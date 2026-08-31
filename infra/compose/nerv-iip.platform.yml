@@ -269,6 +269,7 @@ services:
     environment:
       <<: *dotnet-env
       ConnectionStrings__PostgreSQL: Host=postgres;Port=5432;Database=nerv_iip_barcode;Username=${NERV_IIP_POSTGRES_USER:-nerv};Password=${NERV_IIP_POSTGRES_PASSWORD:?set NERV_IIP_POSTGRES_PASSWORD}
+      FileStorage__BaseUrl: http://file-storage:8080
     ports:
       - "${NERV_IIP_BARCODE_LABEL_PORT:-5113}:8080"
 

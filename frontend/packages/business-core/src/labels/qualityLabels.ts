@@ -51,11 +51,12 @@ export const INSPECTION_TASK_SOURCE_TYPES: readonly string[] = ['receiving', 'op
 
 /**
  * 质量单据（检验记录 / NCR）来源类型（镜像 Quality 检验记录 sourceType 口径：
- * operation/receiving/final/maintenance/customer-return）。与检验任务的三类来源不同，
+ * operation/first-article/receiving/final/maintenance/customer-return）。与检验任务的三类来源不同，
  * 这里覆盖 NCR 分析、检验记录带出区等展示场景；未知码原样返回，不吞真值。
  */
 export const qualitySourceTypeLabels: Record<string, string> = {
   operation: '工序',
+  'first-article': '首件检验',
   'in-process': '过程检验',
   receiving: '收货',
   final: '终检',
@@ -68,6 +69,44 @@ export function qualitySourceTypeLabel(value: string | null | undefined): string
   const trimmed = value.trim()
   if (trimmed.length === 0) return ''
   return qualitySourceTypeLabels[trimmed.toLowerCase()] ?? trimmed
+}
+
+/**
+ * 检验方案类别有序表（镜像 Quality `InspectionPlanCategories` 白名单）。
+ * 不从更宽的单据来源类型表反推，避免把 `in-process` 等合法来源码误当成方案类别。
+ */
+export const INSPECTION_PLAN_CATEGORIES = [
+  'receiving',
+  'operation',
+  'final',
+  'first-article',
+  'maintenance',
+  'customer-return',
+] as const
+
+export type InspectionPlanCategory = (typeof INSPECTION_PLAN_CATEGORIES)[number]
+
+/**
+ * 检验方案类别标签。方案类别与检验记录来源类型是两套业务词汇，不能共用后者的短标签。
+ */
+export const inspectionPlanCategoryLabels: Record<InspectionPlanCategory, string> = {
+  receiving: '来料检',
+  operation: '工序检',
+  final: '终检',
+  'first-article': '首件检验',
+  maintenance: '维修检',
+  'customer-return': '客户退货检',
+}
+
+/** 方案类别码→中文名；未知码原样返回，空值返回空串。 */
+export function inspectionPlanCategoryLabel(value: string | null | undefined): string {
+  if (value == null) return ''
+  const trimmed = value.trim()
+  if (trimmed.length === 0) return ''
+  const normalized = trimmed.toLowerCase()
+  return normalized in inspectionPlanCategoryLabels
+    ? inspectionPlanCategoryLabels[normalized as InspectionPlanCategory]
+    : trimmed
 }
 
 /**

@@ -18,6 +18,7 @@ public sealed class ProductionReportRecordedIntegrationEventConverter
     {
         var report = domainEvent.ProductionReport;
         var projection = domainEvent.OeeProjection;
+        var dimensionSnapshot = report.GetOeeDimensionSnapshot();
         var idempotencyKey = EventIds.Idempotency(
             "production-report-recorded",
             report.OrganizationId,
@@ -51,7 +52,17 @@ public sealed class ProductionReportRecordedIntegrationEventConverter
                 // retain correction lineage for audit and downstream projections that need it.
                 report.IsReversal,
                 report.ReversedReportNo,
-                report.MaterialMovementCount));
+                report.MaterialMovementCount,
+                SiteCode: dimensionSnapshot?.SiteCode,
+                WorkshopCode: dimensionSnapshot?.WorkshopCode,
+                LineCode: dimensionSnapshot?.LineCode,
+                ShiftCode: dimensionSnapshot?.ShiftCode,
+                SiteTimezone: dimensionSnapshot?.SiteTimezone,
+                ShiftStartsAt: dimensionSnapshot?.ShiftStartsAt,
+                ShiftEndsAt: dimensionSnapshot?.ShiftEndsAt,
+                ShiftCrossesMidnight: dimensionSnapshot?.ShiftCrossesMidnight,
+                ShiftPaidMinutes: dimensionSnapshot?.ShiftPaidMinutes,
+                ShiftBreakMinutes: dimensionSnapshot?.ShiftBreakMinutes));
     }
 }
 
@@ -105,7 +116,8 @@ public sealed class ProductionMaterialConsumedIntegrationEventConverter
         DateTimeOffset requestedAtUtc,
         decimal? unitCost = null,
         DateOnly? productionDate = null,
-        DateOnly? expiryDate = null)
+        DateOnly? expiryDate = null,
+        string? unitCostAuthorityReference = null)
     {
         var movementType = quantity < 0 ? InventoryMovementTypes.Outbound : InventoryMovementTypes.Inbound;
         return new InventoryMovementRequestedIntegrationEvent(
@@ -139,7 +151,8 @@ public sealed class ProductionMaterialConsumedIntegrationEventConverter
                 requestedAtUtc,
                 UnitCost: unitCost,
                 ProductionDate: productionDate,
-                ExpiryDate: expiryDate));
+                ExpiryDate: expiryDate,
+                UnitCostAuthorityReference: unitCostAuthorityReference));
     }
 }
 
@@ -170,7 +183,8 @@ public sealed class FinishedGoodsReceiptRequestedIntegrationEventConverter(
             occurredAtUtc,
             request.UnitCost,
             request.ProductionDate,
-            request.ExpiryDate);
+            request.ExpiryDate,
+            InventoryMovementUnitCostAuthorityReferences.MesFinishedGoodsReceipt);
     }
 }
 
@@ -241,6 +255,182 @@ public sealed class OperationTaskCompletedIntegrationEventConverter
                 task.RequiresQualityInspection,
                 completedAtUtc));
     }
+}
+
+public sealed class OperationActualTimeSettledV1IntegrationEventConverter(
+    IMesIntegrationEventContextAccessor contextAccessor)
+{
+    public MesOperationActualTimeSettledIntegrationEvent Convert(OperationActualTimeSettledDomainEvent domainEvent)
+    {
+        var settlement = domainEvent.Settlement;
+        var context = contextAccessor.GetContext();
+        var idempotencyKey = EventIds.Idempotency(
+            "operation-actual-time-settled",
+            settlement.OrganizationId,
+            settlement.EnvironmentId,
+            settlement.OperationTaskId,
+            settlement.SettlementRevision.ToString(CultureInfo.InvariantCulture));
+        return new MesOperationActualTimeSettledIntegrationEvent(
+            $"evt-{Guid.CreateVersion7():N}",
+            MesIntegrationEventTypes.OperationActualTimeSettled,
+            MesIntegrationEventVersions.V1,
+            settlement.CompletedAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            context.CorrelationId,
+            context.CausationId,
+            settlement.OrganizationId,
+            settlement.EnvironmentId,
+            "system:mes",
+            idempotencyKey,
+            new OperationActualTimeSettledPayload(
+                settlement.WorkOrderId,
+                settlement.OperationTaskId,
+                settlement.WorkCenterId,
+                settlement.SettlementRevision,
+                settlement.CompletedAtUtc,
+                settlement.ActualLaborTicks,
+                settlement.ActualMachineTicks,
+                settlement.CoveredProductionReportNos));
+    }
+}
+
+public sealed class OperationActualTimeSettledIntegrationEventConverter(
+    IMesIntegrationEventContextAccessor contextAccessor)
+{
+    public MesOperationActualTimeSettledV2IntegrationEvent Convert(OperationActualTimeSettledDomainEvent domainEvent)
+    {
+        var settlement = domainEvent.Settlement;
+        var context = contextAccessor.GetContext();
+        var idempotencyKey = EventIds.Idempotency(
+            "operation-actual-time-settled",
+            settlement.OrganizationId,
+            settlement.EnvironmentId,
+            settlement.OperationTaskId,
+            settlement.SettlementRevision.ToString(CultureInfo.InvariantCulture));
+        return new MesOperationActualTimeSettledV2IntegrationEvent(
+            $"evt-{Guid.CreateVersion7():N}",
+            MesIntegrationEventTypes.OperationActualTimeSettled,
+            MesIntegrationEventVersions.V2,
+            settlement.CompletedAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            context.CorrelationId,
+            context.CausationId,
+            settlement.OrganizationId,
+            settlement.EnvironmentId,
+            "system:mes",
+            idempotencyKey,
+            new OperationActualTimeSettledV2Payload(
+                settlement.WorkOrderId,
+                settlement.OperationTaskId,
+                settlement.WorkCenterId,
+                settlement.SettlementRevision,
+                settlement.CompletedAtUtc,
+                settlement.ActualLaborTicks,
+                settlement.ActualMachineTicks,
+                settlement.CoveredProductionReportNos,
+                settlement.DeviceAssetId,
+                ToMachineTimeStatusCode(settlement.MachineTimeStatus),
+                settlement.BillableMachineTicks,
+                settlement.MachineTimeBasisCode));
+    }
+
+    private static MesMachineTimeFactStatus ToMachineTimeStatusCode(MachineTimeFactStatus status) => status switch
+    {
+        MachineTimeFactStatus.Available => MesMachineTimeFactStatus.Available,
+        MachineTimeFactStatus.NotApplicable => MesMachineTimeFactStatus.NotApplicable,
+        MachineTimeFactStatus.Unavailable => MesMachineTimeFactStatus.Unavailable,
+        _ => throw new ArgumentOutOfRangeException(nameof(status), status, "Unsupported machine-time fact status."),
+    };
+}
+
+public sealed class OperationActualTimeSettlementVoidedV1IntegrationEventConverter(
+    IMesIntegrationEventContextAccessor contextAccessor)
+{
+    public MesOperationActualTimeSettlementVoidedIntegrationEvent Convert(
+        OperationActualTimeSettlementVoidedDomainEvent domainEvent)
+    {
+        var settlement = domainEvent.Settlement;
+        var context = contextAccessor.GetContext();
+        var idempotencyKey = EventIds.Idempotency(
+            "operation-actual-time-settlement-voided",
+            settlement.OrganizationId,
+            settlement.EnvironmentId,
+            settlement.OperationTaskId,
+            settlement.SettlementRevision.ToString(CultureInfo.InvariantCulture));
+        return new MesOperationActualTimeSettlementVoidedIntegrationEvent(
+            $"evt-{Guid.CreateVersion7():N}",
+            MesIntegrationEventTypes.OperationActualTimeSettlementVoided,
+            MesIntegrationEventVersions.V1,
+            domainEvent.VoidedAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            context.CorrelationId,
+            context.CausationId,
+            settlement.OrganizationId,
+            settlement.EnvironmentId,
+            "system:mes",
+            idempotencyKey,
+            new OperationActualTimeSettlementVoidedPayload(
+                settlement.WorkOrderId,
+                settlement.OperationTaskId,
+                settlement.WorkCenterId,
+                settlement.SettlementRevision,
+                settlement.CompletedAtUtc,
+                domainEvent.VoidedAtUtc,
+                settlement.ActualLaborTicks,
+                settlement.ActualMachineTicks,
+                settlement.CoveredProductionReportNos));
+    }
+}
+
+public sealed class OperationActualTimeSettlementVoidedIntegrationEventConverter(
+    IMesIntegrationEventContextAccessor contextAccessor)
+{
+    public MesOperationActualTimeSettlementVoidedV2IntegrationEvent Convert(
+        OperationActualTimeSettlementVoidedDomainEvent domainEvent)
+    {
+        var settlement = domainEvent.Settlement;
+        var context = contextAccessor.GetContext();
+        var idempotencyKey = EventIds.Idempotency(
+            "operation-actual-time-settlement-voided",
+            settlement.OrganizationId,
+            settlement.EnvironmentId,
+            settlement.OperationTaskId,
+            settlement.SettlementRevision.ToString(CultureInfo.InvariantCulture));
+        return new MesOperationActualTimeSettlementVoidedV2IntegrationEvent(
+            $"evt-{Guid.CreateVersion7():N}",
+            MesIntegrationEventTypes.OperationActualTimeSettlementVoided,
+            MesIntegrationEventVersions.V2,
+            domainEvent.VoidedAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            context.CorrelationId,
+            context.CausationId,
+            settlement.OrganizationId,
+            settlement.EnvironmentId,
+            "system:mes",
+            idempotencyKey,
+            new OperationActualTimeSettlementVoidedV2Payload(
+                settlement.WorkOrderId,
+                settlement.OperationTaskId,
+                settlement.WorkCenterId,
+                settlement.SettlementRevision,
+                settlement.CompletedAtUtc,
+                domainEvent.VoidedAtUtc,
+                settlement.ActualLaborTicks,
+                settlement.ActualMachineTicks,
+                settlement.CoveredProductionReportNos,
+                settlement.DeviceAssetId,
+                ToMachineTimeStatusCode(settlement.MachineTimeStatus),
+                settlement.BillableMachineTicks,
+                settlement.MachineTimeBasisCode));
+    }
+
+    private static MesMachineTimeFactStatus ToMachineTimeStatusCode(MachineTimeFactStatus status) => status switch
+    {
+        MachineTimeFactStatus.Available => MesMachineTimeFactStatus.Available,
+        MachineTimeFactStatus.NotApplicable => MesMachineTimeFactStatus.NotApplicable,
+        MachineTimeFactStatus.Unavailable => MesMachineTimeFactStatus.Unavailable,
+        _ => throw new ArgumentOutOfRangeException(nameof(status), status, "Unsupported machine-time fact status."),
+    };
 }
 
 public sealed class OperationTaskManuallyDispatchedIntegrationEventConverter
@@ -537,6 +727,43 @@ public sealed class WorkOrderReleasedIntegrationEventConverter
                         x.OperationSequence,
                         x.WorkCenterId))
                     .ToArray()));
+    }
+}
+
+public sealed class ReworkWorkOrderCreatedIntegrationEventConverter
+    : IIntegrationEventConverter<ReworkWorkOrderCreatedDomainEvent, ReworkWorkOrderCreatedIntegrationEvent>
+{
+    public ReworkWorkOrderCreatedIntegrationEvent Convert(ReworkWorkOrderCreatedDomainEvent domainEvent)
+    {
+        var workOrder = domainEvent.WorkOrder;
+        var idempotencyKey = EventIds.Idempotency(
+            "rework-work-order-created",
+            workOrder.OrganizationId,
+            workOrder.EnvironmentId,
+            workOrder.SourceNcrId);
+        return new ReworkWorkOrderCreatedIntegrationEvent(
+            $"evt-{Guid.CreateVersion7():N}",
+            MesIntegrationEventTypes.ReworkWorkOrderCreated,
+            MesIntegrationEventVersions.V1,
+            workOrder.CreatedAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            domainEvent.CorrelationId,
+            domainEvent.CausationId,
+            workOrder.OrganizationId,
+            workOrder.EnvironmentId,
+            "system:business-mes",
+            idempotencyKey,
+            new ReworkWorkOrderCreatedPayload(
+                workOrder.SourceNcrId!,
+                workOrder.SourceNcrCode!,
+                workOrder.WorkOrderId,
+                workOrder.SourceWorkOrderId!,
+                workOrder.SourceOperationTaskId,
+                workOrder.SkuId,
+                workOrder.Quantity,
+                workOrder.SourceLotNo,
+                workOrder.SourceSerialNo,
+                workOrder.CreatedAtUtc));
     }
 }
 

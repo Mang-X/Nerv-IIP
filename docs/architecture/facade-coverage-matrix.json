@@ -279,6 +279,19 @@
     },
     {
       "service": "BarcodeLabel",
+      "method": "POST",
+      "route": "/api/business/v1/barcodes/resolve",
+      "operationId": "resolveBusinessBarcode",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "resolveBusinessConsoleBarcode"
+      ]
+    },
+    {
+      "service": "BarcodeLabel",
       "method": "GET",
       "route": "/api/business/v1/barcodes/rules",
       "operationId": "listBusinessBarcodeRules",
@@ -718,6 +731,38 @@
       "gatewayOperationIds": [
         "configureBusinessConsoleErpWorkCenterCostRate"
       ]
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
+      "route": "/api/business/v1/erp/finance/work-order-costs",
+      "operationId": "listErpWorkOrderCosts",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; follows a future ERP work-order cost analysis Business Console phase. Issue #2814 intentionally delivers service-side readback without Console/PDA computation or UI changes."
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
+      "route": "/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations",
+      "operationId": "listErpWorkCenterMachineOverheadReconciliations",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; follows the ERP finance month-end reconciliation Business Console phase. Issue #2383 intentionally delivers the service API without Gateway/UI."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations",
+      "operationId": "reconcileErpWorkCenterMachineOverhead",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; follows the ERP finance month-end reconciliation Business Console phase. Issue #2383 intentionally delivers the service API without Gateway/UI."
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
+      "route": "/api/business/v1/erp/finance/work-order-costs/{workOrderId}",
+      "operationId": "getErpWorkOrderCostVariance",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade and generated client are delivered by follow-up issues; Issue #2277 intentionally exposes only the ERP service contract."
     },
     {
       "service": "Erp",
@@ -1489,6 +1534,19 @@
     {
       "service": "IndustrialTelemetry",
       "method": "GET",
+      "route": "/api/business/v1/iiot/oee/aggregates",
+      "operationId": "queryBusinessIiotOeeAggregates",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "queryBusinessConsoleTelemetryOeeAggregates"
+      ]
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "GET",
       "route": "/api/business/v1/iiot/runtime-availability",
       "operationId": "queryBusinessIiotRuntimeAvailability",
       "classification": "exposed",
@@ -1687,6 +1745,20 @@
       "note": "MAN-449/#803 exposes server paging, filtered totals, expiry provenance, and backend operation availability through the existing facade route.",
       "gatewayOperationIds": [
         "listBusinessConsoleInventoryExpiryAlerts"
+      ]
+    },
+    {
+      "service": "Inventory",
+      "method": "GET",
+      "route": "/api/inventory/v1/line-side-balances",
+      "operationId": "listInventoryLineSideBalances",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "#1964/#2228：Inventory 提供线边库正库存余额与生产日期账龄权威读面，BusinessGateway 以 MES 物料读取权限暴露同源分页 facade。",
+      "gatewayOperationIds": [
+        "listBusinessConsoleMesLineSideInventoryBalances"
       ]
     },
     {
@@ -2103,6 +2175,14 @@
     },
     {
       "service": "MasterData",
+      "method": "GET",
+      "route": "/api/business/v1/master-data/tooling-assets",
+      "operationId": "listBusinessMasterDataToolingAssets",
+      "classification": "deferred",
+      "followUp": "BusinessGateway 工装查询 facade 与生成客户端由 #2063 交付。"
+    },
+    {
+      "service": "MasterData",
       "method": "POST",
       "route": "/api/business/v1/master-data/code-rules/{ruleKey}/preview",
       "operationId": "previewBusinessMasterDataCodeRule",
@@ -2260,6 +2340,7 @@
       "route": "/api/business/v1/master-data/product-categories",
       "operationId": "listBusinessMasterDataProductCategories",
       "classification": "exposed",
+      "note": "NERV-1244：复用组合式租户、关键词与分页 criteria；保留 ProductCategory 专属筛选与响应契约。",
       "gateways": [
         "business"
       ],
@@ -2367,6 +2448,7 @@
       "route": "/api/business/v1/master-data/resources",
       "operationId": "listBusinessMasterDataResources",
       "classification": "exposed",
+      "note": "NERV-1244：复用组合式租户、关键词与分页 criteria；#2603 补齐 deviceAssetId（GUID/Code）与 shiftCode 精确过滤，并返回 canonical 设备 Id；公开字段与既有分页默认值保持兼容。",
       "gateways": [
         "business"
       ],
@@ -2459,6 +2541,7 @@
       "route": "/api/business/v1/master-data/skills",
       "operationId": "listBusinessMasterDataSkills",
       "classification": "exposed",
+      "note": "NERV-1244：复用组合式租户、关键词与分页 criteria；保留 Skill 专属筛选与响应契约。",
       "gateways": [
         "business"
       ],
@@ -2698,7 +2781,8 @@
         "business"
       ],
       "gatewayOperationIds": [
-        "recordBusinessConsoleMesDefect"
+        "recordBusinessConsoleMesDefect",
+        "recordBusinessConsoleMesDefectV2"
       ]
     },
     {
@@ -2725,7 +2809,8 @@
       ],
       "gatewayOperationIds": [
         "assignBusinessConsoleMesDispatchTask"
-      ]
+      ],
+      "note": "exposed：BusinessGateway 对 AssignedUserId 及最多 20 名 Participants 执行 MasterData 在职校验并冻结姓名，再把完整协作派工契约转发至 MES；未提供 Participants 时保留单人兼容语义。"
     },
     {
       "service": "Mes",
@@ -2750,7 +2835,8 @@
         "business"
       ],
       "gatewayOperationIds": [
-        "recordBusinessConsoleMesDowntimeEvent"
+        "recordBusinessConsoleMesDowntimeEvent",
+        "recordBusinessConsoleMesDowntimeEventV2"
       ]
     },
     {
@@ -2847,6 +2933,45 @@
     },
     {
       "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/material-issue-requests/{requestId}",
+      "operationId": "getBusinessMesMaterialIssueRequest",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleMesMaterialIssueRequest"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/material-scan-prevalidation",
+      "operationId": "prevalidateBusinessMesMaterialScan",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "prevalidateBusinessConsoleMesMaterialScan"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/context-scan-prevalidation",
+      "operationId": "prevalidateBusinessMesContextScan",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "prevalidateBusinessConsoleMesContextScan"
+      ]
+    },
+    {
+      "service": "Mes",
       "method": "POST",
       "route": "/api/business/v1/mes/material-issue-requests/{requestId}/line-side-receipts",
       "operationId": "confirmBusinessMesLineSideMaterialReceipt",
@@ -2863,8 +2988,13 @@
       "method": "POST",
       "route": "/api/business/v1/mes/material-issue-requests/{requestId}/line-side-returns",
       "operationId": "returnBusinessMesLineSideMaterial",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; line-side return follows the MES material workbench menu phase."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "returnBusinessConsoleMesLineSideMaterial"
+      ]
     },
     {
       "service": "Mes",
@@ -2878,7 +3008,21 @@
       "gatewayOperationIds": [
         "listBusinessConsoleMesOperationTasks"
       ],
-      "note": "The exposed facade preserves the MES exact operationTaskId filter together with workOrderId and principal-derived scope before paging; PDA action readback uses this strong-ID query instead of keyword search."
+      "note": "exposed：BusinessGateway 通过 listBusinessConsoleMesOperationTasks 保留 MES 的精确 operationTaskId、workOrderId 与主体范围过滤后再分页；AssignedUserIds 同时匹配主指派人与协作 Participants，PDA 动作回读使用该强标识查询而非关键字搜索。响应保留 actualLaborHours 与 actualMachineHours；未完成或冲销后重新打开的工序显式返回 null，不省略字段。"
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/operation-tasks/{operationTaskId}/claim",
+      "operationId": "claimBusinessMesOperationTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "claimBusinessConsoleMesOperationTask"
+      ],
+      "note": "exposed：BusinessGateway 将领取主体绑定为当前认证用户，只允许在已授权的 work-center 范围内领取 Queued 且未指派任务，并以 MasterData 在岗人员目录核验当前工作中心归属。"
     },
     {
       "service": "Mes",
@@ -2931,6 +3075,14 @@
       "gatewayOperationIds": [
         "startBusinessConsoleMesOperationTask"
       ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/operation-tasks/{operationTaskId}/authorize-start",
+      "operationId": "authorizeAndStartBusinessMesOperationTask",
+      "classification": "internal",
+      "rationale": "MES 内部受保护的授权跳站入口，仅由受信服务调用；按设计不通过 BusinessGateway facade 暴露。"
     },
     {
       "service": "Mes",
@@ -2995,7 +3147,16 @@
       ],
       "gatewayOperationIds": [
         "listBusinessConsoleMesProductionReports"
-      ]
+      ],
+      "note": "exposed：BusinessGateway 通过 listBusinessConsoleMesProductionReports 保留 operationActualLaborHours 与 operationActualMachineHours；对应工序尚无冻结实绩时显式返回 null，不省略字段。"
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/production-statistics",
+      "operationId": "queryBusinessMesProductionStatistics",
+      "classification": "deferred",
+      "followUp": "生产日报父能力 #1952 的后续 Gateway 契约子票交付 BusinessGateway facade 与 generated client；#2855 只建立 MES 权威聚合读契约。"
     },
     {
       "service": "Mes",
@@ -3008,7 +3169,8 @@
       ],
       "gatewayOperationIds": [
         "getBusinessConsoleMesProductionReport"
-      ]
+      ],
+      "note": "exposed：BusinessGateway 通过 getBusinessConsoleMesProductionReport 保留 MES 报工详情的 LaborAllocations 不可变分摊快照；阶段报工返回空集合，仅完工报工返回按最终工序工时生成的逐人分摊。详情同时保留 operationActualLaborHours 与 operationActualMachineHours；对应工序尚无冻结实绩时显式返回 null，不省略字段。"
     },
     {
       "service": "Mes",
@@ -3021,7 +3183,8 @@
       ],
       "gatewayOperationIds": [
         "recordBusinessConsoleMesProductionReport"
-      ]
+      ],
+      "note": "exposed：BusinessGateway 转发 CompletesOperation，并在响应中保留 LaborAllocations；只有完工报工生成分摊，阶段报工不生成。"
     },
     {
       "service": "Mes",
@@ -3047,7 +3210,8 @@
       ],
       "gatewayOperationIds": [
         "listBusinessConsoleMesReportableOperationTasks"
-      ]
+      ],
+      "note": "exposed：BusinessGateway 的 Self/Team/Organization 范围经 AssignedUserIds、TeamIds 与 WorkCenterIds 转发；Self 范围同时匹配工序主指派人与协作 Participants，允许登记参与者本人报工。"
     },
     {
       "service": "Mes",
@@ -3283,6 +3447,45 @@
     {
       "service": "Mes",
       "method": "POST",
+      "route": "/api/business/v1/mes/work-orders/{workOrderId}/split",
+      "operationId": "splitBusinessMesWorkOrder",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "splitBusinessConsoleMesWorkOrder"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/work-orders/merge",
+      "operationId": "mergeBusinessMesWorkOrders",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "mergeBusinessConsoleMesWorkOrders"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/work-order-transformations/{transformationId}",
+      "operationId": "getBusinessMesWorkOrderTransformation",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleMesWorkOrderTransformation"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
       "route": "/api/business/v1/mes/work-orders/{workOrderId}/cancel",
       "operationId": "cancelBusinessMesWorkOrder",
       "classification": "exposed",
@@ -3298,16 +3501,26 @@
       "method": "POST",
       "route": "/api/business/v1/mes/work-orders/{workOrderId}/close",
       "operationId": "closeBusinessMesWorkOrder",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; MES work-order close follows the workbench close-action menu phase (hold/cancel already exposed via #833)."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "closeBusinessConsoleMesWorkOrder"
+      ]
     },
     {
       "service": "Mes",
       "method": "POST",
       "route": "/api/business/v1/mes/work-orders/{workOrderId}/engineering-change-decisions",
       "operationId": "recordBusinessMesEngineeringChangeDecision",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; work-order engineering-change-decision follows the ECO-on-workorder menu phase."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "recordBusinessConsoleMesEngineeringChangeDecision"
+      ]
     },
     {
       "service": "Mes",
@@ -3346,7 +3559,8 @@
       ],
       "gatewayOperationIds": [
         "getBusinessConsoleMesMaterialReadiness"
-      ]
+      ],
+      "note": "#2223 在 material-readiness 响应中新增尾部可选兼容字段 SubstituteMaterialIds，表示创建齐套快照时冻结并去重的替代物料候选；BusinessGateway 保真转发该可选字段，旧消费者可继续忽略它，既有必填字段不变。齐套计算中 RequiredQuantity 只计一次，AvailableQuantity 按主料与冻结去重的替代候选池合计，ShortageQuantity 与 Status 基于该合计结果计算。"
     },
     {
       "service": "Mes",
@@ -4229,6 +4443,19 @@
       "gatewayOperationIds": [
         "listBusinessConsoleQualityReasonCodes",
         "listBusinessConsoleSearchableDirectory"
+      ]
+    },
+    {
+      "service": "Quality",
+      "method": "GET",
+      "route": "/api/business/v1/quality/scrap-reason-codes",
+      "operationId": "listBusinessQualityScrapReasonCodes",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleQualityScrapReasonCodes"
       ]
     },
     {

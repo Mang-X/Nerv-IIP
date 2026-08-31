@@ -3,16 +3,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, reactive, shallowRef, type ShallowRef } from 'vue'
 
 import {
+  claimBusinessConsoleMesOperationTaskMutationOptions,
   completeBusinessConsoleMesOperationTaskMutationOptions,
   confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions,
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   createBusinessConsoleMesMaterialIssueRequestMutationOptions,
   createBusinessConsoleSopFileDownloadGrantMutationOptions,
-  getBusinessConsolePrincipalWorkContextQueryOptions,
   getBusinessConsoleMesCurrentOperationSopsQueryOptions,
-  getBusinessConsoleMesWorkOrderDetailQueryKey,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
   listBusinessConsoleMesMaterialIssueRequests,
+  listBusinessConsoleMesLineSideInventoryBalancesQueryOptions,
   listBusinessConsoleMesOperationTasks,
   listBusinessConsoleMesOperationTasksQueryOptions,
   listBusinessConsoleMesReportableOperationTasks,
@@ -25,10 +25,12 @@ import { acquirePendingBusinessIntent } from '@nerv-iip/business-core'
 import {
   MES_WORK_SCOPE_UNAVAILABLE_MESSAGE,
   useMesMaterialIssue,
+  useMesLineSideInventoryBalances,
   useMesCurrentOperationSops,
   useMesExactOperationTask,
   useMesOperationTasks,
   useMesProductionReports,
+  useMesProductionMaterialLots,
   useMesReceipts,
   useMesWorkOrderDetail,
   useMesWorkOrders,
@@ -50,19 +52,28 @@ const coladaState = vi.hoisted(() => ({
     string,
     () => {
       enabled?: boolean
+      key?: unknown
       query?: (context: { signal: AbortSignal }) => unknown
     }
   >(),
+  queryErrorRefById: new Map<string, ShallowRef<unknown>>(),
   mutateById: new Map<string, ReturnType<typeof vi.fn>>(),
   cancelQueries: vi.fn().mockResolvedValue(undefined),
+  invalidateQueries: vi.fn().mockResolvedValue(undefined),
 }))
 const receiptState = vi.hoisted(() => ({
   confirm: vi.fn(),
 }))
+const lineSideInventoryFetch = vi.hoisted(() => vi.fn())
 
 const authState = vi.hoisted(() => ({
   principal: undefined as
-    | { principalId?: string; organizationId?: string; environmentId?: string }
+    | {
+        principalId?: string
+        organizationId?: string
+        environmentId?: string
+        permissionCodes?: string[]
+      }
     | undefined,
   sessionId: 'session-001',
 }))
@@ -117,6 +128,24 @@ vi.mock('@nerv-iip/api-client', () => ({
   listBusinessConsoleMesMaterialIssueRequestsQueryOptions: mockQueryOptions(
     'listBusinessConsoleMesMaterialIssueRequests',
   ),
+  listBusinessConsoleMesLineSideInventoryBalances: (...args: unknown[]) =>
+    lineSideInventoryFetch(...args),
+  listBusinessConsoleMesLineSideInventoryBalancesQueryOptions: vi.fn((options) => ({
+    key: [
+      {
+        _id: 'listBusinessConsoleMesLineSideInventoryBalances',
+        page: options.query.page,
+      },
+    ],
+    query: async (context: { signal?: AbortSignal }) => {
+      const response = await lineSideInventoryFetch({
+        ...options,
+        ...context,
+        throwOnError: true,
+      })
+      return response.data
+    },
+  })),
   listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions: mockQueryOptions(
     'listBusinessConsoleMesFinishedGoodsReceiptRequests',
   ),
@@ -132,6 +161,9 @@ vi.mock('@nerv-iip/api-client', () => ({
   completeBusinessConsoleMesOperationTaskMutationOptions: mockMutationOptions(
     'completeBusinessConsoleMesOperationTask',
   ),
+  claimBusinessConsoleMesOperationTaskMutationOptions: mockMutationOptions(
+    'claimBusinessConsoleMesOperationTask',
+  ),
   recordBusinessConsoleMesProductionReportMutationOptions: mockMutationOptions(
     'recordBusinessConsoleMesProductionReport',
   ),
@@ -140,6 +172,9 @@ vi.mock('@nerv-iip/api-client', () => ({
   ),
   confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions: mockMutationOptions(
     'confirmBusinessConsoleMesLineSideMaterialReceipt',
+  ),
+  returnBusinessConsoleMesLineSideMaterialMutationOptions: mockMutationOptions(
+    'returnBusinessConsoleMesLineSideMaterial',
   ),
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions: mockMutationOptions(
     'createBusinessConsoleMesFinishedGoodsReceiptRequest',
@@ -162,15 +197,37 @@ vi.mock('@pinia/colada', () => ({
     coladaState.queryOptionsById.set(id, options)
     coladaState.queryFactoriesById.set(id, optionsFactory)
 
-    const refetch = vi.fn()
-    coladaState.refetchById.set(id, refetch)
-    const data = shallowRef(coladaState.queryDataById.get(id))
+    const initialData = coladaState.queryDataById.get(id)
+    const data = shallowRef(
+      id === 'listBusinessConsoleMesLineSideInventoryBalances' && initialData !== undefined
+        ? { identity: 'org-001:env-dev:page:1', response: initialData }
+        : initialData,
+    )
     const isLoading = shallowRef(false)
+    const error = shallowRef()
+    const refetch = vi.fn(async () => {
+      if (id !== 'listBusinessConsoleMesLineSideInventoryBalances') return
+      const latest = optionsFactory()
+      isLoading.value = true
+      try {
+        const result = await latest.query?.({ signal: new AbortController().signal })
+        data.value = result
+        error.value = undefined
+        return result
+      } catch (queryError) {
+        error.value = queryError
+        throw queryError
+      } finally {
+        isLoading.value = false
+      }
+    })
+    coladaState.refetchById.set(id, refetch)
     coladaState.queryDataRefById.set(id, data)
+    coladaState.queryErrorRefById.set(id, error)
     coladaState.loadingById.set(id, isLoading)
     return {
       data,
-      error: shallowRef(),
+      error,
       isLoading,
       refetch,
     }
@@ -188,7 +245,7 @@ vi.mock('@pinia/colada', () => ({
     }
   }),
   useQueryCache: vi.fn(() => ({
-    invalidateQueries: vi.fn().mockResolvedValue(undefined),
+    invalidateQueries: coladaState.invalidateQueries,
     cancelQueries: coladaState.cancelQueries,
   })),
 }))
@@ -237,14 +294,19 @@ describe('pda useBusinessMes composables', () => {
     vi.clearAllMocks()
     sessionStorage.clear()
     receiptState.confirm.mockImplementation(async (value) => value)
+    lineSideInventoryFetch.mockReset().mockResolvedValue({
+      data: { success: true, data: { items: [], totalCount: 0, page: 1, pageSize: 200 } },
+    })
     coladaState.queryDataById.clear()
     coladaState.queryDataRefById.clear()
+    coladaState.queryErrorRefById.clear()
     coladaState.loadingById.clear()
     coladaState.refetchById.clear()
     coladaState.queryOptionsById.clear()
     coladaState.queryFactoriesById.clear()
     coladaState.mutateById.clear()
     coladaState.cancelQueries.mockClear()
+    coladaState.invalidateQueries.mockClear()
     coladaState.queryDataById.set(
       'getBusinessConsolePrincipalWorkContext:business.mes.operations.read',
       {
@@ -1260,6 +1322,75 @@ describe('pda useBusinessMes composables', () => {
     )
   })
 
+  it('claims an unassigned queued task with the authenticated work-center scope and a stable key', async () => {
+    vi.mocked(listBusinessConsoleMesOperationTasks).mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: [
+            {
+              operationTaskId: 'ot-claim',
+              workOrderId: 'wo-claim',
+              status: 'Queued',
+              assignedUserId: 'user-001',
+            },
+          ],
+          total: 1,
+        },
+      },
+    } as never)
+    const mes = useMesOperationTasks()
+    const mutateAsync = coladaState.mutateById.get('claimBusinessConsoleMesOperationTask')!
+    mutateAsync.mockResolvedValue({ success: true, data: { status: 'Accepted' } })
+    const context = mes.captureOperationActionContext('claim', 'wo-claim', 'ot-claim')
+
+    const claimed = await mes.claimTask('wo-claim', 'ot-claim', {
+      idempotencyKey: 'operation-claim-1',
+      context,
+    })
+
+    expect(claimBusinessConsoleMesOperationTaskMutationOptions).toHaveBeenCalled()
+    expect(mutateAsync).toHaveBeenCalledWith({
+      path: { operationTaskId: 'ot-claim' },
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        scopeKind: 'work-center',
+        scopeId: 'WC-A',
+      },
+      body: { idempotencyKey: 'operation-claim-1' },
+    })
+    expect(claimed?.assignedUserId).toBe('user-001')
+  })
+
+  it('reuses the pending claim key after an unknown result even when the retry supplies a new key', async () => {
+    vi.mocked(listBusinessConsoleMesOperationTasks).mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: [
+            { operationTaskId: 'ot-claim', workOrderId: 'wo-claim', assignedUserId: 'user-001' },
+          ],
+          total: 1,
+        },
+      },
+    } as never)
+    const mes = useMesOperationTasks()
+    const mutateAsync = coladaState.mutateById.get('claimBusinessConsoleMesOperationTask')!
+    mutateAsync
+      .mockRejectedValueOnce(new TypeError('response lost after commit'))
+      .mockResolvedValueOnce({ success: true, data: { status: 'Accepted' } })
+    const context = mes.captureOperationActionContext('claim', 'wo-claim', 'ot-claim')
+
+    await expect(
+      mes.claimTask('wo-claim', 'ot-claim', { idempotencyKey: 'claim-key-1', context }),
+    ).rejects.toThrow('response lost after commit')
+    await mes.claimTask('wo-claim', 'ot-claim', { idempotencyKey: 'claim-key-2', context })
+
+    expect(mutateAsync.mock.calls[0][0].body.idempotencyKey).toBe('claim-key-1')
+    expect(mutateAsync.mock.calls[1][0].body.idempotencyKey).toBe('claim-key-1')
+  })
+
   it('fails closed before task readback and mutation when no operation scope is selected', async () => {
     coladaState.queryDataById.set(
       'getBusinessConsolePrincipalWorkContext:business.mes.operations.manage',
@@ -1706,6 +1837,55 @@ describe('pda useBusinessMes composables', () => {
     expect(payload.body.idempotencyKey).toBe('op-confirm-1')
   })
 
+  it('replays a return with the same key after the authoritative list shows zero returnable quantity', async () => {
+    vi.mocked(listBusinessConsoleMesMaterialIssueRequests)
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: [
+              {
+                requestId: 'req-return-1',
+                receivedQuantity: 5,
+                consumedQuantity: 0,
+                materialLotId: 'LOT-1',
+              },
+            ],
+            total: 1,
+          },
+        },
+      } as never)
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: [
+              {
+                requestId: 'req-return-1',
+                receivedQuantity: 0,
+                consumedQuantity: 0,
+                materialLotId: null,
+              },
+            ],
+            total: 1,
+          },
+        },
+      } as never)
+
+    const { returnLineSideMaterial } = useMesMaterialIssue()
+    const body = { returnedQuantity: 5, idempotencyKey: 'return-replay-1' }
+
+    await returnLineSideMaterial('req-return-1', body)
+    await returnLineSideMaterial('req-return-1', body)
+
+    expect(
+      coladaState.mutateById.get('returnBusinessConsoleMesLineSideMaterial'),
+    ).toHaveBeenCalledTimes(2)
+    expect(
+      coladaState.mutateById.get('returnBusinessConsoleMesLineSideMaterial')!.mock.calls[1][0].body,
+    ).toEqual(body)
+  })
+
   it('forwards the caller-supplied key + injects business fields when creating a finished-goods receipt', async () => {
     const { createReceipt } = useMesReceipts()
 
@@ -1713,7 +1893,6 @@ describe('pda useBusinessMes composables', () => {
       workOrderId: 'wo-5',
       skuId: 'sku-1',
       quantity: 12,
-      unitCost: 12.34,
       uomCode: 'EA',
       idempotencyKey: 'op-receipt-1',
     })
@@ -1729,7 +1908,6 @@ describe('pda useBusinessMes composables', () => {
       workOrderId: 'wo-5',
       skuId: 'sku-1',
       quantity: 12,
-      unitCost: 12.34,
       uomCode: 'EA',
     })
     expect(payload.body.idempotencyKey).toBe('op-receipt-1')
@@ -1873,12 +2051,12 @@ describe('pda useBusinessMes composables', () => {
       workOrderId: 'wo-5',
       skuId: 'sku-1',
       quantity: 12,
-      unitCost: 12.34,
       uomCode: 'EA',
       idempotencyKey: 'op-receipt-stable',
       organizationId: 'EVIL',
       environmentId: 'EVIL',
       requestedAtUtc: '1999-01-01T00:00:00.000Z',
+      unitCost: 12.34,
     } as never)
 
     const mutateAsync = coladaState.mutateById.get(
@@ -1887,7 +2065,491 @@ describe('pda useBusinessMes composables', () => {
     const payload = mutateAsync!.mock.calls[0][0]
     expect(payload.body.organizationId).toBe('org-001')
     expect(payload.body.environmentId).toBe('env-dev')
+    expect(payload.body).not.toHaveProperty('unitCost')
     expect(payload.body.requestedAtUtc).not.toBe('1999-01-01T00:00:00.000Z')
     expect(payload.body.idempotencyKey).toBe('op-receipt-stable')
+  })
+
+  it('只把 received 且仍有余量的批次提供给报工表单', () => {
+    reactiveAuthState.principal = {
+      ...reactiveAuthState.principal!,
+      permissionCodes: ['business.mes.materials.read'],
+    }
+    coladaState.queryDataById.set('listBusinessConsoleMesMaterialIssueRequests', {
+      success: true,
+      data: {
+        items: [
+          {
+            requestId: 'MIR-RECEIVED',
+            materialId: 'MAT-1',
+            materialLotId: 'LOT-1',
+            receivedQuantity: 10,
+            consumedQuantity: 2,
+            status: 'received',
+          },
+          {
+            requestId: 'MIR-PARTIAL',
+            materialId: 'MAT-2',
+            materialLotId: 'LOT-2',
+            receivedQuantity: 10,
+            consumedQuantity: 2,
+            status: 'partiallyReceived',
+          },
+          {
+            requestId: 'MIR-FAILED',
+            materialId: 'MAT-3',
+            materialLotId: 'LOT-3',
+            receivedQuantity: 10,
+            consumedQuantity: 2,
+            status: 'inventoryPostingFailed',
+          },
+        ],
+      },
+    })
+
+    const result = useMesProductionMaterialLots(() => ({
+      workOrderId: 'WO-1',
+      operationTaskId: 'OP-1',
+    }))
+
+    expect(result.availableMaterialLots.value.map((row) => row.requestId)).toEqual(['MIR-RECEIVED'])
+  })
+
+  it('首次请求身份正确但 payload 页码错误时失败关闭', () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesLineSideInventoryBalances', {
+      success: true,
+      data: {
+        items: [
+          { siteCode: 'SITE-A', locationCode: 'LINE-A', skuCode: 'SKU-WRONG', uomCode: 'pcs' },
+        ],
+        totalCount: 1,
+        page: 2,
+        pageSize: 200,
+      },
+    })
+    const result = useMesLineSideInventoryBalances()
+
+    expect(result.balances.value).toEqual([])
+    expect(result.ready.value).toBe(false)
+    expect(result.error.value).toEqual(
+      expect.objectContaining({ message: '线边库存响应页码与请求不一致，请重试。' }),
+    )
+    expect(result.pending.value).toBe(false)
+  })
+
+  it('翻页后带当前请求身份的迟到错页 payload 不得投影', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesLineSideInventoryBalances', {
+      success: true,
+      data: { items: [], totalCount: 401, page: 1, pageSize: 200 },
+    })
+    lineSideInventoryFetch.mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          items: [
+            { siteCode: 'SITE-A', locationCode: 'LINE-A', skuCode: 'SKU-LATE', uomCode: 'pcs' },
+          ],
+          totalCount: 401,
+          page: 1,
+          pageSize: 200,
+        },
+      },
+    })
+    const result = useMesLineSideInventoryBalances()
+
+    result.nextPage()
+    const options = coladaState.queryFactoriesById.get(
+      'listBusinessConsoleMesLineSideInventoryBalances',
+    )?.()
+    const lateWrongPage = await options?.query?.({ signal: new AbortController().signal })
+    coladaState.queryDataRefById.get('listBusinessConsoleMesLineSideInventoryBalances')!.value =
+      lateWrongPage
+    await nextTick()
+
+    expect(result.page.value).toBe(2)
+    expect(result.balances.value).toEqual([])
+    expect(result.ready.value).toBe(false)
+    expect(result.error.value).toEqual(
+      expect.objectContaining({ message: '线边库存响应页码与请求不一致，请重试。' }),
+    )
+    expect(result.pending.value).toBe(false)
+
+    result.previousPage()
+    expect(result.page.value).toBe(1)
+  })
+
+  it('切换组织环境时同页旧响应立即失效', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesLineSideInventoryBalances', {
+      success: true,
+      data: {
+        items: [{ siteCode: 'SITE-A', locationCode: 'LINE-A', skuCode: 'SKU-OLD', uomCode: 'pcs' }],
+        totalCount: 1,
+        page: 1,
+        pageSize: 200,
+      },
+    })
+    const result = useMesLineSideInventoryBalances()
+    await nextTick()
+
+    expect(result.balances.value.map((item) => item.skuCode)).toEqual(['SKU-OLD'])
+
+    reactiveAuthState.principal = { organizationId: 'org-002', environmentId: 'env-prod' }
+    await nextTick()
+
+    expect(result.page.value).toBe(1)
+    expect(result.balances.value).toEqual([])
+    expect(result.ready.value).toBe(false)
+    coladaState.queryFactoriesById.get('listBusinessConsoleMesLineSideInventoryBalances')?.()
+    expect(listBusinessConsoleMesLineSideInventoryBalancesQueryOptions).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        query: expect.objectContaining({
+          organizationId: 'org-002',
+          environmentId: 'env-prod',
+          page: 1,
+        }),
+      }),
+    )
+  })
+
+  it('分页请求报错后仍可退回上一页', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesLineSideInventoryBalances', {
+      success: true,
+      data: { items: [], totalCount: 401, page: 1, pageSize: 200 },
+    })
+    const result = useMesLineSideInventoryBalances()
+    await nextTick()
+
+    result.nextPage()
+    expect(result.page.value).toBe(2)
+    coladaState.queryErrorRefById.get('listBusinessConsoleMesLineSideInventoryBalances')!.value =
+      new Error('第 2 页加载失败')
+
+    expect(result.error.value).toEqual(expect.objectContaining({ message: '第 2 页加载失败' }))
+    result.previousPage()
+    expect(result.page.value).toBe(1)
+  })
+
+  it('总量收缩使当前页越界时回到最后有效页并忽略迟到旧页', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesLineSideInventoryBalances', {
+      success: true,
+      data: { items: [], totalCount: 401, page: 1, pageSize: 200 },
+    })
+    let resolveCorrectedPage!: (value: {
+      data: {
+        success: boolean
+        data: {
+          items: Array<{
+            siteCode: string
+            locationCode: string
+            skuCode: string
+            uomCode: string
+          }>
+          totalCount: number
+          page: number
+          pageSize: number
+        }
+      }
+    }) => void
+    const correctedPage = new Promise<Parameters<typeof resolveCorrectedPage>[0]>((resolve) => {
+      resolveCorrectedPage = resolve
+    })
+    lineSideInventoryFetch
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: { items: [], totalCount: 200, page: 2, pageSize: 200 },
+        },
+      })
+      .mockImplementationOnce(() => correctedPage)
+    const result = useMesLineSideInventoryBalances()
+    await nextTick()
+
+    result.nextPage()
+    const pageTwoOptions = coladaState.queryFactoriesById.get(
+      'listBusinessConsoleMesLineSideInventoryBalances',
+    )?.()
+    const shrunkenPageTwo = await pageTwoOptions?.query?.({
+      signal: new AbortController().signal,
+    })
+    coladaState.queryDataRefById.get('listBusinessConsoleMesLineSideInventoryBalances')!.value =
+      shrunkenPageTwo
+    await nextTick()
+
+    expect(result.page.value).toBe(1)
+    expect(coladaState.invalidateQueries).toHaveBeenCalledWith(
+      {
+        exact: true,
+        key: [
+          { _id: 'listBusinessConsoleMesLineSideInventoryBalances', page: 1 },
+          'scope-page:org-001:env-dev:page:1',
+        ],
+      },
+      false,
+    )
+    expect(result.pending.value).toBe(true)
+    expect(result.balances.value).toEqual([])
+
+    const correctedOptions = coladaState.queryFactoriesById.get(
+      'listBusinessConsoleMesLineSideInventoryBalances',
+    )?.()
+    const correctedRequest = correctedOptions?.query?.({ signal: new AbortController().signal })
+    expect(lineSideInventoryFetch).toHaveBeenCalledTimes(2)
+    expect(listBusinessConsoleMesLineSideInventoryBalancesQueryOptions).toHaveBeenLastCalledWith(
+      expect.objectContaining({ query: expect.objectContaining({ page: 1, pageSize: 200 }) }),
+    )
+
+    coladaState.queryDataRefById.get('listBusinessConsoleMesLineSideInventoryBalances')!.value =
+      shrunkenPageTwo
+    await nextTick()
+    expect(result.page.value).toBe(1)
+    expect(result.balances.value).toEqual([])
+
+    resolveCorrectedPage({
+      data: {
+        success: true,
+        data: {
+          items: [
+            { siteCode: 'SITE-1', locationCode: 'LINE-1', skuCode: 'SKU-VALID', uomCode: 'pcs' },
+          ],
+          totalCount: 200,
+          page: 1,
+          pageSize: 200,
+        },
+      },
+    })
+    coladaState.queryDataRefById.get('listBusinessConsoleMesLineSideInventoryBalances')!.value =
+      await correctedRequest
+    await vi.waitFor(() => {
+      expect(result.balances.value.map((item) => item.skuCode)).toEqual(['SKU-VALID'])
+      expect(result.pending.value).toBe(false)
+    })
+  })
+
+  it('校正期间切换组织环境后只投影新 scope 并解锁 pending', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesLineSideInventoryBalances', {
+      success: true,
+      data: { items: [], totalCount: 401, page: 1, pageSize: 200 },
+    })
+    lineSideInventoryFetch
+      .mockResolvedValueOnce({
+        data: { success: true, data: { items: [], totalCount: 200, page: 2, pageSize: 200 } },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: [
+              { siteCode: 'SITE-B', locationCode: 'LINE-B', skuCode: 'SKU-NEW', uomCode: 'pcs' },
+            ],
+            totalCount: 1,
+            page: 1,
+            pageSize: 200,
+          },
+        },
+      })
+    const result = useMesLineSideInventoryBalances()
+    await nextTick()
+
+    result.nextPage()
+    const pageTwoOptions = coladaState.queryFactoriesById.get(
+      'listBusinessConsoleMesLineSideInventoryBalances',
+    )?.()
+    const oldScopePageTwo = await pageTwoOptions?.query?.({
+      signal: new AbortController().signal,
+    })
+    coladaState.queryDataRefById.get('listBusinessConsoleMesLineSideInventoryBalances')!.value =
+      oldScopePageTwo
+    await nextTick()
+    expect(result.pending.value).toBe(true)
+
+    reactiveAuthState.principal = { organizationId: 'org-002', environmentId: 'env-prod' }
+    await nextTick()
+    const newScopeOptions = coladaState.queryFactoriesById.get(
+      'listBusinessConsoleMesLineSideInventoryBalances',
+    )?.()
+    const newScopePageOne = await newScopeOptions?.query?.({
+      signal: new AbortController().signal,
+    })
+    coladaState.queryDataRefById.get('listBusinessConsoleMesLineSideInventoryBalances')!.value =
+      newScopePageOne
+    await nextTick()
+
+    expect(lineSideInventoryFetch).toHaveBeenCalledTimes(2)
+    expect(result.balances.value.map((item) => item.skuCode)).toEqual(['SKU-NEW'])
+    expect(result.pending.value).toBe(false)
+
+    coladaState.queryDataRefById.get('listBusinessConsoleMesLineSideInventoryBalances')!.value =
+      oldScopePageTwo
+    await nextTick()
+    expect(result.balances.value).toEqual([])
+    expect(result.pending.value).toBe(false)
+  })
+
+  it('校正目标页请求失败后解锁 pending 并显示错误', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesLineSideInventoryBalances', {
+      success: true,
+      data: { items: [], totalCount: 401, page: 1, pageSize: 200 },
+    })
+    lineSideInventoryFetch
+      .mockResolvedValueOnce({
+        data: { success: true, data: { items: [], totalCount: 200, page: 2, pageSize: 200 } },
+      })
+      .mockRejectedValueOnce(new Error('校正页加载失败'))
+    const result = useMesLineSideInventoryBalances()
+    await nextTick()
+
+    result.nextPage()
+    const pageTwoOptions = coladaState.queryFactoriesById.get(
+      'listBusinessConsoleMesLineSideInventoryBalances',
+    )?.()
+    const shrunkenPageTwo = await pageTwoOptions?.query?.({
+      signal: new AbortController().signal,
+    })
+    coladaState.queryDataRefById.get('listBusinessConsoleMesLineSideInventoryBalances')!.value =
+      shrunkenPageTwo
+    await nextTick()
+    expect(result.pending.value).toBe(true)
+
+    const correctedOptions = coladaState.queryFactoriesById.get(
+      'listBusinessConsoleMesLineSideInventoryBalances',
+    )?.()
+    await expect(
+      correctedOptions?.query?.({ signal: new AbortController().signal }),
+    ).rejects.toThrow('校正页加载失败')
+    coladaState.queryErrorRefById.get('listBusinessConsoleMesLineSideInventoryBalances')!.value =
+      new Error('校正页加载失败')
+    await nextTick()
+
+    expect(result.pending.value).toBe(false)
+    expect(result.error.value).toEqual(expect.objectContaining({ message: '校正页加载失败' }))
+    expect(result.page.value).toBe(1)
+  })
+
+  it('通过服务端分页访问第 201 条线边库存且把页码纳入请求身份', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesLineSideInventoryBalances', {
+      success: true,
+      data: {
+        items: [{ siteCode: 'SITE-1', locationCode: 'LINE-1', skuCode: 'SKU-001', uomCode: 'pcs' }],
+        totalCount: 401,
+        page: 1,
+        pageSize: 200,
+      },
+    })
+    lineSideInventoryFetch
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: [
+              { siteCode: 'SITE-1', locationCode: 'LINE-2', skuCode: 'SKU-201', uomCode: 'pcs' },
+            ],
+            totalCount: 401,
+            page: 2,
+            pageSize: 200,
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: [
+              { siteCode: 'SITE-1', locationCode: 'LINE-3', skuCode: 'SKU-401', uomCode: 'pcs' },
+            ],
+            totalCount: 401,
+            page: 3,
+            pageSize: 200,
+          },
+        },
+      })
+
+    const result = useMesLineSideInventoryBalances()
+    const pageOneKey = coladaState.queryFactoriesById.get(
+      'listBusinessConsoleMesLineSideInventoryBalances',
+    )?.().key
+
+    expect(result.page.value).toBe(1)
+    expect(result.pageCount.value).toBe(3)
+    expect(result.hasNextPage.value).toBe(true)
+
+    result.nextPage()
+    result.nextPage()
+    expect(result.page.value).toBe(2)
+    const options = coladaState.queryFactoriesById.get(
+      'listBusinessConsoleMesLineSideInventoryBalances',
+    )?.()
+    expect(listBusinessConsoleMesLineSideInventoryBalancesQueryOptions).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        query: expect.objectContaining({ page: 2, pageSize: 200 }),
+      }),
+    )
+    expect(options?.key).toEqual([
+      { _id: 'listBusinessConsoleMesLineSideInventoryBalances', page: 2 },
+      'scope-page:org-001:env-dev:page:2',
+    ])
+    expect(options?.key).not.toEqual(pageOneKey)
+    const pageTwo = await options?.query?.({ signal: new AbortController().signal })
+    coladaState.queryDataRefById.get('listBusinessConsoleMesLineSideInventoryBalances')!.value =
+      pageTwo
+    await nextTick()
+
+    expect(result.balances.value.map((item) => item.skuCode)).toEqual(['SKU-201'])
+    expect(result.hasPreviousPage.value).toBe(true)
+    expect(result.hasNextPage.value).toBe(true)
+
+    result.nextPage()
+    const pageThreeOptions = coladaState.queryFactoriesById.get(
+      'listBusinessConsoleMesLineSideInventoryBalances',
+    )?.()
+    const pageThree = await pageThreeOptions?.query?.({ signal: new AbortController().signal })
+    coladaState.queryDataRefById.get('listBusinessConsoleMesLineSideInventoryBalances')!.value =
+      pageThree
+    await nextTick()
+    expect(result.balances.value.map((item) => item.skuCode)).toEqual(['SKU-401'])
+    expect(result.hasNextPage.value).toBe(false)
+
+    result.previousPage()
+    result.previousPage()
+    expect(result.page.value).toBe(2)
+
+    reactiveAuthState.principal = { organizationId: 'org-002', environmentId: 'env-prod' }
+    await nextTick()
+    expect(result.page.value).toBe(1)
+  })
+
+  it('把 HTTP 200 success:false 失败关闭且刷新重新执行公开 query', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesLineSideInventoryBalances', {
+      success: false,
+      message: '库存读模型暂不可用',
+    })
+    lineSideInventoryFetch
+      .mockResolvedValueOnce({ data: { success: false, message: '刷新仍失败' } })
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: [
+              { siteCode: 'SITE-1', locationCode: 'LINE-1', skuCode: 'SKU-OK', uomCode: 'pcs' },
+            ],
+            totalCount: 1,
+            page: 1,
+            pageSize: 200,
+          },
+        },
+      })
+
+    const result = useMesLineSideInventoryBalances()
+
+    expect(result.error.value).toEqual(expect.objectContaining({ message: '库存读模型暂不可用' }))
+    expect(result.balances.value).toEqual([])
+
+    await result.refresh()
+    expect(lineSideInventoryFetch).toHaveBeenCalledTimes(1)
+    expect(result.error.value).toEqual(expect.objectContaining({ message: '刷新仍失败' }))
+
+    await result.refresh()
+    expect(lineSideInventoryFetch).toHaveBeenCalledTimes(2)
+    expect(result.error.value).toBeNull()
+    expect(result.balances.value.map((item) => item.skuCode)).toEqual(['SKU-OK'])
   })
 })

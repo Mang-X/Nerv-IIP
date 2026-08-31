@@ -18,6 +18,7 @@ using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionTasks;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Application.Errors;
 using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Quality.Web.Application.Seed;
 using Nerv.IIP.Business.Quality.Web.Application.InspectionRecords;
 using Nerv.IIP.Business.Quality.Web.Application.Scheduling;
@@ -120,6 +121,8 @@ try
         QualityFacts.ServiceName);
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
+    builder.Services.AddScoped<IReworkWorkOrderBindingWriter, PostgresReworkWorkOrderBindingWriter>();
+    builder.Services.AddScoped<ReworkWorkOrderBindingStore>();
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<QualityCodingService>();
     builder.Services.AddScoped<QualitySeedService>();
@@ -139,6 +142,8 @@ try
     builder.Services.AddScoped<ICapaAutomationService, CapaAutomationService>();
     builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.AddHostedService<InspectionTaskOverdueScheduler>();
+    builder.Services.AddHostedService<PeriodicInspectionTimeTaskScheduler>();
+    builder.Services.AddHostedService<PeriodicInspectionQuantityContinuationScheduler>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
     if (isTesting)
@@ -179,6 +184,9 @@ try
     builder.Services.AddScoped<
         ICommandLock<ClaimInspectionTaskCommand>,
         ClaimInspectionTaskCommandLock>();
+    builder.Services.AddScoped<
+        ICommandLock<SubmitNonconformanceReportDispositionCommand>,
+        SubmitNonconformanceReportDispositionCommandLock>();
     builder.Services.AddScoped<
         IQualityPersistenceConflictClassifier,
         QualityPersistenceConflictClassifier>();

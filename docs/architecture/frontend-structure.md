@@ -215,7 +215,7 @@ Business Console 登录、刷新、退出和 `/me` 复用 PlatformGateway Consol
 | `/inventory/movements` | 库存移动工作台；新建移动通过抽屉承载。 | BusinessGateway Inventory facade。 |
 | `/inventory/counts` | 盘点任务工作台；创建任务和确认差异通过抽屉承载。 | BusinessGateway Inventory facade。 |
 | `/quality/inspections` | 检验任务与记录；检验记录创建通过抽屉承载。 | BusinessGateway Quality facade。 |
-| `/quality/ncrs` | NCR 列表、处置和关闭。 | BusinessGateway Quality facade。 |
+| `/quality/ncrs` | NCR 列表、处置和关闭；查看/管理权限分离，返工处置按 accepted receipt 回读 MES 系统工单强 ID，并在授权时互链工单详情。 | BusinessGateway Quality facade。 |
 | `/quality/analysis` | 按同一 SKU、特性、工作中心、子组大小与样本范围展示 SPC Xbar/R 控制图、中心线、上下控制限、非纯颜色判异定位和 Cp/Cpk；缺陷 Pareto、物料/来源维度继续只基于当前 NCR 返回窗口并保留表格核查，不冒充全量历史趋势。工位/设备/班次全量聚合和 CAPA 读面仍按后续 facade 缺口处理。 | BusinessGateway Quality NCR/SPC facade。 |
 | `/mes` | 生产驾驶舱，展示工单、工序、在制、阻塞和角色待办。 | BusinessGateway MES facade。 |
 | `/mes/foundation` | 基础准备，展示 MasterData、ProductEngineering、Supply、Quality、Equipment、Barcode/Numbering 等开工前就绪结果。 | BusinessGateway MES facade。 |

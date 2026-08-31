@@ -110,6 +110,25 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
         return request;
     }
 
+    public static bool IsInventoryPostingIdempotencyKey(
+        string organizationId,
+        string environmentId,
+        string requestNo,
+        string? idempotencyKey)
+    {
+        if (string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            return false;
+        }
+
+        var prefix = BuildInventoryPostingIdempotencyKey(
+            DomainGuard.Required(organizationId, nameof(organizationId)),
+            DomainGuard.Required(environmentId, nameof(environmentId)),
+            DomainGuard.Required(requestNo, nameof(requestNo)));
+        return string.Equals(idempotencyKey, prefix, StringComparison.Ordinal) ||
+            idempotencyKey.StartsWith(prefix + ":", StringComparison.Ordinal);
+    }
+
     public void ApplyCapitalizedUnitCost(decimal unitCost)
     {
         if (Status != RequestedStatus || PostedQuantity > QuantityTolerance)

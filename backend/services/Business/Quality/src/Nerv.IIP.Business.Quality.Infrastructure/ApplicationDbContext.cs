@@ -6,8 +6,10 @@ using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionTaskAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.MeasuringDeviceAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.PeriodicInspectionOperationAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.QualityReasonAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.SpcControlChartAggregate;
+using Nerv.IIP.Business.Quality.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Coding;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
@@ -28,6 +30,10 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<CalibrationRecord> CalibrationRecords => Set<CalibrationRecord>();
     public DbSet<QualityReason> QualityReasons => Set<QualityReason>();
     public DbSet<SpcControlChart> SpcControlCharts => Set<SpcControlChart>();
+    public DbSet<PeriodicInspectionOperation> PeriodicInspectionOperations => Set<PeriodicInspectionOperation>();
+    public DbSet<PeriodicInspectionProductionReport> PeriodicInspectionProductionReports => Set<PeriodicInspectionProductionReport>();
+    public DbSet<PeriodicInspectionRuntimeContext> PeriodicInspectionRuntimeContexts => Set<PeriodicInspectionRuntimeContext>();
+    public DbSet<ProcessedIntegrationEvent> ProcessedIntegrationEvents => Set<ProcessedIntegrationEvent>();
     public DbSet<CodeCounter> CodeCounters => Set<CodeCounter>();
     public DbSet<CodeIdempotencyKey> CodeIdempotencyKeys => Set<CodeIdempotencyKey>();
 

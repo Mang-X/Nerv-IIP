@@ -1,4 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import type { BusinessConsoleMesProductionReportRow } from '@nerv-iip/api-client'
 import { createPinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from '@/stores/auth'
@@ -8,7 +9,19 @@ const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 
 // 报工列表 mock:同页只放三行,故意让"已冲销原单"(B)与其冲销行、"冲销行"(C)与其原单**不在同页**,
 // 以验证已冲销判定/互链读服务端逐行字段(reversalReportNo / reversedReportNo)与跨页点击定位。
-const rows = [
+interface ReportFixture extends BusinessConsoleMesProductionReportRow {
+  productionReportId: string
+  reportNo: string
+  workOrderId: string
+  operationTaskId: string
+  goodQuantity: number
+  scrapQuantity: number
+  reworkQuantity: number
+  reportedAtUtc: string
+  workOrderStatus: string
+}
+
+const rows: ReportFixture[] = [
   // A 可冲销原单(工单在制、无冲销互链字段)
   {
     productionReportId: 'pr-a',
@@ -20,6 +33,8 @@ const rows = [
     reworkQuantity: 0,
     reportedAtUtc: '2026-07-12T02:00:00Z',
     workOrderStatus: 'started',
+    operationActualLaborHours: 1.25,
+    operationActualMachineHours: 0.5,
   },
   // B 已冲销原单:reversalReportNo 指向冲销它的负向记录(该记录不在本页),服务端逐行反查得出
   {
@@ -33,6 +48,8 @@ const rows = [
     reportedAtUtc: '2026-07-12T01:00:00Z',
     workOrderStatus: 'started',
     reversalReportNo: 'PRPT-000900',
+    operationActualLaborHours: 0,
+    operationActualMachineHours: 0,
   },
   // C 冲销记录行:reversedReportNo 指向被冲销的原单(该原单不在本页)
   {
@@ -47,6 +64,8 @@ const rows = [
     workOrderStatus: 'started',
     reversedReportNo: 'PRPT-000899',
     reversalReason: '误报工',
+    operationActualLaborHours: null,
+    operationActualMachineHours: null,
   },
 ]
 
@@ -66,6 +85,8 @@ const counterpartRows: Record<string, (typeof rows)[number][]> = {
       workOrderStatus: 'started',
       reversedReportNo: 'PRPT-000002',
       reversalReason: '误报工',
+      operationActualLaborHours: 0,
+      operationActualMachineHours: 0,
     },
   ],
   // C(PRPT-000901)冲销的原单,平时不在本页
@@ -81,6 +102,8 @@ const counterpartRows: Record<string, (typeof rows)[number][]> = {
       reportedAtUtc: '2026-07-12T02:30:00Z',
       workOrderStatus: 'started',
       reversalReportNo: 'PRPT-000901',
+      operationActualLaborHours: null,
+      operationActualMachineHours: null,
     },
   ],
 }
@@ -149,6 +172,20 @@ vi.mock('@/composables/useBusinessMes', async () => {
       reportScopeReady: shallowRef(true),
       refreshProductionReportState: vi.fn(),
     }),
+    useMesProductionMaterialLots: () => ({
+      materialsReadPermission: shallowRef(false),
+      materialLotsPending: shallowRef(false),
+      materialLotsError: shallowRef(undefined),
+      availableMaterialLots: shallowRef([]),
+      refreshMaterialLots: vi.fn(),
+    }),
+    useMesScrapReasonCodes: () => ({
+      qualityInspectionRecordsReadPermission: shallowRef(false),
+      scrapReasonCodesPending: shallowRef(false),
+      scrapReasonCodesError: shallowRef(undefined),
+      scrapReasonCodes: shallowRef([]),
+      refreshScrapReasonCodes: vi.fn(),
+    }),
     useMesProductionReports: () => ({
       filters: mesState.filters,
       // 按 keyword 过滤时返回对方那一行(模拟服务端跨页返回),否则返回本页三行——让跨页定位的
@@ -196,12 +233,14 @@ const tableStub = {
   props: ['columns', 'rows'],
   template: `
     <section data-testid="data-table">
+      <span v-for="column in columns" :key="column.key">{{ column.header }}</span>
       <div v-for="row in rows" :key="row.productionReportId" data-testid="row">
         <span v-for="column in columns" :key="column.key">
           {{ column.accessor ? column.accessor(row) : '' }}
         </span>
         <slot name="cell-reportNo" :row="row" />
         <slot name="cell-workOrderId" :row="row" />
+        <slot name="cell-actualHours" :row="row" />
         <slot name="cell-actions" :row="row" />
       </div>
     </section>
@@ -230,7 +269,8 @@ function mountReports(permissionCodes: string[]) {
       plugins: [pinia],
       stubs: {
         // NvUI 组件按其底层组件名 stub。#787 已把 pro/ 重命名为 pc/ 且组件文件 XxxPro.vue → NvXxx.vue,
-        // 故 __name 现在就是 Nv* 名;Tooltip 的 Root/Trigger/Provider 仍是 reka 名(TooltipRoot 等)。
+        // 故 __name 就是 Nv* 名;Tooltip 三件套原本只有 reka 名，#2879 给 barrel 补了 name 之后
+        // 同样按 Nv 名解析，故这里的键全部写 Nv 名。
         BusinessLayout: { template: '<main><slot /></main>' },
         WorkOrderQuickView: true,
         PageHeader: { template: '<header><slot name="actions" /></header>' },
@@ -243,9 +283,9 @@ function mountReports(permissionCodes: string[]) {
           props: ['label'],
           template: '<span data-testid="badge">{{ label }}</span>',
         },
-        TooltipProvider: { template: '<div><slot /></div>' },
-        TooltipRoot: { template: '<div><slot /></div>' },
-        TooltipTrigger: { template: '<div><slot /></div>' },
+        NvTooltipProvider: { template: '<div><slot /></div>' },
+        NvTooltip: { template: '<div><slot /></div>' },
+        NvTooltipTrigger: { template: '<div><slot /></div>' },
         NvTooltipContent: { template: '<div><slot /></div>' },
         // 冲销确认框内容不渲染(否则 reka Dialog 内层需 DialogRoot context);key 复用/关闭路径测试
         // 直接驱动 setup 方法(openReverse/submitReverse/onReverseOpenChange),不依赖弹窗 DOM。
@@ -263,7 +303,7 @@ function mountReports(permissionCodes: string[]) {
         NvSelectTrigger: { template: '<div><slot /></div>' },
         NvSelectContent: { template: '<div><slot /></div>' },
         NvSelectItem: { template: '<div><slot /></div>' },
-        SelectValue: { template: '<span />' },
+        NvSelectValue: { template: '<span />' },
         NvInput: { template: '<input />' },
         Spinner: true,
       },
@@ -303,6 +343,21 @@ beforeEach(() => {
 })
 
 describe('production reports page — reversal permission & cross-page interlink', () => {
+  it('shows the operation cumulative actual hours without treating them as per-report allocation', async () => {
+    const wrapper = mountReports(['business.mes.reporting.read'])
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('实际工时')
+    const actualHourCells = wrapper.findAll('[data-testid="actual-hours"]')
+    expect(actualHourCells).toHaveLength(3)
+    expect(actualHourCells[0].text()).toMatch(/人工\s*1\.25 小时/)
+    expect(actualHourCells[0].text()).toMatch(/机器\s*0\.5 小时/)
+    expect(actualHourCells[1].text()).toMatch(/人工\s*0 小时/)
+    expect(actualHourCells[1].text()).toMatch(/机器\s*0 小时/)
+    expect(actualHourCells[2].text()).toMatch(/人工\s*暂无实绩/)
+    expect(actualHourCells[2].text()).toMatch(/机器\s*暂无实绩/)
+  })
+
   it('read-face guard shows DTO numbers and resolved catalog names without technical identifiers', async () => {
     const row = {
       productionReportId: '019fbb41-1111-7111-8111-111111111111',

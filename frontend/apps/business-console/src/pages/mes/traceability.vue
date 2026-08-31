@@ -138,7 +138,8 @@ const columns: NvDataTableColumn<NodeRow>[] = [
     key: 'nodeType',
     header: '类型',
     width: 'w-32',
-    // 后端回 work-order / material-lot 这类码值，词表缺项时只显原码，不编造中文。
+    // 后端回 WorkOrder / MaterialLot 这类 PascalCase 码值（labelFor 会归一后查表）；
+    // 词表缺项时只显原码，不编造中文。
     accessor: (r) => labelFor(TRACE_NODE_TYPE_LABELS, r.nodeType) || '未标注',
   },
   { key: 'displayName', header: '名称' },
@@ -227,16 +228,17 @@ function firstQuery(value: unknown) {
       </template>
     </NvToolbar>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
-
     <NvDataTable
       :columns="columns"
       :rows="nodes"
       row-key="nodeId"
       :loading="traceabilityPending"
+      :error="traceabilityError"
+      :error-message="errorMessage"
       :searchable="false"
       :column-settings="false"
       empty-message="暂无追溯数据。先选择查询类型并填入工单、批次/序列号或物料批，再查询它经过的工序、用料与检验记录。"
+      @retry="refreshTraceability"
     >
       <template #cell-status="{ row }">
         <NvStatusBadge :value="row.status" :label="statusLabel(row.status)" />

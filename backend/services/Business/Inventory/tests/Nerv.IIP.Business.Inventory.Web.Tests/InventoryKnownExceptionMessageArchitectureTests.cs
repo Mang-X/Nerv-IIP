@@ -46,6 +46,7 @@ public sealed class InventoryKnownExceptionMessageArchitectureTests
         PostingExcluded($"{InventoryWebRoot}/Application/IntegrationEventHandlers/InventoryMovementRequestedIntegrationEventHandlerForPostingMovement.cs", "InventoryMovementRequestedIntegrationEventHandlerForPostingMovement", "SendStatusTransferAsync", 1, 0, "状态转移集成事件消费者，无原始 HTTP facade"),
         PostingExcluded($"{InventoryWebRoot}/Application/IntegrationEventHandlers/InventoryMovementRequestedIntegrationEventHandlerForPostingMovement.cs", "InventoryMovementRequestedIntegrationEventHandlerForPostingMovement", "ParseReservationId", 1, 0, "库存移动请求集成事件消费者，无原始 HTTP facade"),
         PostingExcluded($"{InventoryWebRoot}/Application/Commands/StockMovements/InventoryPostingRejectedException.cs", "InventoryPostingRejectedException", "FromDomain", 1, 0, "FromDomain 工厂自身的构造点由行为测试覆盖，不计入公开调用点"),
+        PostingExcluded($"{InventoryWebRoot}/Application/Commands/StockMovements/InventoryPostingRejectedException.cs", "InventoryPostingRejectedException", "ForUnitCostAuthority", 1, 0, "成本权威拒绝由集成事件消费者触发，无原始 HTTP facade"),
     ];
 
     [Fact]
@@ -107,7 +108,7 @@ public sealed class InventoryKnownExceptionMessageArchitectureTests
         Assert.Equal(3, ExpectedPostingRejectedSites
             .Where(site => site.Kind == InventoryKnownExceptionSiteKind.Target)
             .Sum(site => site.FromDomainCallCount));
-        Assert.Equal(3, ExpectedPostingRejectedSites
+        Assert.Equal(4, ExpectedPostingRejectedSites
             .Where(site => site.Kind == InventoryKnownExceptionSiteKind.Excluded)
             .Sum(site => site.DirectConstructionCount));
         Assert.Equal(20, ExpectedPostingRejectedSites

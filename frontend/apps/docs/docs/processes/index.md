@@ -61,7 +61,7 @@ flowchart LR
   end
   subgraph MES["制造执行"]
     M1["角色: 生产主管<br/>入口: /mes/plans<br/>对象/状态: ProductionPlan Ready -> Converted<br/>缺口: 无"]
-    M2["角色: 生产主管<br/>入口: /mes/work-orders<br/>对象/状态: WorkOrder Created -> Released<br/>缺口: 无"]
+    M2["角色: 生产主管<br/>入口: /mes/work-orders[+详情]<br/>对象/状态: WorkOrder Created -> Released；拆分/合并受理后回读<br/>缺口: 无"]
     M3["角色: 班组长<br/>入口: /mes/dispatch<br/>对象/状态: Dispatch Pending -> Assigned<br/>缺口: 无"]
     M4["角色: 操作员<br/>入口: /mes/operation-tasks<br/>对象/状态: OperationTask Running -> Completed<br/>缺口: 无"]
     M5["角色: 操作员<br/>入口: /mes/production-reports<br/>对象/状态: ProductionReport Submitted<br/>缺口: 无"]
@@ -74,15 +74,15 @@ flowchart LR
   P0 --> P1 --> P2 --> M1 --> M2 --> M3 --> M4 --> M5 --> M6 --> I1
 ```
 
-| 节点              | Business Console 页面                               | BusinessGateway 门面                                                                                                                       | 当前事实或缺口                                                       |
-| ----------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
-| 需求 / MRP / 建议 | `/planning`                                         | `/api/business-console/v1/planning/demands`, `/api/business-console/v1/planning/mrp-runs`, `/api/business-console/v1/planning/suggestions` | 支持需求、MRP、pegging 和计划建议处理。                              |
-| APS 轻量版 / 排程 | `/scheduling`                                       | `/api/business-console/v1/scheduling/**`                                                                                                   | 当前采用确定性有限产能启发式算法；不包含全局优化器、仿真或自动重排。 |
-| 生产计划          | `/mes/plans`                                        | `/api/business-console/v1/mes/production-plans`                                                                                            | MES 可回显来源计划和转工单状态。                                     |
-| 工单 / 工单详情   | `/mes/work-orders`, `/mes/work-orders/:workOrderId` | `/api/business-console/v1/mes/work-orders/**`                                                                                              | 工单详情页存在，但不是常驻菜单入口。                                 |
-| 派工 / 工序执行   | `/mes/dispatch`, `/mes/operation-tasks`             | `/api/business-console/v1/mes/dispatch/**`, `/api/business-console/v1/mes/operation-tasks/**`                                              | 支撑派工、开工、暂停、恢复和完工的执行视图。                         |
-| 报工 / 完工入库   | `/mes/production-reports`, `/mes/receipts`          | `/api/business-console/v1/mes/production-reports`, `/api/business-console/v1/mes/finished-goods-receipt-requests`                          | 完工入库等待 Inventory/WMS 过账事实回写。                            |
-| 库存移动          | `/inventory/movements`                              | `/api/business-console/v1/inventory/movements`                                                                                             | 可解释 posted 或 failed 的库存过账结果。                             |
+| 节点              | Business Console 页面                               | BusinessGateway 门面                                                                                                                       | 当前事实或缺口                                                                                   |
+| ----------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| 需求 / MRP / 建议 | `/planning`                                         | `/api/business-console/v1/planning/demands`, `/api/business-console/v1/planning/mrp-runs`, `/api/business-console/v1/planning/suggestions` | 支持需求、MRP、pegging 和计划建议处理。                                                          |
+| APS 轻量版 / 排程 | `/scheduling`                                       | `/api/business-console/v1/scheduling/**`                                                                                                   | 当前采用确定性有限产能启发式算法；不包含全局优化器、仿真或自动重排。                             |
+| 生产计划          | `/mes/plans`                                        | `/api/business-console/v1/mes/production-plans`                                                                                            | MES 可回显来源计划和转工单状态。                                                                 |
+| 工单 / 工单详情   | `/mes/work-orders`, `/mes/work-orders/:workOrderId` | `/api/business-console/v1/mes/work-orders/**`                                                                                              | 列表支持同上下文工单合并，详情支持数量守恒拆分；提交后按变更标识回读，冲突不显示未经确认的成功。 |
+| 派工 / 工序执行   | `/mes/dispatch`, `/mes/operation-tasks`             | `/api/business-console/v1/mes/dispatch/**`, `/api/business-console/v1/mes/operation-tasks/**`                                              | 支撑派工、开工、暂停、恢复和完工的执行视图。                                                     |
+| 报工 / 完工入库   | `/mes/production-reports`, `/mes/receipts`          | `/api/business-console/v1/mes/production-reports`, `/api/business-console/v1/mes/finished-goods-receipt-requests`                          | 完工入库等待 Inventory/WMS 过账事实回写。                                                        |
+| 库存移动          | `/inventory/movements`                              | `/api/business-console/v1/inventory/movements`                                                                                             | 可解释 posted 或 failed 的库存过账结果。                                                         |
 
 ## 仓储库存
 
@@ -189,7 +189,7 @@ flowchart LR
     B2["角色: 标签管理员<br/>入口: /barcode/print-batches<br/>对象/状态: PrintBatch Created -> Completed<br/>缺口: 打印管理体验仍需产品化"]
   end
   subgraph Scan["扫码与追溯"]
-    B3["角色: 一线作业员<br/>入口: /barcode/scans<br/>对象/状态: ScanRecord Accepted/Rejected<br/>缺口: 独立移动扫码解释后续深化"]
+    B3["角色: 一线作业员<br/>入口: Business PDA 首页与 /scan；Business Console /barcode/scans<br/>对象/状态: 只读解析并按强 ID 直达；ScanRecord Accepted/Rejected<br/>缺口: 相机扫码与离线解析后续深化"]
     B4["角色: 质量 / MES / 仓储<br/>入口: /mes/traceability<br/>对象/状态: EPCIS Object/Aggregation/Disaggregation Facts<br/>缺口: 跨域追溯图谱后续深化"]
   end
 
@@ -209,6 +209,6 @@ flowchart LR
 - APS 轻量版与 MES 规则排程已经可解释计划到执行的基础链路；`/scheduling` 已提供只读资源甘特，高级优化器、仿真、自动重排和交互式甘特仍后置。
 - 质量审批图表达当前 Quality NCR 与 BusinessApproval 的已暴露业务链路；完整质量处置工作台和跨域工作流体验仍需继续产品化。
 - 设备维护图覆盖报警、维修工单、备件请求和可靠性指标；报警处置闭环、独立大屏和完整 CMMS 工作台仍需深化。
-- 条码追溯图覆盖规则、模板、打印批次、扫码记录和 MES 追溯入口；独立移动扫码解释、离线同步和跨域追溯图谱仍后置。
+- 条码追溯图覆盖规则、模板、打印批次、扫码记录和 MES 追溯入口；Business PDA 已提供键盘楔入扫码的只读解析，并对唯一 MES 工单或工序按强 ID 直达，相机扫码、离线解析和跨域追溯图谱仍后置。
 
 [内部缺口记录](/internal/gaps/core-processes)

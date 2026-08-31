@@ -102,6 +102,20 @@ vi.mock('@/composables/useBusinessMes', () => ({
     reportScopeReady: ref(true),
     refreshProductionReportState: vi.fn(),
   }),
+  useMesProductionMaterialLots: () => ({
+    materialsReadPermission: ref(false),
+    materialLotsPending: ref(false),
+    materialLotsError: ref(undefined),
+    availableMaterialLots: ref([]),
+    refreshMaterialLots: vi.fn(),
+  }),
+  useMesScrapReasonCodes: () => ({
+    qualityInspectionRecordsReadPermission: ref(false),
+    scrapReasonCodesPending: ref(false),
+    scrapReasonCodesError: ref(undefined),
+    scrapReasonCodes: ref([]),
+    refreshScrapReasonCodes: vi.fn(),
+  }),
   describeMesReadinessReason: (code: string) => ({
     code,
     label: code || '未检',
@@ -252,6 +266,8 @@ vi.mock('@/composables/useBusinessMes', () => ({
     detailError: ref(null),
     detailPending: ref(false),
     filters: reactive({ workOrderId: '' }),
+    workOrderManageScope: ref(undefined),
+    workOrderReadScope: ref(undefined),
   }),
   useMesWorkOrders: () => ({
     createRushWorkOrder: vi.fn(),
@@ -295,6 +311,21 @@ vi.mock('@/composables/useBusinessMes', () => ({
     }),
     workOrderReadScopeMessage: ref(''),
     workOrderReadScopeReady: ref(true),
+    workOrderManageScope: ref({
+      kind: 'work-center',
+      id: 'WC-01',
+      displayName: '精加工一线',
+    }),
+    workOrderManageScopeMessage: ref(''),
+    workOrderManageScopePending: ref(false),
+    workOrderManageScopeReady: ref(true),
+  }),
+  useMesWorkOrderTransformations: () => ({
+    splitWorkOrder: vi.fn(),
+    mergeWorkOrders: vi.fn(),
+    readTransformation: vi.fn(),
+    splitWorkOrderPending: ref(false),
+    mergeWorkOrdersPending: ref(false),
   }),
 }))
 
@@ -359,7 +390,7 @@ const uiStubs = {
     </template></div>`,
   },
   DataTablePagination: true,
-  DialogRoot: {
+  NvDialog: {
     props: ['open'],
     template: '<div><slot /></div>',
   },
@@ -446,11 +477,11 @@ const uiStubs = {
   NvSelectTrigger: {
     template: '<button><slot /></button>',
   },
-  SelectValue: {
+  NvSelectValue: {
     props: ['placeholder'],
     template: '<span>{{ placeholder }}</span>',
   },
-  // 只选控件内部自带 reka Dialog/Popover，与本文件的 DialogRoot 桩不兼容；
+  // 只选控件内部自带 reka Dialog/Popover，与本文件的 NvDialog 桩不兼容；
   // 桩成带同名 id 的输入位，保留「选中某个候选」的语义。
   NvEntityPicker: {
     props: ['modelValue', 'options', 'id'],
@@ -617,7 +648,7 @@ describe('MES workflow copy', () => {
     expect(carried.text()).toContain('FG-001')
   })
 
-  it('submits finished-goods receipt context with unit cost', async () => {
+  it('submits finished-goods receipt context without client unit cost', async () => {
     routeState.query = {
       quantity: '10',
       skuId: 'FG-001',
@@ -625,7 +656,7 @@ describe('MES workflow copy', () => {
     }
     const wrapper = mountMesPage(ReceiptsPage)
 
-    await wrapper.find('#receipt-unit-cost').setValue('12.34')
+    expect(wrapper.find('#receipt-unit-cost').exists()).toBe(false)
     await wrapper.find('form').trigger('submit')
 
     expect(mesSpies.createReceiptRequest).toHaveBeenCalledWith(
@@ -634,7 +665,6 @@ describe('MES workflow copy', () => {
         organizationId: 'org',
         quantity: 10,
         skuId: 'FG-001',
-        unitCost: 12.34,
         uomCode: 'pcs',
         workOrderId: 'WO-001',
       }),

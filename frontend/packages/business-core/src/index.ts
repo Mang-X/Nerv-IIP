@@ -92,7 +92,10 @@ export type {
   QualityCharacteristicResultLine,
 } from './inspections/qualityResults'
 export {
+  INSPECTION_PLAN_CATEGORIES,
   INSPECTION_TASK_SOURCE_TYPES,
+  inspectionPlanCategoryLabel,
+  inspectionPlanCategoryLabels,
   inspectionRecordResultLabel,
   inspectionRecordResultLabels,
   inspectionTaskSourceTypeLabel,
@@ -104,6 +107,7 @@ export {
   qualitySourceTypeLabel,
   qualitySourceTypeLabels,
 } from './labels/qualityLabels'
+export type { InspectionPlanCategory } from './labels/qualityLabels'
 export {
   EXPIRY_CRITICAL_THRESHOLD_DAYS,
   EXPIRY_NEAR_THRESHOLD_DAYS,
@@ -116,6 +120,22 @@ export {
   isNearOrExpired,
 } from './inventory/expiry'
 export type { ExpiryAlertLike, ExpiryTone } from './inventory/expiry'
+export { lineSideInventoryAgePresentation } from './inventory/lineSideAge'
+export type {
+  LineSideInventoryAgeCompleteness,
+  LineSideInventoryAgeLike,
+  LineSideInventoryAgePresentation,
+} from './inventory/lineSideAge'
+export { lastPageForTotal } from './pagination/pageBounds'
+export {
+  createServerPaginationState,
+  reduceServerPagination,
+  serverPaginationIdentity,
+} from './pagination/serverPaginationController'
+export type {
+  ServerPaginationEvent,
+  ServerPaginationState,
+} from './pagination/serverPaginationController'
 export {
   aggregateReceivingGateStatus,
   isReleasedForPutaway,
@@ -141,6 +161,8 @@ export type {
   LifecycleFacts,
   StatusActionGate,
 } from './actions/statusActionGate'
+export { isAvailableMaterialLot } from './mes/materialLots'
+export type { AvailableMaterialLotFields, MaterialLotAvailabilityLike } from './mes/materialLots'
 export {
   acquirePendingBusinessIntent,
   clearPendingBusinessIntent,

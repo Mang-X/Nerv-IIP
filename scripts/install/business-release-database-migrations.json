@@ -1,0 +1,106 @@
+[
+  {
+    "service": "business-master-data",
+    "connectionEnvironmentVariable": "NERV_IIP_BUSINESS_MASTER_DATA_DB",
+    "expectedDatabase": "nerv_iip_business_masterdata",
+    "project": "backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/Nerv.IIP.Business.MasterData.Infrastructure.csproj",
+    "startupProject": "backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/Nerv.IIP.Business.MasterData.Infrastructure.csproj",
+    "context": "Nerv.IIP.Business.MasterData.Infrastructure.ApplicationDbContext"
+  },
+  {
+    "service": "business-product-engineering",
+    "connectionEnvironmentVariable": "NERV_IIP_BUSINESS_PRODUCT_ENGINEERING_DB",
+    "expectedDatabase": "nerv_iip_product_engineering",
+    "project": "backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Infrastructure/Nerv.IIP.Business.ProductEngineering.Infrastructure.csproj",
+    "startupProject": "backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Infrastructure/Nerv.IIP.Business.ProductEngineering.Infrastructure.csproj",
+    "context": "Nerv.IIP.Business.ProductEngineering.Infrastructure.ApplicationDbContext"
+  },
+  {
+    "service": "business-inventory",
+    "connectionEnvironmentVariable": "NERV_IIP_BUSINESS_INVENTORY_DB",
+    "expectedDatabase": "nerv_iip_inventory",
+    "project": "backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Infrastructure/Nerv.IIP.Business.Inventory.Infrastructure.csproj",
+    "startupProject": "backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Infrastructure/Nerv.IIP.Business.Inventory.Infrastructure.csproj",
+    "context": "Nerv.IIP.Business.Inventory.Infrastructure.ApplicationDbContext"
+  },
+  {
+    "service": "business-quality",
+    "connectionEnvironmentVariable": "NERV_IIP_BUSINESS_QUALITY_DB",
+    "expectedDatabase": "nerv_iip_quality",
+    "project": "backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Infrastructure/Nerv.IIP.Business.Quality.Infrastructure.csproj",
+    "startupProject": "backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Infrastructure/Nerv.IIP.Business.Quality.Infrastructure.csproj",
+    "context": "Nerv.IIP.Business.Quality.Infrastructure.ApplicationDbContext"
+  },
+  {
+    "service": "business-mes",
+    "connectionEnvironmentVariable": "NERV_IIP_BUSINESS_MES_DB",
+    "expectedDatabase": "nerv_iip_mes",
+    "project": "backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Nerv.IIP.Business.Mes.Infrastructure.csproj",
+    "startupProject": "backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Nerv.IIP.Business.Mes.Infrastructure.csproj",
+    "context": "Nerv.IIP.Business.Mes.Infrastructure.ApplicationDbContext"
+  },
+  {
+    "service": "business-demand-planning",
+    "connectionEnvironmentVariable": "NERV_IIP_BUSINESS_DEMAND_PLANNING_DB",
+    "expectedDatabase": "nerv_iip_demand_planning",
+    "project": "backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Infrastructure/Nerv.IIP.Business.DemandPlanning.Infrastructure.csproj",
+    "startupProject": "backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Infrastructure/Nerv.IIP.Business.DemandPlanning.Infrastructure.csproj",
+    "context": "Nerv.IIP.Business.DemandPlanning.Infrastructure.ApplicationDbContext"
+  },
+  {
+    "service": "business-barcode-label",
+    "connectionEnvironmentVariable": "NERV_IIP_BUSINESS_BARCODE_LABEL_DB",
+    "expectedDatabase": "nerv_iip_barcode",
+    "project": "backend/services/Business/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Infrastructure/Nerv.IIP.Business.BarcodeLabel.Infrastructure.csproj",
+    "startupProject": "backend/services/Business/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Infrastructure/Nerv.IIP.Business.BarcodeLabel.Infrastructure.csproj",
+    "context": "Nerv.IIP.Business.BarcodeLabel.Infrastructure.ApplicationDbContext"
+  },
+  {
+    "service": "business-approval",
+    "connectionEnvironmentVariable": "NERV_IIP_BUSINESS_APPROVAL_DB",
+    "expectedDatabase": "nerv_iip_business_approval",
+    "project": "backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Infrastructure/Nerv.IIP.Business.Approval.Infrastructure.csproj",
+    "startupProject": "backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Infrastructure/Nerv.IIP.Business.Approval.Infrastructure.csproj",
+    "context": "Nerv.IIP.Business.Approval.Infrastructure.ApplicationDbContext"
+  },
+  {
+    "service": "business-wms",
+    "connectionEnvironmentVariable": "NERV_IIP_BUSINESS_WMS_DB",
+    "expectedDatabase": "nerv_iip_wms",
+    "project": "backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Infrastructure/Nerv.IIP.Business.Wms.Infrastructure.csproj",
+    "startupProject": "backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Infrastructure/Nerv.IIP.Business.Wms.Infrastructure.csproj",
+    "context": "Nerv.IIP.Business.Wms.Infrastructure.ApplicationDbContext"
+  },
+  {
+    "service": "business-industrial-telemetry",
+    "connectionEnvironmentVariable": "NERV_IIP_BUSINESS_INDUSTRIAL_TELEMETRY_DB",
+    "expectedDatabase": "nerv_iip_industrial_telemetry",
+    "project": "backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Infrastructure/Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.csproj",
+    "startupProject": "backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Infrastructure/Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.csproj",
+    "context": "Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.ApplicationDbContext"
+  },
+  {
+    "service": "business-maintenance",
+    "connectionEnvironmentVariable": "NERV_IIP_BUSINESS_MAINTENANCE_DB",
+    "expectedDatabase": "nerv_iip_maintenance",
+    "project": "backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Infrastructure/Nerv.IIP.Business.Maintenance.Infrastructure.csproj",
+    "startupProject": "backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Infrastructure/Nerv.IIP.Business.Maintenance.Infrastructure.csproj",
+    "context": "Nerv.IIP.Business.Maintenance.Infrastructure.ApplicationDbContext"
+  },
+  {
+    "service": "business-erp",
+    "connectionEnvironmentVariable": "NERV_IIP_BUSINESS_ERP_DB",
+    "expectedDatabase": "nerv_iip_erp",
+    "project": "backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/Nerv.IIP.Business.Erp.Infrastructure.csproj",
+    "startupProject": "backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/Nerv.IIP.Business.Erp.Infrastructure.csproj",
+    "context": "Nerv.IIP.Business.Erp.Infrastructure.ApplicationDbContext"
+  },
+  {
+    "service": "business-scheduling",
+    "connectionEnvironmentVariable": "NERV_IIP_BUSINESS_SCHEDULING_DB",
+    "expectedDatabase": "nerv_iip_scheduling",
+    "project": "backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Infrastructure/Nerv.IIP.Business.Scheduling.Infrastructure.csproj",
+    "startupProject": "backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Infrastructure/Nerv.IIP.Business.Scheduling.Infrastructure.csproj",
+    "context": "Nerv.IIP.Business.Scheduling.Infrastructure.ApplicationDbContext"
+  }
+]

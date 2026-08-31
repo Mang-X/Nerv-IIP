@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,6 +16,224 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 
 public sealed class BusinessGatewayWmsTests
 {
+    [Theory]
+    [InlineData("missing-work-pool-assignment", false)]
+    [InlineData("resource-not-assigned-to-self", true)]
+    [InlineData("assignment-principal-mismatch", false)]
+    public async Task Wms_http_client_preserves_semantic_code_from_legacy_403_error_envelope(
+        string downstreamCode,
+        bool includeTransportCode)
+    {
+        var envelope = new JsonObject
+        {
+            ["success"] = false,
+            ["message"] = downstreamCode,
+        };
+        if (includeTransportCode)
+        {
+            envelope["code"] = (int)HttpStatusCode.Forbidden;
+        }
+
+        var handler = new RecordingHandler(_ =>
+            JsonResponse(HttpStatusCode.Forbidden, envelope));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://wms.local") };
+        var client = new HttpBusinessWmsClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.AssignInboundOrderAsync(
+                "internal-token-001",
+                "inbound-order-001",
+                new BusinessWmsAssignInboundOrderRequest(
+                    "inbound-order-001",
+                    "org-001",
+                    "env-dev",
+                    "user-admin",
+                    ["SITE-A"],
+                    "POOL-A",
+                    "user-admin",
+                    "assign-inbound-order-001",
+                    3),
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.Forbidden, exception.StatusCode);
+        Assert.Equal(downstreamCode, exception.SemanticCode);
+        Assert.Equal(downstreamCode, exception.Message);
+        Assert.Empty(exception.ErrorData);
+    }
+
+    [Theory]
+    [InlineData("Forbidden", false)]
+    [InlineData("top-secret", true)]
+    [InlineData("xxx.yyy.zzz", false)]
+    [InlineData("403.0", true)]
+    [InlineData("hello-world", false)]
+    public async Task Wms_http_client_does_not_promote_unregistered_legacy_messages(
+        string downstreamMessage,
+        bool includeTransportCode)
+    {
+        var envelope = new JsonObject
+        {
+            ["success"] = false,
+            ["message"] = downstreamMessage,
+        };
+        if (includeTransportCode)
+        {
+            envelope["code"] = (int)HttpStatusCode.Forbidden;
+        }
+
+        var handler = new RecordingHandler(_ =>
+            JsonResponse(HttpStatusCode.Forbidden, envelope));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://wms.local") };
+        var client = new HttpBusinessWmsClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.AssignInboundOrderAsync(
+                "internal-token-001",
+                "inbound-order-001",
+                new BusinessWmsAssignInboundOrderRequest(
+                    "inbound-order-001",
+                    "org-001",
+                    "env-dev",
+                    "user-admin",
+                    ["SITE-A"],
+                    "POOL-A",
+                    "user-admin",
+                    "assign-inbound-order-001",
+                    3),
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.Forbidden, exception.StatusCode);
+        Assert.Equal(BusinessServiceProxyException.DownstreamRequestFailedMessage, exception.SemanticCode);
+        Assert.Equal(BusinessServiceProxyException.DownstreamRequestFailedMessage, exception.Message);
+        Assert.Empty(exception.ErrorData);
+    }
+
+    [Fact]
+    public async Task Wms_assignment_public_http_preserves_semantic_code_from_downstream_403()
+    {
+        var handler = new RecordingHandler(_ =>
+            JsonResponse(
+                HttpStatusCode.Forbidden,
+                new
+                {
+                    success = false,
+                    message = "missing-work-pool-assignment",
+                }));
+        using var downstreamHttpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://wms.local"),
+        };
+        var wms = new HttpBusinessWmsClient(downstreamHttpClient);
+        var auth = ScopeAuth(
+            [BusinessGatewayPermissions.WmsReceiptsManage],
+            new AuthorizationScopeGrant(
+                "role",
+                "role-warehouse",
+                "site",
+                "SITE-A",
+                [BusinessGatewayPermissions.WmsReceiptsManage]));
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessWmsClient>();
+            services.AddSingleton<IBusinessWmsClient>(wms);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(
+                new TestInternalServiceTokenProvider("internal-wms-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/wms/inbound-orders/inbound-001/assignment?organizationId=org-001&environmentId=env-dev",
+            new
+            {
+                poolCode = "POOL-WAREHOUSE",
+                operatorPrincipalId = "user-emp-049",
+                idempotencyKey = "assign-inbound",
+                expectedVersion = 3,
+            });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(
+            "missing-work-pool-assignment",
+            document.RootElement.GetProperty("code").GetString());
+        Assert.Equal(
+            "missing-work-pool-assignment",
+            document.RootElement.GetProperty("message").GetString());
+        Assert.Empty(document.RootElement.GetProperty("errorData").EnumerateArray());
+        var downstreamRequest = Assert.Single(handler.Requests);
+        Assert.Equal("internal-wms-token", downstreamRequest.Headers.Authorization!.Parameter);
+    }
+
+    [Theory]
+    [InlineData("eyJhbGciOiJIUzI1NiJ9.e30.x")]
+    [InlineData("TOP-SECRET")]
+    [InlineData("sk_live_51H8ExampleApiKey")]
+    [InlineData("AKIAIOSFODNN7EXAMPLE")]
+    public async Task Wms_assignment_public_http_redacts_untrusted_message_with_valid_semantic_code(
+        string downstreamMessage)
+    {
+        var handler = new RecordingHandler(_ =>
+            JsonResponse(
+                HttpStatusCode.InternalServerError,
+                new
+                {
+                    success = false,
+                    message = downstreamMessage,
+                    code = "downstream-internal-error",
+                    data = new
+                    {
+                        field = "poolCode",
+                        reason = "assignment-required",
+                        detail = downstreamMessage,
+                    },
+                }));
+        using var downstreamHttpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://wms.local"),
+        };
+        var wms = new HttpBusinessWmsClient(downstreamHttpClient);
+        var auth = ScopeAuth(
+            [BusinessGatewayPermissions.WmsReceiptsManage],
+            new AuthorizationScopeGrant(
+                "role",
+                "role-warehouse",
+                "site",
+                "SITE-A",
+                [BusinessGatewayPermissions.WmsReceiptsManage]));
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessWmsClient>();
+            services.AddSingleton<IBusinessWmsClient>(wms);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/wms/inbound-orders/inbound-001/assignment?organizationId=org-001&environmentId=env-dev",
+            new
+            {
+                poolCode = "POOL-WAREHOUSE",
+                operatorPrincipalId = "user-emp-049",
+                idempotencyKey = "assign-inbound",
+                expectedVersion = 3,
+            });
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(body);
+        Assert.Equal("downstream-internal-error", document.RootElement.GetProperty("code").GetString());
+        Assert.Equal(
+            BusinessServiceProxyException.DownstreamRequestFailedMessage,
+            document.RootElement.GetProperty("message").GetString());
+        var errorData = Assert.Single(document.RootElement.GetProperty("errorData").EnumerateArray());
+        Assert.Equal("poolCode", errorData.GetProperty("field").GetString());
+        Assert.Equal("assignment-required", errorData.GetProperty("reason").GetString());
+        Assert.False(errorData.TryGetProperty("detail", out _));
+        Assert.DoesNotContain(downstreamMessage, body, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Wms_http_client_forwards_operational_candidate_filters_and_trusted_context()
     {
@@ -1205,6 +1424,8 @@ public sealed class BusinessGatewayWmsTests
                 });
 
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.Equal(JsonValueKind.Number, document.RootElement.GetProperty("code").ValueKind);
             AssertTrustedAssignment(
                 wms.LastAssignmentRequest!,
                 resourceId,
@@ -1237,6 +1458,8 @@ public sealed class BusinessGatewayWmsTests
     }
 
     [Theory]
+    [InlineData(HttpStatusCode.BadRequest, "invalid-assignment")]
+    [InlineData(HttpStatusCode.Forbidden, "missing-work-pool-assignment")]
     [InlineData(HttpStatusCode.Conflict, "stale-version")]
     [InlineData(HttpStatusCode.UnprocessableEntity, "assignment-target-invalid")]
     public async Task Wms_assignment_facade_preserves_governed_downstream_failure(
@@ -1246,9 +1469,29 @@ public sealed class BusinessGatewayWmsTests
         var wms = new RecordingWmsClient
         {
             AssignmentFailure =
-                BusinessServiceProxyException.FromSafeDownstreamMessage(
-                    statusCode,
-                    safeCode),
+                statusCode == HttpStatusCode.BadRequest
+                    ? BusinessServiceProxyException.FromDownstreamBusinessMessage(safeCode)
+                    : BusinessServiceProxyException.FromDownstreamError(
+                        statusCode,
+                        safeCode,
+                        safeCode,
+                        [
+                            JsonSerializer.SerializeToElement(new
+                            {
+                                field = "poolCode",
+                                reason = "assignment-required",
+                                token = "top-secret",
+                                detail = "internal-detail",
+                                pin = "7314",
+                                actorId = "user-admin",
+                            }),
+                            JsonSerializer.SerializeToElement(new
+                            {
+                                field = "actorId",
+                                reason = "top-secret",
+                            }),
+                        ],
+                        allowMessageAsSemanticCode: false),
         };
         var auth = ScopeAuth(
             [BusinessGatewayPermissions.WmsReceiptsManage],
@@ -1279,6 +1522,32 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal(statusCode, response.StatusCode);
         using var document = JsonDocument.Parse(
             await response.Content.ReadAsStringAsync());
+        var code = document.RootElement.GetProperty("code");
+        if (statusCode == HttpStatusCode.BadRequest)
+        {
+            Assert.Equal(JsonValueKind.Number, code.ValueKind);
+            Assert.Equal((int)statusCode, code.GetInt32());
+            Assert.Empty(document.RootElement.GetProperty("errorData").EnumerateArray());
+        }
+        else
+        {
+            Assert.Equal(safeCode, code.GetString());
+            var errorData = Assert.Single(
+                document.RootElement.GetProperty("errorData").EnumerateArray());
+            Assert.Equal("poolCode", errorData.GetProperty("field").GetString());
+            Assert.Equal("assignment-required", errorData.GetProperty("reason").GetString());
+            Assert.False(errorData.TryGetProperty("token", out _));
+            Assert.False(errorData.TryGetProperty("detail", out _));
+            Assert.False(errorData.TryGetProperty("pin", out _));
+            Assert.False(errorData.TryGetProperty("actorId", out _));
+            Assert.DoesNotContain(
+                "top-secret",
+                errorData.GetRawText(),
+                StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("internal-detail", errorData.GetRawText(), StringComparison.Ordinal);
+            Assert.DoesNotContain("7314", errorData.GetRawText(), StringComparison.Ordinal);
+            Assert.DoesNotContain("user-admin", errorData.GetRawText(), StringComparison.Ordinal);
+        }
         Assert.Equal(safeCode, document.RootElement.GetProperty("message").GetString());
     }
 

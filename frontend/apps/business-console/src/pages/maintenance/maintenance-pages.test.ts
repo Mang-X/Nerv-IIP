@@ -298,6 +298,31 @@ describe('maintenance work orders page', () => {
     expect(document.body.querySelector('#mwo-est-labor')).not.toBeNull()
   })
 
+  it('registers device unavailability when the operator enters an occupancy reason', async () => {
+    mount(WorkOrdersPage, mountOptions())
+    await flushPromises()
+
+    const reasonInput = document.body.querySelector<HTMLInputElement>(
+      '#mwo-asset-unavailable-reason',
+    )
+    expect(reasonInput).not.toBeNull()
+    if (!reasonInput) return
+
+    reasonInput.value = '主轴异常，维修期间暂停排产'
+    reasonInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+
+    const form = reasonInput.closest('form')!
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+
+    expect(state.createWorkOrder).toHaveBeenCalledTimes(1)
+    expect(state.createWorkOrder.mock.calls[0][0]).toMatchObject({
+      deviceAssetId: 'DEV-PRESS-01',
+      assetUnavailableReason: '主轴异常，维修期间暂停排产',
+    })
+  })
+
   // 回归：number 输入框经 v-model 可能回传 number；预估工时校验若对 number 调用
   // .trim() 会抛异常，令 submitCreate 静默失败、不发请求（真机走查发现）。
   it('submits create with a numeric estimated-labor value (no silent .trim() crash)', async () => {

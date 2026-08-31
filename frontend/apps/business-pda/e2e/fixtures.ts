@@ -28,6 +28,7 @@ export const principal = {
     'business.maintenance.work-orders.read',
     'business.maintenance.plans.read',
     'business.masterdata.resources.read',
+    'business.barcodes.scans.write',
   ],
   roleIds: [],
 }
@@ -577,6 +578,17 @@ export async function routeBusinessConsoleApi(route: Route) {
   const method = route.request().method()
   const isPost = method === 'POST'
 
+  if (isPost && pathname === '/api/business-console/v1/barcode/resolve') {
+    return fulfillJson(
+      route,
+      envelope({ status: 'unknown', reasonCode: 'NO_MATCH', candidates: [], total: 0 }),
+    )
+  }
+
+  if (method === 'GET' && pathname === '/api/business-console/v1/search') {
+    return fulfillJson(route, envelope({ query: requestUrl.searchParams.get('q'), results: [] }))
+  }
+
   // ---- WMS（收货/复核/盘点 + 拣货/上架） ----
   if (/\/wms\/work-scopes\/(receipts|shipments|counts)$/.test(pathname)) {
     return fulfillJson(
@@ -1005,6 +1017,77 @@ export async function routeBusinessConsoleApi(route: Route) {
     return fulfillJson(
       route,
       envelope({ items: mesMaterialIssueRequests, total: mesMaterialIssueRequests.length }),
+    )
+  }
+  if (pathname === `${base}/line-side-inventory-balances`) {
+    const requestedPage = Number(requestUrl.searchParams.get('page') ?? 1)
+    const items =
+      requestedPage === 2
+        ? [
+            {
+              siteCode: 'SITE-SH',
+              locationCode: 'LINE-A04',
+              skuCode: 'SKU-PAGE-201',
+              uomCode: 'pcs',
+              onHandQuantity: 8,
+              reservedQuantity: 1,
+              availableQuantity: 7,
+              lotCount: 1,
+              oldestProductionDate: '2026-08-25',
+              ageDays: 1,
+              ageCompleteness: 'complete',
+            },
+          ]
+        : [
+            {
+              siteCode: 'SITE-SH',
+              locationCode: 'LINE-A01',
+              skuCode: 'SKU-DAMPER-001',
+              uomCode: 'pcs',
+              onHandQuantity: 120,
+              reservedQuantity: 20,
+              availableQuantity: 100,
+              lotCount: 3,
+              oldestProductionDate: '2026-08-20',
+              ageDays: 6,
+              ageCompleteness: 'complete',
+            },
+            {
+              siteCode: 'SITE-SH',
+              locationCode: 'LINE-A02',
+              skuCode: 'SKU-SEAL-008',
+              uomCode: 'pcs',
+              onHandQuantity: 45,
+              reservedQuantity: 5,
+              availableQuantity: 40,
+              lotCount: 2,
+              oldestProductionDate: '2026-08-22',
+              ageDays: 4,
+              ageCompleteness: 'partial',
+            },
+            {
+              siteCode: 'SITE-SH',
+              locationCode: 'LINE-A03',
+              skuCode: 'SKU-OIL-012',
+              uomCode: 'l',
+              onHandQuantity: 18,
+              reservedQuantity: 0,
+              availableQuantity: 18,
+              lotCount: 1,
+              oldestProductionDate: null,
+              ageDays: null,
+              ageCompleteness: 'unavailable',
+            },
+          ]
+    return fulfillJson(
+      route,
+      envelope({
+        items,
+        totalCount: 201,
+        page: requestedPage,
+        pageSize: 200,
+        asOfDate: '2026-08-26',
+      }),
     )
   }
   if (pathname === `${base}/finished-goods-receipt-requests`) {

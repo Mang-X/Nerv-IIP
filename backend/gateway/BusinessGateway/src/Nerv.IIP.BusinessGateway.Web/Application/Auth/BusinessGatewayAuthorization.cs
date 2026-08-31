@@ -28,16 +28,30 @@ public sealed record BusinessGatewayAuthorizationResult(
     string? DenialReason,
     AuthorizationDataScope? DataScope = null,
     IReadOnlyCollection<AuthorizationScopeGrant>? ScopeGrants = null,
-    IReadOnlyCollection<AuthorizationRole>? Roles = null)
+    IReadOnlyCollection<AuthorizationRole>? Roles = null,
+    string? AuthorizedOrganizationId = null,
+    string? AuthorizedEnvironmentId = null)
 {
     public static BusinessGatewayAuthorizationResult Allowed(
         string principalId,
         string principalType,
         string loginName,
+        string authorizedOrganizationId,
+        string authorizedEnvironmentId,
         AuthorizationDataScope? dataScope = null,
         IReadOnlyCollection<AuthorizationScopeGrant>? scopeGrants = null,
         IReadOnlyCollection<AuthorizationRole>? roles = null) =>
-        new(true, principalId, principalType, loginName, null, dataScope, scopeGrants, roles);
+        new(
+            true,
+            principalId,
+            principalType,
+            loginName,
+            null,
+            dataScope,
+            scopeGrants,
+            roles,
+            authorizedOrganizationId,
+            authorizedEnvironmentId);
 
     public static BusinessGatewayAuthorizationResult Forbidden(string reason) =>
         new(false, null, null, null, reason, null);
@@ -117,6 +131,7 @@ public static class BusinessGatewayPermissions
     public const string MaintenanceWorkOrdersManage = "business.maintenance.work-orders.manage";
     public const string MaintenancePlansRead = "business.maintenance.plans.read";
     public const string MaintenancePlansManage = "business.maintenance.plans.manage";
+    public const string MaintenanceDowntimeReasonsRead = "business.maintenance.downtime-reasons.read";
     public const string ErpProcurementRead = "business.erp.procurement.read";
     public const string ErpProcurementManage = "business.erp.procurement.manage";
     public const string ErpSalesRead = "business.erp.sales.read";
@@ -248,6 +263,8 @@ public sealed class HttpBusinessGatewayAuthorizationClient(
                     body.PrincipalId!,
                     body.PrincipalType!,
                     body.LoginName!,
+                    requirement.OrganizationId,
+                    requirement.EnvironmentId,
                     body.DataScope,
                     body.ScopeGrants,
                     body.Roles)

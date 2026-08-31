@@ -7,43 +7,49 @@ description: 审 Nerv-IIP 的 PR、复审改动后的 head，或要派并行评�
 
 **本技能是引导不是勾选表。** 一条带证据的阻断项，胜过一串挑剔。
 
-审核分三**轴**并行，各派一个**席位**（子代理），结论分列：
+审核分四**轴**并行，各派一个**席位**（子代理），结论分列：
 
 | 轴 | 问什么 |
 |---|---|
 | 标准 | 改动违反本仓库已文档化的规则吗 |
 | 规格 | 改动做的是 issue / spec 要的那件事吗 |
 | 证据 | 改动声称的东西，证据成立吗 |
+| 质量 | 这样写会让代码库变好还是变差 |
 
-三轴正交，一轴过另一轴照样能挂：代码全合规却实现了错的东西；照 issue 做对了却破坏既有约定；两者都对但断言在错误实现上依然绿。分列汇报就是为了让一轴掩盖不了另一轴。
+四轴正交，一轴过另一轴照样能挂：代码全合规却实现了错的东西；照 issue 做对了却破坏既有约定；前两者都对但断言在错误实现上依然绿；三者全绿而实现方式把一个文件推过千行、给既有流程又插了两个特殊分支。分列汇报就是为了让一轴掩盖不了另一轴。
 
 ## 1. 钉住事实源
 
-派席位**之前**做完。失败要暴露在这一步——ref 解析不出、diff 为空、改动面算不出来，就停在这里，别让三个席位各自跑一遍错的基线。
+派席位**之前**做完。失败要暴露在这一步——ref 解析不出、diff 为空、改动面算不出来，就停在这里，别让四个席位各自跑一遍错的基线。
 
 ```bash
 gh pr view <N> --json headRefOid,baseRefName,mergeable,files
 git fetch origin "pull/<N>/head:pr-<N>"
-git rev-parse "origin/<baseRefName>"    # baseRefName 是分支名；-BaseSha 只收 40 位全长 SHA
+git rev-parse "origin/<baseRefName>"
 pwsh -NoProfile -File scripts/get-ci-impact-plan.ps1 -BaseSha <base> -HeadSha <head>
 ```
 
 仓库里的 `.ps1` 没有执行位，`./scripts/...` 在 bash 下会 `permission denied`；CI 用 `shell: pwsh` 才不需要这层包装。
 
-- 核「某处是否存在」一律用 **PR head 树**。本地工作树不作数：150+ 工作树共享一个 `.git`，并行会话会把 HEAD 切走。
+- 核「某处是否存在」一律用 **PR head 树**。本地工作树不作数：多个工作树共享同一个 `.git`，并行会话会把 HEAD 切走。
 - head SHA 双源交叉：`gh pr view` 与 `git ls-remote` 各取一次，对上再往下走。
 - retarget、force-push、合并 main 之后：本步重做。上一轮的行内锚点和结论随 history rewrite 一起失效。
 
-完成判据：head SHA、base SHA、改动路径清单三样都拿到且非空。
+再定位两轴的判据来源——**这一步归协调者，不是席位的活**。席位收到的应是成品清单，不是搜索任务：
+
+- **标准来源**：根到每个改动路径的 `AGENTS.md` 与 `AGENTS.override.md`；再从 `docs/governance/README.md`、`docs/architecture/README.md` 与 `docs/adr/README.md` 按改动面挑出相关的当前规则、架构和决策记录，列成文件清单。Reference 只在改动涉及其查询事实时加入，冻结 Report 不作为当前标准。
+- **规格来源**：票号取自 PR body 的 `Fixes #` / `Closes #`。取不到就问用户。仍然没有，就地判定**无规格可依**，规格轴席位不派。
+
+完成判据：head SHA、base SHA、改动路径清单、标准来源清单、规格来源（票号或「无规格可依」）都拿到。
 
 **这一步的产出本身就是发现来源。** 改动面里出现 `unclassified-path`、`rule-self-check` 之类的信号，是还没派席位就已经到手的阻断项——比席位早，也便宜得多。
 
-## 2. 派三个席位
+## 2. 派四个席位
 
 每席位一份**隔离副本**——`git archive` 出 head 树到独立目录。席位会跑变异测试和构建，共享一棵树会互相清掉产物。
 
 ```bash
-for axis in standards spec evidence; do
+for axis in standards spec evidence quality; do
   D=/tmp/rv-<N>-$axis
   mkdir -p $D && git archive pr-<N> | tar -x -C $D
   git diff $(git merge-base origin/<base> pr-<N>) pr-<N> > $D/REVIEW-<N>.patch
@@ -55,33 +61,36 @@ done
 派单时：
 
 - **判据整段粘进提示词。** 席位读不到本技能文件，也读不到你的会话。
+- **席位收成品，不收搜索任务。** Step 1 定位出的文件清单、票号或已取回的规格正文，直接给它；不要让它自己去找。
+- 判定为「无规格可依」时**不派规格轴席位**，汇报里直接写该结论。
 - 中间文件名带 PR 号——并行席位共享 scratchpad，同名文件会串台。
 - 席位自己不再派子代理。
 - 每轴 400 字以内，阻断项与建议分开写。
+- 质量轴的判据在下面写全了，它没有仓库内权威文档可链——整段粘进提示词，不自行增删。
 
 ### 标准轴
 
-判据来源：从仓库根到每个改动路径的全部 `AGENTS.md` 与 `AGENTS.override.md`，加 `docs/architecture/` 下相关治理文档与 ADR。
+判据来源：Step 1 定位出的标准来源清单。**按清单读，不自行扩大搜索面**。
 
-报告改动违反了哪条已文档化的规则，每条给出规则所在的文件与行。区分硬违反（文档写了「必须」「不得」）与判断题。
+报告改动违反了哪条已文档化的规则，每条给出规则所在的文件与行。区分硬违反与判断题。
 
 **只报绿门禁拦不住的问题。** 门禁会红的事情不需要人看。
 
 ### 规格轴
 
-判据来源：`gh issue view <票号>`（票号取自 PR body 的 `Fixes #` / `Closes #`），以及 `docs/superpowers/specs/` 下对应规格。
+判据来源：Step 1 定位出的 GitHub Issue。本仓库的规格权威是**票**，不是目录——见 `docs/superpowers/AGENTS.md`。
 
-报告三类：spec 要求了但缺失或只做一半；spec 没要求却做了（范围外）；看着实现了但实现错。每条引 spec 原文。
+- 规格住在 Issue 正文的 `<!-- superpowers-spec:start -->` / `<!-- superpowers-spec:end -->` 受管区块内：`gh issue view <票号> --json body`
+- 走 plan 流程的票，Task 清单与完成态在索引评论里：`gh issue view <票号> --json comments`
+- `docs/superpowers/specs/` 与 `plans/` 下的既有文件不迁移、不改写，是历史件——不要去那里找当前 PR 的规格
 
-PR 没有关联票时按序找，找完仍无就明说「无规格可依」——实现本身不能当需求用：
+报告三类：spec 要求了但缺失或只做一半；spec 没要求却做了（范围外）；看着实现了但实现错。每条引原文。
 
-1. PR body 自己声明的交付范围
-2. base 树里被本 PR 声称关闭的欠账段或 TODO（`gh api repos/<owner>/<repo>/contents/<path>?ref=<base>`）
-3. `docs/superpowers/specs/` 下同主题规格
+实现本身不能当需求用——反推不出的就说没有。
 
 ### 证据轴
 
-判据来源：`docs/architecture/test-validity-governance.md` 的六类合同来源与审核清单，`docs/architecture/test-evidence-governance.md` 的执行证据口径。
+判据来源：`docs/governance/testing/validity.md` 的合同来源与审核清单，`docs/governance/testing/evidence.md` 的执行证据口径；涉及 determinism/provider/lane/PDA 时再从 `docs/governance/testing/README.md` 读取对应规则。
 
 报告：
 
@@ -92,14 +101,34 @@ PR 没有关联票时按序找，找完仍无就明说「无规格可依」—�
 
 工具陷阱：C# `const` 会被内联，增量构建下变异测试既会假绿也会假红。恢复变异后须 `--no-incremental` 全量重建；探针用类型引用而非 const。
 
+### 质量轴
+
+**本节即判据，整段粘进席位提示词，不自行增删**——允许自由发挥，这一轴就退化成挑剔。
+
+问的是**这样写会让代码库变好还是变差**，不是「能不能跑」。要求席位**野心大一点**：不要停在「这里可以更整洁」，去找能让整类复杂度消失的重构——删掉一层，胜过把同样的复杂度摊平到别处。
+
+阻断项（默认阻断，除非作者说清结构性理由）：
+
+- PR 把一个文件从 **1000 行以下推到以上**
+- 往不相干的既有流程里插特殊分支、一次性布尔、可空模式
+- 加了挣不到钱的抽象：薄包装、恒等封装、纯转发
+- 用 cast / `any` / `unknown` / 可选参数糊住真正的不变量
+- 功能逻辑漏进通用模块，或明明有 canonical helper 却另写一个近似品
+- 明显可并行的独立工作被串行化，或相关更新会留下半应用状态
+
+**上报但不阻断**：已超 1000 行的文件继续增长。存量治理分批做，这里只记录、不拦。
+
+优先级：结构性倒退 > 错过的大简化 > 分支复杂度增长 > 边界与契约问题 > 文件体量 > 可读性。**宁可少而准**，一条有证据的结构性阻断胜过一串外观意见。
+
 ## 3. 汇报
 
-三轴**分列**，各给各的最严重项。跨轴排名会重新制造遮蔽，那正是分轴要避免的。
+四轴**分列**，各给各的最严重项。
 
 ```markdown
 ## 标准
 ## 规格
 ## 证据
+## 质量
 ```
 
 - 席位给的「某处不存在」「某处没做」这类判断，自己回 head 树核过再落笔
@@ -108,20 +137,23 @@ PR 没有关联票时按序找，找完仍无就明说「无规格可依」—�
 - 行内评论发完回读一次，确认锚在预期那行
 - 中文发布，见语言治理
 
-完成判据：每轴各有结论（含「本轴无发现」），且每条阻断项都能指到 head 树上的具体位置。
+末尾给一行汇总：**每轴各多少条发现，以及该轴内最严重的一条**。不跨轴挑冠军。
+
+完成判据：每轴各有结论（含「本轴无发现」或「无规格可依」），且每条阻断项都能指到 head 树上的具体位置。
 
 ## 权威来源（读，不要复述）
 
 路径均相对仓库根。技能的源目录（`skills/<name>/`）与安装目录（`.agents/skills/<name>/`）到根的深度差一层，文件相对写法必在一端解析错，所以这里不用 markdown 链接。
 
 - `AGENTS.md` 与目标路径上的各级 `AGENTS.md` —— 开工与交付纪律
-- `docs/architecture/test-validity-governance.md` —— 六类合同来源、红绿验证、删弱化负向测试的四条件、PR 结论格式
-- `docs/architecture/test-evidence-governance.md` —— 执行数量、CI 状态、产物链接的报告口径
-- `docs/architecture/document-language-governance.md` —— 协作文本发布门禁
-- `docs/architecture/decision-record-governance.md` —— PR 触及 ADR 时的分层判据与取代规则
+- `docs/governance/README.md` —— 当前工程规则总入口
+- `docs/governance/testing/validity.md` —— 合同来源、红绿验证、删弱化负向测试条件、PR 结论格式
+- `docs/governance/testing/evidence.md` —— 执行数量、CI 状态、actual/skipped 与产物口径
+- `docs/governance/docs/language.md` —— 协作文本发布规则
+- `docs/governance/decisions/records.md` —— PR 触及 ADR 时的分层判据与取代规则
 
 ## 与其它技能的边界
 
 `superpowers:requesting-code-review` 管作者侧怎么请审，`receiving-code-review` 管怎么处理收到的反馈；本技能管审核方。
 
-那份技能的 `code-reviewer.md` 模板写着席位不得再派子代理——**该约束对席位成立，对协调者不成立**。本技能就是协调者，它派出三个席位。
+那份技能的 `code-reviewer.md` 模板写着席位不得再派子代理——**该约束对席位成立，对协调者不成立**。本技能就是协调者，它派出四个席位。

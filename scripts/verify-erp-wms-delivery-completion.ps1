@@ -4,14 +4,20 @@
 #     - Starts local PostgreSQL and Redis compose services when they are not already running
 #     - Builds and starts ERP, WMS, and Inventory as separate managed processes
 #     - Creates a disposable PostgreSQL database and publishes real Redis CAP integration events
+#     - Deletes an exact diagnostic artifact path when its post-write scan detects retained secret material
 #   Writes:
 #     - bin/ and obj/ outputs for ERP, WMS, Inventory, and the full-chain replay probe
 #     - artifacts/script-logs/**
 #     - artifacts/acceptance/man527/erp-wms-delivery-completion-evidence.json
+#     - artifacts/acceptance/man527/diagnostics/** on failure
+#     - A caller-selected canonical acceptance result when requested
+#     - Same-directory .<leaf>.<guid>.tmp files before atomic diagnostic/evidence publication
 #   Cleanup:
 #     - Stops every managed service process in finally
 #     - Drops the disposable PostgreSQL database in finally
 #     - Stops only compose services started by this script
+#     - Removes owned same-directory diagnostic/evidence temp files in writer finally blocks
+#     - Removes the exact temp or published artifact whose scan detects retained secret material
 #   Requires:
 #     - PowerShell 7
 #     - .NET SDK 10
@@ -21,7 +27,15 @@
 param(
     [string]$PostgresAdminConnectionString = $env:NERV_IIP_TEST_POSTGRES,
     [string]$RedisConnectionString = $env:NERV_IIP_TEST_REDIS,
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [string]$CanonicalResultPath,
+    [string]$TrackIdentifier,
+    [string]$Repository,
+    [string]$RunId,
+    [int]$RunAttempt,
+    [string]$TestedSha,
+    [string]$ManifestDigest,
+    [string]$ScenarioId = 'wms-delivery-erp'
 )
 
 Set-StrictMode -Version Latest
@@ -30,6 +44,21 @@ $ErrorActionPreference = 'Stop'
 $root = Resolve-Path (Join-Path $PSScriptRoot '..')
 Set-Location $root
 . (Join-Path $root 'scripts/lib/ScriptAutomation.ps1')
+. (Join-Path $root 'scripts/lib/AcceptanceScenarioMatrixRuntime.ps1')
+
+$canonicalResultEnabled = -not [string]::IsNullOrWhiteSpace($CanonicalResultPath)
+$canonicalResultFullPath = $null
+if ($canonicalResultEnabled) {
+    $canonicalResultFullPath = Resolve-NervAcceptanceCanonicalOutputPath -Path $CanonicalResultPath -RepositoryRoot $root.Path -Context 'MAN-527 canonical result path'
+    if (-not (Test-NervAcceptanceRepositoryIdentifier -Repository $Repository)) { throw 'MAN-527 canonical repository must be a canonical owner/name identifier.' }
+    if ($RunId -cnotmatch '^[1-9][0-9]*$') { throw 'MAN-527 canonical runId must be a positive decimal identifier.' }
+    if ($RunAttempt -le 0) { throw 'MAN-527 canonical runAttempt must be positive.' }
+    if ($TestedSha -cnotmatch '^[0-9a-f]{40}$') { throw 'MAN-527 canonical testedSha must be a lowercase 40-character Git SHA.' }
+    if ($ManifestDigest -cnotmatch '^[0-9a-f]{64}$') { throw 'MAN-527 canonical manifestDigest must be a lowercase SHA-256 digest.' }
+    if (-not [string]::Equals($ScenarioId, 'wms-delivery-erp', [StringComparison]::Ordinal)) { throw "MAN-527 canonical scenarioId must be 'wms-delivery-erp'." }
+    if ($TrackIdentifier -cnotmatch '^[a-z0-9]+(?:-[a-z0-9]+)*$') { throw 'MAN-527 canonical track identifier must be canonical.' }
+    if (Test-Path -LiteralPath $canonicalResultFullPath -PathType Leaf) { Remove-Item -LiteralPath $canonicalResultFullPath -Force }
+}
 
 if ([string]::IsNullOrWhiteSpace($PostgresAdminConnectionString) -or [string]::IsNullOrWhiteSpace($RedisConnectionString)) {
     throw 'Set NERV_IIP_TEST_POSTGRES and NERV_IIP_TEST_REDIS; credentials are never embedded in this verification script.'
@@ -40,6 +69,127 @@ function Get-FreeTcpPort {
     $listener.Start()
     try { return ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port }
     finally { $listener.Stop() }
+}
+
+function Get-Man527TrxCounter {
+    param(
+        [Parameter(Mandatory)] [Xml.XmlElement] $Counters,
+        [Parameter(Mandatory)] [string] $Name
+    )
+
+    $raw = $Counters.GetAttribute($Name)
+    $parsed = 0
+    if ([string]::IsNullOrWhiteSpace($raw) -or -not [int]::TryParse($raw, [ref]$parsed) -or $parsed -lt 0) {
+        throw "MAN-527 replay probe TRX counter '$Name' must be a non-negative integer."
+    }
+    return $parsed
+}
+
+function Write-Man527DiagnosticFile {
+    param([Parameter(Mandatory)] [string] $Path, [AllowNull()] [string] $Content)
+
+    $sensitiveValues = @($internalToken, $PostgresAdminConnectionString, $databaseConnectionString, $RedisConnectionString)
+    [void](Write-NervAcceptanceWmsDiagnosticArtifact -Path $Path -Content $Content -SensitiveValues $sensitiveValues)
+}
+
+function Invoke-Man527DiagnosticCommand {
+    param(
+        [Parameter(Mandatory)] [string] $Name,
+        [Parameter(Mandatory)] [string] $Command,
+        [Parameter(Mandatory)] [string[]] $Arguments,
+        [Parameter(Mandatory)] [string] $OutputPath
+    )
+
+    try {
+        $result = Invoke-NativeCommandOutput -Command $Command -Arguments $Arguments -WorkingDirectory $root -Name $Name
+        Write-Man527DiagnosticFile -Path $OutputPath -Content $result.Stdout
+    }
+    catch {
+        Write-Man527DiagnosticFile -Path $OutputPath -Content "Diagnostic command failed: $($_.Exception.Message)"
+    }
+}
+
+function Export-Man527FailureDiagnostics {
+    param([Parameter(Mandatory)] [object] $FailureRecord)
+
+    $diagnosticsRoot = Join-Path $evidenceDirectory 'diagnostics'
+    [IO.Directory]::CreateDirectory($diagnosticsRoot) | Out-Null
+    $artifactPaths = [Collections.Generic.List[string]]::new()
+    $summaryPath = Join-Path $diagnosticsRoot 'failure-summary.json'
+    Write-Man527DiagnosticFile -Path $summaryPath -Content ([pscustomobject][ordered]@{
+            capturedAtUtc = [DateTimeOffset]::UtcNow
+            capturePhase = 'before-cleanup'
+            database = $databaseName
+            capVersion = $capVersion
+            deliveryOrderNo = $deliveryOrderNo
+            failure = $FailureRecord.Exception.Message
+        } | ConvertTo-Json -Depth 8)
+    $artifactPaths.Add([IO.Path]::GetFullPath($summaryPath))
+
+    foreach ($entry in ([ordered]@{ erp = $erpProcess; wms = $wmsProcess; inventory = $inventoryProcess }).GetEnumerator()) {
+        if ($null -eq $entry.Value) { continue }
+        foreach ($stream in @('stdout', 'stderr')) {
+            $source = Join-Path $entry.Value.LogDirectory "$stream.log"
+            $target = Join-Path $diagnosticsRoot "$($entry.Key)-$stream-tail.log"
+            try {
+                $tail = Get-Content -LiteralPath $source -Tail 400 -ErrorAction Stop
+                Write-Man527DiagnosticFile -Path $target -Content ($tail -join [Environment]::NewLine)
+            }
+            catch {
+                Write-Man527DiagnosticFile -Path $target -Content "Could not read service log tail: $($_.Exception.Message)"
+            }
+            $artifactPaths.Add([IO.Path]::GetFullPath($target))
+        }
+    }
+
+    if ($databaseCreated) {
+        $postgresPath = Join-Path $diagnosticsRoot 'postgres-state.txt'
+        $databaseSql = @"
+SELECT schemaname, relname, n_live_tup
+FROM pg_stat_user_tables
+WHERE schemaname IN ('erp', 'inventory', 'wms')
+ORDER BY schemaname, relname;
+"@
+        Invoke-Man527DiagnosticCommand -Name 'man527-diagnostics-postgres' -Command 'docker' -Arguments @(
+            'compose', '-f', $composeFile, 'exec', '-T', 'postgres', 'psql', '-U', 'nerv', '-d', $databaseName,
+            '-X', '-v', 'ON_ERROR_STOP=1', '-P', 'pager=off', '-c', $databaseSql
+        ) -OutputPath $postgresPath
+        $artifactPaths.Add([IO.Path]::GetFullPath($postgresPath))
+    }
+
+    $redisPath = Join-Path $diagnosticsRoot 'redis-stream-state.txt'
+    $redisLines = [Collections.Generic.List[string]]::new()
+    foreach ($streamName in @('WmsIntegrationEvent', 'Nerv.IIP.Contracts.Wms.WmsIntegrationEvent')) {
+        foreach ($redisArguments in @(@('XINFO', 'STREAM', $streamName), @('XINFO', 'GROUPS', $streamName))) {
+            try {
+                $result = Invoke-NativeCommandOutput -Command 'docker' -Arguments (@('compose', '-f', $composeFile, 'exec', '-T', 'redis', 'redis-cli') + $redisArguments) -WorkingDirectory $root -Name 'man527-diagnostics-redis'
+                $redisLines.Add("COMMAND redis-cli $($redisArguments -join ' ')")
+                $redisLines.Add("$($result.Stdout)")
+            }
+            catch {
+                $redisLines.Add("COMMAND redis-cli $($redisArguments -join ' ') FAILED: $($_.Exception.Message)")
+            }
+        }
+    }
+    Write-Man527DiagnosticFile -Path $redisPath -Content ($redisLines -join [Environment]::NewLine)
+    $artifactPaths.Add([IO.Path]::GetFullPath($redisPath))
+    $sensitiveValues = @($internalToken, $PostgresAdminConnectionString, $databaseConnectionString, $RedisConnectionString) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
+    foreach ($artifactPath in $artifactPaths) {
+        $artifactContent = [IO.File]::ReadAllText($artifactPath)
+        foreach ($sensitiveValue in $sensitiveValues) {
+            if ($artifactContent.Contains([string]$sensitiveValue, [StringComparison]::Ordinal)) {
+                throw "MAN-527 failure diagnostic retained a declared sensitive value: $artifactPath"
+            }
+        }
+    }
+    Write-Diagnostic -Level 'WARN' -Message "MAN-527 failure diagnostics captured before cleanup: $diagnosticsRoot"
+    return [pscustomobject][ordered]@{
+        failureCaptureSupported = $true
+        failureDiagnosticsCaptured = $true
+        secretsRedacted = $true
+        artifactPaths = $artifactPaths.ToArray()
+        errors = @()
+    }
 }
 
 function Wait-PostgresReady {
@@ -148,7 +298,8 @@ function Wait-WmsOutboundOrder {
         [hashtable]$Headers,
         [string]$DeliveryOrderNo,
         [string]$ActorPrincipalId,
-        [string]$SiteCode)
+        [string]$SiteCode,
+        [switch]$RequireCompleted)
     $keyword = [Uri]::EscapeDataString($DeliveryOrderNo)
     $actor = [Uri]::EscapeDataString($ActorPrincipalId)
     $site = [Uri]::EscapeDataString($SiteCode)
@@ -156,8 +307,11 @@ function Wait-WmsOutboundOrder {
     do {
         try {
             $response = Invoke-RestMethod -Method Get -Uri "$WmsUrl/api/business/v1/wms/outbound-orders?organizationId=org-001&environmentId=env-dev&keyword=$keyword&actorPrincipalId=$actor&authorizedSiteCodes=$site&scopeKind=site&scopeId=$site&siteCode=$site" -Headers $Headers
-            $rows = @($response.data.items | Where-Object { $_.outboundOrderNo -eq $DeliveryOrderNo })
-            if ($rows.Count -eq 1) { return $rows[0] }
+            $rows = @($response.data.items | Where-Object { [string]::Equals([string]$_.outboundOrderNo, $DeliveryOrderNo, [StringComparison]::Ordinal) })
+            if ($rows.Count -eq 1 -and
+                (-not $RequireCompleted -or (Test-NervAcceptanceWmsCompletedOutboundReadback -Readback $rows[0]))) {
+                return $rows[0]
+            }
         }
         catch { }
         Start-Sleep -Milliseconds 500
@@ -314,9 +468,12 @@ $wmsActorPrincipalId = "man527-operator-$([Guid]::NewGuid().ToString('N').Substr
 $wmsSupervisorPrincipalId = "man527-supervisor-$([Guid]::NewGuid().ToString('N').Substring(0, 8))"
 $wmsSiteCode = 'SITE-001'
 $wmsShippingPoolCode = "POOL-MAN527-SHIPPING-$([Guid]::NewGuid().ToString('N').Substring(0, 8).ToUpperInvariant())"
-$erpUrl = "http://127.0.0.1:$(Get-FreeTcpPort)"
-$wmsUrl = "http://127.0.0.1:$(Get-FreeTcpPort)"
-$inventoryUrl = "http://127.0.0.1:$(Get-FreeTcpPort)"
+$erpPort = Get-FreeTcpPort
+$wmsPort = Get-FreeTcpPort
+$inventoryPort = Get-FreeTcpPort
+$erpUrl = "http://127.0.0.1:$erpPort"
+$wmsUrl = "http://127.0.0.1:$wmsPort"
+$inventoryUrl = "http://127.0.0.1:$inventoryPort"
 $erpProcess = $null
 $wmsProcess = $null
 $inventoryProcess = $null
@@ -329,11 +486,22 @@ $probeProject = Join-Path $root 'backend/tests/Nerv.IIP.Business.FullChain.Tests
 $managedProcessIds = [System.Collections.Generic.List[int]]::new()
 $cleanupErrors = [System.Collections.Generic.List[string]]::new()
 $scenarioError = $null
-$businessEvidence = $null
+$probeResultsPath = $null
+$fullChainProbeCounters = $null
+$repeatedEventConverged = $false
+$acceptanceStartedAtUtc = [DateTimeOffset]::UtcNow
 $evidenceDirectory = Join-Path $root 'artifacts/acceptance/man527'
 $injectedEvidencePath = [Environment]::GetEnvironmentVariable('NERV_IIP_FULL_CHAIN_ENTRYPOINT_EVIDENCE_PATH')
 $evidencePath = if ([string]::IsNullOrWhiteSpace($injectedEvidencePath)) { Join-Path $evidenceDirectory 'erp-wms-delivery-completion-evidence.json' } else { [IO.Path]::GetFullPath($injectedEvidencePath) }
 $evidenceDirectory = Split-Path -Parent $evidencePath
+$declaredSensitiveValues = @($internalToken, $PostgresAdminConnectionString, $databaseConnectionString, $RedisConnectionString)
+$diagnosticEvidence = [ordered]@{
+    failureCaptureSupported = $false
+    failureDiagnosticsCaptured = $false
+    secretsRedacted = $false
+    artifactPaths = @()
+    errors = @()
+}
 $cleanupEvidence = [ordered]@{
     managedProcessIds = @()
     managedProcessRemaining = $null
@@ -343,8 +511,13 @@ $cleanupEvidence = [ordered]@{
     redis = if ($startedRedis) { 'owned-pending-cleanup' } else { 'pre-existing-running-not-stopped' }
     errors = @()
 }
+$verifierContract = $null
 
 try {
+    $verifierContract = Test-NervAcceptanceWmsVerifierContract -Path $PSCommandPath
+    if (-not $verifierContract.failureCaptureSupported -or -not $verifierContract.pickingReadbackWired -or -not $verifierContract.completionReplayWired -or -not $verifierContract.outboundCompletionWired) {
+        throw 'MAN-527 verifier structural contract did not prove reachable failure capture and public WMS checkpoint wiring.'
+    }
     Invoke-DockerCompose -Arguments @('-f', $composeFile, 'up', '-d', '--pull', 'never', 'postgres', 'redis') -WorkingDirectory $root -Name 'man527-infrastructure-up' | Out-Null
     Wait-PostgresReady -ComposeFile $composeFile
     Invoke-DockerCompose -Arguments @('-f', $composeFile, 'exec', '-T', 'postgres', 'psql', '-U', 'nerv', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', "CREATE DATABASE $databaseName;") -WorkingDirectory $root -Name 'man527-create-database' | Out-Null
@@ -454,7 +627,11 @@ try {
         -not [string]::Equals([string]$outbound.assignedOperatorUserId, $wmsActorPrincipalId, [StringComparison]::Ordinal)) {
         throw "Public WMS readback did not prove the first assignment for $deliveryOrderNo."
     }
-    foreach ($outboundLine in @($outbound.lines)) {
+    $outboundLines = @($outbound.lines)
+    if ($outboundLines.Count -eq 0) { throw 'Public WMS readback returned no outbound lines to pick.' }
+    $completedPickingReadbacks = [Collections.Generic.List[object]]::new()
+    $requestedPickingQuantities = [Collections.Generic.List[decimal]]::new()
+    foreach ($outboundLine in $outboundLines) {
         Invoke-JsonPost -Uri "$inventoryUrl/api/inventory/v1/movements" -Headers $headers -Body @{
             organizationId = 'org-001'
             environmentId = 'env-dev'
@@ -539,7 +716,19 @@ try {
             executedQuantity = [decimal]$outboundLine.requestedQuantity
             differenceReason = $null
         }) | Out-Null
+        $completedPickingTask = Wait-WmsPickingTask `
+            -WmsUrl $wmsUrl `
+            -Headers $headers `
+            -TaskNo $taskNo `
+            -ActorPrincipalId $wmsActorPrincipalId `
+            -SiteCode $wmsSiteCode
+        [void]$completedPickingReadbacks.Add($completedPickingTask)
+        [void]$requestedPickingQuantities.Add([decimal]$outboundLine.requestedQuantity)
     }
+    New-Variable -Name pickingLifecycleCompleted -Option Constant -Value (
+        Test-NervAcceptanceWmsPickingReadbacks -Readbacks $completedPickingReadbacks.ToArray() -RequestedQuantities $requestedPickingQuantities.ToArray()
+    )
+    if (-not $pickingLifecycleCompleted) { throw 'The public WMS picking lifecycle did not complete for every outbound line.' }
 
     $outboundAfterPicking = Wait-WmsOutboundOrder `
         -WmsUrl $wmsUrl `
@@ -561,8 +750,23 @@ try {
         expectedVersion = [long]$outboundAfterPicking.version
     }
     $completionUri = "$wmsUrl/api/business/v1/wms/outbound-orders/$([Uri]::EscapeDataString($outboundOrderId))/complete"
-    Invoke-JsonPost -Uri $completionUri -Headers $headers -Body $completionBody | Out-Null
-    Invoke-JsonPost -Uri $completionUri -Headers $headers -Body $completionBody | Out-Null
+    $firstCompletion = Invoke-JsonPost -Uri $completionUri -Headers $headers -Body $completionBody
+    $completionReplay = Invoke-JsonPost -Uri $completionUri -Headers $headers -Body $completionBody
+    New-Variable -Name completionHttpReplayConverged -Option Constant -Value (
+        Test-NervAcceptanceWmsCompletionReplay -FirstCompletion $firstCompletion -ReplayCompletion $completionReplay
+    )
+    if (-not $completionHttpReplayConverged) {
+        throw 'Public WMS completion replay did not return the same non-empty inventory movement requestId.'
+    }
+    New-Variable -Name completedOutboundOrder -Option Constant -Value (
+        Wait-WmsOutboundOrder `
+            -WmsUrl $wmsUrl `
+            -Headers $headers `
+            -DeliveryOrderNo $deliveryOrderNo `
+            -ActorPrincipalId $wmsActorPrincipalId `
+            -SiteCode $wmsSiteCode `
+            -RequireCompleted
+    )
 
     $deliveryBeforeReplay = Wait-ErpDeliveryOrder -ErpUrl $erpUrl -Headers $headers -DeliveryOrderNo $deliveryOrderNo
     $receivableBeforeReplay = Wait-Receivable -ErpUrl $erpUrl -Headers $headers -DeliveryOrderNo $deliveryOrderNo
@@ -577,14 +781,34 @@ try {
         [System.IO.Directory]::CreateDirectory($probeResultsDirectory) | Out-Null
         $probeResultsFile = if ([string]::IsNullOrWhiteSpace($env:NERV_IIP_FULL_CHAIN_RESULT_FILE)) { "replay-$([Guid]::NewGuid().ToString('N')).trx" } else { $env:NERV_IIP_FULL_CHAIN_RESULT_FILE }
         $probeResults = Join-Path $probeResultsDirectory $probeResultsFile
+        $script:probeResultsPath = [IO.Path]::GetFullPath($probeResults)
         Invoke-DotNet -Arguments @('test', $probeProject, '--no-build', '--filter', 'FullyQualifiedName~External_process_replays_completed_wms_event_without_duplicate_delivery_or_receivable_facts', '--results-directory', $probeResultsDirectory, '--logger', "trx;LogFileName=$probeResultsFile") -WorkingDirectory $root -TimeoutSeconds 180 -Name 'man527-replay-probe' | Out-Null
         if (-not (Test-Path -LiteralPath $probeResults)) {
             throw 'MAN-527 replay probe produced no TRX result; the selected test may be absent from a stale build.'
         }
         [xml]$probeTrx = Get-Content -LiteralPath $probeResults -Raw
-        $probeExecutions = @($probeTrx.SelectNodes("//*[local-name()='UnitTestResult']") | Where-Object { $_.GetAttribute('testName').EndsWith('.External_process_replays_completed_wms_event_without_duplicate_delivery_or_receivable_facts', [StringComparison]::Ordinal) })
+        $frozenTestIdentity = 'Nerv.IIP.Business.FullChain.Tests.ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests.External_process_replays_completed_wms_event_without_duplicate_delivery_or_receivable_facts'
+        $probeExecutions = @($probeTrx.SelectNodes("//*[local-name()='UnitTestResult']") | Where-Object { [string]::Equals([string]$_.GetAttribute('testName'), $frozenTestIdentity, [StringComparison]::Ordinal) })
         if ($probeExecutions.Count -ne 1 -or (-not [string]::Equals([string]($probeExecutions[0].GetAttribute('outcome')), [string]('Passed'), [StringComparison]::OrdinalIgnoreCase))) {
             throw 'MAN-527 repeated-event probe did not execute exactly once and pass.'
+        }
+        $probeCounters = $probeTrx.SelectSingleNode("//*[local-name()='Counters']")
+        if ($null -eq $probeCounters) { throw 'MAN-527 replay probe TRX has no Counters element.' }
+        $probeTotal = Get-Man527TrxCounter -Counters $probeCounters -Name total
+        $probeExecuted = Get-Man527TrxCounter -Counters $probeCounters -Name executed
+        $script:fullChainProbeCounters = [ordered]@{
+            total = $probeTotal
+            executed = $probeExecuted
+            passed = Get-Man527TrxCounter -Counters $probeCounters -Name passed
+            failed = Get-Man527TrxCounter -Counters $probeCounters -Name failed
+            skipped = $probeTotal - $probeExecuted
+        }
+        if ($script:fullChainProbeCounters.total -ne 1 -or
+            $script:fullChainProbeCounters.executed -ne 1 -or
+            $script:fullChainProbeCounters.passed -ne 1 -or
+            $script:fullChainProbeCounters.failed -ne 0 -or
+            $script:fullChainProbeCounters.skipped -ne 0) {
+            throw 'MAN-527 replay probe must report expected=1 discovered=1 passed=1 failed=0 skipped=0.'
         }
     }
 
@@ -596,8 +820,11 @@ try {
         $receivableAfterReplay.receivableNo -ne $receivableBeforeReplay.receivableNo) {
         throw 'Repeated completion changed the public ERP delivery or receivable facts.'
     }
+    $repeatedEventConverged = $true
 
-    $businessEvidence = [ordered]@{
+    # These four authority facts are intentionally first-bound as constants. Do not restore defensive null initialization:
+    # the static contract proves their source, while Constant closes computed/provider-based runtime rebinding residuals.
+    New-Variable -Name businessEvidence -Option Constant -Value ([ordered]@{
         verifiedAtUtc = [DateTimeOffset]::UtcNow
         scenarioStatus = 'passed'
         deliveryOrderNo = $deliveryOrderNo
@@ -621,7 +848,10 @@ try {
                 establishedThrough = 'public WMS assignment endpoint'
             }
             pickingLifecycle = 'public create/read/assign/start/progress/complete for every outbound line'
+            pickingLifecycleCompleted = $pickingLifecycleCompleted
             completionHttpReplay = 'same idempotency key accepted twice'
+            completionHttpReplayConverged = $completionHttpReplayConverged
+            completionReadback = [ordered]@{ status = $completedOutboundOrder.status; completedAtUtc = $completedOutboundOrder.completedAtUtc }
         }
         erpDelivery = [ordered]@{
             status = $deliveryAfterReplay.status
@@ -631,10 +861,19 @@ try {
         }
         accountReceivable = [ordered]@{ receivableNo = $receivableAfterReplay.receivableNo; sourceDocumentNo = $receivableAfterReplay.sourceDocumentNo }
         repeatedEvent = 'same event id published twice through Redis; one delivery projection, one receivable, one target-consumer durable inbox row, no target-consumer dead letter'
-    }
+        repeatedEventConverged = $repeatedEventConverged
+    })
 }
 catch {
     $scenarioError = $_
+    try {
+        $diagnosticEvidence = Export-Man527FailureDiagnostics -FailureRecord $scenarioError
+    }
+    catch {
+        $diagnosticCaptureError = Protect-NervAcceptanceWmsDiagnosticText -Text $_.Exception.Message -SensitiveValues @($internalToken, $PostgresAdminConnectionString, $databaseConnectionString, $RedisConnectionString)
+        $diagnosticEvidence.failureDiagnosticsCaptured = $false
+        $diagnosticEvidence.errors = @("capture-failed: $diagnosticCaptureError")
+    }
 }
 finally {
     # Cleanup-Step: stop-erp
@@ -745,7 +984,7 @@ finally {
     }
 
     $cleanupEvidence.errors = @($cleanupErrors)
-    $evidencePayload = if ($null -ne $businessEvidence) {
+    $evidencePayload = if ($null -eq $scenarioError) {
         $businessEvidence
     }
     else {
@@ -753,13 +992,30 @@ finally {
             verifiedAtUtc = [DateTimeOffset]::UtcNow
             scenarioStatus = 'failed'
             deliveryOrderNo = $deliveryOrderNo
-            scenarioError = if ($null -ne $scenarioError) { $scenarioError.Exception.Message } else { 'Business evidence was not produced.' }
+            scenarioError = if ($null -ne $scenarioError) { Protect-NervAcceptanceWmsDiagnosticText -Text $scenarioError.Exception.Message -SensitiveValues @($internalToken, $PostgresAdminConnectionString, $databaseConnectionString, $RedisConnectionString) } else { 'Business evidence was not produced.' }
         }
     }
     $evidencePayload.cleanup = $cleanupEvidence
     try {
-        [System.IO.Directory]::CreateDirectory($evidenceDirectory) | Out-Null
-        $evidencePayload | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $evidencePath -Encoding utf8
+        if ($null -eq $scenarioError) {
+            $evidencePayload.diagnostics = [ordered]@{
+                failureCaptureSupported = [bool]$verifierContract.failureCaptureSupported
+                failureDiagnosticsCaptured = $false
+                secretsRedacted = $true
+                artifactPaths = @()
+                errors = @()
+            }
+        }
+        else {
+            $evidencePayload.diagnostics = $diagnosticEvidence
+        }
+        $evidenceWriteProof = Write-NervAcceptanceWmsDiagnosticArtifact -Path $evidencePath -Content ($evidencePayload | ConvertTo-Json -Depth 12) -SensitiveValues $declaredSensitiveValues
+        if (-not $evidenceWriteProof.evidenceWritten -or -not $evidenceWriteProof.secretsRedacted) {
+            throw 'MAN-527 final evidence write or post-write redaction scan did not succeed.'
+        }
+        if ($null -eq $scenarioError) {
+            $diagnosticEvidence = New-NervAcceptanceWmsSuccessfulDiagnosticEvidence -WriteProof $evidenceWriteProof -FailureCaptureSupported $verifierContract.failureCaptureSupported
+        }
         Write-Diagnostic "MAN-527 ERP/WMS delivery-completion evidence written after cleanup to $evidencePath"
     }
     catch {
@@ -770,10 +1026,48 @@ finally {
 if ($null -ne $scenarioError -or $cleanupErrors.Count -ne 0) {
     $failureParts = [System.Collections.Generic.List[string]]::new()
     if ($null -ne $scenarioError) {
-        [void]$failureParts.Add("scenario: $($scenarioError.Exception.Message)")
+        $safeScenarioError = Protect-NervAcceptanceWmsDiagnosticText -Text $scenarioError.Exception.Message -SensitiveValues @($internalToken, $PostgresAdminConnectionString, $databaseConnectionString, $RedisConnectionString)
+        [void]$failureParts.Add("scenario: $safeScenarioError")
     }
     foreach ($cleanupError in $cleanupErrors) {
-        [void]$failureParts.Add("cleanup: $cleanupError")
+        $safeCleanupError = Protect-NervAcceptanceWmsDiagnosticText -Text $cleanupError -SensitiveValues @($internalToken, $PostgresAdminConnectionString, $databaseConnectionString, $RedisConnectionString)
+        [void]$failureParts.Add("cleanup: $safeCleanupError")
+    }
+    foreach ($diagnosticError in @($diagnosticEvidence.errors)) {
+        [void]$failureParts.Add("diagnostics: $diagnosticError")
     }
     throw "MAN-527 verification failed. $($failureParts -join ' | ')"
+}
+
+if ($canonicalResultEnabled) {
+    $canonicalCompletedAtUtc = [DateTimeOffset]::UtcNow
+    $canonicalResult = New-NervAcceptanceWmsDeliveryCanonicalResult `
+        -Provenance ([pscustomobject][ordered]@{
+            repository = $Repository
+            runId = $RunId
+            runAttempt = $RunAttempt
+            testedSha = $TestedSha
+            manifestDigest = $ManifestDigest
+            scenarioId = $ScenarioId
+        }) `
+        -Track $TrackIdentifier `
+        -BusinessEvidence ([pscustomobject]$businessEvidence) `
+        -TestCounters ([pscustomobject]$fullChainProbeCounters) `
+        -CleanupEvidence ([pscustomobject]$cleanupEvidence) `
+        -DiagnosticEvidence ([pscustomobject]$diagnosticEvidence) `
+        -Volatile ([pscustomobject][ordered]@{
+            databaseName = $databaseName
+            processIds = @($managedProcessIds | ForEach-Object { [int64]$_ })
+            capSuffix = $capVersion
+            startedAtUtc = $acceptanceStartedAtUtc.ToString('O')
+            completedAtUtc = $canonicalCompletedAtUtc.ToString('O')
+            ports = [pscustomobject][ordered]@{ erp = $erpPort; wms = $wmsPort; inventory = $inventoryPort }
+            paths = [pscustomobject][ordered]@{
+                businessEvidence = [IO.Path]::GetFullPath($evidencePath)
+                probeTrx = [IO.Path]::GetFullPath($probeResultsPath)
+                cleanupEvidence = [IO.Path]::GetFullPath($evidencePath)
+                canonicalResult = $canonicalResultFullPath
+            }
+        })
+    Write-NervAcceptanceCanonicalJson -Value $canonicalResult -Path $canonicalResultFullPath -RepositoryRoot $root.Path -Context 'MAN-527 canonical result' | Out-Null
 }

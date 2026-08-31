@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel;
 using System.Text.Json.Serialization;
 using FastEndpoints;
 using Nerv.IIP.Contracts.Coding;
@@ -54,7 +55,13 @@ public sealed record BusinessConsoleResourceItem(
     string? CreditCurrencyCode = null,
     string? JobTitle = null,
     string? EmploymentStatus = null,
-    string? Phone = null);
+    string? Phone = null,
+    string? Timezone = null,
+    TimeOnly? StartsAt = null,
+    TimeOnly? EndsAt = null,
+    bool? CrossesMidnight = null,
+    int? PaidMinutes = null,
+    int? BreakMinutes = null);
 
 public sealed record BusinessConsoleResourceListResponse(
     IReadOnlyCollection<BusinessConsoleResourceItem> Resources,
@@ -303,7 +310,8 @@ public sealed record BusinessConsoleListResourcesRequest(
     string? ShiftCode = null,
     string? UserId = null,
     string? SkillCode = null,
-    string? WorkshopCode = null);
+    string? WorkshopCode = null,
+    string? DeviceAssetId = null);
 
 public sealed record BusinessConsoleListDeviceAssetsRequest(
     string OrganizationId,
@@ -1431,6 +1439,24 @@ public sealed record BusinessConsoleQualityListRequest(
     int Skip = 0,
     int Take = 100);
 
+public sealed record BusinessConsoleQualityInspectionPlanListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    string? Category = null,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleQualityInspectionRecordListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    string? SourceType = null,
+    int Skip = 0,
+    int Take = 100);
+
 public sealed record BusinessConsoleQualityItem(
     string Id,
     string Code,
@@ -1449,8 +1475,6 @@ public sealed record BusinessConsoleQualityItem(
     string? SerialNo,
     int? AttemptNumber = null,
     string? ReinspectionOfInspectionRecordId = null,
-    // NCR 关单审计事实：closed 行必有关闭原因（界面必填字段），非 NCR 行恒为 null。
-    string? CloseReason = null,
     decimal? TimeIntervalHours = null,
     decimal? QuantityInterval = null,
     string? AssignedInspectorUserId = null,
@@ -1458,6 +1482,25 @@ public sealed record BusinessConsoleQualityItem(
 
 public sealed record BusinessConsoleQualityListResponse(
     IReadOnlyCollection<BusinessConsoleQualityItem> Items,
+    int Total);
+
+public sealed record BusinessConsoleQualityNcrItem(
+    string Id,
+    string Code,
+    string Status,
+    string SourceType,
+    string SourceDocumentId,
+    string SkuCode,
+    decimal DefectQuantity,
+    string DefectReason,
+    string? BatchNo,
+    string? SerialNo,
+    string? CloseReason,
+    [property: JsonRequired, Required] string ReworkWorkOrderCreationStatus,
+    string? ReworkWorkOrderId);
+
+public sealed record BusinessConsoleQualityNcrListResponse(
+    IReadOnlyCollection<BusinessConsoleQualityNcrItem> Items,
     int Total);
 
 public sealed record BusinessConsoleCreateInspectionPlanRequest(
@@ -1753,6 +1796,13 @@ public sealed record BusinessConsoleQualityReasonListRequest(
     int Take = 100,
     string? DefaultDisposition = null);
 
+public sealed record BusinessConsoleScrapQualityReasonCodeListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Search = null,
+    int Skip = 0,
+    int Take = 100);
+
 public sealed record BusinessConsoleQualityReasonRequest(
     [property: RouteParam] string ReasonCode,
     [property: QueryParam] string OrganizationId,
@@ -2040,9 +2090,11 @@ public sealed record BusinessConsoleQualityNcrDetailResponse(
     string? BatchNo,
     string? SerialNo,
     string? SourceInspectionRecordId,
+    [property: JsonRequired, Required] string ReworkWorkOrderCreationStatus,
     string? DispositionType = null,
     string? DispositionApprovalChainId = null,
-    string? CloseReason = null);
+    string? CloseReason = null,
+    string? ReworkWorkOrderId = null);
 
 /// <summary>
 /// 按 id 取单条检验记录详情（PDA NCR 详情「来源检验记录」→ 打开记录的互链）。代理真实详情端点，
@@ -2114,7 +2166,8 @@ public sealed record BusinessConsoleNcrDispositionRequest(
     string DispositionType,
     string? DispositionApprovalChainId,
     IReadOnlyCollection<string>? AttachmentFileIds,
-    IReadOnlyCollection<BusinessConsoleMrbReview>? MrbReviews = null);
+    IReadOnlyCollection<BusinessConsoleMrbReview>? MrbReviews = null,
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleMrbReview(
     string ReviewerId,
@@ -2126,6 +2179,7 @@ public sealed record BusinessConsoleNcrCloseRequest(
     [property: RouteParam] string NcrId,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
+    [property: Obsolete("由 MES 返工工单创建回执绑定；客户端提交会被拒绝。")]
     string? ReworkWorkOrderId,
     string? ScrapMovementId,
     string? ReturnDocumentId,
@@ -4254,6 +4308,35 @@ public sealed record BusinessConsoleMesListRequest(
     int Skip = 0,
     int Take = 100);
 
+/// <summary>停机事件列表请求：在通用 MES 列表过滤之上增加按停机原因码过滤（#1947）。</summary>
+public sealed record BusinessConsoleMesDowntimeEventListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null,
+    string? WorkOrderId = null,
+    string? ReasonCode = null,
+    DateTimeOffset? WindowStartUtc = null,
+    DateTimeOffset? WindowEndUtc = null,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleMesMaterialIssueRequestListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null,
+    string? WorkOrderId = null,
+    int Skip = 0,
+    int Take = 100,
+    string? OperationTaskId = null);
+
 /// <summary>派工任务列表专用请求：比通用 MES 列表多一个按被派工人过滤（PDA「我的任务」）。</summary>
 public sealed record BusinessConsoleMesDispatchTaskListRequest(
     string OrganizationId,
@@ -4622,6 +4705,24 @@ public sealed record BusinessConsoleMesWorkOrderReasonRequest(
     [property: QueryParam] string? ScopeKind = null,
     [property: QueryParam] string? ScopeId = null);
 
+public sealed record BusinessConsoleMesCloseWorkOrderRequest(
+    [property: RouteParam] string WorkOrderId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    DateTimeOffset? ClosedAtUtc,
+    [property: QueryParam] string? ScopeKind = null,
+    [property: QueryParam] string? ScopeId = null);
+
+public sealed record BusinessConsoleMesEngineeringChangeDecisionRequest(
+    [property: RouteParam] string WorkOrderId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string ChangeNumber,
+    string Decision,
+    string Reason,
+    [property: QueryParam] string? ScopeKind = null,
+    [property: QueryParam] string? ScopeId = null);
+
 // Actor is intentionally omitted: the gateway injects the authenticated principal as the
 // force-release audit actor so a caller cannot forge the releaser identity via the request body.
 public sealed record BusinessConsoleMesForceReleaseQualityHoldRequest(
@@ -4705,7 +4806,8 @@ public sealed record BusinessConsoleMesMaterialReadinessRow(
     decimal ShortageQuantity,
     string Status,
     // 缺口卡在哪个环节：none / awaitingPreparation（还没发起领料）/ awaitingDelivery（仓库在配）。
-    string? ShortageStage = null);
+    string? ShortageStage = null,
+    IReadOnlyCollection<string>? SubstituteMaterialIds = null);
 
 // 工单可入库产出批次（MAN-445/#799）：从 MES OutputLotGenealogies 权威表列出当前有效的产出批次，供 Console
 // 完工入库选择真实 producedLotNo。读权限 MesReceiptsRead 与完工入库列表一致，避免入库操作员因缺 reporting.read
@@ -4737,11 +4839,14 @@ public sealed record BusinessConsoleMesCreateMaterialIssueRequest(
     string UomCode,
     decimal? Quantity,
     IReadOnlyCollection<string>? MaterialIds,
-    string IdempotencyKey);
+    string IdempotencyKey,
+    bool IsSupplementary = false,
+    string? OriginalMaterialIssueRequestNo = null);
 
 public sealed record BusinessConsoleMesMaterialIssueRequestListResponse(
     IReadOnlyCollection<BusinessConsoleMesMaterialIssueRequestRow> Items,
-    int Total);
+    int Total,
+    int SupplementaryCount = 0);
 
 public sealed record BusinessConsoleMesMaterialIssueRequestRow(
     string RequestId,
@@ -4758,7 +4863,15 @@ public sealed record BusinessConsoleMesMaterialIssueRequestRow(
     DateTimeOffset RequestedAtUtc,
     string? WorkOrderNo = null,
     string? OperationTaskNo = null,
-    string? MaterialCode = null);
+    string? MaterialCode = null,
+    bool IsSupplementary = false,
+    string? OriginalMaterialIssueRequestNo = null,
+    string? SubstitutedMaterialId = null);
+
+public sealed record BusinessConsoleMesMaterialIssueRequestDetailRequest(
+    [property: RouteParam] string RequestId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
 
 public sealed record BusinessConsoleMesConfirmLineSideReceiptRequest(
     [property: RouteParam] string RequestId,
@@ -4768,6 +4881,14 @@ public sealed record BusinessConsoleMesConfirmLineSideReceiptRequest(
     decimal? ReceivedQuantity,
     IReadOnlyCollection<string>? EvidenceFileIds,
     string IdempotencyKey);
+
+public sealed record BusinessConsoleMesReturnLineSideMaterialRequest(
+    [property: RouteParam] string RequestId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    DateTimeOffset? ReturnedAtUtc,
+    decimal ReturnedQuantity,
+    [property: JsonRequired, Required] string IdempotencyKey);
 
 public sealed record BusinessConsoleMesDispatchTaskListResponse(
     IReadOnlyCollection<BusinessConsoleMesDispatchTaskRow> Items,
@@ -4810,7 +4931,8 @@ public sealed record BusinessConsoleMesAssignDispatchTaskForwardRequest(
     string? ShiftId,
     string IdempotencyKey,
     string? TeamId = null,
-    string? TeamName = null);
+    string? TeamName = null,
+    IReadOnlyCollection<BusinessConsoleMesDispatchParticipantForwardInput>? Participants = null);
 
 public sealed record BusinessConsoleMesAssignDispatchTaskRequest(
     [property: RouteParam] string OperationTaskId,
@@ -4819,7 +4941,27 @@ public sealed record BusinessConsoleMesAssignDispatchTaskRequest(
     string? AssignedUserId,
     string? DeviceAssetId,
     string? ShiftId,
+    string IdempotencyKey,
+    IReadOnlyCollection<BusinessConsoleMesDispatchParticipantRequest>? Participants = null);
+
+public sealed record BusinessConsoleMesClaimOperationTaskRequest(
+    [property: RouteParam] string OperationTaskId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    [property: QueryParam] string ScopeKind,
+    [property: QueryParam] string ScopeId,
     string IdempotencyKey);
+
+public sealed record BusinessConsoleMesClaimDispatchTaskForwardRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string AssignedUserId,
+    string AssignedUserName,
+    string? DeviceAssetId,
+    string? ShiftId,
+    string IdempotencyKey,
+    string? TeamId = null,
+    string? TeamName = null);
 
 public sealed record BusinessConsoleMesOperationTaskListResponse(
     IReadOnlyCollection<BusinessConsoleMesOperationTaskRow> Items,
@@ -4851,7 +4993,11 @@ public sealed record BusinessConsoleMesOperationTaskRow(
     string? TeamName = null,
     IReadOnlyCollection<string>? AllowedActions = null,
     IReadOnlyCollection<string>? BlockReasons = null,
-    DateTimeOffset? EvaluatedAtUtc = null);
+    DateTimeOffset? EvaluatedAtUtc = null,
+    [property: Description("工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
+    decimal? ActualLaborHours = null,
+    [property: Description("工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
+    decimal? ActualMachineHours = null);
 
 public sealed record BusinessConsoleMesOperationTaskActionRequest(
     [property: RouteParam] string OperationTaskId,
@@ -4897,7 +5043,8 @@ public sealed record BusinessConsoleMesProductionReportDetailRequest(
 
 public sealed record BusinessConsoleMesProductionReportDetailResponse(
     BusinessConsoleMesProductionReportDetail Report,
-    IReadOnlyCollection<BusinessConsoleMesConsumedMaterialLot> ConsumedMaterialLots);
+    IReadOnlyCollection<BusinessConsoleMesConsumedMaterialLot> ConsumedMaterialLots,
+    IReadOnlyCollection<BusinessConsoleMesLaborAllocation> LaborAllocations);
 
 public sealed record BusinessConsoleMesProductionReportDetail(
     string ProductionReportId,
@@ -4920,7 +5067,13 @@ public sealed record BusinessConsoleMesProductionReportDetail(
     string? InventoryPostingFailureMessage = null,
     DateTimeOffset? InventoryPostingFailedAtUtc = null,
     string? WorkOrderStatus = null,
-    string? ReversalReportNo = null);
+    string? ReversalReportNo = null,
+    [property: Description("对应工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
+    decimal? OperationActualLaborHours = null,
+    [property: Description("对应工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
+    decimal? OperationActualMachineHours = null,
+    [property: Description("提交本条报工的操作人引用；升级前的历史报工为 null。")]
+    string? ReportedBy = null);
 
 public sealed record BusinessConsoleMesConsumedMaterialLot(
     string MaterialId,
@@ -4969,7 +5122,13 @@ public sealed record BusinessConsoleMesProductionReportRow(
     // MES 已生成的产出批次(见 CreateFinishedGoodsReceiptRequestCommandHandler),Console 据此让操作员从工单
     // 真实报工产出中选择 producedLotNo,而非前端伪造(MAN-445/#799 review)。
     string? ProducedLotNo = null,
-    string? SerialNo = null);
+    string? SerialNo = null,
+    [property: Description("对应工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
+    decimal? OperationActualLaborHours = null,
+    [property: Description("对应工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
+    decimal? OperationActualMachineHours = null,
+    [property: Description("提交本条报工的操作人引用；升级前的历史报工为 null。")]
+    string? ReportedBy = null);
 
 public sealed record BusinessConsoleMesRecordDefectRequest(
     string OrganizationId,
@@ -4980,6 +5139,28 @@ public sealed record BusinessConsoleMesRecordDefectRequest(
     decimal DefectQuantity,
     string? MaterialLotId,
     string? BatchOrSerial,
+    string IdempotencyKey);
+
+public sealed record BusinessConsoleMesRecordDefectV2Request(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkOrderId,
+    string? OperationTaskId,
+    string DefectCode,
+    decimal Quantity,
+    DateTimeOffset RecordedAtUtc,
+    string IdempotencyKey,
+    string ScopeKind,
+    string ScopeId);
+
+public sealed record BusinessMesRecordDefectRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkOrderId,
+    string? OperationTaskId,
+    string DefectCode,
+    decimal Quantity,
+    DateTimeOffset RecordedAtUtc,
     string IdempotencyKey);
 
 public sealed record BusinessConsoleMesRelatedQualityItemListResponse(
@@ -5112,7 +5293,6 @@ public sealed record BusinessConsoleMesCreateReceiptRequest(
     decimal Quantity,
     string UomCode,
     DateTimeOffset RequestedAtUtc,
-    decimal? UnitCost,
     string IdempotencyKey,
     string? ProducedLotNo = null,
     string? SerialNo = null);
@@ -5121,7 +5301,15 @@ public sealed record BusinessConsoleMesCreateReceiptResponse(string FinishedGood
 
 public sealed record BusinessConsoleMesDowntimeEventListResponse(
     IReadOnlyCollection<BusinessConsoleMesDowntimeEventRow> Items,
-    int Total);
+    int Total,
+    IReadOnlyCollection<BusinessConsoleMesDowntimeReasonSummaryRow> ReasonSummary);
+
+/// <summary>停机时长按原因分类汇总；不受 reasonCode 过滤影响，供停机读面做原因构成。</summary>
+public sealed record BusinessConsoleMesDowntimeReasonSummaryRow(
+    string ReasonCode,
+    int OpenCount,
+    decimal DurationMinutes,
+    string? ReasonName = null);
 
 public sealed record BusinessConsoleMesDowntimeEventRow(
     string DowntimeEventId,
@@ -5136,7 +5324,8 @@ public sealed record BusinessConsoleMesDowntimeEventRow(
     string? DeviceAssetCode = null,
     string? DeviceAssetName = null,
     string? WorkCenterId = null,
-    string? ReasonCode = null);
+    string? ReasonCode = null,
+    string? ReasonName = null);
 
 public sealed record BusinessConsoleMesRecordDowntimeEventRequest(
     string OrganizationId,
@@ -5147,6 +5336,32 @@ public sealed record BusinessConsoleMesRecordDowntimeEventRequest(
     string ReasonCode,
     DateTimeOffset StartedAtUtc,
     string IdempotencyKey);
+
+public sealed record BusinessConsoleMesRecordDowntimeEventV2Request(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkOrderId,
+    string? OperationTaskId,
+    string WorkCenterId,
+    string? DeviceAssetId,
+    string ReasonCode,
+    DateTimeOffset StartedAtUtc,
+    string IdempotencyKey,
+    string ScopeKind,
+    string ScopeId,
+    DateTimeOffset? ToUtc = null);
+
+public sealed record BusinessMesRecordDowntimeEventRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkOrderId,
+    string? OperationTaskId,
+    string WorkCenterId,
+    string? DeviceAssetId,
+    string ReasonCode,
+    DateTimeOffset StartedAtUtc,
+    string IdempotencyKey,
+    DateTimeOffset? ToUtc = null);
 
 public sealed record BusinessConsoleMesRecoverDowntimeEventRequest(
     [property: RouteParam] string DowntimeEventId,
@@ -5223,7 +5438,13 @@ public sealed record BusinessConsoleMesTraceabilityResponse(
     IReadOnlyCollection<BusinessConsoleMesTraceabilityNode> Nodes,
     IReadOnlyCollection<BusinessConsoleMesTraceabilityEdge> Edges);
 
-public sealed record BusinessConsoleMesTraceabilityNode(string NodeId, string NodeType, string DisplayName, string Status);
+public sealed record BusinessConsoleMesTraceabilityNode(
+    string NodeId,
+    string NodeType,
+    string DisplayName,
+    string Status,
+    [property: Description("该节点对应事实的发生时刻；主数据类节点没有单一发生时刻时为 null。")]
+    DateTimeOffset? OccurredAtUtc = null);
 
 public sealed record BusinessConsoleMesTraceabilityEdge(string FromNodeId, string ToNodeId, string RelationType);
 

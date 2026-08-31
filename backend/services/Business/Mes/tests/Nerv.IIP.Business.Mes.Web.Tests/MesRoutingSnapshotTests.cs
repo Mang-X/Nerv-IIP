@@ -4,8 +4,11 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
+using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
+using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using NetCorePal.Extensions.Primitives;
 
@@ -13,6 +16,160 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class MesRoutingSnapshotTests
 {
+    [Fact]
+    public async Task Release_work_order_publishes_existing_operation_snapshots_in_public_event()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var releasedAtUtc = DateTimeOffset.Parse("2026-08-24T08:00:00Z");
+        var workOrder = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-2095",
+            "SKU-2095",
+            "PV-2095",
+            12m,
+            1,
+            releasedAtUtc.AddDays(1),
+            "PCS");
+        workOrder.ClearDomainEvents();
+        dbContext.WorkOrders.Add(workOrder);
+        dbContext.OperationTasks.AddRange(
+            OperationTask.Queue(
+                "org-001", "env-dev", "WO-2095", "OP-020", 20, "WC-PACK", [], releasedAtUtc,
+                TimeSpan.FromMinutes(15)),
+            OperationTask.Queue(
+                "org-001", "env-dev", "WO-2095", "OP-010", 10, "WC-MIX", [], releasedAtUtc,
+                TimeSpan.FromMinutes(45)),
+            OperationTask.Queue(
+                "org-001", "env-dev", "WO-2095", "OP-015-B", 15, "WC-TIE-B", [], releasedAtUtc,
+                TimeSpan.FromMinutes(20)),
+            OperationTask.Queue(
+                "org-001", "env-dev", "WO-2095", "OP-015-A", 15, "WC-TIE-A", [], releasedAtUtc,
+                TimeSpan.FromMinutes(20)),
+            OperationTask.Queue(
+                "org-001", "env-dev", "WO-2095", "OP-005", 30, "WC-FINISH", [], releasedAtUtc,
+                TimeSpan.FromMinutes(10)),
+            OperationTask.Queue(
+                "org-other", "env-dev", "WO-2095", "OP-OTHER-ORG", 5, "WC-OTHER", [], releasedAtUtc,
+                TimeSpan.FromMinutes(10)),
+            OperationTask.Queue(
+                "org-001", "env-other", "WO-2095", "OP-OTHER-ENV", 5, "WC-OTHER", [], releasedAtUtc,
+                TimeSpan.FromMinutes(10)),
+            OperationTask.Queue(
+                "org-001", "env-dev", "WO-OTHER", "OP-OTHER-WO", 5, "WC-OTHER", [], releasedAtUtc,
+                TimeSpan.FromMinutes(10)));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new ReleaseWorkOrderCommandHandler(
+            dbContext,
+            NoMaterialRequirementsProvider.Instance).Handle(
+            new ReleaseWorkOrderCommand("org-001", "env-dev", "WO-2095", releasedAtUtc),
+            CancellationToken.None);
+
+        Assert.Equal("Accepted", response.Status);
+        var domainEvent = Assert.IsType<WorkOrderReleasedDomainEvent>(Assert.Single(workOrder.GetDomainEvents()));
+        Assert.Collection(
+            domainEvent.OperationTasks,
+            operation =>
+            {
+                Assert.Equal("OP-010", operation.OperationTaskId);
+                Assert.Equal(10, operation.OperationSequence);
+                Assert.Equal("WC-MIX", operation.WorkCenterId);
+            },
+            operation =>
+            {
+                Assert.Equal("OP-015-A", operation.OperationTaskId);
+                Assert.Equal(15, operation.OperationSequence);
+                Assert.Equal("WC-TIE-A", operation.WorkCenterId);
+            },
+            operation =>
+            {
+                Assert.Equal("OP-015-B", operation.OperationTaskId);
+                Assert.Equal(15, operation.OperationSequence);
+                Assert.Equal("WC-TIE-B", operation.WorkCenterId);
+            },
+            operation =>
+            {
+                Assert.Equal("OP-020", operation.OperationTaskId);
+                Assert.Equal(20, operation.OperationSequence);
+                Assert.Equal("WC-PACK", operation.WorkCenterId);
+            },
+            operation =>
+            {
+                Assert.Equal("OP-005", operation.OperationTaskId);
+                Assert.Equal(30, operation.OperationSequence);
+                Assert.Equal("WC-FINISH", operation.WorkCenterId);
+            });
+
+        var integrationEvent = new WorkOrderReleasedIntegrationEventConverter().Convert(domainEvent);
+        Assert.Collection(
+            integrationEvent.Payload.Operations,
+            operation =>
+            {
+                Assert.Equal("OP-010", operation.OperationId);
+                Assert.Equal(10, operation.OperationSequence);
+                Assert.Equal("WC-MIX", operation.WorkCenterId);
+            },
+            operation =>
+            {
+                Assert.Equal("OP-015-A", operation.OperationId);
+                Assert.Equal(15, operation.OperationSequence);
+                Assert.Equal("WC-TIE-A", operation.WorkCenterId);
+            },
+            operation =>
+            {
+                Assert.Equal("OP-015-B", operation.OperationId);
+                Assert.Equal(15, operation.OperationSequence);
+                Assert.Equal("WC-TIE-B", operation.WorkCenterId);
+            },
+            operation =>
+            {
+                Assert.Equal("OP-020", operation.OperationId);
+                Assert.Equal(20, operation.OperationSequence);
+                Assert.Equal("WC-PACK", operation.WorkCenterId);
+            },
+            operation =>
+            {
+                Assert.Equal("OP-005", operation.OperationId);
+                Assert.Equal(30, operation.OperationSequence);
+                Assert.Equal("WC-FINISH", operation.WorkCenterId);
+            });
+    }
+
+    [Fact]
+    public async Task Release_work_order_rejects_missing_operation_snapshots_without_publishing_release_event()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var releasedAtUtc = DateTimeOffset.Parse("2026-08-24T08:00:00Z");
+        var workOrder = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-2095-NO-SNAPSHOT",
+            "SKU-2095",
+            "PV-2095",
+            12m,
+            1,
+            releasedAtUtc.AddDays(1),
+            "PCS");
+        workOrder.ClearDomainEvents();
+        dbContext.WorkOrders.Add(workOrder);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => new ReleaseWorkOrderCommandHandler(
+            dbContext,
+            NoMaterialRequirementsProvider.Instance).Handle(
+            new ReleaseWorkOrderCommand("org-001", "env-dev", "WO-2095-NO-SNAPSHOT", releasedAtUtc),
+            CancellationToken.None));
+
+        Assert.Contains("工单缺少工艺路线快照", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(WorkOrder.CreatedStatus, workOrder.Status);
+        Assert.DoesNotContain(workOrder.GetDomainEvents(), x => x is WorkOrderReleasedDomainEvent);
+    }
+
     [Fact]
     public async Task Convert_plan_without_explicit_work_center_freezes_published_routing_and_is_releasable()
     {
@@ -22,7 +179,7 @@ public sealed class MesRoutingSnapshotTests
         var captured = MesRoutingSnapshotResult.Captured(
             "product-engineering-http:PV-001:ROUTE-1000:A",
             [
-                new MesRoutingOperationSnapshot(10, "MIX", "WC-MIX", ["WC-MIX-ALT"], 45, true),
+                new MesRoutingOperationSnapshot(10, "MIX", "WC-MIX", ["WC-MIX-ALT"], 45, true, "cnc-operation"),
                 new MesRoutingOperationSnapshot(20, "PACK", "WC-PACK", [], 15, false),
             ]);
         var routingProvider = new FakeRoutingSnapshotProvider(captured);
@@ -69,6 +226,7 @@ public sealed class MesRoutingSnapshotTests
                 Assert.Equal("PCS", mix.UomCode);
                 Assert.Equal(12m, mix.PlannedQuantity);
                 Assert.True(mix.RequiresQualityInspection);
+                Assert.Equal("cnc-operation", mix.RequiredSkillCode);
             },
             pack =>
             {
@@ -79,6 +237,7 @@ public sealed class MesRoutingSnapshotTests
                 Assert.Empty(pack.AlternativeWorkCenterIdList);
                 Assert.Equal(TimeSpan.FromMinutes(15), pack.Duration);
                 Assert.False(pack.RequiresQualityInspection);
+                Assert.Null(pack.RequiredSkillCode);
             });
 
         var release = await new ReleaseWorkOrderCommandHandler(dbContext, NoMaterialRequirementsProvider.Instance).Handle(
@@ -186,6 +345,7 @@ public sealed class MesRoutingSnapshotTests
                             requiresReporting = true,
                             requiresQualityInspection = true,
                             isOutsourced = false,
+                            requiredSkillCode = " cnc-operation ",
                         },
                         new
                         {
@@ -237,6 +397,7 @@ public sealed class MesRoutingSnapshotTests
                 Assert.Empty(operation.AlternativeWorkCenterIds);
                 Assert.Equal(45, operation.StandardMinutes);
                 Assert.True(operation.RequiresQualityInspection);
+                Assert.Equal("cnc-operation", operation.RequiredSkillCode);
             },
             operation => Assert.Equal("PACK", operation.OperationCode));
         Assert.Single(requests);

@@ -11,7 +11,7 @@
 
 # #1887：`verify-adr-format.ps1` 的生命周期禁令面。两件事各自被守住：
 #
-# 1. 双向对齐：docs/architecture/decision-record-governance.md 的「生命周期禁用标题表」与脚本
+# 1. 双向对齐：docs/governance/decisions/records.md 的「生命周期禁用标题表」与脚本
 #    里的三个列表逐字相等。文档多一行门禁不查、门禁多一条文档没写，都在这里转红——否则
 #    「文档强度高于实现强度」会以两个方向复发。
 # 2. 鉴别力：逐条禁用标题各插一次必红，`## 实施说明` 白名单不红，日期戳标题必红，现存的合法
@@ -25,7 +25,7 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $gatePath = Join-Path $repoRoot 'scripts/verify-adr-format.ps1'
-$governanceDocPath = Join-Path $repoRoot 'docs/architecture/decision-record-governance.md'
+$governanceDocPath = Join-Path $repoRoot 'docs/governance/decisions/records.md'
 $realAdrRoot = Join-Path $repoRoot 'docs/adr'
 
 function Assert-Contract([bool]$Condition, [string]$Message) {
@@ -81,7 +81,7 @@ Assert-Contract ($scriptAllowlist.Count -gt 0) '白名单为空时，`## 实施�
 
 $governanceDoc = [IO.File]::ReadAllText($governanceDocPath)
 $tableMatch = [regex]::Match($governanceDoc, '(?s)### 生命周期禁用标题表.*?\n\n(?<table>\| 禁用标题 \| 匹配方式 \|.*?)\n\n')
-Assert-Contract ($tableMatch.Success) 'decision-record-governance.md 必须保留「### 生命周期禁用标题表」及其表格。'
+Assert-Contract ($tableMatch.Success) 'records.md 必须保留「### 生命周期禁用标题表」及其表格。'
 
 $documentedPrefixes = [System.Collections.Generic.List[string]]::new()
 $documentedExact = [System.Collections.Generic.List[string]]::new()
@@ -97,7 +97,7 @@ foreach ($row in ($tableMatch.Groups['table'].Value -split "`n")) {
 }
 
 $allowlistMatch = [regex]::Match($governanceDoc, '\*\*白名单：`## (?<title>[^`]+)`\*\*')
-Assert-Contract ($allowlistMatch.Success) 'decision-record-governance.md 必须成文写出白名单标题。'
+Assert-Contract ($allowlistMatch.Success) 'records.md 必须成文写出白名单标题。'
 
 Assert-SetEquals -Actual $scriptPrefixes -Expected @($documentedPrefixes) `
     -Message '生命周期禁用前缀在脚本与治理文档之间漂移了，两处必须同改。'
@@ -186,8 +186,21 @@ try {
     $baselineRoot = Join-Path $temporaryRoot 'baseline'
     [IO.Directory]::CreateDirectory($baselineRoot) | Out-Null
     [IO.File]::WriteAllText((Join-Path $baselineRoot '0001-baseline.md'), $baselineRecord, [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText((Join-Path $baselineRoot 'README.md'), "# ADR 导航`n`n本页仅用于导航。", [Text.UTF8Encoding]::new($false))
     $baseline = Invoke-Gate -AdrRoot $baselineRoot
     Assert-Contract ($baseline.ExitCode -eq 0) "基线夹具必须通过门禁，实际 exit $($baseline.ExitCode)：`n$($baseline.Output)"
+
+    # 回归：docs/adr/README.md 是导航入口而不是决策记录，只能排除这一确切文件名；其它
+    # Markdown 仍必须经过文件名和结构校验，不能把扫描范围收窄成只认 NNNN-kebab-case。
+    $malformedRoot = Join-Path $temporaryRoot 'malformed'
+    [IO.Directory]::CreateDirectory($malformedRoot) | Out-Null
+    [IO.File]::WriteAllText((Join-Path $malformedRoot 'README.md'), "# ADR 导航`n", [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText((Join-Path $malformedRoot 'not-an-adr.md'), $baselineRecord, [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText((Join-Path $malformedRoot '0002-malformed.md'), "# ADR 0002：不完整记录`n", [Text.UTF8Encoding]::new($false))
+    $malformed = Invoke-Gate -AdrRoot $malformedRoot
+    Assert-Contract ($malformed.ExitCode -eq 1) "非 README 的 Markdown 和不完整 ADR 必须继续失败，实际 exit $($malformed.ExitCode)：`n$($malformed.Output)"
+    Assert-Contract ($malformed.Output.Contains('not-an-adr.md', [StringComparison]::Ordinal)) "非 README 的 Markdown 文件名必须继续进入 ADR 门禁：`n$($malformed.Output)"
+    Assert-Contract ($malformed.Output.Contains('0002-malformed.md', [StringComparison]::Ordinal)) "不完整 ADR 必须继续进入 ADR 门禁：`n$($malformed.Output)"
 
     $redCases = [System.Collections.Generic.List[object]]::new()
 

@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 
 public partial record MaterialRequirementId : IGuidStronglyTypedId;
@@ -23,8 +25,10 @@ public sealed class MaterialRequirement : Entity<MaterialRequirementId>, IAggreg
         decimal stagedQuantity,
         string sourceSystem,
         string sourceSnapshotId,
-        DateTimeOffset capturedAtUtc)
+        DateTimeOffset capturedAtUtc,
+        IReadOnlyCollection<string> substituteMaterialIds)
     {
+        ArgumentNullException.ThrowIfNull(substituteMaterialIds);
         OrganizationId = DomainGuard.Required(organizationId, nameof(organizationId));
         EnvironmentId = DomainGuard.Required(environmentId, nameof(environmentId));
         WorkOrderId = DomainGuard.Required(workOrderId, nameof(workOrderId));
@@ -37,6 +41,8 @@ public sealed class MaterialRequirement : Entity<MaterialRequirementId>, IAggreg
         SourceSystem = DomainGuard.Required(sourceSystem, nameof(sourceSystem));
         SourceSnapshotId = DomainGuard.Required(sourceSnapshotId, nameof(sourceSnapshotId));
         CapturedAtUtc = capturedAtUtc;
+        SubstituteMaterialIdsJson = JsonSerializer.Serialize(
+            MaterialSubstituteCandidateNormalizer.Normalize(MaterialId, substituteMaterialIds));
     }
 
     public string OrganizationId { get; private set; } = string.Empty;
@@ -51,6 +57,7 @@ public sealed class MaterialRequirement : Entity<MaterialRequirementId>, IAggreg
     public string SourceSystem { get; private set; } = string.Empty;
     public string SourceSnapshotId { get; private set; } = string.Empty;
     public DateTimeOffset CapturedAtUtc { get; private set; }
+    public string SubstituteMaterialIdsJson { get; private set; } = "[]";
 
     public static MaterialRequirement Capture(
         string organizationId,
@@ -64,7 +71,8 @@ public sealed class MaterialRequirement : Entity<MaterialRequirementId>, IAggreg
         decimal stagedQuantity,
         string sourceSystem,
         string sourceSnapshotId,
-        DateTimeOffset capturedAtUtc)
+        DateTimeOffset capturedAtUtc,
+        IReadOnlyCollection<string> substituteMaterialIds)
     {
         return new MaterialRequirement(
             organizationId,
@@ -78,6 +86,11 @@ public sealed class MaterialRequirement : Entity<MaterialRequirementId>, IAggreg
             stagedQuantity,
             sourceSystem,
             sourceSnapshotId,
-            capturedAtUtc);
+            capturedAtUtc,
+            substituteMaterialIds);
     }
+
+    public IReadOnlyCollection<string> GetSubstituteMaterialIds() =>
+        JsonSerializer.Deserialize<string[]>(SubstituteMaterialIdsJson) ?? [];
+
 }

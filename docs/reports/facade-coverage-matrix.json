@@ -1,0 +1,5 @@
+{
+  "status": "compatibility-pointer",
+  "currentPath": "../architecture/facade-coverage-matrix.json",
+  "note": "This file only preserves a relative link inside a frozen report; it is not a facade coverage data source."
+}

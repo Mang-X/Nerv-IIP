@@ -37,6 +37,15 @@ public sealed class BusinessGatewayAuthorizationTests
     }
 
     [Fact]
+    public void MaintenanceDowntimeReasonsRead_matches_adr_0029_naming()
+    {
+        // ADR 0029 决策 1/4：换绑前的 B2 阶段只落权限码本身，尚无端点消费（B3 才接线到
+        // BusinessConsoleSearchableDirectoryPolicy）。这里只钉住 IAM 与 Gateway 两处
+        // producer 字面值必须一致，命名形态必须是 business.<owner域>.<词表复数-kebab>.read。
+        Assert.Equal("business.maintenance.downtime-reasons.read", BusinessGatewayPermissions.MaintenanceDowntimeReasonsRead);
+    }
+
+    [Fact]
     public async Task Business_console_endpoint_requires_user_authentication()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
@@ -557,6 +566,23 @@ public sealed class BusinessGatewayAuthorizationTests
             {
                 reason = "授权测试作废原因",
             },
+        "/api/business-console/v1/mes/material-scan-prevalidation" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            materialIssueRequestId = "MIR-001",
+            workOrderId = "WO-001",
+            operationTaskId = "OP-10",
+        },
+        "/api/business-console/v1/mes/context-scan-prevalidation" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            workOrderId = "WO-001",
+            operationTaskId = "OP-10",
+            objectType = "deviceAsset",
+            scannedObjectId = "device-001",
+        },
         "/api/business-console/v1/master-data/resources/sku/SKU-001/disable" or
         "/api/business-console/v1/master-data/resources/sku/SKU-001/enable" => new
         {
@@ -584,6 +610,12 @@ public sealed class BusinessGatewayAuthorizationTests
             organizationId = "org-001",
             environmentId = "env-dev",
             reason = "authorization test",
+        },
+        "/api/business-console/v1/quality/ncrs/ncr-001/disposition" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            dispositionType = "use-as-is",
         },
         "/api/business-console/v1/planning/demands" => new
         {
@@ -1220,6 +1252,9 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/code-rules/master-data.sku/versions", BusinessGatewayPermissions.MasterDataResourcesManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/code-rules/master-data.sku/preview", BusinessGatewayPermissions.MasterDataResourcesRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/inventory/availability", BusinessGatewayPermissions.InventoryLedgerRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/mes/line-side-inventory-balances", BusinessGatewayPermissions.MesMaterialsRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/mes/material-scan-prevalidation", BusinessGatewayPermissions.MesMaterialsRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/mes/context-scan-prevalidation", BusinessGatewayPermissions.MesOperationsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/inventory/movements", BusinessGatewayPermissions.InventoryMovementsCreate);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/inventory/movements", BusinessGatewayPermissions.InventoryLedgerRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/inventory/count-tasks", BusinessGatewayPermissions.InventoryCountsManage);
@@ -1236,6 +1271,7 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/inspection-records/inspection-001/reinspections", BusinessGatewayPermissions.QualityInspectionRecordsCreate);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/inspection-records/inspection-001/failures/ncr", BusinessGatewayPermissions.QualityNcrManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/ncrs", BusinessGatewayPermissions.QualityNcrRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/ncrs/ncr-001", BusinessGatewayPermissions.QualityNcrRead);
         // 三期读面：计量台账 / 校准记录 / SPC 控制图台账走检验记录读权限（与 reason-codes 同先例），
         // CAPA 是 NCR 的下游闭环，走 NCR 读权限。
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/measuring-devices", BusinessGatewayPermissions.QualityInspectionRecordsRead);
@@ -1244,6 +1280,7 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/capas", BusinessGatewayPermissions.QualityNcrRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/capas/019f87d0-3f7f-7ad0-a829-7724ea91c222", BusinessGatewayPermissions.QualityNcrRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/reason-codes", BusinessGatewayPermissions.QualityInspectionRecordsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/scrap-reason-codes?search=surface&skip=0&take=10", BusinessGatewayPermissions.QualityInspectionRecordsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/reason-codes/QR-SCRATCH", BusinessGatewayPermissions.QualityNcrRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/reason-codes", BusinessGatewayPermissions.QualityNcrManage);
         routes.Add(HttpMethod.Put, "/api/business-console/v1/quality/reason-codes/QR-SCRATCH", BusinessGatewayPermissions.QualityNcrManage);
@@ -1336,6 +1373,7 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/alarms?deviceAssetId=DEV-OIL-01&status=raised", BusinessGatewayPermissions.IiotAlarmsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/devices/DEV-OIL-01/history?fromUtc=2026-06-01T08:00:00Z&toUtc=2026-06-01T16:00:00Z", BusinessGatewayPermissions.IiotTelemetryRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/oee?deviceAssetId=DEV-OIL-01&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z", BusinessGatewayPermissions.IiotTelemetryRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/oee/aggregates?dimension=day&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z", BusinessGatewayPermissions.IiotTelemetryRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/runtime-availability?windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z&deviceAssetIds=DEV-OIL-01", BusinessGatewayPermissions.IiotTelemetryRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/work-orders", BusinessGatewayPermissions.MaintenanceWorkOrdersRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/maintenance/work-orders", BusinessGatewayPermissions.MaintenanceWorkOrdersManage);
@@ -1537,6 +1575,8 @@ internal sealed class FakeBusinessGatewayAuthorizationClient(
                 "user-admin",
                 "user",
                 "admin",
+                requirement.OrganizationId,
+                requirement.EnvironmentId,
                 dataScope,
                 scopeGrants,
                 roles)

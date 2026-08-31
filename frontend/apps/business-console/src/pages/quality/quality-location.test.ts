@@ -57,6 +57,23 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
 const routeState = vi.hoisted(() => ({
   route: undefined as { query: Record<string, string> } | undefined,
 }))
+const authState = vi.hoisted(() => ({
+  permissionCodes: [
+    'business.quality.ncr.read',
+    'business.quality.ncr.manage',
+    'business.mes.work-orders.read',
+  ],
+}))
+
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({
+    principal: {
+      principalId: 'qa-user-001',
+      loginName: 'qa-user',
+      permissionCodes: authState.permissionCodes,
+    },
+  }),
+}))
 
 const notifySpies = vi.hoisted(() => ({
   error: vi.fn(),
@@ -90,7 +107,13 @@ vi.mock('@nerv-iip/api-client', async (importOriginal) => ({
 
 const qualityState = vi.hoisted(() => ({
   inspectionFilters: undefined as
-    | { organizationId: string; environmentId: string; status?: string; keyword?: string }
+    | {
+        organizationId: string
+        environmentId: string
+        category?: string
+        status?: string
+        keyword?: string
+      }
     | undefined,
   inspectionContextInitiallyEmpty: false,
   recordError: undefined as unknown,
@@ -98,6 +121,7 @@ const qualityState = vi.hoisted(() => ({
     {
       id: 'PLAN-001',
       code: 'IQP-001',
+      category: undefined as string | undefined,
       skuCode: 'SKU-001',
       status: 'active',
     },
@@ -122,6 +146,8 @@ const qualityState = vi.hoisted(() => ({
       id: 'NCR-001',
       code: 'NCR-001',
       status: 'open',
+      reworkWorkOrderCreationStatus: 'created',
+      reworkWorkOrderId: 'RW-001',
     },
   ],
 }))
@@ -180,10 +206,41 @@ vi.mock('@/composables/useQualityPickerCatalog', async () => {
   }
 })
 
+vi.mock('@/composables/useEquipmentPickerCatalog', async () => {
+  const { computed, shallowRef } = await import('vue')
+  return {
+    useEquipmentWorkCenterCatalog: () => ({
+      workCenterOptions: computed(() => [{ value: 'WC-001', label: '总装一线' }]),
+      workCentersPending: shallowRef(false),
+    }),
+  }
+})
+
 vi.mock('@/composables/useBusinessQuality', async () => {
   const { computed, reactive, shallowRef } = await import('vue')
 
   return {
+    useQualityFirstArticlePlanActions: () => ({
+      activateFirstArticlePlan: vi.fn(),
+      activateFirstArticlePlanPending: shallowRef(false),
+      createAndActivateFirstArticlePlan: vi.fn(),
+      createFirstArticlePlanPending: shallowRef(false),
+    }),
+    useQualityFirstArticleInspections: () => ({
+      firstArticleRecords: shallowRef([]),
+      firstArticleRecordsError: shallowRef(),
+      firstArticleRecordsPending: shallowRef(false),
+      firstArticleRecordsTotal: shallowRef(0),
+      recordFilters: reactive({
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        skuCode: undefined,
+        result: undefined,
+        skip: 0,
+        take: 100,
+      }),
+      refreshFirstArticleRecords: vi.fn(),
+    }),
     useQualityInspectionPlanCharacteristics: (source: () => { inspectionPlanId: string }) => {
       const planCharacteristics = shallowRef(
         source().inspectionPlanId ? qualityState.planCharacteristics : [],
@@ -200,6 +257,7 @@ vi.mock('@/composables/useBusinessQuality', async () => {
       const filters = reactive({
         organizationId: qualityState.inspectionContextInitiallyEmpty ? '' : 'org-001',
         environmentId: qualityState.inspectionContextInitiallyEmpty ? '' : 'env-dev',
+        category: undefined as string | undefined,
         status: undefined as string | undefined,
         keyword: undefined as string | undefined,
         skip: 0,
@@ -254,6 +312,20 @@ vi.mock('@/composables/useBusinessQuality', async () => {
         closeNcrError: shallowRef(),
         closeNcrPending: shallowRef(false),
         filters,
+        ncrActionGate: (
+          _ncrId: string,
+          status: string | undefined,
+          dispositionType: string | undefined,
+          action: 'submit-disposition' | 'close',
+        ) => {
+          const normalizedStatus = status?.toLowerCase()
+          const executable =
+            (action === 'submit-disposition' && normalizedStatus === 'open') ||
+            (action === 'close' &&
+              normalizedStatus === 'disposition-in-progress' &&
+              Boolean(dispositionType))
+          return { executable }
+        },
         ncrs: computed(() => qualityState.ncrs),
         ncrsError: shallowRef(),
         ncrsPending: shallowRef(false),
@@ -266,6 +338,25 @@ vi.mock('@/composables/useBusinessQuality', async () => {
     },
   }
 })
+
+const dataTableStub = {
+  props: ['rows', 'columns'],
+  methods: {
+    summary(
+      this: {
+        columns?: Array<{
+          key: string
+          accessor?: (row: Record<string, unknown>) => unknown
+        }>
+      },
+      row: Record<string, unknown>,
+    ) {
+      return this.columns?.find((column) => column.key === 'summary')?.accessor?.(row) ?? ''
+    },
+  },
+  template:
+    '<table><tbody><tr v-for="(row, i) in rows" :key="i"><td><slot name="cell-code" :row="row" /></td><td data-plan-summary>{{ summary(row) }}</td><td><slot name="cell-actions" :row="row" /></td></tr></tbody></table>',
+}
 
 const uiStubs = {
   NvAlertDialog: { template: '<div><slot /></div>' },
@@ -283,11 +374,8 @@ const uiStubs = {
     template: '<section data-testid="approval-panel" />',
   },
   Button: { template: '<button><slot /></button>' },
-  DataTable: {
-    props: ['rows'],
-    template:
-      '<table><tbody><tr v-for="(row, i) in rows" :key="i"><td><slot name="cell-code" :row="row" /></td><td><slot name="cell-actions" :row="row" /></td></tr></tbody></table>',
-  },
+  DataTable: dataTableStub,
+  NvDataTable: dataTableStub,
   DataTablePagination: { props: ['page', 'pageSize', 'totalItems'], template: '<nav />' },
   Dialog: { props: ['open'], template: '<div v-if="open" data-dialog><slot /></div>' },
   DialogContent: { template: '<div><slot /></div>' },
@@ -313,9 +401,17 @@ const uiStubs = {
   Select: { template: '<div><slot /></div>' },
   SelectContent: { template: '<div><slot /></div>' },
   SelectItem: { props: ['value'], template: '<div><slot /></div>' },
-  NvSelect: { template: '<div><slot /></div>' },
+  NvSelect: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template:
+      '<div><select aria-label="检验类别" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><option value="all">全部类别</option><option value="first-article">首件检验</option></select><div data-select-options><slot /></div></div>',
+  },
   NvSelectContent: { template: '<div><slot /></div>' },
-  NvSelectItem: { props: ['value'], template: '<div><slot /></div>' },
+  NvSelectItem: {
+    props: ['value'],
+    template: '<div data-select-item :data-value="value"><slot /></div>',
+  },
   NvSelectTrigger: { template: '<button><slot /></button>' },
   NvSelectValue: true,
   NvDialog: { props: ['open'], template: '<div v-if="open" data-dialog><slot /></div>' },
@@ -324,7 +420,6 @@ const uiStubs = {
   NvDialogHeader: { template: '<div><slot /></div>' },
   NvDialogTitle: { template: '<h2><slot /></h2>' },
   SelectTrigger: { template: '<button><slot /></button>' },
-  SelectValue: true,
   Sheet: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
   SheetContent: { template: '<div><slot /></div>' },
   SheetDescription: { template: '<p><slot /></p>' },
@@ -358,7 +453,21 @@ describe('quality route location behavior', () => {
     qualityState.inspectionContextInitiallyEmpty = false
     qualityState.ncrInitialContext = { organizationId: 'org-001', environmentId: 'env-dev' }
     qualityState.ncrFilters = undefined
+    authState.permissionCodes = [
+      'business.quality.ncr.read',
+      'business.quality.ncr.manage',
+      'business.mes.work-orders.read',
+    ]
     qualityState.recordError = undefined
+    qualityState.inspectionPlans = [
+      {
+        id: 'PLAN-001',
+        code: 'IQP-001',
+        category: undefined,
+        skuCode: 'SKU-001',
+        status: 'active',
+      },
+    ]
     qualityState.planCharacteristics = [
       {
         characteristicCode: 'DIM-01',
@@ -411,6 +520,36 @@ describe('quality route location behavior', () => {
 
     expect(qualityState.ncrFilters!.keyword).toBeUndefined()
     expect(qualityState.ncrFilters!.status).toBe('open')
+  })
+
+  it('keeps NCR read access separate from manage actions and MES work-order navigation', async () => {
+    authState.permissionCodes = ['business.quality.ncr.read']
+    const wrapper = mountQualityPage(NcrsPage)
+    await flushPromises()
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().trim() === '查看详情')!
+      .trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('当前账号只有 NCR 查看权限')
+    expect(wrapper.find('#ncr-disposition-files').exists()).toBe(false)
+    expect(wrapper.find('#ncr-close-reason').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('查看返工工单')
+  })
+
+  it('shows the system-created rework work order link only with MES read permission', async () => {
+    const wrapper = mountQualityPage(NcrsPage)
+    await flushPromises()
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().trim() === '打开处置')!
+      .trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('查看返工工单 RW-001')
   })
 
   it.each(['organizationId', 'environmentId'] as const)(
@@ -515,6 +654,58 @@ describe('quality route location behavior', () => {
     expect(qualityState.inspectionFilters!.status).toBe('active')
   })
 
+  it('lets the user independently filter first-article inspection plans', async () => {
+    const wrapper = mountQualityPage(InspectionsPage)
+
+    await wrapper.get('select[aria-label="检验类别"]').setValue('first-article')
+
+    expect(qualityState.inspectionFilters!.category).toBe('first-article')
+  })
+
+  it('offers only inspection-plan categories accepted by the Quality domain', () => {
+    const wrapper = mountQualityPage(InspectionsPage)
+    const categoryOptions = wrapper
+      .get('select[aria-label="检验类别"] + [data-select-options]')
+      .findAll('[data-select-item]')
+      .map((option) => ({ value: option.attributes('data-value'), label: option.text() }))
+
+    expect(categoryOptions).toEqual([
+      { value: 'all', label: '全部类别' },
+      { value: 'receiving', label: '来料检' },
+      { value: 'operation', label: '工序检' },
+      { value: 'final', label: '终检' },
+      { value: 'first-article', label: '首件检验' },
+      { value: 'maintenance', label: '维修检' },
+      { value: 'customer-return', label: '客户退货检' },
+    ])
+  })
+
+  it('renders every accepted inspection-plan category as a business label in table summaries', () => {
+    qualityState.inspectionPlans = [
+      {
+        id: 'PLAN-MAINTENANCE',
+        code: 'IQP-MAINTENANCE',
+        category: 'maintenance',
+        skuCode: 'SKU-001',
+        status: 'active',
+      },
+      {
+        id: 'PLAN-RETURN',
+        code: 'IQP-RETURN',
+        category: 'customer-return',
+        skuCode: 'SKU-002',
+        status: 'active',
+      },
+    ]
+
+    const wrapper = mountQualityPage(InspectionsPage)
+    const summaries = wrapper.findAll('[data-plan-summary]').map((cell) => cell.text())
+
+    expect(summaries).toEqual(['维修检 / SKU-001', '客户退货检 / SKU-002'])
+    expect(wrapper.text()).not.toContain('maintenance')
+    expect(wrapper.text()).not.toContain('customer-return')
+  })
+
   it('does not open the inspection record dialog for a plain inspectionPlanId location route', async () => {
     routeState.route!.query = { inspectionPlanId: 'PLAN-001' }
 
@@ -564,6 +755,39 @@ describe('quality route location behavior', () => {
         unitCode: 'mm',
       }),
     ])
+  })
+
+  it('uses the first-article source contract when creating a record from a first-article plan', async () => {
+    const firstArticlePlan = {
+      id: 'PLAN-FA-001',
+      code: 'FA-PLAN-001',
+      category: 'first-article',
+      skuCode: 'SKU-FA-001',
+      status: 'active',
+    }
+    qualityState.inspectionPlans = [firstArticlePlan]
+    const wrapper = mountQualityPage(InspectionsPage)
+    await nextRenderTick()
+
+    const vm = wrapper.vm as unknown as {
+      recordForm: {
+        inspectionPlanId: string
+        sourceType: string
+        sourceService: string
+        skuCode: string
+      }
+      useInspectionPlan: (plan: typeof firstArticlePlan) => void
+    }
+    vm.useInspectionPlan(firstArticlePlan)
+
+    expect(vm.recordForm).toEqual(
+      expect.objectContaining({
+        inspectionPlanId: 'PLAN-FA-001',
+        sourceType: 'first-article',
+        sourceService: 'mes-operation',
+        skuCode: 'SKU-FA-001',
+      }),
+    )
   })
 
   it('accepts whole-number quantities prefilled by an inspection task', async () => {

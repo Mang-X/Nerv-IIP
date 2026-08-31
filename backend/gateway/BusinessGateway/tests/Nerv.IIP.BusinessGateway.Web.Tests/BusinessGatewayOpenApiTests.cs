@@ -1,9 +1,12 @@
+using System.Net;
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using NJsonSchema;
 using NJsonSchema.Generation;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
+using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using NSwag;
 using NSwag.Generation;
 using NSwag.Generation.Processors.Contexts;
@@ -12,6 +15,45 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 
 public sealed class BusinessGatewayOpenApiTests
 {
+    [Fact]
+    public async Task Mes_material_issue_detail_forwards_scope_and_maps_substitute_audit()
+    {
+        var handler = new MaterialIssueDetailStubHandler(
+            """{"data":{"requestId":"MIR-000123","workOrderId":"WO-001","operationTaskId":"OP-10","materialId":"MAT-ALT","substitutedMaterialId":"MAT-PRIMARY","uomCode":"EA","materialLotId":null,"requestedQuantity":7,"receivedQuantity":0,"consumedQuantity":0,"status":"Requested","wmsRequestId":null,"requestedAtUtc":"2026-08-27T08:00:00Z"}}""");
+        var client = new HttpBusinessMesClient(new HttpClient(handler) { BaseAddress = new Uri("http://mes") });
+
+        var response = await client.GetMaterialIssueRequestAsync(
+            "token",
+            "MIR-000123",
+            new BusinessConsoleMesMaterialIssueRequestDetailRequest("MIR-000123", "org-a", "env-a"),
+            CancellationToken.None);
+
+        Assert.Equal("MAT-ALT", response.MaterialId);
+        Assert.Equal("MAT-PRIMARY", response.SubstitutedMaterialId);
+        Assert.Equal(
+            "/api/business/v1/mes/material-issue-requests/MIR-000123?organizationId=org-a&environmentId=env-a",
+            handler.LastRequest!.RequestUri!.PathAndQuery);
+    }
+
+    [Fact]
+    public async Task Business_gateway_error_response_code_supports_numeric_success_and_semantic_failure_values()
+    {
+        var json = await BusinessGatewayTestHost.GetOpenApiDocumentAsync();
+        using var document = JsonDocument.Parse(json);
+        var responseData = FindSchemaBySuffix(document, "NetCorePalExtensionsDtoResponseData");
+        var code = responseData.GetProperty("properties").GetProperty("code");
+
+        Assert.False(code.TryGetProperty("type", out _));
+        var variants = code.GetProperty("oneOf").EnumerateArray().ToArray();
+        var integer = Assert.Single(
+            variants,
+            item => item.GetProperty("type").GetString() == "integer");
+        Assert.Equal("int32", integer.GetProperty("format").GetString());
+        Assert.Single(
+            variants,
+            item => item.GetProperty("type").GetString() == "string");
+    }
+
     [Fact]
     public async Task Business_gateway_exports_openapi_document_with_stable_business_console_operation_ids()
     {
@@ -23,6 +65,21 @@ public sealed class BusinessGatewayOpenApiTests
         AssertGovernedWriteIdempotencyHeaders(paths);
 
         AssertOperationId(paths, "/api/business-console/v1/master-data/resources", "get", "listBusinessConsoleMasterDataResources");
+        _ = FindQueryParameter(paths, "/api/business-console/v1/master-data/resources", "get", "deviceAssetId");
+        _ = FindQueryParameter(paths, "/api/business-console/v1/master-data/resources", "get", "shiftCode");
+        AssertSchemaProperties(
+            document,
+            "BusinessConsoleResourceItem",
+            "siteCode",
+            "workshopCode",
+            "lineCode",
+            "workCenterCode",
+            "timezone",
+            "startsAt",
+            "endsAt",
+            "crossesMidnight",
+            "paidMinutes",
+            "breakMinutes");
         AssertOperationId(paths, "/api/business-console/v1/me/work-context", "get", "getBusinessConsolePrincipalWorkContext");
         AssertOperationId(paths, "/api/business-console/v1/maintenance/work-orders/{workOrderId}/assignment", "post", "assignBusinessConsoleMaintenanceWorkOrder");
         AssertOperationId(paths, "/api/business-console/v1/maintenance/work-orders/{workOrderId}/actions", "post", "transitionBusinessConsoleMaintenanceWorkOrder");
@@ -95,6 +152,21 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/master-data/code-rules/{ruleKey}/preview", "post", "previewBusinessConsoleCodeRule");
         AssertOperationId(paths, "/api/business-console/v1/inventory/availability", "get", "getBusinessConsoleInventoryAvailability");
         AssertOperationId(paths, "/api/business-console/v1/inventory/expiry-alerts", "get", "listBusinessConsoleInventoryExpiryAlerts");
+        AssertOperationId(paths, "/api/business-console/v1/mes/line-side-inventory-balances", "get", "listBusinessConsoleMesLineSideInventoryBalances");
+        AssertSchemaProperties(
+            document,
+            "LineSideInventoryBalanceItem",
+            "siteCode",
+            "locationCode",
+            "skuCode",
+            "uomCode",
+            "onHandQuantity",
+            "reservedQuantity",
+            "availableQuantity",
+            "lotCount",
+            "oldestProductionDate",
+            "ageDays",
+            "ageCompleteness");
         AssertOperationId(paths, "/api/business-console/v1/inventory/movements", "post", "postBusinessConsoleInventoryMovement");
         AssertOperationId(paths, "/api/business-console/v1/inventory/movements", "get", "listBusinessConsoleInventoryMovements");
         AssertOperationId(paths, "/api/business-console/v1/inventory/count-tasks", "post", "createBusinessConsoleInventoryCountTask");
@@ -114,11 +186,29 @@ public sealed class BusinessGatewayOpenApiTests
             "assignedTeamId");
         AssertSchemaProperties(
             document,
+            "BusinessConsoleQualityNcrDetailResponse",
+            "reworkWorkOrderCreationStatus",
+            "reworkWorkOrderId");
+        AssertRequiredSchemaProperty(
+            document,
+            "BusinessConsoleQualityNcrDetailResponse",
+            "reworkWorkOrderCreationStatus");
+        AssertSchemaProperties(
+            document,
             "BusinessConsoleQualityItem",
             "timeIntervalHours",
             "quantityInterval",
             "assignedInspectorUserId",
             "assignedTeamId");
+        AssertSchemaProperties(
+            document,
+            "BusinessConsoleQualityNcrItem",
+            "reworkWorkOrderCreationStatus",
+            "reworkWorkOrderId");
+        AssertRequiredSchemaProperty(
+            document,
+            "BusinessConsoleQualityNcrItem",
+            "reworkWorkOrderCreationStatus");
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-plans/{inspectionPlanId}/activate", "post", "activateBusinessConsoleQualityInspectionPlan");
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-records", "get", "listBusinessConsoleQualityInspectionRecords");
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-records", "post", "createBusinessConsoleQualityInspectionRecord");
@@ -156,19 +246,28 @@ public sealed class BusinessGatewayOpenApiTests
         Assert.False(submitProperties.TryGetProperty("inspectorUserId", out _));
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}/inspection-record", "post", "idempotencyKey", 150);
         AssertOperationId(paths, "/api/business-console/v1/quality/ncrs", "get", "listBusinessConsoleQualityNcrs");
+        AssertOperationId(paths, "/api/business-console/v1/quality/ncrs/{ncrId}", "get", "getBusinessConsoleQualityNcr");
         AssertOperationId(paths, "/api/business-console/v1/quality/measuring-devices", "get", "listBusinessConsoleQualityMeasuringDevices");
         AssertOperationId(paths, "/api/business-console/v1/quality/calibration-records", "get", "listBusinessConsoleQualityCalibrationRecords");
         AssertOperationId(paths, "/api/business-console/v1/quality/capas", "get", "listBusinessConsoleQualityCapas");
         AssertOperationId(paths, "/api/business-console/v1/quality/capas/{correctiveActionId}", "get", "getBusinessConsoleQualityCapa");
         AssertOperationId(paths, "/api/business-console/v1/quality/spc/control-charts", "get", "listBusinessConsoleQualitySpcControlCharts");
         AssertOperationId(paths, "/api/business-console/v1/quality/reason-codes", "get", "listBusinessConsoleQualityReasonCodes");
+        AssertOperationId(paths, "/api/business-console/v1/quality/scrap-reason-codes", "get", "listBusinessConsoleQualityScrapReasonCodes");
+        AssertQueryParameters(paths, "/api/business-console/v1/quality/scrap-reason-codes", "get", "organizationId", "environmentId", "search", "skip", "take");
+        AssertRequiredStringQueryParameter(paths, "/api/business-console/v1/quality/scrap-reason-codes", "get", "organizationId");
+        AssertRequiredStringQueryParameter(paths, "/api/business-console/v1/quality/scrap-reason-codes", "get", "environmentId");
         AssertOperationId(paths, "/api/business-console/v1/quality/reason-codes/{reasonCode}", "get", "getBusinessConsoleQualityReasonCode");
         AssertOperationId(paths, "/api/business-console/v1/quality/reason-codes", "post", "createBusinessConsoleQualityReasonCode");
         AssertOperationId(paths, "/api/business-console/v1/quality/reason-codes/{reasonCode}", "put", "updateBusinessConsoleQualityReasonCode");
         AssertOperationId(paths, "/api/business-console/v1/quality/reason-codes/{reasonCode}/archive", "post", "archiveBusinessConsoleQualityReasonCode");
         AssertOperationId(paths, "/api/business-console/v1/quality/ncrs/{ncrId}/disposition", "post", "submitBusinessConsoleQualityNcrDisposition");
+        AssertResponseStatuses(paths, "/api/business-console/v1/quality/ncrs/{ncrId}/disposition", "post", "400", "409", "502", "503", "504");
+        AssertOptionalBodyProperty(document, paths, "/api/business-console/v1/quality/ncrs/{ncrId}/disposition", "post", "idempotencyKey");
+        AssertStringBodyPropertyMaxLength(document, paths, "/api/business-console/v1/quality/ncrs/{ncrId}/disposition", "post", "idempotencyKey", 150);
         AssertOperationId(paths, "/api/business-console/v1/quality/ncrs/{ncrId}/close", "post", "closeBusinessConsoleQualityNcr");
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/quality/ncrs/{ncrId}/close", "post", "reason", 500);
+        AssertDeprecatedOptionalBodyProperty(document, paths, "/api/business-console/v1/quality/ncrs/{ncrId}/close", "post", "reworkWorkOrderId");
         AssertOperationId(paths, "/api/business-console/v1/engineering/documents", "post", "registerBusinessConsoleEngineeringDocument");
         AssertOperationId(paths, "/api/business-console/v1/engineering/sops/publish", "post", "publishBusinessConsoleEngineeringSopDocument");
         AssertOperationId(paths, "/api/business-console/v1/engineering/sops/current", "get", "getBusinessConsoleCurrentEngineeringSopDocuments");
@@ -328,6 +427,57 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/telemetry/alarms", "get", "listBusinessConsoleTelemetryAlarms");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/devices/{deviceAssetId}/history", "get", "queryBusinessConsoleTelemetryDeviceHistory");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/oee", "get", "queryBusinessConsoleTelemetryOee");
+        AssertOperationId(paths, "/api/business-console/v1/telemetry/oee/aggregates", "get", "queryBusinessConsoleTelemetryOeeAggregates");
+        _ = FindQueryParameter(paths, "/api/business-console/v1/telemetry/oee/aggregates", "get", "dimension");
+        AssertResponseStatuses(
+            paths,
+            "/api/business-console/v1/telemetry/oee/aggregates",
+            "get",
+            "400", "502", "503", "504");
+        AssertStringEnumSchema(
+            document,
+            "NervIIPContractsIndustrialTelemetryOeeAggregateDimension",
+            "device", "workCenter", "line", "workshop", "shift", "day");
+        AssertSchemaProperties(
+            document,
+            "OeeAggregateBucketsResponse",
+            "organizationId",
+            "environmentId",
+            "dimension",
+            "windowStartUtc",
+            "windowEndUtc",
+            "buckets",
+            "totalCount",
+            "skip",
+            "take");
+        AssertSchemaProperties(
+            document,
+            "OeeAggregateBucket",
+            "dimension",
+            "dimensionValue",
+            "siteCode",
+            "workshopCode",
+            "lineCode",
+            "workCenterId",
+            "deviceAssetId",
+            "shiftCode",
+            "businessDate",
+            "bucketStartUtc",
+            "bucketEndUtc",
+            "deviceCount",
+            "stateSampleCount",
+            "productionFactCount",
+            "availabilityRate",
+            "performanceRate",
+            "qualityRate",
+            "oeeRate",
+            "goodQuantity",
+            "scrapQuantity",
+            "reworkQuantity",
+            "outputUomCode",
+            "expectedOutputQuantity",
+            "isDegraded",
+            "degradedReasons");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/runtime-availability", "get", "queryBusinessConsoleTelemetryRuntimeAvailability");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/runtime-hours", "get", "queryBusinessConsoleTelemetryRuntimeHours");
         AssertOperationId(paths, "/api/business-console/v1/maintenance/work-orders", "get", "listBusinessConsoleMaintenanceWorkOrders");
@@ -562,6 +712,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/void", "post", "reason", 500);
         AssertOperationId(paths, "/api/business-console/v1/barcode/scans", "post", "recordBusinessConsoleBarcodeScan");
         AssertOperationId(paths, "/api/business-console/v1/barcode/scans", "get", "listBusinessConsoleBarcodeScans");
+        AssertOperationId(paths, "/api/business-console/v1/barcode/resolve", "post", "resolveBusinessConsoleBarcode");
         AssertOperationId(paths, "/api/business-console/v1/wms/inbound-orders", "get", "listBusinessConsoleWmsInboundOrders");
         AssertOperationId(paths, "/api/business-console/v1/wms/work-scopes/receipts", "get", "getBusinessConsoleWmsReceiptWorkScopes");
         AssertOperationId(paths, "/api/business-console/v1/wms/work-scopes/shipments", "get", "getBusinessConsoleWmsShipmentWorkScopes");
@@ -787,19 +938,151 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/release", "post", "releaseBusinessConsoleMesWorkOrder");
         AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/hold", "post", "holdBusinessConsoleMesWorkOrder");
         AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/cancel", "post", "cancelBusinessConsoleMesWorkOrder");
+        AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/close", "post", "closeBusinessConsoleMesWorkOrder");
+        AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/split", "post", "splitBusinessConsoleMesWorkOrder");
+        AssertQueryParameters(
+            paths,
+            "/api/business-console/v1/mes/work-orders/{workOrderId}/split",
+            "post",
+            "organizationId",
+            "environmentId",
+            "scopeKind",
+            "scopeId");
+        AssertRequiredStringQueryParameter(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/split", "post", "organizationId");
+        AssertRequiredStringQueryParameter(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/split", "post", "environmentId");
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/split", "post", "reason", 500);
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/split", "post", "idempotencyKey", 150);
+        AssertResponseStatuses(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/split", "post", "502", "503", "504");
+        AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/merge", "post", "mergeBusinessConsoleMesWorkOrders");
+        AssertQueryParameters(
+            paths,
+            "/api/business-console/v1/mes/work-orders/merge",
+            "post",
+            "organizationId",
+            "environmentId",
+            "scopeKind",
+            "scopeId");
+        AssertRequiredStringQueryParameter(paths, "/api/business-console/v1/mes/work-orders/merge", "post", "organizationId");
+        AssertRequiredStringQueryParameter(paths, "/api/business-console/v1/mes/work-orders/merge", "post", "environmentId");
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/work-orders/merge", "post", "reason", 500);
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/work-orders/merge", "post", "idempotencyKey", 150);
+        AssertResponseStatuses(paths, "/api/business-console/v1/mes/work-orders/merge", "post", "502", "503", "504");
+        AssertOperationId(
+            paths,
+            "/api/business-console/v1/mes/work-order-transformations/{transformationId}",
+            "get",
+            "getBusinessConsoleMesWorkOrderTransformation");
+        AssertQueryParameters(
+            paths,
+            "/api/business-console/v1/mes/work-order-transformations/{transformationId}",
+            "get",
+            "organizationId",
+            "environmentId",
+            "scopeKind",
+            "scopeId");
+        AssertRequiredStringQueryParameter(paths, "/api/business-console/v1/mes/work-order-transformations/{transformationId}", "get", "organizationId");
+        AssertRequiredStringQueryParameter(paths, "/api/business-console/v1/mes/work-order-transformations/{transformationId}", "get", "environmentId");
+        AssertResponseStatuses(paths, "/api/business-console/v1/mes/work-order-transformations/{transformationId}", "get", "502", "503", "504");
+        AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/engineering-change-decisions", "post", "recordBusinessConsoleMesEngineeringChangeDecision");
         AssertOperationId(paths, "/api/business-console/v1/mes/quality-holds/{sourceDocumentId}/force-release", "post", "forceReleaseBusinessConsoleMesQualityHold");
         AssertOperationId(paths, "/api/business-console/v1/mes/quality-holds/{sourceDocumentId}/timeline", "get", "getBusinessConsoleMesQualityHoldTimeline");
         AssertOperationId(paths, "/api/business-console/v1/mes/production-reports/{reportNo}/reverse", "post", "reverseBusinessConsoleMesProductionReport");
         AssertOperationId(paths, "/api/business-console/v1/mes/finished-goods-receipt-requests/{requestNo}/inventory-posting/retry", "post", "retryBusinessConsoleMesFinishedGoodsReceiptInventoryPosting");
         AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/rush", "post", "createBusinessConsoleMesRushWorkOrder");
         AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/material-readiness", "get", "getBusinessConsoleMesMaterialReadiness");
+        AssertSchemaProperties(document, "BusinessConsoleMesMaterialReadinessRow", "substituteMaterialIds");
         AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/material-issue-requests", "post", "createBusinessConsoleMesMaterialIssueRequest");
         AssertOperationId(paths, "/api/business-console/v1/mes/material-issue-requests", "get", "listBusinessConsoleMesMaterialIssueRequests");
+        AssertOperationId(paths, "/api/business-console/v1/mes/material-issue-requests/{requestId}", "get", "getBusinessConsoleMesMaterialIssueRequest");
+        AssertOperationId(paths, "/api/business-console/v1/mes/material-scan-prevalidation", "post", "prevalidateBusinessConsoleMesMaterialScan");
+        AssertResponseStatuses(
+            paths,
+            "/api/business-console/v1/mes/material-scan-prevalidation",
+            "post",
+            "400",
+            "502",
+            "503",
+            "504");
+        var schemas = document.RootElement.GetProperty("components").GetProperty("schemas");
+        Assert.True(schemas.TryGetProperty("NervIIPContractsMesMesMaterialScanPrevalidationRequest", out _));
+        Assert.True(schemas.TryGetProperty("NervIIPContractsMesMesMaterialScanPrevalidationResponse", out _));
+        Assert.False(schemas.TryGetProperty("NervIIPContractsMesBusinessConsoleMesMaterialScanPrevalidationRequest", out _));
+        Assert.False(schemas.TryGetProperty("NervIIPContractsMesBusinessConsoleMesMaterialScanPrevalidationResponse", out _));
+        AssertRequiredSchemaProperties(
+            document,
+            "MesMaterialScanPrevalidationRequest",
+            "organizationId",
+            "environmentId",
+            "materialIssueRequestId",
+            "workOrderId",
+            "operationTaskId");
+        AssertRequiredSchemaProperties(
+            document,
+            "MesMaterialScanPrevalidationResponse",
+            "decision",
+            "reasonCode",
+            "materialIssueRequestId",
+            "workOrderId",
+            "operationTaskId",
+            "evaluatedAtUtc");
+        AssertStringEnumProperty(
+            document,
+            "MesMaterialScanPrevalidationResponse",
+            "decision",
+            "accepted",
+            "rejected");
+        AssertOperationId(paths, "/api/business-console/v1/mes/context-scan-prevalidation", "post", "prevalidateBusinessConsoleMesContextScan");
+        AssertResponseStatuses(
+            paths,
+            "/api/business-console/v1/mes/context-scan-prevalidation",
+            "post",
+            "400",
+            "502",
+            "503",
+            "504");
+        AssertRequiredSchemaProperties(
+            document,
+            "MesContextScanPrevalidationRequest",
+            "organizationId",
+            "environmentId",
+            "workOrderId",
+            "operationTaskId");
+        AssertRequiredSchemaProperties(
+            document,
+            "MesContextScanPrevalidationResponse",
+            "decision",
+            "reasonCode",
+            "workOrderId",
+            "operationTaskId",
+            "objectType",
+            "scannedObjectId",
+            "evaluatedAtUtc");
+        AssertStringEnumProperty(
+            document,
+            "MesContextScanPrevalidationResponse",
+            "decision",
+            "accepted",
+            "rejected");
+        AssertStringEnumProperty(
+            document,
+            "MesContextScanPrevalidationResponse",
+            "objectType",
+            "operationTask",
+            "deviceAsset",
+            "personnel");
         AssertOperationId(paths, "/api/business-console/v1/mes/material-issue-requests/{requestId}/line-side-receipts", "post", "confirmBusinessConsoleMesLineSideMaterialReceipt");
+        AssertOperationId(paths, "/api/business-console/v1/mes/material-issue-requests/{requestId}/line-side-returns", "post", "returnBusinessConsoleMesLineSideMaterial");
         AssertOperationId(paths, "/api/business-console/v1/mes/dispatch-tasks", "get", "listBusinessConsoleMesDispatchTasks");
         AssertOperationId(paths, "/api/business-console/v1/mes/dispatch-tasks/{operationTaskId}/assign", "post", "assignBusinessConsoleMesDispatchTask");
+        AssertSchemaProperties(document, "BusinessConsoleMesAssignDispatchTaskRequest", "participants");
+        AssertSchemaProperties(document, "BusinessConsoleMesDispatchParticipantRequest", "workerId", "sharePercent");
         AssertOperationId(paths, "/api/business-console/v1/mes/operation-tasks", "get", "listBusinessConsoleMesOperationTasks");
         AssertQueryParameters(paths, "/api/business-console/v1/mes/operation-tasks", "get", "operationTaskId");
+        AssertNullableDecimalSchemaProperties(
+            document,
+            "BusinessConsoleMesOperationTaskRow",
+            "actualLaborHours",
+            "actualMachineHours");
         AssertOperationId(paths, "/api/business-console/v1/mes/reportable-operation-tasks", "get", "listBusinessConsoleMesReportableOperationTasks");
         AssertNoQueryParameter(paths, "/api/business-console/v1/mes/reportable-operation-tasks", "get", "operationTaskId");
         AssertOperationId(paths, "/api/business-console/v1/mes/operation-sops/current", "get", "getBusinessConsoleMesCurrentOperationSops");
@@ -819,6 +1102,18 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/mes/wip", "get", "getBusinessConsoleMesWipSummary");
         AssertOperationId(paths, "/api/business-console/v1/mes/production-reports", "get", "listBusinessConsoleMesProductionReports");
         AssertOperationId(paths, "/api/business-console/v1/mes/production-reports/{reportNo}", "get", "getBusinessConsoleMesProductionReport");
+        AssertNullableDecimalSchemaProperties(
+            document,
+            "BusinessConsoleMesProductionReportRow",
+            "operationActualLaborHours",
+            "operationActualMachineHours");
+        AssertNullableDecimalSchemaProperties(
+            document,
+            "BusinessConsoleMesProductionReportDetail",
+            "operationActualLaborHours",
+            "operationActualMachineHours");
+        AssertSchemaProperties(document, "BusinessConsoleMesProductionReportDetailResponse", "laborAllocations");
+        AssertSchemaProperties(document, "BusinessConsoleMesLaborAllocation", "workerId", "workerName", "sharePercent", "allocatedLaborTicks");
         AssertOperationId(paths, "/api/business-console/v1/mes/schedules/run", "post", "runBusinessConsoleMesSchedule");
         AssertOperationId(paths, "/api/business-console/v1/mes/schedules", "get", "listBusinessConsoleMesScheduleResults");
         AssertOperationId(paths, "/api/business-console/v1/mes/production-reports", "post", "recordBusinessConsoleMesProductionReport");
@@ -826,9 +1121,39 @@ public sealed class BusinessGatewayOpenApiTests
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/production-reports", "post", "scopeKind", 50);
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/production-reports", "post", "scopeId", 200);
         AssertOperationId(paths, "/api/business-console/v1/mes/defects", "post", "recordBusinessConsoleMesDefect");
+        AssertSchemaProperties(
+            document,
+            "BusinessConsoleMesRecordDefectRequest",
+            "defectQuantity",
+            "materialLotId",
+            "batchOrSerial");
+        AssertSchemaExcludesProperties(
+            document,
+            "BusinessConsoleMesRecordDefectRequest",
+            "quantity",
+            "recordedAtUtc",
+            "scopeKind",
+            "scopeId");
+        AssertOperationId(paths, "/api/business-console/v2/mes/defects", "post", "recordBusinessConsoleMesDefectV2");
+        AssertRequiredBodyProperty(document, paths, "/api/business-console/v2/mes/defects", "post", "quantity");
+        AssertRequiredBodyProperty(document, paths, "/api/business-console/v2/mes/defects", "post", "recordedAtUtc");
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v2/mes/defects", "post", "workOrderId", 200);
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v2/mes/defects", "post", "defectCode", 100);
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v2/mes/defects", "post", "idempotencyKey", 150);
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v2/mes/defects", "post", "scopeKind", 50);
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v2/mes/defects", "post", "scopeId", 200);
+        AssertOptionalBodyProperty(document, paths, "/api/business-console/v2/mes/defects", "post", "operationTaskId");
         AssertOperationId(paths, "/api/business-console/v1/mes/related-quality-items", "get", "listBusinessConsoleMesRelatedQualityItems");
         AssertOperationId(paths, "/api/business-console/v1/mes/finished-goods-receipt-requests", "get", "listBusinessConsoleMesFinishedGoodsReceiptRequests");
         AssertOperationId(paths, "/api/business-console/v1/mes/finished-goods-receipt-requests", "post", "createBusinessConsoleMesFinishedGoodsReceiptRequest");
+        AssertSchemaExcludesProperties(
+            document,
+            "BusinessConsoleMesCreateReceiptRequest",
+            "unitCost");
+        AssertSchemaProperties(
+            document,
+            "BusinessConsoleMesReceiptRequestRow",
+            "unitCost");
         foreach (var path in new[]
                  {
                      "/api/business-console/v1/mes/work-orders",
@@ -860,6 +1185,38 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/mes/finished-goods-receipt-requests/{requestNo}/inventory-link", "get", "getBusinessConsoleMesFinishedGoodsReceiptInventoryLink");
         AssertOperationId(paths, "/api/business-console/v1/mes/downtime-events", "get", "listBusinessConsoleMesDowntimeEvents");
         AssertOperationId(paths, "/api/business-console/v1/mes/downtime-events", "post", "recordBusinessConsoleMesDowntimeEvent");
+        AssertSchemaExcludesProperties(
+            document,
+            "BusinessConsoleMesRecordDowntimeEventRequest",
+            "workCenterId",
+            "scopeKind",
+            "scopeId");
+        AssertOptionalBodyProperty(document, paths, "/api/business-console/v1/mes/downtime-events", "post", "organizationId");
+        AssertOptionalBodyProperty(document, paths, "/api/business-console/v1/mes/downtime-events", "post", "environmentId");
+        AssertOptionalBodyProperty(document, paths, "/api/business-console/v1/mes/downtime-events", "post", "workOrderId");
+        AssertOptionalBodyProperty(document, paths, "/api/business-console/v1/mes/downtime-events", "post", "reasonCode");
+        AssertOptionalBodyProperty(document, paths, "/api/business-console/v1/mes/downtime-events", "post", "startedAtUtc");
+        AssertOptionalBodyProperty(document, paths, "/api/business-console/v1/mes/downtime-events", "post", "idempotencyKey");
+        AssertResponseStatuses(paths, "/api/business-console/v1/mes/downtime-events", "post", "400");
+        AssertJsonResponseRef(
+            paths,
+            "/api/business-console/v1/mes/downtime-events",
+            "post",
+            "400",
+            "NetCorePalExtensionsDtoResponseData");
+        AssertOperationId(paths, "/api/business-console/v2/mes/downtime-events", "post", "recordBusinessConsoleMesDowntimeEventV2");
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v2/mes/downtime-events", "post", "organizationId", 100);
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v2/mes/downtime-events", "post", "environmentId", 100);
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v2/mes/downtime-events", "post", "workOrderId", 200);
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v2/mes/downtime-events", "post", "workCenterId", 200);
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v2/mes/downtime-events", "post", "reasonCode", 100);
+        AssertRequiredBodyProperty(document, paths, "/api/business-console/v2/mes/downtime-events", "post", "startedAtUtc");
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v2/mes/downtime-events", "post", "idempotencyKey", 150);
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v2/mes/downtime-events", "post", "scopeKind", 50);
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v2/mes/downtime-events", "post", "scopeId", 200);
+        AssertOptionalBodyProperty(document, paths, "/api/business-console/v2/mes/downtime-events", "post", "operationTaskId");
+        AssertOptionalBodyProperty(document, paths, "/api/business-console/v2/mes/downtime-events", "post", "deviceAssetId");
+        AssertOptionalBodyProperty(document, paths, "/api/business-console/v2/mes/downtime-events", "post", "toUtc");
         AssertOperationId(paths, "/api/business-console/v1/mes/downtime-events/{downtimeEventId}/recover", "post", "confirmBusinessConsoleMesDowntimeRecovery");
         AssertOperationId(paths, "/api/business-console/v1/mes/shift-handovers", "get", "listBusinessConsoleMesShiftHandovers");
         AssertOperationId(paths, "/api/business-console/v1/mes/shift-handovers", "post", "createBusinessConsoleMesShiftHandover");
@@ -939,6 +1296,7 @@ public sealed class BusinessGatewayOpenApiTests
             "get",
             "organizationId",
             "environmentId",
+            "category",
             "status",
             "keyword",
             "skip",
@@ -949,6 +1307,7 @@ public sealed class BusinessGatewayOpenApiTests
             "get",
             "organizationId",
             "environmentId",
+            "sourceType",
             "status",
             "keyword",
             "skip",
@@ -1079,6 +1438,42 @@ public sealed class BusinessGatewayOpenApiTests
         var schemaName = schemaRef.Split('/')[^1];
         var schema = document.RootElement.GetProperty("components").GetProperty("schemas").GetProperty(schemaName);
         Assert.Contains(propertyName, schema.GetProperty("required").EnumerateArray().Select(x => x.GetString()));
+    }
+
+    private static void AssertOptionalBodyProperty(
+        JsonDocument document,
+        JsonElement paths,
+        string path,
+        string method,
+        string propertyName)
+    {
+        var operation = paths.GetProperty(path).GetProperty(method);
+        var schemaRef = operation.GetProperty("requestBody").GetProperty("content")
+            .GetProperty("application/json").GetProperty("schema").GetProperty("$ref").GetString()!;
+        var schemaName = schemaRef.Split('/')[^1];
+        var schema = document.RootElement.GetProperty("components").GetProperty("schemas").GetProperty(schemaName);
+        Assert.True(schema.GetProperty("properties").TryGetProperty(propertyName, out _));
+        if (schema.TryGetProperty("required", out var required))
+        {
+            Assert.DoesNotContain(propertyName, required.EnumerateArray().Select(x => x.GetString()));
+        }
+    }
+
+    private static void AssertDeprecatedOptionalBodyProperty(
+        JsonDocument document,
+        JsonElement paths,
+        string path,
+        string method,
+        string propertyName)
+    {
+        AssertOptionalBodyProperty(document, paths, path, method, propertyName);
+        var operation = paths.GetProperty(path).GetProperty(method);
+        var schemaRef = operation.GetProperty("requestBody").GetProperty("content")
+            .GetProperty("application/json").GetProperty("schema").GetProperty("$ref").GetString()!;
+        var schemaName = schemaRef.Split('/')[^1];
+        var property = document.RootElement.GetProperty("components").GetProperty("schemas")
+            .GetProperty(schemaName).GetProperty("properties").GetProperty(propertyName);
+        Assert.True(property.GetProperty("deprecated").GetBoolean());
     }
 
     [Fact]
@@ -1278,6 +1673,30 @@ public sealed class BusinessGatewayOpenApiTests
         Assert.Equal(values, actualValues);
     }
 
+    private static void AssertStringEnumProperty(
+        JsonDocument document,
+        string schemaNameSuffix,
+        string propertyName,
+        params string[] values)
+    {
+        var property = FindSchemaBySuffix(document, schemaNameSuffix)
+            .GetProperty("properties")
+            .GetProperty(propertyName);
+        var enumSchema = property.TryGetProperty("enum", out _)
+            ? property
+            : document.RootElement
+                .GetProperty("components")
+                .GetProperty("schemas")
+                .GetProperty(property.GetProperty("$ref").GetString()!.Split('/').Last());
+        var actualValues = enumSchema.GetProperty("enum")
+            .EnumerateArray()
+            .Select(value => value.GetString())
+            .ToArray();
+
+        Assert.Equal("string", enumSchema.GetProperty("type").GetString());
+        Assert.Equal(values, actualValues);
+    }
+
     private static void AssertBusinessPartnerCreditFields(JsonDocument document)
     {
         var properties = FindSchemaBySuffix(document, "BusinessConsoleCreateBusinessPartnerRequest")
@@ -1365,8 +1784,47 @@ public sealed class BusinessGatewayOpenApiTests
         }
     }
 
+    private static void AssertNullableDecimalSchemaProperties(
+        JsonDocument document,
+        string schemaNameSuffix,
+        params string[] propertyNames)
+    {
+        var schemas = document.RootElement
+            .GetProperty("components")
+            .GetProperty("schemas")
+            .EnumerateObject()
+            .Where(schema =>
+                schema.Name.EndsWith(schemaNameSuffix, StringComparison.Ordinal)
+                && schema.Value.TryGetProperty("properties", out _))
+            .ToArray();
+        var schema = Assert.Single(schemas).Value;
+        var properties = schema.GetProperty("properties");
+        foreach (var propertyName in propertyNames)
+        {
+            var property = properties.GetProperty(propertyName);
+            Assert.Equal("number", property.GetProperty("type").GetString());
+            Assert.Equal("decimal", property.GetProperty("format").GetString());
+            Assert.True(property.GetProperty("nullable").GetBoolean());
+            Assert.Contains("小时", property.GetProperty("description").GetString(), StringComparison.Ordinal);
+
+            if (schema.TryGetProperty("required", out var required))
+            {
+                Assert.DoesNotContain(propertyName, required.EnumerateArray().Select(value => value.GetString()));
+            }
+        }
+    }
+
     private static void AssertMesListDisplayContract(JsonDocument document)
     {
+        AssertSchemaProperties(
+            document,
+            "BusinessConsoleMesCreateMaterialIssueRequest",
+            "isSupplementary",
+            "originalMaterialIssueRequestNo");
+        AssertSchemaProperties(
+            document,
+            "BusinessConsoleMesMaterialIssueRequestListResponse",
+            "supplementaryCount");
         AssertMesDisplayProperties(
             document,
             "BusinessConsoleMesCapacityImpactRow",
@@ -1431,7 +1889,10 @@ public sealed class BusinessGatewayOpenApiTests
             "BusinessConsoleMesMaterialIssueRequestRow",
             "workOrderNo",
             "operationTaskNo",
-            "materialCode");
+            "materialCode",
+            "isSupplementary",
+            "originalMaterialIssueRequestNo",
+            "substitutedMaterialId");
         AssertMesStatusEnum(document, "BusinessConsoleMesMaterialIssueRequestRow", "status");
 
         AssertMesDisplayProperties(
@@ -1619,7 +2080,9 @@ public sealed class BusinessGatewayOpenApiTests
 
         var schemas = schemaObject
             .EnumerateObject()
-            .Where(schema => schema.Name.EndsWith(schemaNameSuffix, StringComparison.Ordinal))
+            .Where(schema =>
+                schema.Name.EndsWith(schemaNameSuffix, StringComparison.Ordinal) &&
+                !schema.Name.Contains("ResponseDataOf", StringComparison.Ordinal))
             .ToArray();
 
         Assert.Single(schemas);
@@ -1714,6 +2177,22 @@ public sealed class BusinessGatewayOpenApiTests
             {
                 document.Components.Schemas[schemaName] = new JsonSchema();
             }
+        }
+    }
+
+    private sealed class MaterialIssueDetailStubHandler(string json) : HttpMessageHandler
+    {
+        public HttpRequestMessage? LastRequest { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            LastRequest = request;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(json, Encoding.UTF8, "application/json"),
+            });
         }
     }
 }

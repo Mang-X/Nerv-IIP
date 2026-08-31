@@ -9,7 +9,7 @@ import {
   NvStatusBadge,
   Spinner,
 } from '@nerv-iip/ui'
-import { RefreshCwIcon } from '@lucide/vue'
+import { PrinterIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, watch } from 'vue'
 
 import { useQualityInspectionRecordDetail } from '@/composables/useBusinessQuality'
@@ -53,13 +53,39 @@ watch(
   },
   { immediate: true },
 )
+
+function printRecord() {
+  const printingClass = 'printing-inspection-record'
+  const cleanup = () => document.body.classList.remove(printingClass)
+  document.body.classList.add(printingClass)
+  window.addEventListener('afterprint', cleanup, { once: true })
+  try {
+    window.print()
+  } finally {
+    cleanup()
+    window.removeEventListener('afterprint', cleanup)
+  }
+}
 </script>
 
 <template>
   <NvSheet v-model:open="openModel">
-    <NvSheetContent class="w-full overflow-y-auto sm:max-w-xl">
+    <NvSheetContent class="w-full overflow-y-auto sm:max-w-xl" data-printable-inspection-record>
       <NvSheetHeader>
-        <NvSheetTitle>检验记录 {{ recordId }}</NvSheetTitle>
+        <div class="flex items-center justify-between gap-3">
+          <NvSheetTitle>检验记录 {{ recordId }}</NvSheetTitle>
+          <NvButton
+            v-if="record"
+            data-print-hidden
+            type="button"
+            size="sm"
+            variant="outline"
+            @click="printRecord"
+          >
+            <PrinterIcon aria-hidden="true" />
+            打印检验记录
+          </NvButton>
+        </div>
         <!-- 记录内容已在下方完整呈现；此处仅供读屏播报。 -->
         <NvSheetDescription class="sr-only">检验记录 {{ recordId }} 只读详情。</NvSheetDescription>
       </NvSheetHeader>
@@ -127,3 +153,30 @@ watch(
     </NvSheetContent>
   </NvSheet>
 </template>
+
+<style>
+@media print {
+  body.printing-inspection-record * {
+    visibility: hidden !important;
+  }
+
+  body.printing-inspection-record [data-printable-inspection-record],
+  body.printing-inspection-record [data-printable-inspection-record] * {
+    visibility: visible !important;
+  }
+
+  body.printing-inspection-record [data-printable-inspection-record] {
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    overflow: visible !important;
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+
+  body.printing-inspection-record [data-print-hidden] {
+    display: none !important;
+  }
+}
+</style>

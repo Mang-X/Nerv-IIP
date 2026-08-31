@@ -2,6 +2,7 @@
 import type { BusinessConsoleMesProductionReportRow } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import ProductionReportDialog from '@/components/mes/ProductionReportDialog.vue'
+import ActualHoursCell from '@/components/mes/ActualHoursCell.vue'
 import type { ProductionReportContext } from '@/composables/mes/useProductionReportForm'
 import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import {
@@ -388,6 +389,7 @@ const columns: NvDataTableColumn<ReportRow>[] = [
     header: '工序任务',
     accessor: (r) => r.operationTaskNo?.trim() || '—',
   },
+  { key: 'actualHours', header: '实际工时', width: 'w-36' },
   { key: 'reportedAtUtc', header: '报工时间', width: 'w-44' },
   { key: 'actions', header: '操作', align: 'end', width: 'w-40' },
 ]
@@ -448,8 +450,6 @@ async function dismissCandidate(candidateId?: string) {
       </template>
     </NvPageHeader>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
-
     <!-- 跨页互链定位:点击「查看冲销单/冲销自」时若对方在别页,按其单号筛选定位;给出可清除的说明 -->
     <div
       v-if="filters.keyword"
@@ -475,9 +475,12 @@ async function dismissCandidate(candidateId?: string) {
       :rows="productionReports"
       row-key="productionReportId"
       :loading="productionReportsPending"
+      :error="productionReportsError"
+      :error-message="errorMessage"
       empty-message="还没有报工记录。报工后这里会出现对应记录，去工序执行报工。"
       :searchable="false"
       :column-settings="false"
+      @retry="refreshProductionReports"
     >
       <template #cell-reportNo="{ row }">
         <div
@@ -547,6 +550,13 @@ async function dismissCandidate(candidateId?: string) {
             返工 {{ formatQuantity(row.reworkQuantity) }}
           </span>
         </div>
+      </template>
+
+      <template #cell-actualHours="{ row }">
+        <ActualHoursCell
+          :labor-hours="row.operationActualLaborHours"
+          :machine-hours="row.operationActualMachineHours"
+        />
       </template>
 
       <template #cell-reportedAtUtc="{ row }">{{ formatDateTime(row.reportedAtUtc) }}</template>

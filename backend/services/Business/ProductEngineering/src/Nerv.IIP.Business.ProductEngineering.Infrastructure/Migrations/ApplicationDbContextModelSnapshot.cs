@@ -1324,6 +1324,12 @@ namespace Nerv.IIP.Business.ProductEngineering.Infrastructure.Migrations
                                 .HasColumnName("operation_name")
                                 .HasComment("Operation display name submitted with routing release.");
 
+                            b1.Property<string>("RequiredSkillCode")
+                                .HasMaxLength(100)
+                                .HasColumnType("character varying(100)")
+                                .HasColumnName("required_skill_code")
+                                .HasComment("Optional MasterData skill code required to perform the routing operation, captured at routing release.");
+
                             b1.Property<bool>("RequiresQualityInspection")
                                 .HasColumnType("boolean")
                                 .HasColumnName("requires_quality_inspection")

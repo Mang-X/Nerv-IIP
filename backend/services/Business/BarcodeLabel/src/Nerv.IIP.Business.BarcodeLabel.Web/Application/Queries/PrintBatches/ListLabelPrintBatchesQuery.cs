@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Web.Application.Queries;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Web.Application.Queries.PrintBatches;
 
@@ -11,7 +12,7 @@ public sealed record ListLabelPrintBatchesQuery(
     string? SourceDocumentId,
     string? Status,
     int Skip = 0,
-    int Take = 100) : IQuery<LabelPrintBatchListResult>;
+    int Take = OffsetPage.DefaultTake) : IQuery<LabelPrintBatchListResult>;
 
 public sealed record LabelPrintBatchListResult(IReadOnlyCollection<LabelPrintBatchSummary> Items, int Total);
 
@@ -32,8 +33,9 @@ public sealed class ListLabelPrintBatchesQueryValidator : AbstractValidator<List
 {
     public ListLabelPrintBatchesQueryValidator()
     {
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        this.AddTenantRules(x => x.OrganizationId, x => x.EnvironmentId);
+        RuleFor(x => x.OrganizationId).MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).MaximumLength(100);
         RuleFor(x => x.SourceDocumentType).MaximumLength(100);
         RuleFor(x => x.SourceDocumentId).MaximumLength(150);
         RuleFor(x => x.Status).MaximumLength(30);
@@ -47,8 +49,10 @@ public sealed class ListLabelPrintBatchesQueryHandler(ApplicationDbContext dbCon
 {
     public async Task<LabelPrintBatchListResult> Handle(ListLabelPrintBatchesQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
         var query = dbContext.LabelPrintBatches
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
         if (!string.IsNullOrWhiteSpace(request.SourceDocumentType))
         {
             var sourceDocumentType = request.SourceDocumentType.Trim().ToLowerInvariant();
@@ -70,8 +74,8 @@ public sealed class ListLabelPrintBatchesQueryHandler(ApplicationDbContext dbCon
         var items = await query
             .OrderByDescending(x => x.CreatedAtUtc)
             .ThenByDescending(x => x.Id)
-            .Skip(request.Skip)
-            .Take(request.Take)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new LabelPrintBatchSummary(
                 x.Id,
                 x.LabelTemplateId,

@@ -1,20 +1,32 @@
 import {
+  activateBusinessConsoleQualityInspectionPlanMutationOptions,
   closeBusinessConsoleQualityNcr,
+  confirmBusinessConsoleOperation,
+  createBusinessConsoleQualityInspectionPlanMutationOptions,
   createBusinessConsoleQualityInspectionRecordMutationOptions,
   getBusinessConsoleQualityNcrQueryOptions,
   getBusinessConsoleQualityInspectionRecordQueryOptions,
   listBusinessConsoleQualityInspectionPlanCharacteristicsQueryOptions,
   listBusinessConsoleQualityInspectionPlansQueryOptions,
+  listBusinessConsoleQualityInspectionRecordsQueryOptions,
   listBusinessConsoleQualityNcrsQueryOptions,
   submitBusinessConsoleQualityNcrDisposition,
   type BusinessConsoleCreateInspectionRecordRequest,
+  type BusinessConsoleCreateInspectionPlanRequest,
   type BusinessConsoleInspectionRecordDetailResponse,
   type BusinessConsoleInspectionPlanCharacteristicItem,
   type BusinessConsoleNcrCloseRequest,
   type BusinessConsoleNcrDispositionRequest,
   type BusinessConsoleQualityItem,
-  type BusinessConsoleQualityListEnvelope,
+  type BusinessConsoleQualityNcrItem,
 } from '@nerv-iip/api-client'
+import {
+  acquirePendingBusinessIntent,
+  completePendingBusinessIntent,
+  peekPendingBusinessIntent,
+  statusActionGate,
+} from '@nerv-iip/business-core'
+import { useAuthStore } from '@/stores/auth'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive, shallowRef } from 'vue'
 import {
@@ -28,10 +40,16 @@ import { executeLifecycleAction } from './lifecycleAction'
 const DEFAULT_TAKE = 100
 
 export interface QualityListFilters extends BusinessContextFields {
+  category?: string
   status?: string
   keyword?: string
   skip: number
   take: number
+}
+
+export interface FirstArticleRecordFilters extends QualityListFilters {
+  skuCode?: string
+  result?: string
 }
 
 function defaultFilters(initial: Partial<QualityListFilters> = {}): QualityListFilters {
@@ -54,6 +72,7 @@ function toListQuery(filters: QualityListFilters) {
   return {
     organizationId: filters.organizationId,
     environmentId: filters.environmentId,
+    ...optionalQuery('category', filters.category),
     ...optionalQuery('status', filters.status),
     ...optionalQuery('keyword', filters.keyword),
     skip: filters.skip,
@@ -61,7 +80,12 @@ function toListQuery(filters: QualityListFilters) {
   }
 }
 
-function listItems(envelope: BusinessConsoleQualityListEnvelope | undefined) {
+type QualityListEnvelope<TItem> = {
+  success?: boolean
+  data?: { items?: TItem[]; total?: number } | null
+}
+
+function listItems<TItem>(envelope: QualityListEnvelope<TItem> | undefined) {
   if (!envelope?.success) {
     return []
   }
@@ -69,7 +93,7 @@ function listItems(envelope: BusinessConsoleQualityListEnvelope | undefined) {
   return envelope.data?.items ?? []
 }
 
-function listTotal(envelope: BusinessConsoleQualityListEnvelope | undefined) {
+function listTotal<TItem>(envelope: QualityListEnvelope<TItem> | undefined) {
   if (!envelope?.success) {
     return 0
   }
@@ -197,9 +221,114 @@ export function useQualityInspectionPlans(initialFilters: Partial<QualityListFil
   }
 }
 
+/**
+ * 首件检验页的数据边界：方案写入固定 first-article 分类，记录读面固定 first-article 来源。
+ * 创建与启用是两个独立事实；启用失败时把草稿 id 返回给页面，允许用户明确恢复。
+ */
+export function useQualityFirstArticleInspections(
+  initialFilters: Partial<FirstArticleRecordFilters> = {},
+) {
+  const recordFilters = defaultFilters(initialFilters) as FirstArticleRecordFilters
+  const recordsQuery = useQuery(() => {
+    const options = {
+      query: {
+        organizationId: recordFilters.organizationId,
+        environmentId: recordFilters.environmentId,
+        sourceType: 'first-article',
+        // Gateway 公共查询沿用通用 status / keyword；下游再分别映射为 result / skuCode。
+        ...optionalQuery('keyword', recordFilters.skuCode),
+        ...optionalQuery('status', recordFilters.result),
+        skip: recordFilters.skip,
+        take: recordFilters.take,
+      },
+    } as Parameters<typeof listBusinessConsoleQualityInspectionRecordsQueryOptions>[0]
+    return {
+      ...listBusinessConsoleQualityInspectionRecordsQueryOptions(options),
+      enabled: hasBusinessContext(recordFilters),
+    }
+  })
+  return {
+    firstArticleRecords: computed<BusinessConsoleQualityItem[]>(() =>
+      listItems(recordsQuery.data.value),
+    ),
+    firstArticleRecordsError: recordsQuery.error,
+    firstArticleRecordsPending: recordsQuery.isLoading,
+    firstArticleRecordsTotal: computed(() => listTotal(recordsQuery.data.value)),
+    recordFilters,
+    refreshFirstArticleRecords: () => refetchWithBusinessContext(recordFilters, recordsQuery),
+  }
+}
+
+export function useQualityFirstArticlePlanActions(defaultContext?: BusinessContextFields) {
+  const queryCache = useQueryCache()
+  const createPlanMutation = useMutation(
+    createBusinessConsoleQualityInspectionPlanMutationOptions(),
+  )
+  const activatePlanMutation = useMutation(
+    activateBusinessConsoleQualityInspectionPlanMutationOptions(),
+  )
+
+  async function invalidatePlans() {
+    await queryCache
+      .invalidateQueries({
+        predicate: isBusinessQuery('listBusinessConsoleQualityInspectionPlans'),
+      })
+      .catch(ignoreBackgroundError)
+  }
+
+  async function activateFirstArticlePlan(
+    inspectionPlanId: string,
+    context: BusinessContextFields | undefined = defaultContext,
+  ) {
+    if (!context) throw new Error('business-context-missing')
+    const response = await activatePlanMutation.mutateAsync({
+      path: { inspectionPlanId },
+      body: {
+        organizationId: context.organizationId,
+        environmentId: context.environmentId,
+      },
+    })
+    await invalidatePlans()
+    return response
+  }
+
+  async function createAndActivateFirstArticlePlan(
+    body: BusinessConsoleCreateInspectionPlanRequest,
+  ) {
+    const created = await createPlanMutation.mutateAsync({
+      body: { ...body, category: 'first-article' },
+    })
+    const inspectionPlanId = created?.data?.inspectionPlanId?.trim()
+    if (!inspectionPlanId) {
+      throw new Error('inspection-plan-id-missing')
+    }
+    await invalidatePlans()
+    try {
+      await activateFirstArticlePlan(inspectionPlanId, body)
+      return { inspectionPlanId, activated: true as const }
+    } catch (activationError) {
+      return {
+        inspectionPlanId,
+        activated: false as const,
+        activationError,
+      }
+    }
+  }
+
+  return {
+    activateFirstArticlePlan,
+    activateFirstArticlePlanError: activatePlanMutation.error,
+    activateFirstArticlePlanPending: activatePlanMutation.isLoading,
+    createAndActivateFirstArticlePlan,
+    createFirstArticlePlanError: createPlanMutation.error,
+    createFirstArticlePlanPending: createPlanMutation.isLoading,
+  }
+}
+
 export function useQualityNcrs(initialFilters: Partial<QualityListFilters> = {}) {
   const filters = defaultFilters(initialFilters)
   const queryCache = useQueryCache()
+  const auth = useAuthStore()
 
   const ncrsQuery = useQuery(() => ({
     ...listBusinessConsoleQualityNcrsQueryOptions({
@@ -213,7 +342,61 @@ export function useQualityNcrs(initialFilters: Partial<QualityListFilters> = {})
   const closeNcrPending = shallowRef(false)
   const closeNcrError = shallowRef<unknown>()
 
-  async function readNcr(ncrId: string, action: 'submit-disposition' | 'close') {
+  function reworkIntentScope(ncrId: string, body: BusinessConsoleNcrDispositionRequest) {
+    const fingerprintBody = {
+      ncrId,
+      dispositionType: body.dispositionType,
+      dispositionApprovalChainId: body.dispositionApprovalChainId,
+      attachmentFileIds: body.attachmentFileIds,
+      mrbReviews: body.mrbReviews?.map(({ reviewedAtUtc: _reviewedAtUtc, ...review }) => review),
+    }
+    return {
+      principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
+      organizationId: filters.organizationId,
+      environmentId: filters.environmentId,
+      operationType: 'quality.ncr.rework',
+      payloadFingerprint: JSON.stringify(fingerprintBody),
+    }
+  }
+
+  function ncrActionRequest(
+    ncrId: string,
+    status: string | null | undefined,
+    dispositionType: string | null | undefined,
+    action: 'submit-disposition' | 'close',
+    body?: BusinessConsoleNcrDispositionRequest,
+    idempotentReplay = false,
+  ) {
+    const hasPendingRework =
+      action === 'submit-disposition' &&
+      body?.dispositionType.trim().toLowerCase() === 'rework' &&
+      Boolean(peekPendingBusinessIntent(reworkIntentScope(ncrId, body)))
+    return {
+      domain: 'quality-ncr' as const,
+      action,
+      facts: {
+        status,
+        dispositionType,
+        idempotentReplay: idempotentReplay || hasPendingRework,
+      },
+    }
+  }
+
+  function ncrActionGate(
+    ncrId: string,
+    status: string | null | undefined,
+    dispositionType: string | null | undefined,
+    action: 'submit-disposition' | 'close',
+    body?: BusinessConsoleNcrDispositionRequest,
+  ) {
+    return statusActionGate(ncrActionRequest(ncrId, status, dispositionType, action, body))
+  }
+
+  async function readNcr(
+    ncrId: string,
+    action: 'submit-disposition' | 'close',
+    idempotentReplay = false,
+  ) {
     const query = getBusinessConsoleQualityNcrQueryOptions({
       path: { ncrId },
       query: {
@@ -226,11 +409,14 @@ export function useQualityNcrs(initialFilters: Partial<QualityListFilters> = {})
     } as Parameters<typeof query.query>[0])
     const item = response?.success ? response.data : undefined
     return item
-      ? {
-          domain: 'quality-ncr' as const,
+      ? ncrActionRequest(
+          ncrId,
+          item.status,
+          item.dispositionType,
           action,
-          facts: { status: item.status, dispositionType: item.dispositionType },
-        }
+          undefined,
+          idempotentReplay,
+        )
       : undefined
   }
 
@@ -244,23 +430,67 @@ export function useQualityNcrs(initialFilters: Partial<QualityListFilters> = {})
     submitDispositionPending.value = true
     submitDispositionError.value = undefined
     try {
-      const result = await executeLifecycleAction({
-        readLatest: () => readNcr(ncrId, 'submit-disposition'),
-        command: () =>
-          submitBusinessConsoleQualityNcrDisposition({
-            path: { ncrId },
-            query: {
-              organizationId: filters.organizationId,
-              environmentId: filters.environmentId,
-            },
-            body,
-            throwOnError: false,
-          }),
+      if (body.dispositionType.trim().toLowerCase() !== 'rework') {
+        const result = await executeLifecycleAction({
+          readLatest: () => readNcr(ncrId, 'submit-disposition'),
+          command: () =>
+            submitBusinessConsoleQualityNcrDisposition({
+              path: { ncrId },
+              query: {
+                organizationId: filters.organizationId,
+                environmentId: filters.environmentId,
+              },
+              body,
+              throwOnError: false,
+            }),
+        })
+        await refreshNcrActions()
+        return result
+      }
+
+      const intentScope = reworkIntentScope(ncrId, body)
+      const restored = peekPendingBusinessIntent(intentScope)
+      const pending = acquirePendingBusinessIntent(
+        intentScope,
+        () => `ncr-rework-${globalThis.crypto.randomUUID()}`,
+        body,
+      )
+      if (!pending.payloadSnapshot || typeof pending.payloadSnapshot !== 'object') {
+        throw new Error('返工处置缺少冻结的待处理载荷，请保留当前页面并人工核实。')
+      }
+      const stableBody = pending.payloadSnapshot as BusinessConsoleNcrDispositionRequest
+      const result = await completePendingBusinessIntent(intentScope, async () => {
+        const envelope = await executeLifecycleAction({
+          readLatest: () =>
+            readNcr(
+              ncrId,
+              'submit-disposition',
+              restored?.idempotencyKey === pending.idempotencyKey,
+            ),
+          command: () =>
+            submitBusinessConsoleQualityNcrDisposition({
+              path: { ncrId },
+              query: {
+                organizationId: filters.organizationId,
+                environmentId: filters.environmentId,
+              },
+              body: { ...stableBody, idempotencyKey: pending.idempotencyKey },
+              throwOnError: false,
+            }),
+        })
+        if (!envelope) throw new Error('返工处置未返回业务信封')
+        await confirmBusinessConsoleOperation(envelope, {
+          expectedOperationType: 'quality.ncr.rework',
+          expectedIdempotencyKey: pending.idempotencyKey,
+          expectedResourceId: ncrId,
+        })
+        return envelope
       })
       await refreshNcrActions()
       return result
     } catch (error) {
       submitDispositionError.value = error
+      await refreshNcrActions()
       throw error
     } finally {
       submitDispositionPending.value = false
@@ -299,7 +529,8 @@ export function useQualityNcrs(initialFilters: Partial<QualityListFilters> = {})
     closeNcrError,
     closeNcrPending,
     filters,
-    ncrs: computed<BusinessConsoleQualityItem[]>(() => listItems(ncrsQuery.data.value)),
+    ncrActionGate,
+    ncrs: computed<BusinessConsoleQualityNcrItem[]>(() => listItems(ncrsQuery.data.value)),
     ncrsError: ncrsQuery.error,
     ncrsPending: ncrsQuery.isLoading,
     ncrsTotal: computed(() => listTotal(ncrsQuery.data.value)),

@@ -10,6 +10,7 @@ using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockReservations;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockStatusTransfers;
 using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Business.Inventory.Web.Application.Queries;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Messaging.CAP;
@@ -38,6 +39,50 @@ public sealed class InventoryMovementRequestedConsumerTests
         Assert.Equal("IN-001", movement.SourceDocumentId);
         Assert.Equal("idem-in-001", movement.IdempotencyKey);
         Assert.Equal(5m, movement.Quantity);
+    }
+
+    [Fact]
+    public async Task Movement_requested_consumer_preserves_target_location_for_availability_readback()
+    {
+        await using var dbContext = CreateContext();
+        var sender = new CommandExecutingSender(dbContext);
+        var handler = new InventoryMovementRequestedIntegrationEventHandlerForPostingMovement(
+            NullLogger<InventoryMovementRequestedIntegrationEventHandlerForPostingMovement>.Instance,
+            sender,
+            new InMemoryIntegrationEventDeadLetterStore(),
+            new RecordingIntegrationEventPublisher());
+
+        await handler.HandleAsync(CreateRequestedEvent("evt-target-location") with
+        {
+            Payload = CreateRequestedEvent("evt-target-location").Payload with
+            {
+                LocationCode = "LOC-TARGET",
+                IdempotencyKey = "idem-in-target-location",
+            },
+        }, CancellationToken.None);
+
+        var movement = Assert.Single(dbContext.StockMovements);
+        Assert.Equal("LOC-TARGET", movement.LocationCode);
+        var ledger = Assert.Single(dbContext.StockLedgers);
+        Assert.Equal("LOC-TARGET", ledger.LocationCode);
+
+        var availability = await new GetStockAvailabilityQueryHandler(dbContext).Handle(
+            new GetStockAvailabilityQuery(
+                "org-001",
+                "env-dev",
+                "SKU-FG-1000",
+                "kg",
+                "SITE-01",
+                "LOC-TARGET",
+                "LOT-001",
+                null,
+                "qualified",
+                "company",
+                "owner-001"),
+            CancellationToken.None);
+
+        Assert.Equal(5m, availability.AvailableQuantity);
+        Assert.Equal("LOC-TARGET", Assert.Single(availability.Items).LocationCode);
     }
 
     [Fact]

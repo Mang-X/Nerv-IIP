@@ -6,6 +6,7 @@ import type {
 import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
 import { openDownloadGrantBlob, statusActionGate } from '@nerv-iip/business-core'
 import MesWorkScopeSelect from '@/components/mes/MesWorkScopeSelect.vue'
+import ActualHoursCell from '@/components/mes/ActualHoursCell.vue'
 import ProductionReportDialog from '@/components/mes/ProductionReportDialog.vue'
 import { recoverLifecycleAction, useLifecycleWriteIntent } from '@/composables/lifecycleAction'
 import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
@@ -256,6 +257,7 @@ const columns: NvDataTableColumn<Row>[] = [
   },
   { key: 'shiftId', header: '班次', width: 'w-28', accessor: (r) => resolveShiftLabel(r.shiftId) },
   { key: 'assignedUserName', header: '派工', width: 'w-40' },
+  { key: 'actualHours', header: '实际工时', width: 'w-36' },
   {
     key: 'plannedStartUtc',
     header: '计划开始',
@@ -607,7 +609,6 @@ function formatError(error: unknown) {
       </template>
     </NvToolbar>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
     <p
       v-if="operationScopeMessage"
       data-testid="operation-scope-message"
@@ -630,9 +631,12 @@ function formatError(error: unknown) {
       :row-key="rowKey"
       :client-sort="false"
       :loading="operationTasksPending"
+      :error="operationTasksError"
+      :error-message="errorMessage"
       :searchable="false"
       :column-settings="false"
       empty-message="当前没有工序任务。确认工单已释放、排程已生成后，可开工任务会出现在这里。"
+      @retry="refreshOperationTasks"
     >
       <template #cell-operationSequence="{ row }">
         <span class="tabular-nums">工序 {{ row.operationSequence ?? '—' }}</span>
@@ -676,6 +680,12 @@ function formatError(error: unknown) {
         <NvStatusBadge
           :label="resolveDispatchState(row).label"
           :tone="resolveDispatchState(row).tone"
+        />
+      </template>
+      <template #cell-actualHours="{ row }">
+        <ActualHoursCell
+          :labor-hours="row.actualLaborHours"
+          :machine-hours="row.actualMachineHours"
         />
       </template>
       <template #cell-plannedStartUtc="{ row }">

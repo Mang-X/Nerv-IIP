@@ -13,6 +13,48 @@ namespace Nerv.IIP.Business.Mes.Domain.Tests;
 public sealed class MesAggregateTests
 {
     [Fact]
+    public void Rework_work_order_captures_quality_source_facts_and_creation_event()
+    {
+        var requestedAtUtc = DateTimeOffset.Parse("2026-08-29T08:00:00Z");
+
+        var workOrder = WorkOrder.CreateRework(
+            "org-001",
+            "env-dev",
+            "WO-RW-001",
+            "SKU-001",
+            "PV-001",
+            "PCS",
+            3m,
+            100,
+            DateTimeOffset.Parse("2026-08-30T08:00:00Z"),
+            "WO-SOURCE-001",
+            "OP-SOURCE-10",
+            "DEF-001",
+            "ncr-001",
+            "NCR-2026-0001",
+            "LOT-001",
+            "SN-001",
+            requestedAtUtc,
+            "corr-001",
+            "evt-rework-requested-001");
+
+        Assert.Equal(WorkOrder.ReworkType, workOrder.WorkOrderType);
+        Assert.Equal("WO-SOURCE-001", workOrder.SourceWorkOrderId);
+        Assert.Equal("OP-SOURCE-10", workOrder.SourceOperationTaskId);
+        Assert.Equal("DEF-001", workOrder.SourceDefectNo);
+        Assert.Equal("ncr-001", workOrder.SourceNcrId);
+        Assert.Equal("NCR-2026-0001", workOrder.SourceNcrCode);
+        Assert.Equal("LOT-001", workOrder.SourceLotNo);
+        Assert.Equal("SN-001", workOrder.SourceSerialNo);
+        Assert.Equal(requestedAtUtc, workOrder.SourceReworkRequestedAtUtc);
+        var created = Assert.IsType<ReworkWorkOrderCreatedDomainEvent>(Assert.Single(workOrder.GetDomainEvents()));
+        Assert.Same(workOrder, created.WorkOrder);
+        Assert.Equal(requestedAtUtc, created.RequestedAtUtc);
+        Assert.Equal("corr-001", created.CorrelationId);
+        Assert.Equal("evt-rework-requested-001", created.CausationId);
+    }
+
+    [Fact]
     public void WorkOrder_references_ProductEngineering_production_version_by_public_id()
     {
         var workOrder = WorkOrder.Create(
@@ -27,6 +69,8 @@ public sealed class MesAggregateTests
 
         Assert.Equal("production-version-from-issue-95", workOrder.ProductionVersionId);
         Assert.Equal("SKU-001", workOrder.SkuId);
+        Assert.Equal(WorkOrder.StandardType, workOrder.WorkOrderType);
+        Assert.Null(workOrder.SourceNcrId);
     }
 
     [Fact]
@@ -59,6 +103,80 @@ public sealed class MesAggregateTests
                 Assert.Equal(OperationTaskLifecycleStatus.Queued, first.Status);
             },
             second => Assert.Equal("OP-20", second.OperationTaskId));
+    }
+
+    [Fact]
+    public void WorkOrder_mark_released_rejects_empty_operation_tasks_without_changing_state_or_publishing_event()
+    {
+        var workOrder = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-2095-EMPTY",
+            "SKU-2095",
+            "PV-2095",
+            12m,
+            1,
+            DateTimeOffset.Parse("2026-08-24T08:00:00Z"));
+        workOrder.ClearDomainEvents();
+
+        Assert.Throws<ArgumentException>(() => workOrder.MarkReleased([]));
+
+        Assert.Equal(WorkOrder.CreatedStatus, workOrder.Status);
+        Assert.DoesNotContain(workOrder.GetDomainEvents(), x => x is WorkOrderReleasedDomainEvent);
+    }
+
+    [Fact]
+    public void WorkOrder_mark_released_with_operation_tasks_changes_state_and_publishes_supplied_tasks()
+    {
+        var releasedAtUtc = DateTimeOffset.Parse("2026-08-24T08:00:00Z");
+        var workOrder = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-2095-RELEASE",
+            "SKU-2095",
+            "PV-2095",
+            12m,
+            1,
+            releasedAtUtc.AddDays(1));
+        var operationTasks = new[]
+        {
+            OperationTask.Queue(
+                "org-001", "env-dev", "WO-2095-RELEASE", "OP-10", 10, "WC-MIX", [], releasedAtUtc,
+                TimeSpan.FromMinutes(30)),
+            OperationTask.Queue(
+                "org-001", "env-dev", "WO-2095-RELEASE", "OP-20", 20, "WC-PACK", [], releasedAtUtc,
+                TimeSpan.FromMinutes(15)),
+        };
+        workOrder.ClearDomainEvents();
+
+        workOrder.MarkReleased(operationTasks);
+
+        Assert.Equal(WorkOrder.ReleasedStatus, workOrder.Status);
+        var domainEvent = Assert.IsType<WorkOrderReleasedDomainEvent>(Assert.Single(workOrder.GetDomainEvents()));
+        Assert.Collection(
+            domainEvent.OperationTasks,
+            first => Assert.Same(operationTasks[0], first),
+            second => Assert.Same(operationTasks[1], second));
+    }
+
+    [Fact]
+    public void WorkOrder_mark_released_rejects_null_operation_tasks_without_changing_state_or_publishing_event()
+    {
+        var workOrder = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-2095-NULL",
+            "SKU-2095",
+            "PV-2095",
+            12m,
+            1,
+            DateTimeOffset.Parse("2026-08-24T08:00:00Z"));
+        workOrder.ClearDomainEvents();
+
+        Assert.Throws<ArgumentNullException>(() => workOrder.MarkReleased(null!));
+
+        Assert.Equal(WorkOrder.CreatedStatus, workOrder.Status);
+        Assert.DoesNotContain(workOrder.GetDomainEvents(), x => x is WorkOrderReleasedDomainEvent);
     }
 
     [Fact]
@@ -106,6 +224,35 @@ public sealed class MesAggregateTests
         Assert.Equal("SN-FG-001", report.SerialNo);
         Assert.True(report.CompletesOperation);
         Assert.IsType<ProductionReportRecordedDomainEvent>(report.GetDomainEvents().Single());
+    }
+
+    [Fact]
+    public void ProductionReport_keeps_the_submitting_operator_and_carries_it_onto_the_reversal_row()
+    {
+        var report = ProductionReport.Record(
+            "org-001",
+            "env-dev",
+            "PRPT-OP-001",
+            "WO-001",
+            "OP-10",
+            9m,
+            0m,
+            false,
+            DateTimeOffset.Parse("2026-05-23T09:00:00Z"),
+            reportedBy: "  user-emp-010  ");
+
+        Assert.Equal("user-emp-010", report.ReportedBy);
+
+        var reversal = ProductionReport.Reverse(
+            report,
+            "PRPT-OP-001-R",
+            DateTimeOffset.Parse("2026-05-23T10:00:00Z"),
+            "reported on the wrong operation",
+            "user-supervisor");
+
+        // 冲销行是另一条报工事实，提交它的是执行冲销的人，不是原报工人。
+        Assert.Equal("user-supervisor", reversal.ReportedBy);
+        Assert.Equal("user-supervisor", reversal.ReversedBy);
     }
 
     [Fact]
@@ -396,10 +543,56 @@ public sealed class MesAggregateTests
             DateTimeOffset.Parse("2026-05-23T08:10:00Z"));
 
         Assert.Equal(MaterialIssueRequest.RequestedStatus, request.Status);
+        Assert.False(request.IsSupplementary);
+        Assert.Null(request.OriginalMaterialIssueRequestNo);
         // 创建只发「领料已申请」（仓库据此建出库/拣货，#1324）；库存移动仍然只在收料/退料时发生。
         Assert.Single(request.GetDomainEvents().OfType<MaterialIssueRequestCreatedDomainEvent>());
         Assert.Empty(request.GetDomainEvents().OfType<MaterialIssueRequestedDomainEvent>());
         Assert.Empty(request.GetDomainEvents().OfType<MaterialLineSideReceiptConfirmedDomainEvent>());
+    }
+
+    [Fact]
+    public void MaterialIssueRequest_creation_tracks_supplementary_semantics_and_original_request_no()
+    {
+        var request = MaterialIssueRequest.Create(
+            "org-001",
+            "env-dev",
+            "MIR-002",
+            "WO-001",
+            "OP-10",
+            "MAT-001",
+            "PCS",
+            3m,
+            DateTimeOffset.Parse("2026-05-23T08:10:00Z"),
+            isSupplementary: true,
+            originalMaterialIssueRequestNo: "MIR-001");
+
+        Assert.True(request.IsSupplementary);
+        Assert.Equal("MIR-001", request.OriginalMaterialIssueRequestNo);
+    }
+
+    [Fact]
+    public void MaterialIssueRequest_creation_rejects_inconsistent_supplementary_semantics()
+    {
+        var timestamp = DateTimeOffset.Parse("2026-05-23T08:10:00Z");
+
+        Assert.Throws<ArgumentException>(() => MaterialIssueRequest.Create(
+            "org-001", "env-dev", "MIR-003", "WO-001", "OP-10", "MAT-001", "PCS", 3m, timestamp,
+            isSupplementary: true));
+
+        Assert.Throws<ArgumentException>(() => MaterialIssueRequest.Create(
+            "org-001", "env-dev", "MIR-004", "WO-001", "OP-10", "MAT-001", "PCS", 3m, timestamp,
+            originalMaterialIssueRequestNo: "MIR-001"));
+    }
+
+    [Fact]
+    public void MaterialIssueRequest_creation_rejects_self_reference()
+    {
+        Assert.Throws<ArgumentException>(() => MaterialIssueRequest.Create(
+            "org-001", "env-dev", "MIR-005", "WO-001", "OP-10", "MAT-001", "PCS", 3m,
+            DateTimeOffset.Parse("2026-05-23T08:10:00Z"),
+            isSupplementary: true,
+            originalMaterialIssueRequestNo: "MIR-005"));
     }
 
     [Fact]

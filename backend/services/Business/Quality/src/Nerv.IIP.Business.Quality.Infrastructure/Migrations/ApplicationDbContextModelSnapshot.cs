@@ -849,10 +849,10 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasComment("Source document public id.");
 
                     b.Property<string>("SourceDocumentLineId")
-                        .HasMaxLength(150)
-                        .HasColumnType("character varying(150)")
+                        .HasMaxLength(250)
+                        .HasColumnType("character varying(250)")
                         .HasColumnName("source_document_line_id")
-                        .HasComment("Optional source document line or operation id.");
+                        .HasComment("Optional source document line, operation id or stable periodic-operation window identity.");
 
                     b.Property<string>("SourceService")
                         .IsRequired()
@@ -1403,6 +1403,375 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Quality.Domain.AggregatesModel.PeriodicInspectionOperationAggregate.PeriodicInspectionOperation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Periodic inspection operation aggregate id.");
+
+                    b.Property<DateTime?>("CompletedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at_utc")
+                        .HasComment("UTC time when MES completed the operation; may precede the release event in delivery order.");
+
+                    b.Property<int?>("CompletionOperationSequence")
+                        .HasColumnType("integer")
+                        .HasColumnName("completion_operation_sequence")
+                        .HasComment("Positive operation sequence staged from an operation completion event.");
+
+                    b.Property<string>("CompletionSkuCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("completion_sku_code")
+                        .HasComment("SKU snapshot staged from an operation completion event.");
+
+                    b.Property<string>("CompletionUomCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("completion_uom_code")
+                        .HasComment("Quantity UOM snapshot staged from an operation completion event.");
+
+                    b.Property<string>("CompletionWorkCenterId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("completion_work_center_id")
+                        .HasComment("Work center snapshot staged from an operation completion event.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id where the operation facts apply.");
+
+                    b.Property<string>("OperationId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("operation_id")
+                        .HasComment("MES operation task public id.");
+
+                    b.Property<int?>("OperationSequence")
+                        .HasColumnType("integer")
+                        .HasColumnName("operation_sequence")
+                        .HasComment("Positive operation sequence from the work-order release event; null until release arrives.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id that owns the operation facts.");
+
+                    b.Property<DateTime?>("ReleasedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("released_at_utc")
+                        .HasComment("UTC time when MES released the work order; null while source facts are staged out of order.");
+
+                    b.Property<string>("SkuCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("sku_code")
+                        .HasComment("SKU snapshot from the work-order release event; null until release arrives.");
+
+                    b.Property<string>("WorkCenterId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("work_center_id")
+                        .HasComment("Work center snapshot from the work-order release event; null until release arrives.");
+
+                    b.Property<string>("WorkOrderId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("work_order_id")
+                        .HasComment("MES work order public id.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "WorkOrderId", "OperationId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_periodic_inspection_operations_scope_operation");
+
+                    b.ToTable("periodic_inspection_operations", "quality", t =>
+                        {
+                            t.HasComment("Quality-owned MES operation source facts staged for periodic inspection reconciliation.");
+
+                            t.HasCheckConstraint("ck_periodic_inspection_operations_completion_snapshot", "(completion_sku_code IS NULL AND completion_operation_sequence IS NULL AND completion_work_center_id IS NULL AND completion_uom_code IS NULL AND completed_at_utc IS NULL) OR (completion_sku_code IS NOT NULL AND completion_operation_sequence > 0 AND completion_work_center_id IS NOT NULL AND completion_uom_code IS NOT NULL AND completed_at_utc IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_periodic_inspection_operations_completion_time", "completed_at_utc IS NULL OR released_at_utc IS NULL OR completed_at_utc >= released_at_utc");
+
+                            t.HasCheckConstraint("ck_periodic_inspection_operations_release_snapshot", "(sku_code IS NULL AND operation_sequence IS NULL AND work_center_id IS NULL AND released_at_utc IS NULL) OR (sku_code IS NOT NULL AND operation_sequence > 0 AND work_center_id IS NOT NULL AND released_at_utc IS NOT NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Quality.Domain.AggregatesModel.PeriodicInspectionOperationAggregate.PeriodicInspectionProductionReport", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Production-report fact id.");
+
+                    b.Property<decimal>("GoodQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("good_quantity")
+                        .HasComment("Signed good quantity from MES; reversals carry a non-positive value in the reported UOM.");
+
+                    b.Property<bool>("IsReversal")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_reversal")
+                        .HasComment("Whether this fact reverses an earlier report.");
+
+                    b.Property<Guid>("OperationContextId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("operation_context_id")
+                        .HasComment("Owning periodic inspection operation aggregate id.");
+
+                    b.Property<string>("ReportNo")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("report_no")
+                        .HasComment("MES production report business identity.");
+
+                    b.Property<DateTime>("ReportedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reported_at_utc")
+                        .HasComment("UTC business time recorded by MES.");
+
+                    b.Property<string>("ReversedReportNo")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("reversed_report_no")
+                        .HasComment("Original MES report number referenced by a reversal.");
+
+                    b.Property<string>("UomCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("uom_code")
+                        .HasComment("MES-reported quantity unit of measure; all reports for one operation must match.");
+
+                    b.Property<string>("WorkCenterId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("work_center_id")
+                        .HasComment("MES work center snapshot carried by the production report.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OperationContextId", "ReportNo")
+                        .IsUnique()
+                        .HasDatabaseName("ux_periodic_inspection_reports_operation_report");
+
+                    b.ToTable("periodic_inspection_production_reports", "quality", t =>
+                        {
+                            t.HasComment("Immutable MES production-report facts used to reconcile periodic inspection watermarks.");
+
+                            t.HasCheckConstraint("ck_periodic_inspection_reports_reversal", "(is_reversal AND good_quantity <= 0 AND reversed_report_no IS NOT NULL) OR (NOT is_reversal AND good_quantity >= 0 AND reversed_report_no IS NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Quality.Domain.AggregatesModel.PeriodicInspectionOperationAggregate.PeriodicInspectionRuntimeContext", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Periodic inspection runtime context id.");
+
+                    b.Property<string>("AssignedInspectorUserId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("assigned_inspector_user_id")
+                        .HasComment("Frozen optional inspector assignment target.");
+
+                    b.Property<string>("AssignedTeamId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("assigned_team_id")
+                        .HasComment("Frozen optional team assignment target.");
+
+                    b.Property<DateTime?>("CompletedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at_utc")
+                        .HasComment("UTC MES operation completion time when status is closed.");
+
+                    b.Property<decimal>("CumulativeGoodQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("cumulative_good_quantity")
+                        .HasComment("Current signed net good quantity including reversal effects.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id frozen at context creation.");
+
+                    b.Property<DateTime?>("FirstActivityAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("first_activity_at_utc")
+                        .HasComment("Earliest UTC MES production activity time observed for the operation.");
+
+                    b.Property<Guid>("InspectionPlanId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("inspection_plan_id")
+                        .HasComment("Immutable matched inspection plan id.");
+
+                    b.Property<int>("InspectionPlanVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("inspection_plan_version")
+                        .HasComment("Immutable matched inspection plan version.");
+
+                    b.Property<long>("LastGeneratedQuantityWindowSequence")
+                        .HasColumnType("bigint")
+                        .HasColumnName("last_generated_quantity_window_sequence")
+                        .HasComment("Last atomically generated cumulative quantity-window sequence; zero before generation.");
+
+                    b.Property<long>("LastGeneratedTimeWindowSequence")
+                        .HasColumnType("bigint")
+                        .HasColumnName("last_generated_time_window_sequence")
+                        .HasComment("Last atomically generated time-window sequence; zero before generation.");
+
+                    b.Property<DateTime?>("NextTimeWindowAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("next_time_window_at_utc")
+                        .HasComment("Persisted UTC due time for the next ungenerated time window; null before activity or after closure.");
+
+                    b.Property<Guid>("OperationContextId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("operation_context_id")
+                        .HasComment("Owning periodic inspection operation aggregate id.");
+
+                    b.Property<string>("OperationId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("operation_id")
+                        .HasComment("MES operation task public id frozen at context creation.");
+
+                    b.Property<int>("OperationSequence")
+                        .HasColumnType("integer")
+                        .HasColumnName("operation_sequence")
+                        .HasComment("Positive MES operation sequence snapshot.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id frozen at context creation.");
+
+                    b.Property<DateTime?>("QuantityContinuationNextAttemptAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("quantity_continuation_next_attempt_at_utc")
+                        .HasComment("Persisted fair-scheduling time after which the pending quantity backlog may claim another bounded batch.");
+
+                    b.Property<DateTime?>("QuantityGenerationAnchorAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("quantity_generation_anchor_at_utc")
+                        .HasComment("UTC triggering event time retained while bounded quantity-window continuation remains pending.");
+
+                    b.Property<decimal>("QuantityHighWater")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("quantity_high_water")
+                        .HasComment("Monotonic accepted good-quantity high water; reversal facts neither advance nor roll it back.");
+
+                    b.Property<decimal?>("QuantityInterval")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("quantity_interval")
+                        .HasComment("Frozen periodic quantity interval in the report UOM.");
+
+                    b.Property<DateTime>("ReleasedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("released_at_utc")
+                        .HasComment("UTC work-order release time.");
+
+                    b.Property<string>("SkuCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("sku_code")
+                        .HasComment("SKU snapshot from the release event.");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("status")
+                        .HasComment("Runtime context status: active or closed.");
+
+                    b.Property<decimal?>("TimeIntervalHours")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("time_interval_hours")
+                        .HasComment("Frozen periodic time interval in hours.");
+
+                    b.Property<DateTime?>("TimeScheduleAnchorAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("time_schedule_anchor_at_utc")
+                        .HasComment("Frozen UTC first-production anchor after the first time window is generated.");
+
+                    b.Property<string>("UomCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("uom_code")
+                        .HasComment("Authoritative MES production report UOM; null before the first report.");
+
+                    b.Property<string>("WorkCenterId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("work_center_id")
+                        .HasComment("Work center snapshot from the release event.");
+
+                    b.Property<string>("WorkOrderId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("work_order_id")
+                        .HasComment("MES work order public id frozen at context creation.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OperationContextId");
+
+                    b.HasIndex("QuantityContinuationNextAttemptAtUtc", "Id")
+                        .HasDatabaseName("ix_periodic_inspection_runtime_quantity_continuation_due");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "Status", "NextTimeWindowAtUtc")
+                        .HasDatabaseName("ix_periodic_inspection_runtime_scope_status_next_time");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "InspectionPlanId", "WorkOrderId", "OperationId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_periodic_inspection_runtime_scope_plan_operation");
+
+                    b.ToTable("periodic_inspection_runtime_contexts", "quality", t =>
+                        {
+                            t.HasComment("Frozen per-plan periodic inspection runtime contexts with quantity/time watermarks and periodic task generation state.");
+
+                            t.HasCheckConstraint("ck_periodic_inspection_runtime_assignment", "assigned_inspector_user_id IS NULL OR assigned_team_id IS NULL");
+
+                            t.HasCheckConstraint("ck_periodic_inspection_runtime_high_water", "quantity_high_water >= 0");
+
+                            t.HasCheckConstraint("ck_periodic_inspection_runtime_interval", "(time_interval_hours IS NOT NULL AND time_interval_hours > 0) OR (quantity_interval IS NOT NULL AND quantity_interval > 0)");
+
+                            t.HasCheckConstraint("ck_periodic_inspection_runtime_quantity_continuation", "(quantity_generation_anchor_at_utc IS NULL AND quantity_continuation_next_attempt_at_utc IS NULL) OR (quantity_generation_anchor_at_utc IS NOT NULL AND quantity_continuation_next_attempt_at_utc IS NOT NULL AND status IN ('active', 'closed') AND quantity_interval IS NOT NULL AND uom_code IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_periodic_inspection_runtime_quantity_watermark", "last_generated_quantity_window_sequence >= 0");
+
+                            t.HasCheckConstraint("ck_periodic_inspection_runtime_status", "(status = 'active' AND completed_at_utc IS NULL) OR (status = 'closed' AND completed_at_utc IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_periodic_inspection_runtime_time_watermark", "(last_generated_time_window_sequence = 0 AND time_schedule_anchor_at_utc IS NULL) OR (last_generated_time_window_sequence > 0 AND time_schedule_anchor_at_utc IS NOT NULL)");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Quality.Domain.AggregatesModel.QualityReasonAggregate.QualityReason", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1604,6 +1973,73 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                     b.ToTable("spc_control_charts", "quality", t =>
                         {
                             t.HasComment("Quality SPC control chart limit locks by SKU, characteristic and work center.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Quality.Infrastructure.IntegrationEvents.ProcessedIntegrationEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Processed integration event identifier.");
+
+                    b.Property<string>("ConsumerName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("consumer_name")
+                        .HasComment("BusinessQuality integration event consumer name.");
+
+                    b.Property<string>("EventId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("event_id")
+                        .HasComment("Globally unique source event id used with consumer_name as the minimum inbox key.");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("event_type")
+                        .HasComment("Integration event type.");
+
+                    b.Property<int>("EventVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("event_version")
+                        .HasComment("Integration event contract version.");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("idempotency_key")
+                        .HasComment("Publisher business idempotency key retained for traceability.");
+
+                    b.Property<DateTimeOffset>("ProcessedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("processed_at_utc")
+                        .HasComment("UTC time when BusinessQuality accepted the event into its transactional inbox.");
+
+                    b.Property<string>("SourceService")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("source_service")
+                        .HasComment("Service that produced the integration event.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConsumerName", "EventId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_quality_processed_integration_events_consumer_event_id");
+
+                    b.HasIndex("SourceService", "EventType", "ProcessedAtUtc")
+                        .HasDatabaseName("ix_quality_processed_integration_events_source_type_processed_at");
+
+                    b.ToTable("processed_integration_events", "quality", t =>
+                        {
+                            t.HasComment("Integration events processed by BusinessQuality using the ADR 0011 event-id consumer inbox.");
                         });
                 });
 
@@ -2049,6 +2485,24 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Quality.Domain.AggregatesModel.PeriodicInspectionOperationAggregate.PeriodicInspectionProductionReport", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.Quality.Domain.AggregatesModel.PeriodicInspectionOperationAggregate.PeriodicInspectionOperation", null)
+                        .WithMany("ProductionReports")
+                        .HasForeignKey("OperationContextId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Quality.Domain.AggregatesModel.PeriodicInspectionOperationAggregate.PeriodicInspectionRuntimeContext", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.Quality.Domain.AggregatesModel.PeriodicInspectionOperationAggregate.PeriodicInspectionOperation", null)
+                        .WithMany("RuntimeContexts")
+                        .HasForeignKey("OperationContextId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Quality.Domain.AggregatesModel.CorrectiveActionAggregate.CorrectiveAction", b =>
                 {
                     b.Navigation("Actions");
@@ -2072,6 +2526,13 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
             modelBuilder.Entity("Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate.NonconformanceReport", b =>
                 {
                     b.Navigation("MrbReviews");
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Quality.Domain.AggregatesModel.PeriodicInspectionOperationAggregate.PeriodicInspectionOperation", b =>
+                {
+                    b.Navigation("ProductionReports");
+
+                    b.Navigation("RuntimeContexts");
                 });
 #pragma warning restore 612, 618
         }

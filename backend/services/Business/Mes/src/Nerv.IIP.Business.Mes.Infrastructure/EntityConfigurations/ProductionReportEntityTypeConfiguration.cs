@@ -27,16 +27,38 @@ public sealed class ProductionReportEntityTypeConfiguration : IEntityTypeConfigu
         builder.Property(x => x.ReversedReportNo).HasColumnName("reversed_report_no").HasMaxLength(100).HasComment("Original MES production report number reversed by this negative correction report.");
         builder.Property(x => x.ReversalReason).HasColumnName("reversal_reason").HasMaxLength(500).HasComment("Operator or system reason captured when this report reverses an original production report.");
         builder.Property(x => x.ReversedBy).HasColumnName("reversed_by").HasMaxLength(100).HasComment("Authenticated principal reference that performed the production report reversal.");
+        builder.Property(x => x.ReportedBy).HasColumnName("reported_by").HasMaxLength(100).HasComment("Authenticated principal reference that submitted this production report.");
         builder.Property(x => x.OeeWorkCenterId).HasColumnName("oee_work_center_id").HasMaxLength(100).HasComment("Work center snapshot carried with the report for OEE projection and reversal consistency.");
         builder.Property(x => x.OeeDeviceAssetId).HasColumnName("oee_device_asset_id").HasMaxLength(150).HasComment("Assigned device snapshot carried with the report for OEE projection and reversal consistency.");
         builder.Property(x => x.OeeUomCode).HasColumnName("oee_uom_code").HasMaxLength(30).HasComment("Output unit snapshot carried with the report for OEE projection and reversal consistency.");
         builder.Property(x => x.OeeTheoreticalRatePerHour).HasColumnName("oee_theoretical_rate_per_hour").HasPrecision(18, 6).HasComment("Theoretical output-rate snapshot carried with the report for OEE projection and reversal consistency.");
+        builder.Property(x => x.OeeDimensionResolutionStatus).HasColumnName("oee_dimension_resolution_status").HasMaxLength(20).HasComment("Event-time OEE dimension resolution outcome: resolved or degraded; NULL marks legacy rows predating the snapshot contract.");
+        builder.Property(x => x.OeeDimensionDegradedReason).HasColumnName("oee_dimension_degraded_reason").HasMaxLength(100).HasComment("Explicit reason why the event-time OEE dimension snapshot is degraded; NULL for resolved and legacy rows.");
+        builder.Property(x => x.OeeSiteCode).HasColumnName("oee_site_code").HasMaxLength(100).HasComment("Authoritative MasterData site code captured with the production report.");
+        builder.Property(x => x.OeeWorkshopCode).HasColumnName("oee_workshop_code").HasMaxLength(100).HasComment("Authoritative MasterData workshop code captured with the production report.");
+        builder.Property(x => x.OeeLineCode).HasColumnName("oee_line_code").HasMaxLength(100).HasComment("Authoritative MasterData production line code captured with the production report.");
+        builder.Property(x => x.OeeSiteTimezone).HasColumnName("oee_site_timezone").HasMaxLength(100).HasComment("IANA site timezone captured from MasterData at report time.");
+        builder.Property(x => x.OeeShiftCode).HasColumnName("oee_shift_code").HasMaxLength(100).HasComment("MasterData shift code captured with its report-time definition.");
+        builder.Property(x => x.OeeShiftStartsAt).HasColumnName("oee_shift_starts_at").HasComment("Local shift start time captured from MasterData at report time.");
+        builder.Property(x => x.OeeShiftEndsAt).HasColumnName("oee_shift_ends_at").HasComment("Local shift end time captured from MasterData at report time.");
+        builder.Property(x => x.OeeShiftCrossesMidnight).HasColumnName("oee_shift_crosses_midnight").HasComment("Whether the captured shift definition crosses local midnight.");
+        builder.Property(x => x.OeeShiftPaidMinutes).HasColumnName("oee_shift_paid_minutes").HasComment("Paid minutes in the captured shift definition.");
+        builder.Property(x => x.OeeShiftBreakMinutes).HasColumnName("oee_shift_break_minutes").HasComment("Break minutes in the captured shift definition.");
         builder.Property(x => x.Source).HasColumnName("source").IsRequired().HasMaxLength(50).HasDefaultValue("manual").HasComment("Report origin: manual operator entry or telemetry count automation.");
         builder.Property(x => x.CompletesOperation).HasColumnName("completes_operation").IsRequired().HasComment("Whether this report marks the operation as completed.");
         builder.Property(x => x.ReportedAtUtc).HasColumnName("reported_at_utc").IsRequired().HasComment("UTC time when production was reported.");
         builder.Property(x => x.MaterialMovementCount).HasColumnName("material_movement_count").IsRequired().HasComment("Count of production-consumption Inventory movements emitted for cost closure.");
         builder.HasAlternateKey(x => new { x.OrganizationId, x.EnvironmentId, x.ReportNo })
             .HasName("ak_production_reports_scope_report_no");
+        builder.HasAlternateKey(x => new
+        {
+            x.OrganizationId,
+            x.EnvironmentId,
+            x.ReportNo,
+            x.WorkOrderId,
+            x.OperationTaskId,
+        })
+            .HasName("ak_production_reports_scope_report_task");
         builder.HasOne<WorkOrder>()
             .WithMany()
             .HasPrincipalKey(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderIdValue })
