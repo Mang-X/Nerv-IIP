@@ -99,11 +99,8 @@ public sealed record CompleteMaintenanceWorkOrderRequest(
 
 public sealed class CreateMaintenanceWorkOrderRequestValidator : Validator<CreateMaintenanceWorkOrderRequest>
 {
-    public CreateMaintenanceWorkOrderRequestValidator()
-    {
-        RuleFor(x => x.AssetUnavailableReason).MaximumLength(100);
+    public CreateMaintenanceWorkOrderRequestValidator() =>
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
-    }
 }
 
 public sealed class CompleteMaintenanceWorkOrderRequestValidator : Validator<CompleteMaintenanceWorkOrderRequest>

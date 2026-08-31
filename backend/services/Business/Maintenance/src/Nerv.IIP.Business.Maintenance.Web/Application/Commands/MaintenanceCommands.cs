@@ -135,7 +135,7 @@ public sealed class CreateMaintenanceWorkOrderCommandHandler(ApplicationDbContex
             }
         }
 
-        var assetUnavailableReasonCode = MaintenanceText.Optional(request.AssetUnavailableReason);
+        var assetUnavailableReasonCode = request.AssetUnavailableReason;
         if (assetUnavailableReasonCode is not null)
         {
             var downtimeReasonExists = await dbContext.DowntimeReasons.AnyAsync(
@@ -198,7 +198,7 @@ public sealed class CreateMaintenanceWorkOrderCommandHandler(ApplicationDbContex
             Priority = request.Priority.Trim().ToUpperInvariant(),
             SourceAlarmId = MaintenanceText.Optional(request.SourceAlarmId),
             OpenedBy = request.OpenedBy.Trim(),
-            AssetUnavailableReason = MaintenanceText.Optional(request.AssetUnavailableReason),
+            request.AssetUnavailableReason,
             DiagnosticDescription = MaintenanceText.Optional(request.DiagnosticDescription),
             FailureModeCode = MaintenanceText.Optional(request.FailureModeCode),
             FailureCauseCode = MaintenanceText.Optional(request.FailureCauseCode),

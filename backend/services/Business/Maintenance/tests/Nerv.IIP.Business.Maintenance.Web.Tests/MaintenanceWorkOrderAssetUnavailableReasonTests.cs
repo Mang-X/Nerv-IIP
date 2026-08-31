@@ -1,10 +1,11 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.DowntimeReasonAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.DomainEvents;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
 using Nerv.IIP.Business.Maintenance.Web.Application.IntegrationEventConverters;
-using Nerv.IIP.Business.Maintenance.Web.Endpoints.Maintenance;
+using NetCorePal.Extensions.DependencyInjection;
 using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Tests;
@@ -12,22 +13,47 @@ namespace Nerv.IIP.Business.Maintenance.Web.Tests;
 public sealed class MaintenanceWorkOrderAssetUnavailableReasonTests
 {
     [Fact]
-    public void Create_request_rejects_an_unavailable_reason_longer_than_the_catalog_code_limit()
+    public void Create_command_rejects_an_unavailable_reason_longer_than_the_catalog_code_limit()
     {
-        var request = new CreateMaintenanceWorkOrderRequest(
-            "org-001",
-            "env-dev",
-            "DEV-CNC-01",
-            "high",
-            null,
-            "emp010",
-            new string('A', 101),
-            "asset-unavailable-long-code");
+        var command = CreateCommand(new string('A', 101));
 
-        var result = new CreateMaintenanceWorkOrderRequestValidator().Validate(request);
+        var result = new CreateMaintenanceWorkOrderCommandValidator().Validate(command);
 
         Assert.False(result.IsValid);
-        Assert.Contains(result.Errors, x => x.PropertyName == nameof(request.AssetUnavailableReason));
+        Assert.Contains(result.Errors, x => x.PropertyName == nameof(command.AssetUnavailableReason));
+    }
+
+    [Fact]
+    public async Task Catalog_code_matching_does_not_trim_or_rewrite_the_request_value()
+    {
+        await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
+        db.DowntimeReasons.Add(DowntimeReason.Create(
+            "org-001",
+            "env-dev",
+            "DT-CUSTOM-17",
+            "Custom spindle stop"));
+        await db.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new CreateMaintenanceWorkOrderCommandHandler(db).Handle(
+                CreateCommand(" DT-CUSTOM-17 "),
+                CancellationToken.None));
+
+        Assert.Equal("Downtime reason was not found:  DT-CUSTOM-17 ", exception.Message);
+        Assert.Empty(db.MaintenanceWorkOrders.Local);
+        Assert.Equal(0, await db.MaintenanceWorkOrders.CountAsync());
+    }
+
+    [Fact]
+    public void Production_registration_discovers_the_asset_unavailable_converter()
+    {
+        var services = new ServiceCollection();
+        services.AddIntegrationEvents(typeof(Program));
+        using var serviceProvider = services.BuildServiceProvider();
+
+        var converter = serviceProvider.GetRequiredService<AssetUnavailableIntegrationEventConverter>();
+
+        Assert.IsType<AssetUnavailableIntegrationEventConverter>(converter);
     }
 
     [Fact]
