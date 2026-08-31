@@ -1,8 +1,8 @@
 import type {
-  BusinessConsoleMesProductionStatisticsBucket,
   BusinessConsoleMesProductionStatisticsDimension,
   BusinessConsoleMesProductionStatisticsDegradedReason,
 } from '@nerv-iip/api-client'
+import type { ProductionStatisticsPresentationRow } from './productionStatisticsPresentation'
 
 const HEADERS = [
   '聚合维度',
@@ -56,13 +56,19 @@ function csvCell(value: string | number | null | undefined) {
   return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text
 }
 
-export function createProductionStatisticsCsv(
-  rows: BusinessConsoleMesProductionStatisticsBucket[],
-): string {
-  const body = rows.map((row) =>
-    [
+export function createProductionStatisticsCsv(rows: ProductionStatisticsPresentationRow[]): string {
+  const body = rows.map((row) => {
+    if (
+      (row.dimension === 'workCenter' || row.dimension === 'sku') &&
+      row.dimensionValueLabel === '—'
+    ) {
+      throw new Error(
+        `${PRODUCTION_STATISTICS_DIMENSION_LABELS[row.dimension]}分组缺少可导出的业务标识`,
+      )
+    }
+    return [
       PRODUCTION_STATISTICS_DIMENSION_LABELS[row.dimension],
-      row.dimension === 'workCenter' || row.dimension === 'sku' ? null : row.dimensionValue,
+      row.dimensionValueLabel,
       row.businessDate,
       row.shiftCode,
       row.totalOutputQuantity,
@@ -77,8 +83,8 @@ export function createProductionStatisticsCsv(
       row.degradedReasons.map(describeProductionStatisticsDegradation).join('；'),
     ]
       .map(csvCell)
-      .join(','),
-  )
+      .join(',')
+  })
   return `\ufeff${[HEADERS.join(','), ...body].join('\r\n')}\r\n`
 }
 
