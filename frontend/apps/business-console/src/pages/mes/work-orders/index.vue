@@ -805,10 +805,6 @@ function isNonEmpty(value: string) {
       </template>
     </NvToolbar>
 
-    <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">
-      {{ listErrorMessage }}
-    </p>
-
     <NvDataTable
       manual
       :page="page"
@@ -822,11 +818,14 @@ function isNonEmpty(value: string) {
       :row-key="rowKey"
       :client-sort="false"
       :loading="workOrdersPending"
+      :error="workOrdersError"
+      :error-message="listErrorMessage"
       empty-message="当前筛选下没有工单。正常生产请先进入生产计划转工单，急单只处理临时插单。"
       :searchable="false"
       :column-settings="false"
       selectable
       v-model:selected="selectedWorkOrderIds"
+      @retry="refreshWorkOrders"
     >
       <template #bulk-actions>
         <NvButton
