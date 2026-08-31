@@ -151,11 +151,17 @@ function Read-Man517ListenerAuthority {
     if ($listenerProcessIds[0] -ne $Ownership.ProcessId) {
         throw "MAN-517 reserved port $($Ownership.Port) for '$($Ownership.ServiceName)' is owned by listener PID $($listenerProcessIds[0]), expected managed owner PID $($Ownership.ProcessId)."
     }
+    $listenerProcess = Get-Process -Id $listenerProcessIds[0] -ErrorAction Stop
+    if ($listenerProcess.StartTime -ne $Ownership.ProcessStartTime) {
+        throw "MAN-517 reserved port $($Ownership.Port) for '$($Ownership.ServiceName)' is owned by listener PID $($listenerProcessIds[0]) with process start time $($listenerProcess.StartTime.ToUniversalTime().ToString('O')), expected managed owner start time $($Ownership.ProcessStartTime.ToUniversalTime().ToString('O'))."
+    }
     return [pscustomobject]@{
         ServiceName = $Ownership.ServiceName
         Port = $Ownership.Port
         OwnerProcessId = $Ownership.ProcessId
+        OwnerProcessStartTime = $Ownership.ProcessStartTime
         ListenerProcessId = $listenerProcessIds[0]
+        ListenerProcessStartTime = $listenerProcess.StartTime
         ObservedAtUtc = [DateTimeOffset]::UtcNow
     }
 }
@@ -964,7 +970,7 @@ try {
             @{ service = $_.ServiceName; port = $_.Port; state = $_.State; processId = $_.ProcessId; processStartTimeUtc = $_.ProcessStartTime.ToUniversalTime().ToString('O') }
         })
         listenerAuthority = @($listenerAuthorityReadback | ForEach-Object {
-            @{ service = $_.ServiceName; port = $_.Port; ownerProcessId = $_.OwnerProcessId; listenerProcessId = $_.ListenerProcessId; observedAtUtc = $_.ObservedAtUtc.ToString('O') }
+            @{ service = $_.ServiceName; port = $_.Port; ownerProcessId = $_.OwnerProcessId; ownerProcessStartTimeUtc = $_.OwnerProcessStartTime.ToUniversalTime().ToString('O'); listenerProcessId = $_.ListenerProcessId; listenerProcessStartTimeUtc = $_.ListenerProcessStartTime.ToUniversalTime().ToString('O'); observedAtUtc = $_.ObservedAtUtc.ToString('O') }
         })
         fullChainProbeCounters = $fullChainProbeCounters
         checkpoints = @{ erpSalesOrder = $erpSalesOrder; released = $released; duplicateReplay = $duplicateReplay; changedV2 = $changedV2; changedV3 = $changedV3; outOfOrder = $outOfOrder; cancelled = $cancelled }
