@@ -236,6 +236,14 @@
     {
       "service": "BarcodeLabel",
       "method": "POST",
+      "route": "/api/business/internal/v1/barcodes/print-batches/{printBatchId}/dispatch",
+      "operationId": "dispatchScopedBusinessBarcodePrintBatch",
+      "classification": "internal",
+      "rationale": "Scoped downstream lifecycle endpoint introduced by #2974; #2975 will expose it only through the authorized BusinessGateway facade and reclassify this row."
+    },
+    {
+      "service": "BarcodeLabel",
+      "method": "POST",
       "route": "/api/business/v1/barcodes/print-batches/{printBatchId}/items/{sequenceNo}/reprint",
       "operationId": "reprintBusinessBarcodeLabel",
       "classification": "internal",
@@ -244,10 +252,26 @@
     {
       "service": "BarcodeLabel",
       "method": "POST",
+      "route": "/api/business/internal/v1/barcodes/print-batches/{printBatchId}/items/{sequenceNo}/reprint",
+      "operationId": "reprintScopedBusinessBarcodeLabel",
+      "classification": "internal",
+      "rationale": "Scoped downstream lifecycle endpoint introduced by #2974; #2975 will expose it only through the authorized BusinessGateway facade and reclassify this row."
+    },
+    {
+      "service": "BarcodeLabel",
+      "method": "POST",
       "route": "/api/business/v1/barcodes/print-batches/{printBatchId}/items/{sequenceNo}/void",
       "operationId": "voidBusinessBarcodeLabel",
       "classification": "internal",
       "rationale": "Void is a label lifecycle command for trusted operational clients; existing facade read surfaces expose the resulting state."
+    },
+    {
+      "service": "BarcodeLabel",
+      "method": "POST",
+      "route": "/api/business/internal/v1/barcodes/print-batches/{printBatchId}/items/{sequenceNo}/void",
+      "operationId": "voidScopedBusinessBarcodeLabel",
+      "classification": "internal",
+      "rationale": "Scoped downstream lifecycle endpoint introduced by #2974; #2975 will expose it only through the authorized BusinessGateway facade and reclassify this row."
     },
     {
       "service": "BarcodeLabel",

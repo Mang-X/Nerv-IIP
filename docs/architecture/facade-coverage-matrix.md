@@ -72,7 +72,7 @@ PR 审核须将声明与实际交付物交叉核验（facade + codegen + barrel 
 | 服务                |   总数 | exposed | deferred | internal |
 | ------------------- | ------: | ------: | -------: | -------: |
 | Approval            |      16 |      11 |        4 |        1 |
-| BarcodeLabel        |      13 |      10 |        0 |        3 |
+| BarcodeLabel        |      16 |      10 |        0 |        6 |
 | DemandPlanning      |      16 |      16 |        0 |        0 |
 | Erp                 |      59 |      43 |       15 |        1 |
 | IndustrialTelemetry |      28 |      25 |        1 |        2 |
@@ -84,7 +84,7 @@ PR 审核须将声明与实际交付物交叉核验（facade + codegen + barrel 
 | Quality             |      43 |      30 |       12 |        1 |
 | Scheduling          |      15 |      13 |        1 |        1 |
 | Wms                 |      49 |      37 |        7 |        5 |
-| **Total**           | **437** | **360** |   **50** |   **27** |
+| **Total**           | **440** | **360** |   **50** |   **30** |
 
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
