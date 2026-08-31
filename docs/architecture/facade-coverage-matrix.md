@@ -81,10 +81,10 @@ PR 审核须将声明与实际交付物交叉核验（facade + codegen + barrel 
 | MasterData          |      50 |      41 |        5 |        4 |
 | Mes                 |      64 |      63 |        0 |        1 |
 | ProductEngineering  |      39 |      38 |        0 |        1 |
-| Quality             |      42 |      30 |       12 |        0 |
+| Quality             |      43 |      30 |       12 |        1 |
 | Scheduling          |      15 |      13 |        1 |        1 |
 | Wms                 |      49 |      37 |        7 |        5 |
-| **Total**           | **436** | **360** |   **50** |   **26** |
+| **Total**           | **437** | **360** |   **50** |   **27** |
 
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
@@ -223,6 +223,7 @@ Gateway 不重新计算总产出或比率。
 | MasterData          | GET    | `/api/business/v1/master-data/partners/{customerCode}/credit`                | 供 ERP 销售订单信用检查消费的服务间公开信用读取（#436）。                                              |
 | MasterData          | POST   | `/api/business/v1/master-data/references/resolve`                            | 供其他业务服务消费的服务间批量参考数据和权威设备 identity 快照解析（最多 200 个 reference）。 |
 | MasterData          | POST   | `/api/business/v1/master-data/references/validate`                           | 供其他业务服务消费的服务间批量参考数据校验。                                               |
+| Quality             | GET    | `/api/business/v1/quality/first-article-confirmation`                        | 供 MES 报工门禁按工单工序读取首件判定结论的服务间读取契约（#2779，#1949 波 2）；Console 首件读面走既有检验任务/记录 facade。 |
 | Scheduling          | POST   | `/api/business/internal/v1/scheduling/order-urgency-archives/restore`        | 面向精确版本合规归档的已认证操作员恢复；绝不是 Business Console 操作。                             |
 | Wms                 | POST   | `/api/business/v1/wms/inbound-orders/cancel-by-source`                       | 服务间 ERP 采购订单取消关闭匹配的 open WMS 入库预期；不是直接 Console 操作。      |
 | Wms                 | POST   | `/api/business/v1/wms/warehouse-tasks/{warehouseTaskId}/complete`            | 由 WCS adapter/callback 边界消费的内部仓库任务完成 endpoint（#413）。                                   |
