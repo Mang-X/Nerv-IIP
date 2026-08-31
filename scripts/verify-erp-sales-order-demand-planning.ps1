@@ -323,7 +323,8 @@ function New-AcceptanceDatabase {
 function Test-Man517ServiceIdentityResponse {
     param(
         [Parameter(Mandatory)] [string]$ServiceName,
-        [AllowNull()] [object]$Response
+        [AllowNull()] [object]$Response,
+        [switch]$AllowEmptyDemandPlanning
     )
 
     if ($null -eq $Response) {
@@ -344,9 +345,47 @@ function Test-Man517ServiceIdentityResponse {
         return $null -ne $resources -and $null -ne $total
     }
     if ([string]::Equals($ServiceName, 'demand-planning', [StringComparison]::OrdinalIgnoreCase)) {
-        return $dataProperty.Value -is [System.Collections.IEnumerable] -and
-            $dataProperty.Value -isnot [string] -and
-            $dataProperty.Value -isnot [hashtable]
+        if ($dataProperty.Value -isnot [System.Collections.IEnumerable] -or
+            $dataProperty.Value -is [string] -or
+            $dataProperty.Value -is [hashtable]) {
+            return $false
+        }
+        $demandRows = @($dataProperty.Value)
+        if ($demandRows.Count -eq 0) {
+            # An empty list is a valid response from a real, freshly migrated
+            # DemandPlanning database, but it proves no service-specific row by
+            # itself. Wait-Healthy may allow it only after the independent
+            # managed command identity has already been verified.
+            return $AllowEmptyDemandPlanning.IsPresent
+        }
+        $requiredDemandProperties = @(
+            'demandSourceId',
+            'demandType',
+            'sourceReference',
+            'sourceLineReference',
+            'customerCode',
+            'sourceVersion',
+            'sourceStatus',
+            'skuCode',
+            'uomCode',
+            'siteCode',
+            'quantity',
+            'dueDate'
+        )
+        foreach ($demandRow in $demandRows) {
+            if ($null -eq $demandRow -or $demandRow -is [string] -or $demandRow -is [hashtable]) {
+                return $false
+            }
+            foreach ($requiredDemandProperty in $requiredDemandProperties) {
+                $property = $demandRow.PSObject.Properties |
+                    Where-Object { [string]::Equals([string]$_.Name, $requiredDemandProperty, [StringComparison]::OrdinalIgnoreCase) } |
+                    Select-Object -First 1
+                if ($null -eq $property) {
+                    return $false
+                }
+            }
+        }
+        return $true
     }
     if ([string]::Equals($ServiceName, 'erp', [StringComparison]::OrdinalIgnoreCase)) {
         $items = $dataProperty.Value.PSObject.Properties['items']
@@ -364,8 +403,44 @@ function Wait-Healthy {
         [Parameter(Mandatory)] [hashtable]$Headers,
         [Parameter(Mandatory)] [object]$ManagedProcess,
         [Parameter(Mandatory)] [object]$Ownership,
+        [Parameter(Mandatory)] [string]$ExpectedCommand,
+        [Parameter(Mandatory)] [string[]]$ExpectedArguments,
+        [AllowNull()] [System.Collections.IDictionary]$Observation,
         [ValidateRange(1, 300)] [int]$TimeoutSeconds = 90
     )
+
+    if ($null -ne $Observation) {
+        $Observation.healthResponseObserved = $false
+        $Observation.identityResponseObserved = $false
+        $Observation.healthObservation = 'unavailable'
+        $Observation.identityObservation = 'unavailable'
+    }
+    $actualCommandProperty = $ManagedProcess.PSObject.Properties['Command']
+    $actualArgumentsProperty = $ManagedProcess.PSObject.Properties['Arguments']
+    $actualCommand = if ($null -eq $actualCommandProperty) { $null } else { [string]$actualCommandProperty.Value }
+    $actualArguments = @(
+        if ($null -eq $actualArgumentsProperty -or $null -eq $actualArgumentsProperty.Value) { @() }
+        else { @($actualArgumentsProperty.Value | ForEach-Object { [string]$_ }) }
+    )
+    $commandEquals = $null -ne $actualCommandProperty -and [string]::Equals([string]$actualCommand, [string]$ExpectedCommand, [StringComparison]::OrdinalIgnoreCase)
+    $argumentCountEquals = $actualArguments.Count -eq $ExpectedArguments.Count
+    $commandIdentityMatches = $false
+    if ($commandEquals -and $argumentCountEquals) {
+        $commandIdentityMatches = $true
+        for ($argumentIndex = 0; $argumentIndex -lt $ExpectedArguments.Count; $argumentIndex++) {
+            if (-not [string]::Equals([string]$actualArguments[$argumentIndex], [string]$ExpectedArguments[$argumentIndex], [StringComparison]::Ordinal)) {
+                $commandIdentityMatches = $false
+                break
+            }
+        }
+    }
+    if (-not $commandIdentityMatches) {
+        $expectedCommandText = Protect-Man517DiagnosticText -Text $ExpectedCommand
+        $expectedArgumentsText = Protect-Man517DiagnosticText -Text (($ExpectedArguments -join [Environment]::NewLine))
+        $actualCommandText = Protect-Man517DiagnosticText -Text $actualCommand
+        $actualArgumentsText = Protect-Man517DiagnosticText -Text (($actualArguments -join [Environment]::NewLine))
+        throw (New-Man517ReadinessFailure -ServiceName $ServiceName -Ownership $Ownership -ManagedProcess $ManagedProcess -Reason "managed process command identity mismatch: expectedCommand=$expectedCommandText expectedArguments=$expectedArgumentsText actualCommand=$actualCommandText actualArguments=$actualArgumentsText" -InnerException $null)
+    }
 
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     $lastFailure = $null
@@ -402,6 +477,10 @@ function Wait-Healthy {
         try {
             $remainingSeconds = [int][Math]::Max(1, [Math]::Ceiling(((Get-Date) - $deadline).TotalSeconds * -1))
             $healthResponse = Invoke-RestMethod -Method Get -Uri $Uri -TimeoutSec ([int][Math]::Min(5, $remainingSeconds))
+            if ($null -ne $Observation) {
+                $Observation.healthResponseObserved = $true
+                $Observation.healthObservation = Protect-Man517DiagnosticText -Text ([string]$healthResponse)
+            }
             $healthReady = [string]::Equals([string]$healthResponse, [string]('Healthy'), [StringComparison]::OrdinalIgnoreCase)
             if (-not $healthReady) {
                 throw "health response was not Healthy"
@@ -426,10 +505,17 @@ function Wait-Healthy {
             $identityResponse = $null
             $identityFailure = $null
             try {
-                $identityResponse = Invoke-Man517JsonRequest -Method Get -Uri $IdentityUri -Headers $Headers -Stage "${ServiceName}-service-identity" -Deadline $deadline
+                $identityResponse = Invoke-Man517JsonRequest -Method Get -Uri $IdentityUri -Headers $Headers -Stage "${ServiceName}-service-identity" -Deadline $deadline -Observation $Observation
             }
             catch {
                 $identityFailure = $_.Exception
+                if ($null -ne $Observation -and -not $Observation.identityResponseObserved) {
+                    $httpStatusMatch = [regex]::Match($identityFailure.Message, 'httpStatus=(?<status>[1-5][0-9]{2})')
+                    if ($httpStatusMatch.Success) {
+                        $Observation.identityResponseObserved = $true
+                        $Observation.identityObservation = "httpStatus=$($httpStatusMatch.Groups['status'].Value)"
+                    }
+                }
             }
             if ($null -ne $identityFailure) {
                 if ($identityFailure.Message.Contains('httpStatus=404', [StringComparison]::Ordinal) -or
@@ -438,10 +524,21 @@ function Wait-Healthy {
                 }
                 $lastFailure = $identityFailure
             }
-            elseif (-not (Test-Man517ServiceIdentityResponse -ServiceName $ServiceName -Response $identityResponse)) {
-                throw (New-Man517ReadinessFailure -ServiceName $ServiceName -Ownership $Ownership -ManagedProcess $ManagedProcess -Reason "service identity mismatch: identityUri=$IdentityUri response shape is not the expected $ServiceName contract" -InnerException $null)
-            }
             else {
+                if ($null -ne $Observation -and -not $Observation.identityResponseObserved) {
+                    $Observation.identityResponseObserved = $true
+                    $Observation.identityObservation = Protect-Man517DiagnosticText -Text ($identityResponse | ConvertTo-Json -Depth 20 -Compress)
+                }
+                $identityShapeValid = if ([string]::Equals($ServiceName, 'demand-planning', [StringComparison]::OrdinalIgnoreCase) -and
+                    [string]::Equals($ExpectedCommand, 'dotnet', [StringComparison]::OrdinalIgnoreCase)) {
+                    Test-Man517ServiceIdentityResponse -ServiceName $ServiceName -Response $identityResponse -AllowEmptyDemandPlanning
+                }
+                else {
+                    Test-Man517ServiceIdentityResponse -ServiceName $ServiceName -Response $identityResponse
+                }
+                if (-not $identityShapeValid) {
+                    throw (New-Man517ReadinessFailure -ServiceName $ServiceName -Ownership $Ownership -ManagedProcess $ManagedProcess -Reason "service identity mismatch: identityUri=$IdentityUri response shape is not the expected $ServiceName contract" -InnerException $null)
+                }
                 if ($ManagedProcess.Process.HasExited) {
                     throw (New-Man517ReadinessFailure -ServiceName $ServiceName -Ownership $Ownership -ManagedProcess $ManagedProcess -Reason 'managed process exited after identity response' -InnerException $null)
                 }
@@ -587,7 +684,8 @@ function Invoke-Man517ReadinessNegativeProbes {
             exitCode = 'running'
             healthResponseObserved = $false
             identityResponseObserved = $false
-            identityObservation = $null
+            healthObservation = 'unavailable'
+            identityObservation = 'unavailable'
             businessRequestsIssued = 0
             failure = $null
             failureRoot = $null
@@ -596,6 +694,12 @@ function Invoke-Man517ReadinessNegativeProbes {
         }
         $observedFailure = $null
         $expectedFailureObserved = $false
+        $readinessObservation = [ordered]@{
+            healthResponseObserved = $false
+            identityResponseObserved = $false
+            healthObservation = 'unavailable'
+            identityObservation = 'unavailable'
+        }
 
         try {
             if ([string]::Equals($scenarioId, 'wrong-service-port', [StringComparison]::Ordinal)) {
@@ -615,16 +719,11 @@ function Invoke-Man517ReadinessNegativeProbes {
                 $probe.ownerProcessStartTimeUtc = $owner.ProcessStartTime.ToUniversalTime().ToString('O')
                 $identityUri = "http://127.0.0.1:$($owner.Port)/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev"
                 try {
-                    $readiness = Wait-Healthy -ServiceName 'demand-planning' -Uri "http://127.0.0.1:$($owner.Port)/health" -IdentityUri $identityUri -Headers $Headers -ManagedProcess $managedProcess -Ownership $owner -TimeoutSeconds 15
-                    $probe.healthResponseObserved = $true
-                    $probe.identityResponseObserved = $true
+                    $readiness = Wait-Healthy -ServiceName 'demand-planning' -Uri "http://127.0.0.1:$($owner.Port)/health" -IdentityUri $identityUri -Headers $Headers -ManagedProcess $managedProcess -Ownership $owner -ExpectedCommand 'dotnet' -ExpectedArguments @($MasterDataDll) -Observation $readinessObservation -TimeoutSeconds 15
                     $observedFailure = [InvalidOperationException]::new('MAN-517 wrong-service-port probe unexpectedly accepted the wrong managed service identity.')
                 }
                 catch {
                     $observedFailure = $_.Exception
-                    $probe.healthResponseObserved = $true
-                    $probe.identityResponseObserved = $true
-                    $probe.identityObservation = 'HTTP 404 from the actual MasterData process on the DemandPlanning identity route'
                 }
             }
             elseif ([string]::Equals($scenarioId, 'bind-address-in-use', [StringComparison]::Ordinal)) {
@@ -656,9 +755,8 @@ function Invoke-Man517ReadinessNegativeProbes {
                 $probe.observedProcessExited = $processExited
                 if ($processExited) {
                     $probe.exitCode = [string]$managedProcess.Process.ExitCode
-                    $probe.identityObservation = 'not reached: managed process exited before health and identity probes'
                     try {
-                        Wait-Healthy -ServiceName 'demand-planning' -Uri "http://127.0.0.1:$($owner.Port)/health" -IdentityUri "http://127.0.0.1:$($owner.Port)/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev" -Headers $Headers -ManagedProcess $managedProcess -Ownership $owner -TimeoutSeconds 3 | Out-Null
+                        Wait-Healthy -ServiceName 'demand-planning' -Uri "http://127.0.0.1:$($owner.Port)/health" -IdentityUri "http://127.0.0.1:$($owner.Port)/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev" -Headers $Headers -ManagedProcess $managedProcess -Ownership $owner -ExpectedCommand 'dotnet' -ExpectedArguments @($DemandPlanningDll) -Observation $readinessObservation -TimeoutSeconds 3 | Out-Null
                         $observedFailure = [InvalidOperationException]::new('MAN-517 bind-address-in-use probe unexpectedly reached readiness.')
                     }
                     catch {
@@ -666,7 +764,6 @@ function Invoke-Man517ReadinessNegativeProbes {
                     }
                 }
                 else {
-                    $probe.identityObservation = 'not reached: bind-failure process remained alive beyond the bounded exit observation'
                     $observedFailure = [InvalidOperationException]::new("MAN-517 bind-address-in-use process did not exit within the bounded process-exit observation window: port=$($owner.Port) pid=$($owner.ProcessId)")
                 }
             }
@@ -690,9 +787,8 @@ function Invoke-Man517ReadinessNegativeProbes {
                 $probe.processId = $actualOwner.ProcessId
                 $probe.ownerProcessStartTimeUtc = $actualOwner.ProcessStartTime.ToUniversalTime().ToString('O')
                 $actualIdentityUri = "http://127.0.0.1:$($actualOwner.Port)/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev"
-                Wait-Healthy -ServiceName 'demand-planning' -Uri "http://127.0.0.1:$($actualOwner.Port)/health" -IdentityUri $actualIdentityUri -Headers $Headers -ManagedProcess $managedProcess -Ownership $actualOwner -TimeoutSeconds 15 | Out-Null
-                $probe.healthResponseObserved = $true
-                $probe.identityResponseObserved = $true
+                $actualObservation = @{}
+                Wait-Healthy -ServiceName 'demand-planning' -Uri "http://127.0.0.1:$($actualOwner.Port)/health" -IdentityUri $actualIdentityUri -Headers $Headers -ManagedProcess $managedProcess -Ownership $actualOwner -ExpectedCommand 'dotnet' -ExpectedArguments @($DemandPlanningDll) -Observation $actualObservation -TimeoutSeconds 15 | Out-Null
                 $expectedOwnership = [pscustomobject]@{
                     ServiceName = 'demand-planning'
                     Port = $expectedOwner.Port
@@ -703,12 +799,11 @@ function Invoke-Man517ReadinessNegativeProbes {
                     State = 'ExpectedButNotBound'
                 }
                 try {
-                    Wait-Healthy -ServiceName 'demand-planning' -Uri "http://127.0.0.1:$($expectedOwner.Port)/health" -IdentityUri "http://127.0.0.1:$($expectedOwner.Port)/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev" -Headers $Headers -ManagedProcess $managedProcess -Ownership $expectedOwnership -TimeoutSeconds 3 | Out-Null
+                    Wait-Healthy -ServiceName 'demand-planning' -Uri "http://127.0.0.1:$($expectedOwner.Port)/health" -IdentityUri "http://127.0.0.1:$($expectedOwner.Port)/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev" -Headers $Headers -ManagedProcess $managedProcess -Ownership $expectedOwnership -ExpectedCommand 'dotnet' -ExpectedArguments @($DemandPlanningDll) -Observation $readinessObservation -TimeoutSeconds 3 | Out-Null
                     $observedFailure = [InvalidOperationException]::new('MAN-517 wrong-port probe unexpectedly accepted readiness on the unbound expected port.')
                 }
                 catch {
                     $observedFailure = $_.Exception
-                    $probe.identityObservation = 'not reached on expected port: listener count=0; actual service was verified on a different port'
                 }
             }
             elseif ([string]::Equals($scenarioId, 'pid-reuse', [StringComparison]::Ordinal)) {
@@ -726,9 +821,8 @@ function Invoke-Man517ReadinessNegativeProbes {
                 }
                 $probe.processId = $owner.ProcessId
                 $probe.ownerProcessStartTimeUtc = $owner.ProcessStartTime.ToUniversalTime().ToString('O')
-                Wait-Healthy -ServiceName 'demand-planning' -Uri "http://127.0.0.1:$($owner.Port)/health" -IdentityUri "http://127.0.0.1:$($owner.Port)/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev" -Headers $Headers -ManagedProcess $managedProcess -Ownership $owner -TimeoutSeconds 15 | Out-Null
-                $probe.healthResponseObserved = $true
-                $probe.identityResponseObserved = $true
+                $baselineObservation = @{}
+                Wait-Healthy -ServiceName 'demand-planning' -Uri "http://127.0.0.1:$($owner.Port)/health" -IdentityUri "http://127.0.0.1:$($owner.Port)/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev" -Headers $Headers -ManagedProcess $managedProcess -Ownership $owner -ExpectedCommand 'dotnet' -ExpectedArguments @($DemandPlanningDll) -Observation $baselineObservation -TimeoutSeconds 15 | Out-Null
                 $staleOwnership = [pscustomobject]@{
                     ServiceName = 'demand-planning'
                     Port = $owner.Port
@@ -739,14 +833,13 @@ function Invoke-Man517ReadinessNegativeProbes {
                     State = 'StalePidHandle'
                 }
                 try {
-                    Wait-Healthy -ServiceName 'demand-planning' -Uri "http://127.0.0.1:$($owner.Port)/health" -IdentityUri "http://127.0.0.1:$($owner.Port)/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev" -Headers $Headers -ManagedProcess $managedProcess -Ownership $staleOwnership -TimeoutSeconds 3 | Out-Null
+                    Wait-Healthy -ServiceName 'demand-planning' -Uri "http://127.0.0.1:$($owner.Port)/health" -IdentityUri "http://127.0.0.1:$($owner.Port)/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev" -Headers $Headers -ManagedProcess $managedProcess -Ownership $staleOwnership -ExpectedCommand 'dotnet' -ExpectedArguments @($DemandPlanningDll) -Observation $readinessObservation -TimeoutSeconds 3 | Out-Null
                     $observedFailure = [InvalidOperationException]::new('MAN-517 pid-reuse probe unexpectedly accepted a stale PID identity.')
                 }
                 catch {
                     $observedFailure = $_.Exception
-                    $probe.identityObservation = 'not reached: same PID was paired with a stale start time and rejected before HTTP'
                 }
-                $probe.pidReuseGuard = 'same PID with mismatched start time rejected'
+                $probe.pidReuseGuard = 'same PID with mismatched start time rejected; numeric PID reuse not induced (upper-bound stale-handle guard)'
             }
             elseif ([string]::Equals($scenarioId, 'response-identity-forged', [StringComparison]::Ordinal)) {
                 $probe.expectedService = 'demand-planning'
@@ -770,7 +863,7 @@ try {
             $firstLine = ($request -split "`r?`n")[0]
             $path = (($firstLine -split ' ')[1] -split '\?')[0]
             $isHealth = [string]::Equals($path, '/health', [StringComparison]::Ordinal)
-            $body = if ($isHealth) { 'Healthy' } else { '{"success":true,"data":{}}' }
+            $body = if ($isHealth) { 'Healthy' } else { '{"success":true,"data":[]}' }
             $contentType = if ($isHealth) { 'text/plain' } else { 'application/json' }
             $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes($body)
             $headers = "HTTP/1.1 200 OK`r`nContent-Type: $contentType`r`nContent-Length: $($bodyBytes.Length)`r`nConnection: close`r`n`r`n"
@@ -801,16 +894,11 @@ finally {
                 $probe.processId = $owner.ProcessId
                 $probe.ownerProcessStartTimeUtc = $owner.ProcessStartTime.ToUniversalTime().ToString('O')
                 try {
-                    Wait-Healthy -ServiceName 'demand-planning' -Uri "http://127.0.0.1:$($owner.Port)/health" -IdentityUri "http://127.0.0.1:$($owner.Port)/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev" -Headers $Headers -ManagedProcess $fakeManagedProcess -Ownership $owner -TimeoutSeconds 15 | Out-Null
-                    $probe.healthResponseObserved = $true
-                    $probe.identityResponseObserved = $true
+                    Wait-Healthy -ServiceName 'demand-planning' -Uri "http://127.0.0.1:$($owner.Port)/health" -IdentityUri "http://127.0.0.1:$($owner.Port)/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev" -Headers $Headers -ManagedProcess $fakeManagedProcess -Ownership $owner -ExpectedCommand 'pwsh' -ExpectedArguments @('-NoLogo', '-NoProfile', '-Command', $fakeServerScript) -Observation $readinessObservation -TimeoutSeconds 15 | Out-Null
                     $observedFailure = [InvalidOperationException]::new('MAN-517 response-identity-forged probe unexpectedly accepted a forged identity response.')
                 }
                 catch {
                     $observedFailure = $_.Exception
-                    $probe.healthResponseObserved = $true
-                    $probe.identityResponseObserved = $true
-                    $probe.identityObservation = 'HTTP 200 /health=Healthy; identity body={"success":true,"data":{}} rejected by service-specific shape'
                 }
             }
         }
@@ -844,6 +932,11 @@ finally {
                 $probe.failureRoot = $failureRoots -join ' | '
             }
         }
+
+        $probe.healthResponseObserved = [bool]$readinessObservation.healthResponseObserved
+        $probe.identityResponseObserved = [bool]$readinessObservation.identityResponseObserved
+        $probe.healthObservation = [string]$readinessObservation.healthObservation
+        $probe.identityObservation = [string]$readinessObservation.identityObservation
 
         if ($null -eq $observedFailure) {
             $observedFailure = [InvalidOperationException]::new("MAN-517 $scenarioId probe did not produce the expected fail-closed readiness result.")
@@ -942,6 +1035,7 @@ function Invoke-Man517JsonRequest {
         [string]$Uri,
         [hashtable]$Headers,
         [AllowNull()][hashtable]$Body,
+        [AllowNull()][System.Collections.IDictionary]$Observation,
         [string]$Stage,
         [ValidateRange(1, 300)]
         [int]$TimeoutSeconds,
@@ -1009,11 +1103,19 @@ function Invoke-Man517JsonRequest {
             [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead,
             $deadlineCancellation.Token).GetAwaiter().GetResult()
         $httpStatus = [int]$responseMessage.StatusCode
+        if ($null -ne $Observation) {
+            $Observation.identityResponseObserved = $true
+            $Observation.identityObservation = "httpStatus=$httpStatus"
+        }
         if ($httpStatus -lt 200 -or $httpStatus -ge 300) {
             throw "MAN-517 request HTTP failure: classification=$(Get-Man517HttpClassification -HttpStatus $httpStatus) $requestContext httpStatus=$httpStatus elapsedMs=$($requestStopwatch.ElapsedMilliseconds)"
         }
         $responseContent = $responseMessage.Content.ReadAsStringAsync(
             $deadlineCancellation.Token).GetAwaiter().GetResult()
+        if ($null -ne $Observation) {
+            $Observation.identityResponseObserved = $true
+            $Observation.identityObservation = Protect-Man517DiagnosticText -Text ([string]$responseContent)
+        }
     }
     catch [System.OperationCanceledException] {
         if (($null -ne $deadlineCancellation -and $deadlineCancellation.IsCancellationRequested) -or
@@ -1487,7 +1589,7 @@ try {
         $script:masterDataProcess = Start-Man517OwnedProcess -Ownership $masterDataOwnership -Command 'dotnet' -Arguments @($masterDataDll) -WorkingDirectory $masterDataProjectDirectory -Name 'man517-masterdata'
     }
     $masterDataIdentityUri = "$masterDataUrl/api/business/v1/master-data/resources?organizationId=org-001&environmentId=env-dev&resourceType=work-center&skip=0&take=1"
-    $masterDataReadiness = Wait-Healthy -ServiceName 'masterdata' -Uri "$masterDataUrl/health" -IdentityUri $masterDataIdentityUri -Headers $headers -ManagedProcess $masterDataProcess -Ownership $masterDataOwnership
+    $masterDataReadiness = Wait-Healthy -ServiceName 'masterdata' -Uri "$masterDataUrl/health" -IdentityUri $masterDataIdentityUri -Headers $headers -ManagedProcess $masterDataProcess -Ownership $masterDataOwnership -ExpectedCommand 'dotnet' -ExpectedArguments @($masterDataDll)
     $listenerAuthorityReadback.Add($masterDataReadiness.ListenerAuthority)
     $readinessIdentityReadback.Add(@{ service = $masterDataReadiness.ServiceName; identityUri = $masterDataReadiness.IdentityUri; verified = $true; processId = $masterDataReadiness.ListenerAuthority.OwnerProcessId; port = $masterDataReadiness.ListenerAuthority.Port })
 
@@ -1495,7 +1597,7 @@ try {
         $script:demandPlanningProcess = Start-Man517OwnedProcess -Ownership $demandPlanningOwnership -Command 'dotnet' -Arguments @($demandPlanningDll) -WorkingDirectory $demandPlanningProjectDirectory -Name 'man517-demand-planning'
     }
     $demandPlanningIdentityUri = "$demandPlanningUrl/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev"
-    $demandPlanningReadiness = Wait-Healthy -ServiceName 'demand-planning' -Uri "$demandPlanningUrl/health" -IdentityUri $demandPlanningIdentityUri -Headers $headers -ManagedProcess $demandPlanningProcess -Ownership $demandPlanningOwnership
+    $demandPlanningReadiness = Wait-Healthy -ServiceName 'demand-planning' -Uri "$demandPlanningUrl/health" -IdentityUri $demandPlanningIdentityUri -Headers $headers -ManagedProcess $demandPlanningProcess -Ownership $demandPlanningOwnership -ExpectedCommand 'dotnet' -ExpectedArguments @($demandPlanningDll)
     $listenerAuthorityReadback.Add($demandPlanningReadiness.ListenerAuthority)
     $readinessIdentityReadback.Add(@{ service = $demandPlanningReadiness.ServiceName; identityUri = $demandPlanningReadiness.IdentityUri; verified = $true; processId = $demandPlanningReadiness.ListenerAuthority.OwnerProcessId; port = $demandPlanningReadiness.ListenerAuthority.Port })
 
@@ -1509,7 +1611,7 @@ try {
         $script:erpProcess = Start-Man517OwnedProcess -Ownership $erpOwnership -Command 'dotnet' -Arguments @($erpDll) -WorkingDirectory $erpProjectDirectory -Name 'man517-erp'
     }
     $erpIdentityUri = "$erpUrl/api/business/v1/erp/sales-orders?organizationId=org-001&environmentId=env-dev&status=released&keyword=SO-DEMO-001&skip=0&take=1"
-    $erpReadiness = Wait-Healthy -ServiceName 'erp' -Uri "$erpUrl/health" -IdentityUri $erpIdentityUri -Headers $headers -ManagedProcess $erpProcess -Ownership $erpOwnership
+    $erpReadiness = Wait-Healthy -ServiceName 'erp' -Uri "$erpUrl/health" -IdentityUri $erpIdentityUri -Headers $headers -ManagedProcess $erpProcess -Ownership $erpOwnership -ExpectedCommand 'dotnet' -ExpectedArguments @($erpDll)
     $listenerAuthorityReadback.Add($erpReadiness.ListenerAuthority)
     $readinessIdentityReadback.Add(@{ service = $erpReadiness.ServiceName; identityUri = $erpReadiness.IdentityUri; verified = $true; processId = $erpReadiness.ListenerAuthority.OwnerProcessId; port = $erpReadiness.ListenerAuthority.Port })
 

@@ -202,17 +202,20 @@ Assert-Contract (-not [string]::IsNullOrWhiteSpace((Get-FunctionContractText -Na
 $readinessFunctionAst = Get-FunctionDefinitionAst -Name 'Wait-Healthy'
 $readinessFunctionText = Get-FunctionContractText -Name 'Wait-Healthy'
 Assert-Contract ($null -ne $readinessFunctionAst) 'MAN-517 readiness must have one shared readiness function.'
-foreach ($parameterName in @('ServiceName', 'IdentityUri', 'Headers', 'Ownership', 'ManagedProcess')) {
+foreach ($parameterName in @('ServiceName', 'IdentityUri', 'Headers', 'Ownership', 'ManagedProcess', 'ExpectedCommand', 'ExpectedArguments', 'Observation')) {
     Assert-Contract ($null -ne (Get-ParameterAst -Function $readinessFunctionAst -Name $parameterName)) "MAN-517 readiness must bind its expected $parameterName explicitly."
 }
 Assert-Contract ($readinessFunctionText.Contains('Read-Man517ListenerAuthority', [StringComparison]::Ordinal)) 'Readiness must re-check the exact managed listener authority before accepting health.'
 Assert-Contract ($readinessFunctionText.Contains('Test-Man517ServiceIdentityResponse', [StringComparison]::Ordinal)) 'Readiness must validate a service-specific response shape instead of accepting generic /health.'
 Assert-Contract ($readinessFunctionText.Contains('service identity mismatch', [StringComparison]::Ordinal)) 'Readiness failures must identify a wrong service on the invocation port.'
+Assert-Contract ($readinessFunctionText.Contains('managed process command identity mismatch', [StringComparison]::Ordinal)) 'Readiness must bind the managed process executable and arguments independently of the HTTP response.'
+Assert-Contract ($readinessFunctionText.Contains('unavailable', [StringComparison]::Ordinal)) 'Readiness observations must report unavailable when an HTTP response was not reached.'
+Assert-Contract ($readinessFunctionText.Contains('ConvertTo-Json', [StringComparison]::Ordinal)) 'Readiness observations must be normalized from the response returned by the real HTTP request.'
 $readinessFailureText = Get-FunctionContractText -Name 'New-Man517ReadinessFailure'
 Assert-Contract ($readinessFailureText.Contains('Get-Man517ProcessFailureCause', [StringComparison]::Ordinal)) 'Early process exit diagnostics must retain the bind/root failure cause.'
 Assert-Contract ($readinessFailureText.Contains('exitCode=', [StringComparison]::Ordinal)) 'Early process exit diagnostics must retain the managed process exit code.'
 foreach ($readinessCall in (Get-CommandCallAsts -Name 'Wait-Healthy')) {
-    foreach ($parameterName in @('ServiceName', 'IdentityUri', 'Headers', 'Ownership', 'ManagedProcess')) {
+    foreach ($parameterName in @('ServiceName', 'IdentityUri', 'Headers', 'Ownership', 'ManagedProcess', 'ExpectedCommand', 'ExpectedArguments')) {
         Assert-Contract (Test-CommandHasParameter -Call $readinessCall -Name $parameterName) "Every MAN-517 readiness call must bind -$parameterName so service identity cannot be inferred from /health."
     }
 }
@@ -251,8 +254,27 @@ foreach ($serviceName in @('masterdata', 'demand-planning', 'erp')) {
 Assert-Contract (Test-Man517ServiceIdentityResponse -ServiceName 'masterdata' -Response ([pscustomobject]@{
     success = $true; data = [pscustomobject]@{ resources = @(); total = 0 }
 })) 'MasterData identity must accept the existing resources-list response shape.'
+Assert-Contract (-not (Test-Man517ServiceIdentityResponse -ServiceName 'demand-planning' -Response ([pscustomobject]@{
+    success = $true; data = @()
+}))) 'DemandPlanning identity must reject an empty array unless an independently verified managed process allows the legitimate empty read result.'
+Assert-Contract (-not (Test-Man517ServiceIdentityResponse -ServiceName 'demand-planning' -Response ([pscustomobject]@{
+    success = $true; data = @([pscustomobject]@{ sourceReference = 'forged' })
+}))) 'DemandPlanning identity must reject a legal envelope containing a forged row without the complete service response contract.'
 Assert-Contract (Test-Man517ServiceIdentityResponse -ServiceName 'demand-planning' -Response ([pscustomobject]@{
-    success = $true; data = @([pscustomobject]@{ sourceReference = 'SO-DEMO-001' })
+    success = $true; data = @([pscustomobject]@{
+        demandSourceId = 'demand-001'
+        demandType = 'sales-order'
+        sourceReference = 'SO-DEMO-001'
+        sourceLineReference = '10'
+        customerCode = 'CUST-001'
+        sourceVersion = 1
+        sourceStatus = 'active'
+        skuCode = 'SKU-001'
+        uomCode = 'EA'
+        siteCode = 'SITE-001'
+        quantity = 2
+        dueDate = '2026-08-15'
+    })
 })) 'DemandPlanning identity must accept the existing demand-list response shape.'
 Assert-Contract (Test-Man517ServiceIdentityResponse -ServiceName 'erp' -Response ([pscustomobject]@{
     success = $true; data = [pscustomobject]@{ items = @(); total = 0 }
@@ -286,7 +308,7 @@ function Invoke-RestMethod {
     return 'Healthy'
 }
 function Invoke-Man517JsonRequest {
-    param([hashtable]$Headers, [string]$Uri, [string]$Stage, [datetime]$Deadline, [string]$Method)
+    param([hashtable]$Headers, [string]$Uri, [string]$Stage, [datetime]$Deadline, [string]$Method, [AllowNull()][hashtable]$Observation)
     $script:readinessIdentityCallCount++
     return [pscustomobject]@{ success = $true; data = [pscustomobject]@{} }
 }
@@ -298,30 +320,58 @@ $readinessOwnership = [pscustomobject]@{
 }
 $readinessProcess = [pscustomobject]@{
     ProcessId = 7
+    Command = 'dotnet'
+    Arguments = @('DemandPlanning.dll')
     LogDirectory = 'test-logs'
     StderrPath = ''
     StdoutPath = ''
     Process = [pscustomobject]@{ HasExited = $false; ExitCode = 0 }
 }
 $wrongServiceFailure = $null
+$wrongServiceObservation = @{}
 try {
-    Wait-Healthy -ServiceName 'demand-planning' -Uri 'http://127.0.0.1:54321/health' -IdentityUri 'http://127.0.0.1:54321/api/business/v1/planning/demands' -Headers @{} -ManagedProcess $readinessProcess -Ownership $readinessOwnership -TimeoutSeconds 2 | Out-Null
+    Wait-Healthy -ServiceName 'demand-planning' -Uri 'http://127.0.0.1:54321/health' -IdentityUri 'http://127.0.0.1:54321/api/business/v1/planning/demands' -Headers @{} -ManagedProcess $readinessProcess -Ownership $readinessOwnership -ExpectedCommand 'dotnet' -ExpectedArguments @('DemandPlanning.dll') -Observation $wrongServiceObservation -TimeoutSeconds 2 | Out-Null
 }
 catch { $wrongServiceFailure = $_.Exception }
 Assert-Contract ($null -ne $wrongServiceFailure -and $wrongServiceFailure.Message.Contains('service identity mismatch', [StringComparison]::Ordinal)) 'A wrong service returning generic Healthy must fail closed as an identity mismatch.'
 Assert-Contract ($script:readinessHealthCallCount -eq 1 -and $script:readinessIdentityCallCount -eq 1) 'The wrong-service counterexample must reach the identity route once and must not proceed to business requests.'
+Assert-Contract ($wrongServiceObservation.healthResponseObserved -eq $true -and $wrongServiceObservation.identityResponseObserved -eq $true) 'Readiness observation must record that both real HTTP responses were reached before rejecting the identity shape.'
+Assert-Contract ([string]::Equals([string]$wrongServiceObservation.healthObservation, 'Healthy', [StringComparison]::Ordinal) -and [string]$wrongServiceObservation.identityObservation -match 'success') 'Readiness observation must retain normalized values returned by the actual health and identity responders.'
+
+$forgedProcess = [pscustomobject]@{
+    ProcessId = 8
+    Command = 'pwsh'
+    Arguments = @('-NoLogo', '-NoProfile', '-Command', 'forged-responder')
+    LogDirectory = 'test-logs'
+    StderrPath = ''
+    StdoutPath = ''
+    Process = [pscustomobject]@{ HasExited = $false; ExitCode = 0 }
+}
+$forgedProcessFailure = $null
+$forgedProcessObservation = @{}
+$script:readinessHealthCallCount = 0
+$script:readinessIdentityCallCount = 0
+try {
+    Wait-Healthy -ServiceName 'demand-planning' -Uri 'http://127.0.0.1:54321/health' -IdentityUri 'http://127.0.0.1:54321/api/business/v1/planning/demands' -Headers @{} -ManagedProcess $forgedProcess -Ownership $readinessOwnership -ExpectedCommand 'dotnet' -ExpectedArguments @('DemandPlanning.dll') -Observation $forgedProcessObservation -TimeoutSeconds 2 | Out-Null
+}
+catch { $forgedProcessFailure = $_.Exception }
+Assert-Contract ($null -ne $forgedProcessFailure -and $forgedProcessFailure.Message.Contains('managed process command identity mismatch', [StringComparison]::Ordinal)) 'A forged responder executable must fail before a generic health response can self-identify as DemandPlanning.'
+Assert-Contract ($script:readinessHealthCallCount -eq 0 -and $script:readinessIdentityCallCount -eq 0) 'A forged responder command mismatch must not issue HTTP requests.'
+Assert-Contract (-not $forgedProcessObservation.healthResponseObserved -and -not $forgedProcessObservation.identityResponseObserved -and [string]::Equals([string]$forgedProcessObservation.healthObservation, 'unavailable', [StringComparison]::Ordinal) -and [string]::Equals([string]$forgedProcessObservation.identityObservation, 'unavailable', [StringComparison]::Ordinal)) 'A command mismatch must retain unavailable HTTP observations.'
 
 $readinessProcess.Process.HasExited = $true
 $readinessProcess.Process.ExitCode = 73
 $script:readinessHealthCallCount = 0
 $script:readinessIdentityCallCount = 0
 $earlyExitFailure = $null
+$earlyExitObservation = @{}
 try {
-    Wait-Healthy -ServiceName 'demand-planning' -Uri 'http://127.0.0.1:54321/health' -IdentityUri 'http://127.0.0.1:54321/api/business/v1/planning/demands' -Headers @{} -ManagedProcess $readinessProcess -Ownership $readinessOwnership -TimeoutSeconds 2 | Out-Null
+    Wait-Healthy -ServiceName 'demand-planning' -Uri 'http://127.0.0.1:54321/health' -IdentityUri 'http://127.0.0.1:54321/api/business/v1/planning/demands' -Headers @{} -ManagedProcess $readinessProcess -Ownership $readinessOwnership -ExpectedCommand 'dotnet' -ExpectedArguments @('DemandPlanning.dll') -Observation $earlyExitObservation -TimeoutSeconds 2 | Out-Null
 }
 catch { $earlyExitFailure = $_.Exception }
 Assert-Contract ($null -ne $earlyExitFailure -and $earlyExitFailure.Message.Contains('exitCode=73', [StringComparison]::Ordinal)) 'An exited target process must fail closed with its exact exit code.'
 Assert-Contract ($script:readinessHealthCallCount -eq 0 -and $script:readinessIdentityCallCount -eq 0) 'An exited target process must not issue health, identity, or business requests.'
+Assert-Contract (-not $earlyExitObservation.healthResponseObserved -and -not $earlyExitObservation.identityResponseObserved -and [string]::Equals([string]$earlyExitObservation.healthObservation, 'unavailable', [StringComparison]::Ordinal) -and [string]::Equals([string]$earlyExitObservation.identityObservation, 'unavailable', [StringComparison]::Ordinal)) 'Readiness observation must retain unavailable for both HTTP stages when the managed process exits before any request.'
 $failureLogPath = Join-Path ([IO.Path]::GetTempPath()) "man517-bind-cause-$([Guid]::NewGuid().ToString('N')).log"
 try {
     [IO.File]::WriteAllText($failureLogPath, "System.IO.IOException: Failed to bind to address`n ---> Microsoft.AspNetCore.Connections.AddressInUseException: Address already in use`n ---> System.Net.Sockets.SocketException (48): Address already in use")
