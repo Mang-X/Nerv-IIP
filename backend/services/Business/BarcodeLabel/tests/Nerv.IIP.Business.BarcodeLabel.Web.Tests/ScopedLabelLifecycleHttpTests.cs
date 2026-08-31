@@ -316,7 +316,7 @@ public sealed class ScopedLabelLifecycleHttpTests
             "none",
             ["wms.inbound"],
             "active");
-        var batch = LabelPrintBatch.Create(
+        var batch = LabelPrintBatch.CreateLegacyWithoutReplaySnapshot(
             organizationId,
             environmentId,
             rule,

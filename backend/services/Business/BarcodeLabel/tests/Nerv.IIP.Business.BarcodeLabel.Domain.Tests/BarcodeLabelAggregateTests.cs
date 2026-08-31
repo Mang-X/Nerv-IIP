@@ -107,7 +107,7 @@ public sealed class BarcodeLabelAggregateTests
     {
         var rule = BarcodeRule.Create("org-001", "env-dev", "GS1-FG", "gs1-128", "0950600013435", 80, "gs1-mod10", ["wms.inbound"], "active", 7);
 
-        var batch = LabelPrintBatch.Create(
+        var batch = LabelPrintBatch.CreateLegacyWithoutReplaySnapshot(
             "org-001",
             "env-dev",
             rule,
@@ -142,7 +142,7 @@ public sealed class BarcodeLabelAggregateTests
     {
         var rule = BarcodeRule.Create("org-001", "env-dev", "GS1-FG", "gs1-128", "0950600013435", 80, "gs1-mod10", ["wms.inbound"], "active", 7);
 
-        Assert.Throws<ArgumentException>(() => LabelPrintBatch.Create(
+        Assert.Throws<ArgumentException>(() => LabelPrintBatch.CreateLegacyWithoutReplaySnapshot(
             "org-001",
             "env-dev",
             rule,
@@ -152,6 +152,25 @@ public sealed class BarcodeLabelAggregateTests
             "idem-print-gs1-001",
             labelValuesJson,
             1));
+    }
+
+    [Fact]
+    public void Inactive_gs1_rule_cannot_generate_serialized_values()
+    {
+        var rule = BarcodeRule.Create(
+            "org-001",
+            "env-dev",
+            "GS1-FG",
+            "gs1-128",
+            "0950600013435",
+            80,
+            "gs1-mod10",
+            ["wms.inbound"],
+            "inactive",
+            7);
+
+        Assert.Throws<InvalidOperationException>(() =>
+            rule.GenerateGs1Value("wms.inbound", "LOT-A", "SN-", 1));
     }
 
     [Fact]
@@ -215,7 +234,7 @@ public sealed class BarcodeLabelAggregateTests
     {
         var rule = ActiveRule();
 
-        var first = LabelPrintBatch.Create(
+        var first = LabelPrintBatch.CreateLegacyWithoutReplaySnapshot(
             "org-001",
             "env-dev",
             rule,
@@ -225,7 +244,7 @@ public sealed class BarcodeLabelAggregateTests
             "idem-print-001",
             """{"sku":"SKU-FG-1000"}""",
             3);
-        var second = LabelPrintBatch.Create(
+        var second = LabelPrintBatch.CreateLegacyWithoutReplaySnapshot(
             "org-001",
             "env-dev",
             rule,
@@ -551,7 +570,7 @@ public sealed class BarcodeLabelAggregateTests
 
     private static LabelPrintBatch NewPrintBatch(BarcodeRule rule, LabelTemplateId templateId, string idempotencyKey, string documentId, int quantity)
     {
-        return LabelPrintBatch.Create(
+        return LabelPrintBatch.CreateLegacyWithoutReplaySnapshot(
             "org-001",
             "env-dev",
             rule,

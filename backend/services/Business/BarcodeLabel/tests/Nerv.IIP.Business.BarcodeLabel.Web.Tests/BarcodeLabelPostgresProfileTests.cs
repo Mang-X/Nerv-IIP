@@ -1,5 +1,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.BarcodeLabel.Domain;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
@@ -25,12 +27,63 @@ public sealed class BarcodeLabelPostgresProfileTests
         await using (var dbContext = CreatePostgresDbContext(LaneConnectionString))
         {
             AssertUsesGovernedDatabase(dbContext);
+            await dbContext.GetService<IMigrator>().MigrateAsync("20260710035759_AddPrintLifecycleAndPrinterTransport");
+            var legacyBatchId = Guid.CreateVersion7();
+            var legacyLabelValues = "{}";
+            await dbContext.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO barcode.label_print_batches (
+                    id, organization_id, environment_id, barcode_rule_id, label_template_id,
+                    source_document_type, source_document_id, idempotency_key, label_values_json,
+                    requested_quantity, status, created_at_utc)
+                VALUES (
+                    {legacyBatchId}, 'org-legacy', 'env-legacy', {Guid.CreateVersion7()}, {Guid.CreateVersion7()},
+                    'legacy', 'LEGACY-001', 'legacy-batch', {legacyLabelValues}, 1, 'pending', {DateTimeOffset.UtcNow})
+                """);
             await dbContext.Database.MigrateAsync();
+
+            var legacy = await dbContext.LabelPrintBatches
+                .AsNoTracking()
+                .SingleAsync(batch => batch.Id == new LabelPrintBatchId(legacyBatchId));
+            Assert.Null(legacy.TemplateFileIdSnapshot);
+            Assert.Null(legacy.TemplateAssetSha256);
+            Assert.Null(legacy.VariableSchemaJsonSnapshot);
+            Assert.Null(legacy.BarcodeTypeSnapshot);
+            Assert.Null(legacy.RendererContractVersion);
+
+            var replayRule = BarcodeRule.Create(
+                "org-replay", "env-replay", "FG-REPLAY", "code128", "R", 40, "none", ["work-order"], "active");
+            var replayBatch = LabelPrintBatch.Create(
+                "org-replay",
+                "env-replay",
+                replayRule,
+                new LabelTemplateId(Guid.CreateVersion7()),
+                new LabelPrintBatchSnapshot(
+                    "file-template-replay",
+                    $"sha256:{new string('a', 64)}",
+                    """{"version":1,"variables":[]}""",
+                    "code128",
+                    "zpl-v1"),
+                "work-order",
+                "WO-REPLAY",
+                "replay-batch",
+                "{}",
+                1);
+            dbContext.AddRange(replayRule, replayBatch);
+            await dbContext.SaveChangesAsync();
+
+            var constraintFailure = await Assert.ThrowsAsync<PostgresException>(() =>
+                dbContext.Database.ExecuteSqlInterpolatedAsync($"""
+                    UPDATE barcode.label_print_batches
+                    SET template_file_id_snapshot = NULL
+                    WHERE id = {replayBatch.Id.Id}
+                    """));
+            Assert.Equal(PostgresErrorCodes.CheckViolation, constraintFailure.SqlState);
+
             var rule = BarcodeRule.Create("org-001", "env-dev", "FG-A", "code128", "FGA", 40, "none", ["work-order"], "active");
             var template = LabelTemplate.Create("org-001", "env-dev", "tpl-a", "Template A", "file-a", "{}", "active");
-            var first = LabelPrintBatch.Create("org-001", "env-dev", rule, template.Id, "work-order", "WO-001", "batch-a", "{}", 1);
-            var second = LabelPrintBatch.Create("org-001", "env-dev", rule, template.Id, "work-order", "WO001", "batch-b", "{}", 1);
-            var unique = LabelPrintBatch.Create("org-001", "env-dev", rule, template.Id, "work-order", "WO-UNIQUE", "batch-unique", "{}", 1);
+            var first = LabelPrintBatch.CreateLegacyWithoutReplaySnapshot("org-001", "env-dev", rule, template.Id, "work-order", "WO-001", "batch-a", "{}", 1);
+            var second = LabelPrintBatch.CreateLegacyWithoutReplaySnapshot("org-001", "env-dev", rule, template.Id, "work-order", "WO001", "batch-b", "{}", 1);
+            var unique = LabelPrintBatch.CreateLegacyWithoutReplaySnapshot("org-001", "env-dev", rule, template.Id, "work-order", "WO-UNIQUE", "batch-unique", "{}", 1);
             Assert.Equal(first.Items.Single().LabelValue, second.Items.Single().LabelValue);
             dbContext.AddRange(rule, template, first, second, unique);
             await dbContext.SaveChangesAsync();
