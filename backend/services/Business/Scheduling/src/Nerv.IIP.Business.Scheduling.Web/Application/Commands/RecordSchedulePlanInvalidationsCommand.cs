@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
+using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Application.Commands;
@@ -25,7 +27,10 @@ public sealed record RecordSchedulePlanInvalidationsCommand(
     SchedulePlanInvalidationScope Scope,
     string? ScopeValue,
     string? AffectedWorkOrderId,
-    string? AffectedSkuCode) : ICommand<RecordSchedulePlanInvalidationsResponse>;
+    string? AffectedSkuCode,
+    SchedulingInboxClaim? InboxClaim = null) : ICommand<RecordSchedulePlanInvalidationsResponse>;
+
+public sealed record SchedulingInboxClaim(string ConsumerName, int EventVersion, string IdempotencyKey);
 
 public sealed record RecordSchedulePlanInvalidationsResponse(int MatchedPlanCount, int RecordedInvalidationCount);
 
@@ -58,6 +63,14 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
         RecordSchedulePlanInvalidationsCommand request,
         CancellationToken cancellationToken)
     {
+        if (request.InboxClaim is not null &&
+            !await SchedulingProcessedIntegrationEventInbox.TryRecordAssetUnavailableAsync(
+                dbContext,
+                request.InboxClaim.ConsumerName,
+                new InboxClaimEnvelope(request),
+                cancellationToken))
+            return new RecordSchedulePlanInvalidationsResponse(0, 0);
+
         var calendarResourceIdsByProblem = request.Scope == SchedulePlanInvalidationScope.GeneratedCalendar
             ? await FindCalendarResourceIdsByProblemAsync(request, cancellationToken)
             : [];
@@ -129,6 +142,22 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
         }
 
         return new RecordSchedulePlanInvalidationsResponse(plans.Length, recordedCount);
+    }
+
+    private sealed class InboxClaimEnvelope(RecordSchedulePlanInvalidationsCommand request) : IIntegrationEventEnvelope
+    {
+        public string EventId => request.SourceEventId;
+        public string EventType => request.SourceEventType;
+        public int EventVersion => request.InboxClaim!.EventVersion;
+        public DateTimeOffset OccurredAtUtc => request.OccurredAtUtc;
+        public string SourceService => request.SourceService;
+        public string CorrelationId => string.Empty;
+        public string CausationId => string.Empty;
+        public string OrganizationId => request.OrganizationId;
+        public string EnvironmentId => request.EnvironmentId;
+        public string Actor => string.Empty;
+        public string IdempotencyKey => request.InboxClaim!.IdempotencyKey;
+        public object? PayloadObject => null;
     }
 
     private IQueryable<SchedulePlan> QueryPlans(

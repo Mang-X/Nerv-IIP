@@ -1,5 +1,7 @@
 using DotNetCore.CAP;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using System.Text.Json;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
@@ -141,22 +143,35 @@ public sealed class ResourceChangedIntegrationEventHandlerForInvalidateScheduleP
 }
 
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Maintenance.AssetUnavailableIntegrationEvent", ConsumerName)]
-public sealed class AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans(
-    ApplicationDbContext dbContext,
-    IIntegrationEventDeadLetterStore deadLetterStore,
-    ISender sender,
-    ILogger<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans> logger)
+public sealed class AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans
     : IIntegrationEventHandler<AssetUnavailableIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-scheduling.asset-unavailable";
 
-    private readonly IntegrationEventConsumerGuard<AssetUnavailableIntegrationEvent> consumerGuard = new(
-        new IntegrationEventEnvelopeValidator(),
-        deadLetterStore,
-        new IntegrationEventConsumerOptions(
+    private readonly IntegrationEventConsumerGuard<AssetUnavailableIntegrationEvent> consumerGuard;
+    private readonly IAssetUnavailableCanonicalProcessor processor;
+
+    public AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans(
+        IIntegrationEventDeadLetterStore deadLetterStore,
+        IAssetUnavailableCanonicalProcessor processor)
+    {
+        this.processor = processor;
+        consumerGuard = new IntegrationEventConsumerGuard<AssetUnavailableIntegrationEvent>(
+            new IntegrationEventEnvelopeValidator(), deadLetterStore, new IntegrationEventConsumerOptions(
             ConsumerName,
             MaintenanceIntegrationEventTypes.AssetUnavailable,
             MaintenanceIntegrationEventVersions.V1));
+    }
+
+    public AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans(
+        ApplicationDbContext dbContext,
+        IIntegrationEventDeadLetterStore deadLetterStore,
+        ISender sender,
+        ILogger<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans> logger)
+        : this(deadLetterStore, new AssetUnavailableCanonicalProcessor(
+            sender, new LoggerAdapter<AssetUnavailableCanonicalProcessor, AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans>(logger)))
+    {
+    }
 
     public async Task HandleAsync(AssetUnavailableIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
@@ -171,19 +186,97 @@ public sealed class AssetUnavailableIntegrationEventHandlerForInvalidateSchedule
 
     private async Task HandleValidEventAsync(AssetUnavailableIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
-        if (!await SchedulingProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
+        await processor.ProcessAsync(new AssetUnavailableCanonicalInput(
+            integrationEvent, integrationEvent.Payload.DeviceAssetId, integrationEvent.Payload.Reason), cancellationToken);
+    }
+}
+
+[IntegrationEventConsumer("Nerv.IIP.Contracts.Maintenance.AssetUnavailableV2IntegrationEvent", AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName)]
+public sealed class AssetUnavailableV2IntegrationEventHandlerForInvalidateSchedulePlans(
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    IAssetUnavailableCanonicalProcessor processor)
+    : IIntegrationEventHandler<AssetUnavailableV2IntegrationEvent>, ICapSubscribe
+{
+    private readonly IntegrationEventConsumerGuard<AssetUnavailableV2IntegrationEvent> consumerGuard = new(
+        new IntegrationEventEnvelopeValidator(), deadLetterStore, new IntegrationEventConsumerOptions(
+            AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName,
+            MaintenanceIntegrationEventTypes.AssetUnavailable,
+            MaintenanceIntegrationEventVersions.V2));
+
+    public async Task HandleAsync(AssetUnavailableV2IntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        if (!string.Equals(integrationEvent.SourceService, MaintenanceIntegrationEventSources.BusinessMaintenance, StringComparison.Ordinal))
         {
+            await deadLetterStore.AddAsync(new IntegrationEventDeadLetterMessage(
+                Guid.CreateVersion7(),
+                AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName,
+                integrationEvent.EventId,
+                integrationEvent.EventType,
+                integrationEvent.EventVersion,
+                integrationEvent.SourceService,
+                integrationEvent.IdempotencyKey,
+                typeof(AssetUnavailableV2IntegrationEvent).FullName!,
+                JsonSerializer.Serialize(new
+                {
+                    integrationEvent.EventId,
+                    integrationEvent.EventType,
+                    integrationEvent.EventVersion,
+                    integrationEvent.SourceService,
+                    integrationEvent.IdempotencyKey
+                }),
+                "unexpected-source-service",
+                "AssetUnavailable v2 requires the business-maintenance source service.",
+                IntegrationEventDeadLetterStatus.Pending,
+                DateTimeOffset.UtcNow,
+                null), cancellationToken);
             return;
         }
-
-        await SchedulingPlanInvalidationService.InvalidateByResourceAsync(
-            sender,
-            integrationEvent,
-            SchedulingPlanInvalidationReasons.EquipmentUnavailable,
-            integrationEvent.Payload.DeviceAssetId,
-            logger,
-            cancellationToken);
+        await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
+
+    [CapSubscribe(AssetUnavailableIntegrationEventTopics.V2Template, Group = AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName)]
+    public Task HandleCapAsync(AssetUnavailableV2IntegrationEvent integrationEvent, CancellationToken cancellationToken) =>
+        HandleAsync(integrationEvent, cancellationToken);
+
+    private Task HandleValidEventAsync(AssetUnavailableV2IntegrationEvent integrationEvent, CancellationToken cancellationToken) =>
+        processor.ProcessAsync(new AssetUnavailableCanonicalInput(
+            integrationEvent, integrationEvent.Payload.DeviceAssetId, integrationEvent.Payload.ReasonCode), cancellationToken);
+}
+
+public sealed record AssetUnavailableCanonicalInput(
+    IIntegrationEventEnvelope Envelope,
+    string DeviceAssetId,
+    string UpstreamReason);
+
+public interface IAssetUnavailableCanonicalProcessor
+{
+    Task ProcessAsync(AssetUnavailableCanonicalInput input, CancellationToken cancellationToken);
+}
+
+public sealed class AssetUnavailableCanonicalProcessor(
+    ISender sender,
+    ILogger<AssetUnavailableCanonicalProcessor> logger) : IAssetUnavailableCanonicalProcessor
+{
+    public async Task ProcessAsync(
+        AssetUnavailableCanonicalInput input,
+        CancellationToken cancellationToken)
+    {
+        await SchedulingPlanInvalidationService.InvalidateByResourceAsync(
+            sender, input.Envelope, SchedulingPlanInvalidationReasons.EquipmentUnavailable,
+            input.DeviceAssetId, logger, cancellationToken,
+            new SchedulingInboxClaim(
+                AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName,
+                input.Envelope.EventVersion,
+                input.Envelope.IdempotencyKey));
+    }
+}
+
+internal sealed class LoggerAdapter<TTarget, TSource>(ILogger<TSource> source) : ILogger<TTarget>
+{
+    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => source.BeginScope(state);
+    public bool IsEnabled(LogLevel logLevel) => source.IsEnabled(logLevel);
+    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+        source.Log(logLevel, eventId, state, exception, formatter);
 }
 
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Maintenance.AssetRestoredIntegrationEvent", ConsumerName)]
@@ -515,7 +608,8 @@ internal static class SchedulingPlanInvalidationService
         string reasonCode,
         string affectedResourceId,
         ILogger logger,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        SchedulingInboxClaim? inboxClaim = null)
         where TIntegrationEvent : IIntegrationEventEnvelope
     {
         var normalizedResourceId = Required(affectedResourceId, nameof(affectedResourceId));
@@ -526,7 +620,8 @@ internal static class SchedulingPlanInvalidationService
                 SchedulePlanInvalidationScope.Resource,
                 normalizedResourceId,
                 affectedWorkOrderId: null,
-                affectedSkuCode: null),
+                affectedSkuCode: null,
+                inboxClaim),
             cancellationToken);
         if (result.MatchedPlanCount == 0)
         {
@@ -596,7 +691,8 @@ internal static class SchedulingPlanInvalidationService
         SchedulePlanInvalidationScope scope,
         string? scopeValue,
         string? affectedWorkOrderId,
-        string? affectedSkuCode)
+        string? affectedSkuCode,
+        SchedulingInboxClaim? inboxClaim = null)
         where TIntegrationEvent : IIntegrationEventEnvelope
     {
         return new RecordSchedulePlanInvalidationsCommand(
@@ -610,7 +706,8 @@ internal static class SchedulingPlanInvalidationService
             scope,
             scopeValue,
             affectedWorkOrderId,
-            affectedSkuCode);
+            affectedSkuCode,
+            inboxClaim);
     }
 }
 
@@ -659,6 +756,50 @@ internal static class SchedulingProcessedIntegrationEventInbox
                 record.IdempotencyKey,
                 record.ProcessedAtUtc),
             cancellationToken);
+    }
+
+    public static async Task<bool> TryRecordAssetUnavailableAsync(
+        ApplicationDbContext dbContext,
+        string consumerName,
+        IIntegrationEventEnvelope integrationEvent,
+        CancellationToken cancellationToken)
+    {
+        if (dbContext.Database.IsNpgsql())
+        {
+            if (dbContext.Database.CurrentTransaction is null)
+                throw new InvalidOperationException("AssetUnavailable inbox claim requires an active unit-of-work transaction.");
+
+            var lockKeys = new[]
+            {
+                $"scheduling-asset-unavailable:event:{consumerName}:{integrationEvent.EventId}",
+                $"scheduling-asset-unavailable:business:{consumerName}:{integrationEvent.IdempotencyKey}"
+            };
+            foreach (var lockKey in lockKeys.Order(StringComparer.Ordinal))
+            {
+                await dbContext.Database.ExecuteSqlInterpolatedAsync(
+                    $"SELECT pg_advisory_xact_lock(hashtextextended({lockKey}, 0))",
+                    cancellationToken);
+            }
+        }
+
+        if (dbContext.ProcessedIntegrationEvents.Local.Any(x =>
+                x.ConsumerName == consumerName &&
+                (x.EventId == integrationEvent.EventId || x.IdempotencyKey == integrationEvent.IdempotencyKey)) ||
+            await dbContext.ProcessedIntegrationEvents.AnyAsync(x =>
+                x.ConsumerName == consumerName &&
+                (x.EventId == integrationEvent.EventId || x.IdempotencyKey == integrationEvent.IdempotencyKey),
+                cancellationToken))
+            return false;
+
+        dbContext.ProcessedIntegrationEvents.Add(new ProcessedIntegrationEvent(
+            consumerName,
+            integrationEvent.EventId,
+            integrationEvent.EventType,
+            integrationEvent.EventVersion,
+            integrationEvent.SourceService,
+            integrationEvent.IdempotencyKey,
+            DateTimeOffset.UtcNow));
+        return true;
     }
 
     private sealed class EventInstanceInboxEnvelope(IIntegrationEventEnvelope source) : IIntegrationEventEnvelope

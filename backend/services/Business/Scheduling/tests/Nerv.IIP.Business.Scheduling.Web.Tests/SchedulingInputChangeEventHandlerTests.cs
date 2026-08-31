@@ -58,6 +58,38 @@ public sealed class SchedulingInputChangeEventHandlerTests
             .Published.OfType<SchedulePlanInvalidatedIntegrationEvent>().Count());
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Maintenance_asset_unavailable_v1_and_v2_share_business_identity_and_invalidate_once(bool v1First)
+    {
+        await using var provider = CreateInMemoryProvider();
+        await SeedPlansAsync(provider);
+
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+        var processor = new AssetUnavailableCanonicalProcessor(
+            sender,
+            new RecordingLogger<AssetUnavailableCanonicalProcessor>());
+        var v1 = new AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans(deadLetters, processor);
+        var v2 = new AssetUnavailableV2IntegrationEventHandlerForInvalidateSchedulePlans(deadLetters, processor);
+        const string sharedKey = "asset-unavailable:wo-maint-001:2026-06-01T09:00:00.0000000+00:00";
+
+        var first = v1First
+            ? v1.HandleAsync(CreateAssetUnavailableEvent() with { IdempotencyKey = sharedKey }, CancellationToken.None)
+            : v2.HandleAsync(CreateAssetUnavailableV2Event(sharedKey), CancellationToken.None);
+        await first;
+        var second = v1First
+            ? v2.HandleAsync(CreateAssetUnavailableV2Event(sharedKey), CancellationToken.None)
+            : v1.HandleAsync(CreateAssetUnavailableEvent() with { IdempotencyKey = sharedKey }, CancellationToken.None);
+        await second;
+
+        Assert.Equal(2, await db.SchedulePlanInvalidations.CountAsync());
+        Assert.Single(await db.ProcessedIntegrationEvents.ToArrayAsync());
+    }
+
     /// <summary>
     /// #1320 命中回证：维护世界发出的 deviceAssetId 是**设备业务编码**（DEV-CNC-01），
     /// 计划失效必须靠它命中已生成方案。修复前排程侧的 resourceId 存的是 MasterData 聚合主键 GUID，
@@ -168,6 +200,30 @@ public sealed class SchedulingInputChangeEventHandlerTests
 
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         Assert.Empty(await dbContext.SchedulePlanInvalidations.ToArrayAsync());
+    }
+
+    [Fact]
+    public async Task Maintenance_asset_unavailable_v2_with_wrong_source_is_dead_lettered_before_claim()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var processor = new AssetUnavailableCanonicalProcessor(
+            scope.ServiceProvider.GetRequiredService<ISender>(),
+            new RecordingLogger<AssetUnavailableCanonicalProcessor>());
+        var handler = new AssetUnavailableV2IntegrationEventHandlerForInvalidateSchedulePlans(deadLetters, processor);
+
+        await handler.HandleAsync(CreateAssetUnavailableV2Event("key-wrong-source") with
+        {
+            SourceService = MaintenanceIntegrationEventSources.Maintenance
+        }, CancellationToken.None);
+
+        var deadLetter = Assert.Single(await deadLetters.ListAsync(
+            AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+        Assert.Equal("unexpected-source-service", deadLetter.FailureCode);
+        Assert.Empty(await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().ProcessedIntegrationEvents.ToArrayAsync());
     }
 
     [Fact]
@@ -660,6 +716,9 @@ public sealed class SchedulingInputChangeEventHandlerTests
         AssertSubscription<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans>(
             "AssetUnavailableIntegrationEvent",
             AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName);
+        AssertSubscription<AssetUnavailableV2IntegrationEventHandlerForInvalidateSchedulePlans>(
+            AssetUnavailableIntegrationEventTopics.V2Template,
+            AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName);
         AssertSubscription<AssetRestoredIntegrationEventHandlerForInvalidateSchedulePlans>(
             "AssetRestoredIntegrationEvent",
             AssetRestoredIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName);
@@ -894,6 +953,23 @@ public sealed class SchedulingInputChangeEventHandlerTests
             "system:maintenance",
             "maintenance:asset-restored:ASSET-CNC-01",
             new AssetRestoredPayload("ASSET-CNC-01", new DateTimeOffset(2026, 6, 1, 9, 30, 0, TimeSpan.Zero)));
+    }
+
+    private static AssetUnavailableV2IntegrationEvent CreateAssetUnavailableV2Event(string idempotencyKey)
+    {
+        return new AssetUnavailableV2IntegrationEvent(
+            "evt-maint-v2-001",
+            MaintenanceIntegrationEventTypes.AssetUnavailable,
+            MaintenanceIntegrationEventVersions.V2,
+            new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero),
+            MaintenanceIntegrationEventSources.BusinessMaintenance,
+            "corr-maint-001",
+            "wo-maint-001",
+            "org-001",
+            "env-dev",
+            "system:maintenance",
+            idempotencyKey,
+            new AssetUnavailableV2Payload("ASSET-CNC-01", "breakdown", new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero)));
     }
 
     private static DeviceStateChangedIntegrationEvent CreateDeviceStateChangedEvent()
