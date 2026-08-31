@@ -170,6 +170,110 @@ public sealed class GetBusinessConsoleBarcodePrintBatchEndpoint(
 }
 
 [Tags("Business Console Barcode")]
+[HttpPost("/api/business-console/v1/barcode/print-batches/{printBatchId}/dispatch")]
+[BusinessGatewayOperationId("dispatchBusinessConsoleBarcodePrintBatch")]
+public sealed class DispatchBusinessConsoleBarcodePrintBatchEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessBarcodeLabelClient barcode,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleDispatchBarcodePrintBatchRequest, BusinessConsoleBarcodePrintLifecycleResponse>(
+        auth,
+        BusinessGatewayPermissions.BarcodePrint)
+{
+    protected override string OrganizationId(BusinessConsoleDispatchBarcodePrintBatchRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleDispatchBarcodePrintBatchRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleDispatchBarcodePrintBatchRequest request) => "barcode-print-batch";
+
+    protected override string? ResourceId(BusinessConsoleDispatchBarcodePrintBatchRequest request) => Route<string>("printBatchId");
+
+    protected override Task<BusinessConsoleBarcodePrintLifecycleResponse> ForwardAsync(
+        BusinessConsoleDispatchBarcodePrintBatchRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var downstreamRequest = request with
+        {
+            Body = request.Body with { PrintBatchId = Route<string>("printBatchId")! },
+        };
+        return barcode.DispatchPrintBatchAsync(tokenProvider.BearerToken, downstreamRequest, cancellationToken);
+    }
+}
+
+[Tags("Business Console Barcode")]
+[HttpPost("/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/reprint")]
+[BusinessGatewayOperationId("reprintBusinessConsoleBarcodeLabel")]
+public sealed class ReprintBusinessConsoleBarcodeLabelEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessBarcodeLabelClient barcode,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleReprintBarcodeLabelRequest, BusinessConsoleReprintBarcodeLabelResponse>(
+        auth,
+        BusinessGatewayPermissions.BarcodePrint)
+{
+    protected override string OrganizationId(BusinessConsoleReprintBarcodeLabelRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleReprintBarcodeLabelRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleReprintBarcodeLabelRequest request) => "barcode-print-batch";
+
+    protected override string? ResourceId(BusinessConsoleReprintBarcodeLabelRequest request) => Route<string>("printBatchId");
+
+    protected override Task<BusinessConsoleReprintBarcodeLabelResponse> ForwardAsync(
+        BusinessConsoleReprintBarcodeLabelRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var downstreamRequest = request with
+        {
+            Body = request.Body with
+            {
+                PrintBatchId = Route<string>("printBatchId")!,
+                SequenceNo = Route<int>("sequenceNo"),
+            },
+        };
+        return barcode.ReprintLabelAsync(tokenProvider.BearerToken, downstreamRequest, cancellationToken);
+    }
+}
+
+[Tags("Business Console Barcode")]
+[HttpPost("/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/void")]
+[BusinessGatewayOperationId("voidBusinessConsoleBarcodeLabel")]
+public sealed class VoidBusinessConsoleBarcodeLabelEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessBarcodeLabelClient barcode,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleVoidBarcodeLabelRequest, BusinessConsoleBarcodePrintLifecycleResponse>(
+        auth,
+        BusinessGatewayPermissions.BarcodePrint)
+{
+    protected override string OrganizationId(BusinessConsoleVoidBarcodeLabelRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleVoidBarcodeLabelRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleVoidBarcodeLabelRequest request) => "barcode-print-batch";
+
+    protected override string? ResourceId(BusinessConsoleVoidBarcodeLabelRequest request) => Route<string>("printBatchId");
+
+    protected override Task<BusinessConsoleBarcodePrintLifecycleResponse> ForwardAsync(
+        BusinessConsoleVoidBarcodeLabelRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var downstreamRequest = request with
+        {
+            Body = request.Body with
+            {
+                PrintBatchId = Route<string>("printBatchId")!,
+                SequenceNo = Route<int>("sequenceNo"),
+            },
+        };
+        return barcode.VoidLabelAsync(tokenProvider.BearerToken, downstreamRequest, cancellationToken);
+    }
+}
+
+[Tags("Business Console Barcode")]
 [HttpPost("/api/business-console/v1/barcode/scans")]
 [BusinessGatewayOperationId("recordBusinessConsoleBarcodeScan")]
 public sealed class RecordBusinessConsoleBarcodeScanEndpoint(
@@ -264,5 +368,38 @@ public sealed class BusinessConsoleBarcodeScanListRequestValidator : Validator<B
         RuleFor(x => x.SourceDocumentId).MaximumLength(150);
         RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
         RuleFor(x => x.Take).InclusiveBetween(1, 500);
+    }
+}
+
+public sealed class BusinessConsoleDispatchBarcodePrintBatchRequestValidator : Validator<BusinessConsoleDispatchBarcodePrintBatchRequest>
+{
+    public BusinessConsoleDispatchBarcodePrintBatchRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Body).NotNull();
+        RuleFor(x => x.Body.PrinterId).NotEmpty().MaximumLength(100).When(x => x.Body is not null);
+    }
+}
+
+public sealed class BusinessConsoleReprintBarcodeLabelRequestValidator : Validator<BusinessConsoleReprintBarcodeLabelRequest>
+{
+    public BusinessConsoleReprintBarcodeLabelRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Body).NotNull();
+        RuleFor(x => x.Body.PrinterId).NotEmpty().MaximumLength(100).When(x => x.Body is not null);
+    }
+}
+
+public sealed class BusinessConsoleVoidBarcodeLabelRequestValidator : Validator<BusinessConsoleVoidBarcodeLabelRequest>
+{
+    public BusinessConsoleVoidBarcodeLabelRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Body).NotNull();
+        RuleFor(x => x.Body.Reason).NotEmpty().MaximumLength(500).When(x => x.Body is not null);
     }
 }

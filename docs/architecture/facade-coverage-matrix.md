@@ -72,7 +72,7 @@ PR 审核须将声明与实际交付物交叉核验（facade + codegen + barrel 
 | 服务                |   总数 | exposed | deferred | internal |
 | ------------------- | ------: | ------: | -------: | -------: |
 | Approval            |      16 |      11 |        4 |        1 |
-| BarcodeLabel        |      16 |      10 |        0 |        6 |
+| BarcodeLabel        |      16 |      13 |        0 |        3 |
 | DemandPlanning      |      16 |      16 |        0 |        0 |
 | Erp                 |      59 |      43 |       15 |        1 |
 | IndustrialTelemetry |      28 |      25 |        1 |        2 |
@@ -84,11 +84,11 @@ PR 审核须将声明与实际交付物交叉核验（facade + codegen + barrel 
 | Quality             |      43 |      30 |       12 |        1 |
 | Scheduling          |      15 |      13 |        1 |        1 |
 | Wms                 |      49 |      37 |        7 |        5 |
-| **Total**           | **440** | **360** |   **50** |   **30** |
+| **Total**           | **440** | **363** |   **50** |   **27** |
 
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
-`exposed` 行（360）带有已验证 facade `gatewayOperationIds`，列举于 JSON 登记表中。实际的治理决策，即
+`exposed` 行（363）带有已验证 facade `gatewayOperationIds`，列举于 JSON 登记表中。实际的治理决策，即
 `deferred` 与 `internal` 行，完整列于下方。
 
 对于 MAN-632 可搜索目录，`listBusinessConsoleSearchableDirectory` 为每种类型映射恰好一个权威 owner 和

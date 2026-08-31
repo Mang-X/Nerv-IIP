@@ -16340,6 +16340,16 @@ internal sealed class RecordingBarcodeLabelClient : IBusinessBarcodeLabelClient,
 
     public BusinessConsoleBarcodeScanListRequest? LastScanListRequest { get; private set; }
 
+    public BusinessConsoleDispatchBarcodePrintBatchRequest? LastDispatchRequest { get; private set; }
+
+    public BusinessConsoleReprintBarcodeLabelRequest? LastReprintRequest { get; private set; }
+
+    public BusinessConsoleVoidBarcodeLabelRequest? LastVoidRequest { get; private set; }
+
+    public int LifecycleCallCount { get; private set; }
+
+    public BusinessServiceProxyException? LifecycleFailure { get; init; }
+
     public BusinessBarcodeResolveRequest? LastResolveRequest { get; private set; }
 
     public int ResolveCallCount { get; private set; }
@@ -16460,6 +16470,55 @@ internal sealed class RecordingBarcodeLabelClient : IBusinessBarcodeLabelClient,
                 "observed",
                 DateTimeOffset.Parse("2026-06-03T01:00:00Z", CultureInfo.InvariantCulture)),
         ], 1));
+    }
+
+    public Task<BusinessConsoleBarcodePrintLifecycleResponse> DispatchPrintBatchAsync(
+        string internalBearerToken,
+        BusinessConsoleDispatchBarcodePrintBatchRequest request,
+        CancellationToken cancellationToken)
+    {
+        LifecycleCallCount++;
+        LastInternalToken = internalBearerToken;
+        LastDispatchRequest = request;
+        if (LifecycleFailure is not null)
+        {
+            throw LifecycleFailure;
+        }
+        return Task.FromResult(new BusinessConsoleBarcodePrintLifecycleResponse(request.Body.PrintBatchId));
+    }
+
+    public Task<BusinessConsoleReprintBarcodeLabelResponse> ReprintLabelAsync(
+        string internalBearerToken,
+        BusinessConsoleReprintBarcodeLabelRequest request,
+        CancellationToken cancellationToken)
+    {
+        LifecycleCallCount++;
+        LastInternalToken = internalBearerToken;
+        LastReprintRequest = request;
+        if (LifecycleFailure is not null)
+        {
+            throw LifecycleFailure;
+        }
+        return Task.FromResult(new BusinessConsoleReprintBarcodeLabelResponse(
+            request.Body.PrintBatchId,
+            "reprinted",
+            "print-job-001",
+            null));
+    }
+
+    public Task<BusinessConsoleBarcodePrintLifecycleResponse> VoidLabelAsync(
+        string internalBearerToken,
+        BusinessConsoleVoidBarcodeLabelRequest request,
+        CancellationToken cancellationToken)
+    {
+        LifecycleCallCount++;
+        LastInternalToken = internalBearerToken;
+        LastVoidRequest = request;
+        if (LifecycleFailure is not null)
+        {
+            throw LifecycleFailure;
+        }
+        return Task.FromResult(new BusinessConsoleBarcodePrintLifecycleResponse(request.Body.PrintBatchId));
     }
 
     public Task<BusinessBarcodeResolveResponse> ResolveAsync(

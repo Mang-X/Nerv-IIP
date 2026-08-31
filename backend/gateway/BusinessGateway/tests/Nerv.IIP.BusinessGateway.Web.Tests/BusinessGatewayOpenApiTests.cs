@@ -698,6 +698,86 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches", "post", "createBusinessConsoleBarcodePrintBatch");
         AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches", "get", "listBusinessConsoleBarcodePrintBatches");
         AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}", "get", "getBusinessConsoleBarcodePrintBatch");
+        AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}/dispatch", "post", "dispatchBusinessConsoleBarcodePrintBatch");
+        AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/reprint", "post", "reprintBusinessConsoleBarcodeLabel");
+        AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/void", "post", "voidBusinessConsoleBarcodeLabel");
+        foreach (var path in new[]
+                 {
+                     "/api/business-console/v1/barcode/print-batches/{printBatchId}/dispatch",
+                     "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/reprint",
+                     "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/void",
+                 })
+        {
+            AssertRequiredStringQueryParameter(paths, path, "post", "organizationId");
+            AssertRequiredStringQueryParameter(paths, path, "post", "environmentId");
+        }
+        AssertRequiredSchemaProperties(
+            document,
+            "BusinessConsoleDispatchBarcodePrintBatchBody",
+            "printBatchId",
+            "printerId");
+        AssertSchemaExcludesProperties(
+            document,
+            "BusinessConsoleDispatchBarcodePrintBatchBody",
+            "organizationId",
+            "environmentId");
+        AssertRequiredSchemaProperties(
+            document,
+            "BusinessConsoleReprintBarcodeLabelBody",
+            "printBatchId",
+            "sequenceNo",
+            "printerId");
+        AssertSchemaExcludesProperties(
+            document,
+            "BusinessConsoleReprintBarcodeLabelBody",
+            "organizationId",
+            "environmentId");
+        AssertRequiredSchemaProperties(
+            document,
+            "BusinessConsoleVoidBarcodeLabelBody",
+            "printBatchId",
+            "sequenceNo",
+            "reason");
+        AssertSchemaExcludesProperties(
+            document,
+            "BusinessConsoleVoidBarcodeLabelBody",
+            "organizationId",
+            "environmentId");
+        AssertSchemaProperties(
+            document,
+            "BusinessConsoleBarcodePrintLifecycleResponse",
+            "printBatchId");
+        AssertSchemaProperties(
+            document,
+            "BusinessConsoleReprintBarcodeLabelResponse",
+            "printBatchId",
+            "status",
+            "printJobId",
+            "failureReason");
+        AssertResponseStatuses(
+            paths,
+            "/api/business-console/v1/barcode/print-batches/{printBatchId}/dispatch",
+            "post",
+            "200",
+            "400",
+            "401",
+            "403");
+        AssertResponseStatuses(
+            paths,
+            "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/reprint",
+            "post",
+            "200",
+            "400",
+            "401",
+            "403");
+        AssertResponseStatuses(
+            paths,
+            "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/void",
+            "post",
+            "200",
+            "400",
+            "401",
+            "403");
         AssertOperationId(paths, "/api/business-console/v1/barcode/scans", "post", "recordBusinessConsoleBarcodeScan");
         AssertOperationId(paths, "/api/business-console/v1/barcode/scans", "get", "listBusinessConsoleBarcodeScans");
         AssertOperationId(paths, "/api/business-console/v1/barcode/resolve", "post", "resolveBusinessConsoleBarcode");
