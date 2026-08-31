@@ -32,7 +32,9 @@ function Invoke-ContractProbe {
         [Parameter(Mandatory)] [string] $ProbePath,
         [Parameter(Mandatory)] [string] $ProbeLibraryPath,
         [Parameter(Mandatory)] [string] $Scenario,
-        [Parameter(Mandatory)] [string] $ScenarioRoot
+        [Parameter(Mandatory)] [string] $ScenarioRoot,
+        [ValidateSet('root-exit', 'snapshot')]
+        [string] $DrainMode = 'root-exit'
     )
 
     $output = @(
@@ -42,7 +44,8 @@ function Invoke-ContractProbe {
             -File $ProbePath `
             -LibraryPath $ProbeLibraryPath `
             -Scenario $Scenario `
-            -ScenarioRoot $ScenarioRoot 2>&1 |
+            -ScenarioRoot $ScenarioRoot `
+            -DrainMode $DrainMode 2>&1 |
             ForEach-Object { "$_" }
     )
     $exitCode = $LASTEXITCODE
@@ -76,7 +79,9 @@ $probeScript = @'
 param(
     [Parameter(Mandatory)] [string] $LibraryPath,
     [Parameter(Mandatory)] [string] $Scenario,
-    [Parameter(Mandatory)] [string] $ScenarioRoot
+    [Parameter(Mandatory)] [string] $ScenarioRoot,
+    [ValidateSet('root-exit', 'snapshot')]
+    [string] $DrainMode = 'root-exit'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -273,67 +278,207 @@ function Invoke-TimeoutTreeScenario {
 }
 
 function Invoke-DelayedDrainScenario {
-    $identityPath = Join-Path $ScenarioRoot 'delayed-drain-child.json'
+    $rootIdentityPath = Join-Path $ScenarioRoot 'delayed-drain-root.json'
+    $childIdentityPath = Join-Path $ScenarioRoot 'delayed-drain-child.json'
+    $coordinatorIdentityPath = Join-Path $ScenarioRoot 'delayed-drain-coordinator.json'
+    $childReadyPath = Join-Path $ScenarioRoot 'delayed-drain-child-ready'
+    $rootExitedPath = Join-Path $ScenarioRoot 'delayed-drain-root-exited'
+    $snapshotTakenPath = Join-Path $ScenarioRoot 'delayed-drain-snapshot-taken'
+    $releasePath = Join-Path $ScenarioRoot 'delayed-drain-release'
+    $childFinishedPath = Join-Path $ScenarioRoot 'delayed-drain-child-finished'
+    $coordinatorFailurePath = Join-Path $ScenarioRoot 'delayed-drain-coordinator-failure.txt'
     $childScriptPath = Join-Path $ScenarioRoot 'delayed-drain-child.ps1'
-    $parentScriptPath = Join-Path $ScenarioRoot 'delayed-drain-parent.ps1'
-    $childIdentity = $null
+    $rootScriptPath = Join-Path $ScenarioRoot 'delayed-drain-root.ps1'
+    $coordinatorScriptPath = Join-Path $ScenarioRoot 'delayed-drain-coordinator.ps1'
+    $coordinator = $null
 
     [IO.File]::WriteAllText(
         $childScriptPath,
         @"
-param([string] `$IdentityPath)
+param(
+    [string] `$IdentityPath,
+    [string] `$ReadyPath,
+    [string] `$ReleasePath,
+    [string] `$FinishedPath
+)
+`$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
 `$process = Get-Process -Id `$PID -ErrorAction Stop
 `$identity = [ordered]@{ pid = `$PID; processStartTimeUtc = `$process.StartTime.ToUniversalTime().ToString('O') }
-[IO.File]::WriteAllText(`$IdentityPath, (`$identity | ConvertTo-Json -Compress), [Text.UTF8Encoding]::new(`$false))
-Start-Sleep -Milliseconds 750
+`$identityTempPath = "`$IdentityPath.`$PID.tmp"
+[IO.File]::WriteAllText(`$identityTempPath, (`$identity | ConvertTo-Json -Compress), [Text.UTF8Encoding]::new(`$false))
+[IO.File]::Move(`$identityTempPath, `$IdentityPath)
+`$readyTempPath = "`$ReadyPath.`$PID.tmp"
+[IO.File]::WriteAllText(`$readyTempPath, 'ready', [Text.UTF8Encoding]::new(`$false))
+[IO.File]::Move(`$readyTempPath, `$ReadyPath)
+`$deadline = [DateTimeOffset]::UtcNow.AddSeconds(10)
+while (-not [IO.File]::Exists(`$ReleasePath) -and [DateTimeOffset]::UtcNow -lt `$deadline) {
+    Start-Sleep -Milliseconds 25
+}
+if (-not [IO.File]::Exists(`$ReleasePath)) { throw 'The delayed drain release edge was not observed.' }
 [Console]::Out.Write('late-stdout')
 [Console]::Error.Write('late-stderr')
+`$finishedTempPath = "`$FinishedPath.`$PID.tmp"
+[IO.File]::WriteAllText(`$finishedTempPath, 'finished', [Text.UTF8Encoding]::new(`$false))
+[IO.File]::Move(`$finishedTempPath, `$FinishedPath)
 "@,
         [Text.UTF8Encoding]::new($false)
     )
     [IO.File]::WriteAllText(
-        $parentScriptPath,
+        $rootScriptPath,
         @"
-param([string] `$ChildScriptPath, [string] `$IdentityPath)
+param(
+    [string] `$ChildScriptPath,
+    [string] `$RootIdentityPath,
+    [string] `$ChildIdentityPath,
+    [string] `$ChildReadyPath,
+    [string] `$ReleasePath,
+    [string] `$ChildFinishedPath
+)
+`$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+`$process = Get-Process -Id `$PID -ErrorAction Stop
+`$identity = [ordered]@{ pid = `$PID; processStartTimeUtc = `$process.StartTime.ToUniversalTime().ToString('O') }
+`$identityTempPath = "`$RootIdentityPath.`$PID.tmp"
+[IO.File]::WriteAllText(`$identityTempPath, (`$identity | ConvertTo-Json -Compress), [Text.UTF8Encoding]::new(`$false))
+[IO.File]::Move(`$identityTempPath, `$RootIdentityPath)
 `$startInfo = [Diagnostics.ProcessStartInfo]::new()
 `$startInfo.FileName = (Get-Process -Id `$PID -ErrorAction Stop).Path
 `$startInfo.UseShellExecute = `$false
 `$startInfo.RedirectStandardOutput = `$false
 `$startInfo.RedirectStandardError = `$false
-foreach (`$argument in @('-NoProfile', '-NonInteractive', '-File', `$ChildScriptPath, `$IdentityPath)) {
+foreach (`$argument in @(
+    '-NoProfile', '-NonInteractive', '-File', `$ChildScriptPath,
+    `$ChildIdentityPath, `$ChildReadyPath, `$ReleasePath, `$ChildFinishedPath
+)) {
     [void] `$startInfo.ArgumentList.Add(`$argument)
 }
 `$child = [Diagnostics.Process]::Start(`$startInfo)
 `$child.Dispose()
 `$deadline = [DateTimeOffset]::UtcNow.AddSeconds(10)
-while (-not [IO.File]::Exists(`$IdentityPath) -and [DateTimeOffset]::UtcNow -lt `$deadline) {
+while (-not [IO.File]::Exists(`$ChildReadyPath) -and [DateTimeOffset]::UtcNow -lt `$deadline) {
     Start-Sleep -Milliseconds 25
 }
-if (-not [IO.File]::Exists(`$IdentityPath)) { throw 'The delayed drain child did not publish its identity.' }
+if (-not [IO.File]::Exists(`$ChildReadyPath)) { throw 'The delayed drain child did not publish its ready edge.' }
+"@,
+        [Text.UTF8Encoding]::new($false)
+    )
+    [IO.File]::WriteAllText(
+        $coordinatorScriptPath,
+        @"
+param(
+    [string] `$RootIdentityPath,
+    [string] `$CoordinatorIdentityPath,
+    [string] `$RootExitedPath,
+    [string] `$SnapshotTakenPath,
+    [string] `$ReleasePath,
+    [string] `$FailurePath,
+    [ValidateSet('root-exit', 'snapshot')]
+    [string] `$Mode
+)
+`$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+try {
+    `$process = Get-Process -Id `$PID -ErrorAction Stop
+    `$identity = [ordered]@{ pid = `$PID; processStartTimeUtc = `$process.StartTime.ToUniversalTime().ToString('O') }
+    `$identityTempPath = "`$CoordinatorIdentityPath.`$PID.tmp"
+    [IO.File]::WriteAllText(`$identityTempPath, (`$identity | ConvertTo-Json -Compress), [Text.UTF8Encoding]::new(`$false))
+    [IO.File]::Move(`$identityTempPath, `$CoordinatorIdentityPath)
+
+    `$deadline = [DateTimeOffset]::UtcNow.AddSeconds(10)
+    while (-not [IO.File]::Exists(`$RootIdentityPath) -and [DateTimeOffset]::UtcNow -lt `$deadline) {
+        Start-Sleep -Milliseconds 25
+    }
+    if (-not [IO.File]::Exists(`$RootIdentityPath)) { throw 'The delayed drain root did not publish its identity.' }
+    `$rootIdentity = Get-Content -LiteralPath `$RootIdentityPath -Raw | ConvertFrom-Json
+    `$expectedRootStartTimeUtc = [DateTimeOffset]::Parse(
+        [string] `$rootIdentity.processStartTimeUtc,
+        [Globalization.CultureInfo]::InvariantCulture,
+        [Globalization.DateTimeStyles]::RoundtripKind).UtcDateTime
+
+    while ([DateTimeOffset]::UtcNow -lt `$deadline) {
+        `$root = Get-Process -Id ([int] `$rootIdentity.pid) -ErrorAction SilentlyContinue
+        if (`$null -eq `$root) { break }
+        `$sameIdentity = `$root.StartTime.ToUniversalTime() -eq `$expectedRootStartTimeUtc
+        `$root.Dispose()
+        if (-not `$sameIdentity) { break }
+        Start-Sleep -Milliseconds 25
+    }
+    `$remainingRoot = Get-Process -Id ([int] `$rootIdentity.pid) -ErrorAction SilentlyContinue
+    if (`$null -ne `$remainingRoot) {
+        `$sameIdentity = `$remainingRoot.StartTime.ToUniversalTime() -eq `$expectedRootStartTimeUtc
+        `$remainingRoot.Dispose()
+        if (`$sameIdentity) { throw 'The delayed drain root exit edge was not observed.' }
+    }
+
+    `$rootExitedTempPath = "`$RootExitedPath.`$PID.tmp"
+    [IO.File]::WriteAllText(`$rootExitedTempPath, 'root-exited', [Text.UTF8Encoding]::new(`$false))
+    [IO.File]::Move(`$rootExitedTempPath, `$RootExitedPath)
+    if ([string]::Equals(`$Mode, 'snapshot', [StringComparison]::Ordinal)) {
+        `$deadline = [DateTimeOffset]::UtcNow.AddSeconds(10)
+        while (-not [IO.File]::Exists(`$SnapshotTakenPath) -and [DateTimeOffset]::UtcNow -lt `$deadline) {
+            Start-Sleep -Milliseconds 25
+        }
+        if (-not [IO.File]::Exists(`$SnapshotTakenPath)) { throw 'The wrong-path snapshot edge was not observed.' }
+    }
+
+    `$releaseTempPath = "`$ReleasePath.`$PID.tmp"
+    [IO.File]::WriteAllText(`$releaseTempPath, 'release', [Text.UTF8Encoding]::new(`$false))
+    [IO.File]::Move(`$releaseTempPath, `$ReleasePath)
+    exit 0
+}
+catch {
+    [IO.File]::WriteAllText(`$FailurePath, `$_.Exception.Message, [Text.UTF8Encoding]::new(`$false))
+    exit 1
+}
 "@,
         [Text.UTF8Encoding]::new($false)
     )
 
     try {
+        $coordinatorStartInfo = [Diagnostics.ProcessStartInfo]::new()
+        $coordinatorStartInfo.FileName = (Get-Process -Id $PID -ErrorAction Stop).Path
+        $coordinatorStartInfo.UseShellExecute = $false
+        foreach ($argument in @(
+            '-NoProfile', '-NonInteractive', '-File', $coordinatorScriptPath,
+            $rootIdentityPath, $coordinatorIdentityPath, $rootExitedPath,
+            $snapshotTakenPath, $releasePath, $coordinatorFailurePath, $DrainMode
+        )) {
+            [void] $coordinatorStartInfo.ArgumentList.Add($argument)
+        }
+        $coordinator = [Diagnostics.Process]::Start($coordinatorStartInfo)
+
         $result = Invoke-NativeCommandOutput `
             -Command (Get-Process -Id $PID).Path `
-            -Arguments @('-NoProfile', '-NonInteractive', '-File', $parentScriptPath, $childScriptPath, $identityPath) `
+            -Arguments @(
+                '-NoProfile', '-NonInteractive', '-File', $rootScriptPath, $childScriptPath,
+                $rootIdentityPath, $childIdentityPath, $childReadyPath, $releasePath, $childFinishedPath
+            ) `
             -WorkingDirectory $ScenarioRoot `
             -TimeoutMilliseconds 20000 `
             -Name 'native-output-delayed-drain' `
-            -LogDirectory (Join-Path $ScenarioRoot 'delayed-drain-logs')
+            -LogDirectory (Join-Path $ScenarioRoot 'delayed-drain-logs') `
+            -Environment @{ NERV_SNAPSHOT_TAKEN_PATH = $snapshotTakenPath }
 
         Assert-Probe ([string]::Equals([string]$result.Stdout, 'late-stdout', [StringComparison]::Ordinal)) 'The command must wait for stdout completion after the root process exits.'
         Assert-Probe ([string]::Equals([string]$result.Stderr, 'late-stderr', [StringComparison]::Ordinal)) 'The command must wait for stderr completion after the root process exits.'
         Assert-Probe (-not $result.PartialOutput) 'Streams that complete inside the drain bound must not be marked partial.'
+        Assert-Probe ([IO.File]::Exists($childReadyPath)) 'The child-ready edge must precede the root exit.'
+        Assert-Probe ([IO.File]::Exists($rootExitedPath)) 'The coordinator must observe the exact root identity exit before release.'
+        Assert-Probe ([IO.File]::Exists($releasePath)) 'The child output must be released only after the root exit edge.'
+        Assert-Probe ([IO.File]::Exists($childFinishedPath)) 'The child must publish both late stream fragments before it exits.'
+        Assert-Probe ($coordinator.WaitForExit(10000)) 'The delayed drain coordinator did not exit after publishing release.'
+        $coordinatorFailure = if ([IO.File]::Exists($coordinatorFailurePath)) { [IO.File]::ReadAllText($coordinatorFailurePath) } else { '' }
+        Assert-Probe ($coordinator.ExitCode -eq 0) "The delayed drain coordinator failed: $coordinatorFailure"
     }
     finally {
-        if (Test-Path -LiteralPath $identityPath -PathType Leaf) {
-            $childIdentity = Get-Content -LiteralPath $identityPath -Raw | ConvertFrom-Json
-            $remaining = Get-Process -Id ([int]$childIdentity.pid) -ErrorAction SilentlyContinue
+        foreach ($identityPath in @($rootIdentityPath, $childIdentityPath, $coordinatorIdentityPath)) {
+            if (-not (Test-Path -LiteralPath $identityPath -PathType Leaf)) { continue }
+            $identity = Get-Content -LiteralPath $identityPath -Raw | ConvertFrom-Json
+            $remaining = Get-Process -Id ([int]$identity.pid) -ErrorAction SilentlyContinue
             if ($null -ne $remaining) {
                 $expectedStartTimeUtc = [DateTimeOffset]::Parse(
-                    [string]$childIdentity.processStartTimeUtc,
+                    [string]$identity.processStartTimeUtc,
                     [Globalization.CultureInfo]::InvariantCulture,
                     [Globalization.DateTimeStyles]::RoundtripKind).UtcDateTime
                 if ($remaining.StartTime.ToUniversalTime() -eq $expectedStartTimeUtc) {
@@ -342,6 +487,13 @@ if (-not [IO.File]::Exists(`$IdentityPath)) { throw 'The delayed drain child did
                 }
                 $remaining.Dispose()
             }
+        }
+        if ($null -ne $coordinator) {
+            if (-not $coordinator.HasExited) {
+                $coordinator.Kill()
+                [void] $coordinator.WaitForExit(5000)
+            }
+            $coordinator.Dispose()
         }
     }
 }
@@ -555,6 +707,7 @@ try {
         [pscustomobject]@{
             Name = 'ignore-redirected-stream-completion'
             Scenario = 'delayed-drain'
+            DrainMode = 'snapshot'
             Anchor = @'
         $drain = Complete-ScriptAutomationRedirectedStreamDrain `
             -Process $process `
@@ -569,9 +722,15 @@ try {
         $stdout = $drain.Stdout
 '@
             Replacement = @'
+        $wrongStdout = [string] $stdoutCapture.Snapshot()
+        $wrongStderr = [string] $stderrCapture.Snapshot()
+        $snapshotTakenPath = [string] $Environment['NERV_SNAPSHOT_TAKEN_PATH']
+        $snapshotTakenTempPath = "$snapshotTakenPath.$PID.tmp"
+        [IO.File]::WriteAllText($snapshotTakenTempPath, 'snapshot-taken', [Text.UTF8Encoding]::new($false))
+        [IO.File]::Move($snapshotTakenTempPath, $snapshotTakenPath)
         $drain = [pscustomobject]@{
-            Stdout = [string] $stdoutCapture.Snapshot()
-            Stderr = [string] $stderrCapture.Snapshot()
+            Stdout = $wrongStdout
+            Stderr = $wrongStderr
             TimedOut = $false
             UnfinishedStreams = @()
             DrainErrors = @()
@@ -630,7 +789,8 @@ try {
             -ProbePath $probePath `
             -ProbeLibraryPath $mutatedLibraryPath `
             -Scenario $mutation.Scenario `
-            -ScenarioRoot (Join-Path $temporaryRoot "rejected-$($mutation.Name)")
+            -ScenarioRoot (Join-Path $temporaryRoot "rejected-$($mutation.Name)") `
+            -DrainMode $(if ($null -ne $mutation.PSObject.Properties['DrainMode']) { $mutation.DrainMode } else { 'root-exit' })
         Assert-Contract ($mutatedResult.ExitCode -ne 0) "Equivalent wrong mutation '$($mutation.Name)' survived scenario '$($mutation.Scenario)'."
         Assert-Contract ($mutatedResult.Output.Contains("CONTRACT-FAILURE: $($mutation.Scenario)", [StringComparison]::Ordinal)) "Equivalent wrong mutation '$($mutation.Name)' failed without the target contract marker: $($mutatedResult.Output)"
     }
