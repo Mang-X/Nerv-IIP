@@ -36,6 +36,17 @@ describe('business console scheduling navigation', () => {
   })
 })
 
+describe('business console MES production report navigation', () => {
+  it('exposes the production daily report to the reporting reader', () => {
+    const mesItems = DOMAIN_SIDE_NAV.mes?.flatMap((section) => section.items) ?? []
+    const report = mesItems.find((item) => pathOf(item.to) === '/mes/reports')
+
+    expect(resolveDomainId('/mes/reports')).toBe('mes')
+    expect(report?.title).toBe('生产日报')
+    expect(report?.requiredPermissions).toEqual([P.mesReportingRead])
+  })
+})
+
 describe('business console maintenance navigation', () => {
   it('keeps CMMS deep pages under the equipment domain side navigation', () => {
     const equipmentItems = DOMAIN_SIDE_NAV.equipment?.flatMap((section) => section.items) ?? []
