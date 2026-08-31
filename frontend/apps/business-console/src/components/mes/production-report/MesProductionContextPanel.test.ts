@@ -23,7 +23,7 @@ function mountPanel(overrides: Record<string, unknown> = {}) {
         {
           dimension: 'workCenter',
           dimensionValue: 'WC-CNC-01',
-          performanceRate: 0.873,
+          performanceRate: 0.812,
           isDegraded: false,
         },
       ],
@@ -39,7 +39,7 @@ describe('MES production report context panel', () => {
     expect(wrapper.text()).toContain('当前在制')
     expect(wrapper.text()).toContain('4 个在制工序')
     expect(wrapper.text()).toContain('WO-20260831-0042-OP-20')
-    expect(wrapper.text()).toContain('87.3%')
+    expect(wrapper.text()).toContain('81.2%')
     expect(wrapper.text()).toContain('WC-CNC-01')
   })
 

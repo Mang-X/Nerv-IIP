@@ -9,8 +9,13 @@ import {
   queryBusinessConsoleMesProductionStatisticsQueryOptions,
 } from '@nerv-iip/api-client'
 import { useQuery } from '@pinia/colada'
-import { computed, reactive, watch } from 'vue'
-import { useBusinessContextStore } from '@/stores/businessContext'
+import { computed, reactive } from 'vue'
+import {
+  bindBusinessContext,
+  hasBusinessContext,
+  refetchWithBusinessContext,
+  withBusinessContextEnabled,
+} from '@/composables/businessContextBinding'
 import { businessReadState } from './businessReadState'
 
 export interface MesProductionStatisticsFilters {
@@ -57,8 +62,7 @@ function queryOf(
 
 function hasQueryContext(filters: MesProductionStatisticsFilters) {
   return (
-    filters.organizationId.trim().length > 0 &&
-    filters.environmentId.trim().length > 0 &&
+    hasBusinessContext(filters) &&
     filters.windowStartUtc.trim().length > 0 &&
     filters.windowEndUtc.trim().length > 0
   )
@@ -93,34 +97,30 @@ export async function loadAllMesProductionStatistics(
 export function useMesProductionStatistics(
   initialFilters: Partial<MesProductionStatisticsFilters> = {},
 ) {
-  const context = useBusinessContextStore()
-  const filters = reactive<MesProductionStatisticsFilters>({
-    organizationId: context.organizationId,
-    environmentId: context.environmentId,
-    dimension: 'day',
-    windowStartUtc: '',
-    windowEndUtc: '',
-    businessDate: '',
-    shiftCode: '',
-    workCenterId: '',
-    skuId: '',
-    skip: 0,
-    take: 20,
-    ...initialFilters,
-  })
-  watch(
-    [() => context.organizationId, () => context.environmentId],
-    ([organizationId, environmentId]) => {
-      filters.organizationId = organizationId
-      filters.environmentId = environmentId
-    },
-    { immediate: true },
+  const filters = bindBusinessContext(
+    reactive<MesProductionStatisticsFilters>({
+      organizationId: '',
+      environmentId: '',
+      dimension: 'day',
+      windowStartUtc: '',
+      windowEndUtc: '',
+      businessDate: '',
+      shiftCode: '',
+      workCenterId: '',
+      skuId: '',
+      skip: 0,
+      take: 20,
+      ...initialFilters,
+    }),
   )
   const enabled = computed(() => hasQueryContext(filters))
-  const statisticsQuery = useQuery(() => ({
-    ...queryBusinessConsoleMesProductionStatisticsQueryOptions({ query: queryOf(filters) }),
-    enabled: enabled.value,
-  }))
+  const statisticsQuery = useQuery(() => {
+    const options = withBusinessContextEnabled(
+      queryBusinessConsoleMesProductionStatisticsQueryOptions({ query: queryOf(filters) }),
+      filters,
+    )
+    return { ...options, enabled: options.enabled && enabled.value }
+  })
   const response = computed(() => {
     const envelope = statisticsQuery.data.value as ProductionStatisticsEnvelope | undefined
     return envelope?.success ? (envelope.data ?? undefined) : undefined
@@ -133,7 +133,10 @@ export function useMesProductionStatistics(
     error: statisticsQuery.error,
     pending: statisticsQuery.isLoading,
     state: businessReadState(statisticsQuery, () => enabled.value),
-    refresh: () => (enabled.value ? statisticsQuery.refetch() : Promise.resolve()),
+    refresh: () =>
+      enabled.value
+        ? refetchWithBusinessContext(filters, statisticsQuery)
+        : Promise.resolve(undefined),
     loadAll: (signal?: AbortSignal) => {
       const { skip: _skip, take: _take, ...request } = queryOf(filters)
       return loadAllMesProductionStatistics(request, signal)
