@@ -1,6 +1,6 @@
 # 前端导航地图与分期
 
-本文档是 Nerv-IIP 前端导航的长期约束，覆盖主平台 Console、Business Console 与 Business PDA。代码事实复核日期为 2026-08-30（PDA 三域一线闭环已落地：WMS 收货入库/复核发货/拣货/上架/盘点、MES 工序执行/报工/领料/完工入库、设备运维报修/点检/报警查看；PDA 首页与 `/scan` 已消费 Barcode resolve facade，按唯一 MES 工单或完整工序双强 ID 只读直达，歧义、未知、越权和失效结果 fail closed；MAN-629 后 WMS 五类作业按当前主体的 `self/work-pool/site` 范围展示并支持受控派工，上架/拣货已有逐任务动作；Business Console 已将 ERP 采购/销售/财务窄化页拆为业务对象页，并已挂 WMS putaway/picking/counts、Maintenance work-orders/plans/inspections/spare-parts/reliability/availability、BarcodeLabel rules/templates/print-batches/scans、BusinessApproval 审批中心、IndustrialTelemetry tags/alarm-rules/history/OEE）；当前服务状态仍以 `docs/architecture/implementation-readiness.md` 为入口。任何修改“已落地/过渡/后端已落地/前端待建/规划”状态的 PR，必须同步更新本日期并在 PR 中列出校验命令。
+本文档是 Nerv-IIP 前端导航的长期约束，覆盖主平台 Console、Business Console 与 Business PDA。代码事实复核日期为 2026-08-31（PDA 三域一线闭环已落地：WMS 收货入库/复核发货/拣货/上架/盘点、MES 工序执行/报工/领料/完工入库、设备运维报修/点检/报警查看；PDA 首页与 `/scan` 已消费 Barcode resolve facade，按唯一 MES 工单或完整工序双强 ID 只读直达，歧义、未知、越权和失效结果 fail closed；MAN-629 后 WMS 五类作业按当前主体的 `self/work-pool/site` 范围展示并支持受控派工，上架/拣货已有逐任务动作；Business Console 已将 ERP 采购/销售/财务窄化页拆为业务对象页，并已挂 WMS putaway/picking/counts、Maintenance work-orders/plans/inspections/spare-parts/reliability/availability、BarcodeLabel rules/templates/print-batches/scans、BusinessApproval 审批中心、IndustrialTelemetry tags/alarm-rules/history/OEE、MES 生产日报）；当前服务状态仍以 `docs/architecture/implementation-readiness.md` 为入口。任何修改“已落地/过渡/后端已落地/前端待建/规划”状态的 PR，必须同步更新本日期并在 PR 中列出校验命令。
 
 ## 状态标签
 

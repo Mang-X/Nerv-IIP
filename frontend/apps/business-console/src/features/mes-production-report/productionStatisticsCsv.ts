@@ -9,8 +9,6 @@ const HEADERS = [
   '维度值',
   '业务日',
   '班次',
-  '工作中心',
-  '物料',
   '总产出',
   '合格量',
   '合格率',
@@ -67,8 +65,6 @@ export function createProductionStatisticsCsv(
       row.dimensionValue,
       row.businessDate,
       row.shiftCode,
-      row.workCenterId,
-      row.skuId,
       row.totalOutputQuantity,
       row.goodQuantity,
       row.goodRate,
@@ -91,5 +87,13 @@ export function productionStatisticsCsvFilename(filters: {
   windowStartUtc: string
   windowEndUtc: string
 }): string {
-  return `生产日报_${PRODUCTION_STATISTICS_DIMENSION_LABELS[filters.dimension]}_${filters.windowStartUtc.slice(0, 10)}_${filters.windowEndUtc.slice(0, 10)}.csv`
+  const end = new Date(filters.windowEndUtc)
+  end.setDate(end.getDate() - 1)
+  return `生产日报_${PRODUCTION_STATISTICS_DIMENSION_LABELS[filters.dimension]}_${localDate(filters.windowStartUtc)}_${localDate(end)}.csv`
+}
+
+function localDate(value: string | Date) {
+  const date = new Date(value)
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+  return local.toISOString().slice(0, 10)
 }

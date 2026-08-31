@@ -15,6 +15,7 @@ import {
   productionStatisticsCsvFilename,
   PRODUCTION_STATISTICS_DIMENSION_LABELS,
 } from '@/features/mes-production-report/productionStatisticsCsv'
+import { defaultProductionStatisticsWindow } from '@/features/mes-production-report/productionStatisticsWindow'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
@@ -28,13 +29,7 @@ definePage({
   },
 })
 
-const DEFAULT_WINDOW_DAYS = 7
-const defaultWindow = (() => {
-  const end = new Date()
-  const start = new Date(end)
-  start.setDate(start.getDate() - DEFAULT_WINDOW_DAYS)
-  return { endUtc: end.toISOString(), startUtc: start.toISOString() }
-})()
+const defaultWindow = defaultProductionStatisticsWindow()
 
 const auth = useAuthStore()
 const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
@@ -119,6 +114,7 @@ function refreshPage() {
 
 async function exportCsv() {
   exporting.value = true
+  const filename = productionStatisticsCsvFilename({ ...report.filters })
   try {
     const rows = await report.loadAll()
     const blob = new Blob([createProductionStatisticsCsv(rows)], {
@@ -127,7 +123,7 @@ async function exportCsv() {
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = productionStatisticsCsvFilename(report.filters)
+    link.download = filename
     link.click()
     URL.revokeObjectURL(url)
     notifySuccess(`已导出 ${rows.length} 行生产统计`)

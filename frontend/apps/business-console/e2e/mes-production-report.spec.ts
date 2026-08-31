@@ -100,7 +100,7 @@ test('生产日报呈现跨源上下文、服务端第二页并导出当前筛�
               businessDate: '2026-08-31',
               bucketStartUtc: '2026-08-31T00:00:00.000Z',
               bucketEndUtc: '2026-09-01T00:00:00.000Z',
-              performanceRate: 0.873,
+              performanceRate: 0.812,
               isDegraded: false,
             },
           ],
@@ -121,7 +121,7 @@ test('生产日报呈现跨源上下文、服务端第二页并导出当前筛�
     page.locator('[data-slot="breadcrumb-page"]').filter({ hasText: '生产日报' }),
   ).toBeVisible({ timeout: 15_000 })
   await expect(page.getByText('WO-20260831-0042-OP-20', { exact: true })).toBeVisible()
-  await expect(page.getByText('87.3%', { exact: true })).toBeVisible()
+  await expect(page.getByText('81.2%', { exact: true })).toBeVisible()
   await expect(page.getByText('2026-08-01', { exact: true }).first()).toBeVisible()
   await expect(page.getByText('22 个业务日聚合', { exact: true })).toBeVisible()
 
@@ -140,6 +140,8 @@ test('生产日报呈现跨源上下文、服务端第二页并导出当前筛�
   expect(contents.startsWith('\ufeff聚合维度,维度值,业务日')).toBe(true)
   expect(contents).toContain('2026-08-01')
   expect(contents).toContain('2026-08-22')
+  expect(contents).not.toContain('WC-CNC-01')
+  expect(contents).not.toContain('SKU-HOUSING-01')
 
   await page.screenshot({
     path: testInfo.outputPath('issue-2857-production-daily-page-2.png'),
