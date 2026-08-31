@@ -137,7 +137,6 @@ const uiStubs = {
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
   NvSelectTrigger: { template: '<span><slot /></span>' },
   NvSelectValue: true,
-  SelectValue: true,
   Spinner: true,
   NvStatusBadge: { props: ['value'], template: '<span>{{ value }}</span>' },
 }
