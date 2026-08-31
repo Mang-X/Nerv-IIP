@@ -198,10 +198,11 @@ public sealed class MesPersistenceContractTests
         using (var scope = services.CreateScope())
         {
             var handler = new AssetUnavailableIntegrationEventHandlerForReschedule(
-                scope.ServiceProvider.GetRequiredService<IMesPlanningStore>(),
-                scope.ServiceProvider.GetRequiredService<RuleScheduler>(),
-                new MesRescheduleOptions { AutoRescheduleOnAssetUnavailable = true },
-                scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+                new MesAssetUnavailableCanonicalProcessor(
+                    scope.ServiceProvider.GetRequiredService<IMesPlanningStore>(),
+                    scope.ServiceProvider.GetRequiredService<RuleScheduler>(),
+                    new MesRescheduleOptions { AutoRescheduleOnAssetUnavailable = true },
+                    scope.ServiceProvider.GetRequiredService<ApplicationDbContext>()),
                 new InMemoryIntegrationEventDeadLetterStore());
 
             await handler.HandleAsync(CreateUnavailableEvent(now), CancellationToken.None);
@@ -254,10 +255,11 @@ public sealed class MesPersistenceContractTests
         await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().SaveChangesAsync();
 
         var handler = new AssetUnavailableIntegrationEventHandlerForReschedule(
-            store,
-            scope.ServiceProvider.GetRequiredService<RuleScheduler>(),
-            new MesRescheduleOptions { AutoRescheduleOnAssetUnavailable = false },
-            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+            new MesAssetUnavailableCanonicalProcessor(
+                store,
+                scope.ServiceProvider.GetRequiredService<RuleScheduler>(),
+                new MesRescheduleOptions { AutoRescheduleOnAssetUnavailable = false },
+                scope.ServiceProvider.GetRequiredService<ApplicationDbContext>()),
             new InMemoryIntegrationEventDeadLetterStore());
         await handler.HandleAsync(CreateUnavailableEvent(now, organizationId: "org-b"), CancellationToken.None);
 

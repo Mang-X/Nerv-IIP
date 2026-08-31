@@ -23,6 +23,9 @@ public sealed class ProcessedIntegrationEventEntityTypeConfiguration : IEntityTy
         builder.HasIndex(x => new { x.ConsumerName, x.IdempotencyKey })
             .IsUnique()
             .HasDatabaseName("ux_processed_integration_events_consumer_idempotency_key");
+        builder.HasIndex(x => new { x.ConsumerName, x.EventId })
+            .IsUnique()
+            .HasDatabaseName("ux_processed_integration_events_consumer_event_id");
         builder.HasIndex(x => new { x.SourceService, x.EventType, x.ProcessedAtUtc })
             .HasDatabaseName("ix_processed_integration_events_source_type_processed_at");
     }
