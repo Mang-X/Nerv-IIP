@@ -833,7 +833,6 @@ function Invoke-DotNet {
 }
 
 function Invoke-NativeCommandOutput {
-    [CmdletBinding(DefaultParameterSetName = 'Seconds')]
     param(
         [Parameter(Mandatory)]
         [string] $Command,
@@ -842,12 +841,7 @@ function Invoke-NativeCommandOutput {
 
         [string] $WorkingDirectory = (Get-Location).Path,
 
-        [Parameter(ParameterSetName = 'Seconds')]
         [int] $TimeoutSeconds = 60,
-
-        [Parameter(Mandatory, ParameterSetName = 'Milliseconds')]
-        [ValidateRange(1, [int]::MaxValue)]
-        [int] $TimeoutMilliseconds,
 
         [string] $Name,
 
@@ -861,13 +855,19 @@ function Invoke-NativeCommandOutput {
 
         [System.Collections.IDictionary] $Environment,
 
-        [string[]] $SensitiveValues = @()
+        [string[]] $SensitiveValues = @(),
+
+        [ValidateRange(1, [int]::MaxValue)]
+        [int] $TimeoutMilliseconds
     )
 
     if ([string]::IsNullOrWhiteSpace($Name)) {
         $Name = [System.IO.Path]::GetFileNameWithoutExtension($Command)
     }
-    $usesMillisecondBudget = [string]::Equals($PSCmdlet.ParameterSetName, 'Milliseconds', [StringComparison]::Ordinal)
+    $usesMillisecondBudget = $PSBoundParameters.ContainsKey('TimeoutMilliseconds')
+    if ($usesMillisecondBudget -and $PSBoundParameters.ContainsKey('TimeoutSeconds')) {
+        throw [ArgumentException]::new('TimeoutSeconds and TimeoutMilliseconds are mutually exclusive.')
+    }
     $effectiveTimeoutMilliseconds = if ($usesMillisecondBudget) {
         $TimeoutMilliseconds
     }

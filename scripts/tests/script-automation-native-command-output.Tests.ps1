@@ -162,6 +162,9 @@ function Invoke-NormalScenario {
         -TimeoutSeconds 2 `
         -Name 'native-output-seconds-compatibility'
     Assert-Probe ([string]::Equals([string]$secondsResult.Stdout, 'quick', [StringComparison]::Ordinal)) 'Existing explicit seconds callers must retain their behavior.'
+
+    $positionalResult = Invoke-NativeCommandOutput $quickCommand $quickArguments $ScenarioRoot 2 'native-output-positional-compatibility'
+    Assert-Probe ([string]::Equals([string]$positionalResult.Stdout, 'quick', [StringComparison]::Ordinal)) 'Existing positional seconds callers must retain their behavior.'
 }
 
 function Invoke-TimeoutScenario {
@@ -209,6 +212,10 @@ function Invoke-TimeoutScenario {
         Assert-Probe ([string]::Equals([string]$failure.Exception.Data['LogDirectory'], $logDirectory, [StringComparison]::Ordinal)) 'Timeout diagnostics must retain the requested log location.'
         Assert-Probe (Test-Path -LiteralPath (Join-Path $logDirectory 'stdout.log') -PathType Leaf) 'Timeout must persist captured stdout diagnostics.'
         Assert-Probe (Test-Path -LiteralPath (Join-Path $logDirectory 'stderr.log') -PathType Leaf) 'Timeout must persist captured stderr diagnostics.'
+        $stdoutLog = [IO.File]::ReadAllText((Join-Path $logDirectory 'stdout.log'))
+        $stderrLog = [IO.File]::ReadAllText((Join-Path $logDirectory 'stderr.log'))
+        Assert-Probe ($stdoutLog.Contains('<redacted>', [StringComparison]::Ordinal) -and -not $stdoutLog.Contains($secret, [StringComparison]::Ordinal)) 'Persisted timeout stdout must contain only the redacted sensitive value.'
+        Assert-Probe ($stderrLog.Contains('<redacted>', [StringComparison]::Ordinal) -and -not $stderrLog.Contains($secret, [StringComparison]::Ordinal)) 'Persisted timeout stderr must contain only the redacted sensitive value.'
 
         Assert-Probe (Test-Path -LiteralPath $pidPath -PathType Leaf) 'The timed command must publish the exact PIDs owned by this invocation.'
         $ownedProcessIds = @(([IO.File]::ReadAllText($pidPath)).Split(',', [StringSplitOptions]::RemoveEmptyEntries) | ForEach-Object { [int]$_ })
@@ -223,6 +230,45 @@ function Invoke-TimeoutScenario {
             [void] $sentinel.WaitForExit(5000)
         }
         $sentinel.Dispose()
+    }
+}
+
+function Invoke-TimeoutTreeScenario {
+    if (-not [OperatingSystem]::IsLinux()) {
+        Write-Host 'Owned descendant cleanup probe is skipped outside Linux because the current process-tree enumerator is platform-specific.'
+        return
+    }
+
+    $pidPath = Join-Path $ScenarioRoot 'timeout-tree-pids.txt'
+    $ownedProcessIds = @()
+    try {
+        $failure = Get-ProbeFailure {
+            Invoke-NativeCommandOutput `
+                -Command '/bin/sh' `
+                -Arguments @('-c', 'sleep 20 & child=$!; printf "%s,%s" "$$" "$child" > "$NERV_PID_PATH"; wait "$child"') `
+                -WorkingDirectory $ScenarioRoot `
+                -TimeoutMilliseconds 100 `
+                -Name 'native-output-timeout-tree' `
+                -LogDirectory (Join-Path $ScenarioRoot 'timeout-tree-logs') `
+                -Environment @{ NERV_PID_PATH = $pidPath }
+        }
+        Assert-Probe ($failure.Exception -is [TimeoutException]) 'A long-running owned process tree must fail with TimeoutException at the millisecond budget.'
+        Assert-Probe (Test-Path -LiteralPath $pidPath -PathType Leaf) 'The timeout tree probe must publish its exact root and descendant PIDs.'
+        $ownedProcessIds = @(([IO.File]::ReadAllText($pidPath)).Split(',', [StringSplitOptions]::RemoveEmptyEntries) | ForEach-Object { [int]$_ })
+        Assert-Probe ($ownedProcessIds.Count -eq 2) 'The timeout tree probe must publish one root and one owned descendant PID.'
+        foreach ($ownedProcessId in $ownedProcessIds) {
+            Assert-Probe (Wait-ProbeProcessExit -ProcessId $ownedProcessId) "Timeout process-tree cleanup left owned PID $ownedProcessId alive."
+        }
+    }
+    finally {
+        foreach ($ownedProcessId in $ownedProcessIds) {
+            $remaining = Get-Process -Id $ownedProcessId -ErrorAction SilentlyContinue
+            if ($null -ne $remaining) {
+                $remaining.Kill()
+                [void] $remaining.WaitForExit(5000)
+                $remaining.Dispose()
+            }
+        }
     }
 }
 
@@ -319,6 +365,7 @@ try {
     switch ($Scenario) {
         'normal' { Invoke-NormalScenario }
         'timeout' { Invoke-TimeoutScenario }
+        'timeout-tree' { Invoke-TimeoutTreeScenario }
         'nonzero' { Invoke-NonzeroScenario }
         'signal' { Invoke-SignalScenario }
         'drain-failure' { Invoke-DrainFailureScenario }
@@ -339,7 +386,7 @@ try {
     $probePath = Join-Path $temporaryRoot 'native-output-contract-probe.ps1'
     [IO.File]::WriteAllText($probePath, $probeScript, [Text.UTF8Encoding]::new($false))
 
-    foreach ($scenario in @('normal', 'timeout', 'nonzero', 'signal', 'drain-failure', 'finally-cleanup')) {
+    foreach ($scenario in @('normal', 'timeout', 'timeout-tree', 'nonzero', 'signal', 'drain-failure', 'finally-cleanup')) {
         $result = Invoke-ContractProbe `
             -ProbePath $probePath `
             -ProbeLibraryPath $libraryPath `
@@ -401,11 +448,54 @@ try {
             ExpectedOccurrences = 1
         },
         [pscustomobject]@{
-            Name = 'ignore-stream-drain-failure'
-            Scenario = 'drain-failure'
-            Anchor = '        if (@($drain.DrainErrors).Count -gt 0) {'
-            Replacement = '        if ($false) {'
-            ExpectedOccurrences = 2
+            Name = 'ignore-redirected-stream-drain'
+            Scenario = 'normal'
+            Anchor = @'
+        $drain = Complete-ScriptAutomationRedirectedStreamDrain `
+            -Process $process `
+            -StdoutTask $stdoutTask `
+            -StderrTask $stderrTask `
+            -Name $Name `
+            -LogDirectory $LogDirectory `
+            -StdoutCapture $stdoutCapture `
+            -StderrCapture $stderrCapture `
+            -SensitiveValues $SensitiveValues
+        Write-ScriptAutomationStreamDrainDiagnostics -Name $Name -Drain $drain -SensitiveValues $SensitiveValues
+        $stdout = $drain.Stdout
+'@
+            Replacement = @'
+        $drain = [pscustomobject]@{
+            Stdout = ''
+            Stderr = ''
+            TimedOut = $false
+            UnfinishedStreams = @()
+            DrainErrors = @()
+            LogDirectory = $LogDirectory
+        }
+        Write-ScriptAutomationStreamDrainDiagnostics -Name $Name -Drain $drain -SensitiveValues $SensitiveValues
+        $stdout = $drain.Stdout
+'@
+            ExpectedOccurrences = 1
+        },
+        [pscustomobject]@{
+            Name = 'stop-timeout-root-only'
+            Scenario = 'timeout-tree'
+            Anchor = '            Stop-ProcessTree -ProcessId $process.Id -Reason "Timeout while reading output for $Command" | Out-Null'
+            Replacement = '            Stop-Process -Id $process.Id -Force -ErrorAction Stop'
+            ExpectedOccurrences = 1
+        },
+        [pscustomobject]@{
+            Name = 'delete-timeout-log-redaction'
+            Scenario = 'timeout'
+            Anchor = @'
+            Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stdout.log') -Content $drain.Stdout -PartialOutput:$drain.TimedOut -UnfinishedStreams $drain.UnfinishedStreams -SensitiveValues $SensitiveValues
+            Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stderr.log') -Content $drain.Stderr -PartialOutput:$drain.TimedOut -UnfinishedStreams $drain.UnfinishedStreams -SensitiveValues $SensitiveValues
+'@
+            Replacement = @'
+            Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stdout.log') -Content $drain.Stdout -PartialOutput:$drain.TimedOut -UnfinishedStreams $drain.UnfinishedStreams
+            Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stderr.log') -Content $drain.Stderr -PartialOutput:$drain.TimedOut -UnfinishedStreams $drain.UnfinishedStreams
+'@
+            ExpectedOccurrences = 1
         },
         [pscustomobject]@{
             Name = 'delete-finally-process-cleanup'
@@ -419,6 +509,10 @@ try {
     foreach ($mutation in $mutations) {
         if ([OperatingSystem]::IsWindows() -and [string]::Equals($mutation.Scenario, 'signal', [StringComparison]::Ordinal)) {
             Write-Host "Mutation '$($mutation.Name)' is skipped on Windows because POSIX signal exit codes do not exist there."
+            continue
+        }
+        if (-not [OperatingSystem]::IsLinux() -and [string]::Equals($mutation.Scenario, 'timeout-tree', [StringComparison]::Ordinal)) {
+            Write-Host "Mutation '$($mutation.Name)' is skipped outside Linux because the current process-tree enumerator is platform-specific."
             continue
         }
 
