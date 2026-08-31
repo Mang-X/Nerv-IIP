@@ -41,9 +41,14 @@ describe('production statistics CSV', () => {
     expect(csv).not.toContain('skuId')
   })
 
-  it('keeps every work center and SKU aggregate distinguishable by its business code', () => {
+  it('keeps two work centers and two SKUs distinguishable by their validated business codes', () => {
     const csv = createProductionStatisticsCsv([
       presentProductionStatisticsRow(bucket),
+      presentProductionStatisticsRow({
+        ...bucket,
+        dimensionValue: 'WC-CNC-02',
+        workCenterId: 'WC-CNC-02',
+      }),
       presentProductionStatisticsRow({
         ...bucket,
         dimension: 'sku',
@@ -51,24 +56,19 @@ describe('production statistics CSV', () => {
         workCenterId: null,
         skuId: 'SKU-HOUSING-01',
       }),
+      presentProductionStatisticsRow({
+        ...bucket,
+        dimension: 'sku',
+        dimensionValue: 'SKU-HOUSING-02',
+        workCenterId: null,
+        skuId: 'SKU-HOUSING-02',
+      }),
     ])
 
     expect(csv).toContain('工作中心,WC-CNC-01,2026-08-30,SHIFT-DAY')
+    expect(csv).toContain('工作中心,WC-CNC-02,2026-08-30,SHIFT-DAY')
     expect(csv).toContain('物料,SKU-HOUSING-01,2026-08-30,SHIFT-DAY')
-  })
-
-  it('refuses to export an aggregate whose only group identity is a system UUID', () => {
-    const systemId = '58d80fc0-77d9-4213-8fe6-09cd0f595776'
-
-    expect(() =>
-      createProductionStatisticsCsv([
-        presentProductionStatisticsRow({
-          ...bucket,
-          dimensionValue: systemId,
-          workCenterId: systemId,
-        }),
-      ]),
-    ).toThrow('工作中心分组缺少可导出的业务标识')
+    expect(csv).toContain('物料,SKU-HOUSING-02,2026-08-30,SHIFT-DAY')
   })
 
   it('builds a filename from the selected UTC window and dimension', () => {

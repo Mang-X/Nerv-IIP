@@ -22,35 +22,60 @@ const bucket: BusinessConsoleMesProductionStatisticsBucket = {
 }
 
 describe('production statistics presentation', () => {
-  it('preserves distinct human-readable producer codes for table and export consumers', () => {
-    expect(presentProductionStatisticsRow(bucket)).toMatchObject({
-      dimensionValueLabel: 'WC-CNC-01',
-      workCenterLabel: 'WC-CNC-01',
-      skuLabel: '—',
-    })
-    expect(
+  it('keeps two work centers and two SKUs distinct through the shared presentation boundary', () => {
+    const rows = [
+      presentProductionStatisticsRow(bucket),
       presentProductionStatisticsRow({
         ...bucket,
         dimensionValue: 'WC-CNC-02',
         workCenterId: 'WC-CNC-02',
-      }).dimensionValueLabel,
-    ).toBe('WC-CNC-02')
+      }),
+      presentProductionStatisticsRow({
+        ...bucket,
+        dimension: 'sku',
+        dimensionValue: 'SKU-HOUSING-01',
+        workCenterId: null,
+        skuId: 'SKU-HOUSING-01',
+      }),
+      presentProductionStatisticsRow({
+        ...bucket,
+        dimension: 'sku',
+        dimensionValue: 'SKU-HOUSING-02',
+        workCenterId: null,
+        skuId: 'SKU-HOUSING-02',
+      }),
+    ]
+
+    expect(rows.map((row) => row.dimensionValueLabel)).toEqual([
+      'WC-CNC-01',
+      'WC-CNC-02',
+      'SKU-HOUSING-01',
+      'SKU-HOUSING-02',
+    ])
+    expect(rows.map((row) => [row.workCenterLabel, row.skuLabel])).toEqual([
+      ['WC-CNC-01', '—'],
+      ['WC-CNC-02', '—'],
+      ['—', 'SKU-HOUSING-01'],
+      ['—', 'SKU-HOUSING-02'],
+    ])
   })
 
-  it('does not expose system UUIDs through any presentation field', () => {
-    const systemId = '58d80fc0-77d9-4213-8fe6-09cd0f595776'
-    const presented = presentProductionStatisticsRow({
-      ...bucket,
-      dimensionValue: systemId,
-      workCenterId: systemId,
-      skuId: systemId,
-    })
-
-    expect(presented).toMatchObject({
-      dimensionValueLabel: '—',
-      workCenterLabel: '—',
-      skuLabel: '—',
-    })
-    expect(JSON.stringify(presented)).not.toContain(systemId)
-  })
+  it.each([
+    ['workCenter', 'work-center-internal-42'],
+    ['sku', 'material-internal-42'],
+    ['workCenter', '58d80fc0-77d9-4213-8fe6-09cd0f595776'],
+  ] as const)(
+    'rejects unsupported %s producer identifiers at the shared boundary',
+    (dimension, id) => {
+      expect(() =>
+        presentProductionStatisticsRow({
+          ...bucket,
+          dimension,
+          dimensionValue: id,
+          workCenterId: dimension === 'workCenter' ? id : null,
+          skuId: dimension === 'sku' ? id : null,
+        }),
+      ).toThrow(`${dimension === 'workCenter' ? '工作中心' : '物料'}分组缺少受支持的业务编码。`)
+    },
+  )
 })
