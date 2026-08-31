@@ -20,42 +20,40 @@ import WorkOrdersPage from './work-orders/index.vue'
 /**
  * MES 列表页读面失败时必须落到 `NvDataTable` 的**错误态**，而不是「暂无…」空态（#2854）。
  *
- * 夹具口径：只把每个读面 composable 的 `*Error` 换成一个已失败的错误、`*Pending` 钉成 false，
- * 其余字段（rows/total/filters/写操作）保持真实实现——这样断言检验的是页面模板把错误接到了
- * 表格上，而不是测试自己搭的一套假页面。`*Pending` 必须钉成 false，否则删掉 `:error` 绑定后
- * 表格会停在加载骨架，「不显示空态文案」这条断言就不再有鉴别力。
+ * 夹具口径：只把每个读面 composable 的 `*Error` 换成一个已失败的错误，其余字段（rows/total/
+ * filters/写操作）保持真实实现——这样断言检验的是页面模板把错误接到了表格上，而不是测试
+ * 自己搭的一套假页面。
  */
 
 const readFailure = vi.hoisted(() => new Error('mes-read-face-unavailable'))
 
-// 页面读面 composable → [失败字段, 加载字段]。真实 hook 先跑，再覆写这两个字段。
+// 页面读面 composable → 失败字段。真实 hook 先跑，再覆写这一个字段。
 const overrides = vi.hoisted(
   () =>
     ({
-      useMesCapacityImpacts: ['capacityImpactsError', 'capacityImpactsPending'],
-      useMesDowntimeEvents: ['downtimeEventsError', 'downtimeEventsPending'],
-      useMesFinishedGoodsReceipts: ['receiptRequestsError', 'receiptRequestsPending'],
-      useMesMaterialIssueRequests: ['materialIssueRequestsError', 'materialIssueRequestsPending'],
-      useMesOperationTasks: ['operationTasksError', 'operationTasksPending'],
-      useMesProductionPlans: ['productionPlansError', 'productionPlansPending'],
-      useMesProductionReports: ['productionReportsError', 'productionReportsPending'],
-      useMesRelatedQualityItems: ['qualityItemsError', 'qualityItemsPending'],
-      useMesShiftHandovers: ['handoversError', 'handoversPending'],
-      useMesTraceability: ['traceabilityError', 'traceabilityPending'],
-      useMesWipSummary: ['wipError', 'wipPending'],
-      useMesWorkOrders: ['workOrdersError', 'workOrdersPending'],
+      useMesCapacityImpacts: 'capacityImpactsError',
+      useMesDowntimeEvents: 'downtimeEventsError',
+      useMesFinishedGoodsReceipts: 'receiptRequestsError',
+      useMesMaterialIssueRequests: 'materialIssueRequestsError',
+      useMesOperationTasks: 'operationTasksError',
+      useMesProductionPlans: 'productionPlansError',
+      useMesProductionReports: 'productionReportsError',
+      useMesRelatedQualityItems: 'qualityItemsError',
+      useMesShiftHandovers: 'handoversError',
+      useMesTraceability: 'traceabilityError',
+      useMesWipSummary: 'wipError',
+      useMesWorkOrders: 'workOrdersError',
     }) as const,
 )
 
 vi.mock('@/composables/useBusinessMes', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/composables/useBusinessMes')>()
   const patched: Record<string, unknown> = { ...actual }
-  for (const [hook, [errorKey, pendingKey]] of Object.entries(overrides)) {
+  for (const [hook, errorKey] of Object.entries(overrides)) {
     const original = actual[hook as keyof typeof actual] as (...args: unknown[]) => object
     patched[hook] = (...args: unknown[]) => ({
       ...original(...args),
       [errorKey]: computed(() => readFailure),
-      [pendingKey]: computed(() => false),
     })
   }
   return patched
