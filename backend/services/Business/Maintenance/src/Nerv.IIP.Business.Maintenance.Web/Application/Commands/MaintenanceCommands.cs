@@ -15,6 +15,7 @@ using Nerv.IIP.Business.Maintenance.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Business.Maintenance.Web.Application.Errors;
 using Nerv.IIP.Business.Maintenance.Web.Application.Queries;
 using Nerv.IIP.Coding;
+using Nerv.IIP.Contracts.Maintenance;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Application.Commands;
 
@@ -646,7 +647,7 @@ internal static class MaintenancePmCommandLockKeys
     public static string For(string organizationId, string environmentId)
     {
         return string.Join(':',
-            "business-maintenance",
+            MaintenanceIntegrationEventSources.BusinessMaintenance,
             "pm-generation",
             Normalize(organizationId),
             Normalize(environmentId));
