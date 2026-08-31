@@ -5,6 +5,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
+using Nerv.IIP.Business.Mes.Web.Application.Quality;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -48,7 +49,8 @@ public sealed class ProductionReportOeeDimensionSnapshotCommandTests
                 30);
             var handler = new RecordProductionReportCommandHandler(
                 dbContext,
-                new StubSnapshotProvider(snapshot));
+                new StubSnapshotProvider(snapshot),
+                TestMesFirstArticleGate.Allowing);
 
             await handler.Handle(
                 new RecordProductionReportCommand(

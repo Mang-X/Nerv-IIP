@@ -110,10 +110,26 @@ builder.Services.AddHttpClient<MesMasterDataHttpClient>(client =>
 {
     client.BaseAddress = masterDataBaseAddress;
 });
-builder.Services.AddHttpClient<MesQualityHttpClient>(client =>
-{
-    client.BaseAddress = qualityBaseAddress;
-});
+builder.Services
+    .AddOptions<MesQualityHttpClientOptions>()
+    .Bind(builder.Configuration.GetSection(MesQualityHttpClientOptions.SectionName))
+    .Validate(
+        options => options.ConnectTimeout > TimeSpan.Zero,
+        "Mes:QualityClient:ConnectTimeout must be positive.")
+    .Validate(
+        options => options.RequestTimeout > TimeSpan.Zero,
+        "Mes:QualityClient:RequestTimeout must be positive.")
+    .ValidateOnStart();
+builder.Services
+    .AddHttpClient<MesQualityHttpClient>((services, client) =>
+    {
+        client.BaseAddress = qualityBaseAddress;
+        client.Timeout = services.GetRequiredService<IOptions<MesQualityHttpClientOptions>>().Value.RequestTimeout;
+    })
+    .ConfigurePrimaryHttpMessageHandler(services => new SocketsHttpHandler
+    {
+        ConnectTimeout = services.GetRequiredService<IOptions<MesQualityHttpClientOptions>>().Value.ConnectTimeout,
+    });
 builder.Services.AddHttpClient<IMesOperationTaskStartApprovalClient, HttpMesOperationTaskStartApprovalClient>(client =>
 {
     client.BaseAddress = approvalBaseAddress;

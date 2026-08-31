@@ -6,63 +6,67 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Quality;
+using Nerv.IIP.Contracts.Quality;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 /// <summary>
-/// #2780 首件门禁在**服务端报工提交路径**上的落点：拦的是批量报工，不是首件那一件。
+/// #2780 首件门禁在**服务端报工提交路径**上的落点。
+/// 「这一次是不是首件那一件」由 Quality 的首件进度回答，MES 不用本地报工历史推断，
+/// 因此每次报工都要带着该工单该工序去问，且问到的结论每次现取（复检结论不缓存）。
 /// </summary>
 public sealed class MesFirstArticleReportGateTests
 {
     private static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-08-31T08:00:00Z");
 
     [Fact]
-    public async Task First_report_of_an_operation_is_the_first_article_itself_and_is_not_gated()
+    public async Task Every_report_asks_quality_with_that_work_order_and_operation()
     {
-        // 其它 scope 里都已经报过工：删掉门禁判据里任何一个 scope 谓词，本次报工都会被当成「已有报工」而去问 Quality。
-        var (services, gate) = CreateServices(nameof(First_report_of_an_operation_is_the_first_article_itself_and_is_not_gated));
-        await using var _ = services;
-        using var scope = services.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        SeedOperation(dbContext, "org-001", "env-dev", "WO-A", "OP-10", 10);
-        SeedOperation(dbContext, "org-001", "env-dev", "WO-A", "OP-20", 20, seedWorkOrder: false);
-        SeedOperation(dbContext, "org-002", "env-dev", "WO-A", "OP-10", 10);
-        SeedOperation(dbContext, "org-001", "env-prod", "WO-A", "OP-10", 10);
-        await dbContext.SaveChangesAsync();
-        var handler = CreateHandler(dbContext, gate);
-
-        await ReportAsync(dbContext, handler, "org-001", "env-dev", "WO-A", "OP-20", "k-other-operation");
-        await ReportAsync(dbContext, handler, "org-002", "env-dev", "WO-A", "OP-10", "k-other-organization");
-        await ReportAsync(dbContext, handler, "org-001", "env-prod", "WO-A", "OP-10", "k-other-environment");
-
-        await ReportAsync(dbContext, handler, "org-001", "env-dev", "WO-A", "OP-10", "k-subject");
-
-        Assert.Empty(gate.Calls);
-    }
-
-    [Fact]
-    public async Task Second_report_of_an_operation_is_gated_on_that_work_order_and_operation()
-    {
-        var (services, gate) = CreateServices(nameof(Second_report_of_an_operation_is_gated_on_that_work_order_and_operation));
+        var (services, gate) = CreateServices(nameof(Every_report_asks_quality_with_that_work_order_and_operation));
         await using var _ = services;
         using var scope = services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         SeedOperation(dbContext, "org-001", "env-dev", "WO-A", "OP-10", 10);
         await dbContext.SaveChangesAsync();
         var handler = CreateHandler(dbContext, gate);
+
         await ReportAsync(dbContext, handler, "org-001", "env-dev", "WO-A", "OP-10", "k-first");
-
         await ReportAsync(dbContext, handler, "org-001", "env-dev", "WO-A", "OP-10", "k-second");
 
         Assert.Equal(
-            [("org-001", "env-dev", "WO-A", "OP-10")],
+            [("org-001", "env-dev", "WO-A", "OP-10"), ("org-001", "env-dev", "WO-A", "OP-10")],
             gate.Calls);
     }
 
+    /// <summary>
+    /// 拍板决策 2：首件那一件不该被自己拦住。它不靠「该工序此前没报过工」识别——那个本地判据与
+    /// Quality 的建单条件不等价——而是 Quality 明说任务尚未开出（<c>not-opened</c>），
+    /// 而开单的唯一触发点正是本次报工的事件。
+    /// </summary>
     [Fact]
-    public async Task Rejected_first_article_blocks_the_second_report_and_persists_nothing()
+    public async Task Operation_whose_first_article_task_is_not_opened_yet_still_reports_even_after_earlier_reports()
     {
-        var (services, gate) = CreateServices(nameof(Rejected_first_article_blocks_the_second_report_and_persists_nothing));
+        var (services, gate) = CreateServices(nameof(Operation_whose_first_article_task_is_not_opened_yet_still_reports_even_after_earlier_reports));
+        await using var _ = services;
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        SeedOperation(dbContext, "org-001", "env-dev", "WO-A", "OP-10", 10);
+        await dbContext.SaveChangesAsync();
+        var handler = CreateHandler(dbContext, gate);
+        // 门禁上线前就在制、已经报过工的工序：Quality 侧没有任何首件任务，且命中生效首件档。
+        await ReportAsync(dbContext, handler, "org-001", "env-dev", "WO-A", "OP-10", "k-legacy");
+
+        await ReportAsync(dbContext, handler, "org-001", "env-dev", "WO-A", "OP-10", "k-after-gate");
+
+        // 这一次放行才让 ProductionReportRecorded 落到 outbox，Quality 据此开出首件任务；
+        // 拦掉它就再没有任何路径能开出该工序的首件任务（全仓唯一建单触发点就是报工事件）。
+        Assert.Equal(2, await dbContext.ProductionReports.CountAsync(x => x.OperationTaskId == "OP-10"));
+    }
+
+    [Fact]
+    public async Task Rejected_first_article_blocks_the_report_and_persists_nothing()
+    {
+        var (services, gate) = CreateServices(nameof(Rejected_first_article_blocks_the_report_and_persists_nothing));
         await using var _ = services;
         using var scope = services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -101,15 +105,17 @@ public sealed class MesFirstArticleReportGateTests
         Assert.Equal(2, await dbContext.ProductionReports.CountAsync(x => x.OperationTaskId == "OP-10"));
     }
 
-    /// <summary>门禁未接入来源时不许放行——缺来源等于「不知道」，不是「合格」。</summary>
+    /// <summary>
+    /// 波 1 的读面把「任务未开出」与「Quality 还不掌握该工序」拆成两个取值（#2780），
+    /// 判据是**该状态靠什么恢复**：前者只能靠一次报工恢复，后者只能靠工单发布事实到达恢复。
+    /// 合成一个取值时门禁无论放行还是拒绝都必然错一种，这里把「不可合并」钉住。
+    /// </summary>
     [Fact]
-    public async Task Unconfigured_gate_refuses_instead_of_allowing()
+    public void First_article_progress_separates_states_by_how_they_recover()
     {
-        var exception = await Assert.ThrowsAsync<KnownException>(() =>
-            UnconfiguredMesFirstArticleGate.Instance.EnsureBatchReportAllowedAsync(
-                "org-001", "env-dev", "WO-A", "OP-10", CancellationToken.None));
-
-        Assert.StartsWith("FIRST_ARTICLE_SOURCE_UNAVAILABLE:", exception.Message, StringComparison.Ordinal);
+        Assert.NotEqual(
+            QualityFirstArticleConfirmationStatuses.NotOpened,
+            QualityFirstArticleConfirmationStatuses.NotSynchronized);
     }
 
     /// <summary>

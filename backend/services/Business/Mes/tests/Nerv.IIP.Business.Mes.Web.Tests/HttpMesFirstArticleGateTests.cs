@@ -16,7 +16,9 @@ public sealed class HttpMesFirstArticleGateTests
     [Theory]
     [InlineData("not-required", null)]
     [InlineData("decided", "passed")]
-    public async Task Confirmed_first_article_allows_the_batch_report(string status, string? result)
+    // 任务尚未开出：开单的唯一触发点就是本次报工的事件，这一次就是「首件那一件」（拍板决策 2）。
+    [InlineData("not-opened", null)]
+    public async Task Confirmed_or_triggering_first_article_allows_the_report(string status, string? result)
     {
         var handler = new RecordingHandler(_ => Json(HttpStatusCode.OK, Envelope(status, result)));
         var gate = CreateGate(handler);
@@ -32,8 +34,9 @@ public sealed class HttpMesFirstArticleGateTests
     }
 
     [Theory]
-    [InlineData("not-opened", null, "首件检验任务尚未开出")]
     [InlineData("pending", null, "首件尚未判定")]
+    // Quality 还不掌握该工序事实：它靠工单发布事实到达恢复、不靠报工恢复，拒掉它不会锁死任何东西。
+    [InlineData("not-synchronized", null, "工单发布事实尚未同步")]
     [InlineData("decided", "rejected", "首件判定不合格")]
     // 让步放行是对已产出那批件的处置结论，不解锁后续批量生产（#2780 决策 1）。
     [InlineData("decided", "conditional-release", "让步放行")]

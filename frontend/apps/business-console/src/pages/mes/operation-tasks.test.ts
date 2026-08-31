@@ -311,14 +311,11 @@ describe('operation-tasks 首件检验记录入口', () => {
     entry!.click()
     await flushPromises()
 
+    // 不带任何单据上下文：落点的 query watch 见到 workOrderId 就会自动弹开「创建检验记录」抽屉，
+    // 把来看结论的人丢进新建表单（真机走查实证）。
     expect(routerPush).toHaveBeenCalledWith({
       path: '/quality/inspections',
-      query: {
-        operationTaskId: 'OP-10',
-        workOrderId: 'WO-A',
-        workCenterId: 'WC-FILL',
-        view: 'first-article-records',
-      },
+      query: { view: 'first-article-records' },
     })
   })
 })

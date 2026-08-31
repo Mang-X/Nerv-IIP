@@ -133,8 +133,10 @@ public sealed class GetFirstArticleConfirmationQueryHandler(ApplicationDbContext
     private sealed record InspectionAttempt(InspectionRecordId Id, string Result, int AttemptNumber);
 
     /// <summary>
-    /// 没有首件任务时区分「本工序无需首件」与「应开未开」：只有 Quality 已掌握该工序的 SKU/工作中心
-    /// 且没有命中生效首件档，才是无需首件；工序发布事实未到达时按应开未开处理，让门禁 fail closed。
+    /// 没有首件任务时分三种，判据是**该状态靠什么恢复**（#2780）：Quality 不掌握该工序事实时是
+    /// <c>not-synchronized</c>（靠工单发布事实到达恢复，与报工无关，消费方 fail closed）；
+    /// 掌握了但没命中生效首件档是 <c>not-required</c>；掌握了且命中首件档、任务未开出是
+    /// <c>not-opened</c>——开单的唯一触发点是报工事件，所以下一次报工就是首件那一件。
     /// </summary>
     private async Task<FirstArticleConfirmationResponse> ResolveMissingTaskStatusAsync(
         GetFirstArticleConfirmationQuery request,
@@ -155,9 +157,10 @@ public sealed class GetFirstArticleConfirmationQueryHandler(ApplicationDbContext
                 x.WorkCenterId,
             })
             .SingleOrDefaultAsync(cancellationToken);
-        var status = QualityFirstArticleConfirmationStatuses.NotOpened;
+        var status = QualityFirstArticleConfirmationStatuses.NotSynchronized;
         if (!string.IsNullOrWhiteSpace(operation?.SkuCode))
         {
+            status = QualityFirstArticleConfirmationStatuses.NotOpened;
             // 与触发点用同一套档案匹配，避免读面另写一份近似的方案匹配规则。
             var plan = await InspectionTaskGeneration.MatchPlanAsync(
                 dbContext,

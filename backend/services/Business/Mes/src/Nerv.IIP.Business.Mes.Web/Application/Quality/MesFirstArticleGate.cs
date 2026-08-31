@@ -9,7 +9,7 @@ namespace Nerv.IIP.Business.Mes.Web.Application.Quality;
 
 /// <summary>
 /// 首件门禁（#2780）：某工单某工序的首件判定合格之前，不允许继续批量报工。
-/// 触发首件建单的那一次报工不经过本门禁——它是首件本身，由调用方按「该工序此前没有报工」判定。
+/// 「这一次是不是首件那一件」由 Quality 的首件进度直接回答，不由 MES 本地报工历史推断。
 /// </summary>
 public interface IMesFirstArticleGate
 {
@@ -19,27 +19,6 @@ public interface IMesFirstArticleGate
         string workOrderId,
         string operationTaskId,
         CancellationToken cancellationToken);
-}
-
-/// <summary>
-/// 未接入 Quality 首件确认来源时的实现：一律拒绝。门禁只有 fail closed 一种缺省姿势，
-/// 缺来源时放行等于把「不知道」当成「合格」。
-/// </summary>
-internal sealed class UnconfiguredMesFirstArticleGate : IMesFirstArticleGate
-{
-    internal static readonly UnconfiguredMesFirstArticleGate Instance = new();
-
-    public Task EnsureBatchReportAllowedAsync(
-        string organizationId,
-        string environmentId,
-        string workOrderId,
-        string operationTaskId,
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        throw new KnownException(
-            "FIRST_ARTICLE_SOURCE_UNAVAILABLE: MES 首件门禁未配置，不能确认首件结论。");
-    }
 }
 
 /// <summary>
@@ -119,22 +98,31 @@ public sealed class HttpMesFirstArticleGate(
     }
 
     /// <summary>
-    /// 放行判据（#2780 已拍板）：只有「本工序无需首件」与「已判定且合格」两种。
-    /// 让步放行是对**已产出那批件**的处置结论，不回答「后面能不能继续批量做」，因此与不合格同样拒。
+    /// 放行判据（#2780 拍板决策 1 与决策 2）：
+    /// <list type="bullet">
+    /// <item><c>not-required</c>：本工序无需首件。</item>
+    /// <item><c>not-opened</c>：首件任务尚未开出，而**开单的唯一触发点就是本次报工的事件**——
+    /// 这一次就是决策 2 说的「首件那一件」，放行它；它落库后下一次报工会读到 <c>pending</c> 被拒。</item>
+    /// <item><c>decided</c> + <c>passed</c>：首件已判合格。</item>
+    /// </list>
+    /// 其余一律拒。让步放行是对**已产出那批件**的处置结论，不回答「后面能不能继续批量做」，与不合格同样拒；
+    /// <c>not-synchronized</c> 是 Quality 还不掌握该工序事实，它靠工单发布事实到达恢复、不靠报工恢复，
+    /// 拒掉它不会锁死任何东西（拍板校正第 3 条要的 fail closed 落在这一支上）。
     /// </summary>
     private static void EnsureAllows(FirstArticleConfirmationResponse confirmation)
     {
         switch (confirmation.Status)
         {
             case QualityFirstArticleConfirmationStatuses.NotRequired:
+            case QualityFirstArticleConfirmationStatuses.NotOpened:
                 return;
             case QualityFirstArticleConfirmationStatuses.Decided:
                 EnsureDecisionAllows(confirmation.Result);
                 return;
             case QualityFirstArticleConfirmationStatuses.Pending:
                 throw new KnownException("本工序首件尚未判定，暂不能继续报工。请等待质量完成首件确认。");
-            case QualityFirstArticleConfirmationStatuses.NotOpened:
-                throw new KnownException("本工序首件检验任务尚未开出，暂不能继续报工。请联系质量确认首件方案。");
+            case QualityFirstArticleConfirmationStatuses.NotSynchronized:
+                throw new KnownException("本工序的工单发布事实尚未同步到质量，暂不能报工。请稍后重试。");
             default:
                 throw new KnownException(SourceUnavailable);
         }

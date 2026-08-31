@@ -33,6 +33,7 @@ public sealed class QualityVocabularyContractTests
             ["NotOpened"] = "not-opened",
             ["Pending"] = "pending",
             ["Decided"] = "decided",
+            ["NotSynchronized"] = "not-synchronized",
         };
 
         Assert.Equal(
