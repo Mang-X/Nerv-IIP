@@ -47,6 +47,29 @@ function Import-NervFullChainTestLaneManifest {
     return [pscustomobject]@{ schemaVersion = 1; members = $members }
 }
 
+function Test-NervFullChainDeadlineAdmission {
+    param(
+        [Parameter(Mandatory)] [int64] $GlobalDeadlineSeconds,
+        [Parameter(Mandatory)] [int64] $ElapsedSeconds,
+        [Parameter(Mandatory)] [int64] $EntrypointTimeoutSeconds,
+        [Parameter(Mandatory)] [int64] $CleanupReserveSeconds,
+        [Parameter(Mandatory)] [int64] $GuardReserveSeconds
+    )
+
+    $remainingSeconds = ([Numerics.BigInteger]$GlobalDeadlineSeconds) - [Numerics.BigInteger]$ElapsedSeconds
+    $requiredSeconds = ([Numerics.BigInteger]$EntrypointTimeoutSeconds) +
+        [Numerics.BigInteger]$CleanupReserveSeconds +
+        [Numerics.BigInteger]$GuardReserveSeconds
+    $allowed = $remainingSeconds -ge $requiredSeconds
+
+    return [pscustomobject][ordered]@{
+        Allowed = $allowed
+        Reason = if ($allowed) { 'Allowed' } else { 'InsufficientRemainingBudget' }
+        RemainingSeconds = $remainingSeconds
+        RequiredSeconds = $requiredSeconds
+    }
+}
+
 function Get-NervFullChainTrxResult {
     param(
         [Parameter(Mandatory)] [string] $ResultsDirectory,
