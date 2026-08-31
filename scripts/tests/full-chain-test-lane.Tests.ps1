@@ -23,46 +23,44 @@ function Assert-Contract([bool]$Condition, [string]$Message) {
     if (-not $Condition) { throw $Message }
 }
 
-function Assert-FullChainDeadlineAdmissionCases {
+function Assert-FullChainDeadlineAdmissionContract {
     param(
         [Parameter(Mandatory)] [scriptblock] $Admission,
         [Parameter(Mandatory)] [string] $Context
     )
 
     $cases = @(
-        [pscustomobject]@{ Name = 'ample-budget'; Deadline = 7200; Elapsed = 0; Entrypoint = 1200; Cleanup = 300; Guard = 300; Allowed = $true },
-        [pscustomobject]@{ Name = 'exact-boundary'; Deadline = 7200; Elapsed = 5400; Entrypoint = 1200; Cleanup = 300; Guard = 300; Allowed = $true },
-        [pscustomobject]@{ Name = 'elapsed-consumes-boundary'; Deadline = 7200; Elapsed = 5401; Entrypoint = 1200; Cleanup = 300; Guard = 300; Allowed = $false },
-        [pscustomobject]@{ Name = 'cleanup-and-guard-reserves-protected'; Deadline = 1500; Elapsed = 0; Entrypoint = 1200; Cleanup = 300; Guard = 300; Allowed = $false },
-        [pscustomobject]@{ Name = 'larger-cleanup-reserve-exact-boundary'; Deadline = 1600; Elapsed = 0; Entrypoint = 1000; Cleanup = 500; Guard = 100; Allowed = $true },
-        [pscustomobject]@{ Name = 'larger-cleanup-reserve-protected'; Deadline = 1500; Elapsed = 0; Entrypoint = 1000; Cleanup = 500; Guard = 100; Allowed = $false },
-        [pscustomobject]@{ Name = 'larger-guard-reserve-exact-boundary'; Deadline = 1600; Elapsed = 0; Entrypoint = 1000; Cleanup = 100; Guard = 500; Allowed = $true },
-        [pscustomobject]@{ Name = 'larger-guard-reserve-protected'; Deadline = 1500; Elapsed = 0; Entrypoint = 1000; Cleanup = 100; Guard = 500; Allowed = $false },
-        [pscustomobject]@{ Name = 'fullstack-cap-denied'; Deadline = 1700; Elapsed = 0; Entrypoint = 1200; Cleanup = 300; Guard = 300; Allowed = $false },
-        [pscustomobject]@{ Name = 'script-cap-allowed'; Deadline = 1700; Elapsed = 0; Entrypoint = 900; Cleanup = 300; Guard = 300; Allowed = $true },
-        [pscustomobject]@{ Name = 'early-finish-transfers-budget'; Deadline = 2000; Elapsed = 500; Entrypoint = 900; Cleanup = 300; Guard = 300; Allowed = $true },
-        [pscustomobject]@{ Name = 'late-finish-denies-budget'; Deadline = 2000; Elapsed = 501; Entrypoint = 900; Cleanup = 300; Guard = 300; Allowed = $false }
+        [pscustomobject]@{ Name = 'ample-budget'; Deadline = 2000; Elapsed = 200; Entrypoint = 1000; Cleanup = 500; Guard = 100; Remaining = 1800; Required = 1600; Allowed = $true; Reason = 'Allowed' },
+        [pscustomobject]@{ Name = 'exact-boundary'; Deadline = 1800; Elapsed = 200; Entrypoint = 1000; Cleanup = 500; Guard = 100; Remaining = 1600; Required = 1600; Allowed = $true; Reason = 'Allowed' },
+        [pscustomobject]@{ Name = 'insufficient-elapsed-budget'; Deadline = 1800; Elapsed = 201; Entrypoint = 1000; Cleanup = 500; Guard = 100; Remaining = 1599; Required = 1600; Allowed = $false; Reason = 'InsufficientRemainingBudget' },
+        [pscustomobject]@{ Name = 'entrypoint-budget-contribution'; Deadline = 1800; Elapsed = 200; Entrypoint = 1001; Cleanup = 500; Guard = 100; Remaining = 1600; Required = 1601; Allowed = $false; Reason = 'InsufficientRemainingBudget' },
+        [pscustomobject]@{ Name = 'cleanup-reserve-contribution'; Deadline = 1800; Elapsed = 200; Entrypoint = 1000; Cleanup = 501; Guard = 100; Remaining = 1600; Required = 1601; Allowed = $false; Reason = 'InsufficientRemainingBudget' },
+        [pscustomobject]@{ Name = 'guard-reserve-contribution'; Deadline = 1800; Elapsed = 200; Entrypoint = 1000; Cleanup = 500; Guard = 101; Remaining = 1600; Required = 1601; Allowed = $false; Reason = 'InsufficientRemainingBudget' }
     )
 
     foreach ($case in $cases) {
         $result = & $Admission $case.Deadline $case.Elapsed $case.Entrypoint $case.Cleanup $case.Guard
-        Assert-Contract ([bool]$result.Allowed -eq [bool]$case.Allowed) "$Context failed deadline admission case '$($case.Name)'."
+        Assert-Contract ($result.RemainingSeconds -eq $case.Remaining) "$Context case '$($case.Name)' failed field 'RemainingSeconds'."
+        Assert-Contract ($result.RequiredSeconds -eq $case.Required) "$Context case '$($case.Name)' failed field 'RequiredSeconds'."
+        Assert-Contract ([bool]$result.Allowed -eq [bool]$case.Allowed) "$Context case '$($case.Name)' failed field 'Allowed'."
+        Assert-Contract ([string]::Equals([string]$result.Reason, [string]$case.Reason, [StringComparison]::Ordinal)) "$Context case '$($case.Name)' failed field 'Reason'."
     }
 }
 
-function Assert-FullChainDeadlineAdmissionDiagnosticContract {
+function New-FullChainDeadlineAdmissionTestResult {
     param(
-        [Parameter(Mandatory)] [scriptblock] $Admission,
-        [Parameter(Mandatory)] [string] $Context
+        [Parameter(Mandatory)] $RemainingSeconds,
+        [Parameter(Mandatory)] $RequiredSeconds,
+        [Parameter(Mandatory)] [bool] $Allowed,
+        [Parameter(Mandatory)] [string] $Reason
     )
 
-    $result = & $Admission 1600 0 1000 100 500
-    Assert-Contract (
-        $result.Allowed -and
-        [string]::Equals([string]$result.Reason, 'Allowed', [StringComparison]::Ordinal) -and
-        $result.RemainingSeconds -eq 1600 -and
-        $result.RequiredSeconds -eq 1600
-    ) "$Context must report the complete asymmetric entrypoint, cleanup, and guard budget."
+    return [pscustomobject]@{
+        Allowed = $Allowed
+        Reason = $Reason
+        RemainingSeconds = $RemainingSeconds
+        RequiredSeconds = $RequiredSeconds
+    }
 }
 
 function Assert-FullChainV1WorkflowContract {
@@ -198,101 +196,141 @@ try {
             -CleanupReserveSeconds $Cleanup `
             -GuardReserveSeconds $Guard
     }
-    Assert-FullChainDeadlineAdmissionCases -Admission $canonicalDeadlineAdmission -Context 'Canonical implementation'
-    Assert-FullChainDeadlineAdmissionDiagnosticContract -Admission $canonicalDeadlineAdmission -Context 'Canonical implementation'
-
-    $exactBoundary = & $canonicalDeadlineAdmission 7200 5400 1200 300 300
-    Assert-Contract (
-        $exactBoundary.Allowed -and
-        [string]::Equals([string]$exactBoundary.Reason, 'Allowed', [StringComparison]::Ordinal) -and
-        $exactBoundary.RemainingSeconds -eq 1800 -and
-        $exactBoundary.RequiredSeconds -eq 1800
-    ) 'Exact remaining budget must admit the member and report the checked remaining and required seconds.'
-    $insufficientBudget = & $canonicalDeadlineAdmission 7200 5401 1200 300 300
-    Assert-Contract (
-        -not $insufficientBudget.Allowed -and
-        [string]::Equals([string]$insufficientBudget.Reason, 'InsufficientRemainingBudget', [StringComparison]::Ordinal) -and
-        $insufficientBudget.RemainingSeconds -eq 1799 -and
-        $insufficientBudget.RequiredSeconds -eq 1800
-    ) 'One second below the complete entrypoint, cleanup, and guard budget must be denied with diagnostic values.'
+    Assert-FullChainDeadlineAdmissionContract -Admission $canonicalDeadlineAdmission -Context 'Canonical implementation'
 
     $deadlineAdmissionMutations = @(
         [pscustomobject]@{
             Name = 'cleanup-reserve-deleted'
+            ExpectedField = 'RequiredSeconds'
             Admission = {
                 param($Deadline, $Elapsed, $Entrypoint, $Cleanup, $Guard)
-                [pscustomobject]@{ Allowed = (($Deadline - $Elapsed) -ge ($Entrypoint + $Guard)) }
+                $remaining = $Deadline - $Elapsed
+                $required = $Entrypoint + $Guard
+                $allowed = $remaining -ge $required
+                New-FullChainDeadlineAdmissionTestResult -RemainingSeconds $remaining -RequiredSeconds $required -Allowed $allowed -Reason $(if ($allowed) { 'Allowed' } else { 'InsufficientRemainingBudget' })
             }
         },
         [pscustomobject]@{
             Name = 'guard-reserve-deleted'
+            ExpectedField = 'RequiredSeconds'
             Admission = {
                 param($Deadline, $Elapsed, $Entrypoint, $Cleanup, $Guard)
-                [pscustomobject]@{ Allowed = (($Deadline - $Elapsed) -ge ($Entrypoint + $Cleanup)) }
+                $remaining = $Deadline - $Elapsed
+                $required = $Entrypoint + $Cleanup
+                $allowed = $remaining -ge $required
+                New-FullChainDeadlineAdmissionTestResult -RemainingSeconds $remaining -RequiredSeconds $required -Allowed $allowed -Reason $(if ($allowed) { 'Allowed' } else { 'InsufficientRemainingBudget' })
             }
         },
         [pscustomobject]@{
             Name = 'cleanup-reserve-replaced-by-guard'
+            ExpectedField = 'RequiredSeconds'
             Admission = {
                 param($Deadline, $Elapsed, $Entrypoint, $Cleanup, $Guard)
-                [pscustomobject]@{ Allowed = (($Deadline - $Elapsed) -ge ($Entrypoint + $Guard + $Guard)) }
+                $remaining = $Deadline - $Elapsed
+                $required = $Entrypoint + $Guard + $Guard
+                $allowed = $remaining -ge $required
+                New-FullChainDeadlineAdmissionTestResult -RemainingSeconds $remaining -RequiredSeconds $required -Allowed $allowed -Reason $(if ($allowed) { 'Allowed' } else { 'InsufficientRemainingBudget' })
             }
         },
         [pscustomobject]@{
             Name = 'guard-reserve-replaced-by-cleanup'
+            ExpectedField = 'RequiredSeconds'
             Admission = {
                 param($Deadline, $Elapsed, $Entrypoint, $Cleanup, $Guard)
-                [pscustomobject]@{ Allowed = (($Deadline - $Elapsed) -ge ($Entrypoint + $Cleanup + $Cleanup)) }
+                $remaining = $Deadline - $Elapsed
+                $required = $Entrypoint + $Cleanup + $Cleanup
+                $allowed = $remaining -ge $required
+                New-FullChainDeadlineAdmissionTestResult -RemainingSeconds $remaining -RequiredSeconds $required -Allowed $allowed -Reason $(if ($allowed) { 'Allowed' } else { 'InsufficientRemainingBudget' })
             }
         },
         [pscustomobject]@{
             Name = 'strict-boundary'
+            ExpectedField = 'Allowed'
             Admission = {
                 param($Deadline, $Elapsed, $Entrypoint, $Cleanup, $Guard)
-                [pscustomobject]@{ Allowed = (($Deadline - $Elapsed) -gt ($Entrypoint + $Cleanup + $Guard)) }
+                $remaining = $Deadline - $Elapsed
+                $required = $Entrypoint + $Cleanup + $Guard
+                $allowed = $remaining -gt $required
+                New-FullChainDeadlineAdmissionTestResult -RemainingSeconds $remaining -RequiredSeconds $required -Allowed $allowed -Reason $(if ($allowed) { 'Allowed' } else { 'InsufficientRemainingBudget' })
             }
         },
         [pscustomobject]@{
-            Name = 'elapsed-ignored'
+            Name = 'elapsed-ignored-by-decision'
+            ExpectedField = 'Allowed'
             Admission = {
                 param($Deadline, $Elapsed, $Entrypoint, $Cleanup, $Guard)
-                [pscustomobject]@{ Allowed = ($Deadline -ge ($Entrypoint + $Cleanup + $Guard)) }
+                $remaining = $Deadline - $Elapsed
+                $required = $Entrypoint + $Cleanup + $Guard
+                $allowed = $Deadline -ge $required
+                New-FullChainDeadlineAdmissionTestResult -RemainingSeconds $remaining -RequiredSeconds $required -Allowed $allowed -Reason $(if ($allowed) { 'Allowed' } else { 'InsufficientRemainingBudget' })
             }
         },
         [pscustomobject]@{
             Name = 'wrong-entrypoint-budget'
+            ExpectedField = 'RequiredSeconds'
             Admission = {
                 param($Deadline, $Elapsed, $Entrypoint, $Cleanup, $Guard)
-                [pscustomobject]@{ Allowed = (($Deadline - $Elapsed) -ge (900 + $Cleanup + $Guard)) }
+                $remaining = $Deadline - $Elapsed
+                $required = 900 + $Cleanup + $Guard
+                $allowed = $remaining -ge $required
+                New-FullChainDeadlineAdmissionTestResult -RemainingSeconds $remaining -RequiredSeconds $required -Allowed $allowed -Reason $(if ($allowed) { 'Allowed' } else { 'InsufficientRemainingBudget' })
+            }
+        },
+        [pscustomobject]@{
+            Name = 'reason-misreported'
+            ExpectedField = 'Reason'
+            Admission = {
+                param($Deadline, $Elapsed, $Entrypoint, $Cleanup, $Guard)
+                $remaining = $Deadline - $Elapsed
+                $required = $Entrypoint + $Cleanup + $Guard
+                $allowed = $remaining -ge $required
+                New-FullChainDeadlineAdmissionTestResult -RemainingSeconds $remaining -RequiredSeconds $required -Allowed $allowed -Reason $(if ($allowed) { 'InsufficientRemainingBudget' } else { 'Allowed' })
+            }
+        },
+        [pscustomobject]@{
+            Name = 'required-seconds-misreported'
+            ExpectedField = 'RequiredSeconds'
+            Admission = {
+                param($Deadline, $Elapsed, $Entrypoint, $Cleanup, $Guard)
+                $remaining = $Deadline - $Elapsed
+                $required = $Entrypoint + $Cleanup + $Guard
+                $allowed = $remaining -ge $required
+                New-FullChainDeadlineAdmissionTestResult -RemainingSeconds $remaining -RequiredSeconds ($Entrypoint + $Cleanup + $Cleanup) -Allowed $allowed -Reason $(if ($allowed) { 'Allowed' } else { 'InsufficientRemainingBudget' })
+            }
+        },
+        [pscustomobject]@{
+            Name = 'remaining-seconds-clamped-to-required'
+            ExpectedField = 'RemainingSeconds'
+            Admission = {
+                param($Deadline, $Elapsed, $Entrypoint, $Cleanup, $Guard)
+                $remaining = $Deadline - $Elapsed
+                $required = $Entrypoint + $Cleanup + $Guard
+                $allowed = $remaining -ge $required
+                $reportedRemaining = if ($remaining -lt $required) { $remaining } else { $required }
+                New-FullChainDeadlineAdmissionTestResult -RemainingSeconds $reportedRemaining -RequiredSeconds $required -Allowed $allowed -Reason $(if ($allowed) { 'Allowed' } else { 'InsufficientRemainingBudget' })
+            }
+        },
+        [pscustomobject]@{
+            Name = 'remaining-seconds-ignores-elapsed'
+            ExpectedField = 'RemainingSeconds'
+            Admission = {
+                param($Deadline, $Elapsed, $Entrypoint, $Cleanup, $Guard)
+                $remaining = $Deadline - $Elapsed
+                $required = $Entrypoint + $Cleanup + $Guard
+                $allowed = $remaining -ge $required
+                New-FullChainDeadlineAdmissionTestResult -RemainingSeconds $Deadline -RequiredSeconds $required -Allowed $allowed -Reason $(if ($allowed) { 'Allowed' } else { 'InsufficientRemainingBudget' })
             }
         }
     )
     foreach ($mutation in $deadlineAdmissionMutations) {
         $mutationFailure = $null
-        try { Assert-FullChainDeadlineAdmissionCases -Admission $mutation.Admission -Context "Mutation '$($mutation.Name)'" }
+        try { Assert-FullChainDeadlineAdmissionContract -Admission $mutation.Admission -Context "Mutation '$($mutation.Name)'" }
         catch { $mutationFailure = $_ }
         Assert-Contract ($null -ne $mutationFailure) "Deadline admission mutation '$($mutation.Name)' must be rejected by the behavioral contract."
+        Assert-Contract (
+            ([string]$mutationFailure.Exception.Message).Contains("field '$($mutation.ExpectedField)'", [StringComparison]::Ordinal)
+        ) "Deadline admission mutation '$($mutation.Name)' must fail the '$($mutation.ExpectedField)' semantic assertion, but failed with '$($mutationFailure.Exception.Message)'."
     }
-
-    $misreportedRequiredSeconds = {
-        param($Deadline, $Elapsed, $Entrypoint, $Cleanup, $Guard)
-        $remaining = $Deadline - $Elapsed
-        $required = $Entrypoint + $Cleanup + $Guard
-        [pscustomobject]@{
-            Allowed = ($remaining -ge $required)
-            Reason = 'Allowed'
-            RemainingSeconds = $remaining
-            RequiredSeconds = $Entrypoint + $Cleanup + $Cleanup
-        }
-    }
-    $diagnosticMutationFailure = $null
-    try {
-        Assert-FullChainDeadlineAdmissionDiagnosticContract `
-            -Admission $misreportedRequiredSeconds `
-            -Context "Mutation 'asymmetric-required-seconds-misreported'"
-    }
-    catch { $diagnosticMutationFailure = $_ }
-    Assert-Contract ($null -ne $diagnosticMutationFailure) "Deadline admission mutation 'asymmetric-required-seconds-misreported' must be rejected by the diagnostic contract."
 
     $manifest = Import-NervFullChainTestLaneManifest -ManifestPath $manifestPath -RepositoryRoot $repoRoot
     $expectedIds = @(
