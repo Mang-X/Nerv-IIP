@@ -2,11 +2,14 @@
 #   Category: check
 #   SideEffects:
 #     - Parses the ERP sales-order to DemandPlanning cross-process verification script
+#     - Runs isolated child processes for the real-entry permanent-residual and frozen-elapsed contracts
 #     - Runs the exact script-governance gate for the MAN-703 HTTP fixture
 #   Writes:
+#     - A temporary real-entry harness, cleanup evidence, and watchdog logs under the system temp directory
 #     - artifacts/script-logs/man703-fixture-governance/**
 #     - A temporary canonical-result failure fixture under .superpowers/sdd/**
 #   Cleanup:
+#     - Removes the temporary real-entry harness, evidence, and watchdog logs
 #     - Removes the temporary canonical-result failure fixture
 #   Requires:
 #     - PowerShell 7
@@ -654,12 +657,6 @@ $composeWaitFunctionText = Get-FunctionContractText -Name 'Wait-Man517OwnedCompo
 $composeObservationCoreFunctionText = Get-FunctionContractText -Name 'Invoke-Man517OwnedComposeServicesStoppedObservation'
 Assert-Contract (-not [string]::IsNullOrWhiteSpace($composeWaitFunctionText)) 'Verify script must define bounded observation for owned Compose services.'
 Assert-Contract (-not [string]::IsNullOrWhiteSpace($composeObservationCoreFunctionText)) 'Verify script must define the production Compose observation core.'
-Assert-Contract ($composeWaitFunctionText.Contains('[System.Diagnostics.Stopwatch]::StartNew()', [StringComparison]::Ordinal)) 'The observer must own its monotonic clock lifecycle.'
-Assert-Contract ($composeWaitFunctionText.Contains('[System.Threading.Tasks.Task]::Delay(', [StringComparison]::Ordinal)) 'The observer must own its observation cadence.'
-Assert-Contract (-not $composeWaitFunctionText.Contains('[object]$Clock', [StringComparison]::Ordinal)) 'The observer must not expose a weak replaceable clock.'
-Assert-Contract ([string]::IsNullOrWhiteSpace((Get-FunctionContractText -Name 'Wait-Man517ComposeObservationCadence'))) 'Compose cadence must not be split into a thin global wrapper.'
-$composeWaitFunctionAst = Get-FunctionDefinitionAst -Name 'Wait-Man517OwnedComposeServicesStopped'
-Assert-Contract ((Get-CommandCallAsts -Name 'Invoke-Man517OwnedComposeServicesStoppedObservation' -Scope $composeWaitFunctionAst).Count -eq 1) 'The real-clock observer must delegate exactly once to the tested production observation core.'
 Invoke-Expression $composeObservationCoreFunctionText
 
 $script:composeObservedBudgets = [System.Collections.Generic.List[int]]::new()
@@ -937,6 +934,128 @@ Assert-Contract ($workflowContent.Contains('if: always()', [StringComparison]::O
 Assert-Contract ($workflowContent.Contains('actions/upload-artifact@v4', [StringComparison]::Ordinal)) 'CI must retain MAN-517 diagnostics as an artifact.'
 
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
+
+# 真实入口的永久 residual 行为必须在未注入 runtime 的隔离进程里有界结束。
+# 父进程 watchdog 只识别「入口不终止」；业务 timed-out 与 evidence 都由子进程生产。
+function New-Man517PermanentResidualHarnessContent {
+    param([Parameter(Mandatory)] [string]$WaitFunctionText)
+
+    $fixtureAndAssertions = @'
+function Protect-ScriptAutomationText {
+    param([AllowNull()][string]$Text)
+    return $Text
+}
+
+function Get-Man517ComposeRunningServicesObservation {
+    param([string]$ComposeFile, [int]$Attempt, [int]$RemainingDeadlineMilliseconds)
+    return [pscustomobject]@{
+        runningServices = [string[]]@('postgres')
+        observedAtUtc = [DateTimeOffset]::UtcNow
+        query = 'fixture compose ps --services --status running'
+        logPath = "fixture://permanent-residual/attempt-$Attempt"
+        logStatus = 'available'
+        logUnavailableReason = $null
+    }
+}
+
+$observation = Wait-Man517OwnedComposeServicesStopped `
+    -OwnedServices @('postgres') `
+    -ComposeFile 'fixture-compose.yml' `
+    -DeadlineMilliseconds 1000
+$composeEvidence = New-Man517ComposeCleanupEvidence `
+    -OwnedServices @('postgres') `
+    -Observation $observation
+$document = [ordered]@{ composeServices = $composeEvidence }
+[IO.Directory]::CreateDirectory((Split-Path -Parent $EvidencePath)) | Out-Null
+[IO.File]::WriteAllText(
+    $EvidencePath,
+    ($document | ConvertTo-Json -Depth 8),
+    [Text.UTF8Encoding]::new($false))
+
+if ($observation.converged -or -not [string]::Equals([string]$observation.status, 'timed-out', [StringComparison]::Ordinal)) {
+    throw 'Permanent owned residual must fail closed as timed-out.'
+}
+if ([int]$observation.attempts -le 1) {
+    throw 'Permanent owned residual must be read more than once.'
+}
+if ([long]$observation.elapsedMilliseconds -lt [long]$observation.deadlineMilliseconds) {
+    throw 'Permanent owned residual must reach its internal deadline before timing out.'
+}
+if (@($observation.remainingNames).Count -ne 1 -or
+    -not [string]::Equals([string]$observation.remainingNames[0], 'postgres', [StringComparison]::Ordinal)) {
+    throw 'Permanent owned residual must retain postgres as remaining.'
+}
+'@
+
+    return @(
+        'param([Parameter(Mandatory)] [string]$EvidencePath)'
+        '$ErrorActionPreference = ''Stop'''
+        $composeObservationCoreFunctionText
+        $WaitFunctionText
+        $composeCleanupEvidenceFunctionText
+        $fixtureAndAssertions
+    ) -join [Environment]::NewLine
+}
+
+$entryFixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-man517-real-entry-$([Guid]::NewGuid().ToString('N'))"
+$entryHarnessPath = Join-Path $entryFixtureRoot 'permanent-residual-entry.ps1'
+$entryEvidencePath = Join-Path $entryFixtureRoot 'cleanup-evidence.json'
+$entryMutationHarnessPath = Join-Path $entryFixtureRoot 'permanent-residual-frozen-elapsed.ps1'
+$entryMutationEvidencePath = Join-Path $entryFixtureRoot 'mutation-cleanup-evidence.json'
+$entryLogDirectory = Join-Path $entryFixtureRoot 'logs'
+$entryWatchdogMilliseconds = 30000
+try {
+    [IO.Directory]::CreateDirectory($entryFixtureRoot) | Out-Null
+    $entryHarnessContent = New-Man517PermanentResidualHarnessContent -WaitFunctionText $composeWaitFunctionText
+    [IO.File]::WriteAllText($entryHarnessPath, $entryHarnessContent, [Text.UTF8Encoding]::new($false))
+
+    Invoke-NativeCommandOutput `
+        -Command ([Environment]::ProcessPath) `
+        -Arguments @('-NoLogo', '-NoProfile', '-File', $entryHarnessPath, '-EvidencePath', $entryEvidencePath) `
+        -WorkingDirectory $repoRoot `
+        -Name 'man517-real-entry-permanent-residual' `
+        -LogDirectory (Join-Path $entryLogDirectory 'baseline') `
+        -TimeoutMilliseconds $entryWatchdogMilliseconds | Out-Null
+
+    Assert-Contract (Test-Path -LiteralPath $entryEvidencePath -PathType Leaf) 'The real entry must publish cleanup evidence before the child process exits.'
+    $entryEvidence = (Get-Content -LiteralPath $entryEvidencePath -Raw | ConvertFrom-Json).composeServices
+    Assert-Contract ([string]::Equals([string]$entryEvidence.status, 'timed-out', [StringComparison]::Ordinal)) 'The real entry evidence must retain timed-out status.'
+    Assert-Contract ([int]$entryEvidence.attempts -gt 1) 'The real entry evidence must retain repeated attempts.'
+    Assert-Contract ([long]$entryEvidence.elapsedMilliseconds -ge [long]$entryEvidence.deadlineMilliseconds) 'The real entry evidence must retain internal deadline exhaustion.'
+    Assert-Contract ([int]$entryEvidence.remaining -eq 1 -and @($entryEvidence.remainingNames).Count -eq 1 -and [string]::Equals([string]$entryEvidence.remainingNames[0], 'postgres', [StringComparison]::Ordinal)) 'The real entry evidence must retain the permanent owned residual.'
+    foreach ($diagnosticField in @('lastObservation', 'query', 'logStatus')) {
+        Assert-Contract (-not [string]::IsNullOrWhiteSpace([string]$entryEvidence.$diagnosticField)) "The real entry evidence must retain $diagnosticField."
+    }
+    Assert-Contract ([Linq.Enumerable]::Contains([string[]]@($entryEvidence.PSObject.Properties.Name), 'logUnavailableReason', [StringComparer]::Ordinal)) 'The real entry evidence must retain logUnavailableReason, including an available null value.'
+
+    $elapsedReturn = 'return [long]$clock.ElapsedMilliseconds'
+    $frozenElapsedReturn = 'return [long]0'
+    $mutatedWaitFunctionText = $composeWaitFunctionText.Replace($elapsedReturn, $frozenElapsedReturn)
+    Assert-Contract (-not [string]::Equals($mutatedWaitFunctionText, $composeWaitFunctionText, [StringComparison]::Ordinal)) 'The frozen-elapsed mutation must alter the production entry runtime.'
+    Assert-Contract (-not $mutatedWaitFunctionText.Contains($elapsedReturn, [StringComparison]::Ordinal)) 'The frozen-elapsed mutation must replace the production elapsed return exactly once.'
+    $entryMutationHarnessContent = New-Man517PermanentResidualHarnessContent -WaitFunctionText $mutatedWaitFunctionText
+    [IO.File]::WriteAllText($entryMutationHarnessPath, $entryMutationHarnessContent, [Text.UTF8Encoding]::new($false))
+
+    $frozenElapsedTimedOutAtWatchdog = $false
+    try {
+        Invoke-NativeCommandOutput `
+            -Command ([Environment]::ProcessPath) `
+            -Arguments @('-NoLogo', '-NoProfile', '-File', $entryMutationHarnessPath, '-EvidencePath', $entryMutationEvidencePath) `
+            -WorkingDirectory $repoRoot `
+            -Name 'man517-real-entry-frozen-elapsed-mutation' `
+            -LogDirectory (Join-Path $entryLogDirectory 'frozen-elapsed') `
+            -TimeoutMilliseconds $entryWatchdogMilliseconds | Out-Null
+    }
+    catch {
+        $frozenElapsedTimedOutAtWatchdog = $_.Exception -is [TimeoutException]
+    }
+    Assert-Contract $frozenElapsedTimedOutAtWatchdog 'A frozen production elapsed value must hit only the external watchdog and fail the direct contract.'
+    Assert-Contract (-not (Test-Path -LiteralPath $entryMutationEvidencePath -PathType Leaf)) 'A non-terminating entry must not fabricate completed cleanup evidence.'
+}
+finally {
+    if (Test-Path -LiteralPath $entryFixtureRoot) { Remove-Item -LiteralPath $entryFixtureRoot -Recurse -Force }
+}
+
 Invoke-PwshScript `
     -ScriptPath $governanceScript `
     -Arguments @('-Path', $fixtureScript) `
