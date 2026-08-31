@@ -238,8 +238,13 @@
       "method": "POST",
       "route": "/api/business/internal/v1/barcodes/print-batches/{printBatchId}/dispatch",
       "operationId": "dispatchScopedBusinessBarcodePrintBatch",
-      "classification": "internal",
-      "rationale": "Scoped downstream lifecycle endpoint introduced by #2974; #2975 will expose it only through the authorized BusinessGateway facade and reclassify this row."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "dispatchBusinessConsoleBarcodePrintBatch"
+      ]
     },
     {
       "service": "BarcodeLabel",
@@ -254,8 +259,13 @@
       "method": "POST",
       "route": "/api/business/internal/v1/barcodes/print-batches/{printBatchId}/items/{sequenceNo}/reprint",
       "operationId": "reprintScopedBusinessBarcodeLabel",
-      "classification": "internal",
-      "rationale": "Scoped downstream lifecycle endpoint introduced by #2974; #2975 will expose it only through the authorized BusinessGateway facade and reclassify this row."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "reprintBusinessConsoleBarcodeLabel"
+      ]
     },
     {
       "service": "BarcodeLabel",
@@ -270,8 +280,13 @@
       "method": "POST",
       "route": "/api/business/internal/v1/barcodes/print-batches/{printBatchId}/items/{sequenceNo}/void",
       "operationId": "voidScopedBusinessBarcodeLabel",
-      "classification": "internal",
-      "rationale": "Scoped downstream lifecycle endpoint introduced by #2974; #2975 will expose it only through the authorized BusinessGateway facade and reclassify this row."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "voidBusinessConsoleBarcodeLabel"
+      ]
     },
     {
       "service": "BarcodeLabel",
