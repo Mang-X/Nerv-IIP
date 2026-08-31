@@ -64,6 +64,7 @@ import {
   CheckCheckIcon,
   ClipboardCheckIcon,
   EyeIcon,
+  FileCheckIcon,
   FileTextIcon,
   PauseIcon,
   PlayIcon,
@@ -317,13 +318,14 @@ async function openSopFile(sop: CurrentSop) {
     openingSopFileId.value = null
   }
 }
-function openRoute(path: string, task: Row) {
+function openRoute(path: string, task: Row, extraQuery: Record<string, string> = {}) {
   void router.push({
     path,
     query: {
       operationTaskId: task.operationTaskId ?? undefined,
       workOrderId: task.workOrderId ?? undefined,
       workCenterId: task.workCenterId ?? undefined,
+      ...extraQuery,
     },
   })
 }
@@ -761,6 +763,13 @@ function formatError(error: unknown) {
             >
               <ClipboardCheckIcon aria-hidden="true" />
               {{ canOpenReport(row) ? '报工' : '暂不可报工（缺工单）' }}
+            </NvDropdownMenuItem>
+            <!-- 首件未判合格时服务端会拒绝批量报工（#2780），入口留在报工旁边，被拦下的人一步可达。 -->
+            <NvDropdownMenuItem
+              @click="openRoute('/quality/inspections', row, { view: 'first-article-records' })"
+            >
+              <FileCheckIcon aria-hidden="true" />
+              首件检验记录
             </NvDropdownMenuItem>
             <NvDropdownMenuItem
               :disabled="!row.workOrderId"

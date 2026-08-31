@@ -12,6 +12,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Behaviors;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Errors;
+using Nerv.IIP.Business.Mes.Web.Application.Quality;
 using NetCorePal.Extensions.Repository;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
@@ -140,10 +141,19 @@ public sealed class RecordProductionReportCommandValidator : AbstractValidator<R
 public sealed class RecordProductionReportCommandHandler(
     ApplicationDbContext dbContext,
     IProductionReportOeeDimensionSnapshotProvider oeeDimensionSnapshotProvider,
+    IMesFirstArticleGate firstArticleGate,
     MesCodingService? codingService = null)
     : ICommandHandler<RecordProductionReportCommand, ProductionReportCommandResult>
 {
     private readonly MesCodingService _codingService = codingService ?? new MesCodingService();
+
+    public RecordProductionReportCommandHandler(
+        ApplicationDbContext dbContext,
+        IProductionReportOeeDimensionSnapshotProvider oeeDimensionSnapshotProvider,
+        MesCodingService? codingService = null)
+        : this(dbContext, oeeDimensionSnapshotProvider, UnconfiguredMesFirstArticleGate.Instance, codingService)
+    {
+    }
 
     public async Task<ProductionReportCommandResult> Handle(RecordProductionReportCommand request, CancellationToken cancellationToken)
     {
@@ -199,6 +209,30 @@ public sealed class RecordProductionReportCommandHandler(
             throw new MesLifecycleConflictException(
                 "report",
                 operationTask.Status.ToString());
+        }
+
+        // 首件门禁（#2780）：拦的是**批量**报工，不是首件那一件。
+        // 该工序的第一次报工正是 Quality 按「工单 + 工序」幂等开出首件检验任务的触发点，
+        // 拦掉它会让首件永远开不出来；此后同工序的报工才要求首件已判定合格。
+        // 存量在制工单因此自然过渡：门禁上线后它们的下一次报工触发建单并放行，之后正常受管。
+        // 不带工单谓词：工序任务标识在 (组织, 环境) 内唯一（ak_operation_tasks_scope_operation_task），
+        // 再写一遍工单是零鉴别力；这三列上正好有 ix_production_reports_scope_operation_task。
+        var hasEarlierReport = await dbContext.ProductionReports
+            .AsNoTracking()
+            .AnyAsync(
+                x =>
+                    x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    x.OperationTaskId == request.OperationTaskId,
+                cancellationToken);
+        if (hasEarlierReport)
+        {
+            await firstArticleGate.EnsureBatchReportAllowedAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.WorkOrderId,
+                request.OperationTaskId,
+                cancellationToken);
         }
 
         // 工序级累计合格量是所有工序报工的共同权威边界；不能只依赖末工序对工单聚合的回写。

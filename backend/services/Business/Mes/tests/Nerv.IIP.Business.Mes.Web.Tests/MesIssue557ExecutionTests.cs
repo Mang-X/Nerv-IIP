@@ -784,7 +784,8 @@ public sealed class MesIssue557ExecutionTests
         await dbContext.SaveChangesAsync();
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
-            new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance).Handle(
+            new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance,
+            TestMesFirstArticleGate.Allowing).Handle(
                 new RecordProductionReportCommand(
                     "org-001", "env-dev", "WO-OVER-001", "OP-10",
                     GoodQuantity: 20.000001m,
@@ -837,7 +838,8 @@ public sealed class MesIssue557ExecutionTests
         await using var dbContext = CreateDbContext(nameof(Output_operation_report_rejects_duplicate_explicit_output_lot_before_database_unique_constraint));
         SeedStartedOutputOperation(dbContext);
         await dbContext.SaveChangesAsync();
-        var handler = new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance);
+        var handler = new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance,
+            TestMesFirstArticleGate.Allowing);
         await handler.Handle(
             new RecordProductionReportCommand(
                 "org-001",

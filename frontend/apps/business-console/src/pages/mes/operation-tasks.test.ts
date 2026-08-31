@@ -70,9 +70,10 @@ vi.mock('@/composables/usePromotedCatalogs', async () => {
   }
 })
 
+const routerPush = vi.fn()
 vi.mock('vue-router', () => ({
   onBeforeRouteLeave: vi.fn(),
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: routerPush }),
 }))
 vi.mock('@nerv-iip/business-core', () => ({
   openDownloadGrantBlob: vi.fn(),
@@ -193,6 +194,7 @@ function mountPage() {
               <span v-for="column in columns" :key="column.key">{{ column.header }}</span>
               <div v-for="row in rows" :key="row.operationTaskId" data-testid="operation-row">
                 <slot name="cell-actualHours" :row="row" />
+                <slot name="cell-actions" :row="row" />
               </div>
             </div>
           `,
@@ -278,5 +280,45 @@ describe('operation-tasks 排程已失效 quick filter', () => {
     expect(actualHourCells[2].text()).toMatch(/机器\s*暂无实绩/)
     expect(actualHourCells[3].text()).toMatch(/人工\s*小于 0\.0001 小时/)
     expect(actualHourCells[3].text()).toMatch(/机器\s*小于 0\.0001 小时/)
+  })
+})
+
+describe('operation-tasks 首件检验记录入口', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    state.operationRows = [
+      {
+        operationTaskId: 'OP-10',
+        workOrderId: 'WO-A',
+        workCenterId: 'WC-FILL',
+        operationSequence: 10,
+      },
+    ]
+  })
+
+  // 服务端在首件未判合格时拒绝批量报工（#2780），被拦下的人要能就地走到首件检验记录。
+  it('opens the first-article records view carrying the blocked operation context', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+
+    // 行操作是真菜单：先展开再点，避免对着没挂载的幽灵弹层断言。
+    await wrapper.get('[data-slot="nv-dropdown-menu-trigger"]').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    const entry = [...document.body.querySelectorAll('[role="menuitem"]')].find((node) =>
+      node.textContent?.includes('首件检验记录'),
+    ) as HTMLElement | undefined
+    expect(entry).toBeTruthy()
+    entry!.click()
+    await flushPromises()
+
+    expect(routerPush).toHaveBeenCalledWith({
+      path: '/quality/inspections',
+      query: {
+        operationTaskId: 'OP-10',
+        workOrderId: 'WO-A',
+        workCenterId: 'WC-FILL',
+        view: 'first-article-records',
+      },
+    })
   })
 })

@@ -126,6 +126,7 @@ builder.Services.AddScoped<IMesMaterialLotAvailabilityProvider, HttpMesMaterialL
 builder.Services.AddScoped<IMesRoutingSnapshotProvider, HttpMesProductEngineeringRoutingSnapshotProvider>();
 builder.Services.AddScoped<IMesWorkerSkillQualificationGate, HttpMesWorkerSkillQualificationGate>();
 builder.Services.AddScoped<IProductionReportOeeDimensionSnapshotProvider, HttpProductionReportOeeDimensionSnapshotProvider>();
+builder.Services.AddScoped<IMesFirstArticleGate, HttpMesFirstArticleGate>();
 builder.Services.AddScoped<MesQualityInspectionPlanClient>();
 builder.Services.AddScoped<IMesQualityInspectionPlanReader>(sp =>
     sp.GetRequiredService<MesQualityInspectionPlanClient>());
