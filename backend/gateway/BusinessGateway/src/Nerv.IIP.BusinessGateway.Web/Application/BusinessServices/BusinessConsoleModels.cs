@@ -4466,33 +4466,33 @@ public sealed record BusinessConsoleMesProductionStatisticsRequest(
     int Take = 100);
 
 public sealed record BusinessConsoleMesProductionStatisticsResponse(
-    [property: Required] string OrganizationId,
-    [property: Required] string EnvironmentId,
-    [property: Required] BusinessConsoleMesProductionStatisticsDimension Dimension,
-    [property: Required] DateTimeOffset WindowStartUtc,
-    [property: Required] DateTimeOffset WindowEndUtc,
-    [property: Required] IReadOnlyCollection<BusinessConsoleMesProductionStatisticsBucket> Items,
-    [property: Required] int TotalCount,
-    [property: Required] int Skip,
-    [property: Required] int Take);
+    [property: JsonRequired, Required] string OrganizationId,
+    [property: JsonRequired, Required] string EnvironmentId,
+    [property: JsonRequired, Required] BusinessConsoleMesProductionStatisticsDimension Dimension,
+    [property: JsonRequired, Required] DateTimeOffset WindowStartUtc,
+    [property: JsonRequired, Required] DateTimeOffset WindowEndUtc,
+    [property: JsonRequired, Required] IReadOnlyCollection<BusinessConsoleMesProductionStatisticsBucket> Items,
+    [property: JsonRequired, Required] int TotalCount,
+    [property: JsonRequired, Required] int Skip,
+    [property: JsonRequired, Required] int Take);
 
 public sealed record BusinessConsoleMesProductionStatisticsBucket(
-    [property: Required] BusinessConsoleMesProductionStatisticsDimension Dimension,
+    [property: JsonRequired, Required] BusinessConsoleMesProductionStatisticsDimension Dimension,
     string? DimensionValue,
     DateOnly? BusinessDate,
     string? ShiftCode,
     string? WorkCenterId,
     string? SkuId,
-    [property: Required] decimal GoodQuantity,
-    [property: Required] decimal ScrapQuantity,
-    [property: Required] decimal ReworkQuantity,
-    [property: Required] decimal TotalOutputQuantity,
+    [property: JsonRequired, Required] decimal GoodQuantity,
+    [property: JsonRequired, Required] decimal ScrapQuantity,
+    [property: JsonRequired, Required] decimal ReworkQuantity,
+    [property: JsonRequired, Required] decimal TotalOutputQuantity,
     decimal? GoodRate,
     decimal? ScrapRate,
     decimal? ReworkRate,
-    [property: Required] int ProductionReportCount,
-    [property: Required] BusinessConsoleMesProductionStatisticsResolutionStatus ResolutionStatus,
-    [property: Required] IReadOnlyCollection<BusinessConsoleMesProductionStatisticsDegradedReason> DegradedReasons);
+    [property: JsonRequired, Required] int ProductionReportCount,
+    [property: JsonRequired, Required] BusinessConsoleMesProductionStatisticsResolutionStatus ResolutionStatus,
+    [property: JsonRequired, Required] IReadOnlyCollection<BusinessConsoleMesProductionStatisticsDegradedReason> DegradedReasons);
 
 public sealed record BusinessConsoleMesProductionPlanListRequest(
     string OrganizationId,

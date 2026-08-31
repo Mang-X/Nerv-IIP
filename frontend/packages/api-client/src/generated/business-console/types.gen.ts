@@ -16101,6 +16101,7 @@ export type QueryBusinessConsoleMesProductionStatisticsErrors = {
      * Forbidden
      */
     403: unknown;
+    502: NetCorePalExtensionsDtoResponseData;
 };
 
 export type QueryBusinessConsoleMesProductionStatisticsError = QueryBusinessConsoleMesProductionStatisticsErrors[keyof QueryBusinessConsoleMesProductionStatisticsErrors];

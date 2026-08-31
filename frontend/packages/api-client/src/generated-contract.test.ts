@@ -107,6 +107,7 @@ import type {
   CancelBusinessConsolePlanningDemandData,
   QueryBusinessConsoleTelemetryOeeAggregatesData,
   QueryBusinessConsoleMesProductionStatisticsData,
+  QueryBusinessConsoleMesProductionStatisticsErrors,
   CancelScheduledBusinessConsoleEngineeringChangeData,
   CreateBusinessConsoleErpPurchaseRequisitionFromSuggestionData,
   CreateOrUpdateBusinessConsolePlanningForecastData,
@@ -1138,6 +1139,9 @@ describe('generated API client contract', () => {
     >()
     expectTypeOf<BusinessConsoleMesProductionStatisticsResponse>().toBeObject()
     expectTypeOf<BusinessConsoleMesProductionStatisticsBucket>().toBeObject()
+    expectTypeOf<keyof QueryBusinessConsoleMesProductionStatisticsErrors>().toEqualTypeOf<
+      400 | 401 | 403 | 502
+    >()
   })
 
   it('exports line-side inventory balances through the stable Business Console entry point (#2228)', () => {

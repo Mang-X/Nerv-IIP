@@ -1668,6 +1668,7 @@ public sealed class ListBusinessConsoleMesProductionReportsEndpoint(
 [Tags("Business Console MES")]
 [HttpGet("/api/business-console/v1/mes/production-statistics")]
 [BusinessGatewayOperationId("queryBusinessConsoleMesProductionStatistics")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status502BadGateway)]
 public sealed class QueryBusinessConsoleMesProductionStatisticsEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,

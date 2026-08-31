@@ -263,6 +263,60 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("internal-token-001", sent.Headers.Authorization!.Parameter);
     }
 
+    [Theory]
+    [InlineData("totalCount")]
+    [InlineData("goodQuantity")]
+    [InlineData("scrapQuantity")]
+    [InlineData("reworkQuantity")]
+    [InlineData("totalOutputQuantity")]
+    [InlineData("productionReportCount")]
+    [InlineData("resolutionStatus")]
+    public async Task Mes_production_statistics_http_client_rejects_missing_producer_facts(string missingProperty)
+    {
+        var bucket = new JsonObject
+        {
+            ["dimension"] = "day",
+            ["goodQuantity"] = 8m,
+            ["scrapQuantity"] = 1m,
+            ["reworkQuantity"] = 1m,
+            ["totalOutputQuantity"] = 10m,
+            ["productionReportCount"] = 3,
+            ["resolutionStatus"] = "resolved",
+            ["degradedReasons"] = new JsonArray(),
+        };
+        var payload = new JsonObject
+        {
+            ["organizationId"] = "org-001",
+            ["environmentId"] = "env-dev",
+            ["dimension"] = "day",
+            ["windowStartUtc"] = "2026-08-01T00:00:00Z",
+            ["windowEndUtc"] = "2026-09-01T00:00:00Z",
+            ["items"] = new JsonArray(bucket),
+            ["totalCount"] = 1,
+            ["skip"] = 0,
+            ["take"] = 20,
+        };
+        Assert.True((missingProperty == "totalCount" ? payload : bucket).Remove(missingProperty));
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(payload),
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var mes = new HttpBusinessMesClient(httpClient);
+        var request = new BusinessConsoleMesProductionStatisticsRequest(
+            "org-001",
+            "env-dev",
+            BusinessConsoleMesProductionStatisticsDimension.Day,
+            DateTimeOffset.Parse("2026-08-01T00:00:00Z"),
+            DateTimeOffset.Parse("2026-09-01T00:00:00Z"),
+            Take: 20);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            mes.QueryProductionStatisticsAsync("internal-token-001", request, CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+    }
+
     [Fact]
     public async Task List_device_assets_uses_internal_service_token_and_exposes_device_asset_id()
     {
