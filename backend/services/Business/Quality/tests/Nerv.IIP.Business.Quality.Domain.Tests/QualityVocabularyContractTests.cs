@@ -20,6 +20,26 @@ public sealed class QualityVocabularyContractTests
             PublicStringConstantsOf(typeof(QualityInspectionDispositionStatuses)));
     }
 
+    /// <summary>
+    /// #2779 首件确认读契约的取值是 MES 报工门禁要判读的线上字面量，改一个字符门禁就选错分支；
+    /// 本用例把字面量钉在契约上，并保证新增取值必须显式登记。
+    /// </summary>
+    [Fact]
+    public void First_article_confirmation_statuses_pin_the_2779_wire_values()
+    {
+        var expected = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["NotRequired"] = "not-required",
+            ["NotOpened"] = "not-opened",
+            ["Pending"] = "pending",
+            ["Decided"] = "decided",
+        };
+
+        Assert.Equal(
+            expected,
+            PublicStringConstantsOf(typeof(QualityFirstArticleConfirmationStatuses)));
+    }
+
     private static IReadOnlyDictionary<string, string> PublicStringConstantsOf(Type type)
     {
         return type

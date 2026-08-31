@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Nerv.IIP.Business.Quality.Infrastructure;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260830074341_AddInspectionTaskFirstArticleSourceType")]
+    partial class AddInspectionTaskFirstArticleSourceType
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -617,10 +620,10 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
 
                     b.Property<string>("SourceDocumentId")
                         .IsRequired()
-                        .HasMaxLength(250)
-                        .HasColumnType("character varying(250)")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
                         .HasColumnName("source_document_id")
-                        .HasComment("Source document or operation public id, or the composite first-article source identity '{workOrderId}:{operationTaskId}' produced by FirstArticleInspection.SourceDocumentId.");
+                        .HasComment("Source document or operation public id.");
 
                     b.Property<string>("SourceQualityStatus")
                         .HasMaxLength(50)
@@ -843,10 +846,10 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
 
                     b.Property<string>("SourceDocumentId")
                         .IsRequired()
-                        .HasMaxLength(250)
-                        .HasColumnType("character varying(250)")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
                         .HasColumnName("source_document_id")
-                        .HasComment("Source document public id, or the composite first-article source identity '{workOrderId}:{operationTaskId}' produced by FirstArticleInspection.SourceDocumentId.");
+                        .HasComment("Source document public id.");
 
                     b.Property<string>("SourceDocumentLineId")
                         .HasMaxLength(250)
@@ -1350,10 +1353,10 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
 
                     b.Property<string>("SourceDocumentId")
                         .IsRequired()
-                        .HasMaxLength(250)
-                        .HasColumnType("character varying(250)")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
                         .HasColumnName("source_document_id")
-                        .HasComment("External source document id such as inspection plan, report or return id; NCRs opened from a first-article inspection carry that record's composite '{workOrderId}:{operationTaskId}' source identity.");
+                        .HasComment("External source document id such as inspection plan, report or return id.");
 
                     b.Property<Guid?>("SourceInspectionRecordId")
                         .HasColumnType("uuid")
