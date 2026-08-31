@@ -222,6 +222,77 @@ function Wait-Healthy {
     throw "Service did not become healthy at $Uri. Logs: $($ManagedProcess.LogDirectory)"
 }
 
+function Get-Man527RedisStreamGroupNames {
+    param([string]$ComposeFile, [string]$StreamName)
+
+    $result = Invoke-NativeCommandOutput `
+        -Command 'docker' `
+        -Arguments @('compose', '-f', $ComposeFile, 'exec', '-T', 'redis', 'redis-cli', '--raw', 'XINFO', 'GROUPS', $StreamName) `
+        -WorkingDirectory $root `
+        -TimeoutSeconds 10 `
+        -Name 'man527-erp-cap-consumer-readiness'
+    $output = "$($result.Stdout)`n$($result.Stderr)".Trim()
+    if ($output.StartsWith('ERR ', [StringComparison]::Ordinal)) {
+        throw "Redis XINFO GROUPS failed for topic '$StreamName': $output"
+    }
+
+    $lines = @($result.Stdout -split '\r?\n')
+    $groups = [System.Collections.Generic.List[string]]::new()
+    for ($index = 0; $index + 1 -lt $lines.Count; $index++) {
+        if ([string]::Equals([string]$lines[$index], 'name', [StringComparison]::Ordinal)) {
+            $groups.Add([string]$lines[$index + 1])
+        }
+    }
+    return $groups.ToArray()
+}
+
+function Wait-Man527ErpCapConsumerReady {
+    param(
+        [string]$ComposeFile,
+        [object]$ManagedProcess,
+        [string]$Topic,
+        [string]$Consumer,
+        [string]$CapVersion,
+        [ValidateRange(0, 60)][int]$TimeoutSeconds = 60
+    )
+
+    $expectedGroup = "$Consumer.$CapVersion"
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
+    $firstRegistrationBoundary = $null
+    do {
+        if ($ManagedProcess.Process.HasExited) {
+            throw "MAN-527 ERP exited before CAP consumer readiness: topic='$Topic'; group='$expectedGroup'; consumer='$Consumer'; run identity='$CapVersion'; logs='$($ManagedProcess.LogDirectory)'."
+        }
+
+        try {
+            $observedGroups = @(Get-Man527RedisStreamGroupNames -ComposeFile $ComposeFile -StreamName $Topic)
+            $groupSet = [Collections.Generic.HashSet[string]]::new([string[]]$observedGroups, [StringComparer]::Ordinal)
+            if ($groupSet.Contains($expectedGroup)) {
+                return [pscustomobject][ordered]@{
+                    topic = $Topic
+                    group = $expectedGroup
+                    consumer = $Consumer
+                    capVersion = $CapVersion
+                }
+            }
+            if ($null -eq $firstRegistrationBoundary) {
+                $observedGroupText = if ($observedGroups.Count -eq 0) { '<none>' } else { $observedGroups -join ', ' }
+                $firstRegistrationBoundary = "target group missing; observed groups=$observedGroupText"
+            }
+        }
+        catch {
+            if ($null -eq $firstRegistrationBoundary) {
+                $firstRegistrationBoundary = $_.Exception.Message
+            }
+        }
+
+        if ([DateTimeOffset]::UtcNow -ge $deadline) { break }
+        Start-Sleep -Milliseconds 500
+    } while ($true)
+
+    throw "MAN-527 ERP CAP consumer did not become ready before business actions: topic='$Topic'; group='$expectedGroup'; consumer='$Consumer'; run identity='$CapVersion'; first registration boundary='$firstRegistrationBoundary'; logs='$($ManagedProcess.LogDirectory)'."
+}
+
 function Wait-WmsOutboundOrderEvent {
     param([object]$ManagedProcess, [string]$DeliveryOrderNo)
     $stdoutPath = Join-Path $ManagedProcess.LogDirectory 'stdout.log'
@@ -462,6 +533,8 @@ $databaseConnectionString = if ($PostgresAdminConnectionString -match '(?i)Datab
     "$($PostgresAdminConnectionString.TrimEnd(';'));Database=$databaseName"
 }
 $capVersion = "man527-$([Guid]::NewGuid().ToString('N').Substring(0, 12))"
+$erpCompletionTopic = 'WmsIntegrationEvent'
+$erpCompletionConsumer = 'business-erp.wms-outbound-completed-ar-accrual'
 $internalToken = "man527-$([Guid]::NewGuid().ToString('N'))"
 $deliveryOrderNo = "DO-MAN527-$([Guid]::NewGuid().ToString('N').Substring(0, 8).ToUpperInvariant())"
 $wmsActorPrincipalId = "man527-operator-$([Guid]::NewGuid().ToString('N').Substring(0, 8))"
@@ -512,6 +585,7 @@ $cleanupEvidence = [ordered]@{
     errors = @()
 }
 $verifierContract = $null
+$erpConsumerReadiness = $null
 
 try {
     $verifierContract = Test-NervAcceptanceWmsVerifierContract -Path $PSCommandPath
@@ -569,6 +643,13 @@ try {
     }
     [void]$managedProcessIds.Add([int]$erpProcess.Process.Id)
     Wait-Healthy -Uri "$erpUrl/health" -ManagedProcess $erpProcess
+    $erpConsumerReadiness = Wait-Man527ErpCapConsumerReady `
+        -ComposeFile $composeFile `
+        -ManagedProcess $erpProcess `
+        -Topic $erpCompletionTopic `
+        -Consumer $erpCompletionConsumer `
+        -CapVersion $capVersion
+    Write-Diagnostic "MAN-527 ERP CAP consumer ready: topic='$($erpConsumerReadiness.topic)'; group='$($erpConsumerReadiness.group)'; consumer='$($erpConsumerReadiness.consumer)'; run identity='$($erpConsumerReadiness.capVersion)'."
 
     $headers = @{
         Authorization = "Bearer $internalToken"
@@ -828,7 +909,7 @@ try {
         verifiedAtUtc = [DateTimeOffset]::UtcNow
         scenarioStatus = 'passed'
         deliveryOrderNo = $deliveryOrderNo
-        transport = 'Redis CAP across separate ERP, WMS, Inventory, and replay-probe processes'
+        transport = "Redis CAP across separate ERP, WMS, Inventory, and replay-probe processes; readiness topic='$($erpConsumerReadiness.topic)' group='$($erpConsumerReadiness.group)' consumer='$($erpConsumerReadiness.consumer)' capVersion='$($erpConsumerReadiness.capVersion)'"
         persistence = 'Disposable real PostgreSQL database'
         wmsOutboundOrder = [ordered]@{
             outboundOrderNo = $outbound.outboundOrderNo

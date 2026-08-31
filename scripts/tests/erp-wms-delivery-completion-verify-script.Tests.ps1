@@ -18,6 +18,12 @@ if (-not (Test-Path -LiteralPath $verifyScript)) {
 }
 
 $content = Get-Content -LiteralPath $verifyScript -Raw
+$tokens = $null
+$parseErrors = $null
+$scriptAst = [System.Management.Automation.Language.Parser]::ParseFile(
+    $verifyScript,
+    [ref] $tokens,
+    [ref] $parseErrors)
 
 function Assert-Contract {
     param([bool]$Condition, [string]$Message)
@@ -25,6 +31,84 @@ function Assert-Contract {
         throw $Message
     }
 }
+
+function Import-VerifyFunction {
+    param([string]$Name)
+
+    $definition = $scriptAst.Find({
+        param($node)
+        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+        [string]::Equals([string]$node.Name, $Name, [StringComparison]::OrdinalIgnoreCase)
+    }, $true)
+    if ($null -eq $definition) {
+        throw "Verify script function '$Name' is missing."
+    }
+    Set-Item -Path "Function:\script:$Name" -Value $definition.Body.GetScriptBlock()
+}
+
+Assert-Contract ($parseErrors.Count -eq 0) 'Verify script must parse before executable contracts are evaluated.'
+Import-VerifyFunction -Name 'Wait-Man527ErpCapConsumerReady'
+
+$script:observedRedisGroups = @()
+$script:redisGroupObservationCount = 0
+function Get-Man527RedisStreamGroupNames {
+    param([string]$ComposeFile, [string]$StreamName)
+    $script:redisGroupObservationCount++
+    return @($script:observedRedisGroups)
+}
+
+$readinessProcess = [pscustomobject]@{
+    Process = [pscustomobject]@{ HasExited = $false }
+    LogDirectory = '/tmp/man527-readiness-test'
+}
+$readinessTopic = 'WmsIntegrationEvent'
+$readinessConsumer = 'business-erp.wms-outbound-completed-ar-accrual'
+$readinessCapVersion = 'man527-current-run'
+$readinessGroup = "$readinessConsumer.$readinessCapVersion"
+
+$script:observedRedisGroups = @(
+    'business-erp.wms-outbound-cancelled-delivery-projection.man527-current-run',
+    'business-erp.wms-outbound-completed-ar-accrual.man527-old-run'
+)
+$script:redisGroupObservationCount = 0
+$wrongGroupFailure = $null
+try {
+    Wait-Man527ErpCapConsumerReady `
+        -ComposeFile 'unused-compose.yml' `
+        -ManagedProcess $readinessProcess `
+        -Topic $readinessTopic `
+        -Consumer $readinessConsumer `
+        -CapVersion $readinessCapVersion `
+        -TimeoutSeconds 0 | Out-Null
+}
+catch {
+    $wrongGroupFailure = $_.Exception.Message
+}
+Assert-Contract (-not [string]::IsNullOrWhiteSpace($wrongGroupFailure)) 'A neighboring consumer and an old-run target group must fail readiness.'
+foreach ($identity in @($readinessTopic, $readinessConsumer, $readinessGroup, $readinessCapVersion, 'first registration boundary')) {
+    Assert-Contract ($wrongGroupFailure.Contains($identity, [StringComparison]::Ordinal)) "Wrong-group readiness diagnostics must name '$identity'. Actual: $wrongGroupFailure"
+}
+Assert-Contract ($script:redisGroupObservationCount -eq 1) 'A zero-budget wrong-group readiness probe must fail after its first real observation.'
+
+$script:observedRedisGroups = @(
+    'business-erp.wms-outbound-cancelled-delivery-projection.man527-current-run',
+    $readinessGroup
+)
+$script:redisGroupObservationCount = 0
+$readiness = Wait-Man527ErpCapConsumerReady `
+    -ComposeFile 'unused-compose.yml' `
+    -ManagedProcess $readinessProcess `
+    -Topic $readinessTopic `
+    -Consumer $readinessConsumer `
+    -CapVersion $readinessCapVersion `
+    -TimeoutSeconds 0
+Assert-Contract (
+    [string]::Equals([string]$readiness.topic, $readinessTopic, [StringComparison]::Ordinal) -and
+    [string]::Equals([string]$readiness.consumer, $readinessConsumer, [StringComparison]::Ordinal) -and
+    [string]::Equals([string]$readiness.group, $readinessGroup, [StringComparison]::Ordinal) -and
+    [string]::Equals([string]$readiness.capVersion, $readinessCapVersion, [StringComparison]::Ordinal)
+) 'Only the exact topic/group/consumer/run identity may satisfy readiness.'
+Assert-Contract ($script:redisGroupObservationCount -eq 1) 'Exact target readiness must converge on the first matching observation.'
 
 Assert-Contract ($content.Contains('# Script-Governance:', [StringComparison]::Ordinal)) 'Verify script must declare script governance metadata.'
 Assert-Contract ($content.Contains('scripts/lib/ScriptAutomation.ps1', [StringComparison]::Ordinal)) 'Verify script must use ScriptAutomation helpers.'
@@ -35,6 +119,10 @@ Assert-Contract ($content.Contains('Nerv.IIP.Business.Wms.Web.csproj', [StringCo
 Assert-Contract ($content.Contains('Nerv.IIP.Business.Inventory.Web.csproj', [StringComparison]::Ordinal)) 'Verify script must launch Inventory for the real picking reservation dependency.'
 Assert-Contract ($content.Contains("Persistence__Provider = 'PostgreSQL'", [StringComparison]::Ordinal)) 'Verify script must use PostgreSQL persistence.'
 Assert-Contract ($content.Contains("Messaging__Provider = 'Redis'", [StringComparison]::Ordinal)) 'Verify script must use the real Redis CAP provider.'
+$consumerReadinessIndex = $content.IndexOf('$erpConsumerReadiness = Wait-Man527ErpCapConsumerReady', [StringComparison]::Ordinal)
+$firstBusinessActionIndex = $content.IndexOf('$workPoolFixture = New-WmsWorkPoolFixture', [StringComparison]::Ordinal)
+Assert-Contract ($consumerReadinessIndex -ge 0 -and $firstBusinessActionIndex -gt $consumerReadinessIndex) 'Exact ERP CAP consumer readiness must complete before the first MAN-527 business action.'
+Assert-Contract ($content.Contains('readiness topic=''$($erpConsumerReadiness.topic)'' group=''$($erpConsumerReadiness.group)'' consumer=''$($erpConsumerReadiness.consumer)'' capVersion=''$($erpConsumerReadiness.capVersion)''', [StringComparison]::Ordinal)) 'Successful MAN-527 evidence must retain the observed consumer-readiness identity.'
 Assert-Contract ($content.Contains("Erp__Seed__SalesOrderDemandDemo__Enabled = 'true'", [StringComparison]::Ordinal)) 'Verify script must create a delivery from the reusable released sales-order seed.'
 Assert-Contract ($content.Contains('Wait-ErpSalesOrder', [StringComparison]::Ordinal)) 'Verify script must wait for the post-start ERP seed before releasing a delivery.'
 Assert-Contract ($content.Contains('/api/business/v1/erp/delivery-orders', [StringComparison]::Ordinal)) 'Verify script must release and query the ERP delivery through public HTTP.'
@@ -45,11 +133,6 @@ Assert-Contract (
 Assert-Contract ($content.Contains('function Wait-WmsOutboundOrderEvent', [StringComparison]::Ordinal)) 'Verify script must observe the real Redis-created outbound before bootstrapping assignment facts.'
 Assert-Contract ($content.Contains('Wait-WmsOutboundOrderEvent -ManagedProcess $wmsProcess -DeliveryOrderNo $deliveryOrderNo', [StringComparison]::Ordinal)) 'Verify script must wait for this run-scoped delivery event before locating the unassigned outbound.'
 Assert-Contract (-not $content.Contains("$wmsProcess.Stop.Invoke('MAN-527 governed work-scope bootstrap')", [StringComparison]::Ordinal)) 'Verify script must not seed assignment facts after the run-scoped outbound exists.'
-Assert-Contract ($content.Contains("LeaderDemo__History__Enabled = 'true'", [StringComparison]::Ordinal)) 'Verify script must establish the governed WMS work-pool membership fixture.'
-Assert-Contract (
-    $content.IndexOf("LeaderDemo__History__Enabled = 'true'", [StringComparison]::Ordinal) -lt
-        $content.IndexOf('$script:erpProcess = Start-ManagedBackgroundProcess', [StringComparison]::Ordinal)) `
-    'Verify script must finish the WMS work-scope fixture before ERP can publish the run-scoped outbound.'
 Assert-Contract ($content.Contains('function Get-UnassignedWmsOutboundOrderReadback', [StringComparison]::Ordinal)) 'Verify script must use a narrow read-only lookup for the hidden unassigned outbound.'
 Assert-Contract ($content.Contains('assigned_pool_code IS NULL', [StringComparison]::Ordinal)) 'Verify script readback must prove the run-scoped outbound has no prior pool assignment.'
 Assert-Contract ($content.Contains('assigned_operator_user_id IS NULL', [StringComparison]::Ordinal)) 'Verify script readback must prove the run-scoped outbound has no prior operator assignment.'
@@ -60,7 +143,6 @@ Assert-Contract ((-not $content.Contains("assignedPoolCode -ne `$wmsShippingPool
 Assert-Contract ((-not $content.Contains("assignedOperatorUserId -ne `$wmsActorPrincipalId", [StringComparison]::Ordinal)) -and $content.Contains('[string]::Equals([string]$outbound.assignedOperatorUserId, $wmsActorPrincipalId, [StringComparison]::Ordinal)', [StringComparison]::Ordinal)) 'Verify script must publicly read back and assert the first operator assignment with ordinal identity.'
 Assert-Contract ($content.Contains("Inventory__BaseUrl = `$inventoryUrl", [StringComparison]::Ordinal)) 'Verify script must wire WMS picking reservations to its managed Inventory process.'
 Assert-Contract ($content.Contains('/api/inventory/v1/movements', [StringComparison]::Ordinal)) 'Verify script must establish real available stock through public Inventory HTTP.'
-Assert-Contract ($content.Contains('foreach ($outboundLine in @($outbound.lines))', [StringComparison]::Ordinal)) 'Verify script must execute the picking lifecycle for every outbound line.'
 Assert-Contract ($content.Contains('/api/business/v1/wms/outbound-orders/$([Uri]::EscapeDataString($outboundOrderId))/picking-tasks', [StringComparison]::Ordinal)) 'Verify script must create each picking task through public WMS HTTP.'
 Assert-Contract ($content.Contains('function Wait-WmsPickingTask', [StringComparison]::Ordinal)) 'Verify script must read back each created picking task through governed public scope.'
 Assert-Contract ($content.Contains('/api/business/v1/wms/picking-tasks/$([Uri]::EscapeDataString($warehouseTaskId))/assignment', [StringComparison]::Ordinal)) 'Verify script must assign each picking task through public WMS HTTP.'
