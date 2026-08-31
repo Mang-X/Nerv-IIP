@@ -225,6 +225,11 @@ public interface IBusinessMesClient
         BusinessConsoleMesListWithoutStatusRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleMesProductionStatisticsResponse> QueryProductionStatisticsAsync(
+        string internalBearerToken,
+        BusinessConsoleMesProductionStatisticsRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleMesProductionReportDetailResponse> GetProductionReportAsync(
         string internalBearerToken,
         string reportNo,
@@ -850,6 +855,37 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             null,
             cancellationToken);
 
+    public async Task<BusinessConsoleMesProductionStatisticsResponse> QueryProductionStatisticsAsync(
+        string internalBearerToken,
+        BusinessConsoleMesProductionStatisticsRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<BusinessConsoleMesProductionStatisticsResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/mes/production-statistics?" + ProductionStatisticsQuery(request),
+            null,
+            cancellationToken);
+
+        if (!string.Equals(response.OrganizationId, request.OrganizationId, StringComparison.Ordinal) ||
+            !string.Equals(response.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal) ||
+            response.Dimension != request.Dimension ||
+            response.WindowStartUtc != request.WindowStartUtc ||
+            response.WindowEndUtc != request.WindowEndUtc ||
+            response.Skip != request.Skip ||
+            response.Take != request.Take ||
+            response.Items is null ||
+            response.Items.Any(item =>
+                item.Dimension != request.Dimension || item.DegradedReasons is null))
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
+
+        return response;
+    }
+
     public Task<BusinessConsoleMesProductionReportDetailResponse> GetProductionReportAsync(
         string internalBearerToken,
         string reportNo,
@@ -1352,6 +1388,20 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             ("workCenterId", request.WorkCenterId),
             ("shiftId", request.ShiftId),
             ("deviceAssetId", request.DeviceAssetId),
+            ("skip", request.Skip),
+            ("take", request.Take));
+
+    private static string ProductionStatisticsQuery(BusinessConsoleMesProductionStatisticsRequest request) =>
+        Query(
+            ("organizationId", request.OrganizationId),
+            ("environmentId", request.EnvironmentId),
+            ("dimension", JsonNamingPolicy.CamelCase.ConvertName(request.Dimension.ToString())),
+            ("windowStartUtc", request.WindowStartUtc),
+            ("windowEndUtc", request.WindowEndUtc),
+            ("businessDate", request.BusinessDate),
+            ("shiftCode", request.ShiftCode),
+            ("workCenterId", request.WorkCenterId),
+            ("skuId", request.SkuId),
             ("skip", request.Skip),
             ("take", request.Take));
 
