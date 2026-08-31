@@ -68,7 +68,7 @@ public sealed class AssetUnavailableIntegrationEventConverter
             workOrder.EnvironmentId,
             workOrder.OpenedBy,
             $"asset-unavailable:{workOrder.Id}:{domainEvent.FromUtc:O}",
-            new AssetUnavailablePayload(workOrder.DeviceAssetId, domainEvent.Reason, domainEvent.FromUtc));
+            new AssetUnavailablePayload(workOrder.DeviceAssetId, domainEvent.ReasonCode, domainEvent.FromUtc));
     }
 }
 

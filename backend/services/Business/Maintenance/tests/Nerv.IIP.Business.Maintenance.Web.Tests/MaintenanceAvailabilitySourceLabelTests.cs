@@ -41,7 +41,7 @@ public sealed class MaintenanceAvailabilitySourceLabelTests
             sourceAlarmId: "WH-DEV-CNC-01-spindle-temperature:0001",
             priority: "high",
             sourceReferenceId: "MWO-2026-0042");
-        workOrder.MarkAssetUnavailable(queryStart.AddHours(-1), "alarm downtime");
+        workOrder.MarkAssetUnavailable(queryStart.AddHours(-1), "DT-ALARM");
 
         // 保养计划窗口：SourceReferenceId 本就是计划编码。
         var windowPlan = MaintenancePlan.Create(
@@ -114,7 +114,7 @@ public sealed class MaintenanceAvailabilitySourceLabelTests
             "DEV-CNC-01",
             planCode: "PM-INSP-WEEKLY-02",
             openedBy: "maintenance");
-        workOrder.MarkAssetUnavailable(queryStart.AddHours(-1), "planned downtime");
+        workOrder.MarkAssetUnavailable(queryStart.AddHours(-1), "DT-PM");
 
         dbContext.MaintenanceWorkOrders.Add(workOrder);
         await dbContext.SaveChangesAsync();

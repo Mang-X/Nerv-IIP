@@ -50,7 +50,7 @@ Maintenance 还暴露设备可靠性 P0 查询，用带 `SourceAlarmId` 的维�
 
 当维修处置、故障确认、保养窗口或人工停机判断影响生产能力时，Maintenance 发布：
 
-1. `maintenance.AssetUnavailable`：资产在某个组织/环境和设备资产维度进入不可用状态；当前契约携带 `DeviceAssetId`、原因和开始时间。
+1. `maintenance.AssetUnavailable`：资产在某个组织/环境和设备资产维度进入不可用状态；当前契约携带 `DeviceAssetId`、该组织/环境下 Maintenance `downtime-reason` 目录原因码和开始时间。
 2. `maintenance.AssetRestored`：同一资产或资源约束恢复可用。
 
 这些事件表达维护域对资产可用性的判定，不等同于原始报警。一个报警可能不导致不可用；多个报警、点检结果或保养计划可能合并成一个不可用窗口；一个维修工单也可能经历多次不可用/恢复边界。

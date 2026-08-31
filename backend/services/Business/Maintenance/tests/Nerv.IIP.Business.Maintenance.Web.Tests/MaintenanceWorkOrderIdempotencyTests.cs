@@ -409,7 +409,7 @@ public sealed class MaintenanceWorkOrderIdempotencyTests
             "high",
             null,
             "emp010",
-            "主轴异响",
+            null,
             AssignedTechnicianUserId: "emp042",
             EstimatedLaborMinutes: 45,
             IdempotencyKey: idempotencyKey);

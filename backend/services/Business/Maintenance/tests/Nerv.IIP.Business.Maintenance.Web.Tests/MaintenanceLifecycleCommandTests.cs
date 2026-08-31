@@ -123,7 +123,7 @@ public sealed class MaintenanceLifecycleCommandTests
         await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
         var workOrder = MaintenanceWorkOrder.OpenFromAlarm(
             "org-001", "env-dev", "DEV-001", "alarm-001", "critical", assignedTechnicianUserId: "tech-001");
-        workOrder.MarkAssetUnavailable(DateTimeOffset.UtcNow, "alarm-raised");
+        workOrder.MarkAssetUnavailable(DateTimeOffset.UtcNow, "DT-ALARM");
         db.MaintenanceWorkOrders.Add(workOrder);
         db.DowntimeReasons.Add(DowntimeReason.Create("org-001", "env-dev", "failure", "Failure", "breakdown", "equipment"));
         await db.SaveChangesAsync();

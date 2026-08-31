@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Maintenance.Domain;
+using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.DowntimeReasonAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggregate;
 using Nerv.IIP.Business.Maintenance.Infrastructure;
@@ -212,6 +213,7 @@ public sealed class MaintenanceIntegrationEventHandlerTests
     public async Task Alarm_consumer_creates_one_work_order_per_source_alarm_id()
     {
         await using var dbContext = CreateDbContext();
+        await SeedAlarmReasonAsync(dbContext);
         var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
         var sender = new CommandOnlySender(dbContext);
         var handler = new OpenWorkOrderWhenAlarmRaisedHandler(sender, dbContext, deadLetterStore);
@@ -237,6 +239,7 @@ public sealed class MaintenanceIntegrationEventHandlerTests
     public async Task Alarm_consumer_skips_released_event_with_same_idempotency_key()
     {
         await using var dbContext = CreateDbContext();
+        await SeedAlarmReasonAsync(dbContext);
         var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
         var sender = new CommandOnlySender(dbContext);
         var handler = new OpenWorkOrderWhenAlarmRaisedHandler(sender, dbContext, deadLetterStore);
@@ -305,6 +308,7 @@ public sealed class MaintenanceIntegrationEventHandlerTests
     public async Task Alarm_cleared_consumer_marks_matching_open_work_order_without_completing_it()
     {
         await using var dbContext = CreateDbContext();
+        await SeedAlarmReasonAsync(dbContext);
         var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
         var sender = new CommandOnlySender(dbContext);
         var raisedHandler = new OpenWorkOrderWhenAlarmRaisedHandler(sender, dbContext, deadLetterStore);
@@ -327,6 +331,7 @@ public sealed class MaintenanceIntegrationEventHandlerTests
     public async Task Stable_rule_alarm_events_open_one_work_order_and_clear_runtime_window()
     {
         await using var dbContext = CreateDbContext();
+        await SeedAlarmReasonAsync(dbContext);
         var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
         var sender = new CommandOnlySender(dbContext);
         var raisedHandler = new OpenWorkOrderWhenAlarmRaisedHandler(sender, dbContext, deadLetterStore);
@@ -472,6 +477,16 @@ public sealed class MaintenanceIntegrationEventHandlerTests
     {
         var raisedAtUtc = clearedAtUtc.AddHours(-1);
         return CreateAlarmClearedEvent("evt-alarm-clear-001", "alarm-001", raisedAtUtc, clearedAtUtc, eventVersion);
+    }
+
+    private static async Task SeedAlarmReasonAsync(ApplicationDbContext dbContext)
+    {
+        dbContext.DowntimeReasons.Add(DowntimeReason.Create(
+            "org-001",
+            "env-dev",
+            "OVER_TEMP",
+            "Over temperature"));
+        await dbContext.SaveChangesAsync();
     }
 
     private static AlarmClearedIntegrationEvent CreateAlarmClearedEvent(

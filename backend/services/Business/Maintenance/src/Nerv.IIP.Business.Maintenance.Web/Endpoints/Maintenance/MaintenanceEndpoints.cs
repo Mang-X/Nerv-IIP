@@ -61,6 +61,10 @@ public abstract class MaintenanceEndpoint<TRequest, TResponse> : Endpoint<TReque
     }
 }
 
+/// <summary>
+/// 创建维护工单；AssetUnavailableReason 是当前 organization/environment 的 downtime-reason 目录原因码，
+/// 为 null 时不标记设备不可用。
+/// </summary>
 public sealed record CreateMaintenanceWorkOrderRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -95,8 +99,11 @@ public sealed record CompleteMaintenanceWorkOrderRequest(
 
 public sealed class CreateMaintenanceWorkOrderRequestValidator : Validator<CreateMaintenanceWorkOrderRequest>
 {
-    public CreateMaintenanceWorkOrderRequestValidator() =>
+    public CreateMaintenanceWorkOrderRequestValidator()
+    {
+        RuleFor(x => x.AssetUnavailableReason).MaximumLength(100);
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+    }
 }
 
 public sealed class CompleteMaintenanceWorkOrderRequestValidator : Validator<CompleteMaintenanceWorkOrderRequest>

@@ -12,7 +12,7 @@ public sealed class MaintenanceAggregateTests
     public void Work_order_from_alarm_can_mark_asset_unavailable_and_complete_with_downtime_attribution()
     {
         var workOrder = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", "DEV-CNC-01", "alarm-001", "critical");
-        workOrder.MarkAssetUnavailable(DateTimeOffset.UtcNow, "over temperature");
+        workOrder.MarkAssetUnavailable(DateTimeOffset.UtcNow, "DT-OVER-TEMP");
 
         workOrder.Complete("replaced sensor", "equipment-failure", 45, [new SparePartLineDraft("SKU-SP-001", 1m, "pcs")]);
 
@@ -90,7 +90,7 @@ public sealed class MaintenanceAggregateTests
         workOrder.Verify();
         workOrder.Close();
 
-        Assert.Throws<InvalidOperationException>(() => workOrder.MarkAssetUnavailable(DateTimeOffset.UtcNow, "again"));
+        Assert.Throws<InvalidOperationException>(() => workOrder.MarkAssetUnavailable(DateTimeOffset.UtcNow, "DT-AGAIN"));
     }
 
     [Fact]

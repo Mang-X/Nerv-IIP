@@ -35,6 +35,10 @@ public sealed record AssetUnavailableIntegrationEvent(
     object? IIntegrationEventEnvelope.PayloadObject => Payload;
 }
 
+/// <summary>
+/// 设备不可用载荷；Reason 是 Maintenance downtime-reason 目录原因码，作用域由事件 envelope 的
+/// OrganizationId/EnvironmentId 标识。
+/// </summary>
 public sealed record AssetUnavailablePayload(
     string DeviceAssetId,
     string Reason,

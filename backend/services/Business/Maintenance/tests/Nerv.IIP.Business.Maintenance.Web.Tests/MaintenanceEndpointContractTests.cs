@@ -952,7 +952,7 @@ public sealed class MaintenanceEndpointContractTests
         var queryStart = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
         var queryEnd = queryStart.AddHours(4);
         var workOrder = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", "DEV-CNC-01", "alarm-001", "critical");
-        workOrder.MarkAssetUnavailable(queryStart.AddMinutes(15), "spindle alarm");
+        workOrder.MarkAssetUnavailable(queryStart.AddMinutes(15), "DT-SPINDLE-ALARM");
         var plan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "PM-001", "P7D", DateOnly.FromDateTime(queryStart.UtcDateTime), "maintenance", queryStart.AddHours(1), queryStart.AddHours(2));
         dbContext.MaintenanceWorkOrders.Add(workOrder);
         dbContext.MaintenancePlans.Add(plan);
@@ -987,7 +987,7 @@ public sealed class MaintenanceEndpointContractTests
         var queryStart = DateTimeOffset.UtcNow.AddMinutes(-30);
         var queryEnd = DateTimeOffset.UtcNow.AddMinutes(30);
         var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001");
-        workOrder.MarkAssetUnavailable(queryStart.AddHours(-1), "manual downtime");
+        workOrder.MarkAssetUnavailable(queryStart.AddHours(-1), "DT-MANUAL");
         workOrder.Complete("restored", "mechanical", 45, []);
         var plan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "PM-INSPECT", "P7D", DateOnly.FromDateTime(queryStart.UtcDateTime), "maintenance");
         var failPlan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "PM-INSPECT-FAIL", "P7D", DateOnly.FromDateTime(queryStart.UtcDateTime), "maintenance");

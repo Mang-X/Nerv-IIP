@@ -116,6 +116,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
     public bool AlarmCleared { get; private set; }
     public DateTimeOffset? AlarmClearedAtUtc { get; private set; }
     public bool AssetUnavailable { get; private set; }
+    /// <summary>当前 organization/environment 的 Maintenance downtime-reason 目录原因码。</summary>
     public string? AssetUnavailableReason { get; private set; }
     public DateTimeOffset? AssetUnavailableFromUtc { get; private set; }
     public string? CompletionResult { get; private set; }
@@ -373,19 +374,19 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         this.AddDomainEvent(new MaintenanceWorkOrderAlarmClearedDomainEvent(this, AlarmClearedAtUtc.Value));
     }
 
-    public void MarkAssetUnavailable(DateTimeOffset fromUtc, string reason)
+    public void MarkAssetUnavailable(DateTimeOffset fromUtc, string reasonCode)
     {
         EnsureOpen();
-        var normalizedReason = MaintenanceText.Required(reason, nameof(reason));
+        var normalizedReasonCode = MaintenanceText.Required(reasonCode, nameof(reasonCode));
         if (AssetUnavailable)
         {
             return;
         }
 
         AssetUnavailable = true;
-        AssetUnavailableReason = normalizedReason;
+        AssetUnavailableReason = normalizedReasonCode;
         AssetUnavailableFromUtc = fromUtc;
-        this.AddDomainEvent(new AssetUnavailableDomainEvent(this, normalizedReason, fromUtc));
+        this.AddDomainEvent(new AssetUnavailableDomainEvent(this, normalizedReasonCode, fromUtc));
     }
 
     public void Complete(

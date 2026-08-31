@@ -72,7 +72,7 @@ public sealed class CreateMaintenanceWorkOrderCommandValidator : AbstractValidat
         RuleFor(x => x.Priority).NotEmpty().MaximumLength(50);
         RuleFor(x => x.SourceAlarmId).MaximumLength(150);
         RuleFor(x => x.OpenedBy).NotEmpty().MaximumLength(150);
-        RuleFor(x => x.AssetUnavailableReason).MaximumLength(500);
+        RuleFor(x => x.AssetUnavailableReason).MaximumLength(100);
         RuleFor(x => x.DiagnosticDescription).MaximumLength(1000);
         RuleFor(x => x.FailureModeCode).MaximumLength(100);
         RuleFor(x => x.FailureCauseCode).MaximumLength(100);
@@ -135,6 +135,20 @@ public sealed class CreateMaintenanceWorkOrderCommandHandler(ApplicationDbContex
             }
         }
 
+        var assetUnavailableReasonCode = MaintenanceText.Optional(request.AssetUnavailableReason);
+        if (assetUnavailableReasonCode is not null)
+        {
+            var downtimeReasonExists = await dbContext.DowntimeReasons.AnyAsync(
+                x => x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId
+                    && x.ReasonCode == assetUnavailableReasonCode,
+                cancellationToken);
+            if (!downtimeReasonExists)
+            {
+                throw new KnownException($"Downtime reason was not found: {assetUnavailableReasonCode}");
+            }
+        }
+
         var workOrder = string.IsNullOrWhiteSpace(request.SourceAlarmId)
             ? MaintenanceWorkOrder.OpenManual(
                 request.OrganizationId,
@@ -157,9 +171,9 @@ public sealed class CreateMaintenanceWorkOrderCommandHandler(ApplicationDbContex
                 request.AssignedTechnicianUserId,
                 request.EstimatedLaborMinutes);
 
-        if (!string.IsNullOrWhiteSpace(request.AssetUnavailableReason))
+        if (assetUnavailableReasonCode is not null)
         {
-            workOrder.MarkAssetUnavailable(DateTimeOffset.UtcNow, request.AssetUnavailableReason);
+            workOrder.MarkAssetUnavailable(DateTimeOffset.UtcNow, assetUnavailableReasonCode);
         }
 
         dbContext.MaintenanceWorkOrders.Add(workOrder);

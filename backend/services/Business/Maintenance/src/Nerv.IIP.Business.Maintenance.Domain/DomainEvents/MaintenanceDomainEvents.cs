@@ -6,7 +6,7 @@ namespace Nerv.IIP.Business.Maintenance.Domain.DomainEvents;
 
 public sealed record MaintenanceWorkOrderOpenedDomainEvent(MaintenanceWorkOrder WorkOrder) : IDomainEvent;
 
-public sealed record AssetUnavailableDomainEvent(MaintenanceWorkOrder WorkOrder, string Reason, DateTimeOffset FromUtc) : IDomainEvent;
+public sealed record AssetUnavailableDomainEvent(MaintenanceWorkOrder WorkOrder, string ReasonCode, DateTimeOffset FromUtc) : IDomainEvent;
 
 public sealed record MaintenanceWorkOrderCompletedDomainEvent(MaintenanceWorkOrder WorkOrder) : IDomainEvent;
 
