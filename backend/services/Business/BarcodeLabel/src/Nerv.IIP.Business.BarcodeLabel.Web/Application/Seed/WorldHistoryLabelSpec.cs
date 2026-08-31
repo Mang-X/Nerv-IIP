@@ -49,6 +49,10 @@ namespace Nerv.IIP.Business.BarcodeLabel.Web.Application.Seed;
 /// </summary>
 public static class WorldHistoryLabelSpec
 {
+    /// <summary>
+    /// 仅用于 Development world-history seed 的内置资产。该确定性资产不代表 FileStorage
+    /// metadata/download 验证，运行时打印批次创建链不得使用。
+    /// </summary>
     public const string TemplateAssetJson =
         """{"format":"nerv-iip.label-template","version":1,"media":{"dpi":203,"widthDots":812,"heightDots":406},"fields":[{"kind":"barcode","x":40,"y":90,"moduleWidth":2,"height":100,"variable":"label.value"}]}""";
 

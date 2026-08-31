@@ -3,6 +3,8 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.BarcodeLabel.Domain.Printing;
 using Nerv.IIP.Business.BarcodeLabel.Infrastructure;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Seed;
+using System.Security.Cryptography;
+using System.Text;
 using Xunit.Abstractions;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Web.Tests;
@@ -18,6 +20,17 @@ public sealed class WorldHistoryLabelSeedServiceTests(ITestOutputHelper output)
 
     /// <summary>库写入类用例的规模：足够跑出四族打印批次与五族扫码，又不让 InMemory provider 变慢。</summary>
     private const double SmallScale = 0.05d;
+
+    [Fact]
+    public void Packaged_development_seed_asset_is_parseable_and_its_digest_matches_the_exact_bytes()
+    {
+        _ = LabelTemplateDocument.Parse(WorldHistoryLabelSpec.TemplateAssetJson);
+
+        var bytes = Encoding.UTF8.GetBytes(WorldHistoryLabelSpec.TemplateAssetJson);
+        var expectedDigest = $"sha256:{Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant()}";
+
+        Assert.Equal(expectedDigest, WorldHistoryLabelSpec.TemplateAssetSha256);
+    }
 
     [Fact]
     public void Full_scale_print_batches_match_the_world_bible_target()
