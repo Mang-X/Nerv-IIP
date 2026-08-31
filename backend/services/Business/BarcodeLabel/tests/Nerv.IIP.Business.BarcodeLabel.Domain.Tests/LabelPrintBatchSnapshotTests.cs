@@ -16,10 +16,6 @@ public sealed class LabelPrintBatchSnapshotTests
 
         var batch = NewBatch(rule, templateId, snapshot);
         var same = NewBatch(rule, templateId, snapshot);
-        var changedAsset = NewBatch(
-            rule,
-            templateId,
-            snapshot with { TemplateAssetSha256 = $"sha256:{new string('b', 64)}" });
 
         Assert.Equal(snapshot.TemplateFileId, batch.TemplateFileIdSnapshot);
         Assert.Equal(snapshot.TemplateAssetSha256, batch.TemplateAssetSha256);
@@ -27,7 +23,38 @@ public sealed class LabelPrintBatchSnapshotTests
         Assert.Equal(snapshot.BarcodeType, batch.BarcodeTypeSnapshot);
         Assert.Equal(snapshot.RendererContractVersion, batch.RendererContractVersion);
         Assert.True(batch.HasSameIdempotencyPayload(same));
-        Assert.False(batch.HasSameIdempotencyPayload(changedAsset));
+    }
+
+    [Theory]
+    [InlineData("template-file-id")]
+    [InlineData("template-asset-sha256")]
+    [InlineData("variable-schema-json")]
+    [InlineData("barcode-type")]
+    [InlineData("renderer-contract-version")]
+    public void Idempotency_compares_each_replay_snapshot_fact(string changedFact)
+    {
+        var rule = ActiveRule();
+        var templateId = new LabelTemplateId(Guid.CreateVersion7());
+        var snapshot = ReplaySnapshot();
+        var changedSnapshot = changedFact switch
+        {
+            "template-file-id" => snapshot with { TemplateFileId = "file-template-002" },
+            "template-asset-sha256" => snapshot with { TemplateAssetSha256 = $"sha256:{new string('b', 64)}" },
+            "variable-schema-json" => snapshot with { VariableSchemaJson = """{"version":1,"variables":[{"name":"skuCode"}]}""" },
+            "barcode-type" => snapshot with { BarcodeType = "qr" },
+            "renderer-contract-version" => snapshot with { RendererContractVersion = "zpl-v2" },
+            _ => throw new ArgumentOutOfRangeException(nameof(changedFact), changedFact, null),
+        };
+
+        var batch = NewBatch(rule, templateId, snapshot);
+        if (changedFact == "barcode-type")
+        {
+            rule.Update("qr", "FG", 40, "none", ["wms.inbound"], "active");
+        }
+
+        var changed = NewBatch(rule, templateId, changedSnapshot);
+
+        Assert.False(batch.HasSameIdempotencyPayload(changed));
     }
 
     [Fact]

@@ -3,6 +3,7 @@ using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.ScanRecordAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Domain.Printing;
 using Nerv.IIP.Business.BarcodeLabel.Infrastructure;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Web.Application.Seed;
@@ -47,7 +48,7 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
 
         var templatesWritten = await SeedTemplatesAsync(organizationId, environmentId, cancellationToken);
         var rulesWritten = await SeedBarcodeRulesAsync(organizationId, environmentId, cancellationToken);
-        var templates = await LoadTemplateIdsAsync(organizationId, environmentId, cancellationToken);
+        var templates = await LoadTemplatesAsync(organizationId, environmentId, cancellationToken);
         var rules = await LoadRulesAsync(organizationId, environmentId, cancellationToken);
 
         var counters = new SeedCounters();
@@ -157,7 +158,7 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
         return written;
     }
 
-    private async Task<Dictionary<string, LabelTemplateId>> LoadTemplateIdsAsync(
+    private async Task<Dictionary<string, LabelTemplate>> LoadTemplatesAsync(
         string organizationId,
         string environmentId,
         CancellationToken cancellationToken)
@@ -167,7 +168,6 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
             .AsNoTracking()
             .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
                 codes.Contains(x.TemplateCode))
-            .Select(x => new { x.TemplateCode, x.Id })
             .ToArrayAsync(cancellationToken);
 
         var missing = codes.Except(templates.Select(x => x.TemplateCode), StringComparer.Ordinal).ToArray();
@@ -177,7 +177,7 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
                 $"世界观标签模板缺失：{string.Join(", ", missing)}——历史打印批次无处可挂。");
         }
 
-        return templates.ToDictionary(x => x.TemplateCode, x => x.Id, StringComparer.Ordinal);
+        return templates.ToDictionary(x => x.TemplateCode, StringComparer.Ordinal);
     }
 
     /// <summary>
@@ -215,7 +215,7 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
         string environmentId,
         DateOnly asOfDate,
         double scale,
-        Dictionary<string, LabelTemplateId> templates,
+        Dictionary<string, LabelTemplate> templates,
         Dictionary<string, BarcodeRule> rules,
         SeedCounters counters,
         CancellationToken cancellationToken)
@@ -253,15 +253,21 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
         string organizationId,
         string environmentId,
         WorldHistoryPrintBatchFact fact,
-        LabelTemplateId templateId,
+        LabelTemplate template,
         BarcodeRule rule,
         SeedCounters counters)
     {
-        var batch = LabelPrintBatch.CreateLegacyWithoutReplaySnapshot(
+        var batch = LabelPrintBatch.Create(
             organizationId,
             environmentId,
             rule,
-            templateId,
+            template.Id,
+            new LabelPrintBatchSnapshot(
+                template.TemplateFileId,
+                WorldHistoryLabelSpec.TemplateAssetSha256,
+                template.VariableSchemaJson,
+                rule.BarcodeType,
+                ZplV1LabelCompiler.ContractVersion),
             fact.SourceDocumentType,
             fact.SourceDocumentId,
             fact.IdempotencyKey,

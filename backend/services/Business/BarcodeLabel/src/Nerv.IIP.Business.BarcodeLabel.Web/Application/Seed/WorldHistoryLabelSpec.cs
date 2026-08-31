@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Nerv.IIP.Contracts.Inventory;
 
@@ -47,6 +49,12 @@ namespace Nerv.IIP.Business.BarcodeLabel.Web.Application.Seed;
 /// </summary>
 public static class WorldHistoryLabelSpec
 {
+    public const string TemplateAssetJson =
+        """{"format":"nerv-iip.label-template","version":1,"media":{"dpi":203,"widthDots":812,"heightDots":406},"fields":[{"kind":"barcode","x":40,"y":90,"moduleWidth":2,"height":100,"variable":"label.value"}]}""";
+
+    public static readonly string TemplateAssetSha256 =
+        $"sha256:{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(TemplateAssetJson))).ToLowerInvariant()}";
+
     #region 目标口径（设定集 §7）
 
     /// <summary>设定集 §7「打印批次约 900」。</summary>

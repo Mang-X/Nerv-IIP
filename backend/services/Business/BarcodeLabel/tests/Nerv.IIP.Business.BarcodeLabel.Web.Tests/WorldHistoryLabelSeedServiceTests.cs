@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.BarcodeLabel.Domain.Printing;
 using Nerv.IIP.Business.BarcodeLabel.Infrastructure;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Seed;
 using Xunit.Abstractions;
@@ -222,6 +223,20 @@ public sealed class WorldHistoryLabelSeedServiceTests(ITestOutputHelper output)
         Assert.Equal(scanFacts.Count, await db.ScanRecords.CountAsync());
         Assert.Equal(4, await db.LabelTemplates.CountAsync());
         Assert.Equal(4, await db.BarcodeRules.CountAsync());
+
+        var templates = await db.LabelTemplates.ToDictionaryAsync(template => template.Id);
+        var rules = await db.BarcodeRules.ToDictionaryAsync(rule => rule.Id);
+        var batches = await db.LabelPrintBatches.ToArrayAsync();
+        Assert.All(batches, batch =>
+        {
+            var template = templates[batch.LabelTemplateId];
+            var rule = rules[batch.BarcodeRuleId];
+            Assert.Equal(template.TemplateFileId, batch.TemplateFileIdSnapshot);
+            Assert.Equal(WorldHistoryLabelSpec.TemplateAssetSha256, batch.TemplateAssetSha256);
+            Assert.Equal(template.VariableSchemaJson, batch.VariableSchemaJsonSnapshot);
+            Assert.Equal(rule.BarcodeType, batch.BarcodeTypeSnapshot);
+            Assert.Equal(ZplV1LabelCompiler.ContractVersion, batch.RendererContractVersion);
+        });
     }
 
     [Fact]

@@ -124,7 +124,7 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
         return new LabelPrintBatch(organizationId, environmentId, rule, labelTemplateId, snapshot, sourceDocumentType, sourceDocumentId, idempotencyKey, labelValuesJson, requestedQuantity);
     }
 
-    public static LabelPrintBatch CreateLegacyWithoutReplaySnapshot(
+    internal static LabelPrintBatch CreateLegacyWithoutReplaySnapshot(
         string organizationId,
         string environmentId,
         BarcodeRule rule,
