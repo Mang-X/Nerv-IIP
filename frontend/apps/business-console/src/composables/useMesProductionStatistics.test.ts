@@ -142,6 +142,22 @@ describe('MES production statistics composable', () => {
     expect(report.state.value).toBe('error')
   })
 
+  it('surfaces a business failure envelope as the shared report error', () => {
+    state.data = {
+      success: false,
+      message: 'upstream implementation detail',
+    }
+
+    const report = useMesProductionStatistics({
+      windowStartUtc: '2026-08-01T00:00:00.000Z',
+      windowEndUtc: '2026-08-08T00:00:00.000Z',
+    })
+
+    expect(report.items.value).toEqual([])
+    expect(report.error.value).toEqual(new Error('生产统计读取失败，请稍后重试。'))
+    expect(report.state.value).toBe('error')
+  })
+
   it('reads every server page for export without silently returning a partial file', async () => {
     state.implementation = async ({ query }) => {
       const skip = Number(query.skip)
