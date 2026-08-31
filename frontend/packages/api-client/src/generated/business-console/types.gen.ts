@@ -21834,7 +21834,7 @@ export type ReprintBusinessConsoleBarcodeLabelData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReprintBarcodeLabelBody;
     path: {
         printBatchId: string;
-        sequenceNo: string;
+        sequenceNo: number;
     };
     query: {
         organizationId: string;
@@ -21856,6 +21856,7 @@ export type ReprintBusinessConsoleBarcodeLabelErrors = {
      * Forbidden
      */
     403: unknown;
+    502: NetCorePalExtensionsDtoResponseData;
 };
 
 export type ReprintBusinessConsoleBarcodeLabelError = ReprintBusinessConsoleBarcodeLabelErrors[keyof ReprintBusinessConsoleBarcodeLabelErrors];
@@ -21873,7 +21874,7 @@ export type VoidBusinessConsoleBarcodeLabelData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleVoidBarcodeLabelBody;
     path: {
         printBatchId: string;
-        sequenceNo: string;
+        sequenceNo: number;
     };
     query: {
         organizationId: string;

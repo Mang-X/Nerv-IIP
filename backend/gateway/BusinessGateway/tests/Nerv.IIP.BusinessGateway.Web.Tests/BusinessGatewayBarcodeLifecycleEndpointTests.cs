@@ -163,6 +163,29 @@ public sealed class BusinessGatewayBarcodeLifecycleEndpointTests
         Assert.Equal(0, barcode.LifecycleCallCount);
     }
 
+    [Theory]
+    [InlineData("reprint")]
+    [InlineData("void")]
+    public async Task Label_item_route_rejects_non_integer_sequence_before_authorization_or_downstream(string operation)
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var barcode = new RecordingBarcodeLabelClient();
+        await using var lease = Lease(auth, barcode);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        object requestBody = operation == "reprint"
+            ? new { printBatchId = "batch-001", sequenceNo = 7, printerId = "printer-01" }
+            : new { printBatchId = "batch-001", sequenceNo = 7, reason = "damaged" };
+        var response = await client.PostAsJsonAsync(
+            $"/api/business-console/v1/barcode/print-batches/batch-001/items/not-an-integer/{operation}?organizationId=org-001&environmentId=env-dev",
+            requestBody);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, auth.CallCount);
+        Assert.Equal(0, barcode.LifecycleCallCount);
+    }
+
     [Fact]
     public async Task Reprint_does_not_expose_sensitive_downstream_exception_text()
     {

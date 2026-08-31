@@ -186,7 +186,7 @@ public sealed class DispatchBusinessConsoleBarcodePrintBatchEndpoint(
 
     protected override string ResourceType(BusinessConsoleDispatchBarcodePrintBatchRequest request) => "barcode-print-batch";
 
-    protected override string? ResourceId(BusinessConsoleDispatchBarcodePrintBatchRequest request) => Route<string>("printBatchId");
+    protected override string? ResourceId(BusinessConsoleDispatchBarcodePrintBatchRequest request) => request.PrintBatchId;
 
     protected override Task<BusinessConsoleBarcodePrintLifecycleResponse> ForwardAsync(
         BusinessConsoleDispatchBarcodePrintBatchRequest request,
@@ -195,7 +195,7 @@ public sealed class DispatchBusinessConsoleBarcodePrintBatchEndpoint(
     {
         var downstreamRequest = request with
         {
-            Body = request.Body with { PrintBatchId = Route<string>("printBatchId")! },
+            Body = request.Body with { PrintBatchId = request.PrintBatchId },
         };
         return barcode.DispatchPrintBatchAsync(tokenProvider.BearerToken, downstreamRequest, cancellationToken);
     }
@@ -204,6 +204,7 @@ public sealed class DispatchBusinessConsoleBarcodePrintBatchEndpoint(
 [Tags("Business Console Barcode")]
 [HttpPost("/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/reprint")]
 [BusinessGatewayOperationId("reprintBusinessConsoleBarcodeLabel")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status502BadGateway)]
 public sealed class ReprintBusinessConsoleBarcodeLabelEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessBarcodeLabelClient barcode,
@@ -218,7 +219,7 @@ public sealed class ReprintBusinessConsoleBarcodeLabelEndpoint(
 
     protected override string ResourceType(BusinessConsoleReprintBarcodeLabelRequest request) => "barcode-print-batch";
 
-    protected override string? ResourceId(BusinessConsoleReprintBarcodeLabelRequest request) => Route<string>("printBatchId");
+    protected override string? ResourceId(BusinessConsoleReprintBarcodeLabelRequest request) => request.PrintBatchId;
 
     protected override Task<BusinessConsoleReprintBarcodeLabelResponse> ForwardAsync(
         BusinessConsoleReprintBarcodeLabelRequest request,
@@ -229,8 +230,8 @@ public sealed class ReprintBusinessConsoleBarcodeLabelEndpoint(
         {
             Body = request.Body with
             {
-                PrintBatchId = Route<string>("printBatchId")!,
-                SequenceNo = Route<int>("sequenceNo"),
+                PrintBatchId = request.PrintBatchId,
+                SequenceNo = request.SequenceNo,
             },
         };
         return barcode.ReprintLabelAsync(tokenProvider.BearerToken, downstreamRequest, cancellationToken);
@@ -254,7 +255,7 @@ public sealed class VoidBusinessConsoleBarcodeLabelEndpoint(
 
     protected override string ResourceType(BusinessConsoleVoidBarcodeLabelRequest request) => "barcode-print-batch";
 
-    protected override string? ResourceId(BusinessConsoleVoidBarcodeLabelRequest request) => Route<string>("printBatchId");
+    protected override string? ResourceId(BusinessConsoleVoidBarcodeLabelRequest request) => request.PrintBatchId;
 
     protected override Task<BusinessConsoleBarcodePrintLifecycleResponse> ForwardAsync(
         BusinessConsoleVoidBarcodeLabelRequest request,
@@ -265,8 +266,8 @@ public sealed class VoidBusinessConsoleBarcodeLabelEndpoint(
         {
             Body = request.Body with
             {
-                PrintBatchId = Route<string>("printBatchId")!,
-                SequenceNo = Route<int>("sequenceNo"),
+                PrintBatchId = request.PrintBatchId,
+                SequenceNo = request.SequenceNo,
             },
         };
         return barcode.VoidLabelAsync(tokenProvider.BearerToken, downstreamRequest, cancellationToken);
@@ -375,6 +376,7 @@ public sealed class BusinessConsoleDispatchBarcodePrintBatchRequestValidator : V
 {
     public BusinessConsoleDispatchBarcodePrintBatchRequestValidator()
     {
+        RuleFor(x => x.PrintBatchId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Body).NotNull();
@@ -386,6 +388,8 @@ public sealed class BusinessConsoleReprintBarcodeLabelRequestValidator : Validat
 {
     public BusinessConsoleReprintBarcodeLabelRequestValidator()
     {
+        RuleFor(x => x.PrintBatchId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.SequenceNo).GreaterThan(0);
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Body).NotNull();
@@ -397,6 +401,8 @@ public sealed class BusinessConsoleVoidBarcodeLabelRequestValidator : Validator<
 {
     public BusinessConsoleVoidBarcodeLabelRequestValidator()
     {
+        RuleFor(x => x.PrintBatchId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.SequenceNo).GreaterThan(0);
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Body).NotNull();

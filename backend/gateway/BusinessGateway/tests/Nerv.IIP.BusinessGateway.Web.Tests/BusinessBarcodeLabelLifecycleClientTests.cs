@@ -17,6 +17,7 @@ public sealed class BusinessBarcodeLabelLifecycleClientTests
         var response = await client.DispatchPrintBatchAsync(
             "internal-token",
             new BusinessConsoleDispatchBarcodePrintBatchRequest(
+                "batch-001",
                 "org-001",
                 "env-dev",
                 new BusinessConsoleDispatchBarcodePrintBatchBody("batch-001", "printer-01")),
@@ -47,6 +48,8 @@ public sealed class BusinessBarcodeLabelLifecycleClientTests
         var response = await client.ReprintLabelAsync(
             "internal-token",
             new BusinessConsoleReprintBarcodeLabelRequest(
+                "batch-001",
+                7,
                 "org-001",
                 "env-dev",
                 new BusinessConsoleReprintBarcodeLabelBody("batch-001", 7, "printer-01")),
@@ -78,6 +81,8 @@ public sealed class BusinessBarcodeLabelLifecycleClientTests
         var response = await client.VoidLabelAsync(
             "internal-token",
             new BusinessConsoleVoidBarcodeLabelRequest(
+                "batch-001",
+                7,
                 "org-001",
                 "env-dev",
                 new BusinessConsoleVoidBarcodeLabelBody("batch-001", 7, "damaged")),

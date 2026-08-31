@@ -711,6 +711,21 @@ public sealed class BusinessGatewayOpenApiTests
             AssertRequiredStringQueryParameter(paths, path, "post", "organizationId");
             AssertRequiredStringQueryParameter(paths, path, "post", "environmentId");
         }
+        AssertRequiredPathParameter(
+            paths,
+            "/api/business-console/v1/barcode/print-batches/{printBatchId}/dispatch",
+            "post",
+            "printBatchId",
+            "string");
+        foreach (var path in new[]
+                 {
+                     "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/reprint",
+                     "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/void",
+                 })
+        {
+            AssertRequiredPathParameter(paths, path, "post", "printBatchId", "string");
+            AssertRequiredPathParameter(paths, path, "post", "sequenceNo", "integer", "int32");
+        }
         AssertRequiredSchemaProperties(
             document,
             "BusinessConsoleDispatchBarcodePrintBatchBody",
@@ -769,7 +784,8 @@ public sealed class BusinessGatewayOpenApiTests
             "200",
             "400",
             "401",
-            "403");
+            "403",
+            "502");
         AssertResponseStatuses(
             paths,
             "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/void",
@@ -1683,6 +1699,30 @@ public sealed class BusinessGatewayOpenApiTests
 
         Assert.True(parameter.GetProperty("required").GetBoolean());
         Assert.Equal("string", parameter.GetProperty("schema").GetProperty("type").GetString());
+    }
+
+    private static void AssertRequiredPathParameter(
+        JsonElement paths,
+        string path,
+        string method,
+        string name,
+        string type,
+        string? format = null)
+    {
+        var parameter = paths.GetProperty(path)
+            .GetProperty(method)
+            .GetProperty("parameters")
+            .EnumerateArray()
+            .Single(candidate =>
+                candidate.GetProperty("in").GetString() == "path" &&
+                candidate.GetProperty("name").GetString() == name);
+
+        Assert.True(parameter.GetProperty("required").GetBoolean());
+        Assert.Equal(type, parameter.GetProperty("schema").GetProperty("type").GetString());
+        if (format is not null)
+        {
+            Assert.Equal(format, parameter.GetProperty("schema").GetProperty("format").GetString());
+        }
     }
 
     private static void AssertOptionalIntegerQueryParameter(JsonElement paths, string path, string method, string name)

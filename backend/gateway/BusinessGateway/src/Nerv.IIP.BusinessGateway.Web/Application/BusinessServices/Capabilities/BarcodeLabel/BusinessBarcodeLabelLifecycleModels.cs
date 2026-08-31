@@ -9,6 +9,7 @@ public sealed record BusinessConsoleDispatchBarcodePrintBatchBody(
     [property: JsonRequired, Required] string PrinterId);
 
 public sealed record BusinessConsoleDispatchBarcodePrintBatchRequest(
+    [property: RouteParam] string PrintBatchId,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
     [property: FromBody] BusinessConsoleDispatchBarcodePrintBatchBody Body);
@@ -21,6 +22,8 @@ public sealed record BusinessConsoleReprintBarcodeLabelBody(
     [property: JsonRequired, Required] string PrinterId);
 
 public sealed record BusinessConsoleReprintBarcodeLabelRequest(
+    [property: RouteParam] string PrintBatchId,
+    [property: RouteParam] int SequenceNo,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
     [property: FromBody] BusinessConsoleReprintBarcodeLabelBody Body);
@@ -37,6 +40,8 @@ public sealed record BusinessConsoleVoidBarcodeLabelBody(
     [property: JsonRequired, Required] string Reason);
 
 public sealed record BusinessConsoleVoidBarcodeLabelRequest(
+    [property: RouteParam] string PrintBatchId,
+    [property: RouteParam] int SequenceNo,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
     [property: FromBody] BusinessConsoleVoidBarcodeLabelBody Body);

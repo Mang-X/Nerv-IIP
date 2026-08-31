@@ -401,6 +401,14 @@ describe('generated API client contract', () => {
     expectTypeOf<
       VoidBusinessConsoleBarcodeLabelData['body']
     >().toEqualTypeOf<BusinessConsoleVoidBarcodeLabelBody>()
+    expectTypeOf<ReprintBusinessConsoleBarcodeLabelData['path']>().toEqualTypeOf<{
+      printBatchId: string
+      sequenceNo: number
+    }>()
+    expectTypeOf<VoidBusinessConsoleBarcodeLabelData['path']>().toEqualTypeOf<{
+      printBatchId: string
+      sequenceNo: number
+    }>()
   })
 
   it('requires optimistic versions for public quality assignment and claim mutations', () => {

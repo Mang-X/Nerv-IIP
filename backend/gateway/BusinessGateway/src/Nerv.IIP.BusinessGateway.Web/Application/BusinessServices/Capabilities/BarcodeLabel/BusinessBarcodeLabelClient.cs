@@ -199,7 +199,7 @@ public sealed class HttpBusinessBarcodeLabelClient(HttpClient httpClient)
         SendAsync<BusinessConsoleBarcodePrintLifecycleResponse>(
             internalBearerToken,
             HttpMethod.Post,
-            $"/api/business/internal/v1/barcodes/print-batches/{Uri.EscapeDataString(request.Body.PrintBatchId)}/dispatch?" + Query(
+            $"/api/business/internal/v1/barcodes/print-batches/{Uri.EscapeDataString(request.PrintBatchId)}/dispatch?" + Query(
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId)),
             request.Body,
@@ -212,7 +212,7 @@ public sealed class HttpBusinessBarcodeLabelClient(HttpClient httpClient)
         SendAsync<BusinessConsoleReprintBarcodeLabelResponse>(
             internalBearerToken,
             HttpMethod.Post,
-            $"/api/business/internal/v1/barcodes/print-batches/{Uri.EscapeDataString(request.Body.PrintBatchId)}/items/{request.Body.SequenceNo}/reprint?" + Query(
+            $"/api/business/internal/v1/barcodes/print-batches/{Uri.EscapeDataString(request.PrintBatchId)}/items/{request.SequenceNo}/reprint?" + Query(
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId)),
             request.Body,
@@ -225,7 +225,7 @@ public sealed class HttpBusinessBarcodeLabelClient(HttpClient httpClient)
         SendAsync<BusinessConsoleBarcodePrintLifecycleResponse>(
             internalBearerToken,
             HttpMethod.Post,
-            $"/api/business/internal/v1/barcodes/print-batches/{Uri.EscapeDataString(request.Body.PrintBatchId)}/items/{request.Body.SequenceNo}/void?" + Query(
+            $"/api/business/internal/v1/barcodes/print-batches/{Uri.EscapeDataString(request.PrintBatchId)}/items/{request.SequenceNo}/void?" + Query(
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId)),
             request.Body,
