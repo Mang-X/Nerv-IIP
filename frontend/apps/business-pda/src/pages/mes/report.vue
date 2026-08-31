@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { describeRequestError } from '@/api/request-timeout'
 import type {
   BusinessConsoleMesOperationTaskRow,
   BusinessConsoleMesWorkOrderItem,
@@ -29,7 +28,6 @@ import {
   useMesTelemetryProductionReportCandidates,
   useMesWorkOrderDetail,
   useMesWorkOrders,
-  type MesReportExecutionContext,
 } from '@/composables/useBusinessMes'
 import RetryableListError from '@/components/RetryableListError.vue'
 import MesWorkScopeFilter from '@/components/mes/MesWorkScopeFilter.vue'
@@ -37,9 +35,9 @@ import ProductionReportMaterialLots from '@/components/mes/ProductionReportMater
 import ProductionReportScrapReasonField from '@/components/mes/ProductionReportScrapReasonField.vue'
 import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
 import ListScopeMeta from '@/components/ListScopeMeta.vue'
-import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useProductionReportMaterials } from '@/composables/mes/useProductionReportMaterials'
 import { useProductionReportScrapReason } from '@/composables/mes/useProductionReportScrapReason'
+import { useMesReportSubmission } from '@/composables/mes/useMesReportSubmission'
 import { useMesReportIdentity } from '@/composables/useMesReportIdentity'
 import MesScanPrevalidation from '@/components/mes/MesScanPrevalidation.vue'
 import type { MesScanAccepted } from '@/composables/mes/useMesScanPrevalidation'
@@ -235,6 +233,28 @@ const quantityValid = computed(
     goodQuantity.value + scrapQuantity.value + reworkQuantity.value > 0,
 )
 
+const { currentIntent, result, submitting, deleteCurrentIntent, submit } = useMesReportSubmission({
+  pair,
+  selectedTask,
+  context: reportContext,
+  contextGeneration,
+  flowContext: ctx,
+  scanGuarded,
+  reportScopeReady,
+  quantityValid,
+  invalidMaterialLots,
+  invalidScrapReasonCode,
+  goodQuantity,
+  scrapQuantity,
+  reworkQuantity,
+  scrapReasonCode,
+  consumedMaterialLots,
+  completesOperation,
+  recordReport,
+  confirmReport,
+  recoverLifecycleAction: (error) => lifecycleRecovery.handle(error),
+})
+
 // 录数量面板：选中工序后打开
 const sheetOpen = computed({
   get: () => pair.value !== null && result.value === null,
@@ -243,63 +263,6 @@ const sheetOpen = computed({
   },
 })
 
-// --- 结果反馈 ---
-type ResultState = { status: 'success' | 'error'; title: string; description?: string }
-interface ReportIntent {
-  attempt: symbol
-  workOrderId: string
-  operationTaskId: string
-  intentKey: string
-  context: MesReportExecutionContext
-  payload: {
-    goodQuantity: number
-    scrapQuantity: number
-    reworkQuantity: number
-    consumedMaterialLots: Array<{
-      materialId: string
-      materialLotId: string
-      consumedQuantity: number
-      materialIssueRequestNo: string
-    }>
-    scrapReasonCode: string | undefined
-    completesOperation: boolean
-  }
-  status: 'pending' | 'success' | 'error'
-  receipt: { reportNo: string; productionReportId: string } | null
-  result: ResultState | null
-}
-const intents = reactive(new Map<string, ReportIntent>())
-function reportContextKey(context: MesReportExecutionContext | undefined) {
-  if (!context) return ''
-  return [
-    context.principalId,
-    context.organizationId,
-    context.environmentId,
-    context.scopeKind,
-    context.scopeId,
-    String(context.generation),
-  ].join('\u0000')
-}
-const pairKey = computed(() => {
-  const contextKey = reportContextKey(reportContext.value)
-  return pair.value && contextKey
-    ? `${contextKey}\u0000${pair.value.workOrderId}\u0000${pair.value.operationTaskId}`
-    : ''
-})
-const currentIntent = computed(() => (pairKey.value ? intents.get(pairKey.value) : undefined))
-const result = computed(() => currentIntent.value?.result ?? null)
-const submitting = computed(() => currentIntent.value?.status === 'pending')
-watch(
-  contextGeneration,
-  (generation) => {
-    for (const [key, intent] of intents) {
-      if (intent.context.generation === generation) continue
-      intent.attempt = Symbol('mes-report-context-invalidated')
-      intents.delete(key)
-    }
-  },
-  { flush: 'sync' },
-)
 const canCompleteSelectedTask = computed(
   () =>
     selectedTask.value !== null &&
@@ -330,12 +293,6 @@ watch(
     }
   },
   { immediate: true },
-)
-watch(
-  () => currentIntent.value?.status,
-  (status) => {
-    ctx.recorded = status === 'success'
-  },
 )
 watch(canCompleteSelectedTask, (canComplete) => {
   if (!canComplete) completesOperation.value = false
@@ -426,7 +383,7 @@ function backToWorkOrders() {
 }
 
 function resetReportIntent() {
-  if (pairKey.value) intents.delete(pairKey.value)
+  deleteCurrentIntent()
   goodQuantity.value = 0
   scrapQuantity.value = 0
   reworkQuantity.value = 0
@@ -449,110 +406,8 @@ const lifecycleRecovery = useLifecycleActionRecovery({
     ]),
 })
 
-async function submit() {
-  if (scanGuarded.value) return
-  if (!reportScopeReady.value) return
-  const executionContext = reportContext.value
-  if (!executionContext) return
-  const identity = pair.value
-  const task = selectedTask.value
-  const workOrderId = identity?.workOrderId
-  const operationTaskId = identity?.operationTaskId
-  if (
-    !workOrderId ||
-    ctx.workOrderId !== workOrderId ||
-    !operationTaskId ||
-    ctx.operationTaskId !== operationTaskId ||
-    !task ||
-    task.workOrderId !== workOrderId
-  ) {
-    return
-  }
-  const key = `${reportContextKey(executionContext)}\u0000${workOrderId}\u0000${operationTaskId}`
-  let intent = intents.get(key)
-  if (intent?.status === 'pending' || intent?.status === 'success') return
-  if (!intent) {
-    if (!quantityValid.value || invalidMaterialLots.value || invalidScrapReasonCode.value) return
-    intent = {
-      attempt: Symbol('mes-report-attempt'),
-      workOrderId,
-      operationTaskId,
-      intentKey: makeIdempotencyKey(),
-      context: { ...executionContext },
-      payload: {
-        goodQuantity: goodQuantity.value,
-        scrapQuantity: scrapQuantity.value,
-        reworkQuantity: reworkQuantity.value,
-        scrapReasonCode: scrapQuantity.value > 0 ? scrapReasonCode.value.trim() : undefined,
-        consumedMaterialLots: consumedMaterialLots.value,
-        completesOperation: completesOperation.value,
-      },
-      status: 'pending',
-      receipt: null,
-      result: null,
-    }
-    intents.set(key, intent)
-    intent = intents.get(key)!
-  } else {
-    intent.attempt = Symbol('mes-report-retry')
-    intent.status = 'pending'
-    intent.result = null
-  }
-  ctx.quantityEntered = true
-  if (!intent) return
-  const attempt = intent.attempt
-  try {
-    if (!intent.receipt) {
-      const receiptEnvelope = await recordReport({
-        workOrderId,
-        operationTaskId,
-        ...intent.payload,
-        idempotencyKey: intent.intentKey,
-      })
-      if (intent.attempt !== attempt) return
-      if (!receiptEnvelope?.success) {
-        throw new Error(receiptEnvelope?.message?.trim() || '报工回执无效，请重试。')
-      }
-      const reportNo = receiptEnvelope.data?.reportNo?.trim()
-      const productionReportId = receiptEnvelope.data?.productionReportId?.trim()
-      if (!reportNo || !productionReportId) {
-        throw new Error('报工回执缺少真实报工单号或回执 ID，已阻止成功确认。')
-      }
-      intent.receipt = { reportNo, productionReportId }
-    }
-    const { reportNo, productionReportId } = intent.receipt
-    await confirmReport({
-      reportNo,
-      productionReportId,
-      workOrderId,
-      operationTaskId,
-      context: intent.context,
-    })
-    if (intent.attempt !== attempt) return
-    const description = [`${workOrderId} · ${operationTaskId}`]
-    description.push(`报工单号 ${reportNo}`)
-    description.push(`回执 ID ${productionReportId}`)
-    if (intent.payload.completesOperation) description.push('本工序已标记完工')
-    intent.status = 'success'
-    intent.result = {
-      status: 'success',
-      title: '报工成功',
-      description: description.join('；'),
-    }
-  } catch (e) {
-    if (intent.attempt !== attempt) return
-    if (await lifecycleRecovery.handle(e)) return
-    intent.status = 'error'
-    intent.result = {
-      status: 'error',
-      title: '报工失败',
-      description: describeRequestError(e, '请检查网络后重试。').message,
-    }
-  }
-}
-
 function continueReport() {
-  if (pairKey.value) intents.delete(pairKey.value)
+  deleteCurrentIntent()
   backToWorkOrders()
 }
 
