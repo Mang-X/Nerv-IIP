@@ -161,6 +161,13 @@ try {
         -ManifestPath $manifestPath `
         -V1ManifestPath $v1ManifestPath `
         -RepositoryRoot $repoRoot
+    $activeCoreScenarioCount = @($manifest.scenarios | Where-Object {
+        [string]::Equals([string]$_.status, 'active', [StringComparison]::Ordinal) -and
+        [string]::Equals([string]$_.tier, 'core', [StringComparison]::Ordinal)
+    }).Count
+    $activeScenarioCount = @($manifest.scenarios | Where-Object {
+        [string]::Equals([string]$_.status, 'active', [StringComparison]::Ordinal)
+    }).Count
 
     $expandedMatrix = Copy-ManifestObject
     $expandedScenario = ($expandedMatrix.scenarios[0] | ConvertTo-Json -Depth 50 | ConvertFrom-Json -Depth 50)
@@ -349,7 +356,7 @@ try {
             -Event 'pull_request' `
             -ChangedPaths @($globalSelectionPath) `
             -ImpactRulesSucceeded $true
-        Assert-Contract (@($globalSelection.scenarios).Count -eq 5) "Global FullChain control '$globalSelectionPath' must conservatively select all active/core scenarios."
+        Assert-Contract (@($globalSelection.scenarios).Count -eq $activeCoreScenarioCount) "Global FullChain control '$globalSelectionPath' must conservatively select all active/core scenarios."
     }
 
     foreach ($invalidChangedPath in @(
@@ -374,7 +381,7 @@ try {
             -ChangedPaths @($invalidChangedPath) `
             -ImpactRulesSucceeded $true
         Assert-Contract ([string]::Equals([string]$invalidPathSelection.selectionMode, 'conservative-active-core', [StringComparison]::Ordinal)) "Invalid changed path '$invalidChangedPath' must use conservative selection."
-        Assert-Contract (@($invalidPathSelection.scenarios).Count -eq 5) "Invalid changed path '$invalidChangedPath' must select all active/core scenarios."
+        Assert-Contract (@($invalidPathSelection.scenarios).Count -eq $activeCoreScenarioCount) "Invalid changed path '$invalidChangedPath' must select all active/core scenarios."
     }
 
     $missingEntrypointMappingManifest = Copy-JsonObject $manifest
@@ -384,7 +391,7 @@ try {
         -Event 'pull_request' `
         -ChangedPaths @('scripts/verify-erp-sales-order-demand-planning.ps1') `
         -ImpactRulesSucceeded $true
-    Assert-Contract ([string]::Equals([string]$missingEntrypointMappingSelection.selectionMode, 'conservative-active-core', [StringComparison]::Ordinal) -and @($missingEntrypointMappingSelection.scenarios).Count -eq 5) 'A missing active script entrypoint mapping must conservatively select all active/core scenarios.'
+    Assert-Contract ([string]::Equals([string]$missingEntrypointMappingSelection.selectionMode, 'conservative-active-core', [StringComparison]::Ordinal) -and @($missingEntrypointMappingSelection.scenarios).Count -eq $activeCoreScenarioCount) 'A missing active script entrypoint mapping must conservatively select all active/core scenarios.'
 
     foreach ($entrypointRuleMutation in @(
         @{ Name = 'wrong-case-kind'; ScenarioIndex = 0; Apply = { param($value) $value.entrypoint.kind = 'SCRIPT' } },
@@ -409,7 +416,7 @@ try {
         Assert-Contract (
             [string]::Equals([string]$malformedEntrypointSelection.selectionMode, 'conservative-active-core', [StringComparison]::Ordinal) -and
             [string]::Equals((@($malformedEntrypointSelection.reasons) -join '|'), 'impact-rules-invalid', [StringComparison]::Ordinal) -and
-            @($malformedEntrypointSelection.scenarios).Count -eq 5
+            @($malformedEntrypointSelection.scenarios).Count -eq $activeCoreScenarioCount
         ) "Malformed active/core entrypoint '$($entrypointRuleMutation.Name)' must conservatively select all active/core scenarios with an impact-rules-invalid reason."
     }
 
@@ -431,7 +438,7 @@ try {
         Assert-Contract (
             [string]::Equals([string]$malformedEntrypointEventSelection.selectionMode, 'conservative-active-core', [StringComparison]::Ordinal) -and
             [string]::Equals((@($malformedEntrypointEventSelection.reasons) -join '|'), 'impact-rules-invalid', [StringComparison]::Ordinal) -and
-            @($malformedEntrypointEventSelection.scenarios).Count -eq 5
+            @($malformedEntrypointEventSelection.scenarios).Count -eq $activeCoreScenarioCount
         ) "Malformed active/core entrypoint must conservatively select active/core scenarios for event '$($entrypointEventCase.Event)'."
     }
 
@@ -461,7 +468,7 @@ try {
             Assert-Contract (
                 [string]::Equals([string]$malformedFullstackSelection.selectionMode, 'conservative-active-core', [StringComparison]::Ordinal) -and
                 [string]::Equals((@($malformedFullstackSelection.reasons) -join '|'), 'impact-rules-invalid', [StringComparison]::Ordinal) -and
-                @($malformedFullstackSelection.scenarios).Count -eq 5
+                @($malformedFullstackSelection.scenarios).Count -eq $activeCoreScenarioCount
             ) "Fullstack scenario mutation '$($fullstackScenarioSuffixCase.Name)' must conservatively select active/core scenarios for event '$($fullstackEventCase.Event)'."
         }
     }
@@ -473,7 +480,7 @@ try {
         -Event 'pull_request' `
         -ChangedPaths @('backend/services/Business/Erp/Application/Orders.cs') `
         -ImpactRulesSucceeded $true
-    Assert-Contract ([string]::Equals([string]$malformedImpactRulesSelection.selectionMode, 'conservative-active-core', [StringComparison]::Ordinal) -and @($malformedImpactRulesSelection.scenarios).Count -eq 5) 'Malformed active impact rules must conservatively select all active/core scenarios.'
+    Assert-Contract ([string]::Equals([string]$malformedImpactRulesSelection.selectionMode, 'conservative-active-core', [StringComparison]::Ordinal) -and @($malformedImpactRulesSelection.scenarios).Count -eq $activeCoreScenarioCount) 'Malformed active impact rules must conservatively select all active/core scenarios.'
 
     foreach ($conservativeCase in @(
         @{ Name = 'rules-failed'; Paths = @('README.md'); RulesSucceeded = $false },
@@ -485,14 +492,14 @@ try {
             -ChangedPaths $conservativeCase.Paths `
             -ImpactRulesSucceeded $conservativeCase.RulesSucceeded
         Assert-Contract ([string]::Equals([string]$selection.selectionMode, 'conservative-active-core', [StringComparison]::Ordinal)) "Pull request $($conservativeCase.Name) must fail open to conservative active/core selection."
-        Assert-Contract (@($selection.scenarios).Count -eq 5) "Pull request $($conservativeCase.Name) must select all five active/core scenarios."
+        Assert-Contract (@($selection.scenarios).Count -eq $activeCoreScenarioCount) "Pull request $($conservativeCase.Name) must select all active/core scenarios."
     }
 
     $mainSelection = Select-NervAcceptanceScenarioMatrix -Manifest $manifest -Event 'push'
-    Assert-Contract ([string]::Equals([string]$mainSelection.selectionMode, 'main-active-core', [StringComparison]::Ordinal) -and @($mainSelection.scenarios).Count -eq 5) 'Main push must select all active/core scenarios.'
+    Assert-Contract ([string]::Equals([string]$mainSelection.selectionMode, 'main-active-core', [StringComparison]::Ordinal) -and @($mainSelection.scenarios).Count -eq $activeCoreScenarioCount) 'Main push must select all active/core scenarios.'
 
     $nightlySelection = Select-NervAcceptanceScenarioMatrix -Manifest $manifest -Event 'schedule'
-    Assert-Contract ([string]::Equals([string]$nightlySelection.selectionMode, 'nightly-active', [StringComparison]::Ordinal) -and @($nightlySelection.scenarios).Count -eq 5) 'Nightly must select every active scenario.'
+    Assert-Contract ([string]::Equals([string]$nightlySelection.selectionMode, 'nightly-active', [StringComparison]::Ordinal) -and @($nightlySelection.scenarios).Count -eq $activeScenarioCount) 'Nightly must select every active scenario.'
 
     foreach ($wrongCaseEvent in @('PULL_REQUEST', 'PUSH', 'SCHEDULE', 'WORKFLOW_DISPATCH')) {
         Assert-ThrowsContaining -ExpectedMessage 'Planning event' -Context "Wrong-case selector event '$wrongCaseEvent'" -Action {
@@ -502,7 +509,7 @@ try {
 
     foreach ($dispatchAll in @('lane', 'full')) {
         $dispatchSelection = Select-NervAcceptanceScenarioMatrix -Manifest $manifest -Event 'workflow_dispatch' -DispatchSelection $dispatchAll
-        Assert-Contract (@($dispatchSelection.scenarios).Count -eq 5) "workflow_dispatch '$dispatchAll' must select every active scenario."
+        Assert-Contract (@($dispatchSelection.scenarios).Count -eq $activeScenarioCount) "workflow_dispatch '$dispatchAll' must select every active scenario."
     }
     $dispatchSingle = Select-NervAcceptanceScenarioMatrix -Manifest $manifest -Event 'workflow_dispatch' -DispatchSelection 'mes-produced-lot-inventory'
     Assert-Contract ([string]::Equals((@($dispatchSingle.scenarios.id) -join '|'), 'mes-produced-lot-inventory', [StringComparison]::Ordinal)) 'workflow_dispatch must support one named active scenario.'

@@ -2,10 +2,11 @@
 #   Category: library
 #   SideEffects:
 #     - Reads a FullChain lane manifest and VSTest TRX files supplied by the caller
+#     - Invokes a caller-supplied member action only after deadline admission succeeds
 #   Writes:
-#     - None
+#     - Caller-defined outputs through the admitted member action
 #   Cleanup:
-#     - None
+#     - The caller-supplied member action owns and restores its scoped resources
 #   Requires:
 #     - PowerShell 7
 
@@ -70,25 +71,42 @@ function Test-NervFullChainDeadlineAdmission {
     }
 }
 
-function Invoke-NervFullChainAdmittedAction {
+function Invoke-NervFullChainMemberAdmission {
     param(
+        [Parameter(Mandatory)] [string] $MemberId,
+        [Parameter(Mandatory)] [ValidateSet('fullstack', 'script', 'dotnet')] [string] $EntrypointKind,
         [Parameter(Mandatory)] [int64] $GlobalDeadlineSeconds,
         [Parameter(Mandatory)] [int64] $ElapsedSeconds,
-        [Parameter(Mandatory)] [int64] $EntrypointTimeoutSeconds,
+        [Parameter(Mandatory)] [int64] $FullstackEntrypointTimeoutSeconds,
+        [Parameter(Mandatory)] [int64] $ScriptEntrypointTimeoutSeconds,
+        [Parameter(Mandatory)] [int64] $DotnetEntrypointTimeoutSeconds,
         [Parameter(Mandatory)] [int64] $CleanupReserveSeconds,
         [Parameter(Mandatory)] [int64] $GuardReserveSeconds,
+        [Parameter(Mandatory)] [object] $MemberSummary,
         [Parameter(Mandatory)] [scriptblock] $Action
     )
 
+    $entrypointTimeoutSeconds = if ([string]::Equals($EntrypointKind, 'fullstack', [StringComparison]::Ordinal)) { $FullstackEntrypointTimeoutSeconds }
+        elseif ([string]::Equals($EntrypointKind, 'script', [StringComparison]::Ordinal)) { $ScriptEntrypointTimeoutSeconds }
+        else { $DotnetEntrypointTimeoutSeconds }
     $admission = Test-NervFullChainDeadlineAdmission `
         -GlobalDeadlineSeconds $GlobalDeadlineSeconds `
         -ElapsedSeconds $ElapsedSeconds `
         -EntrypointTimeoutSeconds $EntrypointTimeoutSeconds `
         -CleanupReserveSeconds $CleanupReserveSeconds `
         -GuardReserveSeconds $GuardReserveSeconds
-    if (-not $admission.Allowed) { return $admission }
+    $MemberSummary.deadlineAdmission.reason = [string]$admission.Reason
+    $MemberSummary.deadlineAdmission.elapsedSeconds = $ElapsedSeconds
+    $MemberSummary.deadlineAdmission.remainingSeconds = $admission.RemainingSeconds
+    $MemberSummary.deadlineAdmission.requiredSeconds = $admission.RequiredSeconds
+    if (-not $admission.Allowed) {
+        $MemberSummary.outcome = 'failed'
+        $MemberSummary.cleanup = 'passed'
+        $MemberSummary.diagnosticEvidence = 'deadline-admission-denied'
+        return $admission
+    }
 
-    & $Action | Out-Null
+    & $Action $MemberId | Out-Null
     return $admission
 }
 

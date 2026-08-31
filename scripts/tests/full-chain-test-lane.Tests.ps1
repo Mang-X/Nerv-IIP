@@ -65,6 +65,20 @@ function New-FullChainDeadlineAdmissionTestResult {
     }
 }
 
+function New-FullChainMemberAdmissionSummary {
+    return [pscustomobject][ordered]@{
+        outcome = 'not-run'
+        cleanup = 'not-run'
+        diagnosticEvidence = 'not-run'
+        deadlineAdmission = [pscustomobject][ordered]@{
+            reason = 'not-evaluated'
+            elapsedSeconds = 0
+            remainingSeconds = 0
+            requiredSeconds = 0
+        }
+    }
+}
+
 function Assert-FullChainV1WorkflowContract {
     param([Parameter(Mandatory)] [string] $Path)
 
@@ -109,7 +123,7 @@ function Assert-FullChainV1WorkflowContract {
         'Upload FullChain dependency summary',
         'Upload FullChain failure diagnostics'
     )
-    Assert-Contract ([string]::Equals((@($v1Steps.name) -join '|'), ($expectedStepNames -join '|'), [StringComparison]::Ordinal)) 'The physical v1 worker must carry the complete governed five-scenario workflow step sequence.'
+    Assert-Contract ([string]::Equals((@($v1Steps.name) -join '|'), ($expectedStepNames -join '|'), [StringComparison]::Ordinal)) 'The physical v1 worker must carry the complete governed workflow step sequence.'
     Assert-Contract (@($v1Steps | Where-Object { $null -eq $_.PSObject.Properties['timeout-minutes'] -or [int]$_.'timeout-minutes' -le 0 }).Count -eq 0) 'Every physical v1 workflow step must retain a positive timeout.'
     $v1StepBudget = (@($v1Steps | ForEach-Object { [int]$_.'timeout-minutes' }) | Measure-Object -Sum).Sum
     Assert-Contract ($v1StepBudget -lt [int]$v1Job.'timeout-minutes') 'The physical v1 worker explicit step budget must remain strictly below its job budget.'
@@ -335,12 +349,30 @@ try {
     }
 
     $invokedMembers = [Collections.Generic.List[string]]::new()
-    $firstAdmission = Invoke-NervFullChainAdmittedAction -GlobalDeadlineSeconds 2200 -ElapsedSeconds 0 -EntrypointTimeoutSeconds 1200 -CleanupReserveSeconds 300 -GuardReserveSeconds 300 -Action { $invokedMembers.Add('first') | Out-Null }
-    $secondAdmission = Invoke-NervFullChainAdmittedAction -GlobalDeadlineSeconds 2200 -ElapsedSeconds 600 -EntrypointTimeoutSeconds 900 -CleanupReserveSeconds 300 -GuardReserveSeconds 300 -Action { $invokedMembers.Add('second') | Out-Null }
+    $firstSummary = New-FullChainMemberAdmissionSummary
+    $secondSummary = New-FullChainMemberAdmissionSummary
+    $firstAdmission = Invoke-NervFullChainMemberAdmission -MemberId 'first' -EntrypointKind 'fullstack' -GlobalDeadlineSeconds 2200 -ElapsedSeconds 0 -FullstackEntrypointTimeoutSeconds 1200 -ScriptEntrypointTimeoutSeconds 900 -DotnetEntrypointTimeoutSeconds 600 -CleanupReserveSeconds 300 -GuardReserveSeconds 300 -MemberSummary $firstSummary -Action { param($memberId) $invokedMembers.Add($memberId) | Out-Null }
+    $secondAdmission = Invoke-NervFullChainMemberAdmission -MemberId 'second' -EntrypointKind 'script' -GlobalDeadlineSeconds 2200 -ElapsedSeconds 600 -FullstackEntrypointTimeoutSeconds 1200 -ScriptEntrypointTimeoutSeconds 900 -DotnetEntrypointTimeoutSeconds 600 -CleanupReserveSeconds 300 -GuardReserveSeconds 300 -MemberSummary $secondSummary -Action { param($memberId) $invokedMembers.Add($memberId) | Out-Null }
     Assert-Contract ($firstAdmission.Allowed -and $secondAdmission.Allowed -and [string]::Equals(($invokedMembers -join '|'), 'first|second', [StringComparison]::Ordinal)) 'An early first-member completion must release its unused time to a later member admission.'
-    $deniedAdmission = Invoke-NervFullChainAdmittedAction -GlobalDeadlineSeconds 2200 -ElapsedSeconds 701 -EntrypointTimeoutSeconds 900 -CleanupReserveSeconds 300 -GuardReserveSeconds 300 -Action { $invokedMembers.Add('denied') | Out-Null }
-    Assert-Contract (-not $deniedAdmission.Allowed -and [string]::Equals([string]$deniedAdmission.Reason, 'InsufficientRemainingBudget', [StringComparison]::Ordinal)) 'Insufficient remaining time must fail member admission with a stable reason.'
-    Assert-Contract ([string]::Equals(($invokedMembers -join '|'), 'first|second', [StringComparison]::Ordinal)) 'A denied member admission must invoke no member action.'
+    foreach ($deniedCase in @(
+        [pscustomobject]@{ Kind = 'fullstack'; Elapsed = 401; Required = 1800 },
+        [pscustomobject]@{ Kind = 'script'; Elapsed = 701; Required = 1500 },
+        [pscustomobject]@{ Kind = 'dotnet'; Elapsed = 1001; Required = 1200 }
+    )) {
+        $deniedSummary = New-FullChainMemberAdmissionSummary
+        $laneCleanupReached = $false
+        try {
+            $deniedAdmission = Invoke-NervFullChainMemberAdmission -MemberId "denied-$($deniedCase.Kind)" -EntrypointKind $deniedCase.Kind -GlobalDeadlineSeconds 2200 -ElapsedSeconds $deniedCase.Elapsed -FullstackEntrypointTimeoutSeconds 1200 -ScriptEntrypointTimeoutSeconds 900 -DotnetEntrypointTimeoutSeconds 600 -CleanupReserveSeconds 300 -GuardReserveSeconds 300 -MemberSummary $deniedSummary -Action { param($memberId) $invokedMembers.Add($memberId) | Out-Null }
+        }
+        finally {
+            $laneCleanupReached = $true
+        }
+        Assert-Contract (-not $deniedAdmission.Allowed -and [string]::Equals([string]$deniedAdmission.Reason, 'InsufficientRemainingBudget', [StringComparison]::Ordinal)) "Insufficient remaining time must deny the $($deniedCase.Kind) member with a stable reason."
+        Assert-Contract ($deniedAdmission.RemainingSeconds -eq ($deniedCase.Required - 1) -and $deniedAdmission.RequiredSeconds -eq $deniedCase.Required) "The $($deniedCase.Kind) denial must use its governed entrypoint budget."
+        Assert-Contract ([string]::Equals(($invokedMembers -join '|'), 'first|second', [StringComparison]::Ordinal)) "A denied $($deniedCase.Kind) member must invoke its target entrypoint zero times."
+        Assert-Contract ([string]::Equals([string]$deniedSummary.outcome, 'failed', [StringComparison]::Ordinal) -and [string]::Equals([string]$deniedSummary.cleanup, 'passed', [StringComparison]::Ordinal) -and [string]::Equals([string]$deniedSummary.diagnosticEvidence, 'deadline-admission-denied', [StringComparison]::Ordinal)) "A denied $($deniedCase.Kind) member must emit failure summary evidence without requiring member cleanup."
+        Assert-Contract ($laneCleanupReached) "A denied $($deniedCase.Kind) member must leave the lane cleanup path reachable."
+    }
 
     $manifest = Import-NervFullChainTestLaneManifest -ManifestPath $manifestPath -RepositoryRoot $repoRoot
     $scenarioMatrix = Import-NervAcceptanceScenarioMatrixManifest -ManifestPath $scenarioMatrixPath -V1ManifestPath $manifestPath -RepositoryRoot $repoRoot
@@ -353,8 +385,8 @@ try {
     Assert-Contract (@($manifest.members | Where-Object {
         -not [string]::Equals([string]$_.tier, 'core', [StringComparison]::Ordinal) -or
         -not [string]::Equals([string]$_.status, 'active', [StringComparison]::Ordinal)
-    }).Count -eq 0) 'All five NERV-767 scenarios must be active/core.'
-    Assert-Contract ((@($manifest.members.expectedTestIdentities) | ForEach-Object { @($_).Count } | Measure-Object -Sum).Sum -eq 5) 'Each FullChain scenario must freeze exactly one identity.'
+    }).Count -eq 0) 'All governed FullChain scenarios must be active/core.'
+    Assert-Contract (@($manifest.members | Where-Object { @($_.expectedTestIdentities).Count -ne 1 }).Count -eq 0) 'Each FullChain scenario must freeze exactly one identity.'
     Assert-Contract (@($manifest.members | Where-Object { -not [string]::Equals([string]$_.project, 'backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj', [StringComparison]::Ordinal) }).Count -eq 0) 'All scenarios must target the FullChain test project.'
     Assert-Contract (@($manifest.members | Where-Object { @($_.diagnosticSchemas).Count -eq 0 }).Count -eq 0) 'Every scenario must declare restricted PostgreSQL diagnostic schemas.'
     Assert-Contract (@($manifest.members | Where-Object { [string]::IsNullOrWhiteSpace([string]$_.entrypoint.kind) }).Count -eq 0) 'Every scenario must declare an entrypoint kind.'
@@ -396,12 +428,8 @@ try {
     Assert-Contract ($runnerContent.Contains("SetEnvironmentVariable('MSBUILDDISABLENODEREUSE', '1')", [StringComparison]::Ordinal)) 'FullChain runner must disable MSBuild node reuse on hosted runners.'
     Assert-Contract ($runnerContent.Contains("SetEnvironmentVariable('DOTNET_CLI_USE_MSBUILD_SERVER', '0')", [StringComparison]::Ordinal)) 'FullChain runner must disable the persistent dotnet build server.'
     Assert-Contract ($runnerContent.Contains('[Diagnostics.Stopwatch]::StartNew()', [StringComparison]::Ordinal)) 'FullChain runner must measure its global deadline with a monotonic stopwatch.'
-    Assert-Contract ($runnerContent.Contains('Invoke-NervFullChainAdmittedAction', [StringComparison]::Ordinal)) 'Every FullChain member must pass deadline admission before its action.'
+    Assert-Contract ($runnerContent.Contains('Invoke-NervFullChainMemberAdmission', [StringComparison]::Ordinal)) 'Every FullChain member must pass deadline admission before its action.'
     Assert-Contract (-not $runnerContent.Contains('$maximumGovernedRuntimeSeconds', [StringComparison]::Ordinal)) 'FullChain runner must not reject the lane from a sum-of-maximums precheck.'
-    $admissionIndex = $runnerContent.IndexOf('$admission = Invoke-NervFullChainAdmittedAction', [StringComparison]::Ordinal)
-    $memberSideEffectIndex = $runnerContent.IndexOf('[IO.Directory]::CreateDirectory($memberResultsDirectory)', [StringComparison]::Ordinal)
-    $entrypointIndex = $runnerContent.IndexOf("Invoke-PwshScript -ScriptPath (Join-Path `$repoRoot 'nerv.ps1')", [StringComparison]::Ordinal)
-    Assert-Contract ($admissionIndex -ge 0 -and $admissionIndex -lt $memberSideEffectIndex -and $memberSideEffectIndex -lt $entrypointIndex) 'Deadline admission must precede every member-owned side effect and entrypoint invocation.'
     Assert-Contract ($runnerContent.Contains('Write-NervFullChainSummarySnapshot', [StringComparison]::Ordinal)) 'FullChain runner must write resumable summary snapshots before final completion.'
     Assert-Contract ($runnerContent.IndexOf('Write-NervFullChainSummarySnapshot', [StringComparison]::Ordinal) -lt $runnerContent.IndexOf('try {', [StringComparison]::Ordinal)) 'FullChain runner must create the dependency summary before starting governed work.'
 
