@@ -50,6 +50,21 @@ function Assert-FullChainDeadlineAdmissionCases {
     }
 }
 
+function Assert-FullChainDeadlineAdmissionDiagnosticContract {
+    param(
+        [Parameter(Mandatory)] [scriptblock] $Admission,
+        [Parameter(Mandatory)] [string] $Context
+    )
+
+    $result = & $Admission 1600 0 1000 100 500
+    Assert-Contract (
+        $result.Allowed -and
+        [string]::Equals([string]$result.Reason, 'Allowed', [StringComparison]::Ordinal) -and
+        $result.RemainingSeconds -eq 1600 -and
+        $result.RequiredSeconds -eq 1600
+    ) "$Context must report the complete asymmetric entrypoint, cleanup, and guard budget."
+}
+
 function Assert-FullChainV1WorkflowContract {
     param([Parameter(Mandatory)] [string] $Path)
 
@@ -184,6 +199,7 @@ try {
             -GuardReserveSeconds $Guard
     }
     Assert-FullChainDeadlineAdmissionCases -Admission $canonicalDeadlineAdmission -Context 'Canonical implementation'
+    Assert-FullChainDeadlineAdmissionDiagnosticContract -Admission $canonicalDeadlineAdmission -Context 'Canonical implementation'
 
     $exactBoundary = & $canonicalDeadlineAdmission 7200 5400 1200 300 300
     Assert-Contract (
@@ -257,6 +273,26 @@ try {
         catch { $mutationFailure = $_ }
         Assert-Contract ($null -ne $mutationFailure) "Deadline admission mutation '$($mutation.Name)' must be rejected by the behavioral contract."
     }
+
+    $misreportedRequiredSeconds = {
+        param($Deadline, $Elapsed, $Entrypoint, $Cleanup, $Guard)
+        $remaining = $Deadline - $Elapsed
+        $required = $Entrypoint + $Cleanup + $Guard
+        [pscustomobject]@{
+            Allowed = ($remaining -ge $required)
+            Reason = 'Allowed'
+            RemainingSeconds = $remaining
+            RequiredSeconds = $Entrypoint + $Cleanup + $Cleanup
+        }
+    }
+    $diagnosticMutationFailure = $null
+    try {
+        Assert-FullChainDeadlineAdmissionDiagnosticContract `
+            -Admission $misreportedRequiredSeconds `
+            -Context "Mutation 'asymmetric-required-seconds-misreported'"
+    }
+    catch { $diagnosticMutationFailure = $_ }
+    Assert-Contract ($null -ne $diagnosticMutationFailure) "Deadline admission mutation 'asymmetric-required-seconds-misreported' must be rejected by the diagnostic contract."
 
     $manifest = Import-NervFullChainTestLaneManifest -ManifestPath $manifestPath -RepositoryRoot $repoRoot
     $expectedIds = @(
