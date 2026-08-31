@@ -189,6 +189,31 @@ test('生产日报呈现跨源上下文、服务端第二页并导出当前筛�
   ).toBe(true)
 })
 
+test('生产统计业务失败时呈现错误而不是空态', async ({ page }, testInfo) => {
+  const routeApi = async (route: Route) => {
+    const url = new URL(route.request().url())
+    if (url.pathname === '/api/console/v1/auth/refresh') return fulfill(route, envelope(session))
+    if (url.pathname === '/api/console/v1/auth/me') return fulfill(route, envelope(principal))
+    if (url.pathname === '/api/business-console/v1/mes/production-statistics') {
+      return fulfill(route, { success: false, message: 'upstream implementation detail' })
+    }
+    return fulfill(route, envelope({ items: [], total: 0 }))
+  }
+  await page.route('**/api/console/v1/**', routeApi)
+  await page.route('**/api/business-console/v1/**', routeApi)
+
+  await page.goto('/mes/reports', { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByText('生产统计读取失败，请稍后重试。', { exact: true })).toBeVisible({
+    timeout: 15_000,
+  })
+  await expect(page.getByText('当前统计范围内暂无生产报工数据。', { exact: true })).toBeHidden()
+  await page.screenshot({
+    path: testInfo.outputPath('issue-2857-production-daily-business-error.png'),
+    fullPage: true,
+  })
+})
+
 function productionRows(url: URL) {
   if (url.searchParams.get('dimension') === 'workCenter') {
     return Array.from({ length: 22 }, (_, index) => {

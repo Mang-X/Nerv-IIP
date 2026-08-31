@@ -124,10 +124,12 @@ export function useMesProductionStatistics(
     )
     return { ...options, enabled: options.enabled && enabled.value }
   })
-  const response = computed(() => {
-    const envelope = statisticsQuery.data.value as ProductionStatisticsEnvelope | undefined
-    return envelope?.success ? (envelope.data ?? undefined) : undefined
-  })
+  const envelope = computed(
+    () => statisticsQuery.data.value as ProductionStatisticsEnvelope | undefined,
+  )
+  const response = computed(() =>
+    envelope.value?.success ? (envelope.value.data ?? undefined) : undefined,
+  )
   const presentation = computed(() => {
     try {
       return {
@@ -138,7 +140,13 @@ export function useMesProductionStatistics(
       return { items: [], error }
     }
   })
-  const error = computed(() => statisticsQuery.error.value ?? presentation.value.error)
+  const error = computed(
+    () =>
+      statisticsQuery.error.value ??
+      (envelope.value?.success === false
+        ? new Error('生产统计读取失败，请稍后重试。')
+        : presentation.value.error),
+  )
   const state = businessReadState(
     { data: statisticsQuery.data, error, isLoading: statisticsQuery.isLoading },
     () => enabled.value,
