@@ -1301,6 +1301,34 @@ public sealed record AssignDispatchTaskCommand(
     string? TeamName = null,
     IReadOnlyCollection<DispatchParticipantInput>? Participants = null) : ICommand<MesAcceptedResponse>, IOperationTaskConcurrencyRetryCommand;
 
+public sealed record ClaimDispatchTaskCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string OperationTaskId,
+    string AssignedUserId,
+    string AssignedUserName,
+    string? DeviceAssetId,
+    string? ShiftId,
+    DateTimeOffset AssignedAtUtc,
+    string Actor,
+    string IdempotencyKey,
+    string? TeamId = null,
+    string? TeamName = null) : ICommand<MesAcceptedResponse>, IOperationTaskConcurrencyRetryCommand;
+
+public sealed class ClaimDispatchTaskCommandValidator : AbstractValidator<ClaimDispatchTaskCommand>
+{
+    public ClaimDispatchTaskCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.OperationTaskId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.AssignedUserId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.AssignedUserName).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.Actor).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+    }
+}
+
 public sealed class AssignDispatchTaskCommandValidator : AbstractValidator<AssignDispatchTaskCommand>
 {
     public AssignDispatchTaskCommandValidator()
@@ -1404,8 +1432,7 @@ public sealed class AssignDispatchTaskCommandHandler(
             task.RequiredSkillCode,
             cancellationToken);
 
-        MesDomainRuleGuard.Enforce(() =>
-            task.Assign(
+        MesDomainRuleGuard.Enforce(() => task.Assign(
                 request.AssignedUserId,
                 request.DeviceAssetId,
                 request.ShiftId,
@@ -1440,6 +1467,103 @@ public sealed class AssignDispatchTaskCommandHandler(
         dbContext.Entry(task).Property(x => x.AssignedAtUtc).IsModified = true;
         return new MesAcceptedResponse("Accepted", request.OperationTaskId, request.AssignedAtUtc);
     }
+}
+
+public sealed class ClaimDispatchTaskCommandHandler(
+    ApplicationDbContext dbContext,
+    IMesWorkerSkillQualificationGate workerSkillQualificationGate)
+    : ICommandHandler<ClaimDispatchTaskCommand, MesAcceptedResponse>
+{
+    private const string ClaimRuleKey = "operation-task-claim";
+
+    public ClaimDispatchTaskCommandHandler(ApplicationDbContext dbContext)
+        : this(dbContext, UnconfiguredMesWorkerSkillQualificationGate.Instance)
+    {
+    }
+
+    public async Task<MesAcceptedResponse> Handle(
+        ClaimDispatchTaskCommand request,
+        CancellationToken cancellationToken)
+    {
+        var idempotencyKey = request.IdempotencyKey.Trim();
+        var operationTaskId = request.OperationTaskId.Trim();
+        var assignedUserId = request.AssignedUserId.Trim();
+        var fingerprint = FormattableString.Invariant(
+            $"{operationTaskId.Length}:{operationTaskId}{assignedUserId.Length}:{assignedUserId}");
+        var existing = dbContext.CodeIdempotencyKeys.Local.FirstOrDefault(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.RuleKey == ClaimRuleKey &&
+                x.IdempotencyKey == idempotencyKey)
+            ?? await dbContext.CodeIdempotencyKeys.AsNoTracking().SingleOrDefaultAsync(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.RuleKey == ClaimRuleKey &&
+                x.IdempotencyKey == idempotencyKey,
+                cancellationToken);
+        if (existing is not null)
+        {
+            if (!string.Equals(existing.PayloadFingerprint, fingerprint, StringComparison.Ordinal))
+            {
+                throw new MesIdempotencyConflictException();
+            }
+
+            return new MesAcceptedResponse("Accepted", request.OperationTaskId, existing.CreatedAtUtc);
+        }
+
+        var task = await dbContext.OperationTasks.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.OperationTaskIdValue == request.OperationTaskId,
+            cancellationToken)
+            ?? throw new KnownException($"未找到工序任务，OperationTaskId = {request.OperationTaskId}");
+
+        var qualityIssues = await ReadinessReasonCodes.GetActiveQualityHoldIssuesAsync(
+            dbContext, request.OrganizationId, request.EnvironmentId, task.WorkOrderId,
+            task.OperationTaskIdValue, cancellationToken);
+        if (qualityIssues.Count > 0)
+        {
+            throw new KnownException(string.Join("; ", qualityIssues.Select(x => x.Code)));
+        }
+
+        var equipmentIssues = await ReadinessReasonCodes.GetEquipmentBlockingIssuesAsync(
+            dbContext, request.OrganizationId, request.EnvironmentId, task.WorkCenterId,
+            task.WorkOrderId, request.AssignedAtUtc, cancellationToken);
+        if (equipmentIssues.Count > 0)
+        {
+            throw new KnownException(string.Join("; ", equipmentIssues.Select(x => x.Code)));
+        }
+
+        await workerSkillQualificationGate.EnsureQualifiedAsync(
+            task.OrganizationId, task.EnvironmentId, request.AssignedUserId,
+            task.RequiredSkillCode, cancellationToken);
+
+        MesDomainRuleGuard.Enforce(() => task.Claim(
+            request.AssignedUserId, request.AssignedUserName, request.DeviceAssetId,
+            request.ShiftId, request.AssignedAtUtc, request.Actor, request.TeamId, request.TeamName));
+
+        var existingParticipants = await dbContext.OperationTaskParticipants
+            .Where(x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.OperationTaskId == request.OperationTaskId)
+            .ToArrayAsync(cancellationToken);
+        dbContext.OperationTaskParticipants.RemoveRange(existingParticipants);
+        dbContext.OperationTaskParticipants.Add(OperationTaskParticipant.Register(
+            request.OrganizationId, request.EnvironmentId, request.OperationTaskId,
+            request.AssignedUserId, request.AssignedUserName, 100m));
+        dbContext.Entry(task).Property(x => x.AssignedUserId).IsModified = true;
+        dbContext.Entry(task).Property(x => x.AssignedUserName).IsModified = true;
+        dbContext.Entry(task).Property(x => x.DeviceAssetId).IsModified = true;
+        dbContext.Entry(task).Property(x => x.ShiftId).IsModified = true;
+        dbContext.Entry(task).Property(x => x.TeamId).IsModified = true;
+        dbContext.Entry(task).Property(x => x.TeamName).IsModified = true;
+        dbContext.Entry(task).Property(x => x.AssignedAtUtc).IsModified = true;
+        dbContext.CodeIdempotencyKeys.Add(new CodeIdempotencyKey(
+            request.OrganizationId, request.EnvironmentId, ClaimRuleKey, idempotencyKey,
+            request.OperationTaskId, fingerprint, request.AssignedAtUtc));
+        return new MesAcceptedResponse("Accepted", request.OperationTaskId, request.AssignedAtUtc);
+    }
+
 }
 
 public sealed record ChangeOperationTaskStateCommand(

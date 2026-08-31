@@ -174,6 +174,13 @@ public interface IBusinessMesClient
         string actor,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleAcceptedResponse> ClaimDispatchTaskAsync(
+        string internalBearerToken,
+        string operationTaskId,
+        BusinessConsoleMesClaimDispatchTaskForwardRequest request,
+        string actor,
+        CancellationToken cancellationToken) => throw new NotSupportedException();
+
     Task<BusinessConsoleMesOperationTaskListResponse> ListOperationTasksAsync(
         string internalBearerToken,
         BusinessMesOperationTaskListRequest request,
@@ -750,6 +757,21 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         SendAcceptedAsync(
             internalBearerToken,
             $"/api/business/v1/mes/dispatch-tasks/{Uri.EscapeDataString(operationTaskId)}/assign",
+            request,
+            MesDispatchTaskDocumentType,
+            cancellationToken,
+            configureRequest: message =>
+                message.Headers.TryAddWithoutValidation("X-Authenticated-Actor", actor));
+
+    public Task<BusinessConsoleAcceptedResponse> ClaimDispatchTaskAsync(
+        string internalBearerToken,
+        string operationTaskId,
+        BusinessConsoleMesClaimDispatchTaskForwardRequest request,
+        string actor,
+        CancellationToken cancellationToken) =>
+        SendAcceptedAsync(
+            internalBearerToken,
+            $"/api/business/v1/mes/operation-tasks/{Uri.EscapeDataString(operationTaskId)}/claim",
             request,
             MesDispatchTaskDocumentType,
             cancellationToken,

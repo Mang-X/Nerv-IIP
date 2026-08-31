@@ -886,10 +886,11 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasComment("UTC time when MES dispatch assignment facts were captured.");
 
                     b.Property<string>("AssignedUserId")
+                        .IsConcurrencyToken()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("assigned_user_id")
-                        .HasComment("Assigned operator or person public id captured by MES dispatch.");
+                        .HasComment("Assigned operator or person public id captured by MES dispatch and used to serialize assignment ownership changes.");
 
                     b.Property<string>("AssignedUserName")
                         .HasMaxLength(200)

@@ -903,7 +903,7 @@ public sealed class MesEndpointContractTests
     [Fact]
     public void MesEndpointContracts_ExposeRescheduleAndRushOrderRoutes()
     {
-        Assert.Equal(62, MesEndpointContracts.All.Count);
+        Assert.Equal(64, MesEndpointContracts.All.Count);
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/foundation-readiness/{areaCode}"
@@ -1037,6 +1037,11 @@ public sealed class MesEndpointContractTests
             && x.OperationId == "listBusinessMesOperationTasks");
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/mes/operation-tasks/{operationTaskId}/claim"
+            && x.PermissionCode == MesPermissionCodes.OperationsManage
+            && x.OperationId == "claimBusinessMesOperationTask");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/mes/operation-tasks/{operationTaskId}/start"
             && x.PermissionCode == MesPermissionCodes.OperationsManage
             && x.OperationId == "startBusinessMesOperationTask");
@@ -1075,6 +1080,11 @@ public sealed class MesEndpointContractTests
             && x.Route == "/api/business/v1/mes/production-reports"
             && x.PermissionCode == MesPermissionCodes.ReportingRead
             && x.OperationId == "listBusinessMesProductionReports");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/mes/production-statistics"
+            && x.PermissionCode == MesPermissionCodes.ReportingRead
+            && x.OperationId == "queryBusinessMesProductionStatistics");
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/production-reports/{reportNo}"
