@@ -142,22 +142,83 @@ function Get-Man517CanonicalServiceContract {
     }
 }
 
+function Compare-Man517CanonicalServiceContract {
+    param(
+        [AllowNull()] [object]$Candidate,
+        [Parameter(Mandatory)] [object]$Canonical
+    )
+
+    if ($null -eq $Candidate -or $null -eq $Canonical) { return $false }
+    try {
+        foreach ($propertyName in @('ContractSource', 'ServiceName', 'Port', 'BaseUri', 'HealthUri', 'IdentityUri', 'LaunchCommand', 'LaunchExecutable', 'LaunchArguments', 'AllowsEmptyData', 'ResponseContract')) {
+            if ($null -eq $Candidate.PSObject.Properties[$propertyName] -or
+                $null -eq $Canonical.PSObject.Properties[$propertyName]) {
+                return $false
+            }
+        }
+        foreach ($propertyName in @('ContractSource', 'ServiceName', 'BaseUri', 'HealthUri', 'IdentityUri', 'LaunchCommand', 'ResponseContract')) {
+            if (-not [string]::Equals([string]$Candidate.$propertyName, [string]$Canonical.$propertyName, [StringComparison]::Ordinal)) {
+                return $false
+            }
+        }
+        if ([int]$Candidate.Port -ne [int]$Canonical.Port) { return $false }
+        if ($Candidate.AllowsEmptyData -isnot [bool] -or
+            [bool]$Candidate.AllowsEmptyData -ne [bool]$Canonical.AllowsEmptyData) {
+            return $false
+        }
+        $pathComparison = if ($IsWindows) { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
+        if (-not [string]::Equals([string]$Candidate.LaunchExecutable, [string]$Canonical.LaunchExecutable, $pathComparison)) {
+            return $false
+        }
+        $candidateArguments = @($Candidate.LaunchArguments | ForEach-Object { [string]$_ })
+        $canonicalArguments = @($Canonical.LaunchArguments | ForEach-Object { [string]$_ })
+        if ($candidateArguments.Count -ne $canonicalArguments.Count) { return $false }
+        for ($argumentIndex = 0; $argumentIndex -lt $canonicalArguments.Count; $argumentIndex++) {
+            if (-not [string]::Equals($candidateArguments[$argumentIndex], $canonicalArguments[$argumentIndex], [StringComparison]::Ordinal)) {
+                return $false
+            }
+        }
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
+function Resolve-Man517CanonicalServiceContract {
+    param([AllowNull()] [object]$ServiceContract)
+
+    if ($null -eq $ServiceContract -or
+        $null -eq $ServiceContract.PSObject.Properties['ServiceName'] -or
+        $null -eq $ServiceContract.PSObject.Properties['Port']) {
+        throw 'MAN-517 readiness requires the canonical service contract producer; caller-selected identity is not accepted.'
+    }
+    try {
+        $serviceName = [string]$ServiceContract.ServiceName
+        $port = [int]$ServiceContract.Port
+        $canonicalContract = Get-Man517CanonicalServiceContract -ServiceName $serviceName -Port $port
+    }
+    catch {
+        throw [InvalidOperationException]::new(
+            'MAN-517 readiness requires the canonical service contract producer; caller-selected identity is not accepted.',
+            $_.Exception)
+    }
+    if (-not (Compare-Man517CanonicalServiceContract -Candidate $ServiceContract -Canonical $canonicalContract)) {
+        throw 'MAN-517 readiness requires the canonical service contract producer; caller-selected identity is not accepted.'
+    }
+    return $canonicalContract
+}
+
 function Test-Man517CanonicalServiceContract {
     param([AllowNull()] [object]$ServiceContract)
 
-    if ($null -eq $ServiceContract) { return $false }
-    foreach ($propertyName in @('ContractSource', 'ServiceName', 'Port', 'BaseUri', 'HealthUri', 'IdentityUri', 'LaunchCommand', 'LaunchExecutable', 'LaunchArguments', 'AllowsEmptyData', 'ResponseContract')) {
-        if ($null -eq $ServiceContract.PSObject.Properties[$propertyName]) { return $false }
+    try {
+        $canonicalContract = Resolve-Man517CanonicalServiceContract -ServiceContract $ServiceContract
+        return (Compare-Man517CanonicalServiceContract -Candidate $ServiceContract -Canonical $canonicalContract)
     }
-    if (-not [string]::Equals([string]$ServiceContract.ContractSource, 'MAN-517 canonical service contract v1', [StringComparison]::Ordinal)) { return $false }
-    if (-not [string]::Equals([string]$ServiceContract.LaunchCommand, 'dotnet', [StringComparison]::Ordinal)) { return $false }
-    if ([string]::IsNullOrWhiteSpace([string]$ServiceContract.LaunchExecutable) -or
-        -not [IO.Path]::IsPathFullyQualified([string]$ServiceContract.LaunchExecutable)) { return $false }
-    $launchArguments = @($ServiceContract.LaunchArguments | ForEach-Object { [string]$_ })
-    if ($launchArguments.Count -ne 1 -or [string]::IsNullOrWhiteSpace($launchArguments[0]) -or
-        -not [IO.Path]::IsPathFullyQualified($launchArguments[0])) { return $false }
-    if (-not [string]::Equals([string]$ServiceContract.ResponseContract, [string]$ServiceContract.ServiceName, [StringComparison]::Ordinal)) { return $false }
-    return $true
+    catch {
+        return $false
+    }
 }
 
 function ConvertFrom-Man517ProcessCommandLine {
@@ -283,9 +344,7 @@ function Start-Man517OwnedProcess {
         [Parameter(Mandatory)] [string]$Name
     )
 
-    if (-not (Test-Man517CanonicalServiceContract -ServiceContract $ServiceContract)) {
-        throw "MAN-517 cannot start a process without the canonical service contract for '$($ServiceContract.ServiceName)'."
-    }
+    $ServiceContract = Resolve-Man517CanonicalServiceContract -ServiceContract $ServiceContract
     if ([int]$ServiceContract.Port -ne [int]$Ownership.Port -or
         -not [string]::Equals([string]$ServiceContract.ServiceName, [string]$Ownership.ServiceName, [StringComparison]::Ordinal)) {
         throw "MAN-517 canonical process ownership mismatch: service=$($ServiceContract.ServiceName) contractPort=$($ServiceContract.Port) ownershipService=$($Ownership.ServiceName) ownershipPort=$($Ownership.Port)."
@@ -369,21 +428,29 @@ finally {
     $listener.Stop()
 }
 '@
-    $arguments = @('-NoLogo', '-NoProfile', '-Command', $fakeServerScript)
+    $fakeServerScriptPath = Join-Path ([IO.Path]::GetTempPath()) "man517-forged-responder-$([Guid]::NewGuid().ToString('N')).ps1"
     try {
+        [IO.File]::WriteAllText($fakeServerScriptPath, $fakeServerScript, [Text.UTF8Encoding]::new($false))
         if ($null -ne $Ownership.Reservation) {
             $Ownership.Reservation.Stop()
             $Ownership.Reservation = $null
         }
-        $managedProcess = Start-ManagedBackgroundProcess -Command ([IO.Path]::GetFullPath([string]$pwshCommand.Path)) -Arguments $arguments -WorkingDirectory $WorkingDirectory -Name 'man517-negative-forged-response'
+        # Passing the script path as the sole argument makes the OS process
+        # identity unambiguous while keeping the responder launch recipe
+        # independent from the readiness contract under test.
+        $managedProcess = Start-ManagedBackgroundProcess -Command ([IO.Path]::GetFullPath([string]$pwshCommand.Path)) -Arguments @($fakeServerScriptPath) -WorkingDirectory $WorkingDirectory -Name 'man517-negative-forged-response'
         $Ownership.ManagedProcess = $managedProcess
         $Ownership.ProcessId = $managedProcess.ProcessId
         $Ownership.ProcessStartTime = $managedProcess.Process.StartTime
         $Ownership.State = 'OwnedByProcess'
+        $managedProcess | Add-Member -NotePropertyName TemporaryScriptPath -NotePropertyValue $fakeServerScriptPath -Force
         $managedProcess | Add-Member -NotePropertyName NegativeScenario -NotePropertyValue 'response-identity-forged' -Force
         return $managedProcess
     }
     catch {
+        if (Test-Path -LiteralPath $fakeServerScriptPath) {
+            Remove-Item -LiteralPath $fakeServerScriptPath -Force -ErrorAction SilentlyContinue
+        }
         throw [InvalidOperationException]::new(
             "MAN-517 readiness failed: service=$($Ownership.ServiceName) process=man517-negative-forged-response port=$($Ownership.Port) reason=forged responder could not start exitCode=not-started bindCause=$($_.Exception.Message)",
             $_.Exception)
@@ -531,6 +598,16 @@ function Stop-Man517PortOwner {
         }
     }
     catch { $stopFailures.Add("managed root: $($_.Exception.Message)") }
+    try {
+        $temporaryScriptPath = if ($null -ne $Ownership.ManagedProcess -and
+            $null -ne $Ownership.ManagedProcess.PSObject.Properties['TemporaryScriptPath']) {
+            [string]$Ownership.ManagedProcess.TemporaryScriptPath
+        }
+        if (-not [string]::IsNullOrWhiteSpace($temporaryScriptPath) -and (Test-Path -LiteralPath $temporaryScriptPath)) {
+            Remove-Item -LiteralPath $temporaryScriptPath -Force -ErrorAction Stop
+        }
+    }
+    catch { $stopFailures.Add("temporary responder script: $($_.Exception.Message)") }
     if ($stopFailures.Count -gt 0) {
         throw "MAN-517 '$($Ownership.ServiceName)' cleanup failed: $($stopFailures -join '; ')"
     }
@@ -594,9 +671,7 @@ function Test-Man517ServiceIdentityResponse {
         [AllowNull()] [object]$Response
     )
 
-    if (-not (Test-Man517CanonicalServiceContract -ServiceContract $ServiceContract)) {
-        throw 'MAN-517 service response validation requires the canonical service contract.'
-    }
+    $ServiceContract = Resolve-Man517CanonicalServiceContract -ServiceContract $ServiceContract
     $serviceName = [string]$ServiceContract.ResponseContract
     if ($null -eq $Response) {
         return $false
@@ -677,18 +752,16 @@ function Wait-Healthy {
         [ValidateRange(1, 300)] [int]$TimeoutSeconds = 90
     )
 
-    if (-not (Test-Man517CanonicalServiceContract -ServiceContract $ServiceContract)) {
-        throw 'MAN-517 readiness requires the canonical service contract producer; caller-selected identity is not accepted.'
-    }
-    if ([int]$ServiceContract.Port -ne [int]$Ownership.Port -or
-        -not [string]::Equals([string]$ServiceContract.ServiceName, [string]$Ownership.ServiceName, [StringComparison]::Ordinal)) {
-        throw (New-Man517ReadinessFailure -ServiceContract $ServiceContract -Ownership $Ownership -ManagedProcess $ManagedProcess -Reason 'canonical service ownership or port mismatch' -InnerException $null)
-    }
     if ($null -ne $Observation) {
         $Observation.healthResponseObserved = $false
         $Observation.identityResponseObserved = $false
         $Observation.healthObservation = 'unavailable'
         $Observation.identityObservation = 'unavailable'
+    }
+    $ServiceContract = Resolve-Man517CanonicalServiceContract -ServiceContract $ServiceContract
+    if ([int]$ServiceContract.Port -ne [int]$Ownership.Port -or
+        -not [string]::Equals([string]$ServiceContract.ServiceName, [string]$Ownership.ServiceName, [StringComparison]::Ordinal)) {
+        throw (New-Man517ReadinessFailure -ServiceContract $ServiceContract -Ownership $Ownership -ManagedProcess $ManagedProcess -Reason 'canonical service ownership or port mismatch' -InnerException $null)
     }
     $processIdentity = $null
     try {
@@ -982,6 +1055,8 @@ function Invoke-Man517ReadinessNegativeProbes {
             failureRoot = $null
             expectedLaunchExecutable = $null
             expectedLaunchArguments = @()
+            mutatedLaunchExecutable = $null
+            mutatedLaunchArguments = @()
             expectedHealthUri = $null
             expectedIdentityUri = $null
             actualExecutable = $null
@@ -1205,12 +1280,18 @@ function Invoke-Man517ReadinessNegativeProbes {
                         }
                         if ((Get-Date) -ge $forgedListenerDeadline) {
                             throw "MAN-517 forged responder did not bind port $($owner.Port) before the bounded ownership observation window."
-                        }
-                        Start-Sleep -Milliseconds 100
                     }
+                    Start-Sleep -Milliseconds 100
+                }
                 } while ((Get-Date) -lt $forgedListenerDeadline)
+                $forgedProcessIdentity = Read-Man517ProcessIdentity -ProcessId ([int]$owner.ProcessId)
+                $forgedContract = $expectedContract.PSObject.Copy()
+                $forgedContract.LaunchExecutable = $forgedProcessIdentity.ExecutablePath
+                $forgedContract.LaunchArguments = @($forgedProcessIdentity.Arguments)
+                $probe.mutatedLaunchExecutable = $forgedContract.LaunchExecutable
+                $probe.mutatedLaunchArguments = @($forgedContract.LaunchArguments)
                 try {
-                    Wait-Healthy -ServiceContract $expectedContract -Headers $Headers -ManagedProcess $fakeManagedProcess -Ownership $owner -Observation $readinessObservation -TimeoutSeconds 15 | Out-Null
+                    Wait-Healthy -ServiceContract $forgedContract -Headers $Headers -ManagedProcess $fakeManagedProcess -Ownership $owner -Observation $readinessObservation -TimeoutSeconds 15 | Out-Null
                     $readinessAcceptedUnexpectedly = $true
                 }
                 catch {
@@ -1316,7 +1397,9 @@ function Invoke-Man517ReadinessNegativeProbes {
                   $probe.failure.Contains('expectedOwnerStartTime=', [StringComparison]::Ordinal)))
         }
         elseif ([string]::Equals($scenarioId, 'response-identity-forged', [StringComparison]::Ordinal)) {
-            $expectedFailureObserved = -not $readinessAcceptedUnexpectedly -and $probe.failure.Contains('canonical process identity mismatch', [StringComparison]::Ordinal)
+            $expectedFailureObserved = -not $readinessAcceptedUnexpectedly -and
+                ($probe.failure.Contains('canonical service contract producer', [StringComparison]::Ordinal) -or
+                 $probe.failure.Contains('canonical process identity mismatch', [StringComparison]::Ordinal))
         }
         $probe.passed = [bool]$expectedFailureObserved -and [bool]$probe.cleanup.allClear
         $probes.Add([pscustomobject]$probe)
@@ -1378,6 +1461,11 @@ function Assert-Man517ReadinessNegativeEvidence {
         }
         if ([string]::IsNullOrWhiteSpace([string]$probe.failure) -or [string]::IsNullOrWhiteSpace([string]$probe.failureRoot)) {
             throw "MAN-517 retained readiness evidence lacks failure root/phase for '$scenarioId'."
+        }
+        if ([string]::Equals($scenarioId, 'response-identity-forged', [StringComparison]::Ordinal) -and
+            ([string]::IsNullOrWhiteSpace([string]$probe.mutatedLaunchExecutable) -or
+             @($probe.mutatedLaunchArguments).Count -eq 0)) {
+            throw "MAN-517 retained forged-response evidence lacks the caller-mutated launch contract."
         }
         if ($null -eq $probe.cleanup -or -not [bool]$probe.cleanup.allClear -or
             @($probe.cleanup.remainingProcesses).Count -ne 0 -or

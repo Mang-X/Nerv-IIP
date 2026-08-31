@@ -230,6 +230,8 @@ foreach ($readinessCall in (Get-CommandCallAsts -Name 'Wait-Healthy')) {
 Assert-Contract (-not $content.Contains('ExpectedCommand', [StringComparison]::Ordinal)) 'The verifier must have one canonical launch contract and no caller-selected ExpectedCommand boundary.'
 Assert-Contract (-not $content.Contains('ExpectedArguments', [StringComparison]::Ordinal)) 'The verifier must have one canonical launch contract and no caller-selected ExpectedArguments boundary.'
 Assert-Contract (-not [string]::IsNullOrWhiteSpace((Get-FunctionContractText -Name 'Get-Man517CanonicalServiceContract'))) 'MAN-517 must define one canonical service contract producer.'
+Assert-Contract (-not [string]::IsNullOrWhiteSpace((Get-FunctionContractText -Name 'Compare-Man517CanonicalServiceContract'))) 'MAN-517 must compare caller input with a freshly produced canonical service contract.'
+Assert-Contract (-not [string]::IsNullOrWhiteSpace((Get-FunctionContractText -Name 'Resolve-Man517CanonicalServiceContract'))) 'MAN-517 readiness entry points must resolve canonical service provenance before using launch or response fields.'
 Assert-Contract (-not [string]::IsNullOrWhiteSpace((Get-FunctionContractText -Name 'Read-Man517ProcessIdentity'))) 'MAN-517 must read process executable and full arguments from the operating system.'
 Assert-Contract ((Get-FunctionContractText -Name 'Read-Man517ProcessIdentity').Contains('Win32_Process', [StringComparison]::Ordinal) -or
     (Get-FunctionContractText -Name 'Read-Man517ProcessIdentity').Contains('/proc/', [StringComparison]::Ordinal) -or
@@ -270,6 +272,10 @@ $identityFunctionText = Get-FunctionContractText -Name 'Test-Man517ServiceIdenti
 Assert-Contract (-not [string]::IsNullOrWhiteSpace($identityFunctionText)) 'The service identity response validator must be present for behavioral contract coverage.'
 $canonicalContractFunctionText = Get-FunctionContractText -Name 'Get-Man517CanonicalServiceContract'
 Invoke-Expression $canonicalContractFunctionText
+$canonicalContractComparisonText = Get-FunctionContractText -Name 'Compare-Man517CanonicalServiceContract'
+Invoke-Expression $canonicalContractComparisonText
+$canonicalContractResolverText = Get-FunctionContractText -Name 'Resolve-Man517CanonicalServiceContract'
+Invoke-Expression $canonicalContractResolverText
 $canonicalContractValidatorText = Get-FunctionContractText -Name 'Test-Man517CanonicalServiceContract'
 Invoke-Expression $canonicalContractValidatorText
 Invoke-Expression $identityFunctionText
@@ -386,13 +392,16 @@ Assert-Contract ([string]::Equals([string]$wrongServiceObservation.healthObserva
 $forgedProcess = [pscustomobject]@{
     ProcessId = 8
     ExecutablePath = '/usr/local/microsoft/powershell/7/pwsh'
-    Arguments = @('-NoLogo', '-NoProfile', '-Command', 'forged-responder')
+    Arguments = @([IO.Path]::GetFullPath($verifyScript))
     ProcessStartTime = $readinessOwnership.ProcessStartTime
     LogDirectory = 'test-logs'
     StderrPath = ''
     StdoutPath = ''
     Process = [pscustomobject]@{ HasExited = $false; ExitCode = 0 }
 }
+$callerMutatedContract = $readinessContract.PSObject.Copy()
+$callerMutatedContract.LaunchExecutable = $forgedProcess.ExecutablePath
+$callerMutatedContract.LaunchArguments = @($forgedProcess.Arguments)
 $forgedProcessFailure = $null
 $forgedProcessObservation = @{}
 $script:readinessHealthCallCount = 0
@@ -404,6 +413,29 @@ catch { $forgedProcessFailure = $_.Exception }
 Assert-Contract ($null -ne $forgedProcessFailure -and $forgedProcessFailure.Message.Contains('canonical process identity mismatch', [StringComparison]::Ordinal)) "A forged responder executable must fail before a generic health response can self-identify as DemandPlanning. Actual: failure=$($forgedProcessFailure | Out-String) observation=$($forgedProcessObservation | ConvertTo-Json -Compress) calls=$script:readinessHealthCallCount/$script:readinessIdentityCallCount"
 Assert-Contract ($script:readinessHealthCallCount -eq 0 -and $script:readinessIdentityCallCount -eq 0) 'A forged responder command mismatch must not issue HTTP requests.'
 Assert-Contract (-not $forgedProcessObservation.healthResponseObserved -and -not $forgedProcessObservation.identityResponseObserved -and [string]::Equals([string]$forgedProcessObservation.healthObservation, 'unavailable', [StringComparison]::Ordinal) -and [string]::Equals([string]$forgedProcessObservation.identityObservation, 'unavailable', [StringComparison]::Ordinal)) 'A command mismatch must retain unavailable HTTP observations.'
+
+# A caller can make the forged process look canonical by rewriting the launch
+# fields on an otherwise valid contract. The production entry must reject that
+# mutation before consulting either HTTP endpoint, even when the OS readback
+# exactly matches the rewritten fields.
+$callerMutationFailure = $null
+$callerMutationOwnership = $readinessOwnership.PSObject.Copy()
+$callerMutationOwnership.ProcessId = $forgedProcess.ProcessId
+$callerMutationObservation = @{
+    healthResponseObserved = $false
+    identityResponseObserved = $false
+    healthObservation = 'unavailable'
+    identityObservation = 'unavailable'
+}
+$script:readinessHealthCallCount = 0
+$script:readinessIdentityCallCount = 0
+try {
+    Wait-Healthy -ServiceContract $callerMutatedContract -Headers @{} -ManagedProcess $forgedProcess -Ownership $callerMutationOwnership -Observation $callerMutationObservation -TimeoutSeconds 2 | Out-Null
+}
+catch { $callerMutationFailure = $_.Exception }
+Assert-Contract ($null -ne $callerMutationFailure -and $callerMutationFailure.Message.Contains('canonical service contract producer', [StringComparison]::Ordinal)) "A caller-mutated launch contract must fail at the production readiness entry before process identity or HTTP acceptance. Actual: failure=$($callerMutationFailure | Out-String) observation=$($callerMutationObservation | ConvertTo-Json -Compress) calls=$script:readinessHealthCallCount/$script:readinessIdentityCallCount"
+Assert-Contract ($script:readinessHealthCallCount -eq 0 -and $script:readinessIdentityCallCount -eq 0) 'A caller-mutated launch contract must not issue health or identity requests.'
+Assert-Contract (-not $callerMutationObservation.healthResponseObserved -and -not $callerMutationObservation.identityResponseObserved -and [string]::Equals([string]$callerMutationObservation.healthObservation, 'unavailable', [StringComparison]::Ordinal) -and [string]::Equals([string]$callerMutationObservation.identityObservation, 'unavailable', [StringComparison]::Ordinal)) 'A caller-mutated contract must retain unavailable HTTP observations.'
 
 $readinessProcess.Process.HasExited = $true
 $readinessProcess.Process.ExitCode = 73
