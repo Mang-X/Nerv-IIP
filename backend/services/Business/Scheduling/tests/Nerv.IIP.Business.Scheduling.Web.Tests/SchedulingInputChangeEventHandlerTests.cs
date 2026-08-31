@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using System.Text.Json;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
+using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
@@ -36,11 +37,7 @@ public sealed class SchedulingInputChangeEventHandlerTests
         await SeedPlansAsync(provider);
 
         using var scope = provider.CreateScope();
-        var handler = new AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans(
-            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
-            new InMemoryIntegrationEventDeadLetterStore(),
-            scope.ServiceProvider.GetRequiredService<ISender>(),
-            new RecordingLogger<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans>());
+        var handler = CreateAssetUnavailableHandler(scope.ServiceProvider);
 
         await handler.HandleAsync(CreateAssetUnavailableEvent(), CancellationToken.None);
 
@@ -135,11 +132,7 @@ public sealed class SchedulingInputChangeEventHandlerTests
         // 维护世界只持有业务编码，两个事件都用它。
         if (unavailable)
         {
-            await new AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans(
-                    dbContext,
-                    new InMemoryIntegrationEventDeadLetterStore(),
-                    sender,
-                    new RecordingLogger<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans>())
+            await CreateAssetUnavailableHandler(scope.ServiceProvider)
                 .HandleAsync(
                     CreateAssetUnavailableEvent() with
                     {
@@ -186,11 +179,7 @@ public sealed class SchedulingInputChangeEventHandlerTests
         await SeedPlansAsync(provider);
 
         using var scope = provider.CreateScope();
-        var handler = new AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans(
-            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
-            new InMemoryIntegrationEventDeadLetterStore(),
-            scope.ServiceProvider.GetRequiredService<ISender>(),
-            new RecordingLogger<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans>());
+        var handler = CreateAssetUnavailableHandler(scope.ServiceProvider);
         var integrationEvent = CreateAssetUnavailableEvent() with
         {
             Payload = new AssetUnavailablePayload(" ", "breakdown", new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero))
@@ -223,6 +212,14 @@ public sealed class SchedulingInputChangeEventHandlerTests
             IntegrationEventDeadLetterStatus.Pending,
             CancellationToken.None));
         Assert.Equal("unexpected-source-service", deadLetter.FailureCode);
+        using var eventJson = JsonDocument.Parse(deadLetter.EventJson);
+        var root = eventJson.RootElement;
+        Assert.Equal("evt-maint-v2-001", root.GetProperty("eventId").GetString());
+        Assert.Equal(MaintenanceIntegrationEventVersions.V2, root.GetProperty("eventVersion").GetInt32());
+        Assert.Equal("key-wrong-source", root.GetProperty("idempotencyKey").GetString());
+        Assert.Equal("org-001", root.GetProperty("organizationId").GetString());
+        Assert.Equal("ASSET-CNC-01", root.GetProperty("payload").GetProperty("deviceAssetId").GetString());
+        Assert.Equal("breakdown", root.GetProperty("payload").GetProperty("reasonCode").GetString());
         Assert.Empty(await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().ProcessedIntegrationEvents.ToArrayAsync());
     }
 
@@ -233,12 +230,8 @@ public sealed class SchedulingInputChangeEventHandlerTests
         await SeedPlansAsync(provider);
 
         using var scope = provider.CreateScope();
-        var logger = new RecordingLogger<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans>();
-        var handler = new AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans(
-            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
-            new InMemoryIntegrationEventDeadLetterStore(),
-            scope.ServiceProvider.GetRequiredService<ISender>(),
-            logger);
+        var logger = new RecordingLogger<AssetUnavailableCanonicalProcessor>();
+        var handler = CreateAssetUnavailableHandler(scope.ServiceProvider, logger);
         var integrationEvent = CreateAssetUnavailableEvent() with
         {
             Payload = new AssetUnavailablePayload("ASSET-NOT-MAPPED", "breakdown", new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero))
@@ -914,6 +907,7 @@ public sealed class SchedulingInputChangeEventHandlerTests
         services.AddMediatR(configuration => configuration
             .RegisterServicesFromAssembly(typeof(Program).Assembly)
             .AddUnitOfWorkBehaviors());
+        services.AddScoped<RecordSchedulePlanInvalidationsCommandHandler>();
         services.AddDbContext<ApplicationDbContext>(options => options
             .UseInMemoryDatabase(databaseName)
             .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
@@ -1119,6 +1113,18 @@ public sealed class SchedulingInputChangeEventHandlerTests
 
         Assert.Equal(expectedTopic, attribute.Name);
         Assert.Equal(expectedGroup, attribute.Group);
+    }
+
+    private static AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans CreateAssetUnavailableHandler(
+        IServiceProvider services,
+        RecordingLogger<AssetUnavailableCanonicalProcessor>? logger = null)
+    {
+        var processor = new AssetUnavailableCanonicalProcessor(
+            services.GetRequiredService<ISender>(),
+            logger ?? new RecordingLogger<AssetUnavailableCanonicalProcessor>());
+        return new AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans(
+            new InMemoryIntegrationEventDeadLetterStore(),
+            processor);
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider

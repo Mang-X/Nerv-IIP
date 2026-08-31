@@ -10,6 +10,21 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.Sql(
+                """
+                DELETE FROM scheduling.processed_integration_events AS duplicate
+                USING scheduling.processed_integration_events AS survivor
+                WHERE duplicate."ConsumerName" = survivor."ConsumerName"
+                  AND duplicate."EventId" = survivor."EventId"
+                  AND (
+                      duplicate."ProcessedAtUtc" > survivor."ProcessedAtUtc"
+                      OR (
+                          duplicate."ProcessedAtUtc" = survivor."ProcessedAtUtc"
+                          AND duplicate."Id" > survivor."Id"
+                      )
+                  );
+                """);
+
             migrationBuilder.CreateIndex(
                 name: "ux_processed_integration_events_consumer_event_id",
                 schema: "scheduling",

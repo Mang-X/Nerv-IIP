@@ -44,7 +44,7 @@
       "project": "backend/services/Business/Scheduling/tests/Nerv.IIP.Business.Scheduling.Web.Tests/Nerv.IIP.Business.Scheduling.Web.Tests.csproj",
       "filter": "FullyQualifiedName=Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableRedisCapTransportTests.Redis_cap_poison_exhausts_to_dlq_and_replay_preserves_identity_without_duplicate_claim",
       "databasePrefix": "nerv_iip_scheduling",
-      "capVersionPrefix": "n2967scheduling",
+      "capVersionPrefix": "n2967sched",
       "diagnosticSchemas": [
         "scheduling",
         "cap"

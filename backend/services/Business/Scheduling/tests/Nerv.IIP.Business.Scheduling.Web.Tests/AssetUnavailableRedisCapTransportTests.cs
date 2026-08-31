@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using System.Text.Json;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventHandlers;
@@ -58,6 +59,14 @@ public sealed class AssetUnavailableRedisCapTransportTests
         Assert.Equal(integrationEvent.EventId, deadLetter.EventId);
         Assert.Equal(integrationEvent.EventVersion, deadLetter.EventVersion);
         Assert.Equal(integrationEvent.IdempotencyKey, deadLetter.IdempotencyKey);
+        var replayEnvelope = JsonSerializer.Deserialize<AssetUnavailableV2IntegrationEvent>(
+            deadLetter.EventJson,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.NotNull(replayEnvelope);
+        Assert.Equal(integrationEvent.EventId, replayEnvelope.EventId);
+        Assert.Equal(integrationEvent.EventVersion, replayEnvelope.EventVersion);
+        Assert.Equal(integrationEvent.IdempotencyKey, replayEnvelope.IdempotencyKey);
+        Assert.Equal(integrationEvent.Payload, replayEnvelope.Payload);
         factory.Services.GetRequiredService<PoisonState>().Allow = true;
         using (var scope = factory.Services.CreateScope())
         {
@@ -66,12 +75,19 @@ public sealed class AssetUnavailableRedisCapTransportTests
             Assert.True(result.Succeeded);
         }
 
+        await AssertCountsEventuallyAsync(factory, 1, 1, "real CAP replay reaches the canonical processor");
+
         using (var scope = factory.Services.CreateScope())
-        {
-            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            Assert.Single(await db.ProcessedIntegrationEvents.AsNoTracking().ToArrayAsync());
-            Assert.Single(await db.SchedulePlanInvalidations.AsNoTracking().ToArrayAsync());
-        }
+            await scope.ServiceProvider.GetRequiredService<ICapPublisher>().PublishAsync(
+                AssetUnavailableIntegrationEventTopics.V1LegacyAlias,
+                V1Event("evt-v1-companion", integrationEvent.IdempotencyKey));
+        await AssertCountsEventuallyAsync(factory, 1, 1, "cross-version companion is deduplicated by business key");
+
+        using (var scope = factory.Services.CreateScope())
+            await scope.ServiceProvider.GetRequiredService<ICapPublisher>().PublishAsync(
+                AssetUnavailableIntegrationEventTopics.V1LegacyAlias,
+                V1Event("evt-v1-wrong-key", integrationEvent.IdempotencyKey + ":mutated"));
+        await AssertCountsEventuallyAsync(factory, 2, 2, "wrong-key mutation defeats business deduplication");
     }
 
     private static WebApplicationFactory<Program> CreateFactory()
@@ -118,6 +134,24 @@ public sealed class AssetUnavailableRedisCapTransportTests
         DateTimeOffset.Parse("2026-06-01T09:00:00Z"), MaintenanceIntegrationEventSources.BusinessMaintenance,
         "corr-2967", "cause-2967", "org-001", "env-dev", "system:test", key,
         new AssetUnavailableV2Payload("ASSET-CNC-01", "breakdown", DateTimeOffset.Parse("2026-06-01T09:00:00Z")));
+
+    private static AssetUnavailableIntegrationEvent V1Event(string eventId, string key) => new(
+        eventId, MaintenanceIntegrationEventTypes.AssetUnavailable, MaintenanceIntegrationEventVersions.V1,
+        DateTimeOffset.Parse("2026-06-01T09:00:00Z"), MaintenanceIntegrationEventSources.Maintenance,
+        "corr-2967", "cause-2967", "org-001", "env-dev", "system:test", key,
+        new AssetUnavailablePayload("ASSET-CNC-01", "breakdown", DateTimeOffset.Parse("2026-06-01T09:00:00Z")));
+
+    private static ValueTask AssertCountsEventuallyAsync(
+        WebApplicationFactory<Program> factory,
+        int expectedInbox,
+        int expectedInvalidations,
+        string operation) => Eventually.AssertAsync(operation, async _ =>
+        {
+            using var scope = factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            Assert.Equal(expectedInbox, await db.ProcessedIntegrationEvents.AsNoTracking().CountAsync());
+            Assert.Equal(expectedInvalidations, await db.SchedulePlanInvalidations.AsNoTracking().CountAsync());
+        }, new EventuallyOptions(TimeSpan.FromSeconds(30), TimeSpan.FromMilliseconds(250), []));
 
     private static SchedulePlan CreatePlanWithAssignment() => SchedulePlan.FromGeneratedPlan(
         "org-001",

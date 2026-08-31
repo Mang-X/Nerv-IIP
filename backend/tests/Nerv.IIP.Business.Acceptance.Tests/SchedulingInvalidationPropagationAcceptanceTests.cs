@@ -10,6 +10,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Domain.DomainEvents;
+using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
@@ -47,11 +48,12 @@ public sealed class SchedulingInvalidationPropagationAcceptanceTests
         await schedulingDb.SaveChangesAsync();
         releasedPlan.ClearDomainEvents();
         var domainEventRecorder = schedulingScope.ServiceProvider.GetRequiredService<SchedulePlanInvalidatedDomainEventRecorder>();
-        var schedulingHandler = new AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans(
-            schedulingDb,
-            new InMemoryIntegrationEventDeadLetterStore(),
+        var schedulingProcessor = new AssetUnavailableCanonicalProcessor(
             schedulingScope.ServiceProvider.GetRequiredService<ISender>(),
-            NullLogger<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans>.Instance);
+            NullLogger<AssetUnavailableCanonicalProcessor>.Instance);
+        var schedulingHandler = new AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans(
+            new InMemoryIntegrationEventDeadLetterStore(),
+            schedulingProcessor);
 
         await schedulingHandler.HandleAsync(CreateAssetUnavailableEvent(), CancellationToken.None);
 
@@ -138,6 +140,7 @@ public sealed class SchedulingInvalidationPropagationAcceptanceTests
             .RegisterServicesFromAssembly(typeof(AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans).Assembly)
             .RegisterServicesFromAssembly(typeof(SchedulingInvalidationPropagationAcceptanceTests).Assembly)
             .AddUnitOfWorkBehaviors());
+        services.AddScoped<RecordSchedulePlanInvalidationsCommandHandler>();
         services.AddDbContext<SchedulingDbContext>(options =>
             options
                 .UseInMemoryDatabase($"scheduling-invalidation-acceptance-{Guid.NewGuid():N}")

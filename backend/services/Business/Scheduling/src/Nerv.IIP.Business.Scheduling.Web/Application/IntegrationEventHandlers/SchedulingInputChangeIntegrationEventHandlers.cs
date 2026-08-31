@@ -163,16 +163,6 @@ public sealed class AssetUnavailableIntegrationEventHandlerForInvalidateSchedule
             MaintenanceIntegrationEventVersions.V1));
     }
 
-    public AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans(
-        ApplicationDbContext dbContext,
-        IIntegrationEventDeadLetterStore deadLetterStore,
-        ISender sender,
-        ILogger<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans> logger)
-        : this(deadLetterStore, new AssetUnavailableCanonicalProcessor(
-            sender, new LoggerAdapter<AssetUnavailableCanonicalProcessor, AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans>(logger)))
-    {
-    }
-
     public async Task HandleAsync(AssetUnavailableIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
@@ -221,9 +211,16 @@ public sealed class AssetUnavailableV2IntegrationEventHandlerForInvalidateSchedu
                     integrationEvent.EventId,
                     integrationEvent.EventType,
                     integrationEvent.EventVersion,
+                    integrationEvent.OccurredAtUtc,
                     integrationEvent.SourceService,
-                    integrationEvent.IdempotencyKey
-                }),
+                    integrationEvent.CorrelationId,
+                    integrationEvent.CausationId,
+                    integrationEvent.OrganizationId,
+                    integrationEvent.EnvironmentId,
+                    integrationEvent.Actor,
+                    integrationEvent.IdempotencyKey,
+                    integrationEvent.Payload
+                }, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
                 "unexpected-source-service",
                 "AssetUnavailable v2 requires the business-maintenance source service.",
                 IntegrationEventDeadLetterStatus.Pending,
@@ -261,22 +258,19 @@ public sealed class AssetUnavailableCanonicalProcessor(
         AssetUnavailableCanonicalInput input,
         CancellationToken cancellationToken)
     {
-        await SchedulingPlanInvalidationService.InvalidateByResourceAsync(
-            sender, input.Envelope, SchedulingPlanInvalidationReasons.EquipmentUnavailable,
-            input.DeviceAssetId, logger, cancellationToken,
-            new SchedulingInboxClaim(
-                AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName,
-                input.Envelope.EventVersion,
-                input.Envelope.IdempotencyKey));
+        var result = await sender.Send(
+            new ProcessAssetUnavailableCommand(input.Envelope, input.DeviceAssetId),
+            cancellationToken);
+        if (result.MatchedPlanCount == 0)
+        {
+            logger.LogInformation(
+                "Scheduling input change {EventType} for resource {AffectedResourceId} matched no schedule plan in {OrganizationId}/{EnvironmentId}.",
+                input.Envelope.EventType,
+                input.DeviceAssetId,
+                input.Envelope.OrganizationId,
+                input.Envelope.EnvironmentId);
+        }
     }
-}
-
-internal sealed class LoggerAdapter<TTarget, TSource>(ILogger<TSource> source) : ILogger<TTarget>
-{
-    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => source.BeginScope(state);
-    public bool IsEnabled(LogLevel logLevel) => source.IsEnabled(logLevel);
-    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
-        source.Log(logLevel, eventId, state, exception, formatter);
 }
 
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Maintenance.AssetRestoredIntegrationEvent", ConsumerName)]
@@ -608,8 +602,7 @@ internal static class SchedulingPlanInvalidationService
         string reasonCode,
         string affectedResourceId,
         ILogger logger,
-        CancellationToken cancellationToken,
-        SchedulingInboxClaim? inboxClaim = null)
+        CancellationToken cancellationToken)
         where TIntegrationEvent : IIntegrationEventEnvelope
     {
         var normalizedResourceId = Required(affectedResourceId, nameof(affectedResourceId));
@@ -620,8 +613,7 @@ internal static class SchedulingPlanInvalidationService
                 SchedulePlanInvalidationScope.Resource,
                 normalizedResourceId,
                 affectedWorkOrderId: null,
-                affectedSkuCode: null,
-                inboxClaim),
+                affectedSkuCode: null),
             cancellationToken);
         if (result.MatchedPlanCount == 0)
         {
@@ -685,14 +677,13 @@ internal static class SchedulingPlanInvalidationService
         return value.Trim();
     }
 
-    private static RecordSchedulePlanInvalidationsCommand ToCommand<TIntegrationEvent>(
+    internal static RecordSchedulePlanInvalidationsCommand ToCommand<TIntegrationEvent>(
         TIntegrationEvent integrationEvent,
         string reasonCode,
         SchedulePlanInvalidationScope scope,
         string? scopeValue,
         string? affectedWorkOrderId,
-        string? affectedSkuCode,
-        SchedulingInboxClaim? inboxClaim = null)
+        string? affectedSkuCode)
         where TIntegrationEvent : IIntegrationEventEnvelope
     {
         return new RecordSchedulePlanInvalidationsCommand(
@@ -706,8 +697,7 @@ internal static class SchedulingPlanInvalidationService
             scope,
             scopeValue,
             affectedWorkOrderId,
-            affectedSkuCode,
-            inboxClaim);
+            affectedSkuCode);
     }
 }
 

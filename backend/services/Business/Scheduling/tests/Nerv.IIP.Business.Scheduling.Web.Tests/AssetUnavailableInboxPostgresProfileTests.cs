@@ -1,5 +1,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
@@ -20,26 +22,73 @@ public sealed class AssetUnavailableInboxPostgresProfileTests
     public Task Concurrent_claims_with_different_event_ids_and_same_business_key_commit_one_result() =>
         RunRaceAsync("event-a", "key-shared", "event-b", "key-shared");
 
+    [SchedulingPostgresFact]
+    public async Task Migration_deterministically_keeps_earliest_historical_event_instance()
+    {
+        await SchedulingPostgresLaneDatabase.ResetSchemaAsync();
+        await using var provider = CreateProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var migrator = db.Database.GetService<IMigrator>();
+        await migrator.MigrateAsync("20260731210209_PersistSchedulePlanBlockWindows");
+        await db.Database.ExecuteSqlRawAsync("""
+            INSERT INTO scheduling.processed_integration_events
+                ("Id", "ConsumerName", "EventId", "EventType", "EventVersion", "SourceService", "IdempotencyKey", "ProcessedAtUtc")
+            VALUES
+                ('00000000-0000-0000-0000-000000000002', 'business-scheduling.asset-unavailable', 'historical-event',
+                 'maintenance.AssetUnavailable', 1, 'maintenance', 'historical-key-later', '2026-06-01T10:00:00Z'),
+                ('00000000-0000-0000-0000-000000000001', 'business-scheduling.asset-unavailable', 'historical-event',
+                 'maintenance.AssetUnavailable', 1, 'maintenance', 'historical-key-earlier', '2026-06-01T09:00:00Z');
+            """);
+
+        await migrator.MigrateAsync();
+
+        var survivor = Assert.Single(await db.ProcessedIntegrationEvents.AsNoTracking().ToArrayAsync());
+        Assert.Equal("historical-key-earlier", survivor.IdempotencyKey);
+        await AssertExactUniqueIndexesAsync(db);
+    }
+
+    [SchedulingPostgresFact]
+    public async Task Event_id_unique_index_wrong_column_mutation_is_rejected()
+    {
+        await SchedulingPostgresLaneDatabase.ResetSchemaAsync();
+        await using var provider = CreateProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await db.Database.MigrateAsync();
+        await db.Database.ExecuteSqlRawAsync("""
+            DROP INDEX scheduling.ux_processed_integration_events_consumer_event_id;
+            CREATE UNIQUE INDEX ux_processed_integration_events_consumer_event_id
+                ON scheduling.processed_integration_events ("ConsumerName", "EventId", "IdempotencyKey");
+            """);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => AssertExactUniqueIndexesAsync(db));
+    }
+
+    [SchedulingPostgresFact]
+    public async Task Idempotency_key_unique_index_wrong_column_mutation_is_rejected()
+    {
+        await SchedulingPostgresLaneDatabase.ResetSchemaAsync();
+        await using var provider = CreateProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await db.Database.MigrateAsync();
+        await db.Database.ExecuteSqlRawAsync("""
+            DROP INDEX scheduling.ux_processed_integration_events_consumer_idempotency_key;
+            CREATE UNIQUE INDEX ux_processed_integration_events_consumer_idempotency_key
+                ON scheduling.processed_integration_events ("ConsumerName", "IdempotencyKey", "EventId");
+            """);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => AssertExactUniqueIndexesAsync(db));
+    }
+
     private static async Task RunRaceAsync(string firstEventId, string firstKey, string secondEventId, string secondKey)
     {
         await SchedulingPostgresLaneDatabase.ResetSchemaAsync();
-        var services = new ServiceCollection();
-        services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
-        services.AddSchedulingPostgreSqlPersistence(SchedulingPostgresLaneDatabase.ConnectionString);
-        await using var provider = services.BuildServiceProvider();
+        await using var provider = CreateProvider();
         await using (var setup = provider.CreateAsyncScope())
         {
             var setupDb = setup.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             await setupDb.Database.MigrateAsync();
-            var indexes = await setupDb.Database.SqlQueryRaw<string>("""
-                SELECT indexname AS "Value"
-                FROM pg_indexes
-                WHERE schemaname = 'scheduling'
-                  AND tablename = 'processed_integration_events'
-                  AND indexdef LIKE 'CREATE UNIQUE INDEX%'
-                """).ToArrayAsync();
-            Assert.Contains("ux_processed_integration_events_consumer_event_id", indexes);
-            Assert.Contains("ux_processed_integration_events_consumer_idempotency_key", indexes);
+            await AssertExactUniqueIndexesAsync(setupDb);
         }
 
         var firstClaimed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -49,6 +98,7 @@ public sealed class AssetUnavailableInboxPostgresProfileTests
         await firstClaimed.Task;
         var second = CompeteAsync(provider, secondEventId, secondKey, "plan-b", secondStarted, null, Task.CompletedTask);
         await secondStarted.Task;
+        await WaitForBlockedAdvisoryClaimAsync(provider);
         releaseFirst.SetResult();
         await Task.WhenAll(first, second);
 
@@ -56,6 +106,48 @@ public sealed class AssetUnavailableInboxPostgresProfileTests
         var db = verify.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         Assert.Single(await db.ProcessedIntegrationEvents.AsNoTracking().ToArrayAsync());
         Assert.Single(await db.SchedulePlanInvalidations.AsNoTracking().ToArrayAsync());
+    }
+
+    private static async Task WaitForBlockedAdvisoryClaimAsync(ServiceProvider provider)
+    {
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(15);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var waiting = await db.Database.SqlQueryRaw<int>("""
+                SELECT COUNT(*)::int AS "Value"
+                FROM pg_locks
+                WHERE locktype = 'advisory'
+                  AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+                  AND NOT granted
+                """).SingleAsync();
+            if (waiting > 0) return;
+            await Task.Delay(50);
+        }
+        throw new TimeoutException("Both competitors did not reach the advisory claim boundary.");
+    }
+
+    private static async Task AssertExactUniqueIndexesAsync(ApplicationDbContext db)
+    {
+        var definitions = await db.Database.SqlQueryRaw<string>("""
+            SELECT indexdef AS "Value"
+            FROM pg_indexes
+            WHERE schemaname = 'scheduling'
+              AND tablename = 'processed_integration_events'
+              AND indexdef LIKE 'CREATE UNIQUE INDEX%'
+            """).ToArrayAsync();
+        if (!definitions.Any(value => value.EndsWith("(\"ConsumerName\", \"EventId\")", StringComparison.Ordinal)) ||
+            !definitions.Any(value => value.EndsWith("(\"ConsumerName\", \"IdempotencyKey\")", StringComparison.Ordinal)))
+            throw new InvalidOperationException("Scheduling inbox requires exact, independent EventId and IdempotencyKey unique indexes.");
+    }
+
+    private static ServiceProvider CreateProvider()
+    {
+        var services = new ServiceCollection();
+        services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
+        services.AddSchedulingPostgreSqlPersistence(SchedulingPostgresLaneDatabase.ConnectionString);
+        return services.BuildServiceProvider();
     }
 
     private static async Task CompeteAsync(
