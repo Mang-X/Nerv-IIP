@@ -80,6 +80,12 @@
       "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES and NERV_IIP_TEST_REDIS to run the real PostgreSQL \\+ Redis CAP Quality rework-receipt proof\\.\";$"
     },
     {
+      "id": "mes-asset-unavailable-postgres-redis",
+      "sourcePath": "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/MesAssetUnavailableRedisCapTransportTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES and NERV_IIP_TEST_REDIS to run the real PostgreSQL \\+ Redis CAP MES asset-unavailable proof\\.\";$"
+    },
+    {
       "id": "erp-cost-accounting",
       "sourcePath": "backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/ErpCostAccountingPostgresAcceptanceTests.cs",
       "sourceOrdinal": 1,
@@ -656,6 +662,25 @@
       "exitCondition": null,
       "testIdentities": [
         "Nerv.IIP.Business.Quality.Web.Tests.QualityReworkReceiptRedisCapTransportTests.Redis_cap_transport_recovers_replayed_receipt_and_preserves_the_first_system_binding_in_postgres"
+      ],
+      "expectedRuntimeTestCount": 1
+    },
+    {
+      "id": "mes-asset-unavailable-postgres-redis",
+      "sourceId": "mes-asset-unavailable-postgres-redis",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Mes\\.Web\\.Tests\\.MesAssetUnavailableRedisCapTransportTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES and NERV_IIP_TEST_REDIS to run the real PostgreSQL \\+ Redis CAP MES asset-unavailable proof\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "redis-cap",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Mes.Web.Tests.MesAssetUnavailableRedisCapTransportTests.Redis_cap_poison_exhaustion_persists_and_replays_the_original_v2_identity_without_duplicate_effects"
       ],
       "expectedRuntimeTestCount": 1
     },
