@@ -1254,6 +1254,7 @@
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_closed_period_stays_replayable_then_reopen_posts_machine_overhead_exactly_once",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_concurrent_report_and_actual_settlement_leave_only_actual_labor_active",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_fault_after_save_rolls_back_settlement_inbox_lineage_and_cost",
+        "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_machine_overhead_reads_translate_and_isolate_work_order_period_and_scope",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_migration_backfills_legacy_rate_and_enforces_revision_indexes",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_migration_enforces_gl_link_and_persists_reconciled_cost",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_nonzero_machine_overhead_still_fails_closed_for_priced_labor_in_another_currency",
@@ -1266,7 +1267,7 @@
         "Nerv.IIP.Business.Erp.Web.Tests.WorkCenterMachineOverheadRatePostgresAcceptanceTests.Concurrent_commands_serialize_revision_allocation_on_postgres",
         "Nerv.IIP.Business.Erp.Web.Tests.WorkCenterMachineOverheadRatePostgresAcceptanceTests.Migration_persists_monthly_rate_and_enforces_scope_period_revision_on_postgres"
       ],
-      "expectedRuntimeTestCount": 15
+      "expectedRuntimeTestCount": 16
     },
     {
       "id": "erp-scale-seed",
