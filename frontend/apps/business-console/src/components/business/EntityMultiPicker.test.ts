@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import type { EntityPickerOption } from '@nerv-iip/ui'
 
@@ -37,6 +37,33 @@ function mountPicker(props: {
 }
 
 describe('EntityMultiPicker', () => {
+  it('默认使用真实实体选择器的本地搜索过滤候选', async () => {
+    const wrapper = mount(EntityMultiPicker, {
+      props: {
+        options: [
+          { value: 'SUP-A', label: '华东钢材' },
+          { value: 'SUP-B', label: '江南紧固件' },
+        ],
+        title: '选择供应商',
+      },
+      attachTo: document.body,
+    })
+
+    await wrapper.get('button[aria-haspopup="listbox"]').trigger('click')
+    await flushPromises()
+    const search = document.body.querySelector<HTMLInputElement>('input[role="combobox"]')
+    expect(search).not.toBeNull()
+    await search!.setRangeText('江南')
+    search!.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+
+    const listboxText = document.body.querySelector('[role="listbox"]')?.textContent ?? ''
+    expect(listboxText).not.toContain('华东钢材')
+    expect(listboxText).toContain('江南紧固件')
+
+    wrapper.unmount()
+  })
+
   it('保持既有本地目录消费者的逗号字符串增删语义', async () => {
     const wrapper = mountPicker({
       modelValue: 'SUP-A',
