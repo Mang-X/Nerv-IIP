@@ -282,6 +282,32 @@ public sealed class ZplV1LabelCompilerTests
     }
 
     [Fact]
+    public void Compiler_keeps_greater_than_literal_in_text_fields()
+    {
+        var item = PlainItem("MAT-0001") with
+        {
+            VariableValuesJson = "{\"skuCode\":\">8TEXT\"}",
+        };
+
+        var zpl = CompileText(item);
+
+        Assert.Contains("^FD>8TEXT^FS", zpl, StringComparison.Ordinal);
+        Assert.DoesNotContain("^FD>08TEXT^FS", zpl, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Compiler_keeps_leading_greater_than_literal_in_gs1_datamatrix_data()
+    {
+        var gs1 = new Gs1BarcodeValue("09501101530003", ">8LOT", ">;SERIAL", null);
+
+        var zpl = CompileText(Gs1Item(gs1, Gs1LabelBarcodeType.DataMatrix));
+
+        Assert.Contains("^FD_1010950110153000310>8LOT_121>;SERIAL^FS", zpl, StringComparison.Ordinal);
+        Assert.DoesNotContain("10>08LOT", zpl, StringComparison.Ordinal);
+        Assert.DoesNotContain("21>0;SERIAL", zpl, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Compiler_uses_bx_fnc1_escapes_and_doubles_literal_underscores_in_gs1_datamatrix_data()
     {
         var gs1 = new Gs1BarcodeValue("09501101530003", "LOT_A", "SN_001", null);
@@ -320,6 +346,7 @@ public sealed class ZplV1LabelCompilerTests
     {
         // Contract sources, independent from the compiler implementation:
         // - GitHub Issue #2065, approved specification revision 2, "minimum golden vectors".
+        // - GitHub Issue #2149, regression contract for literal > in Code 128 data contexts.
         // - Zebra ZPL Programming Guide, ^BC invocation table (>0 encodes a literal > in subsets A/B),
         //   ^BX quality 200, and ^FH.
         // - GS1 DataMatrix Guideline release 2.5.1, sections 2.2.1 and 2.2.2.
