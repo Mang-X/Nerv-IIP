@@ -36,13 +36,45 @@ public sealed class WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicIns
     public Task HandleCapAsync(WorkOrderReleasedIntegrationEvent integrationEvent, CancellationToken cancellationToken) =>
         HandleAsync(integrationEvent, cancellationToken);
 
-    private async Task HandleValidEventAsync(
+    private Task HandleValidEventAsync(
         WorkOrderReleasedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken) =>
+        PeriodicInspectionReleaseProjection.ApplyAsync(
+            dbContext,
+            scopeCoordinator,
+            deadLetterStore,
+            integrationEvent,
+            integrationEvent.Payload,
+            ConsumerName,
+            // 直投路径不跳过已有发布事实：同一工序收到第二份**不同**的发布事实是真实异常，
+            // 由 ApplyRelease 判为冲突进死信；跳过会把这一信号吞掉。
+            skipOperationsWithExistingReleaseFacts: false,
+            cancellationToken);
+}
+
+/// <summary>
+/// 工单发布事实落成 <c>PeriodicInspectionOperation</c> 投影的**唯一**写法：直投（<c>mes.WorkOrderReleased</c>）
+/// 与存量回填（<c>mes.WorkOrderReleaseProjectionBackfilled</c>，#3000）共用本方法，两条入口不各写一份。
+/// </summary>
+internal static class PeriodicInspectionReleaseProjection
+{
+    /// <summary>
+    /// <c>skipOperationsWithExistingReleaseFacts</c>：回填载荷里的发布时刻是从 MES 存量数据重建出来的下界，
+    /// 不等于当初那一次发布事件带的时刻；对已经有发布事实的工序调用 <c>ApplyRelease</c> 会因时刻不等被判为
+    /// 冲突事实。回填因此只补空缺、不覆盖既有行——这同时就是「重复执行回填不改变投影内容」这一不变量的落点。
+    /// </summary>
+    public static async Task ApplyAsync(
+        ApplicationDbContext dbContext,
+        IPeriodicInspectionOperationScopeCoordinator scopeCoordinator,
+        IIntegrationEventDeadLetterStore deadLetterStore,
+        IIntegrationEventEnvelope integrationEvent,
+        WorkOrderReleasedPayload payload,
+        string consumerName,
+        bool skipOperationsWithExistingReleaseFacts,
         CancellationToken cancellationToken)
     {
         try
         {
-            var payload = integrationEvent.Payload;
             var operations = ValidateReleasedOperations(payload);
             var workCenterIds = operations.Select(x => x.WorkCenterId.Trim()).Distinct(StringComparer.Ordinal).ToArray();
             var plans = await dbContext.InspectionPlans
@@ -67,7 +99,7 @@ public sealed class WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicIns
                 {
                     if (!await QualityProcessedIntegrationEventInbox.TryRecordAsync(
                             dbContext,
-                            ConsumerName,
+                            consumerName,
                             integrationEvent,
                             ct))
                     {
@@ -83,6 +115,11 @@ public sealed class WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicIns
                             payload.WorkOrderId,
                             operationPayload.OperationId,
                             ct);
+                        if (skipOperationsWithExistingReleaseFacts && operation.ReleasedAtUtc.HasValue)
+                        {
+                            continue;
+                        }
+
                         var snapshots = plans
                             .Where(plan => plan.WorkCenterId == operationPayload.WorkCenterId.Trim())
                             .OrderBy(plan => plan.PlanCode, StringComparer.Ordinal)
@@ -107,7 +144,7 @@ public sealed class WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicIns
             await PeriodicInspectionOperationEventProcessing.DeadLetterAsync(
                 dbContext,
                 deadLetterStore,
-                ConsumerName,
+                consumerName,
                 integrationEvent,
                 exception,
                 cancellationToken);
@@ -144,6 +181,57 @@ public sealed class WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicIns
 
         return operations.OrderBy(operation => operation.OperationId, StringComparer.Ordinal).ToArray();
     }
+}
+
+/// <summary>
+/// 存量在制工单的发布投影回填（#3000）。这批工单在 Quality 订阅 <c>mes.WorkOrderReleased</c> 之前就已发布，
+/// 投影里没有它们的行，首件确认读面因此恒回 <c>not-synchronized</c>、#2780 的报工门禁会持续拒绝，且不靠报工自愈。
+/// 补投由 MES 的内部回填端点一次性发出，本消费者只把发布事实补进空缺的工序行。
+/// </summary>
+[IntegrationEventConsumer(nameof(WorkOrderReleaseProjectionBackfilledIntegrationEvent), ConsumerName)]
+public sealed class WorkOrderReleaseProjectionBackfilledIntegrationEventHandlerForCreatePeriodicInspectionContexts(
+    ApplicationDbContext dbContext,
+    IPeriodicInspectionOperationScopeCoordinator scopeCoordinator,
+    IIntegrationEventDeadLetterStore deadLetterStore)
+    : IIntegrationEventHandler<WorkOrderReleaseProjectionBackfilledIntegrationEvent>, ICapSubscribe
+{
+    /// <summary>
+    /// 与直投消费组分开：两者的 inbox 记录、死信归属和重放语义都不同，混在一个组里，
+    /// 回填就会被直投那次的 inbox 记录挡掉或反过来污染它。
+    /// </summary>
+    public const string ConsumerName = "business-quality.mes-work-order-release-projection-backfill";
+
+    private readonly IntegrationEventConsumerGuard<WorkOrderReleaseProjectionBackfilledIntegrationEvent> consumerGuard = new(
+        new IntegrationEventEnvelopeValidator(),
+        deadLetterStore,
+        new IntegrationEventConsumerOptions(
+            ConsumerName,
+            MesIntegrationEventTypes.WorkOrderReleaseProjectionBackfilled,
+            MesIntegrationEventVersions.V1));
+
+    public Task HandleAsync(
+        WorkOrderReleaseProjectionBackfilledIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken) =>
+        consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
+
+    [CapSubscribe(nameof(WorkOrderReleaseProjectionBackfilledIntegrationEvent), Group = ConsumerName)]
+    public Task HandleCapAsync(
+        WorkOrderReleaseProjectionBackfilledIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken) =>
+        HandleAsync(integrationEvent, cancellationToken);
+
+    private Task HandleValidEventAsync(
+        WorkOrderReleaseProjectionBackfilledIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken) =>
+        PeriodicInspectionReleaseProjection.ApplyAsync(
+            dbContext,
+            scopeCoordinator,
+            deadLetterStore,
+            integrationEvent,
+            integrationEvent.Payload,
+            ConsumerName,
+            skipOperationsWithExistingReleaseFacts: true,
+            cancellationToken);
 }
 
 [IntegrationEventConsumer(nameof(ProductionReportRecordedIntegrationEvent), ConsumerName)]
