@@ -148,6 +148,23 @@ public sealed class WorkCenterMachineOverheadReconciliationApplicationTests
     }
 
     [Fact]
+    public async Task Reconciliation_freezes_actual_pool_to_six_decimal_to_even_before_persistence()
+    {
+        await using var db = CreateDb();
+        AddPeriodAndRate(db, "org-a", "env-a", "WC-01", "2026-08");
+        await db.SaveChangesAsync();
+
+        await Reconcile(db, 1.0000005m, 2.0000015m);
+        await db.SaveChangesAsync();
+
+        var reconciliation = await db.WorkCenterMachineOverheadReconciliations.SingleAsync();
+        Assert.Equal(1.000000m, reconciliation.ActualFixedOverheadAmount);
+        Assert.Equal(2.000002m, reconciliation.ActualVariableOverheadAmount);
+        Assert.Equal(3.000002m, reconciliation.ActualTotalOverheadAmount);
+        Assert.Equal(3.000002m, reconciliation.UnderOverAppliedTotalAmount);
+    }
+
+    [Fact]
     public async Task Reconciliation_history_has_bounded_stable_pagination()
     {
         await using var db = CreateDb();
