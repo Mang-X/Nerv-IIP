@@ -185,6 +185,11 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         otherState.ApplySettlement(1);
         var otherCost = WorkOrderCost.Open("org-read", "env-other", "WO-SAME", "FG-OTHER");
         otherCost.RecordMachineOverhead(otherSettlement);
+        var otherEnvironmentReconciliation = WorkCenterMachineOverheadReconciliation.Record(
+            "org-read", "env-other", "WC-READ", "2026-08", otherRate.Id, 1, "CNY",
+            900m, 300m, 9 * TimeSpan.TicksPerHour, 270m, 90m, 360m,
+            0, AbnormalDowntimeDisposition.None, 1, "user:accountant",
+            "ledger:other-environment", "environment distractor", completedAtUtc.AddHours(1));
 
         var otherOrganizationSettlement = OperationMachineOverheadSettlement.CreateApplied(
             "org-other", "env-read", "WO-SAME", "OP-OTHER-ORG", "WC-READ", 1,
@@ -234,7 +239,7 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
             0, AbnormalDowntimeDisposition.None, 1, "user:accountant",
             "ledger:other-work-order", "work order distractor", completedAtUtc.AddHours(1));
         db.AddRange(settlement, state, cost, reconciliation,
-            otherSettlement, otherState, otherCost,
+            otherSettlement, otherState, otherCost, otherEnvironmentReconciliation,
             otherOrganizationSettlement, otherOrganizationState, otherOrganizationCost,
             otherOrganizationReconciliation, otherPeriodSettlement, otherPeriodState,
             otherPeriodCost, otherPeriodReconciliation, otherWorkOrderSettlement,
@@ -261,6 +266,8 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         Assert.Equal("open", periodRead.AccountingPeriodStatus);
         Assert.Equal("available", periodRead.ReconciliationStatus);
         var item = Assert.Single(periodRead.Items);
+        Assert.Equal(reconciliation.Id.ToString(), item.Id);
+        Assert.NotEqual(otherEnvironmentReconciliation.Id.ToString(), item.Id);
         Assert.Equal(100m, item.ActualFixedOverheadAmount);
         Assert.Equal(60m, item.AppliedFixedAmount);
         Assert.Equal(40m, item.UnderOverAppliedFixedAmount);

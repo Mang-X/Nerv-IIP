@@ -254,7 +254,10 @@ public sealed class WorkCenterMachineOverheadReconciliationApplicationTests
         Assert.Equal(3, response.TotalCount);
         Assert.Equal(2, response.PageNumber);
         Assert.Equal(1, response.PageSize);
-        Assert.Equal(2, Assert.Single(response.Items).Revision);
+        var historicalItem = Assert.Single(response.Items);
+        Assert.Equal(2, historicalItem.Revision);
+        Assert.Equal("unavailable", historicalItem.ReconciliationStatus);
+        Assert.Equal("superseded_reconciliation", historicalItem.UnavailableReason);
     }
 
     private static ApplicationDbContext CreateDb()
