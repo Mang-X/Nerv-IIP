@@ -806,10 +806,35 @@ function Get-NervCSharpAuditedDockerFileNameAssignmentMatches {
     }
 }
 
-$repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$resolvedManifestPath = (Resolve-Path $ManifestPath).Path
-$manifest = Get-Content -LiteralPath $resolvedManifestPath -Raw | ConvertFrom-Json
-$errors = [System.Collections.Generic.List[string]]::new()
+function New-BackendTestShardValidationContext {
+    param(
+        [Parameter(Mandatory)] [string] $RepositoryRoot,
+        [Parameter(Mandatory)] [string] $ManifestPath,
+        [Parameter(Mandatory)] [string] $WorkflowPath,
+        [Parameter(Mandatory)] [string] $PolicyPath,
+        [AllowEmptyString()] [string] $BackendInventoryRoot
+    )
+
+    $resolvedManifestPath = (Resolve-Path $ManifestPath).Path
+    return [pscustomobject]@{
+        RepositoryRoot = $RepositoryRoot
+        Manifest = Get-Content -LiteralPath $resolvedManifestPath -Raw | ConvertFrom-Json
+        WorkflowPath = $WorkflowPath
+        PolicyPath = $PolicyPath
+        BackendInventoryRoot = $BackendInventoryRoot
+        Errors = [System.Collections.Generic.List[string]]::new()
+    }
+}
+
+function Invoke-BackendTestShardManifestPolicyStage {
+    param(
+        [Parameter(Mandatory)] [object] $Context
+    )
+
+    $repositoryRoot = $Context.RepositoryRoot
+    $manifest = $Context.Manifest
+    $PolicyPath = $Context.PolicyPath
+    $errors = $Context.Errors
 
 if ($manifest.schemaVersion -ne 1) {
     $errors.Add('backend test shard manifest schemaVersion must be 1.')
@@ -1024,6 +1049,28 @@ foreach ($entry in $classificationEntries) {
     }
 }
 
+    $Context | Add-Member -NotePropertyName FastShards -NotePropertyValue $fastShards
+    $Context | Add-Member -NotePropertyName HeavyLanes -NotePropertyValue $heavyLanes
+    $Context | Add-Member -NotePropertyName ExcludedClassOwners -NotePropertyValue $excludedClassOwners
+    $Context | Add-Member -NotePropertyName ExcludedClassSelectorsByFastShard -NotePropertyValue $excludedClassSelectorsByFastShard
+    $Context | Add-Member -NotePropertyName HeavyLaneIdSet -NotePropertyValue $heavyLaneIdSet
+    $Context | Add-Member -NotePropertyName ProjectOwners -NotePropertyValue $projectOwners
+    $Context | Add-Member -NotePropertyName AmbiguousProjectOwners -NotePropertyValue $ambiguousProjectOwners
+}
+
+function Invoke-BackendTestShardInventorySourceStage {
+    param(
+        [Parameter(Mandatory)] [object] $Context
+    )
+
+    $repositoryRoot = $Context.RepositoryRoot
+    $BackendInventoryRoot = $Context.BackendInventoryRoot
+    $errors = $Context.Errors
+    $projectOwners = $Context.ProjectOwners
+    $ambiguousProjectOwners = $Context.AmbiguousProjectOwners
+    $excludedClassSelectorsByFastShard = $Context.ExcludedClassSelectorsByFastShard
+    $heavyLaneIdSet = $Context.HeavyLaneIdSet
+
 $backendRoot = if ([string]::IsNullOrWhiteSpace($BackendInventoryRoot)) { Join-Path $repositoryRoot 'backend' } else { (Resolve-Path $BackendInventoryRoot).Path }
 $discoveredProjects = @(
     Get-NervStringsSorted -Values @(Get-ChildItem -LiteralPath $backendRoot -Recurse -File -Filter '*.Tests.csproj' |
@@ -1189,6 +1236,23 @@ if ($unknownClassifications.Count -gt 0) {
     $errors.Add("Classified projects are not discovered backend test projects: $($unknownClassifications -join ', ').")
 }
 
+    $Context | Add-Member -NotePropertyName BackendRoot -NotePropertyValue $backendRoot
+    $Context | Add-Member -NotePropertyName DiscoveredProjects -NotePropertyValue $discoveredProjects
+    $Context | Add-Member -NotePropertyName DiscoveredBackendProjects -NotePropertyValue $discoveredBackendProjects
+}
+
+function Invoke-BackendTestShardSolutionMembershipStage {
+    param(
+        [Parameter(Mandatory)] [object] $Context
+    )
+
+    $repositoryRoot = $Context.RepositoryRoot
+    $manifest = $Context.Manifest
+    $errors = $Context.Errors
+    $fastShards = $Context.FastShards
+    $discoveredProjects = $Context.DiscoveredProjects
+    $discoveredBackendProjects = $Context.DiscoveredBackendProjects
+
 $solutionPath = Join-Path $repositoryRoot ([string] $manifest.solution)
 if (-not (Test-Path -LiteralPath $solutionPath -PathType Leaf)) {
     $errors.Add("Configured backend solution does not exist: $($manifest.solution).")
@@ -1290,6 +1354,18 @@ foreach ($shard in $fastShards) {
         $errors.Add("Fast shard '$($shard.id)' solution filter is invalid JSON: $($_.Exception.Message)")
     }
 }
+
+}
+
+function Invoke-BackendTestShardWorkflowWiringStage {
+    param(
+        [Parameter(Mandatory)] [object] $Context
+    )
+
+    $repositoryRoot = $Context.RepositoryRoot
+    $WorkflowPath = $Context.WorkflowPath
+    $errors = $Context.Errors
+    $fastShards = $Context.FastShards
 
 $resolvedWorkflowPath = Resolve-Path $WorkflowPath -ErrorAction SilentlyContinue
 if ($null -eq $resolvedWorkflowPath) {
@@ -1491,6 +1567,45 @@ test "${{ needs.backend-tests-business-core-b.result }}" = "$expected_result"
     }
 }
 
+}
+
+function Invoke-BackendTestShardValidation {
+    param(
+        [Parameter(Mandatory)] [object] $Context
+    )
+
+    $manifestPolicyStopwatch = [Diagnostics.Stopwatch]::StartNew()
+    Write-Output "Backend test shard stage 'manifest-policy' started."
+    Invoke-BackendTestShardManifestPolicyStage -Context $Context
+    $manifestPolicyStopwatch.Stop()
+    Write-Output "Backend test shard stage 'manifest-policy' completed in $($manifestPolicyStopwatch.ElapsedMilliseconds) ms."
+
+    $inventorySourceStopwatch = [Diagnostics.Stopwatch]::StartNew()
+    Write-Output "Backend test shard stage 'inventory-source' started."
+    Invoke-BackendTestShardInventorySourceStage -Context $Context
+    $inventorySourceStopwatch.Stop()
+    Write-Output "Backend test shard stage 'inventory-source' completed in $($inventorySourceStopwatch.ElapsedMilliseconds) ms."
+
+    $solutionMembershipStopwatch = [Diagnostics.Stopwatch]::StartNew()
+    Write-Output "Backend test shard stage 'solution-membership' started."
+    Invoke-BackendTestShardSolutionMembershipStage -Context $Context
+    $solutionMembershipStopwatch.Stop()
+    Write-Output "Backend test shard stage 'solution-membership' completed in $($solutionMembershipStopwatch.ElapsedMilliseconds) ms."
+
+    $workflowWiringStopwatch = [Diagnostics.Stopwatch]::StartNew()
+    Write-Output "Backend test shard stage 'workflow-wiring' started."
+    Invoke-BackendTestShardWorkflowWiringStage -Context $Context
+    $workflowWiringStopwatch.Stop()
+    Write-Output "Backend test shard stage 'workflow-wiring' completed in $($workflowWiringStopwatch.ElapsedMilliseconds) ms."
+
+    $errors = $Context.Errors
+    $manifest = $Context.Manifest
+    $fastShards = $Context.FastShards
+    $heavyLanes = $Context.HeavyLanes
+    $excludedClassOwners = $Context.ExcludedClassOwners
+    $discoveredProjects = $Context.DiscoveredProjects
+    $discoveredBackendProjects = $Context.DiscoveredBackendProjects
+
 # Findings go to stdout and the script exits nonzero, the same shape as
 # scripts/check-script-governance.ps1 and scripts/verify-solution-configuration-membership.ps1 —
 # deliberately not `throw`, and callers must therefore check the exit code. In particular this file
@@ -1507,3 +1622,15 @@ if ($errors.Count -gt 0) {
 }
 
 Write-Output "Backend test shard governance passed: $($discoveredProjects.Count) projects classified exactly once across $($fastShards.Count) fast shards and $($heavyLanes.Count) heavy lanes; $($excludedClassOwners.Count) real test selectors are explicitly owned outside fast shards; $($discoveredBackendProjects.Count) backend projects are solution members and therefore build under the shard's own Release configuration."
+}
+
+if (-not [string]::Equals($MyInvocation.InvocationName, '.', [StringComparison]::Ordinal)) {
+    $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+    $validationContext = New-BackendTestShardValidationContext `
+        -RepositoryRoot $repositoryRoot `
+        -ManifestPath $ManifestPath `
+        -WorkflowPath $WorkflowPath `
+        -PolicyPath $PolicyPath `
+        -BackendInventoryRoot $BackendInventoryRoot
+    Invoke-BackendTestShardValidation -Context $validationContext
+}
