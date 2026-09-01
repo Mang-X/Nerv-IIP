@@ -94,6 +94,20 @@ BusinessMasterData 的治理和字段口径见 `docs/adr/0013-business-master-da
 
 Scheduling / APS lite 已落地独立 BusinessScheduling 服务、PostgreSQL `scheduling` schema、公开 Scheduling contracts、有限产能 deterministic heuristic、计划 preview/create/list/detail/gantt/release API、BusinessGateway facade、IAM seed 权限、AppHost 注册和 `scripts/verify-business-scheduling-aps-lite.ps1` 验证入口；本地端口固定为 `5120`。MES 内部 `RuleScheduler` 仅作为 MES 规则排程过渡能力，不是长期 APS 权威。上表的“主要依赖”表示 `SchedulingProblem` 的输入事实来源、adapter 和事件投影边界，不表示 Scheduling 启动期或单次排程请求需要同步 fan-out 到全部上游服务。
 
+### BarcodeLabel 标签编译与传输边界
+
+BarcodeLabel 的当前标签打印链由严格的 `zpl-v1` compiler、FileStorage 模板资产 adapter、批次 replay snapshot 和 raw TCP transport 组成；这些能力只建立可重放的编译与传输事实，不等于物理出纸确认：
+
+1. [`ZplV1LabelCompiler`](../../backend/services/Business/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Domain/Printing/ZplV1LabelCompiler.cs) 严格解析模板与变量 schema，并确定性生成 Code 128、GS1-128、QR、Data Matrix 和 GS1 Data Matrix 的 UTF-8 ZPL。Code 128 上下文中的业务数据 `>` 仍失败关闭，不能把当前合同描述为覆盖 GS1 CSET 82 的全部合法字符。
+2. [`HttpFileStorageLabelTemplateAssetAdapter`](../../backend/services/Business/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Infrastructure/Printing/HttpFileStorageLabelTemplateAssetAdapter.cs) 通过现有 SDK 读取 metadata 与一次性 download grant，再按 organization/environment、owner、purpose、MIME、扩展名、状态、大小、UTF-8 和 SHA-256 校验下载字节；它不拥有模板资产删除、引用裁决或配额释放。
+3. 新批次只从同 scope 的 active rule/template 创建，并在持久化前完成整批编译；五项 replay snapshot 由 [`CreateLabelPrintBatchCommand`](../../backend/services/Business/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/PrintBatches/CreateLabelPrintBatchCommand.cs) 冻结。dispatch/reprint 会重新验证冻结的 file id、摘要、变量 schema、码制和 `zpl-v1` 版本，旧的全空快照行失败关闭，部分快照由数据库 check constraint 拒绝。
+4. [`ZplTcpLabelPrinter`](../../backend/services/Business/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Infrastructure/Printing/ZplTcpLabelPrinter.cs) 在首字节前失败时返回 `failed`，已写入任意字节后失败时返回 `delivery-unknown`，只有全部文档写完并 half-close 才返回 `sent-to-printer`；三者都是 transport attempt 结果，均不证明物理出纸。adapter 不自动重发，`delivery-unknown` 必须先现场确认。
+5. [`PrintLabelLifecycleCommands`](../../backend/services/Business/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/PrintBatches/PrintLabelLifecycleCommands.cs) 对整批 dispatch 与单项 reprint 刻意采用不同投影：dispatch 更新批次 `status`、`completed_at_utc` 和最近 printer/job/failure facts；reprint 只覆盖最近 attempt facts，保持批次 `status`、`completed_at_utc` 和 item 状态不变。调用方取消会在独立 DbContext/事务中按重新加载后的状态守卫尽力提交本次 facts，再传播原取消；这不构成逐次 attempt 账本，也不消除两个并发命令均已执行真实 transport 的双打印风险。
+
+`LabelPrintBatch.RecordPrinted` 与 `LabelPrintBatch.ReprintItem` 保留物理状态迁移的领域入口，但生产 dispatch/reprint 链当前不调用它们；生产装配中只有 Development-only world-history seed 会生成 `printed` / `reprinted` 演示事实。当前 `LabelPrinterOptions.Mode` 默认 `disabled`，`zpl-tcp` 只使用一组 host/port，传入的 `printerId` 只记录为 attempt fact，不参与设备路由。因此当前实现没有生产物理确认来源、printer-id 路由、真实打印机/扫码枪验收或现场重打审计闭环。
+
+证明范围必须分层陈述：pure Domain tests 证明解析、绑定和 ZPL 字节合同；fake/loopback tests 证明 FileStorage 消费 adapter 与 TCP 首字节/half-close 行为；受治理的 `barcodelabel-postgres-profile` 当前由 5 个 runtime Fact 通过真实 PostgreSQL、实际 MediatR 与 UnitOfWork 证明 replay migration/check constraint、取消 facts 独立提交和并发状态守卫，具体 identity 与 count 由 [`postgres-test-lane.json`](../../scripts/postgres-test-lane.json)、[`test-evidence-policy.json`](../../scripts/test-evidence-policy.json) 和运行时反射闭合测试共同约束。上述证据不证明真实 FileStorage 服务间下载、生产配置、物理设备、出纸或扫码解码；现有 Business FullChain acceptance 的 BarcodeLabel 覆盖面是扫码到 Inventory 的业务闭环，也不替代打印链验收。
+
 ## 业务控制台边界
 
 #166 到 #169 的 Business Console MVP 采用独立 `frontend/apps/business-console`
