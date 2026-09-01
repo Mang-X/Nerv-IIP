@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Security.Claims;
 using MediatR;
 using Microsoft.AspNetCore.Http;
@@ -15,6 +16,8 @@ using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 using Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverters;
 using NetCorePal.Extensions.DependencyInjection;
 using NetCorePal.Extensions.Primitives;
+using NetCorePal.Extensions.Repository;
+using NetCorePal.Extensions.Repository.EntityFrameworkCore;
 
 namespace Nerv.IIP.Business.MasterData.Web.Tests;
 
@@ -48,6 +51,23 @@ public sealed class MasterDataPostgresProfileTestsToolingAudit
             await AssertToolingAuditSchemaAsync(db);
             Assert.Empty(await db.ToolingAuditEntries.AsNoTracking().ToArrayAsync());
         }
+
+        await SendAsync(provider, new RegisterToolingAssetCommand(
+            "org-append-only",
+            "env-append-only",
+            "TOOL-APPEND-ONLY",
+            "Append-only fixture",
+            "fixture",
+            ["WC-APPEND-ONLY"],
+            ["SKU-APPEND-ONLY"],
+            null,
+            "op-append-only",
+            CreateAuditContext(
+                "user:append-only",
+                "corr-append-only",
+                "cause-append-only",
+                "op-append-only")));
+        await AssertToolingAuditIsAppendOnlyAsync(provider, "op-append-only");
 
         ToolingAssetId legacyAssetId;
         using (var predecessorScope = provider.CreateScope())
@@ -256,7 +276,7 @@ public sealed class MasterDataPostgresProfileTestsToolingAudit
             CreateAuditContext("user:planner", "corr-register", "cause-register", "op-register-replay"));
         await SendAsync(provider, register);
         await SendAsync(provider, register);
-        await Assert.ThrowsAsync<KnownException>(() => SendAsync(provider, register with { Code = "TOOL-B" }));
+        await Assert.ThrowsAsync<KnownException>(() => SendAsync(provider, register with { Code = "TOOL-UNUSED" }));
 
         var usage = new RecordToolingUsageCommand(
             "org-replay",
@@ -294,6 +314,7 @@ public sealed class MasterDataPostgresProfileTestsToolingAudit
         Assert.Equal(ToolingAssetStatus.Maintenance, firstWinner.Status);
         Assert.Equal(0, adjacent.UsageCount);
         Assert.Equal(ToolingAssetStatus.Available, adjacent.Status);
+        Assert.False(await observer.ToolingAssets.AnyAsync(asset => asset.Code == "TOOL-UNUSED"));
         Assert.Equal(3, await observer.ToolingAuditEntries.CountAsync());
         Assert.Equal("planned service", (await observer.ToolingAuditEntries
             .SingleAsync(entry => entry.OperationId == "op-status-replay")).Reason);
@@ -303,7 +324,8 @@ public sealed class MasterDataPostgresProfileTestsToolingAudit
     public async Task Tooling_concurrent_usage_replay_commits_one_increment_and_one_audit_on_postgres()
     {
         var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
-        await using var provider = CreateToolingServices(connectionString);
+        var concurrencyProbe = new ToolingConcurrencyProbe();
+        await using var provider = CreateToolingServices(connectionString, concurrencyProbe: concurrencyProbe);
         await ResetToolingSchemaAsync(provider);
 
         using (var seedScope = provider.CreateScope())
@@ -320,10 +342,36 @@ public sealed class MasterDataPostgresProfileTestsToolingAudit
             "TOOL-RACE",
             5,
             CreateAuditContext("user:operator-race", "corr-race", "cause-race", "op-usage-race"));
-        using var startGate = new Barrier(2);
-        await Task.WhenAll(
-            Task.Run(() => SendAfterGateAsync(provider, startGate, command)),
-            Task.Run(() => SendAfterGateAsync(provider, startGate, command)));
+        using var firstScope = provider.CreateScope();
+        var firstDb = firstScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var firstUnitOfWork = (ITransactionUnitOfWork)firstDb;
+        await using var firstTransaction = await firstDb.Database.BeginTransactionAsync();
+        firstUnitOfWork.CurrentTransaction = firstTransaction;
+        await firstScope.ServiceProvider.GetRequiredService<IMediator>().Send(command);
+        Assert.True(await HasGrantedAdvisoryLockAsync(connectionString, ((NpgsqlConnection)firstDb.Database.GetDbConnection()).ProcessID));
+
+        using var secondScope = provider.CreateScope();
+        var secondDb = secondScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var secondUnitOfWork = (ITransactionUnitOfWork)secondDb;
+        await using var secondTransaction = await secondDb.Database.BeginTransactionAsync();
+        secondUnitOfWork.CurrentTransaction = secondTransaction;
+        concurrencyProbe.Arm(((NpgsqlConnection)secondDb.Database.GetDbConnection()).ProcessID);
+        var secondSend = secondScope.ServiceProvider.GetRequiredService<IMediator>().Send(command);
+
+        var observedBoundary = await concurrencyProbe.ObserveBoundaryAsync();
+        var completedBeforeFirstCommit = secondSend.IsCompleted;
+        var waitedOnAdvisoryLock = await HasWaitingAdvisoryLockAsync(
+            connectionString,
+            ((NpgsqlConnection)secondDb.Database.GetDbConnection()).ProcessID);
+
+        await firstTransaction.CommitAsync();
+        firstUnitOfWork.CurrentTransaction = null;
+        await secondSend;
+        await secondTransaction.CommitAsync();
+        secondUnitOfWork.CurrentTransaction = null;
+        Assert.Equal(ToolingConcurrencyBoundary.AdvisoryLockAttempt, observedBoundary);
+        Assert.False(completedBeforeFirstCommit);
+        Assert.True(waitedOnAdvisoryLock);
 
         using var observerScope = provider.CreateScope();
         var observer = observerScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -433,7 +481,8 @@ public sealed class MasterDataPostgresProfileTestsToolingAudit
 
     private static ServiceProvider CreateToolingServices(
         string connectionString,
-        SaveChangesInterceptor? interceptor = null)
+        SaveChangesInterceptor? interceptor = null,
+        ToolingConcurrencyProbe? concurrencyProbe = null)
     {
         var services = new ServiceCollection();
         services.AddLogging(builder => builder.AddConsole());
@@ -447,6 +496,16 @@ public sealed class MasterDataPostgresProfileTestsToolingAudit
         if (interceptor is not null)
         {
             services.AddDbContext<ApplicationDbContext>(options => options.AddInterceptors(interceptor));
+        }
+        if (concurrencyProbe is not null)
+        {
+            services.AddDbContext<ApplicationDbContext>(options =>
+                options.AddInterceptors(concurrencyProbe.CommandInterceptor));
+            services.AddScoped<IToolingAuditOperationCoordinator>(serviceProvider =>
+                new ObservedToolingAuditOperationCoordinator(
+                    new PostgreSqlToolingAuditOperationCoordinator(
+                        serviceProvider.GetRequiredService<ApplicationDbContext>()),
+                    concurrencyProbe));
         }
 
         return services.BuildServiceProvider();
@@ -479,15 +538,6 @@ public sealed class MasterDataPostgresProfileTestsToolingAudit
     {
         using var scope = provider.CreateScope();
         await scope.ServiceProvider.GetRequiredService<IMediator>().Send(command);
-    }
-
-    private static async Task SendAfterGateAsync(
-        ServiceProvider provider,
-        Barrier startGate,
-        RecordToolingUsageCommand command)
-    {
-        startGate.SignalAndWait();
-        await SendAsync(provider, command);
     }
 
     private static ToolingOperationAuditContext CreateAuditContext(
@@ -677,6 +727,53 @@ public sealed class MasterDataPostgresProfileTestsToolingAudit
         return (T)(await command.ExecuteScalarAsync())!;
     }
 
+    private static async Task AssertToolingAuditIsAppendOnlyAsync(
+        ServiceProvider provider,
+        string operationId)
+    {
+        using (var updateScope = provider.CreateScope())
+        {
+            var updateDb = updateScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var exception = await Assert.ThrowsAsync<PostgresException>(() => updateDb.Database.ExecuteSqlInterpolatedAsync(
+                $"UPDATE business_masterdata.tooling_audit_entries SET \"ActorId\" = {"tampered"} WHERE \"OperationId\" = {operationId}"));
+            Assert.Equal(PostgresErrorCodes.RaiseException, exception.SqlState);
+        }
+
+        using (var deleteScope = provider.CreateScope())
+        {
+            var deleteDb = deleteScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var exception = await Assert.ThrowsAsync<PostgresException>(() => deleteDb.Database.ExecuteSqlInterpolatedAsync(
+                $"DELETE FROM business_masterdata.tooling_audit_entries WHERE \"OperationId\" = {operationId}"));
+            Assert.Equal(PostgresErrorCodes.RaiseException, exception.SqlState);
+        }
+
+        using var observerScope = provider.CreateScope();
+        var observer = observerScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var audit = await observer.ToolingAuditEntries.AsNoTracking().SingleAsync(entry => entry.OperationId == operationId);
+        Assert.Equal("user:append-only", audit.ActorId);
+    }
+
+    private static async Task<bool> HasGrantedAdvisoryLockAsync(string connectionString, int processId) =>
+        await CountAdvisoryLocksAsync(connectionString, processId, granted: true) > 0;
+
+    private static async Task<bool> HasWaitingAdvisoryLockAsync(string connectionString, int processId) =>
+        await CountAdvisoryLocksAsync(connectionString, processId, granted: false) > 0;
+
+    private static async Task<long> CountAdvisoryLocksAsync(
+        string connectionString,
+        int processId,
+        bool granted)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(
+            "SELECT COUNT(*) FROM pg_locks WHERE pid = @pid AND locktype = 'advisory' AND granted = @granted",
+            connection);
+        command.Parameters.AddWithValue("pid", processId);
+        command.Parameters.AddWithValue("granted", granted);
+        return (long)(await command.ExecuteScalarAsync())!;
+    }
+
     private static async Task DropMasterDataSchemaAsync(ApplicationDbContext db)
     {
         var quotedSchema = new NpgsqlCommandBuilder().QuoteIdentifier(MasterDataFacts.Schema);
@@ -717,5 +814,84 @@ public sealed class MasterDataPostgresProfileTestsToolingAudit
 
             return base.SavingChangesAsync(eventData, result, cancellationToken);
         }
+    }
+
+    private enum ToolingConcurrencyBoundary
+    {
+        AdvisoryLockAttempt,
+        ActionEntered,
+    }
+
+    private sealed class ToolingConcurrencyProbe
+    {
+        private TaskCompletionSource<ToolingConcurrencyBoundary>? boundary;
+        private int processId;
+
+        public DbCommandInterceptor CommandInterceptor { get; }
+
+        public ToolingConcurrencyProbe()
+        {
+            CommandInterceptor = new ToolingConcurrencyCommandInterceptor(this);
+        }
+
+        public void Arm(int armedProcessId)
+        {
+            processId = armedProcessId;
+            boundary = new TaskCompletionSource<ToolingConcurrencyBoundary>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+
+        public Task<ToolingConcurrencyBoundary> ObserveBoundaryAsync() => boundary!.Task;
+
+        public void ObserveAdvisoryLockAttempt(DbCommand command)
+        {
+            if (boundary is not null &&
+                command.Connection is NpgsqlConnection connection &&
+                connection.ProcessID == processId &&
+                command.CommandText.Contains("pg_advisory_xact_lock", StringComparison.Ordinal))
+            {
+                boundary.TrySetResult(ToolingConcurrencyBoundary.AdvisoryLockAttempt);
+            }
+        }
+
+        public void ObserveActionEntered() =>
+            boundary?.TrySetResult(ToolingConcurrencyBoundary.ActionEntered);
+    }
+
+    private sealed class ToolingConcurrencyCommandInterceptor(ToolingConcurrencyProbe probe) : DbCommandInterceptor
+    {
+        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            probe.ObserveAdvisoryLockAttempt(command);
+            return base.NonQueryExecutingAsync(command, eventData, result, cancellationToken);
+        }
+    }
+
+    private sealed class ObservedToolingAuditOperationCoordinator(
+        IToolingAuditOperationCoordinator inner,
+        ToolingConcurrencyProbe probe) : IToolingAuditOperationCoordinator
+    {
+        public Task<T> ExecuteAsync<T>(
+            string organizationId,
+            string environmentId,
+            string operationId,
+            string? toolingCode,
+            Func<CancellationToken, Task<T>> action,
+            CancellationToken cancellationToken) =>
+            inner.ExecuteAsync(
+                organizationId,
+                environmentId,
+                operationId,
+                toolingCode,
+                token =>
+                {
+                    probe.ObserveActionEntered();
+                    return action(token);
+                },
+                cancellationToken);
     }
 }
