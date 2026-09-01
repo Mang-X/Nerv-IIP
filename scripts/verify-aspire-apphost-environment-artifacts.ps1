@@ -108,12 +108,12 @@ function Assert-EnvironmentArtifact {
     }
 
     $barcodeLabel = $Services['business-barcode-label']
-    if ($barcodeLabel['FileStorage__BaseUrl'] -cne 'http://file-storage:${FILE_STORAGE_PORT}') {
+    if (-not [string]::Equals([string] $barcodeLabel['FileStorage__BaseUrl'], 'http://file-storage:${FILE_STORAGE_PORT}', [StringComparison]::Ordinal)) {
         throw "BusinessBarcodeLabel must consume the generated FileStorage endpoint; observed '$($barcodeLabel['FileStorage__BaseUrl'])'."
     }
 
     if ([string]::Equals($EnvironmentName, 'Development', [StringComparison]::Ordinal)) {
-        if ($barcodeLabel['LabelPrinter__Mode'] -cne 'simulated') {
+        if (-not [string]::Equals([string] $barcodeLabel['LabelPrinter__Mode'], 'simulated', [StringComparison]::Ordinal)) {
             throw "Development BusinessBarcodeLabel must select simulated printing explicitly; observed '$($barcodeLabel['LabelPrinter__Mode'])'."
         }
 
@@ -135,7 +135,7 @@ function Assert-EnvironmentArtifact {
             'LabelPrinter__Printers__0__Enabled' = 'true'
         }
         foreach ($entry in $expectedPrinterRoute.GetEnumerator()) {
-            if ($barcodeLabel[$entry.Key] -cne $entry.Value) {
+            if (-not [string]::Equals([string] $barcodeLabel[$entry.Key], [string] $entry.Value, [StringComparison]::Ordinal)) {
                 throw "Production BusinessBarcodeLabel has $($entry.Key)='$($barcodeLabel[$entry.Key])', expected '$($entry.Value)'."
             }
         }
