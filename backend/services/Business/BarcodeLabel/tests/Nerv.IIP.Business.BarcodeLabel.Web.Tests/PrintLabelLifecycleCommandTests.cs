@@ -21,6 +21,15 @@ public sealed class PrintLabelLifecycleCommandTests
     private static readonly string AssetSha256 = $"sha256:{new string('a', 64)}";
 
     [Fact]
+    public void Attempt_recorder_exposes_an_explicit_best_effort_task_contract()
+    {
+        var methods = typeof(ILabelPrintAttemptRecorder).GetMethods();
+
+        Assert.Equal(2, methods.Length);
+        Assert.All(methods, method => Assert.Equal(typeof(Task), method.ReturnType));
+    }
+
+    [Fact]
     public async Task Relational_database_rejects_a_partially_missing_replay_snapshot()
     {
         await using var connection = new SqliteConnection("Filename=:memory:");
@@ -344,7 +353,7 @@ public sealed class PrintLabelLifecycleCommandTests
     {
         public List<(LabelPrintBatchId BatchId, LabelPrinterDispatchResult Result)> DispatchAttempts { get; } = [];
 
-        public Task<bool> TryRecordDispatchCanceledAsync(
+        public Task TryRecordDispatchCanceledAsync(
             string organizationId,
             string environmentId,
             LabelPrintBatchId printBatchId,
@@ -352,17 +361,16 @@ public sealed class PrintLabelLifecycleCommandTests
             LabelPrinterDispatchResult result)
         {
             DispatchAttempts.Add((printBatchId, result));
-            return Task.FromResult(true);
+            return Task.CompletedTask;
         }
 
-        public Task<bool> TryRecordReprintCanceledAsync(
+        public Task TryRecordReprintCanceledAsync(
             string organizationId,
             string environmentId,
             LabelPrintBatchId printBatchId,
             int sequenceNo,
             string printerId,
-            LabelPrinterDispatchResult result) =>
-            Task.FromResult(true);
+            LabelPrinterDispatchResult result) => Task.CompletedTask;
     }
 
     private sealed class NoopMediator : IMediator

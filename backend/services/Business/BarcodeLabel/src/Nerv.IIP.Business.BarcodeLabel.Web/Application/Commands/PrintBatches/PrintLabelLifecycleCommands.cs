@@ -216,14 +216,14 @@ public sealed class ScopedReprintLabelCommandHandler(
 
 public interface ILabelPrintAttemptRecorder
 {
-    Task<bool> TryRecordDispatchCanceledAsync(
+    Task TryRecordDispatchCanceledAsync(
         string organizationId,
         string environmentId,
         LabelPrintBatchId printBatchId,
         string printerId,
         LabelPrinterDispatchResult result);
 
-    Task<bool> TryRecordReprintCanceledAsync(
+    Task TryRecordReprintCanceledAsync(
         string organizationId,
         string environmentId,
         LabelPrintBatchId printBatchId,
@@ -235,7 +235,7 @@ public interface ILabelPrintAttemptRecorder
 public sealed class IndependentLabelPrintAttemptRecorder(IServiceScopeFactory scopeFactory)
     : ILabelPrintAttemptRecorder
 {
-    public async Task<bool> TryRecordDispatchCanceledAsync(
+    public async Task TryRecordDispatchCanceledAsync(
         string organizationId,
         string environmentId,
         LabelPrintBatchId printBatchId,
@@ -256,15 +256,14 @@ public sealed class IndependentLabelPrintAttemptRecorder(IServiceScopeFactory sc
         }
         catch (LabelPrintLifecycleRejectedException)
         {
-            return false;
+            return;
         }
 
         LabelPrintLifecycle.ApplyResult(batch, printerId, result);
         await independentDbContext.SaveChangesAsync(CancellationToken.None);
-        return true;
     }
 
-    public async Task<bool> TryRecordReprintCanceledAsync(
+    public async Task TryRecordReprintCanceledAsync(
         string organizationId,
         string environmentId,
         LabelPrintBatchId printBatchId,
@@ -286,12 +285,11 @@ public sealed class IndependentLabelPrintAttemptRecorder(IServiceScopeFactory sc
         }
         catch (LabelPrintLifecycleRejectedException)
         {
-            return false;
+            return;
         }
 
         LabelPrintLifecycle.ApplyReprintResult(batch, printerId, result);
         await independentDbContext.SaveChangesAsync(CancellationToken.None);
-        return true;
     }
 }
 
