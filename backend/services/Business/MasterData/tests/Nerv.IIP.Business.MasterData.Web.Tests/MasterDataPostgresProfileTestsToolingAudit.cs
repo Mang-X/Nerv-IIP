@@ -1,4 +1,3 @@
-using System.Data.Common;
 using System.Security.Claims;
 using MediatR;
 using Microsoft.AspNetCore.Http;
@@ -14,6 +13,7 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ToolingAssetAggregate;
 using Nerv.IIP.Business.MasterData.Infrastructure;
 using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 using Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Testing;
 using NetCorePal.Extensions.DependencyInjection;
 using NetCorePal.Extensions.Primitives;
 using NetCorePal.Extensions.Repository;
@@ -324,8 +324,7 @@ public sealed class MasterDataPostgresProfileTestsToolingAudit
     public async Task Tooling_concurrent_usage_replay_commits_one_increment_and_one_audit_on_postgres()
     {
         var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
-        var concurrencyProbe = new ToolingConcurrencyProbe();
-        await using var provider = CreateToolingServices(connectionString, concurrencyProbe: concurrencyProbe);
+        await using var provider = CreateToolingServices(connectionString);
         await ResetToolingSchemaAsync(provider);
 
         using (var seedScope = provider.CreateScope())
@@ -355,23 +354,32 @@ public sealed class MasterDataPostgresProfileTestsToolingAudit
         var secondUnitOfWork = (ITransactionUnitOfWork)secondDb;
         await using var secondTransaction = await secondDb.Database.BeginTransactionAsync();
         secondUnitOfWork.CurrentTransaction = secondTransaction;
-        concurrencyProbe.Arm(((NpgsqlConnection)secondDb.Database.GetDbConnection()).ProcessID);
         var secondSend = secondScope.ServiceProvider.GetRequiredService<IMediator>().Send(command);
 
-        var observedBoundary = await concurrencyProbe.ObserveBoundaryAsync();
-        var completedBeforeFirstCommit = secondSend.IsCompleted;
-        var waitedOnAdvisoryLock = await HasWaitingAdvisoryLockAsync(
-            connectionString,
-            ((NpgsqlConnection)secondDb.Database.GetDbConnection()).ProcessID);
+        var secondProcessId = ((NpgsqlConnection)secondDb.Database.GetDbConnection()).ProcessID;
+        var waitObservation = await Eventually.WaitAsync(
+            condition: "the competing tooling usage transaction waits on the PostgreSQL advisory lock",
+            observe: async token => new ToolingAdvisoryWaitObservation(
+                await CountAdvisoryLocksAsync(connectionString, secondProcessId, granted: false, token),
+                secondSend.IsCompleted),
+            isSatisfied: observation => observation.WaitingLockCount > 0 || observation.CompetingTaskCompleted,
+            describe: observation =>
+                $"waitingAdvisoryLocks={observation.WaitingLockCount}; " +
+                $"competingTaskCompleted={observation.CompetingTaskCompleted}",
+            options: new EventuallyOptions(
+                Timeout: TimeSpan.FromSeconds(10),
+                PollInterval: TimeSpan.FromMilliseconds(50),
+                SensitiveValues: [connectionString]));
+        Assert.False(
+            waitObservation.CompetingTaskCompleted,
+            "The competing transaction completed before PostgreSQL exposed an advisory-lock waiter.");
+        Assert.True(waitObservation.WaitingLockCount > 0);
 
         await firstTransaction.CommitAsync();
         firstUnitOfWork.CurrentTransaction = null;
         await secondSend;
         await secondTransaction.CommitAsync();
         secondUnitOfWork.CurrentTransaction = null;
-        Assert.Equal(ToolingConcurrencyBoundary.AdvisoryLockAttempt, observedBoundary);
-        Assert.False(completedBeforeFirstCommit);
-        Assert.True(waitedOnAdvisoryLock);
 
         using var observerScope = provider.CreateScope();
         var observer = observerScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -481,8 +489,7 @@ public sealed class MasterDataPostgresProfileTestsToolingAudit
 
     private static ServiceProvider CreateToolingServices(
         string connectionString,
-        SaveChangesInterceptor? interceptor = null,
-        ToolingConcurrencyProbe? concurrencyProbe = null)
+        SaveChangesInterceptor? interceptor = null)
     {
         var services = new ServiceCollection();
         services.AddLogging(builder => builder.AddConsole());
@@ -496,16 +503,6 @@ public sealed class MasterDataPostgresProfileTestsToolingAudit
         if (interceptor is not null)
         {
             services.AddDbContext<ApplicationDbContext>(options => options.AddInterceptors(interceptor));
-        }
-        if (concurrencyProbe is not null)
-        {
-            services.AddDbContext<ApplicationDbContext>(options =>
-                options.AddInterceptors(concurrencyProbe.CommandInterceptor));
-            services.AddScoped<IToolingAuditOperationCoordinator>(serviceProvider =>
-                new ObservedToolingAuditOperationCoordinator(
-                    new PostgreSqlToolingAuditOperationCoordinator(
-                        serviceProvider.GetRequiredService<ApplicationDbContext>()),
-                    concurrencyProbe));
         }
 
         return services.BuildServiceProvider();
@@ -754,24 +751,22 @@ public sealed class MasterDataPostgresProfileTestsToolingAudit
     }
 
     private static async Task<bool> HasGrantedAdvisoryLockAsync(string connectionString, int processId) =>
-        await CountAdvisoryLocksAsync(connectionString, processId, granted: true) > 0;
-
-    private static async Task<bool> HasWaitingAdvisoryLockAsync(string connectionString, int processId) =>
-        await CountAdvisoryLocksAsync(connectionString, processId, granted: false) > 0;
+        await CountAdvisoryLocksAsync(connectionString, processId, granted: true, CancellationToken.None) > 0;
 
     private static async Task<long> CountAdvisoryLocksAsync(
         string connectionString,
         int processId,
-        bool granted)
+        bool granted,
+        CancellationToken cancellationToken)
     {
         await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand(
             "SELECT COUNT(*) FROM pg_locks WHERE pid = @pid AND locktype = 'advisory' AND granted = @granted",
             connection);
         command.Parameters.AddWithValue("pid", processId);
         command.Parameters.AddWithValue("granted", granted);
-        return (long)(await command.ExecuteScalarAsync())!;
+        return (long)(await command.ExecuteScalarAsync(cancellationToken))!;
     }
 
     private static async Task DropMasterDataSchemaAsync(ApplicationDbContext db)
@@ -816,82 +811,7 @@ public sealed class MasterDataPostgresProfileTestsToolingAudit
         }
     }
 
-    private enum ToolingConcurrencyBoundary
-    {
-        AdvisoryLockAttempt,
-        ActionEntered,
-    }
-
-    private sealed class ToolingConcurrencyProbe
-    {
-        private TaskCompletionSource<ToolingConcurrencyBoundary>? boundary;
-        private int processId;
-
-        public DbCommandInterceptor CommandInterceptor { get; }
-
-        public ToolingConcurrencyProbe()
-        {
-            CommandInterceptor = new ToolingConcurrencyCommandInterceptor(this);
-        }
-
-        public void Arm(int armedProcessId)
-        {
-            processId = armedProcessId;
-            boundary = new TaskCompletionSource<ToolingConcurrencyBoundary>(
-                TaskCreationOptions.RunContinuationsAsynchronously);
-        }
-
-        public Task<ToolingConcurrencyBoundary> ObserveBoundaryAsync() => boundary!.Task;
-
-        public void ObserveAdvisoryLockAttempt(DbCommand command)
-        {
-            if (boundary is not null &&
-                command.Connection is NpgsqlConnection connection &&
-                connection.ProcessID == processId &&
-                command.CommandText.Contains("pg_advisory_xact_lock", StringComparison.Ordinal))
-            {
-                boundary.TrySetResult(ToolingConcurrencyBoundary.AdvisoryLockAttempt);
-            }
-        }
-
-        public void ObserveActionEntered() =>
-            boundary?.TrySetResult(ToolingConcurrencyBoundary.ActionEntered);
-    }
-
-    private sealed class ToolingConcurrencyCommandInterceptor(ToolingConcurrencyProbe probe) : DbCommandInterceptor
-    {
-        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
-            DbCommand command,
-            CommandEventData eventData,
-            InterceptionResult<int> result,
-            CancellationToken cancellationToken = default)
-        {
-            probe.ObserveAdvisoryLockAttempt(command);
-            return base.NonQueryExecutingAsync(command, eventData, result, cancellationToken);
-        }
-    }
-
-    private sealed class ObservedToolingAuditOperationCoordinator(
-        IToolingAuditOperationCoordinator inner,
-        ToolingConcurrencyProbe probe) : IToolingAuditOperationCoordinator
-    {
-        public Task<T> ExecuteAsync<T>(
-            string organizationId,
-            string environmentId,
-            string operationId,
-            string? toolingCode,
-            Func<CancellationToken, Task<T>> action,
-            CancellationToken cancellationToken) =>
-            inner.ExecuteAsync(
-                organizationId,
-                environmentId,
-                operationId,
-                toolingCode,
-                token =>
-                {
-                    probe.ObserveActionEntered();
-                    return action(token);
-                },
-                cancellationToken);
-    }
+    private sealed record ToolingAdvisoryWaitObservation(
+        long WaitingLockCount,
+        bool CompetingTaskCompleted);
 }
