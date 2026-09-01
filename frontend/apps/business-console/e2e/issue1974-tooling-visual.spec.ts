@@ -5,6 +5,7 @@ import path from 'node:path'
 import { requireBrowserEvidenceOutputDir } from '../playwright.config'
 
 const STORAGE_KEY = 'nerv-iip.business-console.auth'
+const toolingRegistrations: Record<string, unknown>[] = []
 
 const principal = {
   principalId: 'tooling-maintainer-1',
@@ -28,6 +29,7 @@ const session = {
 test.use({ viewport: { width: 1440, height: 900 } })
 
 test.beforeEach(async ({ page }) => {
+  toolingRegistrations.length = 0
   await page.addInitScript(
     ({ key, storedSession }) => localStorage.setItem(key, JSON.stringify(storedSession)),
     {
@@ -76,19 +78,53 @@ test('工装维护台真实浏览器视觉核验', async ({ page }) => {
   await expect(detail).toBeHidden()
 
   await page.getByRole('button', { name: '注册工装' }).click()
+  await page.getByRole('button', { name: '适用工作中心' }).click()
   const workCenterSearch = page.getByLabel('搜索适用工作中心')
+  const delayedRequest = page.waitForRequest(
+    (request) => new URL(request.url()).searchParams.get('keyword') === '冲压',
+  )
+  await workCenterSearch.fill('冲压')
+  await delayedRequest
   await workCenterSearch.fill('精加工')
-  const lateWorkCenter = page.locator('label').filter({ hasText: 'WC-MACHINING-201' })
+  const lateWorkCenter = page.getByRole('option').filter({ hasText: 'WC-MACHINING-201' })
   await expect(lateWorkCenter).toContainText('精加工工作中心')
-  await lateWorkCenter.getByRole('checkbox').check()
-  await expect(page.getByText(/已选择 1 个工作中心/)).toBeVisible()
+  await page.waitForTimeout(900)
+  await expect(lateWorkCenter).toContainText('精加工工作中心')
+  await lateWorkCenter.click()
+  await expect(page.getByText('精加工工作中心', { exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: '适用工作中心' }).click()
+  await page.getByLabel('搜索适用工作中心').fill('冲压')
+  await page.getByRole('option').filter({ hasText: 'WC-PRESS-01' }).click()
+  await page.getByRole('button', { name: '移除 冲压一线压力机工作中心' }).click()
+
+  await page.getByRole('button', { name: '适用 SKU' }).click()
+  await page.getByLabel('搜索适用 SKU').fill('门槛')
+  await page.getByRole('option').filter({ hasText: 'SKU-SILL-LH' }).click()
+  await page.getByRole('button', { name: '适用 SKU' }).click()
+  await page.getByLabel('搜索适用 SKU').fill('前地板')
+  await page.getByRole('option').filter({ hasText: 'SKU-FLOOR-ASSY' }).click()
+
+  await page.getByLabel('工装名称 *').fill('前地板拉延模')
+  await page.getByLabel('工装类型 *').click()
+  await page.getByRole('option', { name: '模具' }).click()
+  await page.getByRole('button', { name: '确认注册' }).click()
+  await expect.poll(() => toolingRegistrations.length).toBe(1)
+  expect(toolingRegistrations[0]).toMatchObject({
+    name: '前地板拉延模',
+    toolingType: 'mould',
+    workCenterCodes: ['WC-MACHINING-201'],
+    skuCodes: ['SKU-SILL-LH', 'SKU-FLOOR-ASSY'],
+  })
+
+  await page.getByRole('button', { name: '注册工装' }).click()
   const nameInput = page.getByLabel('工装名称 *')
   const typeTrigger = page.getByLabel('工装类型 *')
   const lifeInput = page.getByLabel('保养使用寿命（次）')
   const nameFrame = nameInput.locator('..')
   const lifeFrame = lifeInput.locator('..')
   const nameLabel = page.locator('label[for="tooling-name"] > span')
-  const firstCandidate = page.getByRole('checkbox').first().locator('..')
+  const firstCandidate = page.getByRole('button', { name: '适用工作中心' }).locator('..')
   const beforeBorder = await nameFrame.evaluate((element) => getComputedStyle(element).borderColor)
   const beforeLabel = await nameLabel.evaluate((element) => getComputedStyle(element).color)
   const beforeCandidate = await firstCandidate.evaluate(
@@ -202,6 +238,10 @@ async function routeConsoleApi(route: Route) {
 async function routeBusinessConsoleApi(route: Route) {
   const url = new URL(route.request().url())
   if (url.pathname === '/api/business-console/v1/master-data/tooling-assets') {
+    if (route.request().method() === 'POST') {
+      toolingRegistrations.push(route.request().postDataJSON() as Record<string, unknown>)
+      return fulfillJson(route, envelope({ code: 'MOULD-AUTO-001' }))
+    }
     return fulfillJson(
       route,
       envelope({
@@ -259,6 +299,9 @@ async function routeBusinessConsoleApi(route: Route) {
   if (url.pathname === '/api/business-console/v1/master-data/resources') {
     const resourceType = url.searchParams.get('resourceType')
     const keyword = url.searchParams.get('keyword')
+    if (resourceType === 'work-center' && keyword === '冲压') {
+      await new Promise((resolve) => setTimeout(resolve, 800))
+    }
     const resources =
       resourceType === 'work-center'
         ? keyword === '精加工'
@@ -294,34 +337,54 @@ async function routeBusinessConsoleApi(route: Route) {
                 snapshotVersion: 'v5',
               },
             ]
-        : [
-            {
-              resourceType,
-              code: 'SKU-FLOOR-ASSY',
-              displayName: '前地板总成',
-              active: true,
-              snapshotVersion: 'v18',
-            },
-            {
-              resourceType,
-              code: 'SKU-SILL-LH',
-              displayName: '左门槛加强板',
-              active: true,
-              snapshotVersion: 'v14',
-            },
-            {
-              resourceType,
-              code: 'SKU-DOOR-INNER-LH',
-              displayName: '左前门内板',
-              active: true,
-              snapshotVersion: 'v7',
-            },
-          ]
+        : keyword === '门槛'
+          ? [
+              {
+                resourceType,
+                code: 'SKU-SILL-LH',
+                displayName: '左门槛加强板',
+                active: true,
+                snapshotVersion: 'v14',
+              },
+            ]
+          : keyword === '前地板'
+            ? [
+                {
+                  resourceType,
+                  code: 'SKU-FLOOR-ASSY',
+                  displayName: '前地板总成',
+                  active: true,
+                  snapshotVersion: 'v18',
+                },
+              ]
+            : [
+                {
+                  resourceType,
+                  code: 'SKU-FLOOR-ASSY',
+                  displayName: '前地板总成',
+                  active: true,
+                  snapshotVersion: 'v18',
+                },
+                {
+                  resourceType,
+                  code: 'SKU-SILL-LH',
+                  displayName: '左门槛加强板',
+                  active: true,
+                  snapshotVersion: 'v14',
+                },
+                {
+                  resourceType,
+                  code: 'SKU-DOOR-INNER-LH',
+                  displayName: '左前门内板',
+                  active: true,
+                  snapshotVersion: 'v7',
+                },
+              ]
     return fulfillJson(
       route,
       envelope({
         resources,
-        total: resourceType === 'work-center' ? (keyword ? resources.length : 203) : 318,
+        total: keyword ? resources.length : resourceType === 'work-center' ? 203 : 318,
       }),
     )
   }

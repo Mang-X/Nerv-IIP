@@ -4,10 +4,11 @@ import type {
   BusinessConsoleToolingAssetItem,
   BusinessConsoleToolingAssetStatus,
 } from '@nerv-iip/api-client'
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { EntityPickerOption, NvDataTableColumn } from '@nerv-iip/ui'
 import { watchDebounced } from '@vueuse/core'
 import { computed, reactive, ref, shallowRef } from 'vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import EntityMultiPicker from '@/components/business/EntityMultiPicker.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import {
@@ -28,7 +29,6 @@ import {
   NvAlertDialogFooter,
   NvAlertDialogHeader,
   NvAlertDialogTitle,
-  NvCheckbox,
   NvDataTable,
   NvDialog,
   NvDialogContent,
@@ -94,6 +94,17 @@ watchDebounced(
   },
   { debounce: 300, maxWait: 1000 },
 )
+
+function resourceOptions(
+  resources: Array<{ code?: string | null; displayName?: string | null; active?: boolean }>,
+): EntityPickerOption[] {
+  return resources
+    .filter((row) => row.active !== false && row.code)
+    .map((row) => ({ value: row.code!, label: row.displayName?.trim() || row.code! }))
+}
+
+const workCenterOptions = computed(() => resourceOptions(workCenters.resources.value))
+const skuOptions = computed(() => resourceOptions(skus.resources.value))
 watchDebounced(
   skuSearch,
   (value) => {
@@ -150,12 +161,6 @@ function lifeWarning(row: BusinessConsoleToolingAssetItem) {
 function statusTone(status: BusinessConsoleToolingAssetStatus | undefined) {
   return status === 'available' ? 'success' : status === 'maintenance' ? 'warning' : 'neutral'
 }
-function toggleCode(codes: string[], code: string, checked: boolean) {
-  const index = codes.indexOf(code)
-  if (checked && index < 0) codes.push(code)
-  if (!checked && index >= 0) codes.splice(index, 1)
-}
-
 const detailOpen = shallowRef(false)
 const detailTarget = shallowRef<BusinessConsoleToolingAssetItem>()
 function openDetail(row: BusinessConsoleToolingAssetItem) {
@@ -177,6 +182,23 @@ const registerForm = reactive({
 const applicabilityCount = computed(
   () => registerForm.workCenterCodes.length * registerForm.skuCodes.length,
 )
+function commaSeparatedCodes(codes: string[]) {
+  return codes.join(',')
+}
+function parseCommaSeparatedCodes(value: string) {
+  return value
+    .split(',')
+    .map((code) => code.trim())
+    .filter(Boolean)
+}
+const selectedWorkCenters = computed({
+  get: () => commaSeparatedCodes(registerForm.workCenterCodes),
+  set: (value: string) => (registerForm.workCenterCodes = parseCommaSeparatedCodes(value)),
+})
+const selectedSkus = computed({
+  get: () => commaSeparatedCodes(registerForm.skuCodes),
+  set: (value: string) => (registerForm.skuCodes = parseCommaSeparatedCodes(value)),
+})
 const lifeValidationMessage = computed(() => {
   if (!String(registerForm.maintenanceLifeCount).trim()) return ''
   const value = Number(registerForm.maintenanceLifeCount)
@@ -599,36 +621,23 @@ const listErrorMessage = computed(() =>
                   适用工作中心 <span class="text-destructive">*</span>
                 </span>
               </NvFieldLabel>
-              <NvInput
+              <EntityMultiPicker
                 id="tooling-work-center-search"
-                v-model="workCenterSearch"
-                placeholder="搜索工作中心名称 / 编码"
-                aria-label="搜索适用工作中心"
+                v-model="selectedWorkCenters"
+                v-model:search="workCenterSearch"
+                :options="workCenterOptions"
+                title="选择适用工作中心"
+                placeholder="添加适用工作中心"
+                search-placeholder="搜索工作中心名称 / 编码"
+                source-text="数据来自基础数据工作中心"
+                empty-text="当前范围内没有匹配的工作中心"
+                :loading="workCenters.resourcesPending.value"
+                :invalid="Boolean(registerWorkCenterError)"
+                server-search
+                :total-count="workCenters.resourcesTotal.value"
+                aria-label="适用工作中心"
+                selection-empty-text="至少选择一个适用工作中心"
               />
-              <div
-                class="grid gap-2 rounded-lg border p-3 sm:grid-cols-2"
-                :data-invalid="Boolean(registerWorkCenterError)"
-                :class="registerWorkCenterError ? 'border-destructive' : ''"
-              >
-                <label
-                  v-for="row in workCenters.resources.value.filter(
-                    (item) => item.active !== false && item.code,
-                  )"
-                  :key="row.code"
-                  class="flex items-center gap-2 text-sm"
-                >
-                  <NvCheckbox
-                    :model-value="registerForm.workCenterCodes.includes(row.code!)"
-                    @update:model-value="
-                      toggleCode(registerForm.workCenterCodes, row.code!, Boolean($event))
-                    "
-                  />
-                  <span
-                    >{{ row.displayName || row.code }}
-                    <span class="text-muted-foreground">{{ row.code }}</span></span
-                  >
-                </label>
-              </div>
               <NvFieldDescription>
                 已选择 {{ registerForm.workCenterCodes.length }} 个工作中心；当前匹配
                 {{ workCenters.resourcesTotal.value }} 项，请搜索后继续选择。
@@ -641,36 +650,23 @@ const listErrorMessage = computed(() =>
                   适用 SKU <span class="text-destructive">*</span>
                 </span>
               </NvFieldLabel>
-              <NvInput
+              <EntityMultiPicker
                 id="tooling-sku-search"
-                v-model="skuSearch"
-                placeholder="搜索 SKU 名称 / 编码"
-                aria-label="搜索适用 SKU"
+                v-model="selectedSkus"
+                v-model:search="skuSearch"
+                :options="skuOptions"
+                title="选择适用 SKU"
+                placeholder="添加适用 SKU"
+                search-placeholder="搜索 SKU 名称 / 编码"
+                source-text="数据来自基础数据 SKU"
+                empty-text="当前范围内没有匹配的 SKU"
+                :loading="skus.resourcesPending.value"
+                :invalid="Boolean(registerSkuError)"
+                server-search
+                :total-count="skus.resourcesTotal.value"
+                aria-label="适用 SKU"
+                selection-empty-text="至少选择一个适用 SKU"
               />
-              <div
-                class="grid gap-2 rounded-lg border p-3 sm:grid-cols-2"
-                :data-invalid="Boolean(registerSkuError)"
-                :class="registerSkuError ? 'border-destructive' : ''"
-              >
-                <label
-                  v-for="row in skus.resources.value.filter(
-                    (item) => item.active !== false && item.code,
-                  )"
-                  :key="row.code"
-                  class="flex items-center gap-2 text-sm"
-                >
-                  <NvCheckbox
-                    :model-value="registerForm.skuCodes.includes(row.code!)"
-                    @update:model-value="
-                      toggleCode(registerForm.skuCodes, row.code!, Boolean($event))
-                    "
-                  />
-                  <span
-                    >{{ row.displayName || row.code }}
-                    <span class="text-muted-foreground">{{ row.code }}</span></span
-                  >
-                </label>
-              </div>
               <NvFieldDescription>
                 已选择 {{ registerForm.skuCodes.length }} 个 SKU；当前匹配
                 {{ skus.resourcesTotal.value }} 项，请搜索后继续选择。

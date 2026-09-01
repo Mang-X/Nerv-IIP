@@ -88,10 +88,9 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
           ? filters.keyword === '精加工'
             ? [{ code: 'WC-MACHINING-201', displayName: '精加工工作中心', active: true }]
             : [{ code: 'WC-PRESS', displayName: '冲压工作中心', active: true }]
-          : [
-              { code: 'SKU-FLOOR', displayName: '前地板总成', active: true },
-              { code: 'SKU-SILL', displayName: '左门槛加强板', active: true },
-            ],
+          : filters.keyword === '门槛'
+            ? [{ code: 'SKU-SILL', displayName: '左门槛加强板', active: true }]
+            : [{ code: 'SKU-FLOOR', displayName: '前地板总成', active: true }],
       ),
       resourcesTotal: computed(() =>
         resourceType === 'work-center' ? (filters.keyword ? 1 : 203) : 2,
@@ -155,6 +154,20 @@ const stubs = {
   },
   NvFieldError: { props: ['errors'], template: '<p role="alert">{{ errors?.join("；") }}</p>' },
   FormSectionTitle: { template: '<h3><slot /></h3>' },
+  EntityMultiPicker: {
+    props: ['id', 'modelValue', 'options', 'search', 'title', 'invalid'],
+    emits: ['update:modelValue', 'update:search'],
+    template: `<div data-testid="multi-picker" :data-title="title" :data-invalid="invalid || undefined">
+      <input :id="id" :aria-label="'搜索' + title" :value="search"
+        @input="$emit('update:search', $event.target.value)" />
+      <button v-for="option in options" :key="option.value" type="button"
+        :data-option-value="option.value"
+        @click="$emit('update:modelValue', [modelValue, option.value].filter(Boolean).join(','))">{{ option.label }} {{ option.value }}</button>
+      <button v-for="code in String(modelValue || '').split(',').filter(Boolean)" :key="'remove-' + code"
+        type="button" :aria-label="'移除 ' + code"
+        @click="$emit('update:modelValue', String(modelValue || '').split(',').filter((item) => item && item !== code).join(','))">移除 {{ code }}</button>
+    </div>`,
+  },
   NvRowActions: { template: '<div data-testid="row-actions"><slot /></div>' },
   RowActions: { template: '<div data-testid="row-actions"><slot /></div>' },
   NvDropdownMenuItem: {
@@ -232,11 +245,15 @@ describe('工装与模具维护台', () => {
     expect(wrapper.findAll('[data-testid="sheet-content"]')[1]?.attributes('data-size')).toBe('2xl')
   })
 
-  it('通过服务端目录搜索可以选择首批结果之外的工作中心', async () => {
+  it('跨工作中心与 SKU 搜索保留选择、支持移除并提交完整组合', async () => {
     vi.useFakeTimers()
     const wrapper = mount(ToolingPage, { global: { stubs } })
     await flushPromises()
     await button(wrapper, '注册工装')!.trigger('click')
+    await wrapper.find('#tooling-name').setValue('前地板拉延模')
+    await wrapper.find('form select').setValue('mould')
+    await wrapper.find('[data-option-value="WC-PRESS"]').trigger('click')
+    await wrapper.find('[data-option-value="SKU-FLOOR"]').trigger('click')
 
     expect(wrapper.text()).not.toContain('精加工工作中心')
     await wrapper.find('#tooling-work-center-search').setValue('精加工')
@@ -244,12 +261,21 @@ describe('工装与模具维护台', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('精加工工作中心')
-    const lateOption = wrapper
-      .findAll('label')
-      .find((candidate) => candidate.text().includes('WC-MACHINING-201'))
-    expect(lateOption).toBeTruthy()
-    await lateOption!.find('input[type="checkbox"]').setValue(true)
-    expect(wrapper.text()).toContain('已选择 1 个工作中心')
+    await wrapper.find('[data-option-value="WC-MACHINING-201"]').trigger('click')
+    await wrapper.find('#tooling-sku-search').setValue('门槛')
+    await vi.advanceTimersByTimeAsync(300)
+    await flushPromises()
+    await wrapper.find('[data-option-value="SKU-SILL"]').trigger('click')
+    await wrapper.find('button[aria-label="移除 WC-PRESS"]').trigger('click')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(state.register).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workCenterCodes: ['WC-MACHINING-201'],
+        skuCodes: ['SKU-FLOOR', 'SKU-SILL'],
+      }),
+    )
     vi.useRealTimers()
   })
 
@@ -325,9 +351,8 @@ describe('工装与模具维护台', () => {
     expect(wrapper.text()).toContain('使用寿命必须是正整数')
 
     await wrapper.find('#tooling-life').setValue('80000')
-    const checks = wrapper.findAll('input[type="checkbox"]')
-    await checks[0]!.setValue(true)
-    await checks[1]!.setValue(true)
+    await wrapper.find('[data-option-value="WC-PRESS"]').trigger('click')
+    await wrapper.find('[data-option-value="SKU-FLOOR"]').trigger('click')
     expect(wrapper.text()).toContain('1 个适用组合')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
@@ -353,9 +378,8 @@ describe('工装与模具维护台', () => {
     async function fillRequiredFields() {
       await wrapper.find('#tooling-name').setValue('前地板拉延模')
       await wrapper.find('form select').setValue('mould')
-      const checks = wrapper.findAll('input[type="checkbox"]')
-      await checks[0]!.setValue(true)
-      await checks[1]!.setValue(true)
+      await wrapper.find('[data-option-value="WC-PRESS"]').trigger('click')
+      await wrapper.find('[data-option-value="SKU-FLOOR"]').trigger('click')
     }
 
     await button(wrapper, '注册工装')!.trigger('click')
