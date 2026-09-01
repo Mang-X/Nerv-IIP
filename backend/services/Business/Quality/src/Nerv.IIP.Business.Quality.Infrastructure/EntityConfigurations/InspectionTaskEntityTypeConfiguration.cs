@@ -14,9 +14,9 @@ public sealed class InspectionTaskEntityTypeConfiguration : IEntityTypeConfigura
         builder.Property(x => x.EnvironmentId).HasColumnName("environment_id").IsRequired().HasMaxLength(100).HasComment("Environment id where the task applies.");
         builder.Property(x => x.InspectionPlanId).HasColumnName("inspection_plan_id").IsRequired().HasComment("Matched active inspection plan id.");
         builder.Property(x => x.InspectionRecordId).HasColumnName("inspection_record_id").HasComment("Inspection record id created from this task once completed.");
-        builder.Property(x => x.SourceType).HasColumnName("source_type").IsRequired().HasMaxLength(50).HasComment("Task source type: receiving, operation or final.");
+        builder.Property(x => x.SourceType).HasColumnName("source_type").IsRequired().HasMaxLength(50).HasComment("Task source type: receiving, operation, final or first-article.");
         builder.Property(x => x.SourceService).HasColumnName("source_service").IsRequired().HasMaxLength(100).HasComment("Upstream service that emitted the task source event.");
-        builder.Property(x => x.SourceDocumentId).HasColumnName("source_document_id").IsRequired().HasMaxLength(150).HasComment("Source document public id.");
+        builder.Property(x => x.SourceDocumentId).HasColumnName("source_document_id").IsRequired().HasMaxLength(250).HasComment("Source document public id, or the composite first-article source identity '{workOrderId}:{operationTaskId}' produced by FirstArticleInspection.SourceDocumentId.");
         builder.Property(x => x.SourceDocumentLineId).HasColumnName("source_document_line_id").HasMaxLength(250).HasComment("Optional source document line, operation id or stable periodic-operation window identity.");
         builder.Property(x => x.SkuCode).HasColumnName("sku_code").IsRequired().HasMaxLength(100).HasComment("SKU code awaiting inspection.");
         builder.Property(x => x.Quantity).HasColumnName("quantity").IsRequired().HasPrecision(18, 6).HasComment("Quantity awaiting inspection.");

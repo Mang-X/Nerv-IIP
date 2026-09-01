@@ -10,7 +10,7 @@
 #     - PowerShell 7
 #
 # 校验 docs/adr 的结构不变量。判据与理由见
-# docs/architecture/decision-record-governance.md；本脚本只强制该文档里已经
+# docs/governance/decisions/records.md；本脚本只强制该文档里已经
 # 达成的部分，未达成的欠账在那里登记，不在此处误红。
 #
 # 编号唯一性与 H1/文件名编号一致性均已校验：0020 撞号（industrial-telemetry 与
@@ -40,7 +40,7 @@ $synonymSections = [ordered]@{
 $allowedStatuses = @('已接受', '已否决', '被取代')
 
 # 生命周期禁用标题：决策记录只写裁决，不写提案期与进度期段落。判据、逐条理由和这张表的
-# 权威副本见 docs/architecture/decision-record-governance.md 的「生命周期禁用标题表」；
+# 权威副本见 docs/governance/decisions/records.md 的「生命周期禁用标题表」；
 # 两处必须逐字对齐，由 scripts/tests/verify-adr-format-lifecycle.Tests.ps1 双向锁定。
 # 前缀匹配而不是全等：`实施状态` 与 `实施状态声明`、`当前实现事实` 与
 # `当前实现事实与目标状态` 是同一档欠账的两种写法，全等表每来一个变体就要补一行。
@@ -77,7 +77,13 @@ $lifecycleSectionAllowlist = @('实施说明')
 # 只查标题不查正文——正文里的票号与日期是耐久指针，下探正文会误伤（见门禁小节）。
 $dateStampedHeadingPattern = '\d{4}-\d{2}-\d{2}'
 
-$adrFiles = @(Get-NervItemsSortedByString -Items @(Get-ChildItem -LiteralPath $AdrRoot -Filter '*.md' -File) -KeySelector { param($row) [string]$row.Name } -Comparer ([StringComparer]::Ordinal))
+# `README.md` 是目录导航入口，不是决策记录。只排除这一确切文件名，其他 Markdown 文件仍然
+# 必须经过原有的文件名和格式校验。
+$adrFiles = @(Get-NervItemsSortedByString -Items @(
+        Get-ChildItem -LiteralPath $AdrRoot -Filter '*.md' -File | Where-Object {
+            -not [string]::Equals($_.Name, 'README.md', [StringComparison]::Ordinal)
+        }
+    ) -KeySelector { param($row) [string]$row.Name } -Comparer ([StringComparer]::Ordinal))
 if ($adrFiles.Count -eq 0) { Write-Host "No ADR found under $AdrRoot"; exit 1 }
 
 $findings = [System.Collections.Generic.List[string]]::new()
@@ -160,20 +166,20 @@ foreach ($file in $adrFiles) {
                     $title.StartsWith($_, [StringComparison]::Ordinal)
                 })
             if ($matchedPrefix.Count -gt 0) {
-                $findings.Add("${name}: 标题 '$marker $title' 是提案期/进度期段落（禁用前缀 '$($matchedPrefix[0])'），已实施的决策记录不得出现；见 docs/architecture/decision-record-governance.md 的生命周期禁用标题表")
+                $findings.Add("${name}: 标题 '$marker $title' 是提案期/进度期段落（禁用前缀 '$($matchedPrefix[0])'），已实施的决策记录不得出现；见 docs/governance/decisions/records.md 的生命周期禁用标题表")
             }
             else {
                 $matchedExact = @($lifecycleForbiddenExactHeadings | Where-Object {
                         [string]::Equals($_, $title, [StringComparison]::OrdinalIgnoreCase)
                     })
                 if ($matchedExact.Count -gt 0) {
-                    $findings.Add("${name}: 标题 '$marker $title' 是提案期段落（禁用标题 '$($matchedExact[0])'），已实施的决策记录不得出现；见 docs/architecture/decision-record-governance.md 的生命周期禁用标题表")
+                    $findings.Add("${name}: 标题 '$marker $title' 是提案期段落（禁用标题 '$($matchedExact[0])'），已实施的决策记录不得出现；见 docs/governance/decisions/records.md 的生命周期禁用标题表")
                 }
             }
         }
 
         if ([regex]::IsMatch($title, $dateStampedHeadingPattern)) {
-            $findings.Add("${name}: 标题 '$marker $title' 带日期戳，决策变更必须新开记录而不是按时间叠加段落；见 docs/architecture/decision-record-governance.md")
+            $findings.Add("${name}: 标题 '$marker $title' 带日期戳，决策变更必须新开记录而不是按时间叠加段落；见 docs/governance/decisions/records.md")
         }
     }
 }

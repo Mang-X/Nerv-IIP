@@ -24,6 +24,27 @@ const scopeState = vi.hoisted(() => ({
   pending: false,
   ready: true,
 }))
+const materialState = vi.hoisted(() => ({
+  permission: true,
+  pending: false,
+  rows: [] as Array<Record<string, unknown>>,
+}))
+const scrapReasonState = vi.hoisted(() => ({
+  permission: true,
+  pending: false,
+  error: undefined as unknown,
+  rows: [
+    {
+      reasonCode: 'SCRAP-SURFACE',
+      reasonName: '表面缺陷',
+      groupName: '外观',
+      severity: 'major',
+      defaultDisposition: 'scrap',
+      enabled: true,
+      snapshotVersion: 'v1',
+    },
+  ] as Array<Record<string, unknown>>,
+}))
 
 vi.mock('@/composables/useBusinessMes', () => ({
   makeIdempotencyKey: spies.makeIdempotencyKey,
@@ -37,6 +58,20 @@ vi.mock('@/composables/useBusinessMes', () => ({
     readProductionQuantitySnapshot: spies.readProductionQuantitySnapshot,
     refreshProductionReportState: vi.fn(async () => undefined),
   }),
+  useMesProductionMaterialLots: () => ({
+    materialsReadPermission: ref(materialState.permission),
+    materialLotsPending: ref(materialState.pending),
+    materialLotsError: ref(undefined),
+    availableMaterialLots: ref(materialState.rows),
+    refreshMaterialLots: vi.fn(async () => undefined),
+  }),
+  useMesScrapReasonCodes: () => ({
+    qualityInspectionRecordsReadPermission: ref(scrapReasonState.permission),
+    scrapReasonCodes: ref(scrapReasonState.rows),
+    scrapReasonCodesPending: ref(scrapReasonState.pending),
+    scrapReasonCodesError: ref(scrapReasonState.error),
+    refreshScrapReasonCodes: vi.fn(async () => undefined),
+  }),
 }))
 
 vi.mock('@/utils/notify', async (importOriginal) => ({
@@ -47,7 +82,7 @@ vi.mock('@/utils/notify', async (importOriginal) => ({
 }))
 
 const stubs = {
-  DialogRoot: { props: ['open'], template: '<div><slot /></div>' },
+  NvDialog: { props: ['open'], template: '<div><slot /></div>' },
   NvDialogContent: { template: '<div><slot /></div>' },
   NvDialogHeader: { template: '<div><slot /></div>' },
   NvDialogTitle: { template: '<h2><slot /></h2>' },
@@ -58,7 +93,7 @@ const stubs = {
     props: ['disabled', 'modelValue'],
     emits: ['update:modelValue'],
     template:
-      '<input type="checkbox" :disabled="disabled" :checked="modelValue" @change="$emit(\'update:modelValue\', $event.target.checked)" />',
+      '<input v-bind="$attrs" type="checkbox" :disabled="disabled" :checked="modelValue" @change="$emit(\'update:modelValue\', $event.target.checked)" />',
   },
   Field: { template: '<div><slot /></div>' },
   FieldGroup: { template: '<div><slot /></div>' },
@@ -91,6 +126,23 @@ function mountDialog(ctx: ProductionReportContext | null = context) {
   })
 }
 
+function seedReportMaterialLot() {
+  materialState.rows = [
+    {
+      requestId: 'MIR-REPORT-001',
+      workOrderId: 'WO-2026-0007',
+      operationTaskId: 'WO-2026-0007-OP-20',
+      materialId: 'MAT-OIL',
+      uomCode: 'L',
+      materialLotId: 'LOT-OIL-001',
+      requestedQuantity: 5,
+      receivedQuantity: 5,
+      consumedQuantity: 1,
+      status: 'received',
+    },
+  ]
+}
+
 describe('ProductionReportDialog — 带出式录入', () => {
   beforeEach(() => {
     spies.recordProductionReport.mockClear()
@@ -113,6 +165,12 @@ describe('ProductionReportDialog — 带出式录入', () => {
     scopeState.message = ''
     scopeState.pending = false
     scopeState.ready = true
+    materialState.permission = true
+    materialState.pending = false
+    materialState.rows = []
+    scrapReasonState.permission = true
+    scrapReasonState.pending = false
+    scrapReasonState.error = undefined
   })
 
   it('带出的上下文只读呈现，且不提供工单/工序的输入位', () => {
@@ -131,22 +189,62 @@ describe('ProductionReportDialog — 带出式录入', () => {
     expect(wrapper.find('#report-operation-task').exists()).toBe(false)
   })
 
-  it('录入项只有合格数量、不合格数量与完成状态，且没有说明书文案', () => {
+  it('录入项包含合格数量、不合格数量、返修数量与完成状态，且没有说明书文案', () => {
     const wrapper = mountDialog()
 
     const inputIds = wrapper.findAll('input[id]').map((input) => input.attributes('id'))
-    expect(inputIds).toEqual(['report-good', 'report-scrap', 'report-complete'])
+    expect(inputIds).toEqual(['report-good', 'report-scrap', 'report-rework', 'report-complete'])
     // 报工时间不再作为录入项（提交时取当前时间）
     expect(wrapper.find('#report-time').exists()).toBe(false)
     // 可见区域零说明文案
     expect(wrapper.find('form').text()).not.toMatch(/系统|带出|只能从|必须为非负数|后端/)
   })
 
+  it('提交时把返修数量与选中的已收料批次耗量一起发出', async () => {
+    seedReportMaterialLot()
+    const wrapper = mountDialog()
+
+    await wrapper.find('#report-good').setValue('10')
+    await wrapper.find('#report-rework').setValue('2')
+    await wrapper.find('#report-material-MIR-REPORT-001').setValue(true)
+    await wrapper.find('#report-material-quantity-MIR-REPORT-001').setValue('3')
+    await wrapper.find('form').trigger('submit')
+    await wrapper.vm.$nextTick()
+
+    const body = spies.recordProductionReport.mock.calls[0]![0]
+    expect(body.reworkQuantity).toBe(2)
+    expect(body.consumedMaterialLots).toEqual([
+      {
+        materialId: 'MAT-OIL',
+        materialLotId: 'LOT-OIL-001',
+        consumedQuantity: 3,
+        materialIssueRequestNo: 'MIR-REPORT-001',
+      },
+    ])
+  })
+
+  it('允许仅填写返修数量的报工提交', async () => {
+    const wrapper = mountDialog()
+
+    await wrapper.find('#report-good').setValue('0')
+    await wrapper.find('#report-scrap').setValue('0')
+    await wrapper.find('#report-rework').setValue('2')
+    await wrapper.find('form').trigger('submit')
+    await wrapper.vm.$nextTick()
+
+    expect(spies.recordProductionReport).toHaveBeenCalledTimes(1)
+    expect(spies.recordProductionReport.mock.calls[0]![0].reworkQuantity).toBe(2)
+  })
+
   it('提交时把带出的工单/工序与录入数量一起发出，成功后 toast 并关闭', async () => {
+    seedReportMaterialLot()
     const wrapper = mountDialog()
 
     await wrapper.find('#report-good').setValue('180')
     await wrapper.find('#report-scrap').setValue('3')
+    await wrapper.find('#report-scrap-reason').setValue('SCRAP-SURFACE')
+    await wrapper.find('#report-material-MIR-REPORT-001').setValue(true)
+    await wrapper.find('#report-material-quantity-MIR-REPORT-001').setValue('1')
     await wrapper.find('form').trigger('submit')
     await wrapper.vm.$nextTick()
 
@@ -156,6 +254,7 @@ describe('ProductionReportDialog — 带出式录入', () => {
     expect(body.operationTaskId).toBe('WO-2026-0007-OP-20')
     expect(body.goodQuantity).toBe(180)
     expect(body.scrapQuantity).toBe(3)
+    expect(body.scrapReasonCode).toBe('SCRAP-SURFACE')
     expect(body.completesOperation).toBe(true)
     expect(typeof body.reportedAtUtc).toBe('string')
     expect(spies.notifySuccess).toHaveBeenCalledOnce()
@@ -258,10 +357,14 @@ describe('ProductionReportDialog — 带出式录入', () => {
         throw { success: false, code: 422, message: '报工数量不符合规则' }
       },
     )
+    seedReportMaterialLot()
     const wrapper = mountDialog()
 
     await wrapper.find('#report-good').setValue('5')
     await wrapper.find('#report-scrap').setValue('1')
+    await wrapper.find('#report-scrap-reason').setValue('SCRAP-SURFACE')
+    await wrapper.find('#report-material-MIR-REPORT-001').setValue(true)
+    await wrapper.find('#report-material-quantity-MIR-REPORT-001').setValue('1')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
@@ -282,10 +385,14 @@ describe('ProductionReportDialog — 带出式录入', () => {
         throw new TypeError('Failed to fetch')
       },
     )
+    seedReportMaterialLot()
     const wrapper = mountDialog()
 
     await wrapper.find('#report-good').setValue('5')
     await wrapper.find('#report-scrap').setValue('1')
+    await wrapper.find('#report-scrap-reason').setValue('SCRAP-SURFACE')
+    await wrapper.find('#report-material-MIR-REPORT-001').setValue(true)
+    await wrapper.find('#report-material-quantity-MIR-REPORT-001').setValue('1')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 

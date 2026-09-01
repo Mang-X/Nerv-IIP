@@ -1,6 +1,7 @@
 using System.Globalization;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.OeeProductionFactAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRollupAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Seed;
@@ -87,6 +88,10 @@ public sealed class WorldHistoryDeviceSeedServiceTests
         Assert.Equal(0, second.SummariesWritten);
         Assert.Equal(0, second.DeviceStateSnapshotsWritten);
         Assert.Equal(0, second.OeeFactsWritten);
+
+        Assert.All(
+            await db.OeeProductionFacts.ToArrayAsync(),
+            fact => Assert.Equal(OeeHistoricalDimensionStatus.MissingTimezone, fact.HistoricalDimensionStatus));
 
         // 周日/春节无生产遥测：随机抽一个周日断言非辅助设备当天没有日级聚合。
         var sunday = new DateTimeOffset(new DateOnly(2026, 1, 11), TimeOnly.MinValue, TimeSpan.Zero);

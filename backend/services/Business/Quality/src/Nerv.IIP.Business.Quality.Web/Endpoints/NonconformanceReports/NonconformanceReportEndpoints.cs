@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.ComponentModel.DataAnnotations;
 using FastEndpoints;
+using FluentValidation;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 using Nerv.IIP.Business.Quality.Web.Application.Auth;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
@@ -30,6 +31,7 @@ internal static class NonconformanceReportEndpointMapping
             response.Status,
             response.DispositionType,
             response.DispositionApprovalChainId,
+            response.ReworkWorkOrderCreationStatus,
             response.ReworkWorkOrderId,
             response.ScrapMovementId,
             response.ReturnDocumentId,
@@ -117,17 +119,34 @@ public sealed record GetNonconformanceReportRequest(
 
 public sealed record SubmitNonconformanceReportDispositionRequest(
     NonconformanceReportId NcrId,
+    string OrganizationId,
+    string EnvironmentId,
     string DispositionType,
     string? DispositionApprovalChainId,
     IReadOnlyCollection<string>? AttachmentFileIds,
-    IReadOnlyCollection<MrbReviewInput>? MrbReviews);
+    IReadOnlyCollection<MrbReviewInput>? MrbReviews,
+    string? IdempotencyKey = null);
 
 public sealed record CloseNonconformanceReportRequest(
     NonconformanceReportId NcrId,
+    [property: Obsolete("由 MES 返工工单创建回执绑定；客户端提交会被拒绝。")]
     string? ReworkWorkOrderId,
     string? ScrapMovementId,
     string? ReturnDocumentId,
     [property: Required, MaxLength(500)] string Reason);
+
+public sealed class CloseNonconformanceReportRequestValidator
+    : Validator<CloseNonconformanceReportRequest>
+{
+    public CloseNonconformanceReportRequestValidator()
+    {
+#pragma warning disable CS0618
+        RuleFor(x => x.ReworkWorkOrderId)
+            .Must(string.IsNullOrWhiteSpace)
+            .WithMessage("ReworkWorkOrderId is bound only from the MES rework-work-order-created receipt.");
+#pragma warning restore CS0618
+    }
+}
 
 public sealed record AcceptedResponse(bool Accepted);
 
@@ -146,6 +165,7 @@ public sealed record NonconformanceReportDto(
     string Status,
     string? DispositionType,
     string? DispositionApprovalChainId,
+    string ReworkWorkOrderCreationStatus,
     string? ReworkWorkOrderId,
     string? ScrapMovementId,
     string? ReturnDocumentId,
@@ -238,10 +258,13 @@ public sealed class SubmitNonconformanceReportDispositionEndpoint(ISender sender
     {
         await sender.Send(new SubmitNonconformanceReportDispositionCommand(
             req.NcrId,
+            req.OrganizationId,
+            req.EnvironmentId,
             req.DispositionType,
             req.DispositionApprovalChainId,
             req.AttachmentFileIds ?? [],
-            req.MrbReviews ?? []), ct);
+            req.MrbReviews ?? [],
+            req.IdempotencyKey), ct);
         await Send.OkAsync(new AcceptedResponse(true).AsResponseData(), cancellation: ct);
     }
 }
@@ -261,7 +284,6 @@ public sealed class CloseNonconformanceReportEndpoint(ISender sender)
     {
         await sender.Send(new CloseNonconformanceReportCommand(
             req.NcrId,
-            req.ReworkWorkOrderId,
             req.ScrapMovementId,
             req.ReturnDocumentId,
             req.Reason), ct);

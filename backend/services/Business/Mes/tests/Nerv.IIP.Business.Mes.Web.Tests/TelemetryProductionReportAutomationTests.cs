@@ -9,6 +9,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.IndustrialTelemetry;
 using Nerv.IIP.Messaging.CAP;
+using Nerv.IIP.Business.Mes.Web.Application.Quality;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -205,7 +206,11 @@ public sealed class TelemetryProductionReportAutomationTests
         {
             if (request is RecordProductionReportCommand command)
             {
-                var response = await new RecordProductionReportCommandHandler(dbContext, CodingService).Handle(command, cancellationToken);
+                var response = await new RecordProductionReportCommandHandler(
+                    dbContext,
+                    TestProductionReportOeeDimensionSnapshotProvider.Instance,
+                    TestMesFirstArticleGate.Allowing,
+                    CodingService).Handle(command, cancellationToken);
                 await dbContext.SaveChangesAsync(cancellationToken);
                 return (TResponse)(object)response;
             }

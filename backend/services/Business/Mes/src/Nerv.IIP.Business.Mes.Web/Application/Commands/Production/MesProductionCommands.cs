@@ -12,6 +12,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Behaviors;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Errors;
+using Nerv.IIP.Business.Mes.Web.Application.Quality;
 using NetCorePal.Extensions.Repository;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
@@ -44,7 +45,9 @@ public sealed record RecordProductionReportCommand(
     string? DefectRecordNo = null,
     string? ProducedLotNo = null,
     string? SerialNo = null,
-    string Source = "manual") : ICommand<ProductionReportCommandResult>, IOperationTaskConcurrencyRetryCommand
+    string Source = "manual",
+    // 操作人由前线 HTTP 边界从已认证 principal 注入，不由业务载荷携带。
+    string? ReportedBy = null) : ICommand<ProductionReportCommandResult>, IOperationTaskConcurrencyRetryCommand
 {
     internal bool PersistsCallerIntentReceipt { get; private init; } = true;
 
@@ -67,7 +70,8 @@ public sealed record RecordProductionReportCommand(
         string? DefectRecordNo = null,
         string? ProducedLotNo = null,
         string? SerialNo = null,
-        string Source = "manual")
+        string Source = "manual",
+        string? ReportedBy = null)
         : this(
             OrganizationId,
             EnvironmentId,
@@ -94,7 +98,8 @@ public sealed record RecordProductionReportCommand(
             DefectRecordNo,
             ProducedLotNo,
             SerialNo,
-            Source)
+            Source,
+            ReportedBy)
     {
         PersistsCallerIntentReceipt = false;
     }
@@ -122,6 +127,7 @@ public sealed class RecordProductionReportCommandValidator : AbstractValidator<R
         RuleFor(x => x.Source).NotEmpty().MaximumLength(50).Must(ProductionReport.IsSupportedSource)
             .WithMessage("Production report source must be manual or telemetry.");
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.ReportedBy).MaximumLength(ProductionReport.ReportedByMaxLength);
         RuleForEach(x => x.ConsumedMaterialLots).ChildRules(lot =>
         {
             lot.RuleFor(x => x.MaterialId).NotEmpty().MaximumLength(100);
@@ -132,7 +138,11 @@ public sealed class RecordProductionReportCommandValidator : AbstractValidator<R
     }
 }
 
-public sealed class RecordProductionReportCommandHandler(ApplicationDbContext dbContext, MesCodingService? codingService = null)
+public sealed class RecordProductionReportCommandHandler(
+    ApplicationDbContext dbContext,
+    IProductionReportOeeDimensionSnapshotProvider oeeDimensionSnapshotProvider,
+    IMesFirstArticleGate firstArticleGate,
+    MesCodingService? codingService = null)
     : ICommandHandler<RecordProductionReportCommand, ProductionReportCommandResult>
 {
     private readonly MesCodingService _codingService = codingService ?? new MesCodingService();
@@ -193,6 +203,17 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                 operationTask.Status.ToString());
         }
 
+        // 首件门禁（#2780）：拦的是**批量**报工，不是首件那一件。
+        // 「这一次是不是首件那一件」由 Quality 的首件进度直接回答（not-opened = 任务未开出，
+        // 而开单的唯一触发点就是本次报工的事件），MES 不用本地报工历史去猜——猜出来的判据
+        // 与 Quality 的建单条件不等价，会把「已报过工但任务还没开出」的工序永久锁死。
+        await firstArticleGate.EnsureBatchReportAllowedAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.WorkOrderId,
+            request.OperationTaskId,
+            cancellationToken);
+
         // 工序级累计合格量是所有工序报工的共同权威边界；不能只依赖末工序对工单聚合的回写。
         var reportedGoodQuantity = await dbContext.ProductionReports
             .AsNoTracking()
@@ -229,6 +250,15 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
             producedLotNo = $"{request.WorkOrderId}-{request.OperationTaskId}-{allocation.Code}";
         }
 
+        var oeeProjection = ProductionReportOeeProjectionFactory.Create(operationTask);
+        var oeeDimensionSnapshot = await oeeDimensionSnapshotProvider.CaptureAsync(
+            new ProductionReportOeeDimensionSnapshotRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                operationTask.DeviceAssetId,
+                operationTask.WorkCenterId,
+                operationTask.ShiftId),
+            cancellationToken);
         var report = ProductionReport.Record(
             request.OrganizationId,
             request.EnvironmentId,
@@ -244,9 +274,11 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
             request.DefectRecordNo,
             producedLotNo,
             request.SerialNo,
-            ProductionReportOeeProjectionFactory.Create(operationTask),
+            oeeProjection,
             request.Source,
-            consumedMaterialLots.Count);
+            consumedMaterialLots.Count,
+            request.ReportedBy,
+            oeeDimensionSnapshot);
 
         var duplicateLot = consumedMaterialLots
             .GroupBy(x => $"{x.MaterialId.ToUpperInvariant()}|{x.MaterialLotId.ToUpperInvariant()}", StringComparer.Ordinal)
@@ -341,10 +373,47 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                 dbContext,
                 operationTask,
                 cancellationToken);
-            MesDomainRuleGuard.Enforce(() => operationTask.Complete(request.ReportedAtUtc));
+            await OperationActualTimeSettlementCoordinator.CompleteAsync(
+                dbContext,
+                operationTask,
+                request.ReportedAtUtc,
+                [report.ReportNo],
+                cancellationToken);
         }
 
         dbContext.ProductionReports.Add(report);
+        if (request.CompletesOperation)
+        {
+            var participants = await dbContext.OperationTaskParticipants
+                .AsNoTracking()
+                .Where(x => x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    x.OperationTaskId == request.OperationTaskId)
+                .ToArrayAsync(cancellationToken);
+            if (participants.Length == 0 && !string.IsNullOrWhiteSpace(operationTask.AssignedUserId))
+            {
+                participants =
+                [
+                    OperationTaskParticipant.Register(
+                        request.OrganizationId,
+                        request.EnvironmentId,
+                        request.OperationTaskId,
+                        operationTask.AssignedUserId,
+                        operationTask.AssignedUserName,
+                        100m),
+                ];
+            }
+
+            dbContext.ProductionReportLaborAllocations.AddRange(
+                ProductionReportLaborAllocation.Allocate(
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    report.ReportNo,
+                    request.WorkOrderId,
+                    request.OperationTaskId,
+                    operationTask.LaborTimeTicks,
+                    participants));
+        }
         dbContext.ProductionReportMaterialConsumptions.AddRange(materialConsumptions);
         if (isOutputOperation && request.GoodQuantity > 0m)
         {
@@ -499,7 +568,11 @@ public sealed class ReverseProductionReportCommandHandler(ApplicationDbContext d
 
         if (original.CompletesOperation)
         {
-            operationTask.ReopenAfterReportReversal();
+            await OperationActualTimeSettlementCoordinator.VoidAsync(
+                dbContext,
+                operationTask,
+                request.ReversedAtUtc,
+                cancellationToken);
         }
 
         var reversal = ProductionReport.Reverse(
@@ -616,7 +689,7 @@ public sealed class CreateFinishedGoodsReceiptRequestCommandHandler(
             request.EnvironmentId, "finished-goods-receipt-request",
             null,
             request.IdempotencyKey,
-            MesCodingService.Fingerprint(request.WorkOrderId, request.SkuId, request.Quantity, request.UomCode, request.RequestedAtUtc, request.UnitCost, request.ProducedLotNo, request.SerialNo, request.ProductionDate, request.ExpiryDate),
+            MesCodingService.Fingerprint(request.WorkOrderId, request.SkuId, request.Quantity, request.UomCode, request.RequestedAtUtc, request.ProducedLotNo, request.SerialNo, request.ProductionDate, request.ExpiryDate),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -714,7 +787,7 @@ public sealed class CreateFinishedGoodsReceiptRequestCommandHandler(
                     request.RequestedAtUtc,
                     request.ProducedLotNo,
                     request.SerialNo,
-                    request.UnitCost ?? workOrder.CapitalizedUnitCost,
+                    workOrder.CapitalizedUnitCost,
                     request.ProductionDate,
                     request.ExpiryDate);
                 dbContext.FinishedGoodsReceiptRequests.Add(receiptRequest);

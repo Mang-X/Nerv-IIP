@@ -78,7 +78,6 @@ export function useReceiptCreateForm(
 
   const form = reactive({
     quantity: '1',
-    unitCost: '',
     // 物料主档到位前保持空：宁可让操作员显式选单位，也不预填一个假单位。
     uomCode: '',
     requestedAtUtc: toLocalDateTimeInput(new Date()),
@@ -116,7 +115,7 @@ export function useReceiptCreateForm(
     },
     { immediate: true },
   )
-  // 工单上下文切换（同一 /mes/receipts 路由从工单 A 切到 B）：整体重置表单，避免以 A 的数量/成本/单位/时间提交 B，
+  // 工单上下文切换（同一 /mes/receipts 路由从工单 A 切到 B）：整体重置表单，避免以 A 的数量/单位/时间提交 B，
   // 或复用 A 的登记会话幂等键；重置后再应用 B 的建议数量。
   watch(
     () => context().workOrderId,
@@ -153,7 +152,6 @@ export function useReceiptCreateForm(
   const invalid = computed(() => ({
     producedLotNo: !isNonEmpty(form.producedLotNo),
     quantity: !quantityValid.value,
-    unitCost: toPositiveNumber(form.unitCost) === undefined,
     uomCode: !isNonEmpty(form.uomCode),
     requestedAtUtc: !isNonEmpty(form.requestedAtUtc),
   }))
@@ -167,7 +165,6 @@ export function useReceiptCreateForm(
       isNonEmpty(ctx.skuId) &&
       !invalid.value.producedLotNo &&
       !invalid.value.quantity &&
-      !invalid.value.unitCost &&
       !invalid.value.uomCode &&
       !invalid.value.requestedAtUtc
     )
@@ -178,7 +175,6 @@ export function useReceiptCreateForm(
 
   function resetForm() {
     form.quantity = '1'
-    form.unitCost = ''
     // 回到「跟随物料主档」：主档没到就留空，由上面的 watch 在主档到位后补齐。
     form.uomCode = contextBaseUom.value
     // 成功后先清空产出批次：多批次工单强制操作员重新选择（避免连录误记到上一批次），单一批次再由
@@ -196,14 +192,13 @@ export function useReceiptCreateForm(
     showErrors.value = true
     if (!canSubmit.value) return false
     const ctx = context()
-    const body: BusinessConsoleMesCreateReceiptRequest = {
+    const body: Omit<BusinessConsoleMesCreateReceiptRequest, 'unitCost'> = {
       organizationId: ctx.organizationId.trim(),
       environmentId: ctx.environmentId.trim(),
       workOrderId: ctx.workOrderId.trim(),
       skuId: ctx.skuId.trim(),
       producedLotNo: form.producedLotNo.trim(),
       quantity: toPositiveNumber(form.quantity),
-      unitCost: toPositiveNumber(form.unitCost),
       uomCode: form.uomCode.trim(),
       requestedAtUtc: toIsoFromLocalInput(form.requestedAtUtc),
       idempotencyKey: optionalText(form.idempotencyKey) ?? makeIdempotencyKey('receipt'),

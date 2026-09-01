@@ -6,6 +6,7 @@ using Nerv.IIP.Business.MasterData.Web.Application.Auth;
 using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 using Nerv.IIP.Business.MasterData.Web.Application.Queries;
 using Nerv.IIP.Contracts.Coding;
+using Nerv.IIP.Contracts.MasterData;
 using NetCorePal.Extensions.Dto;
 using Nerv.IIP.ServiceAuth;
 using System.Diagnostics.CodeAnalysis;
@@ -61,7 +62,7 @@ public sealed record ListMasterDataResourcesRequest(
     string ResourceType,
     bool IncludeDisabled = false,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? CodeSet = null,
     string? ParentCode = null,
     string? SiteCode = null,
@@ -75,7 +76,8 @@ public sealed record ListMasterDataResourcesRequest(
     string? ShiftCode = null,
     string? UserId = null,
     string? SkillCode = null,
-    string? WorkshopCode = null);
+    string? WorkshopCode = null,
+    string? DeviceAssetId = null);
 
 public sealed record CreateSkuRequest(
     string OrganizationId,
@@ -148,7 +150,8 @@ public sealed class ListMasterDataResourcesEndpoint(ISender sender)
                 req.ShiftCode,
                 req.UserId,
                 req.SkillCode,
-                req.WorkshopCode),
+                req.WorkshopCode,
+                req.DeviceAssetId),
             ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
@@ -1327,7 +1330,7 @@ public sealed record ListProductCategoriesRequest(
     string? Search = null,
     string? ParentCode = null,
     int Skip = 0,
-    int Take = 100);
+    int Take = OffsetPage.DefaultTake);
 
 public sealed record ProductCategoryRequest(
     string OrganizationId,
@@ -1364,7 +1367,7 @@ public sealed record ListSkillsRequest(
     string? Search = null,
     string? GroupName = null,
     int Skip = 0,
-    int Take = 100);
+    int Take = OffsetPage.DefaultTake);
 
 public sealed record SkillRequest(
     string OrganizationId,
@@ -1799,28 +1802,38 @@ public sealed class ListToolingAssetsEndpoint(ISender sender)
     }
 }
 
-public sealed class RegisterToolingAssetEndpoint(ISender sender) : MasterDataEndpoint<RegisterToolingAssetRequest, ResponseData<MasterDataResourceResponse>>
+public sealed class RegisterToolingAssetEndpoint(
+    ISender sender,
+    IToolingOperationAdmission operationAdmission)
+    : MasterDataEndpoint<RegisterToolingAssetRequest, ResponseData<MasterDataResourceResponse>>
 {
     public override void Configure() { var contract = MasterDataEndpointContracts.Get<RegisterToolingAssetEndpoint>(); ConfigureMasterDataContract(contract); }
     public override async Task HandleAsync(RegisterToolingAssetRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new RegisterToolingAssetCommand(req.OrganizationId, req.EnvironmentId, req.Code, req.Name, req.ToolingType, req.WorkCenterCodes, req.SkuCodes, req.MaintenanceLifeCount, req.IdempotencyKey), ct);
+        var operation = operationAdmission.GetRequiredContext();
+        var result = await sender.Send(new RegisterToolingAssetCommand(req.OrganizationId, req.EnvironmentId, req.Code, req.Name, req.ToolingType, req.WorkCenterCodes, req.SkuCodes, req.MaintenanceLifeCount, req.IdempotencyKey, operation), ct);
         await Send.OkAsync(new MasterDataResourceResponse(result.ResourceType, result.Code, result.DisplayName).AsResponseData(), ct);
     }
 }
 
 public sealed record ChangeToolingStatusRequest(string OrganizationId, string EnvironmentId, string Code, ToolingAssetStatus Status, string Reason);
-public sealed class ChangeToolingStatusEndpoint(ISender sender) : MasterDataEndpoint<ChangeToolingStatusRequest, EmptyResponse>
+public sealed class ChangeToolingStatusEndpoint(
+    ISender sender,
+    IToolingOperationAdmission operationAdmission)
+    : MasterDataEndpoint<ChangeToolingStatusRequest, EmptyResponse>
 {
     public override void Configure() { var contract = MasterDataEndpointContracts.Get<ChangeToolingStatusEndpoint>(); ConfigureMasterDataContract(contract); }
-    public override async Task HandleAsync(ChangeToolingStatusRequest req, CancellationToken ct) { await sender.Send(new ChangeToolingStatusCommand(req.OrganizationId, req.EnvironmentId, req.Code, req.Status, req.Reason), ct); await Send.NoContentAsync(ct); }
+    public override async Task HandleAsync(ChangeToolingStatusRequest req, CancellationToken ct) { var operation = operationAdmission.GetRequiredContext(); var reason = operationAdmission.RequireAuditSafeText(req.Reason, "reason"); await sender.Send(new ChangeToolingStatusCommand(req.OrganizationId, req.EnvironmentId, req.Code, req.Status, reason, operation), ct); await Send.NoContentAsync(ct); }
 }
 
 public sealed record RecordToolingUsageRequest(string OrganizationId, string EnvironmentId, string Code, long Count);
-public sealed class RecordToolingUsageEndpoint(ISender sender) : MasterDataEndpoint<RecordToolingUsageRequest, EmptyResponse>
+public sealed class RecordToolingUsageEndpoint(
+    ISender sender,
+    IToolingOperationAdmission operationAdmission)
+    : MasterDataEndpoint<RecordToolingUsageRequest, EmptyResponse>
 {
     public override void Configure() { var contract = MasterDataEndpointContracts.Get<RecordToolingUsageEndpoint>(); ConfigureMasterDataContract(contract); }
-    public override async Task HandleAsync(RecordToolingUsageRequest req, CancellationToken ct) { await sender.Send(new RecordToolingUsageCommand(req.OrganizationId, req.EnvironmentId, req.Code, req.Count), ct); await Send.NoContentAsync(ct); }
+    public override async Task HandleAsync(RecordToolingUsageRequest req, CancellationToken ct) { var operation = operationAdmission.GetRequiredContext(); await sender.Send(new RecordToolingUsageCommand(req.OrganizationId, req.EnvironmentId, req.Code, req.Count, operation), ct); await Send.NoContentAsync(ct); }
 }
 
 public sealed record ImportChangeoverMatrixRequest(string OrganizationId, string EnvironmentId, IReadOnlyCollection<ChangeoverMatrixEntryDraft> Entries);

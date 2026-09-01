@@ -28,6 +28,7 @@ export const principal = {
     'business.maintenance.work-orders.read',
     'business.maintenance.plans.read',
     'business.masterdata.resources.read',
+    'business.barcodes.scans.write',
   ],
   roleIds: [],
 }
@@ -317,6 +318,7 @@ const countExecutions = [
 export const authorizedWorkScopes = [
   { kind: 'work-center', id: 'WC-A', displayName: '精加工一线' },
   { kind: 'work-center', id: 'WC-B', displayName: '精加工二线' },
+  { kind: 'workshop', id: 'WS-A', displayName: '机加工车间' },
 ]
 
 /**
@@ -389,7 +391,7 @@ const mesManyOperationTasks = Array.from({ length: 501 }, (_, index) => ({
   operationTaskNo: null,
   status: 'Queued',
   operationSequence: index + 1,
-  workCenterId: 'WC-MANY',
+  workCenterId: 'WC-A',
   qualityStatus: 'Pending',
   allowedActions: ['start'],
   blockReasons: [],
@@ -576,6 +578,17 @@ export async function routeBusinessConsoleApi(route: Route) {
   const { pathname } = requestUrl
   const method = route.request().method()
   const isPost = method === 'POST'
+
+  if (isPost && pathname === '/api/business-console/v1/barcode/resolve') {
+    return fulfillJson(
+      route,
+      envelope({ status: 'unknown', reasonCode: 'NO_MATCH', candidates: [], total: 0 }),
+    )
+  }
+
+  if (method === 'GET' && pathname === '/api/business-console/v1/search') {
+    return fulfillJson(route, envelope({ query: requestUrl.searchParams.get('q'), results: [] }))
+  }
 
   // ---- WMS（收货/复核/盘点 + 拣货/上架） ----
   if (/\/wms\/work-scopes\/(receipts|shipments|counts)$/.test(pathname)) {
@@ -955,7 +968,13 @@ export async function routeBusinessConsoleApi(route: Route) {
       : workOrderScopedItems
     const skip = Number(requestUrl.searchParams.get('skip') ?? 0)
     const take = Number(requestUrl.searchParams.get('take') ?? 100)
-    const items = scopedItems.slice(skip, skip + take)
+    const items = scopedItems
+      .slice(skip, skip + take)
+      .map((task) =>
+        pathname === `${base}/reportable-operation-tasks`
+          ? { ...task, allowedActions: ['report'] }
+          : task,
+      )
     return fulfillJson(route, envelope({ items, total: scopedItems.length }))
   }
   if (pathname === `${base}/work-orders`) {
@@ -998,6 +1017,29 @@ export async function routeBusinessConsoleApi(route: Route) {
     }
     return fulfillJson(route, envelope({ items: [], total: 0 }))
   }
+  const productionReportDetailMatch = pathname.match(
+    /^\/api\/business-console\/v1\/mes\/production-reports\/([^/]+)$/,
+  )
+  if (method === 'GET' && productionReportDetailMatch) {
+    const reportNo = decodeURIComponent(productionReportDetailMatch[1])
+    return fulfillJson(
+      route,
+      envelope({
+        report: {
+          productionReportId: '019f-e2e-production-report',
+          reportNo,
+          workOrderId: 'WO-1',
+          operationTaskId: 'OP-1',
+          goodQuantity: 5,
+          scrapQuantity: 0,
+          reworkQuantity: 0,
+          reportedAtUtc: nowUtc,
+        },
+        consumedMaterialLots: [],
+        laborAllocations: [],
+      }),
+    )
+  }
   if (pathname === `${base}/telemetry-production-report-candidates`) {
     return fulfillJson(route, envelope({ items: [], total: 0 }))
   }
@@ -1005,6 +1047,77 @@ export async function routeBusinessConsoleApi(route: Route) {
     return fulfillJson(
       route,
       envelope({ items: mesMaterialIssueRequests, total: mesMaterialIssueRequests.length }),
+    )
+  }
+  if (pathname === `${base}/line-side-inventory-balances`) {
+    const requestedPage = Number(requestUrl.searchParams.get('page') ?? 1)
+    const items =
+      requestedPage === 2
+        ? [
+            {
+              siteCode: 'SITE-SH',
+              locationCode: 'LINE-A04',
+              skuCode: 'SKU-PAGE-201',
+              uomCode: 'pcs',
+              onHandQuantity: 8,
+              reservedQuantity: 1,
+              availableQuantity: 7,
+              lotCount: 1,
+              oldestProductionDate: '2026-08-25',
+              ageDays: 1,
+              ageCompleteness: 'complete',
+            },
+          ]
+        : [
+            {
+              siteCode: 'SITE-SH',
+              locationCode: 'LINE-A01',
+              skuCode: 'SKU-DAMPER-001',
+              uomCode: 'pcs',
+              onHandQuantity: 120,
+              reservedQuantity: 20,
+              availableQuantity: 100,
+              lotCount: 3,
+              oldestProductionDate: '2026-08-20',
+              ageDays: 6,
+              ageCompleteness: 'complete',
+            },
+            {
+              siteCode: 'SITE-SH',
+              locationCode: 'LINE-A02',
+              skuCode: 'SKU-SEAL-008',
+              uomCode: 'pcs',
+              onHandQuantity: 45,
+              reservedQuantity: 5,
+              availableQuantity: 40,
+              lotCount: 2,
+              oldestProductionDate: '2026-08-22',
+              ageDays: 4,
+              ageCompleteness: 'partial',
+            },
+            {
+              siteCode: 'SITE-SH',
+              locationCode: 'LINE-A03',
+              skuCode: 'SKU-OIL-012',
+              uomCode: 'l',
+              onHandQuantity: 18,
+              reservedQuantity: 0,
+              availableQuantity: 18,
+              lotCount: 1,
+              oldestProductionDate: null,
+              ageDays: null,
+              ageCompleteness: 'unavailable',
+            },
+          ]
+    return fulfillJson(
+      route,
+      envelope({
+        items,
+        totalCount: 201,
+        page: requestedPage,
+        pageSize: 200,
+        asOfDate: '2026-08-26',
+      }),
     )
   }
   if (pathname === `${base}/finished-goods-receipt-requests`) {

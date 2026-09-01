@@ -474,6 +474,53 @@ public sealed class IntegrationEventReliabilityTests
     }
 
     [Fact]
+    public async Task Processed_integration_event_inbox_supports_event_id_identity_and_acquires_lock_before_lookup()
+    {
+        var options = new DbContextOptionsBuilder<TestProcessedEventDbContext>()
+            .UseInMemoryDatabase($"processed-event-id-inbox-{Guid.CreateVersion7():N}")
+            .Options;
+        await using var dbContext = new TestProcessedEventDbContext(options);
+        var first = CreateValidEvent("event-stable-001");
+        var changedPayload = first with
+        {
+            IdempotencyKey = "sample:changed-business-key",
+            Payload = new SamplePayload("changed"),
+        };
+        var locks = new List<string>();
+
+        Task AcquireLock(DbContext _, string consumer, string identity, CancellationToken __)
+        {
+            locks.Add($"{consumer}:{identity}");
+            return Task.CompletedTask;
+        }
+
+        var firstRecorded = await ProcessedIntegrationEventInbox.TryRecordAsync(
+            dbContext,
+            dbContext.ProcessedIntegrationEvents,
+            "sample.consumer",
+            first,
+            SampleProcessedIntegrationEvent.FromInboxRecord,
+            ProcessedIntegrationEventInboxIdentity.EventId,
+            AcquireLock,
+            CancellationToken.None);
+        var replayRecorded = await ProcessedIntegrationEventInbox.TryRecordAsync(
+            dbContext,
+            dbContext.ProcessedIntegrationEvents,
+            "sample.consumer",
+            changedPayload,
+            SampleProcessedIntegrationEvent.FromInboxRecord,
+            ProcessedIntegrationEventInboxIdentity.EventId,
+            AcquireLock,
+            CancellationToken.None);
+
+        Assert.True(firstRecorded);
+        Assert.False(replayRecorded);
+        Assert.Equal(["sample.consumer:event-stable-001", "sample.consumer:event-stable-001"], locks);
+        var processed = Assert.Single(dbContext.ProcessedIntegrationEvents.Local);
+        Assert.Equal("sample:event-stable-001", processed.IdempotencyKey);
+    }
+
+    [Fact]
     public async Task Processed_integration_event_inbox_classifies_sqlite_unique_conflict_as_already_processed()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

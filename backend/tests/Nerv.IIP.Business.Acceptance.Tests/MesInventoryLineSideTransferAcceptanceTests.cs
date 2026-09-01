@@ -5,8 +5,10 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAg
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockReservations;
 using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Business.Inventory.Web.Application.Valuation;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
@@ -203,7 +205,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
 
         await PostTransferLegsAsync(mesDb, issueEvent, receiptEvent);
 
-        var reportResult = await new RecordProductionReportCommandHandler(mesDb).Handle(
+        var reportResult = await new RecordProductionReportCommandHandler(mesDb, SnapshotProvider.Instance, AcceptanceMesFirstArticleGate.Allowing).Handle(
             new RecordProductionReportCommand(
                 "org-001",
                 "env-dev",
@@ -259,11 +261,14 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
     {
         await using var mesDb = CreateMesContext();
         await using var inventoryDb = CreateInventoryContext();
-        SeedMesWorkOrder(mesDb, "WO-483", "SKU-FG-483");
+        SeedMesWorkOrder(mesDb, "WO-483", "SKU-FG-483", capitalizedUnitCost: 12.34m);
         await mesDb.SaveChangesAsync();
         await RecordMesOutputLotAsync(mesDb, "WO-483", "LOT-FG-483", 8m, DateTimeOffset.Parse("2026-06-23T07:45:00Z"));
         var inventoryPublisher = new RecordingIntegrationEventPublisher();
-        var inventoryHandler = CreateInventoryHandler(inventoryDb, inventoryPublisher);
+        var inventoryHandler = CreateInventoryHandler(
+            inventoryDb,
+            inventoryPublisher,
+            new AcceptanceMesFinishedGoodsAuthorityResolver(12.34m));
         var requestedAtUtc = DateTimeOffset.Parse("2026-06-23T08:00:00Z");
 
         var receiptResult = await new CreateFinishedGoodsReceiptRequestCommandHandler(mesDb).Handle(
@@ -275,7 +280,8 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
                 8m,
                 "PCS",
                 requestedAtUtc,
-                UnitCost: 12.34m,
+                // 等价旧调用仍可能携带客户端成本；库存价值必须来自 ERP 资本化读面。
+                UnitCost: 99.99m,
                 IdempotencyKey: "receipt-483",
                 ProducedLotNo: "LOT-FG-483"),
             CancellationToken.None);
@@ -286,6 +292,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         await inventoryHandler.HandleAsync(receiptEvent, CancellationToken.None);
 
         Assert.Empty(inventoryPublisher.Published);
+        Assert.Equal(12.34m, receiptRequest.UnitCost);
         Assert.Equal(12.34m, receiptEvent.Payload.UnitCost);
         var movement = Assert.Single(inventoryDb.StockMovements);
         var ledger = Assert.Single(inventoryDb.StockLedgers);
@@ -354,7 +361,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
 
         await PostTransferLegsAsync(mesDb, issueEvent, receiptEvent);
 
-        var reportResult = await new RecordProductionReportCommandHandler(mesDb).Handle(
+        var reportResult = await new RecordProductionReportCommandHandler(mesDb, SnapshotProvider.Instance, AcceptanceMesFirstArticleGate.Allowing).Handle(
             new RecordProductionReportCommand(
                 "org-001",
                 "env-dev",
@@ -446,7 +453,11 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
 
         await PostTransferLegsAsync(mesDb, issueEvent, receiptEvent);
 
-        var reportResult = await new RecordProductionReportCommandHandler(mesDb, mesCodingService).Handle(
+        var reportResult = await new RecordProductionReportCommandHandler(
+            mesDb,
+            SnapshotProvider.Instance,
+            AcceptanceMesFirstArticleGate.Allowing,
+            mesCodingService).Handle(
             new RecordProductionReportCommand(
                 "org-001",
                 "env-dev",
@@ -743,7 +754,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         issueRequest.ClearDomainEvents();
         await mesDb.SaveChangesAsync();
 
-        var reportResult = await new RecordProductionReportCommandHandler(mesDb).Handle(
+        var reportResult = await new RecordProductionReportCommandHandler(mesDb, SnapshotProvider.Instance, AcceptanceMesFirstArticleGate.Allowing).Handle(
             new RecordProductionReportCommand(
                 "org-001",
                 "env-dev",
@@ -790,11 +801,14 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
     {
         await using var mesDb = CreateMesContext();
         await using var inventoryDb = CreateInventoryContext();
-        SeedMesWorkOrder(mesDb, "WO-541", "SKU-FG-541");
+        SeedMesWorkOrder(mesDb, "WO-541", "SKU-FG-541", capitalizedUnitCost: 12.34m);
         await mesDb.SaveChangesAsync();
         await RecordMesOutputLotAsync(mesDb, "WO-541", "LOT-FG-541", 8m, DateTimeOffset.Parse("2026-06-18T08:45:00Z"));
         var inventoryPublisher = new RecordingIntegrationEventPublisher();
-        var inventoryHandler = CreateInventoryHandler(inventoryDb, inventoryPublisher);
+        var inventoryHandler = CreateInventoryHandler(
+            inventoryDb,
+            inventoryPublisher,
+            new AcceptanceMesFinishedGoodsAuthorityResolver(12.34m));
         var failedConsumer = new StockMovementPostingFailedIntegrationEventHandlerForMarkMesRequestFailed(
             mesDb,
             new InMemoryIntegrationEventDeadLetterStore());
@@ -808,7 +822,8 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
                 8m,
                 "PCS",
                 DateTimeOffset.Parse("2026-06-18T09:00:00Z"),
-                UnitCost: 12.34m,
+                // 失败路径同样只能使用 ERP 资本化读面，不能回退到客户端成本。
+                UnitCost: 99.99m,
                 IdempotencyKey: "receipt-541",
                 ProducedLotNo: "LOT-FG-541"),
             CancellationToken.None);
@@ -832,6 +847,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         await failedConsumer.HandleAsync(failedEvent, CancellationToken.None);
         await mesDb.SaveChangesAsync();
 
+        Assert.Equal(12.34m, receiptRequest.UnitCost);
         var persistedReceipt = await mesDb.FinishedGoodsReceiptRequests.SingleAsync();
         Assert.Equal(FinishedGoodsReceiptRequest.InventoryPostingFailedStatus, persistedReceipt.Status);
         Assert.Null(persistedReceipt.PostedInventoryMovementId);
@@ -1069,13 +1085,43 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
 
     private static InventoryMovementRequestedIntegrationEventHandlerForPostingMovement CreateInventoryHandler(
         InventoryDbContext inventoryDb,
-        RecordingIntegrationEventPublisher publisher)
+        RecordingIntegrationEventPublisher publisher,
+        IInventoryUnitCostAuthorityResolver? authorityResolver = null)
     {
         return new InventoryMovementRequestedIntegrationEventHandlerForPostingMovement(
             NullLogger<InventoryMovementRequestedIntegrationEventHandlerForPostingMovement>.Instance,
             new InventoryCommandExecutingSender(inventoryDb),
             new InMemoryIntegrationEventDeadLetterStore(),
-            publisher);
+            publisher,
+            authorityResolver);
+    }
+
+    private sealed class AcceptanceMesFinishedGoodsAuthorityResolver(decimal unitCost)
+        : IInventoryUnitCostAuthorityResolver
+    {
+        public Task<InventoryUnitCostAuthorityResolution> ResolveAsync(
+            InventoryMovementRequestedIntegrationEvent integrationEvent,
+            CancellationToken cancellationToken)
+        {
+            var payload = integrationEvent.Payload;
+            var isFinishedGoodsAuthorityReference =
+                string.Equals(
+                    integrationEvent.SourceService,
+                    InventoryIntegrationEventSources.BusinessMes,
+                    StringComparison.Ordinal) &&
+                string.Equals(
+                    payload.UnitCostAuthorityReference,
+                    InventoryMovementUnitCostAuthorityReferences.MesFinishedGoodsReceipt,
+                    StringComparison.Ordinal) &&
+                payload.IdempotencyKey.StartsWith(
+                    "mes:finished-goods-receipt:",
+                    StringComparison.Ordinal);
+
+            return Task.FromResult(
+                isFinishedGoodsAuthorityReference
+                    ? InventoryUnitCostAuthorityResolution.Available(unitCost)
+                    : InventoryUnitCostAuthorityResolution.Pending("authority-reference-missing"));
+        }
     }
 
     private static InventoryReservationReleaseRequestedIntegrationEventHandlerForReleaseReservations CreateInventoryReservationReleaseHandler(
@@ -1087,12 +1133,20 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             new InMemoryIntegrationEventDeadLetterStore());
     }
 
-    private static void SeedMesWorkOrder(MesDbContext mesDb, string workOrderId = "WO-446", string skuId = "SKU-FG")
+    private static void SeedMesWorkOrder(
+        MesDbContext mesDb,
+        string workOrderId = "WO-446",
+        string skuId = "SKU-FG",
+        decimal? capitalizedUnitCost = null)
     {
         var now = DateTimeOffset.Parse("2026-06-18T07:00:00Z");
         var workOrder = WorkOrder.Create("org-001", "env-dev", workOrderId, skuId, "PV-001", 10m, 10, now.AddHours(8));
         workOrder.MarkReleased();
         workOrder.Start(now);
+        if (capitalizedUnitCost.HasValue)
+        {
+            workOrder.ApplyCapitalizedUnitCost(capitalizedUnitCost.Value);
+        }
         mesDb.WorkOrders.Add(workOrder);
         var operationTask = OperationTask.Create(
             "org-001",
@@ -1109,6 +1163,20 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             null);
         operationTask.Start(now);
         mesDb.OperationTasks.Add(operationTask);
+        mesDb.MaterialRequirements.Add(MaterialRequirement.Capture(
+            "org-001",
+            "env-dev",
+            workOrderId,
+            "OP-10",
+            "MAT-OIL",
+            null,
+            10m,
+            10m,
+            0m,
+            "MBOM",
+            $"SNAP-{workOrderId}-MAT-OIL",
+            now,
+            []));
     }
 
     private static async Task RecordMesOutputLotAsync(
@@ -1118,7 +1186,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         decimal quantity,
         DateTimeOffset reportedAtUtc)
     {
-        await new RecordProductionReportCommandHandler(mesDb).Handle(
+        await new RecordProductionReportCommandHandler(mesDb, SnapshotProvider.Instance, AcceptanceMesFirstArticleGate.Allowing).Handle(
             new RecordProductionReportCommand(
                 "org-001",
                 "env-dev",
@@ -1203,6 +1271,19 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             Published.Add(integrationEvent!);
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class SnapshotProvider : IProductionReportOeeDimensionSnapshotProvider
+    {
+        public static SnapshotProvider Instance { get; } = new();
+
+        public Task<ProductionReportOeeDimensionSnapshot> CaptureAsync(
+            ProductionReportOeeDimensionSnapshotRequest request,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(ProductionReportOeeDimensionSnapshot.Degraded(
+                request.DeviceAssetReference,
+                request.WorkCenterId,
+                "test:not-resolved"));
     }
 
     private sealed class NoopMediator : IMediator

@@ -3,7 +3,12 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.Contracts.FileStorage;
+using Nerv.IIP.FileStorage.Web.Application.Files;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.FileStorage.Web.Tests;
@@ -128,9 +133,15 @@ public sealed class FileStorageSkeletonTests(FileStorageWebApplicationFactory fa
     }
 
     [Fact]
-    public async Task UploadSessionWorkflow_MetadataFirstServerProxy_CompletesFileAndIssuesDownloadGrant()
+    public async Task UploadSessionWorkflow_VerifiedSeam_CompletesFileAndIssuesDownloadGrant()
     {
-        var client = factory.CreateClient();
+        await using var verifiedFactory = factory.WithWebHostBuilder(builder =>
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<IUploadCommitStorage>();
+                services.AddSingleton<IUploadCommitStorage>(new VerifiedTestCommitStorage());
+            }));
+        var client = verifiedFactory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
             "Bearer",
             InternalServiceAuthentication.DefaultDevelopmentBearerToken);
@@ -173,13 +184,12 @@ public sealed class FileStorageSkeletonTests(FileStorageWebApplicationFactory fa
         Assert.Equal("demo.zip", completed.FileName);
         Assert.Equal("application/zip", completed.ContentType);
         Assert.Equal(4096, completed.SizeBytes);
-        Assert.Equal("sha256:test", completed.Checksum);
+        Assert.Equal($"sha256:{new string('e', 64)}", completed.Checksum);
         Assert.Equal("available", completed.Status);
         await AssertObjectKeyIsNotExposedAsync(completeResponse);
         await AssertFlatOwnerFieldsAreNotExposedAsync(completeResponse);
 
         var metadataResponse = await client.GetAsync($"/api/files/v1/files/{created.FileId}");
-
         metadataResponse.EnsureSuccessStatusCode();
         var metadata = await metadataResponse.Content.ReadFromJsonAsync<FileMetadataResponse>();
         Assert.NotNull(metadata);
@@ -243,6 +253,16 @@ public sealed class FileStorageSkeletonTests(FileStorageWebApplicationFactory fa
             "application/zip",
             4096,
             "sha256:test");
+    }
+
+    private sealed class VerifiedTestCommitStorage : IUploadCommitStorage
+    {
+        public Task<UploadCommitStorageResult> CommitAsync(
+            UploadCommitIntent intent,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(UploadCommitStorageResult.Verified(
+                intent.ExpectedSizeBytes,
+                $"sha256:{new string('e', 64)}"));
     }
 
     private static async Task AssertObjectKeyIsNotExposedAsync(HttpResponseMessage response)

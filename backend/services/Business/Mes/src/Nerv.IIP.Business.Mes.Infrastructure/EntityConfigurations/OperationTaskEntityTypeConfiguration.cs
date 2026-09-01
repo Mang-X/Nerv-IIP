@@ -8,7 +8,12 @@ public sealed class OperationTaskEntityTypeConfiguration : IEntityTypeConfigurat
     public void Configure(EntityTypeBuilder<OperationTask> builder)
     {
         builder.ToTable("operation_tasks", tableBuilder =>
-            tableBuilder.HasComment("MES operation task facts created from routing step snapshots for scheduling and execution tracking."));
+        {
+            tableBuilder.HasComment("MES operation task facts created from routing step snapshots for scheduling and execution tracking.");
+            tableBuilder.HasCheckConstraint(
+                "ck_operation_tasks_actual_time_settlement_revision_nonnegative",
+                "actual_time_settlement_revision >= 0");
+        });
         builder.HasKey(x => x.Id);
         builder.Ignore(x => x.OperationTaskId);
         builder.Ignore(x => x.Duration);
@@ -33,7 +38,19 @@ public sealed class OperationTaskEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.PausedDurationTicks).HasColumnName("paused_duration_ticks").IsRequired().HasDefaultValue(0L).HasComment("Accumulated paused duration stored as .NET ticks and excluded from actual work time.");
         builder.Property(x => x.LaborTimeTicks).HasColumnName("labor_time_ticks").IsRequired().HasDefaultValue(0L).HasComment("Actual labor time stored as .NET ticks after paused duration deduction.");
         builder.Property(x => x.MachineTimeTicks).HasColumnName("machine_time_ticks").IsRequired().HasDefaultValue(0L).HasComment("Actual machine time stored as .NET ticks after paused duration deduction.");
-        builder.Property(x => x.AssignedUserId).HasColumnName("assigned_user_id").HasMaxLength(100).HasComment("Assigned operator or person public id captured by MES dispatch.");
+        builder.Property(x => x.MachineTimeExecutionDeviceAssetId)
+            .HasColumnName("machine_time_execution_device_asset_id").HasMaxLength(100)
+            .HasComment("Single device asset frozen when the current execution window started; null when no authoritative device was present.");
+        builder.Property(x => x.MachineTimeEvidenceUnavailable)
+            .HasColumnName("machine_time_evidence_unavailable").IsRequired().HasDefaultValue(true)
+            .HasComment("Whether the current execution window cannot produce billable machine ticks because device evidence was absent or changed.");
+        builder.Property(x => x.ActualTimeSettlementRevision)
+            .HasColumnName("actual_time_settlement_revision").IsRequired().HasDefaultValue(0L)
+            .HasComment("Monotonic MES actual-time settlement revision; zero means the operation has never emitted a settlement.");
+        builder.Property(x => x.RowVersion).HasColumnName("row_version")
+            .HasConversion(x => x.VersionNumber, x => new RowVersion(x))
+            .HasComment("Optimistic row version.");
+        builder.Property(x => x.AssignedUserId).HasColumnName("assigned_user_id").HasMaxLength(100).IsConcurrencyToken().HasComment("Assigned operator or person public id captured by MES dispatch and used to serialize assignment ownership changes.");
         builder.Property(x => x.AssignedUserName).HasColumnName("assigned_user_name").HasMaxLength(200).HasComment("Display name snapshot of the assigned worker captured by MES dispatch.");
         builder.Property(x => x.DeviceAssetId).HasColumnName("device_asset_id").HasMaxLength(100).HasComment("Assigned MasterData device asset public id captured by MES dispatch.");
         builder.Property(x => x.ManualDispatchRevision)
@@ -55,9 +72,12 @@ public sealed class OperationTaskEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.PlannedQuantity).HasColumnName("planned_quantity").HasPrecision(18, 6).IsRequired().HasComment("Planned operation quantity used as the default good quantity for operation completion inspection triggers.");
         builder.Property(x => x.RequiresQualityInspection).HasColumnName("requires_quality_inspection").IsRequired().HasComment("Whether this operation completion should trigger a Quality inspection task.");
         builder.Property(x => x.OperationCode).HasColumnName("operation_code").HasMaxLength(100).HasComment("ProductEngineering standard operation code used to resolve current SOP or electronic work instructions.");
+        builder.Property(x => x.RequiredSkillCode).HasColumnName("required_skill_code").HasMaxLength(100).HasComment("Optional MasterData skill code frozen from the published routing snapshot when the work order is converted.");
         builder.Property(x => x.ScheduleInvalidationReasonCode).HasColumnName("schedule_invalidation_reason_code").HasMaxLength(64).HasComment("Latest scheduling invalidation reason code when the task is schedule invalidated; cleared when a released schedule re-plans the task.");
         builder.HasAlternateKey(x => new { x.OrganizationId, x.EnvironmentId, x.OperationTaskIdValue })
             .HasName("ak_operation_tasks_scope_task");
+        builder.HasAlternateKey(x => new { x.OrganizationId, x.EnvironmentId, x.OperationTaskIdValue, x.WorkOrderId })
+            .HasName("ak_operation_tasks_scope_task_work_order");
         builder.HasOne<WorkOrder>()
             .WithMany()
             .HasPrincipalKey(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderIdValue })

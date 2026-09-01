@@ -921,6 +921,16 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                         .HasColumnName("id")
                         .HasComment("OEE production fact aggregate id.");
 
+                    b.Property<DateTimeOffset>("AggregationOccurredAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("aggregation_occurred_at_utc")
+                        .HasComment("UTC production instant used for historical aggregation; reversals retain the original fact instant.");
+
+                    b.Property<DateOnly?>("BusinessDate")
+                        .HasColumnType("date")
+                        .HasColumnName("business_date")
+                        .HasComment("Site-local business date resolved from the event-time timezone and shift definition.");
+
                     b.Property<string>("DeviceAssetId")
                         .IsRequired()
                         .HasMaxLength(150)
@@ -941,6 +951,19 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                         .HasColumnName("good_quantity")
                         .HasComment("Reported accepted output quantity; reversals are negative.");
 
+                    b.Property<string>("HistoricalDimensionStatus")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("historical_dimension_status")
+                        .HasComment("Historical dimension resolution status; LegacyUnresolved identifies facts migrated from the prior schema.");
+
+                    b.Property<string>("LineCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("line_code")
+                        .HasComment("Event-time MES production-line snapshot; null when the historical hierarchy was unavailable.");
+
                     b.Property<string>("OrganizationId")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -953,6 +976,12 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                         .HasColumnName("reported_at_utc")
                         .HasComment("UTC instant assigned to the production report.");
 
+                    b.Property<string>("ReversedReportNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("reversed_report_no")
+                        .HasComment("Original MES report number reversed by this fact; null for ordinary reports.");
+
                     b.Property<decimal>("ReworkQuantity")
                         .HasPrecision(18, 6)
                         .HasColumnType("numeric(18,6)")
@@ -964,6 +993,59 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                         .HasColumnType("numeric(18,6)")
                         .HasColumnName("scrap_quantity")
                         .HasComment("Reported scrap output quantity; reversals are negative.");
+
+                    b.Property<int?>("ShiftBreakMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("shift_break_minutes")
+                        .HasComment("Planned break minutes from the event-time shift definition.");
+
+                    b.Property<DateTimeOffset?>("ShiftBucketEndUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("shift_bucket_end_utc")
+                        .HasComment("Resolved UTC end of the event-time shift bucket; null when resolution degraded.");
+
+                    b.Property<DateTimeOffset?>("ShiftBucketStartUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("shift_bucket_start_utc")
+                        .HasComment("Resolved UTC start of the event-time shift bucket; null when resolution degraded.");
+
+                    b.Property<string>("ShiftCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("shift_code")
+                        .HasComment("Event-time MES shift code; null when the historical shift was unavailable.");
+
+                    b.Property<bool?>("ShiftCrossesMidnight")
+                        .HasColumnType("boolean")
+                        .HasColumnName("shift_crosses_midnight")
+                        .HasComment("Whether the event-time shift definition ends on the next local business day.");
+
+                    b.Property<TimeOnly?>("ShiftEndsAt")
+                        .HasColumnType("time without time zone")
+                        .HasColumnName("shift_ends_at")
+                        .HasComment("Local wall-clock end from the MES event-time shift definition.");
+
+                    b.Property<int?>("ShiftPaidMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("shift_paid_minutes")
+                        .HasComment("Paid or planned working minutes from the event-time shift definition.");
+
+                    b.Property<TimeOnly?>("ShiftStartsAt")
+                        .HasColumnType("time without time zone")
+                        .HasColumnName("shift_starts_at")
+                        .HasComment("Local wall-clock start from the MES event-time shift definition.");
+
+                    b.Property<string>("SiteCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("site_code")
+                        .HasComment("Event-time MES site snapshot; null when the historical hierarchy was unavailable.");
+
+                    b.Property<string>("SiteTimezone")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("site_timezone")
+                        .HasComment("IANA site timezone copied from the MES event-time snapshot.");
 
                     b.Property<string>("SourceReportNo")
                         .IsRequired()
@@ -992,13 +1074,26 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                         .HasColumnName("work_center_id")
                         .HasComment("MES work center snapshot for the reported operation.");
 
+                    b.Property<string>("WorkshopCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("workshop_code")
+                        .HasComment("Event-time MES workshop snapshot; null when the historical hierarchy was unavailable.");
+
                     b.HasKey("Id");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "SourceReportNo")
                         .IsUnique()
                         .HasDatabaseName("ux_oee_production_facts_scope_source_report_no");
 
-                    b.HasIndex("OrganizationId", "EnvironmentId", "DeviceAssetId", "ReportedAtUtc");
+                    b.HasIndex("OrganizationId", "EnvironmentId", "DeviceAssetId", "AggregationOccurredAtUtc")
+                        .HasDatabaseName("ix_oee_production_facts_scope_device_aggregation");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "WorkCenterId", "AggregationOccurredAtUtc")
+                        .HasDatabaseName("ix_oee_production_facts_scope_work_center_aggregation");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SiteCode", "WorkshopCode", "LineCode", "BusinessDate", "ShiftCode")
+                        .HasDatabaseName("ix_oee_production_facts_scope_hierarchy_business_shift");
 
                     b.ToTable("oee_production_facts", "industrial_telemetry", t =>
                         {

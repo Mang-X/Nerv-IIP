@@ -6,6 +6,7 @@ import type {
 import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
 import { openDownloadGrantBlob, statusActionGate } from '@nerv-iip/business-core'
 import MesWorkScopeSelect from '@/components/mes/MesWorkScopeSelect.vue'
+import ActualHoursCell from '@/components/mes/ActualHoursCell.vue'
 import ProductionReportDialog from '@/components/mes/ProductionReportDialog.vue'
 import { recoverLifecycleAction, useLifecycleWriteIntent } from '@/composables/lifecycleAction'
 import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
@@ -63,6 +64,7 @@ import {
   CheckCheckIcon,
   ClipboardCheckIcon,
   EyeIcon,
+  FileCheckIcon,
   FileTextIcon,
   PauseIcon,
   PlayIcon,
@@ -256,6 +258,7 @@ const columns: NvDataTableColumn<Row>[] = [
   },
   { key: 'shiftId', header: '班次', width: 'w-28', accessor: (r) => resolveShiftLabel(r.shiftId) },
   { key: 'assignedUserName', header: '派工', width: 'w-40' },
+  { key: 'actualHours', header: '实际工时', width: 'w-36' },
   {
     key: 'plannedStartUtc',
     header: '计划开始',
@@ -324,6 +327,13 @@ function openRoute(path: string, task: Row) {
       workCenterId: task.workCenterId ?? undefined,
     },
   })
+}
+// 只带 view，不带任何单据上下文：`quality/inspections` 的 query watch 一旦看到
+// workOrderId / operationTaskId / sourceDocumentId 就会**自动弹开「创建检验记录」抽屉**
+// （inspections.vue 的 `if (source) recordSheetOpen.value = true`）。本入口是去**看**首件结论的，
+// 把人丢进新建表单是走错门。真机走查抓到过一次，别再加回去。
+function openFirstArticleRecords() {
+  void router.push({ path: '/quality/inspections', query: { view: 'first-article-records' } })
 }
 function canOpenReport(task: Row) {
   return Boolean(task.workOrderId && task.operationTaskId)
@@ -607,7 +617,6 @@ function formatError(error: unknown) {
       </template>
     </NvToolbar>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
     <p
       v-if="operationScopeMessage"
       data-testid="operation-scope-message"
@@ -630,9 +639,12 @@ function formatError(error: unknown) {
       :row-key="rowKey"
       :client-sort="false"
       :loading="operationTasksPending"
+      :error="operationTasksError"
+      :error-message="errorMessage"
       :searchable="false"
       :column-settings="false"
       empty-message="当前没有工序任务。确认工单已释放、排程已生成后，可开工任务会出现在这里。"
+      @retry="refreshOperationTasks"
     >
       <template #cell-operationSequence="{ row }">
         <span class="tabular-nums">工序 {{ row.operationSequence ?? '—' }}</span>
@@ -676,6 +688,12 @@ function formatError(error: unknown) {
         <NvStatusBadge
           :label="resolveDispatchState(row).label"
           :tone="resolveDispatchState(row).tone"
+        />
+      </template>
+      <template #cell-actualHours="{ row }">
+        <ActualHoursCell
+          :labor-hours="row.actualLaborHours"
+          :machine-hours="row.actualMachineHours"
         />
       </template>
       <template #cell-plannedStartUtc="{ row }">
@@ -751,6 +769,11 @@ function formatError(error: unknown) {
             >
               <ClipboardCheckIcon aria-hidden="true" />
               {{ canOpenReport(row) ? '报工' : '暂不可报工（缺工单）' }}
+            </NvDropdownMenuItem>
+            <!-- 首件未判合格时服务端会拒绝批量报工（#2780），入口留在报工旁边，被拦下的人一步可达。 -->
+            <NvDropdownMenuItem @click="openFirstArticleRecords()">
+              <FileCheckIcon aria-hidden="true" />
+              首件检验记录
             </NvDropdownMenuItem>
             <NvDropdownMenuItem
               :disabled="!row.workOrderId"

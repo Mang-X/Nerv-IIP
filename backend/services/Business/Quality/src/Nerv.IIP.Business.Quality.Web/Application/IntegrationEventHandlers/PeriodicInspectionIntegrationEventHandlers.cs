@@ -1,8 +1,10 @@
 using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionTaskAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.PeriodicInspectionOperationAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
+using Nerv.IIP.Business.Quality.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Messaging.CAP;
@@ -63,6 +65,15 @@ public sealed class WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicIns
                 operations.Select(x => x.OperationId).ToArray(),
                 async ct =>
                 {
+                    if (!await QualityProcessedIntegrationEventInbox.TryRecordAsync(
+                            dbContext,
+                            ConsumerName,
+                            integrationEvent,
+                            ct))
+                    {
+                        return;
+                    }
+
                     foreach (var operationPayload in operations)
                     {
                         var operation = await PeriodicInspectionOperationEventProcessing.LoadOrCreateAsync(
@@ -83,6 +94,10 @@ public sealed class WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicIns
                             operationPayload.WorkCenterId,
                             payload.ReleasedAtUtc.UtcDateTime,
                             snapshots);
+                        PeriodicInspectionQuantityTaskGeneration.AddDueTasks(
+                            dbContext,
+                            operation.RuntimeContexts,
+                            integrationEvent.OccurredAtUtc);
                     }
                 },
                 cancellationToken);
@@ -179,6 +194,15 @@ public sealed class ProductionReportRecordedIntegrationEventHandlerForTrackPerio
                 [payload.OperationTaskId],
                 async ct =>
                 {
+                    if (!await QualityProcessedIntegrationEventInbox.TryRecordAsync(
+                            dbContext,
+                            ConsumerName,
+                            integrationEvent,
+                            ct))
+                    {
+                        return;
+                    }
+
                     var operation = await PeriodicInspectionOperationEventProcessing.LoadOrCreateAsync(
                         dbContext,
                         integrationEvent.OrganizationId,
@@ -194,6 +218,10 @@ public sealed class ProductionReportRecordedIntegrationEventHandlerForTrackPerio
                         payload.ReportedAtUtc.UtcDateTime,
                         payload.IsReversal,
                         payload.ReversedReportNo);
+                    PeriodicInspectionQuantityTaskGeneration.AddDueTasks(
+                        dbContext,
+                        operation.RuntimeContexts,
+                        integrationEvent.OccurredAtUtc);
                 },
                 cancellationToken);
         }
@@ -259,6 +287,15 @@ public sealed class MesOperationTaskCompletedIntegrationEventHandlerForClosePeri
                 [payload.OperationTaskId],
                 async ct =>
                 {
+                    if (!await QualityProcessedIntegrationEventInbox.TryRecordAsync(
+                            dbContext,
+                            ConsumerName,
+                            integrationEvent,
+                            ct))
+                    {
+                        return;
+                    }
+
                     var operation = await PeriodicInspectionOperationEventProcessing.LoadOrCreateAsync(
                         dbContext,
                         integrationEvent.OrganizationId,
@@ -285,6 +322,100 @@ public sealed class MesOperationTaskCompletedIntegrationEventHandlerForClosePeri
                 exception,
                 cancellationToken);
         }
+    }
+}
+
+internal static class PeriodicInspectionQuantityTaskGeneration
+{
+    public const int MaxWindowsPerTransaction = 256;
+
+    public static void AddDueTasks(
+        ApplicationDbContext dbContext,
+        IReadOnlyCollection<PeriodicInspectionRuntimeContext> contexts,
+        DateTimeOffset occurredAtUtc,
+        int maxWindows = MaxWindowsPerTransaction,
+        DateTime? continuationNextAttemptAtUtc = null)
+    {
+        foreach (var context in contexts.OrderBy(x => x.Id))
+        {
+            foreach (var window in context.TakeDueQuantityWindows(
+                         occurredAtUtc.UtcDateTime,
+                         maxWindows,
+                         continuationNextAttemptAtUtc))
+            {
+                var generatedAtUtc = new DateTimeOffset(window.GeneratedAtUtc);
+                var task = InspectionTask.CreatePending(
+                    context.OrganizationId,
+                    context.EnvironmentId,
+                    context.InspectionPlanId,
+                    sourceType: "operation",
+                    sourceService: "mes",
+                    sourceDocumentId: context.WorkOrderId,
+                    sourceDocumentLineId: $"{context.OperationId}:periodic-quantity:{context.Id.Id:D}:{window.Sequence}",
+                    skuCode: context.SkuCode,
+                    quantity: window.ThresholdQuantity,
+                    uomCode: context.UomCode!,
+                    batchNo: null,
+                    serialNo: null,
+                    generatedAtUtc,
+                    dueAtUtc: generatedAtUtc.AddHours(24),
+                    triggerIdempotencyKey: $"quality:periodic-quantity:{context.Id.Id:D}:{window.Sequence}");
+                if (context.AssignedInspectorUserId is not null || context.AssignedTeamId is not null)
+                {
+                    task.Assign(
+                        context.AssignedInspectorUserId,
+                        context.AssignedTeamId,
+                        task.Version,
+                        generatedAtUtc);
+                }
+
+                dbContext.InspectionTasks.Add(task);
+            }
+        }
+    }
+}
+
+internal static class QualityProcessedIntegrationEventInbox
+{
+    public static async Task<bool> TryRecordAsync(
+        ApplicationDbContext dbContext,
+        string consumerName,
+        IIntegrationEventEnvelope integrationEvent,
+        CancellationToken cancellationToken)
+    {
+        return await ProcessedIntegrationEventInbox.TryRecordAsync(
+            dbContext,
+            dbContext.ProcessedIntegrationEvents,
+            consumerName,
+            integrationEvent,
+            record => new ProcessedIntegrationEvent(
+                record.ConsumerName,
+                record.EventId,
+                record.EventType,
+                record.EventVersion,
+                record.SourceService,
+                record.IdempotencyKey,
+                record.ProcessedAtUtc),
+            ProcessedIntegrationEventInboxIdentity.EventId,
+            AcquireEventIdentityLockAsync,
+            cancellationToken);
+    }
+
+    private static async Task AcquireEventIdentityLockAsync(
+        DbContext dbContext,
+        string consumerName,
+        string eventId,
+        CancellationToken cancellationToken)
+    {
+        if (!dbContext.Database.IsNpgsql())
+        {
+            return;
+        }
+
+        var lockKey = $"quality-integration-event-inbox:{consumerName}:{eventId}";
+        await dbContext.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock(hashtextextended({lockKey}, 0))",
+            cancellationToken);
     }
 }
 

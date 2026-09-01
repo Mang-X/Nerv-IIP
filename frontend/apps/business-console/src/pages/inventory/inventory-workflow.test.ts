@@ -452,8 +452,8 @@ const uiStubs = {
   RowActions: { props: ['label'], template: '<div><slot /></div>' },
   DropdownMenuItem: { template: '<button v-bind="$attrs"><slot /></button>' },
   DropdownMenuSeparator: true,
-  // NvDialog (reka DialogRoot) stubs render slot content unconditionally so dialog forms are testable.
-  DialogRoot: { props: ['open'], template: '<div><slot /></div>' },
+  // NvDialog stub renders slot content unconditionally so dialog forms are testable.
+  NvDialog: { props: ['open'], template: '<div><slot /></div>' },
   NvDialogContent: { template: '<div><slot /></div>' },
   NvDialogHeader: { template: '<div><slot /></div>' },
   NvDialogTitle: { template: '<h2><slot /></h2>' },
@@ -471,7 +471,7 @@ const uiStubs = {
     template:
       '<input :value="modelValue" v-bind="$attrs" @input="$emit(\'update:modelValue\', $event.target.value)" />',
   },
-  // 实体选择弹窗内部自带 DialogRoot；这里的 DialogRoot 桩会截断它的上下文，所以整件替换成 select。
+  // 实体选择弹窗内部自带 NvDialog；这里的 NvDialog 桩会截断它的上下文，所以整件替换成 select。
   NvEntityPicker: {
     props: ['modelValue', 'options', 'title', 'placeholder', 'loading'],
     emits: ['update:modelValue'],
@@ -482,7 +482,7 @@ const uiStubs = {
   NvSelectContent: { template: '<div><slot /></div>' },
   NvSelectItem: { props: ['value'], template: '<div><slot /></div>' },
   NvSelectTrigger: { template: '<button><slot /></button>' },
-  SelectValue: true,
+  NvSelectValue: true,
   Spinner: true,
 }
 

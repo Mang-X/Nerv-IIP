@@ -12,6 +12,9 @@ const createIssue = vi.fn(async (_workOrderId: string, _body: Record<string, unk
 const confirmLineSideReceipt = vi.fn(
   async (_requestId: string, _body: Record<string, unknown>) => {},
 )
+const returnLineSideMaterial = vi.fn(
+  async (_requestId: string, _body: Record<string, unknown>) => {},
+)
 const refreshRequests = vi.fn(async () => {})
 const refreshWorkOrders = vi.fn(async () => {})
 
@@ -23,7 +26,10 @@ const issueFilters = reactive({
   status: undefined as string | undefined,
 })
 const workOrderFilters = reactive({
+  organizationId: 'org-001',
+  environmentId: 'env-dev',
   keyword: undefined as string | undefined,
+  workOrderId: undefined as string | undefined,
 })
 
 const requests = [
@@ -42,6 +48,7 @@ const requests = [
     requestedQuantity: 50,
     receivedQuantity: 50,
     status: 'Received',
+    materialLotId: 'LOT-B',
   },
 ]
 
@@ -57,6 +64,54 @@ const issueRequests = ref(requests)
 const issueLastUpdatedAt = ref('2026-07-28T10:20:30.000Z')
 const issueHasSuccessfulResponse = ref(true)
 const issueHasFailedResponse = ref(false)
+const lineSideInventoryPending = ref(false)
+const lineSideInventoryError = ref<unknown>(null)
+const lineSideInventoryReady = ref(true)
+const lineSideInventoryBalances = ref([
+  {
+    siteCode: 'SITE-SH',
+    locationCode: 'LINE-A01',
+    skuCode: 'SKU-DAMPER-001',
+    uomCode: 'pcs',
+    onHandQuantity: 120,
+    reservedQuantity: 20,
+    availableQuantity: 100,
+    lotCount: 3,
+    oldestProductionDate: '2026-08-20',
+    ageDays: 6,
+    ageCompleteness: 'complete' as const,
+  },
+  {
+    siteCode: 'SITE-SH',
+    locationCode: 'LINE-A02',
+    skuCode: 'SKU-SEAL-008',
+    uomCode: 'pcs',
+    onHandQuantity: 45,
+    reservedQuantity: 5,
+    availableQuantity: 40,
+    lotCount: 2,
+    oldestProductionDate: '2026-08-22',
+    ageDays: 4,
+    ageCompleteness: 'partial' as const,
+  },
+  {
+    siteCode: 'SITE-SH',
+    locationCode: 'LINE-A03',
+    skuCode: 'SKU-OIL-012',
+    uomCode: 'l',
+    onHandQuantity: 18,
+    reservedQuantity: 0,
+    availableQuantity: 18,
+    lotCount: 1,
+    oldestProductionDate: null,
+    ageDays: null,
+    ageCompleteness: 'unavailable' as const,
+  },
+])
+const initialLineSideInventoryBalances = lineSideInventoryBalances.value
+const refreshLineSideInventory = vi.fn(async () => {})
+const nextLineSideInventoryPage = vi.fn()
+const previousLineSideInventoryPage = vi.fn()
 
 vi.mock('@/composables/useBusinessMes', () => ({
   useMesMaterialIssue: () => ({
@@ -71,6 +126,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     refresh: refreshRequests,
     createIssue,
     confirmLineSideReceipt,
+    returnLineSideMaterial,
   }),
   useMesWorkOrders: () => ({
     filters: workOrderFilters,
@@ -79,6 +135,20 @@ vi.mock('@/composables/useBusinessMes', () => ({
     pending: ref(false),
     error: ref(null),
     refresh: refreshWorkOrders,
+  }),
+  useMesLineSideInventoryBalances: () => ({
+    balances: computed(() => lineSideInventoryBalances.value),
+    total: computed(() => lineSideInventoryBalances.value.length),
+    pending: lineSideInventoryPending,
+    error: lineSideInventoryError,
+    ready: lineSideInventoryReady,
+    page: ref(1),
+    pageCount: ref(2),
+    hasPreviousPage: ref(false),
+    hasNextPage: ref(true),
+    previousPage: previousLineSideInventoryPage,
+    nextPage: nextLineSideInventoryPage,
+    refresh: refreshLineSideInventory,
   }),
 }))
 
@@ -90,17 +160,28 @@ describe('PDA MES material issue page', () => {
     createIssue.mockResolvedValue(undefined)
     confirmLineSideReceipt.mockClear()
     confirmLineSideReceipt.mockResolvedValue(undefined)
+    returnLineSideMaterial.mockClear()
+    returnLineSideMaterial.mockResolvedValue(undefined)
     push.mockClear()
     issueFilters.keyword = undefined
+    issueFilters.workOrderId = undefined
     issueFilters.organizationId = 'org-001'
     issueFilters.environmentId = 'env-dev'
     workOrderFilters.keyword = undefined
+    workOrderFilters.workOrderId = undefined
     issuePending.value = false
     issueError.value = null
     issueRequests.value = requests
     issueHasSuccessfulResponse.value = true
     issueHasFailedResponse.value = false
     refreshRequests.mockClear()
+    lineSideInventoryPending.value = false
+    lineSideInventoryError.value = null
+    lineSideInventoryReady.value = true
+    lineSideInventoryBalances.value = initialLineSideInventoryBalances
+    refreshLineSideInventory.mockClear()
+    nextLineSideInventoryPage.mockClear()
+    previousLineSideInventoryPage.mockClear()
   })
 
   it('lists material issue requests with readable info', () => {
@@ -116,6 +197,55 @@ describe('PDA MES material issue page', () => {
     expect(wrapper.text()).toContain('来源：生产领料申请服务（组织/环境范围）')
     expect(wrapper.text()).toContain('已加载 2 / 共 2')
     expect(wrapper.text()).toContain('最近成功响应')
+  })
+
+  it('shows touch-friendly line-side balances without turning unknown age into zero days', async () => {
+    const wrapper = mount(IssuePage)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('线边库存')
+    expect(wrapper.text()).toContain('SKU-DAMPER-001')
+    expect(wrapper.text()).toContain('LINE-A01')
+    expect(wrapper.text()).toContain('可用 100 pcs')
+    expect(wrapper.text()).toContain('6 天 · 账龄完整')
+    expect(wrapper.text()).toContain('4 天（部分批次缺少生产日期） · 账龄部分可知')
+    expect(wrapper.text()).toContain('账龄未知（批次缺少生产日期）')
+    expect(wrapper.text()).not.toContain('0 天')
+    expect(wrapper.text()).toContain('第 1 / 2 页')
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '下一页')!
+      .trigger('click')
+    expect(nextLineSideInventoryPage).toHaveBeenCalledTimes(1)
+  })
+
+  it('distinguishes line-side loading, error, empty, and refresh behavior', async () => {
+    lineSideInventoryBalances.value = []
+    lineSideInventoryPending.value = true
+    lineSideInventoryReady.value = false
+    const wrapper = mount(IssuePage)
+    await flushPromises()
+    expect(wrapper.text()).toContain('正在加载线边库存')
+
+    lineSideInventoryPending.value = false
+    lineSideInventoryError.value = new Error('网络暂不可用')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="line-side-inventory-error"]').text()).toContain(
+      '网络暂不可用',
+    )
+    expect(wrapper.text()).not.toContain('暂无线边库存余额')
+
+    lineSideInventoryError.value = null
+    lineSideInventoryReady.value = true
+    await flushPromises()
+    expect(wrapper.text()).toContain('当前组织/环境范围暂无线边库存余额')
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('刷新库存'))!
+      .trigger('click')
+    expect(refreshLineSideInventory).toHaveBeenCalledTimes(1)
   })
 
   it('shows the list error (not the empty state) when the requests query fails', async () => {
@@ -168,12 +298,42 @@ describe('PDA MES material issue page', () => {
     expect(wrapper.text()).not.toContain('MAT-A')
   })
 
-  it('scanning sets the issue keyword filter', async () => {
+  it('uses the resolved work-order strong id as an exact issue filter', async () => {
     const wrapper = mount(IssuePage)
-    const input = wrapper.get('input[placeholder^="扫"]')
-    await input.setValue('WO-2026-0002')
-    await input.trigger('keydown.enter')
-    expect(issueFilters.keyword).toBe('WO-2026-0002')
+    await wrapper.getComponent({ name: 'MesScanPrevalidation' }).vm.$emit('accepted', {
+      kind: 'work-order',
+      candidate: {},
+      workOrderId: 'WO-2026-0002',
+    })
+    expect(issueFilters.workOrderId).toBe('WO-2026-0002')
+    expect(issueFilters.keyword).toBeUndefined()
+  })
+
+  it('uses an accepted material scan to update the exact issue context', async () => {
+    const wrapper = mount(IssuePage)
+    await wrapper.getComponent({ name: 'MesScanPrevalidation' }).vm.$emit('accepted', {
+      kind: 'material',
+      candidate: {},
+      workOrderId: 'WO-2026-0002',
+      operationTaskId: 'OP-20',
+      materialIssueRequestId: 'MIR-20',
+      materialId: 'MAT-20',
+    })
+    await flushPromises()
+
+    expect(issueFilters.workOrderId).toBe('WO-2026-0002')
+    expect(issueFilters.keyword).toBe('MAT-20')
+    expect(wrapper.get('[data-testid="issue-scanned-material"]').text()).toContain('已核验')
+  })
+
+  it('allows a new manual issue intent after a failed list scan', async () => {
+    const wrapper = mount(IssuePage)
+    await wrapper.getComponent({ name: 'MesScanPrevalidation' }).vm.$emit('statusChange', 'unknown')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="new-issue"]').attributes('disabled')).toBeUndefined()
+    await wrapper.get('[data-testid="new-issue"]').trigger('click')
+    expect(wrapper.text()).toContain('新建领料')
   })
 
   it('creates an issue with the bound fields and a page-supplied idempotencyKey', async () => {
@@ -362,6 +522,68 @@ describe('PDA MES material issue page', () => {
     const newKey = confirmLineSideReceipt.mock.calls[2][1].idempotencyKey
     expect(newKey).toBeTruthy()
     expect(newKey).not.toBe(firstKey)
+    wrapper.unmount()
+  })
+
+  it('returns received line-side material from the same issue list', async () => {
+    const wrapper = mount(IssuePage, { attachTo: document.body })
+
+    await wrapper.get('[data-testid="return-REQ-2"]').trigger('click')
+    await flushPromises()
+    const quantity = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="returned-quantity"]',
+    )!
+    quantity.value = '10'
+    quantity.dispatchEvent(new Event('input'))
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="submit-return"]')!.click()
+    await flushPromises()
+
+    expect(returnLineSideMaterial).toHaveBeenCalledWith(
+      'REQ-2',
+      expect.objectContaining({ returnedQuantity: 10 }),
+      { workOrderId: 'WO-2026-0002' },
+    )
+    expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('blocks an over-limit return with visible feedback before submitting', async () => {
+    const wrapper = mount(IssuePage, { attachTo: document.body })
+
+    await wrapper.get('[data-testid="return-REQ-2"]').trigger('click')
+    await flushPromises()
+    const quantity = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="returned-quantity"]',
+    )!
+    quantity.value = '51'
+    quantity.dispatchEvent(new Event('input'))
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('退料数量不能超过当前可退数量 50')
+    expect(
+      document.body
+        .querySelector<HTMLElement>('[data-testid="submit-return"]')!
+        .hasAttribute('disabled'),
+    ).toBe(true)
+    expect(returnLineSideMaterial).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('shows a structured MES rejection and reuses the return idempotency key on retry', async () => {
+    returnLineSideMaterial.mockRejectedValueOnce({ detail: '当前可退数量不足。' })
+    const wrapper = mount(IssuePage, { attachTo: document.body })
+
+    await wrapper.get('[data-testid="return-REQ-2"]').trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="submit-return"]')!.click()
+    await flushPromises()
+
+    expect(wrapper.find('[data-result][data-status="error"]').text()).toContain('当前可退数量不足')
+    const firstKey = returnLineSideMaterial.mock.calls[0][1].idempotencyKey
+    await wrapper.get('[data-testid="retry-issue"]').trigger('click')
+    await flushPromises()
+    expect(returnLineSideMaterial.mock.calls[1][1].idempotencyKey).toBe(firstKey)
     wrapper.unmount()
   })
 })

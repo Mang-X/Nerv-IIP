@@ -1,14 +1,18 @@
-﻿using FastEndpoints;
+﻿using System.Reflection;
+using FastEndpoints;
 using FastEndpoints.Swagger;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Business.Mes.Web.Application.Approvals;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.ProductEngineering;
+using Nerv.IIP.Business.Mes.Web.Application.Quality;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Business.Mes.Web.Application.Behaviors;
@@ -29,7 +33,14 @@ var isTesting = builder.Environment.IsEnvironment("Testing");
 builder.Services.AddNervIipObservability(builder.Configuration, "business-mes");
 
 builder.Services
-    .AddFastEndpoints()
+    .AddFastEndpoints(o =>
+    {
+        if (builder.Configuration.GetValue<bool>("FastEndpoints:RestrictDiscoveryToEntryAssembly"))
+        {
+            o.Assemblies = [Assembly.GetExecutingAssembly()];
+            o.DisableAutoDiscovery = true;
+        }
+    })
     .SwaggerDocument(o =>
     {
         o.DocumentSettings = s =>
@@ -42,9 +53,17 @@ builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, 
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IMesIntegrationEventContextAccessor, HttpMesIntegrationEventContextAccessor>();
+builder.Services.AddScoped<OperationActualTimeSettledV1IntegrationEventConverter>();
+builder.Services.AddScoped<OperationActualTimeSettledIntegrationEventConverter>();
+builder.Services.AddScoped<OperationActualTimeSettlementVoidedV1IntegrationEventConverter>();
+builder.Services.AddScoped<OperationActualTimeSettlementVoidedIntegrationEventConverter>();
+builder.Services.AddScoped<IMesActualTimeOutboxPublisher, CapMesActualTimeOutboxPublisher>();
+builder.Services.AddSingleton(new MesActualTimeTopicOptions(builder.Environment.EnvironmentName));
 var productEngineeringBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "ProductEngineering:BaseUrl", "http://localhost:5108");
 var inventoryBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Inventory:BaseUrl", "http://localhost:5109");
 var masterDataBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
+var qualityBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Quality:BaseUrl", "http://localhost:5110");
+var approvalBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Approval:BaseUrl", "http://localhost:5114");
 // `Inventory:SiteCode` 是唯一权威的站点键。`Inventory:SiteCodes`（复数）保留给真正的多站点部署
 // —— 齐套可用量需要跨站点求和，与「本服务归属哪个站点」不是同一件事，因此不能合并；
 // 未显式配置时它回落到权威键，不再各自留一份默认值。
@@ -67,19 +86,66 @@ builder.Services.AddHttpClient<MesProductEngineeringHttpClient>(client =>
 {
     client.BaseAddress = productEngineeringBaseAddress;
 });
-builder.Services.AddHttpClient<MesInventoryHttpClient>(client =>
-{
-    client.BaseAddress = inventoryBaseAddress;
-});
+builder.Services
+    .AddOptions<MesInventoryHttpClientOptions>()
+    .Bind(builder.Configuration.GetSection(MesInventoryHttpClientOptions.SectionName))
+    .Validate(
+        options => options.ConnectTimeout > TimeSpan.Zero,
+        "Mes:InventoryClient:ConnectTimeout must be positive.")
+    .Validate(
+        options => options.RequestTimeout > TimeSpan.Zero,
+        "Mes:InventoryClient:RequestTimeout must be positive.")
+    .ValidateOnStart();
+builder.Services
+    .AddHttpClient<MesInventoryHttpClient>((services, client) =>
+    {
+        client.BaseAddress = inventoryBaseAddress;
+        client.Timeout = services.GetRequiredService<IOptions<MesInventoryHttpClientOptions>>().Value.RequestTimeout;
+    })
+    .ConfigurePrimaryHttpMessageHandler(services => new SocketsHttpHandler
+    {
+        ConnectTimeout = services.GetRequiredService<IOptions<MesInventoryHttpClientOptions>>().Value.ConnectTimeout,
+    });
 builder.Services.AddHttpClient<MesMasterDataHttpClient>(client =>
 {
     client.BaseAddress = masterDataBaseAddress;
+});
+builder.Services
+    .AddOptions<MesQualityHttpClientOptions>()
+    .Bind(builder.Configuration.GetSection(MesQualityHttpClientOptions.SectionName))
+    .Validate(
+        options => options.ConnectTimeout > TimeSpan.Zero,
+        "Mes:QualityClient:ConnectTimeout must be positive.")
+    .Validate(
+        options => options.RequestTimeout > TimeSpan.Zero,
+        "Mes:QualityClient:RequestTimeout must be positive.")
+    .ValidateOnStart();
+builder.Services
+    .AddHttpClient<MesQualityHttpClient>((services, client) =>
+    {
+        client.BaseAddress = qualityBaseAddress;
+        client.Timeout = services.GetRequiredService<IOptions<MesQualityHttpClientOptions>>().Value.RequestTimeout;
+    })
+    .ConfigurePrimaryHttpMessageHandler(services => new SocketsHttpHandler
+    {
+        ConnectTimeout = services.GetRequiredService<IOptions<MesQualityHttpClientOptions>>().Value.ConnectTimeout,
+    });
+builder.Services.AddHttpClient<IMesOperationTaskStartApprovalClient, HttpMesOperationTaskStartApprovalClient>(client =>
+{
+    client.BaseAddress = approvalBaseAddress;
 });
 builder.Services.Configure<MesMaterialSupplyLocationOptions>(builder.Configuration.GetSection("Inventory"));
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<MesMaterialSupplyLocationOptions>>().Value);
 builder.Services.AddScoped<IMesMaterialSupplyLocationResolver, InventoryMesMaterialSupplyLocationResolver>();
 builder.Services.AddScoped<IMesMaterialRequirementSnapshotProvider, HttpMesProductEngineeringMaterialRequirementSnapshotProvider>();
+builder.Services.AddScoped<IMesMaterialLotAvailabilityProvider, HttpMesMaterialLotAvailabilityProvider>();
 builder.Services.AddScoped<IMesRoutingSnapshotProvider, HttpMesProductEngineeringRoutingSnapshotProvider>();
+builder.Services.AddScoped<IMesWorkerSkillQualificationGate, HttpMesWorkerSkillQualificationGate>();
+builder.Services.AddScoped<IProductionReportOeeDimensionSnapshotProvider, HttpProductionReportOeeDimensionSnapshotProvider>();
+builder.Services.AddScoped<IMesFirstArticleGate, HttpMesFirstArticleGate>();
+builder.Services.AddScoped<MesQualityInspectionPlanClient>();
+builder.Services.AddScoped<IMesQualityInspectionPlanReader>(sp =>
+    sp.GetRequiredService<MesQualityInspectionPlanClient>());
 builder.Services.AddScoped<LeaderDemoSeedService>();
 builder.Services.AddScoped<LeaderDemoScaleSeedService>();
 builder.Services.AddScoped<IWorldHistoryProductionVersionResolver, WorldHistoryProductionVersionResolver>();
@@ -102,10 +168,18 @@ builder.Services.AddMediatR(configuration => configuration
     .AddOpenBehavior(typeof(NervIipCommandLockBehavior<,>))
     .AddKnownExceptionValidationBehavior()
     .AddOpenBehavior(typeof(ManualDispatchConcurrencyRetryBehavior<,>))
+    .AddOpenBehavior(typeof(ReturnLineSideMaterialConcurrencyRetryBehavior<,>))
+    .AddOpenBehavior(typeof(WorkOrderTransformationConcurrencyBehavior<,>))
     .AddUnitOfWorkBehaviors());
 builder.Services.AddScoped<
     NetCorePal.Extensions.Primitives.ICommandLock<ChangeOperationTaskStateCommand>,
     ChangeOperationTaskStateCommandLock>();
+builder.Services.AddScoped<
+    NetCorePal.Extensions.Primitives.ICommandLock<AuthorizeAndStartOperationTaskCommand>,
+    AuthorizeAndStartOperationTaskCommandLock>();
+builder.Services.AddScoped<
+    NetCorePal.Extensions.Primitives.ICommandLock<ReturnLineSideMaterialCommand>,
+    ReturnLineSideMaterialCommandLock>();
 // Surface KnownException (business-rule violations, e.g. cancelling a work order whose received
 // material has no returnable lot) as the standard success=false envelope instead of an unhandled
 // HTTP 500 — matching every other business service. Without it the gateway sees a 500 and returns

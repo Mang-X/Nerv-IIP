@@ -61,7 +61,7 @@ Nerv-IIP/
 
 - services：平台领域服务，如 IAM、FileStorage、AppHub、Ops、Notification、AI Integration、Knowledge；业务平台扩展服务在单仓过渡阶段只能放在 `services/Business/{Context}` 下。当前业务服务包括 MasterData、ProductEngineering、Inventory、Quality、Mes、DemandPlanning、BarcodeLabel、Approval、Wms、IndustrialTelemetry、Maintenance、Erp 和 Scheduling。
 - gateway：PlatformGateway、BusinessGateway 与前端聚合接口。PlatformGateway 只承载主平台控制面 facade；BusinessGateway 承载业务前端或业务移动端 facade。
-- common：窄共享库，如 Contracts、Sdk、Caching、Observability、Testing。
+- common：窄共享库，如 Contracts、Sdk、Caching、Observability、Web、Testing；其中 Web 只承载跨 Host 复用的 HTTP 基础设施，不承载端点或领域规则。
 - tests：后端测试项目与测试宿主。
 - backend 不承载 Connector Host 与 Connector。
 
@@ -95,7 +95,7 @@ Nerv-IIP/
 - 统一放置初始化、环境校验、代码生成、安装、发布辅助脚本。
 - 前后端脚手架脚本都应从这里暴露稳定入口，而不是散落在各自子目录。
 - Windows/Linux 整合安装脚本归 scripts 管理；脚本只编排安装和运维动作，不承载业务规则。
-- scripts/lib 放共享脚本 helper；脚本分类、副作用声明、超时、日志、进程清理和静态门禁按 docs/architecture/script-automation-governance.md 执行。
+- scripts/lib 放共享脚本 helper；脚本分类、副作用声明、超时、日志、进程清理和静态门禁按 `docs/governance/script-automation.md` 执行。
 
 ## 放置规则
 
@@ -115,5 +115,5 @@ Nerv-IIP/
 ## 非目标
 
 1. 不在此文档中规定每个目录下的所有子目录细节。
-2. 不在此文档中定义 CI 文件名与提交规范；脚本命名和治理细节见 docs/architecture/script-automation-governance.md。
+2. 不在此文档中定义 CI 文件名与提交规范；脚本命名和治理细节见 `docs/governance/script-automation.md`。
 3. 不在此文档中决定所有包是否立即创建，只定义未来代码放置的基线。

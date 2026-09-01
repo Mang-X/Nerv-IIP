@@ -96,6 +96,49 @@ public sealed class QualityEndpointContractTests
     }
 
     [Fact]
+    public void Scrap_reason_endpoint_exposes_a_fixed_read_contract()
+    {
+        var contracts = QualityReasonEndpointContracts.All.ToArray();
+
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/quality/scrap-reason-codes"
+            && x.PermissionCode == BusinessPermissionCodes.QualityNcrRead
+            && x.OperationId == "listBusinessQualityScrapReasonCodes");
+    }
+
+    [Fact]
+    public async Task Scrap_reason_query_applies_fixed_filter_search_paging_and_scope()
+    {
+        await using var provider = CreateInMemoryProvider();
+        await using var dbContext = provider.GetRequiredService<ApplicationDbContext>();
+        dbContext.QualityReasons.AddRange(
+            QualityReason.Create("org-001", "env-dev", "SCRAP-SURFACE-A", "Surface A", "Appearance", "major", "scrap", true),
+            QualityReason.Create("org-001", "env-dev", "SCRAP-SURFACE-B", "Surface B", "Appearance", "major", "scrap", true),
+            QualityReason.Create("org-001", "env-dev", "REWORK-SURFACE", "Surface Rework", "Appearance", "minor", "rework", true),
+            QualityReason.Create("org-001", "env-dev", "SCRAP-DISABLED", "Surface Disabled", "Appearance", "major", "scrap", false),
+            QualityReason.Create("org-001", "env-test", "SCRAP-SURFACE-ENV", "Surface Other Environment", "Appearance", "major", "scrap", true),
+            QualityReason.Create("org-002", "env-dev", "SCRAP-SURFACE-ORG", "Surface Other Organization", "Appearance", "major", "scrap", true));
+        await dbContext.SaveChangesAsync();
+
+        var paged = await new ListScrapQualityReasonCodesQueryHandler(dbContext).Handle(
+            new ListScrapQualityReasonCodesQuery("org-001", "env-dev", "surface", Skip: 1, Take: 1),
+            CancellationToken.None);
+
+        var item = Assert.Single(paged.Items);
+        Assert.Equal("SCRAP-SURFACE-B", item.ReasonCode);
+        Assert.Equal("scrap", item.DefaultDisposition);
+        Assert.True(item.Enabled);
+        Assert.Equal(2, paged.Total);
+
+        var empty = await new ListScrapQualityReasonCodesQueryHandler(dbContext).Handle(
+            new ListScrapQualityReasonCodesQuery("org-001", "env-dev", "not-present"),
+            CancellationToken.None);
+
+        Assert.Empty(empty.Items);
+        Assert.Equal(0, empty.Total);
+    }
+
+    [Fact]
     public void Ncr_business_endpoints_require_internal_service_authorization_policy()
     {
         using var factory = CreateFactory();

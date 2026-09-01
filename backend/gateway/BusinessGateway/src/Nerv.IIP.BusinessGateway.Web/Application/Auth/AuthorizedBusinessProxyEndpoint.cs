@@ -51,8 +51,7 @@ public abstract class AuthorizedBusinessProxyEndpoint<TRequest, TResponse>(
         {
             await ResponseDataEndpointResults.WriteErrorAsync(
                 HttpContext,
-                (int)ex.StatusCode,
-                ex.Message,
+                ex,
                 ct);
         }
     }

@@ -12,6 +12,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.Business.Mes.Web.Endpoints.Mes;
+using Nerv.IIP.Business.Mes.Web.Application.Quality;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -215,6 +216,31 @@ public sealed class MesTaskScopeQueryTests
     }
 
     [Fact]
+    public async Task Reportable_query_includes_an_in_progress_task_for_a_registered_participant()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = Utc("2026-07-29T08:00:00Z");
+        var task = SeedTask(dbContext, "WO-01", "OP-01", "WC-01", "lead-worker", "TEAM-A", now);
+        task.Start(now.AddMinutes(1));
+        dbContext.OperationTaskParticipants.Add(OperationTaskParticipant.Register(
+            "org-001", "env-dev", "OP-01", "participant-worker", "协作员工", 40m));
+        await dbContext.SaveChangesAsync();
+
+        var result = await new ListReportableOperationTasksQueryHandler(dbContext).Handle(
+            new ListReportableOperationTasksQuery(
+                "org-001",
+                "env-dev",
+                Status: nameof(OperationTaskLifecycleStatus.InProgress),
+                AssignedUserIds: "participant-worker"),
+            CancellationToken.None);
+
+        Assert.Equal(1, result.Total);
+        Assert.Equal("OP-01", Assert.Single(result.Items).OperationTaskId);
+    }
+
+    [Fact]
     public async Task Queued_task_without_material_snapshot_is_blocked_while_lifecycle_actions_are_authoritative()
     {
         await using var provider = MesTestProvider.CreateInMemoryProvider();
@@ -229,7 +255,7 @@ public sealed class MesTaskScopeQueryTests
         paused.Pause(now.AddMinutes(4));
         var completed = SeedTask(dbContext, "WO-DONE", "OP-DONE", "WC-01", "emp010", "TEAM-MC", now.AddMinutes(3));
         completed.Start(now.AddMinutes(4));
-        completed.Complete(now.AddMinutes(5));
+        completed.Complete(now.AddMinutes(5), []);
         await dbContext.SaveChangesAsync();
 
         var result = await new ListOperationTasksQueryHandler(dbContext).Handle(
@@ -338,7 +364,8 @@ public sealed class MesTaskScopeQueryTests
             1m,
             "ProductEngineering",
             "SNAP-ASSEMBLY",
-            now));
+            now,
+            []));
         await dbContext.SaveChangesAsync();
 
         var evaluatedReadiness = await new MesOperationTaskActionReadinessEvaluator(dbContext)
@@ -418,7 +445,8 @@ public sealed class MesTaskScopeQueryTests
             0m,
             "ProductEngineering",
             "SNAP-READY",
-            now));
+            now,
+            []));
         await dbContext.SaveChangesAsync();
 
         var result = await new ListOperationTasksQueryHandler(dbContext).Handle(
@@ -461,7 +489,8 @@ public sealed class MesTaskScopeQueryTests
             0m,
             "Legacy",
             "SNAP-LEGACY",
-            now.AddDays(-1)));
+            now.AddDays(-1),
+            []));
         await dbContext.SaveChangesAsync();
 
         var list = await new ListOperationTasksQueryHandler(dbContext).Handle(
@@ -553,11 +582,11 @@ public sealed class MesTaskScopeQueryTests
         var now = Utc("2026-07-29T08:00:00Z");
         var task = SeedTask(dbContext, "WO-DONE", "OP-DONE", "WC-01", "emp010", "TEAM-MC", now);
         task.Start(now.AddMinutes(1));
-        task.Complete(now.AddMinutes(2));
+        task.Complete(now.AddMinutes(2), []);
         await dbContext.SaveChangesAsync();
 
         var exception = await Assert.ThrowsAsync<MesLifecycleConflictException>(() =>
-            new RecordProductionReportCommandHandler(dbContext).Handle(
+            new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance, TestMesFirstArticleGate.Allowing).Handle(
                 new RecordProductionReportCommand(
                     "org-001",
                     "env-dev",

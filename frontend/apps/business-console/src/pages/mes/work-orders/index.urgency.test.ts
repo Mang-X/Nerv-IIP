@@ -1,7 +1,9 @@
 import { mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 import { reactive, ref } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 
+import { useAuthStore } from '@/stores/auth'
 import WorkOrdersListPage from './index.vue'
 
 vi.mock('vue-router', () => ({
@@ -65,6 +67,20 @@ vi.mock('@/composables/useBusinessMes', () => ({
     recordProductionReportError: ref(undefined),
     recordProductionReportPending: ref(false),
   }),
+  useMesProductionMaterialLots: () => ({
+    materialsReadPermission: ref(false),
+    materialLotsPending: ref(false),
+    materialLotsError: ref(undefined),
+    availableMaterialLots: ref([]),
+    refreshMaterialLots: vi.fn(),
+  }),
+  useMesScrapReasonCodes: () => ({
+    qualityInspectionRecordsReadPermission: ref(false),
+    scrapReasonCodesPending: ref(false),
+    scrapReasonCodesError: ref(undefined),
+    scrapReasonCodes: ref([]),
+    refreshScrapReasonCodes: vi.fn(),
+  }),
   // 急单表单的「工序任务」改成只选，列表页新引入了工序任务读面。
   useMesOperationTasks: () => ({
     filters: reactive({ organizationId: 'org', environmentId: 'dev', skip: 0, take: 200 }),
@@ -105,12 +121,35 @@ vi.mock('@/composables/useBusinessMes', () => ({
     }),
     workOrderReadScopeMessage: ref(''),
     workOrderReadScopeReady: ref(true),
+    workOrderManageScope: ref({ kind: 'work-center', id: 'WC-A', displayName: '精加工一线' }),
+    workOrderManageScopeMessage: ref(''),
+    workOrderManageScopePending: ref(false),
+    workOrderManageScopeReady: ref(true),
+  }),
+  useMesWorkOrderTransformations: () => ({
+    splitWorkOrder: vi.fn(),
+    mergeWorkOrders: vi.fn(),
+    readTransformation: vi.fn(),
+    splitWorkOrderPending: ref(false),
+    mergeWorkOrdersPending: ref(false),
   }),
 }))
 
 function mountList() {
+  const pinia = createPinia()
+  useAuthStore(pinia).$patch({
+    principal: {
+      principalId: 'u1',
+      principalType: 'user',
+      organizationId: 'org',
+      environmentId: 'dev',
+      loginName: 'operator',
+      permissionCodes: ['business.mes.work-orders.read'],
+    },
+  })
   return mount(WorkOrdersListPage, {
     global: {
+      plugins: [pinia],
       stubs: {
         // 行内工单抽屉自带一整套 MES 查询，本用例只看紧急度徽章，整体桩掉。
         WorkOrderDetailSheet: true,
@@ -128,9 +167,9 @@ function mountList() {
         NvSelectTrigger: { template: '<button><slot /></button>' },
         NvSelectContent: { template: '<div><slot /></div>' },
         NvSelectItem: { props: ['value'], template: '<div><slot /></div>' },
-        // reka's component name is `SelectValue`; `NvSelectValue` (the barrel alias)
-        // would miss test-utils stub matching and render the real reka value.
-        SelectValue: { template: '<span />' },
+        // The barrel alias carries its own `name` (#2879), so `NvSelectValue` is what
+        // test-utils matches — keying it by reka's `SelectValue` would miss.
+        NvSelectValue: { template: '<span />' },
         NvInput: { template: '<input />' },
         RouterLink: { props: ['to'], template: '<a><slot /></a>' },
       },

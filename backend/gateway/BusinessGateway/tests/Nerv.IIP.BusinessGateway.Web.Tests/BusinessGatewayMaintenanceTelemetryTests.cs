@@ -12,6 +12,8 @@ using Nerv.IIP.BusinessGateway.Web.Endpoints.Maintenance;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.ServiceAuth;
+using BusinessOeeAggregateRequest = Nerv.IIP.Contracts.IndustrialTelemetry.QueryOeeAggregateBucketsRequest;
+using BusinessOeeAggregateResponse = Nerv.IIP.Contracts.IndustrialTelemetry.OeeAggregateBucketsResponse;
 
 namespace Nerv.IIP.BusinessGateway.Web.Tests;
 
@@ -3077,6 +3079,37 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
 
     public string? LastInternalToken { get; private set; }
 
+    /// <summary>#1947：停机读面在门面层按这份目录把原因码解成中文名。</summary>
+    public IReadOnlyCollection<BusinessConsoleMaintenanceReasonDirectoryItem> DowntimeReasonDirectory { get; init; } =
+    [
+        new("downtime-reason-1", "DT-MECH", "机械故障（轴承/传动/密封）", "breakdown", "availability"),
+        new("downtime-reason-2", "DT-PM", "计划保养", "planned", "planned"),
+    ];
+
+    public BusinessConsoleMaintenanceReasonDirectoryRequest? LastDowntimeReasonDirectoryRequest { get; private set; }
+
+    /// <summary>设置后目录调用改为抛出该异常，用来覆盖 Maintenance 不可用时读面的降级路径。</summary>
+    public Exception? DowntimeReasonDirectoryFailure { get; init; }
+
+    public Task<BusinessConsoleMaintenanceReasonDirectoryResponse> ListDowntimeReasonsAsync(
+        string internalBearerToken,
+        BusinessConsoleMaintenanceReasonDirectoryRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastDowntimeReasonDirectoryRequest = request;
+        if (DowntimeReasonDirectoryFailure is not null)
+        {
+            return Task.FromException<BusinessConsoleMaintenanceReasonDirectoryResponse>(DowntimeReasonDirectoryFailure);
+        }
+
+        return Task.FromResult(new BusinessConsoleMaintenanceReasonDirectoryResponse(
+            DowntimeReasonDirectory,
+            request.Skip,
+            request.Take,
+            DowntimeReasonDirectory.Count));
+    }
+
     public BusinessConsoleMaintenanceWorkOrderListRequest? LastWorkOrderListRequest { get; private set; }
 
     public BusinessConsoleMaintenanceListRequest? LastInspectionListRequest { get; private set; }
@@ -3656,6 +3689,12 @@ internal sealed class RecordingTelemetryFacadeClient : IBusinessIndustrialTeleme
             true,
             ["production-facts-missing"]));
     }
+
+    public Task<BusinessOeeAggregateResponse> QueryOeeAggregatesAsync(
+        string internalBearerToken,
+        BusinessOeeAggregateRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
 
     public Task<EquipmentRuntimeAvailabilityResponse> GetRuntimeAvailabilityAsync(
         string internalBearerToken,

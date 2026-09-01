@@ -6,9 +6,11 @@ public partial record BarcodeRuleId : IGuidStronglyTypedId;
 
 public sealed class BarcodeRule : Entity<BarcodeRuleId>, IAggregateRoot
 {
+    public const string ActiveStatus = "active";
+
     private static readonly HashSet<string> SupportedTypes = ["code128", "qr", "datamatrix", "gs1-128", "gs1-datamatrix"];
 
-    private static readonly HashSet<string> SupportedStatuses = ["active", "inactive"];
+    private static readonly HashSet<string> SupportedStatuses = [ActiveStatus, "inactive"];
 
     private BarcodeRule()
     {
@@ -96,7 +98,7 @@ public sealed class BarcodeRule : Entity<BarcodeRuleId>, IAggregateRoot
 
     public string GenerateValue(string sourceDocumentType, string sourceDocumentId, int sequence)
     {
-        if (Status != "active")
+        if (Status != ActiveStatus)
         {
             throw new InvalidOperationException("Only active barcode rules can generate label values.");
         }
@@ -123,6 +125,11 @@ public sealed class BarcodeRule : Entity<BarcodeRuleId>, IAggregateRoot
 
     public Gs1BarcodeValue GenerateGs1Value(string sourceDocumentType, string lotNo, string serialPrefix, int sequence)
     {
+        if (Status != ActiveStatus)
+        {
+            throw new InvalidOperationException("Only active barcode rules can generate label values.");
+        }
+
         if (!BarcodeType.StartsWith("gs1-", StringComparison.Ordinal))
         {
             throw new InvalidOperationException("Only GS1 barcode rules can generate GS1 values.");

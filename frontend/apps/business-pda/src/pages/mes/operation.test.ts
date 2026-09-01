@@ -7,6 +7,7 @@ import { computed, defineComponent, h, nextTick, reactive, ref, shallowRef } fro
 type OperationTaskFixture = Omit<BusinessConsoleMesOperationTaskRow, 'status'> & { status?: string }
 
 const push = vi.fn()
+const replace = vi.fn()
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
@@ -37,7 +38,7 @@ vi.mock('vue-router', async () => {
       routeGuardState.guard = guard
     }),
     useRoute: () => route,
-    useRouter: () => ({ push }),
+    useRouter: () => ({ push, replace }),
   }
 })
 
@@ -48,7 +49,7 @@ type OperationActionContext = {
   environmentId: string
   scopeKind: string
   scopeId: string
-  action: 'start' | 'pause' | 'resume' | 'complete'
+  action: 'claim' | 'start' | 'pause' | 'resume' | 'complete'
   workOrderId: string
   operationTaskId: string
 }
@@ -67,6 +68,9 @@ const pauseTask = vi.fn(
   async (_workOrderId: string, _operationTaskId: string, _options: ActionOptions) => {},
 )
 const resumeTask = vi.fn(
+  async (_workOrderId: string, _operationTaskId: string, _options: ActionOptions) => {},
+)
+const claimTask = vi.fn(
   async (_workOrderId: string, _operationTaskId: string, _options: ActionOptions) => {},
 )
 const captureOperationActionContext = vi.fn(
@@ -175,6 +179,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     pauseTask,
     resumeTask,
     completeTask,
+    claimTask,
     actionPending: ref(false),
     operationListScope: operationListScopeRef,
     operationListContextIdentity: operationListContextIdentityRef,
@@ -215,6 +220,7 @@ describe('PDA MES operation execution page', () => {
     startTask.mockReset().mockResolvedValue(undefined)
     pauseTask.mockReset().mockResolvedValue(undefined)
     resumeTask.mockReset().mockResolvedValue(undefined)
+    claimTask.mockReset().mockResolvedValue(undefined)
     refresh.mockClear()
     refreshSops.mockClear()
     tasksErrorRef.value = null
@@ -237,6 +243,9 @@ describe('PDA MES operation execution page', () => {
     currentSopsRef.value = []
     createSopFileDownloadGrant.mockClear()
     push.mockReset().mockResolvedValue(undefined)
+    replace.mockReset().mockImplementation(async (to: { query?: Record<string, string> }) => {
+      routeState.replaceQuery?.(to.query ?? {})
+    })
     routeGuardState.guard = undefined
     filters.keyword = undefined
     filters.organizationId = 'org-001'
@@ -314,12 +323,17 @@ describe('PDA MES operation execution page', () => {
     expect(wrapper.text()).toContain('工序 10')
   })
 
-  it('sets filters.keyword when scanning', async () => {
+  it('uses the resolved work-order strong id as an exact task filter', async () => {
     const wrapper = mount(OperationPage)
-    const input = wrapper.get('input[placeholder^="扫"]')
-    await input.setValue('WO-2026-0002')
-    await input.trigger('keydown.enter')
-    expect(filters.keyword).toBe('WO-2026-0002')
+    await wrapper.getComponent({ name: 'MesScanPrevalidation' }).vm.$emit('accepted', {
+      kind: 'work-order',
+      candidate: {},
+      workOrderId: 'WO-2026-0002',
+    })
+    await flushPromises()
+    expect(filters.workOrderId).toBe('WO-2026-0002')
+    expect(filters.operationTaskId).toBeUndefined()
+    expect(filters.keyword).toBeUndefined()
   })
 
   it('opens the action BottomSheet when a row is tapped', async () => {
@@ -329,6 +343,106 @@ describe('PDA MES operation execution page', () => {
     await flushPromises()
     // BottomSheet 内容 teleport 到 body
     expect(document.body.textContent).toContain('完成')
+    wrapper.unmount()
+  })
+
+  it('lets the current operator claim an unassigned queued task in the selected work center', async () => {
+    operationTasksRef.value = [
+      {
+        ...defaultTasks[1],
+        workCenterId: 'WC-A',
+        assignedUserId: null,
+        assignedUserName: null,
+      },
+    ]
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+
+    await wrapper.get('[data-row]').trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="action-claim"]')!.click()
+    await flushPromises()
+
+    expect(claimTask).toHaveBeenCalledTimes(1)
+    expect(claimTask).toHaveBeenCalledWith(
+      'WO-2026-0002',
+      'OP-2',
+      expect.objectContaining({
+        idempotencyKey: expect.any(String),
+        context: expect.objectContaining({
+          action: 'claim',
+          scopeKind: 'work-center',
+          scopeId: 'WC-A',
+        }),
+      }),
+    )
+    expect(document.body.textContent).toContain('任务领取请求已受理')
+    wrapper.unmount()
+  })
+
+  it('does not carry an abandoned list scan failure into a manually selected task', async () => {
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    const listScanner = wrapper.getComponent({ name: 'MesScanPrevalidation' })
+    await listScanner.vm.$emit('statusChange', 'unknown')
+
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    const contextScanner = wrapper
+      .findAllComponents({ name: 'MesScanPrevalidation' })
+      .find((scanner) => (scanner.props('acceptedKinds') as string[]).includes('device'))!
+    await contextScanner.vm.$emit('statusChange', 'resolved')
+    await nextTick()
+
+    expect(
+      document.body.querySelector<HTMLButtonElement>('[data-testid="action-pause"]')!.disabled,
+    ).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('keeps concurrent scanners aggregated and records validated device and personnel context', async () => {
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    const scanners = wrapper.findAllComponents({ name: 'MesScanPrevalidation' })
+    const contextScanner = scanners.find((scanner) =>
+      (scanner.props('acceptedKinds') as string[]).includes('device'),
+    )!
+    const listScanner = scanners.find(
+      (scanner) => !(scanner.props('acceptedKinds') as string[]).includes('device'),
+    )!
+
+    await contextScanner.vm.$emit('accepted', {
+      kind: 'device',
+      candidate: {},
+      workOrderId: 'WO-2026-0001',
+      operationTaskId: 'OP-1',
+      scannedObjectId: 'DEVICE-1',
+    })
+    await contextScanner.vm.$emit('accepted', {
+      kind: 'personnel',
+      candidate: {},
+      workOrderId: 'WO-2026-0001',
+      operationTaskId: 'OP-1',
+      scannedObjectId: 'USER-1',
+    })
+    await flushPromises()
+    expect(document.body.querySelector('[data-testid="operation-validated-device"]')).not.toBeNull()
+    expect(
+      document.body.querySelector('[data-testid="operation-validated-personnel"]'),
+    ).not.toBeNull()
+
+    await listScanner.vm.$emit('statusChange', 'pending')
+    await contextScanner.vm.$emit('statusChange', 'pending')
+    await contextScanner.vm.$emit('statusChange', 'resolved')
+    await nextTick()
+    expect(
+      document.body.querySelector<HTMLButtonElement>('[data-testid="action-pause"]')!.disabled,
+    ).toBe(true)
+
+    await listScanner.vm.$emit('statusChange', 'resolved')
+    await nextTick()
+    expect(
+      document.body.querySelector<HTMLButtonElement>('[data-testid="action-pause"]')!.disabled,
+    ).toBe(false)
     wrapper.unmount()
   })
 

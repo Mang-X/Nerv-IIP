@@ -46,7 +46,8 @@ public sealed record ProductionVersionRoutingOperationResponse(
     string ControlKey,
     bool RequiresReporting,
     bool RequiresQualityInspection,
-    bool IsOutsourced);
+    bool IsOutsourced,
+    string? RequiredSkillCode);
 
 public sealed class GetProductionVersionRoutingSnapshotQueryHandler(
     ApplicationDbContext dbContext,
@@ -113,7 +114,8 @@ public sealed class GetProductionVersionRoutingSnapshotQueryHandler(
                     x.ControlKey,
                     x.RequiresReporting,
                     x.RequiresQualityInspection,
-                    x.IsOutsourced))
+                    x.IsOutsourced,
+                    x.RequiredSkillCode))
                 .ToArray());
     }
 }

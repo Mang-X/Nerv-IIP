@@ -7,7 +7,7 @@ public partial record InspectionTaskId : IGuidStronglyTypedId;
 
 public sealed class InspectionTask : Entity<InspectionTaskId>, IAggregateRoot
 {
-    private static readonly HashSet<string> SourceTypes = ["receiving", "operation", "final"];
+    private static readonly HashSet<string> SourceTypes = ["receiving", "operation", "final", "first-article"];
     private static readonly HashSet<string> SourceServices = ["wms", "erp", "mes"];
 
     private InspectionTask()
@@ -38,7 +38,12 @@ public sealed class InspectionTask : Entity<InspectionTaskId>, IAggregateRoot
         SourceType = Supported(sourceType, SourceTypes, nameof(sourceType));
         SourceService = Supported(sourceService, SourceServices, nameof(sourceService));
         SourceDocumentId = Required(sourceDocumentId);
+        TriggerIdempotencyKey = Required(triggerIdempotencyKey);
         SourceDocumentLineId = Optional(sourceDocumentLineId);
+        if (IsPeriodicTrigger(TriggerIdempotencyKey) && SourceDocumentLineId is null)
+        {
+            throw new ArgumentException("Periodic inspection tasks require a stable source document line.", nameof(sourceDocumentLineId));
+        }
         SkuCode = Required(skuCode);
         Quantity = Positive(quantity, nameof(quantity));
         UomCode = Required(uomCode);
@@ -49,7 +54,6 @@ public sealed class InspectionTask : Entity<InspectionTaskId>, IAggregateRoot
         CreatedAtUtc = createdAtUtc;
         UpdatedAtUtc = createdAtUtc;
         DueAtUtc = dueAtUtc;
-        TriggerIdempotencyKey = Required(triggerIdempotencyKey);
     }
 
     public string OrganizationId { get; private set; } = string.Empty;
@@ -116,6 +120,9 @@ public sealed class InspectionTask : Entity<InspectionTaskId>, IAggregateRoot
             dueAtUtc,
             triggerIdempotencyKey);
     }
+
+    public string InspectionRecordSourceDocumentId() =>
+        IsPeriodicTrigger(TriggerIdempotencyKey) ? SourceDocumentLineId! : SourceDocumentId;
 
     public void Start(string assignedUserId, DateTimeOffset startedAtUtc)
     {
@@ -280,6 +287,10 @@ public sealed class InspectionTask : Entity<InspectionTaskId>, IAggregateRoot
             ? normalized
             : throw new ArgumentException($"Unsupported value '{value}'.", parameterName);
     }
+
+    private static bool IsPeriodicTrigger(string triggerIdempotencyKey) =>
+        triggerIdempotencyKey.StartsWith("quality:periodic-time:", StringComparison.Ordinal)
+        || triggerIdempotencyKey.StartsWith("quality:periodic-quantity:", StringComparison.Ordinal);
 }
 
 public sealed class InspectionTaskAlreadyClaimedException()

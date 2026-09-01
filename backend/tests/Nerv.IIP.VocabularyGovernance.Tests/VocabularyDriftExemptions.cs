@@ -32,6 +32,7 @@ internal static class VocabularyDriftExemptions
             $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Queries/ListInventoryDirectoryQuery.cs",
             $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Seed/WorldHistorySeedService.cs",
             $"{Svc}/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/IntegrationEventHandlers/PauseMaintenancePlansWhenDeviceDisabledHandler.cs",
+            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkerSkillQualificationGate.cs",
             $"{Svc}/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Commands/MasterData/CreateMasterDataCommands.cs",
             $"{Svc}/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Commands/MasterData/MasterDataLifecycleCommands.cs",
             $"{Svc}/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/IntegrationEventConverters/MasterDataIntegrationEventConverters.cs",
@@ -90,6 +91,8 @@ internal static class VocabularyDriftExemptions
         // approve / reject / return / withdraw / resubmit / add_signer / transfer 一并进入扫描面。
         // 其中真违例（Notification 按审批动作分流待办/消息）已改引 ApprovalDecisions.Withdraw；
         // 下列全部是同值不同义的各域内状态机/动作词，永久豁免。
+        // #2779 起 "pending" 另有 QualityFirstArticleConfirmationStatuses.Pending（首件确认进度）同值，
+        // 下列各条的「非审批链状态」裁决同样覆盖它：各域内状态机词与首件确认进度互不相同义。
         ..Group("pending", "同值不同义：标签打印批次状态（pending/sent-to-printer），非审批链状态。",
             $"{Svc}/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Application/Seed/WorldHistoryConsistencyValidator.cs"),
         ..Group("pending", "同值不同义：出库单的库存过账状态（pending/posted/failed/not-started），非审批链状态。",
@@ -105,6 +108,13 @@ internal static class VocabularyDriftExemptions
             $"{Svc}/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Commands/IndustrialTelemetryCommands.cs"),
         ..Group("pending", "同值不同义：成本候选清单的列表状态（该聚合尚无持久化生命周期，pending 是唯一列表态），非审批链状态。",
             $"{Svc}/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Queries/SalesFinance/ErpSalesFinanceQueries.cs"),
+        // ── "not-required" ──────────────────────────────────────────────────────────
+        // 同值不同义：Nerv.IIP.Contracts.Quality.QualityFirstArticleConfirmationStatuses.NotRequired
+        // 守护的是「某工单工序无需首件」这一首件确认进度（#2779）；下列文件中的 "not-required"
+        // 是 Inventory 单位成本授权协议里「非 MES 完工入库来源、无需成本授权」的取值，两者不可互相引用。
+        ..Group("not-required", "同值不同义：Inventory 单位成本授权状态，非首件确认进度。",
+            $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Valuation/InventoryUnitCostAuthority.cs"),
+
         ..Group("transfer", "同值不同义：检验任务转派动作（质量域内动作面），非审批链裁决动作。",
             $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Commands/InspectionTasks/InspectionTaskAssignmentCommands.cs"),
 
@@ -180,6 +190,9 @@ internal static class VocabularyDriftExemptions
             $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Queries/ListInventoryDirectoryQuery.cs"),
         ..Group("available", "同值不同义：库存移动载荷 QualityStatus 字段取值（available 不在设备运行态语境）。",
             $"{Svc}/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/IntegrationEventConverters/MaintenanceIntegrationEventConverters.cs"),
+        ..Group("available", "同值不同义：ERP 工单成本与期间制造费用核对读面的可计算状态，非设备运行态或 MES 成品收货成本权威状态。",
+            $"{Svc}/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Queries/Finance/WorkOrderCostVarianceQueries.cs",
+            $"{Svc}/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Queries/Finance/MachineOverheadReadStatus.cs"),
         ..Group("stopped", "同值不同义：AppHub 连接器上报状态，非设备运行态。",
             "services/AppHub/src/Nerv.IIP.AppHub.Web/Application/Connectors/ConnectorCollectionHealthEvaluator.cs"),
 

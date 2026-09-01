@@ -13,6 +13,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.CashReceiptAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.CostCandidateAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.DeliveryOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.MachineOverheadReconciliationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.OpportunityAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PaymentExecutionAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
@@ -84,6 +85,7 @@ public sealed class ErpSchemaConventionTests
             typeof(BusinessPartnerAvailability),
             typeof(IntegrationEventDeadLetter),
             typeof(WorkCenterCostRate),
+            typeof(WorkCenterMachineOverheadReconciliation),
         };
 
         var failures = new List<string>();

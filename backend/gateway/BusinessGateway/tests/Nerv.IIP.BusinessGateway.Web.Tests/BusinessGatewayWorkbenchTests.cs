@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Time.Testing;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.Contracts.EquipmentRuntime;
@@ -201,6 +202,7 @@ public sealed class BusinessGatewayWorkbenchTests
     [Fact]
     public async Task Workbench_summary_keeps_other_sources_available_and_health_reports_degraded_source()
     {
+        var clock = new FakeTimeProvider(DateTimeOffset.Parse("2026-08-30T00:00:00Z"));
         var auth = FakeBusinessGatewayAuthorizationClient.AllowOnly(
             BusinessGatewayPermissions.NotificationTasksRead,
             BusinessGatewayPermissions.MesWorkOrdersRead);
@@ -213,6 +215,8 @@ public sealed class BusinessGatewayWorkbenchTests
             services.AddSingleton<IBusinessMesClient>(mes);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(clock);
         });
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
@@ -229,6 +233,10 @@ public sealed class BusinessGatewayWorkbenchTests
         var health = await client.GetStringAsync("/health");
         Assert.Contains("Degraded", health, StringComparison.Ordinal);
         Assert.Contains("Notification", health, StringComparison.Ordinal);
+
+        clock.Advance(TimeSpan.FromSeconds(30));
+
+        Assert.Equal("Healthy", await client.GetStringAsync("/health"));
     }
 
     [Fact]
@@ -308,7 +316,12 @@ public sealed class BusinessGatewayWorkbenchTests
 
             return Task.FromResult(
                 requirement.PermissionCode == BusinessGatewayPermissions.MesWorkOrdersRead
-                    ? BusinessGatewayAuthorizationResult.Allowed("user-admin", "user", "admin")
+                    ? BusinessGatewayAuthorizationResult.Allowed(
+                        "user-admin",
+                        "user",
+                        "admin",
+                        requirement.OrganizationId,
+                        requirement.EnvironmentId)
                     : BusinessGatewayAuthorizationResult.Forbidden("forbidden"));
         }
     }

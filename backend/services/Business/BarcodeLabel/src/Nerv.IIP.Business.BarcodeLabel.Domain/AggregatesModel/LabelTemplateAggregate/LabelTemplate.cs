@@ -6,7 +6,9 @@ public partial record LabelTemplateId : IGuidStronglyTypedId;
 
 public sealed class LabelTemplate : Entity<LabelTemplateId>, IAggregateRoot
 {
-    private static readonly HashSet<string> SupportedStatuses = ["active", "inactive"];
+    public const string ActiveStatus = "active";
+
+    private static readonly HashSet<string> SupportedStatuses = [ActiveStatus, "inactive"];
 
     private LabelTemplate()
     {

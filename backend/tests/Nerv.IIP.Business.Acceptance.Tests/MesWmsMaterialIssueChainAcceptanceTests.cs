@@ -39,16 +39,20 @@ public sealed class MesWmsMaterialIssueChainAcceptanceTests
         // 1) 控制台提交（单位取自物料主档，不是占位值）
         var accepted = await new CreateMaterialIssueRequestCommandHandler(mesDb).Handle(
             new CreateMaterialIssueRequestCommand(
-                "org-001", "env-dev", "WO-1324", "OP-10", "MAT-OIL", "L", 6m, requestedAtUtc, "issue-1324"),
+                "org-001", "env-dev", "WO-1324", "OP-10", "MAT-OIL-ALT", "L", null, requestedAtUtc, "issue-1324"),
             CancellationToken.None);
         await mesDb.SaveChangesAsync(CancellationToken.None);
         var issueRequest = await mesDb.MaterialIssueRequests.SingleAsync(CancellationToken.None);
         Assert.Equal(accepted.ReferenceId, issueRequest.RequestNo);
+        Assert.Equal("MAT-OIL-ALT", issueRequest.MaterialId);
+        Assert.Equal("MAT-OIL-PRIMARY", issueRequest.SubstitutedMaterialId);
+        Assert.Equal(6m, issueRequest.RequestedQuantity);
 
         // 2) 领域事件 → 集成事件（占位单位会在这里抛异常，本用例守住它不会）
         var creation = Assert.Single(issueRequest.GetDomainEvents().OfType<MaterialIssueRequestCreatedDomainEvent>());
         var requestedEvent = new MaterialIssueRequestCreatedIntegrationEventConverter().Convert(creation);
         Assert.Equal("L", requestedEvent.Payload.UomCode);
+        Assert.Equal("MAT-OIL-ALT", requestedEvent.Payload.MaterialId);
 
         // 3) WMS 消费：出库单 + 拣货任务
         var wmsHandler = new MesMaterialIssueRequestedIntegrationEventHandler(
@@ -70,7 +74,9 @@ public sealed class MesWmsMaterialIssueChainAcceptanceTests
         var outbound = await wmsDb.OutboundOrders.Include(x => x.Lines).SingleAsync(CancellationToken.None);
         Assert.Equal($"MI-{issueRequest.RequestNo}", outbound.OutboundOrderNo);
         Assert.Equal(issueRequest.RequestNo, outbound.SourceDocumentId);
-        Assert.Equal("L", Assert.Single(outbound.Lines).UomCode);
+        var outboundLine = Assert.Single(outbound.Lines);
+        Assert.Equal("L", outboundLine.UomCode);
+        Assert.Equal("MAT-OIL-ALT", outboundLine.SkuCode);
         var pickingTask = await wmsDb.WarehouseTasks.SingleAsync(CancellationToken.None);
         Assert.Equal(WarehouseTaskType.Picking, pickingTask.TaskType);
         Assert.Equal(6m, pickingTask.PlannedQuantity);
@@ -86,6 +92,19 @@ public sealed class MesWmsMaterialIssueChainAcceptanceTests
         var linked = await mesDb.MaterialIssueRequests.SingleAsync(CancellationToken.None);
         Assert.Equal(outbound.OutboundOrderNo, linked.WmsRequestId);
         Assert.Equal(pickingTask.TaskNo, linked.WmsPickingTaskNo);
+
+        // 5) 实收后的两条 Inventory movement 仍只使用实际 SKU；主料只保留在 MES 审计字段。
+        linked.ConfirmLineSideReceipt(
+            MaterialSupplyTestFixtures.Locations,
+            requestedAtUtc.AddMinutes(5),
+            6m,
+            "LOT-OIL-ALT");
+        var warehouseMovement = new MaterialIssueRequestedIntegrationEventConverter().Convert(
+            Assert.Single(linked.GetDomainEvents().OfType<MaterialIssueRequestedDomainEvent>()));
+        var lineSideMovement = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
+            Assert.Single(linked.GetDomainEvents().OfType<MaterialLineSideReceiptConfirmedDomainEvent>()));
+        Assert.Equal("MAT-OIL-ALT", warehouseMovement.Payload.SkuCode);
+        Assert.Equal("MAT-OIL-ALT", lineSideMovement.Payload.SkuCode);
     }
 
     [Fact]
@@ -125,6 +144,9 @@ public sealed class MesWmsMaterialIssueChainAcceptanceTests
             TimeSpan.FromMinutes(30), null, null);
         operationTask.Start(now);
         mesDb.OperationTasks.Add(operationTask);
+        mesDb.MaterialRequirements.Add(MaterialRequirement.Capture(
+            "org-001", "env-dev", "WO-1324", "OP-10", "MAT-OIL-PRIMARY", null,
+            6m, 0m, 0m, "MBOM", "SNAP-1324", now, ["MAT-OIL-ALT"]));
     }
 
     private sealed class NoopMediator : IMediator

@@ -72,23 +72,23 @@ PR 审核须将声明与实际交付物交叉核验（facade + codegen + barrel 
 | 服务                |   总数 | exposed | deferred | internal |
 | ------------------- | ------: | ------: | -------: | -------: |
 | Approval            |      16 |      11 |        4 |        1 |
-| BarcodeLabel        |      12 |       9 |        0 |        3 |
+| BarcodeLabel        |      16 |      13 |        0 |        3 |
 | DemandPlanning      |      16 |      16 |        0 |        0 |
-| Erp                 |      55 |      43 |       11 |        1 |
-| IndustrialTelemetry |      27 |      24 |        1 |        2 |
-| Inventory           |      18 |      12 |        1 |        5 |
+| Erp                 |      59 |      43 |       15 |        1 |
+| IndustrialTelemetry |      28 |      25 |        1 |        2 |
+| Inventory           |      19 |      13 |        1 |        5 |
 | Maintenance         |      26 |      20 |        4 |        2 |
 | MasterData          |      50 |      45 |        1 |        4 |
-| Mes                 |      55 |      52 |        3 |        0 |
+| Mes                 |      64 |      63 |        0 |        1 |
 | ProductEngineering  |      39 |      38 |        0 |        1 |
-| Quality             |      41 |      29 |       12 |        0 |
+| Quality             |      43 |      30 |       12 |        1 |
 | Scheduling          |      15 |      13 |        1 |        1 |
 | Wms                 |      49 |      37 |        7 |        5 |
-| **Total**           | **419** | **349** |   **45** |   **25** |
+| **Total**           | **440** | **367** |   **46** |   **27** |
 
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
-`exposed` 行（349）带有已验证 facade `gatewayOperationIds`，列举于 JSON 登记表中。实际的治理决策，即
+`exposed` 行（367）带有已验证 facade `gatewayOperationIds`，列举于 JSON 登记表中。实际的治理决策，即
 `deferred` 与 `internal` 行，完整列于下方。
 
 对于 MAN-632 可搜索目录，`listBusinessConsoleSearchableDirectory` 为每种类型映射恰好一个权威 owner 和
@@ -121,6 +121,37 @@ principal、scope 和已授权 site 事实前检查各自 receipts、shipments �
 MasterData/Inventory 库位目录或完整批次目录。本行是这三个公开 operation 的两跳证据；服务 endpoint 不是三份
 独立的公开契约。
 
+对于 #1179 条码解析，BarcodeLabel `resolveBusinessBarcode` 只从自身生成且未作废的标签事实解析来源单据；
+BusinessGateway `resolveBusinessConsoleBarcode` 将来源映射为稳定 `objectType`、`strongIds`、`authority`、
+`source` 与 `observedAtUtc`，不返回前端 route。MES 工序候选必须通过 MES 权威读面补齐成对的
+`workOrderId` 与 `operationTaskId`；无法唯一配对时失效关闭。
+
+对于 #2235 工序上下文扫码预校验，MES `prevalidateBusinessMesContextScan` 以当前 `workOrderId` +
+`operationTaskId` 为权威上下文，分别核对工序、冻结/指派设备和当前指派人员强 ID；人员匹配后复用派工与开工的
+实时资格门禁。BusinessGateway `prevalidateBusinessConsoleMesContextScan` 只执行 `business.mes.operations.read`
+鉴权、上下文透传和下游响应闭合校验，不复制 MES 匹配或人员资格规则。
+
+对于 #2219 实际工时读取契约，MES `GET /api/business/v1/mes/operation-tasks`、
+`GET /api/business/v1/mes/production-reports` 与
+`GET /api/business/v1/mes/production-reports/{reportNo}` 继续分类为 `exposed`，分别由
+BusinessGateway `listBusinessConsoleMesOperationTasks`、`listBusinessConsoleMesProductionReports` 与
+`getBusinessConsoleMesProductionReport` 暴露。facade 保留工序的 `actualLaborHours` / `actualMachineHours`
+以及报工列表和详情的 `operationActualLaborHours` / `operationActualMachineHours`；尚无冻结
+实绩时字段必须存在且值为 `null`，不得以序列化省略替代。
+
+对于 #1948 报工人身份与追溯执行上下文，MES `POST /api/business/v1/mes/production-reports` 继续分类为
+`exposed`，由 BusinessGateway `recordBusinessConsoleMesProductionReport` 暴露；下游 `reportedBy` 由 Gateway 从
+已认证 principal 注入，**公开请求 DTO 不暴露该字段**，调用方无法自报报工人。报工列表与详情 facade 透传
+`reportedBy`，历史报工为 `null`。MES 三个追溯读面（`getBusinessMesWorkOrderTraceability`、
+`getBusinessMesBatchTraceability`、`getBusinessMesMaterialLotTraceability`）继续分类为 `exposed`，节点新增
+`occurredAtUtc`；其中 `InspectionResult` 节点及其 `inspected-as` 边由 Gateway 按 `business.mes.quality.read`
+分层，未持该权限的主体拿到的图不含这两者（见 authorization-matrix）。
+
+对于 #2856 生产日报聚合，MES `queryBusinessMesProductionStatistics` 分类为 `exposed`，由 BusinessGateway
+`queryBusinessConsoleMesProductionStatistics` 暴露。Gateway 只执行 `business.mes.reporting.read` 授权、
+组织/环境连续性与契约代理；时间窗、四种维度、过滤、分页、数量、比率和降级事实均由 MES producer 提供，
+Gateway 不重新计算总产出或比率。
+
 ### 延后 endpoint（facade 已跟踪，尚未暴露）
 
 | 服务                | 方法   | 服务 route                                                                                      | 后续事项                                                                                                                                                                          |
@@ -134,6 +165,10 @@ MasterData/Inventory 库位目录或完整批次目录。本行是这三个公�
 | Erp                 | POST   | `/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/cancel`                                 | BusinessGateway facade 待交付；采购订单取消跟随 ERP 订单管理的 Business Console 菜单阶段。                                                                                          |
 | Erp                 | POST   | `/api/business/v1/erp/sales-orders/{salesOrderNo}/lines/{lineNo}`                               | BusinessGateway facade 待交付；销售订单变更跟随 ERP 订单管理的 Business Console 菜单阶段。                                                                                          |
 | Erp                 | POST   | `/api/business/v1/erp/sales-orders/{salesOrderNo}/cancel`                                       | BusinessGateway facade 待交付；销售订单取消跟随 ERP 订单管理的 Business Console 菜单阶段。                                                                                          |
+| Erp                 | GET    | `/api/business/v1/erp/finance/work-order-costs`                                                  | BusinessGateway facade 待交付；跟随后续 ERP 工单成本分析 Business Console 阶段；#2814 明确只交付服务端读回，不包含 Console/PDA 计算或 UI 变更。                                      |
+| Erp                 | GET    | `/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations`                     | BusinessGateway facade 待交付；跟随 ERP 财务月末机器制造费用核对的 Business Console 阶段；#2383 明确只交付服务 API，不包含 Gateway/UI。                                               |
+| Erp                 | POST   | `/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations`                     | BusinessGateway facade 待交付；跟随 ERP 财务月末机器制造费用核对的 Business Console 阶段；#2383 明确只交付服务 API，不包含 Gateway/UI。                                               |
+| Erp                 | GET    | `/api/business/v1/erp/finance/work-order-costs/{workOrderId}`                                  | BusinessGateway facade 与 generated client 由后续独立票交付；#2277 仅交付 ERP 服务只读契约。                                                                                       |
 | Erp                 | POST   | `/api/business/v1/erp/finance/payables/payment`                                                 | BusinessGateway facade 待交付；跟随 ERP 财务的 Business Console 菜单阶段（ERP 菜单按就绪度明确分阶段）。                                                                             |
 | Erp                 | POST   | `/api/business/v1/erp/finance/receivables/collection`                                           | BusinessGateway facade 待交付；跟随 ERP 财务的 Business Console 菜单阶段。                                                                                                           |
 | Erp                 | POST   | `/api/business/v1/erp/supplier-invoices`                                                        | BusinessGateway facade 待交付；供应商发票 UI 是已知的 ERP 前端缺口（就绪度）。                                                                                                        |
@@ -146,7 +181,6 @@ MasterData/Inventory 库位目录或完整批次目录。本行是这三个公�
 | Maintenance         | DELETE | `/api/business/v1/maintenance/downtime-reasons/{reasonCode}`                                    | BusinessGateway facade 待交付；停机原因目录配置 UI 属于后续 Maintenance 菜单阶段。                                                                                                    |
 | Maintenance         | PUT    | `/api/business/v1/maintenance/downtime-reasons/{reasonCode}`                                    | BusinessGateway facade 待交付；停机原因目录配置 UI 属于后续 Maintenance 菜单阶段。                                                                                                    |
 | Maintenance         | POST   | `/api/business/v1/maintenance/work-orders/{workOrderId}/repair-started`                         | BusinessGateway facade 待交付；维修开始操作跟随 CMMS 执行的 Business Console 菜单阶段。                                                                                               |
-| Mes                 | POST   | `/api/business/v1/mes/material-issue-requests/{requestId}/line-side-returns`                    | BusinessGateway facade 待交付；线边退料跟随 MES 物料工作台菜单阶段。                                                                                                                  |
 | Mes                 | POST   | `/api/business/v1/mes/work-orders/{workOrderId}/close`                                          | BusinessGateway facade 待交付；MES 工单关闭跟随工作台关闭操作菜单阶段（暂挂/取消已通过 #833 暴露）。                                                                                   |
 | Mes                 | POST   | `/api/business/v1/mes/work-orders/{workOrderId}/engineering-change-decisions`                   | BusinessGateway facade 待交付；工单工程变更决策跟随工单 ECO 菜单阶段。                                                                                                                |
 | Quality             | POST   | `/api/business/v1/quality/capas`                                                                | BusinessGateway CAPA 管理 facade 由 #677 跟踪，并解锁前端 #804。                                                                                                                       |
@@ -187,6 +221,7 @@ MasterData/Inventory 库位目录或完整批次目录。本行是这三个公�
 | MasterData          | GET    | `/api/business/v1/master-data/partners/{customerCode}/credit`                | 供 ERP 销售订单信用检查消费的服务间公开信用读取（#436）。                                              |
 | MasterData          | POST   | `/api/business/v1/master-data/references/resolve`                            | 供其他业务服务消费的服务间批量参考数据和权威设备 identity 快照解析（最多 200 个 reference）。 |
 | MasterData          | POST   | `/api/business/v1/master-data/references/validate`                           | 供其他业务服务消费的服务间批量参考数据校验。                                               |
+| Quality             | GET    | `/api/business/v1/quality/first-article-confirmation`                        | 供 MES 报工门禁按工单工序读取首件判定结论的服务间读取契约（#2779，#1949 波 2）；Console 首件读面走既有检验任务/记录 facade。 |
 | Scheduling          | POST   | `/api/business/internal/v1/scheduling/order-urgency-archives/restore`        | 面向精确版本合规归档的已认证操作员恢复；绝不是 Business Console 操作。                             |
 | Wms                 | POST   | `/api/business/v1/wms/inbound-orders/cancel-by-source`                       | 服务间 ERP 采购订单取消关闭匹配的 open WMS 入库预期；不是直接 Console 操作。      |
 | Wms                 | POST   | `/api/business/v1/wms/warehouse-tasks/{warehouseTaskId}/complete`            | 由 WCS adapter/callback 边界消费的内部仓库任务完成 endpoint（#413）。                                   |
