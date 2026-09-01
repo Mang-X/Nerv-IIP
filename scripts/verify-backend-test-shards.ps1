@@ -1241,7 +1241,7 @@ function Invoke-BackendTestShardSolutionMembershipStage {
         [Parameter(Mandatory)] [object] $Manifest,
         [Parameter(Mandatory)] [object[]] $FastShards,
         [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $DiscoveredProjects,
-        [Parameter(Mandatory)] [string[]] $DiscoveredBackendProjects
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $DiscoveredBackendProjects
     )
 
     $stopwatch = [Diagnostics.Stopwatch]::StartNew()

@@ -24,6 +24,7 @@ $manifestPath = Join-Path $repoRoot 'scripts/backend-test-shards.json'
 $validatorPath = Join-Path $repoRoot 'scripts/verify-backend-test-shards.ps1'
 $workflowPath = Join-Path $repoRoot '.github/workflows/ci.yml'
 $temporaryBackendInventory = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-inventory-{0}" -f [Guid]::NewGuid().ToString('N'))
+$temporaryEmptyBackendInventory = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-empty-backend-inventory-{0}" -f [Guid]::NewGuid().ToString('N'))
 $temporaryProjectDirectory = Join-Path $temporaryBackendInventory 'tests/Nerv.IIP.TemporaryShardClassification.Tests'
 $temporaryProjectPath = Join-Path $temporaryProjectDirectory 'Nerv.IIP.TemporaryShardClassification.Tests.csproj'
 $temporaryDirectDockerTestPath = Join-Path $temporaryProjectDirectory 'DirectDockerTests.cs'
@@ -137,6 +138,19 @@ Assert-Contract (-not $missingWorkflow.Passed) 'A missing workflow must fail the
 Assert-Contract ($missingWorkflow.Message.Contains("Backend test shard stage 'solution-membership' completed in ", [StringComparison]::Ordinal)) 'A missing workflow must complete solution membership before entering workflow wiring.'
 Assert-Contract ($missingWorkflow.Message.Contains("Backend test shard stage 'workflow-wiring' started.", [StringComparison]::Ordinal)) 'A missing workflow must identify workflow-wiring as the stage that owns the diagnostic.'
 Assert-Contract ($missingWorkflow.Message.Contains($missingWorkflowFinding, [StringComparison]::Ordinal)) 'The complete CLI and direct workflow stage must report the same missing-workflow diagnostic.'
+
+$emptyInventory = $null
+try {
+    New-Item -ItemType Directory -Path $temporaryEmptyBackendInventory | Out-Null
+    $emptyInventory = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-empty-inventory-stage-contract' -Arguments @('-BackendInventoryRoot', $temporaryEmptyBackendInventory)
+}
+finally {
+    Remove-Item -LiteralPath $temporaryEmptyBackendInventory -Recurse -Force -ErrorAction SilentlyContinue
+}
+Assert-Contract (-not $emptyInventory.Passed) 'An empty backend inventory must fail through aggregated shard governance findings.'
+Assert-Contract ($emptyInventory.Message.Contains("Backend test shard stage 'solution-membership' completed in ", [StringComparison]::Ordinal)) 'An empty backend inventory must still complete solution membership.'
+Assert-Contract ($emptyInventory.Message.Contains("Backend test shard stage 'workflow-wiring' completed in ", [StringComparison]::Ordinal)) 'An empty backend inventory must still complete all four stages before reporting findings.'
+Assert-Contract ($emptyInventory.Message.Contains('Classified projects are not discovered backend test projects:', [StringComparison]::Ordinal)) 'An empty backend inventory must preserve the existing aggregated classification diagnostic.'
 
 $directDockerType = 'Nerv.IIP.TemporaryShardClassification.Tests.DirectDockerTests'
 $directDockerFinding = "Real dependency test type '$directDockerType' uses the audited Docker CLI primitive but is not excluded from its fast shard."
