@@ -22,16 +22,11 @@ public sealed class ZplTcpLabelPrinterTests
                 listener.Start();
                 var port = ((IPEndPoint)listener.LocalEndpoint).Port;
                 var received = ReceiveUntilEofAsync(listener, cancellationToken);
-                var printer = new ZplTcpLabelPrinter(Options.Create(new LabelPrinterOptions
-                {
-                    Host = IPAddress.Loopback.ToString(),
-                    Port = port,
-                    ConnectTimeoutSeconds = 5,
-                    WriteTimeoutSeconds = 5,
-                }));
+                var printer = new ZplTcpLabelPrinter(Options.Create(
+                    PrinterOptions(IPAddress.Loopback.ToString(), port, 5, 5)));
                 var documents = CompileDocuments(2);
 
-                var result = await printer.PrintAsync("printer-zpl-01", documents, cancellationToken);
+                var result = await printer.PrintAsync("printer-01", documents, cancellationToken);
                 var payload = await received;
 
                 Assert.Equal("sent-to-printer", result.Status);
@@ -48,13 +43,10 @@ public sealed class ZplTcpLabelPrinterTests
         var clock = new TimerRegistrationObservingTimeProvider();
         var connection = new BudgetAwareScriptedConnection(clock);
         var factory = new ScriptedConnectionFactory { Connection = connection };
-        var printer = new ZplTcpLabelPrinter(Options.Create(new LabelPrinterOptions
-        {
-            Host = "printer.test",
-            Port = 9100,
-            ConnectTimeoutSeconds = 1,
-            WriteTimeoutSeconds = 1,
-        }), factory, clock);
+        var printer = new ZplTcpLabelPrinter(
+            Options.Create(PrinterOptions("printer.test", 9100, 1, 1)),
+            factory,
+            clock);
 
         var result = await printer.PrintAsync("printer-01", CompileDocuments(1), CancellationToken.None);
 
@@ -164,6 +156,96 @@ public sealed class ZplTcpLabelPrinterTests
         Assert.Equal("failed", result.Status);
     }
 
+    [Fact]
+    public async Task Zpl_tcp_mode_routes_the_requested_printer_id_to_its_own_endpoint_and_connect_budget()
+    {
+        var options = Options.Create(new LabelPrinterOptions
+        {
+            Mode = "zpl-tcp",
+            Printers =
+            [
+                Route("printer-01", "printer-01.example.test", 9100, 3),
+                Route("printer-02", "printer-02.example.test", 9200, 7),
+            ],
+        });
+        var factory = new ScriptedConnectionFactory();
+        var printer = new ConfiguredLabelPrinter(
+            options,
+            new ZplTcpLabelPrinter(options, factory),
+            new TestHostEnvironment("Production"));
+
+        var result = await printer.PrintAsync("printer-02", CompileDocuments(1), CancellationToken.None);
+
+        Assert.Equal("sent-to-printer", result.Status);
+        Assert.Equal("printer-02.example.test", factory.LastHost);
+        Assert.Equal(9200, factory.LastPort);
+        Assert.Equal(TimeSpan.FromSeconds(7), factory.LastTimeout);
+    }
+
+    [Theory]
+    [InlineData("printer-missing")]
+    [InlineData("PRINTER-01")]
+    public async Task Zpl_tcp_mode_rejects_unknown_printer_ids_before_connecting(string printerId)
+    {
+        var options = Options.Create(PrinterOptions("printer-01.example.test", 9100, 3, 5));
+        var factory = new ScriptedConnectionFactory();
+        var printer = new ZplTcpLabelPrinter(options, factory);
+
+        var result = await printer.PrintAsync(printerId, CompileDocuments(1), CancellationToken.None);
+
+        Assert.Equal("failed", result.Status);
+        Assert.Equal(0, factory.ConnectCalls);
+    }
+
+    [Fact]
+    public async Task Zpl_tcp_mode_rejects_a_disabled_route_before_connecting()
+    {
+        var options = Options.Create(new LabelPrinterOptions
+        {
+            Mode = "zpl-tcp",
+            Printers =
+            [
+                Route("printer-01", "printer-01.example.test", 9100, 3) with { Enabled = false },
+            ],
+        });
+        var factory = new ScriptedConnectionFactory();
+        var printer = new ZplTcpLabelPrinter(options, factory);
+
+        var result = await printer.PrintAsync("printer-01", CompileDocuments(1), CancellationToken.None);
+
+        Assert.Equal("failed", result.Status);
+        Assert.Equal(0, factory.ConnectCalls);
+    }
+
+    [Theory]
+    [InlineData(300, "code128,gs1-128,qr,datamatrix,gs1-datamatrix")]
+    [InlineData(203, "qr")]
+    public async Task Zpl_tcp_mode_rejects_incompatible_dpi_or_symbology_before_connecting(
+        int dpi,
+        string capabilities)
+    {
+        var route = Route("printer-01", "printer-01.example.test", 9100, 3) with
+        {
+            Dpi = dpi,
+            Capabilities = capabilities,
+        };
+        var options = Options.Create(new LabelPrinterOptions
+        {
+            Mode = "zpl-tcp",
+            Printers = [route],
+        });
+        var factory = new ScriptedConnectionFactory();
+        var printer = new ConfiguredLabelPrinter(
+            options,
+            new ZplTcpLabelPrinter(options, factory),
+            new TestHostEnvironment("Production"));
+
+        var result = await printer.PrintAsync("printer-01", CompileDocuments(1), CancellationToken.None);
+
+        Assert.Equal("failed", result.Status);
+        Assert.Equal(0, factory.ConnectCalls);
+    }
+
     [Theory]
     [InlineData("Development")]
     [InlineData("Testing")]
@@ -182,13 +264,40 @@ public sealed class ZplTcpLabelPrinterTests
     }
 
     private static ZplTcpLabelPrinter CreateScriptedPrinter(ScriptedConnectionFactory factory) =>
-        new(Options.Create(new LabelPrinterOptions
+        new(Options.Create(PrinterOptions("printer.test", 9100, 1, 1)), factory);
+
+    private static LabelPrinterOptions PrinterOptions(
+        string host,
+        int port,
+        int connectTimeoutSeconds,
+        int writeTimeoutSeconds) => new()
         {
-            Host = "printer.test",
-            Port = 9100,
-            ConnectTimeoutSeconds = 1,
-            WriteTimeoutSeconds = 1,
-        }), factory);
+            Mode = "zpl-tcp",
+            Printers =
+        [
+            Route("printer-01", host, port, connectTimeoutSeconds) with
+            {
+                WriteTimeoutSeconds = writeTimeoutSeconds,
+            }
+        ],
+        };
+
+    private static LabelPrinterRouteOptions Route(
+        string id,
+        string host,
+        int port,
+        int connectTimeoutSeconds) => new()
+        {
+            Id = id,
+            Host = host,
+            Port = port,
+            ConnectTimeoutSeconds = connectTimeoutSeconds,
+            WriteTimeoutSeconds = 10,
+            Dpi = 203,
+            Language = "zpl",
+            Capabilities = "code128,gs1-128,qr,datamatrix,gs1-datamatrix",
+            Enabled = true,
+        };
 
     private static IReadOnlyCollection<CompiledLabelDocument> CompileDocuments(int count)
     {
@@ -226,6 +335,9 @@ public sealed class ZplTcpLabelPrinterTests
     private sealed class ScriptedConnectionFactory : IZplTcpConnectionFactory
     {
         public int ConnectCalls { get; private set; }
+        public string? LastHost { get; private set; }
+        public int LastPort { get; private set; }
+        public TimeSpan LastTimeout { get; private set; }
         public Exception? ConnectFailure { get; init; }
         public bool HonorCancellationDuringConnect { get; init; }
         public IZplTcpConnection Connection { get; init; } = new ScriptedConnection(buffer => buffer.Length);
@@ -237,6 +349,9 @@ public sealed class ZplTcpLabelPrinterTests
             CancellationToken cancellationToken)
         {
             ConnectCalls++;
+            LastHost = host;
+            LastPort = port;
+            LastTimeout = timeout;
             if (HonorCancellationDuringConnect)
             {
                 cancellationToken.ThrowIfCancellationRequested();

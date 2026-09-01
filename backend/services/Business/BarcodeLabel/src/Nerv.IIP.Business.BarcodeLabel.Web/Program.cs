@@ -120,7 +120,11 @@ try
             services.GetRequiredService<IFileStorageClient>(),
             services.GetRequiredService<IHttpClientFactory>().CreateClient(FileStorageClientOptions.DownloadClientName),
             services.GetRequiredService<IOptions<FileStorageClientOptions>>().Value.DownloadTimeout));
-    builder.Services.Configure<LabelPrinterOptions>(builder.Configuration.GetSection("LabelPrinter"));
+    builder.Services.AddSingleton<IValidateOptions<LabelPrinterOptions>, LabelPrinterOptionsValidator>();
+    builder.Services
+        .AddOptions<LabelPrinterOptions>()
+        .Bind(builder.Configuration.GetSection("LabelPrinter"))
+        .ValidateOnStart();
     builder.Services.AddSingleton<ZplTcpLabelPrinter>();
     builder.Services.AddSingleton<ILabelPrinter, ConfiguredLabelPrinter>();
     builder.Services.AddScoped<ILabelPrintAttemptRecorder, IndependentLabelPrintAttemptRecorder>();

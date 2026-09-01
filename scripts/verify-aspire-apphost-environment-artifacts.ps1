@@ -2,6 +2,7 @@
 #   Category: verify
 #   SideEffects:
 #     - Builds and publishes two temporary Aspire Docker Compose artifacts
+#     - Validates environment-gated BarcodeLabel printer configuration and its FileStorage endpoint
 #   Writes:
 #     - A uniquely owned temporary directory under the system temporary directory
 #     - artifacts/script-logs/**
@@ -101,6 +102,44 @@ function Assert-EnvironmentArtifact {
             if ($service.Value[$profile.Key] -ne $profile.Value.Value) { throw "Service '$($service.Key)' has $($profile.Key)='$($service.Value[$profile.Key])', expected '$($profile.Value.Value)'." }
         }
     }
+
+    if (-not $Services.ContainsKey('business-barcode-label')) {
+        throw 'Published artifact is missing the business-barcode-label resource.'
+    }
+
+    $barcodeLabel = $Services['business-barcode-label']
+    if ($barcodeLabel['FileStorage__BaseUrl'] -cne 'http://file-storage:${FILE_STORAGE_PORT}') {
+        throw "BusinessBarcodeLabel must consume the generated FileStorage endpoint; observed '$($barcodeLabel['FileStorage__BaseUrl'])'."
+    }
+
+    if ([string]::Equals($EnvironmentName, 'Development', [StringComparison]::Ordinal)) {
+        if ($barcodeLabel['LabelPrinter__Mode'] -cne 'simulated') {
+            throw "Development BusinessBarcodeLabel must select simulated printing explicitly; observed '$($barcodeLabel['LabelPrinter__Mode'])'."
+        }
+
+        if ($barcodeLabel.ContainsKey('LabelPrinter__Printers__0__Host')) {
+            throw 'Development BusinessBarcodeLabel must not publish a real printer route.'
+        }
+    }
+    else {
+        $expectedPrinterRoute = @{
+            'LabelPrinter__Mode' = 'zpl-tcp'
+            'LabelPrinter__Printers__0__Id' = '${BARCODE_LABEL_PRINTER_ID}'
+            'LabelPrinter__Printers__0__Host' = '${BARCODE_LABEL_PRINTER_HOST}'
+            'LabelPrinter__Printers__0__Port' = '${BARCODE_LABEL_PRINTER_PORT}'
+            'LabelPrinter__Printers__0__ConnectTimeoutSeconds' = '${BARCODE_LABEL_PRINTER_CONNECT_TIMEOUT_SECONDS}'
+            'LabelPrinter__Printers__0__WriteTimeoutSeconds' = '${BARCODE_LABEL_PRINTER_WRITE_TIMEOUT_SECONDS}'
+            'LabelPrinter__Printers__0__Dpi' = '${BARCODE_LABEL_PRINTER_DPI}'
+            'LabelPrinter__Printers__0__Language' = 'zpl'
+            'LabelPrinter__Printers__0__Capabilities' = '${BARCODE_LABEL_PRINTER_CAPABILITIES}'
+            'LabelPrinter__Printers__0__Enabled' = 'true'
+        }
+        foreach ($entry in $expectedPrinterRoute.GetEnumerator()) {
+            if ($barcodeLabel[$entry.Key] -cne $entry.Value) {
+                throw "Production BusinessBarcodeLabel has $($entry.Key)='$($barcodeLabel[$entry.Key])', expected '$($entry.Value)'."
+            }
+        }
+    }
 }
 
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-iip-apphost-environment-artifacts-$([Guid]::NewGuid().ToString('N'))"
@@ -126,7 +165,7 @@ try {
         if (-not (Test-Path -LiteralPath $composePath -PathType Leaf)) { throw "Aspire publish did not produce $composePath." }
         Assert-EnvironmentArtifact -Services (Get-ComposeProjectEnvironments -ComposePath $composePath) -EnvironmentName $environmentName
     }
-    Write-Diagnostic 'Aspire Development and Production Compose artifacts preserve the environment, migration, and seed profiles.'
+    Write-Diagnostic 'Aspire Development and Production Compose artifacts preserve environment, migration, seed, BarcodeLabel printer, and FileStorage endpoint profiles.'
 }
 finally {
     if (Test-Path -LiteralPath $temporaryRoot) { Remove-Item -LiteralPath $temporaryRoot -Recurse -Force }
