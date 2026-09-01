@@ -6836,6 +6836,165 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpWorkOrderCostVarianceResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkOrderCostVarianceResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkOrderCostVarianceResponse = {
+    organizationId?: string;
+    environmentId?: string;
+    workOrderId?: string;
+    currencyCode?: string | null;
+    laborCostBasis?: string;
+    laborVarianceStatus?: string;
+    unavailableReason?: string | null;
+    actualLaborHours?: number | null;
+    actualLaborCost?: number | null;
+    standardLaborHours?: number | null;
+    standardLaborCost?: number | null;
+    laborEfficiencyVarianceHours?: number | null;
+    laborEfficiencyVarianceAmount?: number | null;
+    laborEfficiencyVarianceDirection?: string | null;
+    laborRateVarianceStatus?: string;
+    laborRateVarianceReason?: string;
+    materialCost?: number | null;
+    totalAccumulatedCost?: number | null;
+    capitalizedCost?: number | null;
+    capitalizationVarianceAmount?: number | null;
+    actualMachineHours: number | null;
+    machineCostStatus: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMachineOverheadReadStatus;
+    machineCostUnavailableReason: string | null;
+    machineCurrencyCode: string | null;
+    pageNumber?: number;
+    pageSize?: number;
+    totalOperations?: number;
+    operations?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpOperationLaborVarianceItem>;
+    appliedFixedMachineOverhead: number | null;
+    appliedVariableMachineOverhead: number | null;
+    appliedMachineOverheadTotal: number | null;
+    machineOverheadPageNumber: number;
+    machineOverheadPageSize: number;
+    totalMachineOverheadOperations: number;
+    machineOverheadOperations: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpOperationMachineOverheadItem>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMachineOverheadReadStatus = 'available' | 'notApplicable' | 'unavailable';
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpOperationLaborVarianceItem = {
+    operationTaskId?: string;
+    workCenterId?: string;
+    settlementRevision?: number;
+    status?: string;
+    unavailableReason?: string | null;
+    actualLaborTicks?: number;
+    actualLaborHours?: number;
+    actualLaborCost?: number;
+    standardLaborHours?: number | null;
+    standardLaborCost?: number | null;
+    laborEfficiencyVarianceHours?: number | null;
+    laborEfficiencyVarianceAmount?: number | null;
+    laborEfficiencyVarianceDirection?: string | null;
+    currencyCode?: string;
+    workCenterCostRateId?: string;
+    rateRevision?: number;
+    hourlyRate?: number;
+    rateBasis?: string;
+    rateBasisAtUtc?: string;
+    coveredReports?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpCoveredLaborReportItem>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpCoveredLaborReportItem = {
+    reportNo?: string;
+    goodQuantity?: number;
+    scrapQuantity?: number;
+    reworkQuantity?: number;
+    uomCode?: string;
+    theoreticalRatePerHour?: number | null;
+    reportedAtUtc?: string;
+    isReversal?: boolean;
+    reversedReportNo?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpOperationMachineOverheadItem = {
+    operationTaskId: string;
+    workCenterId: string;
+    settlementId: string;
+    settlementRevision: number;
+    status: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMachineOverheadReadStatus;
+    unavailableReason: string | null;
+    actualMachineHours: number | null;
+    appliedFixedMachineOverhead: number | null;
+    appliedVariableMachineOverhead: number | null;
+    appliedMachineOverheadTotal: number | null;
+    accountingPeriodCode: string;
+    currencyCode: string;
+    deviceAssetId?: string | null;
+    machineTimeBasisCode?: string | null;
+    workCenterMachineOverheadRateId: string;
+    rateRevision: number;
+    completedAtUtc: string;
+    sourceEventId: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleGetErpWorkOrderCostVarianceRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpMachineOverheadReconciliationListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpMachineOverheadReconciliationListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpMachineOverheadReconciliationListResponse = {
+    organizationId?: string;
+    environmentId?: string;
+    accountingPeriodCode?: string;
+    workCenterId?: string | null;
+    pageNumber: number;
+    pageSize: number;
+    totalCount: number;
+    items: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpMachineOverheadReconciliationItem>;
+    accountingPeriodStatus: string | null;
+    reconciliationStatus: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMachineOverheadReadStatus;
+    reconciliationUnavailableReason: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpMachineOverheadReconciliationItem = {
+    id: string;
+    workCenterId: string;
+    accountingPeriodCode: string;
+    revision: number;
+    rateRevision: number;
+    currencyCode: string;
+    actualFixedOverheadAmount: number;
+    actualVariableOverheadAmount: number;
+    actualTotalOverheadAmount: number;
+    appliedMachineTicks: number;
+    appliedMachineHours: number;
+    appliedFixedAmount: number;
+    appliedVariableAmount: number;
+    appliedTotalAmount: number;
+    appliedRoundingDifferenceAmount: number;
+    underOverAppliedFixedAmount: number;
+    underOverAppliedVariableAmount: number;
+    underOverAppliedTotalAmount: number;
+    unallocatedFixedOverheadAmount: number;
+    overAppliedFixedOverheadAmount: number;
+    abnormalDowntimeTicks: number;
+    abnormalDowntimeHours: number;
+    abnormalDowntimeDisposition: string;
+    isReadyForClose: boolean;
+    reconciliationStatus: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMachineOverheadReadStatus;
+    unavailableReason: string | null;
+    recordedBy: string;
+    sourceReference: string;
+    reason: string;
+    recordedAtUtc: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListErpMachineOverheadReconciliationsRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpRequestForQuotationListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpRequestForQuotationListResponse | null;
 };
@@ -20095,6 +20254,86 @@ export type CreateBusinessConsoleErpPurchaseOrderResponses = {
 };
 
 export type CreateBusinessConsoleErpPurchaseOrderResponse = CreateBusinessConsoleErpPurchaseOrderResponses[keyof CreateBusinessConsoleErpPurchaseOrderResponses];
+
+export type GetBusinessConsoleErpWorkOrderCostVarianceData = {
+    body?: never;
+    path: {
+        workOrderId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        pageNumber?: number;
+        pageSize?: number;
+    };
+    url: '/api/business-console/v1/erp/finance/work-order-costs/{workOrderId}';
+};
+
+export type GetBusinessConsoleErpWorkOrderCostVarianceErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleErpWorkOrderCostVarianceError = GetBusinessConsoleErpWorkOrderCostVarianceErrors[keyof GetBusinessConsoleErpWorkOrderCostVarianceErrors];
+
+export type GetBusinessConsoleErpWorkOrderCostVarianceResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpWorkOrderCostVarianceResponse;
+};
+
+export type GetBusinessConsoleErpWorkOrderCostVarianceResponse = GetBusinessConsoleErpWorkOrderCostVarianceResponses[keyof GetBusinessConsoleErpWorkOrderCostVarianceResponses];
+
+export type ListBusinessConsoleErpWorkCenterMachineOverheadReconciliationsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        accountingPeriodCode: string;
+        workCenterId?: string | null;
+        pageNumber?: number;
+        pageSize?: number;
+    };
+    url: '/api/business-console/v1/erp/finance/work-center-machine-overhead-reconciliations';
+};
+
+export type ListBusinessConsoleErpWorkCenterMachineOverheadReconciliationsErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleErpWorkCenterMachineOverheadReconciliationsError = ListBusinessConsoleErpWorkCenterMachineOverheadReconciliationsErrors[keyof ListBusinessConsoleErpWorkCenterMachineOverheadReconciliationsErrors];
+
+export type ListBusinessConsoleErpWorkCenterMachineOverheadReconciliationsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpMachineOverheadReconciliationListResponse;
+};
+
+export type ListBusinessConsoleErpWorkCenterMachineOverheadReconciliationsResponse = ListBusinessConsoleErpWorkCenterMachineOverheadReconciliationsResponses[keyof ListBusinessConsoleErpWorkCenterMachineOverheadReconciliationsResponses];
 
 export type ListBusinessConsoleErpRequestsForQuotationData = {
     body?: never;

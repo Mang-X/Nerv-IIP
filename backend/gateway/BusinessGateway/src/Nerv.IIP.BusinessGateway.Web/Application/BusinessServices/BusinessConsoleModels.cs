@@ -3281,6 +3281,167 @@ public sealed record BusinessConsoleErpWorkCenterCostRateItem(
     bool IsEffectiveAtUtc,
     bool IsCurrentEffectiveRevision);
 
+public sealed record BusinessConsoleGetErpWorkOrderCostVarianceRequest(
+    string WorkOrderId,
+    string OrganizationId,
+    string EnvironmentId,
+    int PageNumber = 1,
+    int PageSize = 50);
+
+public sealed record BusinessConsoleListErpMachineOverheadReconciliationsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string AccountingPeriodCode,
+    string? WorkCenterId = null,
+    int PageNumber = 1,
+    int PageSize = 50);
+
+[JsonConverter(typeof(BusinessConsoleMachineOverheadReadStatusJsonConverter))]
+public enum BusinessConsoleMachineOverheadReadStatus
+{
+    Available,
+    NotApplicable,
+    Unavailable,
+}
+
+public sealed class BusinessConsoleMachineOverheadReadStatusJsonConverter()
+    : JsonStringEnumConverter<BusinessConsoleMachineOverheadReadStatus>(JsonNamingPolicy.CamelCase, allowIntegerValues: false);
+
+public sealed record BusinessConsoleErpWorkOrderCostVarianceResponse(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkOrderId,
+    string? CurrencyCode,
+    string LaborCostBasis,
+    string LaborVarianceStatus,
+    string? UnavailableReason,
+    decimal? ActualLaborHours,
+    decimal? ActualLaborCost,
+    decimal? StandardLaborHours,
+    decimal? StandardLaborCost,
+    decimal? LaborEfficiencyVarianceHours,
+    decimal? LaborEfficiencyVarianceAmount,
+    string? LaborEfficiencyVarianceDirection,
+    string LaborRateVarianceStatus,
+    string LaborRateVarianceReason,
+    decimal? MaterialCost,
+    decimal? TotalAccumulatedCost,
+    decimal? CapitalizedCost,
+    decimal? CapitalizationVarianceAmount,
+    [property: Required, JsonRequired] decimal? ActualMachineHours,
+    [property: Required, JsonRequired] BusinessConsoleMachineOverheadReadStatus MachineCostStatus,
+    [property: Required, JsonRequired] string? MachineCostUnavailableReason,
+    [property: Required, JsonRequired] string? MachineCurrencyCode,
+    int PageNumber,
+    int PageSize,
+    int TotalOperations,
+    IReadOnlyCollection<BusinessConsoleErpOperationLaborVarianceItem> Operations,
+    [property: Required, JsonRequired] decimal? AppliedFixedMachineOverhead,
+    [property: Required, JsonRequired] decimal? AppliedVariableMachineOverhead,
+    [property: Required, JsonRequired] decimal? AppliedMachineOverheadTotal,
+    [property: Required, JsonRequired] int MachineOverheadPageNumber,
+    [property: Required, JsonRequired] int MachineOverheadPageSize,
+    [property: Required, JsonRequired] int TotalMachineOverheadOperations,
+    [property: Required, JsonRequired] IReadOnlyCollection<BusinessConsoleErpOperationMachineOverheadItem> MachineOverheadOperations);
+
+public sealed record BusinessConsoleErpOperationMachineOverheadItem(
+    [property: Required, JsonRequired] string OperationTaskId,
+    [property: Required, JsonRequired] string WorkCenterId,
+    [property: Required, JsonRequired] string SettlementId,
+    [property: Required, JsonRequired] long SettlementRevision,
+    [property: Required, JsonRequired] BusinessConsoleMachineOverheadReadStatus Status,
+    [property: Required, JsonRequired] string? UnavailableReason,
+    [property: Required, JsonRequired] decimal? ActualMachineHours,
+    [property: Required, JsonRequired] decimal? AppliedFixedMachineOverhead,
+    [property: Required, JsonRequired] decimal? AppliedVariableMachineOverhead,
+    [property: Required, JsonRequired] decimal? AppliedMachineOverheadTotal,
+    [property: Required, JsonRequired] string AccountingPeriodCode,
+    [property: Required, JsonRequired] string CurrencyCode,
+    string? DeviceAssetId,
+    string? MachineTimeBasisCode,
+    [property: Required, JsonRequired] string WorkCenterMachineOverheadRateId,
+    [property: Required, JsonRequired] int RateRevision,
+    [property: Required, JsonRequired] DateTimeOffset CompletedAtUtc,
+    [property: Required, JsonRequired] string SourceEventId);
+
+public sealed record BusinessConsoleErpOperationLaborVarianceItem(
+    string OperationTaskId,
+    string WorkCenterId,
+    long SettlementRevision,
+    string Status,
+    string? UnavailableReason,
+    long ActualLaborTicks,
+    decimal ActualLaborHours,
+    decimal ActualLaborCost,
+    decimal? StandardLaborHours,
+    decimal? StandardLaborCost,
+    decimal? LaborEfficiencyVarianceHours,
+    decimal? LaborEfficiencyVarianceAmount,
+    string? LaborEfficiencyVarianceDirection,
+    string CurrencyCode,
+    string WorkCenterCostRateId,
+    int RateRevision,
+    decimal HourlyRate,
+    string RateBasis,
+    DateTimeOffset RateBasisAtUtc,
+    IReadOnlyCollection<BusinessConsoleErpCoveredLaborReportItem> CoveredReports);
+
+public sealed record BusinessConsoleErpCoveredLaborReportItem(
+    string ReportNo,
+    decimal GoodQuantity,
+    decimal ScrapQuantity,
+    decimal ReworkQuantity,
+    string UomCode,
+    decimal? TheoreticalRatePerHour,
+    DateTimeOffset ReportedAtUtc,
+    bool IsReversal,
+    string? ReversedReportNo);
+
+public sealed record BusinessConsoleErpMachineOverheadReconciliationListResponse(
+    string OrganizationId,
+    string EnvironmentId,
+    string AccountingPeriodCode,
+    string? WorkCenterId,
+    [property: Required, JsonRequired] int PageNumber,
+    [property: Required, JsonRequired] int PageSize,
+    [property: Required, JsonRequired] int TotalCount,
+    [property: Required, JsonRequired] IReadOnlyCollection<BusinessConsoleErpMachineOverheadReconciliationItem> Items,
+    [property: Required, JsonRequired] string? AccountingPeriodStatus,
+    [property: Required, JsonRequired] BusinessConsoleMachineOverheadReadStatus ReconciliationStatus,
+    [property: Required, JsonRequired] string? ReconciliationUnavailableReason);
+
+public sealed record BusinessConsoleErpMachineOverheadReconciliationItem(
+    [property: Required, JsonRequired] string Id,
+    [property: Required, JsonRequired] string WorkCenterId,
+    [property: Required, JsonRequired] string AccountingPeriodCode,
+    [property: Required, JsonRequired] int Revision,
+    [property: Required, JsonRequired] int RateRevision,
+    [property: Required, JsonRequired] string CurrencyCode,
+    [property: Required, JsonRequired] decimal ActualFixedOverheadAmount,
+    [property: Required, JsonRequired] decimal ActualVariableOverheadAmount,
+    [property: Required, JsonRequired] decimal ActualTotalOverheadAmount,
+    [property: Required, JsonRequired] long AppliedMachineTicks,
+    [property: Required, JsonRequired] decimal AppliedMachineHours,
+    [property: Required, JsonRequired] decimal AppliedFixedAmount,
+    [property: Required, JsonRequired] decimal AppliedVariableAmount,
+    [property: Required, JsonRequired] decimal AppliedTotalAmount,
+    [property: Required, JsonRequired] decimal AppliedRoundingDifferenceAmount,
+    [property: Required, JsonRequired] decimal UnderOverAppliedFixedAmount,
+    [property: Required, JsonRequired] decimal UnderOverAppliedVariableAmount,
+    [property: Required, JsonRequired] decimal UnderOverAppliedTotalAmount,
+    [property: Required, JsonRequired] decimal UnallocatedFixedOverheadAmount,
+    [property: Required, JsonRequired] decimal OverAppliedFixedOverheadAmount,
+    [property: Required, JsonRequired] long AbnormalDowntimeTicks,
+    [property: Required, JsonRequired] decimal AbnormalDowntimeHours,
+    [property: Required, JsonRequired] string AbnormalDowntimeDisposition,
+    [property: Required, JsonRequired] bool IsReadyForClose,
+    [property: Required, JsonRequired] BusinessConsoleMachineOverheadReadStatus ReconciliationStatus,
+    [property: Required, JsonRequired] string? UnavailableReason,
+    [property: Required, JsonRequired] string RecordedBy,
+    [property: Required, JsonRequired] string SourceReference,
+    [property: Required, JsonRequired] string Reason,
+    [property: Required, JsonRequired] DateTimeOffset RecordedAtUtc);
+
 public sealed record BusinessConsoleErpSourceDocumentRequest(
     string OrganizationId,
     string EnvironmentId,

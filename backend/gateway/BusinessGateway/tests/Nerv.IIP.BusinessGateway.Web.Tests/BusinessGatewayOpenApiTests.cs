@@ -567,6 +567,91 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/cost-candidates", "get", "listBusinessConsoleErpCostCandidates");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/work-center-cost-rates", "post", "configureBusinessConsoleErpWorkCenterCostRate");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/work-center-cost-rates", "get", "listBusinessConsoleErpWorkCenterCostRates");
+        AssertOperationId(paths, "/api/business-console/v1/erp/finance/work-order-costs/{workOrderId}", "get", "getBusinessConsoleErpWorkOrderCostVariance");
+        AssertOperationId(paths, "/api/business-console/v1/erp/finance/work-center-machine-overhead-reconciliations", "get", "listBusinessConsoleErpWorkCenterMachineOverheadReconciliations");
+        AssertQueryParameters(
+            paths,
+            "/api/business-console/v1/erp/finance/work-order-costs/{workOrderId}",
+            "get",
+            "organizationId",
+            "environmentId",
+            "pageNumber",
+            "pageSize");
+        AssertRequiredPathParameter(
+            paths,
+            "/api/business-console/v1/erp/finance/work-order-costs/{workOrderId}",
+            "get",
+            "workOrderId",
+            "string");
+        AssertQueryParameters(
+            paths,
+            "/api/business-console/v1/erp/finance/work-center-machine-overhead-reconciliations",
+            "get",
+            "organizationId",
+            "environmentId",
+            "accountingPeriodCode",
+            "workCenterId",
+            "pageNumber",
+            "pageSize");
+        AssertStringEnumProperty(
+            document,
+            "BusinessConsoleErpWorkOrderCostVarianceResponse",
+            "machineCostStatus",
+            "available",
+            "notApplicable",
+            "unavailable");
+        AssertStringEnumProperty(
+            document,
+            "BusinessConsoleErpMachineOverheadReconciliationItem",
+            "reconciliationStatus",
+            "available",
+            "notApplicable",
+            "unavailable");
+        AssertRequiredSchemaProperties(
+            document,
+            "BusinessConsoleErpWorkOrderCostVarianceResponse",
+            "actualMachineHours",
+            "machineCostStatus",
+            "machineCostUnavailableReason",
+            "machineCurrencyCode",
+            "appliedFixedMachineOverhead",
+            "appliedVariableMachineOverhead",
+            "appliedMachineOverheadTotal",
+            "machineOverheadPageNumber",
+            "machineOverheadPageSize",
+            "totalMachineOverheadOperations",
+            "machineOverheadOperations");
+        AssertRequiredNullableSchemaProperties(
+            document,
+            "BusinessConsoleErpWorkOrderCostVarianceResponse",
+            "actualMachineHours",
+            "machineCostUnavailableReason",
+            "machineCurrencyCode",
+            "appliedFixedMachineOverhead",
+            "appliedVariableMachineOverhead",
+            "appliedMachineOverheadTotal");
+        AssertRequiredNullableSchemaProperties(
+            document,
+            "BusinessConsoleErpOperationMachineOverheadItem",
+            "unavailableReason",
+            "actualMachineHours",
+            "appliedFixedMachineOverhead",
+            "appliedVariableMachineOverhead",
+            "appliedMachineOverheadTotal");
+        AssertRequiredSchemaProperties(
+            document,
+            "BusinessConsoleErpMachineOverheadReconciliationItem",
+            "actualFixedOverheadAmount",
+            "actualVariableOverheadAmount",
+            "actualTotalOverheadAmount",
+            "appliedFixedAmount",
+            "appliedVariableAmount",
+            "appliedTotalAmount",
+            "underOverAppliedFixedAmount",
+            "underOverAppliedVariableAmount",
+            "underOverAppliedTotalAmount",
+            "reconciliationStatus",
+            "unavailableReason");
         AssertRequiredBodyProperty(
             document,
             paths,
@@ -2382,6 +2467,27 @@ public sealed class BusinessGatewayOpenApiTests
         foreach (var propertyName in propertyNames)
         {
             AssertRequiredSchemaProperty(document, schemaNameSuffix, propertyName);
+        }
+    }
+
+    private static void AssertRequiredNullableSchemaProperties(
+        JsonDocument document,
+        string schemaNameSuffix,
+        params string[] propertyNames)
+    {
+        var schema = FindSchemaBySuffix(document, schemaNameSuffix);
+        var required = schema.GetProperty("required")
+            .EnumerateArray()
+            .Select(value => value.GetString())
+            .ToHashSet(StringComparer.Ordinal);
+        var properties = schema.GetProperty("properties");
+
+        foreach (var propertyName in propertyNames)
+        {
+            Assert.Contains(propertyName, required);
+            Assert.True(
+                properties.GetProperty(propertyName).GetProperty("nullable").GetBoolean(),
+                $"{schemaNameSuffix}.{propertyName} must remain nullable while being required.");
         }
     }
 

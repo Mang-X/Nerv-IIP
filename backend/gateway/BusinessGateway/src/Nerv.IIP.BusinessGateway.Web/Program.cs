@@ -44,6 +44,7 @@ builder.Services
             s.SchemaSettings.ResolveExternalXmlDocumentation = false;
             s.DocumentProcessors.Add(new SchedulingEnumOpenApiDocumentProcessor());
             s.DocumentProcessors.Add(new MesListDisplayOpenApiDocumentProcessor());
+            s.DocumentProcessors.Add(new MachineOverheadOpenApiDocumentProcessor());
             s.DocumentProcessors.Add(new OperationReceiptOpenApiDocumentProcessor());
             s.DocumentProcessors.Add(new SearchableDirectoryOpenApiDocumentProcessor());
             s.DocumentProcessors.Add(new BusinessGatewayErrorResponseOpenApiDocumentProcessor());
