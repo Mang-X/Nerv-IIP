@@ -108,6 +108,26 @@ BarcodeLabel 的当前标签打印链由严格的 `zpl-v1` compiler、FileStorag
 
 证明范围必须分层陈述：pure Domain tests 证明解析、绑定和 ZPL 字节合同；fake/loopback tests 证明 FileStorage 消费 adapter 与 TCP 首字节/half-close 行为；受治理的 `barcodelabel-postgres-profile` 当前由 5 个 runtime Fact 通过真实 PostgreSQL、实际 MediatR 与 UnitOfWork 证明 replay migration/check constraint、取消 facts 独立提交和并发状态守卫，具体 identity 与 count 由 [`postgres-test-lane.json`](../../scripts/postgres-test-lane.json)、[`test-evidence-policy.json`](../../scripts/test-evidence-policy.json) 和运行时反射闭合测试共同约束。上述证据不证明真实 FileStorage 服务间下载、生产配置、物理设备、出纸或扫码解码；现有 Business FullChain acceptance 的 BarcodeLabel 覆盖面是扫码到 Inventory 的业务闭环，也不替代打印链验收。
 
+这组现态能力的已合并子票与 exact-head CI provenance 如下；GitHub 链接保存执行详情，本文不把一次运行升级为新的 runtime producer：
+
+| 能力                                 | 已合并交付                                                                                                                                                           | exact head / CI                                                                                                             |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `zpl-v1` 严格编译                    | [#2836](https://github.com/Mang-X/Nerv-IIP/issues/2836) / [PR #2842](https://github.com/Mang-X/Nerv-IIP/pull/2842)，merge `5546780b87ba7893704a39b45574f989c059bd82` | `fc4717fb372fd79467711eed1659a95fb55007ec` / [run 33289458304](https://github.com/Mang-X/Nerv-IIP/actions/runs/33289458304) |
+| FileStorage 模板消费校验             | [#2837](https://github.com/Mang-X/Nerv-IIP/issues/2837) / [PR #2846](https://github.com/Mang-X/Nerv-IIP/pull/2846)，merge `8a192f89f02518f12af4142902286207110baf82` | `8336726de97f947dff7beb999903f376f8a9e379` / [run 33352812397](https://github.com/Mang-X/Nerv-IIP/actions/runs/33352812397) |
+| replay snapshots 与 check constraint | [#2838](https://github.com/Mang-X/Nerv-IIP/issues/2838) / [PR #3004](https://github.com/Mang-X/Nerv-IIP/pull/3004)，merge `b456934ff28e87b4f0c6db86d126e3eb5d6f93ab` | `fd64593fecab9241547a2c3d480dece94edde1ad` / [run 33415929188](https://github.com/Mang-X/Nerv-IIP/actions/runs/33415929188) |
+| transport 与 lifecycle 投影          | [#2839](https://github.com/Mang-X/Nerv-IIP/issues/2839) / [PR #3009](https://github.com/Mang-X/Nerv-IIP/pull/3009)，merge `bae44cd507692f103dd9ec0785b4b45e2ad4cf46` | `ab18db1957e513ef5bb29087c852a17e470a9388` / [run 33465275771](https://github.com/Mang-X/Nerv-IIP/actions/runs/33465275771) |
+| PostgreSQL profile identity 闭合     | [#2840](https://github.com/Mang-X/Nerv-IIP/issues/2840) / [PR #3016](https://github.com/Mang-X/Nerv-IIP/pull/3016)，merge `46b91bb4249e163b17423e4bcece84d66813214d` | `8af05316ac9fd83fb816dbc9fb0188c4aece485b` / [run 33471906935](https://github.com/Mang-X/Nerv-IIP/actions/runs/33471906935) |
+
+`barcodelabel-postgres-profile` 的实际 runtime Fact identity 集合与两个 machine producer 当前都精确闭合为 5 项；以下 identity 共同使用 `Nerv.IIP.Business.BarcodeLabel.Web.Tests.` namespace 前缀：
+
+- `BarcodeLabelPostgresProfileTests.Canceled_attempt_facts_commit_outside_the_rolling_back_command_transaction`
+- `BarcodeLabelPostgresProfileTests.Canceled_dispatch_preserves_the_original_cancellation_when_another_dispatch_committed_first`
+- `BarcodeLabelPostgresProfileTests.Canceled_reprint_attempt_does_not_overwrite_facts_when_the_item_was_concurrently_voided`
+- `BarcodeLabelPostgresProfileTests.Canceled_reprint_attempt_facts_commit_outside_the_rolling_back_command_transaction`
+- `BarcodeLabelPostgresProfileTests.Postgres_unique_conflicts_are_mapped_for_scan_natural_key_and_epcis_event`
+
+#2840 的真实 PostgreSQL runner 结果为 expected/discovered/passed `5/5/5`、failed/skipped `0/0`、cleanup passed；其 exact-head CI 的 `PostgreSQL Provider Tests` 与 `CI Summary` 均为 success。该 profile 没有把 pure、InMemory 或 loopback 测试计入这 5 项。
+
 ## 业务控制台边界
 
 #166 到 #169 的 Business Console MVP 采用独立 `frontend/apps/business-console`
