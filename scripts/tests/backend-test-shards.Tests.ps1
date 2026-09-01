@@ -2595,10 +2595,16 @@ Assert-Contract (-not (Test-Path -LiteralPath $timingFixtureRoot)) 'The shard ti
 
 Assert-Contract ($runLedger.CompleteValidatorInvocationCount -eq 4) "The contract suite must retain exactly four complete validator process contracts; observed $($runLedger.CompleteValidatorInvocationCount)."
 $mappingNames = @($runLedger.StageExecutionMappings | ForEach-Object { [string] $_.Name })
+Assert-Contract ($mappingNames.Count -eq 56) "The contract suite must retain exactly 56 stage execution mappings; observed $($mappingNames.Count)."
 Assert-Contract ((Get-NervStringsSorted -Values $mappingNames -Comparer ([StringComparer]::Ordinal) -Unique).Count -eq $mappingNames.Count) 'Every direct stage execution must have one unique mapping identity.'
-foreach ($stageId in @('manifest-policy', 'inventory-source', 'solution-membership', 'workflow-wiring')) {
+$expectedStageExecutionCounts = [System.Collections.Generic.Dictionary[string, int]]::new([StringComparer]::Ordinal)
+$expectedStageExecutionCounts.Add('manifest-policy', 18)
+$expectedStageExecutionCounts.Add('inventory-source', 13)
+$expectedStageExecutionCounts.Add('solution-membership', 10)
+$expectedStageExecutionCounts.Add('workflow-wiring', 15)
+foreach ($stageId in $stageIds) {
     $stageExecutionCount = @($runLedger.StageExecutionMappings | Where-Object { [string]::Equals([string] $_.Stage, $stageId, [StringComparison]::Ordinal) }).Count
-    Assert-Contract ($stageExecutionCount -gt 0) "The mutation suite must execute the authoritative '$stageId' stage at least once."
+    Assert-Contract ($stageExecutionCount -eq $expectedStageExecutionCounts[$stageId]) "The mutation suite must execute the authoritative '$stageId' stage exactly $($expectedStageExecutionCounts[$stageId]) times; observed $stageExecutionCount."
     Write-Host "  [stage-invocations] ${stageId}: $stageExecutionCount"
 }
 foreach ($mapping in @(Get-NervItemsSortedByString -Items @($runLedger.StageExecutionMappings) -KeySelector { param($row) [string] $row.Name } -Comparer ([StringComparer]::Ordinal))) {
@@ -2606,6 +2612,10 @@ foreach ($mapping in @(Get-NervItemsSortedByString -Items @($runLedger.StageExec
 }
 $actualMutationCount = @($runLedger.StageExecutionMappings | Where-Object { [string]::Equals([string] $_.Kind, 'mutation', [StringComparison]::Ordinal) }).Count
 $prerequisiteCount = @($runLedger.StageExecutionMappings | Where-Object { [string]::Equals([string] $_.Kind, 'prerequisite', [StringComparison]::Ordinal) }).Count
-Write-Host "  [execution-counts] input mutations: $actualMutationCount; stage prerequisites: $prerequisiteCount; baselines: 2; complete validator processes: $($runLedger.CompleteValidatorInvocationCount); rejected routing controls: 2"
+$baselineCount = @($runLedger.StageExecutionMappings | Where-Object { [string]::Equals([string] $_.Kind, 'baseline', [StringComparison]::Ordinal) }).Count
+Assert-Contract ($actualMutationCount -eq 41) "The contract suite must retain exactly 41 input mutation mappings; observed $actualMutationCount."
+Assert-Contract ($prerequisiteCount -eq 13) "The contract suite must retain exactly 13 stage prerequisite mappings; observed $prerequisiteCount."
+Assert-Contract ($baselineCount -eq 2) "The contract suite must retain exactly 2 baseline mappings; observed $baselineCount."
+Write-Host "  [execution-counts] input mutations: $actualMutationCount; stage prerequisites: $prerequisiteCount; baselines: $baselineCount; complete validator processes: $($runLedger.CompleteValidatorInvocationCount); rejected routing controls: 2"
 
 Write-Host 'Backend test shard manifest contract tests passed.'
