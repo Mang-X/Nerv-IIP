@@ -2594,8 +2594,7 @@ foreach ($stageId in @('manifest-policy', 'inventory-source', 'solution-membersh
     Assert-Contract ($stageExecutionCount -gt 0) "The mutation suite must execute the authoritative '$stageId' stage at least once."
     Write-Host "  [stage-invocations] ${stageId}: $stageExecutionCount"
 }
-foreach ($mappingName in @(Get-NervStringsSorted -Values $mappingNames -Comparer ([StringComparer]::Ordinal))) {
-    $mapping = @($stageExecutionMappings | Where-Object { [string]::Equals([string] $_.Name, $mappingName, [StringComparison]::Ordinal) })[0]
+foreach ($mapping in @(Get-NervItemsSortedByString -Items @($stageExecutionMappings) -KeySelector { param($row) [string] $row.Name } -Comparer ([StringComparer]::Ordinal))) {
     Write-Host "  [stage-map:$($mapping.Kind)] $($mapping.Name) -> $($mapping.Stage)"
 }
 $actualMutationCount = @($stageExecutionMappings | Where-Object { [string]::Equals([string] $_.Kind, 'mutation', [StringComparison]::Ordinal) }).Count
