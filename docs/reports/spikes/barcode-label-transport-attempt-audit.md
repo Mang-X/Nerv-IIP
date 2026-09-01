@@ -10,8 +10,8 @@ attempt；单项 reprint 会覆盖整批 dispatch 的这些列，`label_print_it
 建议后续采用 BarcodeLabel 自有的独立 `label_print_transport_attempts` 表，逐次记录 dispatch
 和 reprint 的 transport 事实。该表不是物理打印确认、outbox、printer-agent job/ack，也不接管
 `LabelPrintBatch` 的业务生命周期；现有批次列继续作为兼容的“最近一次尝试投影”。历史行不从批次列
-伪造 attempt。只有 #2065 的 attempt 边界修订获批，并由 owner 确认本文列出的 6 项产品与治理
-选择后，才能进入生产实施。
+伪造 attempt。所有生产实施都以 #2065 的 attempt 边界修订获批为共同前置；本文列出的 6 项 owner
+裁决按各自 seam 门控后续子项，不设置“六项全部确认后才能开始任何实施”的全局串行门。
 
 本次只提交调查报告，不修改生产代码、Schema、API、权限、事件、UI 或测试治理。
 
@@ -79,7 +79,22 @@ attempt；单项 reprint 会覆盖整批 dispatch 的这些列，`label_print_it
 | `started_at_utc` | 调用 printer 前、attempt 预登记成功时写入。 |
 | `completed_at_utc` | 三个封闭 transport 结果必填；`started` 为空。 |
 
-必要约束：operation/item 空值矩阵；status/job/failure/completed 时间矩阵；batch 上
+必要约束的封闭真值表如下；`operation` 或 `status` 的未知值以及表外任意 nullness 组合都必须由
+PostgreSQL CHECK 拒绝：
+
+| `operation` | `label_print_item_id` |
+| --- | --- |
+| `dispatch` | 必须为空 |
+| `reprint` | 必须非空 |
+
+| `status` | `print_job_id` | `failure_reason` | `completed_at_utc` |
+| --- | --- | --- | --- |
+| `started` | 空 | 空 | 空 |
+| `failed` | 空 | 非空 | 非空 |
+| `delivery-unknown` | 非空 | 非空 | 非空 |
+| `sent-to-printer` | 非空 | 空 | 非空 |
+
+其余必要约束包括 batch 上
 `(id, organization_id, environment_id)` 候选键与 item 上 `(id, label_print_batch_id)` 候选键，配合
 上述两个复合 FK 让跨 scope batch 和错 batch item 无法成为持久事实。Application 写入边界仍需先
 按 scope 加载，但不能代替数据库不变量。建议查询索引只保留
@@ -155,18 +170,17 @@ GET /api/business/internal/v1/barcodes/print-batches/{printBatchId}/transport-at
 
 [`ADR 0003`](../../adr/0003-data-and-messaging-baseline.md) 冻结了审计记录不得与业务事务数据共用
 retention 策略/周期。因此 attempt 即使与 batch 同属 BarcodeLabel owner，也必须有独立审计 retention
-合同；batch 删除不得 cascade 删除未到期 attempt，attempt 到期也不得驱动 batch 删除。
+合同；batch 删除不得 cascade 删除仍在保留的 attempt，attempt 按自身策略清理也不得驱动 batch 删除。
 
 | 选择 | 优点 | 风险 | 裁决 |
 | --- | --- | --- | --- |
-| 永久保留、无清理 | 不会误删审计 | 数据单向增长，无法给容量与删除授权边界 | 不作为最终合同，也不作为未声明期限的临时默认。 |
-| 独立审计在线期 + 总保留期 | 容量、在线查询与合规边界可分别治理 | 需要 owner 给出时长、legal hold 与删除授权 | 唯一推荐候选；精确时长待 owner 批准。 |
+| 显式独立审计策略 | 可以按真实合规、容量和运维需求选择单周期、多阶段或明确的无限期保留 | 需要 owner 明确保留期限、删除授权与执行方式 | 唯一推荐候选；本 spike 不预设双周期、legal hold 或 worker。 |
 | 跟随 batch 生命周期或 cascade | 实现表面简单 | 与 ADR 0003 冲突，业务删除会提前删除审计 | 拒绝；若未来确需采用，必须先有新 ADR 明确取代 ADR 0003 对应条款。 |
 
-清理必须按 organization/environment 分批、可观察、可重入，并在 attempt 仍被调查/hold 时跳过；删除
-权限不能等同于 `business.barcodes.print`。当前没有足够事实决定保留天数、legal hold 或执行 owner，
-因此独立审计 retention 实施票必须等待 owner 裁决，不能在 Schema PR 中顺手加一个任意定时任务，
-也不能等待或复用 batch retention。
+冻结的结果不变量只有：策略与 batch retention 独立、禁止 cascade、按 scope 隔离；若 owner 选择自动
+清理，则清理必须可观察、失败可恢复，删除权限不能等同于 `business.barcodes.print`。当前没有足够
+事实决定期限、是否需要 legal hold、是否需要多阶段归档或采用 worker/人工运维入口，因此不能在
+Schema PR 中顺手固化这些机械，也不能等待或复用 batch retention。
 
 ### 历史数据
 
@@ -192,7 +206,8 @@ retention 策略/周期。因此 attempt 即使与 batch 同属 BarcodeLabel own
    不再把“复用 print 或新建 permission”的二选一留给实现者。
 4. **操作人归因：** 只记录 trusted service/correlation，还是扩展 Gateway -> BarcodeLabel 的终端 actor
    传递合同。当前 internal Bearer 不能证明终端操作人，禁止反向猜测。
-5. **Retention：** 在线/总保留期、legal hold、删除授权与执行 owner。没有裁决前不得承诺自动清理。
+5. **Retention：** 明确独立审计保留期限（可以是显式无限期）、删除授权与执行方式；只有真实合规需求
+   要求时才增加多阶段归档或 legal hold，没有裁决前不得承诺自动清理。
 6. **人工确认：** 是否继续完全不落库，还是另立“现场核验”产品合同。推荐本轮保持不落库；若新增，
    必须单独修订 #2065，且不得把人工陈述改写成物理设备 ack。
 
@@ -200,21 +215,29 @@ retention 策略/周期。因此 attempt 即使与 batch 同属 BarcodeLabel own
 
 | 顺序 | 建议子项 | Gate | 独立验收 | 依赖 |
 | ---: | --- | --- | --- | --- |
-| 1 | BarcodeLabel attempt 实体、迁移、复合归属约束、最小索引、独立预登记、原子 terminal + batch 投影 recorder 与真实 PostgreSQL crash-window/并发测试 | `scope:M` / 高 | 每次 printer 调用一条 attempt；预登记失败时 printer 零调用；跨 scope batch 与错 batch item 的原始插入被数据库拒绝；两个受控并发完成者恰好一个成功，败者不能覆盖 terminal/job/failure/time 或 batch 投影；删除 scope/关联约束、把条件更新改为无条件更新的等价错误变异必须判红；既有 batch/item 状态机不变 | #2065 attempt 规格修订已批准；owner 1、2；[`validity.md`](../../governance/testing/validity.md) |
+| 1 | BarcodeLabel attempt 实体、迁移、复合归属约束、最小索引、独立预登记、原子 terminal + batch 投影 recorder 与真实 PostgreSQL crash-window/并发测试 | `scope:M` / 高 | 每次 printer 调用一条 attempt；预登记失败时 printer 零调用；operation/item 表与 status/job/failure/completed 表分别以封闭笛卡尔组合做 raw INSERT/UPDATE，表内格成功、未知值和表外每格均被 PostgreSQL 拒绝；跨 scope batch 与错 batch item 的原始插入被拒绝；两个受控并发完成者恰好一个成功，败者不能覆盖 terminal/job/failure/time 或 batch 投影；删除任一 CHECK、漏掉任一矩阵格、删除 scope/关联约束或把条件更新改为无条件更新的等价错误变异必须判红；既有 batch/item 状态机不变 | #2065 attempt 规格修订已批准；owner 1、2、4；[`validity.md`](../../governance/testing/validity.md) |
 | 2 | BarcodeLabel scoped internal 分页查询、覆盖语义、OpenAPI 与安全投影测试 | `scope:M` / 中 | 错 scope 安全未找到；分页稳定；无 raw ZPL/endpoint/异常泄漏；历史空集合不冒充完整 | 1 合并，owner 2、3 |
-| 3 | BusinessGateway 只读 facade、权限目录、generated client | `scope:M` / 中 | 认证 scope/permission 失败关闭；只调用 scoped internal；codegen 无漂移 | 2 合并，owner 3、4 |
+| 3 | BusinessGateway 只读 facade、权限目录、generated client；若 owner 4 选择终端 actor 归因，同票闭合认证 actor 透传 | `scope:M` / 中 | 认证 scope/permission 失败关闭；只调用 scoped internal；codegen 无漂移；若包含 actor，则缺失/伪造 actor 失败关闭 | 2 合并，owner 3；owner 4 的结果已由子项 1 前置冻结 |
 | 4 | Business Console 单批 attempt 时间线 | `scope:M` / 中 | dispatch/reprint 可区分；unknown 与不完整 `started` 明示；不显示“已打印” | 3 合并 |
-| 5 | 独立审计 retention/hold worker 与真实 PostgreSQL 分批清理证据 | `scope:M` / 高 | 独立周期、scope 隔离、hold 跳过、失败可重入；batch 删除不 cascade，attempt 清理不删除 batch | owner 5；不依赖或复用 batch retention |
+| 5 | 独立审计 retention 落地；仅在 owner 选择自动清理时实现对应清理入口与真实 PostgreSQL 证据 | `scope:M` / 按裁决复评 | retention 与 batch 独立、scope 隔离、禁止 cascade；若有自动清理则失败可恢复且 attempt 清理不删除 batch | owner 5；不依赖或复用 batch retention |
 | 6 | 现场核验/恢复授权 spike（仅当 owner 选择新增） | `scope:spike` / 高 | 先修订 #2065；冻结 actor、结论、授权和状态机后再拆生产票 | owner 4、6 |
 
-所有生产子项都以“#2065 的 attempt 边界修订已批准”为共同前置；子项 1 不应同时承担
-API/UI/retention；子项 2 不应顺手开放跨租户 printer 报表；子项 5 在独立审计 retention 未裁决时
-不得启动。这样每个生产 PR 都保持单一 owner seam，且不会把质量轴问题扩张为 printer-agent 或通用
-审计平台。
+所有生产子项都以“#2065 的 attempt 边界修订已批准”为共同前置，除此之外按表中局部门控：owner
+1/2/4 前置于会受其字段与提交语义影响的 Schema 子项 1；owner 3 前置读面/Gateway；owner 5 只前置
+retention 子项 5；owner 6 只决定是否启动可选子项 6。子项 1 不应同时承担 API/UI/retention，子项 2
+不应顺手开放跨租户 printer 报表。这样不会用无关裁决串行化独立工作，也不会把质量轴问题扩张为
+printer-agent 或通用审计平台。
 
 ## 验证与未验证
 
 本报告通过 live GitHub Issue、当前 `origin/main` 的 Domain/Application/Infrastructure producer、当前
-Architecture/Reference 和既有测试核对结论。只执行了只读源码与历史查询及 Markdown 静态检查；未运行
-.NET 测试、PostgreSQL、CI、FullChain、真实 FileStorage、真实打印机/扫码枪或物理标签验证，因为本次
-没有生产改动，也不对任何运行能力作新增声明。
+Architecture/Reference 和既有测试核对结论。作者本地只执行了只读源码/历史查询、相对链接检查与
+`git diff --check`，未在本地运行 .NET、PostgreSQL、FullChain、真实 FileStorage、真实打印机/扫码枪或
+物理标签验证。
+
+GitHub CI 并非“未运行”：上一审核 head `c2944dba2b9d69f5272ab5d685be446dd45dbea9` 的 run
+`33529538293` 中，`CI Impact Plan` 实际运行并按 docs-only 影响计划将 PostgreSQL、Business FullChain、
+后端业务分片等测试 worker 标记为 policy-skipped；`Backend Tests`、`Frontend Unit Tests`、
+`Frontend Typecheck and Build` 等 aggregate jobs 与 `CI Summary` 实际运行且成功。aggregate 成功只证明
+影响计划与汇总闭合，不替代被跳过 worker 的 .NET/PostgreSQL/FullChain 执行证据。后续新 head 的
+exact-head 状态必须从 PR checks 重新读取，不沿用该 run。
