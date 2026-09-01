@@ -1,6 +1,5 @@
 using System.Collections.Immutable;
 using Microsoft.EntityFrameworkCore;
-using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.Printing;
 
@@ -545,7 +544,7 @@ internal static class LabelPrintLifecycle
                 .OrderBy(item => item.SequenceNo)
                 .Select(item => new LabelCompilationItem(
                     batch.LabelValuesJson,
-                    CreateBarcodePayload(batch.BarcodeTypeSnapshot!, item),
+                    LabelBarcodePayloadFactory.Create(batch.BarcodeTypeSnapshot!, item.LabelValue),
                     item.SequenceNo,
                     batch.SourceDocumentId))
                 .ToArray();
@@ -630,23 +629,4 @@ internal static class LabelPrintLifecycle
                     $"Unsupported label printer result type: {result.GetType().FullName}.");
         }
     }
-
-    private static LabelBarcodePayload CreateBarcodePayload(
-        string barcodeType,
-        LabelPrintItem item) =>
-        barcodeType switch
-        {
-            "code128" => new PlainLabelBarcodePayload(PlainLabelBarcodeType.Code128, item.LabelValue),
-            "qr" => new PlainLabelBarcodePayload(PlainLabelBarcodeType.Qr, item.LabelValue),
-            "datamatrix" => new PlainLabelBarcodePayload(
-                PlainLabelBarcodeType.DataMatrix,
-                item.LabelValue),
-            "gs1-128" => new Gs1LabelBarcodePayload(
-                Gs1LabelBarcodeType.Gs1128,
-                Gs1ApplicationIdentifierParser.Parse(item.LabelValue)),
-            "gs1-datamatrix" => new Gs1LabelBarcodePayload(
-                Gs1LabelBarcodeType.DataMatrix,
-                Gs1ApplicationIdentifierParser.Parse(item.LabelValue)),
-            _ => throw new InvalidOperationException($"Unsupported barcode type '{barcodeType}'."),
-        };
 }

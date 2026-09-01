@@ -10,6 +10,10 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Nerv.IIP.Business.BarcodeLabel.Web.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="DotNetCore.CAP.Dashboard" />
     <PackageReference Include="DotNetCore.CAP.PostgreSql" />
     <PackageReference Include="DotNetCore.CAP.RabbitMQ" />
