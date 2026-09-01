@@ -5,7 +5,8 @@ import type {
   BusinessConsoleToolingAssetStatus,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
-import { computed, reactive, shallowRef } from 'vue'
+import { watchDebounced } from '@vueuse/core'
+import { computed, reactive, ref, shallowRef } from 'vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
@@ -80,8 +81,27 @@ const canManage = computed(() =>
 
 const workCenters = useBusinessMasterDataResources('work-center')
 const skus = useBusinessMasterDataResources('sku')
-workCenters.filters.take = 200
-skus.filters.take = 200
+const CATALOG_PAGE_SIZE = 50
+workCenters.filters.take = CATALOG_PAGE_SIZE
+skus.filters.take = CATALOG_PAGE_SIZE
+const workCenterSearch = ref('')
+const skuSearch = ref('')
+watchDebounced(
+  workCenterSearch,
+  (value) => {
+    const keyword = value.trim()
+    workCenters.filters.keyword = keyword || undefined
+  },
+  { debounce: 300, maxWait: 1000 },
+)
+watchDebounced(
+  skuSearch,
+  (value) => {
+    const keyword = value.trim()
+    skus.filters.keyword = keyword || undefined
+  },
+  { debounce: 300, maxWait: 1000 },
+)
 
 const toolingTypes = [
   { value: 'mould', label: '模具' },
@@ -211,6 +231,10 @@ function openRegister() {
     skuCodes: [],
   })
   registerShowErrors.value = false
+  workCenterSearch.value = ''
+  skuSearch.value = ''
+  workCenters.filters.keyword = undefined
+  skus.filters.keyword = undefined
   registerOpen.value = true
 }
 async function submitRegister() {
@@ -457,7 +481,7 @@ const listErrorMessage = computed(() =>
     </NvDataTable>
 
     <NvSheet v-model:open="detailOpen">
-      <NvSheetContent class="w-full overflow-y-auto sm:max-w-lg">
+      <NvSheetContent size="lg">
         <NvSheetHeader>
           <NvSheetTitle>{{ detailTarget?.name ?? '工装详情' }}</NvSheetTitle>
           <NvSheetDescription>{{ detailTarget?.code }}</NvSheetDescription>
@@ -492,7 +516,7 @@ const listErrorMessage = computed(() =>
     </NvSheet>
 
     <NvSheet v-if="canManage" v-model:open="registerOpen">
-      <NvSheetContent class="w-full overflow-y-auto sm:max-w-2xl">
+      <NvSheetContent size="2xl">
         <form class="grid gap-5" novalidate @submit.prevent="submitRegister">
           <NvSheetHeader>
             <NvSheetTitle>注册工装</NvSheetTitle>
@@ -575,6 +599,12 @@ const listErrorMessage = computed(() =>
                   适用工作中心 <span class="text-destructive">*</span>
                 </span>
               </NvFieldLabel>
+              <NvInput
+                id="tooling-work-center-search"
+                v-model="workCenterSearch"
+                placeholder="搜索工作中心名称 / 编码"
+                aria-label="搜索适用工作中心"
+              />
               <div
                 class="grid gap-2 rounded-lg border p-3 sm:grid-cols-2"
                 :data-invalid="Boolean(registerWorkCenterError)"
@@ -599,11 +629,9 @@ const listErrorMessage = computed(() =>
                   >
                 </label>
               </div>
-              <NvFieldDescription
-                v-if="workCenters.resourcesTotal.value > workCenters.filters.take"
-              >
-                工作中心目录共 {{ workCenters.resourcesTotal.value }} 项，当前候选加载上限为
-                {{ workCenters.filters.take }} 项。
+              <NvFieldDescription>
+                已选择 {{ registerForm.workCenterCodes.length }} 个工作中心；当前匹配
+                {{ workCenters.resourcesTotal.value }} 项，请搜索后继续选择。
               </NvFieldDescription>
               <NvFieldError v-if="registerWorkCenterError" :errors="[registerWorkCenterError]" />
             </NvField>
@@ -613,6 +641,12 @@ const listErrorMessage = computed(() =>
                   适用 SKU <span class="text-destructive">*</span>
                 </span>
               </NvFieldLabel>
+              <NvInput
+                id="tooling-sku-search"
+                v-model="skuSearch"
+                placeholder="搜索 SKU 名称 / 编码"
+                aria-label="搜索适用 SKU"
+              />
               <div
                 class="grid gap-2 rounded-lg border p-3 sm:grid-cols-2"
                 :data-invalid="Boolean(registerSkuError)"
@@ -637,9 +671,9 @@ const listErrorMessage = computed(() =>
                   >
                 </label>
               </div>
-              <NvFieldDescription v-if="skus.resourcesTotal.value > skus.filters.take">
-                SKU 目录共 {{ skus.resourcesTotal.value }} 项，当前候选加载上限为
-                {{ skus.filters.take }} 项。
+              <NvFieldDescription>
+                已选择 {{ registerForm.skuCodes.length }} 个 SKU；当前匹配
+                {{ skus.resourcesTotal.value }} 项，请搜索后继续选择。
               </NvFieldDescription>
               <NvFieldDescription>{{ applicabilityCount }} 个适用组合</NvFieldDescription>
               <NvFieldError v-if="registerSkuError" :errors="[registerSkuError]" />

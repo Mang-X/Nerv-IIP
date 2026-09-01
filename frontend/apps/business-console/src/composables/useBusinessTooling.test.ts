@@ -80,7 +80,7 @@ describe('useBusinessTooling', () => {
     state.invalidations = 0
   })
 
-  it('将工装状态和类型映射为中文，并对未知类型保留服务端值', () => {
+  it('将工装状态和类型映射为中文，并对未知类型失败关闭', () => {
     expect(toolingStatusLabel('available')).toBe('可用')
     expect(toolingStatusLabel('maintenance')).toBe('保养中')
     expect(toolingStatusLabel('retired')).toBe('已退役')
@@ -89,7 +89,7 @@ describe('useBusinessTooling', () => {
     expect(toolingTypeLabel('jig')).toBe('工装夹具')
     expect(toolingTypeLabel('cutting')).toBe('刀具')
     expect(toolingTypeLabel('gauge')).toBe('检具')
-    expect(toolingTypeLabel('unknown-tooling')).toBe('unknown-tooling')
+    expect(toolingTypeLabel('unknown-tooling')).toBe('其他类型')
   })
 
   it('把关键字、状态与分页作为服务端查询参数，并读取服务端总数', () => {

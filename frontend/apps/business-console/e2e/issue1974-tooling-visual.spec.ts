@@ -76,6 +76,12 @@ test('工装维护台真实浏览器视觉核验', async ({ page }) => {
   await expect(detail).toBeHidden()
 
   await page.getByRole('button', { name: '注册工装' }).click()
+  const workCenterSearch = page.getByLabel('搜索适用工作中心')
+  await workCenterSearch.fill('精加工')
+  const lateWorkCenter = page.locator('label').filter({ hasText: 'WC-MACHINING-201' })
+  await expect(lateWorkCenter).toContainText('精加工工作中心')
+  await lateWorkCenter.getByRole('checkbox').check()
+  await expect(page.getByText(/已选择 1 个工作中心/)).toBeVisible()
   const nameInput = page.getByLabel('工装名称 *')
   const typeTrigger = page.getByLabel('工装类型 *')
   const lifeInput = page.getByLabel('保养使用寿命（次）')
@@ -252,31 +258,42 @@ async function routeBusinessConsoleApi(route: Route) {
 
   if (url.pathname === '/api/business-console/v1/master-data/resources') {
     const resourceType = url.searchParams.get('resourceType')
+    const keyword = url.searchParams.get('keyword')
     const resources =
       resourceType === 'work-center'
-        ? [
-            {
-              resourceType,
-              code: 'WC-PRESS-01',
-              displayName: '冲压一线压力机工作中心',
-              active: true,
-              snapshotVersion: 'v12',
-            },
-            {
-              resourceType,
-              code: 'WC-WELD-02',
-              displayName: '车身二线焊装工作中心',
-              active: true,
-              snapshotVersion: 'v9',
-            },
-            {
-              resourceType,
-              code: 'WC-QA-01',
-              displayName: '冲压件终检工作中心',
-              active: true,
-              snapshotVersion: 'v5',
-            },
-          ]
+        ? keyword === '精加工'
+          ? [
+              {
+                resourceType,
+                code: 'WC-MACHINING-201',
+                displayName: '精加工工作中心',
+                active: true,
+                snapshotVersion: 'v3',
+              },
+            ]
+          : [
+              {
+                resourceType,
+                code: 'WC-PRESS-01',
+                displayName: '冲压一线压力机工作中心',
+                active: true,
+                snapshotVersion: 'v12',
+              },
+              {
+                resourceType,
+                code: 'WC-WELD-02',
+                displayName: '车身二线焊装工作中心',
+                active: true,
+                snapshotVersion: 'v9',
+              },
+              {
+                resourceType,
+                code: 'WC-QA-01',
+                displayName: '冲压件终检工作中心',
+                active: true,
+                snapshotVersion: 'v5',
+              },
+            ]
         : [
             {
               resourceType,
@@ -302,7 +319,10 @@ async function routeBusinessConsoleApi(route: Route) {
           ]
     return fulfillJson(
       route,
-      envelope({ resources, total: resourceType === 'work-center' ? 203 : 318 }),
+      envelope({
+        resources,
+        total: resourceType === 'work-center' ? (keyword ? resources.length : 203) : 318,
+      }),
     )
   }
 

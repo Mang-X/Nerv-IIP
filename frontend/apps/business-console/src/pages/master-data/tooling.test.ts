@@ -79,19 +79,26 @@ vi.mock('@/composables/useBusinessTooling', () => ({
 }))
 
 vi.mock('@/composables/useBusinessMasterData', () => ({
-  useBusinessMasterDataResources: (resourceType: string) => ({
-    filters: reactive({ take: 200 }),
-    resources: computed(() =>
-      resourceType === 'work-center'
-        ? [{ code: 'WC-PRESS', displayName: '冲压工作中心', active: true }]
-        : [
-            { code: 'SKU-FLOOR', displayName: '前地板总成', active: true },
-            { code: 'SKU-SILL', displayName: '左门槛加强板', active: true },
-          ],
-    ),
-    resourcesTotal: computed(() => (resourceType === 'work-center' ? 201 : 2)),
-    resourcesPending: shallowRef(false),
-  }),
+  useBusinessMasterDataResources: (resourceType: string) => {
+    const filters = reactive({ take: 50, keyword: undefined as string | undefined })
+    return {
+      filters,
+      resources: computed(() =>
+        resourceType === 'work-center'
+          ? filters.keyword === '精加工'
+            ? [{ code: 'WC-MACHINING-201', displayName: '精加工工作中心', active: true }]
+            : [{ code: 'WC-PRESS', displayName: '冲压工作中心', active: true }]
+          : [
+              { code: 'SKU-FLOOR', displayName: '前地板总成', active: true },
+              { code: 'SKU-SILL', displayName: '左门槛加强板', active: true },
+            ],
+      ),
+      resourcesTotal: computed(() =>
+        resourceType === 'work-center' ? (filters.keyword ? 1 : 203) : 2,
+      ),
+      resourcesPending: shallowRef(false),
+    }
+  },
 }))
 
 vi.mock('@nerv-iip/ui', async (original) => ({
@@ -103,7 +110,10 @@ const stubs = {
   BusinessLayout: { template: '<main><slot /></main>' },
   NvSheet: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
   DialogRoot: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
-  NvSheetContent: { template: '<section><slot /></section>' },
+  NvSheetContent: {
+    props: ['size'],
+    template: '<section data-testid="sheet-content" :data-size="size"><slot /></section>',
+  },
   NvSheetHeader: { template: '<header><slot /></header>' },
   NvSheetTitle: { template: '<h2><slot /></h2>' },
   NvSheetDescription: { template: '<p><slot /></p>' },
@@ -208,6 +218,39 @@ describe('工装与模具维护台', () => {
     const form = wrapper.find('form')
     expect(form.exists()).toBe(true)
     expect(form.attributes('novalidate')).toBeDefined()
+    expect(wrapper.findAll('[data-testid="sheet-content"]')[0]?.attributes('data-size')).toBe('2xl')
+  })
+
+  it('详情与注册抽屉使用 NvSheetContent 尺寸契约', async () => {
+    const wrapper = mount(ToolingPage, { global: { stubs } })
+    await flushPromises()
+
+    await button(wrapper, 'MOULD-001')!.trigger('click')
+    expect(wrapper.find('[data-testid="sheet-content"]').attributes('data-size')).toBe('lg')
+
+    await button(wrapper, '注册工装')!.trigger('click')
+    expect(wrapper.findAll('[data-testid="sheet-content"]')[1]?.attributes('data-size')).toBe('2xl')
+  })
+
+  it('通过服务端目录搜索可以选择首批结果之外的工作中心', async () => {
+    vi.useFakeTimers()
+    const wrapper = mount(ToolingPage, { global: { stubs } })
+    await flushPromises()
+    await button(wrapper, '注册工装')!.trigger('click')
+
+    expect(wrapper.text()).not.toContain('精加工工作中心')
+    await wrapper.find('#tooling-work-center-search').setValue('精加工')
+    await vi.advanceTimersByTimeAsync(300)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('精加工工作中心')
+    const lateOption = wrapper
+      .findAll('label')
+      .find((candidate) => candidate.text().includes('WC-MACHINING-201'))
+    expect(lateOption).toBeTruthy()
+    await lateOption!.find('input[type="checkbox"]').setValue(true)
+    expect(wrapper.text()).toContain('已选择 1 个工作中心')
+    vi.useRealTimers()
   })
 
   it('未达到寿命时完成保养只要求填写原因', async () => {
@@ -286,7 +329,6 @@ describe('工装与模具维护台', () => {
     await checks[0]!.setValue(true)
     await checks[1]!.setValue(true)
     expect(wrapper.text()).toContain('1 个适用组合')
-    expect(wrapper.text()).toContain('工作中心目录共 201 项，当前候选加载上限为 200 项')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 

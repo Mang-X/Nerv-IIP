@@ -54,6 +54,7 @@ export function toolingStatusLabel(value: string | null | undefined) {
 }
 
 export function toolingTypeLabel(value: string | null | undefined) {
+  if (!value) return '未分类'
   return (
     {
       mould: '模具',
@@ -61,9 +62,7 @@ export function toolingTypeLabel(value: string | null | undefined) {
       jig: '工装夹具',
       cutting: '刀具',
       gauge: '检具',
-    }[value ?? ''] ??
-    value ??
-    '未分类'
+    }[value] ?? '其他类型'
   )
 }
 
