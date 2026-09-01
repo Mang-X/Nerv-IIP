@@ -87,7 +87,7 @@ public sealed class CreateLabelPrintBatchCommandHandler(
                 LabelVariableSchema.Parse(template.VariableSchemaJson),
                 candidate.Items.Select(item => new LabelCompilationItem(
                     request.LabelValuesJson,
-                    CreateBarcodePayload(rule.BarcodeType, item),
+                    LabelBarcodePayloadFactory.Create(rule.BarcodeType, item.LabelValue),
                     item.SequenceNo,
                     candidate.SourceDocumentId)).ToArray());
         }
@@ -124,19 +124,4 @@ public sealed class CreateLabelPrintBatchCommandHandler(
         dbContext.LabelPrintBatches.Add(candidate);
         return candidate.Id;
     }
-
-    private static LabelBarcodePayload CreateBarcodePayload(string barcodeType, LabelPrintItem item) =>
-        barcodeType switch
-        {
-            "code128" => new PlainLabelBarcodePayload(PlainLabelBarcodeType.Code128, item.LabelValue),
-            "qr" => new PlainLabelBarcodePayload(PlainLabelBarcodeType.Qr, item.LabelValue),
-            "datamatrix" => new PlainLabelBarcodePayload(PlainLabelBarcodeType.DataMatrix, item.LabelValue),
-            "gs1-128" => new Gs1LabelBarcodePayload(
-                Gs1LabelBarcodeType.Gs1128,
-                Gs1ApplicationIdentifierParser.Parse(item.LabelValue)),
-            "gs1-datamatrix" => new Gs1LabelBarcodePayload(
-                Gs1LabelBarcodeType.DataMatrix,
-                Gs1ApplicationIdentifierParser.Parse(item.LabelValue)),
-            _ => throw new InvalidOperationException($"Unsupported barcode type '{barcodeType}'."),
-        };
 }

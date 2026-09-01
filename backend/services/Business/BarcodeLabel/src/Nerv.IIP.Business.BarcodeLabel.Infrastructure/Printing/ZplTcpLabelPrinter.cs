@@ -1,5 +1,5 @@
 using System.Net.Sockets;
-using System.Text;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.BarcodeLabel.Domain.Printing;
 
@@ -8,89 +8,198 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Printing;
 public sealed class LabelPrinterOptions
 {
     public string Mode { get; init; } = "disabled";
-
     public string? Host { get; init; }
-
     public int Port { get; init; } = 9100;
-
     public int ConnectTimeoutSeconds { get; init; } = 10;
+    public int WriteTimeoutSeconds { get; init; } = 10;
 }
 
-public sealed class ZplTcpLabelPrinter(IOptions<LabelPrinterOptions> options)
-    : ILabelPrinter
+internal interface IZplTcpConnectionFactory
 {
+    Task<IZplTcpConnection> ConnectAsync(
+        string host,
+        int port,
+        TimeSpan timeout,
+        CancellationToken cancellationToken);
+}
+
+internal interface IZplTcpConnection : IAsyncDisposable
+{
+    ValueTask<int> SendAsync(ReadOnlyMemory<byte> payload, CancellationToken cancellationToken);
+    void ShutdownSend();
+}
+
+internal sealed class SocketZplTcpConnectionFactory : IZplTcpConnectionFactory
+{
+    public async Task<IZplTcpConnection> ConnectAsync(
+        string host,
+        int port,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        var client = new TcpClient();
+        try
+        {
+            using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutSource.CancelAfter(timeout);
+            await client.ConnectAsync(host, port, timeoutSource.Token);
+            return new SocketZplTcpConnection(client);
+        }
+        catch
+        {
+            client.Dispose();
+            throw;
+        }
+    }
+
+    private sealed class SocketZplTcpConnection(TcpClient client) : IZplTcpConnection
+    {
+        public ValueTask<int> SendAsync(
+            ReadOnlyMemory<byte> payload,
+            CancellationToken cancellationToken) =>
+            client.Client.SendAsync(payload, SocketFlags.None, cancellationToken);
+
+        public void ShutdownSend() => client.Client.Shutdown(SocketShutdown.Send);
+
+        public ValueTask DisposeAsync()
+        {
+            client.Dispose();
+            return ValueTask.CompletedTask;
+        }
+    }
+}
+
+public sealed class ZplTcpLabelPrinter : ILabelPrinter
+{
+    private readonly IOptions<LabelPrinterOptions> options;
+    private readonly IZplTcpConnectionFactory connectionFactory;
+    private readonly TimeProvider timeProvider;
+
+    public ZplTcpLabelPrinter(IOptions<LabelPrinterOptions> options)
+        : this(options, new SocketZplTcpConnectionFactory(), TimeProvider.System)
+    {
+    }
+
+    internal ZplTcpLabelPrinter(
+        IOptions<LabelPrinterOptions> options,
+        IZplTcpConnectionFactory connectionFactory)
+        : this(options, connectionFactory, TimeProvider.System)
+    {
+    }
+
+    internal ZplTcpLabelPrinter(
+        IOptions<LabelPrinterOptions> options,
+        IZplTcpConnectionFactory connectionFactory,
+        TimeProvider timeProvider)
+    {
+        this.options = options;
+        this.connectionFactory = connectionFactory;
+        this.timeProvider = timeProvider;
+    }
+
     public async Task<LabelPrinterDispatchResult> PrintAsync(
         string printerId,
-        IReadOnlyCollection<string> labelValues,
+        IReadOnlyCollection<CompiledLabelDocument> documents,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(printerId);
-        ArgumentNullException.ThrowIfNull(labelValues);
-        if (labelValues.Count == 0)
+        ArgumentNullException.ThrowIfNull(documents);
+        if (documents.Count == 0 || documents.Any(document => document.Payload.IsEmpty))
         {
-            return LabelPrinterDispatchResult.Failed("No labels were supplied for printing.");
+            return LabelPrinterDispatchResult.Failed("未提供可发送的已编译标签文档。");
         }
 
         var settings = options.Value;
         if (string.IsNullOrWhiteSpace(settings.Host))
         {
-            return LabelPrinterDispatchResult.Failed("LabelPrinter:Host is required for ZPL-over-TCP printing.");
+            return LabelPrinterDispatchResult.Failed("未配置 ZPL TCP 打印机地址。");
         }
 
+        if (settings.Port is <= 0 or > 65535
+            || settings.ConnectTimeoutSeconds <= 0
+            || settings.WriteTimeoutSeconds <= 0)
+        {
+            return LabelPrinterDispatchResult.Failed("ZPL TCP 打印机端口或超时配置无效。");
+        }
+
+        var printJobId = $"zpl-{Guid.CreateVersion7():N}";
+        long confirmedBytesWritten = 0;
         try
         {
-            using var client = new TcpClient();
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeout.CancelAfter(TimeSpan.FromSeconds(settings.ConnectTimeoutSeconds));
-            await client.ConnectAsync(settings.Host, settings.Port, timeout.Token);
-            await using var stream = client.GetStream();
-            var document = BuildDocument(labelValues);
-            var payload = Encoding.UTF8.GetBytes(document);
-            await stream.WriteAsync(payload, cancellationToken);
-            await stream.FlushAsync(cancellationToken);
-            client.Client.Shutdown(SocketShutdown.Send);
-            return LabelPrinterDispatchResult.Sent($"zpl-{Guid.CreateVersion7():N}");
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            return LabelPrinterDispatchResult.Failed("Timed out connecting to the ZPL printer.");
-        }
-        catch (SocketException exception)
-        {
-            return LabelPrinterDispatchResult.Failed($"ZPL printer connection failed: {exception.SocketErrorCode}.");
-        }
-        catch (IOException exception)
-        {
-            return LabelPrinterDispatchResult.Failed($"ZPL printer write failed: {exception.Message}");
-        }
-    }
+            await using var connection = await connectionFactory.ConnectAsync(
+                settings.Host,
+                settings.Port,
+                TimeSpan.FromSeconds(settings.ConnectTimeoutSeconds),
+                cancellationToken);
+            using var timeoutSource = new CancellationTokenSource(
+                TimeSpan.FromSeconds(settings.WriteTimeoutSeconds),
+                timeProvider);
+            using var transferSource = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                timeoutSource.Token);
+            foreach (var document in documents)
+            {
+                var remaining = document.Payload;
+                while (!remaining.IsEmpty)
+                {
+                    var written = await connection.SendAsync(remaining, transferSource.Token);
+                    if (written <= 0 || written > remaining.Length)
+                    {
+                        throw new IOException("The TCP socket returned an invalid write count.");
+                    }
 
-    private static string BuildDocument(IEnumerable<string> labelValues)
-    {
-        return string.Concat(labelValues.Select(labelValue => $"^XA^FO20,20^A0N,30,30^FD{Escape(labelValue)}^FS^XZ"));
-    }
+                    confirmedBytesWritten += written;
+                    remaining = remaining[written..];
+                }
+            }
 
-    private static string Escape(string labelValue)
-    {
-        return labelValue
-            .Replace("^", " ", StringComparison.Ordinal)
-            .Replace("~", " ", StringComparison.Ordinal);
+            cancellationToken.ThrowIfCancellationRequested();
+            connection.ShutdownSend();
+            return LabelPrinterDispatchResult.Sent(printJobId);
+        }
+        catch (OperationCanceledException exception) when (cancellationToken.IsCancellationRequested)
+        {
+            var attemptResult = confirmedBytesWritten > 0
+                ? LabelPrinterDispatchResult.DeliveryUnknown(
+                    printJobId,
+                    "TCP 写入已开始但未确认完整交付，禁止自动重试。")
+                : LabelPrinterDispatchResult.Failed("TCP 传输在首字节写入前失败。");
+            throw new LabelPrinterDispatchCanceledException(
+                attemptResult,
+                exception,
+                cancellationToken);
+        }
+        catch (Exception)
+        {
+            return confirmedBytesWritten > 0
+                ? LabelPrinterDispatchResult.DeliveryUnknown(
+                    printJobId,
+                    "TCP 写入已开始但未确认完整交付，禁止自动重试。")
+                : LabelPrinterDispatchResult.Failed("TCP 传输在首字节写入前失败。");
+        }
     }
 }
 
-public sealed class ConfiguredLabelPrinter(IOptions<LabelPrinterOptions> options, ZplTcpLabelPrinter zplPrinter)
+public sealed class ConfiguredLabelPrinter(
+    IOptions<LabelPrinterOptions> options,
+    ZplTcpLabelPrinter zplPrinter,
+    IHostEnvironment environment)
     : ILabelPrinter
 {
     public Task<LabelPrinterDispatchResult> PrintAsync(
         string printerId,
-        IReadOnlyCollection<string> labelValues,
+        IReadOnlyCollection<CompiledLabelDocument> documents,
         CancellationToken cancellationToken)
     {
         return options.Value.Mode.Trim().ToLowerInvariant() switch
         {
-            "zpl-tcp" => zplPrinter.PrintAsync(printerId, labelValues, cancellationToken),
-            "simulated" => Task.FromResult(LabelPrinterDispatchResult.Printed($"sim-{Guid.CreateVersion7():N}")),
-            _ => Task.FromResult(LabelPrinterDispatchResult.Failed("Label printer is disabled. Configure LabelPrinter:Mode as zpl-tcp or simulated.")),
+            "zpl-tcp" => zplPrinter.PrintAsync(printerId, documents, cancellationToken),
+            "simulated" when environment.IsDevelopment()
+                || string.Equals(environment.EnvironmentName, "Testing", StringComparison.Ordinal) =>
+                Task.FromResult(LabelPrinterDispatchResult.Sent($"sim-{Guid.CreateVersion7():N}")),
+            "simulated" => Task.FromResult(
+                LabelPrinterDispatchResult.Failed("模拟打印模式仅允许在 Development 或 Testing 环境使用。")),
+            _ => Task.FromResult(LabelPrinterDispatchResult.Failed("标签打印机未启用。")),
         };
     }
 }
