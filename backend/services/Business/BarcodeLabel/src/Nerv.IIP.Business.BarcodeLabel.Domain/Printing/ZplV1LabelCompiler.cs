@@ -124,11 +124,10 @@ public static class ZplV1LabelCompiler
         switch (barcodeType)
         {
             case PlainLabelBarcodeType.Code128:
-                EnsureCode128Data(value, "Code 128");
                 builder.Append("^BCN,")
                     .Append(field.Height.ToString(CultureInfo.InvariantCulture))
                     .Append(",Y,N,N,A^FD>:")
-                    .Append(value)
+                    .Append(EncodeForCode128(value))
                     .Append("^FS");
                 return;
             case PlainLabelBarcodeType.Qr:
@@ -171,11 +170,10 @@ public static class ZplV1LabelCompiler
     }
 
     private static string EncodeGs1ForCode128(Gs1BarcodeValue value, string separatorEscape) =>
-        EncodeGs1(value, separatorEscape, segment =>
-        {
-            EnsureCode128Data(segment, "GS1-128");
-            return segment;
-        });
+        EncodeGs1(value, separatorEscape, EncodeForCode128);
+
+    private static string EncodeForCode128(string value) =>
+        value.Replace(">", ">0", StringComparison.Ordinal);
 
     private static string EncodeGs1ForDataMatrix(Gs1BarcodeValue value, string separatorEscape) =>
         EncodeGs1(value, separatorEscape, EncodeForDataMatrix);
@@ -209,14 +207,6 @@ public static class ZplV1LabelCompiler
         }
 
         return builder.ToString();
-    }
-
-    private static void EnsureCode128Data(string value, string context)
-    {
-        if (value.Contains('>'))
-        {
-            throw StrictJson.Contract($"{context} data cannot contain the ZPL Code 128 control introducer '>'.");
-        }
     }
 
     private static void ValidateFixedDigits(string? value, int length, string name)
