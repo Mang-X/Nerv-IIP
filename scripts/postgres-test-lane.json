@@ -116,6 +116,10 @@
         "barcode"
       ],
       "expectedTestIdentities": [
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Canceled_attempt_facts_commit_outside_the_rolling_back_command_transaction",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Canceled_dispatch_preserves_the_original_cancellation_when_another_dispatch_committed_first",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Canceled_reprint_attempt_does_not_overwrite_facts_when_the_item_was_concurrently_voided",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Canceled_reprint_attempt_facts_commit_outside_the_rolling_back_command_transaction",
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Postgres_unique_conflicts_are_mapped_for_scan_natural_key_and_epcis_event"
       ]
     },
@@ -320,6 +324,7 @@
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_closed_period_stays_replayable_then_reopen_posts_machine_overhead_exactly_once",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_concurrent_report_and_actual_settlement_leave_only_actual_labor_active",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_fault_after_save_rolls_back_settlement_inbox_lineage_and_cost",
+        "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_machine_overhead_reads_translate_and_isolate_work_order_period_and_scope",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_migration_backfills_legacy_rate_and_enforces_revision_indexes",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_migration_enforces_gl_link_and_persists_reconciled_cost",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_nonzero_machine_overhead_still_fails_closed_for_priced_labor_in_another_currency",

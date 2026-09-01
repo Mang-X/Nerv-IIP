@@ -25,11 +25,16 @@ namespace Nerv.IIP.Business.BarcodeLabel.Web.Tests;
 public sealed class ScopedLabelLifecycleHttpTests
 {
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
+    private const string VariableSchemaJson =
+        """{"version":1,"variables":[{"name":"skuCode","type":"string","required":true,"maxLength":80}]}""";
+    private const string TemplateJson =
+        """{"format":"nerv-iip.label-template","version":1,"media":{"dpi":203,"widthDots":812,"heightDots":406},"fields":[{"kind":"text","x":40,"y":30,"fontHeight":30,"fontWidth":30,"variable":"skuCode"},{"kind":"barcode","x":40,"y":90,"moduleWidth":2,"height":100,"variable":"label.value"}]}""";
+    private static readonly string AssetSha256 = $"sha256:{new string('a', 64)}";
 
     [Fact]
     public async Task Scoped_dispatch_prints_only_the_batch_owned_by_the_required_scope()
     {
-        var printer = new RecordingPrinter(LabelPrinterDispatchResult.Printed("scoped-job-001"));
+        var printer = new RecordingPrinter(LabelPrinterDispatchResult.Sent("scoped-job-001"));
         await using var factory = CreateFactory(printer);
         var batch = await SeedBatchAsync(factory, "org-001", "env-dev", "dispatch-owned");
         using var client = CreateAuthenticatedClient(factory);
@@ -43,14 +48,14 @@ public sealed class ScopedLabelLifecycleHttpTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var result = JsonDocument.Parse(body);
         Assert.True(result.RootElement.GetProperty("success").GetBoolean(), body);
-        Assert.Equal("printed", await GetBatchStatusAsync(client, batch.Id));
+        Assert.Equal("sent-to-printer", await GetBatchStatusAsync(client, batch.Id));
         Assert.Single(printer.Requests);
     }
 
     [Fact]
     public async Task Scoped_reprint_prints_only_the_owned_item()
     {
-        var printer = new RecordingPrinter(LabelPrinterDispatchResult.Printed("scoped-reprint-001"));
+        var printer = new RecordingPrinter(LabelPrinterDispatchResult.Sent("scoped-reprint-001"));
         await using var factory = CreateFactory(printer);
         var batch = await SeedBatchAsync(factory, "org-001", "env-dev", "reprint-owned", printed: true);
         using var client = CreateAuthenticatedClient(factory);
@@ -65,14 +70,14 @@ public sealed class ScopedLabelLifecycleHttpTests
         using var result = JsonDocument.Parse(body);
         Assert.True(result.RootElement.GetProperty("success").GetBoolean(), body);
         var batchData = await GetBatchAsync(client, batch.Id);
-        Assert.Equal("reprinted", batchData.GetProperty("items")[0].GetProperty("status").GetString());
+        Assert.Equal("printed", batchData.GetProperty("items")[0].GetProperty("status").GetString());
         Assert.Single(printer.Requests);
     }
 
     [Fact]
     public async Task Scoped_void_changes_only_the_owned_item()
     {
-        var printer = new RecordingPrinter(LabelPrinterDispatchResult.Printed("unused"));
+        var printer = new RecordingPrinter(LabelPrinterDispatchResult.Sent("unused"));
         await using var factory = CreateFactory(printer);
         var batch = await SeedBatchAsync(factory, "org-001", "env-dev", "void-owned");
         using var client = CreateAuthenticatedClient(factory);
@@ -116,7 +121,7 @@ public sealed class ScopedLabelLifecycleHttpTests
         LifecycleOperation operation,
         string query)
     {
-        var printer = new RecordingPrinter(LabelPrinterDispatchResult.Printed("must-not-run"));
+        var printer = new RecordingPrinter(LabelPrinterDispatchResult.Sent("must-not-run"));
         await using var factory = CreateFactory(printer);
         var batch = await SeedBatchAsync(factory, "org-001", "env-dev", $"missing-scope-{operation}", printed: true);
         using var client = CreateAuthenticatedClient(factory);
@@ -139,7 +144,7 @@ public sealed class ScopedLabelLifecycleHttpTests
     [InlineData(LifecycleOperation.Void)]
     public async Task Scoped_lifecycle_hides_batches_owned_by_another_scope(LifecycleOperation operation)
     {
-        var printer = new RecordingPrinter(LabelPrinterDispatchResult.Printed("must-not-run"));
+        var printer = new RecordingPrinter(LabelPrinterDispatchResult.Sent("must-not-run"));
         await using var factory = CreateFactory(printer);
         var batch = await SeedBatchAsync(factory, "org-002", "env-dev", $"cross-scope-{operation}", printed: true);
         using var client = CreateAuthenticatedClient(factory);
@@ -167,7 +172,7 @@ public sealed class ScopedLabelLifecycleHttpTests
     [InlineData(LifecycleOperation.Void)]
     public async Task Scoped_lifecycle_uses_route_identifiers_when_body_identifiers_conflict(LifecycleOperation operation)
     {
-        var printer = new RecordingPrinter(LabelPrinterDispatchResult.Printed($"route-wins-{operation}"));
+        var printer = new RecordingPrinter(LabelPrinterDispatchResult.Sent($"route-wins-{operation}"));
         await using var factory = CreateFactory(printer);
         var routeBatch = await SeedBatchAsync(
             factory,
@@ -199,8 +204,8 @@ public sealed class ScopedLabelLifecycleHttpTests
         var routeAfter = await GetBatchAsync(client, routeBatch.Id);
         var expectedStatus = operation switch
         {
-            LifecycleOperation.Dispatch => "printed",
-            LifecycleOperation.Reprint => "reprinted",
+            LifecycleOperation.Dispatch => "sent-to-printer",
+            LifecycleOperation.Reprint => "printed",
             LifecycleOperation.Void => "voided",
             _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null),
         };
@@ -249,7 +254,7 @@ public sealed class ScopedLabelLifecycleHttpTests
     [InlineData(LifecycleOperation.Void)]
     public async Task Legacy_v1_lifecycle_keeps_working_without_scope_query(LifecycleOperation operation)
     {
-        var printer = new RecordingPrinter(LabelPrinterDispatchResult.Printed($"legacy-{operation}"));
+        var printer = new RecordingPrinter(LabelPrinterDispatchResult.Sent($"legacy-{operation}"));
         await using var factory = CreateFactory(printer);
         var batch = await SeedBatchAsync(
             factory,
@@ -288,8 +293,10 @@ public sealed class ScopedLabelLifecycleHttpTests
                     services.RemoveAll<IDbContextOptionsConfiguration<ApplicationDbContext>>();
                     services.RemoveAll<IIntegrationEventPublisher>();
                     services.RemoveAll<ILabelPrinter>();
+                    services.RemoveAll<ILabelTemplateAssetPort>();
                     services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
                     services.AddSingleton(printer);
+                    services.AddSingleton<ILabelTemplateAssetPort, FixedTemplateAssetPort>();
                     services.AddDbContext<ApplicationDbContext>(options => options
                         .UseInMemoryDatabase(databaseName)
                         .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
@@ -316,15 +323,29 @@ public sealed class ScopedLabelLifecycleHttpTests
             "none",
             ["wms.inbound"],
             "active");
+        var template = LabelTemplate.Create(
+            organizationId,
+            environmentId,
+            $"TEMPLATE-{Guid.CreateVersion7():N}",
+            "Lifecycle test template",
+            "file-template-001",
+            VariableSchemaJson,
+            "active");
         var batch = LabelPrintBatch.Create(
             organizationId,
             environmentId,
             rule,
-            new LabelTemplateId(Guid.CreateVersion7()),
+            template.Id,
+            new LabelPrintBatchSnapshot(
+                template.TemplateFileId,
+                AssetSha256,
+                VariableSchemaJson,
+                rule.BarcodeType,
+                ZplV1LabelCompiler.ContractVersion),
             "wms.inbound",
             "ASN-001",
             idempotencyKey,
-            "{}",
+            """{"skuCode":"SKU-FG-1000"}""",
             1);
         if (printed)
         {
@@ -332,7 +353,7 @@ public sealed class ScopedLabelLifecycleHttpTests
             batch.RecordPrinted();
         }
 
-        dbContext.AddRange(rule, batch);
+        dbContext.AddRange(rule, template, batch);
         await dbContext.SaveChangesAsync();
         return batch;
     }
@@ -427,22 +448,32 @@ public sealed class ScopedLabelLifecycleHttpTests
 
         public Task<LabelPrinterDispatchResult> PrintAsync(
             string printerId,
-            IReadOnlyCollection<string> labelValues,
+            IReadOnlyCollection<CompiledLabelDocument> documents,
             CancellationToken cancellationToken)
         {
-            Requests.Add(new PrintRequest(printerId, labelValues.ToArray()));
+            Requests.Add(new PrintRequest(
+                printerId,
+                documents.Select(document => document.Payload.ToArray()).ToArray()));
             return Task.FromResult(result);
         }
     }
 
-    private sealed record PrintRequest(string PrinterId, IReadOnlyCollection<string> LabelValues);
+    private sealed record PrintRequest(string PrinterId, IReadOnlyCollection<byte[]> Documents);
 
     private sealed class ThrowingPrinter(string message) : ILabelPrinter
     {
         public Task<LabelPrinterDispatchResult> PrintAsync(
             string printerId,
-            IReadOnlyCollection<string> labelValues,
+            IReadOnlyCollection<CompiledLabelDocument> documents,
             CancellationToken cancellationToken) => throw new InvalidOperationException(message);
+    }
+
+    private sealed class FixedTemplateAssetPort : ILabelTemplateAssetPort
+    {
+        public Task<VerifiedLabelTemplateAsset> GetVerifiedAsync(
+            LabelTemplateAssetReference reference,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new VerifiedLabelTemplateAsset(reference.FileId, AssetSha256, TemplateJson));
     }
 
     public enum LifecycleOperation

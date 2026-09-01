@@ -1,5 +1,9 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.Extensions.DependencyInjection;
+using NetCorePal.Extensions.DependencyInjection;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.BarcodeLabel.Domain;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
@@ -7,7 +11,9 @@ using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggre
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.ScanRecordAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.TraceabilityAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Domain.Printing;
 using Nerv.IIP.Business.BarcodeLabel.Infrastructure;
+using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.PrintBatches;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Queries.Resolutions;
 using Npgsql;
 
@@ -18,6 +24,158 @@ public sealed class BarcodeLabelPostgresProfileTests
     private const string PostgresConnectionStringEnvironmentVariable = "NERV_IIP_TEST_POSTGRES";
 
     [RealPostgresFact]
+    public async Task Canceled_attempt_facts_commit_outside_the_rolling_back_command_transaction()
+    {
+        await ResetAndMigrateSchemaAsync();
+        using var cancellation = new CancellationTokenSource();
+        var printer = new CancelingLabelPrinter(cancellation);
+        await using var provider = CreateCommandProvider(printer);
+        var batchId = await AddReplayableBatchAsync(provider, "idem-independent-attempt", markSent: false);
+
+        await using (var commandScope = provider.CreateAsyncScope())
+        {
+            var sender = commandScope.ServiceProvider.GetRequiredService<ISender>();
+            var exception = await Assert.ThrowsAsync<LabelPrinterDispatchCanceledException>(() => sender.Send(
+                new ScopedDispatchLabelPrintBatchCommand(
+                    batchId,
+                    "org-001",
+                    "env-dev",
+                    "printer-independent"),
+                cancellation.Token));
+            Assert.Same(printer.ThrownCancellation, exception);
+            Assert.Same(printer.OriginalCancellation, exception.InnerException);
+        }
+
+        await using var verificationScope = provider.CreateAsyncScope();
+        var verificationDb = verificationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var persisted = await verificationDb.LabelPrintBatches.SingleAsync(batch => batch.Id == batchId);
+        Assert.Equal("failed", persisted.Status);
+        Assert.Equal("printer-independent", persisted.PrinterId);
+        Assert.Null(persisted.PrintJobId);
+        Assert.Equal("调用方取消前未写入首字节。", persisted.FailureReason);
+    }
+
+    [RealPostgresFact]
+    public async Task Canceled_dispatch_preserves_the_original_cancellation_when_another_dispatch_committed_first()
+    {
+        await ResetAndMigrateSchemaAsync();
+        using var cancellation = new CancellationTokenSource();
+        var printer = new MutatingCancelingLabelPrinter(
+            cancellation,
+            async () =>
+            {
+                await using var concurrentDb = CreatePostgresDbContext(LaneConnectionString);
+                var concurrentBatch = await concurrentDb.LabelPrintBatches
+                    .SingleAsync(batch => batch.IdempotencyKey == "idem-concurrent-dispatch");
+                concurrentBatch.RecordSentToPrinter("printer-concurrent", "concurrent-job");
+                await concurrentDb.SaveChangesAsync();
+            });
+        await using var provider = CreateCommandProvider(printer);
+        var batchId = await AddReplayableBatchAsync(provider, "idem-concurrent-dispatch", markSent: false);
+
+        await using (var commandScope = provider.CreateAsyncScope())
+        {
+            var sender = commandScope.ServiceProvider.GetRequiredService<ISender>();
+            var exception = await Assert.ThrowsAsync<LabelPrinterDispatchCanceledException>(() => sender.Send(
+                new ScopedDispatchLabelPrintBatchCommand(
+                    batchId,
+                    "org-001",
+                    "env-dev",
+                    "printer-canceled"),
+                cancellation.Token));
+            Assert.Same(printer.ThrownCancellation, exception);
+            Assert.Same(printer.OriginalCancellation, exception.InnerException);
+        }
+
+        await using var verificationScope = provider.CreateAsyncScope();
+        var verificationDb = verificationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var persisted = await verificationDb.LabelPrintBatches.SingleAsync(batch => batch.Id == batchId);
+        Assert.Equal("sent-to-printer", persisted.Status);
+        Assert.Equal("printer-concurrent", persisted.PrinterId);
+        Assert.Equal("concurrent-job", persisted.PrintJobId);
+        Assert.Null(persisted.FailureReason);
+    }
+
+    [RealPostgresFact]
+    public async Task Canceled_reprint_attempt_facts_commit_outside_the_rolling_back_command_transaction()
+    {
+        await ResetAndMigrateSchemaAsync();
+        using var cancellation = new CancellationTokenSource();
+        var printer = new CancelingLabelPrinter(cancellation);
+        await using var provider = CreateCommandProvider(printer);
+        var batchId = await AddReplayableBatchAsync(provider, "idem-independent-reprint", markSent: true);
+
+        await using (var commandScope = provider.CreateAsyncScope())
+        {
+            var sender = commandScope.ServiceProvider.GetRequiredService<ISender>();
+            var exception = await Assert.ThrowsAsync<LabelPrinterDispatchCanceledException>(() => sender.Send(
+                new ScopedReprintLabelCommand(
+                    batchId,
+                    1,
+                    "org-001",
+                    "env-dev",
+                    "printer-reprint-independent"),
+                cancellation.Token));
+            Assert.Same(printer.ThrownCancellation, exception);
+            Assert.Same(printer.OriginalCancellation, exception.InnerException);
+        }
+
+        await using var verificationScope = provider.CreateAsyncScope();
+        var verificationDb = verificationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var persisted = await verificationDb.LabelPrintBatches.SingleAsync(batch => batch.Id == batchId);
+        Assert.Equal("sent-to-printer", persisted.Status);
+        Assert.Equal("printer-reprint-independent", persisted.PrinterId);
+        Assert.Null(persisted.PrintJobId);
+        Assert.Equal("调用方取消前未写入首字节。", persisted.FailureReason);
+    }
+
+    [RealPostgresFact]
+    public async Task Canceled_reprint_attempt_does_not_overwrite_facts_when_the_item_was_concurrently_voided()
+    {
+        await ResetAndMigrateSchemaAsync();
+        using var cancellation = new CancellationTokenSource();
+        var printer = new MutatingCancelingLabelPrinter(
+            cancellation,
+            async () =>
+            {
+                await using var concurrentDb = CreatePostgresDbContext(LaneConnectionString);
+                var concurrentBatch = await concurrentDb.LabelPrintBatches
+                    .Include(batch => batch.Items)
+                    .SingleAsync(batch => batch.IdempotencyKey == "idem-concurrent-void-reprint");
+                concurrentBatch.VoidItem(1, "打印期间并发作废。");
+                await concurrentDb.SaveChangesAsync();
+            });
+        await using var provider = CreateCommandProvider(printer);
+        var batchId = await AddReplayableBatchAsync(provider, "idem-concurrent-void-reprint", markSent: true);
+
+        await using (var commandScope = provider.CreateAsyncScope())
+        {
+            var sender = commandScope.ServiceProvider.GetRequiredService<ISender>();
+            var exception = await Assert.ThrowsAsync<LabelPrinterDispatchCanceledException>(() => sender.Send(
+                new ScopedReprintLabelCommand(
+                    batchId,
+                    1,
+                    "org-001",
+                    "env-dev",
+                    "printer-must-not-overwrite"),
+                cancellation.Token));
+            Assert.Same(printer.ThrownCancellation, exception);
+            Assert.Same(printer.OriginalCancellation, exception.InnerException);
+        }
+
+        await using var verificationScope = provider.CreateAsyncScope();
+        var verificationDb = verificationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var persisted = await verificationDb.LabelPrintBatches
+            .Include(batch => batch.Items)
+            .SingleAsync(batch => batch.Id == batchId);
+        Assert.Equal("sent-to-printer", persisted.Status);
+        Assert.Equal("printer-original", persisted.PrinterId);
+        Assert.Equal("initial-job", persisted.PrintJobId);
+        Assert.Null(persisted.FailureReason);
+        Assert.Equal("voided", persisted.Items.Single().Status);
+    }
+
+    [RealPostgresFact]
     public async Task Postgres_unique_conflicts_are_mapped_for_scan_natural_key_and_epcis_event()
     {
         await ResetBarcodeLabelSchemaAsync();
@@ -25,12 +183,63 @@ public sealed class BarcodeLabelPostgresProfileTests
         await using (var dbContext = CreatePostgresDbContext(LaneConnectionString))
         {
             AssertUsesGovernedDatabase(dbContext);
+            await dbContext.GetService<IMigrator>().MigrateAsync("20260710035759_AddPrintLifecycleAndPrinterTransport");
+            var legacyBatchId = Guid.CreateVersion7();
+            var legacyLabelValues = "{}";
+            await dbContext.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO barcode.label_print_batches (
+                    id, organization_id, environment_id, barcode_rule_id, label_template_id,
+                    source_document_type, source_document_id, idempotency_key, label_values_json,
+                    requested_quantity, status, created_at_utc)
+                VALUES (
+                    {legacyBatchId}, 'org-legacy', 'env-legacy', {Guid.CreateVersion7()}, {Guid.CreateVersion7()},
+                    'legacy', 'LEGACY-001', 'legacy-batch', {legacyLabelValues}, 1, 'pending', {DateTimeOffset.UtcNow})
+                """);
             await dbContext.Database.MigrateAsync();
+
+            var legacy = await dbContext.LabelPrintBatches
+                .AsNoTracking()
+                .SingleAsync(batch => batch.Id == new LabelPrintBatchId(legacyBatchId));
+            Assert.Null(legacy.TemplateFileIdSnapshot);
+            Assert.Null(legacy.TemplateAssetSha256);
+            Assert.Null(legacy.VariableSchemaJsonSnapshot);
+            Assert.Null(legacy.BarcodeTypeSnapshot);
+            Assert.Null(legacy.RendererContractVersion);
+
+            var replayRule = BarcodeRule.Create(
+                "org-replay", "env-replay", "FG-REPLAY", "code128", "R", 40, "none", ["work-order"], "active");
+            var replayBatch = LabelPrintBatch.Create(
+                "org-replay",
+                "env-replay",
+                replayRule,
+                new LabelTemplateId(Guid.CreateVersion7()),
+                new LabelPrintBatchSnapshot(
+                    "file-template-replay",
+                    $"sha256:{new string('a', 64)}",
+                    """{"version":1,"variables":[]}""",
+                    "code128",
+                    "zpl-v1"),
+                "work-order",
+                "WO-REPLAY",
+                "replay-batch",
+                "{}",
+                1);
+            dbContext.AddRange(replayRule, replayBatch);
+            await dbContext.SaveChangesAsync();
+
+            var constraintFailure = await Assert.ThrowsAsync<PostgresException>(() =>
+                dbContext.Database.ExecuteSqlInterpolatedAsync($"""
+                    UPDATE barcode.label_print_batches
+                    SET template_file_id_snapshot = NULL
+                    WHERE id = {replayBatch.Id.Id}
+                    """));
+            Assert.Equal(PostgresErrorCodes.CheckViolation, constraintFailure.SqlState);
+
             var rule = BarcodeRule.Create("org-001", "env-dev", "FG-A", "code128", "FGA", 40, "none", ["work-order"], "active");
             var template = LabelTemplate.Create("org-001", "env-dev", "tpl-a", "Template A", "file-a", "{}", "active");
-            var first = LabelPrintBatch.Create("org-001", "env-dev", rule, template.Id, "work-order", "WO-001", "batch-a", "{}", 1);
-            var second = LabelPrintBatch.Create("org-001", "env-dev", rule, template.Id, "work-order", "WO001", "batch-b", "{}", 1);
-            var unique = LabelPrintBatch.Create("org-001", "env-dev", rule, template.Id, "work-order", "WO-UNIQUE", "batch-unique", "{}", 1);
+            var first = LabelPrintBatch.CreateLegacyWithoutReplaySnapshot("org-001", "env-dev", rule, template.Id, "work-order", "WO-001", "batch-a", "{}", 1);
+            var second = LabelPrintBatch.CreateLegacyWithoutReplaySnapshot("org-001", "env-dev", rule, template.Id, "work-order", "WO001", "batch-b", "{}", 1);
+            var unique = LabelPrintBatch.CreateLegacyWithoutReplaySnapshot("org-001", "env-dev", rule, template.Id, "work-order", "WO-UNIQUE", "batch-unique", "{}", 1);
             Assert.Equal(first.Items.Single().LabelValue, second.Items.Single().LabelValue);
             dbContext.AddRange(rule, template, first, second, unique);
             await dbContext.SaveChangesAsync();
@@ -95,6 +304,123 @@ public sealed class BarcodeLabelPostgresProfileTests
             .Options;
 
         return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private static async Task ResetAndMigrateSchemaAsync()
+    {
+        await ResetBarcodeLabelSchemaAsync();
+        await using var migrationDb = CreatePostgresDbContext(LaneConnectionString);
+        AssertUsesGovernedDatabase(migrationDb);
+        await migrationDb.Database.MigrateAsync();
+    }
+
+    private static ServiceProvider CreateCommandProvider(ILabelPrinter printer)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddMediatR(configuration => configuration
+            .RegisterServicesFromAssembly(typeof(DispatchLabelPrintBatchCommand).Assembly)
+            .AddUnitOfWorkBehaviors());
+        services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(
+            LaneConnectionString,
+            npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", BarcodeLabelFacts.Schema)));
+        services.AddUnitOfWork<ApplicationDbContext>();
+        services.AddScoped<ILabelPrintAttemptRecorder, IndependentLabelPrintAttemptRecorder>();
+        services.AddSingleton<ILabelTemplateAssetPort>(new FixedTemplateAssetPort());
+        services.AddSingleton(printer);
+        return services.BuildServiceProvider();
+    }
+
+    private static async Task<LabelPrintBatchId> AddReplayableBatchAsync(
+        ServiceProvider provider,
+        string idempotencyKey,
+        bool markSent)
+    {
+        await using var setupScope = provider.CreateAsyncScope();
+        var setupDb = setupScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var rule = BarcodeRule.Create(
+            "org-001", "env-dev", "FG", "code128", "FG", 40, "none", ["wms.inbound"], "active");
+        var template = LabelTemplate.Create(
+            "org-001", "env-dev", "FG_BOX", "Finished goods box", "file-template-001",
+            """{"version":1,"variables":[{"name":"skuCode","type":"string","required":true,"maxLength":80}]}""", "active");
+        var batch = LabelPrintBatch.Create(
+            "org-001",
+            "env-dev",
+            rule,
+            template.Id,
+            new LabelPrintBatchSnapshot(
+                "file-template-001",
+                $"sha256:{new string('a', 64)}",
+                """{"version":1,"variables":[{"name":"skuCode","type":"string","required":true,"maxLength":80}]}""",
+                "code128",
+                "zpl-v1"),
+            "wms.inbound",
+            "ASN-INDEPENDENT-ATTEMPT",
+            idempotencyKey,
+            """{"skuCode":"SKU-FG-1000"}""",
+            1);
+        if (markSent)
+        {
+            batch.RecordSentToPrinter("printer-original", "initial-job");
+        }
+
+        setupDb.AddRange(template, batch);
+        await setupDb.SaveChangesAsync();
+        return batch.Id;
+    }
+
+    private sealed class FixedTemplateAssetPort : ILabelTemplateAssetPort
+    {
+        public Task<VerifiedLabelTemplateAsset> GetVerifiedAsync(
+            LabelTemplateAssetReference reference,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new VerifiedLabelTemplateAsset(
+                reference.FileId,
+                $"sha256:{new string('a', 64)}",
+                """{"format":"nerv-iip.label-template","version":1,"media":{"dpi":203,"widthDots":812,"heightDots":406},"fields":[{"kind":"text","x":40,"y":30,"fontHeight":30,"fontWidth":30,"variable":"skuCode"},{"kind":"barcode","x":40,"y":90,"moduleWidth":2,"height":100,"variable":"label.value"}]}"""));
+    }
+
+    private sealed class CancelingLabelPrinter(CancellationTokenSource cancellation) : ILabelPrinter
+    {
+        public OperationCanceledException? OriginalCancellation { get; private set; }
+        public LabelPrinterDispatchCanceledException? ThrownCancellation { get; private set; }
+
+        public Task<LabelPrinterDispatchResult> PrintAsync(
+            string printerId,
+            IReadOnlyCollection<CompiledLabelDocument> documents,
+            CancellationToken cancellationToken)
+        {
+            cancellation.Cancel();
+            OriginalCancellation = new OperationCanceledException(cancellation.Token);
+            ThrownCancellation = new LabelPrinterDispatchCanceledException(
+                LabelPrinterDispatchResult.Failed("调用方取消前未写入首字节。"),
+                OriginalCancellation,
+                cancellation.Token);
+            throw ThrownCancellation;
+        }
+    }
+
+    private sealed class MutatingCancelingLabelPrinter(
+        CancellationTokenSource cancellation,
+        Func<Task> mutateAsync) : ILabelPrinter
+    {
+        public OperationCanceledException? OriginalCancellation { get; private set; }
+        public LabelPrinterDispatchCanceledException? ThrownCancellation { get; private set; }
+
+        public async Task<LabelPrinterDispatchResult> PrintAsync(
+            string printerId,
+            IReadOnlyCollection<CompiledLabelDocument> documents,
+            CancellationToken cancellationToken)
+        {
+            await mutateAsync();
+            cancellation.Cancel();
+            OriginalCancellation = new OperationCanceledException(cancellation.Token);
+            ThrownCancellation = new LabelPrinterDispatchCanceledException(
+                LabelPrinterDispatchResult.Failed("调用方取消前未写入首字节。"),
+                OriginalCancellation,
+                cancellation.Token);
+            throw ThrownCancellation;
+        }
     }
 
     private static ScanRecord NewPlainInventoryScan(string idempotencyKey)

@@ -300,6 +300,10 @@ try {
 
     $smallServiceMembers = @(
         @{ id = 'barcodelabel-postgres-profile'; service = 'BarcodeLabel'; schema = 'barcode'; identities = @(
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Canceled_attempt_facts_commit_outside_the_rolling_back_command_transaction',
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Canceled_dispatch_preserves_the_original_cancellation_when_another_dispatch_committed_first',
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Canceled_reprint_attempt_does_not_overwrite_facts_when_the_item_was_concurrently_voided',
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Canceled_reprint_attempt_facts_commit_outside_the_rolling_back_command_transaction',
                 'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Postgres_unique_conflicts_are_mapped_for_scan_natural_key_and_epcis_event')
             source = 'backend/services/Business/BarcodeLabel/tests/Nerv.IIP.Business.BarcodeLabel.Web.Tests/BarcodeLabelPostgresProfileTests.cs'
             innerDatabaseFactory = 'TemporaryPostgresDatabase.CreateAsync' },
@@ -534,7 +538,7 @@ try {
         Assert-Contract (-not $redisCapIdentities.Contains($frozenIdentityKey)) 'No identity may be owned by both the postgres and redis-cap lanes.'
     }
     $erpMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'erp-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 16) 'The ERP member must freeze exactly its sixteen PostgreSQL identities.'
+    Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 17) 'The ERP member must freeze exactly its seventeen PostgreSQL identities.'
     Assert-Contract ([string]::Equals([string]$erpMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) 'ERP keeps runner-owned databases for failure diagnostics.'
     $acceptanceMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'acceptance-postgres-profile' -RepositoryRoot $repoRoot
     Assert-Contract (@($acceptanceMember.expectedTestIdentities).Count -eq 3) 'The cross-service acceptance member must freeze exactly its three PostgreSQL identities.'
