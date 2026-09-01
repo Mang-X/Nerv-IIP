@@ -26782,6 +26782,190 @@
         ]
       }
     },
+    "/api/business-console/v1/erp/finance/work-order-costs/{workOrderId}": {
+      "get": {
+        "tags": [
+          "Business Console ERP",
+          "Api"
+        ],
+        "operationId": "getBusinessConsoleErpWorkOrderCostVariance",
+        "parameters": [
+          {
+            "name": "workOrderId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pageNumber",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1,
+              "nullable": false
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 50,
+              "nullable": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpWorkOrderCostVarianceResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v1/erp/finance/work-center-machine-overhead-reconciliations": {
+      "get": {
+        "tags": [
+          "Business Console ERP",
+          "Api"
+        ],
+        "operationId": "listBusinessConsoleErpWorkCenterMachineOverheadReconciliations",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "accountingPeriodCode",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "workCenterId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "pageNumber",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1,
+              "nullable": false
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 50,
+              "nullable": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpMachineOverheadReconciliationListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/erp/procurement/rfqs": {
       "get": {
         "tags": [
@@ -57632,6 +57816,685 @@
         }
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpListRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpWorkOrderCostVarianceResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkOrderCostVarianceResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkOrderCostVarianceResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "actualMachineHours",
+          "machineCostStatus",
+          "machineCostUnavailableReason",
+          "machineCurrencyCode",
+          "appliedFixedMachineOverhead",
+          "appliedVariableMachineOverhead",
+          "appliedMachineOverheadTotal",
+          "machineOverheadPageNumber",
+          "machineOverheadPageSize",
+          "totalMachineOverheadOperations",
+          "machineOverheadOperations"
+        ],
+        "properties": {
+          "organizationId": {
+            "type": "string"
+          },
+          "environmentId": {
+            "type": "string"
+          },
+          "workOrderId": {
+            "type": "string"
+          },
+          "currencyCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "laborCostBasis": {
+            "type": "string"
+          },
+          "laborVarianceStatus": {
+            "type": "string"
+          },
+          "unavailableReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "actualLaborHours": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "actualLaborCost": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "standardLaborHours": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "standardLaborCost": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "laborEfficiencyVarianceHours": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "laborEfficiencyVarianceAmount": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "laborEfficiencyVarianceDirection": {
+            "type": "string",
+            "nullable": true
+          },
+          "laborRateVarianceStatus": {
+            "type": "string"
+          },
+          "laborRateVarianceReason": {
+            "type": "string"
+          },
+          "materialCost": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "totalAccumulatedCost": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "capitalizedCost": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "capitalizationVarianceAmount": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "actualMachineHours": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "machineCostStatus": {
+            "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMachineOverheadReadStatus"
+          },
+          "machineCostUnavailableReason": {
+            "type": "string",
+            "minLength": 1,
+            "nullable": true
+          },
+          "machineCurrencyCode": {
+            "type": "string",
+            "minLength": 1,
+            "nullable": true
+          },
+          "pageNumber": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pageSize": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalOperations": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpOperationLaborVarianceItem"
+            }
+          },
+          "appliedFixedMachineOverhead": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "appliedVariableMachineOverhead": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "appliedMachineOverheadTotal": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "machineOverheadPageNumber": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "machineOverheadPageSize": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalMachineOverheadOperations": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "machineOverheadOperations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpOperationMachineOverheadItem"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMachineOverheadReadStatus": {
+        "type": "string",
+        "description": "",
+        "x-enumNames": [
+          "Available",
+          "NotApplicable",
+          "Unavailable"
+        ],
+        "enum": [
+          "available",
+          "notApplicable",
+          "unavailable"
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpOperationLaborVarianceItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operationTaskId": {
+            "type": "string"
+          },
+          "workCenterId": {
+            "type": "string"
+          },
+          "settlementRevision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "status": {
+            "type": "string"
+          },
+          "unavailableReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "actualLaborTicks": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "actualLaborHours": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "actualLaborCost": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "standardLaborHours": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "standardLaborCost": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "laborEfficiencyVarianceHours": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "laborEfficiencyVarianceAmount": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "laborEfficiencyVarianceDirection": {
+            "type": "string",
+            "nullable": true
+          },
+          "currencyCode": {
+            "type": "string"
+          },
+          "workCenterCostRateId": {
+            "type": "string"
+          },
+          "rateRevision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "hourlyRate": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "rateBasis": {
+            "type": "string"
+          },
+          "rateBasisAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "coveredReports": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpCoveredLaborReportItem"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpCoveredLaborReportItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "reportNo": {
+            "type": "string"
+          },
+          "goodQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "scrapQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "reworkQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "uomCode": {
+            "type": "string"
+          },
+          "theoreticalRatePerHour": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "reportedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "isReversal": {
+            "type": "boolean"
+          },
+          "reversedReportNo": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpOperationMachineOverheadItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "operationTaskId",
+          "workCenterId",
+          "settlementId",
+          "settlementRevision",
+          "status",
+          "unavailableReason",
+          "actualMachineHours",
+          "appliedFixedMachineOverhead",
+          "appliedVariableMachineOverhead",
+          "appliedMachineOverheadTotal",
+          "accountingPeriodCode",
+          "currencyCode",
+          "workCenterMachineOverheadRateId",
+          "rateRevision",
+          "completedAtUtc",
+          "sourceEventId"
+        ],
+        "properties": {
+          "operationTaskId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workCenterId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "settlementId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "settlementRevision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "status": {
+            "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMachineOverheadReadStatus"
+          },
+          "unavailableReason": {
+            "type": "string",
+            "minLength": 1,
+            "nullable": true
+          },
+          "actualMachineHours": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "appliedFixedMachineOverhead": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "appliedVariableMachineOverhead": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "appliedMachineOverheadTotal": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "accountingPeriodCode": {
+            "type": "string",
+            "minLength": 1
+          },
+          "currencyCode": {
+            "type": "string",
+            "minLength": 1
+          },
+          "deviceAssetId": {
+            "type": "string",
+            "nullable": true
+          },
+          "machineTimeBasisCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "workCenterMachineOverheadRateId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "rateRevision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "completedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "minLength": 1
+          },
+          "sourceEventId": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleGetErpWorkOrderCostVarianceRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpMachineOverheadReconciliationListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpMachineOverheadReconciliationListResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpMachineOverheadReconciliationListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "pageNumber",
+          "pageSize",
+          "totalCount",
+          "items",
+          "accountingPeriodStatus",
+          "reconciliationStatus",
+          "reconciliationUnavailableReason"
+        ],
+        "properties": {
+          "organizationId": {
+            "type": "string"
+          },
+          "environmentId": {
+            "type": "string"
+          },
+          "accountingPeriodCode": {
+            "type": "string"
+          },
+          "workCenterId": {
+            "type": "string",
+            "nullable": true
+          },
+          "pageNumber": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pageSize": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpMachineOverheadReconciliationItem"
+            }
+          },
+          "accountingPeriodStatus": {
+            "type": "string",
+            "minLength": 1,
+            "nullable": true
+          },
+          "reconciliationStatus": {
+            "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMachineOverheadReadStatus"
+          },
+          "reconciliationUnavailableReason": {
+            "type": "string",
+            "minLength": 1,
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpMachineOverheadReconciliationItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "workCenterId",
+          "accountingPeriodCode",
+          "revision",
+          "rateRevision",
+          "currencyCode",
+          "actualFixedOverheadAmount",
+          "actualVariableOverheadAmount",
+          "actualTotalOverheadAmount",
+          "appliedMachineTicks",
+          "appliedMachineHours",
+          "appliedFixedAmount",
+          "appliedVariableAmount",
+          "appliedTotalAmount",
+          "appliedRoundingDifferenceAmount",
+          "underOverAppliedFixedAmount",
+          "underOverAppliedVariableAmount",
+          "underOverAppliedTotalAmount",
+          "unallocatedFixedOverheadAmount",
+          "overAppliedFixedOverheadAmount",
+          "abnormalDowntimeTicks",
+          "abnormalDowntimeHours",
+          "abnormalDowntimeDisposition",
+          "isReadyForClose",
+          "reconciliationStatus",
+          "unavailableReason",
+          "recordedBy",
+          "sourceReference",
+          "reason",
+          "recordedAtUtc"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workCenterId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "accountingPeriodCode": {
+            "type": "string",
+            "minLength": 1
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "rateRevision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "currencyCode": {
+            "type": "string",
+            "minLength": 1
+          },
+          "actualFixedOverheadAmount": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "actualVariableOverheadAmount": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "actualTotalOverheadAmount": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "appliedMachineTicks": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "appliedMachineHours": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "appliedFixedAmount": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "appliedVariableAmount": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "appliedTotalAmount": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "appliedRoundingDifferenceAmount": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "underOverAppliedFixedAmount": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "underOverAppliedVariableAmount": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "underOverAppliedTotalAmount": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "unallocatedFixedOverheadAmount": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "overAppliedFixedOverheadAmount": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "abnormalDowntimeTicks": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "abnormalDowntimeHours": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "abnormalDowntimeDisposition": {
+            "type": "string",
+            "minLength": 1
+          },
+          "isReadyForClose": {
+            "type": "boolean"
+          },
+          "reconciliationStatus": {
+            "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMachineOverheadReadStatus"
+          },
+          "unavailableReason": {
+            "type": "string",
+            "minLength": 1,
+            "nullable": true
+          },
+          "recordedBy": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sourceReference": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "recordedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "minLength": 1
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListErpMachineOverheadReconciliationsRequest": {
         "type": "object",
         "additionalProperties": false
       },

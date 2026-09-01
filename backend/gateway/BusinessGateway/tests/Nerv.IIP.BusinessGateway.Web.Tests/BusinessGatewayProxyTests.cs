@@ -14235,7 +14235,8 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
     ];
 
     public Func<BusinessConsoleWorkerDirectoryRequest, CancellationToken, Task<BusinessConsoleWorkerDirectoryResponse>>?
-        ListWorkersHandler { get; set; }
+        ListWorkersHandler
+    { get; set; }
 
     public IReadOnlyCollection<BusinessConsoleTeamMemberItem> TeamMembers { get; set; } =
     [
@@ -16575,6 +16576,18 @@ internal sealed class RecordingErpClient : IBusinessErpClient
                     true),
             ]));
     }
+
+    public Task<BusinessConsoleErpWorkOrderCostVarianceResponse> GetWorkOrderCostVarianceAsync(
+        string internalBearerToken,
+        BusinessConsoleGetErpWorkOrderCostVarianceRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException("Use the concrete ERP HTTP client for machine-overhead contract tests.");
+
+    public Task<BusinessConsoleErpMachineOverheadReconciliationListResponse> ListMachineOverheadReconciliationsAsync(
+        string internalBearerToken,
+        BusinessConsoleListErpMachineOverheadReconciliationsRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException("Use the concrete ERP HTTP client for machine-overhead contract tests.");
 
     public Task<BusinessConsoleCreateErpPurchaseRequisitionResponse> CreatePurchaseRequisitionFromSuggestionAsync(
         string internalBearerToken,
