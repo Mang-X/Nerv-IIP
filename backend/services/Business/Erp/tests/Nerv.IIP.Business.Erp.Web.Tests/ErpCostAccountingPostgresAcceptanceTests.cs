@@ -248,7 +248,7 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
 
         var workOrder = await new GetWorkOrderCostVarianceQueryHandler(db).Handle(
             new("org-read", "env-read", "WO-SAME"), CancellationToken.None);
-        Assert.Equal("available", workOrder.MachineCostStatus);
+        Assert.Equal(MachineOverheadReadStatus.Available, workOrder.MachineCostStatus);
         Assert.Equal(2m, workOrder.ActualMachineHours);
         Assert.Equal(60m, workOrder.AppliedFixedMachineOverhead);
         Assert.Equal(20m, workOrder.AppliedVariableMachineOverhead);
@@ -264,7 +264,7 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         var periodRead = await new ListWorkCenterMachineOverheadReconciliationsQueryHandler(db).Handle(
             new("org-read", "env-read", "2026-08", "WC-READ"), CancellationToken.None);
         Assert.Equal("open", periodRead.AccountingPeriodStatus);
-        Assert.Equal("available", periodRead.ReconciliationStatus);
+        Assert.Equal(MachineOverheadReadStatus.Available, periodRead.ReconciliationStatus);
         var item = Assert.Single(periodRead.Items);
         Assert.Equal(reconciliation.Id.ToString(), item.Id);
         Assert.NotEqual(otherEnvironmentReconciliation.Id.ToString(), item.Id);
@@ -736,7 +736,7 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         Assert.Equal(2.000000m, read.ActualLaborHours);
         Assert.Null(read.LaborEfficiencyVarianceAmount);
         Assert.Equal(2.000000m, read.ActualMachineHours);
-        Assert.Equal("available", read.MachineCostStatus);
+        Assert.Equal(MachineOverheadReadStatus.Available, read.MachineCostStatus);
         Assert.Null(read.MachineCostUnavailableReason);
         Assert.Equal(60m, read.AppliedFixedMachineOverhead);
         Assert.Equal(20m, read.AppliedVariableMachineOverhead);

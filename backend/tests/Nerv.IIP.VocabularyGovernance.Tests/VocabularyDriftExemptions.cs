@@ -192,7 +192,7 @@ internal static class VocabularyDriftExemptions
             $"{Svc}/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/IntegrationEventConverters/MaintenanceIntegrationEventConverters.cs"),
         ..Group("available", "同值不同义：ERP 工单成本与期间制造费用核对读面的可计算状态，非设备运行态或 MES 成品收货成本权威状态。",
             $"{Svc}/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Queries/Finance/WorkOrderCostVarianceQueries.cs",
-            $"{Svc}/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Queries/Finance/WorkCenterMachineOverheadReconciliationQueries.cs"),
+            $"{Svc}/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Queries/Finance/MachineOverheadReadStatus.cs"),
         ..Group("stopped", "同值不同义：AppHub 连接器上报状态，非设备运行态。",
             "services/AppHub/src/Nerv.IIP.AppHub.Web/Application/Connectors/ConnectorCollectionHealthEvaluator.cs"),
 

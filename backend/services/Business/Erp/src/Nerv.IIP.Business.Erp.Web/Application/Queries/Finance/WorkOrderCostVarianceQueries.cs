@@ -49,7 +49,7 @@ public sealed record WorkOrderCostVarianceResponse(
     decimal? CapitalizedCost,
     decimal? CapitalizationVarianceAmount,
     decimal? ActualMachineHours,
-    [property: Required] string MachineCostStatus,
+    [property: Required] MachineOverheadReadStatus MachineCostStatus,
     string? MachineCostUnavailableReason,
     string? MachineCurrencyCode,
     int PageNumber,
@@ -69,7 +69,7 @@ public sealed record OperationMachineOverheadItem(
     [property: Required] string WorkCenterId,
     [property: Required] string SettlementId,
     [property: Required] long SettlementRevision,
-    [property: Required] string Status,
+    [property: Required] MachineOverheadReadStatus Status,
     string? UnavailableReason,
     decimal? ActualMachineHours,
     decimal? AppliedFixedMachineOverhead,
@@ -234,23 +234,23 @@ public sealed class GetWorkOrderCostVarianceQueryHandler(ApplicationDbContext db
         decimal? appliedFixedMachineOverhead = null;
         decimal? appliedVariableMachineOverhead = null;
         decimal? appliedMachineOverheadTotal = null;
-        string machineCostStatus;
+        MachineOverheadReadStatus machineCostStatus;
         string? machineCostUnavailableReason;
         try
         {
             if (machineSettlements.Count == 0)
             {
-                machineCostStatus = "unavailable";
+                machineCostStatus = MachineOverheadReadStatus.Unavailable;
                 machineCostUnavailableReason = "operation_not_settled";
             }
             else if (applicableMachineSettlements.Length == 0)
             {
-                machineCostStatus = "notApplicable";
+                machineCostStatus = MachineOverheadReadStatus.NotApplicable;
                 machineCostUnavailableReason = MachineOverheadNotApplicableReason;
             }
             else if (machineCurrencies.Length != 1)
             {
-                machineCostStatus = "unavailable";
+                machineCostStatus = MachineOverheadReadStatus.Unavailable;
                 machineCostUnavailableReason = "currency_conflict";
             }
             else
@@ -259,7 +259,7 @@ public sealed class GetWorkOrderCostVarianceQueryHandler(ApplicationDbContext db
                 appliedFixedMachineOverhead = Round(applicableMachineSettlements.Sum(x => x.FixedAmount));
                 appliedVariableMachineOverhead = Round(applicableMachineSettlements.Sum(x => x.VariableAmount));
                 appliedMachineOverheadTotal = Round(applicableMachineSettlements.Sum(x => x.Amount));
-                machineCostStatus = "available";
+                machineCostStatus = MachineOverheadReadStatus.Available;
                 machineCostUnavailableReason = null;
             }
         }
@@ -269,7 +269,7 @@ public sealed class GetWorkOrderCostVarianceQueryHandler(ApplicationDbContext db
             appliedFixedMachineOverhead = null;
             appliedVariableMachineOverhead = null;
             appliedMachineOverheadTotal = null;
-            machineCostStatus = "unavailable";
+            machineCostStatus = MachineOverheadReadStatus.Unavailable;
             machineCostUnavailableReason = NumericOverflowReason;
         }
 
@@ -300,7 +300,7 @@ public sealed class GetWorkOrderCostVarianceQueryHandler(ApplicationDbContext db
             machineHours,
             machineCostStatus,
             machineCostUnavailableReason,
-            machineCostStatus == "available" ? machineCurrencies[0] : null,
+            machineCostStatus == MachineOverheadReadStatus.Available ? machineCurrencies[0] : null,
             request.PageNumber,
             request.PageSize,
             operationResults.Length,
@@ -435,7 +435,7 @@ public sealed class GetWorkOrderCostVarianceQueryHandler(ApplicationDbContext db
             settlement.WorkCenterId,
             settlement.Id.ToString(),
             settlement.SettlementRevision,
-            isApplicable ? "available" : "notApplicable",
+            isApplicable ? MachineOverheadReadStatus.Available : MachineOverheadReadStatus.NotApplicable,
             isApplicable ? null : MachineOverheadNotApplicableReason,
             isApplicable ? Round(settlement.ActualMachineHours!.Value) : null,
             isApplicable ? Round(settlement.FixedAmount) : null,
@@ -461,7 +461,7 @@ public sealed class GetWorkOrderCostVarianceQueryHandler(ApplicationDbContext db
             organizationId, environmentId, workOrderId, null, "actualOperation",
             "unavailable", reason, null, null, null, null, null, null, null,
             "notApplicable", "actual_payroll_rate_not_modeled",
-            null, null, null, null, null, "unavailable", "operation_not_settled", null,
+            null, null, null, null, null, MachineOverheadReadStatus.Unavailable, "operation_not_settled", null,
             request.PageNumber, request.PageSize, 0, [], null, null, null,
             request.PageNumber, request.PageSize, 0, []);
 

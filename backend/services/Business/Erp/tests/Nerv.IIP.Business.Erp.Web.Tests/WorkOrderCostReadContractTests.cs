@@ -69,7 +69,7 @@ public sealed class WorkOrderCostReadContractTests
         var response = await new GetWorkOrderCostVarianceQueryHandler(db).Handle(
             new("org-machine", "env-machine", "WO-MACHINE"), CancellationToken.None);
 
-        Assert.Equal("available", response.MachineCostStatus);
+        Assert.Equal(MachineOverheadReadStatus.Available, response.MachineCostStatus);
         Assert.Null(response.MachineCostUnavailableReason);
         Assert.Null(response.CurrencyCode);
         Assert.Equal("CNY", response.MachineCurrencyCode);
@@ -92,8 +92,8 @@ public sealed class WorkOrderCostReadContractTests
         Assert.Equal("evt-machine-applied", applied.SourceEventId);
         Assert.Equal(CompletedAtUtc, applied.CompletedAtUtc);
         Assert.Equal(0m, operations["OP-ZERO"].AppliedMachineOverheadTotal);
-        Assert.Equal("available", operations["OP-ZERO"].Status);
-        Assert.Equal("notApplicable", operations["OP-NOT-APPLICABLE"].Status);
+        Assert.Equal(MachineOverheadReadStatus.Available, operations["OP-ZERO"].Status);
+        Assert.Equal(MachineOverheadReadStatus.NotApplicable, operations["OP-NOT-APPLICABLE"].Status);
         Assert.Equal("machine_overhead_not_applicable", operations["OP-NOT-APPLICABLE"].UnavailableReason);
         Assert.Null(operations["OP-NOT-APPLICABLE"].ActualMachineHours);
         Assert.Null(operations["OP-NOT-APPLICABLE"].AppliedMachineOverheadTotal);
@@ -127,7 +127,7 @@ public sealed class WorkOrderCostReadContractTests
         var response = await new GetWorkOrderCostVarianceQueryHandler(db).Handle(
             new("org-na", "env-na", "WO-NA"), CancellationToken.None);
 
-        Assert.Equal("notApplicable", response.MachineCostStatus);
+        Assert.Equal(MachineOverheadReadStatus.NotApplicable, response.MachineCostStatus);
         Assert.Equal("machine_overhead_not_applicable", response.MachineCostUnavailableReason);
         Assert.Null(response.MachineCurrencyCode);
         Assert.Null(response.ActualMachineHours);
@@ -167,7 +167,7 @@ public sealed class WorkOrderCostReadContractTests
 
         Assert.Equal("USD", response.CurrencyCode);
         Assert.Equal("CNY", response.MachineCurrencyCode);
-        Assert.Equal("available", response.MachineCostStatus);
+        Assert.Equal(MachineOverheadReadStatus.Available, response.MachineCostStatus);
         Assert.Equal(40m, response.AppliedMachineOverheadTotal);
     }
 
@@ -218,7 +218,7 @@ public sealed class WorkOrderCostReadContractTests
         Assert.Equal(30.000000m, response.CapitalizationVarianceAmount);
         Assert.Equal("notApplicable", response.LaborRateVarianceStatus);
         Assert.Equal("actual_payroll_rate_not_modeled", response.LaborRateVarianceReason);
-        Assert.Equal("unavailable", response.MachineCostStatus);
+        Assert.Equal(MachineOverheadReadStatus.Unavailable, response.MachineCostStatus);
         Assert.Equal("operation_not_settled", response.MachineCostUnavailableReason);
         Assert.Null(response.AppliedMachineOverheadTotal);
         var operation = Assert.Single(response.Operations);
@@ -851,6 +851,7 @@ public sealed class WorkOrderCostReadContractTests
         using var client = factory.CreateClient();
 
         using var json = JsonDocument.Parse(await client.GetStringAsync("/swagger/v1/swagger.json"));
+        var schemas = json.RootElement.GetProperty("components").GetProperty("schemas");
         var operation = json.RootElement.GetProperty("paths")
             .GetProperty("/api/business/v1/erp/finance/work-order-costs/{workOrderId}")
             .GetProperty("get");
@@ -858,7 +859,7 @@ public sealed class WorkOrderCostReadContractTests
         Assert.Equal("getErpWorkOrderCostVariance", operation.GetProperty("operationId").GetString());
         var serialized = operation.GetRawText();
         Assert.Contains("WorkOrderCostVarianceResponse", serialized, StringComparison.Ordinal);
-        var schema = json.RootElement.GetProperty("components").GetProperty("schemas")
+        var schema = schemas
             .EnumerateObject()
             .Single(x => x.Name.EndsWith("WorkOrderCostVarianceResponse", StringComparison.Ordinal)
                 && x.Value.TryGetProperty("properties", out var candidateProperties)
@@ -873,12 +874,14 @@ public sealed class WorkOrderCostReadContractTests
         Assert.True(properties.TryGetProperty("totalMachineOverheadOperations", out _));
         Assert.True(properties.TryGetProperty("machineOverheadOperations", out _));
         Assert.False(properties.TryGetProperty("actualFixedMachineOverhead", out _));
-        var machineOperationSchema = json.RootElement.GetProperty("components").GetProperty("schemas")
+        var machineOperationSchema = schemas
             .EnumerateObject()
             .Single(x => x.Name.EndsWith("OperationMachineOverheadItem", StringComparison.Ordinal)
                 && x.Value.TryGetProperty("properties", out var candidateProperties)
                 && candidateProperties.TryGetProperty("operationTaskId", out _));
         var machineOperationProperties = machineOperationSchema.Value.GetProperty("properties");
+        AssertMachineOverheadStatusSchema(properties.GetProperty("machineCostStatus"), schemas);
+        AssertMachineOverheadStatusSchema(machineOperationProperties.GetProperty("status"), schemas);
         foreach (var propertyName in new[]
         {
             "settlementId", "settlementRevision", "status", "unavailableReason", "actualMachineHours",
@@ -929,7 +932,7 @@ public sealed class WorkOrderCostReadContractTests
             .GetProperty("/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations")
             .GetProperty("get");
         Assert.Equal("listErpWorkCenterMachineOverheadReconciliations", periodOperation.GetProperty("operationId").GetString());
-        var periodSchema = json.RootElement.GetProperty("components").GetProperty("schemas")
+        var periodSchema = schemas
             .EnumerateObject()
             .Single(x => x.Name.EndsWith("ListWorkCenterMachineOverheadReconciliationsResponse", StringComparison.Ordinal)
                 && x.Value.TryGetProperty("properties", out var candidateProperties)
@@ -938,6 +941,34 @@ public sealed class WorkOrderCostReadContractTests
         Assert.True(periodProperties.TryGetProperty("accountingPeriodStatus", out _));
         Assert.True(periodProperties.TryGetProperty("reconciliationStatus", out _));
         Assert.True(periodProperties.TryGetProperty("reconciliationUnavailableReason", out _));
+        AssertMachineOverheadStatusSchema(periodProperties.GetProperty("reconciliationStatus"), schemas);
+
+        var periodItemSchema = schemas.EnumerateObject()
+            .Single(x => x.Name.EndsWith("WorkCenterMachineOverheadReconciliationItem", StringComparison.Ordinal)
+                && x.Value.TryGetProperty("properties", out var candidateProperties)
+                && candidateProperties.TryGetProperty("recordedAtUtc", out _));
+        AssertMachineOverheadStatusSchema(
+            periodItemSchema.Value.GetProperty("properties").GetProperty("reconciliationStatus"), schemas);
+    }
+
+    private static void AssertMachineOverheadStatusSchema(JsonElement propertySchema, JsonElement schemas)
+    {
+        var schema = ResolveSchema(propertySchema, schemas);
+        Assert.Equal("string", schema.GetProperty("type").GetString());
+        Assert.Equal(
+            ["available", "notApplicable", "unavailable"],
+            schema.GetProperty("enum").EnumerateArray().Select(value => value.GetString()));
+    }
+
+    private static JsonElement ResolveSchema(JsonElement schema, JsonElement schemas)
+    {
+        if (schema.TryGetProperty("$ref", out var schemaReference))
+            return schemas.GetProperty(schemaReference.GetString()!.Split('/')[^1]);
+        if (schema.TryGetProperty("allOf", out var inheritedSchemas))
+            return ResolveSchema(Assert.Single(inheritedSchemas.EnumerateArray()), schemas);
+        if (schema.TryGetProperty("oneOf", out var alternatives))
+            return ResolveSchema(Assert.Single(alternatives.EnumerateArray()), schemas);
+        return schema;
     }
 
     private sealed class CapturingSender(string machineCostStatus) : ISender
@@ -959,7 +990,8 @@ public sealed class WorkOrderCostReadContractTests
                 query.OrganizationId, query.EnvironmentId, query.WorkOrderId, "CNY", "actualOperation",
                 "available", null, 0m, 0m, 0m, 0m, 0m, 0m, "neutral",
                 "notApplicable", "actual_payroll_rate_not_modeled",
-                0m, 0m, 0m, 0m, available ? 0m : null, machineCostStatus, reason,
+                0m, 0m, 0m, 0m, available ? 0m : null,
+                Enum.Parse<MachineOverheadReadStatus>(machineCostStatus, ignoreCase: true), reason,
                 available ? "CNY" : null, query.PageNumber, query.PageSize, 0, [],
                 available ? 0m : null, available ? 0m : null, available ? 0m : null,
                 query.PageNumber, query.PageSize, 0, []));

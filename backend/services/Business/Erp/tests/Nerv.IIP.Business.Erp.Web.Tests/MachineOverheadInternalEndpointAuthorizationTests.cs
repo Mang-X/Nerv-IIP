@@ -316,7 +316,7 @@ public sealed class MachineOverheadInternalEndpointAuthorizationTests
                 0,
                 [],
                 "open",
-                "unavailable",
+                MachineOverheadReadStatus.Unavailable,
                 "reconciliation_not_recorded"));
         }
 

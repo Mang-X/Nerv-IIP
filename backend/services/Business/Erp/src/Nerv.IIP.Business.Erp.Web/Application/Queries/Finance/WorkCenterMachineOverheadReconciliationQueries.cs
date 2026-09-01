@@ -40,7 +40,7 @@ public sealed record ListWorkCenterMachineOverheadReconciliationsResponse(
     int TotalCount,
     IReadOnlyList<WorkCenterMachineOverheadReconciliationItem> Items,
     string? AccountingPeriodStatus,
-    string ReconciliationStatus,
+    MachineOverheadReadStatus ReconciliationStatus,
     string? ReconciliationUnavailableReason);
 
 public sealed record WorkCenterMachineOverheadReconciliationItem(
@@ -68,7 +68,7 @@ public sealed record WorkCenterMachineOverheadReconciliationItem(
     decimal AbnormalDowntimeHours,
     string AbnormalDowntimeDisposition,
     bool IsReadyForClose,
-    string ReconciliationStatus,
+    MachineOverheadReadStatus ReconciliationStatus,
     string? UnavailableReason,
     string RecordedBy,
     string SourceReference,
@@ -115,8 +115,8 @@ public sealed class ListWorkCenterMachineOverheadReconciliationsQueryHandler(App
                 x.AbnormalDowntimeDisposition.ToString(),
                 x.AbnormalDowntimeDisposition != Domain.AggregatesModel.MachineOverheadReconciliationAggregate.AbnormalDowntimeDisposition.Pending,
                 x.AbnormalDowntimeDisposition == Domain.AggregatesModel.MachineOverheadReconciliationAggregate.AbnormalDowntimeDisposition.Pending
-                    ? "unavailable"
-                    : "available",
+                    ? MachineOverheadReadStatus.Unavailable
+                    : MachineOverheadReadStatus.Available,
                 x.AbnormalDowntimeDisposition == Domain.AggregatesModel.MachineOverheadReconciliationAggregate.AbnormalDowntimeDisposition.Pending
                     ? "abnormal_downtime_pending"
                     : null,
@@ -130,13 +130,13 @@ public sealed class ListWorkCenterMachineOverheadReconciliationsQueryHandler(App
                 ? item with
                 {
                     ReconciliationStatus = status.Issues.TryGetValue(item.WorkCenterId, out var issue)
-                        ? "unavailable"
-                        : "available",
+                        ? MachineOverheadReadStatus.Unavailable
+                        : MachineOverheadReadStatus.Available,
                     UnavailableReason = status.Issues.GetValueOrDefault(item.WorkCenterId)?.ReasonCode,
                 }
                 : item with
                 {
-                    ReconciliationStatus = "unavailable",
+                    ReconciliationStatus = MachineOverheadReadStatus.Unavailable,
                     UnavailableReason = "superseded_reconciliation",
                 })
             .ToArray();
@@ -174,25 +174,25 @@ public sealed class ListWorkCenterMachineOverheadReconciliationsQueryHandler(App
             dbContext, organizationId, environmentId, periodCode, scope, cancellationToken);
         var issue = evaluation.FirstIssue(scope.RequiredWorkCenterIds);
         return new(
-            issue is null ? "available" : "unavailable",
+            issue is null ? MachineOverheadReadStatus.Available : MachineOverheadReadStatus.Unavailable,
             issue?.ReasonCode,
             evaluation.LatestReconciliationIds,
             evaluation.Issues);
     }
 
     private sealed record ReconciliationReadStatus(
-        string Status,
+        MachineOverheadReadStatus Status,
         string? UnavailableReason,
         IReadOnlyDictionary<string, string> LatestReconciliationIds,
         IReadOnlyDictionary<string, MachineOverheadReconciliationIssue> Issues)
     {
         public static ReconciliationReadStatus Unavailable(string reason)
-            => new("unavailable", reason,
+            => new(MachineOverheadReadStatus.Unavailable, reason,
                 new Dictionary<string, string>(StringComparer.Ordinal),
                 new Dictionary<string, MachineOverheadReconciliationIssue>(StringComparer.Ordinal));
 
         public static ReconciliationReadStatus NotApplicable()
-            => new("notApplicable", "machine_overhead_not_applicable",
+            => new(MachineOverheadReadStatus.NotApplicable, "machine_overhead_not_applicable",
                 new Dictionary<string, string>(StringComparer.Ordinal),
                 new Dictionary<string, MachineOverheadReconciliationIssue>(StringComparer.Ordinal));
     }
