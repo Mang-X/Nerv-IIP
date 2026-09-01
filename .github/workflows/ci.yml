@@ -1972,7 +1972,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.impact-plan.outputs.frontend_validation_matrix) }}
-    timeout-minutes: 45
+    # A 级证据作业预算算术：显式步骤预算合计 71m，作业预算 80m，
+    # 留出 9m 给 Set up job 与 action 隐式后置步骤。
+    timeout-minutes: 80
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -2031,6 +2033,36 @@ jobs:
         if: matrix.run_build
         timeout-minutes: 20
         run: pnpm -C frontend --filter "${{ matrix.name }}" build
+
+      - name: Resolve Business Console browser
+        if: matrix.name == '@nerv-iip/business-console'
+        timeout-minutes: 3
+        shell: bash --noprofile --norc -euo pipefail {0}
+        run: |
+          browser_path="$(command -v google-chrome || true)"
+          if [ -z "$browser_path" ]; then
+            echo "GitHub runner 未提供 google-chrome，无法执行 Business Console 浏览器不变量。" >&2
+            exit 1
+          fi
+          echo "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=$browser_path" >> "$GITHUB_ENV"
+
+      - name: Test Business Console browser invariants
+        id: business-console-browser-tests
+        if: matrix.name == '@nerv-iip/business-console'
+        timeout-minutes: 10
+        env:
+          NERV_IIP_OUT_DIR: ${{ runner.temp }}/issue-2098-tooling-browser
+        run: pnpm -C frontend --filter @nerv-iip/business-console exec playwright test e2e/issue1974-tooling-visual.spec.ts --project=desktop --reporter=list
+
+      - name: Upload Business Console browser diagnostics
+        timeout-minutes: 5
+        if: failure() && steps.business-console-browser-tests.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: business-console-browser-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/issue-2098-tooling-browser
+          if-no-files-found: error
+          retention-days: 7
 
   frontend:
     name: Frontend Typecheck and Build
