@@ -115,16 +115,28 @@ foreach ($stageId in $stageIds) {
 Assert-Contract ($fullValidation.Message.Contains('Backend test shard governance passed:', [StringComparison]::Ordinal)) 'Stage evidence must preserve the existing successful CLI summary.'
 
 . $validatorPath
-$workflowStageContext = New-BackendTestShardValidationContext `
+$manifestStage = Invoke-BackendTestShardManifestPolicyStage `
     -RepositoryRoot $repoRoot `
     -ManifestPath $manifestPath `
-    -WorkflowPath $temporaryWorkflowPath `
     -PolicyPath (Join-Path $repoRoot 'scripts/test-evidence-policy.json')
-Invoke-BackendTestShardManifestPolicyStage -Context $workflowStageContext
-Invoke-BackendTestShardWorkflowWiringStage -Context $workflowStageContext
+$workflowStage = Invoke-BackendTestShardWorkflowWiringStage `
+    -RepositoryRoot $repoRoot `
+    -WorkflowPath $temporaryWorkflowPath `
+    -FastShards $manifestStage.FastShards
 $missingWorkflowFinding = "Configured CI workflow does not exist: $temporaryWorkflowPath."
-Assert-Contract ($workflowStageContext.Errors.Count -eq 1) 'The workflow stage seam must isolate a missing-workflow failure without running inventory or solution membership.'
-Assert-Contract ([string]::Equals([string]$workflowStageContext.Errors[0], $missingWorkflowFinding, [StringComparison]::Ordinal)) 'The workflow stage seam must preserve the complete CLI missing-workflow diagnostic.'
+Assert-Contract (@($workflowStage.Errors).Count -eq 1) 'The workflow stage seam must isolate a missing-workflow failure without running inventory or solution membership.'
+Assert-Contract ([string]::Equals([string]$workflowStage.Errors[0], $missingWorkflowFinding, [StringComparison]::Ordinal)) 'The workflow stage seam must preserve the complete CLI missing-workflow diagnostic.'
+
+$missingManifest = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-missing-manifest-stage-contract' -Arguments @('-ManifestPath', $temporaryManifestPath)
+Assert-Contract (-not $missingManifest.Passed) 'A missing manifest must fail the complete validator.'
+Assert-Contract ($missingManifest.Message.Contains("Backend test shard stage 'manifest-policy' started.", [StringComparison]::Ordinal)) 'A missing manifest must identify manifest-policy as the last entered stage before path resolution fails.'
+Assert-Contract (-not $missingManifest.Message.Contains("Backend test shard stage 'manifest-policy' completed", [StringComparison]::Ordinal)) 'A manifest stage that aborts during path resolution must not report completion.'
+
+$missingWorkflow = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-missing-workflow-stage-contract' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
+Assert-Contract (-not $missingWorkflow.Passed) 'A missing workflow must fail the complete validator.'
+Assert-Contract ($missingWorkflow.Message.Contains("Backend test shard stage 'solution-membership' completed in ", [StringComparison]::Ordinal)) 'A missing workflow must complete solution membership before entering workflow wiring.'
+Assert-Contract ($missingWorkflow.Message.Contains("Backend test shard stage 'workflow-wiring' started.", [StringComparison]::Ordinal)) 'A missing workflow must identify workflow-wiring as the stage that owns the diagnostic.'
+Assert-Contract ($missingWorkflow.Message.Contains($missingWorkflowFinding, [StringComparison]::Ordinal)) 'The complete CLI and direct workflow stage must report the same missing-workflow diagnostic.'
 
 $directDockerType = 'Nerv.IIP.TemporaryShardClassification.Tests.DirectDockerTests'
 $directDockerFinding = "Real dependency test type '$directDockerType' uses the audited Docker CLI primitive but is not excluded from its fast shard."

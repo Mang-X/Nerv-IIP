@@ -806,35 +806,18 @@ function Get-NervCSharpAuditedDockerFileNameAssignmentMatches {
     }
 }
 
-function New-BackendTestShardValidationContext {
+function Invoke-BackendTestShardManifestPolicyStage {
     param(
         [Parameter(Mandatory)] [string] $RepositoryRoot,
         [Parameter(Mandatory)] [string] $ManifestPath,
-        [Parameter(Mandatory)] [string] $WorkflowPath,
-        [Parameter(Mandatory)] [string] $PolicyPath,
-        [AllowEmptyString()] [string] $BackendInventoryRoot
+        [Parameter(Mandatory)] [string] $PolicyPath
     )
 
+    $stopwatch = [Diagnostics.Stopwatch]::StartNew()
+    Write-Host "Backend test shard stage 'manifest-policy' started."
     $resolvedManifestPath = (Resolve-Path $ManifestPath).Path
-    return [pscustomobject]@{
-        RepositoryRoot = $RepositoryRoot
-        Manifest = Get-Content -LiteralPath $resolvedManifestPath -Raw | ConvertFrom-Json
-        WorkflowPath = $WorkflowPath
-        PolicyPath = $PolicyPath
-        BackendInventoryRoot = $BackendInventoryRoot
-        Errors = [System.Collections.Generic.List[string]]::new()
-    }
-}
-
-function Invoke-BackendTestShardManifestPolicyStage {
-    param(
-        [Parameter(Mandatory)] [object] $Context
-    )
-
-    $repositoryRoot = $Context.RepositoryRoot
-    $manifest = $Context.Manifest
-    $PolicyPath = $Context.PolicyPath
-    $errors = $Context.Errors
+    $manifest = Get-Content -LiteralPath $resolvedManifestPath -Raw | ConvertFrom-Json
+    $errors = [System.Collections.Generic.List[string]]::new()
 
 if ($manifest.schemaVersion -ne 1) {
     $errors.Add('backend test shard manifest schemaVersion must be 1.')
@@ -1049,27 +1032,34 @@ foreach ($entry in $classificationEntries) {
     }
 }
 
-    $Context | Add-Member -NotePropertyName FastShards -NotePropertyValue $fastShards
-    $Context | Add-Member -NotePropertyName HeavyLanes -NotePropertyValue $heavyLanes
-    $Context | Add-Member -NotePropertyName ExcludedClassOwners -NotePropertyValue $excludedClassOwners
-    $Context | Add-Member -NotePropertyName ExcludedClassSelectorsByFastShard -NotePropertyValue $excludedClassSelectorsByFastShard
-    $Context | Add-Member -NotePropertyName HeavyLaneIdSet -NotePropertyValue $heavyLaneIdSet
-    $Context | Add-Member -NotePropertyName ProjectOwners -NotePropertyValue $projectOwners
-    $Context | Add-Member -NotePropertyName AmbiguousProjectOwners -NotePropertyValue $ambiguousProjectOwners
+    $stopwatch.Stop()
+    Write-Host "Backend test shard stage 'manifest-policy' completed in $($stopwatch.ElapsedMilliseconds) ms."
+    return [pscustomobject]@{
+        Manifest = $manifest
+        FastShards = $fastShards
+        HeavyLanes = $heavyLanes
+        ExcludedClassOwners = $excludedClassOwners
+        ExcludedClassSelectorsByFastShard = $excludedClassSelectorsByFastShard
+        HeavyLaneIdSet = $heavyLaneIdSet
+        ProjectOwners = $projectOwners
+        AmbiguousProjectOwners = $ambiguousProjectOwners
+        Errors = @($errors)
+    }
 }
 
 function Invoke-BackendTestShardInventorySourceStage {
     param(
-        [Parameter(Mandatory)] [object] $Context
+        [Parameter(Mandatory)] [string] $RepositoryRoot,
+        [AllowEmptyString()] [string] $BackendInventoryRoot,
+        [Parameter(Mandatory)] [hashtable] $ProjectOwners,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [Collections.Generic.HashSet[string]] $AmbiguousProjectOwners,
+        [Parameter(Mandatory)] [hashtable] $ExcludedClassSelectorsByFastShard,
+        [Parameter(Mandatory)] [Collections.Generic.HashSet[string]] $HeavyLaneIdSet
     )
 
-    $repositoryRoot = $Context.RepositoryRoot
-    $BackendInventoryRoot = $Context.BackendInventoryRoot
-    $errors = $Context.Errors
-    $projectOwners = $Context.ProjectOwners
-    $ambiguousProjectOwners = $Context.AmbiguousProjectOwners
-    $excludedClassSelectorsByFastShard = $Context.ExcludedClassSelectorsByFastShard
-    $heavyLaneIdSet = $Context.HeavyLaneIdSet
+    $stopwatch = [Diagnostics.Stopwatch]::StartNew()
+    Write-Host "Backend test shard stage 'inventory-source' started."
+    $errors = [System.Collections.Generic.List[string]]::new()
 
 $backendRoot = if ([string]::IsNullOrWhiteSpace($BackendInventoryRoot)) { Join-Path $repositoryRoot 'backend' } else { (Resolve-Path $BackendInventoryRoot).Path }
 $discoveredProjects = @(
@@ -1236,22 +1226,27 @@ if ($unknownClassifications.Count -gt 0) {
     $errors.Add("Classified projects are not discovered backend test projects: $($unknownClassifications -join ', ').")
 }
 
-    $Context | Add-Member -NotePropertyName BackendRoot -NotePropertyValue $backendRoot
-    $Context | Add-Member -NotePropertyName DiscoveredProjects -NotePropertyValue $discoveredProjects
-    $Context | Add-Member -NotePropertyName DiscoveredBackendProjects -NotePropertyValue $discoveredBackendProjects
+    $stopwatch.Stop()
+    Write-Host "Backend test shard stage 'inventory-source' completed in $($stopwatch.ElapsedMilliseconds) ms."
+    return [pscustomobject]@{
+        DiscoveredProjects = $discoveredProjects
+        DiscoveredBackendProjects = $discoveredBackendProjects
+        Errors = @($errors)
+    }
 }
 
 function Invoke-BackendTestShardSolutionMembershipStage {
     param(
-        [Parameter(Mandatory)] [object] $Context
+        [Parameter(Mandatory)] [string] $RepositoryRoot,
+        [Parameter(Mandatory)] [object] $Manifest,
+        [Parameter(Mandatory)] [object[]] $FastShards,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $DiscoveredProjects,
+        [Parameter(Mandatory)] [string[]] $DiscoveredBackendProjects
     )
 
-    $repositoryRoot = $Context.RepositoryRoot
-    $manifest = $Context.Manifest
-    $errors = $Context.Errors
-    $fastShards = $Context.FastShards
-    $discoveredProjects = $Context.DiscoveredProjects
-    $discoveredBackendProjects = $Context.DiscoveredBackendProjects
+    $stopwatch = [Diagnostics.Stopwatch]::StartNew()
+    Write-Host "Backend test shard stage 'solution-membership' started."
+    $errors = [System.Collections.Generic.List[string]]::new()
 
 $solutionPath = Join-Path $repositoryRoot ([string] $manifest.solution)
 if (-not (Test-Path -LiteralPath $solutionPath -PathType Leaf)) {
@@ -1355,17 +1350,21 @@ foreach ($shard in $fastShards) {
     }
 }
 
+    $stopwatch.Stop()
+    Write-Host "Backend test shard stage 'solution-membership' completed in $($stopwatch.ElapsedMilliseconds) ms."
+    return [pscustomobject]@{ Errors = @($errors) }
 }
 
 function Invoke-BackendTestShardWorkflowWiringStage {
     param(
-        [Parameter(Mandatory)] [object] $Context
+        [Parameter(Mandatory)] [string] $RepositoryRoot,
+        [Parameter(Mandatory)] [string] $WorkflowPath,
+        [Parameter(Mandatory)] [object[]] $FastShards
     )
 
-    $repositoryRoot = $Context.RepositoryRoot
-    $WorkflowPath = $Context.WorkflowPath
-    $errors = $Context.Errors
-    $fastShards = $Context.FastShards
+    $stopwatch = [Diagnostics.Stopwatch]::StartNew()
+    Write-Host "Backend test shard stage 'workflow-wiring' started."
+    $errors = [System.Collections.Generic.List[string]]::new()
 
 $resolvedWorkflowPath = Resolve-Path $WorkflowPath -ErrorAction SilentlyContinue
 if ($null -eq $resolvedWorkflowPath) {
@@ -1567,44 +1566,55 @@ test "${{ needs.backend-tests-business-core-b.result }}" = "$expected_result"
     }
 }
 
+    $stopwatch.Stop()
+    Write-Host "Backend test shard stage 'workflow-wiring' completed in $($stopwatch.ElapsedMilliseconds) ms."
+    return [pscustomobject]@{ Errors = @($errors) }
 }
 
 function Invoke-BackendTestShardValidation {
     param(
-        [Parameter(Mandatory)] [object] $Context
+        [Parameter(Mandatory)] [string] $RepositoryRoot,
+        [Parameter(Mandatory)] [string] $ManifestPath,
+        [Parameter(Mandatory)] [string] $WorkflowPath,
+        [Parameter(Mandatory)] [string] $PolicyPath,
+        [AllowEmptyString()] [string] $BackendInventoryRoot
     )
 
-    $manifestPolicyStopwatch = [Diagnostics.Stopwatch]::StartNew()
-    Write-Output "Backend test shard stage 'manifest-policy' started."
-    Invoke-BackendTestShardManifestPolicyStage -Context $Context
-    $manifestPolicyStopwatch.Stop()
-    Write-Output "Backend test shard stage 'manifest-policy' completed in $($manifestPolicyStopwatch.ElapsedMilliseconds) ms."
+    $errors = [System.Collections.Generic.List[string]]::new()
+    $manifestPolicy = Invoke-BackendTestShardManifestPolicyStage `
+        -RepositoryRoot $RepositoryRoot `
+        -ManifestPath $ManifestPath `
+        -PolicyPath $PolicyPath
+    foreach ($failure in @($manifestPolicy.Errors)) { $errors.Add([string] $failure) }
 
-    $inventorySourceStopwatch = [Diagnostics.Stopwatch]::StartNew()
-    Write-Output "Backend test shard stage 'inventory-source' started."
-    Invoke-BackendTestShardInventorySourceStage -Context $Context
-    $inventorySourceStopwatch.Stop()
-    Write-Output "Backend test shard stage 'inventory-source' completed in $($inventorySourceStopwatch.ElapsedMilliseconds) ms."
+    $inventorySource = Invoke-BackendTestShardInventorySourceStage `
+        -RepositoryRoot $RepositoryRoot `
+        -BackendInventoryRoot $BackendInventoryRoot `
+        -ProjectOwners $manifestPolicy.ProjectOwners `
+        -AmbiguousProjectOwners $manifestPolicy.AmbiguousProjectOwners `
+        -ExcludedClassSelectorsByFastShard $manifestPolicy.ExcludedClassSelectorsByFastShard `
+        -HeavyLaneIdSet $manifestPolicy.HeavyLaneIdSet
+    foreach ($failure in @($inventorySource.Errors)) { $errors.Add([string] $failure) }
 
-    $solutionMembershipStopwatch = [Diagnostics.Stopwatch]::StartNew()
-    Write-Output "Backend test shard stage 'solution-membership' started."
-    Invoke-BackendTestShardSolutionMembershipStage -Context $Context
-    $solutionMembershipStopwatch.Stop()
-    Write-Output "Backend test shard stage 'solution-membership' completed in $($solutionMembershipStopwatch.ElapsedMilliseconds) ms."
+    $solutionMembership = Invoke-BackendTestShardSolutionMembershipStage `
+        -RepositoryRoot $RepositoryRoot `
+        -Manifest $manifestPolicy.Manifest `
+        -FastShards $manifestPolicy.FastShards `
+        -DiscoveredProjects $inventorySource.DiscoveredProjects `
+        -DiscoveredBackendProjects $inventorySource.DiscoveredBackendProjects
+    foreach ($failure in @($solutionMembership.Errors)) { $errors.Add([string] $failure) }
 
-    $workflowWiringStopwatch = [Diagnostics.Stopwatch]::StartNew()
-    Write-Output "Backend test shard stage 'workflow-wiring' started."
-    Invoke-BackendTestShardWorkflowWiringStage -Context $Context
-    $workflowWiringStopwatch.Stop()
-    Write-Output "Backend test shard stage 'workflow-wiring' completed in $($workflowWiringStopwatch.ElapsedMilliseconds) ms."
+    $workflowWiring = Invoke-BackendTestShardWorkflowWiringStage `
+        -RepositoryRoot $RepositoryRoot `
+        -WorkflowPath $WorkflowPath `
+        -FastShards $manifestPolicy.FastShards
+    foreach ($failure in @($workflowWiring.Errors)) { $errors.Add([string] $failure) }
 
-    $errors = $Context.Errors
-    $manifest = $Context.Manifest
-    $fastShards = $Context.FastShards
-    $heavyLanes = $Context.HeavyLanes
-    $excludedClassOwners = $Context.ExcludedClassOwners
-    $discoveredProjects = $Context.DiscoveredProjects
-    $discoveredBackendProjects = $Context.DiscoveredBackendProjects
+    $fastShards = $manifestPolicy.FastShards
+    $heavyLanes = $manifestPolicy.HeavyLanes
+    $excludedClassOwners = $manifestPolicy.ExcludedClassOwners
+    $discoveredProjects = $inventorySource.DiscoveredProjects
+    $discoveredBackendProjects = $inventorySource.DiscoveredBackendProjects
 
 # Findings go to stdout and the script exits nonzero, the same shape as
 # scripts/check-script-governance.ps1 and scripts/verify-solution-configuration-membership.ps1 —
@@ -1626,11 +1636,10 @@ Write-Output "Backend test shard governance passed: $($discoveredProjects.Count)
 
 if (-not [string]::Equals($MyInvocation.InvocationName, '.', [StringComparison]::Ordinal)) {
     $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-    $validationContext = New-BackendTestShardValidationContext `
+    Invoke-BackendTestShardValidation `
         -RepositoryRoot $repositoryRoot `
         -ManifestPath $ManifestPath `
         -WorkflowPath $WorkflowPath `
         -PolicyPath $PolicyPath `
         -BackendInventoryRoot $BackendInventoryRoot
-    Invoke-BackendTestShardValidation -Context $validationContext
 }
