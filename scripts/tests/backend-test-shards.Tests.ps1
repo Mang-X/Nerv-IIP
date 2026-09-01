@@ -22,6 +22,7 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 
 $manifestPath = Join-Path $repoRoot 'scripts/backend-test-shards.json'
 $validatorPath = Join-Path $repoRoot 'scripts/verify-backend-test-shards.ps1'
+$policyPath = Join-Path $repoRoot 'scripts/test-evidence-policy.json'
 $workflowPath = Join-Path $repoRoot '.github/workflows/ci.yml'
 $temporaryBackendInventory = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-inventory-{0}" -f [Guid]::NewGuid().ToString('N'))
 $temporaryEmptyBackendInventory = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-empty-backend-inventory-{0}" -f [Guid]::NewGuid().ToString('N'))
@@ -58,6 +59,9 @@ function Assert-Contract {
     }
 }
 
+$completeValidatorInvocationCount = 0
+$stageExecutionMappings = [System.Collections.Generic.List[object]]::new()
+
 $inventoryRelativeToRepo = [IO.Path]::GetRelativePath($repoRoot, $temporaryBackendInventory)
 Assert-Contract ($inventoryRelativeToRepo.StartsWith('..', [StringComparison]::Ordinal)) 'Backend mutation fixtures must live outside the tracked repository tree.'
 Assert-Contract (-not (Test-Path -LiteralPath (Join-Path $repoRoot 'backend/tests/Nerv.IIP.TemporaryShardClassification.Tests'))) 'The unclassified-project fixture must never be planted in the tracked backend tree.'
@@ -84,6 +88,10 @@ function Invoke-GovernedScript {
         [string[]] $Arguments = @(),
         [Parameter(Mandatory)] [string] $Name
     )
+
+    if ([string]::Equals($ScriptPath, $validatorPath, [StringComparison]::Ordinal)) {
+        $script:completeValidatorInvocationCount++
+    }
 
     try {
         $result = Invoke-NativeCommandOutput `
@@ -116,17 +124,120 @@ foreach ($stageId in $stageIds) {
 Assert-Contract ($fullValidation.Message.Contains('Backend test shard governance passed:', [StringComparison]::Ordinal)) 'Stage evidence must preserve the existing successful CLI summary.'
 
 . $validatorPath
-$manifestStage = Invoke-BackendTestShardManifestPolicyStage `
-    -RepositoryRoot $repoRoot `
-    -ManifestPath $manifestPath `
-    -PolicyPath (Join-Path $repoRoot 'scripts/test-evidence-policy.json')
-$workflowStage = Invoke-BackendTestShardWorkflowWiringStage `
-    -RepositoryRoot $repoRoot `
-    -WorkflowPath $temporaryWorkflowPath `
+
+# #3012 made each authoritative stage emit one finite started event. Capturing that existing event
+# keeps execution ownership observable without adding a second validator seam or a wall-clock gate:
+# a skipped owner and a mutation accidentally routed through the complete pipeline both fail here.
+function Invoke-BackendTestShardOwnedStageContract {
+    param(
+        [Parameter(Mandatory)] [string] $MutationName,
+        [Parameter(Mandatory)] [ValidateSet('manifest-policy', 'inventory-source', 'solution-membership', 'workflow-wiring')] [string] $StageId,
+        [ValidateSet('mutation', 'baseline', 'prerequisite')] [string] $MappingKind = 'mutation',
+        [Parameter(Mandatory)] [scriptblock] $Action
+    )
+
+    $records = @(& $Action 6>&1)
+    $stageEvents = @(
+        $records |
+            Where-Object { $_ -is [System.Management.Automation.InformationRecord] } |
+            ForEach-Object { [string] $_.MessageData } |
+            Where-Object { $_ -match "^Backend test shard stage '[^']+' started\.$" }
+    )
+    $expectedEvent = "Backend test shard stage '$StageId' started."
+    Assert-Contract (@($stageEvents | Where-Object { [string]::Equals($_, $expectedEvent, [StringComparison]::Ordinal) }).Count -eq 1) "Mutation '$MutationName' must invoke its owning '$StageId' stage exactly once."
+    Assert-Contract ($stageEvents.Count -eq 1) "Mutation '$MutationName' must not invoke unrelated backend shard stages; observed: $($stageEvents -join ', ')."
+
+    $stageResults = @($records | Where-Object { $_ -isnot [System.Management.Automation.InformationRecord] -and $null -ne $_.PSObject.Properties['Errors'] })
+    Assert-Contract ($stageResults.Count -eq 1) "Mutation '$MutationName' must return exactly one authoritative '$StageId' stage result."
+    [void] $script:stageExecutionMappings.Add([pscustomobject]@{ Name = $MutationName; Stage = $StageId; Kind = $MappingKind })
+
+    $errors = @($stageResults[0].Errors | ForEach-Object { [string] $_ })
+    return [pscustomobject]@{
+        Passed = $errors.Count -eq 0
+        Message = ($errors -join ' ')
+        StageResult = $stageResults[0]
+    }
+}
+
+function Invoke-ManifestPolicyMutation {
+    param(
+        [Parameter(Mandatory)] [string] $MutationName,
+        [ValidateSet('mutation', 'baseline', 'prerequisite')] [string] $MappingKind = 'mutation',
+        [string] $MutationManifestPath = $manifestPath,
+        [string] $MutationPolicyPath = $policyPath
+    )
+
+    Invoke-BackendTestShardOwnedStageContract -MutationName $MutationName -StageId 'manifest-policy' -MappingKind $MappingKind -Action {
+        Invoke-BackendTestShardManifestPolicyStage `
+            -RepositoryRoot $repoRoot `
+            -ManifestPath $MutationManifestPath `
+            -PolicyPath $MutationPolicyPath
+    }
+}
+
+function Invoke-InventorySourceMutation {
+    param(
+        [Parameter(Mandatory)] [string] $MutationName,
+        [ValidateSet('mutation', 'baseline', 'prerequisite')] [string] $MappingKind = 'mutation',
+        [Parameter(Mandatory)] [object] $ManifestPolicy,
+        [AllowEmptyString()] [string] $MutationBackendInventoryRoot
+    )
+
+    Invoke-BackendTestShardOwnedStageContract -MutationName $MutationName -StageId 'inventory-source' -MappingKind $MappingKind -Action {
+        Invoke-BackendTestShardInventorySourceStage `
+            -RepositoryRoot $repoRoot `
+            -BackendInventoryRoot $MutationBackendInventoryRoot `
+            -ProjectOwners $ManifestPolicy.ProjectOwners `
+            -AmbiguousProjectOwners $ManifestPolicy.AmbiguousProjectOwners `
+            -ExcludedClassSelectorsByFastShard $ManifestPolicy.ExcludedClassSelectorsByFastShard `
+            -HeavyLaneIdSet $ManifestPolicy.HeavyLaneIdSet
+    }
+}
+
+function Invoke-SolutionMembershipMutation {
+    param(
+        [Parameter(Mandatory)] [string] $MutationName,
+        [ValidateSet('mutation', 'baseline', 'prerequisite')] [string] $MappingKind = 'mutation',
+        [Parameter(Mandatory)] [object] $ManifestPolicy,
+        [Parameter(Mandatory)] [object] $InventorySource
+    )
+
+    Invoke-BackendTestShardOwnedStageContract -MutationName $MutationName -StageId 'solution-membership' -MappingKind $MappingKind -Action {
+        Invoke-BackendTestShardSolutionMembershipStage `
+            -RepositoryRoot $repoRoot `
+            -Manifest $ManifestPolicy.Manifest `
+            -FastShards $ManifestPolicy.FastShards `
+            -DiscoveredProjects $InventorySource.DiscoveredProjects `
+            -DiscoveredBackendProjects $InventorySource.DiscoveredBackendProjects
+    }
+}
+
+function Invoke-WorkflowWiringMutation {
+    param(
+        [Parameter(Mandatory)] [string] $MutationName,
+        [ValidateSet('mutation', 'baseline', 'prerequisite')] [string] $MappingKind = 'mutation',
+        [Parameter(Mandatory)] [string] $MutationWorkflowPath,
+        [Parameter(Mandatory)] [object[]] $FastShards
+    )
+
+    Invoke-BackendTestShardOwnedStageContract -MutationName $MutationName -StageId 'workflow-wiring' -MappingKind $MappingKind -Action {
+        Invoke-BackendTestShardWorkflowWiringStage `
+            -RepositoryRoot $repoRoot `
+            -WorkflowPath $MutationWorkflowPath `
+            -FastShards $FastShards
+    }
+}
+
+$manifestStageContract = Invoke-ManifestPolicyMutation -MutationName 'valid-manifest-policy-baseline' -MappingKind 'baseline'
+Assert-Contract $manifestStageContract.Passed 'The authoritative manifest-policy stage must accept the repository baseline.'
+$manifestStage = $manifestStageContract.StageResult
+$workflowStage = Invoke-WorkflowWiringMutation `
+    -MutationName 'missing-workflow-stage-contract' `
+    -MutationWorkflowPath $temporaryWorkflowPath `
     -FastShards $manifestStage.FastShards
 $missingWorkflowFinding = "Configured CI workflow does not exist: $temporaryWorkflowPath."
-Assert-Contract (@($workflowStage.Errors).Count -eq 1) 'The workflow stage seam must isolate a missing-workflow failure without running inventory or solution membership.'
-Assert-Contract ([string]::Equals([string]$workflowStage.Errors[0], $missingWorkflowFinding, [StringComparison]::Ordinal)) 'The workflow stage seam must preserve the complete CLI missing-workflow diagnostic.'
+Assert-Contract (-not $workflowStage.Passed) 'The workflow stage seam must isolate a missing-workflow failure without running inventory or solution membership.'
+Assert-Contract ([string]::Equals($workflowStage.Message, $missingWorkflowFinding, [StringComparison]::Ordinal)) 'The workflow stage seam must preserve the complete CLI missing-workflow diagnostic.'
 
 $missingManifest = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-missing-manifest-stage-contract' -Arguments @('-ManifestPath', $temporaryManifestPath)
 Assert-Contract (-not $missingManifest.Passed) 'A missing manifest must fail the complete validator.'
@@ -208,7 +319,7 @@ public sealed class DirectDockerTests
 }
 '@
 
-    $directDocker = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-direct-docker-contract' -Arguments @('-BackendInventoryRoot', $temporaryBackendInventory)
+    $directDocker = Invoke-InventorySourceMutation -MutationName 'direct-docker' -ManifestPolicy $manifestStage -MutationBackendInventoryRoot $temporaryBackendInventory
     Assert-Contract (-not $directDocker.Passed) 'An unexcluded test type using the audited Docker CLI primitive must fail shard governance.'
     Assert-Contract ($directDocker.Message.Contains($directDockerFinding, [StringComparison]::Ordinal)) 'Shard governance must report a direct Docker call in a single top-level test class.'
 
@@ -235,7 +346,8 @@ public sealed class Unexcluded
     $directDockerShard[0].excludedTestClasses = @(Get-NervStringsSorted -Values @(@($directDockerShard[0].excludedTestClasses) + $directDockerExcludedType) -Comparer ([StringComparer]::Ordinal) -Unique)
     Set-Content -LiteralPath $temporaryDirectDockerManifestPath -Value ($directDockerManifest | ConvertTo-Json -Depth 100) -NoNewline
 
-    $containedDocker = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-direct-docker-containment-contract' -Arguments @('-BackendInventoryRoot', $temporaryBackendInventory, '-ManifestPath', $temporaryDirectDockerManifestPath)
+    $containedDockerManifest = Invoke-ManifestPolicyMutation -MutationName 'direct-docker-containment-manifest' -MappingKind 'prerequisite' -MutationManifestPath $temporaryDirectDockerManifestPath
+    $containedDocker = Invoke-InventorySourceMutation -MutationName 'direct-docker-containment' -ManifestPolicy $containedDockerManifest.StageResult -MutationBackendInventoryRoot $temporaryBackendInventory
     Assert-Contract (-not $containedDocker.Passed) 'A later unexcluded test type using the audited Docker CLI primitive must fail shard governance.'
     Assert-Contract ($containedDocker.Message.Contains($containedDockerFinding, [StringComparison]::Ordinal)) 'Shard governance must map the Docker primitive to the later containing outer test class instead of an earlier excluded class.'
 
@@ -254,7 +366,7 @@ public sealed class OrdinaryEmptyStringThenDockerTests
     }
 }
 '@
-    $ordinaryEmptyStringThenDocker = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-ordinary-empty-string-then-docker-contract' -Arguments @('-BackendInventoryRoot', $temporaryBackendInventory)
+    $ordinaryEmptyStringThenDocker = Invoke-InventorySourceMutation -MutationName 'ordinary-empty-string-then-docker' -ManifestPolicy $manifestStage -MutationBackendInventoryRoot $temporaryBackendInventory
 
     Set-Content -LiteralPath $temporaryDirectDockerTestPath -NoNewline -Value @'
 namespace Nerv.IIP.TemporaryShardClassification.Tests;
@@ -270,7 +382,7 @@ public sealed class VerbatimEmptyStringThenDockerTests
     }
 }
 '@
-    $verbatimEmptyStringThenDocker = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-verbatim-empty-string-then-docker-contract' -Arguments @('-BackendInventoryRoot', $temporaryBackendInventory)
+    $verbatimEmptyStringThenDocker = Invoke-InventorySourceMutation -MutationName 'verbatim-empty-string-then-docker' -ManifestPolicy $manifestStage -MutationBackendInventoryRoot $temporaryBackendInventory
     Assert-Contract (-not $verbatimEmptyStringThenDocker.Passed) 'A real Docker call after empty and quote-like verbatim strings must fail shard governance.'
     Assert-Contract ($verbatimEmptyStringThenDocker.Message.Contains($verbatimEmptyStringThenDockerFinding, [StringComparison]::Ordinal)) 'Shard governance must not let a verbatim empty string swallow a later Docker call and must report the exact containing test type.'
     Assert-Contract (-not $ordinaryEmptyStringThenDocker.Passed) 'A real Docker call after empty and quote-like ordinary strings must fail shard governance.'
@@ -288,7 +400,7 @@ public sealed class InterpolatedDockerTests
     }
 }
 '@
-    $interpolatedDocker = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-interpolated-docker-contract' -Arguments @('-BackendInventoryRoot', $temporaryBackendInventory)
+    $interpolatedDocker = Invoke-InventorySourceMutation -MutationName 'interpolated-docker' -ManifestPolicy $manifestStage -MutationBackendInventoryRoot $temporaryBackendInventory
 
     Set-Content -LiteralPath $temporaryDirectDockerTestPath -NoNewline -Value @'
 namespace Nerv.IIP.TemporaryShardClassification.Tests;
@@ -302,7 +414,7 @@ public sealed class InterpolatedRawDockerTests
     }
 }
 '@
-    $interpolatedRawDocker = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-interpolated-raw-docker-contract' -Arguments @('-BackendInventoryRoot', $temporaryBackendInventory)
+    $interpolatedRawDocker = Invoke-InventorySourceMutation -MutationName 'interpolated-raw-docker' -ManifestPolicy $manifestStage -MutationBackendInventoryRoot $temporaryBackendInventory
 
     Assert-Contract (-not $interpolatedDocker.Passed) 'A real Docker call inside an ordinary interpolation hole must fail shard governance.'
     Assert-Contract ($interpolatedDocker.Message.Contains($interpolatedDockerFinding, [StringComparison]::Ordinal)) 'Shard governance must audit executable ordinary interpolation holes and report the exact containing test type.'
@@ -539,7 +651,7 @@ public sealed class ParenthesizedNamedStaticProcessStartDockerTests
         _ = System.Diagnostics.Process.Start(fileName: ("docker"));
 }
 '@
-    $dockerBclEntries = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-docker-bcl-entry-contract' -Arguments @('-BackendInventoryRoot', $temporaryBackendInventory)
+    $dockerBclEntries = Invoke-InventorySourceMutation -MutationName 'docker-bcl-entry-shapes' -ManifestPolicy $manifestStage -MutationBackendInventoryRoot $temporaryBackendInventory
     Assert-Contract (-not $dockerBclEntries.Passed) 'Every audited BCL Docker process entry shape in an unexcluded fast-shard project must fail shard governance.'
     foreach ($dockerBclEntryType in $dockerBclEntryTypes) {
         $dockerBclEntryFinding = "Real dependency test type '$dockerBclEntryType' uses the audited Docker CLI primitive but is not excluded from its fast shard."
@@ -683,7 +795,7 @@ public sealed class CustomFieldSelectedWithThisTests
 }
 '@
 
-    $dockerLookalike = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-docker-lookalike-contract'
+    $dockerLookalike = Invoke-InventorySourceMutation -MutationName 'docker-lookalike-source' -ManifestPolicy $manifestStage -MutationBackendInventoryRoot ''
     Assert-Contract $dockerLookalike.Passed 'Comments and C# string lookalikes must not fail real backend shard governance.'
     Assert-Contract (-not $dockerLookalike.Message.Contains($dockerLookalikeFinding, [StringComparison]::Ordinal)) 'Comments and C# string lookalikes must not produce a direct Docker finding.'
 }
@@ -1221,6 +1333,37 @@ foreach ($shard in $fastShards) {
     Assert-Contract ((@($filter.solution.projects | Where-Object { $_ -match '^\.\./' })).Count -eq 0) "Solution filter $($shard.solutionFilter) project paths must be relative to backend/Nerv.IIP.sln."
 }
 
+$baselineInventoryContract = Invoke-InventorySourceMutation -MutationName 'valid-inventory-source-baseline' -MappingKind 'baseline' -ManifestPolicy $manifestStage -MutationBackendInventoryRoot ''
+Assert-Contract $baselineInventoryContract.Passed 'The authoritative inventory-source stage must accept the repository baseline.'
+$baselineInventory = $baselineInventoryContract.StageResult
+
+$bypassedStageRejected = $false
+try {
+    Invoke-BackendTestShardOwnedStageContract -MutationName 'routing-control-bypassed-workflow-stage' -StageId 'workflow-wiring' -Action {
+        [pscustomobject]@{ Errors = @() }
+    } | Out-Null
+}
+catch {
+    $bypassedStageRejected = $_.Exception.Message.Contains("must invoke its owning 'workflow-wiring' stage exactly once", [StringComparison]::Ordinal)
+}
+Assert-Contract $bypassedStageRejected 'Bypassing a mutation owning stage must make the execution-ownership contract fail.'
+
+$fullPipelineRoutingRejected = $false
+try {
+    Invoke-BackendTestShardOwnedStageContract -MutationName 'routing-control-workflow-through-full-pipeline' -StageId 'workflow-wiring' -Action {
+        Invoke-BackendTestShardValidation `
+            -RepositoryRoot $repoRoot `
+            -ManifestPath $manifestPath `
+            -WorkflowPath $workflowPath `
+            -PolicyPath $policyPath `
+            -BackendInventoryRoot ''
+    } | Out-Null
+}
+catch {
+    $fullPipelineRoutingRejected = $_.Exception.Message.Contains('must not invoke unrelated backend shard stages', [StringComparison]::Ordinal)
+}
+Assert-Contract $fullPipelineRoutingRejected 'Routing a local workflow mutation through the complete inventory pipeline must make the execution-ownership contract fail.'
+
 # Solution membership must be enforced for *non-test* backend projects too. A project reachable only
 # as a transitive ProjectReference has no entry in the solution configuration map, so a
 # `--configuration Release` shard emits it into bin/Debug and every shard silently tests Release
@@ -1232,7 +1375,8 @@ try {
     New-Item -ItemType Directory -Path $temporarySolutionMemberDirectory -Force | Out-Null
     Set-Content -LiteralPath $temporarySolutionMemberPath -Value '<Project Sdk="Microsoft.NET.Sdk" />' -NoNewline
 
-    $solutionMembership = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-solution-membership' -Arguments @('-BackendInventoryRoot', $temporaryBackendInventory)
+    $solutionMembershipInventory = Invoke-InventorySourceMutation -MutationName 'non-test-solution-member-inventory' -MappingKind 'prerequisite' -ManifestPolicy $manifestStage -MutationBackendInventoryRoot $temporaryBackendInventory
+    $solutionMembership = Invoke-SolutionMembershipMutation -MutationName 'non-test-solution-membership' -ManifestPolicy $manifestStage -InventorySource $solutionMembershipInventory.StageResult
 }
 finally {
     if (Test-Path -LiteralPath $temporarySolutionMemberDirectory) {
@@ -1249,19 +1393,19 @@ try {
     New-Item -ItemType Directory -Path $temporaryProjectDirectory -Force | Out-Null
     Set-Content -LiteralPath $temporaryProjectPath -Value '<Project Sdk="Microsoft.NET.Sdk" />' -NoNewline
 
-    $unclassified = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-unclassified-project' -Arguments @('-BackendInventoryRoot', $temporaryBackendInventory)
+    $unclassified = Invoke-InventorySourceMutation -MutationName 'unclassified-project' -ManifestPolicy $manifestStage -MutationBackendInventoryRoot $temporaryBackendInventory
     Assert-Contract (-not $unclassified.Passed) 'An unclassified temporary backend test project must fail classification.'
     Assert-Contract ($unclassified.Message.Contains('Unclassified backend test', [StringComparison]::Ordinal)) 'Unclassified project failure must identify the classification error.'
     Assert-Contract ($unclassified.Message.Contains('backend/tests/Nerv.IIP.TemporaryShardClassification.Tests/Nerv.IIP.TemporaryShardClassification.Tests.csproj', [StringComparison]::Ordinal)) 'Unclassified project failure must identify the temporary project path.'
 
     $workflowContent = Get-Content -LiteralPath $workflowPath -Raw
     Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent -replace '(?m)^\s+- backend-tests-business-core-b\r?\n', '') -NoNewline
-    $workflowValidation = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-workflow-contract' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
+    $workflowValidation = Invoke-WorkflowWiringMutation -MutationName 'workflow-missing-aggregate-dependency' -MutationWorkflowPath $temporaryWorkflowPath -FastShards $manifestStage.FastShards
     Assert-Contract (-not $workflowValidation.Passed) 'A workflow with a missing aggregate dependency must fail structured shard governance.'
     Assert-Contract ($workflowValidation.Message.Contains('Backend Tests aggregate must need exactly the impact plan, governance, and four fast shard jobs.', [StringComparison]::Ordinal)) 'Structured workflow validation must reject an aggregate with a missing shard dependency.'
 
     Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent.Replace("  backend-test-shard-governance:$([Environment]::NewLine)", "  backend-test-shard-governance-missing:$([Environment]::NewLine)")) -NoNewline
-    $missingGovernanceValidation = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-missing-governance-job' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
+    $missingGovernanceValidation = Invoke-WorkflowWiringMutation -MutationName 'workflow-missing-governance-job' -MutationWorkflowPath $temporaryWorkflowPath -FastShards $manifestStage.FastShards
     Assert-Contract (-not $missingGovernanceValidation.Passed) 'A missing backend shard governance job must fail structured shard governance.'
     Assert-Contract ($missingGovernanceValidation.Message.Contains("CI workflow is missing backend execution job 'backend-test-shard-governance'.", [StringComparison]::Ordinal)) 'Structured workflow validation must identify the missing backend shard governance job.'
 
@@ -1271,42 +1415,42 @@ try {
     $workflowWithMutatedPlatformNeed = $workflowContent.Replace($platformNeed, "${platformNeed}$statusFunctionSoftHyphen")
     Assert-Contract (-not [string]::Equals($workflowWithMutatedPlatformNeed, $workflowContent, [StringComparison]::Ordinal)) 'The aggregate-needs U+00AD mutation must target the canonical platform job line.'
     Set-Content -LiteralPath $temporaryWorkflowPath -Value $workflowWithMutatedPlatformNeed -NoNewline
-    $mutatedNeedValidation = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-aggregate-needs-ordinal-contract' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
+    $mutatedNeedValidation = Invoke-WorkflowWiringMutation -MutationName 'workflow-aggregate-needs-ordinal' -MutationWorkflowPath $temporaryWorkflowPath -FastShards $manifestStage.FastShards
     Assert-Contract (-not $mutatedNeedValidation.Passed) 'A U+00AD-mutated aggregate need must fail exact shard governance.'
     Assert-Contract ($mutatedNeedValidation.Message.Contains('Backend Tests aggregate must need exactly the impact plan, governance, and four fast shard jobs.', [StringComparison]::Ordinal)) 'Structured workflow validation must reject a U+00AD-mutated aggregate need.'
 
     Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent -replace 'test "\$\{\{ needs\.backend-tests-platform\.result \}\}" = "\$expected_result"', 'echo "${{ needs.backend-tests-platform.result }}"') -NoNewline
-    $noOpValidation = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-noop-aggregate-contract' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
+    $noOpValidation = Invoke-WorkflowWiringMutation -MutationName 'workflow-noop-aggregate' -MutationWorkflowPath $temporaryWorkflowPath -FastShards $manifestStage.FastShards
     Assert-Contract (-not $noOpValidation.Passed) 'A no-op aggregate dependency expression must fail structured shard governance.'
     Assert-Contract ($noOpValidation.Message.Contains('Backend Tests aggregate must retain the fail-closed selected-success and unselected-skipped contract and audit reason.', [StringComparison]::Ordinal)) 'Structured workflow validation must reject a non-failing aggregate dependency expression.'
 
     Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent -replace 'test "\$\{\{ needs\.backend-tests-platform\.result \}\}" = "\$expected_result"', 'test "${{ needs.backend-tests-platform.result }}" = "$expected_result" || true') -NoNewline
-    $maskedFailureValidation = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-masked-aggregate-contract' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
+    $maskedFailureValidation = Invoke-WorkflowWiringMutation -MutationName 'workflow-masked-aggregate' -MutationWorkflowPath $temporaryWorkflowPath -FastShards $manifestStage.FastShards
     Assert-Contract (-not $maskedFailureValidation.Passed) 'An aggregate assertion masked with || true must fail structured shard governance.'
     Assert-Contract ($maskedFailureValidation.Message.Contains('Backend Tests aggregate must retain the fail-closed selected-success and unselected-skipped contract and audit reason.', [StringComparison]::Ordinal)) 'Structured workflow validation must reject a masked aggregate dependency assertion.'
 
     Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent.Replace('            expected_result="success"', '            expected_result="skipped"')) -NoNewline
-    $selectedAllowsSkipValidation = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-selected-allows-skip' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
+    $selectedAllowsSkipValidation = Invoke-WorkflowWiringMutation -MutationName 'workflow-selected-allows-skip' -MutationWorkflowPath $temporaryWorkflowPath -FastShards $manifestStage.FastShards
     Assert-Contract (-not $selectedAllowsSkipValidation.Passed) 'The selected Backend Tests policy must reject skipped execution jobs.'
     Assert-Contract ($selectedAllowsSkipValidation.Message.Contains('Backend Tests aggregate must retain the fail-closed selected-success and unselected-skipped contract and audit reason.', [StringComparison]::Ordinal)) 'Selected Backend Tests must only accept successful execution jobs.'
 
     Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent.Replace('          expected_result="skipped"', '          expected_result="success"')) -NoNewline
-    $unselectedAllowsSuccessValidation = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-unselected-allows-success' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
+    $unselectedAllowsSuccessValidation = Invoke-WorkflowWiringMutation -MutationName 'workflow-unselected-allows-success' -MutationWorkflowPath $temporaryWorkflowPath -FastShards $manifestStage.FastShards
     Assert-Contract (-not $unselectedAllowsSuccessValidation.Passed) 'The unselected Backend Tests policy must reject unexpectedly successful execution jobs.'
     Assert-Contract ($unselectedAllowsSuccessValidation.Message.Contains('Backend Tests aggregate must retain the fail-closed selected-success and unselected-skipped contract and audit reason.', [StringComparison]::Ordinal)) 'Unselected Backend Tests must only accept precisely skipped execution jobs.'
 
     Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent -replace '(?m)^(\s+- name: Require all backend fast shards\r?\n)', ('$1        continue-on-error: true' + [Environment]::NewLine)) -NoNewline
-    $continueOnErrorValidation = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-continue-on-error-contract' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
+    $continueOnErrorValidation = Invoke-WorkflowWiringMutation -MutationName 'workflow-step-continue-on-error' -MutationWorkflowPath $temporaryWorkflowPath -FastShards $manifestStage.FastShards
     Assert-Contract (-not $continueOnErrorValidation.Passed) 'An aggregate step with continue-on-error must fail structured shard governance.'
     Assert-Contract ($continueOnErrorValidation.Message.Contains("Backend Tests aggregate must not set 'continue-on-error' on the job or any step.", [StringComparison]::Ordinal)) 'Structured workflow validation must reject an aggregate continue-on-error configuration.'
 
     Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent -replace '(?m)^(    if: always\(\)\r?\n)', ('$1    continue-on-error: true' + [Environment]::NewLine)) -NoNewline
-    $jobContinueOnErrorValidation = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-job-continue-on-error-contract' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
+    $jobContinueOnErrorValidation = Invoke-WorkflowWiringMutation -MutationName 'workflow-job-continue-on-error' -MutationWorkflowPath $temporaryWorkflowPath -FastShards $manifestStage.FastShards
     Assert-Contract (-not $jobContinueOnErrorValidation.Passed) 'An aggregate job with continue-on-error must fail structured shard governance.'
     Assert-Contract ($jobContinueOnErrorValidation.Message.Contains("Backend Tests aggregate must not set 'continue-on-error' on the job or any step.", [StringComparison]::Ordinal)) 'Structured workflow validation must reject an aggregate job continue-on-error configuration.'
 
     Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent -replace '(?m)(-TrxFilePrefix backend-tests-platform)', '$1 -TestCommand "Write-Output pass"') -NoNewline
-    $bypassValidation = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-command-bypass-contract' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
+    $bypassValidation = Invoke-WorkflowWiringMutation -MutationName 'workflow-command-bypass' -MutationWorkflowPath $temporaryWorkflowPath -FastShards $manifestStage.FastShards
     Assert-Contract (-not $bypassValidation.Passed) 'A fast shard command replacement parameter must fail structured shard governance.'
     Assert-Contract ($bypassValidation.Message.Contains("Fast shard job 'backend-tests-platform' must not supply a command replacement parameter.", [StringComparison]::Ordinal)) 'Structured workflow validation must reject a command replacement parameter.'
 
@@ -1337,7 +1481,7 @@ try {
             }
         )) {
         Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent -replace $evidenceMutation.Pattern, $evidenceMutation.Replacement) -NoNewline
-        $evidenceValidation = Invoke-GovernedScript -ScriptPath $validatorPath -Name "backend-test-shard-evidence-$($evidenceMutation.Name)-contract" -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
+        $evidenceValidation = Invoke-WorkflowWiringMutation -MutationName "workflow-evidence-$($evidenceMutation.Name)" -MutationWorkflowPath $temporaryWorkflowPath -FastShards $manifestStage.FastShards
         Assert-Contract (-not $evidenceValidation.Passed) "Evidence mutation '$($evidenceMutation.Name)' must fail structured shard governance."
         Assert-Contract ($evidenceValidation.Message.Contains($evidenceMutation.Expected)) "Structured workflow validation must reject the '$($evidenceMutation.Name)' evidence mutation."
     }
@@ -1351,7 +1495,7 @@ try {
         }
     }
     Set-Content -LiteralPath $temporaryPolicyPath -Value ($policy | ConvertTo-Json -Depth 100) -NoNewline
-    $policyCoverage = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-policy-coverage-contract' -Arguments @('-PolicyPath', $temporaryPolicyPath)
+    $policyCoverage = Invoke-ManifestPolicyMutation -MutationName 'policy-coverage' -MutationPolicyPath $temporaryPolicyPath
     Assert-Contract (-not $policyCoverage.Passed) 'A fast shard exclusion without a MAN-661 registered skip must fail shard governance.'
     Assert-Contract ($policyCoverage.Message.Contains('is not registered in the MAN-661 evidence policy as an environment-gated real-dependency skip', [StringComparison]::Ordinal)) 'Shard governance must reject an exclusion the evidence policy does not register.'
 
@@ -1361,7 +1505,8 @@ try {
     Assert-Contract ($directoryShard.Count -eq 1) 'The Inventory directory PostgreSQL selector mutation must resolve business-core-a exactly once.'
     $directoryShard[0].excludedTestClasses = @($directoryShard[0].excludedTestClasses | Where-Object { -not [string]::Equals([string]([string] $_), $directorySelector, [StringComparison]::Ordinal) })
     Set-Content -LiteralPath $temporaryManifestPath -Value ($directoryManifest | ConvertTo-Json -Depth 100) -NoNewline
-    $missingDirectorySelector = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-inventory-directory-selector-contract' -Arguments @('-ManifestPath', $temporaryManifestPath)
+    $missingDirectoryManifest = Invoke-ManifestPolicyMutation -MutationName 'inventory-directory-selector-manifest' -MappingKind 'prerequisite' -MutationManifestPath $temporaryManifestPath
+    $missingDirectorySelector = Invoke-InventorySourceMutation -MutationName 'inventory-directory-selector' -ManifestPolicy $missingDirectoryManifest.StageResult -MutationBackendInventoryRoot ''
     $directoryFinding = "Real dependency test type '$directorySelector' uses the audited Docker CLI primitive but is not excluded from its fast shard."
     Assert-Contract (-not $missingDirectorySelector.Passed) 'Removing the Inventory directory PostgreSQL selector must fail shard governance.'
     Assert-Contract ($missingDirectorySelector.Message.Contains($directoryFinding, [StringComparison]::Ordinal)) 'Removing the Inventory directory PostgreSQL selector must report the complete direct Docker finding.'
@@ -1374,7 +1519,8 @@ try {
     $wrongShardDirectoryOwner[0].excludedTestClasses = @($wrongShardDirectoryOwner[0].excludedTestClasses | Where-Object { -not [string]::Equals([string]([string] $_), $directorySelector, [StringComparison]::Ordinal) })
     $wrongShardDirectoryTarget[0].excludedTestClasses = @(Get-NervStringsSorted -Values @(@($wrongShardDirectoryTarget[0].excludedTestClasses) + $directorySelector) -Comparer ([StringComparer]::Ordinal) -Unique)
     Set-Content -LiteralPath $temporaryManifestPath -Value ($wrongShardDirectoryManifest | ConvertTo-Json -Depth 100) -NoNewline
-    $wrongShardDirectorySelector = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-inventory-directory-wrong-owner-contract' -Arguments @('-ManifestPath', $temporaryManifestPath)
+    $wrongShardDirectoryManifestContract = Invoke-ManifestPolicyMutation -MutationName 'inventory-directory-wrong-owner-manifest' -MappingKind 'prerequisite' -MutationManifestPath $temporaryManifestPath
+    $wrongShardDirectorySelector = Invoke-InventorySourceMutation -MutationName 'inventory-directory-wrong-owner' -ManifestPolicy $wrongShardDirectoryManifestContract.StageResult -MutationBackendInventoryRoot ''
     Assert-Contract (-not $wrongShardDirectorySelector.Passed) 'Relocating the Inventory directory PostgreSQL selector to a non-owning fast shard must fail shard governance.'
     Assert-Contract ($wrongShardDirectorySelector.Message.Contains($directoryFinding, [StringComparison]::Ordinal)) 'Relocating the Inventory directory PostgreSQL selector must report the complete direct Docker finding for its owning shard.'
 
@@ -1391,7 +1537,7 @@ try {
         [StringComparer]::Ordinal)
     $directoryPolicy.rules = @($directoryPolicy.rules | Where-Object { -not $directoryPolicyRuleIds.Contains([string] $_.id) })
     Set-Content -LiteralPath $temporaryPolicyPath -Value ($directoryPolicy | ConvertTo-Json -Depth 100) -NoNewline
-    $missingDirectoryPolicy = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-inventory-directory-policy-contract' -Arguments @('-PolicyPath', $temporaryPolicyPath)
+    $missingDirectoryPolicy = Invoke-ManifestPolicyMutation -MutationName 'inventory-directory-policy' -MutationPolicyPath $temporaryPolicyPath
     Assert-Contract (-not $missingDirectoryPolicy.Passed) 'Removing the Inventory directory PostgreSQL policy rule must fail shard governance.'
     Assert-Contract ($missingDirectoryPolicy.Message.Contains("Fast shard exclusion '$directorySelector' is not registered in the MAN-661 evidence policy as an environment-gated real-dependency skip.", [StringComparison]::Ordinal)) 'Removing the Inventory directory PostgreSQL policy rule must report the unregistered environment-gated skip finding.'
 
@@ -1403,7 +1549,7 @@ try {
     Assert-Contract ($redisCapShards.Count -ge 1) 'At least one fast shard must own Redis/CAP exclusions for the lane-attribution contract to under-declare one owner.'
     $redisCapShards[0].excludedTestLanes = @('real-postgres')
     Set-Content -LiteralPath $temporaryManifestPath -Value ($laneManifest | ConvertTo-Json -Depth 100) -NoNewline
-    $laneAttribution = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-lane-attribution-contract' -Arguments @('-ManifestPath', $temporaryManifestPath)
+    $laneAttribution = Invoke-ManifestPolicyMutation -MutationName 'lane-attribution' -MutationManifestPath $temporaryManifestPath
     Assert-Contract (-not $laneAttribution.Passed) 'A shard that under-declares its excluded test lanes must fail shard governance.'
     Assert-Contract ($laneAttribution.Message.Contains('must declare excludedTestLanes [real-postgres, redis-cap]', [StringComparison]::Ordinal)) 'Shard governance must derive owner lanes from the MAN-661 requiredLane instead of trusting the declaration.'
 
@@ -1422,20 +1568,22 @@ try {
     # whole-solution finding rather than with "invalid JSON" — a failure-only assertion would be
     # green for all eight even with the branch deleted, because every spelling fails either way.
     $solutionSpelling = [string] (Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json).solution
-    foreach ($wholeSolutionSpelling in @(
-            $solutionSpelling,
-            "./$solutionSpelling",
-            ($solutionSpelling -replace '/', '\'),
-            $solutionSpelling.ToLowerInvariant(),
-            ($solutionSpelling -replace '/', '//'),
-            ($solutionSpelling -replace '/', '/./'),
-            ("$(Split-Path -Parent $solutionSpelling)/../$solutionSpelling"),
-            ((Join-Path $repoRoot $solutionSpelling) -replace '\\', '/')
+    foreach ($wholeSolutionCase in @(
+            @{ Name = 'canonical'; Spelling = $solutionSpelling },
+            @{ Name = 'dot-prefix'; Spelling = "./$solutionSpelling" },
+            @{ Name = 'backslash'; Spelling = ($solutionSpelling -replace '/', '\') },
+            @{ Name = 'lower-case'; Spelling = $solutionSpelling.ToLowerInvariant() },
+            @{ Name = 'double-slash'; Spelling = ($solutionSpelling -replace '/', '//') },
+            @{ Name = 'dot-segment'; Spelling = ($solutionSpelling -replace '/', '/./') },
+            @{ Name = 'parent-segment'; Spelling = ("$(Split-Path -Parent $solutionSpelling)/../$solutionSpelling") },
+            @{ Name = 'absolute'; Spelling = ((Join-Path $repoRoot $solutionSpelling) -replace '\\', '/') }
         )) {
+        $wholeSolutionSpelling = [string] $wholeSolutionCase.Spelling
         $wholeSolutionManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
         $wholeSolutionManifest.fastShards[0].solutionFilter = $wholeSolutionSpelling
         Set-Content -LiteralPath $temporaryManifestPath -Value ($wholeSolutionManifest | ConvertTo-Json -Depth 100) -NoNewline
-        $wholeSolution = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-whole-solution-contract' -Arguments @('-ManifestPath', $temporaryManifestPath)
+        $wholeSolutionManifestContract = Invoke-ManifestPolicyMutation -MutationName "whole-solution-manifest-$($wholeSolutionCase.Name)" -MappingKind 'prerequisite' -MutationManifestPath $temporaryManifestPath
+        $wholeSolution = Invoke-SolutionMembershipMutation -MutationName "whole-solution-$($wholeSolutionCase.Name)" -ManifestPolicy $wholeSolutionManifestContract.StageResult -InventorySource $baselineInventory
         Assert-Contract (-not $wholeSolution.Passed) "A fast shard pointed at the whole backend solution ('$wholeSolutionSpelling') must fail shard governance."
         Assert-Contract ($wholeSolution.Message.Contains('must build its own solution filter, not the whole backend solution', [StringComparison]::Ordinal)) "Shard governance must reject a fast shard that rebuilds the entire backend solution, however '$wholeSolutionSpelling' is spelled."
         Assert-Contract (-not $wholeSolution.Message.Contains('solution filter is invalid JSON', [StringComparison]::Ordinal)) "'$wholeSolutionSpelling' must be diagnosed as the whole solution, not as a malformed solution filter."
@@ -1472,7 +1620,7 @@ try {
         }
     }
     Set-Content -LiteralPath $temporaryPolicyPath -Value ($collisionPolicy | ConvertTo-Json -Depth 100) -NoNewline
-    $collision = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-selector-collision-contract' -Arguments @('-PolicyPath', $temporaryPolicyPath)
+    $collision = Invoke-ManifestPolicyMutation -MutationName 'selector-prefix-collision' -MutationPolicyPath $temporaryPolicyPath
     Assert-Contract (-not $collision.Passed) 'A method selector that substring-excludes a sibling member must fail shard governance.'
     Assert-Contract ($collision.Message.Contains('would also substring-exclude a sibling member', [StringComparison]::Ordinal)) 'Shard governance must reject a method selector that swallows a prefix-sharing sibling.'
 
@@ -2173,7 +2321,12 @@ try {
 
         $rearrangedManifestPath = Join-Path $timingFixtureRoot 'rearranged-manifest.json'
         Set-Content -LiteralPath $rearrangedManifestPath -NoNewline -Value ($rearranged | ConvertTo-Json -Depth 100)
-        $rearrangedGate = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-rearranged-policy-gate' -Arguments @('-ManifestPath', $rearrangedManifestPath)
+        $rearrangedManifestContract = Invoke-ManifestPolicyMutation -MutationName 'rearranged-policy-manifest' -MutationManifestPath $rearrangedManifestPath
+        $rearrangedSolutionContract = Invoke-SolutionMembershipMutation -MutationName 'rearranged-policy-solution-membership' -MappingKind 'prerequisite' -ManifestPolicy $rearrangedManifestContract.StageResult -InventorySource $baselineInventory
+        $rearrangedGate = [pscustomobject]@{
+            Passed = $rearrangedManifestContract.Passed -and $rearrangedSolutionContract.Passed
+            Message = (@($rearrangedManifestContract.Message, $rearrangedSolutionContract.Message) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join ' '
+        }
         Assert-Contract ($rearrangedGate.Passed) "A shard rearrangement that moves a project with its exclusions must lose zero policy keys and satisfy the policy gate unchanged; the gate reported: $($rearrangedGate.Message)"
 
         # Negative control for the fixture, not for the product: with excludedTestLanes left behind,
@@ -2184,7 +2337,7 @@ try {
         $underDeclaredReceiver.excludedTestLanes = @(@($underDeclaredReceiver.excludedTestLanes) | Where-Object { -not [string]::Equals([string] $_, $donorExtraLane, [StringComparison]::Ordinal) })
         $underDeclaredManifestPath = Join-Path $timingFixtureRoot 'rearranged-manifest-under-declared.json'
         Set-Content -LiteralPath $underDeclaredManifestPath -NoNewline -Value ($underDeclaredManifest | ConvertTo-Json -Depth 100)
-        $underDeclaredGate = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-rearranged-under-declared-lane' -Arguments @('-ManifestPath', $underDeclaredManifestPath)
+        $underDeclaredGate = Invoke-ManifestPolicyMutation -MutationName 'rearranged-under-declared-lane' -MutationManifestPath $underDeclaredManifestPath
         Assert-Contract (-not $underDeclaredGate.Passed) 'The rearrangement fixture must actually exercise the excludedTestLanes derivation; a shard that keeps a moved exclusion lane must fail.'
         Assert-Contract ($underDeclaredGate.Message.Contains('must declare excludedTestLanes', [StringComparison]::Ordinal)) 'The under-declared control must fail at the excludedTestLanes coupling point, not somewhere else.'
     }
@@ -2432,5 +2585,20 @@ finally {
     Remove-Item -LiteralPath $timingFixtureRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 Assert-Contract (-not (Test-Path -LiteralPath $timingFixtureRoot)) 'The shard timing fixtures must be cleaned up.'
+
+Assert-Contract ($completeValidatorInvocationCount -eq 4) "The contract suite must retain exactly four complete validator process contracts; observed $completeValidatorInvocationCount."
+$mappingNames = @($stageExecutionMappings | ForEach-Object { [string] $_.Name })
+Assert-Contract ((Get-NervStringsSorted -Values $mappingNames -Comparer ([StringComparer]::Ordinal) -Unique).Count -eq $mappingNames.Count) 'Every direct stage execution must have one unique mapping identity.'
+foreach ($stageId in @('manifest-policy', 'inventory-source', 'solution-membership', 'workflow-wiring')) {
+    $stageExecutionCount = @($stageExecutionMappings | Where-Object { [string]::Equals([string] $_.Stage, $stageId, [StringComparison]::Ordinal) }).Count
+    Assert-Contract ($stageExecutionCount -gt 0) "The mutation suite must execute the authoritative '$stageId' stage at least once."
+    Write-Host "  [stage-invocations] ${stageId}: $stageExecutionCount"
+}
+foreach ($mapping in @($stageExecutionMappings | Sort-Object -Property Name)) {
+    Write-Host "  [stage-map:$($mapping.Kind)] $($mapping.Name) -> $($mapping.Stage)"
+}
+$actualMutationCount = @($stageExecutionMappings | Where-Object { [string]::Equals([string] $_.Kind, 'mutation', [StringComparison]::Ordinal) }).Count
+$prerequisiteCount = @($stageExecutionMappings | Where-Object { [string]::Equals([string] $_.Kind, 'prerequisite', [StringComparison]::Ordinal) }).Count
+Write-Host "  [execution-counts] input mutations: $actualMutationCount; stage prerequisites: $prerequisiteCount; baselines: 2; complete validator processes: $completeValidatorInvocationCount; rejected routing controls: 2"
 
 Write-Host 'Backend test shard manifest contract tests passed.'
