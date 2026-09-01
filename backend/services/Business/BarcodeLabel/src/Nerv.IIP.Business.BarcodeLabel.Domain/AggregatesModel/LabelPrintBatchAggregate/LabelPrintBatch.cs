@@ -22,6 +22,7 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
 {
     private const string Pending = "pending";
     private const string SentToPrinter = "sent-to-printer";
+    private const string DeliveryUnknown = "delivery-unknown";
     private const string Printed = "printed";
     private const string Failed = "failed";
 
@@ -138,6 +139,33 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
         return new LabelPrintBatch(organizationId, environmentId, rule, labelTemplateId, null, sourceDocumentType, sourceDocumentId, idempotencyKey, labelValuesJson, requestedQuantity);
     }
 
+    public bool HasCompleteReplaySnapshot =>
+        !string.IsNullOrWhiteSpace(TemplateFileIdSnapshot)
+        && !string.IsNullOrWhiteSpace(TemplateAssetSha256)
+        && !string.IsNullOrWhiteSpace(VariableSchemaJsonSnapshot)
+        && !string.IsNullOrWhiteSpace(BarcodeTypeSnapshot)
+        && !string.IsNullOrWhiteSpace(RendererContractVersion);
+
+    public void EnsureCompleteReplaySnapshot()
+    {
+        if (!HasCompleteReplaySnapshot)
+        {
+            throw new InvalidOperationException("Print batch does not contain a complete replay snapshot.");
+        }
+    }
+
+    public void EnsureCanBeDispatched()
+    {
+        if (Status is not (Pending or Failed))
+        {
+            throw Reject(
+                Status == DeliveryUnknown
+                    ? LabelPrintLifecycleRejectionReason.BatchDeliveryUnknownCannotBeDispatched
+                    : LabelPrintLifecycleRejectionReason.BatchCannotBeDispatched,
+                $"Print batch in status '{Status}' cannot be dispatched.");
+        }
+    }
+
     public bool HasSameIdempotencyPayload(LabelPrintBatch other)
     {
         return OrganizationId == other.OrganizationId
@@ -166,9 +194,11 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
 
     public void RecordSentToPrinter(string printerId, string printJobId)
     {
-        if (Status is not (Pending or Failed or Printed))
+        if (Status is not (Pending or Failed))
         {
-            throw new InvalidOperationException($"Print batch in status '{Status}' cannot be sent to a printer.");
+            throw Reject(
+                LabelPrintLifecycleRejectionReason.BatchCannotBeDispatched,
+                $"Print batch in status '{Status}' cannot be sent to a printer.");
         }
 
         PrinterId = BarcodeLabelText.Required(printerId, nameof(printerId));
@@ -176,6 +206,14 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
         FailureReason = null;
         CompletedAtUtc = null;
         Status = SentToPrinter;
+    }
+
+    public void RecordReprintSentToPrinter(string printerId, string printJobId)
+    {
+        EnsureCanRecordReprintResult();
+        PrinterId = BarcodeLabelText.Required(printerId, nameof(printerId));
+        PrintJobId = BarcodeLabelText.Required(printJobId, nameof(printJobId));
+        FailureReason = null;
     }
 
     public void RecordPrinted()
@@ -195,21 +233,70 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
         this.AddDomainEvent(new LabelPrintBatchCompletedDomainEvent(this));
     }
 
-    public void RecordPrintFailed(string failureReason)
+    public void RecordDeliveryUnknown(string printerId, string printJobId, string failureReason)
     {
-        if (Status is not (Pending or SentToPrinter))
+        if (Status is not (Pending or Failed))
+        {
+            throw new InvalidOperationException($"Print batch in status '{Status}' cannot record unknown delivery.");
+        }
+
+        PrinterId = BarcodeLabelText.Required(printerId, nameof(printerId));
+        PrintJobId = BarcodeLabelText.Required(printJobId, nameof(printJobId));
+        FailureReason = BarcodeLabelText.Required(failureReason, nameof(failureReason));
+        CompletedAtUtc = DateTimeOffset.UtcNow;
+        Status = DeliveryUnknown;
+    }
+
+    public void RecordReprintDeliveryUnknown(string printerId, string printJobId, string failureReason)
+    {
+        EnsureCanRecordReprintResult();
+        PrinterId = BarcodeLabelText.Required(printerId, nameof(printerId));
+        PrintJobId = BarcodeLabelText.Required(printJobId, nameof(printJobId));
+        FailureReason = BarcodeLabelText.Required(failureReason, nameof(failureReason));
+    }
+
+    public void RecordPrintFailed(string printerId, string failureReason)
+    {
+        if (Status is not (Pending or Failed))
         {
             throw new InvalidOperationException($"Print batch in status '{Status}' cannot be marked failed.");
         }
 
+        PrinterId = BarcodeLabelText.Required(printerId, nameof(printerId));
+        PrintJobId = null;
         FailureReason = BarcodeLabelText.Required(failureReason, nameof(failureReason));
         Status = Failed;
         CompletedAtUtc = DateTimeOffset.UtcNow;
     }
 
+    public void RecordReprintFailed(string printerId, string failureReason)
+    {
+        EnsureCanRecordReprintResult();
+        PrinterId = BarcodeLabelText.Required(printerId, nameof(printerId));
+        PrintJobId = null;
+        FailureReason = BarcodeLabelText.Required(failureReason, nameof(failureReason));
+    }
+
     public void ReprintItem(int sequenceNo)
     {
         FindItem(sequenceNo).MarkReprinted();
+    }
+
+    public void EnsureItemCanBeReprinted(int sequenceNo)
+    {
+        if (Status is not (SentToPrinter or Printed))
+        {
+            throw Reject(
+                Status switch
+                {
+                    DeliveryUnknown => LabelPrintLifecycleRejectionReason.BatchDeliveryUnknownCannotBeReprinted,
+                    Failed => LabelPrintLifecycleRejectionReason.FailedBatchRequiresDispatch,
+                    _ => LabelPrintLifecycleRejectionReason.BatchCannotBeReprinted,
+                },
+                $"Print batch in status '{Status}' cannot dispatch a reprint.");
+        }
+
+        FindItem(sequenceNo).EnsureCanBeRedispatched();
     }
 
     public void VoidItem(int sequenceNo, string voidReason)
@@ -231,8 +318,23 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
     private LabelPrintItem FindItem(int sequenceNo)
     {
         return Items.SingleOrDefault(x => x.SequenceNo == sequenceNo)
-            ?? throw new InvalidOperationException($"Print item not found, SequenceNo = {sequenceNo}.");
+            ?? throw Reject(
+                LabelPrintLifecycleRejectionReason.PrintItemNotFound,
+                $"Print item not found, SequenceNo = {sequenceNo}.");
     }
+
+    private void EnsureCanRecordReprintResult()
+    {
+        if (Status is not (SentToPrinter or Printed))
+        {
+            throw new InvalidOperationException($"Print batch in status '{Status}' cannot record a reprint result.");
+        }
+    }
+
+    private static LabelPrintLifecycleRejectedException Reject(
+        LabelPrintLifecycleRejectionReason reason,
+        string message) =>
+        new(reason, message);
 }
 
 public sealed class LabelPrintItem : Entity<LabelPrintItemId>
@@ -302,29 +404,44 @@ public sealed class LabelPrintItem : Entity<LabelPrintItemId>
 
     internal void MarkReprinted()
     {
-        if (Status == Voided)
-        {
-            throw new InvalidOperationException("Voided labels cannot be reprinted.");
-        }
+        EnsureCanBeReprinted();
+        Status = Reprinted;
+    }
 
-        if (Status == Consumed)
-        {
-            throw new InvalidOperationException("Consumed labels cannot be reprinted.");
-        }
+    internal void EnsureCanBeReprinted()
+    {
+        EnsureCanBeRedispatched();
 
         if (Status is not (Printed or Reprinted))
         {
             throw new InvalidOperationException($"Label in status '{Status}' cannot be reprinted.");
         }
+    }
 
-        Status = Reprinted;
+    internal void EnsureCanBeRedispatched()
+    {
+        if (Status == Voided)
+        {
+            throw new LabelPrintLifecycleRejectedException(
+                LabelPrintLifecycleRejectionReason.PrintItemVoided,
+                "Voided labels cannot be reprinted.");
+        }
+
+        if (Status == Consumed)
+        {
+            throw new LabelPrintLifecycleRejectedException(
+                LabelPrintLifecycleRejectionReason.PrintItemConsumed,
+                "Consumed labels cannot be reprinted.");
+        }
     }
 
     internal void Void(string voidReason)
     {
         if (Status == Consumed)
         {
-            throw new InvalidOperationException("Consumed labels cannot be voided.");
+            throw new LabelPrintLifecycleRejectedException(
+                LabelPrintLifecycleRejectionReason.ConsumedPrintItemCannotBeVoided,
+                "Consumed labels cannot be voided.");
         }
 
         if (Status == Voided)
@@ -352,6 +469,26 @@ public sealed class LabelPrintItem : Entity<LabelPrintItemId>
         Status = Consumed;
         ConsumedAtUtc = DateTimeOffset.UtcNow;
     }
+}
+
+public enum LabelPrintLifecycleRejectionReason
+{
+    BatchCannotBeDispatched,
+    BatchDeliveryUnknownCannotBeDispatched,
+    BatchCannotBeReprinted,
+    BatchDeliveryUnknownCannotBeReprinted,
+    FailedBatchRequiresDispatch,
+    PrintItemNotFound,
+    PrintItemVoided,
+    PrintItemConsumed,
+    ConsumedPrintItemCannotBeVoided,
+}
+
+public sealed class LabelPrintLifecycleRejectedException(
+    LabelPrintLifecycleRejectionReason reason,
+    string message) : InvalidOperationException(message)
+{
+    public LabelPrintLifecycleRejectionReason Reason { get; } = reason;
 }
 
 internal sealed record LabelValueInputs(string? LotNo, string? SerialPrefix)
