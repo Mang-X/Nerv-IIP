@@ -86,7 +86,7 @@ function Get-CSharpClassBody {
         return $null
     }
 
-    $open = $Text.IndexOf('{', $declaration.Index)
+    $open = $Text.IndexOf('{', $declaration.Index, [StringComparison]::Ordinal)
     if ($open -lt 0) {
         return $null
     }
@@ -118,7 +118,7 @@ function Get-CollectionInitializerBody {
         return $null
     }
 
-    $open = $Text.IndexOf('[', $declaration.Index)
+    $open = $Text.IndexOf('[', $declaration.Index, [StringComparison]::Ordinal)
     $depth = 0
     for ($i = $open; $i -lt $Text.Length; $i++) {
         $ch = $Text[$i]
