@@ -191,6 +191,9 @@ const pageSize = ref(10)
 自定义呈现走 `#error` / `#awaiting` / `#empty` 插槽；`#error` 提供
 `{ message, error }` 作用域参数。
 
+错误面板是 `role="alert"` 活动区域，进入错误态时读屏会播报失败原因（`#error`
+插槽内容同样被包住）；调用点不需要再自己加 `role="alert"`。
+
 ## 操作栏 NvToolbar
 
 <Demo block>
