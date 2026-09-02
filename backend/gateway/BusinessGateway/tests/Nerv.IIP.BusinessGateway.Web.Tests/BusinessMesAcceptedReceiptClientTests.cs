@@ -194,7 +194,8 @@ public sealed class BusinessMesAcceptedReceiptClientTests
             "ShiftHandover",
             client => client.CreateShiftHandoverAsync(
                 "token",
-                new BusinessConsoleMesCreateShiftHandoverRequest("org", "env", "SHIFT-A", "TEAM-1", null, "idem-handover"),
+                new BusinessConsoleMesCreateShiftHandoverForwardRequest(
+                    "org", "env", "SHIFT-A", "TEAM-1", null, "idem-handover", null, "user-admin", "张三", null, null, null),
                 CancellationToken.None));
 
     [Fact]
@@ -205,7 +206,7 @@ public sealed class BusinessMesAcceptedReceiptClientTests
             client => client.AcceptShiftHandoverAsync(
                 "token",
                 "SH-000012",
-                new BusinessConsoleMesAcceptShiftHandoverRequest("SH-000012", "org", "env", "idem-accept"),
+                new BusinessConsoleMesAcceptShiftHandoverForwardRequest("org", "env", "idem-accept", "user-admin", "李四"),
                 CancellationToken.None));
 
     [Fact]

@@ -3379,6 +3379,19 @@
     },
     {
       "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/shift-handovers/{handoverId}",
+      "operationId": "getBusinessMesShiftHandover",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleMesShiftHandover"
+      ]
+    },
+    {
+      "service": "Mes",
       "method": "POST",
       "route": "/api/business/v1/mes/shift-handovers",
       "operationId": "createBusinessMesShiftHandover",

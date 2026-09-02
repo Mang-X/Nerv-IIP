@@ -304,15 +304,21 @@ public interface IBusinessMesClient
         BusinessConsoleMesListRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleMesShiftHandoverDetail> GetShiftHandoverAsync(
+        string internalBearerToken,
+        string handoverId,
+        BusinessConsoleMesShiftHandoverDetailRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleAcceptedResponse> CreateShiftHandoverAsync(
         string internalBearerToken,
-        BusinessConsoleMesCreateShiftHandoverRequest request,
+        BusinessConsoleMesCreateShiftHandoverForwardRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleAcceptedResponse> AcceptShiftHandoverAsync(
         string internalBearerToken,
         string handoverId,
-        BusinessConsoleMesAcceptShiftHandoverRequest request,
+        BusinessConsoleMesAcceptShiftHandoverForwardRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleMesTraceabilityResponse> GetWorkOrderTraceabilityAsync(
@@ -1140,9 +1146,22 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             null,
             cancellationToken);
 
+    public Task<BusinessConsoleMesShiftHandoverDetail> GetShiftHandoverAsync(
+        string internalBearerToken,
+        string handoverId,
+        BusinessConsoleMesShiftHandoverDetailRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesShiftHandoverDetail>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/mes/shift-handovers/{Uri.EscapeDataString(handoverId)}?" +
+            ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken);
+
     public Task<BusinessConsoleAcceptedResponse> CreateShiftHandoverAsync(
         string internalBearerToken,
-        BusinessConsoleMesCreateShiftHandoverRequest request,
+        BusinessConsoleMesCreateShiftHandoverForwardRequest request,
         CancellationToken cancellationToken) =>
         SendAcceptedAsync(
             internalBearerToken,
@@ -1154,7 +1173,7 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
     public Task<BusinessConsoleAcceptedResponse> AcceptShiftHandoverAsync(
         string internalBearerToken,
         string handoverId,
-        BusinessConsoleMesAcceptShiftHandoverRequest request,
+        BusinessConsoleMesAcceptShiftHandoverForwardRequest request,
         CancellationToken cancellationToken) =>
         SendAcceptedAsync(
             internalBearerToken,
