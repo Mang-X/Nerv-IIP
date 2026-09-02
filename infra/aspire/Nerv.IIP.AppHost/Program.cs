@@ -558,6 +558,32 @@ var businessBarcodeLabel = WithNervIipTelemetry(WithAppHostEnvironment(builder.A
     .WithReference(fileStorage)
     .WaitFor(businessBarcodeLabelDatabase)
     .WaitFor(fileStorage);
+if (localDevelopmentAppHost)
+{
+    businessBarcodeLabel = businessBarcodeLabel
+        .WithEnvironment("LabelPrinter__Mode", "simulated");
+}
+else
+{
+    var barcodeLabelPrinterId = builder.AddParameter("barcode-label-printer-id");
+    var barcodeLabelPrinterHost = builder.AddParameter("barcode-label-printer-host");
+    var barcodeLabelPrinterPort = builder.AddParameter("barcode-label-printer-port");
+    var barcodeLabelPrinterConnectTimeout = builder.AddParameter("barcode-label-printer-connect-timeout-seconds");
+    var barcodeLabelPrinterWriteTimeout = builder.AddParameter("barcode-label-printer-write-timeout-seconds");
+    var barcodeLabelPrinterDpi = builder.AddParameter("barcode-label-printer-dpi");
+    var barcodeLabelPrinterCapabilities = builder.AddParameter("barcode-label-printer-capabilities");
+    businessBarcodeLabel = businessBarcodeLabel
+        .WithEnvironment("LabelPrinter__Mode", "zpl-tcp")
+        .WithEnvironment("LabelPrinter__Printers__0__Id", barcodeLabelPrinterId)
+        .WithEnvironment("LabelPrinter__Printers__0__Host", barcodeLabelPrinterHost)
+        .WithEnvironment("LabelPrinter__Printers__0__Port", barcodeLabelPrinterPort)
+        .WithEnvironment("LabelPrinter__Printers__0__ConnectTimeoutSeconds", barcodeLabelPrinterConnectTimeout)
+        .WithEnvironment("LabelPrinter__Printers__0__WriteTimeoutSeconds", barcodeLabelPrinterWriteTimeout)
+        .WithEnvironment("LabelPrinter__Printers__0__Dpi", barcodeLabelPrinterDpi)
+        .WithEnvironment("LabelPrinter__Printers__0__Language", "zpl")
+        .WithEnvironment("LabelPrinter__Printers__0__Capabilities", barcodeLabelPrinterCapabilities)
+        .WithEnvironment("LabelPrinter__Printers__0__Enabled", "true");
+}
 businessBarcodeLabel = WithRedisMessagingTransport(businessBarcodeLabel);
 if (rabbitmq is not null)
 {

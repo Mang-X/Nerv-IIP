@@ -12,6 +12,48 @@ namespace Nerv.IIP.Business.BarcodeLabel.Web.Tests;
 public sealed class CreateLabelPrintBatchCommandTests
 {
     [Theory]
+    [InlineData("code128", PlainLabelBarcodeType.Code128)]
+    [InlineData("qr", PlainLabelBarcodeType.Qr)]
+    [InlineData("datamatrix", PlainLabelBarcodeType.DataMatrix)]
+    public void Shared_payload_factory_maps_plain_barcode_types(
+        string barcodeType,
+        PlainLabelBarcodeType expectedType)
+    {
+        var payload = Assert.IsType<PlainLabelBarcodePayload>(
+            LabelBarcodePayloadFactory.Create(barcodeType, "LABEL-001"));
+
+        Assert.Equal(expectedType, payload.Type);
+        Assert.Equal("LABEL-001", payload.Value);
+    }
+
+    [Theory]
+    [InlineData("gs1-128", Gs1LabelBarcodeType.Gs1128)]
+    [InlineData("gs1-datamatrix", Gs1LabelBarcodeType.DataMatrix)]
+    public void Shared_payload_factory_maps_gs1_barcode_types(
+        string barcodeType,
+        Gs1LabelBarcodeType expectedType)
+    {
+        var payload = Assert.IsType<Gs1LabelBarcodePayload>(
+            LabelBarcodePayloadFactory.Create(
+                barcodeType,
+                "(01)09506000134352(10)LOT-A(21)SN-0001"));
+
+        Assert.Equal(expectedType, payload.Type);
+        Assert.Equal("09506000134352", payload.Value.Gtin);
+        Assert.Equal("LOT-A", payload.Value.LotNo);
+        Assert.Equal("SN-0001", payload.Value.SerialNumber);
+    }
+
+    [Fact]
+    public void Shared_payload_factory_rejects_an_unsupported_barcode_type()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            LabelBarcodePayloadFactory.Create("pdf417", "LABEL-001"));
+
+        Assert.Equal("Unsupported barcode type 'pdf417'.", exception.Message);
+    }
+
+    [Theory]
     [InlineData("org-other", "env-dev")]
     [InlineData("org-001", "env-other")]
     public async Task Create_rejects_rule_from_another_scope_before_loading_an_asset(

@@ -770,7 +770,7 @@
       "route": "/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations",
       "operationId": "listErpWorkCenterMachineOverheadReconciliations",
       "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; follows the ERP finance month-end reconciliation Business Console phase. Issue #2383 intentionally delivers the service API without Gateway/UI."
+      "followUp": "BusinessGateway facade pending; follows the ERP finance month-end reconciliation Business Console phase. Issues #2383 and #2384 intentionally deliver the period reconciliation service read contract without Gateway/UI."
     },
     {
       "service": "Erp",
@@ -786,7 +786,7 @@
       "route": "/api/business/v1/erp/finance/work-order-costs/{workOrderId}",
       "operationId": "getErpWorkOrderCostVariance",
       "classification": "deferred",
-      "followUp": "BusinessGateway facade and generated client are delivered by follow-up issues; Issue #2277 intentionally exposes only the ERP service contract."
+      "followUp": "BusinessGateway facade and generated client are delivered by follow-up issues; Issues #2277 and #2384 intentionally expose only the ERP service work-order cost, variance, and machine-overhead read contract."
     },
     {
       "service": "Erp",
@@ -2202,8 +2202,13 @@
       "method": "GET",
       "route": "/api/business/v1/master-data/tooling-assets",
       "operationId": "listBusinessMasterDataToolingAssets",
-      "classification": "deferred",
-      "followUp": "BusinessGateway 工装查询 facade 与生成客户端由 #2063 交付。"
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleToolingAssets"
+      ]
     },
     {
       "service": "MasterData",
@@ -2262,24 +2267,39 @@
       "method": "POST",
       "route": "/api/business/v1/master-data/tooling-assets",
       "operationId": "registerBusinessMasterDataToolingAsset",
-      "classification": "deferred",
-      "followUp": "BusinessGateway and Business Console tooling maintenance follow the dedicated MasterData tooling menu phase after #718."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "registerBusinessConsoleToolingAsset"
+      ]
     },
     {
       "service": "MasterData",
       "method": "POST",
       "route": "/api/business/v1/master-data/tooling-assets/status",
       "operationId": "changeBusinessMasterDataToolingStatus",
-      "classification": "deferred",
-      "followUp": "BusinessGateway and Business Console tooling lifecycle maintenance follow the dedicated MasterData tooling menu phase after #718."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "changeBusinessConsoleToolingStatus"
+      ]
     },
     {
       "service": "MasterData",
       "method": "POST",
       "route": "/api/business/v1/master-data/tooling-assets/usage",
       "operationId": "recordBusinessMasterDataToolingUsage",
-      "classification": "deferred",
-      "followUp": "Equipment counter integration and Business Console tooling usage maintenance follow the dedicated MasterData tooling menu phase after #718."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "recordBusinessConsoleToolingUsage"
+      ]
     },
     {
       "service": "MasterData",

@@ -163,6 +163,15 @@ Quality 数量巡检链路依次引入 `AddPeriodicInspectionQuantityWatermark`�
 3. 开始写入 `quantity_continuation_next_attempt_at_utc` 或出现 closed + pending 上下文后，不执行 `AddPeriodicInspectionQuantityContinuationFairness.Down`。旧约束不能表达终态欠桶，且降级会丢失公平游标；使用补救 migration 前滚修复。
 4. 如果上述 migration 已应用但新版本健康检查失败，保留现有 schema 和数据，停止新版本服务，按第 6 节从批准恢复点恢复，或发布包含补救 migration 的前滚版本；不得手工删除水位、inbox、锚点或公平游标。
 
+### 6.2 BusinessMasterData 工装审计 migration
+
+`20260825081539_AddToolingOperationAudit` 是纯新增 migration，不回填既有 `tooling_assets` / `tooling_applicability` 的伪历史审计。发布或恢复仍使用第 4.1 节的业务数据库 migrator 与第 6 节的批准备份/恢复入口，不用测试 runner、临时 SQL 或 Web `AutoMigrate` 代替客户发布流程。
+
+1. migration 已应用但尚未产生工装审计事实时，旧版本服务可以忽略新增表继续运行；这不是执行 `Down` 的授权。
+2. `business_masterdata.tooling_audit_entries` 一旦存在事实，不执行会删除该证据的 `Down`；发布失败时停止新版本服务并优先前滚补救。
+3. 确需恢复备份时，记录 `releaseId`、目标数据库、批准恢复点、执行人、开始时间、结束时间和结果；恢复后重新核对 migration history 与工装业务/审计事实。
+4. CI 或本地一次性 PostgreSQL profile 只验证 runner 自有数据库中的 migration、事务、并发与隔离行为，不构成客户生产迁移、备份或恢复演练，也不能据此宣称 BusinessMasterData 已具备完整客户 migrator。
+
 ## 7. Seed 契约
 
 Seed 是显式步骤，不混入普通 Web 启动。每个 seed 至少声明 `seedName`、`seedVersion`、`ownerService`、幂等规则、输入来源、重复执行结果和敏感信息处理。初始管理员密码、客户端密钥、Connector 凭据不得写入日志。

@@ -7,6 +7,7 @@ using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.PrintBatches;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Seed;
 using Nerv.IIP.Business.BarcodeLabel.Web.Endpoints.BarcodeLabel;
 using Nerv.IIP.Business.BarcodeLabel.Domain.Printing;
@@ -119,9 +120,14 @@ try
             services.GetRequiredService<IFileStorageClient>(),
             services.GetRequiredService<IHttpClientFactory>().CreateClient(FileStorageClientOptions.DownloadClientName),
             services.GetRequiredService<IOptions<FileStorageClientOptions>>().Value.DownloadTimeout));
-    builder.Services.Configure<LabelPrinterOptions>(builder.Configuration.GetSection("LabelPrinter"));
+    builder.Services.AddSingleton<IValidateOptions<LabelPrinterOptions>, LabelPrinterOptionsValidator>();
+    builder.Services
+        .AddOptions<LabelPrinterOptions>()
+        .Bind(builder.Configuration.GetSection("LabelPrinter"))
+        .ValidateOnStart();
     builder.Services.AddSingleton<ZplTcpLabelPrinter>();
     builder.Services.AddSingleton<ILabelPrinter, ConfiguredLabelPrinter>();
+    builder.Services.AddScoped<ILabelPrintAttemptRecorder, IndependentLabelPrintAttemptRecorder>();
     builder.Services.AddScoped<WorldHistorySeedService>();
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();

@@ -88,6 +88,14 @@ if (-not $SkipDockerComposeConfig) {
         NERV_IIP_IAM_SECRETS_PEPPER = "iam-pepper-48chars-test-value-not-a-real-secret"
         NERV_IIP_IAM_ENTERPRISE_IDENTITY_MFA_CODE = "654321"
         NERV_IIP_CORS_ALLOWED_ORIGINS = "https://console.example.test,https://business.example.test"
+        NERV_IIP_BARCODE_LABEL_PRINTER_MODE = "zpl-tcp"
+        NERV_IIP_BARCODE_LABEL_PRINTER_ID = "printer-verification-001"
+        NERV_IIP_BARCODE_LABEL_PRINTER_HOST = "printer.example.test"
+        NERV_IIP_BARCODE_LABEL_PRINTER_PORT = "9100"
+        NERV_IIP_BARCODE_LABEL_PRINTER_CONNECT_TIMEOUT_SECONDS = "5"
+        NERV_IIP_BARCODE_LABEL_PRINTER_WRITE_TIMEOUT_SECONDS = "10"
+        NERV_IIP_BARCODE_LABEL_PRINTER_DPI = "203"
+        NERV_IIP_BARCODE_LABEL_PRINTER_CAPABILITIES = "code128,gs1-128,qr,datamatrix,gs1-datamatrix"
     }
 
     Invoke-WithScopedEnvironment -Variables $environment -ScriptBlock {

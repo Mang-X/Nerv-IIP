@@ -235,30 +235,10 @@ internal static class MachineOverheadPeriodCloseGuard
         organizationId = organizationId.Trim();
         environmentId = environmentId.Trim();
         accountingPeriodCode = accountingPeriodCode.Trim();
-        var latestRates = await dbContext.WorkCenterMachineOverheadRates.AsNoTracking()
-            .Where(x => x.OrganizationId == organizationId
-                && x.EnvironmentId == environmentId
-                && x.AccountingPeriodCode == accountingPeriodCode
-                && !dbContext.WorkCenterMachineOverheadRates.Any(newer =>
-                    newer.OrganizationId == x.OrganizationId
-                    && newer.EnvironmentId == x.EnvironmentId
-                    && newer.AccountingPeriodCode == x.AccountingPeriodCode
-                    && newer.WorkCenterId == x.WorkCenterId
-                    && newer.Revision > x.Revision))
-            .OrderBy(x => x.WorkCenterId)
-            .ToListAsync(cancellationToken);
-        var latestRateByWorkCenter = latestRates.ToDictionary(x => x.WorkCenterId, StringComparer.Ordinal);
-        var appliedByWorkCenter = await MachineOverheadAppliedSnapshotReader.ReadForPeriodAsync(
-            dbContext, organizationId, environmentId, accountingPeriodCode, cancellationToken);
-        var requiredWorkCenterIds = latestRates
-            .Where(x => x.Applicability == MachineOverheadApplicability.Applicable)
-            .Select(x => x.WorkCenterId)
-            .Concat(appliedByWorkCenter.Keys)
-            .Distinct(StringComparer.Ordinal)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
+        var scope = await MachineOverheadPeriodReconciliationEvaluator.ReadScopeAsync(
+            dbContext, organizationId, environmentId, accountingPeriodCode, null, cancellationToken);
 
-        foreach (var workCenterId in requiredWorkCenterIds)
+        foreach (var workCenterId in scope.RequiredWorkCenterIds)
         {
             await reconciliationLock.AcquireAsync(
                 ErpAdvisoryLockDomain.WorkCenterMachineOverheadReconciliation,
@@ -266,58 +246,30 @@ internal static class MachineOverheadPeriodCloseGuard
                 $"{accountingPeriodCode}\n{workCenterId}", cancellationToken);
         }
 
-        var latestReconciliations = await dbContext.WorkCenterMachineOverheadReconciliations.AsNoTracking()
-            .Where(x => x.OrganizationId == organizationId
-                && x.EnvironmentId == environmentId
-                && x.AccountingPeriodCode == accountingPeriodCode
-                && requiredWorkCenterIds.Contains(x.WorkCenterId)
-                && !dbContext.WorkCenterMachineOverheadReconciliations.Any(newer =>
-                    newer.OrganizationId == x.OrganizationId
-                    && newer.EnvironmentId == x.EnvironmentId
-                    && newer.AccountingPeriodCode == x.AccountingPeriodCode
-                    && newer.WorkCenterId == x.WorkCenterId
-                    && newer.Revision > x.Revision))
-            .ToListAsync(cancellationToken);
-        var reconciliationByWorkCenter = latestReconciliations
-            .ToDictionary(x => x.WorkCenterId, StringComparer.Ordinal);
-
-        foreach (var workCenterId in requiredWorkCenterIds)
-        {
-            if (!reconciliationByWorkCenter.TryGetValue(workCenterId, out var reconciliation))
-                throw new KnownException(
-                    $"会计期间『{accountingPeriodCode}』工作中心『{workCenterId}』缺少机器制造费用实际池归集核对。");
-            var rate = latestRateByWorkCenter[workCenterId];
-            if (rate.Applicability == MachineOverheadApplicability.Applicable
-                && (reconciliation.WorkCenterMachineOverheadRateId != rate.Id
-                    || reconciliation.RateRevision != rate.Revision))
-            {
-                throw new KnownException(
-                    $"会计期间『{accountingPeriodCode}』工作中心『{workCenterId}』机器制造费用率已变更，请重新归集核对。");
-            }
-            if (rate.Applicability == MachineOverheadApplicability.Applicable
-                && !string.Equals(reconciliation.CurrencyCode, rate.CurrencyCode, StringComparison.Ordinal))
-                throw new KnownException(
-                    $"会计期间『{accountingPeriodCode}』工作中心『{workCenterId}』机器制造费用币种不一致。");
-            if (!reconciliation.IsReadyForClose)
-                throw new KnownException(
-                    $"会计期间『{accountingPeriodCode}』工作中心『{workCenterId}』仍有未处理异常停机。");
-
-            var current = appliedByWorkCenter.GetValueOrDefault(workCenterId)
-                ?? new MachineOverheadAppliedSnapshot(0, 0m, 0m, 0m, new HashSet<string>(StringComparer.Ordinal));
-            var expectedCurrency = rate.Applicability == MachineOverheadApplicability.Applicable
-                ? rate.CurrencyCode
-                : reconciliation.CurrencyCode;
-            if (current.CurrencyCodes.Any(currency => !string.Equals(currency, expectedCurrency, StringComparison.Ordinal)))
-                throw new KnownException(
-                    $"会计期间『{accountingPeriodCode}』工作中心『{workCenterId}』active settlement 币种不一致。");
-            if (reconciliation.AppliedMachineTicks != current.AppliedMachineTicks
-                || reconciliation.AppliedFixedAmount != current.AppliedFixedAmount
-                || reconciliation.AppliedVariableAmount != current.AppliedVariableAmount
-                || reconciliation.AppliedTotalAmount != current.AppliedTotalAmount)
-            {
-                throw new KnownException(
-                    $"会计期间『{accountingPeriodCode}』工作中心『{workCenterId}』active settlement 已变化，请重新归集核对。");
-            }
-        }
+        var evaluation = await MachineOverheadPeriodReconciliationEvaluator.EvaluateAsync(
+            dbContext, organizationId, environmentId, accountingPeriodCode, scope, cancellationToken);
+        var issue = evaluation.FirstIssue(scope.RequiredWorkCenterIds);
+        if (issue is not null)
+            throw new KnownException(MessageFor(issue, accountingPeriodCode));
     }
+
+    private static string MessageFor(MachineOverheadReconciliationIssue issue, string accountingPeriodCode)
+        => issue.ReasonCode switch
+        {
+            "reconciliation_not_recorded" =>
+                $"会计期间『{accountingPeriodCode}』工作中心『{issue.WorkCenterId}』缺少机器制造费用实际池归集核对。",
+            "machine_overhead_rate_not_configured" =>
+                $"会计期间『{accountingPeriodCode}』工作中心『{issue.WorkCenterId}』缺少机器制造费用率。",
+            "machine_overhead_rate_changed" =>
+                $"会计期间『{accountingPeriodCode}』工作中心『{issue.WorkCenterId}』机器制造费用率已变更，请重新归集核对。",
+            "currency_conflict" =>
+                $"会计期间『{accountingPeriodCode}』工作中心『{issue.WorkCenterId}』机器制造费用币种不一致。",
+            "abnormal_downtime_pending" =>
+                $"会计期间『{accountingPeriodCode}』工作中心『{issue.WorkCenterId}』仍有未处理异常停机。",
+            "active_settlement_currency_conflict" =>
+                $"会计期间『{accountingPeriodCode}』工作中心『{issue.WorkCenterId}』active settlement 币种不一致。",
+            "active_settlement_changed" =>
+                $"会计期间『{accountingPeriodCode}』工作中心『{issue.WorkCenterId}』active settlement 已变化，请重新归集核对。",
+            _ => throw new InvalidOperationException($"Unknown reconciliation issue: {issue.ReasonCode}"),
+        };
 }

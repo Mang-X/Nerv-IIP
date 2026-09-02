@@ -2605,6 +2605,34 @@ export type {
   NetCorePalExtensionsDtoResponseDataOfLineSideInventoryBalancesResponse as BusinessConsoleMesLineSideInventoryBalancesEnvelope,
 } from './generated/business-console'
 
+// MAN-718 / #2063: MasterData 工装档案查询与维护 facade。
+export {
+  changeBusinessConsoleToolingStatus,
+  changeBusinessConsoleToolingStatusMutationOptions,
+  listBusinessConsoleToolingAssets,
+  listBusinessConsoleToolingAssetsQueryOptions,
+  recordBusinessConsoleToolingUsage,
+  recordBusinessConsoleToolingUsageMutationOptions,
+  registerBusinessConsoleToolingAsset,
+  registerBusinessConsoleToolingAssetMutationOptions,
+} from './generated/business-console'
+
+export type {
+  ChangeBusinessConsoleToolingStatusData,
+  ListBusinessConsoleToolingAssetsData,
+  RecordBusinessConsoleToolingUsageData,
+  RegisterBusinessConsoleToolingAssetData,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleChangeToolingStatusRequest as BusinessConsoleChangeToolingStatusRequest,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordToolingUsageRequest as BusinessConsoleRecordToolingUsageRequest,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRegisterToolingAssetRequest as BusinessConsoleRegisterToolingAssetRequest,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleToolingAssetItem as BusinessConsoleToolingAssetItem,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleToolingAssetListResponse as BusinessConsoleToolingAssetListResponse,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleToolingAssetStatus as BusinessConsoleToolingAssetStatus,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleToolingRegistrationResponse as BusinessConsoleToolingRegistrationResponse,
+  NetCorePalExtensionsDtoResponseDataOfBusinessConsoleToolingAssetListResponse as BusinessConsoleToolingAssetListEnvelope,
+  NetCorePalExtensionsDtoResponseDataOfBusinessConsoleToolingRegistrationResponse as BusinessConsoleToolingRegistrationEnvelope,
+} from './generated/business-console'
+
 // MAN-632 / #1169: unified owner-backed searchable directory contract.
 export {
   listBusinessConsoleSearchableDirectory,

@@ -806,10 +806,18 @@ function Get-NervCSharpAuditedDockerFileNameAssignmentMatches {
     }
 }
 
-$repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$resolvedManifestPath = (Resolve-Path $ManifestPath).Path
-$manifest = Get-Content -LiteralPath $resolvedManifestPath -Raw | ConvertFrom-Json
-$errors = [System.Collections.Generic.List[string]]::new()
+function Invoke-BackendTestShardManifestPolicyStage {
+    param(
+        [Parameter(Mandatory)] [string] $RepositoryRoot,
+        [Parameter(Mandatory)] [string] $ManifestPath,
+        [Parameter(Mandatory)] [string] $PolicyPath
+    )
+
+    $stopwatch = [Diagnostics.Stopwatch]::StartNew()
+    Write-Host "Backend test shard stage 'manifest-policy' started."
+    $resolvedManifestPath = (Resolve-Path $ManifestPath).Path
+    $manifest = Get-Content -LiteralPath $resolvedManifestPath -Raw | ConvertFrom-Json
+    $errors = [System.Collections.Generic.List[string]]::new()
 
 if ($manifest.schemaVersion -ne 1) {
     $errors.Add('backend test shard manifest schemaVersion must be 1.')
@@ -1024,6 +1032,35 @@ foreach ($entry in $classificationEntries) {
     }
 }
 
+    $stopwatch.Stop()
+    Write-Host "Backend test shard stage 'manifest-policy' completed in $($stopwatch.ElapsedMilliseconds) ms."
+    return [pscustomobject]@{
+        Manifest = $manifest
+        FastShards = $fastShards
+        HeavyLanes = $heavyLanes
+        ExcludedClassOwners = $excludedClassOwners
+        ExcludedClassSelectorsByFastShard = $excludedClassSelectorsByFastShard
+        HeavyLaneIdSet = $heavyLaneIdSet
+        ProjectOwners = $projectOwners
+        AmbiguousProjectOwners = $ambiguousProjectOwners
+        Errors = @($errors)
+    }
+}
+
+function Invoke-BackendTestShardInventorySourceStage {
+    param(
+        [Parameter(Mandatory)] [string] $RepositoryRoot,
+        [AllowEmptyString()] [string] $BackendInventoryRoot,
+        [Parameter(Mandatory)] [hashtable] $ProjectOwners,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [Collections.Generic.HashSet[string]] $AmbiguousProjectOwners,
+        [Parameter(Mandatory)] [hashtable] $ExcludedClassSelectorsByFastShard,
+        [Parameter(Mandatory)] [Collections.Generic.HashSet[string]] $HeavyLaneIdSet
+    )
+
+    $stopwatch = [Diagnostics.Stopwatch]::StartNew()
+    Write-Host "Backend test shard stage 'inventory-source' started."
+    $errors = [System.Collections.Generic.List[string]]::new()
+
 $backendRoot = if ([string]::IsNullOrWhiteSpace($BackendInventoryRoot)) { Join-Path $repositoryRoot 'backend' } else { (Resolve-Path $BackendInventoryRoot).Path }
 $discoveredProjects = @(
     Get-NervStringsSorted -Values @(Get-ChildItem -LiteralPath $backendRoot -Recurse -File -Filter '*.Tests.csproj' |
@@ -1189,6 +1226,28 @@ if ($unknownClassifications.Count -gt 0) {
     $errors.Add("Classified projects are not discovered backend test projects: $($unknownClassifications -join ', ').")
 }
 
+    $stopwatch.Stop()
+    Write-Host "Backend test shard stage 'inventory-source' completed in $($stopwatch.ElapsedMilliseconds) ms."
+    return [pscustomobject]@{
+        DiscoveredProjects = $discoveredProjects
+        DiscoveredBackendProjects = $discoveredBackendProjects
+        Errors = @($errors)
+    }
+}
+
+function Invoke-BackendTestShardSolutionMembershipStage {
+    param(
+        [Parameter(Mandatory)] [string] $RepositoryRoot,
+        [Parameter(Mandatory)] [object] $Manifest,
+        [Parameter(Mandatory)] [object[]] $FastShards,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $DiscoveredProjects,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $DiscoveredBackendProjects
+    )
+
+    $stopwatch = [Diagnostics.Stopwatch]::StartNew()
+    Write-Host "Backend test shard stage 'solution-membership' started."
+    $errors = [System.Collections.Generic.List[string]]::new()
+
 $solutionPath = Join-Path $repositoryRoot ([string] $manifest.solution)
 if (-not (Test-Path -LiteralPath $solutionPath -PathType Leaf)) {
     $errors.Add("Configured backend solution does not exist: $($manifest.solution).")
@@ -1290,6 +1349,22 @@ foreach ($shard in $fastShards) {
         $errors.Add("Fast shard '$($shard.id)' solution filter is invalid JSON: $($_.Exception.Message)")
     }
 }
+
+    $stopwatch.Stop()
+    Write-Host "Backend test shard stage 'solution-membership' completed in $($stopwatch.ElapsedMilliseconds) ms."
+    return [pscustomobject]@{ Errors = @($errors) }
+}
+
+function Invoke-BackendTestShardWorkflowWiringStage {
+    param(
+        [Parameter(Mandatory)] [string] $RepositoryRoot,
+        [Parameter(Mandatory)] [string] $WorkflowPath,
+        [Parameter(Mandatory)] [object[]] $FastShards
+    )
+
+    $stopwatch = [Diagnostics.Stopwatch]::StartNew()
+    Write-Host "Backend test shard stage 'workflow-wiring' started."
+    $errors = [System.Collections.Generic.List[string]]::new()
 
 $resolvedWorkflowPath = Resolve-Path $WorkflowPath -ErrorAction SilentlyContinue
 if ($null -eq $resolvedWorkflowPath) {
@@ -1491,6 +1566,56 @@ test "${{ needs.backend-tests-business-core-b.result }}" = "$expected_result"
     }
 }
 
+    $stopwatch.Stop()
+    Write-Host "Backend test shard stage 'workflow-wiring' completed in $($stopwatch.ElapsedMilliseconds) ms."
+    return [pscustomobject]@{ Errors = @($errors) }
+}
+
+function Invoke-BackendTestShardValidation {
+    param(
+        [Parameter(Mandatory)] [string] $RepositoryRoot,
+        [Parameter(Mandatory)] [string] $ManifestPath,
+        [Parameter(Mandatory)] [string] $WorkflowPath,
+        [Parameter(Mandatory)] [string] $PolicyPath,
+        [AllowEmptyString()] [string] $BackendInventoryRoot
+    )
+
+    $errors = [System.Collections.Generic.List[string]]::new()
+    $manifestPolicy = Invoke-BackendTestShardManifestPolicyStage `
+        -RepositoryRoot $RepositoryRoot `
+        -ManifestPath $ManifestPath `
+        -PolicyPath $PolicyPath
+    foreach ($failure in @($manifestPolicy.Errors)) { $errors.Add([string] $failure) }
+
+    $inventorySource = Invoke-BackendTestShardInventorySourceStage `
+        -RepositoryRoot $RepositoryRoot `
+        -BackendInventoryRoot $BackendInventoryRoot `
+        -ProjectOwners $manifestPolicy.ProjectOwners `
+        -AmbiguousProjectOwners $manifestPolicy.AmbiguousProjectOwners `
+        -ExcludedClassSelectorsByFastShard $manifestPolicy.ExcludedClassSelectorsByFastShard `
+        -HeavyLaneIdSet $manifestPolicy.HeavyLaneIdSet
+    foreach ($failure in @($inventorySource.Errors)) { $errors.Add([string] $failure) }
+
+    $solutionMembership = Invoke-BackendTestShardSolutionMembershipStage `
+        -RepositoryRoot $RepositoryRoot `
+        -Manifest $manifestPolicy.Manifest `
+        -FastShards $manifestPolicy.FastShards `
+        -DiscoveredProjects $inventorySource.DiscoveredProjects `
+        -DiscoveredBackendProjects $inventorySource.DiscoveredBackendProjects
+    foreach ($failure in @($solutionMembership.Errors)) { $errors.Add([string] $failure) }
+
+    $workflowWiring = Invoke-BackendTestShardWorkflowWiringStage `
+        -RepositoryRoot $RepositoryRoot `
+        -WorkflowPath $WorkflowPath `
+        -FastShards $manifestPolicy.FastShards
+    foreach ($failure in @($workflowWiring.Errors)) { $errors.Add([string] $failure) }
+
+    $fastShards = $manifestPolicy.FastShards
+    $heavyLanes = $manifestPolicy.HeavyLanes
+    $excludedClassOwners = $manifestPolicy.ExcludedClassOwners
+    $discoveredProjects = $inventorySource.DiscoveredProjects
+    $discoveredBackendProjects = $inventorySource.DiscoveredBackendProjects
+
 # Findings go to stdout and the script exits nonzero, the same shape as
 # scripts/check-script-governance.ps1 and scripts/verify-solution-configuration-membership.ps1 —
 # deliberately not `throw`, and callers must therefore check the exit code. In particular this file
@@ -1507,3 +1632,14 @@ if ($errors.Count -gt 0) {
 }
 
 Write-Output "Backend test shard governance passed: $($discoveredProjects.Count) projects classified exactly once across $($fastShards.Count) fast shards and $($heavyLanes.Count) heavy lanes; $($excludedClassOwners.Count) real test selectors are explicitly owned outside fast shards; $($discoveredBackendProjects.Count) backend projects are solution members and therefore build under the shard's own Release configuration."
+}
+
+if (-not [string]::Equals($MyInvocation.InvocationName, '.', [StringComparison]::Ordinal)) {
+    $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+    Invoke-BackendTestShardValidation `
+        -RepositoryRoot $repositoryRoot `
+        -ManifestPath $ManifestPath `
+        -WorkflowPath $WorkflowPath `
+        -PolicyPath $PolicyPath `
+        -BackendInventoryRoot $BackendInventoryRoot
+}
