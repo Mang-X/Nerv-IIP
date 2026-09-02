@@ -200,6 +200,7 @@ internal static class PeriodicInspectionReleaseProjection
                                 "backfill-operation-rejected",
                                 $"Operation '{operationPayload.OperationId}' of work order '{payload.WorkOrderId}' "
                                 + $"could not take the reconstructed release facts: {exception.Message}",
+                                IntegrationEventDeadLetterStatus.Pending,
                                 ct);
                             continue;
                         }
@@ -217,6 +218,7 @@ internal static class PeriodicInspectionReleaseProjection
                                     "; ",
                                     facts.Substitutions.Select(x =>
                                         $"{x.Attribute} reconstructed='{x.ReconstructedValue}' authoritative='{x.AuthoritativeValue}'")),
+                                IntegrationEventDeadLetterStatus.Ignored,
                                 ct);
                         }
                     }
@@ -627,10 +629,14 @@ internal static class PeriodicInspectionOperationEventProcessing
     }
 
     /// <summary>
-    /// 回填过程中单道工序的处置留痕。与 <see cref="DeadLetterAsync"/> 的关键差别是**不清变更跟踪**：
-    /// 同一封补投事件里其它工序已经应用的改动必须留住——清掉就等于把工序级失败重新退回成整封失败。
-    /// 写进死信存储是因为它是仓库里唯一持久、可查询的消费侧留痕通道；这两个 reason code 记录的是
-    /// 「已处置」而非「未处置」，重放它们是幂等的 no-op。
+    /// 回填过程中单道工序的处置留痕。与 <see cref="DeadLetterAsync"/> 有两处关键差别：
+    ///
+    /// ① **不清变更跟踪**——同一封补投事件里其它工序已经应用的改动、以及 inbox 幂等登记必须留住；
+    /// 清掉就等于把工序级失败重新退回成整封失败。
+    ///
+    /// ② **状态按是否还需人处置区分**：<paramref name="status"/> 取 <c>Pending</c> 表示该工序确实没补上、
+    /// 要进待处理队列；取 <c>Ignored</c> 表示已经按权威事实处置完、只是留痕，不该混进待处理队列。
+    /// 写进死信存储是因为它是仓库里唯一持久、可查询的消费侧留痕通道。
     /// </summary>
     public static async Task RecordBackfillNoticeAsync<TIntegrationEvent>(
         IIntegrationEventDeadLetterStore deadLetterStore,
@@ -638,11 +644,13 @@ internal static class PeriodicInspectionOperationEventProcessing
         TIntegrationEvent integrationEvent,
         string reasonCode,
         string message,
+        IntegrationEventDeadLetterStatus status,
         CancellationToken cancellationToken)
         where TIntegrationEvent : IIntegrationEventEnvelope
     {
         await deadLetterStore.AddAsync(
-            IntegrationEventDeadLetterMessage.Create(consumerName, integrationEvent, reasonCode, message),
+            IntegrationEventDeadLetterMessage.Create(consumerName, integrationEvent, reasonCode, message)
+                with { Status = status },
             cancellationToken);
     }
 

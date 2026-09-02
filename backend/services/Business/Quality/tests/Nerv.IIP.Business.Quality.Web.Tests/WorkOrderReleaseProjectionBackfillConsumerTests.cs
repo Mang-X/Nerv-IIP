@@ -165,6 +165,9 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
     {
         await using var dbContext = CreateDbContext();
         dbContext.InspectionPlans.Add(FirstArticlePlan());
+        // 巡检档配在**载荷 SKU** 上：让位后不得再拿它给 OP-10 建运行上下文，
+        // 而没让位的 OP-20 必须照常建出来——后者是正对照，证明档确实取得到。
+        dbContext.InspectionPlans.Add(PeriodicPlan());
         await dbContext.SaveChangesAsync();
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
         // OP-10 先完工，完工事实带的是回落成工单号的 junk SKU。
@@ -180,13 +183,23 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
 
         // 让位：冲突属性取既有权威事实，而不是丢弃该工序。
         var completed = await dbContext.PeriodicInspectionOperations
+            .Include(x => x.RuntimeContexts)
             .SingleAsync(x => x.OperationId == "OP-10");
         Assert.Equal("WO-001", completed.SkuCode);
         Assert.Equal(ReleasedAtUtc.UtcDateTime, completed.ReleasedAtUtc);
+        // 让位到权威 SKU 后不得依据**载荷 SKU** 的巡检档建上下文——
+        // 一条声明着 WO-001、却绑着 SKU-FG-1000 那张档的运行上下文是真错。
+        Assert.Empty(completed.RuntimeContexts);
+        var untouched = await dbContext.PeriodicInspectionOperations
+            .Include(x => x.RuntimeContexts)
+            .SingleAsync(x => x.OperationId == "OP-20");
+        Assert.Single(untouched.RuntimeContexts);
         // 差异不静默。
         var notice = Assert.Single(await deadLetters.ListAsync(null, null, CancellationToken.None));
         Assert.Equal("backfill-release-fact-substituted", notice.FailureCode);
         Assert.Contains("sku-code", notice.FailureMessage, StringComparison.Ordinal);
+        // 已按权威事实处置完，只是留痕；不该混进「待处理」队列。
+        Assert.Equal(IntegrationEventDeadLetterStatus.Ignored, notice.Status);
 
         // 再跑一次：行数与内容不变，且不新增首件检验任务。
         var before = await SnapshotAsync(dbContext);
@@ -211,25 +224,35 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
     {
         await using var dbContext = CreateDbContext();
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
-        // OP-10 的报工落在别的工作中心，与补投载荷的 WC-MIX 冲突。
-        await HandleReportAsync(dbContext, ProductionReport(workCenterId: "WC-OTHER"));
+        // 被拒的那道工序必须**排在后面**：ValidateReleasedOperations 按 OperationId 重排，
+        // 拿 OP-10 当被拒工序时它恒排第一，前面没有任何已应用的改动可供丢失，
+        // 「留痕不清变更跟踪」这条不变量就没有会失败的输入。这里让 OP-30 被拒、OP-20 先成功。
+        await HandleReportAsync(
+            dbContext,
+            ProductionReport(operationId: "OP-30", workCenterId: "WC-OTHER"));
 
-        await HandleBackfillAsync(dbContext, Backfill(operationIds: ["OP-10", "OP-20"]), deadLetters);
+        await HandleBackfillAsync(dbContext, Backfill(operationIds: ["OP-20", "OP-30"]), deadLetters);
 
-        var rejected = await dbContext.PeriodicInspectionOperations.SingleAsync(x => x.OperationId == "OP-10");
+        var rejected = await dbContext.PeriodicInspectionOperations.SingleAsync(x => x.OperationId == "OP-30");
         Assert.Null(rejected.ReleasedAtUtc);
         var applied = await dbContext.PeriodicInspectionOperations.SingleAsync(x => x.OperationId == "OP-20");
         Assert.Equal(ReleasedAtUtc.UtcDateTime, applied.ReleasedAtUtc);
         Assert.Equal(
             QualityFirstArticleConfirmationStatuses.NotSynchronized,
-            (await ConfirmAsync(dbContext, "OP-10")).Status);
+            (await ConfirmAsync(dbContext, "OP-30")).Status);
         Assert.NotEqual(
             QualityFirstArticleConfirmationStatuses.NotSynchronized,
             (await ConfirmAsync(dbContext, "OP-20")).Status);
+        // 幂等登记也在「已应用改动」之列：清变更跟踪会把它一起丢掉，重跑就不再是 no-op。
+        Assert.Single(await dbContext.ProcessedIntegrationEvents
+            .Where(x => x.ConsumerName
+                == WorkOrderReleaseProjectionBackfilledIntegrationEventHandlerForCreatePeriodicInspectionContexts.ConsumerName)
+            .ToArrayAsync());
 
         var notice = Assert.Single(await deadLetters.ListAsync(null, null, CancellationToken.None));
         Assert.Equal("backfill-operation-rejected", notice.FailureCode);
-        Assert.Contains("OP-10", notice.FailureMessage, StringComparison.Ordinal);
+        Assert.Equal(IntegrationEventDeadLetterStatus.Pending, notice.Status);
+        Assert.Contains("OP-30", notice.FailureMessage, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -439,7 +462,8 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
     private static ProductionReportRecordedIntegrationEvent ProductionReport(
         string reportNo = "RPT-001",
         decimal goodQuantity = 250m,
-        string workCenterId = "WC-MIX") => new(
+        string workCenterId = "WC-MIX",
+        string operationId = "OP-10") => new(
         $"evt-report-{reportNo}",
         MesIntegrationEventTypes.ProductionReportRecorded,
         MesIntegrationEventVersions.V1,
@@ -452,7 +476,7 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
         "system:mes",
         $"mes:production-report-recorded:org-001:env-dev:{reportNo}",
         new ProductionReportRecordedPayload(
-            reportNo, "WO-001", "OP-10", workCenterId, null, goodQuantity, 0m, 0m, "EA", null,
+            reportNo, "WO-001", operationId, workCenterId, null, goodQuantity, 0m, 0m, "EA", null,
             DateTimeOffset.Parse("2026-08-02T00:00:00Z"), false));
 
     private static InspectionPlan FirstArticlePlan()
