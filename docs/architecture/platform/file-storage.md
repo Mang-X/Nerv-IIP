@@ -17,12 +17,14 @@ Knowledge、Ops、AppHub 与业务域可以引用文件，但文件的业务语�
 5. `ObjectKey` 可以作为 File Storage 内部持久化事实存在，但不得暴露到公开 API、Gateway facade、SDK DTO 或业务持久化模型。
 6. UI、外部应用、Connector Host 与业务服务不得绕过 File Storage 直接访问对象存储；上传、完成、下载都必须经过受控会话或授权入口。
 7. purpose、content type / extension、quota、retention 等当前策略由 File Storage 自己的配置与实现解释；其它服务不能维护平行 allowlist 或配额事实。
+8. 面向业务控制台的字节通路由 BusinessGateway 按用途单独开门，不存在通用文件门面：每条门面固定一个 `filePurpose` 与 owner，并在交付字节前复核目标文件用途，使业务域读权限不会退化成通用文件读权限。业务面不得把 File Storage 的 download grant id 交给调用方——该 id 是全服务共用命名空间且兑换面不校验用途——授权由网关在服务端签发并立即兑换。见 [ADR 0030](../../adr/0030-business-gateway-purpose-scoped-file-transfer.md)。
 
 ## 契约与目标边界
 
 - 当前公开 DTO、endpoint、purpose 注册、上传 provider 行为与 fail-closed 条件，以 File Storage 代码、Contracts、配置、迁移和测试为准。
 - tus staging/final complete 等长期目标由相关 ADR 约束；“已批准目标”不等于当前 endpoint、provider、schema 或生产就绪事实。ADR 0023：[`../../adr/0023-filestorage-tus-proxy-staging-final-complete-invariants.md`](../../adr/0023-filestorage-tus-proxy-staging-final-complete-invariants.md)。
 - SDK 边界见 [`sdk.md`](sdk.md)；API/Gateway 公开契约见 [`../integration/api-contracts.md`](../integration/api-contracts.md)。
+- 受控 tus 代理入口不再只属 PlatformGateway；BusinessGateway 并列暴露业务面入口，两者同受「客户端只取得网关自有 URL」约束。ADR 0030：[`../../adr/0030-business-gateway-purpose-scoped-file-transfer.md`](../../adr/0030-business-gateway-purpose-scoped-file-transfer.md)。
 
 ## 操作与查询路由
 

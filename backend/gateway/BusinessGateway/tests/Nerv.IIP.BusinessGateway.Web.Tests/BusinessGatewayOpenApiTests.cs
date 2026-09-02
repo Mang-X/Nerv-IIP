@@ -315,6 +315,14 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/engineering/sops/current", "get", "getBusinessConsoleCurrentEngineeringSopDocuments");
         AssertOperationId(paths, "/api/business-console/v1/files/{fileId}/download-grants", "post", "createBusinessConsoleSopFileDownloadGrant");
         AssertOperationId(paths, "/api/business-console/v1/files/download-grants/{downloadGrantId}/content", "get", "downloadBusinessConsoleSopFileContent");
+        // #3085 交接班附件门面：上传三段（会话 / tus HEAD+PATCH / complete）与下载两段都必须进契约，
+        // 否则 business-console 与 PDA 侧没有可消费的 generated operation。
+        AssertOperationId(paths, "/api/business-console/v1/files/shift-handover-attachments/upload-sessions", "post", "createBusinessConsoleShiftHandoverAttachmentUploadSession");
+        AssertOperationId(paths, "/api/business-console/v1/files/shift-handover-attachments/upload-sessions/{uploadSessionId}/complete", "post", "completeBusinessConsoleShiftHandoverAttachmentUpload");
+        AssertOperationId(paths, "/api/business-console/v1/files/shift-handover-attachments/tus/{uploadSessionId}", "head", "getBusinessConsoleShiftHandoverAttachmentTusOffset");
+        AssertOperationId(paths, "/api/business-console/v1/files/shift-handover-attachments/tus/{uploadSessionId}", "patch", "patchBusinessConsoleShiftHandoverAttachmentTusUpload");
+        AssertOperationId(paths, "/api/business-console/v1/files/shift-handover-attachments/{fileId}/download-grants", "post", "createBusinessConsoleShiftHandoverAttachmentDownloadGrant");
+        AssertOperationId(paths, "/api/business-console/v1/files/shift-handover-attachments/download-grants/{downloadGrantId}/content", "get", "downloadBusinessConsoleShiftHandoverAttachmentContent");
         AssertOperationId(paths, "/api/business-console/v1/engineering/items", "post", "createBusinessConsoleEngineeringItemRevision");
         AssertOperationId(paths, "/api/business-console/v1/engineering/engineering-boms", "get", "listBusinessConsoleEngineeringBoms");
         AssertOperationId(paths, "/api/business-console/v1/engineering/engineering-boms/explosion", "get", "getBusinessConsoleEngineeringBomExplosion");
