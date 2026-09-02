@@ -357,6 +357,11 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
             MaintenanceWorkOrderStatus.WaitingForParts);
         Status = MaintenanceWorkOrderStatus.Cancelled;
         CancelledAtUtc = DateTimeOffset.UtcNow;
+        if (AssetUnavailable)
+        {
+            this.AddDomainEvent(new AssetRestoredDomainEvent(this, CancelledAtUtc.Value));
+        }
+
         IncrementVersion();
     }
 
