@@ -144,6 +144,59 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
         Assert.Empty(await dbContext.UploadSessions.ToListAsync());
     }
 
+    [Theory]
+    [InlineData("handover.txt", "text/plain")]
+    [InlineData("handover.jpg", "application/pdf")]
+    [InlineData("handover.pdf", "image/jpeg")]
+    public async Task CreateShiftHandoverPhotoUpload_NonImageExtensionOrContentType_IsRejected(
+        string fileName,
+        string contentType)
+    {
+        await using var dbContext = CreateEfCoreInMemoryDbContext();
+        var service = FileStorageServiceTestFactory.Create(dbContext, configuration: FileStorageTestConfiguration.Default);
+
+        var result = await service.CreateUploadSessionAsync(
+            CreateShiftHandoverPhotoUploadRequest() with
+            {
+                FileName = fileName,
+                ContentType = contentType
+            },
+            CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status400BadRequest, result.StatusCode);
+        Assert.Equal("File type is not allowed for purpose 'shift-handover-photo'.", result.Error?.Message);
+        Assert.Empty(await dbContext.UploadSessions.ToListAsync());
+    }
+
+    [Fact]
+    public async Task CreateShiftHandoverPhotoUpload_AboveTwentyMiB_IsRejected()
+    {
+        await using var dbContext = CreateEfCoreInMemoryDbContext();
+        var service = FileStorageServiceTestFactory.Create(dbContext, configuration: FileStorageTestConfiguration.Default);
+
+        var result = await service.CreateUploadSessionAsync(
+            CreateShiftHandoverPhotoUploadRequest() with { ExpectedSizeBytes = (20 * 1024 * 1024) + 1 },
+            CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status400BadRequest, result.StatusCode);
+        Assert.Equal("File size is not allowed for purpose 'shift-handover-photo'.", result.Error?.Message);
+        Assert.Empty(await dbContext.UploadSessions.ToListAsync());
+    }
+
+    [Fact]
+    public async Task CreateShiftHandoverPhotoUpload_AtTwentyMiB_IsAccepted()
+    {
+        await using var dbContext = CreateEfCoreInMemoryDbContext();
+        var service = FileStorageServiceTestFactory.Create(dbContext, configuration: FileStorageTestConfiguration.Default);
+
+        var result = await service.CreateUploadSessionAsync(
+            CreateShiftHandoverPhotoUploadRequest() with { ExpectedSizeBytes = 20 * 1024 * 1024 },
+            CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status200OK, result.StatusCode);
+        Assert.Single(await dbContext.UploadSessions.ToListAsync());
+    }
+
     [Fact]
     public async Task CreateBarcodeLabelTemplateUpload_AboveSixtyFourKiB_IsRejected()
     {
@@ -1491,6 +1544,19 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
             "application/zip",
             4096,
             "sha256:test");
+    }
+
+    private static CreateUploadSessionRequest CreateShiftHandoverPhotoUploadRequest()
+    {
+        return new CreateUploadSessionRequest(
+            "org-001",
+            "prod",
+            new OwnerReference("business-mes", "shift-handover", "SH-0001"),
+            "shift-handover-photo",
+            "handover.jpg",
+            "image/jpeg",
+            1024,
+            null);
     }
 
     private static CreateUploadSessionRequest CreateBarcodeLabelTemplateUploadRequest()

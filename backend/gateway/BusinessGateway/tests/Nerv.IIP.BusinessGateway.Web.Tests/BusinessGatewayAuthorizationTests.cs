@@ -1542,6 +1542,14 @@ internal sealed class FakeBusinessGatewayAuthorizationClient(
         LastRequirement = requirement;
         LastContinuityMode = continuityMode;
         Requirements.Add(requirement);
+
+        // 与真实 IAM `/internal/iam/v1/authorization/check` 的投影语义保持一致：
+        // 只有 requirement.IncludePrincipalContext 为真时，IAM 才回传 scope grants 与 roles；
+        // 否则 grants 为 null、roles 为空集合（DataScope 不受该开关影响）。
+        // 见 backend/services/Iam/src/Nerv.IIP.Iam.Web/Endpoints/Authorization/AuthorizationCheckEndpoint.cs。
+        var projectedScopeGrants = requirement.IncludePrincipalContext ? scopeGrants : null;
+        var projectedRoles = requirement.IncludePrincipalContext ? roles : [];
+
         return Task.FromResult(isAllowed(requirement)
             ? allowedResult ?? BusinessGatewayAuthorizationResult.Allowed(
                 "user-admin",
@@ -1550,8 +1558,8 @@ internal sealed class FakeBusinessGatewayAuthorizationClient(
                 requirement.OrganizationId,
                 requirement.EnvironmentId,
                 dataScope,
-                scopeGrants,
-                roles)
+                projectedScopeGrants,
+                projectedRoles)
             : BusinessGatewayAuthorizationResult.Forbidden("forbidden"));
     }
 }
