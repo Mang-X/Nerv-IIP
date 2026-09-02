@@ -59,7 +59,7 @@
       "tier": "core",
       "status": "active",
       "project": "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/Nerv.IIP.Business.Mes.Web.Tests.csproj",
-      "filter": "FullyQualifiedName=Nerv.IIP.Business.Mes.Web.Tests.MesReworkReceiptRedisCapTransportTests.Redis_cap_production_subscriber_emits_one_created_receipt_for_replayed_ncr_request",
+      "filter": "FullyQualifiedName=Nerv.IIP.Business.Mes.Web.Tests.MesReworkReceiptRedisCapTransportTests.Concurrent_distinct_events_for_one_ncr_emit_one_created_receipt_after_both_deliveries_succeed",
       "databasePrefix": "nerv_iip_mes",
       "capVersionPrefix": "n3010mes",
       "diagnosticSchemas": [
@@ -67,7 +67,7 @@
         "cap"
       ],
       "expectedTestIdentities": [
-        "Nerv.IIP.Business.Mes.Web.Tests.MesReworkReceiptRedisCapTransportTests.Redis_cap_production_subscriber_emits_one_created_receipt_for_replayed_ncr_request"
+        "Nerv.IIP.Business.Mes.Web.Tests.MesReworkReceiptRedisCapTransportTests.Concurrent_distinct_events_for_one_ncr_emit_one_created_receipt_after_both_deliveries_succeed"
       ]
     }
   ]
