@@ -364,6 +364,24 @@ public sealed class MesSchemaConventionTests
         Assert.Empty(differences);
     }
 
+    /// <summary>
+    /// 附件大小的非负约束是 EF 配置里的裸 SQL 字符串，<c>MigrationsModelDiffer</c> 不 diff check constraint，
+    /// 因此模型快照一致性那条断言结构上不可能承接它——删掉整条约束，全仓 MES 用例照绿。
+    /// 与同文件既有的五条同族断言同姿势，连表达式一起钉住。
+    /// </summary>
+    [Fact]
+    public void Shift_handover_attachment_size_is_constrained_non_negative()
+    {
+        using var fixture = CreateFixture();
+        var entity = fixture.DbContext.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(ShiftHandoverAttachment))!;
+
+        var sizeConstraint = Assert.Single(
+            entity.GetCheckConstraints(),
+            x => x.Name == "ck_shift_handover_attachments_size_bytes");
+
+        Assert.Equal("size_bytes >= 0", sizeConstraint.Sql);
+    }
+
     [Fact]
     public void Mes_schema_metadata_follows_database_conventions()
     {

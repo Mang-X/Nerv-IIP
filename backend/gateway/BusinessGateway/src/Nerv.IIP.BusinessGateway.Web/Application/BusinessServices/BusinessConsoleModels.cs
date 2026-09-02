@@ -5495,8 +5495,13 @@ public sealed record BusinessConsoleMesShiftHandoverUnfinishedWorkOrder(
 
 /// <summary>
 /// 随交班一并提交的 FileStorage 附件引用；文件名、内容类型与大小是交班时点快照。
-/// 附件字节走 FileStorage：先按 <c>shift-handover-photo</c> 用途上传拿到 <c>FileId</c>，
-/// 读回后再用同一个 <c>FileId</c> 走 <c>/api/business-console/v1/files/{fileId}/download-grants</c> 换下载地址。
+/// <c>FileId</c> 是 FileStorage 文件 id，字节本身按 <c>shift-handover-photo</c> 用途存在 FileStorage，不落在 MES。
+///
+/// 取回通路目前两端都还没有：BusinessGateway 没有任何上传面（business-console 契约里 upload/tus 路径为 0），
+/// 而唯一的下载授权端点 <c>POST /api/business-console/v1/files/{fileId}/download-grants</c> 门在
+/// <c>business.engineering.documents.read</c>（ResourceType <c>engineering-sop-file</c>），交接班读者持
+/// <c>business.mes.handovers.read</c> 换不出下载地址。因此本记录当前只是契约与生成物，
+/// 生产上还走不通；补齐这两个门面是 #2784 的开工前置条件，已作为登记项交回 owner 立票，不在 #2782 范围内。
 /// </summary>
 public sealed record BusinessConsoleMesShiftHandoverAttachment(
     string FileId,
