@@ -39,7 +39,7 @@ import {
   NvToolbar,
   Spinner,
 } from '@nerv-iip/ui'
-import { computed, reactive, ref, shallowRef, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import { makeIdempotencyKey, useMesShiftHandovers } from '@/composables/useBusinessMes'
 import { useMesKeywordFilter } from '@/composables/mes/useMesKeywordFilter'
@@ -217,9 +217,9 @@ function incomingUserLabel(row: {
 }
 
 const detailOpen = ref(false)
-const selectedHandover = shallowRef<HandoverRow>()
-// 抽屉里以详情读面为准；详情还没到时先用列表行垫住表头信息，不让抽屉空着。
-const detailHandover = computed(() => handoverDetail.value ?? selectedHandover.value)
+// 抽屉正文只认详情读面，不用列表行垫底：详情取数失败时 `handoverDetail` 为空而列表行还在，
+// 垫上去就会让三张明细表以 `rows=[]` 渲染成「交班时点没有登记…」——那是把「没取到」
+// 谎报成「没登记」，还与同屏的错误横幅、列表行自己的计数三方矛盾。失败时只留横幅。
 const detailWipItems = computed<BusinessConsoleMesShiftHandoverWipItem[]>(
   () => handoverDetail.value?.wipItems ?? [],
 )
@@ -234,14 +234,12 @@ const detailErrorMessage = computed(() => formatError(handoverDetailError.value)
 function openDetail(row: HandoverRow) {
   const handoverId = row.handoverId?.trim()
   if (!handoverId) return
-  selectedHandover.value = row
   detailHandoverId.value = handoverId
   detailOpen.value = true
 }
 
 watch(detailOpen, (open) => {
   if (open) return
-  selectedHandover.value = undefined
   detailHandoverId.value = ''
 })
 
@@ -284,14 +282,13 @@ const openIssueColumns: NvDataTableColumn<BusinessConsoleMesShiftHandoverOpenIss
   { key: 'referenceId', header: '关联单据', accessor: (row) => row.referenceId?.trim() || '无' },
 ]
 
-function wipRowKey(row: BusinessConsoleMesShiftHandoverWipItem) {
-  return `${row.workOrderId ?? ''}-${row.operationTaskId ?? ''}`
-}
-function unfinishedWorkOrderRowKey(row: BusinessConsoleMesShiftHandoverUnfinishedWorkOrder) {
-  return row.workOrderId ?? ''
-}
-function openIssueRowKey(row: BusinessConsoleMesShiftHandoverOpenIssue) {
-  return `${row.category ?? ''}-${row.description ?? ''}`
+/**
+ * 三类明细的读面都没有 id 字段（WipItem / UnfinishedWorkOrder / OpenIssue 只有业务属性），
+ * 拿属性拼键就会撞——同类别同描述的两条遗留问题、同工单同工序的两条在制清点都是合法数据。
+ * 这三张表不排序、不选择、不分页，行位置就是这一屏内唯一可靠的身份。
+ */
+function rowPositionKey<T>(rows: readonly T[]) {
+  return (row: T) => String(rows.indexOf(row))
 }
 
 const createDialogOpen = ref(false)
@@ -685,15 +682,15 @@ function formatError(error: unknown) {
             正在加载交接明细…
           </p>
 
-          <template v-if="detailHandover">
+          <template v-if="handoverDetail">
             <dl class="grid gap-3 @md:grid-cols-2">
               <div class="rounded-lg border bg-card p-3">
                 <dt class="text-xs text-muted-foreground">状态</dt>
                 <dd class="mt-1">
                   <NvStatusBadge
-                    :value="detailHandover.handoverStatus"
+                    :value="handoverDetail.handoverStatus"
                     :label="
-                      labelFor(MES_HANDOVER_STATUS_LABELS, detailHandover.handoverStatus) || '未知'
+                      labelFor(MES_HANDOVER_STATUS_LABELS, handoverDetail.handoverStatus) || '未知'
                     "
                   />
                 </dd>
@@ -701,41 +698,41 @@ function formatError(error: unknown) {
               <div class="rounded-lg border bg-card p-3">
                 <dt class="text-xs text-muted-foreground">未结事项</dt>
                 <dd class="mt-1 text-lg font-semibold tabular-nums">
-                  {{ detailHandover.openIssueCount ?? 0 }}
+                  {{ handoverDetail.openIssueCount ?? 0 }}
                 </dd>
               </div>
               <div class="rounded-lg border bg-card p-3">
                 <dt class="text-xs text-muted-foreground">班次</dt>
-                <dd class="mt-1 text-sm">{{ resolveShiftLabel(detailHandover.shiftId) }}</dd>
+                <dd class="mt-1 text-sm">{{ resolveShiftLabel(handoverDetail.shiftId) }}</dd>
               </div>
               <div class="rounded-lg border bg-card p-3">
                 <dt class="text-xs text-muted-foreground">班组</dt>
                 <dd class="mt-1 text-sm">
                   {{
-                    detailHandover.teamName?.trim() ||
-                    resolveTeamLabel(detailHandover.teamId) ||
+                    handoverDetail.teamName?.trim() ||
+                    resolveTeamLabel(handoverDetail.teamId) ||
                     '未指派'
                   }}
                 </dd>
               </div>
               <div class="rounded-lg border bg-card p-3">
                 <dt class="text-xs text-muted-foreground">交班人</dt>
-                <dd class="mt-1 text-sm">{{ outgoingUserLabel(detailHandover) }}</dd>
+                <dd class="mt-1 text-sm">{{ outgoingUserLabel(handoverDetail) }}</dd>
               </div>
               <div class="rounded-lg border bg-card p-3">
                 <dt class="text-xs text-muted-foreground">接班人</dt>
-                <dd class="mt-1 text-sm">{{ incomingUserLabel(detailHandover) }}</dd>
+                <dd class="mt-1 text-sm">{{ incomingUserLabel(handoverDetail) }}</dd>
               </div>
               <div class="rounded-lg border bg-card p-3">
                 <dt class="text-xs text-muted-foreground">创建时间</dt>
-                <dd class="mt-1 text-sm">{{ formatDateTime(detailHandover.createdAtUtc) }}</dd>
+                <dd class="mt-1 text-sm">{{ formatDateTime(handoverDetail.createdAtUtc) }}</dd>
               </div>
               <div class="rounded-lg border bg-card p-3">
                 <dt class="text-xs text-muted-foreground">接班时间</dt>
                 <dd class="mt-1 text-sm">
                   {{
-                    detailHandover.acceptedAtUtc
-                      ? formatDateTime(detailHandover.acceptedAtUtc)
+                    handoverDetail.acceptedAtUtc
+                      ? formatDateTime(handoverDetail.acceptedAtUtc)
                       : '尚未接班'
                   }}
                 </dd>
@@ -747,7 +744,7 @@ function formatError(error: unknown) {
               <NvDataTable
                 :columns="wipColumns"
                 :rows="detailWipItems"
-                :row-key="wipRowKey"
+                :row-key="rowPositionKey(detailWipItems)"
                 :loading="handoverDetailPending"
                 :searchable="false"
                 :column-settings="false"
@@ -765,7 +762,7 @@ function formatError(error: unknown) {
               <NvDataTable
                 :columns="unfinishedWorkOrderColumns"
                 :rows="detailUnfinishedWorkOrders"
-                :row-key="unfinishedWorkOrderRowKey"
+                :row-key="rowPositionKey(detailUnfinishedWorkOrders)"
                 :loading="handoverDetailPending"
                 :searchable="false"
                 :column-settings="false"
@@ -792,7 +789,7 @@ function formatError(error: unknown) {
               <NvDataTable
                 :columns="openIssueColumns"
                 :rows="detailOpenIssues"
-                :row-key="openIssueRowKey"
+                :row-key="rowPositionKey(detailOpenIssues)"
                 :loading="handoverDetailPending"
                 :searchable="false"
                 :column-settings="false"

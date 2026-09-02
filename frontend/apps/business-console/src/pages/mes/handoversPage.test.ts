@@ -31,17 +31,23 @@ const state = vi.hoisted(() => ({
     teamId: 'TEAM-A' as string | undefined,
     teamName: '总装早班一组' as string | undefined,
     handoverStatus: 'open',
-    openIssueCount: 1,
+    // 未结事项是「环境级派生的未结事实总数」，按域注释本就不等于本单登记的遗留问题条数，
+    // 夹具显式拉开二者（5 vs 2），免得两个概念被读成同一个数。
+    openIssueCount: 5,
     createdAtUtc: '2026-08-01T08:00:00Z',
     acceptedAtUtc: undefined as string | undefined,
-    // 网关注入的交班人身份：id 是工程标识符、只有 displayName 允许上屏。
-    outgoingUserId: 'user-emp-1042',
-    outgoingUserName: '李海生' as string | undefined,
-    incomingUserId: undefined as string | undefined,
-    incomingUserName: undefined as string | undefined,
-    wipItemCount: 3,
-    unfinishedWorkOrderCount: 2,
-    openIssueDetailCount: 1,
+    // 网关按认证 principal 注入交班人 id、再从员工目录解显示名；目录解不出时 name 为 null
+    // 而 id 仍在（types.gen 里两个字段都是 `string | null`）。id 是工程标识符，任何情况下
+    // 都不该上屏——所以这两个字段都要能被用例单独摆布。
+    outgoingUserId: 'user-emp-1042' as string | null | undefined,
+    outgoingUserName: '李海生' as string | null | undefined,
+    incomingUserId: undefined as string | null | undefined,
+    incomingUserName: undefined as string | null | undefined,
+    // 三类计数在 beforeEach 里从 detail 的三个数组长度派生，不手写——手写会让「列表计数」
+    // 与「详情条数」各自被断言、却没有任何断言检验二者一致（第 1 轮 S-B）。
+    wipItemCount: 0,
+    unfinishedWorkOrderCount: 0,
+    openIssueDetailCount: 0,
   },
   detail: {
     handoverId: 'handover-001',
@@ -49,16 +55,17 @@ const state = vi.hoisted(() => ({
     teamId: 'TEAM-A',
     teamName: '总装早班一组',
     handoverStatus: 'open',
-    openIssueCount: 1,
+    openIssueCount: 5,
     createdAtUtc: '2026-08-01T08:00:00Z',
     acceptedAtUtc: null,
-    outgoingUserId: 'user-emp-1042',
-    outgoingUserName: '李海生',
-    incomingUserId: null,
-    incomingUserName: null,
+    outgoingUserId: 'user-emp-1042' as string | null,
+    outgoingUserName: '李海生' as string | null,
+    incomingUserId: null as string | null,
+    incomingUserName: null as string | null,
     wipItems: [
       { workOrderId: 'WO-2026-0731', operationTaskId: 'OT-2026-0731-30', quantity: 24 },
       { workOrderId: 'WO-2026-0733', operationTaskId: null, quantity: 6 },
+      { workOrderId: 'WO-2026-0735', operationTaskId: 'OT-2026-0735-10', quantity: 12 },
     ],
     unfinishedWorkOrders: [
       {
@@ -85,7 +92,10 @@ const state = vi.hoisted(() => ({
   },
 }))
 
-const detailFace = vi.hoisted(() => ({ handoverId: undefined as unknown as Ref<string> }))
+const detailFace = vi.hoisted(() => ({
+  handoverId: undefined as unknown as Ref<string>,
+  error: undefined as unknown as Ref<unknown>,
+}))
 
 const mutations = vi.hoisted(() => ({
   createShiftHandover: vi.fn(),
@@ -101,6 +111,7 @@ vi.mock('@/composables/useBusinessMes', () => {
   // 详情读面按 detailHandoverId 取数：写空即停取（与 useMesShiftHandovers 的 enabled 同口径）。
   // 用例要断言页面确实把选中的交接单 id 写进去了，所以这个 ref 由测试持有。
   detailFace.handoverId = ref('')
+  detailFace.error = ref()
   return {
     useMesShiftHandovers: () => ({
       filters: reactive(state.filters),
@@ -109,8 +120,11 @@ vi.mock('@/composables/useBusinessMes', () => {
       handoversPending: ref(false),
       handoversTotal: ref(1),
       detailHandoverId: detailFace.handoverId,
-      handoverDetail: computed(() => (detailFace.handoverId.value ? state.detail : undefined)),
-      handoverDetailError: ref(),
+      // 取数失败时读面给不出 detail——这正是 B1 那条失败路径的形状。
+      handoverDetail: computed(() =>
+        detailFace.handoverId.value && !detailFace.error.value ? state.detail : undefined,
+      ),
+      handoverDetailError: detailFace.error,
       handoverDetailPending: ref(false),
       createShiftHandover: mutations.createShiftHandover,
       acceptShiftHandover: mutations.acceptShiftHandover,
@@ -141,7 +155,7 @@ vi.mock('@/utils/notify', async () => {
   const actual = await vi.importActual<typeof import('@/utils/notify')>('@/utils/notify')
   return {
     ...actual,
-    inlineErrorMessage: () => '',
+    inlineErrorMessage: (error: unknown) => (error ? '交接明细加载失败，请稍后重试。' : ''),
     notifyError: mutations.notifyError,
     notifyOperationFailure: mutations.notifyOperationFailure,
     notifySuccess: mutations.notifySuccess,
@@ -266,10 +280,13 @@ describe('MES handovers read-face guard', () => {
     state.row.acceptedAtUtc = undefined
     state.row.outgoingUserName = '李海生'
     state.row.incomingUserName = undefined
-    state.row.wipItemCount = 3
-    state.row.unfinishedWorkOrderCount = 2
-    state.row.openIssueDetailCount = 1
+    // 列表计数由详情的三个数组长度派生：两侧同源，谁改了都不会只改一半。
+    state.row.wipItemCount = state.detail.wipItems.length
+    state.row.unfinishedWorkOrderCount = state.detail.unfinishedWorkOrders.length
+    state.row.openIssueDetailCount = state.detail.openIssues.length
+    state.detail.outgoingUserName = '李海生'
     detailFace.handoverId.value = ''
+    detailFace.error.value = undefined
     mutations.createShiftHandover.mockReset()
     mutations.acceptShiftHandover.mockReset()
     mutations.refreshHandovers.mockReset().mockResolvedValue(undefined)
@@ -507,9 +524,9 @@ describe('MES handovers read-face guard', () => {
     const visibleText = wrapper.text().replace(/\s+/g, ' ')
 
     expect(visibleText).toContain('李海生')
-    expect(visibleText).toContain('在制 3')
-    expect(visibleText).toContain('未完工单 2')
-    expect(visibleText).toContain('遗留 1')
+    expect(visibleText).toContain(`在制 ${state.detail.wipItems.length}`)
+    expect(visibleText).toContain(`未完工单 ${state.detail.unfinishedWorkOrders.length}`)
+    expect(visibleText).toContain(`遗留 ${state.detail.openIssues.length}`)
     expect(visibleText).not.toMatch(TECHNICAL_USER_PATTERN)
   })
 
@@ -581,6 +598,44 @@ describe('MES handovers read-face guard', () => {
     expect(detailFace.handoverId.value).toBe('')
     expect(wrapper.find('[data-testid="handover-detail"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="accept-handover-form"]').exists()).toBe(true)
+  })
+
+  // 第 1 轮 B2：这条分支此前从未被检验——`beforeEach` 恒置 outgoingUserName，23 条用例里
+  // 没有一条让它为空，于是「拿 id 兜底」注入进去 23/23 全绿。网关目录解不出显示名时
+  // name 为 null 而 id 仍在，是可达状态；用户 id 属工程标识符，两个呈现面都不许印出来。
+  it('目录解不出交班人显示名时退回「未记录」，列表与抽屉都不印用户 id', async () => {
+    state.row.outgoingUserName = null
+    state.detail.outgoingUserName = null
+    const wrapper = mountPage()
+
+    expect(wrapper.text()).toContain('未记录')
+    expect(wrapper.text()).not.toMatch(TECHNICAL_USER_PATTERN)
+
+    await wrapper.get('[data-testid="handovers-table"] > div').trigger('click')
+    await flushPromises()
+
+    const detailText = wrapper.get('[data-testid="handover-detail"]').text()
+    expect(detailText).toContain('未记录')
+    expect(detailText).not.toMatch(TECHNICAL_USER_PATTERN)
+  })
+
+  // 第 1 轮 B1：详情取数失败时，抽屉此前会照常渲染抬头 + 三张 rows=[] 的表，屏上出现
+  // 「交班时点没有登记…」——那是把「没取到」谎报成「没登记」，还与同屏错误横幅、
+  // 列表行自己的计数三方矛盾。失败态只该留横幅。
+  it('详情取数失败时只留错误横幅，不谎报「交班时点没有登记」', async () => {
+    detailFace.error.value = new Error('detail read face unavailable')
+    const wrapper = mountPage()
+
+    await wrapper.get('[data-testid="handovers-table"] > div').trigger('click')
+    await flushPromises()
+
+    const detail = wrapper.get('[data-testid="handover-detail"]')
+    expect(detail.get('[role="alert"]').text()).toContain('交接明细加载失败')
+    expect(detail.text()).not.toContain('交班时点没有登记在制清点')
+    expect(detail.text()).not.toContain('交班时点没有未完工单')
+    expect(detail.text()).not.toContain('交班时点没有登记遗留问题')
+    // 抬头也不许用列表行垫出来：垫上去会让失败态看着像一张读到了的交接单。
+    expect(detail.text()).not.toContain('总装早班一组')
   })
 
   it.each([
