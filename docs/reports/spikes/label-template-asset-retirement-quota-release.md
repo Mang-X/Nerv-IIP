@@ -162,7 +162,7 @@ checksum、ownerService、ownerType、ownerId、purpose。pre-terminal proof 只
 decisionId。issuer/audience 是由每跳 producer/verifier owner 各自配置的唯一常量，不接受调用方任意值。
 
 两跳都要求 `expiresAt > issuedAt` 且 `expiresAt - issuedAt <= 300` 秒；使用同一个注入的
-`TimeProvider` 判定 `issuedAt > now + 300s` 为尚未生效、`expiresAt <= now - 300s` 为已过期，边界包含在
+`TimeProvider` 判定 `issuedAt >= now + 300s` 为尚未生效、`expiresAt <= now - 300s` 为已过期，边界包含在
 拒绝侧。测试分别钉住正 TTL、零/负 TTL、超过 300 秒、未来 issuedAt 及过期 expiresAt；不得用一个
 “签名失败”断言替代时钟分支。
 
@@ -197,6 +197,15 @@ capability 携带这份快照。FileStorage 首次接受 decision 时冻结自�
 首次结果，不按 live 配置重算。BarcodeLabel 收到结果后保存同一 H。响应丢失只需以同 decision 重试，不
 增加第二阶段、补偿 API 或分布式事务。
 
+由于不存在 2PC/ack 且 FileStorage 不保留永久 decision fence，pending 不能被宣称永久可恢复。
+BarcodeLabel 在首次发送前的本地 decision 事务内同时写 `FirstSentAtUtc` 与
+`RecoveryUntilUtc = FirstSentAtUtc + 7 days`；在 `now < RecoveryUntilUtc` 时才可为同 decision 重签和
+重试。若到 `now >= RecoveryUntilUtc` 仍未取得 FileStorage 的幂等结果，BarcodeLabel 原子转为永久
+fail-closed `execution-outcome-unknown`/hold，停止 signer/executor，保留最小非敏感 fence 与审计。该状态
+只说明“FileStorage 可能已完成，也可能从未接受”，不得伪造 quota/物理删除结论；hold 的解除需要另行
+裁决，本合同没有人工 purge。FileStorage 对首次接受的 decision 至少保留 8 天；其自身 terminal+H 通常
+更晚。这样 7 天恢复期严格落在下游最短保证内，同时不要求两服务共享绝对时钟或增加确认阶段。
+
 两服务分别在自身 terminal-complete 数据库事务内由注入的本地 `TimeProvider` 同时写
 `CompletedAtUtc`、H 和 `ReplayUntilUtc = CompletedAtUtc + H`；因此共享的是冻结时长 H，不宣称两个绝对
 截止时刻相同。后续配置变更不追溯改写 pending 已冻结输入、FileStorage 首次接受结果、terminal 记录或
@@ -212,6 +221,9 @@ service owner 的自动 worker 清理，不提供人工 purge。BarcodeLabel
 90 天 clamp 的小于/等于/大于。时间证据使用同一 `FakeTimeProvider` 证明 `now < ReplayUntilUtc` 可重放，
 `now == ReplayUntilUtc` 与 `now > ReplayUntilUtc` 均过期；推进同一时钟后同时观察 owner cleanup、公开响应和
 零 provider/executor 重执行，避免各自设置时钟形成假绿。
+若 clamp 前任何原始安全输入 `physical grace + 2 * GC interval` 或
+`lease + 2 * max recovery backoff` 已超过 90 天，服务必须启动失败；不得用 90 天上限静默生成短于安全
+输入的 H。90 天 clamp 只限制可配置的 client replay 诉求，不覆盖内部安全下限。
 
 ### quota 与物理删除时点
 
@@ -243,9 +255,11 @@ service owner 的自动 worker 清理，不提供人工 purge。BarcodeLabel
 | retirement 与新批次冻结同 fileId 并发 | 同上；不能出现“批次已引用但 decision 仍获批” |
 | BarcodeLabel 查询失败或读到未知/hold | 不创建授权，不调用 FileStorage |
 | BarcodeLabel decision 已提交，FileStorage 未收到 | decision 保持待执行，退避重试；文件 available，quota 未释放 |
-| pending/failed decision 的 5 分钟 capability 过期 | 不改状态；只要 BarcodeLabel fence 未过期，就为同一 decision 重签后重试；proof TTL 不充当 replay horizon |
+| pending/failed decision 的 5 分钟 capability 过期 | 不改状态；尚未形成 `replay-window-expired` fence 且 `now < RecoveryUntilUtc` 时，为同一 decision 重签后重试；proof TTL 不充当 replay horizon |
 | FileStorage metadata 事务失败 | 文件 available、quota 不变、tombstone/metadata 不得半应用 |
 | FileStorage physical-hold 已提交，响应丢失 | replay window 内同 decision 重放返回同一 quota-released 结果，不产生第二 tombstone |
+| FileStorage 已接受/可能已 physical-complete，响应持续丢失至 `now >= RecoveryUntilUtc` | BarcodeLabel 原子转永久 `execution-outcome-unknown`/hold，停止重签与 executor；只报告下游可能已完成或从未接受，不伪报 quota/physical 结论，不重建任何记录 |
+| FileStorage 从未接受，且 `now >= RecoveryUntilUtc` | 与上一行相同的永久 unknown/hold；不因本地没有下游结果而重建 decision 或继续执行，解除另行裁决 |
 | 文件已经由同 decision 删除 | replay window 内幂等成功 |
 | 文件被不同 decision/reason 删除 | conflict；不得冒领对方审计 |
 | scope/owner/purpose/checksum 任一不匹配 | 失败关闭，不改变文件或 quota |
@@ -287,7 +301,9 @@ service owner 的自动 worker 清理，不提供人工 purge。BarcodeLabel
    通用认证平台。该项不再门控生产拆解。
 4. **审计 retention（已批准）：** 使用上述 purpose-specific horizon 公式、默认 30 天、8–90 天边界；
    terminal complete 起算，pending/failed 不因窗口到期清理，过期稳定返回 `replay-window-expired`，只由
-   各事实 owner 自动清理且无人工 purge。该项不再门控生产拆解。
+   BarcodeLabel 永久最小非敏感 fence 对外产生该错误；FileStorage 到期自动清理且不保留永久 fence、
+   不对外推断该错误。首次发送另有 7 天 recovery deadline，超时进入永久
+   `execution-outcome-unknown`/hold；各事实 owner 自动清理且无人工 purge。该项不再门控生产拆解。
 
 因此 #2101 四项新裁决中只剩 1、2 未决；3、4 已完成熔断裁决。
 
@@ -301,12 +317,12 @@ owner 3 只门控 attempt 详情读权限/角色；owner 6 只决定是否另开
 | ---: | --- | --- | --- | --- |
 | 1 | BarcodeLabel retirement decision、候选引用函数、模板/批次复用拒绝与同 fileId 并发栅栏 | `scope:M` / 高 | 先以 owner 批准的 #2065 修订为 oracle；真实 PostgreSQL 覆盖 active/inactive current reference、非目标/legacy/partial snapshot、owner/checksum 冲突、batch/item 各等价状态分区与 unknown/hold，并让每个独立分区的最小错误变异判红；受控并发证明 retirement 与模板复用/批次冻结不可同时成功；同 key 重放、不同 key 同 scope/file 及原始唯一冲突均映射为稳定结果且不创建第二 decision | owner 1 及 #2065 显式修订；若 attempt ledger 已实施则接入 `started` hold |
 | 2 | BarcodeLabel scoped retirement endpoint 与 final-user proof verifier | `scope:M` / 中 | 交付窄且版本化的 v1 wire contract；按实际 request 重算 digest；version/algorithm/canonicalization/encoding/delimiter/签名缺失或篡改/错误 key/issuer/audience/clock/TTL/subject/permission/action/scope/resource/checksum/reason/key 每个独立约束各用一个最小错误变异证明零 decision，不做字段笛卡尔积；internal Bearer 不替代 proof | 1 合同；owner 2；已批准 proof 合同 |
-| 3 | BusinessGateway retirement facade、IAM permission、final-user proof producer、OpenAPI/codegen | `scope:M` / 中 | principal/permission/scope/resource/reason 失败关闭；一个实际 Gateway signer 接线用例产生 v1 proof 并由子项 2 verifier 消费，不复制完整 verifier 矩阵；不隐式开放 attempt 详情 | 2；owner 2；若 owner 2 选择 B 则先完成 approval spike；#2148 owner 3 仅在嵌入 attempt timeline 时 |
-| 4 | FileStorage purpose-specific delete endpoint、capability verifier、physical-hold、durable tombstone 与 quota 原子释放 | `scope:M` / 高 | 真实 PostgreSQL 重放/并发；与第一跳对称核对 version/algorithm/canonicalization/encoding/delimiter/签名/错误 key/issuer/audience/clock/TTL/decisionId/replay policy/version/冻结输入/scope/file/checksum/owner/purpose，每个独立约束一个最小错误变异且零 metadata/tombstone/quota 改动；正 TTL、零/负 TTL、超过 300 秒、未来 issuedAt、过期 expiresAt 与边界分别判红；首次接受冻结 FileStorage 输入、按纯函数真值表解析并持久化 H，同 decision 在配置变化后仍返回原 H；持久化本地 terminal complete 与绝对期限；不同 decision 不冒领；事务不半应用；usage 只下降一次；新旧 grant 均不能兑换 content；跨过 grace 运行旧 collector 后 metadata/session/bytes/tombstone 仍在；另有一条窄 actual-HTTP 测试让生产 BarcodeLabel signer 的真实 wire 由生产 FileStorage verifier 消费，覆盖成功及 wrong key/issuer/audience/digest/clock，归现有 `backend` fast lane，不升 FullChain、不复制完整 verifier 矩阵 | 已批准 proof/replay 合同；1，可与 3 实现并行 |
-| 5 | BarcodeLabel durable executor 与 FileStorage 失败重放收敛 | `scope:M` / 高 | 唯一持久恢复 evidence owner 为“BarcodeLabel 生产 executor + 真实 PostgreSQL”lane：提交 pending decision 后重建宿主/进程作用域，证明重新扫描、5 分钟 capability 过期后重签、FileStorage 响应丢失后重放取回同一 H，并由 BarcodeLabel 以该 H 本地 terminalize，且不创建第二业务事实；该 lane 的 FileStorage 受控 adapter 只证明 BarcodeLabel 恢复，不冒充子项 4 的生产 signer→wire→verifier 证据或 FullChain | 1+4 |
-| 6 | provider-aware final delete、回读不存在证明与物理重试 | `scope:M` / 高 | PostgreSQL 崩溃矩阵只由生产 executor + 真实 PostgreSQL lane负责；Local/实际 provider 各只验证最小 delete/readback contract；`FileStorage Retirement PhysicalDelete Acceptance` 是场景名，不是新 required lane：以“生产 executor 持久状态与失败恢复”为唯一结论登记到既有 `postgres` requiredLane/manifest，并在其中运行真实 PostgreSQL + 当前实际启用 provider；选中后 actual identities/execution count/cleanup 必须闭合，zero-run、全部 skip 或 policy-skip 均失败；禁止 fake/非 PostgreSQL 代替，失败/回读不确定不假完成 | #1628 -> #994；实际启用 provider #997 或 #1012；4 |
-| 7 | BarcodeLabel retirement decision retention | `scope:M` / 中 | 保存 FileStorage 幂等结果返回的同一 H，在本地 terminal 事务用注入 TimeProvider 写 CompletedAtUtc/H/ReplayUntilUtc；同一 FakeTimeProvider 覆盖 `<`、`==`、`>` 边界及 status/scope 最小错误变异，钉住 `now >= ReplayUntilUtc` 过期；pending/failed 不清理，窗口外只有永久最小非敏感 retirement fence 返回过期，且不得重签/重建/调用 executor；清理失败可重试收敛且不丢 fence | 已批准 replay 合同；5 |
-| 8 | FileStorage deletion tombstone retention | `scope:M` / 中 | 使用首次接受时冻结并持久化的同一 H，在本地 terminal 事务写自己的 CompletedAtUtc/ReplayUntilUtc；配置变化不改历史；同一 FakeTimeProvider 覆盖 `<`、`==`、`>` 及 status/scope 变异；未 terminal complete 不清理，到自身截止自动清理后不保留永久 FileStorage fence、不产出公开 `replay-window-expired`，清理失败可重试收敛 | 已批准 replay 合同；6 |
+| 3 | BusinessGateway retirement facade、IAM permission、final-user proof producer、OpenAPI/codegen | `scope:M` / 中 | principal/permission/scope/resource/reason 失败关闭；生产 BusinessGateway signer/client 发出 actual HTTP request，由子项 2 的生产 BarcodeLabel endpoint/verifier 消费，成功 wire 接线归现有 `backend` fast shard/manifest；字段级负例仍归子项 2，不复制 verifier 矩阵、不升 FullChain、不隐式开放 attempt 详情 | 2；owner 2；若 owner 2 选择 B 则先完成 approval spike；#2148 owner 3 仅在嵌入 attempt timeline 时 |
+| 4 | FileStorage purpose-specific delete endpoint、capability verifier、physical-hold、durable tombstone 与 quota 原子释放 | `scope:M` / 高 | 真实 PostgreSQL 重放/并发；生产 FileStorage verifier 对 version/algorithm/canonicalization/encoding/delimiter/签名/错误 key/issuer/audience/clock/TTL/decisionId/replay policy/version/冻结输入/scope/file/checksum/owner/purpose 每个独立约束用一个最小错误变异证明零 metadata/tombstone/quota 改动；正 TTL、零/负 TTL、超过 300 秒、future-issued `>=` 边界与过期 expiresAt 分别判红；首次接受冻结 FileStorage 输入、按纯函数真值表解析并持久化 H，同 decision 在配置变化后仍返回原 H；进入 physical-hold、不同 decision 不冒领、事务不半应用、usage 只下降一次、新旧 grant 均不能兑换 content；跨过 grace 运行旧 collector 后 metadata/session/bytes/tombstone 仍在。本子项不实现 BarcodeLabel signer，不写 physical-complete/ReplayUntilUtc | 已批准 proof/replay 合同；1，可与 3 实现并行 |
+| 5 | BarcodeLabel durable executor 与 FileStorage 失败重放收敛 | `scope:M` / 高 | 首次发送前同一 decision 事务冻结 FirstSentAtUtc/RecoveryUntilUtc；唯一持久恢复 evidence owner 为“BarcodeLabel 生产 executor + 真实 PostgreSQL”lane：重建宿主后证明扫描、5 分钟 capability 过期后重签、响应丢失后重放取回同一 H并本地 terminalize；生产 BarcodeLabel signer/client→actual HTTP wire→子项 4 生产 FileStorage verifier 的成功接线另归现有 `backend` fast shard，wrong key/issuer/audience/digest/clock 用最小负例且不复制完整 verifier 矩阵；同一 FakeTimeProvider 证明 `< RecoveryUntilUtc` 可恢复、`==`/`>` 原子转永久 `execution-outcome-unknown`/hold且 signer/executor 零调用，覆盖“FS已完成”和“FS从未接受”两种不可区分反例 | 1+4 |
+| 6 | provider-aware final delete、回读不存在证明与物理重试 | `scope:M` / 高 | provider 回读证明不存在后，在同一 physical-complete 事务用冻结 H 与注入 TimeProvider 写 CompletedAtUtc/H/ReplayUntilUtc；PostgreSQL 崩溃矩阵只由生产 executor + 真实 PostgreSQL lane负责；Local/实际 provider 各只验证最小 delete/readback contract；`FileStorage Retirement PhysicalDelete Acceptance` 是场景名，不是新 required lane：以“生产 executor 持久状态与失败恢复”为唯一结论登记到既有 `postgres` requiredLane/manifest，并在其中运行真实 PostgreSQL + 当前实际启用 provider；选中后 actual identities/execution count/cleanup 必须闭合，zero-run、全部 skip 或 policy-skip 均失败；禁止 fake/非 PostgreSQL 代替，失败/回读不确定不假完成 | #1628 -> #994；实际启用 provider #997 或 #1012；4 |
+| 7 | BarcodeLabel retirement decision retention | `scope:M` / 中 | 保存 FileStorage 幂等结果返回的同一 H，在本地 terminal 事务用注入 TimeProvider 写 CompletedAtUtc/H/ReplayUntilUtc；同一 FakeTimeProvider 覆盖 `<`、`==`、`>` replay 边界及 status/scope 变异，钉住 `now >= ReplayUntilUtc` 过期；另覆盖 recovery unknown/hold 后永久最小非敏感 fence 保留且不得重签/重建/调用 executor；清理失败可重试收敛且不丢 fence，unknown hold 的解除不在本子项 | 已批准 replay/recovery 合同；5 |
+| 8 | FileStorage deletion tombstone retention | `scope:M` / 中 | 使用首次接受时冻结并持久化的同一 H及子项 6 写入的 CompletedAtUtc/ReplayUntilUtc；配置变化不改历史；清理下限同时满足“首次接受后至少 8 天”和自身 terminal+H，取更晚者；同一 FakeTimeProvider 覆盖两个下限的 `<`、`==`、`>` 及 status/scope 变异；未 terminal complete 不清理，到期自动清理后不保留永久 FileStorage fence、不产出公开 `replay-window-expired`，清理失败可重试收敛 | 已批准 replay/recovery 合同；6 |
 | 9 | Business Console 基础退役发起与 decision/hold/quota 状态展示 | `scope:M` / 中 | 不把 inactive 当无引用，不把空 attempt 历史当从未打印；基础页面不需要 attempt 详情权限；reason 与安全冲突不泄漏其他 requester | 3+5；#2148 owner 2/3 仅在展示 attempt 覆盖/详情时门控 |
 | 10 | BarcodeLabel retirement/hold/pending 指标 | `scope:M` / 中 | decision 数、最老 pending 与引用 hold 只从 BarcodeLabel owner 事实产生；`started` 指标只在 attempt ledger 已实施时接入 | 1+5；attempt `started` 条件依赖 ledger |
 | 11 | FileStorage physical retry/complete 指标与告警 | `scope:M` / 中 | quota-released、physical-complete、provider retry 与最老 physical pending 只从 FileStorage owner 事实产生并分显 | 6 |
