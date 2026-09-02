@@ -20,7 +20,7 @@ internal static class VocabularyDriftExemptions
     /// 同值同义的业务服务权限码声明，销账见下方分组注释。
     /// </summary>
     private const string PermissionCodeTrackingAdjudication =
-        "待 #3040 尾巴票销账：与 NervIipPermissionCodes 同值同义的业务服务权限码声明；"
+        "待 #3094 销账：与 NervIipPermissionCodes 同值同义的业务服务权限码声明；"
         + "该服务未引用 Nerv.IIP.Contracts.Iam，销账动作为加引用后改常量引用。";
 
     public static readonly IReadOnlyList<VocabularyExemption> Entries =
@@ -255,7 +255,7 @@ internal static class VocabularyDriftExemptions
         // ── 检验来源族（QualityInspectionSourceTypes：wms / receiving） ─────────────
 
         // ── 平台权限码族（Nerv.IIP.Contracts.Iam.NervIipPermissionCodes，#3040 D1） ──
-        // 待 #3040 尾巴票销账：下列 13 个业务服务的 *PermissionCodes.cs 声明的权限码与
+        // 待 #3094 销账：下列 13 个业务服务的 *PermissionCodes.cs 声明的权限码与
         // NervIipPermissionCodes 逐条同值同义，属真实违例，不是「同值不同义」。之所以不在本票
         // 改常量引用：这些项目均未引用 Nerv.IIP.Contracts.Iam，改引用需要给 13 个业务服务各加一条
         // ProjectReference，是独立的架构决定；owner 已裁定 #3040 D1 覆盖面只盖 IAM ↔ Gateway 两处，
