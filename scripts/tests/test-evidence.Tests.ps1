@@ -1494,7 +1494,8 @@ $liveAssignments = Get-NervSourceSkipAssignments -RepoRoot $repoRoot
 # 修掉假通过后登记义务才浮出来。增至 54。
 # #3222 注册「真实 Redis 订阅连接/超时异常接入既有恢复路径」的 PostgreSQL + Redis/CAP proof
 # （真 SubscribeAsync 的 RedisConnectionException / RedisTimeoutException 只有真 Redis 分得开），增至 55。
-Assert-Equal 55 $liveAssignments.Count '已批准的 source skip 清单变更必须显式分类。'
+# #2813 注册 NCR 返工成本 FullChain，增至 56。
+Assert-Equal 56 $liveAssignments.Count '已批准的 source skip 清单变更必须显式分类。'
 Assert-True (($liveAssignments | Where-Object sourcePath -like '*SimulatedConnectorHostProcessTests.cs').sourceText.Contains('Windows runs the platform-specific executable resolution contract only', [StringComparison]::Ordinal)) 'Quote-aware scanner must retain semicolons inside a C# string literal.'
 $livePolicy = Import-NervTestEvidencePolicy -Path (Join-Path $repoRoot 'scripts/test-evidence-policy.json')
 $liveViolations = Test-NervTestEvidencePolicy -Policy $livePolicy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)
