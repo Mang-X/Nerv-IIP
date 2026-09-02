@@ -350,6 +350,13 @@ function Assert-NervFullChainMemberEvidence {
             }
             if (-not (Test-NervFullChainEvidenceProperty -Object $evidence -Name 'cleanupFailures') -or $evidence.cleanupFailures -isnot [array] -or @($evidence.cleanupFailures).Count -ne 0) { throw "FullChain member '$($Member.id)' cleanup evidence must contain an empty cleanupFailures array." }
         }
+        elseif ([string]::Equals([string]$Member.id, 'ncr-rework-cost-closure', [StringComparison]::Ordinal)) {
+            if (-not (Test-NervFullChainEvidenceProperty -Object $evidence -Name 'cleanup')) { throw "FullChain member '$($Member.id)' cleanup evidence is missing required 'cleanup' object." }
+            foreach ($name in @('managedProcessRemaining', 'exactDatabaseRemaining', 'ownedComposeServiceRemaining')) {
+                Assert-NervFullChainZeroReadback -Object $evidence.cleanup -Name $name -MemberId ([string]$Member.id)
+            }
+            if (-not (Test-NervFullChainEvidenceProperty -Object $evidence.cleanup -Name 'errors') -or $evidence.cleanup.errors -isnot [array] -or @($evidence.cleanup.errors).Count -ne 0) { throw "FullChain member '$($Member.id)' cleanup evidence must contain an empty errors array." }
+        }
         else { throw "FullChain script member '$($Member.id)' has no cleanup evidence validator." }
         return [pscustomobject]@{ cleanup = 'passed'; diagnosticEvidence = 'entrypoint-evidence-verified'; source = $evidencePath; diagnosticSchemas = $schemas }
     }

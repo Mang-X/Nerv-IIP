@@ -254,6 +254,12 @@
       "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL ERP return closure acceptance test\\.\";$"
     },
     {
+      "id": "fullchain-ncr-rework-cost",
+      "sourcePath": "backend/tests/Nerv.IIP.Business.FullChain.Tests/NcrReworkCostClosurePostgresRedisAcceptanceTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set the MAN-2813 PostgreSQL, Redis, seven service URLs, and internal token variables to run the public NCR rework cost closure probe\\.\";$"
+    },
+    {
       "id": "fullchain-erp-wms",
       "sourcePath": "backend/tests/Nerv.IIP.Business.FullChain.Tests/ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests.cs",
       "sourceOrdinal": 1,
@@ -542,6 +548,25 @@
       "exitCondition": null,
       "testIdentities": [
         "Nerv.IIP.Business.FullChain.Tests.ErpReturnClosurePostgresAcceptanceTests.Purchase_return_and_sales_rma_close_through_real_postgres_contexts_with_replay_safety"
+      ],
+      "expectedRuntimeTestCount": 1
+    },
+    {
+      "id": "fullchain-ncr-rework-cost",
+      "sourceId": "fullchain-ncr-rework-cost",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.FullChain\\.Tests\\.NcrReworkCostClosurePostgresRedisAcceptanceTests\\..+$",
+      "reasonPattern": "^Set the MAN-2813 PostgreSQL, Redis, seven service URLs, and internal token variables to run the public NCR rework cost closure probe\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "full-chain",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.FullChain.Tests.NcrReworkCostClosurePostgresRedisAcceptanceTests.Public_ncr_rework_closes_one_traceable_work_order_and_independent_erp_cost"
       ],
       "expectedRuntimeTestCount": 1
     },
