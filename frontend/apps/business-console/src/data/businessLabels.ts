@@ -475,6 +475,22 @@ export const MES_HANDOVER_STATUS_LABELS: Readonly<Record<string, string>> = {
   accepted: '已接班',
 }
 
+/**
+ * 交接单遗留问题的来源域，取值来自 MES 域枚举 ShiftHandoverIssueCategory（Equipment / Quality），
+ * 读面按枚举名回显字符串，`normalizeCode` 归一后查表。
+ */
+export const MES_HANDOVER_ISSUE_CATEGORY_LABELS: Readonly<Record<string, string>> = {
+  equipment: '设备',
+  quality: '质量',
+}
+
+/** 交接单遗留问题的严重度，取值来自 MES 域枚举 ShiftHandoverIssueSeverity（Low / Medium / High）。 */
+export const MES_HANDOVER_ISSUE_SEVERITY_LABELS: Readonly<Record<string, string>> = {
+  low: '低',
+  medium: '中',
+  high: '高',
+}
+
 /** 不合格品报告（NCR）状态，与后端 NonconformanceReport 的三个状态字一一对应。 */
 export const NCR_STATUS_LABELS: Readonly<Record<string, string>> = {
   open: '待处置',
