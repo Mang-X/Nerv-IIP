@@ -1,4 +1,4 @@
-import { expect, test, type Route } from '@playwright/test'
+import { expect, test, type Locator, type Route } from '@playwright/test'
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
 
@@ -227,6 +227,67 @@ test('工装维护台真实浏览器视觉核验', async ({ page }) => {
     path: path.join(screenshotDir, '04-retire-confirmation.png'),
   })
 })
+
+test('NvInput 与 NvSelectTrigger 在真实浏览器中呈现可区分的边框状态', async ({ page }) => {
+  test.skip(test.info().project.name !== 'desktop', '桌面 NvUI 状态只取 desktop 证据')
+
+  await page.goto('/master-data/tooling', { waitUntil: 'domcontentloaded' })
+  await page.addStyleTag({
+    content:
+      '*, *::before, *::after { animation-duration: 0s !important; transition-duration: 0s !important; }',
+  })
+  await expect(page.getByText('MOULD-FLOOR-OP10', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '注册工装' }).click()
+
+  const nameInput = page.getByLabel('工装名称 *')
+  const nameFrame = nameInput.locator('..')
+  const typeTrigger = page.getByLabel('工装类型 *')
+
+  const inputDefaultBorder = await borderColor(nameFrame)
+  await nameFrame.hover()
+  await expect.poll(() => borderColor(nameFrame)).not.toBe(inputDefaultBorder)
+  await nameInput.focus()
+  await page.mouse.move(0, 0)
+  const inputFocusBorder = await borderColor(nameFrame)
+  expect(inputFocusBorder).not.toBe(inputDefaultBorder)
+
+  const selectDefaultBorder = await borderColor(typeTrigger)
+  await typeTrigger.hover()
+  await expect.poll(() => borderColor(typeTrigger)).not.toBe(selectDefaultBorder)
+  await nameInput.focus()
+  await page.keyboard.press('Tab')
+  await expect(typeTrigger).toBeFocused()
+  await page.mouse.move(0, 0)
+  const selectFocusBorder = await borderColor(typeTrigger)
+  expect(selectFocusBorder).not.toBe(selectDefaultBorder)
+  expect(await boxShadow(typeTrigger)).not.toBe('none')
+
+  await page.getByRole('button', { name: '确认注册' }).click()
+  await expect(nameFrame).toHaveAttribute('data-invalid', 'true')
+  await expect(typeTrigger).toHaveAttribute('data-invalid', 'true')
+  await page.mouse.move(0, 0)
+
+  const inputInvalidBorder = await borderColor(nameFrame)
+  expect(inputInvalidBorder).not.toBe(inputDefaultBorder)
+  await nameInput.focus()
+  await expect.poll(() => borderColor(nameFrame)).toBe(inputInvalidBorder)
+  await expect.poll(() => boxShadow(nameFrame)).not.toBe('none')
+
+  const selectInvalidBorder = await borderColor(typeTrigger)
+  expect(selectInvalidBorder).not.toBe(selectDefaultBorder)
+  await page.keyboard.press('Tab')
+  await expect(typeTrigger).toBeFocused()
+  await expect.poll(() => borderColor(typeTrigger)).toBe(selectInvalidBorder)
+  await expect.poll(() => boxShadow(typeTrigger)).not.toBe('none')
+})
+
+function borderColor(locator: Locator) {
+  return locator.evaluate((element) => getComputedStyle(element).borderColor)
+}
+
+function boxShadow(locator: Locator) {
+  return locator.evaluate((element) => getComputedStyle(element).boxShadow)
+}
 
 async function routeConsoleApi(route: Route) {
   const pathname = new URL(route.request().url()).pathname
