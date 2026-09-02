@@ -213,7 +213,7 @@ const priorityOptions = maintenanceCreatePriorityValues.map((value) => ({
   label: maintenancePriorityLabel(value),
 }))
 
-// 流程驱动的校验：deviceAssetId + priority 必填（故障描述建议但非必填）。
+// 流程驱动的校验：deviceAssetId + priority 必填（设备占用原因非必填，填写即登记设备停机）。
 const valid = computed(() => repairOrderFlow.progress(form).completed >= 2)
 
 // ScanBar 在浮层（成功/失败 Result）展示时停止抢焦。
@@ -482,17 +482,21 @@ function workOrderSubtitle(item: { priority?: string; status?: string; openedAtU
         </div>
 
         <label class="block space-y-1">
-          <span class="text-sm text-foreground">故障描述（建议填写）</span>
+          <span class="text-sm text-foreground">设备占用原因（填写即登记设备停机）</span>
           <textarea
             data-testid="reason-input"
             v-model="form.assetUnavailableReason"
             :disabled="intentLocked"
             rows="3"
-            placeholder="描述故障现象，便于维修人员处理"
+            maxlength="200"
+            placeholder="设备停下来了才填，如：主轴异响，无法运转"
             class="min-h-24 w-full scroll-mb-24 rounded-lg border border-border bg-card px-4 py-3 text-base text-foreground outline-none focus:border-brand"
             @focus="reasonFocused = true"
             @blur="reasonFocused = false"
           />
+          <span class="block text-xs text-muted-foreground">
+            填写后从提交时刻登记该设备不可用并计入产能影响，工单完工时自动释放；留空则只提交报修、不登记占用。
+          </span>
         </label>
 
         <NvMobileButton
