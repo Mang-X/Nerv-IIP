@@ -78,17 +78,17 @@ PR 审核须将声明与实际交付物交叉核验（facade + codegen + barrel 
 | IndustrialTelemetry |      28 |      25 |        1 |        2 |
 | Inventory           |      19 |      13 |        1 |        5 |
 | Maintenance         |      26 |      20 |        4 |        2 |
-| MasterData          |      50 |      41 |        5 |        4 |
-| Mes                 |      64 |      63 |        0 |        1 |
+| MasterData          |      50 |      45 |        1 |        4 |
+| Mes                 |      65 |      64 |        0 |        1 |
 | ProductEngineering  |      39 |      38 |        0 |        1 |
 | Quality             |      43 |      30 |       12 |        1 |
 | Scheduling          |      15 |      13 |        1 |        1 |
 | Wms                 |      49 |      37 |        7 |        5 |
-| **Total**           | **440** | **363** |   **50** |   **27** |
+| **Total**           | **441** | **368** |   **46** |   **27** |
 
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
-`exposed` 行（363）带有已验证 facade `gatewayOperationIds`，列举于 JSON 登记表中。实际的治理决策，即
+`exposed` 行（368）带有已验证 facade `gatewayOperationIds`，列举于 JSON 登记表中。实际的治理决策，即
 `deferred` 与 `internal` 行，完整列于下方。
 
 对于 MAN-632 可搜索目录，`listBusinessConsoleSearchableDirectory` 为每种类型映射恰好一个权威 owner 和
@@ -181,8 +181,6 @@ Gateway 不重新计算总产出或比率。
 | Maintenance         | DELETE | `/api/business/v1/maintenance/downtime-reasons/{reasonCode}`                                    | BusinessGateway facade 待交付；停机原因目录配置 UI 属于后续 Maintenance 菜单阶段。                                                                                                    |
 | Maintenance         | PUT    | `/api/business/v1/maintenance/downtime-reasons/{reasonCode}`                                    | BusinessGateway facade 待交付；停机原因目录配置 UI 属于后续 Maintenance 菜单阶段。                                                                                                    |
 | Maintenance         | POST   | `/api/business/v1/maintenance/work-orders/{workOrderId}/repair-started`                         | BusinessGateway facade 待交付；维修开始操作跟随 CMMS 执行的 Business Console 菜单阶段。                                                                                               |
-| MasterData          | GET    | `/api/business/v1/master-data/tooling-assets`                                                   | BusinessGateway 工装查询 facade 与生成客户端由 #2063 交付。                                                                                                                           |
-| Mes                 | POST   | `/api/business/v1/mes/material-issue-requests/{requestId}/line-side-returns`                    | 已通过 BusinessGateway `returnBusinessConsoleMesLineSideMaterial` 暴露，供 Console/PDA 线边退料入口使用。                                                                                   |
 | Mes                 | POST   | `/api/business/v1/mes/work-orders/{workOrderId}/close`                                          | BusinessGateway facade 待交付；MES 工单关闭跟随工作台关闭操作菜单阶段（暂挂/取消已通过 #833 暴露）。                                                                                   |
 | Mes                 | POST   | `/api/business/v1/mes/work-orders/{workOrderId}/engineering-change-decisions`                   | BusinessGateway facade 待交付；工单工程变更决策跟随工单 ECO 菜单阶段。                                                                                                                |
 | Quality             | POST   | `/api/business/v1/quality/capas`                                                                | BusinessGateway CAPA 管理 facade 由 #677 跟踪，并解锁前端 #804。                                                                                                                       |

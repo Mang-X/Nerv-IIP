@@ -236,11 +236,40 @@ public interface IBusinessMasterDataClient
         string internalBearerToken,
         BusinessConsolePreviewCodeRuleRequest request,
         CancellationToken cancellationToken);
+
+    Task<BusinessConsoleToolingAssetListResponse> ListToolingAssetsAsync(
+        string internalBearerToken,
+        BusinessConsoleListToolingAssetsRequest request,
+        string correlationId,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleToolingRegistrationResponse> RegisterToolingAssetAsync(
+        string internalBearerToken,
+        BusinessConsoleRegisterToolingAssetRequest request,
+        BusinessServiceAuditContext auditContext,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleAcceptedResponse> ChangeToolingStatusAsync(
+        string internalBearerToken,
+        BusinessConsoleChangeToolingStatusRequest request,
+        BusinessServiceAuditContext auditContext,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleAcceptedResponse> RecordToolingUsageAsync(
+        string internalBearerToken,
+        BusinessConsoleRecordToolingUsageRequest request,
+        BusinessServiceAuditContext auditContext,
+        CancellationToken cancellationToken);
 }
 
 public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
     : BusinessServiceHttpClient(httpClient), IBusinessMasterDataClient
 {
+    private static readonly JsonSerializerOptions ToolingJsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false) },
+    };
+
     public Task<BusinessMasterDataPrincipalWorkContextResponse> GetPrincipalWorkContextAsync(
         string internalBearerToken,
         BusinessMasterDataPrincipalWorkContextRequest request,
@@ -766,6 +795,114 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
             CodeRulePath(request.RuleKey) + "/preview",
             request,
             cancellationToken);
+
+    public async Task<BusinessConsoleToolingAssetListResponse> ListToolingAssetsAsync(
+        string internalBearerToken,
+        BusinessConsoleListToolingAssetsRequest request,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<BusinessConsoleToolingAssetListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/master-data/tooling-assets?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("keyword", request.Keyword),
+                ("status", request.Status?.ToString().ToLowerInvariant()),
+                ("skip", request.Skip),
+                ("take", request.Take)),
+            null,
+            cancellationToken,
+            jsonOptions: ToolingJsonOptions,
+            configureRequest: message => ConfigureCorrelationHeader(message, correlationId),
+            failClosedOnFailureEnvelope: true);
+        if (response.Items is null ||
+            response.Total < 0 ||
+            response.Items.Count > request.Take ||
+            (response.Items.Count > 0 &&
+                (long)response.Total < (long)request.Skip + response.Items.Count) ||
+            response.Items.Any(item =>
+                item is null ||
+                string.IsNullOrWhiteSpace(item.Code) ||
+                string.IsNullOrWhiteSpace(item.Name) ||
+                string.IsNullOrWhiteSpace(item.ToolingType) ||
+                item.UsageCount < 0 ||
+                item.MaintenanceLifeCount is <= 0 ||
+                item.WorkCenterCodes is null ||
+                item.WorkCenterCodes.Any(string.IsNullOrWhiteSpace) ||
+                item.SkuCodes is null ||
+                item.SkuCodes.Any(string.IsNullOrWhiteSpace)))
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
+        return response;
+    }
+
+    public async Task<BusinessConsoleToolingRegistrationResponse> RegisterToolingAssetAsync(
+        string internalBearerToken,
+        BusinessConsoleRegisterToolingAssetRequest request,
+        BusinessServiceAuditContext auditContext,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<BusinessConsoleToolingRegistrationResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/master-data/tooling-assets",
+            request,
+            cancellationToken,
+            jsonOptions: ToolingJsonOptions,
+            configureRequest: message => ConfigureAuditHeaders(message, auditContext),
+            failClosedOnFailureEnvelope: true);
+        if (string.IsNullOrWhiteSpace(response.ResourceType) ||
+            string.IsNullOrWhiteSpace(response.Code) ||
+            string.IsNullOrWhiteSpace(response.DisplayName))
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
+        return response;
+    }
+
+    public async Task<BusinessConsoleAcceptedResponse> ChangeToolingStatusAsync(
+        string internalBearerToken,
+        BusinessConsoleChangeToolingStatusRequest request,
+        BusinessServiceAuditContext auditContext,
+        CancellationToken cancellationToken)
+    {
+        await SendNoContentAsync(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/master-data/tooling-assets/status",
+            request,
+            cancellationToken,
+            jsonOptions: ToolingJsonOptions,
+            configureRequest: message => ConfigureAuditHeaders(message, auditContext));
+        return new BusinessConsoleAcceptedResponse(true);
+    }
+
+    public async Task<BusinessConsoleAcceptedResponse> RecordToolingUsageAsync(
+        string internalBearerToken,
+        BusinessConsoleRecordToolingUsageRequest request,
+        BusinessServiceAuditContext auditContext,
+        CancellationToken cancellationToken)
+    {
+        await SendNoContentAsync(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/master-data/tooling-assets/usage",
+            request,
+            cancellationToken,
+            jsonOptions: ToolingJsonOptions,
+            configureRequest: message => ConfigureAuditHeaders(message, auditContext));
+        return new BusinessConsoleAcceptedResponse(true);
+    }
+
+    private static void ConfigureCorrelationHeader(HttpRequestMessage message, string correlationId) =>
+        message.Headers.TryAddWithoutValidation("X-Correlation-Id", correlationId);
 
     private Task<BusinessConsoleResourceItem> CreateResourceAsync(
         string internalBearerToken,

@@ -36,6 +36,36 @@ public sealed class BusinessGatewayOpenApiTests
     }
 
     [Fact]
+    public async Task Mes_shift_handover_detail_forwards_scope_and_maps_snapshot_details()
+    {
+        var handler = new MaterialIssueDetailStubHandler(
+            """{"data":{"handoverId":"SH-000123","shiftId":"EARLY","teamId":"TEAM-A","handoverStatus":"Accepted","openIssueCount":4,"createdAtUtc":"2026-08-27T08:00:00Z","acceptedAtUtc":"2026-08-27T16:00:00Z","teamName":"甲班","outgoingUserId":"user-out","outgoingUserName":"张三","incomingUserId":"user-in","incomingUserName":"李四","wipItems":[{"workOrderId":"WO-001","operationTaskId":"OP-10","quantity":12.5}],"unfinishedWorkOrders":[{"workOrderId":"WO-001","plannedQuantity":100,"completedQuantity":40,"workOrderStatus":"released"}],"openIssues":[{"category":"Equipment","severity":"High","description":"三号机主轴异响","referenceId":"DT-0001"}],"attachments":[{"fileId":"file-sh-1","fileName":"photo.jpg","contentType":"image/jpeg","sizeBytes":2048}]}}""");
+        var client = new HttpBusinessMesClient(new HttpClient(handler) { BaseAddress = new Uri("http://mes") });
+
+        var response = await client.GetShiftHandoverAsync(
+            "token",
+            "SH-000123",
+            new BusinessConsoleMesShiftHandoverDetailRequest("SH-000123", "org-a", "env-a"),
+            CancellationToken.None);
+
+        Assert.Equal("张三", response.OutgoingUserName);
+        Assert.Equal("李四", response.IncomingUserName);
+        Assert.Equal(12.5m, Assert.Single(response.WipItems).Quantity);
+        Assert.Equal(40m, Assert.Single(response.UnfinishedWorkOrders).CompletedQuantity);
+        var issue = Assert.Single(response.OpenIssues);
+        Assert.Equal("Equipment", issue.Category);
+        Assert.Equal("High", issue.Severity);
+        Assert.Equal("DT-0001", issue.ReferenceId);
+        var attachment = Assert.Single(response.Attachments);
+        Assert.Equal(
+            ("file-sh-1", "photo.jpg", "image/jpeg", 2048L),
+            (attachment.FileId, attachment.FileName, attachment.ContentType, attachment.SizeBytes));
+        Assert.Equal(
+            "/api/business/v1/mes/shift-handovers/SH-000123?organizationId=org-a&environmentId=env-a",
+            handler.LastRequest!.RequestUri!.PathAndQuery);
+    }
+
+    [Fact]
     public async Task Business_gateway_error_response_code_supports_numeric_success_and_semantic_failure_values()
     {
         var json = await BusinessGatewayTestHost.GetOpenApiDocumentAsync();
@@ -150,6 +180,18 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/master-data/code-rules/{ruleKey}/versions", "post", "createBusinessConsoleCodeRuleVersion");
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/master-data/code-rules/{ruleKey}/versions", "post", "changeReason", 500);
         AssertOperationId(paths, "/api/business-console/v1/master-data/code-rules/{ruleKey}/preview", "post", "previewBusinessConsoleCodeRule");
+        AssertOperationId(paths, "/api/business-console/v1/master-data/tooling-assets", "get", "listBusinessConsoleToolingAssets");
+        AssertOperationId(paths, "/api/business-console/v1/master-data/tooling-assets", "post", "registerBusinessConsoleToolingAsset");
+        AssertOperationId(paths, "/api/business-console/v1/master-data/tooling-assets/status", "post", "changeBusinessConsoleToolingStatus");
+        AssertOperationId(paths, "/api/business-console/v1/master-data/tooling-assets/usage", "post", "recordBusinessConsoleToolingUsage");
+        AssertResponseStatuses(paths, "/api/business-console/v1/master-data/tooling-assets", "post", "409");
+        AssertResponseStatuses(paths, "/api/business-console/v1/master-data/tooling-assets/status", "post", "409");
+        AssertResponseStatuses(paths, "/api/business-console/v1/master-data/tooling-assets/usage", "post", "409");
+        AssertToolingStatusParameterEnum(
+            document,
+            paths.GetProperty("/api/business-console/v1/master-data/tooling-assets").GetProperty("get"),
+            "status");
+        AssertToolingStatusBodyEnum(document, paths);
         AssertOperationId(paths, "/api/business-console/v1/inventory/availability", "get", "getBusinessConsoleInventoryAvailability");
         AssertOperationId(paths, "/api/business-console/v1/inventory/expiry-alerts", "get", "listBusinessConsoleInventoryExpiryAlerts");
         AssertOperationId(paths, "/api/business-console/v1/mes/line-side-inventory-balances", "get", "listBusinessConsoleMesLineSideInventoryBalances");
@@ -1360,6 +1402,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOptionalBodyProperty(document, paths, "/api/business-console/v2/mes/downtime-events", "post", "toUtc");
         AssertOperationId(paths, "/api/business-console/v1/mes/downtime-events/{downtimeEventId}/recover", "post", "confirmBusinessConsoleMesDowntimeRecovery");
         AssertOperationId(paths, "/api/business-console/v1/mes/shift-handovers", "get", "listBusinessConsoleMesShiftHandovers");
+        AssertOperationId(paths, "/api/business-console/v1/mes/shift-handovers/{handoverId}", "get", "getBusinessConsoleMesShiftHandover");
         AssertOperationId(paths, "/api/business-console/v1/mes/shift-handovers", "post", "createBusinessConsoleMesShiftHandover");
         AssertOperationId(paths, "/api/business-console/v1/mes/shift-handovers/{handoverId}/accept", "post", "acceptBusinessConsoleMesShiftHandover");
         AssertOperationId(paths, "/api/business-console/v1/mes/traceability/work-orders/{workOrderId}", "get", "getBusinessConsoleMesWorkOrderTraceability");
@@ -1785,6 +1828,66 @@ public sealed class BusinessGatewayOpenApiTests
         Assert.Equal(expected, actual);
     }
 
+    private static void AssertToolingStatusBodyEnum(JsonDocument document, JsonElement paths)
+    {
+        var requestSchemaRef = paths
+            .GetProperty("/api/business-console/v1/master-data/tooling-assets/status")
+            .GetProperty("post")
+            .GetProperty("requestBody")
+            .GetProperty("content")
+            .GetProperty("application/json")
+            .GetProperty("schema")
+            .GetProperty("$ref")
+            .GetString()!;
+        var requestSchema = document.RootElement
+            .GetProperty("components")
+            .GetProperty("schemas")
+            .GetProperty(requestSchemaRef.Split('/')[^1]);
+        var statusSchema = requestSchema.GetProperty("properties").GetProperty("status");
+        var values = statusSchema.TryGetProperty("enum", out var inlineValues)
+            ? inlineValues
+            : document.RootElement
+                .GetProperty("components")
+                .GetProperty("schemas")
+                .GetProperty(statusSchema.GetProperty("$ref").GetString()!.Split('/')[^1])
+                .GetProperty("enum");
+
+        Assert.Equal(
+            new string?[] { "available", "maintenance", "retired" },
+            values.EnumerateArray().Select(value => value.GetString()).ToArray());
+    }
+
+    private static void AssertToolingStatusParameterEnum(
+        JsonDocument document,
+        JsonElement operation,
+        string parameterName)
+    {
+        var parameterSchema = operation
+            .GetProperty("parameters")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("name").GetString() == parameterName)
+            .GetProperty("schema");
+        var enumSchema = parameterSchema.TryGetProperty("allOf", out var allOf)
+            ? allOf.EnumerateArray().First(item => item.TryGetProperty("$ref", out _))
+            : parameterSchema.TryGetProperty("oneOf", out var oneOf)
+                ? oneOf.EnumerateArray().First(item => item.TryGetProperty("$ref", out _))
+                : parameterSchema;
+        Assert.True(
+            enumSchema.TryGetProperty("enum", out _) || enumSchema.TryGetProperty("$ref", out _),
+            $"Tooling status query must expose a governed enum: {parameterSchema.GetRawText()}");
+        var values = enumSchema.TryGetProperty("enum", out var inlineValues)
+            ? inlineValues
+            : document.RootElement
+                .GetProperty("components")
+                .GetProperty("schemas")
+                .GetProperty(enumSchema.GetProperty("$ref").GetString()!.Split('/')[^1])
+                .GetProperty("enum");
+
+        Assert.Equal(
+            new string?[] { "available", "maintenance", "retired" },
+            values.EnumerateArray().Select(value => value.GetString()).ToArray());
+    }
+
     private static void AssertJsonResponseRef(
         JsonElement paths,
         string path,
@@ -2182,6 +2285,15 @@ public sealed class BusinessGatewayOpenApiTests
             "completeBusinessConsoleWmsInboundOrder",
             "completeBusinessConsoleWmsOutboundOrder",
             "completeBusinessConsoleWmsCountExecution",
+            "registerBusinessConsoleToolingAsset",
+            "changeBusinessConsoleToolingStatus",
+            "recordBusinessConsoleToolingUsage",
+        };
+        var toolingOperationIds = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "registerBusinessConsoleToolingAsset",
+            "changeBusinessConsoleToolingStatus",
+            "recordBusinessConsoleToolingUsage",
         };
 
         var operations = paths.EnumerateObject()
@@ -2199,6 +2311,12 @@ public sealed class BusinessGatewayOpenApiTests
             Assert.True(
                 !header.TryGetProperty("required", out var required)
                 || !required.GetBoolean());
+            if (toolingOperationIds.Contains(operationId))
+            {
+                Assert.Equal(
+                    "At least one idempotency key must be supplied using the standard Idempotency-Key header, the legacy X-Idempotency-Key header, or the JSON idempotencyKey field; when multiple are supplied they must match.",
+                    header.GetProperty("description").GetString());
+            }
         }
     }
 

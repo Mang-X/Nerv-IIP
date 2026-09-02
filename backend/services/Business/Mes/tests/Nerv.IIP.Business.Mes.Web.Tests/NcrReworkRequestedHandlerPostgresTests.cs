@@ -15,6 +15,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Messaging.CAP;
+using NetCorePal.Extensions.DependencyInjection;
 using NetCorePal.Extensions.Primitives;
 using Npgsql;
 using Nerv.IIP.Business.Mes.Web.Application.Quality;
@@ -816,6 +817,7 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
         services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(
             MesPostgresLaneDatabase.ConnectionString,
             npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "mes")));
+        services.AddUnitOfWork<ApplicationDbContext>();
         services.AddScoped<MesCodingService>();
         services.AddScoped<IMesReworkWorkOrderScopeCoordinator, PostgreSqlMesReworkWorkOrderScopeCoordinator>();
         var provider = services.BuildServiceProvider();
