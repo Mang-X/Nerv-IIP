@@ -25,6 +25,11 @@
         backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/Auth/BusinessGatewayAuthorization.cs.
         This is what the facade actually enforces at the browser-facing edge.
 
+    Checked surface is `NervIipSeedPermissions.All` only. `IamPermissionCatalog.Descriptions` is a second,
+    separate hand-maintained table that this check deliberately does NOT read: a missing description is not
+    an outage — `GetValueOrDefault(code, code)` falls back to showing the raw code — so it does not belong
+    behind the same gate. It does still have to be synced by hand, and the failure text says so.
+
     A code that Gateway enforces but IAM does not seed is not a naming inconsistency: it is an
     endpoint that returns 403 to every principal in production, forever, because no role can be
     granted the code in the first place. Neither test suite can see it — each producer is internally
@@ -206,8 +211,11 @@ if ($errors.Count -eq 0) {
         $errors.Add(
             "BusinessGateway enforces '$code' but $IamSeedPermissionsPath does not seed it, so " +
             "IamPermissionCatalog.EnsureSeeded rejects it and no role can hold it — every principal is denied " +
-            'at that endpoint. Add it to NervIipSeedPermissions.All (and IamPermissionCatalog.Descriptions), or ' +
-            'remove the Gateway enforcement if the capability is gone.')
+            'at that endpoint. Add it to NervIipSeedPermissions.All, or remove the Gateway enforcement if the ' +
+            'capability is gone. Note that this check reads NervIipSeedPermissions.All only: ' +
+            'IamPermissionCatalog.Descriptions is NOT checked here, and a code seeded without a description ' +
+            'falls back to displaying the raw code (GetValueOrDefault(code, code)) in the IAM console, so it ' +
+            'must be synced by hand.')
     }
 }
 

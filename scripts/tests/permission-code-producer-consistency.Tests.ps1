@@ -8,6 +8,7 @@
 #     - artifacts/script-logs/**
 #   Cleanup:
 #     - Removes the fixture directory in finally
+#     - Leaves artifacts/script-logs/** to the repository's existing artifact hygiene
 #   Requires:
 #     - PowerShell 7
 
@@ -180,11 +181,11 @@ try {
         -SeededCode $sharedCodes `
         -EnforcedCode ($sharedCodes + 'business.inventory.expired-stock.override')
     Assert-Contract -Condition (-not $case1.Passed) -Message 'A Gateway-only permission code must fail the check.'
-    Assert-Contract -Condition ($case1.Message -match 'business\.inventory\.expired-stock\.override') `
+    Assert-Contract -Condition ($case1.Message.Contains('business.inventory.expired-stock.override', [StringComparison]::Ordinal)) `
         -Message "The failure must name the offending code. Actual: $($case1.Message)"
     # The three shared codes are legal and must not be reported; naming them would mean the checker
     # is reporting the whole enforced set rather than the difference.
-    Assert-Contract -Condition ($case1.Message -notmatch 'business\.mes\.work-orders\.read') `
+    Assert-Contract -Condition (-not $case1.Message.Contains('business.mes.work-orders.read', [StringComparison]::Ordinal)) `
         -Message "Only the missing code may be reported. Actual: $($case1.Message)"
 
     # --- Case 2: the reverse direction is legal (ADR 0029 实施说明 1 exempts service-only codes). ---
@@ -206,7 +207,7 @@ try {
     $case4 = Invoke-Case -Name 'iam-class-renamed' `
         -SeededCode $sharedCodes -EnforcedCode $sharedCodes -IamPermissionClassName 'NervIipSeedPermissionsV2'
     Assert-Contract -Condition (-not $case4.Passed) -Message 'A renamed IAM producer class must fail the check.'
-    Assert-Contract -Condition ($case4.Message -match 'NervIipSeedPermissions') `
+    Assert-Contract -Condition ($case4.Message.Contains('NervIipSeedPermissions', [StringComparison]::Ordinal)) `
         -Message "The failure must name the producer it could not find. Actual: $($case4.Message)"
 
     # --- Case 5: the class is there but `All` is not. Same disarm, one level down. ---
@@ -223,14 +224,18 @@ try {
         -RoleOnlyCode @('business.inventory.expired-stock.override')
     Assert-Contract -Condition (-not $case6.Passed) `
         -Message 'A code present only in the role-seed class is not grantable and must still fail.'
-    Assert-Contract -Condition ($case6.Message -match 'business\.inventory\.expired-stock\.override') `
+    Assert-Contract -Condition ($case6.Message.Contains('business.inventory.expired-stock.override', [StringComparison]::Ordinal)) `
         -Message "The failure must name the offending code. Actual: $($case6.Message)"
 
     # --- Case 7: an empty enforced set is contained in anything. Vacuous pass, refused. ---
     $case7 = Invoke-Case -Name 'gateway-set-emptied' -SeededCode $sharedCodes -EnforcedCode @()
     Assert-Contract -Condition (-not $case7.Passed) -Message 'An empty Gateway permission set must fail rather than pass vacuously.'
 
-    # --- Case 8: an emptied IAM array. Refused for the same reason, from the other side. ---
+    # --- Case 8: an emptied IAM array, refused from the other side. Note this guard is *redundant* in
+    # isolation: with the IAM set empty, every enforced code is missing, so the containment comparison
+    # already reports. Removing only this guard leaves the suite green — it takes disarming the
+    # comparison as well before this case is the thing that speaks. It is kept because the redundancy is
+    # the point: two independent reasons to fail is what stops a single edit from going quiet. ---
     $case8 = Invoke-Case -Name 'iam-set-emptied' -SeededCode @() -EnforcedCode $sharedCodes
     Assert-Contract -Condition (-not $case8.Passed) -Message 'An empty IAM permission set must fail rather than pass vacuously.'
 
@@ -238,7 +243,7 @@ try {
     $case9 = Invoke-Case -Name 'gateway-class-renamed' `
         -SeededCode $sharedCodes -EnforcedCode $sharedCodes -GatewayPermissionClassName 'BusinessGatewayPermissionsV2'
     Assert-Contract -Condition (-not $case9.Passed) -Message 'A renamed Gateway producer class must fail the check.'
-    Assert-Contract -Condition ($case9.Message -match 'BusinessGatewayPermissions') `
+    Assert-Contract -Condition ($case9.Message.Contains('BusinessGatewayPermissions', [StringComparison]::Ordinal)) `
         -Message "The failure must name the producer it could not find. Actual: $($case9.Message)"
 
     # --- Case 10: a producer path that does not exist must fail, not scan nothing quietly. ---
@@ -255,7 +260,7 @@ try {
     $case11 = Invoke-Verifier -Name 'permission-producers-repository'
     Assert-Contract -Condition $case11.Passed `
         -Message "The repository's own permission producers must satisfy Gateway subset-of IAM. Actual: $($case11.Message)"
-    Assert-Contract -Condition ($case11.Message -match 'Every enforced code is seeded') `
+    Assert-Contract -Condition ($case11.Message.Contains('Every enforced code is seeded', [StringComparison]::Ordinal)) `
         -Message "The success output must state the containment conclusion. Actual: $($case11.Message)"
 
     if ($script:Failures.Count -gt 0) {
@@ -268,6 +273,10 @@ try {
     }
 
     Write-Host 'Permission code producer consistency contract tests passed (11 cases).'
+    # Explicit, because the success path would otherwise inherit the exit code of whatever native command
+    # ran last. That is green today only by accident of case 11 succeeding; append a case that expects a
+    # failure after it and this script would report red while every assertion passed.
+    exit 0
 }
 finally {
     if (Test-Path -LiteralPath $fixtureRoot) {
