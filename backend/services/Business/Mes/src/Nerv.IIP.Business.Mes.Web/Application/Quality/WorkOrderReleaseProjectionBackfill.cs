@@ -66,7 +66,8 @@ internal sealed class BackfillWorkOrderReleaseProjectionCommandHandler(
     /// 恰好是「当初正常结算完工」的标志。按「此刻未完工」筛人，这批工序复活后就永远拿不到发布投影、被门禁永久拒。
     ///
     /// 因此只排除 <see cref="OperationTaskLifecycleStatus.Cancelled"/>——它是唯一真终态：
-    /// 全类 8 处状态赋值里没有任何一处以 <c>Cancelled</c> 为来源（<c>Cancel</c> 与 <c>MarkScheduleInvalidated</c>
+    /// <c>OperationTask</c> 全类 9 处 <c>Status =</c> 赋值中，1 处是私有构造函数的初始赋值（不是状态转移），
+    /// 其余 8 处状态转移**没有任何一处以 <c>Cancelled</c> 为来源**（<c>Cancel</c> 与 <c>MarkScheduleInvalidated</c>
     /// 对 <c>Cancelled</c> 直接 return，<c>ApplyScheduleAssignment</c> 只把 <c>ScheduleInvalidated</c> 转回 <c>Queued</c>）。
     /// </summary>
     private static bool HasReleaseFacts(OperationTaskLifecycleStatus status) =>

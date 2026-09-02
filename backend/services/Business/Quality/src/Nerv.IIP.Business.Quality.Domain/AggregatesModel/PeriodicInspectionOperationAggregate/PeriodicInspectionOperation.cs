@@ -1,3 +1,4 @@
+using System.Globalization;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 
 namespace Nerv.IIP.Business.Quality.Domain.AggregatesModel.PeriodicInspectionOperationAggregate;
@@ -13,6 +14,24 @@ public partial record PeriodicInspectionRuntimeContextId : IGuidStronglyTypedId,
 }
 
 public sealed record PeriodicInspectionTimeWindow(long Sequence, DateTime DueAtUtc);
+
+/// <summary>
+/// 补投的重建发布事实被既有权威事实顶掉的那一个属性。
+/// </summary>
+public sealed record PeriodicInspectionReleaseFactSubstitution(
+    string Attribute,
+    string ReconstructedValue,
+    string AuthoritativeValue);
+
+/// <summary>
+/// 经权威事实校正后、真正写进投影的发布事实。<see cref="Substitutions"/> 非空表示重建值被顶掉过，
+/// 调用方须把它留痕。
+/// </summary>
+public sealed record PeriodicInspectionReleaseFacts(
+    string SkuCode,
+    int OperationSequence,
+    string WorkCenterId,
+    IReadOnlyList<PeriodicInspectionReleaseFactSubstitution> Substitutions);
 
 public sealed record PeriodicInspectionQuantityWindow(
     long Sequence,
@@ -144,6 +163,68 @@ public sealed class PeriodicInspectionOperation : Entity<PeriodicInspectionOpera
             context.Reconcile(ProductionReports, CompletedAtUtc);
             RuntimeContexts.Add(context);
         }
+    }
+
+    /// <summary>
+    /// 用重建的发布事实补投（#3000 回填）时，先让它与既有权威事实对齐。
+    ///
+    /// 回填载荷里的 SKU / 工序号 / 工作中心取自 MES **当前**的工单与工序行，而完工事实是 MES 当初
+    /// 直投过来的那一份；两者不一致时权威的是后者——重建来源本就无法权威知晓这些属性，
+    /// 不一致只说明重建精度不足，**不构成业务事实冲突**。若照 <c>ApplyRelease</c> 的直投语义把它判成
+    /// 冲突，整封补投事件会被判为无效业务事实进死信，该工单一行都补不上、继续 <c>not-synchronized</c>
+    /// 被门禁永久拒——正是本票要消除的形态。
+    ///
+    /// 因此这里以既有完工事实为准，并把被顶掉的属性交回调用方留痕（不静默）。
+    /// 已知可达的不一致只有 SKU 一项：MES 的 <c>OperationTask</c> 在未传 SKU 时把 <c>SkuCode</c>
+    /// 回落成工单号，该值随完工事件进入 <c>CompletionSkuCode</c>；工序号在构造后不可变，
+    /// 工作中心在工序完工后被 <c>ApplyScheduleAssignment</c> 拒绝改写。三项统一处理，不为其中两项另立分支。
+    /// </summary>
+    public PeriodicInspectionReleaseFacts ResolveReconstructedReleaseFacts(
+        string skuCode,
+        int operationSequence,
+        string workCenterId)
+    {
+        var reconstructedSkuCode = Required(skuCode);
+        var reconstructedWorkCenterId = Required(workCenterId);
+        if (!CompletedAtUtc.HasValue)
+        {
+            return new PeriodicInspectionReleaseFacts(
+                reconstructedSkuCode,
+                operationSequence,
+                reconstructedWorkCenterId,
+                []);
+        }
+
+        var substitutions = new List<PeriodicInspectionReleaseFactSubstitution>();
+        if (CompletionSkuCode != reconstructedSkuCode)
+        {
+            substitutions.Add(new PeriodicInspectionReleaseFactSubstitution(
+                "sku-code",
+                reconstructedSkuCode,
+                CompletionSkuCode!));
+        }
+
+        if (CompletionOperationSequence != operationSequence)
+        {
+            substitutions.Add(new PeriodicInspectionReleaseFactSubstitution(
+                "operation-sequence",
+                operationSequence.ToString(CultureInfo.InvariantCulture),
+                CompletionOperationSequence!.Value.ToString(CultureInfo.InvariantCulture)));
+        }
+
+        if (CompletionWorkCenterId != reconstructedWorkCenterId)
+        {
+            substitutions.Add(new PeriodicInspectionReleaseFactSubstitution(
+                "work-center-id",
+                reconstructedWorkCenterId,
+                CompletionWorkCenterId!));
+        }
+
+        return new PeriodicInspectionReleaseFacts(
+            CompletionSkuCode!,
+            CompletionOperationSequence!.Value,
+            CompletionWorkCenterId!,
+            substitutions);
     }
 
     /// <summary>
@@ -522,7 +603,7 @@ public sealed class PeriodicInspectionRuntimeContext : Entity<PeriodicInspection
     /// </summary>
     internal void SkipWindowsAccruedBefore(DateTime observedAtUtc)
     {
-        if (QuantityInterval.HasValue && QuantityHighWater > 0m)
+        if (QuantityInterval.HasValue)
         {
             LastGeneratedQuantityWindowSequence =
                 decimal.ToInt64(decimal.Floor(QuantityHighWater / QuantityInterval.Value));

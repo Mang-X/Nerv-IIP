@@ -155,6 +155,84 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
     }
 
     /// <summary>
+    /// R-c 端到端：存量在制工单里有一道工序已经有完工事实，且它的 <c>CompletionSkuCode</c> 与工单 SkuId 不等
+    /// （MES 的 <c>OperationTask</c> 在未传 SKU 时把 <c>SkuCode</c> 回落成工单号，该值随完工事件进了 Quality）。
+    /// 回填一次后，该工单**全部**工序读首件确认都不得是 <c>not-synchronized</c>——
+    /// 一道工序的重建值与权威事实不一致，不能让同工单其余工序一起失去补投。
+    /// </summary>
+    [Fact]
+    public async Task Backfill_covers_every_operation_even_when_one_carries_conflicting_completion_facts()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.InspectionPlans.Add(FirstArticlePlan());
+        await dbContext.SaveChangesAsync();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        // OP-10 先完工，完工事实带的是回落成工单号的 junk SKU。
+        await HandleCompletionAsync(dbContext, OperationCompleted("OP-10", skuCode: "WO-001"), deadLetters);
+
+        await HandleBackfillAsync(dbContext, Backfill(operationIds: ["OP-10", "OP-20"]), deadLetters);
+
+        foreach (var operationId in new[] { "OP-10", "OP-20" })
+        {
+            var confirmation = await ConfirmAsync(dbContext, operationId);
+            Assert.NotEqual(QualityFirstArticleConfirmationStatuses.NotSynchronized, confirmation.Status);
+        }
+
+        // 让位：冲突属性取既有权威事实，而不是丢弃该工序。
+        var completed = await dbContext.PeriodicInspectionOperations
+            .SingleAsync(x => x.OperationId == "OP-10");
+        Assert.Equal("WO-001", completed.SkuCode);
+        Assert.Equal(ReleasedAtUtc.UtcDateTime, completed.ReleasedAtUtc);
+        // 差异不静默。
+        var notice = Assert.Single(await deadLetters.ListAsync(null, null, CancellationToken.None));
+        Assert.Equal("backfill-release-fact-substituted", notice.FailureCode);
+        Assert.Contains("sku-code", notice.FailureMessage, StringComparison.Ordinal);
+
+        // 再跑一次：行数与内容不变，且不新增首件检验任务。
+        var before = await SnapshotAsync(dbContext);
+        await HandleBackfillAsync(
+            dbContext,
+            Backfill(eventId: "evt-backfill-second", operationIds: ["OP-10", "OP-20"]),
+            deadLetters);
+
+        Assert.Equal(before, await SnapshotAsync(dbContext));
+        Assert.Empty(await dbContext.InspectionTasks
+            .Where(x => x.SourceType == FirstArticleInspection.SourceType)
+            .ToArrayAsync());
+    }
+
+    /// <summary>
+    /// R-a 单独承重：失败粒度是工序，不是整封事件。这里让 OP-10 因「报工工作中心与发布事实冲突」
+    /// 被 <c>ApplyRelease</c> 拒掉（不是让位能救的那一类），断言 OP-20 照常拿到发布事实，
+    /// 且 OP-10 的失败有留痕。
+    /// </summary>
+    [Fact]
+    public async Task One_operation_rejected_does_not_deny_the_rest_of_the_work_order()
+    {
+        await using var dbContext = CreateDbContext();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        // OP-10 的报工落在别的工作中心，与补投载荷的 WC-MIX 冲突。
+        await HandleReportAsync(dbContext, ProductionReport(workCenterId: "WC-OTHER"));
+
+        await HandleBackfillAsync(dbContext, Backfill(operationIds: ["OP-10", "OP-20"]), deadLetters);
+
+        var rejected = await dbContext.PeriodicInspectionOperations.SingleAsync(x => x.OperationId == "OP-10");
+        Assert.Null(rejected.ReleasedAtUtc);
+        var applied = await dbContext.PeriodicInspectionOperations.SingleAsync(x => x.OperationId == "OP-20");
+        Assert.Equal(ReleasedAtUtc.UtcDateTime, applied.ReleasedAtUtc);
+        Assert.Equal(
+            QualityFirstArticleConfirmationStatuses.NotSynchronized,
+            (await ConfirmAsync(dbContext, "OP-10")).Status);
+        Assert.NotEqual(
+            QualityFirstArticleConfirmationStatuses.NotSynchronized,
+            (await ConfirmAsync(dbContext, "OP-20")).Status);
+
+        var notice = Assert.Single(await deadLetters.ListAsync(null, null, CancellationToken.None));
+        Assert.Equal("backfill-operation-rejected", notice.FailureCode);
+        Assert.Contains("OP-10", notice.FailureMessage, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// 直投侧不得跟着回填一起「跳过已有发布事实」：同一工序收到第二份**内容不同**的发布事实
     /// 是真实异常，必须判为冲突进死信。本 PR 把该判断做成了按调用点取值的参数，
     /// 因此直投那一半也要有断言承重，否则参数被翻反不会红。
@@ -270,10 +348,39 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
             deadLetters ?? new InMemoryIntegrationEventDeadLetterStore())
             .HandleAsync(integrationEvent, CancellationToken.None);
 
-    private static Task<FirstArticleConfirmationResponse> ConfirmAsync(ApplicationDbContext dbContext) =>
+    private static Task<FirstArticleConfirmationResponse> ConfirmAsync(
+        ApplicationDbContext dbContext,
+        string operationId = "OP-10") =>
         new GetFirstArticleConfirmationQueryHandler(dbContext).Handle(
-            new GetFirstArticleConfirmationQuery("org-001", "env-dev", "WO-001", "OP-10"),
+            new GetFirstArticleConfirmationQuery("org-001", "env-dev", "WO-001", operationId),
             CancellationToken.None);
+
+    private static async Task HandleCompletionAsync(
+        ApplicationDbContext dbContext,
+        MesOperationTaskCompletedIntegrationEvent integrationEvent,
+        InMemoryIntegrationEventDeadLetterStore deadLetters) =>
+        await new MesOperationTaskCompletedIntegrationEventHandlerForClosePeriodicInspection(
+            dbContext,
+            new PeriodicInspectionOperationScopeCoordinator(dbContext),
+            deadLetters).HandleAsync(integrationEvent, CancellationToken.None);
+
+    private static MesOperationTaskCompletedIntegrationEvent OperationCompleted(
+        string operationId,
+        string skuCode) => new(
+        $"evt-complete-{operationId}",
+        MesIntegrationEventTypes.OperationTaskCompleted,
+        MesIntegrationEventVersions.V1,
+        DateTimeOffset.Parse("2026-08-20T00:00:00Z"),
+        MesIntegrationEventSources.BusinessMes,
+        $"corr-complete-{operationId}",
+        "WO-001",
+        "org-001",
+        "env-dev",
+        "system:mes",
+        $"mes:operation-completed:org-001:env-dev:WO-001:{operationId}",
+        new OperationTaskCompletedPayload(
+            "WO-001", operationId, skuCode, 10, "WC-MIX", 1000m, "EA", false,
+            DateTimeOffset.Parse("2026-08-20T00:00:00Z")));
 
     private static async Task<string[]> SnapshotAsync(ApplicationDbContext dbContext) =>
         await dbContext.PeriodicInspectionOperations
@@ -286,7 +393,8 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
 
     private static WorkOrderReleaseProjectionBackfilledIntegrationEvent Backfill(
         string eventId = "evt-backfill-first",
-        DateTimeOffset? releasedAtUtc = null) => new(
+        DateTimeOffset? releasedAtUtc = null,
+        IReadOnlyCollection<string>? operationIds = null) => new(
         eventId,
         MesIntegrationEventTypes.WorkOrderReleaseProjectionBackfilled,
         MesIntegrationEventVersions.V1,
@@ -303,7 +411,9 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
             "SKU-FG-1000",
             1000m,
             releasedAtUtc ?? ReleasedAtUtc,
-            [new ReleasedOperationPayload("OP-10", 10, "WC-MIX")]));
+            (operationIds ?? ["OP-10"])
+                .Select(operationId => new ReleasedOperationPayload(operationId, 10, "WC-MIX"))
+                .ToArray()));
 
     private static WorkOrderReleasedIntegrationEvent LiveRelease(
         string eventId = "evt-release-WO-001",
@@ -328,7 +438,8 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
 
     private static ProductionReportRecordedIntegrationEvent ProductionReport(
         string reportNo = "RPT-001",
-        decimal goodQuantity = 250m) => new(
+        decimal goodQuantity = 250m,
+        string workCenterId = "WC-MIX") => new(
         $"evt-report-{reportNo}",
         MesIntegrationEventTypes.ProductionReportRecorded,
         MesIntegrationEventVersions.V1,
@@ -341,7 +452,7 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
         "system:mes",
         $"mes:production-report-recorded:org-001:env-dev:{reportNo}",
         new ProductionReportRecordedPayload(
-            reportNo, "WO-001", "OP-10", "WC-MIX", null, goodQuantity, 0m, 0m, "EA", null,
+            reportNo, "WO-001", "OP-10", workCenterId, null, goodQuantity, 0m, 0m, "EA", null,
             DateTimeOffset.Parse("2026-08-02T00:00:00Z"), false));
 
     private static InspectionPlan FirstArticlePlan()

@@ -191,6 +191,39 @@ public sealed class WorkOrderReleaseProjectionBackfillTests
     /// 下界取的是「更早者」，不是「有报工就取报工」：报工晚于工序建单时，
     /// 下界仍须落在工序建单那一支，否则该工单的发布时刻会被推后到报工之后。
     /// </summary>
+    /// <summary>
+    /// 发布时刻必须是该工单**全部**工序建单时刻的下界，不是任意一条：Quality 的 <c>ApplyRelease</c>
+    /// 拿它判「报工早于发布 = 冲突事实」，取到较晚那条就会把工单打进死信。
+    /// 同一工单的工序并不保证同时建出——<c>CreatedAtUtc</c> 每个实例各取一次 <c>UtcNow</c>，
+    /// 而排程计划发布是按工序逐条 <c>Queue</c> 的，工序可以跨多次事件在不同时刻建出。
+    /// </summary>
+    [Fact]
+    public async Task Release_time_is_the_lower_bound_across_all_operations_of_the_work_order()
+    {
+        await using var dbContext = CreateDbContext();
+        AddWorkOrder(
+            dbContext,
+            "WO-SPREAD",
+            Started,
+            [
+                (OperationTaskLifecycleStatus.Queued, 10),
+                (OperationTaskLifecycleStatus.Queued, 20),
+            ]);
+        await dbContext.SaveChangesAsync();
+        // 存量库里两道工序的建单时刻本就不同；这里直接设定持久化值来复刻该状态，
+        // 不去复刻「建单那一次调用」——构造函数取的是 UtcNow，没有注入点。
+        SetCreatedAtUtc(dbContext, "OP-WO-SPREAD-10", Now);
+        SetCreatedAtUtc(dbContext, "OP-WO-SPREAD-20", Now.AddHours(10));
+        await dbContext.SaveChangesAsync();
+
+        var publisher = new RecordingPublisher();
+        await CreateHandler(dbContext, publisher).Handle(
+            new BackfillWorkOrderReleaseProjectionCommand(), CancellationToken.None);
+
+        var published = Assert.Single(publisher.Published);
+        Assert.Equal(Now, published.Payload.ReleasedAtUtc);
+    }
+
     [Fact]
     public async Task Release_time_keeps_the_operation_creation_when_the_only_report_is_later()
     {
@@ -372,8 +405,8 @@ public sealed class WorkOrderReleaseProjectionBackfillTests
             new BackfillWorkOrderReleaseProjectionCommand(), CancellationToken.None);
 
         var topic = Assert.Single(publisher.Topics);
-        var published = Assert.Single(publisher.Published);
-        Assert.Equal(published.GetType().Name, topic);
+        Assert.Single(publisher.Published);
+        // nameof 解析出的就是契约类型短名，消费侧 [CapSubscribe] 订阅的是同一个 nameof。
         Assert.Equal(nameof(WorkOrderReleaseProjectionBackfilledIntegrationEvent), topic);
     }
 
@@ -404,6 +437,17 @@ public sealed class WorkOrderReleaseProjectionBackfillTests
         Assert.Contains("w.work_order_id > ", nextPage, StringComparison.Ordinal);
         Assert.DoesNotContain("OFFSET", firstPage, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("OFFSET", nextPage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// 直接改持久化值。<c>OperationTask.CreatedAtUtc</c> 是私有 setter、构造函数里取 <c>UtcNow</c>，
+    /// 没有注入点；存量行的建单时刻本来就是各不相同的历史值，用变更跟踪设定它即可复刻，
+    /// 不必依赖两次 <c>UtcNow</c> 读数的亚微秒差（那是已知易抖的写法）。
+    /// </summary>
+    private static void SetCreatedAtUtc(ApplicationDbContext dbContext, string operationTaskId, DateTimeOffset createdAtUtc)
+    {
+        var task = dbContext.OperationTasks.Single(x => x.OperationTaskIdValue == operationTaskId);
+        dbContext.Entry(task).Property(x => x.CreatedAtUtc).CurrentValue = createdAtUtc;
     }
 
     private static BackfillWorkOrderReleaseProjectionCommandHandler CreateHandler(

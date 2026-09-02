@@ -136,26 +136,89 @@ internal static class PeriodicInspectionReleaseProjection
                             continue;
                         }
 
+                        // 重建值先与既有权威事实对齐：不一致时以权威事实为准，被顶掉的属性留痕。
+                        var facts = authority == ReleaseFactAuthority.ReconstructedLowerBound
+                            ? operation.ResolveReconstructedReleaseFacts(
+                                payload.SkuCode,
+                                operationPayload.OperationSequence,
+                                operationPayload.WorkCenterId)
+                            : new PeriodicInspectionReleaseFacts(
+                                payload.SkuCode.Trim(),
+                                operationPayload.OperationSequence,
+                                operationPayload.WorkCenterId.Trim(),
+                                []);
+
+                        // 巡检档按**校正后**的 SKU 与工作中心筛。档是按载荷 SKU 查出来的，
+                        // 因此让位到别的 SKU 时这里筛不出档、该工序不建周期运行上下文——
+                        // 拿载荷 SKU 的档去配一条声明着另一个 SKU 的上下文才是真错。
                         var snapshots = plans
-                            .Where(plan => plan.WorkCenterId == operationPayload.WorkCenterId.Trim())
+                            .Where(plan => plan.SkuCode == facts.SkuCode && plan.WorkCenterId == facts.WorkCenterId)
                             .OrderBy(plan => plan.PlanCode, StringComparer.Ordinal)
                             .Select(PeriodicInspectionPlanSnapshot.From)
                             .ToArray();
-                        operation.ApplyRelease(
-                            payload.SkuCode,
-                            operationPayload.OperationSequence,
-                            operationPayload.WorkCenterId,
-                            payload.ReleasedAtUtc.UtcDateTime,
-                            snapshots);
-                        if (authority == ReleaseFactAuthority.ReconstructedLowerBound)
+
+                        if (authority == ReleaseFactAuthority.Authoritative)
                         {
-                            operation.SkipPeriodicWindowsAccruedBefore(integrationEvent.OccurredAtUtc.UtcDateTime);
+                            // 直投：冲突是真实异常，照旧整封进死信，语义不变。
+                            operation.ApplyRelease(
+                                facts.SkuCode,
+                                facts.OperationSequence,
+                                facts.WorkCenterId,
+                                payload.ReleasedAtUtc.UtcDateTime,
+                                snapshots);
+                            PeriodicInspectionQuantityTaskGeneration.AddDueTasks(
+                                dbContext,
+                                operation.RuntimeContexts,
+                                integrationEvent.OccurredAtUtc);
+                            continue;
                         }
 
-                        PeriodicInspectionQuantityTaskGeneration.AddDueTasks(
-                            dbContext,
-                            operation.RuntimeContexts,
-                            integrationEvent.OccurredAtUtc);
+                        try
+                        {
+                            operation.ApplyRelease(
+                                facts.SkuCode,
+                                facts.OperationSequence,
+                                facts.WorkCenterId,
+                                payload.ReleasedAtUtc.UtcDateTime,
+                                snapshots);
+                            operation.SkipPeriodicWindowsAccruedBefore(
+                                integrationEvent.OccurredAtUtc.UtcDateTime);
+                            PeriodicInspectionQuantityTaskGeneration.AddDueTasks(
+                                dbContext,
+                                operation.RuntimeContexts,
+                                integrationEvent.OccurredAtUtc);
+                        }
+                        catch (Exception exception)
+                            when (PeriodicInspectionOperationEventProcessing.IsInvalidBusinessFact(exception))
+                        {
+                            // 失败粒度是工序，不是整封事件：一道工序补不上，不能让同工单其余工序
+                            // 一起失去补投——那等于让整张工单继续 not-synchronized 被门禁永久拒。
+                            await PeriodicInspectionOperationEventProcessing.RecordBackfillNoticeAsync(
+                                deadLetterStore,
+                                consumerName,
+                                integrationEvent,
+                                "backfill-operation-rejected",
+                                $"Operation '{operationPayload.OperationId}' of work order '{payload.WorkOrderId}' "
+                                + $"could not take the reconstructed release facts: {exception.Message}",
+                                ct);
+                            continue;
+                        }
+
+                        if (facts.Substitutions.Count > 0)
+                        {
+                            await PeriodicInspectionOperationEventProcessing.RecordBackfillNoticeAsync(
+                                deadLetterStore,
+                                consumerName,
+                                integrationEvent,
+                                "backfill-release-fact-substituted",
+                                $"Operation '{operationPayload.OperationId}' of work order '{payload.WorkOrderId}' "
+                                + "was backfilled with the existing authoritative completion facts: "
+                                + string.Join(
+                                    "; ",
+                                    facts.Substitutions.Select(x =>
+                                        $"{x.Attribute} reconstructed='{x.ReconstructedValue}' authoritative='{x.AuthoritativeValue}'")),
+                                ct);
+                        }
                     }
                 },
                 cancellationToken);
@@ -561,6 +624,26 @@ internal static class PeriodicInspectionOperationEventProcessing
             normalizedOperationId);
         dbContext.PeriodicInspectionOperations.Add(operation);
         return operation;
+    }
+
+    /// <summary>
+    /// 回填过程中单道工序的处置留痕。与 <see cref="DeadLetterAsync"/> 的关键差别是**不清变更跟踪**：
+    /// 同一封补投事件里其它工序已经应用的改动必须留住——清掉就等于把工序级失败重新退回成整封失败。
+    /// 写进死信存储是因为它是仓库里唯一持久、可查询的消费侧留痕通道；这两个 reason code 记录的是
+    /// 「已处置」而非「未处置」，重放它们是幂等的 no-op。
+    /// </summary>
+    public static async Task RecordBackfillNoticeAsync<TIntegrationEvent>(
+        IIntegrationEventDeadLetterStore deadLetterStore,
+        string consumerName,
+        TIntegrationEvent integrationEvent,
+        string reasonCode,
+        string message,
+        CancellationToken cancellationToken)
+        where TIntegrationEvent : IIntegrationEventEnvelope
+    {
+        await deadLetterStore.AddAsync(
+            IntegrationEventDeadLetterMessage.Create(consumerName, integrationEvent, reasonCode, message),
+            cancellationToken);
     }
 
     public static bool IsInvalidBusinessFact(Exception exception) =>
