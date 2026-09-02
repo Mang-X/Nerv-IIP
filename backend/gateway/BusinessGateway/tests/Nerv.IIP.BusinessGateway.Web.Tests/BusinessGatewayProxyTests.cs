@@ -15793,6 +15793,107 @@ internal sealed class RecordingBusinessFileStorageClient : IBusinessFileStorageC
             "SOP PDF bytes".Length,
             "SOP PDF bytes"u8.ToArray()));
     }
+
+    public string? LastUploadOwnerId { get; private set; }
+
+    public BusinessConsoleCreateShiftHandoverAttachmentUploadSessionRequest? LastUploadSessionRequest { get; private set; }
+
+    public string? LastCompletedUploadSessionId { get; private set; }
+
+    public BusinessConsoleCompleteShiftHandoverAttachmentUploadRequest? LastCompleteRequest { get; private set; }
+
+    public BusinessConsoleCreateShiftHandoverAttachmentDownloadGrantRequest? LastAttachmentGrantRequest { get; private set; }
+
+    public string? LastTusUploadSessionId { get; private set; }
+
+    public bool LastTusRequestHadBody { get; private set; }
+
+    public string? LastAttachmentContentGrantId { get; private set; }
+
+    public string? LastAttachmentContentOrganizationId { get; private set; }
+
+    public string? LastAttachmentContentEnvironmentId { get; private set; }
+
+    public Task<BusinessConsoleShiftHandoverAttachmentUploadSessionResponse> CreateShiftHandoverAttachmentUploadSessionAsync(
+        string internalBearerToken,
+        string ownerId,
+        BusinessConsoleCreateShiftHandoverAttachmentUploadSessionRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastUploadOwnerId = ownerId;
+        LastUploadSessionRequest = request;
+        return Task.FromResult(new BusinessConsoleShiftHandoverAttachmentUploadSessionResponse(
+            "ups-handover-1",
+            "file-handover-1",
+            "tus",
+            DateTimeOffset.Parse("2026-09-02T08:00:00Z"),
+            "/api/business-console/v1/files/shift-handover-attachments/tus/ups-handover-1",
+            new Dictionary<string, string> { ["x-nerv-upload-mode"] = "tus" }));
+    }
+
+    public Task<BusinessConsoleMesShiftHandoverAttachment> CompleteShiftHandoverAttachmentUploadAsync(
+        string internalBearerToken,
+        string uploadSessionId,
+        BusinessConsoleCompleteShiftHandoverAttachmentUploadRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCompletedUploadSessionId = uploadSessionId;
+        LastCompleteRequest = request;
+        return Task.FromResult(new BusinessConsoleMesShiftHandoverAttachment(
+            "file-handover-1",
+            "handover.jpg",
+            "image/jpeg",
+            2048));
+    }
+
+    public Task<BusinessConsoleShiftHandoverAttachmentDownloadGrantResponse> CreateShiftHandoverAttachmentDownloadGrantAsync(
+        string internalBearerToken,
+        string fileId,
+        BusinessConsoleCreateShiftHandoverAttachmentDownloadGrantRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastFileId = fileId;
+        LastAttachmentGrantRequest = request;
+        return Task.FromResult(new BusinessConsoleShiftHandoverAttachmentDownloadGrantResponse(
+            fileId,
+            DateTimeOffset.Parse("2026-09-02T08:00:00Z"),
+            "/api/business-console/v1/files/shift-handover-attachments/download-grants/grant-handover-1/content",
+            new Dictionary<string, string>()));
+    }
+
+    public Task ProxyShiftHandoverAttachmentTusAsync(
+        string internalBearerToken,
+        string uploadSessionId,
+        HttpRequest? sourceRequest,
+        HttpResponse targetResponse,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastTusUploadSessionId = uploadSessionId;
+        LastTusRequestHadBody = sourceRequest is not null;
+        targetResponse.StatusCode = StatusCodes.Status204NoContent;
+        targetResponse.Headers["Upload-Offset"] = "1024";
+        return Task.CompletedTask;
+    }
+
+    public Task ProxyShiftHandoverAttachmentContentAsync(
+        string internalBearerToken,
+        string downloadGrantId,
+        string organizationId,
+        string environmentId,
+        HttpResponse targetResponse,
+        CancellationToken cancellationToken)
+    {
+        LastContentInternalToken = internalBearerToken;
+        LastAttachmentContentGrantId = downloadGrantId;
+        LastAttachmentContentOrganizationId = organizationId;
+        LastAttachmentContentEnvironmentId = environmentId;
+        targetResponse.ContentType = "application/octet-stream";
+        return targetResponse.Body.WriteAsync("handover photo bytes"u8.ToArray(), cancellationToken).AsTask();
+    }
 }
 internal sealed class RecordingProductEngineeringClient : IBusinessProductEngineeringClient
 {

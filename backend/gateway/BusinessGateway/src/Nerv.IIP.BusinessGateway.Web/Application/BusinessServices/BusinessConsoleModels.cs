@@ -2280,6 +2280,49 @@ public sealed record BusinessConsoleSopFileContentResponse(
     long? ContentLength,
     byte[] Content);
 
+/// <summary>
+/// 交接班附件上传会话请求。用途、owner 与上传协议不收请求体：BusinessGateway 固定
+/// <c>shift-handover-photo</c> 用途与 <c>business-mes / shift-handover-attachment / {principalId}</c> owner，
+/// 使 <c>business.mes.handovers.manage</c> 只能开出交接班照片会话，不能借这条门面上传别的用途。
+/// </summary>
+public sealed record BusinessConsoleCreateShiftHandoverAttachmentUploadSessionRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string FileName,
+    string ContentType,
+    long ExpectedSizeBytes,
+    string? Checksum = null);
+
+/// <summary>
+/// 交接班附件上传会话。<c>UploadProtocol</c> 按 ADR 0023 只有 <c>tus</c> 一个取值：
+/// FileStorage 未按 tus 运行时本门面失败关闭，不返回无字节入口的占位指令。
+/// <c>UploadUrl</c> 已改写为 BusinessGateway 受控 tus 路径，调用方拿不到 FileStorage 内部 URL。
+/// </summary>
+public sealed record BusinessConsoleShiftHandoverAttachmentUploadSessionResponse(
+    string UploadSessionId,
+    string FileId,
+    string UploadProtocol,
+    DateTimeOffset ExpiresAtUtc,
+    string UploadUrl,
+    IReadOnlyDictionary<string, string> UploadHeaders);
+
+/// <summary>交接班附件上传 complete 请求；组织/环境与用途由门面按会话固定值补齐。</summary>
+public sealed record BusinessConsoleCompleteShiftHandoverAttachmentUploadRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Checksum = null,
+    long? SizeBytes = null);
+
+public sealed record BusinessConsoleCreateShiftHandoverAttachmentDownloadGrantRequest(
+    string OrganizationId,
+    string EnvironmentId);
+
+public sealed record BusinessConsoleShiftHandoverAttachmentDownloadGrantResponse(
+    string FileId,
+    DateTimeOffset ExpiresAtUtc,
+    string DownloadUrl,
+    IReadOnlyDictionary<string, string> DownloadHeaders);
+
 public sealed record BusinessConsoleListEngineeringBomsRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -5497,12 +5540,12 @@ public sealed record BusinessConsoleMesShiftHandoverUnfinishedWorkOrder(
 /// 随交班一并提交的 FileStorage 附件引用；文件名、内容类型与大小是交班时点快照。
 /// <c>FileId</c> 是 FileStorage 文件 id，字节本身按 <c>shift-handover-photo</c> 用途存在 FileStorage，不落在 MES。
 ///
-/// 取回通路目前两端都还没有：BusinessGateway 没有任何上传面（business-console 契约的 files 组只有
-/// <c>/files/{fileId}/download-grants</c> 与 <c>/files/download-grants/{downloadGrantId}/content</c> 两条），
-/// 而其中的下载授权端点 <c>POST /api/business-console/v1/files/{fileId}/download-grants</c> 门在
-/// <c>business.engineering.documents.read</c>（ResourceType <c>engineering-sop-file</c>），交接班读者持
-/// <c>business.mes.handovers.read</c> 换不出下载地址。因此本记录当前只是契约与生成物，
-/// 生产上还走不通；补齐这两个门面见 #3085，它是 #2784 的开工前置条件，不在 #2782 范围内。
+/// 两端通路见 <c>/api/business-console/v1/files/shift-handover-attachments/**</c>（#3085）：
+/// 上传走 <c>business.mes.handovers.manage</c> 的 tus 会话 + <c>HEAD</c>/<c>PATCH</c> + complete，
+/// complete 直接返回本记录；下载走 <c>business.mes.handovers.read</c> 的 download-grant 与 content，
+/// 并在换授权前复核目标文件用途必须是 <c>shift-handover-photo</c>。
+/// SOP 那条 <c>/files/{fileId}/download-grants</c> 仍只认 <c>business.engineering.documents.read</c>，
+/// 交接班读者不经由它取字节。
 /// </summary>
 public sealed record BusinessConsoleMesShiftHandoverAttachment(
     string FileId,
