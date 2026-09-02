@@ -11790,20 +11790,26 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("production-report-validation-failed", exception.Message);
     }
 
-    [Fact]
-    public async Task Mes_http_client_rebuilds_production_report_reversal_body_with_injected_actor()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Mes_http_client_maps_reversal_strong_id_and_rebuilds_body_with_injected_actor(bool enveloped)
     {
+        const string productionReportId = "019f855b-5cb0-7550-a509-d2ee7b021689";
         var reversedAtUtc = DateTimeOffset.Parse("2026-07-12T08:00:00Z");
-        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        var payload = new
         {
-            productionReportId = "report-reversal-id",
+            productionReportId = new { id = productionReportId },
             reportNo = "PR/REV-001",
             originalReportNo = "PR/001",
-        }));
+        };
+        var handler = new RecordingHandler(_ => JsonResponse(
+            HttpStatusCode.OK,
+            enveloped ? new { success = true, data = (object)payload, message = string.Empty, code = 0 } : payload));
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
         var client = new HttpBusinessMesClient(httpClient);
 
-        await client.ReverseProductionReportAsync(
+        var response = await client.ReverseProductionReportAsync(
             "internal-token-001",
             "PR/001",
             new BusinessConsoleMesReverseProductionReportRequest(
@@ -11816,6 +11822,9 @@ public sealed class BusinessGatewayProxyTests
             "user-admin",
             CancellationToken.None);
 
+        Assert.Equal(productionReportId, response.ProductionReportId);
+        Assert.Equal("PR/REV-001", response.ReportNo);
+        Assert.Equal("PR/001", response.OriginalReportNo);
         var request = Assert.Single(handler.Requests);
         Assert.Equal(HttpMethod.Post, request.Method);
         Assert.Equal("/api/business/v1/mes/production-reports/PR%2F001/reverse", request.RequestUri!.PathAndQuery);
@@ -11832,6 +11841,39 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("reverse-001", root.GetProperty("idempotencyKey").GetString());
         Assert.False(root.TryGetProperty("reportNo", out _));
         Assert.False(root.TryGetProperty("reversedBy", out _));
+    }
+
+    [Theory]
+    [InlineData("{\"productionReportId\":\"019f855b-5cb0-7550-a509-d2ee7b021689\",\"reportNo\":\"PR/REV-001\",\"originalReportNo\":\"PR/001\"}")]
+    [InlineData("{\"productionReportId\":{\"id\":\"not-a-guid\"},\"reportNo\":\"PR/REV-001\",\"originalReportNo\":\"PR/001\"}")]
+    [InlineData("{\"productionReportId\":{},\"reportNo\":\"PR/REV-001\",\"originalReportNo\":\"PR/001\"}")]
+    [InlineData("{\"productionReportId\":null,\"reportNo\":\"PR/REV-001\",\"originalReportNo\":\"PR/001\"}")]
+    [InlineData("{\"productionReportId\":{\"id\":\"00000000-0000-0000-0000-000000000000\"},\"reportNo\":\"PR/REV-001\",\"originalReportNo\":\"PR/001\"}")]
+    [InlineData("{\"productionReportId\":{\"id\":\"019f855b-5cb0-7550-a509-d2ee7b021689\"},\"reportNo\":\"\",\"originalReportNo\":\"PR/001\"}")]
+    [InlineData("{\"productionReportId\":{\"id\":\"019f855b-5cb0-7550-a509-d2ee7b021689\"},\"reportNo\":\"PR/REV-001\",\"originalReportNo\":\"   \"}")]
+    [InlineData("{not-json")]
+    public async Task Mes_http_client_rejects_invalid_reversal_response(string body)
+    {
+        var handler = new RecordingHandler(_ => StringJsonResponse(HttpStatusCode.OK, body));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var client = new HttpBusinessMesClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.ReverseProductionReportAsync(
+                "internal-token-001",
+                "PR/001",
+                new BusinessConsoleMesReverseProductionReportRequest(
+                    "PR/001",
+                    "org-001",
+                    "env-dev",
+                    "incorrect lot",
+                    DateTimeOffset.Parse("2026-07-12T08:00:00Z"),
+                    "reverse-001"),
+                "user-admin",
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
     }
 
     [Fact]
