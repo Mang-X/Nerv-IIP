@@ -904,7 +904,7 @@ public sealed class MesEndpointContractTests
     [Fact]
     public void MesEndpointContracts_ExposeRescheduleAndRushOrderRoutes()
     {
-        Assert.Equal(64, MesEndpointContracts.All.Count);
+        Assert.Equal(65, MesEndpointContracts.All.Count);
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/foundation-readiness/{areaCode}"
@@ -1146,6 +1146,11 @@ public sealed class MesEndpointContractTests
             && x.Route == "/api/business/v1/mes/shift-handovers"
             && x.PermissionCode == MesPermissionCodes.HandoversRead
             && x.OperationId == "listBusinessMesShiftHandovers");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/mes/shift-handovers/{handoverId}"
+            && x.PermissionCode == MesPermissionCodes.HandoversRead
+            && x.OperationId == "getBusinessMesShiftHandover");
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/mes/shift-handovers"
@@ -2435,6 +2440,229 @@ public sealed class MesEndpointContractTests
         Assert.Equal("OP-FILTER-10", wipItem.OperationTaskNo);
         Assert.Equal("WC-FILTER", wipItem.WorkCenterCode);
         Assert.Null(wipItem.WorkCenterName);
+    }
+
+    [Fact]
+    public async Task Shift_handover_freezes_details_and_records_both_shift_workers()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = DateTimeOffset.Parse("2026-08-27T08:00:00Z");
+
+        // 明细是交班时点快照：这些工单号在 work_orders 里根本不存在，读面仍须原样回吐，
+        // 证明详情不是回 join 工单表重算出来的。
+        // 三类明细条数刻意取 2/4/3 互不相同，计数字段轮换赋值即可被发现。
+        // 遗留问题按「类别升序、严重度降序」排。Equipment 组刻意放满 High/Medium/Low 三档，
+        // 因为只有 High+Medium 时「升序字典序」("High" < "Medium") 与严重度降序同序，
+        // 把排序下推进 EF（Severity 是字符串列）这种最自然的重构就杀不掉；
+        // 补上 Low 之后升序字典序给出 High/Low/Medium，与期望的 High/Medium/Low 不同。
+        // 三条 Equipment 的描述序数序又与严重度序相反（三 U+4E09 < 主 U+4E3B < 刀 U+5200），
+        // 所以删掉严重度键退到描述兜底同样会翻序；Quality 组同理（尾 U+5C3E < 终 U+7EC8）。
+        // 三类明细条数保持 2/4/5 互不相同，任意两个计数字段对调都能被发现。
+        var created = await new CreateShiftHandoverCommandHandler(dbContext).Handle(
+            new CreateShiftHandoverCommand(
+                "org-001",
+                "env-dev",
+                "EARLY",
+                "TEAM-A",
+                now,
+                "handover-detail-001",
+                "甲班",
+                "user-out",
+                "张三",
+                [
+                    new ShiftHandoverWipItemInput("WO-ABSENT-002", "OP-20", 3m),
+                    new ShiftHandoverWipItemInput("WO-ABSENT-001", "OP-10", 12.5m),
+                ],
+                [
+                    new ShiftHandoverUnfinishedWorkOrderInput("WO-ABSENT-004", 40m, 39m, "released"),
+                    new ShiftHandoverUnfinishedWorkOrderInput("WO-ABSENT-001", 100m, 40m, "released"),
+                    new ShiftHandoverUnfinishedWorkOrderInput("WO-ABSENT-003", 30m, 0m, "created"),
+                    new ShiftHandoverUnfinishedWorkOrderInput("WO-ABSENT-002", 20m, 5m, "released"),
+                ],
+                [
+                    new ShiftHandoverOpenIssueInput("quality", "low", "尾工序外观待复判", null),
+                    new ShiftHandoverOpenIssueInput("equipment", "medium", "三号机气压偏低", null),
+                    new ShiftHandoverOpenIssueInput("equipment", "low", "刀具磨损待更换", null),
+                    new ShiftHandoverOpenIssueInput("quality", "high", "终检记录待补录", null),
+                    new ShiftHandoverOpenIssueInput("equipment", "high", "主轴异响，二号机", "DT-0001"),
+                ]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new AcceptShiftHandoverCommandHandler(dbContext).Handle(
+            new AcceptShiftHandoverCommand("org-001", "env-dev", created.ReferenceId, now.AddHours(8), "user-in", "李四"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var detail = await new GetShiftHandoverQueryHandler(dbContext).Handle(
+            new GetShiftHandoverQuery("org-001", "env-dev", created.ReferenceId),
+            CancellationToken.None);
+        var listed = Assert.Single((await new ListShiftHandoversQueryHandler(dbContext).Handle(
+            new ListShiftHandoversQuery("org-001", "env-dev", "EARLY"),
+            CancellationToken.None)).Items);
+
+        Assert.Equal("甲班", detail.TeamName);
+        Assert.Equal("user-out", detail.OutgoingUserId);
+        Assert.Equal("张三", detail.OutgoingUserName);
+        Assert.Equal("user-in", detail.IncomingUserId);
+        Assert.Equal("李四", detail.IncomingUserName);
+        Assert.Equal(now.AddHours(8), detail.AcceptedAtUtc);
+
+        Assert.Equal(
+            [("WO-ABSENT-001", "OP-10", 12.5m), ("WO-ABSENT-002", "OP-20", 3m)],
+            detail.WipItems.Select(x => (x.WorkOrderId, x.OperationTaskId, x.Quantity)));
+        Assert.Equal(
+            ["WO-ABSENT-001", "WO-ABSENT-002", "WO-ABSENT-003", "WO-ABSENT-004"],
+            detail.UnfinishedWorkOrders.Select(x => x.WorkOrderId));
+        var firstUnfinished = detail.UnfinishedWorkOrders.First();
+        Assert.Equal(100m, firstUnfinished.PlannedQuantity);
+        Assert.Equal(40m, firstUnfinished.CompletedQuantity);
+        Assert.Equal("released", firstUnfinished.WorkOrderStatus);
+        Assert.Equal(
+            [("Equipment", "High"), ("Equipment", "Medium"), ("Equipment", "Low"), ("Quality", "High"), ("Quality", "Low")],
+            detail.OpenIssues.Select(x => (x.Category, x.Severity)));
+        var firstIssue = detail.OpenIssues.First();
+        Assert.Equal("主轴异响，二号机", firstIssue.Description);
+        Assert.Equal("DT-0001", firstIssue.ReferenceId);
+        Assert.Null(detail.OpenIssues.Last().ReferenceId);
+
+        // OpenIssueCount 是建单时从其它事实推导的环境级计数，与显式写下的遗留问题条数是两码事。
+        Assert.Equal(0, detail.OpenIssueCount);
+        Assert.Equal(0, listed.OpenIssueCount);
+        Assert.Equal(2, listed.WipItemCount);
+        Assert.Equal(4, listed.UnfinishedWorkOrderCount);
+        Assert.Equal(5, listed.OpenIssueDetailCount);
+        Assert.Equal("张三", listed.OutgoingUserName);
+        Assert.Equal("李四", listed.IncomingUserName);
+        Assert.Equal(now.AddHours(8), listed.AcceptedAtUtc);
+    }
+
+    [Fact]
+    public async Task Shift_handover_detail_does_not_cross_organization_or_environment()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = DateTimeOffset.Parse("2026-08-27T08:00:00Z");
+
+        // 对照行只存在于 org-002/env-dev。它能通过详情查询的其余全部谓词（同一个 handoverNo、
+        // 非 Guid 形态），因此唯一能把它挡在外面的就是租户与环境谓词本身。
+        var foreignTenant = await new CreateShiftHandoverCommandHandler(dbContext).Handle(
+            new CreateShiftHandoverCommand("org-002", "env-dev", "EARLY", "TEAM-Z", now, "handover-foreign"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new GetShiftHandoverQueryHandler(dbContext);
+
+        var otherOrganization = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new GetShiftHandoverQuery("org-001", "env-dev", foreignTenant.ReferenceId),
+            CancellationToken.None));
+        var otherEnvironment = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new GetShiftHandoverQuery("org-002", "env-prod", foreignTenant.ReferenceId),
+            CancellationToken.None));
+        var owningScope = await handler.Handle(
+            new GetShiftHandoverQuery("org-002", "env-dev", foreignTenant.ReferenceId),
+            CancellationToken.None);
+
+        Assert.Contains("未找到班次交接", otherOrganization.Message, StringComparison.Ordinal);
+        Assert.Contains("未找到班次交接", otherEnvironment.Message, StringComparison.Ordinal);
+        Assert.Equal(foreignTenant.ReferenceId, owningScope.HandoverId);
+        Assert.Equal("TEAM-Z", owningScope.TeamId);
+    }
+
+    [Fact]
+    public async Task Shift_handover_surfaces_out_of_range_detail_input_as_business_rejection()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = DateTimeOffset.Parse("2026-08-27T08:00:00Z");
+        var handler = new CreateShiftHandoverCommandHandler(dbContext);
+
+        // 这三条请求体全仓没有 validator 拦，直接落到域构造里抛 ArgumentOutOfRangeException。
+        // 不包成 KnownException 就会逃逸成 HTTP 500，网关只回一句 downstream-request-failed，真实原因丢失。
+        var negativeWipQuantity = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CreateShiftHandoverCommand(
+                "org-001", "env-dev", "EARLY", "TEAM-A", now, "handover-negative-wip",
+                WipItems: [new ShiftHandoverWipItemInput("WO-1", null, -1m)]),
+            CancellationToken.None));
+        var nonPositivePlannedQuantity = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CreateShiftHandoverCommand(
+                "org-001", "env-dev", "EARLY", "TEAM-A", now, "handover-zero-planned",
+                UnfinishedWorkOrders: [new ShiftHandoverUnfinishedWorkOrderInput("WO-1", 0m, 0m, "released")]),
+            CancellationToken.None));
+        var overlongDescription = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CreateShiftHandoverCommand(
+                "org-001", "env-dev", "EARLY", "TEAM-A", now, "handover-overlong-description",
+                OpenIssues: [new ShiftHandoverOpenIssueInput("Quality", "Low", new string('x', 1001))]),
+            CancellationToken.None));
+        var overlongOutgoingUserName = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CreateShiftHandoverCommand(
+                "org-001", "env-dev", "EARLY", "TEAM-A", now, "handover-overlong-user",
+                OutgoingUserName: new string('x', 201)),
+            CancellationToken.None));
+
+        Assert.Contains("在制清点数量不能为负数", negativeWipQuantity.Message, StringComparison.Ordinal);
+        Assert.Contains("未完工单计划数量必须为正数", nonPositivePlannedQuantity.Message, StringComparison.Ordinal);
+        Assert.Contains("cannot exceed 1000 characters", overlongDescription.Message, StringComparison.Ordinal);
+        Assert.Contains("cannot exceed 200 characters", overlongOutgoingUserName.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Shift_handover_rejects_unknown_issue_vocabulary_and_finished_work_orders()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = DateTimeOffset.Parse("2026-08-27T08:00:00Z");
+        var handler = new CreateShiftHandoverCommandHandler(dbContext);
+
+        var unknownCategory = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CreateShiftHandoverCommand(
+                "org-001",
+                "env-dev",
+                "EARLY",
+                "TEAM-A",
+                now,
+                "handover-bad-category",
+                OpenIssues: [new ShiftHandoverOpenIssueInput("Safety", "High", "描述")]),
+            CancellationToken.None));
+        var unknownSeverity = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CreateShiftHandoverCommand(
+                "org-001",
+                "env-dev",
+                "EARLY",
+                "TEAM-A",
+                now,
+                "handover-bad-severity",
+                OpenIssues: [new ShiftHandoverOpenIssueInput("Quality", "Critical", "描述")]),
+            CancellationToken.None));
+        // Enum.TryParse 单独用会把数字串当成合法枚举值放进来，这条必须也被拒。
+        var numericCategory = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CreateShiftHandoverCommand(
+                "org-001",
+                "env-dev",
+                "EARLY",
+                "TEAM-A",
+                now,
+                "handover-numeric-category",
+                OpenIssues: [new ShiftHandoverOpenIssueInput("7", "High", "描述")]),
+            CancellationToken.None));
+        var finishedWorkOrder = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CreateShiftHandoverCommand(
+                "org-001",
+                "env-dev",
+                "EARLY",
+                "TEAM-A",
+                now,
+                "handover-finished-work-order",
+                UnfinishedWorkOrders: [new ShiftHandoverUnfinishedWorkOrderInput("WO-DONE", 100m, 100m, "released")]),
+            CancellationToken.None));
+
+        Assert.Contains("Safety", unknownCategory.Message, StringComparison.Ordinal);
+        Assert.Contains("未知的遗留问题类别", numericCategory.Message, StringComparison.Ordinal);
+        Assert.Contains("Critical", unknownSeverity.Message, StringComparison.Ordinal);
+        Assert.Contains("未完工单", finishedWorkOrder.Message, StringComparison.Ordinal);
     }
 
     [Fact]
