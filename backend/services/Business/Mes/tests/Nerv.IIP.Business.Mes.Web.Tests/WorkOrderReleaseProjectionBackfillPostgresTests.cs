@@ -28,7 +28,7 @@ public sealed class WorkOrderReleaseProjectionBackfillPostgresTests
 
     private static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-09-02T00:00:00Z");
 
-    [PostgreSqlFact]
+    [MesRealPostgresFact]
     public async Task Backfill_runs_inside_one_uow_transaction_and_publishes_every_gate_bound_work_order_on_postgres()
     {
         await MesPostgresLaneDatabase.ResetSchemaAsync();
