@@ -610,13 +610,14 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             null,
             cancellationToken);
 
-    public Task<BusinessConsoleMesReverseProductionReportResponse> ReverseProductionReportAsync(
+    public async Task<BusinessConsoleMesReverseProductionReportResponse> ReverseProductionReportAsync(
         string internalBearerToken,
         string reportNo,
         BusinessConsoleMesReverseProductionReportRequest request,
         string actor,
-        CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleMesReverseProductionReportResponse>(
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamReverseProductionReportResponse>(
             internalBearerToken,
             HttpMethod.Post,
             $"/api/business/v1/mes/production-reports/{Uri.EscapeDataString(reportNo)}/reverse",
@@ -628,6 +629,22 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
                 request.ReversedAtUtc,
                 request.IdempotencyKey),
             cancellationToken);
+
+        if (response.ProductionReportId is null ||
+            response.ProductionReportId.Id == Guid.Empty ||
+            string.IsNullOrWhiteSpace(response.ReportNo) ||
+            string.IsNullOrWhiteSpace(response.OriginalReportNo))
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
+
+        return new BusinessConsoleMesReverseProductionReportResponse(
+            response.ProductionReportId.Id.ToString(),
+            response.ReportNo,
+            response.OriginalReportNo);
+    }
 
     public async Task<BusinessConsoleMesCreateReceiptResponse> RetryFinishedGoodsReceiptInventoryPostingAsync(
         string internalBearerToken,
@@ -1476,6 +1493,11 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         string? ReportNo);
 
     private sealed record DownstreamProductionReportId(Guid Id);
+
+    private sealed record DownstreamReverseProductionReportResponse(
+        DownstreamProductionReportId? ProductionReportId,
+        string? ReportNo,
+        string? OriginalReportNo);
 
     private sealed record DownstreamCreateFinishedGoodsReceiptRequestResponse(
         DownstreamFinishedGoodsReceiptRequestId? FinishedGoodsReceiptRequestId,
