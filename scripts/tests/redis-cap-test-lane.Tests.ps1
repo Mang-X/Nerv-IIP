@@ -1,9 +1,9 @@
 # Script-Governance:
 #   Category: check
 #   SideEffects:
-#     - Validates Redis/CAP lane manifest, TRX and summary contracts with temporary fixtures
+#     - Validates Redis/CAP lane manifest, runner, TRX and summary contracts with temporary fixtures and fake dependency commands
 #   Writes:
-#     - Temporary TRX fixtures under the operating-system temp directory
+#     - Temporary command, manifest, TRX and summary fixtures under the operating-system temp directory
 #   Cleanup:
 #     - Removes owned temporary fixtures in finally
 #   Requires:
@@ -40,6 +40,74 @@ function New-RedisCapTrx {
     }
     $trx = "<?xml version=`"1.0`"?><TestRun xmlns=`"http://microsoft.com/schemas/VisualStudio/TeamTest/2010`"><Results>$($results -join '')</Results><TestDefinitions>$($definitions -join '')</TestDefinitions></TestRun>"
     [IO.File]::WriteAllText($Path, $trx, [Text.UTF8Encoding]::new($false))
+}
+
+function New-FakeRedisCapRunnerCommands {
+    param([Parameter(Mandatory)] [string] $Directory)
+
+    [IO.Directory]::CreateDirectory($Directory) | Out-Null
+    $commandScript = @'
+$commandName = if ([string]::IsNullOrWhiteSpace($env:NERV_FAKE_COMMAND_NAME)) {
+    [IO.Path]::GetFileNameWithoutExtension($PSCommandPath)
+}
+else {
+    $env:NERV_FAKE_COMMAND_NAME
+}
+
+switch ($commandName) {
+    'psql' {
+        if (@($args | Where-Object { $_.Contains('server_version', [StringComparison]::Ordinal) }).Count -gt 0) {
+            Write-Output '18.6'
+        }
+        exit 0
+    }
+    'redis-cli' {
+        if (@($args | Where-Object { [string]::Equals([string]$_, 'PING', [StringComparison]::Ordinal) }).Count -gt 0) {
+            Write-Output 'PONG'
+        }
+        elseif (@($args | Where-Object { [string]::Equals([string]$_, 'INFO', [StringComparison]::Ordinal) }).Count -gt 0) {
+            Write-Output 'redis_version:8.10.1'
+        }
+        exit 0
+    }
+    'dotnet' {
+        $identities = @(
+            'Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.Redis_cap_fallback_scan_converges_changed_v2_after_immediate_retries_fail'
+            'Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.Redis_cap_transport_converges_duplicate_out_of_order_change_and_cancel_in_postgres'
+        )
+        if (@($args | Where-Object { [string]::Equals([string]$_, '--list-tests', [StringComparison]::Ordinal) }).Count -gt 0) {
+            $identities | Write-Output
+            exit 0
+        }
+
+        $resultsDirectoryIndex = [Array]::IndexOf([object[]]$args, '--results-directory')
+        if ($resultsDirectoryIndex -lt 0 -or $resultsDirectoryIndex + 1 -ge $args.Count) { throw 'Fake dotnet execution requires --results-directory.' }
+        $resultsDirectory = [string]$args[$resultsDirectoryIndex + 1]
+        [IO.Directory]::CreateDirectory($resultsDirectory) | Out-Null
+        $trx = '<?xml version="1.0"?><TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"><Results><UnitTestResult testId="test-0" testName="Redis_cap_fallback_scan_converges_changed_v2_after_immediate_retries_fail" outcome="Passed" /><UnitTestResult testId="test-1" testName="Redis_cap_transport_converges_duplicate_out_of_order_change_and_cancel_in_postgres" outcome="Passed" /></Results><TestDefinitions><UnitTest id="test-0"><TestMethod className="Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests" name="Redis_cap_fallback_scan_converges_changed_v2_after_immediate_retries_fail" /></UnitTest><UnitTest id="test-1"><TestMethod className="Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests" name="Redis_cap_transport_converges_duplicate_out_of_order_change_and_cancel_in_postgres" /></UnitTest></TestDefinitions></TestRun>'
+        [IO.File]::WriteAllText((Join-Path $resultsDirectory 'fake.trx'), $trx, [Text.UTF8Encoding]::new($false))
+        exit 0
+    }
+    default { throw "Unexpected fake Redis/CAP runner command '$commandName'." }
+}
+'@
+
+    if ($IsWindows) {
+        $commandScriptPath = Join-Path $Directory 'fake-redis-cap-command.ps1'
+        [IO.File]::WriteAllText($commandScriptPath, $commandScript, [Text.UTF8Encoding]::new($false))
+        foreach ($commandName in @('dotnet', 'psql', 'redis-cli')) {
+            $wrapper = "@echo off`r`nset NERV_FAKE_COMMAND_NAME=$commandName`r`npwsh -NoProfile -File `"%~dp0fake-redis-cap-command.ps1`" %*`r`nexit /b %ERRORLEVEL%`r`n"
+            [IO.File]::WriteAllText((Join-Path $Directory "$commandName.cmd"), $wrapper, [Text.UTF8Encoding]::new($false))
+        }
+        return
+    }
+
+    $unixMode = [IO.UnixFileMode]::UserRead -bor [IO.UnixFileMode]::UserWrite -bor [IO.UnixFileMode]::UserExecute
+    foreach ($commandName in @('dotnet', 'psql', 'redis-cli')) {
+        $commandPath = Join-Path $Directory $commandName
+        [IO.File]::WriteAllText($commandPath, ("#!/usr/bin/env pwsh`n`$env:NERV_FAKE_COMMAND_NAME = '$commandName'`n" + $commandScript), [Text.UTF8Encoding]::new($false))
+        [IO.File]::SetUnixFileMode($commandPath, $unixMode)
+    }
 }
 
 try {
@@ -133,6 +201,43 @@ try {
     }
     catch { $mixedSelectionRejected = $_.Exception.Message.Contains('Parameter set cannot be resolved', [StringComparison]::Ordinal) }
     Assert-Contract $mixedSelectionRejected '-MemberId and -AllActiveMembers must be mutually exclusive runner entrypoints.'
+
+    $runnerSentinel = $activeSentinel.PSObject.Copy()
+    $runnerSentinel.status = 'active'
+    $runnerSentinelManifest = [pscustomobject]@{
+        schemaVersion = 1
+        members = @($runnerSentinel)
+    }
+    $runnerSentinelManifestPath = Join-Path $fixtureRoot 'runner-active-sentinel.json'
+    [IO.File]::WriteAllText($runnerSentinelManifestPath, (($runnerSentinelManifest | ConvertTo-Json -Depth 20) + "`n"), [Text.UTF8Encoding]::new($false))
+    $fakeCommandDirectory = Join-Path $fixtureRoot 'fake-runner-commands'
+    New-FakeRedisCapRunnerCommands -Directory $fakeCommandDirectory
+    $runnerResultsDirectory = Join-Path $fixtureRoot 'runner-active-results'
+    $runnerSummaryPath = Join-Path $fixtureRoot 'runner-active-summary.json'
+    $savedPath = [Environment]::GetEnvironmentVariable('PATH')
+    $savedTestPostgres = [Environment]::GetEnvironmentVariable('NERV_IIP_TEST_POSTGRES')
+    $savedTestRedis = [Environment]::GetEnvironmentVariable('NERV_IIP_TEST_REDIS')
+    try {
+        [Environment]::SetEnvironmentVariable('PATH', "$fakeCommandDirectory$([IO.Path]::PathSeparator)$savedPath")
+        [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_POSTGRES', 'Host=localhost;Port=5432;Database=postgres;Username=postgres;Password=fake')
+        [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_REDIS', 'localhost:6379')
+        & (Join-Path $repoRoot 'scripts/run-redis-cap-test-lane.ps1') `
+            -AllActiveMembers `
+            -ManifestPath $runnerSentinelManifestPath `
+            -DatabaseSuffix '3026_1' `
+            -ResultsDirectory $runnerResultsDirectory `
+            -SummaryPath $runnerSummaryPath
+    }
+    finally {
+        [Environment]::SetEnvironmentVariable('PATH', $savedPath)
+        [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_POSTGRES', $savedTestPostgres)
+        [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_REDIS', $savedTestRedis)
+    }
+    $runnerSummary = [IO.File]::ReadAllText($runnerSummaryPath) | ConvertFrom-Json -Depth 20
+    Assert-Contract ([string]::Equals((@($runnerSummary.selectedMemberIds) -join '|'), 'active-sentinel-redis-cap', [StringComparison]::Ordinal)) 'The runner must expose the active sentinel as its actual selected member set.'
+    Assert-Contract ($runnerSummary.members.Count -eq 1 -and [string]::Equals([string]$runnerSummary.members[0].memberId, 'active-sentinel-redis-cap', [StringComparison]::Ordinal)) 'The runner must execute and summarize the member returned by all-active manifest resolution.'
+    Assert-Contract ($runnerSummary.expected -eq 2 -and $runnerSummary.discovered -eq 2 -and $runnerSummary.passed -eq 2 -and $runnerSummary.failed -eq 0 -and $runnerSummary.skipped -eq 0 -and [string]::Equals([string]$runnerSummary.cleanup, 'passed', [StringComparison]::Ordinal)) 'The runner sentinel fixture must close discovery, execution and cleanup for the resolved member.'
+    Remove-Item -LiteralPath $runnerResultsDirectory -Recurse -Force
 
     $runnerContent = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/run-redis-cap-test-lane.ps1'))
     Assert-Contract (-not $runnerContent.Contains('}.GetNewClosure()', [StringComparison]::Ordinal)) 'Runner callbacks must retain the runner script session state so hosted PowerShell can resolve Get-RedisKeys and Invoke-RedisCli.'
