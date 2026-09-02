@@ -113,6 +113,7 @@ public static class NervIipSeedPermissions
         "business.inventory.movements.create",
         "business.inventory.ledger.read",
         "business.inventory.counts.manage",
+        "business.inventory.expired-stock.override",
         "business.mes.foundation.read",
         "business.mes.overview.read",
         "business.mes.plans.read",

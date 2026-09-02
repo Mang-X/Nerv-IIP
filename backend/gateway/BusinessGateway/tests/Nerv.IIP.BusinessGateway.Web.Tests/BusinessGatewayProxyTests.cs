@@ -4623,6 +4623,109 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Mes_shift_handover_create_binds_outgoing_worker_to_principal_and_ignores_body_identity()
+    {
+        var mes = new RecordingMesClient();
+        var masterData = new RecordingMasterDataClient();
+        masterData.WorkerDirectory = [.. masterData.WorkerDirectory, WorkerDirectoryItem("user-admin", "张三")];
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/shift-handovers",
+            // 调用方硬塞交班人身份：持 handovers.manage 的 user-admin 想把 user-B 写成交班人。
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                shiftId = "EARLY",
+                teamId = "TEAM-A",
+                idempotencyKey = "idem-handover-1",
+                teamName = "甲班",
+                outgoingUserId = "user-B",
+                outgoingUserName = "他人",
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", mes.LastInternalToken);
+        Assert.NotNull(mes.LastCreateShiftHandoverRequest);
+        // 交班人身份来自认证 principal，请求体里那份被彻底忽略。
+        Assert.Equal("user-admin", mes.LastCreateShiftHandoverRequest!.OutgoingUserId);
+        Assert.NotEqual("user-B", mes.LastCreateShiftHandoverRequest.OutgoingUserId);
+        // 显示名是 Gateway 从 MasterData 员工目录解析出来的快照，不取请求体。
+        Assert.Equal("张三", mes.LastCreateShiftHandoverRequest.OutgoingUserName);
+        Assert.NotEqual("他人", mes.LastCreateShiftHandoverRequest.OutgoingUserName);
+        Assert.Equal("user-admin", masterData.LastListWorkersRequest!.UserId);
+        Assert.Equal("TEAM-A", mes.LastCreateShiftHandoverRequest.TeamId);
+        Assert.Equal("甲班", mes.LastCreateShiftHandoverRequest.TeamName);
+    }
+
+    [Fact]
+    public async Task Mes_shift_handover_accept_binds_incoming_worker_to_principal_and_ignores_body_identity()
+    {
+        var mes = new RecordingMesClient();
+        var masterData = new RecordingMasterDataClient();
+        masterData.WorkerDirectory = [.. masterData.WorkerDirectory, WorkerDirectoryItem("user-admin", "李四")];
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/shift-handovers/SH-000001/accept?organizationId=org-001&environmentId=env-dev",
+            new { idempotencyKey = "idem-accept-1", incomingUserId = "user-B", incomingUserName = "他人" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("SH-000001", mes.LastAcceptShiftHandoverId);
+        Assert.NotNull(mes.LastAcceptShiftHandoverRequest);
+        Assert.Equal("user-admin", mes.LastAcceptShiftHandoverRequest!.IncomingUserId);
+        Assert.NotEqual("user-B", mes.LastAcceptShiftHandoverRequest.IncomingUserId);
+        Assert.Equal("李四", mes.LastAcceptShiftHandoverRequest.IncomingUserName);
+        Assert.NotEqual("他人", mes.LastAcceptShiftHandoverRequest.IncomingUserName);
+    }
+
+    [Fact]
+    public async Task Mes_shift_handover_detail_requires_handovers_read_permission()
+    {
+        var mes = new RecordingMesClient();
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/mes/shift-handovers/SH-000001?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        // 详情是读面：拿 manage 顶替 read 会把只读用户挡在外面，也会让写权限意外覆盖读面。
+        Assert.Equal(BusinessGatewayPermissions.MesHandoversRead, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("SH-000001", mes.LastShiftHandoverDetailId);
+        Assert.Equal("internal-test-token", mes.LastInternalToken);
+    }
+
+    [Fact]
     public async Task Mes_quality_hold_force_release_injects_principal_actor_and_uses_internal_service_token()
     {
         var mes = new RecordingMesClient();
@@ -11687,20 +11790,26 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("production-report-validation-failed", exception.Message);
     }
 
-    [Fact]
-    public async Task Mes_http_client_rebuilds_production_report_reversal_body_with_injected_actor()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Mes_http_client_maps_reversal_strong_id_and_rebuilds_body_with_injected_actor(bool enveloped)
     {
+        const string productionReportId = "019f855b-5cb0-7550-a509-d2ee7b021689";
         var reversedAtUtc = DateTimeOffset.Parse("2026-07-12T08:00:00Z");
-        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        var payload = new
         {
-            productionReportId = "report-reversal-id",
+            productionReportId = new { id = productionReportId },
             reportNo = "PR/REV-001",
             originalReportNo = "PR/001",
-        }));
+        };
+        var handler = new RecordingHandler(_ => JsonResponse(
+            HttpStatusCode.OK,
+            enveloped ? new { success = true, data = (object)payload, message = string.Empty, code = 0 } : payload));
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
         var client = new HttpBusinessMesClient(httpClient);
 
-        await client.ReverseProductionReportAsync(
+        var response = await client.ReverseProductionReportAsync(
             "internal-token-001",
             "PR/001",
             new BusinessConsoleMesReverseProductionReportRequest(
@@ -11713,6 +11822,9 @@ public sealed class BusinessGatewayProxyTests
             "user-admin",
             CancellationToken.None);
 
+        Assert.Equal(productionReportId, response.ProductionReportId);
+        Assert.Equal("PR/REV-001", response.ReportNo);
+        Assert.Equal("PR/001", response.OriginalReportNo);
         var request = Assert.Single(handler.Requests);
         Assert.Equal(HttpMethod.Post, request.Method);
         Assert.Equal("/api/business/v1/mes/production-reports/PR%2F001/reverse", request.RequestUri!.PathAndQuery);
@@ -11729,6 +11841,43 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("reverse-001", root.GetProperty("idempotencyKey").GetString());
         Assert.False(root.TryGetProperty("reportNo", out _));
         Assert.False(root.TryGetProperty("reversedBy", out _));
+    }
+
+    [Theory]
+    [InlineData("{\"productionReportId\":\"019f855b-5cb0-7550-a509-d2ee7b021689\",\"reportNo\":\"PR/REV-001\",\"originalReportNo\":\"PR/001\"}", false)]
+    [InlineData("{\"productionReportId\":{\"id\":\"not-a-guid\"},\"reportNo\":\"PR/REV-001\",\"originalReportNo\":\"PR/001\"}", false)]
+    [InlineData("{\"productionReportId\":{},\"reportNo\":\"PR/REV-001\",\"originalReportNo\":\"PR/001\"}", false)]
+    [InlineData("{\"reportNo\":\"PR/REV-001\",\"originalReportNo\":\"PR/001\"}", true)]
+    [InlineData("{\"productionReportId\":null,\"reportNo\":\"PR/REV-001\",\"originalReportNo\":\"PR/001\"}", false)]
+    [InlineData("{\"productionReportId\":{\"id\":\"00000000-0000-0000-0000-000000000000\"},\"reportNo\":\"PR/REV-001\",\"originalReportNo\":\"PR/001\"}", false)]
+    [InlineData("{\"productionReportId\":{\"id\":\"019f855b-5cb0-7550-a509-d2ee7b021689\"},\"reportNo\":\"\",\"originalReportNo\":\"PR/001\"}", false)]
+    [InlineData("{\"productionReportId\":{\"id\":\"019f855b-5cb0-7550-a509-d2ee7b021689\"},\"reportNo\":\"PR/REV-001\",\"originalReportNo\":\"   \"}", false)]
+    [InlineData("{not-json", false)]
+    public async Task Mes_http_client_rejects_invalid_reversal_response(string body, bool enveloped)
+    {
+        var responseBody = enveloped
+            ? $"{{\"success\":true,\"data\":{body},\"message\":\"\",\"code\":0}}"
+            : body;
+        var handler = new RecordingHandler(_ => StringJsonResponse(HttpStatusCode.OK, responseBody));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var client = new HttpBusinessMesClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.ReverseProductionReportAsync(
+                "internal-token-001",
+                "PR/001",
+                new BusinessConsoleMesReverseProductionReportRequest(
+                    "PR/001",
+                    "org-001",
+                    "env-dev",
+                    "incorrect lot",
+                    DateTimeOffset.Parse("2026-07-12T08:00:00Z"),
+                    "reverse-001"),
+                "user-admin",
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
     }
 
     [Fact]
@@ -19108,18 +19257,61 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         CancellationToken cancellationToken) =>
         throw new NotSupportedException();
 
+    public string? LastShiftHandoverDetailId { get; private set; }
+
+    public Task<BusinessConsoleMesShiftHandoverDetail> GetShiftHandoverAsync(
+        string internalBearerToken,
+        string handoverId,
+        BusinessConsoleMesShiftHandoverDetailRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastShiftHandoverDetailId = handoverId;
+        return Task.FromResult(new BusinessConsoleMesShiftHandoverDetail(
+            handoverId,
+            "EARLY",
+            "TEAM-A",
+            "Open",
+            0,
+            DateTimeOffset.Parse("2026-08-27T08:00:00Z"),
+            null,
+            "甲班",
+            "user-admin",
+            "张三",
+            null,
+            null,
+            [],
+            [],
+            []));
+    }
+
+    public BusinessConsoleMesCreateShiftHandoverForwardRequest? LastCreateShiftHandoverRequest { get; private set; }
+
+    public BusinessConsoleMesAcceptShiftHandoverForwardRequest? LastAcceptShiftHandoverRequest { get; private set; }
+
+    public string? LastAcceptShiftHandoverId { get; private set; }
+
     public Task<BusinessConsoleAcceptedResponse> CreateShiftHandoverAsync(
         string internalBearerToken,
-        BusinessConsoleMesCreateShiftHandoverRequest request,
-        CancellationToken cancellationToken) =>
-        throw new NotSupportedException();
+        BusinessConsoleMesCreateShiftHandoverForwardRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCreateShiftHandoverRequest = request;
+        return Task.FromResult(new BusinessConsoleAcceptedResponse(true, "BusinessMes", "ShiftHandover", "SH-000001"));
+    }
 
     public Task<BusinessConsoleAcceptedResponse> AcceptShiftHandoverAsync(
         string internalBearerToken,
         string handoverId,
-        BusinessConsoleMesAcceptShiftHandoverRequest request,
-        CancellationToken cancellationToken) =>
-        throw new NotSupportedException();
+        BusinessConsoleMesAcceptShiftHandoverForwardRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastAcceptShiftHandoverId = handoverId;
+        LastAcceptShiftHandoverRequest = request;
+        return Task.FromResult(new BusinessConsoleAcceptedResponse(true, "BusinessMes", "ShiftHandover", handoverId));
+    }
 
     // 三个追溯读面接同一份下游响应，故追溯类用例可以把「哪个读面」当成可枚举维度，
     // 而不是给每个读面手写一条用例。
