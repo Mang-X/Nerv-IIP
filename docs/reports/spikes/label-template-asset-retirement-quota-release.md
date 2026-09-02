@@ -9,10 +9,12 @@
 `RetentionSeconds`。
 
 建议由 BarcodeLabel 独占“资产是否仍被引用”和“以后不得再引用”的业务裁决，FileStorage 只执行
-精确 scope/owner/purpose/file/checksum 的幂等软删、quota 释放和物理清理。模板 `inactive` 不等于资产
+精确 scope/owner/purpose/file/checksum 的幂等逻辑退役、quota 释放和物理清理。模板 `inactive` 不等于资产
 无引用；历史批次冻结 `TemplateFileIdSnapshot`，仍可 dispatch 或 reprint 时必须保留资产。
 
-当前实现足以冻结历史执行可达性函数和失败关闭矩阵，但还不足以直接进入生产：模板当前引用如何
+当前实现只足以核实 dispatch/reprint 守卫，并不存在生产资产删除引用函数。下文执行可达性矩阵只是
+拟议的释放策略；它会收窄 #2065 已批准的“历史批次引用即保留”边界，必须由 owner 显式修订后才能
+进入生产。在修订前，任何历史批次快照指向的资产都继续按引用处理。模板当前引用如何
 原子转为不可复用的 retirement、最终用户使用何种权限、BarcodeLabel 如何向 FileStorage 证明自己
 持有本次删除授权，以及两侧审计保留期限，仍需 owner 逐项批准。本文只给出推荐候选和每项不超过
 `scope:M` 的拆解，不以报告代替长期 ADR 或 owner 裁决。
@@ -48,7 +50,7 @@
 | attempt 审计 | #2148 已冻结未来独立 attempt 候选；历史不合成 attempt，空时间线不证明“从未打印”，`started` 代表结果未封闭且禁止自动重放。 | [`barcode-label-transport-attempt-audit.md`](barcode-label-transport-attempt-audit.md) |
 | 内部身份 | 当前共享 Bearer 只产生统一的 `internal-service` principal，不能识别具体调用服务或替代最终用户授权。 | [`InternalServiceAuthentication.cs`](../../../backend/common/ServiceAuth/Nerv.IIP.ServiceAuth/InternalServiceAuthentication.cs)、[`authorization.md`](../../governance/security/authorization.md) |
 
-## 引用权威与历史执行可达性
+## 引用权威与历史执行可达性候选
 
 ### 权威边界
 
@@ -58,7 +60,12 @@
 - BusinessGateway 只完成最终用户 IAM 授权、scope 校验和 facade；不持久化引用或清理事实。
 - 两服务不得跨 schema join；BarcodeLabel 形成持久授权后，通过公开窄契约请求 FileStorage 执行。
 
-### 当前执行可达性函数
+### 已批准保守边界与推荐候选函数
+
+#2065 当前已批准边界是：模板仍被 active 模板或历史批次引用时不得物理清理。因此在 owner 1 批准
+完整矩阵并登记 #2065 新修订前，只要历史批次的完整快照指向目标 fileId，就继续返回 `referenced`，
+不得按 batch/item 状态缩小。以下函数不是 current producer，也不是既有裁决；它是 owner 1 待裁决的
+推荐候选，用于说明若允许释放不可再执行的历史资产，应如何失败关闭。
 
 对目标 `organizationId + environmentId + fileId + checksum`，只有完整 scope 精确匹配才进入判断；
 任何查询失败、未知状态、部分快照、缺失模板 owner 或摘要冲突都返回 `unknown`，删除流程失败关闭。
@@ -70,7 +77,7 @@
    “不可再用”前仍返回 `true`。`inactive` 本身不终止引用，因为当前命令可以换资产或重新激活。
 3. 没有当前模板指向该 fileId，返回 `false`。
 
-`BatchExecutionReachable(batch, fileId)`：
+候选 `BatchExecutionReachable(batch, fileId)`：
 
 | 冻结快照与批次/item 事实 | 结果 | 原因 |
 | --- | --- | --- |
@@ -84,7 +91,7 @@
 | 完整 snapshot，batch=`sent-to-printer / printed`，全部 item 均为 `voided / consumed` | `false` | 现有 reprint 守卫没有可发送 item。 |
 | 完整 snapshot，batch=`delivery-unknown` | `false`，但形成 deletion hold | 当前 dispatch/reprint 均不可达；没有持久现场确认，因此不能把“不可执行”提升为“可安全物理删除”。 |
 
-目标资产只有在以下条件全部成立时才成为候选：
+只有 owner 1 批准该矩阵及 #2065 修订后，目标资产才可按以下条件成为候选：
 
 ```text
 TemplateReachable(fileId) == false
@@ -94,8 +101,9 @@ and no matching fact is unknown
 ```
 
 候选判断必须与“以后不得再引用”原子闭合。否则检查结束后并发模板更新可重新选择该 fileId，或并发
-批次创建可冻结它。推荐候选是在 BarcodeLabel 持久化 scope+fileId 唯一的 retirement decision，并让
-模板更新、批次创建和 retirement 共享同一并发栅栏；具体 Schema/锁形态仍是 owner 裁决 1。
+批次创建可冻结它。推荐候选是在 BarcodeLabel 持久化 scope+fileId 唯一的 retirement decision，并保证
+同一 fileId 下 retirement 与模板复用/批次冻结不可同时成功。owner 1 只裁决该业务不变量与完整矩阵；
+具体事务、锁或并发 token 由实现选择，并以真实 PostgreSQL 并发验收，不作为 owner 选型题。
 
 ### #2148 对本函数的约束
 
@@ -118,10 +126,10 @@ and no matching fact is unknown
 | 阶段 | 责任方 | 推荐候选 | 失败关闭条件 |
 | --- | --- | --- | --- |
 | 发起 | Business Console user | 选择 inactive 模板/旧资产，提交必填 reason 与 idempotency key | 无最终用户身份、跨 scope、reason/key 缺失 |
-| 最终用户授权 | BusinessGateway + IAM | 使用 owner 批准的独立退役 permission；Gateway 校验 principal、organization/environment 与 template/file resource | 只有按钮隐藏或 internal token，没有 IAM 授权事实 |
+| 最终用户授权 | BusinessGateway + IAM | 使用 owner 批准的独立退役 permission；Gateway 校验 principal、organization/environment 与 template/file resource，并签发给 BarcodeLabel 的短时 final-user proof | 只有按钮隐藏或 internal token，没有 IAM 授权事实 |
 | 业务裁决 | BarcodeLabel | 在同一并发边界内执行引用函数并持久化唯一 retirement decision | 任一 `true / unknown / hold`、并发所有权丢失 |
 | 服务间授权 | BarcodeLabel -> FileStorage | purpose-specific、短时、不可篡改 capability，绑定 decisionId、scope、fileId、checksum、owner、purpose | 共享 internal Bearer 单独出现、签名/TTL/字段不匹配 |
-| 生命周期执行 | FileStorage | 精确核对 stored metadata 与 capability，幂等软删并写执行 tombstone | 非 `barcode-label-template`、owner/scope/checksum/decision 冲突 |
+| 生命周期执行 | FileStorage | 精确核对 stored metadata 与 capability，幂等进入 physical-hold 并写 durable tombstone | 非 `barcode-label-template`、owner/scope/checksum/decision 冲突 |
 | 物理清理 | FileStorage provider worker | grace 后按 canonical final locator 删除并回读证明不存在 | provider 只返回成功、却不能证明对象不存在 |
 
 推荐独立退役 permission，而不直接复用 `business.barcodes.templates.manage`：后者当前允许可逆的模板创建、
@@ -132,13 +140,21 @@ purpose-specific capability 只保护本窄动作，不重构全平台 internal 
 proof 形状，但密钥只在 BarcodeLabel/FileStorage 配置，签名不作为用户身份。worker 重试同一持久
 decision 时可以重新签发短时 capability，不创建第二个业务决定。该机制仍需 owner 裁决 3 批准。
 
+两跳 proof 不得混成一个 token：BusinessGateway 是 final-user proof producer，BarcodeLabel 是 verifier，
+canonical payload 至少绑定 `issuer=business-gateway`、`audience=barcode-label`、issued/expiry、subject、
+permission、organization/environment、template/file resource 与 idempotency request key；BarcodeLabel 把
+验证后的 subject/permission/request key 与新 decision 持久绑定。BarcodeLabel 再作为 FileStorage capability
+producer，FileStorage 是 verifier，payload 绑定 `issuer=barcode-label`、`audience=file-storage`、TTL、
+decisionId、scope、fileId、checksum、owner 与 purpose。FileStorage 不消费 subject 或最终用户展示字段，
+其 tombstone 只引用 decisionId；共享 internal Bearer 单独出现时两跳都失败关闭。
+
 ### 持久审计候选
 
 BarcodeLabel retirement decision 至少保留：decision/idempotency、scope、template id/code、file id、
 checksum、requester subject、permission、reason、correlation、引用判定结果、状态、attempt count、safe
 error code 与关键时间。它证明“谁依据哪些 BarcodeLabel 事实授权”，不保存模板正文或 ZPL。
 
-FileStorage deletion tombstone 至少保留：decision、scope、file/owner/purpose、size/checksum、软删与 quota
+FileStorage durable deletion tombstone 至少保留：decision、scope、file/owner/purpose、size/checksum、软删与 quota
 释放时间、物理删除状态/attempt/safe error/completed time及上游审计引用。tombstone 必须晚于
 `stored_files`/对象物理删除继续存在，不暴露 `object_key` 或存储凭据。
 
@@ -148,14 +164,20 @@ FileStorage deletion tombstone 至少保留：decision、scope、file/owner/purp
 
 ### quota 与物理删除时点
 
-1. FileStorage 在一个 metadata 事务内验证 capability、写 tombstone 并把 available 文件软删。
-2. 该事务提交后，现有 quota 口径排除 `deleted` size；这是唯一 quota-released 时点。事务失败或回滚时
-   文件仍 available，quota 不变。
-3. download grant/content 必须继续只允许 available；软删后不可再下载。
-4. grace 到期后才删除 final bytes、关联 grant/session/metadata；只有 provider 回读证明不存在后，才把
+1. FileStorage 在一个 metadata 事务内验证 capability、写 durable tombstone，并把 available 文件转为
+   quota 不计入、下载不可兑换、但不具备 legacy GC eligibility 的 physical-hold 逻辑状态或等价 discriminator；
+   具体 Schema 形态留给子项 3。不得直接调用
+   当前 `MarkDeleted` 形成到期的 `PhysicalDeleteAfterUtc`，否则旧 collector 会先删 metadata 再 best-effort
+   删除 local tus 字节，破坏重试事实。
+2. 该事务提交后，quota 计算必须像当前排除 `deleted` 一样排除 physical-hold size；这是唯一
+   quota-released 时点。事务失败或回滚时文件仍 available，quota 不变。
+3. 当前新建 download grant 不检查 file status，只有 content 兑换要求 available。本合同只冻结字节边界：
+   physical-hold 后新旧 grant 均不得兑换 content；不额外引入“禁止创建无用 grant”的首版门禁。
+4. 子项 5 显式把 physical-hold 转为 physical-eligible 后，才可按 grace 删除 final bytes、关联
+   grant/session/metadata；只有 provider 回读证明不存在后，才把
    tombstone 标为 physical-complete。
 5. 当前 `ObjectKey` 不是实际通用 final locator；#994 与实际启用 provider（#997 或 #1012）完成前，任何
-   实施只能如实报告 metadata soft-deleted / quota-released，不能报告物理字节已删除。
+   实施只能如实报告 metadata physical-hold / quota-released，不能报告物理字节已删除。
 
 ## 失败与重放矩阵
 
@@ -163,17 +185,19 @@ FileStorage deletion tombstone 至少保留：decision、scope、file/owner/purp
 | --- | --- |
 | 相同 idempotency key + 相同 scope/file/checksum/reason | 返回同一 retirement decision，不重复释放 quota |
 | 相同 key + 不同 payload | conflict，原 decision 不变 |
+| 不同 key + 同 scope/file（无论 requester/reason 是否相同） | 稳定 conflict 并可返回安全的既有 decision 引用；不得创建第二 decision、泄漏原 requester/reason 或暴露数据库唯一约束错误 |
 | retirement 与模板重新选择同 fileId 并发 | 同一 fileId 栅栏只允许一方提交；retirement 赢则后续复用失败，模板更新赢则 retirement 重查并拒绝 |
 | retirement 与新批次冻结同 fileId 并发 | 同上；不能出现“批次已引用但 decision 仍获批” |
 | BarcodeLabel 查询失败或读到未知/hold | 不创建授权，不调用 FileStorage |
 | BarcodeLabel decision 已提交，FileStorage 未收到 | decision 保持待执行，退避重试；文件 available，quota 未释放 |
 | capability 过期 | 不改状态；为同一 decision 重签后重试 |
 | FileStorage metadata 事务失败 | 文件 available、quota 不变、tombstone/metadata 不得半应用 |
-| FileStorage 软删已提交，响应丢失 | 同 decision 重放返回同一 quota-released 结果，不产生第二 tombstone |
+| FileStorage physical-hold 已提交，响应丢失 | 同 decision 重放返回同一 quota-released 结果，不产生第二 tombstone |
 | 文件已经由同 decision 删除 | 幂等成功 |
 | 文件被不同 decision/reason 删除 | conflict；不得冒领对方审计 |
 | scope/owner/purpose/checksum 任一不匹配 | 失败关闭，不改变文件或 quota |
-| provider 物理删除失败 | 文件保持 deleted/不可下载，quota 保持已释放；记录 safe error，退避重试 |
+| legacy GC 跨过 grace 运行 | physical-hold 不满足旧 collector eligibility；metadata/session/bytes 与 durable tombstone 均保留，content 仍不可兑换且 quota 保持已释放 |
+| provider 物理删除失败 | 文件保持 physical-hold/不可下载，quota 保持已释放；记录 safe error，退避重试 |
 | provider 返回成功但回读不能证明不存在 | 不标 physical-complete |
 | tombstone complete 且 `stored_files` 已不存在 | 同 decision 重放仍返回同一完成事实 |
 | matching batch 有 `delivery-unknown`，或未来 ledger 有 `started` | deletion hold；没有 owner 6 的持久现场核验合同不得解除 |
@@ -189,15 +213,20 @@ FileStorage deletion tombstone 至少保留：decision、scope、file/owner/purp
    provider retry 数；不能只报一个“已清理”布尔值。
 4. 运营顺序是：停用/替换模板 -> 请求 retirement -> 观察 quota-released -> 追踪 physical-complete。
    手工修改 `stored_files.status`、直接删对象或扩大 quota 都不是正式恢复动作。
-5. `delivery-unknown / started` hold 必须单独可见；没有持久现场核验时，运营人员不能用口头确认绕过。
+5. 历史批次引用、`delivery-unknown / started` hold 必须单独可见；它们可能让一部分 quota 长期不可释放。
+   没有另行批准并持久化的现场核验合同时，运营人员不能用口头确认绕过；若业务必须解除，应另立
+   `scope:spike`，不得把它挂靠为 #2148 owner 6 已经批准的能力。
 
 ## Owner 局部门控
 
-1. **模板 retirement 语义：** 是否批准 scope+fileId 唯一的 retirement decision，把 inactive 模板当前
-   file 引用原子转为“保留历史指针但不可再用于模板/批次”，以及选用何种并发栅栏。前置 BarcodeLabel
-   核心 Schema/命令子项。
-2. **退役权限与批准人：** 独立 permission 的规范名、默认角色、是否需要第二人批准。前置 Gateway/Console
-   发起面，不阻塞只读 reference predicate 原型。
+1. **模板 retirement 语义：** 是否批准完整候选引用矩阵并显式修订 #2065，把 inactive 模板当前 file
+   引用原子转为“保留历史指针但不可再用于模板/批次”，且保证同 fileId 的 retirement 与模板复用/
+   批次冻结不可同时成功。前置 BarcodeLabel 核心 Schema/命令子项；锁形态不由 owner 选择。
+2. **退役权限与批准人：** 独立 permission 的规范名、默认角色，以及首版是否需要第二人批准。选项 A：
+   首版单人授权，负面影响是高风险误操作只由权限与审计约束，但可直接进入既有 ≤M seam；选项 B：需要
+   第二人批准，负面影响是必须先另做 `scope:spike` 冻结 approval owner、请求/批准人隔离、拒绝/撤回/
+   过期、等待期引用变化与最终栅栏时点，当前生产拆解暂停。推荐 A，避免在没有事实模型时暗造审批系统；
+   本报告不代 owner 选择。前置 Gateway/Console 发起面，不阻塞只读 reference predicate 原型。
 3. **服务间删除授权：** 是否批准 purpose-specific signed capability，以及密钥/issuer/TTL 的部署责任。
    前置 FileStorage delete endpoint 与跨服务 worker，不阻塞 BarcodeLabel 本地引用矩阵测试。
 4. **审计 retention：** BarcodeLabel decision 与 FileStorage tombstone 的期限、删除授权、清理执行方式。
@@ -211,16 +240,19 @@ owner 3 只门控 attempt 详情读权限/角色；owner 6 只决定是否另开
 
 | 顺序 | 建议子项 | Gate | 独立验收 | 依赖 |
 | ---: | --- | --- | --- | --- |
-| 1 | BarcodeLabel retirement decision、引用函数、模板/批次复用拒绝与同 fileId 并发栅栏 | `scope:M` / 高 | 真实 PostgreSQL 受控并发证明 retirement 与等价错误模板更新/批次创建不能同时成功；unknown/hold 不产生授权；相同 key 重放同 decision | owner 1；当前 producer；若 attempt ledger 已实施则接入 `started` hold |
-| 2 | BusinessGateway retirement facade、IAM permission、signed final-user proof、OpenAPI/codegen | `scope:M` / 中 | principal/permission/scope/resource/reason 失败关闭；internal Bearer 不替代用户授权；不隐式开放 attempt 详情 | 1 合同；owner 2；#2148 owner 3 仅在嵌入 attempt timeline 时 |
-| 3 | FileStorage purpose-specific delete endpoint、capability 验证、软删、永久 tombstone 与 quota 原子释放 | `scope:M` / 高 | 真实 PostgreSQL 重放/并发；不同 decision 不冒领；metadata/tombstone 不半应用；usage 只下降一次；错 scope/owner/purpose/checksum 原始请求被拒绝 | owner 3；1 合同，可与 2 实现并行 |
-| 4 | BarcodeLabel durable executor 与 FileStorage 失败重放收敛 | `scope:M` / 高 | 响应丢失、短时 capability 过期、服务重启均收敛到同 decision；不创建第二业务决定 | 1+3 |
-| 5 | provider-aware final delete、回读不存在证明与物理重试 | `scope:M` / 高 | Local 与实际生产 provider 的真实 contract profile；失败不假完成，quota 与 physical 状态分报 | #994；实际启用 provider #997 或 #1012；3 |
-| 6 | 独立 decision/tombstone retention | `scope:M` / 按裁决复评 | 两侧审计按各自 owner/scope 清理；失败可恢复；不删除仍执行中的 decision/tombstone | owner 4；3+4+5 |
-| 7 | Business Console 退役状态/原因/hold 与窄运营指标、告警、runbook | `scope:M` / 中 | 不把 inactive 当无引用；不把空 attempt 历史当从未打印；quota-released 与 physical-complete 分显；无手工删库/扩 quota 正式方案 | 2+4；#2148 owner 2/3 仅门控 attempt 覆盖/详情；owner 6 仅门控可选现场核验 |
+| 1 | BarcodeLabel retirement decision、候选引用函数、模板/批次复用拒绝与同 fileId 并发栅栏 | `scope:M` / 高 | 先以 owner 批准的 #2065 修订为 oracle；真实 PostgreSQL 覆盖 active/inactive current reference、非目标/legacy/partial snapshot、owner/checksum 冲突、batch/item 各等价状态分区与 unknown/hold，并让每个独立分区的最小错误变异判红；受控并发证明 retirement 与模板复用/批次冻结不可同时成功；同 key 重放、不同 key 同 scope/file 及原始唯一冲突均映射为稳定结果且不创建第二 decision | owner 1 及 #2065 显式修订；若 attempt ledger 已实施则接入 `started` hold |
+| 2 | BusinessGateway retirement facade、IAM permission、final-user proof、OpenAPI/codegen | `scope:M` / 中 | 验证 Gateway producer 与 BarcodeLabel verifier 的 issuer/audience/TTL、subject/permission/scope/resource/request key 绑定；等价错误 principal/permission/scope/resource/reason/proof 失败关闭；internal Bearer 不替代用户授权，不隐式开放 attempt 详情 | 1 合同；owner 2；若 owner 2 选择双人批准则本项暂停，先完成独立 approval spike；#2148 owner 3 仅在嵌入 attempt timeline 时 |
+| 3 | FileStorage purpose-specific delete endpoint、capability 验证、physical-hold、durable tombstone 与 quota 原子释放 | `scope:M` / 高 | 真实 PostgreSQL 重放/并发；不同 decision 不冒领；metadata/tombstone 不半应用；usage 只下降一次；错 scope/owner/purpose/checksum 原始请求被拒绝；新旧 grant 均不能兑换 content；跨过 grace 运行现有 collector 后 metadata/session/bytes/tombstone 仍在且 quota 仍已释放 | owner 3；1 合同，可与 2 实现并行 |
+| 4 | BarcodeLabel durable executor 与 FileStorage 失败重放收敛 | `scope:M` / 高 | 响应丢失、短时 capability 过期、服务重启均收敛到同 decision；重新签发仍绑定相同 decision/capability 字段且不创建第二业务决定 | 1+3 |
+| 5 | provider-aware final delete、回读不存在证明与物理重试 | `scope:M` / 高 | Local 与实际生产 provider 的真实 contract profile；在 delete 前、provider 成功后/tombstone 完成前、metadata 删除后的崩溃点重放，同 decision 都由 durable tombstone 收敛；metadata 已消失仍幂等读回；失败/回读不确定不假完成，quota 与 physical 状态分报 | #994；实际启用 provider #997 或 #1012；3 |
+| 6 | 独立 decision/tombstone retention | `scope:M` / 按裁决复评 | 两侧审计按各自 owner/scope 清理；失败可恢复；pending/failed 或仍承担同 decision 重放的 decision/tombstone 不得清理 | owner 4；3+4+5 |
+| 7 | Business Console 基础退役发起与 decision/hold/quota 状态展示 | `scope:M` / 中 | 不把 inactive 当无引用，不把空 attempt 历史当从未打印；基础页面不需要 attempt 详情权限；reason 与安全冲突不泄漏其他 requester | 2+4；#2148 owner 2/3 仅在展示 attempt 覆盖/详情时门控 |
+| 8 | physical retry/complete 运营指标、告警与 runbook | `scope:M` / 中 | quota-released 与 physical-complete 分显；长期历史引用/unknown/started hold 可见；provider retry/最老 pending 可观测；无手工删库、直接删对象或扩 quota 的正式恢复方案 | 5；owner 6 只门控另行批准的可选现场核验 |
 
-每个子项独立 PR。子项 1 不承担 FileStorage/Gateway/UI；子项 3 不顺手实现通用 purpose 删除；子项 5
-不借本票实施完整 #994/#997/#1012；子项 7 不因缺 attempt-read permission 阻断基础退役状态。
+每个子项独立 PR。子项 1 不承担 FileStorage/Gateway/UI；子项 3 不顺手实现通用 purpose 删除，且在子项 5
+上线前始终保持 physical-hold、不能被 legacy GC 清理；子项 5 不借本票实施完整 #994/#997/#1012；子项 7
+不因缺 attempt-read permission 阻断基础退役状态。owner 2 若选择双人批准，只暂停子项 2/7 并先产出
+approval spike，不把未建模的肯定分支直接塞入任一生产子项。
 
 ## 验证与未验证
 
