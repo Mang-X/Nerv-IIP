@@ -524,11 +524,8 @@ public sealed class PeriodicInspectionRuntimeContext : Entity<PeriodicInspection
     {
         if (QuantityInterval.HasValue && QuantityHighWater > 0m)
         {
-            var accrued = decimal.ToInt64(decimal.Floor(QuantityHighWater / QuantityInterval.Value));
-            if (accrued > LastGeneratedQuantityWindowSequence)
-            {
-                LastGeneratedQuantityWindowSequence = accrued;
-            }
+            LastGeneratedQuantityWindowSequence =
+                decimal.ToInt64(decimal.Floor(QuantityHighWater / QuantityInterval.Value));
         }
 
         if (!TimeIntervalHours.HasValue || !FirstActivityAtUtc.HasValue || !NextTimeWindowAtUtc.HasValue)

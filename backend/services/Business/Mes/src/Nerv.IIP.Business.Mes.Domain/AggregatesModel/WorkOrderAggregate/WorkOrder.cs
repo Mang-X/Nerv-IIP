@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 
@@ -95,7 +96,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
     /// —— <c>completed</c> 正是这样一个差集：它不在本集合里（超收容差显式为「已达量后继续报工」留了空间），
     /// 却曾被回填的白名单排除。
     /// </summary>
-    public static readonly string[] NonExecutableStatuses =
+    public static readonly ImmutableArray<string> NonExecutableStatuses =
     [
         CancelledStatus,
         ClosedStatus,

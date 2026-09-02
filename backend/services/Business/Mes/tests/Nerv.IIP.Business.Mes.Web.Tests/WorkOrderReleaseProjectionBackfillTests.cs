@@ -26,7 +26,7 @@ public sealed class WorkOrderReleaseProjectionBackfillTests
     private static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-09-01T00:00:00Z");
 
     [Fact]
-    public async Task Only_in_flight_work_orders_with_unfinished_operations_are_backfilled()
+    public async Task Only_work_orders_whose_release_already_happened_and_still_have_live_operations_are_backfilled()
     {
         await using var dbContext = CreateDbContext();
         AddWorkOrder(dbContext, "WO-RELEASED", Released);
@@ -38,13 +38,13 @@ public sealed class WorkOrderReleaseProjectionBackfillTests
         AddWorkOrder(dbContext, "WO-CANCELLED", static workOrder => workOrder.Cancel("客户取消", Now));
         AddWorkOrder(dbContext, "WO-SPLIT", workOrder => { Released(workOrder); workOrder.MarkSplit(); });
         AddWorkOrder(dbContext, "WO-MERGED", workOrder => { Released(workOrder); workOrder.MarkMerged(); });
-        // 在制工单但全部工序已终结：门禁不会再拦它的报工，因此不补投。
+        // 全部工序都已取消：Cancelled 无回流路径，工序不会再复活，也就没有需要补的发布事实。
         AddWorkOrder(
             dbContext,
-            "WO-ALL-FINISHED",
+            "WO-ALL-CANCELLED",
             Started,
             [
-                (OperationTaskLifecycleStatus.Completed, 10),
+                (OperationTaskLifecycleStatus.Cancelled, 10),
                 (OperationTaskLifecycleStatus.Cancelled, 20),
             ]);
         await dbContext.SaveChangesAsync();
@@ -52,7 +52,7 @@ public sealed class WorkOrderReleaseProjectionBackfillTests
         var publisher = new RecordingPublisher();
         var report = await CreateHandler(dbContext, publisher).Handle(new BackfillWorkOrderReleaseProjectionCommand(), CancellationToken.None);
 
-        // completed 在内：报工命令的准入只看工序 InProgress，工单状态不参与判断，
+        // completed 工单在内：报工命令的准入只看工序 InProgress，工单状态不参与判断，
         // 而 RecordProductionProgress 不拒 completed（超收容差为「已达量后继续报工」留了空间）。
         Assert.Equal(5, report.WorkOrdersScanned);
         Assert.Equal(4, report.WorkOrdersPublished);
@@ -96,8 +96,14 @@ public sealed class WorkOrderReleaseProjectionBackfillTests
         Assert.Equal("OP-AT-QUANTITY-10", Assert.Single(published.Payload.Operations).OperationId);
     }
 
+    /// <summary>
+    /// 工序过滤只排除 <c>Cancelled</c>。<c>Completed</c> 必须在内：它不是终态——
+    /// 报工冲销经 <c>ReopenAfterReportReversal</c> 把它改回 <c>InProgress</c>
+    /// （该转换本身由 <c>OperationActualTimeSettlementTests</c> 钉住），复活后照样撞门禁；
+    /// 而回填是一次性动作、存量工单的直投发布事件不会再来，漏掉它就是永久拒。
+    /// </summary>
     [Fact]
-    public async Task Backfilled_payload_carries_only_unfinished_operations()
+    public async Task Backfilled_payload_carries_every_operation_that_is_not_cancelled()
     {
         await using var dbContext = CreateDbContext();
         AddWorkOrder(
@@ -119,14 +125,14 @@ public sealed class WorkOrderReleaseProjectionBackfillTests
         var report = await CreateHandler(dbContext, publisher).Handle(new BackfillWorkOrderReleaseProjectionCommand(), CancellationToken.None);
 
         var published = Assert.Single(publisher.Published);
-        Assert.Equal(4, report.OperationsPublished);
+        Assert.Equal(5, report.OperationsPublished);
         Assert.Equal(
-            new[] { 20, 30, 40, 60 },
+            new[] { 10, 20, 30, 40, 60 },
             published.Payload.Operations.Select(x => x.OperationSequence).ToArray());
         Assert.Equal(MesIntegrationEventTypes.WorkOrderReleaseProjectionBackfilled, published.EventType);
         Assert.Equal(MesIntegrationEventVersions.V1, published.EventVersion);
         Assert.Equal("SKU-FG-1000", published.Payload.SkuCode);
-        Assert.Equal("WC-020", published.Payload.Operations.First().WorkCenterId);
+        Assert.Equal("WC-010", published.Payload.Operations.First().WorkCenterId);
     }
 
     [Fact]
@@ -179,6 +185,34 @@ public sealed class WorkOrderReleaseProjectionBackfillTests
         var published = publisher.Published.ToDictionary(x => x.Payload.WorkOrderId, x => x.Payload.ReleasedAtUtc);
         Assert.Equal(ancient, published["WO-OLD"]);
         Assert.Equal(recent, published["WO-NEW"]);
+    }
+
+    /// <summary>
+    /// 下界取的是「更早者」，不是「有报工就取报工」：报工晚于工序建单时，
+    /// 下界仍须落在工序建单那一支，否则该工单的发布时刻会被推后到报工之后。
+    /// </summary>
+    [Fact]
+    public async Task Release_time_keeps_the_operation_creation_when_the_only_report_is_later()
+    {
+        await using var dbContext = CreateDbContext();
+        AddWorkOrder(dbContext, "WO-LATE-REPORT", Started);
+        await dbContext.SaveChangesAsync();
+        var earliestCreatedAtUtc = await dbContext.OperationTasks
+            .AsNoTracking()
+            .Where(x => x.WorkOrderId == "WO-LATE-REPORT")
+            .MinAsync(x => x.CreatedAtUtc);
+        dbContext.ProductionReports.Add(ProductionReport.Record(
+            "org-001", "env-dev", "RPT-LATE", "WO-LATE-REPORT", "OP-WO-LATE-REPORT-10",
+            goodQuantity: 3m, scrapQuantity: 0m, completesOperation: false,
+            reportedAtUtc: earliestCreatedAtUtc.AddHours(5)));
+        await dbContext.SaveChangesAsync();
+
+        var publisher = new RecordingPublisher();
+        await CreateHandler(dbContext, publisher).Handle(
+            new BackfillWorkOrderReleaseProjectionCommand(), CancellationToken.None);
+
+        var published = Assert.Single(publisher.Published);
+        Assert.Equal(earliestCreatedAtUtc, published.Payload.ReleasedAtUtc);
     }
 
     [Fact]
@@ -313,6 +347,34 @@ public sealed class WorkOrderReleaseProjectionBackfillTests
         Assert.Equal(7, body.RootElement.GetProperty("workOrdersScanned").GetInt32());
         Assert.Equal(5, body.RootElement.GetProperty("workOrdersPublished").GetInt32());
         Assert.Equal(9, body.RootElement.GetProperty("operationsPublished").GetInt32());
+    }
+
+    /// <summary>
+    /// 发布侧的投递通道。与消费侧订阅是**同一个事实**：契约类型短名。
+    /// Quality 的回填消费组用 <c>[CapSubscribe(nameof(WorkOrderReleaseProjectionBackfilledIntegrationEvent))]</c> 订阅，
+    /// 仓库级 <c>CapSubscribeTopicConventionTests.CapSubscribe_topics_match_the_event_short_name</c> 又把
+    /// 「订阅 topic == 事件短名」钉死；因此这里断言「投递 topic == 实际投出去那个事件的类型短名」，
+    /// 两侧就锁在同一个短名上，无需跨服务引用 Quality 程序集。
+    ///
+    /// 通道一旦退回直投标识，后果不是「少一条断言」：回填消费组收不到（回填整体失效），
+    /// 同时 Scheduling 的发布事件消费者会对每一张在制工单触发排程计划失效、
+    /// Quality 直投组把重建下界判为冲突事实成批进死信——正是契约注释里自己列出的那两条。
+    /// </summary>
+    [Fact]
+    public async Task Backfill_publishes_on_the_channel_named_after_the_backfill_event_type()
+    {
+        await using var dbContext = CreateDbContext();
+        AddWorkOrder(dbContext, "WO-CHANNEL", Started);
+        await dbContext.SaveChangesAsync();
+
+        var publisher = new RecordingPublisher();
+        await CreateHandler(dbContext, publisher).Handle(
+            new BackfillWorkOrderReleaseProjectionCommand(), CancellationToken.None);
+
+        var topic = Assert.Single(publisher.Topics);
+        var published = Assert.Single(publisher.Published);
+        Assert.Equal(published.GetType().Name, topic);
+        Assert.Equal(nameof(WorkOrderReleaseProjectionBackfilledIntegrationEvent), topic);
     }
 
     /// <summary>

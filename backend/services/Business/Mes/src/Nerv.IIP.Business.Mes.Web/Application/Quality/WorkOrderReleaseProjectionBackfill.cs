@@ -58,23 +58,19 @@ internal sealed class BackfillWorkOrderReleaseProjectionCommandHandler(
             && !WorkOrder.NonExecutableStatuses.Contains(workOrder.Status);
 
     /// <summary>
-    /// 门禁拦的是「还会再报工」的工序，因此只补未完工工序。逐个状态的取舍：
-    /// <list type="bullet">
-    /// <item><see cref="OperationTaskLifecycleStatus.Queued"/> / <see cref="OperationTaskLifecycleStatus.InProgress"/>
-    /// / <see cref="OperationTaskLifecycleStatus.Paused"/>：还会报工。回填。</item>
-    /// <item><see cref="OperationTaskLifecycleStatus.ScheduleInvalidated"/>：排程失效待重排，工序本身没完工，
-    /// 重排后继续报工。回填。</item>
-    /// <item><see cref="OperationTaskLifecycleStatus.Completed"/> / <see cref="OperationTaskLifecycleStatus.Cancelled"/>：
-    /// 终态，不会再有报工撞门禁。不回填。</item>
-    /// </list>
+    /// 工序维度用的是**和工单维度同一把尺子**：判「该工单的发布事实是否已经发生」，不是判「此刻会不会撞门禁」。
+    /// 工序生命周期会回流——报工冲销（<c>ReverseProductionReportCommand</c>）经
+    /// <c>OperationActualTimeSettlementCoordinator.VoidAsync</c> → <c>OperationTask.ReopenAfterReportReversal</c>
+    /// 把 <see cref="OperationTaskLifecycleStatus.Completed"/> 改回 <see cref="OperationTaskLifecycleStatus.InProgress"/>，
+    /// 该路径上的守卫只拒 <c>closed</c> 工单，拦不住存量工单；而它的前置 <c>ActualTimeSettlementRevision &gt; 0</c>
+    /// 恰好是「当初正常结算完工」的标志。按「此刻未完工」筛人，这批工序复活后就永远拿不到发布投影、被门禁永久拒。
+    ///
+    /// 因此只排除 <see cref="OperationTaskLifecycleStatus.Cancelled"/>——它是唯一真终态：
+    /// 全类 8 处状态赋值里没有任何一处以 <c>Cancelled</c> 为来源（<c>Cancel</c> 与 <c>MarkScheduleInvalidated</c>
+    /// 对 <c>Cancelled</c> 直接 return，<c>ApplyScheduleAssignment</c> 只把 <c>ScheduleInvalidated</c> 转回 <c>Queued</c>）。
     /// </summary>
-    private static readonly OperationTaskLifecycleStatus[] UnfinishedOperationStatuses =
-    [
-        OperationTaskLifecycleStatus.Queued,
-        OperationTaskLifecycleStatus.InProgress,
-        OperationTaskLifecycleStatus.Paused,
-        OperationTaskLifecycleStatus.ScheduleInvalidated,
-    ];
+    private static bool HasReleaseFacts(OperationTaskLifecycleStatus status) =>
+        status != OperationTaskLifecycleStatus.Cancelled;
 
     /// <summary>
     /// 续扫一页。抽成方法是为了让「这条查询能被真实 provider 翻译、且翻出来的是 keyset seek 而不是 OFFSET」
@@ -182,12 +178,12 @@ internal sealed class BackfillWorkOrderReleaseProjectionCommandHandler(
                         && x.EnvironmentId == workOrder.EnvironmentId
                         && string.Equals(x.WorkOrderId, workOrder.WorkOrderIdValue, StringComparison.Ordinal))
                     .ToArray();
-                var unfinished = tasks
-                    .Where(x => UnfinishedOperationStatuses.Contains(x.Status))
+                var released = tasks
+                    .Where(x => HasReleaseFacts(x.Status))
                     .OrderBy(x => x.OperationSequence)
                     .ThenBy(x => x.OperationTaskIdValue, StringComparer.Ordinal)
                     .ToArray();
-                if (unfinished.Length == 0)
+                if (released.Length == 0)
                 {
                     continue;
                 }
@@ -229,14 +225,14 @@ internal sealed class BackfillWorkOrderReleaseProjectionCommandHandler(
                         workOrder.SkuId,
                         workOrder.Quantity,
                         releasedAtUtc,
-                        unfinished
+                        released
                             .Select(x => new ReleasedOperationPayload(
                                 x.OperationTaskIdValue,
                                 x.OperationSequence,
                                 x.WorkCenterId))
                             .ToArray())));
                 published++;
-                operationsPublished += unfinished.Length;
+                operationsPublished += released.Length;
             }
 
         }
