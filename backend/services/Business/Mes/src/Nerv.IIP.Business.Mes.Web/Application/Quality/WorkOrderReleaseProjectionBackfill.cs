@@ -17,6 +17,14 @@ public sealed record WorkOrderReleaseProjectionBackfillReport(
     int WorkOrdersPublished,
     int OperationsPublished);
 
+/// <summary>续扫一页取回的工单身份与补投载荷所需字段。</summary>
+internal sealed record WorkOrderReleaseProjectionPageRow(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkOrderIdValue,
+    string SkuId,
+    decimal Quantity);
+
 /// <summary>
 /// 存量在制工单的发布事实补投（#3000）。Quality 订阅 <c>mes.WorkOrderReleased</c> 之前发布的工单，
 /// 在 Quality 的 <c>PeriodicInspectionOperations</c> 里没有行，首件确认读面恒回 <c>not-synchronized</c>，
@@ -68,6 +76,42 @@ internal sealed class BackfillWorkOrderReleaseProjectionCommandHandler(
         OperationTaskLifecycleStatus.ScheduleInvalidated,
     ];
 
+    /// <summary>
+    /// 续扫一页。抽成方法是为了让「这条查询能被真实 provider 翻译、且翻出来的是 keyset seek 而不是 OFFSET」
+    /// 可以被断言——EF Core InMemory 不做翻译，把不可翻译的谓词或退化成 OFFSET 的写法一律放行。
+    /// </summary>
+    internal static IQueryable<WorkOrderReleaseProjectionPageRow> BuildPageQuery(
+        ApplicationDbContext dbContext,
+        string? lastOrganizationId,
+        string? lastEnvironmentId,
+        string? lastWorkOrderId)
+    {
+        var query = dbContext.WorkOrders
+            .AsNoTracking()
+            .Where(CanStillHitTheFirstArticleGate);
+        if (lastWorkOrderId is not null)
+        {
+            query = query.Where(x =>
+                string.Compare(x.OrganizationId, lastOrganizationId) > 0
+                || (x.OrganizationId == lastOrganizationId
+                    && (string.Compare(x.EnvironmentId, lastEnvironmentId) > 0
+                        || (x.EnvironmentId == lastEnvironmentId
+                            && string.Compare(x.WorkOrderIdValue, lastWorkOrderId) > 0))));
+        }
+
+        return query
+            .OrderBy(x => x.OrganizationId)
+            .ThenBy(x => x.EnvironmentId)
+            .ThenBy(x => x.WorkOrderIdValue)
+            .Take(WorkOrderPageSize)
+            .Select(x => new WorkOrderReleaseProjectionPageRow(
+                x.OrganizationId,
+                x.EnvironmentId,
+                x.WorkOrderIdValue,
+                x.SkuId,
+                x.Quantity));
+    }
+
     public async Task<WorkOrderReleaseProjectionBackfillReport> Handle(
         BackfillWorkOrderReleaseProjectionCommand request,
         CancellationToken cancellationToken)
@@ -88,32 +132,7 @@ internal sealed class BackfillWorkOrderReleaseProjectionCommandHandler(
         string? lastWorkOrderId = null;
         while (true)
         {
-            var query = dbContext.WorkOrders
-                .AsNoTracking()
-                .Where(CanStillHitTheFirstArticleGate);
-            if (lastWorkOrderId is not null)
-            {
-                query = query.Where(x =>
-                    string.Compare(x.OrganizationId, lastOrganizationId) > 0
-                    || (x.OrganizationId == lastOrganizationId
-                        && (string.Compare(x.EnvironmentId, lastEnvironmentId) > 0
-                            || (x.EnvironmentId == lastEnvironmentId
-                                && string.Compare(x.WorkOrderIdValue, lastWorkOrderId) > 0))));
-            }
-
-            var page = await query
-                .OrderBy(x => x.OrganizationId)
-                .ThenBy(x => x.EnvironmentId)
-                .ThenBy(x => x.WorkOrderIdValue)
-                .Take(WorkOrderPageSize)
-                .Select(x => new
-                {
-                    x.OrganizationId,
-                    x.EnvironmentId,
-                    x.WorkOrderIdValue,
-                    x.SkuId,
-                    x.Quantity,
-                })
+            var page = await BuildPageQuery(dbContext, lastOrganizationId, lastEnvironmentId, lastWorkOrderId)
                 .ToArrayAsync(cancellationToken);
             if (page.Length == 0)
             {

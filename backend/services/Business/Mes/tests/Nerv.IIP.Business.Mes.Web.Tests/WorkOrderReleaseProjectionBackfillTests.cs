@@ -315,6 +315,35 @@ public sealed class WorkOrderReleaseProjectionBackfillTests
         Assert.Equal(9, body.RootElement.GetProperty("operationsPublished").GetInt32());
     }
 
+    /// <summary>
+    /// 续扫查询必须能被真实 provider 翻译，且翻出来的是 keyset seek。EF Core InMemory 不做翻译：
+    /// 不可翻译的谓词会被它客户端求值放行，退化成 OFFSET 也照样绿，两种都要到生产库才炸/才漏。
+    /// 这里用 Npgsql 的 <c>ToQueryString()</c>（只生成 SQL、不连库）钉住**生产代码那条查询本身**。
+    /// </summary>
+    [Fact]
+    public void Page_query_translates_to_a_keyset_seek_on_the_real_provider()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql("Host=unused;Database=unused;Username=unused;Password=unused")
+            .Options;
+        using var dbContext = new ApplicationDbContext(options, new NoopMediator());
+
+        var firstPage = BackfillWorkOrderReleaseProjectionCommandHandler
+            .BuildPageQuery(dbContext, null, null, null)
+            .ToQueryString();
+        var nextPage = BackfillWorkOrderReleaseProjectionCommandHandler
+            .BuildPageQuery(dbContext, "org-001", "env-dev", "WO-0199")
+            .ToQueryString();
+
+        // 判据集合直接落成 NOT IN，completed 不在其中。
+        Assert.Contains("NOT IN ('created', 'cancelled', 'closed', 'scrapped', 'split', 'merged')", firstPage, StringComparison.Ordinal);
+        // 续扫是身份比较，不是偏移量；两页都必须带与 seek 同序的 ORDER BY。
+        Assert.Contains("ORDER BY w.organization_id, w.environment_id, w.work_order_id", nextPage, StringComparison.Ordinal);
+        Assert.Contains("w.work_order_id > ", nextPage, StringComparison.Ordinal);
+        Assert.DoesNotContain("OFFSET", firstPage, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("OFFSET", nextPage, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static BackfillWorkOrderReleaseProjectionCommandHandler CreateHandler(
         ApplicationDbContext dbContext,
         RecordingPublisher publisher) =>
