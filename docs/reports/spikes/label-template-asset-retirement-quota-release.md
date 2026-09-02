@@ -2,7 +2,7 @@
 
 ## 结论
 
-#2101 在 `origin/main` 基线 `21e04513c2e29032a4e49232c377b8de6df63d83` 上仍然成立。
+#2101 在 `origin/main` 基线 `f6ca095bd8d7b1ba21819bfa2cc58e149d574c71` 上仍然成立。
 `barcode-label-template` 没有 retention，FileStorage files API 也没有业务授权的删除入口；用途级
 `8,388,608` bytes quota 会按非 `deleted` 文件与未过期上传预留累计，最多容纳 128 份达到
 `65,536` bytes 上限的资产。当前只有 retention worker 能把正式文件软删，而该 purpose 刻意不配置
