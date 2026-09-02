@@ -4994,6 +4994,68 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     openIssueCount?: number;
     createdAtUtc?: string;
     teamName?: string | null;
+    outgoingUserId?: string | null;
+    outgoingUserName?: string | null;
+    incomingUserId?: string | null;
+    incomingUserName?: string | null;
+    acceptedAtUtc?: string | null;
+    wipItemCount?: number;
+    unfinishedWorkOrderCount?: number;
+    openIssueDetailCount?: number;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesShiftHandoverDetail = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverDetail | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverDetail = {
+    handoverId?: string;
+    shiftId?: string;
+    teamId?: string;
+    handoverStatus?: string;
+    openIssueCount?: number;
+    createdAtUtc?: string;
+    acceptedAtUtc?: string | null;
+    teamName?: string | null;
+    outgoingUserId?: string | null;
+    outgoingUserName?: string | null;
+    incomingUserId?: string | null;
+    incomingUserName?: string | null;
+    wipItems?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverWipItem>;
+    unfinishedWorkOrders?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverUnfinishedWorkOrder>;
+    openIssues?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverOpenIssue>;
+    attachments?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverAttachment>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverWipItem = {
+    workOrderId?: string;
+    operationTaskId?: string | null;
+    quantity?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverUnfinishedWorkOrder = {
+    workOrderId?: string;
+    plannedQuantity?: number;
+    completedQuantity?: number;
+    workOrderStatus?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverOpenIssue = {
+    category?: string;
+    severity?: string;
+    description?: string;
+    referenceId?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverAttachment = {
+    fileId?: string;
+    fileName?: string;
+    contentType?: string;
+    sizeBytes?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverDetailRequest = {
+    [key: string]: never;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCreateShiftHandoverRequest = {
@@ -5004,6 +5066,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     openIssueIds?: Array<string> | null;
     idempotencyKey?: string;
     teamName?: string | null;
+    wipItems?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverWipItem> | null;
+    unfinishedWorkOrders?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverUnfinishedWorkOrder> | null;
+    openIssues?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverOpenIssue> | null;
+    attachments?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverAttachment> | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAcceptShiftHandoverRequest = {
@@ -5992,6 +6058,72 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleP
         [key: string]: string;
     } | null;
     siteCode?: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleToolingAssetListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleToolingAssetListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleToolingAssetListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleToolingAssetItem>;
+    total?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleToolingAssetItem = {
+    code?: string;
+    name?: string;
+    toolingType?: string;
+    status?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleToolingAssetStatus;
+    maintenanceLifeCount?: number | null;
+    usageCount?: number;
+    isSchedulable?: boolean;
+    workCenterCodes?: Array<string>;
+    skuCodes?: Array<string>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleToolingAssetStatus = 'available' | 'maintenance' | 'retired';
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListToolingAssetsRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleToolingRegistrationResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleToolingRegistrationResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleToolingRegistrationResponse = {
+    resourceType?: string;
+    code?: string;
+    displayName?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRegisterToolingAssetRequest = {
+    organizationId: string;
+    environmentId: string;
+    code?: string | null;
+    name: string;
+    toolingType: string;
+    workCenterCodes: Array<string>;
+    skuCodes: Array<string>;
+    maintenanceLifeCount?: number | null;
+    idempotencyKey?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleChangeToolingStatusRequest = {
+    organizationId: string;
+    environmentId: string;
+    code: string;
+    status?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleToolingAssetStatus;
+    reason: string;
+    idempotencyKey?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordToolingUsageRequest = {
+    organizationId: string;
+    environmentId: string;
+    code: string;
+    count?: number;
+    idempotencyKey?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateMaintenanceWorkOrderResponse = NetCorePalExtensionsDtoResponseData & {
@@ -16773,6 +16905,38 @@ export type CreateBusinessConsoleMesShiftHandoverResponses = {
 
 export type CreateBusinessConsoleMesShiftHandoverResponse = CreateBusinessConsoleMesShiftHandoverResponses[keyof CreateBusinessConsoleMesShiftHandoverResponses];
 
+export type GetBusinessConsoleMesShiftHandoverData = {
+    body?: never;
+    path: {
+        handoverId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/mes/shift-handovers/{handoverId}';
+};
+
+export type GetBusinessConsoleMesShiftHandoverErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleMesShiftHandoverResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesShiftHandoverDetail;
+};
+
+export type GetBusinessConsoleMesShiftHandoverResponse = GetBusinessConsoleMesShiftHandoverResponses[keyof GetBusinessConsoleMesShiftHandoverResponses];
+
 export type AcceptBusinessConsoleMesShiftHandoverData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAcceptShiftHandoverRequest;
     path: {
@@ -18680,6 +18844,166 @@ export type PreviewBusinessConsoleCodeRuleResponses = {
 };
 
 export type PreviewBusinessConsoleCodeRuleResponse = PreviewBusinessConsoleCodeRuleResponses[keyof PreviewBusinessConsoleCodeRuleResponses];
+
+export type ListBusinessConsoleToolingAssetsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        keyword?: string | null;
+        status?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleToolingAssetStatus | null;
+        skip?: number;
+        take?: number;
+    };
+    url: '/api/business-console/v1/master-data/tooling-assets';
+};
+
+export type ListBusinessConsoleToolingAssetsErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleToolingAssetsError = ListBusinessConsoleToolingAssetsErrors[keyof ListBusinessConsoleToolingAssetsErrors];
+
+export type ListBusinessConsoleToolingAssetsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleToolingAssetListResponse;
+};
+
+export type ListBusinessConsoleToolingAssetsResponse = ListBusinessConsoleToolingAssetsResponses[keyof ListBusinessConsoleToolingAssetsResponses];
+
+export type RegisterBusinessConsoleToolingAssetData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRegisterToolingAssetRequest;
+    headers?: {
+        /**
+         * At least one idempotency key must be supplied using the standard Idempotency-Key header, the legacy X-Idempotency-Key header, or the JSON idempotencyKey field; when multiple are supplied they must match.
+         */
+        'Idempotency-Key'?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/master-data/tooling-assets';
+};
+
+export type RegisterBusinessConsoleToolingAssetErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
+};
+
+export type RegisterBusinessConsoleToolingAssetError = RegisterBusinessConsoleToolingAssetErrors[keyof RegisterBusinessConsoleToolingAssetErrors];
+
+export type RegisterBusinessConsoleToolingAssetResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleToolingRegistrationResponse;
+};
+
+export type RegisterBusinessConsoleToolingAssetResponse = RegisterBusinessConsoleToolingAssetResponses[keyof RegisterBusinessConsoleToolingAssetResponses];
+
+export type ChangeBusinessConsoleToolingStatusData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleChangeToolingStatusRequest;
+    headers?: {
+        /**
+         * At least one idempotency key must be supplied using the standard Idempotency-Key header, the legacy X-Idempotency-Key header, or the JSON idempotencyKey field; when multiple are supplied they must match.
+         */
+        'Idempotency-Key'?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/master-data/tooling-assets/status';
+};
+
+export type ChangeBusinessConsoleToolingStatusErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
+};
+
+export type ChangeBusinessConsoleToolingStatusError = ChangeBusinessConsoleToolingStatusErrors[keyof ChangeBusinessConsoleToolingStatusErrors];
+
+export type ChangeBusinessConsoleToolingStatusResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type ChangeBusinessConsoleToolingStatusResponse = ChangeBusinessConsoleToolingStatusResponses[keyof ChangeBusinessConsoleToolingStatusResponses];
+
+export type RecordBusinessConsoleToolingUsageData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordToolingUsageRequest;
+    headers?: {
+        /**
+         * At least one idempotency key must be supplied using the standard Idempotency-Key header, the legacy X-Idempotency-Key header, or the JSON idempotencyKey field; when multiple are supplied they must match.
+         */
+        'Idempotency-Key'?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/master-data/tooling-assets/usage';
+};
+
+export type RecordBusinessConsoleToolingUsageErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
+};
+
+export type RecordBusinessConsoleToolingUsageError = RecordBusinessConsoleToolingUsageErrors[keyof RecordBusinessConsoleToolingUsageErrors];
+
+export type RecordBusinessConsoleToolingUsageResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type RecordBusinessConsoleToolingUsageResponse = RecordBusinessConsoleToolingUsageResponses[keyof RecordBusinessConsoleToolingUsageResponses];
 
 export type ListBusinessConsoleMaintenanceWorkOrdersData = {
     body?: never;

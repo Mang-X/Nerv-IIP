@@ -5470,7 +5470,75 @@ public sealed record BusinessConsoleMesShiftHandoverRow(
     string HandoverStatus,
     int OpenIssueCount,
     DateTimeOffset CreatedAtUtc,
-    string? TeamName = null);
+    string? TeamName = null,
+    string? OutgoingUserId = null,
+    string? OutgoingUserName = null,
+    string? IncomingUserId = null,
+    string? IncomingUserName = null,
+    DateTimeOffset? AcceptedAtUtc = null,
+    int WipItemCount = 0,
+    int UnfinishedWorkOrderCount = 0,
+    int OpenIssueDetailCount = 0);
+
+/// <summary>交班时点的在制清点行。</summary>
+public sealed record BusinessConsoleMesShiftHandoverWipItem(
+    string WorkOrderId,
+    string? OperationTaskId,
+    decimal Quantity);
+
+/// <summary>交班时点的未完工单进度快照。</summary>
+public sealed record BusinessConsoleMesShiftHandoverUnfinishedWorkOrder(
+    string WorkOrderId,
+    decimal PlannedQuantity,
+    decimal CompletedQuantity,
+    string WorkOrderStatus);
+
+/// <summary>
+/// 随交班一并提交的 FileStorage 附件引用；文件名、内容类型与大小是交班时点快照。
+/// <c>FileId</c> 是 FileStorage 文件 id，字节本身按 <c>shift-handover-photo</c> 用途存在 FileStorage，不落在 MES。
+///
+/// 取回通路目前两端都还没有：BusinessGateway 没有任何上传面（business-console 契约的 files 组只有
+/// <c>/files/{fileId}/download-grants</c> 与 <c>/files/download-grants/{downloadGrantId}/content</c> 两条），
+/// 而其中的下载授权端点 <c>POST /api/business-console/v1/files/{fileId}/download-grants</c> 门在
+/// <c>business.engineering.documents.read</c>（ResourceType <c>engineering-sop-file</c>），交接班读者持
+/// <c>business.mes.handovers.read</c> 换不出下载地址。因此本记录当前只是契约与生成物，
+/// 生产上还走不通；补齐这两个门面见 #3085，它是 #2784 的开工前置条件，不在 #2782 范围内。
+/// </summary>
+public sealed record BusinessConsoleMesShiftHandoverAttachment(
+    string FileId,
+    string FileName,
+    string ContentType,
+    long SizeBytes);
+
+/// <summary>交班时点的遗留问题；<c>Category</c> 取 Equipment/Quality，<c>Severity</c> 取 Low/Medium/High。</summary>
+public sealed record BusinessConsoleMesShiftHandoverOpenIssue(
+    string Category,
+    string Severity,
+    string Description,
+    string? ReferenceId = null);
+
+public sealed record BusinessConsoleMesShiftHandoverDetail(
+    string HandoverId,
+    string ShiftId,
+    string TeamId,
+    string HandoverStatus,
+    int OpenIssueCount,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset? AcceptedAtUtc,
+    string? TeamName,
+    string? OutgoingUserId,
+    string? OutgoingUserName,
+    string? IncomingUserId,
+    string? IncomingUserName,
+    IReadOnlyCollection<BusinessConsoleMesShiftHandoverWipItem> WipItems,
+    IReadOnlyCollection<BusinessConsoleMesShiftHandoverUnfinishedWorkOrder> UnfinishedWorkOrders,
+    IReadOnlyCollection<BusinessConsoleMesShiftHandoverOpenIssue> OpenIssues,
+    IReadOnlyCollection<BusinessConsoleMesShiftHandoverAttachment> Attachments);
+
+public sealed record BusinessConsoleMesShiftHandoverDetailRequest(
+    [property: RouteParam] string HandoverId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
 
 public sealed record BusinessConsoleMesCreateShiftHandoverRequest(
     string OrganizationId,
@@ -5479,13 +5547,46 @@ public sealed record BusinessConsoleMesCreateShiftHandoverRequest(
     string TeamId,
     IReadOnlyCollection<string>? OpenIssueIds,
     string IdempotencyKey,
-    string? TeamName = null);
+    string? TeamName = null,
+    IReadOnlyCollection<BusinessConsoleMesShiftHandoverWipItem>? WipItems = null,
+    IReadOnlyCollection<BusinessConsoleMesShiftHandoverUnfinishedWorkOrder>? UnfinishedWorkOrders = null,
+    IReadOnlyCollection<BusinessConsoleMesShiftHandoverOpenIssue>? OpenIssues = null,
+    IReadOnlyCollection<BusinessConsoleMesShiftHandoverAttachment>? Attachments = null);
+
+/// <summary>
+/// 转发给 MES 的建单载荷：交班人身份由 Gateway 从认证 principal 注入，显示名从 MasterData 员工目录解析，
+/// 都不出现在公开请求体里。
+/// </summary>
+public sealed record BusinessConsoleMesCreateShiftHandoverForwardRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ShiftId,
+    string TeamId,
+    IReadOnlyCollection<string>? OpenIssueIds,
+    string IdempotencyKey,
+    string? TeamName,
+    string? OutgoingUserId,
+    string? OutgoingUserName,
+    IReadOnlyCollection<BusinessConsoleMesShiftHandoverWipItem>? WipItems,
+    IReadOnlyCollection<BusinessConsoleMesShiftHandoverUnfinishedWorkOrder>? UnfinishedWorkOrders,
+    IReadOnlyCollection<BusinessConsoleMesShiftHandoverOpenIssue>? OpenIssues,
+    IReadOnlyCollection<BusinessConsoleMesShiftHandoverAttachment>? Attachments);
 
 public sealed record BusinessConsoleMesAcceptShiftHandoverRequest(
     [property: RouteParam] string HandoverId,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
     string IdempotencyKey);
+
+/// <summary>
+/// 转发给 MES 的接班载荷：接班人身份同样由 Gateway 从认证 principal 注入。
+/// </summary>
+public sealed record BusinessConsoleMesAcceptShiftHandoverForwardRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string IdempotencyKey,
+    string? IncomingUserId,
+    string? IncomingUserName);
 
 public sealed record BusinessConsoleMesTraceabilityByWorkOrderRequest(
     [property: RouteParam] string WorkOrderId,

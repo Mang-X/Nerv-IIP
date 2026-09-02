@@ -23,6 +23,12 @@ public sealed class WorkCenterMachineOverheadReconciliationTests
         Assert.Equal(14_000m, reconciliation.UnderOverAppliedTotalAmount);
         Assert.Equal(12_000m, reconciliation.UnallocatedFixedOverheadAmount);
         Assert.Equal(0m, reconciliation.OverAppliedFixedOverheadAmount);
+        Assert.Equal(
+            reconciliation.AppliedTotalAmount,
+            reconciliation.AppliedFixedAmount + reconciliation.AppliedVariableAmount);
+        Assert.Equal(
+            reconciliation.UnderOverAppliedFixedAmount,
+            reconciliation.UnallocatedFixedOverheadAmount - reconciliation.OverAppliedFixedOverheadAmount);
     }
 
     [Fact]
@@ -42,6 +48,9 @@ public sealed class WorkCenterMachineOverheadReconciliationTests
         Assert.Equal(-8_000m, reconciliation.UnderOverAppliedTotalAmount);
         Assert.Equal(0m, reconciliation.UnallocatedFixedOverheadAmount);
         Assert.Equal(6_000m, reconciliation.OverAppliedFixedOverheadAmount);
+        Assert.Equal(
+            reconciliation.UnderOverAppliedFixedAmount,
+            reconciliation.UnallocatedFixedOverheadAmount - reconciliation.OverAppliedFixedOverheadAmount);
     }
 
     [Fact]
@@ -72,6 +81,10 @@ public sealed class WorkCenterMachineOverheadReconciliationTests
             disposition: AbnormalDowntimeDisposition.PeriodExpense);
 
         Assert.Equal(1_200m, zero.UnderOverAppliedTotalAmount);
+        Assert.Equal(0m, zero.AppliedFixedAmount);
+        Assert.Equal(0m, zero.AppliedVariableAmount);
+        Assert.Equal(0m, zero.AppliedTotalAmount);
+        Assert.Equal(0m, zero.AppliedRoundingDifferenceAmount);
         Assert.True(zero.IsReadyForClose);
         Assert.True(expensedDowntime.IsReadyForClose);
         Assert.Throws<ArgumentException>(() => Record(
@@ -81,25 +94,47 @@ public sealed class WorkCenterMachineOverheadReconciliationTests
     }
 
     [Fact]
-    public void Persistence_precision_is_normalized_before_derived_values_are_frozen()
+    public void Amount_chain_uses_six_decimal_to_even_for_positive_and_negative_midpoints()
     {
-        var reconciliation = WorkCenterMachineOverheadReconciliation.Record(
+        var positive = WorkCenterMachineOverheadReconciliation.Record(
             "org-a", "env-a", "WC-01", "2026-08",
             new WorkCenterMachineOverheadRateId(Guid.CreateVersion7()), 1, "CNY",
-            1.0000005m, 2.0000005m, 1,
-            0.1000005m, 0.2000005m, 0.3000015m,
+            1.0000005m, 1.0000015m, 1,
+            0m, 0m, 0m,
             0, AbnormalDowntimeDisposition.None, 1,
-            "user:accountant", "ledger:2026-08", "fractional precision",
+            "user:accountant", "ledger:2026-08-positive", "positive midpoint precision",
             new DateTimeOffset(2026, 8, 31, 16, 0, 0, TimeSpan.Zero));
+        var negative = WorkCenterMachineOverheadReconciliation.Record(
+            "org-a", "env-a", "WC-01", "2026-08",
+            new WorkCenterMachineOverheadRateId(Guid.CreateVersion7()), 1, "CNY",
+            0m, 0m, 1,
+            1.0000005m, 1.0000015m, 2.0000025m,
+            0, AbnormalDowntimeDisposition.None, 2,
+            "user:accountant", "ledger:2026-08-negative", "negative midpoint precision",
+            new DateTimeOffset(2026, 8, 31, 16, 1, 0, TimeSpan.Zero));
 
-        Assert.Equal(1.000001m, reconciliation.ActualFixedOverheadAmount);
-        Assert.Equal(2.000001m, reconciliation.ActualVariableOverheadAmount);
-        Assert.Equal(3.000002m, reconciliation.ActualTotalOverheadAmount);
-        Assert.Equal(0.100001m, reconciliation.AppliedFixedAmount);
-        Assert.Equal(0.200001m, reconciliation.AppliedVariableAmount);
-        Assert.Equal(0.300002m, reconciliation.AppliedTotalAmount);
-        Assert.Equal(0m, reconciliation.AppliedRoundingDifferenceAmount);
-        Assert.Equal(0.000000000028m, reconciliation.AppliedMachineHours);
+        Assert.Equal(1.000000m, positive.ActualFixedOverheadAmount);
+        Assert.Equal(1.000002m, positive.ActualVariableOverheadAmount);
+        Assert.Equal(2.000002m, positive.ActualTotalOverheadAmount);
+        Assert.Equal(1.000000m, positive.UnderOverAppliedFixedAmount);
+        Assert.Equal(1.000002m, positive.UnderOverAppliedVariableAmount);
+        Assert.Equal(2.000002m, positive.UnderOverAppliedTotalAmount);
+        Assert.Equal(1.000000m, positive.UnallocatedFixedOverheadAmount);
+        Assert.Equal(0m, positive.OverAppliedFixedOverheadAmount);
+
+        Assert.Equal(1.000000m, negative.AppliedFixedAmount);
+        Assert.Equal(1.000002m, negative.AppliedVariableAmount);
+        Assert.Equal(2.000002m, negative.AppliedTotalAmount);
+        Assert.Equal(0m, negative.AppliedRoundingDifferenceAmount);
+        Assert.Equal(-1.000000m, negative.UnderOverAppliedFixedAmount);
+        Assert.Equal(-1.000002m, negative.UnderOverAppliedVariableAmount);
+        Assert.Equal(-2.000002m, negative.UnderOverAppliedTotalAmount);
+        Assert.Equal(0m, negative.UnallocatedFixedOverheadAmount);
+        Assert.Equal(1.000000m, negative.OverAppliedFixedOverheadAmount);
+        Assert.Equal(negative.AppliedTotalAmount,
+            negative.AppliedFixedAmount + negative.AppliedVariableAmount + negative.AppliedRoundingDifferenceAmount);
+        Assert.Equal(0.000000000028m, positive.AppliedMachineHours);
+        Assert.Equal(0.000000000028m, negative.AppliedMachineHours);
     }
 
     private static WorkCenterMachineOverheadReconciliation Record(

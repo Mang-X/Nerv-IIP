@@ -1491,7 +1491,8 @@ internal sealed class FakeBusinessGatewayAuthorizationClient(
     Func<BusinessGatewayPermissionRequirement, bool> isAllowed,
     AuthorizationDataScope? dataScope = null,
     IReadOnlyCollection<AuthorizationScopeGrant>? scopeGrants = null,
-    IReadOnlyCollection<AuthorizationRole>? roles = null)
+    IReadOnlyCollection<AuthorizationRole>? roles = null,
+    BusinessGatewayAuthorizationResult? allowedResult = null)
     : IBusinessGatewayAuthorizationClient
 {
     public int CallCount { get; private set; }
@@ -1509,6 +1510,11 @@ internal sealed class FakeBusinessGatewayAuthorizationClient(
         new(_ => true, dataScope, scopeGrants, roles);
 
     public static FakeBusinessGatewayAuthorizationClient Forbidden() => new(_ => false);
+
+    public static FakeBusinessGatewayAuthorizationClient AllowedWithoutPrincipal() =>
+        new(
+            _ => true,
+            allowedResult: new BusinessGatewayAuthorizationResult(true, null, "user", null, null));
 
     public static FakeBusinessGatewayAuthorizationClient AllowOnly(params string[] permissionCodes)
     {
@@ -1537,7 +1543,7 @@ internal sealed class FakeBusinessGatewayAuthorizationClient(
         LastContinuityMode = continuityMode;
         Requirements.Add(requirement);
         return Task.FromResult(isAllowed(requirement)
-            ? BusinessGatewayAuthorizationResult.Allowed(
+            ? allowedResult ?? BusinessGatewayAuthorizationResult.Allowed(
                 "user-admin",
                 "user",
                 "admin",

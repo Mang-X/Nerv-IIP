@@ -948,7 +948,7 @@ jobs:
         shell: pwsh
         run: |
           ./scripts/run-redis-cap-test-lane.ps1 `
-            -MemberId demandplanning-sales-order-redis-cap,erp-operation-labor-redis-cap,quality-rework-receipt-redis-cap `
+            -AllActiveMembers `
             -DatabaseSuffix ${{ github.run_id }}_${{ github.run_attempt }} `
             -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/redis-cap `
             -SummaryPath artifacts/redis-cap-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
@@ -1972,7 +1972,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.impact-plan.outputs.frontend_validation_matrix) }}
-    timeout-minutes: 45
+    # A 级证据作业预算算术：显式步骤预算合计 71m，作业预算 80m，
+    # 留出 9m 给 Set up job 与 action 隐式后置步骤。
+    timeout-minutes: 80
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -2031,6 +2033,36 @@ jobs:
         if: matrix.run_build
         timeout-minutes: 20
         run: pnpm -C frontend --filter "${{ matrix.name }}" build
+
+      - name: Resolve Business Console browser
+        if: matrix.name == '@nerv-iip/business-console'
+        timeout-minutes: 3
+        shell: bash --noprofile --norc -euo pipefail {0}
+        run: |
+          browser_path="$(command -v google-chrome || true)"
+          if [ -z "$browser_path" ]; then
+            echo "GitHub runner 未提供 google-chrome，无法执行 Business Console 浏览器不变量。" >&2
+            exit 1
+          fi
+          echo "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=$browser_path" >> "$GITHUB_ENV"
+
+      - name: Test Business Console browser invariants
+        id: business-console-browser-tests
+        if: matrix.name == '@nerv-iip/business-console'
+        timeout-minutes: 10
+        env:
+          NERV_IIP_OUT_DIR: ${{ runner.temp }}/issue-2098-tooling-browser
+        run: pnpm -C frontend --filter @nerv-iip/business-console exec playwright test e2e/issue1974-tooling-visual.spec.ts --project=desktop --reporter=list
+
+      - name: Upload Business Console browser diagnostics
+        timeout-minutes: 5
+        if: failure() && steps.business-console-browser-tests.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: business-console-browser-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/issue-2098-tooling-browser
+          if-no-files-found: error
+          retention-days: 7
 
   frontend:
     name: Frontend Typecheck and Build
@@ -2128,17 +2160,22 @@ jobs:
     #
     # 这是运行器速度波动，不是某个 step 变慢：把 9.72m 与 7.10m 两次 run 逐 step 相除，
     # 比值在 1.26x–1.62x 之间均匀分布（中位 1.35x），没有任何 step 单独跳变。
-    # 也不是新增 step：声明 step 数自 2026-08-23 起一直是 31（API 报告的 35 含 4 个
-    # 隐式 step）。真正的原因是三个大头 step 在 2026-08-04/08-10 落地后，从未按它们
-    # 重新推导过 job 预算。
+    # 也不是新增 step：声明 step 数在 2026-08-23 至 2026-09-02 之间一直是 31（API 报告的
+    # 35 含 4 个隐式 step），#2863 加入权限码 producer 一致性的两个 step 后为 33。真正的
+    # 原因是三个大头 step 在 2026-08-04/08-10 落地后，从未按它们重新推导过 job 预算。
+    #
+    # 20m 在 #2863 之后仍然成立：新增的两个 step 是纯文件读取（本地实测检查器约 0.1s、
+    # 契约测试约 45s，后者的耗时几乎全是 11 次 pwsh 子进程启动），按新判据重新推导时
+    # 整 job 的观测最大值不因它们跨过 10m 量级。
     #
     # 旧判据「新增 step 若本地均在秒级完成，job 预算保持 10m」已作废：它只看单个 step
     # 是否秒级，从不重算总和，因此 31 个秒级 step 累加贴顶时它不会报警。
     # 新判据：增删 step 后按 main 上最近若干次 run 的**整 job** 观测最大值重新推导，
     # 取其约 2 倍；不要只看新 step 自身耗时。
     #
-    # step 预算合计 153m（31 个 step：3m checkout
-    # + 30 × 5m；2026-08-23 逐 step 实测求和），且仅为逐 step 上限。
+    # step 预算合计 163m（33 个 step：3m checkout
+    # + 32 × 5m；2026-08-23 逐 step 实测求和，2026-09-02 按 #2863 新增两个 step 重算），
+    # 且仅为逐 step 上限。
     # 合计超过 job 预算对层级 B 是正确的，也不是 scripts/lib/CiWorkflowBudgets.ps1
     # 执行的约束：「step 预算合计低于 job 预算」只适用于层级 A（会从 `if: always()`
     # step 发布证据、而该 step 会被 job 级超时取消的 job）。本 job 没有此类 step，
@@ -2326,6 +2363,23 @@ jobs:
         timeout-minutes: 5
         shell: pwsh
         run: ./scripts/verify-solution-configuration-membership.ps1
+
+      # #2863：`business.*` 权限码有两处手工 producer（IAM 的 NervIipSeedPermissions.All 与
+      # Gateway 的 BusinessGatewayPermissions），彼此从未比对过。单边漂移的后果不是命名不一致，
+      # 而是该端点对所有主体永久 403——IamPermissionCatalog.EnsureSeeded 硬校验，不在 All 里的码
+      # 无法授予任何角色。PR #2858 期间两个方向的单边回退实测各自全绿（1297/1297 与 141/141），
+      # 因为两侧各自内部自洽，且 Gateway 代理测试走一律放行的假授权客户端。
+      # 检查器读源码文本，因此它自己可以无声缴械（改个类名、清空数组，两个空集合比对照样"通过"）；
+      # 上面那一步守的就是这件事，用 fixture 钉住每一种缴械形态，并自带变异对照。
+      - name: Test permission code producer consistency checker
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/permission-code-producer-consistency.Tests.ps1
+
+      - name: Run permission code producer consistency check
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/verify-permission-code-producer-consistency.ps1
 
   ci-summary:
     name: CI Summary

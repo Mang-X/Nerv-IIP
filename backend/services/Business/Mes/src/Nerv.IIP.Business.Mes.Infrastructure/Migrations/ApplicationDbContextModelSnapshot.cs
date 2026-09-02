@@ -2668,10 +2668,22 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("handover_status")
                         .HasComment("Shift handover lifecycle status.");
 
+                    b.Property<string>("IncomingUserId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("incoming_user_id")
+                        .HasComment("Identity of the worker taking the shift over; written when the handover is accepted.");
+
+                    b.Property<string>("IncomingUserName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("incoming_user_name")
+                        .HasComment("Display name of the incoming worker captured at acceptance time.");
+
                     b.Property<int>("OpenIssueCount")
                         .HasColumnType("integer")
                         .HasColumnName("open_issue_count")
-                        .HasComment("Number of open issues captured when the handover was created.");
+                        .HasComment("Environment-level count of still-open shop-floor facts derived when the handover was created; not the number of shift_handover_open_issues rows.");
 
                     b.Property<string>("OrganizationId")
                         .IsRequired()
@@ -2679,6 +2691,18 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("organization_id")
                         .HasComment("Organization tenant id.");
+
+                    b.Property<string>("OutgoingUserId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("outgoing_user_id")
+                        .HasComment("Identity of the worker handing the shift over.");
+
+                    b.Property<string>("OutgoingUserName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("outgoing_user_name")
+                        .HasComment("Display name of the outgoing worker captured at handover time; snapshot so the read face needs no directory call.");
 
                     b.Property<string>("ShiftId")
                         .IsRequired()
@@ -2712,6 +2736,206 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                     b.ToTable("shift_handovers", "mes", t =>
                         {
                             t.HasComment("MES shift handover facts carrying open production, quality, material and equipment issues between teams.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverAttachment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Shift handover attachment id.");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("content_type")
+                        .HasComment("Content type captured at handover time.");
+
+                    b.Property<string>("FileId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("file_id")
+                        .HasComment("FileStorage file id; the handle a download grant is issued against.");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("file_name")
+                        .HasComment("File name captured at handover time.");
+
+                    b.Property<Guid>("ShiftHandoverId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("shift_handover_id")
+                        .HasComment("Owning shift handover aggregate id.");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("size_bytes")
+                        .HasComment("File size in bytes captured at handover time.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ShiftHandoverId")
+                        .HasDatabaseName("ix_shift_handover_attachments_handover");
+
+                    b.ToTable("shift_handover_attachments", "mes", t =>
+                        {
+                            t.HasComment("MES FileStorage attachments handed over with a shift; file name, content type and size are handover-time snapshots.");
+
+                            t.HasCheckConstraint("ck_shift_handover_attachments_size_bytes", "size_bytes >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverOpenIssue", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Shift handover open issue id.");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("category")
+                        .HasComment("Open issue category: Equipment or Quality.");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("description")
+                        .HasComment("What the incoming team has to deal with, in the outgoing team's own words.");
+
+                    b.Property<string>("ReferenceId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("reference_id")
+                        .HasComment("Optional business id of the originating fact such as a downtime event or defect record.");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("severity")
+                        .HasComment("Severity judged by the outgoing team: Low, Medium or High.");
+
+                    b.Property<Guid>("ShiftHandoverId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("shift_handover_id")
+                        .HasComment("Owning shift handover aggregate id.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ShiftHandoverId")
+                        .HasDatabaseName("ix_shift_handover_open_issues_handover");
+
+                    b.ToTable("shift_handover_open_issues", "mes", t =>
+                        {
+                            t.HasComment("MES equipment and quality problems handed over unresolved to the incoming team.");
+
+                            t.HasCheckConstraint("ck_shift_handover_open_issues_category", "category IN ('Equipment', 'Quality')");
+
+                            t.HasCheckConstraint("ck_shift_handover_open_issues_severity", "severity IN ('Low', 'Medium', 'High')");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverUnfinishedWorkOrder", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Shift handover unfinished work-order line id.");
+
+                    b.Property<decimal>("CompletedQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("completed_quantity")
+                        .HasComment("Work-order completed quantity captured at handover time.");
+
+                    b.Property<decimal>("PlannedQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("planned_quantity")
+                        .HasComment("Work-order planned quantity captured at handover time.");
+
+                    b.Property<Guid>("ShiftHandoverId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("shift_handover_id")
+                        .HasComment("Owning shift handover aggregate id.");
+
+                    b.Property<string>("WorkOrderId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("work_order_id")
+                        .HasComment("MES work-order business id carried over to the incoming team.");
+
+                    b.Property<string>("WorkOrderStatus")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("work_order_status")
+                        .HasComment("Work-order status captured at handover time.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ShiftHandoverId")
+                        .HasDatabaseName("ix_shift_handover_unfinished_work_orders_handover");
+
+                    b.ToTable("shift_handover_unfinished_work_orders", "mes", t =>
+                        {
+                            t.HasComment("MES unfinished work orders carried into the next shift, with progress frozen at handover time.");
+
+                            t.HasCheckConstraint("ck_shift_handover_unfinished_work_orders_progress", "planned_quantity > 0 AND completed_quantity >= 0 AND completed_quantity < planned_quantity");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverWipItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Shift handover WIP count line id.");
+
+                    b.Property<string>("OperationTaskId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("operation_task_id")
+                        .HasComment("Operation task the WIP sits on; null when counted at work-order granularity.");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("quantity")
+                        .HasComment("WIP quantity counted at handover time.");
+
+                    b.Property<Guid>("ShiftHandoverId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("shift_handover_id")
+                        .HasComment("Owning shift handover aggregate id.");
+
+                    b.Property<string>("WorkOrderId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("work_order_id")
+                        .HasComment("MES work-order business id the WIP quantity belongs to.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ShiftHandoverId")
+                        .HasDatabaseName("ix_shift_handover_wip_items_handover");
+
+                    b.ToTable("shift_handover_wip_items", "mes", t =>
+                        {
+                            t.HasComment("MES WIP count lines frozen at shift handover time; never recomputed from work orders.");
+
+                            t.HasCheckConstraint("ck_shift_handover_wip_items_quantity", "quantity >= 0");
                         });
                 });
 
@@ -3906,6 +4130,46 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasConstraintName("fk_quality_hold_contexts_work_orders");
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverAttachment", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandover", null)
+                        .WithMany("Attachments")
+                        .HasForeignKey("ShiftHandoverId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_shift_handover_attachments_handovers");
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverOpenIssue", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandover", null)
+                        .WithMany("OpenIssues")
+                        .HasForeignKey("ShiftHandoverId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_shift_handover_open_issues_handovers");
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverUnfinishedWorkOrder", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandover", null)
+                        .WithMany("UnfinishedWorkOrders")
+                        .HasForeignKey("ShiftHandoverId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_shift_handover_unfinished_work_orders_handovers");
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverWipItem", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandover", null)
+                        .WithMany("WipItems")
+                        .HasForeignKey("ShiftHandoverId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_shift_handover_wip_items_handovers");
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate.WorkOrder", b =>
                 {
                     b.OwnsOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate.SourcePlanReference", "SourcePlanReference", b1 =>
@@ -3993,6 +4257,17 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
             modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.TelemetryProductionReportCandidate", b =>
                 {
                     b.Navigation("Transitions");
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandover", b =>
+                {
+                    b.Navigation("Attachments");
+
+                    b.Navigation("OpenIssues");
+
+                    b.Navigation("UnfinishedWorkOrders");
+
+                    b.Navigation("WipItems");
                 });
 
             modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderTransformationAggregate.WorkOrderTransformation", b =>

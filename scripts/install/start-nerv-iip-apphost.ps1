@@ -67,6 +67,20 @@ param(
 
     [string] $MaterialIssueLineSideLocationCode,
 
+    [string] $BarcodeLabelPrinterId,
+
+    [string] $BarcodeLabelPrinterHost,
+
+    [int] $BarcodeLabelPrinterPort,
+
+    [int] $BarcodeLabelPrinterConnectTimeoutSeconds,
+
+    [int] $BarcodeLabelPrinterWriteTimeoutSeconds,
+
+    [int] $BarcodeLabelPrinterDpi,
+
+    [string] $BarcodeLabelPrinterCapabilities,
+
     [switch] $UsePostgreSql,
 
     [switch] $AutoMigrate
@@ -143,6 +157,34 @@ if ((-not [string]::Equals([string]($EnvironmentName), [string]("Development"), 
 
     if ([string]::IsNullOrWhiteSpace($CorsAllowedOrigins)) {
         throw "-CorsAllowedOrigins is required outside Development."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($BarcodeLabelPrinterId)) {
+        throw "-BarcodeLabelPrinterId is required outside Development."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($BarcodeLabelPrinterHost)) {
+        throw "-BarcodeLabelPrinterHost is required outside Development."
+    }
+
+    if ($BarcodeLabelPrinterPort -lt 1 -or $BarcodeLabelPrinterPort -gt 65535) {
+        throw "-BarcodeLabelPrinterPort must be between 1 and 65535 outside Development."
+    }
+
+    if ($BarcodeLabelPrinterConnectTimeoutSeconds -le 0) {
+        throw "-BarcodeLabelPrinterConnectTimeoutSeconds must be positive outside Development."
+    }
+
+    if ($BarcodeLabelPrinterWriteTimeoutSeconds -le 0) {
+        throw "-BarcodeLabelPrinterWriteTimeoutSeconds must be positive outside Development."
+    }
+
+    if ($BarcodeLabelPrinterDpi -notin @(203, 300, 600)) {
+        throw "-BarcodeLabelPrinterDpi must be 203, 300, or 600 outside Development."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($BarcodeLabelPrinterCapabilities)) {
+        throw "-BarcodeLabelPrinterCapabilities is required outside Development."
     }
 }
 
@@ -275,6 +317,34 @@ if (-not [string]::IsNullOrWhiteSpace($MaterialIssueSourceLocationCode)) {
 
 if (-not [string]::IsNullOrWhiteSpace($MaterialIssueLineSideLocationCode)) {
     $environment["MaterialIssue__LineSideLocationCode"] = $MaterialIssueLineSideLocationCode
+}
+
+if (-not [string]::IsNullOrWhiteSpace($BarcodeLabelPrinterId)) {
+    $environment["Parameters__barcode-label-printer-id"] = $BarcodeLabelPrinterId
+}
+
+if (-not [string]::IsNullOrWhiteSpace($BarcodeLabelPrinterHost)) {
+    $environment["Parameters__barcode-label-printer-host"] = $BarcodeLabelPrinterHost
+}
+
+if ($BarcodeLabelPrinterPort -gt 0) {
+    $environment["Parameters__barcode-label-printer-port"] = $BarcodeLabelPrinterPort.ToString([Globalization.CultureInfo]::InvariantCulture)
+}
+
+if ($BarcodeLabelPrinterConnectTimeoutSeconds -gt 0) {
+    $environment["Parameters__barcode-label-printer-connect-timeout-seconds"] = $BarcodeLabelPrinterConnectTimeoutSeconds.ToString([Globalization.CultureInfo]::InvariantCulture)
+}
+
+if ($BarcodeLabelPrinterWriteTimeoutSeconds -gt 0) {
+    $environment["Parameters__barcode-label-printer-write-timeout-seconds"] = $BarcodeLabelPrinterWriteTimeoutSeconds.ToString([Globalization.CultureInfo]::InvariantCulture)
+}
+
+if ($BarcodeLabelPrinterDpi -gt 0) {
+    $environment["Parameters__barcode-label-printer-dpi"] = $BarcodeLabelPrinterDpi.ToString([Globalization.CultureInfo]::InvariantCulture)
+}
+
+if (-not [string]::IsNullOrWhiteSpace($BarcodeLabelPrinterCapabilities)) {
+    $environment["Parameters__barcode-label-printer-capabilities"] = $BarcodeLabelPrinterCapabilities
 }
 
 $appHostProject = "infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj"

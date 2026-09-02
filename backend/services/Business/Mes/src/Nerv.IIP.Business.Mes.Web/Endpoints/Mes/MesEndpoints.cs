@@ -517,6 +517,11 @@ public sealed record ListScheduleResultsRequest(
     int Skip = 0,
     int Take = 20);
 
+public sealed record GetShiftHandoverRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string HandoverId);
+
 public sealed record CreateShiftHandoverRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -524,13 +529,21 @@ public sealed record CreateShiftHandoverRequest(
     string TeamId,
     DateTimeOffset? HandoverAtUtc,
     string? IdempotencyKey = null,
-    string? TeamName = null);
+    string? TeamName = null,
+    string? OutgoingUserId = null,
+    string? OutgoingUserName = null,
+    IReadOnlyCollection<ShiftHandoverWipItemInput>? WipItems = null,
+    IReadOnlyCollection<ShiftHandoverUnfinishedWorkOrderInput>? UnfinishedWorkOrders = null,
+    IReadOnlyCollection<ShiftHandoverOpenIssueInput>? OpenIssues = null,
+    IReadOnlyCollection<ShiftHandoverAttachmentInput>? Attachments = null);
 
 public sealed record AcceptShiftHandoverRequest(
     string OrganizationId,
     string EnvironmentId,
     [property: RouteParam] string HandoverId,
-    DateTimeOffset? AcceptedAtUtc);
+    DateTimeOffset? AcceptedAtUtc,
+    string? IncomingUserId = null,
+    string? IncomingUserName = null);
 
 public sealed record TraceabilityWorkOrderRequest(
     string OrganizationId,
@@ -1723,6 +1736,20 @@ public sealed class ListShiftHandoversEndpoint(ISender sender)
     }
 }
 
+public sealed class GetShiftHandoverEndpoint(ISender sender)
+    : MesEndpoint<GetShiftHandoverRequest, MesShiftHandoverDetail>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<GetShiftHandoverEndpoint>());
+
+    public override async Task HandleAsync(GetShiftHandoverRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(
+            new GetShiftHandoverQuery(req.OrganizationId, req.EnvironmentId, req.HandoverId),
+            ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
 public sealed class CreateShiftHandoverEndpoint(ISender sender, TimeProvider timeProvider)
     : MesEndpoint<CreateShiftHandoverRequest, MesAcceptedResponse>
 {
@@ -1737,7 +1764,13 @@ public sealed class CreateShiftHandoverEndpoint(ISender sender, TimeProvider tim
             req.TeamId,
             req.HandoverAtUtc ?? timeProvider.GetUtcNow(),
             req.IdempotencyKey,
-            req.TeamName), ct);
+            req.TeamName,
+            req.OutgoingUserId,
+            req.OutgoingUserName,
+            req.WipItems,
+            req.UnfinishedWorkOrders,
+            req.OpenIssues,
+            req.Attachments), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -1753,7 +1786,9 @@ public sealed class AcceptShiftHandoverEndpoint(ISender sender, TimeProvider tim
             req.OrganizationId,
             req.EnvironmentId,
             req.HandoverId,
-            req.AcceptedAtUtc ?? timeProvider.GetUtcNow()), ct);
+            req.AcceptedAtUtc ?? timeProvider.GetUtcNow(),
+            req.IncomingUserId,
+            req.IncomingUserName), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -1884,6 +1919,7 @@ public static class MesEndpointContracts
         new(typeof(RecordDowntimeEventEndpoint), "POST", "/api/business/v1/mes/downtime-events", MesPermissionCodes.DowntimeManage, "recordBusinessMesDowntimeEvent"),
         new(typeof(ConfirmDowntimeRecoveryEndpoint), "POST", "/api/business/v1/mes/downtime-events/{downtimeEventId}/recover", MesPermissionCodes.DowntimeManage, "confirmBusinessMesDowntimeRecovery"),
         new(typeof(ListShiftHandoversEndpoint), "GET", "/api/business/v1/mes/shift-handovers", MesPermissionCodes.HandoversRead, "listBusinessMesShiftHandovers"),
+        new(typeof(GetShiftHandoverEndpoint), "GET", "/api/business/v1/mes/shift-handovers/{handoverId}", MesPermissionCodes.HandoversRead, "getBusinessMesShiftHandover"),
         new(typeof(CreateShiftHandoverEndpoint), "POST", "/api/business/v1/mes/shift-handovers", MesPermissionCodes.HandoversManage, "createBusinessMesShiftHandover"),
         new(typeof(AcceptShiftHandoverEndpoint), "POST", "/api/business/v1/mes/shift-handovers/{handoverId}/accept", MesPermissionCodes.HandoversManage, "acceptBusinessMesShiftHandover"),
         new(typeof(GetWorkOrderTraceabilityEndpoint), "GET", "/api/business/v1/mes/traceability/work-orders/{workOrderId}", MesPermissionCodes.TraceabilityRead, "getBusinessMesWorkOrderTraceability"),

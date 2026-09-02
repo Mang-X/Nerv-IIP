@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using NetCorePal.Extensions.Primitives;
+using NetCorePal.Extensions.Repository.EntityFrameworkCore;
 using Nerv.IIP.Business.BarcodeLabel.Domain;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
@@ -12,7 +13,7 @@ using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
 namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure;
 
 public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, IMediator mediator)
-    : AppDbContextBase(options, mediator), IPostgreSqlCapDataStorage
+    : AppDbContextBase(options, mediator), IPostgreSqlCapDataStorage, ITransactionUnitOfWork
 {
     private static readonly UniqueConflictMapping[] ScanRecordUniqueConflicts =
     [
@@ -76,6 +77,9 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<ScanRecord> ScanRecords => Set<ScanRecord>();
 
     public DbSet<EpcisEvent> EpcisEvents => Set<EpcisEvent>();
+
+    Task ITransactionUnitOfWork.RollbackAsync(CancellationToken cancellationToken) =>
+        base.RollbackAsync(CancellationToken.None);
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

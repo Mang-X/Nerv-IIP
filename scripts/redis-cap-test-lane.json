@@ -54,6 +54,23 @@
       ]
     },
     {
+      "id": "mes-rework-receipt-producer-redis-cap",
+      "service": "Mes",
+      "tier": "core",
+      "status": "active",
+      "project": "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/Nerv.IIP.Business.Mes.Web.Tests.csproj",
+      "filter": "FullyQualifiedName=Nerv.IIP.Business.Mes.Web.Tests.MesReworkReceiptRedisCapTransportTests.Concurrent_distinct_events_for_one_ncr_emit_one_created_receipt_after_both_deliveries_succeed",
+      "databasePrefix": "nerv_iip_mes",
+      "capVersionPrefix": "n3010mes",
+      "diagnosticSchemas": [
+        "mes",
+        "cap"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Business.Mes.Web.Tests.MesReworkReceiptRedisCapTransportTests.Concurrent_distinct_events_for_one_ncr_emit_one_created_receipt_after_both_deliveries_succeed"
+      ]
+    },
+    {
       "id": "mes-asset-unavailable-redis-cap",
       "service": "Mes",
       "tier": "core",
