@@ -247,6 +247,9 @@ describe('MES 列表页读面失败时落到表格错误态（#2854）', () => {
       const retryButtons = wrapper
         .findAll('button')
         .filter((button) => button.text().includes('重新加载'))
+      // 这行不只是防手滑：`handlers` 与间谍派生自同一份 `retryHandlers`，名单漏一个名字
+      // 时两边一起漏、点击与断言都少一张表，只有「页面实渲染的按钮数」还站在名单外面。
+      // 删掉它 + 名单缩水 = 16 条全绿而实际只检验了两张表（实测存活）。别当冗余删。
       expect(retryButtons).toHaveLength(handlers.length)
       for (const button of retryButtons) await button.trigger('click')
       await flushPromises()
