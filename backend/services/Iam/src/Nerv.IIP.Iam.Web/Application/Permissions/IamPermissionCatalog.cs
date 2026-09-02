@@ -114,7 +114,27 @@ public static class IamPermissionCatalog
         ["business.maintenance.work-orders.manage"] = "Create, update and complete maintenance work orders.",
         ["business.maintenance.plans.read"] = "Read maintenance plans and inspections.",
         ["business.maintenance.plans.manage"] = "Create and manage maintenance plans and inspections.",
-        ["business.maintenance.downtime-reasons.read"] = "Read the maintenance downtime reason reference vocabulary."
+        ["business.maintenance.downtime-reasons.read"] = "Read the maintenance downtime reason reference vocabulary.",
+        ["business.engineering.documents.read"] = "Read engineering documents and current SOP documents.",
+        ["business.engineering.documents.manage"] = "Register engineering documents and publish SOP documents.",
+        ["business.engineering.items.read"] = "Read engineering item revisions.",
+        ["business.engineering.items.manage"] = "Create engineering item revisions.",
+        ["business.engineering.boms.read"] = "Read engineering and manufacturing BOMs, explosions, where-used and BOM diffs.",
+        ["business.engineering.boms.manage"] = "Release engineering and manufacturing BOMs.",
+        ["business.engineering.routings.read"] = "Read engineering routings.",
+        ["business.engineering.routings.manage"] = "Release engineering routings.",
+        ["business.engineering.standard-operations.read"] = "Read standard operations.",
+        ["business.engineering.standard-operations.manage"] = "Create, update and archive standard operations.",
+        ["business.engineering.changes.read"] = "Read engineering changes and preview change impact.",
+        ["business.engineering.changes.manage"] = "Release, reschedule and cancel scheduled engineering changes.",
+        ["business.engineering.production-versions.read"] = "Read production versions and their routing snapshots.",
+        ["business.engineering.production-versions.manage"] = "Create, update and archive production versions.",
+        ["business.masterdata.products.read"] = "Read product categories.",
+        ["business.masterdata.products.manage"] = "Create SKUs, units of measure and UOM conversions, and manage product categories.",
+        ["business.masterdata.partners.read"] = "Read business partner credit.",
+        ["business.masterdata.partners.manage"] = "Create business partners.",
+        ["business.masterdata.resources.read"] = "Read organizational and operational master data such as workers, teams, skills, tooling assets and code rules.",
+        ["business.masterdata.resources.manage"] = "Create and manage organizational and operational master data such as departments, teams, workshops, workers, shifts, work centers, device and tooling assets, skills and code rules."
     };
 
     private static readonly HashSet<string> SeedCodes = NervIipSeedPermissions.All.ToHashSet(StringComparer.Ordinal);
