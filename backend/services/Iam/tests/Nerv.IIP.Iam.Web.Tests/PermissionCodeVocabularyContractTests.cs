@@ -160,6 +160,27 @@ public sealed class PermissionCodeVocabularyContractTests
         Assert.Equal(seedCodes, contractCodes);
     }
 
+    /// <summary>
+    /// 结构性闭合：反射面必须等于该类型的**全部**公开静态字段。
+    /// 否则 <c>public static readonly string</c>、<c>public const int</c> 之类的写法
+    /// 会被 <c>PublicStringConstantsOf</c> 的筛选静默跳过，上面两条断言都看不见它。
+    /// </summary>
+    [Fact]
+    public void Contracts_permission_code_table_exposes_nothing_outside_the_reflected_surface()
+    {
+        var allPublicStaticFields = typeof(NervIipPermissionCodes)
+            .GetFields(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly)
+            .Select(field => field.Name)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+        var reflectedSurface = PublicStringConstantsOf(typeof(NervIipPermissionCodes))
+            .Keys
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(allPublicStaticFields, reflectedSurface);
+    }
+
     private static IReadOnlyDictionary<string, string> PublicStringConstantsOf(Type type)
     {
         return type
