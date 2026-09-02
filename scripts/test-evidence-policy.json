@@ -170,6 +170,12 @@
       "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run Scheduling PostgreSQL profile tests\\.\";$"
     },
     {
+      "id": "scheduling-postgres-redis",
+      "sourcePath": "backend/services/Business/Scheduling/tests/Nerv.IIP.Business.Scheduling.Web.Tests/AssetUnavailableRedisCapTransportTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES and NERV_IIP_TEST_REDIS to run Scheduling PostgreSQL \\+ Redis CAP tests\\.\";$"
+    },
+    {
       "id": "wms-task-action",
       "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WarehouseTaskActionConcurrencyPostgresTests.cs",
       "sourceOrdinal": 1,
@@ -915,6 +921,25 @@
         "Nerv.IIP.Business.Scheduling.Web.Tests.ScheduleReleaseGovernancePostgresProfileTests.Migration_normalizes_historical_duplicate_releases_with_exact_timestamp_tie"
       ],
       "expectedRuntimeTestCount": 6
+    },
+    {
+      "id": "scheduling-postgres-redis",
+      "sourceId": "scheduling-postgres-redis",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Scheduling\\.Web\\.Tests\\.AssetUnavailableRedisCapTransportTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES and NERV_IIP_TEST_REDIS to run Scheduling PostgreSQL \\+ Redis CAP tests\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "redis-cap",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableRedisCapTransportTests.Redis_cap_poison_exhausts_to_dlq_and_replay_preserves_identity_without_duplicate_claim"
+      ],
+      "expectedRuntimeTestCount": 1
     },
     {
       "id": "barcodelabel-postgres-profile",
