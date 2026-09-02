@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
-using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.TemplateAssetRetirements;
+using Nerv.IIP.Business.BarcodeLabel.Infrastructure.Concurrency;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.LabelTemplates;
 
@@ -30,13 +30,14 @@ public sealed class CreateOrUpdateLabelTemplateCommandValidator : AbstractValida
     }
 }
 
-public sealed class CreateOrUpdateLabelTemplateCommandHandler(ApplicationDbContext dbContext)
+public sealed class CreateOrUpdateLabelTemplateCommandHandler(
+    ApplicationDbContext dbContext,
+    ITemplateAssetRetirementFence retirementFence)
     : ICommandHandler<CreateOrUpdateLabelTemplateCommand, LabelTemplateId>
 {
     public async Task<LabelTemplateId> Handle(CreateOrUpdateLabelTemplateCommand request, CancellationToken cancellationToken)
     {
-        await TemplateAssetRetirementFence.AcquireAsync(
-            dbContext,
+        await retirementFence.AcquireAsync(
             request.OrganizationId,
             request.EnvironmentId,
             request.TemplateFileId,

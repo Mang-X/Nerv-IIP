@@ -94,17 +94,11 @@ public sealed class TemplateAssetRetirementDecision : Entity<TemplateAssetRetire
         LabelTemplateId labelTemplateId,
         string templateFileId,
         string templateAssetSha256,
-        string requesterSubject,
-        string permission,
-        string reason,
-        string correlationId) =>
+        string reason) =>
         OrganizationId == organizationId
         && EnvironmentId == environmentId
         && LabelTemplateId == labelTemplateId
         && TemplateFileId == templateFileId
         && TemplateAssetSha256 == templateAssetSha256
-        && RequesterSubject == requesterSubject
-        && Permission == permission
-        && Reason == reason
-        && CorrelationId == correlationId;
+        && Reason == reason;
 }

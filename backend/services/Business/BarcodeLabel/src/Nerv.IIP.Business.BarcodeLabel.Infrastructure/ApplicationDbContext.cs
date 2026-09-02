@@ -147,7 +147,17 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
                     return true;
                 }
             }
+        }
 
+        return TryMapTemplateAssetRetirementUniqueConflict(exception, out knownException);
+    }
+
+    private bool TryMapTemplateAssetRetirementUniqueConflict(
+        DbUpdateException exception,
+        out KnownException knownException)
+    {
+        foreach (var current in EnumerateExceptions(exception))
+        {
             if (IsUniqueConflict(current, RetirementDecisionFileConflict))
             {
                 knownException = new KnownException("模板资产已存在退役裁决，不能创建第二条记录。", exception);

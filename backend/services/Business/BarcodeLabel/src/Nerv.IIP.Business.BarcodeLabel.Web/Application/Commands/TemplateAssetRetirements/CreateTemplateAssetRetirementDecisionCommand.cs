@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.TemplateAssetRetirementDecisionAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Infrastructure.Concurrency;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.TemplateAssetRetirements;
 
@@ -34,7 +36,9 @@ public sealed class CreateTemplateAssetRetirementDecisionCommandValidator
     }
 }
 
-public sealed class CreateTemplateAssetRetirementDecisionCommandHandler(ApplicationDbContext dbContext)
+public sealed class CreateTemplateAssetRetirementDecisionCommandHandler(
+    ApplicationDbContext dbContext,
+    ITemplateAssetRetirementFence retirementFence)
     : ICommandHandler<CreateTemplateAssetRetirementDecisionCommand, TemplateAssetRetirementDecisionId>
 {
     public async Task<TemplateAssetRetirementDecisionId> Handle(
@@ -47,8 +51,7 @@ public sealed class CreateTemplateAssetRetirementDecisionCommandHandler(Applicat
             return EnsureSameRequest(replay, request);
         }
 
-        await TemplateAssetRetirementFence.AcquireAsync(
-            dbContext,
+        await retirementFence.AcquireAsync(
             request.OrganizationId,
             request.EnvironmentId,
             request.TemplateFileId,
@@ -79,9 +82,12 @@ public sealed class CreateTemplateAssetRetirementDecisionCommandHandler(Applicat
         var currentReferences = await dbContext.LabelTemplates
             .Where(x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
-                && x.TemplateFileId == request.TemplateFileId
-                && x.RetiredCurrentFileByDecisionId == null)
+                && x.TemplateFileId == request.TemplateFileId)
             .ToListAsync(cancellationToken);
+        if (currentReferences.Any(x => x.RetiredCurrentFileByDecisionId is not null))
+        {
+            throw new KnownException("模板资产引用事实不完整，退役已安全拒绝。");
+        }
         if (currentReferences.Any(x => x.Id != template.Id || x.Status == LabelTemplate.ActiveStatus))
         {
             throw new KnownException("模板资产仍可被标签模板引用，不能退役。");
@@ -97,40 +103,23 @@ public sealed class CreateTemplateAssetRetirementDecisionCommandHandler(Applicat
             .Where(x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId)
             .ToListAsync(cancellationToken);
-        var ambiguousPartialSnapshot = scopedBatches.Any(batch =>
-            !batch.HasCompleteReplaySnapshot
-            && (batch.TemplateFileIdSnapshot is not null
-                || batch.TemplateAssetSha256 is not null
-                || batch.VariableSchemaJsonSnapshot is not null
-                || batch.BarcodeTypeSnapshot is not null
-                || batch.RendererContractVersion is not null)
-            && (batch.TemplateFileIdSnapshot is null
-                || batch.TemplateFileIdSnapshot == request.TemplateFileId));
-        var matchingBatches = scopedBatches
-            .Where(batch => batch.TemplateFileIdSnapshot == request.TemplateFileId)
+        var batchDispositions = scopedBatches
+            .Select(batch => batch.GetTemplateAssetReferenceDisposition(
+                template.Id,
+                request.TemplateFileId,
+                request.TemplateAssetSha256))
             .ToArray();
-        var unknownBatchFact = ambiguousPartialSnapshot || matchingBatches.Any(batch =>
-            !batch.HasCompleteReplaySnapshot
-            || batch.LabelTemplateId != template.Id
-            || batch.TemplateAssetSha256 != request.TemplateAssetSha256
-            || batch.Status is not ("pending" or "failed" or "sent-to-printer" or "printed" or "delivery-unknown")
-            || (batch.Status is "sent-to-printer" or "printed"
-                && (batch.Items.Count == 0
-                    || batch.Items.Any(item => item.Status is not ("created" or "printed" or "reprinted" or "voided" or "consumed")))));
-        if (unknownBatchFact)
+        if (batchDispositions.Contains(TemplateAssetReferenceDisposition.Unknown))
         {
             throw new KnownException("模板资产引用事实不完整，退役已安全拒绝。");
         }
 
-        if (matchingBatches.Any(batch => batch.Status == "delivery-unknown"))
+        if (batchDispositions.Contains(TemplateAssetReferenceDisposition.Hold))
         {
             throw new KnownException("模板资产存在未封闭的交付事实，退役已安全拒绝。");
         }
 
-        if (matchingBatches.Any(batch =>
-                batch.Status is "pending" or "failed"
-                || (batch.Status is "sent-to-printer" or "printed"
-                    && batch.Items.Any(item => item.Status is not ("voided" or "consumed")))))
+        if (batchDispositions.Contains(TemplateAssetReferenceDisposition.Reachable))
         {
             throw new KnownException("模板资产仍可被打印批次引用，不能退役。");
         }
@@ -175,10 +164,7 @@ public sealed class CreateTemplateAssetRetirementDecisionCommandHandler(Applicat
                 request.LabelTemplateId,
                 request.TemplateFileId,
                 request.TemplateAssetSha256,
-                request.RequesterSubject,
-                request.Permission,
-                request.Reason,
-                request.CorrelationId))
+                request.Reason))
         {
             throw new KnownException("模板资产退役幂等键与已有记录不一致，请检查提交内容。");
         }

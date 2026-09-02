@@ -3,12 +3,21 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 
-namespace Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.TemplateAssetRetirements;
+namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Concurrency;
 
-internal static class TemplateAssetRetirementFence
+public interface ITemplateAssetRetirementFence
 {
-    public static async Task AcquireAsync(
-        ApplicationDbContext dbContext,
+    Task AcquireAsync(
+        string organizationId,
+        string environmentId,
+        string fileId,
+        CancellationToken cancellationToken);
+}
+
+internal sealed class PostgresTemplateAssetRetirementFence(ApplicationDbContext dbContext)
+    : ITemplateAssetRetirementFence
+{
+    public async Task AcquireAsync(
         string organizationId,
         string environmentId,
         string fileId,
