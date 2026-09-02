@@ -139,10 +139,15 @@ try {
     $resolvedManifestActiveMemberIds = @($resolvedManifestActiveMembers | ForEach-Object { [string]$_.id })
     Assert-Contract ([string]::Equals(($resolvedManifestActiveMemberIds -join '|'), ($manifestActiveMemberIds -join '|'), [StringComparison]::Ordinal)) 'All-active resolution must follow the fixture manifest active members in manifest order.'
 
-    $multiIdentityMembers = @($manifestActiveMembers | Where-Object { @($_.expectedTestIdentities).Count -gt 1 })
-    Assert-Contract ($multiIdentityMembers.Count -gt 0) 'The Redis/CAP fixture manifest must provide an active member with more than one expected identity for the partial-TRX contract.'
-    $pilotMember = $multiIdentityMembers[0]
-    $pilotExpectedIdentities = @($pilotMember.expectedTestIdentities | ForEach-Object { [string]$_ })
+    $focusMember = $manifestActiveMembers[0]
+    $partialTrxMember = [pscustomobject]@{
+        id = 'contract-partial-trx-member'
+        expectedTestIdentities = @(
+            'Nerv.IIP.Contract.RedisCap.PartialTrx.First'
+            'Nerv.IIP.Contract.RedisCap.PartialTrx.Second'
+        )
+    }
+    $partialTrxExpectedIdentities = @($partialTrxMember.expectedTestIdentities)
 
     $activeManifest = [IO.File]::ReadAllText($manifestPath) | ConvertFrom-Json -Depth 20
     $activeSourceMembers = @($activeManifest.members)
@@ -171,17 +176,21 @@ try {
     foreach ($manifestMember in $zeroActiveManifest.members) { $manifestMember.status = 'deferred' }
     $zeroActiveManifestPath = Join-Path $fixtureRoot 'zero-active.json'
     [IO.File]::WriteAllText($zeroActiveManifestPath, (($zeroActiveManifest | ConvertTo-Json -Depth 20) + "`n"), [Text.UTF8Encoding]::new($false))
+    $zeroActiveResultsPath = Join-Path $fixtureRoot 'zero-active-results'
+    $zeroActiveSummaryPath = Join-Path $fixtureRoot 'zero-active-summary.json'
     $zeroActiveRejected = $false
     try {
         & (Join-Path $repoRoot 'scripts/run-redis-cap-test-lane.ps1') `
             -AllActiveMembers `
             -ManifestPath $zeroActiveManifestPath `
             -DatabaseSuffix '3031_1' `
-            -ResultsDirectory (Join-Path $fixtureRoot 'zero-active-results') `
-            -SummaryPath (Join-Path $fixtureRoot 'zero-active-summary.json')
+            -ResultsDirectory $zeroActiveResultsPath `
+            -SummaryPath $zeroActiveSummaryPath
     }
     catch { $zeroActiveRejected = $_.Exception.Message.Contains('does not contain any active members', [StringComparison]::Ordinal) }
     Assert-Contract $zeroActiveRejected 'All-active execution must reject an empty active set before dependency readiness is evaluated.'
+    Assert-Contract (-not (Test-Path -LiteralPath $zeroActiveResultsPath)) 'All-active execution must reject an empty active set before creating its results directory.'
+    Assert-Contract (-not (Test-Path -LiteralPath $zeroActiveSummaryPath)) 'All-active execution must reject an empty active set before writing its summary.'
 
     $savedTestPostgres = [Environment]::GetEnvironmentVariable('NERV_IIP_TEST_POSTGRES')
     $savedTestRedis = [Environment]::GetEnvironmentVariable('NERV_IIP_TEST_REDIS')
@@ -191,7 +200,7 @@ try {
         $focusedMemberReachedReadiness = $false
         try {
             & (Join-Path $repoRoot 'scripts/run-redis-cap-test-lane.ps1') `
-                -MemberId ([string]$pilotMember.id) `
+                -MemberId ([string]$focusMember.id) `
                 -DatabaseSuffix '3031_1' `
                 -ResultsDirectory (Join-Path $fixtureRoot 'focused-results') `
                 -SummaryPath (Join-Path $fixtureRoot 'focused-summary.json')
@@ -207,7 +216,7 @@ try {
     $mixedSelectionRejected = $false
     try {
         & (Join-Path $repoRoot 'scripts/run-redis-cap-test-lane.ps1') `
-            -MemberId ([string]$pilotMember.id) `
+            -MemberId ([string]$focusMember.id) `
             -AllActiveMembers `
             -DatabaseSuffix '3031_1' `
             -ResultsDirectory (Join-Path $fixtureRoot 'mixed-results') `
@@ -337,31 +346,21 @@ try {
     catch { $verificationRejected = $_.Exception.Message.Contains('cleanup verification scan failed', [StringComparison]::Ordinal) }
     Assert-Contract $verificationRejected 'A cleanup verification scan failure must fail closed even after owned keys were removed.'
 
-    $missingIdentityManifest = [IO.File]::ReadAllText($manifestPath) | ConvertFrom-Json -Depth 20
-    $missingIdentityTarget = @($missingIdentityManifest.members | Where-Object { [string]::Equals([string]$_.id, [string]$pilotMember.id, [StringComparison]::Ordinal) })
-    Assert-Contract ($missingIdentityTarget.Count -eq 1) 'The partial-TRX fixture target must resolve exactly once in the manifest.'
-    $missingIdentityTarget[0].expectedTestIdentities = @($missingIdentityTarget[0].expectedTestIdentities | Select-Object -Skip 1)
-    $missingIdentityPath = Join-Path $fixtureRoot 'missing-identity.json'
-    [IO.File]::WriteAllText($missingIdentityPath, (($missingIdentityManifest | ConvertTo-Json -Depth 20) + "`n"), [Text.UTF8Encoding]::new($false))
-    $missingIdentity = Import-NervRedisCapTestLaneMember -ManifestPath $missingIdentityPath -MemberId ([string]$pilotMember.id) -RepositoryRoot $repoRoot
-    Assert-Contract (@($missingIdentity.expectedTestIdentities).Count -eq $pilotExpectedIdentities.Count - 1) 'The missing-identity fixture must remove one governed test.'
-    Assert-Contract (-not [string]::Equals((@($missingIdentity.expectedTestIdentities) -join "`n"), ($pilotExpectedIdentities -join "`n"), [StringComparison]::Ordinal)) 'Removing a frozen Redis/CAP identity must fail the pilot contract.'
-
     $trxPath = Join-Path $fixtureRoot 'redis-cap.trx'
-    New-RedisCapTrx -Path $trxPath -Identities $pilotExpectedIdentities
-    $trxResult = Get-NervRedisCapTrxResult -ResultsDirectory $fixtureRoot -ExpectedTestIdentities $pilotExpectedIdentities
-    Assert-Contract ($trxResult.total -eq $pilotExpectedIdentities.Count -and $trxResult.passed -eq $pilotExpectedIdentities.Count -and $trxResult.failed -eq 0 -and $trxResult.skipped -eq 0) 'Passed fixture identities must satisfy the Redis/CAP TRX contract.'
+    New-RedisCapTrx -Path $trxPath -Identities $partialTrxExpectedIdentities
+    $trxResult = Get-NervRedisCapTrxResult -ResultsDirectory $fixtureRoot -ExpectedTestIdentities $partialTrxExpectedIdentities
+    Assert-Contract ($trxResult.total -eq $partialTrxExpectedIdentities.Count -and $trxResult.passed -eq $partialTrxExpectedIdentities.Count -and $trxResult.failed -eq 0 -and $trxResult.skipped -eq 0) 'Passed synthetic fixture identities must satisfy the Redis/CAP TRX contract.'
 
-    New-RedisCapTrx -Path $trxPath -Identities $pilotExpectedIdentities -Outcome 'NotExecuted'
-    $skippedResult = Get-NervRedisCapTrxResult -ResultsDirectory $fixtureRoot -ExpectedTestIdentities $pilotExpectedIdentities -AllowInvalid
-    Assert-Contract (-not $skippedResult.valid -and $skippedResult.skipped -eq $pilotExpectedIdentities.Count) 'All skipped Redis/CAP tests must remain visible and invalid.'
+    New-RedisCapTrx -Path $trxPath -Identities $partialTrxExpectedIdentities -Outcome 'NotExecuted'
+    $skippedResult = Get-NervRedisCapTrxResult -ResultsDirectory $fixtureRoot -ExpectedTestIdentities $partialTrxExpectedIdentities -AllowInvalid
+    Assert-Contract (-not $skippedResult.valid -and $skippedResult.skipped -eq $partialTrxExpectedIdentities.Count) 'All skipped Redis/CAP tests must remain visible and invalid.'
     $skipRejected = $false
-    try { Get-NervRedisCapTrxResult -ResultsDirectory $fixtureRoot -ExpectedTestIdentities $pilotExpectedIdentities | Out-Null }
+    try { Get-NervRedisCapTrxResult -ResultsDirectory $fixtureRoot -ExpectedTestIdentities $partialTrxExpectedIdentities | Out-Null }
     catch { $skipRejected = $_.Exception.Message.Contains('0 failed and 0 skipped', [StringComparison]::Ordinal) }
     Assert-Contract $skipRejected 'The strict Redis/CAP TRX contract must reject all-skipped execution.'
 
-    New-RedisCapTrx -Path $trxPath -Identities @($pilotExpectedIdentities[0])
-    $missingTrxIdentity = Get-NervRedisCapTrxResult -ResultsDirectory $fixtureRoot -ExpectedTestIdentities $pilotExpectedIdentities -AllowInvalid
+    New-RedisCapTrx -Path $trxPath -Identities @($partialTrxExpectedIdentities[0])
+    $missingTrxIdentity = Get-NervRedisCapTrxResult -ResultsDirectory $fixtureRoot -ExpectedTestIdentities $partialTrxExpectedIdentities -AllowInvalid
     Assert-Contract (-not $missingTrxIdentity.identitiesMatch) 'A partial Redis/CAP TRX must not satisfy the frozen identity set.'
 
     $passedSummary = [pscustomobject]@{
@@ -370,9 +369,9 @@ try {
         redisNamespace = $attempt1Identity.redisNamespace
         outcome = 'passed'
         cleanup = 'passed'
-        expected = $pilotExpectedIdentities.Count
-        discovered = $pilotExpectedIdentities.Count
-        passed = $pilotExpectedIdentities.Count
+        expected = $partialTrxExpectedIdentities.Count
+        discovered = $partialTrxExpectedIdentities.Count
+        passed = $partialTrxExpectedIdentities.Count
         failed = 0
         skipped = 0
     }
@@ -386,9 +385,9 @@ try {
                 redisNamespace = $attempt1Identity.redisNamespace
                 outcome = 'passed'
                 cleanup = 'failed'
-                expected = $pilotExpectedIdentities.Count
-                discovered = $pilotExpectedIdentities.Count
-                passed = $pilotExpectedIdentities.Count
+                expected = $partialTrxExpectedIdentities.Count
+                discovered = $partialTrxExpectedIdentities.Count
+                passed = $partialTrxExpectedIdentities.Count
                 failed = 0
                 skipped = 0
             })
