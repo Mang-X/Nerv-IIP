@@ -140,14 +140,10 @@ try {
     Assert-Contract ([string]::Equals(($resolvedManifestActiveMemberIds -join '|'), ($manifestActiveMemberIds -join '|'), [StringComparison]::Ordinal)) 'All-active resolution must follow the fixture manifest active members in manifest order.'
 
     $focusMember = $manifestActiveMembers[0]
-    $partialTrxMember = [pscustomobject]@{
-        id = 'contract-partial-trx-member'
-        expectedTestIdentities = @(
-            'Nerv.IIP.Contract.RedisCap.PartialTrx.First'
-            'Nerv.IIP.Contract.RedisCap.PartialTrx.Second'
-        )
-    }
-    $partialTrxExpectedIdentities = @($partialTrxMember.expectedTestIdentities)
+    [string[]]$partialTrxExpectedIdentities = @(
+        'Nerv.IIP.Contract.RedisCap.PartialTrx.First'
+        'Nerv.IIP.Contract.RedisCap.PartialTrx.Second'
+    )
 
     $activeManifest = [IO.File]::ReadAllText($manifestPath) | ConvertFrom-Json -Depth 20
     $activeSourceMembers = @($activeManifest.members)
