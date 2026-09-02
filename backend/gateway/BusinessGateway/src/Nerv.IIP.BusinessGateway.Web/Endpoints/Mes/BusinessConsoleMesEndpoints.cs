@@ -2487,7 +2487,8 @@ public sealed class CreateBusinessConsoleMesShiftHandoverEndpoint(
                 outgoingUserName,
                 request.WipItems,
                 request.UnfinishedWorkOrders,
-                request.OpenIssues),
+                request.OpenIssues,
+                request.Attachments),
             cancellationToken);
     }
 }

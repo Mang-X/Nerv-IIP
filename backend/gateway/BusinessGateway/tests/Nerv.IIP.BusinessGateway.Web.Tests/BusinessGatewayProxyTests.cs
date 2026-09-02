@@ -4653,6 +4653,10 @@ public sealed class BusinessGatewayProxyTests
                 teamName = "甲班",
                 outgoingUserId = "user-B",
                 outgoingUserName = "他人",
+                attachments = new[]
+                {
+                    new { fileId = "file-sh-1", fileName = "photo.jpg", contentType = "image/jpeg", sizeBytes = 2048L },
+                },
             });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -4667,6 +4671,9 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("user-admin", masterData.LastListWorkersRequest!.UserId);
         Assert.Equal("TEAM-A", mes.LastCreateShiftHandoverRequest.TeamId);
         Assert.Equal("甲班", mes.LastCreateShiftHandoverRequest.TeamName);
+        // 附件是调用方提供的事实，与身份字段不同，必须原样转发给 MES，不能在 Gateway 掉包或丢失。
+        var attachment = Assert.Single(mes.LastCreateShiftHandoverRequest.Attachments!);
+        Assert.Equal(("file-sh-1", "photo.jpg", "image/jpeg", 2048L), (attachment.FileId, attachment.FileName, attachment.ContentType, attachment.SizeBytes));
     }
 
     [Fact]
@@ -19280,6 +19287,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
             "张三",
             null,
             null,
+            [],
             [],
             [],
             []));
