@@ -73,6 +73,8 @@ attempt；单项 reprint 会覆盖整批 dispatch 的这些列，`label_print_it
 | `label_print_item_id` | reprint 必填、dispatch 必须为空；`(label_print_item_id, label_print_batch_id)` 复合 FK 指向 item 同序候选键，强制 item 属于该 batch。 |
 | `operation` | 封闭值 `dispatch` / `reprint`。 |
 | `printer_id` | 受控逻辑 printer ID，不保存 endpoint。 |
+| `initiator_kind` | 固定为 `trusted-internal-service`，由服务端写入；不接受请求体或客户端 header 自报。 |
+| `correlation_id` | 可空；只从既有可信 request context 复制，不接受客户端覆盖。没有可信值时保持空。 |
 | `status` | `started` / `failed` / `delivery-unknown` / `sent-to-printer`。不允许 `printed`。 |
 | `print_job_id` | `sent-to-printer` 与 `delivery-unknown` 必填，其余为空。 |
 | `failure_reason` | `failed` 与 `delivery-unknown` 必填；`started` / `sent-to-printer` 为空；只存安全摘要。 |
@@ -102,6 +104,9 @@ PostgreSQL CHECK 拒绝：
 reprint 查询所需的 `(label_print_item_id, started_at_utc desc, id desc)`，不为尚不存在的报表
 增加 printer/status 全局索引。
 
+候选不增加 `actor_subject`：当前 internal Bearer 只能证明可信调用服务，不能证明终端用户；不得用
+header、用户名或 Gateway 推测值填补不存在的 actor 事实。
+
 attempt 允许且只允许 `started -> failed|delivery-unknown|sent-to-printer` 一次转换，封闭后不可
 改写。正常返回路径在命令的同一数据库事务内，取消路径在 recorder 的同一个独立数据库事务内，
 同时完成 attempt terminal 条件更新与 batch 最近尝试投影；任一步失败都回滚这两个同库事实。为防止
@@ -118,12 +123,17 @@ attempt 允许且只允许 `started -> failed|delivery-unknown|sent-to-printer` 
 | 全部写入并 half-close | `sent-to-printer` | 保持当前 dispatch/reprint 投影 | 不自动；不得解释为 `printed` |
 | 同一 HTTP 请求被人工再次提交 | 新 attempt ID | 重新执行既有守卫 | 不去重为旧 attempt；当前 reprint 没有 request idempotency 合同 |
 | 进程在 attempt 预登记后、封闭前退出 | 保留 `started` | 不据此虚构 batch/item 终态 | 禁止自动重放；在 owner 裁决前只展示“结果未封闭，按可能已发送处理” |
-| terminal 或 batch 最近投影任一同库写入失败 | 同一事务回滚，attempt 保持 `started` | batch 最近投影保持原值 | 禁止自动重放；不得形成只有一侧成功的半应用 |
+| terminal 或 batch 最近投影任一同库写入失败 | 同一事务回滚，attempt 保持 `started` | batch 最近投影保持原值 | 稳定非成功响应携带 attempt ID，明确禁止自动重试并要求人工核验；结构化错误、metric 与 alert 必须可观察 |
 
 最后两行只保留同步 TCP 真正不可消除的“attempt 预登记已提交—外部发送—terminal 与 batch 投影
 原子提交”窗口，不主动制造两个同库 terminal 事实之间的窗口。引入同库 outbox 仍不能让数据库事务
 包住外部 TCP 副作用；printer-agent ack 可以缩小/重定义窗口，但属于 #2065 明确排除的另一套架构。
 本候选不以更多重试或状态掩盖该事实。
+
+该失败闭合是已裁决合同：attempt 预登记失败严格禁止调用 printer；printer 已运行但 terminal 事务失败
+时，系统不能判断外部副作用是否发生，必须按可能已发送处理。调用方取消仍传播原取消；若取消路径的
+recorder 失败，则另行记录结构化错误、metric 与 alert，不能用 recorder 错误替换原取消，也不能自动
+重放。恢复依赖操作员核验现场，而不是新增一条“确认”持久化事实。
 
 ### 人工确认
 
@@ -154,8 +164,11 @@ GET /api/business/internal/v1/barcodes/print-batches/{printBatchId}/transport-at
 
 - organization/environment 必填，查询以完整 scope + batch 定位；错误 scope 返回安全的未找到结果。
 - `sequenceNo` 只筛 reprint；省略时返回 batch dispatch 与 reprint 的统一时间线。
-- 响应只返回 attempt ID、operation、sequenceNo、printerId、status、job、failure 摘要和时间；不返回
-  ZPL、标签值、endpoint 或原始异常。
+- 响应只返回 attempt ID、operation、sequenceNo、printerId、status、job、failure 摘要、时间、
+  `initiatorKind` 与可空 `correlationId`；不返回 ZPL、标签值、endpoint、原始异常或虚构的终端用户名。
+- `initiatorKind` 必须读回服务端写入的 `trusted-internal-service`；`correlationId` 只读回可信 request
+  context 的原值，没有可信值时为 null。Console 只能呈现“受信服务请求”和 correlation，不能把它
+  解释为终端用户归因。
 - BusinessGateway 若公开 facade，仍只透传认证 scope，不持久化 attempt，也不直接访问 BarcodeLabel 表。
 - 冻结候选使用新的 `business.barcodes.transport-attempts.read`，不复用
   `business.barcodes.print`。理由是 attempt 是独立 retention 的长期失败与操作轨迹，执行打印权不自动
@@ -177,10 +190,15 @@ retention 策略/周期。因此 attempt 即使与 batch 同属 BarcodeLabel own
 | 显式独立审计策略 | 可以按真实合规、容量和运维需求选择单周期、多阶段或明确的无限期保留 | 需要 owner 明确保留期限、删除授权与执行方式 | 唯一推荐候选；本 spike 不预设双周期、legal hold 或 worker。 |
 | 跟随 batch 生命周期或 cascade | 实现表面简单 | 与 ADR 0003 冲突，业务删除会提前删除审计 | 拒绝；若未来确需采用，必须先有新 ADR 明确取代 ADR 0003 对应条款。 |
 
-冻结的结果不变量只有：策略与 batch retention 独立、禁止 cascade、按 scope 隔离；若 owner 选择自动
-清理，则清理必须可观察、失败可恢复，删除权限不能等同于 `business.barcodes.print`。当前没有足够
-事实决定期限、是否需要 legal hold、是否需要多阶段归档或采用 worker/人工运维入口，因此不能在
-Schema PR 中顺手固化这些机械，也不能等待或复用 batch retention。
+已裁决采用复合 FK + `Restrict`：batch/item 的最短物理存续期不得短于所有仍引用它们的 attempt，
+父记录清理必须排在 attempt 按独立策略到期/删除之后；有 retained attempt 时删除父记录必须由数据库
+拒绝。不得改成 tombstone、弱 FK 或无 FK。该裁决不新建 retention worker，也不虚构当前不存在的
+batch/item 删除 API；未来若引入父记录删除或 retention API，必须在实施前复评授权与顺序。
+
+attempt 的具体保留期限、删除授权与执行方式仍必须由 owner 在 retention 子项前明确；若选择自动清理，
+清理必须可观察、失败可恢复，删除权限不能等同于 `business.barcodes.print`。当前没有足够事实决定期限、
+是否需要 legal hold、是否需要多阶段归档或采用 worker/人工运维入口，因此不能在 Schema PR 中顺手
+固化这些机械。
 
 ### 历史数据
 
@@ -196,35 +214,50 @@ Schema PR 中顺手固化这些机械，也不能等待或复用 batch retention
 `transport_attempt_history_started_at_utc` 来精确表达每批覆盖起点，属于 owner 裁决；不允许硬编码某个
 发布日后按 `CreatedAtUtc` 猜测完整性。
 
-## 必须由 owner 裁决的 6 项
+## Owner 裁决状态
 
-1. **审计保证等级：** attempt 预登记失败时是否严格禁止 transport；terminal 落库失败时 HTTP、告警与
-   `started` 行如何处理。推荐“预登记失败则零 transport；未封闭行禁止自动重放”。
+1. **审计保证等级（已裁决）：** 预登记失败严格零 transport；terminal 原子事务失败返回携带 attempt ID
+   的稳定非成功响应，明确禁止自动重试并要求人工核验；attempt 保持 `started`、batch 投影不变，且必须
+   产生结构化错误、metric 与 alert。取消路径保留原取消，recorder 失败另行观察。
 2. **历史覆盖表达：** 只在 API 文档声明 post-cutover，还是增加 batch 级覆盖起点。推荐显式覆盖起点，
    避免空历史被读成“从未打印”。
 3. **读取授权批准：** 确认采用已冻结候选 `business.barcodes.transport-attempts.read`，并批准哪些角色显式获得；
    不再把“复用 print 或新建 permission”的二选一留给实现者。
-4. **操作人归因：** 只记录 trusted service/correlation，还是扩展 Gateway -> BarcodeLabel 的终端 actor
-   传递合同。当前 internal Bearer 不能证明终端操作人，禁止反向猜测。
-5. **Retention：** 明确独立审计保留期限（可以是显式无限期）、删除授权与执行方式；只有真实合规需求
-   要求时才增加多阶段归档或 legal hold，没有裁决前不得承诺自动清理。
+4. **操作人归因（已裁决）：** 只记录服务端固定的 `trusted-internal-service` 与可信 request context
+   中可空的 correlation；不新增终端 actor 合同，不允许客户端自报或推测用户名。
+5. **Retention 关系（已裁决）：** 复合 FK + `Restrict`；父记录存续期不短于仍引用它的 attempt，清理
+   顺序先 attempt 后 parent，不引入 tombstone/弱 FK。具体 attempt 期限、删除授权与执行方式仍是
+   retention 子项的局部门禁，不在 Schema 子项内预设 worker、legal hold 或多阶段归档。
 6. **人工确认：** 是否继续完全不落库，还是另立“现场核验”产品合同。推荐本轮保持不落库；若新增，
    必须单独修订 #2065，且不得把人工陈述改写成物理设备 ack。
 
 ## 建议实施拆解
 
+### #2065 修订前置
+
+任何生产子项开始前，#2065 的 owner 修订必须明确接纳 attempt ledger，并逐字保留以下已裁决边界：
+
+- 预登记失败零 transport；terminal 同库事务失败保持 `started` 与原 batch 投影，稳定失败响应携带
+  attempt ID、禁止自动重试、要求人工核验，并有结构化错误、metric 与 alert；
+- provenance 只到 `trusted-internal-service` + 可信 correlation，不增加或伪造终端 actor；
+- attempt 使用复合 FK + `Restrict`，父记录存续期不短于引用 attempt，不使用 tombstone/弱 FK；
+- 不改变 #2065 的首字节边界、`delivery-unknown`、不把 transport 结果解释为物理出纸，也不引入
+  printer-agent、outbox、自动重试或持久化人工确认。
+
+该修订是 attempt 能力进入生产的前置，不是以本报告暗改 #2065；owner 2/3/6 仍只门控各自 seam。
+
 | 顺序 | 建议子项 | Gate | 独立验收 | 依赖 |
 | ---: | --- | --- | --- | --- |
-| 1 | BarcodeLabel attempt 实体、迁移、复合归属约束、最小索引、独立预登记、原子 terminal + batch 投影 recorder 与真实 PostgreSQL crash-window/并发测试 | `scope:M` / 高 | 每次 printer 调用一条 attempt；预登记失败时 printer 零调用；operation/item 表与 status/job/failure/completed 表分别以封闭笛卡尔组合做 raw INSERT/UPDATE，表内格成功、未知值和表外每格均被 PostgreSQL 拒绝；跨 scope batch 与错 batch item 的原始插入被拒绝；两个受控并发完成者恰好一个成功，败者不能覆盖 terminal/job/failure/time 或 batch 投影；删除任一 CHECK、漏掉任一矩阵格、删除 scope/关联约束或把条件更新改为无条件更新的等价错误变异必须判红；既有 batch/item 状态机不变 | #2065 attempt 规格修订已批准；owner 1、2、4；[`validity.md`](../../governance/testing/validity.md) |
-| 2 | BarcodeLabel scoped internal 分页查询、覆盖语义、OpenAPI 与安全投影测试 | `scope:M` / 中 | 错 scope 安全未找到；分页稳定；无 raw ZPL/endpoint/异常泄漏；历史空集合不冒充完整 | 1 合并，owner 2、3 |
-| 3 | BusinessGateway 只读 facade、权限目录、generated client；若 owner 4 选择终端 actor 归因，同票闭合认证 actor 透传 | `scope:M` / 中 | 认证 scope/permission 失败关闭；只调用 scoped internal；codegen 无漂移；若包含 actor，则缺失/伪造 actor 失败关闭 | 2 合并，owner 3；owner 4 的结果已由子项 1 前置冻结 |
-| 4 | Business Console 单批 attempt 时间线 | `scope:M` / 中 | dispatch/reprint 可区分；unknown 与不完整 `started` 明示；不显示“已打印” | 3 合并 |
-| 5 | 独立审计 retention 落地；仅在 owner 选择自动清理时实现对应清理入口与真实 PostgreSQL 证据 | `scope:M` / 按裁决复评 | retention 与 batch 独立、scope 隔离、禁止 cascade；若有自动清理则失败可恢复且 attempt 清理不删除 batch | owner 5；不依赖或复用 batch retention |
+| 1 | BarcodeLabel attempt 实体、迁移、复合归属约束、最小索引、独立预登记、原子 terminal + batch 投影 recorder 与真实 PostgreSQL crash-window/并发测试 | `scope:M` / 高 | 每次 printer 调用一条 attempt；预登记失败时 printer 零调用；terminal 事务失败时返回携带 attempt ID 的稳定非成功结果、禁止自动重试并要求人工核验，结构化错误/metric/alert 可观察，数据库读回 `started` 且 batch 投影不变；raw INSERT 参数化覆盖两张封闭真值表，表内格成功、未知值与表外 nullness 组合被拒绝；UPDATE 只验证 `started -> terminal`，terminal 再终结必须失败且 batch 不变；每个独立 CHECK、复合 FK 与 `status = started` 条件更新至少一个等价错误变异判红；跨 scope/wrong-item 插入及 retained attempt 下删除 parent 被 PostgreSQL 拒绝；可信 provenance/correlation 可读回，客户端自报/覆盖失败，缺失 correlation 保持 null；既有 batch/item 状态机不变 | #2065 attempt 规格修订已批准；owner 1/4/5 已冻结，owner 2；[`validity.md`](../../governance/testing/validity.md) |
+| 2 | BarcodeLabel scoped internal 分页查询、覆盖语义、OpenAPI 与安全投影测试 | `scope:M` / 中 | 错 scope 安全未找到；分页稳定；无 raw ZPL/endpoint/异常泄漏；返回可信服务 provenance 与可空 correlation，不返回或推测终端 actor；历史空集合不冒充完整 | 1 合并，owner 2、3 |
+| 3 | BusinessGateway 只读 facade、权限目录、generated client | `scope:M` / 中 | 认证 scope/permission 失败关闭；只调用 scoped internal；codegen 无漂移；不接受客户端伪造 provenance/correlation，不新增终端 actor 透传合同 | 2 合并，owner 3 |
+| 4 | Business Console 单批 attempt 时间线 | `scope:M` / 中 | dispatch/reprint 可区分；unknown 与不完整 `started` 明示；显示“受信服务请求”与可用 correlation，不显示虚构用户名或“已打印” | 3 合并 |
+| 5 | 独立审计 retention 落地；仅在 owner 选择自动清理时实现对应清理入口与真实 PostgreSQL 证据 | `scope:M` / 按裁决复评 | retention 与 batch 独立、scope 隔离、复合 FK `Restrict`；retained attempt 时 parent 删除失败，attempt 到期/删除后未来 parent 清理才可继续；若有自动清理则失败可恢复且 attempt 清理不删除 batch | owner 5 已冻结关系；具体期限、删除授权与执行方式仍待局部批准 |
 | 6 | 现场核验/恢复授权 spike（仅当 owner 选择新增） | `scope:spike` / 高 | 先修订 #2065；冻结 actor、结论、授权和状态机后再拆生产票 | owner 4、6 |
 
 所有生产子项都以“#2065 的 attempt 边界修订已批准”为共同前置，除此之外按表中局部门控：owner
-1/2/4 前置于会受其字段与提交语义影响的 Schema 子项 1；owner 3 前置读面/Gateway；owner 5 只前置
-retention 子项 5；owner 6 只决定是否启动可选子项 6。子项 1 不应同时承担 API/UI/retention，子项 2
+1/4/5 的 Schema 关系已冻结，owner 2 前置于历史覆盖字段选择；owner 3 前置读面/Gateway；owner 5 的
+具体期限/执行方式只前置 retention 子项 5；owner 6 只决定是否启动可选子项 6。子项 1 不应同时承担 API/UI/retention，子项 2
 不应顺手开放跨租户 printer 报表。这样不会用无关裁决串行化独立工作，也不会把质量轴问题扩张为
 printer-agent 或通用审计平台。
 
