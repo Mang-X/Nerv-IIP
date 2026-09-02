@@ -46,6 +46,7 @@ public static class IamPermissionCatalog
         ["business.inventory.movements.create"] = "Create inventory stock movements.",
         ["business.inventory.ledger.read"] = "Read inventory ledger balances and reports.",
         ["business.inventory.counts.manage"] = "Create and complete inventory counts.",
+        ["business.inventory.expired-stock.override"] = "Override the expiry block when issuing or reserving expired stock.",
         ["business.mes.foundation.read"] = "Read MES foundation readiness.",
         ["business.mes.overview.read"] = "Read MES execution overview.",
         ["business.mes.plans.read"] = "Read MES production plans and readiness.",
