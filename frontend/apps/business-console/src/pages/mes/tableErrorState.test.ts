@@ -64,7 +64,13 @@ const retryHandlers = vi.hoisted(
     }) as Record<string, string[]>,
 )
 
-const retrySpies = vi.hoisted(() => ({}) as Record<string, ReturnType<typeof vi.fn>>)
+const retrySpies = vi.hoisted(() =>
+  Object.fromEntries(
+    Object.values(retryHandlers)
+      .flat()
+      .map((key) => [key, vi.fn()]),
+  ),
+)
 
 vi.mock('@/composables/useBusinessMes', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/composables/useBusinessMes')>()
@@ -75,7 +81,7 @@ vi.mock('@/composables/useBusinessMes', async (importOriginal) => {
     patched[hook] = (...args: unknown[]) => ({
       ...original(...args),
       ...Object.fromEntries(errorKeys.map((key) => [key, computed(() => readFailure)])),
-      ...Object.fromEntries(refreshKeys.map((key) => [key, (retrySpies[key] ??= vi.fn())])),
+      ...Object.fromEntries(refreshKeys.map((key) => [key, retrySpies[key]])),
     })
   }
   return patched
@@ -188,9 +194,10 @@ const pages: Array<{
   {
     // 工单详情三张子表读三个面，三条空态文案互不相同：任一条绑定被摘掉，
     // 对应那句空态就会重新出现，断言随即变红。
+    // 末条是用料齐套卡：页面级错误条已删，卡片不许再把用户指向「上方」那个不存在的控件。
     name: '工单详情',
     page: WorkOrderDetailPage,
-    absentText: ['暂无工序任务', '暂无用料行', '本工单还没有领料单'],
+    absentText: ['暂无工序任务', '暂无用料行', '本工单还没有领料单', '先解决上方读取阻塞'],
   },
 ]
 
@@ -224,18 +231,18 @@ describe('MES 列表页读面失败时落到表格错误态（#2854）', () => {
 
   // 本 PR 新接的 4 张表：按钮点得动才算接上（`@retry` 丢了按钮照样渲染）。
   const retryPages: Array<{ name: string; page: Component; handlers: string[] }> = [
-    { name: '生产准备检查', page: FoundationPage, handlers: ['refreshReadiness'] },
     {
-      name: '工单详情',
-      page: WorkOrderDetailPage,
-      handlers: ['refreshDetail', 'refreshMaterialReadiness', 'refreshMaterialIssueRequests'],
+      name: '生产准备检查',
+      page: FoundationPage,
+      handlers: retryHandlers.useMesFoundationReadiness,
     },
+    { name: '工单详情', page: WorkOrderDetailPage, handlers: retryHandlers.useMesWorkOrderDetail },
   ]
 
   for (const { name, page, handlers } of retryPages) {
     it(`${name}：错误态点「重新加载」真的触发重试`, async () => {
       const wrapper = await mountPage(page)
-      for (const key of handlers) retrySpies[key]?.mockClear()
+      for (const key of handlers) retrySpies[key].mockClear()
 
       const retryButtons = wrapper
         .findAll('button')
