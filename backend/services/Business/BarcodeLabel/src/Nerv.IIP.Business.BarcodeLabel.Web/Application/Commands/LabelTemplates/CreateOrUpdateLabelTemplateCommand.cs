@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.TemplateAssetRetirements;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.LabelTemplates;
 
@@ -34,6 +35,21 @@ public sealed class CreateOrUpdateLabelTemplateCommandHandler(ApplicationDbConte
 {
     public async Task<LabelTemplateId> Handle(CreateOrUpdateLabelTemplateCommand request, CancellationToken cancellationToken)
     {
+        await TemplateAssetRetirementFence.AcquireAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.TemplateFileId,
+            cancellationToken);
+        if (await dbContext.TemplateAssetRetirementDecisions.AnyAsync(
+                x => x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId
+                    && x.TemplateFileId == request.TemplateFileId,
+                cancellationToken))
+        {
+            throw new KnownException("模板资产已经退役，不能重新用于标签模板。");
+        }
+
         var existing = await dbContext.LabelTemplates.SingleOrDefaultAsync(x =>
             x.OrganizationId == request.OrganizationId
             && x.EnvironmentId == request.EnvironmentId

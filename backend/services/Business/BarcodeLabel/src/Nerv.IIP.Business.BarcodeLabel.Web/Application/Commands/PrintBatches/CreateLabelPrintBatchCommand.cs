@@ -3,6 +3,7 @@ using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.Printing;
+using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.TemplateAssetRetirements;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.PrintBatches;
 
@@ -54,6 +55,21 @@ public sealed class CreateLabelPrintBatchCommandHandler(
                     && x.Status == LabelTemplate.ActiveStatus,
                 cancellationToken)
             ?? throw new KnownException($"未找到当前组织和环境内可用的标签模板，模板 ID = {request.LabelTemplateId}。");
+
+        await TemplateAssetRetirementFence.AcquireAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            template.TemplateFileId,
+            cancellationToken);
+        if (await dbContext.TemplateAssetRetirementDecisions.AnyAsync(
+                x => x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId
+                    && x.TemplateFileId == template.TemplateFileId,
+                cancellationToken))
+        {
+            throw new KnownException("模板资产已经退役，不能冻结到新打印批次。");
+        }
 
         LabelPrintBatch candidate;
         try
