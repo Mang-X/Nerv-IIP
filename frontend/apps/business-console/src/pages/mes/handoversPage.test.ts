@@ -57,7 +57,7 @@ const state = vi.hoisted(() => ({
     handoverStatus: 'open',
     openIssueCount: 5,
     createdAtUtc: '2026-08-01T08:00:00Z',
-    acceptedAtUtc: null,
+    acceptedAtUtc: null as string | null,
     outgoingUserId: 'user-emp-1042' as string | null,
     outgoingUserName: '李海生' as string | null,
     incomingUserId: null as string | null,
@@ -95,6 +95,10 @@ const state = vi.hoisted(() => ({
 const detailFace = vi.hoisted(() => ({
   handoverId: undefined as unknown as Ref<string>,
   error: undefined as unknown as Ref<unknown>,
+  // `data` 与 `error` 在 pinia-colada 里是分别透出的：重取失败时旧 `data` 仍在。
+  // 上一版 mock 写成 `handoverId && !error` 才给 detail，从结构上排除了「有数据且有错误」
+  // 这个真实可达的组合（第 2 轮 S-F），于是撤回 `v-else-if` 的依据无人守。两者拆开。
+  hasDetail: undefined as unknown as Ref<boolean>,
 }))
 
 const mutations = vi.hoisted(() => ({
@@ -112,6 +116,7 @@ vi.mock('@/composables/useBusinessMes', () => {
   // 用例要断言页面确实把选中的交接单 id 写进去了，所以这个 ref 由测试持有。
   detailFace.handoverId = ref('')
   detailFace.error = ref()
+  detailFace.hasDetail = ref(true)
   return {
     useMesShiftHandovers: () => ({
       filters: reactive(state.filters),
@@ -120,9 +125,8 @@ vi.mock('@/composables/useBusinessMes', () => {
       handoversPending: ref(false),
       handoversTotal: ref(1),
       detailHandoverId: detailFace.handoverId,
-      // 取数失败时读面给不出 detail——这正是 B1 那条失败路径的形状。
       handoverDetail: computed(() =>
-        detailFace.handoverId.value && !detailFace.error.value ? state.detail : undefined,
+        detailFace.handoverId.value && detailFace.hasDetail.value ? state.detail : undefined,
       ),
       handoverDetailError: detailFace.error,
       handoverDetailPending: ref(false),
@@ -262,6 +266,18 @@ function acceptedResponse() {
   }
 }
 
+/**
+ * 把抽屉抬头读成「字段名 → 屏上取值」的映射。
+ *
+ * 用整段 `text()` 做 `toContain` 抓不到栅格错位——8 格的值都在同一段文本里，把「班次」
+ * 和「班组」两格互换，`toContain` 仍然全过（第 2 轮 B3 的 P9 实测）。所以断言必须
+ * 按 `<dt>` 定位到它自己的 `<dd>`。
+ */
+function readDetailSummary(wrapper: ReturnType<typeof mountPage>) {
+  const cells = wrapper.get('[data-testid="handover-detail"]').findAll('dl > div')
+  return Object.fromEntries(cells.map((cell) => [cell.get('dt').text(), cell.get('dd').text()]))
+}
+
 function mountPage() {
   return mount(HandoversPage, { global: { stubs } })
 }
@@ -285,8 +301,12 @@ describe('MES handovers read-face guard', () => {
     state.row.unfinishedWorkOrderCount = state.detail.unfinishedWorkOrders.length
     state.row.openIssueDetailCount = state.detail.openIssues.length
     state.detail.outgoingUserName = '李海生'
+    state.detail.handoverStatus = 'open'
+    state.detail.acceptedAtUtc = null
+    state.detail.incomingUserName = null
     detailFace.handoverId.value = ''
     detailFace.error.value = undefined
+    detailFace.hasDetail.value = true
     mutations.createShiftHandover.mockReset()
     mutations.acceptShiftHandover.mockReset()
     mutations.refreshHandovers.mockReset().mockResolvedValue(undefined)
@@ -600,6 +620,63 @@ describe('MES handovers read-face guard', () => {
     expect(wrapper.find('[data-testid="accept-handover-form"]').exists()).toBe(true)
   })
 
+  // 第 2 轮 B3：抬头 8 格此前只有「状态」与「交班人」有覆盖，其余六格零鉴别力——
+  // 把「班次」「班组」两格互换（8 格栅格最典型的复制粘贴错位）仍 25/25 全绿。
+  // 这条按 <dt> 定位 <dd>，把每一格放的是哪个字段钉死。
+  it('抽屉抬头逐格取值正确，不是把八个字段堆在同一段文本里', async () => {
+    const wrapper = mountPage()
+    await wrapper.get('[data-testid="handovers-table"] > div').trigger('click')
+    await flushPromises()
+
+    const summary = readDetailSummary(wrapper)
+
+    expect(summary['班次']).toBe('早班')
+    expect(summary['班组']).toBe('总装早班一组')
+    expect(summary['交班人']).toBe('李海生')
+    expect(summary['接班人']).toBe('待接班')
+    // 「未结事项」是环境级派生总数（5），不是本单登记的遗留问题条数（2）——这一格若误取
+    // openIssues.length 就该红。
+    expect(summary['未结事项']).toBe(String(state.detail.openIssueCount))
+    expect(summary['未结事项']).not.toBe(String(state.detail.openIssues.length))
+    // 时间两格互换时：创建时间会变成「尚未接班」、接班时间会带上日期，两侧都被抓。
+    expect(summary['创建时间']).toContain('2026')
+    expect(summary['接班时间']).toBe('尚未接班')
+  })
+
+  it('已接班的交接单在抬头给出接班人与接班时间', async () => {
+    state.detail.handoverStatus = 'accepted'
+    state.detail.acceptedAtUtc = '2026-08-01T16:05:00Z'
+    state.detail.incomingUserName = '周敏'
+    const wrapper = mountPage()
+    await wrapper.get('[data-testid="handovers-table"] > div').trigger('click')
+    await flushPromises()
+
+    const summary = readDetailSummary(wrapper)
+    expect(summary['状态']).toBe('已接班')
+    expect(summary['接班人']).toBe('周敏')
+    expect(summary['接班时间']).toContain('2026')
+    expect(summary['接班时间']).not.toBe('尚未接班')
+  })
+
+  // 第 2 轮 S-F：pinia-colada 在重取失败时保留旧 data，于是「有数据且有错误」真实可达。
+  // 正文段用独立 v-if（而不是跟在错误横幅后面的 v-else-if），为的就是这一刻仍把读到过的
+  // 真实明细留在屏上、只补一条横幅——这是我上轮撤回 v-else-if 时的依据，这里把它钉住。
+  it('缓存命中后重取失败时，保留已读到的明细并加一条错误横幅', async () => {
+    const wrapper = mountPage()
+    await wrapper.get('[data-testid="handovers-table"] > div').trigger('click')
+    await flushPromises()
+
+    detailFace.error.value = new Error('detail refetch failed')
+    await flushPromises()
+
+    const detail = wrapper.get('[data-testid="handover-detail"]')
+    expect(detail.get('[role="alert"]').text()).toContain('交接明细加载失败')
+    // 旧数据仍在，且不得退化成「交班时点没有登记」那套空态说法。
+    expect(detail.text()).toContain('WO-2026-0731')
+    expect(readDetailSummary(wrapper)['班组']).toBe('总装早班一组')
+    expect(detail.text()).not.toContain('交班时点没有登记在制清点')
+  })
+
   // 第 1 轮 B2：这条分支此前从未被检验——`beforeEach` 恒置 outgoingUserName，23 条用例里
   // 没有一条让它为空，于是「拿 id 兜底」注入进去 23/23 全绿。网关目录解不出显示名时
   // name 为 null 而 id 仍在，是可达状态；用户 id 属工程标识符，两个呈现面都不许印出来。
@@ -624,6 +701,7 @@ describe('MES handovers read-face guard', () => {
   // 列表行自己的计数三方矛盾。失败态只该留横幅。
   it('详情取数失败时只留错误横幅，不谎报「交班时点没有登记」', async () => {
     detailFace.error.value = new Error('detail read face unavailable')
+    detailFace.hasDetail.value = false
     const wrapper = mountPage()
 
     await wrapper.get('[data-testid="handovers-table"] > div').trigger('click')

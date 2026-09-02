@@ -285,7 +285,10 @@ const openIssueColumns: NvDataTableColumn<BusinessConsoleMesShiftHandoverOpenIss
 /**
  * 三类明细的读面都没有 id 字段（WipItem / UnfinishedWorkOrder / OpenIssue 只有业务属性），
  * 拿属性拼键就会撞——同类别同描述的两条遗留问题、同工单同工序的两条在制清点都是合法数据。
- * 这三张表不排序、不选择、不分页，行位置就是这一屏内唯一可靠的身份。
+ *
+ * 这里查的是**对象引用**在本数组里的位置，成立条件只有一条：同一数组内各元素引用互不相同
+ * （读面反序列化出来的对象天然满足）。所以给某列加排序也不必重做这个键——`NvDataTable`
+ * 排序后透传的仍是同一批对象引用。真正会坏的是换成「渲染时的下标」那类与数据脱钩的写法。
  */
 function rowPositionKey<T>(rows: readonly T[]) {
   return (row: T) => String(rows.indexOf(row))
