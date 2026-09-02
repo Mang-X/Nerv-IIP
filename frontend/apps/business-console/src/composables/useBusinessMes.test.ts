@@ -360,6 +360,10 @@ vi.mock('@nerv-iip/api-client', () => ({
     key: [{ _id: 'listBusinessConsoleMesShiftHandovers' }],
     query: vi.fn(),
   })),
+  getBusinessConsoleMesShiftHandoverQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'getBusinessConsoleMesShiftHandover' }],
+    query: vi.fn(),
+  })),
   listBusinessConsoleMesWorkOrdersQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleMesWorkOrders' }],
     query: vi.fn(),

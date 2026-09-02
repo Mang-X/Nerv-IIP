@@ -1,3 +1,4 @@
+import type { Ref } from 'vue'
 import { computed, reactive, ref } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -32,8 +33,59 @@ const state = vi.hoisted(() => ({
     handoverStatus: 'open',
     openIssueCount: 1,
     createdAtUtc: '2026-08-01T08:00:00Z',
+    acceptedAtUtc: undefined as string | undefined,
+    // 网关注入的交班人身份：id 是工程标识符、只有 displayName 允许上屏。
+    outgoingUserId: 'user-emp-1042',
+    outgoingUserName: '李海生' as string | undefined,
+    incomingUserId: undefined as string | undefined,
+    incomingUserName: undefined as string | undefined,
+    wipItemCount: 3,
+    unfinishedWorkOrderCount: 2,
+    openIssueDetailCount: 1,
+  },
+  detail: {
+    handoverId: 'handover-001',
+    shiftId: 'EARLY',
+    teamId: 'TEAM-A',
+    teamName: '总装早班一组',
+    handoverStatus: 'open',
+    openIssueCount: 1,
+    createdAtUtc: '2026-08-01T08:00:00Z',
+    acceptedAtUtc: null,
+    outgoingUserId: 'user-emp-1042',
+    outgoingUserName: '李海生',
+    incomingUserId: null,
+    incomingUserName: null,
+    wipItems: [
+      { workOrderId: 'WO-2026-0731', operationTaskId: 'OT-2026-0731-30', quantity: 24 },
+      { workOrderId: 'WO-2026-0733', operationTaskId: null, quantity: 6 },
+    ],
+    unfinishedWorkOrders: [
+      {
+        workOrderId: 'WO-2026-0728',
+        plannedQuantity: 200,
+        completedQuantity: 148,
+        workOrderStatus: 'started',
+      },
+    ],
+    openIssues: [
+      {
+        category: 'Equipment',
+        severity: 'High',
+        description: '总装线 3 号拧紧枪扭矩漂移，已换备枪顶班',
+        referenceId: 'DT-2026-0801-02',
+      },
+      {
+        category: 'Quality',
+        severity: 'Medium',
+        description: '前桥总成异响复检未闭环',
+        referenceId: null,
+      },
+    ],
   },
 }))
+
+const detailFace = vi.hoisted(() => ({ handoverId: undefined as unknown as Ref<string> }))
 
 const mutations = vi.hoisted(() => ({
   createShiftHandover: vi.fn(),
@@ -45,19 +97,28 @@ const mutations = vi.hoisted(() => ({
   notifyOperationFailure: vi.fn(),
 }))
 
-vi.mock('@/composables/useBusinessMes', () => ({
-  useMesShiftHandovers: () => ({
-    filters: reactive(state.filters),
-    handovers: computed(() => [state.row]),
-    handoversError: ref(),
-    handoversPending: ref(false),
-    handoversTotal: ref(1),
-    createShiftHandover: mutations.createShiftHandover,
-    acceptShiftHandover: mutations.acceptShiftHandover,
-    refreshHandovers: mutations.refreshHandovers,
-  }),
-  makeIdempotencyKey: mutations.makeIdempotencyKey,
-}))
+vi.mock('@/composables/useBusinessMes', () => {
+  // 详情读面按 detailHandoverId 取数：写空即停取（与 useMesShiftHandovers 的 enabled 同口径）。
+  // 用例要断言页面确实把选中的交接单 id 写进去了，所以这个 ref 由测试持有。
+  detailFace.handoverId = ref('')
+  return {
+    useMesShiftHandovers: () => ({
+      filters: reactive(state.filters),
+      handovers: computed(() => [state.row]),
+      handoversError: ref(),
+      handoversPending: ref(false),
+      handoversTotal: ref(1),
+      detailHandoverId: detailFace.handoverId,
+      handoverDetail: computed(() => (detailFace.handoverId.value ? state.detail : undefined)),
+      handoverDetailError: ref(),
+      handoverDetailPending: ref(false),
+      createShiftHandover: mutations.createShiftHandover,
+      acceptShiftHandover: mutations.acceptShiftHandover,
+      refreshHandovers: mutations.refreshHandovers,
+    }),
+    makeIdempotencyKey: mutations.makeIdempotencyKey,
+  }
+})
 
 vi.mock('@/composables/useBusinessMasterData', () => ({
   useBusinessMasterDataResources: (resourceType: string) => ({
@@ -97,18 +158,21 @@ const stubs = {
     props: ['disabled'],
     template: '<button v-bind="$attrs" :disabled="disabled"><slot /></button>',
   },
+  // 与 NvDataTable 同口径：单元格优先用 `cell-<key>` 插槽，没有插槽才回落到
+  // accessor / row[key]（真组件 valueOf 的行为）。行点击也照真组件挂在整行上——
+  // 操作列的 stopPropagation 只有这样才被真正检验。
   NvDataTable: {
-    props: ['columns', 'rows'],
+    props: ['columns', 'rows', 'emptyMessage'],
+    emits: ['row-click'],
     template: `
       <section>
-        <div v-for="row in rows" :key="row.handoverId">
+        <p v-if="!rows || rows.length === 0">{{ emptyMessage }}</p>
+        <div v-for="(row, index) in rows" :key="index" @click="$emit('row-click', row)">
           <span v-for="column in columns" :key="column.key">
-            {{ column.accessor ? column.accessor(row) : '' }}
+            <slot :name="'cell-' + column.key" :row="row">{{
+              column.accessor ? column.accessor(row) : (row[column.key] ?? '')
+            }}</slot>
           </span>
-          <slot name="cell-handoverStatus" :row="row" />
-          <slot name="cell-openIssueCount" :row="row" />
-          <slot name="cell-createdAtUtc" :row="row" />
-          <slot name="cell-actions" :row="row" />
         </div>
       </section>
     `,
@@ -160,6 +224,17 @@ const stubs = {
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
   NvSelectTrigger: { template: '<span><slot /></span>' },
   NvSelectValue: { template: '<span />' },
+  // 与 NvDialog 同理：stub 必须用 v-if 承载开合，否则抽屉在测试里恒为「已渲染」。
+  NvSheet: {
+    props: ['open'],
+    emits: ['update:open'],
+    template:
+      '<div v-if="open"><button data-testid="close-detail" @click="$emit(\'update:open\', false)" /><slot /></div>',
+  },
+  NvSheetContent: { template: '<section><slot /></section>' },
+  NvSheetDescription: { template: '<p><slot /></p>' },
+  NvSheetHeader: { template: '<header><slot /></header>' },
+  NvSheetTitle: { template: '<h2><slot /></h2>' },
   NvStatusBadge: { props: ['label'], template: '<span>{{ label }}</span>' },
   NvToolbar: { template: '<div><slot name="filters" /></div>' },
   Spinner: { template: '<span />' },
@@ -188,6 +263,13 @@ describe('MES handovers read-face guard', () => {
     state.row.teamId = 'TEAM-A'
     state.row.teamName = '总装早班一组'
     state.row.handoverStatus = 'open'
+    state.row.acceptedAtUtc = undefined
+    state.row.outgoingUserName = '李海生'
+    state.row.incomingUserName = undefined
+    state.row.wipItemCount = 3
+    state.row.unfinishedWorkOrderCount = 2
+    state.row.openIssueDetailCount = 1
+    detailFace.handoverId.value = ''
     mutations.createShiftHandover.mockReset()
     mutations.acceptShiftHandover.mockReset()
     mutations.refreshHandovers.mockReset().mockResolvedValue(undefined)
@@ -419,6 +501,87 @@ describe('MES handovers read-face guard', () => {
       )
     },
   )
+
+  it('在列表行给出交班人、接班人与三类明细计数', () => {
+    const wrapper = mountPage()
+    const visibleText = wrapper.text().replace(/\s+/g, ' ')
+
+    expect(visibleText).toContain('李海生')
+    expect(visibleText).toContain('在制 3')
+    expect(visibleText).toContain('未完工单 2')
+    expect(visibleText).toContain('遗留 1')
+    expect(visibleText).not.toMatch(TECHNICAL_USER_PATTERN)
+  })
+
+  it.each([
+    ['已接班且目录解出显示名', '周敏', '周敏'],
+    ['已接班但目录解不出显示名', undefined, '未记录'],
+  ])('接班人列在%s时给出对应说法', (_label, incomingUserName, expected) => {
+    state.row.handoverStatus = 'accepted'
+    state.row.acceptedAtUtc = '2026-08-01T16:05:00Z'
+    state.row.incomingUserName = incomingUserName
+    const wrapper = mountPage()
+
+    expect(wrapper.text()).toContain(expected)
+    expect(wrapper.text()).not.toMatch(TECHNICAL_USER_PATTERN)
+  })
+
+  it('点开交接单按 id 取详情，并把三类明细全量摆出来', async () => {
+    const wrapper = mountPage()
+    expect(wrapper.find('[data-testid="handover-detail"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="handovers-table"] > div').trigger('click')
+    await flushPromises()
+
+    expect(detailFace.handoverId.value).toBe('handover-001')
+    const detailText = wrapper.get('[data-testid="handover-detail"]').text().replace(/\s+/g, ' ')
+
+    // 在制清点：工序任务缺省时说清是按工单登记，不留空格子。
+    expect(detailText).toContain('WO-2026-0731')
+    expect(detailText).toContain('OT-2026-0731-30')
+    expect(detailText).toContain('24')
+    expect(detailText).toContain('按工单登记')
+    // 未完工单：计划/完成进度与工单状态中文化。
+    expect(detailText).toContain('WO-2026-0728')
+    expect(detailText).toContain('148')
+    expect(detailText).toContain('已开工')
+    // 设备与质量遗留问题：类别、严重度与关联单据都译成业务说法。
+    expect(detailText).toContain('设备')
+    expect(detailText).toContain('高')
+    expect(detailText).toContain('总装线 3 号拧紧枪扭矩漂移，已换备枪顶班')
+    expect(detailText).toContain('DT-2026-0801-02')
+    expect(detailText).toContain('质量')
+    expect(detailText).toContain('中')
+    expect(detailText).toContain('前桥总成异响复检未闭环')
+    expect(detailText).toContain('无')
+
+    expect(detailText).not.toMatch(UUID_PATTERN)
+    expect(detailText).not.toMatch(TECHNICAL_USER_PATTERN)
+  })
+
+  it('关掉详情抽屉后停止持有详情请求', async () => {
+    const wrapper = mountPage()
+    await wrapper.get('[data-testid="handovers-table"] > div').trigger('click')
+    await flushPromises()
+    expect(detailFace.handoverId.value).toBe('handover-001')
+
+    await wrapper.get('[data-testid="close-detail"]').trigger('click')
+    await flushPromises()
+
+    expect(detailFace.handoverId.value).toBe('')
+    expect(wrapper.find('[data-testid="handover-detail"]').exists()).toBe(false)
+  })
+
+  it('点操作列不顺带打开详情抽屉', async () => {
+    const wrapper = mountPage()
+
+    await wrapper.get('[data-testid="accept-handover"]').trigger('click')
+    await flushPromises()
+
+    expect(detailFace.handoverId.value).toBe('')
+    expect(wrapper.find('[data-testid="handover-detail"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="accept-handover-form"]').exists()).toBe(true)
+  })
 
   it.each([
     ['已接班状态', () => (state.row.handoverStatus = 'accepted')],

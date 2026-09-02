@@ -54,6 +54,7 @@ import {
   listBusinessConsoleQualityScrapReasonCodesQueryOptions,
   listBusinessConsoleMesScheduleResultsQueryOptions,
   listBusinessConsoleMesShiftHandoversQueryOptions,
+  getBusinessConsoleMesShiftHandoverQueryOptions,
   pauseBusinessConsoleMesOperationTaskMutationOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
   mergeBusinessConsoleMesWorkOrdersMutationOptions,
@@ -109,6 +110,8 @@ import {
   type BusinessConsoleMesQualityHoldTimelineItem,
   type BusinessConsoleMesWorkOrderQualityHoldSummary,
   type BusinessConsoleMesCreateShiftHandoverRequest,
+  type BusinessConsoleMesShiftHandoverDetail,
+  type BusinessConsoleMesShiftHandoverDetailEnvelope,
   type BusinessConsoleMesShiftHandoverListEnvelope,
   type BusinessConsoleMesShiftHandoverRow,
   type BusinessConsoleMesTraceabilityEnvelope,
@@ -3143,7 +3146,30 @@ export function useMesShiftHandovers() {
       ),
   })
 
+  // 列表行只带三类明细的计数，明细本身要按交接单单独取。选中哪一张由调用页写这个 ref，
+  // 清空即停止取数（详情抽屉关掉后不再持有请求）。
+  const detailHandoverId = shallowRef('')
+  const detailQuery = useQuery(() => ({
+    ...getBusinessConsoleMesShiftHandoverQueryOptions({
+      path: { handoverId: detailHandoverId.value },
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+      },
+    }),
+    enabled: hasBusinessContext(filters) && detailHandoverId.value.trim().length > 0,
+  }))
+
   return {
+    detailHandoverId,
+    handoverDetail: computed<BusinessConsoleMesShiftHandoverDetail | undefined>(() =>
+      unwrapData<
+        BusinessConsoleMesShiftHandoverDetail,
+        BusinessConsoleMesShiftHandoverDetailEnvelope
+      >(detailQuery.data.value),
+    ),
+    handoverDetailError: detailQuery.error,
+    handoverDetailPending: detailQuery.isLoading,
     acceptShiftHandover: (
       handoverId: string,
       body: { organizationId: string; environmentId: string; idempotencyKey: string },

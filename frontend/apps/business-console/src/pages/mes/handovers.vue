@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import type {
   BusinessConsoleMesCreateShiftHandoverRequest,
+  BusinessConsoleMesShiftHandoverOpenIssue,
+  BusinessConsoleMesShiftHandoverUnfinishedWorkOrder,
+  BusinessConsoleMesShiftHandoverWipItem,
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn, StatusTone } from '@nerv-iip/ui'
 import { CheckCircle2Icon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import {
   NvButton,
@@ -27,18 +30,32 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
+  NvSheet,
+  NvSheetContent,
+  NvSheetDescription,
+  NvSheetHeader,
+  NvSheetTitle,
   NvStatusBadge,
   NvToolbar,
   Spinner,
 } from '@nerv-iip/ui'
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import { makeIdempotencyKey, useMesShiftHandovers } from '@/composables/useBusinessMes'
 import { useMesKeywordFilter } from '@/composables/mes/useMesKeywordFilter'
 import { usePagedList } from '@/composables/usePagedList'
 import { pagedBreakdownSegments } from '@/composables/metricSegments'
-import { mesHandoverStatusOptions } from '@/composables/mes/useMesReferenceLabels'
-import { labelFor, MES_HANDOVER_STATUS_LABELS } from '@/data/businessLabels'
+import {
+  mesHandoverStatusOptions,
+  useMesReferenceLabels,
+} from '@/composables/mes/useMesReferenceLabels'
+import {
+  labelFor,
+  normalizeCode,
+  MES_HANDOVER_ISSUE_CATEGORY_LABELS,
+  MES_HANDOVER_ISSUE_SEVERITY_LABELS,
+  MES_HANDOVER_STATUS_LABELS,
+} from '@/data/businessLabels'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -60,13 +77,18 @@ definePage({
 const {
   acceptShiftHandover,
   createShiftHandover,
+  detailHandoverId,
   filters,
+  handoverDetail,
+  handoverDetailError,
+  handoverDetailPending,
   handovers,
   handoversError,
   handoversPending,
   handoversTotal,
   refreshHandovers,
 } = useMesShiftHandovers()
+const { statusLabel } = useMesReferenceLabels()
 const { keyword } = useMesKeywordFilter(filters)
 const { page, pageSize } = usePagedList(filters, {
   resetOn: [() => filters.status, () => filters.keyword],
@@ -173,11 +195,104 @@ const columns: NvDataTableColumn<HandoverRow>[] = [
     header: '班组',
     accessor: (r) => r.teamName?.trim() || resolveTeamLabel(r.teamId) || '未指派',
   },
+  { key: 'outgoingUserName', header: '交班人', accessor: outgoingUserLabel },
+  { key: 'incomingUserName', header: '接班人', accessor: incomingUserLabel },
   { key: 'handoverStatus', header: '状态', width: 'w-24' },
+  { key: 'detailCounts', header: '交接明细' },
   { key: 'openIssueCount', header: '未结事项', align: 'end', width: 'w-24' },
   { key: 'createdAtUtc', header: '创建时间', width: 'w-44' },
   { key: 'actions', header: '操作', align: 'end', width: 'w-24' },
 ]
+
+// 交接人显示名由网关按员工目录解析后回显；目录解不出时读面只剩用户 id，那是工程标识符、
+// 不能上屏，所以退回「未记录」。接班人在未接班时本来就没有，说法要和「解析不出」区分开。
+function outgoingUserLabel(row: { outgoingUserName?: string | null }) {
+  return row.outgoingUserName?.trim() || '未记录'
+}
+function incomingUserLabel(row: {
+  incomingUserName?: string | null
+  acceptedAtUtc?: string | null
+}) {
+  return row.incomingUserName?.trim() || (row.acceptedAtUtc ? '未记录' : '待接班')
+}
+
+const detailOpen = ref(false)
+const selectedHandover = shallowRef<HandoverRow>()
+// 抽屉里以详情读面为准；详情还没到时先用列表行垫住表头信息，不让抽屉空着。
+const detailHandover = computed(() => handoverDetail.value ?? selectedHandover.value)
+const detailWipItems = computed<BusinessConsoleMesShiftHandoverWipItem[]>(
+  () => handoverDetail.value?.wipItems ?? [],
+)
+const detailUnfinishedWorkOrders = computed<BusinessConsoleMesShiftHandoverUnfinishedWorkOrder[]>(
+  () => handoverDetail.value?.unfinishedWorkOrders ?? [],
+)
+const detailOpenIssues = computed<BusinessConsoleMesShiftHandoverOpenIssue[]>(
+  () => handoverDetail.value?.openIssues ?? [],
+)
+const detailErrorMessage = computed(() => formatError(handoverDetailError.value))
+
+function openDetail(row: HandoverRow) {
+  const handoverId = row.handoverId?.trim()
+  if (!handoverId) return
+  selectedHandover.value = row
+  detailHandoverId.value = handoverId
+  detailOpen.value = true
+}
+
+watch(detailOpen, (open) => {
+  if (open) return
+  selectedHandover.value = undefined
+  detailHandoverId.value = ''
+})
+
+const ISSUE_SEVERITY_TONES: Readonly<Record<string, StatusTone>> = {
+  low: 'neutral',
+  medium: 'warning',
+  high: 'danger',
+}
+function issueSeverityTone(value?: string | null): StatusTone {
+  return ISSUE_SEVERITY_TONES[normalizeCode(value)] ?? 'neutral'
+}
+
+const wipColumns: NvDataTableColumn<BusinessConsoleMesShiftHandoverWipItem>[] = [
+  { key: 'workOrderId', header: '工单', cellClass: 'font-medium' },
+  {
+    key: 'operationTaskId',
+    header: '工序任务',
+    accessor: (row) => row.operationTaskId?.trim() || '按工单登记',
+  },
+  { key: 'quantity', header: '在制数量', align: 'end', width: 'w-28' },
+]
+
+const unfinishedWorkOrderColumns: NvDataTableColumn<BusinessConsoleMesShiftHandoverUnfinishedWorkOrder>[] =
+  [
+    { key: 'workOrderId', header: '工单', cellClass: 'font-medium' },
+    { key: 'plannedQuantity', header: '计划数量', align: 'end', width: 'w-24' },
+    { key: 'completedQuantity', header: '完成数量', align: 'end', width: 'w-24' },
+    { key: 'workOrderStatus', header: '工单状态', width: 'w-28' },
+  ]
+
+const openIssueColumns: NvDataTableColumn<BusinessConsoleMesShiftHandoverOpenIssue>[] = [
+  {
+    key: 'category',
+    header: '类别',
+    width: 'w-20',
+    accessor: (row) => labelFor(MES_HANDOVER_ISSUE_CATEGORY_LABELS, row.category, '未分类'),
+  },
+  { key: 'severity', header: '严重度', width: 'w-24' },
+  { key: 'description', header: '问题描述' },
+  { key: 'referenceId', header: '关联单据', accessor: (row) => row.referenceId?.trim() || '无' },
+]
+
+function wipRowKey(row: BusinessConsoleMesShiftHandoverWipItem) {
+  return `${row.workOrderId ?? ''}-${row.operationTaskId ?? ''}`
+}
+function unfinishedWorkOrderRowKey(row: BusinessConsoleMesShiftHandoverUnfinishedWorkOrder) {
+  return row.workOrderId ?? ''
+}
+function openIssueRowKey(row: BusinessConsoleMesShiftHandoverOpenIssue) {
+  return `${row.category ?? ''}-${row.description ?? ''}`
+}
 
 const createDialogOpen = ref(false)
 const createShowErrors = ref(false)
@@ -474,6 +589,7 @@ function formatError(error: unknown) {
 
     <NvDataTable
       manual
+      data-testid="handovers-table"
       :page="page"
       :page-size="pageSize"
       :total-items="handoversTotal"
@@ -487,8 +603,10 @@ function formatError(error: unknown) {
       :error-message="errorMessage"
       :searchable="false"
       :column-settings="false"
+      row-class="cursor-pointer"
       empty-message="暂无班次交接。点击上方「新建交接」登记未完成事项，接班人可在这里确认接收。"
       @retry="refreshHandovers"
+      @row-click="openDetail"
     >
       <template #cell-handoverStatus="{ row }">
         <NvStatusBadge
@@ -496,23 +614,204 @@ function formatError(error: unknown) {
           :label="labelFor(MES_HANDOVER_STATUS_LABELS, row.handoverStatus) || '未知'"
         />
       </template>
+      <template #cell-detailCounts="{ row }">
+        <span class="text-sm text-muted-foreground">
+          在制
+          <span class="font-medium tabular-nums text-foreground">{{ row.wipItemCount ?? 0 }}</span>
+          · 未完工单
+          <span class="font-medium tabular-nums text-foreground">{{
+            row.unfinishedWorkOrderCount ?? 0
+          }}</span>
+          · 遗留
+          <span class="font-medium tabular-nums text-foreground">{{
+            row.openIssueDetailCount ?? 0
+          }}</span>
+        </span>
+      </template>
       <template #cell-openIssueCount="{ row }"
         ><span class="tabular-nums">{{ row.openIssueCount ?? 0 }}</span></template
       >
       <template #cell-createdAtUtc="{ row }">{{ formatDateTime(row.createdAtUtc) }}</template>
       <template #cell-actions="{ row }">
-        <NvRowActions v-if="canManageHandovers && isOpenHandover(row)" label="班次交接操作">
-          <NvDropdownMenuItem
-            data-testid="accept-handover"
-            :disabled="!canAcceptRow(row)"
-            @click="openAcceptDialog(row)"
-          >
-            <CheckCircle2Icon aria-hidden="true" />
-            接班
-          </NvDropdownMenuItem>
-        </NvRowActions>
+        <!-- NvDataTable 的 row-click 挂在整行上；操作列自己是交互区，点它不该顺带打开详情抽屉。
+             NvRowActions 的根是 reka 的 DropdownMenuRoot（不渲染元素），事件修饰符落不到 DOM 上，
+             所以由这层 span 承接 stop。 -->
+        <span v-if="canManageHandovers && isOpenHandover(row)" class="inline-flex" @click.stop>
+          <NvRowActions label="班次交接操作">
+            <NvDropdownMenuItem
+              data-testid="accept-handover"
+              :disabled="!canAcceptRow(row)"
+              @click="openAcceptDialog(row)"
+            >
+              <CheckCircle2Icon aria-hidden="true" />
+              接班
+            </NvDropdownMenuItem>
+          </NvRowActions>
+        </span>
       </template>
     </NvDataTable>
+
+    <NvSheet v-model:open="detailOpen">
+      <NvSheetContent
+        data-testid="handover-detail"
+        class="w-full gap-0 overflow-y-auto sm:max-w-3xl"
+      >
+        <NvSheetHeader>
+          <NvSheetTitle>班次交接明细</NvSheetTitle>
+          <NvSheetDescription>
+            交班时点的在制清点、未完工单进度与遗留问题，供接班人逐项核对后再确认接班。
+          </NvSheetDescription>
+        </NvSheetHeader>
+
+        <!-- 抽屉宽度与视口无关（这里最宽 768px，窄屏则是整屏），所以内部多列必须按**容器**宽度
+             决定：父级开 `@container`，断点用 `@md:`。用 `sm:` 之类视口断点会在宽屏窄抽屉里
+             把字段压成竖排单字（护栏与踩坑记录见 container-breakpoint.contract.test.ts）。
+             `grid-cols-1` + `[&>*]:min-w-0` 解掉栅格子项默认的 `min-width:auto`，
+             否则下面三张表会按内容最小宽把抽屉顶破。 -->
+        <div class="@container grid grid-cols-1 content-start gap-4 px-4 pb-4 [&>*]:min-w-0">
+          <p
+            v-if="detailErrorMessage"
+            class="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
+            role="alert"
+          >
+            {{ detailErrorMessage }}
+          </p>
+          <p
+            v-else-if="handoverDetailPending && !handoverDetail"
+            class="flex items-center gap-2 text-sm text-muted-foreground"
+            role="status"
+          >
+            <Spinner aria-hidden="true" />
+            正在加载交接明细…
+          </p>
+
+          <template v-if="detailHandover">
+            <dl class="grid gap-3 @md:grid-cols-2">
+              <div class="rounded-lg border bg-card p-3">
+                <dt class="text-xs text-muted-foreground">状态</dt>
+                <dd class="mt-1">
+                  <NvStatusBadge
+                    :value="detailHandover.handoverStatus"
+                    :label="
+                      labelFor(MES_HANDOVER_STATUS_LABELS, detailHandover.handoverStatus) || '未知'
+                    "
+                  />
+                </dd>
+              </div>
+              <div class="rounded-lg border bg-card p-3">
+                <dt class="text-xs text-muted-foreground">未结事项</dt>
+                <dd class="mt-1 text-lg font-semibold tabular-nums">
+                  {{ detailHandover.openIssueCount ?? 0 }}
+                </dd>
+              </div>
+              <div class="rounded-lg border bg-card p-3">
+                <dt class="text-xs text-muted-foreground">班次</dt>
+                <dd class="mt-1 text-sm">{{ resolveShiftLabel(detailHandover.shiftId) }}</dd>
+              </div>
+              <div class="rounded-lg border bg-card p-3">
+                <dt class="text-xs text-muted-foreground">班组</dt>
+                <dd class="mt-1 text-sm">
+                  {{
+                    detailHandover.teamName?.trim() ||
+                    resolveTeamLabel(detailHandover.teamId) ||
+                    '未指派'
+                  }}
+                </dd>
+              </div>
+              <div class="rounded-lg border bg-card p-3">
+                <dt class="text-xs text-muted-foreground">交班人</dt>
+                <dd class="mt-1 text-sm">{{ outgoingUserLabel(detailHandover) }}</dd>
+              </div>
+              <div class="rounded-lg border bg-card p-3">
+                <dt class="text-xs text-muted-foreground">接班人</dt>
+                <dd class="mt-1 text-sm">{{ incomingUserLabel(detailHandover) }}</dd>
+              </div>
+              <div class="rounded-lg border bg-card p-3">
+                <dt class="text-xs text-muted-foreground">创建时间</dt>
+                <dd class="mt-1 text-sm">{{ formatDateTime(detailHandover.createdAtUtc) }}</dd>
+              </div>
+              <div class="rounded-lg border bg-card p-3">
+                <dt class="text-xs text-muted-foreground">接班时间</dt>
+                <dd class="mt-1 text-sm">
+                  {{
+                    detailHandover.acceptedAtUtc
+                      ? formatDateTime(detailHandover.acceptedAtUtc)
+                      : '尚未接班'
+                  }}
+                </dd>
+              </div>
+            </dl>
+
+            <section class="grid grid-cols-1 gap-2 [&>*]:min-w-0">
+              <h3 class="text-sm font-semibold text-foreground">在制清点</h3>
+              <NvDataTable
+                :columns="wipColumns"
+                :rows="detailWipItems"
+                :row-key="wipRowKey"
+                :loading="handoverDetailPending"
+                :searchable="false"
+                :column-settings="false"
+                :pagination="false"
+                empty-message="交班时点没有登记在制清点。"
+              >
+                <template #cell-quantity="{ row }"
+                  ><span class="tabular-nums">{{ row.quantity ?? 0 }}</span></template
+                >
+              </NvDataTable>
+            </section>
+
+            <section class="grid grid-cols-1 gap-2 [&>*]:min-w-0">
+              <h3 class="text-sm font-semibold text-foreground">未完工单</h3>
+              <NvDataTable
+                :columns="unfinishedWorkOrderColumns"
+                :rows="detailUnfinishedWorkOrders"
+                :row-key="unfinishedWorkOrderRowKey"
+                :loading="handoverDetailPending"
+                :searchable="false"
+                :column-settings="false"
+                :pagination="false"
+                empty-message="交班时点没有未完工单。"
+              >
+                <template #cell-plannedQuantity="{ row }"
+                  ><span class="tabular-nums">{{ row.plannedQuantity ?? 0 }}</span></template
+                >
+                <template #cell-completedQuantity="{ row }"
+                  ><span class="tabular-nums">{{ row.completedQuantity ?? 0 }}</span></template
+                >
+                <template #cell-workOrderStatus="{ row }">
+                  <NvStatusBadge
+                    :value="row.workOrderStatus"
+                    :label="statusLabel(row.workOrderStatus)"
+                  />
+                </template>
+              </NvDataTable>
+            </section>
+
+            <section class="grid grid-cols-1 gap-2 [&>*]:min-w-0">
+              <h3 class="text-sm font-semibold text-foreground">设备与质量遗留问题</h3>
+              <NvDataTable
+                :columns="openIssueColumns"
+                :rows="detailOpenIssues"
+                :row-key="openIssueRowKey"
+                :loading="handoverDetailPending"
+                :searchable="false"
+                :column-settings="false"
+                :pagination="false"
+                empty-message="交班时点没有登记遗留问题。"
+              >
+                <template #cell-severity="{ row }">
+                  <NvStatusBadge
+                    :value="row.severity"
+                    :label="labelFor(MES_HANDOVER_ISSUE_SEVERITY_LABELS, row.severity, '未定级')"
+                    :tone="issueSeverityTone(row.severity)"
+                  />
+                </template>
+              </NvDataTable>
+            </section>
+          </template>
+        </div>
+      </NvSheetContent>
+    </NvSheet>
 
     <NvDialog v-if="canManageHandovers" v-model:open="createDialogOpen">
       <NvDialogContent>
