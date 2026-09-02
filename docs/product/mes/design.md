@@ -218,8 +218,12 @@ OpenAPI、生成客户端、MES domain 或 persistence；Quality、Inventory、W
 到达质量侧的那一批，会被持续拒绝**：该状态不靠报工恢复，只能靠补上工单发布投影。它由
 [#3000](https://github.com/Mang-X/Nerv-IIP/issues/3000)（Quality 工单发布投影回填）一次性解决，
 门禁侧不设过渡开关或例外名单。回填由 MES 的内部运维端点
-`POST /internal/business-mes/v1/work-order-release-projection-backfill` 触发：它按「工单状态 + 工序未完工」
-这一可复算判据选出存量在制工序，把发布事实补投给质量侧；重复执行不改变质量侧投影，也不额外开出首件检验任务。
+`POST /internal/business-mes/v1/work-order-release-projection-backfill` 触发。它选谁不另立名单，
+而是照**报工路径自己的准入条件**推：报工只要求工序未完工，工单侧真正拦人的是 `RecordProductionProgress`
+的不可执行状态集合，所以「还会再撞门禁」= 工序未完工 ∧ 工单不在该集合里（已达计划量翻 `completed`
+但工序仍在跑的工单**在内**——超收容差为它留了继续报工的空间），再排除尚未发布的 `created`。
+重复执行不改变质量侧投影；回填也不追认补投之前的周期巡检窗口，因此既不额外开出首件检验任务，
+也不会为历史产量与历史时长成批补开已过期的周期巡检。
 **部署顺序是硬约束：#3000 的回填必须先于本门禁上线执行**，顺序颠倒会让这批在制工序在回填完成前被持续拒绝。
 
 被拦下时的提示直接点名入口位置；操作员在 `/mes/operation-tasks` 的行操作里就地进入「首件检验记录」。

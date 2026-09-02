@@ -146,6 +146,35 @@ public sealed class PeriodicInspectionOperation : Entity<PeriodicInspectionOpera
         }
     }
 
+    /// <summary>
+    /// 补投发布事实（#3000 回填）时，把补投之前已经累计的产量与已经流逝的时间**记为已生成**，
+    /// 不追认那段时间的周期巡检窗口。
+    ///
+    /// 直投路径上发布事实先到、报工后到，窗口是随产量逐步生成的；回填是反过来——
+    /// 发布事实补到一张已经报了很久的工序上，<c>Reconcile</c> 会把全部历史产量一次性算进
+    /// <see cref="PeriodicInspectionRuntimeContext.QuantityHighWater"/>、把最早报工算进
+    /// <c>FirstActivityAtUtc</c>。不做这一步，一次回填就会为**已经流走的**产量和时间成批开出
+    /// 已过期的巡检任务；产量积压超过
+    /// <see cref="PeriodicInspectionRuntimeContext.MaximumSupportedPendingQuantityWindows"/> 时
+    /// <c>TakeDueQuantityWindows</c> 还会抛出，整张工单被判为无效业务事实进死信、回填对它失效——
+    /// 那正是本票要消除的「永久 not-synchronized」。
+    ///
+    /// 只在**本次刚补上发布事实**的工序上调用：调用方按「已有发布事实的工序不覆盖」筛过，
+    /// 因此此刻聚合里的运行上下文恰好就是本次新建的那些。
+    /// </summary>
+    public void SkipPeriodicWindowsAccruedBefore(DateTime observedAtUtc)
+    {
+        if (observedAtUtc.Kind != DateTimeKind.Utc)
+        {
+            throw new ArgumentException("Observation time must be UTC.", nameof(observedAtUtc));
+        }
+
+        foreach (var context in RuntimeContexts)
+        {
+            context.SkipWindowsAccruedBefore(observedAtUtc);
+        }
+    }
+
     public bool RecordProductionReport(
         string reportNo,
         string workCenterId,
@@ -483,6 +512,43 @@ public sealed class PeriodicInspectionRuntimeContext : Entity<PeriodicInspection
         {
             NextTimeWindowAtUtc = TryAddTicks(FirstActivityAtUtc.Value, GetIntervalTicks());
         }
+    }
+
+    /// <summary>
+    /// 把补投之前已经累计的产量窗口与已经流逝的时间窗口记为已生成。取值口径与
+    /// <see cref="TakeDueQuantityWindows"/> / <see cref="TakeDueTimeWindows"/> 完全一致
+    /// （同一个 <c>floor(高水位 / 间隔)</c>、同一个 <c>GetIntervalTicks</c>），
+    /// 差别只是不产出窗口——因此「跳过的」与「本会开出的」是同一批，不会多跳也不会少跳。
+    /// </summary>
+    internal void SkipWindowsAccruedBefore(DateTime observedAtUtc)
+    {
+        if (QuantityInterval.HasValue && QuantityHighWater > 0m)
+        {
+            var accrued = decimal.ToInt64(decimal.Floor(QuantityHighWater / QuantityInterval.Value));
+            if (accrued > LastGeneratedQuantityWindowSequence)
+            {
+                LastGeneratedQuantityWindowSequence = accrued;
+            }
+        }
+
+        if (!TimeIntervalHours.HasValue || !FirstActivityAtUtc.HasValue || !NextTimeWindowAtUtc.HasValue)
+        {
+            return;
+        }
+
+        var intervalTicks = GetIntervalTicks();
+        var elapsedTicks = (observedAtUtc - FirstActivityAtUtc.Value).Ticks;
+        if (elapsedTicks < intervalTicks)
+        {
+            return;
+        }
+
+        var accruedWindows = elapsedTicks / intervalTicks;
+        TimeScheduleAnchorAtUtc ??= FirstActivityAtUtc.Value;
+        LastGeneratedTimeWindowSequence = accruedWindows;
+        NextTimeWindowAtUtc = TryAddTicks(
+            FirstActivityAtUtc.Value,
+            checked(intervalTicks * (accruedWindows + 1)));
     }
 
     public IReadOnlyList<PeriodicInspectionTimeWindow> TakeDueTimeWindows(DateTime nowUtc, int maxWindows)

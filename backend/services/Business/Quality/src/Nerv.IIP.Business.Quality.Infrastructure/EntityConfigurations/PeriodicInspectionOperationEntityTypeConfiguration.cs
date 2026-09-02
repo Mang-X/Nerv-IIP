@@ -33,7 +33,7 @@ public sealed class PeriodicInspectionOperationEntityTypeConfiguration
         builder.Property(x => x.SkuCode).HasColumnName("sku_code").HasMaxLength(100).HasComment("SKU snapshot from the work-order release event; null until release arrives.");
         builder.Property(x => x.OperationSequence).HasColumnName("operation_sequence").HasComment("Positive operation sequence from the work-order release event; null until release arrives.");
         builder.Property(x => x.WorkCenterId).HasColumnName("work_center_id").HasMaxLength(150).HasComment("Work center snapshot from the work-order release event; null until release arrives.");
-        builder.Property(x => x.ReleasedAtUtc).HasColumnName("released_at_utc").HasComment("UTC time when MES released the work order; null while source facts are staged out of order.");
+        builder.Property(x => x.ReleasedAtUtc).HasColumnName("released_at_utc").HasComment("UTC work-order release time, composite by source: the MES release event time for directly delivered facts, or a reconstructed lower bound (earliest operation creation or earliest production report of the work order) for legacy work orders backfilled by the release-projection backfill. Null while source facts are staged out of order.");
         builder.Property(x => x.CompletionSkuCode).HasColumnName("completion_sku_code").HasMaxLength(100).HasComment("SKU snapshot staged from an operation completion event.");
         builder.Property(x => x.CompletionOperationSequence).HasColumnName("completion_operation_sequence").HasComment("Positive operation sequence staged from an operation completion event.");
         builder.Property(x => x.CompletionWorkCenterId).HasColumnName("completion_work_center_id").HasMaxLength(150).HasComment("Work center snapshot staged from an operation completion event.");
@@ -129,7 +129,7 @@ public sealed class PeriodicInspectionRuntimeContextEntityTypeConfiguration
         builder.Property(x => x.SkuCode).HasColumnName("sku_code").IsRequired().HasMaxLength(100).HasComment("SKU snapshot from the release event.");
         builder.Property(x => x.OperationSequence).HasColumnName("operation_sequence").IsRequired().HasComment("Positive MES operation sequence snapshot.");
         builder.Property(x => x.WorkCenterId).HasColumnName("work_center_id").IsRequired().HasMaxLength(150).HasComment("Work center snapshot from the release event.");
-        builder.Property(x => x.ReleasedAtUtc).HasColumnName("released_at_utc").IsRequired().HasComment("UTC work-order release time.");
+        builder.Property(x => x.ReleasedAtUtc).HasColumnName("released_at_utc").IsRequired().HasComment("UTC work-order release time frozen from the release snapshot; carries the same composite meaning as periodic_inspection_operations.released_at_utc - event time for directly delivered facts, reconstructed lower bound for backfilled legacy work orders.");
         builder.Property(x => x.InspectionPlanId).HasColumnName("inspection_plan_id").IsRequired().HasComment("Immutable matched inspection plan id.");
         builder.Property(x => x.InspectionPlanVersion).HasColumnName("inspection_plan_version").IsRequired().HasComment("Immutable matched inspection plan version.");
         builder.Property(x => x.TimeIntervalHours).HasColumnName("time_interval_hours").HasPrecision(18, 6).HasComment("Frozen periodic time interval in hours.");

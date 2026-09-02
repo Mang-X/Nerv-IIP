@@ -46,10 +46,30 @@ public sealed class WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicIns
             integrationEvent,
             integrationEvent.Payload,
             ConsumerName,
-            // 直投路径不跳过已有发布事实：同一工序收到第二份**不同**的发布事实是真实异常，
-            // 由 ApplyRelease 判为冲突进死信；跳过会把这一信号吞掉。
-            skipOperationsWithExistingReleaseFacts: false,
+            ReleaseFactAuthority.Authoritative,
             cancellationToken);
+}
+
+/// <summary>
+/// 发布事实的**权威性**：两条入口的全部行为差异都由它派生，不各自带开关。
+/// </summary>
+internal enum ReleaseFactAuthority
+{
+    /// <summary>
+    /// MES 直投的 <c>mes.WorkOrderReleased</c>：发布时刻是当初那一次发布事件带的值，权威。
+    /// 因此同一工序收到第二份**内容不同**的发布事实是真实异常，必须由 <c>ApplyRelease</c> 判为冲突进死信，
+    /// 不得跳过——跳过会把这个信号吞掉。
+    /// </summary>
+    Authoritative,
+
+    /// <summary>
+    /// #3000 回填的 <c>mes.WorkOrderReleaseProjectionBackfilled</c>：发布时刻是从 MES 存量数据重建的**下界**，
+    /// 不等于当初那一次发布事件带的时刻。由此派生两条行为：
+    /// ① 已有发布事实的工序只跳过、不覆盖（拿重建下界去比对必然判冲突），这同时是「重复执行回填不改变投影内容」的落点；
+    /// ② 补投之前累计的产量与流逝的时间不追认周期巡检窗口（见
+    /// <c>PeriodicInspectionOperation.SkipPeriodicWindowsAccruedBefore</c>）。
+    /// </summary>
+    ReconstructedLowerBound,
 }
 
 /// <summary>
@@ -58,11 +78,6 @@ public sealed class WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicIns
 /// </summary>
 internal static class PeriodicInspectionReleaseProjection
 {
-    /// <summary>
-    /// <c>skipOperationsWithExistingReleaseFacts</c>：回填载荷里的发布时刻是从 MES 存量数据重建出来的下界，
-    /// 不等于当初那一次发布事件带的时刻；对已经有发布事实的工序调用 <c>ApplyRelease</c> 会因时刻不等被判为
-    /// 冲突事实。回填因此只补空缺、不覆盖既有行——这同时就是「重复执行回填不改变投影内容」这一不变量的落点。
-    /// </summary>
     public static async Task ApplyAsync(
         ApplicationDbContext dbContext,
         IPeriodicInspectionOperationScopeCoordinator scopeCoordinator,
@@ -70,7 +85,7 @@ internal static class PeriodicInspectionReleaseProjection
         IIntegrationEventEnvelope integrationEvent,
         WorkOrderReleasedPayload payload,
         string consumerName,
-        bool skipOperationsWithExistingReleaseFacts,
+        ReleaseFactAuthority authority,
         CancellationToken cancellationToken)
     {
         try
@@ -115,7 +130,8 @@ internal static class PeriodicInspectionReleaseProjection
                             payload.WorkOrderId,
                             operationPayload.OperationId,
                             ct);
-                        if (skipOperationsWithExistingReleaseFacts && operation.ReleasedAtUtc.HasValue)
+                        if (authority == ReleaseFactAuthority.ReconstructedLowerBound
+                            && operation.ReleasedAtUtc.HasValue)
                         {
                             continue;
                         }
@@ -131,6 +147,11 @@ internal static class PeriodicInspectionReleaseProjection
                             operationPayload.WorkCenterId,
                             payload.ReleasedAtUtc.UtcDateTime,
                             snapshots);
+                        if (authority == ReleaseFactAuthority.ReconstructedLowerBound)
+                        {
+                            operation.SkipPeriodicWindowsAccruedBefore(integrationEvent.OccurredAtUtc.UtcDateTime);
+                        }
+
                         PeriodicInspectionQuantityTaskGeneration.AddDueTasks(
                             dbContext,
                             operation.RuntimeContexts,
@@ -230,7 +251,7 @@ public sealed class WorkOrderReleaseProjectionBackfilledIntegrationEventHandlerF
             integrationEvent,
             integrationEvent.Payload,
             ConsumerName,
-            skipOperationsWithExistingReleaseFacts: true,
+            ReleaseFactAuthority.ReconstructedLowerBound,
             cancellationToken);
 }
 

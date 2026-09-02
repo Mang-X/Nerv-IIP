@@ -10,6 +10,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Mes.Web.Application.Quality;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Testing;
@@ -51,11 +52,48 @@ public sealed class WorkOrderReleaseProjectionBackfillTests
         var publisher = new RecordingPublisher();
         var report = await CreateHandler(dbContext, publisher).Handle(new BackfillWorkOrderReleaseProjectionCommand(), CancellationToken.None);
 
-        Assert.Equal(4, report.WorkOrdersScanned);
-        Assert.Equal(3, report.WorkOrdersPublished);
+        // completed 在内：报工命令的准入只看工序 InProgress，工单状态不参与判断，
+        // 而 RecordProductionProgress 不拒 completed（超收容差为「已达量后继续报工」留了空间）。
+        Assert.Equal(5, report.WorkOrdersScanned);
+        Assert.Equal(4, report.WorkOrdersPublished);
         Assert.Equal(
-            new[] { "WO-HOLD", "WO-RELEASED", "WO-STARTED" },
+            new[] { "WO-COMPLETED", "WO-HOLD", "WO-RELEASED", "WO-STARTED" },
             publisher.Published.Select(x => x.Payload.WorkOrderId).Order(StringComparer.Ordinal).ToArray());
+    }
+
+    /// <summary>
+    /// S1 的会失败状态：末工序报满计划量后工单被 <c>RecordProductionProgress</c> 自动翻成 completed，
+    /// 工序仍是 InProgress、还能继续报工（尾数/报废/完工那几笔），因此仍会撞首件门禁。
+    /// 判据一旦改回工单状态白名单，这张工单被整张跳过、门禁永久拒。
+    /// </summary>
+    [Fact]
+    public async Task Work_order_that_reached_planned_quantity_is_still_backfilled_while_its_operation_runs()
+    {
+        await using var dbContext = CreateDbContext();
+        var workOrder = WorkOrder.Create(
+            "org-001", "env-dev", "WO-AT-QUANTITY", "SKU-FG-1000", null,
+            quantity: 100m, priority: 1, dueUtc: Now.AddDays(3));
+        workOrder.MarkReleased();
+        workOrder.Start(Now);
+        var task = OperationTask.Create(
+            "org-001", "env-dev", "WO-AT-QUANTITY", "OP-AT-QUANTITY-10",
+            OperationTaskLifecycleStatus.InProgress, 10, "WC-010", [],
+            Now, TimeSpan.FromHours(1), null, null, "SKU-FG-1000", "EA", 100m);
+        dbContext.OperationTasks.Add(task);
+        dbContext.WorkOrders.Add(workOrder);
+        // 报满计划量：工单翻 completed，工序不动。
+        workOrder.RecordProductionProgress(goodQuantity: 100m, scrapQuantity: 0m, reportedAtUtc: Now);
+        await dbContext.SaveChangesAsync();
+        Assert.Equal(WorkOrder.CompletedStatus, workOrder.Status);
+        Assert.Equal(OperationTaskLifecycleStatus.InProgress, task.Status);
+
+        var publisher = new RecordingPublisher();
+        await CreateHandler(dbContext, publisher).Handle(
+            new BackfillWorkOrderReleaseProjectionCommand(), CancellationToken.None);
+
+        var published = Assert.Single(publisher.Published);
+        Assert.Equal("WO-AT-QUANTITY", published.Payload.WorkOrderId);
+        Assert.Equal("OP-AT-QUANTITY-10", Assert.Single(published.Payload.Operations).OperationId);
     }
 
     [Fact]
@@ -66,13 +104,14 @@ public sealed class WorkOrderReleaseProjectionBackfillTests
             dbContext,
             "WO-MIXED",
             Started,
+            // 乱序插入：断言里的 20/30/40/60 只有在载荷真的排过序时才成立。
             [
-                (OperationTaskLifecycleStatus.Completed, 10),
-                (OperationTaskLifecycleStatus.InProgress, 20),
-                (OperationTaskLifecycleStatus.Paused, 30),
-                (OperationTaskLifecycleStatus.ScheduleInvalidated, 40),
-                (OperationTaskLifecycleStatus.Cancelled, 50),
                 (OperationTaskLifecycleStatus.Queued, 60),
+                (OperationTaskLifecycleStatus.InProgress, 20),
+                (OperationTaskLifecycleStatus.Cancelled, 50),
+                (OperationTaskLifecycleStatus.ScheduleInvalidated, 40),
+                (OperationTaskLifecycleStatus.Completed, 10),
+                (OperationTaskLifecycleStatus.Paused, 30),
             ]);
         await dbContext.SaveChangesAsync();
 
@@ -111,6 +150,35 @@ public sealed class WorkOrderReleaseProjectionBackfillTests
 
         var published = Assert.Single(publisher.Published);
         Assert.Equal(backdated, published.Payload.ReleasedAtUtc);
+    }
+
+    /// <summary>
+    /// 发布时刻的下界只能取**本工单自己**的最早报工。同一页里另有一张带远早报工的工单时，
+    /// 归属谓词一旦失效，轻则取到别人的时刻，重则 <c>SingleOrDefault</c> 撞多组直接把整次回填打崩。
+    /// </summary>
+    [Fact]
+    public async Task Release_time_never_borrows_another_work_orders_earliest_report()
+    {
+        await using var dbContext = CreateDbContext();
+        AddWorkOrder(dbContext, "WO-OLD", Started);
+        AddWorkOrder(dbContext, "WO-NEW", Started);
+        var ancient = DateTimeOffset.Parse("2020-01-01T00:00:00Z");
+        var recent = DateTimeOffset.Parse("2026-08-30T00:00:00Z");
+        dbContext.ProductionReports.Add(ProductionReport.Record(
+            "org-001", "env-dev", "RPT-OLD", "WO-OLD", "OP-WO-OLD-10",
+            goodQuantity: 3m, scrapQuantity: 0m, completesOperation: false, reportedAtUtc: ancient));
+        dbContext.ProductionReports.Add(ProductionReport.Record(
+            "org-001", "env-dev", "RPT-NEW", "WO-NEW", "OP-WO-NEW-10",
+            goodQuantity: 3m, scrapQuantity: 0m, completesOperation: false, reportedAtUtc: recent));
+        await dbContext.SaveChangesAsync();
+
+        var publisher = new RecordingPublisher();
+        await CreateHandler(dbContext, publisher).Handle(
+            new BackfillWorkOrderReleaseProjectionCommand(), CancellationToken.None);
+
+        var published = publisher.Published.ToDictionary(x => x.Payload.WorkOrderId, x => x.Payload.ReleasedAtUtc);
+        Assert.Equal(ancient, published["WO-OLD"]);
+        Assert.Equal(recent, published["WO-NEW"]);
     }
 
     [Fact]
@@ -173,6 +241,40 @@ public sealed class WorkOrderReleaseProjectionBackfillTests
         Assert.Equal(205, publisher.Published.Select(x => x.Payload.WorkOrderId).Distinct(StringComparer.Ordinal).Count());
     }
 
+    /// <summary>
+    /// 筛选谓词是可变状态，回填又跑在活库上：扫描中途有工单退出集合（一次普通报工翻 completed、
+    /// 或 Close/Cancel/MarkSplit/MarkMerged）时，按偏移量翻页会让后面的工单整段左移、被静默跳过，
+    /// 而 <c>WorkOrdersScanned</c> 只累加实际取到的行数，看不出这个缺口。
+    /// 这里在第一页处理途中把一张**已扫过**的工单移出集合，断言剩余符合判据的工单仍全部被补投。
+    /// </summary>
+    [Fact]
+    public async Task Work_orders_are_not_skipped_when_the_scanned_set_shrinks_mid_scan()
+    {
+        await using var dbContext = CreateDbContext();
+        for (var index = 0; index < 201; index++)
+        {
+            AddWorkOrder(dbContext, $"WO-{index:D4}", Released);
+        }
+
+        await dbContext.SaveChangesAsync();
+
+        var publisher = new RecordingPublisher();
+        publisher.OnFirstPublish = () =>
+        {
+            var leaving = dbContext.WorkOrders.Single(x => x.WorkOrderIdValue == "WO-0000");
+            leaving.Cancel("扫描途中退出集合", Now);
+            dbContext.SaveChanges();
+        };
+
+        var report = await CreateHandler(dbContext, publisher).Handle(
+            new BackfillWorkOrderReleaseProjectionCommand(), CancellationToken.None);
+
+        var publishedIds = publisher.Published.Select(x => x.Payload.WorkOrderId).ToArray();
+        Assert.Contains("WO-0200", publishedIds);
+        Assert.Equal(201, publishedIds.Length);
+        Assert.Equal(201, report.WorkOrdersPublished);
+    }
+
     [Fact]
     public async Task Backfill_endpoint_is_reachable_only_with_an_internal_service_token()
     {
@@ -200,6 +302,13 @@ public sealed class WorkOrderReleaseProjectionBackfillTests
             content: null);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        // 端点走的是 ISender，本用例把它换成了桩；真实 handler 是否被 MediatR 发现要单独钉住，
+        // 否则「命令改成 internal」这类改动会让端点在运行时找不到 handler 而用例照绿。
+        Assert.True(factory.Services
+            .GetRequiredService<IServiceProviderIsService>()
+            .IsService(typeof(IRequestHandler<
+                BackfillWorkOrderReleaseProjectionCommand,
+                WorkOrderReleaseProjectionBackfillReport>)));
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal(7, body.RootElement.GetProperty("workOrdersScanned").GetInt32());
         Assert.Equal(5, body.RootElement.GetProperty("workOrdersPublished").GetInt32());
@@ -293,13 +402,24 @@ public sealed class WorkOrderReleaseProjectionBackfillTests
             throw new NotSupportedException();
     }
 
-    private sealed class RecordingPublisher : IWorkOrderReleaseProjectionBackfillPublisher
+    private sealed class RecordingPublisher : IMesIntegrationEventOutboxPublisher
     {
         public List<WorkOrderReleaseProjectionBackfilledIntegrationEvent> Published { get; } = [];
 
-        public Task PublishAsync(WorkOrderReleaseProjectionBackfilledIntegrationEvent integrationEvent)
+        public List<string> Topics { get; } = [];
+
+        /// <summary>扫描途中改库的钩子：补投第一张工单时触发一次。</summary>
+        public Action? OnFirstPublish { get; set; }
+
+        public Task PublishAsync<T>(string topic, T integrationEvent)
         {
-            Published.Add(integrationEvent);
+            Topics.Add(topic);
+            Published.Add((WorkOrderReleaseProjectionBackfilledIntegrationEvent)(object)integrationEvent!);
+            if (Published.Count == 1)
+            {
+                OnFirstPublish?.Invoke();
+            }
+
             return Task.CompletedTask;
         }
     }

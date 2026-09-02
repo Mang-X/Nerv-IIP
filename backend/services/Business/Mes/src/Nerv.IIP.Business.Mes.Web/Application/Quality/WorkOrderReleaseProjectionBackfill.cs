@@ -1,11 +1,11 @@
-using DotNetCore.CAP;
-using MediatR;
+using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Contracts.Mes;
+using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Quality;
 
@@ -17,52 +17,37 @@ public sealed record WorkOrderReleaseProjectionBackfillReport(
     int WorkOrdersPublished,
     int OperationsPublished);
 
-public interface IWorkOrderReleaseProjectionBackfillPublisher
-{
-    Task PublishAsync(WorkOrderReleaseProjectionBackfilledIntegrationEvent integrationEvent);
-}
-
-public sealed class CapWorkOrderReleaseProjectionBackfillPublisher(ICapPublisher publisher)
-    : IWorkOrderReleaseProjectionBackfillPublisher
-{
-    public Task PublishAsync(WorkOrderReleaseProjectionBackfilledIntegrationEvent integrationEvent) =>
-        publisher.PublishAsync(nameof(WorkOrderReleaseProjectionBackfilledIntegrationEvent), integrationEvent);
-}
-
 /// <summary>
 /// 存量在制工单的发布事实补投（#3000）。Quality 订阅 <c>mes.WorkOrderReleased</c> 之前发布的工单，
 /// 在 Quality 的 <c>PeriodicInspectionOperations</c> 里没有行，首件确认读面恒回 <c>not-synchronized</c>，
 /// #2780 的报工门禁会持续拒绝且不靠报工自愈——只能补上发布投影。
 /// </summary>
-public sealed record BackfillWorkOrderReleaseProjectionCommand
-    : IRequest<WorkOrderReleaseProjectionBackfillReport>;
+internal sealed record BackfillWorkOrderReleaseProjectionCommand
+    : ICommand<WorkOrderReleaseProjectionBackfillReport>;
 
-public sealed class BackfillWorkOrderReleaseProjectionCommandHandler(
+internal sealed class BackfillWorkOrderReleaseProjectionCommandHandler(
     ApplicationDbContext dbContext,
-    IWorkOrderReleaseProjectionBackfillPublisher publisher,
+    IMesIntegrationEventOutboxPublisher publisher,
     TimeProvider timeProvider)
-    : IRequestHandler<BackfillWorkOrderReleaseProjectionCommand, WorkOrderReleaseProjectionBackfillReport>
+    : ICommandHandler<BackfillWorkOrderReleaseProjectionCommand, WorkOrderReleaseProjectionBackfillReport>
 {
     private const int WorkOrderPageSize = 200;
 
     /// <summary>
-    /// 在制工单的可复算判据（不靠人工名单）。逐个状态的取舍：
-    /// <list type="bullet">
-    /// <item><c>created</c>：尚未发布，还没有发布事实；真正发布时由直投事件覆盖。不回填。</item>
-    /// <item><c>released</c>：已发布未开工，后续会报工。回填。</item>
-    /// <item><c>started</c>：在制。回填。</item>
-    /// <item><c>hold</c>：暂挂但仍在制，解挂后继续报工。回填。</item>
-    /// <item><c>completed</c> / <c>closed</c> / <c>cancelled</c> / <c>scrapped</c>：终态，不再报工。不回填。</item>
-    /// <item><c>split</c> / <c>merged</c>：本单不再生产，产量转到拆分出的子工单或合并后的目标工单，
-    /// 那些工单自己按本判据参与回填。不回填。</item>
-    /// </list>
+    /// 「哪些工单的工序还会再撞首件门禁」由**报工路径自己的准入条件**表达，不另起一套工单状态白名单：
+    /// 报工命令的准入只检查工序 <c>InProgress</c>，门禁调用点就紧跟其后，工单状态在准入判断里一次都不出现；
+    /// 真正筛掉工单的是 <see cref="WorkOrder.NonExecutableStatuses"/>（<c>RecordProductionProgress</c> 的拒绝集合，
+    /// 与本查询同源）。因此受门禁影响的工单 = 该集合的补集，其中 <c>completed</c> **在内**——
+    /// 超收容差（计划量 ×1.2 硬上限）显式为「累计量已达计划量后继续报工」留了空间，
+    /// 工单翻 <c>completed</c> 时工序往往仍是 <c>InProgress</c>。
+    ///
+    /// 补集里唯一还要再排除的是 <c>created</c>，判据不是「在不在制」而是**发布事实是否已经发生**：
+    /// <c>created</c> 工单的发布事件还没发出（<c>ThrowIfCannotRelease</c> 允许它后续被发布），
+    /// 此时补投等于凭空造一份发布事实，随后真正的发布事件到达时会与它时刻不等、被判为冲突事实进死信。
     /// </summary>
-    private static readonly string[] InFlightWorkOrderStatuses =
-    [
-        WorkOrder.ReleasedStatus,
-        WorkOrder.StartedStatus,
-        WorkOrder.HoldStatus,
-    ];
+    private static readonly Expression<Func<WorkOrder, bool>> CanStillHitTheFirstArticleGate =
+        workOrder => workOrder.Status != WorkOrder.CreatedStatus
+            && !WorkOrder.NonExecutableStatuses.Contains(workOrder.Status);
 
     /// <summary>
     /// 门禁拦的是「还会再报工」的工序，因此只补未完工工序。逐个状态的取舍：
@@ -92,15 +77,34 @@ public sealed class BackfillWorkOrderReleaseProjectionCommandHandler(
         var operationsPublished = 0;
         var occurredAtUtc = timeProvider.GetUtcNow();
 
-        for (var skip = 0; ; skip += WorkOrderPageSize)
+        // 翻页按**上一页最后一个工单身份**续扫，不按偏移量：筛选谓词是可变状态，
+        // 而回填是活体系统上的一次请求——一次普通报工就能把工单从 released/started 翻成 completed
+        // 或经 Close/Cancel/MarkSplit/MarkMerged 退出集合，偏移量翻页会让后面的工单整段左移、被跳过，
+        // 而 WorkOrdersScanned 只累加实际取到的行数，看不出这个缺口。
+        // (OrganizationId, EnvironmentId, WorkOrderIdValue) 是 ak_work_orders_scope_work_order 上的
+        // 唯一候选键，即唯一全序，不需要再补 tiebreaker。
+        string? lastOrganizationId = null;
+        string? lastEnvironmentId = null;
+        string? lastWorkOrderId = null;
+        while (true)
         {
-            var page = await dbContext.WorkOrders
+            var query = dbContext.WorkOrders
                 .AsNoTracking()
-                .Where(x => InFlightWorkOrderStatuses.Contains(x.Status))
+                .Where(CanStillHitTheFirstArticleGate);
+            if (lastWorkOrderId is not null)
+            {
+                query = query.Where(x =>
+                    string.Compare(x.OrganizationId, lastOrganizationId) > 0
+                    || (x.OrganizationId == lastOrganizationId
+                        && (string.Compare(x.EnvironmentId, lastEnvironmentId) > 0
+                            || (x.EnvironmentId == lastEnvironmentId
+                                && string.Compare(x.WorkOrderIdValue, lastWorkOrderId) > 0))));
+            }
+
+            var page = await query
                 .OrderBy(x => x.OrganizationId)
                 .ThenBy(x => x.EnvironmentId)
                 .ThenBy(x => x.WorkOrderIdValue)
-                .Skip(skip)
                 .Take(WorkOrderPageSize)
                 .Select(x => new
                 {
@@ -115,6 +119,11 @@ public sealed class BackfillWorkOrderReleaseProjectionCommandHandler(
             {
                 break;
             }
+
+            var lastOnPage = page[^1];
+            lastOrganizationId = lastOnPage.OrganizationId;
+            lastEnvironmentId = lastOnPage.EnvironmentId;
+            lastWorkOrderId = lastOnPage.WorkOrderIdValue;
 
             scanned += page.Length;
             var workOrderIds = page.Select(x => x.WorkOrderIdValue).Distinct(StringComparer.Ordinal).ToArray();
@@ -143,6 +152,9 @@ public sealed class BackfillWorkOrderReleaseProjectionCommandHandler(
                     EarliestReportedAtUtc = group.Min(x => x.ReportedAtUtc),
                 })
                 .ToArrayAsync(cancellationToken);
+            var earliestReportByWorkOrder = earliestReports.ToDictionary(
+                x => (x.Key.OrganizationId, x.Key.EnvironmentId, x.Key.WorkOrderId),
+                x => x.EarliestReportedAtUtc);
 
             foreach (var workOrder in page)
             {
@@ -167,14 +179,11 @@ public sealed class BackfillWorkOrderReleaseProjectionCommandHandler(
                 // 「该工单最早的工序建单时刻」与「该工单最早的报工时刻」中更早的那个作为发布时刻下界。
                 // Quality 收到的报工是 MES 这批报工的子集，因此该下界对它一定成立。
                 var earliestTaskCreatedAtUtc = tasks.Min(x => x.CreatedAtUtc);
-                var earliestReportedAtUtc = earliestReports
-                    .Where(x => x.Key.OrganizationId == workOrder.OrganizationId
-                        && x.Key.EnvironmentId == workOrder.EnvironmentId
-                        && string.Equals(x.Key.WorkOrderId, workOrder.WorkOrderIdValue, StringComparison.Ordinal))
-                    .Select(x => (DateTimeOffset?)x.EarliestReportedAtUtc)
-                    .SingleOrDefault();
-                var releasedAtUtc = earliestReportedAtUtc.HasValue && earliestReportedAtUtc.Value < earliestTaskCreatedAtUtc
-                    ? earliestReportedAtUtc.Value
+                var releasedAtUtc = earliestReportByWorkOrder.TryGetValue(
+                    (workOrder.OrganizationId, workOrder.EnvironmentId, workOrder.WorkOrderIdValue),
+                    out var earliestReportedAtUtc)
+                    && earliestReportedAtUtc < earliestTaskCreatedAtUtc
+                    ? earliestReportedAtUtc
                     : earliestTaskCreatedAtUtc;
 
                 var idempotencyKey = EventIds.Idempotency(
@@ -182,7 +191,9 @@ public sealed class BackfillWorkOrderReleaseProjectionCommandHandler(
                     workOrder.OrganizationId,
                     workOrder.EnvironmentId,
                     workOrder.WorkOrderIdValue);
-                await publisher.PublishAsync(new WorkOrderReleaseProjectionBackfilledIntegrationEvent(
+                await publisher.PublishAsync(
+                    nameof(WorkOrderReleaseProjectionBackfilledIntegrationEvent),
+                    new WorkOrderReleaseProjectionBackfilledIntegrationEvent(
                     $"evt-{Guid.CreateVersion7():N}",
                     MesIntegrationEventTypes.WorkOrderReleaseProjectionBackfilled,
                     MesIntegrationEventVersions.V1,
@@ -209,10 +220,6 @@ public sealed class BackfillWorkOrderReleaseProjectionCommandHandler(
                 operationsPublished += unfinished.Length;
             }
 
-            if (page.Length < WorkOrderPageSize)
-            {
-                break;
-            }
         }
 
         return new WorkOrderReleaseProjectionBackfillReport(scanned, published, operationsPublished);

@@ -1,3 +1,4 @@
+using System.Reflection;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
@@ -89,18 +90,19 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
         Assert.Empty(await deadLetters.ListAsync(null, null, CancellationToken.None));
     }
 
+    /// <summary>
+    /// 回填补的是发布事实，不是巡检历史：补投之前已经流走的产量不追认周期巡检窗口，
+    /// 否则一次回填就为历史产量成批开出已过期任务；积压超过 <c>MaximumSupportedPendingQuantityWindows</c> 时
+    /// <c>TakeDueQuantityWindows</c> 还会抛出，整张工单进死信、回填对它失效。
+    /// 「不追认」不等于「不生成」——补投之后新报的量照常按间隔开出。
+    /// </summary>
     [Fact]
-    public async Task Backfill_reconciles_the_reports_that_arrived_before_the_release_facts()
+    public async Task Backfill_does_not_open_periodic_tasks_for_quantity_produced_before_it_ran()
     {
         await using var dbContext = CreateDbContext();
         dbContext.InspectionPlans.Add(PeriodicPlan());
         await dbContext.SaveChangesAsync();
-        await new ProductionReportRecordedIntegrationEventHandlerForTrackPeriodicInspection(
-            dbContext,
-            new PeriodicInspectionOperationScopeCoordinator(dbContext),
-            new InMemoryIntegrationEventDeadLetterStore()).HandleAsync(
-                ProductionReport(),
-                CancellationToken.None);
+        await HandleReportAsync(dbContext, ProductionReport());
 
         await HandleBackfillAsync(dbContext, Backfill());
 
@@ -110,8 +112,153 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
         var runtimeContext = Assert.Single(operation.RuntimeContexts);
         Assert.Equal(250m, runtimeContext.QuantityHighWater);
         Assert.Equal("EA", runtimeContext.UomCode);
-        Assert.Equal(2, await dbContext.InspectionTasks.CountAsync());
+        // 250 件 / 间隔 100 = 2 扇历史窗口，全部记为已生成，一张任务都不开。
+        Assert.Equal(2, runtimeContext.LastGeneratedQuantityWindowSequence);
+        Assert.Empty(await dbContext.InspectionTasks.ToArrayAsync());
+
+        // 补投之后再报 100 件：高水位 350、目标 3，只开出第 3 扇窗口这一张。
+        await HandleReportAsync(dbContext, ProductionReport(reportNo: "RPT-002", goodQuantity: 100m));
+
+        var task = Assert.Single(await dbContext.InspectionTasks.ToArrayAsync());
+        Assert.EndsWith(":3", task.SourceDocumentLineId, StringComparison.Ordinal);
+        Assert.Equal(300m, task.Quantity);
     }
+
+    /// <summary>
+    /// 时间间隔侧同理：回填时刻之前流逝的时间窗口一并记为已生成，时间调度器不会追认补开。
+    /// </summary>
+    [Fact]
+    public async Task Backfill_does_not_open_periodic_tasks_for_time_elapsed_before_it_ran()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.InspectionPlans.Add(TimeIntervalPlan());
+        await dbContext.SaveChangesAsync();
+        await HandleReportAsync(dbContext, ProductionReport());
+
+        await HandleBackfillAsync(dbContext, Backfill());
+
+        var operation = await dbContext.PeriodicInspectionOperations
+            .Include(x => x.RuntimeContexts)
+            .SingleAsync();
+        var runtimeContext = Assert.Single(operation.RuntimeContexts);
+        // 首次活动 2026-08-02T00:00Z、间隔 2 小时、补投时刻 2026-09-01T00:00Z → 360 扇窗口已流走。
+        Assert.Equal(360, runtimeContext.LastGeneratedTimeWindowSequence);
+        Assert.Equal(
+            DateTime.Parse("2026-08-02T00:00:00Z").ToUniversalTime(),
+            runtimeContext.TimeScheduleAnchorAtUtc);
+        Assert.Equal(
+            DateTime.Parse("2026-09-01T02:00:00Z").ToUniversalTime(),
+            runtimeContext.NextTimeWindowAtUtc);
+        Assert.Empty(runtimeContext.TakeDueTimeWindows(
+            DateTime.Parse("2026-09-01T00:00:00Z").ToUniversalTime(),
+            maxWindows: 256));
+    }
+
+    /// <summary>
+    /// 直投侧不得跟着回填一起「跳过已有发布事实」：同一工序收到第二份**内容不同**的发布事实
+    /// 是真实异常，必须判为冲突进死信。本 PR 把该判断做成了按调用点取值的参数，
+    /// 因此直投那一半也要有断言承重，否则参数被翻反不会红。
+    /// </summary>
+    [Fact]
+    public async Task Live_release_with_conflicting_facts_still_dead_letters()
+    {
+        await using var dbContext = CreateDbContext();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        await HandleLiveReleaseAsync(dbContext, LiveRelease(), deadLetters);
+
+        // 新 EventId（inbox 挡不住），发布时刻不同（内容冲突）。
+        await HandleLiveReleaseAsync(
+            dbContext,
+            LiveRelease(eventId: "evt-release-WO-001-second", releasedAtUtc: ReleasedAtUtc.AddHours(5)),
+            deadLetters);
+
+        var deadLetter = Assert.Single(await deadLetters.ListAsync(null, null, CancellationToken.None));
+        Assert.Equal(
+            WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicInspectionContexts.ConsumerName,
+            deadLetter.ConsumerName);
+        var operation = await dbContext.PeriodicInspectionOperations.SingleAsync();
+        Assert.Equal(ReleasedAtUtc.UtcDateTime, operation.ReleasedAtUtc);
+    }
+
+    /// <summary>
+    /// 「独立 topic + 独立消费组」是本 PR 隔离主张的承重结构：回填消费组必须与直投消费组不同，
+    /// 且回填的 CAP 订阅与消费者注册都必须指向回填事件。没有断言时这三处被改成直投的值不会红。
+    /// </summary>
+    [Fact]
+    public void Backfill_consumer_is_registered_on_its_own_topic_and_group()
+    {
+        var backfill = typeof(WorkOrderReleaseProjectionBackfilledIntegrationEventHandlerForCreatePeriodicInspectionContexts);
+        var live = typeof(WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicInspectionContexts);
+
+        Assert.NotEqual(
+            WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicInspectionContexts.ConsumerName,
+            WorkOrderReleaseProjectionBackfilledIntegrationEventHandlerForCreatePeriodicInspectionContexts.ConsumerName);
+
+        var backfillTopic = nameof(WorkOrderReleaseProjectionBackfilledIntegrationEvent);
+        Assert.Equal(backfillTopic, ReadCapSubscribeTopic(backfill));
+        Assert.Equal(
+            WorkOrderReleaseProjectionBackfilledIntegrationEventHandlerForCreatePeriodicInspectionContexts.ConsumerName,
+            ReadCapSubscribeGroup(backfill));
+        Assert.Equal(backfillTopic, ReadIntegrationEventConsumerEventName(backfill));
+        Assert.Equal(
+            WorkOrderReleaseProjectionBackfilledIntegrationEventHandlerForCreatePeriodicInspectionContexts.ConsumerName,
+            ReadIntegrationEventConsumerName(backfill));
+
+        // 直投侧同时钉住，避免「两边都被改成同一个值」这种改法悄悄通过。
+        Assert.Equal(nameof(WorkOrderReleasedIntegrationEvent), ReadCapSubscribeTopic(live));
+        Assert.Equal(
+            WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicInspectionContexts.ConsumerName,
+            ReadCapSubscribeGroup(live));
+    }
+
+    private static string ReadCapSubscribeTopic(Type handler) =>
+        ReadCapSubscribeProperty(handler, "Name");
+
+    private static string ReadCapSubscribeGroup(Type handler) =>
+        ReadCapSubscribeProperty(handler, "Group");
+
+    private static string ReadCapSubscribeProperty(Type handler, string propertyName)
+    {
+        var attribute = handler
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .SelectMany(method => method.GetCustomAttributes())
+            .Single(x => string.Equals(x.GetType().Name, "CapSubscribeAttribute", StringComparison.Ordinal));
+        return (string)attribute.GetType().GetProperty(propertyName)!.GetValue(attribute)!;
+    }
+
+    private static string ReadIntegrationEventConsumerEventName(Type handler) =>
+        ReadIntegrationEventConsumerField(handler, 0);
+
+    private static string ReadIntegrationEventConsumerName(Type handler) =>
+        ReadIntegrationEventConsumerField(handler, 1);
+
+    private static string ReadIntegrationEventConsumerField(Type handler, int index)
+    {
+        var attribute = handler
+            .GetCustomAttributesData()
+            .Single(x => string.Equals(
+                x.AttributeType.Name,
+                "IntegrationEventConsumerAttribute",
+                StringComparison.Ordinal));
+        return (string)attribute.ConstructorArguments[index].Value!;
+    }
+
+    private static async Task HandleReportAsync(
+        ApplicationDbContext dbContext,
+        ProductionReportRecordedIntegrationEvent integrationEvent) =>
+        await new ProductionReportRecordedIntegrationEventHandlerForTrackPeriodicInspection(
+            dbContext,
+            new PeriodicInspectionOperationScopeCoordinator(dbContext),
+            new InMemoryIntegrationEventDeadLetterStore()).HandleAsync(integrationEvent, CancellationToken.None);
+
+    private static async Task HandleLiveReleaseAsync(
+        ApplicationDbContext dbContext,
+        WorkOrderReleasedIntegrationEvent integrationEvent,
+        InMemoryIntegrationEventDeadLetterStore deadLetters) =>
+        await new WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicInspectionContexts(
+            dbContext,
+            new PeriodicInspectionOperationScopeCoordinator(dbContext),
+            deadLetters).HandleAsync(integrationEvent, CancellationToken.None);
 
     private static async Task HandleBackfillAsync(
         ApplicationDbContext dbContext,
@@ -158,8 +305,10 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
             releasedAtUtc ?? ReleasedAtUtc,
             [new ReleasedOperationPayload("OP-10", 10, "WC-MIX")]));
 
-    private static WorkOrderReleasedIntegrationEvent LiveRelease() => new(
-        "evt-release-WO-001",
+    private static WorkOrderReleasedIntegrationEvent LiveRelease(
+        string eventId = "evt-release-WO-001",
+        DateTimeOffset? releasedAtUtc = null) => new(
+        eventId,
         MesIntegrationEventTypes.WorkOrderReleased,
         MesIntegrationEventVersions.V1,
         ReleasedAtUtc,
@@ -174,23 +323,25 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
             "WO-001",
             "SKU-FG-1000",
             1000m,
-            ReleasedAtUtc,
+            releasedAtUtc ?? ReleasedAtUtc,
             [new ReleasedOperationPayload("OP-10", 10, "WC-MIX")]));
 
-    private static ProductionReportRecordedIntegrationEvent ProductionReport() => new(
-        "evt-report-RPT-001",
+    private static ProductionReportRecordedIntegrationEvent ProductionReport(
+        string reportNo = "RPT-001",
+        decimal goodQuantity = 250m) => new(
+        $"evt-report-{reportNo}",
         MesIntegrationEventTypes.ProductionReportRecorded,
         MesIntegrationEventVersions.V1,
         DateTimeOffset.Parse("2026-08-02T00:00:00Z"),
         MesIntegrationEventSources.BusinessMes,
-        "corr-report-RPT-001",
+        $"corr-report-{reportNo}",
         "WO-001",
         "org-001",
         "env-dev",
         "system:mes",
-        "mes:production-report-recorded:org-001:env-dev:RPT-001",
+        $"mes:production-report-recorded:org-001:env-dev:{reportNo}",
         new ProductionReportRecordedPayload(
-            "RPT-001", "WO-001", "OP-10", "WC-MIX", null, 250m, 0m, 0m, "EA", null,
+            reportNo, "WO-001", "OP-10", "WC-MIX", null, goodQuantity, 0m, 0m, "EA", null,
             DateTimeOffset.Parse("2026-08-02T00:00:00Z"), false));
 
     private static InspectionPlan FirstArticlePlan()
@@ -207,6 +358,16 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
         var plan = InspectionPlan.Create(
             "org-001", "env-dev", "PLAN-PERIODIC-1000", "operation", "SKU-FG-1000", null, "WC-MIX", null, "mes-operation",
             quantityInterval: 100m);
+        plan.AddCharacteristic("appearance", "Appearance", "visual", "major", required: true, "100%");
+        plan.Activate();
+        return plan;
+    }
+
+    private static InspectionPlan TimeIntervalPlan()
+    {
+        var plan = InspectionPlan.Create(
+            "org-001", "env-dev", "PLAN-TIME-1000", "operation", "SKU-FG-1000", null, "WC-MIX", null, "mes-operation",
+            timeIntervalHours: 2m);
         plan.AddCharacteristic("appearance", "Appearance", "visual", "major", required: true, "100%");
         plan.Activate();
         return plan;
