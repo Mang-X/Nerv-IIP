@@ -367,7 +367,9 @@ public sealed class MesSchemaConventionTests
     /// <summary>
     /// 附件大小的非负约束是 EF 配置里的裸 SQL 字符串，<c>MigrationsModelDiffer</c> 不 diff check constraint，
     /// 因此模型快照一致性那条断言结构上不可能承接它——删掉整条约束，全仓 MES 用例照绿。
-    /// 与同文件既有的五条同族断言同姿势，连表达式一起钉住。
+    /// 姿势照同文件的 <c>ck_work_order_transformation_lines_uom_present</c>：<c>Assert.Single</c> 定位后连
+    /// <c>Sql</c> 一起钉。同文件另有四条只用 <c>Assert.Contains</c> 钉名字，那个较弱的形状钉不住
+    /// 「约束还在、表达式被改坏」这一支。
     /// </summary>
     [Fact]
     public void Shift_handover_attachment_size_is_constrained_non_negative()
