@@ -62,6 +62,8 @@ POST /api/files/v1/files/{fileId}/download-grants
 
 2026-08-25 起，complete 的 application/PostgreSQL 协议层持久化 `open / committing / completed`、不可变提交意图、执行 owner/租约、恢复退避与永久证据失败的终止时间。Tx1 在共享 PATCH gate 内提交后才调用 `IUploadCommitStorage`；执行期间由独立 DbContext 续租，写入 Tx2、重开或失败诊断前再次核验 owner。只有本次调用前没有历史 storage-action 标记，且本次明确证明未开始任何 final 动作时，才允许回到 `open`；历史标记存在、遗留迁移记录或 final 可能存在时继续失败关闭。size/checksum 已验证但与冻结意图不一致时停止自动恢复；`committing` 会话和 tus 字节不由过期 GC 删除。当前 tus staging 的大小、可选 checksum 与文件签名校验仍在 Tx1 前执行；默认 storage seam 仍不可用，因此这些协议事实不代表 provider promote、final 回读或 canonical `ObjectKey` 已实现。
 
+2026-09-02 起新增 `shift-handover-photo`，承载 MES 交接班随班提交的现场照片：只接受 `.png`/`.jpg`/`.jpeg` 与 `image/png`/`image/jpeg`，单文件上限 20,971,520 bytes（现场手机原图口径），沿用平台通用 blocked extension 名单。该 purpose 不配置 owner allowlist、`RequireSha256Checksum`、`QuotaBytes` 或 `RetentionSeconds`，因此不做用途级配额与自动清理；组织+环境或组织+环境+用途配额一旦显式配置仍按既有优先级生效。附件与交接班记录的挂接关系由 MES `shift_handover_attachments` 拥有，FileStorage 只拥有字节与文件事实。
+
 ## 已批准目标，尚未实现
 
 以下是已接受的目标架构，不是当前 API、配置、schema、脚本、生产就绪或真实基础设施证明；实现进度仍以当前代码、配置、公开契约、测试及对应交付和运行证据为准。

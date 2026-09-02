@@ -195,7 +195,7 @@ public sealed class BusinessMesAcceptedReceiptClientTests
             client => client.CreateShiftHandoverAsync(
                 "token",
                 new BusinessConsoleMesCreateShiftHandoverForwardRequest(
-                    "org", "env", "SHIFT-A", "TEAM-1", null, "idem-handover", null, "user-admin", "张三", null, null, null),
+                    "org", "env", "SHIFT-A", "TEAM-1", null, "idem-handover", null, "user-admin", "张三", null, null, null, null),
                 CancellationToken.None));
 
     [Fact]

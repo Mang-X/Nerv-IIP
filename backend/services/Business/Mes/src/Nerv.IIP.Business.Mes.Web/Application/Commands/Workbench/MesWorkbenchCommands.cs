@@ -25,6 +25,7 @@ using ShiftHandoverIssueSeverity = Nerv.IIP.Business.Mes.Domain.AggregatesModel.
 using ShiftHandoverWipItemSnapshot = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverWipItemSnapshot;
 using ShiftHandoverUnfinishedWorkOrderSnapshot = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverUnfinishedWorkOrderSnapshot;
 using ShiftHandoverOpenIssueSnapshot = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverOpenIssueSnapshot;
+using ShiftHandoverAttachmentSnapshot = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverAttachmentSnapshot;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.Business.Mes.Web.Application.Errors;
 using Nerv.IIP.Business.Mes.Web.Application.Approvals;
@@ -2633,6 +2634,13 @@ public sealed record ShiftHandoverUnfinishedWorkOrderInput(
     decimal CompletedQuantity,
     string WorkOrderStatus);
 
+/// <summary>随交班一并提交的 FileStorage 附件引用；文件名、内容类型与大小是交班时点快照。</summary>
+public sealed record ShiftHandoverAttachmentInput(
+    string FileId,
+    string FileName,
+    string ContentType,
+    long SizeBytes);
+
 /// <summary>交班时点的遗留问题；<c>Category</c>/<c>Severity</c> 走字符串词表，见 <see cref="ShiftHandoverVocabulary"/>。</summary>
 public sealed record ShiftHandoverOpenIssueInput(
     string Category,
@@ -2680,7 +2688,8 @@ public sealed record CreateShiftHandoverCommand(
     string? OutgoingUserName = null,
     IReadOnlyCollection<ShiftHandoverWipItemInput>? WipItems = null,
     IReadOnlyCollection<ShiftHandoverUnfinishedWorkOrderInput>? UnfinishedWorkOrders = null,
-    IReadOnlyCollection<ShiftHandoverOpenIssueInput>? OpenIssues = null) : ICommand<MesAcceptedResponse>;
+    IReadOnlyCollection<ShiftHandoverOpenIssueInput>? OpenIssues = null,
+    IReadOnlyCollection<ShiftHandoverAttachmentInput>? Attachments = null) : ICommand<MesAcceptedResponse>;
 
 public sealed class CreateShiftHandoverCommandHandler(ApplicationDbContext dbContext, MesCodingService? codingService = null)
     : ICommandHandler<CreateShiftHandoverCommand, MesAcceptedResponse>
@@ -2732,7 +2741,12 @@ public sealed class CreateShiftHandoverCommandHandler(ApplicationDbContext dbCon
                     ShiftHandoverVocabulary.ParseCategory(x.Category),
                     ShiftHandoverVocabulary.ParseSeverity(x.Severity),
                     x.Description,
-                    x.ReferenceId))]));
+                    x.ReferenceId))],
+                [.. (request.Attachments ?? []).Select(x => new ShiftHandoverAttachmentSnapshot(
+                    x.FileId,
+                    x.FileName,
+                    x.ContentType,
+                    x.SizeBytes))]));
 
         dbContext.ShiftHandovers.Add(handover);
         return new MesAcceptedResponse("Accepted", handover.HandoverNo, request.HandoverAtUtc);
