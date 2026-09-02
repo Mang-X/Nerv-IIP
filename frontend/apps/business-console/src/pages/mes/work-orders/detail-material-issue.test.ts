@@ -104,6 +104,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     filters: reactive({ organizationId: 'org', environmentId: 'dev', workOrderId: 'WO-1' }),
     finishedGoodsReceiptRequests: ref([]),
     materialIssueRequests: ref(state.materialIssueRequests),
+    materialIssueRequestsError: ref(undefined),
     materialIssueRequestsPending: ref(false),
     materialReadiness: ref(state.materialReadiness),
     materialReadinessError: ref(undefined),

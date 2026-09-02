@@ -364,6 +364,26 @@ public sealed class MesSchemaConventionTests
         Assert.Empty(differences);
     }
 
+    /// <summary>
+    /// 附件大小的非负约束是 EF 配置里的裸 SQL 字符串，<c>MigrationsModelDiffer</c> 不 diff check constraint，
+    /// 因此模型快照一致性那条断言结构上不可能承接它——删掉整条约束，全仓 MES 用例照绿。
+    /// 姿势照同文件的 <c>ck_work_order_transformation_lines_uom_present</c>：<c>Assert.Single</c> 定位后连
+    /// <c>Sql</c> 一起钉。同文件另有四条只用 <c>Assert.Contains</c> 钉名字，那个较弱的形状钉不住
+    /// 「约束还在、表达式被改坏」这一支。
+    /// </summary>
+    [Fact]
+    public void Shift_handover_attachment_size_is_constrained_non_negative()
+    {
+        using var fixture = CreateFixture();
+        var entity = fixture.DbContext.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(ShiftHandoverAttachment))!;
+
+        var sizeConstraint = Assert.Single(
+            entity.GetCheckConstraints(),
+            x => x.Name == "ck_shift_handover_attachments_size_bytes");
+
+        Assert.Equal("size_bytes >= 0", sizeConstraint.Sql);
+    }
+
     [Fact]
     public void Mes_schema_metadata_follows_database_conventions()
     {
@@ -390,6 +410,10 @@ public sealed class MesSchemaConventionTests
             typeof(DeviceAssetWorkCenterMapping),
             typeof(FinishedGoodsReceiptRequest),
             typeof(ShiftHandover),
+            typeof(ShiftHandoverWipItem),
+            typeof(ShiftHandoverUnfinishedWorkOrder),
+            typeof(ShiftHandoverOpenIssue),
+            typeof(ShiftHandoverAttachment),
             typeof(CodeCounter),
             typeof(CodeIdempotencyKey),
             typeof(ProcessedIntegrationEvent),

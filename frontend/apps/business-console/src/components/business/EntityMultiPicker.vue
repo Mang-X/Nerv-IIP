@@ -10,7 +10,7 @@
  */
 import { NvBadge, NvEntityPicker, type EntityPickerOption } from '@nerv-iip/ui'
 import { XIcon } from '@lucide/vue'
-import { computed } from 'vue'
+import { computed, shallowRef, watch } from 'vue'
 
 const props = withDefaults(
   defineProps<{
@@ -32,6 +32,13 @@ const props = withDefaults(
     invalid?: boolean
     /** 已选标签区的空态文案。 */
     selectionEmptyText?: string
+    /** 服务端搜索时由调用方持有的搜索词。 */
+    search?: string
+    /** 目录超过一页时打开；候选由服务端按 `search` 过滤。 */
+    serverSearch?: boolean
+    /** 当前搜索命中的服务端总数。 */
+    totalCount?: number
+    searchPlaceholder?: string
   }>(),
   {
     modelValue: '',
@@ -40,10 +47,14 @@ const props = withDefaults(
     disabled: false,
     invalid: false,
     selectionEmptyText: '尚未选择',
+    serverSearch: false,
   },
 )
 
-const emit = defineEmits<{ (e: 'update:modelValue', value: string): void }>()
+const emit = defineEmits<{
+  (e: 'update:modelValue', value: string): void
+  (e: 'update:search', value: string): void
+}>()
 
 const selectedCodes = computed(() =>
   (props.modelValue ?? '')
@@ -52,11 +63,24 @@ const selectedCodes = computed(() =>
     .filter(Boolean),
 )
 
-/** 已选项按选择顺序展示；目录里查得到就显示名称，查不到（历史值）就显示编码本身。 */
+// 服务端搜索会不断替换结果窗。缓存组件见过的人读标签，使已选项在换词后仍可核对和移除；
+// 未见过的历史值仍按既有语义显示编码本身。
+const optionLabels = shallowRef(new Map<string, string>())
+watch(
+  () => props.options,
+  (options) => {
+    const next = new Map(optionLabels.value)
+    for (const option of options) next.set(option.value, option.label)
+    optionLabels.value = next
+  },
+  { immediate: true },
+)
+
+/** 已选项按选择顺序展示；目录曾返回名称就显示名称，否则显示编码本身。 */
 const selectedEntries = computed(() =>
   selectedCodes.value.map((code) => ({
     code,
-    label: props.options.find((option) => option.value === code)?.label ?? code,
+    label: optionLabels.value.get(code) ?? code,
   })),
 )
 
@@ -94,8 +118,13 @@ function remove(code: string) {
       :loading="loading"
       :disabled="disabled"
       :aria-label="ariaLabel"
+      :search="search"
+      :server-search="serverSearch"
+      :total-count="totalCount"
+      :search-placeholder="searchPlaceholder"
       :class="invalid ? '[&>button]:border-destructive' : undefined"
       @update:model-value="add"
+      @update:search="emit('update:search', $event)"
     />
     <div v-if="selectedEntries.length" class="flex flex-wrap gap-1.5">
       <NvBadge

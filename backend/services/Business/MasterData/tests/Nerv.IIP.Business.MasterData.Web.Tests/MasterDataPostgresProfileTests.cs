@@ -30,6 +30,7 @@ using DotNetCore.CAP.Persistence;
 
 namespace Nerv.IIP.Business.MasterData.Web.Tests;
 
+[Collection(MasterDataPostgresProfileCollection.Name)]
 public sealed class MasterDataPostgresProfileTests
 {
     [PostgresFact]

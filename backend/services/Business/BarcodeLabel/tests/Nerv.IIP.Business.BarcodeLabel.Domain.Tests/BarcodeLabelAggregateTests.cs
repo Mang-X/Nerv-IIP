@@ -281,6 +281,77 @@ public sealed class BarcodeLabelAggregateTests
     }
 
     [Fact]
+    public void Raw_transport_results_never_mark_a_batch_or_item_as_physically_printed()
+    {
+        var sent = NewPrintBatch(ActiveRule(), "idem-sent-only", "ASN-001", 1);
+        sent.RecordSentToPrinter("printer-zpl-01", "job-sent");
+
+        Assert.Equal("sent-to-printer", sent.Status);
+        Assert.Equal("created", sent.Items.Single().Status);
+        Assert.Null(sent.CompletedAtUtc);
+
+        var unknown = NewPrintBatch(ActiveRule(), "idem-unknown", "ASN-002", 1);
+        unknown.RecordDeliveryUnknown("printer-zpl-01", "job-unknown", "partial write");
+
+        Assert.Equal("delivery-unknown", unknown.Status);
+        Assert.Equal("created", unknown.Items.Single().Status);
+        Assert.Equal("job-unknown", unknown.PrintJobId);
+        Assert.Equal("partial write", unknown.FailureReason);
+    }
+
+    [Fact]
+    public void Reprint_transport_updates_only_recent_attempt_facts()
+    {
+        var batch = NewPrintBatch(ActiveRule(), "idem-reprint-transport", "ASN-001", 1);
+        batch.RecordSentToPrinter("printer-zpl-01", "initial-job");
+        batch.RecordPrinted();
+        var completedAtUtc = batch.CompletedAtUtc;
+
+        batch.EnsureItemCanBeReprinted(1);
+        batch.RecordReprintDeliveryUnknown("printer-zpl-02", "reprint-job", "partial write");
+
+        Assert.Equal("printed", batch.Status);
+        Assert.Equal("printed", batch.Items.Single().Status);
+        Assert.Equal(completedAtUtc, batch.CompletedAtUtc);
+        Assert.Equal("printer-zpl-02", batch.PrinterId);
+        Assert.Equal("reprint-job", batch.PrintJobId);
+        Assert.Equal("partial write", batch.FailureReason);
+    }
+
+    [Fact]
+    public void Reprint_rejections_expose_stable_reasons_for_every_unsafe_lifecycle_state()
+    {
+        var pending = NewPrintBatch(ActiveRule(), "idem-reject-pending", "ASN-001", 1);
+        AssertReprintRejected(
+            pending,
+            LabelPrintLifecycleRejectionReason.BatchCannotBeReprinted);
+
+        var failed = NewPrintBatch(ActiveRule(), "idem-reject-failed", "ASN-002", 1);
+        failed.RecordPrintFailed("printer-zpl-01", "pre-write failure");
+        AssertReprintRejected(
+            failed,
+            LabelPrintLifecycleRejectionReason.FailedBatchRequiresDispatch);
+
+        var unknown = NewPrintBatch(ActiveRule(), "idem-reject-unknown", "ASN-003", 1);
+        unknown.RecordDeliveryUnknown("printer-zpl-01", "job-unknown", "partial write");
+        AssertReprintRejected(
+            unknown,
+            LabelPrintLifecycleRejectionReason.BatchDeliveryUnknownCannotBeReprinted);
+
+        var voided = NewPrintedBatch("idem-reject-voided", "ASN-004");
+        voided.VoidItem(1, "damaged");
+        AssertReprintRejected(
+            voided,
+            LabelPrintLifecycleRejectionReason.PrintItemVoided);
+
+        var consumed = NewPrintedBatch("idem-reject-consumed", "ASN-005");
+        consumed.ConsumeItem(consumed.Items.Single().Id);
+        AssertReprintRejected(
+            consumed,
+            LabelPrintLifecycleRejectionReason.PrintItemConsumed);
+    }
+
+    [Fact]
     public void Printed_item_can_be_reprinted_or_voided_but_voided_item_cannot_be_reprinted()
     {
         var batch = NewPrintBatch(ActiveRule(), "idem-print-lifecycle-002", "ASN-001", 1);
@@ -293,7 +364,24 @@ public sealed class BarcodeLabelAggregateTests
         batch.VoidItem(1, "damaged");
         Assert.Equal("voided", batch.Items.Single().Status);
         Assert.Equal("damaged", batch.Items.Single().VoidReason);
-        Assert.Throws<InvalidOperationException>(() => batch.ReprintItem(1));
+        Assert.Throws<LabelPrintLifecycleRejectedException>(() => batch.ReprintItem(1));
+    }
+
+    private static LabelPrintBatch NewPrintedBatch(string idempotencyKey, string sourceDocumentId)
+    {
+        var batch = NewPrintBatch(ActiveRule(), idempotencyKey, sourceDocumentId, 1);
+        batch.RecordSentToPrinter("printer-zpl-01", $"job-{idempotencyKey}");
+        batch.RecordPrinted();
+        return batch;
+    }
+
+    private static void AssertReprintRejected(
+        LabelPrintBatch batch,
+        LabelPrintLifecycleRejectionReason expectedReason)
+    {
+        var exception = Assert.Throws<LabelPrintLifecycleRejectedException>(
+            () => batch.EnsureItemCanBeReprinted(1));
+        Assert.Equal(expectedReason, exception.Reason);
     }
 
     [Fact]

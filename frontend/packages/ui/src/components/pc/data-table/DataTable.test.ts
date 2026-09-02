@@ -126,6 +126,32 @@ describe('NvDataTable 空 / 失败 / 未查询三态（架构契约）', () => {
     wrapper.unmount()
   })
 
+  it('错误态把失败原因放进活动区域，读屏可播报（列表已渲染时分页失败是唯一变化）', async () => {
+    const wrapper = mount(NvDataTable, {
+      props: {
+        ...base,
+        rows: [{ id: '1', name: '甲' }],
+        pagination: false,
+        emptyMessage: EMPTY,
+        error: new Error('网关 502'),
+      },
+    })
+    await nextTick()
+
+    const alert = wrapper.get('[role="alert"]')
+    expect(alert.text()).toContain('数据加载失败')
+    expect(alert.text()).toContain('网关 502')
+    wrapper.unmount()
+
+    // 只有错误态播报：空态若也落进活动区域，正常查询无结果会被读屏当成告警。
+    const empty = mount(NvDataTable, {
+      props: { ...base, rows: [], pagination: false, emptyMessage: EMPTY },
+    })
+    await nextTick()
+    expect(empty.find('[role="alert"]').exists()).toBe(false)
+    empty.unmount()
+  })
+
   it('错误态优先级高于空态与加载态（rows 为空 + error → 走错误态）', async () => {
     const wrapper = mount(NvDataTable, {
       props: {
@@ -152,7 +178,8 @@ describe('NvDataTable 空 / 失败 / 未查询三态（架构契约）', () => {
       slots: { error: '<p>自定义失败呈现</p>' },
     })
     await nextTick()
-    expect(wrapper.text()).toContain('自定义失败呈现')
+    // 播报由组件承担，调用点换掉呈现也不必自己加 role="alert"
+    expect(wrapper.get('[role="alert"]').text()).toContain('自定义失败呈现')
     expect(wrapper.text()).not.toContain(EMPTY)
     wrapper.unmount()
   })

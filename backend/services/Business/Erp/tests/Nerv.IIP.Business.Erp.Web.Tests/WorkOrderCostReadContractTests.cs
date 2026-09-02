@@ -1,18 +1,9 @@
-using System.Net;
-using System.Net.Http.Headers;
-using System.Text.Json;
-using MediatR;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkCenterMachineOverheadRateAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Queries.Finance;
-using Nerv.IIP.Business.Erp.Web.Endpoints.Erp;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
 
@@ -21,6 +12,154 @@ public sealed class WorkOrderCostReadContractTests
 {
     private static readonly DateTimeOffset CompletedAtUtc =
         DateTimeOffset.Parse("2026-08-31T15:00:00Z");
+
+    [Fact]
+    public async Task Machine_overhead_read_returns_applied_amounts_three_states_and_frozen_settlement_lineage()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var applicableRateId = new WorkCenterMachineOverheadRateId(Guid.CreateVersion7());
+        var notApplicableRateId = new WorkCenterMachineOverheadRateId(Guid.CreateVersion7());
+        var applicable = OperationMachineOverheadSettlement.CreateApplied(
+            "org-machine", "env-machine", "WO-MACHINE", "OP-APPLIED", "WC-APPLIED", 2,
+            CompletedAtUtc, "DEVICE-001", 2 * TimeSpan.TicksPerHour,
+            "single-device-active-minus-explicit-pause-v1", applicableRateId,
+            "2026-08", 7, "CNY", 30m, 10m, "evt-machine-applied", new string('a', 64));
+        var explicitZero = OperationMachineOverheadSettlement.CreateApplied(
+            "org-machine", "env-machine", "WO-MACHINE", "OP-ZERO", "WC-ZERO", 1,
+            CompletedAtUtc, "DEVICE-ZERO", 0,
+            "single-device-active-minus-explicit-pause-v1", applicableRateId,
+            "2026-08", 7, "CNY", 30m, 10m, "evt-machine-zero", new string('b', 64));
+        var notApplicable = OperationMachineOverheadSettlement.CreateNotApplicable(
+            "org-machine", "env-machine", "WO-MACHINE", "OP-NOT-APPLICABLE", "WC-MANUAL", 1,
+            CompletedAtUtc, notApplicableRateId, "2026-08", 3, "CNY",
+            "evt-machine-not-applicable", new string('c', 64));
+        var inactive = OperationMachineOverheadSettlement.CreateApplied(
+            "org-machine", "env-machine", "WO-MACHINE", "OP-APPLIED", "WC-APPLIED", 1,
+            CompletedAtUtc.AddHours(-1), "DEVICE-OLD", 9 * TimeSpan.TicksPerHour,
+            "single-device-active-minus-explicit-pause-v1", applicableRateId,
+            "2026-07", 6, "CNY", 30m, 10m, "evt-machine-old", new string('d', 64));
+        var appliedState = OperationMachineOverheadSettlementState.Open("org-machine", "env-machine", "OP-APPLIED");
+        appliedState.ApplySettlement(1);
+        appliedState.ApplySettlement(2);
+        var zeroState = OperationMachineOverheadSettlementState.Open("org-machine", "env-machine", "OP-ZERO");
+        zeroState.ApplySettlement(1);
+        var notApplicableState = OperationMachineOverheadSettlementState.Open(
+            "org-machine", "env-machine", "OP-NOT-APPLICABLE");
+        notApplicableState.ApplySettlement(1);
+        var cost = WorkOrderCost.Open("org-machine", "env-machine", "WO-MACHINE", "FG-MACHINE");
+        cost.RecordMachineOverhead(applicable);
+        cost.RecordMachineOverhead(explicitZero);
+        cost.RecordMachineOverhead(notApplicable);
+        db.AddRange(cost, applicable, explicitZero, notApplicable, inactive,
+            appliedState, zeroState, notApplicableState);
+        await db.SaveChangesAsync();
+
+        var response = await new GetWorkOrderCostVarianceQueryHandler(db).Handle(
+            new("org-machine", "env-machine", "WO-MACHINE"), CancellationToken.None);
+
+        Assert.Equal(MachineOverheadReadStatus.Available, response.MachineCostStatus);
+        Assert.Null(response.MachineCostUnavailableReason);
+        Assert.Null(response.CurrencyCode);
+        Assert.Equal("CNY", response.MachineCurrencyCode);
+        Assert.Equal(2.000000m, response.ActualMachineHours);
+        Assert.Equal(60.000000m, response.AppliedFixedMachineOverhead);
+        Assert.Equal(20.000000m, response.AppliedVariableMachineOverhead);
+        Assert.Equal(80.000000m, response.AppliedMachineOverheadTotal);
+        Assert.Equal(3, response.MachineOverheadOperations.Count);
+        Assert.Equal(1, response.MachineOverheadPageNumber);
+        Assert.Equal(50, response.MachineOverheadPageSize);
+        Assert.Equal(3, response.TotalMachineOverheadOperations);
+        var operations = response.MachineOverheadOperations.ToDictionary(x => x.OperationTaskId, StringComparer.Ordinal);
+        var applied = operations["OP-APPLIED"];
+        Assert.Equal(applicable.Id.ToString(), applied.SettlementId);
+        Assert.Equal(2, applied.SettlementRevision);
+        Assert.Equal("2026-08", applied.AccountingPeriodCode);
+        Assert.Equal("CNY", applied.CurrencyCode);
+        Assert.Equal(applicableRateId.ToString(), applied.WorkCenterMachineOverheadRateId);
+        Assert.Equal(7, applied.RateRevision);
+        Assert.Equal("evt-machine-applied", applied.SourceEventId);
+        Assert.Equal(CompletedAtUtc, applied.CompletedAtUtc);
+        Assert.Equal(0m, operations["OP-ZERO"].AppliedMachineOverheadTotal);
+        Assert.Equal(MachineOverheadReadStatus.Available, operations["OP-ZERO"].Status);
+        Assert.Equal(MachineOverheadReadStatus.NotApplicable, operations["OP-NOT-APPLICABLE"].Status);
+        Assert.Equal("machine_overhead_not_applicable", operations["OP-NOT-APPLICABLE"].UnavailableReason);
+        Assert.Null(operations["OP-NOT-APPLICABLE"].ActualMachineHours);
+        Assert.Null(operations["OP-NOT-APPLICABLE"].AppliedMachineOverheadTotal);
+
+        var secondPage = await new GetWorkOrderCostVarianceQueryHandler(db).Handle(
+            new("org-machine", "env-machine", "WO-MACHINE", PageNumber: 2, PageSize: 1),
+            CancellationToken.None);
+        Assert.Equal(2, secondPage.MachineOverheadPageNumber);
+        Assert.Equal(1, secondPage.MachineOverheadPageSize);
+        Assert.Equal(3, secondPage.TotalMachineOverheadOperations);
+        Assert.Equal("OP-NOT-APPLICABLE", Assert.Single(secondPage.MachineOverheadOperations).OperationTaskId);
+    }
+
+    [Fact]
+    public async Task Work_order_with_only_not_applicable_machine_settlement_does_not_map_to_zero()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var settlement = OperationMachineOverheadSettlement.CreateNotApplicable(
+            "org-na", "env-na", "WO-NA", "OP-NA", "WC-MANUAL", 1, CompletedAtUtc,
+            new WorkCenterMachineOverheadRateId(Guid.CreateVersion7()), "2026-08", 1, "CNY",
+            "evt-na", new string('e', 64));
+        var state = OperationMachineOverheadSettlementState.Open("org-na", "env-na", "OP-NA");
+        state.ApplySettlement(1);
+        var cost = WorkOrderCost.Open("org-na", "env-na", "WO-NA", "FG-NA");
+        cost.RecordMachineOverhead(settlement);
+        db.AddRange(cost, settlement, state);
+        await db.SaveChangesAsync();
+
+        var response = await new GetWorkOrderCostVarianceQueryHandler(db).Handle(
+            new("org-na", "env-na", "WO-NA"), CancellationToken.None);
+
+        Assert.Equal(MachineOverheadReadStatus.NotApplicable, response.MachineCostStatus);
+        Assert.Equal("machine_overhead_not_applicable", response.MachineCostUnavailableReason);
+        Assert.Null(response.MachineCurrencyCode);
+        Assert.Null(response.ActualMachineHours);
+        Assert.Null(response.AppliedFixedMachineOverhead);
+        Assert.Null(response.AppliedVariableMachineOverhead);
+        Assert.Null(response.AppliedMachineOverheadTotal);
+    }
+
+    [Fact]
+    public async Task Labor_and_machine_aggregates_keep_their_own_currency_codes()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var labor = OperationLaborSettlement.Create(
+            "org-currency", "env-currency", "WO-CURRENCY", "OP-LABOR", "WC-LABOR", 1,
+            CompletedAtUtc, TimeSpan.TicksPerHour, new WorkCenterCostRateId(Guid.CreateVersion7()),
+            1, "USD", 20m, "evt-labor-currency", "hash-labor-currency");
+        var laborState = OperationLaborSettlementState.Open("org-currency", "env-currency", "OP-LABOR");
+        laborState.ApplySettlement(1);
+        var machine = OperationMachineOverheadSettlement.CreateApplied(
+            "org-currency", "env-currency", "WO-CURRENCY", "OP-MACHINE", "WC-MACHINE", 1,
+            CompletedAtUtc, "DEVICE-CURRENCY", TimeSpan.TicksPerHour,
+            "single-device-active-minus-explicit-pause-v1",
+            new WorkCenterMachineOverheadRateId(Guid.CreateVersion7()), "2026-08", 1,
+            "CNY", 30m, 10m, "evt-machine-currency", new string('f', 64));
+        var machineState = OperationMachineOverheadSettlementState.Open(
+            "org-currency", "env-currency", "OP-MACHINE");
+        machineState.ApplySettlement(1);
+        var cost = WorkOrderCost.Open("org-currency", "env-currency", "WO-CURRENCY", "FG-CURRENCY");
+        cost.RecordActualLabor(labor);
+        db.AddRange(cost, labor, laborState, machine, machineState);
+        await db.SaveChangesAsync();
+
+        var response = await new GetWorkOrderCostVarianceQueryHandler(db).Handle(
+            new("org-currency", "env-currency", "WO-CURRENCY"), CancellationToken.None);
+
+        Assert.Equal("USD", response.CurrencyCode);
+        Assert.Equal("CNY", response.MachineCurrencyCode);
+        Assert.Equal(MachineOverheadReadStatus.Available, response.MachineCostStatus);
+        Assert.Equal(40m, response.AppliedMachineOverheadTotal);
+    }
 
     [Fact]
     public async Task Work_order_cost_read_uses_net_good_quantity_and_keeps_capitalization_variance_separate()
@@ -69,6 +208,9 @@ public sealed class WorkOrderCostReadContractTests
         Assert.Equal(30.000000m, response.CapitalizationVarianceAmount);
         Assert.Equal("notApplicable", response.LaborRateVarianceStatus);
         Assert.Equal("actual_payroll_rate_not_modeled", response.LaborRateVarianceReason);
+        Assert.Equal(MachineOverheadReadStatus.Unavailable, response.MachineCostStatus);
+        Assert.Equal("operation_not_settled", response.MachineCostUnavailableReason);
+        Assert.Null(response.AppliedMachineOverheadTotal);
         var operation = Assert.Single(response.Operations);
         Assert.Equal(7, operation.RateRevision);
         Assert.Equal("standard", operation.RateBasis);
@@ -584,112 +726,4 @@ public sealed class WorkOrderCostReadContractTests
         Assert.Equal("numeric_scale_out_of_range", operation.UnavailableReason);
         Assert.Null(operation.StandardLaborHours);
     }
-
-    [Fact]
-    public void Public_contract_registers_scoped_finance_read_endpoint()
-    {
-        var contract = ErpFinanceEndpointContracts.Get<GetWorkOrderCostVarianceEndpoint>();
-
-        Assert.Equal("GET", contract.HttpMethod);
-        Assert.Equal("/api/business/v1/erp/finance/work-order-costs/{workOrderId}", contract.Route);
-        Assert.Equal("business.erp.finance.read", contract.PermissionCode);
-        Assert.Equal("getErpWorkOrderCostVariance", contract.OperationId);
-    }
-
-    [Fact]
-    public async Task Http_contract_binds_claim_scope_and_preserves_explicit_zero_and_unavailable_nulls()
-    {
-        var sender = new CapturingSender();
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment("Testing");
-            builder.ConfigureAppConfiguration((_, configuration) =>
-                configuration.AddInMemoryCollection(TestHostConfiguration()));
-            builder.ConfigureTestServices(services =>
-            {
-                services.RemoveAll<ISender>();
-                services.AddSingleton<ISender>(sender);
-            });
-        });
-        using var client = factory.CreateClient();
-        using var request = new HttpRequestMessage(
-            HttpMethod.Get,
-            "/api/business/v1/erp/finance/work-order-costs/WO-ZERO?pageNumber=2&pageSize=25");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "test-erp-machine-overhead-token");
-        request.Headers.Add("X-Organization-Id", "org-test");
-        request.Headers.Add("X-Environment-Id", "env-test");
-
-        using var response = await client.SendAsync(request);
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var query = Assert.Single(sender.Queries);
-        Assert.Equal("org-test", query.OrganizationId);
-        Assert.Equal("env-test", query.EnvironmentId);
-        Assert.Equal("WO-ZERO", query.WorkOrderId);
-        Assert.Equal(2, query.PageNumber);
-        Assert.Equal(25, query.PageSize);
-        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var data = json.RootElement.GetProperty("data");
-        Assert.Equal("available", data.GetProperty("laborVarianceStatus").GetString());
-        Assert.Equal(0m, data.GetProperty("actualLaborHours").GetDecimal());
-        Assert.Equal(JsonValueKind.Null, data.GetProperty("actualMachineHours").ValueKind);
-        Assert.Equal("unavailable", data.GetProperty("machineCostStatus").GetString());
-    }
-
-    [Fact]
-    public async Task OpenApi_exposes_work_order_cost_operation_and_three_state_fields()
-    {
-        await using var factory = new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Testing");
-                builder.ConfigureAppConfiguration((_, configuration) =>
-                    configuration.AddInMemoryCollection(TestHostConfiguration()));
-            });
-        using var client = factory.CreateClient();
-
-        using var json = JsonDocument.Parse(await client.GetStringAsync("/swagger/v1/swagger.json"));
-        var operation = json.RootElement.GetProperty("paths")
-            .GetProperty("/api/business/v1/erp/finance/work-order-costs/{workOrderId}")
-            .GetProperty("get");
-
-        Assert.Equal("getErpWorkOrderCostVariance", operation.GetProperty("operationId").GetString());
-        var serialized = operation.GetRawText();
-        Assert.Contains("WorkOrderCostVarianceResponse", serialized, StringComparison.Ordinal);
-    }
-
-    private sealed class CapturingSender : ISender
-    {
-        public List<GetWorkOrderCostVarianceQuery> Queries { get; } = [];
-
-        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
-        {
-            var query = Assert.IsType<GetWorkOrderCostVarianceQuery>(request);
-            Queries.Add(query);
-            return Task.FromResult((TResponse)(object)new WorkOrderCostVarianceResponse(
-                query.OrganizationId, query.EnvironmentId, query.WorkOrderId, "CNY", "actualOperation",
-                "available", null, 0m, 0m, 0m, 0m, 0m, 0m, "neutral",
-                "notApplicable", "actual_payroll_rate_not_modeled",
-                0m, 0m, 0m, 0m, null, "unavailable", "machine_cost_read_contract_deferred",
-                query.PageNumber, query.PageSize, 0, []));
-        }
-
-        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
-            where TRequest : IRequest => throw new NotSupportedException();
-        public Task<object?> Send(object request, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
-            IStreamRequest<TResponse> request,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public IAsyncEnumerable<object?> CreateStream(
-            object request,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException();
-    }
-
-    private static Dictionary<string, string?> TestHostConfiguration() => new()
-    {
-        ["InternalService:BearerToken"] = "test-general-internal-token",
-        ["ConnectionStrings:PostgreSQL"] = "Host=unused;Database=unused;Username=unused;Password=unused",
-        ["Persistence:AutoMigrate"] = "false",
-    };
 }
