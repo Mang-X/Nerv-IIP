@@ -71,16 +71,6 @@ const dialogStubs = {
   NvAlertDialogTitle: { template: '<h2><slot /></h2>' },
   NvAlertDialogDescription: { template: '<p><slot /></p>' },
   NvAlertDialogCancel: { template: '<button type="button"><slot /></button>' },
-  NvSelect: {
-    props: ['modelValue'],
-    emits: ['update:modelValue'],
-    template:
-      '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
-  },
-  NvSelectTrigger: { template: '<span><slot /></span>' },
-  NvSelectValue: { template: '<span />' },
-  NvSelectContent: { template: '<slot />' },
-  NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
 
 function findButton(wrapper: ReturnType<typeof mount>, text: string) {
