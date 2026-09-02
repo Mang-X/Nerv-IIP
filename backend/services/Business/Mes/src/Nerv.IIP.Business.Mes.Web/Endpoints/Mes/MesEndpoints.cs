@@ -534,7 +534,8 @@ public sealed record CreateShiftHandoverRequest(
     string? OutgoingUserName = null,
     IReadOnlyCollection<ShiftHandoverWipItemInput>? WipItems = null,
     IReadOnlyCollection<ShiftHandoverUnfinishedWorkOrderInput>? UnfinishedWorkOrders = null,
-    IReadOnlyCollection<ShiftHandoverOpenIssueInput>? OpenIssues = null);
+    IReadOnlyCollection<ShiftHandoverOpenIssueInput>? OpenIssues = null,
+    IReadOnlyCollection<ShiftHandoverAttachmentInput>? Attachments = null);
 
 public sealed record AcceptShiftHandoverRequest(
     string OrganizationId,
@@ -1768,7 +1769,8 @@ public sealed class CreateShiftHandoverEndpoint(ISender sender, TimeProvider tim
             req.OutgoingUserName,
             req.WipItems,
             req.UnfinishedWorkOrders,
-            req.OpenIssues), ct);
+            req.OpenIssues,
+            req.Attachments), ct);
         await Send.OkAsync(response, ct);
     }
 }
