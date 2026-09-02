@@ -247,8 +247,6 @@ const columns: NvDataTableColumn<ReadinessArea>[] = [
       </NvFieldGroup>
     </div>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
-
     <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
       <NvMetricCard
         variant="alert"
@@ -289,9 +287,12 @@ const columns: NvDataTableColumn<ReadinessArea>[] = [
       :rows="areas"
       row-key="areaCode"
       :loading="readinessPending"
+      :error="readinessError"
+      :error-message="errorMessage"
       :searchable="false"
       :column-settings="false"
       empty-message="暂无检查结果。点「重新检查」按当前范围运行就绪检查。"
+      @retry="refreshReadiness"
     >
       <template #cell-areaCode="{ row }">{{ areaLabel(row.areaCode) }}</template>
       <template #cell-status="{ row }">

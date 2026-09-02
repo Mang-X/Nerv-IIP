@@ -6,6 +6,7 @@ import { computed, type Component } from 'vue'
 
 import CapacityPage from './capacity.vue'
 import DowntimePage from './downtime.vue'
+import FoundationPage from './foundation.vue'
 import HandoversPage from './handovers.vue'
 import MaterialsPage from './materials.vue'
 import OperationTasksPage from './operation-tasks.vue'
@@ -15,6 +16,7 @@ import QualityPage from './quality.vue'
 import ReceiptsPage from './receipts.vue'
 import TraceabilityPage from './traceability.vue'
 import WipPage from './wip.vue'
+import WorkOrderDetailPage from './work-orders/[workOrderId].vue'
 import WorkOrdersPage from './work-orders/index.vue'
 
 /**
@@ -27,13 +29,15 @@ import WorkOrdersPage from './work-orders/index.vue'
 
 const readFailure = vi.hoisted(() => new Error('mes-read-face-unavailable'))
 
-// 页面读面 composable → 失败字段。真实 hook 先跑，再覆写这一个字段。
+// 页面读面 composable → 失败字段。真实 hook 先跑，再覆写这些字段。
+// 一个 hook 供多张表时（工单详情）列出全部错误字段，逐表各自落错误态。
 const overrides = vi.hoisted(
   () =>
     ({
       useMesCapacityImpacts: 'capacityImpactsError',
       useMesDowntimeEvents: 'downtimeEventsError',
       useMesFinishedGoodsReceipts: 'receiptRequestsError',
+      useMesFoundationReadiness: 'readinessError',
       useMesMaterialIssueRequests: 'materialIssueRequestsError',
       useMesOperationTasks: 'operationTasksError',
       useMesProductionPlans: 'productionPlansError',
@@ -43,7 +47,12 @@ const overrides = vi.hoisted(
       useMesTraceability: 'traceabilityError',
       useMesWipSummary: 'wipError',
       useMesWorkOrders: 'workOrdersError',
-    }) as const,
+      useMesWorkOrderDetail: [
+        'detailError',
+        'materialReadinessError',
+        'materialIssueRequestsError',
+      ],
+    }) as Record<string, string | string[]>,
 )
 
 vi.mock('@/composables/useBusinessMes', async (importOriginal) => {
@@ -51,9 +60,10 @@ vi.mock('@/composables/useBusinessMes', async (importOriginal) => {
   const patched: Record<string, unknown> = { ...actual }
   for (const [hook, errorKey] of Object.entries(overrides)) {
     const original = actual[hook as keyof typeof actual] as (...args: unknown[]) => object
+    const keys = Array.isArray(errorKey) ? errorKey : [errorKey]
     patched[hook] = (...args: unknown[]) => ({
       ...original(...args),
-      [errorKey]: computed(() => readFailure),
+      ...Object.fromEntries(keys.map((key) => [key, computed(() => readFailure)])),
     })
   }
   return patched
@@ -88,11 +98,11 @@ async function mountPage(page: Component) {
   return wrapper
 }
 
-/** 页面模块 → 该页表格的空态文案片段（错误态下绝不允许出现）。 */
+/** 页面模块 → 该页表格的空态文案片段（错误态下绝不允许出现）。多表页逐表各给一条。 */
 const pages: Array<{
   name: string
   page: Component
-  emptyText: string
+  emptyText: string | string[]
 }> = [
   {
     name: '产能影响',
@@ -103,6 +113,11 @@ const pages: Array<{
     name: '设备与停机',
     page: DowntimePage,
     emptyText: '暂无停机事件',
+  },
+  {
+    name: '生产准备检查',
+    page: FoundationPage,
+    emptyText: '暂无检查结果',
   },
   {
     name: '班次交接',
@@ -154,6 +169,13 @@ const pages: Array<{
     page: WorkOrdersPage,
     emptyText: '当前筛选下没有工单',
   },
+  {
+    // 工单详情三张子表读三个面，三条空态文案互不相同：任一条绑定被摘掉，
+    // 对应那句空态就会重新出现，断言随即变红。
+    name: '工单详情',
+    page: WorkOrderDetailPage,
+    emptyText: ['暂无工序任务', '暂无用料行', '本工单还没有领料单'],
+  },
 ]
 
 describe('MES 列表页读面失败时落到表格错误态（#2854）', () => {
@@ -175,7 +197,9 @@ describe('MES 列表页读面失败时落到表格错误态（#2854）', () => {
 
       expect(text).toContain('数据加载失败')
       expect(text).toContain('重新加载')
-      expect(text).not.toContain(emptyText)
+      for (const empty of Array.isArray(emptyText) ? emptyText : [emptyText]) {
+        expect(text).not.toContain(empty)
+      }
     })
   }
 })
