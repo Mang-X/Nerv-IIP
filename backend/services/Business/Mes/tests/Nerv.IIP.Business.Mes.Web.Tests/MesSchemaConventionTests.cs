@@ -393,6 +393,7 @@ public sealed class MesSchemaConventionTests
             typeof(ShiftHandoverWipItem),
             typeof(ShiftHandoverUnfinishedWorkOrder),
             typeof(ShiftHandoverOpenIssue),
+            typeof(ShiftHandoverAttachment),
             typeof(CodeCounter),
             typeof(CodeIdempotencyKey),
             typeof(ProcessedIntegrationEvent),

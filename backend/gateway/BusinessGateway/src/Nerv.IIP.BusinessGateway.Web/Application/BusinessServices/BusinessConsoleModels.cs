@@ -5493,6 +5493,17 @@ public sealed record BusinessConsoleMesShiftHandoverUnfinishedWorkOrder(
     decimal CompletedQuantity,
     string WorkOrderStatus);
 
+/// <summary>
+/// 随交班一并提交的 FileStorage 附件引用；文件名、内容类型与大小是交班时点快照。
+/// 附件字节走 FileStorage：先按 <c>shift-handover-photo</c> 用途上传拿到 <c>FileId</c>，
+/// 读回后再用同一个 <c>FileId</c> 走 <c>/api/business-console/v1/files/{fileId}/download-grants</c> 换下载地址。
+/// </summary>
+public sealed record BusinessConsoleMesShiftHandoverAttachment(
+    string FileId,
+    string FileName,
+    string ContentType,
+    long SizeBytes);
+
 /// <summary>交班时点的遗留问题；<c>Category</c> 取 Equipment/Quality，<c>Severity</c> 取 Low/Medium/High。</summary>
 public sealed record BusinessConsoleMesShiftHandoverOpenIssue(
     string Category,
@@ -5515,7 +5526,8 @@ public sealed record BusinessConsoleMesShiftHandoverDetail(
     string? IncomingUserName,
     IReadOnlyCollection<BusinessConsoleMesShiftHandoverWipItem> WipItems,
     IReadOnlyCollection<BusinessConsoleMesShiftHandoverUnfinishedWorkOrder> UnfinishedWorkOrders,
-    IReadOnlyCollection<BusinessConsoleMesShiftHandoverOpenIssue> OpenIssues);
+    IReadOnlyCollection<BusinessConsoleMesShiftHandoverOpenIssue> OpenIssues,
+    IReadOnlyCollection<BusinessConsoleMesShiftHandoverAttachment> Attachments);
 
 public sealed record BusinessConsoleMesShiftHandoverDetailRequest(
     [property: RouteParam] string HandoverId,
@@ -5532,7 +5544,8 @@ public sealed record BusinessConsoleMesCreateShiftHandoverRequest(
     string? TeamName = null,
     IReadOnlyCollection<BusinessConsoleMesShiftHandoverWipItem>? WipItems = null,
     IReadOnlyCollection<BusinessConsoleMesShiftHandoverUnfinishedWorkOrder>? UnfinishedWorkOrders = null,
-    IReadOnlyCollection<BusinessConsoleMesShiftHandoverOpenIssue>? OpenIssues = null);
+    IReadOnlyCollection<BusinessConsoleMesShiftHandoverOpenIssue>? OpenIssues = null,
+    IReadOnlyCollection<BusinessConsoleMesShiftHandoverAttachment>? Attachments = null);
 
 /// <summary>
 /// 转发给 MES 的建单载荷：交班人身份由 Gateway 从认证 principal 注入，显示名从 MasterData 员工目录解析，
@@ -5550,7 +5563,8 @@ public sealed record BusinessConsoleMesCreateShiftHandoverForwardRequest(
     string? OutgoingUserName,
     IReadOnlyCollection<BusinessConsoleMesShiftHandoverWipItem>? WipItems,
     IReadOnlyCollection<BusinessConsoleMesShiftHandoverUnfinishedWorkOrder>? UnfinishedWorkOrders,
-    IReadOnlyCollection<BusinessConsoleMesShiftHandoverOpenIssue>? OpenIssues);
+    IReadOnlyCollection<BusinessConsoleMesShiftHandoverOpenIssue>? OpenIssues,
+    IReadOnlyCollection<BusinessConsoleMesShiftHandoverAttachment>? Attachments);
 
 public sealed record BusinessConsoleMesAcceptShiftHandoverRequest(
     [property: RouteParam] string HandoverId,
