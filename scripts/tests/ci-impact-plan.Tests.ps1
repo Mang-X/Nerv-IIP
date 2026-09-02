@@ -202,6 +202,22 @@ function Assert-ConditionalRoutingWorkflow {
     }
 }
 
+function Assert-RedisCapActiveSelectionWorkflowContract {
+    param([Parameter(Mandatory)] [string] $Path)
+
+    $parsedWorkflow = ConvertFrom-NervCiRequiredSummaryWorkflow -Path $Path -WorkingDirectory $repoRoot
+    $redisCapJobProperty = $parsedWorkflow.jobs.PSObject.Properties['redis-cap-transport-tests']
+    Assert-Contract ($null -ne $redisCapJobProperty) 'CI must define the Redis/CAP transport job.'
+    $runnerSteps = @($redisCapJobProperty.Value.steps | Where-Object {
+            $runProperty = $_.PSObject.Properties['run']
+            $null -ne $runProperty -and ([string]$runProperty.Value).Contains('./scripts/run-redis-cap-test-lane.ps1', [StringComparison]::Ordinal)
+        })
+    Assert-Contract ($runnerSteps.Count -eq 1) 'The Redis/CAP job must invoke its governed runner exactly once.'
+    $runnerInvocation = [string]$runnerSteps[0].run
+    Assert-Contract ($runnerInvocation.Contains('-AllActiveMembers', [StringComparison]::Ordinal)) 'Hosted Redis/CAP execution must select the manifest active set.'
+    Assert-Contract (-not $runnerInvocation.Contains('-MemberId', [StringComparison]::Ordinal)) 'Hosted Redis/CAP execution must not maintain a member-id list.'
+}
+
 function Assert-BusinessConsoleBrowserValidationWorkflowContract {
     param([Parameter(Mandatory)] [string] $Path)
 
@@ -1153,6 +1169,22 @@ $workflow = [IO.File]::ReadAllText($workflowPath)
 Assert-Contract ($workflow.Contains("  impact-plan:`n", [StringComparison]::Ordinal)) 'CI must define the impact-plan job.'
 Assert-Contract ($workflow.Contains('run: ./scripts/tests/ci-impact-plan.Tests.ps1', [StringComparison]::Ordinal)) 'Script Governance must run the CI impact-plan contract tests.'
 Assert-Contract ($workflow.Contains('uses: actions/upload-artifact@v4', [StringComparison]::Ordinal)) 'The impact-plan job must upload its audit artifact.'
+Assert-RedisCapActiveSelectionWorkflowContract -Path $workflowPath
+
+$redisCapMemberListMutation = $workflow.Replace('-AllActiveMembers', '-MemberId stale-hosted-member-redis-cap', [StringComparison]::Ordinal)
+Assert-Contract (-not [string]::Equals($redisCapMemberListMutation, $workflow, [StringComparison]::Ordinal)) 'The Redis/CAP hosted-member mutation must alter the canonical workflow invocation.'
+$redisCapMemberListMutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-redis-cap-selection-$([Guid]::NewGuid().ToString('N'))"
+try {
+    [IO.Directory]::CreateDirectory($redisCapMemberListMutationRoot) | Out-Null
+    $redisCapMemberListMutationPath = Join-Path $redisCapMemberListMutationRoot 'member-list.yml'
+    [IO.File]::WriteAllText($redisCapMemberListMutationPath, $redisCapMemberListMutation, [Text.UTF8Encoding]::new($false))
+    $redisCapMemberListMutationFailure = $null
+    try { Assert-RedisCapActiveSelectionWorkflowContract -Path $redisCapMemberListMutationPath } catch { $redisCapMemberListMutationFailure = $_ }
+    Assert-Contract ($null -ne $redisCapMemberListMutationFailure) 'A hosted Redis/CAP -MemberId list must fail the workflow contract.'
+}
+finally {
+    if (Test-Path -LiteralPath $redisCapMemberListMutationRoot) { Remove-Item -LiteralPath $redisCapMemberListMutationRoot -Recurse -Force }
+}
 
 $expectedDotNetJobNames = @(
     'backend-tests-business-gateway'

@@ -71,6 +71,69 @@ try {
     Assert-Contract ([string]::Equals((@($qualityMember.expectedTestIdentities) -join "`n"), $qualityIdentity, [StringComparison]::Ordinal)) 'The Quality rework-receipt Redis/CAP member must freeze its transport identity.'
     Assert-Contract ([string]::Equals((@($qualityMember.diagnosticSchemas) -join '|'), 'quality|cap', [StringComparison]::Ordinal)) 'The Quality rework-receipt Redis/CAP member must restrict diagnostics to Quality and CAP schemas.'
 
+    $activeManifest = [IO.File]::ReadAllText($manifestPath) | ConvertFrom-Json -Depth 20
+    $activeSentinel = $activeManifest.members[0].PSObject.Copy()
+    $activeSentinel.id = 'active-sentinel-redis-cap'
+    $activeManifest.members = @($activeManifest.members) + @($activeSentinel)
+    $activeManifestPath = Join-Path $fixtureRoot 'active-sentinel.json'
+    [IO.File]::WriteAllText($activeManifestPath, (($activeManifest | ConvertTo-Json -Depth 20) + "`n"), [Text.UTF8Encoding]::new($false))
+    $activeMembers = @(Import-NervRedisCapTestLaneMembers -ManifestPath $activeManifestPath -RepositoryRoot $repoRoot)
+    Assert-Contract ([string]::Equals((@($activeMembers.id) -join '|'), 'demandplanning-sales-order-redis-cap|erp-operation-labor-redis-cap|quality-rework-receipt-redis-cap|active-sentinel-redis-cap', [StringComparison]::Ordinal)) 'All-active resolution must include a newly registered active member in manifest order without a caller-owned member list.'
+
+    $activeManifest.members[-1].status = 'deferred'
+    $deferredSentinelPath = Join-Path $fixtureRoot 'deferred-sentinel.json'
+    [IO.File]::WriteAllText($deferredSentinelPath, (($activeManifest | ConvertTo-Json -Depth 20) + "`n"), [Text.UTF8Encoding]::new($false))
+    $membersWithoutDeferred = @(Import-NervRedisCapTestLaneMembers -ManifestPath $deferredSentinelPath -RepositoryRoot $repoRoot)
+    Assert-Contract (-not [Linq.Enumerable]::Contains([string[]]@($membersWithoutDeferred.id), 'active-sentinel-redis-cap', [StringComparer]::Ordinal)) 'All-active resolution must exclude a member after its manifest status becomes deferred.'
+
+    foreach ($manifestMember in $activeManifest.members) { $manifestMember.status = 'deferred' }
+    $zeroActiveManifestPath = Join-Path $fixtureRoot 'zero-active.json'
+    [IO.File]::WriteAllText($zeroActiveManifestPath, (($activeManifest | ConvertTo-Json -Depth 20) + "`n"), [Text.UTF8Encoding]::new($false))
+    $zeroActiveRejected = $false
+    try {
+        & (Join-Path $repoRoot 'scripts/run-redis-cap-test-lane.ps1') `
+            -AllActiveMembers `
+            -ManifestPath $zeroActiveManifestPath `
+            -DatabaseSuffix '3026_1' `
+            -ResultsDirectory (Join-Path $fixtureRoot 'zero-active-results') `
+            -SummaryPath (Join-Path $fixtureRoot 'zero-active-summary.json')
+    }
+    catch { $zeroActiveRejected = $_.Exception.Message.Contains('does not contain any active members', [StringComparison]::Ordinal) }
+    Assert-Contract $zeroActiveRejected 'All-active execution must reject an empty active set before dependency readiness is evaluated.'
+
+    $savedTestPostgres = [Environment]::GetEnvironmentVariable('NERV_IIP_TEST_POSTGRES')
+    $savedTestRedis = [Environment]::GetEnvironmentVariable('NERV_IIP_TEST_REDIS')
+    try {
+        [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_POSTGRES', $null)
+        [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_REDIS', $null)
+        $focusedMemberReachedReadiness = $false
+        try {
+            & (Join-Path $repoRoot 'scripts/run-redis-cap-test-lane.ps1') `
+                -MemberId 'demandplanning-sales-order-redis-cap' `
+                -DatabaseSuffix '3026_1' `
+                -ResultsDirectory (Join-Path $fixtureRoot 'focused-results') `
+                -SummaryPath (Join-Path $fixtureRoot 'focused-summary.json')
+        }
+        catch { $focusedMemberReachedReadiness = $_.Exception.Message.Contains('Set NERV_IIP_TEST_POSTGRES', [StringComparison]::Ordinal) }
+        Assert-Contract $focusedMemberReachedReadiness 'The explicit -MemberId entrypoint must remain available for local focused execution.'
+    }
+    finally {
+        [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_POSTGRES', $savedTestPostgres)
+        [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_REDIS', $savedTestRedis)
+    }
+
+    $mixedSelectionRejected = $false
+    try {
+        & (Join-Path $repoRoot 'scripts/run-redis-cap-test-lane.ps1') `
+            -MemberId 'demandplanning-sales-order-redis-cap' `
+            -AllActiveMembers `
+            -DatabaseSuffix '3026_1' `
+            -ResultsDirectory (Join-Path $fixtureRoot 'mixed-results') `
+            -SummaryPath (Join-Path $fixtureRoot 'mixed-summary.json')
+    }
+    catch { $mixedSelectionRejected = $_.Exception.Message.Contains('Parameter set cannot be resolved', [StringComparison]::Ordinal) }
+    Assert-Contract $mixedSelectionRejected '-MemberId and -AllActiveMembers must be mutually exclusive runner entrypoints.'
+
     $runnerContent = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/run-redis-cap-test-lane.ps1'))
     Assert-Contract (-not $runnerContent.Contains('}.GetNewClosure()', [StringComparison]::Ordinal)) 'Runner callbacks must retain the runner script session state so hosted PowerShell can resolve Get-RedisKeys and Invoke-RedisCli.'
 
