@@ -247,7 +247,7 @@ const carriedContextItems = computed(() => [
  */
 const listErrorMessage = computed(() =>
   putawayTasksError.value
-    ? `取不到上架任务列表，当前上架进度无法判断：${formatError(putawayTasksError.value)}`
+    ? `取不到上架任务列表，当前上架进度无法判断：${inlineErrorMessage(putawayTasksError.value)}`
     : '',
 )
 /**
@@ -331,10 +331,6 @@ function formatDateTime(value?: string | null) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
-
 function refreshAll() {
   void refreshWorkScopes()
   void refreshPutawayTasks()

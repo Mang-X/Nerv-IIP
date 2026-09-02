@@ -89,7 +89,7 @@ function canRetry(row: ReceiptRow) {
   )
 }
 
-const listErrorMessage = computed(() => formatError(receiptRequestsError.value))
+const listErrorMessage = computed(() => inlineErrorMessage(receiptRequestsError.value))
 const hasReceiptContext = computed(
   () => isNonEmpty(receiptContext.workOrderId) && isNonEmpty(receiptContext.skuId),
 )
@@ -189,9 +189,6 @@ function formatUnitCost(value?: number | null) {
 function firstQueryValue(value: unknown) {
   if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : ''
   return typeof value === 'string' ? value : ''
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 function isNonEmpty(value: string) {
   return value.trim().length > 0

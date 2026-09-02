@@ -54,7 +54,7 @@ const {
 // 断言「现场无阻塞」。所以本页所有数字与结论一律以 overviewState 为准，非 ready 一律显式说「取不到」。
 const isReady = computed(() => overviewState.value === 'ready')
 const stateNote = computed(() => readStateNote(overviewState.value))
-const errorMessage = computed(() => formatError(overviewError.value))
+const errorMessage = computed(() => inlineErrorMessage(overviewError.value))
 // 顶部状态条：只在「没读到」时出现，且必须说清楚原因 + 给重试出路，不含任何「正常 / 无阻塞」措辞。
 const readNotice = computed(() => {
   if (overviewState.value === 'idle') {
@@ -378,9 +378,6 @@ function normalizeCountKey(key?: string | null) {
 function countValue(key: string) {
   const wanted = normalizeCountKey(key)
   return counts.value.find((item) => normalizeCountKey(item.key) === wanted)?.count ?? 0
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 </script>
 

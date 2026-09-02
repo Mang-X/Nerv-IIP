@@ -93,7 +93,7 @@ const statusFilter = computed({
     filters.status = value === 'all' ? undefined : value
   },
 })
-const errorMessage = computed(() => formatError(qualityItemsError.value))
+const errorMessage = computed(() => inlineErrorMessage(qualityItemsError.value))
 // 上下文穿透：从工单/工序带入时显示来源并提供返回链接。
 const contextWorkOrderId = computed(() => firstQuery(route.query.workOrderId))
 const contextOperationTaskId = computed(() => firstQuery(route.query.operationTaskId))
@@ -140,10 +140,6 @@ function firstQuery(value: unknown) {
   if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : ''
   return typeof value === 'string' ? value : ''
 }
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
-
 // ── 缺陷登记：可见工序读范围 × 质量写范围 ──────────────────────────
 const canReadOperationContext = computed(() =>
   (auth.principal?.permissionCodes ?? []).includes(P.mesOperationsRead),

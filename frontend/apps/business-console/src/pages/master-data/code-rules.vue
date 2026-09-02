@@ -172,11 +172,7 @@ function ruleStatusTone(rule: BusinessConsoleCodeRuleItem): StatusTone {
 function ruleStatusLabel(rule: BusinessConsoleCodeRuleItem) {
   return rule.isActive ? '启用' : '停用'
 }
-
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
-const listErrorMessage = computed(() => formatError(rulesError.value))
+const listErrorMessage = computed(() => inlineErrorMessage(rulesError.value))
 
 // ── 客户端分页 ──────────────────────────────────────────────────
 const page = ref(1)
@@ -231,7 +227,7 @@ async function openView(row: BusinessConsoleCodeRuleItem) {
     if (detail?.rule) viewTarget.value = detail.rule
     versions.value = detail?.versions ?? []
   } catch (error) {
-    versionsError.value = formatError(error) || '加载版本历史失败，请稍后重试。'
+    versionsError.value = inlineErrorMessage(error) || '加载版本历史失败，请稍后重试。'
   } finally {
     versionsPending.value = false
   }
