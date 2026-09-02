@@ -1499,7 +1499,8 @@ $liveAssignments = Get-NervSourceSkipAssignments -RepoRoot $repoRoot
 # 而 EF InMemory **看不见唯一索引**、重复行只会多一条不会报错 ⇒ 只有真库分得开。
 # ⭐ 这一条**刻意不蹭** erp-cost-accounting 的 skip 理由（那句写着 cost-accounting，而本类测的是取号），
 # 蹭理由等于把一条假理由固化进证据记录；本仓 canonical 是一类一属性一规则。增至 56。
-Assert-Equal 56 $liveAssignments.Count '已批准的 source skip 清单变更必须显式分类。'
+# #2813 注册 NCR 返工成本 FullChain，再增至 57。
+Assert-Equal 57 $liveAssignments.Count '已批准的 source skip 清单变更必须显式分类。'
 Assert-True (($liveAssignments | Where-Object sourcePath -like '*SimulatedConnectorHostProcessTests.cs').sourceText.Contains('Windows runs the platform-specific executable resolution contract only', [StringComparison]::Ordinal)) 'Quote-aware scanner must retain semicolons inside a C# string literal.'
 $livePolicy = Import-NervTestEvidencePolicy -Path (Join-Path $repoRoot 'scripts/test-evidence-policy.json')
 $liveViolations = Test-NervTestEvidencePolicy -Policy $livePolicy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)
