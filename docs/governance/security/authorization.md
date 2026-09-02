@@ -80,7 +80,8 @@
 ## 变更与验收
 
 1. 新增或修改权限：先修改 IAM/目标端点的真实 producer 与测试，再同步 Reference；若规则本身变化，再修改本页。
-2. `connector-host` 和 `external-client` 不得只校验权限码而忽略 scope。
-3. `internal-service` 不得作为最终授权绕过机制。
-4. 不能用默认角色 seed 是否包含某权限，替代端点真实授权检查；也不能用端点声明替代 seed/role 是否具备该权限的独立事实。
-5. 历史权限盘点、Issue 状态和“尚未落地”清单留在 Reports/GitHub/Linear，不进入现态 Governance。
+2. Gateway facade 强制的每个 `business.*` 码必须同时存在于 IAM 的权限 producer，否则该码无法授予任何角色、端点对所有主体恒 403。这条包含关系由 `scripts/verify-permission-code-producer-consistency.ps1` 在 CI 强制，方向是单向的（IAM 可以多，Gateway 不可以多）——仅经 internal service policy 使用的服务端码按 [ADR 0029](../../adr/0029-reference-data-vocabulary-read-permission.md) 实施说明 1 合法只在 IAM 一侧。各业务服务自己的 `*PermissionCodes` 常量是消费方，不在该门禁的登记面内。
+3. `connector-host` 和 `external-client` 不得只校验权限码而忽略 scope。
+4. `internal-service` 不得作为最终授权绕过机制。
+5. 不能用默认角色 seed 是否包含某权限，替代端点真实授权检查；也不能用端点声明替代 seed/role 是否具备该权限的独立事实。
+6. 历史权限盘点、Issue 状态和“尚未落地”清单留在 Reports/GitHub/Linear，不进入现态 Governance。
