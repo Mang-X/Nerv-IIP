@@ -82,6 +82,12 @@ import type {
   BusinessConsoleClaimQualityInspectionTaskRequest,
   BusinessConsoleCreateMaintenanceWorkOrderRequest,
   BusinessConsoleMesOperationTaskActionRequest,
+  BusinessConsoleMesProductionStatisticsBucket,
+  BusinessConsoleMesProductionStatisticsDegradedReason,
+  BusinessConsoleMesProductionStatisticsDimension,
+  BusinessConsoleMesProductionStatisticsRequest,
+  BusinessConsoleMesProductionStatisticsResolutionStatus,
+  BusinessConsoleMesProductionStatisticsResponse,
   BusinessConsoleRecordProductionReportRequest,
   BusinessConsoleCompleteWmsWarehouseTaskRequest,
   BusinessConsoleRecordWmsWarehouseTaskProgressRequest,
@@ -100,6 +106,8 @@ import type {
   BusinessConsoleWorkScopeAuthorizationPath,
   CancelBusinessConsolePlanningDemandData,
   QueryBusinessConsoleTelemetryOeeAggregatesData,
+  QueryBusinessConsoleMesProductionStatisticsData,
+  QueryBusinessConsoleMesProductionStatisticsErrors,
   CancelScheduledBusinessConsoleEngineeringChangeData,
   CreateBusinessConsoleErpPurchaseRequisitionFromSuggestionData,
   CreateOrUpdateBusinessConsolePlanningForecastData,
@@ -161,6 +169,7 @@ import {
 import {
   acceptBusinessConsoleMesShiftHandoverMutationOptions,
   assignBusinessConsoleMesDispatchTaskMutationOptions,
+  claimBusinessConsoleMesOperationTaskMutationOptions,
   completeBusinessConsoleMesOperationTaskMutationOptions,
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   createBusinessConsoleMesMaterialIssueRequestMutationOptions,
@@ -189,6 +198,7 @@ import {
   listBusinessConsoleMesReportableOperationTasksQueryOptions,
   listBusinessConsoleMesProductionPlansQueryOptions,
   listBusinessConsoleMesProductionReportsQueryOptions,
+  queryBusinessConsoleMesProductionStatisticsQueryOptions,
   listBusinessConsoleMesRelatedQualityItemsQueryOptions,
   listBusinessConsoleMesShiftHandoversQueryOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
@@ -234,6 +244,22 @@ import {
   type BusinessConsoleMaintenanceWorkOrderLifecycleEventItem,
   type BusinessConsoleTransitionMaintenanceWorkOrderRequest,
   type TransitionBusinessConsoleMaintenanceWorkOrderData,
+} from './business-console'
+import {
+  dispatchBusinessConsoleBarcodePrintBatch,
+  dispatchBusinessConsoleBarcodePrintBatchMutationOptions,
+  reprintBusinessConsoleBarcodeLabel,
+  reprintBusinessConsoleBarcodeLabelMutationOptions,
+  voidBusinessConsoleBarcodeLabel,
+  voidBusinessConsoleBarcodeLabelMutationOptions,
+  type BusinessConsoleDispatchBarcodePrintBatchBody,
+  type BusinessConsoleReprintBarcodeLabelBody,
+  type BusinessConsoleVoidBarcodeLabelBody,
+  type DispatchBusinessConsoleBarcodePrintBatchData,
+  type DispatchBusinessConsoleBarcodePrintBatchErrors,
+  type ReprintBusinessConsoleBarcodeLabelData,
+  type VoidBusinessConsoleBarcodeLabelData,
+  type VoidBusinessConsoleBarcodeLabelErrors,
 } from './business-console'
 
 describe('generated API client contract', () => {
@@ -359,6 +385,34 @@ describe('generated API client contract', () => {
     >()
     expectTypeOf<BusinessConsoleMaintenanceWorkOrderActionResponse>().not.toBeNever()
     expectTypeOf<BusinessConsoleMaintenanceWorkOrderLifecycleEventItem>().not.toBeNever()
+  })
+
+  it('exports the barcode lifecycle API through the stable business-console barrel', () => {
+    expect(dispatchBusinessConsoleBarcodePrintBatch).toBeTypeOf('function')
+    expect(dispatchBusinessConsoleBarcodePrintBatchMutationOptions).toBeTypeOf('function')
+    expect(reprintBusinessConsoleBarcodeLabel).toBeTypeOf('function')
+    expect(reprintBusinessConsoleBarcodeLabelMutationOptions).toBeTypeOf('function')
+    expect(voidBusinessConsoleBarcodeLabel).toBeTypeOf('function')
+    expect(voidBusinessConsoleBarcodeLabelMutationOptions).toBeTypeOf('function')
+    expectTypeOf<
+      DispatchBusinessConsoleBarcodePrintBatchData['body']
+    >().toEqualTypeOf<BusinessConsoleDispatchBarcodePrintBatchBody>()
+    expectTypeOf<
+      ReprintBusinessConsoleBarcodeLabelData['body']
+    >().toEqualTypeOf<BusinessConsoleReprintBarcodeLabelBody>()
+    expectTypeOf<
+      VoidBusinessConsoleBarcodeLabelData['body']
+    >().toEqualTypeOf<BusinessConsoleVoidBarcodeLabelBody>()
+    expectTypeOf<ReprintBusinessConsoleBarcodeLabelData['path']>().toEqualTypeOf<{
+      printBatchId: string
+      sequenceNo: number
+    }>()
+    expectTypeOf<VoidBusinessConsoleBarcodeLabelData['path']>().toEqualTypeOf<{
+      printBatchId: string
+      sequenceNo: number
+    }>()
+    expectTypeOf<DispatchBusinessConsoleBarcodePrintBatchErrors[502]>().not.toBeNever()
+    expectTypeOf<VoidBusinessConsoleBarcodeLabelErrors[502]>().not.toBeNever()
   })
 
   it('requires optimistic versions for public quality assignment and claim mutations', () => {
@@ -618,6 +672,7 @@ describe('generated API client contract', () => {
     expect(listBusinessConsoleMesDispatchTasksQueryOptions).toBeTypeOf('function')
     expect(assignBusinessConsoleMesDispatchTaskMutationOptions).toBeTypeOf('function')
     expect(listBusinessConsoleMesOperationTasksQueryOptions).toBeTypeOf('function')
+    expect(claimBusinessConsoleMesOperationTaskMutationOptions).toBeTypeOf('function')
     expect(listBusinessConsoleMesReportableOperationTasksQueryOptions).toBeTypeOf('function')
     expect(businessConsoleClient.listBusinessConsoleMesReportableOperationTasks).toBeTypeOf(
       'function',
@@ -1099,6 +1154,38 @@ describe('generated API client contract', () => {
     for (const functionName of expectedFunctions) {
       expect(businessConsoleClient[functionName], functionName).toBeTypeOf('function')
     }
+  })
+
+  it('exports MES production statistics through the stable api-client entry point (#2856)', () => {
+    expect(businessConsoleClient.queryBusinessConsoleMesProductionStatistics).toBeTypeOf('function')
+    expect(queryBusinessConsoleMesProductionStatisticsQueryOptions).toBeTypeOf('function')
+    expectTypeOf<BusinessConsoleMesProductionStatisticsRequest>().toEqualTypeOf<
+      QueryBusinessConsoleMesProductionStatisticsData['query']
+    >()
+    expectTypeOf<BusinessConsoleMesProductionStatisticsDimension>().toEqualTypeOf<
+      'day' | 'shift' | 'workCenter' | 'sku'
+    >()
+    expectTypeOf<BusinessConsoleMesProductionStatisticsResolutionStatus>().toEqualTypeOf<
+      'resolved' | 'degraded'
+    >()
+    expectTypeOf<BusinessConsoleMesProductionStatisticsDegradedReason>().toEqualTypeOf<
+      | 'historicalDimensionLegacyUnresolved'
+      | 'historicalTimezoneMissing'
+      | 'historicalTimezoneInvalid'
+      | 'historicalShiftDefinitionMissing'
+      | 'historicalShiftDefinitionInvalid'
+      | 'historicalReportOutsideShiftWindow'
+      | 'historicalLocalTimeInvalid'
+      | 'historicalLocalTimeAmbiguous'
+      | 'historicalDimensionSnapshotDegraded'
+      | 'workCenterMissing'
+      | 'nonPositiveTotalOutput'
+    >()
+    expectTypeOf<BusinessConsoleMesProductionStatisticsResponse>().toBeObject()
+    expectTypeOf<BusinessConsoleMesProductionStatisticsBucket>().toBeObject()
+    expectTypeOf<keyof QueryBusinessConsoleMesProductionStatisticsErrors>().toEqualTypeOf<
+      400 | 401 | 403 | 502
+    >()
   })
 
   it('exports line-side inventory balances through the stable Business Console entry point (#2228)', () => {

@@ -135,6 +135,189 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Mes_production_statistics_facade_authorizes_scope_and_preserves_producer_facts()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var mes = new RecordingMesClient
+        {
+            ProductionStatistics = new BusinessConsoleMesProductionStatisticsResponse(
+                "org-001",
+                "env-dev",
+                BusinessConsoleMesProductionStatisticsDimension.Shift,
+                DateTimeOffset.Parse("2026-08-29T16:00:00Z"),
+                DateTimeOffset.Parse("2026-08-30T16:00:00Z"),
+                [
+                    new BusinessConsoleMesProductionStatisticsBucket(
+                        BusinessConsoleMesProductionStatisticsDimension.Shift,
+                        "2026-08-30/SHIFT-A",
+                        new DateOnly(2026, 8, 30),
+                        "SHIFT-A",
+                        "WC-01",
+                        "SKU-01",
+                        8m,
+                        1m,
+                        1m,
+                        10m,
+                        0.8m,
+                        0.1m,
+                        0.1m,
+                        3,
+                        BusinessConsoleMesProductionStatisticsResolutionStatus.Degraded,
+                        [BusinessConsoleMesProductionStatisticsDegradedReason.HistoricalTimezoneMissing]),
+                ],
+                1,
+                4,
+                12),
+        };
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-statistics-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/mes/production-statistics" +
+            "?organizationId=org-001&environmentId=env-dev&dimension=shift" +
+            "&windowStartUtc=2026-08-29T16%3A00%3A00Z&windowEndUtc=2026-08-30T16%3A00%3A00Z" +
+            "&businessDate=2026-08-30&shiftCode=SHIFT-A&workCenterId=WC-01&skuId=SKU-01&skip=4&take=12");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(BusinessGatewayPermissions.MesReportingRead, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("org-001", auth.LastRequirement.OrganizationId);
+        Assert.Equal("env-dev", auth.LastRequirement.EnvironmentId);
+        Assert.Equal("internal-statistics-token", mes.LastInternalToken);
+        Assert.Equal(
+            new BusinessConsoleMesProductionStatisticsRequest(
+                "org-001",
+                "env-dev",
+                BusinessConsoleMesProductionStatisticsDimension.Shift,
+                DateTimeOffset.Parse("2026-08-29T16:00:00Z"),
+                DateTimeOffset.Parse("2026-08-30T16:00:00Z"),
+                new DateOnly(2026, 8, 30),
+                "SHIFT-A",
+                "WC-01",
+                "SKU-01",
+                4,
+                12),
+            mes.LastProductionStatisticsRequest);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal("shift", data.GetProperty("dimension").GetString());
+        Assert.Equal(1, data.GetProperty("totalCount").GetInt32());
+        Assert.Equal(4, data.GetProperty("skip").GetInt32());
+        Assert.Equal(12, data.GetProperty("take").GetInt32());
+        var item = data.GetProperty("items")[0];
+        Assert.Equal(10m, item.GetProperty("totalOutputQuantity").GetDecimal());
+        Assert.Equal(0.8m, item.GetProperty("goodRate").GetDecimal());
+        Assert.Equal("degraded", item.GetProperty("resolutionStatus").GetString());
+        Assert.Equal("historicalTimezoneMissing", item.GetProperty("degradedReasons")[0].GetString());
+    }
+
+    [Fact]
+    public async Task Mes_production_statistics_http_client_forwards_the_complete_query_and_rejects_scope_drift()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            organizationId = "org-other",
+            environmentId = "env-dev",
+            dimension = "workCenter",
+            windowStartUtc = "2026-08-01T00:00:00Z",
+            windowEndUtc = "2026-09-01T00:00:00Z",
+            items = Array.Empty<object>(),
+            totalCount = 0,
+            skip = 5,
+            take = 20,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var mes = new HttpBusinessMesClient(httpClient);
+        var request = new BusinessConsoleMesProductionStatisticsRequest(
+            "org-001",
+            "env-dev",
+            BusinessConsoleMesProductionStatisticsDimension.WorkCenter,
+            DateTimeOffset.Parse("2026-08-01T00:00:00Z"),
+            DateTimeOffset.Parse("2026-09-01T00:00:00Z"),
+            new DateOnly(2026, 8, 30),
+            "SHIFT A",
+            "WC/01",
+            "SKU+01",
+            5,
+            20);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            mes.QueryProductionStatisticsAsync("internal-token-001", request, CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        var sent = Assert.Single(handler.Requests);
+        Assert.Equal(
+            "/api/business/v1/mes/production-statistics" +
+            "?organizationId=org-001&environmentId=env-dev&dimension=workCenter" +
+            "&windowStartUtc=2026-08-01T00%3A00%3A00.0000000%2B00%3A00" +
+            "&windowEndUtc=2026-09-01T00%3A00%3A00.0000000%2B00%3A00" +
+            "&businessDate=2026-08-30&shiftCode=SHIFT%20A&workCenterId=WC%2F01&skuId=SKU%2B01&skip=5&take=20",
+            sent.RequestUri!.PathAndQuery);
+        Assert.Equal("internal-token-001", sent.Headers.Authorization!.Parameter);
+    }
+
+    [Theory]
+    [InlineData("totalCount")]
+    [InlineData("goodQuantity")]
+    [InlineData("scrapQuantity")]
+    [InlineData("reworkQuantity")]
+    [InlineData("totalOutputQuantity")]
+    [InlineData("productionReportCount")]
+    [InlineData("resolutionStatus")]
+    public async Task Mes_production_statistics_http_client_rejects_missing_producer_facts(string missingProperty)
+    {
+        var bucket = new JsonObject
+        {
+            ["dimension"] = "day",
+            ["goodQuantity"] = 8m,
+            ["scrapQuantity"] = 1m,
+            ["reworkQuantity"] = 1m,
+            ["totalOutputQuantity"] = 10m,
+            ["productionReportCount"] = 3,
+            ["resolutionStatus"] = "resolved",
+            ["degradedReasons"] = new JsonArray(),
+        };
+        var payload = new JsonObject
+        {
+            ["organizationId"] = "org-001",
+            ["environmentId"] = "env-dev",
+            ["dimension"] = "day",
+            ["windowStartUtc"] = "2026-08-01T00:00:00Z",
+            ["windowEndUtc"] = "2026-09-01T00:00:00Z",
+            ["items"] = new JsonArray(bucket),
+            ["totalCount"] = 1,
+            ["skip"] = 0,
+            ["take"] = 20,
+        };
+        Assert.True((missingProperty == "totalCount" ? payload : bucket).Remove(missingProperty));
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(payload),
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var mes = new HttpBusinessMesClient(httpClient);
+        var request = new BusinessConsoleMesProductionStatisticsRequest(
+            "org-001",
+            "env-dev",
+            BusinessConsoleMesProductionStatisticsDimension.Day,
+            DateTimeOffset.Parse("2026-08-01T00:00:00Z"),
+            DateTimeOffset.Parse("2026-09-01T00:00:00Z"),
+            Take: 20);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            mes.QueryProductionStatisticsAsync("internal-token-001", request, CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+    }
+
+    [Fact]
     public async Task List_device_assets_uses_internal_service_token_and_exposes_device_asset_id()
     {
         var masterData = new RecordingMasterDataClient
@@ -548,6 +731,372 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("admin-001", masterData.LastCodeRuleVersionRequest.CreatedBy);
         Assert.Equal("align plant convention", masterData.LastCodeRuleVersionRequest.ChangeReason);
         Assert.Equal("master-data.sku", masterData.LastCodeRulePreviewRequest!.RuleKey);
+    }
+
+    [Fact]
+    public async Task Master_data_tooling_facades_forward_scope_body_enum_and_internal_token()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var masterData = new RecordingMasterDataClient();
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-tooling-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        client.DefaultRequestHeaders.Add("X-Correlation-Id", "corr-tooling-facades");
+        client.DefaultRequestHeaders.Add("X-Causation-Id", "cause-tooling-facades");
+        client.DefaultRequestHeaders.Add("X-Authenticated-Actor", "service:forged");
+
+        var list = await client.GetAsync(
+            "/api/business-console/v1/master-data/tooling-assets?organizationId=org-001&environmentId=env-dev&keyword=%E6%A8%A1%E5%85%B7&status=maintenance&skip=2&take=20");
+        var register = await client.PostAsJsonAsync("/api/business-console/v1/master-data/tooling-assets", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            code = "TOOL-001",
+            name = "冲压模具",
+            toolingType = "mould",
+            workCenterCodes = new[] { "WC-01" },
+            skuCodes = new[] { "SKU-01" },
+            maintenanceLifeCount = 100L,
+            idempotencyKey = "tooling-register-001",
+        });
+        using var statusRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/api/business-console/v1/master-data/tooling-assets/status")
+        {
+            Content = JsonContent.Create(new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                code = "TOOL-001",
+                status = "retired",
+                reason = "寿命到期",
+            }),
+        };
+        statusRequest.Headers.Add("Idempotency-Key", "tooling-status-001");
+        var status = await client.SendAsync(statusRequest);
+        using var usageRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/api/business-console/v1/master-data/tooling-assets/usage")
+        {
+            Content = JsonContent.Create(new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                code = "TOOL-001",
+                count = 3L,
+            }),
+        };
+        usageRequest.Headers.Add("X-Idempotency-Key", "tooling-usage-001");
+        var usage = await client.SendAsync(usageRequest);
+
+        Assert.All([list, register, status, usage], response => Assert.Equal(HttpStatusCode.OK, response.StatusCode));
+        Assert.Equal(
+            ["internal-tooling-token", "internal-tooling-token", "internal-tooling-token", "internal-tooling-token"],
+            masterData.ToolingInternalTokens);
+        Assert.Equal(
+            ["corr-tooling-facades", "corr-tooling-facades", "corr-tooling-facades", "corr-tooling-facades"],
+            masterData.ToolingCorrelationIds);
+        Assert.Equal(
+            new BusinessConsoleListToolingAssetsRequest(
+                "org-001", "env-dev", "模具", BusinessConsoleToolingAssetStatus.Maintenance, 2, 20),
+            masterData.LastToolingListRequest);
+        Assert.Equivalent(
+            new BusinessConsoleRegisterToolingAssetRequest(
+                "org-001", "env-dev", "TOOL-001", "冲压模具", "mould", ["WC-01"], ["SKU-01"], 100, "tooling-register-001"),
+            masterData.LastRegisterToolingRequest,
+            strict: true);
+        Assert.Equal(
+            new BusinessConsoleChangeToolingStatusRequest(
+                "org-001", "env-dev", "TOOL-001", BusinessConsoleToolingAssetStatus.Retired, "寿命到期", "tooling-status-001"),
+            masterData.LastChangeToolingStatusRequest);
+        Assert.Equal(
+            new BusinessConsoleRecordToolingUsageRequest("org-001", "env-dev", "TOOL-001", 3, "tooling-usage-001"),
+            masterData.LastRecordToolingUsageRequest);
+        Assert.Equal(
+            [
+                new BusinessServiceAuditContext(
+                    "user:user-admin", "corr-tooling-facades", "cause-tooling-facades", "tooling-register-001"),
+                new BusinessServiceAuditContext(
+                    "user:user-admin", "corr-tooling-facades", "cause-tooling-facades", "tooling-status-001"),
+                new BusinessServiceAuditContext(
+                    "user:user-admin", "corr-tooling-facades", "cause-tooling-facades", "tooling-usage-001"),
+            ],
+            masterData.ToolingAuditContexts);
+        Assert.Equal(
+            [
+                BusinessGatewayPermissions.MasterDataResourcesRead,
+                BusinessGatewayPermissions.MasterDataResourcesManage,
+                BusinessGatewayPermissions.MasterDataResourcesManage,
+                BusinessGatewayPermissions.MasterDataResourcesManage,
+            ],
+            auth.Requirements.Select(requirement => requirement.PermissionCode).ToArray());
+        Assert.Equal(
+            [false, true, true, true],
+            auth.Requirements.Select(requirement => requirement.IncludePrincipalContext).ToArray());
+    }
+
+    [Theory]
+    [InlineData(
+        "/api/business-console/v1/master-data/tooling-assets",
+        """{"organizationId":"org-001","environmentId":"env-dev","code":"TOOL-001","name":"冲压模具","toolingType":"mould","workCenterCodes":["WC-01"],"skuCodes":["SKU-01"],"maintenanceLifeCount":100}""")]
+    [InlineData(
+        "/api/business-console/v1/master-data/tooling-assets/status",
+        """{"organizationId":"org-001","environmentId":"env-dev","code":"TOOL-001","status":"retired","reason":"寿命到期"}""")]
+    [InlineData(
+        "/api/business-console/v1/master-data/tooling-assets/usage",
+        """{"organizationId":"org-001","environmentId":"env-dev","code":"TOOL-001","count":3}""")]
+    public async Task Master_data_tooling_write_facades_reject_missing_idempotency_before_downstream(
+        string path,
+        string body)
+    {
+        var masterData = new RecordingMasterDataClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        using var response = await client.PostAsync(
+            path,
+            new StringContent(body, System.Text.Encoding.UTF8, "application/json"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("idempotency-key-required", document.RootElement.GetProperty("message").GetString());
+        Assert.Equal(0, masterData.ToolingCallCount);
+    }
+
+    [Fact]
+    public async Task Master_data_tooling_write_facade_rejects_conflicting_idempotency_before_downstream()
+    {
+        var masterData = new RecordingMasterDataClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/api/business-console/v1/master-data/tooling-assets/status")
+        {
+            Content = JsonContent.Create(new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                code = "TOOL-001",
+                status = "retired",
+                reason = "寿命到期",
+                idempotencyKey = "body-status-001",
+            }),
+        };
+        request.Headers.Add("Idempotency-Key", "header-status-001");
+
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("idempotency-key-mismatch", document.RootElement.GetProperty("message").GetString());
+        Assert.Equal(0, masterData.ToolingCallCount);
+    }
+
+    [Fact]
+    public async Task Master_data_tooling_write_facade_rejects_illegal_idempotency_before_downstream()
+    {
+        var masterData = new RecordingMasterDataClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/api/business-console/v1/master-data/tooling-assets/usage")
+        {
+            Content = JsonContent.Create(new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                code = "TOOL-001",
+                count = 3L,
+            }),
+        };
+        request.Headers.Add("X-Idempotency-Key", "illegal key");
+
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("idempotency-key-mismatch", document.RootElement.GetProperty("message").GetString());
+        Assert.Equal(0, masterData.ToolingCallCount);
+    }
+
+    [Fact]
+    public async Task Master_data_tooling_write_facade_rejects_unresolved_authorized_principal_before_downstream()
+    {
+        var masterData = new RecordingMasterDataClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.AllowedWithoutPrincipal(), services =>
+        {
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        using var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/master-data/tooling-assets",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                code = "TOOL-001",
+                name = "冲压模具",
+                toolingType = "mould",
+                workCenterCodes = new[] { "WC-01" },
+                skuCodes = new[] { "SKU-01" },
+                maintenanceLifeCount = 100L,
+                idempotencyKey = "tooling-register-001",
+            });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(
+            BusinessServiceProxyException.DownstreamRequestFailedMessage,
+            document.RootElement.GetProperty("message").GetString());
+        Assert.Equal(0, masterData.ToolingCallCount);
+    }
+
+    [Fact]
+    public async Task Master_data_tooling_facade_reuses_generated_response_correlation_id_downstream()
+    {
+        var masterData = new RecordingMasterDataClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/master-data/tooling-assets?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var responseCorrelationId = response.Headers.GetValues("X-Correlation-Id").Single();
+        Assert.False(string.IsNullOrWhiteSpace(responseCorrelationId));
+        Assert.Equal(responseCorrelationId, Assert.Single(masterData.ToolingCorrelationIds));
+    }
+
+    [Fact]
+    public async Task Master_data_tooling_facade_reuses_authoritative_multi_value_correlation_id_downstream()
+    {
+        var masterData = new RecordingMasterDataClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            "/api/business-console/v1/master-data/tooling-assets?organizationId=org-001&environmentId=env-dev");
+        request.Headers.TryAddWithoutValidation("X-Correlation-Id", ["   ", "corr-tooling-second"]);
+
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var responseCorrelationId = Assert.Single(response.Headers.GetValues("X-Correlation-Id"));
+        Assert.Equal(responseCorrelationId, Assert.Single(masterData.ToolingCorrelationIds));
+    }
+
+    [Fact]
+    public async Task Master_data_tooling_write_facade_reuses_authoritative_correlation_for_audit_context()
+    {
+        var masterData = new RecordingMasterDataClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/api/business-console/v1/master-data/tooling-assets/status")
+        {
+            Content = JsonContent.Create(new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                code = "TOOL-001",
+                status = "maintenance",
+                reason = "周期保养",
+                idempotencyKey = "tooling-status-correlation-001",
+            }),
+        };
+        request.Headers.TryAddWithoutValidation("X-Correlation-Id", ["   ", "corr-tooling-second"]);
+
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var responseCorrelationId = Assert.Single(response.Headers.GetValues("X-Correlation-Id"));
+        var auditContext = Assert.Single(masterData.ToolingAuditContexts);
+        Assert.Equal(responseCorrelationId, auditContext.CorrelationId);
+        Assert.Equal(responseCorrelationId, auditContext.CausationId);
+    }
+
+    [Theory]
+    [InlineData("GET", "/api/business-console/v1/master-data/tooling-assets?organizationId=org-001&environmentId=env-dev")]
+    [InlineData("POST", "/api/business-console/v1/master-data/tooling-assets")]
+    [InlineData("POST", "/api/business-console/v1/master-data/tooling-assets/status")]
+    [InlineData("POST", "/api/business-console/v1/master-data/tooling-assets/usage")]
+    public async Task Master_data_tooling_facades_do_not_call_downstream_when_permission_is_denied(
+        string method,
+        string path)
+    {
+        var masterData = new RecordingMasterDataClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Forbidden(), services =>
+        {
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        using var request = new HttpRequestMessage(new HttpMethod(method), path)
+        {
+            Content = method == "POST"
+                ? JsonContent.Create(new
+                {
+                    organizationId = "org-001",
+                    environmentId = "env-dev",
+                    code = "TOOL-001",
+                    name = "冲压模具",
+                    toolingType = "mould",
+                    workCenterCodes = new[] { "WC-01" },
+                    skuCodes = new[] { "SKU-01" },
+                    status = "maintenance",
+                    reason = "保养",
+                    count = 1L,
+                })
+                : null,
+        };
+
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(0, masterData.ToolingCallCount);
     }
 
     [Fact]
@@ -1764,6 +2313,86 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("OP-10-EXACT", mes.LastOperationTaskListRequest.OperationTaskId);
         Assert.Equal(2, mes.LastOperationTaskListRequest.Skip);
         Assert.Equal(20, mes.LastOperationTaskListRequest.Take);
+    }
+
+    // Break caught: PDA self-claim must bind the authenticated worker and the selected work center,
+    // never a caller-provided assignee.
+    [Fact]
+    public async Task Mes_operation_self_claim_binds_principal_and_authorized_work_center()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "membership",
+                    "membership-operator",
+                    "work-center",
+                    "WC-A",
+                    [BusinessGatewayPermissions.MesOperationsManage]),
+            ]);
+        var mes = new RecordingMesClient
+        {
+            OperationTasks =
+            [
+                new BusinessConsoleMesOperationTaskRow(
+                    "OP-CLAIM",
+                    "WO-001",
+                    "Queued",
+                    10,
+                    "WC-A",
+                    "DEV-A",
+                    "SHIFT-A",
+                    null,
+                    null,
+                    null,
+                    null,
+                    "Ready"),
+            ],
+            EmulateMesListPaging = true,
+        };
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                [new BusinessMasterDataWorkContextCoveredWorkCenter(
+                    "WC-A", "A 工作中心", "WS-A", "team-workshop")],
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "work-center", "WC-A", "A 工作中心", "team-workshop", [])),
+            WorkerDirectory =
+            [
+                new BusinessConsoleWorkerDirectoryItem(
+                    "user-admin", "EMP-001", "操作员甲", null, null, "操作工", "active", null, true,
+                    [new BusinessConsoleWorkerTeamItem("TEAM-A", "甲班", false, "WS-A")],
+                    [],
+                    "v1"),
+            ],
+        };
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/operation-tasks/OP-CLAIM/claim?organizationId=org-001&environmentId=env-dev&scopeKind=work-center&scopeId=WC-A",
+            new { assignedUserId = "forged-user", idempotencyKey = "claim-001" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(BusinessGatewayPermissions.MesOperationsManage, auth.LastRequirement!.PermissionCode);
+        Assert.True(auth.LastRequirement.IncludePrincipalContext);
+        Assert.Equal("WC-A", mes.LastOperationTaskListRequest!.WorkCenterIds);
+        Assert.Equal("OP-CLAIM", mes.LastOperationTaskListRequest.OperationTaskId);
+        Assert.Equal("user-admin", masterData.LastListWorkersRequest!.UserId);
+        Assert.Equal("WC-A", masterData.LastListWorkersRequest.WorkCenterCode);
+        Assert.Equal("user-admin", mes.LastClaimDispatchRequest!.AssignedUserId);
+        Assert.Equal("操作员甲", mes.LastClaimDispatchRequest.AssignedUserName);
+        Assert.Equal("DEV-A", mes.LastClaimDispatchRequest.DeviceAssetId);
+        Assert.Equal("SHIFT-A", mes.LastClaimDispatchRequest.ShiftId);
+        Assert.Equal("TEAM-A", mes.LastClaimDispatchRequest.TeamId);
+        Assert.Equal("user:user-admin", mes.LastClaimDispatchActor);
     }
 
     [Fact]
@@ -3036,10 +3665,16 @@ public sealed class BusinessGatewayProxyTests
         BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync(
-            "/api/business-console/v1/mes/downtime-events?organizationId=org-001&environmentId=env-dev&reasonCode=DT-MECH");
+            "/api/business-console/v1/mes/downtime-events?organizationId=org-001&environmentId=env-dev&reasonCode=DT-MECH&windowStartUtc=2026-07-01T00%3A00%3A00Z&windowEndUtc=2026-08-01T00%3A00%3A00Z");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("DT-MECH", mes.LastDowntimeEventListRequest!.ReasonCode);
+        Assert.Equal(
+            DateTimeOffset.Parse("2026-07-01T00:00:00Z"),
+            mes.LastDowntimeEventListRequest.WindowStartUtc);
+        Assert.Equal(
+            DateTimeOffset.Parse("2026-08-01T00:00:00Z"),
+            mes.LastDowntimeEventListRequest.WindowEndUtc);
         // 跨域取名必须按当前请求的租户/环境查目录：串了范围就会拿别的组织的词表解名。
         Assert.Equal("org-001", maintenance.LastDowntimeReasonDirectoryRequest!.OrganizationId);
         Assert.Equal("env-dev", maintenance.LastDowntimeReasonDirectoryRequest!.EnvironmentId);
@@ -8689,6 +9324,355 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Master_data_http_client_routes_tooling_operations_and_preserves_wire_bodies()
+    {
+        var requestBodies = new List<string?>();
+        var handler = new RecordingHandler(request =>
+        {
+            requestBodies.Add(request.Content?.ReadAsStringAsync().GetAwaiter().GetResult());
+            return request.RequestUri!.AbsolutePath switch
+            {
+                "/api/business/v1/master-data/tooling-assets/status" or
+                "/api/business/v1/master-data/tooling-assets/usage" => new HttpResponseMessage(HttpStatusCode.NoContent),
+                "/api/business/v1/master-data/tooling-assets" when request.Method == HttpMethod.Post =>
+                    JsonResponse(HttpStatusCode.OK, new
+                    {
+                        data = new { resourceType = "tooling-asset", code = "TOOL-001", displayName = "冲压模具" },
+                        success = true,
+                        message = string.Empty,
+                        code = 0,
+                    }),
+                _ => JsonResponse(HttpStatusCode.OK, new
+                {
+                    data = new
+                    {
+                        items = new[]
+                        {
+                            new
+                            {
+                                code = "TOOL-001",
+                                name = "冲压模具",
+                                toolingType = "mould",
+                                status = "maintenance",
+                                maintenanceLifeCount = 100L,
+                                usageCount = 100L,
+                                isSchedulable = false,
+                                workCenterCodes = new[] { "WC-01" },
+                                skuCodes = new[] { "SKU-01" },
+                            },
+                        },
+                        total = 3,
+                    },
+                    success = true,
+                    message = string.Empty,
+                    code = 0,
+                }),
+            };
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var list = await client.ListToolingAssetsAsync(
+            "internal-tooling-token",
+            new BusinessConsoleListToolingAssetsRequest(
+                "org-001", "env-dev", "模具", BusinessConsoleToolingAssetStatus.Maintenance, 2, 20),
+            "corr-tooling-client",
+            CancellationToken.None);
+        await client.RegisterToolingAssetAsync(
+            "internal-tooling-token",
+            new BusinessConsoleRegisterToolingAssetRequest(
+                "org-001", "env-dev", "TOOL-001", "冲压模具", "mould", ["WC-01"], ["SKU-01"], 100, "idem-register"),
+            new BusinessServiceAuditContext(
+                "user:trusted", "corr-tooling-client", "cause-tooling-client", "idem-register"),
+            CancellationToken.None);
+        var status = await client.ChangeToolingStatusAsync(
+            "internal-tooling-token",
+            new BusinessConsoleChangeToolingStatusRequest(
+                "org-001", "env-dev", "TOOL-001", BusinessConsoleToolingAssetStatus.Retired, "寿命到期", "idem-status"),
+            new BusinessServiceAuditContext(
+                "user:trusted", "corr-tooling-client", "cause-tooling-client", "idem-status"),
+            CancellationToken.None);
+        var usage = await client.RecordToolingUsageAsync(
+            "internal-tooling-token",
+            new BusinessConsoleRecordToolingUsageRequest("org-001", "env-dev", "TOOL-001", 3, "idem-usage"),
+            new BusinessServiceAuditContext(
+                "user:trusted", "corr-tooling-client", "cause-tooling-client", "idem-usage"),
+            CancellationToken.None);
+
+        Assert.Equal(BusinessConsoleToolingAssetStatus.Maintenance, Assert.Single(list.Items).Status);
+        Assert.Equal(3, list.Total);
+        Assert.True(status.Accepted);
+        Assert.True(usage.Accepted);
+        AssertRequest(
+            handler.Requests[0],
+            HttpMethod.Get,
+            "/api/business/v1/master-data/tooling-assets?organizationId=org-001&environmentId=env-dev&keyword=%E6%A8%A1%E5%85%B7&status=maintenance&skip=2&take=20");
+        AssertRequest(handler.Requests[1], HttpMethod.Post, "/api/business/v1/master-data/tooling-assets");
+        AssertRequest(handler.Requests[2], HttpMethod.Post, "/api/business/v1/master-data/tooling-assets/status");
+        AssertRequest(handler.Requests[3], HttpMethod.Post, "/api/business/v1/master-data/tooling-assets/usage");
+        Assert.All(handler.Requests, request => Assert.Equal("internal-tooling-token", request.Headers.Authorization!.Parameter));
+        Assert.All(handler.Requests, request => Assert.Equal("corr-tooling-client", request.Headers.GetValues("X-Correlation-Id").Single()));
+        Assert.All(handler.Requests.Skip(1), request =>
+        {
+            Assert.Equal("user:trusted", request.Headers.GetValues("X-Authenticated-Actor").Single());
+            Assert.Equal("cause-tooling-client", request.Headers.GetValues("X-Causation-Id").Single());
+        });
+        Assert.Equal("idem-register", handler.Requests[1].Headers.GetValues("X-Idempotency-Key").Single());
+        Assert.Equal("idem-status", handler.Requests[2].Headers.GetValues("X-Idempotency-Key").Single());
+        Assert.Equal("idem-usage", handler.Requests[3].Headers.GetValues("X-Idempotency-Key").Single());
+        Assert.Equal("idem-register", handler.Requests[1].Headers.GetValues("Idempotency-Key").Single());
+        Assert.Equal("idem-status", handler.Requests[2].Headers.GetValues("Idempotency-Key").Single());
+        Assert.Equal("idem-usage", handler.Requests[3].Headers.GetValues("Idempotency-Key").Single());
+        Assert.True(JsonNode.DeepEquals(
+            JsonNode.Parse(requestBodies[1]!),
+            JsonNode.Parse("""{"organizationId":"org-001","environmentId":"env-dev","code":"TOOL-001","name":"冲压模具","toolingType":"mould","workCenterCodes":["WC-01"],"skuCodes":["SKU-01"],"maintenanceLifeCount":100,"idempotencyKey":"idem-register"}""")));
+        Assert.True(JsonNode.DeepEquals(
+            JsonNode.Parse(requestBodies[2]!),
+            JsonNode.Parse("""{"organizationId":"org-001","environmentId":"env-dev","code":"TOOL-001","status":"retired","reason":"寿命到期","idempotencyKey":"idem-status"}""")));
+        Assert.True(JsonNode.DeepEquals(
+            JsonNode.Parse(requestBodies[3]!),
+            JsonNode.Parse("""{"organizationId":"org-001","environmentId":"env-dev","code":"TOOL-001","count":3,"idempotencyKey":"idem-usage"}""")));
+    }
+
+    [Fact]
+    public async Task Master_data_http_client_fails_closed_for_invalid_tooling_directory_response()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = new { total = 1 },
+            success = true,
+            message = string.Empty,
+            code = 0,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.ListToolingAssetsAsync(
+            "internal-tooling-token",
+            new BusinessConsoleListToolingAssetsRequest("org-001", "env-dev"),
+            "corr-tooling-invalid-list",
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
+    }
+
+    [Fact]
+    public async Task Master_data_http_client_fails_closed_when_tooling_items_is_explicitly_null()
+    {
+        var handler = new RecordingHandler(_ => StringJsonResponse(HttpStatusCode.OK,
+            """{"data":{"items":null,"total":0},"success":true,"message":"","code":0}"""));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.ListToolingAssetsAsync(
+            "internal-tooling-token",
+            new BusinessConsoleListToolingAssetsRequest("org-001", "env-dev"),
+            "corr-tooling-null-items",
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
+    }
+
+    [Fact]
+    public async Task Master_data_http_client_fails_closed_when_tooling_item_omits_required_fields()
+    {
+        var handler = new RecordingHandler(_ => StringJsonResponse(HttpStatusCode.OK,
+            """{"data":{"items":[{"code":"TOOL-001","toolingType":"mould","status":"available","maintenanceLifeCount":null,"usageCount":0,"isSchedulable":true,"workCenterCodes":["WC-01"],"skuCodes":["SKU-01"]}],"total":1},"success":true,"message":"","code":0}"""));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.ListToolingAssetsAsync(
+            "internal-tooling-token",
+            new BusinessConsoleListToolingAssetsRequest("org-001", "env-dev"),
+            "corr-tooling-missing-item",
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
+    }
+
+    [Fact]
+    public async Task Master_data_http_client_fails_closed_when_tooling_registration_omits_required_fields()
+    {
+        var handler = new RecordingHandler(_ => StringJsonResponse(HttpStatusCode.OK,
+            """{"data":{},"success":true,"message":"","code":0}"""));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.RegisterToolingAssetAsync(
+            "internal-tooling-token",
+            new BusinessConsoleRegisterToolingAssetRequest(
+                "org-001", "env-dev", "TOOL-001", "冲压模具", "mould", ["WC-01"], ["SKU-01"], 100, "idem-001"),
+            new BusinessServiceAuditContext(
+                "user:trusted", "corr-tooling-missing-register", "cause-tooling-missing-register", "idem-001"),
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
+    }
+
+    [Fact]
+    public async Task Master_data_http_client_fails_closed_for_tooling_failure_envelope()
+    {
+        var handler = new RecordingHandler(_ => StringJsonResponse(HttpStatusCode.OK,
+            """{"data":{"items":[],"total":0},"success":false,"message":"unexpected","code":1}"""));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.ListToolingAssetsAsync(
+            "internal-tooling-token",
+            new BusinessConsoleListToolingAssetsRequest("org-001", "env-dev"),
+            "corr-tooling-failure-envelope",
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
+    }
+
+    [Fact]
+    public async Task Master_data_http_client_fails_closed_when_tooling_total_is_less_than_item_count()
+    {
+        var handler = new RecordingHandler(_ => StringJsonResponse(HttpStatusCode.OK,
+            """{"data":{"items":[{"code":"TOOL-001","name":"冲压模具","toolingType":"mould","status":"available","maintenanceLifeCount":null,"usageCount":0,"isSchedulable":true,"workCenterCodes":["WC-01"],"skuCodes":["SKU-01"]}],"total":0},"success":true,"message":"","code":0}"""));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.ListToolingAssetsAsync(
+            "internal-tooling-token",
+            new BusinessConsoleListToolingAssetsRequest("org-001", "env-dev"),
+            "corr-tooling-invalid-total",
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
+    }
+
+    [Fact]
+    public async Task Master_data_http_client_fails_closed_when_non_empty_tooling_page_exceeds_total()
+    {
+        var handler = new RecordingHandler(_ => StringJsonResponse(HttpStatusCode.OK,
+            """{"data":{"items":[{"code":"TOOL-001","name":"冲压模具","toolingType":"mould","status":"available","maintenanceLifeCount":null,"usageCount":0,"isSchedulable":true,"workCenterCodes":["WC-01"],"skuCodes":["SKU-01"]}],"total":1},"success":true,"message":"","code":0}"""));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.ListToolingAssetsAsync(
+            "internal-tooling-token",
+            new BusinessConsoleListToolingAssetsRequest("org-001", "env-dev", Skip: 2),
+            "corr-tooling-invalid-page-total",
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
+    }
+
+    [Fact]
+    public async Task Master_data_http_client_fails_closed_when_tooling_page_exceeds_requested_take()
+    {
+        var handler = new RecordingHandler(_ => StringJsonResponse(HttpStatusCode.OK,
+            """{"data":{"items":[{"code":"TOOL-001","name":"冲压模具","toolingType":"mould","status":"available","maintenanceLifeCount":null,"usageCount":0,"isSchedulable":true,"workCenterCodes":["WC-01"],"skuCodes":["SKU-01"]},{"code":"TOOL-002","name":"焊接夹具","toolingType":"fixture","status":"available","maintenanceLifeCount":null,"usageCount":0,"isSchedulable":true,"workCenterCodes":["WC-02"],"skuCodes":["SKU-02"]}],"total":2},"success":true,"message":"","code":0}"""));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.ListToolingAssetsAsync(
+            "internal-tooling-token",
+            new BusinessConsoleListToolingAssetsRequest("org-001", "env-dev", Take: 1),
+            "corr-tooling-invalid-page-size",
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
+    }
+
+    [Fact]
+    public async Task Master_data_http_client_fails_closed_when_tooling_page_bounds_overflow_int32()
+    {
+        var handler = new RecordingHandler(_ => StringJsonResponse(HttpStatusCode.OK,
+            """{"data":{"items":[{"code":"TOOL-001","name":"冲压模具","toolingType":"mould","status":"available","maintenanceLifeCount":null,"usageCount":0,"isSchedulable":true,"workCenterCodes":["WC-01"],"skuCodes":["SKU-01"]}],"total":2147483647},"success":true,"message":"","code":0}"""));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.ListToolingAssetsAsync(
+            "internal-tooling-token",
+            new BusinessConsoleListToolingAssetsRequest("org-001", "env-dev", Skip: int.MaxValue),
+            "corr-tooling-page-bounds-overflow",
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
+    }
+
+    [Theory]
+    [InlineData("""{"data":{"items":[null],"total":1},"success":true,"message":"","code":0}""")]
+    [InlineData("""{"data":{"items":[{"code":"TOOL-001","name":"冲压模具","toolingType":"mould","status":"available","maintenanceLifeCount":null,"usageCount":0,"isSchedulable":true,"workCenterCodes":[null],"skuCodes":["SKU-01"]}],"total":1},"success":true,"message":"","code":0}""")]
+    [InlineData("""{"data":{"items":[{"code":"TOOL-001","name":"冲压模具","toolingType":"mould","status":"available","maintenanceLifeCount":null,"usageCount":0,"isSchedulable":true,"workCenterCodes":["WC-01"],"skuCodes":[" "]}],"total":1},"success":true,"message":"","code":0}""")]
+    public async Task Master_data_http_client_fails_closed_for_null_or_blank_tooling_item_members(string payload)
+    {
+        var handler = new RecordingHandler(_ => StringJsonResponse(HttpStatusCode.OK, payload));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.ListToolingAssetsAsync(
+            "internal-tooling-token",
+            new BusinessConsoleListToolingAssetsRequest("org-001", "env-dev"),
+            "corr-tooling-invalid-member",
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
+    }
+
+    [Fact]
+    public async Task Master_data_http_client_requires_no_content_for_tooling_status_command()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = new { accepted = true },
+            success = true,
+            message = string.Empty,
+            code = 0,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.ChangeToolingStatusAsync(
+            "internal-tooling-token",
+            new BusinessConsoleChangeToolingStatusRequest(
+                "org-001", "env-dev", "TOOL-001", BusinessConsoleToolingAssetStatus.Retired, "寿命到期"),
+            new BusinessServiceAuditContext(
+                "user:trusted", "corr-tooling-status", "cause-tooling-status", "idem-status"),
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
+    }
+
+    [Fact]
+    public async Task Master_data_http_client_requires_no_content_for_tooling_usage_command()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = new { accepted = true },
+            success = true,
+            message = string.Empty,
+            code = 0,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.RecordToolingUsageAsync(
+            "internal-tooling-token",
+            new BusinessConsoleRecordToolingUsageRequest("org-001", "env-dev", "TOOL-001", 3),
+            new BusinessServiceAuditContext(
+                "user:trusted", "corr-tooling-usage", "cause-tooling-usage", "idem-usage"),
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
+    }
+
+    [Fact]
     public async Task Master_data_worker_directory_maps_downstream_name_to_display_name()
     {
         // 下游员工目录行是 `name`，facade 契约是 `displayName`——回归守卫：若网关又改回
@@ -10451,8 +11435,11 @@ public sealed class BusinessGatewayProxyTests
     public async Task Quality_http_client_forwards_mrb_reviews_for_ncr_disposition()
     {
         string? requestBody = null;
+        var postCount = 0;
         var handler = new RecordingHandler(request =>
         {
+            Assert.Equal(HttpMethod.Post, request.Method);
+            postCount++;
             requestBody = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
             return JsonResponse(HttpStatusCode.OK, new
             {
@@ -10469,28 +11456,139 @@ public sealed class BusinessGatewayProxyTests
         var client = new HttpBusinessQualityClient(httpClient);
         var reviewedAt = DateTimeOffset.Parse("2026-06-16T01:02:03Z", CultureInfo.InvariantCulture);
 
-        await client.SubmitNcrDispositionAsync(
+        var request = new BusinessConsoleNcrDispositionRequest(
+            "ncr-001",
+            "org-001",
+            "env-dev",
+            "rework",
+            "approval-chain-001",
+            ["file-001"],
+            [new BusinessConsoleMrbReview("qa-lead", "approved", "release for rework", reviewedAt)],
+            "ncr-rework-key-001");
+        var first = await client.SubmitNcrDispositionAsync(
             "internal-token-001",
             "ncr-001",
-            new BusinessConsoleNcrDispositionRequest(
-                "ncr-001",
-                "org-001",
-                "env-dev",
-                "rework",
-                "approval-chain-001",
-                ["file-001"],
-                [new BusinessConsoleMrbReview("qa-lead", "approved", "release for rework", reviewedAt)]),
+            request,
+            CancellationToken.None);
+        var replay = await client.SubmitNcrDispositionAsync(
+            "internal-token-001",
+            "ncr-001",
+            request,
             CancellationToken.None);
 
         Assert.NotNull(requestBody);
         using var document = JsonDocument.Parse(requestBody);
         var root = document.RootElement;
+        Assert.Equal("org-001", root.GetProperty("organizationId").GetString());
+        Assert.Equal("env-dev", root.GetProperty("environmentId").GetString());
         Assert.Equal("rework", root.GetProperty("dispositionType").GetString());
         var review = root.GetProperty("mrbReviews")[0];
         Assert.Equal("qa-lead", review.GetProperty("reviewerId").GetString());
         Assert.Equal("approved", review.GetProperty("decision").GetString());
         Assert.Equal("release for rework", review.GetProperty("comment").GetString());
         Assert.Equal(reviewedAt, review.GetProperty("reviewedAtUtc").GetDateTimeOffset());
+        Assert.Equal("ncr-rework-key-001", root.GetProperty("idempotencyKey").GetString());
+        Assert.Equal(2, postCount);
+        Assert.Equal("ncr-rework-key-001", first.OperationReceipt?.IdempotencyKey);
+        Assert.Equal(first.OperationReceipt, replay.OperationReceipt);
+        Assert.Equal(
+            "/api/business-console/v1/quality/ncrs/ncr-001?organizationId=org-001&environmentId=env-dev",
+            first.OperationReceipt?.ReadbackPath);
+    }
+
+    [Fact]
+    public async Task Quality_http_client_preserves_authoritative_rework_conflict()
+    {
+        var handler = new RecordingHandler(request =>
+        {
+            Assert.Equal(HttpMethod.Post, request.Method);
+            return JsonResponse(HttpStatusCode.Conflict, new
+            {
+                success = false,
+                message = "idempotency-conflict",
+            });
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var client = new HttpBusinessQualityClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.SubmitNcrDispositionAsync(
+                "internal-token-001",
+                "ncr-conflict",
+                new BusinessConsoleNcrDispositionRequest(
+                    "ncr-conflict",
+                    "org-001",
+                    "env-dev",
+                    "rework",
+                    "approval-chain-001",
+                    ["different-evidence"],
+                    [new BusinessConsoleMrbReview(
+                        "qa-lead",
+                        "approved",
+                        "different decision evidence",
+                        DateTimeOffset.Parse("2026-06-16T01:02:03Z", CultureInfo.InvariantCulture))],
+                    "ncr-rework-key-conflict"),
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.Conflict, exception.StatusCode);
+        Assert.Contains("idempotency-conflict", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Quality_http_client_does_not_turn_a_rejected_rework_command_into_a_receipt()
+    {
+        var handler = new RecordingHandler(request =>
+            request.Method == HttpMethod.Get
+                ? JsonResponse(HttpStatusCode.OK, new
+                {
+                    data = new
+                    {
+                        ncrId = "ncr-rejected",
+                        ncrCode = "NCR-REJECTED",
+                        sourceType = "inspection-record",
+                        sourceDocumentId = "IR-REJECTED",
+                        skuCode = "SKU-001",
+                        defectQuantity = 1m,
+                        defectReason = "surface defect",
+                        batchNo = (string?)null,
+                        serialNo = (string?)null,
+                        status = "open",
+                        reworkWorkOrderCreationStatus = "not-requested",
+                    },
+                    success = true,
+                    message = string.Empty,
+                    code = 0,
+                })
+                : JsonResponse(HttpStatusCode.OK, new
+                {
+                    data = new { accepted = false },
+                    success = true,
+                    message = string.Empty,
+                    code = 0,
+                }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var client = new HttpBusinessQualityClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.SubmitNcrDispositionAsync(
+                "internal-token-001",
+                "ncr-rejected",
+                new BusinessConsoleNcrDispositionRequest(
+                    "ncr-rejected",
+                    "org-001",
+                    "env-dev",
+                    "rework",
+                    "approval-chain-001",
+                    ["file-001"],
+                    [new BusinessConsoleMrbReview(
+                        "qa-lead",
+                        "approved",
+                        null,
+                        DateTimeOffset.Parse("2026-06-16T01:02:03Z", CultureInfo.InvariantCulture))],
+                    "ncr-rework-rejected-key"),
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
     }
 
     [Fact]
@@ -10750,10 +11848,21 @@ public sealed class BusinessGatewayProxyTests
         var materialRequest = new BusinessConsoleMesMaterialIssueRequestListRequest("org-001", "env-dev", Keyword: "filter", WorkCenterId: "WC-FILTER", ShiftId: "SHIFT-FILTER", DeviceAssetId: "DEV-FILTER", Skip: 4, Take: 12);
         var requestWithoutStatus = new BusinessConsoleMesListWithoutStatusRequest("org-001", "env-dev", Keyword: "filter", WorkCenterId: "WC-FILTER", ShiftId: "SHIFT-FILTER", DeviceAssetId: "DEV-FILTER", Skip: 4, Take: 12);
         var dispatchRequest = new BusinessConsoleMesDispatchTaskListRequest("org-001", "env-dev", Keyword: "filter", WorkCenterId: "WC-FILTER", ShiftId: "SHIFT-FILTER", DeviceAssetId: "DEV-FILTER", AssignedUserId: "user-emp-010", Skip: 4, Take: 12);
-        var downtimeRequest = new BusinessConsoleMesDowntimeEventListRequest("org-001", "env-dev", Keyword: "filter", WorkCenterId: "WC-FILTER", ShiftId: "SHIFT-FILTER", DeviceAssetId: "DEV-FILTER", ReasonCode: "DT-MECH", Skip: 4, Take: 12);
+        var downtimeRequest = new BusinessConsoleMesDowntimeEventListRequest(
+            "org-001",
+            "env-dev",
+            Keyword: "filter",
+            WorkCenterId: "WC-FILTER",
+            ShiftId: "SHIFT-FILTER",
+            DeviceAssetId: "DEV-FILTER",
+            ReasonCode: "DT-MECH",
+            WindowStartUtc: DateTimeOffset.Parse("2026-07-01T00:00:00Z"),
+            WindowEndUtc: DateTimeOffset.Parse("2026-08-01T00:00:00Z"),
+            Skip: 4,
+            Take: 12);
         var expectedQuery = "?organizationId=org-001&environmentId=env-dev&keyword=filter&workCenterId=WC-FILTER&shiftId=SHIFT-FILTER&deviceAssetId=DEV-FILTER&skip=4&take=12";
         var expectedDispatchQuery = "?organizationId=org-001&environmentId=env-dev&keyword=filter&workCenterId=WC-FILTER&shiftId=SHIFT-FILTER&deviceAssetId=DEV-FILTER&assignedUserId=user-emp-010&skip=4&take=12";
-        var expectedDowntimeQuery = "?organizationId=org-001&environmentId=env-dev&keyword=filter&workCenterId=WC-FILTER&shiftId=SHIFT-FILTER&deviceAssetId=DEV-FILTER&reasonCode=DT-MECH&skip=4&take=12";
+        var expectedDowntimeQuery = "?organizationId=org-001&environmentId=env-dev&keyword=filter&workCenterId=WC-FILTER&shiftId=SHIFT-FILTER&deviceAssetId=DEV-FILTER&reasonCode=DT-MECH&windowStartUtc=2026-07-01T00%3A00%3A00.0000000%2B00%3A00&windowEndUtc=2026-08-01T00%3A00%3A00.0000000%2B00%3A00&skip=4&take=12";
 
         var cases = new (string Path, Func<Task<int>> Invoke)[]
         {
@@ -12842,6 +13951,22 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
 
     public BusinessConsolePreviewCodeRuleRequest? LastCodeRulePreviewRequest { get; private set; }
 
+    public int ToolingCallCount { get; private set; }
+
+    public List<string> ToolingInternalTokens { get; } = [];
+
+    public List<string> ToolingCorrelationIds { get; } = [];
+
+    public List<BusinessServiceAuditContext> ToolingAuditContexts { get; } = [];
+
+    public BusinessConsoleListToolingAssetsRequest? LastToolingListRequest { get; private set; }
+
+    public BusinessConsoleRegisterToolingAssetRequest? LastRegisterToolingRequest { get; private set; }
+
+    public BusinessConsoleChangeToolingStatusRequest? LastChangeToolingStatusRequest { get; private set; }
+
+    public BusinessConsoleRecordToolingUsageRequest? LastRecordToolingUsageRequest { get; private set; }
+
     public IReadOnlyCollection<BusinessConsoleResourceItem>? Resources { get; init; }
 
     public BusinessServiceProxyException? Failure { get; init; }
@@ -13434,6 +14559,70 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
         LastInternalToken = internalBearerToken;
         LastCodeRulePreviewRequest = request;
         return Task.FromResult(new BusinessConsoleCodeRulePreviewResponse(request.RuleKey, "SKU-0042"));
+    }
+
+    public Task<BusinessConsoleToolingAssetListResponse> ListToolingAssetsAsync(
+        string internalBearerToken,
+        BusinessConsoleListToolingAssetsRequest request,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        ToolingCallCount++;
+        LastInternalToken = internalBearerToken;
+        ToolingInternalTokens.Add(internalBearerToken);
+        ToolingCorrelationIds.Add(correlationId);
+        LastToolingListRequest = request;
+        return Task.FromResult(new BusinessConsoleToolingAssetListResponse(
+            [new BusinessConsoleToolingAssetItem(
+                "TOOL-001", "冲压模具", "mould", BusinessConsoleToolingAssetStatus.Maintenance,
+                100, 100, false, ["WC-01"], ["SKU-01"])],
+            1));
+    }
+
+    public Task<BusinessConsoleToolingRegistrationResponse> RegisterToolingAssetAsync(
+        string internalBearerToken,
+        BusinessConsoleRegisterToolingAssetRequest request,
+        BusinessServiceAuditContext auditContext,
+        CancellationToken cancellationToken)
+    {
+        ToolingCallCount++;
+        LastInternalToken = internalBearerToken;
+        ToolingInternalTokens.Add(internalBearerToken);
+        ToolingCorrelationIds.Add(auditContext.CorrelationId);
+        ToolingAuditContexts.Add(auditContext);
+        LastRegisterToolingRequest = request;
+        return Task.FromResult(new BusinessConsoleToolingRegistrationResponse(
+            "tooling-asset", request.Code ?? "TOOL-GENERATED", request.Name));
+    }
+
+    public Task<BusinessConsoleAcceptedResponse> ChangeToolingStatusAsync(
+        string internalBearerToken,
+        BusinessConsoleChangeToolingStatusRequest request,
+        BusinessServiceAuditContext auditContext,
+        CancellationToken cancellationToken)
+    {
+        ToolingCallCount++;
+        LastInternalToken = internalBearerToken;
+        ToolingInternalTokens.Add(internalBearerToken);
+        ToolingCorrelationIds.Add(auditContext.CorrelationId);
+        ToolingAuditContexts.Add(auditContext);
+        LastChangeToolingStatusRequest = request;
+        return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+    }
+
+    public Task<BusinessConsoleAcceptedResponse> RecordToolingUsageAsync(
+        string internalBearerToken,
+        BusinessConsoleRecordToolingUsageRequest request,
+        BusinessServiceAuditContext auditContext,
+        CancellationToken cancellationToken)
+    {
+        ToolingCallCount++;
+        LastInternalToken = internalBearerToken;
+        ToolingInternalTokens.Add(internalBearerToken);
+        ToolingCorrelationIds.Add(auditContext.CorrelationId);
+        ToolingAuditContexts.Add(auditContext);
+        LastRecordToolingUsageRequest = request;
+        return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
     }
 
     private Task<BusinessConsoleResourceItem> CreateResourceAsync(
@@ -16049,6 +17238,16 @@ internal sealed class RecordingBarcodeLabelClient : IBusinessBarcodeLabelClient,
 
     public BusinessConsoleBarcodeScanListRequest? LastScanListRequest { get; private set; }
 
+    public BusinessConsoleDispatchBarcodePrintBatchRequest? LastDispatchRequest { get; private set; }
+
+    public BusinessConsoleReprintBarcodeLabelRequest? LastReprintRequest { get; private set; }
+
+    public BusinessConsoleVoidBarcodeLabelRequest? LastVoidRequest { get; private set; }
+
+    public int LifecycleCallCount { get; private set; }
+
+    public BusinessServiceProxyException? LifecycleFailure { get; init; }
+
     public BusinessBarcodeResolveRequest? LastResolveRequest { get; private set; }
 
     public int ResolveCallCount { get; private set; }
@@ -16169,6 +17368,55 @@ internal sealed class RecordingBarcodeLabelClient : IBusinessBarcodeLabelClient,
                 "observed",
                 DateTimeOffset.Parse("2026-06-03T01:00:00Z", CultureInfo.InvariantCulture)),
         ], 1));
+    }
+
+    public Task<BusinessConsoleBarcodePrintLifecycleResponse> DispatchPrintBatchAsync(
+        string internalBearerToken,
+        BusinessConsoleDispatchBarcodePrintBatchRequest request,
+        CancellationToken cancellationToken)
+    {
+        LifecycleCallCount++;
+        LastInternalToken = internalBearerToken;
+        LastDispatchRequest = request;
+        if (LifecycleFailure is not null)
+        {
+            throw LifecycleFailure;
+        }
+        return Task.FromResult(new BusinessConsoleBarcodePrintLifecycleResponse(request.Body.PrintBatchId));
+    }
+
+    public Task<BusinessConsoleReprintBarcodeLabelResponse> ReprintLabelAsync(
+        string internalBearerToken,
+        BusinessConsoleReprintBarcodeLabelRequest request,
+        CancellationToken cancellationToken)
+    {
+        LifecycleCallCount++;
+        LastInternalToken = internalBearerToken;
+        LastReprintRequest = request;
+        if (LifecycleFailure is not null)
+        {
+            throw LifecycleFailure;
+        }
+        return Task.FromResult(new BusinessConsoleReprintBarcodeLabelResponse(
+            request.Body.PrintBatchId,
+            "reprinted",
+            "print-job-001",
+            null));
+    }
+
+    public Task<BusinessConsoleBarcodePrintLifecycleResponse> VoidLabelAsync(
+        string internalBearerToken,
+        BusinessConsoleVoidBarcodeLabelRequest request,
+        CancellationToken cancellationToken)
+    {
+        LifecycleCallCount++;
+        LastInternalToken = internalBearerToken;
+        LastVoidRequest = request;
+        if (LifecycleFailure is not null)
+        {
+            throw LifecycleFailure;
+        }
+        return Task.FromResult(new BusinessConsoleBarcodePrintLifecycleResponse(request.Body.PrintBatchId));
     }
 
     public Task<BusinessBarcodeResolveResponse> ResolveAsync(
@@ -17172,6 +18420,10 @@ internal sealed class RecordingMesClient : IBusinessMesClient
 
     public string? LastInternalToken { get; private set; }
 
+    public BusinessConsoleMesProductionStatisticsRequest? LastProductionStatisticsRequest { get; private set; }
+
+    public BusinessConsoleMesProductionStatisticsResponse? ProductionStatistics { get; init; }
+
     public BusinessMesWorkOrderListRequest? LastWorkOrderListRequest { get; private set; }
 
     public BusinessMesOperationTaskListRequest? LastOperationTaskListRequest { get; private set; }
@@ -17257,6 +18509,10 @@ internal sealed class RecordingMesClient : IBusinessMesClient
 
     public string? LastAssignDispatchActor { get; private set; }
 
+    public string? LastClaimDispatchActor { get; private set; }
+
+    public BusinessConsoleMesClaimDispatchTaskForwardRequest? LastClaimDispatchRequest { get; private set; }
+
     public int RetryFinishedGoodsReceiptInventoryPostingCallCount { get; private set; }
 
     public BusinessConsoleMesRetryFinishedGoodsReceiptInventoryPostingRequest? LastRetryFinishedGoodsReceiptInventoryPostingRequest { get; private set; }
@@ -17291,6 +18547,16 @@ internal sealed class RecordingMesClient : IBusinessMesClient
     {
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleMesOverviewResponse([], [], []));
+    }
+
+    public Task<BusinessConsoleMesProductionStatisticsResponse> QueryProductionStatisticsAsync(
+        string internalBearerToken,
+        BusinessConsoleMesProductionStatisticsRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastProductionStatisticsRequest = request;
+        return Task.FromResult(ProductionStatistics ?? throw new InvalidOperationException("Production statistics response is required."));
     }
 
     public Task<BusinessConsoleMesProductionPlanListResponse> ListProductionPlansAsync(
@@ -17605,6 +18871,19 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         LastAssignDispatchActor = actor;
         LastAssignDispatchRequest = request;
         return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+    }
+
+    public Task<BusinessConsoleAcceptedResponse> ClaimDispatchTaskAsync(
+        string internalBearerToken,
+        string operationTaskId,
+        BusinessConsoleMesClaimDispatchTaskForwardRequest request,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastClaimDispatchActor = actor;
+        LastClaimDispatchRequest = request;
+        return Task.FromResult(new BusinessConsoleAcceptedResponse(true, "BusinessMes", "DispatchTask", operationTaskId));
     }
 
     public async Task<BusinessConsoleMesOperationTaskListResponse> ListOperationTasksAsync(

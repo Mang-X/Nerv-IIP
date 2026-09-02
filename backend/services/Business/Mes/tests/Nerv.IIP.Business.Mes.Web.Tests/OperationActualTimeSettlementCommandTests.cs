@@ -29,7 +29,8 @@ public sealed class OperationActualTimeSettlementCommandTests
         dbContext.OperationTasks.Add(task);
         await dbContext.SaveChangesAsync();
 
-        var handler = new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance);
+        var handler = new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance,
+            TestMesFirstArticleGate.Allowing);
         var staged = await handler.Handle(
             new RecordProductionReportCommand(
                 "org-001", "env-dev", "WO-001", "OP-001", 4m, 0m, false,

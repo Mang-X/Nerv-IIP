@@ -132,13 +132,12 @@ const uiStubs = {
   NvSelect: passthrough,
   NvSelectTrigger: passthrough,
   NvSelectValue: true,
-  SelectValue: true,
   NvSelectContent: passthrough,
   NvSelectItem: passthrough,
-  // NvDialog 是 reka-ui DialogRoot 的重命名再导出（frontend/packages/ui/src/components/pc/dialog/index.ts），
-  // <script setup> 编译期直接绑定导入标识符，不经过按名解析；stub 必须按其真实组件名 DialogRoot 匹配，
-  // 否则真实 DialogRoot（内容始终无条件渲染 slot）会绕过本 stub，dialog 的开合状态在测试里恒为"已渲染"。
-  DialogRoot: {
+  // NvDialog 的 barrel 别名带 name（frontend/packages/ui/src/components/pc/dialog/index.ts），
+  // stub 按 Nv 名匹配即可命中。此 stub 必须用 v-if 承载开合状态，否则真实 DialogRoot
+  // 无条件渲染 slot，dialog 的开合状态在测试里恒为"已渲染"。
+  NvDialog: {
     props: ['open'],
     emits: ['update:open'],
     template: '<div v-if="open"><slot /></div>',

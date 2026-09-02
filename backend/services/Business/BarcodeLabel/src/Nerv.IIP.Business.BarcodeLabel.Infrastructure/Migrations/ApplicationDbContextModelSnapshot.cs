@@ -129,6 +129,12 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                         .HasColumnName("barcode_rule_id")
                         .HasComment("Barcode rule id used for deterministic label generation.");
 
+                    b.Property<string>("BarcodeTypeSnapshot")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("barcode_type_snapshot")
+                        .HasComment("Nullable barcode type snapshot used by the renderer; null only for legacy rows.");
+
                     b.Property<DateTimeOffset?>("CompletedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("completed_at_utc")
@@ -189,6 +195,12 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                         .HasColumnName("printer_id")
                         .HasComment("Configured printer identity selected for the transport attempt.");
 
+                    b.Property<string>("RendererContractVersion")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("renderer_contract_version")
+                        .HasComment("Nullable deterministic renderer contract version; null only for legacy rows.");
+
                     b.Property<int>("RequestedQuantity")
                         .HasColumnType("integer")
                         .HasColumnName("requested_quantity")
@@ -215,6 +227,23 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                         .HasColumnName("status")
                         .HasComment("Truthful print batch lifecycle status: pending, sent-to-printer, printed or failed.");
 
+                    b.Property<string>("TemplateAssetSha256")
+                        .HasMaxLength(71)
+                        .HasColumnType("character varying(71)")
+                        .HasColumnName("template_asset_sha256")
+                        .HasComment("Nullable canonical sha256-prefixed template asset snapshot; null only for legacy rows and never synthesized.");
+
+                    b.Property<string>("TemplateFileIdSnapshot")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("template_file_id_snapshot")
+                        .HasComment("Nullable FileStorage template file id snapshot; null only for legacy rows created before replay snapshots.");
+
+                    b.Property<string>("VariableSchemaJsonSnapshot")
+                        .HasColumnType("text")
+                        .HasColumnName("variable_schema_json_snapshot")
+                        .HasComment("Nullable variable schema JSON snapshot produced by BarcodeLabel for deterministic replay; null legacy rows are not replayable.");
+
                     b.HasKey("Id");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "IdempotencyKey")
@@ -225,6 +254,8 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                     b.ToTable("label_print_batches", "barcode", t =>
                         {
                             t.HasComment("Label print batch facts and idempotency records.");
+
+                            t.HasCheckConstraint("ck_label_print_batches_replay_snapshot_complete", "(template_file_id_snapshot IS NULL AND template_asset_sha256 IS NULL AND variable_schema_json_snapshot IS NULL AND barcode_type_snapshot IS NULL AND renderer_contract_version IS NULL) OR (template_file_id_snapshot IS NOT NULL AND template_asset_sha256 IS NOT NULL AND variable_schema_json_snapshot IS NOT NULL AND barcode_type_snapshot IS NOT NULL AND renderer_contract_version IS NOT NULL)");
                         });
                 });
 

@@ -15,6 +15,15 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 public sealed class BusinessGatewayAuthorizationTests
 {
     [Fact]
+    public void MaintenanceDowntimeReasonsRead_matches_adr_0029_naming()
+    {
+        // ADR 0029 决策 1/4：换绑前的 B2 阶段只落权限码本身，尚无端点消费（B3 才接线到
+        // BusinessConsoleSearchableDirectoryPolicy）。这里只钉住 IAM 与 Gateway 两处
+        // producer 字面值必须一致，命名形态必须是 business.<owner域>.<词表复数-kebab>.read。
+        Assert.Equal("business.maintenance.downtime-reasons.read", BusinessGatewayPermissions.MaintenanceDowntimeReasonsRead);
+    }
+
+    [Fact]
     public async Task Business_console_endpoint_requires_user_authentication()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
@@ -570,6 +579,12 @@ public sealed class BusinessGatewayAuthorizationTests
             organizationId = "org-001",
             environmentId = "env-dev",
             reason = "authorization test",
+        },
+        "/api/business-console/v1/quality/ncrs/ncr-001/disposition" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            dispositionType = "use-as-is",
         },
         "/api/business-console/v1/planning/demands" => new
         {
@@ -1225,6 +1240,7 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/inspection-records/inspection-001/reinspections", BusinessGatewayPermissions.QualityInspectionRecordsCreate);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/inspection-records/inspection-001/failures/ncr", BusinessGatewayPermissions.QualityNcrManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/ncrs", BusinessGatewayPermissions.QualityNcrRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/ncrs/ncr-001", BusinessGatewayPermissions.QualityNcrRead);
         // 三期读面：计量台账 / 校准记录 / SPC 控制图台账走检验记录读权限（与 reason-codes 同先例），
         // CAPA 是 NCR 的下游闭环，走 NCR 读权限。
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/measuring-devices", BusinessGatewayPermissions.QualityInspectionRecordsRead);
@@ -1475,7 +1491,8 @@ internal sealed class FakeBusinessGatewayAuthorizationClient(
     Func<BusinessGatewayPermissionRequirement, bool> isAllowed,
     AuthorizationDataScope? dataScope = null,
     IReadOnlyCollection<AuthorizationScopeGrant>? scopeGrants = null,
-    IReadOnlyCollection<AuthorizationRole>? roles = null)
+    IReadOnlyCollection<AuthorizationRole>? roles = null,
+    BusinessGatewayAuthorizationResult? allowedResult = null)
     : IBusinessGatewayAuthorizationClient
 {
     public int CallCount { get; private set; }
@@ -1493,6 +1510,11 @@ internal sealed class FakeBusinessGatewayAuthorizationClient(
         new(_ => true, dataScope, scopeGrants, roles);
 
     public static FakeBusinessGatewayAuthorizationClient Forbidden() => new(_ => false);
+
+    public static FakeBusinessGatewayAuthorizationClient AllowedWithoutPrincipal() =>
+        new(
+            _ => true,
+            allowedResult: new BusinessGatewayAuthorizationResult(true, null, "user", null, null));
 
     public static FakeBusinessGatewayAuthorizationClient AllowOnly(params string[] permissionCodes)
     {
@@ -1521,7 +1543,7 @@ internal sealed class FakeBusinessGatewayAuthorizationClient(
         LastContinuityMode = continuityMode;
         Requirements.Add(requirement);
         return Task.FromResult(isAllowed(requirement)
-            ? BusinessGatewayAuthorizationResult.Allowed(
+            ? allowedResult ?? BusinessGatewayAuthorizationResult.Allowed(
                 "user-admin",
                 "user",
                 "admin",

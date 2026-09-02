@@ -142,8 +142,6 @@ function formatError(error: unknown) {
       </template>
     </NvToolbar>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
-
     <NvDataTable
       manual
       :page="page"
@@ -155,9 +153,12 @@ function formatError(error: unknown) {
       :rows="wipRows"
       :row-key="(r) => `${r.workOrderId}-${r.operationTaskId}`"
       :loading="wipPending"
+      :error="wipError"
+      :error-message="errorMessage"
       :searchable="false"
       :column-settings="false"
       empty-message="暂无在制数据。工单释放并排程、工序开工后，在制行会出现在这里。"
+      @retry="refreshWip"
     >
       <template #cell-workOrderId="{ row }">
         <button

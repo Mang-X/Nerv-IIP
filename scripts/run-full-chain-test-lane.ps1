@@ -3,12 +3,15 @@
 #   SideEffects:
 #     - Starts scenario-owned PostgreSQL, Redis, Aspire and business service processes through governed entrypoints
 #     - Creates and removes scenario-owned disposable PostgreSQL databases and Docker resources
+#     - Temporarily overrides and restores process environment used by FullChain entrypoints
 #   Writes:
 #     - FullChain TRX files and a machine-readable dependency summary under artifacts/**
+#     - Resumable snapshots and exactly one terminal snapshot through the configured leaf summary writer
 #     - One caller-selected sales-order-demand canonical result when provenance is supplied
 #     - Best-effort memory-dimension evidence inside that same dependency summary
 #     - Existing governed scenario diagnostics under artifacts/acceptance/** and artifacts/fullstack/**
 #   Cleanup:
+#     - Stops PostgreSQL and Redis services started by this runner
 #     - Delegates exact process, database and container cleanup to each governed scenario entrypoint
 #     - Fails the lane when an entrypoint or its cleanup fails
 #   Requires:
@@ -19,6 +22,7 @@
 param(
     [string[]] $MemberId = @(),
     [string] $ManifestPath = (Join-Path $PSScriptRoot 'full-chain-test-lane.json'),
+    [string] $ScenarioMatrixPath = (Join-Path $PSScriptRoot 'acceptance-scenario-matrix.json'),
     [string] $WorkflowPath = (Join-Path $PSScriptRoot '../.github/workflows/ci.yml'),
     [string] $ResultsDirectory = (Join-Path $PSScriptRoot '../artifacts/test-evidence-raw/full-chain'),
     [string] $SummaryPath = (Join-Path $PSScriptRoot '../artifacts/full-chain-test-lane/summary.json'),
@@ -29,7 +33,14 @@ param(
     [int] $RunAttempt,
     [string] $TestedSha,
     [string] $ManifestDigest,
-    [string] $ScenarioId
+    [string] $ScenarioId,
+    [scriptblock] $SummaryFileWriter = {
+        param([string] $Path, [string] $Payload, [string] $Phase)
+
+        $directory = Split-Path -Parent $Path
+        if (-not [string]::IsNullOrWhiteSpace($directory)) { [IO.Directory]::CreateDirectory($directory) | Out-Null }
+        [IO.File]::WriteAllText($Path, $Payload, [Text.UTF8Encoding]::new($false))
+    }
 )
 
 Set-StrictMode -Version Latest
@@ -39,9 +50,13 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'lib/CiWorkflowBudgets.ps1')
 . (Join-Path $PSScriptRoot 'lib/RuntimeMemoryEvidence.ps1')
 . (Join-Path $PSScriptRoot 'lib/AcceptanceScenarioMatrixRuntime.ps1')
+. (Join-Path $PSScriptRoot 'lib/AcceptanceScenarioMatrix.ps1')
+
+$laneStopwatch = [Diagnostics.Stopwatch]::StartNew()
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $manifest = Import-NervFullChainTestLaneManifest -ManifestPath $ManifestPath -RepositoryRoot $repoRoot
+[void](Import-NervAcceptanceScenarioMatrixManifest -ManifestPath $ScenarioMatrixPath -V1ManifestPath $ManifestPath -RepositoryRoot $repoRoot)
 if ($MemberId.Count -eq 0) { $MemberId = @($manifest.members.id | ForEach-Object { [string]$_ }) }
 $selectedIdSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
 $selectedMembers = @(
@@ -96,17 +111,6 @@ $scriptEntrypointTimeoutSeconds = 900
 $dotnetEntrypointTimeoutSeconds = 600
 $cleanupTimeoutSeconds = 300
 $timeoutGuardSeconds = 300
-$maximumGovernedRuntimeSeconds = $infrastructureTimeoutSeconds + $readinessTimeoutSeconds + $restoreTimeoutSeconds + $discoveryTimeoutSeconds + $cleanupTimeoutSeconds + $timeoutGuardSeconds
-foreach ($member in $selectedMembers) {
-    $entrypointKind = [string]$member.entrypoint.kind
-    if ([string]::Equals($entrypointKind, 'fullstack', [StringComparison]::Ordinal)) { $maximumGovernedRuntimeSeconds += $fullstackEntrypointTimeoutSeconds }
-    elseif ([string]::Equals($entrypointKind, 'script', [StringComparison]::Ordinal)) { $maximumGovernedRuntimeSeconds += $scriptEntrypointTimeoutSeconds }
-    elseif ([string]::Equals($entrypointKind, 'dotnet', [StringComparison]::Ordinal)) { $maximumGovernedRuntimeSeconds += $dotnetEntrypointTimeoutSeconds }
-    else { throw "Unsupported FullChain entrypoint kind '$entrypointKind'." }
-}
-if ($maximumGovernedRuntimeSeconds -ge $runStepTimeoutSeconds) {
-    throw "FullChain internal timeout budget $maximumGovernedRuntimeSeconds seconds must remain below the $runStepTimeoutSeconds-second workflow step."
-}
 
 $adminPostgres = [Environment]::GetEnvironmentVariable('NERV_IIP_TEST_POSTGRES')
 $redis = [Environment]::GetEnvironmentVariable('NERV_IIP_TEST_REDIS')
@@ -143,6 +147,12 @@ foreach ($member in $selectedMembers) {
         diagnosticEvidence = 'not-run'
         cleanup = 'not-run'
         outcome = 'not-run'
+        deadlineAdmission = [ordered]@{
+            reason = 'not-evaluated'
+            elapsedSeconds = 0
+            remainingSeconds = 0
+            requiredSeconds = 0
+        }
         # #1664 / #1877：内存维度证据。快照刻意贴着 entrypoint 前后取，取在 lane 首尾会把冷启动
         # 峰值平均掉，正好看不见 137 发生的那一刻。
         memory = [ordered]@{
@@ -166,6 +176,8 @@ $savedDotnetBuildServer = [Environment]::GetEnvironmentVariable('DOTNET_CLI_USE_
 [Environment]::SetEnvironmentVariable('DOTNET_CLI_USE_MSBUILD_SERVER', '0')
 
 function Write-NervFullChainSummarySnapshot {
+    param([ValidateSet('resumable', 'terminal')] [string] $Phase = 'resumable')
+
     $summary.members = @($memberSummaries)
     $summary.expected = 0
     $summary.discovered = 0
@@ -179,9 +191,7 @@ function Write-NervFullChainSummarySnapshot {
         $summary.failed += [int]$memberSummary.failed
         $summary.skipped += [int]$memberSummary.skipped
     }
-    $summaryDirectory = Split-Path -Parent $SummaryPath
-    if (-not [string]::IsNullOrWhiteSpace($summaryDirectory)) { [IO.Directory]::CreateDirectory($summaryDirectory) | Out-Null }
-    [IO.File]::WriteAllText($SummaryPath, (($summary | ConvertTo-Json -Depth 12) + "`n"), [Text.UTF8Encoding]::new($false))
+    $SummaryFileWriter.Invoke($SummaryPath, (($summary | ConvertTo-Json -Depth 12) + "`n"), $Phase) | Out-Null
 }
 
 function Wait-NervFullChainComposeProbe {
@@ -244,15 +254,18 @@ try {
 
 foreach ($member in $selectedMembers) {
     $memberResultsDirectory = Join-Path $ResultsDirectory ([string]$member.id)
-    [IO.Directory]::CreateDirectory($memberResultsDirectory) | Out-Null
     $resultFile = "full-chain-$($member.id).trx"
     $memberSummary = $memberSummaryById[[string]$member.id]
     Write-NervFullChainSummarySnapshot
     $memberFailure = $null
-    try {
+    $entrypointKind = [string]$member.entrypoint.kind
+    $memberAction = {
+        param($admittedMemberId)
+
         if (-not [string]::Equals([string]$summary.readiness.postgres, 'passed', [StringComparison]::Ordinal) -or
-            ([bool]$member.dependencies.redis -and -not [string]::Equals([string]$summary.readiness.redis, 'passed', [StringComparison]::Ordinal))) { throw "FullChain member '$($member.id)' dependency readiness is incomplete." }
+            ([bool]$member.dependencies.redis -and -not [string]::Equals([string]$summary.readiness.redis, 'passed', [StringComparison]::Ordinal))) { throw "FullChain member '$admittedMemberId' dependency readiness is incomplete." }
         $memberSummary.dependencyEvidence = 'passed'
+        [IO.Directory]::CreateDirectory($memberResultsDirectory) | Out-Null
 
         $savedResultsDirectory = [Environment]::GetEnvironmentVariable('NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY')
         $savedResultFile = [Environment]::GetEnvironmentVariable('NERV_IIP_FULL_CHAIN_RESULT_FILE')
@@ -272,13 +285,12 @@ foreach ($member in $selectedMembers) {
             [Environment]::SetEnvironmentVariable('NERV_IIP_FULL_CHAIN_CONFIGURATION', 'Release')
             $memberSummary.memory.beforeEntrypoint = Get-NervRuntimeMemorySnapshot -Phase 'before-entrypoint'
             Write-NervFullChainSummarySnapshot
-            $entrypointKind = [string]$member.entrypoint.kind
             if ([string]::Equals($entrypointKind, 'fullstack', [StringComparison]::Ordinal)) {
-                Invoke-PwshScript -ScriptPath (Join-Path $repoRoot 'nerv.ps1') -Arguments @('fullstack', 'run', '-Scenario', [string]$member.entrypoint.scenario) -WorkingDirectory $repoRoot -TimeoutSeconds $fullstackEntrypointTimeoutSeconds -Name "full-chain-$($member.id)-entrypoint" | Out-Null
+                Invoke-PwshScript -ScriptPath (Join-Path $repoRoot 'nerv.ps1') -Arguments @('fullstack', 'run', '-Scenario', [string]$member.entrypoint.scenario) -WorkingDirectory $repoRoot -TimeoutSeconds $fullstackEntrypointTimeoutSeconds -Name "full-chain-$admittedMemberId-entrypoint" | Out-Null
             }
             elseif ([string]::Equals($entrypointKind, 'script', [StringComparison]::Ordinal)) {
                 $scriptArguments = @()
-                if ($canonicalResultEnabled -and [string]::Equals([string]$member.id, 'sales-order-demand-planning', [StringComparison]::Ordinal)) {
+                if ($canonicalResultEnabled -and [string]::Equals($admittedMemberId, 'sales-order-demand-planning', [StringComparison]::Ordinal)) {
                     $scriptArguments = @(
                         '-CanonicalResultPath', $canonicalResultFullPath,
                         '-TrackIdentifier', $TrackIdentifier,
@@ -290,17 +302,14 @@ foreach ($member in $selectedMembers) {
                         '-ScenarioId', $ScenarioId
                     )
                 }
-                Invoke-PwshScript -ScriptPath (Join-Path $repoRoot ([string]$member.entrypoint.path)) -Arguments $scriptArguments -WorkingDirectory $repoRoot -TimeoutSeconds $scriptEntrypointTimeoutSeconds -Name "full-chain-$($member.id)-entrypoint" | Out-Null
-                if ($canonicalResultEnabled -and [string]::Equals([string]$member.id, 'sales-order-demand-planning', [StringComparison]::Ordinal) -and
+                Invoke-PwshScript -ScriptPath (Join-Path $repoRoot ([string]$member.entrypoint.path)) -Arguments $scriptArguments -WorkingDirectory $repoRoot -TimeoutSeconds $scriptEntrypointTimeoutSeconds -Name "full-chain-$admittedMemberId-entrypoint" | Out-Null
+                if ($canonicalResultEnabled -and [string]::Equals($admittedMemberId, 'sales-order-demand-planning', [StringComparison]::Ordinal) -and
                     -not (Test-Path -LiteralPath $canonicalResultFullPath -PathType Leaf)) {
                     throw 'FullChain sales-order-demand member did not produce its canonical result.'
                 }
             }
             elseif ([string]::Equals($entrypointKind, 'dotnet', [StringComparison]::Ordinal)) {
-                Invoke-DotNetOutput -Name "full-chain-$($member.id)-entrypoint" -WorkingDirectory $repoRoot -TimeoutSeconds $dotnetEntrypointTimeoutSeconds -Arguments @('test', [string]$member.project, '--configuration', 'Release', '--no-restore', '--no-build', '--filter', [string]$member.filter, '--logger', "trx;LogFileName=$resultFile", '--results-directory', $memberResultsDirectory) | Out-Null
-            }
-            else {
-                throw "Unsupported FullChain entrypoint kind '$entrypointKind'."
+                Invoke-DotNetOutput -Name "full-chain-$admittedMemberId-entrypoint" -WorkingDirectory $repoRoot -TimeoutSeconds $dotnetEntrypointTimeoutSeconds -Arguments @('test', [string]$member.project, '--configuration', 'Release', '--no-restore', '--no-build', '--filter', [string]$member.filter, '--logger', "trx;LogFileName=$resultFile", '--results-directory', $memberResultsDirectory) | Out-Null
             }
         }
         finally {
@@ -313,6 +322,27 @@ foreach ($member in $selectedMembers) {
             [Environment]::SetEnvironmentVariable('Persistence__Provider', $savedPersistenceProvider)
             [Environment]::SetEnvironmentVariable('NERV_IIP_FULL_CHAIN_ENTRYPOINT_EVIDENCE_PATH', $savedEntrypointEvidencePath)
             [Environment]::SetEnvironmentVariable('NERV_IIP_FULL_CHAIN_CONFIGURATION', $savedFullChainConfiguration)
+        }
+    }
+    try {
+        $elapsedSeconds = [int64][Math]::Ceiling($laneStopwatch.Elapsed.TotalSeconds)
+        $admission = Invoke-NervFullChainMemberAdmission `
+            -MemberId ([string]$member.id) `
+            -EntrypointKind $entrypointKind `
+            -GlobalDeadlineSeconds $runStepTimeoutSeconds `
+            -ElapsedSeconds $elapsedSeconds `
+            -FullstackEntrypointTimeoutSeconds $fullstackEntrypointTimeoutSeconds `
+            -ScriptEntrypointTimeoutSeconds $scriptEntrypointTimeoutSeconds `
+            -DotnetEntrypointTimeoutSeconds $dotnetEntrypointTimeoutSeconds `
+            -CleanupReserveSeconds $cleanupTimeoutSeconds `
+            -GuardReserveSeconds $timeoutGuardSeconds `
+            -MemberSummary $memberSummary `
+            -Action $memberAction
+        if (-not $admission.Allowed) {
+            $memberFailure = [InvalidOperationException]::new("FullChain member '$($member.id)' deadline admission denied: reason=$($admission.Reason) elapsed=$elapsedSeconds remaining=$($admission.RemainingSeconds) required=$($admission.RequiredSeconds).")
+            if ($null -eq $firstFailure) { $firstFailure = $memberFailure }
+            Write-NervFullChainSummarySnapshot
+            continue
         }
 
         $trx = Get-NervFullChainTrxResult -ResultsDirectory $memberResultsDirectory -ExpectedTestIdentities @($member.expectedTestIdentities)
@@ -372,11 +402,9 @@ finally {
         [string]::Equals($infrastructureCleanup, 'passed', [StringComparison]::Ordinal) -and
         @($memberSummaries | Where-Object { -not [string]::Equals([string]$_.cleanup, 'passed', [StringComparison]::Ordinal) }).Count -eq 0
     ) { 'passed' } else { 'failed' }
-    Write-NervFullChainSummarySnapshot
+    try { Assert-NervFullChainTestLaneSummary -SelectedMemberIds @($MemberId) -MemberSummaries @($memberSummaries) }
+    catch { if ($null -eq $firstFailure) { $firstFailure = $_ } }
+    Write-NervFullChainSummarySnapshot -Phase 'terminal'
 }
-
-try { Assert-NervFullChainTestLaneSummary -SelectedMemberIds @($MemberId) -MemberSummaries @($memberSummaries) }
-catch { if ($null -eq $firstFailure) { $firstFailure = $_ } }
-Write-NervFullChainSummarySnapshot
 if ($null -ne $firstFailure) { throw $firstFailure }
 Write-Host "FullChain lane passed: expected=$($summary.expected) discovered=$($summary.discovered) passed=$($summary.passed) failed=$($summary.failed) skipped=$($summary.skipped) cleanup=$($summary.cleanup)."

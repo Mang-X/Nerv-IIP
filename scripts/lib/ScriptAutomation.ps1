@@ -121,6 +121,11 @@ function Protect-ScriptAutomationText {
     }
 
     $redacted = $Text
+    foreach ($sensitiveValue in $SensitiveValues) {
+        if (-not [string]::IsNullOrEmpty($sensitiveValue)) {
+            $redacted = $redacted.Replace($sensitiveValue, '<redacted>')
+        }
+    }
     $redacted = [regex]::Replace(
         $redacted,
         '(?is)-----BEGIN [^-\r\n]+-----.*?-----END [^-\r\n]+-----',
@@ -144,12 +149,6 @@ function Protect-ScriptAutomationText {
 
     foreach ($pattern in $patterns) {
         $redacted = [regex]::Replace($redacted, $pattern, '$1<redacted>')
-    }
-
-    foreach ($sensitiveValue in $SensitiveValues) {
-        if (-not [string]::IsNullOrEmpty($sensitiveValue)) {
-            $redacted = $redacted.Replace($sensitiveValue, '<redacted>')
-        }
     }
 
     return $redacted
@@ -825,10 +824,12 @@ function Invoke-DotNet {
 
         [string] $Name = 'dotnet',
 
-        [int[]] $SensitiveArgumentIndexes = @()
+        [int[]] $SensitiveArgumentIndexes = @(),
+
+        [string[]] $SensitiveValues = @()
     )
 
-    Invoke-NativeCommandWithTimeout -Command 'dotnet' -Arguments $Arguments -WorkingDirectory $WorkingDirectory -TimeoutSeconds $TimeoutSeconds -Name $Name -SensitiveArgumentIndexes $SensitiveArgumentIndexes
+    Invoke-NativeCommandWithTimeout -Command 'dotnet' -Arguments $Arguments -WorkingDirectory $WorkingDirectory -TimeoutSeconds $TimeoutSeconds -Name $Name -SensitiveArgumentIndexes $SensitiveArgumentIndexes -SensitiveValues $SensitiveValues
 }
 
 function Invoke-NativeCommandOutput {
@@ -846,17 +847,38 @@ function Invoke-NativeCommandOutput {
 
         [string] $LogDirectory,
 
+        [switch] $PersistOutput,
+
         [switch] $AllowPartialOutput,
 
         [scriptblock] $StreamReadTaskAction,
 
         [System.Collections.IDictionary] $Environment,
 
-        [string[]] $SensitiveValues = @()
+        [string[]] $SensitiveValues = @(),
+
+        [ValidateRange(1, [int]::MaxValue)]
+        [int] $TimeoutMilliseconds
     )
 
     if ([string]::IsNullOrWhiteSpace($Name)) {
         $Name = [System.IO.Path]::GetFileNameWithoutExtension($Command)
+    }
+    $usesMillisecondBudget = $PSBoundParameters.ContainsKey('TimeoutMilliseconds')
+    if ($usesMillisecondBudget -and $PSBoundParameters.ContainsKey('TimeoutSeconds')) {
+        throw [ArgumentException]::new('TimeoutSeconds and TimeoutMilliseconds are mutually exclusive.')
+    }
+    $effectiveTimeoutMilliseconds = if ($usesMillisecondBudget) {
+        $TimeoutMilliseconds
+    }
+    else {
+        $TimeoutSeconds * 1000
+    }
+    $timeoutDescription = if ($usesMillisecondBudget) {
+        "$TimeoutMilliseconds milliseconds"
+    }
+    else {
+        "$TimeoutSeconds seconds"
     }
     $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
     $startInfo.FileName = $Command
@@ -894,7 +916,7 @@ function Invoke-NativeCommandOutput {
             $stderrTask = & $StreamReadTaskAction $process.StandardError 'stderr'
         }
 
-        if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+        if (-not $process.WaitForExit($effectiveTimeoutMilliseconds)) {
             Stop-ProcessTree -ProcessId $process.Id -Reason "Timeout while reading output for $Command" | Out-Null
             $timeoutLogDirectory = New-ScriptAutomationLogDirectory -Name $Name -LogDirectory $LogDirectory
             $drain = Complete-ScriptAutomationRedirectedStreamDrain `
@@ -909,7 +931,7 @@ function Invoke-NativeCommandOutput {
             Write-ScriptAutomationStreamDrainDiagnostics -Name $Name -Drain $drain -SensitiveValues $SensitiveValues
             Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stdout.log') -Content $drain.Stdout -PartialOutput:$drain.TimedOut -UnfinishedStreams $drain.UnfinishedStreams -SensitiveValues $SensitiveValues
             Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stderr.log') -Content $drain.Stderr -PartialOutput:$drain.TimedOut -UnfinishedStreams $drain.UnfinishedStreams -SensitiveValues $SensitiveValues
-            $failure = [TimeoutException]::new("Command '$Command' timed out after $TimeoutSeconds seconds while reading output. Logs: $($drain.LogDirectory)")
+            $failure = [TimeoutException]::new("Command '$Command' timed out after $timeoutDescription while reading output. Logs: $($drain.LogDirectory)")
             $failure.Data['Stdout'] = Protect-ScriptAutomationText $drain.Stdout -SensitiveValues $SensitiveValues
             $failure.Data['Stderr'] = Protect-ScriptAutomationText $drain.Stderr -SensitiveValues $SensitiveValues
             $failure.Data['LogDirectory'] = "$($drain.LogDirectory)"
@@ -930,9 +952,15 @@ function Invoke-NativeCommandOutput {
         Write-ScriptAutomationStreamDrainDiagnostics -Name $Name -Drain $drain -SensitiveValues $SensitiveValues
         $stdout = $drain.Stdout
         $stderr = $drain.Stderr
-        if ($drain.TimedOut) {
-            Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stdout.log') -Content $stdout -PartialOutput -UnfinishedStreams $drain.UnfinishedStreams -SensitiveValues $SensitiveValues
-            Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stderr.log') -Content $stderr -PartialOutput -UnfinishedStreams $drain.UnfinishedStreams -SensitiveValues $SensitiveValues
+        if ($PersistOutput -or $drain.TimedOut) {
+            $resolvedOutputLogDirectory = if ([string]::IsNullOrWhiteSpace([string]$drain.LogDirectory)) {
+                New-ScriptAutomationLogDirectory -Name $Name -LogDirectory $LogDirectory
+            }
+            else {
+                [string]$drain.LogDirectory
+            }
+            Write-ScriptAutomationProcessLog -Path (Join-Path $resolvedOutputLogDirectory 'stdout.log') -Content $stdout -PartialOutput:$drain.TimedOut -UnfinishedStreams $drain.UnfinishedStreams -SensitiveValues $SensitiveValues
+            Write-ScriptAutomationProcessLog -Path (Join-Path $resolvedOutputLogDirectory 'stderr.log') -Content $stderr -PartialOutput:$drain.TimedOut -UnfinishedStreams $drain.UnfinishedStreams -SensitiveValues $SensitiveValues
         }
 
         if ($exitCode -ne 0) {
@@ -944,8 +972,12 @@ function Invoke-NativeCommandOutput {
                 -ExitCode $exitCode `
                 -Stdout $stdout `
                 -Stderr $stderr
-            $failure = [InvalidOperationException]::new("$failureMessage Output: $safeOutput")
+            $logSuffix = if ($PersistOutput) { " Logs: $resolvedOutputLogDirectory" } else { '' }
+            $failure = [InvalidOperationException]::new("$failureMessage Output: $safeOutput$logSuffix")
             $failure.Data['ExitCode'] = [int] $exitCode
+            if ($PersistOutput) {
+                $failure.Data['LogDirectory'] = $resolvedOutputLogDirectory
+            }
             throw $failure
         }
         if (@($drain.DrainErrors).Count -gt 0) {
@@ -974,6 +1006,9 @@ function Invoke-NativeCommandOutput {
             ExitCode = $exitCode
             Stdout = $stdout
             Stderr = $stderr
+            LogDirectory = if ($PersistOutput) { $resolvedOutputLogDirectory } else { $null }
+            StdoutPath = if ($PersistOutput) { Join-Path $resolvedOutputLogDirectory 'stdout.log' } else { $null }
+            StderrPath = if ($PersistOutput) { Join-Path $resolvedOutputLogDirectory 'stderr.log' } else { $null }
             PartialOutput = [bool] $drain.TimedOut
             UnfinishedStreams = @($drain.UnfinishedStreams)
         }

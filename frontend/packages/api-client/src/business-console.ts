@@ -9,6 +9,7 @@ export {
   assignBusinessConsoleMesDispatchTaskMutationOptions,
   acknowledgeBusinessConsoleEquipmentAlarmMutationOptions,
   closeBusinessConsoleQualityNcrMutationOptions,
+  claimBusinessConsoleMesOperationTaskMutationOptions,
   completeBusinessConsoleMesOperationTaskMutationOptions,
   confirmBusinessConsoleInventoryCountAdjustmentMutationOptions,
   confirmBusinessConsoleMesDowntimeRecoveryMutationOptions,
@@ -2604,6 +2605,34 @@ export type {
   NetCorePalExtensionsDtoResponseDataOfLineSideInventoryBalancesResponse as BusinessConsoleMesLineSideInventoryBalancesEnvelope,
 } from './generated/business-console'
 
+// MAN-718 / #2063: MasterData 工装档案查询与维护 facade。
+export {
+  changeBusinessConsoleToolingStatus,
+  changeBusinessConsoleToolingStatusMutationOptions,
+  listBusinessConsoleToolingAssets,
+  listBusinessConsoleToolingAssetsQueryOptions,
+  recordBusinessConsoleToolingUsage,
+  recordBusinessConsoleToolingUsageMutationOptions,
+  registerBusinessConsoleToolingAsset,
+  registerBusinessConsoleToolingAssetMutationOptions,
+} from './generated/business-console'
+
+export type {
+  ChangeBusinessConsoleToolingStatusData,
+  ListBusinessConsoleToolingAssetsData,
+  RecordBusinessConsoleToolingUsageData,
+  RegisterBusinessConsoleToolingAssetData,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleChangeToolingStatusRequest as BusinessConsoleChangeToolingStatusRequest,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordToolingUsageRequest as BusinessConsoleRecordToolingUsageRequest,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRegisterToolingAssetRequest as BusinessConsoleRegisterToolingAssetRequest,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleToolingAssetItem as BusinessConsoleToolingAssetItem,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleToolingAssetListResponse as BusinessConsoleToolingAssetListResponse,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleToolingAssetStatus as BusinessConsoleToolingAssetStatus,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleToolingRegistrationResponse as BusinessConsoleToolingRegistrationResponse,
+  NetCorePalExtensionsDtoResponseDataOfBusinessConsoleToolingAssetListResponse as BusinessConsoleToolingAssetListEnvelope,
+  NetCorePalExtensionsDtoResponseDataOfBusinessConsoleToolingRegistrationResponse as BusinessConsoleToolingRegistrationEnvelope,
+} from './generated/business-console'
+
 // MAN-632 / #1169: unified owner-backed searchable directory contract.
 export {
   listBusinessConsoleSearchableDirectory,
@@ -2809,4 +2838,49 @@ export type {
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteWmsWarehouseTaskRequest as BusinessConsoleCompleteWmsWarehouseTaskRequest,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWarehouseTaskActionResult as BusinessConsoleWmsWarehouseTaskActionResult,
   NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsWarehouseTaskActionResult as BusinessConsoleWmsWarehouseTaskActionEnvelope,
+} from './generated/business-console'
+
+// #2856: MES 生产统计聚合的稳定 SDK、query options 与公开类型。
+export {
+  queryBusinessConsoleMesProductionStatistics,
+  queryBusinessConsoleMesProductionStatisticsQueryOptions,
+} from './generated/business-console'
+
+export type {
+  QueryBusinessConsoleMesProductionStatisticsData,
+  QueryBusinessConsoleMesProductionStatisticsErrors,
+  QueryBusinessConsoleMesProductionStatisticsResponse,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsBucket as BusinessConsoleMesProductionStatisticsBucket,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsDegradedReason as BusinessConsoleMesProductionStatisticsDegradedReason,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsDimension as BusinessConsoleMesProductionStatisticsDimension,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsResolutionStatus as BusinessConsoleMesProductionStatisticsResolutionStatus,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsResponse as BusinessConsoleMesProductionStatisticsResponse,
+} from './generated/business-console'
+
+export type BusinessConsoleMesProductionStatisticsRequest =
+  import('./generated/business-console').QueryBusinessConsoleMesProductionStatisticsData['query']
+
+// #2975: scoped barcode-label lifecycle commands exposed through BusinessGateway.
+export {
+  dispatchBusinessConsoleBarcodePrintBatch,
+  dispatchBusinessConsoleBarcodePrintBatchMutationOptions,
+  reprintBusinessConsoleBarcodeLabel,
+  reprintBusinessConsoleBarcodeLabelMutationOptions,
+  voidBusinessConsoleBarcodeLabel,
+  voidBusinessConsoleBarcodeLabelMutationOptions,
+} from './generated/business-console'
+
+export type {
+  DispatchBusinessConsoleBarcodePrintBatchData,
+  DispatchBusinessConsoleBarcodePrintBatchErrors,
+  DispatchBusinessConsoleBarcodePrintBatchResponse,
+  ReprintBusinessConsoleBarcodeLabelData,
+  ReprintBusinessConsoleBarcodeLabelErrors,
+  ReprintBusinessConsoleBarcodeLabelResponse,
+  VoidBusinessConsoleBarcodeLabelData,
+  VoidBusinessConsoleBarcodeLabelErrors,
+  VoidBusinessConsoleBarcodeLabelResponse,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDispatchBarcodePrintBatchBody as BusinessConsoleDispatchBarcodePrintBatchBody,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReprintBarcodeLabelBody as BusinessConsoleReprintBarcodeLabelBody,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleVoidBarcodeLabelBody as BusinessConsoleVoidBarcodeLabelBody,
 } from './generated/business-console'

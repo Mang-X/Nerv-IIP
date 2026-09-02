@@ -13,6 +13,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
+using Nerv.IIP.Business.Mes.Web.Application.Quality;
 using Nerv.IIP.Contracts.Mes;
 using Npgsql;
 
@@ -474,6 +475,10 @@ public sealed class OperationActualTimeSettlementPostgresTests
 
             builder.ConfigureAppConfiguration((_, configuration) =>
                 configuration.AddInMemoryCollection(settings));
+            // 本用例的被测对象是工时结算与出站消息。报工路径每次都会同步问 Quality 首件进度（#2780），
+            // 本 lane 里没有 Quality 在跑，因此在测试宿主里把门禁换成放行实现。
+            builder.ConfigureServices(services =>
+                services.AddScoped<IMesFirstArticleGate>(_ => TestMesFirstArticleGate.Allowing));
         });
     }
 

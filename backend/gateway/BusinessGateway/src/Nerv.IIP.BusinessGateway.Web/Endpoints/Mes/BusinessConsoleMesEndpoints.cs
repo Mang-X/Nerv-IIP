@@ -1211,6 +1211,106 @@ public sealed class BusinessConsoleMesAssignDispatchTaskRequestValidator
 }
 
 [Tags("Business Console MES")]
+[HttpPost("/api/business-console/v1/mes/operation-tasks/{operationTaskId}/claim")]
+[BusinessGatewayOperationId("claimBusinessConsoleMesOperationTask")]
+public sealed class ClaimBusinessConsoleMesOperationTaskEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesClient mes,
+    IBusinessMasterDataClient masterData,
+    PrincipalWorkScopeResolver workScopeResolver,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesClaimOperationTaskRequest, BusinessConsoleAcceptedResponse>(
+        auth,
+        BusinessGatewayPermissions.MesOperationsManage)
+{
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
+    protected override string OrganizationId(BusinessConsoleMesClaimOperationTaskRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleMesClaimOperationTaskRequest request) => request.EnvironmentId;
+
+    protected override async Task<BusinessConsoleAcceptedResponse> ForwardAsync(
+        BusinessConsoleMesClaimOperationTaskRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var scopedRequest = await ListBusinessConsoleMesOperationTasksEndpoint.ResolveRequestAsync(
+            workScopeResolver,
+            AuthorizationResult,
+            new BusinessConsoleMesOperationTaskListRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                Status: "Queued",
+                Skip: 0,
+                Take: 2,
+                ScopeKind: request.ScopeKind,
+                ScopeId: request.ScopeId,
+                OperationTaskId: request.OperationTaskId),
+            BusinessGatewayPermissions.MesOperationsManage,
+            cancellationToken);
+        var tasks = await mes.ListOperationTasksAsync(tokenProvider.BearerToken, scopedRequest, cancellationToken);
+        var task = tasks.Items.SingleOrDefault(x =>
+            string.Equals(x.OperationTaskId, request.OperationTaskId, StringComparison.Ordinal));
+        if (task is null)
+        {
+            throw new BusinessServiceProxyException(System.Net.HttpStatusCode.Forbidden, "operation-task-outside-work-center");
+        }
+
+        var principalId = RequireAuthorizedPrincipalId();
+        var directory = await masterData.ListWorkersAsync(
+            tokenProvider.BearerToken,
+            new BusinessConsoleWorkerDirectoryRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                UserId: principalId,
+                WorkCenterCode: task.WorkCenterId,
+                EmploymentStatus: "active",
+                PageIndex: 1,
+                PageSize: 2),
+            cancellationToken);
+        var worker = directory.Items.SingleOrDefault();
+        if (worker is null || !worker.Active)
+        {
+            throw new BusinessServiceProxyException(System.Net.HttpStatusCode.Forbidden, "worker-not-on-duty-at-work-center");
+        }
+
+        var team = worker.Teams.FirstOrDefault(x => x.IsLeader) ?? worker.Teams.FirstOrDefault();
+        return await mes.ClaimDispatchTaskAsync(
+            tokenProvider.BearerToken,
+            request.OperationTaskId,
+            new BusinessConsoleMesClaimDispatchTaskForwardRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                principalId,
+                worker.DisplayName,
+                task.DeviceAssetId,
+                task.ShiftId,
+                request.IdempotencyKey,
+                team?.TeamCode,
+                team?.TeamName),
+            RequireAuthorizedPrincipalActorReference(),
+            cancellationToken);
+    }
+}
+
+public sealed class BusinessConsoleMesClaimOperationTaskRequestValidator
+    : Validator<BusinessConsoleMesClaimOperationTaskRequest>
+{
+    public BusinessConsoleMesClaimOperationTaskRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.OperationTaskId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ScopeKind).Equal("work-center");
+        RuleFor(x => x.ScopeId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+    }
+}
+
+[Tags("Business Console MES")]
 [HttpGet("/api/business-console/v1/mes/operation-tasks")]
 [BusinessGatewayOperationId("listBusinessConsoleMesOperationTasks")]
 public sealed class ListBusinessConsoleMesOperationTasksEndpoint(
@@ -1563,6 +1663,45 @@ public sealed class ListBusinessConsoleMesProductionReportsEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         mes.ListProductionReportsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console MES")]
+[HttpGet("/api/business-console/v1/mes/production-statistics")]
+[BusinessGatewayOperationId("queryBusinessConsoleMesProductionStatistics")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status502BadGateway)]
+public sealed class QueryBusinessConsoleMesProductionStatisticsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesClient mes,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesProductionStatisticsRequest, BusinessConsoleMesProductionStatisticsResponse>(
+        auth,
+        BusinessGatewayPermissions.MesReportingRead)
+{
+    protected override string OrganizationId(BusinessConsoleMesProductionStatisticsRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleMesProductionStatisticsRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleMesProductionStatisticsResponse> ForwardAsync(
+        BusinessConsoleMesProductionStatisticsRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        mes.QueryProductionStatisticsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+public sealed class BusinessConsoleMesProductionStatisticsRequestValidator
+    : Validator<BusinessConsoleMesProductionStatisticsRequest>
+{
+    public BusinessConsoleMesProductionStatisticsRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.WindowEndUtc).GreaterThan(x => x.WindowStartUtc);
+        RuleFor(x => x.ShiftCode).MaximumLength(100);
+        RuleFor(x => x.WorkCenterId).MaximumLength(100);
+        RuleFor(x => x.SkuId).MaximumLength(100);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+    }
 }
 
 [Tags("Business Console MES")]

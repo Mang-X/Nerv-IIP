@@ -337,6 +337,17 @@ describe('statusActionGate', () => {
       },
     ],
     [
+      'submit-disposition',
+      { status: 'disposition-in-progress', dispositionType: 'rework', idempotentReplay: true },
+      {
+        known: true,
+        terminal: false,
+        executable: true,
+        legalNoop: false,
+        reason: 'allowed',
+      },
+    ],
+    [
       'close',
       { status: 'disposition-in-progress', dispositionType: 'rework' },
       {

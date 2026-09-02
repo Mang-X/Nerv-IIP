@@ -21,7 +21,7 @@ public sealed class BarcodeLabelListQueryTests
         await using var dbContext = CreateDbContext();
         var rule = BarcodeRule.Create("org-001", "env-dev", "FG-A", "code128", "FGA", 40, "none", ["work-order"], "active");
         var template = LabelTemplate.Create("org-001", "env-dev", "tpl-a", "Template A", "file-a", "{}", "active");
-        var batch = LabelPrintBatch.Create("org-001", "env-dev", rule, template.Id, "work-order", "WO-001", "batch-a", "{}", 1);
+        var batch = LabelPrintBatch.CreateLegacyWithoutReplaySnapshot("org-001", "env-dev", rule, template.Id, "work-order", "WO-001", "batch-a", "{}", 1);
         dbContext.AddRange(rule, template, batch);
         await dbContext.SaveChangesAsync();
 
@@ -43,7 +43,7 @@ public sealed class BarcodeLabelListQueryTests
         await using var dbContext = CreateDbContext();
         var rule = BarcodeRule.Create("org-001", "env-dev", "FG-A", "code128", "FGA", 40, "none", ["work-order"], "active");
         var template = LabelTemplate.Create("org-001", "env-dev", "tpl-a", "Template A", "file-a", "{}", "active");
-        var batch = LabelPrintBatch.Create("org-001", "env-dev", rule, template.Id, "work-order", "WO-001", "batch-a", "{}", 1);
+        var batch = LabelPrintBatch.CreateLegacyWithoutReplaySnapshot("org-001", "env-dev", rule, template.Id, "work-order", "WO-001", "batch-a", "{}", 1);
         dbContext.AddRange(rule, template, batch);
         await dbContext.SaveChangesAsync();
 
@@ -62,7 +62,7 @@ public sealed class BarcodeLabelListQueryTests
         await using var dbContext = CreateDbContext();
         var rule = BarcodeRule.Create("org-002", "env-dev", "FG-A", "code128", "FGA", 40, "none", ["work-order"], "active");
         var template = LabelTemplate.Create("org-002", "env-dev", "tpl-a", "Template A", "file-a", "{}", "active");
-        var batch = LabelPrintBatch.Create("org-002", "env-dev", rule, template.Id, "work-order", "WO-001", "batch-a", "{}", 1);
+        var batch = LabelPrintBatch.CreateLegacyWithoutReplaySnapshot("org-002", "env-dev", rule, template.Id, "work-order", "WO-001", "batch-a", "{}", 1);
         dbContext.AddRange(rule, template, batch);
         await dbContext.SaveChangesAsync();
 
@@ -79,8 +79,8 @@ public sealed class BarcodeLabelListQueryTests
         await using var dbContext = CreateDbContext();
         var rule = BarcodeRule.Create("org-001", "env-dev", "FG-A", "code128", "FGA", 40, "none", ["work-order"], "active");
         var template = LabelTemplate.Create("org-001", "env-dev", "tpl-a", "Template A", "file-a", "{}", "active");
-        var first = LabelPrintBatch.Create("org-001", "env-dev", rule, template.Id, "work-order", "WO-001", "batch-a", "{}", 1);
-        var second = LabelPrintBatch.Create("org-001", "env-dev", rule, template.Id, "work-order", "WO001", "batch-b", "{}", 1);
+        var first = LabelPrintBatch.CreateLegacyWithoutReplaySnapshot("org-001", "env-dev", rule, template.Id, "work-order", "WO-001", "batch-a", "{}", 1);
+        var second = LabelPrintBatch.CreateLegacyWithoutReplaySnapshot("org-001", "env-dev", rule, template.Id, "work-order", "WO001", "batch-b", "{}", 1);
         Assert.Equal(first.Items.Single().LabelValue, second.Items.Single().LabelValue);
         dbContext.AddRange(rule, template, first, second);
         await dbContext.SaveChangesAsync();
@@ -100,9 +100,9 @@ public sealed class BarcodeLabelListQueryTests
         await using var dbContext = CreateDbContext();
         var rule = BarcodeRule.Create("org-001", "env-dev", "FG-A", "code128", "FGA", 40, "none", ["work-order"], "active");
         var template = LabelTemplate.Create("org-001", "env-dev", "tpl-a", "Template A", "file-a", "{}", "active");
-        var first = LabelPrintBatch.Create("org-001", "env-dev", rule, template.Id, "work-order", "WO-001", "batch-a", "{}", 1);
-        var second = LabelPrintBatch.Create("org-001", "env-dev", rule, template.Id, "work-order", "WO001", "batch-b", "{}", 1);
-        var third = LabelPrintBatch.Create("org-001", "env-dev", rule, template.Id, "work-order", "W-O001", "batch-c", "{}", 1);
+        var first = LabelPrintBatch.CreateLegacyWithoutReplaySnapshot("org-001", "env-dev", rule, template.Id, "work-order", "WO-001", "batch-a", "{}", 1);
+        var second = LabelPrintBatch.CreateLegacyWithoutReplaySnapshot("org-001", "env-dev", rule, template.Id, "work-order", "WO001", "batch-b", "{}", 1);
+        var third = LabelPrintBatch.CreateLegacyWithoutReplaySnapshot("org-001", "env-dev", rule, template.Id, "work-order", "W-O001", "batch-c", "{}", 1);
         Assert.Equal(first.Items.Single().LabelValue, second.Items.Single().LabelValue);
         Assert.Equal(first.Items.Single().LabelValue, third.Items.Single().LabelValue);
         dbContext.AddRange(rule, template, first, second, third);
@@ -110,7 +110,7 @@ public sealed class BarcodeLabelListQueryTests
 
         var result = await new ResolveBarcodeQueryHandler(dbContext)
             .Handle(
-                new ResolveBarcodeQuery("org-001", "env-dev", first.Items.Single().LabelValue, Skip: 1, Take: 1),
+                new ResolveBarcodeQuery(" org-001 ", " env-dev ", first.Items.Single().LabelValue, Skip: 1, Take: 1),
                 CancellationToken.None);
 
         Assert.Equal("ambiguous", result.Status);
@@ -124,7 +124,7 @@ public sealed class BarcodeLabelListQueryTests
         await using var dbContext = CreateDbContext();
         var rule = BarcodeRule.Create("org-001", "env-dev", "FG-A", "code128", "FGA", 40, "none", ["work-order"], "active");
         var template = LabelTemplate.Create("org-001", "env-dev", "tpl-a", "Template A", "file-a", "{}", "active");
-        var batch = LabelPrintBatch.Create("org-001", "env-dev", rule, template.Id, "work-order", "WO-001", "batch-a", "{}", 1);
+        var batch = LabelPrintBatch.CreateLegacyWithoutReplaySnapshot("org-001", "env-dev", rule, template.Id, "work-order", "WO-001", "batch-a", "{}", 1);
         batch.VoidItem(1, "标签破损");
         dbContext.AddRange(rule, template, batch);
         await dbContext.SaveChangesAsync();
@@ -169,8 +169,8 @@ public sealed class BarcodeLabelListQueryTests
         var templateA = LabelTemplate.Create("org-001", "env-dev", "tpl-a", "Template A", "file-a", "{}", "active");
         var templateB = LabelTemplate.Create("org-001", "env-dev", "tpl-b", "Template B", "file-b", "{}", "active");
         var templateInactive = LabelTemplate.Create("org-001", "env-dev", "tpl-c", "Template C", "file-c", "{}", "inactive");
-        var batchA = LabelPrintBatch.Create("org-001", "env-dev", ruleA, templateA.Id, "work-order", "WO-001", "batch-a", "{}", 1);
-        var batchB = LabelPrintBatch.Create("org-001", "env-dev", ruleA, templateA.Id, "work-order", "WO-002", "batch-b", "{}", 1);
+        var batchA = LabelPrintBatch.CreateLegacyWithoutReplaySnapshot("org-001", "env-dev", ruleA, templateA.Id, "work-order", "WO-001", "batch-a", "{}", 1);
+        var batchB = LabelPrintBatch.CreateLegacyWithoutReplaySnapshot("org-001", "env-dev", ruleA, templateA.Id, "work-order", "WO-002", "batch-b", "{}", 1);
         var scanA = ScanRecord.Record("org-001", "env-dev", "PDA-01", "BC-001", "wms.receiving", "ASN-001", "scan-a", "accepted", null);
         var scanB = ScanRecord.Record("org-001", "env-dev", "PDA-01", "BC-002", "wms.receiving", "ASN-002", "scan-b", "rejected", "bad");
 
@@ -178,13 +178,13 @@ public sealed class BarcodeLabelListQueryTests
         await dbContext.SaveChangesAsync();
 
         var rules = await new ListBarcodeRulesQueryHandler(dbContext)
-            .Handle(new ListBarcodeRulesQuery("org-001", "env-dev", null, "FG", 1, 1), CancellationToken.None);
+            .Handle(new ListBarcodeRulesQuery(" org-001 ", " env-dev ", null, "  fg  ", 1, 1), CancellationToken.None);
         var templates = await new ListLabelTemplatesQueryHandler(dbContext)
-            .Handle(new ListLabelTemplatesQuery("org-001", "env-dev", "active", 1, 1), CancellationToken.None);
+            .Handle(new ListLabelTemplatesQuery(" org-001 ", " env-dev ", "active", 1, 1), CancellationToken.None);
         var batches = await new ListLabelPrintBatchesQueryHandler(dbContext)
-            .Handle(new ListLabelPrintBatchesQuery("org-001", "env-dev", "work-order", null, "pending", 1, 1), CancellationToken.None);
+            .Handle(new ListLabelPrintBatchesQuery(" org-001 ", " env-dev ", "work-order", null, "pending", 1, 1), CancellationToken.None);
         var scans = await new ListScansQueryHandler(dbContext)
-            .Handle(new ListScansQuery("org-001", "env-dev", "PDA-01", null, "wms.receiving", null, 1, 1), CancellationToken.None);
+            .Handle(new ListScansQuery(" org-001 ", " env-dev ", "PDA-01", null, "wms.receiving", null, 1, 1), CancellationToken.None);
 
         Assert.Equal(2, rules.Total);
         Assert.Single(rules.Items);

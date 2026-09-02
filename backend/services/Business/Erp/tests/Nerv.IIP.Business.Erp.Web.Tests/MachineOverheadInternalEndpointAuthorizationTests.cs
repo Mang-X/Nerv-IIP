@@ -175,6 +175,11 @@ public sealed class MachineOverheadInternalEndpointAuthorizationTests
         Assert.Equal(2, query.PageNumber);
         Assert.Equal(25, query.PageSize);
         Assert.Empty(sender.Commands);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal("open", data.GetProperty("accountingPeriodStatus").GetString());
+        Assert.Equal("unavailable", data.GetProperty("reconciliationStatus").GetString());
+        Assert.Equal("reconciliation_not_recorded", data.GetProperty("reconciliationUnavailableReason").GetString());
     }
 
     [Fact]
@@ -309,7 +314,10 @@ public sealed class MachineOverheadInternalEndpointAuthorizationTests
                 query.PageNumber,
                 query.PageSize,
                 0,
-                []));
+                [],
+                "open",
+                MachineOverheadReadStatus.Unavailable,
+                "reconciliation_not_recorded"));
         }
 
         public void AssertNoRequests()

@@ -196,6 +196,12 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           to: { path: '/master-data/devices' },
           requiredPermissions: [P.masterDataResourcesRead],
         },
+        {
+          title: '工装与模具',
+          icon: WrenchIcon,
+          to: { path: '/master-data/tooling' },
+          requiredPermissions: [P.masterDataResourcesRead],
+        },
       ],
     },
     {
@@ -769,7 +775,7 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           requiredPermissions: [P.iiotTelemetryRead],
         },
         {
-          title: 'OEE 与可用性',
+          title: 'OEE 趋势与横比',
           icon: GaugeIcon,
           to: { path: '/equipment/telemetry/oee' },
           requiredPermissions: [P.iiotTelemetryRead],

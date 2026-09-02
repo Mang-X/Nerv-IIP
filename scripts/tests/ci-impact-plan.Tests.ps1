@@ -202,6 +202,80 @@ function Assert-ConditionalRoutingWorkflow {
     }
 }
 
+function Assert-RedisCapActiveSelectionWorkflowContract {
+    param([Parameter(Mandatory)] [string] $Path)
+
+    $parsedWorkflow = ConvertFrom-NervCiRequiredSummaryWorkflow -Path $Path -WorkingDirectory $repoRoot
+    $redisCapJobProperty = $parsedWorkflow.jobs.PSObject.Properties['redis-cap-transport-tests']
+    Assert-Contract ($null -ne $redisCapJobProperty) 'CI must define the Redis/CAP transport job.'
+    $runnerSteps = @($redisCapJobProperty.Value.steps | Where-Object {
+            $runProperty = $_.PSObject.Properties['run']
+            $null -ne $runProperty -and ([string]$runProperty.Value).Contains('./scripts/run-redis-cap-test-lane.ps1', [StringComparison]::Ordinal)
+        })
+    Assert-Contract ($runnerSteps.Count -eq 1) 'The Redis/CAP job must invoke its governed runner exactly once.'
+    $runnerInvocation = [string]$runnerSteps[0].run
+    Assert-Contract ($runnerInvocation.Contains('-AllActiveMembers', [StringComparison]::Ordinal)) 'Hosted Redis/CAP execution must select the manifest active set.'
+    Assert-Contract (-not $runnerInvocation.Contains('-MemberId', [StringComparison]::Ordinal)) 'Hosted Redis/CAP execution must not maintain a member-id list.'
+}
+
+function Assert-BusinessConsoleBrowserValidationWorkflowContract {
+    param([Parameter(Mandatory)] [string] $Path)
+
+    $parsedWorkflow = ConvertFrom-NervCiRequiredSummaryWorkflow -Path $Path -WorkingDirectory $repoRoot
+    $frontendValidation = $parsedWorkflow.jobs.'frontend-validation-shards'
+    Assert-Contract ([int]$frontendValidation.'timeout-minutes' -eq 80) 'Frontend Validation must leave a 9-minute job margin above the 71-minute evidence-publishing step sum for implicit post steps.'
+    $businessConsoleBrowserCondition = "matrix.name == '@nerv-iip/business-console'"
+    $resolveBrowserSteps = @($frontendValidation.steps | Where-Object {
+            [string]::Equals([string]$_.name, 'Resolve Business Console browser', [StringComparison]::Ordinal)
+        })
+    Assert-Contract ($resolveBrowserSteps.Count -eq 1) 'Frontend Validation must resolve the Business Console browser exactly once.'
+    $resolveBrowserStep = $resolveBrowserSteps[0]
+    Assert-Contract ([string]::Equals([string]$resolveBrowserStep.if, $businessConsoleBrowserCondition, [StringComparison]::Ordinal)) 'Business Console browser resolution must run only for its validation matrix item.'
+    Assert-Contract ([int]$resolveBrowserStep.'timeout-minutes' -eq 3) 'Business Console browser resolution must keep a three-minute budget.'
+    Assert-Contract ([string]::Equals([string]$resolveBrowserStep.shell, 'bash --noprofile --norc -euo pipefail {0}', [StringComparison]::Ordinal)) 'Business Console browser resolution must use the governed fail-fast Bash shell.'
+    Assert-Contract (([string]$resolveBrowserStep.run).Contains('command -v google-chrome', [StringComparison]::Ordinal) -and
+        ([string]$resolveBrowserStep.run).Contains('if [ -z "$browser_path" ]; then', [StringComparison]::Ordinal) -and
+        ([string]$resolveBrowserStep.run).Contains('exit 1', [StringComparison]::Ordinal) -and
+        ([string]$resolveBrowserStep.run).Contains('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=', [StringComparison]::Ordinal) -and
+        ([string]$resolveBrowserStep.run).Contains('$GITHUB_ENV', [StringComparison]::Ordinal)) 'Business Console browser resolution must fail closed and export the runner Chrome path.'
+
+    $browserTestSteps = @($frontendValidation.steps | Where-Object {
+            [string]::Equals([string]$_.name, 'Test Business Console browser invariants', [StringComparison]::Ordinal)
+        })
+    Assert-Contract ($browserTestSteps.Count -eq 1) 'Frontend Validation must execute the Business Console browser invariants exactly once.'
+    $browserTestStep = $browserTestSteps[0]
+    $browserTestIdProperty = $browserTestStep.PSObject.Properties['id']
+    Assert-Contract ($null -ne $browserTestIdProperty -and [string]::Equals([string]$browserTestIdProperty.Value, 'business-console-browser-tests', [StringComparison]::Ordinal)) 'Business Console browser invariants must expose a stable outcome for diagnostic upload routing.'
+    Assert-Contract ([string]::Equals([string]$browserTestStep.if, $businessConsoleBrowserCondition, [StringComparison]::Ordinal)) 'Business Console browser invariants must run only for their validation matrix item.'
+    Assert-Contract ([int]$browserTestStep.'timeout-minutes' -eq 10) 'Business Console browser invariants must keep a ten-minute budget.'
+    Assert-Contract ([string]::Equals([string]$browserTestStep.env.NERV_IIP_OUT_DIR, '${{ runner.temp }}/issue-2098-tooling-browser', [StringComparison]::Ordinal)) 'Business Console browser artifacts must use the runner temporary directory.'
+    Assert-Contract (([string]$browserTestStep.run).Contains('pnpm -C frontend --filter @nerv-iip/business-console exec playwright test', [StringComparison]::Ordinal) -and
+        ([string]$browserTestStep.run).Contains('e2e/issue1974-tooling-visual.spec.ts', [StringComparison]::Ordinal) -and
+        ([string]$browserTestStep.run).Contains('--project=desktop', [StringComparison]::Ordinal)) 'Business Console browser invariants must run the governed desktop tooling specification.'
+
+    $browserUploadSteps = @($frontendValidation.steps | Where-Object {
+            [string]::Equals([string]$_.name, 'Upload Business Console browser diagnostics', [StringComparison]::Ordinal)
+        })
+    Assert-Contract ($browserUploadSteps.Count -eq 1) 'Frontend Validation must upload Business Console browser diagnostics exactly once.'
+    $browserUploadStep = $browserUploadSteps[0]
+    $browserUploadTimeoutProperty = $browserUploadStep.PSObject.Properties['timeout-minutes']
+    Assert-Contract ($null -ne $browserUploadTimeoutProperty -and [int]$browserUploadTimeoutProperty.Value -eq 5) 'Business Console browser diagnostic upload must keep a five-minute budget.'
+    Assert-Contract ([string]::Equals([string]$browserUploadStep.if, "failure() && steps.business-console-browser-tests.outcome == 'failure'", [StringComparison]::Ordinal)) 'Business Console browser diagnostics must upload only after its browser test fails.'
+    Assert-Contract ([string]::Equals([string]$browserUploadStep.uses, 'actions/upload-artifact@v4', [StringComparison]::Ordinal)) 'Business Console browser diagnostics must use the governed artifact uploader.'
+    Assert-Contract ([string]::Equals([string]$browserUploadStep.with.name, 'business-console-browser-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}', [StringComparison]::Ordinal)) 'Business Console browser diagnostics must have a run-attempt-specific artifact identity.'
+    Assert-Contract ([string]::Equals([string]$browserUploadStep.with.path, '${{ runner.temp }}/issue-2098-tooling-browser', [StringComparison]::Ordinal)) 'Business Console browser diagnostics must upload the governed temporary directory.'
+    Assert-Contract ([string]::Equals([string]$browserUploadStep.with.'if-no-files-found', 'error', [StringComparison]::Ordinal)) 'Business Console browser diagnostics must fail closed when no diagnostic files exist.'
+    Assert-Contract ([int]$browserUploadStep.with.'retention-days' -eq 7) 'Business Console browser diagnostics must retain artifacts for seven days.'
+
+    $resolveBrowserIndex = [Array]::IndexOf([object[]]$frontendValidation.steps, $resolveBrowserStep)
+    $browserTestIndex = [Array]::IndexOf([object[]]$frontendValidation.steps, $browserTestStep)
+    $browserUploadIndex = [Array]::IndexOf([object[]]$frontendValidation.steps, $browserUploadStep)
+    Assert-Contract ($resolveBrowserIndex -gt 0 -and
+        [string]::Equals([string]$frontendValidation.steps[$resolveBrowserIndex - 1].name, 'Build affected frontend app', [StringComparison]::Ordinal) -and
+        $browserTestIndex -eq ($resolveBrowserIndex + 1) -and
+        $browserUploadIndex -eq ($browserTestIndex + 1)) 'Business Console browser resolution, test, and diagnostic upload must follow the validated production build in order.'
+}
+
 function Assert-AcceptanceScenarioMatrixWorkflowContract {
     param([Parameter(Mandatory)] [string] $Path)
 
@@ -690,7 +764,7 @@ foreach ($sharedCase in @(
 }
 
 $backendCommonDirectories = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'backend/common') -Directory | ForEach-Object { $_.Name })
-Assert-Contract ($backendCommonDirectories.Count -eq 11) 'The backend common-directory observation baseline must be revised when a shared directory is added or removed.'
+Assert-Contract ($backendCommonDirectories.Count -eq 12) 'The backend common-directory observation baseline must be revised when a shared directory is added or removed.'
 foreach ($commonDirectory in $backendCommonDirectories) {
     $plan = Get-NervCiImpactPlan -ChangedPaths @("backend/common/$commonDirectory/ObservedChange.cs")
     Assert-ImpactFlag -Plan $plan -Name 'backend' -Expected $true
@@ -1095,6 +1169,22 @@ $workflow = [IO.File]::ReadAllText($workflowPath)
 Assert-Contract ($workflow.Contains("  impact-plan:`n", [StringComparison]::Ordinal)) 'CI must define the impact-plan job.'
 Assert-Contract ($workflow.Contains('run: ./scripts/tests/ci-impact-plan.Tests.ps1', [StringComparison]::Ordinal)) 'Script Governance must run the CI impact-plan contract tests.'
 Assert-Contract ($workflow.Contains('uses: actions/upload-artifact@v4', [StringComparison]::Ordinal)) 'The impact-plan job must upload its audit artifact.'
+Assert-RedisCapActiveSelectionWorkflowContract -Path $workflowPath
+
+$redisCapMemberListMutation = $workflow.Replace('-AllActiveMembers', '-MemberId stale-hosted-member-redis-cap', [StringComparison]::Ordinal)
+Assert-Contract (-not [string]::Equals($redisCapMemberListMutation, $workflow, [StringComparison]::Ordinal)) 'The Redis/CAP hosted-member mutation must alter the canonical workflow invocation.'
+$redisCapMemberListMutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-redis-cap-selection-$([Guid]::NewGuid().ToString('N'))"
+try {
+    [IO.Directory]::CreateDirectory($redisCapMemberListMutationRoot) | Out-Null
+    $redisCapMemberListMutationPath = Join-Path $redisCapMemberListMutationRoot 'member-list.yml'
+    [IO.File]::WriteAllText($redisCapMemberListMutationPath, $redisCapMemberListMutation, [Text.UTF8Encoding]::new($false))
+    $redisCapMemberListMutationFailure = $null
+    try { Assert-RedisCapActiveSelectionWorkflowContract -Path $redisCapMemberListMutationPath } catch { $redisCapMemberListMutationFailure = $_ }
+    Assert-Contract ($null -ne $redisCapMemberListMutationFailure) 'A hosted Redis/CAP -MemberId list must fail the workflow contract.'
+}
+finally {
+    if (Test-Path -LiteralPath $redisCapMemberListMutationRoot) { Remove-Item -LiteralPath $redisCapMemberListMutationRoot -Recurse -Force }
+}
 
 $expectedDotNetJobNames = @(
     'backend-tests-business-gateway'
@@ -1151,6 +1241,7 @@ finally {
 }
 
 Assert-ConditionalRoutingWorkflow -Path $workflowPath
+Assert-BusinessConsoleBrowserValidationWorkflowContract -Path $workflowPath
 Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowPath
 
 $workflowMutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-impact-workflow-$([Guid]::NewGuid().ToString('N'))"
@@ -1431,6 +1522,27 @@ try {
         $failure = $null
         try { Assert-ConditionalRoutingWorkflow -Path $mutationPath } catch { $failure = $_ }
         Assert-Contract ($null -ne $failure) "Conditional-routing mutation '$($mutation.Name)' must be rejected."
+    }
+
+    foreach ($browserMutation in @(
+            @{
+                Name = 'business-console-browser-diagnostics-not-failure-only'
+                Original = "        if: failure() && steps.business-console-browser-tests.outcome == 'failure'"
+                Replacement = '        if: always()'
+            },
+            @{
+                Name = 'business-console-browser-diagnostics-missing'
+                Original = '      - name: Upload Business Console browser diagnostics'
+                Replacement = '      - name: Browser diagnostic upload removed by mutation'
+            }
+        )) {
+        $mutated = $workflow.Replace($browserMutation.Original, $browserMutation.Replacement)
+        Assert-Contract (-not [string]::Equals($mutated, $workflow, [StringComparison]::Ordinal)) "Business Console browser mutation '$($browserMutation.Name)' must match the canonical workflow."
+        $mutationPath = Join-Path $workflowMutationRoot "$($browserMutation.Name).yml"
+        [IO.File]::WriteAllText($mutationPath, $mutated, [Text.UTF8Encoding]::new($false))
+        $failure = $null
+        try { Assert-BusinessConsoleBrowserValidationWorkflowContract -Path $mutationPath } catch { $failure = $_ }
+        Assert-Contract ($null -ne $failure) "Business Console browser mutation '$($browserMutation.Name)' must be rejected."
     }
 }
 finally {

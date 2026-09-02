@@ -142,7 +142,6 @@ const stubs = {
   NvSelectContent: { template: '<div><slot /></div>' },
   NvSelectItem: { props: ['value'], template: '<div><slot /></div>' },
   NvSelectValue: { template: '<span />' },
-  SelectValue: { template: '<span />' },
   NvButton: { template: '<button v-bind="$attrs"><slot /></button>' },
   Spinner: true,
 }

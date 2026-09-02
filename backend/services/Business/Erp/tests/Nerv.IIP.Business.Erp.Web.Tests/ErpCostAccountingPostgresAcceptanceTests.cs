@@ -9,6 +9,7 @@ using Nerv.IIP.Business.Erp.Domain;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.GLAccountAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountingPeriodAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.MachineOverheadReconciliationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkCenterMachineOverheadRateAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
@@ -118,6 +119,158 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         Assert.Equal(100m, byNcr.ReworkCostTotal);
         Assert.Equal(0m, byNcr.OrdinaryCostTotal);
         Assert.Empty(await deadLetters.ListAsync(null, null, CancellationToken.None));
+    }
+
+    [ErpCostPostgresFact(Timeout = 30_000)]
+    public async Task PostgreSQL_machine_overhead_reads_translate_and_isolate_work_order_period_and_scope()
+    {
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        var options = ErpPostgresLaneDatabase.CreateOptions();
+        var completedAtUtc = new DateTimeOffset(2026, 8, 31, 12, 0, 0, TimeSpan.Zero);
+        await using var db = new ApplicationDbContext(options, new NoopMediator());
+        await db.Database.MigrateAsync();
+        ErpPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
+
+        var period = AccountingPeriod.Open(
+            "org-read", "env-read", "2026-08", new(2026, 8, 1), new(2026, 8, 31));
+        var rate = WorkCenterMachineOverheadRate.DefineApplicable(
+            "org-read", "env-read", "WC-READ", "2026-08",
+            30_000m, 10_000m, 1_000m, "CNY", 4,
+            "system:test", "approved read contract rate", completedAtUtc.AddMonths(-1));
+        var otherRate = WorkCenterMachineOverheadRate.DefineApplicable(
+            "org-read", "env-other", "WC-READ", "2026-08",
+            30_000m, 10_000m, 1_000m, "CNY", 1,
+            "system:test", "scope distractor", completedAtUtc.AddMonths(-1));
+        var otherOrganizationPeriod = AccountingPeriod.Open(
+            "org-other", "env-read", "2026-08", new(2026, 8, 1), new(2026, 8, 31));
+        var otherOrganizationRate = WorkCenterMachineOverheadRate.DefineApplicable(
+            "org-other", "env-read", "WC-READ", "2026-08",
+            30_000m, 10_000m, 1_000m, "CNY", 1,
+            "system:test", "organization distractor", completedAtUtc.AddMonths(-1));
+        var otherPeriod = AccountingPeriod.Open(
+            "org-read", "env-read", "2026-07", new(2026, 7, 1), new(2026, 7, 31));
+        var otherPeriodRate = WorkCenterMachineOverheadRate.DefineApplicable(
+            "org-read", "env-read", "WC-READ", "2026-07",
+            30_000m, 10_000m, 1_000m, "CNY", 1,
+            "system:test", "period distractor", completedAtUtc.AddMonths(-2));
+        var otherWorkOrderRate = WorkCenterMachineOverheadRate.DefineApplicable(
+            "org-read", "env-read", "WC-OTHER-WO", "2026-08",
+            30_000m, 10_000m, 1_000m, "CNY", 1,
+            "system:test", "work order distractor", completedAtUtc.AddMonths(-1));
+        db.AddRange(period, rate, otherRate, otherOrganizationPeriod, otherOrganizationRate,
+            otherPeriod, otherPeriodRate, otherWorkOrderRate);
+        await db.SaveChangesAsync();
+
+        var settlement = OperationMachineOverheadSettlement.CreateApplied(
+            "org-read", "env-read", "WO-SAME", "OP-READ", "WC-READ", 3,
+            completedAtUtc, "DEVICE-READ", 2 * TimeSpan.TicksPerHour,
+            "single-device-active-minus-explicit-pause-v1", rate.Id, "2026-08", 4,
+            "CNY", 30m, 10m, "evt-read", new string('a', 64));
+        var state = OperationMachineOverheadSettlementState.Open("org-read", "env-read", "OP-READ");
+        state.ApplySettlement(3);
+        var cost = WorkOrderCost.Open("org-read", "env-read", "WO-SAME", "FG-READ");
+        cost.RecordMachineOverhead(settlement);
+        var reconciliation = WorkCenterMachineOverheadReconciliation.Record(
+            "org-read", "env-read", "WC-READ", "2026-08", rate.Id, 4, "CNY",
+            100m, 40m, 2 * TimeSpan.TicksPerHour, 60m, 20m, 80m,
+            0, AbnormalDowntimeDisposition.None, 1, "user:accountant",
+            "ledger:2026-08", "month-end actual pool", completedAtUtc.AddHours(1));
+
+        var otherSettlement = OperationMachineOverheadSettlement.CreateApplied(
+            "org-read", "env-other", "WO-SAME", "OP-OTHER", "WC-READ", 1,
+            completedAtUtc, "DEVICE-OTHER", 9 * TimeSpan.TicksPerHour,
+            "single-device-active-minus-explicit-pause-v1", otherRate.Id, "2026-08", 1,
+            "CNY", 30m, 10m, "evt-other", new string('b', 64));
+        var otherState = OperationMachineOverheadSettlementState.Open("org-read", "env-other", "OP-OTHER");
+        otherState.ApplySettlement(1);
+        var otherCost = WorkOrderCost.Open("org-read", "env-other", "WO-SAME", "FG-OTHER");
+        otherCost.RecordMachineOverhead(otherSettlement);
+        var otherEnvironmentReconciliation = WorkCenterMachineOverheadReconciliation.Record(
+            "org-read", "env-other", "WC-READ", "2026-08", otherRate.Id, 1, "CNY",
+            900m, 300m, 9 * TimeSpan.TicksPerHour, 270m, 90m, 360m,
+            0, AbnormalDowntimeDisposition.None, 1, "user:accountant",
+            "ledger:other-environment", "environment distractor", completedAtUtc.AddHours(1));
+
+        var otherOrganizationSettlement = OperationMachineOverheadSettlement.CreateApplied(
+            "org-other", "env-read", "WO-SAME", "OP-OTHER-ORG", "WC-READ", 1,
+            completedAtUtc, "DEVICE-OTHER-ORG", 7 * TimeSpan.TicksPerHour,
+            "single-device-active-minus-explicit-pause-v1", otherOrganizationRate.Id, "2026-08", 1,
+            "CNY", 30m, 10m, "evt-other-org", new string('c', 64));
+        var otherOrganizationState = OperationMachineOverheadSettlementState.Open(
+            "org-other", "env-read", "OP-OTHER-ORG");
+        otherOrganizationState.ApplySettlement(1);
+        var otherOrganizationCost = WorkOrderCost.Open("org-other", "env-read", "WO-SAME", "FG-OTHER-ORG");
+        otherOrganizationCost.RecordMachineOverhead(otherOrganizationSettlement);
+        var otherOrganizationReconciliation = WorkCenterMachineOverheadReconciliation.Record(
+            "org-other", "env-read", "WC-READ", "2026-08", otherOrganizationRate.Id, 1, "CNY",
+            210m, 70m, 7 * TimeSpan.TicksPerHour, 210m, 70m, 280m,
+            0, AbnormalDowntimeDisposition.None, 1, "user:accountant",
+            "ledger:other-org", "organization distractor", completedAtUtc.AddHours(1));
+
+        var otherPeriodSettlement = OperationMachineOverheadSettlement.CreateApplied(
+            "org-read", "env-read", "WO-OTHER-PERIOD", "OP-OTHER-PERIOD", "WC-READ", 1,
+            completedAtUtc.AddMonths(-1), "DEVICE-OTHER-PERIOD", 6 * TimeSpan.TicksPerHour,
+            "single-device-active-minus-explicit-pause-v1", otherPeriodRate.Id, "2026-07", 1,
+            "CNY", 30m, 10m, "evt-other-period", new string('d', 64));
+        var otherPeriodState = OperationMachineOverheadSettlementState.Open(
+            "org-read", "env-read", "OP-OTHER-PERIOD");
+        otherPeriodState.ApplySettlement(1);
+        var otherPeriodCost = WorkOrderCost.Open("org-read", "env-read", "WO-OTHER-PERIOD", "FG-OTHER-PERIOD");
+        otherPeriodCost.RecordMachineOverhead(otherPeriodSettlement);
+        var otherPeriodReconciliation = WorkCenterMachineOverheadReconciliation.Record(
+            "org-read", "env-read", "WC-READ", "2026-07", otherPeriodRate.Id, 1, "CNY",
+            180m, 60m, 6 * TimeSpan.TicksPerHour, 180m, 60m, 240m,
+            0, AbnormalDowntimeDisposition.None, 1, "user:accountant",
+            "ledger:other-period", "period distractor", completedAtUtc.AddHours(1));
+
+        var otherWorkOrderSettlement = OperationMachineOverheadSettlement.CreateApplied(
+            "org-read", "env-read", "WO-OTHER", "OP-OTHER-WO", "WC-OTHER-WO", 1,
+            completedAtUtc, "DEVICE-OTHER-WO", 5 * TimeSpan.TicksPerHour,
+            "single-device-active-minus-explicit-pause-v1", otherWorkOrderRate.Id, "2026-08", 1,
+            "CNY", 30m, 10m, "evt-other-wo", new string('e', 64));
+        var otherWorkOrderState = OperationMachineOverheadSettlementState.Open(
+            "org-read", "env-read", "OP-OTHER-WO");
+        otherWorkOrderState.ApplySettlement(1);
+        var otherWorkOrderCost = WorkOrderCost.Open("org-read", "env-read", "WO-OTHER", "FG-OTHER-WO");
+        otherWorkOrderCost.RecordMachineOverhead(otherWorkOrderSettlement);
+        var otherWorkOrderReconciliation = WorkCenterMachineOverheadReconciliation.Record(
+            "org-read", "env-read", "WC-OTHER-WO", "2026-08", otherWorkOrderRate.Id, 1, "CNY",
+            150m, 50m, 5 * TimeSpan.TicksPerHour, 150m, 50m, 200m,
+            0, AbnormalDowntimeDisposition.None, 1, "user:accountant",
+            "ledger:other-work-order", "work order distractor", completedAtUtc.AddHours(1));
+        db.AddRange(settlement, state, cost, reconciliation,
+            otherSettlement, otherState, otherCost, otherEnvironmentReconciliation,
+            otherOrganizationSettlement, otherOrganizationState, otherOrganizationCost,
+            otherOrganizationReconciliation, otherPeriodSettlement, otherPeriodState,
+            otherPeriodCost, otherPeriodReconciliation, otherWorkOrderSettlement,
+            otherWorkOrderState, otherWorkOrderCost, otherWorkOrderReconciliation);
+        await db.SaveChangesAsync();
+
+        var workOrder = await new GetWorkOrderCostVarianceQueryHandler(db).Handle(
+            new("org-read", "env-read", "WO-SAME"), CancellationToken.None);
+        Assert.Equal(MachineOverheadReadStatus.Available, workOrder.MachineCostStatus);
+        Assert.Equal(2m, workOrder.ActualMachineHours);
+        Assert.Equal(60m, workOrder.AppliedFixedMachineOverhead);
+        Assert.Equal(20m, workOrder.AppliedVariableMachineOverhead);
+        Assert.Equal(80m, workOrder.AppliedMachineOverheadTotal);
+        var operation = Assert.Single(workOrder.MachineOverheadOperations);
+        Assert.Equal("OP-READ", operation.OperationTaskId);
+        Assert.Equal("WC-READ", operation.WorkCenterId);
+        Assert.Equal("DEVICE-READ", operation.DeviceAssetId);
+        Assert.Equal("single-device-active-minus-explicit-pause-v1", operation.MachineTimeBasisCode);
+        Assert.Equal("evt-read", operation.SourceEventId);
+        Assert.Equal("CNY", workOrder.MachineCurrencyCode);
+
+        var periodRead = await new ListWorkCenterMachineOverheadReconciliationsQueryHandler(db).Handle(
+            new("org-read", "env-read", "2026-08", "WC-READ"), CancellationToken.None);
+        Assert.Equal("open", periodRead.AccountingPeriodStatus);
+        Assert.Equal(MachineOverheadReadStatus.Available, periodRead.ReconciliationStatus);
+        var item = Assert.Single(periodRead.Items);
+        Assert.Equal(reconciliation.Id.ToString(), item.Id);
+        Assert.NotEqual(otherEnvironmentReconciliation.Id.ToString(), item.Id);
+        Assert.Equal(100m, item.ActualFixedOverheadAmount);
+        Assert.Equal(60m, item.AppliedFixedAmount);
+        Assert.Equal(40m, item.UnderOverAppliedFixedAmount);
     }
 
     [ErpCostPostgresFact(Timeout = 30_000)]
@@ -583,7 +736,11 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         Assert.Equal(2.000000m, read.ActualLaborHours);
         Assert.Null(read.LaborEfficiencyVarianceAmount);
         Assert.Equal(2.000000m, read.ActualMachineHours);
-        Assert.Equal("unavailable", read.MachineCostStatus);
+        Assert.Equal(MachineOverheadReadStatus.Available, read.MachineCostStatus);
+        Assert.Null(read.MachineCostUnavailableReason);
+        Assert.Equal(60m, read.AppliedFixedMachineOverhead);
+        Assert.Equal(20m, read.AppliedVariableMachineOverhead);
+        Assert.Equal(80m, read.AppliedMachineOverheadTotal);
 
         var governedRateId = await assertDb.WorkCenterCostRates.Select(x => x.Id).SingleAsync();
         var oldRevision = OperationLaborSettlement.Create(

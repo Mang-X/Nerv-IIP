@@ -2,13 +2,13 @@
 
 本文把 ADR 0009 的迁移/发布决策落实为当前操作者步骤。它不声明 Nerv-IIP 已具备完整客户安装包，也不保存第五/六/七阶段等形成历史；历史形成过程见 [`../reports/audits/database-release-stage-history.md`](../reports/audits/database-release-stage-history.md)。
 
-命令事实以 `scripts/install/migrate-platform-databases.ps1`、`scripts/install/migrate-file-storage.ps1`、`scripts/install/release-database-migrations.json`、当前 EF migrations 和脚本帮助为准。执行前若本文与脚本参数不一致，**停止并先修正文档**。承载发布动作的脚本还必须满足 `docs/architecture/script-automation-governance.md`。
+命令事实以 `scripts/install/migrate-platform-databases.ps1`、`scripts/install/migrate-business-databases.ps1`、`scripts/install/migrate-file-storage.ps1`、两份 release database manifest、当前 EF migrations 和脚本帮助为准。执行前若本文与脚本参数不一致，**停止并先修正文档**。承载发布动作的脚本还必须满足 `docs/governance/script-automation.md`。
 
 ## 1. 当前执行边界
 
 | Profile | 当前可执行边界 | 客户发布结论 | 权威入口 |
 | --- | --- | --- | --- |
-| PostgreSQL | AppHub、IAM、Ops、Notification 已进入平台 migration manifest；FileStorage 使用独立受治理 migrator。 | 尚不等于完整客户发布；仍需业务数据库安装编排、备份恢复演练、seed 清单和现场诊断契约。 | `scripts/install/migrate-platform-databases.ps1`、`scripts/install/migrate-file-storage.ps1` |
+| PostgreSQL | AppHub、IAM、Ops、Notification 与 13 个业务数据库分别进入显式 migration manifest；FileStorage 使用独立受治理 migrator。 | 尚不等于完整客户发布；仍需备份恢复演练、seed 清单和现场诊断契约。 | `scripts/install/migrate-platform-databases.ps1`、`scripts/install/migrate-business-databases.ps1`、`scripts/install/migrate-file-storage.ps1` |
 | GaussDB | 候选项。 | 不支持。 | 需要 provider、CAP storage/outbox、migration、JSON、时间、事务和集成测试证据。 |
 | DMDB | 候选项。 | 不支持。 | 同上。 |
 | 其他数据库 | 评估阶段。 | 不支持。 | 不属于当前公开 profile 基线。 |
@@ -104,6 +104,21 @@ Remove-Item Env:\NERV_IIP_APPHUB_DB,Env:\NERV_IIP_IAM_DB,Env:\NERV_IIP_OPS_DB,En
 
 直接 `dotnet-ef database update` 只用于实现原理核查或开发排障，不是客户 release-install 入口。
 
+### 4.1 业务数据库 migrator
+
+13 个业务数据库由 `scripts/install/business-release-database-migrations.json` 显式登记 service、当前进程连接变量、expected database、Infrastructure project、startup project 与 DbContext，并通过固定选择该 manifest 的受治理包装入口执行。目标 database 必须预先存在；实际 apply 会在任何 restore 或 EF migration 前使用 `psql` 逐库执行只读存在性检查，全部选中目标通过后才串行迁移，首个失败立即停止。
+
+```powershell
+# 按 business-release-database-migrations.json 的
+# connectionEnvironmentVariable 字段设置 13 个当前进程连接变量。
+pwsh scripts/install/migrate-business-databases.ps1 -ValidateOnly -ReleaseId "<release-id>"
+pwsh scripts/install/migrate-business-databases.ps1 -ReleaseId "<release-id>"
+
+Remove-Item Env:\NERV_IIP_BUSINESS_MASTER_DATA_DB,Env:\NERV_IIP_BUSINESS_PRODUCT_ENGINEERING_DB,Env:\NERV_IIP_BUSINESS_INVENTORY_DB,Env:\NERV_IIP_BUSINESS_QUALITY_DB,Env:\NERV_IIP_BUSINESS_MES_DB,Env:\NERV_IIP_BUSINESS_DEMAND_PLANNING_DB,Env:\NERV_IIP_BUSINESS_BARCODE_LABEL_DB,Env:\NERV_IIP_BUSINESS_APPROVAL_DB,Env:\NERV_IIP_BUSINESS_WMS_DB,Env:\NERV_IIP_BUSINESS_INDUSTRIAL_TELEMETRY_DB,Env:\NERV_IIP_BUSINESS_MAINTENANCE_DB,Env:\NERV_IIP_BUSINESS_ERP_DB,Env:\NERV_IIP_BUSINESS_SCHEDULING_DB -ErrorAction SilentlyContinue
+```
+
+经过发布计划明确批准时可传 `-Service business-quality,business-mes` 等子集；未传 `-Service` 时覆盖全部 13 项。`-ValidateOnly` 只验证配置、目标 database 名和仓库中的 project/context/factory 配对，不连接数据库。入口不执行 seed、建库、备份、删除或回滚；连接串不得复制进命令行、仓库文件或日志。
+
 ## 5. FileStorage migrator
 
 ```powershell
@@ -147,6 +162,15 @@ Quality 数量巡检链路依次引入 `AddPeriodicInspectionQuantityWatermark`�
 2. 开始写入 `processed_integration_events`、数量续批锚点或恢复进度后，不执行 `AddPeriodicInspectionQuantityContinuationInbox.Down`。该降级会丢失消费去重事实与恢复进度；使用补救 migration 前滚修复。
 3. 开始写入 `quantity_continuation_next_attempt_at_utc` 或出现 closed + pending 上下文后，不执行 `AddPeriodicInspectionQuantityContinuationFairness.Down`。旧约束不能表达终态欠桶，且降级会丢失公平游标；使用补救 migration 前滚修复。
 4. 如果上述 migration 已应用但新版本健康检查失败，保留现有 schema 和数据，停止新版本服务，按第 6 节从批准恢复点恢复，或发布包含补救 migration 的前滚版本；不得手工删除水位、inbox、锚点或公平游标。
+
+### 6.2 BusinessMasterData 工装审计 migration
+
+`20260825081539_AddToolingOperationAudit` 是纯新增 migration，不回填既有 `tooling_assets` / `tooling_applicability` 的伪历史审计。发布或恢复仍使用第 4.1 节的业务数据库 migrator 与第 6 节的批准备份/恢复入口，不用测试 runner、临时 SQL 或 Web `AutoMigrate` 代替客户发布流程。
+
+1. migration 已应用但尚未产生工装审计事实时，旧版本服务可以忽略新增表继续运行；这不是执行 `Down` 的授权。
+2. `business_masterdata.tooling_audit_entries` 一旦存在事实，不执行会删除该证据的 `Down`；发布失败时停止新版本服务并优先前滚补救。
+3. 确需恢复备份时，记录 `releaseId`、目标数据库、批准恢复点、执行人、开始时间、结束时间和结果；恢复后重新核对 migration history 与工装业务/审计事实。
+4. CI 或本地一次性 PostgreSQL profile 只验证 runner 自有数据库中的 migration、事务、并发与隔离行为，不构成客户生产迁移、备份或恢复演练，也不能据此宣称 BusinessMasterData 已具备完整客户 migrator。
 
 ## 7. Seed 契约
 

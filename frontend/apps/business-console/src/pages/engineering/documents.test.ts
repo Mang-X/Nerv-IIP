@@ -64,8 +64,8 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
 
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 const dialogStubs = {
-  DialogRoot: { template: '<div><slot /></div>' },
-  DialogTrigger: { template: '<div><slot /></div>' },
+  NvDialog: { template: '<div><slot /></div>' },
+  NvDialogTrigger: { template: '<div><slot /></div>' },
   NvDialogContent: { template: '<div><slot /></div>' },
   NvDialogHeader: { template: '<div><slot /></div>' },
   NvDialogFooter: { template: '<div><slot /></div>' },
@@ -73,14 +73,16 @@ const dialogStubs = {
   NvDialogDescription: { template: '<p><slot /></p>' },
 }
 const sheetStubs = {
-  // NvSheet 根 = reka DialogRoot（与对话框共用 DialogRoot stub），内容/标头为真 .vue 按 Pro 名打桩。
+  // NvSheet 根与 NvDialog 同为 reka DialogRoot，但 barrel 已给两个别名各自的 name，
+  // 因而这里能分开打桩（过去只能共用一个 DialogRoot 键）。
+  NvSheet: { template: '<div><slot /></div>' },
   NvSheetContent: { template: '<div data-testid="sheet"><slot /></div>' },
   NvSheetHeader: { template: '<div><slot /></div>' },
   NvSheetTitle: { template: '<h2><slot /></h2>' },
   NvSheetDescription: { template: '<p><slot /></p>' },
 }
 
-// 关联物料是只选的实体选择器（内部自带 reka Dialog，会撞上这里的 DialogRoot 桩），
+// 关联物料是只选的实体选择器（内部自带 reka Dialog，会撞上这里的 NvDialog 桩），
 // 桩成带同名 id 的输入位，用例继续用 `#doc-item-code` 表达「选中了某个物料」。
 const pickerStubs = {
   NvEntityPicker: {
@@ -120,7 +122,6 @@ const selectStubs = {
   NvSelectContent: { template: '<slot />' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
   NvSelectValue: { template: '<span />' },
-  SelectValue: { template: '<span />' },
 }
 
 const allStubs = {

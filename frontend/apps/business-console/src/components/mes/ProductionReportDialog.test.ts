@@ -82,7 +82,7 @@ vi.mock('@/utils/notify', async (importOriginal) => ({
 }))
 
 const stubs = {
-  DialogRoot: { props: ['open'], template: '<div><slot /></div>' },
+  NvDialog: { props: ['open'], template: '<div><slot /></div>' },
   NvDialogContent: { template: '<div><slot /></div>' },
   NvDialogHeader: { template: '<div><slot /></div>' },
   NvDialogTitle: { template: '<h2><slot /></h2>' },

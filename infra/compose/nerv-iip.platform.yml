@@ -269,6 +269,17 @@ services:
     environment:
       <<: *dotnet-env
       ConnectionStrings__PostgreSQL: Host=postgres;Port=5432;Database=nerv_iip_barcode;Username=${NERV_IIP_POSTGRES_USER:-nerv};Password=${NERV_IIP_POSTGRES_PASSWORD:?set NERV_IIP_POSTGRES_PASSWORD}
+      FileStorage__BaseUrl: http://file-storage:8080
+      LabelPrinter__Mode: ${NERV_IIP_BARCODE_LABEL_PRINTER_MODE:?set NERV_IIP_BARCODE_LABEL_PRINTER_MODE}
+      LabelPrinter__Printers__0__Id: ${NERV_IIP_BARCODE_LABEL_PRINTER_ID:?set NERV_IIP_BARCODE_LABEL_PRINTER_ID}
+      LabelPrinter__Printers__0__Host: ${NERV_IIP_BARCODE_LABEL_PRINTER_HOST:?set NERV_IIP_BARCODE_LABEL_PRINTER_HOST}
+      LabelPrinter__Printers__0__Port: ${NERV_IIP_BARCODE_LABEL_PRINTER_PORT:?set NERV_IIP_BARCODE_LABEL_PRINTER_PORT}
+      LabelPrinter__Printers__0__ConnectTimeoutSeconds: ${NERV_IIP_BARCODE_LABEL_PRINTER_CONNECT_TIMEOUT_SECONDS:?set NERV_IIP_BARCODE_LABEL_PRINTER_CONNECT_TIMEOUT_SECONDS}
+      LabelPrinter__Printers__0__WriteTimeoutSeconds: ${NERV_IIP_BARCODE_LABEL_PRINTER_WRITE_TIMEOUT_SECONDS:?set NERV_IIP_BARCODE_LABEL_PRINTER_WRITE_TIMEOUT_SECONDS}
+      LabelPrinter__Printers__0__Dpi: ${NERV_IIP_BARCODE_LABEL_PRINTER_DPI:?set NERV_IIP_BARCODE_LABEL_PRINTER_DPI}
+      LabelPrinter__Printers__0__Language: zpl
+      LabelPrinter__Printers__0__Capabilities: ${NERV_IIP_BARCODE_LABEL_PRINTER_CAPABILITIES:?set NERV_IIP_BARCODE_LABEL_PRINTER_CAPABILITIES}
+      LabelPrinter__Printers__0__Enabled: "true"
     ports:
       - "${NERV_IIP_BARCODE_LABEL_PORT:-5113}:8080"
 
