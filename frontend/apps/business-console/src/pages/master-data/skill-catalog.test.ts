@@ -77,10 +77,7 @@ const dialogStubs = {
     template:
       '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
-  // trigger 故意不吐 slot：这在 #2879 给 barrel 补 name **之前**是必需的——那时 `NvSelectValue`
-  // 键打不中，真实 reka SelectValue 会去 inject SelectRoot（已被 NvSelect stub 抹平）而抛错。
-  // 补 name 后该前提已不成立（下面的 NvSelectValue 键能命中），这段绕法是历史遗留，见 #2879 跟进项。
-  NvSelectTrigger: { template: '<span />' },
+  NvSelectTrigger: { template: '<span><slot /></span>' },
   NvSelectValue: { template: '<span />' },
   NvSelectContent: { template: '<slot />' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
