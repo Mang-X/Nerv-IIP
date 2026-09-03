@@ -13,9 +13,11 @@ using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
+using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Maintenance;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Testing;
+using System.Collections.Concurrent;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -30,7 +32,8 @@ public sealed class MesAssetUnavailableRedisCapTransportTests
     {
         await MesPostgresLaneDatabase.ResetSchemaAsync();
         var poison = new PoisonSwitch();
-        await using var factory = CreateFactory(poison);
+        var arrivals = new ArrivalLog();
+        await using var factory = CreateFactory(poison, arrivals);
         using var client = factory.CreateClient();
         await InitializeAsync(factory);
 
@@ -96,6 +99,11 @@ public sealed class MesAssetUnavailableRedisCapTransportTests
         await PublishAsync(factory, nameof(AssetUnavailableIntegrationEvent), v1);
         await AssertOneEffectEventuallyAsync(factory, idempotencyKey);
 
+        // P1-6：replay 前先记下 v2 EventId 已到达 canonical processor 的次数（poison 期间的每次投递都算一次），
+        // replay 后必须观察到"又多了一次到达"这个真实 subscriber 边沿，而不是只重读 v1 早已留下的唯一结果。
+        var arrivalsBeforeReplay = arrivals.CountFor(v2.EventId);
+        Assert.True(arrivalsBeforeReplay >= 2, $"Expected poisoned deliveries to reach the processor at least twice, observed {arrivalsBeforeReplay}.");
+
         IntegrationEventDeadLetterReplayResult replay;
         using (var scope = factory.Services.CreateScope())
         {
@@ -104,10 +112,59 @@ public sealed class MesAssetUnavailableRedisCapTransportTests
         }
         Assert.True(replay.Succeeded, replay.Message);
         Assert.Equal(IntegrationEventDeadLetterStatus.Replayed.ToString(), replay.Status);
+
+        ArrivalLog.Arrival replayed = null!;
+        await Eventually.AssertAsync(
+            condition: "the replayed v2 identity reaches the MES canonical processor through the real Redis CAP subscriber",
+            assertion: async token =>
+            {
+                Assert.Equal(arrivalsBeforeReplay + 1, arrivals.CountFor(v2.EventId));
+                replayed = arrivals.Last(v2.EventId);
+                using var scope = factory.Services.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var succeeded = await db.Database.SqlQuery<int>(
+                        $"SELECT count(*)::int AS \"Value\" FROM cap.received WHERE \"StatusName\" = 'Succeeded' AND \"Name\" LIKE '%asset-unavailable.v2' AND \"Content\" LIKE {'%' + v2.EventId + '%'}")
+                    .SingleAsync(token);
+                Assert.True(succeeded >= 1, "CAP must record the replayed v2 message as a succeeded receive on the v2 canonical topic.");
+            },
+            options: new EventuallyOptions(TimeSpan.FromSeconds(90), TimeSpan.FromMilliseconds(250), []));
+
+        // 完整 identity / payload：replay 投递的必须是原始 v2 信封，而不是被改写过的副本。
+        Assert.Equal(v2.EventId, replayed.EventId);
+        Assert.Equal(MaintenanceIntegrationEventVersions.V2, replayed.EventVersion);
+        Assert.Equal(MaintenanceIntegrationEventTypes.AssetUnavailable, replayed.EventType);
+        Assert.Equal(MaintenanceIntegrationEventSources.BusinessMaintenance, replayed.SourceService);
+        Assert.Equal(idempotencyKey, replayed.IdempotencyKey);
+        Assert.Equal(v2.OccurredAtUtc, replayed.OccurredAtUtc);
+        Assert.Equal((v2.OrganizationId, v2.EnvironmentId), (replayed.OrganizationId, replayed.EnvironmentId));
+        Assert.Equal(("ASSET-CNC-01", "CUSTOM-DOWNTIME-CODE", fromUtc), (replayed.DeviceAssetId, replayed.Reason, replayed.FromUtc));
+
+        // 稳定的一次业务结果：replay 到达后，v1 早先赢得的那条事实仍是唯一结果。
         await AssertOneEffectEventuallyAsync(factory, idempotencyKey);
+
+        // 反例：换一个业务键（Maintenance 的业务键内嵌停机起点，另一个起点就是另一条停机事实）的投递不再被折叠，
+        // 会产生第二条停机事实——证明上面的"一次结果"是靠业务键折叠，不是夹具本身只允许一条。
+        var laterFromUtc = fromUtc.AddHours(1);
+        await PublishAsync(factory, nameof(AssetUnavailableIntegrationEvent), v1 with
+        {
+            EventId = "evt-2966-v1-different-fact",
+            OccurredAtUtc = laterFromUtc,
+            IdempotencyKey = "maintenance.AssetUnavailable:ASSET-CNC-01:20260831090000",
+            Payload = new AssetUnavailablePayload("ASSET-CNC-01", "legacy-breakdown", laterFromUtc),
+        });
+        await Eventually.AssertAsync(
+            condition: "a different business key is a different downtime fact",
+            assertion: async token =>
+            {
+                using var scope = factory.Services.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                Assert.Equal(2, await db.ProcessedIntegrationEvents.AsNoTracking().CountAsync(token));
+                Assert.Equal(2, await db.WorkCenterUnavailabilities.AsNoTracking().CountAsync(token));
+            },
+            options: new EventuallyOptions(TimeSpan.FromSeconds(60), TimeSpan.FromMilliseconds(250), []));
     }
 
-    private static WebApplicationFactory<Program> CreateFactory(PoisonSwitch poison)
+    private static WebApplicationFactory<Program> CreateFactory(PoisonSwitch poison, ArrivalLog arrivals)
     {
         var settings = new Dictionary<string, string?>
         {
@@ -142,6 +199,11 @@ public sealed class MesAssetUnavailableRedisCapTransportTests
                 });
                 services.RemoveAll<IMesPlanningStore>();
                 services.AddSingleton(poison);
+                services.AddSingleton(arrivals);
+                services.Replace(ServiceDescriptor.Scoped<IMesAssetUnavailableCanonicalProcessor>(provider =>
+                    new RecordingProcessor(
+                        provider.GetRequiredService<MesAssetUnavailableCanonicalProcessor>(),
+                        provider.GetRequiredService<ArrivalLog>())));
                 services.AddScoped<IMesPlanningStore>(provider =>
                 {
                     var db = provider.GetRequiredService<ApplicationDbContext>();
@@ -182,6 +244,55 @@ public sealed class MesAssetUnavailableRedisCapTransportTests
                 Assert.Equal(1, await db.ScheduleResults.AsNoTracking().CountAsync(token));
             },
             options: new EventuallyOptions(TimeSpan.FromSeconds(90), TimeSpan.FromMilliseconds(250), []));
+
+    /// <summary>记录每一次真正到达 canonical processor 的信封——这是 replay/投递"被路由且被消费"的可观察边沿。</summary>
+    private sealed class ArrivalLog
+    {
+        private readonly ConcurrentQueue<Arrival> arrivals = new();
+
+        public int Total => arrivals.Count;
+
+        public int CountFor(string eventId) => arrivals.Count(x => x.EventId == eventId);
+
+        public Arrival Last(string eventId) => arrivals.Last(x => x.EventId == eventId);
+
+        public void Record(IIntegrationEventEnvelope envelope, string deviceAssetId, string reason, DateTimeOffset fromUtc) =>
+            arrivals.Enqueue(new Arrival(
+                envelope.EventId,
+                envelope.EventType,
+                envelope.EventVersion,
+                envelope.SourceService,
+                envelope.IdempotencyKey,
+                envelope.OccurredAtUtc,
+                envelope.OrganizationId,
+                envelope.EnvironmentId,
+                deviceAssetId,
+                reason,
+                fromUtc));
+
+        public sealed record Arrival(
+            string EventId,
+            string EventType,
+            int EventVersion,
+            string SourceService,
+            string IdempotencyKey,
+            DateTimeOffset OccurredAtUtc,
+            string OrganizationId,
+            string EnvironmentId,
+            string DeviceAssetId,
+            string Reason,
+            DateTimeOffset FromUtc);
+    }
+
+    private sealed class RecordingProcessor(IMesAssetUnavailableCanonicalProcessor inner, ArrivalLog arrivals)
+        : IMesAssetUnavailableCanonicalProcessor
+    {
+        public Task ProcessAsync(IIntegrationEventEnvelope integrationEvent, string deviceAssetId, string reason, DateTimeOffset fromUtc, CancellationToken cancellationToken)
+        {
+            arrivals.Record(integrationEvent, deviceAssetId, reason, fromUtc);
+            return inner.ProcessAsync(integrationEvent, deviceAssetId, reason, fromUtc, cancellationToken);
+        }
+    }
 
     private sealed class PoisonSwitch
     {

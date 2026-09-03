@@ -8,6 +8,7 @@ public static class MesIntegrationEventConsumerRegistrationExtensions
     public static IServiceCollection AddMesIntegrationEventConsumers(this IServiceCollection services)
     {
         services.AddScoped<MesAssetUnavailableCanonicalProcessor>();
+        services.AddScoped<IMesAssetUnavailableCanonicalProcessor>(provider => provider.GetRequiredService<MesAssetUnavailableCanonicalProcessor>());
         services.AddScoped<AssetUnavailableIntegrationEventHandlerForReschedule>();
         services.AddScoped<AssetUnavailableV2IntegrationEventHandlerForReschedule>();
         services.AddScoped<IIntegrationEventDeadLetterReplayHandler, MesAssetUnavailableDeadLetterReplayHandler>();

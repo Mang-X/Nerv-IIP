@@ -1,3 +1,4 @@
+using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using NetCorePal.Extensions.Primitives;
@@ -198,11 +199,7 @@ public sealed class MesPersistenceContractTests
         using (var scope = services.CreateScope())
         {
             var handler = new AssetUnavailableIntegrationEventHandlerForReschedule(
-                new MesAssetUnavailableCanonicalProcessor(
-                    scope.ServiceProvider.GetRequiredService<IMesPlanningStore>(),
-                    scope.ServiceProvider.GetRequiredService<RuleScheduler>(),
-                    new MesRescheduleOptions { AutoRescheduleOnAssetUnavailable = true },
-                    scope.ServiceProvider.GetRequiredService<ApplicationDbContext>()),
+                new MesAssetUnavailableCanonicalProcessor(scope.ServiceProvider.GetRequiredService<ISender>()),
                 new InMemoryIntegrationEventDeadLetterStore());
 
             await handler.HandleAsync(CreateUnavailableEvent(now), CancellationToken.None);
@@ -242,7 +239,9 @@ public sealed class MesPersistenceContractTests
     [Fact]
     public async Task Maintenance_unavailability_constraints_are_scoped_to_event_organization_and_environment()
     {
-        var services = CreateServices(nameof(Maintenance_unavailability_constraints_are_scoped_to_event_organization_and_environment));
+        var services = CreateServices(
+            nameof(Maintenance_unavailability_constraints_are_scoped_to_event_organization_and_environment),
+            autoRescheduleOnAssetUnavailable: false);
         var now = DateTimeOffset.Parse("2026-05-23T08:00:00Z");
 
         using var scope = services.CreateScope();
@@ -255,11 +254,7 @@ public sealed class MesPersistenceContractTests
         await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().SaveChangesAsync();
 
         var handler = new AssetUnavailableIntegrationEventHandlerForReschedule(
-            new MesAssetUnavailableCanonicalProcessor(
-                store,
-                scope.ServiceProvider.GetRequiredService<RuleScheduler>(),
-                new MesRescheduleOptions { AutoRescheduleOnAssetUnavailable = false },
-                scope.ServiceProvider.GetRequiredService<ApplicationDbContext>()),
+            new MesAssetUnavailableCanonicalProcessor(scope.ServiceProvider.GetRequiredService<ISender>()),
             new InMemoryIntegrationEventDeadLetterStore());
         await handler.HandleAsync(CreateUnavailableEvent(now, organizationId: "org-b"), CancellationToken.None);
 
@@ -3585,7 +3580,7 @@ public sealed class MesPersistenceContractTests
         Assert.Equal("WC-A", task.WorkCenterId);
     }
 
-    private static ServiceProvider CreateServices(string databaseName)
+    private static ServiceProvider CreateServices(string databaseName, bool autoRescheduleOnAssetUnavailable = true)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -3594,6 +3589,8 @@ public sealed class MesPersistenceContractTests
         services.AddScoped<IOperationTaskRepository, OperationTaskRepository>();
         services.AddScoped<IMesPlanningStore, PersistentMesPlanningStore>();
         services.AddSingleton<RuleScheduler>();
+        services.AddSingleton(new MesRescheduleOptions { AutoRescheduleOnAssetUnavailable = autoRescheduleOnAssetUnavailable });
+        services.AddScoped<IMesAssetUnavailableInboxClaimCoordinator, PostgreSqlMesAssetUnavailableInboxClaimCoordinator>();
         return services.BuildServiceProvider();
     }
 

@@ -1328,7 +1328,7 @@ $mesSaveBoundaryIdentities = @(
     'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Stock_movement_posting_failed_unknown_prefix_early_return_persists_only_inbox'
 )
 $mesCapIdentitySet = [Collections.Generic.HashSet[string]]::new([string[]]@($mesCapPostgresRules[0].testIdentities), [StringComparer]::Ordinal)
-Assert-Equal 15 @($mesCapPostgresRules[0].testIdentities).Count 'The MES CAP policy rule must freeze the existing three subscription proofs, all nine save-boundary proofs and the three #2966 asset-unavailable v1/v2 inbox proofs.'
+Assert-Equal 18 @($mesCapPostgresRules[0].testIdentities).Count 'The MES CAP policy rule must freeze the existing three subscription proofs, all nine save-boundary proofs and the six #2966 asset-unavailable v1/v2 inbox proofs.'
 Assert-True (@($mesSaveBoundaryIdentities | Where-Object { -not $mesCapIdentitySet.Contains($_) }).Count -eq 0) 'The MES CAP policy rule must own all nine save-boundary identities.'
 Assert-True (@($mesSaveBoundaryIdentities | Where-Object { $_ -cnotmatch [string]$mesCapPostgresRules[0].testPattern }).Count -eq 0) 'The MES CAP policy pattern must match every save-boundary identity.'
 $brokenClosure = ($livePolicy | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100)

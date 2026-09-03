@@ -645,6 +645,46 @@ public sealed class IntegrationEventReliabilityTests
         return index.Properties.Select(property => property.Name).ToArray();
     }
 
+    [Fact]
+    public async Task Consumer_guard_rejects_empty_causation_id_by_default_but_accepts_it_when_opted_in()
+    {
+        var strictStore = new InMemoryIntegrationEventDeadLetterStore();
+        var strictGuard = new IntegrationEventConsumerGuard<SampleIntegrationEvent>(
+            new IntegrationEventEnvelopeValidator(),
+            strictStore,
+            new IntegrationEventConsumerOptions("sample.consumer", "sample.Event", 1));
+        var strictInvoked = false;
+        await strictGuard.HandleAsync(
+            CreateValidEvent("event-empty-causation-strict") with { CausationId = string.Empty },
+            (_, _) => { strictInvoked = true; return Task.CompletedTask; },
+            CancellationToken.None);
+        Assert.False(strictInvoked);
+        var rejected = Assert.Single(await strictStore.ListAsync("sample.consumer", IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+        Assert.Equal(IntegrationEventEnvelopeValidator.MissingEnvelopeFieldFailureCode, rejected.FailureCode);
+
+        var lenientStore = new InMemoryIntegrationEventDeadLetterStore();
+        var lenientGuard = new IntegrationEventConsumerGuard<SampleIntegrationEvent>(
+            new IntegrationEventEnvelopeValidator(),
+            lenientStore,
+            new IntegrationEventConsumerOptions("sample.consumer", "sample.Event", 1) { AllowEmptyCausationId = true });
+        var lenientInvoked = false;
+        await lenientGuard.HandleAsync(
+            CreateValidEvent("event-empty-causation-lenient") with { CausationId = string.Empty },
+            (_, _) => { lenientInvoked = true; return Task.CompletedTask; },
+            CancellationToken.None);
+        Assert.True(lenientInvoked);
+        Assert.Empty(await lenientStore.ListAsync("sample.consumer", IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+
+        // 选项只放行"空串"，null / 纯空白仍是缺失字段。
+        var whitespaceInvoked = false;
+        await lenientGuard.HandleAsync(
+            CreateValidEvent("event-whitespace-causation-lenient") with { CausationId = "   " },
+            (_, _) => { whitespaceInvoked = true; return Task.CompletedTask; },
+            CancellationToken.None);
+        Assert.False(whitespaceInvoked);
+        Assert.Single(await lenientStore.ListAsync("sample.consumer", IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+    }
+
     private static SampleIntegrationEvent CreateValidEvent(string eventId)
     {
         return new SampleIntegrationEvent(

@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260903002414_AddMesProcessedEventInstanceIdentity")]
+    [Migration("20260903012322_AddMesProcessedEventInstanceIdentity")]
     partial class AddMesProcessedEventInstanceIdentity
     {
         /// <inheritdoc />
@@ -3407,7 +3407,7 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)")
-                        .HasComment("Source integration event identifier retained for traceability; idempotency uses IdempotencyKey.");
+                        .HasComment("Source integration event identifier; unique per consumer as the event-instance identity alongside the IdempotencyKey business identity.");
 
                     b.Property<string>("EventType")
                         .IsRequired()
@@ -3423,7 +3423,7 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)")
-                        .HasComment("Deterministic BusinessMES idempotency key unique within a consumer.");
+                        .HasComment("Deterministic cross-version business identity of the consumed fact, unique within a consumer alongside the EventId instance identity.");
 
                     b.Property<DateTimeOffset>("ProcessedAtUtc")
                         .HasColumnType("timestamp with time zone")

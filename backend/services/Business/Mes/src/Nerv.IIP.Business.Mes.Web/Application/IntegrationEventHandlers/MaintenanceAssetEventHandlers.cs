@@ -1,4 +1,5 @@
 using DotNetCore.CAP;
+using MediatR;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 using Nerv.IIP.Business.Mes.Infrastructure;
@@ -22,7 +23,7 @@ public sealed class MesRescheduleOptions
 
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Maintenance.AssetUnavailableIntegrationEvent", ConsumerName)]
 public sealed class AssetUnavailableIntegrationEventHandlerForReschedule(
-    MesAssetUnavailableCanonicalProcessor processor,
+    IMesAssetUnavailableCanonicalProcessor processor,
     IIntegrationEventDeadLetterStore deadLetterStore)
     : IIntegrationEventHandler<AssetUnavailableIntegrationEvent>, ICapSubscribe
 {
@@ -62,7 +63,7 @@ public sealed class AssetUnavailableIntegrationEventHandlerForReschedule(
 
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Maintenance.AssetUnavailableV2IntegrationEvent", ConsumerName)]
 public sealed class AssetUnavailableV2IntegrationEventHandlerForReschedule(
-    MesAssetUnavailableCanonicalProcessor processor,
+    IMesAssetUnavailableCanonicalProcessor processor,
     IIntegrationEventDeadLetterStore deadLetterStore)
     : IIntegrationEventHandler<AssetUnavailableV2IntegrationEvent>, ICapSubscribe
 {
@@ -74,7 +75,12 @@ public sealed class AssetUnavailableV2IntegrationEventHandlerForReschedule(
         new IntegrationEventConsumerOptions(
             ConsumerName,
             MaintenanceIntegrationEventTypes.AssetUnavailable,
-            MaintenanceIntegrationEventVersions.V2));
+            MaintenanceIntegrationEventVersions.V2)
+        {
+            // #2965 的 v2 wire contract 把缺失/空的 causationId 归一为合法空串（converter 的 `?? string.Empty`），
+            // 共享 guard 默认把空串当 missing-envelope-field 拒收；v2 消费者按已合并契约接受它。v1 保持原样。
+            AllowEmptyCausationId = true,
+        });
 
     public Task HandleAsync(AssetUnavailableV2IntegrationEvent integrationEvent, CancellationToken cancellationToken) =>
         consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
@@ -144,11 +150,22 @@ public sealed class AssetUnavailableV2IntegrationEventHandlerForReschedule(
             null);
 }
 
-public sealed class MesAssetUnavailableCanonicalProcessor(
-    IMesPlanningStore store,
-    RuleScheduler scheduler,
-    MesRescheduleOptions options,
-    ApplicationDbContext dbContext)
+public interface IMesAssetUnavailableCanonicalProcessor
+{
+    Task ProcessAsync(
+        IIntegrationEventEnvelope integrationEvent,
+        string deviceAssetId,
+        string reason,
+        DateTimeOffset fromUtc,
+        CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// v1/v2 handler 汇入的单一 canonical 入口：只负责把信封与已按版本取好的原因/时间交给
+/// <see cref="ProcessAssetUnavailableCommand"/>，claim、副作用与事务边界全部在 command 的 UoW 内完成。
+/// 姿势照 #2967（Scheduling）：processor 不再自己持有 DbContext 或手动 SaveChanges。
+/// </summary>
+public sealed class MesAssetUnavailableCanonicalProcessor(ISender sender) : IMesAssetUnavailableCanonicalProcessor
 {
     public async Task ProcessAsync(
         IIntegrationEventEnvelope integrationEvent,
@@ -158,42 +175,9 @@ public sealed class MesAssetUnavailableCanonicalProcessor(
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(integrationEvent);
-        if (!await MesProcessedIntegrationEventInbox.TryRecordAsync(
-                dbContext,
-                AssetUnavailableIntegrationEventHandlerForReschedule.ConsumerName,
-                integrationEvent,
-                cancellationToken))
-        {
-            return;
-        }
-
-        var workCenterId = await store.ResolveWorkCenterIdAsync(
-            integrationEvent.OrganizationId,
-            integrationEvent.EnvironmentId,
-            deviceAssetId,
+        await sender.Send(
+            new ProcessAssetUnavailableCommand(integrationEvent, deviceAssetId, reason, fromUtc),
             cancellationToken);
-        store.AddUnavailability(new WorkCenterUnavailability(
-            workCenterId,
-            fromUtc,
-            null,
-            reason,
-            deviceAssetId,
-            integrationEvent.OrganizationId,
-            integrationEvent.EnvironmentId));
-
-        if (options.AutoRescheduleOnAssetUnavailable)
-        {
-            var plan = scheduler.Schedule(
-                await store.GetScheduleOperationsAsync(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, cancellationToken),
-                await store.GetUnavailabilitiesAsync(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, cancellationToken));
-            await store.AddScheduleResultAsync(
-                RescheduleTrigger.AssetUnavailable,
-                integrationEvent.OccurredAtUtc,
-                plan,
-                cancellationToken: cancellationToken);
-        }
-
-        await dbContext.SaveChangesAsync(cancellationToken);
     }
 }
 

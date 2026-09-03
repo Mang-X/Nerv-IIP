@@ -13,11 +13,11 @@ public sealed class ProcessedIntegrationEventEntityTypeConfiguration : IEntityTy
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).UseGuidVersion7ValueGenerator().HasComment("Processed integration event identifier.");
         builder.Property(x => x.ConsumerName).IsRequired().HasMaxLength(256).HasComment("BusinessMES integration event consumer name.");
-        builder.Property(x => x.EventId).IsRequired().HasMaxLength(256).HasComment("Source integration event identifier retained for traceability; idempotency uses IdempotencyKey.");
+        builder.Property(x => x.EventId).IsRequired().HasMaxLength(256).HasComment("Source integration event identifier; unique per consumer as the event-instance identity alongside the IdempotencyKey business identity.");
         builder.Property(x => x.EventType).IsRequired().HasMaxLength(256).HasComment("Integration event type.");
         builder.Property(x => x.EventVersion).HasComment("Integration event contract version.");
         builder.Property(x => x.SourceService).IsRequired().HasMaxLength(128).HasComment("Service that produced the integration event.");
-        builder.Property(x => x.IdempotencyKey).IsRequired().HasMaxLength(512).HasComment("Deterministic BusinessMES idempotency key unique within a consumer.");
+        builder.Property(x => x.IdempotencyKey).IsRequired().HasMaxLength(512).HasComment("Deterministic cross-version business identity of the consumed fact, unique within a consumer alongside the EventId instance identity.");
         builder.Property(x => x.ProcessedAtUtc).HasComment("UTC time when BusinessMES processed the event.");
 
         builder.HasIndex(x => new { x.ConsumerName, x.IdempotencyKey })

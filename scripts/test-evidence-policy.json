@@ -1229,7 +1229,7 @@
       "id": "mes-cap-postgres",
       "sourceId": "mes-cap-postgres",
       "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.Mes\\.Web\\.Tests\\.(?:MaintenanceEventHandlerTests\\.PostgreSQL_(?:v1_v2_concurrent_claims_commit_one_business_effect_across_independent_transactions|idempotency_unique_constraint_rejects_its_equivalent_wrong_mutation|event_id_unique_constraint_rejects_its_equivalent_wrong_mutation)|MesCapSaveBoundaryPostgresTests\\..+|MesCapSubscriptionTests\\..+)$",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Mes\\.Web\\.Tests\\.(?:MaintenanceEventHandlerTests\\.PostgreSQL_(?:v1_v2_concurrent_claims_commit_one_business_effect_across_independent_transactions|same_event_id_with_different_business_keys_commits_one_business_effect_across_independent_transactions|true_duplicate_event_instances_are_unrepresentable_before_the_migration|migration_fails_closed_on_ambiguous_event_instance_history|idempotency_unique_constraint_rejects_its_equivalent_wrong_mutation|event_id_unique_constraint_rejects_its_equivalent_wrong_mutation)|MesCapSaveBoundaryPostgresTests\\..+|MesCapSubscriptionTests\\..+)$",
       "reasonPattern": "^PostgreSQL unavailable for MES CAP acceptance test: .+$",
       "allowedLanes": [
         "backend"
@@ -1254,9 +1254,12 @@
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSubscriptionTests.PostgreSQL_cap_with_inmemory_messaging_delivers_asset_unavailable_event_to_mes_consumer",
         "Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_v1_v2_concurrent_claims_commit_one_business_effect_across_independent_transactions",
         "Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_idempotency_unique_constraint_rejects_its_equivalent_wrong_mutation",
-        "Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_event_id_unique_constraint_rejects_its_equivalent_wrong_mutation"
+        "Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_event_id_unique_constraint_rejects_its_equivalent_wrong_mutation",
+        "Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_same_event_id_with_different_business_keys_commits_one_business_effect_across_independent_transactions",
+        "Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_true_duplicate_event_instances_are_unrepresentable_before_the_migration",
+        "Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_migration_fails_closed_on_ambiguous_event_instance_history"
       ],
-      "expectedRuntimeTestCount": 15
+      "expectedRuntimeTestCount": 18
     },
     {
       "id": "erp-world-history",
