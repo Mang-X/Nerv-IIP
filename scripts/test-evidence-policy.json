@@ -927,7 +927,7 @@
       "id": "scheduling-postgres",
       "sourceId": "scheduling-postgres",
       "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.Scheduling\\.Web\\.Tests\\.(?:OrderUrgencyRetentionPostgresCapacityTests|RecordSchedulePlanInvalidationsPostgresProfileTests|ScheduleReleaseGovernancePostgresProfileTests)\\..+$",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Scheduling\\.Web\\.Tests\\.(?:AssetUnavailableInboxPostgresProfileTests|OrderUrgencyRetentionPostgresCapacityTests|RecordSchedulePlanInvalidationsPostgresProfileTests|ScheduleReleaseGovernancePostgresProfileTests)\\..+$",
       "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run Scheduling PostgreSQL profile tests\\.$",
       "allowedLanes": [
         "backend"
@@ -938,6 +938,12 @@
       "expiresOn": null,
       "exitCondition": null,
       "testIdentities": [
+        "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Concurrent_claims_with_different_event_ids_and_same_business_key_commit_one_result",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Concurrent_claims_with_same_event_id_and_different_business_keys_commit_one_result",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Event_id_unique_index_wrong_column_mutation_is_rejected",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Idempotency_key_unique_index_wrong_column_mutation_is_rejected",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Migration_fails_closed_on_historical_event_instance_with_ambiguous_business_keys",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Migration_upgrades_distinct_historical_event_instances_and_old_schema_already_forbids_same_key_duplicates",
         "Nerv.IIP.Business.Scheduling.Web.Tests.OrderUrgencyRetentionPostgresCapacityTests.Representative_capacity_scan_and_overlapping_workers_are_safe_on_PostgreSQL",
         "Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_calendar_event_handler_changes_the_generated_plan_query_state_once",
         "Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_records_generated_calendar_invalidation_without_matching_released_or_other_calendar_plans",
@@ -945,7 +951,7 @@
         "Nerv.IIP.Business.Scheduling.Web.Tests.ScheduleReleaseGovernancePostgresProfileTests.Concurrent_releases_converge_to_one_active_plan_with_monotonic_revisions",
         "Nerv.IIP.Business.Scheduling.Web.Tests.ScheduleReleaseGovernancePostgresProfileTests.Migration_normalizes_historical_duplicate_releases_with_exact_timestamp_tie"
       ],
-      "expectedRuntimeTestCount": 6
+      "expectedRuntimeTestCount": 12
     },
     {
       "id": "scheduling-postgres-redis",

@@ -108,7 +108,8 @@
         "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Concurrent_claims_with_same_event_id_and_different_business_keys_commit_one_result",
         "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Event_id_unique_index_wrong_column_mutation_is_rejected",
         "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Idempotency_key_unique_index_wrong_column_mutation_is_rejected",
-        "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Migration_deterministically_keeps_earliest_historical_event_instance"
+        "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Migration_fails_closed_on_historical_event_instance_with_ambiguous_business_keys",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Migration_upgrades_distinct_historical_event_instances_and_old_schema_already_forbids_same_key_duplicates"
       ]
     },
     {

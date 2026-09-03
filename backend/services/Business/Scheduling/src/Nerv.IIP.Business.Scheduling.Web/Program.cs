@@ -152,7 +152,6 @@ try
     builder.Services.AddScoped<IntegrationEventDeadLetterReplayExecutor>();
     builder.Services.AddScoped<IIntegrationEventDeadLetterReplayHandler, SchedulingAssetUnavailableDeadLetterReplayHandler>();
     builder.Services.AddScoped<AssetUnavailableCanonicalProcessor>();
-    builder.Services.AddScoped<RecordSchedulePlanInvalidationsCommandHandler>();
     builder.Services.AddScoped<IAssetUnavailableCanonicalProcessor>(sp => sp.GetRequiredService<AssetUnavailableCanonicalProcessor>());
     builder.Services.AddScoped<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans>();
     builder.Services.AddScoped<AssetUnavailableV2IntegrationEventHandlerForInvalidateSchedulePlans>();

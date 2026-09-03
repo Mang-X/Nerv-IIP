@@ -9,6 +9,7 @@ using Nerv.IIP.Business.Scheduling.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Maintenance;
 using Nerv.IIP.Testing;
+using Npgsql;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 
@@ -23,30 +24,87 @@ public sealed class AssetUnavailableInboxPostgresProfileTests
     public Task Concurrent_claims_with_different_event_ids_and_same_business_key_commit_one_result() =>
         RunRaceAsync("event-a", "key-shared", "event-b", "key-shared");
 
+    private const string PreIdentityMigration = "20260731210209_PersistSchedulePlanBlockWindows";
+
     [SchedulingPostgresFact]
-    public async Task Migration_deterministically_keeps_earliest_historical_event_instance()
+    public async Task Migration_upgrades_distinct_historical_event_instances_and_old_schema_already_forbids_same_key_duplicates()
     {
         await SchedulingPostgresLaneDatabase.ResetSchemaAsync();
         await using var provider = CreateProvider();
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var migrator = db.Database.GetService<IMigrator>();
-        await migrator.MigrateAsync("20260731210209_PersistSchedulePlanBlockWindows");
+        await migrator.MigrateAsync(PreIdentityMigration);
         await db.Database.ExecuteSqlRawAsync("""
             INSERT INTO scheduling.processed_integration_events
                 ("Id", "ConsumerName", "EventId", "EventType", "EventVersion", "SourceService", "IdempotencyKey", "ProcessedAtUtc")
             VALUES
-                ('00000000-0000-0000-0000-000000000002', 'business-scheduling.asset-unavailable', 'historical-event',
-                 'maintenance.AssetUnavailable', 1, 'maintenance', 'historical-key-later', '2026-06-01T10:00:00Z'),
-                ('00000000-0000-0000-0000-000000000001', 'business-scheduling.asset-unavailable', 'historical-event',
-                 'maintenance.AssetUnavailable', 1, 'maintenance', 'historical-key-earlier', '2026-06-01T09:00:00Z');
+                ('00000000-0000-0000-0000-000000000001', 'business-scheduling.asset-unavailable', 'historical-event-a',
+                 'maintenance.AssetUnavailable', 1, 'maintenance', 'historical-key-a', '2026-06-01T09:00:00Z'),
+                ('00000000-0000-0000-0000-000000000002', 'business-scheduling.asset-unavailable', 'historical-event-b',
+                 'maintenance.AssetUnavailable', 1, 'maintenance', 'historical-key-b', '2026-06-01T10:00:00Z');
             """);
+        // 旧 schema 已经不允许同 consumer 下重复的 IdempotencyKey：迁移不需要、也不应该带“同 key 自动清理”分支。
+        var sameKeyRejection = await Assert.ThrowsAsync<PostgresException>(() => db.Database.ExecuteSqlRawAsync("""
+            INSERT INTO scheduling.processed_integration_events
+                ("Id", "ConsumerName", "EventId", "EventType", "EventVersion", "SourceService", "IdempotencyKey", "ProcessedAtUtc")
+            VALUES
+                ('00000000-0000-0000-0000-000000000003', 'business-scheduling.asset-unavailable', 'historical-event-a',
+                 'maintenance.AssetUnavailable', 1, 'maintenance', 'historical-key-a', '2026-06-01T11:00:00Z');
+            """));
+        Assert.Equal(PostgresErrorCodes.UniqueViolation, sameKeyRejection.SqlState);
+        Assert.Equal("ux_processed_integration_events_consumer_idempotency_key", sameKeyRejection.ConstraintName);
 
         await migrator.MigrateAsync();
 
-        var survivor = Assert.Single(await db.ProcessedIntegrationEvents.AsNoTracking().ToArrayAsync());
-        Assert.Equal("historical-key-earlier", survivor.IdempotencyKey);
+        var rows = await db.ProcessedIntegrationEvents.AsNoTracking().OrderBy(x => x.IdempotencyKey).ToArrayAsync();
+        Assert.Equal(["historical-key-a", "historical-key-b"], rows.Select(x => x.IdempotencyKey));
         await AssertExactUniqueIndexesAsync(db);
+    }
+
+    [SchedulingPostgresFact]
+    public async Task Migration_fails_closed_on_historical_event_instance_with_ambiguous_business_keys()
+    {
+        await SchedulingPostgresLaneDatabase.ResetSchemaAsync();
+        await using var provider = CreateProvider();
+        await using (var setup = provider.CreateAsyncScope())
+        {
+            var setupDb = setup.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await setupDb.Database.GetService<IMigrator>().MigrateAsync(PreIdentityMigration);
+            // 同一事件下出现过两个业务键：删掉任一行都会让该业务键的 inbox 痕迹消失，迁移必须中止。
+            await setupDb.Database.ExecuteSqlRawAsync("""
+                INSERT INTO scheduling.processed_integration_events
+                    ("Id", "ConsumerName", "EventId", "EventType", "EventVersion", "SourceService", "IdempotencyKey", "ProcessedAtUtc")
+                VALUES
+                    ('00000000-0000-0000-0000-000000000002', 'business-scheduling.asset-unavailable', 'historical-event',
+                     'maintenance.AssetUnavailable', 1, 'maintenance', 'historical-key-later', '2026-06-01T10:00:00Z'),
+                    ('00000000-0000-0000-0000-000000000001', 'business-scheduling.asset-unavailable', 'historical-event',
+                     'maintenance.AssetUnavailable', 1, 'maintenance', 'historical-key-earlier', '2026-06-01T09:00:00Z');
+                """);
+        }
+
+        PostgresException failure;
+        await using (var upgrade = provider.CreateAsyncScope())
+        {
+            var upgradeDb = upgrade.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            failure = await Assert.ThrowsAsync<PostgresException>(() => upgradeDb.Database.GetService<IMigrator>().MigrateAsync());
+        }
+
+        Assert.Equal(PostgresErrorCodes.IntegrityConstraintViolation, failure.SqlState);
+        Assert.Contains("AddSchedulingProcessedEventInstanceIdentity aborted", failure.MessageText, StringComparison.Ordinal);
+        Assert.Contains(
+            "business-scheduling.asset-unavailable/historical-event: historical-key-earlier@2026-06-01T09:00:00.000000Z, historical-key-later@2026-06-01T10:00:00.000000Z",
+            failure.MessageText,
+            StringComparison.Ordinal);
+
+        await using var verify = provider.CreateAsyncScope();
+        var db = verify.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var rows = await db.ProcessedIntegrationEvents.AsNoTracking().OrderBy(x => x.IdempotencyKey).ToArrayAsync();
+        Assert.Equal(["historical-key-earlier", "historical-key-later"], rows.Select(x => x.IdempotencyKey));
+        Assert.DoesNotContain(
+            "20260831142730_AddSchedulingProcessedEventInstanceIdentity",
+            await db.Database.GetAppliedMigrationsAsync());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => AssertExactUniqueIndexesAsync(db));
     }
 
     [SchedulingPostgresFact]
