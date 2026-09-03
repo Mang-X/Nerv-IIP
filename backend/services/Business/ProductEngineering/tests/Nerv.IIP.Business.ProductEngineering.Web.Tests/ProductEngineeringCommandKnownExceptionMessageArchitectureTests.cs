@@ -2,6 +2,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using NetCorePal.Extensions.Primitives;
+using System.Text.RegularExpressions;
 
 namespace Nerv.IIP.Business.ProductEngineering.Web.Tests;
 
@@ -9,6 +10,8 @@ public sealed class ProductEngineeringCommandKnownExceptionMessageArchitectureTe
 {
     private const string ReleaseCommandsPath =
         "backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Commands/ProductEngineeringReleaseCommands.cs";
+    private const string ScheduledReleasePath =
+        "backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Scheduling/EngineeringChangeScheduledReleaseService.cs";
     private const string StandardOperationCommandsPath =
         "backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Commands/StandardOperations/StandardOperationCommands.cs";
     private const string ArchiveProductionVersionCommandPath =
@@ -21,6 +24,7 @@ public sealed class ProductEngineeringCommandKnownExceptionMessageArchitectureTe
     private static readonly IReadOnlyCollection<string> CommandSourcePaths =
     [
         ReleaseCommandsPath,
+        ScheduledReleasePath,
         StandardOperationCommandsPath,
         ArchiveProductionVersionCommandPath,
         CreateProductionVersionCommandPath,
@@ -54,39 +58,65 @@ public sealed class ProductEngineeringCommandKnownExceptionMessageArchitectureTe
         Excluded(ReleaseCommandsPath, "ProductEngineeringReleaseValidation", "AsKnownException<T>", 2, "dynamic domain-message helper"),
         Excluded(ReleaseCommandsPath, "ProductEngineeringReleaseValidation", "AsKnownException", 2, "dynamic domain-message helper"),
 
-        // The provider boundary is not part of this command-message layer.
-        Excluded(ReleaseCommandsPath, "HttpProductEngineeringMasterDataReferenceValidator", "ValidateActiveReferencesAsync", 3, "provider boundary"),
+        // These three direct sites are already compliant Chinese provider-boundary messages on base.
+        Excluded(ReleaseCommandsPath, "HttpProductEngineeringMasterDataReferenceValidator", "ValidateActiveReferencesAsync", 3, "base已合规中文 provider boundary"),
 
-        // Engineering Change and scheduled/internal command paths remain separate layers.
-        Excluded(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "ResolveAffectedVersionAsync", 1, "Engineering Change"),
-        Excluded(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "EnsureAcyclicSupersedeTopology", 3, "Engineering Change"),
-        Excluded(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "SupersedeCycleException", 1, "Engineering Change"),
-        Excluded(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "NormalizeRequired", 1, "Engineering Change"),
-        Excluded(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "GetSuccessorEngineeringBomAsync", 1, "Engineering Change"),
-        Excluded(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "GetSuccessorManufacturingBomAsync", 1, "Engineering Change"),
-        Excluded(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "GetSuccessorRoutingAsync", 1, "Engineering Change"),
-        Excluded(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "GetSuccessorProductionVersionAsync", 1, "Engineering Change"),
-        Excluded(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "GetSuccessorEngineeringDocumentAsync", 1, "Engineering Change"),
-        Excluded(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "ArchiveEngineeringBom", 1, "Engineering Change", asKnownExceptionCallCount: 1),
-        Excluded(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "ArchiveManufacturingBom", 1, "Engineering Change", asKnownExceptionCallCount: 1),
-        Excluded(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "ArchiveRouting", 1, "Engineering Change", asKnownExceptionCallCount: 1),
-        Excluded(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "ArchiveProductionVersion", 1, "Engineering Change", asKnownExceptionCallCount: 2),
-        Excluded(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "ArchiveEngineeringDocument", 1, "Engineering Change", asKnownExceptionCallCount: 1),
-        Excluded(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "GetEngineeringDocumentRepository", 1, "Engineering Change"),
-        Excluded(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "EnsurePublishedSuccessor", 1, "Engineering Change"),
-        Excluded(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "EnsureActiveSuccessor", 1, "Engineering Change"),
+        // Engineering Change public synchronous release and archive paths are the target layer.
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "Handle", 0, asKnownExceptionCallCount: 1),
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "ResolveAffectedVersionAsync", 1),
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "EnsureAcyclicSupersedeTopology", 3),
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "SupersedeCycleException", 1),
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "NormalizeRequired", 1),
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "GetSuccessorEngineeringBomAsync", 1),
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "GetSuccessorManufacturingBomAsync", 1),
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "GetSuccessorRoutingAsync", 1),
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "GetSuccessorProductionVersionAsync", 1),
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "GetSuccessorEngineeringDocumentAsync", 1),
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "ArchiveEngineeringBom", 1, asKnownExceptionCallCount: 1),
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "ArchiveManufacturingBom", 1, asKnownExceptionCallCount: 1),
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "ArchiveRouting", 1, asKnownExceptionCallCount: 1),
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "ArchiveProductionVersion", 1, asKnownExceptionCallCount: 2),
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "ArchiveEngineeringDocument", 1, asKnownExceptionCallCount: 1),
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "GetEngineeringDocumentRepository", 1),
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "EnsurePublishedSuccessor", 1),
+        Target(ReleaseCommandsPath, "ReleaseEngineeringChangeCommandHandler", "EnsureActiveSuccessor", 1),
+        // Scheduled promotion remains an internal background command and is excluded from this public layer.
         Excluded(ReleaseCommandsPath, "PromoteScheduledEngineeringChangeCommandHandler", "Handle", 1, "scheduled/internal command", asKnownExceptionCallCount: 1),
-        Excluded(ReleaseCommandsPath, "CancelScheduledEngineeringChangeCommandHandler", "Handle", 1, "scheduled/internal command", asKnownExceptionCallCount: 1),
-        Excluded(ReleaseCommandsPath, "RescheduleEngineeringChangeCommandHandler", "Handle", 1, "scheduled/internal command", asKnownExceptionCallCount: 1),
-        Excluded(ReleaseCommandsPath, "RejectingEngineeringApprovalVerifier", "EnsureApprovedAsync", 1, "Engineering Change"),
-        Excluded(ReleaseCommandsPath, "HttpEngineeringApprovalVerifier", "EnsureApprovedAsync", 3, "Engineering Change"),
-        Excluded(ReleaseCommandsPath, "HttpEngineeringApprovalVerifier", "ValidateApprovedChain", 1, "Engineering Change"),
+        // The archive resolver is only reached by the background scheduler and remains excluded.
+        Excluded(ScheduledReleasePath, "ScheduledEngineeringChangeArchiveResolver", "ResolveAffectedVersionAsync", 1, "scheduler/background"),
+        Excluded(ScheduledReleasePath, "ScheduledEngineeringChangeArchiveResolver", "GetSuccessorEngineeringBomAsync", 1, "scheduler/background"),
+        Excluded(ScheduledReleasePath, "ScheduledEngineeringChangeArchiveResolver", "GetSuccessorManufacturingBomAsync", 1, "scheduler/background"),
+        Excluded(ScheduledReleasePath, "ScheduledEngineeringChangeArchiveResolver", "GetSuccessorRoutingAsync", 1, "scheduler/background"),
+        Excluded(ScheduledReleasePath, "ScheduledEngineeringChangeArchiveResolver", "GetSuccessorProductionVersionAsync", 1, "scheduler/background"),
+        Excluded(ScheduledReleasePath, "ScheduledEngineeringChangeArchiveResolver", "GetSuccessorEngineeringDocumentAsync", 1, "scheduler/background"),
+        Excluded(ScheduledReleasePath, "ScheduledEngineeringChangeArchiveResolver", "ArchiveEngineeringBom", 1, "scheduler/background", asKnownExceptionCallCount: 1),
+        Excluded(ScheduledReleasePath, "ScheduledEngineeringChangeArchiveResolver", "ArchiveManufacturingBom", 1, "scheduler/background", asKnownExceptionCallCount: 1),
+        Excluded(ScheduledReleasePath, "ScheduledEngineeringChangeArchiveResolver", "ArchiveRouting", 1, "scheduler/background", asKnownExceptionCallCount: 1),
+        Excluded(ScheduledReleasePath, "ScheduledEngineeringChangeArchiveResolver", "ArchiveProductionVersion", 1, "scheduler/background", asKnownExceptionCallCount: 2),
+        Excluded(ScheduledReleasePath, "ScheduledEngineeringChangeArchiveResolver", "ArchiveEngineeringDocument", 1, "scheduler/background", asKnownExceptionCallCount: 1),
+        Excluded(ScheduledReleasePath, "ScheduledEngineeringChangeArchiveResolver", "GetEngineeringDocumentRepository", 1, "scheduler/background"),
+        Excluded(ScheduledReleasePath, "ScheduledEngineeringChangeArchiveResolver", "EnsurePublishedSuccessor", 1, "scheduler/background"),
+        Excluded(ScheduledReleasePath, "ScheduledEngineeringChangeArchiveResolver", "EnsureActiveSuccessor", 1, "scheduler/background"),
+        Target(ReleaseCommandsPath, "CancelScheduledEngineeringChangeCommandHandler", "Handle", 1, asKnownExceptionCallCount: 1),
+        Target(ReleaseCommandsPath, "RescheduleEngineeringChangeCommandHandler", "Handle", 1, asKnownExceptionCallCount: 1),
+        // The fallback verifier fails six-step step 1: no production synchronous root reaches it after DI binding.
+        Excluded(ReleaseCommandsPath, "RejectingEngineeringApprovalVerifier", "EnsureApprovedAsync", 1, "六步第1步失败：Program.cs:46 生产注册 HttpEngineeringApprovalVerifier，fallback 同步根不可达"),
+        Target(ReleaseCommandsPath, "HttpEngineeringApprovalVerifier", "EnsureApprovedAsync", 3),
+        Target(ReleaseCommandsPath, "HttpEngineeringApprovalVerifier", "ValidateApprovedChain", 1),
     ];
 
     [Fact]
     public void Command_known_exception_messages_have_a_closed_static_and_excluded_ledger()
     {
         var repositoryRoot = FindRepositoryRoot();
+        var programPath = Path.Combine(repositoryRoot, "backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Program.cs");
+        var programText = File.ReadAllText(programPath);
+        var approvalRegistrations = Regex.Matches(
+                programText,
+                @"Add(?:HttpClient|Scoped|Transient|Singleton)\s*<\s*IEngineeringApprovalVerifier\s*,\s*(?<implementation>[A-Za-z0-9_]+)\s*>")
+            .Select(match => match.Groups["implementation"].Value)
+            .ToArray();
+        Assert.Equal(["HttpEngineeringApprovalVerifier"], approvalRegistrations);
         var documents = CommandSourcePaths
             .Select(path => Path.Combine(repositoryRoot, path.Replace('/', Path.DirectorySeparatorChar)))
             .Select(file => new ProductEngineeringSourceDocument(
@@ -140,7 +170,68 @@ public sealed class ProductEngineeringCommandKnownExceptionMessageArchitectureTe
             "ProductEngineering command user messages must be static, contain Chinese, and be at most 60 estimated characters. Offenders:"
             + Environment.NewLine
             + string.Join(Environment.NewLine, violations));
+
+        var engineeringChangeTargets = ExpectedSites
+            .Where(site => site.Kind == ProductEngineeringCommandSiteKind.Target
+                && (site.TypeName is "ReleaseEngineeringChangeCommandHandler"
+                    or "CancelScheduledEngineeringChangeCommandHandler"
+                    or "RescheduleEngineeringChangeCommandHandler"
+                    or "HttpEngineeringApprovalVerifier"))
+            .ToArray();
+        var discoveredEngineeringChangeTargets = discovered
+            .Where(site => engineeringChangeTargets.Any(expected => expected.Key == site.Key))
+            .ToArray();
+        Assert.Equal(19, discoveredEngineeringChangeTargets
+            .Where(site => site.TypeName == "ReleaseEngineeringChangeCommandHandler")
+            .Sum(site => site.DirectKnownExceptionCount));
+        Assert.Equal(2, discoveredEngineeringChangeTargets
+            .Where(site => site.TypeName is "CancelScheduledEngineeringChangeCommandHandler" or "RescheduleEngineeringChangeCommandHandler")
+            .Sum(site => site.DirectKnownExceptionCount));
+        Assert.Equal(4, discoveredEngineeringChangeTargets
+            .Where(site => site.TypeName == "HttpEngineeringApprovalVerifier")
+            .Sum(site => site.DirectKnownExceptionCount));
+        Assert.Equal(25, discoveredEngineeringChangeTargets.Sum(site => site.DirectKnownExceptionCount));
+        Assert.Equal(9, discoveredEngineeringChangeTargets.Sum(site => site.AsKnownExceptionCallCount));
+
+        var targetMethods = engineeringChangeTargets
+            .Where(site => site.AsKnownExceptionCallCount > 0)
+            .Select(site => (site.TypeName, MethodName: site.MethodName.Split('<')[0]))
+            .ToHashSet();
+        var targetMessages = documents
+            .Where(document => document.Path == ReleaseCommandsPath)
+            .SelectMany(document => CSharpSyntaxTree.ParseText(document.Text, path: document.Path)
+                .GetRoot()
+                .DescendantNodes()
+                .OfType<MethodDeclarationSyntax>()
+                .Where(method => method.Ancestors().OfType<TypeDeclarationSyntax>()
+                    .Any(type => targetMethods.Contains((type.Identifier.ValueText, method.Identifier.ValueText))))
+                .SelectMany(method => method.DescendantNodes().OfType<InvocationExpressionSyntax>()
+                    .Where(IsProductEngineeringAsKnownException)
+                    .Select(invocation => (method, invocation))))
+            .ToArray();
+
+        Assert.Equal(9, targetMessages.Length);
+        foreach (var (_, invocation) in targetMessages)
+        {
+            var arguments = invocation.ArgumentList?.Arguments ?? [];
+            Assert.True(arguments.Count >= 2, $"{invocation.GetLocation()} 的 AsKnownException 必须提供固定中文外层文案。");
+            var message = arguments[1].Expression;
+            var isStaticMessage = ProductEngineeringUserMessageSourceAnalyzer.TryExtractMessage(
+                message,
+                out var messageText,
+                out var estimatedLength);
+            var containsChinese = isStaticMessage
+                && messageText.Any(character => character is >= '\u3400' and <= '\u9fff');
+            Assert.True(isStaticMessage, $"{invocation.GetLocation()} 的 AsKnownException 外层文案必须是可静态分析字符串。");
+            Assert.True(containsChinese, $"{invocation.GetLocation()} 的 AsKnownException 外层文案必须包含中文。");
+            Assert.True(estimatedLength <= 60, $"{invocation.GetLocation()} 的 AsKnownException 外层文案估算长度超过 60 个字符。");
+        }
     }
+
+    private static bool IsProductEngineeringAsKnownException(InvocationExpressionSyntax invocation) =>
+        invocation.Expression is MemberAccessExpressionSyntax memberAccess
+        && memberAccess.Name.Identifier.ValueText == "AsKnownException"
+        && memberAccess.Expression.ToString().EndsWith("ProductEngineeringReleaseValidation", StringComparison.Ordinal);
 
     private static ProductEngineeringCommandKnownExceptionSite Target(
         string path,

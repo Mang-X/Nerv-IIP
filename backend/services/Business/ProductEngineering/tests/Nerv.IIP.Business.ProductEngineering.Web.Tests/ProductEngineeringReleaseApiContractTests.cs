@@ -1715,7 +1715,9 @@ public sealed class ProductEngineeringReleaseApiContractTests
             CancellationToken.None));
 
         Assert.Equal("EBOM 发布失败，请检查物料行和生效日期。", exception.Message);
-        Assert.IsType<InvalidOperationException>(exception.InnerException);
+        Assert.Equal(
+            "Engineering BOM already contains child item 'ENG-2001'.",
+            Assert.IsType<InvalidOperationException>(exception.InnerException).Message);
     }
 
     [Fact]
@@ -1752,7 +1754,9 @@ public sealed class ProductEngineeringReleaseApiContractTests
             CancellationToken.None));
 
         Assert.Equal("MBOM 发布失败，请检查物料行、配方和来源 EBOM。", exception.Message);
-        Assert.IsType<InvalidOperationException>(exception.InnerException);
+        Assert.Equal(
+            "Manufacturing BOM already contains SKU 'SKU-RM-2000'.",
+            Assert.IsType<InvalidOperationException>(exception.InnerException).Message);
     }
 
     [Fact]
@@ -1784,7 +1788,9 @@ public sealed class ProductEngineeringReleaseApiContractTests
             CancellationToken.None));
 
         Assert.Equal("工艺路线发布失败，请检查工序和生效日期。", exception.Message);
-        Assert.IsType<InvalidOperationException>(exception.InnerException);
+        Assert.Equal(
+            "Routing already contains operation sequence '10'.",
+            Assert.IsType<InvalidOperationException>(exception.InnerException).Message);
     }
 
     [Fact]
@@ -2348,7 +2354,11 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 [new AffectedVersionCommand("production-version", oldVersion.Id.Id.ToString("D"), successor.Id.Id.ToString("D"))]),
             CancellationToken.None));
 
-        Assert.Contains("successor production version effective window", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("第 1 条受影响生产版本替代失败，请检查版本状态、生效日期和替代版本窗口。", exception.Message);
+        var domainException = Assert.IsType<ArgumentException>(exception.InnerException);
+        Assert.Equal(
+            "Successor production version effective window must include the supersede effective date. (Parameter 'effectiveDate')",
+            domainException.Message);
         Assert.Equal(ProductionVersionStatus.Active, oldVersion.Status);
         Assert.Null(oldVersion.ValidTo);
         Assert.Equal(new DateOnly(2026, 3, 1), successor.ValidFrom);
@@ -2381,7 +2391,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 [new AffectedVersionCommand("engineering-bom", "EBOM-SELF:A", " EBOM-SELF:A ")]),
             CancellationToken.None));
 
-        Assert.Contains("cannot supersede itself", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("第 1 条受影响版本不能将自身设为替代版本，请修改替代版本。", exception.Message);
         Assert.Empty(approvalVerifier.Calls);
         Assert.Empty(dbContext.EngineeringChanges);
     }
@@ -2415,7 +2425,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 ]),
             CancellationToken.None));
 
-        Assert.Contains("supersede cycle", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("第 1 条与第 2 条受影响版本的替代关系形成循环，请修改替代版本。", exception.Message);
         Assert.Empty(approvalVerifier.Calls);
         Assert.Empty(dbContext.EngineeringChanges);
     }
@@ -2449,7 +2459,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 ]),
             CancellationToken.None));
 
-        Assert.Contains("can only declare one successor", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("第 2 条受影响版本已指定其他替代版本，请删除重复项。", exception.Message);
         Assert.Empty(approvalVerifier.Calls);
         Assert.Empty(dbContext.EngineeringChanges);
     }
@@ -2522,7 +2532,8 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 [new AffectedVersionCommand("engineering-bom", "EBOM-DRAFT:A")]),
             CancellationToken.None));
 
-        Assert.Contains("Only released engineering BOM versions can be archived", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("第 1 条受影响工程 BOM 归档失败，请检查版本状态和替代版本。", exception.Message);
+        Assert.IsType<InvalidOperationException>(exception.InnerException);
         Assert.Empty(dbContext.EngineeringChanges);
     }
 
@@ -2552,7 +2563,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 [new AffectedVersionCommand("engineering-bom", "EBOM-404:A")]),
             CancellationToken.None));
 
-        Assert.Contains("approved BusinessApproval chain", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("工程变更发布需要同一工程变更的已批准 BusinessApproval 审批链。", exception.Message);
         Assert.Empty(dbContext.EngineeringChanges);
     }
 
@@ -2598,7 +2609,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 [new AffectedVersionCommand("production-version", foreignProductionVersion.Id.Id.ToString("D"))]),
             CancellationToken.None));
 
-        Assert.Contains("was not found", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("第 1 条受影响生产版本不存在，请检查版本标识。", exception.Message);
         Assert.Equal(ProductionVersionStatus.Active, foreignProductionVersion.Status);
         Assert.Empty(dbContext.EngineeringChanges);
     }
@@ -3122,16 +3133,11 @@ public sealed class ProductEngineeringReleaseApiContractTests
             Calls.Add((approvalReferenceId, changeNumber));
             if (!shouldApprove)
             {
-                throw new KnownException("Engineering change release requires an approved BusinessApproval chain for the same ECO document.");
+                throw new KnownException("工程变更发布需要同一工程变更的已批准 BusinessApproval 审批链。");
             }
 
             return Task.CompletedTask;
         }
-    }
-
-    private sealed class FixedBusinessDateProvider(DateOnly businessDate) : IProductEngineeringBusinessDateProvider
-    {
-        public DateOnly GetBusinessDate() => businessDate;
     }
 
     private sealed class EngineeringChangeReleasedDomainEventRecorder
