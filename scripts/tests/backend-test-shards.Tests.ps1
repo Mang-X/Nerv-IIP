@@ -870,7 +870,8 @@ $excludedSelectors = @(
 # #3319 的检验记录来源行唯一键证明（新唯一键把同工单两道工序分开、迁移对存量行的 NULL 语义）
 # 整类只含真实 PostgreSQL 用例，整类交给 real-postgres lane，总数为 86。
 # #2890 的报工单件序列号类同样只含真实 PostgreSQL 迁移与约束证明，总数为 87。
-Assert-Contract ($excludedSelectors.Count -eq 87) '所有已排除的真实依赖测试选择器必须显式分类。'
+# #2944 的维护可用窗口求交谓词验收类同样只含真实 PostgreSQL 用例，总数为 88。
+Assert-Contract ($excludedSelectors.Count -eq 88) '所有已排除的真实依赖测试选择器必须显式分类。'
 Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]('Nerv.IIP.Business.Erp.Web.Tests.OperationLaborSettlementRedisCapTransportTests'))) 'The ERP operation-labor Redis/CAP class must be excluded from the fast shard and owned by the Redis/CAP lane.'
 foreach ($selector in @('Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresConcurrencyTests', 'Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresContinuationTests', 'Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresMigrationTests')) {
     Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]$selector)) "The Quality periodic-inspection PostgreSQL class '$selector' must be excluded from the fast shard and owned by the real PostgreSQL lane."
