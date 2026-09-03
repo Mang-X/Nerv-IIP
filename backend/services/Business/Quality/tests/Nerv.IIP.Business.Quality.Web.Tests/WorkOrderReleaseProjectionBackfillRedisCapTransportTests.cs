@@ -157,6 +157,9 @@ public sealed class WorkOrderReleaseProjectionBackfillRedisCapTransportTests
                 using var scope = factory.Services.CreateScope();
                 await assertion(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(), token);
             },
+            // 本文件不加 xUnit 的 Timeout 是有意的，不是漏了：这条用例唯一的等待就在这里，
+            // 已由 EventuallyOptions 的 90s 上界收口，失败形态本来就是红而不是挂死。
+            // 再叠一层 Timeout 会变成同一个上界由两处把关，且必须大于 90s 才不会误杀正常等待。
             options: new EventuallyOptions(TimeSpan.FromSeconds(90), TimeSpan.FromMilliseconds(250), []));
 
     private static WorkOrderReleaseProjectionBackfilledIntegrationEvent Backfill(string eventId) => new(

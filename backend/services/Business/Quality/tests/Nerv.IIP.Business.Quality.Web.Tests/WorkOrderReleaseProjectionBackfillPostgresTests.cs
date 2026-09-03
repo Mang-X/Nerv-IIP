@@ -20,7 +20,7 @@ public sealed class WorkOrderReleaseProjectionBackfillPostgresTests : PeriodicIn
     private static readonly DateTimeOffset ReleasedAtUtc = DateTimeOffset.Parse("2026-08-01T00:00:00Z");
     private static readonly DateTimeOffset BackfilledAtUtc = DateTimeOffset.Parse("2026-09-01T00:00:00Z");
 
-    [QualityPostgresFact]
+    [QualityPostgresFact(Timeout = 30_000)]
     public async Task Backfill_commits_the_window_baseline_and_the_yielded_sku_under_real_constraints_on_postgres()
     {
         await QualityPostgresLaneDatabase.ResetSchemaAsync();

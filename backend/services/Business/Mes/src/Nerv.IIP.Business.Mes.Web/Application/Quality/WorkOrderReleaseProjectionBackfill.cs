@@ -137,6 +137,24 @@ internal sealed class BackfillWorkOrderReleaseProjectionCommandHandler(
             }
 
             var lastOnPage = page[^1];
+            // 终止条件是「某一页取回 0 行」，而这只在游标每轮**严格前进**时才会到达：
+            // seek 谓词写成 `>=` 而不是 `>`，末页就恒回 ≥1 行，循环既不前进也不退出，
+            // 变成一个事务内的无界重扫重发。那种失败是挂死加写放大，不是可见的错值——
+            // 由 job 超时兜底会连带带走 `if: always()` 的证据，且 xUnit 的 Timeout 对
+            // EF InMemory 这种同步完成、从不让出的 await 链根本不生效（实测 >10 分钟不触发）。
+            // 所以把「游标严格前进」这条循环不变量就地断言：一旦不成立立即失败，且说得出原因。
+            if (lastWorkOrderId is not null
+                && string.CompareOrdinal(lastOnPage.OrganizationId, lastOrganizationId) <= 0
+                && string.CompareOrdinal(lastOnPage.EnvironmentId, lastEnvironmentId) <= 0
+                && string.CompareOrdinal(lastOnPage.WorkOrderIdValue, lastWorkOrderId) <= 0)
+            {
+                throw new InvalidOperationException(
+                    "回填分页游标没有前进："
+                    + $"上一页末尾为 ({lastOrganizationId}, {lastEnvironmentId}, {lastWorkOrderId})，"
+                    + $"本页末尾为 ({lastOnPage.OrganizationId}, {lastOnPage.EnvironmentId}, {lastOnPage.WorkOrderIdValue})。"
+                    + "续扫谓词必须是严格大于，否则扫描不会终止。");
+            }
+
             lastOrganizationId = lastOnPage.OrganizationId;
             lastEnvironmentId = lastOnPage.EnvironmentId;
             lastWorkOrderId = lastOnPage.WorkOrderIdValue;

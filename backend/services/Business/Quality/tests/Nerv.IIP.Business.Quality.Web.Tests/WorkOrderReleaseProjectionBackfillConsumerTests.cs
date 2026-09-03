@@ -215,6 +215,60 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
     }
 
     /// <summary>
+    /// B2 单独承重：内存档筛的**工作中心**半边，与已闭合的 SKU 半边是同一行、同一族。
+    /// 载荷把 OP-30 记在 <c>WC-MIX</c>，权威完工事实说它在 <c>WC-ALT</c>，
+    /// 于是 <c>facts.WorkCenterId</c> 让位成 <c>WC-ALT</c>；此时只有 <c>WC-ALT</c> 那张周期档配得上它。
+    /// 删掉 <c>plan.WorkCenterId == facts.WorkCenterId</c>，<c>WC-MIX</c> 的档会一并挂上去——
+    /// 把**另一个工作中心**的巡检档挂到本工序，与 SKU 半边判为「真错」的情形完全同型。
+    ///
+    /// 两张档的量间隔取不同值（100 / 250），因此断言判的是「配上了哪一张」而不只是「配上了几张」。
+    /// OP-40 是正对照：它本来就在 <c>WC-ALT</c>、不让位，证明 <c>WC-ALT</c> 那张档在本夹具里确实取得到，
+    /// 否则「只配上一张」可能只是因为根本没档。
+    /// </summary>
+    [Fact]
+    public async Task Backfill_does_not_borrow_a_periodic_plan_from_another_work_center()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.InspectionPlans.Add(PeriodicPlan());
+        dbContext.InspectionPlans.Add(PeriodicPlan("PLAN-PERIODIC-ALT", "WC-ALT", quantityInterval: 250m));
+        await dbContext.SaveChangesAsync();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        // 同 SKU、只有工作中心与载荷不符：走让位而不是拒绝。
+        await HandleCompletionAsync(
+            dbContext,
+            OperationCompleted("OP-30", skuCode: "SKU-FG-1000", workCenterId: "WC-ALT"),
+            deadLetters);
+
+        await HandleBackfillAsync(
+            dbContext,
+            Backfill(operations:
+            [
+                new ReleasedOperationPayload("OP-30", 10, "WC-MIX"),
+                new ReleasedOperationPayload("OP-40", 20, "WC-ALT"),
+            ]),
+            deadLetters);
+
+        var yielded = await dbContext.PeriodicInspectionOperations
+            .Include(x => x.RuntimeContexts)
+            .SingleAsync(x => x.OperationId == "OP-30");
+        Assert.Equal("WC-ALT", yielded.WorkCenterId);
+        var yieldedContext = Assert.Single(yielded.RuntimeContexts);
+        Assert.Equal(250m, yieldedContext.QuantityInterval);
+        Assert.Equal("WC-ALT", yieldedContext.WorkCenterId);
+
+        var untouched = await dbContext.PeriodicInspectionOperations
+            .Include(x => x.RuntimeContexts)
+            .SingleAsync(x => x.OperationId == "OP-40");
+        var untouchedContext = Assert.Single(untouched.RuntimeContexts);
+        Assert.Equal(250m, untouchedContext.QuantityInterval);
+
+        // 让位不静默：工作中心那一项要留得下痕。
+        var notice = Assert.Single(await deadLetters.ListAsync(null, null, CancellationToken.None));
+        Assert.Equal("backfill-release-fact-substituted", notice.FailureCode);
+        Assert.Contains("work-center-id", notice.FailureMessage, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// R-a 单独承重：失败粒度是工序，不是整封事件。这里让 OP-10 因「报工工作中心与发布事实冲突」
     /// 被 <c>ApplyRelease</c> 拒掉（不是让位能救的那一类），断言 OP-20 照常拿到发布事实，
     /// 且 OP-10 的失败有留痕。
@@ -389,7 +443,8 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
 
     private static MesOperationTaskCompletedIntegrationEvent OperationCompleted(
         string operationId,
-        string skuCode) => new(
+        string skuCode,
+        string workCenterId = "WC-MIX") => new(
         $"evt-complete-{operationId}",
         MesIntegrationEventTypes.OperationTaskCompleted,
         MesIntegrationEventVersions.V1,
@@ -402,7 +457,7 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
         "system:mes",
         $"mes:operation-completed:org-001:env-dev:WO-001:{operationId}",
         new OperationTaskCompletedPayload(
-            "WO-001", operationId, skuCode, 10, "WC-MIX", 1000m, "EA", false,
+            "WO-001", operationId, skuCode, 10, workCenterId, 1000m, "EA", false,
             DateTimeOffset.Parse("2026-08-20T00:00:00Z")));
 
     private static async Task<string[]> SnapshotAsync(ApplicationDbContext dbContext) =>
@@ -417,7 +472,8 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
     private static WorkOrderReleaseProjectionBackfilledIntegrationEvent Backfill(
         string eventId = "evt-backfill-first",
         DateTimeOffset? releasedAtUtc = null,
-        IReadOnlyCollection<string>? operationIds = null) => new(
+        IReadOnlyCollection<string>? operationIds = null,
+        IReadOnlyCollection<ReleasedOperationPayload>? operations = null) => new(
         eventId,
         MesIntegrationEventTypes.WorkOrderReleaseProjectionBackfilled,
         MesIntegrationEventVersions.V1,
@@ -434,9 +490,10 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
             "SKU-FG-1000",
             1000m,
             releasedAtUtc ?? ReleasedAtUtc,
-            (operationIds ?? ["OP-10"])
-                .Select(operationId => new ReleasedOperationPayload(operationId, 10, "WC-MIX"))
-                .ToArray()));
+            operations?.ToArray()
+                ?? (operationIds ?? ["OP-10"])
+                    .Select(operationId => new ReleasedOperationPayload(operationId, 10, "WC-MIX"))
+                    .ToArray()));
 
     private static WorkOrderReleasedIntegrationEvent LiveRelease(
         string eventId = "evt-release-WO-001",
@@ -488,11 +545,14 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
         return plan;
     }
 
-    private static InspectionPlan PeriodicPlan()
+    private static InspectionPlan PeriodicPlan(
+        string planCode = "PLAN-PERIODIC-1000",
+        string workCenterId = "WC-MIX",
+        decimal quantityInterval = 100m)
     {
         var plan = InspectionPlan.Create(
-            "org-001", "env-dev", "PLAN-PERIODIC-1000", "operation", "SKU-FG-1000", null, "WC-MIX", null, "mes-operation",
-            quantityInterval: 100m);
+            "org-001", "env-dev", planCode, "operation", "SKU-FG-1000", null, workCenterId, null, "mes-operation",
+            quantityInterval: quantityInterval);
         plan.AddCharacteristic("appearance", "Appearance", "visual", "major", required: true, "100%");
         plan.Activate();
         return plan;
