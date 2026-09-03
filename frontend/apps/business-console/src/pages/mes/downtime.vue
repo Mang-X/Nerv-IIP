@@ -138,7 +138,7 @@ const reasonFilterOptions = computed(() => [
   { value: 'all', label: '全部原因' },
   ...downtimeReasonOptions.value.map((option) => ({ value: option.value, label: option.name })),
 ])
-const errorMessage = computed(() => formatError(downtimeEventsError.value))
+const errorMessage = computed(() => inlineErrorMessage(downtimeEventsError.value))
 // 停机原因目录读失败的**唯一归因点**：写面（登记入口 blocker）与读面（原因筛选）共用同一句话。
 // 归因分两处必然漂移——同一个 403 在两个面上会说成两种话；本页此前读面干脆什么都不说，
 // 下拉静默只剩「全部原因」，用户看不出是没权限还是真没配。
@@ -526,9 +526,6 @@ function formatDateTime(value?: string | null) {
   if (!value) return '未指定'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 </script>
 

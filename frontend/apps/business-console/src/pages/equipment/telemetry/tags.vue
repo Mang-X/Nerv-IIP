@@ -33,7 +33,7 @@ const { filters, refreshTags, tags, tagsError, tagsPending, tagsTotal } = useBus
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.deviceAssetId] })
 const { deviceOptions, devicesPending } = useEquipmentDeviceCatalog()
 
-const errorMessage = computed(() => formatError(tagsError.value))
+const errorMessage = computed(() => inlineErrorMessage(tagsError.value))
 
 // 采集标签读面只回设备编号（DEV-CNC-01），设备名在主数据里，按编号 join 出中文名。
 const { resolveDevice } = useMasterDataDisplayNames({ devices: true })
@@ -97,9 +97,6 @@ function valueTypeLabel(value?: string | null) {
 }
 function rowKey(row: BusinessConsoleTelemetryTagItem) {
   return row.telemetryTagId ?? `${row.deviceAssetId}-${row.tagKey}`
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 </script>
 

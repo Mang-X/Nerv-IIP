@@ -151,7 +151,7 @@ const workerFilterOptions = computed(() => [
 
 type DispatchRow = (typeof dispatchTasks)['value'][number]
 
-const errorMessage = computed(() => formatError(dispatchTasksError.value))
+const errorMessage = computed(() => inlineErrorMessage(dispatchTasksError.value))
 
 // 分组只对当前这一页的工序生效——facade 的分页单位是工序、不是工单，
 // 所以组头写「本页 N 道」，不谎称这就是该工单的全部工序。
@@ -264,9 +264,6 @@ function formatDateTime(value?: string | null) {
   if (!value) return '未指定'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 </script>
 

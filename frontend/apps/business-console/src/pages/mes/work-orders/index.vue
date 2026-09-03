@@ -183,7 +183,7 @@ const rushForm = reactive({
 // 报工对象由所选工单行带出（工单 + 该工单的首道可报工序），弹窗不提供任何挑选入口。
 const reportContext = shallowRef<ProductionReportContext | null>(null)
 
-const listErrorMessage = computed(() => formatError(workOrdersError.value))
+const listErrorMessage = computed(() => inlineErrorMessage(workOrdersError.value))
 const workScopeKindLabels: Record<string, string> = {
   self: '本人',
   team: '班组',
@@ -707,9 +707,6 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
       label: item.displayName ? `${item.displayName} (${item.code})` : item.code!,
       value: item.code!,
     }))
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 function isNonEmpty(value: string) {
   return value.trim().length > 0
