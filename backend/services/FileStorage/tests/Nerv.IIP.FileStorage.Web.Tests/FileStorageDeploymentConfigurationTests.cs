@@ -62,6 +62,35 @@ public sealed class FileStorageDeploymentConfigurationTests
         Assert.Contains($".WithEnvironment(\"Storage__MinIO__ComplianceArchiveBucket\", \"{ComplianceArchiveBucket}\")", appHostFileStorage, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Legacy_compose_and_apphost_enable_the_tus_upload_provider()
+    {
+        var platform = ReadRepositoryFile("infra/compose/nerv-iip.platform.yml");
+        var appHost = ReadRepositoryFile("infra/aspire/Nerv.IIP.AppHost/Program.cs");
+        var fileStorage = ComposeServiceBlock(platform, "file-storage");
+        var appHostFileStorage = TextBetween(appHost, "var fileStorage =", "var notification =");
+
+        Assert.Contains("FileStorage__UploadProvider: tus", fileStorage, StringComparison.Ordinal);
+        Assert.Contains(
+            ".WithEnvironment(\"FileStorage__UploadProvider\", \"tus\")",
+            appHostFileStorage,
+            StringComparison.Ordinal);
+
+        // compose 的 tus 盘同时承载已 complete 文件的字节，容器可写层不能作为它的落点。
+        Assert.Contains(
+            "FileStorage__Tus__RootPath: /var/lib/nerv-iip/filestorage/tus",
+            fileStorage,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "      - nerv-iip-file-storage:/var/lib/nerv-iip/filestorage",
+            fileStorage,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "volumes:\n  nerv-iip-file-storage:",
+            platform.Replace("\r\n", "\n", StringComparison.Ordinal),
+            StringComparison.Ordinal);
+    }
+
     private static string ReadRepositoryFile(string relativePath)
     {
         var repositoryRoot = FindRepositoryRoot();

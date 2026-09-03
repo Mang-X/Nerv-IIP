@@ -12,10 +12,12 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Time.Testing;
 using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.FileStorage.Infrastructure;
+using Nerv.IIP.FileStorage.Infrastructure.Records;
 using Nerv.IIP.FileStorage.Web.Application.Files;
 using Nerv.IIP.FileStorage.Web.Application.Files.Tus;
 using Nerv.IIP.FileStorage.Web.Application.Files.UploadProviders;
 using Nerv.IIP.ServiceAuth;
+using FileStorageFileStatus = Nerv.IIP.FileStorage.Domain.FileStorageFileStatus;
 
 namespace Nerv.IIP.FileStorage.Web.Tests;
 
@@ -350,6 +352,50 @@ public sealed class FileStorageTusProviderTests
         }
     }
 
+    /// <summary>
+    /// 这条用例不替换任何 <see cref="IUploadCommitStorage"/>：它跑在 Program.cs 的生产注册上，
+    /// 断言的 checksum 只有真的读过本地 tus 盘上的字节才算得出来。
+    /// </summary>
+    [Fact]
+    public async Task CompleteUploadSession_OnProductionCommitStorageRegistration_PersistsStoredFileFromLocalTusBytes()
+    {
+        var rootPath = CreateTempDirectory();
+        try
+        {
+            await using var factory = CreateFactoryWithTusProvider(rootPath);
+            var client = CreateInternalServiceClient(factory);
+            var uploadedBytes = Encoding.UTF8.GetBytes("production-assembly");
+            var expectedChecksum =
+                $"sha256:{Convert.ToHexString(SHA256.HashData(uploadedBytes)).ToLowerInvariant()}";
+            var created = await CreateTusUploadSessionAsync(
+                client,
+                expectedSizeBytes: uploadedBytes.Length,
+                request: CreateTextAttachmentRequest());
+            await PatchTusBytesAsync(client, created.Upload.Url, offset: 0, uploadedBytes);
+
+            var completeResponse = await client.PostAsJsonAsync(
+                $"/api/files/v1/upload-sessions/{created.UploadSessionId}/complete",
+                new CompleteUploadSessionRequest("org-001", "prod", "attachment", null, uploadedBytes.Length));
+
+            Assert.Equal(StatusCodes.Status200OK, (int)completeResponse.StatusCode);
+            using var scope = factory.Services.CreateScope();
+            Assert.IsType<LocalTusUploadCommitStorage>(
+                scope.ServiceProvider.GetRequiredService<IUploadCommitStorage>());
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var stored = await dbContext.StoredFiles.SingleAsync(x => x.FileId == created.FileId);
+            Assert.Equal(uploadedBytes.Length, stored.SizeBytes);
+            Assert.Equal(expectedChecksum, stored.Checksum);
+            Assert.Equal(FileStorageFileStatus.Available, stored.Status);
+            var session = await dbContext.UploadSessions.SingleAsync(
+                x => x.UploadSessionId == created.UploadSessionId);
+            Assert.Equal(UploadSessionState.Completed, session.State);
+        }
+        finally
+        {
+            DeleteTempDirectory(rootPath);
+        }
+    }
+
     [Fact]
     public async Task TusUploadEndpoint_CompleteBeforeExpectedSize_ReturnsBadRequest()
     {
@@ -498,14 +544,6 @@ public sealed class FileStorageTusProviderTests
                 {
                     builder.ConfigureServices(services => services.AddSingleton(clock));
                 }
-
-                builder.ConfigureServices(services =>
-                {
-                    services.RemoveAll<IUploadCommitStorage>();
-                    services.AddSingleton<IUploadCommitStorage>(provider =>
-                        new VerifiedTusTestCommitStorage(
-                            provider.GetRequiredService<ILocalTusFileStoreAccessor>()));
-                });
             });
     }
 
@@ -618,34 +656,6 @@ public sealed class FileStorageTusProviderTests
     private static Task<HttpResponseMessage> SendTusHeadAsync(HttpClient client, string url)
     {
         return client.SendAsync(new HttpRequestMessage(HttpMethod.Head, url));
-    }
-
-    private sealed class VerifiedTusTestCommitStorage(ILocalTusFileStoreAccessor accessor) : IUploadCommitStorage
-    {
-        public async Task<UploadCommitStorageResult> CommitAsync(
-            UploadCommitIntent intent,
-            CancellationToken cancellationToken)
-        {
-            if (!accessor.TryGet(out var store) || !store.Exists(intent.UploadSessionId))
-            {
-                return UploadCommitStorageResult.RetryableUnavailable();
-            }
-
-            var size = store.GetOffset(intent.UploadSessionId);
-            if (size != intent.ExpectedSizeBytes)
-            {
-                return new UploadCommitStorageResult(
-                    false,
-                    size,
-                    null,
-                    StatusCodes.Status400BadRequest,
-                    "final-size-mismatch",
-                    "已验证的存储大小与上传会话不匹配。");
-            }
-
-            var checksum = await store.ComputeSha256HexAsync(intent.UploadSessionId, cancellationToken);
-            return UploadCommitStorageResult.Verified(size, $"sha256:{checksum}");
-        }
     }
 
     private static long GetUploadOffset(HttpResponseMessage response)
