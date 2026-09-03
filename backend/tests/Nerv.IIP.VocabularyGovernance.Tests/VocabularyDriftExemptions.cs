@@ -15,6 +15,14 @@ internal static class VocabularyDriftExemptions
 {
     private const string Svc = "services/Business";
 
+    /// <summary>
+    /// 「待已登记跟踪票销账」类裁决：与 <c>Nerv.IIP.Contracts.Iam.NervIipPermissionCodes</c>
+    /// 同值同义的业务服务权限码声明，销账见下方分组注释。
+    /// </summary>
+    private const string PermissionCodeTrackingAdjudication =
+        "待 #3094 销账：与 NervIipPermissionCodes 同值同义的业务服务权限码声明；"
+        + "该服务未引用 Nerv.IIP.Contracts.Iam，销账动作为加引用后改常量引用。";
+
     public static readonly IReadOnlyList<VocabularyExemption> Entries =
     [
         // ── "active" ────────────────────────────────────────────────────────────────
@@ -245,6 +253,237 @@ internal static class VocabularyDriftExemptions
             $"{Svc}/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Application/Seed/WorldHistoryLabelSpec.cs"),
 
         // ── 检验来源族（QualityInspectionSourceTypes：wms / receiving） ─────────────
+
+        // ── 平台权限码族（Nerv.IIP.Contracts.Iam.NervIipPermissionCodes，#3040 D1） ──
+        // 待 #3094 销账：下列 13 个业务服务的 *PermissionCodes.cs 声明的权限码与
+        // NervIipPermissionCodes 逐条同值同义，属真实违例，不是「同值不同义」。之所以不在本票
+        // 改常量引用：这些项目均未引用 Nerv.IIP.Contracts.Iam，改引用需要给 13 个业务服务各加一条
+        // ProjectReference，是独立的架构决定；owner 已裁定 #3040 D1 覆盖面只盖 IAM ↔ Gateway 两处，
+        // 服务侧不纳入。销账动作：给该服务加 Contracts.Iam 引用后把裸字面量改为常量引用，
+        // 并同步删除对应豁免条目。
+
+        // Approval
+        ..Group("business.approvals.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Approval/src/Nerv.IIP.Business.Approval.Web/Application/Auth/ApprovalPermissionCodes.cs"),
+        ..Group("business.approvals.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Approval/src/Nerv.IIP.Business.Approval.Web/Application/Auth/ApprovalPermissionCodes.cs"),
+
+        // BarcodeLabel
+        ..Group("business.barcodes.print", PermissionCodeTrackingAdjudication,
+            $"{Svc}/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Application/Auth/BarcodeLabelPermissionCodes.cs"),
+        ..Group("business.barcodes.scans.write", PermissionCodeTrackingAdjudication,
+            $"{Svc}/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Application/Auth/BarcodeLabelPermissionCodes.cs"),
+        ..Group("business.barcodes.templates.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Application/Auth/BarcodeLabelPermissionCodes.cs"),
+
+        // DemandPlanning
+        ..Group("business.planning.demands.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Auth/DemandPlanningPermissionCodes.cs"),
+        ..Group("business.planning.demands.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Auth/DemandPlanningPermissionCodes.cs"),
+        ..Group("business.planning.mps.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Auth/DemandPlanningPermissionCodes.cs"),
+        ..Group("business.planning.mps.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Auth/DemandPlanningPermissionCodes.cs"),
+        ..Group("business.planning.mps.release", PermissionCodeTrackingAdjudication,
+            $"{Svc}/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Auth/DemandPlanningPermissionCodes.cs"),
+        ..Group("business.planning.mrp.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Auth/DemandPlanningPermissionCodes.cs"),
+        ..Group("business.planning.mrp.run", PermissionCodeTrackingAdjudication,
+            $"{Svc}/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Auth/DemandPlanningPermissionCodes.cs"),
+        ..Group("business.planning.suggestions.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Auth/DemandPlanningPermissionCodes.cs"),
+
+        // Erp
+        ..Group("business.erp.finance.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Auth/ErpPermissionCodes.cs"),
+        ..Group("business.erp.finance.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Auth/ErpPermissionCodes.cs"),
+        ..Group("business.erp.procurement.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Auth/ErpPermissionCodes.cs"),
+        ..Group("business.erp.procurement.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Auth/ErpPermissionCodes.cs"),
+        ..Group("business.erp.sales.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Auth/ErpPermissionCodes.cs"),
+        ..Group("business.erp.sales.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Auth/ErpPermissionCodes.cs"),
+
+        // IndustrialTelemetry
+        ..Group("business.iiot.alarm-rules.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Auth/IndustrialTelemetryPermissionCodes.cs"),
+        ..Group("business.iiot.alarms.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Auth/IndustrialTelemetryPermissionCodes.cs"),
+        ..Group("business.iiot.alarms.write", PermissionCodeTrackingAdjudication,
+            $"{Svc}/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Auth/IndustrialTelemetryPermissionCodes.cs"),
+        ..Group("business.iiot.device-control.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Auth/IndustrialTelemetryPermissionCodes.cs"),
+        ..Group("business.iiot.device-control.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Auth/IndustrialTelemetryPermissionCodes.cs"),
+        ..Group("business.iiot.device-control.write", PermissionCodeTrackingAdjudication,
+            $"{Svc}/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Auth/IndustrialTelemetryPermissionCodes.cs"),
+        ..Group("business.iiot.tags.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Auth/IndustrialTelemetryPermissionCodes.cs"),
+        ..Group("business.iiot.telemetry.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Auth/IndustrialTelemetryPermissionCodes.cs"),
+        ..Group("business.iiot.telemetry.write", PermissionCodeTrackingAdjudication,
+            $"{Svc}/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Auth/IndustrialTelemetryPermissionCodes.cs"),
+
+        // Inventory
+        ..Group("business.inventory.counts.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Auth/InventoryPermissionCodes.cs",
+            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Auth/WmsPermissionCodes.cs"),
+        ..Group("business.inventory.expired-stock.override", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Auth/InventoryPermissionCodes.cs"),
+        ..Group("business.inventory.ledger.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Auth/InventoryPermissionCodes.cs"),
+        ..Group("business.inventory.locations.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Auth/InventoryPermissionCodes.cs"),
+        ..Group("business.inventory.movements.create", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Auth/InventoryPermissionCodes.cs"),
+
+        // Maintenance
+        ..Group("business.maintenance.downtime-reasons.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/Auth/MaintenancePermissionCodes.cs"),
+        ..Group("business.maintenance.plans.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/Auth/MaintenancePermissionCodes.cs"),
+        ..Group("business.maintenance.plans.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/Auth/MaintenancePermissionCodes.cs"),
+        ..Group("business.maintenance.work-orders.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/Auth/MaintenancePermissionCodes.cs"),
+        ..Group("business.maintenance.work-orders.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/Auth/MaintenancePermissionCodes.cs"),
+
+        // MasterData
+        ..Group("business.masterdata.partners.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Auth/BusinessPermissionCodes.cs"),
+        ..Group("business.masterdata.partners.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Auth/BusinessPermissionCodes.cs"),
+        ..Group("business.masterdata.products.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Auth/BusinessPermissionCodes.cs"),
+        ..Group("business.masterdata.products.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Auth/BusinessPermissionCodes.cs"),
+        ..Group("business.masterdata.resources.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Auth/BusinessPermissionCodes.cs"),
+        ..Group("business.masterdata.resources.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Auth/BusinessPermissionCodes.cs"),
+
+        // Mes
+        ..Group("business.mes.capacity.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Auth/MesPermissionCodes.cs"),
+        ..Group("business.mes.dispatch.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Auth/MesPermissionCodes.cs"),
+        ..Group("business.mes.dispatch.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Auth/MesPermissionCodes.cs"),
+        ..Group("business.mes.downtime.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Auth/MesPermissionCodes.cs"),
+        ..Group("business.mes.downtime.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Auth/MesPermissionCodes.cs"),
+        ..Group("business.mes.foundation.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Auth/MesPermissionCodes.cs"),
+        ..Group("business.mes.handovers.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Auth/MesPermissionCodes.cs"),
+        ..Group("business.mes.handovers.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Auth/MesPermissionCodes.cs"),
+        ..Group("business.mes.materials.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Auth/MesPermissionCodes.cs"),
+        ..Group("business.mes.materials.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Auth/MesPermissionCodes.cs"),
+        ..Group("business.mes.operations.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Auth/MesPermissionCodes.cs"),
+        ..Group("business.mes.operations.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Auth/MesPermissionCodes.cs"),
+        ..Group("business.mes.overview.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Auth/MesPermissionCodes.cs"),
+        ..Group("business.mes.plans.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Auth/MesPermissionCodes.cs"),
+        ..Group("business.mes.quality.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Auth/MesPermissionCodes.cs"),
+        ..Group("business.mes.quality.write", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Auth/MesPermissionCodes.cs"),
+        ..Group("business.mes.receipts.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Auth/MesPermissionCodes.cs"),
+        ..Group("business.mes.receipts.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Auth/MesPermissionCodes.cs"),
+        ..Group("business.mes.reporting.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Auth/MesPermissionCodes.cs"),
+        ..Group("business.mes.reporting.write", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Auth/MesPermissionCodes.cs"),
+        ..Group("business.mes.schedules.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Auth/MesPermissionCodes.cs"),
+        ..Group("business.mes.schedules.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Auth/MesPermissionCodes.cs"),
+        ..Group("business.mes.traceability.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Auth/MesPermissionCodes.cs"),
+        ..Group("business.mes.work-orders.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Auth/MesPermissionCodes.cs"),
+        ..Group("business.mes.work-orders.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Auth/MesPermissionCodes.cs"),
+
+        // ProductEngineering
+        ..Group("business.engineering.boms.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Auth/EngineeringPermissionCodes.cs"),
+        ..Group("business.engineering.boms.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Auth/EngineeringPermissionCodes.cs"),
+        ..Group("business.engineering.changes.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Auth/EngineeringPermissionCodes.cs"),
+        ..Group("business.engineering.changes.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Auth/EngineeringPermissionCodes.cs"),
+        ..Group("business.engineering.documents.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Auth/EngineeringPermissionCodes.cs"),
+        ..Group("business.engineering.documents.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Auth/EngineeringPermissionCodes.cs"),
+        ..Group("business.engineering.items.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Auth/EngineeringPermissionCodes.cs"),
+        ..Group("business.engineering.items.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Auth/EngineeringPermissionCodes.cs"),
+        ..Group("business.engineering.production-versions.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Auth/EngineeringPermissionCodes.cs"),
+        ..Group("business.engineering.production-versions.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Auth/EngineeringPermissionCodes.cs"),
+        ..Group("business.engineering.routings.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Auth/EngineeringPermissionCodes.cs"),
+        ..Group("business.engineering.routings.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Auth/EngineeringPermissionCodes.cs"),
+        ..Group("business.engineering.standard-operations.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Auth/EngineeringPermissionCodes.cs"),
+        ..Group("business.engineering.standard-operations.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Auth/EngineeringPermissionCodes.cs"),
+
+        // Quality
+        ..Group("business.quality.inspection-plans.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Auth/BusinessPermissionCodes.cs"),
+        ..Group("business.quality.inspection-records.create", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Auth/BusinessPermissionCodes.cs"),
+        ..Group("business.quality.inspection-records.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Auth/BusinessPermissionCodes.cs"),
+        ..Group("business.quality.ncr.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Auth/BusinessPermissionCodes.cs"),
+        ..Group("business.quality.ncr.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Auth/BusinessPermissionCodes.cs"),
+
+        // Scheduling
+        ..Group("business.scheduling.plans.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Scheduling/src/Nerv.IIP.Business.Scheduling.Web/Application/Auth/SchedulingPermissionCodes.cs"),
+        ..Group("business.scheduling.plans.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Scheduling/src/Nerv.IIP.Business.Scheduling.Web/Application/Auth/SchedulingPermissionCodes.cs"),
+        ..Group("business.scheduling.plans.release", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Scheduling/src/Nerv.IIP.Business.Scheduling.Web/Application/Auth/SchedulingPermissionCodes.cs"),
+
+        // Wms
+        ..Group("business.wms.automation.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Auth/WmsPermissionCodes.cs"),
+        ..Group("business.wms.counts.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Auth/WmsPermissionCodes.cs"),
+        ..Group("business.wms.receipts.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Auth/WmsPermissionCodes.cs"),
+        ..Group("business.wms.receipts.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Auth/WmsPermissionCodes.cs"),
+        ..Group("business.wms.shipments.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Auth/WmsPermissionCodes.cs"),
+        ..Group("business.wms.shipments.read", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Auth/WmsPermissionCodes.cs"),
+        ..Group("business.wms.work-pools.manage", PermissionCodeTrackingAdjudication,
+            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Auth/WmsPermissionCodes.cs"),
     ];
 
     private static IEnumerable<VocabularyExemption> Group(
