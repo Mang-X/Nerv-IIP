@@ -645,6 +645,112 @@ public sealed class IntegrationEventReliabilityTests
         return index.Properties.Select(property => property.Name).ToArray();
     }
 
+    /// <summary>#3101 反向探针①：CAP 存下的原始 wire 体（data URI）被契约拒收后，死信保留解码后的原始 JSON 与可读身份。</summary>
+    [Fact]
+    public async Task Cap_retry_exhausted_contract_rejected_body_dead_letters_original_wire_json_with_lenient_identity()
+    {
+        var store = new InMemoryIntegrationEventDeadLetterStore();
+        // eventVersion 是字符串而非整数：类型化反序列化必然抛 JsonException，模拟 wire contract converter 拒收。
+        const string rawJson = """
+            {"eventId":"event-contract-rejected-001","eventType":"sample.Event","eventVersion":"not-a-number",
+             "sourceService":"sample","idempotencyKey":"sample:event-contract-rejected-001","payload":{"value":"raw"}}
+            """;
+        var failure = CreateSubscribeFailure(
+            typeof(SampleIntegrationEvent).FullName!,
+            "data:SampleIntegrationEvent;base64," + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(rawJson)),
+            "JsonException-->contract rejected.");
+
+        var exception = await Record.ExceptionAsync(() =>
+            new IntegrationEventCapFailureDeadLetterer(store).HandleAsync(failure, CancellationToken.None));
+
+        Assert.Null(exception);
+        var deadLetter = Assert.Single(await store.ListAsync("sample.consumer", IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+        Assert.Equal(IntegrationEventCapFailureDeadLetterer.ContractRejectedFailureCode, deadLetter.FailureCode);
+        Assert.Equal("event-contract-rejected-001", deadLetter.EventId);
+        Assert.Equal("sample.Event", deadLetter.EventType);
+        Assert.Null(deadLetter.EventVersion);
+        Assert.Equal("sample", deadLetter.SourceService);
+        Assert.Equal("sample:event-contract-rejected-001", deadLetter.IdempotencyKey);
+        Assert.Equal(typeof(SampleIntegrationEvent).FullName, deadLetter.EventClrType);
+        Assert.Equal(rawJson, deadLetter.EventJson);
+        Assert.Contains("contract rejected", deadLetter.FailureMessage, StringComparison.Ordinal);
+        using var forensic = JsonDocument.Parse(deadLetter.EventJson);
+        Assert.Equal("not-a-number", forensic.RootElement.GetProperty("eventVersion").GetString());
+    }
+
+    /// <summary>#3101 反向探针②：根本不是 JSON 的 wire 体也不能被丢——原文进 JSON 包装，列仍可写入 jsonb。</summary>
+    [Fact]
+    public async Task Cap_retry_exhausted_non_json_body_dead_letters_verbatim_inside_json_wrapper()
+    {
+        var store = new InMemoryIntegrationEventDeadLetterStore();
+        var failure = CreateSubscribeFailure(
+            typeof(SampleIntegrationEvent).FullName!,
+            "data:SampleIntegrationEvent;base64," + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("<not-json/>")),
+            "JsonException-->body is not JSON.");
+
+        await new IntegrationEventCapFailureDeadLetterer(store).HandleAsync(failure, CancellationToken.None);
+
+        var deadLetter = Assert.Single(await store.ListAsync("sample.consumer", IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+        Assert.Equal(IntegrationEventCapFailureDeadLetterer.ContractRejectedFailureCode, deadLetter.FailureCode);
+        Assert.Null(deadLetter.EventId);
+        using var wrapper = JsonDocument.Parse(deadLetter.EventJson);
+        Assert.Equal("<not-json/>", wrapper.RootElement.GetProperty(IntegrationEventCapFailureDeadLetterer.RawBodyPropertyName).GetString());
+    }
+
+    /// <summary>
+    /// #3101 反向探针③：违反自身 wire 契约（converter 在 Write 侧也校验）的 CLR 事件，<c>Create</c> 不再自己抛，
+    /// 死信保留全部信封成员与 payload 用于取证；合法事件仍走类型化序列化（形状零漂移由既有用例钉住）。
+    /// </summary>
+    [Fact]
+    public void Dead_letter_create_keeps_forensic_envelope_for_events_that_violate_their_own_write_contract()
+    {
+        var invalid = new StrictIntegrationEvent(
+            EventId: "event-strict-001",
+            EventType: "strict.Event",
+            EventVersion: 1, // 契约要求 2
+            OccurredAtUtc: DateTimeOffset.Parse("2026-09-03T00:00:00Z"),
+            SourceService: "strict",
+            CorrelationId: "corr:strict-001",
+            CausationId: "cause:strict-001",
+            OrganizationId: "org-001",
+            EnvironmentId: "env-001",
+            Actor: "system:test",
+            IdempotencyKey: "strict:event-strict-001",
+            Payload: new StrictPayload("strict-value"));
+        Assert.Throws<JsonException>(() => JsonSerializer.Serialize(invalid));
+
+        var deadLetter = IntegrationEventDeadLetterMessage.Create("strict.consumer", invalid, "unsupported-version", "version 1 is not accepted");
+
+        Assert.Equal("event-strict-001", deadLetter.EventId);
+        Assert.Equal(1, deadLetter.EventVersion);
+        Assert.Equal(typeof(StrictIntegrationEvent).FullName, deadLetter.EventClrType);
+        using var forensic = JsonDocument.Parse(deadLetter.EventJson);
+        Assert.Equal("event-strict-001", forensic.RootElement.GetProperty("eventId").GetString());
+        Assert.Equal(1, forensic.RootElement.GetProperty("eventVersion").GetInt32());
+        Assert.Equal("strict:event-strict-001", forensic.RootElement.GetProperty("idempotencyKey").GetString());
+        Assert.Equal("strict-value", forensic.RootElement.GetProperty("payload").GetProperty("Value").GetString());
+
+        var valid = invalid with { EventVersion = 2 };
+        var typed = IntegrationEventDeadLetterMessage.Create("strict.consumer", valid, "handler-failed", "business rule");
+        Assert.Equal(JsonSerializer.Serialize(valid), typed.EventJson);
+    }
+
+    private static DotNetCore.CAP.Messages.FailedInfo CreateSubscribeFailure(string typeHeader, object value, string exceptionHeader) =>
+        new()
+        {
+            ServiceProvider = new ServiceCollection().BuildServiceProvider(),
+            MessageType = DotNetCore.CAP.Messages.MessageType.Subscribe,
+            Message = new DotNetCore.CAP.Messages.Message(
+                new Dictionary<string, string?>
+                {
+                    [DotNetCore.CAP.Messages.Headers.Group] = "sample.consumer",
+                    [DotNetCore.CAP.Messages.Headers.Type] = typeHeader,
+                    [DotNetCore.CAP.Messages.Headers.MessageName] = "sample.topic",
+                    [DotNetCore.CAP.Messages.Headers.Exception] = exceptionHeader
+                },
+                value)
+        };
+
     private static SampleIntegrationEvent CreateValidEvent(string eventId)
     {
         return new SampleIntegrationEvent(
@@ -781,3 +887,63 @@ public sealed class IntegrationEventReliabilityTests
         public override DateTimeOffset GetUtcNow() => utcNow;
     }
 }
+
+[System.Text.Json.Serialization.JsonConverter(typeof(StrictIntegrationEventJsonConverter))]
+public sealed record StrictIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    StrictPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+/// <summary>模拟本仓 Read/Write 双侧校验的 wire contract converter（如 AssetUnavailableV2WireContract）。</summary>
+public sealed class StrictIntegrationEventJsonConverter : System.Text.Json.Serialization.JsonConverter<StrictIntegrationEvent>
+{
+    public override StrictIntegrationEvent Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        var value = JsonSerializer.Deserialize<StrictDto>(ref reader, options) ?? throw new JsonException("envelope required");
+        var integrationEvent = new StrictIntegrationEvent(value.EventId, value.EventType, value.EventVersion, value.OccurredAtUtc, value.SourceService, value.CorrelationId, value.CausationId, value.OrganizationId, value.EnvironmentId, value.Actor, value.IdempotencyKey, value.Payload);
+        Validate(integrationEvent);
+        return integrationEvent;
+    }
+
+    public override void Write(Utf8JsonWriter writer, StrictIntegrationEvent value, JsonSerializerOptions options)
+    {
+        Validate(value);
+        JsonSerializer.Serialize(writer, new StrictDto(value.EventId, value.EventType, value.EventVersion, value.OccurredAtUtc, value.SourceService, value.CorrelationId, value.CausationId, value.OrganizationId, value.EnvironmentId, value.Actor, value.IdempotencyKey, value.Payload), options);
+    }
+
+    private static void Validate(StrictIntegrationEvent value)
+    {
+        if (value.EventVersion != 2)
+        {
+            throw new JsonException("strict envelope requires eventVersion 2.");
+        }
+    }
+
+    private sealed record StrictDto(
+        string EventId,
+        string EventType,
+        int EventVersion,
+        DateTimeOffset OccurredAtUtc,
+        string SourceService,
+        string CorrelationId,
+        string CausationId,
+        string OrganizationId,
+        string EnvironmentId,
+        string Actor,
+        string IdempotencyKey,
+        StrictPayload Payload);
+}
+
+public sealed record StrictPayload(string Value);

@@ -498,12 +498,41 @@ public sealed record IntegrationEventDeadLetterMessage(
             integrationEvent.SourceService,
             integrationEvent.IdempotencyKey,
             integrationEvent.GetType().FullName ?? typeof(TIntegrationEvent).FullName ?? typeof(TIntegrationEvent).Name,
-            JsonSerializer.Serialize(integrationEvent, integrationEvent.GetType()),
+            SerializeForForensics(integrationEvent),
             failureCode,
             failureMessage,
             IntegrationEventDeadLetterStatus.Pending,
             DateTimeOffset.UtcNow,
             null);
+    }
+
+    /// <summary>
+    /// Dead letters must be writable for exactly the objects that violate their own contract. Typed serialization
+    /// runs the contract's <c>JsonConverter.Write</c>, and converters in this repository validate on write too,
+    /// so an envelope that breaks its wire contract would make <see cref="Create{TIntegrationEvent}"/> itself throw
+    /// (#3101). Fall back to a converter-free projection of the public envelope members so the evidence is kept.
+    /// </summary>
+    private static string SerializeForForensics(IIntegrationEventEnvelope integrationEvent)
+    {
+        try
+        {
+            return JsonSerializer.Serialize(integrationEvent, integrationEvent.GetType());
+        }
+        catch (JsonException)
+        {
+            var projection = new Dictionary<string, object?>(StringComparer.Ordinal);
+            foreach (var property in integrationEvent.GetType().GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+            {
+                if (property.GetIndexParameters().Length > 0 || !property.CanRead)
+                {
+                    continue;
+                }
+
+                projection[JsonNamingPolicy.CamelCase.ConvertName(property.Name)] = property.GetValue(integrationEvent);
+            }
+
+            return JsonSerializer.Serialize(projection);
+        }
     }
 }
 
@@ -594,6 +623,21 @@ public sealed class IntegrationEventDeadLetterReplayExecutor(
 public sealed class IntegrationEventCapFailureDeadLetterer(IIntegrationEventDeadLetterStore deadLetterStore)
 {
     public const string HandlerRetryExhaustedFailureCode = "handler-retry-exhausted";
+
+    /// <summary>
+    /// The transport delivered a message that the typed contract rejected before any handler ran (for example a
+    /// wire-contract <see cref="JsonException"/> thrown by a contract converter on read). The original wire body is
+    /// preserved verbatim: re-serialising through the same contract is exactly what cannot work for it (#3101).
+    /// </summary>
+    public const string ContractRejectedFailureCode = "contract-rejected";
+
+    /// <summary>
+    /// Wrapper property used when the wire body is not JSON at all; <c>EventJson</c> is stored in a JSON column on
+    /// PostgreSQL, so a non-JSON body is kept verbatim as a string inside a JSON object instead of being dropped.
+    /// </summary>
+    public const string RawBodyPropertyName = "rawBody";
+
+    private const string DataUriBase64Marker = ";base64,";
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
         PropertyNameCaseInsensitive = true
@@ -607,43 +651,137 @@ public sealed class IntegrationEventCapFailureDeadLetterer(IIntegrationEventDead
             return;
         }
 
-        var integrationEvent = failedInfo.Message.Value as IIntegrationEventEnvelope
-            ?? TryDeserializeEnvelope(failedInfo.Message);
-        if (integrationEvent is null)
-        {
-            return;
-        }
-
         var consumerName = ReadHeader(failedInfo.Message, Headers.Group)
             ?? ReadHeader(failedInfo.Message, Headers.MessageName)
             ?? "unknown.consumer";
         var failureMessage = ReadHeader(failedInfo.Message, Headers.Exception)
             ?? "CAP subscriber exhausted retry attempts.";
+
+        if (failedInfo.Message.Value is IIntegrationEventEnvelope typedValue)
+        {
+            await deadLetterStore.AddAsync(
+                IntegrationEventDeadLetterMessage.Create(consumerName, typedValue, HandlerRetryExhaustedFailureCode, failureMessage),
+                cancellationToken);
+            return;
+        }
+
+        var json = ExtractJson(failedInfo.Message.Value);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return;
+        }
+
+        var eventType = ResolveEventType(ReadHeader(failedInfo.Message, Headers.Type))
+            ?? ResolveEventType(ReadHeader(failedInfo.Message, Headers.MessageName));
+        JsonException? contractRejection = null;
+        if (eventType is not null)
+        {
+            try
+            {
+                if (JsonSerializer.Deserialize(json, eventType, SerializerOptions) is IIntegrationEventEnvelope integrationEvent)
+                {
+                    await deadLetterStore.AddAsync(
+                        IntegrationEventDeadLetterMessage.Create(consumerName, integrationEvent, HandlerRetryExhaustedFailureCode, failureMessage),
+                        cancellationToken);
+                    return;
+                }
+            }
+            catch (JsonException exception)
+            {
+                contractRejection = exception;
+            }
+        }
+
+        var eventClrType = eventType?.FullName
+            ?? ReadHeader(failedInfo.Message, Headers.Type)
+            ?? ReadHeader(failedInfo.Message, Headers.MessageName)
+            ?? "unknown";
         await deadLetterStore.AddAsync(
-            IntegrationEventDeadLetterMessage.Create(
-                consumerName,
-                integrationEvent,
-                HandlerRetryExhaustedFailureCode,
-                failureMessage),
+            CreateRawDeadLetter(consumerName, eventClrType, json, contractRejection, failureMessage),
             cancellationToken);
     }
 
-    private static IIntegrationEventEnvelope? TryDeserializeEnvelope(Message message)
+    /// <summary>
+    /// Builds a dead letter for a body the typed contract refused: identity columns are read leniently from the raw
+    /// JSON (missing ones stay <c>null</c>) and <see cref="IntegrationEventDeadLetterMessage.EventJson"/> is the
+    /// original wire body, so replay tooling and operators see exactly what the transport delivered.
+    /// </summary>
+    private static IntegrationEventDeadLetterMessage CreateRawDeadLetter(
+        string consumerName,
+        string eventClrType,
+        string json,
+        JsonException? contractRejection,
+        string transportFailureMessage)
     {
-        var eventType = ResolveEventType(ReadHeader(message, Headers.Type))
-            ?? ResolveEventType(ReadHeader(message, Headers.MessageName));
-        if (eventType is null)
+        string? eventId = null, eventTypeName = null, sourceService = null, idempotencyKey = null;
+        int? eventVersion = null;
+        string eventJson;
+        try
         {
-            return null;
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind == JsonValueKind.Object)
+            {
+                eventId = ReadString(document.RootElement, nameof(IIntegrationEventEnvelope.EventId));
+                eventTypeName = ReadString(document.RootElement, nameof(IIntegrationEventEnvelope.EventType));
+                sourceService = ReadString(document.RootElement, nameof(IIntegrationEventEnvelope.SourceService));
+                idempotencyKey = ReadString(document.RootElement, nameof(IIntegrationEventEnvelope.IdempotencyKey));
+                eventVersion = ReadInt32(document.RootElement, nameof(IIntegrationEventEnvelope.EventVersion));
+            }
+
+            eventJson = json;
+        }
+        catch (JsonException)
+        {
+            // Not JSON at all: keep the body verbatim inside a JSON wrapper so the JSON column still accepts it.
+            eventJson = JsonSerializer.Serialize(new Dictionary<string, string> { [RawBodyPropertyName] = json });
         }
 
-        var json = ExtractJson(message.Value);
-        if (string.IsNullOrWhiteSpace(json))
+        var failureMessage = contractRejection is null
+            ? transportFailureMessage
+            : $"{contractRejection.Message} ({transportFailureMessage})";
+        return new IntegrationEventDeadLetterMessage(
+            Guid.CreateVersion7(),
+            consumerName,
+            eventId,
+            eventTypeName,
+            eventVersion,
+            sourceService,
+            idempotencyKey,
+            eventClrType,
+            eventJson,
+            ContractRejectedFailureCode,
+            failureMessage,
+            IntegrationEventDeadLetterStatus.Pending,
+            DateTimeOffset.UtcNow,
+            null);
+    }
+
+    private static string? ReadString(JsonElement element, string propertyName)
+    {
+        foreach (var property in element.EnumerateObject())
         {
-            return null;
+            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                return property.Value.ValueKind == JsonValueKind.String ? property.Value.GetString() : property.Value.ToString();
+            }
         }
 
-        return JsonSerializer.Deserialize(json, eventType, SerializerOptions) as IIntegrationEventEnvelope;
+        return null;
+    }
+
+    private static int? ReadInt32(JsonElement element, string propertyName)
+    {
+        foreach (var property in element.EnumerateObject())
+        {
+            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                return property.Value.ValueKind == JsonValueKind.Number && property.Value.TryGetInt32(out var value)
+                    ? value
+                    : null;
+            }
+        }
+
+        return null;
     }
 
     private static Type? ResolveEventType(string? eventTypeName)
@@ -686,17 +824,45 @@ public sealed class IntegrationEventCapFailureDeadLetterer(IIntegrationEventDead
                 : null;
     }
 
+    /// <summary>
+    /// CAP persists a received message whose body could not be bound to the subscriber parameter as a
+    /// <c>data:&lt;name&gt;;base64,&lt;payload&gt;</c> string. Decode it so the dead letter carries the wire JSON, not the
+    /// storage encoding.
+    /// </summary>
     private static string? ExtractJson(object? value)
     {
         return value switch
         {
             null => null,
-            string text => text,
+            string text => DecodeDataUri(text),
             JsonElement element => element.GetRawText(),
             byte[] bytes => Encoding.UTF8.GetString(bytes),
             IIntegrationEventEnvelope envelope => JsonSerializer.Serialize(envelope, envelope.GetType(), SerializerOptions),
             _ => JsonSerializer.Serialize(value, value.GetType(), SerializerOptions)
         };
+    }
+
+    private static string DecodeDataUri(string text)
+    {
+        if (!text.StartsWith("data:", StringComparison.Ordinal))
+        {
+            return text;
+        }
+
+        var marker = text.IndexOf(DataUriBase64Marker, StringComparison.Ordinal);
+        if (marker < 0)
+        {
+            return text;
+        }
+
+        try
+        {
+            return Encoding.UTF8.GetString(Convert.FromBase64String(text[(marker + DataUriBase64Marker.Length)..]));
+        }
+        catch (FormatException)
+        {
+            return text;
+        }
     }
 
     private static string? ReadHeader(Message message, string name)
