@@ -210,7 +210,7 @@ const routingSegments = computed(() => {
   return pagedBreakdownSegments(routingsTotal.value, segments)
 })
 
-const listErrorMessage = computed(() => formatError(routingsError.value))
+const listErrorMessage = computed(() => inlineErrorMessage(routingsError.value))
 
 const columns: NvDataTableColumn<BusinessConsoleRoutingItem>[] = [
   { key: 'routingCode', header: '路线号', cellClass: 'font-medium' },
@@ -373,10 +373,6 @@ async function openView(row: BusinessConsoleRoutingItem) {
   } finally {
     detailPending.value = false
   }
-}
-
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 </script>
 
