@@ -2487,6 +2487,17 @@ public sealed class MesEndpointContractTests
                     new ShiftHandoverOpenIssueInput("equipment", "low", "刀具磨损待更换", null),
                     new ShiftHandoverOpenIssueInput("quality", "high", "终检记录待补录", null),
                     new ShiftHandoverOpenIssueInput("equipment", "high", "主轴异响，二号机", "DT-0001"),
+                ],
+                // 附件按文件名序数排。写入序、文件 id 序与文件名序三者刻意互不相同，
+                // 因此改按写入序或按 FileId 排都会翻序；三个大小也互不相同，字段错位即可被发现。
+                // 后两条同名：两台手机各传一张 IMG_0001.jpg 是现场常态，file_name 是交班时点快照且无唯一约束，
+                // 重名合法。同名时并列必须由 FileId 兜底定序，否则退回数据库行序——Postgres 上无 ORDER BY 即未定义。
+                [
+                    new ShiftHandoverAttachmentInput("file-a", "photo-3.jpg", "image/jpeg", 300L),
+                    new ShiftHandoverAttachmentInput("file-c", "photo-1.jpg", "image/jpeg", 100L),
+                    new ShiftHandoverAttachmentInput("file-b", "photo-2.jpg", "image/jpeg", 200L),
+                    new ShiftHandoverAttachmentInput("file-e", "IMG_0001.jpg", "image/jpeg", 500L),
+                    new ShiftHandoverAttachmentInput("file-d", "IMG_0001.jpg", "image/jpeg", 400L),
                 ]),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -2536,6 +2547,16 @@ public sealed class MesEndpointContractTests
         Assert.Equal("张三", listed.OutgoingUserName);
         Assert.Equal("李四", listed.IncomingUserName);
         Assert.Equal(now.AddHours(8), listed.AcceptedAtUtc);
+
+        // IMG_0001.jpg 排在 photo-* 之前（大写 I U+0049 < 小写 p U+0070），同名两条由 FileId 升序兜底：
+        // 写入序是 file-e 在前，若删掉 ThenBy(FileId) 就会退回写入序 file-e/file-d，与此期望相反。
+        Assert.Equal(
+            [("file-d", "IMG_0001.jpg", "image/jpeg", 400L),
+             ("file-e", "IMG_0001.jpg", "image/jpeg", 500L),
+             ("file-c", "photo-1.jpg", "image/jpeg", 100L),
+             ("file-b", "photo-2.jpg", "image/jpeg", 200L),
+             ("file-a", "photo-3.jpg", "image/jpeg", 300L)],
+            detail.Attachments.Select(x => (x.FileId, x.FileName, x.ContentType, x.SizeBytes)));
     }
 
     [Fact]
@@ -2601,11 +2622,17 @@ public sealed class MesEndpointContractTests
                 "org-001", "env-dev", "EARLY", "TEAM-A", now, "handover-overlong-user",
                 OutgoingUserName: new string('x', 201)),
             CancellationToken.None));
+        var negativeAttachmentSize = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CreateShiftHandoverCommand(
+                "org-001", "env-dev", "EARLY", "TEAM-A", now, "handover-negative-attachment",
+                Attachments: [new ShiftHandoverAttachmentInput("file-a", "photo.jpg", "image/jpeg", -1L)]),
+            CancellationToken.None));
 
         Assert.Contains("在制清点数量不能为负数", negativeWipQuantity.Message, StringComparison.Ordinal);
         Assert.Contains("未完工单计划数量必须为正数", nonPositivePlannedQuantity.Message, StringComparison.Ordinal);
         Assert.Contains("cannot exceed 1000 characters", overlongDescription.Message, StringComparison.Ordinal);
         Assert.Contains("cannot exceed 200 characters", overlongOutgoingUserName.Message, StringComparison.Ordinal);
+        Assert.Contains("交接班附件大小不能为负数", negativeAttachmentSize.Message, StringComparison.Ordinal);
     }
 
     [Fact]

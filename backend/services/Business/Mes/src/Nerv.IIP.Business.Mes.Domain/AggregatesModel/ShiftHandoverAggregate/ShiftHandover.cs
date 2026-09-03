@@ -8,6 +8,8 @@ public partial record ShiftHandoverUnfinishedWorkOrderId : IGuidStronglyTypedId;
 
 public partial record ShiftHandoverOpenIssueId : IGuidStronglyTypedId;
 
+public partial record ShiftHandoverAttachmentId : IGuidStronglyTypedId;
+
 /// <summary>Which shop-floor domain a handed-over open issue came from.</summary>
 public enum ShiftHandoverIssueCategory
 {
@@ -142,6 +144,46 @@ public sealed class ShiftHandoverOpenIssue : Entity<ShiftHandoverOpenIssueId>
         new(category, severity, description, referenceId);
 }
 
+/// <summary>
+/// FileStorage file handed over with the shift — on the shop floor these are phone photos of the
+/// machine, the defect or the paperwork the outgoing team is talking about.
+///
+/// Only the file id crosses back to FileStorage when a download grant is issued; the name, content
+/// type and size are snapshots taken at handover time so the read face needs no FileStorage call.
+/// </summary>
+public sealed class ShiftHandoverAttachment : Entity<ShiftHandoverAttachmentId>
+{
+    private ShiftHandoverAttachment()
+    {
+    }
+
+    private ShiftHandoverAttachment(string fileId, string fileName, string contentType, long sizeBytes)
+    {
+        Id = new ShiftHandoverAttachmentId(Guid.CreateVersion7());
+        FileId = ShiftHandoverGuard.RequiredBounded(fileId, nameof(fileId), 150);
+        FileName = ShiftHandoverGuard.RequiredBounded(fileName, nameof(fileName), 255);
+        ContentType = ShiftHandoverGuard.RequiredBounded(contentType, nameof(contentType), 150);
+        SizeBytes = sizeBytes >= 0
+            ? sizeBytes
+            : throw new ArgumentOutOfRangeException(nameof(sizeBytes), "交接班附件大小不能为负数。");
+    }
+
+    /// <summary>FileStorage file id; the only handle a download grant needs.</summary>
+    public string FileId { get; private set; } = string.Empty;
+
+    /// <summary>File name captured at handover time.</summary>
+    public string FileName { get; private set; } = string.Empty;
+
+    /// <summary>Content type captured at handover time; tells the read face whether it can be shown inline.</summary>
+    public string ContentType { get; private set; } = string.Empty;
+
+    /// <summary>File size in bytes captured at handover time.</summary>
+    public long SizeBytes { get; private set; }
+
+    internal static ShiftHandoverAttachment Create(string fileId, string fileName, string contentType, long sizeBytes) =>
+        new(fileId, fileName, contentType, sizeBytes);
+}
+
 /// <summary>WIP count line supplied by the write face.</summary>
 public sealed record ShiftHandoverWipItemSnapshot(string WorkOrderId, string? OperationTaskId, decimal Quantity);
 
@@ -159,6 +201,13 @@ public sealed record ShiftHandoverOpenIssueSnapshot(
     string Description,
     string? ReferenceId = null);
 
+/// <summary>FileStorage attachment supplied by the write face.</summary>
+public sealed record ShiftHandoverAttachmentSnapshot(
+    string FileId,
+    string FileName,
+    string ContentType,
+    long SizeBytes);
+
 public sealed class ShiftHandover : Entity<ShiftHandoverId>, IAggregateRoot
 {
     public const string OpenStatus = "Open";
@@ -167,6 +216,7 @@ public sealed class ShiftHandover : Entity<ShiftHandoverId>, IAggregateRoot
     private readonly List<ShiftHandoverWipItem> wipItems = [];
     private readonly List<ShiftHandoverUnfinishedWorkOrder> unfinishedWorkOrders = [];
     private readonly List<ShiftHandoverOpenIssue> openIssues = [];
+    private readonly List<ShiftHandoverAttachment> attachments = [];
 
     private ShiftHandover()
     {
@@ -240,6 +290,7 @@ public sealed class ShiftHandover : Entity<ShiftHandoverId>, IAggregateRoot
     public IReadOnlyCollection<ShiftHandoverWipItem> WipItems => wipItems;
     public IReadOnlyCollection<ShiftHandoverUnfinishedWorkOrder> UnfinishedWorkOrders => unfinishedWorkOrders;
     public IReadOnlyCollection<ShiftHandoverOpenIssue> OpenIssues => openIssues;
+    public IReadOnlyCollection<ShiftHandoverAttachment> Attachments => attachments;
 
     public static ShiftHandover Create(
         string organizationId,
@@ -254,7 +305,8 @@ public sealed class ShiftHandover : Entity<ShiftHandoverId>, IAggregateRoot
         string? outgoingUserName = null,
         IReadOnlyCollection<ShiftHandoverWipItemSnapshot>? wipItems = null,
         IReadOnlyCollection<ShiftHandoverUnfinishedWorkOrderSnapshot>? unfinishedWorkOrders = null,
-        IReadOnlyCollection<ShiftHandoverOpenIssueSnapshot>? openIssues = null)
+        IReadOnlyCollection<ShiftHandoverOpenIssueSnapshot>? openIssues = null,
+        IReadOnlyCollection<ShiftHandoverAttachmentSnapshot>? attachments = null)
     {
         var handover = new ShiftHandover(
             organizationId,
@@ -289,6 +341,15 @@ public sealed class ShiftHandover : Entity<ShiftHandoverId>, IAggregateRoot
                 issue.Severity,
                 issue.Description,
                 issue.ReferenceId));
+        }
+
+        foreach (var attachment in attachments ?? [])
+        {
+            handover.attachments.Add(ShiftHandoverAttachment.Create(
+                attachment.FileId,
+                attachment.FileName,
+                attachment.ContentType,
+                attachment.SizeBytes));
         }
 
         return handover;
