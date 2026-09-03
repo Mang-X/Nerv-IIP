@@ -715,8 +715,9 @@ watch(
                 id="mwo-device"
                 v-model="createForm.deviceAssetId"
                 :suggestions="deviceSuggestions"
-                placeholder="搜索设备台账或直接输入，如 DEV-SMT-01"
+                placeholder="搜索设备台账"
               />
+              <NvFieldDescription>也可直接输入设备编号，如 DEV-SMT-01。</NvFieldDescription>
             </NvField>
             <NvField>
               <NvFieldLabel for="mwo-priority">优先级</NvFieldLabel>
