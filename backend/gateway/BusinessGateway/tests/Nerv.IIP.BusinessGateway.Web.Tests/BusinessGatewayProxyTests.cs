@@ -15802,13 +15802,11 @@ internal sealed class RecordingBusinessFileStorageClient : IBusinessFileStorageC
 
     public BusinessConsoleCompleteShiftHandoverAttachmentUploadRequest? LastCompleteRequest { get; private set; }
 
-    public BusinessConsoleCreateShiftHandoverAttachmentDownloadGrantRequest? LastAttachmentGrantRequest { get; private set; }
+    public string? LastTusHeadUploadSessionId { get; private set; }
 
-    public string? LastTusUploadSessionId { get; private set; }
+    public string? LastTusPatchUploadSessionId { get; private set; }
 
-    public bool LastTusRequestHadBody { get; private set; }
-
-    public string? LastAttachmentContentGrantId { get; private set; }
+    public string? LastAttachmentContentFileId { get; private set; }
 
     public string? LastAttachmentContentOrganizationId { get; private set; }
 
@@ -15848,47 +15846,43 @@ internal sealed class RecordingBusinessFileStorageClient : IBusinessFileStorageC
             2048));
     }
 
-    public Task<BusinessConsoleShiftHandoverAttachmentDownloadGrantResponse> CreateShiftHandoverAttachmentDownloadGrantAsync(
-        string internalBearerToken,
-        string fileId,
-        BusinessConsoleCreateShiftHandoverAttachmentDownloadGrantRequest request,
-        CancellationToken cancellationToken)
-    {
-        LastInternalToken = internalBearerToken;
-        LastFileId = fileId;
-        LastAttachmentGrantRequest = request;
-        return Task.FromResult(new BusinessConsoleShiftHandoverAttachmentDownloadGrantResponse(
-            fileId,
-            DateTimeOffset.Parse("2026-09-02T08:00:00Z"),
-            "/api/business-console/v1/files/shift-handover-attachments/download-grants/grant-handover-1/content",
-            new Dictionary<string, string>()));
-    }
-
-    public Task ProxyShiftHandoverAttachmentTusAsync(
+    public Task ProxyShiftHandoverAttachmentTusHeadAsync(
         string internalBearerToken,
         string uploadSessionId,
-        HttpRequest? sourceRequest,
         HttpResponse targetResponse,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
-        LastTusUploadSessionId = uploadSessionId;
-        LastTusRequestHadBody = sourceRequest is not null;
+        LastTusHeadUploadSessionId = uploadSessionId;
         targetResponse.StatusCode = StatusCodes.Status204NoContent;
         targetResponse.Headers["Upload-Offset"] = "1024";
         return Task.CompletedTask;
     }
 
-    public Task ProxyShiftHandoverAttachmentContentAsync(
+    public Task ProxyShiftHandoverAttachmentTusPatchAsync(
         string internalBearerToken,
-        string downloadGrantId,
+        string uploadSessionId,
+        HttpRequest sourceRequest,
+        HttpResponse targetResponse,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastTusPatchUploadSessionId = uploadSessionId;
+        targetResponse.StatusCode = StatusCodes.Status204NoContent;
+        targetResponse.Headers["Upload-Offset"] = "2048";
+        return Task.CompletedTask;
+    }
+
+    public Task StreamShiftHandoverAttachmentContentAsync(
+        string internalBearerToken,
+        string fileId,
         string organizationId,
         string environmentId,
         HttpResponse targetResponse,
         CancellationToken cancellationToken)
     {
         LastContentInternalToken = internalBearerToken;
-        LastAttachmentContentGrantId = downloadGrantId;
+        LastAttachmentContentFileId = fileId;
         LastAttachmentContentOrganizationId = organizationId;
         LastAttachmentContentEnvironmentId = environmentId;
         targetResponse.ContentType = "application/octet-stream";

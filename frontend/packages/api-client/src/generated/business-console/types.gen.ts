@@ -6895,24 +6895,6 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     sizeBytes?: number | null;
 };
 
-export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleShiftHandoverAttachmentDownloadGrantResponse = NetCorePalExtensionsDtoResponseData & {
-    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleShiftHandoverAttachmentDownloadGrantResponse | null;
-};
-
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleShiftHandoverAttachmentDownloadGrantResponse = {
-    fileId?: string;
-    expiresAtUtc?: string;
-    downloadUrl?: string;
-    downloadHeaders?: {
-        [key: string]: string;
-    };
-};
-
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateShiftHandoverAttachmentDownloadGrantRequest = {
-    organizationId: string;
-    environmentId: string;
-};
-
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpPurchaseOrderListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseOrderListResponse | null;
 };
@@ -20306,48 +20288,13 @@ export type PatchBusinessConsoleShiftHandoverAttachmentTusUploadResponses = {
 
 export type PatchBusinessConsoleShiftHandoverAttachmentTusUploadResponse = PatchBusinessConsoleShiftHandoverAttachmentTusUploadResponses[keyof PatchBusinessConsoleShiftHandoverAttachmentTusUploadResponses];
 
-export type CreateBusinessConsoleShiftHandoverAttachmentDownloadGrantData = {
-    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateShiftHandoverAttachmentDownloadGrantRequest;
+export type DownloadBusinessConsoleShiftHandoverAttachmentContentData = {
+    body?: never;
     path: {
         fileId: string;
     };
     query?: never;
-    url: '/api/business-console/v1/files/shift-handover-attachments/{fileId}/download-grants';
-};
-
-export type CreateBusinessConsoleShiftHandoverAttachmentDownloadGrantErrors = {
-    /**
-     * Bad Request
-     */
-    400: FastEndpointsErrorResponse;
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Forbidden
-     */
-    403: unknown;
-};
-
-export type CreateBusinessConsoleShiftHandoverAttachmentDownloadGrantError = CreateBusinessConsoleShiftHandoverAttachmentDownloadGrantErrors[keyof CreateBusinessConsoleShiftHandoverAttachmentDownloadGrantErrors];
-
-export type CreateBusinessConsoleShiftHandoverAttachmentDownloadGrantResponses = {
-    /**
-     * Success
-     */
-    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleShiftHandoverAttachmentDownloadGrantResponse;
-};
-
-export type CreateBusinessConsoleShiftHandoverAttachmentDownloadGrantResponse = CreateBusinessConsoleShiftHandoverAttachmentDownloadGrantResponses[keyof CreateBusinessConsoleShiftHandoverAttachmentDownloadGrantResponses];
-
-export type DownloadBusinessConsoleShiftHandoverAttachmentContentData = {
-    body?: never;
-    path: {
-        downloadGrantId: string;
-    };
-    query?: never;
-    url: '/api/business-console/v1/files/shift-handover-attachments/download-grants/{downloadGrantId}/content';
+    url: '/api/business-console/v1/files/shift-handover-attachments/{fileId}/content';
 };
 
 export type DownloadBusinessConsoleShiftHandoverAttachmentContentErrors = {

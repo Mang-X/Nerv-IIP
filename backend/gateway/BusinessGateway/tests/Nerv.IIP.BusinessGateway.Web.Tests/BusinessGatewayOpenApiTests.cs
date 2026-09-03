@@ -321,8 +321,11 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/files/shift-handover-attachments/upload-sessions/{uploadSessionId}/complete", "post", "completeBusinessConsoleShiftHandoverAttachmentUpload");
         AssertOperationId(paths, "/api/business-console/v1/files/shift-handover-attachments/tus/{uploadSessionId}", "head", "getBusinessConsoleShiftHandoverAttachmentTusOffset");
         AssertOperationId(paths, "/api/business-console/v1/files/shift-handover-attachments/tus/{uploadSessionId}", "patch", "patchBusinessConsoleShiftHandoverAttachmentTusUpload");
-        AssertOperationId(paths, "/api/business-console/v1/files/shift-handover-attachments/{fileId}/download-grants", "post", "createBusinessConsoleShiftHandoverAttachmentDownloadGrant");
-        AssertOperationId(paths, "/api/business-console/v1/files/shift-handover-attachments/download-grants/{downloadGrantId}/content", "get", "downloadBusinessConsoleShiftHandoverAttachmentContent");
+        // 下载面只有一条字节路由、以 fileId 为入参：grant id 不出网关（#3096 审核 A1）。
+        AssertOperationId(paths, "/api/business-console/v1/files/shift-handover-attachments/{fileId}/content", "get", "downloadBusinessConsoleShiftHandoverAttachmentContent");
+        Assert.DoesNotContain(
+            paths.EnumerateObject().Select(path => path.Name),
+            name => name.StartsWith("/api/business-console/v1/files/shift-handover-attachments/download-grants", StringComparison.Ordinal));
         AssertOperationId(paths, "/api/business-console/v1/engineering/items", "post", "createBusinessConsoleEngineeringItemRevision");
         AssertOperationId(paths, "/api/business-console/v1/engineering/engineering-boms", "get", "listBusinessConsoleEngineeringBoms");
         AssertOperationId(paths, "/api/business-console/v1/engineering/engineering-boms/explosion", "get", "getBusinessConsoleEngineeringBomExplosion");

@@ -126,7 +126,7 @@ File Storage 创建上传会话时必须先应用平台策略，不能等文件�
 3. AppHub 可引用应用包、发布附件或实例证据文件，但应用目录、版本和实例事实仍由 AppHub 拥有。
 4. PlatformGateway 只聚合文件元数据和下载授权入口，不绕过 File Storage 直连对象存储。
 5. Connector Host 如需上传日志或诊断包，必须使用 IAM 授权后的 File Storage API/SDK。
-6. BusinessGateway 的业务面按用途单独开门，不提供通用文件门面。当前有两组：工程 SOP 文件的下载授权与内容（`business.engineering.documents.read`），以及 `/api/business-console/v1/files/shift-handover-attachments/**` 的交接班附件上传与下载。后者的用途固定为 `shift-handover-photo`、owner 固定为 `business-mes / shift-handover-attachment / {principalId}`，上传（会话、tus `HEAD`/`PATCH`、complete）要求 `business.mes.handovers.manage`，下载授权与内容要求 `business.mes.handovers.read`，并在换下载授权前复核目标文件用途，避免交接班读权限退化成通用文件读权限。两组都按 ADR 0023 只交出 Gateway 受控 URL；FileStorage 未按 tus 运行时上传会话门面失败关闭，不下发没有字节 endpoint 的占位指令。
+6. BusinessGateway 的业务面按用途单独开门，不提供通用文件门面。当前有两组：工程 SOP 文件的下载授权与内容（`business.engineering.documents.read`），以及 `/api/business-console/v1/files/shift-handover-attachments/**` 的交接班附件上传与下载。后者的用途固定为 `shift-handover-photo`、owner 固定为 `business-mes / shift-handover-attachment / {principalId}`，上传（会话、tus `HEAD`/`PATCH`、complete）要求 `business.mes.handovers.manage`，下载是单跳 `GET .../{fileId}/content`、要求 `business.mes.handovers.read`，网关在取字节前复核目标文件用途，并在服务端签发 download grant 后立即兑换——grant id 不出网关，因为它是 FileStorage 全服务共用命名空间且兑换面不校验用途，交出去会让任一业务门面的读权限持有者兑换其它门面签发的 grant。两组都按 [ADR 0023](../adr/0023-filestorage-tus-proxy-staging-final-complete-invariants.md) 与 [ADR 0030](../adr/0030-business-gateway-purpose-scoped-file-transfer.md) 只交出 Gateway 受控 URL；FileStorage 未按 tus 运行时上传会话门面失败关闭，不下发没有字节 endpoint 的占位指令。
 
 ## 首批验收标准
 

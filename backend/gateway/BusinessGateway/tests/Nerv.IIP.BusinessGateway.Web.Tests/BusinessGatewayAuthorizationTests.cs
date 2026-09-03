@@ -642,7 +642,6 @@ public sealed class BusinessGatewayAuthorizationTests
             horizonEnd = "2026-06-30",
         },
         "/api/business-console/v1/files/file-sop-v2/download-grants"
-            or "/api/business-console/v1/files/shift-handover-attachments/file-handover-1/download-grants"
             or "/api/business-console/v1/files/shift-handover-attachments/upload-sessions/ups-handover-1/complete" => new
         {
             organizationId = "org-001",
@@ -1309,8 +1308,7 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/files/shift-handover-attachments/upload-sessions", BusinessGatewayPermissions.MesHandoversManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/files/shift-handover-attachments/upload-sessions/ups-handover-1/complete", BusinessGatewayPermissions.MesHandoversManage);
         routes.Add(HttpMethod.Patch, "/api/business-console/v1/files/shift-handover-attachments/tus/ups-handover-1", BusinessGatewayPermissions.MesHandoversManage);
-        routes.Add(HttpMethod.Post, "/api/business-console/v1/files/shift-handover-attachments/file-handover-1/download-grants", BusinessGatewayPermissions.MesHandoversRead);
-        routes.Add(HttpMethod.Get, "/api/business-console/v1/files/shift-handover-attachments/download-grants/grant-handover-1/content", BusinessGatewayPermissions.MesHandoversRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/files/shift-handover-attachments/file-handover-1/content", BusinessGatewayPermissions.MesHandoversRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/demands", BusinessGatewayPermissions.PlanningDemandsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/demands", BusinessGatewayPermissions.PlanningDemandsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/forecasts", BusinessGatewayPermissions.PlanningDemandsRead);

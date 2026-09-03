@@ -2313,15 +2313,6 @@ public sealed record BusinessConsoleCompleteShiftHandoverAttachmentUploadRequest
     string? Checksum = null,
     long? SizeBytes = null);
 
-public sealed record BusinessConsoleCreateShiftHandoverAttachmentDownloadGrantRequest(
-    string OrganizationId,
-    string EnvironmentId);
-
-public sealed record BusinessConsoleShiftHandoverAttachmentDownloadGrantResponse(
-    string FileId,
-    DateTimeOffset ExpiresAtUtc,
-    string DownloadUrl,
-    IReadOnlyDictionary<string, string> DownloadHeaders);
 
 public sealed record BusinessConsoleListEngineeringBomsRequest(
     string OrganizationId,
@@ -5542,8 +5533,9 @@ public sealed record BusinessConsoleMesShiftHandoverUnfinishedWorkOrder(
 ///
 /// 两端通路见 <c>/api/business-console/v1/files/shift-handover-attachments/**</c>（#3085）：
 /// 上传走 <c>business.mes.handovers.manage</c> 的 tus 会话 + <c>HEAD</c>/<c>PATCH</c> + complete，
-/// complete 直接返回本记录；下载走 <c>business.mes.handovers.read</c> 的 download-grant 与 content，
-/// 并在换授权前复核目标文件用途必须是 <c>shift-handover-photo</c>。
+/// complete 直接返回本记录；下载走 <c>business.mes.handovers.read</c> 的
+/// <c>GET .../{fileId}/content</c> 单跳，网关在取字节前复核目标文件用途必须是
+/// <c>shift-handover-photo</c>，且不把 FileStorage 的 download grant id 交给调用方。
 /// SOP 那条 <c>/files/{fileId}/download-grants</c> 仍只认 <c>business.engineering.documents.read</c>，
 /// 交接班读者不经由它取字节。
 /// </summary>
