@@ -273,7 +273,7 @@ function rowKey(task: Row) {
   return task.operationTaskId ?? `${task.workOrderId}-${task.operationSequence}`
 }
 
-const errorMessage = computed(() => formatError(operationTasksError.value))
+const errorMessage = computed(() => inlineErrorMessage(operationTasksError.value))
 
 function resetFilters() {
   keyword.value = ''
@@ -476,7 +476,7 @@ function formatDate(value?: string | null) {
 function canOpenSops(task: Row) {
   return Boolean(task.operationCode?.trim())
 }
-const selectedSopErrorMessage = computed(() => formatError(currentSopsError.value))
+const selectedSopErrorMessage = computed(() => inlineErrorMessage(currentSopsError.value))
 const selectedSopTitle = computed(() => {
   const task = selectedSopTask.value
   if (!task) return ''
@@ -506,9 +506,6 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
       label: item.displayName ? `${item.displayName} (${item.code})` : item.code!,
       value: item.code!,
     }))
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 </script>
 

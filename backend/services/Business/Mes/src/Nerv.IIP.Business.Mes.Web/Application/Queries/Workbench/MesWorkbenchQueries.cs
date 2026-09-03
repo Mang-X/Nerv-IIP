@@ -2130,6 +2130,13 @@ public sealed record MesShiftHandoverOpenIssueRow(
     string Description,
     string? ReferenceId);
 
+/// <summary>交班附件行；<c>FileId</c> 就是网关下载授权面所需的全部信息。</summary>
+public sealed record MesShiftHandoverAttachmentRow(
+    string FileId,
+    string FileName,
+    string ContentType,
+    long SizeBytes);
+
 public sealed record MesShiftHandoverDetail(
     string HandoverId,
     string ShiftId,
@@ -2145,7 +2152,8 @@ public sealed record MesShiftHandoverDetail(
     string? IncomingUserName,
     IReadOnlyCollection<MesShiftHandoverWipItemRow> WipItems,
     IReadOnlyCollection<MesShiftHandoverUnfinishedWorkOrderRow> UnfinishedWorkOrders,
-    IReadOnlyCollection<MesShiftHandoverOpenIssueRow> OpenIssues);
+    IReadOnlyCollection<MesShiftHandoverOpenIssueRow> OpenIssues,
+    IReadOnlyCollection<MesShiftHandoverAttachmentRow> Attachments);
 
 public sealed class GetShiftHandoverQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<GetShiftHandoverQuery, MesShiftHandoverDetail>
@@ -2195,6 +2203,13 @@ public sealed class GetShiftHandoverQueryHandler(ApplicationDbContext dbContext)
                         issue.ReferenceId,
                     })
                     .ToArray(),
+                Attachments = x.Attachments
+                    .Select(attachment => new MesShiftHandoverAttachmentRow(
+                        attachment.FileId,
+                        attachment.FileName,
+                        attachment.ContentType,
+                        attachment.SizeBytes))
+                    .ToArray(),
             })
             .SingleOrDefaultAsync(cancellationToken)
             ?? throw new KnownException($"未找到班次交接，HandoverId = {request.HandoverId}");
@@ -2226,7 +2241,10 @@ public sealed class GetShiftHandoverQueryHandler(ApplicationDbContext dbContext)
                     x.Category.ToString(),
                     x.Severity.ToString(),
                     x.Description,
-                    x.ReferenceId))]);
+                    x.ReferenceId))],
+            [.. handover.Attachments
+                .OrderBy(x => x.FileName, StringComparer.Ordinal)
+                .ThenBy(x => x.FileId, StringComparer.Ordinal)]);
     }
 }
 

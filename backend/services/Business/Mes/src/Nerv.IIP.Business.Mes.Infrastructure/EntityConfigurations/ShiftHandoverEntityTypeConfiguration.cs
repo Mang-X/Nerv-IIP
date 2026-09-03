@@ -47,6 +47,12 @@ public sealed class ShiftHandoverEntityTypeConfiguration : IEntityTypeConfigurat
             .HasConstraintName("fk_shift_handover_open_issues_handovers")
             .OnDelete(DeleteBehavior.Cascade);
         builder.Navigation(x => x.OpenIssues).UsePropertyAccessMode(PropertyAccessMode.Field);
+        builder.HasMany(x => x.Attachments)
+            .WithOne()
+            .HasForeignKey("ShiftHandoverId")
+            .HasConstraintName("fk_shift_handover_attachments_handovers")
+            .OnDelete(DeleteBehavior.Cascade);
+        builder.Navigation(x => x.Attachments).UsePropertyAccessMode(PropertyAccessMode.Field);
     }
 }
 
@@ -121,5 +127,29 @@ public sealed class ShiftHandoverOpenIssueEntityTypeConfiguration : IEntityTypeC
         builder.Property(x => x.ReferenceId).HasColumnName("reference_id").HasMaxLength(100).HasComment("Optional business id of the originating fact such as a downtime event or defect record.");
         builder.HasIndex("ShiftHandoverId")
             .HasDatabaseName("ix_shift_handover_open_issues_handover");
+    }
+}
+
+public sealed class ShiftHandoverAttachmentEntityTypeConfiguration : IEntityTypeConfiguration<ShiftHandoverAttachment>
+{
+    public void Configure(EntityTypeBuilder<ShiftHandoverAttachment> builder)
+    {
+        builder.ToTable("shift_handover_attachments", tableBuilder =>
+        {
+            tableBuilder.HasComment("MES FileStorage attachments handed over with a shift; file name, content type and size are handover-time snapshots.");
+            tableBuilder.HasCheckConstraint("ck_shift_handover_attachments_size_bytes", "size_bytes >= 0");
+        });
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Shift handover attachment id.");
+        builder.Property<ShiftHandoverId>("ShiftHandoverId")
+            .HasColumnName("shift_handover_id")
+            .IsRequired()
+            .HasComment("Owning shift handover aggregate id.");
+        builder.Property(x => x.FileId).HasColumnName("file_id").IsRequired().HasMaxLength(150).HasComment("FileStorage file id; the handle a download grant is issued against.");
+        builder.Property(x => x.FileName).HasColumnName("file_name").IsRequired().HasMaxLength(255).HasComment("File name captured at handover time.");
+        builder.Property(x => x.ContentType).HasColumnName("content_type").IsRequired().HasMaxLength(150).HasComment("Content type captured at handover time.");
+        builder.Property(x => x.SizeBytes).HasColumnName("size_bytes").IsRequired().HasComment("File size in bytes captured at handover time.");
+        builder.HasIndex("ShiftHandoverId")
+            .HasDatabaseName("ix_shift_handover_attachments_handover");
     }
 }

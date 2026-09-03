@@ -85,7 +85,7 @@ watch(
 )
 
 const nodes = computed(() => traceability.value?.nodes ?? [])
-const errorMessage = computed(() => formatError(traceabilityError.value))
+const errorMessage = computed(() => inlineErrorMessage(traceabilityError.value))
 const batchModel = computed({
   get: () => filters.batchOrSerial ?? '',
   set: (value: string) => {
@@ -145,10 +145,6 @@ const columns: NvDataTableColumn<NodeRow>[] = [
   { key: 'displayName', header: '名称' },
   { key: 'status', header: '状态', width: 'w-28' },
 ]
-
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
 function firstQuery(value: unknown) {
   if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : ''
   return typeof value === 'string' ? value : ''

@@ -188,10 +188,12 @@ const blockingReasons = computed(() => [
 ])
 const blockingReasonDisplays = computed(() => describeMesReadinessReasons(blockingReasons.value))
 // 三张子表各读各的面，失败也各归各的表：合成一条页面级错误行会让「哪张表挂了」丢失。
-const detailErrorMessage = computed(() => formatError(detailError.value))
-const materialReadinessErrorMessage = computed(() => formatError(materialReadinessError.value))
+const detailErrorMessage = computed(() => inlineErrorMessage(detailError.value))
+const materialReadinessErrorMessage = computed(() =>
+  inlineErrorMessage(materialReadinessError.value),
+)
 const materialIssueRequestsErrorMessage = computed(() =>
-  formatError(materialIssueRequestsError.value),
+  inlineErrorMessage(materialIssueRequestsError.value),
 )
 
 // 工单头部四卡：状态与用料给「能不能开工」的结论，工序进度给「做到哪了」。
@@ -884,9 +886,6 @@ function formatStatus(value?: string | null) {
     warning: '预警',
   }
   return value ? (map[value.toLowerCase()] ?? value) : '未知'
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 </script>
 
