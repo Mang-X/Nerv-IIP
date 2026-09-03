@@ -12,7 +12,7 @@
 
 ## 有效决策索引
 
-审计基线：`main@3f5bb820`（2026-09-07）。共 29 条 ADR；无整篇“被取代”或“已否决”记录；已确认 4 条部分修订链。
+审计基线：`main@3f5bb820`（2026-09-07）。该基线共 29 条 ADR；其后新增 [ADR 0030](0030-business-gateway-purpose-scoped-file-transfer.md)，当前共 30 条。无整篇“被取代”或“已否决”记录；已确认 5 条部分修订链。
 
 | ADR | Area | 状态 | 取代 / 修订关系 | 复评触发条件 | 当前实现 / 当前权威落点 |
 | --- | --- | --- | --- | --- | --- |
@@ -38,17 +38,18 @@
 | [0020 NvUI 命名、token 命名空间与样式隔离](0020-nvui-naming-token-namespaces-and-style-isolation.md) | Frontend / Design System | 已接受 | — | 待核（原文未单列） | [`../../frontend/DESIGN/nvui-naming-map.md`](../../frontend/DESIGN/nvui-naming-map.md)、[`../governance/frontend/design-system.md`](../governance/frontend/design-system.md)；实施状态以关联 Issue 为准 |
 | [0021 产品文档信息架构与内容治理](0021-product-docs-information-architecture.md) | Product Documentation | 已接受 | — | 待核（原文未单列） | [`../../frontend/apps/docs/`](../../frontend/apps/docs/)、[`../product/README.md`](../product/README.md) |
 | [0022 排程演进冻结](0022-scheduling-rescheduling-evolution-freeze.md) | Scheduling | 已接受 | — | 引入求解器、改变三层重排边界或提前拆批时必须新建或修订 ADR | [`../architecture/business/domain-architecture.md`](../architecture/business/domain-architecture.md)、[`../architecture/business/scheduling-order-urgency-retention.md`](../architecture/business/scheduling-order-urgency-retention.md)；交付状态以关联 Issue 为准 |
-| [0023 FileStorage tus、staging/final 与 complete 不变量](0023-filestorage-tus-proxy-staging-final-complete-invariants.md) | File Storage | 已接受 | 部分修订 [ADR 0003](0003-data-and-messaging-baseline.md) 的 FileStorage 上传传输分类；不改变 FileStorage 事实所有权 | 待核（原文未单列） | [`../architecture/platform/file-storage.md`](../architecture/platform/file-storage.md)；当前 endpoint、schema、provider 与测试以代码事实为准 |
+| [0023 FileStorage tus、staging/final 与 complete 不变量](0023-filestorage-tus-proxy-staging-final-complete-invariants.md) | File Storage | 已接受（部分修订） | 部分修订 [ADR 0003](0003-data-and-messaging-baseline.md) 的 FileStorage 上传传输分类；不改变 FileStorage 事实所有权。决策 1.3「只由 PlatformGateway 暴露受控 tus URL」与决策 1.1「自研 tus endpoint 不得新增消费方」这一面由 [ADR 0030](0030-business-gateway-purpose-scoped-file-transfer.md) 部分修订；其余条款仍有效 | 待核（原文未单列） | [`../architecture/platform/file-storage.md`](../architecture/platform/file-storage.md)；当前 endpoint、schema、provider 与测试以代码事实为准 |
 | [0024 FileStorage provider 与 Local 生产语义](0024-filestorage-storage-provider-and-local-production-semantics.md) | File Storage | 已接受 | 继承 ADR 0023，不取代其 complete 不变量 | 待核（原文未单列） | [`../architecture/platform/file-storage.md`](../architecture/platform/file-storage.md)；当前 provider、配置、迁移与测试以代码事实为准 |
 | [0025 Field 能力范围调整](0025-field-capability-scope-shift.md) | Field / Business Architecture | 已接受 | 部分修订 [ADR 0014](0014-aps-and-iiot-scheduling-boundary.md) 决策 3；不改变 Scheduling 独立边界 | 待核（原文未单列） | [`../architecture/business/domain-architecture.md`](../architecture/business/domain-architecture.md)、[`../architecture/business/equipment-status-event-flow.md`](../architecture/business/equipment-status-event-flow.md)；交付状态以关联 Issue 为准 |
 | [0026 工业遥测历史数据库存储](0026-industrial-telemetry-historian-storage.md) | Industrial Telemetry | 已接受 | — | PostgreSQL 基准无法满足目标客户配置时复评 TimescaleDB 或其它物理存储策略 | 待核（未确认唯一 Historian 当前架构页；代码、迁移、配置与测试为准） |
 | [0027 FileStorage 停服离线迁移与回退](0027-filestorage-offline-migration-cutover-and-rollback.md) | File Storage / Migration | 已接受 | 继承 ADR 0023、0024 | 在线迁移、多 active provider / placement、evidence/remap 失效、跨系统原子能力、容量权威或 cleanup 合规原则变化时复评 | [`../architecture/platform/file-storage.md`](../architecture/platform/file-storage.md)、[`../runbooks/file-storage-offline-migration.md`](../runbooks/file-storage-offline-migration.md)；交付状态以关联 Issue 为准 |
 | [0028 退役纵切脚本入口边界](0028-retired-vertical-slice-script-entry-boundary.md) | Automation / Migration | 已接受 | 部分修订 [ADR 0009](0009-database-migration-release-and-seed-strategy.md) 后果 2 | 四个兼容墓碑路径被物理删除时复评墓碑许可与历史引用 | [`../governance/script-automation.md`](../governance/script-automation.md)、[`../runbooks/script-automation.md`](../runbooks/script-automation.md)；物理删除状态以关联 Issue 为准 |
 | [0029 参考数据词表独立读权限](0029-reference-data-vocabulary-read-permission.md) | Security / Authorization | 已接受 | — | 专用词表读权限增多到出现按域聚合权限的真实需求时复评命名形态 | [`../governance/security/authorization.md`](../governance/security/authorization.md)、[`../reference/security/authorization-catalog.md`](../reference/security/authorization-catalog.md) |
+| [0030 BusinessGateway 按用途分面的受控文件字节通路](0030-business-gateway-purpose-scoped-file-transfer.md) | Gateway / File Storage / Security | 已接受 | 部分修订 [ADR 0023](0023-filestorage-tus-proxy-staging-final-complete-invariants.md) 决策 1.3 与决策 1.1 的「不得新增消费方」一面；tus 传输语义、staging/final 与 complete 不变量不变 | 出现网关侧无法关闭的跨门面兑换需求，或 FileStorage 为 download grant 增加签发门面校验时复评决策 3 | [`../architecture/platform/file-storage.md`](../architecture/platform/file-storage.md)、[`../../backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Endpoints/Files/BusinessConsoleFileStorageEndpoints.cs`](../../backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Endpoints/Files/BusinessConsoleFileStorageEndpoints.cs) |
 
 ## 审计结论与待核项
 
-- 已确认部分修订链：`0003 → 0023`、`0009 → 0028`、`0012 → 0014`、`0014 → 0025`。
+- 已确认部分修订链：`0003 → 0023`、`0009 → 0028`、`0012 → 0014`、`0014 → 0025`、`0023 → 0030`。
 - 当前没有整篇被取代或已否决 ADR；未来出现时必须在本索引中标出替代记录与精确生效范围。
 - `待核（原文未单列）` 表示审计未找到可引用的复评条件，不等于“永不复评”。补录必须有历史证据或通过新 ADR 建立，不能从现行代码倒推。
 - `待核（未确认唯一……当前架构页）` 表示当前代码、迁移、配置或测试可以作为事实源，但尚未确认唯一的 Current Architecture 页面；不得为填表而新造第二份权威。

@@ -8,6 +8,70 @@ using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Files;
 
+/// <summary>
+/// 字节面（tus HEAD/PATCH、附件内容）共用的门：它们不是 JSON 门面，走不了
+/// <see cref="AuthorizedBusinessProxyEndpoint{TRequest,TResponse}"/>，组织/环境只能从 header 或 query 取。
+/// </summary>
+internal static class BusinessConsoleFileTransfer
+{
+    public const string OrganizationHeader = "X-Organization-Id";
+    public const string EnvironmentHeader = "X-Environment-Id";
+
+    public static string? FirstHeaderOrQuery(HttpContext httpContext, string headerName, string queryName)
+    {
+        var header = httpContext.Request.Headers[headerName].ToString();
+        return string.IsNullOrWhiteSpace(header)
+            ? httpContext.Request.Query[queryName].ToString()
+            : header;
+    }
+
+    public static async Task ProxyAsync(
+        HttpContext httpContext,
+        IBusinessGatewayAuthorizationClient auth,
+        string permissionCode,
+        string resourceType,
+        string resourceId,
+        Func<string, string, CancellationToken, Task> proxyAsync,
+        CancellationToken ct)
+    {
+        var organizationId = FirstHeaderOrQuery(httpContext, OrganizationHeader, "organizationId");
+        var environmentId = FirstHeaderOrQuery(httpContext, EnvironmentHeader, "environmentId");
+        if (string.IsNullOrWhiteSpace(organizationId) || string.IsNullOrWhiteSpace(environmentId))
+        {
+            await ResponseDataEndpointResults.WriteErrorAsync(
+                httpContext,
+                StatusCodes.Status400BadRequest,
+                "File transfer headers are required.",
+                ct);
+            return;
+        }
+
+        var bearerToken = await BusinessGatewayAuthorization.RequirePermissionAsync(
+            httpContext,
+            auth,
+            new BusinessGatewayPermissionRequirement(
+                permissionCode,
+                organizationId,
+                environmentId,
+                resourceType,
+                resourceId),
+            ct);
+        if (bearerToken is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await proxyAsync(organizationId, environmentId, ct);
+        }
+        catch (BusinessServiceProxyException ex)
+        {
+            await ResponseDataEndpointResults.WriteErrorAsync(httpContext, ex, ct);
+        }
+    }
+}
+
 [Tags("Business Console Files")]
 [HttpPost("/api/business-console/v1/files/{fileId}/download-grants")]
 [BusinessGatewayOperationId("createBusinessConsoleSopFileDownloadGrant")]
@@ -54,13 +118,12 @@ public sealed class DownloadBusinessConsoleSopFileContentEndpoint(
     IInternalServiceTokenProvider tokenProvider)
     : EndpointWithoutRequest
 {
-    private const string OrganizationHeader = "X-Organization-Id";
-    private const string EnvironmentHeader = "X-Environment-Id";
-
     public override async Task HandleAsync(CancellationToken ct)
     {
-        var organizationId = FirstHeaderOrQuery(OrganizationHeader, "organizationId");
-        var environmentId = FirstHeaderOrQuery(EnvironmentHeader, "environmentId");
+        var organizationId = BusinessConsoleFileTransfer.FirstHeaderOrQuery(
+            HttpContext, BusinessConsoleFileTransfer.OrganizationHeader, "organizationId");
+        var environmentId = BusinessConsoleFileTransfer.FirstHeaderOrQuery(
+            HttpContext, BusinessConsoleFileTransfer.EnvironmentHeader, "environmentId");
         if (string.IsNullOrWhiteSpace(organizationId) || string.IsNullOrWhiteSpace(environmentId))
         {
             await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, StatusCodes.Status400BadRequest, "Download grant headers are required.", ct);
@@ -90,8 +153,8 @@ public sealed class DownloadBusinessConsoleSopFileContentEndpoint(
                 downloadGrantId,
                 new Dictionary<string, string>
                 {
-                    [OrganizationHeader] = organizationId,
-                    [EnvironmentHeader] = environmentId,
+                    [BusinessConsoleFileTransfer.OrganizationHeader] = organizationId,
+                    [BusinessConsoleFileTransfer.EnvironmentHeader] = environmentId,
                 },
                 ct);
             HttpContext.Response.ContentType = response.ContentType;
@@ -107,23 +170,19 @@ public sealed class DownloadBusinessConsoleSopFileContentEndpoint(
             await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, ex, ct);
         }
     }
-
-    private string? FirstHeaderOrQuery(string headerName, string queryName)
-    {
-        var header = HttpContext.Request.Headers[headerName].ToString();
-        return string.IsNullOrWhiteSpace(header)
-            ? HttpContext.Request.Query[queryName].ToString()
-            : header;
-    }
 }
 
 // ---------------------------------------------------------------------------
 // #3085 交接班附件门面。
 //
-// 交接班照片和工程 SOP 文件共用 FileStorage，但不共用权限口径：上传归
-// business.mes.handovers.manage，下载归 business.mes.handovers.read，两者都不授予
-// business.engineering.documents.read 的 SOP 面，反之亦然。用途（shift-handover-photo）、
-// owner 和 tus 代理路径由门面固定，调用方拿不到 FileStorage 内部 URL（ADR 0023 决策 1.3）。
+// 交接班照片与工程 SOP 文件共用 FileStorage，但不共用权限口径：上传归
+// business.mes.handovers.manage，下载归 business.mes.handovers.read，两侧都不落到
+// business.engineering.documents.read 上。用途（shift-handover-photo）、owner 与代理路径
+// 由门面固定，调用方拿不到 FileStorage 内部 URL（ADR 0023 决策 1.3 / ADR 0030）。
+//
+// 下载面**只有一条**字节路由、以 fileId 为入参：download grant 在服务端签发并立即兑换，
+// 调用方拿不到 grant id。FileStorage 的 grant id 是全服务共用命名空间且兑换面不校验用途，
+// 若把 id 交出去，持交接班读权限的主体就能兑换工程 SOP 面签发的 grant（#3096 审核 A1）。
 // ---------------------------------------------------------------------------
 
 [Tags("Business Console Files")]
@@ -229,16 +288,15 @@ public sealed class GetBusinessConsoleShiftHandoverAttachmentTusOffsetEndpoint(
     }
 
     public override Task HandleAsync(CancellationToken ct) =>
-        BusinessConsoleShiftHandoverAttachmentTransfer.ProxyAsync(
+        BusinessConsoleFileTransfer.ProxyAsync(
             HttpContext,
             auth,
             BusinessGatewayPermissions.MesHandoversManage,
             "mes-shift-handover-attachment-upload",
             Route<string>("uploadSessionId")!,
-            (organizationId, environmentId, cancellationToken) => files.ProxyShiftHandoverAttachmentTusAsync(
+            (_, _, cancellationToken) => files.ProxyShiftHandoverAttachmentTusHeadAsync(
                 tokenProvider.BearerToken,
                 Route<string>("uploadSessionId")!,
-                null,
                 HttpContext.Response,
                 cancellationToken),
             ct);
@@ -255,13 +313,13 @@ public sealed class PatchBusinessConsoleShiftHandoverAttachmentTusUploadEndpoint
     : EndpointWithoutRequest
 {
     public override Task HandleAsync(CancellationToken ct) =>
-        BusinessConsoleShiftHandoverAttachmentTransfer.ProxyAsync(
+        BusinessConsoleFileTransfer.ProxyAsync(
             HttpContext,
             auth,
             BusinessGatewayPermissions.MesHandoversManage,
             "mes-shift-handover-attachment-upload",
             Route<string>("uploadSessionId")!,
-            (organizationId, environmentId, cancellationToken) => files.ProxyShiftHandoverAttachmentTusAsync(
+            (_, _, cancellationToken) => files.ProxyShiftHandoverAttachmentTusPatchAsync(
                 tokenProvider.BearerToken,
                 Route<string>("uploadSessionId")!,
                 HttpContext.Request,
@@ -271,49 +329,7 @@ public sealed class PatchBusinessConsoleShiftHandoverAttachmentTusUploadEndpoint
 }
 
 [Tags("Business Console Files")]
-[HttpPost("/api/business-console/v1/files/shift-handover-attachments/{fileId}/download-grants")]
-[BusinessGatewayOperationId("createBusinessConsoleShiftHandoverAttachmentDownloadGrant")]
-public sealed class CreateBusinessConsoleShiftHandoverAttachmentDownloadGrantEndpoint(
-    IBusinessGatewayAuthorizationClient auth,
-    IBusinessFileStorageClient files,
-    IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<
-        BusinessConsoleCreateShiftHandoverAttachmentDownloadGrantRequest,
-        BusinessConsoleShiftHandoverAttachmentDownloadGrantResponse>(
-        auth,
-        BusinessGatewayPermissions.MesHandoversRead)
-{
-    protected override string OrganizationId(BusinessConsoleCreateShiftHandoverAttachmentDownloadGrantRequest request) => request.OrganizationId;
-
-    protected override string EnvironmentId(BusinessConsoleCreateShiftHandoverAttachmentDownloadGrantRequest request) => request.EnvironmentId;
-
-    protected override string ResourceType(BusinessConsoleCreateShiftHandoverAttachmentDownloadGrantRequest request) => "mes-shift-handover-attachment";
-
-    protected override string? ResourceId(BusinessConsoleCreateShiftHandoverAttachmentDownloadGrantRequest request) => Route<string>("fileId");
-
-    protected override Task<BusinessConsoleShiftHandoverAttachmentDownloadGrantResponse> ForwardAsync(
-        BusinessConsoleCreateShiftHandoverAttachmentDownloadGrantRequest request,
-        string bearerToken,
-        CancellationToken cancellationToken) =>
-        files.CreateShiftHandoverAttachmentDownloadGrantAsync(
-            tokenProvider.BearerToken,
-            Route<string>("fileId")!,
-            request,
-            cancellationToken);
-}
-
-public sealed class BusinessConsoleCreateShiftHandoverAttachmentDownloadGrantRequestValidator
-    : Validator<BusinessConsoleCreateShiftHandoverAttachmentDownloadGrantRequest>
-{
-    public BusinessConsoleCreateShiftHandoverAttachmentDownloadGrantRequestValidator()
-    {
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-    }
-}
-
-[Tags("Business Console Files")]
-[HttpGet("/api/business-console/v1/files/shift-handover-attachments/download-grants/{downloadGrantId}/content")]
+[HttpGet("/api/business-console/v1/files/shift-handover-attachments/{fileId}/content")]
 [BusinessGatewayOperationId("downloadBusinessConsoleShiftHandoverAttachmentContent")]
 [Authorize(Policy = BusinessGatewayPolicies.BusinessConsoleAuthenticated)]
 [Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(byte[]), StatusCodes.Status200OK, "application/octet-stream")]
@@ -324,83 +340,18 @@ public sealed class DownloadBusinessConsoleShiftHandoverAttachmentContentEndpoin
     : EndpointWithoutRequest
 {
     public override Task HandleAsync(CancellationToken ct) =>
-        BusinessConsoleShiftHandoverAttachmentTransfer.ProxyAsync(
+        BusinessConsoleFileTransfer.ProxyAsync(
             HttpContext,
             auth,
             BusinessGatewayPermissions.MesHandoversRead,
-            "mes-shift-handover-attachment-download-grant",
-            Route<string>("downloadGrantId")!,
-            (organizationId, environmentId, cancellationToken) => files.ProxyShiftHandoverAttachmentContentAsync(
+            "mes-shift-handover-attachment",
+            Route<string>("fileId")!,
+            (organizationId, environmentId, cancellationToken) => files.StreamShiftHandoverAttachmentContentAsync(
                 tokenProvider.BearerToken,
-                Route<string>("downloadGrantId")!,
+                Route<string>("fileId")!,
                 organizationId,
                 environmentId,
                 HttpContext.Response,
                 cancellationToken),
             ct);
-}
-
-/// <summary>
-/// tus HEAD/PATCH 与下载 content 三条字节路径共用的门：它们都不是 JSON 门面，不能走
-/// <see cref="AuthorizedBusinessProxyEndpoint{TRequest,TResponse}"/>，组织/环境只能从 header 取
-/// （tus 客户端可以带自定义 header，但不方便带请求体）。
-/// </summary>
-internal static class BusinessConsoleShiftHandoverAttachmentTransfer
-{
-    private const string OrganizationHeader = "X-Organization-Id";
-    private const string EnvironmentHeader = "X-Environment-Id";
-
-    public static async Task ProxyAsync(
-        HttpContext httpContext,
-        IBusinessGatewayAuthorizationClient auth,
-        string permissionCode,
-        string resourceType,
-        string resourceId,
-        Func<string, string, CancellationToken, Task> proxyAsync,
-        CancellationToken ct)
-    {
-        var organizationId = FirstHeaderOrQuery(httpContext, OrganizationHeader, "organizationId");
-        var environmentId = FirstHeaderOrQuery(httpContext, EnvironmentHeader, "environmentId");
-        if (string.IsNullOrWhiteSpace(organizationId) || string.IsNullOrWhiteSpace(environmentId))
-        {
-            await ResponseDataEndpointResults.WriteErrorAsync(
-                httpContext,
-                StatusCodes.Status400BadRequest,
-                "Shift handover attachment transfer headers are required.",
-                ct);
-            return;
-        }
-
-        var bearerToken = await BusinessGatewayAuthorization.RequirePermissionAsync(
-            httpContext,
-            auth,
-            new BusinessGatewayPermissionRequirement(
-                permissionCode,
-                organizationId,
-                environmentId,
-                resourceType,
-                resourceId),
-            ct);
-        if (bearerToken is null)
-        {
-            return;
-        }
-
-        try
-        {
-            await proxyAsync(organizationId, environmentId, ct);
-        }
-        catch (BusinessServiceProxyException ex)
-        {
-            await ResponseDataEndpointResults.WriteErrorAsync(httpContext, ex, ct);
-        }
-    }
-
-    private static string? FirstHeaderOrQuery(HttpContext httpContext, string headerName, string queryName)
-    {
-        var header = httpContext.Request.Headers[headerName].ToString();
-        return string.IsNullOrWhiteSpace(header)
-            ? httpContext.Request.Query[queryName].ToString()
-            : header;
-    }
 }
