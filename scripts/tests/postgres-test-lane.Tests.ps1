@@ -548,7 +548,7 @@ try {
     Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 17) 'The ERP member must freeze exactly its seventeen PostgreSQL identities.'
     Assert-Contract ([string]::Equals([string]$erpMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) 'ERP keeps runner-owned databases for failure diagnostics.'
     $acceptanceMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'acceptance-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($acceptanceMember.expectedTestIdentities).Count -eq 3) 'The cross-service acceptance member must freeze exactly its three PostgreSQL identities.'
+    Assert-Contract (@($acceptanceMember.expectedTestIdentities).Count -eq 4) 'The cross-service acceptance member must freeze exactly its four PostgreSQL identities.'
     Assert-Contract ([string]::Equals((@($acceptanceMember.diagnosticSchemas) -join ','), 'industrial_telemetry,inventory,maintenance,wms', [StringComparison]::Ordinal)) 'The cross-service acceptance member must declare every schema its scenarios migrate.'
     Assert-Contract ([string]::Equals([string]$acceptanceMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) 'The cross-service acceptance member keeps runner-owned databases so its four-schema end state stays diagnosable.'
     Assert-MethodScopedFilter -Member $acceptanceMember
@@ -556,6 +556,7 @@ try {
             'backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/BusinessPartnerChangedPostgresAcceptanceTests.cs',
             'backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/ErpCostAccountingPostgresAcceptanceTests.cs',
             'backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/WorkCenterMachineOverheadRatePostgresAcceptanceTests.cs',
+            'backend/tests/Nerv.IIP.Business.Acceptance.Tests/MaintenanceAvailabilityWindowPostgresAcceptanceTests.cs',
             'backend/tests/Nerv.IIP.Business.Acceptance.Tests/RuntimeHoursMaintenancePostgresAcceptanceTests.cs',
             'backend/tests/Nerv.IIP.Business.Acceptance.Tests/WmsInventoryRpcIdempotencyAcceptanceTests.cs')) {
         $runnerOwnedSourcePath = Join-Path $repoRoot $runnerOwnedSource
@@ -565,9 +566,13 @@ try {
         Assert-LaneOwnedDatabase -SourcePath $runnerOwnedSourcePath -InnerDatabaseFactory 'PostgreSqlTestDatabase.CreateAsync'
     }
     # 跨业务 acceptance 用 EnsureCreatedAsync 会在共享成员库上直接跳过建表（库已存在），必须走迁移。
-    $runtimeHoursSource = [IO.File]::ReadAllText((Join-Path $repoRoot 'backend/tests/Nerv.IIP.Business.Acceptance.Tests/RuntimeHoursMaintenancePostgresAcceptanceTests.cs'))
-    Assert-Contract (-not $runtimeHoursSource.Contains('EnsureCreatedAsync(', [StringComparison]::Ordinal)) 'Lane members must migrate rather than EnsureCreated, which silently skips schema creation on an existing member database.'
-    Assert-Contract ($runtimeHoursSource.Contains('MigrateAsync(', [StringComparison]::Ordinal)) 'The cross-service acceptance member must create its schemas through migrations.'
+    foreach ($acceptanceSource in @(
+            'backend/tests/Nerv.IIP.Business.Acceptance.Tests/MaintenanceAvailabilityWindowPostgresAcceptanceTests.cs',
+            'backend/tests/Nerv.IIP.Business.Acceptance.Tests/RuntimeHoursMaintenancePostgresAcceptanceTests.cs')) {
+        $acceptanceSourceText = [IO.File]::ReadAllText((Join-Path $repoRoot $acceptanceSource))
+        Assert-Contract (-not $acceptanceSourceText.Contains('EnsureCreatedAsync(', [StringComparison]::Ordinal)) 'Lane members must migrate rather than EnsureCreated, which silently skips schema creation on an existing member database.'
+        Assert-Contract ($acceptanceSourceText.Contains('MigrateAsync(', [StringComparison]::Ordinal)) 'The cross-service acceptance member must create its schemas through migrations.'
+    }
 
     # 逐成员、逐冻结身份地把"先重置再迁移"和"重置用 CASCADE"变成门禁，而不是靠每个作者自觉。
     $resetDeclaringSources = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)

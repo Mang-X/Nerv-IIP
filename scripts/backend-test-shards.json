@@ -125,6 +125,7 @@
         "backend/tests/Nerv.IIP.Business.Acceptance.Tests/Nerv.IIP.Business.Acceptance.Tests.csproj"
       ],
       "excludedTestClasses": [
+        "Nerv.IIP.Business.Acceptance.Tests.MaintenanceAvailabilityWindowPostgresAcceptanceTests",
         "Nerv.IIP.Business.Acceptance.Tests.RuntimeHoursMaintenancePostgresAcceptanceTests",
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests",
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.WorldHistoryLabelSeedPostgresTests",
