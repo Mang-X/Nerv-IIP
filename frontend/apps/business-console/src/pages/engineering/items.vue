@@ -141,7 +141,7 @@ const knownItemCodes = computed(() => {
   return out.sort()
 })
 
-const listErrorMessage = computed(() => formatError(itemsError.value))
+const listErrorMessage = computed(() => inlineErrorMessage(itemsError.value))
 
 const columns: NvDataTableColumn<BusinessConsoleEngineeringItemRevisionItem>[] = [
   { key: 'itemCode', header: '物料编码', cellClass: 'font-medium' },
@@ -228,10 +228,6 @@ async function openView(row: BusinessConsoleEngineeringItemRevisionItem) {
   } finally {
     detailPending.value = false
   }
-}
-
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 </script>
 
