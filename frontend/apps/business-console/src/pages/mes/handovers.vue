@@ -179,7 +179,7 @@ const handoverSegments = computed(() =>
     { key: 'accepted', label: '已接班', value: currentPageAcceptedCount.value, tone: 'success' },
   ]),
 )
-const errorMessage = computed(() => formatError(handoversError.value))
+const errorMessage = computed(() => inlineErrorMessage(handoversError.value))
 
 type HandoverRow = (typeof handovers)['value'][number]
 const columns: NvDataTableColumn<HandoverRow>[] = [
@@ -229,7 +229,7 @@ const detailUnfinishedWorkOrders = computed<BusinessConsoleMesShiftHandoverUnfin
 const detailOpenIssues = computed<BusinessConsoleMesShiftHandoverOpenIssue[]>(
   () => handoverDetail.value?.openIssues ?? [],
 )
-const detailErrorMessage = computed(() => formatError(handoverDetailError.value))
+const detailErrorMessage = computed(() => inlineErrorMessage(handoverDetailError.value))
 
 function openDetail(row: HandoverRow) {
   const handoverId = row.handoverId?.trim()
@@ -498,9 +498,6 @@ function formatDateTime(value?: string | null) {
   if (!value) return '未指定'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 </script>
 

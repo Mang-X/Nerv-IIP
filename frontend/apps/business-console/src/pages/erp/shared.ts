@@ -1,5 +1,4 @@
 import type { ComputedRef } from 'vue'
-import { inlineErrorMessage } from '@/utils/notify'
 
 /** 取不到数时的统一占位。财务页尤其不许拿 0 顶上——「¥0.00 余额」是会被当真的。 */
 export const UNAVAILABLE_TEXT = '—'
@@ -36,10 +35,6 @@ export function formatDateTime(value?: string | null) {
 export function formatQuantity(value?: number | null) {
   if (value === null || value === undefined || Number.isNaN(value)) return UNAVAILABLE_TEXT
   return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(value)
-}
-
-export function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 
 export function firstQueryParam(value: unknown) {

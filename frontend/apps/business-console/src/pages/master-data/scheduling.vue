@@ -119,9 +119,6 @@ function rowKey(item: BusinessConsoleResourceItem) {
 function isNonEmpty(value: string) {
   return value.trim().length > 0
 }
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
 function filterRows(items: BusinessConsoleResourceItem[], keyword: string) {
   const kw = keyword.trim().toLowerCase()
   if (!kw) return items
@@ -164,7 +161,7 @@ const shiftFormValid = computed(() =>
     ? isNonEmpty(shiftForm.name) && shiftPaidValid.value
     : canCreateShift.value,
 )
-const shiftListError = computed(() => formatError(shifts.error.value))
+const shiftListError = computed(() => inlineErrorMessage(shifts.error.value))
 const shiftCrossesMidnight = computed(() => {
   const start = shiftForm.startsAt.trim()
   const end = shiftForm.endsAt.trim()
@@ -280,7 +277,7 @@ const calEditLoading = shallowRef(false)
 const calForm = reactive({ code: '', name: '' })
 const calRows = computed(() => filterRows(calendars.items.value, calKeyword.value))
 const canCreateCal = computed(() => isNonEmpty(calForm.name))
-const calListError = computed(() => formatError(calendars.error.value))
+const calListError = computed(() => inlineErrorMessage(calendars.error.value))
 watch(calOpen, (open) => {
   if (open) calShowErrors.value = false
 })

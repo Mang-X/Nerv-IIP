@@ -101,7 +101,7 @@ const alarmEmptyExplanation = computed(() =>
     : '当前列表为组织范围的未解除设备报警，暂不支持按当前人员归属筛选；空态不代表个人报警。',
 )
 
-const errorMessage = computed(() => formatError(alarmsError.value))
+const errorMessage = computed(() => inlineErrorMessage(alarmsError.value))
 const criticalCount = computed(
   () =>
     alarms.value.filter((a) => ['critical', 'blocked'].includes((a.severity ?? '').toLowerCase()))
@@ -728,9 +728,6 @@ function formatDateTime(value?: string | null) {
   if (!value) return '无'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 </script>
 

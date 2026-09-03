@@ -68,7 +68,7 @@ const impactSegments = computed(() =>
     },
   ]),
 )
-const errorMessage = computed(() => formatError(capacityImpactsError.value))
+const errorMessage = computed(() => inlineErrorMessage(capacityImpactsError.value))
 watch(statusFilter, (value) => {
   filters.status = value === 'all' ? undefined : value
 })
@@ -132,9 +132,6 @@ function formatDateTime(value?: string | null) {
   if (!value) return '无'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 </script>
 
