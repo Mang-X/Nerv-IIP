@@ -139,6 +139,98 @@ public sealed class AssetUnavailableInboxPostgresProfileTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => AssertExactUniqueIndexesAsync(db));
     }
 
+    /// <summary>
+    /// 双身份 claim 必须在工作单元事务内执行：advisory lock 是事务级的，没有事务就没有串行化，claim 的
+    /// "先查后写"会退化成竞态。守卫必须在锁执行器里 fail-closed，而不是靠调用约定。
+    /// </summary>
+    [SchedulingPostgresFact]
+    public async Task Inbox_identity_lock_fails_closed_without_an_active_transaction()
+    {
+        await SchedulingPostgresLaneDatabase.ResetSchemaAsync();
+        await using var provider = CreateProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await db.Database.MigrateAsync();
+        var identityLock = scope.ServiceProvider.GetRequiredService<IAssetUnavailableInboxIdentityLock>();
+
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            SchedulingProcessedIntegrationEventInbox.TryRecordAssetUnavailableAsync(
+                db,
+                identityLock,
+                AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName,
+                Event("event-no-tx", "key-no-tx"),
+                CancellationToken.None));
+
+        Assert.Contains("active unit-of-work transaction", failure.Message, StringComparison.Ordinal);
+        Assert.Empty(await db.ProcessedIntegrationEvents.AsNoTracking().ToArrayAsync());
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        Assert.True(await SchedulingProcessedIntegrationEventInbox.TryRecordAssetUnavailableAsync(
+            db,
+            identityLock,
+            AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName,
+            Event("event-no-tx", "key-no-tx"),
+            CancellationToken.None));
+        await db.SaveChangesAsync();
+        await transaction.CommitAsync();
+        Assert.Single(await db.ProcessedIntegrationEvents.AsNoTracking().ToArrayAsync());
+    }
+
+    /// <summary>
+    /// 唯一索引是 claim 的最后一道防线，而防线的另一半是 <c>ApplicationDbContext.SaveChanges</c> 把两条 inbox
+    /// 索引的冲突吞成 0 行而不是抛出：否则并发中被吸收的那一方会以异常逃逸成 CAP poison。
+    /// 两条索引各验一次，异步与同步 SaveChanges 各验一次。
+    /// </summary>
+    [SchedulingPostgresFact]
+    public Task Save_changes_absorbs_event_id_inbox_conflict_as_zero_rows() =>
+        RunSaveChangesConflictAsync("event-shared", "key-a", "event-shared", "key-b");
+
+    [SchedulingPostgresFact]
+    public Task Save_changes_absorbs_idempotency_key_inbox_conflict_as_zero_rows() =>
+        RunSaveChangesConflictAsync("event-a", "key-shared", "event-b", "key-shared");
+
+    private static async Task RunSaveChangesConflictAsync(string firstEventId, string firstKey, string secondEventId, string secondKey)
+    {
+        await SchedulingPostgresLaneDatabase.ResetSchemaAsync();
+        await using var provider = CreateProvider();
+        await using (var setup = provider.CreateAsyncScope())
+        {
+            var setupDb = setup.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await setupDb.Database.MigrateAsync();
+            setupDb.ProcessedIntegrationEvents.Add(ProcessedRecord(firstEventId, firstKey));
+            Assert.Equal(1, await setupDb.SaveChangesAsync());
+        }
+
+        await using (var conflict = provider.CreateAsyncScope())
+        {
+            var db = conflict.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.ProcessedIntegrationEvents.Add(ProcessedRecord(secondEventId, secondKey));
+            Assert.Equal(0, await db.SaveChangesAsync());
+            Assert.Empty(db.ChangeTracker.Entries());
+        }
+
+        await using (var conflictSync = provider.CreateAsyncScope())
+        {
+            var db = conflictSync.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.ProcessedIntegrationEvents.Add(ProcessedRecord(secondEventId, secondKey));
+            Assert.Equal(0, db.SaveChanges());
+            Assert.Empty(db.ChangeTracker.Entries());
+        }
+
+        await using var verify = provider.CreateAsyncScope();
+        var verifyDb = verify.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var survivor = Assert.Single(await verifyDb.ProcessedIntegrationEvents.AsNoTracking().ToArrayAsync());
+        Assert.Equal((firstEventId, firstKey), (survivor.EventId, survivor.IdempotencyKey));
+    }
+
+    private static ProcessedIntegrationEvent ProcessedRecord(string eventId, string idempotencyKey) => new(
+        AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName,
+        eventId,
+        MaintenanceIntegrationEventTypes.AssetUnavailable,
+        MaintenanceIntegrationEventVersions.V2,
+        MaintenanceIntegrationEventSources.BusinessMaintenance,
+        idempotencyKey,
+        DateTimeOffset.UtcNow);
+
     private static async Task RunRaceAsync(string firstEventId, string firstKey, string secondEventId, string secondKey)
     {
         await SchedulingPostgresLaneDatabase.ResetSchemaAsync();
@@ -154,12 +246,27 @@ public sealed class AssetUnavailableInboxPostgresProfileTests
         var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseFirst = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var first = CompeteAsync(provider, firstEventId, firstKey, "plan-a", null, firstClaimed, releaseFirst.Task);
-        await firstClaimed.Task;
-        var second = CompeteAsync(provider, secondEventId, secondKey, "plan-b", secondStarted, null, Task.CompletedTask);
-        await secondStarted.Task;
-        await WaitForBlockedAdvisoryClaimAsync(provider);
-        releaseFirst.SetResult();
-        await Task.WhenAll(first, second);
+        try
+        {
+            await firstClaimed.Task;
+            var second = CompeteAsync(provider, secondEventId, secondKey, "plan-b", secondStarted, null, Task.CompletedTask);
+            await secondStarted.Task;
+            try
+            {
+                await WaitForBlockedAdvisoryClaimAsync(provider);
+            }
+            finally
+            {
+                // 屏障等待超时也必须放行首事务：否则两个竞争者的事务永久悬挂，后续用例的 DROP SCHEMA … CASCADE
+                // 会被阻塞，一次真红被放大成整类红。
+                releaseFirst.TrySetResult();
+            }
+            await Task.WhenAll(first, second);
+        }
+        finally
+        {
+            releaseFirst.TrySetResult();
+        }
 
         await using var verify = provider.CreateAsyncScope();
         var db = verify.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -233,6 +340,7 @@ public sealed class AssetUnavailableInboxPostgresProfileTests
         var integrationEvent = Event(eventId, idempotencyKey);
         var won = await SchedulingProcessedIntegrationEventInbox.TryRecordAssetUnavailableAsync(
             db,
+            scope.ServiceProvider.GetRequiredService<IAssetUnavailableInboxIdentityLock>(),
             AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName,
             integrationEvent,
             CancellationToken.None);

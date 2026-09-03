@@ -18,6 +18,7 @@ public sealed record ProcessAssetUnavailableCommand(
 /// </summary>
 public sealed class ProcessAssetUnavailableCommandHandler(
     ApplicationDbContext dbContext,
+    IAssetUnavailableInboxIdentityLock identityLock,
     ISender sender)
     : ICommandHandler<ProcessAssetUnavailableCommand, RecordSchedulePlanInvalidationsResponse>
 {
@@ -28,6 +29,7 @@ public sealed class ProcessAssetUnavailableCommandHandler(
         ArgumentException.ThrowIfNullOrWhiteSpace(request.DeviceAssetId);
         if (!await SchedulingProcessedIntegrationEventInbox.TryRecordAssetUnavailableAsync(
                 dbContext,
+                identityLock,
                 AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName,
                 request.Envelope,
                 cancellationToken))

@@ -195,6 +195,8 @@ public sealed class AssetUnavailableV2IntegrationEventHandlerForInvalidateSchedu
 
     public async Task HandleAsync(AssetUnavailableV2IntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
+        // 纵深防御，不是可达路径：v2 wire 契约的 converter 在 Read 时就拒绝非 business-maintenance 的 source，
+        // 经 CAP 投递的 envelope 到不了这里；本分支只对进程内直接构造的对象生效，把它完整落进 DLQ 以便追查。
         if (!string.Equals(integrationEvent.SourceService, MaintenanceIntegrationEventSources.BusinessMaintenance, StringComparison.Ordinal))
         {
             await deadLetterStore.AddAsync(new IntegrationEventDeadLetterMessage(
@@ -240,6 +242,11 @@ public sealed class AssetUnavailableV2IntegrationEventHandlerForInvalidateSchedu
             integrationEvent, integrationEvent.Payload.DeviceAssetId, integrationEvent.Payload.ReasonCode), cancellationToken);
 }
 
+/// <summary>
+/// v1/v2 归一后的处理输入。<paramref name="UpstreamReason"/> 只作为上游事实随输入传递（v1 的 Reason / v2 的 ReasonCode），
+/// Scheduling 不复制 Maintenance 的原因目录、不解释其业务语义、也不据此分支；它存在是为了让 seam 上的观测
+/// （日志、测试装饰器）能看到上游原样的原因，而不是被 Scheduling 改写过的版本。
+/// </summary>
 public sealed record AssetUnavailableCanonicalInput(
     IIntegrationEventEnvelope Envelope,
     string DeviceAssetId,
@@ -748,29 +755,19 @@ internal static class SchedulingProcessedIntegrationEventInbox
             cancellationToken);
     }
 
+    /// <summary>
+    /// 双身份 claim：同 consumer 下 EventId 或 IdempotencyKey 任一已被记录即视为重复。串行化由
+    /// <see cref="IAssetUnavailableInboxIdentityLock"/>（Infrastructure）提供；两条唯一索引是最后一道防线，
+    /// 冲突由 <c>ApplicationDbContext.SaveChanges</c> 吞成 0 行而不是抛出。
+    /// </summary>
     public static async Task<bool> TryRecordAssetUnavailableAsync(
         ApplicationDbContext dbContext,
+        IAssetUnavailableInboxIdentityLock identityLock,
         string consumerName,
         IIntegrationEventEnvelope integrationEvent,
         CancellationToken cancellationToken)
     {
-        if (dbContext.Database.IsNpgsql())
-        {
-            if (dbContext.Database.CurrentTransaction is null)
-                throw new InvalidOperationException("AssetUnavailable inbox claim requires an active unit-of-work transaction.");
-
-            var lockKeys = new[]
-            {
-                $"scheduling-asset-unavailable:event:{consumerName}:{integrationEvent.EventId}",
-                $"scheduling-asset-unavailable:business:{consumerName}:{integrationEvent.IdempotencyKey}"
-            };
-            foreach (var lockKey in lockKeys.Order(StringComparer.Ordinal))
-            {
-                await dbContext.Database.ExecuteSqlInterpolatedAsync(
-                    $"SELECT pg_advisory_xact_lock(hashtextextended({lockKey}, 0))",
-                    cancellationToken);
-            }
-        }
+        await identityLock.AcquireAsync(consumerName, integrationEvent, cancellationToken);
 
         if (dbContext.ProcessedIntegrationEvents.Local.Any(x =>
                 x.ConsumerName == consumerName &&

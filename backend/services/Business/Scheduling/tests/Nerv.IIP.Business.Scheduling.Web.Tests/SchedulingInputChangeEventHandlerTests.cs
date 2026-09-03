@@ -127,6 +127,30 @@ public sealed class SchedulingInputChangeEventHandlerTests
     }
 
     /// <summary>
+    /// 双身份的另一半：同一事件实例（EventId 相同）即使带了不同的业务键，也只能被 claim 一次。
+    /// InMemory 没有唯一索引兜底，这条用例只靠 claim 谓词的 EventId 分支存活。
+    /// </summary>
+    [Fact]
+    public async Task Maintenance_asset_unavailable_same_event_id_with_different_business_key_is_claimed_once()
+    {
+        await using var provider = CreateInMemoryProvider();
+        await SeedPlansAsync(provider);
+
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var v2 = CreateAssetUnavailableV2Handler(scope.ServiceProvider);
+
+        await v2.HandleAsync(CreateAssetUnavailableV2Event("asset-unavailable:wo-maint-001:key-a"), CancellationToken.None);
+        await v2.HandleAsync(CreateAssetUnavailableV2Event("asset-unavailable:wo-maint-001:key-b"), CancellationToken.None);
+
+        var processed = Assert.Single(await db.ProcessedIntegrationEvents.ToArrayAsync());
+        Assert.Equal("evt-maint-v2-001", processed.EventId);
+        Assert.Equal("asset-unavailable:wo-maint-001:key-a", processed.IdempotencyKey);
+        Assert.Equal(2, await db.SchedulePlanInvalidations.CountAsync());
+        Assert.Empty(await ListAssetUnavailableDeadLettersAsync(scope.ServiceProvider));
+    }
+
+    /// <summary>
     /// v1 与 v2 handler 必须共用同一个注册的 <see cref="IAssetUnavailableCanonicalProcessor"/>：
     /// 用 <c>services.Replace</c> 换成计数装饰器后，两个版本的投递都必须经过它。
     /// </summary>
@@ -1051,6 +1075,7 @@ public sealed class SchedulingInputChangeEventHandlerTests
             .UseInMemoryDatabase(databaseName)
             .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
         services.AddUnitOfWork<ApplicationDbContext>();
+        services.AddScoped<IAssetUnavailableInboxIdentityLock, PostgreSqlAssetUnavailableInboxIdentityLock>();
         // AssetUnavailable 的 v1/v2 handler 与 canonical processor 走与 Program.cs 相同的 DI seam 注册，
         // 用例从容器解析 handler，而不是手工 new：只有这样才证明两个版本解析到的是同一个注册的 processor。
         services.AddSingleton<IIntegrationEventDeadLetterStore, InMemoryIntegrationEventDeadLetterStore>();
