@@ -32,7 +32,7 @@ internal static class FileStorageServiceTestFactory
             tusStoreAccessor!,
             configuration ?? FileStorageTestConfiguration.Default,
             clock,
-            commitStorage ?? new UnavailableUploadCommitStorage(),
+            commitStorage ?? new NoFinalActionCommitStorage(),
             gateRegistry ?? new UploadSessionGateRegistry(),
             logger ?? NullLogger<PostgreSqlFileStorageService>.Instance,
             manager);
@@ -54,6 +54,17 @@ internal static class FileStorageServiceTestFactory
         var services = new ServiceCollection();
         services.AddScoped(_ => fileStorageService);
         return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+    }
+
+    /// <summary>
+    /// 提交存储始终报告“最终存储动作从未开始”，用于只关心 complete 协议、不关心字节面的用例。
+    /// </summary>
+    internal sealed class NoFinalActionCommitStorage : IUploadCommitStorage
+    {
+        public Task<UploadCommitStorageResult> CommitAsync(
+            UploadCommitIntent intent,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(UploadCommitStorageResult.ProvenNoFinalActionStarted());
     }
 
     private sealed class TestDbContextFactory(DbContextOptions<ApplicationDbContext> options)

@@ -104,6 +104,8 @@ services:
     environment:
       <<: *dotnet-env
       ConnectionStrings__FileStorageDb: Host=postgres;Port=5432;Database=nerv_iip_filestorage;Username=${NERV_IIP_POSTGRES_USER:-nerv};Password=${NERV_IIP_POSTGRES_PASSWORD:?set NERV_IIP_POSTGRES_PASSWORD}
+      FileStorage__UploadProvider: tus
+      FileStorage__Tus__RootPath: /var/lib/nerv-iip/filestorage/tus
       Storage__Provider: MinIO
       Storage__MinIO__Endpoint: http://minio:9000
       Storage__MinIO__AccessKey: ${NERV_IIP_MINIO_ROOT_USER:?set NERV_IIP_MINIO_ROOT_USER}
@@ -118,6 +120,9 @@ services:
         condition: service_completed_successfully
       otel-collector:
         condition: service_started
+    volumes:
+      # tus 盘承载已 complete 文件的字节，容器可写层会随重建丢失，必须挂持久卷。
+      - nerv-iip-file-storage:/var/lib/nerv-iip/filestorage
     ports:
       - "${NERV_IIP_FILE_STORAGE_PORT:-5104}:8080"
 
@@ -449,3 +454,6 @@ services:
         APP_DIR: frontend/apps/business-console
     ports:
       - "${NERV_IIP_BUSINESS_CONSOLE_PORT:-5125}:8080"
+
+volumes:
+  nerv-iip-file-storage:

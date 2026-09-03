@@ -96,7 +96,9 @@ builder.Services.AddSingleton<IVersionedObjectStore>(_ =>
 builder.Services.AddSingleton<VersionedArchiveService>();
 builder.Services.AddSingleton<UploadSessionGateRegistry>();
 builder.Services.AddSingleton<IUploadSessionMutationGate, UploadSessionMutationGate>();
-builder.Services.AddSingleton<IUploadCommitStorage, UnavailableUploadCommitStorage>();
+// 提交存储读回的是本地 tus 盘上的实际字节。server-proxy 部署没有本地字节面，
+// LocalTusUploadCommitStorage 会据实报告“最终存储动作从未开始”，complete 与本次改动前一样保持 503 可重试。
+builder.Services.AddSingleton<IUploadCommitStorage, LocalTusUploadCommitStorage>();
 builder.Services.AddScoped<UploadCommitExecutionLeaseManager>();
 
 builder.Services.AddScoped<IFileStorageService, PostgreSqlFileStorageService>();
