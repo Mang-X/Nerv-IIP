@@ -8,6 +8,7 @@ using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Scheduling.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Maintenance;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 
@@ -108,24 +109,32 @@ public sealed class AssetUnavailableInboxPostgresProfileTests
         Assert.Single(await db.SchedulePlanInvalidations.AsNoTracking().ToArrayAsync());
     }
 
+    /// <remarks>
+    /// Each observation owns its own scope and context: <c>Eventually</c> abandons an in-flight observation
+    /// when the window closes, so nothing shared may be disposed underneath it.
+    /// </remarks>
     private static async Task WaitForBlockedAdvisoryClaimAsync(ServiceProvider provider)
     {
-        var deadline = DateTimeOffset.UtcNow.AddSeconds(15);
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            await using var scope = provider.CreateAsyncScope();
-            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var waiting = await db.Database.SqlQueryRaw<int>("""
-                SELECT COUNT(*)::int AS "Value"
-                FROM pg_locks
-                WHERE locktype = 'advisory'
-                  AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
-                  AND NOT granted
-                """).SingleAsync();
-            if (waiting > 0) return;
-            await Task.Delay(50);
-        }
-        throw new TimeoutException("Both competitors did not reach the advisory claim boundary.");
+        await Eventually.WaitAsync(
+            condition: "the second competitor is blocked on the Scheduling inbox advisory claim",
+            observe: async token =>
+            {
+                await using var scope = provider.CreateAsyncScope();
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                return await db.Database.SqlQueryRaw<int>("""
+                    SELECT COUNT(*)::int AS "Value"
+                    FROM pg_locks
+                    WHERE locktype = 'advisory'
+                      AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+                      AND NOT granted
+                    """).SingleAsync(token);
+            },
+            isSatisfied: waiting => waiting > 0,
+            describe: waiting => $"advisoryLockWaiters={waiting}; expected>=1",
+            options: new EventuallyOptions(
+                Timeout: TimeSpan.FromSeconds(15),
+                PollInterval: TimeSpan.FromMilliseconds(50),
+                SensitiveValues: [SchedulingPostgresLaneDatabase.ConnectionString]));
     }
 
     private static async Task AssertExactUniqueIndexesAsync(ApplicationDbContext db)
