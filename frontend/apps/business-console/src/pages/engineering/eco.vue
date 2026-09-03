@@ -194,7 +194,7 @@ const ecoCells = computed<NvMetricStripCell[]>(() => [
   },
 ])
 
-const listErrorMessage = computed(() => formatError(changesError.value))
+const listErrorMessage = computed(() => inlineErrorMessage(changesError.value))
 
 const columns: NvDataTableColumn<BusinessConsoleEngineeringChangeItem>[] = [
   { key: 'changeNumber', header: '变更号', cellClass: 'font-medium' },
@@ -360,10 +360,6 @@ async function openView(row: BusinessConsoleEngineeringChangeItem) {
   } finally {
     detailPending.value = false
   }
-}
-
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 
 function impactNodeTypeLabel(type?: string | null) {

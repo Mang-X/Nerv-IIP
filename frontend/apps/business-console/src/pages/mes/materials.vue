@@ -71,7 +71,7 @@ const awaitingReceiptCount = computed(
       (r) => r.status?.toLowerCase() !== 'closed' && receiptShortfall(r) > 0,
     ).length,
 )
-const errorMessage = computed(() => formatError(materialIssueRequestsError.value))
+const errorMessage = computed(() => inlineErrorMessage(materialIssueRequestsError.value))
 watch(statusFilter, (value) => {
   filters.status = value === 'all' ? undefined : value
 })
@@ -113,9 +113,6 @@ function formatDateTime(value?: string | null) {
   if (!value) return '未指定'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 </script>
 
