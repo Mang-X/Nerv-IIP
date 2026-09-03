@@ -142,7 +142,16 @@ internal sealed class BackfillWorkOrderReleaseProjectionCommandHandler(
             // 变成一个事务内的无界重扫重发。那种失败是挂死加写放大，不是可见的错值——
             // 由 job 超时兜底会连带带走 `if: always()` 的证据，且 xUnit 的 Timeout 对
             // EF InMemory 这种同步完成、从不让出的 await 链根本不生效（实测 >10 分钟不触发）。
-            // 所以把「游标严格前进」这条循环不变量就地断言：一旦不成立立即失败，且说得出原因。
+            // 所以就地断言这条循环终止不变量：一旦不成立立即失败，且说得出原因。
+            // 断言写成的是**三个分量各自都不前进**的合取（三次 CompareOrdinal 同时 <= 0），
+            // 它并**不**等同于「(Org, Env, WorkOrderId) 这个元组没有严格前进」——单独读这一行，
+            // 合取是更弱的条件。二者在此处等价的前提是上面 BuildPageQuery 的
+            // ORDER BY (OrganizationId, EnvironmentId, WorkOrderIdValue) 构成全序：
+            // 真实前进必在第一个不同的分量上取到 > 0 而让合取短路（故不会误抛）；
+            // `>=` 退化时末页游标与上一页逐分量相等、三次比较全为 0（故必抛）；
+            // 唯一能骗过合取而骗不过元组比较的形态——某个分量前进、另一个分量倒退——
+            // 正被该全序排除。前提若变（换排序键、丢掉全序、或补 tiebreaker），
+            // 这条合取就不再等价于元组比较，必须一并改写。
             if (lastWorkOrderId is not null
                 && string.CompareOrdinal(lastOnPage.OrganizationId, lastOrganizationId) <= 0
                 && string.CompareOrdinal(lastOnPage.EnvironmentId, lastEnvironmentId) <= 0
