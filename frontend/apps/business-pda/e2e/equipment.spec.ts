@@ -779,8 +779,13 @@ test('报修：375×812 路由/扫码/设备搜索 → ActionSheet → 键盘态
   await page.setViewportSize({ width: 375, height: 812 })
   const postBodies: unknown[] = []
   const legacyPostPaths: string[] = []
+  const reasonDirectoryRequests: URL[] = []
   page.on('request', (request) => {
-    const { pathname } = new URL(request.url())
+    const url = new URL(request.url())
+    const { pathname } = url
+    if (pathname === '/api/business-console/v1/directories/downtime-reason') {
+      reasonDirectoryRequests.push(url)
+    }
     if (
       request.method() === 'POST' &&
       pathname === '/api/business-console/v2/maintenance/work-orders'
@@ -924,6 +929,13 @@ test('报修：375×812 路由/扫码/设备搜索 → ActionSheet → 键盘态
     },
   ])
   expect(legacyPostPaths).toEqual([])
+  // 停机原因目录只按登录主体的 organization/environment 查询；别的租户/环境的码
+  // 既不会被请求，也就不会出现在抽屉里（跨租户过滤的权威在网关，前端不另设过滤）。
+  expect(reasonDirectoryRequests.length).toBeGreaterThan(0)
+  for (const url of reasonDirectoryRequests) {
+    expect(url.searchParams.get('organizationId')).toBe('org-001')
+    expect(url.searchParams.get('environmentId')).toBe('env-dev')
+  }
 })
 
 test('报修：匹配的非 GUID payload/receipt 也不能进入成功或工单核验态', async ({ page }) => {
