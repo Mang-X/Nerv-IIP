@@ -444,10 +444,15 @@ try {
     # DowntimeReasonCodeMigration、ProductionReportOeeDimensionSnapshot、WorkOrderTransformation），
     # 而漏登记就是漏防线——Assert-LaneOwnedDatabase 根本没扫到那些文件。
     # 身份形如 <Namespace>.<Class>.<Method>，倒数第二段即类名，类名即源文件名。
-    $mesSourceNames = @($mesMember.expectedTestIdentities | ForEach-Object {
-            $segments = ([string]$_).Split('.')
-            "$($segments[$segments.Length - 2]).cs"
-        } | Sort-Object -Unique)
+    # 去重与排序都走序数比较器：`Sort-Object -Unique` 会折叠可忽略字符，
+    # 两个只差一个 bidi 字符的类名会被并成一个，扫描面因此静默变窄（ordinal-comparison-layers 门禁点名过这一处）。
+    $mesSourceSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($mesIdentity in @($mesMember.expectedTestIdentities)) {
+        $segments = ([string]$mesIdentity).Split('.')
+        [void]$mesSourceSet.Add("$($segments[$segments.Length - 2]).cs")
+    }
+    $mesSourceNames = [Collections.Generic.List[string]]::new([string[]]@($mesSourceSet))
+    $mesSourceNames.Sort([StringComparer]::Ordinal)
     foreach ($mesSource in $mesSourceNames) {
         $mesSourcePath = Join-Path $repoRoot "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/$mesSource"
         Assert-Contract (Test-Path -LiteralPath $mesSourcePath -PathType Leaf) "MES lane source '$mesSource' must exist."
