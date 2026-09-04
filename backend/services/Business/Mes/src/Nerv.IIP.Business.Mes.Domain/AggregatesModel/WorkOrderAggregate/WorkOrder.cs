@@ -360,7 +360,8 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
 
     /// <summary>
     /// 对已经有工序快照的工单补记发布（计划转工单后再下达这条主流程）。
-    /// 这些工序可能早已开工报工，因此发布事实的时刻必须按「不晚于该工单任何一条既有报工」取下界；
+    /// 这些工序可能早已开工、报工、乃至完工，因此发布事实的时刻必须按
+    /// 「不晚于该工单任何一条**既有活动**（报工或工序完工）」取下界；
     /// 该不变量由 <see cref="WorkOrderReleaseFactTime"/> 的构造口径承担，本方法不再收裸时刻。
     /// </summary>
     public void MarkReleased(IReadOnlyCollection<OperationTask> operationTasks, WorkOrderReleaseFactTime releasedAt)

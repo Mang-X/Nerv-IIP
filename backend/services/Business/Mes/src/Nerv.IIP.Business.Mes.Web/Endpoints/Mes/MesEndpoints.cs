@@ -825,7 +825,8 @@ public sealed class ReleaseWorkOrderEndpoint(ISender sender, TimeProvider timePr
         // 发布事实的时刻落在未来时，该工单工序此后的**每一条**报工都会被 Quality 的
         // PeriodicInspectionOperation 判为「报工早于发布」抛出、整封进死信——正是 #3117 修的那个缺陷
         // 换了个入口。发布是一件已经发生的事，故在此夹到当前时刻；仓库内部的常量与种子不跨这条边界，
-        // 不重复付这份时钟依赖（「不晚于既有报工」那半条不变量由 WorkOrderReleaseFactTime 承担）。
+        // 不重复付这份时钟依赖（「不晚于既有活动（报工或工序完工）」那半条不变量由
+        // WorkOrderReleaseFactTime 承担）。
         var nowUtc = timeProvider.GetUtcNow();
         var releasedAtUtc = req.ReleasedAtUtc is { } supplied
             ? WorkOrderReleaseFactTime.UntrustedCandidate(supplied, nowUtc)

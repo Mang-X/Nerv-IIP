@@ -381,6 +381,19 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
         var tasks = await dbContext.InspectionTasks.OrderBy(x => x.Quantity).ToArrayAsync();
         Assert.Equal([100m, 200m], tasks.Select(x => x.Quantity));
         Assert.Equal(2, context.LastGeneratedQuantityWindowSequence);
+
+        // **补开任务的到期时刻同样要有承重者（#3117 第四轮 / 复审 R5）。**
+        // 条数这一半由 merge-base 上的 `Report_before_release_backfills_quantity_windows_from_the_frozen_context`
+        // （d4a8a711e）钉着；**到期时刻这一半在此之前谁也没钉**——包括本文件上一版。
+        // 今天的行为：`AddDueTasks` 拿的是信封 `OccurredAtUtc`，而本 PR 让它等于发布事实时刻（被夹到最早报工），
+        // 于是 `generatedAtUtc` = 最早报工时刻、`dueAtUtc = +24h`，**任务出生即逾期数周**。
+        // 下游至少三处受影响：`inspection_tasks.due_at_utc` 与超期扫描索引、
+        // `InspectionTaskOverdueIntegrationEvent` → Notification（补下达即刻批量触发超期提醒）、检验员队列排序。
+        // **本用例只钉「今天是什么」，不主张「应该是什么」**——是否改行为是跨服务产品判断，已在正文交回 owner。
+        // 实测值（不是推算）：`dueAtUtc = window.GeneratedAtUtc + 24h`，此处为 2026-08-02T00:00Z。
+        Assert.All(tasks, task => Assert.Equal(DateTimeOffset.Parse("2026-08-02T00:00:00Z"), task.DueAtUtc));
+        // 「出生即逾期」这件事本身也要有断言，否则改成按真实时钟时这条用例不会红。
+        Assert.All(tasks, task => Assert.True(task.DueAtUtc < DateTimeOffset.UtcNow));
     }
 
     /// <summary>

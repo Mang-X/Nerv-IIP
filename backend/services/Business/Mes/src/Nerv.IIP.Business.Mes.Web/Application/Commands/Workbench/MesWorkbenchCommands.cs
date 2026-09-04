@@ -175,7 +175,7 @@ public sealed class ReleaseWorkOrderCommandHandler(
         workOrder.MarkReleased(operationSnapshots, releasedAt);
 
         // 回执回**实际落到发布事实上的时刻**，不回 request.ReleasedAtUtc：
-        // 被报工下界压过或被夹到当前时刻时，调用方否则无从得知自己给的时刻已被改写。
+        // 被既有活动下界压过或被夹到当前时刻时，调用方否则无从得知自己给的时刻已被改写。
         return new MesAcceptedResponse("Accepted", request.WorkOrderId, releasedAt.Value);
     }
 }
