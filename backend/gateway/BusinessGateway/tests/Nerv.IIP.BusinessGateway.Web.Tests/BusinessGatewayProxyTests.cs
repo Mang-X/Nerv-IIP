@@ -18244,6 +18244,15 @@ internal sealed class RecordingMaintenanceClient : IBusinessMaintenanceClient
         return Task.FromResult(new BusinessConsoleCreateMaintenanceWorkOrderResponse("wo-maint-created"));
     }
 
+    public Task<BusinessConsoleCreateMaintenanceWorkOrderV2Response> CreateWorkOrderV2Async(
+        string internalBearerToken,
+        BusinessConsoleCreateMaintenanceWorkOrderV2Request request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleCreateMaintenanceWorkOrderV2Response("wo-maint-created-v2"));
+    }
+
     public Task<BusinessConsoleCompleteMaintenanceWorkOrderResponse> CompleteWorkOrderAsync(
         string internalBearerToken,
         string workOrderId,

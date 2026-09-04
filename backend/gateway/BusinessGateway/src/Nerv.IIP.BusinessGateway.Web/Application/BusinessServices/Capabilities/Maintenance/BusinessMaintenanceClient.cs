@@ -18,6 +18,11 @@ public interface IBusinessMaintenanceClient
         BusinessConsoleCreateMaintenanceWorkOrderRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleCreateMaintenanceWorkOrderV2Response> CreateWorkOrderV2Async(
+        string internalBearerToken,
+        BusinessConsoleCreateMaintenanceWorkOrderV2Request request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleCompleteMaintenanceWorkOrderResponse> CompleteWorkOrderAsync(
         string internalBearerToken,
         string workOrderId,
@@ -175,11 +180,43 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         BusinessConsoleCreateMaintenanceWorkOrderRequest request,
         CancellationToken cancellationToken)
     {
+        var (resourceId, receipt) = await SendCreateWorkOrderAsync(
+            internalBearerToken,
+            "/api/business/v1/maintenance/work-orders",
+            request,
+            request.IdempotencyKey,
+            cancellationToken);
+        return new BusinessConsoleCreateMaintenanceWorkOrderResponse(resourceId, receipt);
+    }
+
+    public async Task<BusinessConsoleCreateMaintenanceWorkOrderV2Response> CreateWorkOrderV2Async(
+        string internalBearerToken,
+        BusinessConsoleCreateMaintenanceWorkOrderV2Request request,
+        CancellationToken cancellationToken)
+    {
+        var (resourceId, receipt) = await SendCreateWorkOrderAsync(
+            internalBearerToken,
+            "/api/business/v2/maintenance/work-orders",
+            request,
+            request.IdempotencyKey,
+            cancellationToken);
+        return new BusinessConsoleCreateMaintenanceWorkOrderV2Response(resourceId, receipt);
+    }
+
+    // v1 与 v2 共享同一段下游响应校验和回执构造：任何一处收紧/放松都同时作用于两个版本，
+    // 避免 v2 复制出一份弱化校验（#2969）。
+    private async Task<(string ResourceId, BusinessConsoleOperationReceipt? Receipt)> SendCreateWorkOrderAsync(
+        string internalBearerToken,
+        string downstreamPath,
+        object payload,
+        string idempotencyKey,
+        CancellationToken cancellationToken)
+    {
         var response = await SendAsync<DownstreamCreateMaintenanceWorkOrderResponse>(
             internalBearerToken,
             HttpMethod.Post,
-            "/api/business/v1/maintenance/work-orders",
-            request,
+            downstreamPath,
+            payload,
             cancellationToken);
         var resourceId = FormatMaintenanceWorkOrderId(response.WorkOrderId);
         if (!Guid.TryParse(resourceId, out var parsedWorkOrderId)
@@ -192,9 +229,9 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
                 "downstream-invalid-response");
         }
 
-        return new BusinessConsoleCreateMaintenanceWorkOrderResponse(
+        return (
             resourceId,
-            string.IsNullOrWhiteSpace(request.IdempotencyKey)
+            string.IsNullOrWhiteSpace(idempotencyKey)
                 ? null
                 : BusinessConsoleOperationReceipts.Confirmed(
                     "maintenance.work-order.create",
@@ -203,7 +240,7 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
                     resourceId,
                     response.ChangedAtUtc,
                     response.Status,
-                    request.IdempotencyKey));
+                    idempotencyKey));
     }
 
     public async Task<BusinessConsoleCompleteMaintenanceWorkOrderResponse> CompleteWorkOrderAsync(

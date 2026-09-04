@@ -3,6 +3,8 @@ import * as businessConsoleClient from './business-console'
 import { client } from './generated/client.gen'
 import type {
   CreateBusinessConsoleCodeRuleVersionData,
+  CreateBusinessConsoleMaintenanceWorkOrderData,
+  CreateBusinessConsoleMaintenanceWorkOrderV2Data,
   NetCorePalExtensionsDtoResponseData,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCreateMaterialIssueRequest,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestListResponse,
@@ -76,6 +78,7 @@ import type {
   BusinessConsoleTelemetryOeeAggregateRequest,
   BusinessConsoleTelemetryOeeAggregateResponse,
   BusinessConsoleCompleteMaintenanceWorkOrderRequest,
+  BusinessConsoleCreateMaintenanceWorkOrderV2Request,
   BusinessConsoleAssignWmsResourceRequest,
   BusinessConsoleCompleteWmsInboundOrderRequest,
   BusinessConsoleCreateInspectionRecordFromTaskRequest,
@@ -297,6 +300,53 @@ describe('generated API client contract', () => {
       scopeId: string
       toUtc?: string | null
     }>()
+  })
+
+  it('keeps the v1 free-text maintenance create request separate from the v2 reason-code contract', () => {
+    expectTypeOf<BusinessConsoleCreateMaintenanceWorkOrderRequest>().toEqualTypeOf<{
+      organizationId: string
+      environmentId: string
+      deviceAssetId: string
+      priority: string
+      sourceAlarmId?: string | null
+      openedBy?: string
+      idempotencyKey: string
+      assetUnavailableReason?: string | null
+      assignedTechnicianUserId?: string | null
+      estimatedLaborMinutes?: number | null
+    }>()
+    expectTypeOf<BusinessConsoleCreateMaintenanceWorkOrderV2Request>().toEqualTypeOf<{
+      organizationId: string
+      environmentId: string
+      deviceAssetId: string
+      priority: string
+      sourceAlarmId?: string | null
+      openedBy?: string
+      idempotencyKey: string
+      assetUnavailableReasonCode?: string | null
+      assignedTechnicianUserId?: string | null
+      estimatedLaborMinutes?: number | null
+    }>()
+  })
+
+  // 由 vue-tsc typecheck 承担（vitest 不求值 expectTypeOf）：v2 与 v1 必须对称地在公开契约里
+  // 声明标准 Idempotency-Key 头，否则 #2970 的 PDA 只能深层导入或手搓。
+  it('declares the standard Idempotency-Key header on both maintenance create versions', () => {
+    expectTypeOf<CreateBusinessConsoleMaintenanceWorkOrderV2Data['headers']>().toEqualTypeOf<
+      CreateBusinessConsoleMaintenanceWorkOrderData['headers']
+    >()
+    expectTypeOf<
+      NonNullable<CreateBusinessConsoleMaintenanceWorkOrderV2Data['headers']>['Idempotency-Key']
+    >().toEqualTypeOf<string | undefined>()
+  })
+
+  it('exposes the maintenance v2 create mutation from the stable entry point', () => {
+    expect(
+      typeof businessConsoleClient.createBusinessConsoleMaintenanceWorkOrderMutationOptions,
+    ).toBe('function')
+    expect(
+      typeof businessConsoleClient.createBusinessConsoleMaintenanceWorkOrderV2MutationOptions,
+    ).toBe('function')
   })
 
   it('exposes the v1 downtime fail-closed 400 response in generated contracts', () => {

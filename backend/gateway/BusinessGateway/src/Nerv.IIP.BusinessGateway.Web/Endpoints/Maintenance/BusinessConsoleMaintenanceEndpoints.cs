@@ -21,85 +21,81 @@ public abstract class AuthorizedBusinessMaintenanceProxyEndpoint<TRequest, TResp
     protected override JsonSerializerOptions? ResponseJsonOptions => EquipmentRuntimeJson.Options;
 }
 
-[Tags("Business Console Maintenance")]
-[HttpPost("/api/business-console/v1/maintenance/work-orders")]
-[BusinessGatewayOperationId("createBusinessConsoleMaintenanceWorkOrder")]
-public sealed class CreateBusinessConsoleMaintenanceWorkOrderEndpoint(
-    IBusinessGatewayAuthorizationClient auth,
-    IBusinessMaintenanceClient maintenance,
-    IBusinessIndustrialTelemetryClient industrialTelemetry,
-    IBusinessMasterDataClient masterData,
-    IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCreateMaintenanceWorkOrderRequest, BusinessConsoleCreateMaintenanceWorkOrderResponse>(
-        auth,
-        BusinessGatewayPermissions.MaintenanceWorkOrdersManage)
+// v1 与 v2 创建工单代理共用的 source alarm / 设备一致性校验。两个端点调用同一份实现，
+// 使 v2 不可能退化为一套弱化校验（#2969，spec #2964）。
+internal static class MaintenanceWorkOrderCreateGuard
 {
-    protected override string OrganizationId(BusinessConsoleCreateMaintenanceWorkOrderRequest request) => request.OrganizationId;
-
-    protected override string EnvironmentId(BusinessConsoleCreateMaintenanceWorkOrderRequest request) => request.EnvironmentId;
-
-    protected override string? ResourceType(BusinessConsoleCreateMaintenanceWorkOrderRequest request) => "maintenance-work-order";
-
-    protected override string? ResourceId(BusinessConsoleCreateMaintenanceWorkOrderRequest request) => request.DeviceAssetId;
-
-    protected override async Task<BusinessConsoleCreateMaintenanceWorkOrderResponse> ForwardAsync(
-        BusinessConsoleCreateMaintenanceWorkOrderRequest request,
-        string bearerToken,
+    /// <summary>
+    /// 归一化并校验 sourceAlarmId：非空时必须在同一 organization/environment 精确命中一条告警，
+    /// 且该告警的设备与请求设备解析到同一个 canonical 设备聚合 ID。返回归一化后的 sourceAlarmId。
+    /// </summary>
+    public static async Task<string?> EnsureSourceAlarmConsistencyAsync(
+        IBusinessIndustrialTelemetryClient industrialTelemetry,
+        IBusinessMasterDataClient masterData,
+        IInternalServiceTokenProvider tokenProvider,
+        string organizationId,
+        string environmentId,
+        string deviceAssetId,
+        string? sourceAlarmId,
         CancellationToken cancellationToken)
     {
-        var (_, actorRef) = RequireAuthorizedPrincipalActor();
-        var sourceAlarmId = NormalizeSourceAlarmId(request.SourceAlarmId);
-        if (!string.IsNullOrEmpty(sourceAlarmId))
+        var normalizedSourceAlarmId = NormalizeSourceAlarmId(sourceAlarmId);
+        if (string.IsNullOrEmpty(normalizedSourceAlarmId))
         {
-            var alarms = await industrialTelemetry.ListAlarmsAsync(
-                tokenProvider.BearerToken,
-                new BusinessConsoleTelemetryAlarmListRequest(
-                    request.OrganizationId,
-                    request.EnvironmentId,
-                    DeviceAssetId: null,
-                    Status: null,
-                    Skip: 0,
-                    Take: 2,
-                    AlarmEventId: sourceAlarmId),
-                cancellationToken);
-            var alarm = alarms.Items is { Count: 1 } && alarms.Total == 1
-                ? alarms.Items.Single()
-                : null;
-            if (alarm is null ||
-                !string.Equals(alarm.AlarmEventId, sourceAlarmId, StringComparison.Ordinal) ||
-                !string.Equals(alarm.OrganizationId, request.OrganizationId, StringComparison.Ordinal) ||
-                !string.Equals(alarm.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal))
-            {
-                throw BusinessServiceProxyException.FromSafeDownstreamMessage(
-                    HttpStatusCode.BadGateway,
-                    "source-alarm-unavailable");
-            }
-
-            var requestedDeviceId = await ResolveDeviceAggregateIdAsync(
-                request.DeviceAssetId,
-                request.OrganizationId,
-                request.EnvironmentId,
-                cancellationToken);
-            var alarmDeviceId = await ResolveDeviceAggregateIdAsync(
-                alarm.DeviceAssetId,
-                request.OrganizationId,
-                request.EnvironmentId,
-                cancellationToken);
-            if (!string.Equals(requestedDeviceId, alarmDeviceId, StringComparison.Ordinal))
-            {
-                throw BusinessServiceProxyException.FromSafeDownstreamMessage(
-                    HttpStatusCode.Conflict,
-                    "source-alarm-device-mismatch");
-            }
+            return normalizedSourceAlarmId;
         }
 
-        return await maintenance.CreateWorkOrderAsync(
+        var alarms = await industrialTelemetry.ListAlarmsAsync(
             tokenProvider.BearerToken,
-            request with { OpenedBy = actorRef, SourceAlarmId = sourceAlarmId },
+            new BusinessConsoleTelemetryAlarmListRequest(
+                organizationId,
+                environmentId,
+                DeviceAssetId: null,
+                Status: null,
+                Skip: 0,
+                Take: 2,
+                AlarmEventId: normalizedSourceAlarmId),
             cancellationToken);
+        var alarm = alarms.Items is { Count: 1 } && alarms.Total == 1
+            ? alarms.Items.Single()
+            : null;
+        if (alarm is null ||
+            !string.Equals(alarm.AlarmEventId, normalizedSourceAlarmId, StringComparison.Ordinal) ||
+            !string.Equals(alarm.OrganizationId, organizationId, StringComparison.Ordinal) ||
+            !string.Equals(alarm.EnvironmentId, environmentId, StringComparison.Ordinal))
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "source-alarm-unavailable");
+        }
+
+        var requestedDeviceId = await ResolveDeviceAggregateIdAsync(
+            masterData,
+            tokenProvider,
+            deviceAssetId,
+            organizationId,
+            environmentId,
+            cancellationToken);
+        var alarmDeviceId = await ResolveDeviceAggregateIdAsync(
+            masterData,
+            tokenProvider,
+            alarm.DeviceAssetId,
+            organizationId,
+            environmentId,
+            cancellationToken);
+        if (!string.Equals(requestedDeviceId, alarmDeviceId, StringComparison.Ordinal))
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.Conflict,
+                "source-alarm-device-mismatch");
+        }
+
+        return normalizedSourceAlarmId;
     }
 
-    private async Task<string> ResolveDeviceAggregateIdAsync(
+    private static async Task<string> ResolveDeviceAggregateIdAsync(
+        IBusinessMasterDataClient masterData,
+        IInternalServiceTokenProvider tokenProvider,
         string deviceReference,
         string organizationId,
         string environmentId,
@@ -145,6 +141,100 @@ public sealed class CreateBusinessConsoleMaintenanceWorkOrderEndpoint(
     {
         var trimmed = value?.Trim();
         return string.IsNullOrEmpty(trimmed) ? trimmed : NormalizeGuid(trimmed) ?? trimmed;
+    }
+}
+
+[Tags("Business Console Maintenance")]
+[HttpPost("/api/business-console/v1/maintenance/work-orders")]
+[BusinessGatewayOperationId("createBusinessConsoleMaintenanceWorkOrder")]
+public sealed class CreateBusinessConsoleMaintenanceWorkOrderEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMaintenanceClient maintenance,
+    IBusinessIndustrialTelemetryClient industrialTelemetry,
+    IBusinessMasterDataClient masterData,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCreateMaintenanceWorkOrderRequest, BusinessConsoleCreateMaintenanceWorkOrderResponse>(
+        auth,
+        BusinessGatewayPermissions.MaintenanceWorkOrdersManage)
+{
+    protected override string OrganizationId(BusinessConsoleCreateMaintenanceWorkOrderRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleCreateMaintenanceWorkOrderRequest request) => request.EnvironmentId;
+
+    protected override string? ResourceType(BusinessConsoleCreateMaintenanceWorkOrderRequest request) => "maintenance-work-order";
+
+    protected override string? ResourceId(BusinessConsoleCreateMaintenanceWorkOrderRequest request) => request.DeviceAssetId;
+
+    protected override async Task<BusinessConsoleCreateMaintenanceWorkOrderResponse> ForwardAsync(
+        BusinessConsoleCreateMaintenanceWorkOrderRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var (_, actorRef) = RequireAuthorizedPrincipalActor();
+        var sourceAlarmId = await MaintenanceWorkOrderCreateGuard.EnsureSourceAlarmConsistencyAsync(
+            industrialTelemetry,
+            masterData,
+            tokenProvider,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.DeviceAssetId,
+            request.SourceAlarmId,
+            cancellationToken);
+
+        return await maintenance.CreateWorkOrderAsync(
+            tokenProvider.BearerToken,
+            request with { OpenedBy = actorRef, SourceAlarmId = sourceAlarmId },
+            cancellationToken);
+    }
+}
+
+/// <summary>
+/// v2 创建工单代理（#2969）：路由、operationId 与 DTO 均与 v1 独立，转发到 Maintenance
+/// <c>POST /api/business/v2/maintenance/work-orders</c>。授权要求、principal actor 注入、
+/// source alarm/设备一致性与 idempotency 规则与 v1 完全同源，唯一差异是把自由文本
+/// <c>assetUnavailableReason</c> 换成原样转发的 <c>assetUnavailableReasonCode</c>。
+/// </summary>
+[Tags("Business Console Maintenance")]
+[HttpPost("/api/business-console/v2/maintenance/work-orders")]
+[BusinessGatewayOperationId("createBusinessConsoleMaintenanceWorkOrderV2")]
+public sealed class CreateBusinessConsoleMaintenanceWorkOrderV2Endpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMaintenanceClient maintenance,
+    IBusinessIndustrialTelemetryClient industrialTelemetry,
+    IBusinessMasterDataClient masterData,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCreateMaintenanceWorkOrderV2Request, BusinessConsoleCreateMaintenanceWorkOrderV2Response>(
+        auth,
+        BusinessGatewayPermissions.MaintenanceWorkOrdersManage)
+{
+    protected override string OrganizationId(BusinessConsoleCreateMaintenanceWorkOrderV2Request request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleCreateMaintenanceWorkOrderV2Request request) => request.EnvironmentId;
+
+    protected override string? ResourceType(BusinessConsoleCreateMaintenanceWorkOrderV2Request request) => "maintenance-work-order";
+
+    protected override string? ResourceId(BusinessConsoleCreateMaintenanceWorkOrderV2Request request) => request.DeviceAssetId;
+
+    protected override async Task<BusinessConsoleCreateMaintenanceWorkOrderV2Response> ForwardAsync(
+        BusinessConsoleCreateMaintenanceWorkOrderV2Request request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var (_, actorRef) = RequireAuthorizedPrincipalActor();
+        var sourceAlarmId = await MaintenanceWorkOrderCreateGuard.EnsureSourceAlarmConsistencyAsync(
+            industrialTelemetry,
+            masterData,
+            tokenProvider,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.DeviceAssetId,
+            request.SourceAlarmId,
+            cancellationToken);
+
+        return await maintenance.CreateWorkOrderV2Async(
+            tokenProvider.BearerToken,
+            request with { OpenedBy = actorRef, SourceAlarmId = sourceAlarmId },
+            cancellationToken);
     }
 }
 
@@ -1395,6 +1485,34 @@ public sealed class BusinessConsoleCreateMaintenanceWorkOrderRequestValidator : 
         RuleFor(x => x.OpenedBy).MaximumLength(100);
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
         RuleFor(x => x.AssetUnavailableReason).MaximumLength(200);
+        RuleFor(x => x.AssignedTechnicianUserId).MaximumLength(150);
+        RuleFor(x => x.EstimatedLaborMinutes).GreaterThan(0).When(x => x.EstimatedLaborMinutes is not null);
+    }
+}
+
+/// <summary>
+/// v2 创建工单校验：逐条复用 v1 的传输层规则，唯一差异是把 <c>AssetUnavailableReason</c> 的
+/// MaximumLength(200) 换成 <c>AssetUnavailableReasonCode</c> 的 1–100 长度（spec #2964）。
+/// 显式 null 合法（建单但不标记不可用）；空字符串因 Length(1,100) 被拒；Gateway 不 trim、不改大小写、
+/// 不判断目录成员——目录精确命中由 Maintenance v2 承担。
+/// </summary>
+public sealed class BusinessConsoleCreateMaintenanceWorkOrderV2RequestValidator
+    : Validator<BusinessConsoleCreateMaintenanceWorkOrderV2Request>
+{
+    public const int MaxAssetUnavailableReasonCodeLength = 100;
+
+    public BusinessConsoleCreateMaintenanceWorkOrderV2RequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Priority).NotEmpty().MaximumLength(40);
+        RuleFor(x => x.SourceAlarmId).NotEmpty().MaximumLength(100).When(x => x.SourceAlarmId is not null);
+        RuleFor(x => x.OpenedBy).MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.AssetUnavailableReasonCode)
+            .Length(1, MaxAssetUnavailableReasonCodeLength)
+            .When(x => x.AssetUnavailableReasonCode is not null);
         RuleFor(x => x.AssignedTechnicianUserId).MaximumLength(150);
         RuleFor(x => x.EstimatedLaborMinutes).GreaterThan(0).When(x => x.EstimatedLaborMinutes is not null);
     }
