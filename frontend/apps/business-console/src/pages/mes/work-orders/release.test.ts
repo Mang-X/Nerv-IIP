@@ -417,7 +417,7 @@ describe('work-order list — release entry', () => {
   // #3118：后端 `ReleaseWorkOrderCommandHandler` 的下达守卫不看工序状态，工序在制的
   // created 工单照样受理。界面此前要求全部工序 queued，比后端更严，把「事后补下达」
   // 这条自愈路径整个藏掉；这里钉住的是「界面不得比后端守卫更严」。
-  it('releases a work order whose operation is already in progress, telling the user it only backfills the release fact', async () => {
+  it('releases a work order whose operation is already in progress, and says so in the dialog', async () => {
     releaseState.items = [
       workOrder({
         operationTasks: [
@@ -441,7 +441,7 @@ describe('work-order list — release entry', () => {
     expect(readWorkOrderForRelease).toHaveBeenCalledWith('WO-1')
     expect(wrapper.text()).toContain('确认下达工单')
     expect(wrapper.get('[data-testid="release-retroactive-notice"]').text()).toContain(
-      '下达只补齐工单的发布记录，不会改变工序当前进度。',
+      '该工单已有工序不在排队中，这是对已开工工单的补充下达。',
     )
     expect(wrapper.find('[data-testid="release-validation-message"]').exists()).toBe(false)
 
@@ -456,8 +456,8 @@ describe('work-order list — release entry', () => {
     )
   })
 
-  // 常规下达（工序仍在排队）不该背上补发布的说法。
-  it('does not show the backfill notice when every operation is still queued', async () => {
+  // 开工前的常规下达不该背上这句前提说明。
+  it('does not show the already-started notice when every operation is still queued', async () => {
     const wrapper = mountPage()
 
     await button(wrapper, '下达').trigger('click')

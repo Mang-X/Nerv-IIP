@@ -57,11 +57,20 @@ export function mesWorkOrderReleaseBlocker(order: MesWorkOrderReleaseCandidate) 
 }
 
 /**
- * 工序已离开排队的工单，其「下达」是事后补发布事实（母票 #3113 的自愈路径），
- * 与开工前的常规下达不是同一件事。确认框里必须说出这点，否则用户无从判断
- * 这一下会不会动到正在跑的工序。
+ * 工序已离开排队的工单，其「下达」发生在开工之后，与开工前的常规下达不是同一件事，
+ * 确认框需要点出这个前提。
+ *
+ * 文案只陈述读面上看得见的前提，**不承诺下达的后果**：
+ * - 不能说「不会改变工序当前进度」——下达发出的 `WorkOrderReleased` 会经
+ *   `SchedulingPlanInvalidationService.InvalidateAllGeneratedPlansAsync`
+ *   （scope 为 AllInvalidatablePlans，且计划内无本工单时回落成整张计划的全部工序）
+ *   走到 `OperationTask.MarkScheduleInvalidated`，把 **Queued** 工序改成 `ScheduleInvalidated`；
+ *   而本提示出现的场景恰好最可能存在 queued 兄弟工序。
+ * - 不能说「补齐发布记录」——`WorkOrderReleasedIntegrationEventConverter` 目前把
+ *   releasedAtUtc 写成 `DateTimeOffset.UtcNow`，对**已有报工**的工单会让 Quality 的
+ *   `PeriodicInspectionOperation` 抛「报工时刻早于发布时刻」而整封进死信（由 #3117 承担）。
  */
 export function mesWorkOrderRetroactiveReleaseNotice(order: MesWorkOrderReleaseCandidate) {
   if (!order.operationTasks?.some((task) => !isQueued(task))) return null
-  return '该工单已有工序不在排队中：下达只补齐工单的发布记录，不会改变工序当前进度。'
+  return '该工单已有工序不在排队中，这是对已开工工单的补充下达。'
 }

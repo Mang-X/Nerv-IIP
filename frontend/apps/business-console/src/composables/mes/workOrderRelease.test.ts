@@ -184,7 +184,7 @@ describe('mesWorkOrderReleaseBlocker', () => {
 })
 
 describe('mesWorkOrderRetroactiveReleaseNotice', () => {
-  it('工序已离开排队时说明这次下达只补发布记录', () => {
+  it('工序已离开排队时点出「这是对已开工工单的补充下达」这个前提', () => {
     expect(
       mesWorkOrderRetroactiveReleaseNotice(
         candidate({
@@ -193,14 +193,14 @@ describe('mesWorkOrderRetroactiveReleaseNotice', () => {
           ],
         }),
       ),
-    ).toBe('该工单已有工序不在排队中：下达只补齐工单的发布记录，不会改变工序当前进度。')
+    ).toBe('该工单已有工序不在排队中，这是对已开工工单的补充下达。')
   })
 
-  it('全部工序仍在排队时不给补发布提示', () => {
+  it('全部工序仍在排队时不给该提示', () => {
     expect(mesWorkOrderRetroactiveReleaseNotice(candidate())).toBeNull()
   })
 
-  it('没有工序任务时不给补发布提示', () => {
+  it('没有工序任务时不给该提示', () => {
     expect(mesWorkOrderRetroactiveReleaseNotice(candidate({ operationTasks: [] }))).toBeNull()
   })
 })
