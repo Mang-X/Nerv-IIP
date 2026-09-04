@@ -221,13 +221,13 @@ internal sealed class BackfillWorkOrderReleaseProjectionCommandHandler(
                 // 报工时刻由调用方填、可以早于工序建单时刻，故还要按最早报工压到下界。
                 // 该下界口径与直投路径（#3117，ReleaseWorkOrderCommandHandler）同一处实现，
                 // 差别只在候选：直投用调用方给的下达时刻。
-                var releasedAtUtc = WorkOrderReleaseFactTime.LowerBound(
+                var releasedAtUtc = WorkOrderReleaseFactTime.NotLaterThan(
                     tasks.Min(x => x.CreatedAtUtc),
                     earliestReportByWorkOrder.TryGetValue(
                         (workOrder.OrganizationId, workOrder.EnvironmentId, workOrder.WorkOrderIdValue),
                         out var earliestReportedAtUtc)
                         ? earliestReportedAtUtc
-                        : null);
+                        : null).Value;
 
                 var idempotencyKey = EventIds.Idempotency(
                     "work-order-release-projection-backfill",

@@ -894,7 +894,8 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
             provider.GetRequiredService<MesCodingService>(),
             new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(db),
             provider.GetRequiredService<IMesMaterialRequirementSnapshotProvider>(),
-            coordinator ?? provider.GetRequiredService<IMesReworkWorkOrderScopeCoordinator>());
+            coordinator ?? provider.GetRequiredService<IMesReworkWorkOrderScopeCoordinator>(),
+            TimeProvider.System);
     }
 
     private sealed class BlockingReworkScopeCoordinator(

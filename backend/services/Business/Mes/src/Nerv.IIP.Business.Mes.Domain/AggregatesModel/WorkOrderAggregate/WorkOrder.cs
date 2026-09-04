@@ -274,13 +274,19 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
     }
 
     /// <summary>
-    /// 发布工单并当场按工艺路线建出工序任务。工序在这一刻才存在，因此不可能已有报工，
-    /// <paramref name="earliestStartUtc"/> 同时就是发布锚点——它是本次发布给工序定的最早可开工时刻，
-    /// 仓库既有用法也是同一个值两处用（<c>WorldHistorySeedService</c> 把算出的 releasedAtUtc 直接当
-    /// 工序的 earliestStartUtc 传）。故发布事实的时刻取它，不取 <c>UtcNow</c>。
+    /// 发布工单并当场按工艺路线建出工序任务。
+    ///
+    /// <para><paramref name="earliestStartUtc"/> 与 <paramref name="releasedAt"/> 是**两件事**，不可一值两用：
+    /// 前者是本次发布给工序定的**最早可开工时刻**，语义上允许落在未来（下达后下一班才开工是正常排产）；
+    /// 后者是**发布这件事发生的时刻**，会作为发布事实发给 Quality，落在未来会让该工序此后的每一条报工
+    /// 都被 <c>PeriodicInspectionOperation</c> 判为「报工早于发布」进死信。</para>
+    ///
+    /// <para>工序在这一刻才建出，因此不可能已有报工，
+    /// <paramref name="releasedAt"/> 的报工下界项由调用方传 <c>null</c> 即可。</para>
     /// </summary>
     public IReadOnlyCollection<OperationTask> Release(
         DateTimeOffset earliestStartUtc,
+        WorkOrderReleaseFactTime releasedAt,
         IReadOnlyCollection<RoutingStepSnapshot> routingSteps)
     {
         ArgumentNullException.ThrowIfNull(routingSteps);
@@ -311,14 +317,25 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
             .ToList();
         Status = ReleasedStatus;
         AdvanceVersion();
-        AddDomainEvent(new WorkOrderReleasedDomainEvent(this, tasks, earliestStartUtc));
+        AddDomainEvent(new WorkOrderReleasedDomainEvent(this, tasks, releasedAt));
         return tasks;
     }
 
     /// <summary>
-    /// 只翻状态、不携带工序的发布。发布事实的时刻取聚合创建时刻——它是发布时刻的真实下界，
-    /// 且这条载荷的 operations 为空，Quality 的发布投影（<c>ValidateReleasedOperations</c>）对空 operations
-    /// 一律拒收，该时刻不会进入任何投影。
+    /// 只翻状态、不携带工序的发布。
+    ///
+    /// <para><b>时刻取值。</b>本重载拿不到任何工序，也就拿不到报工集合，
+    /// 聚合自己知道的唯一下界是 <see cref="CreatedAtUtc"/>——工单不可能早于自己被创建就被发布。
+    /// 这个下界是**读取当刻**的 <see cref="CreatedAtUtc"/>：调用方若要把创建时刻回拨成历史时刻，
+    /// 必须在调用本方法**之前**回拨（唯一生产调用方 <c>WorldHistorySeedService</c> 已按此顺序，
+    /// 并在调用点写明了该顺序要求）。</para>
+    ///
+    /// <para><b>为什么这条不携带工序的发布事实不会伤到 Quality。</b>真实理由是
+    /// <c>WorldHistorySeedService.SaveHistoryFactsAsync</c> 在写盘前按 <c>ChangeTracker</c>
+    /// 统一 <c>ClearDomainEvents()</c>，**本事件从不出域**。
+    /// 不要拿「Quality 对空 operations 一律拒收」当安全性依据——
+    /// <c>PeriodicInspectionReleaseProjection.ValidateReleasedOperations</c> 对空 operations 是
+    /// <c>throw</c>，即**整封进死信**，不是无害跳过；那是「出事了」，不是「没事」。</para>
     /// </summary>
     public void MarkReleased()
     {
@@ -326,16 +343,18 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
 
         Status = ReleasedStatus;
         AdvanceVersion();
-        AddDomainEvent(new WorkOrderReleasedDomainEvent(this, [], CreatedAtUtc));
+        AddDomainEvent(new WorkOrderReleasedDomainEvent(
+            this,
+            [],
+            WorkOrderReleaseFactTime.AtAggregateCreation(CreatedAtUtc)));
     }
 
     /// <summary>
     /// 对已经有工序快照的工单补记发布（计划转工单后再下达这条主流程）。
-    /// 这些工序可能早已开工报工，因此 <paramref name="releasedAtUtc"/> 必须由调用方按
-    /// 「不晚于该工单任何一条既有报工」取下界，见
-    /// <see cref="WorkOrderReleasedDomainEvent.ReleasedAtUtc"/>。
+    /// 这些工序可能早已开工报工，因此发布事实的时刻必须按「不晚于该工单任何一条既有报工」取下界；
+    /// 该不变量由 <see cref="WorkOrderReleaseFactTime"/> 的构造口径承担，本方法不再收裸时刻。
     /// </summary>
-    public void MarkReleased(IReadOnlyCollection<OperationTask> operationTasks, DateTimeOffset releasedAtUtc)
+    public void MarkReleased(IReadOnlyCollection<OperationTask> operationTasks, WorkOrderReleaseFactTime releasedAt)
     {
         ArgumentNullException.ThrowIfNull(operationTasks);
         if (operationTasks.Count == 0)
@@ -347,7 +366,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
 
         Status = ReleasedStatus;
         AdvanceVersion();
-        AddDomainEvent(new WorkOrderReleasedDomainEvent(this, operationTasks, releasedAtUtc));
+        AddDomainEvent(new WorkOrderReleasedDomainEvent(this, operationTasks, releasedAt));
     }
 
     public void BindProductionVersion(string productionVersionId)

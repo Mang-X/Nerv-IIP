@@ -22,16 +22,16 @@ public sealed record ReworkWorkOrderCreatedDomainEvent(
     string CorrelationId,
     string CausationId) : IDomainEvent;
 
-/// <param name="ReleasedAtUtc">
-/// 发布时刻。它是发给 Quality 的发布事实的时刻口径，必须**不晚于** MES 已经掌握的任何一条同工单报工——
-/// Quality 的 <c>PeriodicInspectionOperation.ApplyRelease</c> 对「报工早于发布」直接抛出、整封进死信，
-/// 而工单在 <c>created</c> 状态就能开工报工（#3113），事后补下达按「现在」记时刻就永远补不进去（#3117）。
-/// 由发布动作的调用方给出，不由转换器取 <c>UtcNow</c>。
+/// <param name="ReleasedAt">
+/// 发布事实的时刻。由发布动作的调用方给出，不由转换器取 <c>UtcNow</c>。
+/// 类型是 <see cref="WorkOrderReleaseFactTime"/> 而不是裸 <c>DateTimeOffset</c>：
+/// 「不晚于任何一条既有报工」这条不变量由该类型的构造口径承担，编译器强制每条发布路径交出报工下界，
+/// 不靠调用方读注释（#3117）。
 /// </param>
 public sealed record WorkOrderReleasedDomainEvent(
     WorkOrder WorkOrder,
     IReadOnlyCollection<OperationTask> OperationTasks,
-    DateTimeOffset ReleasedAtUtc) : IDomainEvent;
+    WorkOrderReleaseFactTime ReleasedAt) : IDomainEvent;
 
 public sealed record WorkOrderCompletedDomainEvent(WorkOrder WorkOrder, DateTimeOffset CompletedAtUtc) : IDomainEvent;
 

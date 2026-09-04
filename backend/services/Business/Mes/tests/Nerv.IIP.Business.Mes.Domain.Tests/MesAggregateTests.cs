@@ -89,16 +89,17 @@ public sealed class MesAggregateTests
         var earliestStartUtc = DateTimeOffset.Parse("2026-05-23T08:00:00Z");
         var tasks = workOrder.Release(
             earliestStartUtc,
+            WorkOrderReleaseFactTime.NotLaterThan(earliestStartUtc, null),
             [
                 new RoutingStepSnapshot("OP-10", 10, "WC-A", ["WC-B"], TimeSpan.FromMinutes(30)),
                 new RoutingStepSnapshot("OP-20", 20, "WC-C", [], TimeSpan.FromMinutes(45)),
             ]);
 
-        // 本重载在建工序的同一刻发布，发布事实的时刻就是这次发布给工序定的最早可开工时刻；
-        // 取到别的值（例如交期）会让发给 Quality 的发布时刻晚于随后的报工，投影整封进死信。
+        // 本用例里两个入参恰好同值，只钉住「事件带走的是调用方交出的发布事实时刻」这一点；
+        // 「两者不可一值两用」由下一条用例分开钉。
         var domainEvent = Assert.IsType<WorkOrderReleasedDomainEvent>(
             Assert.Single(workOrder.GetDomainEvents(), x => x is WorkOrderReleasedDomainEvent));
-        Assert.Equal(earliestStartUtc, domainEvent.ReleasedAtUtc);
+        Assert.Equal(earliestStartUtc, domainEvent.ReleasedAt.Value);
         Assert.Collection(
             tasks,
             first =>
@@ -109,6 +110,109 @@ public sealed class MesAggregateTests
                 Assert.Equal(OperationTaskLifecycleStatus.Queued, first.Status);
             },
             second => Assert.Equal("OP-20", second.OperationTaskId));
+    }
+
+    /// <summary>
+    /// <c>earliestStartUtc</c>（排产用的最早可开工时刻，**允许落在未来**：下达后下一班开工是正常排产）
+    /// 与发布事实的时刻是两件事。若把前者当后者用，该工单工序此后的每一条报工都会被 Quality 的
+    /// <c>PeriodicInspectionOperation</c> 判为「报工早于发布」抛出、整封进死信——正是 #3117 修的那个缺陷
+    /// 换了个入口原样重演。本用例把两者拉开：工序拿到未来的可开工时刻，发布事实拿到过去的发布时刻。
+    /// </summary>
+    [Fact]
+    public void WorkOrder_release_does_not_reuse_the_earliest_start_as_the_release_fact_time()
+    {
+        var workOrder = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-3117-SPLIT",
+            "SKU-001",
+            "PV-001",
+            5m,
+            10,
+            DateTimeOffset.Parse("2026-05-30T10:00:00Z"));
+        var releasedAtUtc = DateTimeOffset.Parse("2026-05-23T08:00:00Z");
+        var earliestStartUtc = releasedAtUtc.AddDays(3);
+
+        var tasks = workOrder.Release(
+            earliestStartUtc,
+            WorkOrderReleaseFactTime.NotLaterThan(releasedAtUtc, null),
+            [
+                new RoutingStepSnapshot("OP-10", 10, "WC-A", [], TimeSpan.FromMinutes(30)),
+            ]);
+
+        var domainEvent = Assert.IsType<WorkOrderReleasedDomainEvent>(
+            Assert.Single(workOrder.GetDomainEvents(), x => x is WorkOrderReleasedDomainEvent));
+        Assert.Equal(releasedAtUtc, domainEvent.ReleasedAt.Value);
+        Assert.Equal(earliestStartUtc, Assert.Single(tasks).EarliestStartUtc);
+    }
+
+    /// <summary>
+    /// 不携带工序的那条发布：事件时刻取**调用当刻**的 <c>CreatedAtUtc</c>，不取墙钟。
+    /// 唯一生产调用方（<c>WorldHistorySeedService</c>）先把 <c>CreatedAtUtc</c> 回拨到历史创建时刻再调它，
+    /// 顺序反了事件带走的就是播种当下的 <c>UtcNow</c>——既非历史创建时刻，也晚于该工单全部历史报工。
+    /// </summary>
+    [Fact]
+    public void WorkOrder_mark_released_without_operations_dates_the_release_fact_at_the_creation_moment()
+    {
+        var workOrder = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-3117-NO-OPS",
+            "SKU-001",
+            "PV-001",
+            5m,
+            10,
+            DateTimeOffset.Parse("2026-05-30T10:00:00Z"));
+        workOrder.ClearDomainEvents();
+
+        workOrder.MarkReleased();
+
+        var domainEvent = Assert.IsType<WorkOrderReleasedDomainEvent>(
+            Assert.Single(workOrder.GetDomainEvents(), x => x is WorkOrderReleasedDomainEvent));
+        Assert.Equal(workOrder.CreatedAtUtc, domainEvent.ReleasedAt.Value);
+        Assert.Empty(domainEvent.OperationTasks);
+    }
+
+    /// <summary>
+    /// 报工下界：取「更早者」，不是「有报工就取报工」。第三条钉住**恰好相等**这个边界
+    /// （<c>&lt;</c> 变 <c>&lt;=</c> 时取值不变，但它是唯一能把「严格早于」与「不晚于」区分开的输入）。
+    /// </summary>
+    [Theory]
+    [InlineData("2026-06-01T10:00:00Z", null, "2026-06-01T10:00:00Z")]
+    [InlineData("2026-06-01T10:00:00Z", "2026-06-01T06:00:00Z", "2026-06-01T06:00:00Z")]
+    [InlineData("2026-06-01T10:00:00Z", "2026-06-01T10:00:00Z", "2026-06-01T10:00:00Z")]
+    [InlineData("2026-06-01T10:00:00Z", "2026-06-01T14:00:00Z", "2026-06-01T10:00:00Z")]
+    public void WorkOrderReleaseFactTime_takes_the_earlier_of_the_candidate_and_the_earliest_report(
+        string candidate,
+        string? earliestReport,
+        string expected)
+    {
+        var factTime = WorkOrderReleaseFactTime.NotLaterThan(
+            DateTimeOffset.Parse(candidate),
+            earliestReport is null ? null : DateTimeOffset.Parse(earliestReport));
+
+        Assert.Equal(DateTimeOffset.Parse(expected), factTime.Value);
+    }
+
+    /// <summary>
+    /// 信任边界上的那一夹：外部给来的候选落在未来时压到当前时刻，不在未来时原样通过。
+    /// 未来值会让该工序此后的每一条报工进死信；原样通过那一半同样要钉，
+    /// 否则「一律取当前时刻」这个变异不可分辨，#3117 本身就会被这一夹撤销。
+    /// </summary>
+    [Theory]
+    [InlineData("2026-06-01T14:00:00Z", "2026-06-01T10:00:00Z", "2026-06-01T10:00:00Z")]
+    [InlineData("2026-06-01T06:00:00Z", "2026-06-01T10:00:00Z", "2026-06-01T06:00:00Z")]
+    [InlineData("2026-06-01T10:00:00Z", "2026-06-01T10:00:00Z", "2026-06-01T10:00:00Z")]
+    public void WorkOrderReleaseFactTime_clamps_an_untrusted_candidate_to_now(
+        string candidate,
+        string now,
+        string expected)
+    {
+        var clamped = WorkOrderReleaseFactTime.UntrustedCandidate(
+            DateTimeOffset.Parse(candidate),
+            DateTimeOffset.Parse(now));
+
+        Assert.Equal(DateTimeOffset.Parse(expected), clamped);
     }
 
     [Fact]
@@ -125,7 +229,7 @@ public sealed class MesAggregateTests
             DateTimeOffset.Parse("2026-08-24T08:00:00Z"));
         workOrder.ClearDomainEvents();
 
-        Assert.Throws<ArgumentException>(() => workOrder.MarkReleased([], DateTimeOffset.Parse("2026-08-24T08:00:00Z")));
+        Assert.Throws<ArgumentException>(() => workOrder.MarkReleased([], WorkOrderReleaseFactTime.NotLaterThan(DateTimeOffset.Parse("2026-08-24T08:00:00Z"), null)));
 
         Assert.Equal(WorkOrder.CreatedStatus, workOrder.Status);
         Assert.DoesNotContain(workOrder.GetDomainEvents(), x => x is WorkOrderReleasedDomainEvent);
@@ -155,11 +259,11 @@ public sealed class MesAggregateTests
         };
         workOrder.ClearDomainEvents();
 
-        workOrder.MarkReleased(operationTasks, releasedAtUtc);
+        workOrder.MarkReleased(operationTasks, WorkOrderReleaseFactTime.NotLaterThan(releasedAtUtc, null));
 
         Assert.Equal(WorkOrder.ReleasedStatus, workOrder.Status);
         var domainEvent = Assert.IsType<WorkOrderReleasedDomainEvent>(Assert.Single(workOrder.GetDomainEvents()));
-        Assert.Equal(releasedAtUtc, domainEvent.ReleasedAtUtc);
+        Assert.Equal(releasedAtUtc, domainEvent.ReleasedAt.Value);
         Assert.Collection(
             domainEvent.OperationTasks,
             first => Assert.Same(operationTasks[0], first),
@@ -180,7 +284,7 @@ public sealed class MesAggregateTests
             DateTimeOffset.Parse("2026-08-24T08:00:00Z"));
         workOrder.ClearDomainEvents();
 
-        Assert.Throws<ArgumentNullException>(() => workOrder.MarkReleased(null!, DateTimeOffset.Parse("2026-08-24T08:00:00Z")));
+        Assert.Throws<ArgumentNullException>(() => workOrder.MarkReleased(null!, WorkOrderReleaseFactTime.NotLaterThan(DateTimeOffset.Parse("2026-08-24T08:00:00Z"), null)));
 
         Assert.Equal(WorkOrder.CreatedStatus, workOrder.Status);
         Assert.DoesNotContain(workOrder.GetDomainEvents(), x => x is WorkOrderReleasedDomainEvent);
@@ -346,10 +450,16 @@ public sealed class MesAggregateTests
             new RoutingStepSnapshot("OP-10", 10, "WC-A", [], TimeSpan.FromMinutes(30)),
         };
 
-        _ = workOrder.Release(DateTimeOffset.Parse("2026-05-23T08:00:00Z"), routingSteps);
+        _ = workOrder.Release(
+            DateTimeOffset.Parse("2026-05-23T08:00:00Z"),
+            WorkOrderReleaseFactTime.NotLaterThan(DateTimeOffset.Parse("2026-05-23T08:00:00Z"), null),
+            routingSteps);
 
         Assert.Throws<InvalidOperationException>(() =>
-            workOrder.Release(DateTimeOffset.Parse("2026-05-23T08:00:00Z"), routingSteps));
+            workOrder.Release(
+            DateTimeOffset.Parse("2026-05-23T08:00:00Z"),
+            WorkOrderReleaseFactTime.NotLaterThan(DateTimeOffset.Parse("2026-05-23T08:00:00Z"), null),
+            routingSteps));
     }
 
     [Theory]

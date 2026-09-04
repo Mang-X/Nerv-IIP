@@ -85,7 +85,9 @@ internal static class NcrReworkRequestedPostgresFixtures
                 false,
                 "OP-CODE-030"),
         };
-        sourceWorkOrder.MarkReleased(sourceOperations, DateTimeOffset.Parse("2026-08-29T07:20:00Z"));
+        sourceWorkOrder.MarkReleased(
+            sourceOperations,
+            WorkOrderReleaseFactTime.NotLaterThan(DateTimeOffset.Parse("2026-08-29T07:20:00Z"), null));
         db.WorkOrders.Add(sourceWorkOrder);
         db.OperationTasks.AddRange(sourceOperations);
         db.DefectRecords.Add(DefectRecord.Create(

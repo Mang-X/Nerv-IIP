@@ -44,6 +44,11 @@ public sealed record MesOperationActionResponse(
     string Status,
     DateTimeOffset ChangedAtUtc);
 
+/// <summary>
+/// 下达工单。其中 <c>ReleasedAtUtc</c> 是下达时刻，
+/// **已在 HTTP 端点（<c>ReleaseWorkOrderEndpoint</c>）夹到不晚于当前时刻**——
+/// 那里是请求体进入系统的信任边界，未来值只可能从那里来，本处不再重复夹一遍。
+/// </summary>
 public sealed record ReleaseWorkOrderCommand(
     string OrganizationId,
     string EnvironmentId,
@@ -149,10 +154,13 @@ public sealed class ReleaseWorkOrderCommandHandler(
                 x.WorkOrderId == request.WorkOrderId)
             .MinAsync(x => (DateTimeOffset?)x.ReportedAtUtc, cancellationToken);
 
-        workOrder.MarkReleased(
-            operationSnapshots,
-            WorkOrderReleaseFactTime.LowerBound(request.ReleasedAtUtc, earliestReportedAtUtc));
-        return new MesAcceptedResponse("Accepted", request.WorkOrderId, request.ReleasedAtUtc);
+        var releasedAt = WorkOrderReleaseFactTime.NotLaterThan(request.ReleasedAtUtc, earliestReportedAtUtc);
+
+        workOrder.MarkReleased(operationSnapshots, releasedAt);
+
+        // 回执回**实际落到发布事实上的时刻**，不回 request.ReleasedAtUtc：
+        // 被报工下界压过或被夹到当前时刻时，调用方否则无从得知自己给的时刻已被改写。
+        return new MesAcceptedResponse("Accepted", request.WorkOrderId, releasedAt.Value);
     }
 }
 

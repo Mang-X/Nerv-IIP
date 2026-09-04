@@ -369,9 +369,15 @@ public sealed class WorldHistorySeedService(
             dueUtc,
             WorldHistorySpec.UomCode,
             sourcePlanReference);
-        workOrder.MarkReleased();
         dbContext.WorkOrders.Add(workOrder);
+        // **顺序要求**：先把 CreatedAtUtc 回拨到历史创建时刻，再 MarkReleased()。
+        // MarkReleased() 读取**调用当刻**的 CreatedAtUtc 当发布事实的下界；反过来写，
+        // 事件带走的是 WorkOrder.Create 里那个 DateTimeOffset.UtcNow（播种当下的墙钟），
+        // 既不是历史创建时刻，也晚于本工单全部被回填的历史报工。
+        // 该事件今天不出域（SaveHistoryFactsAsync 统一 ClearDomainEvents），
+        // 但顺序反了它带的就是个错值，不留给下一个人踩。
         Backdate(workOrder, x => x.CreatedAtUtc, createdAtUtc);
+        workOrder.MarkReleased();
 
         var tasks = WriteOperationTasks(organizationId, environmentId, plan, timeline, execution, releasedAtUtc);
         WriteMaterialFacts(

@@ -438,22 +438,17 @@ try {
     Assert-Contract (@($mesSaveBoundaryIdentities | Where-Object { -not $mesIdentitySet.Contains($_) }).Count -eq 0) 'The MES member must freeze all nine CAP save-boundary PostgreSQL identities.'
     Assert-Contract ([string]::Equals((@($mesMember.diagnosticSchemas) -join ','), 'mes,cap', [StringComparison]::Ordinal)) 'The MES member must declare both the mes schema and the native CAP storage schema.'
     Assert-MethodScopedFilter -Member $mesMember
-    foreach ($mesSource in @(
-            'MesCapSaveBoundaryPostgresTests.cs',
-            'MesCapSubscriptionTests.cs',
-            'MesCollaborationPostgresTests.cs',
-            'OperationTaskClaimPostgresTests.cs',
-            'MesDowntimeReadFacePostgresTests.cs',
-            'MesMaterialSubstituteSnapshotPostgresTests.cs',
-            'MesProductionStatisticsPostgresTests.cs',
-            'MesSchedulePlanProvenancePostgresTests.cs',
-            'OperationActualTimeSettlementPostgresTests.cs',
-            'RushWorkOrderHttpPostgresTests.cs',
-            'SkuDisabledConsumerTests.cs',
-            'TelemetryProductionReportCandidatePostgresTests.cs',
-            'WorkOrderCapitalizationConcurrencyPostgresTests.cs',
-            'WorkOrderReleaseFactTimePostgresTests.cs',
-            'WorkOrderTransformationApplicationPostgresTests.cs')) {
+    # MES lane 的扫描面**从冻结身份派生**，不再手工列举。
+    # 人工名单会静默偏斜：改前它漏了 6 个已登记的 PostgreSQL 测试类
+    # （#3000 的 WorkOrderReleaseProjectionBackfillPostgresTests、两条 NcrReworkRequested*、
+    # DowntimeReasonCodeMigration、ProductionReportOeeDimensionSnapshot、WorkOrderTransformation），
+    # 而漏登记就是漏防线——Assert-LaneOwnedDatabase 根本没扫到那些文件。
+    # 身份形如 <Namespace>.<Class>.<Method>，倒数第二段即类名，类名即源文件名。
+    $mesSourceNames = @($mesMember.expectedTestIdentities | ForEach-Object {
+            $segments = ([string]$_).Split('.')
+            "$($segments[$segments.Length - 2]).cs"
+        } | Sort-Object -Unique)
+    foreach ($mesSource in $mesSourceNames) {
         $mesSourcePath = Join-Path $repoRoot "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/$mesSource"
         Assert-Contract (Test-Path -LiteralPath $mesSourcePath -PathType Leaf) "MES lane source '$mesSource' must exist."
         Assert-LaneOwnedDatabase -SourcePath $mesSourcePath -InnerDatabaseFactory 'PostgreSqlTestDatabase.CreateAsync'

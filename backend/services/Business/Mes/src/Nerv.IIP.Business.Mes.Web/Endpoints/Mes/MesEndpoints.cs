@@ -3,6 +3,7 @@ using FluentValidation;
 using MediatR;
 using Nerv.IIP.Business.Mes.Web.Application.Auth;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
@@ -820,11 +821,20 @@ public sealed class ReleaseWorkOrderEndpoint(ISender sender, TimeProvider timePr
 
     public override async Task HandleAsync(ReleaseWorkOrderRequest req, CancellationToken ct)
     {
+        // 这里是请求体进入系统的信任边界：req.ReleasedAtUtc 由调用方给，可能落在未来。
+        // 发布事实的时刻落在未来时，该工单工序此后的**每一条**报工都会被 Quality 的
+        // PeriodicInspectionOperation 判为「报工早于发布」抛出、整封进死信——正是 #3117 修的那个缺陷
+        // 换了个入口。发布是一件已经发生的事，故在此夹到当前时刻；仓库内部的常量与种子不跨这条边界，
+        // 不重复付这份时钟依赖（「不晚于既有报工」那半条不变量由 WorkOrderReleaseFactTime 承担）。
+        var nowUtc = timeProvider.GetUtcNow();
+        var releasedAtUtc = req.ReleasedAtUtc is { } supplied
+            ? WorkOrderReleaseFactTime.UntrustedCandidate(supplied, nowUtc)
+            : nowUtc;
         var response = await sender.Send(new ReleaseWorkOrderCommand(
             req.OrganizationId,
             req.EnvironmentId,
             req.WorkOrderId,
-            req.ReleasedAtUtc ?? timeProvider.GetUtcNow()), ct);
+            releasedAtUtc), ct);
         await Send.OkAsync(response, ct);
     }
 }
