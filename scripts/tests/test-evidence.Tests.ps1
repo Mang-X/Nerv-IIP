@@ -1256,8 +1256,10 @@ $liveAssignments = Get-NervSourceSkipAssignments -RepoRoot $repoRoot
 # #1561 把 InventoryDirectoryPostgresTests 的两条目录用例拆成两个 skip 理由（Docker 夹具 / external），
 # #2228 再把线边库存 provider proof 从目录 external identity 中拆出，因此已登记的 source 从 42 增至 43；
 # #2809 注册 Quality 返工回执真实 PostgreSQL + Redis/CAP transport proof，增至 45；#3010 注册 MES 对应 producer proof，增至 46；
-# #3000 注册发布投影回填的 Redis/CAP transport proof，增至 47；#2966 注册 MES 停机事件 v2 契约拒收/poison 重放的真实 PostgreSQL + Redis/CAP proof，增至 48。
-Assert-Equal 48 $liveAssignments.Count 'The approved initial source skip inventory changed; classify the diff explicitly.'
+# #3000 注册发布投影回填的 Redis/CAP transport proof，增至 47；
+# #2967 注册 Scheduling AssetUnavailable v2 的 PostgreSQL + Redis/CAP transport proof，增至 48；
+# #2966 注册 MES 停机事件 v2 契约拒收/poison 重放的真实 PostgreSQL + Redis/CAP proof，增至 49。
+Assert-Equal 49 $liveAssignments.Count 'The approved initial source skip inventory changed; classify the diff explicitly.'
 Assert-True (($liveAssignments | Where-Object sourcePath -like '*SimulatedConnectorHostProcessTests.cs').sourceText.Contains('Windows runs the platform-specific executable resolution contract only', [StringComparison]::Ordinal)) 'Quote-aware scanner must retain semicolons inside a C# string literal.'
 $livePolicy = Import-NervTestEvidencePolicy -Path (Join-Path $repoRoot 'scripts/test-evidence-policy.json')
 $liveViolations = Test-NervTestEvidencePolicy -Policy $livePolicy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)

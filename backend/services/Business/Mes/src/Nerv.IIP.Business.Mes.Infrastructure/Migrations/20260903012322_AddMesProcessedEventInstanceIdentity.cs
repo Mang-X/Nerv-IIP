@@ -40,7 +40,7 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
             // 同 consumer / 同 EventId 的多行。同一条历史 migration 在移除它的同时建立了
             // (ConsumerName, IdempotencyKey) 唯一索引，因此这些多行的 IdempotencyKey 必然两两不同——
             // 「同 EventId 且同 IdempotencyKey 的真重复」在任何合法 schema 版本上都不可表示，不存在可自动清理的分支。
-            // 按 docs/runbooks/database-release.md §6.3：同 EventId、不同 IdempotencyKey 是语义歧义，migration
+            // 按 docs/runbooks/database-release.md §6.4：同 EventId、不同 IdempotencyKey 是语义歧义，migration
             // fail-closed 中止并逐行列出冲突，由运维显式裁决；任何歧义组存在时整条 migration 回滚，既不删行也不建索引。
             migrationBuilder.Sql(
                 """
@@ -66,7 +66,7 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         -- "Detail redacted as it may contain sensitive data"，运维在 migrator 输出里将看不到要裁决的行。
                         RAISE EXCEPTION USING
                             ERRCODE = 'integrity_constraint_violation',
-                            MESSAGE = 'AddMesProcessedEventInstanceIdentity aborted: mes.processed_integration_events has rows sharing ConsumerName + EventId with different IdempotencyKey values. Resolve them explicitly (see docs/runbooks/database-release.md §6.3) and re-run the migration. ConsumerName / EventId / IdempotencyKey / ProcessedAtUtc:' || E'\n' || ambiguous_rows;
+                            MESSAGE = 'AddMesProcessedEventInstanceIdentity aborted: mes.processed_integration_events has rows sharing ConsumerName + EventId with different IdempotencyKey values. Resolve them explicitly (see docs/runbooks/database-release.md §6.4) and re-run the migration. ConsumerName / EventId / IdempotencyKey / ProcessedAtUtc:' || E'\n' || ambiguous_rows;
                     END IF;
                 END
                 $$;

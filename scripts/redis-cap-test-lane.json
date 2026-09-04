@@ -37,6 +37,23 @@
       ]
     },
     {
+      "id": "scheduling-asset-unavailable-redis-cap",
+      "service": "Scheduling",
+      "tier": "core",
+      "status": "active",
+      "project": "backend/services/Business/Scheduling/tests/Nerv.IIP.Business.Scheduling.Web.Tests/Nerv.IIP.Business.Scheduling.Web.Tests.csproj",
+      "filter": "FullyQualifiedName=Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableRedisCapTransportTests.Redis_cap_poison_exhausts_to_dlq_and_replay_preserves_identity_without_duplicate_claim",
+      "databasePrefix": "nerv_iip_scheduling",
+      "capVersionPrefix": "n2967sched",
+      "diagnosticSchemas": [
+        "scheduling",
+        "cap"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableRedisCapTransportTests.Redis_cap_poison_exhausts_to_dlq_and_replay_preserves_identity_without_duplicate_claim"
+      ]
+    },
+    {
       "id": "quality-rework-receipt-redis-cap",
       "service": "Quality",
       "tier": "core",
