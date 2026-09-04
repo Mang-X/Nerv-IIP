@@ -7,6 +7,12 @@ namespace Nerv.IIP.Contracts.Mes;
 public static class MesIntegrationEventTypes
 {
     public const string WorkOrderReleased = "mes.WorkOrderReleased";
+
+    /// <summary>
+    /// 工单发布投影回填（#3000）：与 <see cref="WorkOrderReleased"/> 是同一份发布事实、同一份载荷，
+    /// 但走独立事件类型与独立 topic，只投给 Quality 的回填消费组。
+    /// </summary>
+    public const string WorkOrderReleaseProjectionBackfilled = "mes.WorkOrderReleaseProjectionBackfilled";
     public const string WorkOrderCompleted = "mes.WorkOrderCompleted";
     public const string WorkOrderClosed = "mes.WorkOrderClosed";
     public const string ReworkWorkOrderCreated = "mes.ReworkWorkOrderCreated";
@@ -135,6 +141,30 @@ public sealed record ReleasedOperationPayload(
     string OperationId,
     int OperationSequence,
     string WorkCenterId);
+
+/// <summary>
+/// 存量在制工单的发布事实补投（#3000）。载荷与 <see cref="WorkOrderReleasedIntegrationEvent"/> 完全相同，
+/// 但**不能**复用发布事件的 topic 重放：
+/// 1) Scheduling 的发布事件消费者会让全部已生成排程计划失效，重放会把这一副作用扩到每一张在制工单；
+/// 2) Quality 的发布事件消费组对已同步过的工单会拿重建的发布时刻与库里那一个比对，判为冲突事实进死信。
+/// 因此补投是独立通道，接收方按「只补空缺、不覆盖既有发布事实」处理。
+/// </summary>
+public sealed record WorkOrderReleaseProjectionBackfilledIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    WorkOrderReleasedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record WorkOrderCompletedIntegrationEvent(
     string EventId,

@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Nerv.IIP.Business.Quality.Infrastructure;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260902012846_ExpressCompositeReleasedAtUtcForBackfill")]
+    partial class ExpressCompositeReleasedAtUtcForBackfill
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1473,7 +1476,7 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("sku_code")
-                        .HasComment("SKU snapshot, composite by source: the work-order release event SKU for directly delivered facts; for legacy work orders backfilled by the release-projection backfill it carries the reconstructed SKU, or - when the operation already had authoritative completion facts that disagreed - completion_sku_code. Null until release facts arrive.");
+                        .HasComment("SKU snapshot from the work-order release event; null until release arrives.");
 
                     b.Property<string>("WorkCenterId")
                         .HasMaxLength(150)
@@ -1698,7 +1701,7 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("sku_code")
-                        .HasComment("SKU snapshot frozen from the release facts; carries the same composite meaning as periodic_inspection_operations.sku_code - release event SKU for directly delivered facts, completion_sku_code when a backfilled reconstruction yielded to authoritative completion facts.");
+                        .HasComment("SKU snapshot from the release event.");
 
                     b.Property<string>("Status")
                         .IsRequired()
