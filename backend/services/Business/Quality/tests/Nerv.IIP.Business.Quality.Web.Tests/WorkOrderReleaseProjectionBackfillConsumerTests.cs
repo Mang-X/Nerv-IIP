@@ -341,6 +341,49 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
     }
 
     /// <summary>
+    /// **给「补下达之后累计窗口怎么算」这一面一个读数**（#3117 第三轮 / 复审 Q3·③）。
+    ///
+    /// <para>上一版的 <c>Live_release_lands_when_its_time_equals_the_earliest_known_report</c> 挂的是
+    /// <c>FirstArticlePlan()</c>——它的 <c>category</c> 是 <c>first-article</c>、两个 interval 都是 <c>null</c>，
+    /// 被投影里的档查询（<c>Category == "operation"</c> 且 interval 非空）**整条筛掉**，
+    /// <c>RuntimeContexts</c> 恒为空、<c>AddDueTasks</c> 全程空转。也就是说那条用例在**累计窗口**这一面
+    /// 零鉴别力：直投分支跳不跳过累计窗口，它都绿。本用例换成真正的周期档，让这一面有读数。</para>
+    ///
+    /// <para><b>本用例钉的是「今天是什么行为」，不是「应该是什么行为」。</b>当前行为：先报 250 件、
+    /// 后按最早报工时刻补下达，直投分支**会**为已经流走的产量补开 <c>floor(250/100) = 2</c> 张巡检任务。
+    /// 这个取舍不是本票引入的——merge-base 上就有一条专门用例
+    /// <c>PeriodicInspectionIntegrationEventTests.Report_before_release_backfills_quantity_windows_from_the_frozen_context</c>
+    /// （提交 <c>d4a8a711e</c>，本 PR 未触碰该文件）把它钉成了**既有的、被明确命名为「backfills」的行为**。
+    /// 本票只是让 MES 直投这条路径**经常**产出这种形态，而不是让它第一次可达。
+    /// 是否应当改成「不追认」需要跨服务的产品裁定，已在 PR 正文登记并交回 owner。</para>
+    /// </summary>
+    [Fact]
+    public async Task Live_release_after_reported_quantity_opens_the_accrued_windows_today()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.InspectionPlans.Add(PeriodicPlan(quantityInterval: 100m));
+        await dbContext.SaveChangesAsync();
+        await HandleReportAsync(dbContext, ProductionReport());
+        var earliestReportedAtUtc = DateTimeOffset.Parse("2026-08-02T00:00:00Z");
+
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        await HandleLiveReleaseAsync(
+            dbContext,
+            LiveRelease(releasedAtUtc: earliestReportedAtUtc),
+            deadLetters);
+
+        Assert.Empty(await deadLetters.ListAsync(null, null, CancellationToken.None));
+        // 前提自检：档确实被选中、运行上下文确实建出来了。否则下面的计数会在一个空转的场景上恒成立，
+        // 又变回一条零鉴别力的用例。
+        var context = await dbContext.PeriodicInspectionRuntimeContexts.SingleAsync();
+        Assert.Equal(250m, context.QuantityHighWater);
+
+        var tasks = await dbContext.InspectionTasks.OrderBy(x => x.Quantity).ToArrayAsync();
+        Assert.Equal([100m, 200m], tasks.Select(x => x.Quantity));
+        Assert.Equal(2, context.LastGeneratedQuantityWindowSequence);
+    }
+
+    /// <summary>
     /// 直投侧不得跟着回填一起「跳过已有发布事实」：同一工序收到第二份**内容不同**的发布事实
     /// 是真实异常，必须判为冲突进死信。本 PR 把该判断做成了按调用点取值的参数，
     /// 因此直投那一半也要有断言承重，否则参数被翻反不会红。

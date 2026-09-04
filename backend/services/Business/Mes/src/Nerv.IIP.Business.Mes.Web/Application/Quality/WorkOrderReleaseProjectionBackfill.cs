@@ -221,6 +221,10 @@ internal sealed class BackfillWorkOrderReleaseProjectionCommandHandler(
                 // 报工时刻由调用方填、可以早于工序建单时刻，故还要按最早报工压到下界。
                 // 该下界口径与直投路径（#3117，ReleaseWorkOrderCommandHandler）同一处实现，
                 // 差别只在候选：直投用调用方给的下达时刻。
+                // 完工这一面**回填不需要单独进下界**（直投需要，见 ReleaseWorkOrderCommandHandler）：
+                // 本路径的候选是 tasks.Min(CreatedAtUtc)，而一道工序不可能早于自己被建出就完工，
+                // 故候选恒 ≤ 该工单任何一条工序完工时刻，完工守卫天然不会被触犯。
+                // 这是**结构性成立**、不是「今天恰好没有」。
                 var releasedAtUtc = WorkOrderReleaseFactTime.NotLaterThan(
                     tasks.Min(x => x.CreatedAtUtc),
                     earliestReportByWorkOrder.TryGetValue(

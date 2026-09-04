@@ -281,8 +281,12 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
     /// 后者是**发布这件事发生的时刻**，会作为发布事实发给 Quality，落在未来会让该工序此后的每一条报工
     /// 都被 <c>PeriodicInspectionOperation</c> 判为「报工早于发布」进死信。</para>
     ///
-    /// <para>工序在这一刻才建出，因此不可能已有报工，
-    /// <paramref name="releasedAt"/> 的报工下界项由调用方传 <c>null</c> 即可。</para>
+    /// <para><b>下界项归属：本方法要求调用方保证，本方法自己不检查。</b>
+    /// 唯一前置守卫 <c>ThrowIfCannotRelease()</c> **只看 <c>Status</c>**——一张 <c>created</c> 状态、
+    /// 却已经有工序任务与报工的工单（正是 #3113 那条形态）照样能进本方法。
+    /// 当前三个生产调用方都是**当场造新工单**（返工工单 + 两个演示种子），工序在这一刻才建出、
+    /// 不可能已有活动，因此传 <c>null</c> 成立；**这是调用方的性质，不是本方法的性质**。
+    /// 新增调用方若可能面对已有活动的工单，必须自己查出最早既有活动再传进来，否则 #3117 原样重演。</para>
     /// </summary>
     public IReadOnlyCollection<OperationTask> Release(
         DateTimeOffset earliestStartUtc,
@@ -343,10 +347,15 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
 
         Status = ReleasedStatus;
         AdvanceVersion();
+        // 下界传 null 的自证：本重载不携带工序，聚合手上没有任何报工或完工集合可查，
+        // 因此 CreatedAtUtc 本身就是它能给出的唯一下界（工单不可能早于自己被创建就被发布）。
+        // 这里不再走一个专用工厂——`AtAggregateCreation(x)` 与 `NotLaterThan(x, null)` 曾是逐字等价的
+        // 两条构造路径，而前者用「internal 挡住应用层」当依据，与 Mes.Domain.csproj 的
+        // `InternalsVisibleTo(Mes.Web)` 直接矛盾（Mes.Web 就是应用层）。删掉它，只留一个公开工厂。
         AddDomainEvent(new WorkOrderReleasedDomainEvent(
             this,
             [],
-            WorkOrderReleaseFactTime.AtAggregateCreation(CreatedAtUtc)));
+            WorkOrderReleaseFactTime.NotLaterThan(CreatedAtUtc, null)));
     }
 
     /// <summary>

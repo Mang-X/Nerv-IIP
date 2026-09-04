@@ -144,8 +144,8 @@ public sealed class ReleaseWorkOrderCommandHandler(
             }
         }
 
-        // 工单在 created 状态就能开工报工（#3113），下达因此可能发生在已有报工之后。
-        // 发给 Quality 的发布时刻必须按既有报工取下界，口径与 #3000 回填同一处实现。
+        // 工单在 created 状态就能开工、报工、乃至完工（#3113），下达因此可能发生在已有活动之后。
+        // 发给 Quality 的发布时刻必须按**最早既有活动**取下界，口径与 #3000 回填同一处实现。
         var earliestReportedAtUtc = await dbContext.ProductionReports
             .AsNoTracking()
             .Where(x =>
@@ -154,7 +154,23 @@ public sealed class ReleaseWorkOrderCommandHandler(
                 x.WorkOrderId == request.WorkOrderId)
             .MinAsync(x => (DateTimeOffset?)x.ReportedAtUtc, cancellationToken);
 
-        var releasedAt = WorkOrderReleaseFactTime.NotLaterThan(request.ReleasedAtUtc, earliestReportedAtUtc);
+        // 完工这一面必须一起进下界，**不能只按报工算**：工序动作 "complete"
+        // （本文件 ChangeOperationTaskStateCommandHandler 的 "complete" 分支）把 pendingProductionReportNos
+        // 传 []，完工时刻取 request.ChangedAtUtc，**不产生任何报工行**。于是「零报工、却已有完工」可达，
+        // 只按报工取下界时这里查不到任何活动 → 发布事实取调用方时刻 → 被 Quality 的完工守卫
+        // （PeriodicInspectionOperation 的 CompletedAtUtc < releasedAtUtc）判冲突整封进死信（#3117 第三轮）。
+        // 不新增查询：operationSnapshots 已在上面读进内存，ExistingEndUtc 就是完工时刻。
+        // 注：取消也会写 ExistingEndUtc；把它算进来只会把下界**往早**拉，而 Quality 三条守卫都是
+        // 「既有活动早于发布」才抛，往早拉恒安全，故不再按状态过滤。
+        var earliestOperationEndUtc = operationSnapshots
+            .Where(x => x.ExistingEndUtc.HasValue)
+            .Select(x => (DateTimeOffset?)x.ExistingEndUtc!.Value)
+            .Min();
+        var earliestExistingActivityAtUtc = earliestReportedAtUtc is { } report
+            ? (earliestOperationEndUtc is { } end && end < report ? end : report)
+            : earliestOperationEndUtc;
+
+        var releasedAt = WorkOrderReleaseFactTime.NotLaterThan(request.ReleasedAtUtc, earliestExistingActivityAtUtc);
 
         workOrder.MarkReleased(operationSnapshots, releasedAt);
 
