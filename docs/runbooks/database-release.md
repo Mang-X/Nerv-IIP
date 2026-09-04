@@ -172,6 +172,15 @@ Quality 数量巡检链路依次引入 `AddPeriodicInspectionQuantityWatermark`�
 3. 确需恢复备份时，记录 `releaseId`、目标数据库、批准恢复点、执行人、开始时间、结束时间和结果；恢复后重新核对 migration history 与工装业务/审计事实。
 4. CI 或本地一次性 PostgreSQL profile 只验证 runner 自有数据库中的 migration、事务、并发与隔离行为，不构成客户生产迁移、备份或恢复演练，也不能据此宣称 BusinessMasterData 已具备完整客户 migrator。
 
+### 6.3 BusinessScheduling 事件实例身份 migration
+
+`20260831142730_AddSchedulingProcessedEventInstanceIdentity` 在 `scheduling.processed_integration_events` 既有的 `(ConsumerName, IdempotencyKey)` 唯一索引之外新增 `(ConsumerName, EventId)` 唯一索引，用于 AssetUnavailable v1/v2 双投时按事件实例与业务事实分别去重（#2967）。旧模型允许同一 `ConsumerName/EventId` 出现多行，而既有唯一索引保证这些行的 `IdempotencyKey` 必然互不相同，即同一事件下曾产生过多个业务键。migration 对这种历史形状 fail-closed，不做任何自动清理；执行前仍须满足第 2 节的备份、版本冻结与失败停止条件：
+
+1. 历史库若存在同 `ConsumerName/EventId` 的多行，migration 以 `integrity_constraint_violation` 中止，错误消息列出每组冲突的 `ConsumerName/EventId` 与各 `IdempotencyKey@ProcessedAtUtc`（放在消息正文而非 `DETAIL`，因为 Npgsql 默认脱敏 `DETAIL`）。migration 在事务内执行，中止后不删除任何行、不创建索引、不写入 migration history。
+2. 不得为了让 migration 通过而手工删除任一冲突行：删除后该业务键的 inbox 痕迹消失，事件重投会再次产生 schedule invalidation。运维须按冲突清单逐组核对来源事件，确认哪一行对应真实业务事实并记录裁决，再以补救 migration 或经批准的数据修正前滚，随后重跑本 migration。
+3. 开始写入双身份 inbox 事实后，不执行本 migration 的 `Down`：降级只删除 `(ConsumerName, EventId)` 索引，旧版本消费者会退回仅按业务键去重，v2 重投可能被记为第二次失效；使用补救 migration 前滚修复。
+4. CI 与本地一次性 PostgreSQL profile 只在 runner 自有数据库上验证两种历史形状（无歧义历史前滚且安装精确索引、歧义形状中止且错误消息含冲突行），不构成客户生产迁移、备份或恢复演练。
+
 ## 7. Seed 契约
 
 Seed 是显式步骤，不混入普通 Web 启动。每个 seed 至少声明 `seedName`、`seedVersion`、`ownerService`、幂等规则、输入来源、重复执行结果和敏感信息处理。初始管理员密码、客户端密钥、Connector 凭据不得写入日志。
