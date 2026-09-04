@@ -86,13 +86,19 @@ public sealed class MesAggregateTests
             10,
             DateTimeOffset.Parse("2026-05-23T10:00:00Z"));
 
+        var earliestStartUtc = DateTimeOffset.Parse("2026-05-23T08:00:00Z");
         var tasks = workOrder.Release(
-            DateTimeOffset.Parse("2026-05-23T08:00:00Z"),
+            earliestStartUtc,
             [
                 new RoutingStepSnapshot("OP-10", 10, "WC-A", ["WC-B"], TimeSpan.FromMinutes(30)),
                 new RoutingStepSnapshot("OP-20", 20, "WC-C", [], TimeSpan.FromMinutes(45)),
             ]);
 
+        // 本重载在建工序的同一刻发布，发布事实的时刻就是这次发布给工序定的最早可开工时刻；
+        // 取到别的值（例如交期）会让发给 Quality 的发布时刻晚于随后的报工，投影整封进死信。
+        var domainEvent = Assert.IsType<WorkOrderReleasedDomainEvent>(
+            Assert.Single(workOrder.GetDomainEvents(), x => x is WorkOrderReleasedDomainEvent));
+        Assert.Equal(earliestStartUtc, domainEvent.ReleasedAtUtc);
         Assert.Collection(
             tasks,
             first =>
@@ -119,7 +125,7 @@ public sealed class MesAggregateTests
             DateTimeOffset.Parse("2026-08-24T08:00:00Z"));
         workOrder.ClearDomainEvents();
 
-        Assert.Throws<ArgumentException>(() => workOrder.MarkReleased([]));
+        Assert.Throws<ArgumentException>(() => workOrder.MarkReleased([], DateTimeOffset.Parse("2026-08-24T08:00:00Z")));
 
         Assert.Equal(WorkOrder.CreatedStatus, workOrder.Status);
         Assert.DoesNotContain(workOrder.GetDomainEvents(), x => x is WorkOrderReleasedDomainEvent);
@@ -149,10 +155,11 @@ public sealed class MesAggregateTests
         };
         workOrder.ClearDomainEvents();
 
-        workOrder.MarkReleased(operationTasks);
+        workOrder.MarkReleased(operationTasks, releasedAtUtc);
 
         Assert.Equal(WorkOrder.ReleasedStatus, workOrder.Status);
         var domainEvent = Assert.IsType<WorkOrderReleasedDomainEvent>(Assert.Single(workOrder.GetDomainEvents()));
+        Assert.Equal(releasedAtUtc, domainEvent.ReleasedAtUtc);
         Assert.Collection(
             domainEvent.OperationTasks,
             first => Assert.Same(operationTasks[0], first),
@@ -173,7 +180,7 @@ public sealed class MesAggregateTests
             DateTimeOffset.Parse("2026-08-24T08:00:00Z"));
         workOrder.ClearDomainEvents();
 
-        Assert.Throws<ArgumentNullException>(() => workOrder.MarkReleased(null!));
+        Assert.Throws<ArgumentNullException>(() => workOrder.MarkReleased(null!, DateTimeOffset.Parse("2026-08-24T08:00:00Z")));
 
         Assert.Equal(WorkOrder.CreatedStatus, workOrder.Status);
         Assert.DoesNotContain(workOrder.GetDomainEvents(), x => x is WorkOrderReleasedDomainEvent);

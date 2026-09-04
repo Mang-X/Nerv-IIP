@@ -273,6 +273,12 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         return workOrder;
     }
 
+    /// <summary>
+    /// 发布工单并当场按工艺路线建出工序任务。工序在这一刻才存在，因此不可能已有报工，
+    /// <paramref name="earliestStartUtc"/> 同时就是发布锚点——它是本次发布给工序定的最早可开工时刻，
+    /// 仓库既有用法也是同一个值两处用（<c>WorldHistorySeedService</c> 把算出的 releasedAtUtc 直接当
+    /// 工序的 earliestStartUtc 传）。故发布事实的时刻取它，不取 <c>UtcNow</c>。
+    /// </summary>
     public IReadOnlyCollection<OperationTask> Release(
         DateTimeOffset earliestStartUtc,
         IReadOnlyCollection<RoutingStepSnapshot> routingSteps)
@@ -305,20 +311,31 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
             .ToList();
         Status = ReleasedStatus;
         AdvanceVersion();
-        AddDomainEvent(new WorkOrderReleasedDomainEvent(this, tasks));
+        AddDomainEvent(new WorkOrderReleasedDomainEvent(this, tasks, earliestStartUtc));
         return tasks;
     }
 
+    /// <summary>
+    /// 只翻状态、不携带工序的发布。发布事实的时刻取聚合创建时刻——它是发布时刻的真实下界，
+    /// 且这条载荷的 operations 为空，Quality 的发布投影（<c>ValidateReleasedOperations</c>）对空 operations
+    /// 一律拒收，该时刻不会进入任何投影。
+    /// </summary>
     public void MarkReleased()
     {
         ThrowIfCannotRelease();
 
         Status = ReleasedStatus;
         AdvanceVersion();
-        AddDomainEvent(new WorkOrderReleasedDomainEvent(this, []));
+        AddDomainEvent(new WorkOrderReleasedDomainEvent(this, [], CreatedAtUtc));
     }
 
-    public void MarkReleased(IReadOnlyCollection<OperationTask> operationTasks)
+    /// <summary>
+    /// 对已经有工序快照的工单补记发布（计划转工单后再下达这条主流程）。
+    /// 这些工序可能早已开工报工，因此 <paramref name="releasedAtUtc"/> 必须由调用方按
+    /// 「不晚于该工单任何一条既有报工」取下界，见
+    /// <see cref="WorkOrderReleasedDomainEvent.ReleasedAtUtc"/>。
+    /// </summary>
+    public void MarkReleased(IReadOnlyCollection<OperationTask> operationTasks, DateTimeOffset releasedAtUtc)
     {
         ArgumentNullException.ThrowIfNull(operationTasks);
         if (operationTasks.Count == 0)
@@ -330,7 +347,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
 
         Status = ReleasedStatus;
         AdvanceVersion();
-        AddDomainEvent(new WorkOrderReleasedDomainEvent(this, operationTasks));
+        AddDomainEvent(new WorkOrderReleasedDomainEvent(this, operationTasks, releasedAtUtc));
     }
 
     public void BindProductionVersion(string productionVersionId)

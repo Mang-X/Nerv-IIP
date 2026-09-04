@@ -217,17 +217,17 @@ internal sealed class BackfillWorkOrderReleaseProjectionCommandHandler(
                 }
 
                 // 存量数据里没有留下「当初那一次发布」的时刻（工单聚合不存发布时间，发布事件的
-                // ReleasedAtUtc 是发布那一刻的 UtcNow，早已丢失）。Quality 的聚合要求发布时刻不晚于
-                // 它已掌握的任何一条报工——报工时刻由调用方填，可以早于工序建单时刻——所以这里取
-                // 「该工单最早的工序建单时刻」与「该工单最早的报工时刻」中更早的那个作为发布时刻下界。
-                // Quality 收到的报工是 MES 这批报工的子集，因此该下界对它一定成立。
-                var earliestTaskCreatedAtUtc = tasks.Min(x => x.CreatedAtUtc);
-                var releasedAtUtc = earliestReportByWorkOrder.TryGetValue(
-                    (workOrder.OrganizationId, workOrder.EnvironmentId, workOrder.WorkOrderIdValue),
-                    out var earliestReportedAtUtc)
-                    && earliestReportedAtUtc < earliestTaskCreatedAtUtc
-                    ? earliestReportedAtUtc
-                    : earliestTaskCreatedAtUtc;
+                // ReleasedAtUtc 早已丢失），所以候选发布时刻只能用「该工单最早的工序建单时刻」重建；
+                // 报工时刻由调用方填、可以早于工序建单时刻，故还要按最早报工压到下界。
+                // 该下界口径与直投路径（#3117，ReleaseWorkOrderCommandHandler）同一处实现，
+                // 差别只在候选：直投用调用方给的下达时刻。
+                var releasedAtUtc = WorkOrderReleaseFactTime.LowerBound(
+                    tasks.Min(x => x.CreatedAtUtc),
+                    earliestReportByWorkOrder.TryGetValue(
+                        (workOrder.OrganizationId, workOrder.EnvironmentId, workOrder.WorkOrderIdValue),
+                        out var earliestReportedAtUtc)
+                        ? earliestReportedAtUtc
+                        : null);
 
                 var idempotencyKey = EventIds.Idempotency(
                     "work-order-release-projection-backfill",

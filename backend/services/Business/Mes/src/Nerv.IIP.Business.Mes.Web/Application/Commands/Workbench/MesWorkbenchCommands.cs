@@ -27,6 +27,7 @@ using ShiftHandoverWipItemSnapshot = Nerv.IIP.Business.Mes.Domain.AggregatesMode
 using ShiftHandoverUnfinishedWorkOrderSnapshot = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverUnfinishedWorkOrderSnapshot;
 using ShiftHandoverOpenIssueSnapshot = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverOpenIssueSnapshot;
 using ShiftHandoverAttachmentSnapshot = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverAttachmentSnapshot;
+using Nerv.IIP.Business.Mes.Web.Application.Quality;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.Business.Mes.Web.Application.Errors;
 using Nerv.IIP.Business.Mes.Web.Application.Approvals;
@@ -138,7 +139,19 @@ public sealed class ReleaseWorkOrderCommandHandler(
             }
         }
 
-        workOrder.MarkReleased(operationSnapshots);
+        // 工单在 created 状态就能开工报工（#3113），下达因此可能发生在已有报工之后。
+        // 发给 Quality 的发布时刻必须按既有报工取下界，口径与 #3000 回填同一处实现。
+        var earliestReportedAtUtc = await dbContext.ProductionReports
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.WorkOrderId == request.WorkOrderId)
+            .MinAsync(x => (DateTimeOffset?)x.ReportedAtUtc, cancellationToken);
+
+        workOrder.MarkReleased(
+            operationSnapshots,
+            WorkOrderReleaseFactTime.LowerBound(request.ReleasedAtUtc, earliestReportedAtUtc));
         return new MesAcceptedResponse("Accepted", request.WorkOrderId, request.ReleasedAtUtc);
     }
 }

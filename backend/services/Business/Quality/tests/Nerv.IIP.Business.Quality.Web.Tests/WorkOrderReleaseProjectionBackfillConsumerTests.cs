@@ -310,6 +310,37 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
     }
 
     /// <summary>
+    /// #3117 的验收落点：MES 直投的发布时刻按既有报工取下界，最紧的一格就是「发布时刻恰等于最早报工」。
+    /// Quality 的守卫拒的是「报工**早于**发布」，等号必须放行——否则下界取到位了投影仍然进死信，
+    /// 那张工单继续 <c>not-synchronized</c>、被 #2780 门禁永久拒。
+    /// 对照是同一文件里的 <c>Live_release_with_conflicting_facts_still_dead_letters</c>：
+    /// 发布晚于既有事实时该守卫照样拒。
+    /// </summary>
+    [Fact]
+    public async Task Live_release_lands_when_its_time_equals_the_earliest_known_report()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.InspectionPlans.Add(FirstArticlePlan());
+        await dbContext.SaveChangesAsync();
+        // 先报工、后下达：这条报工的时刻就是 MES 侧算出的发布时刻下界。
+        await HandleReportAsync(dbContext, ProductionReport());
+        var earliestReportedAtUtc = DateTimeOffset.Parse("2026-08-02T00:00:00Z");
+
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        await HandleLiveReleaseAsync(
+            dbContext,
+            LiveRelease(releasedAtUtc: earliestReportedAtUtc),
+            deadLetters);
+
+        Assert.Empty(await deadLetters.ListAsync(null, null, CancellationToken.None));
+        var operation = await dbContext.PeriodicInspectionOperations.SingleAsync();
+        Assert.Equal(earliestReportedAtUtc.UtcDateTime, operation.ReleasedAtUtc);
+        Assert.NotEqual(
+            QualityFirstArticleConfirmationStatuses.NotSynchronized,
+            (await ConfirmAsync(dbContext)).Status);
+    }
+
+    /// <summary>
     /// 直投侧不得跟着回填一起「跳过已有发布事实」：同一工序收到第二份**内容不同**的发布事实
     /// 是真实异常，必须判为冲突进死信。本 PR 把该判断做成了按调用点取值的参数，
     /// 因此直投那一半也要有断言承重，否则参数被翻反不会红。
