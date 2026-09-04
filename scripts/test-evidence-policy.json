@@ -92,6 +92,12 @@
       "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES and NERV_IIP_TEST_REDIS to run the real PostgreSQL \\+ Redis CAP release-projection backfill proof\\.\";$"
     },
     {
+      "id": "mes-asset-unavailable-postgres-redis",
+      "sourcePath": "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/MesAssetUnavailableRedisCapTransportTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES and NERV_IIP_TEST_REDIS to run the real PostgreSQL \\+ Redis CAP MES asset-unavailable proof\\.\";$"
+    },
+    {
       "id": "erp-cost-accounting",
       "sourcePath": "backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/ErpCostAccountingPostgresAcceptanceTests.cs",
       "sourceOrdinal": 1,
@@ -716,6 +722,26 @@
       "expectedRuntimeTestCount": 1
     },
     {
+      "id": "mes-asset-unavailable-postgres-redis",
+      "sourceId": "mes-asset-unavailable-postgres-redis",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Mes\\.Web\\.Tests\\.MesAssetUnavailableRedisCapTransportTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES and NERV_IIP_TEST_REDIS to run the real PostgreSQL \\+ Redis CAP MES asset-unavailable proof\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "redis-cap",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Mes.Web.Tests.MesAssetUnavailableRedisCapTransportTests.Redis_cap_poison_exhaustion_persists_and_replays_the_original_v2_identity_without_duplicate_effects",
+        "Nerv.IIP.Business.Mes.Web.Tests.MesAssetUnavailableRedisCapTransportTests.Redis_cap_rejects_mismatched_v2_envelopes_into_persistent_dead_letters_with_original_json"
+      ],
+      "expectedRuntimeTestCount": 2
+    },
+    {
       "id": "productengineering-world-bible",
       "sourceId": "productengineering-world-bible",
       "classification": "environment-gated",
@@ -1265,7 +1291,7 @@
       "id": "mes-cap-postgres",
       "sourceId": "mes-cap-postgres",
       "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.Mes\\.Web\\.Tests\\.(?:MesCapSaveBoundaryPostgresTests|MesCapSubscriptionTests)\\..+$",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Mes\\.Web\\.Tests\\.(?:MaintenanceEventHandlerTests\\.PostgreSQL_(?:v1_v2_concurrent_claims_commit_one_business_effect_across_independent_transactions|same_event_id_with_different_business_keys_commits_one_business_effect_across_independent_transactions|true_duplicate_event_instances_are_unrepresentable_before_the_migration|migration_fails_closed_on_ambiguous_event_instance_history|idempotency_unique_constraint_rejects_its_equivalent_wrong_mutation|event_id_unique_constraint_rejects_its_equivalent_wrong_mutation)|MesCapSaveBoundaryPostgresTests\\..+|MesCapSubscriptionTests\\..+)$",
       "reasonPattern": "^PostgreSQL unavailable for MES CAP acceptance test: .+$",
       "allowedLanes": [
         "backend"
@@ -1287,9 +1313,15 @@
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Stock_movement_posting_failed_unknown_prefix_early_return_persists_only_inbox",
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSubscriptionTests.PostgreSQL_asset_restored_handler_persists_window_schedule_and_inbox_without_external_save",
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSubscriptionTests.PostgreSQL_cap_quality_results_persist_rejected_passed_and_conditional_hold_states",
-        "Nerv.IIP.Business.Mes.Web.Tests.MesCapSubscriptionTests.PostgreSQL_cap_with_inmemory_messaging_delivers_asset_unavailable_event_to_mes_consumer"
+        "Nerv.IIP.Business.Mes.Web.Tests.MesCapSubscriptionTests.PostgreSQL_cap_with_inmemory_messaging_delivers_asset_unavailable_event_to_mes_consumer",
+        "Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_v1_v2_concurrent_claims_commit_one_business_effect_across_independent_transactions",
+        "Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_idempotency_unique_constraint_rejects_its_equivalent_wrong_mutation",
+        "Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_event_id_unique_constraint_rejects_its_equivalent_wrong_mutation",
+        "Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_same_event_id_with_different_business_keys_commits_one_business_effect_across_independent_transactions",
+        "Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_true_duplicate_event_instances_are_unrepresentable_before_the_migration",
+        "Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_migration_fails_closed_on_ambiguous_event_instance_history"
       ],
-      "expectedRuntimeTestCount": 12
+      "expectedRuntimeTestCount": 18
     },
     {
       "id": "erp-world-history",

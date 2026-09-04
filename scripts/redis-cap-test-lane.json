@@ -103,6 +103,24 @@
       "expectedTestIdentities": [
         "Nerv.IIP.Business.Quality.Web.Tests.WorkOrderReleaseProjectionBackfillRedisCapTransportTests.Redis_cap_transport_routes_the_backfill_topic_to_its_own_consumer_group_and_stays_idempotent_in_postgres"
       ]
+    },
+    {
+      "id": "mes-asset-unavailable-redis-cap",
+      "service": "Mes",
+      "tier": "core",
+      "status": "active",
+      "project": "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/Nerv.IIP.Business.Mes.Web.Tests.csproj",
+      "filter": "FullyQualifiedName=Nerv.IIP.Business.Mes.Web.Tests.MesAssetUnavailableRedisCapTransportTests.Redis_cap_poison_exhaustion_persists_and_replays_the_original_v2_identity_without_duplicate_effects|FullyQualifiedName=Nerv.IIP.Business.Mes.Web.Tests.MesAssetUnavailableRedisCapTransportTests.Redis_cap_rejects_mismatched_v2_envelopes_into_persistent_dead_letters_with_original_json",
+      "databasePrefix": "nerv_iip_mes",
+      "capVersionPrefix": "n2966mes",
+      "diagnosticSchemas": [
+        "mes",
+        "cap"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Business.Mes.Web.Tests.MesAssetUnavailableRedisCapTransportTests.Redis_cap_poison_exhaustion_persists_and_replays_the_original_v2_identity_without_duplicate_effects",
+        "Nerv.IIP.Business.Mes.Web.Tests.MesAssetUnavailableRedisCapTransportTests.Redis_cap_rejects_mismatched_v2_envelopes_into_persistent_dead_letters_with_original_json"
+      ]
     }
   ]
 }

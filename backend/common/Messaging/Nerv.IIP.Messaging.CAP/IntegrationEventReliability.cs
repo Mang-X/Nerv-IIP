@@ -15,6 +15,13 @@ public sealed record IntegrationEventConsumerOptions(
     public IReadOnlyCollection<string> SupportedEventTypes { get; init; } = [ExpectedEventType];
     public bool IgnoreUnsupportedEventTypes { get; init; }
 
+    /// <summary>
+    /// Accept an empty <see cref="IIntegrationEventEnvelope.CausationId"/> as a legal value. Wire contracts that
+    /// normalise a missing causation to the empty string (Maintenance AssetUnavailable v2) opt in per consumer;
+    /// a <c>null</c> or whitespace-only causation is still rejected as a missing envelope field.
+    /// </summary>
+    public bool AllowEmptyCausationId { get; init; }
+
     public IntegrationEventConsumerOptions(
         string consumerName,
         IReadOnlyCollection<string> supportedEventTypes,
@@ -75,6 +82,13 @@ public sealed class IntegrationEventEnvelopeValidator
 
         foreach (var (fieldName, value) in GetRequiredStringFields(integrationEvent))
         {
+            if (options.AllowEmptyCausationId &&
+                fieldName == nameof(IIntegrationEventEnvelope.CausationId) &&
+                value is { Length: 0 })
+            {
+                continue;
+            }
+
             if (string.IsNullOrWhiteSpace(value))
             {
                 return IntegrationEventEnvelopeValidationResult.Invalid(

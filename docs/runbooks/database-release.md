@@ -181,6 +181,14 @@ Quality 数量巡检链路依次引入 `AddPeriodicInspectionQuantityWatermark`�
 3. 开始写入双身份 inbox 事实后，不执行本 migration 的 `Down`：降级只删除 `(ConsumerName, EventId)` 索引，旧版本消费者会退回仅按业务键去重，v2 重投可能被记为第二次失效；使用补救 migration 前滚修复。
 4. CI 与本地一次性 PostgreSQL profile 只在 runner 自有数据库上验证两种历史形状（无歧义历史前滚且安装精确索引、歧义形状中止且错误消息含冲突行），不构成客户生产迁移、备份或恢复演练。
 
+### 6.4 BusinessMES 停机事件收件箱 migration
+
+`AddMesProcessedEventInstanceIdentity` 为 `mes.processed_integration_events` 补回 `(ConsumerName, EventId)` 唯一索引，让 Maintenance AssetUnavailable 的 v1/v2 跨版本双投同时受事件实例身份与 `IdempotencyKey` 业务身份约束。该索引曾被 `UseIdempotencyKeyForProcessedIntegrationEvents` 移除，因此既有库里可能存在同 consumer、同 `EventId` 的多行历史。同一条历史 migration 在移除它的同时建立了 `(ConsumerName, IdempotencyKey)` 唯一索引，所以这些多行的 `IdempotencyKey` 必然两两不同：MES 不存在「同 `EventId` 且同 `IdempotencyKey`」的真重复分支，也就没有可自动清理的行。migration 按以下策略处理，不做静默清理：
+
+1. 同 consumer、同 `EventId` 但 `IdempotencyKey` 不同的行是语义歧义：migration **fail-closed 中止**（PostgreSQL `RAISE EXCEPTION`，SQLSTATE `23000`），错误信息逐行列出 `ConsumerName / EventId / IdempotencyKey / ProcessedAtUtc`，由运维按发布说明显式裁决（确认为同一事实的重复登记后保留一行，或确认为不同事实后重赋 `EventId`）再重跑 migration；migration 不会替运维选择保留哪一行。
+2. 中止时索引未创建、数据未改动、迁移历史未写入，旧版本服务可继续运行；这不是执行 `Down` 的授权。`Down` 只删除索引。
+3. 索引创建后，旧版本 MES（只按 `IdempotencyKey` 去重）仍可运行；新版本消费者在同一事务内先赢得两项身份再登记停机与重排，重放死信不会形成第二条停机事实。
+
 ## 7. Seed 契约
 
 Seed 是显式步骤，不混入普通 Web 启动。每个 seed 至少声明 `seedName`、`seedVersion`、`ownerService`、幂等规则、输入来源、重复执行结果和敏感信息处理。初始管理员密码、客户端密钥、Connector 凭据不得写入日志。
