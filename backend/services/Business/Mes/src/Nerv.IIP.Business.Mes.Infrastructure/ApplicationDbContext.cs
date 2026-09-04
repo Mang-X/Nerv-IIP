@@ -24,6 +24,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
 {
     private const string ProductionReportReversalUniqueIndexName = "ux_production_reports_scope_reversed_report_no";
     private const string QualityHoldTransitionIdempotencyIndexName = "ux_quality_hold_transitions_scope_idempotency_kind";
+    private const string ProcessedIntegrationEventInstanceIndexName = "ux_processed_integration_events_consumer_event_id";
 
     public DbSet<WorkOrder> WorkOrders => Set<WorkOrder>();
 
@@ -113,6 +114,11 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
                 token => base.SaveChangesAsync(acceptAllChangesOnSuccess, token),
                 cancellationToken);
         }
+        catch (DbUpdateException exception) when (IsDuplicateProcessedIntegrationEventInstance(exception))
+        {
+            ChangeTracker.Clear();
+            return 0;
+        }
         catch (DbUpdateException exception) when (IsDuplicateQualityHoldTransition(exception))
         {
             return await RecoverQualityHoldTransitionReplayAsync(acceptAllChangesOnSuccess, cancellationToken);
@@ -189,11 +195,25 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
                 this,
                 () => base.SaveChanges(acceptAllChangesOnSuccess));
         }
+        catch (DbUpdateException exception) when (IsDuplicateProcessedIntegrationEventInstance(exception))
+        {
+            ChangeTracker.Clear();
+            return 0;
+        }
         catch (DbUpdateException exception) when (IsDuplicateProductionReportReversal(exception))
         {
             ChangeTracker.Clear();
             throw DuplicateProductionReportReversal(exception);
         }
+    }
+
+    private bool IsDuplicateProcessedIntegrationEventInstance(DbUpdateException exception)
+    {
+        return ChangeTracker.Entries<ProcessedIntegrationEvent>().Any(entry => entry.State == EntityState.Added) &&
+            ProcessedIntegrationEventInbox.IsUniqueConflict(
+                exception,
+                this,
+                ProcessedIntegrationEventInstanceIndexName);
     }
 
     private void EnsureOperationTaskStartAuthorizationsAreAppendOnly()

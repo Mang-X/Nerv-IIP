@@ -551,7 +551,7 @@ public sealed class MesSchemaConventionTests
             return [$"{MesFacts.ServiceName}: missing processed integration event entity metadata."];
         }
 
-        var hasUniqueIndex = entity.GetIndexes().Any(index =>
+        var hasBusinessIdentityIndex = entity.GetIndexes().Any(index =>
             index.IsUnique &&
             index.GetDatabaseName() == "ux_processed_integration_events_consumer_idempotency_key" &&
             index.Properties.Select(property => property.Name).SequenceEqual([
@@ -559,9 +559,17 @@ public sealed class MesSchemaConventionTests
                 nameof(ProcessedIntegrationEvent.IdempotencyKey),
             ]));
 
-        return hasUniqueIndex
+        var hasEventIdentityIndex = entity.GetIndexes().Any(index =>
+            index.IsUnique &&
+            index.GetDatabaseName() == "ux_processed_integration_events_consumer_event_id" &&
+            index.Properties.Select(property => property.Name).SequenceEqual([
+                nameof(ProcessedIntegrationEvent.ConsumerName),
+                nameof(ProcessedIntegrationEvent.EventId),
+            ]));
+
+        return hasBusinessIdentityIndex && hasEventIdentityIndex
             ? []
-            : [$"{MesFacts.ServiceName}: processed integration event inbox requires a unique consumer/idempotency key index."];
+            : [$"{MesFacts.ServiceName}: processed integration event inbox requires independent unique consumer/event-id and consumer/idempotency-key indexes."];
     }
 
     private static IReadOnlyCollection<string> ProductionReportReversalHasUniqueOriginalReportIndex(IModel model)

@@ -7,6 +7,8 @@ using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using DotNetCore.CAP.Internal;
 using Nerv.IIP.Business.Scheduling.Domain;
 using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventHandlers;
@@ -146,7 +148,13 @@ try
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
+    builder.Services.AddScoped<IntegrationEventCapFailureDeadLetterer>();
+    builder.Services.AddScoped<IntegrationEventDeadLetterReplayExecutor>();
+    builder.Services.AddScoped<IIntegrationEventDeadLetterReplayHandler, SchedulingAssetUnavailableDeadLetterReplayHandler>();
+    builder.Services.AddScoped<AssetUnavailableCanonicalProcessor>();
+    builder.Services.AddScoped<IAssetUnavailableCanonicalProcessor>(sp => sp.GetRequiredService<AssetUnavailableCanonicalProcessor>());
     builder.Services.AddScoped<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans>();
+    builder.Services.AddScoped<AssetUnavailableV2IntegrationEventHandlerForInvalidateSchedulePlans>();
     builder.Services.AddScoped<AssetRestoredIntegrationEventHandlerForInvalidateSchedulePlans>();
     builder.Services.AddScoped<DeviceStateChangedIntegrationEventHandlerForInvalidateSchedulePlans>();
     builder.Services.AddScoped<StockAvailabilityChangedIntegrationEventHandlerForInvalidateSchedulePlans>();
@@ -174,8 +182,10 @@ try
             x.UseEntityFramework<ApplicationDbContext>();
             x.JsonSerializerOptions.AddNetCorePalJsonConverters();
             x.UseConfiguredTransport(builder.Configuration, builder.Environment.EnvironmentName);
+            x.UseIntegrationEventDeadLetterOnFailedThreshold();
             x.UseDashboard();
         });
+        builder.Services.Replace(ServiceDescriptor.Singleton<IConsumerServiceSelector, DeploymentProfileConsumerServiceSelector>());
     }
 
     builder.Services.AddMediatR(cfg =>

@@ -853,8 +853,9 @@ $excludedSelectors = @(
 # 验收类整类进入 real-postgres lane 后为 73；#2072 将单一 Periodic Inspection provider
 # fixture 按三项业务职责拆分，原 1 个选择器替换为 3 个，因此总数为 75；#2855 的 MES
 # 生产统计真库类整类进入 real-postgres lane 后为 76；#3010 的 MES 返工 UoW/outbox
-# 真库类整类进入 real-postgres lane 后，当前总数为 77。
-Assert-Contract ($excludedSelectors.Count -eq 77) 'Every currently excluded real-dependency test selector must be explicitly classified.'
+# 真库类整类进入 real-postgres lane 后为 77；#2967 的 Scheduling AssetUnavailable inbox 真库类
+# （双身份 claim 并发、迁移前滚与索引列变异证明）整类进入 real-postgres lane 后，当前总数为 78。
+Assert-Contract ($excludedSelectors.Count -eq 78) 'Every currently excluded real-dependency test selector must be explicitly classified.'
 Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]('Nerv.IIP.Business.Erp.Web.Tests.OperationLaborSettlementRedisCapTransportTests'))) 'The ERP operation-labor Redis/CAP class must be excluded from the fast shard and owned by the Redis/CAP lane.'
 foreach ($selector in @('Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresConcurrencyTests', 'Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresContinuationTests', 'Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresMigrationTests')) {
     Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]$selector)) "The Quality periodic-inspection PostgreSQL class '$selector' must be excluded from the fast shard and owned by the real PostgreSQL lane."

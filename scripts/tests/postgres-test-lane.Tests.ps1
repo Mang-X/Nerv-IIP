@@ -39,7 +39,8 @@ $script:GovernedPostgresMemberIds = @(
     'erp-postgres-profile',
     'demandplanning-postgres-profile',
     'acceptance-postgres-profile',
-    'maintenance-device-pause-postgres'
+    'maintenance-device-pause-postgres',
+    'scheduling-asset-unavailable-postgres'
 )
 function Get-NervCSharpMethodBody([string]$Source, [string]$MethodName) {
     $signatureIndex = $Source.IndexOf(" $MethodName(", [StringComparison]::Ordinal)
@@ -275,6 +276,28 @@ try {
         Assert-Contract (Test-Path -LiteralPath $schedulingSourcePath -PathType Leaf) "The Scheduling lane source '$schedulingSourcePath' must exist."
         Assert-SchedulingLaneOwnedDatabase -SourcePath $schedulingSourcePath
     }
+    # #2967：AssetUnavailable v2 的 inbox 双身份 claim、迁移前滚与索引列变异证明落在独立成员，
+    # 与 scheduling-postgres-profile 共用同一受治理数据库（同一序列化 collection），身份集合在此冻结。
+    $schedulingAssetMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'scheduling-asset-unavailable-postgres' -RepositoryRoot $repoRoot
+    $schedulingAssetIdentities = @(
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Concurrent_claims_with_different_event_ids_and_same_business_key_commit_one_result',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Concurrent_claims_with_same_event_id_and_different_business_keys_commit_one_result',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Event_id_unique_index_wrong_column_mutation_is_rejected',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Idempotency_key_unique_index_wrong_column_mutation_is_rejected',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Inbox_identity_lock_fails_closed_without_an_active_transaction',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Migration_fails_closed_on_historical_event_instance_with_ambiguous_business_keys',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Migration_upgrades_distinct_historical_event_instances_and_old_schema_already_forbids_same_key_duplicates',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Save_changes_absorbs_event_id_inbox_conflict_as_zero_rows',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Save_changes_absorbs_idempotency_key_inbox_conflict_as_zero_rows'
+    )
+    Assert-Contract ([string]::Equals([string]$schedulingAssetMember.service, 'Scheduling', [StringComparison]::Ordinal)) 'The Scheduling AssetUnavailable member must belong to the Scheduling service.'
+    Assert-Contract ([string]::Equals([string]$schedulingAssetMember.project, [string]$schedulingMember.project, [StringComparison]::Ordinal)) 'The Scheduling AssetUnavailable member must target the same owning test project as the profile member.'
+    Assert-Contract (@($schedulingAssetMember.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$schedulingAssetMember.diagnosticSchemas[0], 'scheduling', [StringComparison]::Ordinal)) 'The Scheduling AssetUnavailable member must own its restricted diagnostic schema declaration.'
+    Assert-Contract ([string]::Equals((@($schedulingAssetMember.expectedTestIdentities) -join "`n"), ($schedulingAssetIdentities -join "`n"), [StringComparison]::Ordinal)) 'The Scheduling AssetUnavailable member must freeze exactly the nine inbox, lock, save-conflict, migration and index-mutation identities.'
+    Assert-Contract ([string]$schedulingAssetMember.filter).Contains('FullyQualifiedName~Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests', [StringComparison]::Ordinal) 'The Scheduling AssetUnavailable member filter must select its owning test class.'
+    $schedulingAssetSourcePath = Join-Path $schedulingSourceDirectory 'AssetUnavailableInboxPostgresProfileTests.cs'
+    Assert-Contract (Test-Path -LiteralPath $schedulingAssetSourcePath -PathType Leaf) "The Scheduling lane source '$schedulingAssetSourcePath' must exist."
+    Assert-SchedulingLaneOwnedDatabase -SourcePath $schedulingAssetSourcePath
     $innerDatabaseSourcePath = Join-Path $fixtureRoot 'inner-database-scheduling-source.cs'
     [IO.File]::WriteAllText(
         $innerDatabaseSourcePath,
@@ -413,12 +436,13 @@ try {
     # 以及停机读面 3 条（列表行投影、按原因聚合的时长结算与名次、按原因过滤与汇总面）、报工 OEE 维度快照迁移 1 条
     # 和 NCR 返工工单 8 条来源、物料、幂等、并发、范围隔离与追溯证明、停机原因迁移 1 条及生产统计 3 条聚合契约证明，
     # 再保留独立协作参与者读面与自领并发的唯一 owner/participant/receipt/业务冲突证明，以及 #3010 的
-    # 返工 UoW 成功、outbox 失败回滚与外层事务归属 3 条证明、#3000 的回填单事务扫描 1 条，
-    # 与 #3117 的直投发布时刻下界 1 条（按既有报工取下界的聚合查询与三分量归属谓词由真实 provider 执行），
-    # 共有 58 条真实 PostgreSQL 证明；
+    # 返工 UoW 成功、outbox 失败回滚与外层事务归属 3 条证明，以及 #2966 的停机事件 v1/v2 跨事务并发单效、
+    # 幂等键与 eventId 两条唯一约束各自拒绝其等价错误变异、同 EventId 异业务键并发单效，以及收件箱迁移
+    # 「真重复保留最早行」与「歧义历史 fail-closed」共 6 条证明，共有 62 条真实 PostgreSQL 证明；再加 #3117 的直投发布时刻下界 1 条
+    # （按既有活动取下界的聚合查询与三分量归属谓词由真实 provider 执行），共 64 条；
     # CAP 的原生存储表落在独立 cap schema，业务表与 EF 侧 cap_* 表落在 mes schema，两者都必须声明才能在失败时留下完整诊断。
     $mesMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'mes-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($mesMember.expectedTestIdentities).Count -eq 58) 'The MES member must freeze exactly its fifty-eight governed PostgreSQL identities.'
+    Assert-Contract (@($mesMember.expectedTestIdentities).Count -eq 64) 'The MES member must freeze exactly its sixty-four governed PostgreSQL identities.'
     $mesCollaborationIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.MesCollaborationPostgresTests.Reportable_scope_matches_a_registered_participant_on_postgres'
     $mesClaimIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.OperationTaskClaimPostgresTests.Concurrent_claims_persist_one_owner_participant_and_receipt_and_reject_the_loser_on_postgres'
     Assert-Contract (@($mesMember.expectedTestIdentities | Where-Object { [string]::Equals([string]$_, $mesCollaborationIdentity, [StringComparison]::Ordinal) }).Count -eq 1) 'The MES member must freeze the participant-only reportable-scope PostgreSQL identity exactly once.'

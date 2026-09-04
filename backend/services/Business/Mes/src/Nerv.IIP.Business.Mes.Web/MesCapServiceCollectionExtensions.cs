@@ -1,5 +1,8 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using DotNetCore.CAP.Internal;
+using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Context.CAP;
@@ -21,6 +24,7 @@ public static class MesCapServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configuration);
 
         services.AddContext().AddEnvContext().AddCapContextProcessor();
+        services.AddScoped<IntegrationEventCapFailureDeadLetterer>();
 
         if (isTesting)
         {
@@ -46,8 +50,11 @@ public static class MesCapServiceCollectionExtensions
             options.UseEntityFramework<ApplicationDbContext>();
             options.JsonSerializerOptions.AddNetCorePalJsonConverters();
             options.UseConfiguredTransport(configuration, environmentName);
+            options.UseIntegrationEventDeadLetterOnFailedThreshold();
             options.UseDashboard();
         });
+        services.Replace(ServiceDescriptor.Singleton<IConsumerServiceSelector>(serviceProvider =>
+            new MesDeploymentProfileConsumerServiceSelector(serviceProvider, environmentName)));
 
         return services;
     }
