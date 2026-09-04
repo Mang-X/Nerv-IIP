@@ -83,6 +83,7 @@ public sealed class MesActualTimeReadContractTests
             startedAtUtc.AddDays(1));
         var operation = Assert.Single(workOrder.Release(
             startedAtUtc.AddHours(-1),
+            WorkOrderReleaseFactTime.NotLaterThan(startedAtUtc.AddHours(-1), null),
             [new RoutingStepSnapshot("OP-DETAIL", 10, "WC-DETAIL", [], TimeSpan.FromMinutes(30))]));
         operation.Start(startedAtUtc);
         operation.Complete(startedAtUtc.AddMinutes(75), []);

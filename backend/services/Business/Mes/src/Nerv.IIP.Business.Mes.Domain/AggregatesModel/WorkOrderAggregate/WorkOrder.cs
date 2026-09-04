@@ -273,8 +273,24 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         return workOrder;
     }
 
+    /// <summary>
+    /// 发布工单并当场按工艺路线建出工序任务。
+    ///
+    /// <para><paramref name="earliestStartUtc"/> 与 <paramref name="releasedAt"/> 是**两件事**，不可一值两用：
+    /// 前者是本次发布给工序定的**最早可开工时刻**，语义上允许落在未来（下达后下一班才开工是正常排产）；
+    /// 后者是**发布这件事发生的时刻**，会作为发布事实发给 Quality，落在未来会让该工序此后的每一条报工
+    /// 都被 <c>PeriodicInspectionOperation</c> 判为「报工早于发布」进死信。</para>
+    ///
+    /// <para><b>下界项归属：本方法要求调用方保证，本方法自己不检查。</b>
+    /// 唯一前置守卫 <c>ThrowIfCannotRelease()</c> **只看 <c>Status</c>**——一张 <c>created</c> 状态、
+    /// 却已经有工序任务与报工的工单（正是 #3113 那条形态）照样能进本方法。
+    /// 当前三个生产调用方都是**当场造新工单**（返工工单 + 两个演示种子），工序在这一刻才建出、
+    /// 不可能已有活动，因此传 <c>null</c> 成立；**这是调用方的性质，不是本方法的性质**。
+    /// 新增调用方若可能面对已有活动的工单，必须自己查出最早既有活动再传进来，否则 #3117 原样重演。</para>
+    /// </summary>
     public IReadOnlyCollection<OperationTask> Release(
         DateTimeOffset earliestStartUtc,
+        WorkOrderReleaseFactTime releasedAt,
         IReadOnlyCollection<RoutingStepSnapshot> routingSteps)
     {
         ArgumentNullException.ThrowIfNull(routingSteps);
@@ -305,20 +321,50 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
             .ToList();
         Status = ReleasedStatus;
         AdvanceVersion();
-        AddDomainEvent(new WorkOrderReleasedDomainEvent(this, tasks));
+        AddDomainEvent(new WorkOrderReleasedDomainEvent(this, tasks, releasedAt));
         return tasks;
     }
 
+    /// <summary>
+    /// 只翻状态、不携带工序的发布。
+    ///
+    /// <para><b>时刻取值。</b>本重载拿不到任何工序，也就拿不到报工集合，
+    /// 聚合自己知道的唯一下界是 <see cref="CreatedAtUtc"/>——工单不可能早于自己被创建就被发布。
+    /// 这个下界是**读取当刻**的 <see cref="CreatedAtUtc"/>：调用方若要把创建时刻回拨成历史时刻，
+    /// 必须在调用本方法**之前**回拨（唯一生产调用方 <c>WorldHistorySeedService</c> 已按此顺序，
+    /// 并在调用点写明了该顺序要求）。</para>
+    ///
+    /// <para><b>为什么这条不携带工序的发布事实不会伤到 Quality。</b>真实理由是
+    /// <c>WorldHistorySeedService.SaveHistoryFactsAsync</c> 在写盘前按 <c>ChangeTracker</c>
+    /// 统一 <c>ClearDomainEvents()</c>，**本事件从不出域**。
+    /// 不要拿「Quality 对空 operations 一律拒收」当安全性依据——
+    /// <c>PeriodicInspectionReleaseProjection.ValidateReleasedOperations</c> 对空 operations 是
+    /// <c>throw</c>，即**整封进死信**，不是无害跳过；那是「出事了」，不是「没事」。</para>
+    /// </summary>
     public void MarkReleased()
     {
         ThrowIfCannotRelease();
 
         Status = ReleasedStatus;
         AdvanceVersion();
-        AddDomainEvent(new WorkOrderReleasedDomainEvent(this, []));
+        // 下界传 null 的自证：本重载不携带工序，聚合手上没有任何报工或完工集合可查，
+        // 因此 CreatedAtUtc 本身就是它能给出的唯一下界（工单不可能早于自己被创建就被发布）。
+        // 这里不再走一个专用工厂——`AtAggregateCreation(x)` 与 `NotLaterThan(x, null)` 曾是逐字等价的
+        // 两条构造路径，而前者用「internal 挡住应用层」当依据，与 Mes.Domain.csproj 的
+        // `InternalsVisibleTo(Mes.Web)` 直接矛盾（Mes.Web 就是应用层）。删掉它，只留一个公开工厂。
+        AddDomainEvent(new WorkOrderReleasedDomainEvent(
+            this,
+            [],
+            WorkOrderReleaseFactTime.NotLaterThan(CreatedAtUtc, null)));
     }
 
-    public void MarkReleased(IReadOnlyCollection<OperationTask> operationTasks)
+    /// <summary>
+    /// 对已经有工序快照的工单补记发布（计划转工单后再下达这条主流程）。
+    /// 这些工序可能早已开工、报工、乃至完工，因此发布事实的时刻必须按
+    /// 「不晚于该工单任何一条**既有活动**（报工或工序完工）」取下界；
+    /// 该不变量由 <see cref="WorkOrderReleaseFactTime"/> 的构造口径承担，本方法不再收裸时刻。
+    /// </summary>
+    public void MarkReleased(IReadOnlyCollection<OperationTask> operationTasks, WorkOrderReleaseFactTime releasedAt)
     {
         ArgumentNullException.ThrowIfNull(operationTasks);
         if (operationTasks.Count == 0)
@@ -330,7 +376,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
 
         Status = ReleasedStatus;
         AdvanceVersion();
-        AddDomainEvent(new WorkOrderReleasedDomainEvent(this, operationTasks));
+        AddDomainEvent(new WorkOrderReleasedDomainEvent(this, operationTasks, releasedAt));
     }
 
     public void BindProductionVersion(string productionVersionId)

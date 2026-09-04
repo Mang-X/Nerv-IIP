@@ -56,15 +56,36 @@ public sealed class WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicIns
 internal enum ReleaseFactAuthority
 {
     /// <summary>
-    /// MES 直投的 <c>mes.WorkOrderReleased</c>：发布时刻是当初那一次发布事件带的值，权威。
-    /// 因此同一工序收到第二份**内容不同**的发布事实是真实异常，必须由 <c>ApplyRelease</c> 判为冲突进死信，
-    /// 不得跳过——跳过会把这个信号吞掉。
+    /// MES 直投的 <c>mes.WorkOrderReleased</c>：发布时刻**由 MES 在发布动作发生的那一刻定下并随事件发出**，
+    /// 消费侧不重建、也无从重建，故权威。
+    ///
+    /// <para><b>「权威」不等于「等于调用方原样给的那个值」（#3117 后的口径澄清）。</b>
+    /// MES 侧现在会把该时刻夹到「不晚于该工单**最早既有活动**（最早报工与最早工序完工中更早者）」——
+    /// 工单在 <c>created</c> 状态就能开工、报工、乃至完工，
+    /// 不夹就必然触犯下面 <c>ApplyRelease</c> 的「报工早于发布」守卫、整封进死信。
+    /// 夹紧发生在 **MES 侧、事件发出之前**，结果仍是这一次发布唯一的、由生产者确定的口径，
+    /// 因此分类仍是 <c>Authoritative</c>，派生行为（用该时刻生成到期任务、**不**跳过累计窗口）不变。
+    /// 与 <see cref="ReconstructedLowerBound"/> 的分界线不是「有没有被夹过」，而是
+    /// **这个时刻是不是消费侧从存量数据重建出来的**：重建值随扫描时点可变、且与既有权威事实不可比对，
+    /// 夹紧后的直投值不是。</para>
+    ///
+    /// <para>因此同一工序收到第二份**内容不同**的发布事实是真实异常，必须由 <c>ApplyRelease</c> 判为冲突进死信，
+    /// 不得跳过——跳过会把这个信号吞掉。</para>
+    ///
+    /// <para><b>已知的假冲突面（既有，非 #3117 引入；本票**严格改善**了它）。</b>
+    /// MES 的 <c>released → hold → release</c> 是允许的状态迁移（<c>ThrowIfCannotRelease</c> 只拒
+    /// <c>released</c> 与六个终态，**不拒 <c>hold</c>**），第二次下达会再发一封发布事实。
+    /// 改前该时刻取转换那一刻的 <c>UtcNow</c>，两次下达**恒不同 → 恒判冲突进死信**；
+    /// 改后取 <c>min(调用方时刻, 最早既有活动)</c>，只要两次下达时都已有活动且最早活动未变
+    /// （报工只向后累积时恒成立），两封事实的时刻**完全相同** → 直接 return、不再判冲突。
+    /// 即**严格不变差、常常变好**——不要把它读成「只是把不同值的来源换了一下」。</para>
     /// </summary>
     Authoritative,
 
     /// <summary>
-    /// #3000 回填的 <c>mes.WorkOrderReleaseProjectionBackfilled</c>：发布时刻是从 MES 存量数据重建的**下界**，
-    /// 不等于当初那一次发布事件带的时刻。由此派生两条行为：
+    /// #3000 回填的 <c>mes.WorkOrderReleaseProjectionBackfilled</c>：发布时刻是从 MES **存量数据重建**的下界
+    /// （工单聚合不存发布时间，当初那封发布事件的时刻早已丢失），不等于当初那一次发布事件带的时刻，
+    /// 且随重建时点的数据面可变。由此派生两条行为：
     /// ① 已有发布事实的工序只跳过、不覆盖（拿重建下界去比对必然判冲突），这同时是「重复执行回填不改变投影内容」的落点；
     /// ② 补投之前累计的产量与流逝的时间不追认周期巡检窗口（见
     /// <c>PeriodicInspectionOperation.SkipPeriodicWindowsAccruedBefore</c>）。
@@ -166,6 +187,23 @@ internal static class PeriodicInspectionReleaseProjection
                                 facts.WorkCenterId,
                                 payload.ReleasedAtUtc.UtcDateTime,
                                 snapshots);
+
+                            // **本分支不做「跳过下达前已累计窗口」——该行为已拆出 #3129，本票不实现。**
+                            // owner 裁定「下达之前已产出的数量不补开巡检任务」曾在本票内落地过一版，
+                            // 后按归因回退：判断所需的事实（哪些产量发生在**下达动作**之前、且按**工序**分辨）
+                            // 只存在于 MES 侧，`mes.WorkOrderReleased` 只带一个**工单级** ReleasedAtUtc，
+                            // Quality 只能推断，于是在「多工序」与「发布先于报工到达」两种形态下失效。
+                            // **落点错了，不是判别式写窄了**——详见 #3129。当前行为与 main 一致。
+                            //
+                            // **与回填分支形状不同不是「忘了对齐」，别顺手补上跳过：**
+                            // 回填分支的 SkipPeriodicWindowsAccruedBefore 锚在 integrationEvent.OccurredAtUtc
+                            // （= GetUtcNow()），即无条件把到「现在」为止的累计记为已生成，这是 #3000 的既有取舍；
+                            // 直投分支没有一个等价的锚可用（发布事实时刻是被夹紧过的工单级标量）。
+                            // 这是**锚点差异**，把回填那种无条件跳过复制过来会打掉一类合法输入——
+                            // `PeriodicInspectionIntegrationEventTests.Report_before_release_backfills_quantity_windows_from_the_frozen_context`
+                            // 钉的就是那类：报工时刻晚于发布时刻，产量是下达之后真实累积的，窗口本就该开。
+                            // **改这一处之前先确认该用例仍绿。**
+                            //
                             PeriodicInspectionQuantityTaskGeneration.AddDueTasks(
                                 dbContext,
                                 operation.RuntimeContexts,

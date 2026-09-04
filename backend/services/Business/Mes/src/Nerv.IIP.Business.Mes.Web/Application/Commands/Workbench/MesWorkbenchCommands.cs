@@ -27,6 +27,7 @@ using ShiftHandoverWipItemSnapshot = Nerv.IIP.Business.Mes.Domain.AggregatesMode
 using ShiftHandoverUnfinishedWorkOrderSnapshot = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverUnfinishedWorkOrderSnapshot;
 using ShiftHandoverOpenIssueSnapshot = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverOpenIssueSnapshot;
 using ShiftHandoverAttachmentSnapshot = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverAttachmentSnapshot;
+using Nerv.IIP.Business.Mes.Web.Application.Quality;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.Business.Mes.Web.Application.Errors;
 using Nerv.IIP.Business.Mes.Web.Application.Approvals;
@@ -43,6 +44,11 @@ public sealed record MesOperationActionResponse(
     string Status,
     DateTimeOffset ChangedAtUtc);
 
+/// <summary>
+/// 下达工单。其中 <c>ReleasedAtUtc</c> 是下达时刻，
+/// **已在 HTTP 端点（<c>ReleaseWorkOrderEndpoint</c>）夹到不晚于当前时刻**——
+/// 那里是请求体进入系统的信任边界，未来值只可能从那里来，本处不再重复夹一遍。
+/// </summary>
 public sealed record ReleaseWorkOrderCommand(
     string OrganizationId,
     string EnvironmentId,
@@ -138,8 +144,45 @@ public sealed class ReleaseWorkOrderCommandHandler(
             }
         }
 
-        workOrder.MarkReleased(operationSnapshots);
-        return new MesAcceptedResponse("Accepted", request.WorkOrderId, request.ReleasedAtUtc);
+        // 工单在 created 状态就能开工、报工、乃至完工（#3113），下达因此可能发生在已有活动之后。
+        // 发给 Quality 的发布时刻必须按**最早既有活动**取下界，口径与 #3000 回填同一处实现。
+        var earliestReportedAtUtc = await dbContext.ProductionReports
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.WorkOrderId == request.WorkOrderId)
+            .MinAsync(x => (DateTimeOffset?)x.ReportedAtUtc, cancellationToken);
+
+        // 完工这一面必须一起进下界，**不能只按报工算**：工序动作 "complete"
+        // （本文件 ChangeOperationTaskStateCommandHandler 的 "complete" 分支）把 pendingProductionReportNos
+        // 传 []，完工时刻取 request.ChangedAtUtc，**不产生任何报工行**。于是「零报工、却已有完工」可达，
+        // 只按报工取下界时这里查不到任何活动 → 发布事实取调用方时刻 → 被 Quality 的完工守卫
+        // （PeriodicInspectionOperation 的 CompletedAtUtc < releasedAtUtc）判冲突整封进死信（#3117 第三轮）。
+        // 不新增查询：operationSnapshots 已在上面读进内存，ExistingEndUtc 就是完工时刻。
+        // 关于不按状态过滤：取消也会写 ExistingEndUtc（OperationTask.Cancel）。
+        // **但取消态在生产上进不到这条下界，这里如实写清，不再声称它有用例承担：**
+        // OperationTask.Cancel 的生产调用点恰 1 处（本文件 ChangeWorkOrderStateCommandHandler 的取消分支），
+        // 它先把工单整单 Cancel、再 foreach 取消全部工序（无部分取消路径）；
+        // 而 WorkOrder.ThrowIfCannotRelease 把 CancelledStatus 与其余终态一并拒掉。
+        // 故「工单可下达 + 存在已取消工序」在系统层不可达，加不加状态过滤对可达输入是等价变异。
+        // 保留「不过滤」是因为它不依赖「哪些状态会写 ExistingEndUtc」这份枚举的完备性，方向上恒偏早、
+        // 对 Quality 那三条 throw 守卫恒安全（**只对那三条守卫，不覆盖窗口生成语义**）。
+        var earliestOperationEndUtc = operationSnapshots
+            .Where(x => x.ExistingEndUtc.HasValue)
+            .Select(x => (DateTimeOffset?)x.ExistingEndUtc!.Value)
+            .Min();
+        var earliestExistingActivityAtUtc = earliestReportedAtUtc is { } report
+            ? (earliestOperationEndUtc is { } end && end < report ? end : report)
+            : earliestOperationEndUtc;
+
+        var releasedAt = WorkOrderReleaseFactTime.NotLaterThan(request.ReleasedAtUtc, earliestExistingActivityAtUtc);
+
+        workOrder.MarkReleased(operationSnapshots, releasedAt);
+
+        // 回执回**实际落到发布事实上的时刻**，不回 request.ReleasedAtUtc：
+        // 被既有活动下界压过或被夹到当前时刻时，调用方否则无从得知自己给的时刻已被改写。
+        return new MesAcceptedResponse("Accepted", request.WorkOrderId, releasedAt.Value);
     }
 }
 

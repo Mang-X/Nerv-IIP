@@ -450,10 +450,11 @@ try {
     # 再保留独立协作参与者读面与自领并发的唯一 owner/participant/receipt/业务冲突证明，以及 #3010 的
     # 返工 UoW 成功、outbox 失败回滚与外层事务归属 3 条证明，以及 #2966 的停机事件 v1/v2 跨事务并发单效、
     # 幂等键与 eventId 两条唯一约束各自拒绝其等价错误变异、同 EventId 异业务键并发单效，以及收件箱迁移
-    # 「真重复保留最早行」与「歧义历史 fail-closed」共 6 条证明，共有 62 条真实 PostgreSQL 证明；
+    # 「真重复保留最早行」与「歧义历史 fail-closed」共 6 条证明，共有 63 条真实 PostgreSQL 证明（该叙述在 main 上原写 62、与断言的 63 差 1，此处按断言更正）；再加 #3117 的直投发布时刻下界 1 条
+    # （按既有活动取下界的聚合查询与三分量归属谓词由真实 provider 执行），共 64 条；
     # CAP 的原生存储表落在独立 cap schema，业务表与 EF 侧 cap_* 表落在 mes schema，两者都必须声明才能在失败时留下完整诊断。
     $mesMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'mes-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($mesMember.expectedTestIdentities).Count -eq 63) 'The MES member must freeze exactly its sixty-three governed PostgreSQL identities.'
+    Assert-Contract (@($mesMember.expectedTestIdentities).Count -eq 64) 'The MES member must freeze exactly its sixty-four governed PostgreSQL identities.'
     $mesCollaborationIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.MesCollaborationPostgresTests.Reportable_scope_matches_a_registered_participant_on_postgres'
     $mesClaimIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.OperationTaskClaimPostgresTests.Concurrent_claims_persist_one_owner_participant_and_receipt_and_reject_the_loser_on_postgres'
     Assert-Contract (@($mesMember.expectedTestIdentities | Where-Object { [string]::Equals([string]$_, $mesCollaborationIdentity, [StringComparison]::Ordinal) }).Count -eq 1) 'The MES member must freeze the participant-only reportable-scope PostgreSQL identity exactly once.'
@@ -473,21 +474,22 @@ try {
     Assert-Contract (@($mesSaveBoundaryIdentities | Where-Object { -not $mesIdentitySet.Contains($_) }).Count -eq 0) 'The MES member must freeze all nine CAP save-boundary PostgreSQL identities.'
     Assert-Contract ([string]::Equals((@($mesMember.diagnosticSchemas) -join ','), 'mes,cap', [StringComparison]::Ordinal)) 'The MES member must declare both the mes schema and the native CAP storage schema.'
     Assert-MethodScopedFilter -Member $mesMember
-    foreach ($mesSource in @(
-            'MesCapSaveBoundaryPostgresTests.cs',
-            'MesCapSubscriptionTests.cs',
-            'MesCollaborationPostgresTests.cs',
-            'OperationTaskClaimPostgresTests.cs',
-            'MesDowntimeReadFacePostgresTests.cs',
-            'MesMaterialSubstituteSnapshotPostgresTests.cs',
-            'MesProductionStatisticsPostgresTests.cs',
-            'MesSchedulePlanProvenancePostgresTests.cs',
-            'OperationActualTimeSettlementPostgresTests.cs',
-            'RushWorkOrderHttpPostgresTests.cs',
-            'SkuDisabledConsumerTests.cs',
-            'TelemetryProductionReportCandidatePostgresTests.cs',
-            'WorkOrderCapitalizationConcurrencyPostgresTests.cs',
-            'WorkOrderTransformationApplicationPostgresTests.cs')) {
+    # MES lane 的扫描面**从冻结身份派生**，不再手工列举。
+    # 人工名单会静默偏斜：改前它漏了 6 个已登记的 PostgreSQL 测试类
+    # （#3000 的 WorkOrderReleaseProjectionBackfillPostgresTests、两条 NcrReworkRequested*、
+    # DowntimeReasonCodeMigration、ProductionReportOeeDimensionSnapshot、WorkOrderTransformation），
+    # 而漏登记就是漏防线——Assert-LaneOwnedDatabase 根本没扫到那些文件。
+    # 身份形如 <Namespace>.<Class>.<Method>，倒数第二段即类名，类名即源文件名。
+    # 去重与排序都走序数比较器：`Sort-Object -Unique` 会折叠可忽略字符，
+    # 两个只差一个 bidi 字符的类名会被并成一个，扫描面因此静默变窄（ordinal-comparison-layers 门禁点名过这一处）。
+    $mesSourceSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($mesIdentity in @($mesMember.expectedTestIdentities)) {
+        $segments = ([string]$mesIdentity).Split('.')
+        [void]$mesSourceSet.Add("$($segments[$segments.Length - 2]).cs")
+    }
+    $mesSourceNames = [Collections.Generic.List[string]]::new([string[]]@($mesSourceSet))
+    $mesSourceNames.Sort([StringComparer]::Ordinal)
+    foreach ($mesSource in $mesSourceNames) {
         $mesSourcePath = Join-Path $repoRoot "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/$mesSource"
         Assert-Contract (Test-Path -LiteralPath $mesSourcePath -PathType Leaf) "MES lane source '$mesSource' must exist."
         Assert-LaneOwnedDatabase -SourcePath $mesSourcePath -InnerDatabaseFactory 'PostgreSqlTestDatabase.CreateAsync'

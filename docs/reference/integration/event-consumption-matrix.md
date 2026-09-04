@@ -81,7 +81,7 @@ Reference 与源码冲突时，以当前代码/契约/测试为准并修正本�
 | Quality | `InspectionResultIntegrationEvent`（passed/conditional/rejected） | Quality | Inventory、MES、Scheduling；RMA 场景下 ERP 处理相应财务结果 | `consumed-internally` |
 | Quality | `InspectionTaskOverdueIntegrationEvent` | Quality | Notification | `consumed-internally` |
 | Quality | `MeasuringDeviceCalibrationDueIntegrationEvent` | Quality | Notification | `consumed-internally` |
-| MES | `WorkOrderReleasedIntegrationEvent` | MES | Scheduling、Quality | `consumed-internally` |
+| MES | `WorkOrderReleasedIntegrationEvent` | MES | Scheduling、Quality | `consumed-internally`。信封 `occurredAtUtc` 与 payload `releasedAtUtc` 同取**发布动作给出的发布事实时刻**（按该工单**既有活动**取下界——最早报工与最早工序完工中更早者，#3117），不再取转换那一刻的 `UtcNow`。按 ADR 0011 §5 这是把原先违反「`occurredAtUtc` 必须是领域事实发生时间」的取值修回合规，属修正而非 §4 意义上的语义变更，**不提升 `eventVersion`**；Scheduling 只读 `Payload.WorkOrderId`/`SkuCode`，不校验也不消费任一时刻 |
 | MES | `WorkOrderReleaseProjectionBackfilledIntegrationEvent` | MES（运维触发的一次性内部端点，非领域事件转换） | 仅 Quality：把存量在制工单的发布事实补进工序巡检投影，只补空缺不覆盖既有行。Scheduling **不**订阅——它对发布事件的处理是让全部已生成排程计划失效，不能被回填放大 | `consumed-internally` |
 | MES | `ReworkWorkOrderCreatedIntegrationEvent` | MES | Quality：按 organization/environment/NCR 来源事实绑定系统返工工单回执；ERP：在既有 `WorkOrderCost` 上登记 NCR 与来源工单归因 | `consumed-internally` |
 | MES | `WorkOrderCompletedIntegrationEvent` | MES | ERP | `consumed-internally` |

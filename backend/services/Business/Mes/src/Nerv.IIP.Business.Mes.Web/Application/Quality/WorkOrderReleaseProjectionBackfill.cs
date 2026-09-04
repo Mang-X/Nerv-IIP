@@ -183,6 +183,8 @@ internal sealed class BackfillWorkOrderReleaseProjectionCommandHandler(
                     x.WorkCenterId,
                     x.Status,
                     x.CreatedAtUtc,
+                    // 完工时刻要进发布时刻下界（#3117 第三轮）：多投影一列，**不增加往返**。
+                    x.ExistingEndUtc,
                 })
                 .ToArrayAsync(cancellationToken);
             var earliestReports = await dbContext.ProductionReports
@@ -217,17 +219,35 @@ internal sealed class BackfillWorkOrderReleaseProjectionCommandHandler(
                 }
 
                 // 存量数据里没有留下「当初那一次发布」的时刻（工单聚合不存发布时间，发布事件的
-                // ReleasedAtUtc 是发布那一刻的 UtcNow，早已丢失）。Quality 的聚合要求发布时刻不晚于
-                // 它已掌握的任何一条报工——报工时刻由调用方填，可以早于工序建单时刻——所以这里取
-                // 「该工单最早的工序建单时刻」与「该工单最早的报工时刻」中更早的那个作为发布时刻下界。
-                // Quality 收到的报工是 MES 这批报工的子集，因此该下界对它一定成立。
-                var earliestTaskCreatedAtUtc = tasks.Min(x => x.CreatedAtUtc);
-                var releasedAtUtc = earliestReportByWorkOrder.TryGetValue(
+                // ReleasedAtUtc 早已丢失），所以候选发布时刻只能用「该工单最早的工序建单时刻」重建；
+                // 既有活动（报工与工序完工）时刻由调用方填、**可以早于工序建单时刻**，故还要按最早既有活动压到下界。
+                // 该下界口径与直投路径（#3117，ReleaseWorkOrderCommandHandler）同一处实现，
+                // 两条路径的**下界项集合现在完全一致**（报工 + 工序完工），差别只在候选：直投用调用方给的下达时刻。
+                //
+                // 完工这一面**回填同样要进下界**。上一版这里写的是「一道工序不可能早于自己被建出就完工，
+                // 故候选恒 ≤ 任何完工时刻，这是结构性成立」——**该主张已被探针证伪**：
+                // OperationTask.CreatedAtUtc 是服务端墙钟，而 Start/FreezeCompletion 都不与它比较
+                // （FreezeCompletion 唯一时间守卫是 completedAtUtc >= ExistingStartUtc），
+                // 且时刻来源 request.ChangedAtUtc 是四个动作端点共用、**未夹紧**的请求体字段。
+                // 于是「用回拨的 ChangedAtUtc 开工+完工」是常规 HTTP 面，ExistingEndUtc < CreatedAtUtc 可达；
+                // 此时若不把完工纳入下界，回填出的发布时刻会晚于完工时刻，
+                // 被 Quality 的 ApplyRelease 完工守卫判冲突整封进死信——与直投侧刚闭合的缺陷同型。
+                // 回填与直投走的是**同一个 ApplyRelease、同一组守卫**，没有理由只在一侧设防。
+                var earliestOperationEndUtc = tasks
+                    .Where(x => x.ExistingEndUtc.HasValue)
+                    .Select(x => (DateTimeOffset?)x.ExistingEndUtc!.Value)
+                    .Min();
+                var earliestReportedAtUtc = earliestReportByWorkOrder.TryGetValue(
                     (workOrder.OrganizationId, workOrder.EnvironmentId, workOrder.WorkOrderIdValue),
-                    out var earliestReportedAtUtc)
-                    && earliestReportedAtUtc < earliestTaskCreatedAtUtc
-                    ? earliestReportedAtUtc
-                    : earliestTaskCreatedAtUtc;
+                    out var reportedAtUtc)
+                    ? reportedAtUtc
+                    : (DateTimeOffset?)null;
+                var earliestExistingActivityAtUtc = earliestReportedAtUtc is { } report
+                    ? (earliestOperationEndUtc is { } end && end < report ? end : report)
+                    : earliestOperationEndUtc;
+                var releasedAtUtc = WorkOrderReleaseFactTime.NotLaterThan(
+                    tasks.Min(x => x.CreatedAtUtc),
+                    earliestExistingActivityAtUtc).Value;
 
                 var idempotencyKey = EventIds.Idempotency(
                     "work-order-release-projection-backfill",
