@@ -9,6 +9,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
+using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Scheduling.Domain.DomainEvents;
 using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventConverters;
@@ -140,7 +141,9 @@ public sealed class SchedulingInvalidationPropagationAcceptanceTests
             .RegisterServicesFromAssembly(typeof(AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans).Assembly)
             .RegisterServicesFromAssembly(typeof(SchedulingInvalidationPropagationAcceptanceTests).Assembly)
             .AddUnitOfWorkBehaviors());
-        services.AddScoped<RecordSchedulePlanInvalidationsCommandHandler>();
+        // 与 Program.cs（AddSchedulingPostgreSqlPersistence）同一实现：非 PostgreSQL provider 上它是显式 no-op，
+        // 不会在运行期才失败；这里跑 InMemory，串行化由用例顺序保证，唯一索引与吞噬由 PG profile 用例证明。
+        services.AddScoped<IAssetUnavailableInboxIdentityLock, PostgreSqlAssetUnavailableInboxIdentityLock>();
         services.AddDbContext<SchedulingDbContext>(options =>
             options
                 .UseInMemoryDatabase($"scheduling-invalidation-acceptance-{Guid.NewGuid():N}")
