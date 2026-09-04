@@ -92,6 +92,12 @@
       "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES and NERV_IIP_TEST_REDIS to run the real PostgreSQL \\+ Redis CAP release-projection backfill proof\\.\";$"
     },
     {
+      "id": "mes-asset-unavailable-postgres-redis",
+      "sourcePath": "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/MesAssetUnavailableRedisCapTransportTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES and NERV_IIP_TEST_REDIS to run the real PostgreSQL \\+ Redis CAP MES asset-unavailable proof\\.\";$"
+    },
+    {
       "id": "erp-cost-accounting",
       "sourcePath": "backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/ErpCostAccountingPostgresAcceptanceTests.cs",
       "sourceOrdinal": 1,
@@ -132,6 +138,12 @@
       "sourcePath": "backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceIntegrationEventHandlerTests.cs",
       "sourceOrdinal": 1,
       "sourceReasonPattern": "^Skip = \\$\"Set \\{PostgresConnectionStringEnvironmentVariable\\} to run the real PostgreSQL Maintenance device-pause acceptance test\\.\";$"
+    },
+    {
+      "id": "maintenance-asset-unavailable-v2",
+      "sourcePath": "backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceAssetUnavailableV2PostgresTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \\$\"Set \\{PostgresConnectionStringEnvironmentVariable\\} to run the real PostgreSQL Maintenance AssetUnavailable v2 tests\\.\";$"
     },
     {
       "id": "maintenance-world-history",
@@ -180,6 +192,12 @@
       "sourcePath": "backend/services/Business/Scheduling/tests/Nerv.IIP.Business.Scheduling.Web.Tests/RecordSchedulePlanInvalidationsPostgresProfileTests.cs",
       "sourceOrdinal": 1,
       "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run Scheduling PostgreSQL profile tests\\.\";$"
+    },
+    {
+      "id": "scheduling-postgres-redis",
+      "sourcePath": "backend/services/Business/Scheduling/tests/Nerv.IIP.Business.Scheduling.Web.Tests/AssetUnavailableRedisCapTransportTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES and NERV_IIP_TEST_REDIS to run Scheduling PostgreSQL \\+ Redis CAP tests\\.\";$"
     },
     {
       "id": "wms-task-action",
@@ -710,6 +728,26 @@
       "expectedRuntimeTestCount": 1
     },
     {
+      "id": "mes-asset-unavailable-postgres-redis",
+      "sourceId": "mes-asset-unavailable-postgres-redis",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Mes\\.Web\\.Tests\\.MesAssetUnavailableRedisCapTransportTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES and NERV_IIP_TEST_REDIS to run the real PostgreSQL \\+ Redis CAP MES asset-unavailable proof\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "redis-cap",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Mes.Web.Tests.MesAssetUnavailableRedisCapTransportTests.Redis_cap_poison_exhaustion_persists_and_replays_the_original_v2_identity_without_duplicate_effects",
+        "Nerv.IIP.Business.Mes.Web.Tests.MesAssetUnavailableRedisCapTransportTests.Redis_cap_rejects_mismatched_v2_envelopes_into_persistent_dead_letters_with_original_json"
+      ],
+      "expectedRuntimeTestCount": 2
+    },
+    {
       "id": "productengineering-world-bible",
       "sourceId": "productengineering-world-bible",
       "classification": "environment-gated",
@@ -946,7 +984,7 @@
       "id": "scheduling-postgres",
       "sourceId": "scheduling-postgres",
       "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.Scheduling\\.Web\\.Tests\\.(?:OrderUrgencyRetentionPostgresCapacityTests|RecordSchedulePlanInvalidationsPostgresProfileTests|ScheduleReleaseGovernancePostgresProfileTests)\\..+$",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Scheduling\\.Web\\.Tests\\.(?:AssetUnavailableInboxPostgresProfileTests|OrderUrgencyRetentionPostgresCapacityTests|RecordSchedulePlanInvalidationsPostgresProfileTests|ScheduleReleaseGovernancePostgresProfileTests)\\..+$",
       "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run Scheduling PostgreSQL profile tests\\.$",
       "allowedLanes": [
         "backend"
@@ -957,6 +995,15 @@
       "expiresOn": null,
       "exitCondition": null,
       "testIdentities": [
+        "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Concurrent_claims_with_different_event_ids_and_same_business_key_commit_one_result",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Concurrent_claims_with_same_event_id_and_different_business_keys_commit_one_result",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Event_id_unique_index_wrong_column_mutation_is_rejected",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Idempotency_key_unique_index_wrong_column_mutation_is_rejected",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Inbox_identity_lock_fails_closed_without_an_active_transaction",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Migration_fails_closed_on_historical_event_instance_with_ambiguous_business_keys",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Migration_upgrades_distinct_historical_event_instances_and_old_schema_already_forbids_same_key_duplicates",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Save_changes_absorbs_event_id_inbox_conflict_as_zero_rows",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Save_changes_absorbs_idempotency_key_inbox_conflict_as_zero_rows",
         "Nerv.IIP.Business.Scheduling.Web.Tests.OrderUrgencyRetentionPostgresCapacityTests.Representative_capacity_scan_and_overlapping_workers_are_safe_on_PostgreSQL",
         "Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_calendar_event_handler_changes_the_generated_plan_query_state_once",
         "Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_records_generated_calendar_invalidation_without_matching_released_or_other_calendar_plans",
@@ -964,7 +1011,26 @@
         "Nerv.IIP.Business.Scheduling.Web.Tests.ScheduleReleaseGovernancePostgresProfileTests.Concurrent_releases_converge_to_one_active_plan_with_monotonic_revisions",
         "Nerv.IIP.Business.Scheduling.Web.Tests.ScheduleReleaseGovernancePostgresProfileTests.Migration_normalizes_historical_duplicate_releases_with_exact_timestamp_tie"
       ],
-      "expectedRuntimeTestCount": 6
+      "expectedRuntimeTestCount": 15
+    },
+    {
+      "id": "scheduling-postgres-redis",
+      "sourceId": "scheduling-postgres-redis",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Scheduling\\.Web\\.Tests\\.AssetUnavailableRedisCapTransportTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES and NERV_IIP_TEST_REDIS to run Scheduling PostgreSQL \\+ Redis CAP tests\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "redis-cap",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableRedisCapTransportTests.Redis_cap_poison_exhausts_to_dlq_and_replay_preserves_identity_without_duplicate_claim"
+      ],
+      "expectedRuntimeTestCount": 1
     },
     {
       "id": "barcodelabel-postgres-profile",
@@ -1060,6 +1126,30 @@
         "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceIntegrationEventHandlerTests.Device_disabled_consumer_durably_blocks_pm_generation_on_postgres"
       ],
       "expectedRuntimeTestCount": 1
+    },
+    {
+      "id": "maintenance-asset-unavailable-v2",
+      "sourceId": "maintenance-asset-unavailable-v2",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Maintenance\\.Web\\.Tests\\.MaintenanceAssetUnavailableV2PostgresTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL Maintenance AssetUnavailable v2 tests\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.V1_free_text_still_publishes_only_the_v1_envelope_without_touching_the_catalog",
+        "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.V2_exact_code_commits_work_order_with_v1_companion_and_v2_canonical_outbox_rows_in_one_transaction",
+        "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.V2_near_miss_cross_scope_or_free_text_codes_are_rejected_by_the_database_predicate_with_zero_rows",
+        "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.V2_null_reason_code_commits_a_plain_work_order_without_asset_unavailable_outbox_rows",
+        "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.V2_outbox_failure_rolls_back_the_work_order_and_the_already_published_v1_companion",
+        "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.V1_companion_outbox_failure_rolls_back_the_work_order_before_the_v2_envelope_is_attempted"
+      ],
+      "expectedRuntimeTestCount": 6
     },
     {
       "id": "quality-postgres",
@@ -1231,7 +1321,7 @@
       "id": "mes-cap-postgres",
       "sourceId": "mes-cap-postgres",
       "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.Mes\\.Web\\.Tests\\.(?:MesCapSaveBoundaryPostgresTests|MesCapSubscriptionTests)\\..+$",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Mes\\.Web\\.Tests\\.(?:MaintenanceEventHandlerTests\\.PostgreSQL_(?:v1_v2_concurrent_claims_commit_one_business_effect_across_independent_transactions|same_event_id_with_different_business_keys_commits_one_business_effect_across_independent_transactions|true_duplicate_event_instances_are_unrepresentable_before_the_migration|migration_fails_closed_on_ambiguous_event_instance_history|idempotency_unique_constraint_rejects_its_equivalent_wrong_mutation|event_id_unique_constraint_rejects_its_equivalent_wrong_mutation)|MesCapSaveBoundaryPostgresTests\\..+|MesCapSubscriptionTests\\..+)$",
       "reasonPattern": "^PostgreSQL unavailable for MES CAP acceptance test: .+$",
       "allowedLanes": [
         "backend"
@@ -1253,9 +1343,15 @@
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Stock_movement_posting_failed_unknown_prefix_early_return_persists_only_inbox",
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSubscriptionTests.PostgreSQL_asset_restored_handler_persists_window_schedule_and_inbox_without_external_save",
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSubscriptionTests.PostgreSQL_cap_quality_results_persist_rejected_passed_and_conditional_hold_states",
-        "Nerv.IIP.Business.Mes.Web.Tests.MesCapSubscriptionTests.PostgreSQL_cap_with_inmemory_messaging_delivers_asset_unavailable_event_to_mes_consumer"
+        "Nerv.IIP.Business.Mes.Web.Tests.MesCapSubscriptionTests.PostgreSQL_cap_with_inmemory_messaging_delivers_asset_unavailable_event_to_mes_consumer",
+        "Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_v1_v2_concurrent_claims_commit_one_business_effect_across_independent_transactions",
+        "Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_idempotency_unique_constraint_rejects_its_equivalent_wrong_mutation",
+        "Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_event_id_unique_constraint_rejects_its_equivalent_wrong_mutation",
+        "Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_same_event_id_with_different_business_keys_commits_one_business_effect_across_independent_transactions",
+        "Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_true_duplicate_event_instances_are_unrepresentable_before_the_migration",
+        "Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_migration_fails_closed_on_ambiguous_event_instance_history"
       ],
-      "expectedRuntimeTestCount": 12
+      "expectedRuntimeTestCount": 18
     },
     {
       "id": "erp-world-history",

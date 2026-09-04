@@ -50,14 +50,14 @@ Maintenance 还暴露设备可靠性 P0 查询，用带 `SourceAlarmId` 的维�
 
 当维修处置、故障确认、保养窗口或人工停机判断影响生产能力时，Maintenance 发布：
 
-1. `maintenance.AssetUnavailable`：资产在某个组织/环境和设备资产维度进入不可用状态。当前活动 v1 线继续使用 `AssetUnavailableIntegrationEvent`、自由文本 `reason` 与 legacy alias `AssetUnavailableIntegrationEvent`；独立的 `AssetUnavailableV2IntegrationEvent` 共享契约使用 `eventVersion=2`、`sourceService=business-maintenance` 与 `reasonCode`，canonical topic 模板为 `nerv-iip.{deployment-profile}.business-maintenance.maintenance.asset-unavailable.v2`。v2 契约当前尚未注册生产者或消费者，因此不改变现有活动事件流。
+1. `maintenance.AssetUnavailable`：资产在某个组织/环境和设备资产维度进入不可用状态。当前活动 v1 线继续使用 `AssetUnavailableIntegrationEvent`、自由文本 `reason` 与 legacy alias `AssetUnavailableIntegrationEvent`；独立的 `AssetUnavailableV2IntegrationEvent` 共享契约使用 `eventVersion=2`、`sourceService=business-maintenance` 与 `reasonCode`，canonical topic 模板为 `nerv-iip.{deployment-profile}.business-maintenance.maintenance.asset-unavailable.v2`。MES 与 Scheduling 已按部署 profile 精确订阅该 v2 topic，并与 v1 汇入各自同一 canonical 处理器。当前处于 #2964 的 C/D 双发阶段：`POST /api/business/v2/maintenance/work-orders` 以 nullable `assetUnavailableReasonCode` 取代自由文本，非 null 值必须在请求 organization/environment 的动态 `downtime-reason` 目录精确命中（请求原值，不 trim、不改大小写），命中后在同一事务内发布 v1 companion（legacy alias，payload `reason` = 目录码）与 v2 canonical envelope，两者 `idempotencyKey` 精确相同、`eventId` 各自独立；v1 入口继续只发布 v1 且不查目录。BusinessGateway 已提供独立的 v2 代理 `POST /api/business-console/v2/maintenance/work-orders`（operationId `createBusinessConsoleMaintenanceWorkOrderV2`，独立请求/响应 DTO），复用与 v1 同源的授权、principal actor 注入、source alarm/设备一致性与 idempotency 规则，并把 `assetUnavailableReasonCode` 原样转发到 Maintenance v2 入口；`@nerv-iip/api-client` 已按该 OpenAPI snapshot 再生成并从稳定入口导出。
 2. `maintenance.AssetRestored`：同一资产或资源约束恢复可用。
 
 这些事件表达维护域对资产可用性的判定，不等同于原始报警。一个报警可能不导致不可用；多个报警、点检结果或保养计划可能合并成一个不可用窗口；一个维修工单也可能经历多次不可用/恢复边界。
 
 ### 4. MES 投影为工作中心不可用
 
-MES 消费 `maintenance.AssetUnavailable` 和 `maintenance.AssetRestored`，在 MES 边界内把设备资产解析到工作中心，并形成 `WorkCenterUnavailability` 投影。当前代码主要把该投影用于规则排程避让、产能影响查询和执行视图提示；#207/#206 后可以进一步把它接入 readiness 阻断和正式 APS 资源可用性约束。
+MES 消费 v1/v2 `maintenance.AssetUnavailable` 和 v1 `maintenance.AssetRestored`，在 MES 边界内把设备资产解析到工作中心，并形成 `WorkCenterUnavailability` 投影；v2 的 `reasonCode` 直接作为该停机事实的原因。v1/v2 不可用事件共享逻辑 consumer identity 和业务幂等键，因此双投只形成一条停机事实和一次有效重排。当前代码主要把该投影用于规则排程避让、产能影响查询和执行视图提示；#207/#206 后可以进一步把它接入 readiness 阻断和正式 APS 资源可用性约束。
 
 `WorkCenterUnavailability` 是 MES 的执行侧投影，不是 MaintenanceWorkOrder 的副本。当前代码保存 MES 派工、工序执行、产能影响查询和生产现场看板需要的最小字段：`DeviceAssetId`、`WorkCenterId`、原因、开始时间和恢复时间。MES 不修改维修工单状态，不直接关闭报警，也不把 Maintenance 的内部处置字段复制进 MES。
 

@@ -51,7 +51,7 @@ Reference 与源码冲突时，以当前代码/契约/测试为准并修正本�
 | Inventory | `StockMovementPostingFailedIntegrationEvent` | Inventory | WMS | `consumed-internally` |
 | Inventory | `StockCountVarianceConfirmedIntegrationEvent` | Inventory | 当前无必须改变平台状态的活动消费者 | `producer-only-until-feature` |
 | Inventory | `StockAvailabilityChangedIntegrationEvent` | Inventory | Scheduling | `consumed-internally` |
-| Maintenance | V1 `AssetUnavailableIntegrationEvent`；V2 `AssetUnavailableV2IntegrationEvent` | V1 Maintenance；V2 当前无活动 producer | V1 MES、Scheduling；V2 当前无活动 consumer | V1 `consumed-internally`；V2 `needs-business-consumer` |
+| Maintenance | V1 `AssetUnavailableIntegrationEvent`；V2 `AssetUnavailableV2IntegrationEvent` | V1 Maintenance（v1 自由文本入口只发 V1；v2 原因码入口双发 V1 companion + V2）；V2 Maintenance（`POST /api/business/v2/maintenance/work-orders`，#2964 C/D 阶段） | V1 MES、Scheduling；V2 MES、Scheduling 均精确订阅 canonical topic，并按共享 `idempotencyKey` 折叠双发 | V1/V2 `consumed-internally` |
 | Maintenance | `AssetRestoredIntegrationEvent` | Maintenance | MES、Scheduling | `consumed-internally` |
 | MasterData | `SkuChangedIntegrationEvent` | MasterData | 当前下游主要使用 API/快照；无活动状态消费者 | `producer-only-until-feature` |
 | MasterData | `SkuDisabledIntegrationEvent` | MasterData | MES | `consumed-internally` |

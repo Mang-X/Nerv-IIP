@@ -16,7 +16,7 @@
 | --- | --- |
 | 前端工作区、应用和包职责 | [frontend-structure.md](frontend-structure.md) |
 | 业务导航、页面 IA 与产品语义 | [frontend-navigation-map.md](frontend-navigation-map.md) + [`../product/README.md`](../product/README.md) |
-| API、OpenAPI 与生成客户端 | [api-contract-and-codegen.md](api-contract-and-codegen.md) |
+| API、Gateway、OpenAPI 与生成客户端的当前边界 | [`integration/api-contracts.md`](integration/api-contracts.md) + [`../governance/api/contracts-and-codegen.md`](../governance/api/contracts-and-codegen.md) |
 | Connector Host / 平台协议 | [connector-platform-protocol-v1.md](connector-platform-protocol-v1.md)、[connector-host-machine-auth.md](connector-host-machine-auth.md) |
 | 数据库命名与 Schema 规则 | [`../governance/data/database-schema.md`](../governance/data/database-schema.md)；当前 Schema 人工目录见 [`../reference/data/database-schema-catalog.md`](../reference/data/database-schema-catalog.md) |
 | 当前工程 Governance | [`../governance/README.md`](../governance/README.md) |
@@ -40,7 +40,7 @@
 - 调查、实验、审计和修复记录位于 [`../reports/README.md`](../reports/README.md)。
 - 当前任务进度、负责人和验收证据位于 GitHub/Linear。
 
-M2-B 已迁出纵切历史与报告；M2-C 已迁出 Product；M2-D 已迁出 Runbook；M2-E 已迁出 Reference；M2-F 已迁出本批纯 Governance；M2-G 已拆脚本治理；M2-H 已拆测试有效性、确定性、证据、真实依赖 lane 与 PDA 测试五个混合 owner。上述旧文件名只保留短兼容入口，不能再作为正文读取；兼容入口删除条件由 M2-M 汇总后交给 M4。
+M2-B 已迁出纵切历史与报告；M2-C 已迁出 Product；M2-D 已迁出 Runbook；M2-E 已迁出 Reference；M2-F 已迁出本批纯 Governance；M2-G 已拆脚本治理；M2-H 已拆测试有效性、确定性、证据、真实依赖 lane 与 PDA 测试五个混合 owner；M2-I 已拆 API/codegen 总账、BusinessGateway surface 与 facade coverage 的现态职责。上述旧文件名只保留短兼容入口，不能再作为正文读取；兼容入口删除条件由 M2-M 汇总后交给 M4。
 
 ## 迁移期类型提示
 
@@ -49,6 +49,7 @@ M2-B 已迁出纵切历史与报告；M2-C 已迁出 Product；M2-D 已迁出 Ru
 - M2-F 的旧 Governance 文件名仅为兼容入口。
 - M2-G 的 `script-automation-governance.md` 仅为兼容入口；当前规则与操作分别位于 `docs/governance/script-automation.md`、`docs/runbooks/script-automation.md`。
 - M2-H 的 `backend-test-determinism.md`、`test-evidence-governance.md`、`test-validity-governance.md`、`real-dependency-test-lanes.md`、`mobile-pda-testing-and-smoke.md` 仅为兼容入口；当前测试治理从 `docs/governance/testing/` 路由。
+- M2-I 的 `api-contract-and-codegen.md`、`business-gateway-api-surface-canonicalization.md` 与 `facade-coverage-matrix.md` 仅为兼容入口；当前 API 架构从 `docs/architecture/integration/api-contracts.md` 路由，规则/操作/机器事实分别位于 Governance、Runbook 与 Reference。
 - 其它 `*-catalog.md`、`*-matrix.*`、`*-inventory.md` 仍可能属于 Reference、Report 或机器伴随物，按正文生命周期判断。
 - `*-investigation.md`、`*-spike.md`、`*-remediation.md` 的完整正文已由 M2-B 迁往 Reports；同名短页只可能是兼容入口。
 

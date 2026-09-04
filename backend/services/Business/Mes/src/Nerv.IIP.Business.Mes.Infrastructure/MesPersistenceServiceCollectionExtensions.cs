@@ -39,6 +39,7 @@ public static class MesPersistenceServiceCollectionExtensions
         services.AddScoped<IMesSkuAvailabilityScopeCoordinator, PostgreSqlMesSkuAvailabilityScopeCoordinator>();
         services.AddScoped<IMesWorkOrderCapitalizationScopeCoordinator, PostgreSqlMesWorkOrderCapitalizationScopeCoordinator>();
         services.AddScoped<IMesReworkWorkOrderScopeCoordinator, PostgreSqlMesReworkWorkOrderScopeCoordinator>();
+        services.AddScoped<IMesAssetUnavailableInboxClaimCoordinator, PostgreSqlMesAssetUnavailableInboxClaimCoordinator>();
         return services;
     }
 }

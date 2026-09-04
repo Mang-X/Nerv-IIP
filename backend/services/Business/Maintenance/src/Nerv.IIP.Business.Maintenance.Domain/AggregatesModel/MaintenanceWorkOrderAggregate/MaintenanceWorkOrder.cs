@@ -393,6 +393,41 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         this.AddDomainEvent(new AssetUnavailableDomainEvent(this, normalizedReason, fromUtc));
     }
 
+    /// <summary>
+    /// v2 原因码入口（#2964）：<paramref name="reasonCode"/> 必须已由应用层按请求 organization/environment 在动态
+    /// <c>downtime-reason</c> 目录精确命中；聚合原样保存请求原值——不 trim、不改大小写——并只抛出
+    /// <see cref="AssetUnavailableByReasonCodeDomainEvent"/>，不复用 v1 自由文本事实。
+    /// </summary>
+    public void MarkAssetUnavailableByReasonCode(DateTimeOffset fromUtc, string reasonCode)
+    {
+        EnsureOpen();
+        if (string.IsNullOrWhiteSpace(reasonCode))
+        {
+            throw new ArgumentException("reasonCode is required.", nameof(reasonCode));
+        }
+
+        if (reasonCode.Length > MaxAssetUnavailableReasonCodeLength)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(reasonCode),
+                reasonCode.Length,
+                $"reasonCode cannot exceed {MaxAssetUnavailableReasonCodeLength} characters.");
+        }
+
+        if (AssetUnavailable)
+        {
+            return;
+        }
+
+        AssetUnavailable = true;
+        AssetUnavailableReason = reasonCode;
+        AssetUnavailableFromUtc = fromUtc;
+        this.AddDomainEvent(new AssetUnavailableByReasonCodeDomainEvent(this, reasonCode, fromUtc));
+    }
+
+    /// <summary>与 <c>DowntimeReason.ReasonCode</c> 的持久化长度（100）一致；目录里不存在更长的码。</summary>
+    public const int MaxAssetUnavailableReasonCodeLength = 100;
+
     public void Complete(
         string result,
         string downtimeReasonCode,
