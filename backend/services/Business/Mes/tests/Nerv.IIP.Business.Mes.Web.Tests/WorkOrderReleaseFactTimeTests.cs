@@ -185,8 +185,9 @@ public sealed class WorkOrderReleaseFactTimeTests
     /// <summary>
     /// **「取消也算既有活动」这条明写裁定的鉴别力**（#3117 第四轮 / 复审 R6）。
     ///
-    /// <para>命令层注释写「取消也会写 <c>ExistingEndUtc</c>；把它算进来只会把下界往早拉，
-    /// 而 Quality 三条守卫都是『既有活动早于发布』才抛，往早拉恒安全，故**不再按状态过滤**」。
+    /// <para>命令层的裁定是「取消也会写 <c>ExistingEndUtc</c>；把它算进来只会把下界往早拉，
+    /// 对 Quality 那三条 throw 守卫恒安全，故**不再按状态过滤**」
+    /// （该注释第四轮已限定为「只对那三条守卫成立」，不覆盖窗口生成语义——见 PR 正文 R5）。
     /// 复审实测：加上 <c>Status == Completed</c> 过滤后**全仓零红**——也就是这条裁定此前**没有任何用例盯着**，
     /// 而当时看似有防线的那点红，只是因为夹具用了聚合造不出的 <c>InProgress + 非空 ExistingEndUtc</c>
     /// 组合（假鉴别力）。本用例把这条裁定钉住，夹具全程走**聚合方法**（Queue → Cancel），域上可达。</para>
