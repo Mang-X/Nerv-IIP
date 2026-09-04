@@ -163,6 +163,29 @@ public sealed class WmsLifecycleConflictOpenApiTests
         }
     }
 
+    [Fact]
+    public async Task Wms_list_contracts_keep_flat_offset_page_defaults()
+    {
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token"));
+        using var client = factory.CreateClient();
+        using var document = JsonDocument.Parse(await client.GetStringAsync("/swagger/v1/swagger.json"));
+        var paths = document.RootElement.GetProperty("paths");
+
+        foreach (var route in OffsetPageRoutes)
+        {
+            var parameters = paths.GetProperty(route)
+                .GetProperty("get")
+                .GetProperty("parameters")
+                .EnumerateArray()
+                .ToArray();
+
+            Assert.Equal(0, GetDefault(parameters, "skip"));
+            Assert.Equal(100, GetDefault(parameters, "take"));
+        }
+    }
+
     private static readonly string[] AssignedResourceCompletionRoutes =
     [
         "/api/business/v1/wms/inbound-orders/{inboundOrderId}/complete",
@@ -185,6 +208,27 @@ public sealed class WmsLifecycleConflictOpenApiTests
         "/api/business/v1/wms/picking-tasks/{warehouseTaskId}/complete",
         "/api/business/v1/wms/wcs-tasks/{warehouseTaskId}/dispatch",
     ];
+
+    private static readonly string[] OffsetPageRoutes =
+    [
+        "/api/business/v1/wms/backorder-orders",
+        "/api/business/v1/wms/inbound-orders",
+        "/api/business/v1/wms/outbound-orders",
+        "/api/business/v1/wms/putaway-tasks",
+        "/api/business/v1/wms/picking-tasks",
+        "/api/business/v1/wms/replenishment-tasks",
+        "/api/business/v1/wms/count-executions",
+        "/api/business/v1/wms/wcs-tasks",
+        "/api/business/v1/wms/receiving-quality-gates",
+        "/api/business/v1/wms/supplier-return-requests",
+    ];
+
+    private static int GetDefault(IEnumerable<JsonElement> parameters, string name) =>
+        parameters
+            .Single(parameter => parameter.GetProperty("name").GetString() == name)
+            .GetProperty("schema")
+            .GetProperty("default")
+            .GetInt32();
 
     private static DbUpdateException UniqueConflict(
         string constraintName,

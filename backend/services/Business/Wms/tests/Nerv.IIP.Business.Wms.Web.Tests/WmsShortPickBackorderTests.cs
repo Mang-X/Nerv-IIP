@@ -68,7 +68,7 @@ public sealed class WmsShortPickBackorderTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var query = await new ListBackorderOrdersQueryHandler(dbContext).Handle(
-            new ListBackorderOrdersQuery("org-001", "env-dev"), CancellationToken.None);
+            new ListBackorderOrdersQuery(" org-001 ", " env-dev ", Keyword: " bo-001 "), CancellationToken.None);
         await new CloseBackorderOrderCommandHandler(dbContext).Handle(
             new CloseBackorderOrderCommand(backorder.Id, "stock-restored"), CancellationToken.None);
         await new CloseBackorderOrderCommandHandler(dbContext).Handle(
