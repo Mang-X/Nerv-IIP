@@ -99,6 +99,33 @@ public sealed class WorkOrderReleaseFactTimeTests
         Assert.Equal(ReleaseRequestedAtUtc, releasedAtUtc);
     }
 
+    /// <summary>
+    /// 回执必须回**实际落到发布事实上的**时刻，不回调用方原样给的时刻。
+    ///
+    /// <para>调用方给 10:00、工单最早报工在 08-20T06:00，发布事实被压到 06:00——
+    /// 回执若仍回 10:00，调用方**无从得知自己给的时刻已被改写**。
+    /// 这条用例是该主张的唯一鉴别力：变异测试实测，把回执第三参改回 <c>request.ReleasedAtUtc</c>
+    /// 在补它之前**全仓零红**（全仓对 <c>MesAcceptedResponse</c> 只有构造、没有一处断言下达回执的时刻字段）。</para>
+    /// </summary>
+    [Fact]
+    public async Task Release_receipt_reports_the_moment_that_actually_landed_on_the_release_fact()
+    {
+        await using var dbContext = CreateDbContext();
+        AddReleasableWorkOrder(dbContext, "WO-RECEIPT");
+        var earliest = DateTimeOffset.Parse("2026-08-20T06:00:00Z");
+        AddReport(dbContext, "RPT-RECEIPT", "WO-RECEIPT", earliest);
+        await dbContext.SaveChangesAsync();
+
+        var response = await new ReleaseWorkOrderCommandHandler(dbContext).Handle(
+            new ReleaseWorkOrderCommand(Organization, Environment, "WO-RECEIPT", ReleaseRequestedAtUtc),
+            CancellationToken.None);
+
+        // 被夹紧的那一格：回执与调用方给的时刻**必须不同**，否则这条断言退化成同义反复。
+        Assert.NotEqual(ReleaseRequestedAtUtc, response.AcceptedAtUtc);
+        Assert.Equal(earliest, response.AcceptedAtUtc);
+        Assert.Equal("WO-RECEIPT", response.ReferenceId);
+    }
+
     /// <summary>下达并取回发给 Quality 的那份发布事实的时刻。</summary>
     private static async Task<DateTimeOffset> ReleaseAsync(ApplicationDbContext dbContext, string workOrderId)
     {
