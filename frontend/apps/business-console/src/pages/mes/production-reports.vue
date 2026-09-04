@@ -112,7 +112,7 @@ const canReport = computed(() =>
 
 const quickViewWorkOrderId = ref<string | null>(null)
 
-const errorMessage = computed(() => formatError(productionReportsError.value))
+const errorMessage = computed(() => inlineErrorMessage(productionReportsError.value))
 
 type ReportRow = BusinessConsoleMesProductionReportRow
 
@@ -404,9 +404,6 @@ function formatDateTime(value?: string | null) {
 }
 function openWorkOrder(workOrderId?: string | null) {
   if (workOrderId) quickViewWorkOrderId.value = workOrderId
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 async function promoteCandidate(candidate: {
   candidateId?: string
@@ -792,7 +789,7 @@ async function dismissCandidate(candidateId?: string) {
         </div>
       </div>
       <p v-if="candidateQueue.error.value" class="text-sm text-destructive" role="alert">
-        {{ formatError(candidateQueue.error.value) }}
+        {{ inlineErrorMessage(candidateQueue.error.value) }}
       </p>
       <div v-if="candidateQueue.candidates.value.length" class="space-y-3">
         <article

@@ -1467,13 +1467,13 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                     b.Property<DateTime?>("ReleasedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("released_at_utc")
-                        .HasComment("UTC time when MES released the work order; null while source facts are staged out of order.");
+                        .HasComment("UTC work-order release time, composite by source: the MES release event time for directly delivered facts, or a reconstructed lower bound (earliest operation creation or earliest production report of the work order) for legacy work orders backfilled by the release-projection backfill. Null while source facts are staged out of order.");
 
                     b.Property<string>("SkuCode")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("sku_code")
-                        .HasComment("SKU snapshot from the work-order release event; null until release arrives.");
+                        .HasComment("SKU snapshot, composite by source: the work-order release event SKU for directly delivered facts; for legacy work orders backfilled by the release-projection backfill it carries the reconstructed SKU, or - when the operation already had authoritative completion facts that disagreed - completion_sku_code. Null until release facts arrive.");
 
                     b.Property<string>("WorkCenterId")
                         .HasMaxLength(150)
@@ -1691,14 +1691,14 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                     b.Property<DateTime>("ReleasedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("released_at_utc")
-                        .HasComment("UTC work-order release time.");
+                        .HasComment("UTC work-order release time frozen from the release snapshot; carries the same composite meaning as periodic_inspection_operations.released_at_utc - event time for directly delivered facts, reconstructed lower bound for backfilled legacy work orders.");
 
                     b.Property<string>("SkuCode")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("sku_code")
-                        .HasComment("SKU snapshot from the release event.");
+                        .HasComment("SKU snapshot frozen from the release facts; carries the same composite meaning as periodic_inspection_operations.sku_code - release event SKU for directly delivered facts, completion_sku_code when a backfilled reconstruction yielded to authoritative completion facts.");
 
                     b.Property<string>("Status")
                         .IsRequired()

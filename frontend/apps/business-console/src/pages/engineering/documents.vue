@@ -132,7 +132,7 @@ const documentCells = computed<NvMetricStripCell[]>(() => [
   },
 ])
 
-const listErrorMessage = computed(() => formatError(documentsError.value))
+const listErrorMessage = computed(() => inlineErrorMessage(documentsError.value))
 
 const columns: NvDataTableColumn<BusinessConsoleEngineeringDocumentItem>[] = [
   { key: 'documentNumber', header: '文档号', cellClass: 'font-medium' },
@@ -323,10 +323,6 @@ async function openView(row: BusinessConsoleEngineeringDocumentItem) {
   } finally {
     detailPending.value = false
   }
-}
-
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 </script>
 

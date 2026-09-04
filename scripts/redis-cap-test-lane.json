@@ -86,6 +86,23 @@
       "expectedTestIdentities": [
         "Nerv.IIP.Business.Mes.Web.Tests.MesReworkReceiptRedisCapTransportTests.Concurrent_distinct_events_for_one_ncr_emit_one_created_receipt_after_both_deliveries_succeed"
       ]
+    },
+    {
+      "id": "quality-release-projection-backfill-redis-cap",
+      "service": "Quality",
+      "tier": "core",
+      "status": "active",
+      "project": "backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/Nerv.IIP.Business.Quality.Web.Tests.csproj",
+      "filter": "FullyQualifiedName=Nerv.IIP.Business.Quality.Web.Tests.WorkOrderReleaseProjectionBackfillRedisCapTransportTests.Redis_cap_transport_routes_the_backfill_topic_to_its_own_consumer_group_and_stays_idempotent_in_postgres",
+      "databasePrefix": "nerv_iip_quality",
+      "capVersionPrefix": "n3000quality",
+      "diagnosticSchemas": [
+        "quality",
+        "cap"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Business.Quality.Web.Tests.WorkOrderReleaseProjectionBackfillRedisCapTransportTests.Redis_cap_transport_routes_the_backfill_topic_to_its_own_consumer_group_and_stays_idempotent_in_postgres"
+      ]
     }
   ]
 }

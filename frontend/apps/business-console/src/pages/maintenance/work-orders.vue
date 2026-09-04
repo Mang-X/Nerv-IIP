@@ -255,7 +255,7 @@ const sparePartCostDisplay = computed({
     sparePartCostOverride.value = value
   },
 })
-const listErrorMessage = computed(() => formatError(workOrdersError.value))
+const listErrorMessage = computed(() => inlineErrorMessage(workOrdersError.value))
 // 服务端错误走 toast；这里只留点提交后的字段级校验汇总。
 const createErrorMessage = computed(() => createError.value)
 const completeErrorMessage = computed(() => completeError.value)
@@ -559,10 +559,6 @@ function formatDate(value?: string | null) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString()
 }
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
-
 watch(
   () => route.query,
   (query) => {

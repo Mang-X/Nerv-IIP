@@ -338,7 +338,7 @@ async function submitComplete() {
  */
 const listErrorMessage = computed(() =>
   pickingTasksError.value
-    ? `取不到拣货任务列表，当前拣货进度无法判断：${formatError(pickingTasksError.value)}`
+    ? `取不到拣货任务列表，当前拣货进度无法判断：${inlineErrorMessage(pickingTasksError.value)}`
     : '',
 )
 /**
@@ -429,10 +429,6 @@ function formatDateTime(value?: string | null) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
-
 function refreshAll() {
   void refreshWorkScopes()
   void refreshPickingTasks()
