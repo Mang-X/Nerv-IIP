@@ -8,6 +8,9 @@
 
 | Reference | Producer / 权威来源 | 更新方式 | 主要消费者 | 生成属性 |
 | --- | --- | --- | --- | --- |
+| [`api/contracts-and-codegen.md`](api/contracts-and-codegen.md) | Gateway endpoint/OpenAPI、`openapi-ts.config.ts`、generated client、API 脚本 | producer 路径、生成入口或受控例外变化时同步；不复制 endpoint 清单 | API/Gateway/codegen 开发与审查 | 人工索引；精确事实回到 producer |
+| [`api/facade-coverage-matrix.json`](api/facade-coverage-matrix.json) | 业务 endpoint registry + Gateway OpenAPI；由 `Nerv.IIP.FacadeCoverage.Tests` 验证 | endpoint facade 分类变化时与代码/OpenAPI 原子更新 | BusinessGateway、业务服务、FacadeCoverage 门禁 | 既有机器事实，非人工第二 registry |
+| [`api/business-gateway-surface-restore.manifest.json`](api/business-gateway-surface-restore.manifest.json) | `docs/governance/api/business-gateway-surface.md` 规定的固定 restore 输入与 lock fixture set | canonicalization/restore 合同批准变更时原子更新 | BusinessGateway API surface canonicalizer / 审核 | 既有机器输入 |
 | [`data/database-schema-catalog.md`](data/database-schema-catalog.md) | EF Core migrations、EntityConfigurations、DbContext | Schema/迁移变更时同步人工解释；物理结构以代码为准 | 后端开发、数据库治理、发布排障 | 人工维护 |
 | [`demo/factory-world-bible.md`](demo/factory-world-bible.md) | `WalkthroughSeedSpec`、对应 seed 与行为测试 | 最小走查设定/价格/工时调整时与代码投影一起修改 | Product、Demo、真实走查 | 人工维护，与 seed/spec 共同受控 |
 | [`frontline/contract-page-scope-action.md`](frontline/contract-page-scope-action.md) | BusinessGateway OpenAPI、Gateway 授权/代理实现、generated client、业务服务与页面代码 | 公开 operation、scope、action 或页面消费变化时复核 | 一线页面、PDA/Console 产品与验收 | 人工维护 |
