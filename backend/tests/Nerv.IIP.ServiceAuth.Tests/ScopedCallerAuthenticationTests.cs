@@ -226,6 +226,62 @@ public sealed class ScopedCallerAuthenticationTests
     }
 
     [Fact]
+    public async Task Internal_service_authorization_only_runs_for_its_named_policy()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["InternalService:BearerToken"] = "internal.service.token"
+        }).Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddNervIipInternalServiceAuthorization(configuration, new StubHostEnvironment("Production"));
+        await using var provider = services.BuildServiceProvider();
+
+        var defaultScheme = await provider.GetRequiredService<IAuthenticationSchemeProvider>()
+            .GetDefaultAuthenticateSchemeAsync();
+        await using var wrongTokenScope = provider.CreateAsyncScope();
+        var wrongTokenResult = await Context(wrongTokenScope.ServiceProvider, "Bearer internal.service.tokeX")
+            .AuthenticateAsync(InternalServiceAuthentication.SchemeName);
+
+        Assert.NotNull(defaultScheme);
+        Assert.NotEqual(InternalServiceAuthentication.SchemeName, defaultScheme.Name);
+        Assert.False(wrongTokenResult.Succeeded);
+        Assert.False(wrongTokenResult.None);
+        Assert.NotNull(wrongTokenResult.Failure);
+    }
+
+    [Fact]
+    public async Task Generic_internal_service_provider_and_handler_share_one_credential_snapshot()
+    {
+        const string sessionToken = "session.internal.token";
+        const string changedToken = "session.internal.tokeX";
+        var configuration = new ConfigurationManager
+        {
+            ["InternalService:BearerToken"] = sessionToken
+        };
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddNervIipInternalServiceAuthentication(configuration, new StubHostEnvironment("Production"));
+        await using var provider = services.BuildServiceProvider();
+
+        var outboundToken = provider.GetRequiredService<IInternalServiceTokenProvider>().BearerToken;
+        configuration["InternalService:BearerToken"] = changedToken;
+
+        await using var matchingScope = provider.CreateAsyncScope();
+        var matchingResult = await Context(matchingScope.ServiceProvider, $"Bearer {outboundToken}")
+            .AuthenticateAsync(InternalServiceAuthentication.SchemeName);
+        await using var changedScope = provider.CreateAsyncScope();
+        var changedResult = await Context(changedScope.ServiceProvider, $"Bearer {changedToken}")
+            .AuthenticateAsync(InternalServiceAuthentication.SchemeName);
+
+        Assert.Equal(sessionToken, outboundToken);
+        Assert.True(matchingResult.Succeeded);
+        Assert.False(changedResult.Succeeded);
+        Assert.False(changedResult.None);
+        Assert.NotNull(changedResult.Failure);
+    }
+
+    [Fact]
     public void Duplicate_scoped_caller_scheme_fails_closed_when_the_scheme_provider_is_resolved()
     {
         var services = new ServiceCollection();
