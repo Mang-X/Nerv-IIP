@@ -195,7 +195,19 @@ internal static class PeriodicInspectionReleaseProjection
                             // **为什么带条件、而不是无条件与回填分支对齐**：无条件跳过会打掉一类
                             // 合法的既有输入——`d4a8a711e` 钉住的那条「乱序到达」用例里，
                             // 报工时刻（01:30）**晚于**发布时刻（01:00），产量是**下达之后**真实累积的，
-                            // 那批窗口本就该开。回填侧不需要这个条件是因为它的候选恒 ≤ 全部既有活动。
+                            // 那批窗口本就该开。
+                            //
+                            // **两条分支的实质差别是「跳过的锚点」不同，不是判别式在回填侧恒真：**
+                            //   直投：SkipPeriodicWindowsAccruedBefore(payload.ReleasedAtUtc)   ← 锚在发布事实时刻
+                            //   回填：SkipPeriodicWindowsAccruedBefore(integrationEvent.OccurredAtUtc = GetUtcNow())
+                            //         ← 锚在「现在」，即**无条件**把到现在为止的全部累计记为已生成，这是 #3000 的既有取舍。
+                            // 把本判别式搬到回填侧，它在两类可达输入上都为假——所以回填侧不是「不需要」，
+                            // 而是**取舍不同**。（曾经写在这里的「回填候选恒 ≤ 全部既有活动、结构性成立」
+                            // 是本 PR 自己在回填侧用探针推翻过的句式，已删；勿再引入。）
+                            //
+                            // **改这一处之前先重放 PB**（去掉判别式改成无条件跳过）：
+                            // 它会打红 `PeriodicInspectionIntegrationEventTests.Report_before_release_backfills_quantity_windows_from_the_frozen_context`。
+                            // PA（整块删掉）则打红本分支自己的承重用例。两格是这处不对称的唯一证据。
                             //
                             // 判别式：**该工序在发布时刻或之前已有报工** ⇒ 那批产量发生在下达之前 ⇒ 跳过。
                             // #3117 场景下发布时刻被夹到最早既有活动，故最早那条报工恰好落在等号上；

@@ -81,7 +81,16 @@ public sealed record WorkOrderReleaseFactTime
     /// <c>NcrReworkRequestedIntegrationEventHandlerForCreateMesWorkOrder</c>（跨服务载荷）。
     /// 新增外部入口的人**不调本方法也能编译**——这一格没有编译期防线，靠的是这条注释与两条用例。</para>
     ///
-    /// <para><b>还有第三条外部输入在影响发布事实时刻，但它不经过本方法（如实登记，非疏漏）：</b>
+    /// <para><b>下界这条主臂本身也是未夹紧的外部输入：</b>
+    /// <c>RecordProductionReportRequest.ReportedAtUtc</c> 是**必填**请求体字段
+    /// （<c>MesEndpoints</c> 的报工请求记录），<c>RecordProductionReportEndpoint</c> **原样透传**、
+    /// 既无 <c>?? GetUtcNow()</c> 也无夹紧，经 <c>ProductionReports.ReportedAtUtc</c> →
+    /// 「最早既有活动」→ 发布事实时刻。**风险刻画与下面 <c>ChangedAtUtc</c> 那条完全同型**：
+    /// 未来值不构成风险（<see cref="NotLaterThan"/> 只取更早者），任意回拨的过去值会把发布事实时刻拉早。
+    /// 上一版这份枚举把口径放宽成「能到达发布事实时刻的外部输入」之后**没有按新口径重新枚举一遍**，
+    /// 于是漏掉了这条主臂——枚举式名单在口径变化时跟不上，是本仓成文教训「枚举 vs 结构性闭合」的形态。</para>
+    ///
+    /// <para><b>另有一条经工序完工进入的外部输入：</b>
     /// 工序动作端点的 <c>req.ChangedAtUtc</c>（<c>MesEndpoints</c> 里 start/pause/resume/complete
     /// 四个动作共用、只做 <c>?? GetUtcNow()</c> 空值回落、**不夹**）。它经
     /// <c>OperationTask.ExistingEndUtc</c> → 「最早既有活动」→ 发布事实时刻 → 信封 <c>OccurredAtUtc</c>。
