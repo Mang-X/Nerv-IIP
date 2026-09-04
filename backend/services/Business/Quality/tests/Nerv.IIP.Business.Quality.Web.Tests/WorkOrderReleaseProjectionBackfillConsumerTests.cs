@@ -310,6 +310,76 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
     }
 
     /// <summary>
+    /// #3117 的验收落点：MES 直投的发布时刻按既有活动（报工或工序完工）取下界，最紧的一格就是「发布时刻恰等于最早报工」。
+    /// Quality 的守卫拒的是「报工**早于**发布」，等号必须放行——否则下界取到位了投影仍然进死信，
+    /// 那张工单继续 <c>not-synchronized</c>、被 #2780 门禁永久拒。
+    /// 对照是同一文件里的 <c>Live_release_with_conflicting_facts_still_dead_letters</c>：
+    /// 发布晚于既有事实时该守卫照样拒。
+    /// </summary>
+    [Fact]
+    public async Task Live_release_lands_when_its_time_equals_the_earliest_known_report()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.InspectionPlans.Add(FirstArticlePlan());
+        await dbContext.SaveChangesAsync();
+        // 先报工、后下达：这条报工的时刻就是 MES 侧算出的发布时刻下界。
+        await HandleReportAsync(dbContext, ProductionReport());
+        var earliestReportedAtUtc = DateTimeOffset.Parse("2026-08-02T00:00:00Z");
+
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        await HandleLiveReleaseAsync(
+            dbContext,
+            LiveRelease(releasedAtUtc: earliestReportedAtUtc),
+            deadLetters);
+
+        Assert.Empty(await deadLetters.ListAsync(null, null, CancellationToken.None));
+        var operation = await dbContext.PeriodicInspectionOperations.SingleAsync();
+        Assert.Equal(earliestReportedAtUtc.UtcDateTime, operation.ReleasedAtUtc);
+        Assert.NotEqual(
+            QualityFirstArticleConfirmationStatuses.NotSynchronized,
+            (await ConfirmAsync(dbContext)).Status);
+    }
+
+    /// <summary>
+    /// **「完工先于下达、零报工」这条新输入类的 Quality 侧端到端读数**（复审 N3，两轮点名）。
+    ///
+    /// <para>MES 侧由 `WorkOrderReleaseFactTimeTests.Release_after_an_operation_already_completed_…`
+    /// 钉住「发布事实时刻被压到最早工序完工」这个**产出值**；但该值到达 Quality 之后能不能落库、
+    /// 会不会被完工守卫判冲突进死信，此前只有分服务的解析式推断、**没有端到端读数**。本用例补上这一格。</para>
+    ///
+    /// <para><b>生产调用链</b>（按本票采纳的结构性约束给链，不给聚合序列）：
+    /// 工序动作 `complete`（`ChangeOperationTaskStateCommandHandler`，`pendingProductionReportNos` 传 `[]`、
+    /// 时刻取 `req.ChangedAtUtc`，**不产生任何报工行**）→ `mes.OperationTaskCompleted` → Quality 先落完工事实；
+    /// 随后 `POST …/release` → `ReleaseWorkOrderCommandHandler`（按最早既有活动取下界，此处即最早工序完工）
+    /// → `mes.WorkOrderReleased` → 本处 `Authoritative` 分支。</para>
+    ///
+    /// <para>守卫是 `PeriodicInspectionOperation` 的
+    /// 「`CompletedAtUtc &lt; releasedAtUtc` ⇒ 冲突」那条；发布时刻恰等于完工时刻时**必须放行**，
+    /// 否则 MES 侧把下界取到位了、投影仍然进死信。</para>
+    /// </summary>
+    [Fact]
+    public async Task Live_release_lands_when_its_time_equals_the_only_completion_and_nothing_was_reported()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.InspectionPlans.Add(FirstArticlePlan());
+        await dbContext.SaveChangesAsync();
+
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        // 先到的是完工事实，且**一条报工都没有**——这正是 MES 侧新纳入下界的那一类输入。
+        await HandleCompletionAsync(dbContext, OperationCompleted("OP-10", skuCode: "SKU-FG-1000"), deadLetters);
+        var completedAtUtc = DateTimeOffset.Parse("2026-08-20T00:00:00Z");
+
+        await HandleLiveReleaseAsync(dbContext, LiveRelease(releasedAtUtc: completedAtUtc), deadLetters);
+
+        Assert.Empty(await deadLetters.ListAsync(null, null, CancellationToken.None));
+        var operation = await dbContext.PeriodicInspectionOperations.SingleAsync();
+        // 前提自检：确实是「零报工」那条输入类，否则本用例测的是报工下界那一面。
+        Assert.Empty(operation.ProductionReports);
+        Assert.Equal(completedAtUtc.UtcDateTime, operation.CompletedAtUtc);
+        Assert.Equal(completedAtUtc.UtcDateTime, operation.ReleasedAtUtc);
+    }
+
+    /// <summary>
     /// 直投侧不得跟着回填一起「跳过已有发布事实」：同一工序收到第二份**内容不同**的发布事实
     /// 是真实异常，必须判为冲突进死信。本 PR 把该判断做成了按调用点取值的参数，
     /// 因此直投那一半也要有断言承重，否则参数被翻反不会红。

@@ -440,6 +440,53 @@ public sealed class WorkOrderReleaseProjectionBackfillTests
     }
 
     /// <summary>
+    /// **回填侧的完工下界**（#3117 第四轮 / 复审 R4 + 变异 W1·W2）。
+    ///
+    /// <para>回填与直投走的是**同一个 <c>ApplyRelease</c>、同一组守卫**，所以完工这一面两侧都要设防。
+    /// 上一版这里写的是「一道工序不可能早于自己被建出就完工，故候选恒 ≤ 任何完工时刻，
+    /// **这是结构性成立**」——**该主张已被证伪**：`OperationTask.CreatedAtUtc` 是服务端墙钟，
+    /// 而 `Start`/`FreezeCompletion` 都不与它比较，完工时刻来源 `req.ChangedAtUtc` 是四个工序动作端点
+    /// 共用、**未夹紧**的请求体字段。</para>
+    ///
+    /// <para><b>本用例是那次修法的唯一承重者。</b>变异实测：把回填侧的完工下界整条撤掉（W1）、
+    /// 或把完工集合掐空（W2），在本用例出现之前**全仓零红**——即那处改动当时没有任何承担者。
+    /// 夹具全程走**聚合方法**（`Queue` → `Start` → `Complete`），是域可达状态，
+    /// 不是手搓的 `InProgress + 非空 ExistingEndUtc`（R6 刚踩过那个坑）。</para>
+    /// </summary>
+    [Fact]
+    public async Task Release_time_falls_back_to_the_earliest_backdated_completion_when_nothing_was_reported()
+    {
+        await using var dbContext = CreateDbContext();
+        var workOrder = WorkOrder.Create(
+            "org-001", "env-dev", "WO-BACKDATED-DONE", "SKU-FG-1000", null,
+            quantity: 1000m, priority: 1, dueUtc: Now.AddDays(3));
+        Started(workOrder);
+        dbContext.WorkOrders.Add(workOrder);
+
+        // 回拨的 ChangedAtUtc：开工与完工都记在 2020 年，而工序建单时刻是「现在」。
+        var backdatedCompletion = DateTimeOffset.Parse("2020-01-01T01:00:00Z");
+        var task = OperationTask.Queue(
+            "org-001", "env-dev", "WO-BACKDATED-DONE", "OP-WO-BACKDATED-DONE-10",
+            10, "WC-010", [], Now, TimeSpan.FromHours(1), "SKU-FG-1000", "EA", 1000m);
+        task.Start(DateTimeOffset.Parse("2020-01-01T00:00:00Z"));
+        task.Complete(backdatedCompletion, []);
+        dbContext.OperationTasks.Add(task);
+        await dbContext.SaveChangesAsync();
+
+        // 前提自检：这条路径**零报工**（否则本用例会被报工下界顺带杀掉、失去针对性），
+        // 且完工时刻确实早于工序建单时刻（否则下界不会绑定，变异照样绿）。
+        Assert.Empty(dbContext.ProductionReports);
+        Assert.Equal(backdatedCompletion, task.ExistingEndUtc);
+        Assert.True(task.ExistingEndUtc < task.CreatedAtUtc);
+
+        var publisher = new RecordingPublisher();
+        await CreateHandler(dbContext, publisher).Handle(new BackfillWorkOrderReleaseProjectionCommand(), CancellationToken.None);
+
+        var published = Assert.Single(publisher.Published);
+        Assert.Equal(backdatedCompletion, published.Payload.ReleasedAtUtc);
+    }
+
+    /// <summary>
     /// 直接改持久化值。<c>OperationTask.CreatedAtUtc</c> 是私有 setter、构造函数里取 <c>UtcNow</c>，
     /// 没有注入点；存量行的建单时刻本来就是各不相同的历史值，用变更跟踪设定它即可复刻，
     /// 不必依赖两次 <c>UtcNow</c> 读数的亚微秒差（那是已知易抖的写法）。
