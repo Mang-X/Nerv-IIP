@@ -2097,6 +2097,14 @@
     },
     {
       "service": "Maintenance",
+      "method": "POST",
+      "route": "/api/business/v2/maintenance/work-orders",
+      "operationId": "createMaintenanceWorkOrderV2",
+      "classification": "deferred",
+      "followUp": "BusinessGateway v2 proxy, independent operationId/DTO and regenerated client follow #2969 (migration chain #2952 / spec #2964); v2 replaces free-text assetUnavailableReason with a catalog-validated assetUnavailableReasonCode and dual-publishes v1+v2 AssetUnavailable events."
+    },
+    {
+      "service": "Maintenance",
       "method": "GET",
       "route": "/api/business/v1/maintenance/work-orders/{workOrderId}",
       "operationId": "getMaintenanceWorkOrder",

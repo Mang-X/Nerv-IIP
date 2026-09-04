@@ -35,14 +35,14 @@
 | Erp | 59 | 43 | 15 | 1 |
 | IndustrialTelemetry | 28 | 25 | 1 | 2 |
 | Inventory | 19 | 13 | 1 | 5 |
-| Maintenance | 26 | 20 | 4 | 2 |
+| Maintenance | 27 | 20 | 5 | 2 |
 | MasterData | 50 | 45 | 1 | 4 |
 | Mes | 65 | 64 | 0 | 1 |
 | ProductEngineering | 39 | 38 | 0 | 1 |
 | Quality | 43 | 30 | 12 | 1 |
 | Scheduling | 15 | 13 | 1 | 1 |
 | Wms | 49 | 37 | 7 | 5 |
-| **Total** | **441** | **368** | **46** | **27** |
+| **Total** | **442** | **368** | **47** | **27** |
 
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
