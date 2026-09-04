@@ -1,5 +1,6 @@
 using System.Text.Json;
 using DotNetCore.CAP;
+using DotNetCore.CAP.Persistence;
 using MediatR;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -45,22 +46,24 @@ public sealed class MaintenanceAssetUnavailableV2WiringTests
     }
 
     [Fact]
-    public void Testing_cap_registration_keeps_the_existing_no_outbox_behaviour()
+    public async Task Testing_cap_registration_activates_the_v2_dual_publisher_and_fails_loudly_on_publish_without_cap()
     {
         using var provider = BuildProvider("Testing", isTesting: true);
 
-        Assert.Null(provider.GetService<IMaintenanceIntegrationEventOutboxPublisher>());
-        Assert.Null(provider.GetService<ICapPublisher>());
-        Assert.Null(provider.GetService<MaintenanceAssetUnavailableTopicOptions>());
+        // 无条件注册：Testing 环境打 v2 入口时领域事件派发不会在 DI 解析处失败（house style 同 MES Program.cs）。
+        var outbox = Assert.IsType<CapMaintenanceIntegrationEventOutboxPublisher>(provider.GetRequiredService<IMaintenanceIntegrationEventOutboxPublisher>());
+        Assert.Equal("Testing", provider.GetRequiredService<MaintenanceAssetUnavailableTopicOptions>().DeploymentProfile);
+        Assert.Single(provider.GetServices<INotificationHandler<AssetUnavailableByReasonCodeDomainEvent>>().OfType<AssetUnavailableV2IntegrationEventPublisher>());
 
-        // 与 v1 完全对齐：Testing 分支不接任何 outbox，v1 转换器 handler（缺 IIntegrationEventPublisher）和 v2 双发 publisher
-        // （缺 IMaintenanceIntegrationEventOutboxPublisher）在这里同样不可激活；v2 没有偷偷多一条只在测试里成立的发布路径。
+        // Testing 与既有 v1 同一边界：不接 CAP 存储/transport；真走到发布时显式失败而不是静默吞事件。
+        Assert.Null(provider.GetService<ICapPublisher>());
+        Assert.Null(provider.GetService<IStorageInitializer>());
+        var publish = await Record.ExceptionAsync(() => outbox.PublishAsync("any-topic", new object(), CancellationToken.None));
+        Assert.IsType<InvalidOperationException>(publish);
+        Assert.Equal(CapMaintenanceIntegrationEventOutboxPublisher.NotWiredMessage, publish.Message);
         var v1Activation = Record.Exception(() => provider.GetServices<INotificationHandler<AssetUnavailableDomainEvent>>().ToArray());
-        var v2Activation = Record.Exception(() => provider.GetServices<INotificationHandler<AssetUnavailableByReasonCodeDomainEvent>>().ToArray());
         Assert.IsType<InvalidOperationException>(v1Activation);
         Assert.Contains(nameof(IIntegrationEventPublisher), v1Activation.Message, StringComparison.Ordinal);
-        Assert.IsType<InvalidOperationException>(v2Activation);
-        Assert.Contains(nameof(IMaintenanceIntegrationEventOutboxPublisher), v2Activation.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -80,6 +83,7 @@ public sealed class MaintenanceAssetUnavailableV2WiringTests
             Assert.Single(locks.OfType<CreateMaintenanceWorkOrderV2CommandLock>());
             Assert.Single(scope.ServiceProvider.GetServices<ICommandLock<CreateMaintenanceWorkOrderCommand>>().OfType<CreateMaintenanceWorkOrderCommandLock>());
             Assert.NotNull(scope.ServiceProvider.GetService<IRequestHandler<CreateMaintenanceWorkOrderV2Command, MaintenanceWorkOrderCommandResult>>());
+            Assert.Single(scope.ServiceProvider.GetServices<INotificationHandler<AssetUnavailableByReasonCodeDomainEvent>>().OfType<AssetUnavailableV2IntegrationEventPublisher>());
         }
 
         using var client = factory.CreateClient();

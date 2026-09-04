@@ -72,10 +72,18 @@ public sealed class MaintenanceAssetUnavailableV2PostgresTests
         Assert.Equal("maintenance.AssetUnavailable", Get(v1, "eventType").GetString());
         Assert.Equal(Get(v1, "eventType").GetString(), Get(v2, "eventType").GetString());
         Assert.NotEqual(Get(v1, "eventId").GetString(), Get(v2, "eventId").GetString());
-        var expectedKey = $"asset-unavailable:{workOrder.Id}:{workOrder.AssetUnavailableFromUtc.Value:O}";
+        // 业务键只能从 envelope 自己的时间重算：timestamptz 只有微秒精度，从工单列回读的 fromUtc 已丢掉 100ns 位，
+        // Linux 上 UtcNow 的 100ns 位非 0（macOS 恰好微秒对齐），用列值重算会假红。
+        var v1FromUtc = DateTimeOffset.Parse(Get(Get(v1, "payload"), "fromUtc").GetString()!, null, System.Globalization.DateTimeStyles.RoundtripKind);
+        var expectedKey = $"asset-unavailable:{workOrder.Id}:{v1FromUtc:O}";
         Assert.Equal(expectedKey, Get(v1, "idempotencyKey").GetString());
         Assert.Equal(expectedKey, Get(v2, "idempotencyKey").GetString());
+        Assert.Equal(Get(v1, "idempotencyKey").GetString(), Get(v2, "idempotencyKey").GetString());
+        Assert.StartsWith($"asset-unavailable:{workOrder.Id}:", Get(v2, "idempotencyKey").GetString(), StringComparison.Ordinal);
         Assert.Equal(Get(v1, "occurredAtUtc").GetRawText(), Get(v2, "occurredAtUtc").GetRawText());
+        Assert.Equal(Get(Get(v1, "payload"), "fromUtc").GetRawText(), Get(Get(v2, "payload"), "fromUtc").GetRawText());
+        // 列值是微秒截断后的同一时刻。
+        Assert.Equal(TruncateToMicroseconds(v1FromUtc), workOrder.AssetUnavailableFromUtc.Value.ToUniversalTime());
         Assert.Equal(Get(v1, "correlationId").GetString(), Get(v2, "correlationId").GetString());
         Assert.Equal(Get(v1, "causationId").GetString(), Get(v2, "causationId").GetString());
         Assert.Equal(("org-001", "env-dev", "operator-001"), (Get(v2, "organizationId").GetString(), Get(v2, "environmentId").GetString(), Get(v2, "actor").GetString()));
@@ -152,8 +160,9 @@ public sealed class MaintenanceAssetUnavailableV2PostgresTests
         {
             services.RemoveAll<IMaintenanceIntegrationEventOutboxPublisher>();
             services.AddScoped<IMaintenanceIntegrationEventOutboxPublisher>(sp =>
-                new FailOnV2TopicOutboxPublisher(
-                    new CapMaintenanceIntegrationEventOutboxPublisher(sp.GetRequiredService<ICapPublisher>())));
+                new FailOnTopicOutboxPublisher(
+                    new CapMaintenanceIntegrationEventOutboxPublisher(sp),
+                    topic => AssetUnavailableIntegrationEventTopics.TryParseV2(topic, out _)));
         });
         await MigrateAndSeedCatalogAsync(factory);
         await InitializeCapAsync(factory);
@@ -162,11 +171,42 @@ public sealed class MaintenanceAssetUnavailableV2PostgresTests
         var response = await client.PostAsJsonAsync("/api/business/v2/maintenance/work-orders", V2Body("v2-pg-rollback", ExactCode));
 
         Assert.False(response.IsSuccessStatusCode);
-        var decorator = FailOnV2TopicOutboxPublisher.Last;
+        var decorator = FailOnTopicOutboxPublisher.Last;
         Assert.NotNull(decorator);
         // v1 companion 已经真的经 CAP 进了同一事务（不是被跳过），随后 v2 写入失败让整笔事务回滚。
         Assert.Equal([V1LegacyTopic], decorator.DelegatedTopics);
         Assert.Equal(V2DevelopmentTopic, decorator.RejectedTopic);
+
+        await using var db = CreateDbContext();
+        Assert.Equal(0, await db.MaintenanceWorkOrders.CountAsync());
+        Assert.Equal(0, await db.CodeIdempotencyKeys.CountAsync());
+        Assert.Empty(await ReadOutboxAsync(db));
+    }
+
+    [MaintenanceAssetUnavailableV2PostgresFact]
+    public async Task V1_companion_outbox_failure_rolls_back_the_work_order_before_the_v2_envelope_is_attempted()
+    {
+        await ResetMaintenanceSchemaAsync();
+        await using var factory = CreateFactory(services =>
+        {
+            services.RemoveAll<IMaintenanceIntegrationEventOutboxPublisher>();
+            services.AddScoped<IMaintenanceIntegrationEventOutboxPublisher>(sp =>
+                new FailOnTopicOutboxPublisher(
+                    new CapMaintenanceIntegrationEventOutboxPublisher(sp),
+                    topic => topic == V1LegacyTopic));
+        });
+        await MigrateAndSeedCatalogAsync(factory);
+        await InitializeCapAsync(factory);
+        using var client = CreateClient(factory);
+
+        var response = await client.PostAsJsonAsync("/api/business/v2/maintenance/work-orders", V2Body("v2-pg-rollback-v1", ExactCode));
+
+        Assert.False(response.IsSuccessStatusCode);
+        var decorator = FailOnTopicOutboxPublisher.Last;
+        Assert.NotNull(decorator);
+        Assert.Equal(V1LegacyTopic, decorator.RejectedTopic);
+        // v1 companion 先失败，v2 canonical 根本不会尝试：不存在「只发了 v2」的半次双发。
+        Assert.Empty(decorator.DelegatedTopics);
 
         await using var db = CreateDbContext();
         Assert.Equal(0, await db.MaintenanceWorkOrders.CountAsync());
@@ -378,11 +418,11 @@ public sealed class MaintenanceAssetUnavailableV2PostgresTests
             (observed.Host, observed.Port, observed.Database));
     }
 
-    /// <summary>v1 companion 真的经 CAP 进事务，v2 canonical 写入时抛错——模拟第二条 outbox 失败。</summary>
-    private sealed class FailOnV2TopicOutboxPublisher(IMaintenanceIntegrationEventOutboxPublisher inner)
+    /// <summary>被拒绝的 topic 抛错，其余 topic 真的经 CAP 进同一事务——模拟双发中任一条 outbox 写入失败。</summary>
+    private sealed class FailOnTopicOutboxPublisher(IMaintenanceIntegrationEventOutboxPublisher inner, Func<string, bool> reject)
         : IMaintenanceIntegrationEventOutboxPublisher
     {
-        public static FailOnV2TopicOutboxPublisher? Last { get; private set; }
+        public static FailOnTopicOutboxPublisher? Last { get; private set; }
 
         public List<string> DelegatedTopics { get; } = [];
 
@@ -391,16 +431,19 @@ public sealed class MaintenanceAssetUnavailableV2PostgresTests
         public async Task PublishAsync<T>(string topic, T integrationEvent, CancellationToken cancellationToken)
         {
             Last = this;
-            if (AssetUnavailableIntegrationEventTopics.TryParseV2(topic, out _))
+            if (reject(topic))
             {
                 RejectedTopic = topic;
-                throw new InvalidOperationException("Simulated v2 outbox failure.");
+                throw new InvalidOperationException($"Simulated outbox failure for '{topic}'.");
             }
 
             DelegatedTopics.Add(topic);
             await inner.PublishAsync(topic, integrationEvent, cancellationToken);
         }
     }
+
+    private static DateTimeOffset TruncateToMicroseconds(DateTimeOffset value) =>
+        new(value.Ticks - value.Ticks % 10, value.Offset);
 
     private sealed class NoopMediator : IMediator
     {
