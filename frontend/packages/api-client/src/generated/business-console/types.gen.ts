@@ -6860,6 +6860,41 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     environmentId: string;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleShiftHandoverAttachmentUploadSessionResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleShiftHandoverAttachmentUploadSessionResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleShiftHandoverAttachmentUploadSessionResponse = {
+    uploadSessionId?: string;
+    fileId?: string;
+    uploadProtocol?: string;
+    expiresAtUtc?: string;
+    uploadUrl?: string;
+    uploadHeaders?: {
+        [key: string]: string;
+    };
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateShiftHandoverAttachmentUploadSessionRequest = {
+    organizationId: string;
+    environmentId: string;
+    fileName: string;
+    contentType: string;
+    expectedSizeBytes?: number;
+    checksum?: string | null;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesShiftHandoverAttachment = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverAttachment | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteShiftHandoverAttachmentUploadRequest = {
+    organizationId: string;
+    environmentId: string;
+    checksum?: string | null;
+    sizeBytes?: number | null;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpPurchaseOrderListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseOrderListResponse | null;
 };
@@ -20126,6 +20161,161 @@ export type DownloadBusinessConsoleSopFileContentResponses = {
 };
 
 export type DownloadBusinessConsoleSopFileContentResponse = DownloadBusinessConsoleSopFileContentResponses[keyof DownloadBusinessConsoleSopFileContentResponses];
+
+export type CreateBusinessConsoleShiftHandoverAttachmentUploadSessionData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateShiftHandoverAttachmentUploadSessionRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/files/shift-handover-attachments/upload-sessions';
+};
+
+export type CreateBusinessConsoleShiftHandoverAttachmentUploadSessionErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateBusinessConsoleShiftHandoverAttachmentUploadSessionError = CreateBusinessConsoleShiftHandoverAttachmentUploadSessionErrors[keyof CreateBusinessConsoleShiftHandoverAttachmentUploadSessionErrors];
+
+export type CreateBusinessConsoleShiftHandoverAttachmentUploadSessionResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleShiftHandoverAttachmentUploadSessionResponse;
+};
+
+export type CreateBusinessConsoleShiftHandoverAttachmentUploadSessionResponse = CreateBusinessConsoleShiftHandoverAttachmentUploadSessionResponses[keyof CreateBusinessConsoleShiftHandoverAttachmentUploadSessionResponses];
+
+export type CompleteBusinessConsoleShiftHandoverAttachmentUploadData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteShiftHandoverAttachmentUploadRequest;
+    path: {
+        uploadSessionId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/files/shift-handover-attachments/upload-sessions/{uploadSessionId}/complete';
+};
+
+export type CompleteBusinessConsoleShiftHandoverAttachmentUploadErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CompleteBusinessConsoleShiftHandoverAttachmentUploadError = CompleteBusinessConsoleShiftHandoverAttachmentUploadErrors[keyof CompleteBusinessConsoleShiftHandoverAttachmentUploadErrors];
+
+export type CompleteBusinessConsoleShiftHandoverAttachmentUploadResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesShiftHandoverAttachment;
+};
+
+export type CompleteBusinessConsoleShiftHandoverAttachmentUploadResponse = CompleteBusinessConsoleShiftHandoverAttachmentUploadResponses[keyof CompleteBusinessConsoleShiftHandoverAttachmentUploadResponses];
+
+export type GetBusinessConsoleShiftHandoverAttachmentTusOffsetData = {
+    body?: never;
+    path: {
+        uploadSessionId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/files/shift-handover-attachments/tus/{uploadSessionId}';
+};
+
+export type GetBusinessConsoleShiftHandoverAttachmentTusOffsetErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleShiftHandoverAttachmentTusOffsetResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type GetBusinessConsoleShiftHandoverAttachmentTusOffsetResponse = GetBusinessConsoleShiftHandoverAttachmentTusOffsetResponses[keyof GetBusinessConsoleShiftHandoverAttachmentTusOffsetResponses];
+
+export type PatchBusinessConsoleShiftHandoverAttachmentTusUploadData = {
+    body?: never;
+    path: {
+        uploadSessionId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/files/shift-handover-attachments/tus/{uploadSessionId}';
+};
+
+export type PatchBusinessConsoleShiftHandoverAttachmentTusUploadErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type PatchBusinessConsoleShiftHandoverAttachmentTusUploadResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type PatchBusinessConsoleShiftHandoverAttachmentTusUploadResponse = PatchBusinessConsoleShiftHandoverAttachmentTusUploadResponses[keyof PatchBusinessConsoleShiftHandoverAttachmentTusUploadResponses];
+
+export type DownloadBusinessConsoleShiftHandoverAttachmentContentData = {
+    body?: never;
+    path: {
+        fileId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/files/shift-handover-attachments/{fileId}/content';
+};
+
+export type DownloadBusinessConsoleShiftHandoverAttachmentContentErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type DownloadBusinessConsoleShiftHandoverAttachmentContentResponses = {
+    /**
+     * Success
+     */
+    200: Blob | File;
+};
+
+export type DownloadBusinessConsoleShiftHandoverAttachmentContentResponse = DownloadBusinessConsoleShiftHandoverAttachmentContentResponses[keyof DownloadBusinessConsoleShiftHandoverAttachmentContentResponses];
 
 export type ListBusinessConsoleErpPurchaseOrdersData = {
     body?: never;

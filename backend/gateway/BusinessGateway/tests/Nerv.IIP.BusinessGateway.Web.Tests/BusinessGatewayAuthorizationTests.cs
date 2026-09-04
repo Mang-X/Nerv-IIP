@@ -641,10 +641,19 @@ public sealed class BusinessGatewayAuthorizationTests
             horizonStart = "2026-05-25",
             horizonEnd = "2026-06-30",
         },
-        "/api/business-console/v1/files/file-sop-v2/download-grants" => new
+        "/api/business-console/v1/files/file-sop-v2/download-grants"
+            or "/api/business-console/v1/files/shift-handover-attachments/upload-sessions/ups-handover-1/complete" => new
         {
             organizationId = "org-001",
             environmentId = "env-dev",
+        },
+        "/api/business-console/v1/files/shift-handover-attachments/upload-sessions" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            fileName = "handover.jpg",
+            contentType = "image/jpeg",
+            expectedSizeBytes = 2048,
         },
         "/api/business-console/v1/scheduling/plans/preview" or "/api/business-console/v1/scheduling/plans" => new
         {
@@ -1294,6 +1303,12 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/production-versions/resolve", BusinessGatewayPermissions.EngineeringProductionVersionsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/files/file-sop-v2/download-grants", BusinessGatewayPermissions.EngineeringDocumentsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/files/download-grants/grant-sop-v2/content", BusinessGatewayPermissions.EngineeringDocumentsRead);
+        // #3085：交接班附件面与 SOP 面共用 FileStorage 但不共用权限口径。写面归 handovers.manage，
+        // 读面归 handovers.read，两侧都不落到 engineering.documents.read 上。
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/files/shift-handover-attachments/upload-sessions", BusinessGatewayPermissions.MesHandoversManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/files/shift-handover-attachments/upload-sessions/ups-handover-1/complete", BusinessGatewayPermissions.MesHandoversManage);
+        routes.Add(HttpMethod.Patch, "/api/business-console/v1/files/shift-handover-attachments/tus/ups-handover-1", BusinessGatewayPermissions.MesHandoversManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/files/shift-handover-attachments/file-handover-1/content", BusinessGatewayPermissions.MesHandoversRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/demands", BusinessGatewayPermissions.PlanningDemandsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/demands", BusinessGatewayPermissions.PlanningDemandsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/forecasts", BusinessGatewayPermissions.PlanningDemandsRead);

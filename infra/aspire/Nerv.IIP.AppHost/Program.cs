@@ -892,9 +892,13 @@ var businessGateway = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddPro
     .WithEnvironment("Notification__BaseUrl", notification.GetEndpoint("http"))
     .WithEnvironment("IndustrialTelemetry__BaseUrl", businessIndustrialTelemetry.GetEndpoint("http"))
     .WithEnvironment("Maintenance__BaseUrl", businessMaintenance.GetEndpoint("http"))
+    // BusinessGateway 的 FileStorage 门面（工程 SOP 下载、交接班附件上传下载）此前没有这行，
+    // 客户端回落到固定端口 5104；在动态端口的 ephemeral 会话上必然连不上，整个文件面 500。
+    .WithEnvironment("FileStorage__BaseUrl", fileStorage.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(apphub)
     .WithReference(iam)
+    .WithReference(fileStorage)
     .WithReference(businessMasterData)
     .WithReference(businessInventory)
     .WithReference(businessQuality)
@@ -912,6 +916,7 @@ var businessGateway = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddPro
     .WithReference(redis)
     .WaitFor(apphub)
     .WaitFor(iam)
+    .WaitFor(fileStorage)
     .WaitFor(businessMasterData)
     .WaitFor(businessInventory)
     .WaitFor(businessQuality)

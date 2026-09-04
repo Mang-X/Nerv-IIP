@@ -15793,6 +15793,101 @@ internal sealed class RecordingBusinessFileStorageClient : IBusinessFileStorageC
             "SOP PDF bytes".Length,
             "SOP PDF bytes"u8.ToArray()));
     }
+
+    public string? LastUploadOwnerId { get; private set; }
+
+    public BusinessConsoleCreateShiftHandoverAttachmentUploadSessionRequest? LastUploadSessionRequest { get; private set; }
+
+    public string? LastCompletedUploadSessionId { get; private set; }
+
+    public BusinessConsoleCompleteShiftHandoverAttachmentUploadRequest? LastCompleteRequest { get; private set; }
+
+    public string? LastTusHeadUploadSessionId { get; private set; }
+
+    public string? LastTusPatchUploadSessionId { get; private set; }
+
+    public string? LastAttachmentContentFileId { get; private set; }
+
+    public string? LastAttachmentContentOrganizationId { get; private set; }
+
+    public string? LastAttachmentContentEnvironmentId { get; private set; }
+
+    public Task<BusinessConsoleShiftHandoverAttachmentUploadSessionResponse> CreateShiftHandoverAttachmentUploadSessionAsync(
+        string internalBearerToken,
+        string ownerId,
+        BusinessConsoleCreateShiftHandoverAttachmentUploadSessionRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastUploadOwnerId = ownerId;
+        LastUploadSessionRequest = request;
+        return Task.FromResult(new BusinessConsoleShiftHandoverAttachmentUploadSessionResponse(
+            "ups-handover-1",
+            "file-handover-1",
+            "tus",
+            DateTimeOffset.Parse("2026-09-02T08:00:00Z"),
+            "/api/business-console/v1/files/shift-handover-attachments/tus/ups-handover-1",
+            new Dictionary<string, string> { ["x-nerv-upload-mode"] = "tus" }));
+    }
+
+    public Task<BusinessConsoleMesShiftHandoverAttachment> CompleteShiftHandoverAttachmentUploadAsync(
+        string internalBearerToken,
+        string uploadSessionId,
+        BusinessConsoleCompleteShiftHandoverAttachmentUploadRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCompletedUploadSessionId = uploadSessionId;
+        LastCompleteRequest = request;
+        return Task.FromResult(new BusinessConsoleMesShiftHandoverAttachment(
+            "file-handover-1",
+            "handover.jpg",
+            "image/jpeg",
+            2048));
+    }
+
+    public Task ProxyShiftHandoverAttachmentTusHeadAsync(
+        string internalBearerToken,
+        string uploadSessionId,
+        HttpResponse targetResponse,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastTusHeadUploadSessionId = uploadSessionId;
+        targetResponse.StatusCode = StatusCodes.Status204NoContent;
+        targetResponse.Headers["Upload-Offset"] = "1024";
+        return Task.CompletedTask;
+    }
+
+    public Task ProxyShiftHandoverAttachmentTusPatchAsync(
+        string internalBearerToken,
+        string uploadSessionId,
+        HttpRequest sourceRequest,
+        HttpResponse targetResponse,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastTusPatchUploadSessionId = uploadSessionId;
+        targetResponse.StatusCode = StatusCodes.Status204NoContent;
+        targetResponse.Headers["Upload-Offset"] = "2048";
+        return Task.CompletedTask;
+    }
+
+    public Task StreamShiftHandoverAttachmentContentAsync(
+        string internalBearerToken,
+        string fileId,
+        string organizationId,
+        string environmentId,
+        HttpResponse targetResponse,
+        CancellationToken cancellationToken)
+    {
+        LastContentInternalToken = internalBearerToken;
+        LastAttachmentContentFileId = fileId;
+        LastAttachmentContentOrganizationId = organizationId;
+        LastAttachmentContentEnvironmentId = environmentId;
+        targetResponse.ContentType = "application/octet-stream";
+        return targetResponse.Body.WriteAsync("handover photo bytes"u8.ToArray(), cancellationToken).AsTask();
+    }
 }
 internal sealed class RecordingProductEngineeringClient : IBusinessProductEngineeringClient
 {
