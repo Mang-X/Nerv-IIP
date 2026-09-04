@@ -508,9 +508,10 @@ public sealed record IntegrationEventDeadLetterMessage(
 
     /// <summary>
     /// Dead letters must be writable for exactly the objects that violate their own contract. Typed serialization
-    /// runs the contract's <c>JsonConverter.Write</c>, and converters in this repository validate on write too,
-    /// so an envelope that breaks its wire contract would make <see cref="Create{TIntegrationEvent}"/> itself throw
-    /// (#3101). Fall back to a converter-free projection of the public envelope members so the evidence is kept.
+    /// runs the contract converters (type-level and property-level), and converters in this repository validate on
+    /// write too, so an envelope that breaks its wire contract would make <see cref="Create{TIntegrationEvent}"/>
+    /// itself throw (#3101). Fall back to <see cref="ForensicJson"/>, which walks the object graph with no converter
+    /// at all, so nested property converters cannot re-introduce the failure.
     /// </summary>
     private static string SerializeForForensics(IIntegrationEventEnvelope integrationEvent)
     {
@@ -518,20 +519,136 @@ public sealed record IntegrationEventDeadLetterMessage(
         {
             return JsonSerializer.Serialize(integrationEvent, integrationEvent.GetType());
         }
-        catch (JsonException)
+        catch (Exception exception) when (exception is not OutOfMemoryException and not StackOverflowException)
         {
-            var projection = new Dictionary<string, object?>(StringComparer.Ordinal);
-            foreach (var property in integrationEvent.GetType().GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+            return ForensicJson.Serialize(integrationEvent);
+        }
+    }
+}
+
+/// <summary>
+/// Converter-free JSON projection for forensic evidence: public readable properties (camelCase), primitives, enums as
+/// names, collections and dictionaries, bounded depth and cycle-safe. It never consults <c>JsonConverter</c>
+/// attributes, so a contract that refuses to serialize itself still leaves a readable dead letter.
+/// </summary>
+public static class ForensicJson
+{
+    private const int MaxDepth = 32;
+
+    public static string Serialize(object? value)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            WriteValue(writer, value, 0, new HashSet<object>(ReferenceEqualityComparer.Instance));
+        }
+
+        return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private static void WriteValue(Utf8JsonWriter writer, object? value, int depth, HashSet<object> ancestors)
+    {
+        switch (value)
+        {
+            case null:
+                writer.WriteNullValue();
+                return;
+            case string text:
+                writer.WriteStringValue(text);
+                return;
+            case bool boolean:
+                writer.WriteBooleanValue(boolean);
+                return;
+            case byte or sbyte or short or ushort or int or uint or long or ulong or float or double or decimal:
+                writer.WriteRawValue(Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture)!, skipInputValidation: false);
+                return;
+            case DateTimeOffset dateTimeOffset:
+                writer.WriteStringValue(dateTimeOffset);
+                return;
+            case DateTime dateTime:
+                writer.WriteStringValue(dateTime);
+                return;
+            case DateOnly dateOnly:
+                writer.WriteStringValue(dateOnly.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
+                return;
+            case TimeOnly timeOnly:
+                writer.WriteStringValue(timeOnly.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
+                return;
+            case TimeSpan timeSpan:
+                writer.WriteStringValue(timeSpan.ToString("c", System.Globalization.CultureInfo.InvariantCulture));
+                return;
+            case Guid guid:
+                writer.WriteStringValue(guid);
+                return;
+            case Enum enumeration:
+                writer.WriteStringValue(enumeration.ToString());
+                return;
+            case JsonElement element:
+                element.WriteTo(writer);
+                return;
+            case byte[] bytes:
+                writer.WriteBase64StringValue(bytes);
+                return;
+        }
+
+        if (depth >= MaxDepth || !ancestors.Add(value))
+        {
+            writer.WriteStringValue($"<{value.GetType().Name}: depth or cycle limit>");
+            return;
+        }
+
+        try
+        {
+            switch (value)
             {
-                if (property.GetIndexParameters().Length > 0 || !property.CanRead)
+                case System.Collections.IDictionary dictionary:
+                    writer.WriteStartObject();
+                    foreach (System.Collections.DictionaryEntry entry in dictionary)
+                    {
+                        writer.WritePropertyName(Convert.ToString(entry.Key, System.Globalization.CultureInfo.InvariantCulture) ?? "null");
+                        WriteValue(writer, entry.Value, depth + 1, ancestors);
+                    }
+
+                    writer.WriteEndObject();
+                    return;
+                case System.Collections.IEnumerable enumerable:
+                    writer.WriteStartArray();
+                    foreach (var item in enumerable)
+                    {
+                        WriteValue(writer, item, depth + 1, ancestors);
+                    }
+
+                    writer.WriteEndArray();
+                    return;
+            }
+
+            writer.WriteStartObject();
+            foreach (var property in value.GetType().GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+            {
+                if (!property.CanRead || property.GetIndexParameters().Length > 0)
                 {
                     continue;
                 }
 
-                projection[JsonNamingPolicy.CamelCase.ConvertName(property.Name)] = property.GetValue(integrationEvent);
+                object? propertyValue;
+                try
+                {
+                    propertyValue = property.GetValue(value);
+                }
+                catch (Exception exception) when (exception is not OutOfMemoryException and not StackOverflowException)
+                {
+                    propertyValue = $"<unreadable: {exception.GetType().Name}>";
+                }
+
+                writer.WritePropertyName(JsonNamingPolicy.CamelCase.ConvertName(property.Name));
+                WriteValue(writer, propertyValue, depth + 1, ancestors);
             }
 
-            return JsonSerializer.Serialize(projection);
+            writer.WriteEndObject();
+        }
+        finally
+        {
+            ancestors.Remove(value);
         }
     }
 }
