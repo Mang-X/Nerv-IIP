@@ -417,7 +417,7 @@ describe('work-order list — release entry', () => {
   // #3118：后端 `ReleaseWorkOrderCommandHandler` 的下达守卫不看工序状态，工序在制的
   // created 工单照样受理。界面此前要求全部工序 queued，比后端更严，把「事后补下达」
   // 这条自愈路径整个藏掉；这里钉住的是「界面不得比后端守卫更严」。
-  it('releases a work order whose operation is already in progress, and says so in the dialog', async () => {
+  it('releases a work order whose operation is already in progress, and the dialog states the premise', async () => {
     releaseState.items = [
       workOrder({
         operationTasks: [
@@ -441,7 +441,7 @@ describe('work-order list — release entry', () => {
     expect(readWorkOrderForRelease).toHaveBeenCalledWith('WO-1')
     expect(wrapper.text()).toContain('确认下达工单')
     expect(wrapper.get('[data-testid="release-retroactive-notice"]').text()).toContain(
-      '该工单已有工序不在排队中，这是对已开工工单的补充下达。',
+      '该工单已有工序不在排队中。',
     )
     expect(wrapper.find('[data-testid="release-validation-message"]').exists()).toBe(false)
 

@@ -184,17 +184,22 @@ describe('mesWorkOrderReleaseBlocker', () => {
 })
 
 describe('mesWorkOrderRetroactiveReleaseNotice', () => {
-  it('工序已离开排队时点出「这是对已开工工单的补充下达」这个前提', () => {
-    expect(
-      mesWorkOrderRetroactiveReleaseNotice(
-        candidate({
-          operationTasks: [
-            { status: 'InProgress', blockReasons: [], evaluatedAtUtc: '2026-09-04T02:00:00Z' },
-          ],
-        }),
-      ),
-    ).toBe('该工单已有工序不在排队中，这是对已开工工单的补充下达。')
-  })
+  // 文案只能说谓词支持的那件事。之前写成「这是对已开工工单的补充下达」是读面不支持的推断：
+  // `ScheduleInvalidated`（`MarkScheduleInvalidated` 对 Queued 不豁免）与 `Cancelled`
+  // （`Cancel` 只豁免 Completed/Cancelled）都能从 Queued 直达，工单一道工序都没开过。
+  // 正向夹具此前只有 InProgress 一种，正是这个覆盖缺口把那句推断藏住了。
+  it.each(['InProgress', 'Paused', 'Completed', 'Cancelled', 'ScheduleInvalidated'])(
+    '工序为 %s 时提示只陈述「已有工序不在排队中」，不推断是否开过工',
+    (status) => {
+      expect(
+        mesWorkOrderRetroactiveReleaseNotice(
+          candidate({
+            operationTasks: [{ status, blockReasons: [], evaluatedAtUtc: '2026-09-04T02:00:00Z' }],
+          }),
+        ),
+      ).toBe('该工单已有工序不在排队中。')
+    },
+  )
 
   it('全部工序仍在排队时不给该提示', () => {
     expect(mesWorkOrderRetroactiveReleaseNotice(candidate())).toBeNull()

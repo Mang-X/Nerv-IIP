@@ -57,10 +57,13 @@ export function mesWorkOrderReleaseBlocker(order: MesWorkOrderReleaseCandidate) 
 }
 
 /**
- * 工序已离开排队的工单，其「下达」发生在开工之后，与开工前的常规下达不是同一件事，
- * 确认框需要点出这个前提。
+ * 并非全部工序仍在排队的工单，其「下达」与常规下达不是同一件事，确认框需要点出这个前提。
  *
- * 文案只陈述读面上看得见的前提，**不承诺下达的后果**：
+ * 文案严格只说谓词支持的那件事——「已有工序不在排队中」，**既不推断成因，也不承诺后果**：
+ * - 不能说「已开工」——非 queued 有 5 种取值，其中 `ScheduleInvalidated`（`MarkScheduleInvalidated`
+ *   对 Queued 不豁免）与 `Cancelled`（`Cancel` 只豁免 Completed/Cancelled）都可以**从未开工**就到达；
+ *   而下面那条排产级联恰恰是量产 `ScheduleInvalidated` 的机制。
+ * - 不承诺下达的后果，理由如下两条：
  * - 不能说「不会改变工序当前进度」——下达发出的 `WorkOrderReleased` 会经
  *   `SchedulingPlanInvalidationService.InvalidateAllGeneratedPlansAsync`
  *   （scope 为 AllInvalidatablePlans，且计划内无本工单时回落成整张计划的全部工序）
@@ -72,5 +75,5 @@ export function mesWorkOrderReleaseBlocker(order: MesWorkOrderReleaseCandidate) 
  */
 export function mesWorkOrderRetroactiveReleaseNotice(order: MesWorkOrderReleaseCandidate) {
   if (!order.operationTasks?.some((task) => !isQueued(task))) return null
-  return '该工单已有工序不在排队中，这是对已开工工单的补充下达。'
+  return '该工单已有工序不在排队中。'
 }
