@@ -188,36 +188,22 @@ internal static class PeriodicInspectionReleaseProjection
                                 payload.ReleasedAtUtc.UtcDateTime,
                                 snapshots);
 
-                            // 下达之前已产出的数量**不补开**巡检任务，巡检窗口自下达时刻起算
-                            // （owner 裁定，#3117 并入本票；依据是国内 MES 惯例——巡检是过程管控，
-                            // 事后补检不可执行，且补开的那批任务出生即逾期、会批量触发超期提醒）。
+                            // **本分支不做「跳过下达前已累计窗口」——该行为已拆出 #3129，本票不实现。**
+                            // owner 裁定「下达之前已产出的数量不补开巡检任务」曾在本票内落地过一版，
+                            // 后按归因回退：判断所需的事实（哪些产量发生在**下达动作**之前、且按**工序**分辨）
+                            // 只存在于 MES 侧，`mes.WorkOrderReleased` 只带一个**工单级** ReleasedAtUtc，
+                            // Quality 只能推断，于是在「多工序」与「发布先于报工到达」两种形态下失效。
+                            // **落点错了，不是判别式写窄了**——详见 #3129。当前行为与 main 一致。
                             //
-                            // **为什么带条件、而不是无条件与回填分支对齐**：无条件跳过会打掉一类
-                            // 合法的既有输入——`d4a8a711e` 钉住的那条「乱序到达」用例里，
-                            // 报工时刻（01:30）**晚于**发布时刻（01:00），产量是**下达之后**真实累积的，
-                            // 那批窗口本就该开。
+                            // **与回填分支形状不同不是「忘了对齐」，别顺手补上跳过：**
+                            // 回填分支的 SkipPeriodicWindowsAccruedBefore 锚在 integrationEvent.OccurredAtUtc
+                            // （= GetUtcNow()），即无条件把到「现在」为止的累计记为已生成，这是 #3000 的既有取舍；
+                            // 直投分支没有一个等价的锚可用（发布事实时刻是被夹紧过的工单级标量）。
+                            // 这是**锚点差异**，把回填那种无条件跳过复制过来会打掉一类合法输入——
+                            // `PeriodicInspectionIntegrationEventTests.Report_before_release_backfills_quantity_windows_from_the_frozen_context`
+                            // 钉的就是那类：报工时刻晚于发布时刻，产量是下达之后真实累积的，窗口本就该开。
+                            // **改这一处之前先确认该用例仍绿。**
                             //
-                            // **两条分支的实质差别是「跳过的锚点」不同，不是判别式在回填侧恒真：**
-                            //   直投：SkipPeriodicWindowsAccruedBefore(payload.ReleasedAtUtc)   ← 锚在发布事实时刻
-                            //   回填：SkipPeriodicWindowsAccruedBefore(integrationEvent.OccurredAtUtc = GetUtcNow())
-                            //         ← 锚在「现在」，即**无条件**把到现在为止的全部累计记为已生成，这是 #3000 的既有取舍。
-                            // 把本判别式搬到回填侧，它在两类可达输入上都为假——所以回填侧不是「不需要」，
-                            // 而是**取舍不同**。（曾经写在这里的「回填候选恒 ≤ 全部既有活动、结构性成立」
-                            // 是本 PR 自己在回填侧用探针推翻过的句式，已删；勿再引入。）
-                            //
-                            // **改这一处之前先重放 PB**（去掉判别式改成无条件跳过）：
-                            // 它会打红 `PeriodicInspectionIntegrationEventTests.Report_before_release_backfills_quantity_windows_from_the_frozen_context`。
-                            // PA（整块删掉）则打红本分支自己的承重用例。两格是这处不对称的唯一证据。
-                            //
-                            // 判别式：**该工序在发布时刻或之前已有报工** ⇒ 那批产量发生在下达之前 ⇒ 跳过。
-                            // #3117 场景下发布时刻被夹到最早既有活动，故最早那条报工恰好落在等号上；
-                            // 乱序到达场景下全部报工严格晚于发布时刻，判别式为假、行为不变。
-                            if (operation.ProductionReports.Any(
-                                    report => report.ReportedAtUtc <= payload.ReleasedAtUtc.UtcDateTime))
-                            {
-                                operation.SkipPeriodicWindowsAccruedBefore(payload.ReleasedAtUtc.UtcDateTime);
-                            }
-
                             PeriodicInspectionQuantityTaskGeneration.AddDueTasks(
                                 dbContext,
                                 operation.RuntimeContexts,
