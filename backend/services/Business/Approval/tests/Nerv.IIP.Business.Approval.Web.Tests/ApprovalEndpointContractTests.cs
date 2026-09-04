@@ -16,6 +16,7 @@ using Nerv.IIP.Business.Approval.Web.Application.Commands.Chains;
 using Nerv.IIP.Business.Approval.Web.Application.Commands.Templates;
 using Nerv.IIP.Business.Approval.Web.Application.Queries.Chains;
 using Nerv.IIP.Business.Approval.Web.Application.Queries.Delegations;
+using Nerv.IIP.Business.Approval.Web.Application.Queries.Templates;
 using Nerv.IIP.Business.Approval.Web.Endpoints.Approvals;
 using Nerv.IIP.Contracts.Approval;
 using Nerv.IIP.ServiceAuth;
@@ -141,6 +142,57 @@ public sealed class ApprovalEndpointContractTests
 
         Assert.Contains(typeof(ISender), parameterTypes);
         Assert.DoesNotContain(typeof(ApplicationDbContext), parameterTypes);
+    }
+
+    [Fact]
+    public void Approval_list_requests_keep_the_public_page_defaults()
+    {
+        var templates = new ListApprovalTemplatesRequest(null, null, null, null);
+        var chains = new ListApprovalChainsRequest("org-001", "env-dev", null, null, null, null, null);
+        var tasks = new ListPendingApprovalTasksRequest("org-001", "env-dev", "user", "u-reviewer");
+
+        Assert.Equal((0, 100), (templates.Skip, templates.Take));
+        Assert.Equal((0, 100), (chains.Skip, chains.Take));
+        Assert.Equal((0, 100), (tasks.Skip, tasks.Take));
+    }
+
+    [Fact]
+    public void Approval_list_validators_keep_optional_template_scope_and_tenant_rules()
+    {
+        var validator = new ListApprovalTemplatesQueryValidator();
+
+        Assert.True(validator.Validate(new ListApprovalTemplatesQuery(null, null, null, null, 0, 100)).IsValid);
+        Assert.True(validator.Validate(new ListApprovalTemplatesQuery("org-001", null, null, null, 0, 100)).IsValid);
+        Assert.True(validator.Validate(new ListApprovalTemplatesQuery(null, "env-dev", null, null, 0, 100)).IsValid);
+        Assert.False(validator.Validate(new ListApprovalTemplatesQuery("org;drop", null, null, null, 0, 100)).IsValid);
+        Assert.False(validator.Validate(new ListApprovalTemplatesQuery(null, "env dev", null, null, 0, 100)).IsValid);
+
+        Assert.False(new ListApprovalChainsQueryValidator().Validate(
+            new ListApprovalChainsQuery("", "env-dev", null, null, null, null, null, 0, 100)).IsValid);
+        Assert.False(new ListApprovalChainsQueryValidator().Validate(
+            new ListApprovalChainsQuery("org-001", "", null, null, null, null, null, 0, 100)).IsValid);
+        Assert.False(new ListPendingApprovalTasksQueryValidator().Validate(
+            new ListPendingApprovalTasksQuery("org-001", "", "user", "u-reviewer", 0, 100)).IsValid);
+        Assert.False(new ListPendingApprovalTasksQueryValidator().Validate(
+            new ListPendingApprovalTasksQuery("", "env-dev", "user", "u-reviewer", 0, 100)).IsValid);
+    }
+
+    [Fact]
+    public void Approval_list_validators_keep_the_legacy_rejected_page_boundaries()
+    {
+        var templateValidator = new ListApprovalTemplatesQueryValidator();
+        var chainValidator = new ListApprovalChainsQueryValidator();
+        var taskValidator = new ListPendingApprovalTasksQueryValidator();
+
+        Assert.True(templateValidator.Validate(new ListApprovalTemplatesQuery(null, null, null, null, 0, 1)).IsValid);
+        Assert.True(chainValidator.Validate(new ListApprovalChainsQuery("org-001", "env-dev", null, null, null, null, null, 0, 500)).IsValid);
+        Assert.True(taskValidator.Validate(new ListPendingApprovalTasksQuery("org-001", "env-dev", "user", "u-reviewer", 0, 100)).IsValid);
+
+        Assert.False(templateValidator.Validate(new ListApprovalTemplatesQuery(null, null, null, null, -1, 100)).IsValid);
+        Assert.False(templateValidator.Validate(new ListApprovalTemplatesQuery(null, null, null, null, 0, 0)).IsValid);
+        Assert.False(chainValidator.Validate(new ListApprovalChainsQuery("org-001", "env-dev", null, null, null, null, null, -1, 100)).IsValid);
+        Assert.False(chainValidator.Validate(new ListApprovalChainsQuery("org-001", "env-dev", null, null, null, null, null, 0, 501)).IsValid);
+        Assert.False(taskValidator.Validate(new ListPendingApprovalTasksQuery("org-001", "env-dev", "user", "u-reviewer", -1, 100)).IsValid);
     }
 
     [Fact]
