@@ -26,6 +26,7 @@ import {
   NvDialogTitle,
   NvDialogTrigger,
   NvField,
+  NvFieldDescription,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
@@ -518,9 +519,10 @@ function uomLabel(code?: string | null) {
                     v-model="form.revision"
                     :suggestions="takenRevisions"
                     :disabled="!form.skuCode || takenRevisionsPending"
-                    :placeholder="form.skuCode ? '填写新修订号，如 A、B、001' : '请先选产出物料'"
+                    :placeholder="form.skuCode ? '填写新修订号' : '请先选产出物料'"
                     empty-text="该物料还没有历史修订"
                   />
+                  <NvFieldDescription>例如 A、B、001。</NvFieldDescription>
                   <p v-if="revisionTaken" class="text-sm text-destructive" role="alert">
                     修订号「{{ form.revision.trim() }}」已存在，请换一个新号。
                   </p>

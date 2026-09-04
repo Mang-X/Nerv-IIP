@@ -297,9 +297,10 @@ async function confirmArchive() {
                     id="skill-group"
                     v-model="form.groupName"
                     :suggestions="groupSuggestions"
-                    placeholder="选择已有技能组或新建，例如：机加工"
+                    placeholder="选择或新建技能组"
                     empty-text="还没有技能组，填写即新建"
                   />
+                  <NvFieldDescription>例如：机加工。</NvFieldDescription>
                 </NvField>
               </NvFieldGroup>
 

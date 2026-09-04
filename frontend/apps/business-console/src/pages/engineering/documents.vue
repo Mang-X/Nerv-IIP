@@ -432,11 +432,8 @@ async function openView(row: BusinessConsoleEngineeringDocumentItem) {
                   <NvFieldLabel for="doc-content-type"
                     >内容类型 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvInput
-                    id="doc-content-type"
-                    v-model="form.contentType"
-                    placeholder="如 application/pdf"
-                  />
+                  <NvInput id="doc-content-type" v-model="form.contentType" />
+                  <NvFieldDescription>如 application/pdf。</NvFieldDescription>
                 </NvField>
               </NvFieldGroup>
 
