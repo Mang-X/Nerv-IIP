@@ -82,6 +82,7 @@ Reference 与源码冲突时，以当前代码/契约/测试为准并修正本�
 | Quality | `InspectionTaskOverdueIntegrationEvent` | Quality | Notification | `consumed-internally` |
 | Quality | `MeasuringDeviceCalibrationDueIntegrationEvent` | Quality | Notification | `consumed-internally` |
 | MES | `WorkOrderReleasedIntegrationEvent` | MES | Scheduling、Quality | `consumed-internally` |
+| MES | `WorkOrderReleaseProjectionBackfilledIntegrationEvent` | MES（运维触发的一次性内部端点，非领域事件转换） | 仅 Quality：把存量在制工单的发布事实补进工序巡检投影，只补空缺不覆盖既有行。Scheduling **不**订阅——它对发布事件的处理是让全部已生成排程计划失效，不能被回填放大 | `consumed-internally` |
 | MES | `ReworkWorkOrderCreatedIntegrationEvent` | MES | Quality：按 organization/environment/NCR 来源事实绑定系统返工工单回执；ERP：在既有 `WorkOrderCost` 上登记 NCR 与来源工单归因 | `consumed-internally` |
 | MES | `WorkOrderCompletedIntegrationEvent` | MES | ERP | `consumed-internally` |
 | MES | `WorkOrderClosedIntegrationEvent` | MES | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |

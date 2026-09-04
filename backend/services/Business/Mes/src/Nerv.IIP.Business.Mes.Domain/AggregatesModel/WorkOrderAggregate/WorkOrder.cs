@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 
@@ -83,6 +84,26 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
     public const string MergedStatus = "merged";
     public const string MaterialRequirementSnapshotCapturedStatus = "captured";
     public const string MaterialRequirementSnapshotNoRequirementsStatus = "no-requirements";
+
+    /// <summary>
+    /// 报工不再受理的工单状态。<see cref="RecordProductionProgress"/> 用它判「工单是否还可执行」，
+    /// #3000 的发布投影回填用**同一份**集合挑「哪些工单的工序还会再撞首件门禁」。
+    ///
+    /// 两侧必须同源：报工命令的准入路径只看工序 <c>InProgress</c>，工单状态在准入判断里一次都不出现
+    /// （`MesProductionCommands` 的首件门禁调用点就紧跟在那句工序状态检查之后），
+    /// 真正筛掉工单的就是本集合。回填若另起一套工单状态白名单，白名单一旦比本集合窄，
+    /// 落在差集里的工序读首件确认就永远是 not-synchronized，被门禁永久拒且无自愈路径
+    /// —— <c>completed</c> 正是这样一个差集：它不在本集合里（超收容差显式为「已达量后继续报工」留了空间），
+    /// 却曾被回填的白名单排除。
+    /// </summary>
+    public static readonly ImmutableArray<string> NonExecutableStatuses =
+    [
+        CancelledStatus,
+        ClosedStatus,
+        ScrappedStatus,
+        SplitStatus,
+        MergedStatus,
+    ];
 
     private WorkOrder()
     {
@@ -469,7 +490,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
             throw new ArgumentOutOfRangeException(nameof(goodQuantity), "At least one progress quantity must be positive.");
         }
 
-        if (Status is CancelledStatus or ClosedStatus or ScrappedStatus or SplitStatus or MergedStatus)
+        if (NonExecutableStatuses.Contains(Status))
         {
             throw new InvalidOperationException("Work order is not executable.");
         }
