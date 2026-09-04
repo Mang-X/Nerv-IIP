@@ -1,8 +1,13 @@
 <script setup lang="ts">
 import TaskListShell from '@/components/task-list/TaskListShell.vue'
 import DeviceAssetPicker from '@/components/equipment/DeviceAssetPicker.vue'
+import DowntimeReasonPicker from '@/components/equipment/DowntimeReasonPicker.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useBusinessMaintenance } from '@/composables/useBusinessMaintenance'
+import {
+  useMaintenanceDowntimeReasonDirectory,
+  type DowntimeReasonOption,
+} from '@/composables/useMaintenanceDowntimeReasonDirectory'
 import { confirmedMaintenanceCreateWorkOrderId } from '@/composables/maintenanceCreateReceipt'
 import { useMaintenanceSelfWorkOrderDetail } from '@/composables/useMaintenanceSelfWorkOrders'
 import { useNonIdempotentWriteResult } from '@/composables/useNonIdempotentWriteResult'
@@ -154,17 +159,20 @@ const routeSourceAlarmId = computed(() => {
 const sourceAlarmId = ref(routeSourceAlarmId.value)
 
 // 报修表单 = repairOrderFlow 的上下文（selectDevice → fillDetails → create）。
-const form = reactive<RepairCtx & { assetUnavailableReason: string }>({
+const form = reactive<RepairCtx>({
   deviceAssetId: queryDeviceAssetId.value,
   priority: '',
-  assetUnavailableReason: '',
 })
+
+// 设备占用原因 = Maintenance 权威 `downtime-reason` 目录里的一条；`null` 表示明确不登记。
+// 目录条目的 `code` 一路原样传到 v2 请求，中间不 trim、不改大小写。
+const selectedReason = ref<DowntimeReasonOption | null>(null)
 
 type DeviceSource = 'route' | 'scan' | 'directory'
 type RepairIntent = {
   deviceAssetId: string
   priority: string
-  assetUnavailableReason: string
+  assetUnavailableReasonCode: string | null
   sourceAlarmId?: string
 }
 type SelectedDevice = BusinessConsoleResourceItem & {
@@ -183,7 +191,28 @@ const selectedDevice = ref<SelectedDevice | null>(
 )
 const devicePickerOpen = ref(false)
 const prioritySheetOpen = ref(false)
-const reasonFocused = ref(false)
+const reasonPickerOpen = ref(false)
+const {
+  reasonOptions,
+  state: reasonDirectoryState,
+  stateMessage: reasonDirectoryMessage,
+  canSelectReason,
+  search: searchReasons,
+  refreshReasons,
+} = useMaintenanceDowntimeReasonDirectory()
+// 目录读不出来时**只报错**：既不回退自由文本，也不塞伪默认码。表单上仍能提交，
+// 但唯一可达的原因值是 null（不登记设备不可用）。
+const reasonDirectoryBroken = computed(
+  () =>
+    reasonDirectoryState.value === 'forbidden' ||
+    reasonDirectoryState.value === 'failed' ||
+    reasonDirectoryState.value === 'unavailable',
+)
+const reasonTriggerSubtitle = computed(() => {
+  if (selectedReason.value) return `${selectedReason.value.name}（${selectedReason.value.code}）`
+  if (reasonDirectoryBroken.value) return reasonDirectoryMessage.value
+  return '不登记设备不可用'
+})
 
 function applyRouteRepairPair(deviceAssetId: string, alarmId: string | undefined) {
   form.deviceAssetId = deviceAssetId
@@ -223,7 +252,7 @@ const scanActive = computed(
     !intentLocked.value &&
     !devicePickerOpen.value &&
     !prioritySheetOpen.value &&
-    !reasonFocused.value,
+    !reasonPickerOpen.value,
 )
 
 function onScan(value: string) {
@@ -253,6 +282,13 @@ function onPrioritySelected(priority: string) {
   if (maintenanceCreatePriorityValues.some((value) => value === priority)) {
     form.priority = priority
   }
+}
+
+// 目录不可用时仍允许打开抽屉：抽屉里只有明确错误态与「不登记设备不可用」，没有任何
+// 自由文本入口。把入口整个禁掉反而让已选原因无法撤回，也看不到归因。
+function onReasonSelected(reason: DowntimeReasonOption | null) {
+  if (intentLocked.value) return
+  selectedReason.value = reason
 }
 
 const selectedDeviceTitle = computed(
@@ -287,7 +323,7 @@ async function submit() {
   const draftIntent: RepairIntent = {
     deviceAssetId: form.deviceAssetId as string,
     priority: form.priority as string,
-    assetUnavailableReason: form.assetUnavailableReason,
+    assetUnavailableReasonCode: selectedReason.value ? selectedReason.value.code : null,
     ...(sourceAlarmId.value ? { sourceAlarmId: sourceAlarmId.value } : {}),
   }
   const intent = intentLocked.value && submittedIntent.value ? submittedIntent.value : draftIntent
@@ -326,7 +362,7 @@ function resetForm() {
   createdWorkOrderId.value = ''
   applyRouteRepairPair(queryDeviceAssetId.value, routeSourceAlarmId.value)
   form.priority = ''
-  form.assetUnavailableReason = ''
+  selectedReason.value = null
   reset()
 }
 
@@ -481,23 +517,27 @@ function workOrderSubtitle(item: { priority?: string; status?: string; openedAtU
           />
         </div>
 
-        <label class="block space-y-1">
-          <span class="text-sm text-foreground">设备占用原因（填写即登记设备停机）</span>
-          <textarea
-            data-testid="reason-input"
-            v-model="form.assetUnavailableReason"
-            :disabled="intentLocked"
-            rows="3"
-            maxlength="200"
-            placeholder="设备停下来了才填，如：主轴异响，无法运转"
-            class="min-h-24 w-full scroll-mb-24 rounded-lg border border-border bg-card px-4 py-3 text-base text-foreground outline-none focus:border-brand"
-            @focus="reasonFocused = true"
-            @blur="reasonFocused = false"
+        <div class="overflow-hidden rounded-lg border border-border">
+          <NvListRow
+            data-testid="reason-trigger"
+            title="设备占用原因（选择即登记设备停机）"
+            :subtitle="reasonTriggerSubtitle"
+            :interactive="!intentLocked"
+            class="border-b-0"
+            @select="intentLocked ? undefined : (reasonPickerOpen = true)"
           />
-          <span class="block text-xs text-muted-foreground">
-            填写后从提交时刻登记该设备不可用并计入产能影响，工单完工时自动释放；留空则只提交报修、不登记占用。
-          </span>
-        </label>
+        </div>
+        <p
+          v-if="reasonDirectoryBroken"
+          role="alert"
+          data-testid="reason-directory-blocked"
+          class="text-sm text-destructive"
+        >
+          {{ reasonDirectoryMessage }}；当前只能提交不登记设备停机的报修，不能手工填写原因。
+        </p>
+        <span class="block text-xs text-muted-foreground">
+          选择原因后从提交时刻登记该设备不可用并计入产能影响，工单完工时自动释放；选择「不登记设备不可用」则只提交报修、不登记占用。
+        </span>
 
         <NvMobileButton
           data-testid="submit"
@@ -573,6 +613,17 @@ function workOrderSubtitle(item: { priority?: string; status?: string; openedAtU
     </div>
 
     <DeviceAssetPicker v-model:open="devicePickerOpen" @select="onDeviceSelected" />
+    <DowntimeReasonPicker
+      v-model:open="reasonPickerOpen"
+      :selected-code="selectedReason?.code ?? null"
+      :options="reasonOptions"
+      :state="reasonDirectoryState"
+      :state-message="reasonDirectoryMessage"
+      :can-select="canSelectReason"
+      @select="onReasonSelected"
+      @search="searchReasons"
+      @retry="refreshReasons"
+    />
     <NvActionSheet
       v-model:open="prioritySheetOpen"
       title="选择优先级"

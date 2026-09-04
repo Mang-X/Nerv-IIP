@@ -30,6 +30,7 @@ async function createContextWithPrincipal(browser: Browser, overrides: Partial<t
   const scopedPrincipal = { ...principal, ...overrides }
   await page.route('**/api/console/v1/**', routeConsoleApi)
   await page.route('**/api/business-console/v1/**', routeBusinessConsoleApi)
+  await page.route('**/api/business-console/v2/**', routeBusinessConsoleApi)
   await page.route('**/api/console/v1/auth/refresh', (route) =>
     route.fulfill({
       status: 200,
@@ -59,6 +60,7 @@ async function createContextWithPrincipal(browser: Browser, overrides: Partial<t
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/console/v1/**', routeConsoleApi)
   await page.route('**/api/business-console/v1/**', routeBusinessConsoleApi)
+  await page.route('**/api/business-console/v2/**', routeBusinessConsoleApi)
   await seedStoredSession(page)
 })
 
@@ -463,14 +465,16 @@ test('维修工单：GUID 形设备编码在筛选、详情与报修中保持 Or
       }),
     })
   })
+  await page.route('**/api/business-console/v2/maintenance/work-orders', async (route) => {
+    const request = route.request()
+    if (request.method() !== 'POST') return route.fallback()
+    postBodies.push(request.postDataJSON() as Record<string, unknown>)
+    return route.fallback()
+  })
   await page.route('**/api/business-console/v1/maintenance/work-orders**', async (route) => {
     const request = route.request()
     const url = new URL(request.url())
     const base = '/api/business-console/v1/maintenance/work-orders'
-    if (request.method() === 'POST' && url.pathname === base) {
-      postBodies.push(request.postDataJSON() as Record<string, unknown>)
-      return route.fallback()
-    }
     if (request.method() !== 'GET') return route.fallback()
     if (url.pathname === `${base}/${workOrderId}`) {
       return route.fulfill({
@@ -774,13 +778,21 @@ test('报修：375×812 路由/扫码/设备搜索 → ActionSheet → 键盘态
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.setViewportSize({ width: 375, height: 812 })
   const postBodies: unknown[] = []
+  const legacyPostPaths: string[] = []
   page.on('request', (request) => {
     const { pathname } = new URL(request.url())
     if (
       request.method() === 'POST' &&
-      pathname === '/api/business-console/v1/maintenance/work-orders'
+      pathname === '/api/business-console/v2/maintenance/work-orders'
     ) {
       postBodies.push(request.postDataJSON())
+    }
+    // v1 创建入口不得再被 PDA 生产路径调用（#2970 验收条件）。
+    if (
+      request.method() === 'POST' &&
+      pathname === '/api/business-console/v1/maintenance/work-orders'
+    ) {
+      legacyPostPaths.push(pathname)
     }
   })
 
@@ -808,7 +820,7 @@ test('报修：375×812 路由/扫码/设备搜索 → ActionSheet → 键盘态
   await expect48(scan.locator('..'))
   await expect48(page.getByTestId('device-trigger'))
   await expect48(page.getByTestId('priority-trigger'))
-  await expect48(page.getByTestId('reason-input'))
+  await expect48(page.getByTestId('reason-trigger'))
   await expect48(page.getByTestId('submit'))
 
   // ActionSheet 三项及取消均为 48px；取消保持已选值。
@@ -824,14 +836,26 @@ test('报修：375×812 路由/扫码/设备搜索 → ActionSheet → 键盘态
   await prioritySheet.getByRole('button', { name: '取消', exact: true }).click()
   await expect(page.getByTestId('priority-trigger')).toContainText('高')
 
-  // 报警路由设备可被扫码替换；已有优先级与自由文本描述保持不变。
-  await page.getByTestId('reason-input').fill('主轴异响，无法运转')
+  // 停机原因来自权威 downtime-reason 目录：抽屉里只有目录条目和「不登记设备不可用」，
+  // 没有任何自由文本入口；页面上也不存在 textarea。
+  await expect(page.locator('textarea')).toHaveCount(0)
+  await page.getByTestId('reason-trigger').click()
+  const reasonSheet = page.locator('[data-slot="mobile-sheet-content"]')
+  await expect(reasonSheet).toBeVisible()
+  await expect(reasonSheet.locator('textarea')).toHaveCount(0)
+  await expect48(page.getByTestId('reason-option-none'))
+  await expect48(page.getByTestId('reason-option-Spindle-Noise'))
+  await page.getByTestId('reason-option-Spindle-Noise').click()
+  await expect(reasonSheet).toBeHidden()
+  await expect(page.getByTestId('reason-trigger')).toContainText('主轴异响')
+
+  // 报警路由设备可被扫码替换；已有优先级与已选停机原因保持不变。
   await scan.click()
   await scan.pressSequentially('DEV-SCAN')
   await scan.press('Enter')
   await expect(page.getByTestId('device-trigger')).toContainText('DEV-SCAN')
   await expect(page.getByTestId('priority-trigger')).toContainText('高')
-  await expect(page.getByTestId('reason-input')).toHaveValue('主轴异响，无法运转')
+  await expect(page.getByTestId('reason-trigger')).toContainText('主轴异响')
 
   // 再用现有 facade 的服务端 keyword 选择设备编码；请求保持 principal scope + 有界分页。
   await page.getByTestId('device-trigger').click()
@@ -839,7 +863,16 @@ test('报修：375×812 路由/扫码/设备搜索 → ActionSheet → 键盘态
   const searchInput = deviceSheet.locator('input[type="search"]')
   await searchInput.fill('数控')
   await expect48(searchInput)
-  await expect48(deviceSheet.getByRole('button', { name: '清除' }))
+  // 清除按钮是 Vue <Transition> 进场的：enter-from 那一帧 `scale(0.6)` 会把 48px 量成
+  // 28.8px。取一次性读数会随前置步骤耗时变红变绿，所以按最终稳定态轮询。
+  const clearButton = deviceSheet.getByRole('button', { name: '清除' })
+  await expect(clearButton).toBeVisible()
+  await expect
+    .poll(async () => (await clearButton.boundingBox())?.height ?? 0)
+    .toBeGreaterThanOrEqual(48 - 0.001)
+  await expect
+    .poll(async () => (await clearButton.boundingBox())?.width ?? 0)
+    .toBeGreaterThanOrEqual(48 - 0.001)
   await expect48(deviceSheet.getByRole('button', { name: '取消', exact: true }))
   const keywordRequest = page.waitForRequest((request) => {
     const url = new URL(request.url())
@@ -864,10 +897,9 @@ test('报修：375×812 路由/扫码/设备搜索 → ActionSheet → 键盘态
   await expect(page.getByTestId('device-trigger')).toContainText('DEV-CNC-01')
 
   // 仅属 mock Chromium 证据：缩短 viewport 模拟软键盘占位，不能代表 Android/iOS 真 IME。
+  // 停机原因改成目录选择后，本页写面已不再有需要软键盘的自由文本框；这里保留窄视口
+  // 断言的是提交按钮在被压缩的可视区内仍完整可点。
   await page.setViewportSize({ width: 375, height: 520 })
-  const reason = page.getByTestId('reason-input')
-  await reason.focus()
-  await reason.fill('主轴异响，无法运转')
   const submit = page.getByTestId('submit')
   await submit.scrollIntoViewIfNeeded()
   const submitBox = await submit.boundingBox()
@@ -883,17 +915,19 @@ test('报修：375×812 路由/扫码/设备搜索 → ActionSheet → 键盘态
     {
       deviceAssetId: 'DEV-CNC-01',
       priority: 'high',
-      assetUnavailableReason: '主轴异响，无法运转',
+      // 目录码原值上线：大小写未被改写，也没有回退成自由文本字段。
+      assetUnavailableReasonCode: 'Spindle-Noise',
       organizationId: 'org-001',
       environmentId: 'env-dev',
       openedBy: 'operator01',
       idempotencyKey: expect.any(String),
     },
   ])
+  expect(legacyPostPaths).toEqual([])
 })
 
 test('报修：匹配的非 GUID payload/receipt 也不能进入成功或工单核验态', async ({ page }) => {
-  await page.route('**/api/business-console/v1/maintenance/work-orders', async (route) => {
+  await page.route('**/api/business-console/v2/maintenance/work-orders', async (route) => {
     if (route.request().method() !== 'POST') return route.fallback()
     await route.fulfill({
       status: 200,
@@ -927,6 +961,50 @@ test('报修：匹配的非 GUID payload/receipt 也不能进入成功或工单�
   await expect(page.locator('[data-result][data-status="success"]')).toHaveCount(0)
   await expect(page.locator('[data-result][data-status="error"]')).toBeVisible()
   await expect(page.getByTestId('recheck-created-work-order-assignment')).toHaveCount(0)
+})
+
+test('报修：停机原因目录读失败时只给错误态，不回退自由文本且仍只能提交 null', async ({ page }) => {
+  await page.route('**/api/business-console/v1/directories/downtime-reason**', (route) =>
+    route.fulfill({
+      status: 502,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: false, message: 'downstream-unavailable', data: null }),
+    }),
+  )
+  const postBodies: unknown[] = []
+  page.on('request', (request) => {
+    if (
+      request.method() === 'POST' &&
+      new URL(request.url()).pathname === '/api/business-console/v2/maintenance/work-orders'
+    ) {
+      postBodies.push(request.postDataJSON())
+    }
+  })
+
+  await page.goto('/equipment/repair?deviceAssetId=DEV-CNC-01')
+  await expect(page.getByTestId('reason-directory-blocked')).toBeVisible()
+  await expect(page.getByTestId('reason-directory-blocked')).toContainText('不能手工填写原因')
+  // 关键否定证据：整页没有任何自由文本输入可以承载原因。
+  await expect(page.locator('textarea')).toHaveCount(0)
+
+  await page.getByTestId('reason-trigger').click()
+  const sheet = page.locator('[data-slot="mobile-sheet-content"]')
+  await expect(sheet.getByTestId('reason-directory-error')).toBeVisible()
+  await expect(sheet.locator('textarea')).toHaveCount(0)
+  await expect(sheet.getByTestId('reason-retry')).toBeVisible()
+  await sheet.getByTestId('reason-option-none').click()
+  await expect(sheet).toBeHidden()
+
+  await page.getByTestId('priority-trigger').click()
+  await page
+    .locator('[data-slot="mobile-sheet-content"]')
+    .getByRole('button', { name: '高', exact: true })
+    .click()
+  await page.getByTestId('submit').click()
+  await expect(page.locator('[data-result][data-status="success"]')).toBeVisible()
+
+  expect(postBodies).toHaveLength(1)
+  expect((postBodies[0] as Record<string, unknown>).assetUnavailableReasonCode).toBeNull()
 })
 
 test('点检：选保养计划 → 选「通过」→ 提交 → 成功 Result', async ({ page }) => {
