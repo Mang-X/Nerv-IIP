@@ -17,6 +17,8 @@ const props = defineProps<{
   state: DowntimeReasonDirectoryState
   stateMessage: string
   canSelect: boolean
+  truncated: boolean
+  total: number
 }>()
 /** `null` = 用户明确选择「不登记设备不可用」——该路径提交 null，不是空串、不是伪默认码。 */
 const emit = defineEmits<{
@@ -35,6 +37,14 @@ watch(open, (isOpen) => {
     searchKeyword.value = ''
     emit('search', '')
   }
+})
+
+// `NvSearchBar` 的清除按钮只置空 v-model、**不 emit `search`**（见 SearchBar.vue 的 `clear()`），
+// 光靠 `@search` 会留下"输入框空了、列表还按旧关键字过滤"的错位。这条错位不只是界面矛盾：
+// 空结果会显示"没有匹配的停机原因"，工人据此以为本组织没配这个码，转而选"不登记设备不可用"，
+// 本该记录的停机原因就丢了——正是本页要防的事。所以清空即重查全量。
+watch(searchKeyword, (value) => {
+  if (value.trim().length === 0) emit('search', '')
 })
 
 function selectReason(reason: DowntimeReasonOption | null) {
@@ -107,17 +117,31 @@ function clearSearch() {
       >
         {{ props.stateMessage }}
       </div>
-      <div v-else class="max-h-[48vh] overflow-y-auto rounded-lg border border-border">
-        <NvListRow
-          v-for="reason in props.options"
-          :key="reason.code"
-          :data-testid="`reason-option-${reason.code}`"
-          :title="reason.name"
-          :subtitle="reason.code"
-          :class="reason.code === props.selectedCode ? 'bg-accent' : undefined"
-          @select="selectReason(reason)"
-        />
-      </div>
+      <template v-else>
+        <!--
+          一次只取一页且不翻页：超量组织必然被截断。不说出来的话，"翻不到的码"和
+          "本组织没配这个码"在界面上完全一样，工人会改选"不登记设备不可用"。
+        -->
+        <p
+          v-if="props.truncated"
+          data-testid="reason-directory-truncated"
+          class="text-xs text-muted-foreground"
+        >
+          共 {{ props.total }} 条停机原因，当前只显示前 {{ props.options.length }}
+          条；没找到就用上面的搜索框按名称或码查找。
+        </p>
+        <div class="max-h-[48vh] overflow-y-auto rounded-lg border border-border">
+          <NvListRow
+            v-for="reason in props.options"
+            :key="reason.code"
+            :data-testid="`reason-option-${reason.code}`"
+            :title="reason.name"
+            :subtitle="reason.code"
+            :class="reason.code === props.selectedCode ? 'bg-accent' : undefined"
+            @select="selectReason(reason)"
+          />
+        </div>
+      </template>
     </div>
   </NvBottomSheet>
 </template>

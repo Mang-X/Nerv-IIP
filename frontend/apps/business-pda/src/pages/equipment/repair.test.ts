@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, ref } from 'vue'
 import { NvScanBar, NvSearchBar } from '@nerv-iip/ui-mobile'
+import DowntimeReasonPicker from '@/components/equipment/DowntimeReasonPicker.vue'
 
 // ---- vue-router mock（默认无 query；个别用例覆写 useRoute）---------------------
 const push = vi.fn(() => Promise.resolve())
@@ -108,12 +109,17 @@ const DIRECTORY_OPTIONS: DirectoryOption[] = [
 const reasonOptions = ref<DirectoryOption[]>([])
 const reasonDirectoryState = ref('ok')
 const reasonDirectoryMessage = ref('')
+const reasonsTotal = ref(0)
 const searchReasons = vi.fn()
 const refreshReasons = vi.fn(async () => {})
 
 vi.mock('@/composables/useMaintenanceDowntimeReasonDirectory', () => ({
   useMaintenanceDowntimeReasonDirectory: () => ({
     reasonOptions,
+    reasonsTotal,
+    reasonsTruncated: computed(
+      () => reasonDirectoryState.value === 'ok' && reasonsTotal.value > reasonOptions.value.length,
+    ),
     state: reasonDirectoryState,
     stateMessage: reasonDirectoryMessage,
     canSelectReason: computed(() => reasonDirectoryState.value === 'ok'),
@@ -178,6 +184,7 @@ beforeEach(() => {
   reasonOptions.value = [...DIRECTORY_OPTIONS]
   reasonDirectoryState.value = 'ok'
   reasonDirectoryMessage.value = ''
+  reasonsTotal.value = DIRECTORY_OPTIONS.length
   searchReasons.mockClear()
   refreshReasons.mockClear()
   createWorkOrder.mockClear()
@@ -746,7 +753,10 @@ describe('PDA equipment repair page', () => {
       expect(sheet.querySelector('[data-testid="reason-directory-error"]')!.textContent).toContain(
         message as string,
       )
-      expect(sheet.querySelectorAll('textarea, input[type="text"]')).toHaveLength(0)
+      // 排除搜索框本身（`input[type="search"]`）后，抽屉里不许再有任何可输入控件。
+      expect(
+        sheet.querySelectorAll('textarea, input:not([type="search"]), [contenteditable="true"]'),
+      ).toHaveLength(0)
       expect(sheet.querySelector('[data-testid="reason-option-Hyd-Leak_01"]')).toBeNull()
       expect(sheet.querySelector('[data-testid="reason-retry"]') !== null).toBe(retryable)
 
@@ -808,6 +818,129 @@ describe('PDA equipment repair page', () => {
       .map((row) => row.getAttribute('data-testid'))
       .filter((id): id is string => Boolean(id))
     expect(codes).toEqual(['reason-option-none', 'reason-option-Only-One'])
+  })
+
+  it('清空搜索关键字后重新查全量——不留"输入框空了、列表还在过滤"的错位', async () => {
+    const wrapper = mount(RepairPage, { attachTo: document.body })
+    await wrapper.get('[data-testid="reason-trigger"]').trigger('click')
+    await flushPromises()
+
+    const reasonSearch = wrapper
+      .findAllComponents(NvSearchBar)
+      .find((component) => component.props('ariaLabel') === '停机原因关键字')!
+    await reasonSearch.find('input').setValue('主轴')
+    await reasonSearch.find('input').trigger('keydown.enter')
+    await flushPromises()
+    expect(searchReasons).toHaveBeenLastCalledWith('主轴')
+
+    // NvSearchBar 的清除按钮只置空 v-model、不 emit search；页面必须自己把关键字清回去，
+    // 否则空结果会显示"没有匹配的停机原因"，把"翻不到"误导成"本组织没配"。
+    await reasonSearch.get('button[aria-label="清除"]').trigger('click')
+    await flushPromises()
+    expect(reasonSearch.find('input').element.value).toBe('')
+    expect(searchReasons).toHaveBeenLastCalledWith('')
+  })
+
+  it('目录被截断时说出总数与"请搜索"，不让"翻不到"看起来像"没配"', async () => {
+    reasonsTotal.value = 137
+    const wrapper = mount(RepairPage, { attachTo: document.body })
+    await wrapper.get('[data-testid="reason-trigger"]').trigger('click')
+    await flushPromises()
+
+    const hint = document.body.querySelector('[data-testid="reason-directory-truncated"]')!
+    expect(hint).not.toBeNull()
+    expect(hint.textContent).toContain('137')
+    expect(hint.textContent).toContain('搜索')
+
+    reasonsTotal.value = DIRECTORY_OPTIONS.length
+    await flushPromises()
+    expect(document.body.querySelector('[data-testid="reason-directory-truncated"]')).toBeNull()
+  })
+
+  it.each([
+    ['empty', '当前组织尚未配置可用停机原因'],
+    ['loading', '正在读取停机原因…'],
+    ['scope-pending', '登录范围尚未就绪，暂不能读取停机原因'],
+  ])('抽屉在 %s 态渲染出可归因文案而不是空白列表', async (state, message) => {
+    reasonDirectoryState.value = state as string
+    reasonDirectoryMessage.value = message as string
+    reasonOptions.value = []
+    reasonsTotal.value = 0
+    const wrapper = mount(RepairPage, { attachTo: document.body })
+    await wrapper.get('[data-testid="reason-trigger"]').trigger('click')
+    await flushPromises()
+
+    const sheet = document.body.querySelector('[data-slot="mobile-sheet-content"]')!
+    expect(sheet.querySelector('[data-testid="reason-directory-state"]')!.textContent).toContain(
+      message as string,
+    )
+    expect(sheet.querySelector('[data-testid="reason-directory-error"]')).toBeNull()
+    // 「不登记设备不可用」在任何一态都必须还在，否则 null 路径不可达。
+    expect(sheet.querySelector('[data-testid="reason-option-none"]')).not.toBeNull()
+  })
+
+  it('意图锁定期即使抽屉直接 emit select 也不改原因码（防呆层的独立契约）', async () => {
+    createWorkOrder.mockRejectedValueOnce(new RequestTimeoutError())
+    route.query = { deviceAssetId: 'DEV-9' }
+    const wrapper = mount(RepairPage, { attachTo: document.body })
+    await selectPriority(wrapper, '高')
+    await selectReason(wrapper, '液压泄漏')
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+    const firstPayload = lastCreateBody()
+
+    await wrapper.get('[data-testid="retry"]').trigger('click')
+    await flushPromises()
+    // UI 上抽屉根本打不开（前两层守卫）；这条只钉最内层 `onReasonSelected` 的防呆：
+    // 即便有人绕过入口直接触发组件事件，已锁定的意图也不许被改。
+    wrapper.findComponent(DowntimeReasonPicker).vm.$emit('select', DIRECTORY_OPTIONS[1])
+    await flushPromises()
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+
+    expect(createWorkOrder).toHaveBeenCalledTimes(2)
+    expect(lastCreateBody()).toEqual(firstPayload)
+    expect(lastCreateBody().assetUnavailableReasonCode).toBe('Hyd-Leak_01')
+  })
+
+  it('「继续报修」清空已选停机原因——下一单不会带着上一单的目录码', async () => {
+    route.query = { deviceAssetId: 'DEV-9' }
+    const wrapper = mount(RepairPage, { attachTo: document.body })
+    await selectPriority(wrapper, '高')
+    await selectReason(wrapper, '液压泄漏')
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+    expect(lastCreateBody().assetUnavailableReasonCode).toBe('Hyd-Leak_01')
+
+    const again = [...wrapper.findAll('button')].find(
+      (button) => button.text().trim() === '继续报修',
+    )!
+    await again.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="reason-trigger"]').text()).toContain('不登记设备不可用')
+    expect(wrapper.get('[data-testid="reason-trigger"]').text()).not.toContain('液压泄漏')
+    await selectPriority(wrapper, '中')
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+
+    expect(lastCreateBody().assetUnavailableReasonCode).toBeNull()
+  })
+
+  it.each([
+    ['选了原因', true, '已登记设备占用原因'],
+    ['没选原因', false, '本次未登记设备占用原因'],
+  ])('成功页复述本次是否登记了设备占用（%s）', async (_name, pickReason, expected) => {
+    route.query = { deviceAssetId: 'DEV-9' }
+    const wrapper = mount(RepairPage, { attachTo: document.body })
+    await selectPriority(wrapper, '高')
+    if (pickReason) await selectReason(wrapper, '液压泄漏')
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+
+    const state = wrapper.get('[data-testid="created-work-order-asset-unavailable-state"]')
+    expect(state.text()).toContain(expected as string)
+    if (pickReason) expect(state.text()).toContain('Hyd-Leak_01')
   })
 
   it('prefills deviceAssetId + sourceAlarmId from the route query (from alarms page)', async () => {

@@ -872,12 +872,13 @@ test('报修：375×812 路由/扫码/设备搜索 → ActionSheet → 键盘态
   // 28.8px。取一次性读数会随前置步骤耗时变红变绿，所以按最终稳定态轮询。
   const clearButton = deviceSheet.getByRole('button', { name: '清除' })
   await expect(clearButton).toBeVisible()
+  // 高宽一次读完：分两次 poll 理论上可以在不同瞬间各自达标，凑不出"同一时刻同时达标"。
   await expect
-    .poll(async () => (await clearButton.boundingBox())?.height ?? 0)
-    .toBeGreaterThanOrEqual(48 - 0.001)
-  await expect
-    .poll(async () => (await clearButton.boundingBox())?.width ?? 0)
-    .toBeGreaterThanOrEqual(48 - 0.001)
+    .poll(async () => {
+      const box = await clearButton.boundingBox()
+      return box && box.height >= 48 - 0.001 && box.width >= 48 - 0.001
+    })
+    .toBe(true)
   await expect48(deviceSheet.getByRole('button', { name: '取消', exact: true }))
   const keywordRequest = page.waitForRequest((request) => {
     const url = new URL(request.url())
@@ -1002,7 +1003,8 @@ test('报修：停机原因目录读失败时只给错误态，不回退自由�
   await page.getByTestId('reason-trigger').click()
   const sheet = page.locator('[data-slot="mobile-sheet-content"]')
   await expect(sheet.getByTestId('reason-directory-error')).toBeVisible()
-  await expect(sheet.locator('textarea')).toHaveCount(0)
+  // 排除搜索框自身（`input[type="search"]`）后，抽屉里不许再有任何可输入控件。
+  await expect(sheet.locator('textarea, input:not([type="search"])')).toHaveCount(0)
   await expect(sheet.getByTestId('reason-retry')).toBeVisible()
   await sheet.getByTestId('reason-option-none').click()
   await expect(sheet).toBeHidden()
@@ -1017,6 +1019,30 @@ test('报修：停机原因目录读失败时只给错误态，不回退自由�
 
   expect(postBodies).toHaveLength(1)
   expect((postBodies[0] as Record<string, unknown>).assetUnavailableReasonCode).toBeNull()
+})
+
+test('报修：清空停机原因搜索后列表恢复全量，不留"空输入框 + 过滤结果"的错位', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.setViewportSize({ width: 375, height: 812 })
+  await page.goto('/equipment/repair?deviceAssetId=DEV-CNC-01')
+  await page.getByTestId('reason-trigger').click()
+  const sheet = page.locator('[data-slot="mobile-sheet-content"]')
+  await expect(sheet.getByTestId('reason-option-Hyd-Leak_01')).toBeVisible()
+  await expect(sheet.getByTestId('reason-option-Spindle-Noise')).toBeVisible()
+
+  const search = sheet.locator('input[type="search"]')
+  await search.fill('主轴')
+  await search.press('Enter')
+  await expect(sheet.getByTestId('reason-option-Hyd-Leak_01')).toHaveCount(0)
+  await expect(sheet.getByTestId('reason-option-Spindle-Noise')).toBeVisible()
+
+  // 点 X 清除：输入框空了，列表必须同时回到全量。否则空结果会显示"没有匹配的停机原因"，
+  // 工人会以为本组织没配这个码，转而选"不登记设备不可用"——本该记录的停机原因就丢了。
+  await sheet.getByRole('button', { name: '清除' }).click()
+  await expect(search).toHaveValue('')
+  await expect(sheet.getByTestId('reason-option-Hyd-Leak_01')).toBeVisible()
+  await expect(sheet.getByTestId('reason-option-Spindle-Noise')).toBeVisible()
+  await expect(sheet.getByTestId('reason-directory-state')).toHaveCount(0)
 })
 
 test('点检：选保养计划 → 选「通过」→ 提交 → 成功 Result', async ({ page }) => {

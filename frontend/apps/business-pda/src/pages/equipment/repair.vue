@@ -140,6 +140,14 @@ const canViewCreatedWorkOrder = computed(
     createdDetailHasSuccessfulResponse.value &&
     confirmedCreatedWorkOrder.value?.workOrderId === createdWorkOrderId.value,
 )
+// 成功页复述"这次到底登没登设备占用"：决策时刻已经告知过，但结果页只说"报修已提交"
+// 会让"没记"这件事无声通过——尤其目录读失败时用户是被迫走的 null 路径。
+const createdAssetUnavailableState = computed(() => {
+  const code = submittedIntent.value?.assetUnavailableReasonCode
+  if (!code) return '本次未登记设备占用原因，只创建了维修工单。'
+  const name = selectedReason.value?.code === code ? selectedReason.value.name : code
+  return `已登记设备占用原因：${name}（${code}），工单完工时自动释放。`
+})
 const createdAssignmentState = computed(() => {
   if (createdDetailPending.value) return '正在核验工单指派状态…'
   if (canViewCreatedWorkOrder.value) return '已确认工单指派给当前维修人员，可查看详情。'
@@ -194,6 +202,8 @@ const prioritySheetOpen = ref(false)
 const reasonPickerOpen = ref(false)
 const {
   reasonOptions,
+  reasonsTotal,
+  reasonsTruncated,
   state: reasonDirectoryState,
   stateMessage: reasonDirectoryMessage,
   canSelectReason,
@@ -416,6 +426,12 @@ function workOrderSubtitle(item: { priority?: string; status?: string; openedAtU
     >
       <template #actions>
         <p
+          data-testid="created-work-order-asset-unavailable-state"
+          class="text-sm leading-6 text-muted-foreground"
+        >
+          {{ createdAssetUnavailableState }}
+        </p>
+        <p
           data-testid="created-work-order-assignment-state"
           class="text-sm leading-6 text-muted-foreground"
         >
@@ -620,6 +636,8 @@ function workOrderSubtitle(item: { priority?: string; status?: string; openedAtU
       :state="reasonDirectoryState"
       :state-message="reasonDirectoryMessage"
       :can-select="canSelectReason"
+      :truncated="reasonsTruncated"
+      :total="reasonsTotal"
       @select="onReasonSelected"
       @search="searchReasons"
       @retry="refreshReasons"

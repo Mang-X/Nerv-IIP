@@ -145,7 +145,7 @@ describe('useMaintenanceDowntimeReasonDirectory', () => {
         queryState.data.value = envelope({ status: 'unavailable', items: [], total: 0 })
       },
       'unavailable',
-      '停机原因词表暂不可用，请稍后重试',
+      '权威服务尚未配置停机原因词表，请联系管理员配置',
     ],
     [
       '403',
@@ -180,6 +180,47 @@ describe('useMaintenanceDowntimeReasonDirectory', () => {
     expect(directory.canSelectReason.value).toBe(false)
     expect(directory.state.value).toBe(state)
     expect(directory.stateMessage.value).toBe(message)
+  })
+
+  it('一页取满时说出被截断——"翻不到"不能长得像"本组织没配"', () => {
+    seedPrincipal()
+    queryState.data.value = envelope({
+      status: 'available',
+      items: [{ id: '1', code: 'A-1', displayName: '甲' }],
+      total: 137,
+    })
+    const directory = useMaintenanceDowntimeReasonDirectory()
+
+    expect(directory.reasonsTotal.value).toBe(137)
+    expect(directory.reasonsTruncated.value).toBe(true)
+  })
+
+  it('全量已在本页时不报截断', () => {
+    seedPrincipal()
+    queryState.data.value = envelope({
+      status: 'available',
+      items: [{ id: '1', code: 'A-1', displayName: '甲' }],
+      total: 1,
+    })
+    const directory = useMaintenanceDowntimeReasonDirectory()
+
+    expect(directory.reasonsTruncated.value).toBe(false)
+  })
+
+  it('读失败与词表未配置时不报截断，也不给出可疑总数', () => {
+    seedPrincipal()
+    queryState.error.value = new Error('boom')
+    const failed = useMaintenanceDowntimeReasonDirectory()
+    expect(failed.reasonsTruncated.value).toBe(false)
+    expect(failed.reasonsTotal.value).toBe(0)
+
+    setActivePinia(createPinia())
+    seedPrincipal()
+    queryState.error.value = undefined
+    queryState.data.value = envelope({ status: 'unavailable', items: [], total: 42 })
+    const unavailable = useMaintenanceDowntimeReasonDirectory()
+    expect(unavailable.reasonsTruncated.value).toBe(false)
+    expect(unavailable.reasonsTotal.value).toBe(0)
   })
 
   it('区分"组织没配"和"关键字没命中"，不把两者说成同一句话', () => {

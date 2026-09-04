@@ -76,6 +76,13 @@ export function useMaintenanceDowntimeReasonDirectory() {
   const envelope = computed(
     () => directoryQuery.data.value as BusinessConsoleSearchableDirectoryEnvelope | undefined,
   )
+  /**
+   * **当前链路不可达的防御分支。** `BusinessConsoleSearchableDirectoryEndpoint.QueryMaintenanceAsync`
+   * 调 `FromItems` 时只传了 `authorityDirectoryType:`，没传 `authorityConfigured`，
+   * 该参数默认 `true`（`BusinessConsoleModels.cs:112`），所以 downtime-reason 目前恒
+   * `status: "available"`；只有 `priority` 目录会走出 `unavailable`。
+   * 这里仍然 fail closed 地识别它：网关哪天补上探针，前端不会把"没配词表"当成空目录。
+   */
   const directoryUnavailable = computed(
     () => envelope.value?.success === true && envelope.value.data?.status === 'unavailable',
   )
@@ -120,7 +127,9 @@ export function useMaintenanceDowntimeReasonDirectory() {
       case 'failed':
         return '停机原因读取失败，请重试'
       case 'unavailable':
-        return '停机原因词表暂不可用，请稍后重试'
+        // 语义是"权威服务没配这份词表"（producer 的 `directory-authority-unconfigured`），
+        // 是配置事实而非瞬时故障——写"请稍后重试"会让人白等。
+        return '权威服务尚未配置停机原因词表，请联系管理员配置'
       case 'empty':
         return keyword.value.trim() ? '没有匹配的停机原因' : '当前组织尚未配置可用停机原因'
       default:
@@ -131,12 +140,27 @@ export function useMaintenanceDowntimeReasonDirectory() {
   /** 目录不可用时**唯一**允许的后果：不能选原因，只能提交不登记设备停机的报修。 */
   const canSelectReason = computed(() => state.value === 'ok')
 
+  const reasonsTotal = computed(() => {
+    if (envelope.value?.success !== true || directoryUnavailable.value) return 0
+    return envelope.value.data?.total ?? 0
+  })
+  /**
+   * 一次只取一页且不翻页，所以超量组织必然被截断。**必须让工人知道**：
+   * 否则"翻不到的码"和"本组织没有这个码"在界面上长得一模一样，人就会改选
+   * "不登记设备不可用"——本该记录的停机原因就这样丢了。
+   */
+  const reasonsTruncated = computed(
+    () => state.value === 'ok' && reasonsTotal.value > reasonOptions.value.length,
+  )
+
   function search(value: string) {
     keyword.value = value
   }
 
   return {
     reasonOptions,
+    reasonsTotal,
+    reasonsTruncated,
     reasonsError: directoryQuery.error,
     reasonsPending: directoryQuery.isLoading,
     reasonKeyword: keyword,
