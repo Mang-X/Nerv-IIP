@@ -414,20 +414,23 @@ describe('work-order list — release entry', () => {
     expect(releaseWorkOrder).not.toHaveBeenCalled()
   })
 
-  it('fails closed when a non-queued task has no release readiness facts', async () => {
-    const latest = workOrder({
-      status: 'started',
-      operationTasks: [
-        {
-          operationTaskId: 'OP-1',
-          operationSequence: 10,
-          status: 'inProgress',
-          blockReasons: [],
-          evaluatedAtUtc: '2026-08-25T00:00:00.000Z',
-        },
-      ],
-    })
-    readWorkOrderForRelease.mockResolvedValue(latest)
+  // #3118：后端 `ReleaseWorkOrderCommandHandler` 的下达守卫不看工序状态，工序在制的
+  // created 工单照样受理。界面此前要求全部工序 queued，比后端更严，把「事后补下达」
+  // 这条自愈路径整个藏掉；这里钉住的是「界面不得比后端守卫更严」。
+  it('releases a work order whose operation is already in progress, telling the user it only backfills the release fact', async () => {
+    releaseState.items = [
+      workOrder({
+        operationTasks: [
+          {
+            operationTaskId: 'OP-1',
+            operationSequence: 10,
+            status: 'inProgress',
+            blockReasons: [],
+            evaluatedAtUtc: '2026-08-25T00:00:00.000Z',
+          },
+        ],
+      }),
+    ]
     const wrapper = mountPage()
 
     const action = button(wrapper, '下达')
@@ -436,8 +439,32 @@ describe('work-order list — release entry', () => {
     await flushPromises()
 
     expect(readWorkOrderForRelease).toHaveBeenCalledWith('WO-1')
-    expect(wrapper.text()).not.toContain('确认下达工单')
-    expect(releaseWorkOrder).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('确认下达工单')
+    expect(wrapper.get('[data-testid="release-retroactive-notice"]').text()).toContain(
+      '下达只补齐工单的发布记录，不会改变工序当前进度。',
+    )
+    expect(wrapper.find('[data-testid="release-validation-message"]').exists()).toBe(false)
+
+    await wrapper.get('input[type="checkbox"]').setValue(true)
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(releaseWorkOrder).toHaveBeenCalledTimes(1)
+    expect(releaseWorkOrder).toHaveBeenCalledWith(
+      'WO-1',
+      expect.objectContaining({ confirmWarnings: true }),
+    )
+  })
+
+  // 常规下达（工序仍在排队）不该背上补发布的说法。
+  it('does not show the backfill notice when every operation is still queued', async () => {
+    const wrapper = mountPage()
+
+    await button(wrapper, '下达').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('确认下达工单')
+    expect(wrapper.find('[data-testid="release-retroactive-notice"]').exists()).toBe(false)
   })
 
   it.each([

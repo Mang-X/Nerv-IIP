@@ -16,9 +16,18 @@ export type MesWorkOrderReleaseCandidate = {
   qualityHolds?: Array<{ isActive?: boolean }> | null
 }
 
+function isQueued(task: { status?: string }) {
+  return (task.status ?? '').toLowerCase() === 'queued'
+}
+
 /**
- * 从工单读面保守推导“可以尝试下达”。非 queued 工序的 action readiness 不包含
- * release handler 会执行的设备/物料检查，因此必须失败关闭，不能把空 blocker 当作已就绪。
+ * 从工单读面推导“可以尝试下达”，口径对齐 `ReleaseWorkOrderCommandHandler`：
+ * 工单状态、生产版本、工艺路线快照、质量保留、物料/设备就绪，**不含工序状态**。
+ *
+ * 工序 readiness 只在 queued 工序上求值（`MesOperationTaskActionReadinessEvaluator`
+ * 对非 queued 工序恒返回空 blockReasons），所以非 queued 工序既不作为就绪证据、
+ * 也不作为阻断理由——把空 blocker 当已就绪是假绿，把它当阻断则比后端守卫更严，
+ * 会把「工序已开工的工单事后补下达」这条自愈路径从界面上藏掉。
  */
 export function mesWorkOrderReleaseBlocker(order: MesWorkOrderReleaseCandidate) {
   if (!order.workOrderId) return '工单标识缺失，不能下达'
@@ -31,9 +40,7 @@ export function mesWorkOrderReleaseBlocker(order: MesWorkOrderReleaseCandidate) 
     return '存在有效质量保留，不能下达'
   }
   for (const task of order.operationTasks) {
-    if ((task.status ?? '').toLowerCase() !== 'queued') {
-      return '当前工序状态无法证明下达就绪，不能下达'
-    }
+    if (!isQueued(task)) continue
     if (!task.evaluatedAtUtc?.trim() || !Array.isArray(task.blockReasons)) {
       return '工序就绪状态尚未取得，不能下达'
     }
@@ -47,4 +54,14 @@ export function mesWorkOrderReleaseBlocker(order: MesWorkOrderReleaseCandidate) 
     }
   }
   return null
+}
+
+/**
+ * 工序已离开排队的工单，其「下达」是事后补发布事实（母票 #3113 的自愈路径），
+ * 与开工前的常规下达不是同一件事。确认框里必须说出这点，否则用户无从判断
+ * 这一下会不会动到正在跑的工序。
+ */
+export function mesWorkOrderRetroactiveReleaseNotice(order: MesWorkOrderReleaseCandidate) {
+  if (!order.operationTasks?.some((task) => !isQueued(task))) return null
+  return '该工单已有工序不在排队中：下达只补齐工单的发布记录，不会改变工序当前进度。'
 }
