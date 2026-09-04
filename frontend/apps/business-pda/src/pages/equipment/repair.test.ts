@@ -895,6 +895,12 @@ describe('PDA equipment repair page', () => {
     // 即便有人绕过入口直接触发组件事件，已锁定的意图也不许被改。
     wrapper.findComponent(DowntimeReasonPicker).vm.$emit('select', DIRECTORY_OPTIONS[1])
     await flushPromises()
+
+    // 界面也不许说谎：显示成"主轴异响"而实际重发"液压泄漏"，等于让工人以为自己改成了
+    // 另一条停机原因。`submit()` 冻结意图只保证发出去的对，保证不了屏幕上写的对。
+    expect(wrapper.get('[data-testid="reason-trigger"]').text()).toContain('液压泄漏')
+    expect(wrapper.get('[data-testid="reason-trigger"]').text()).not.toContain('主轴异响')
+
     await wrapper.get('[data-testid="submit"]').trigger('click')
     await flushPromises()
 
