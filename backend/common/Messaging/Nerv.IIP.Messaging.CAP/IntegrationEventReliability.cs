@@ -519,18 +519,22 @@ public sealed record IntegrationEventDeadLetterMessage(
         {
             return JsonSerializer.Serialize(integrationEvent, integrationEvent.GetType());
         }
-        catch (Exception exception) when (exception is not OutOfMemoryException and not StackOverflowException)
+        catch (Exception typedFailure)
         {
-            return ForensicJson.Serialize(integrationEvent);
+            try
+            {
+                return ForensicJson.Serialize(integrationEvent);
+            }
+            catch (Exception forensicFailure)
+            {
+                // 结构性兜底：无论投影因何失败（含 OutOfMemoryException——这里能捕获且必须捕获，
+                // 否则"越该进 DLQ 越写不进"原样复现），死信都以只含信封身份列的字面 JSON 写入。
+                return ForensicJson.SerializeIdentityOnly(integrationEvent, typedFailure, forensicFailure);
+            }
         }
     }
 }
 
-/// <summary>
-/// Converter-free JSON projection for forensic evidence: public readable properties (camelCase), primitives, enums as
-/// names, collections and dictionaries, bounded depth and cycle-safe. It never consults <c>JsonConverter</c>
-/// attributes, so a contract that refuses to serialize itself still leaves a readable dead letter.
-/// </summary>
 public static class ForensicJson
 {
     private const int MaxDepth = 32;
@@ -546,6 +550,54 @@ public static class ForensicJson
         return Encoding.UTF8.GetString(stream.ToArray());
     }
 
+    /// <summary>
+    /// Last-resort dead-letter body: only the <see cref="IIntegrationEventEnvelope"/> scalar members (each read
+    /// defensively) plus the two failures that got us here. Built with the raw writer so nothing here can throw
+    /// for a reason that depends on the payload.
+    /// </summary>
+    public static string SerializeIdentityOnly(IIntegrationEventEnvelope integrationEvent, Exception typedFailure, Exception forensicFailure)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            WriteIdentity(writer, "eventId", () => integrationEvent.EventId);
+            WriteIdentity(writer, "eventType", () => integrationEvent.EventType);
+            WriteIdentity(writer, "eventVersion", () => integrationEvent.EventVersion.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            WriteIdentity(writer, "occurredAtUtc", () => integrationEvent.OccurredAtUtc.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
+            WriteIdentity(writer, "sourceService", () => integrationEvent.SourceService);
+            WriteIdentity(writer, "correlationId", () => integrationEvent.CorrelationId);
+            WriteIdentity(writer, "causationId", () => integrationEvent.CausationId);
+            WriteIdentity(writer, "organizationId", () => integrationEvent.OrganizationId);
+            WriteIdentity(writer, "environmentId", () => integrationEvent.EnvironmentId);
+            WriteIdentity(writer, "actor", () => integrationEvent.Actor);
+            WriteIdentity(writer, "idempotencyKey", () => integrationEvent.IdempotencyKey);
+            writer.WriteString("payload", "<unserializable>");
+            writer.WriteString("typedSerializationFailure", Describe(typedFailure));
+            writer.WriteString("forensicSerializationFailure", Describe(forensicFailure));
+            writer.WriteEndObject();
+        }
+
+        return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private static void WriteIdentity(Utf8JsonWriter writer, string name, Func<string?> read)
+    {
+        string? value;
+        try
+        {
+            value = read();
+        }
+        catch (Exception exception)
+        {
+            value = $"<unreadable: {exception.GetType().Name}>";
+        }
+
+        writer.WriteString(name, value);
+    }
+
+    private static string Describe(Exception exception) => $"{exception.GetType().Name}: {exception.Message}";
+
     private static void WriteValue(Utf8JsonWriter writer, object? value, int depth, HashSet<object> ancestors)
     {
         switch (value)
@@ -559,7 +611,13 @@ public static class ForensicJson
             case bool boolean:
                 writer.WriteBooleanValue(boolean);
                 return;
-            case byte or sbyte or short or ushort or int or uint or long or ulong or float or double or decimal:
+            case float single:
+                WriteFloating(writer, single, float.IsFinite(single));
+                return;
+            case double @double:
+                WriteFloating(writer, @double, double.IsFinite(@double));
+                return;
+            case byte or sbyte or short or ushort or int or uint or long or ulong or decimal:
                 writer.WriteRawValue(Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture)!, skipInputValidation: false);
                 return;
             case DateTimeOffset dateTimeOffset:
@@ -589,6 +647,12 @@ public static class ForensicJson
             case byte[] bytes:
                 writer.WriteBase64StringValue(bytes);
                 return;
+            // 框架/反射类型不展开：`Type`/`MemberInfo` 的反射图深不见底（展开到 OOM），`Uri`/`Exception`/`Delegate`
+            // 等展开后体积失控且无取证价值；统一写 ToString。
+            case Type or System.Reflection.MemberInfo or System.Reflection.Assembly or Uri or Exception or Delegate
+                or System.Globalization.CultureInfo or System.Text.RegularExpressions.Regex or Version or Stream:
+                writer.WriteStringValue(Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture));
+                return;
         }
 
         if (depth >= MaxDepth || !ancestors.Add(value))
@@ -602,23 +666,10 @@ public static class ForensicJson
             switch (value)
             {
                 case System.Collections.IDictionary dictionary:
-                    writer.WriteStartObject();
-                    foreach (System.Collections.DictionaryEntry entry in dictionary)
-                    {
-                        writer.WritePropertyName(Convert.ToString(entry.Key, System.Globalization.CultureInfo.InvariantCulture) ?? "null");
-                        WriteValue(writer, entry.Value, depth + 1, ancestors);
-                    }
-
-                    writer.WriteEndObject();
+                    WriteDictionary(writer, dictionary, depth, ancestors);
                     return;
                 case System.Collections.IEnumerable enumerable:
-                    writer.WriteStartArray();
-                    foreach (var item in enumerable)
-                    {
-                        WriteValue(writer, item, depth + 1, ancestors);
-                    }
-
-                    writer.WriteEndArray();
+                    WriteEnumerable(writer, enumerable, depth, ancestors);
                     return;
             }
 
@@ -635,7 +686,7 @@ public static class ForensicJson
                 {
                     propertyValue = property.GetValue(value);
                 }
-                catch (Exception exception) when (exception is not OutOfMemoryException and not StackOverflowException)
+                catch (Exception exception)
                 {
                     propertyValue = $"<unreadable: {exception.GetType().Name}>";
                 }
@@ -650,6 +701,66 @@ public static class ForensicJson
         {
             ancestors.Remove(value);
         }
+    }
+
+    private static void WriteFloating(Utf8JsonWriter writer, double value, bool isFinite)
+    {
+        // NaN / ±Infinity 不是 JSON 数字，writer 不放行；显式写成字符串。
+        if (isFinite)
+        {
+            writer.WriteNumberValue(value);
+        }
+        else
+        {
+            writer.WriteStringValue(value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+    }
+
+    private static void WriteDictionary(Utf8JsonWriter writer, System.Collections.IDictionary dictionary, int depth, HashSet<object> ancestors)
+    {
+        writer.WriteStartObject();
+        var seenNames = new HashSet<string>(StringComparer.Ordinal);
+        try
+        {
+            foreach (System.Collections.DictionaryEntry entry in dictionary)
+            {
+                var name = Convert.ToString(entry.Key, System.Globalization.CultureInfo.InvariantCulture) ?? "null";
+                // 两个键 ToString 相同会产出重复属性名，jsonb 会静默丢前者：冲突时追加序号。
+                var unique = name;
+                for (var suffix = 2; !seenNames.Add(unique); suffix++)
+                {
+                    unique = $"{name}#{suffix}";
+                }
+
+                writer.WritePropertyName(unique);
+                WriteValue(writer, entry.Value, depth + 1, ancestors);
+            }
+        }
+        catch (Exception exception)
+        {
+            writer.WriteString("<enumeration failed>", $"{exception.GetType().Name}: {exception.Message}");
+        }
+
+        writer.WriteEndObject();
+    }
+
+    private static void WriteEnumerable(Utf8JsonWriter writer, System.Collections.IEnumerable enumerable, int depth, HashSet<object> ancestors)
+    {
+        writer.WriteStartArray();
+        try
+        {
+            foreach (var item in enumerable)
+            {
+                WriteValue(writer, item, depth + 1, ancestors);
+            }
+        }
+        catch (Exception exception)
+        {
+            // 枚举中途抛（惰性序列、已释放的 reader 等）：保留已写出的元素，追加失败说明，不让整份取证丢失。
+            writer.WriteStringValue($"<enumeration failed: {exception.GetType().Name}: {exception.Message}>");
+        }
+
+        writer.WriteEndArray();
     }
 }
 
