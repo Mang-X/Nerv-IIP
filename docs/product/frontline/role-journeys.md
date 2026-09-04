@@ -126,6 +126,7 @@ Business Console 已有真实登录、按 `permissionCodes` 裁剪的域/侧栏�
 | --- | --- |
 | 登录 | admin 只做连通性诊断；终验必须给每种目标 PC 角色独立账号，并用 `/auth/me` 证明 role/permissions。 |
 | 默认工作台 | 终验须证明每个角色只见职责内待办、消息、预警和 KPI，不用全权限 admin 截图代替。 |
+| 生产日报 | `/mes/reports` 已提供按日/班次/工作中心/物料的权威生产统计、服务端分页和全量 CSV；WIP 与设备性能率按独立权限请求，不能用缺权限或失败态冒充真实空值。目标生产管理角色及其范围仍需独立账号终验。 |
 | 范围 | 当前业务上下文来自 principal 的 org/env；Team/WorkCenter/Workshop 范围尚未交付时不能假装存在。 |
 | 详情/动作/回执 | 以页面实体强 ID、公开 Gateway command response 和同一公开详情回读为准；没有角色账号和样本前均是 gap。 |
 | 终态只读 | 每个业务终态必须隐藏或禁用非法动作，直接调用仍由 Gateway/服务端拒绝。 |

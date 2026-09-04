@@ -965,6 +965,14 @@ describe('business MES composables', () => {
     ).toMatchObject({ enabled: false })
   })
 
+  it('keeps the current WIP request disabled when the consuming page lacks operations permission', () => {
+    useMesWipSummary(() => false)
+
+    expect(coladaState.queryFactoriesById.get('getBusinessConsoleMesWipSummary')?.()).toMatchObject(
+      { enabled: false },
+    )
+  })
+
   it('does not refetch MES lists when business context is empty', async () => {
     const context = useBusinessContextStore()
     context.patchContext({ organizationId: '', environmentId: '' })
