@@ -438,7 +438,7 @@ try {
     # 再保留独立协作参与者读面与自领并发的唯一 owner/participant/receipt/业务冲突证明，以及 #3010 的
     # 返工 UoW 成功、outbox 失败回滚与外层事务归属 3 条证明，以及 #2966 的停机事件 v1/v2 跨事务并发单效、
     # 幂等键与 eventId 两条唯一约束各自拒绝其等价错误变异、同 EventId 异业务键并发单效，以及收件箱迁移
-    # 「真重复保留最早行」与「歧义历史 fail-closed」共 6 条证明，共有 62 条真实 PostgreSQL 证明；再加 #3117 的直投发布时刻下界 1 条
+    # 「真重复保留最早行」与「歧义历史 fail-closed」共 6 条证明，共有 63 条真实 PostgreSQL 证明（该叙述在 main 上原写 62、与断言的 63 差 1，此处按断言更正）；再加 #3117 的直投发布时刻下界 1 条
     # （按既有活动取下界的聚合查询与三分量归属谓词由真实 provider 执行），共 64 条；
     # CAP 的原生存储表落在独立 cap schema，业务表与 EF 侧 cap_* 表落在 mes schema，两者都必须声明才能在失败时留下完整诊断。
     $mesMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'mes-postgres-profile' -RepositoryRoot $repoRoot

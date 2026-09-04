@@ -160,8 +160,13 @@ public sealed class ReleaseWorkOrderCommandHandler(
         // 只按报工取下界时这里查不到任何活动 → 发布事实取调用方时刻 → 被 Quality 的完工守卫
         // （PeriodicInspectionOperation 的 CompletedAtUtc < releasedAtUtc）判冲突整封进死信（#3117 第三轮）。
         // 不新增查询：operationSnapshots 已在上面读进内存，ExistingEndUtc 就是完工时刻。
-        // 注：取消也会写 ExistingEndUtc；把它算进来只会把下界**往早**拉，而 Quality 三条守卫都是
-        // 「既有活动早于发布」才抛，往早拉恒安全，故不再按状态过滤。
+        // 注：取消也会写 ExistingEndUtc（OperationTask.Cancel）。把它算进来只会把下界**往早**拉。
+        // **「往早拉恒安全」这句只对 Quality 那三条 throw 守卫成立，不要读成无条件安全**：
+        // 发布时刻同时是信封 OccurredAtUtc，被 Quality 直投分支当作累计窗口的生成时钟，
+        // 往早拉会让补开的巡检任务到期时刻更早（见 PR 正文登记项 0b / R5）。
+        // 这条「不按状态过滤」是有意裁定，其鉴别力由
+        // WorkOrderReleaseFactTimeTests.Release_treats_a_cancelled_operations_end_time_as_existing_activity 承担
+        // （加 Status == Completed 过滤即红）。
         var earliestOperationEndUtc = operationSnapshots
             .Where(x => x.ExistingEndUtc.HasValue)
             .Select(x => (DateTimeOffset?)x.ExistingEndUtc!.Value)

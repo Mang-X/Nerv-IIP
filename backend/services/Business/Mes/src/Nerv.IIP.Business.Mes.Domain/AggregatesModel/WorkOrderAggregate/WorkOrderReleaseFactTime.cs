@@ -81,6 +81,13 @@ public sealed record WorkOrderReleaseFactTime
     /// <c>NcrReworkRequestedIntegrationEventHandlerForCreateMesWorkOrder</c>（跨服务载荷）。
     /// 新增外部入口的人**不调本方法也能编译**——这一格没有编译期防线，靠的是这条注释与两条用例。</para>
     ///
+    /// <para><b>还有第三条外部输入在影响发布事实时刻，但它不经过本方法（如实登记，非疏漏）：</b>
+    /// 工序动作端点的 <c>req.ChangedAtUtc</c>（<c>MesEndpoints</c> 里 start/pause/resume/complete
+    /// 四个动作共用、只做 <c>?? GetUtcNow()</c> 空值回落、**不夹**）。它经
+    /// <c>OperationTask.ExistingEndUtc</c> → 「最早既有活动」→ 发布事实时刻 → 信封 <c>OccurredAtUtc</c>。
+    /// **未来值不构成风险**（<see cref="NotLaterThan"/> 只取更早者），
+    /// **但任意回拨的过去值会把发布事实时刻拉早**，后果见 PR 正文登记项 0b。是否夹紧未在 #3117 内裁定。</para>
+    ///
     /// <para>返回裸 <see cref="DateTimeOffset"/> 而不是本类型：它只处理取值里的一项，
     /// 结果仍要交给 <see cref="NotLaterThan"/> 与既有活动下界合并，不能单独充当发布事实时刻。</para>
     /// </summary>
