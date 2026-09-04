@@ -162,19 +162,25 @@ public sealed class IntegrationEventDeadLetter
     {
     }
 
+    /// <remarks>
+    /// Identity and failure columns are fixed-length while their values come from producer-controlled wire JSON and
+    /// transport exception headers (#3101). Persist truncated values rather than letting a 22001 escape from the CAP
+    /// failed-threshold callback, where it would be swallowed and the dead letter lost — the very failure class this
+    /// store exists to prevent. Limits mirror <see cref="IntegrationEventDeadLetterModelBuilderExtensions"/>.
+    /// </remarks>
     public IntegrationEventDeadLetter(IntegrationEventDeadLetterMessage message)
     {
         Id = message.Id;
-        ConsumerName = message.ConsumerName;
-        EventId = message.EventId;
-        EventType = message.EventType;
+        ConsumerName = Truncate(message.ConsumerName, ConsumerNameMaxLength);
+        EventId = TruncateOptional(message.EventId, EventIdMaxLength);
+        EventType = TruncateOptional(message.EventType, EventTypeMaxLength);
         EventVersion = message.EventVersion;
-        SourceService = message.SourceService;
-        IdempotencyKey = message.IdempotencyKey;
-        EventClrType = message.EventClrType;
+        SourceService = TruncateOptional(message.SourceService, SourceServiceMaxLength);
+        IdempotencyKey = TruncateOptional(message.IdempotencyKey, IdempotencyKeyMaxLength);
+        EventClrType = Truncate(message.EventClrType, EventClrTypeMaxLength);
         EventJson = message.EventJson;
-        FailureCode = message.FailureCode;
-        FailureMessage = message.FailureMessage;
+        FailureCode = Truncate(message.FailureCode, FailureCodeMaxLength);
+        FailureMessage = Truncate(message.FailureMessage, FailureMessageMaxLength);
         Status = message.Status;
         DeadLetteredAtUtc = message.DeadLetteredAtUtc;
         ReplayedAtUtc = message.ReplayedAtUtc;
@@ -241,8 +247,22 @@ public sealed class IntegrationEventDeadLetter
             ReplayedAtUtc);
     }
 
-    private static string Truncate(string value) =>
-        value.Length <= 1000 ? value : value[..1000];
+    public const int ConsumerNameMaxLength = 200;
+    public const int EventIdMaxLength = 200;
+    public const int EventTypeMaxLength = 300;
+    public const int SourceServiceMaxLength = 150;
+    public const int IdempotencyKeyMaxLength = 500;
+    public const int EventClrTypeMaxLength = 500;
+    public const int FailureCodeMaxLength = 100;
+    public const int FailureMessageMaxLength = 1000;
+
+    private static string Truncate(string value) => Truncate(value, FailureMessageMaxLength);
+
+    private static string Truncate(string value, int maxLength) =>
+        value.Length <= maxLength ? value : value[..maxLength];
+
+    private static string? TruncateOptional(string? value, int maxLength) =>
+        value is null ? null : Truncate(value, maxLength);
 }
 
 public static class IntegrationEventDeadLetterModelBuilderExtensions
@@ -257,16 +277,16 @@ public static class IntegrationEventDeadLetterModelBuilderExtensions
         builder.ToTable("integration_event_dead_letters", table => table.HasComment("Integration events rejected before business handling and retained for replay triage."));
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").HasComment("Dead-letter message id.");
-        builder.Property(x => x.ConsumerName).HasColumnName("consumer_name").IsRequired().HasMaxLength(200).HasComment("Integration event consumer name that rejected the message.");
-        builder.Property(x => x.EventId).HasColumnName("event_id").HasMaxLength(200).HasComment("Rejected integration event id when present.");
-        builder.Property(x => x.EventType).HasColumnName("event_type").HasMaxLength(300).HasComment("Rejected integration event type when present.");
+        builder.Property(x => x.ConsumerName).HasColumnName("consumer_name").IsRequired().HasMaxLength(IntegrationEventDeadLetter.ConsumerNameMaxLength).HasComment("Integration event consumer name that rejected the message.");
+        builder.Property(x => x.EventId).HasColumnName("event_id").HasMaxLength(IntegrationEventDeadLetter.EventIdMaxLength).HasComment("Rejected integration event id when present.");
+        builder.Property(x => x.EventType).HasColumnName("event_type").HasMaxLength(IntegrationEventDeadLetter.EventTypeMaxLength).HasComment("Rejected integration event type when present.");
         builder.Property(x => x.EventVersion).HasColumnName("event_version").HasComment("Rejected integration event envelope version when present.");
-        builder.Property(x => x.SourceService).HasColumnName("source_service").HasMaxLength(150).HasComment("Source service from the rejected event envelope when present.");
-        builder.Property(x => x.IdempotencyKey).HasColumnName("idempotency_key").HasMaxLength(500).HasComment("Rejected integration event idempotency key when present.");
-        builder.Property(x => x.EventClrType).HasColumnName("event_clr_type").IsRequired().HasMaxLength(500).HasComment("CLR contract type captured for replay diagnostics.");
+        builder.Property(x => x.SourceService).HasColumnName("source_service").HasMaxLength(IntegrationEventDeadLetter.SourceServiceMaxLength).HasComment("Source service from the rejected event envelope when present.");
+        builder.Property(x => x.IdempotencyKey).HasColumnName("idempotency_key").HasMaxLength(IntegrationEventDeadLetter.IdempotencyKeyMaxLength).HasComment("Rejected integration event idempotency key when present.");
+        builder.Property(x => x.EventClrType).HasColumnName("event_clr_type").IsRequired().HasMaxLength(IntegrationEventDeadLetter.EventClrTypeMaxLength).HasComment("CLR contract type captured for replay diagnostics.");
         builder.Property(x => x.EventJson).HasColumnName("event_json").IsRequired().HasColumnType("jsonb").HasComment("Serialized rejected integration event envelope and payload.");
-        builder.Property(x => x.FailureCode).HasColumnName("failure_code").IsRequired().HasMaxLength(100).HasComment("Machine-readable reason the consumer rejected the message.");
-        builder.Property(x => x.FailureMessage).HasColumnName("failure_message").IsRequired().HasMaxLength(1000).HasComment("Operator-readable rejection detail.");
+        builder.Property(x => x.FailureCode).HasColumnName("failure_code").IsRequired().HasMaxLength(IntegrationEventDeadLetter.FailureCodeMaxLength).HasComment("Machine-readable reason the consumer rejected the message.");
+        builder.Property(x => x.FailureMessage).HasColumnName("failure_message").IsRequired().HasMaxLength(IntegrationEventDeadLetter.FailureMessageMaxLength).HasComment("Operator-readable rejection detail.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Dead-letter status: Pending, Replayed, Failed, or Ignored.");
         builder.Property(x => x.DeadLetteredAtUtc).HasColumnName("dead_lettered_at_utc").IsRequired().HasComment("UTC time when the service stored the dead-letter message.");
         builder.Property(x => x.ReplayedAtUtc).HasColumnName("replayed_at_utc").HasComment("UTC time when the dead-letter message was marked replayed.");

@@ -645,6 +645,412 @@ public sealed class IntegrationEventReliabilityTests
         return index.Properties.Select(property => property.Name).ToArray();
     }
 
+    /// <summary>#3101 反向探针①：CAP 存下的原始 wire 体（data URI）被契约拒收后，死信保留解码后的原始 JSON 与可读身份。</summary>
+    [Fact]
+    public async Task Cap_retry_exhausted_contract_rejected_body_dead_letters_original_wire_json_with_lenient_identity()
+    {
+        var store = new InMemoryIntegrationEventDeadLetterStore();
+        // eventVersion 是字符串而非整数：类型化反序列化必然抛 JsonException，模拟 wire contract converter 拒收。
+        const string rawJson = """
+            {"eventId":"event-contract-rejected-001","eventType":"sample.Event","eventVersion":"not-a-number",
+             "sourceService":"sample","idempotencyKey":"sample:event-contract-rejected-001","payload":{"value":"raw"}}
+            """;
+        var failure = CreateSubscribeFailure(
+            typeof(SampleIntegrationEvent).FullName!,
+            "data:SampleIntegrationEvent;base64," + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(rawJson)),
+            "JsonException-->contract rejected.");
+
+        var exception = await Record.ExceptionAsync(() =>
+            new IntegrationEventCapFailureDeadLetterer(store).HandleAsync(failure, CancellationToken.None));
+
+        Assert.Null(exception);
+        var deadLetter = Assert.Single(await store.ListAsync("sample.consumer", IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+        // 失败码是运维/工具可见面：与 handler-retry-exhausted 同族，钉硬字面量。
+        Assert.Equal("contract-rejected", deadLetter.FailureCode);
+        Assert.Equal(IntegrationEventCapFailureDeadLetterer.ContractRejectedFailureCode, deadLetter.FailureCode);
+        Assert.Equal("event-contract-rejected-001", deadLetter.EventId);
+        Assert.Equal("sample.Event", deadLetter.EventType);
+        Assert.Null(deadLetter.EventVersion);
+        Assert.Equal("sample", deadLetter.SourceService);
+        Assert.Equal("sample:event-contract-rejected-001", deadLetter.IdempotencyKey);
+        Assert.Equal(typeof(SampleIntegrationEvent).FullName, deadLetter.EventClrType);
+        Assert.Equal(rawJson, deadLetter.EventJson);
+        // 两段都要在：契约拒收的真实异常文本（类型化反序列化自己抛的）与 transport 头文本；缺任一即红。
+        Assert.Contains("could not be converted", deadLetter.FailureMessage, StringComparison.Ordinal);
+        Assert.Contains("(JsonException-->contract rejected.)", deadLetter.FailureMessage, StringComparison.Ordinal);
+        using var forensic = JsonDocument.Parse(deadLetter.EventJson);
+        Assert.Equal("not-a-number", forensic.RootElement.GetProperty("eventVersion").GetString());
+    }
+
+    /// <summary>M12：原始体是合法 JSON 但根不是对象——身份列全 null，原文仍逐字保留。</summary>
+    [Fact]
+    public async Task Cap_retry_exhausted_contract_rejected_non_object_json_root_dead_letters_verbatim_without_identity()
+    {
+        var store = new InMemoryIntegrationEventDeadLetterStore();
+        const string rawJson = "[\"not\",\"an\",\"envelope\"]";
+        await new IntegrationEventCapFailureDeadLetterer(store).HandleAsync(
+            CreateSubscribeFailure(typeof(SampleIntegrationEvent).FullName!, rawJson, "JsonException-->root is an array."),
+            CancellationToken.None);
+
+        var deadLetter = Assert.Single(await store.ListAsync("sample.consumer", IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+        Assert.Equal("contract-rejected", deadLetter.FailureCode);
+        Assert.Null(deadLetter.EventId);
+        Assert.Null(deadLetter.EventType);
+        Assert.Null(deadLetter.EventVersion);
+        Assert.Null(deadLetter.SourceService);
+        Assert.Null(deadLetter.IdempotencyKey);
+        Assert.Equal(rawJson, deadLetter.EventJson);
+    }
+
+    /// <summary>M14：带 data: 前缀但 base64 非法——不解码、按原文处理（非 JSON → rawBody 包装），不得抛出丢消息。</summary>
+    [Fact]
+    public async Task Cap_retry_exhausted_invalid_base64_data_uri_dead_letters_verbatim_inside_json_wrapper()
+    {
+        var store = new InMemoryIntegrationEventDeadLetterStore();
+        const string value = "data:SampleIntegrationEvent;base64,@@not-base64@@";
+        var exception = await Record.ExceptionAsync(() => new IntegrationEventCapFailureDeadLetterer(store).HandleAsync(
+            CreateSubscribeFailure(typeof(SampleIntegrationEvent).FullName!, value, "JsonException-->garbage."),
+            CancellationToken.None));
+
+        Assert.Null(exception);
+        var deadLetter = Assert.Single(await store.ListAsync("sample.consumer", IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+        using var wrapper = JsonDocument.Parse(deadLetter.EventJson);
+        Assert.Equal(value, wrapper.RootElement.GetProperty("rawBody").GetString());
+    }
+
+    /// <summary>M15：无 data: 前缀的纯 JSON 字符串体被契约拒收——直接按 JSON 读身份并逐字保留。</summary>
+    [Fact]
+    public async Task Cap_retry_exhausted_plain_json_string_body_without_data_prefix_dead_letters_contract_rejected()
+    {
+        var store = new InMemoryIntegrationEventDeadLetterStore();
+        const string rawJson = "{\"eventId\":\"event-plain-001\",\"eventVersion\":\"x\",\"sourceService\":\"sample\"}";
+        await new IntegrationEventCapFailureDeadLetterer(store).HandleAsync(
+            CreateSubscribeFailure(typeof(SampleIntegrationEvent).FullName!, rawJson, "JsonException-->plain."),
+            CancellationToken.None);
+
+        var deadLetter = Assert.Single(await store.ListAsync("sample.consumer", IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+        Assert.Equal("contract-rejected", deadLetter.FailureCode);
+        Assert.Equal("event-plain-001", deadLetter.EventId);
+        Assert.Equal("sample", deadLetter.SourceService);
+        Assert.Equal(rawJson, deadLetter.EventJson);
+    }
+
+    /// <summary>
+    /// 阻断 2：身份列与失败信息取自生产者可控的 wire JSON / CAP 异常头，列是定长的；持久化 AddAsync 路径必须像
+    /// MarkFailed* 一样截断，否则 22001 在阈值回调里被吞、死信丢失（与 #3101 根因同一失败类）。
+    /// </summary>
+    [Fact]
+    public async Task Persistent_dead_letter_store_truncates_producer_controlled_columns_on_add()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<TestDeadLetterDbContext>().UseSqlite(connection).Options;
+        await using var dbContext = new TestDeadLetterDbContext(options);
+        await dbContext.Database.EnsureCreatedAsync();
+        var store = new PersistentIntegrationEventDeadLetterStore<TestDeadLetterDbContext>(dbContext);
+        var overlong = new string('x', 5000);
+
+        var stored = await store.AddAsync(
+            new IntegrationEventDeadLetterMessage(
+                Guid.CreateVersion7(),
+                "c" + overlong,
+                "e" + overlong,
+                "t" + overlong,
+                1,
+                "s" + overlong,
+                "k" + overlong,
+                "clr" + overlong,
+                "{\"raw\":true}",
+                "f" + overlong,
+                "m" + overlong,
+                IntegrationEventDeadLetterStatus.Pending,
+                DateTimeOffset.UtcNow,
+                null),
+            CancellationToken.None);
+
+        var persisted = Assert.Single(await store.ListAsync(null, IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+        Assert.Equal(stored.Id, persisted.Id);
+        Assert.Equal(IntegrationEventDeadLetter.ConsumerNameMaxLength, persisted.ConsumerName.Length);
+        Assert.Equal(IntegrationEventDeadLetter.EventIdMaxLength, persisted.EventId!.Length);
+        Assert.Equal(IntegrationEventDeadLetter.EventTypeMaxLength, persisted.EventType!.Length);
+        Assert.Equal(IntegrationEventDeadLetter.SourceServiceMaxLength, persisted.SourceService!.Length);
+        Assert.Equal(IntegrationEventDeadLetter.IdempotencyKeyMaxLength, persisted.IdempotencyKey!.Length);
+        Assert.Equal(IntegrationEventDeadLetter.EventClrTypeMaxLength, persisted.EventClrType.Length);
+        Assert.Equal(IntegrationEventDeadLetter.FailureCodeMaxLength, persisted.FailureCode.Length);
+        Assert.Equal(IntegrationEventDeadLetter.FailureMessageMaxLength, persisted.FailureMessage.Length);
+        Assert.StartsWith("e", persisted.EventId, StringComparison.Ordinal);
+        Assert.Equal("{\"raw\":true}", persisted.EventJson);
+        // 上限本身也是运维可见面（与 EF 列定义同源），钉硬字面量。
+        Assert.Equal((200, 200, 300, 150, 500, 500, 100, 1000), (
+            IntegrationEventDeadLetter.ConsumerNameMaxLength,
+            IntegrationEventDeadLetter.EventIdMaxLength,
+            IntegrationEventDeadLetter.EventTypeMaxLength,
+            IntegrationEventDeadLetter.SourceServiceMaxLength,
+            IntegrationEventDeadLetter.IdempotencyKeyMaxLength,
+            IntegrationEventDeadLetter.EventClrTypeMaxLength,
+            IntegrationEventDeadLetter.FailureCodeMaxLength,
+            IntegrationEventDeadLetter.FailureMessageMaxLength));
+    }
+
+    /// <summary>#3101 反向探针②：根本不是 JSON 的 wire 体也不能被丢——原文进 JSON 包装，列仍可写入 jsonb。</summary>
+    [Fact]
+    public async Task Cap_retry_exhausted_non_json_body_dead_letters_verbatim_inside_json_wrapper()
+    {
+        var store = new InMemoryIntegrationEventDeadLetterStore();
+        var failure = CreateSubscribeFailure(
+            typeof(SampleIntegrationEvent).FullName!,
+            "data:SampleIntegrationEvent;base64," + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("<not-json/>")),
+            "JsonException-->body is not JSON.");
+
+        await new IntegrationEventCapFailureDeadLetterer(store).HandleAsync(failure, CancellationToken.None);
+
+        var deadLetter = Assert.Single(await store.ListAsync("sample.consumer", IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+        Assert.Equal(IntegrationEventCapFailureDeadLetterer.ContractRejectedFailureCode, deadLetter.FailureCode);
+        Assert.Null(deadLetter.EventId);
+        using var wrapper = JsonDocument.Parse(deadLetter.EventJson);
+        Assert.Equal("rawBody", IntegrationEventCapFailureDeadLetterer.RawBodyPropertyName);
+        Assert.Equal("<not-json/>", wrapper.RootElement.GetProperty("rawBody").GetString());
+    }
+
+    /// <summary>
+    /// #3101 反向探针③：违反自身 wire 契约（converter 在 Write 侧也校验）的 CLR 事件，<c>Create</c> 不再自己抛，
+    /// 死信保留全部信封成员与 payload 用于取证；合法事件仍走类型化序列化（形状零漂移由既有用例钉住）。
+    /// </summary>
+    [Fact]
+    public void Dead_letter_create_keeps_forensic_envelope_for_events_that_violate_their_own_write_contract()
+    {
+        var invalid = new StrictIntegrationEvent(
+            EventId: "event-strict-001",
+            EventType: "strict.Event",
+            EventVersion: 1, // 契约要求 2
+            OccurredAtUtc: DateTimeOffset.Parse("2026-09-03T00:00:00Z"),
+            SourceService: "strict",
+            CorrelationId: "corr:strict-001",
+            CausationId: "cause:strict-001",
+            OrganizationId: "org-001",
+            EnvironmentId: "env-001",
+            Actor: "system:test",
+            IdempotencyKey: "strict:event-strict-001",
+            Payload: new StrictPayload("strict-value"));
+        Assert.Throws<JsonException>(() => JsonSerializer.Serialize(invalid));
+
+        var deadLetter = IntegrationEventDeadLetterMessage.Create("strict.consumer", invalid, "unsupported-version", "version 1 is not accepted");
+
+        Assert.Equal("event-strict-001", deadLetter.EventId);
+        Assert.Equal(1, deadLetter.EventVersion);
+        Assert.Equal(typeof(StrictIntegrationEvent).FullName, deadLetter.EventClrType);
+        using var forensic = JsonDocument.Parse(deadLetter.EventJson);
+        Assert.Equal("event-strict-001", forensic.RootElement.GetProperty("eventId").GetString());
+        Assert.Equal(1, forensic.RootElement.GetProperty("eventVersion").GetInt32());
+        Assert.Equal("strict:event-strict-001", forensic.RootElement.GetProperty("idempotencyKey").GetString());
+        Assert.Equal("strict-value", forensic.RootElement.GetProperty("payload").GetProperty("value").GetString());
+
+        var valid = invalid with { EventVersion = 2 };
+        var typed = IntegrationEventDeadLetterMessage.Create("strict.consumer", valid, "handler-failed", "business rule");
+        Assert.Equal(JsonSerializer.Serialize(valid), typed.EventJson);
+    }
+
+    /// <summary>
+    /// 阻断 1（#3101 复审）：信封 payload 带**属性级** converter（本仓生产形态如 MesMachineTimeFactStatusJsonConverter：
+    /// JsonStringEnumConverter&lt;T&gt;(allowIntegerValues:false)），枚举值未定义时类型化序列化在 EnumConverter.Write 抛。
+    /// 回退投影必须完全不经 converter，否则 Create 依旧抛、死信依旧丢。
+    /// </summary>
+    [Fact]
+    public void Dead_letter_create_keeps_forensic_envelope_when_a_nested_property_converter_throws()
+    {
+        var invalid = new NestedConverterIntegrationEvent(
+            EventId: "event-nested-001",
+            EventType: "nested.Event",
+            EventVersion: 1,
+            OccurredAtUtc: DateTimeOffset.Parse("2026-09-03T00:00:00Z"),
+            SourceService: "nested",
+            CorrelationId: "corr:nested-001",
+            CausationId: "cause:nested-001",
+            OrganizationId: "org-001",
+            EnvironmentId: "env-001",
+            Actor: "system:test",
+            IdempotencyKey: "nested:event-nested-001",
+            Payload: new NestedStatusPayload((NestedStatus)99, "line-1"));
+        var typedFailure = Record.Exception(() => JsonSerializer.Serialize(invalid));
+        Assert.IsAssignableFrom<JsonException>(typedFailure);
+
+        var deadLetter = IntegrationEventDeadLetterMessage.Create("nested.consumer", invalid, "unsupported-version", "nested converter rejected");
+
+        Assert.Equal("event-nested-001", deadLetter.EventId);
+        Assert.Equal(typeof(NestedConverterIntegrationEvent).FullName, deadLetter.EventClrType);
+        using var forensic = JsonDocument.Parse(deadLetter.EventJson);
+        Assert.Equal("event-nested-001", forensic.RootElement.GetProperty("eventId").GetString());
+        Assert.Equal("nested:event-nested-001", forensic.RootElement.GetProperty("idempotencyKey").GetString());
+        var payload = forensic.RootElement.GetProperty("payload");
+        Assert.Equal("99", payload.GetProperty("status").GetString());
+        Assert.Equal("line-1", payload.GetProperty("line").GetString());
+
+        // 合法值仍走类型化路径：形状与类型化序列化逐字相同（零漂移）。
+        var valid = invalid with { Payload = new NestedStatusPayload(NestedStatus.Active, "line-1") };
+        Assert.Equal(JsonSerializer.Serialize(valid), IntegrationEventDeadLetterMessage.Create("nested.consumer", valid, "handler-failed", "x").EventJson);
+    }
+
+    /// <summary>B1-①：NaN/Infinity 不是 JSON 数字——类型化序列化本就抛，回退投影必须把它写成字符串而不是再抛一次。</summary>
+    [Fact]
+    public void Dead_letter_create_keeps_non_finite_floating_values_as_strings()
+    {
+        var invalid = CreateHostileEvent(new HostilePayload((NestedStatus)99) { Ratio = double.NaN, Single = float.PositiveInfinity });
+        Assert.NotNull(Record.Exception(() => JsonSerializer.Serialize(invalid)));
+
+        var deadLetter = IntegrationEventDeadLetterMessage.Create("hostile.consumer", invalid, "unsupported-version", "hostile");
+
+        using var forensic = JsonDocument.Parse(deadLetter.EventJson);
+        var payload = forensic.RootElement.GetProperty("payload");
+        Assert.Equal("NaN", payload.GetProperty("ratio").GetString());
+        Assert.Equal("Infinity", payload.GetProperty("single").GetString());
+        Assert.Equal("99", payload.GetProperty("status").GetString());
+    }
+
+    /// <summary>B1-②：`Type` 属性不展开反射图（展开到 OOM），写 ToString。</summary>
+    [Fact]
+    public void Dead_letter_create_writes_reflection_and_framework_types_as_strings()
+    {
+        var invalid = CreateHostileEvent(new HostilePayload((NestedStatus)99)
+        {
+            Clr = typeof(IntegrationEventReliabilityTests),
+            Link = new Uri("https://nerv.test/path?q=1"),
+            Error = new InvalidOperationException("boom"),
+        });
+
+        var deadLetter = IntegrationEventDeadLetterMessage.Create("hostile.consumer", invalid, "unsupported-version", "hostile");
+
+        using var forensic = JsonDocument.Parse(deadLetter.EventJson);
+        var payload = forensic.RootElement.GetProperty("payload");
+        Assert.Equal(typeof(IntegrationEventReliabilityTests).ToString(), payload.GetProperty("clr").GetString());
+        Assert.Equal("https://nerv.test/path?q=1", payload.GetProperty("link").GetString());
+        Assert.Equal(new InvalidOperationException("boom").ToString(), payload.GetProperty("error").GetString());
+        Assert.True(deadLetter.EventJson.Length < 2000, $"forensic body must stay bounded, observed {deadLetter.EventJson.Length}");
+    }
+
+    /// <summary>B1-③：枚举时抛异常的 IEnumerable——保留已写出的元素并追加失败说明，不逃逸。</summary>
+    [Fact]
+    public void Dead_letter_create_keeps_partial_sequence_when_enumeration_throws()
+    {
+        var invalid = CreateHostileEvent(new HostilePayload((NestedStatus)99) { Lines = ThrowingSequence() });
+
+        var deadLetter = IntegrationEventDeadLetterMessage.Create("hostile.consumer", invalid, "unsupported-version", "hostile");
+
+        using var forensic = JsonDocument.Parse(deadLetter.EventJson);
+        var lines = forensic.RootElement.GetProperty("payload").GetProperty("lines").EnumerateArray().Select(x => x.GetString()).ToArray();
+        Assert.Equal(2, lines.Length);
+        Assert.Equal("first", lines[0]);
+        Assert.StartsWith("<enumeration failed: InvalidOperationException: sequence broke", lines[1], StringComparison.Ordinal);
+
+        static IEnumerable<string> ThrowingSequence()
+        {
+            yield return "first";
+            throw new InvalidOperationException("sequence broke");
+        }
+    }
+
+    /// <summary>B2：getter 抛异常时降级为占位串（合法 JSON），不让整份取证丢失。</summary>
+    [Fact]
+    public void Dead_letter_create_degrades_throwing_getters_to_placeholders()
+    {
+        var invalid = CreateHostileEvent(new HostilePayload((NestedStatus)99) { ExplodeOnRead = true });
+
+        var deadLetter = IntegrationEventDeadLetterMessage.Create("hostile.consumer", invalid, "unsupported-version", "hostile");
+
+        using var forensic = JsonDocument.Parse(deadLetter.EventJson);
+        Assert.Equal("<unreadable: TargetInvocationException>", forensic.RootElement.GetProperty("payload").GetProperty("bad").GetString());
+        Assert.Equal("99", forensic.RootElement.GetProperty("payload").GetProperty("status").GetString());
+    }
+
+    /// <summary>
+    /// B1 结构性兜底：投影自身因任何原因失败（这里用已释放 JsonDocument 的 JsonElement 让 writer 抛 ObjectDisposedException），
+    /// 死信仍以只含身份列的字面 JSON 写入，并记录两级失败原因。
+    /// </summary>
+    [Fact]
+    public void Dead_letter_create_falls_back_to_identity_only_json_when_forensic_projection_itself_throws()
+    {
+        JsonElement disposed;
+        using (var document = JsonDocument.Parse("{\"x\":1}"))
+        {
+            disposed = document.RootElement;
+        }
+
+        var invalid = CreateHostileEvent(new HostilePayload((NestedStatus)99) { Element = disposed });
+        Assert.NotNull(Record.Exception(() => ForensicJson.Serialize(invalid)));
+
+        var deadLetter = IntegrationEventDeadLetterMessage.Create("hostile.consumer", invalid, "unsupported-version", "hostile");
+
+        using var forensic = JsonDocument.Parse(deadLetter.EventJson);
+        Assert.Equal("event-hostile-001", forensic.RootElement.GetProperty("eventId").GetString());
+        Assert.Equal("hostile:event-hostile-001", forensic.RootElement.GetProperty("idempotencyKey").GetString());
+        Assert.Equal("1", forensic.RootElement.GetProperty("eventVersion").GetString());
+        Assert.Equal("<unserializable>", forensic.RootElement.GetProperty("payload").GetString());
+        Assert.StartsWith("ObjectDisposedException", forensic.RootElement.GetProperty("forensicSerializationFailure").GetString(), StringComparison.Ordinal);
+        Assert.False(string.IsNullOrWhiteSpace(forensic.RootElement.GetProperty("typedSerializationFailure").GetString()));
+        Assert.Equal("event-hostile-001", deadLetter.EventId);
+    }
+
+    /// <summary>建议 2：字典两个键 ToString 相同 → 属性名追加序号，jsonb 不会静默丢前者。</summary>
+    [Fact]
+    public void Forensic_json_disambiguates_dictionary_keys_that_stringify_identically()
+    {
+        var dictionary = new Dictionary<object, object?> { [1] = "int", ["1"] = "string" };
+
+        using var forensic = JsonDocument.Parse(ForensicJson.Serialize(dictionary));
+
+        var names = forensic.RootElement.EnumerateObject().Select(x => x.Name).ToArray();
+        Assert.Equal(["1", "1#2"], names);
+    }
+
+    /// <summary>建议 1：MarkFailed 路径的截断在本项目有独立承担。</summary>
+    [Fact]
+    public async Task Persistent_dead_letter_store_truncates_failure_message_on_mark_failed()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<TestDeadLetterDbContext>().UseSqlite(connection).Options;
+        await using var dbContext = new TestDeadLetterDbContext(options);
+        await dbContext.Database.EnsureCreatedAsync();
+        var store = new PersistentIntegrationEventDeadLetterStore<TestDeadLetterDbContext>(dbContext);
+        var stored = await store.AddAsync(
+            IntegrationEventDeadLetterMessage.Create("sample.consumer", CreateValidEvent("event-mark-failed-001"), "manual", "short"),
+            CancellationToken.None);
+
+        await store.MarkFailedAsync(stored.Id, "replay-handler-failed", new string('m', 5000), DateTimeOffset.UtcNow, CancellationToken.None);
+
+        var failed = Assert.Single(await store.ListAsync("sample.consumer", IntegrationEventDeadLetterStatus.Failed, CancellationToken.None));
+        Assert.Equal(IntegrationEventDeadLetter.FailureMessageMaxLength, failed.FailureMessage.Length);
+    }
+
+    private static HostileIntegrationEvent CreateHostileEvent(HostilePayload payload) => new(
+        EventId: "event-hostile-001",
+        EventType: "hostile.Event",
+        EventVersion: 1,
+        OccurredAtUtc: DateTimeOffset.Parse("2026-09-04T00:00:00Z"),
+        SourceService: "hostile",
+        CorrelationId: "corr:hostile-001",
+        CausationId: "cause:hostile-001",
+        OrganizationId: "org-001",
+        EnvironmentId: "env-001",
+        Actor: "system:test",
+        IdempotencyKey: "hostile:event-hostile-001",
+        Payload: payload);
+
+    private static DotNetCore.CAP.Messages.FailedInfo CreateSubscribeFailure(string typeHeader, object value, string exceptionHeader) =>
+        new()
+        {
+            ServiceProvider = new ServiceCollection().BuildServiceProvider(),
+            MessageType = DotNetCore.CAP.Messages.MessageType.Subscribe,
+            Message = new DotNetCore.CAP.Messages.Message(
+                new Dictionary<string, string?>
+                {
+                    [DotNetCore.CAP.Messages.Headers.Group] = "sample.consumer",
+                    [DotNetCore.CAP.Messages.Headers.Type] = typeHeader,
+                    [DotNetCore.CAP.Messages.Headers.MessageName] = "sample.topic",
+                    [DotNetCore.CAP.Messages.Headers.Exception] = exceptionHeader
+                },
+                value)
+        };
+
     private static SampleIntegrationEvent CreateValidEvent(string eventId)
     {
         return new SampleIntegrationEvent(
@@ -780,4 +1186,136 @@ public sealed class IntegrationEventReliabilityTests
     {
         public override DateTimeOffset GetUtcNow() => utcNow;
     }
+}
+
+[System.Text.Json.Serialization.JsonConverter(typeof(StrictIntegrationEventJsonConverter))]
+public sealed record StrictIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    StrictPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+/// <summary>模拟本仓 Read/Write 双侧校验的 wire contract converter（如 AssetUnavailableV2WireContract）。</summary>
+public sealed class StrictIntegrationEventJsonConverter : System.Text.Json.Serialization.JsonConverter<StrictIntegrationEvent>
+{
+    public override StrictIntegrationEvent Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        var value = JsonSerializer.Deserialize<StrictDto>(ref reader, options) ?? throw new JsonException("envelope required");
+        var integrationEvent = new StrictIntegrationEvent(value.EventId, value.EventType, value.EventVersion, value.OccurredAtUtc, value.SourceService, value.CorrelationId, value.CausationId, value.OrganizationId, value.EnvironmentId, value.Actor, value.IdempotencyKey, value.Payload);
+        Validate(integrationEvent);
+        return integrationEvent;
+    }
+
+    public override void Write(Utf8JsonWriter writer, StrictIntegrationEvent value, JsonSerializerOptions options)
+    {
+        Validate(value);
+        JsonSerializer.Serialize(writer, new StrictDto(value.EventId, value.EventType, value.EventVersion, value.OccurredAtUtc, value.SourceService, value.CorrelationId, value.CausationId, value.OrganizationId, value.EnvironmentId, value.Actor, value.IdempotencyKey, value.Payload), options);
+    }
+
+    private static void Validate(StrictIntegrationEvent value)
+    {
+        if (value.EventVersion != 2)
+        {
+            throw new JsonException("strict envelope requires eventVersion 2.");
+        }
+    }
+
+    private sealed record StrictDto(
+        string EventId,
+        string EventType,
+        int EventVersion,
+        DateTimeOffset OccurredAtUtc,
+        string SourceService,
+        string CorrelationId,
+        string CausationId,
+        string OrganizationId,
+        string EnvironmentId,
+        string Actor,
+        string IdempotencyKey,
+        StrictPayload Payload);
+}
+
+public sealed record StrictPayload(string Value);
+
+public enum NestedStatus
+{
+    Active = 1,
+    Retired = 2,
+}
+
+/// <summary>与生产 MesMachineTimeFactStatusJsonConverter 同形：allowIntegerValues:false，未定义值在 Write 侧抛。</summary>
+public sealed class NestedStatusJsonConverter() : System.Text.Json.Serialization.JsonStringEnumConverter<NestedStatus>(namingPolicy: null, allowIntegerValues: false);
+
+public sealed record NestedStatusPayload(
+    [property: System.Text.Json.Serialization.JsonConverter(typeof(NestedStatusJsonConverter))] NestedStatus Status,
+    string Line);
+
+public sealed record NestedConverterIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    NestedStatusPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+/// <summary>取证投影的敌意 payload：拒收 converter + 各种让序列化器/反射难堪的成员。</summary>
+public sealed class HostilePayload(NestedStatus status)
+{
+    [System.Text.Json.Serialization.JsonConverter(typeof(NestedStatusJsonConverter))]
+    public NestedStatus Status { get; } = status;
+
+    public double Ratio { get; init; } = 1;
+
+    public float Single { get; init; } = 1;
+
+    public Type? Clr { get; init; }
+
+    public Uri? Link { get; init; }
+
+    public Exception? Error { get; init; }
+
+    public IEnumerable<string>? Lines { get; init; }
+
+    public JsonElement? Element { get; init; }
+
+    public bool ExplodeOnRead { get; init; }
+
+    public string Bad => ExplodeOnRead ? throw new InvalidOperationException("getter exploded") : "ok";
+}
+
+public sealed record HostileIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    HostilePayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
 }
