@@ -855,11 +855,30 @@ function Invoke-NativeCommandOutput {
 
         [System.Collections.IDictionary] $Environment,
 
-        [string[]] $SensitiveValues = @()
+        [string[]] $SensitiveValues = @(),
+
+        [ValidateRange(1, [int]::MaxValue)]
+        [int] $TimeoutMilliseconds
     )
 
     if ([string]::IsNullOrWhiteSpace($Name)) {
         $Name = [System.IO.Path]::GetFileNameWithoutExtension($Command)
+    }
+    $usesMillisecondBudget = $PSBoundParameters.ContainsKey('TimeoutMilliseconds')
+    if ($usesMillisecondBudget -and $PSBoundParameters.ContainsKey('TimeoutSeconds')) {
+        throw [ArgumentException]::new('TimeoutSeconds and TimeoutMilliseconds are mutually exclusive.')
+    }
+    $effectiveTimeoutMilliseconds = if ($usesMillisecondBudget) {
+        $TimeoutMilliseconds
+    }
+    else {
+        $TimeoutSeconds * 1000
+    }
+    $timeoutDescription = if ($usesMillisecondBudget) {
+        "$TimeoutMilliseconds milliseconds"
+    }
+    else {
+        "$TimeoutSeconds seconds"
     }
     $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
     $startInfo.FileName = $Command
@@ -897,7 +916,7 @@ function Invoke-NativeCommandOutput {
             $stderrTask = & $StreamReadTaskAction $process.StandardError 'stderr'
         }
 
-        if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+        if (-not $process.WaitForExit($effectiveTimeoutMilliseconds)) {
             Stop-ProcessTree -ProcessId $process.Id -Reason "Timeout while reading output for $Command" | Out-Null
             $timeoutLogDirectory = New-ScriptAutomationLogDirectory -Name $Name -LogDirectory $LogDirectory
             $drain = Complete-ScriptAutomationRedirectedStreamDrain `
@@ -912,7 +931,7 @@ function Invoke-NativeCommandOutput {
             Write-ScriptAutomationStreamDrainDiagnostics -Name $Name -Drain $drain -SensitiveValues $SensitiveValues
             Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stdout.log') -Content $drain.Stdout -PartialOutput:$drain.TimedOut -UnfinishedStreams $drain.UnfinishedStreams -SensitiveValues $SensitiveValues
             Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stderr.log') -Content $drain.Stderr -PartialOutput:$drain.TimedOut -UnfinishedStreams $drain.UnfinishedStreams -SensitiveValues $SensitiveValues
-            $failure = [TimeoutException]::new("Command '$Command' timed out after $TimeoutSeconds seconds while reading output. Logs: $($drain.LogDirectory)")
+            $failure = [TimeoutException]::new("Command '$Command' timed out after $timeoutDescription while reading output. Logs: $($drain.LogDirectory)")
             $failure.Data['Stdout'] = Protect-ScriptAutomationText $drain.Stdout -SensitiveValues $SensitiveValues
             $failure.Data['Stderr'] = Protect-ScriptAutomationText $drain.Stderr -SensitiveValues $SensitiveValues
             $failure.Data['LogDirectory'] = "$($drain.LogDirectory)"

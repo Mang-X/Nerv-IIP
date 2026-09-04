@@ -66,11 +66,8 @@ const dialogStubs = {
     template:
       '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
-  // NvSelectValue 是 reka SelectValue 的裸导出，按 Nv 名 stub 不掉；渲染它会去 inject
-  // SelectRoot（已被 NvSelect stub 抹平）而抛错。trigger 不吐 slot 即可自洽。
-  NvSelectTrigger: { template: '<span />' },
+  NvSelectTrigger: { template: '<span><slot /></span>' },
   NvSelectValue: { template: '<span />' },
-  SelectValue: { template: '<span />' },
   NvSelectContent: { template: '<slot />' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }

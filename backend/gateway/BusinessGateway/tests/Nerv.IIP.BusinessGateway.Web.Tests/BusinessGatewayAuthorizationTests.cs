@@ -1491,7 +1491,8 @@ internal sealed class FakeBusinessGatewayAuthorizationClient(
     Func<BusinessGatewayPermissionRequirement, bool> isAllowed,
     AuthorizationDataScope? dataScope = null,
     IReadOnlyCollection<AuthorizationScopeGrant>? scopeGrants = null,
-    IReadOnlyCollection<AuthorizationRole>? roles = null)
+    IReadOnlyCollection<AuthorizationRole>? roles = null,
+    BusinessGatewayAuthorizationResult? allowedResult = null)
     : IBusinessGatewayAuthorizationClient
 {
     public int CallCount { get; private set; }
@@ -1509,6 +1510,11 @@ internal sealed class FakeBusinessGatewayAuthorizationClient(
         new(_ => true, dataScope, scopeGrants, roles);
 
     public static FakeBusinessGatewayAuthorizationClient Forbidden() => new(_ => false);
+
+    public static FakeBusinessGatewayAuthorizationClient AllowedWithoutPrincipal() =>
+        new(
+            _ => true,
+            allowedResult: new BusinessGatewayAuthorizationResult(true, null, "user", null, null));
 
     public static FakeBusinessGatewayAuthorizationClient AllowOnly(params string[] permissionCodes)
     {
@@ -1536,16 +1542,24 @@ internal sealed class FakeBusinessGatewayAuthorizationClient(
         LastRequirement = requirement;
         LastContinuityMode = continuityMode;
         Requirements.Add(requirement);
+
+        // 与真实 IAM `/internal/iam/v1/authorization/check` 的投影语义保持一致：
+        // 只有 requirement.IncludePrincipalContext 为真时，IAM 才回传 scope grants 与 roles；
+        // 否则 grants 为 null、roles 为空集合（DataScope 不受该开关影响）。
+        // 见 backend/services/Iam/src/Nerv.IIP.Iam.Web/Endpoints/Authorization/AuthorizationCheckEndpoint.cs。
+        var projectedScopeGrants = requirement.IncludePrincipalContext ? scopeGrants : null;
+        var projectedRoles = requirement.IncludePrincipalContext ? roles : [];
+
         return Task.FromResult(isAllowed(requirement)
-            ? BusinessGatewayAuthorizationResult.Allowed(
+            ? allowedResult ?? BusinessGatewayAuthorizationResult.Allowed(
                 "user-admin",
                 "user",
                 "admin",
                 requirement.OrganizationId,
                 requirement.EnvironmentId,
                 dataScope,
-                scopeGrants,
-                roles)
+                projectedScopeGrants,
+                projectedRoles)
             : BusinessGatewayAuthorizationResult.Forbidden("forbidden"));
     }
 }

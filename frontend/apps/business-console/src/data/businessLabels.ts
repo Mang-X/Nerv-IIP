@@ -158,6 +158,7 @@ export const TRACE_NODE_TYPE_LABELS: Readonly<Record<string, string>> = {
   operator: '报工人',
   'device-asset': '生产设备',
   'inspection-result': '不良记录',
+  'nonconformance-report': '不合格品报告',
   'produced-lot': '产出批次',
   serial: '产出序列号',
   'produced-lot-or-serial': '产出批次/序列号',
@@ -472,6 +473,22 @@ export const MES_QUALITY_ITEM_STATUS_LABELS: Readonly<Record<string, string>> = 
 export const MES_HANDOVER_STATUS_LABELS: Readonly<Record<string, string>> = {
   open: '待接班',
   accepted: '已接班',
+}
+
+/**
+ * 交接单遗留问题的来源域，取值来自 MES 域枚举 ShiftHandoverIssueCategory（Equipment / Quality），
+ * 读面按枚举名回显字符串，`normalizeCode` 归一后查表。
+ */
+export const MES_HANDOVER_ISSUE_CATEGORY_LABELS: Readonly<Record<string, string>> = {
+  equipment: '设备',
+  quality: '质量',
+}
+
+/** 交接单遗留问题的严重度，取值来自 MES 域枚举 ShiftHandoverIssueSeverity（Low / Medium / High）。 */
+export const MES_HANDOVER_ISSUE_SEVERITY_LABELS: Readonly<Record<string, string>> = {
+  low: '低',
+  medium: '中',
+  high: '高',
 }
 
 /** 不合格品报告（NCR）状态，与后端 NonconformanceReport 的三个状态字一一对应。 */

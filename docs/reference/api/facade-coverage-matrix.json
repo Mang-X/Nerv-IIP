@@ -236,6 +236,19 @@
     {
       "service": "BarcodeLabel",
       "method": "POST",
+      "route": "/api/business/internal/v1/barcodes/print-batches/{printBatchId}/dispatch",
+      "operationId": "dispatchScopedBusinessBarcodePrintBatch",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "dispatchBusinessConsoleBarcodePrintBatch"
+      ]
+    },
+    {
+      "service": "BarcodeLabel",
+      "method": "POST",
       "route": "/api/business/v1/barcodes/print-batches/{printBatchId}/items/{sequenceNo}/reprint",
       "operationId": "reprintBusinessBarcodeLabel",
       "classification": "internal",
@@ -244,10 +257,36 @@
     {
       "service": "BarcodeLabel",
       "method": "POST",
+      "route": "/api/business/internal/v1/barcodes/print-batches/{printBatchId}/items/{sequenceNo}/reprint",
+      "operationId": "reprintScopedBusinessBarcodeLabel",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "reprintBusinessConsoleBarcodeLabel"
+      ]
+    },
+    {
+      "service": "BarcodeLabel",
+      "method": "POST",
       "route": "/api/business/v1/barcodes/print-batches/{printBatchId}/items/{sequenceNo}/void",
       "operationId": "voidBusinessBarcodeLabel",
       "classification": "internal",
       "rationale": "Void is a label lifecycle command for trusted operational clients; existing facade read surfaces expose the resulting state."
+    },
+    {
+      "service": "BarcodeLabel",
+      "method": "POST",
+      "route": "/api/business/internal/v1/barcodes/print-batches/{printBatchId}/items/{sequenceNo}/void",
+      "operationId": "voidScopedBusinessBarcodeLabel",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "voidBusinessConsoleBarcodeLabel"
+      ]
     },
     {
       "service": "BarcodeLabel",
@@ -731,7 +770,7 @@
       "route": "/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations",
       "operationId": "listErpWorkCenterMachineOverheadReconciliations",
       "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; follows the ERP finance month-end reconciliation Business Console phase. Issue #2383 intentionally delivers the service API without Gateway/UI."
+      "followUp": "BusinessGateway facade pending; follows the ERP finance month-end reconciliation Business Console phase. Issues #2383 and #2384 intentionally deliver the period reconciliation service read contract without Gateway/UI."
     },
     {
       "service": "Erp",
@@ -747,7 +786,7 @@
       "route": "/api/business/v1/erp/finance/work-order-costs/{workOrderId}",
       "operationId": "getErpWorkOrderCostVariance",
       "classification": "deferred",
-      "followUp": "BusinessGateway facade and generated client are delivered by follow-up issues; Issue #2277 intentionally exposes only the ERP service contract."
+      "followUp": "BusinessGateway facade and generated client are delivered by follow-up issues; Issues #2277 and #2384 intentionally expose only the ERP service work-order cost, variance, and machine-overhead read contract."
     },
     {
       "service": "Erp",
@@ -2163,8 +2202,13 @@
       "method": "GET",
       "route": "/api/business/v1/master-data/tooling-assets",
       "operationId": "listBusinessMasterDataToolingAssets",
-      "classification": "deferred",
-      "followUp": "BusinessGateway 工装查询 facade 与生成客户端由 #2063 交付。"
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleToolingAssets"
+      ]
     },
     {
       "service": "MasterData",
@@ -2223,24 +2267,39 @@
       "method": "POST",
       "route": "/api/business/v1/master-data/tooling-assets",
       "operationId": "registerBusinessMasterDataToolingAsset",
-      "classification": "deferred",
-      "followUp": "BusinessGateway and Business Console tooling maintenance follow the dedicated MasterData tooling menu phase after #718."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "registerBusinessConsoleToolingAsset"
+      ]
     },
     {
       "service": "MasterData",
       "method": "POST",
       "route": "/api/business/v1/master-data/tooling-assets/status",
       "operationId": "changeBusinessMasterDataToolingStatus",
-      "classification": "deferred",
-      "followUp": "BusinessGateway and Business Console tooling lifecycle maintenance follow the dedicated MasterData tooling menu phase after #718."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "changeBusinessConsoleToolingStatus"
+      ]
     },
     {
       "service": "MasterData",
       "method": "POST",
       "route": "/api/business/v1/master-data/tooling-assets/usage",
       "operationId": "recordBusinessMasterDataToolingUsage",
-      "classification": "deferred",
-      "followUp": "Equipment counter integration and Business Console tooling usage maintenance follow the dedicated MasterData tooling menu phase after #718."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "recordBusinessConsoleToolingUsage"
+      ]
     },
     {
       "service": "MasterData",
@@ -3140,8 +3199,14 @@
       "method": "GET",
       "route": "/api/business/v1/mes/production-statistics",
       "operationId": "queryBusinessMesProductionStatistics",
-      "classification": "deferred",
-      "followUp": "生产日报父能力 #1952 的后续 Gateway 契约子票交付 BusinessGateway facade 与 generated client；#2855 只建立 MES 权威聚合读契约。"
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "queryBusinessConsoleMesProductionStatistics"
+      ],
+      "note": "exposed：BusinessGateway 只执行 business.mes.reporting.read 授权、组织/环境连续性与契约代理；时间窗、维度、过滤、分页、数量、比率和降级事实由 MES producer 原样提供。"
     },
     {
       "service": "Mes",
@@ -3310,6 +3375,19 @@
       ],
       "gatewayOperationIds": [
         "listBusinessConsoleMesShiftHandovers"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/shift-handovers/{handoverId}",
+      "operationId": "getBusinessMesShiftHandover",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleMesShiftHandover"
       ]
     },
     {
@@ -4245,6 +4323,14 @@
       "gatewayOperationIds": [
         "openBusinessConsoleQualityNcrFromInspection"
       ]
+    },
+    {
+      "service": "Quality",
+      "method": "GET",
+      "route": "/api/business/v1/quality/first-article-confirmation",
+      "operationId": "getBusinessQualityFirstArticleConfirmation",
+      "classification": "internal",
+      "rationale": "Service-to-service first-article confirmation read contract consumed by the MES report gate (#2779, wave 2 of #1949); the Business Console reads first-article tasks and records through the existing inspection-task/record facades."
     },
     {
       "service": "Quality",

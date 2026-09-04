@@ -318,6 +318,7 @@ const countExecutions = [
 export const authorizedWorkScopes = [
   { kind: 'work-center', id: 'WC-A', displayName: '精加工一线' },
   { kind: 'work-center', id: 'WC-B', displayName: '精加工二线' },
+  { kind: 'workshop', id: 'WS-A', displayName: '机加工车间' },
 ]
 
 /**
@@ -390,7 +391,7 @@ const mesManyOperationTasks = Array.from({ length: 501 }, (_, index) => ({
   operationTaskNo: null,
   status: 'Queued',
   operationSequence: index + 1,
-  workCenterId: 'WC-MANY',
+  workCenterId: 'WC-A',
   qualityStatus: 'Pending',
   allowedActions: ['start'],
   blockReasons: [],
@@ -967,7 +968,13 @@ export async function routeBusinessConsoleApi(route: Route) {
       : workOrderScopedItems
     const skip = Number(requestUrl.searchParams.get('skip') ?? 0)
     const take = Number(requestUrl.searchParams.get('take') ?? 100)
-    const items = scopedItems.slice(skip, skip + take)
+    const items = scopedItems
+      .slice(skip, skip + take)
+      .map((task) =>
+        pathname === `${base}/reportable-operation-tasks`
+          ? { ...task, allowedActions: ['report'] }
+          : task,
+      )
     return fulfillJson(route, envelope({ items, total: scopedItems.length }))
   }
   if (pathname === `${base}/work-orders`) {
@@ -1009,6 +1016,29 @@ export async function routeBusinessConsoleApi(route: Route) {
       )
     }
     return fulfillJson(route, envelope({ items: [], total: 0 }))
+  }
+  const productionReportDetailMatch = pathname.match(
+    /^\/api\/business-console\/v1\/mes\/production-reports\/([^/]+)$/,
+  )
+  if (method === 'GET' && productionReportDetailMatch) {
+    const reportNo = decodeURIComponent(productionReportDetailMatch[1])
+    return fulfillJson(
+      route,
+      envelope({
+        report: {
+          productionReportId: '019f-e2e-production-report',
+          reportNo,
+          workOrderId: 'WO-1',
+          operationTaskId: 'OP-1',
+          goodQuantity: 5,
+          scrapQuantity: 0,
+          reworkQuantity: 0,
+          reportedAtUtc: nowUtc,
+        },
+        consumedMaterialLots: [],
+        laborAllocations: [],
+      }),
+    )
   }
   if (pathname === `${base}/telemetry-production-report-candidates`) {
     return fulfillJson(route, envelope({ items: [], total: 0 }))

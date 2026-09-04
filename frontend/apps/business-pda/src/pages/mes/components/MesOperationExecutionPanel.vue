@@ -7,6 +7,7 @@ import { describeMesReadinessReasons, operationTaskStatusLabel } from '@nerv-iip
 import RetryableListError from '@/components/RetryableListError.vue'
 import { NvBottomSheet, NvMobileButton, NvMobileResult } from '@nerv-iip/ui-mobile'
 import { computed } from 'vue'
+import { hasCompleteReworkAuthority } from '@/composables/mes/mesWorkOrderAuthority'
 
 import {
   actionsForOperationTask,
@@ -16,6 +17,7 @@ import {
   operationTaskLabel,
   operationTaskRowTitle,
   OPERATION_ACTION_LABELS,
+  reworkSourceLabel,
   type OperationActionKind,
   type OperationResultState,
   workOrderLabel,
@@ -50,6 +52,9 @@ const emit = defineEmits<{
 }>()
 
 const availableActions = computed(() => actionsForOperationTask(props.selected))
+const authorityComplete = computed(
+  () => props.selected === null || hasCompleteReworkAuthority(props.selected),
+)
 const blockReasonDisplays = computed(() =>
   describeMesReadinessReasons(props.selected?.blockReasons),
 )
@@ -126,6 +131,21 @@ const blockReasonDisplays = computed(() =>
       <p v-if="selected.assignedUserName" class="text-sm text-muted-foreground">
         受派工人：{{ selected.assignedUserName }}
       </p>
+      <p
+        v-if="reworkSourceLabel(selected)"
+        data-testid="operation-rework-source"
+        class="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-foreground"
+      >
+        {{ reworkSourceLabel(selected) }}
+      </p>
+      <p
+        v-if="!authorityComplete"
+        data-testid="operation-rework-authority-error"
+        class="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+        role="alert"
+      >
+        返工来源信息不完整，已阻止工序操作，请刷新后重试。
+      </p>
 
       <section
         v-if="blockReasonDisplays.length"
@@ -198,7 +218,7 @@ const blockReasonDisplays = computed(() =>
         </template>
       </section>
 
-      <div v-if="confirmingComplete" class="space-y-3">
+      <div v-if="confirmingComplete && authorityComplete" class="space-y-3">
         <p class="text-sm text-foreground">完成后该工序将进入终态，确认完成？</p>
         <NvMobileButton
           type="button"
@@ -226,7 +246,7 @@ const blockReasonDisplays = computed(() =>
 
       <div v-else class="space-y-2">
         <NvMobileButton
-          v-if="canClaim"
+          v-if="canClaim && authorityComplete"
           type="button"
           data-testid="action-claim"
           :disabled="actionPending || !operationScopeReady"

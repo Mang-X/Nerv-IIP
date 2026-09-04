@@ -1,5 +1,8 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountingPeriodAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkCenterMachineOverheadRateAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
+using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.Queries.Finance;
 
@@ -35,7 +38,10 @@ public sealed record ListWorkCenterMachineOverheadReconciliationsResponse(
     int PageNumber,
     int PageSize,
     int TotalCount,
-    IReadOnlyList<WorkCenterMachineOverheadReconciliationItem> Items);
+    IReadOnlyList<WorkCenterMachineOverheadReconciliationItem> Items,
+    string? AccountingPeriodStatus,
+    MachineOverheadReadStatus ReconciliationStatus,
+    string? ReconciliationUnavailableReason);
 
 public sealed record WorkCenterMachineOverheadReconciliationItem(
     string Id,
@@ -62,6 +68,8 @@ public sealed record WorkCenterMachineOverheadReconciliationItem(
     decimal AbnormalDowntimeHours,
     string AbnormalDowntimeDisposition,
     bool IsReadyForClose,
+    MachineOverheadReadStatus ReconciliationStatus,
+    string? UnavailableReason,
     string RecordedBy,
     string SourceReference,
     string Reason,
@@ -78,6 +86,10 @@ public sealed class ListWorkCenterMachineOverheadReconciliationsQueryHandler(App
         var environmentId = request.EnvironmentId.Trim();
         var periodCode = request.AccountingPeriodCode.Trim();
         var workCenterId = request.WorkCenterId?.Trim();
+        var period = await dbContext.AccountingPeriods.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.PeriodCode == periodCode, cancellationToken);
         var query = dbContext.WorkCenterMachineOverheadReconciliations.AsNoTracking()
             .Where(x => x.OrganizationId == organizationId
                 && x.EnvironmentId == environmentId
@@ -102,11 +114,86 @@ public sealed class ListWorkCenterMachineOverheadReconciliationsQueryHandler(App
                 x.OverAppliedFixedOverheadAmount, x.AbnormalDowntimeTicks, x.AbnormalDowntimeHours,
                 x.AbnormalDowntimeDisposition.ToString(),
                 x.AbnormalDowntimeDisposition != Domain.AggregatesModel.MachineOverheadReconciliationAggregate.AbnormalDowntimeDisposition.Pending,
+                x.AbnormalDowntimeDisposition == Domain.AggregatesModel.MachineOverheadReconciliationAggregate.AbnormalDowntimeDisposition.Pending
+                    ? MachineOverheadReadStatus.Unavailable
+                    : MachineOverheadReadStatus.Available,
+                x.AbnormalDowntimeDisposition == Domain.AggregatesModel.MachineOverheadReconciliationAggregate.AbnormalDowntimeDisposition.Pending
+                    ? "abnormal_downtime_pending"
+                    : null,
                 x.RecordedBy, x.SourceReference, x.Reason, x.RecordedAtUtc))
             .ToListAsync(cancellationToken);
 
+        var status = await ResolveReconciliationStatusAsync(
+            organizationId, environmentId, periodCode, workCenterId, period, cancellationToken);
+        var statusItems = items
+            .Select(item => status.LatestReconciliationIds.GetValueOrDefault(item.WorkCenterId) == item.Id
+                ? item with
+                {
+                    ReconciliationStatus = status.Issues.TryGetValue(item.WorkCenterId, out var issue)
+                        ? MachineOverheadReadStatus.Unavailable
+                        : MachineOverheadReadStatus.Available,
+                    UnavailableReason = status.Issues.GetValueOrDefault(item.WorkCenterId)?.ReasonCode,
+                }
+                : item with
+                {
+                    ReconciliationStatus = MachineOverheadReadStatus.Unavailable,
+                    UnavailableReason = "superseded_reconciliation",
+                })
+            .ToArray();
+
         return new(
             organizationId, environmentId, periodCode, workCenterId,
-            request.PageNumber, request.PageSize, totalCount, items);
+            request.PageNumber, request.PageSize, totalCount, statusItems,
+            period?.Status == AccountingPeriodStatus.Closed ? "closed" : period is null ? null : "open",
+            status.Status,
+            status.UnavailableReason);
+    }
+
+    private async Task<ReconciliationReadStatus> ResolveReconciliationStatusAsync(
+        string organizationId,
+        string environmentId,
+        string periodCode,
+        string? workCenterId,
+        AccountingPeriod? period,
+        CancellationToken cancellationToken)
+    {
+        if (period is null)
+            return ReconciliationReadStatus.Unavailable("accounting_period_not_found");
+
+        var scope = await MachineOverheadPeriodReconciliationEvaluator.ReadScopeAsync(
+            dbContext, organizationId, environmentId, periodCode, workCenterId, cancellationToken);
+        if (scope.RequiredWorkCenterIds.Count == 0)
+        {
+            return scope.LatestRates.Count > 0
+                && scope.LatestRates.Values.All(x => x.Applicability == MachineOverheadApplicability.NotApplicable)
+                    ? ReconciliationReadStatus.NotApplicable()
+                    : ReconciliationReadStatus.Unavailable("machine_overhead_rate_not_configured");
+        }
+
+        var evaluation = await MachineOverheadPeriodReconciliationEvaluator.EvaluateAsync(
+            dbContext, organizationId, environmentId, periodCode, scope, cancellationToken);
+        var issue = evaluation.FirstIssue(scope.RequiredWorkCenterIds);
+        return new(
+            issue is null ? MachineOverheadReadStatus.Available : MachineOverheadReadStatus.Unavailable,
+            issue?.ReasonCode,
+            evaluation.LatestReconciliationIds,
+            evaluation.Issues);
+    }
+
+    private sealed record ReconciliationReadStatus(
+        MachineOverheadReadStatus Status,
+        string? UnavailableReason,
+        IReadOnlyDictionary<string, string> LatestReconciliationIds,
+        IReadOnlyDictionary<string, MachineOverheadReconciliationIssue> Issues)
+    {
+        public static ReconciliationReadStatus Unavailable(string reason)
+            => new(MachineOverheadReadStatus.Unavailable, reason,
+                new Dictionary<string, string>(StringComparer.Ordinal),
+                new Dictionary<string, MachineOverheadReconciliationIssue>(StringComparer.Ordinal));
+
+        public static ReconciliationReadStatus NotApplicable()
+            => new(MachineOverheadReadStatus.NotApplicable, "machine_overhead_not_applicable",
+                new Dictionary<string, string>(StringComparer.Ordinal),
+                new Dictionary<string, MachineOverheadReconciliationIssue>(StringComparer.Ordinal));
     }
 }

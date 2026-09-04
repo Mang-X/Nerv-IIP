@@ -39,7 +39,8 @@ $script:GovernedPostgresMemberIds = @(
     'erp-postgres-profile',
     'demandplanning-postgres-profile',
     'acceptance-postgres-profile',
-    'maintenance-device-pause-postgres'
+    'maintenance-device-pause-postgres',
+    'scheduling-asset-unavailable-postgres'
 )
 function Get-NervCSharpMethodBody([string]$Source, [string]$MethodName) {
     $signatureIndex = $Source.IndexOf(" $MethodName(", [StringComparison]::Ordinal)
@@ -225,7 +226,13 @@ try {
         'Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_device_reference_batch_uses_two_fixed_relational_reads_for_one_and_two_hundred_references',
         'Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_disable_endpoint_transaction_fact_persists_audit_and_cap_outbox_with_operation_identity',
         'Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_store_persists_master_data_aggregates',
-        'Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_work_calendar_update_replaces_owned_details_after_reload'
+        'Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_work_calendar_update_replaces_owned_details_after_reload',
+        'Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTestsToolingAudit.Tooling_audit_is_scoped_and_excludes_sensitive_request_content_on_postgres',
+        'Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTestsToolingAudit.Tooling_audit_migration_preserves_predecessor_data_and_installs_append_only_schema_on_postgres',
+        'Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTestsToolingAudit.Tooling_commands_commit_business_and_exact_audit_facts_through_mediator_on_postgres',
+        'Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTestsToolingAudit.Tooling_concurrent_usage_replay_commits_one_increment_and_one_audit_on_postgres',
+        'Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTestsToolingAudit.Tooling_replays_are_idempotent_and_conflicting_payloads_preserve_first_winner_on_postgres',
+        'Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTestsToolingAudit.Tooling_save_failure_rolls_back_business_and_audit_together_on_postgres'
     )
     Assert-Contract ([string]::Equals([string]$masterDataMember.service, 'MasterData', [StringComparison]::Ordinal)) 'The first checklist-three batch must register MasterData as its own lane member.'
     Assert-Contract ([string]::Equals([string]$masterDataMember.project, 'backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/Nerv.IIP.Business.MasterData.Web.Tests.csproj', [StringComparison]::Ordinal)) 'The MasterData member must target the owning test project.'
@@ -240,7 +247,7 @@ try {
     $missingCapRejected = $false
     try { Assert-MasterDataDiagnosticSchemas -Member $missingCapMember } catch { $missingCapRejected = $_.Exception.Message.Contains('CAP outbox diagnostics', [StringComparison]::Ordinal) }
     Assert-Contract $missingCapRejected 'Removing CAP from the MasterData diagnostic schemas must fail the contract.'
-    Assert-Contract ([string]::Equals((@($masterDataMember.expectedTestIdentities) -join "`n"), ($masterDataIdentities -join "`n"), [StringComparison]::Ordinal)) 'The MasterData member must freeze exactly the five profile identities and exclude the world-bible seed test.'
+    Assert-Contract ([string]::Equals((@($masterDataMember.expectedTestIdentities) -join "`n"), ($masterDataIdentities -join "`n"), [StringComparison]::Ordinal)) 'The MasterData member must freeze exactly the eleven governed profile identities and exclude the world-bible seed test.'
 
     $schedulingMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'scheduling-postgres-profile' -RepositoryRoot $repoRoot
     $schedulingIdentities = @(
@@ -269,6 +276,28 @@ try {
         Assert-Contract (Test-Path -LiteralPath $schedulingSourcePath -PathType Leaf) "The Scheduling lane source '$schedulingSourcePath' must exist."
         Assert-SchedulingLaneOwnedDatabase -SourcePath $schedulingSourcePath
     }
+    # #2967：AssetUnavailable v2 的 inbox 双身份 claim、迁移前滚与索引列变异证明落在独立成员，
+    # 与 scheduling-postgres-profile 共用同一受治理数据库（同一序列化 collection），身份集合在此冻结。
+    $schedulingAssetMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'scheduling-asset-unavailable-postgres' -RepositoryRoot $repoRoot
+    $schedulingAssetIdentities = @(
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Concurrent_claims_with_different_event_ids_and_same_business_key_commit_one_result',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Concurrent_claims_with_same_event_id_and_different_business_keys_commit_one_result',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Event_id_unique_index_wrong_column_mutation_is_rejected',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Idempotency_key_unique_index_wrong_column_mutation_is_rejected',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Inbox_identity_lock_fails_closed_without_an_active_transaction',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Migration_fails_closed_on_historical_event_instance_with_ambiguous_business_keys',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Migration_upgrades_distinct_historical_event_instances_and_old_schema_already_forbids_same_key_duplicates',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Save_changes_absorbs_event_id_inbox_conflict_as_zero_rows',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Save_changes_absorbs_idempotency_key_inbox_conflict_as_zero_rows'
+    )
+    Assert-Contract ([string]::Equals([string]$schedulingAssetMember.service, 'Scheduling', [StringComparison]::Ordinal)) 'The Scheduling AssetUnavailable member must belong to the Scheduling service.'
+    Assert-Contract ([string]::Equals([string]$schedulingAssetMember.project, [string]$schedulingMember.project, [StringComparison]::Ordinal)) 'The Scheduling AssetUnavailable member must target the same owning test project as the profile member.'
+    Assert-Contract (@($schedulingAssetMember.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$schedulingAssetMember.diagnosticSchemas[0], 'scheduling', [StringComparison]::Ordinal)) 'The Scheduling AssetUnavailable member must own its restricted diagnostic schema declaration.'
+    Assert-Contract ([string]::Equals((@($schedulingAssetMember.expectedTestIdentities) -join "`n"), ($schedulingAssetIdentities -join "`n"), [StringComparison]::Ordinal)) 'The Scheduling AssetUnavailable member must freeze exactly the nine inbox, lock, save-conflict, migration and index-mutation identities.'
+    Assert-Contract ([string]$schedulingAssetMember.filter).Contains('FullyQualifiedName~Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests', [StringComparison]::Ordinal) 'The Scheduling AssetUnavailable member filter must select its owning test class.'
+    $schedulingAssetSourcePath = Join-Path $schedulingSourceDirectory 'AssetUnavailableInboxPostgresProfileTests.cs'
+    Assert-Contract (Test-Path -LiteralPath $schedulingAssetSourcePath -PathType Leaf) "The Scheduling lane source '$schedulingAssetSourcePath' must exist."
+    Assert-SchedulingLaneOwnedDatabase -SourcePath $schedulingAssetSourcePath
     $innerDatabaseSourcePath = Join-Path $fixtureRoot 'inner-database-scheduling-source.cs'
     [IO.File]::WriteAllText(
         $innerDatabaseSourcePath,
@@ -300,6 +329,10 @@ try {
 
     $smallServiceMembers = @(
         @{ id = 'barcodelabel-postgres-profile'; service = 'BarcodeLabel'; schema = 'barcode'; identities = @(
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Canceled_attempt_facts_commit_outside_the_rolling_back_command_transaction',
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Canceled_dispatch_preserves_the_original_cancellation_when_another_dispatch_committed_first',
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Canceled_reprint_attempt_does_not_overwrite_facts_when_the_item_was_concurrently_voided',
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Canceled_reprint_attempt_facts_commit_outside_the_rolling_back_command_transaction',
                 'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Postgres_unique_conflicts_are_mapped_for_scan_natural_key_and_epcis_event')
             source = 'backend/services/Business/BarcodeLabel/tests/Nerv.IIP.Business.BarcodeLabel.Web.Tests/BarcodeLabelPostgresProfileTests.cs'
             innerDatabaseFactory = 'TemporaryPostgresDatabase.CreateAsync' },
@@ -351,7 +384,7 @@ try {
     # Quality 同理：provider 类中只有 25 条是真实 PostgreSQL 证明；Periodic Inspection 的
     # 窄 harness 另行纳入数据库 builder 归属核验，但不承载测试身份。
     $qualityMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'quality-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($qualityMember.expectedTestIdentities).Count -eq 25) 'The Quality member must freeze exactly its twenty-five governed PostgreSQL identities.'
+    Assert-Contract (@($qualityMember.expectedTestIdentities).Count -eq 26) 'The Quality member must freeze exactly its twenty-six governed PostgreSQL identities.'
     Assert-Contract (@($qualityMember.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$qualityMember.diagnosticSchemas[0], 'quality', [StringComparison]::Ordinal)) 'Quality business and CAP tables share one schema, which the member must declare.'
     $qualityLaneSources = @(
             'PeriodicInspectionPostgresConcurrencyTests.cs',
@@ -401,10 +434,16 @@ try {
     Assert-MethodScopedFilter -Member $qualityMember
     # MES：base 的既有证明加上替代料快照 1 条、OperationActualTimeSettlement 7 条原子性/并发/归属隔离证明，
     # 以及停机读面 3 条（列表行投影、按原因聚合的时长结算与名次、按原因过滤与汇总面）、报工 OEE 维度快照迁移 1 条
-    # 和 NCR 返工工单 7 条来源、物料、幂等、并发与范围隔离证明、停机原因迁移 1 条及生产统计 3 条聚合契约证明，共有 51 条真实 PostgreSQL 证明；
+    # 和 NCR 返工工单 8 条来源、物料、幂等、并发、范围隔离与追溯证明、停机原因迁移 1 条及生产统计 3 条聚合契约证明，
+    # 再保留独立协作参与者读面与自领并发的唯一 owner/participant/receipt/业务冲突证明，以及 #3010 的
+    # 返工 UoW 成功、outbox 失败回滚与外层事务归属 3 条证明，共有 56 条真实 PostgreSQL 证明；
     # CAP 的原生存储表落在独立 cap schema，业务表与 EF 侧 cap_* 表落在 mes schema，两者都必须声明才能在失败时留下完整诊断。
     $mesMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'mes-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($mesMember.expectedTestIdentities).Count -eq 51) 'The MES member must freeze exactly its fifty-one governed PostgreSQL identities.'
+    Assert-Contract (@($mesMember.expectedTestIdentities).Count -eq 57) 'The MES member must freeze exactly its fifty-seven governed PostgreSQL identities.'
+    $mesCollaborationIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.MesCollaborationPostgresTests.Reportable_scope_matches_a_registered_participant_on_postgres'
+    $mesClaimIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.OperationTaskClaimPostgresTests.Concurrent_claims_persist_one_owner_participant_and_receipt_and_reject_the_loser_on_postgres'
+    Assert-Contract (@($mesMember.expectedTestIdentities | Where-Object { [string]::Equals([string]$_, $mesCollaborationIdentity, [StringComparison]::Ordinal) }).Count -eq 1) 'The MES member must freeze the participant-only reportable-scope PostgreSQL identity exactly once.'
+    Assert-Contract (@($mesMember.expectedTestIdentities | Where-Object { [string]::Equals([string]$_, $mesClaimIdentity, [StringComparison]::Ordinal) }).Count -eq 1) 'The MES member must freeze the concurrent operation-task claim PostgreSQL identity exactly once.'
     $mesSaveBoundaryIdentities = @(
         'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_blank_defect_number_early_return_persists_only_inbox',
         'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_missing_defect_early_return_persists_only_inbox',
@@ -424,6 +463,7 @@ try {
             'MesCapSaveBoundaryPostgresTests.cs',
             'MesCapSubscriptionTests.cs',
             'MesCollaborationPostgresTests.cs',
+            'OperationTaskClaimPostgresTests.cs',
             'MesDowntimeReadFacePostgresTests.cs',
             'MesMaterialSubstituteSnapshotPostgresTests.cs',
             'MesProductionStatisticsPostgresTests.cs',
@@ -528,7 +568,7 @@ try {
         Assert-Contract (-not $redisCapIdentities.Contains($frozenIdentityKey)) 'No identity may be owned by both the postgres and redis-cap lanes.'
     }
     $erpMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'erp-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 16) 'The ERP member must freeze exactly its sixteen PostgreSQL identities.'
+    Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 17) 'The ERP member must freeze exactly its seventeen PostgreSQL identities.'
     Assert-Contract ([string]::Equals([string]$erpMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) 'ERP keeps runner-owned databases for failure diagnostics.'
     $acceptanceMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'acceptance-postgres-profile' -RepositoryRoot $repoRoot
     Assert-Contract (@($acceptanceMember.expectedTestIdentities).Count -eq 3) 'The cross-service acceptance member must freeze exactly its three PostgreSQL identities.'
@@ -687,7 +727,8 @@ try {
     $uncoveredIdentities = @(
         foreach ($policyRule in @($policyDocument.rules | Where-Object { [string]::Equals([string]$_.requiredLane, 'postgres', [StringComparison]::Ordinal) })) {
             foreach ($policyIdentity in @($policyRule.testIdentities)) {
-                if (-not $manifestIdentities.Contains([string]$policyIdentity) -and -not $exemptIdentities.Contains([string]$policyIdentity)) { [string]$policyIdentity }
+                if (-not $manifestIdentities.Contains([string]$policyIdentity) -and
+                    -not $exemptIdentities.Contains([string]$policyIdentity)) { [string]$policyIdentity }
             }
         }
     )
@@ -700,7 +741,8 @@ try {
     $mutatedUncovered = @(
         foreach ($policyRule in @($policyDocument.rules | Where-Object { [string]::Equals([string]$_.requiredLane, 'postgres', [StringComparison]::Ordinal) })) {
             foreach ($policyIdentity in @($policyRule.testIdentities)) {
-                if (-not $mutatedIdentities.Contains([string]$policyIdentity) -and -not $exemptIdentities.Contains([string]$policyIdentity)) { [string]$policyIdentity }
+                if (-not $mutatedIdentities.Contains([string]$policyIdentity) -and
+                    -not $exemptIdentities.Contains([string]$policyIdentity)) { [string]$policyIdentity }
             }
         }
     )

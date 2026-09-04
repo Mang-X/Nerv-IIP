@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.OrganizationAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
@@ -36,51 +37,51 @@ public sealed class WorldBiblePdaDemoAccountSeedService(
     /// <summary>PDA 质量检验员角色：检验任务执行与记录/NCR 查看。</summary>
     public const string InspectorRoleId = "role-pda-inspector";
 
-    private const string WarehouseProductsReadPermission = "business.masterdata.products.read";
-    private const string WarehouseCountsReadPermission = "business.wms.counts.read";
+    private const string WarehouseProductsReadPermission = NervIipPermissionCodes.MasterDataProductsRead;
+    private const string WarehouseCountsReadPermission = NervIipPermissionCodes.WmsCountsRead;
 
     public static readonly (string RoleId, string RoleName, string[] PermissionCodes)[] Roles =
     [
         (OperatorRoleId, "产线操作工（PDA）",
         [
-            "business.mes.work-orders.read",
-            "business.mes.dispatch.read",
-            "business.mes.operations.read",
-            "business.mes.operations.manage",
-            "business.mes.reporting.read",
-            "business.mes.reporting.write",
-            "business.mes.materials.read",
-            "business.mes.materials.manage",
-            "business.mes.receipts.read",
-            "business.mes.receipts.manage",
-            "business.engineering.documents.read",
-            "business.iiot.alarms.read",
-            "business.iiot.alarms.write",
-            "business.maintenance.work-orders.read",
-            "business.maintenance.work-orders.manage",
-            "business.maintenance.plans.read",
-            "business.maintenance.downtime-reasons.read",
-            "business.masterdata.resources.read",
+            NervIipPermissionCodes.MesWorkOrdersRead,
+            NervIipPermissionCodes.MesDispatchRead,
+            NervIipPermissionCodes.MesOperationsRead,
+            NervIipPermissionCodes.MesOperationsManage,
+            NervIipPermissionCodes.MesReportingRead,
+            NervIipPermissionCodes.MesReportingWrite,
+            NervIipPermissionCodes.MesMaterialsRead,
+            NervIipPermissionCodes.MesMaterialsManage,
+            NervIipPermissionCodes.MesReceiptsRead,
+            NervIipPermissionCodes.MesReceiptsManage,
+            NervIipPermissionCodes.EngineeringDocumentsRead,
+            NervIipPermissionCodes.IiotAlarmsRead,
+            NervIipPermissionCodes.IiotAlarmsWrite,
+            NervIipPermissionCodes.MaintenanceWorkOrdersRead,
+            NervIipPermissionCodes.MaintenanceWorkOrdersManage,
+            NervIipPermissionCodes.MaintenancePlansRead,
+            NervIipPermissionCodes.MaintenanceDowntimeReasonsRead,
+            NervIipPermissionCodes.MasterDataResourcesRead,
         ]),
         (WarehouseRoleId, "仓储库管（PDA）",
         [
-            "business.wms.receipts.read",
-            "business.wms.receipts.manage",
-            "business.wms.shipments.read",
-            "business.wms.shipments.manage",
+            NervIipPermissionCodes.WmsReceiptsRead,
+            NervIipPermissionCodes.WmsReceiptsManage,
+            NervIipPermissionCodes.WmsShipmentsRead,
+            NervIipPermissionCodes.WmsShipmentsManage,
             WarehouseProductsReadPermission,
             WarehouseCountsReadPermission,
-            "business.inventory.ledger.read",
-            "business.inventory.counts.manage",
-            "business.inventory.movements.create",
-            "business.masterdata.resources.read",
+            NervIipPermissionCodes.InventoryLedgerRead,
+            NervIipPermissionCodes.InventoryCountsManage,
+            NervIipPermissionCodes.InventoryMovementsCreate,
+            NervIipPermissionCodes.MasterDataResourcesRead,
         ]),
         (InspectorRoleId, "质量检验员（PDA）",
         [
-            "business.quality.inspection-records.read",
-            "business.quality.inspection-records.create",
-            "business.mes.work-orders.read",
-            "business.masterdata.resources.read",
+            NervIipPermissionCodes.QualityInspectionRecordsRead,
+            NervIipPermissionCodes.QualityInspectionRecordsCreate,
+            NervIipPermissionCodes.MesWorkOrdersRead,
+            NervIipPermissionCodes.MasterDataResourcesRead,
         ]),
     ];
 

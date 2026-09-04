@@ -152,7 +152,7 @@ public sealed class WorkCenterMachineOverheadReconciliation
     }
 
     private static decimal NormalizeAmount(decimal value)
-        => decimal.Round(value, 6, MidpointRounding.AwayFromZero);
+        => decimal.Round(value, 6, MidpointRounding.ToEven);
 
     private static decimal NormalizeHours(long ticks)
         => decimal.Round(ticks / (decimal)TimeSpan.TicksPerHour, 12, MidpointRounding.AwayFromZero);

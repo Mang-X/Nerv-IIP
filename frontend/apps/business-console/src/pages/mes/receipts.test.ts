@@ -179,7 +179,7 @@ const stubs = {
   NvSelectTrigger: { template: '<button><slot /></button>' },
   NvSelectContent: { template: '<div><slot /></div>' },
   NvSelectItem: { props: ['value'], template: '<div data-testid="status-option"><slot /></div>' },
-  SelectValue: { template: '<span />' },
+  NvSelectValue: { template: '<span />' },
   NvSheet: { props: ['open'], template: '<div><slot /></div>' },
   NvSheetContent: { template: '<div><slot /></div>' },
   NvSheetHeader: { template: '<div><slot /></div>' },

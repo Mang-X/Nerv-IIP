@@ -12,6 +12,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Behaviors;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Errors;
+using Nerv.IIP.Business.Mes.Web.Application.Quality;
 using NetCorePal.Extensions.Repository;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
@@ -140,6 +141,7 @@ public sealed class RecordProductionReportCommandValidator : AbstractValidator<R
 public sealed class RecordProductionReportCommandHandler(
     ApplicationDbContext dbContext,
     IProductionReportOeeDimensionSnapshotProvider oeeDimensionSnapshotProvider,
+    IMesFirstArticleGate firstArticleGate,
     MesCodingService? codingService = null)
     : ICommandHandler<RecordProductionReportCommand, ProductionReportCommandResult>
 {
@@ -200,6 +202,17 @@ public sealed class RecordProductionReportCommandHandler(
                 "report",
                 operationTask.Status.ToString());
         }
+
+        // 首件门禁（#2780）：拦的是**批量**报工，不是首件那一件。
+        // 「这一次是不是首件那一件」由 Quality 的首件进度直接回答（not-opened = 任务未开出，
+        // 而开单的唯一触发点就是本次报工的事件），MES 不用本地报工历史去猜——猜出来的判据
+        // 与 Quality 的建单条件不等价，会把「已报过工但任务还没开出」的工序永久锁死。
+        await firstArticleGate.EnsureBatchReportAllowedAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.WorkOrderId,
+            request.OperationTaskId,
+            cancellationToken);
 
         // 工序级累计合格量是所有工序报工的共同权威边界；不能只依赖末工序对工单聚合的回写。
         var reportedGoodQuantity = await dbContext.ProductionReports

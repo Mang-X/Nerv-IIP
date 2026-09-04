@@ -53,7 +53,7 @@ public sealed class QualityInspectionEndpointContractTests
     {
         var contracts = QualityInspectionEndpointContracts.All;
 
-        Assert.Equal(24, contracts.Count);
+        Assert.Equal(25, contracts.Count);
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/quality/measuring-devices"
             && x.PermissionCode == BusinessPermissionCodes.QualityMeasuringDevicesManage
@@ -120,6 +120,11 @@ public sealed class QualityInspectionEndpointContractTests
             && x.Route == "/api/business/v1/quality/inspection-tasks/{inspectionTaskId}"
             && x.PermissionCode == BusinessPermissionCodes.QualityInspectionRecordsRead
             && x.OperationId == "getBusinessQualityInspectionTask");
+        // #2779 首件确认服务间读契约：MES 首件门禁按工单工序取判定结论。
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/quality/first-article-confirmation"
+            && x.PermissionCode == BusinessPermissionCodes.QualityInspectionRecordsRead
+            && x.OperationId == "getBusinessQualityFirstArticleConfirmation");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/quality/inspection-tasks/{inspectionTaskId}/assignment"
             && x.PermissionCode == BusinessPermissionCodes.QualityInspectionPlansManage

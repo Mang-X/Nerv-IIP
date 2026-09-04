@@ -466,6 +466,7 @@ export function useBusinessMasterDataResources(
           resourceType: filters.resourceType,
           ...optionalQuery('codeSet', filters.codeSet),
           ...optionalQuery('includeDisabled', filters.includeDisabled),
+          ...optionalQuery('keyword', filters.keyword),
           skip: filters.skip,
           take: filters.take,
         },

@@ -34,6 +34,9 @@ public sealed class MesKnownExceptionMessageArchitectureTests
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkerSkillQualificationGate.cs", "UnconfiguredMesWorkerSkillQualificationGate", "EnsureQualifiedAsync", 1, "稳定错误码 WORKER_SKILL_SOURCE_UNAVAILABLE"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesRoutingSnapshotProvider.cs", "HttpMesProductEngineeringRoutingSnapshotProvider", "SendOptionalAsync", 3, "稳定错误码与 ProductEngineering provider 失败透传"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesRoutingSnapshotProvider.cs", "MesRoutingSnapshotMissingException", ".ctor", 1, "稳定错误码 ROUTING_SNAPSHOT_MISSING"),
+        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Quality/MesFirstArticleGate.cs", "HttpMesFirstArticleGate", "EnsureBatchReportAllowedAsync", 5, "稳定错误码 FIRST_ARTICLE_SOURCE_UNAVAILABLE 与 Quality 来源失败透传"),
+        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Quality/MesFirstArticleGate.cs", "HttpMesFirstArticleGate", "EnsureAllows", 3, "中文首件门禁业务拒绝与稳定错误码"),
+        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Quality/MesFirstArticleGate.cs", "HttpMesFirstArticleGate", "EnsureDecisionAllows", 3, "中文首件门禁业务拒绝与稳定错误码"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Quality/MesQualityInspectionPlanClient.cs", "MesQualityInspectionPlanClient", "HasActiveOperationPlanAsync", 4, "稳定错误码 QUALITY_PLAN_SOURCE_UNAVAILABLE 与 Quality provider 失败透传"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "AcceptShiftHandoverCommandHandler", "Handle", 2, "其中 1 处为中文静态消息，另 1 处为 dynamic exception.Message 透传，非本层静态目标"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "AssignDispatchTaskCommandHandler", "Handle", 3, "已有中文静态消息，非本层英文候选"),
@@ -49,6 +52,8 @@ public sealed class MesKnownExceptionMessageArchitectureTests
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "CreateMaterialIssueRequestCommandHandler", "Handle", 9, "已有中文静态消息，非本层英文候选"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "CreateMaterialIssueRequestCommandHandler", "ResolveFrozenMaterialSelectionAsync", 2, "冻结物料候选不存在或审计归属歧义的中文业务拒绝"),
         Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "ForceReleaseQualityHoldCommandHandler", "Handle", 2, "同步公开质量保留强制释放拒绝"),
+        Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "ShiftHandoverVocabulary", "ParseCategory", 1, "同步公开交接班遗留问题类别词表拒绝"),
+        Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "ShiftHandoverVocabulary", "ParseSeverity", 1, "同步公开交接班遗留问题严重度词表拒绝"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "RecordDefectCommandHandler", "Handle", 2, "已有中文静态消息，非本层英文候选"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "ReleaseWorkOrderCommandHandler", "Handle", 6, "稳定错误码与 readiness code 排除"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "ReturnLineSideMaterialCommandLock", "GetLockKeysAsync", 1, "退料分布式锁归一化查询的稳定异常不属于用户消息目标"),
@@ -65,6 +70,7 @@ public sealed class MesKnownExceptionMessageArchitectureTests
         Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/WorkOrders/GetWorkOrderTransformationQuery.cs", "GetWorkOrderTransformationQueryHandler", "Handle", 1, "同步公开工单转换读回不存在拒绝"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/MesWorkbenchQueries.cs", "GetMaterialReadinessQueryHandler", "Handle", 1, "dynamic readiness message 透传"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/MesWorkbenchQueries.cs", "GetMaterialIssueRequestQueryHandler", "Handle", 1, "领料详情在当前组织与环境 scope 内不存在的统一中文拒绝"),
+        Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/MesWorkbenchQueries.cs", "GetShiftHandoverQueryHandler", "Handle", 1, "同步公开交接班详情读回不存在拒绝"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/MesWorkbenchQueries.cs", "GetMesWorkOrderDetailQueryHandler", "Handle", 1, "已有中文静态消息，非本层英文候选"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/PrevalidateMaterialScanQuery.cs", "MaterialScanPrevalidationErrors", "SourceUnavailable", 1, "固定中文外层消息；provider、异常与 HTTP reason 仅进入受控日志"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Endpoints/Mes/MesEndpoints.cs", "MesAuthenticatedActor", "Resolve", 3, "MesEndpoints internal/header 分支排除"),
@@ -78,9 +84,9 @@ public sealed class MesKnownExceptionMessageArchitectureTests
         var documents = ReadMesSourceDocuments();
         var discovered = MesKnownExceptionUserMessageSourceAnalyzer.Discover(documents);
 
-        Assert.Equal(64, discovered.Count);
-        Assert.Equal(150, discovered.Sum(site => site.DirectKnownExceptionCount));
-        Assert.Equal(146, documents.Sum(document => CountOccurrences(document.Text, "new KnownException")));
+        Assert.Equal(70, discovered.Count);
+        Assert.Equal(164, discovered.Sum(site => site.DirectKnownExceptionCount));
+        Assert.Equal(160, documents.Sum(document => CountOccurrences(document.Text, "new KnownException")));
         Assert.Equal(ExpectedLedger.Count, discovered.Count);
 
         var expectedByKey = ExpectedLedger.ToDictionary(site => site.Key, StringComparer.Ordinal);
@@ -94,7 +100,7 @@ public sealed class MesKnownExceptionMessageArchitectureTests
         var excluded = ExpectedLedger.Where(site => site.Kind == MesKnownExceptionSiteKind.Excluded).ToArray();
         var violations = MesKnownExceptionUserMessageSourceAnalyzer.Analyze(documents, excluded);
         Assert.Empty(violations);
-        Assert.Equal(17, ExpectedLedger.Where(site => site.Kind == MesKnownExceptionSiteKind.Target).Sum(site => site.DirectKnownExceptionCount));
+        Assert.Equal(20, ExpectedLedger.Where(site => site.Kind == MesKnownExceptionSiteKind.Target).Sum(site => site.DirectKnownExceptionCount));
     }
 
     [Fact]

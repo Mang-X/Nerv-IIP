@@ -28,6 +28,16 @@ public sealed class OperationReceiptOpenApiDocumentProcessor : IDocumentProcesso
         "completeBusinessConsoleWmsInboundOrder",
         "completeBusinessConsoleWmsOutboundOrder",
         "completeBusinessConsoleWmsCountExecution",
+        "registerBusinessConsoleToolingAsset",
+        "changeBusinessConsoleToolingStatus",
+        "recordBusinessConsoleToolingUsage",
+    ];
+
+    private static readonly HashSet<string> ToolingWriteOperationIds =
+    [
+        "registerBusinessConsoleToolingAsset",
+        "changeBusinessConsoleToolingStatus",
+        "recordBusinessConsoleToolingUsage",
     ];
 
     public void Process(DocumentProcessorContext context)
@@ -141,8 +151,9 @@ public sealed class OperationReceiptOpenApiDocumentProcessor : IDocumentProcesso
                     Name = "Idempotency-Key",
                     Kind = OpenApiParameterKind.Header,
                     IsRequired = false,
-                    Description =
-                        "Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.",
+                    Description = ToolingWriteOperationIds.Contains(operation.OperationId)
+                        ? "At least one idempotency key must be supplied using the standard Idempotency-Key header, the legacy X-Idempotency-Key header, or the JSON idempotencyKey field; when multiple are supplied they must match."
+                        : "Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.",
                     Schema = new JsonSchema
                     {
                         Type = JsonObjectType.String,

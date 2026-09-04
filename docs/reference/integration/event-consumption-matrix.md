@@ -51,7 +51,7 @@ Reference 与源码冲突时，以当前代码/契约/测试为准并修正本�
 | Inventory | `StockMovementPostingFailedIntegrationEvent` | Inventory | WMS | `consumed-internally` |
 | Inventory | `StockCountVarianceConfirmedIntegrationEvent` | Inventory | 当前无必须改变平台状态的活动消费者 | `producer-only-until-feature` |
 | Inventory | `StockAvailabilityChangedIntegrationEvent` | Inventory | Scheduling | `consumed-internally` |
-| Maintenance | `AssetUnavailableIntegrationEvent` | Maintenance | MES、Scheduling | `consumed-internally` |
+| Maintenance | V1 `AssetUnavailableIntegrationEvent`；V2 `AssetUnavailableV2IntegrationEvent` | V1 Maintenance；V2 当前无活动 producer | V1 MES、Scheduling；V2 Scheduling 精确订阅 canonical topic，MES 尚待迁移 | V1 `consumed-internally`；V2 `consumed-internally`（Scheduling）/`needs-business-consumer`（MES） |
 | Maintenance | `AssetRestoredIntegrationEvent` | Maintenance | MES、Scheduling | `consumed-internally` |
 | MasterData | `SkuChangedIntegrationEvent` | MasterData | 当前下游主要使用 API/快照；无活动状态消费者 | `producer-only-until-feature` |
 | MasterData | `SkuDisabledIntegrationEvent` | MasterData | MES | `consumed-internally` |
@@ -82,6 +82,7 @@ Reference 与源码冲突时，以当前代码/契约/测试为准并修正本�
 | Quality | `InspectionTaskOverdueIntegrationEvent` | Quality | Notification | `consumed-internally` |
 | Quality | `MeasuringDeviceCalibrationDueIntegrationEvent` | Quality | Notification | `consumed-internally` |
 | MES | `WorkOrderReleasedIntegrationEvent` | MES | Scheduling、Quality | `consumed-internally` |
+| MES | `WorkOrderReleaseProjectionBackfilledIntegrationEvent` | MES（运维触发的一次性内部端点，非领域事件转换） | 仅 Quality：把存量在制工单的发布事实补进工序巡检投影，只补空缺不覆盖既有行。Scheduling **不**订阅——它对发布事件的处理是让全部已生成排程计划失效，不能被回填放大 | `consumed-internally` |
 | MES | `ReworkWorkOrderCreatedIntegrationEvent` | MES | Quality：按 organization/environment/NCR 来源事实绑定系统返工工单回执；ERP：在既有 `WorkOrderCost` 上登记 NCR 与来源工单归因 | `consumed-internally` |
 | MES | `WorkOrderCompletedIntegrationEvent` | MES | ERP | `consumed-internally` |
 | MES | `WorkOrderClosedIntegrationEvent` | MES | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |

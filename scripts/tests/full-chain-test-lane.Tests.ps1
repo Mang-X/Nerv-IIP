@@ -2,8 +2,9 @@
 #   Category: check
 #   SideEffects:
 #     - Validates FullChain lane manifest, TRX and summary contracts with temporary fixtures
+#     - Executes the production FullChain runner against temporary leaf command shims
 #   Writes:
-#     - Temporary TRX fixtures under the operating-system temp directory
+#     - Temporary TRX, runner, workflow, command-shim and summary fixtures under the operating-system temp directory
 #   Cleanup:
 #     - Removes owned temporary fixtures in finally
 #   Requires:
@@ -15,12 +16,178 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 . (Join-Path $repoRoot 'scripts/lib/CiRequiredSummary.ps1')
 . (Join-Path $repoRoot 'scripts/lib/FullChainTestLane.ps1')
+. (Join-Path $repoRoot 'scripts/lib/AcceptanceScenarioMatrix.ps1')
 
 $manifestPath = Join-Path $repoRoot 'scripts/full-chain-test-lane.json'
+$scenarioMatrixPath = Join-Path $repoRoot 'scripts/acceptance-scenario-matrix.json'
 $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-full-chain-lane-$([Guid]::NewGuid().ToString('N'))"
 
 function Assert-Contract([bool]$Condition, [string]$Message) {
     if (-not $Condition) { throw $Message }
+}
+
+function Assert-FullChainDeadlineAdmissionContract {
+    param(
+        [Parameter(Mandatory)] [scriptblock] $Admission,
+        [Parameter(Mandatory)] [string] $Context
+    )
+
+    $cases = @(
+        [pscustomobject]@{ Name = 'ample-budget'; Deadline = 2000; Elapsed = 200; Entrypoint = 1000; Cleanup = 500; Guard = 100; Remaining = 1800; Required = 1600; Allowed = $true; Reason = 'Allowed' },
+        [pscustomobject]@{ Name = 'exact-boundary'; Deadline = 1800; Elapsed = 200; Entrypoint = 1000; Cleanup = 500; Guard = 100; Remaining = 1600; Required = 1600; Allowed = $true; Reason = 'Allowed' },
+        [pscustomobject]@{ Name = 'insufficient-elapsed-budget'; Deadline = 1800; Elapsed = 201; Entrypoint = 1000; Cleanup = 500; Guard = 100; Remaining = 1599; Required = 1600; Allowed = $false; Reason = 'InsufficientRemainingBudget' },
+        [pscustomobject]@{ Name = 'entrypoint-budget-contribution'; Deadline = 1800; Elapsed = 200; Entrypoint = 1001; Cleanup = 500; Guard = 100; Remaining = 1600; Required = 1601; Allowed = $false; Reason = 'InsufficientRemainingBudget' },
+        [pscustomobject]@{ Name = 'cleanup-reserve-contribution'; Deadline = 1800; Elapsed = 200; Entrypoint = 1000; Cleanup = 501; Guard = 100; Remaining = 1600; Required = 1601; Allowed = $false; Reason = 'InsufficientRemainingBudget' },
+        [pscustomobject]@{ Name = 'guard-reserve-contribution'; Deadline = 1800; Elapsed = 200; Entrypoint = 1000; Cleanup = 500; Guard = 101; Remaining = 1600; Required = 1601; Allowed = $false; Reason = 'InsufficientRemainingBudget' }
+    )
+
+    foreach ($case in $cases) {
+        $result = & $Admission $case.Deadline $case.Elapsed $case.Entrypoint $case.Cleanup $case.Guard
+        Assert-Contract ($result.RemainingSeconds -eq $case.Remaining) "$Context case '$($case.Name)' failed field 'RemainingSeconds'."
+        Assert-Contract ($result.RequiredSeconds -eq $case.Required) "$Context case '$($case.Name)' failed field 'RequiredSeconds'."
+        Assert-Contract ([bool]$result.Allowed -eq [bool]$case.Allowed) "$Context case '$($case.Name)' failed field 'Allowed'."
+        Assert-Contract ([string]::Equals([string]$result.Reason, [string]$case.Reason, [StringComparison]::Ordinal)) "$Context case '$($case.Name)' failed field 'Reason'."
+    }
+}
+
+function New-FullChainDeadlineAdmissionTestResult {
+    param(
+        [Parameter(Mandatory)] $RemainingSeconds,
+        [Parameter(Mandatory)] $RequiredSeconds,
+        [Parameter(Mandatory)] [bool] $Allowed,
+        [Parameter(Mandatory)] [string] $Reason
+    )
+
+    return [pscustomobject]@{
+        Allowed = $Allowed
+        Reason = $Reason
+        RemainingSeconds = $RemainingSeconds
+        RequiredSeconds = $RequiredSeconds
+    }
+}
+
+function New-FullChainMemberAdmissionSummary {
+    return [pscustomobject][ordered]@{
+        outcome = 'not-run'
+        cleanup = 'not-run'
+        diagnosticEvidence = 'not-run'
+        deadlineAdmission = [pscustomobject][ordered]@{
+            reason = 'not-evaluated'
+            elapsedSeconds = 0
+            remainingSeconds = 0
+            requiredSeconds = 0
+        }
+    }
+}
+
+function Write-FullChainRunnerWorkflowFixture {
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [int] $RunStepTimeoutMinutes
+    )
+
+    $workflow = [IO.File]::ReadAllText((Join-Path $repoRoot '.github/workflows/ci.yml'))
+    $pattern = '(?m)(^\s+- name: Run governed FullChain scenarios\r?\n\s+timeout-minutes: )120$'
+    $updated = [regex]::Replace($workflow, $pattern, "`${1}$RunStepTimeoutMinutes")
+    if ([string]::Equals($workflow, $updated, [StringComparison]::Ordinal)) { throw 'FullChain workflow fixture did not replace the governed runner timeout.' }
+    [IO.File]::WriteAllText($Path, $updated, [Text.UTF8Encoding]::new($false))
+    return $Path
+}
+
+function New-FullChainRunnerFakeCommands {
+    param(
+        [Parameter(Mandatory)] [string] $Directory,
+        [Parameter(Mandatory)] [string[]] $DiscoveredIdentities
+    )
+
+    [IO.Directory]::CreateDirectory($Directory) | Out-Null
+    if ($IsWindows) {
+        $docker = @'
+@echo off
+>>"%NERV_FULLCHAIN_FAKE_COMMAND_LOG%" echo docker %*
+echo %* | findstr /C:" exec -T postgres psql " >nul
+if not errorlevel 1 (
+  if "%NERV_FULLCHAIN_FAKE_FAILURE%"=="postgres-version" (
+    >&2 echo NERV_FULLCHAIN_ORIGINAL_FAILURE
+    exit /b 42
+  )
+  echo 18.6
+)
+echo %* | findstr /C:" redis-cli --raw PING" >nul
+if not errorlevel 1 echo PONG
+echo %* | findstr /C:" redis-cli --raw INFO server" >nul
+if not errorlevel 1 echo redis_version:8.10.1
+exit /b 0
+'@
+        $identityOutput = (@('  echo The following Tests are available:') + @($DiscoveredIdentities | ForEach-Object { "  echo     $_" })) -join "`r`n"
+        $dotnet = @"
+@echo off
+>>"%NERV_FULLCHAIN_FAKE_COMMAND_LOG%" echo dotnet %*
+echo %* | findstr /C:" --filter " >nul
+if not errorlevel 1 >>"%NERV_FULLCHAIN_FAKE_COMMAND_LOG%" echo ENTRYPOINT dotnet %*
+echo %* | findstr /C:" --list-tests " >nul
+if not errorlevel 1 (
+$identityOutput
+)
+exit /b 0
+"@
+        $pwsh = @'
+@echo off
+>>"%NERV_FULLCHAIN_FAKE_COMMAND_LOG%" echo ENTRYPOINT pwsh %*
+exit /b 43
+'@
+        [IO.File]::WriteAllText((Join-Path $Directory 'docker.cmd'), $docker, [Text.ASCIIEncoding]::new())
+        [IO.File]::WriteAllText((Join-Path $Directory 'dotnet.cmd'), $dotnet, [Text.ASCIIEncoding]::new())
+        [IO.File]::WriteAllText((Join-Path $Directory 'pwsh.cmd'), $pwsh, [Text.ASCIIEncoding]::new())
+        return
+    }
+
+    $docker = @'
+#!/bin/sh
+printf 'docker %s\n' "$*" >> "$NERV_FULLCHAIN_FAKE_COMMAND_LOG"
+case " $* " in
+  *" exec -T postgres psql "*)
+    if [ "$NERV_FULLCHAIN_FAKE_FAILURE" = "postgres-version" ]; then
+      printf '%s\n' 'NERV_FULLCHAIN_ORIGINAL_FAILURE' >&2
+      exit 42
+    fi
+    printf '%s\n' '18.6'
+    ;;
+  *" redis-cli --raw PING "*) printf '%s\n' 'PONG' ;;
+  *" redis-cli --raw INFO server "*) printf '%s\n' 'redis_version:8.10.1' ;;
+esac
+exit 0
+'@
+    $identityOutput = ((@("    printf '%s\n' 'The following Tests are available:'") + @($DiscoveredIdentities | ForEach-Object { "    printf '%s\n' '    $_'" })) -join "`n")
+    $dotnet = @"
+#!/bin/sh
+printf 'dotnet %s\n' "`$*" >> "`$NERV_FULLCHAIN_FAKE_COMMAND_LOG"
+case " `$* " in
+  *" --filter "*) printf 'ENTRYPOINT dotnet %s\n' "`$*" >> "`$NERV_FULLCHAIN_FAKE_COMMAND_LOG" ;;
+  *" --list-tests "*)
+$identityOutput
+    ;;
+esac
+exit 0
+"@
+    $pwsh = @'
+#!/bin/sh
+printf 'ENTRYPOINT pwsh %s\n' "$*" >> "$NERV_FULLCHAIN_FAKE_COMMAND_LOG"
+exit 43
+'@
+    foreach ($command in @(
+        @{ Name = 'docker'; Content = $docker },
+        @{ Name = 'dotnet'; Content = $dotnet },
+        @{ Name = 'pwsh'; Content = $pwsh }
+    )) {
+        $path = Join-Path $Directory $command.Name
+        [IO.File]::WriteAllText($path, $command.Content, [Text.UTF8Encoding]::new($false))
+        [IO.File]::SetUnixFileMode(
+            $path,
+            [IO.UnixFileMode]::UserRead -bor [IO.UnixFileMode]::UserWrite -bor [IO.UnixFileMode]::UserExecute -bor
+                [IO.UnixFileMode]::GroupRead -bor [IO.UnixFileMode]::GroupExecute -bor
+                [IO.UnixFileMode]::OtherRead -bor [IO.UnixFileMode]::OtherExecute)
+    }
 }
 
 function Assert-FullChainV1WorkflowContract {
@@ -67,10 +234,10 @@ function Assert-FullChainV1WorkflowContract {
         'Upload FullChain dependency summary',
         'Upload FullChain failure diagnostics'
     )
-    Assert-Contract ([string]::Equals((@($v1Steps.name) -join '|'), ($expectedStepNames -join '|'), [StringComparison]::Ordinal)) 'The physical v1 worker must carry the complete governed five-scenario workflow step sequence.'
+    Assert-Contract ([string]::Equals((@($v1Steps.name) -join '|'), ($expectedStepNames -join '|'), [StringComparison]::Ordinal)) 'The physical v1 worker must carry the complete governed workflow step sequence.'
     Assert-Contract (@($v1Steps | Where-Object { $null -eq $_.PSObject.Properties['timeout-minutes'] -or [int]$_.'timeout-minutes' -le 0 }).Count -eq 0) 'Every physical v1 workflow step must retain a positive timeout.'
     $v1StepBudget = (@($v1Steps | ForEach-Object { [int]$_.'timeout-minutes' }) | Measure-Object -Sum).Sum
-    Assert-Contract ($v1StepBudget -eq 220 -and [int]$v1Job.'timeout-minutes' -eq 225) 'The physical v1 worker must retain the complete 220-minute explicit budget inside its 225-minute job budget.'
+    Assert-Contract ($v1StepBudget -lt [int]$v1Job.'timeout-minutes') 'The physical v1 worker explicit step budget must remain strictly below its job budget.'
     $runSteps = @($v1Steps | Where-Object { [string]::Equals([string]$_.name, 'Run governed FullChain scenarios', [StringComparison]::Ordinal) })
     Assert-Contract ($runSteps.Count -eq 1 -and [int]$runSteps[0].'timeout-minutes' -eq 120) 'The physical v1 worker must retain exactly one 120-minute governed FullChain runner step.'
     $v1Run = [string]$runSteps[0].run
@@ -146,26 +313,298 @@ function New-FullChainTrx {
 
 try {
     [IO.Directory]::CreateDirectory($fixtureRoot) | Out-Null
-    $manifest = Import-NervFullChainTestLaneManifest -ManifestPath $manifestPath -RepositoryRoot $repoRoot
-    $expectedIds = @(
-        'maintenance-runtime-hours',
-        'mes-inventory-produced-lot',
-        'erp-wms-delivery-completion',
-        'sales-order-demand-planning',
-        'erp-return-closure'
+
+    $canonicalDeadlineAdmission = {
+        param($Deadline, $Elapsed, $Entrypoint, $Cleanup, $Guard)
+        Test-NervFullChainDeadlineAdmission `
+            -GlobalDeadlineSeconds $Deadline `
+            -ElapsedSeconds $Elapsed `
+            -EntrypointTimeoutSeconds $Entrypoint `
+            -CleanupReserveSeconds $Cleanup `
+            -GuardReserveSeconds $Guard
+    }
+    Assert-FullChainDeadlineAdmissionContract -Admission $canonicalDeadlineAdmission -Context 'Canonical implementation'
+
+    $deadlineAdmissionMutations = @(
+        [pscustomobject]@{
+            Name = 'cleanup-reserve-deleted'
+            ExpectedField = 'RequiredSeconds'
+            Admission = {
+                param($Deadline, $Elapsed, $Entrypoint, $Cleanup, $Guard)
+                $remaining = $Deadline - $Elapsed
+                $required = $Entrypoint + $Guard
+                $allowed = $remaining -ge $required
+                New-FullChainDeadlineAdmissionTestResult -RemainingSeconds $remaining -RequiredSeconds $required -Allowed $allowed -Reason $(if ($allowed) { 'Allowed' } else { 'InsufficientRemainingBudget' })
+            }
+        },
+        [pscustomobject]@{
+            Name = 'guard-reserve-deleted'
+            ExpectedField = 'RequiredSeconds'
+            Admission = {
+                param($Deadline, $Elapsed, $Entrypoint, $Cleanup, $Guard)
+                $remaining = $Deadline - $Elapsed
+                $required = $Entrypoint + $Cleanup
+                $allowed = $remaining -ge $required
+                New-FullChainDeadlineAdmissionTestResult -RemainingSeconds $remaining -RequiredSeconds $required -Allowed $allowed -Reason $(if ($allowed) { 'Allowed' } else { 'InsufficientRemainingBudget' })
+            }
+        },
+        [pscustomobject]@{
+            Name = 'cleanup-reserve-replaced-by-guard'
+            ExpectedField = 'RequiredSeconds'
+            Admission = {
+                param($Deadline, $Elapsed, $Entrypoint, $Cleanup, $Guard)
+                $remaining = $Deadline - $Elapsed
+                $required = $Entrypoint + $Guard + $Guard
+                $allowed = $remaining -ge $required
+                New-FullChainDeadlineAdmissionTestResult -RemainingSeconds $remaining -RequiredSeconds $required -Allowed $allowed -Reason $(if ($allowed) { 'Allowed' } else { 'InsufficientRemainingBudget' })
+            }
+        },
+        [pscustomobject]@{
+            Name = 'guard-reserve-replaced-by-cleanup'
+            ExpectedField = 'RequiredSeconds'
+            Admission = {
+                param($Deadline, $Elapsed, $Entrypoint, $Cleanup, $Guard)
+                $remaining = $Deadline - $Elapsed
+                $required = $Entrypoint + $Cleanup + $Cleanup
+                $allowed = $remaining -ge $required
+                New-FullChainDeadlineAdmissionTestResult -RemainingSeconds $remaining -RequiredSeconds $required -Allowed $allowed -Reason $(if ($allowed) { 'Allowed' } else { 'InsufficientRemainingBudget' })
+            }
+        },
+        [pscustomobject]@{
+            Name = 'strict-boundary'
+            ExpectedField = 'Allowed'
+            Admission = {
+                param($Deadline, $Elapsed, $Entrypoint, $Cleanup, $Guard)
+                $remaining = $Deadline - $Elapsed
+                $required = $Entrypoint + $Cleanup + $Guard
+                $allowed = $remaining -gt $required
+                New-FullChainDeadlineAdmissionTestResult -RemainingSeconds $remaining -RequiredSeconds $required -Allowed $allowed -Reason $(if ($allowed) { 'Allowed' } else { 'InsufficientRemainingBudget' })
+            }
+        },
+        [pscustomobject]@{
+            Name = 'elapsed-ignored-by-decision'
+            ExpectedField = 'Allowed'
+            Admission = {
+                param($Deadline, $Elapsed, $Entrypoint, $Cleanup, $Guard)
+                $remaining = $Deadline - $Elapsed
+                $required = $Entrypoint + $Cleanup + $Guard
+                $allowed = $Deadline -ge $required
+                New-FullChainDeadlineAdmissionTestResult -RemainingSeconds $remaining -RequiredSeconds $required -Allowed $allowed -Reason $(if ($allowed) { 'Allowed' } else { 'InsufficientRemainingBudget' })
+            }
+        },
+        [pscustomobject]@{
+            Name = 'wrong-entrypoint-budget'
+            ExpectedField = 'RequiredSeconds'
+            Admission = {
+                param($Deadline, $Elapsed, $Entrypoint, $Cleanup, $Guard)
+                $remaining = $Deadline - $Elapsed
+                $required = 900 + $Cleanup + $Guard
+                $allowed = $remaining -ge $required
+                New-FullChainDeadlineAdmissionTestResult -RemainingSeconds $remaining -RequiredSeconds $required -Allowed $allowed -Reason $(if ($allowed) { 'Allowed' } else { 'InsufficientRemainingBudget' })
+            }
+        },
+        [pscustomobject]@{
+            Name = 'reason-misreported'
+            ExpectedField = 'Reason'
+            Admission = {
+                param($Deadline, $Elapsed, $Entrypoint, $Cleanup, $Guard)
+                $remaining = $Deadline - $Elapsed
+                $required = $Entrypoint + $Cleanup + $Guard
+                $allowed = $remaining -ge $required
+                New-FullChainDeadlineAdmissionTestResult -RemainingSeconds $remaining -RequiredSeconds $required -Allowed $allowed -Reason $(if ($allowed) { 'InsufficientRemainingBudget' } else { 'Allowed' })
+            }
+        },
+        [pscustomobject]@{
+            Name = 'required-seconds-misreported'
+            ExpectedField = 'RequiredSeconds'
+            Admission = {
+                param($Deadline, $Elapsed, $Entrypoint, $Cleanup, $Guard)
+                $remaining = $Deadline - $Elapsed
+                $required = $Entrypoint + $Cleanup + $Guard
+                $allowed = $remaining -ge $required
+                New-FullChainDeadlineAdmissionTestResult -RemainingSeconds $remaining -RequiredSeconds ($Entrypoint + $Cleanup + $Cleanup) -Allowed $allowed -Reason $(if ($allowed) { 'Allowed' } else { 'InsufficientRemainingBudget' })
+            }
+        },
+        [pscustomobject]@{
+            Name = 'remaining-seconds-clamped-to-required'
+            ExpectedField = 'RemainingSeconds'
+            Admission = {
+                param($Deadline, $Elapsed, $Entrypoint, $Cleanup, $Guard)
+                $remaining = $Deadline - $Elapsed
+                $required = $Entrypoint + $Cleanup + $Guard
+                $allowed = $remaining -ge $required
+                $reportedRemaining = if ($remaining -lt $required) { $remaining } else { $required }
+                New-FullChainDeadlineAdmissionTestResult -RemainingSeconds $reportedRemaining -RequiredSeconds $required -Allowed $allowed -Reason $(if ($allowed) { 'Allowed' } else { 'InsufficientRemainingBudget' })
+            }
+        },
+        [pscustomobject]@{
+            Name = 'remaining-seconds-ignores-elapsed'
+            ExpectedField = 'RemainingSeconds'
+            Admission = {
+                param($Deadline, $Elapsed, $Entrypoint, $Cleanup, $Guard)
+                $remaining = $Deadline - $Elapsed
+                $required = $Entrypoint + $Cleanup + $Guard
+                $allowed = $remaining -ge $required
+                New-FullChainDeadlineAdmissionTestResult -RemainingSeconds $Deadline -RequiredSeconds $required -Allowed $allowed -Reason $(if ($allowed) { 'Allowed' } else { 'InsufficientRemainingBudget' })
+            }
+        }
     )
-    Assert-Contract ([string]::Equals((@($manifest.members.id) -join '|'), ($expectedIds -join '|'), [StringComparison]::Ordinal)) 'FullChain manifest must freeze exactly the five approved scenarios in execution order.'
+    foreach ($mutation in $deadlineAdmissionMutations) {
+        $mutationFailure = $null
+        try { Assert-FullChainDeadlineAdmissionContract -Admission $mutation.Admission -Context "Mutation '$($mutation.Name)'" }
+        catch { $mutationFailure = $_ }
+        Assert-Contract ($null -ne $mutationFailure) "Deadline admission mutation '$($mutation.Name)' must be rejected by the behavioral contract."
+        Assert-Contract (
+            ([string]$mutationFailure.Exception.Message).Contains("field '$($mutation.ExpectedField)'", [StringComparison]::Ordinal)
+        ) "Deadline admission mutation '$($mutation.Name)' must fail the '$($mutation.ExpectedField)' semantic assertion, but failed with '$($mutationFailure.Exception.Message)'."
+    }
+
+    $invokedMembers = [Collections.Generic.List[string]]::new()
+    $firstSummary = New-FullChainMemberAdmissionSummary
+    $secondSummary = New-FullChainMemberAdmissionSummary
+    $firstAdmission = Invoke-NervFullChainMemberAdmission -MemberId 'first' -EntrypointKind 'fullstack' -GlobalDeadlineSeconds 2200 -ElapsedSeconds 0 -FullstackEntrypointTimeoutSeconds 1200 -ScriptEntrypointTimeoutSeconds 900 -DotnetEntrypointTimeoutSeconds 600 -CleanupReserveSeconds 300 -GuardReserveSeconds 300 -MemberSummary $firstSummary -Action { param($memberId) $invokedMembers.Add($memberId) | Out-Null }
+    $secondAdmission = Invoke-NervFullChainMemberAdmission -MemberId 'second' -EntrypointKind 'script' -GlobalDeadlineSeconds 2200 -ElapsedSeconds 600 -FullstackEntrypointTimeoutSeconds 1200 -ScriptEntrypointTimeoutSeconds 900 -DotnetEntrypointTimeoutSeconds 600 -CleanupReserveSeconds 300 -GuardReserveSeconds 300 -MemberSummary $secondSummary -Action { param($memberId) $invokedMembers.Add($memberId) | Out-Null }
+    Assert-Contract ($firstAdmission.Allowed -and $secondAdmission.Allowed -and [string]::Equals(($invokedMembers -join '|'), 'first|second', [StringComparison]::Ordinal)) 'An early first-member completion must release its unused time to a later member admission.'
+
+    $manifest = Import-NervFullChainTestLaneManifest -ManifestPath $manifestPath -RepositoryRoot $repoRoot
+    $scenarioMatrix = Import-NervAcceptanceScenarioMatrixManifest -ManifestPath $scenarioMatrixPath -V1ManifestPath $manifestPath -RepositoryRoot $repoRoot
+    [string[]]$manifestIds = @($manifest.members.id | ForEach-Object { [string]$_ })
+    [string[]]$matrixAliases = @($scenarioMatrix.scenarios | Where-Object { [string]::Equals([string]$_.status, 'active', [StringComparison]::Ordinal) -and [string]::Equals([string]$_.tier, 'core', [StringComparison]::Ordinal) } | ForEach-Object { [string]$_.v1Alias })
+    [Array]::Sort($manifestIds, [StringComparer]::Ordinal)
+    [Array]::Sort($matrixAliases, [StringComparer]::Ordinal)
+    Assert-Contract ([string]::Equals(($manifestIds -join '|'), ($matrixAliases -join '|'), [StringComparison]::Ordinal)) 'FullChain manifest member identities must equal the acceptance matrix active/core alias set.'
+    $expectedIds = @($manifest.members.id | ForEach-Object { [string]$_ })
     Assert-Contract (@($manifest.members | Where-Object {
         -not [string]::Equals([string]$_.tier, 'core', [StringComparison]::Ordinal) -or
         -not [string]::Equals([string]$_.status, 'active', [StringComparison]::Ordinal)
-    }).Count -eq 0) 'All five NERV-767 scenarios must be active/core.'
-    Assert-Contract ((@($manifest.members.expectedTestIdentities) | ForEach-Object { @($_).Count } | Measure-Object -Sum).Sum -eq 5) 'Each FullChain scenario must freeze exactly one identity.'
+    }).Count -eq 0) 'All governed FullChain scenarios must be active/core.'
+    Assert-Contract (@($manifest.members | Where-Object { @($_.expectedTestIdentities).Count -ne 1 }).Count -eq 0) 'Each FullChain scenario must freeze exactly one identity.'
     Assert-Contract (@($manifest.members | Where-Object { -not [string]::Equals([string]$_.project, 'backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj', [StringComparison]::Ordinal) }).Count -eq 0) 'All scenarios must target the FullChain test project.'
     Assert-Contract (@($manifest.members | Where-Object { @($_.diagnosticSchemas).Count -eq 0 }).Count -eq 0) 'Every scenario must declare restricted PostgreSQL diagnostic schemas.'
     Assert-Contract (@($manifest.members | Where-Object { [string]::IsNullOrWhiteSpace([string]$_.entrypoint.kind) }).Count -eq 0) 'Every scenario must declare an entrypoint kind.'
 
     $runnerPath = Join-Path $repoRoot 'scripts/run-full-chain-test-lane.ps1'
     Assert-Contract (Test-Path -LiteralPath $runnerPath -PathType Leaf) 'The governed FullChain runner must exist.'
+    $runnerWorkflowPath = Write-FullChainRunnerWorkflowFixture -Path (Join-Path $fixtureRoot 'runner-denied-workflow.yml') -RunStepTimeoutMinutes 1
+    $fakeCommandDirectory = Join-Path $fixtureRoot 'runner-fake-bin'
+    $fakeCommandLog = Join-Path $fixtureRoot 'runner-fake-commands.log'
+    $allIdentities = @($manifest.members.expectedTestIdentities | ForEach-Object { [string]$_ })
+    New-FullChainRunnerFakeCommands -Directory $fakeCommandDirectory -DiscoveredIdentities $allIdentities
+    $savedPath = [Environment]::GetEnvironmentVariable('PATH')
+    $savedPostgres = [Environment]::GetEnvironmentVariable('NERV_IIP_TEST_POSTGRES')
+    $savedRedis = [Environment]::GetEnvironmentVariable('NERV_IIP_TEST_REDIS')
+    $savedFakeCommandLog = [Environment]::GetEnvironmentVariable('NERV_FULLCHAIN_FAKE_COMMAND_LOG')
+    $savedFakeFailure = [Environment]::GetEnvironmentVariable('NERV_FULLCHAIN_FAKE_FAILURE')
+    $savedComposeProject = [Environment]::GetEnvironmentVariable('COMPOSE_PROJECT_NAME')
+    $realPwsh = [string](@(Get-Command pwsh -CommandType Application)[0].Source)
+    try {
+        [Environment]::SetEnvironmentVariable('PATH', "$fakeCommandDirectory$([IO.Path]::PathSeparator)$savedPath")
+        [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_POSTGRES', 'Host=fake-postgres;Database=postgres')
+        [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_REDIS', 'fake-redis:6379')
+        [Environment]::SetEnvironmentVariable('NERV_FULLCHAIN_FAKE_COMMAND_LOG', $fakeCommandLog)
+        [Environment]::SetEnvironmentVariable('COMPOSE_PROJECT_NAME', $null)
+
+        foreach ($deniedCase in @(
+            [pscustomobject]@{ Kind = 'fullstack'; MemberId = 'maintenance-runtime-hours' },
+            [pscustomobject]@{ Kind = 'script'; MemberId = 'erp-wms-delivery-completion' },
+            [pscustomobject]@{ Kind = 'dotnet'; MemberId = 'erp-return-closure' }
+        )) {
+            [IO.File]::WriteAllText($fakeCommandLog, '', [Text.UTF8Encoding]::new($false))
+            [Environment]::SetEnvironmentVariable('NERV_FULLCHAIN_FAKE_FAILURE', $null)
+            $caseRoot = Join-Path $fixtureRoot "runner-denied-$($deniedCase.Kind)"
+            $caseSummaryPath = Join-Path $caseRoot 'summary.json'
+            $writeState = [pscustomobject]@{ terminal = 0; resumable = 0 }
+            $summaryWriter = {
+                param([string] $Path, [string] $Payload, [string] $Phase)
+
+                $writeState.$Phase++
+                [IO.Directory]::CreateDirectory((Split-Path -Parent $Path)) | Out-Null
+                [IO.File]::WriteAllText($Path, $Payload, [Text.UTF8Encoding]::new($false))
+            }.GetNewClosure()
+            $runnerFailure = $null
+            try {
+                & $runnerPath `
+                    -MemberId $deniedCase.MemberId `
+                    -WorkflowPath $runnerWorkflowPath `
+                    -ResultsDirectory (Join-Path $caseRoot 'results') `
+                    -SummaryPath $caseSummaryPath `
+                    -SummaryFileWriter $summaryWriter 6>$null | Out-Null
+            }
+            catch { $runnerFailure = $_ }
+
+            Assert-Contract ($null -ne $runnerFailure -and ([string]$runnerFailure.Exception.Message).Contains('deadline admission denied', [StringComparison]::Ordinal)) "Production $($deniedCase.Kind) denied fixture must preserve the admission failure."
+            $commands = @([IO.File]::ReadAllLines($fakeCommandLog))
+            Assert-Contract (@($commands | Where-Object { $_ -match '^docker .* up -d ' }).Count -eq 1) "Production $($deniedCase.Kind) denied fixture must enter runner-owned infrastructure state."
+            Assert-Contract (@($commands | Where-Object { $_ -match '^docker .* (?:stop|down) ' }).Count -eq 1) "Production $($deniedCase.Kind) denied fixture must clean runner-owned infrastructure exactly once."
+            Assert-Contract (@($commands | Where-Object { $_.StartsWith('ENTRYPOINT ', [StringComparison]::Ordinal) }).Count -eq 0) "Production $($deniedCase.Kind) denied fixture must invoke its member entrypoint zero times."
+            Assert-Contract ($writeState.terminal -eq 1) "Production $($deniedCase.Kind) denied fixture must persist exactly one terminal summary."
+            $caseSummary = Get-Content -LiteralPath $caseSummaryPath -Raw | ConvertFrom-Json -Depth 20
+            Assert-Contract ([string]::Equals([string]$caseSummary.members[0].outcome, 'failed', [StringComparison]::Ordinal) -and [string]::Equals([string]$caseSummary.members[0].diagnosticEvidence, 'deadline-admission-denied', [StringComparison]::Ordinal) -and [string]::Equals([string]$caseSummary.cleanup, 'passed', [StringComparison]::Ordinal)) "Production $($deniedCase.Kind) denied fixture must persist its final denied outcome and cleanup."
+        }
+
+        [IO.File]::WriteAllText($fakeCommandLog, '', [Text.UTF8Encoding]::new($false))
+        [Environment]::SetEnvironmentVariable('NERV_FULLCHAIN_FAKE_FAILURE', 'postgres-version')
+        $failureRoot = Join-Path $fixtureRoot 'runner-original-failure'
+        $failureSummaryPath = Join-Path $failureRoot 'summary.json'
+        $failureWriteState = [pscustomobject]@{ terminal = 0; resumable = 0 }
+        $failureSummaryWriter = {
+            param([string] $Path, [string] $Payload, [string] $Phase)
+
+            $failureWriteState.$Phase++
+            [IO.Directory]::CreateDirectory((Split-Path -Parent $Path)) | Out-Null
+            [IO.File]::WriteAllText($Path, $Payload, [Text.UTF8Encoding]::new($false))
+        }.GetNewClosure()
+        $originalFailure = $null
+        try {
+            & $runnerPath `
+                -MemberId 'maintenance-runtime-hours' `
+                -WorkflowPath $runnerWorkflowPath `
+                -ResultsDirectory (Join-Path $failureRoot 'results') `
+                -SummaryPath $failureSummaryPath `
+                -SummaryFileWriter $failureSummaryWriter 6>$null | Out-Null
+        }
+        catch { $originalFailure = $_ }
+        Assert-Contract ($null -ne $originalFailure -and ([string]$originalFailure.Exception.Message).Contains('NERV_FULLCHAIN_ORIGINAL_FAILURE', [StringComparison]::Ordinal)) 'Production infrastructure failure fixture must preserve the original failure marker.'
+        $failureCommands = @([IO.File]::ReadAllLines($fakeCommandLog))
+        Assert-Contract (@($failureCommands | Where-Object { $_ -match '^docker .* (?:stop|down) ' }).Count -eq 1) 'Production infrastructure failure fixture must clean runner-owned infrastructure exactly once.'
+        Assert-Contract ($failureWriteState.terminal -eq 1) 'Production infrastructure failure fixture must persist exactly one terminal summary.'
+        $failureSummary = Get-Content -LiteralPath $failureSummaryPath -Raw | ConvertFrom-Json -Depth 20
+        Assert-Contract ([string]::Equals([string]$failureSummary.cleanup, 'failed', [StringComparison]::Ordinal)) 'Production infrastructure failure fixture must persist its final cleanup state.'
+
+        [IO.File]::WriteAllText($fakeCommandLog, '', [Text.UTF8Encoding]::new($false))
+        [Environment]::SetEnvironmentVariable('NERV_FULLCHAIN_FAKE_FAILURE', $null)
+        $childRoot = Join-Path $fixtureRoot 'runner-child-process'
+        $childSummaryPath = Join-Path $childRoot 'summary.json'
+        $childFailure = $null
+        try {
+            Invoke-NativeCommandOutput `
+                -Command $realPwsh `
+                -Arguments @(
+                    '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $runnerPath,
+                    '-MemberId', 'maintenance-runtime-hours',
+                    '-WorkflowPath', $runnerWorkflowPath,
+                    '-ResultsDirectory', (Join-Path $childRoot 'results'),
+                    '-SummaryPath', $childSummaryPath
+                ) `
+                -WorkingDirectory $repoRoot `
+                -TimeoutSeconds 60 `
+                -Name 'full-chain-production-composition-child' | Out-Null
+        }
+        catch { $childFailure = $_ }
+        Assert-Contract ($null -ne $childFailure -and ([string]$childFailure.Exception.Message).Contains('deadline admission denied', [StringComparison]::Ordinal)) "The real FullChain child-process entrypoint must preserve the denied failure; observed '$($childFailure.Exception.Message)'."
+        $childCommands = @([IO.File]::ReadAllLines($fakeCommandLog))
+        Assert-Contract (@($childCommands | Where-Object { $_ -match '^docker .* (?:stop|down) ' }).Count -eq 1) 'The real FullChain child-process entrypoint must execute production cleanup exactly once.'
+        $childSummary = Get-Content -LiteralPath $childSummaryPath -Raw | ConvertFrom-Json -Depth 20
+        Assert-Contract ([string]::Equals([string]$childSummary.members[0].diagnosticEvidence, 'deadline-admission-denied', [StringComparison]::Ordinal) -and [string]::Equals([string]$childSummary.cleanup, 'passed', [StringComparison]::Ordinal)) 'The real FullChain child-process entrypoint must persist its terminal denied summary.'
+    }
+    finally {
+        [Environment]::SetEnvironmentVariable('PATH', $savedPath)
+        [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_POSTGRES', $savedPostgres)
+        [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_REDIS', $savedRedis)
+        [Environment]::SetEnvironmentVariable('NERV_FULLCHAIN_FAKE_COMMAND_LOG', $savedFakeCommandLog)
+        [Environment]::SetEnvironmentVariable('NERV_FULLCHAIN_FAKE_FAILURE', $savedFakeFailure)
+        [Environment]::SetEnvironmentVariable('COMPOSE_PROJECT_NAME', $savedComposeProject)
+    }
     $runnerContent = [IO.File]::ReadAllText($runnerPath)
     foreach ($requiredFragment in @(
         'Import-NervFullChainTestLaneManifest',
@@ -200,7 +639,9 @@ try {
     Assert-Contract ($runnerContent.Contains("'--no-restore', '--list-tests'", [StringComparison]::Ordinal)) 'FullChain discovery must not restore again after the explicit restore phase.'
     Assert-Contract ($runnerContent.Contains("SetEnvironmentVariable('MSBUILDDISABLENODEREUSE', '1')", [StringComparison]::Ordinal)) 'FullChain runner must disable MSBuild node reuse on hosted runners.'
     Assert-Contract ($runnerContent.Contains("SetEnvironmentVariable('DOTNET_CLI_USE_MSBUILD_SERVER', '0')", [StringComparison]::Ordinal)) 'FullChain runner must disable the persistent dotnet build server.'
-    Assert-Contract ($runnerContent.Contains('$maximumGovernedRuntimeSeconds -ge $runStepTimeoutSeconds', [StringComparison]::Ordinal)) 'FullChain runner must fail closed when its internal timeout sum no longer fits the workflow step.'
+    Assert-Contract ($runnerContent.Contains('[Diagnostics.Stopwatch]::StartNew()', [StringComparison]::Ordinal)) 'FullChain runner must measure its global deadline with a monotonic stopwatch.'
+    Assert-Contract ($runnerContent.Contains('Invoke-NervFullChainMemberAdmission', [StringComparison]::Ordinal)) 'Every FullChain member must pass deadline admission before its action.'
+    Assert-Contract (-not $runnerContent.Contains('$maximumGovernedRuntimeSeconds', [StringComparison]::Ordinal)) 'FullChain runner must not reject the lane from a sum-of-maximums precheck.'
     Assert-Contract ($runnerContent.Contains('Write-NervFullChainSummarySnapshot', [StringComparison]::Ordinal)) 'FullChain runner must write resumable summary snapshots before final completion.'
     Assert-Contract ($runnerContent.IndexOf('Write-NervFullChainSummarySnapshot', [StringComparison]::Ordinal) -lt $runnerContent.IndexOf('try {', [StringComparison]::Ordinal)) 'FullChain runner must create the dependency summary before starting governed work.'
 
@@ -242,6 +683,16 @@ try {
                 Name = 'v1-relative-canonical-result-path'
                 Original = '-CanonicalResultPath $v1CanonicalResultPath'
                 Replacement = '-CanonicalResultPath artifacts/acceptance-scenario-matrix/v1/sales-order-demand-result.json'
+            },
+            @{
+                Name = 'v1-zero-step-timeout'
+                Original = "      - name: Resolve v1 canonical artifact identity`n        timeout-minutes: 1"
+                Replacement = "      - name: Resolve v1 canonical artifact identity`n        timeout-minutes: 0"
+            },
+            @{
+                Name = 'v1-step-budget-exhausts-job'
+                Original = "      - name: Checkout`n        timeout-minutes: 3"
+                Replacement = "      - name: Checkout`n        timeout-minutes: 8"
             }
         )) {
         $mutatedV1Workflow = $workflowContent.Replace([string]$v1Mutation.Original, [string]$v1Mutation.Replacement)
@@ -253,32 +704,47 @@ try {
         Assert-Contract ($null -ne $v1MutationFailure) "FullChain v1 mutation '$($v1Mutation.Name)' must be rejected."
     }
 
-    $workflowTimeoutNeedle = "      - name: Run governed FullChain scenarios`n        timeout-minutes: 120"
-    $shortenedWorkflowTimeout = "      - name: Run governed FullChain scenarios`n        timeout-minutes: 90"
-    Assert-Contract ($workflowContent.Contains($workflowTimeoutNeedle, [StringComparison]::Ordinal)) 'The FullChain workflow timeout mutation must target exactly one governed run step.'
-    $shortenedWorkflowPath = Join-Path $fixtureRoot 'ci-shortened-full-chain-timeout.yml'
-    [IO.File]::WriteAllText(
-        $shortenedWorkflowPath,
-        $workflowContent.Replace($workflowTimeoutNeedle, $shortenedWorkflowTimeout, [StringComparison]::Ordinal),
-        [Text.UTF8Encoding]::new($false)
-    )
-    $timeoutProbeOutput = & pwsh -NoLogo -NoProfile -NonInteractive -File $runnerPath -WorkflowPath $shortenedWorkflowPath 2>&1 | Out-String
-    $timeoutProbeExitCode = $LASTEXITCODE
-    $global:LASTEXITCODE = 0
-    Assert-Contract ($timeoutProbeExitCode -ne 0) 'A workflow step timeout shorter than the runner internal budget must fail before governed work starts.'
-    Assert-Contract (
-        $timeoutProbeOutput.Contains('FullChain internal timeout budget 6960 seconds', [StringComparison]::Ordinal) -and
-        $timeoutProbeOutput.Contains('5400-second workflow step', [StringComparison]::Ordinal)
-    ) "The runner must derive its timeout guard from the actual FullChain workflow step instead of a copied constant. Probe output: $timeoutProbeOutput"
-
     $manifestObject = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json -Depth 20
     $manifestObject.members = @($manifestObject.members | Select-Object -First 4)
     $missingMemberPath = Join-Path $fixtureRoot 'missing-member.json'
     [IO.File]::WriteAllText($missingMemberPath, (($manifestObject | ConvertTo-Json -Depth 20) + "`n"), [Text.UTF8Encoding]::new($false))
     $missingRejected = $false
-    try { Import-NervFullChainTestLaneManifest -ManifestPath $missingMemberPath -RepositoryRoot $repoRoot | Out-Null }
-    catch { $missingRejected = $_.Exception.Message.Contains('exactly 5 active/core members', [StringComparison]::Ordinal) }
-    Assert-Contract $missingRejected 'Removing a FullChain scenario must fail the manifest contract.'
+    try { Import-NervAcceptanceScenarioMatrixManifest -ManifestPath $scenarioMatrixPath -V1ManifestPath $missingMemberPath -RepositoryRoot $repoRoot | Out-Null }
+    catch { $missingRejected = $_.Exception.Message.Contains('must exactly match', [StringComparison]::Ordinal) }
+    Assert-Contract $missingRejected 'Removing a FullChain member while retaining its active/core matrix identity must fail closure.'
+
+    $duplicateManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json -Depth 20
+    $duplicateManifest.members += $duplicateManifest.members[0]
+    $duplicateMemberPath = Join-Path $fixtureRoot 'duplicate-member.json'
+    [IO.File]::WriteAllText($duplicateMemberPath, (($duplicateManifest | ConvertTo-Json -Depth 20) + "`n"), [Text.UTF8Encoding]::new($false))
+    $duplicateRejected = $false
+    try { Import-NervFullChainTestLaneManifest -ManifestPath $duplicateMemberPath -RepositoryRoot $repoRoot | Out-Null }
+    catch { $duplicateRejected = $_.Exception.Message.Contains('must be unique and canonical', [StringComparison]::Ordinal) }
+    Assert-Contract $duplicateRejected 'A duplicate FullChain member identity must fail closed.'
+
+    $extraManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json -Depth 20
+    $extraMember = ($extraManifest.members[-1] | ConvertTo-Json -Depth 20 | ConvertFrom-Json -Depth 20)
+    $extraMember.id = 'unexpected-extra-member'
+    $extraMember.filter = 'FullyQualifiedName=Nerv.IIP.Business.FullChain.Tests.UnexpectedTests.Unexpected'
+    $extraMember.expectedTestIdentities = @('Nerv.IIP.Business.FullChain.Tests.UnexpectedTests.Unexpected')
+    $extraManifest.members += $extraMember
+    $extraMemberPath = Join-Path $fixtureRoot 'extra-member.json'
+    [IO.File]::WriteAllText($extraMemberPath, (($extraManifest | ConvertTo-Json -Depth 20) + "`n"), [Text.UTF8Encoding]::new($false))
+    $extraRejected = $false
+    try { Import-NervAcceptanceScenarioMatrixManifest -ManifestPath $scenarioMatrixPath -V1ManifestPath $extraMemberPath -RepositoryRoot $repoRoot | Out-Null }
+    catch { $extraRejected = $_.Exception.Message.Contains('must exactly match', [StringComparison]::Ordinal) }
+    Assert-Contract $extraRejected 'An extra FullChain member without an active/core matrix identity must fail closure.'
+
+    $mismatchedMatrix = Get-Content -LiteralPath $scenarioMatrixPath -Raw | ConvertFrom-Json -Depth 50
+    $firstAlias = [string]$mismatchedMatrix.scenarios[0].v1Alias
+    $mismatchedMatrix.scenarios[0].v1Alias = [string]$mismatchedMatrix.scenarios[1].v1Alias
+    $mismatchedMatrix.scenarios[1].v1Alias = $firstAlias
+    $mismatchedMatrixPath = Join-Path $fixtureRoot 'mismatched-matrix.json'
+    [IO.File]::WriteAllText($mismatchedMatrixPath, (($mismatchedMatrix | ConvertTo-Json -Depth 50) + "`n"), [Text.UTF8Encoding]::new($false))
+    $mismatchRejected = $false
+    try { Import-NervAcceptanceScenarioMatrixManifest -ManifestPath $mismatchedMatrixPath -V1ManifestPath $manifestPath -RepositoryRoot $repoRoot | Out-Null }
+    catch { $mismatchRejected = $_.Exception.Message.Contains('must equal v1', [StringComparison]::Ordinal) }
+    Assert-Contract $mismatchRejected 'A matrix alias mapped to the wrong FullChain member contract must fail closure.'
 
     $identity = [string]$manifest.members[0].expectedTestIdentities[0]
     $trxPath = Join-Path $fixtureRoot 'full-chain.trx'
