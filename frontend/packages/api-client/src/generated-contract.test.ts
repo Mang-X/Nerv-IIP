@@ -328,12 +328,12 @@ describe('generated API client contract', () => {
   })
 
   it('exposes the maintenance v2 create mutation from the stable entry point', () => {
-    expect(typeof businessConsoleClient.createBusinessConsoleMaintenanceWorkOrderMutationOptions).toBe(
-      'function',
-    )
-    expect(typeof businessConsoleClient.createBusinessConsoleMaintenanceWorkOrderV2MutationOptions).toBe(
-      'function',
-    )
+    expect(
+      typeof businessConsoleClient.createBusinessConsoleMaintenanceWorkOrderMutationOptions,
+    ).toBe('function')
+    expect(
+      typeof businessConsoleClient.createBusinessConsoleMaintenanceWorkOrderV2MutationOptions,
+    ).toBe('function')
   })
 
   it('exposes the v1 downtime fail-closed 400 response in generated contracts', () => {
