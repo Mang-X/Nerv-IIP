@@ -2097,6 +2097,19 @@
     },
     {
       "service": "Maintenance",
+      "method": "POST",
+      "route": "/api/business/v2/maintenance/work-orders",
+      "operationId": "createMaintenanceWorkOrderV2",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleMaintenanceWorkOrderV2"
+      ]
+    },
+    {
+      "service": "Maintenance",
       "method": "GET",
       "route": "/api/business/v1/maintenance/work-orders/{workOrderId}",
       "operationId": "getMaintenanceWorkOrder",

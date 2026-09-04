@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Maintenance.Domain;
 using Nerv.IIP.Business.Maintenance.Infrastructure;
+using Nerv.IIP.Business.Maintenance.Web;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
 using Nerv.IIP.Business.Maintenance.Web.Application.Errors;
 using Nerv.IIP.Business.Maintenance.Web.Application.IntegrationEventHandlers;
@@ -78,6 +79,7 @@ try
     builder.Services.AddScoped<PauseMaintenancePlansWhenDeviceDisabledHandler>();
     builder.Services.AddScoped<ICommandLock<GenerateDueMaintenanceWorkOrdersCommand>, GenerateDueMaintenanceWorkOrdersCommandLock>();
     builder.Services.AddScoped<ICommandLock<CreateMaintenanceWorkOrderCommand>, CreateMaintenanceWorkOrderCommandLock>();
+    builder.Services.AddScoped<ICommandLock<CreateMaintenanceWorkOrderV2Command>, CreateMaintenanceWorkOrderV2CommandLock>();
     builder.Services.AddScoped<ICommandLock<CompleteMaintenanceWorkOrderCommand>, CompleteMaintenanceWorkOrderCommandLock>();
     builder.Services.AddScoped<ICommandLock<AssignMaintenanceWorkOrderCommand>, AssignMaintenanceWorkOrderCommandLock>();
     builder.Services.AddScoped<ICommandLock<TransitionMaintenanceWorkOrderCommand>, TransitionMaintenanceWorkOrderCommandLock>();
@@ -117,28 +119,7 @@ try
     builder.Services.AddScoped<WorldHistorySeedService>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
-    if (isTesting)
-    {
-        builder.Services.AddIntegrationEvents(typeof(Program));
-    }
-    else
-    {
-        builder.Services.AddIntegrationEvents(typeof(Program))
-            .UseCap<ApplicationDbContext>(b =>
-            {
-                b.RegisterServicesFromAssemblies(typeof(Program));
-                b.AddContextIntegrationFilters();
-            });
-
-        builder.Services.AddCap(x =>
-        {
-            x.Version = builder.Configuration["Cap:Version"] ?? "v1";
-            x.UseEntityFramework<ApplicationDbContext>();
-            x.JsonSerializerOptions.AddNetCorePalJsonConverters();
-            x.UseConfiguredTransport(builder.Configuration, builder.Environment.EnvironmentName);
-            x.UseDashboard();
-        });
-    }
+    builder.Services.AddMaintenanceCapIntegrationEvents(builder.Configuration, builder.Environment.EnvironmentName, isTesting);
 
     builder.Services.AddMediatR(cfg =>
         cfg.RegisterServicesFromAssemblies(Assembly.GetExecutingAssembly())

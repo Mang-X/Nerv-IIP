@@ -40,7 +40,8 @@ $script:GovernedPostgresMemberIds = @(
     'demandplanning-postgres-profile',
     'acceptance-postgres-profile',
     'maintenance-device-pause-postgres',
-    'scheduling-asset-unavailable-postgres'
+    'scheduling-asset-unavailable-postgres',
+    'maintenance-asset-unavailable-v2-postgres'
 )
 function Get-NervCSharpMethodBody([string]$Source, [string]$MethodName) {
     $signatureIndex = $Source.IndexOf(" $MethodName(", [StringComparison]::Ordinal)
@@ -347,6 +348,17 @@ try {
         @{ id = 'maintenance-device-pause-postgres'; service = 'Maintenance'; schema = 'maintenance'; identities = @(
                 'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceIntegrationEventHandlerTests.Device_disabled_consumer_durably_blocks_pm_generation_on_postgres')
             source = 'backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceIntegrationEventHandlerTests.cs'
+            innerDatabaseFactory = 'TemporaryPostgresDatabase.CreateAsync' },
+        # #2968：Maintenance v2 工单入口的目录精确命中、v1+v2 双发同事务与回滚、v1 零漂移证明落在独立成员，
+        # 与 maintenance-device-pause-postgres 同一测试项目、各自独立的运行器数据库；身份集合在此冻结。
+        @{ id = 'maintenance-asset-unavailable-v2-postgres'; service = 'Maintenance'; schema = 'maintenance'; identities = @(
+                'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.V1_free_text_still_publishes_only_the_v1_envelope_without_touching_the_catalog',
+                'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.V2_exact_code_commits_work_order_with_v1_companion_and_v2_canonical_outbox_rows_in_one_transaction',
+                'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.V2_near_miss_cross_scope_or_free_text_codes_are_rejected_by_the_database_predicate_with_zero_rows',
+                'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.V2_null_reason_code_commits_a_plain_work_order_without_asset_unavailable_outbox_rows',
+                'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.V2_outbox_failure_rolls_back_the_work_order_and_the_already_published_v1_companion',
+                'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.V1_companion_outbox_failure_rolls_back_the_work_order_before_the_v2_envelope_is_attempted')
+            source = 'backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceAssetUnavailableV2PostgresTests.cs'
             innerDatabaseFactory = 'TemporaryPostgresDatabase.CreateAsync' }
     )
     foreach ($smallServiceMember in $smallServiceMembers) {
