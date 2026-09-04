@@ -58,6 +58,16 @@ public sealed class PublicIdempotencyRequestValidationTests
                 OpenedBy: "operator-001",
                 IdempotencyKey: key!)).IsValid);
 
+        Assert.False(new BusinessConsoleCreateMaintenanceWorkOrderV2RequestValidator().Validate(
+            new BusinessConsoleCreateMaintenanceWorkOrderV2Request(
+                OrganizationId: "org-001",
+                EnvironmentId: "env-dev",
+                DeviceAssetId: "DEV-001",
+                Priority: "high",
+                SourceAlarmId: null,
+                OpenedBy: "operator-001",
+                IdempotencyKey: key!)).IsValid);
+
         Assert.False(new BusinessConsoleCompleteMaintenanceWorkOrderRequestValidator().Validate(
             new BusinessConsoleCompleteMaintenanceWorkOrderRequest(
                 OrganizationId: "org-001",

@@ -24437,6 +24437,61 @@
         ]
       }
     },
+    "/api/business-console/v2/maintenance/work-orders": {
+      "post": {
+        "tags": [
+          "Business Console Maintenance",
+          "Api"
+        ],
+        "operationId": "createBusinessConsoleMaintenanceWorkOrderV2",
+        "requestBody": {
+          "x-name": "BusinessConsoleCreateMaintenanceWorkOrderV2Request",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMaintenanceWorkOrderV2Request"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateMaintenanceWorkOrderV2Response"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/maintenance/work-orders/{workOrderId}/complete": {
       "post": {
         "tags": [
@@ -55115,6 +55170,117 @@
             "type": "string",
             "maxLength": 200,
             "minLength": 0,
+            "nullable": true
+          },
+          "assignedTechnicianUserId": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": true
+          },
+          "estimatedLaborMinutes": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0.0,
+            "nullable": true,
+            "exclusiveMinimum": true
+          }
+        }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateMaintenanceWorkOrderV2Response": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMaintenanceWorkOrderV2Response"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMaintenanceWorkOrderV2Response": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "workOrderId": {
+            "type": "string"
+          },
+          "operationReceipt": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOperationReceipt"
+              }
+            ]
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMaintenanceWorkOrderV2Request": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "organizationId",
+          "environmentId",
+          "deviceAssetId",
+          "priority",
+          "idempotencyKey"
+        ],
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "environmentId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "deviceAssetId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "priority": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 0,
+            "nullable": false
+          },
+          "sourceAlarmId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": true
+          },
+          "openedBy": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": false
+          },
+          "assetUnavailableReasonCode": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
             "nullable": true
           },
           "assignedTechnicianUserId": {
