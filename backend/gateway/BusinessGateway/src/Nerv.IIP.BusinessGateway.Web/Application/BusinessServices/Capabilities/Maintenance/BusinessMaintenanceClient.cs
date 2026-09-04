@@ -21,8 +21,7 @@ public interface IBusinessMaintenanceClient
     Task<BusinessConsoleCreateMaintenanceWorkOrderV2Response> CreateWorkOrderV2Async(
         string internalBearerToken,
         BusinessConsoleCreateMaintenanceWorkOrderV2Request request,
-        CancellationToken cancellationToken) =>
-        throw new NotSupportedException("Maintenance v2 work-order client is not configured.");
+        CancellationToken cancellationToken);
 
     Task<BusinessConsoleCompleteMaintenanceWorkOrderResponse> CompleteWorkOrderAsync(
         string internalBearerToken,

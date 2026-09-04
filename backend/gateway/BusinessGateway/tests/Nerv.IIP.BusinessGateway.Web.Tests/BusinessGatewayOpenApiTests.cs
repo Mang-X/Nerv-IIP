@@ -2318,6 +2318,7 @@ public sealed class BusinessGatewayOpenApiTests
             "shelveBusinessConsoleEquipmentAlarm",
             "unshelveBusinessConsoleEquipmentAlarm",
             "createBusinessConsoleMaintenanceWorkOrder",
+            "createBusinessConsoleMaintenanceWorkOrderV2",
             "completeBusinessConsoleMaintenanceWorkOrder",
             "createBusinessConsoleQualityInspectionRecordFromTask",
             "startBusinessConsoleMesOperationTask",

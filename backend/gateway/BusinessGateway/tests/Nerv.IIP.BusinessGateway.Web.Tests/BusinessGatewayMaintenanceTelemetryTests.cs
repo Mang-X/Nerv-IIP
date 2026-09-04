@@ -2363,6 +2363,10 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                     Alarm("alarm-001", "DEV-A"),
                     Alarm("alarm-001", "DEV-B"),
                 ], 2), version);
+                // #2969 复审 D：单页只回一条但 Total 声明还有更多 —— 唯一能让 `alarms.Total == 1`
+                // 这个合取项承重的形状（Count==1 && Total!=1）。缺它时删掉该判断仍全绿。
+                data.Add("single item with ambiguous total",
+                    new BusinessConsoleTelemetryAlarmEventListResponse([Alarm("alarm-001", "DEV-A")], 2), version);
             }
 
             return data;

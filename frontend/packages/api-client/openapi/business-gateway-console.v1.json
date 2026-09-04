@@ -24444,6 +24444,17 @@
           "Api"
         ],
         "operationId": "createBusinessConsoleMaintenanceWorkOrderV2",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.",
+            "schema": {
+              "type": "string",
+              "maxLength": 150
+            }
+          }
+        ],
         "requestBody": {
           "x-name": "BusinessConsoleCreateMaintenanceWorkOrderV2Request",
           "description": "",

@@ -70,6 +70,98 @@ public sealed class BusinessGatewayMaintenanceWorkOrderV2Tests
         Assert.False(handler.LastBody.TryGetProperty("assetUnavailableReasonCode", out _));
     }
 
+    // C（#2969 复审）：规格明写 v2 原因码「不 trim、不改大小写、原值转发」，纯空白值是最容易被
+    // 后人「顺手修好」（判空转 null / 丢字段）的一格。它与带内容的值不是等价输入：把非空白值 trim
+    // 掉的变异不会改变「字段仍是非空字符串」这一事实，而把空白当缺失的变异只有本用例能杀。
+    [Theory]
+    [InlineData("   ")]
+    [InlineData("\t")]
+    public async Task V2_client_forwards_a_whitespace_only_reason_code_verbatim_instead_of_dropping_it(
+        string whitespaceReasonCode)
+    {
+        var handler = new RecordingCreateHandler();
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://maintenance.local") };
+        var client = new HttpBusinessMaintenanceClient(httpClient);
+
+        await client.CreateWorkOrderV2Async(
+            "internal-token-001",
+            V2Request() with { AssetUnavailableReasonCode = whitespaceReasonCode },
+            CancellationToken.None);
+
+        var forwarded = handler.LastBody.GetProperty("assetUnavailableReasonCode");
+        Assert.Equal(JsonValueKind.String, forwarded.ValueKind);
+        Assert.Equal(whitespaceReasonCode, forwarded.GetString());
+    }
+
+    [Fact]
+    public async Task V2_endpoint_forwards_a_whitespace_only_reason_code_verbatim_instead_of_dropping_it()
+    {
+        var maintenance = new RecordingMaintenanceFacadeClient();
+        await using var lease = BusinessGatewayTestHost.Lease(
+            FakeBusinessGatewayAuthorizationClient.Allowed(),
+            services =>
+            {
+                services.RemoveAll<IBusinessMaintenanceClient>();
+                services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+                services.RemoveAll<IInternalServiceTokenProvider>();
+                services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+            });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v2/maintenance/work-orders", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "DEV-PRESS-01",
+            priority = "high",
+            openedBy = "operator-001",
+            assetUnavailableReasonCode = "   ",
+            idempotencyKey = "maintenance-create-v2-blank-reason",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("   ", maintenance.LastCreateWorkOrderV2Request!.AssetUnavailableReasonCode);
+    }
+
+    // E（#2969 复审）：SendCreateWorkOrderAsync 现在是 v1/v2 共享的，v1 侧也要有自己的防线，
+    // 否则该方法的下游响应校验分支只由 v2 单版本承重。
+    [Fact]
+    public async Task V1_client_rejects_a_downstream_response_that_is_not_a_freshly_opened_work_order()
+    {
+        var handler = new RecordingCreateHandler
+        {
+            ResponseFactory = () => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new
+                {
+                    data = new
+                    {
+                        workOrderId = "019f0000-0000-7000-8000-000000000111",
+                        status = "Completed",
+                        changedAtUtc = "2026-08-31T10:00:00Z",
+                    },
+                }),
+            },
+        };
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://maintenance.local") };
+        var client = new HttpBusinessMaintenanceClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.CreateWorkOrderAsync(
+            "internal-token-001",
+            new BusinessConsoleCreateMaintenanceWorkOrderRequest(
+                "org-001",
+                "env-dev",
+                "DEV-PRESS-01",
+                "high",
+                SourceAlarmId: null,
+                OpenedBy: "user-admin",
+                IdempotencyKey: "repair-intent-001"),
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+    }
+
     [Fact]
     public async Task V2_client_rejects_a_downstream_response_that_is_not_a_freshly_opened_work_order()
     {

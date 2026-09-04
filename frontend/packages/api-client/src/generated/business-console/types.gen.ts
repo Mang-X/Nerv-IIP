@@ -19116,6 +19116,12 @@ export type CreateBusinessConsoleMaintenanceWorkOrderResponse = CreateBusinessCo
 
 export type CreateBusinessConsoleMaintenanceWorkOrderV2Data = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMaintenanceWorkOrderV2Request;
+    headers?: {
+        /**
+         * Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.
+         */
+        'Idempotency-Key'?: string;
+    };
     path?: never;
     query?: never;
     url: '/api/business-console/v2/maintenance/work-orders';
