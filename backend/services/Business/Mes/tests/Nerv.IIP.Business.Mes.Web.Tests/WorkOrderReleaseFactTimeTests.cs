@@ -48,7 +48,7 @@ public sealed class WorkOrderReleaseFactTimeTests
     }
 
     /// <summary>
-    /// 没有报工时不得把发布时刻往前拉：下界只由既有报工构成，调用方给的下达时刻本身是权威的。
+    /// 没有报工时不得把发布时刻往前拉：下界只由既有活动（报工或工序完工）构成，调用方给的下达时刻本身是权威的。
     /// </summary>
     [Fact]
     public async Task Release_keeps_the_caller_supplied_moment_when_nothing_was_reported()
@@ -180,51 +180,6 @@ public sealed class WorkOrderReleaseFactTimeTests
         Assert.NotEqual(ReleaseRequestedAtUtc, response.AcceptedAtUtc);
         Assert.Equal(earliest, response.AcceptedAtUtc);
         Assert.Equal("WO-RECEIPT", response.ReferenceId);
-    }
-
-    /// <summary>
-    /// **「取消也算既有活动」这条明写裁定的鉴别力**（#3117 第四轮 / 复审 R6）。
-    ///
-    /// <para>命令层的裁定是「取消也会写 <c>ExistingEndUtc</c>；把它算进来只会把下界往早拉，
-    /// 对 Quality 那三条 throw 守卫恒安全，故**不再按状态过滤**」
-    /// （该注释第四轮已限定为「只对那三条守卫成立」，不覆盖窗口生成语义——见 PR 正文 R5）。
-    /// 复审实测：加上 <c>Status == Completed</c> 过滤后**全仓零红**——也就是这条裁定此前**没有任何用例盯着**，
-    /// 而当时看似有防线的那点红，只是因为夹具用了聚合造不出的 <c>InProgress + 非空 ExistingEndUtc</c>
-    /// 组合（假鉴别力）。本用例把这条裁定钉住，夹具全程走**聚合方法**（Queue → Cancel），域上可达。</para>
-    /// </summary>
-    [Fact]
-    public async Task Release_treats_a_cancelled_operations_end_time_as_existing_activity()
-    {
-        await using var dbContext = CreateDbContext();
-        var cancelledAtUtc = DateTimeOffset.Parse("2026-08-12T04:00:00Z");
-        AddReleasableWorkOrder(dbContext, "WO-CANCELLED");
-
-        // 走聚合方法造出取消态：Queue 之后 Cancel，ExistingEndUtc 被置为取消时刻。
-        var cancelled = OperationTask.Queue(
-            Organization,
-            Environment,
-            "WO-CANCELLED",
-            "OP-WO-CANCELLED-20",
-            20,
-            "WC-MIX",
-            [],
-            ReleaseRequestedAtUtc.AddDays(-20),
-            TimeSpan.FromHours(1),
-            "SKU-FG-1000",
-            "EA",
-            1000m);
-        cancelled.Cancel(cancelledAtUtc);
-        dbContext.OperationTasks.Add(cancelled);
-        await dbContext.SaveChangesAsync();
-
-        // 前提自检：取消确实写了 ExistingEndUtc，且状态是 Cancelled——否则本用例测的不是它声称的那件事。
-        Assert.Equal(OperationTaskLifecycleStatus.Cancelled, cancelled.Status);
-        Assert.Equal(cancelledAtUtc, cancelled.ExistingEndUtc);
-        Assert.Empty(dbContext.ProductionReports);
-
-        var releasedAtUtc = await ReleaseAsync(dbContext, "WO-CANCELLED");
-
-        Assert.Equal(cancelledAtUtc, releasedAtUtc);
     }
 
     /// <summary>

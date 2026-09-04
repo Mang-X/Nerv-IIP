@@ -310,7 +310,7 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
     }
 
     /// <summary>
-    /// #3117 的验收落点：MES 直投的发布时刻按既有报工取下界，最紧的一格就是「发布时刻恰等于最早报工」。
+    /// #3117 的验收落点：MES 直投的发布时刻按既有活动（报工或工序完工）取下界，最紧的一格就是「发布时刻恰等于最早报工」。
     /// Quality 的守卫拒的是「报工**早于**发布」，等号必须放行——否则下界取到位了投影仍然进死信，
     /// 那张工单继续 <c>not-synchronized</c>、被 #2780 门禁永久拒。
     /// 对照是同一文件里的 <c>Live_release_with_conflicting_facts_still_dead_letters</c>：
@@ -341,24 +341,24 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
     }
 
     /// <summary>
-    /// **给「补下达之后累计窗口怎么算」这一面一个读数**（#3117 第三轮 / 复审 Q3·③）。
+    /// **下达之前已产出的数量不补开巡检任务，窗口自下达时刻起算**（owner 裁定，#3117 并入本票）。
     ///
-    /// <para>上一版的 <c>Live_release_lands_when_its_time_equals_the_earliest_known_report</c> 挂的是
-    /// <c>FirstArticlePlan()</c>——它的 <c>category</c> 是 <c>first-article</c>、两个 interval 都是 <c>null</c>，
-    /// 被投影里的档查询（<c>Category == "operation"</c> 且 interval 非空）**整条筛掉**，
-    /// <c>RuntimeContexts</c> 恒为空、<c>AddDueTasks</c> 全程空转。也就是说那条用例在**累计窗口**这一面
-    /// 零鉴别力：直投分支跳不跳过累计窗口，它都绿。本用例换成真正的周期档，让这一面有读数。</para>
+    /// <para>依据：国内 MES 惯例——巡检是过程管控，事后补检不可执行；补开的那批任务还会
+    /// 出生即逾期、批量触发超期提醒（`InspectionTaskOverdueIntegrationEvent` → Notification）。</para>
     ///
-    /// <para><b>本用例钉的是「今天是什么行为」，不是「应该是什么行为」。</b>当前行为：先报 250 件、
-    /// 后按最早报工时刻补下达，直投分支**会**为已经流走的产量补开 <c>floor(250/100) = 2</c> 张巡检任务。
-    /// 这个取舍不是本票引入的——merge-base 上就有一条专门用例
-    /// <c>PeriodicInspectionIntegrationEventTests.Report_before_release_backfills_quantity_windows_from_the_frozen_context</c>
-    /// （提交 <c>d4a8a711e</c>，本 PR 未触碰该文件）把它钉成了**既有的、被明确命名为「backfills」的行为**。
-    /// 本票只是让 MES 直投这条路径**经常**产出这种形态，而不是让它第一次可达。
-    /// 是否应当改成「不追认」需要跨服务的产品裁定，已在 PR 正文登记并交回 owner。</para>
+    /// <para><b>本用例是这条裁定的承重者，生产调用链如下（不是聚合方法序列）</b>：
+    /// `POST /api/business/v1/mes/work-orders/{workOrderId}/release`（`ReleaseWorkOrderEndpoint`）
+    /// → `ReleaseWorkOrderCommand` → `ReleaseWorkOrderCommandHandler`（按最早既有活动取下界）
+    /// → `WorkOrderReleasedDomainEvent` → `WorkOrderReleasedIntegrationEventConverter`
+    /// → `mes.WorkOrderReleased` → 本处 `Authoritative` 分支。
+    /// 先报工后下达是 #3113 实测可达的主流程形态。</para>
+    ///
+    /// <para><b>与 `d4a8a711e` 钉住的乱序到达用例的分界</b>：那条用例的报工时刻（01:30）**晚于**
+    /// 发布时刻（01:00），产量是下达之后真实累积的，窗口本就该开、行为不变；
+    /// 本用例的报工时刻**等于**发布时刻（发布被夹到最早既有活动），产量发生在下达之前，故跳过。</para>
     /// </summary>
     [Fact]
-    public async Task Live_release_after_reported_quantity_opens_the_accrued_windows_today()
+    public async Task Live_release_does_not_open_windows_for_quantity_produced_before_the_release()
     {
         await using var dbContext = CreateDbContext();
         dbContext.InspectionPlans.Add(PeriodicPlan(quantityInterval: 100m));
@@ -373,27 +373,15 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
             deadLetters);
 
         Assert.Empty(await deadLetters.ListAsync(null, null, CancellationToken.None));
-        // 前提自检：档确实被选中、运行上下文确实建出来了。否则下面的计数会在一个空转的场景上恒成立，
-        // 又变回一条零鉴别力的用例。
+
+        // 前提自检：档确实被选中、运行上下文确实建出来了、产量确实进了高水位。
+        // 少了这三条，「0 张任务」可能只是因为整条链空转，那就又是一条零鉴别力用例。
         var context = await dbContext.PeriodicInspectionRuntimeContexts.SingleAsync();
         Assert.Equal(250m, context.QuantityHighWater);
 
-        var tasks = await dbContext.InspectionTasks.OrderBy(x => x.Quantity).ToArrayAsync();
-        Assert.Equal([100m, 200m], tasks.Select(x => x.Quantity));
+        // 裁定的落点：下达之前的 250 件不补开任务；水位被推到已生成，后续产量从这里继续算。
+        Assert.Empty(await dbContext.InspectionTasks.ToListAsync());
         Assert.Equal(2, context.LastGeneratedQuantityWindowSequence);
-
-        // **补开任务的到期时刻同样要有承重者（#3117 第四轮 / 复审 R5）。**
-        // 条数这一半由 merge-base 上的 `Report_before_release_backfills_quantity_windows_from_the_frozen_context`
-        // （d4a8a711e）钉着；**到期时刻这一半在此之前谁也没钉**——包括本文件上一版。
-        // 今天的行为：`AddDueTasks` 拿的是信封 `OccurredAtUtc`，而本 PR 让它等于发布事实时刻（被夹到最早报工），
-        // 于是 `generatedAtUtc` = 最早报工时刻、`dueAtUtc = +24h`，**任务出生即逾期数周**。
-        // 下游至少三处受影响：`inspection_tasks.due_at_utc` 与超期扫描索引、
-        // `InspectionTaskOverdueIntegrationEvent` → Notification（补下达即刻批量触发超期提醒）、检验员队列排序。
-        // **本用例只钉「今天是什么」，不主张「应该是什么」**——是否改行为是跨服务产品判断，已在正文交回 owner。
-        // 实测值（不是推算）：`dueAtUtc = window.GeneratedAtUtc + 24h`，此处为 2026-08-02T00:00Z。
-        Assert.All(tasks, task => Assert.Equal(DateTimeOffset.Parse("2026-08-02T00:00:00Z"), task.DueAtUtc));
-        // 「出生即逾期」这件事本身也要有断言，否则改成按真实时钟时这条用例不会红。
-        Assert.All(tasks, task => Assert.True(task.DueAtUtc < DateTimeOffset.UtcNow));
     }
 
     /// <summary>

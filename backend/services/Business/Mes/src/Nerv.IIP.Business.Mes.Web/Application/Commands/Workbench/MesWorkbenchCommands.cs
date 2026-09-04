@@ -160,13 +160,14 @@ public sealed class ReleaseWorkOrderCommandHandler(
         // 只按报工取下界时这里查不到任何活动 → 发布事实取调用方时刻 → 被 Quality 的完工守卫
         // （PeriodicInspectionOperation 的 CompletedAtUtc < releasedAtUtc）判冲突整封进死信（#3117 第三轮）。
         // 不新增查询：operationSnapshots 已在上面读进内存，ExistingEndUtc 就是完工时刻。
-        // 注：取消也会写 ExistingEndUtc（OperationTask.Cancel）。把它算进来只会把下界**往早**拉。
-        // **「往早拉恒安全」这句只对 Quality 那三条 throw 守卫成立，不要读成无条件安全**：
-        // 发布时刻同时是信封 OccurredAtUtc，被 Quality 直投分支当作累计窗口的生成时钟，
-        // 往早拉会让补开的巡检任务到期时刻更早（见 PR 正文登记项 0b / R5）。
-        // 这条「不按状态过滤」是有意裁定，其鉴别力由
-        // WorkOrderReleaseFactTimeTests.Release_treats_a_cancelled_operations_end_time_as_existing_activity 承担
-        // （加 Status == Completed 过滤即红）。
+        // 关于不按状态过滤：取消也会写 ExistingEndUtc（OperationTask.Cancel）。
+        // **但取消态在生产上进不到这条下界，这里如实写清，不再声称它有用例承担：**
+        // OperationTask.Cancel 的生产调用点恰 1 处（本文件 ChangeWorkOrderStateCommandHandler 的取消分支），
+        // 它先把工单整单 Cancel、再 foreach 取消全部工序（无部分取消路径）；
+        // 而 WorkOrder.ThrowIfCannotRelease 把 CancelledStatus 与其余终态一并拒掉。
+        // 故「工单可下达 + 存在已取消工序」在系统层不可达，加不加状态过滤对可达输入是等价变异。
+        // 保留「不过滤」是因为它不依赖「哪些状态会写 ExistingEndUtc」这份枚举的完备性，方向上恒偏早、
+        // 对 Quality 那三条 throw 守卫恒安全（**只对那三条守卫，不覆盖窗口生成语义**）。
         var earliestOperationEndUtc = operationSnapshots
             .Where(x => x.ExistingEndUtc.HasValue)
             .Select(x => (DateTimeOffset?)x.ExistingEndUtc!.Value)

@@ -187,6 +187,25 @@ internal static class PeriodicInspectionReleaseProjection
                                 facts.WorkCenterId,
                                 payload.ReleasedAtUtc.UtcDateTime,
                                 snapshots);
+
+                            // 下达之前已产出的数量**不补开**巡检任务，巡检窗口自下达时刻起算
+                            // （owner 裁定，#3117 并入本票；依据是国内 MES 惯例——巡检是过程管控，
+                            // 事后补检不可执行，且补开的那批任务出生即逾期、会批量触发超期提醒）。
+                            //
+                            // **为什么带条件、而不是无条件与回填分支对齐**：无条件跳过会打掉一类
+                            // 合法的既有输入——`d4a8a711e` 钉住的那条「乱序到达」用例里，
+                            // 报工时刻（01:30）**晚于**发布时刻（01:00），产量是**下达之后**真实累积的，
+                            // 那批窗口本就该开。回填侧不需要这个条件是因为它的候选恒 ≤ 全部既有活动。
+                            //
+                            // 判别式：**该工序在发布时刻或之前已有报工** ⇒ 那批产量发生在下达之前 ⇒ 跳过。
+                            // #3117 场景下发布时刻被夹到最早既有活动，故最早那条报工恰好落在等号上；
+                            // 乱序到达场景下全部报工严格晚于发布时刻，判别式为假、行为不变。
+                            if (operation.ProductionReports.Any(
+                                    report => report.ReportedAtUtc <= payload.ReleasedAtUtc.UtcDateTime))
+                            {
+                                operation.SkipPeriodicWindowsAccruedBefore(payload.ReleasedAtUtc.UtcDateTime);
+                            }
+
                             PeriodicInspectionQuantityTaskGeneration.AddDueTasks(
                                 dbContext,
                                 operation.RuntimeContexts,
