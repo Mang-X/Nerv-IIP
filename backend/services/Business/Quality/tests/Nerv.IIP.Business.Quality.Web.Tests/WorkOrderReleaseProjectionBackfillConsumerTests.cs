@@ -341,6 +341,45 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
     }
 
     /// <summary>
+    /// **「完工先于下达、零报工」这条新输入类的 Quality 侧端到端读数**（复审 N3，两轮点名）。
+    ///
+    /// <para>MES 侧由 `WorkOrderReleaseFactTimeTests.Release_after_an_operation_already_completed_…`
+    /// 钉住「发布事实时刻被压到最早工序完工」这个**产出值**；但该值到达 Quality 之后能不能落库、
+    /// 会不会被完工守卫判冲突进死信，此前只有分服务的解析式推断、**没有端到端读数**。本用例补上这一格。</para>
+    ///
+    /// <para><b>生产调用链</b>（按本票采纳的结构性约束给链，不给聚合序列）：
+    /// 工序动作 `complete`（`ChangeOperationTaskStateCommandHandler`，`pendingProductionReportNos` 传 `[]`、
+    /// 时刻取 `req.ChangedAtUtc`，**不产生任何报工行**）→ `mes.OperationTaskCompleted` → Quality 先落完工事实；
+    /// 随后 `POST …/release` → `ReleaseWorkOrderCommandHandler`（按最早既有活动取下界，此处即最早工序完工）
+    /// → `mes.WorkOrderReleased` → 本处 `Authoritative` 分支。</para>
+    ///
+    /// <para>守卫是 `PeriodicInspectionOperation` 的
+    /// 「`CompletedAtUtc &lt; releasedAtUtc` ⇒ 冲突」那条；发布时刻恰等于完工时刻时**必须放行**，
+    /// 否则 MES 侧把下界取到位了、投影仍然进死信。</para>
+    /// </summary>
+    [Fact]
+    public async Task Live_release_lands_when_its_time_equals_the_only_completion_and_nothing_was_reported()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.InspectionPlans.Add(FirstArticlePlan());
+        await dbContext.SaveChangesAsync();
+
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        // 先到的是完工事实，且**一条报工都没有**——这正是 MES 侧新纳入下界的那一类输入。
+        await HandleCompletionAsync(dbContext, OperationCompleted("OP-10", skuCode: "SKU-FG-1000"), deadLetters);
+        var completedAtUtc = DateTimeOffset.Parse("2026-08-20T00:00:00Z");
+
+        await HandleLiveReleaseAsync(dbContext, LiveRelease(releasedAtUtc: completedAtUtc), deadLetters);
+
+        Assert.Empty(await deadLetters.ListAsync(null, null, CancellationToken.None));
+        var operation = await dbContext.PeriodicInspectionOperations.SingleAsync();
+        // 前提自检：确实是「零报工」那条输入类，否则本用例测的是报工下界那一面。
+        Assert.Empty(operation.ProductionReports);
+        Assert.Equal(completedAtUtc.UtcDateTime, operation.CompletedAtUtc);
+        Assert.Equal(completedAtUtc.UtcDateTime, operation.ReleasedAtUtc);
+    }
+
+    /// <summary>
     /// **下达之前已产出的数量不补开巡检任务，窗口自下达时刻起算**（owner 裁定，#3117 并入本票）。
     ///
     /// <para>依据：国内 MES 惯例——巡检是过程管控，事后补检不可执行；补开的那批任务还会
