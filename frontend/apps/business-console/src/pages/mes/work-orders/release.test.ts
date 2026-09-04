@@ -456,8 +456,8 @@ describe('work-order list — release entry', () => {
     )
   })
 
-  // 开工前的常规下达不该背上这句前提说明。
-  it('does not show the already-started notice when every operation is still queued', async () => {
+  // 全部工序仍在排队时不该背上这句前提说明。
+  it('does not show the not-all-queued notice when every operation is still queued', async () => {
     const wrapper = mountPage()
 
     await button(wrapper, '下达').trigger('click')
