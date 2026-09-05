@@ -14,6 +14,7 @@ public sealed class StandardCodeRulesTests
     [InlineData("material-issue-request", "MIR")]
     [InlineData("defect", "DEF")]
     [InlineData("downtime-event", "DOWNTIME")]
+    [InlineData("changeover-record", "CHANGEOVER")]
     [InlineData("shift-handover", "SHO")]
     [InlineData("opportunity", "OPP")]
     [InlineData("quotation", "QUO")]

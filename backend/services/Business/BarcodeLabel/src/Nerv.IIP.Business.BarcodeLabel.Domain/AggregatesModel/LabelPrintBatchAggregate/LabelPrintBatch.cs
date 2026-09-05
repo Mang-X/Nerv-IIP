@@ -18,6 +18,15 @@ public sealed record LabelPrintBatchSnapshot(
     string BarcodeType,
     string RendererContractVersion);
 
+public enum TemplateAssetReferenceDisposition
+{
+    NotTarget,
+    Unreachable,
+    Reachable,
+    Hold,
+    Unknown,
+}
+
 public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
 {
     private const string Pending = "pending";
@@ -152,6 +161,64 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
         {
             throw new InvalidOperationException("Print batch does not contain a complete replay snapshot.");
         }
+    }
+
+    public TemplateAssetReferenceDisposition GetTemplateAssetReferenceDisposition(
+        LabelTemplateId labelTemplateId,
+        string templateFileId,
+        string templateAssetSha256)
+    {
+        var hasAnyReplayFact = TemplateFileIdSnapshot is not null
+            || TemplateAssetSha256 is not null
+            || VariableSchemaJsonSnapshot is not null
+            || BarcodeTypeSnapshot is not null
+            || RendererContractVersion is not null;
+        if (!hasAnyReplayFact)
+        {
+            return TemplateAssetReferenceDisposition.NotTarget;
+        }
+
+        if (!HasCompleteReplaySnapshot)
+        {
+            return string.IsNullOrWhiteSpace(TemplateFileIdSnapshot) || TemplateFileIdSnapshot == templateFileId
+                ? TemplateAssetReferenceDisposition.Unknown
+                : TemplateAssetReferenceDisposition.NotTarget;
+        }
+
+        if (TemplateFileIdSnapshot != templateFileId)
+        {
+            return TemplateAssetReferenceDisposition.NotTarget;
+        }
+
+        if (LabelTemplateId != labelTemplateId || TemplateAssetSha256 != templateAssetSha256)
+        {
+            return TemplateAssetReferenceDisposition.Unknown;
+        }
+
+        if (Status == DeliveryUnknown)
+        {
+            return TemplateAssetReferenceDisposition.Hold;
+        }
+
+        if (Status is Pending or Failed)
+        {
+            return TemplateAssetReferenceDisposition.Reachable;
+        }
+
+        if (Status is not (SentToPrinter or Printed) || Items.Count == 0)
+        {
+            return TemplateAssetReferenceDisposition.Unknown;
+        }
+
+        var itemDispositions = Items.Select(item => item.GetTemplateAssetReferenceDisposition()).ToArray();
+        if (itemDispositions.Any(disposition => disposition == TemplateAssetReferenceDisposition.Unknown))
+        {
+            return TemplateAssetReferenceDisposition.Unknown;
+        }
+
+        return itemDispositions.Any(disposition => disposition == TemplateAssetReferenceDisposition.Reachable)
+            ? TemplateAssetReferenceDisposition.Reachable
+            : TemplateAssetReferenceDisposition.Unreachable;
     }
 
     public void EnsureCanBeDispatched()
@@ -469,6 +536,14 @@ public sealed class LabelPrintItem : Entity<LabelPrintItemId>
         Status = Consumed;
         ConsumedAtUtc = DateTimeOffset.UtcNow;
     }
+
+    internal TemplateAssetReferenceDisposition GetTemplateAssetReferenceDisposition() =>
+        Status switch
+        {
+            Created or Printed or Reprinted => TemplateAssetReferenceDisposition.Reachable,
+            Voided or Consumed => TemplateAssetReferenceDisposition.Unreachable,
+            _ => TemplateAssetReferenceDisposition.Unknown,
+        };
 }
 
 public enum LabelPrintLifecycleRejectionReason

@@ -347,7 +347,8 @@ public sealed record BusinessConsoleTelemetryOeeResponse(
     decimal? QualityRate,
     decimal? OeeRate,
     bool IsDegraded,
-    IReadOnlyCollection<string> DegradedReasons);
+    IReadOnlyCollection<string> DegradedReasons,
+    decimal ChangeoverLossMinutes = 0m);
 
 public sealed record BusinessConsoleTelemetryRuntimeHoursRequest(string OrganizationId, string EnvironmentId, string DeviceAssetId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc);
 public sealed record BusinessConsoleTelemetryRuntimeHoursDailyItem(string BusinessDate, decimal RuntimeHours, decimal LoadingHours, int StateSampleCount);
