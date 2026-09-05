@@ -91,13 +91,11 @@ public sealed class TemplateAssetRetirementDecision : Entity<TemplateAssetRetire
     public bool HasSameRequest(
         string organizationId,
         string environmentId,
-        LabelTemplateId labelTemplateId,
         string templateFileId,
         string templateAssetSha256,
         string reason) =>
         OrganizationId == organizationId
         && EnvironmentId == environmentId
-        && LabelTemplateId == labelTemplateId
         && TemplateFileId == templateFileId
         && TemplateAssetSha256 == templateAssetSha256
         && Reason == reason;

@@ -161,7 +161,6 @@ public sealed class CreateTemplateAssetRetirementDecisionCommandHandler(
         if (!existing.HasSameRequest(
                 request.OrganizationId,
                 request.EnvironmentId,
-                request.LabelTemplateId,
                 request.TemplateFileId,
                 request.TemplateAssetSha256,
                 request.Reason))

@@ -180,7 +180,7 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
 
         if (!HasCompleteReplaySnapshot)
         {
-            return TemplateFileIdSnapshot is null || TemplateFileIdSnapshot == templateFileId
+            return string.IsNullOrWhiteSpace(TemplateFileIdSnapshot) || TemplateFileIdSnapshot == templateFileId
                 ? TemplateAssetReferenceDisposition.Unknown
                 : TemplateAssetReferenceDisposition.NotTarget;
         }

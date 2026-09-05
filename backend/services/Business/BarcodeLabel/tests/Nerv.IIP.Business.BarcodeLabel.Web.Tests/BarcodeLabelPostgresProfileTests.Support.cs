@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
@@ -64,16 +65,23 @@ public sealed partial class BarcodeLabelPostgresProfileTests
         return services.BuildServiceProvider();
     }
 
-    private static ServiceProvider CreateRetirementCommandProvider()
+    private static ServiceProvider CreateRetirementCommandProvider(SaveChangesInterceptor? interceptor = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddMediatR(configuration => configuration
             .RegisterServicesFromAssembly(typeof(CreateTemplateAssetRetirementDecisionCommand).Assembly)
             .AddUnitOfWorkBehaviors());
-        services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(
-            LaneConnectionString,
-            npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", BarcodeLabelFacts.Schema)));
+        services.AddDbContext<ApplicationDbContext>(options =>
+        {
+            options.UseNpgsql(
+                LaneConnectionString,
+                npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", BarcodeLabelFacts.Schema));
+            if (interceptor is not null)
+            {
+                options.AddInterceptors(interceptor);
+            }
+        });
         services.AddUnitOfWork<ApplicationDbContext>();
         services.AddScoped<ITemplateAssetRetirementFence, PostgresTemplateAssetRetirementFence>();
         services.AddSingleton<ILabelTemplateAssetPort>(new FixedTemplateAssetPort());
@@ -234,6 +242,13 @@ public sealed partial class BarcodeLabelPostgresProfileTests
                 await setupDb.Database.ExecuteSqlRawAsync(
                     "UPDATE barcode.label_print_batches SET variable_schema_json_snapshot = NULL");
             }
+            else if (scenario == "whitespace-file-snapshot")
+            {
+                await setupDb.Database.ExecuteSqlRawAsync(
+                    "ALTER TABLE barcode.label_print_batches DROP CONSTRAINT ck_label_print_batches_replay_snapshot_complete");
+                await setupDb.Database.ExecuteSqlRawAsync(
+                    "UPDATE barcode.label_print_batches SET template_file_id_snapshot = '   '");
+            }
             else if (scenario == "missing-owner")
             {
                 var missingOwnerId = Guid.CreateVersion7();
@@ -364,6 +379,82 @@ public sealed partial class BarcodeLabelPostgresProfileTests
                 Timeout: TimeSpan.FromSeconds(15),
                 PollInterval: TimeSpan.FromMilliseconds(50),
                 SensitiveValues: [LaneConnectionString]));
+    }
+
+    private static async Task<(int Waiters, bool CompetingTaskCompleted)> WaitForAdvisoryWaiterOrCompletionAsync(
+        int holderProcessId,
+        Task competingTask,
+        string description)
+    {
+        return await Eventually.WaitAsync(
+            condition: $"PostgreSQL advisory-lock waiter or early completion for {description}",
+            observe: async cancellationToken =>
+            {
+                await using var connection = new NpgsqlConnection(LaneConnectionString);
+                await connection.OpenAsync(cancellationToken);
+                await using var command = connection.CreateCommand();
+                command.CommandText = """
+                    WITH holder_lock AS (
+                        SELECT locktype, database, classid, objid, objsubid
+                        FROM pg_locks
+                        WHERE pid = @holder_pid
+                          AND locktype = 'advisory'
+                          AND granted
+                    )
+                    SELECT count(*)
+                    FROM pg_locks AS waiter
+                    INNER JOIN holder_lock AS holder
+                        ON waiter.locktype = holder.locktype
+                       AND waiter.database IS NOT DISTINCT FROM holder.database
+                       AND waiter.classid IS NOT DISTINCT FROM holder.classid
+                       AND waiter.objid IS NOT DISTINCT FROM holder.objid
+                       AND waiter.objsubid IS NOT DISTINCT FROM holder.objsubid
+                    WHERE waiter.pid <> @holder_pid
+                      AND NOT waiter.granted
+                    """;
+                command.Parameters.AddWithValue("holder_pid", holderProcessId);
+                var waiters = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
+                return (Waiters: waiters, CompetingTaskCompleted: competingTask.IsCompleted);
+            },
+            isSatisfied: observation => observation.Waiters > 0 || observation.CompetingTaskCompleted,
+            describe: observation =>
+                $"advisoryLockWaiters={observation.Waiters}; competingTaskCompleted={observation.CompetingTaskCompleted}",
+            options: new EventuallyOptions(
+                Timeout: TimeSpan.FromSeconds(15),
+                PollInterval: TimeSpan.FromMilliseconds(50),
+                SensitiveValues: [LaneConnectionString]));
+    }
+
+    private sealed class RetirementSaveBarrier : SaveChangesInterceptor
+    {
+        private readonly TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource released = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int HolderProcessId { get; private set; }
+
+        public async Task WaitUntilEnteredAsync(CancellationToken cancellationToken)
+        {
+            await entered.Task.WaitAsync(cancellationToken);
+        }
+
+        public void Release() => released.TrySetResult();
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (eventData.Context is ApplicationDbContext context
+                && context.ChangeTracker.Entries<TemplateAssetRetirementDecision>()
+                    .Any(entry => entry.State == EntityState.Added))
+            {
+                HolderProcessId = ((NpgsqlConnection)context.Database.GetDbConnection()).ProcessID;
+                entered.TrySetResult();
+                await released.Task.WaitAsync(cancellationToken);
+            }
+
+            return result;
+        }
     }
 
     private static async Task<LabelPrintBatchId> AddReplayableBatchAsync(

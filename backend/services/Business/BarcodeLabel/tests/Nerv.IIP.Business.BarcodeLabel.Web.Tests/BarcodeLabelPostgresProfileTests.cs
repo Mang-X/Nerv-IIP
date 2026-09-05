@@ -323,6 +323,7 @@ public sealed partial class BarcodeLabelPostgresProfileTests
         await AssertHistoricalFactOutcomeAsync("active-template", approved: false, "模板资产仍可被标签模板引用，不能退役。");
         await AssertHistoricalFactOutcomeAsync("legacy-empty", approved: true);
         await AssertHistoricalFactOutcomeAsync("partial-snapshot", approved: false, "模板资产引用事实不完整，退役已安全拒绝。");
+        await AssertHistoricalFactOutcomeAsync("whitespace-file-snapshot", approved: false, "模板资产引用事实不完整，退役已安全拒绝。");
         await AssertHistoricalFactOutcomeAsync("missing-owner", approved: false, "模板资产引用事实不完整，退役已安全拒绝。");
         await AssertHistoricalFactOutcomeAsync("unknown-template", approved: false, "模板资产引用事实不完整，退役已安全拒绝。");
         await AssertHistoricalFactOutcomeAsync("untrusted-retirement-marker", approved: false, "模板资产引用事实不完整，退役已安全拒绝。");
@@ -381,6 +382,11 @@ public sealed partial class BarcodeLabelPostgresProfileTests
                 CorrelationId = "correlation-idempotency-replay",
             });
             Assert.Equal(firstId, auditMetadataReplayId);
+            var ownerAuditReplayId = await sender.Send(original with
+            {
+                LabelTemplateId = new LabelTemplateId(Guid.CreateVersion7()),
+            });
+            Assert.Equal(firstId, ownerAuditReplayId);
             var reasonConflict = await Assert.ThrowsAsync<KnownException>(() => sender.Send(
                 original with { Reason = "不同退役原因。" }));
             Assert.Equal("模板资产退役幂等键与已有记录不一致，请检查提交内容。", reasonConflict.Message);
@@ -458,6 +464,67 @@ public sealed partial class BarcodeLabelPostgresProfileTests
         var failures = await Task.WhenAll(retirementTask, reuseTask);
         Assert.Equal(1, failures.Count(failure => failure is null));
         Assert.Single(failures, failure => failure is KnownException);
+    }
+
+    [RealPostgresFact]
+    public async Task Retirement_and_cross_file_template_rebind_preserve_a_consistent_marker_on_postgres()
+    {
+        await ResetAndMigrateSchemaAsync();
+        await using var setupProvider = CreateRetirementCommandProvider();
+        var templateId = await AddRetirementTemplateAsync(
+            setupProvider,
+            "TPL-CONCURRENT-REBIND",
+            "file-concurrent-old");
+        var barrier = new RetirementSaveBarrier();
+        await using var retirementProvider = CreateRetirementCommandProvider(barrier);
+        await using var rebindProvider = CreateRetirementCommandProvider();
+        await using var retirementScope = retirementProvider.CreateAsyncScope();
+        await using var rebindScope = rebindProvider.CreateAsyncScope();
+        var retirementTask = CaptureFailureAsync(async () =>
+            _ = await retirementScope.ServiceProvider.GetRequiredService<ISender>().Send(
+                RetirementCommand(templateId, "file-concurrent-old", "concurrent-retirement-rebind")));
+
+        await TestTimeout.RunAsync(
+            "retirement command reaches the pre-save barrier",
+            async cancellationToken => await barrier.WaitUntilEnteredAsync(cancellationToken),
+            TimeSpan.FromSeconds(15),
+            sensitiveValues: [LaneConnectionString]);
+        Assert.True(barrier.HolderProcessId > 0);
+
+        var rebindTask = CaptureFailureAsync(async () =>
+            _ = await rebindScope.ServiceProvider.GetRequiredService<ISender>().Send(
+                new CreateOrUpdateLabelTemplateCommand(
+                    "org-retirement",
+                    "env-retirement",
+                    "TPL-CONCURRENT-REBIND",
+                    "Concurrent rebound template",
+                    "file-concurrent-new",
+                    """{"version":1,"variables":[]}""",
+                    LabelTemplate.InactiveStatus)));
+        var observation = await WaitForAdvisoryWaiterOrCompletionAsync(
+            barrier.HolderProcessId,
+            rebindTask,
+            "retirement A vs template rebind A-to-B");
+
+        barrier.Release();
+        var failures = await TestTimeout.RunAsync(
+            "retirement and cross-file rebind complete after the barrier is released",
+            async cancellationToken => await Task.WhenAll(retirementTask, rebindTask).WaitAsync(cancellationToken),
+            TimeSpan.FromSeconds(15),
+            sensitiveValues: [LaneConnectionString]);
+
+        Assert.False(
+            observation.CompetingTaskCompleted,
+            "The A-to-B rebind completed without waiting for retirement's lock on old file A.");
+        Assert.True(observation.Waiters > 0);
+        Assert.All(failures, failure => Assert.Null(failure));
+
+        await using var verificationDb = CreatePostgresDbContext(LaneConnectionString);
+        var template = await verificationDb.LabelTemplates.AsNoTracking().SingleAsync(x => x.Id == templateId);
+        var decision = await verificationDb.TemplateAssetRetirementDecisions.AsNoTracking().SingleAsync();
+        Assert.Equal("file-concurrent-new", template.TemplateFileId);
+        Assert.Null(template.RetiredCurrentFileByDecisionId);
+        Assert.Equal("file-concurrent-old", decision.TemplateFileId);
     }
 
     [RealPostgresFact]
@@ -733,6 +800,14 @@ public sealed partial class BarcodeLabelPostgresProfileTests
                     WHERE id = {replayBatch.Id.Id}
                     """));
             Assert.Equal(PostgresErrorCodes.CheckViolation, constraintFailure.SqlState);
+
+            var whitespaceConstraintFailure = await Assert.ThrowsAsync<PostgresException>(() =>
+                dbContext.Database.ExecuteSqlInterpolatedAsync($"""
+                    UPDATE barcode.label_print_batches
+                    SET template_file_id_snapshot = {' '}
+                    WHERE id = {replayBatch.Id.Id}
+                    """));
+            Assert.Equal(PostgresErrorCodes.CheckViolation, whitespaceConstraintFailure.SqlState);
 
             var rule = BarcodeRule.Create("org-001", "env-dev", "FG-A", "code128", "FGA", 40, "none", ["work-order"], "active");
             var template = LabelTemplate.Create("org-001", "env-dev", "tpl-a", "Template A", "file-a", "{}", "active");

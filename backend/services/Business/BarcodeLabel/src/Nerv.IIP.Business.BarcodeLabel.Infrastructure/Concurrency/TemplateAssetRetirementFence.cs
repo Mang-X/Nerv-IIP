@@ -25,7 +25,7 @@ internal sealed class PostgresTemplateAssetRetirementFence(ApplicationDbContext 
     {
         if (!string.Equals(dbContext.Database.ProviderName, "Npgsql.EntityFrameworkCore.PostgreSQL", StringComparison.Ordinal))
         {
-            return;
+            throw new InvalidOperationException("The template asset retirement fence requires the Npgsql PostgreSQL provider.");
         }
 
         if (dbContext.Database.CurrentTransaction is null)
