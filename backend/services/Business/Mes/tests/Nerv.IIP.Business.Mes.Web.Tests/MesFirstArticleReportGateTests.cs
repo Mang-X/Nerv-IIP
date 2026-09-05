@@ -123,8 +123,12 @@ public sealed class MesFirstArticleReportGateTests
     {
         if (seedWorkOrder)
         {
-            dbContext.WorkOrders.Add(WorkOrder.Create(
-                organizationId, environmentId, workOrderId, "FG-FSA", "PV-FSA-1", 100m, 10, Now.AddHours(8)));
+            // #3119：未下达的工单不受理报工，夹具因此必须先补记发布（生产上这一步由下达完成）。
+            var workOrder = WorkOrder.Create(
+                organizationId, environmentId, workOrderId, "FG-FSA", "PV-FSA-1", 100m, 10, Now.AddHours(8));
+            workOrder.MarkReleased();
+            workOrder.ClearDomainEvents();
+            dbContext.WorkOrders.Add(workOrder);
         }
 
         dbContext.OperationTasks.Add(OperationTask.Create(

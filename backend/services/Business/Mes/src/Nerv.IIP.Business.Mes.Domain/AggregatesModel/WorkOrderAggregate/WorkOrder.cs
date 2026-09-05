@@ -95,6 +95,14 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
     /// 落在差集里的工序读首件确认就永远是 not-synchronized，被门禁永久拒且无自愈路径
     /// —— <c>completed</c> 正是这样一个差集：它不在本集合里（超收容差显式为「已达量后继续报工」留了空间），
     /// 却曾被回填的白名单排除。
+    ///
+    /// <para><b>这个集合不是「报工准入」的全部</b>（#3119）：<c>created</c>——尚未下达——同样不受理报工，
+    /// 但那条守卫**有意**落在受理路径（<c>RecordProductionReportCommandHandler</c>）而不是本集合里。
+    /// 两个理由：① <see cref="RecordProductionProgress"/> 只在**产出工序**的报工上被调用，
+    /// 写进这里会得到一条只覆盖一半的护栏（实测：把守卫改放进本方法后，
+    /// 「非产出工序在 created 工单上报工」这一格照样被受理）；
+    /// ② #3000 的回填按本集合的**补集**选人，把 <c>created</c> 塞进来会同时改掉那份选人口径。
+    /// 因此「本集合 = 报工不受理的全部工单状态」这句话是**假的**，不要按它推断。</para>
     /// </summary>
     public static readonly ImmutableArray<string> NonExecutableStatuses =
     [
@@ -363,6 +371,10 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
     /// 这些工序可能早已开工、报工、乃至完工，因此发布事实的时刻必须按
     /// 「不晚于该工单任何一条**既有活动**（报工或工序完工）」取下界；
     /// 该不变量由 <see cref="WorkOrderReleaseFactTime"/> 的构造口径承担，本方法不再收裸时刻。
+    ///
+    /// <para>当前有两个生产调用方：下达命令（<c>ReleaseWorkOrderCommandHandler</c>，过三道 readiness），
+    /// 与 <c>created</c> 存量工单的一次性补下达（#3119 的内部运维端点，**有意绕开 readiness**——
+    /// 那些拒因恰恰是这批工单当初没被下达的原因）。两者各自查出最早既有活动再传进来。</para>
     /// </summary>
     public void MarkReleased(IReadOnlyCollection<OperationTask> operationTasks, WorkOrderReleaseFactTime releasedAt)
     {

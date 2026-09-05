@@ -62,6 +62,7 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
                 workOrderIds.Contains(x.WorkOrderIdValue))
             .Select(x => new WorkOrderFact(
                 x.WorkOrderIdValue,
+                x.Status,
                 x.ProductionVersionId,
                 x.MaterialRequirementSnapshotStatus,
                 x.MaterialRequirementSnapshotProductionVersionId))
@@ -185,9 +186,24 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
         {
             blockReasons.Add("WORK_ORDER_NOT_FOUND: 未找到所属生产工单");
         }
-        else if (string.IsNullOrWhiteSpace(workOrder.ProductionVersionId))
+        else
         {
-            blockReasons.Add($"{MesReadinessReasonCodes.QualityPlanMissing}: 工单缺少已发布生产版本或检验方案");
+            // 未下达的工单不得开工（#3119）。这一条与生产版本那一条是**并列**的两条阻断、不是二选一：
+            // 计划转工单建出的工单在 created 状态就已绑好生产版本，若写成 else-if，
+            // 恰好这批（也正是唯一能走到「created 带在制工序」的那批）会因为生产版本非空而跳过本条。
+            //
+            // 授权跳站入口（MesWorkbenchCommands 的 AuthorizeAndStartOperationTaskCommandHandler）
+            // 只把 PREVIOUS_OPERATION_INCOMPLETE: 前缀从阻断集合里剔除，本条不带该前缀，
+            // 因此它同样拦得住授权跳站——两个开工入口共用这一处判断，不各写一份。
+            if (string.Equals(workOrder.Status, WorkOrder.CreatedStatus, StringComparison.Ordinal))
+            {
+                blockReasons.Add(MesReadinessReasonCodes.WorkOrderNotReleasedReason);
+            }
+
+            if (string.IsNullOrWhiteSpace(workOrder.ProductionVersionId))
+            {
+                blockReasons.Add($"{MesReadinessReasonCodes.QualityPlanMissing}: 工单缺少已发布生产版本或检验方案");
+            }
         }
 
         foreach (var hold in activeQualityHolds.Where(x =>
@@ -276,6 +292,7 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
 
     private sealed record WorkOrderFact(
         string WorkOrderIdValue,
+        string Status,
         string? ProductionVersionId,
         string? MaterialRequirementSnapshotStatus,
         string? MaterialRequirementSnapshotProductionVersionId);

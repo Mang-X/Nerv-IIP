@@ -13,6 +13,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Errors;
 using Nerv.IIP.Business.Mes.Web.Application.Quality;
+using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using NetCorePal.Extensions.Repository;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
@@ -185,6 +186,23 @@ public sealed class RecordProductionReportCommandHandler(
                 x.WorkOrderIdValue == request.WorkOrderId,
             cancellationToken)
             ?? throw new KnownException($"未找到生产工单，WorkOrderId = {request.WorkOrderId}");
+
+        // 未下达的工单不受理报工（#3119）。
+        //
+        // **为什么这条守卫落在受理路径上、而不是落在 WorkOrder.RecordProductionProgress 里**
+        // （票面原建议是后者）：本文件下方 `if (isOutputOperation)` 只在**产出工序**上调那个域方法，
+        // 非产出工序的报工根本不经过它。而 #3113 记下的最坏形态恰恰是多工序工单的非末工序报工
+        // ——它既不翻工单状态、也不会被域方法拦住。把守卫写进域方法会得到一条**只覆盖产出工序**的护栏，
+        // 而它的名字（"工单是否可执行"）会让后来人以为报工这一面已经关死。
+        // 受理是唯一一处所有报工都必经的关口，所以不变量只在这里把一次；
+        // 域侧 WorkOrder.NonExecutableStatuses 保持原样不动——#3000 的回填用它的补集选人，
+        // 把 created 塞进去会同时改掉那份选人口径（票面已写明）。
+        if (string.Equals(workOrder.Status, WorkOrder.CreatedStatus, StringComparison.Ordinal))
+        {
+            throw new KnownException(
+                MaterialReadinessGuards.DescribeForUser([MesReadinessReasonCodes.WorkOrderNotReleasedReason]));
+        }
+
         var operationTask = await dbContext.OperationTasks.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&

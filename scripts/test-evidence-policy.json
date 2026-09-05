@@ -1257,7 +1257,7 @@
       "id": "mes-production-candidate",
       "sourceId": "mes-production-candidate",
       "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.Mes\\.Web\\.Tests\\.(?:DowntimeReasonCodeMigrationPostgresTests|LeaderDemoScaleSeedPostgresTests|MesCollaborationPostgresTests|MesDowntimeReadFacePostgresTests|MesMaterialSubstituteSnapshotPostgresTests|MesProductionStatisticsPostgresTests|MesSchedulePlanProvenancePostgresTests|NcrReworkRequestedHandlerPostgresTests|NcrReworkRequestedOutboxPostgresTests|OperationActualTimeSettlementPostgresTests|OperationTaskClaimPostgresTests|ProductionReportOeeDimensionSnapshotPostgresTests|RushWorkOrderHttpPostgresTests|SkuDisabledConsumerTests|TelemetryProductionReportCandidatePostgresTests|WorkOrderCapitalizationConcurrencyPostgresTests|WorkOrderReleaseFactTimePostgresTests|WorkOrderReleaseProjectionBackfillPostgresTests|WorkOrderTransformationApplicationPostgresTests|WorkOrderTransformationPostgresTests)\\..+$",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Mes\\.Web\\.Tests\\.(?:CreatedWorkOrderReleaseBackfillPostgresTests|DowntimeReasonCodeMigrationPostgresTests|LeaderDemoScaleSeedPostgresTests|MesCollaborationPostgresTests|MesDowntimeReadFacePostgresTests|MesMaterialSubstituteSnapshotPostgresTests|MesProductionStatisticsPostgresTests|MesSchedulePlanProvenancePostgresTests|NcrReworkRequestedHandlerPostgresTests|NcrReworkRequestedOutboxPostgresTests|OperationActualTimeSettlementPostgresTests|OperationTaskClaimPostgresTests|ProductionReportOeeDimensionSnapshotPostgresTests|RushWorkOrderHttpPostgresTests|SkuDisabledConsumerTests|TelemetryProductionReportCandidatePostgresTests|WorkOrderCapitalizationConcurrencyPostgresTests|WorkOrderReleaseFactTimePostgresTests|WorkOrderReleaseProjectionBackfillPostgresTests|WorkOrderTransformationApplicationPostgresTests|WorkOrderTransformationPostgresTests)\\..+$",
       "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run real PostgreSQL MES candidate proof\\.$",
       "allowedLanes": [
         "backend"
@@ -1268,6 +1268,7 @@
       "expiresOn": null,
       "exitCondition": null,
       "testIdentities": [
+        "Nerv.IIP.Business.Mes.Web.Tests.CreatedWorkOrderReleaseBackfillPostgresTests.Backfill_clears_the_impact_query_for_executing_created_work_orders_and_reruns_clean_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.DowntimeReasonCodeMigrationPostgresTests.Legacy_reasons_migrate_once_across_all_scopes_and_repeat_stably_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.LeaderDemoScaleSeedPostgresTests.Scale_seed_persists_one_thousand_released_work_orders_within_the_startup_budget",
         "Nerv.IIP.Business.Mes.Web.Tests.MesCollaborationPostgresTests.Reportable_scope_matches_a_registered_participant_on_postgres",
@@ -1316,7 +1317,7 @@
         "Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationPostgresTests.Split_lineage_audit_and_work_order_version_survive_postgres_scope_recreation",
         "Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationPostgresTests.Stale_work_order_version_is_rejected_by_postgresql_concurrency_token"
       ],
-      "expectedRuntimeTestCount": 47
+      "expectedRuntimeTestCount": 48
     },
     {
       "id": "mes-cap-postgres",
