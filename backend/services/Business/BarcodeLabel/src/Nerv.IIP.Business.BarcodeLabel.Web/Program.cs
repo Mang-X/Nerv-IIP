@@ -7,6 +7,7 @@ using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Nerv.IIP.Business.BarcodeLabel.Web.Application.Auth;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.PrintBatches;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Seed;
 using Nerv.IIP.Business.BarcodeLabel.Web.Endpoints.BarcodeLabel;
@@ -37,6 +38,12 @@ try
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
+    builder.Services.AddSingleton(TimeProvider.System);
+    builder.Services.AddSingleton<IValidateOptions<TemplateAssetRetirementProofOptions>, TemplateAssetRetirementProofOptionsValidator>();
+    builder.Services.AddOptions<TemplateAssetRetirementProofOptions>()
+        .Bind(builder.Configuration.GetSection(TemplateAssetRetirementProofOptions.SectionName))
+        .ValidateOnStart();
+    builder.Services.AddSingleton<TemplateAssetRetirementProofVerifier>();
     builder.Services.AddControllers().AddNetCorePalSystemTextJson();
     builder.Services
         .AddFastEndpoints(o => o.IncludeAbstractValidators = true)

@@ -201,6 +201,14 @@
     },
     {
       "service": "BarcodeLabel",
+      "method": "POST",
+      "route": "/api/business/v1/barcodes/template-assets/retire",
+      "operationId": "retireBusinessBarcodeTemplateAsset",
+      "classification": "deferred",
+      "followUp": "#3043 交付 BusinessGateway 退役门面、IAM 授权与 proof signer。"
+    },
+    {
+      "service": "BarcodeLabel",
       "method": "GET",
       "route": "/api/business/v1/barcodes/print-batches",
       "operationId": "listBusinessBarcodePrintBatches",

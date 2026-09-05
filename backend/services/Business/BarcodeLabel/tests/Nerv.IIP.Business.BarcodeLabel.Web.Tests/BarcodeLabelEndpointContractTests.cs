@@ -19,7 +19,7 @@ public sealed class BarcodeLabelEndpointContractTests
     {
         var contracts = BarcodeLabelEndpointContracts.All.ToArray();
 
-        Assert.Equal(16, contracts.Length);
+        Assert.Equal(17, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/barcodes/rules"
             && x.PermissionCode == BarcodeLabelPermissionCodes.TemplatesManage

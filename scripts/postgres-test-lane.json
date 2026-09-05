@@ -159,6 +159,8 @@
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_and_new_batch_freeze_cannot_both_commit_on_postgres",
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_and_template_reuse_cannot_both_commit_on_postgres",
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_idempotency_and_unique_conflicts_are_stable_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_http_proof_rejections_leave_zero_decisions_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_http_valid_proof_commits_authenticated_decision_on_postgres",
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_rejects_when_inactive_template_rebind_to_target_file_commits_while_waiting_on_postgres",
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_reference_and_reuse_matrix_is_enforced_on_postgres",
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Sent_and_printed_batches_follow_the_item_reprint_matrix_on_postgres",
