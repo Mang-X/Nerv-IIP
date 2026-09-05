@@ -13,7 +13,13 @@ import { RELEASE_IGNORED_TASK_BLOCKERS, mesWorkOrderReleaseBlocker } from './wor
  * 本文件钉两件事：
  * ① 具体那一格（下面第一条用例，夹具用后端真正会回的组合）；
  * ② **归类的完备性**——共享词表里的每个码都必须被显式决定「阻不阻断下达」。
- *    ② 才是防复发的那条：它把「新增码默认阻断下达」这个静默默认改成编译期之外的红。
+ *    ② 才是防复发的那条：它把「**词表里的**新增码默认阻断下达」这个静默默认改成红。
+ *
+ * **②的值域边界，别读强了**：它闭合的是 `MES_READINESS_REASON_DISPLAYS`，
+ * **不是**「后端产出的所有阻断码」。后端新增码若从未登记进词表，
+ * 会走 `describeMesReadinessReason` 兜底、不在豁免集里、**仍然静默阻断下达且本文件零红**。
+ * 现存反例：同一个 evaluator 产出的 `WORK_ORDER_NOT_FOUND` 就不在词表里。
+ * 跨语言码表契约属跟进票。
  */
 
 /** 后端 `MesReadinessReasonCodes.WorkOrderNotReleasedReason` 的逐字形态。 */

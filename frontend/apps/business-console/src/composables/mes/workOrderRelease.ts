@@ -15,9 +15,16 @@ const RELEASEABLE_WORK_ORDER_STATUSES = new Set(['created', 'started', 'hold'])
  *   补救动作恰恰是下达本身。这条码由 `MesOperationTaskActionReadinessEvaluator`
  *   对 `created` 工单的每一道 queued 工序无条件产出，**因此它命中的正是本函数要放行的全部人群**。
  *
- * 本集合的**完备性**由 `workOrderRelease.releasePolicy.test.ts` 钉住：
- * `MES_READINESS_REASON_DISPLAYS` 里的每一个码都必须被显式归类为「阻断下达」或「不阻断下达」。
- * 新增后端阻断码时若不做这个决定，那条用例会红——而不是像 #3119 那样静默按「阻断」处理。
+ * 本集合的**完备性**由 `workOrderRelease.releasePolicy.test.ts` 钉住，
+ * 但**闭合的值域是共享词表 `MES_READINESS_REASON_DISPLAYS`，不是「后端所有阻断码」**：
+ * 词表里的每一个码都必须被显式归类为「阻断下达」或「不阻断下达」，漏一个就红。
+ *
+ * **未被这条闭合覆盖的那一格，写明**：后端新增的码若**从未登记进共享词表**，
+ * 它会走 `describeMesReadinessReason` 的兜底分支，`RELEASE_IGNORED_TASK_BLOCKERS.has(code)`
+ * 为 false，于是**仍然静默阻断下达且全仓零红**——正是 #3119 的失效模式原样重演。
+ * 这不是假想：同一个 `MesOperationTaskActionReadinessEvaluator` 产出的 `WORK_ORDER_NOT_FOUND`
+ * 现在就不在词表里。真正的结构性修法是给「后端码表 → 前端词表」加跨语言契约，
+ * 全仓当前零门禁，属跟进票，不在本文件能解决的范围内。
  */
 export const RELEASE_IGNORED_TASK_BLOCKERS = new Set([
   'PREVIOUS_OPERATION_INCOMPLETE',

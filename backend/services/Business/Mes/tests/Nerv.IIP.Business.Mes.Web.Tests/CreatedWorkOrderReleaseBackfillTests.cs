@@ -179,7 +179,10 @@ public sealed class CreatedWorkOrderReleaseBackfillTests
         AddWorkOrderWithCompletionAndReport(dbContext, "WO-REPORT-FIRST", completedAtUtc: late, reportedAtUtc: early);
         await dbContext.SaveChangesAsync();
 
-        // 前提自检：两张工单都**同时**拥有两条下界项，否则本用例退化成上一条的等价输入。
+        // 前提自检有两层，缺一层这条用例都会悄悄退化：
+        // ① 两张工单都**同时**拥有两条下界项——否则退化成上一条用例的等价输入；
+        // ② 两张工单的**方向相反**——否则只剩一个方向在场，比较符的另一侧无人承担
+        //    （实测：把 WO-REPORT-FIRST 整张删掉时，只有 ① 的自检照绿而 E1b 变异存活）。
         foreach (var workOrderId in new[] { "WO-DONE-FIRST", "WO-REPORT-FIRST" })
         {
             Assert.Contains(
@@ -187,6 +190,13 @@ public sealed class CreatedWorkOrderReleaseBackfillTests
                 x => x.WorkOrderId == workOrderId && x.ExistingEndUtc.HasValue);
             Assert.Contains(dbContext.ProductionReports.Local, x => x.WorkOrderId == workOrderId);
         }
+
+        Assert.Equal(
+            new[] { true, false },
+            new[] { "WO-DONE-FIRST", "WO-REPORT-FIRST" }
+                .Select(workOrderId => EarliestCompletionUtc(dbContext, workOrderId)
+                    < EarliestReportUtc(dbContext, workOrderId))
+                .ToArray());
 
         await Backfill(dbContext);
 
@@ -363,6 +373,16 @@ public sealed class CreatedWorkOrderReleaseBackfillTests
             Assert.Single(workOrder.GetDomainEvents(), x => x is WorkOrderReleasedDomainEvent));
         return new WorkOrderReleasedIntegrationEventConverter().Convert(domainEvent);
     }
+
+    private static DateTimeOffset EarliestCompletionUtc(ApplicationDbContext dbContext, string workOrderId) =>
+        dbContext.OperationTasks.Local
+            .Where(x => x.WorkOrderId == workOrderId && x.ExistingEndUtc.HasValue)
+            .Min(x => x.ExistingEndUtc!.Value);
+
+    private static DateTimeOffset EarliestReportUtc(ApplicationDbContext dbContext, string workOrderId) =>
+        dbContext.ProductionReports.Local
+            .Where(x => x.WorkOrderId == workOrderId)
+            .Min(x => x.ReportedAtUtc);
 
     /// <summary>
     /// 一张 <c>created</c> 工单，**同时**带一道走聚合方法完工的工序（不落报工行）与一条报工。
