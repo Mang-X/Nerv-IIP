@@ -197,7 +197,11 @@ internal static class RetirementProofCases
         yield return ("bom", request with { Proof = SignBytes([0xef, 0xbb, 0xbf, ..Payload(fields)]) });
         yield return ("length", request with { Proof = SignBytes(Encoding.UTF8.GetBytes("01" + text[1..])) });
         yield return ("bad-length", request with { Proof = SignBytes(Encoding.UTF8.GetBytes("2" + text[1..])) });
-        yield return ("utf8", request with { Proof = SignBytes([..Payload(fields)[..^1], 0xff]) });
+        var invalidUtf8 = Payload(fields);
+        var subjectOffset = Payload(fields[..6]).Length + 1
+            + Encoding.ASCII.GetByteCount(Encoding.UTF8.GetByteCount(fields[6]).ToString(CultureInfo.InvariantCulture)) + 1;
+        invalidUtf8[subjectOffset] = 0xff;
+        yield return ("utf8", request with { Proof = SignBytes(invalidUtf8) });
         yield return ("padding", request with { Proof = request.Proof + "=" });
         yield return ("base64-whitespace", request with { Proof = " " + request.Proof });
         yield return ("bad-base64", request with { Proof = "!.!" });
