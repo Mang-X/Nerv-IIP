@@ -1181,6 +1181,13 @@ foreach ($testProjectPath in $testProjectPaths) {
                 # A heavy lane is the intended home for real-dependency tests. Its owner script and
                 # evidence policy govern execution, so fast-shard exclusion is neither required nor
                 # meaningful for a project classified wholly into that lane.
+                #
+                # #3135：上面这句「classified wholly into that lane」此前是**愿望而不是事实**。
+                # full-chain 的 owner 脚本当时只按 5 个成员的 FullyQualifiedName 精确 filter 跑，
+                # 项目里另外 16 条用例既被本分支放行、又不在名单里，于是跑在 0 个 CI job 上。
+                # 本检查器管不到这一层（静态看不到测试框架的用例发现结果），闭合由 lane owner 自己
+                # 承担：见 scripts/run-full-chain-test-lane.ps1 的 residual 覆盖段与
+                # docs/governance/testing/real-dependency-lanes.md「Lane 接管整个项目时的覆盖闭合」。
                 continue
             }
             else {
