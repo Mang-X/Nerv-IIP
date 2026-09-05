@@ -4,6 +4,7 @@ using MediatR;
 using Nerv.IIP.Business.Mes.Web.Application.Auth;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ChangeoverRecordAggregate;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
@@ -498,6 +499,37 @@ public sealed record RecoverDowntimeRequest(
     string EnvironmentId,
     [property: RouteParam] string DowntimeEventId,
     DateTimeOffset? RecoveredAtUtc);
+
+public sealed record StartChangeoverRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkCenterId,
+    string DeviceAssetId,
+    string OperatorId,
+    ChangeoverToolingCheckResult ToolingCheckResult,
+    DateTimeOffset StartedAtUtc,
+    string IdempotencyKey);
+
+public sealed class StartChangeoverRequestValidator : Validator<StartChangeoverRequest>
+{
+    public StartChangeoverRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.WorkCenterId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.OperatorId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ToolingCheckResult).IsInEnum();
+        RuleFor(x => x.StartedAtUtc).NotEmpty();
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+    }
+}
+
+public sealed record CompleteChangeoverRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string ChangeoverRecordId,
+    DateTimeOffset? CompletedAtUtc);
 
 public sealed record ListShiftHandoversRequest(
     string OrganizationId,
@@ -1709,6 +1741,42 @@ public sealed class ConfirmDowntimeRecoveryEndpoint(ISender sender, TimeProvider
     }
 }
 
+public sealed class StartChangeoverEndpoint(ISender sender)
+    : MesEndpoint<StartChangeoverRequest, MesAcceptedResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<StartChangeoverEndpoint>());
+
+    public override async Task HandleAsync(StartChangeoverRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new StartChangeoverCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.WorkCenterId,
+            req.DeviceAssetId,
+            req.OperatorId,
+            req.ToolingCheckResult,
+            req.StartedAtUtc,
+            req.IdempotencyKey), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
+public sealed class CompleteChangeoverEndpoint(ISender sender, TimeProvider timeProvider)
+    : MesEndpoint<CompleteChangeoverRequest, MesAcceptedResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<CompleteChangeoverEndpoint>());
+
+    public override async Task HandleAsync(CompleteChangeoverRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new CompleteChangeoverCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.ChangeoverRecordId,
+            req.CompletedAtUtc ?? timeProvider.GetUtcNow()), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
 public sealed class ListScheduleResultsEndpoint(ISender sender)
     : MesEndpoint<ListScheduleResultsRequest, MesScheduleResultListResponse>
 {
@@ -1929,6 +1997,8 @@ public static class MesEndpointContracts
         new(typeof(ListDowntimeEventsEndpoint), "GET", "/api/business/v1/mes/downtime-events", MesPermissionCodes.DowntimeRead, "listBusinessMesDowntimeEvents"),
         new(typeof(RecordDowntimeEventEndpoint), "POST", "/api/business/v1/mes/downtime-events", MesPermissionCodes.DowntimeManage, "recordBusinessMesDowntimeEvent"),
         new(typeof(ConfirmDowntimeRecoveryEndpoint), "POST", "/api/business/v1/mes/downtime-events/{downtimeEventId}/recover", MesPermissionCodes.DowntimeManage, "confirmBusinessMesDowntimeRecovery"),
+        new(typeof(StartChangeoverEndpoint), "POST", "/api/business/v1/mes/changeover-records", MesPermissionCodes.OperationsManage, "startBusinessMesChangeover"),
+        new(typeof(CompleteChangeoverEndpoint), "POST", "/api/business/v1/mes/changeover-records/{changeoverRecordId}/complete", MesPermissionCodes.OperationsManage, "completeBusinessMesChangeover"),
         new(typeof(ListShiftHandoversEndpoint), "GET", "/api/business/v1/mes/shift-handovers", MesPermissionCodes.HandoversRead, "listBusinessMesShiftHandovers"),
         new(typeof(GetShiftHandoverEndpoint), "GET", "/api/business/v1/mes/shift-handovers/{handoverId}", MesPermissionCodes.HandoversRead, "getBusinessMesShiftHandover"),
         new(typeof(CreateShiftHandoverEndpoint), "POST", "/api/business/v1/mes/shift-handovers", MesPermissionCodes.HandoversManage, "createBusinessMesShiftHandover"),
