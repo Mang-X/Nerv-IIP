@@ -52,6 +52,23 @@ namespace Nerv.IIP.ScriptAutomation
             }
         }
 
+        public string ReadIncrement(ref int cursor, int maximumCharacters)
+        {
+            lock (_bufferLock)
+            {
+                int count = Math.Min(maximumCharacters, _buffer.Length - cursor);
+                // Keep UTF-16 surrogate pairs together for accurate UTF-8 byte counts.
+                if (count > 0 && char.IsHighSurrogate(_buffer[cursor + count - 1]))
+                {
+                    if (cursor + count < _buffer.Length) count++;
+                    else if (!Completion.IsCompleted) count--;
+                }
+                string increment = _buffer.ToString(cursor, count);
+                cursor += count;
+                return increment;
+            }
+        }
+
         public void Stop()
         {
             if (Interlocked.Exchange(ref _stopRequested, 1) != 0)
@@ -113,11 +130,84 @@ function Protect-ScriptAutomationText {
         [AllowNull()]
         [string] $Text,
 
-        [string[]] $SensitiveValues = @()
+        [string[]] $SensitiveValues = @(),
+
+        [System.Collections.IDictionary] $IncrementalState,
+
+        [switch] $Final
     )
 
     if ($null -eq $Text) {
         return $null
+    }
+
+    $rules = @(
+        @('(?is)-----BEGIN [^-\r\n]+-----.*?-----END [^-\r\n]+-----', '<redacted-pem>'),
+        @('(?i)(https?://)[^/@\s]+@', '$1<redacted>@'),
+        @('(?i)(["''](?:authorization|password|pwd|token|secret|client_secret|customerName|phone|email|address)["'']\s*:\s*["''])[^"'']*(["''])', '$1<redacted>$2'),
+        @('(?i)(authorization\s*[:=]\s*bearer\s+)[^\s''"]+', '$1<redacted>'),
+        @('(?i)(password\s*=\s*)[^;\s]+', '$1<redacted>'),
+        @('(?i)(pwd\s*=\s*)[^;\s]+', '$1<redacted>'),
+        @('(?i)(token\s*[:=]\s*)[^\s''";]+', '$1<redacted>'),
+        @('(?i)(secret\s*[:=]\s*)[^\s''";]+', '$1<redacted>'),
+        @('(?i)(client_secret\s*[:=]\s*)[^\s''";]+', '$1<redacted>'),
+        @('(?i)((?:customerName|phone|email|address)\s*=\s*)[^;\s,}]+', '$1<redacted>'),
+        @('(?i)(user-secrets\s+set\s+["'']?[^"''\s]+["'']?\s+)[^\s]+', '$1<redacted>'),
+        @('(?i)(Host=[^;]+;Port=[^;]+;Database=[^;]+;Username=[^;]+;Password=)[^;]+', '$1<redacted>')
+    )
+
+    if ($null -ne $IncrementalState) {
+        # Live output commits complete lines only. Multiline constructs stay in this
+        # authority until their closing delimiter arrives; capture remains independent.
+        if ($IncrementalState.Contains('SuppressionReason')) { return '' }
+        $Text = [string] $IncrementalState.Pending + $Text
+        if ($Final -or $Text.Length -gt 65536) {
+            $IncrementalState.Pending = ''
+            if ($Text.Length -gt 0) {
+                $IncrementalState.SuppressionReason = if ($Final) { 'incomplete-record' } else { 'record-limit' }
+            }
+            return ''
+        }
+        $boundary = $Text.LastIndexOf("`n", [StringComparison]::Ordinal) + 1
+        if ($boundary -gt 0) {
+            $openStructures = @(
+                '(?is)-----BEGIN [^-\r\n]+-----(?:(?!-----END [^-\r\n]+-----).)*$',
+                '(?is)["''](?:authorization|password|pwd|token|secret|client_secret|customerName|phone|email|address)["'']\s*(?::\s*(?:["''][^"'']*)?)?$',
+                '(?is)(?:authorization|password|pwd|token|secret|client_secret|customerName|phone|email|address)\s*(?:[:=]\s*(?:bearer\s*)?)?$',
+                '(?is)user-secrets\s+(?:set\s*(?:["'']?[^"''\s]+["'']?\s*)?)?$',
+                '(?is)Host=[^;]*(?:;Port=[^;]*(?:;Database=[^;]*(?:;Username=[^;]*(?:;Password=[^;]*)?)?)?)?$'
+            )
+            foreach ($pattern in $openStructures) {
+                $match = [regex]::Match($Text, $pattern)
+                if ($match.Success) { $boundary = [Math]::Min($boundary, $match.Index) }
+            }
+            # Use the same complete-match grammar as final log redaction when a
+            # match crosses the last complete line or an earlier retained boundary.
+            do {
+                $previousBoundary = $boundary
+                foreach ($rule in $rules) {
+                    foreach ($match in [regex]::Matches($Text, $rule[0])) {
+                        if ($match.Index -lt $boundary -and $match.Index + $match.Length -gt $boundary) {
+                            $boundary = $match.Index
+                        }
+                    }
+                }
+                foreach ($value in $SensitiveValues) {
+                    if ([string]::IsNullOrEmpty($value)) { continue }
+                    # A known secret may span any number of newlines or chunks.
+                    $start = [Math]::Max(0, $boundary - $value.Length + 1)
+                    for ($index = $start; $index -lt $boundary; $index++) {
+                        $count = [Math]::Min($value.Length, $Text.Length - $index)
+                        if ([string]::CompareOrdinal($Text, $index, $value, 0, $count) -eq 0 -and $index + $value.Length -gt $boundary) {
+                            $boundary = $index
+                            break
+                        }
+                    }
+                }
+            } while ($boundary -lt $previousBoundary)
+        }
+        $IncrementalState.Pending = $Text.Substring($boundary)
+        $Text = $Text.Substring(0, $boundary)
     }
 
     $redacted = $Text
@@ -126,29 +216,8 @@ function Protect-ScriptAutomationText {
             $redacted = $redacted.Replace($sensitiveValue, '<redacted>')
         }
     }
-    $redacted = [regex]::Replace(
-        $redacted,
-        '(?is)-----BEGIN [^-\r\n]+-----.*?-----END [^-\r\n]+-----',
-        '<redacted-pem>')
-    $redacted = [regex]::Replace($redacted, '(?i)(https?://)[^/@\s]+@', '$1<redacted>@')
-    $redacted = [regex]::Replace(
-        $redacted,
-        '(?i)(["''](?:authorization|password|pwd|token|secret|client_secret|customerName|phone|email|address)["'']\s*:\s*["''])[^"'']*(["''])',
-        '$1<redacted>$2')
-    $patterns = @(
-        '(?i)(authorization\s*[:=]\s*bearer\s+)[^\s''"]+',
-        '(?i)(password\s*=\s*)[^;\s]+',
-        '(?i)(pwd\s*=\s*)[^;\s]+',
-        '(?i)(token\s*[:=]\s*)[^\s''";]+',
-        '(?i)(secret\s*[:=]\s*)[^\s''";]+',
-        '(?i)(client_secret\s*[:=]\s*)[^\s''";]+',
-        '(?i)((?:customerName|phone|email|address)\s*=\s*)[^;\s,}]+',
-        '(?i)(user-secrets\s+set\s+["'']?[^"''\s]+["'']?\s+)[^\s]+',
-        '(?i)(Host=[^;]+;Port=[^;]+;Database=[^;]+;Username=[^;]+;Password=)[^;]+'
-    )
-
-    foreach ($pattern in $patterns) {
-        $redacted = [regex]::Replace($redacted, $pattern, '$1<redacted>')
+    foreach ($rule in $rules) {
+        $redacted = [regex]::Replace($redacted, $rule[0], $rule[1])
     }
 
     return $redacted
@@ -661,6 +730,53 @@ function Add-ScriptAutomationSignalExitDiagnosis {
     return $FailureMessage
 }
 
+function Write-ScriptAutomationLiveOutput {
+    param(
+        [Parameter(Mandatory)] [System.Collections.IDictionary] $State,
+        [Parameter(Mandatory)] [object] $StdoutCapture,
+        [Parameter(Mandatory)] [object] $StderrCapture,
+        [string[]] $SensitiveValues = @(),
+        [switch] $Final
+    )
+
+    foreach ($stream in @('stdout', 'stderr')) {
+        $capture = if ([string]::Equals($stream, 'stdout', [StringComparison]::Ordinal)) { $StdoutCapture } else { $StderrCapture }
+        $streamState = $State[$stream]
+        do {
+            $cursor = [int] $streamState.Cursor
+            $increment = $capture.ReadIncrement([ref] $cursor, 16384)
+            $streamState.Cursor = $cursor
+            $streamState.Bytes += [Text.Encoding]::UTF8.GetByteCount($increment)
+            $safe = Protect-ScriptAutomationText -Text $increment -SensitiveValues $SensitiveValues -IncrementalState $streamState
+            if ($safe.Length -gt 0) { Write-Host -NoNewline $safe }
+        } while ($Final -and $increment.Length -ge 16384)
+        if ($Final) {
+            $safe = Protect-ScriptAutomationText -Text '' -SensitiveValues $SensitiveValues -IncrementalState $streamState -Final
+            if ($safe.Length -gt 0) { Write-Host -NoNewline $safe }
+        }
+        if ($streamState.Contains('SuppressionReason') -and -not $streamState.Contains('SuppressionReported')) {
+            Write-Host "[live] stream=$stream textSuppressed=$($streamState.SuppressionReason)"
+            $streamState.SuppressionReported = $true
+        }
+    }
+}
+
+function Write-ScriptAutomationLiveHeartbeat {
+    param(
+        [System.Collections.IDictionary] $State,
+        [string] $Name,
+        [int] $ProcessId,
+        [long] $ElapsedMilliseconds,
+        [string[]] $SensitiveValues = @()
+    )
+
+    $alive = @(Get-ScriptAutomationProcessTreeIds -ProcessId $ProcessId | Where-Object { $null -ne (Get-Process -Id $_ -ErrorAction SilentlyContinue) })
+    $safeName = Protect-ScriptAutomationText -Text $Name -SensitiveValues $SensitiveValues
+    Write-Host "[live] name=$safeName rootPid=$ProcessId elapsedMs=$ElapsedMilliseconds stdoutBytes=$($State.stdout.Bytes) stderrBytes=$($State.stderr.Bytes) aliveCount=$($alive.Count) alivePids=$($alive -join ',')"
+    $State.stdout.Bytes = 0L
+    $State.stderr.Bytes = 0L
+}
+
 function Invoke-NativeCommandWithTimeout {
     param(
         [Parameter(Mandatory)]
@@ -682,8 +798,14 @@ function Invoke-NativeCommandWithTimeout {
 
         [System.Collections.IDictionary] $Environment,
 
-        [string[]] $SensitiveValues = @()
+        [string[]] $SensitiveValues = @(),
+
+        [switch] $LiveOutput
     )
+
+    if ($LiveOutput -and $null -ne $StreamReadTaskAction) {
+        throw 'LiveOutput requires the managed redirected stream capture.'
+    }
 
     if ([string]::IsNullOrWhiteSpace($Name)) {
         $Name = [System.IO.Path]::GetFileNameWithoutExtension($Command)
@@ -715,6 +837,10 @@ function Invoke-NativeCommandWithTimeout {
     $stdoutCapture = $null
     $stderrCapture = $null
     $rootProcessId = $null
+    $liveState = @{
+        stdout = @{ Cursor = 0; Pending = ''; Bytes = 0L }
+        stderr = @{ Cursor = 0; Pending = ''; Bytes = 0L }
+    }
 
     try {
         $displayArguments = Protect-ScriptAutomationArguments -Arguments $Arguments -SensitiveArgumentIndexes $SensitiveArgumentIndexes
@@ -736,8 +862,28 @@ function Invoke-NativeCommandWithTimeout {
             $stderrTask = & $StreamReadTaskAction $process.StandardError 'stderr'
         }
 
-        if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+        if ($LiveOutput) {
+            $waitClock = [Diagnostics.Stopwatch]::StartNew()
+            $nextHeartbeat = 0L
+            do {
+                Write-ScriptAutomationLiveOutput -State $liveState -StdoutCapture $stdoutCapture -StderrCapture $stderrCapture -SensitiveValues $SensitiveValues
+                if ($waitClock.ElapsedMilliseconds -ge $nextHeartbeat) {
+                    Write-ScriptAutomationLiveHeartbeat -State $liveState -Name $Name -ProcessId $rootProcessId -ElapsedMilliseconds $stopwatch.ElapsedMilliseconds -SensitiveValues $SensitiveValues
+                    $nextHeartbeat = $waitClock.ElapsedMilliseconds + 5000
+                }
+                $remaining = [Math]::Max(0, $TimeoutSeconds * 1000L - $waitClock.ElapsedMilliseconds)
+                $exited = $process.WaitForExit([int] [Math]::Min(250, $remaining))
+            } while (-not $exited -and $waitClock.ElapsedMilliseconds -lt $TimeoutSeconds * 1000L)
+        }
+        else {
+            $exited = $process.WaitForExit($TimeoutSeconds * 1000)
+        }
+        if (-not $exited) {
             $timedOut = $true
+            if ($LiveOutput) {
+                Write-ScriptAutomationLiveOutput -State $liveState -StdoutCapture $stdoutCapture -StderrCapture $stderrCapture -SensitiveValues $SensitiveValues
+                Write-ScriptAutomationLiveHeartbeat -State $liveState -Name $Name -ProcessId $rootProcessId -ElapsedMilliseconds $stopwatch.ElapsedMilliseconds -SensitiveValues $SensitiveValues
+            }
             Write-Diagnostic -Level 'ERROR' -Message "Command timed out: $Command (pid=$rootProcessId, timeout=${TimeoutSeconds}s, logs=$resolvedLogDirectory)"
             $cleanup = Stop-ProcessTree -ProcessId $rootProcessId -Reason "Timeout while running $Command"
             $drain = Complete-ScriptAutomationRedirectedStreamDrain `
@@ -750,6 +896,10 @@ function Invoke-NativeCommandWithTimeout {
                 -StderrCapture $stderrCapture `
                 -SensitiveValues $SensitiveValues
             Write-ScriptAutomationStreamDrainDiagnostics -Name $Name -Drain $drain -SensitiveValues $SensitiveValues
+            if ($LiveOutput) {
+                Write-ScriptAutomationLiveOutput -State $liveState -StdoutCapture $stdoutCapture -StderrCapture $stderrCapture -SensitiveValues $SensitiveValues -Final
+                Write-ScriptAutomationLiveHeartbeat -State $liveState -Name $Name -ProcessId $rootProcessId -ElapsedMilliseconds $stopwatch.ElapsedMilliseconds -SensitiveValues $SensitiveValues
+            }
             Write-ScriptAutomationProcessLog -Path $stdoutPath -Content $drain.Stdout -PartialOutput:$drain.TimedOut -UnfinishedStreams $drain.UnfinishedStreams -SensitiveValues $SensitiveValues
             Write-ScriptAutomationProcessLog -Path $stderrPath -Content $drain.Stderr -PartialOutput:$drain.TimedOut -UnfinishedStreams $drain.UnfinishedStreams -SensitiveValues $SensitiveValues
             throw "Command '$Command' timed out after $TimeoutSeconds seconds. Stopped PIDs: $($cleanup.StoppedProcessIds -join ', '). Logs: $resolvedLogDirectory"
@@ -766,6 +916,10 @@ function Invoke-NativeCommandWithTimeout {
             -StderrCapture $stderrCapture `
             -SensitiveValues $SensitiveValues
         Write-ScriptAutomationStreamDrainDiagnostics -Name $Name -Drain $drain -SensitiveValues $SensitiveValues
+        if ($LiveOutput) {
+            Write-ScriptAutomationLiveOutput -State $liveState -StdoutCapture $stdoutCapture -StderrCapture $stderrCapture -SensitiveValues $SensitiveValues -Final
+            Write-ScriptAutomationLiveHeartbeat -State $liveState -Name $Name -ProcessId $rootProcessId -ElapsedMilliseconds $stopwatch.ElapsedMilliseconds -SensitiveValues $SensitiveValues
+        }
         Write-ScriptAutomationProcessLog -Path $stdoutPath -Content $drain.Stdout -PartialOutput:$drain.TimedOut -UnfinishedStreams $drain.UnfinishedStreams -SensitiveValues $SensitiveValues
         Write-ScriptAutomationProcessLog -Path $stderrPath -Content $drain.Stderr -PartialOutput:$drain.TimedOut -UnfinishedStreams $drain.UnfinishedStreams -SensitiveValues $SensitiveValues
 
