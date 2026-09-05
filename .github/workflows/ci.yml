@@ -2168,13 +2168,19 @@ jobs:
     # 契约测试约 45s，后者的耗时几乎全是 11 次 pwsh 子进程启动），按新判据重新推导时
     # 整 job 的观测最大值不因它们跨过 10m 量级。
     #
+    # 20m 在 #3145 之后同样成立，但余量比 #2863 那次窄，所以这里记下实测值而不是「秒级」：
+    # restore lock 合同检查器本机实测 1.3s（读 37 个文件算 SHA-256 + 解析 17 个 lock，不 restore、
+    # 不联网），其契约测试本机实测 29s（20 个 case，耗时同样几乎全是 20 次 pwsh 子进程启动）。
+    # 两者合计约 30s，加在 #2863 之后的构成上仍不足以把整 job 的观测最大值推过 10m 量级。
+    #
     # 旧判据「新增 step 若本地均在秒级完成，job 预算保持 10m」已作废：它只看单个 step
     # 是否秒级，从不重算总和，因此 31 个秒级 step 累加贴顶时它不会报警。
     # 新判据：增删 step 后按 main 上最近若干次 run 的**整 job** 观测最大值重新推导，
     # 取其约 2 倍；不要只看新 step 自身耗时。
     #
-    # step 预算合计 163m（33 个 step：3m checkout
-    # + 32 × 5m；2026-08-23 逐 step 实测求和，2026-09-02 按 #2863 新增两个 step 重算），
+    # step 预算合计 173m（35 个 step：3m checkout
+    # + 34 × 5m；2026-08-23 逐 step 实测求和，2026-09-02 按 #2863 新增两个 step 重算，
+    # 2026-09-05 按 #3145 新增两个 step 重算），
     # 且仅为逐 step 上限。
     # 合计超过 job 预算对层级 B 是正确的，也不是 scripts/lib/CiWorkflowBudgets.ps1
     # 执行的约束：「step 预算合计低于 job 预算」只适用于层级 A（会从 `if: always()`
@@ -2380,6 +2386,28 @@ jobs:
         timeout-minutes: 5
         shell: pwsh
         run: ./scripts/verify-permission-code-producer-consistency.ps1
+
+      # #3145：16 个 packages.lock.json 与 docs/reference/api/business-gateway-surface-restore.manifest.json
+      # 在此之前是全仓无门禁的裸合同——`.github/workflows` 里唯一的用法是 nightly 拿 lock 做缓存
+      # key hash，那不是校验。代价已经付过一次：BusinessGateway 的 lock 把 MediatR 分叉
+      # （`"requested": "[14.0.0, )", "resolved": "12.5.0"`）白纸黑字记了很久，而进程内托管会
+      # 因此 TypeLoadException（#3136）。
+      # 门禁做成纯静态比对而不是 `dotnet restore --locked-mode`，因为后者对这一类缺陷实测零鉴别力：
+      # 清过 obj、加 RestoreLockedMode=true、加 --force，改 `resolved` 全是 EXIT=0——它只比
+      # 「lock 记录的 Direct requested 集合」与「项目当前声明的 PackageReference 集合」，从不校验
+      # resolved 是不是真实解析结果。矩阵见检查器头部注释。
+      # 检查器读文件、也就可以无声缴械（清空 inputs、清空 lock.paths、把豁免表放宽成按包名匹配，
+      # 三者都会让比对在空集上"通过"）；上面那一步守的就是这件事，每种缴械形态各有 fixture，
+      # 并自带变异对照。
+      - name: Test restore lock contract checker
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/restore-lock-contract.Tests.ps1
+
+      - name: Run restore lock contract check
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/verify-restore-lock-contract.ps1
 
   ci-summary:
     name: CI Summary

@@ -36,6 +36,16 @@ restore/reference closure 必须由 Reference manifest 与其登记的 per-proje
 
 精确 restore/msbuild 操作从 [`../../runbooks/api-codegen.md`](../../runbooks/api-codegen.md) 路由回本合同和实际脚本/CLI；本页不维护第二份机器版本表。
 
+### manifest 与 lock 的机器校验（#3145）
+
+上面这些要求在 #3145 之前没有任何程序执行：本节声明的 canonicalization 工具没有落地，manifest 与 16 个 `packages.lock.json` 因此长期是无门禁的裸合同。代价已经付过一次——BusinessGateway 的 lock 把 MediatR 分叉（`"requested": "[14.0.0, )", "resolved": "12.5.0"`）如实记录了很久而无人读（#3136）。
+
+现在由 `scripts/verify-restore-lock-contract.ps1` 在 CI 的 `Script Governance` job 执行，校验四类：lock 内部 `resolved` 低于自身 `requested` 下界、lock 被篡改、闭包内项目缺 lock、manifest `inputs` hash 与实际文件不符。它是纯静态比对：`dotnet restore --locked-mode` 对第一类实测零鉴别力（它只比对 lock 记录的 Direct `requested` 集合与项目当前声明的 `PackageReference` 集合，从不校验 `resolved` 是不是真实解析结果），因此不能作为该类的承担方。
+
+manifest 的 `inputs` 语义在 #3145 中有意扩面：由「seed 项目的 restore 输入」扩为「整个 ProjectReference 闭包的合同快照」——闭包内每个项目的 `.csproj` 都进入 `inputs`。原范围下，某个共享库改了自己的 `PackageReference` 而不更新 lock 是无人可见的。
+
+已知无法覆盖、且不假装覆盖的：lock 中 `contentHash` 是否为包的真实哈希（需要下载每个包），以及只有 `resolved` 而无 `requested` 的 `Transitive` 条目（没有声明的范围可比）。`main` 上先于本门禁存在的分叉登记在 `scripts/restore-lock-drift-exemptions.json`，按四元组全等匹配，且登记后不再命中即判红。
+
 ## Roslyn 解析与编译语义
 
 实现必须显式固定而非依赖默认值：

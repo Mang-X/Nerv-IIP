@@ -723,6 +723,23 @@ Assert-ImpactCase -Name 'script-governance-registry' -Paths @('docs/governance/s
     docs = $true; scripts = $true; backend = $false; frontend = $false
 }
 
+# #3145: the restore manifest lives under 'docs/', and the generic 'docs/' rule would route it to
+# 'docs' alone. The only gate that reads it, scripts/verify-restore-lock-contract.ps1, runs in the
+# 'Script Governance' job, whose `if` is `scripts != false || backend != false` — so without
+# 'scripts' here, a PR that edits only the manifest skips the job entirely and the check runs on
+# zero jobs for exactly the change it exists to catch. Measured before the routing rule was added:
+# the plan for this path came back 'docs' only.
+Assert-ImpactCase -Name 'restore-lock-manifest' -Paths @('docs/reference/api/business-gateway-surface-restore.manifest.json') -Flags @{
+    docs = $true; scripts = $true; backend = $false; frontend = $false
+}
+
+# The exemption table reaches the same gate through the generic 'scripts/' rule. Asserted rather
+# than assumed: it is the file that decides which forks stay silent, and if it ever moved out of
+# 'scripts/' the gate would stop being scheduled on changes to it.
+Assert-ImpactCase -Name 'restore-lock-exemption-table' -Paths @('scripts/restore-lock-drift-exemptions.json') -Flags @{
+    scripts = $true; docs = $false; backend = $false; frontend = $false
+}
+
 Assert-ImpactCase -Name 'nested-readme-docs' -Paths @('backend/services/Business/Erp/README.md', 'connector-hosts/README.md') -Flags @{
     docs = $true; backend = $false; frontend = $false; connector_hosts = $false; postgresql = $false; full_chain = $false
 }

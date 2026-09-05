@@ -29,7 +29,71 @@
     },
     {
       "path": "backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Nerv.IIP.BusinessGateway.Web.csproj",
-      "sha256": "7406391672d8c426ebb671145af90c031361c3eb150d925de22fb80904df1620"
+      "sha256": "d89f1178436e7a659184402c15c739241b7b6e71135d871bd57aa0b5388d4670"
+    },
+    {
+      "path": "backend/common/Caching/Nerv.IIP.Caching/Nerv.IIP.Caching.csproj",
+      "sha256": "d556eb052108688365d55f9e7bce102861eb328ecbbad473bcc1f568f479f075"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.Coding/Nerv.IIP.Contracts.Coding.csproj",
+      "sha256": "2c82dae7a6492e5dc0d99b6b5a5d1c89a4702b892f71757981e46302949d6115"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.EquipmentRuntime/Nerv.IIP.Contracts.EquipmentRuntime.csproj",
+      "sha256": "2c82dae7a6492e5dc0d99b6b5a5d1c89a4702b892f71757981e46302949d6115"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.Erp/Nerv.IIP.Contracts.Erp.csproj",
+      "sha256": "3cbc9bbff26ad056a2514e6301286f9ae282a22f090e067479f2c6dba8bde48b"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.FileStorage/Nerv.IIP.Contracts.FileStorage.csproj",
+      "sha256": "2c82dae7a6492e5dc0d99b6b5a5d1c89a4702b892f71757981e46302949d6115"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.Iam/Nerv.IIP.Contracts.Iam.csproj",
+      "sha256": "11c0c110e19c9eaeaef66a0382f7a3e4ff6ab395d99ca6664e1ba378371cc47c"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.IndustrialTelemetry/Nerv.IIP.Contracts.IndustrialTelemetry.csproj",
+      "sha256": "9af97168cf2d6b56c8222905afa6c6eab21c7d7d1f0aaf1a439c35e261bfdbec"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.IntegrationEvents/Nerv.IIP.Contracts.IntegrationEvents.csproj",
+      "sha256": "2c82dae7a6492e5dc0d99b6b5a5d1c89a4702b892f71757981e46302949d6115"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.Inventory/Nerv.IIP.Contracts.Inventory.csproj",
+      "sha256": "9af97168cf2d6b56c8222905afa6c6eab21c7d7d1f0aaf1a439c35e261bfdbec"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.Mes/Nerv.IIP.Contracts.Mes.csproj",
+      "sha256": "9af97168cf2d6b56c8222905afa6c6eab21c7d7d1f0aaf1a439c35e261bfdbec"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.Notification/Nerv.IIP.Contracts.Notification.csproj",
+      "sha256": "11c0c110e19c9eaeaef66a0382f7a3e4ff6ab395d99ca6664e1ba378371cc47c"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.Scheduling/Nerv.IIP.Contracts.Scheduling.csproj",
+      "sha256": "655d5b52b7a574e334d95ef17efa00264fac5f565da4ec4aeb02176b40ccd3aa"
+    },
+    {
+      "path": "backend/common/Localization/Nerv.IIP.Localization/Nerv.IIP.Localization.csproj",
+      "sha256": "c75bf9f225d126f71620e43d9ac2421d81d867152324d9f8cd64782c36f9d31c"
+    },
+    {
+      "path": "backend/common/Observability/Nerv.IIP.Observability/Nerv.IIP.Observability.csproj",
+      "sha256": "1494f095497824f5c9a041672b50c47047cee0f9afb4dd9f3a8c2450ddbefdf9"
+    },
+    {
+      "path": "backend/common/Sdk/Nerv.IIP.Sdk.Core/Nerv.IIP.Sdk.Core.csproj",
+      "sha256": "11c0c110e19c9eaeaef66a0382f7a3e4ff6ab395d99ca6664e1ba378371cc47c"
+    },
+    {
+      "path": "backend/common/ServiceAuth/Nerv.IIP.ServiceAuth/Nerv.IIP.ServiceAuth.csproj",
+      "sha256": "063cdc199e0fb482df554a35ca7f50eabb93554db1e33e38f9f97a84feee7dcd"
     },
     {
       "path": "backend/common/Caching/Nerv.IIP.Caching/packages.lock.json",
@@ -54,6 +118,10 @@
     {
       "path": "backend/common/Contracts/Nerv.IIP.Contracts.Iam/packages.lock.json",
       "sha256": "03eeadc5ef377c17f787ab65f41fb4c8a9c936bb7f7f4171111fdeec8a81cb46"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.IndustrialTelemetry/packages.lock.json",
+      "sha256": "5a36c7a4adea509e76abe5afa166113303b9af6a73765524dac894f02236bbd6"
     },
     {
       "path": "backend/common/Contracts/Nerv.IIP.Contracts.IntegrationEvents/packages.lock.json",
@@ -104,6 +172,7 @@
       "backend/common/Contracts/Nerv.IIP.Contracts.Erp/packages.lock.json",
       "backend/common/Contracts/Nerv.IIP.Contracts.FileStorage/packages.lock.json",
       "backend/common/Contracts/Nerv.IIP.Contracts.Iam/packages.lock.json",
+      "backend/common/Contracts/Nerv.IIP.Contracts.IndustrialTelemetry/packages.lock.json",
       "backend/common/Contracts/Nerv.IIP.Contracts.IntegrationEvents/packages.lock.json",
       "backend/common/Contracts/Nerv.IIP.Contracts.Inventory/packages.lock.json",
       "backend/common/Contracts/Nerv.IIP.Contracts.Mes/packages.lock.json",
