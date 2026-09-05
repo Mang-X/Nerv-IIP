@@ -461,7 +461,11 @@ public sealed partial class BarcodeLabelPostgresProfileTests
         Assert.False(retirementTask.IsCompleted);
         Assert.False(reuseTask.IsCompleted);
         await gateTransaction.CommitAsync();
-        var failures = await Task.WhenAll(retirementTask, reuseTask);
+        var failures = await TestTimeout.RunAsync(
+            "retirement and template reuse complete after the file fence is released",
+            async cancellationToken => await Task.WhenAll(retirementTask, reuseTask).WaitAsync(cancellationToken),
+            TimeSpan.FromSeconds(15),
+            sensitiveValues: [LaneConnectionString]);
         Assert.Equal(1, failures.Count(failure => failure is null));
         Assert.Single(failures, failure => failure is KnownException);
     }
@@ -701,7 +705,11 @@ public sealed partial class BarcodeLabelPostgresProfileTests
         Assert.False(retirementTask.IsCompleted);
         Assert.False(batchTask.IsCompleted);
         await gateTransaction.CommitAsync();
-        var failures = await Task.WhenAll(retirementTask, batchTask);
+        var failures = await TestTimeout.RunAsync(
+            "retirement and new batch freeze complete after the file fence is released",
+            async cancellationToken => await Task.WhenAll(retirementTask, batchTask).WaitAsync(cancellationToken),
+            TimeSpan.FromSeconds(15),
+            sensitiveValues: [LaneConnectionString]);
         Assert.IsType<KnownException>(failures[0]);
         Assert.Null(failures[1]);
 
