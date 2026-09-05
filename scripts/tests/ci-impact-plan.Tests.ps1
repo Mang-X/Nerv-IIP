@@ -723,6 +723,23 @@ Assert-ImpactCase -Name 'script-governance-registry' -Paths @('docs/governance/s
     docs = $true; scripts = $true; backend = $false; frontend = $false
 }
 
+# #3145: the restore manifest lives under 'docs/', and the generic 'docs/' rule would route it to
+# 'docs' alone. The only gate that reads it, scripts/verify-restore-lock-contract.ps1, runs in the
+# 'Script Governance' job, whose `if` is `scripts != false || backend != false` — so without
+# 'scripts' here, a PR that edits only the manifest skips the job entirely and the check runs on
+# zero jobs for exactly the change it exists to catch. Measured before the routing rule was added:
+# the plan for this path came back 'docs' only.
+Assert-ImpactCase -Name 'restore-lock-manifest' -Paths @('docs/reference/api/business-gateway-surface-restore.manifest.json') -Flags @{
+    docs = $true; scripts = $true; backend = $false; frontend = $false
+}
+
+# The exemption table reaches the same gate through the generic 'scripts/' rule. Asserted rather
+# than assumed: it is the file that decides which forks stay silent, and if it ever moved out of
+# 'scripts/' the gate would stop being scheduled on changes to it.
+Assert-ImpactCase -Name 'restore-lock-exemption-table' -Paths @('scripts/restore-lock-drift-exemptions.json') -Flags @{
+    scripts = $true; docs = $false; backend = $false; frontend = $false
+}
+
 Assert-ImpactCase -Name 'nested-readme-docs' -Paths @('backend/services/Business/Erp/README.md', 'connector-hosts/README.md') -Flags @{
     docs = $true; backend = $false; frontend = $false; connector_hosts = $false; postgresql = $false; full_chain = $false
 }
@@ -1362,12 +1379,12 @@ try {
 
 '@
     $workflowWithoutAcceptanceRuntimeContract = $workflow.Replace($acceptanceRuntimeContractStep, '').Replace(
-        'step 预算合计 163m（33 个 step：3m checkout',
-        'step 预算合计 158m（32 个 step：3m checkout').Replace(
-        '+ 32 × 5m；',
-        '+ 31 × 5m；')
+        'step 预算合计 173m（35 个 step：3m checkout',
+        'step 预算合计 168m（34 个 step：3m checkout').Replace(
+        '+ 34 × 5m；',
+        '+ 33 × 5m；')
     Assert-Contract (-not [string]::Equals($workflowWithoutAcceptanceRuntimeContract, $workflow, [StringComparison]::Ordinal)) 'Acceptance runtime workflow mutation must remove the canonical pure fixture contract step.'
-    Assert-Contract ($workflowWithoutAcceptanceRuntimeContract.Contains('step 预算合计 158m（32 个 step：3m checkout', [StringComparison]::Ordinal) -and $workflowWithoutAcceptanceRuntimeContract.Contains('+ 31 × 5m；', [StringComparison]::Ordinal)) 'Acceptance runtime workflow mutation must keep its budget comment truthful at 32 steps and 158m.'
+    Assert-Contract ($workflowWithoutAcceptanceRuntimeContract.Contains('step 预算合计 168m（34 个 step：3m checkout', [StringComparison]::Ordinal) -and $workflowWithoutAcceptanceRuntimeContract.Contains('+ 33 × 5m；', [StringComparison]::Ordinal)) 'Acceptance runtime workflow mutation must keep its budget comment truthful at 34 steps and 168m.'
     $workflowWithoutAcceptanceRuntimeContractPath = Join-Path $workflowMutationRoot 'script-governance-drops-acceptance-runtime-contract.yml'
     [IO.File]::WriteAllText($workflowWithoutAcceptanceRuntimeContractPath, $workflowWithoutAcceptanceRuntimeContract, [Text.UTF8Encoding]::new($false))
     $runtimeWorkflowContractFailure = $null
@@ -1384,10 +1401,10 @@ try {
 
 '@
     $workflowWithoutAcceptanceEquivalenceContract = $workflow.Replace($acceptanceEquivalenceContractStep, '').Replace(
-        'step 预算合计 163m（33 个 step：3m checkout',
-        'step 预算合计 158m（32 个 step：3m checkout').Replace(
-        '+ 32 × 5m；',
-        '+ 31 × 5m；')
+        'step 预算合计 173m（35 个 step：3m checkout',
+        'step 预算合计 168m（34 个 step：3m checkout').Replace(
+        '+ 34 × 5m；',
+        '+ 33 × 5m；')
     $workflowWithoutAcceptanceEquivalenceContractPath = Join-Path $workflowMutationRoot 'script-governance-drops-acceptance-equivalence-contract.yml'
     [IO.File]::WriteAllText($workflowWithoutAcceptanceEquivalenceContractPath, $workflowWithoutAcceptanceEquivalenceContract, [Text.UTF8Encoding]::new($false))
     $equivalenceWorkflowContractFailure = $null
@@ -1395,16 +1412,16 @@ try {
     Assert-Contract ($null -ne $equivalenceWorkflowContractFailure) 'Removing the equivalence Script Governance fixture step must fail the workflow contract.'
 
     $workflowWithIncorrectBudgetComment = $workflow.Replace(
-        'step 预算合计 163m（33 个 step：3m checkout',
-        'step 预算合计 158m（32 个 step：3m checkout').Replace(
-        '+ 32 × 5m；',
-        '+ 31 × 5m；')
-    Assert-Contract (-not [string]::Equals($workflowWithIncorrectBudgetComment, $workflow, [StringComparison]::Ordinal)) 'Script Governance budget-comment mutation must alter the canonical 33-step/163m comment.'
+        'step 预算合计 173m（35 个 step：3m checkout',
+        'step 预算合计 168m（34 个 step：3m checkout').Replace(
+        '+ 34 × 5m；',
+        '+ 33 × 5m；')
+    Assert-Contract (-not [string]::Equals($workflowWithIncorrectBudgetComment, $workflow, [StringComparison]::Ordinal)) 'Script Governance budget-comment mutation must alter the canonical 35-step/173m comment.'
     $workflowWithIncorrectBudgetCommentPath = Join-Path $workflowMutationRoot 'script-governance-uses-incorrect-budget-comment.yml'
     [IO.File]::WriteAllText($workflowWithIncorrectBudgetCommentPath, $workflowWithIncorrectBudgetComment, [Text.UTF8Encoding]::new($false))
     $budgetCommentContractFailure = $null
     try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithIncorrectBudgetCommentPath } catch { $budgetCommentContractFailure = $_ }
-    $expectedBudgetCommentDiagnostic = 'Script Governance budget comment must match its actual 33-step/163m structure.'
+    $expectedBudgetCommentDiagnostic = 'Script Governance budget comment must match its actual 35-step/173m structure.'
     $observedBudgetCommentDiagnostic = if ($null -eq $budgetCommentContractFailure) { '<none>' } else { [string]$budgetCommentContractFailure.Exception.Message }
     Assert-Contract ([string]::Equals($observedBudgetCommentDiagnostic, $expectedBudgetCommentDiagnostic, [StringComparison]::Ordinal)) "An incorrect Script Governance budget comment must fail with the exact budget diagnostic. Observed: $observedBudgetCommentDiagnostic"
 

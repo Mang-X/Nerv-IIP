@@ -199,6 +199,19 @@ function Get-NervCiImpactPlan {
             continue
         }
 
+        # #3145: this manifest is the hash ledger that scripts/verify-restore-lock-contract.ps1
+        # reads, and the checker runs in the 'Script Governance' job, whose `if` is
+        # `scripts != false || backend != false`. Left to the generic 'docs/' rule below, a PR that
+        # edits only the manifest routes to 'docs' alone, the job is skipped, and the one gate that
+        # reads the file never runs on the change it exists to catch — the shape this repository has
+        # already been caught by in #3003, #3135 and #3140. It routes to 'docs' as well because it is
+        # still a Reference document. 'backend' is deliberately not selected: the checker reads files
+        # only, and pulling in the 45-minute backend shards would buy nothing.
+        if ([string]::Equals($path, 'docs/reference/api/business-gateway-surface-restore.manifest.json', [StringComparison]::Ordinal)) {
+            foreach ($flag in @('docs', 'scripts')) { Select-Impact -Name $flag -Reason $reason }
+            continue
+        }
+
         # Agent-harness configuration only reaches local agent runtimes: the skill payload
         # directories these install into are gitignored, and no CI job reads them. They
         # route to 'docs' like the AGENTS.md guidance they sit beside. 'skills/' is the

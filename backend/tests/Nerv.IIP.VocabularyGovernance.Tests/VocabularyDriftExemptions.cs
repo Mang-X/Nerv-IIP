@@ -25,6 +25,10 @@ internal static class VocabularyDriftExemptions
 
     public static readonly IReadOnlyList<VocabularyExemption> Entries =
     [
+        // #3044 的 ownerService 是退役 capability 绑定的文件资源所有者，不是集成事件来源。
+        ..Group("business-barcode-label", "同值不同义：FileStorage 退役 capability 的资源 ownerService，非 BarcodeLabel 集成事件 Source。",
+            "services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/TemplateAssetRetirementProof.cs"),
+
         // ── "active" ────────────────────────────────────────────────────────────────
         // 同值不同义：Nerv.IIP.Contracts.ProductEngineering.ProductionEngineeringContractStatuses.Active
         // 守护的是 PE 生产版本/契约的 active/archived 状态；下列文件中的 "active" 分别是
