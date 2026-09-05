@@ -184,15 +184,19 @@ function Assert-NervFullChainDiscoveryClosure {
     )
 
     $discovered = [Collections.Generic.HashSet[string]]::new([string[]]@(@($DiscoveredIdentities) | ForEach-Object { [string]$_ }), [StringComparer]::Ordinal)
-    $missingClaims = @(@($ClaimedIdentities) | Where-Object { -not $discovered.Contains([string]$_) })
+    $missingClaims = @(@($ClaimedIdentities) | Where-Object { -not $discovered.Contains([string]$_) } | ForEach-Object { [string]$_ })
     if ($missingClaims.Count -gt 0) {
-        throw "FullChain lane manifest freezes identities that discovery did not report: $(($missingClaims | Sort-Object) -join ', ')."
+        # 诊断文本也走序数排序：Sort-Object 的键比较是 culture collation，本仓的序数契约门禁
+        # （scripts/tests/ordinal-comparison-layers.Tests.ps1）扫到即红。
+        [Array]::Sort($missingClaims, [StringComparer]::Ordinal)
+        throw "FullChain lane manifest freezes identities that discovery did not report: $($missingClaims -join ', ')."
     }
     $accounted = @(@($ClaimedIdentities) | ForEach-Object { [string]$_ }) + @(@($ResidualIdentities) | ForEach-Object { [string]$_ })
     $accountedSet = [Collections.Generic.HashSet[string]]::new([string[]]$accounted, [StringComparer]::Ordinal)
-    $unaccounted = @(@($DiscoveredIdentities) | Where-Object { -not $accountedSet.Contains([string]$_) })
+    $unaccounted = @(@($DiscoveredIdentities) | Where-Object { -not $accountedSet.Contains([string]$_) } | ForEach-Object { [string]$_ })
     if ($unaccounted.Count -gt 0) {
-        throw "FullChain lane discovered tests that no member and no residual run accounts for: $(($unaccounted | Sort-Object) -join ', ')."
+        [Array]::Sort($unaccounted, [StringComparer]::Ordinal)
+        throw "FullChain lane discovered tests that no member and no residual run accounts for: $($unaccounted -join ', ')."
     }
 }
 
