@@ -148,7 +148,10 @@ public sealed class ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests
         string eventId,
         CancellationToken cancellationToken)
     {
-        // Successful Redis CAP deliveries are not retained in cap_received_messages in this profile.
+        // The erp-schema CAP tables mapped by NetCorePal are never written at runtime: production CAP storage
+        // is DotNetCore.CAP.PostgreSql (UseEntityFramework), whose default schema/tables are cap."published" /
+        // cap."received". Counting receipts there would always yield zero regardless of delivery outcome,
+        // so this check uses the durable dead-letter projection instead.
         // The sibling WMS consumer durably rejects this outbound event type once per physical envelope.
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
