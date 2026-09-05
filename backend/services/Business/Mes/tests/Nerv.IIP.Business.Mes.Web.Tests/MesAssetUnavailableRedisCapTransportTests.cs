@@ -283,7 +283,7 @@ public sealed class MesAssetUnavailableRedisCapTransportTests(ITestOutputHelper 
             "evt-2966-wrong-version", "evt-2966-wrong-source", "evt-2966-wrong-type", "evt-2966-wrong-topic"];
         var attempts = poison.Attempts;
         var arrivalCount = currentEventId is null ? arrivals.Total : arrivals.CountFor(currentEventId);
-        var dlq = await QueryDiagnosticAsync($"""
+        var dlqTask = QueryDiagnosticAsync($"""
             SELECT json_build_object(
                 'other', (SELECT count(*) FROM mes.integration_event_dead_letters WHERE event_id IS NULL OR NOT (event_id = ANY ({knownEventIds}))),
                 'knownCount', (SELECT count(*) FROM mes.integration_event_dead_letters WHERE event_id = ANY ({knownEventIds})),
@@ -293,13 +293,16 @@ public sealed class MesAssetUnavailableRedisCapTransportTests(ITestOutputHelper 
                     FROM mes.integration_event_dead_letters WHERE event_id = ANY ({knownEventIds})
                     ORDER BY id LIMIT 16) r))::text AS "Value"
             """);
-        var received = currentEventId is null ? "not-requested" : await QueryDiagnosticAsync($"""
+        var receivedTask = currentEventId is null ? Task.FromResult("not-requested") : QueryDiagnosticAsync($"""
             SELECT coalesce(json_agg(r ORDER BY r."Id"), '[]'::json)::text AS "Value" FROM (
                 SELECT "Id", left("StatusName", 50) AS "StatusName", "Retries", "Added", "ExpiresAt"
                 FROM cap.received
                 WHERE "Content"::jsonb -> 'Value' ->> 'EventId' = {currentEventId}
                 ORDER BY "Id" LIMIT 16) r
             """);
+        await Task.WhenAll(dlqTask, receivedTask);
+        var dlq = await dlqTask;
+        var received = await receivedTask;
         try
         {
             output.WriteLine($"MES transport {phase}; Attempts={attempts}; arrivals={arrivalCount}; DLQ(limit=16)={dlq}; CAP received(limit=16)={received}");
