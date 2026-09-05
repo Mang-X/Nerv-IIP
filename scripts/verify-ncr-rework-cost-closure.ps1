@@ -11,9 +11,10 @@
 #   Cleanup:
 #     - Stops only this invocation's managed processes
 #     - Drops only this invocation's exact random database
-#     - Verifies zero managed process and database residue
+#     - Removes only this invocation's unique Redis topic namespace and verifies a foreign sentinel survives
+#     - Verifies zero managed process, database, and Redis residue
 #   Requires:
-#     - PowerShell 7, .NET SDK 10, Docker, PostgreSQL and Redis lane variables
+#     - PowerShell 7, .NET SDK 10, Docker, redis-cli, PostgreSQL and Redis lane variables
 
 param(
     [string]$PostgresAdminConnectionString = $env:NERV_IIP_TEST_POSTGRES,
@@ -94,6 +95,54 @@ function Invoke-Man2813DatabaseSql {
     ) -WorkingDirectory $root -Name $Name
 }
 
+function ConvertTo-Man2813RedisCliContext {
+    param([Parameter(Mandatory)] [string]$ConnectionString)
+
+    $segments = @($ConnectionString.Split(',', [StringSplitOptions]::RemoveEmptyEntries) | ForEach-Object { $_.Trim() })
+    if ($segments.Count -eq 0 -or $segments[0] -notmatch '^(?<host>\[[^\]]+\]|[^:]+):(?<port>[0-9]+)$') {
+        throw 'NERV_IIP_TEST_REDIS must begin with host:port; credentials redacted.'
+    }
+    $options = @{}
+    foreach ($segment in @($segments | Select-Object -Skip 1)) {
+        $parts = $segment.Split('=', 2)
+        if ($parts.Count -eq 2) { $options[$parts[0].Trim().ToLowerInvariant()] = $parts[1].Trim() }
+    }
+    $arguments = @('--raw', '-h', $Matches.host.Trim('[', ']'), '-p', $Matches.port)
+    if ($options.ContainsKey('ssl') -and [string]::Equals([string]$options.ssl, 'true', [StringComparison]::OrdinalIgnoreCase)) {
+        $arguments += '--tls'
+    }
+    if ($options.ContainsKey('user') -and -not [string]::IsNullOrWhiteSpace([string]$options.user)) {
+        $arguments += @('--user', [string]$options.user)
+    }
+    return [pscustomobject]@{
+        Arguments = $arguments
+        Password = if ($options.ContainsKey('password')) { [string]$options.password } else { $null }
+    }
+}
+
+function Invoke-Man2813Redis {
+    param([Parameter(Mandatory)] [string]$Name, [Parameter(Mandatory)] [string[]]$Arguments)
+
+    Invoke-WithScopedEnvironment -Variables @{ REDISCLI_AUTH = $redisContext.Password } -ScriptBlock {
+        Invoke-NativeCommandOutput -Command 'redis-cli' -Arguments (@($redisContext.Arguments) + $Arguments) -WorkingDirectory $root -TimeoutSeconds 30 -Name $Name
+    }
+}
+
+function Get-Man2813RedisKeys {
+    param([Parameter(Mandatory)] [string]$Namespace, [Parameter(Mandatory)] [string]$Name)
+
+    if ($Namespace -cnotmatch '^nerv:n2813:[0-9a-f]{32}:$') { throw "MAN-2813 Redis namespace '$Namespace' is not canonical." }
+    $scan = Invoke-Man2813Redis -Name $Name -Arguments @('--scan', '--pattern', "$Namespace*")
+    $keys = [Collections.Generic.SortedSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($key in @($scan.Stdout -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
+        if (-not $key.StartsWith($Namespace, [StringComparison]::Ordinal)) {
+            throw "MAN-2813 Redis namespace scan returned foreign key '$key'."
+        }
+        [void]$keys.Add($key)
+    }
+    return @($keys)
+}
+
 function Get-Man2813TrxCount {
     param([Parameter(Mandatory)] [xml]$Trx, [Parameter(Mandatory)] [string]$Name)
     $counters = $Trx.SelectSingleNode("//*[local-name()='Counters']")
@@ -113,12 +162,20 @@ $databaseConnectionString = if ($PostgresAdminConnectionString -match '(?i)Datab
     "$($PostgresAdminConnectionString.TrimEnd(';'));Database=$databaseName"
 }
 $capVersion = "man2813-$([Guid]::NewGuid().ToString('N').Substring(0, 12))"
+$redisNamespace = "nerv:n2813:$([Guid]::NewGuid().ToString('N')):"
+$foreignRedisSentinel = "nerv:n2813-control:$([Guid]::NewGuid().ToString('N'))"
+$redisContext = ConvertTo-Man2813RedisCliContext -ConnectionString $RedisConnectionString
 $internalToken = "man2813-$([Guid]::NewGuid().ToString('N'))"
 $databaseCreated = $false
+$redisNamespaceClaimed = $false
+$foreignRedisSentinelCreated = $false
+$foreignRedisSentinelPreserved = $false
 $acceptanceFailure = $null
 $cleanupErrors = [Collections.Generic.List[string]]::new()
 $remainingProcesses = [Collections.Generic.List[string]]::new()
 $remainingDatabase = 0
+$remainingRedisKeys = 0
+$remainingForeignRedisSentinel = 0
 
 $serviceSpecs = [ordered]@{
     masterData = 'backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Nerv.IIP.Business.MasterData.Web.csproj'
@@ -147,6 +204,20 @@ $evidencePath = if ([string]::IsNullOrWhiteSpace($env:NERV_IIP_FULL_CHAIN_ENTRYP
 [IO.Directory]::CreateDirectory($resultsDirectory) | Out-Null
 
 try {
+    $redisProbe = Invoke-Man2813Redis -Name 'man2813-redis-readiness' -Arguments @('PING')
+    if (-not [string]::Equals($redisProbe.Stdout.Trim(), 'PONG', [StringComparison]::Ordinal)) {
+        throw 'MAN-2813 Redis readiness probe did not return PONG.'
+    }
+    if (@(Get-Man2813RedisKeys -Namespace $redisNamespace -Name 'man2813-redis-claim').Count -ne 0) {
+        throw "MAN-2813 Redis namespace '$redisNamespace' was not empty before claim."
+    }
+    $redisNamespaceClaimed = $true
+    $sentinelCreated = Invoke-Man2813Redis -Name 'man2813-foreign-redis-sentinel-create' -Arguments @('SET', $foreignRedisSentinel, $capVersion, 'NX')
+    if (-not [string]::Equals($sentinelCreated.Stdout.Trim(), 'OK', [StringComparison]::Ordinal)) {
+        throw 'MAN-2813 could not create its foreign Redis sentinel.'
+    }
+    $foreignRedisSentinelCreated = $true
+
     Invoke-Man2813DatabaseSql -Sql "CREATE DATABASE $databaseName;" -Name 'man2813-create-database' | Out-Null
     $databaseCreated = $true
 
@@ -167,6 +238,7 @@ try {
         Messaging__Redis__ConnectionString = $RedisConnectionString
         ConnectionStrings__Redis = $RedisConnectionString
         Cap__Version = $capVersion
+        Cap__TopicNamePrefix = $redisNamespace
         Cap__FailedRetryInterval = '2'
         Cap__FallbackWindowLookbackSeconds = '30'
         InternalService__BearerToken = $internalToken
@@ -262,6 +334,38 @@ finally {
         }
         catch { $cleanupErrors.Add("database readback: $($_.Exception.Message)") }
     }
+    if ($redisNamespaceClaimed) {
+        try {
+            foreach ($key in @(Get-Man2813RedisKeys -Namespace $redisNamespace -Name 'man2813-redis-owned-scan')) {
+                $removed = Invoke-Man2813Redis -Name 'man2813-redis-owned-remove' -Arguments @('UNLINK', $key)
+                if (-not [string]::Equals($removed.Stdout.Trim(), '1', [StringComparison]::Ordinal)) {
+                    throw "MAN-2813 Redis cleanup did not remove owned key '$key'."
+                }
+            }
+            $remainingRedisKeys = @(Get-Man2813RedisKeys -Namespace $redisNamespace -Name 'man2813-redis-owned-readback').Count
+            if ($remainingRedisKeys -ne 0) { $cleanupErrors.Add("owned Redis keys remain: $remainingRedisKeys") }
+        }
+        catch { $cleanupErrors.Add("Redis namespace cleanup: $($_.Exception.Message)") }
+    }
+    if ($foreignRedisSentinelCreated) {
+        try {
+            $sentinelReadback = Invoke-Man2813Redis -Name 'man2813-foreign-redis-sentinel-readback' -Arguments @('GET', $foreignRedisSentinel)
+            $foreignRedisSentinelPreserved = [string]::Equals($sentinelReadback.Stdout.Trim(), $capVersion, [StringComparison]::Ordinal)
+            if (-not $foreignRedisSentinelPreserved) { $cleanupErrors.Add('foreign Redis sentinel was not preserved by namespace cleanup.') }
+        }
+        catch { $cleanupErrors.Add("foreign Redis sentinel readback: $($_.Exception.Message)") }
+        try {
+            $sentinelRemoved = Invoke-Man2813Redis -Name 'man2813-foreign-redis-sentinel-remove' -Arguments @('UNLINK', $foreignRedisSentinel)
+            if (-not [string]::Equals($sentinelRemoved.Stdout.Trim(), '1', [StringComparison]::Ordinal)) {
+                $cleanupErrors.Add('foreign Redis sentinel exact cleanup did not remove one key.')
+            }
+            $sentinelRemaining = Invoke-Man2813Redis -Name 'man2813-foreign-redis-sentinel-final-readback' -Arguments @('EXISTS', $foreignRedisSentinel)
+            if (-not [int]::TryParse($sentinelRemaining.Stdout.Trim(), [ref]$remainingForeignRedisSentinel)) {
+                $cleanupErrors.Add('foreign Redis sentinel final readback was not countable.')
+            }
+        }
+        catch { $cleanupErrors.Add("foreign Redis sentinel cleanup: $($_.Exception.Message)") }
+    }
     try {
         [IO.Directory]::CreateDirectory((Split-Path -Parent $evidencePath)) | Out-Null
         [ordered]@{
@@ -272,7 +376,10 @@ finally {
             cleanup = [ordered]@{
                 managedProcessRemaining = $remainingProcesses.Count
                 exactDatabaseRemaining = $remainingDatabase
+                ownedRedisKeyRemaining = $remainingRedisKeys
                 ownedComposeServiceRemaining = 0
+                foreignRedisSentinelPreserved = $foreignRedisSentinelPreserved
+                foreignRedisSentinelRemaining = $remainingForeignRedisSentinel
                 errors = @($cleanupErrors | ForEach-Object { Protect-ScriptAutomationText -Text $_ })
             }
         } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $evidencePath -Encoding utf8
