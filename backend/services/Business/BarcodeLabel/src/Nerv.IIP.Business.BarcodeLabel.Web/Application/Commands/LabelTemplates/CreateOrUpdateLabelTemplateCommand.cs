@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Infrastructure.Concurrency;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.LabelTemplates;
 
@@ -29,16 +30,55 @@ public sealed class CreateOrUpdateLabelTemplateCommandValidator : AbstractValida
     }
 }
 
-public sealed class CreateOrUpdateLabelTemplateCommandHandler(ApplicationDbContext dbContext)
+public sealed class CreateOrUpdateLabelTemplateCommandHandler(
+    ApplicationDbContext dbContext,
+    ITemplateAssetRetirementFence retirementFence)
     : ICommandHandler<CreateOrUpdateLabelTemplateCommand, LabelTemplateId>
 {
     public async Task<LabelTemplateId> Handle(CreateOrUpdateLabelTemplateCommand request, CancellationToken cancellationToken)
     {
+        var observed = await dbContext.LabelTemplates
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x =>
+                x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.TemplateCode == request.TemplateCode,
+                cancellationToken);
+        var fileIdsToFence = observed is null
+            ? [request.TemplateFileId]
+            : new[] { observed.TemplateFileId, request.TemplateFileId };
+        foreach (var fileId in fileIdsToFence.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal))
+        {
+            await retirementFence.AcquireAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                fileId,
+                cancellationToken);
+        }
+
+        if (await dbContext.TemplateAssetRetirementDecisions.AnyAsync(
+                x => x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId
+                    && x.TemplateFileId == request.TemplateFileId,
+                cancellationToken))
+        {
+            throw new KnownException("模板资产已经退役，不能重新用于标签模板。");
+        }
+
         var existing = await dbContext.LabelTemplates.SingleOrDefaultAsync(x =>
             x.OrganizationId == request.OrganizationId
             && x.EnvironmentId == request.EnvironmentId
             && x.TemplateCode == request.TemplateCode,
             cancellationToken);
+        if (observed is null
+            ? existing is not null
+            : existing is null
+                || existing.Id != observed.Id
+                || !string.Equals(existing.TemplateFileId, observed.TemplateFileId, StringComparison.Ordinal))
+        {
+            throw new KnownException("标签模板当前文件已发生并发变化，请重试。");
+        }
+
         if (existing is not null)
         {
             existing.Update(request.TemplateName, request.TemplateFileId, request.VariableSchemaJson, request.Status);
