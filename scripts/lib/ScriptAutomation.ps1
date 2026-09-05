@@ -161,15 +161,27 @@ function Protect-ScriptAutomationText {
         # authority until their closing delimiter arrives; capture remains independent.
         if ($IncrementalState.ContainsKey('SuppressionReason')) { return '' }
         $Text = [string] $IncrementalState.Pending + $Text
-        if ($Final -or $Text.Length -gt 65536) {
+        if ($Final) {
             $IncrementalState.Pending = ''
             if ($Text.Length -gt 0) {
-                $IncrementalState.SuppressionReason = if ($Final) { 'incomplete-record' } else { 'record-limit' }
+                $IncrementalState.SuppressionReason = 'incomplete-record'
             }
             return ''
         }
         $boundary = $Text.LastIndexOf("`n", [StringComparison]::Ordinal) + 1
+        $recordLimitReached = $false
         if ($boundary -gt 0) {
+            $recordStart = 0
+            $lineEnd = $Text.IndexOf("`n", $recordStart, [StringComparison]::Ordinal)
+            while ($lineEnd -ge 0) {
+                if ($lineEnd - $recordStart + 1 -gt 65536) {
+                    $recordLimitReached = $true
+                    $boundary = [Math]::Min($boundary, $recordStart)
+                    break
+                }
+                $recordStart = $lineEnd + 1
+                $lineEnd = $Text.IndexOf("`n", $recordStart, [StringComparison]::Ordinal)
+            }
             $openStructures = @(
                 '(?is)-----BEGIN [^-\r\n]+-----(?:(?!-----END [^-\r\n]+-----).)*$',
                 '(?is)["''](?:authorization|password|pwd|token|secret|client_secret|customerName|phone|email|address)["'']\s*(?::\s*(?:["''][^"'']*)?)?$',
@@ -187,6 +199,10 @@ function Protect-ScriptAutomationText {
                 $previousBoundary = $boundary
                 foreach ($rule in $rules) {
                     foreach ($match in [regex]::Matches($Text, $rule[0])) {
+                        if ($match.Length -gt 65536) {
+                            $recordLimitReached = $true
+                            $boundary = [Math]::Min($boundary, $match.Index)
+                        }
                         if ($match.Index -lt $boundary -and $match.Index + $match.Length -gt $boundary) {
                             $boundary = $match.Index
                         }
@@ -209,7 +225,14 @@ function Protect-ScriptAutomationText {
                 }
             } while ($boundary -lt $previousBoundary)
         }
-        $IncrementalState.Pending = $Text.Substring($boundary)
+        $pendingText = $Text.Substring($boundary)
+        if ($recordLimitReached -or $pendingText.Length -gt 65536) {
+            $IncrementalState.Pending = ''
+            $IncrementalState.SuppressionReason = 'record-limit'
+        }
+        else {
+            $IncrementalState.Pending = $pendingText
+        }
         $Text = $Text.Substring(0, $boundary)
     }
 
@@ -754,8 +777,7 @@ function Write-ScriptAutomationLiveOutput {
             if ($safe.Length -gt 0) { Write-Host -NoNewline $safe }
         } while ($Final -and $increment.Length -ge 16384)
         if ($Final) {
-            $safe = Protect-ScriptAutomationText -Text '' -SensitiveValues $SensitiveValues -IncrementalState $streamState -Final
-            if ($safe.Length -gt 0) { Write-Host -NoNewline $safe }
+            [void] (Protect-ScriptAutomationText -Text '' -SensitiveValues $SensitiveValues -IncrementalState $streamState -Final)
         }
         if ($streamState.ContainsKey('SuppressionReason') -and -not $streamState.ContainsKey('SuppressionReported')) {
             Write-Host "[live] stream=$stream textSuppressed=$($streamState.SuppressionReason)"

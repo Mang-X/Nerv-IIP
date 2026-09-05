@@ -155,6 +155,52 @@ else {
         }
     }
 
+    # R1: a valid 61,153-character record must not be rejected just because its
+    # closing newline arrives in the same capture batch as 5,000 short records.
+    [void] $script:observed.Clear()
+    $pipeName = 'nl-' + [Guid]::NewGuid().ToString('N').Substring(0, 16)
+    $server = [IO.Pipes.NamedPipeServerStream]::new($pipeName, [IO.Pipes.PipeDirection]::In, 1, [IO.Pipes.PipeTransmissionMode]::Byte, [IO.Pipes.PipeOptions]::Asynchronous)
+    $client = [IO.Pipes.NamedPipeClientStream]::new('.', $pipeName, [IO.Pipes.PipeDirection]::Out)
+    $connected = $server.WaitForConnectionAsync()
+    $client.Connect(5000)
+    [void] $connected.GetAwaiter().GetResult()
+    $writer = [IO.StreamWriter]::new($client, [Text.UTF8Encoding]::new($false))
+    $capture = [Nerv.IIP.ScriptAutomation.RedirectedStreamCapture]::new([IO.StreamReader]::new($server))
+    $empty = [Nerv.IIP.ScriptAutomation.RedirectedStreamCapture]::new([IO.StreamReader]::new([IO.MemoryStream]::new([byte[]] @())))
+    $pipeState = @{ stdout = @{ Cursor = 0; Pending = ''; Bytes = 0L }; stderr = @{ Cursor = 0; Pending = ''; Bytes = 0L } }
+    try {
+        $expected = ''
+        foreach ($batch in @(('x' * 61152), ("`n" + ('ok' + "`n") * 5000), "later`n")) {
+            $writer.Write($batch)
+            $writer.Flush()
+            $expected += $batch
+            $readClock = [Diagnostics.Stopwatch]::StartNew()
+            # Test-only synchronization: make the full batch available before the
+            # production incremental consumer runs, so the old defect cannot evade
+            # the assertion through a lucky reader scheduling interleaving.
+            while ($capture.Snapshot().Length -lt $expected.Length -and $readClock.ElapsedMilliseconds -lt 5000) {
+                Start-Sleep -Milliseconds 10
+            }
+            Assert-Contract ($capture.Snapshot().Length -eq $expected.Length) 'The complete batch must reach capture before incremental consumption.'
+            while ($pipeState.stdout.Cursor -lt $expected.Length -and $readClock.ElapsedMilliseconds -lt 5000) {
+                Write-ScriptAutomationLiveOutput -State $pipeState -StdoutCapture $capture -StderrCapture $empty
+                Start-Sleep -Milliseconds 10
+            }
+            Assert-Contract ($pipeState.stdout.Cursor -eq $expected.Length) 'The real pipe must reach each explicit capture/consume boundary.'
+        }
+        $writer.Dispose()
+        Assert-Contract ($capture.Completion.Wait(5000)) 'The real pipe must drain to EOF.'
+        Write-ScriptAutomationLiveOutput -State $pipeState -StdoutCapture $capture -StderrCapture $empty -Final
+        Assert-Contract ([string]::Equals($script:observed.ToString(), $expected, [StringComparison]::Ordinal)) 'Chunk grouping must not suppress bounded complete records.'
+    }
+    finally {
+        $writer.Dispose()
+        $capture.Dispose()
+        $empty.Dispose()
+        $client.Dispose()
+        $server.Dispose()
+    }
+
     # Every possible chunk split must preserve the same authority's whole-text result.
     $canary = "known-first`nknown-last"
     $samples = @(
@@ -193,7 +239,8 @@ else {
         $mutations = @(
             @{ Name = 'redaction-bypass'; Anchor = '$safe = Protect-ScriptAutomationText -Text $increment -SensitiveValues $SensitiveValues -IncrementalState $streamState'; Replacement = '$safe = $increment'; Failure = 'Real dual-stream secrets must not leak' },
             @{ Name = 'cursor-reset'; Anchor = 'cursor += count;'; Replacement = 'cursor = 0;'; Failure = 'A must be mirrored exactly once' },
-            @{ Name = 'pending-bound'; Anchor = '$Text.Length -gt 65536'; Replacement = '$Text.Length -gt 1048576'; Failure = 'Oversized live records must emit' }
+            @{ Name = 'pending-bound'; Anchor = '$pendingText.Length -gt 65536'; Replacement = '$pendingText.Length -gt 1048576'; Failure = 'Live pending text must remain bounded' },
+            @{ Name = 'chunk-group-limit'; Anchor = '$recordLimitReached = $false'; Replacement = '$recordLimitReached = $Text.Length -gt 65536'; Failure = 'Chunk grouping must not suppress bounded complete records' }
         )
         foreach ($mutation in $mutations) {
             Assert-Contract (([regex]::Matches($source, [regex]::Escape($mutation.Anchor))).Count -eq 1) 'Mutation must match exactly one production anchor.'
