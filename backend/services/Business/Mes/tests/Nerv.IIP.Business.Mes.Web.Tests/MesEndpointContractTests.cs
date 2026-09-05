@@ -954,7 +954,7 @@ public sealed class MesEndpointContractTests
     [Fact]
     public void MesEndpointContracts_ExposeRescheduleAndRushOrderRoutes()
     {
-        Assert.Equal(65, MesEndpointContracts.All.Count);
+        Assert.Equal(67, MesEndpointContracts.All.Count);
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/foundation-readiness/{areaCode}"
@@ -1191,6 +1191,16 @@ public sealed class MesEndpointContractTests
             && x.Route == "/api/business/v1/mes/downtime-events/{downtimeEventId}/recover"
             && x.PermissionCode == MesPermissionCodes.DowntimeManage
             && x.OperationId == "confirmBusinessMesDowntimeRecovery");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/mes/changeover-records"
+            && x.PermissionCode == MesPermissionCodes.OperationsManage
+            && x.OperationId == "startBusinessMesChangeover");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/mes/changeover-records/{changeoverRecordId}/complete"
+            && x.PermissionCode == MesPermissionCodes.OperationsManage
+            && x.OperationId == "completeBusinessMesChangeover");
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/shift-handovers"

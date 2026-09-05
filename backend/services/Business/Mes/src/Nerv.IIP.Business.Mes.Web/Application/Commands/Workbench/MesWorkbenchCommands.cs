@@ -1,6 +1,7 @@
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ChangeoverRecordAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
@@ -2718,6 +2719,79 @@ public static class ShiftHandoverVocabulary
     private static bool TryParseClosed<TEnum>(string? value, out TEnum parsed)
         where TEnum : struct, Enum =>
         Enum.TryParse(value?.Trim(), ignoreCase: true, out parsed) && Enum.IsDefined(parsed);
+}
+
+public sealed record StartChangeoverCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkCenterId,
+    string DeviceAssetId,
+    string OperatorId,
+    ChangeoverToolingCheckResult ToolingCheckResult,
+    DateTimeOffset StartedAtUtc,
+    string IdempotencyKey) : ICommand<MesAcceptedResponse>;
+
+public sealed class StartChangeoverCommandHandler(
+    ApplicationDbContext dbContext,
+    MesCodingService? codingService = null)
+    : ICommandHandler<StartChangeoverCommand, MesAcceptedResponse>
+{
+    private readonly MesCodingService _codingService = codingService ?? new MesCodingService();
+
+    public async Task<MesAcceptedResponse> Handle(StartChangeoverCommand request, CancellationToken cancellationToken)
+    {
+        var allocation = await _codingService.AllocateAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            "changeover-record",
+            null,
+            request.IdempotencyKey,
+            MesCodingService.Fingerprint(
+                request.WorkCenterId,
+                request.DeviceAssetId,
+                request.OperatorId,
+                request.ToolingCheckResult,
+                request.StartedAtUtc),
+            cancellationToken);
+        if (allocation.IsIdempotentReplay)
+        {
+            return new MesAcceptedResponse("Accepted", allocation.Code, request.StartedAtUtc);
+        }
+
+        var record = ChangeoverRecord.Start(
+            request.OrganizationId,
+            request.EnvironmentId,
+            allocation.Code,
+            request.WorkCenterId,
+            request.DeviceAssetId,
+            request.OperatorId,
+            request.ToolingCheckResult,
+            request.StartedAtUtc);
+        dbContext.ChangeoverRecords.Add(record);
+        return new MesAcceptedResponse("Accepted", record.ChangeoverNo, request.StartedAtUtc);
+    }
+}
+
+public sealed record CompleteChangeoverCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string ChangeoverRecordId,
+    DateTimeOffset CompletedAtUtc) : ICommand<MesAcceptedResponse>;
+
+public sealed class CompleteChangeoverCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<CompleteChangeoverCommand, MesAcceptedResponse>
+{
+    public async Task<MesAcceptedResponse> Handle(CompleteChangeoverCommand request, CancellationToken cancellationToken)
+    {
+        var record = await dbContext.ChangeoverRecords.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.ChangeoverNo == request.ChangeoverRecordId,
+            cancellationToken) ?? throw new KnownException($"未找到换型记录，ChangeoverRecordId = {request.ChangeoverRecordId}");
+
+        record.Complete(request.CompletedAtUtc);
+        return new MesAcceptedResponse("Accepted", record.ChangeoverNo, request.CompletedAtUtc);
+    }
 }
 
 public sealed record CreateShiftHandoverCommand(
