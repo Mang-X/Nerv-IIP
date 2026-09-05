@@ -2911,6 +2911,22 @@
     },
     {
       "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/changeover-records",
+      "operationId": "startBusinessMesChangeover",
+      "classification": "deferred",
+      "followUp": "BusinessGateway and Business Console entry points are intentionally outside backend-scoped Issue #1962 and require a separate delivery issue."
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/changeover-records/{changeoverRecordId}/complete",
+      "operationId": "completeBusinessMesChangeover",
+      "classification": "deferred",
+      "followUp": "BusinessGateway and Business Console entry points are intentionally outside backend-scoped Issue #1962 and require a separate delivery issue."
+    },
+    {
+      "service": "Mes",
       "method": "GET",
       "route": "/api/business/v1/mes/finished-goods-receipt-requests",
       "operationId": "listBusinessMesFinishedGoodsReceiptRequests",

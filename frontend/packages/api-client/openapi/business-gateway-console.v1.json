@@ -36641,6 +36641,10 @@
             "items": {
               "type": "string"
             }
+          },
+          "changeoverLossMinutes": {
+            "type": "number",
+            "format": "decimal"
           }
         }
       },
@@ -36839,6 +36843,10 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPContractsIndustrialTelemetryOeeAggregateDegradedReason"
             }
+          },
+          "changeoverLossMinutes": {
+            "type": "number",
+            "format": "decimal"
           }
         }
       },

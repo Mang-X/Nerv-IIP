@@ -34,6 +34,7 @@ $script:GovernedPostgresMemberIds = @(
     'filestorage-postgres-profile',
     'industrialtelemetry-postgres-profile',
     'quality-postgres-profile',
+    'mes-changeover-postgres',
     'mes-postgres-profile',
     'wms-postgres-profile',
     'erp-postgres-profile',
@@ -440,7 +441,7 @@ try {
     Assert-Contract ($qualityPinnedBuilders -eq 6) 'The Quality lane sources must keep exactly their six pinned raw builders; a new unpinned one silently reintroduces the public-schema history table.'
 
     $telemetryMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'industrialtelemetry-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($telemetryMember.expectedTestIdentities).Count -eq 15) 'The IndustrialTelemetry member must freeze exactly its fifteen governed PostgreSQL identities.'
+    Assert-Contract (@($telemetryMember.expectedTestIdentities).Count -eq 16) 'The IndustrialTelemetry member must freeze exactly its sixteen governed PostgreSQL identities.'
     Assert-Contract (@($telemetryMember.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$telemetryMember.diagnosticSchemas[0], 'industrial_telemetry', [StringComparison]::Ordinal)) 'IndustrialTelemetry business and CAP tables share one schema, which the member must declare.'
     Assert-MethodScopedFilter -Member $telemetryMember
     Assert-MethodScopedFilter -Member $qualityMember

@@ -1092,6 +1092,8 @@ public sealed class IndustrialTelemetryEndpointContractTests
         Assert.Equal(EquipmentRuntimeDeviceStateCategory.LoadingNonProductive, EquipmentRuntimeDeviceStates.Classify("待机"));
         Assert.Equal(EquipmentRuntimeDeviceStateCategory.PlannedDown, EquipmentRuntimeDeviceStates.Classify("planned maintenance"));
         Assert.Equal(EquipmentRuntimeDeviceStateCategory.PlannedDown, EquipmentRuntimeDeviceStates.Classify("计划停机"));
+        Assert.Equal(EquipmentRuntimeDeviceStateCategory.Changeover, EquipmentRuntimeDeviceStates.Classify("setup"));
+        Assert.Equal(EquipmentRuntimeDeviceStateCategory.Changeover, EquipmentRuntimeDeviceStates.Classify("换型"));
         Assert.Equal(EquipmentRuntimeDeviceStateCategory.Unavailable, EquipmentRuntimeDeviceStates.Classify("faulted"));
         Assert.Equal(EquipmentRuntimeDeviceStateCategory.Unknown, EquipmentRuntimeDeviceStates.Classify("operator-note"));
     }
@@ -1104,7 +1106,7 @@ public sealed class IndustrialTelemetryEndpointContractTests
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
 
         await PostSampleAsync(client, "DEV-OEE-VOCAB", "运行", new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "oee-vocab-001");
-        await PostSampleAsync(client, "DEV-OEE-VOCAB", "待机", new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "oee-vocab-002");
+        await PostSampleAsync(client, "DEV-OEE-VOCAB", "换型", new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "oee-vocab-002");
         await PostSampleAsync(client, "DEV-OEE-VOCAB", "计划停机", new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "oee-vocab-003");
         await PostSampleAsync(client, "DEV-OEE-VOCAB", "operator-note", new DateTimeOffset(2026, 6, 1, 11, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "oee-vocab-004");
 
@@ -1120,6 +1122,7 @@ public sealed class IndustrialTelemetryEndpointContractTests
         Assert.Equal(4, data.GetProperty("stateSampleCount").GetInt32());
         Assert.Equal(0.333333m, data.GetProperty("availabilityRate").GetDecimal());
         Assert.Equal(0.75m, data.GetProperty("loadingRate").GetDecimal());
+        Assert.Equal(60m, data.GetProperty("changeoverLossMinutes").GetDecimal());
         Assert.Equal(JsonValueKind.Null, data.GetProperty("oeeRate").ValueKind);
         Assert.True(data.GetProperty("isDegraded").GetBoolean());
         Assert.NotNull(availability?.Data);
