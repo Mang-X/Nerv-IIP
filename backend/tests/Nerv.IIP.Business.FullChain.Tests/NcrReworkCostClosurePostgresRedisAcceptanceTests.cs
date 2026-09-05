@@ -339,7 +339,8 @@ public sealed class NcrReworkCostClosurePostgresRedisAcceptanceTests
                 state.SourceCost.GetProperty("total").GetInt32() == 0 &&
                 state.OtherScopeCost.GetProperty("total").GetInt32() == 0 &&
                 HasEdge(state.Trace, ncrId, reworkWorkOrderId!, "created-rework-work-order") &&
-                HasEdge(state.Trace, reportNo!, "LOT-MAN2813-REWORK-OUTPUT", "produced-lot"),
+                HasEdge(state.Trace, reportNo!, "LOT-MAN2813-REWORK-OUTPUT", "produced-lot") &&
+                HasEdge(state.Trace, reportNo!, "SN-MAN2813-REWORK-OUTPUT", "produced-serial"),
             describe: state => JsonSerializer.Serialize(new
             {
                 reworkTotal = state.ReworkCost.GetProperty("total").GetInt32(),
@@ -362,6 +363,8 @@ public sealed class NcrReworkCostClosurePostgresRedisAcceptanceTests
             node.GetProperty("status").GetString() == "Source");
         Assert.True(HasEdge(costAndTrace.Trace, sourceLotNode.GetProperty("nodeId").GetString()!, ncrId, "identified-in-ncr"));
         Assert.True(HasEdge(costAndTrace.Trace, sourceSerialNode.GetProperty("nodeId").GetString()!, ncrId, "identified-in-ncr"));
+        Assert.True(HasNode(costAndTrace.Trace, "LOT-MAN2813-REWORK-OUTPUT", "ProducedLot", "Produced"));
+        Assert.True(HasNode(costAndTrace.Trace, "SN-MAN2813-REWORK-OUTPUT", "Serial", "Produced"));
 
         await PostDataAsync(browser,
             $"/api/business-console/v1/mes/production-reports/{reportNo}/reverse" +
@@ -389,7 +392,18 @@ public sealed class NcrReworkCostClosurePostgresRedisAcceptanceTests
                 state.Cost.GetProperty("total").GetInt32() == 1 &&
                 state.Cost.GetProperty("reworkCostTotal").GetDecimal() == 0m &&
                 !HasEdge(state.Trace, reportNo!, "LOT-MAN2813-REWORK-OUTPUT", "produced-lot") &&
-                HasEdge(state.Trace, ncrId, reworkWorkOrderId!, "created-rework-work-order"),
+                !HasEdge(state.Trace, reportNo!, "SN-MAN2813-REWORK-OUTPUT", "produced-serial") &&
+                !HasNode(state.Trace, "LOT-MAN2813-REWORK-OUTPUT", "ProducedLot", "Produced") &&
+                !HasNode(state.Trace, "SN-MAN2813-REWORK-OUTPUT", "Serial", "Produced") &&
+                HasNode(state.Trace, SourceWorkOrderId, "WorkOrder", "Source") &&
+                HasNode(state.Trace, ncrId, "NonconformanceReport", "ReworkRequested") &&
+                HasNode(state.Trace, reworkWorkOrderId!, "WorkOrder") &&
+                HasNode(state.Trace, sourceLotNode.GetProperty("nodeId").GetString()!, "ProducedLot", "Source") &&
+                HasNode(state.Trace, sourceSerialNode.GetProperty("nodeId").GetString()!, "Serial", "Source") &&
+                HasEdge(state.Trace, SourceWorkOrderId, ncrId, "raised-ncr") &&
+                HasEdge(state.Trace, ncrId, reworkWorkOrderId!, "created-rework-work-order") &&
+                HasEdge(state.Trace, sourceLotNode.GetProperty("nodeId").GetString()!, ncrId, "identified-in-ncr") &&
+                HasEdge(state.Trace, sourceSerialNode.GetProperty("nodeId").GetString()!, ncrId, "identified-in-ncr"),
             describe: state => JsonSerializer.Serialize(new
             {
                 reworkCost = state.Cost.GetProperty("reworkCostTotal").GetDecimal(),
@@ -404,6 +418,12 @@ public sealed class NcrReworkCostClosurePostgresRedisAcceptanceTests
             edge.GetProperty("fromNodeId").GetString() == fromNodeId &&
             edge.GetProperty("toNodeId").GetString() == toNodeId &&
             edge.GetProperty("relationType").GetString() == relationType);
+
+    private static bool HasNode(JsonElement trace, string nodeId, string nodeType, string? status = null) =>
+        trace.GetProperty("nodes").EnumerateArray().Any(node =>
+            node.GetProperty("nodeId").GetString() == nodeId &&
+            node.GetProperty("nodeType").GetString() == nodeType &&
+            (status is null || node.GetProperty("status").GetString() == status));
 
     private static WebApplicationFactory<GatewayProgram> CreateGateway(ScenarioEndpoints endpoints) =>
         new WebApplicationFactory<GatewayProgram>().WithWebHostBuilder(builder =>
