@@ -5,6 +5,7 @@ using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.Printing;
 using Nerv.IIP.Business.BarcodeLabel.Infrastructure;
+using Nerv.IIP.Business.BarcodeLabel.Infrastructure.Concurrency;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.PrintBatches;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Web.Tests;
@@ -77,7 +78,7 @@ public sealed class CreateLabelPrintBatchCommandTests
         var assetPort = ValidAssetPort();
 
         await Assert.ThrowsAsync<KnownException>(() =>
-            new CreateLabelPrintBatchCommandHandler(dbContext, assetPort)
+            new CreateLabelPrintBatchCommandHandler(dbContext, assetPort, NoopTemplateAssetRetirementFence.Instance)
                 .Handle(NewCommand(rule.Id, template.Id), CancellationToken.None));
 
         Assert.Empty(assetPort.Requests);
@@ -108,7 +109,7 @@ public sealed class CreateLabelPrintBatchCommandTests
         var assetPort = ValidAssetPort();
 
         await Assert.ThrowsAsync<KnownException>(() =>
-            new CreateLabelPrintBatchCommandHandler(dbContext, assetPort)
+            new CreateLabelPrintBatchCommandHandler(dbContext, assetPort, NoopTemplateAssetRetirementFence.Instance)
                 .Handle(NewCommand(rule.Id, template.Id), CancellationToken.None));
 
         Assert.Empty(assetPort.Requests);
@@ -136,7 +137,7 @@ public sealed class CreateLabelPrintBatchCommandTests
         var assetPort = ValidAssetPort();
 
         await Assert.ThrowsAsync<KnownException>(() =>
-            new CreateLabelPrintBatchCommandHandler(dbContext, assetPort)
+            new CreateLabelPrintBatchCommandHandler(dbContext, assetPort, NoopTemplateAssetRetirementFence.Instance)
                 .Handle(
                     NewCommand(
                         rule.Id,
@@ -157,7 +158,7 @@ public sealed class CreateLabelPrintBatchCommandTests
         dbContext.AddRange(rule, template);
         await dbContext.SaveChangesAsync();
         var assetPort = ValidAssetPort();
-        var handler = new CreateLabelPrintBatchCommandHandler(dbContext, assetPort);
+        var handler = new CreateLabelPrintBatchCommandHandler(dbContext, assetPort, NoopTemplateAssetRetirementFence.Instance);
 
         var batchId = await handler.Handle(NewCommand(rule.Id, template.Id), CancellationToken.None);
         await dbContext.SaveChangesAsync();
@@ -201,7 +202,7 @@ public sealed class CreateLabelPrintBatchCommandTests
             new VerifiedLabelTemplateAsset(reference.FileId, AssetSha256, templateJson));
 
         await Assert.ThrowsAsync<KnownException>(() =>
-            new CreateLabelPrintBatchCommandHandler(dbContext, assetPort)
+            new CreateLabelPrintBatchCommandHandler(dbContext, assetPort, NoopTemplateAssetRetirementFence.Instance)
                 .Handle(NewCommand(rule.Id, template.Id, labelValuesJson), CancellationToken.None));
 
         Assert.Empty(dbContext.LabelPrintBatches);
@@ -218,7 +219,7 @@ public sealed class CreateLabelPrintBatchCommandTests
         var currentSha256 = AssetSha256;
         var assetPort = new RecordingAssetPort(reference =>
             new VerifiedLabelTemplateAsset(reference.FileId, currentSha256, TemplateJson));
-        var handler = new CreateLabelPrintBatchCommandHandler(dbContext, assetPort);
+        var handler = new CreateLabelPrintBatchCommandHandler(dbContext, assetPort, NoopTemplateAssetRetirementFence.Instance);
 
         _ = await handler.Handle(NewCommand(rule.Id, template.Id), CancellationToken.None);
         await dbContext.SaveChangesAsync();
@@ -227,6 +228,21 @@ public sealed class CreateLabelPrintBatchCommandTests
         await Assert.ThrowsAsync<KnownException>(() =>
             handler.Handle(NewCommand(rule.Id, template.Id), CancellationToken.None));
         Assert.Single(dbContext.LabelPrintBatches);
+    }
+
+    [Fact]
+    public async Task Postgres_retirement_fence_fails_closed_for_the_wrong_provider()
+    {
+        await using var dbContext = CreateDbContext();
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new PostgresTemplateAssetRetirementFence(dbContext).AcquireAsync(
+                "org-001",
+                "env-dev",
+                "file-template-001",
+                CancellationToken.None));
+
+        Assert.Equal("The template asset retirement fence requires the Npgsql PostgreSQL provider.", exception.Message);
     }
 
     private const string VariableSchemaJson =
@@ -304,6 +320,17 @@ public sealed class CreateLabelPrintBatchCommandTests
             Requests.Add(reference);
             return Task.FromResult(responseFactory(reference));
         }
+    }
+
+    private sealed class NoopTemplateAssetRetirementFence : ITemplateAssetRetirementFence
+    {
+        public static readonly NoopTemplateAssetRetirementFence Instance = new();
+
+        public Task AcquireAsync(
+            string organizationId,
+            string environmentId,
+            string fileId,
+            CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private sealed class NoopMediator : IMediator
