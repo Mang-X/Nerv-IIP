@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "note": "由 scripts/verify-restore-lock-contract.ps1 读取。一条登记按四元组全等匹配（lockPath / package / requested / resolved，序数比较），没有通配、没有 skip 语义、也没有按文件豁免。四项中任意一项变化，登记即停止匹配，违例照报。登记必须带 issue 号；登记了却匹配不到任何活违例的条目本身判红——否则缺陷修好后豁免会留下来，把下一次真分叉盖住。",
+  "exemptions": [
+    {
+      "lockPath": "backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/packages.lock.json",
+      "package": "FluentValidation.AspNetCore",
+      "requested": "[11.3.1, )",
+      "resolved": "11.3.0",
+      "issue": "#3152",
+      "reason": "本门禁上线前即存在于 main 的 CentralTransitive 分叉，与 #3136 的 MediatR 同机制。修它要改依赖版本，越过了 #3145（建门禁）票面的『明确不做』，需要自己的证据面，因此销账在 #3152 而不是随 #3145 关闭。注意这个包是 FluentValidation.AspNetCore，与 #3136 里 NU1109 提到的 FluentValidation 相关但不是同一个包。"
+    },
+    {
+      "lockPath": "backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/packages.lock.json",
+      "package": "Microsoft.EntityFrameworkCore",
+      "requested": "[10.0.8, )",
+      "resolved": "9.0.0",
+      "issue": "#3152",
+      "reason": "同上，且差一个 major：CPM 声明 10.0.8，传递解析实际拿到 9.0.0。影响面比 FluentValidation.AspNetCore 那条大得多，更不该作为『上门禁』的副作用被顺手改掉。销账在 #3152。"
+    }
+  ]
+}
