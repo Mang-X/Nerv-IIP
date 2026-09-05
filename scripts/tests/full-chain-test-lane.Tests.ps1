@@ -1037,6 +1037,8 @@ try {
     Assert-Contract ($ncrMember.Count -eq 1) 'The NCR rework cost closure member must exist exactly once.'
     $ncrEntrypointSource = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/verify-ncr-rework-cost-closure.ps1'))
     foreach ($requiredRedisOwnershipFragment in @(
+        'lib/RedisTestNamespaceCleanup.ps1',
+        'ConvertTo-NervRedisCliContext',
         'Cap__TopicNamePrefix = $redisNamespace',
         'Get-Man2813RedisKeys',
         "@('UNLINK', `$key)",
@@ -1044,6 +1046,7 @@ try {
     )) {
         Assert-Contract ($ncrEntrypointSource.Contains($requiredRedisOwnershipFragment, [StringComparison]::Ordinal)) "NCR entrypoint must implement Redis ownership contract fragment '$requiredRedisOwnershipFragment'."
     }
+    Assert-Contract (-not $ncrEntrypointSource.Contains('function ConvertTo-Man2813RedisCliContext', [StringComparison]::Ordinal)) 'The NCR entrypoint must reuse the governed Redis connection parser rather than define another authority.'
     $ncrCleanupFixture = [ordered]@{
         cleanup = [ordered]@{
             managedProcessRemaining = 0

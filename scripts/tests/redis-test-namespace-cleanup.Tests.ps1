@@ -25,10 +25,21 @@ $exactlyOld = New-TestNamespace ($now - $minimumAge)
 $young = New-TestNamespace ($now - $minimumAge + [TimeSpan]::FromMilliseconds(1))
 $future = New-TestNamespace ($now + [TimeSpan]::FromMinutes(1))
 
-$context = ConvertTo-NervRedisCliContext '127.0.0.1:6379,password=local-secret,abortConnect=false'
+$context = ConvertTo-NervRedisCliContext '127.0.0.1:6379,user=lane-user,password=local-secret,ssl=true,defaultDatabase=1,abortConnect=false'
 Assert-Contract ([string]::Equals([string]$context.Host, '127.0.0.1', [StringComparison]::Ordinal) -and $context.Port -eq 6379) 'Redis CLI host and port must parse from the established endpoint format.'
 Assert-Contract ([string]::Equals([string]$context.Password, 'local-secret', [StringComparison]::Ordinal)) 'Redis password must be passed through scoped REDISCLI_AUTH rather than command arguments.'
 Assert-Contract (-not (($context.Arguments -join ' ').Contains('local-secret', [StringComparison]::Ordinal))) 'Redis CLI arguments must not expose the password.'
+Assert-Contract (
+    ($context.Arguments -join ' ').Contains('--tls', [StringComparison]::Ordinal) -and
+    ($context.Arguments -join ' ').Contains('--user lane-user', [StringComparison]::Ordinal) -and
+    ($context.Arguments -join ' ').Contains('-n 1', [StringComparison]::Ordinal)
+) 'Redis CLI arguments must target the same TLS, ACL user, and default database as the production connection string.'
+foreach ($invalidDefaultDatabase in @('not-a-number', '-1')) {
+    $invalidDefaultDatabaseRejected = $false
+    try { ConvertTo-NervRedisCliContext "127.0.0.1:6379,defaultDatabase=$invalidDefaultDatabase" | Out-Null }
+    catch { $invalidDefaultDatabaseRejected = $_.Exception.Message.Contains('defaultDatabase', [StringComparison]::Ordinal) }
+    Assert-Contract $invalidDefaultDatabaseRejected "Redis defaultDatabase '$invalidDefaultDatabase' must fail closed."
+}
 
 $parsed = ConvertFrom-NervRedisTestNamespaceKey "${older}stream"
 Assert-Contract ($null -ne $parsed -and [string]::Equals([string]$parsed.Namespace, $older, [StringComparison]::Ordinal)) 'A canonical NERV-822 UUIDv7 namespace key must parse.'
