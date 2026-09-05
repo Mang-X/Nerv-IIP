@@ -388,7 +388,10 @@ describe('work-order list — release entry', () => {
             operationTaskId: 'OP-1',
             operationSequence: 10,
             status: 'queued',
-            blockReasons: [reason, 'WORK_ORDER_NOT_RELEASED: 工单尚未下达，请先下达工单后再开工或报工。'],
+            blockReasons: [
+              reason,
+              'WORK_ORDER_NOT_RELEASED: 工单尚未下达，请先下达工单后再开工或报工。',
+            ],
             evaluatedAtUtc: '2026-08-25T00:00:00.000Z',
           },
         ],
@@ -433,7 +436,10 @@ describe('work-order list — release entry', () => {
           operationTaskId: 'OP-1',
           operationSequence: 10,
           status: 'queued',
-          blockReasons: ['MATERIAL_REQUIREMENT_SNAPSHOT_MISSING: 工单缺少齐套需求快照', 'WORK_ORDER_NOT_RELEASED: 工单尚未下达，请先下达工单后再开工或报工。'],
+          blockReasons: [
+            'MATERIAL_REQUIREMENT_SNAPSHOT_MISSING: 工单缺少齐套需求快照',
+            'WORK_ORDER_NOT_RELEASED: 工单尚未下达，请先下达工单后再开工或报工。',
+          ],
           evaluatedAtUtc: '2026-08-25T00:00:00.000Z',
         },
       ],

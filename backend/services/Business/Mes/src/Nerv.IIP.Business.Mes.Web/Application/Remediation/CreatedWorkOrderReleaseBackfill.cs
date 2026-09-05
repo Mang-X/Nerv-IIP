@@ -148,6 +148,11 @@ internal sealed class BackfillCreatedWorkOrderReleaseCommandHandler(ApplicationD
             // 仍前进 199 行，循环照常终止——**本断言抓不到那一格**（上一版注释声称它防的是
             // 「一个事务内的无界重扫重发」，不成立，已更正）。它真正抓的是「游标整体不前进」的形态：
             // 例如把游标赋值写丢、或换成恒等的排序键。断言本身无误抛，代价是一次三分量比较。
+            // **强度如实写**：在当前实现下这条分支**不可达**（seek 谓词是严格 `>`，三分量是唯一候选键
+            // 构成全序），删掉整段全仓零红——它是**等价变异**，是给未来改动留的绊线，
+            // 不为它造夹具（造得出来的只能是把 seek 改坏的那份实现，不是可达输入）。
+            // 另：失败条件写成三分量同时 `<= 0` 的合取，**不是**字典序「未前进」的严格否定
+            // （org 前进而 env/wo 回退时不触发）；对 `>=` 退化这一个目标够用，别当通用不变量读。
             // 等价性依赖上面 ORDER BY 三分量构成全序，与 #3000 同一条推理；排序键若变必须一并改写。
             if (lastWorkOrderId is not null
                 && string.CompareOrdinal(lastOnPage.OrganizationId, lastOrganizationId) <= 0

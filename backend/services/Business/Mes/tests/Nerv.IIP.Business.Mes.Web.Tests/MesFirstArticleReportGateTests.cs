@@ -71,8 +71,12 @@ public sealed class MesFirstArticleReportGateTests
         var handler = CreateHandler(dbContext, gate);
         await ReportAsync(dbContext, handler, "org-001", "env-dev", "WO-A", "OP-10", "k-first");
         gate.Rejection = "本工序首件尚未判定，暂不能继续报工。可在工序行操作打开首件检验记录。";
-        await Assert.ThrowsAsync<KnownException>(() =>
+        // 断言到消息，不只断言异常类型：裸 ThrowsAsync<KnownException> 会被**任何**其它业务守卫兜住，
+        // 于是这条用例可能「因为错误的原因继续绿」——#3119 的未下达守卫就差点落进这一格
+        // （夹具工单当时从未下达；若不修夹具，这里会拿到工单守卫的拒绝而不是首件门禁的拒绝）。
+        var rejection = await Assert.ThrowsAsync<KnownException>(() =>
             ReportAsync(dbContext, handler, "org-001", "env-dev", "WO-A", "OP-10", "k-second"));
+        Assert.Equal(gate.Rejection, rejection.Message);
 
         gate.Rejection = null;
         await ReportAsync(dbContext, handler, "org-001", "env-dev", "WO-A", "OP-10", "k-third");

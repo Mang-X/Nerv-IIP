@@ -107,8 +107,14 @@ public sealed class CreatedWorkOrderReleaseBackfillTests
     }
 
     /// <summary>
-    /// 发布事实时刻按最早既有活动取下界，报工与工序完工两条都要压。
-    /// 上界（工序建单时刻）与两条下界项被有意错开，删掉任何一条下界的取值都不一样。
+    /// 发布事实时刻按最早既有活动取下界，报工与工序完工两条**各自**都要压。
+    ///
+    /// <para><b>本用例的强度边界，如实写</b>：它只覆盖「某一条下界项**被删掉**」这一族变异
+    /// （两张工单各自只带一条下界项：一张只有报工、一张只有完工、零报工）。
+    /// 它**不覆盖**「两条下界项同时存在时怎么合并」——那条规则由
+    /// <see cref="Release_fact_time_takes_the_earlier_of_report_and_completion_when_both_exist"/> 承担。
+    /// 上一版这里写的是「删掉任何一条下界的取值都不一样」，读起来像把合并规则也包了进来，
+    /// 而把 <c>min</c> 的比较符取反时全仓零红——那是护栏自称完备。</para>
     /// </summary>
     [Fact]
     public async Task Release_fact_time_is_pushed_down_to_the_earliest_report_or_completion()
@@ -149,6 +155,43 @@ public sealed class CreatedWorkOrderReleaseBackfillTests
         Assert.Equal(
             earliestCompletion,
             SingleReleasedIntegrationEvent(dbContext, "WO-COMPLETION-ONLY").Payload.ReleasedAtUtc);
+    }
+
+    /// <summary>
+    /// **两条下界项同时存在时取更早的那个**（#3144 复审阻断 E1）。
+    ///
+    /// <para>这条规则此前零覆盖：既有夹具里报工与工序完工**从不共存**
+    /// （有报工的那张工序是 <c>InProgress</c> 故 <c>ExistingEndUtc</c> 为空；有完工的那张零报工），
+    /// 于是 <c>min</c> 那一步从未被求值检验，把比较符取反全仓 1080 条无一变红。
+    /// 它可达：多工序工单 OP-10 走工序动作 "complete"（不落报工行）、OP-20 随后报工，就是这一格。</para>
+    ///
+    /// <para><b>两个方向都要在场</b>，否则只杀得掉比较符的一侧：
+    /// 一张工单完工早于报工（期望取完工），另一张报工早于完工（期望取报工）。</para>
+    /// </summary>
+    [Fact]
+    public async Task Release_fact_time_takes_the_earlier_of_report_and_completion_when_both_exist()
+    {
+        await using var dbContext = CreateDbContext();
+        var early = DateTimeOffset.Parse("2026-08-01T00:00:00Z");
+        var late = DateTimeOffset.Parse("2026-08-20T00:00:00Z");
+
+        AddWorkOrderWithCompletionAndReport(dbContext, "WO-DONE-FIRST", completedAtUtc: early, reportedAtUtc: late);
+        AddWorkOrderWithCompletionAndReport(dbContext, "WO-REPORT-FIRST", completedAtUtc: late, reportedAtUtc: early);
+        await dbContext.SaveChangesAsync();
+
+        // 前提自检：两张工单都**同时**拥有两条下界项，否则本用例退化成上一条的等价输入。
+        foreach (var workOrderId in new[] { "WO-DONE-FIRST", "WO-REPORT-FIRST" })
+        {
+            Assert.Contains(
+                dbContext.OperationTasks.Local,
+                x => x.WorkOrderId == workOrderId && x.ExistingEndUtc.HasValue);
+            Assert.Contains(dbContext.ProductionReports.Local, x => x.WorkOrderId == workOrderId);
+        }
+
+        await Backfill(dbContext);
+
+        Assert.Equal(early, SingleReleasedIntegrationEvent(dbContext, "WO-DONE-FIRST").Payload.ReleasedAtUtc);
+        Assert.Equal(early, SingleReleasedIntegrationEvent(dbContext, "WO-REPORT-FIRST").Payload.ReleasedAtUtc);
     }
 
     /// <summary>重跑：工单已翻 <c>released</c>，第二次既不在扫描面里、也不再发第二封发布事实。</summary>
@@ -319,6 +362,33 @@ public sealed class CreatedWorkOrderReleaseBackfillTests
         var domainEvent = Assert.IsType<WorkOrderReleasedDomainEvent>(
             Assert.Single(workOrder.GetDomainEvents(), x => x is WorkOrderReleasedDomainEvent));
         return new WorkOrderReleasedIntegrationEventConverter().Convert(domainEvent);
+    }
+
+    /// <summary>
+    /// 一张 <c>created</c> 工单，**同时**带一道走聚合方法完工的工序（不落报工行）与一条报工。
+    /// 完工走 <c>Queue → Start → Complete</c>，是域可达状态，不是手搓的
+    /// 「InProgress + 非空 ExistingEndUtc」。
+    /// </summary>
+    private static void AddWorkOrderWithCompletionAndReport(
+        ApplicationDbContext dbContext,
+        string workOrderId,
+        DateTimeOffset completedAtUtc,
+        DateTimeOffset reportedAtUtc)
+    {
+        dbContext.WorkOrders.Add(NewWorkOrder(workOrderId));
+        var completed = OperationTask.Queue(
+            Organization, Environment, workOrderId, $"OP-{workOrderId}-10",
+            10, "WC-010", [], Now, TimeSpan.FromHours(1), "SKU-FG-1000", "EA", 1000m);
+        completed.Start(completedAtUtc.AddHours(-1));
+        completed.Complete(completedAtUtc, []);
+        dbContext.OperationTasks.Add(completed);
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            Organization, Environment, workOrderId, $"OP-{workOrderId}-20",
+            OperationTaskLifecycleStatus.InProgress, 20, "WC-020", [],
+            Now, TimeSpan.FromHours(1), Now, null, "SKU-FG-1000", "EA", 1000m));
+        dbContext.ProductionReports.Add(ProductionReport.Record(
+            Organization, Environment, $"RPT-{workOrderId}", workOrderId, $"OP-{workOrderId}-20",
+            goodQuantity: 1m, scrapQuantity: 0m, completesOperation: false, reportedAtUtc: reportedAtUtc));
     }
 
     private static void Created(WorkOrder workOrder)

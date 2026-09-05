@@ -188,9 +188,15 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
         }
         else
         {
-            // 未下达的工单不得开工（#3119）。这一条与生产版本那一条是**并列**的两条阻断、不是二选一：
-            // 计划转工单建出的工单在 created 状态就已绑好生产版本，若写成 else-if，
-            // 恰好这批（也正是唯一能走到「created 带在制工序」的那批）会因为生产版本非空而跳过本条。
+            // 未下达的工单不得开工（#3119）。这一条与生产版本那一条写成**并列**的两条阻断。
+            //
+            // **理由按实测写，别读强了**：写成 `else if (created)` 时，对「created ∧ 生产版本非空」
+            // 的工单，前一支为假、控制流照样落到本条，阻断仍然产出——
+            // 上一版注释声称「写成 else-if 恰好会漏掉唯一能走到本缺陷的那一批」，**不成立**（复审实测证伪）。
+            // else-if 真正丢的是「created ∧ **缺**生产版本」时少报一条次要理由：
+            // 读面只显示一条阻断，用户补齐生产版本后才发现还有第二条。
+            // 并列写法的收益就是这一条**读面完整性**，由下面那条
+            // `Created_work_order_without_a_production_version_reports_both_reasons` 用例钉住。
             //
             // 授权跳站入口（MesWorkbenchCommands 的 AuthorizeAndStartOperationTaskCommandHandler）
             // 只把 PREVIOUS_OPERATION_INCOMPLETE: 前缀从阻断集合里剔除，本条不带该前缀，

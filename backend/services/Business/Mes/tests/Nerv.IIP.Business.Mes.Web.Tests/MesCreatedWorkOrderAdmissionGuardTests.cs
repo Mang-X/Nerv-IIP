@@ -84,6 +84,32 @@ public sealed class MesCreatedWorkOrderAdmissionGuardTests
     }
 
     /// <summary>
+    /// 「未下达」与「缺生产版本」是**并列**的两条阻断，读面同时给出。
+    /// 这是并列写法（相对 else-if）唯一的实际收益：改成 else-if 时这一格只剩一条理由，
+    /// 用户补齐生产版本后才发现还有第二条。本用例是那条设计主张的承担方。
+    /// </summary>
+    [Fact]
+    public async Task Created_work_order_without_a_production_version_reports_both_reasons()
+    {
+        await using var dbContext = CreateDbContext();
+        var task = AddWorkOrderWithQueuedOperation(dbContext, "WO-NO-PV", productionVersionId: null);
+        await dbContext.SaveChangesAsync();
+
+        var readiness = await new MesOperationTaskActionReadinessEvaluator(dbContext)
+            .EvaluateAsync(task, Now, CancellationToken.None);
+
+        // 三条并列：未下达、缺生产版本、齐套快照未证（缺生产版本时聚合本就记不了快照）。
+        // 改成 else-if 时第一条会被第二条吃掉，本断言即红。
+        Assert.Equal(
+            [
+                MesReadinessReasonCodes.WorkOrderNotReleasedReason,
+                $"{MesReadinessReasonCodes.QualityPlanMissing}: 工单缺少已发布生产版本或检验方案",
+                MaterialReadinessGuards.MissingRequirementSnapshotReason,
+            ],
+            readiness.BlockReasons);
+    }
+
+    /// <summary>
     /// **授权跳站**这第二个开工入口（票面交付范围 2 白纸黑字点名，且要求它**不得**进
     /// <c>nonPreviousBlockReasons</c> 的豁免集）。
     ///
@@ -276,15 +302,20 @@ public sealed class MesCreatedWorkOrderAdmissionGuardTests
     private static OperationTask AddWorkOrderWithQueuedOperation(
         ApplicationDbContext dbContext,
         string workOrderId,
-        bool release = false)
+        bool release = false,
+        string? productionVersionId = "PV-FG-1000")
     {
         var workOrder = WorkOrder.Create(
-            Organization, Environment, workOrderId, "SKU-FG-1000", "PV-FG-1000",
+            Organization, Environment, workOrderId, "SKU-FG-1000", productionVersionId,
             quantity: 1000m, priority: 1, dueUtc: Now.AddDays(3));
         // 齐套需求为空且快照已证：readiness 的物料那一支全绿，剩下唯一可能的阻断就是工单状态。
-        workOrder.RecordMaterialRequirementSnapshot(
-            WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus,
-            Now.AddHours(-1));
+        // 缺生产版本时聚合拒绝记录快照（域不变量），因此那一格的夹具会多出一条齐套快照缺失阻断。
+        if (productionVersionId is not null)
+        {
+            workOrder.RecordMaterialRequirementSnapshot(
+                WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus,
+                Now.AddHours(-1));
+        }
         if (release)
         {
             workOrder.MarkReleased();
