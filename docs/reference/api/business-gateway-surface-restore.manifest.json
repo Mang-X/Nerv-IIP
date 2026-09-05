@@ -29,7 +29,7 @@
     },
     {
       "path": "backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Nerv.IIP.BusinessGateway.Web.csproj",
-      "sha256": "d89f1178436e7a659184402c15c739241b7b6e71135d871bd57aa0b5388d4670"
+      "sha256": "62c68f631c583268afafdd08271c9dcaad02e4c8980abea6347385bd0eaf7d51"
     },
     {
       "path": "backend/common/Caching/Nerv.IIP.Caching/Nerv.IIP.Caching.csproj",
@@ -161,7 +161,7 @@
     },
     {
       "path": "backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/packages.lock.json",
-      "sha256": "6610ff2bcdb071877c04e7b902cec9a3d6786a94f4a2ef3e4924de1fe8083b27"
+      "sha256": "7caa3283ecd975f65edda933977d30986fa2770ef5cb3d9a94bcbd3a6bda1572"
     }
   ],
   "lock": {

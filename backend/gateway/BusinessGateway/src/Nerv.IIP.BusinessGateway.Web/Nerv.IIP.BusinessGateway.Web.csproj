@@ -5,6 +5,20 @@
     <PackageReference Include="FastEndpoints.Swagger" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
+    <!--
+      下面两条本项目源码一行也没用到，它们钉住的是「传递解析结果」而不是编译期需要（关联 #3152）。
+      两个包都只由 NetCorePal.Extensions.AspNetCore 3.3.0 传递引入，它在 nuspec 里声明的是
+      Microsoft.EntityFrameworkCore 9.0.0 与 FluentValidation.AspNetCore 11.3.0，即只有下界没有上界。而 CPM 的
+      PackageVersion 只约束直接 PackageReference、不约束传递依赖（全仓未启用
+      CentralPackageTransitivePinningEnabled），于是 NuGet 按「最低适用版本」把它们解析到 9.0.0 /
+      11.3.0，低于 backend/Directory.Packages.props 声明的 10.0.8 / 11.3.1 —— 这正是
+      packages.lock.json 里 requested 下界高于 resolved 的那两条分叉（#3136 同机制）。
+      声明为直接引用后 CPM 才生效，解析结果被钉回 10.0.8 / 11.3.1。
+      删掉这两行，分叉会立刻复活，而 dotnet restore 的 locked mode 对它零鉴别力（见
+      scripts/verify-restore-lock-contract.ps1 的说明）—— 所以做「清理无用引用」时不要删。
+    -->
+    <PackageReference Include="FluentValidation.AspNetCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
     <PackageReference Include="NetCorePal.Extensions.AspNetCore" />
     <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Iam\Nerv.IIP.Contracts.Iam.csproj" />
     <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Coding\Nerv.IIP.Contracts.Coding.csproj" />
