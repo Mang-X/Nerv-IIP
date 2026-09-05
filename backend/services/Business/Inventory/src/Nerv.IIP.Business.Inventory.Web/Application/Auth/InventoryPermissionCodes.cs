@@ -1,13 +1,15 @@
+using Nerv.IIP.Contracts.Iam;
+
 namespace Nerv.IIP.Business.Inventory.Web.Application.Auth;
 
 public static class InventoryPermissionCodes
 {
-    public const string LocationsManage = "business.inventory.locations.manage";
-    public const string MovementsCreate = "business.inventory.movements.create";
-    public const string LedgerRead = "business.inventory.ledger.read";
-    public const string CountsManage = "business.inventory.counts.manage";
+    public const string LocationsManage = NervIipPermissionCodes.InventoryLocationsManage;
+    public const string MovementsCreate = NervIipPermissionCodes.InventoryMovementsCreate;
+    public const string LedgerRead = NervIipPermissionCodes.InventoryLedgerRead;
+    public const string CountsManage = NervIipPermissionCodes.InventoryCountsManage;
     public const string ReservationsManage = "business.inventory.reservations.manage";
-    public const string ExpiredStockOverride = "business.inventory.expired-stock.override";
+    public const string ExpiredStockOverride = NervIipPermissionCodes.InventoryExpiredStockOverride;
 
     public static readonly IReadOnlyCollection<string> All =
     [
