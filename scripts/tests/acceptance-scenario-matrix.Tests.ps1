@@ -75,6 +75,17 @@ function Copy-JsonObject {
     return ($Value | ConvertTo-Json -Depth 50 | ConvertFrom-Json -Depth 50)
 }
 
+function Get-OnlyScenarioById {
+    param(
+        [Parameter(Mandatory)] [object] $Manifest,
+        [Parameter(Mandatory)] [string] $Id
+    )
+
+    $matches = @($Manifest.scenarios | Where-Object { [string]::Equals([string]$_.id, $Id, [StringComparison]::Ordinal) })
+    Assert-Contract ($matches.Count -eq 1) "Scenario '$Id' must exist exactly once in the test fixture."
+    return $matches[0]
+}
+
 function Write-WorkflowFixture {
     param(
         [Parameter(Mandatory)] [string] $Name,
@@ -184,7 +195,7 @@ try {
     $expandedMatrixPath = Write-ManifestFixture -Name 'expanded-authority-set' -Manifest $expandedMatrix
     $expandedV1Path = Write-ManifestFixture -Name 'expanded-authority-set-v1' -Manifest $expandedV1
     $expanded = Import-NervAcceptanceScenarioMatrixManifest -ManifestPath $expandedMatrixPath -V1ManifestPath $expandedV1Path -RepositoryRoot $repoRoot
-    Assert-Contract (@($expanded.scenarios | Where-Object { [string]::Equals([string]$_.status, 'active', [StringComparison]::Ordinal) -and [string]::Equals([string]$_.tier, 'core', [StringComparison]::Ordinal) }).Count -eq 6) 'The matrix and FullChain manifest must admit a sixth active/core identity without a hard-coded member count.'
+    Assert-Contract (@($expanded.scenarios | Where-Object { [string]::Equals([string]$_.status, 'active', [StringComparison]::Ordinal) -and [string]::Equals([string]$_.tier, 'core', [StringComparison]::Ordinal) }).Count -eq ($activeCoreScenarioCount + 1)) 'The matrix and FullChain manifest must admit an additional active/core identity without a hard-coded member count.'
 
     $missingImpactRoot = Copy-ManifestObject
     $missingImpactRoot.scenarios[0].impact.paths[0] = 'backend/services/Business/DoesNotExist/**'
@@ -223,7 +234,7 @@ try {
     }
 
     $nonCanonicalBlockedIdentity = Copy-ManifestObject
-    $nonCanonicalBlockedIdentity.scenarios[5].testProjects[0].frozenTestIdentities[0] = 'x'
+    (Get-OnlyScenarioById -Manifest $nonCanonicalBlockedIdentity -Id 'equipment-unavailable-scheduling-mes').testProjects[0].frozenTestIdentities[0] = 'x'
     Assert-ManifestRejected -Name 'non-canonical-blocked-identity' -Manifest $nonCanonicalBlockedIdentity -ExpectedMessage 'frozen identity must be a canonical FullyQualifiedName'
 
     $missingScenario = Copy-ManifestObject
@@ -251,7 +262,7 @@ try {
     Assert-ManifestRejected -Name 'invalid-tier' -Manifest $invalidTier -ExpectedMessage 'invalid tier'
 
     $blockedWithoutReason = Copy-ManifestObject
-    $blockedWithoutReason.scenarios[5].blockedReason = '   '
+    (Get-OnlyScenarioById -Manifest $blockedWithoutReason -Id 'equipment-unavailable-scheduling-mes').blockedReason = '   '
     Assert-ManifestRejected -Name 'blocked-without-reason' -Manifest $blockedWithoutReason -ExpectedMessage 'blockedReason'
 
     foreach ($unknownMutation in @(
@@ -517,7 +528,7 @@ try {
         Select-NervAcceptanceScenarioMatrix -Manifest $manifest -Event 'workflow_dispatch' -DispatchSelection 'equipment-unavailable-scheduling-mes' | Out-Null
     }
     $deferredManifest = Copy-JsonObject $manifest
-    $deferredManifest.scenarios[5].status = 'deferred'
+    (Get-OnlyScenarioById -Manifest $deferredManifest -Id 'equipment-unavailable-scheduling-mes').status = 'deferred'
     Assert-ThrowsContaining -ExpectedMessage 'is not active' -Context 'Deferred workflow_dispatch selection' -Action {
         Select-NervAcceptanceScenarioMatrix -Manifest $deferredManifest -Event 'workflow_dispatch' -DispatchSelection 'equipment-unavailable-scheduling-mes' | Out-Null
     }
@@ -528,7 +539,8 @@ try {
     $planningProjects = @(Get-NervAcceptancePlanningProjects -Scenarios $planningSelection.scenarios)
     Assert-Contract ($planningProjects.Count -eq 2) 'Planning must group selected scenarios into two ordinal-unique projects.'
     Assert-Contract ([string]::Equals([string]$planningProjects[0].path, 'backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj', [StringComparison]::Ordinal)) 'Planning projects must be ordinal-sorted.'
-    Assert-Contract (@($planningProjects[0].expectedTestIdentities).Count -eq 4 -and @($planningProjects[1].expectedTestIdentities).Count -eq 1) 'Planning must aggregate each selected identity into exactly one project.'
+    $plannedIdentityCount = @($planningProjects | ForEach-Object { @($_.expectedTestIdentities) }).Count
+    Assert-Contract ($plannedIdentityCount -eq $activeScenarioCount -and @($planningProjects[1].expectedTestIdentities).Count -eq 1) 'Planning must aggregate each selected identity into exactly one project without a fixed lane-member count.'
 
     $planningWorkflowPath = Write-WorkflowFixture -Name 'planning-workflow' -StepTimeoutMinutes 60
     $directPlanningWorkflowPath = Write-WorkflowFixture `
@@ -848,7 +860,7 @@ try {
     }
 
     $nonActiveSelection = Copy-JsonObject $planningSelection
-    $nonActiveSelection.scenarios[0] = Copy-JsonObject $planningManifest.scenarios[5]
+    $nonActiveSelection.scenarios[0] = Copy-JsonObject (Get-OnlyScenarioById -Manifest $planningManifest -Id 'equipment-unavailable-scheduling-mes')
     $nonActiveArtifact = Copy-JsonObject $persistedArtifact
     $nonActiveArtifact.scenarios[0].id = [string]$nonActiveSelection.scenarios[0].id
     Assert-ThrowsContaining -ExpectedMessage 'selection must contain only active scenarios' -Context 'Non-active scenario selection' -Action {

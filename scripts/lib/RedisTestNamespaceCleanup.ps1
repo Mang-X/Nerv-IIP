@@ -29,12 +29,29 @@ function ConvertTo-NervRedisCliContext {
     if ($options.ContainsKey('ssl') -and [string]::Equals([string]$options.ssl, 'true', [StringComparison]::OrdinalIgnoreCase)) {
         $arguments += '--tls'
     }
+    if ($options.ContainsKey('user') -and -not [string]::IsNullOrWhiteSpace([string]$options.user)) {
+        $arguments += @('--user', [string]$options.user)
+    }
+
+    $defaultDatabase = 0
+    if ($options.ContainsKey('defaultdatabase')) {
+        if (-not [int]::TryParse(
+                [string]$options.defaultdatabase,
+                [Globalization.NumberStyles]::Integer,
+                [Globalization.CultureInfo]::InvariantCulture,
+                [ref]$defaultDatabase) -or $defaultDatabase -lt 0) {
+            throw 'NERV_IIP_TEST_REDIS defaultDatabase must be a non-negative integer; credentials redacted.'
+        }
+        $arguments += @('-n', $defaultDatabase.ToString([Globalization.CultureInfo]::InvariantCulture))
+    }
 
     return [pscustomobject]@{
         Arguments = $arguments
         Host = $Matches.host.Trim('[', ']')
         Port = [int]$Matches.port
+        User = if ($options.ContainsKey('user')) { [string]$options.user } else { $null }
         Password = if ($options.ContainsKey('password')) { [string]$options.password } else { $null }
+        DefaultDatabase = $defaultDatabase
     }
 }
 

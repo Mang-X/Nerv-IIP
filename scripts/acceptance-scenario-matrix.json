@@ -313,6 +313,67 @@
       }
     },
     {
+      "id": "ncr-rework-cost-closure",
+      "v1Alias": "ncr-rework-cost-closure",
+      "services": ["MasterData", "ProductEngineering", "Inventory", "Approval", "Quality", "MES", "ERP"],
+      "ownerIssue": "#2813",
+      "status": "active",
+      "tier": "core",
+      "contracts": ["Nerv.IIP.Contracts.Quality", "Nerv.IIP.Contracts.Mes", "Nerv.IIP.Contracts.Erp"],
+      "entrypoint": {
+        "kind": "script",
+        "path": "scripts/verify-ncr-rework-cost-closure.ps1"
+      },
+      "testProjects": [
+        {
+          "path": "backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj",
+          "frozenTestIdentities": ["Nerv.IIP.Business.FullChain.Tests.NcrReworkCostClosurePostgresRedisAcceptanceTests.Public_ncr_rework_closes_one_traceable_work_order_and_independent_erp_cost"]
+        }
+      ],
+      "dependencies": {
+        "postgres": true,
+        "redis": true,
+        "externalProcesses": true
+      },
+      "impact": {
+        "paths": ["backend/tests/Nerv.IIP.Business.FullChain.Tests/**", "scripts/verify-ncr-rework-cost-closure.ps1", "docs/product/mes/**"],
+        "owners": ["Quality", "MES", "ERP"]
+      },
+      "runPolicy": {
+        "pullRequest": "impact",
+        "main": "always",
+        "nightly": "always",
+        "workflowDispatch": "selectable"
+      },
+      "expectedRuntimeTestCount": 1,
+      "executionBudget": {
+        "dependencyReadinessSeconds": 360,
+        "executionTimeoutSeconds": 900,
+        "diagnosticsSeconds": 300,
+        "cleanupSeconds": 300,
+        "evidenceWriteSeconds": 60,
+        "safetyMarginSeconds": 300
+      },
+      "diagnosticProtocol": {
+        "schemas": ["approval", "erp", "inventory", "master_data", "mes", "product_engineering", "quality"],
+        "captureBeforeCleanup": true,
+        "redactSecrets": true
+      },
+      "evidenceProtocol": {
+        "machineReadableResult": "trx",
+        "exactIdentitySet": true,
+        "incrementalSummary": true,
+        "requireBusinessKeys": true,
+        "requireDependencyVersions": true
+      },
+      "cleanupProtocol": {
+        "ownedResourcesOnly": true,
+        "requireZeroRemaining": true,
+        "preserveDiagnosticsBeforeCleanup": true,
+        "prohibitedActions": ["broad-process-kill", "unknown-database-delete", "docker-prune", "redis-flushall"]
+      }
+    },
+    {
       "id": "equipment-unavailable-scheduling-mes",
       "v1Alias": null,
       "services": ["MasterData", "Scheduling", "MES"],
