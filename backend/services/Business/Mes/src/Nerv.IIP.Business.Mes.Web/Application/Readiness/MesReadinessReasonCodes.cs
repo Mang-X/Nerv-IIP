@@ -4,6 +4,22 @@ namespace Nerv.IIP.Business.Mes.Web.Application.Readiness;
 
 public static class MesReadinessReasonCodes
 {
+    /// <summary>
+    /// 工单尚未下达（#3119）。工单在 <c>created</c> 状态就能带 <c>InProgress</c> 工序并被报工受理是缺陷
+    /// （定性见 #3113），本码是准入侧的拒绝理由：开工由
+    /// <c>MesOperationTaskActionReadinessEvaluator</c> 产出，报工由
+    /// <c>RecordProductionReportCommandHandler</c> 产出，两处共用本文件这一份措辞。
+    /// </summary>
+    public const string WorkOrderNotReleased = "WORK_ORDER_NOT_RELEASED";
+
+    /// <summary>
+    /// <see cref="WorkOrderNotReleased"/> 的完整 <c>CODE: 中文</c> 原因串。
+    /// 读面原样上屏（前端 <c>describeMesReadinessReason</c> 按码取标签与下一步动作），
+    /// 写操作被拒时经 <c>MaterialReadinessGuards.DescribeForUser</c> 剥掉英文码后再进 KnownException。
+    /// </summary>
+    public const string WorkOrderNotReleasedReason =
+        WorkOrderNotReleased + ": 工单尚未下达，请先下达工单后再开工或报工。";
+
     public const string QualityPlanMissing = "QUALITY_PLAN_MISSING";
     public const string QualityHoldActive = "QUALITY_HOLD_ACTIVE";
     public const string ActiveAlarm = EquipmentRuntimeReasonCodes.ActiveAlarm;

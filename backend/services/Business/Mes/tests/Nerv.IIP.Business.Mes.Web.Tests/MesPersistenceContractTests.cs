@@ -2173,7 +2173,7 @@ public sealed class MesPersistenceContractTests
 
         using var scope = services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var workOrder = WorkOrder.Create(
+        var workOrder = ReleasedForReportingWithoutEvents(WorkOrder.Create(
             "org-001",
             "env-dev",
             "WO-LIFE-001",
@@ -2181,7 +2181,7 @@ public sealed class MesPersistenceContractTests
             "PV-FSA-1",
             10m,
             20,
-            now.AddHours(8));
+            now.AddHours(8)));
         workOrder.RecordMaterialRequirementSnapshot(
             WorkOrder.MaterialRequirementSnapshotCapturedStatus,
             now);
@@ -2241,7 +2241,7 @@ public sealed class MesPersistenceContractTests
         using (var scope = services.CreateScope())
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-REPORT-COMPLETE-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+            dbContext.WorkOrders.Add(ReleasedForReportingWithoutEvents(WorkOrder.Create("org-001", "env-dev", "WO-REPORT-COMPLETE-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8))));
             dbContext.OperationTasks.Add(OperationTask.Create(
                 "org-001",
                 "env-dev",
@@ -2304,7 +2304,7 @@ public sealed class MesPersistenceContractTests
         using (var scope = services.CreateScope())
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-COLLAB-001", "FG-001", "PV-001", 10m, 10, now.AddHours(8)));
+            dbContext.WorkOrders.Add(ReleasedForReportingWithoutEvents(WorkOrder.Create("org-001", "env-dev", "WO-COLLAB-001", "FG-001", "PV-001", 10m, 10, now.AddHours(8))));
             dbContext.OperationTasks.Add(OperationTask.Create(
                 "org-001", "env-dev", "WO-COLLAB-001", "OP-COLLAB-10",
                 OperationTaskLifecycleStatus.InProgress, 10, "WC-001", [], now,
@@ -2360,7 +2360,7 @@ public sealed class MesPersistenceContractTests
 
         using var scope = services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-LEGACY-001", "FG-001", "PV-001", 10m, 10, now.AddHours(8)));
+        dbContext.WorkOrders.Add(ReleasedForReportingWithoutEvents(WorkOrder.Create("org-001", "env-dev", "WO-LEGACY-001", "FG-001", "PV-001", 10m, 10, now.AddHours(8))));
         var task = OperationTask.Create(
             "org-001", "env-dev", "WO-LEGACY-001", "OP-LEGACY-10",
             OperationTaskLifecycleStatus.InProgress, 10, "WC-001", [], now,
@@ -2402,7 +2402,7 @@ public sealed class MesPersistenceContractTests
         using (var scope = services.CreateScope())
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-BATCH-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+            dbContext.WorkOrders.Add(ReleasedForReportingWithoutEvents(WorkOrder.Create("org-001", "env-dev", "WO-BATCH-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8))));
             dbContext.OperationTasks.Add(OperationTask.Create(
                 "org-001",
                 "env-dev",
@@ -2855,7 +2855,7 @@ public sealed class MesPersistenceContractTests
         using (var scope = services.CreateScope())
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-TRACE-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+            dbContext.WorkOrders.Add(ReleasedForReportingWithoutEvents(WorkOrder.Create("org-001", "env-dev", "WO-TRACE-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8))));
             dbContext.OperationTasks.Add(OperationTask.Create(
                 "org-001",
                 "env-dev",
@@ -2925,7 +2925,7 @@ public sealed class MesPersistenceContractTests
 
         using var scope = services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-CONSUME-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+        dbContext.WorkOrders.Add(ReleasedForReportingWithoutEvents(WorkOrder.Create("org-001", "env-dev", "WO-CONSUME-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8))));
         dbContext.OperationTasks.Add(OperationTask.Create(
             "org-001",
             "env-dev",
@@ -2967,7 +2967,7 @@ public sealed class MesPersistenceContractTests
 
         using var scope = services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-CUM-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+        dbContext.WorkOrders.Add(ReleasedForReportingWithoutEvents(WorkOrder.Create("org-001", "env-dev", "WO-CUM-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8))));
         dbContext.OperationTasks.Add(OperationTask.Create(
             "org-001",
             "env-dev",
@@ -3039,7 +3039,7 @@ public sealed class MesPersistenceContractTests
 
         using var scope = services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-REPORT-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+        dbContext.WorkOrders.Add(ReleasedForReportingWithoutEvents(WorkOrder.Create("org-001", "env-dev", "WO-REPORT-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8))));
         dbContext.OperationTasks.Add(OperationTask.Create(
             "org-001",
             "env-dev",
@@ -3093,8 +3093,8 @@ public sealed class MesPersistenceContractTests
 
         using var scope = services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-REPORT-A", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
-        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-REPORT-B", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+        dbContext.WorkOrders.Add(ReleasedForReportingWithoutEvents(WorkOrder.Create("org-001", "env-dev", "WO-REPORT-A", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8))));
+        dbContext.WorkOrders.Add(ReleasedForReportingWithoutEvents(WorkOrder.Create("org-001", "env-dev", "WO-REPORT-B", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8))));
         dbContext.OperationTasks.Add(OperationTask.Create(
             "org-001",
             "env-dev",
@@ -3135,7 +3135,7 @@ public sealed class MesPersistenceContractTests
 
         using var scope = services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-IDEMP-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+        dbContext.WorkOrders.Add(ReleasedForReportingWithoutEvents(WorkOrder.Create("org-001", "env-dev", "WO-IDEMP-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8))));
         dbContext.OperationTasks.Add(OperationTask.Create(
             "org-001",
             "env-dev",
@@ -3195,7 +3195,7 @@ public sealed class MesPersistenceContractTests
 
         using var scope = services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-DUP-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+        dbContext.WorkOrders.Add(ReleasedForReportingWithoutEvents(WorkOrder.Create("org-001", "env-dev", "WO-DUP-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8))));
         dbContext.OperationTasks.Add(OperationTask.Create(
             "org-001",
             "env-dev",
@@ -3698,4 +3698,17 @@ public sealed class MesPersistenceContractTests
             "maintenance.AssetUnavailable:ASSET-CNC-01:20260523080000",
             new AssetUnavailablePayload("ASSET-CNC-01", "breakdown", fromUtc));
     }
+
+    /// <summary>
+    /// #3119：未下达（<c>created</c>）的工单不受理报工，报工类夹具因此必须先补记发布——
+    /// 生产上这一步由「下达」完成，夹具直接走聚合的补记入口，不必把三道 readiness 也搭出来。
+    /// 顺手清掉发布留下的领域事件：这些用例断言的是报工与结算事实，不该被夹具自己造的事件干扰。
+    /// </summary>
+    private static WorkOrder ReleasedForReportingWithoutEvents(WorkOrder workOrder)
+    {
+        workOrder.MarkReleased();
+        workOrder.ClearDomainEvents();
+        return workOrder;
+    }
+
 }
