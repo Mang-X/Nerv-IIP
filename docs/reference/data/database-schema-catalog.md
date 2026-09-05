@@ -882,13 +882,15 @@ MAN-631/#1168 迁移 `20260731210404_AddMaintenanceKeywordSearchIndexes` 启用 
 | `download_grants`       | business | 短期下载授权元数据，当前用于平台控制下载路径；tus provider 下可映射到本地 tus 字节内容。 | 物理列为 `download_grant_id`、`file_id`、`organization_id`、`environment_id`、`provider`、`created_at_utc`、`expires_at_utc`。`download_grant_id` 是业务生成字符串 ID；`file_id` 以级联删除外键指向 `stored_files`；`organization_id + environment_id + file_id + expires_at_utc` 支持授权校验和清理。 |
 | `__EFMigrationsHistory` | system   | EF Core 迁移历史表，记录 FileStorage 已应用迁移。                           | 必须位于 `filestorage` Schema；业务代码不直接读写。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
-当前迁移基线只有以下五项（以及配对的 Designer/model snapshot），它们是上述物理 schema 的唯一迁移依据：
+当前迁移基线如下（以及配对的 Designer/model snapshot），它们是上述物理 schema 的唯一迁移依据：
 
 1. `InitialFileStorageSchema` 创建 `filestorage`、`stored_files`、`upload_sessions`、`download_grants`、三张表的初始列/主键、download grant 到 stored file 的外键及初始索引。
 2. `AddStoredFilesTenantListIndex` 新增 `stored_files` 的 `organization_id + environment_id + completed_at_utc` 列表读取索引。
 3. `AddFileStorageSecurityHardening` 新增 `deleted_at_utc`、`deletion_reason`、`physical_delete_after_utc` 与当时的扫描列/索引，并新增当前仍存在的 `status + physical_delete_after_utc` 清理索引。
 4. `RemoveFileStorageScanning` 先把历史非 `clean` 文件软删并安排物理清理，再删除扫描索引和 `scan_detail`、`scan_status`、`scanned_at_utc`；这些扫描列不是当前物理 schema。
 5. `AddDurableUploadCommitProtocol` 把旧 `completed` 确定映射为 `open` / `committing` / `completed`：只有同时存在 completed timestamp 与同 `file_id` / `object_key` 的 `stored_files` 事实才回填 `completed`，其余历史 completed 标记失败关闭为 `committing` 并保留 storage-action 已开始标记，恢复器不得将其重新开放；合法的大小写 SHA-256 checksum 统一以 lowercase canonical 形式冻结；同时新增 immutable intent、execution claim、租约、恢复退避/终止时间、并发版本、唯一/扫描索引和 state/intent check constraint。该 migration 是 expand 阶段：保留旧 `completed` 列和旧实例可写形态，新实现双读双写；删除兼容列必须在旧版本全部退出并经过独立 contract 发布后另行实施，本迁移不承担删列。
+
+新增 `AddTemplateAssetRetirementReceipts` 创建 `filestorage.template_asset_retirements`：FileStorage 独占的模板资产退役回执，以 `decision_id` 为主键、`organization_id + environment_id + file_id` 为唯一键，保存 scope/owner/purpose/checksum/size、首次接受暨 quota 释放时间、两侧 executor 与 grace/GC 冻结输入、policy version 和 H。不建到 `stored_files` 的外键，保证回执晚于文件 metadata 存在；不保存 secret、subject、reason 或内部 ObjectKey。首次接受仅写 `physical-hold`，同时把 stored file 转为相同状态，使业务 quota 排除该文件且 content 不可兑换，旧 GC 不具备清理资格。physical-complete、terminal 时间与自动清理由后续生命周期执行 seam 负责，首次接受不伪造截止时间。
 
 当前事实与已批准目标：
 

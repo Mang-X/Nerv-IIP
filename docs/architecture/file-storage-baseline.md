@@ -64,6 +64,10 @@ POST /api/files/v1/files/{fileId}/download-grants
 
 2026-09-02 起新增 `shift-handover-photo`，承载 MES 交接班随班提交的现场照片：只接受 `.png`/`.jpg`/`.jpeg` 与 `image/png`/`image/jpeg`，单文件上限 20,971,520 bytes（现场手机原图口径），沿用平台通用 blocked extension 名单。该 purpose 不配置 owner allowlist、`RequireSha256Checksum`、`QuotaBytes` 或 `RetentionSeconds`，因此不做用途级配额与自动清理；组织+环境或组织+环境+用途配额一旦显式配置仍按既有优先级生效。附件与交接班记录的挂接关系由 MES `shift_handover_attachments` 拥有，FileStorage 只拥有字节与文件事实。
 
+模板资产退役接收已由 `/internal/file-storage/v1/template-asset-retirements` 的窄第二跳 HMAC proof 保护；仅 internal Bearer 不足。`FileStorage:TemplateAssetRetirement` 配置 active `Secret`（Base64，至少 32 bytes）、`Issuer`、`Audience` 以及专用 `LeaseSeconds`/`MaxBackoffSeconds`（默认各 300 秒）。Development 文件中的公开示例 key 仅供本地开发，其他环境必须显式配置双方协调的独立 secret，缺失或非法时启动失败。v1 wire 字段与编码由 `backend/common/Contracts/Nerv.IIP.Contracts.FileStorage/TemplateAssetRetirementContracts.cs` 定义。
+
+首次接受只在同一 PostgreSQL 事务写 durable receipt 与 `physical-hold`，立即从业务 quota 排除，禁止新旧 download grant 兑换 content，并避开旧 GC。receipt 冻结两侧执行输入及共享时长 H，重放返回首次值；此接收能力不执行 provider 删除、不写 physical-complete 或 terminal replay 截止。产生 receipt 后不可通过回滚 migration 丢弃 hold 审计，应前滚修复；物理完成及自动清理仍属于后续执行 seam。
+
 ## 已批准目标，尚未实现
 
 以下是已接受的目标架构，不是当前 API、配置、schema、脚本、生产就绪或真实基础设施证明；实现进度仍以当前代码、配置、公开契约、测试及对应交付和运行证据为准。
