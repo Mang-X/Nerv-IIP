@@ -110,6 +110,92 @@ function Invoke-NervFullChainMemberAdmission {
     return $admission
 }
 
+function Get-NervFullChainDiscoveredTestIdentities {
+    <#
+        把 `dotnet test --list-tests` 的原始输出转成权威用例身份集合。
+
+        #3135：本函数刻意**不**依赖 "The following Tests are available:" / "以下测试可用:" 这行表头 —
+        VSTest 的表头随 CLI UI 语言变化（本机中文、CI 英文），拿它当锚点就是「本机绿 CI 红」的经典形状。
+        这里改为按身份自身的形状识别：以被测程序集根命名空间开头、且至少还有「类型 + 方法」两段。
+        身份形状同时排除了 MSBuild 的构建输出行（`Nerv.IIP.X -> /abs/path/X.dll`）：整行必须**完全**
+        匹配「根命名空间 + 至少两段标识符」，路径里的 `/`、空格和 `->` 都落在字符集之外。刻意不额外加
+        一条 ` -> ` 的特判——那条分支在这个正则下永远命中不到，是拿不出鉴别力证据的死代码。
+        `[Theory]` 会按用例参数逐行列出（`...Method(x: 1)`），截断到第一个 `(` 后去重，得到方法级身份。
+    #>
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [AllowNull()] [string[]] $DiscoveryLines,
+        [Parameter(Mandatory)] [string] $RootNamespace
+    )
+
+    if ($RootNamespace -cnotmatch '^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$') {
+        throw "FullChain discovery root namespace '$RootNamespace' is not a canonical .NET namespace."
+    }
+    $identityPattern = '^' + [regex]::Escape($RootNamespace) + '(?:\.[A-Za-z_][A-Za-z0-9_]*){2,}$'
+    $identities = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($rawLine in @($DiscoveryLines)) {
+        $line = ([string]$rawLine).Trim()
+        if ([string]::IsNullOrWhiteSpace($line)) { continue }
+        $parenthesisIndex = $line.IndexOf('(', [StringComparison]::Ordinal)
+        if ($parenthesisIndex -ge 0) { $line = $line.Substring(0, $parenthesisIndex).TrimEnd() }
+        if ($line -cnotmatch $identityPattern) { continue }
+        [void]$identities.Add($line)
+    }
+    $ordered = @($identities)
+    [Array]::Sort($ordered, [StringComparer]::Ordinal)
+    return @($ordered)
+}
+
+function Get-NervFullChainResidualTestIdentities {
+    <#
+        #3135：lane 的选取口径从「白名单精确 filter」翻转为「默认全跑 + 无逃生口」。
+        residual = 该项目发现到的全部用例 − manifest 冻结的成员身份。新增测试类因此**自动被跑**，
+        而不是像 #3135 之前那样掉出地图（被 heavyLanes[full-chain] 排除出四个 fast shard、又不在
+        5 个成员名单里 = 谁都不跑）。刻意不提供排除注册表：空注册表拿不出鉴别力证据，而一个逃生口
+        必然会被用来重新制造暗测试 —— 白名单选取本身就是本票要治的病因。
+
+        Claimed 必须由调用方传入 manifest 的**全部** members，而不是 -MemberId 选中的子集：
+        否则本地只跑一个成员时，另外 4 个成员会落进 residual 被无依赖重跑。这个错不会红，只会让人困惑。
+    #>
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [AllowNull()] [string[]] $DiscoveredIdentities,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [AllowNull()] [string[]] $ClaimedIdentities
+    )
+
+    $claimed = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($identity in @($ClaimedIdentities)) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$identity)) { [void]$claimed.Add(([string]$identity).Trim()) }
+    }
+    $unclaimed = @(@($DiscoveredIdentities) | Where-Object { -not $claimed.Contains([string]$_) } | ForEach-Object { [string]$_ })
+    $residual = @($unclaimed)
+    [Array]::Sort($residual, [StringComparer]::Ordinal)
+    return @($residual)
+}
+
+function Assert-NervFullChainDiscoveryClosure {
+    <#
+        #3135：manifest 冻结的每一条成员身份都必须真的被发现。名单指向一条不存在的用例时，
+        成员侧的 discovery 断言会先红；这里再补一层集合口径的护栏，让「名单陈旧」和
+        「新增用例未被跑」在同一处被表述为同一个不变量：发现集 = 成员集 ∪ residual 集。
+    #>
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [AllowNull()] [string[]] $DiscoveredIdentities,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [AllowNull()] [string[]] $ClaimedIdentities,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [AllowNull()] [string[]] $ResidualIdentities
+    )
+
+    $discovered = [Collections.Generic.HashSet[string]]::new([string[]]@(@($DiscoveredIdentities) | ForEach-Object { [string]$_ }), [StringComparer]::Ordinal)
+    $missingClaims = @(@($ClaimedIdentities) | Where-Object { -not $discovered.Contains([string]$_) })
+    if ($missingClaims.Count -gt 0) {
+        throw "FullChain lane manifest freezes identities that discovery did not report: $(($missingClaims | Sort-Object) -join ', ')."
+    }
+    $accounted = @(@($ClaimedIdentities) | ForEach-Object { [string]$_ }) + @(@($ResidualIdentities) | ForEach-Object { [string]$_ })
+    $accountedSet = [Collections.Generic.HashSet[string]]::new([string[]]$accounted, [StringComparer]::Ordinal)
+    $unaccounted = @(@($DiscoveredIdentities) | Where-Object { -not $accountedSet.Contains([string]$_) })
+    if ($unaccounted.Count -gt 0) {
+        throw "FullChain lane discovered tests that no member and no residual run accounts for: $(($unaccounted | Sort-Object) -join ', ')."
+    }
+}
+
 function Get-NervFullChainTrxResult {
     param(
         [Parameter(Mandatory)] [string] $ResultsDirectory,
@@ -140,6 +226,59 @@ function Get-NervFullChainTrxResult {
     if (-not $AllowInvalid -and -not $identitiesMatch) { throw 'FullChain lane TRX identities do not equal the frozen member identities.' }
     if (-not $AllowInvalid -and -not $valid) { throw "FullChain lane requires $($expected.Count) passed, 0 failed and 0 skipped; observed $passed passed, $failed failed and $skipped skipped." }
     return $result
+}
+
+function Get-NervFullChainResidualTrxResult {
+    <#
+        #3135 residual 的 TRX 判定。刻意**不**复用 Get-NervFullChainTrxResult：那个函数服务于 5 个
+        冻结成员的 1:1 身份契约（恰好 1 条、逐字相等），把它放松掉会削弱 lane 的核心不变量。
+
+        residual 是方法级集合，而 `[Theory]` 在 TRX 里是逐用例的（`Method(value: 1)`、
+        `Method(value: 2)`）。本机变异实测过：直接套用成员那套逐字比较会在新增一个 Theory 时
+        误红（"TRX identities do not equal the frozen member identities"）。因此这里把 TRX 身份
+        归一到方法级再比集合，同时要求**每一条用例**都通过——Theory 的任一参数化用例失败仍是红。
+    #>
+    param(
+        [Parameter(Mandatory)] [string] $ResultsDirectory,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $ExpectedTestIdentities
+    )
+
+    $trxFiles = @(Get-ChildItem -LiteralPath $ResultsDirectory -Filter '*.trx' -File -Recurse)
+    if ($trxFiles.Count -ne 1) { throw "FullChain residual coverage must produce exactly one TRX file; observed $($trxFiles.Count)." }
+    [xml]$trx = Get-Content -LiteralPath $trxFiles[0].FullName -Raw
+    $results = @($trx.SelectNodes("//*[local-name()='UnitTestResult']"))
+    $definitions = @($trx.SelectNodes("//*[local-name()='UnitTest']"))
+    $definitionById = [Collections.Generic.Dictionary[string, string]]::new([StringComparer]::Ordinal)
+    foreach ($definition in $definitions) {
+        $method = $definition.SelectSingleNode("./*[local-name()='TestMethod']")
+        if ($null -ne $method) { $definitionById[[string]$definition.id] = "$($method.className).$($method.name)" }
+    }
+    $methodIdentities = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $failedIdentities = [Collections.Generic.List[string]]::new()
+    $passed = 0
+    $failed = 0
+    foreach ($result in $results) {
+        $raw = if ($definitionById.ContainsKey([string]$result.testId)) { $definitionById[[string]$result.testId] } else { [string]$result.testName }
+        $parenthesisIndex = $raw.IndexOf('(', [StringComparison]::Ordinal)
+        $methodIdentity = if ($parenthesisIndex -ge 0) { $raw.Substring(0, $parenthesisIndex).TrimEnd() } else { $raw }
+        [void]$methodIdentities.Add($methodIdentity)
+        $outcome = [string]$result.outcome
+        if ([string]::Equals($outcome, 'Passed', [StringComparison]::Ordinal)) { $passed++ }
+        elseif ([string]::Equals($outcome, 'Failed', [StringComparison]::Ordinal)) { $failed++; $failedIdentities.Add($raw) }
+    }
+    $skipped = $results.Count - $passed - $failed
+    $observed = @($methodIdentities)
+    $expected = @($ExpectedTestIdentities | ForEach-Object { [string]$_ })
+    [Array]::Sort($observed, [StringComparer]::Ordinal)
+    [Array]::Sort($expected, [StringComparer]::Ordinal)
+    if (-not [string]::Equals(($observed -join "`n"), ($expected -join "`n"), [StringComparison]::Ordinal)) {
+        $missing = @($expected | Where-Object { -not $methodIdentities.Contains([string]$_) })
+        throw "FullChain residual coverage executed a different identity set than discovery reported. Missing: $($missing -join ', '); observed: $($observed -join ', ')."
+    }
+    if ($failed -ne 0 -or $skipped -ne 0) {
+        throw "FullChain residual coverage requires 0 failed and 0 skipped; observed $passed passed, $failed failed and $skipped skipped. Failed identities: $($failedIdentities -join ', ')."
+    }
+    return [pscustomobject]@{ total = $results.Count; methods = $observed.Count; passed = $passed; failed = $failed; skipped = $skipped; identities = @($observed) }
 }
 
 function Test-NervFullChainEvidenceProperty {
