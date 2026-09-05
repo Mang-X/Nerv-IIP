@@ -42,19 +42,19 @@ try {
     $childPath = Join-Path $probeRoot 'child.ps1'
     [IO.File]::WriteAllText($childPath, @'
 param([string] $ReleasePath, [string] $Mode)
-if ($Mode -ceq 'handshake') {
+if ([string]::Equals($Mode, 'handshake', [StringComparison]::Ordinal)) {
     [Console]::Out.WriteLine('stage-A')
     [Console]::Out.Flush()
     while (-not [IO.File]::Exists($ReleasePath)) { Start-Sleep -Milliseconds 10 }
     [Console]::Out.WriteLine('stage-B')
 }
-elseif ($Mode -ceq 'dual') {
+elseif ([string]::Equals($Mode, 'dual', [StringComparison]::Ordinal)) {
     for ($i = 0; $i -lt 2000; $i++) {
         [Console]::Out.WriteLine("out-$i-" + ([char]::ConvertFromUtf32(128512) * 40))
         [Console]::Error.WriteLine("err-$i-" + ('y' * 80))
     }
 }
-elseif ($Mode -ceq 'timeout') {
+elseif ([string]::Equals($Mode, 'timeout', [StringComparison]::Ordinal)) {
     if ($IsLinux -or $IsWindows) {
         $child = if ($IsLinux) {
             [Diagnostics.Process]::Start('/bin/sleep', '60')
@@ -69,17 +69,17 @@ elseif ($Mode -ceq 'timeout') {
     [Console]::Out.Flush()
     Start-Sleep -Seconds 60
 }
-elseif ($Mode -ceq 'sensitive') {
+elseif ([string]::Equals($Mode, 'sensitive', [StringComparison]::Ordinal)) {
     $text = "safe-start`nknown-first`nknown-last`n`"token`": `"canary-json`"`n-----BEGIN PRIVATE KEY-----`ncanary-pem`n-----END PRIVATE KEY-----`nsafe-end`n"
     foreach ($character in $text.ToCharArray()) {
         [Console]::Out.Write($character)
         [Console]::Error.Write($character)
     }
 }
-elseif ($Mode -ceq 'oversize') {
+elseif ([string]::Equals($Mode, 'oversize', [StringComparison]::Ordinal)) {
     [Console]::Out.Write("-----BEGIN PRIVATE KEY-----`ncanary-oversize" + ('z' * 80000) + "`n-----END PRIVATE KEY-----`nafter-oversize`n")
 }
-elseif ($Mode -ceq 'nonzero') {
+elseif ([string]::Equals($Mode, 'nonzero', [StringComparison]::Ordinal)) {
     [Console]::Out.WriteLine('before-nonzero')
     exit 7
 }
@@ -104,9 +104,9 @@ else {
     $result = Invoke-NativeCommandWithTimeout -Command $pwshPath -Arguments @('-NoProfile', '-File', $childPath, $script:releasePath, 'dual') -Name 'dual' -TimeoutSeconds 15 -LogDirectory (Join-Path $probeRoot 'dual') -LiveOutput
     $console = $script:observed.ToString()
     foreach ($stream in @('out', 'err')) {
-        $path = if ($stream -ceq 'out') { $result.StdoutPath } else { $result.StderrPath }
+        $path = if ([string]::Equals($stream, 'out', [StringComparison]::Ordinal)) { $result.StdoutPath } else { $result.StderrPath }
         $log = [IO.File]::ReadAllText($path)
-        $counter = if ($stream -ceq 'out') { 'stdoutBytes' } else { 'stderrBytes' }
+        $counter = if ([string]::Equals($stream, 'out', [StringComparison]::Ordinal)) { 'stdoutBytes' } else { 'stderrBytes' }
         $bytes = 0L
         foreach ($match in [regex]::Matches($console, "$counter=(\d+)")) { $bytes += [long] $match.Groups[1].Value }
         Assert-Contract ($bytes -eq [Text.Encoding]::UTF8.GetByteCount($log)) 'Heartbeat byte increments must sum to actual UTF-8 stream bytes, including surrogate pairs.'
@@ -139,10 +139,10 @@ else {
             Invoke-NativeCommandWithTimeout -Command $pwshPath -Arguments @('-NoProfile', '-File', $childPath, $script:releasePath, $mode) -Name $mode -TimeoutSeconds 3 -LogDirectory (Join-Path $probeRoot $mode) -LiveOutput | Out-Null
         }
         catch { $failure = $_.Exception.Message }
-        $expectedFailure = if ($mode -ceq 'timeout') { 'timed out after 3 seconds' } else { 'exited with 7' }
+        $expectedFailure = if ([string]::Equals($mode, 'timeout', [StringComparison]::Ordinal)) { 'timed out after 3 seconds' } else { 'exited with 7' }
         Assert-Contract ($failure.Contains($expectedFailure, [StringComparison]::Ordinal)) "Live output must preserve the native failure verdict for $mode. Actual: $failure"
         Assert-Contract ($script:observed.ToString().Contains("before-$mode", [StringComparison]::Ordinal)) "Failure must retain the last complete live record for $mode."
-        if ($mode -ceq 'timeout') {
+        if ([string]::Equals($mode, 'timeout', [StringComparison]::Ordinal)) {
             $console = $script:observed.ToString()
             Assert-Contract ($console.Contains('aliveCount=0', [StringComparison]::Ordinal)) 'Timeout cleanup must report the final empty process tree.'
             $rootMatch = [regex]::Match($console, 'rootPid=(\d+)')

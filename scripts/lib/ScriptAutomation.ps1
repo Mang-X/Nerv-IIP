@@ -132,7 +132,7 @@ function Protect-ScriptAutomationText {
 
         [string[]] $SensitiveValues = @(),
 
-        [System.Collections.IDictionary] $IncrementalState,
+        [hashtable] $IncrementalState,
 
         [switch] $Final
     )
@@ -159,7 +159,7 @@ function Protect-ScriptAutomationText {
     if ($null -ne $IncrementalState) {
         # Live output commits complete lines only. Multiline constructs stay in this
         # authority until their closing delimiter arrives; capture remains independent.
-        if ($IncrementalState.Contains('SuppressionReason')) { return '' }
+        if ($IncrementalState.ContainsKey('SuppressionReason')) { return '' }
         $Text = [string] $IncrementalState.Pending + $Text
         if ($Final -or $Text.Length -gt 65536) {
             $IncrementalState.Pending = ''
@@ -735,7 +735,7 @@ function Add-ScriptAutomationSignalExitDiagnosis {
 
 function Write-ScriptAutomationLiveOutput {
     param(
-        [Parameter(Mandatory)] [System.Collections.IDictionary] $State,
+        [Parameter(Mandatory)] [hashtable] $State,
         [Parameter(Mandatory)] [object] $StdoutCapture,
         [Parameter(Mandatory)] [object] $StderrCapture,
         [string[]] $SensitiveValues = @(),
@@ -757,7 +757,7 @@ function Write-ScriptAutomationLiveOutput {
             $safe = Protect-ScriptAutomationText -Text '' -SensitiveValues $SensitiveValues -IncrementalState $streamState -Final
             if ($safe.Length -gt 0) { Write-Host -NoNewline $safe }
         }
-        if ($streamState.Contains('SuppressionReason') -and -not $streamState.Contains('SuppressionReported')) {
+        if ($streamState.ContainsKey('SuppressionReason') -and -not $streamState.ContainsKey('SuppressionReported')) {
             Write-Host "[live] stream=$stream textSuppressed=$($streamState.SuppressionReason)"
             $streamState.SuppressionReported = $true
         }
@@ -766,7 +766,7 @@ function Write-ScriptAutomationLiveOutput {
 
 function Write-ScriptAutomationLiveHeartbeat {
     param(
-        [System.Collections.IDictionary] $State,
+        [hashtable] $State,
         [string] $Name,
         [int] $ProcessId,
         [long] $ElapsedMilliseconds,
