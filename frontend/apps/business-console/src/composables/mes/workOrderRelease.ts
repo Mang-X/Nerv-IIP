@@ -1,7 +1,28 @@
 import { describeMesReadinessReason } from '@nerv-iip/business-core'
 
 const RELEASEABLE_WORK_ORDER_STATUSES = new Set(['created', 'started', 'hold'])
-const RELEASE_IGNORED_TASK_BLOCKERS = new Set(['PREVIOUS_OPERATION_INCOMPLETE'])
+
+/**
+ * 工序 readiness 里**不阻断下达**的阻断码。
+ *
+ * 入选判据只有一条，请照它增删、不要按「感觉像不像下达的事」：
+ * **该阻断码的补救动作本身就是下达（或必须在下达之后才可能发生）时，它不能阻断下达。**
+ * 否则界面会形成自指死锁——文案叫用户去下达，而这条文案自己把下达按钮关掉。
+ *
+ * - `PREVIOUS_OPERATION_INCOMPLETE`：前序工序未完工是**开工**的先后顺序问题，
+ *   下达是工单维度动作，与工序先后无关。
+ * - `WORK_ORDER_NOT_RELEASED`（#3119）：它的字面含义就是「还没下达」，
+ *   补救动作恰恰是下达本身。这条码由 `MesOperationTaskActionReadinessEvaluator`
+ *   对 `created` 工单的每一道 queued 工序无条件产出，**因此它命中的正是本函数要放行的全部人群**。
+ *
+ * 本集合的**完备性**由 `workOrderRelease.releasePolicy.test.ts` 钉住：
+ * `MES_READINESS_REASON_DISPLAYS` 里的每一个码都必须被显式归类为「阻断下达」或「不阻断下达」。
+ * 新增后端阻断码时若不做这个决定，那条用例会红——而不是像 #3119 那样静默按「阻断」处理。
+ */
+export const RELEASE_IGNORED_TASK_BLOCKERS = new Set([
+  'PREVIOUS_OPERATION_INCOMPLETE',
+  'WORK_ORDER_NOT_RELEASED',
+])
 
 export type MesWorkOrderReleaseCandidate = {
   workOrderId?: string

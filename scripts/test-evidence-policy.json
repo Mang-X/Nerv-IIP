@@ -1282,6 +1282,7 @@
       "exitCondition": null,
       "testIdentities": [
         "Nerv.IIP.Business.Mes.Web.Tests.CreatedWorkOrderReleaseBackfillPostgresTests.Backfill_clears_the_impact_query_for_executing_created_work_orders_and_reruns_clean_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.CreatedWorkOrderReleaseBackfillPostgresTests.Backfill_publishes_the_release_fact_through_the_real_unit_of_work_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.DowntimeReasonCodeMigrationPostgresTests.Legacy_reasons_migrate_once_across_all_scopes_and_repeat_stably_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.LeaderDemoScaleSeedPostgresTests.Scale_seed_persists_one_thousand_released_work_orders_within_the_startup_budget",
         "Nerv.IIP.Business.Mes.Web.Tests.MesChangeoverRecordPostgresTests.Start_fields_and_completion_are_persisted_by_the_mes_migration",
@@ -1331,7 +1332,7 @@
         "Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationPostgresTests.Split_lineage_audit_and_work_order_version_survive_postgres_scope_recreation",
         "Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationPostgresTests.Stale_work_order_version_is_rejected_by_postgresql_concurrency_token"
       ],
-      "expectedRuntimeTestCount": 49
+      "expectedRuntimeTestCount": 50
     },
     {
       "id": "mes-cap-postgres",

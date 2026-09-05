@@ -194,7 +194,12 @@ public sealed class RecordProductionReportCommandHandler(
         // 非产出工序的报工根本不经过它。而 #3113 记下的最坏形态恰恰是多工序工单的非末工序报工
         // ——它既不翻工单状态、也不会被域方法拦住。把守卫写进域方法会得到一条**只覆盖产出工序**的护栏，
         // 而它的名字（"工单是否可执行"）会让后来人以为报工这一面已经关死。
-        // 受理是唯一一处所有报工都必经的关口，所以不变量只在这里把一次；
+        // 受理是唯一一处**新增**报工都必经的关口，所以不变量只在这里把一次。
+        // 说清楚它不覆盖什么：`ProductionReports` 在生产面还有第二个写入点——
+        // 冲销（本文件 ReverseProductionReportCommandHandler），它同样改工单进度、
+        // 还能经 OperationTask.ReopenAfterReportReversal 把工序推回 InProgress。
+        // **有意不拦冲销**：它只能冲销**既有**报工，在 created 工单上纠正误报是合理的，
+        // 而补救跑完后 created 工单本就不该再有报工。别把这里读成「报工面已全关死」。
         // 域侧 WorkOrder.NonExecutableStatuses 保持原样不动——#3000 的回填用它的补集选人，
         // 把 created 塞进去会同时改掉那份选人口径（票面已写明）。
         if (string.Equals(workOrder.Status, WorkOrder.CreatedStatus, StringComparison.Ordinal))

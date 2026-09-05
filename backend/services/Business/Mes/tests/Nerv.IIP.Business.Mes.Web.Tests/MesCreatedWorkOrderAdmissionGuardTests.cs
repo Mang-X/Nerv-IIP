@@ -6,6 +6,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
+using Nerv.IIP.Business.Mes.Web.Application.Approvals;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
@@ -83,6 +84,53 @@ public sealed class MesCreatedWorkOrderAdmissionGuardTests
     }
 
     /// <summary>
+    /// **授权跳站**这第二个开工入口（票面交付范围 2 白纸黑字点名，且要求它**不得**进
+    /// <c>nonPreviousBlockReasons</c> 的豁免集）。
+    ///
+    /// <para>两个开工入口共用同一处 readiness，因此实现上不需要第二处守卫——
+    /// 但「共用真的覆盖到了第二个入口」这句话需要它自己的读数。
+    /// <c>nonPreviousBlockReasons</c> 是一个**按字符串前缀**做豁免的集合：
+    /// 将来任何一次「再豁免一个前缀」或改动本码的措辞，都可能把这一面静默放开，
+    /// 而普通开工那条用例会继续绿。</para>
+    ///
+    /// <para>夹具用「前序工序未完成」这个授权跳站**唯一**成立的前提
+    /// （handler 要求存在未完成的前序工序，否则先抛「不存在需要授权跳站的未完前序工序」），
+    /// 所以这条用例真的走进了跳站分支，不是被别的守卫提前拦下。</para>
+    /// </summary>
+    [Fact]
+    public async Task Authorized_skip_start_on_a_created_work_order_is_rejected()
+    {
+        await using var dbContext = CreateDbContext();
+        AddWorkOrderWithTwoQueuedOperations(dbContext, "WO-CREATED");
+        await dbContext.SaveChangesAsync();
+
+        var rejection = await Assert.ThrowsAsync<KnownException>(() => AuthorizeAndStart(dbContext, "OP-WO-CREATED-20"));
+
+        Assert.Contains("尚未下达", rejection.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(MesReadinessReasonCodes.WorkOrderNotReleased, rejection.Message, StringComparison.Ordinal);
+        Assert.Equal(
+            OperationTaskLifecycleStatus.Queued,
+            dbContext.OperationTasks.Single(x => x.OperationTaskIdValue == "OP-WO-CREATED-20").Status);
+        Assert.Empty(dbContext.OperationTaskStartAuthorizations.Local);
+    }
+
+    /// <summary>
+    /// 授权跳站的正向对照：同一夹具、工单已下达即放行。
+    /// 它证明上一条的红因是工单状态，而不是「授权跳站在这个夹具上本来就走不通」。
+    /// </summary>
+    [Fact]
+    public async Task Authorized_skip_start_succeeds_once_the_work_order_is_released()
+    {
+        await using var dbContext = CreateDbContext();
+        AddWorkOrderWithTwoQueuedOperations(dbContext, "WO-RELEASED", release: true);
+        await dbContext.SaveChangesAsync();
+
+        var result = await AuthorizeAndStart(dbContext, "OP-WO-RELEASED-20");
+
+        Assert.Equal(OperationTaskLifecycleStatus.InProgress.ToString(), result.Status);
+    }
+
+    /// <summary>
     /// 报工侧：守卫落在受理路径（<see cref="RecordProductionReportCommandHandler"/>）而不是
     /// <c>WorkOrder.RecordProductionProgress</c>。
     ///
@@ -148,6 +196,60 @@ public sealed class MesCreatedWorkOrderAdmissionGuardTests
     public void Created_stays_out_of_the_non_executable_status_set()
     {
         Assert.DoesNotContain(WorkOrder.CreatedStatus, WorkOrder.NonExecutableStatuses);
+    }
+
+    private static Task<MesOperationActionResponse> AuthorizeAndStart(
+        ApplicationDbContext dbContext,
+        string operationTaskId) =>
+        new AuthorizeAndStartOperationTaskCommandHandler(
+                dbContext,
+                CreatedGuardApprovalClient.Instance,
+                new FixedClock(Now))
+            .Handle(
+                new AuthorizeAndStartOperationTaskCommand(
+                    Organization,
+                    Environment,
+                    operationTaskId,
+                    "设备临时故障，先行处理后续工序",
+                    "approval-3119-001",
+                    "correlation-3119-001",
+                    $"skip-start-{operationTaskId}"),
+                CancellationToken.None);
+
+    /// <summary>
+    /// 授权跳站要求「存在未完成的前序工序」，所以夹具必须有两道 queued 工序。
+    /// 其余条件与 <see cref="AddWorkOrderWithQueuedOperation"/> 同样全绿。
+    /// </summary>
+    private static void AddWorkOrderWithTwoQueuedOperations(
+        ApplicationDbContext dbContext,
+        string workOrderId,
+        bool release = false)
+    {
+        AddWorkOrderWithQueuedOperation(dbContext, workOrderId, release);
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            Organization, Environment, workOrderId, $"OP-{workOrderId}-20",
+            OperationTaskLifecycleStatus.Queued, 20, "WC-020", [],
+            Now, TimeSpan.FromHours(1), null, null, "SKU-FG-1000", "EA", 1000m));
+    }
+
+    private sealed class CreatedGuardApprovalClient : IMesOperationTaskStartApprovalClient
+    {
+        public static CreatedGuardApprovalClient Instance { get; } = new();
+
+        public Task<MesOperationTaskStartApproval?> GetApprovedAsync(
+            string approvalChainId,
+            string organizationId,
+            string environmentId,
+            string operationTaskId,
+            string workOrderId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<MesOperationTaskStartApproval?>(
+                new MesOperationTaskStartApproval(approvalChainId, "user:supervisor-3119"));
+    }
+
+    private sealed class FixedClock(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
     }
 
     private static Task<ProductionReportCommandResult> RecordReport(

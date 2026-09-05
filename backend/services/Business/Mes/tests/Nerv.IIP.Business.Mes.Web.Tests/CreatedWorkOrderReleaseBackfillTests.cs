@@ -1,5 +1,10 @@
+using System.Net;
+using System.Text.Json;
 using MediatR;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate;
@@ -11,6 +16,7 @@ using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Mes.Web.Application.Remediation;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.Mes;
+using Nerv.IIP.Testing;
 using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
@@ -18,6 +24,7 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 /// <summary>
 /// <c>created</c> 存量工单一次性补下达（#3119）的选人判据、发布事实时刻与重跑行为。
 /// </summary>
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class CreatedWorkOrderReleaseBackfillTests
 {
     private const string Organization = "org-001";
@@ -233,6 +240,59 @@ public sealed class CreatedWorkOrderReleaseBackfillTests
         Assert.DoesNotContain("OFFSET", nextPage, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// 端点这一面（#3144 复审阻断 3）。逐条对齐 canonical
+    /// <c>WorkOrderReleaseProjectionBackfillTests.Backfill_endpoint_is_reachable_only_with_an_internal_service_token</c>：
+    /// 匿名 401、带内部令牌 200、外加**真实 handler 是否被 MediatR 发现**的注册探针。
+    ///
+    /// <para>注册探针不是可选项：端点走 <see cref="ISender"/>，本用例把它换成了桩，
+    /// 于是「命令与 handler 都是 <c>internal</c>」这类可见性/注册改动会让端点在运行时找不到 handler
+    /// 而 HTTP 那两条断言照绿。本命令与 handler <b>恰恰都是 <c>internal</c></b>
+    /// （<c>CreatedWorkOrderReleaseBackfill.cs</c>），正是 canonical 那条注释点名警告的形态。</para>
+    ///
+    /// <para>这个端点的能力是**绕开设备/质量/齐套三道 readiness 批量强制发布工单**，
+    /// 并对每一张发出 <c>WorkOrderReleasedIntegrationEvent</c>。
+    /// 少了这条用例，删掉 <c>Policies(...)</c> 一行不会让任何门禁红。</para>
+    /// </summary>
+    [Fact]
+    public async Task Backfill_endpoint_is_reachable_only_with_an_internal_service_token()
+    {
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(new CreatedReleaseBackfillReportSender());
+                });
+            });
+        using var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
+
+        using var anonymous = await client.PostAsync(
+            "/internal/business-mes/v1/created-work-order-release-backfill",
+            content: null);
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
+
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+        using var response = await client.PostAsync(
+            "/internal/business-mes/v1/created-work-order-release-backfill",
+            content: null);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(factory.Services
+            .GetRequiredService<IServiceProviderIsService>()
+            .IsService(typeof(IRequestHandler<
+                BackfillCreatedWorkOrderReleaseCommand,
+                CreatedWorkOrderReleaseBackfillReport>)));
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(11, body.RootElement.GetProperty("createdWorkOrdersScanned").GetInt32());
+        Assert.Equal(3, body.RootElement.GetProperty("workOrdersReleased").GetInt32());
+        Assert.Equal(7, body.RootElement.GetProperty("operationsReleased").GetInt32());
+        Assert.Equal(2, body.RootElement.GetProperty("executingOperationsRemediated").GetInt32());
+    }
+
     private static async Task<CreatedWorkOrderReleaseBackfillReport> Backfill(ApplicationDbContext dbContext) =>
         await new BackfillCreatedWorkOrderReleaseCommandHandler(dbContext).Handle(
             new BackfillCreatedWorkOrderReleaseCommand(),
@@ -302,6 +362,28 @@ public sealed class CreatedWorkOrderReleaseBackfillTests
             .UseInMemoryDatabase($"mes-created-release-backfill-{Guid.CreateVersion7():N}")
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private sealed class CreatedReleaseBackfillReportSender : ISender
+    {
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            _ = Assert.IsType<BackfillCreatedWorkOrderReleaseCommand>(request);
+            return Task.FromResult((TResponse)(object)new CreatedWorkOrderReleaseBackfillReport(11, 3, 7, 2));
+        }
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+            where TRequest : IRequest => throw new NotSupportedException();
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+            IStreamRequest<TResponse> request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 
     private sealed class NoopMediator : IMediator

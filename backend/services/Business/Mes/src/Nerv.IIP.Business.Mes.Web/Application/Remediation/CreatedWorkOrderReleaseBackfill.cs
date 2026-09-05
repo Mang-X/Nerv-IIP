@@ -50,6 +50,18 @@ public sealed record CreatedWorkOrderReleaseBackfillReport(
 ///
 /// <para><b>重跑安全。</b>补下达把工单翻成 <c>released</c>，第二次运行时它已不在 <c>created</c> 谓词里，
 /// 因此 <see cref="CreatedWorkOrderReleaseBackfillReport.WorkOrdersReleased"/> 归零、不再发第二封发布事实。</para>
+///
+/// <para><b>量级边界，按实测写明。</b>本命令**必须 tracking**（要改工单状态），
+/// 与 #3000 的 <c>AsNoTracking()</c> + 投影不同：**扫描面上每一张 <c>created</c> 工单都进变更跟踪器**，
+/// 内存随**扫描量**而非选中量增长——十万张 <c>created</c> 工单时即使只选中 3 张，十万个实体全程驻留。
+/// 整条命令跑在 <c>AddUnitOfWorkBehaviors()</c> 的**单个事务**里（好性质：中途失败不留半补救状态），
+/// 但也因此**没有** <c>CommandTimeout</c>、没有分批、没有续跑参数。
+/// 现网量级未知（无生产库通道）；若首次执行遇到超时，处置是先按 org/env 缩小范围而不是加重试。</para>
+///
+/// <para><b>载荷不过滤 <c>Cancelled</c> 工序</b>（#3000 的回填有该过滤，本命令没有）。
+/// 当前不可达：<c>OperationTask.Cancel</c> 的生产调用点恰 1 处且整单取消，
+/// 取消后的工单不满足 <c>created</c> 谓词。**这是调用点唯一性给的，不是结构性闭合**——
+/// 将来若出现部分取消，混合工单会把 <c>Cancelled</c> 工序一并送进 Quality 的发布投影。</para>
 /// </summary>
 internal sealed record BackfillCreatedWorkOrderReleaseCommand
     : ICommand<CreatedWorkOrderReleaseBackfillReport>;
@@ -110,8 +122,12 @@ internal sealed class BackfillCreatedWorkOrderReleaseCommandHandler(ApplicationD
         var operationsReleased = 0;
         var executingRemediated = 0;
 
-        // 翻页按上一页最后一个工单身份续扫，不按偏移量：谓词字段 Status 正是本命令自己在改的列，
-        // 偏移量翻页会让后面的工单整段左移、被静默跳过。
+        // 翻页按上一页最后一个工单身份续扫，不按偏移量。
+        // **准确的理由**（上一版写的「谓词字段正是本命令自己在改的列、偏移量会让后面的工单左移」
+        // 在本实现里其实没有发生）：整条命令跑在 `AddUnitOfWorkBehaviors()` 的单个事务里、
+        // 末尾才 SaveChanges，因此翻页期间数据库里的 status 全程仍是 created，谓词集合不会收缩。
+        // 保留 keyset 续扫的真实理由是它**不依赖**这条前提：一旦将来有人给本命令加中途提交、
+        // 或让别的会话并发改 status，偏移量翻页会静默跳过整段而 CreatedWorkOrdersScanned 看不出来。
         // (OrganizationId, EnvironmentId, WorkOrderIdValue) 是 ak_work_orders_scope_work_order 上的
         // 唯一候选键，即唯一全序，不需要再补 tiebreaker。
         string? lastOrganizationId = null;
@@ -127,9 +143,12 @@ internal sealed class BackfillCreatedWorkOrderReleaseCommandHandler(ApplicationD
             }
 
             var lastOnPage = page[^1];
-            // 终止条件是「某一页取回 0 行」，而这只在游标每轮**严格前进**时才会到达：seek 谓词写成 `>=`
-            // 就变成一个事务内的无界重扫重发（挂死加写放大，不是可见错值）。就地断言这条循环终止不变量。
-            // 断言的等价性依赖上面 ORDER BY 三分量构成全序，与 #3000 同一条推理；排序键若变必须一并改写。
+            // 终止条件是「某一页取回 0 行」，它要求游标每轮**严格前进**。
+            // **这条断言防的是什么，按实测写**：把 seek 写成 `>=` 时页大小 200 只会每轮重复 1 行、
+            // 仍前进 199 行，循环照常终止——**本断言抓不到那一格**（上一版注释声称它防的是
+            // 「一个事务内的无界重扫重发」，不成立，已更正）。它真正抓的是「游标整体不前进」的形态：
+            // 例如把游标赋值写丢、或换成恒等的排序键。断言本身无误抛，代价是一次三分量比较。
+            // 等价性依赖上面 ORDER BY 三分量构成全序，与 #3000 同一条推理；排序键若变必须一并改写。
             if (lastWorkOrderId is not null
                 && string.CompareOrdinal(lastOnPage.OrganizationId, lastOrganizationId) <= 0
                 && string.CompareOrdinal(lastOnPage.EnvironmentId, lastEnvironmentId) <= 0
