@@ -7,10 +7,10 @@ namespace Nerv.IIP.FileStorage.Infrastructure;
 
 public sealed record RetirementAcceptance(TemplateAssetRetirementRecord? Receipt, bool Conflict);
 
-public sealed class TemplateAssetRetirementStore(ApplicationDbContext db)
+public sealed class TemplateAssetRetirementStore(ApplicationDbContext db, TimeProvider clock)
 {
     public async Task<RetirementAcceptance> AcceptAsync(RetirementCapability request,
-        RetirementStorageInputs storage, DateTimeOffset now, CancellationToken ct)
+        RetirementStorageInputs storage, CancellationToken ct)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         // A database row lock, not a process-local gate, serializes all retirements for this file.
@@ -29,7 +29,7 @@ public sealed class TemplateAssetRetirementStore(ApplicationDbContext db)
             || file.OwnerId != request.OwnerId || file.Checksum != request.Checksum || file.FilePurpose != request.Purpose)
             return new(null, true);
 
-        var receipt = TemplateAssetRetirementRecord.Accept(request, storage, file.SizeBytes, now);
+        var receipt = TemplateAssetRetirementRecord.Accept(request, storage, file.SizeBytes, clock.GetUtcNow());
         file.HoldForTemplateAssetRetirement();
         db.TemplateAssetRetirements.Add(receipt);
         try

@@ -11,7 +11,7 @@ namespace Nerv.IIP.FileStorage.Web.Endpoints.Files;
 [HttpPost("/internal/file-storage/v1/template-asset-retirements")]
 [Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
 public sealed class RetireTemplateAssetEndpoint(TemplateAssetRetirementProof proof,
-    TemplateAssetRetirementStore store, TemplateAssetRetirementOptions options, TimeProvider clock)
+    TemplateAssetRetirementStore store, TemplateAssetRetirementOptions options)
     : Endpoint<RetireTemplateAssetRequest, RetireTemplateAssetResponse>
 {
     public override async Task HandleAsync(RetireTemplateAssetRequest req, CancellationToken ct)
@@ -26,7 +26,7 @@ public sealed class RetireTemplateAssetEndpoint(TemplateAssetRetirementProof pro
         RetirementAcceptance result;
         try
         {
-            result = await store.AcceptAsync(capability, options.Storage, clock.GetUtcNow(), ct);
+            result = await store.AcceptAsync(capability, options.Storage, ct);
         }
         catch (ArgumentException)
         {
