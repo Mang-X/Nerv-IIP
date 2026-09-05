@@ -102,7 +102,7 @@ public sealed class FileStorageRestartPersistenceTests
                     new ServerProxyUploadProvider(),
                     configuration: migrationScope.ServiceProvider.GetRequiredService<IConfiguration>(),
                     timeProvider: migrationScope.ServiceProvider.GetRequiredService<TimeProvider>(),
-                    commitStorage: new UnavailableUploadCommitStorage(),
+                    commitStorage: new FileStorageServiceTestFactory.NoFinalActionCommitStorage(),
                     gateRegistry: new UploadSessionGateRegistry(),
                     executionLeaseManager: migrationScope.ServiceProvider.GetRequiredService<UploadCommitExecutionLeaseManager>());
                 var recovery = new UploadCommitRecoveryProcessor(

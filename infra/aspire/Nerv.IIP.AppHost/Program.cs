@@ -271,6 +271,8 @@ var fileStorage = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5104, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
+    // 上传字节走 tus：complete 的提交证据由 FileStorage 从本地 tus 盘读回，默认的 server-proxy 没有字节面。
+    .WithEnvironment("FileStorage__UploadProvider", "tus")
     .WithEnvironment("Storage__Provider", "MinIO")
     .WithEnvironment("Storage__MinIO__Endpoint", minio.GetEndpoint("api"))
     .WithEnvironment("Storage__MinIO__AccessKey", minioRootUser)
