@@ -62,6 +62,7 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
                 workOrderIds.Contains(x.WorkOrderIdValue))
             .Select(x => new WorkOrderFact(
                 x.WorkOrderIdValue,
+                x.Status,
                 x.ProductionVersionId,
                 x.MaterialRequirementSnapshotStatus,
                 x.MaterialRequirementSnapshotProductionVersionId))
@@ -185,9 +186,30 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
         {
             blockReasons.Add("WORK_ORDER_NOT_FOUND: 未找到所属生产工单");
         }
-        else if (string.IsNullOrWhiteSpace(workOrder.ProductionVersionId))
+        else
         {
-            blockReasons.Add($"{MesReadinessReasonCodes.QualityPlanMissing}: 工单缺少已发布生产版本或检验方案");
+            // 未下达的工单不得开工（#3119）。这一条与生产版本那一条写成**并列**的两条阻断。
+            //
+            // **理由按实测写，别读强了**：写成 `else if (created)` 时，对「created ∧ 生产版本非空」
+            // 的工单，前一支为假、控制流照样落到本条，阻断仍然产出——
+            // 上一版注释声称「写成 else-if 恰好会漏掉唯一能走到本缺陷的那一批」，**不成立**（复审实测证伪）。
+            // else-if 真正丢的是「created ∧ **缺**生产版本」时少报一条次要理由：
+            // 读面只显示一条阻断，用户补齐生产版本后才发现还有第二条。
+            // 并列写法的收益就是这一条**读面完整性**，由下面那条
+            // `Created_work_order_without_a_production_version_reports_both_reasons` 用例钉住。
+            //
+            // 授权跳站入口（MesWorkbenchCommands 的 AuthorizeAndStartOperationTaskCommandHandler）
+            // 只把 PREVIOUS_OPERATION_INCOMPLETE: 前缀从阻断集合里剔除，本条不带该前缀，
+            // 因此它同样拦得住授权跳站——两个开工入口共用这一处判断，不各写一份。
+            if (string.Equals(workOrder.Status, WorkOrder.CreatedStatus, StringComparison.Ordinal))
+            {
+                blockReasons.Add(MesReadinessReasonCodes.WorkOrderNotReleasedReason);
+            }
+
+            if (string.IsNullOrWhiteSpace(workOrder.ProductionVersionId))
+            {
+                blockReasons.Add($"{MesReadinessReasonCodes.QualityPlanMissing}: 工单缺少已发布生产版本或检验方案");
+            }
         }
 
         foreach (var hold in activeQualityHolds.Where(x =>
@@ -276,6 +298,7 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
 
     private sealed record WorkOrderFact(
         string WorkOrderIdValue,
+        string Status,
         string? ProductionVersionId,
         string? MaterialRequirementSnapshotStatus,
         string? MaterialRequirementSnapshotProductionVersionId);

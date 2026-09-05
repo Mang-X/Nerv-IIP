@@ -501,10 +501,17 @@ public sealed class OperationActualTimeSettlementPostgresTests
         await dbContext.SaveChangesAsync();
     }
 
-    private static WorkOrder CreateWorkOrder() =>
-        WorkOrder.Create(
+    private static WorkOrder CreateWorkOrder()
+    {
+        var workOrder = WorkOrder.Create(
             "org-001", "env-dev", "WO-001", "SKU-001", "PV-001", 10m, 1,
             At(480));
+        // #3119：未下达的工单不受理报工，报工类夹具因此必须先补记发布（生产上这一步由下达完成）。
+        // 清掉发布留下的领域事件：本组用例断言的是结算出站消息，夹具自己造的事件不该混进去。
+        workOrder.MarkReleased();
+        workOrder.ClearDomainEvents();
+        return workOrder;
+    }
 
     private static OperationTask CreateRunningTask()
     {

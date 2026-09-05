@@ -1,7 +1,35 @@
 import { describeMesReadinessReason } from '@nerv-iip/business-core'
 
 const RELEASEABLE_WORK_ORDER_STATUSES = new Set(['created', 'started', 'hold'])
-const RELEASE_IGNORED_TASK_BLOCKERS = new Set(['PREVIOUS_OPERATION_INCOMPLETE'])
+
+/**
+ * 工序 readiness 里**不阻断下达**的阻断码。
+ *
+ * 入选判据只有一条，请照它增删、不要按「感觉像不像下达的事」：
+ * **该阻断码的补救动作本身就是下达（或必须在下达之后才可能发生）时，它不能阻断下达。**
+ * 否则界面会形成自指死锁——文案叫用户去下达，而这条文案自己把下达按钮关掉。
+ *
+ * - `PREVIOUS_OPERATION_INCOMPLETE`：前序工序未完工是**开工**的先后顺序问题，
+ *   下达是工单维度动作，与工序先后无关。
+ * - `WORK_ORDER_NOT_RELEASED`（#3119）：它的字面含义就是「还没下达」，
+ *   补救动作恰恰是下达本身。这条码由 `MesOperationTaskActionReadinessEvaluator`
+ *   对 `created` 工单的每一道 queued 工序无条件产出，**因此它命中的正是本函数要放行的全部人群**。
+ *
+ * 本集合的**完备性**由 `workOrderRelease.releasePolicy.test.ts` 钉住，
+ * 但**闭合的值域是共享词表 `MES_READINESS_REASON_DISPLAYS`，不是「后端所有阻断码」**：
+ * 词表里的每一个码都必须被显式归类为「阻断下达」或「不阻断下达」，漏一个就红。
+ *
+ * **未被这条闭合覆盖的那一格，写明**：后端新增的码若**从未登记进共享词表**，
+ * 它会走 `describeMesReadinessReason` 的兜底分支，`RELEASE_IGNORED_TASK_BLOCKERS.has(code)`
+ * 为 false，于是**仍然静默阻断下达且全仓零红**——正是 #3119 的失效模式原样重演。
+ * 这不是假想：同一个 `MesOperationTaskActionReadinessEvaluator` 产出的 `WORK_ORDER_NOT_FOUND`
+ * 现在就不在词表里。真正的结构性修法是给「后端码表 → 前端词表」加跨语言契约，
+ * 全仓当前零门禁，属跟进票，不在本文件能解决的范围内。
+ */
+export const RELEASE_IGNORED_TASK_BLOCKERS = new Set([
+  'PREVIOUS_OPERATION_INCOMPLETE',
+  'WORK_ORDER_NOT_RELEASED',
+])
 
 export type MesWorkOrderReleaseCandidate = {
   workOrderId?: string
