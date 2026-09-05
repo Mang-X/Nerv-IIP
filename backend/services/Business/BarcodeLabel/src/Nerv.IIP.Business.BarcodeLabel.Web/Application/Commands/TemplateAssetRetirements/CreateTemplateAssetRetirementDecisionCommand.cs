@@ -51,6 +51,7 @@ public sealed class CreateTemplateAssetRetirementDecisionCommandHandler(
             return EnsureSameRequest(replay, request);
         }
 
+        var observedCurrentReferences = await ObserveCurrentReferencesAsync(request, cancellationToken);
         await retirementFence.AcquireAsync(
             request.OrganizationId,
             request.EnvironmentId,
@@ -84,6 +85,12 @@ public sealed class CreateTemplateAssetRetirementDecisionCommandHandler(
                 && x.EnvironmentId == request.EnvironmentId
                 && x.TemplateFileId == request.TemplateFileId)
             .ToListAsync(cancellationToken);
+        if (!new HashSet<TemplateReferenceObservation>(observedCurrentReferences).SetEquals(
+                currentReferences.Select(TemplateReferenceObservation.From)))
+        {
+            throw new KnownException("模板资产引用事实不完整，退役已安全拒绝。");
+        }
+
         if (currentReferences.Any(x => x.RetiredCurrentFileByDecisionId is not null))
         {
             throw new KnownException("模板资产引用事实不完整，退役已安全拒绝。");
@@ -145,6 +152,20 @@ public sealed class CreateTemplateAssetRetirementDecisionCommandHandler(
         return decision.Id;
     }
 
+    private Task<List<TemplateReferenceObservation>> ObserveCurrentReferencesAsync(
+        CreateTemplateAssetRetirementDecisionCommand request,
+        CancellationToken cancellationToken) =>
+        dbContext.LabelTemplates
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.TemplateFileId == request.TemplateFileId)
+            .Select(x => new TemplateReferenceObservation(
+                x.Id,
+                x.Status,
+                x.RetiredCurrentFileByDecisionId))
+            .ToListAsync(cancellationToken);
+
     private Task<TemplateAssetRetirementDecision?> FindByIdempotencyKeyAsync(
         CreateTemplateAssetRetirementDecisionCommand request,
         CancellationToken cancellationToken) =>
@@ -169,5 +190,14 @@ public sealed class CreateTemplateAssetRetirementDecisionCommandHandler(
         }
 
         return existing.Id;
+    }
+
+    private sealed record TemplateReferenceObservation(
+        LabelTemplateId Id,
+        string Status,
+        TemplateAssetRetirementDecisionId? RetiredByDecisionId)
+    {
+        public static TemplateReferenceObservation From(LabelTemplate template) =>
+            new(template.Id, template.Status, template.RetiredCurrentFileByDecisionId);
     }
 }

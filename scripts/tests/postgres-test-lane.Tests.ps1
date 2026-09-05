@@ -343,8 +343,10 @@ try {
                 'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_and_new_batch_freeze_cannot_both_commit_on_postgres',
                 'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_and_template_reuse_cannot_both_commit_on_postgres',
                 'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_idempotency_and_unique_conflicts_are_stable_on_postgres',
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_rejects_when_inactive_template_rebind_to_target_file_commits_while_waiting_on_postgres',
                 'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_reference_and_reuse_matrix_is_enforced_on_postgres',
-                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Sent_and_printed_batches_follow_the_item_reprint_matrix_on_postgres')
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Sent_and_printed_batches_follow_the_item_reprint_matrix_on_postgres',
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Template_create_observation_fails_closed_when_same_code_appears_before_target_file_lock_on_postgres')
             source = 'backend/services/Business/BarcodeLabel/tests/Nerv.IIP.Business.BarcodeLabel.Web.Tests/BarcodeLabelPostgresProfileTests.cs'
             innerDatabaseFactory = 'TemporaryPostgresDatabase.CreateAsync' },
         @{ id = 'filestorage-postgres-profile'; service = 'FileStorage'; schema = 'filestorage'; identities = @(

@@ -308,13 +308,14 @@ public sealed partial class BarcodeLabelPostgresProfileTests
         ServiceProvider provider,
         string templateCode,
         string fileId,
-        string status = LabelTemplate.InactiveStatus)
+        string status = LabelTemplate.InactiveStatus,
+        string variableSchemaJson = """{"version":1,"variables":[]}""")
     {
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var template = LabelTemplate.Create(
             "org-retirement", "env-retirement", templateCode, "Concurrent retirement template",
-            fileId, """{"version":1,"variables":[]}""", status);
+            fileId, variableSchemaJson, status);
         db.LabelTemplates.Add(template);
         await db.SaveChangesAsync();
         return template.Id;
@@ -447,6 +448,39 @@ public sealed partial class BarcodeLabelPostgresProfileTests
             if (eventData.Context is ApplicationDbContext context
                 && context.ChangeTracker.Entries<TemplateAssetRetirementDecision>()
                     .Any(entry => entry.State == EntityState.Added))
+            {
+                HolderProcessId = ((NpgsqlConnection)context.Database.GetDbConnection()).ProcessID;
+                entered.TrySetResult();
+                await released.Task.WaitAsync(cancellationToken);
+            }
+
+            return result;
+        }
+    }
+
+    private sealed class TemplateRebindSaveBarrier(string targetFileId) : SaveChangesInterceptor
+    {
+        private readonly TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource released = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int HolderProcessId { get; private set; }
+
+        public async Task WaitUntilEnteredAsync(CancellationToken cancellationToken)
+        {
+            await entered.Task.WaitAsync(cancellationToken);
+        }
+
+        public void Release() => released.TrySetResult();
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (eventData.Context is ApplicationDbContext context
+                && context.ChangeTracker.Entries<LabelTemplate>()
+                    .Any(entry => entry.State == EntityState.Modified
+                        && string.Equals(entry.Entity.TemplateFileId, targetFileId, StringComparison.Ordinal)))
             {
                 HolderProcessId = ((NpgsqlConnection)context.Database.GetDbConnection()).ProcessID;
                 entered.TrySetResult();

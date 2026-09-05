@@ -528,6 +528,129 @@ public sealed partial class BarcodeLabelPostgresProfileTests
     }
 
     [RealPostgresFact]
+    public async Task Template_create_observation_fails_closed_when_same_code_appears_before_target_file_lock_on_postgres()
+    {
+        await ResetAndMigrateSchemaAsync();
+        await using var provider = CreateRetirementCommandProvider();
+        await using var gateDb = CreatePostgresDbContext(LaneConnectionString);
+        await using var gateTransaction = await gateDb.Database.BeginTransactionAsync();
+        await new PostgresTemplateAssetRetirementFence(gateDb).AcquireAsync(
+            "org-retirement", "env-retirement", "file-appearing-new", CancellationToken.None);
+        var holderProcessId = ((NpgsqlConnection)gateDb.Database.GetDbConnection()).ProcessID;
+
+        await using var updateScope = provider.CreateAsyncScope();
+        var updateTask = CaptureFailureAsync(async () =>
+            _ = await updateScope.ServiceProvider.GetRequiredService<ISender>().Send(
+                new CreateOrUpdateLabelTemplateCommand(
+                    "org-retirement",
+                    "env-retirement",
+                    "TPL-APPEARING-WHILE-WAITING",
+                    "Appearing template",
+                    "file-appearing-new",
+                    """{"version":1,"variables":[]}""",
+                    LabelTemplate.InactiveStatus)));
+
+        try
+        {
+            await WaitForAdvisoryWaitersAsync(holderProcessId, 1, "missing template create vs target file lock");
+            Assert.False(updateTask.IsCompleted);
+
+            var templateId = await AddRetirementTemplateAsync(
+                provider,
+                "TPL-APPEARING-WHILE-WAITING",
+                "file-appearing-old");
+            await using (var retirementScope = provider.CreateAsyncScope())
+            {
+                _ = await retirementScope.ServiceProvider.GetRequiredService<ISender>().Send(
+                    RetirementCommand(templateId, "file-appearing-old", "retire-appearing-old"));
+            }
+        }
+        finally
+        {
+            await gateTransaction.CommitAsync();
+        }
+
+        var updateFailure = await TestTimeout.RunAsync(
+            "template command fails closed after a same-code template appears",
+            async cancellationToken => await updateTask.WaitAsync(cancellationToken),
+            TimeSpan.FromSeconds(15),
+            sensitiveValues: [LaneConnectionString]);
+        var knownFailure = Assert.IsType<KnownException>(updateFailure);
+        Assert.Equal("标签模板当前文件已发生并发变化，请重试。", knownFailure.Message);
+
+        await using var verificationDb = CreatePostgresDbContext(LaneConnectionString);
+        var template = await verificationDb.LabelTemplates.AsNoTracking().SingleAsync();
+        var decision = await verificationDb.TemplateAssetRetirementDecisions.AsNoTracking().SingleAsync();
+        Assert.Equal("file-appearing-old", template.TemplateFileId);
+        Assert.Equal(decision.Id, template.RetiredCurrentFileByDecisionId);
+    }
+
+    [RealPostgresFact]
+    public async Task Retirement_rejects_when_inactive_template_rebind_to_target_file_commits_while_waiting_on_postgres()
+    {
+        await ResetAndMigrateSchemaAsync();
+        await using var setupProvider = CreateRetirementCommandProvider();
+        var templateId = await AddRetirementTemplateAsync(
+            setupProvider,
+            "TPL-REBIND-WINS",
+            "file-rebind-source");
+        var barrier = new TemplateRebindSaveBarrier("file-rebind-target");
+        await using var updateProvider = CreateRetirementCommandProvider(barrier);
+        await using var retirementProvider = CreateRetirementCommandProvider();
+        await using var updateScope = updateProvider.CreateAsyncScope();
+        await using var retirementScope = retirementProvider.CreateAsyncScope();
+
+        var updateTask = CaptureFailureAsync(async () =>
+            _ = await updateScope.ServiceProvider.GetRequiredService<ISender>().Send(
+                new CreateOrUpdateLabelTemplateCommand(
+                    "org-retirement",
+                    "env-retirement",
+                    "TPL-REBIND-WINS",
+                    "Rebound inactive template",
+                    "file-rebind-target",
+                    """{"version":1,"variables":[]}""",
+                    LabelTemplate.InactiveStatus)));
+        await TestTimeout.RunAsync(
+            "inactive template rebind reaches the pre-save barrier",
+            async cancellationToken => await barrier.WaitUntilEnteredAsync(cancellationToken),
+            TimeSpan.FromSeconds(15),
+            sensitiveValues: [LaneConnectionString]);
+        Assert.True(barrier.HolderProcessId > 0);
+
+        var retirementTask = CaptureFailureAsync(async () =>
+            _ = await retirementScope.ServiceProvider.GetRequiredService<ISender>().Send(
+                RetirementCommand(templateId, "file-rebind-target", "retire-after-rebind-wins")));
+        try
+        {
+            await WaitForAdvisoryWaitersAsync(
+                barrier.HolderProcessId,
+                1,
+                "inactive A-to-B rebind vs retirement B");
+            Assert.False(updateTask.IsCompleted);
+            Assert.False(retirementTask.IsCompleted);
+        }
+        finally
+        {
+            barrier.Release();
+        }
+
+        var failures = await TestTimeout.RunAsync(
+            "inactive template rebind and retirement complete after the barrier is released",
+            async cancellationToken => await Task.WhenAll(updateTask, retirementTask).WaitAsync(cancellationToken),
+            TimeSpan.FromSeconds(15),
+            sensitiveValues: [LaneConnectionString]);
+        Assert.Null(failures[0]);
+        var retirementFailure = Assert.IsType<KnownException>(failures[1]);
+        Assert.Equal("模板资产引用事实不完整，退役已安全拒绝。", retirementFailure.Message);
+
+        await using var verificationDb = CreatePostgresDbContext(LaneConnectionString);
+        var template = await verificationDb.LabelTemplates.AsNoTracking().SingleAsync(x => x.Id == templateId);
+        Assert.Equal("file-rebind-target", template.TemplateFileId);
+        Assert.Null(template.RetiredCurrentFileByDecisionId);
+        Assert.Empty(await verificationDb.TemplateAssetRetirementDecisions.AsNoTracking().ToListAsync());
+    }
+
+    [RealPostgresFact]
     public async Task Retirement_and_new_batch_freeze_cannot_both_commit_on_postgres()
     {
         await ResetAndMigrateSchemaAsync();
@@ -536,7 +659,8 @@ public sealed partial class BarcodeLabelPostgresProfileTests
             provider,
             "TPL-CONCURRENT-BATCH",
             "file-concurrent-batch",
-            LabelTemplate.ActiveStatus);
+            LabelTemplate.ActiveStatus,
+            """{"version":1,"variables":[{"name":"skuCode","type":"string","required":true,"maxLength":80}]}""");
         BarcodeRuleId ruleId;
         await using (var ruleScope = provider.CreateAsyncScope())
         {
@@ -578,10 +702,8 @@ public sealed partial class BarcodeLabelPostgresProfileTests
         Assert.False(batchTask.IsCompleted);
         await gateTransaction.CommitAsync();
         var failures = await Task.WhenAll(retirementTask, batchTask);
-        Assert.True(
-            failures.Count(failure => failure is null) == 1,
-            string.Join(Environment.NewLine, failures.Select(failure => failure?.ToString() ?? "success")));
-        Assert.Single(failures, failure => failure is KnownException);
+        Assert.IsType<KnownException>(failures[0]);
+        Assert.Null(failures[1]);
 
         await using var verificationDb = CreatePostgresDbContext(LaneConnectionString);
         Assert.False(
@@ -804,7 +926,7 @@ public sealed partial class BarcodeLabelPostgresProfileTests
             var whitespaceConstraintFailure = await Assert.ThrowsAsync<PostgresException>(() =>
                 dbContext.Database.ExecuteSqlInterpolatedAsync($"""
                     UPDATE barcode.label_print_batches
-                    SET template_file_id_snapshot = {' '}
+                    SET template_file_id_snapshot = {"\t\n\u00a0"}
                     WHERE id = {replayBatch.Id.Id}
                     """));
             Assert.Equal(PostgresErrorCodes.CheckViolation, whitespaceConstraintFailure.SqlState);

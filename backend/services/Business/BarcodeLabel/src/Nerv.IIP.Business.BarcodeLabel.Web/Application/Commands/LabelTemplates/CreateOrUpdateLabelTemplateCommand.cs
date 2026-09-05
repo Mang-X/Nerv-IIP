@@ -70,10 +70,11 @@ public sealed class CreateOrUpdateLabelTemplateCommandHandler(
             && x.EnvironmentId == request.EnvironmentId
             && x.TemplateCode == request.TemplateCode,
             cancellationToken);
-        if (observed is not null
-            && (existing is null
+        if (observed is null
+            ? existing is not null
+            : existing is null
                 || existing.Id != observed.Id
-                || !string.Equals(existing.TemplateFileId, observed.TemplateFileId, StringComparison.Ordinal)))
+                || !string.Equals(existing.TemplateFileId, observed.TemplateFileId, StringComparison.Ordinal))
         {
             throw new KnownException("标签模板当前文件已发生并发变化，请重试。");
         }
