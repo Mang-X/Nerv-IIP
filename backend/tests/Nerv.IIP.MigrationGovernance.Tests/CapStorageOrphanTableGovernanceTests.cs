@@ -203,50 +203,36 @@ public sealed class CapStorageOrphanTableGovernanceTests
             $"Expected the backend C# scan face to cover at least 1500 files, found {sources.Length} under {backend}.");
 
         var tableNames = TableNames;
-        var typedAccessProbes = BuildTypedAccessProbes(Directory
+        var contract = ResolveCapDataStorageContract(Directory
             .EnumerateFiles(AppContext.BaseDirectory, "Nerv.IIP.*.Infrastructure.dll")
             .Select(LoadAssembly));
+        var dbSetPropertyNames = contract.Select(property => property.Name).ToArray();
+        var capEntityTypeNames = contract
+            .Select(property => property.PropertyType.GetGenericArguments()[0].Name)
+            .ToArray();
         var failures = new List<string>();
 
         foreach (var source in sources)
         {
-            var text = File.ReadAllText(source);
             var relative = Path.GetRelativePath(root, source).Replace('\\', '/');
-            var scan = CSharpLiterals.Scan(text);
+            var findings = CapStorageSourceProbe.Analyze(
+                relative,
+                File.ReadAllText(source),
+                tableNames,
+                dbSetPropertyNames,
+                capEntityTypeNames,
+                NonQueryDeclarationApis);
 
-            // 面 1：表名以字符串字面量出现。覆盖全部 SQL 写法（转义引号、逐字双写、raw、插值 schema）。
-            foreach (var literal in scan.Literals)
+            foreach (var finding in findings)
             {
-                var matched = tableNames.FirstOrDefault(
-                    name => literal.Value.Contains(name, StringComparison.OrdinalIgnoreCase));
-                if (matched is null)
-                {
-                    continue;
-                }
-
-                if (IsNonQueryDeclarationArgument(text, literal.Start))
-                {
-                    continue;
-                }
-
                 failures.Add(
-                    $"{relative}:{LineOf(text, literal.Start)}: string literal names '{matched}', a CAP table that is "
-                    + "never written at runtime; the production outbox/inbox/lock live in the cap schema. Any query "
-                    + "against it is always zero rows. "
-                    + $"Only these non-query APIs may name it: {string.Join(", ", NonQueryDeclarationApis)}.");
-            }
-
-            // 面 2：强类型访问根本不出现表名字面量，必须单独判；在剔掉注释与字面量的代码文本上跑，
-            // 这样注释里举例说明不会误报（CONTROL 变异证明了这一点）。
-            foreach (var (probe, shape) in typedAccessProbes)
-            {
-                foreach (Match match in probe.Matches(scan.CodeOnly))
-                {
-                    failures.Add(
-                        $"{relative}:{LineOf(text, match.Index)}: {shape} '{match.Value.Trim()}' reaches a CAP table "
-                        + "that is never written at runtime; the production outbox/inbox/lock live in the cap schema. "
-                        + "Any query through it is always zero rows.");
-                }
+                    $"{relative}:{finding.Line}: {finding.Shape} '{finding.Detail}' reaches a CAP table that is "
+                    + "never written at runtime; the production outbox/inbox/lock live in the cap schema, so any "
+                    + "query against it is always zero rows. "
+                    + $"Only these non-query APIs may name it: {string.Join(", ", NonQueryDeclarationApis)} "
+                    + $"(registered in {nameof(NonQueryDeclarationApis)} in "
+                    + "backend/tests/Nerv.IIP.MigrationGovernance.Tests/CapStorageOrphanTableGovernanceTests.cs; "
+                    + "adding one there is a reviewable act).");
             }
         }
 
@@ -300,15 +286,19 @@ public sealed class CapStorageOrphanTableGovernanceTests
     }
 
     /// <summary>
-    /// 强类型访问面与字面量面互补：<c>db.PublishedMessages.CountAsync()</c> 与
-    /// <c>db.Set&lt;PublishedMessage&gt;()</c> 里根本没有表名字面量，字面量规则抓不到。
+    /// 强类型访问面的词表：<c>db.PublishedMessages</c> 与 <c>db.Set&lt;PublishedMessage&gt;()</c> 里根本没有
+    /// 表名字面量，字面量规则抓不到，必须按 CLR 名字判。名字**从 <c>ICapDataStorage</c> 的接口成员反射穷举**，
+    /// 不手打——手打会让本文件自己出现表名字面量（实体名大小写不敏感地就等于其中一张表的名字），
+    /// 进而逼防线给自己开豁免。
     ///
-    /// 这两条不是 SQL 形状枚举，词表也不是手打的——实体名与 DbSet 属性名**从 <c>ICapDataStorage</c>
-    /// 的接口成员反射穷举**而来。手打会让本文件自己出现表名字面量（实体名大小写不敏感地就等于其中一张
-    /// 表的名字），进而逼防线给自己开豁免；从类型系统取则天然不自匹配，也不会漏拼。
-    /// 要求有接收者，是因为 DbContext 自身实现接口时的裸调用是声明惯用法而非读取。
+    /// 两条已知局限（有意接受，写在这里以免被当成完备）：
+    ///   1. <c>Type.GetProperties()</c> 对接口**不返回继承来的成员**。若 netcorepal 把新的 DbSet 加在派生接口
+    ///      <c>IPostgreSqlCapDataStorage</c> 上，这里拿不到；<c>Assert.Equal(3, ...)</c> 只保证「基接口自己
+    ///      增删成员即红」。
+    ///   2. 只覆盖属性形态。若供应商改成方法（例如 <c>GetPublishedMessages()</c>），这里同样拿不到。
+    /// 两种情况都属于升级 netcorepal 时需要人工复核的范围，由第一个 Fact 的台账兜底。
     /// </summary>
-    private static (Regex Probe, string Shape)[] BuildTypedAccessProbes(IEnumerable<Assembly> assemblies)
+    private static IReadOnlyList<PropertyInfo> ResolveCapDataStorageContract(IEnumerable<Assembly> assemblies)
     {
         var contract = assemblies
             .SelectMany(assembly => assembly.GetTypes())
@@ -321,64 +311,36 @@ public sealed class CapStorageOrphanTableGovernanceTests
         Assert.True(
             contract is not null,
             $"{CapDataStorageInterfaceFullName} was not found in the loaded Infrastructure assemblies; "
-            + "the typed-access probe would silently cover nothing.");
+            + "the typed-access face would silently cover nothing.");
 
         var properties = contract!.GetProperties();
         Assert.Equal(3, properties.Length);
-
-        var propertyAlternation = string.Join(
-            '|',
-            properties.Select(property => Regex.Escape(property.Name)).OrderBy(name => name, StringComparer.Ordinal));
-        var entityAlternation = string.Join(
-            '|',
-            properties
-                .Select(property => Regex.Escape(property.PropertyType.GetGenericArguments()[0].Name))
-                .OrderBy(name => name, StringComparer.Ordinal));
-
-        return
-        [
-            (new Regex(
-                    @"[\w\)\]]\s*\.\s*Set<\s*(?:" + entityAlternation + @")\s*>\s*\(",
-                    RegexOptions.CultureInvariant),
-                "DbContext.Set<T>() access"),
-            (new Regex(
-                    @"\.\s*(?:" + propertyAlternation + @")\b",
-                    RegexOptions.CultureInvariant),
-                "DbSet property access"),
-        ];
+        return properties;
     }
 
     /// <summary>
-    /// 明说覆盖边界，避免后人把这个门禁当完备。**已覆盖**：任意 C# 字符串字面量（普通、转义引号、逐字
-    /// <c>@""</c> 双写、raw <c>"""</c>、插值）里出现表名，无论 SQL 怎么写、schema 是否插值；以及带接收者的
-    /// <c>DbSet</c> 属性访问与泛型 <c>Set</c> 调用。
-    /// **明确放弃**：表名先存进常量/资源再引用、跨字符串拼接出表名、通过 <c>using</c> 别名或全限定泛型
-    /// 实参绕开、反射按名取 <c>DbSet</c>、以及非 <c>backend</c> 目录下的源码。这些放弃项由第一个 Fact 的
-    /// 台账与人工审核兜底。
+    /// 明说覆盖边界，避免后人把这个门禁当完备。措辞与实现逐条对齐过：声称覆盖的都跑过变异，
+    /// 声称放弃的都确认真的放弃。
+    ///
+    /// **已覆盖**：Roslyn 语法树里的字符串字面量（普通、逐字 <c>@""</c>、raw <c>"""</c>、UTF-8、
+    /// 转义序列已按 <c>ValueText</c> 还原）、插值字符串的文本段、以及插值洞内的嵌套字面量；
+    /// 带接收者的 <c>DbSet</c> 属性访问与泛型 <c>Set</c> 调用（类型实参取最右标识符，**全限定写法也命中**）。
+    /// 在 <c>backend</c> 内用字面量定义常量同样命中——常量的**定义点**是字面量。
+    ///
+    /// **明确放弃**：跨字符串拼接出表名；引用在 <c>backend</c> 之外定义的常量或嵌入资源；
+    /// <c>using</c> 类型别名把实体重命名后再用；反射按名字取 <c>DbSet</c>；<c>backend</c> 之外的源码。
+    /// 这些放弃项由第一个 Fact 的台账与人工审核兜底。
     /// </summary>
     private const string CoverageBoundaryNotice =
-        "Coverage boundary: this probe covers (a) C# string literals — regular, escaped, verbatim, raw and "
-        + "interpolated — naming the table, and (b) DbSet property access / generic Set<T>() calls with a "
-        + "receiver, across backend/**/*.cs excluding obj, bin and Migrations. It deliberately does NOT cover "
-        + "names hidden behind constants or resources, names assembled by string concatenation, using aliases, "
-        + "fully qualified generic arguments, reflection-by-name, or sources outside backend. Do not treat a "
+        "Coverage boundary: parsed with Roslyn, this probe covers (a) string literals — regular, verbatim, raw, "
+        + "UTF-8, with escape sequences resolved — plus interpolated-string text segments and literals nested "
+        + "inside interpolation holes, and (b) DbSet property access / generic Set<T>() calls with a receiver, "
+        + "including fully qualified type arguments. Defining a constant from such a literal inside backend is "
+        + "covered too. It deliberately does NOT cover names assembled by string concatenation, constants or "
+        + "embedded resources defined outside backend, using-alias renames, reflection-by-name, or sources "
+        + "outside backend/**/*.cs (obj, bin and Migrations are excluded). Both faces share one syntax tree, so "
+        + "they are complementary judgements over a common parse, not two independent defences. Do not treat a "
         + "green result as proof that nothing reads these tables.";
-
-    /// <summary>
-    /// 判定字面量是否是某个非查询声明 API 的实参：从字面量往回退到最近的语句边界（<c>;</c> / <c>{</c> /
-    /// <c>}</c>），在这一段里找 <c>Api(</c>。已知局限：同一条语句里既调用声明 API 又拼 SQL 时会放行，
-    /// 但那种写法不出现在本仓，且属上面「明确放弃」的范围。
-    /// </summary>
-    private static bool IsNonQueryDeclarationArgument(string text, int literalStart)
-    {
-        var boundary = text.LastIndexOfAny([';', '{', '}'], Math.Max(literalStart - 1, 0));
-        var segment = text[(boundary + 1)..literalStart];
-        return NonQueryDeclarationApis.Any(
-            api => Regex.IsMatch(
-                segment,
-                $"\\b{Regex.Escape(api)}\\s*\\(",
-                RegexOptions.CultureInvariant));
-    }
 
     private static IReadOnlyDictionary<string, string[]> LoadLedger()
     {
@@ -406,9 +368,6 @@ public sealed class CapStorageOrphanTableGovernanceTests
     private static bool ContainsSegment(string path, string segment) =>
         path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
             .Any(part => string.Equals(part, segment, StringComparison.Ordinal));
-
-    private static int LineOf(string text, int index) =>
-        text.AsSpan(0, index).Count('\n') + 1;
 
     private static Assembly LoadAssembly(string path)
     {
