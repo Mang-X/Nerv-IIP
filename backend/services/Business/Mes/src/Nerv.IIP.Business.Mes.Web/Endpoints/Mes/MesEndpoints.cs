@@ -506,7 +506,7 @@ public sealed record StartChangeoverRequest(
     string WorkCenterId,
     string DeviceAssetId,
     string OperatorId,
-    ChangeoverToolingCheckResult ToolingCheckResult,
+    ChangeoverToolingCheckResult? ToolingCheckResult,
     DateTimeOffset StartedAtUtc,
     string IdempotencyKey);
 
@@ -519,7 +519,7 @@ public sealed class StartChangeoverRequestValidator : Validator<StartChangeoverR
         RuleFor(x => x.WorkCenterId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.OperatorId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.ToolingCheckResult).IsInEnum();
+        RuleFor(x => x.ToolingCheckResult).NotNull().IsInEnum();
         RuleFor(x => x.StartedAtUtc).NotEmpty();
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
     }
@@ -1754,7 +1754,7 @@ public sealed class StartChangeoverEndpoint(ISender sender)
             req.WorkCenterId,
             req.DeviceAssetId,
             req.OperatorId,
-            req.ToolingCheckResult,
+            req.ToolingCheckResult!.Value,
             req.StartedAtUtc,
             req.IdempotencyKey), ct);
         await Send.OkAsync(response, ct);
