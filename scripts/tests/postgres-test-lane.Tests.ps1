@@ -355,7 +355,10 @@ try {
                 'Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Expand_migration_keeps_legacy_completed_write_readable_by_new_protocol',
                 'Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Independent_gate_registries_claim_one_database_owner_and_create_one_file_fact',
                 'Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Metadata_usage_and_download_grant_survive_web_host_restart',
-                'Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Recovery_batch_prioritizes_never_attempted_intent_before_due_retries')
+                'Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Recovery_batch_prioritizes_never_attempted_intent_before_due_retries',
+                'Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Retirement_acceptance_replays_frozen_horizon_and_holds_content_and_legacy_gc_on_postgres',
+                'Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Retirement_concurrent_duplicate_waits_for_row_lock_and_rollback_is_atomic_on_postgres',
+                'Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Retirement_verifier_rejects_each_wire_and_resource_constraint_without_writes_on_postgres')
             source = 'backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/FileStorageRestartPersistenceTests.cs'
             innerDatabaseFactory = 'PostgreSqlTestDatabase.CreateAsync' },
         @{ id = 'maintenance-device-pause-postgres'; service = 'Maintenance'; schema = 'maintenance'; identities = @(
