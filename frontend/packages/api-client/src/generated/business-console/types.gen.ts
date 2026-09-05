@@ -5024,6 +5024,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     wipItems?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverWipItem>;
     unfinishedWorkOrders?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverUnfinishedWorkOrder>;
     openIssues?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverOpenIssue>;
+    attachments?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverAttachment>;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverWipItem = {
@@ -5046,6 +5047,13 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     referenceId?: string | null;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverAttachment = {
+    fileId?: string;
+    fileName?: string;
+    contentType?: string;
+    sizeBytes?: number;
+};
+
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverDetailRequest = {
     [key: string]: never;
 };
@@ -5061,6 +5069,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     wipItems?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverWipItem> | null;
     unfinishedWorkOrders?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverUnfinishedWorkOrder> | null;
     openIssues?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverOpenIssue> | null;
+    attachments?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverAttachment> | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAcceptShiftHandoverRequest = {
@@ -6135,6 +6144,28 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     openedBy?: string;
     idempotencyKey: string;
     assetUnavailableReason?: string | null;
+    assignedTechnicianUserId?: string | null;
+    estimatedLaborMinutes?: number | null;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateMaintenanceWorkOrderV2Response = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMaintenanceWorkOrderV2Response | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMaintenanceWorkOrderV2Response = {
+    workOrderId?: string;
+    operationReceipt?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOperationReceipt | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMaintenanceWorkOrderV2Request = {
+    organizationId: string;
+    environmentId: string;
+    deviceAssetId: string;
+    priority: string;
+    sourceAlarmId?: string | null;
+    openedBy?: string;
+    idempotencyKey: string;
+    assetUnavailableReasonCode?: string | null;
     assignedTechnicianUserId?: string | null;
     estimatedLaborMinutes?: number | null;
 };
@@ -19082,6 +19113,45 @@ export type CreateBusinessConsoleMaintenanceWorkOrderResponses = {
 };
 
 export type CreateBusinessConsoleMaintenanceWorkOrderResponse = CreateBusinessConsoleMaintenanceWorkOrderResponses[keyof CreateBusinessConsoleMaintenanceWorkOrderResponses];
+
+export type CreateBusinessConsoleMaintenanceWorkOrderV2Data = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMaintenanceWorkOrderV2Request;
+    headers?: {
+        /**
+         * Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.
+         */
+        'Idempotency-Key'?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v2/maintenance/work-orders';
+};
+
+export type CreateBusinessConsoleMaintenanceWorkOrderV2Errors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateBusinessConsoleMaintenanceWorkOrderV2Error = CreateBusinessConsoleMaintenanceWorkOrderV2Errors[keyof CreateBusinessConsoleMaintenanceWorkOrderV2Errors];
+
+export type CreateBusinessConsoleMaintenanceWorkOrderV2Responses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateMaintenanceWorkOrderV2Response;
+};
+
+export type CreateBusinessConsoleMaintenanceWorkOrderV2Response = CreateBusinessConsoleMaintenanceWorkOrderV2Responses[keyof CreateBusinessConsoleMaintenanceWorkOrderV2Responses];
 
 export type CompleteBusinessConsoleMaintenanceWorkOrderData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteMaintenanceWorkOrderRequest;

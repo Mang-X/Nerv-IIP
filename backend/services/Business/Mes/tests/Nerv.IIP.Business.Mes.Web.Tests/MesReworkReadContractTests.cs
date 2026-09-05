@@ -36,6 +36,7 @@ public sealed class MesReworkReadContractTests
             "evt-rework-requested-001");
         var reworkTask = Assert.Single(rework.Release(
             requestedAtUtc,
+            WorkOrderReleaseFactTime.NotLaterThan(requestedAtUtc, null),
             [new RoutingStepSnapshot("OP-RW", 10, "WC-001", [], TimeSpan.FromMinutes(30))]));
         reworkTask.Start(requestedAtUtc.AddMinutes(1));
         var standard = WorkOrder.Create(
@@ -49,6 +50,7 @@ public sealed class MesReworkReadContractTests
             requestedAtUtc.AddDays(1));
         var standardTask = Assert.Single(standard.Release(
             requestedAtUtc,
+            WorkOrderReleaseFactTime.NotLaterThan(requestedAtUtc, null),
             [new RoutingStepSnapshot("OP-STANDARD", 10, "WC-001", [], TimeSpan.FromMinutes(30))]));
         db.WorkOrders.AddRange(rework, standard);
         db.OperationTasks.AddRange(reworkTask, standardTask);

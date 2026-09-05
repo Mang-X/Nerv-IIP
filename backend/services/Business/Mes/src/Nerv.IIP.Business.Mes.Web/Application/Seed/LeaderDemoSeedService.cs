@@ -57,7 +57,11 @@ public sealed class LeaderDemoSeedService(
 
         var workOrder = WorkOrder.Create(
             organizationId, environmentId, WorkOrderId, SkuCode, productionVersion.ProductionVersionId, 10m, 1, DueUtc, "pcs");
-        var operations = workOrder.Release(EarliestStartUtc,
+        // 工序在这一刻才建出，无既有活动（报工或完工）；EarliestStartUtc 是排产用的最早可开工时刻，
+        // 与发布事实的时刻是两件事，故分开传（#3117）。演示种子的发布锚点取同一个常量时刻。
+        var operations = workOrder.Release(
+            EarliestStartUtc,
+            WorkOrderReleaseFactTime.NotLaterThan(EarliestStartUtc, null),
         [
             new RoutingStepSnapshot("OP-DEMO-Q01-010", 10, "WC-CNC-DEMO", [], TimeSpan.FromMinutes(30), true, "OP-CNC-DEMO")
         ]);

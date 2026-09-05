@@ -51,7 +51,7 @@ Reference 与源码冲突时，以当前代码/契约/测试为准并修正本�
 | Inventory | `StockMovementPostingFailedIntegrationEvent` | Inventory | WMS | `consumed-internally` |
 | Inventory | `StockCountVarianceConfirmedIntegrationEvent` | Inventory | 当前无必须改变平台状态的活动消费者 | `producer-only-until-feature` |
 | Inventory | `StockAvailabilityChangedIntegrationEvent` | Inventory | Scheduling | `consumed-internally` |
-| Maintenance | V1 `AssetUnavailableIntegrationEvent`；V2 `AssetUnavailableV2IntegrationEvent` | V1 Maintenance；V2 当前无活动 producer | V1 MES、Scheduling；V2 当前无活动 consumer | V1 `consumed-internally`；V2 `needs-business-consumer` |
+| Maintenance | V1 `AssetUnavailableIntegrationEvent`；V2 `AssetUnavailableV2IntegrationEvent` | V1 Maintenance（v1 自由文本入口只发 V1；v2 原因码入口双发 V1 companion + V2）；V2 Maintenance（`POST /api/business/v2/maintenance/work-orders`，#2964 C/D 阶段） | V1 MES、Scheduling；V2 MES、Scheduling 均精确订阅 canonical topic，并按共享 `idempotencyKey` 折叠双发 | V1/V2 `consumed-internally` |
 | Maintenance | `AssetRestoredIntegrationEvent` | Maintenance | MES、Scheduling | `consumed-internally` |
 | MasterData | `SkuChangedIntegrationEvent` | MasterData | 当前下游主要使用 API/快照；无活动状态消费者 | `producer-only-until-feature` |
 | MasterData | `SkuDisabledIntegrationEvent` | MasterData | MES | `consumed-internally` |
@@ -81,7 +81,8 @@ Reference 与源码冲突时，以当前代码/契约/测试为准并修正本�
 | Quality | `InspectionResultIntegrationEvent`（passed/conditional/rejected） | Quality | Inventory、MES、Scheduling；RMA 场景下 ERP 处理相应财务结果 | `consumed-internally` |
 | Quality | `InspectionTaskOverdueIntegrationEvent` | Quality | Notification | `consumed-internally` |
 | Quality | `MeasuringDeviceCalibrationDueIntegrationEvent` | Quality | Notification | `consumed-internally` |
-| MES | `WorkOrderReleasedIntegrationEvent` | MES | Scheduling、Quality | `consumed-internally` |
+| MES | `WorkOrderReleasedIntegrationEvent` | MES | Scheduling、Quality | `consumed-internally`。信封 `occurredAtUtc` 与 payload `releasedAtUtc` 同取**发布动作给出的发布事实时刻**（按该工单**既有活动**取下界——最早报工与最早工序完工中更早者，#3117），不再取转换那一刻的 `UtcNow`。按 ADR 0011 §5 这是把原先违反「`occurredAtUtc` 必须是领域事实发生时间」的取值修回合规，属修正而非 §4 意义上的语义变更，**不提升 `eventVersion`**；Scheduling 只读 `Payload.WorkOrderId`/`SkuCode`，不校验也不消费任一时刻 |
+| MES | `WorkOrderReleaseProjectionBackfilledIntegrationEvent` | MES（运维触发的一次性内部端点，非领域事件转换） | 仅 Quality：把存量在制工单的发布事实补进工序巡检投影，只补空缺不覆盖既有行。Scheduling **不**订阅——它对发布事件的处理是让全部已生成排程计划失效，不能被回填放大 | `consumed-internally` |
 | MES | `ReworkWorkOrderCreatedIntegrationEvent` | MES | Quality：按 organization/environment/NCR 来源事实绑定系统返工工单回执；ERP：在既有 `WorkOrderCost` 上登记 NCR 与来源工单归因 | `consumed-internally` |
 | MES | `WorkOrderCompletedIntegrationEvent` | MES | ERP | `consumed-internally` |
 | MES | `WorkOrderClosedIntegrationEvent` | MES | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |

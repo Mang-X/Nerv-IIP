@@ -2739,6 +2739,57 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverAttachment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Shift handover attachment id.");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("content_type")
+                        .HasComment("Content type captured at handover time.");
+
+                    b.Property<string>("FileId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("file_id")
+                        .HasComment("FileStorage file id; the handle a download grant is issued against.");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("file_name")
+                        .HasComment("File name captured at handover time.");
+
+                    b.Property<Guid>("ShiftHandoverId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("shift_handover_id")
+                        .HasComment("Owning shift handover aggregate id.");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("size_bytes")
+                        .HasComment("File size in bytes captured at handover time.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ShiftHandoverId")
+                        .HasDatabaseName("ix_shift_handover_attachments_handover");
+
+                    b.ToTable("shift_handover_attachments", "mes", t =>
+                        {
+                            t.HasComment("MES FileStorage attachments handed over with a shift; file name, content type and size are handover-time snapshots.");
+
+                            t.HasCheckConstraint("ck_shift_handover_attachments_size_bytes", "size_bytes >= 0");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverOpenIssue", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3353,7 +3404,7 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)")
-                        .HasComment("Source integration event identifier retained for traceability; idempotency uses IdempotencyKey.");
+                        .HasComment("Source integration event identifier; unique per consumer as the event-instance identity alongside the IdempotencyKey business identity.");
 
                     b.Property<string>("EventType")
                         .IsRequired()
@@ -3369,7 +3420,7 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)")
-                        .HasComment("Deterministic BusinessMES idempotency key unique within a consumer.");
+                        .HasComment("Deterministic cross-version business identity of the consumed fact, unique within a consumer alongside the EventId instance identity.");
 
                     b.Property<DateTimeOffset>("ProcessedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -3382,6 +3433,10 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasComment("Service that produced the integration event.");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ConsumerName", "EventId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_processed_integration_events_consumer_event_id");
 
                     b.HasIndex("ConsumerName", "IdempotencyKey")
                         .IsUnique()
@@ -4075,6 +4130,16 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasConstraintName("fk_quality_hold_contexts_work_orders");
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverAttachment", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandover", null)
+                        .WithMany("Attachments")
+                        .HasForeignKey("ShiftHandoverId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_shift_handover_attachments_handovers");
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverOpenIssue", b =>
                 {
                     b.HasOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandover", null)
@@ -4196,6 +4261,8 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
 
             modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandover", b =>
                 {
+                    b.Navigation("Attachments");
+
                     b.Navigation("OpenIssues");
 
                     b.Navigation("UnfinishedWorkOrders");

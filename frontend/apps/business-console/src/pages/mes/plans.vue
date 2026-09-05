@@ -155,7 +155,7 @@ const convertContextItems = computed(() => {
     { label: '计划开始', value: formatDateTime(plan.plannedStartUtc) },
   ]
 })
-const errorMessage = computed(() => formatError(productionPlansError.value))
+const errorMessage = computed(() => inlineErrorMessage(productionPlansError.value))
 const hasActiveFilters = computed(
   () =>
     Boolean(keyword.value.trim()) ||
@@ -313,9 +313,6 @@ function normalizeSourceQuery(value: unknown): string {
 }
 function newPlanIdempotencyKey(scope: string) {
   return `${scope}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 </script>
 

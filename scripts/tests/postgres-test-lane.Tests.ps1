@@ -39,7 +39,9 @@ $script:GovernedPostgresMemberIds = @(
     'erp-postgres-profile',
     'demandplanning-postgres-profile',
     'acceptance-postgres-profile',
-    'maintenance-device-pause-postgres'
+    'maintenance-device-pause-postgres',
+    'scheduling-asset-unavailable-postgres',
+    'maintenance-asset-unavailable-v2-postgres'
 )
 function Get-NervCSharpMethodBody([string]$Source, [string]$MethodName) {
     $signatureIndex = $Source.IndexOf(" $MethodName(", [StringComparison]::Ordinal)
@@ -275,6 +277,28 @@ try {
         Assert-Contract (Test-Path -LiteralPath $schedulingSourcePath -PathType Leaf) "The Scheduling lane source '$schedulingSourcePath' must exist."
         Assert-SchedulingLaneOwnedDatabase -SourcePath $schedulingSourcePath
     }
+    # #2967：AssetUnavailable v2 的 inbox 双身份 claim、迁移前滚与索引列变异证明落在独立成员，
+    # 与 scheduling-postgres-profile 共用同一受治理数据库（同一序列化 collection），身份集合在此冻结。
+    $schedulingAssetMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'scheduling-asset-unavailable-postgres' -RepositoryRoot $repoRoot
+    $schedulingAssetIdentities = @(
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Concurrent_claims_with_different_event_ids_and_same_business_key_commit_one_result',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Concurrent_claims_with_same_event_id_and_different_business_keys_commit_one_result',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Event_id_unique_index_wrong_column_mutation_is_rejected',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Idempotency_key_unique_index_wrong_column_mutation_is_rejected',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Inbox_identity_lock_fails_closed_without_an_active_transaction',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Migration_fails_closed_on_historical_event_instance_with_ambiguous_business_keys',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Migration_upgrades_distinct_historical_event_instances_and_old_schema_already_forbids_same_key_duplicates',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Save_changes_absorbs_event_id_inbox_conflict_as_zero_rows',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Save_changes_absorbs_idempotency_key_inbox_conflict_as_zero_rows'
+    )
+    Assert-Contract ([string]::Equals([string]$schedulingAssetMember.service, 'Scheduling', [StringComparison]::Ordinal)) 'The Scheduling AssetUnavailable member must belong to the Scheduling service.'
+    Assert-Contract ([string]::Equals([string]$schedulingAssetMember.project, [string]$schedulingMember.project, [StringComparison]::Ordinal)) 'The Scheduling AssetUnavailable member must target the same owning test project as the profile member.'
+    Assert-Contract (@($schedulingAssetMember.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$schedulingAssetMember.diagnosticSchemas[0], 'scheduling', [StringComparison]::Ordinal)) 'The Scheduling AssetUnavailable member must own its restricted diagnostic schema declaration.'
+    Assert-Contract ([string]::Equals((@($schedulingAssetMember.expectedTestIdentities) -join "`n"), ($schedulingAssetIdentities -join "`n"), [StringComparison]::Ordinal)) 'The Scheduling AssetUnavailable member must freeze exactly the nine inbox, lock, save-conflict, migration and index-mutation identities.'
+    Assert-Contract ([string]$schedulingAssetMember.filter).Contains('FullyQualifiedName~Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests', [StringComparison]::Ordinal) 'The Scheduling AssetUnavailable member filter must select its owning test class.'
+    $schedulingAssetSourcePath = Join-Path $schedulingSourceDirectory 'AssetUnavailableInboxPostgresProfileTests.cs'
+    Assert-Contract (Test-Path -LiteralPath $schedulingAssetSourcePath -PathType Leaf) "The Scheduling lane source '$schedulingAssetSourcePath' must exist."
+    Assert-SchedulingLaneOwnedDatabase -SourcePath $schedulingAssetSourcePath
     $innerDatabaseSourcePath = Join-Path $fixtureRoot 'inner-database-scheduling-source.cs'
     [IO.File]::WriteAllText(
         $innerDatabaseSourcePath,
@@ -333,6 +357,17 @@ try {
         @{ id = 'maintenance-device-pause-postgres'; service = 'Maintenance'; schema = 'maintenance'; identities = @(
                 'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceIntegrationEventHandlerTests.Device_disabled_consumer_durably_blocks_pm_generation_on_postgres')
             source = 'backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceIntegrationEventHandlerTests.cs'
+            innerDatabaseFactory = 'TemporaryPostgresDatabase.CreateAsync' },
+        # #2968：Maintenance v2 工单入口的目录精确命中、v1+v2 双发同事务与回滚、v1 零漂移证明落在独立成员，
+        # 与 maintenance-device-pause-postgres 同一测试项目、各自独立的运行器数据库；身份集合在此冻结。
+        @{ id = 'maintenance-asset-unavailable-v2-postgres'; service = 'Maintenance'; schema = 'maintenance'; identities = @(
+                'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.V1_free_text_still_publishes_only_the_v1_envelope_without_touching_the_catalog',
+                'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.V2_exact_code_commits_work_order_with_v1_companion_and_v2_canonical_outbox_rows_in_one_transaction',
+                'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.V2_near_miss_cross_scope_or_free_text_codes_are_rejected_by_the_database_predicate_with_zero_rows',
+                'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.V2_null_reason_code_commits_a_plain_work_order_without_asset_unavailable_outbox_rows',
+                'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.V2_outbox_failure_rolls_back_the_work_order_and_the_already_published_v1_companion',
+                'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.V1_companion_outbox_failure_rolls_back_the_work_order_before_the_v2_envelope_is_attempted')
+            source = 'backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceAssetUnavailableV2PostgresTests.cs'
             innerDatabaseFactory = 'TemporaryPostgresDatabase.CreateAsync' }
     )
     foreach ($smallServiceMember in $smallServiceMembers) {
@@ -370,7 +405,7 @@ try {
     # Quality 同理：provider 类中只有 25 条是真实 PostgreSQL 证明；Periodic Inspection 的
     # 窄 harness 另行纳入数据库 builder 归属核验，但不承载测试身份。
     $qualityMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'quality-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($qualityMember.expectedTestIdentities).Count -eq 25) 'The Quality member must freeze exactly its twenty-five governed PostgreSQL identities.'
+    Assert-Contract (@($qualityMember.expectedTestIdentities).Count -eq 26) 'The Quality member must freeze exactly its twenty-six governed PostgreSQL identities.'
     Assert-Contract (@($qualityMember.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$qualityMember.diagnosticSchemas[0], 'quality', [StringComparison]::Ordinal)) 'Quality business and CAP tables share one schema, which the member must declare.'
     $qualityLaneSources = @(
             'PeriodicInspectionPostgresConcurrencyTests.cs',
@@ -422,10 +457,13 @@ try {
     # 以及停机读面 3 条（列表行投影、按原因聚合的时长结算与名次、按原因过滤与汇总面）、报工 OEE 维度快照迁移 1 条
     # 和 NCR 返工工单 8 条来源、物料、幂等、并发、范围隔离与追溯证明、停机原因迁移 1 条及生产统计 3 条聚合契约证明，
     # 再保留独立协作参与者读面与自领并发的唯一 owner/participant/receipt/业务冲突证明，以及 #3010 的
-    # 返工 UoW 成功、outbox 失败回滚与外层事务归属 3 条证明，共有 56 条真实 PostgreSQL 证明；
+    # 返工 UoW 成功、outbox 失败回滚与外层事务归属 3 条证明，以及 #2966 的停机事件 v1/v2 跨事务并发单效、
+    # 幂等键与 eventId 两条唯一约束各自拒绝其等价错误变异、同 EventId 异业务键并发单效，以及收件箱迁移
+    # 「真重复保留最早行」与「歧义历史 fail-closed」共 6 条证明，共有 63 条真实 PostgreSQL 证明（该叙述在 main 上原写 62、与断言的 63 差 1，此处按断言更正）；再加 #3117 的直投发布时刻下界 1 条
+    # （按既有活动取下界的聚合查询与三分量归属谓词由真实 provider 执行），共 64 条；
     # CAP 的原生存储表落在独立 cap schema，业务表与 EF 侧 cap_* 表落在 mes schema，两者都必须声明才能在失败时留下完整诊断。
     $mesMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'mes-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($mesMember.expectedTestIdentities).Count -eq 56) 'The MES member must freeze exactly its fifty-six governed PostgreSQL identities.'
+    Assert-Contract (@($mesMember.expectedTestIdentities).Count -eq 64) 'The MES member must freeze exactly its sixty-four governed PostgreSQL identities.'
     $mesCollaborationIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.MesCollaborationPostgresTests.Reportable_scope_matches_a_registered_participant_on_postgres'
     $mesClaimIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.OperationTaskClaimPostgresTests.Concurrent_claims_persist_one_owner_participant_and_receipt_and_reject_the_loser_on_postgres'
     Assert-Contract (@($mesMember.expectedTestIdentities | Where-Object { [string]::Equals([string]$_, $mesCollaborationIdentity, [StringComparison]::Ordinal) }).Count -eq 1) 'The MES member must freeze the participant-only reportable-scope PostgreSQL identity exactly once.'
@@ -445,21 +483,22 @@ try {
     Assert-Contract (@($mesSaveBoundaryIdentities | Where-Object { -not $mesIdentitySet.Contains($_) }).Count -eq 0) 'The MES member must freeze all nine CAP save-boundary PostgreSQL identities.'
     Assert-Contract ([string]::Equals((@($mesMember.diagnosticSchemas) -join ','), 'mes,cap', [StringComparison]::Ordinal)) 'The MES member must declare both the mes schema and the native CAP storage schema.'
     Assert-MethodScopedFilter -Member $mesMember
-    foreach ($mesSource in @(
-            'MesCapSaveBoundaryPostgresTests.cs',
-            'MesCapSubscriptionTests.cs',
-            'MesCollaborationPostgresTests.cs',
-            'OperationTaskClaimPostgresTests.cs',
-            'MesDowntimeReadFacePostgresTests.cs',
-            'MesMaterialSubstituteSnapshotPostgresTests.cs',
-            'MesProductionStatisticsPostgresTests.cs',
-            'MesSchedulePlanProvenancePostgresTests.cs',
-            'OperationActualTimeSettlementPostgresTests.cs',
-            'RushWorkOrderHttpPostgresTests.cs',
-            'SkuDisabledConsumerTests.cs',
-            'TelemetryProductionReportCandidatePostgresTests.cs',
-            'WorkOrderCapitalizationConcurrencyPostgresTests.cs',
-            'WorkOrderTransformationApplicationPostgresTests.cs')) {
+    # MES lane 的扫描面**从冻结身份派生**，不再手工列举。
+    # 人工名单会静默偏斜：改前它漏了 6 个已登记的 PostgreSQL 测试类
+    # （#3000 的 WorkOrderReleaseProjectionBackfillPostgresTests、两条 NcrReworkRequested*、
+    # DowntimeReasonCodeMigration、ProductionReportOeeDimensionSnapshot、WorkOrderTransformation），
+    # 而漏登记就是漏防线——Assert-LaneOwnedDatabase 根本没扫到那些文件。
+    # 身份形如 <Namespace>.<Class>.<Method>，倒数第二段即类名，类名即源文件名。
+    # 去重与排序都走序数比较器：`Sort-Object -Unique` 会折叠可忽略字符，
+    # 两个只差一个 bidi 字符的类名会被并成一个，扫描面因此静默变窄（ordinal-comparison-layers 门禁点名过这一处）。
+    $mesSourceSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($mesIdentity in @($mesMember.expectedTestIdentities)) {
+        $segments = ([string]$mesIdentity).Split('.')
+        [void]$mesSourceSet.Add("$($segments[$segments.Length - 2]).cs")
+    }
+    $mesSourceNames = [Collections.Generic.List[string]]::new([string[]]@($mesSourceSet))
+    $mesSourceNames.Sort([StringComparer]::Ordinal)
+    foreach ($mesSource in $mesSourceNames) {
         $mesSourcePath = Join-Path $repoRoot "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/$mesSource"
         Assert-Contract (Test-Path -LiteralPath $mesSourcePath -PathType Leaf) "MES lane source '$mesSource' must exist."
         Assert-LaneOwnedDatabase -SourcePath $mesSourcePath -InnerDatabaseFactory 'PostgreSqlTestDatabase.CreateAsync'

@@ -39,7 +39,7 @@ public sealed class BusinessGatewayOpenApiTests
     public async Task Mes_shift_handover_detail_forwards_scope_and_maps_snapshot_details()
     {
         var handler = new MaterialIssueDetailStubHandler(
-            """{"data":{"handoverId":"SH-000123","shiftId":"EARLY","teamId":"TEAM-A","handoverStatus":"Accepted","openIssueCount":4,"createdAtUtc":"2026-08-27T08:00:00Z","acceptedAtUtc":"2026-08-27T16:00:00Z","teamName":"甲班","outgoingUserId":"user-out","outgoingUserName":"张三","incomingUserId":"user-in","incomingUserName":"李四","wipItems":[{"workOrderId":"WO-001","operationTaskId":"OP-10","quantity":12.5}],"unfinishedWorkOrders":[{"workOrderId":"WO-001","plannedQuantity":100,"completedQuantity":40,"workOrderStatus":"released"}],"openIssues":[{"category":"Equipment","severity":"High","description":"三号机主轴异响","referenceId":"DT-0001"}]}}""");
+            """{"data":{"handoverId":"SH-000123","shiftId":"EARLY","teamId":"TEAM-A","handoverStatus":"Accepted","openIssueCount":4,"createdAtUtc":"2026-08-27T08:00:00Z","acceptedAtUtc":"2026-08-27T16:00:00Z","teamName":"甲班","outgoingUserId":"user-out","outgoingUserName":"张三","incomingUserId":"user-in","incomingUserName":"李四","wipItems":[{"workOrderId":"WO-001","operationTaskId":"OP-10","quantity":12.5}],"unfinishedWorkOrders":[{"workOrderId":"WO-001","plannedQuantity":100,"completedQuantity":40,"workOrderStatus":"released"}],"openIssues":[{"category":"Equipment","severity":"High","description":"三号机主轴异响","referenceId":"DT-0001"}],"attachments":[{"fileId":"file-sh-1","fileName":"photo.jpg","contentType":"image/jpeg","sizeBytes":2048}]}}""");
         var client = new HttpBusinessMesClient(new HttpClient(handler) { BaseAddress = new Uri("http://mes") });
 
         var response = await client.GetShiftHandoverAsync(
@@ -56,6 +56,10 @@ public sealed class BusinessGatewayOpenApiTests
         Assert.Equal("Equipment", issue.Category);
         Assert.Equal("High", issue.Severity);
         Assert.Equal("DT-0001", issue.ReferenceId);
+        var attachment = Assert.Single(response.Attachments);
+        Assert.Equal(
+            ("file-sh-1", "photo.jpg", "image/jpeg", 2048L),
+            (attachment.FileId, attachment.FileName, attachment.ContentType, attachment.SizeBytes));
         Assert.Equal(
             "/api/business/v1/mes/shift-handovers/SH-000123?organizationId=org-a&environmentId=env-a",
             handler.LastRequest!.RequestUri!.PathAndQuery);
@@ -521,6 +525,8 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/maintenance/work-orders", "get", "listBusinessConsoleMaintenanceWorkOrders");
         AssertOperationId(paths, "/api/business-console/v1/maintenance/work-orders", "post", "createBusinessConsoleMaintenanceWorkOrder");
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/maintenance/work-orders", "post", "idempotencyKey", 150);
+        AssertOperationId(paths, "/api/business-console/v2/maintenance/work-orders", "post", "createBusinessConsoleMaintenanceWorkOrderV2");
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v2/maintenance/work-orders", "post", "idempotencyKey", 150);
         AssertOperationId(paths, "/api/business-console/v1/maintenance/work-orders/{workOrderId}", "get", "getBusinessConsoleMaintenanceWorkOrder");
         AssertOperationId(paths, "/api/business-console/v1/maintenance/work-orders/{workOrderId}/complete", "post", "completeBusinessConsoleMaintenanceWorkOrder");
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/maintenance/work-orders/{workOrderId}/complete", "post", "idempotencyKey", 150);
@@ -1688,6 +1694,47 @@ public sealed class BusinessGatewayOpenApiTests
         Assert.Empty(schema.EnumerationNames);
     }
 
+    // Contract: #2969 / spec #2964。v1 与 v2 创建工单必须是两份彼此独立的 wire 契约：
+    // v2 只有目录码字段，v1 只有自由文本字段，两者的 request schema 不得复用同一个组件。
+    [Fact]
+    public async Task Maintenance_work_order_create_v1_and_v2_expose_independent_request_contracts()
+    {
+        var json = await BusinessGatewayTestHost.GetOpenApiDocumentAsync();
+        using var document = JsonDocument.Parse(json);
+        var paths = document.RootElement.GetProperty("paths");
+
+        var v1Schema = RequestBodySchemaName(paths, "/api/business-console/v1/maintenance/work-orders", "post");
+        var v2Schema = RequestBodySchemaName(paths, "/api/business-console/v2/maintenance/work-orders", "post");
+        Assert.NotEqual(v1Schema, v2Schema);
+
+        var schemas = document.RootElement.GetProperty("components").GetProperty("schemas");
+        var v1Properties = schemas.GetProperty(v1Schema).GetProperty("properties");
+        var v2Properties = schemas.GetProperty(v2Schema).GetProperty("properties");
+
+        Assert.True(v1Properties.TryGetProperty("assetUnavailableReason", out var v1Reason));
+        Assert.Equal(200, v1Reason.GetProperty("maxLength").GetInt32());
+        Assert.False(v1Properties.TryGetProperty("assetUnavailableReasonCode", out _));
+
+        Assert.True(v2Properties.TryGetProperty("assetUnavailableReasonCode", out var v2ReasonCode));
+        Assert.Equal(100, v2ReasonCode.GetProperty("maxLength").GetInt32());
+        Assert.Equal(1, v2ReasonCode.GetProperty("minLength").GetInt32());
+        Assert.False(v2Properties.TryGetProperty("assetUnavailableReason", out _));
+
+        var v2Required = schemas.GetProperty(v2Schema).GetProperty("required")
+            .EnumerateArray().Select(x => x.GetString()).ToArray();
+        Assert.Contains("organizationId", v2Required);
+        Assert.Contains("environmentId", v2Required);
+        Assert.Contains("deviceAssetId", v2Required);
+        Assert.Contains("priority", v2Required);
+        Assert.Contains("idempotencyKey", v2Required);
+        Assert.DoesNotContain("assetUnavailableReasonCode", v2Required);
+    }
+
+    private static string RequestBodySchemaName(JsonElement paths, string path, string method) =>
+        paths.GetProperty(path).GetProperty(method).GetProperty("requestBody").GetProperty("content")
+            .GetProperty("application/json").GetProperty("schema").GetProperty("$ref").GetString()!
+            .Split('/')[^1];
+
     private static void AssertOperationId(JsonElement paths, string path, string method, string operationId)
     {
         Assert.Equal(operationId, paths.GetProperty(path).GetProperty(method).GetProperty("operationId").GetString());
@@ -2271,6 +2318,7 @@ public sealed class BusinessGatewayOpenApiTests
             "shelveBusinessConsoleEquipmentAlarm",
             "unshelveBusinessConsoleEquipmentAlarm",
             "createBusinessConsoleMaintenanceWorkOrder",
+            "createBusinessConsoleMaintenanceWorkOrderV2",
             "completeBusinessConsoleMaintenanceWorkOrder",
             "createBusinessConsoleQualityInspectionRecordFromTask",
             "startBusinessConsoleMesOperationTask",

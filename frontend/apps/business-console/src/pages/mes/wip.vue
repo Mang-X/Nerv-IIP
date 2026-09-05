@@ -49,7 +49,7 @@ watch(statusFilter, (value) => {
 
 const quickViewWorkOrderId = ref<string | null>(null)
 
-const errorMessage = computed(() => formatError(wipError.value))
+const errorMessage = computed(() => inlineErrorMessage(wipError.value))
 
 type WipRow = (typeof wipRows)['value'][number]
 // facade 回显示字段（workOrderNo / operationTaskNo / workCenterName），accessor 优先取人读显示值。
@@ -91,9 +91,6 @@ function openWorkOrder(workOrderId?: string | null) {
 }
 function formatQuantity(value?: number | null) {
   return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 }).format(value ?? 0)
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 </script>
 

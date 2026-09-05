@@ -72,7 +72,7 @@ const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.devic
 const { deviceOptions, devicesPending } = useEquipmentDeviceCatalog()
 const { connectorInstanceOptions, connectorsPending } = useConnectorInstanceCatalog()
 
-const errorMessage = computed(() => formatError(bindingsError.value))
+const errorMessage = computed(() => inlineErrorMessage(bindingsError.value))
 
 const dialogOpen = ref(false)
 const editing = ref(false)
@@ -205,9 +205,6 @@ function formatDateTime(value?: string | null) {
   if (!value) return '无'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 </script>
 

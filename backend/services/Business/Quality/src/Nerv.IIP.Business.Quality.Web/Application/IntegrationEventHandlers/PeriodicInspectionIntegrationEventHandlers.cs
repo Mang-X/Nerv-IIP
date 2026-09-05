@@ -36,13 +36,81 @@ public sealed class WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicIns
     public Task HandleCapAsync(WorkOrderReleasedIntegrationEvent integrationEvent, CancellationToken cancellationToken) =>
         HandleAsync(integrationEvent, cancellationToken);
 
-    private async Task HandleValidEventAsync(
+    private Task HandleValidEventAsync(
         WorkOrderReleasedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken) =>
+        PeriodicInspectionReleaseProjection.ApplyAsync(
+            dbContext,
+            scopeCoordinator,
+            deadLetterStore,
+            integrationEvent,
+            integrationEvent.Payload,
+            ConsumerName,
+            ReleaseFactAuthority.Authoritative,
+            cancellationToken);
+}
+
+/// <summary>
+/// 发布事实的**权威性**：两条入口的全部行为差异都由它派生，不各自带开关。
+/// </summary>
+internal enum ReleaseFactAuthority
+{
+    /// <summary>
+    /// MES 直投的 <c>mes.WorkOrderReleased</c>：发布时刻**由 MES 在发布动作发生的那一刻定下并随事件发出**，
+    /// 消费侧不重建、也无从重建，故权威。
+    ///
+    /// <para><b>「权威」不等于「等于调用方原样给的那个值」（#3117 后的口径澄清）。</b>
+    /// MES 侧现在会把该时刻夹到「不晚于该工单**最早既有活动**（最早报工与最早工序完工中更早者）」——
+    /// 工单在 <c>created</c> 状态就能开工、报工、乃至完工，
+    /// 不夹就必然触犯下面 <c>ApplyRelease</c> 的「报工早于发布」守卫、整封进死信。
+    /// 夹紧发生在 **MES 侧、事件发出之前**，结果仍是这一次发布唯一的、由生产者确定的口径，
+    /// 因此分类仍是 <c>Authoritative</c>，派生行为（用该时刻生成到期任务、**不**跳过累计窗口）不变。
+    /// 与 <see cref="ReconstructedLowerBound"/> 的分界线不是「有没有被夹过」，而是
+    /// **这个时刻是不是消费侧从存量数据重建出来的**：重建值随扫描时点可变、且与既有权威事实不可比对，
+    /// 夹紧后的直投值不是。</para>
+    ///
+    /// <para>因此同一工序收到第二份**内容不同**的发布事实是真实异常，必须由 <c>ApplyRelease</c> 判为冲突进死信，
+    /// 不得跳过——跳过会把这个信号吞掉。</para>
+    ///
+    /// <para><b>已知的假冲突面（既有，非 #3117 引入；本票**严格改善**了它）。</b>
+    /// MES 的 <c>released → hold → release</c> 是允许的状态迁移（<c>ThrowIfCannotRelease</c> 只拒
+    /// <c>released</c> 与六个终态，**不拒 <c>hold</c>**），第二次下达会再发一封发布事实。
+    /// 改前该时刻取转换那一刻的 <c>UtcNow</c>，两次下达**恒不同 → 恒判冲突进死信**；
+    /// 改后取 <c>min(调用方时刻, 最早既有活动)</c>，只要两次下达时都已有活动且最早活动未变
+    /// （报工只向后累积时恒成立），两封事实的时刻**完全相同** → 直接 return、不再判冲突。
+    /// 即**严格不变差、常常变好**——不要把它读成「只是把不同值的来源换了一下」。</para>
+    /// </summary>
+    Authoritative,
+
+    /// <summary>
+    /// #3000 回填的 <c>mes.WorkOrderReleaseProjectionBackfilled</c>：发布时刻是从 MES **存量数据重建**的下界
+    /// （工单聚合不存发布时间，当初那封发布事件的时刻早已丢失），不等于当初那一次发布事件带的时刻，
+    /// 且随重建时点的数据面可变。由此派生两条行为：
+    /// ① 已有发布事实的工序只跳过、不覆盖（拿重建下界去比对必然判冲突），这同时是「重复执行回填不改变投影内容」的落点；
+    /// ② 补投之前累计的产量与流逝的时间不追认周期巡检窗口（见
+    /// <c>PeriodicInspectionOperation.SkipPeriodicWindowsAccruedBefore</c>）。
+    /// </summary>
+    ReconstructedLowerBound,
+}
+
+/// <summary>
+/// 工单发布事实落成 <c>PeriodicInspectionOperation</c> 投影的**唯一**写法：直投（<c>mes.WorkOrderReleased</c>）
+/// 与存量回填（<c>mes.WorkOrderReleaseProjectionBackfilled</c>，#3000）共用本方法，两条入口不各写一份。
+/// </summary>
+internal static class PeriodicInspectionReleaseProjection
+{
+    public static async Task ApplyAsync(
+        ApplicationDbContext dbContext,
+        IPeriodicInspectionOperationScopeCoordinator scopeCoordinator,
+        IIntegrationEventDeadLetterStore deadLetterStore,
+        IIntegrationEventEnvelope integrationEvent,
+        WorkOrderReleasedPayload payload,
+        string consumerName,
+        ReleaseFactAuthority authority,
         CancellationToken cancellationToken)
     {
         try
         {
-            var payload = integrationEvent.Payload;
             var operations = ValidateReleasedOperations(payload);
             var workCenterIds = operations.Select(x => x.WorkCenterId.Trim()).Distinct(StringComparer.Ordinal).ToArray();
             var plans = await dbContext.InspectionPlans
@@ -67,7 +135,7 @@ public sealed class WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicIns
                 {
                     if (!await QualityProcessedIntegrationEventInbox.TryRecordAsync(
                             dbContext,
-                            ConsumerName,
+                            consumerName,
                             integrationEvent,
                             ct))
                     {
@@ -83,21 +151,114 @@ public sealed class WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicIns
                             payload.WorkOrderId,
                             operationPayload.OperationId,
                             ct);
+                        if (authority == ReleaseFactAuthority.ReconstructedLowerBound
+                            && operation.ReleasedAtUtc.HasValue)
+                        {
+                            continue;
+                        }
+
+                        // 重建值先与既有权威事实对齐：不一致时以权威事实为准，被顶掉的属性留痕。
+                        var facts = authority == ReleaseFactAuthority.ReconstructedLowerBound
+                            ? operation.ResolveReconstructedReleaseFacts(
+                                payload.SkuCode,
+                                operationPayload.OperationSequence,
+                                operationPayload.WorkCenterId)
+                            : new PeriodicInspectionReleaseFacts(
+                                payload.SkuCode.Trim(),
+                                operationPayload.OperationSequence,
+                                operationPayload.WorkCenterId.Trim(),
+                                []);
+
+                        // 巡检档按**校正后**的 SKU 与工作中心筛。档是按载荷 SKU 查出来的，
+                        // 因此让位到别的 SKU 时这里筛不出档、该工序不建周期运行上下文——
+                        // 拿载荷 SKU 的档去配一条声明着另一个 SKU 的上下文才是真错。
                         var snapshots = plans
-                            .Where(plan => plan.WorkCenterId == operationPayload.WorkCenterId.Trim())
+                            .Where(plan => plan.SkuCode == facts.SkuCode && plan.WorkCenterId == facts.WorkCenterId)
                             .OrderBy(plan => plan.PlanCode, StringComparer.Ordinal)
                             .Select(PeriodicInspectionPlanSnapshot.From)
                             .ToArray();
-                        operation.ApplyRelease(
-                            payload.SkuCode,
-                            operationPayload.OperationSequence,
-                            operationPayload.WorkCenterId,
-                            payload.ReleasedAtUtc.UtcDateTime,
-                            snapshots);
-                        PeriodicInspectionQuantityTaskGeneration.AddDueTasks(
-                            dbContext,
-                            operation.RuntimeContexts,
-                            integrationEvent.OccurredAtUtc);
+
+                        if (authority == ReleaseFactAuthority.Authoritative)
+                        {
+                            // 直投：冲突是真实异常，照旧整封进死信，语义不变。
+                            operation.ApplyRelease(
+                                facts.SkuCode,
+                                facts.OperationSequence,
+                                facts.WorkCenterId,
+                                payload.ReleasedAtUtc.UtcDateTime,
+                                snapshots);
+
+                            // **本分支不做「跳过下达前已累计窗口」——该行为已拆出 #3129，本票不实现。**
+                            // owner 裁定「下达之前已产出的数量不补开巡检任务」曾在本票内落地过一版，
+                            // 后按归因回退：判断所需的事实（哪些产量发生在**下达动作**之前、且按**工序**分辨）
+                            // 只存在于 MES 侧，`mes.WorkOrderReleased` 只带一个**工单级** ReleasedAtUtc，
+                            // Quality 只能推断，于是在「多工序」与「发布先于报工到达」两种形态下失效。
+                            // **落点错了，不是判别式写窄了**——详见 #3129。当前行为与 main 一致。
+                            //
+                            // **与回填分支形状不同不是「忘了对齐」，别顺手补上跳过：**
+                            // 回填分支的 SkipPeriodicWindowsAccruedBefore 锚在 integrationEvent.OccurredAtUtc
+                            // （= GetUtcNow()），即无条件把到「现在」为止的累计记为已生成，这是 #3000 的既有取舍；
+                            // 直投分支没有一个等价的锚可用（发布事实时刻是被夹紧过的工单级标量）。
+                            // 这是**锚点差异**，把回填那种无条件跳过复制过来会打掉一类合法输入——
+                            // `PeriodicInspectionIntegrationEventTests.Report_before_release_backfills_quantity_windows_from_the_frozen_context`
+                            // 钉的就是那类：报工时刻晚于发布时刻，产量是下达之后真实累积的，窗口本就该开。
+                            // **改这一处之前先确认该用例仍绿。**
+                            //
+                            PeriodicInspectionQuantityTaskGeneration.AddDueTasks(
+                                dbContext,
+                                operation.RuntimeContexts,
+                                integrationEvent.OccurredAtUtc);
+                            continue;
+                        }
+
+                        try
+                        {
+                            operation.ApplyRelease(
+                                facts.SkuCode,
+                                facts.OperationSequence,
+                                facts.WorkCenterId,
+                                payload.ReleasedAtUtc.UtcDateTime,
+                                snapshots);
+                            operation.SkipPeriodicWindowsAccruedBefore(
+                                integrationEvent.OccurredAtUtc.UtcDateTime);
+                            PeriodicInspectionQuantityTaskGeneration.AddDueTasks(
+                                dbContext,
+                                operation.RuntimeContexts,
+                                integrationEvent.OccurredAtUtc);
+                        }
+                        catch (Exception exception)
+                            when (PeriodicInspectionOperationEventProcessing.IsInvalidBusinessFact(exception))
+                        {
+                            // 失败粒度是工序，不是整封事件：一道工序补不上，不能让同工单其余工序
+                            // 一起失去补投——那等于让整张工单继续 not-synchronized 被门禁永久拒。
+                            await PeriodicInspectionOperationEventProcessing.RecordBackfillNoticeAsync(
+                                deadLetterStore,
+                                consumerName,
+                                integrationEvent,
+                                "backfill-operation-rejected",
+                                $"Operation '{operationPayload.OperationId}' of work order '{payload.WorkOrderId}' "
+                                + $"could not take the reconstructed release facts: {exception.Message}",
+                                IntegrationEventDeadLetterStatus.Pending,
+                                ct);
+                            continue;
+                        }
+
+                        if (facts.Substitutions.Count > 0)
+                        {
+                            await PeriodicInspectionOperationEventProcessing.RecordBackfillNoticeAsync(
+                                deadLetterStore,
+                                consumerName,
+                                integrationEvent,
+                                "backfill-release-fact-substituted",
+                                $"Operation '{operationPayload.OperationId}' of work order '{payload.WorkOrderId}' "
+                                + "was backfilled with the existing authoritative completion facts: "
+                                + string.Join(
+                                    "; ",
+                                    facts.Substitutions.Select(x =>
+                                        $"{x.Attribute} reconstructed='{x.ReconstructedValue}' authoritative='{x.AuthoritativeValue}'")),
+                                IntegrationEventDeadLetterStatus.Ignored,
+                                ct);
+                        }
                     }
                 },
                 cancellationToken);
@@ -107,7 +268,7 @@ public sealed class WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicIns
             await PeriodicInspectionOperationEventProcessing.DeadLetterAsync(
                 dbContext,
                 deadLetterStore,
-                ConsumerName,
+                consumerName,
                 integrationEvent,
                 exception,
                 cancellationToken);
@@ -144,6 +305,57 @@ public sealed class WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicIns
 
         return operations.OrderBy(operation => operation.OperationId, StringComparer.Ordinal).ToArray();
     }
+}
+
+/// <summary>
+/// 存量在制工单的发布投影回填（#3000）。这批工单在 Quality 订阅 <c>mes.WorkOrderReleased</c> 之前就已发布，
+/// 投影里没有它们的行，首件确认读面因此恒回 <c>not-synchronized</c>、#2780 的报工门禁会持续拒绝，且不靠报工自愈。
+/// 补投由 MES 的内部回填端点一次性发出，本消费者只把发布事实补进空缺的工序行。
+/// </summary>
+[IntegrationEventConsumer(nameof(WorkOrderReleaseProjectionBackfilledIntegrationEvent), ConsumerName)]
+public sealed class WorkOrderReleaseProjectionBackfilledIntegrationEventHandlerForCreatePeriodicInspectionContexts(
+    ApplicationDbContext dbContext,
+    IPeriodicInspectionOperationScopeCoordinator scopeCoordinator,
+    IIntegrationEventDeadLetterStore deadLetterStore)
+    : IIntegrationEventHandler<WorkOrderReleaseProjectionBackfilledIntegrationEvent>, ICapSubscribe
+{
+    /// <summary>
+    /// 与直投消费组分开：两者的 inbox 记录、死信归属和重放语义都不同，混在一个组里，
+    /// 回填就会被直投那次的 inbox 记录挡掉或反过来污染它。
+    /// </summary>
+    public const string ConsumerName = "business-quality.mes-work-order-release-projection-backfill";
+
+    private readonly IntegrationEventConsumerGuard<WorkOrderReleaseProjectionBackfilledIntegrationEvent> consumerGuard = new(
+        new IntegrationEventEnvelopeValidator(),
+        deadLetterStore,
+        new IntegrationEventConsumerOptions(
+            ConsumerName,
+            MesIntegrationEventTypes.WorkOrderReleaseProjectionBackfilled,
+            MesIntegrationEventVersions.V1));
+
+    public Task HandleAsync(
+        WorkOrderReleaseProjectionBackfilledIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken) =>
+        consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
+
+    [CapSubscribe(nameof(WorkOrderReleaseProjectionBackfilledIntegrationEvent), Group = ConsumerName)]
+    public Task HandleCapAsync(
+        WorkOrderReleaseProjectionBackfilledIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken) =>
+        HandleAsync(integrationEvent, cancellationToken);
+
+    private Task HandleValidEventAsync(
+        WorkOrderReleaseProjectionBackfilledIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken) =>
+        PeriodicInspectionReleaseProjection.ApplyAsync(
+            dbContext,
+            scopeCoordinator,
+            deadLetterStore,
+            integrationEvent,
+            integrationEvent.Payload,
+            ConsumerName,
+            ReleaseFactAuthority.ReconstructedLowerBound,
+            cancellationToken);
 }
 
 [IntegrationEventConsumer(nameof(ProductionReportRecordedIntegrationEvent), ConsumerName)]
@@ -452,6 +664,32 @@ internal static class PeriodicInspectionOperationEventProcessing
             normalizedOperationId);
         dbContext.PeriodicInspectionOperations.Add(operation);
         return operation;
+    }
+
+    /// <summary>
+    /// 回填过程中单道工序的处置留痕。与 <see cref="DeadLetterAsync"/> 有两处关键差别：
+    ///
+    /// ① **不清变更跟踪**——同一封补投事件里其它工序已经应用的改动、以及 inbox 幂等登记必须留住；
+    /// 清掉就等于把工序级失败重新退回成整封失败。
+    ///
+    /// ② **状态按是否还需人处置区分**：<paramref name="status"/> 取 <c>Pending</c> 表示该工序确实没补上、
+    /// 要进待处理队列；取 <c>Ignored</c> 表示已经按权威事实处置完、只是留痕，不该混进待处理队列。
+    /// 写进死信存储是因为它是仓库里唯一持久、可查询的消费侧留痕通道。
+    /// </summary>
+    public static async Task RecordBackfillNoticeAsync<TIntegrationEvent>(
+        IIntegrationEventDeadLetterStore deadLetterStore,
+        string consumerName,
+        TIntegrationEvent integrationEvent,
+        string reasonCode,
+        string message,
+        IntegrationEventDeadLetterStatus status,
+        CancellationToken cancellationToken)
+        where TIntegrationEvent : IIntegrationEventEnvelope
+    {
+        await deadLetterStore.AddAsync(
+            IntegrationEventDeadLetterMessage.Create(consumerName, integrationEvent, reasonCode, message)
+                with { Status = status },
+            cancellationToken);
     }
 
     public static bool IsInvalidBusinessFact(Exception exception) =>

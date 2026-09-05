@@ -105,6 +105,28 @@ public sealed record BusinessConsoleCreateMaintenanceWorkOrderResponse(
     string WorkOrderId,
     BusinessConsoleOperationReceipt? OperationReceipt = null);
 
+/// <summary>
+/// v2 创建工单请求（#2969 / spec #2964）：与 v1 是彼此独立的 wire 契约，只把自由文本
+/// <c>AssetUnavailableReason</c> 换成目录码 <see cref="AssetUnavailableReasonCode"/>。
+/// Gateway 只做长度与必填的传输层校验，不 trim、不改大小写、不校验目录成员——
+/// 目录精确命中由 Maintenance v2 写边界承担。
+/// </summary>
+public sealed record BusinessConsoleCreateMaintenanceWorkOrderV2Request(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    string Priority,
+    string? SourceAlarmId,
+    string OpenedBy,
+    string IdempotencyKey,
+    string? AssetUnavailableReasonCode = null,
+    string? AssignedTechnicianUserId = null,
+    int? EstimatedLaborMinutes = null);
+
+public sealed record BusinessConsoleCreateMaintenanceWorkOrderV2Response(
+    string WorkOrderId,
+    BusinessConsoleOperationReceipt? OperationReceipt = null);
+
 public sealed record BusinessConsoleCompleteMaintenanceWorkOrderRequest(
     string OrganizationId,
     string EnvironmentId,

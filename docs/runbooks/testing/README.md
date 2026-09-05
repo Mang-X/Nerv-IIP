@@ -6,5 +6,6 @@
 - [`determinism.md`](determinism.md)：确定性 checker/verifier 与问题定位。
 - [`real-dependencies.md`](real-dependencies.md)：PostgreSQL、Redis/CAP、FullChain 本地运行与残留回收。
 - [`mobile-pda.md`](mobile-pda.md)：business-pda 自动化、live、模拟器/APK 与真机 smoke。
+- [`frontend-vitest-local.md`](frontend-vitest-local.md)：本地前端 vitest 跑法与红结果归因（资源争用假红 vs 真红）。
 
 命令参数最终以脚本 `Get-Help`、package scripts、workflow 和当前代码为准。

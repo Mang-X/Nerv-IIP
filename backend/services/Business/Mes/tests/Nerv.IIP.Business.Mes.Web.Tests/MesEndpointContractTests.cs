@@ -569,6 +569,56 @@ public sealed class MesEndpointContractTests
         Assert.NotEqual(sender.ObservedChangedAtUtc[0], sender.ObservedChangedAtUtc[1]);
     }
 
+    /// <summary>
+    /// 下达端点是请求体进入系统的信任边界。调用方给的 <c>releasedAtUtc</c> 落在未来时必须夹到当前时刻：
+    /// 发布事实的时刻落在未来，该工单工序此后的**每一条**报工都会被 Quality 的
+    /// <c>PeriodicInspectionOperation</c> 判为「报工早于发布」抛出、整封进死信——正是 #3117 修的那个缺陷
+    /// 换了个入口重演。三行数据分别钉住未来（夹）、过去（原样通过）、恰好等于当前时刻（边界）；
+    /// 「过去原样通过」那一行同样承重：没有它，「一律取服务端当前时刻」这个变异不可分辨，
+    /// 而那正是 #3117 本身要修掉的取值。
+    /// </summary>
+    [Theory]
+    [InlineData("2026-09-01T18:00:00Z", "2026-09-01T12:00:00Z")]
+    [InlineData("2026-09-01T06:00:00Z", "2026-09-01T06:00:00Z")]
+    [InlineData("2026-09-01T12:00:00Z", "2026-09-01T12:00:00Z")]
+    public async Task Release_endpoint_clamps_a_future_caller_supplied_moment_to_the_server_clock(
+        string suppliedReleasedAtUtc,
+        string expectedCommandReleasedAtUtc)
+    {
+        var serverNowUtc = DateTimeOffset.Parse("2026-09-01T12:00:00Z");
+        var sender = new CapturingReleaseWorkOrderSender();
+        var serverClock = new FakeTimeProvider(serverNowUtc);
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(sender);
+                    services.RemoveAll<TimeProvider>();
+                    services.AddSingleton<TimeProvider>(serverClock);
+                });
+            });
+        var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business/v1/mes/work-orders/WO-3117-CLAMP/release",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                releasedAtUtc = DateTimeOffset.Parse(suppliedReleasedAtUtc),
+                idempotencyKey = "mes-release-clamp-001",
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(sender.LastCommand);
+        Assert.Equal(DateTimeOffset.Parse(expectedCommandReleasedAtUtc), sender.LastCommand.ReleasedAtUtc);
+    }
+
     [Fact]
     public async Task Record_defect_endpoint_preserves_the_caller_recorded_time_in_the_command()
     {
@@ -1307,6 +1357,7 @@ public sealed class MesEndpointContractTests
         var workOrder = WorkOrder.Create("org-001", "env-dev", "WO-START", "SKU-001", "PV-001", 2m, 10, now.AddDays(1));
         var tasks = workOrder.Release(
             now,
+            WorkOrderReleaseFactTime.NotLaterThan(now, null),
             [
                 new RoutingStepSnapshot("OP-10", 10, "WC-001", [], TimeSpan.FromMinutes(30)),
             ]);
@@ -1344,6 +1395,7 @@ public sealed class MesEndpointContractTests
             dueUtc);
         var tasks = workOrder.Release(
             dueUtc.AddHours(-1),
+            WorkOrderReleaseFactTime.NotLaterThan(dueUtc.AddHours(-1), null),
             [
                 new Domain.AggregatesModel.WorkOrderAggregate.RoutingStepSnapshot(
                     "OP-10",
@@ -1455,17 +1507,29 @@ public sealed class MesEndpointContractTests
             workOrderB,
             otherScopeWorkOrderA,
             otherEnvironmentWorkOrderA);
-        dbContext.OperationTasks.AddRange(workOrderA.Release(dueUtc.AddHours(-1), [
+        dbContext.OperationTasks.AddRange(workOrderA.Release(
+            dueUtc.AddHours(-1),
+            WorkOrderReleaseFactTime.NotLaterThan(dueUtc.AddHours(-1), null),
+            [
             new RoutingStepSnapshot("OP-A", 10, "WC-A", [], TimeSpan.FromMinutes(10)),
         ]));
-        dbContext.OperationTasks.AddRange(workOrderB.Release(dueUtc.AddHours(-1), [
+        dbContext.OperationTasks.AddRange(workOrderB.Release(
+            dueUtc.AddHours(-1),
+            WorkOrderReleaseFactTime.NotLaterThan(dueUtc.AddHours(-1), null),
+            [
             new RoutingStepSnapshot("OP-B-1", 10, "WC-B", [], TimeSpan.FromMinutes(10)),
             new RoutingStepSnapshot("OP-B-2", 20, "WC-B", [], TimeSpan.FromMinutes(10)),
         ]));
-        dbContext.OperationTasks.AddRange(otherScopeWorkOrderA.Release(dueUtc.AddHours(-1), [
+        dbContext.OperationTasks.AddRange(otherScopeWorkOrderA.Release(
+            dueUtc.AddHours(-1),
+            WorkOrderReleaseFactTime.NotLaterThan(dueUtc.AddHours(-1), null),
+            [
             new RoutingStepSnapshot("OP-OTHER-SCOPE", 10, "WC-A", [], TimeSpan.FromMinutes(10)),
         ]));
-        dbContext.OperationTasks.AddRange(otherEnvironmentWorkOrderA.Release(dueUtc.AddHours(-1), [
+        dbContext.OperationTasks.AddRange(otherEnvironmentWorkOrderA.Release(
+            dueUtc.AddHours(-1),
+            WorkOrderReleaseFactTime.NotLaterThan(dueUtc.AddHours(-1), null),
+            [
             new RoutingStepSnapshot("OP-OTHER-ENV", 10, "WC-A", [], TimeSpan.FromMinutes(10)),
         ]));
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -1576,6 +1640,7 @@ public sealed class MesEndpointContractTests
             reportedAt.AddHours(8));
         var tasks = workOrder.Release(
             reportedAt.AddHours(-1),
+            WorkOrderReleaseFactTime.NotLaterThan(reportedAt.AddHours(-1), null),
             [
                 new Domain.AggregatesModel.WorkOrderAggregate.RoutingStepSnapshot(
                     "OP-10",
@@ -1652,6 +1717,7 @@ public sealed class MesEndpointContractTests
             reportedAt.AddHours(8));
         var tasks = workOrder.Release(
             reportedAt.AddHours(-1),
+            WorkOrderReleaseFactTime.NotLaterThan(reportedAt.AddHours(-1), null),
             [
                 new Domain.AggregatesModel.WorkOrderAggregate.RoutingStepSnapshot(
                     "OP-10",
@@ -1693,6 +1759,7 @@ public sealed class MesEndpointContractTests
             reportedAt.AddHours(8));
         var tasks = workOrder.Release(
             reportedAt.AddHours(-1),
+            WorkOrderReleaseFactTime.NotLaterThan(reportedAt.AddHours(-1), null),
             [
                 new RoutingStepSnapshot(
                     "OP-10",
@@ -1903,6 +1970,7 @@ public sealed class MesEndpointContractTests
             new SourcePlanReference("DemandPlanning", "PlanningSuggestion", "SUG-RELEASED-001", null));
         released.Release(
             dueUtc,
+            WorkOrderReleaseFactTime.NotLaterThan(dueUtc, null),
             [
                 new RoutingStepSnapshot("OP-10", 10, "WC-01", [], TimeSpan.FromMinutes(30)),
             ]);
@@ -2374,6 +2442,7 @@ public sealed class MesEndpointContractTests
         var targetOrder = WorkOrder.Create("org-001", "env-dev", "WO-FILTER-001", "SKU-FILTER", "PV-001", 1m, 10, now);
         var targetTasks = targetOrder.Release(
             now.AddHours(-1),
+            WorkOrderReleaseFactTime.NotLaterThan(now.AddHours(-1), null),
             [
                 new Domain.AggregatesModel.WorkOrderAggregate.RoutingStepSnapshot(
                     "OP-FILTER-10",
@@ -2386,6 +2455,7 @@ public sealed class MesEndpointContractTests
         var otherOrder = WorkOrder.Create("org-001", "env-dev", "WO-OTHER-001", "SKU-OTHER", "PV-001", 1m, 10, now.AddMinutes(1));
         var otherTasks = otherOrder.Release(
             now.AddHours(-1),
+            WorkOrderReleaseFactTime.NotLaterThan(now.AddHours(-1), null),
             [
                 new Domain.AggregatesModel.WorkOrderAggregate.RoutingStepSnapshot(
                     "OP-OTHER-10",
@@ -2487,6 +2557,17 @@ public sealed class MesEndpointContractTests
                     new ShiftHandoverOpenIssueInput("equipment", "low", "刀具磨损待更换", null),
                     new ShiftHandoverOpenIssueInput("quality", "high", "终检记录待补录", null),
                     new ShiftHandoverOpenIssueInput("equipment", "high", "主轴异响，二号机", "DT-0001"),
+                ],
+                // 附件按文件名序数排。写入序、文件 id 序与文件名序三者刻意互不相同，
+                // 因此改按写入序或按 FileId 排都会翻序；三个大小也互不相同，字段错位即可被发现。
+                // 后两条同名：两台手机各传一张 IMG_0001.jpg 是现场常态，file_name 是交班时点快照且无唯一约束，
+                // 重名合法。同名时并列必须由 FileId 兜底定序，否则退回数据库行序——Postgres 上无 ORDER BY 即未定义。
+                [
+                    new ShiftHandoverAttachmentInput("file-a", "photo-3.jpg", "image/jpeg", 300L),
+                    new ShiftHandoverAttachmentInput("file-c", "photo-1.jpg", "image/jpeg", 100L),
+                    new ShiftHandoverAttachmentInput("file-b", "photo-2.jpg", "image/jpeg", 200L),
+                    new ShiftHandoverAttachmentInput("file-e", "IMG_0001.jpg", "image/jpeg", 500L),
+                    new ShiftHandoverAttachmentInput("file-d", "IMG_0001.jpg", "image/jpeg", 400L),
                 ]),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -2536,6 +2617,16 @@ public sealed class MesEndpointContractTests
         Assert.Equal("张三", listed.OutgoingUserName);
         Assert.Equal("李四", listed.IncomingUserName);
         Assert.Equal(now.AddHours(8), listed.AcceptedAtUtc);
+
+        // IMG_0001.jpg 排在 photo-* 之前（大写 I U+0049 < 小写 p U+0070），同名两条由 FileId 升序兜底：
+        // 写入序是 file-e 在前，若删掉 ThenBy(FileId) 就会退回写入序 file-e/file-d，与此期望相反。
+        Assert.Equal(
+            [("file-d", "IMG_0001.jpg", "image/jpeg", 400L),
+             ("file-e", "IMG_0001.jpg", "image/jpeg", 500L),
+             ("file-c", "photo-1.jpg", "image/jpeg", 100L),
+             ("file-b", "photo-2.jpg", "image/jpeg", 200L),
+             ("file-a", "photo-3.jpg", "image/jpeg", 300L)],
+            detail.Attachments.Select(x => (x.FileId, x.FileName, x.ContentType, x.SizeBytes)));
     }
 
     [Fact]
@@ -2601,11 +2692,17 @@ public sealed class MesEndpointContractTests
                 "org-001", "env-dev", "EARLY", "TEAM-A", now, "handover-overlong-user",
                 OutgoingUserName: new string('x', 201)),
             CancellationToken.None));
+        var negativeAttachmentSize = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CreateShiftHandoverCommand(
+                "org-001", "env-dev", "EARLY", "TEAM-A", now, "handover-negative-attachment",
+                Attachments: [new ShiftHandoverAttachmentInput("file-a", "photo.jpg", "image/jpeg", -1L)]),
+            CancellationToken.None));
 
         Assert.Contains("在制清点数量不能为负数", negativeWipQuantity.Message, StringComparison.Ordinal);
         Assert.Contains("未完工单计划数量必须为正数", nonPositivePlannedQuantity.Message, StringComparison.Ordinal);
         Assert.Contains("cannot exceed 1000 characters", overlongDescription.Message, StringComparison.Ordinal);
         Assert.Contains("cannot exceed 200 characters", overlongOutgoingUserName.Message, StringComparison.Ordinal);
+        Assert.Contains("交接班附件大小不能为负数", negativeAttachmentSize.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -2676,6 +2773,7 @@ public sealed class MesEndpointContractTests
         var targetOrder = WorkOrder.Create("org-001", "env-dev", "WO-FILTER", "SKU-FILTER", "PV-001", 1m, 10, now);
         var targetTasks = targetOrder.Release(
             now.AddHours(-1),
+            WorkOrderReleaseFactTime.NotLaterThan(now.AddHours(-1), null),
             [
                 new Domain.AggregatesModel.WorkOrderAggregate.RoutingStepSnapshot(
                     "OP-FILTER",
@@ -2688,6 +2786,7 @@ public sealed class MesEndpointContractTests
         var otherOrder = WorkOrder.Create("org-001", "env-dev", "WO-OTHER", "SKU-OTHER", "PV-001", 1m, 10, now.AddMinutes(1));
         var otherTasks = otherOrder.Release(
             now.AddHours(-1),
+            WorkOrderReleaseFactTime.NotLaterThan(now.AddHours(-1), null),
             [
                 new Domain.AggregatesModel.WorkOrderAggregate.RoutingStepSnapshot(
                     "OP-OTHER",
@@ -3130,6 +3229,7 @@ public sealed class MesEndpointContractTests
             reportedAt.AddHours(8));
         var tasks = workOrder.Release(
             reportedAt.AddHours(-1),
+            WorkOrderReleaseFactTime.NotLaterThan(reportedAt.AddHours(-1), null),
             [
                 new Domain.AggregatesModel.WorkOrderAggregate.RoutingStepSnapshot(
                     "OP-10",
@@ -3751,6 +3851,36 @@ internal sealed class CapturingRecordDefectSender : ISender
         CallCount++;
         return Task.CompletedTask;
     }
+
+    public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+        IStreamRequest<TResponse> request,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    public IAsyncEnumerable<object?> CreateStream(
+        object request,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+}
+
+internal sealed class CapturingReleaseWorkOrderSender : ISender
+{
+    public ReleaseWorkOrderCommand? LastCommand { get; private set; }
+
+    public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+    {
+        LastCommand = Assert.IsType<ReleaseWorkOrderCommand>(request);
+        return Task.FromResult((TResponse)(object)new MesAcceptedResponse(
+            "Accepted",
+            LastCommand.WorkOrderId,
+            LastCommand.ReleasedAtUtc));
+    }
+
+    public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+        where TRequest : IRequest => throw new NotSupportedException();
 
     public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
         throw new NotSupportedException();

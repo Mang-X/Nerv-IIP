@@ -7,7 +7,10 @@ import type {
 import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
 import { mesWorkOrderStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
-import { mesWorkOrderReleaseBlocker } from '@/composables/mes/workOrderRelease'
+import {
+  mesWorkOrderReleaseBlocker,
+  mesWorkOrderRetroactiveReleaseNotice,
+} from '@/composables/mes/workOrderRelease'
 import {
   useBusinessMasterDataResources,
   useBusinessSkus,
@@ -183,7 +186,7 @@ const rushForm = reactive({
 // 报工对象由所选工单行带出（工单 + 该工单的首道可报工序），弹窗不提供任何挑选入口。
 const reportContext = shallowRef<ProductionReportContext | null>(null)
 
-const listErrorMessage = computed(() => formatError(workOrdersError.value))
+const listErrorMessage = computed(() => inlineErrorMessage(workOrdersError.value))
 const workScopeKindLabels: Record<string, string> = {
   self: '本人',
   team: '班组',
@@ -349,6 +352,9 @@ const releaseValidationMessage = computed(() => {
   if (!releaseIntentOrder.value) return '工单已不在当前主体授权工单范围，请刷新后重试。'
   return releaseBlocker(releaseIntentOrder.value) ?? ''
 })
+const releaseRetroactiveNotice = computed(() =>
+  releaseIntentOrder.value ? mesWorkOrderRetroactiveReleaseNotice(releaseIntentOrder.value) : null,
+)
 const canSubmitRelease = computed(
   () =>
     releaseIntent.value !== null &&
@@ -708,9 +714,6 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
       value: item.code!,
     }))
 }
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
 function isNonEmpty(value: string) {
   return value.trim().length > 0
 }
@@ -992,6 +995,13 @@ function isNonEmpty(value: string) {
               <dd>{{ releaseIntentOrder.operationTasks?.length ?? 0 }} 道</dd>
             </div>
           </dl>
+          <p
+            v-if="releaseRetroactiveNotice"
+            class="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-muted-foreground"
+            data-testid="release-retroactive-notice"
+          >
+            {{ releaseRetroactiveNotice }}
+          </p>
           <p
             v-if="releaseValidationMessage"
             class="text-sm text-destructive"

@@ -701,7 +701,12 @@ public sealed class WorkOrderReleasedIntegrationEventConverter
             workOrder.OrganizationId,
             workOrder.EnvironmentId,
             workOrder.WorkOrderId);
-        var occurredAtUtc = DateTimeOffset.UtcNow;
+        // 发布事实的时刻由发布动作给出（<see cref="WorkOrderReleasedDomainEvent.ReleasedAt"/>），不取 UtcNow：
+        // 工单在 created 状态就能开工报工（#3113），按转换那一刻记时刻会让「已有报工的工单事后补下达」
+        // 被 Quality 的 ApplyRelease 判为「报工早于发布」整封进死信（#3117）。
+        // 信封 OccurredAtUtc 与 payload.ReleasedAtUtc 同取该值：按 ADR 0011 §5，
+        // occurredAtUtc 必须是领域事实发生时间，原先的 UtcNow 是处理时间、本就违反 §5。
+        var occurredAtUtc = domainEvent.ReleasedAt.Value;
 
         return new WorkOrderReleasedIntegrationEvent(
             $"evt-{Guid.CreateVersion7():N}",

@@ -1255,8 +1255,12 @@ Assert-True (-not (Test-NervQuarantineRuleMetadata -Rule $quarantineWithoutIssue
 $liveAssignments = Get-NervSourceSkipAssignments -RepoRoot $repoRoot
 # #1561 把 InventoryDirectoryPostgresTests 的两条目录用例拆成两个 skip 理由（Docker 夹具 / external），
 # #2228 再把线边库存 provider proof 从目录 external identity 中拆出，因此已登记的 source 从 42 增至 43；
-# #2809 注册 Quality 返工回执真实 PostgreSQL + Redis/CAP transport proof，增至 45；#3010 注册 MES 对应 producer proof，增至 46。
-Assert-Equal 46 $liveAssignments.Count 'The approved initial source skip inventory changed; classify the diff explicitly.'
+# #2809 注册 Quality 返工回执真实 PostgreSQL + Redis/CAP transport proof，增至 45；#3010 注册 MES 对应 producer proof，增至 46；
+# #3000 注册发布投影回填的 Redis/CAP transport proof，增至 47；
+# #2967 注册 Scheduling AssetUnavailable v2 的 PostgreSQL + Redis/CAP transport proof，增至 48；
+# #2966 注册 MES 停机事件 v2 契约拒收/poison 重放的真实 PostgreSQL + Redis/CAP proof，增至 49。
+# #2968 注册 Maintenance v2 工单入口的目录精确命中/双发同事务/v1 零漂移真实 PostgreSQL proof，增至 50。
+Assert-Equal 50 $liveAssignments.Count 'The approved initial source skip inventory changed; classify the diff explicitly.'
 Assert-True (($liveAssignments | Where-Object sourcePath -like '*SimulatedConnectorHostProcessTests.cs').sourceText.Contains('Windows runs the platform-specific executable resolution contract only', [StringComparison]::Ordinal)) 'Quote-aware scanner must retain semicolons inside a C# string literal.'
 $livePolicy = Import-NervTestEvidencePolicy -Path (Join-Path $repoRoot 'scripts/test-evidence-policy.json')
 $liveViolations = Test-NervTestEvidencePolicy -Policy $livePolicy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)
@@ -1304,7 +1308,7 @@ Assert-Equal 2 @($demandPlanningRedisRules[0].testIdentities).Count 'The Redis/C
 $mesMaterialSubstituteIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.MesMaterialSubstituteSnapshotPostgresTests.Substitute_snapshot_migration_and_cross_scope_readback_hold_on_postgres'
 $mesProductionCandidateRules = @($livePolicy.rules | Where-Object { [string]::Equals([string]$_.id, 'mes-production-candidate', [StringComparison]::Ordinal) })
 Assert-Equal 1 $mesProductionCandidateRules.Count 'The MES production candidate PostgreSQL proofs must have one evidence policy rule.'
-Assert-Equal 45 @($mesProductionCandidateRules[0].testIdentities).Count 'The MES production candidate policy rule must freeze its forty-five governed PostgreSQL identities.'
+Assert-Equal 47 @($mesProductionCandidateRules[0].testIdentities).Count 'The MES production candidate policy rule must freeze its forty-seven governed PostgreSQL identities.'
 $downtimeReasonCodeMigrationIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.DowntimeReasonCodeMigrationPostgresTests.Legacy_reasons_migrate_once_across_all_scopes_and_repeat_stably_on_postgres'
 Assert-True (@($mesProductionCandidateRules[0].testIdentities | Where-Object { [string]::Equals([string]$_, $downtimeReasonCodeMigrationIdentity, [StringComparison]::Ordinal) }).Count -eq 1) 'The MES production candidate policy rule must own the downtime-reason migration identity exactly once.'
 Assert-True ($downtimeReasonCodeMigrationIdentity -cmatch [string]$mesProductionCandidateRules[0].testPattern) 'The MES production candidate policy pattern must match the downtime-reason migration identity.'
@@ -1327,7 +1331,7 @@ $mesSaveBoundaryIdentities = @(
     'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Stock_movement_posting_failed_unknown_prefix_early_return_persists_only_inbox'
 )
 $mesCapIdentitySet = [Collections.Generic.HashSet[string]]::new([string[]]@($mesCapPostgresRules[0].testIdentities), [StringComparer]::Ordinal)
-Assert-Equal 12 @($mesCapPostgresRules[0].testIdentities).Count 'The MES CAP policy rule must freeze the existing three subscription proofs and all nine save-boundary proofs.'
+Assert-Equal 18 @($mesCapPostgresRules[0].testIdentities).Count 'The MES CAP policy rule must freeze the existing three subscription proofs, all nine save-boundary proofs and the six #2966 asset-unavailable v1/v2 inbox proofs.'
 Assert-True (@($mesSaveBoundaryIdentities | Where-Object { -not $mesCapIdentitySet.Contains($_) }).Count -eq 0) 'The MES CAP policy rule must own all nine save-boundary identities.'
 Assert-True (@($mesSaveBoundaryIdentities | Where-Object { $_ -cnotmatch [string]$mesCapPostgresRules[0].testPattern }).Count -eq 0) 'The MES CAP policy pattern must match every save-boundary identity.'
 $brokenClosure = ($livePolicy | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100)
