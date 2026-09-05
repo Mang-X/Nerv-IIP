@@ -20,7 +20,7 @@ using Nerv.IIP.FileStorage.Web.Application.Files.UploadProviders;
 
 namespace Nerv.IIP.FileStorage.Web.Tests;
 
-public sealed class FileStorageRestartPersistenceTests
+public sealed partial class FileStorageRestartPersistenceTests
 {
     [FileStorageRealPostgresFact]
     public async Task Metadata_usage_and_download_grant_survive_web_host_restart()
