@@ -1203,6 +1203,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleT
     oeeRate?: number | null;
     isDegraded?: boolean;
     degradedReasons?: Array<string>;
+    changeoverLossMinutes?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryOeeRequest = {
@@ -1253,6 +1254,7 @@ export type NervIipContractsIndustrialTelemetryOeeAggregateBucket = {
     expectedOutputQuantity?: number | null;
     isDegraded?: boolean;
     degradedReasons?: Array<NervIipContractsIndustrialTelemetryOeeAggregateDegradedReason>;
+    changeoverLossMinutes?: number;
 };
 
 export type NervIipContractsIndustrialTelemetryOeeAggregateDegradedReason = 'runtimeStateFactsMissing' | 'runtimeStateCoverageIncomplete' | 'productionUomAmbiguous' | 'productionOutputMissing' | 'theoreticalRateMissingOrAmbiguous' | 'productiveRuntimeMissing' | 'loadingRuntimeMissing' | 'historicalDimensionLegacyUnresolved' | 'historicalHierarchyMissing' | 'historicalTimezoneMissing' | 'historicalTimezoneInvalid' | 'historicalShiftDefinitionMissing' | 'historicalShiftDefinitionInvalid' | 'historicalReportOutsideShiftWindow' | 'historicalLocalTimeInvalid' | 'historicalLocalTimeAmbiguous' | 'siteDimensionMissing' | 'workshopDimensionMissing' | 'lineDimensionMissing' | 'siteDimensionAmbiguous' | 'workshopDimensionAmbiguous' | 'lineDimensionAmbiguous' | 'siteTimezoneOrDayBoundaryMissing' | 'shiftDefinitionOrBoundaryMissing';

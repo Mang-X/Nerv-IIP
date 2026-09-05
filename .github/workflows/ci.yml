@@ -746,7 +746,7 @@ jobs:
         id: postgres-tests
         shell: pwsh
         run: |
-          $members = @('inventory-postgres-profile', 'masterdata-postgres-profile', 'scheduling-postgres-profile', 'apphub-postgres-profile', 'barcodelabel-postgres-profile', 'filestorage-postgres-profile', 'industrialtelemetry-postgres-profile', 'quality-postgres-profile', 'mes-postgres-profile', 'wms-postgres-profile', 'erp-postgres-profile', 'demandplanning-postgres-profile', 'acceptance-postgres-profile', 'maintenance-device-pause-postgres', 'scheduling-asset-unavailable-postgres', 'maintenance-asset-unavailable-v2-postgres')
+          $members = @('inventory-postgres-profile', 'masterdata-postgres-profile', 'scheduling-postgres-profile', 'apphub-postgres-profile', 'barcodelabel-postgres-profile', 'filestorage-postgres-profile', 'industrialtelemetry-postgres-profile', 'quality-postgres-profile', 'mes-changeover-postgres', 'mes-postgres-profile', 'wms-postgres-profile', 'erp-postgres-profile', 'demandplanning-postgres-profile', 'acceptance-postgres-profile', 'maintenance-device-pause-postgres', 'scheduling-asset-unavailable-postgres', 'maintenance-asset-unavailable-v2-postgres')
           ./scripts/run-postgres-test-lane.ps1 `
             -MemberId $members `
             -DatabaseSuffix ${{ github.run_id }}_${{ github.run_attempt }} `
