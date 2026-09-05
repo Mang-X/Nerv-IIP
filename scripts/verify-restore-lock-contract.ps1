@@ -52,6 +52,12 @@
     clean obj/. Adding a `--locked-mode` step would therefore have installed a permanently green
     gate for the defect this check exists for.
 
+    The consequence is worth stating plainly, because it bounds what "the repository has a lock gate
+    now" actually means: the only thing in this repository that can go red on a requested/resolved
+    fork is the class 1 check below. No `dotnet restore` invocation — in CI, locally, or in any
+    lane — will ever report one. Disable or weaken class 1 and that defect class has no defence at
+    all, rather than a weaker second line.
+
     FOUR CLASSES CHECKED.
 
       1. Fork inside a lock — a `resolved` version below its own `requested` lower bound. This is

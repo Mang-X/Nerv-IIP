@@ -233,7 +233,7 @@ $forkExemption = [ordered]@{
     package   = 'Contoso.Widgets'
     requested = '[3.1.0, )'
     resolved  = '3.0.9'
-    issue     = '#3145'
+    issue     = '#3152'
     reason    = 'fixture'
 }
 
