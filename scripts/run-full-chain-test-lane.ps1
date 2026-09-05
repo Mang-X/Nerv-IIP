@@ -109,6 +109,11 @@ $discoveryTimeoutSeconds = 600
 $fullstackEntrypointTimeoutSeconds = 1200
 $scriptEntrypointTimeoutSeconds = 900
 $dotnetEntrypointTimeoutSeconds = 600
+# #3135：residual 覆盖跑（本项目里不属于任何冻结成员的全部用例）。实测 16 条 ≈ 1m30s（7 条
+# Docker 生命周期 1m15s + 1 条公开 HTTP 链路 11s + 8 条纯进程内 0.6s），900s 预留留足 CI 余量。
+# 预算算术：4800（5 个成员）+ 900（residual）+ 300 cleanup + 300 guard = 6300s < 7200s（
+# `Run governed FullChain scenarios` 的 120 分钟 step 预算），因此不新增 step、不动 tier A 不变量。
+$residualTimeoutSeconds = 900
 $cleanupTimeoutSeconds = 300
 $timeoutGuardSeconds = 300
 
@@ -118,7 +123,7 @@ if ([string]::IsNullOrWhiteSpace($adminPostgres)) { throw 'Set NERV_IIP_TEST_POS
 if ([string]::IsNullOrWhiteSpace($redis)) { throw 'Set NERV_IIP_TEST_REDIS before FullChain lane discovery.' }
 
 $summary = [ordered]@{
-    schemaVersion = 3
+    schemaVersion = 4
     lane = 'full-chain'
     selectedMemberIds = @($MemberId)
     expected = 0
@@ -130,6 +135,20 @@ $summary = [ordered]@{
     postgresVersion = ''
     redisVersion = ''
     cleanup = 'not-run'
+    # #3135：residual 与 members 刻意分开记账。members 承载 full-chain 场景结论（
+    # docs/governance/testing/real-dependency-lanes.md：「只证明被选中的精确场景」）；residual 只是
+    # 项目级覆盖兜底，不为任何一条用例主张 full-chain 证明边界。
+    residual = [ordered]@{
+        projectDiscovered = 0
+        expected = 0
+        discovered = 0
+        executed = 0
+        passed = 0
+        failed = 0
+        skipped = 0
+        identities = @()
+        outcome = 'not-run'
+    }
     members = @()
 }
 $memberSummaries = [Collections.Generic.List[object]]::new()
@@ -191,6 +210,13 @@ function Write-NervFullChainSummarySnapshot {
         $summary.failed += [int]$memberSummary.failed
         $summary.skipped += [int]$memberSummary.skipped
     }
+    # #3135：residual 计入 lane 总数，这样 CI 日志里的 discovered 直接是「项目里被跑掉的用例数」，
+    # 而不是「名单里有几条」——后者正是暗测试藏身之处。
+    $summary.expected += [int]$summary.residual.expected
+    $summary.discovered += [int]$summary.residual.discovered
+    $summary.passed += [int]$summary.residual.passed
+    $summary.failed += [int]$summary.residual.failed
+    $summary.skipped += [int]$summary.residual.skipped
     $SummaryFileWriter.Invoke($SummaryPath, (($summary | ConvertTo-Json -Depth 12) + "`n"), $Phase) | Out-Null
 }
 
@@ -249,6 +275,64 @@ try {
         $discovered = @($discoveryLines | Where-Object { [string]::Equals([string]$_, $expectedIdentity, [StringComparison]::Ordinal) })
         $memberSummary.discovered = $discovered.Count
         if ($discovered.Count -ne 1) { throw "FullChain member '$($member.id)' discovery expected 1 frozen test but found $($discovered.Count)." }
+    }
+
+    # === #3135 residual 覆盖闭合 ==================================================================
+    # 此前本 lane 只按 5 个成员的 FullyQualifiedName 精确 filter 跑，而
+    # scripts/backend-test-shards.json 的 heavyLanes[full-chain] 又把整个项目从四个 fast shard 里
+    # 接管掉：项目里其余 16 条用例因此跑在 0 个 CI job 上，而且这种「变暗」不会红。
+    # 修法是把选取口径翻过来：默认全跑，没有白名单，也**没有排除注册表**。
+    #
+    # 覆盖边界（如实声明，不冒充完备）：这条闭合**只对 full-chain 这一个 heavy lane 成立**。
+    # 已穷举 scripts/backend-test-shards.json 的 heavyLanes：real-postgres 与 redis-cap 的
+    # projects 为空（按 selector 归属，不接管项目），performance 由
+    # scripts/verify-business-performance-baseline.ps1 在 -Scenario all 下不带 filter 整项目跑；
+    # 只有 full-chain 是白名单选取。将来若有**第三个** heavy lane 采用白名单选取，本机制不覆盖它 ——
+    # 通用的跨 lane 静态护栏只能是登记式簿记、拿不出鉴别力证据，因此刻意不造。
+    $rootNamespace = [IO.Path]::GetFileNameWithoutExtension($fullChainProject)
+    $discoveredIdentities = @(Get-NervFullChainDiscoveredTestIdentities -DiscoveryLines $discoveryLines -RootNamespace $rootNamespace)
+    # 刻意取 $manifest.members（全部成员）而不是 $selectedMembers：-MemberId 只跑一个成员时，
+    # 另外 4 个成员的重依赖用例不该落进 residual 被无依赖重跑。
+    $claimedIdentities = @($manifest.members | ForEach-Object { [string]$_.expectedTestIdentities[0] })
+    $residualIdentities = @(Get-NervFullChainResidualTestIdentities -DiscoveredIdentities $discoveredIdentities -ClaimedIdentities $claimedIdentities)
+    Assert-NervFullChainDiscoveryClosure -DiscoveredIdentities $discoveredIdentities -ClaimedIdentities $claimedIdentities -ResidualIdentities $residualIdentities
+    $summary.residual.projectDiscovered = $discoveredIdentities.Count
+    $summary.residual.expected = $residualIdentities.Count
+    $summary.residual.identities = @($residualIdentities)
+    Write-Host "FullChain residual coverage: project discovered $($discoveredIdentities.Count) tests; $($claimedIdentities.Count) are frozen lane members; $($residualIdentities.Count) run as residual coverage."
+    foreach ($residualIdentity in $residualIdentities) { Write-Host "FullChain residual identity: $residualIdentity" }
+    Write-NervFullChainSummarySnapshot
+    if ($residualIdentities.Count -gt 0) {
+        try {
+            $residualElapsedSeconds = [int64][Math]::Ceiling($laneStopwatch.Elapsed.TotalSeconds)
+            $residualAdmission = Test-NervFullChainDeadlineAdmission `
+                -GlobalDeadlineSeconds $runStepTimeoutSeconds `
+                -ElapsedSeconds $residualElapsedSeconds `
+                -EntrypointTimeoutSeconds $residualTimeoutSeconds `
+                -CleanupReserveSeconds $cleanupTimeoutSeconds `
+                -GuardReserveSeconds $timeoutGuardSeconds
+            if (-not $residualAdmission.Allowed) {
+                throw "FullChain residual coverage deadline admission denied: reason=$($residualAdmission.Reason) elapsed=$residualElapsedSeconds remaining=$($residualAdmission.RemainingSeconds) required=$($residualAdmission.RequiredSeconds)."
+            }
+            $residualResultsDirectory = Join-Path $ResultsDirectory 'residual'
+            [IO.Directory]::CreateDirectory($residualResultsDirectory) | Out-Null
+            $residualFilter = (@($residualIdentities | ForEach-Object { "FullyQualifiedName=$_" })) -join '|'
+            Invoke-DotNetOutput -Name 'full-chain-residual-coverage' -WorkingDirectory $repoRoot -TimeoutSeconds $residualTimeoutSeconds -Arguments @('test', $fullChainProject, '--configuration', 'Release', '--no-restore', '--no-build', '--filter', $residualFilter, '--logger', 'trx;LogFileName=full-chain-residual.trx', '--results-directory', $residualResultsDirectory) | Out-Null
+            $residualTrx = Get-NervFullChainResidualTrxResult -ResultsDirectory $residualResultsDirectory -ExpectedTestIdentities @($residualIdentities)
+            $summary.residual.discovered = $residualTrx.methods
+            $summary.residual.executed = $residualTrx.total
+            $summary.residual.passed = $residualTrx.passed
+            $summary.residual.failed = $residualTrx.failed
+            $summary.residual.skipped = $residualTrx.skipped
+            $summary.residual.outcome = 'passed'
+        }
+        catch {
+            $summary.residual.outcome = 'failed'
+            if ($null -eq $firstFailure) { $firstFailure = $_ }
+        }
+    }
+    else {
+        $summary.residual.outcome = 'passed'
     }
     Write-NervFullChainSummarySnapshot
 
@@ -404,7 +488,12 @@ finally {
     ) { 'passed' } else { 'failed' }
     try { Assert-NervFullChainTestLaneSummary -SelectedMemberIds @($MemberId) -MemberSummaries @($memberSummaries) }
     catch { if ($null -eq $firstFailure) { $firstFailure = $_ } }
+    # #3135：residual 没跑完就不是绿灯。少了这一条，discovery 之前失败会留下 outcome='not-run'
+    # 的 residual 段，而 lane 仍可能因为成员全绿而通过——那正是「登记了但没被跑」的复发形状。
+    if (-not [string]::Equals([string]$summary.residual.outcome, 'passed', [StringComparison]::Ordinal) -and $null -eq $firstFailure) {
+        $firstFailure = [InvalidOperationException]::new("FullChain residual coverage outcome is '$($summary.residual.outcome)'.")
+    }
     Write-NervFullChainSummarySnapshot -Phase 'terminal'
 }
 if ($null -ne $firstFailure) { throw $firstFailure }
-Write-Host "FullChain lane passed: expected=$($summary.expected) discovered=$($summary.discovered) passed=$($summary.passed) failed=$($summary.failed) skipped=$($summary.skipped) cleanup=$($summary.cleanup)."
+Write-Host "FullChain lane passed: expected=$($summary.expected) discovered=$($summary.discovered) passed=$($summary.passed) failed=$($summary.failed) skipped=$($summary.skipped) cleanup=$($summary.cleanup) residual=$($summary.residual.discovered)/$($summary.residual.projectDiscovered)."
