@@ -28,6 +28,7 @@ $ErrorActionPreference = 'Stop'
 $root = Resolve-Path (Join-Path $PSScriptRoot '..')
 Set-Location $root
 . (Join-Path $root 'scripts/lib/ScriptAutomation.ps1')
+. (Join-Path $root 'scripts/lib/RedisTestNamespaceCleanup.ps1')
 
 if ([string]::IsNullOrWhiteSpace($PostgresAdminConnectionString) -or
     [string]::IsNullOrWhiteSpace($RedisConnectionString)) {
@@ -95,31 +96,6 @@ function Invoke-Man2813DatabaseSql {
     ) -WorkingDirectory $root -Name $Name
 }
 
-function ConvertTo-Man2813RedisCliContext {
-    param([Parameter(Mandatory)] [string]$ConnectionString)
-
-    $segments = @($ConnectionString.Split(',', [StringSplitOptions]::RemoveEmptyEntries) | ForEach-Object { $_.Trim() })
-    if ($segments.Count -eq 0 -or $segments[0] -notmatch '^(?<host>\[[^\]]+\]|[^:]+):(?<port>[0-9]+)$') {
-        throw 'NERV_IIP_TEST_REDIS must begin with host:port; credentials redacted.'
-    }
-    $options = @{}
-    foreach ($segment in @($segments | Select-Object -Skip 1)) {
-        $parts = $segment.Split('=', 2)
-        if ($parts.Count -eq 2) { $options[$parts[0].Trim().ToLowerInvariant()] = $parts[1].Trim() }
-    }
-    $arguments = @('--raw', '-h', $Matches.host.Trim('[', ']'), '-p', $Matches.port)
-    if ($options.ContainsKey('ssl') -and [string]::Equals([string]$options.ssl, 'true', [StringComparison]::OrdinalIgnoreCase)) {
-        $arguments += '--tls'
-    }
-    if ($options.ContainsKey('user') -and -not [string]::IsNullOrWhiteSpace([string]$options.user)) {
-        $arguments += @('--user', [string]$options.user)
-    }
-    return [pscustomobject]@{
-        Arguments = $arguments
-        Password = if ($options.ContainsKey('password')) { [string]$options.password } else { $null }
-    }
-}
-
 function Invoke-Man2813Redis {
     param([Parameter(Mandatory)] [string]$Name, [Parameter(Mandatory)] [string[]]$Arguments)
 
@@ -164,7 +140,7 @@ $databaseConnectionString = if ($PostgresAdminConnectionString -match '(?i)Datab
 $capVersion = "man2813-$([Guid]::NewGuid().ToString('N').Substring(0, 12))"
 $redisNamespace = "nerv:n2813:$([Guid]::NewGuid().ToString('N')):"
 $foreignRedisSentinel = "nerv:n2813-control:$([Guid]::NewGuid().ToString('N'))"
-$redisContext = ConvertTo-Man2813RedisCliContext -ConnectionString $RedisConnectionString
+$redisContext = ConvertTo-NervRedisCliContext -ConnectionString $RedisConnectionString
 $internalToken = "man2813-$([Guid]::NewGuid().ToString('N'))"
 $databaseCreated = $false
 $redisNamespaceClaimed = $false
