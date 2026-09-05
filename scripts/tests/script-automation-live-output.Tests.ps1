@@ -32,7 +32,7 @@ function Write-Host {
     param([object] $Object, [switch] $NoNewline)
     [void] $script:observed.Append([string] $Object)
     if (-not $NoNewline) { [void] $script:observed.AppendLine() }
-    if ([string] $Object -ceq "stage-A`n") {
+    if ([string]::Equals([string] $Object, ('stage-A' + [Environment]::NewLine), [StringComparison]::Ordinal)) {
         [IO.File]::WriteAllText($script:releasePath, 'ack')
     }
 }
@@ -56,7 +56,12 @@ elseif ($Mode -ceq 'dual') {
 }
 elseif ($Mode -ceq 'timeout') {
     if ($IsLinux -or $IsWindows) {
-        $child = Start-Process -FilePath (Get-Process -Id $PID).Path -ArgumentList @('-NoProfile', '-Command', 'Start-Sleep -Seconds 60') -PassThru
+        $child = if ($IsLinux) {
+            [Diagnostics.Process]::Start('/bin/sleep', '60')
+        }
+        else {
+            Start-Process -FilePath (Get-Process -Id $PID).Path -ArgumentList @('-NoProfile', '-Command', 'Start-Sleep -Seconds 60') -PassThru
+        }
         [IO.File]::WriteAllText($ReleasePath + '.pid', [string] $child.Id)
         [IO.File]::WriteAllText($ReleasePath + '.start', [string] $child.StartTime.ToUniversalTime().Ticks)
     }
@@ -88,7 +93,7 @@ else {
     $console = $script:observed.ToString()
     Assert-Contract (([regex]::Matches($console, 'stage-A')).Count -eq 1) 'A must be mirrored exactly once.'
     Assert-Contract (([regex]::Matches($console, 'stage-B')).Count -eq 1) 'B must be mirrored exactly once.'
-    Assert-Contract ([IO.File]::ReadAllText($result.StdoutPath).Contains("stage-A`nstage-B`n", [StringComparison]::Ordinal)) 'Final stdout must retain A and B.'
+    Assert-Contract ([IO.File]::ReadAllText($result.StdoutPath).Contains(('stage-A' + [Environment]::NewLine + 'stage-B' + [Environment]::NewLine), [StringComparison]::Ordinal)) 'Final stdout must retain A and B.'
 
     [void] $script:observed.Clear()
     $result = Invoke-NativeCommandWithTimeout -Command $pwshPath -Arguments @('-NoProfile', '-File', $childPath, $script:releasePath, 'default') -Name 'default' -TimeoutSeconds 10 -LogDirectory (Join-Path $probeRoot 'default')
@@ -135,8 +140,8 @@ else {
         }
         catch { $failure = $_.Exception.Message }
         $expectedFailure = if ($mode -ceq 'timeout') { 'timed out after 3 seconds' } else { 'exited with 7' }
-        Assert-Contract ($failure.Contains($expectedFailure, [StringComparison]::Ordinal)) 'Live output must preserve the native failure verdict.'
-        Assert-Contract ($script:observed.ToString().Contains("before-$mode", [StringComparison]::Ordinal)) 'Failure must retain the last complete live record.'
+        Assert-Contract ($failure.Contains($expectedFailure, [StringComparison]::Ordinal)) "Live output must preserve the native failure verdict for $mode. Actual: $failure"
+        Assert-Contract ($script:observed.ToString().Contains("before-$mode", [StringComparison]::Ordinal)) "Failure must retain the last complete live record for $mode."
         if ($mode -ceq 'timeout') {
             $console = $script:observed.ToString()
             Assert-Contract ($console.Contains('aliveCount=0', [StringComparison]::Ordinal)) 'Timeout cleanup must report the final empty process tree.'
@@ -154,7 +159,7 @@ else {
     $canary = "known-first`nknown-last"
     $samples = @(
         "before`n$canary`nafter`n",
-        "before`n-----BEGIN PRIVATE KEY-----`ncanary-pem`n-----END PRIVATE KEY-----`nafter`n",
+        "before`nsafe-prefix-----BEGIN PRIVATE KEY-----`ncanary-pem`n-----END PRIVATE KEY-----`nafter`n",
         "before`n`"token`": `"canary-json-first`ncanary-json-last`"`nafter`n",
         "before`npassword=`ncanary-password`nafter`n",
         "before`nHost=h;Port=1;Database=d;Username=u;Password=canary-db-first`ncanary-db-last;`nafter`n"
@@ -164,6 +169,7 @@ else {
         for ($split = 1; $split -lt $sample.Length; $split++) {
             $state = @{ Pending = '' }
             $actual = Protect-ScriptAutomationText -Text $sample.Substring(0, $split) -SensitiveValues @($canary) -IncrementalState $state
+            Assert-Contract ($actual.Length -eq 0 -or $actual.EndsWith("`n", [StringComparison]::Ordinal)) 'Live text must commit complete records only.'
             $actual += Protect-ScriptAutomationText -Text $sample.Substring($split) -SensitiveValues @($canary) -IncrementalState $state
             $actual += Protect-ScriptAutomationText -Text '' -SensitiveValues @($canary) -IncrementalState $state -Final
             Assert-Contract ([string]::Equals($actual, $expected, [StringComparison]::Ordinal)) "Incremental redaction must match the authority at split $split."

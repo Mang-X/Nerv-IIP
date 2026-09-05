@@ -204,6 +204,9 @@ function Protect-ScriptAutomationText {
                         }
                     }
                 }
+                if ($boundary -gt 0) {
+                    $boundary = $Text.LastIndexOf("`n", $boundary - 1, [StringComparison]::Ordinal) + 1
+                }
             } while ($boundary -lt $previousBoundary)
         }
         $IncrementalState.Pending = $Text.Substring($boundary)
