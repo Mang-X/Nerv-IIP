@@ -227,7 +227,7 @@ Business Console 登录、刷新、退出和 `/me` 复用 PlatformGateway Consol
 | `/mes/dispatch` | 派工看板，按工作中心、设备、班次和人员查看待派工任务。 | BusinessGateway MES facade。 |
 | `/mes/operation-tasks` | 工序执行任务列表，提供查看工单、查看报工、呼叫质检、记录异常和开工/暂停/恢复/完工入口。 | BusinessGateway MES facade。 |
 | `/mes/wip` | 在制跟踪。 | BusinessGateway MES facade。 |
-| `/mes/reports` | 报工与完工，展示生产报工、良品、不良、返工和完工相关状态。 | BusinessGateway MES facade。 |
+| `/mes/reports` | 生产日报，按业务日、班次、工作中心或物料聚合产出与质量比率，支持服务端分页和当前筛选全量 CSV；授权时补充当前 WIP 与设备性能率上下文。 | BusinessGateway MES production statistics facade；WIP 与 OEE 分别由其公开 facade 提供且独立权限门控。 |
 | `/mes/production-reports` | 旧报工记录查询路由；新增报工从工单或工序上下文进入。 | BusinessGateway MES facade。 |
 | `/mes/quality` | 质量与不良，展示 MES 缺陷上下文和关联 Quality 事项。 | BusinessGateway MES facade。 |
 | `/mes/receipts` | 完工入库请求；新增请求通过抽屉承载，行级入口可回到工单上下文。 | BusinessGateway MES facade。 |
