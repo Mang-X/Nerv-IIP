@@ -191,12 +191,14 @@ public sealed class QualityInspectionInventoryStockGateAcceptanceTests
         await SeedQualityStockAsync(provider, 5m);
 
         var integrationEvent = ReceivingInspectionPassedEvent("GR-20260906-000001");
+        var logger = new RecordingLogger<QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer>();
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
         var handler = new QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer(
             scope.ServiceProvider.GetRequiredService<ISender>(),
             db,
-            new InMemoryIntegrationEventDeadLetterStore());
+            new InMemoryIntegrationEventDeadLetterStore(),
+            logger);
 
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
 
@@ -209,6 +211,9 @@ public sealed class QualityInspectionInventoryStockGateAcceptanceTests
         Assert.Equal(
             1m,
             (await assertDb.StockLedgers.SingleAsync(x => x.QualityStatus == StockQualityStatus.Quality)).OnHandQuantity);
+        // 放行侧不得留下「被挡」的痕迹。流水断言接不住这一维：把 gate 条件放宽却忘了 return 时，
+        // 事件**照样过账 2 条流水**（流水断言全绿），只是留下一条撒谎的痕迹——只有这条能看见。
+        Assert.Empty(logger.Entries);
     }
 
     /// <summary>
@@ -237,12 +242,14 @@ public sealed class QualityInspectionInventoryStockGateAcceptanceTests
             await SeedQualityStockAsync(provider, 5m);
 
             var integrationEvent = InspectionPassedEvent(sourceType, SourceServiceFor(sourceType), $"DOC-{sourceType}-001");
+            var logger = new RecordingLogger<QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer>();
             await using var scope = provider.CreateAsyncScope();
             var db = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
             var handler = new QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer(
                 scope.ServiceProvider.GetRequiredService<ISender>(),
                 db,
-                new InMemoryIntegrationEventDeadLetterStore());
+                new InMemoryIntegrationEventDeadLetterStore(),
+                logger);
 
             await handler.HandleAsync(integrationEvent, CancellationToken.None);
 
@@ -251,6 +258,7 @@ public sealed class QualityInspectionInventoryStockGateAcceptanceTests
             Assert.True(
                 2 == await assertDb.StockMovements.CountAsync(x => x.MovementType.StartsWith("status-transfer")),
                 $"来源环节 '{sourceType}' 被挡住了：本次没有产生状态转移流水。");
+            Assert.True(logger.Entries.Count == 0, $"来源环节 '{sourceType}' 不该被 gate-and-skip 留痕。");
         }
     }
 

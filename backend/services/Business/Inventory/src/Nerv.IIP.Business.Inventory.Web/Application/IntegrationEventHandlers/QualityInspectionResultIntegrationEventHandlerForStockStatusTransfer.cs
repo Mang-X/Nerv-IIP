@@ -103,8 +103,10 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForStockStatus
             // 只在 handler 抛异常时触发，本分支正常返回。删掉它，生产环境一条被丢弃的 first-article
             // 事件就是**无流水、无 ledger 变化、无 DLQ、无日志**的零记录静默丢弃。
             //
-            // 可替代的只有**放行侧**的负向对照（「放行的取值不得触发本留痕」）：那一半已由
-            // 「每个 stock-bearing 取值都产生 2 条 status-transfer 流水」承接，实测严格更强。
+            // 放行侧的负向对照（「放行的取值不得触发本留痕」）**也没有被完全替代**，两条都要留：
+            // 流水断言只在「gate 条件误扩」这一维更强；一旦留痕被挪出本 if（对放行的取值也打），
+            // 事件**照样过账 2 条流水**、流水断言全绿，只留下一条**撒谎的痕迹**——
+            // 实测只有 Assert.Empty(logger.Entries) / logger.Entries.Count == 0 看得见（#3186 复审 S2）。
             logger?.LogInformation(
                 "Consumer {Consumer} skipped quality inspection result {EventId} because inspection source type '{SourceType}' does not carry inventory stock.",
                 ConsumerName,
