@@ -72,9 +72,10 @@ Assert-Contract ($parseErrors.Count -eq 0) 'Verify script must parse before exec
     $composeFile = 'fixture-compose.yml'
     function Invoke-NativeCommandOutput {
         param($Command, $Arguments, $WorkingDirectory, $Name)
-        $output = if ($Arguments -contains 'psql') { 'erp | delivery_orders | 1' }
-        elseif ($Arguments -contains 'XLEN') { '1' }
-        elseif ($Arguments -contains 'GROUPS') {
+        $argumentSet = [Collections.Generic.HashSet[string]]::new([string[]]$Arguments, [StringComparer]::Ordinal)
+        $output = if ($argumentSet.Contains('psql')) { 'erp | delivery_orders | 1' }
+        elseif ($argumentSet.Contains('XLEN')) { '1' }
+        elseif ($argumentSet.Contains('GROUPS')) {
             '[{"name":"business-erp.man527-fixture","consumers":1,"pending":1,"last-delivered-id":"123-0","entries-read":1,"lag":0}]'
         }
         else { 'first-entry EventJson MAN527-BODY-SENTINEL last-entry' }
