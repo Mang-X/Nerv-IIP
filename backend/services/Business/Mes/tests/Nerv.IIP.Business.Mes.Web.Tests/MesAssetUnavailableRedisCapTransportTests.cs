@@ -55,6 +55,8 @@ public sealed class MesAssetUnavailableRedisCapTransportTests(ITestOutputHelper 
             cancellation.Cancel();
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelledWait);
             using var scope = factory.Services.CreateScope();
+            Assert.IsType<PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>(
+                scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>());
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             Assert.Equal(0, await db.Database.SqlQuery<int>(
                 $"SELECT count(*)::int AS \"Value\" FROM cap.published").SingleAsync());
