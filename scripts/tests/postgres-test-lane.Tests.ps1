@@ -638,7 +638,7 @@ try {
     Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 17) 'The ERP member must freeze exactly its seventeen PostgreSQL identities.'
     Assert-Contract ([string]::Equals([string]$erpMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) 'ERP keeps runner-owned databases for failure diagnostics.'
     $acceptanceMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'acceptance-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($acceptanceMember.expectedTestIdentities).Count -eq 7) 'The cross-service acceptance member must freeze exactly its seven PostgreSQL identities.'
+    Assert-Contract (@($acceptanceMember.expectedTestIdentities).Count -eq 8) 'The cross-service acceptance member must freeze exactly its eight PostgreSQL identities.'
     Assert-Contract ([string]::Equals((@($acceptanceMember.diagnosticSchemas) -join ','), 'industrial_telemetry,inventory,maintenance,wms', [StringComparison]::Ordinal)) 'The cross-service acceptance member must declare every schema its scenarios migrate.'
     Assert-Contract ([string]::Equals([string]$acceptanceMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) 'The cross-service acceptance member keeps runner-owned databases so its four-schema end state stays diagnosable.'
     Assert-MethodScopedFilter -Member $acceptanceMember

@@ -90,7 +90,23 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForStockStatus
         var payloadSourceType = integrationEvent.Payload.SourceType?.Trim() ?? string.Empty;
         if (NonStockBearingSourceTypes.Contains(payloadSourceType))
         {
-            // gate-and-skip：跳过但留痕。误挡时要有人能从日志里发现，不做静默丢弃。
+            // gate-and-skip：跳过但**必须留痕**（#3180 的设计声明，#3186 复审实证后维持）。
+            //
+            // 本处曾被提议删掉留痕，理由是「该分支恒定触发、日志内容恒定」——**两条都不成立**：
+            // ① 触发条件取自 payload（外部输入），六个来源环节里只有 first-article 进这个分支、
+            //    其余五个不进，是**条件触发**；
+            // ② 模板里的 {EventId} 逐条事件都不同，而**哪一条消息被丢了正是留痕的全部意义**。
+            //
+            // 更要命的是这条痕迹**没有任何替代**：本分支在 IsAlreadyProcessedAsync 之前、任何
+            // dbContext 写入之前就 return；IntegrationEventConsumerGuard 只在**信封校验失败**时写
+            // dead letter，而被挡的事件信封是合法的，走不到那里；CAP 的 FailedThresholdCallback
+            // 只在 handler 抛异常时触发，本分支正常返回。删掉它，生产环境一条被丢弃的 first-article
+            // 事件就是**无流水、无 ledger 变化、无 DLQ、无日志**的零记录静默丢弃。
+            //
+            // 放行侧的负向对照（「放行的取值不得触发本留痕」）**也没有被完全替代**，两条都要留：
+            // 流水断言只在「gate 条件误扩」这一维更强；一旦留痕被挪出本 if（对放行的取值也打），
+            // 事件**照样过账 2 条流水**、流水断言全绿，只留下一条**撒谎的痕迹**——
+            // 实测只有 Assert.Empty(logger.Entries) / logger.Entries.Count == 0 看得见（#3186 复审 S2）。
             logger?.LogInformation(
                 "Consumer {Consumer} skipped quality inspection result {EventId} because inspection source type '{SourceType}' does not carry inventory stock.",
                 ConsumerName,
@@ -116,10 +132,29 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForStockStatus
         var payload = integrationEvent.Payload;
         if (payload.StockRelease is not null)
         {
-            var releaseSourceStatus = StockQualityStatus.Normalize(payload.StockRelease.SourceQualityStatus);
-            var payloadTargetStatus = string.IsNullOrWhiteSpace(payload.StockRelease.TargetQualityStatus)
-                ? targetStatus
-                : StockQualityStatus.Normalize(payload.StockRelease.TargetQualityStatus);
+            // 非法取值表达成 KnownException：与紧接着的 `!= sourceStatus` 判的是同一个不变量
+            // （来源状态必须是 quality），此前却抛 ArgumentOutOfRangeException——把调用方的输入
+            // 错误伪装成本服务的编程缺陷（#3186）。
+            //
+            // **这不改变它在 CAP 上的投递结局。** IntegrationEventConsumerGuard.HandleAsync 末尾是
+            // 裸的 await handler(...)（无 try/catch），backend/common/Messaging 下 KnownException
+            // 零命中，生产代码零 ISubscribeFilter 注册——两种异常一样逃逸出消费者、一样按
+            // FailedThresholdCallback 重试耗尽后进死信（死信只把异常当不透明字符串读）。
+            // 这一处能被吸收，取决于 #877 的 gate-and-skip 落地；届时按本服务已有的写法
+            // （InventoryMovementRequestedIntegrationEventHandlerForPostingMovement 的
+            // `catch (KnownException)` → 发补偿事件）加一条按类型的 catch 即可，不必再动本行。
+            if (!StockQualityStatus.TryNormalize(payload.StockRelease.SourceQualityStatus, out var releaseSourceStatus))
+            {
+                throw new KnownException(StockQualityStatus.UnsupportedMessage(payload.StockRelease.SourceQualityStatus));
+            }
+
+            var payloadTargetStatus = targetStatus;
+            if (!string.IsNullOrWhiteSpace(payload.StockRelease.TargetQualityStatus)
+                && !StockQualityStatus.TryNormalize(payload.StockRelease.TargetQualityStatus, out payloadTargetStatus))
+            {
+                throw new KnownException(StockQualityStatus.UnsupportedMessage(payload.StockRelease.TargetQualityStatus));
+            }
+
             if (payloadTargetStatus != targetStatus)
             {
                 throw new KnownException("Quality inspection stock release target status must match the inspection event type.");

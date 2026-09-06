@@ -68,6 +68,59 @@ public sealed class QualityInspectionInventoryStockGateAcceptanceTests
     public async Task Postgres_first_article_inspection_result_at_validator_upper_bound_never_reaches_inventory_stock_commands() =>
         await AssertFirstArticleIsGatedAsync(LongWorkOrderId, LongOperationTaskId, "validator-upper-bound", expectsOverlongSourceDocumentId: true);
 
+    /// <summary>
+    /// #3186 复审：上面两条首件用例的「零条 status-transfer 流水」断言**在它们自己身上不可达**——
+    /// 两条身份的幂等键都必然超长，门一旦失效就先撞 <c>idempotency_key</c> 的 <c>varchar(128)</c>，
+    /// 红在过账那一步，永远走不到流水断言。也就是说那条断言是**装饰**。
+    ///
+    /// 本条用短身份把它变成**真正可达**：幂等键不超列宽、来源单据号不超校验器上界，门失效时会
+    /// **成功过账 2 条流水**，于是 <c>Assert.Empty</c> 成为真实的杀死点。
+    /// 前置条件写成断言，防止将来编码规则变化后本用例悄悄退化回不可达。
+    /// </summary>
+    [RealPostgresFact]
+    public async Task Postgres_first_article_inspection_result_with_short_identity_posts_no_stock_movement()
+    {
+        await AcceptancePostgresLaneDatabase.ResetSchemaAsync(InventoryFacts.Schema);
+        await using var provider = CreateInventoryPostgresProvider();
+        await MigrateAsync(provider);
+        await SeedQualityStockAsync(provider, 5m);
+
+        var integrationEvent = FirstArticleInspectionPassedEvent("WO-1", "OP-1");
+
+        // 前置读数：本条**必须**落在列宽与校验器上界之内，否则它又变回不可达。
+        Assert.True(
+            integrationEvent.IdempotencyKey.Length + ":out".Length <= InventoryIdempotencyKeyColumnLength,
+            $"幂等键 {integrationEvent.IdempotencyKey.Length} + 4 必须不超过 {InventoryIdempotencyKeyColumnLength} 列宽，否则本用例退化为不可达。");
+        Assert.True(
+            integrationEvent.Payload.SourceDocumentId.Length <= InventorySourceDocumentIdMaxLength,
+            $"来源单据号 {integrationEvent.Payload.SourceDocumentId.Length} 必须不超过 {InventorySourceDocumentIdMaxLength}。");
+
+        var logger = new RecordingLogger<QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer>();
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+        AcceptancePostgresLaneDatabase.AssertUsesGovernedDatabase(db);
+        var handler = new QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer(
+            scope.ServiceProvider.GetRequiredService<ISender>(),
+            db,
+            new InMemoryIntegrationEventDeadLetterStore(),
+            logger);
+
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+
+        await using var assertScope = provider.CreateAsyncScope();
+        var assertDb = assertScope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+        // 门失效时这里会读到 2 条——这才是本条的杀死点。
+        Assert.Empty(await assertDb.StockMovements
+            .Where(x => x.MovementType.StartsWith("status-transfer"))
+            .ToListAsync());
+        var ledger = await assertDb.StockLedgers.SingleAsync(x => x.QualityStatus == StockQualityStatus.Quality);
+        Assert.Equal(5m, ledger.OnHandQuantity);
+        Assert.Single(await assertDb.StockLedgers.ToListAsync());
+
+        var skip = Assert.Single(logger.Entries);
+        Assert.Contains(integrationEvent.EventId, skip.Message, StringComparison.Ordinal);
+    }
+
     private async Task AssertFirstArticleIsGatedAsync(
         string workOrderId,
         string operationTaskId,
@@ -117,11 +170,14 @@ public sealed class QualityInspectionInventoryStockGateAcceptanceTests
             Assert.Equal(5m, ledger.OnHandQuantity);
             Assert.Single(await assertDb.StockLedgers.ToListAsync());
 
-            // gate-and-skip 不是静默丢弃：跳过必须留痕，且痕迹要点出是哪个来源环节被挡的。
+            // gate-and-skip 不是静默丢弃：被挡的事件在流水/ledger/DLQ 三处都不留任何记录，
+            // 这条日志是它**唯一**的可追踪痕迹，且必须点出是哪一条事件（EventId）、
+            // 哪个来源环节被挡的。删掉它等于把一次丢弃变成零记录。
             var skip = Assert.Single(logger.Entries);
             Assert.Equal(LogLevel.Information, skip.Level);
             Assert.Contains(QualityInspectionInventoryStockGateFacts.FirstArticleSourceType, skip.Message, StringComparison.Ordinal);
             Assert.Contains(QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer.ConsumerName, skip.Message, StringComparison.Ordinal);
+            Assert.Contains(integrationEvent.EventId, skip.Message, StringComparison.Ordinal);
         }
     }
 
@@ -155,6 +211,8 @@ public sealed class QualityInspectionInventoryStockGateAcceptanceTests
         Assert.Equal(
             1m,
             (await assertDb.StockLedgers.SingleAsync(x => x.QualityStatus == StockQualityStatus.Quality)).OnHandQuantity);
+        // 放行侧不得留下「被挡」的痕迹。流水断言接不住这一维：把 gate 条件放宽却忘了 return 时，
+        // 事件**照样过账 2 条流水**（流水断言全绿），只是留下一条撒谎的痕迹——只有这条能看见。
         Assert.Empty(logger.Entries);
     }
 

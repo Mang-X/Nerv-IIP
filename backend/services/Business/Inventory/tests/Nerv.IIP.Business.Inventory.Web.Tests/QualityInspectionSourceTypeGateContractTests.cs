@@ -8,6 +8,22 @@ namespace Nerv.IIP.Business.Inventory.Web.Tests;
 /// #2976：Inventory 按来源环节分流时，两个桶必须**恰好**划分公开契约词表。
 /// 这条契约的作用是让「Quality 新增第七个来源环节」变成一次红，而不是静默落进放行那一边——
 /// 名单式实现的失败方向本来是不可见的，靠这条把它变成可见的。
+///
+/// **本契约只闭合「分类完备性」，对运行时的门零鉴别力。** 三条断言全部作用在静态集合形状上，
+/// 没有一条执行消费者——实测把 <c>HandleValidEventAsync</c> 里的 gate 分支改成恒不进入，
+/// 本契约 2/2 全绿，**整个常规（非 Postgres）Inventory 单测套件也全绿**：
+/// 本项目不带 <c>NERV_IIP_TEST_POSTGRES</c> 时读到 <c>通过 284 / 失败 0 / 跳过 5 / 总计 289</c>。
+/// 也就是说 #2976 那条 poison 缺陷可以完整回潮而常规门禁不红。这是反射式静态契约的**正确边界**，
+/// 不是缺陷。
+///
+/// （口径提醒：同一套件三个口径互不相同，引用时别横比——CI shard 因 lane 选择器排除 Postgres 用例，
+/// discovered 数更小；本地带该环境变量则 <c>跳过 0</c>。）
+///
+/// **运行时的门唯一的防线在 Postgres lane 上**：
+/// <c>QualityInspectionInventoryStockGateAcceptanceTests</c> 的「被挡侧必须留痕（含 EventId）」
+/// 与「放行侧每个取值都产生 2 条 status-transfer 流水」两条断言，均为
+/// <c>[RealPostgresFact]</c>（environment-gated / requiredLane: postgres），**无真库时全部 skip**。
+/// 改动本门时不要以本契约绿作为「门还在工作」的依据（#3186 复审）。
 /// </summary>
 public sealed class QualityInspectionSourceTypeGateContractTests
 {
