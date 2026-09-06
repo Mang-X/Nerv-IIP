@@ -386,7 +386,7 @@ foreach ($member in $selectedMembers) {
                         '-ScenarioId', $ScenarioId
                     )
                 }
-                Invoke-PwshScript -ScriptPath (Join-Path $repoRoot ([string]$member.entrypoint.path)) -Arguments $scriptArguments -WorkingDirectory $repoRoot -TimeoutSeconds $scriptEntrypointTimeoutSeconds -Name "full-chain-$admittedMemberId-entrypoint" | Out-Null
+                Invoke-NativeCommandWithTimeout -Command 'pwsh' -Arguments (@('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $repoRoot ([string]$member.entrypoint.path))) + $scriptArguments) -WorkingDirectory $repoRoot -TimeoutSeconds $scriptEntrypointTimeoutSeconds -Name "full-chain-$admittedMemberId-entrypoint" -LiveOutput | Out-Null
                 if ($canonicalResultEnabled -and [string]::Equals($admittedMemberId, 'sales-order-demand-planning', [StringComparison]::Ordinal) -and
                     -not (Test-Path -LiteralPath $canonicalResultFullPath -PathType Leaf)) {
                     throw 'FullChain sales-order-demand member did not produce its canonical result.'
