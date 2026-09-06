@@ -432,7 +432,7 @@ public sealed class MesReworkReceiptRedisCapTransportTests(ITestOutputHelper out
 
         public override async Task OnSubscribeExecutingAsync(ExecutingContext context)
         {
-            var value = context.Arguments.Single(x => x is NcrReworkRequestedIntegrationEvent or ReworkWorkOrderCreatedIntegrationEvent);
+            var value = context.Arguments.Single(x => x is NcrReworkRequestedIntegrationEvent or ReworkWorkOrderCreatedIntegrationEvent)!;
             var (id, category) = value is NcrReworkRequestedIntegrationEvent input
                 ? (input.EventId, input.EventId == "evt-rework-transport-001" ? "input-first" : "input-second")
                 : (((ReworkWorkOrderCreatedIntegrationEvent)value).EventId,
