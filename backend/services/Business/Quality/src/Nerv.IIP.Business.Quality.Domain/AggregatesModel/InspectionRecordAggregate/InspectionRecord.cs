@@ -33,17 +33,11 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
     private static readonly HashSet<string> SourceTypes =
         new(QualityInspectionSourceTypes.All, StringComparer.Ordinal);
 
+    // 取值域与公开契约词表同源（#3191）：跨服务消费者按 payload.SourceService 分流时引的是
+    // QualityInspectionSourceServices，两边各写一份字面量就会悄悄漂移——排程侧那道恒真的门
+    // 正是因为这条轴当年没有可引的词表，才拿信封面常量凑数。
     private static readonly HashSet<string> SourceServices =
-    [
-        "inventory",
-        "wms",
-        "mes",
-        "erp",
-        "maintenance",
-        "purchase-receipt",
-        "mes-operation",
-        "customer-return",
-    ];
+        new(QualityInspectionSourceServices.All, StringComparer.Ordinal);
 
     private InspectionRecord()
     {

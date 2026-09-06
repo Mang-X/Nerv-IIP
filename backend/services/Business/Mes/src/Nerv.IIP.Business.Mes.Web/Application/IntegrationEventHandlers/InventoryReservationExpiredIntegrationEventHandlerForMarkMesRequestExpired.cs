@@ -58,6 +58,6 @@ public sealed class InventoryReservationExpiredIntegrationEventHandlerForMarkMes
     }
 
     private static bool IsMesReservation(string sourceService) =>
-        string.Equals(sourceService, "mes", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(sourceService, InventoryMovementSourceServices.Mes, StringComparison.OrdinalIgnoreCase) ||
         string.Equals(sourceService, InventoryIntegrationEventSources.BusinessMes, StringComparison.OrdinalIgnoreCase);
 }
