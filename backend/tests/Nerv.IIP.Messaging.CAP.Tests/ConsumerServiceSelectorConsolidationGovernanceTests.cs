@@ -12,9 +12,10 @@ namespace Nerv.IIP.Messaging.CAP.Tests;
 /// （类型注册 → 工厂 lambda）、换目录都绕不过这条 —— 本票收敛掉的第三份副本正是靠这三招
 /// 从「按类名 grep」里消失的。
 ///
-/// 允许形态是**闭集**：只有「从容器里取出来读」这两种消费形态被允许出现在共享入口之外。
+/// 允许形态是**闭集**：只有「从容器里取出来读」这几种消费形态被允许出现在共享入口之外。
 /// 漏登记一种合法形态的后果是红（有人来这里显式加并接受审核），不是静默放行 —— 这与
-/// 「枚举违规形状」相反，后者漏一种就是假绿。
+/// 「枚举违规形状」相反，后者漏一种就是假绿。闭集本身的强度声明见
+/// <see cref="Allowed_consumption_forms_are_structurally_read_only"/>，那里明写了它覆盖什么、不覆盖什么。
 ///
 /// 被扫描的标识符住在 <c>consumer-service-selector-governance.json</c>：守卫源码里不写这个
 /// 标识符，就不需要给自己开豁免，也就没有那条可以往里塞注册的自指的洞。
@@ -42,17 +43,18 @@ public sealed class ConsumerServiceSelectorConsolidationGovernanceTests
 
         Assert.True(
             sources.Length >= ledger.MinimumScannedFiles,
-            $"Expected the backend C# scan face to cover at least {ledger.MinimumScannedFiles} files, "
+            $"Expected the repository-wide C# scan face to cover at least {ledger.MinimumScannedFiles} files, "
             + $"found {sources.Length}. A glob that misses the tree would make this gate silently green.");
 
-        var sharedEntries = ledger.SharedEntryFiles
-            .Select(relative => Path.GetFullPath(Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar))))
-            .ToHashSet(StringComparer.Ordinal);
-
-        foreach (var sharedEntry in sharedEntries)
-        {
-            Assert.True(File.Exists(sharedEntry), $"Shared entry file was not found at {sharedEntry}.");
-        }
+        // 票面验收条件第一句是「全仓该接口的替换实现只有一份」。
+        // 没有这条 Assert.Single，sharedEntryFiles 就是一个无上界白名单：
+        // 把一份完整本地副本的路径追加进台账即可全绿（#3122 复审实测）。
+        // 「一」必须在门禁里被表达出来，而不是靠台账写的人自觉。
+        var sharedEntryRelative = Assert.Single(ledger.SharedEntryFiles);
+        var sharedEntry = Path.GetFullPath(
+            Path.Combine(root, sharedEntryRelative.Replace('/', Path.DirectorySeparatorChar)));
+        Assert.True(File.Exists(sharedEntry), $"Shared entry file was not found at {sharedEntry}.");
+        var sharedEntries = new HashSet<string>(StringComparer.Ordinal) { sharedEntry };
 
         var violations = new List<string>();
 
@@ -117,29 +119,86 @@ public sealed class ConsumerServiceSelectorConsolidationGovernanceTests
     }
 
     /// <summary>
-    /// 允许形态是闭集，闭集本身必须真的把该标识符盖住 —— 否则 <c>allowedConsumptionForms</c>
-    /// 写错一个字符就会把「消费形态」误判成「注册形态」（红，可发现），或者更糟：
-    /// 写成一个空串 / 过宽的串把所有注册都掩盖掉（绿，不可发现）。这条钉住后者。
+    /// 允许形态闭集是 <see cref="CountRegistrationOccurrences"/> 的**剥离**输入：写进去的每条串
+    /// 都会先从行里被删掉，再去找接口标识符。因此一条「过宽」的 form 能把真实注册整段剥掉，
+    /// 表现为绿——不可发现。
+    ///
+    /// **强度声明（本条覆盖什么、不覆盖什么）**：
+    ///   * 覆盖：闭集的**结构**——每条 form 必须是取值动作（以 <c>Get</c> 开头）、必须恰好含一次
+    ///     接口标识符、且不得含任何 DI 注册记号（见 <see cref="RegistrationMarkers"/>）。
+    ///     这三条一起排除掉「以注册动词开头 / 中途夹带注册片段 / 一条吃掉两次出现」这三类过宽写法。
+    ///     #3122 首轮复审用的绕法是往闭集里追加一条「以 <c>AddSingleton&lt;</c> 开头、后接接口标识符」的串，
+    ///     它被第一条（不以 <c>Get</c> 开头）和第三条（含注册记号）各挡一次。
+    ///     注意本文件通篇不写那个接口标识符的字面量——写了就会被上面那条 Fact 判成违规注册，
+    ///     而给自己开豁免就是重新打开那个自指的洞。
+    ///   * **不覆盖**：任意可能的过宽写法。<c>RegistrationMarkers</c> 是枚举，枚举天然可能漏。
+    ///     它只是在结构约束之外多加一道，不构成完备性声明——本仓的教训是「护栏自称完备比有洞更坏」，
+    ///     所以这里明说它不完备，请不要因为这条 Fact 存在就停止怀疑闭集。
+    ///
+    /// 下面三条构造串是**例子不是判据**：判据是上面的结构约束，探针只演示两类注册写法确实还能被数到。
     /// </summary>
     [Fact]
-    public void Allowed_consumption_forms_cannot_mask_a_registration()
+    public void Allowed_consumption_forms_are_structurally_read_only()
     {
         var ledger = Ledger.Value;
 
         Assert.NotEmpty(ledger.AllowedConsumptionForms);
+
         Assert.All(ledger.AllowedConsumptionForms, form =>
-            Assert.Contains(ledger.InterfaceName, form, StringComparison.Ordinal));
+        {
+            // 结构约束 1：取值动作。以注册动词开头的 form 一律不合法。
+            Assert.StartsWith("Get", form, StringComparison.Ordinal);
+
+            // 结构约束 2：恰好含一次接口标识符，避免一次剥离吃掉两次出现。
+            Assert.Equal(1, CountOccurrences(form, ledger.InterfaceName));
+
+            // 结构约束 3：不得夹带任何 DI 注册记号（非完备枚举，见上）。
+            foreach (var marker in RegistrationMarkers)
+            {
+                Assert.DoesNotContain(marker, form, StringComparison.Ordinal);
+            }
+        });
 
         var registrationLike =
             $"services.Replace(ServiceDescriptor.Singleton<{ledger.InterfaceName}, Whatever>());";
         var factoryLike =
             $"services.Replace(ServiceDescriptor.Singleton<{ledger.InterfaceName}>(sp => new Whatever(sp)));";
+        var addSingletonLike =
+            $"services.AddSingleton<{ledger.InterfaceName}, Whatever>();";
         var consumptionLike =
             $"var selector = provider.GetRequiredService<{ledger.InterfaceName}>();";
 
         Assert.Equal(1, CountRegistrationOccurrences(registrationLike, ledger));
         Assert.Equal(1, CountRegistrationOccurrences(factoryLike, ledger));
+        Assert.Equal(1, CountRegistrationOccurrences(addSingletonLike, ledger));
         Assert.Equal(0, CountRegistrationOccurrences(consumptionLike, ledger));
+    }
+
+    /// <summary>
+    /// DI 注册记号。**这是枚举，不是闭集**：漏一个就少一道，所以它只作为结构约束 1 / 3 之外的补充，
+    /// 承重的是「必须以 Get 开头」这条结构约束。
+    /// </summary>
+    private static readonly string[] RegistrationMarkers =
+    [
+        "Add", "TryAdd", "Replace", "Describe", "ServiceDescriptor",
+        "Singleton", "Scoped", "Transient",
+    ];
+
+    private static int CountOccurrences(string text, string needle)
+    {
+        var count = 0;
+        var offset = 0;
+        while (true)
+        {
+            var found = text.IndexOf(needle, offset, StringComparison.Ordinal);
+            if (found < 0)
+            {
+                return count;
+            }
+
+            count++;
+            offset = found + needle.Length;
+        }
     }
 
     private static int CountRegistrationOccurrences(string line, GovernanceLedger ledger)
@@ -150,33 +209,29 @@ public sealed class ConsumerServiceSelectorConsolidationGovernanceTests
             stripped = stripped.Replace(form, string.Empty, StringComparison.Ordinal);
         }
 
-        var count = 0;
-        var offset = 0;
-        while (true)
-        {
-            var found = stripped.IndexOf(ledger.InterfaceName, offset, StringComparison.Ordinal);
-            if (found < 0)
-            {
-                return count;
-            }
-
-            count++;
-            offset = found + ledger.InterfaceName.Length;
-        }
+        return CountOccurrences(stripped, ledger.InterfaceName);
     }
 
     private static Regex BaseTypeRegex(GovernanceLedger ledger) => new(
         $@":\s*(?:[\w.]+\.)?(?<![\w]){Regex.Escape(ledger.BaseClassName)}\b",
         RegexOptions.CultureInvariant);
 
+    /// <summary>
+    /// 扫描面 = **仓库根**下全部 C# 源码，不是 <c>backend/</c>。
+    ///
+    /// 票面验收条件说的是「全仓」；扫 <c>backend/</c> 就与验收条件的面不一致，
+    /// 把完整副本放进 <c>connector-hosts/</c> 即可绕过（#3122 复审实测：3/3 全绿）。
+    /// 排除集只有构建产物与依赖目录，不含任何按内容/用途的豁免——豁免就是洞。
+    /// </summary>
+    private static readonly string[] ExcludedPathSegments = ["obj", "bin", "node_modules"];
+
     private static string[] ScanFace(string root)
     {
-        var backend = Path.Combine(root, "backend");
-        Assert.True(Directory.Exists(backend), $"Backend source root was not found at {backend}.");
+        Assert.True(Directory.Exists(root), $"Repository root was not found at {root}.");
 
         return Directory
-            .EnumerateFiles(backend, "*.cs", SearchOption.AllDirectories)
-            .Where(path => !ContainsSegment(path, "obj") && !ContainsSegment(path, "bin"))
+            .EnumerateFiles(root, "*.cs", SearchOption.AllDirectories)
+            .Where(path => !ExcludedPathSegments.Any(segment => ContainsSegment(path, segment)))
             .Select(Path.GetFullPath)
             .OrderBy(path => path, StringComparer.Ordinal)
             .ToArray();

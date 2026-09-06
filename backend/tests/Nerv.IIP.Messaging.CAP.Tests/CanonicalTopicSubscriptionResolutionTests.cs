@@ -111,6 +111,8 @@ public sealed class CanonicalTopicSubscriptionResolutionTests
         Assert.Contains(UnclaimedTemplate, exception.Message, StringComparison.Ordinal);
         Assert.Contains(nameof(UnclaimedTemplateConsumer), exception.Message, StringComparison.Ordinal);
         Assert.Contains(nameof(DeploymentProfileTopicResolver), exception.Message, StringComparison.Ordinal);
+        // 正文把 deployment profile 列为异常消息内容之一；不断言它，那句话就是未经检验的声明。
+        Assert.Contains("Development", exception.Message, StringComparison.Ordinal);
     }
 
     /// <summary>
