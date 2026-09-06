@@ -7,8 +7,6 @@ using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using DotNetCore.CAP.Internal;
 using Nerv.IIP.Business.Scheduling.Domain;
 using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventHandlers;
@@ -185,7 +183,7 @@ try
             x.UseIntegrationEventDeadLetterOnFailedThreshold();
             x.UseDashboard();
         });
-        builder.Services.Replace(ServiceDescriptor.Singleton<IConsumerServiceSelector, DeploymentProfileConsumerServiceSelector>());
+        builder.Services.AddNervIipCanonicalTopicSubscriptions(builder.Environment.EnvironmentName);
     }
 
     builder.Services.AddMediatR(cfg =>
