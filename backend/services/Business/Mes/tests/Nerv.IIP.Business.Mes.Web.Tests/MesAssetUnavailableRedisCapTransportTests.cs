@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Infrastructure.Repositories;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
@@ -245,7 +246,11 @@ public sealed class MesAssetUnavailableRedisCapTransportTests(ITestOutputHelper 
         Assert.Equal(IntegrationEventEnvelopeValidator.UnsupportedVersionFailureCode, topicMismatch.FailureCode);
         Assert.Equal(MaintenanceIntegrationEventVersions.V2, topicMismatch.EventVersion);
 
-        Assert.Equal(0, arrivals.Total);
+        await AssertWithDiagnosticsAsync(() =>
+        {
+            Assert.Equal(0, arrivals.Total);
+            return Task.CompletedTask;
+        }, factory, poison, arrivals, currentEventId: null, phase: "arrival-assertion-failed");
         using var assertionScope = factory.Services.CreateScope();
         var assertionDb = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         Assert.Equal(0, await assertionDb.ProcessedIntegrationEvents.AsNoTracking().CountAsync());
@@ -258,7 +263,8 @@ public sealed class MesAssetUnavailableRedisCapTransportTests(ITestOutputHelper 
         WebApplicationFactory<Program> factory,
         PoisonSwitch poison,
         ArrivalLog arrivals,
-        string? currentEventId)
+        string? currentEventId,
+        string phase = "wait-failed")
     {
         try
         {
@@ -266,7 +272,7 @@ public sealed class MesAssetUnavailableRedisCapTransportTests(ITestOutputHelper 
         }
         catch
         {
-            await WriteDiagnosticsAsync("wait-failed", factory, poison, arrivals, currentEventId);
+            await WriteDiagnosticsAsync(phase, factory, poison, arrivals, currentEventId);
             throw;
         }
     }
@@ -282,7 +288,20 @@ public sealed class MesAssetUnavailableRedisCapTransportTests(ITestOutputHelper 
         string[] knownEventIds = ["evt-2966-poison-v2", "evt-2966-v1-winner", "evt-2966-v1-different-fact",
             "evt-2966-wrong-version", "evt-2966-wrong-source", "evt-2966-wrong-type", "evt-2966-wrong-topic"];
         var attempts = poison.Attempts;
-        var arrivalCount = currentEventId is null ? arrivals.Total : arrivals.CountFor(currentEventId);
+        var arrivalSnapshot = arrivals.DescribeSnapshot();
+        var retryOptions = "not-requested";
+        if (currentEventId is not null)
+        {
+            try
+            {
+                var options = factory.Services.GetRequiredService<IOptions<CapOptions>>().Value;
+                retryOptions = $"FailedRetryCount={options.FailedRetryCount}, FailedRetryInterval={options.FailedRetryInterval}, FallbackWindowLookbackSeconds={options.FallbackWindowLookbackSeconds}";
+            }
+            catch (Exception exception)
+            {
+                retryOptions = $"unavailable ({exception.GetType().Name})";
+            }
+        }
         var dlqTask = QueryDiagnosticAsync($"""
             SELECT json_build_object(
                 'other', (SELECT count(*) FROM mes.integration_event_dead_letters WHERE event_id IS NULL OR NOT (event_id = ANY ({knownEventIds}))),
@@ -300,12 +319,22 @@ public sealed class MesAssetUnavailableRedisCapTransportTests(ITestOutputHelper 
                 WHERE "Content"::jsonb -> 'Value' ->> 'EventId' = {currentEventId}
                 ORDER BY "Id" LIMIT 16) r
             """);
-        await Task.WhenAll(dlqTask, receivedTask);
+        var publishedTask = currentEventId is null ? Task.FromResult("not-requested") : QueryDiagnosticAsync($"""
+            SELECT coalesce(json_agg(r ORDER BY r.status), '[]'::json)::text AS "Value" FROM (
+                SELECT CASE WHEN "StatusName" IN ('Scheduled', 'Queued', 'Succeeded', 'Failed', 'Delayed')
+                        THEN "StatusName" ELSE 'other' END AS status,
+                    count(*) AS count, min("Retries") AS min_retries, max("Retries") AS max_retries
+                FROM cap.published
+                WHERE "Content"::jsonb -> 'Value' ->> 'EventId' = {currentEventId}
+                GROUP BY 1 LIMIT 6) r
+            """);
+        await Task.WhenAll(dlqTask, receivedTask, publishedTask);
         var dlq = await dlqTask;
         var received = await receivedTask;
+        var published = await publishedTask;
         try
         {
-            output.WriteLine($"MES transport {phase}; Attempts={attempts}; arrivals={arrivalCount}; DLQ(limit=16)={dlq}; CAP received(limit=16)={received}");
+            output.WriteLine($"MES transport {phase}; Attempts={attempts}; arrivals={arrivalSnapshot}; CAP options={retryOptions}; DLQ(limit=16)={dlq}; CAP received(limit=16)={received}; CAP published(groups<=6)={published}");
         }
         catch
         {
@@ -322,7 +351,9 @@ public sealed class MesAssetUnavailableRedisCapTransportTests(ITestOutputHelper 
                     var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
                     db.Database.SetCommandTimeout(2);
                     var snapshot = await db.Database.SqlQuery<string>(query).SingleAsync(token);
-                    return TestDiagnostic.Sanitize(snapshot);
+                    const int maxDiagnosticLength = 8192;
+                    var safe = TestDiagnostic.Sanitize(snapshot);
+                    return safe.Length <= maxDiagnosticLength ? safe : safe[..maxDiagnosticLength] + " [truncated]";
                 }, TimeSpan.FromSeconds(2));
             }
             catch (Exception exception)
@@ -456,6 +487,30 @@ public sealed class MesAssetUnavailableRedisCapTransportTests(ITestOutputHelper 
         public int CountFor(string eventId) => arrivals.Count(x => x.EventId == eventId);
 
         public Arrival Last(string eventId) => arrivals.Last(x => x.EventId == eventId);
+
+        public string DescribeSnapshot()
+        {
+            var snapshot = arrivals.ToArray();
+            var wrongVersion = 0;
+            var wrongSource = 0;
+            var wrongType = 0;
+            var wrongTopic = 0;
+            var priorPoison = 0;
+            var other = 0;
+            foreach (var arrival in snapshot)
+            {
+                switch (arrival.EventId)
+                {
+                    case "evt-2966-wrong-version": wrongVersion++; break;
+                    case "evt-2966-wrong-source": wrongSource++; break;
+                    case "evt-2966-wrong-type": wrongType++; break;
+                    case "evt-2966-wrong-topic": wrongTopic++; break;
+                    case "evt-2966-poison-v2": priorPoison++; break;
+                    default: other++; break;
+                }
+            }
+            return $"total={snapshot.Length}, current-wrong-version={wrongVersion}, current-wrong-source={wrongSource}, current-wrong-type={wrongType}, current-wrong-topic={wrongTopic}, prior-poison={priorPoison}, other={other}";
+        }
 
         public void Record(IIntegrationEventEnvelope envelope, string deviceAssetId, string reason, DateTimeOffset fromUtc) =>
             arrivals.Enqueue(new Arrival(
