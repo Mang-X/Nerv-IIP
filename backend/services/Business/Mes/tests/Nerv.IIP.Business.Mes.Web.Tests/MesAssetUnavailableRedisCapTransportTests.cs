@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Infrastructure.Repositories;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
@@ -18,13 +19,14 @@ using Nerv.IIP.Contracts.Maintenance;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Testing;
 using System.Collections.Concurrent;
+using Xunit.Abstractions;
 using RawV2Envelope = Nerv.IIP.Business.Mes.Web.Tests.RawWire.AssetUnavailableV2IntegrationEvent;
 using RawV2Payload = Nerv.IIP.Business.Mes.Web.Tests.RawWire.AssetUnavailableV2Payload;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 [Collection(WebApplicationFactoryCollection.Name)]
-public sealed class MesAssetUnavailableRedisCapTransportTests
+public sealed class MesAssetUnavailableRedisCapTransportTests(ITestOutputHelper output)
 {
     private const string DeploymentProfile = "Issue2966Acceptance";
     private const string V2Topic = "nerv-iip.issue2966acceptance.business-maintenance.maintenance.asset-unavailable.v2";
@@ -57,7 +59,7 @@ public sealed class MesAssetUnavailableRedisCapTransportTests
 
         await PublishAsync(factory, V2Topic, v2);
         IntegrationEventDeadLetterMessage? deadLetter = null;
-        await Eventually.AssertAsync(
+        await AssertWithDiagnosticsAsync(async () => await Eventually.AssertAsync(
             condition: "MES CAP poison exhausts bounded retries into the persistent dead-letter store",
             assertion: async token =>
             {
@@ -71,7 +73,8 @@ public sealed class MesAssetUnavailableRedisCapTransportTests
                             StringComparison.Ordinal));
                 Assert.NotNull(deadLetter);
             },
-            options: new EventuallyOptions(TimeSpan.FromSeconds(90), TimeSpan.FromMilliseconds(250), []));
+            options: new EventuallyOptions(TimeSpan.FromSeconds(90), TimeSpan.FromMilliseconds(250), [])),
+            factory, poison, arrivals, v2.EventId);
 
         Assert.NotNull(deadLetter);
         Assert.Equal(IntegrationEventCapFailureDeadLetterer.HandlerRetryExhaustedFailureCode, deadLetter.FailureCode);
@@ -185,6 +188,7 @@ public sealed class MesAssetUnavailableRedisCapTransportTests
         var wrongVersion = CreateRawV2("evt-2966-wrong-version", fromUtc, eventVersion: 1);
         var wrongSource = CreateRawV2("evt-2966-wrong-source", fromUtc, sourceService: MaintenanceIntegrationEventSources.Maintenance);
         var wrongType = CreateRawV2("evt-2966-wrong-type", fromUtc, eventType: MaintenanceIntegrationEventTypes.AssetRestored);
+        await WriteDiagnosticsAsync("before-publish", factory, poison, arrivals, currentEventId: null);
         foreach (var raw in new[] { wrongVersion, wrongSource, wrongType })
         {
             await PublishAsync(factory, V2Topic, raw);
@@ -206,7 +210,7 @@ public sealed class MesAssetUnavailableRedisCapTransportTests
         await PublishAsync(factory, nameof(AssetUnavailableIntegrationEvent), wrongTopic);
 
         IReadOnlyList<IntegrationEventDeadLetterMessage> deadLetters = [];
-        await Eventually.AssertAsync(
+        await AssertWithDiagnosticsAsync(async () => await Eventually.AssertAsync(
             condition: "every mismatched envelope exhausts CAP retries into the persistent dead-letter store",
             assertion: async token =>
             {
@@ -215,7 +219,8 @@ public sealed class MesAssetUnavailableRedisCapTransportTests
                     .ListAsync(consumerName: null, status: null, cancellationToken: token);
                 Assert.Equal(4, deadLetters.Count);
             },
-            options: new EventuallyOptions(TimeSpan.FromSeconds(90), TimeSpan.FromMilliseconds(250), []));
+            options: new EventuallyOptions(TimeSpan.FromSeconds(90), TimeSpan.FromMilliseconds(250), [])),
+            factory, poison, arrivals, currentEventId: null);
 
         foreach (var raw in new[] { wrongVersion, wrongSource, wrongType })
         {
@@ -241,12 +246,121 @@ public sealed class MesAssetUnavailableRedisCapTransportTests
         Assert.Equal(IntegrationEventEnvelopeValidator.UnsupportedVersionFailureCode, topicMismatch.FailureCode);
         Assert.Equal(MaintenanceIntegrationEventVersions.V2, topicMismatch.EventVersion);
 
-        Assert.Equal(0, arrivals.Total);
+        await AssertWithDiagnosticsAsync(() =>
+        {
+            Assert.Equal(0, arrivals.Total);
+            return Task.CompletedTask;
+        }, factory, poison, arrivals, currentEventId: null, phase: "arrival-assertion-failed");
         using var assertionScope = factory.Services.CreateScope();
         var assertionDb = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         Assert.Equal(0, await assertionDb.ProcessedIntegrationEvents.AsNoTracking().CountAsync());
         Assert.Equal(0, await assertionDb.WorkCenterUnavailabilities.AsNoTracking().CountAsync());
         Assert.Equal(0, await assertionDb.ScheduleResults.AsNoTracking().CountAsync());
+    }
+
+    private async Task AssertWithDiagnosticsAsync(
+        Func<Task> assertion,
+        WebApplicationFactory<Program> factory,
+        PoisonSwitch poison,
+        ArrivalLog arrivals,
+        string? currentEventId,
+        string phase = "wait-failed")
+    {
+        try
+        {
+            await assertion();
+        }
+        catch
+        {
+            await WriteDiagnosticsAsync(phase, factory, poison, arrivals, currentEventId);
+            throw;
+        }
+    }
+
+    private async Task WriteDiagnosticsAsync(
+        string phase,
+        WebApplicationFactory<Program> factory,
+        PoisonSwitch poison,
+        ArrivalLog arrivals,
+        string? currentEventId)
+    {
+        // 仅固定测试身份可离开查询；外来消息只贡献 other 计数。每次查询独立拥有 scope 与取消预算。
+        string[] knownEventIds = ["evt-2966-poison-v2", "evt-2966-v1-winner", "evt-2966-v1-different-fact",
+            "evt-2966-wrong-version", "evt-2966-wrong-source", "evt-2966-wrong-type", "evt-2966-wrong-topic"];
+        var attempts = poison.Attempts;
+        var arrivalSnapshot = arrivals.DescribeSnapshot();
+        var retryOptions = "not-requested";
+        if (currentEventId is not null)
+        {
+            try
+            {
+                var options = factory.Services.GetRequiredService<IOptions<CapOptions>>().Value;
+                retryOptions = $"FailedRetryCount={options.FailedRetryCount}, FailedRetryInterval={options.FailedRetryInterval}, FallbackWindowLookbackSeconds={options.FallbackWindowLookbackSeconds}";
+            }
+            catch (Exception exception)
+            {
+                retryOptions = $"unavailable ({exception.GetType().Name})";
+            }
+        }
+        var dlqTask = QueryDiagnosticAsync($"""
+            SELECT json_build_object(
+                'other', (SELECT count(*) FROM mes.integration_event_dead_letters WHERE event_id IS NULL OR NOT (event_id = ANY ({knownEventIds}))),
+                'knownCount', (SELECT count(*) FROM mes.integration_event_dead_letters WHERE event_id = ANY ({knownEventIds})),
+                'rows', (SELECT coalesce(json_agg(r ORDER BY r.id), '[]'::json) FROM (
+                    SELECT id, event_id, left(consumer_name, 160) AS consumer_name,
+                        left(failure_code, 80) AS failure_code, left(status, 50) AS status
+                    FROM mes.integration_event_dead_letters WHERE event_id = ANY ({knownEventIds})
+                    ORDER BY id LIMIT 16) r))::text AS "Value"
+            """);
+        var receivedTask = currentEventId is null ? Task.FromResult("not-requested") : QueryDiagnosticAsync($"""
+            SELECT coalesce(json_agg(r ORDER BY r."Id"), '[]'::json)::text AS "Value" FROM (
+                SELECT "Id", left("StatusName", 50) AS "StatusName", "Retries", "Added", "ExpiresAt"
+                FROM cap.received
+                WHERE "Content"::jsonb -> 'Value' ->> 'EventId' = {currentEventId}
+                ORDER BY "Id" LIMIT 16) r
+            """);
+        var publishedTask = currentEventId is null ? Task.FromResult("not-requested") : QueryDiagnosticAsync($"""
+            SELECT coalesce(json_agg(r ORDER BY r.status), '[]'::json)::text AS "Value" FROM (
+                SELECT CASE WHEN "StatusName" IN ('Scheduled', 'Queued', 'Succeeded', 'Failed', 'Delayed')
+                        THEN "StatusName" ELSE 'other' END AS status,
+                    count(*) AS count, min("Retries") AS min_retries, max("Retries") AS max_retries
+                FROM cap.published
+                WHERE "Content"::jsonb -> 'Value' ->> 'EventId' = {currentEventId}
+                GROUP BY 1 LIMIT 6) r
+            """);
+        await Task.WhenAll(dlqTask, receivedTask, publishedTask);
+        var dlq = await dlqTask;
+        var received = await receivedTask;
+        var published = await publishedTask;
+        try
+        {
+            output.WriteLine($"MES transport {phase}; Attempts={attempts}; arrivals={arrivalSnapshot}; CAP options={retryOptions}; DLQ(limit=16)={dlq}; CAP received(limit=16)={received}; CAP published(groups<=6)={published}");
+        }
+        catch
+        {
+            // 输出目标关闭也不能覆盖原业务断言。
+        }
+
+        async Task<string> QueryDiagnosticAsync(FormattableString query)
+        {
+            try
+            {
+                return await TestTimeout.RunAsync("MES transport diagnostic query", async token =>
+                {
+                    using var scope = factory.Services.CreateScope();
+                    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                    db.Database.SetCommandTimeout(2);
+                    var snapshot = await db.Database.SqlQuery<string>(query).SingleAsync(token);
+                    const int maxDiagnosticLength = 8192;
+                    var safe = TestDiagnostic.Sanitize(snapshot);
+                    return safe.Length <= maxDiagnosticLength ? safe : safe[..maxDiagnosticLength] + " [truncated]";
+                }, TimeSpan.FromSeconds(2));
+            }
+            catch (Exception exception)
+            {
+                return $"unavailable ({exception.GetType().Name})";
+            }
+        }
     }
 
     /// <summary>
@@ -373,6 +487,30 @@ public sealed class MesAssetUnavailableRedisCapTransportTests
         public int CountFor(string eventId) => arrivals.Count(x => x.EventId == eventId);
 
         public Arrival Last(string eventId) => arrivals.Last(x => x.EventId == eventId);
+
+        public string DescribeSnapshot()
+        {
+            var snapshot = arrivals.ToArray();
+            var wrongVersion = 0;
+            var wrongSource = 0;
+            var wrongType = 0;
+            var wrongTopic = 0;
+            var priorPoison = 0;
+            var other = 0;
+            foreach (var arrival in snapshot)
+            {
+                switch (arrival.EventId)
+                {
+                    case "evt-2966-wrong-version": wrongVersion++; break;
+                    case "evt-2966-wrong-source": wrongSource++; break;
+                    case "evt-2966-wrong-type": wrongType++; break;
+                    case "evt-2966-wrong-topic": wrongTopic++; break;
+                    case "evt-2966-poison-v2": priorPoison++; break;
+                    default: other++; break;
+                }
+            }
+            return $"total={snapshot.Length}, current-wrong-version={wrongVersion}, current-wrong-source={wrongSource}, current-wrong-type={wrongType}, current-wrong-topic={wrongTopic}, prior-poison={priorPoison}, other={other}";
+        }
 
         public void Record(IIntegrationEventEnvelope envelope, string deviceAssetId, string reason, DateTimeOffset fromUtc) =>
             arrivals.Enqueue(new Arrival(
