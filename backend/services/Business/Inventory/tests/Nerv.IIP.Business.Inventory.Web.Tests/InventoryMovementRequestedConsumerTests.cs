@@ -741,8 +741,12 @@ public sealed class InventoryMovementRequestedConsumerTests
 
     /// <summary>
     /// #3186：<c>payload.StockRelease.SourceQualityStatus</c> 是 Quality 侧原样透传的外部输入，
-    /// 词表外的取值必须表达成 <c>KnownException</c>——它抛 <c>ArgumentOutOfRangeException</c> 时
-    /// 不被拦截器覆盖，会逃逸出 CAP 消费者变成 poison message。
+    /// 词表外的取值应当表达成 <c>KnownException</c>（业务拒绝），而不是
+    /// <c>ArgumentOutOfRangeException</c>（本服务的编程缺陷）。
+    ///
+    /// **本用例断言的是异常的分类，不是它的投递结局。** 它用 <c>ThrowsAsync</c> 断言——也就是说
+    /// 异常**照样逃逸出消费者入口**，这一点改动前后相同：<c>IntegrationEventConsumerGuard</c>
+    /// 不吞异常、无 <c>ISubscribeFilter</c>、无按类型的 catch。能不能被吸收由 #877 承接。
     ///
     /// 反向读数：把 <c>TryNormalize</c> 改回 <c>Normalize</c>，<c>ThrowsAsync&lt;KnownException&gt;</c>
     /// 直接红在实际抛出的 <c>ArgumentOutOfRangeException</c> 上。

@@ -1,6 +1,7 @@
 using FluentValidation;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Inventory.Domain;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
@@ -94,13 +95,15 @@ public sealed class QualityInspectionInventoryStockGateAcceptanceTests
                 Assert.Equal(201, integrationEvent.Payload.SourceDocumentId.Length);
             }
 
+            var logger = new RecordingLogger<QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer>();
             await using var scope = provider.CreateAsyncScope();
             var db = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
             AcceptancePostgresLaneDatabase.AssertUsesGovernedDatabase(db);
             var handler = new QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer(
                 scope.ServiceProvider.GetRequiredService<ISender>(),
                 db,
-                new InMemoryIntegrationEventDeadLetterStore());
+                new InMemoryIntegrationEventDeadLetterStore(),
+                logger);
 
             // 不产生 poison message：消费者正常返回，不抛出。
             await handler.HandleAsync(integrationEvent, CancellationToken.None);
@@ -113,6 +116,15 @@ public sealed class QualityInspectionInventoryStockGateAcceptanceTests
             var ledger = await assertDb.StockLedgers.SingleAsync(x => x.QualityStatus == StockQualityStatus.Quality);
             Assert.Equal(5m, ledger.OnHandQuantity);
             Assert.Single(await assertDb.StockLedgers.ToListAsync());
+
+            // gate-and-skip 不是静默丢弃：被挡的事件在流水/ledger/DLQ 三处都不留任何记录，
+            // 这条日志是它**唯一**的可追踪痕迹，且必须点出是哪一条事件（EventId）、
+            // 哪个来源环节被挡的。删掉它等于把一次丢弃变成零记录。
+            var skip = Assert.Single(logger.Entries);
+            Assert.Equal(LogLevel.Information, skip.Level);
+            Assert.Contains(QualityInspectionInventoryStockGateFacts.FirstArticleSourceType, skip.Message, StringComparison.Ordinal);
+            Assert.Contains(QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer.ConsumerName, skip.Message, StringComparison.Ordinal);
+            Assert.Contains(integrationEvent.EventId, skip.Message, StringComparison.Ordinal);
         }
     }
 
@@ -309,6 +321,20 @@ public sealed class QualityInspectionInventoryStockGateAcceptanceTests
     {
         public Task PublishAsync<TIntegrationEvent>(TIntegrationEvent eventData, CancellationToken cancellationToken = default)
             where TIntegrationEvent : notnull => Task.CompletedTask;
+    }
+
+    private sealed record LogEntry(LogLevel Level, string Message);
+
+    private sealed class RecordingLogger<T> : ILogger<T>
+    {
+        public List<LogEntry> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+            => Entries.Add(new LogEntry(logLevel, formatter(state, exception)));
     }
 
 }
