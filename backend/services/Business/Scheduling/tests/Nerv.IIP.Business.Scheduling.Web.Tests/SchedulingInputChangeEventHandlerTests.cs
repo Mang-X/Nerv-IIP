@@ -507,10 +507,7 @@ public sealed class SchedulingInputChangeEventHandlerTests
         await SeedPlansAsync(provider);
 
         using var scope = provider.CreateScope();
-        var handler = new QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans(
-            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
-            new InMemoryIntegrationEventDeadLetterStore(),
-            scope.ServiceProvider.GetRequiredService<ISender>());
+        var handler = CreateInspectionHandler(scope);
 
         await handler.HandleAsync(CreateInspectionEvent(eventType), CancellationToken.None);
 
@@ -525,20 +522,26 @@ public sealed class SchedulingInputChangeEventHandlerTests
         });
     }
 
+    /// <summary>
+    /// 周期检（#3191）：来源单据身份是 <c>{operationId}:periodic-*:{contextId}:{seq}</c> 复合行号，
+    /// 拿它本身去匹配计划指派永远命中不到。生产者把工序身份结构化发布出来之后才能落到那道工序。
+    /// </summary>
     [Fact]
-    public async Task Quality_inspection_event_for_operation_source_publishes_only_affected_operation()
+    public async Task Quality_inspection_event_for_periodic_operation_source_publishes_only_affected_operation()
     {
         await using var provider = CreateInMemoryProvider();
         await SeedPlansAsync(provider);
 
         using var scope = provider.CreateScope();
-        var handler = new QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans(
-            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
-            new InMemoryIntegrationEventDeadLetterStore(),
-            scope.ServiceProvider.GetRequiredService<ISender>());
+        var handler = CreateInspectionHandler(scope);
 
         await handler.HandleAsync(
-            CreateInspectionEvent(QualityIntegrationEventTypes.InspectionRejected, sourceDocumentId: "OP-002"),
+            CreateInspectionEvent(
+                QualityIntegrationEventTypes.InspectionRejected,
+                // 复合行号的编码约定属 Quality 内部，排程侧只是把它当成一串不透明取值；这里照它的真实形状造。
+                sourceDocumentId: $"OP-002:periodic-time:{Guid.Empty:D}:1",
+                workOrderId: null,
+                operationTaskId: "OP-002"),
             CancellationToken.None);
 
         var invalidations = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
@@ -550,33 +553,124 @@ public sealed class SchedulingInputChangeEventHandlerTests
         {
             Assert.Equal("OP-002", invalidation.AffectedOperationId);
             Assert.Null(invalidation.AffectedWorkOrderId);
-            Assert.Contains("OP-002", invalidation.SourceEventId, StringComparison.Ordinal);
         });
     }
 
+    /// <summary>
+    /// 首件（#2779 / #3191）：来源单据身份是 <c>{workOrderId}:{operationTaskId}</c> 复合串。
+    /// 排程不拆这串，取生产者结构化发布的工单身份。
+    /// </summary>
     [Fact]
-    public async Task Quality_inspection_event_ignores_non_mes_source_service()
+    public async Task Quality_inspection_event_for_first_article_composite_source_invalidates_affected_work_order()
     {
         await using var provider = CreateInMemoryProvider();
         await SeedPlansAsync(provider);
 
         using var scope = provider.CreateScope();
-        var handler = new QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans(
-            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
-            new InMemoryIntegrationEventDeadLetterStore(),
-            scope.ServiceProvider.GetRequiredService<ISender>());
-        var integrationEvent = CreateInspectionEvent(QualityIntegrationEventTypes.InspectionRejected) with
-        {
-            Payload = CreateInspectionEvent(QualityIntegrationEventTypes.InspectionRejected).Payload with
-            {
-                SourceService = QualityIntegrationEventSources.BusinessQuality
-            }
-        };
+        var handler = CreateInspectionHandler(scope);
 
-        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        await handler.HandleAsync(
+            CreateInspectionEvent(
+                QualityIntegrationEventTypes.InspectionRejected,
+                sourceDocumentId: "WO-001:OP-002",
+                sourceType: QualityInspectionSourceTypes.FirstArticle,
+                workOrderId: "WO-001",
+                operationTaskId: "OP-002"),
+            CancellationToken.None);
+
+        var invalidations = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
+            .SchedulePlanInvalidations
+            .OrderBy(x => x.PlanId)
+            .ToArrayAsync();
+        Assert.Equal(["plan-generated", "plan-released"], invalidations.Select(x => x.PlanId));
+        Assert.All(invalidations, invalidation => Assert.Equal("WO-001", invalidation.AffectedWorkOrderId));
+    }
+
+    /// <summary>
+    /// 对照组：同一条首件事件，若结构化身份缺失（老生产者、或将来有人把它去掉），复合串本身匹配不到
+    /// 任何计划，并且必须留下 0 命中日志——这条通路原本连 ILogger 都没有，「一条都没命中」在现场
+    /// 与「门恒不通过」看起来完全一样。
+    /// </summary>
+    [Fact]
+    public async Task Quality_inspection_event_without_structured_identity_matches_nothing_and_logs_it()
+    {
+        await using var provider = CreateInMemoryProvider();
+        await SeedPlansAsync(provider);
+
+        using var scope = provider.CreateScope();
+        var logger = new RecordingLogger<QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans>();
+        var handler = CreateInspectionHandler(scope, logger);
+
+        await handler.HandleAsync(
+            CreateInspectionEvent(
+                QualityIntegrationEventTypes.InspectionRejected,
+                sourceDocumentId: "WO-001:OP-002",
+                sourceType: QualityInspectionSourceTypes.FirstArticle,
+                workOrderId: null,
+                operationTaskId: null),
+            CancellationToken.None);
+
+        Assert.Empty(await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
+            .SchedulePlanInvalidations
+            .ToArrayAsync());
+        Assert.Contains(logger.Messages, x =>
+            x.Message.Contains("matched no schedule plan", StringComparison.OrdinalIgnoreCase)
+            && x.Message.Contains("WO-001:OP-002", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// 来源服务维（#3191）：门收 MES 归属的两个 payload 取值与历史入站别名，其余一律不收。
+    /// 原用例传的是 <c>business-quality</c>——但当时那道门比较的常量是 <c>business-mes</c>，
+    /// 任何取值都不通过，于是这条负向用例零鉴别力。现在正反两侧都在同一条 Theory 里。
+    /// </summary>
+    [Theory]
+    [InlineData(QualityInspectionSourceServices.Mes, 2)]
+    [InlineData(QualityInspectionSourceServices.MesOperation, 2)]
+    [InlineData(QualityIntegrationEventSources.BusinessMes, 2)]
+    [InlineData(QualityInspectionSourceServices.Wms, 0)]
+    [InlineData(QualityInspectionSourceServices.Inventory, 0)]
+    [InlineData(QualityIntegrationEventSources.BusinessQuality, 0)]
+    public async Task Quality_inspection_event_gate_accepts_only_mes_owned_source_services(string sourceService, int expectedInvalidationCount)
+    {
+        await using var provider = CreateInMemoryProvider();
+        await SeedPlansAsync(provider);
+
+        using var scope = provider.CreateScope();
+        var handler = CreateInspectionHandler(scope);
+
+        await handler.HandleAsync(
+            CreateInspectionEvent(QualityIntegrationEventTypes.InspectionRejected, sourceService: sourceService),
+            CancellationToken.None);
 
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        Assert.Empty(await dbContext.SchedulePlanInvalidations.ToArrayAsync());
+        Assert.Equal(expectedInvalidationCount, await dbContext.SchedulePlanInvalidations.CountAsync());
+    }
+
+    /// <summary>
+    /// 来源环节维（#3191）：final 的来源单据是入库申请单号、receiving 是收货单号，永远匹配不到工单。
+    /// 滤掉它们不是为了省事，是为了让「0 命中」在日志里从噪声变成真信号。
+    /// </summary>
+    [Theory]
+    [InlineData(QualityInspectionSourceTypes.Operation, 2)]
+    [InlineData(QualityInspectionSourceTypes.FirstArticle, 2)]
+    [InlineData(QualityInspectionSourceTypes.Final, 0)]
+    [InlineData(QualityInspectionSourceTypes.Receiving, 0)]
+    [InlineData(QualityInspectionSourceTypes.Maintenance, 0)]
+    [InlineData(QualityInspectionSourceTypes.CustomerReturn, 0)]
+    public async Task Quality_inspection_event_gate_accepts_only_work_order_bearing_source_types(string sourceType, int expectedInvalidationCount)
+    {
+        await using var provider = CreateInMemoryProvider();
+        await SeedPlansAsync(provider);
+
+        using var scope = provider.CreateScope();
+        var handler = CreateInspectionHandler(scope);
+
+        await handler.HandleAsync(
+            CreateInspectionEvent(QualityIntegrationEventTypes.InspectionRejected, sourceType: sourceType),
+            CancellationToken.None);
+
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Equal(expectedInvalidationCount, await dbContext.SchedulePlanInvalidations.CountAsync());
     }
 
     [Fact]
@@ -1196,7 +1290,19 @@ public sealed class SchedulingInputChangeEventHandlerTests
                 120));
     }
 
-    private static InspectionResultIntegrationEvent CreateInspectionEvent(string eventType, string sourceDocumentId = "WO-001")
+    /// <summary>
+    /// 夹具必须只发**真实生产者发得出来**的取值（#3191）。原夹具写的是 SourceType="mes-work-order"
+    /// （不在 QualityInspectionSourceTypes 六项词表里）与 SourceService=business-mes（信封面常量，
+    /// payload 面不存在），两个值 Quality 一个都发不出来，于是三条绿用例在为一条从未跑通的路径背书。
+    /// 默认取值对应「MES 工序检」：sourceType=operation、sourceService=mes、来源单据身份就是工单。
+    /// </summary>
+    private static InspectionResultIntegrationEvent CreateInspectionEvent(
+        string eventType,
+        string sourceDocumentId = "WO-001",
+        string sourceService = QualityInspectionSourceServices.Mes,
+        string sourceType = QualityInspectionSourceTypes.Operation,
+        string? workOrderId = "WO-001",
+        string? operationTaskId = null)
     {
         return new InspectionResultIntegrationEvent(
             $"evt-quality-{eventType}-{sourceDocumentId}",
@@ -1213,15 +1319,28 @@ public sealed class SchedulingInputChangeEventHandlerTests
             new InspectionResultPayload(
                 "INS-001",
                 null,
-                "mes-work-order",
-                QualityIntegrationEventSources.BusinessMes,
+                sourceType,
+                sourceService,
                 sourceDocumentId,
                 "SKU-001",
                 1,
                 eventType == QualityIntegrationEventTypes.InspectionRejected ? "Rejected" : "Passed",
                 null,
                 [],
-                new DateTimeOffset(2026, 6, 1, 9, 10, 0, TimeSpan.Zero)));
+                new DateTimeOffset(2026, 6, 1, 9, 10, 0, TimeSpan.Zero),
+                WorkOrderId: workOrderId,
+                OperationTaskId: operationTaskId));
+    }
+
+    private static QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans CreateInspectionHandler(
+        IServiceScope scope,
+        RecordingLogger<QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans>? logger = null)
+    {
+        return new QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans(
+            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+            new InMemoryIntegrationEventDeadLetterStore(),
+            scope.ServiceProvider.GetRequiredService<ISender>(),
+            logger ?? new RecordingLogger<QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans>());
     }
 
     private static WorkOrderReleasedIntegrationEvent CreateWorkOrderReleasedEvent()

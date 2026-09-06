@@ -562,9 +562,13 @@ internal static class PeriodicInspectionQuantityTaskGeneration
                     context.EnvironmentId,
                     context.InspectionPlanId,
                     sourceType: QualityInspectionSourceTypes.Operation,
-                    sourceService: "mes",
+                    sourceService: QualityInspectionSourceServices.Mes,
                     sourceDocumentId: context.WorkOrderId,
-                    sourceDocumentLineId: $"{context.OperationId}:periodic-quantity:{context.Id.Id:D}:{window.Sequence}",
+                    sourceDocumentLineId: PeriodicInspectionSourceLine.LineId(
+                        context.OperationId,
+                        PeriodicInspectionSourceLine.QuantityKind,
+                        context.Id.Id,
+                        window.Sequence),
                     skuCode: context.SkuCode,
                     quantity: window.ThresholdQuantity,
                     uomCode: context.UomCode!,
@@ -572,7 +576,10 @@ internal static class PeriodicInspectionQuantityTaskGeneration
                     serialNo: null,
                     generatedAtUtc,
                     dueAtUtc: generatedAtUtc.AddHours(24),
-                    triggerIdempotencyKey: $"quality:periodic-quantity:{context.Id.Id:D}:{window.Sequence}");
+                    triggerIdempotencyKey: PeriodicInspectionSourceLine.TriggerIdempotencyKey(
+                        PeriodicInspectionSourceLine.QuantityKind,
+                        context.Id.Id,
+                        window.Sequence));
                 if (context.AssignedInspectorUserId is not null || context.AssignedTeamId is not null)
                 {
                     task.Assign(

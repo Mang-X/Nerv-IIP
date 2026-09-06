@@ -1564,6 +1564,10 @@ jobs:
             artifacts/acceptance/**
             artifacts/fullstack/**
             artifacts/script-logs/**
+            artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/full-chain/erp-wms-delivery-completion/entrypoint-evidence.json
+            artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/full-chain/erp-wms-delivery-completion/diagnostics/failure-summary.json
+            artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/full-chain/erp-wms-delivery-completion/diagnostics/postgres-state.txt
+            artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/full-chain/erp-wms-delivery-completion/diagnostics/redis-stream-state.txt
           if-no-files-found: error
           retention-days: 14
 

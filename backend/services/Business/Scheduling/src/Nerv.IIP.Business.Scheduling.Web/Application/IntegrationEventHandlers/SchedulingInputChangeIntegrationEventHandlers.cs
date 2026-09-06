@@ -420,10 +420,34 @@ public sealed class StockAvailabilityChangedIntegrationEventHandlerForInvalidate
 public sealed class QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    ISender sender)
+    ISender sender,
+    ILogger<QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans> logger)
     : IIntegrationEventHandler<InspectionResultIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-scheduling.quality-inspection-result";
+
+    /// <summary>
+    /// 收哪些来源服务（#3191）：检验对象归属 MES 工单／工序的两个 payload 取值，引公开词表。
+    /// <c>business-mes</c> 是历史**信封面**别名，此处作为入站兼容保留，但它不再是唯一被收的值——
+    /// 原实现只收它，而真实生产者一个都发不出来，于是这道门对所有检验结论恒为不通过。
+    /// </summary>
+    private static readonly HashSet<string> AcceptedSourceServices = new(StringComparer.OrdinalIgnoreCase)
+    {
+        QualityInspectionSourceServices.Mes,
+        QualityInspectionSourceServices.MesOperation,
+        QualityIntegrationEventSources.BusinessMes,
+    };
+
+    /// <summary>
+    /// 收哪些来源环节（#3191）：只有工序检与首件的来源单据身份是工单／工序，能落到排程的
+    /// 计划指派上。<c>final</c> 的来源单据是入库申请单号、<c>receiving</c> 是收货单号，
+    /// 都永远匹配不到工单——放进来只会把「0 命中」变成噪声，压掉真正需要被看见的 0 命中。
+    /// </summary>
+    private static readonly HashSet<string> AcceptedSourceTypes = new(StringComparer.Ordinal)
+    {
+        QualityInspectionSourceTypes.Operation,
+        QualityInspectionSourceTypes.FirstArticle,
+    };
 
     private static readonly string[] SupportedEventTypes =
     [
@@ -453,7 +477,19 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForInvalidateS
 
     private async Task HandleValidEventAsync(InspectionResultIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
-        if (!string.Equals(integrationEvent.Payload.SourceService, QualityIntegrationEventSources.BusinessMes, StringComparison.OrdinalIgnoreCase))
+        var payload = integrationEvent.Payload;
+        if (!AcceptedSourceServices.Contains(payload.SourceService?.Trim() ?? string.Empty)
+            || !AcceptedSourceTypes.Contains(payload.SourceType?.Trim() ?? string.Empty))
+        {
+            return;
+        }
+
+        // 排程要匹配的是计划指派上的工单／工序身份。首件与周期检的 SourceDocumentId 是 Quality 内部
+        // 的复合串，排程侧不去拆它（拆等于把 Quality 的编码约定复制一份过来）——生产者已把工单／
+        // 工序结构化发布在 payload 上，这里按「工单 → 工序 → 来源单据」取。指派侧同时按
+        // WorkOrderId 与 OperationId 匹配，所以工序身份同样是可用的作用域值。
+        var scopeValue = FirstNonEmpty(payload.WorkOrderId, payload.OperationTaskId, payload.SourceDocumentId);
+        if (scopeValue is null)
         {
             return;
         }
@@ -471,9 +507,23 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForInvalidateS
             sender,
             integrationEvent,
             reason,
-            integrationEvent.Payload.SourceDocumentId,
-            integrationEvent.Payload.SkuCode,
+            scopeValue,
+            payload.SkuCode,
+            logger,
             cancellationToken);
+    }
+
+    private static string? FirstNonEmpty(params string?[] candidates)
+    {
+        foreach (var candidate in candidates)
+        {
+            if (!string.IsNullOrWhiteSpace(candidate))
+            {
+                return candidate.Trim();
+            }
+        }
+
+        return null;
     }
 }
 
@@ -639,11 +689,12 @@ internal static class SchedulingPlanInvalidationService
         string reasonCode,
         string sourceDocumentId,
         string? affectedSkuCode,
+        ILogger logger,
         CancellationToken cancellationToken)
         where TIntegrationEvent : IIntegrationEventEnvelope
     {
         var normalizedSource = Required(sourceDocumentId, nameof(sourceDocumentId));
-        await sender.Send(
+        var result = await sender.Send(
             ToCommand(
                 integrationEvent,
                 reasonCode,
@@ -652,6 +703,17 @@ internal static class SchedulingPlanInvalidationService
                 affectedWorkOrderId: null,
                 affectedSkuCode),
             cancellationToken);
+        // 0 命中必须留痕：这条通路原本连日志都没有，门修好之后若身份对不上（工单号口径不一致、
+        // 计划里没有这张工单），表现仍然是「什么都没发生」，与门恒不通过在现场无法区分。
+        if (result.MatchedPlanCount == 0)
+        {
+            logger.LogInformation(
+                "Scheduling input change {EventType} for work order or operation {AffectedScopeValue} matched no schedule plan in {OrganizationId}/{EnvironmentId}.",
+                integrationEvent.EventType,
+                normalizedSource,
+                integrationEvent.OrganizationId,
+                integrationEvent.EnvironmentId);
+        }
     }
 
     public static async Task InvalidateAllGeneratedPlansAsync<TIntegrationEvent>(
