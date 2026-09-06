@@ -175,19 +175,23 @@ public sealed class MesReworkReceiptRedisCapTransportTests(ITestOutputHelper out
         try
         {
             await StoreAsync(identity.Name, identity.Group, input, StatusName.Succeeded);
+            var receipt = new ReworkWorkOrderCreatedIntegrationEvent(
+                "evt-receipt-counterexample", "ReworkWorkOrderCreated", 1, input.OccurredAtUtc,
+                "business-mes", "corr-receipt-counterexample", target, input.OrganizationId, input.EnvironmentId, "test", "identity-fixture",
+                new("ncr-001", "NCR-001", "rework-counterexample", "source-001", null, "SKU-001", 1m, null, null, input.OccurredAtUtc));
+            var receiptRecord = await StoreAsync(nameof(ReworkWorkOrderCreatedIntegrationEvent), "receipt-counterexample", receipt, StatusName.Failed);
+            // 此时只有目标输入和仅 CausationId 命中的回执，隔离指定回归，避免其它 Failed 掩盖它。
+            var preciseStatuses = await ReadReceivedStatusesAsync(db, identity, target, CancellationToken.None);
+            Assert.Equal("Succeeded", Assert.Single(preciseStatuses));
+            var oldStatuses = await db.Database.SqlQuery<string>(
+                $"SELECT \"StatusName\" AS \"Value\" FROM cap.received WHERE \"Content\" LIKE {'%' + target + '%'}").ToArrayAsync();
+            Assert.Equal(["Failed", "Succeeded"], oldStatuses.Order(StringComparer.Ordinal).ToArray());
+            Assert.NotNull(Record.Exception(() => AssertReceivedSucceeded(oldStatuses)));
             await StoreAsync(identity.Name + ".wrong", identity.Group, input, StatusName.Failed);
             await StoreAsync(identity.Name, identity.Group + ".wrong", input, StatusName.Failed);
             await StoreAsync(identity.Name, identity.Group,
                 input with { EventId = "evt-other", CausationId = target, CorrelationId = target }, StatusName.Failed);
-            var receipt = new ReworkWorkOrderCreatedIntegrationEvent(
-                "evt-receipt-counterexample", "ReworkWorkOrderCreated", 1, input.OccurredAtUtc,
-                "business-mes", target, target, input.OrganizationId, input.EnvironmentId, "test", "identity-fixture",
-                new("ncr-001", "NCR-001", "rework-counterexample", "source-001", null, "SKU-001", 1m, null, null, input.OccurredAtUtc));
-            var receiptRecord = await StoreAsync(nameof(ReworkWorkOrderCreatedIntegrationEvent), "receipt-counterexample", receipt, StatusName.Failed);
             AssertReceivedSucceeded(await ReadReceivedStatusesAsync(db, identity, target, CancellationToken.None));
-            var oldStatuses = await db.Database.SqlQuery<string>(
-                $"SELECT \"StatusName\" AS \"Value\" FROM cap.received WHERE \"Content\" LIKE {'%' + target + '%'}").ToArrayAsync();
-            Assert.NotNull(Record.Exception(() => AssertReceivedSucceeded(oldStatuses)));
             // 同一输入的第二条 received 不能被 DISTINCT/First 遮蔽。
             var duplicate = await StoreAsync(identity.Name, identity.Group, input, StatusName.Failed);
             var duplicateStatuses = await ReadReceivedStatusesAsync(db, identity, target, CancellationToken.None);
