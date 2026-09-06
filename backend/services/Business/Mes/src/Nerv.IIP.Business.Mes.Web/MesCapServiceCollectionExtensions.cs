@@ -1,7 +1,5 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using DotNetCore.CAP.Internal;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Messaging.CAP;
@@ -53,8 +51,7 @@ public static class MesCapServiceCollectionExtensions
             options.UseIntegrationEventDeadLetterOnFailedThreshold();
             options.UseDashboard();
         });
-        services.Replace(ServiceDescriptor.Singleton<IConsumerServiceSelector>(serviceProvider =>
-            new MesDeploymentProfileConsumerServiceSelector(serviceProvider, environmentName)));
+        services.AddNervIipCanonicalTopicSubscriptions(environmentName);
 
         return services;
     }

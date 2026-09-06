@@ -1,0 +1,22 @@
+{
+  "$comment": [
+    "#3122 收敛门禁的判据台账。",
+    "判据落在『谁替换了 CAP 的 consumer selector 接口』这个身份上，不按类名、不按文件名——",
+    "本票被收敛掉的第三份副本（MES）正是靠给类加前缀、把注册改成工厂 lambda 从按类名的 grep 里消失的。",
+    "标识符写在台账里而不是写在守卫源码里：一旦守卫源码自己含有这个标识符，守卫就必须给自己开豁免，",
+    "而那条豁免就是一个可以往里塞注册的洞（同 CapStorageOrphanTableGovernanceTests 的台账理由）。",
+    "sharedEntryFiles 必须恰好一条：票面验收条件是『全仓只有一份』，往这里追加第二条路径即是违规。",
+    "allowedConsumptionForms 受结构性约束（必须以 Get 开头、恰含一次接口标识符、不含 DI 注册记号），",
+    "不是想写什么就写什么；minimumScannedFiles 对应仓库根全量 C# 扫描面（实测 3082）。"
+  ],
+  "interfaceName": "IConsumerServiceSelector",
+  "baseClassName": "ConsumerServiceSelector",
+  "sharedEntryFiles": [
+    "backend/common/Messaging/Nerv.IIP.Messaging.CAP/CanonicalTopicSubscriptionResolution.cs"
+  ],
+  "allowedConsumptionForms": [
+    "GetRequiredService<IConsumerServiceSelector>",
+    "GetService<IConsumerServiceSelector>"
+  ],
+  "minimumScannedFiles": 3000
+}
