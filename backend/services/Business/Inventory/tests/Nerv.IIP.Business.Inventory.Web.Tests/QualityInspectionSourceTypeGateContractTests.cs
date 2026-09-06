@@ -11,9 +11,13 @@ namespace Nerv.IIP.Business.Inventory.Web.Tests;
 ///
 /// **本契约只闭合「分类完备性」，对运行时的门零鉴别力。** 三条断言全部作用在静态集合形状上，
 /// 没有一条执行消费者——实测把 <c>HandleValidEventAsync</c> 里的 gate 分支改成恒不进入，
-/// 本契约 2/2 全绿，**整个常规（非 Postgres）Inventory 单测套件也 281/0/skip 5 全绿**，
+/// 本契约 2/2 全绿，**整个常规（非 Postgres）Inventory 单测套件也全绿**：
+/// 本项目不带 <c>NERV_IIP_TEST_POSTGRES</c> 时读到 <c>通过 284 / 失败 0 / 跳过 5 / 总计 289</c>。
 /// 也就是说 #2976 那条 poison 缺陷可以完整回潮而常规门禁不红。这是反射式静态契约的**正确边界**，
 /// 不是缺陷。
+///
+/// （口径提醒：同一套件三个口径互不相同，引用时别横比——CI shard 因 lane 选择器排除 Postgres 用例，
+/// discovered 数更小；本地带该环境变量则 <c>跳过 0</c>。）
 ///
 /// **运行时的门唯一的防线在 Postgres lane 上**：
 /// <c>QualityInspectionInventoryStockGateAcceptanceTests</c> 的「被挡侧必须留痕（含 EventId）」

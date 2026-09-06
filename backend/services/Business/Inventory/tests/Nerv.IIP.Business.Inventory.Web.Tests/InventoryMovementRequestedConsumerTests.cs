@@ -757,9 +757,25 @@ public sealed class InventoryMovementRequestedConsumerTests
     /// 改个数字就没了（#3186 复审 B2 实测）。
     ///
     /// **且必须断言消息含被拒的那个取值。** target 侧紧邻着一条同型守卫
-    /// （<c>target status must match the inspection event type</c>），只断言
-    /// <c>ThrowsAsync&lt;KnownException&gt;</c> 会被它兜住——本仓「相邻同型守卫会兜住变异」那条。
-    /// 所以这里同时反向断言消息**不**是那条相邻守卫的。
+    /// （<c>target status must match the inspection event type</c>）——本仓「相邻同型守卫会兜住变异」那条。
+    ///
+    /// 两条消息断言**各自承接不同的一格**，别把功劳记错、更别据此删掉其中一条：
+    /// <list type="bullet">
+    /// <item><c>Assert.Contains(rejected, …)</c> 承接**今天**的相邻守卫兜底：实测该守卫开火时，
+    /// 真正把变异杀掉的是这一条，不是下面那条。</item>
+    /// <item><c>Assert.DoesNotContain("must match the inspection event type", …)</c> 承接**将来**：
+    /// 一旦相邻守卫的消息也开始携带取值，上一条就失效，那时只剩这条是唯一防线。</item>
+    /// </list>
+    ///
+    /// **覆盖量按 3 格记，不是 5 格。** 定向变异算出的支配关系：
+    /// <c>("not-a-status", null)</c> 的杀伤集合 ⊂ <c>("quarantine", null)</c>，
+    /// <c>(quality,"not-a-status")</c> ⊂ <c>(quality,"quarantine")</c>；最小覆盖集是
+    /// <c>{("quarantine",null), (quality,"quarantine"), ("",null)}</c>。
+    /// 另两行保留是为可读性，**不计入覆盖量**。
+    ///
+    /// 两者是**支配关系不是等价关系**：往 <c>Aliases</c> 加回 <c>["quarantine"]</c> 的变异只红
+    /// <c>quarantine</c> 那两行——即 <c>"quarantine"</c> 额外钉住 #2976 的「别名表不得放宽」裁定，
+    /// <c>"not-a-status"</c> 没有这一份。
     /// </remarks>
     [Theory]
     [InlineData("quarantine", null)]
