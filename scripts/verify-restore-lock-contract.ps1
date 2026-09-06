@@ -1,8 +1,8 @@
 # Script-Governance:
 #   Category: check
 #   SideEffects:
-#     - Reads the BusinessGateway restore manifest, the per-project packages.lock.json files it
-#       registers, and the .csproj files in the seed project's ProjectReference closure
+#     - Reads every docs/reference/api/*-restore.manifest.json, the per-project packages.lock.json
+#       files they register, and the .csproj files in each seed project's ProjectReference closure
 #   Writes:
 #     - None
 #   Cleanup:
@@ -18,8 +18,12 @@
     Two artifacts in this repository declare, in machine-readable form, that a set of restore inputs
     is pinned:
 
-      * docs/reference/api/business-gateway-surface-restore.manifest.json — records a SHA-256 for
-        every restore input and enumerates the per-project lock fixture set.
+      * docs/reference/api/*-restore.manifest.json — each records a SHA-256 for every restore input
+        of one seed project and enumerates the per-project lock fixture set of its closure. The set
+        of manifests is DISCOVERED from that directory glob, not enumerated in this script. #3157
+        added a second one (PlatformGateway) and the reason the glob exists rather than a second
+        default value is that a manifest nobody reads is exactly the defect this checker was written
+        for: a hardcoded list makes "manifest added, gate not extended" a silent green.
       * the packages.lock.json files themselves — record, per package, the requested version range
         and the version NuGet actually resolved.
 
@@ -95,8 +99,9 @@
 param(
     [string] $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path,
 
+    # Empty means "discover every manifest in the repository", which is the production path.
     # Overridden only by the contract test, which points the checker at throwaway fixtures.
-    [string] $ManifestPath = 'docs/reference/api/business-gateway-surface-restore.manifest.json',
+    [string[]] $ManifestPath = @(),
 
     [string] $ExemptionPath = 'scripts/restore-lock-drift-exemptions.json'
 )
@@ -239,21 +244,7 @@ function ConvertFrom-NervVersionRange {
     }
 }
 
-$manifestFullPath = Join-Path $RepositoryRoot $ManifestPath
 $exemptionFullPath = Join-Path $RepositoryRoot $ExemptionPath
-
-$manifest = $null
-if (-not (Test-Path -LiteralPath $manifestFullPath -PathType Leaf)) {
-    $errors.Add("Restore manifest does not exist: $ManifestPath.")
-}
-else {
-    try {
-        $manifest = Get-Content -LiteralPath $manifestFullPath -Raw | ConvertFrom-Json
-    }
-    catch {
-        $errors.Add("Restore manifest $ManifestPath is not valid JSON: $($_.Exception.Message)")
-    }
-}
 
 $exemptions = @()
 if (-not (Test-Path -LiteralPath $exemptionFullPath -PathType Leaf)) {
@@ -287,214 +278,273 @@ foreach ($exemption in $exemptions) {
 }
 
 $matchedExemptionKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
-$closureProjects = [System.Collections.Generic.List[string]]::new()
 $inspectedDependencyCount = 0
-$manifestInputs = @()
+$manifestSummaries = [System.Collections.Generic.List[psobject]]::new()
 
-if ($null -ne $manifest) {
-    $seedProject = [string] (Get-NervJsonProperty -Object $manifest -Name 'project')
-    if ([string]::IsNullOrWhiteSpace($seedProject)) {
-        $errors.Add("$ManifestPath declares no seed 'project', so the ProjectReference closure cannot be computed.")
-    }
-
-    $manifestInputs = @(Get-NervJsonProperty -Object $manifest -Name 'inputs')
-    if ($manifestInputs.Count -eq 0) {
-        $errors.Add("$ManifestPath declares no 'inputs'. An empty ledger hash-matches vacuously.")
-    }
-
-    $declaredLockPaths = @(Get-NervJsonProperty -Object (Get-NervJsonProperty -Object $manifest -Name 'lock') -Name 'paths')
-    if ($declaredLockPaths.Count -eq 0) {
-        $errors.Add("$ManifestPath declares no 'lock.paths'. An empty lock set makes the closure comparison vacuous.")
-    }
-
-    # --- Classes 4 and 2: every recorded input must exist and hash-match. Because the manifest
-    # records a SHA-256 for each lock file, it is structurally a hash ledger for them, and a tampered
-    # lock is reported here without any restore having to run. ---
-    $inputPaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
-    foreach ($inputEntry in $manifestInputs) {
-        $path = [string] (Get-NervJsonProperty -Object $inputEntry -Name 'path')
-        if ([string]::IsNullOrWhiteSpace($path)) {
-            $errors.Add("$ManifestPath contains an input entry with no 'path'.")
-            continue
-        }
-
-        if (-not $inputPaths.Add($path)) {
-            $errors.Add("$ManifestPath records '$path' more than once; a duplicated entry lets one copy be " +
-                'updated while a stale copy keeps passing.')
-        }
-
-        $recorded = [string] (Get-NervJsonProperty -Object $inputEntry -Name 'sha256')
-        if ([string]::IsNullOrWhiteSpace($recorded)) {
-            $errors.Add("$ManifestPath records no sha256 for '$path'.")
-            continue
-        }
-
-        $full = Join-Path $RepositoryRoot $path
-        if (-not (Test-Path -LiteralPath $full -PathType Leaf)) {
-            $errors.Add("$ManifestPath pins '$path' but that file does not exist.")
-            continue
-        }
-
-        $actual = (Get-FileHash -LiteralPath $full -Algorithm SHA256).Hash.ToLowerInvariant()
-        if (-not [string]::Equals($actual, $recorded.ToLowerInvariant(), [StringComparison]::Ordinal)) {
-            $errors.Add("Restore input '$path' has drifted from the manifest: recorded $recorded, actual " +
-                "$actual. Either the change was never registered, or the manifest was updated without the " +
-                'file. Establish which before touching the recorded hash; re-baselining it is approving a ' +
-                'contract change on someone else behalf.')
-        }
-    }
-
-    # --- Class 3: the ProjectReference closure must equal the registered lock set, both directions. ---
-    if (-not [string]::IsNullOrWhiteSpace($seedProject)) {
-        $pending = [System.Collections.Generic.Queue[string]]::new()
-        $pending.Enqueue($seedProject.Replace('\', '/'))
-        $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
-
-        while ($pending.Count -gt 0) {
-            $projectPath = $pending.Dequeue()
-            if (-not $seen.Add($projectPath)) { continue }
-
-            $closureProjects.Add($projectPath)
-
-            $projectFull = Join-Path $RepositoryRoot $projectPath
-            if (-not (Test-Path -LiteralPath $projectFull -PathType Leaf)) {
-                $errors.Add("Project '$projectPath' is in the ProjectReference closure but does not exist on disk.")
-                continue
-            }
-
-            $projectText = Get-Content -LiteralPath $projectFull -Raw
-            $baseDirectory = [string] [System.IO.Path]::GetDirectoryName($projectPath)
-            foreach ($reference in [regex]::Matches($projectText, '<ProjectReference\s[^>]*Include\s*=\s*"(?<include>[^"]+)"')) {
-                $pending.Enqueue((Resolve-RepositoryRelativePath -BaseDirectory $baseDirectory.Replace('\', '/') -RelativePath $reference.Groups['include'].Value))
-            }
-        }
-    }
-
-    if ($closureProjects.Count -eq 0) {
-        $errors.Add('The ProjectReference closure came out empty; an empty closure equals an empty lock set vacuously.')
-    }
-
-    $expectedLockPaths = @()
-    if ($closureProjects.Count -gt 0) {
-        $expectedLockPaths = @(Get-NervStringsSorted `
-            -Values @($closureProjects | ForEach-Object { Get-RepositoryRelativeLockPath -ProjectPath $_ }) `
+# --- Which manifests are under contract. ---
+#
+# An explicit -ManifestPath is the fixture path used by restore-lock-contract.Tests.ps1. With none
+# given, the set is DERIVED from the repository: every 'docs/reference/api/*-restore.manifest.json'.
+# Deriving rather than listing is the point. A hardcoded default covers the manifests that existed
+# when it was written, so adding a manifest without also editing this script produces a file that
+# declares a contract and is read by nothing — the exact failure mode (#3145) this checker exists to
+# report, reintroduced one level up. With the glob, a new manifest is under contract the moment it
+# lands, and a manifest that is deleted or renamed out of the pattern is caught by the zero-discovered
+# guard below rather than silently reducing coverage to nothing.
+$manifestPaths = @($ManifestPath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+if ($manifestPaths.Count -eq 0) {
+    $manifestSearchRoot = Join-Path $RepositoryRoot 'docs/reference/api'
+    if (Test-Path -LiteralPath $manifestSearchRoot -PathType Container) {
+        $manifestPaths = @(Get-NervStringsSorted `
+            -Values @(Get-ChildItem -LiteralPath $manifestSearchRoot -Filter '*-restore.manifest.json' -File |
+                ForEach-Object { 'docs/reference/api/' + $_.Name }) `
             -Comparer ([StringComparer]::Ordinal) -Unique)
     }
 
-    $declaredLockSet = [System.Collections.Generic.HashSet[string]]::new([string[]] @($declaredLockPaths | ForEach-Object { [string] $_ }), [System.StringComparer]::Ordinal)
-    $expectedLockSet = [System.Collections.Generic.HashSet[string]]::new([string[]] $expectedLockPaths, [System.StringComparer]::Ordinal)
-
-    foreach ($expected in $expectedLockPaths) {
-        if (-not $declaredLockSet.Contains($expected)) {
-            $errors.Add("'$expected' is required by the ProjectReference closure but is not registered in " +
-                "$ManifestPath under 'lock.paths'. A project entered the closure without its restore contract " +
-                'being registered with it.')
-        }
-
-        if (-not $inputPaths.Contains($expected)) {
-            $errors.Add("'$expected' is required by the closure but is not listed in the manifest 'inputs', so " +
-                'nothing pins its hash and it could be edited freely.')
-        }
+    if ($manifestPaths.Count -eq 0) {
+        # Fail closed. Discovering nothing would otherwise make every class below run over an empty
+        # set and report success, which is worse than the ungated state it replaced because the
+        # green would be read as evidence.
+        $errors.Add("No restore manifest was discovered under docs/reference/api/ matching " +
+            "'*-restore.manifest.json'. The contract cannot be vacuously satisfied by having no manifests.")
     }
+}
 
-    foreach ($project in $closureProjects) {
-        if (-not $inputPaths.Contains($project)) {
-            $errors.Add("Project file '$project' is in the ProjectReference closure but is not listed in the " +
-                "manifest 'inputs'. Its PackageReference declarations could then change without the " +
-                'corresponding lock being updated, and nothing would report it.')
-        }
+foreach ($manifestRelativePath in $manifestPaths) {
+
+    $closureProjects = [System.Collections.Generic.List[string]]::new()
+    $manifestInputs = @()
+    $manifest = $null
+    $manifestFullPath = Join-Path $RepositoryRoot $manifestRelativePath
+    if (-not (Test-Path -LiteralPath $manifestFullPath -PathType Leaf)) {
+        $errors.Add("Restore manifest does not exist: $manifestRelativePath.")
     }
-
-    foreach ($declaredEntry in @($declaredLockPaths)) {
-        $declared = [string] $declaredEntry
-        if (-not $expectedLockSet.Contains($declared)) {
-            $errors.Add("$ManifestPath registers lock '$declared', which no project in the ProjectReference " +
-                'closure corresponds to. A stale registration keeps a file under contract after it left the closure.')
-        }
-
-        $declaredFull = Join-Path $RepositoryRoot $declared
-        if (-not (Test-Path -LiteralPath $declaredFull -PathType Leaf)) {
-            $errors.Add("$ManifestPath registers lock '$declared' but that file does not exist.")
-        }
-    }
-
-    # --- Class 1: a resolved version below its own requested lower bound (the #3136 shape). ---
-    foreach ($lockPath in $expectedLockPaths) {
-        $lockFull = Join-Path $RepositoryRoot $lockPath
-        if (-not (Test-Path -LiteralPath $lockFull -PathType Leaf)) { continue }
-
-        $lockDocument = $null
+    else {
         try {
-            $lockDocument = Get-Content -LiteralPath $lockFull -Raw | ConvertFrom-Json
+            $manifest = Get-Content -LiteralPath $manifestFullPath -Raw | ConvertFrom-Json
         }
         catch {
-            $errors.Add("Lock '$lockPath' is not valid JSON: $($_.Exception.Message)")
-            continue
+            $errors.Add("Restore manifest $manifestRelativePath is not valid JSON: $($_.Exception.Message)")
+        }
+    }
+
+    if ($null -ne $manifest) {
+        $seedProject = [string] (Get-NervJsonProperty -Object $manifest -Name 'project')
+        if ([string]::IsNullOrWhiteSpace($seedProject)) {
+            $errors.Add("$manifestRelativePath declares no seed 'project', so the ProjectReference closure cannot be computed.")
         }
 
-        $dependencies = Get-NervJsonProperty -Object $lockDocument -Name 'dependencies'
-        if ($null -eq $dependencies) {
-            $errors.Add("Lock '$lockPath' has no 'dependencies' object, so no fork could be detected in it.")
-            continue
+        $manifestInputs = @(Get-NervJsonProperty -Object $manifest -Name 'inputs')
+        if ($manifestInputs.Count -eq 0) {
+            $errors.Add("$manifestRelativePath declares no 'inputs'. An empty ledger hash-matches vacuously.")
         }
 
-        foreach ($targetProperty in $dependencies.PSObject.Properties) {
-            foreach ($packageProperty in $targetProperty.Value.PSObject.Properties) {
-                $entry = $packageProperty.Value
-                $requested = [string] (Get-NervJsonProperty -Object $entry -Name 'requested')
-                $resolved = [string] (Get-NervJsonProperty -Object $entry -Name 'resolved')
+        $declaredLockPaths = @(Get-NervJsonProperty -Object (Get-NervJsonProperty -Object $manifest -Name 'lock') -Name 'paths')
+        if ($declaredLockPaths.Count -eq 0) {
+            $errors.Add("$manifestRelativePath declares no 'lock.paths'. An empty lock set makes the closure comparison vacuous.")
+        }
 
-                # A `"type": "Project"` entry carries neither, and that is legal: a project reference
-                # has no NuGet version to fork.
-                if ([string]::IsNullOrWhiteSpace($requested) -or [string]::IsNullOrWhiteSpace($resolved)) {
-                    continue
-                }
+        # --- Classes 4 and 2: every recorded input must exist and hash-match. Because the manifest
+        # records a SHA-256 for each lock file, it is structurally a hash ledger for them, and a tampered
+        # lock is reported here without any restore having to run. ---
+        $inputPaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+        foreach ($inputEntry in $manifestInputs) {
+            $path = [string] (Get-NervJsonProperty -Object $inputEntry -Name 'path')
+            if ([string]::IsNullOrWhiteSpace($path)) {
+                $errors.Add("$manifestRelativePath contains an input entry with no 'path'.")
+                continue
+            }
 
-                $inspectedDependencyCount++
+            if (-not $inputPaths.Add($path)) {
+                $errors.Add("$manifestRelativePath records '$path' more than once; a duplicated entry lets one copy be " +
+                    'updated while a stale copy keeps passing.')
+            }
 
-                $range = ConvertFrom-NervVersionRange -Range $requested
-                if ($null -eq $range) {
-                    $errors.Add("Lock '$lockPath' records requested range '$requested' for " +
-                        "'$($packageProperty.Name)', which this checker cannot parse. An unreadable range is " +
-                        'reported rather than skipped.')
-                    continue
-                }
+            $recorded = [string] (Get-NervJsonProperty -Object $inputEntry -Name 'sha256')
+            if ([string]::IsNullOrWhiteSpace($recorded)) {
+                $errors.Add("$manifestRelativePath records no sha256 for '$path'.")
+                continue
+            }
 
-                $comparison = Compare-NervPackageVersion -Left $resolved -Right $range.Lower
-                if ($null -eq $comparison) {
-                    $errors.Add("Lock '$lockPath' records versions for '$($packageProperty.Name)' that this " +
-                        "checker cannot compare (requested '$requested', resolved '$resolved').")
-                    continue
-                }
+            $full = Join-Path $RepositoryRoot $path
+            if (-not (Test-Path -LiteralPath $full -PathType Leaf)) {
+                $errors.Add("$manifestRelativePath pins '$path' but that file does not exist.")
+                continue
+            }
 
-                if ($comparison -ge 0) { continue }
-
-                $key = "$lockPath|$($packageProperty.Name)|$requested|$resolved"
-                $registered = @($exemptions | Where-Object {
-                    [string]::Equals([string] (Get-NervJsonProperty -Object $_ -Name 'lockPath'), $lockPath, [StringComparison]::Ordinal) -and
-                    [string]::Equals([string] (Get-NervJsonProperty -Object $_ -Name 'package'), [string] $packageProperty.Name, [StringComparison]::Ordinal) -and
-                    [string]::Equals([string] (Get-NervJsonProperty -Object $_ -Name 'requested'), $requested, [StringComparison]::Ordinal) -and
-                    [string]::Equals([string] (Get-NervJsonProperty -Object $_ -Name 'resolved'), $resolved, [StringComparison]::Ordinal)
-                })
-
-                if ($registered.Count -gt 0) {
-                    $matchedExemptionKeys.Add($key) | Out-Null
-                    continue
-                }
-
-                $entryType = [string] (Get-NervJsonProperty -Object $entry -Name 'type')
-                $errors.Add("Lock '$lockPath' resolves '$($packageProperty.Name)' to $resolved, below the " +
-                    "requested lower bound of $requested (entry type '$entryType'). This is the shape that made " +
-                    'MediatR compile against 12.5.0 while 14.0.0 loaded at runtime (#3136). Fix the version, or ' +
-                    "register the tuple in $ExemptionPath with a tracking issue.")
+            $actual = (Get-FileHash -LiteralPath $full -Algorithm SHA256).Hash.ToLowerInvariant()
+            if (-not [string]::Equals($actual, $recorded.ToLowerInvariant(), [StringComparison]::Ordinal)) {
+                # The manifest is named because an input can be pinned by more than one manifest (#3157):
+                # 'this file drifted' without saying which ledger recorded the hash sends the reader to
+                # the wrong file.
+                $errors.Add("Restore input '$path' has drifted from $($manifestRelativePath): recorded $recorded, actual " +
+                    "$actual. Either the change was never registered, or the manifest was updated without the " +
+                    'file. Establish which before touching the recorded hash; re-baselining it is approving a ' +
+                    'contract change on someone else behalf.')
             }
         }
+
+        # --- Class 3: the ProjectReference closure must equal the registered lock set, both directions. ---
+        if (-not [string]::IsNullOrWhiteSpace($seedProject)) {
+            $pending = [System.Collections.Generic.Queue[string]]::new()
+            $pending.Enqueue($seedProject.Replace('\', '/'))
+            $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+
+            while ($pending.Count -gt 0) {
+                $projectPath = $pending.Dequeue()
+                if (-not $seen.Add($projectPath)) { continue }
+
+                $closureProjects.Add($projectPath)
+
+                $projectFull = Join-Path $RepositoryRoot $projectPath
+                if (-not (Test-Path -LiteralPath $projectFull -PathType Leaf)) {
+                    $errors.Add("Project '$projectPath' is in the ProjectReference closure but does not exist on disk.")
+                    continue
+                }
+
+                $projectText = Get-Content -LiteralPath $projectFull -Raw
+                $baseDirectory = [string] [System.IO.Path]::GetDirectoryName($projectPath)
+                foreach ($reference in [regex]::Matches($projectText, '<ProjectReference\s[^>]*Include\s*=\s*"(?<include>[^"]+)"')) {
+                    $pending.Enqueue((Resolve-RepositoryRelativePath -BaseDirectory $baseDirectory.Replace('\', '/') -RelativePath $reference.Groups['include'].Value))
+                }
+            }
+        }
+
+        if ($closureProjects.Count -eq 0) {
+            $errors.Add('The ProjectReference closure came out empty; an empty closure equals an empty lock set vacuously.')
+        }
+
+        $expectedLockPaths = @()
+        if ($closureProjects.Count -gt 0) {
+            $expectedLockPaths = @(Get-NervStringsSorted `
+                -Values @($closureProjects | ForEach-Object { Get-RepositoryRelativeLockPath -ProjectPath $_ }) `
+                -Comparer ([StringComparer]::Ordinal) -Unique)
+        }
+
+        $declaredLockSet = [System.Collections.Generic.HashSet[string]]::new([string[]] @($declaredLockPaths | ForEach-Object { [string] $_ }), [System.StringComparer]::Ordinal)
+        $expectedLockSet = [System.Collections.Generic.HashSet[string]]::new([string[]] $expectedLockPaths, [System.StringComparer]::Ordinal)
+
+        foreach ($expected in $expectedLockPaths) {
+            if (-not $declaredLockSet.Contains($expected)) {
+                $errors.Add("'$expected' is required by the ProjectReference closure but is not registered in " +
+                    "$manifestRelativePath under 'lock.paths'. A project entered the closure without its restore contract " +
+                    'being registered with it.')
+            }
+
+            if (-not $inputPaths.Contains($expected)) {
+                $errors.Add("'$expected' is required by the closure but is not listed in the manifest 'inputs', so " +
+                    'nothing pins its hash and it could be edited freely.')
+            }
+        }
+
+        foreach ($project in $closureProjects) {
+            if (-not $inputPaths.Contains($project)) {
+                $errors.Add("Project file '$project' is in the ProjectReference closure but is not listed in the " +
+                    "manifest 'inputs'. Its PackageReference declarations could then change without the " +
+                    'corresponding lock being updated, and nothing would report it.')
+            }
+        }
+
+        foreach ($declaredEntry in @($declaredLockPaths)) {
+            $declared = [string] $declaredEntry
+            if (-not $expectedLockSet.Contains($declared)) {
+                $errors.Add("$manifestRelativePath registers lock '$declared', which no project in the ProjectReference " +
+                    'closure corresponds to. A stale registration keeps a file under contract after it left the closure.')
+            }
+
+            $declaredFull = Join-Path $RepositoryRoot $declared
+            if (-not (Test-Path -LiteralPath $declaredFull -PathType Leaf)) {
+                $errors.Add("$manifestRelativePath registers lock '$declared' but that file does not exist.")
+            }
+        }
+
+        # --- Class 1: a resolved version below its own requested lower bound (the #3136 shape). ---
+        foreach ($lockPath in $expectedLockPaths) {
+            $lockFull = Join-Path $RepositoryRoot $lockPath
+            if (-not (Test-Path -LiteralPath $lockFull -PathType Leaf)) { continue }
+
+            $lockDocument = $null
+            try {
+                $lockDocument = Get-Content -LiteralPath $lockFull -Raw | ConvertFrom-Json
+            }
+            catch {
+                $errors.Add("Lock '$lockPath' is not valid JSON: $($_.Exception.Message)")
+                continue
+            }
+
+            $dependencies = Get-NervJsonProperty -Object $lockDocument -Name 'dependencies'
+            if ($null -eq $dependencies) {
+                $errors.Add("Lock '$lockPath' has no 'dependencies' object, so no fork could be detected in it.")
+                continue
+            }
+
+            foreach ($targetProperty in $dependencies.PSObject.Properties) {
+                foreach ($packageProperty in $targetProperty.Value.PSObject.Properties) {
+                    $entry = $packageProperty.Value
+                    $requested = [string] (Get-NervJsonProperty -Object $entry -Name 'requested')
+                    $resolved = [string] (Get-NervJsonProperty -Object $entry -Name 'resolved')
+
+                    # A `"type": "Project"` entry carries neither, and that is legal: a project reference
+                    # has no NuGet version to fork.
+                    if ([string]::IsNullOrWhiteSpace($requested) -or [string]::IsNullOrWhiteSpace($resolved)) {
+                        continue
+                    }
+
+                    $inspectedDependencyCount++
+
+                    $range = ConvertFrom-NervVersionRange -Range $requested
+                    if ($null -eq $range) {
+                        $errors.Add("Lock '$lockPath' records requested range '$requested' for " +
+                            "'$($packageProperty.Name)', which this checker cannot parse. An unreadable range is " +
+                            'reported rather than skipped.')
+                        continue
+                    }
+
+                    $comparison = Compare-NervPackageVersion -Left $resolved -Right $range.Lower
+                    if ($null -eq $comparison) {
+                        $errors.Add("Lock '$lockPath' records versions for '$($packageProperty.Name)' that this " +
+                            "checker cannot compare (requested '$requested', resolved '$resolved').")
+                        continue
+                    }
+
+                    if ($comparison -ge 0) { continue }
+
+                    $key = "$lockPath|$($packageProperty.Name)|$requested|$resolved"
+                    $registered = @($exemptions | Where-Object {
+                        [string]::Equals([string] (Get-NervJsonProperty -Object $_ -Name 'lockPath'), $lockPath, [StringComparison]::Ordinal) -and
+                        [string]::Equals([string] (Get-NervJsonProperty -Object $_ -Name 'package'), [string] $packageProperty.Name, [StringComparison]::Ordinal) -and
+                        [string]::Equals([string] (Get-NervJsonProperty -Object $_ -Name 'requested'), $requested, [StringComparison]::Ordinal) -and
+                        [string]::Equals([string] (Get-NervJsonProperty -Object $_ -Name 'resolved'), $resolved, [StringComparison]::Ordinal)
+                    })
+
+                    if ($registered.Count -gt 0) {
+                        $matchedExemptionKeys.Add($key) | Out-Null
+                        continue
+                    }
+
+                    $entryType = [string] (Get-NervJsonProperty -Object $entry -Name 'type')
+                    $errors.Add("Lock '$lockPath' resolves '$($packageProperty.Name)' to $resolved, below the " +
+                        "requested lower bound of $requested (entry type '$entryType'). This is the shape that made " +
+                        'MediatR compile against 12.5.0 while 14.0.0 loaded at runtime (#3136). Fix the version, or ' +
+                        "register the tuple in $ExemptionPath with a tracking issue.")
+                }
+            }
+        }
+
     }
 
-    if ($inspectedDependencyCount -eq 0) {
-        $errors.Add('No lock entry carried both a requested range and a resolved version, so the fork check ' +
-            'inspected nothing. A comparison over zero entries passes vacuously.')
-    }
+    $manifestSummaries.Add([pscustomobject]@{
+        Path         = $manifestRelativePath
+        InputCount   = $manifestInputs.Count
+        ClosureCount = $closureProjects.Count
+    })
+
+}
+
+# Global, not per manifest: the question is whether the fork check inspected anything at all.
+if ($inspectedDependencyCount -eq 0) {
+    $errors.Add('No lock entry carried both a requested range and a resolved version, so the fork check ' +
+        'inspected nothing. A comparison over zero entries passes vacuously.')
 }
 
 # --- The reverse check: a registration that no longer matches anything must fail. Without it an
@@ -524,8 +574,11 @@ if ($errors.Count -gt 0) {
 }
 
 Write-Host 'Restore lock contract check passed:'
-Write-Host "  $ManifestPath pins $($manifestInputs.Count) restore inputs, all hash-matched."
-Write-Host "  The ProjectReference closure has $($closureProjects.Count) projects, each with a registered lock."
+Write-Host "  $($manifestSummaries.Count) discovered restore manifest(s) checked."
+foreach ($summary in $manifestSummaries) {
+    Write-Host "  $($summary.Path) pins $($summary.InputCount) restore inputs, all hash-matched."
+    Write-Host "  Its ProjectReference closure has $($summary.ClosureCount) projects, each with a registered lock."
+}
 Write-Host "  $inspectedDependencyCount versioned lock entries checked for requested/resolved forks."
 Write-Host "  $($matchedExemptionKeys.Count) of $($exemptions.Count) registered exemptions matched a live fork."
 

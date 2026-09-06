@@ -5,6 +5,29 @@
     <PackageReference Include="FastEndpoints.Swagger" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
+    <!--
+      下面两条本项目源码一行也没用到，它们钉住的是「传递解析结果」而不是编译期需要（关联 #3157，与
+      BusinessGateway 的 #3152 同构）。两个包都只由 NetCorePal.Extensions.AspNetCore 3.3.0 传递引入，它在
+      nuspec 里声明的是 Microsoft.EntityFrameworkCore 9.0.0 与 FluentValidation.AspNetCore 11.3.0，即只有
+      下界没有上界。而 CPM 的 PackageVersion 只约束直接 PackageReference、不约束传递依赖（全仓未启用
+      CentralPackageTransitivePinningEnabled），于是 NuGet 按「最低适用版本」把它们解析到 9.0.0 /
+      11.3.0，低于 backend/Directory.Packages.props 声明的 10.0.8 / 11.3.1。
+      声明为直接引用后 CPM 才生效，解析结果被钉回 10.0.8 / 11.3.1。
+
+      ⚠️ 关于「删掉会怎样」，写实测结果而不是直觉：**今天单独删掉这两行，门禁不会红**。
+      本项目的 ProjectReference 闭包里 backend/common/Web/Nerv.IIP.Web 也钉了同样的版本，NuGet 取全图
+      最大值，于是 EF 会退回 CentralTransitive 但仍解析到 10.0.8（#3157 实施期实测：删掉后重新 restore
+      并重算 manifest，检查器 EXIT=0）。真正独立承重的是 Nerv.IIP.Web 那三行，删掉它们立刻三条分叉全红。
+      这两行在这里的作用是：本项目自己也直接声明了 NetCorePal.Extensions.AspNetCore，它的解析结果不该
+      依赖另一个项目碰巧钉了什么——一旦上面那条 Nerv.IIP.Web 的 ProjectReference 或它的钉子发生变化，
+      这两行就是本项目仅剩的保证。
+      所以做「清理无用引用」时不要删；dotnet restore 的 locked mode 对这类分叉零鉴别力（见
+      scripts/verify-restore-lock-contract.ps1 的说明），承担方是 Script Governance 的 restore lock
+      contract 门禁——本项目的 packages.lock.json 已进
+      docs/reference/api/platform-gateway-restore.manifest.json。
+    -->
+    <PackageReference Include="FluentValidation.AspNetCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
     <PackageReference Include="NetCorePal.Extensions.AspNetCore" />
     <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.AppHubQueries\Nerv.IIP.Contracts.AppHubQueries.csproj" />
     <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.FileStorage\Nerv.IIP.Contracts.FileStorage.csproj" />

@@ -733,6 +733,28 @@ Assert-ImpactCase -Name 'restore-lock-manifest' -Paths @('docs/reference/api/bus
     docs = $true; scripts = $true; backend = $false; frontend = $false
 }
 
+# #3157: the same routing for the second manifest. Asserted separately from the case above because
+# the rule used to be an exact string match on the BusinessGateway path — one case passing proves
+# only that that one path is routed, which is precisely how a whitelist of one passes review.
+Assert-ImpactCase -Name 'restore-lock-manifest-platform-gateway' -Paths @('docs/reference/api/platform-gateway-restore.manifest.json') -Flags @{
+    docs = $true; scripts = $true; backend = $false; frontend = $false
+}
+
+# A manifest that does not exist yet must already route to 'scripts'. This is the assertion that
+# distinguishes a derived rule from a widened whitelist: it fails if anyone replaces the pattern with
+# an enumeration of the two real paths, and it is the only case here that cannot be satisfied by
+# listing today's files.
+Assert-ImpactCase -Name 'restore-lock-manifest-future' -Paths @('docs/reference/api/not-yet-created-restore.manifest.json') -Flags @{
+    docs = $true; scripts = $true; backend = $false; frontend = $false
+}
+
+# The neighbouring negative: a Reference document under the same directory that is NOT a restore
+# manifest must stay on 'docs' alone. Without it the pattern could be loosened to the whole
+# directory and every case above would still pass.
+Assert-ImpactCase -Name 'reference-api-non-manifest' -Paths @('docs/reference/api/contracts-and-codegen.md') -Flags @{
+    docs = $true; scripts = $false; backend = $false; frontend = $false
+}
+
 # The exemption table reaches the same gate through the generic 'scripts/' rule. Asserted rather
 # than assumed: it is the file that decides which forks stay silent, and if it ever moved out of
 # 'scripts/' the gate would stop being scheduled on changes to it.
