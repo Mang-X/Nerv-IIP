@@ -253,8 +253,34 @@ internal static class VocabularyDriftExemptions
         ..Group("operation", "同值不同义：MasterData 参考数据的**码集名**（工序字典，值域是 welding/assembly/… 这类工序码），不是检验来源环节。",
             $"{Svc}/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Seed/MasterDataDictionaryRules.cs"),
         ..Group("operation", "同值不同义：排程 scope 类型（与 order/sku/resource/workcenter 同族的过滤维度），不是检验来源环节。",
-            $"{Svc}/Scheduling/src/Nerv.IIP.Business.Scheduling.Web/Application/Scheduling/FiniteCapacityScheduler.cs",
-            $"{Svc}/Scheduling/src/Nerv.IIP.Business.Scheduling.Web/Application/Urgency/OrderUrgencyFactAssembler.cs"),
+            $"{Svc}/Scheduling/src/Nerv.IIP.Business.Scheduling.Web/Application/Urgency/OrderUrgencyFactAssembler.cs",
+            $"{Svc}/Scheduling/src/Nerv.IIP.Business.Scheduling.Web/Application/Scheduling/FiniteCapacityScheduler.cs"),
+
+        // ── 检验来源**服务**族（QualityInspectionSourceServices：inventory / wms / mes / erp /
+        //    maintenance / purchase-receipt / mes-operation / customer-return；#3191 新建导出） ────
+        // Quality 自己的 7 处已全部改常量引用（检验任务/检验档的 sourceService 就是这条轴）。
+        // 以下是**别的轴**恰好同值——各自有独立的权威与演化路径，跨服务引 Contracts.Quality 反而是边界违例。
+        ..Group(
+            "erp",
+            "同值不同义：需求计划的供给来源系统（与同一构造第 2 位的 purchase-order 源单据类型配套），非检验来源服务。",
+            $"{Svc}/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Planning/PlanningInputAdapters.cs"),
+        ..Group(
+            "mes",
+            "同值不同义：需求计划的供给来源系统（与同一构造第 2 位的 work-order 源单据类型配套），非检验来源服务。",
+            $"{Svc}/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Planning/PlanningInputAdapters.cs"),
+        // 库存预留来源服务是 Inventory 自己的轴（与 InventoryIntegrationEventSources.BusinessMes 成对出现，
+        // 见各处上下文），其权威是 Contracts.Inventory；该轴今天没有 Mes 常量，但补它属 Inventory 的值域决策，
+        // 不能拿检验来源服务顶替——两条轴的取值集合并不相同（检验轴有 mes-operation / purchase-receipt，预留轴没有）。
+        ..Group(
+            "mes",
+            "同值不同义：库存预留来源服务（Inventory 自有轴，权威在 Contracts.Inventory），非检验来源服务。",
+            $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Commands/StockReservations/ReleaseStockReservationsBySourceCommand.cs",
+            $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Expiry/StockReservationExpirationOptions.cs",
+            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/IntegrationEventHandlers/InventoryReservationExpiredIntegrationEventHandlerForMarkMesRequestExpired.cs"),
+        ..Group(
+            "mes",
+            "同值不同义：世界史种子里补产工单的来源计划参考 sourceSystem（与 sourceDocumentType 配套），非检验来源服务。",
+            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Seed/WorldHistorySeedService.cs"),
     ];
 
     private static IEnumerable<VocabularyExemption> Group(

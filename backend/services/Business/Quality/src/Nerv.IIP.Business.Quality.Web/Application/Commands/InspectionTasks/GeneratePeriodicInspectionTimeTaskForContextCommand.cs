@@ -79,7 +79,7 @@ public sealed class GeneratePeriodicInspectionTimeTaskForContextCommandHandler(
             context.EnvironmentId,
             context.InspectionPlanId,
             sourceType: QualityInspectionSourceTypes.Operation,
-            sourceService: "mes",
+            sourceService: QualityInspectionSourceServices.Mes,
             sourceDocumentId: context.WorkOrderId,
             sourceDocumentLineId: PeriodicInspectionSourceLine.LineId(
                 context.OperationId,

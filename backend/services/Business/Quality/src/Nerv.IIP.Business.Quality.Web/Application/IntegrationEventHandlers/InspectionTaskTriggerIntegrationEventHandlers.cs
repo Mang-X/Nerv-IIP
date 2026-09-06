@@ -115,7 +115,7 @@ public sealed class ErpPurchaseReceiptRecordedIntegrationEventHandlerForCreateIn
                 integrationEvent.OrganizationId,
                 integrationEvent.EnvironmentId,
                 sourceType: QualityInspectionSourceTypes.Receiving,
-                sourceService: "erp",
+                sourceService: QualityInspectionSourceServices.Erp,
                 sourceDocumentId: payload.PurchaseReceiptNo,
                 sourceDocumentLineId: line.LineReference,
                 skuCode: line.SkuCode,
@@ -169,7 +169,7 @@ public sealed class MesOperationCompletedIntegrationEventHandlerForCreateInspect
             integrationEvent.OrganizationId,
             integrationEvent.EnvironmentId,
             sourceType: QualityInspectionSourceTypes.Operation,
-            sourceService: "mes",
+            sourceService: QualityInspectionSourceServices.Mes,
             sourceDocumentId: payload.WorkOrderId,
             sourceDocumentLineId: payload.OperationTaskId,
             skuCode: payload.SkuCode,
@@ -216,7 +216,7 @@ public sealed class MesFinishedGoodsReceiptRequestedIntegrationEventHandlerForCr
             integrationEvent.OrganizationId,
             integrationEvent.EnvironmentId,
             sourceType: QualityInspectionSourceTypes.Final,
-            sourceService: "mes",
+            sourceService: QualityInspectionSourceServices.Mes,
             sourceDocumentId: payload.RequestNo,
             sourceDocumentLineId: payload.WorkOrderId,
             skuCode: payload.SkuCode,
@@ -242,7 +242,7 @@ public static class FirstArticleInspection
     public const string SourceType = QualityInspectionSourceTypes.FirstArticle;
 
     /// <summary>首件任务的来源服务：触发事实来自 MES 报工。</summary>
-    public const string SourceService = "mes";
+    public const string SourceService = QualityInspectionSourceServices.Mes;
 
     /// <summary>首件取样数量固定为 1 个报工单位，不随本次报工良品数变动。</summary>
     public const decimal SampleQuantity = 1m;

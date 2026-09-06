@@ -103,7 +103,7 @@ public sealed class ErpPurchaseReceiptInspectionSourceDocumentVerifier(
     private static readonly string[] SupportedSourceServices =
     [
         WmsSourceDocumentTypes.PurchaseReceipt,
-        "erp",
+        QualityInspectionSourceServices.Erp,
         QualityInspectionSourceTypes.Wms,
     ];
 
