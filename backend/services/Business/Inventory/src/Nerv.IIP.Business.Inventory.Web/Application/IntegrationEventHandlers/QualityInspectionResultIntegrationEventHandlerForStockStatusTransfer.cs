@@ -1,6 +1,5 @@
 using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockStatusTransfers;
@@ -16,8 +15,7 @@ namespace Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventHandlers;
 public sealed class QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer(
     ISender sender,
     ApplicationDbContext dbContext,
-    IIntegrationEventDeadLetterStore deadLetterStore,
-    ILogger<QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer>? logger = null)
+    IIntegrationEventDeadLetterStore deadLetterStore)
     : IIntegrationEventHandler<InspectionResultIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-inventory.quality-inspection-result";
@@ -90,12 +88,8 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForStockStatus
         var payloadSourceType = integrationEvent.Payload.SourceType?.Trim() ?? string.Empty;
         if (NonStockBearingSourceTypes.Contains(payloadSourceType))
         {
-            // gate-and-skip：跳过但留痕。误挡时要有人能从日志里发现，不做静默丢弃。
-            logger?.LogInformation(
-                "Consumer {Consumer} skipped quality inspection result {EventId} because inspection source type '{SourceType}' does not carry inventory stock.",
-                ConsumerName,
-                integrationEvent.EventId,
-                payloadSourceType);
+            // gate-and-skip：直接跳过，不留痕。误挡的方向由 QualityInspectionSourceTypeGateContractTests
+            // 与 Postgres 验收用例钉住；给一个恒定触发的分支装一个恒定输出的日志源没有诊断价值（#3186）。
             return;
         }
 
@@ -116,10 +110,20 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForStockStatus
         var payload = integrationEvent.Payload;
         if (payload.StockRelease is not null)
         {
-            var releaseSourceStatus = StockQualityStatus.Normalize(payload.StockRelease.SourceQualityStatus);
-            var payloadTargetStatus = string.IsNullOrWhiteSpace(payload.StockRelease.TargetQualityStatus)
-                ? targetStatus
-                : StockQualityStatus.Normalize(payload.StockRelease.TargetQualityStatus);
+            // 非法取值必须表达成 KnownException：Normalize 抛的 ArgumentOutOfRangeException 不被
+            // 拦截器覆盖，会逃逸出 CAP 消费者变成 poison message（#3186）。
+            if (!StockQualityStatus.TryNormalize(payload.StockRelease.SourceQualityStatus, out var releaseSourceStatus))
+            {
+                throw new KnownException(StockQualityStatus.UnsupportedMessage(payload.StockRelease.SourceQualityStatus));
+            }
+
+            var payloadTargetStatus = targetStatus;
+            if (!string.IsNullOrWhiteSpace(payload.StockRelease.TargetQualityStatus)
+                && !StockQualityStatus.TryNormalize(payload.StockRelease.TargetQualityStatus, out payloadTargetStatus))
+            {
+                throw new KnownException(StockQualityStatus.UnsupportedMessage(payload.StockRelease.TargetQualityStatus));
+            }
+
             if (payloadTargetStatus != targetStatus)
             {
                 throw new KnownException("Quality inspection stock release target status must match the inspection event type.");

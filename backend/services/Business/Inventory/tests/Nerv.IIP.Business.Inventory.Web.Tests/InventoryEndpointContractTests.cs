@@ -1,23 +1,29 @@
-using System.Net;
-using System.Net.Http.Json;
 using System.Globalization;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using System.Net;
 using DotNetCore.CAP;
-using Microsoft.AspNetCore.Hosting;
 using MediatR;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.InMemory.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountTaskAggregate;
-using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
 using Nerv.IIP.Business.Inventory.Infrastructure;
 using Nerv.IIP.Business.Inventory.Web.Application.Approval;
 using Nerv.IIP.Business.Inventory.Web.Application.Auth;
-using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockLocations;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockCounts;
+using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockLocations;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockReservations;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockStatusTransfers;
@@ -1119,6 +1125,79 @@ public sealed class InventoryEndpointContractTests
         });
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    /// <summary>
+    /// #3186：<c>POST /api/inventory/v1/status-transfers</c> 的质量状态取值来自调用方，命令校验器只管
+    /// 编码形状（<c>RequiredInventoryCode(50)</c>）不管值域，词表外的取值此前经
+    /// <c>StockQualityStatus.Normalize</c> 抛 <c>ArgumentOutOfRangeException</c>
+    /// → <c>500 / {"success":false,"message":"未知错误","code":99999}</c>，把调用方的输入错误
+    /// 报成了服务端故障，且回包里没有任何能定位的信息。
+    ///
+    /// **本用例断言的是 Inventory 今天真实的已知错误传输形态：`200` + `success:false` + 业务消息。**
+    /// 不是 400——Inventory 的 <c>app.UseKnownExceptionHandler()</c> 没有传
+    /// <c>KnownExceptionStatusCode</c>（19 个服务里有 8 个显式传了 BadRequest，Inventory 不在其中）。
+    /// 把它改成 400 是**服务级错误传输口径**变更，不在 #3186 范围内。
+    ///
+    /// 反向读数：把命令处理器里的 <c>TryNormalize</c> 改回 <c>Normalize</c>，本用例读到
+    /// <c>500 / 未知错误</c>。
+    /// </summary>
+    [Theory]
+    [InlineData("quarantine", InventoryQualityStatuses.Unrestricted)]
+    [InlineData(InventoryQualityStatuses.Quality, "quarantine")]
+    public async Task Inventory_status_transfer_endpoint_reports_unknown_quality_status_as_known_error_not_server_failure(
+        string sourceQualityStatus,
+        string targetQualityStatus)
+    {
+        var databaseName = $"status-transfer-vocabulary-{Guid.NewGuid():N}";
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Testing");
+                builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+                builder.ConfigureTestServices(services =>
+                {
+                    services.RemoveAll<ApplicationDbContext>();
+                    services.RemoveAll<DbContextOptions>();
+                    services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
+                    services.RemoveAll<IDbContextOptionsConfiguration<ApplicationDbContext>>();
+                    // netcorepal 的 UoW 行为会在命令前开事务，InMemory provider 不支持事务，
+                    // 不放行这条警告的话所有写面请求都恒定 500，用例就失去了对异常类型的鉴别力。
+                    services.AddDbContext<ApplicationDbContext>(options => options
+                        .UseInMemoryDatabase(databaseName)
+                        .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
+                });
+            });
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        using var response = await client.PostAsJsonAsync("/api/inventory/v1/status-transfers", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            sourceQualityStatus,
+            targetQualityStatus,
+            sourceService = "quality",
+            sourceDocumentId = "QI-001",
+            sourceDocumentLineId = (string?)null,
+            idempotencyKey = "idem-status-transfer-vocabulary-001",
+            skuCode = "SKU-FG-1000",
+            uomCode = "kg",
+            siteCode = "SITE-01",
+            locationCode = "LOC-A-01",
+            lotNo = "LOT-001",
+            serialNo = (string?)null,
+            ownerType = "company",
+            ownerId = "owner-001",
+            quantity = 1m,
+        });
+
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("\"success\":false", body, StringComparison.Ordinal);
+        Assert.Contains("quarantine", body, StringComparison.Ordinal);
+        // 缺陷侧的判别：非法取值不得再被报成「未知错误」。
+        Assert.DoesNotContain("99999", body, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -1,5 +1,6 @@
 using Nerv.IIP.Testing.PostgreSql;
 using Npgsql;
+using System.Text.RegularExpressions;
 
 namespace Nerv.IIP.Testing.PostgreSql.Tests;
 
@@ -400,7 +401,11 @@ public sealed class PostgreSqlTestDatabaseTests
         var password = new NpgsqlConnectionStringBuilder(baseConnectionString).Password;
         if (!string.IsNullOrEmpty(password))
         {
-            Assert.DoesNotContain(password, exception.ToString(), StringComparison.Ordinal);
+            // 只对被脱敏字段（detail=…）按 SanitizeDiagnostic 真正承诺的 **token 语义** 判定。
+            // 原先对整段 exception.ToString() 做子串判定，比实现契约更强：口令若恰是本用例自建库名
+            // database=nerv_initializer_failure_xxx 的子 token（如 `nerv`），会得到一条假红（#3190）。
+            var detail = ExtractDiagnosticDetail(exception.Message);
+            Assert.DoesNotMatch($@"(?<![A-Za-z0-9_]){Regex.Escape(password)}(?![A-Za-z0-9_])", detail);
         }
         Assert.Empty(await FindDatabasesAsync(baseConnectionString, [createdDatabaseName]));
     }
@@ -461,6 +466,14 @@ public sealed class PostgreSqlTestDatabaseTests
             initializeAsync: null,
             executeAdminCommandAsync: executor,
             cancellationToken: CancellationToken.None);
+    }
+
+    private static string ExtractDiagnosticDetail(string message)
+    {
+        const string marker = "detail=";
+        var start = message.IndexOf(marker, StringComparison.Ordinal);
+        Assert.True(start >= 0, message);
+        return message[(start + marker.Length)..];
     }
 
     private static string SanitizeDiagnostic(string value, string?[] sensitiveValues)

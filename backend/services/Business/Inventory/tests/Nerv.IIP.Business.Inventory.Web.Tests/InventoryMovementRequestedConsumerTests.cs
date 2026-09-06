@@ -739,6 +739,46 @@ public sealed class InventoryMovementRequestedConsumerTests
         Assert.Equal(5m, dbContext.StockLedgers.Single(x => x.LocationCode == "LOC-B-02").OnHandQuantity);
     }
 
+    /// <summary>
+    /// #3186：<c>payload.StockRelease.SourceQualityStatus</c> 是 Quality 侧原样透传的外部输入，
+    /// 词表外的取值必须表达成 <c>KnownException</c>——它抛 <c>ArgumentOutOfRangeException</c> 时
+    /// 不被拦截器覆盖，会逃逸出 CAP 消费者变成 poison message。
+    ///
+    /// 反向读数：把 <c>TryNormalize</c> 改回 <c>Normalize</c>，<c>ThrowsAsync&lt;KnownException&gt;</c>
+    /// 直接红在实际抛出的 <c>ArgumentOutOfRangeException</c> 上。
+    /// </summary>
+    [Theory]
+    [InlineData("quarantine")]
+    [InlineData("not-a-status")]
+    public async Task Quality_inspection_result_consumer_rejects_unknown_stock_release_source_status_as_known_exception(string sourceQualityStatus)
+    {
+        await using var dbContext = CreateContext();
+        dbContext.StockLedgers.Add(CreateQualityLedger("LOC-B-02", "LOT-002", 5m));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer(
+            new CommandExecutingSender(dbContext),
+            dbContext,
+            new InMemoryIntegrationEventDeadLetterStore());
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.HandleAsync(
+            CreateInspectionEvent(
+                QualityIntegrationEventTypes.InspectionPassed,
+                new StockReleaseDimensionPayload(
+                    "kg",
+                    "SITE-01",
+                    "LOC-B-02",
+                    "LOT-002",
+                    null,
+                    sourceQualityStatus,
+                    "company",
+                    "owner-001")),
+            CancellationToken.None));
+
+        Assert.Contains(sourceQualityStatus, exception.Message, StringComparison.Ordinal);
+        Assert.Empty(dbContext.StockMovements);
+        Assert.Equal(5m, dbContext.StockLedgers.Single(x => x.LocationCode == "LOC-B-02").OnHandQuantity);
+    }
+
     [Fact]
     public async Task Quality_inspection_result_consumer_accepts_matching_stock_release_target_status()
     {

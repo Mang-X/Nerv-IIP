@@ -63,8 +63,18 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
 {
     public async Task<PostStockStatusTransferResult> Handle(PostStockStatusTransferCommand request, CancellationToken cancellationToken)
     {
-        var sourceStatus = StockQualityStatus.Normalize(request.SourceQualityStatus);
-        var targetStatus = StockQualityStatus.Normalize(request.TargetQualityStatus);
+        // 状态取值来自 HTTP 写面与集成事件消费者，是外部输入：非法取值走 KnownException（400），
+        // 不走 Normalize 的 ArgumentOutOfRangeException（500）（#3186）。
+        if (!StockQualityStatus.TryNormalize(request.SourceQualityStatus, out var sourceStatus))
+        {
+            throw new KnownException(StockQualityStatus.UnsupportedMessage(request.SourceQualityStatus));
+        }
+
+        if (!StockQualityStatus.TryNormalize(request.TargetQualityStatus, out var targetStatus))
+        {
+            throw new KnownException(StockQualityStatus.UnsupportedMessage(request.TargetQualityStatus));
+        }
+
         var ownerType = StockOwnerType.Normalize(request.OwnerType);
         if (sourceStatus == targetStatus)
         {
