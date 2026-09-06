@@ -32,8 +32,8 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForUpdateMesHo
     // 使 MES 查询与前端（均用 business-mes）一致。
     private static readonly HashSet<string> MesSourceServiceTokens = new(StringComparer.OrdinalIgnoreCase)
     {
-        "mes",
-        "mes-operation",
+        QualityInspectionSourceServices.Mes,
+        QualityInspectionSourceServices.MesOperation,
         QualityIntegrationEventSources.BusinessMes,
     };
 
@@ -81,6 +81,8 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForUpdateMesHo
                 integrationEvent.OrganizationId,
                 integrationEvent.EnvironmentId,
                 sourceDocumentId,
+                payload.WorkOrderId,
+                payload.OperationTaskId,
                 cancellationToken);
         }
         catch (InvalidOperationException exception)
@@ -185,12 +187,52 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForUpdateMesHo
             payload.InspectionPlanId, "automatic", integrationEvent.IdempotencyKey));
     }
 
+    /// <summary>
+    /// 定位检验对象。首件与周期检的 <paramref name="sourceDocumentId"/> 是 Quality 内部的复合串，
+    /// 按它去查工单表与工序任务表两边都查不到，结果是整条首件／周期检结论进死信
+    /// （<c>unknown-source-document</c>，#3177）。生产者现在把工单／工序结构化发布在 payload 上，
+    /// 优先按结构化身份定位；仍然回库校验存在性，不拿事件自称的身份当事实。
+    /// </summary>
     private async Task<MesInspectionSource?> ResolveMesSourceAsync(
         string organizationId,
         string environmentId,
         string sourceDocumentId,
+        string? payloadWorkOrderId,
+        string? payloadOperationTaskId,
         CancellationToken cancellationToken)
     {
+        if (!string.IsNullOrWhiteSpace(payloadOperationTaskId))
+        {
+            var operationScoped = await dbContext.OperationTasks
+                .AsNoTracking()
+                .Where(x =>
+                    x.OrganizationId == organizationId &&
+                    x.EnvironmentId == environmentId &&
+                    x.OperationTaskIdValue == payloadOperationTaskId)
+                .Select(x => new MesInspectionSource(x.WorkOrderId, x.OperationTaskIdValue))
+                .SingleOrDefaultAsync(cancellationToken);
+            if (operationScoped is not null)
+            {
+                return operationScoped;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(payloadWorkOrderId))
+        {
+            var workOrderScoped = await dbContext.WorkOrders
+                .AsNoTracking()
+                .Where(x =>
+                    x.OrganizationId == organizationId &&
+                    x.EnvironmentId == environmentId &&
+                    x.WorkOrderIdValue == payloadWorkOrderId)
+                .Select(x => new MesInspectionSource(x.WorkOrderIdValue, (string?)null))
+                .SingleOrDefaultAsync(cancellationToken);
+            if (workOrderScoped is not null)
+            {
+                return workOrderScoped;
+            }
+        }
+
         var workOrder = await dbContext.WorkOrders
             .AsNoTracking()
             .Where(x =>

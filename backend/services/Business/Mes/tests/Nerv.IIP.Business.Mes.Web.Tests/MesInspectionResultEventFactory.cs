@@ -13,7 +13,10 @@ internal static class MesInspectionResultEventFactory
         string inspectionPlanId,
         string skuCode,
         string sourceService,
-        string? dispositionReason = null)
+        string? dispositionReason = null,
+        string sourceType = "in-process",
+        string? workOrderId = null,
+        string? operationTaskId = null)
     {
         var result = eventType == QualityIntegrationEventTypes.InspectionPassed
             ? "passed"
@@ -35,7 +38,7 @@ internal static class MesInspectionResultEventFactory
             new InspectionResultPayload(
                 inspectionRecordId,
                 inspectionPlanId,
-                "in-process",
+                sourceType,
                 sourceService,
                 sourceDocumentId,
                 skuCode,
@@ -43,6 +46,8 @@ internal static class MesInspectionResultEventFactory
                 result,
                 dispositionReason ?? (eventType == QualityIntegrationEventTypes.InspectionRejected ? "critical-defect" : null),
                 [],
-                occurredAtUtc));
+                occurredAtUtc,
+                WorkOrderId: workOrderId,
+                OperationTaskId: operationTaskId));
     }
 }

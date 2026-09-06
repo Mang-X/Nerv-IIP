@@ -256,6 +256,30 @@ public static class FirstArticleInspection
         $"{workOrderId}:{operationId}";
 
     /// <summary>
+    /// <see cref="SourceDocumentId"/> 的逆函数，与编码点同住一处（#3191）。下游服务不得自行按
+    /// <c>:</c> 切这串复合身份——那等于把 Quality 的内部编码约定复制一份到别的服务里。
+    /// </summary>
+    public static bool TryParseSourceDocumentId(string? sourceDocumentId, out string workOrderId, out string operationId)
+    {
+        workOrderId = string.Empty;
+        operationId = string.Empty;
+        if (string.IsNullOrWhiteSpace(sourceDocumentId))
+        {
+            return false;
+        }
+
+        var segments = sourceDocumentId.Split(':');
+        if (segments.Length != 2 || segments[0].Length == 0 || segments[1].Length == 0)
+        {
+            return false;
+        }
+
+        workOrderId = segments[0];
+        operationId = segments[1];
+        return true;
+    }
+
+    /// <summary>
     /// 按「工单 + 工序」构成，不用事件 <c>IdempotencyKey</c>，因此同一工序多次换型、多次报工只开一张任务；
     /// 它同时是 <c>ux_inspection_tasks_scope_trigger_key</c> 上的读面定位键。
     /// </summary>
