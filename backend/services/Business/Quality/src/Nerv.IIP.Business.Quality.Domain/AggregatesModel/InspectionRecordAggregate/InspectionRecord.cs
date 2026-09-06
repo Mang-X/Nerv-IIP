@@ -28,15 +28,10 @@ public sealed record InspectionMeasuringDeviceUsage(
 
 public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoot
 {
+    // 取值域与公开契约词表同源（#2976）：跨服务消费者按 payload.SourceType 分流时引的是
+    // QualityInspectionSourceTypes，两边各写一份字面量就会悄悄漂移。
     private static readonly HashSet<string> SourceTypes =
-    [
-        "receiving",
-        "operation",
-        "final",
-        "first-article",
-        "maintenance",
-        "customer-return",
-    ];
+        new(QualityInspectionSourceTypes.All, StringComparer.Ordinal);
 
     private static readonly HashSet<string> SourceServices =
     [

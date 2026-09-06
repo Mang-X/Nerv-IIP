@@ -38,10 +38,36 @@ public static class QualityIntegrationEventSources
     public const string BusinessMes = "business-mes";
 }
 
+/// <summary>
+/// 检验来源环节词表。取值域由 <c>InspectionRecord.SourceTypes</c> 锁死，而
+/// <c>InspectionResultIntegrationEvent</c> 的 <c>payload.SourceType</c> 直接取自
+/// <c>record.SourceType</c>，所以这里就是跨服务消费者按来源环节分流时的**唯一**取值来源；
+/// 消费侧不得再写裸字面量（#2976）。
+///
+/// <c>Wms</c> 是来源**服务**取值，不是来源环节，历史上落在本类里；WMS/ERP 两个消费者用它匹配
+/// <c>payload.SourceService</c>。保留原位不动，但由 <c>QualityInspectionSourceTypeContractTests</c>
+/// 明写为「服务轴遗留项」，避免后来人把它当成第七个来源环节。
+/// </summary>
 public static class QualityInspectionSourceTypes
 {
     public const string Wms = "wms";
     public const string Receiving = "receiving";
+    public const string Operation = "operation";
+    public const string Final = "final";
+    public const string FirstArticle = "first-article";
+    public const string Maintenance = "maintenance";
+    public const string CustomerReturn = "customer-return";
+
+    /// <summary>六个来源环节取值（不含服务轴的 <see cref="Wms"/>）。</summary>
+    public static readonly IReadOnlyList<string> All =
+    [
+        Receiving,
+        Operation,
+        Final,
+        FirstArticle,
+        Maintenance,
+        CustomerReturn,
+    ];
 }
 
 public static class QualityStockReleaseTargetStatuses

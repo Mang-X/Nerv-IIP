@@ -60,7 +60,12 @@ public sealed class ContractBoundaryTests
         new(
             typeof(InspectionRecord).Assembly,
             typeof(QualityInspectionDispositionStatuses).Assembly,
-            [typeof(QualityInspectionDispositionStatuses).FullName!]),
+            [
+                typeof(QualityInspectionDispositionStatuses).FullName!,
+                // #2976：检验来源环节值域下沉到共享词表，Domain 的 SourceTypes 直接引它，
+                // 免得 Domain 与跨服务消费者各留一份字面量再悄悄漂移。
+                typeof(QualityInspectionSourceTypes).FullName!,
+            ]),
     ];
 
     /// <summary>
@@ -123,7 +128,8 @@ public sealed class ContractBoundaryTests
                 "Nerv.IIP.Business.Inventory.Domain -> Nerv.IIP.Contracts.Inventory: "
                 + "Nerv.IIP.Contracts.Inventory.InventoryMovementTypes,Nerv.IIP.Contracts.Inventory.InventoryQualityStatuses",
                 "Nerv.IIP.Business.Quality.Domain -> Nerv.IIP.Contracts.Quality: "
-                + "Nerv.IIP.Contracts.Quality.QualityInspectionDispositionStatuses",
+                + "Nerv.IIP.Contracts.Quality.QualityInspectionDispositionStatuses,"
+                + "Nerv.IIP.Contracts.Quality.QualityInspectionSourceTypes",
             ],
             registrations);
     }
