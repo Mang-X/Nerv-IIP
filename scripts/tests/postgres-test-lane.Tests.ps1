@@ -199,6 +199,12 @@ function Get-PostgresWorkflowSelectedMemberId([string]$WorkflowPath) {
         })
 }
 
+# 身份集合一律用序数比较：-in / -notin 是 culture-aware，对 member id 这种身份敏感值不能用
+# （ordinal-comparison-layers 门禁已就此拦下过本 PR 的初版）。
+function New-PostgresOrdinalSet([string[]]$Values) {
+    return [Collections.Generic.HashSet[string]]::new([string[]]@($Values), [StringComparer]::Ordinal)
+}
+
 function Get-PostgresArrayLiteral([object]$Expression) {
     if ($Expression -is [System.Management.Automation.Language.ArrayLiteralAst]) { return $Expression }
     if ($Expression -is [System.Management.Automation.Language.ArrayExpressionAst] -and
@@ -828,14 +834,19 @@ try {
     # CI 侧的集合是从 ci.yml 解析出来的，不是假定的，因此下面每条变异都能真的杀掉它。
     $manifestActiveMemberIds = @(Import-NervPostgresTestLaneMembers -ManifestPath $manifestPath -RepositoryRoot $repoRoot | ForEach-Object { [string]$_.id })
     $workflowSelectedMemberIds = @(Get-PostgresWorkflowSelectedMemberId -WorkflowPath $workflowPath)
-    $unselectedActiveMemberIds = @($manifestActiveMemberIds | Where-Object { $_ -notin $workflowSelectedMemberIds })
+    $workflowSelectedMemberIdSet = New-PostgresOrdinalSet -Values $workflowSelectedMemberIds
+    $manifestActiveMemberIdSet = New-PostgresOrdinalSet -Values $manifestActiveMemberIds
+    $unselectedActiveMemberIds = @($manifestActiveMemberIds | Where-Object { -not $workflowSelectedMemberIdSet.Contains([string]$_) })
     Assert-Contract ($unselectedActiveMemberIds.Count -eq 0) "Every active PostgreSQL lane member must be selected by the hosted job; unselected: $($unselectedActiveMemberIds -join ', ')."
-    $unregisteredSelectedMemberIds = @($workflowSelectedMemberIds | Where-Object { $_ -notin $manifestActiveMemberIds })
+    $unregisteredSelectedMemberIds = @($workflowSelectedMemberIds | Where-Object { -not $manifestActiveMemberIdSet.Contains([string]$_) })
     Assert-Contract ($unregisteredSelectedMemberIds.Count -eq 0) "The hosted job must not select a member that is not an active manifest member; unexpected: $($unregisteredSelectedMemberIds -join ', ')."
     Assert-Contract ([string]::Equals(($workflowSelectedMemberIds -join '|'), ($manifestActiveMemberIds -join '|'), [StringComparison]::Ordinal)) 'The hosted job selection set must equal the manifest active member set in manifest order.'
     # 本票的具体实例：这条成员是 active、无 deferredReason，却曾经不在 CI 名单里，
     # 它的 8 条真 PostgreSQL 并发用例因此跑在零个 job 上。
-    Assert-Contract ('masterdata-device-reference-concurrency' -in $workflowSelectedMemberIds) 'The MasterData device-reference concurrency member must be selected by the hosted job.'
+    # 集合本身用 [StringComparer]::Ordinal 构造，比较即为序数；字面量先绑定成变量，
+    # 以免 .Contains('literal') 落进 ordinal 门禁的「无显式 StringComparison」形态。
+    $deviceReferenceConcurrencyMemberId = 'masterdata-device-reference-concurrency'
+    Assert-Contract ($workflowSelectedMemberIdSet.Contains($deviceReferenceConcurrencyMemberId)) 'The MasterData device-reference concurrency member must be selected by the hosted job.'
 
     # 变异对照①（少选，本票缺陷方向）：把 -AllActiveMembers 换回硬编码名单并掉一个成员。
     # 每条变异都单独确认红在「active 未被选中」那条判据上，而不是被相邻守卫兜住。
@@ -855,7 +866,8 @@ try {
         $mutatedWorkflowPath = Join-Path $fixtureRoot "dropped-$droppedMemberId-ci.yml"
         [IO.File]::WriteAllText($mutatedWorkflowPath, (New-PostgresHardCodedWorkflow -MemberIds $remainingIds), [Text.UTF8Encoding]::new($false))
         $mutatedSelectedMemberIds = @(Get-PostgresWorkflowSelectedMemberId -WorkflowPath $mutatedWorkflowPath)
-        $mutatedUnselected = @($manifestActiveMemberIds | Where-Object { $_ -notin $mutatedSelectedMemberIds })
+        $mutatedSelectedMemberIdSet = New-PostgresOrdinalSet -Values $mutatedSelectedMemberIds
+        $mutatedUnselected = @($manifestActiveMemberIds | Where-Object { -not $mutatedSelectedMemberIdSet.Contains([string]$_) })
         Assert-Contract ($mutatedUnselected.Count -eq 1 -and [string]::Equals($mutatedUnselected[0], $droppedMemberId, [StringComparison]::Ordinal)) "Dropping '$droppedMemberId' must be reported by the active-selection contract naming exactly that member."
         # 同一条变异也必须被结构面拒绝：回退成硬编码名单本身就是被禁止的形状。
         $structuralRejected = $false
@@ -868,7 +880,7 @@ try {
         $overSelectedWorkflowPath = Join-Path $fixtureRoot "over-selected-$([string]$deferredMember.id)-ci.yml"
         [IO.File]::WriteAllText($overSelectedWorkflowPath, (New-PostgresHardCodedWorkflow -MemberIds $overSelectedIds), [Text.UTF8Encoding]::new($false))
         $overSelectedMemberIds = @(Get-PostgresWorkflowSelectedMemberId -WorkflowPath $overSelectedWorkflowPath)
-        $overSelectedExtra = @($overSelectedMemberIds | Where-Object { $_ -notin $manifestActiveMemberIds })
+        $overSelectedExtra = @($overSelectedMemberIds | Where-Object { -not $manifestActiveMemberIdSet.Contains([string]$_) })
         Assert-Contract ($overSelectedExtra.Count -eq 1 -and [string]::Equals($overSelectedExtra[0], [string]$deferredMember.id, [StringComparison]::Ordinal)) "Selecting deferred member '$($deferredMember.id)' must be reported by the exact-equality contract."
         $overSelectedSet = [Collections.Generic.HashSet[string]]::new([string[]]@($overSelectedMemberIds), [StringComparer]::Ordinal)
         Assert-Contract ($overSelectedSet.Contains([string]$deferredMember.id)) "The deferred-selection direction must observe '$($deferredMember.id)' in the mutated selection set."
@@ -877,7 +889,8 @@ try {
     $commentMaskedWorkflowPath = Join-Path $fixtureRoot 'comment-masked-dropped-last-member-ci.yml'
     [IO.File]::WriteAllText($commentMaskedWorkflowPath, (New-PostgresHardCodedWorkflow -MemberIds @($manifestActiveMemberIds | Select-Object -First ($manifestActiveMemberIds.Count - 1)) -CommentMasked), [Text.UTF8Encoding]::new($false))
     $commentMaskedSelectedMemberIds = @(Get-PostgresWorkflowSelectedMemberId -WorkflowPath $commentMaskedWorkflowPath)
-    $commentMaskedUnselected = @($manifestActiveMemberIds | Where-Object { $_ -notin $commentMaskedSelectedMemberIds })
+    $commentMaskedSelectedMemberIdSet = New-PostgresOrdinalSet -Values $commentMaskedSelectedMemberIds
+    $commentMaskedUnselected = @($manifestActiveMemberIds | Where-Object { -not $commentMaskedSelectedMemberIdSet.Contains([string]$_) })
     Assert-Contract ($commentMaskedUnselected.Count -eq 1) 'A comment must not mask an active workflow assignment that drops a governed member.'
 
     # 推导链的另一端：runner 的 -AllActiveMembers 必须真的跟着 manifest 走，而不是碰巧等于当前名单。
