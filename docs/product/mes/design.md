@@ -44,12 +44,14 @@ MES（ISA-95 Level-3）分**四大运营域**：生产运营、质量运营、�
 ├─ 领料与齐套      /mes/materials（开工准备 foundation 收为 Tab）         (Execution Readiness)
 │                  ← 由「齐套与物料」改名，**领料**进标题；主操作=发起领料/领料申请
 ├─ 工序执行        工序执行 /mes/operation-tasks · 班次交接 /mes/handovers (Execution)
-├─ 报工与完工      报工记录 /mes/production-reports · 完工入库 /mes/receipts (Data Collection)
+├─ 报工与完工      报工记录 /mes/production-reports · 生产日报 /mes/reports · 完工入库 /mes/receipts (Data Collection)
 ├─ 在制与追溯      在制跟踪 /mes/wip · 追溯查询 /mes/traceability          (Tracking)
 └─ 生产分析        异常与产能 /mes/capacity                              (Analysis)
 ★ 移出 MES 顶层菜单（改他域跳链 / 详情内联只读）：质量与不良 → 质量管理；设备与停机 → 设备监控
 ```
 菜单项从 ~16 压到 ~11；每组 1-2 页、语义单一、顺序即生产流；**标签即一线操作**。
+
+`/mes/reports` 是生产统计读面：按业务日、班次、工作中心或物料聚合报工数量与质量比率，并可导出当前筛选范围的全量 CSV。页面的“当前在制”只在具备 MES operations 读取权限时请求，设备性能率只在具备 IIoT telemetry 读取权限且不是物料维度时请求；性能率直接采用设备效率服务的权威值，不从产量反算。
 
 ### 2.3 合并 / 拆分 / 迁移清单
 | 操作 | 对象 | 目标 | 理由 |

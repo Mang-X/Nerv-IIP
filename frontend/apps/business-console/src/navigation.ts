@@ -521,6 +521,12 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           requiredPermissions: [P.mesReportingRead],
         },
         {
+          title: '生产日报',
+          icon: TrendingUpIcon,
+          to: { path: '/mes/reports' },
+          requiredPermissions: [P.mesReportingRead],
+        },
+        {
           title: '完工入库',
           icon: PackageCheckIcon,
           to: { path: '/mes/receipts' },
