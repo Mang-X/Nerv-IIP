@@ -3,9 +3,9 @@
 #   SideEffects:
 #     - Parses the ERP and WMS delivery-completion cross-process verification script
 #   Writes:
-#     - None
+#     - Temporary diagnostic artifacts for the executable privacy regression
 #   Cleanup:
-#     - None
+#     - Removes the owned temporary diagnostic directory in finally
 #   Requires:
 #     - PowerShell 7
 
@@ -47,6 +47,57 @@ function Import-VerifyFunction {
 }
 
 Assert-Contract ($parseErrors.Count -eq 0) 'Verify script must parse before executable contracts are evaluated.'
+& {
+    # Regression: #3203 requires retained diagnostics to exclude Redis message bodies.
+    . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
+    . (Join-Path $repoRoot 'scripts/lib/AcceptanceScenarioMatrixRuntime.ps1')
+    foreach ($name in @('Write-Man527DiagnosticFile', 'Invoke-Man527DiagnosticCommand', 'Export-Man527FailureDiagnostics')) {
+        $definition = $scriptAst.Find({ param($node)
+            $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+            [string]::Equals($node.Name, $name, [StringComparison]::Ordinal)
+        }, $true)
+        Set-Item -Path "Function:$name" -Value $definition.Body.GetScriptBlock()
+    }
+    $root = $repoRoot
+    $evidenceDirectory = Join-Path ([IO.Path]::GetTempPath()) "man527-safe-$([Guid]::NewGuid().ToString('N'))"
+    $internalToken = 'man527-declared-secret'
+    $PostgresAdminConnectionString = 'Host=example;Password=fixture-secret'
+    $databaseConnectionString = $PostgresAdminConnectionString
+    $RedisConnectionString = 'localhost,password=fixture-secret'
+    $databaseName = 'man527_fixture'
+    $capVersion = 'man527-fixture'
+    $deliveryOrderNo = 'DO-MAN527-FIXTURE'
+    $erpProcess = $wmsProcess = $inventoryProcess = $null
+    $databaseCreated = $true
+    $composeFile = 'fixture-compose.yml'
+    function Invoke-NativeCommandOutput {
+        param($Command, $Arguments, $WorkingDirectory, $Name)
+        $output = if ($Arguments -contains 'psql') { 'erp | delivery_orders | 1' }
+        elseif ($Arguments -contains 'XLEN') { '1' }
+        elseif ($Arguments -contains 'GROUPS') {
+            '[{"name":"business-erp.man527-fixture","consumers":1,"pending":1,"last-delivered-id":"123-0","entries-read":1,"lag":0}]'
+        }
+        else { 'first-entry EventJson MAN527-BODY-SENTINEL last-entry' }
+        [pscustomobject]@{ Stdout = $output }
+    }
+    try {
+        try { throw 'EventJson MAN527-BODY-SENTINEL Authorization: Bearer man527-declared-secret' }
+        catch { $failureRecord = $_ }
+        $proof = Export-Man527FailureDiagnostics -FailureRecord $failureRecord
+        Assert-Contract $proof.failureDiagnosticsCaptured 'Failure diagnostics must actually be persisted.'
+        foreach ($path in $proof.artifactPaths) {
+            $retained = [IO.File]::ReadAllText($path)
+            foreach ($forbidden in @('MAN527-BODY-SENTINEL', 'EventJson', 'first-entry', 'last-entry', 'man527-declared-secret')) {
+                Assert-Contract (-not $retained.Contains($forbidden, [StringComparison]::Ordinal)) "Retained diagnostic must exclude $forbidden."
+            }
+        }
+        $redis = [IO.File]::ReadAllText((Join-Path $evidenceDirectory 'diagnostics/redis-stream-state.txt'))
+        Assert-Contract ($redis.Contains('length=1', [StringComparison]::Ordinal) -and $redis.Contains('"pending":1', [StringComparison]::Ordinal)) 'Safe Redis diagnostics must preserve stream length and pending count.'
+    }
+    finally {
+        if (Test-Path -LiteralPath $evidenceDirectory) { Remove-Item -LiteralPath $evidenceDirectory -Recurse -Force }
+    }
+}
 Import-VerifyFunction -Name 'ConvertFrom-Man527RedisStreamGroupOutput'
 Import-VerifyFunction -Name 'Wait-Man527ErpCapConsumerReady'
 Import-VerifyFunction -Name 'Invoke-Man527FirstBusinessActionAfterConsumerReady'
