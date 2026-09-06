@@ -439,7 +439,7 @@
       "status": "active",
       "databaseOwnership": "runner",
       "project": "backend/tests/Nerv.IIP.Business.Acceptance.Tests/Nerv.IIP.Business.Acceptance.Tests.csproj",
-      "filter": "FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.RuntimeHoursMaintenancePostgresAcceptanceTests.Runtime_hour_interval_generates_pm_work_order_from_industrial_telemetry_runtime_hours_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.WmsInventoryRpcIdempotencyAcceptanceTests.Postgres_count_execution_timeout_and_concurrent_retry_converges_inventory_and_wms|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.WmsInventoryRpcIdempotencyAcceptanceTests.Postgres_count_task_same_code_different_key_unique_conflict_reruns_as_domain_conflict",
+      "filter": "FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_every_stock_bearing_inspection_source_type_still_transfers_quality_stock|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_first_article_inspection_result_at_validator_upper_bound_never_reaches_inventory_stock_commands|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_first_article_inspection_result_with_generated_codes_never_reaches_inventory_stock_commands|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_receiving_inspection_result_still_transfers_quality_stock|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.RuntimeHoursMaintenancePostgresAcceptanceTests.Runtime_hour_interval_generates_pm_work_order_from_industrial_telemetry_runtime_hours_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.WmsInventoryRpcIdempotencyAcceptanceTests.Postgres_count_execution_timeout_and_concurrent_retry_converges_inventory_and_wms|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.WmsInventoryRpcIdempotencyAcceptanceTests.Postgres_count_task_same_code_different_key_unique_conflict_reruns_as_domain_conflict",
       "databasePrefix": "nerv_iip_acceptance",
       "diagnosticSchemas": [
         "industrial_telemetry",
@@ -448,6 +448,10 @@
         "wms"
       ],
       "expectedTestIdentities": [
+        "Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_every_stock_bearing_inspection_source_type_still_transfers_quality_stock",
+        "Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_first_article_inspection_result_at_validator_upper_bound_never_reaches_inventory_stock_commands",
+        "Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_first_article_inspection_result_with_generated_codes_never_reaches_inventory_stock_commands",
+        "Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_receiving_inspection_result_still_transfers_quality_stock",
         "Nerv.IIP.Business.Acceptance.Tests.RuntimeHoursMaintenancePostgresAcceptanceTests.Runtime_hour_interval_generates_pm_work_order_from_industrial_telemetry_runtime_hours_on_postgres",
         "Nerv.IIP.Business.Acceptance.Tests.WmsInventoryRpcIdempotencyAcceptanceTests.Postgres_count_execution_timeout_and_concurrent_retry_converges_inventory_and_wms",
         "Nerv.IIP.Business.Acceptance.Tests.WmsInventoryRpcIdempotencyAcceptanceTests.Postgres_count_task_same_code_different_key_unique_conflict_reruns_as_domain_conflict"

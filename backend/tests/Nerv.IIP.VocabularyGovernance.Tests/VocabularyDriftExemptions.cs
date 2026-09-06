@@ -248,7 +248,13 @@ internal static class VocabularyDriftExemptions
         ..Group("purchase-receipt", "同值不同义：条码规则源单据类型（BarcodeRule.AllowedSourceDocumentTypes 自成一族，票面 (a) 类）。",
             $"{Svc}/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Application/Seed/WorldHistoryLabelSpec.cs"),
 
-        // ── 检验来源族（QualityInspectionSourceTypes：wms / receiving） ─────────────
+        // ── 检验来源族（QualityInspectionSourceTypes：wms / receiving / operation /
+        //    final / first-article / maintenance / customer-return；后五值 #2976 补齐导出） ─────
+        ..Group("operation", "同值不同义：MasterData 参考数据的**码集名**（工序字典，值域是 welding/assembly/… 这类工序码），不是检验来源环节。",
+            $"{Svc}/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Seed/MasterDataDictionaryRules.cs"),
+        ..Group("operation", "同值不同义：排程 scope 类型（与 order/sku/resource/workcenter 同族的过滤维度），不是检验来源环节。",
+            $"{Svc}/Scheduling/src/Nerv.IIP.Business.Scheduling.Web/Application/Scheduling/FiniteCapacityScheduler.cs",
+            $"{Svc}/Scheduling/src/Nerv.IIP.Business.Scheduling.Web/Application/Urgency/OrderUrgencyFactAssembler.cs"),
     ];
 
     private static IEnumerable<VocabularyExemption> Group(

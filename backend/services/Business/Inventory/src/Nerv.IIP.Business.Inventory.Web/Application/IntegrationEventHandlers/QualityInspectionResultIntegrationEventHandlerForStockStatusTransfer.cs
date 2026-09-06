@@ -1,5 +1,6 @@
 using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockStatusTransfers;
@@ -15,10 +16,51 @@ namespace Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventHandlers;
 public sealed class QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer(
     ISender sender,
     ApplicationDbContext dbContext,
-    IIntegrationEventDeadLetterStore deadLetterStore)
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    ILogger<QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer>? logger = null)
     : IIntegrationEventHandler<InspectionResultIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-inventory.quality-inspection-result";
+
+    /// <summary>
+    /// 不驱动库存状态转移的检验来源环节（#2976）。
+    ///
+    /// 只有 <c>first-article</c>：首件是工作中心上的**单件取样**，Inventory 里不存在与之对应的
+    /// quality 状态台账。#2779 起首件把 <c>{workOrderId}:{operationId}</c> 编进来源单据身份后，
+    /// 标准生成的编码就已经撑爆 <c>stock_movements.idempotency_key</c>，异常逃出 CAP 消费者变成
+    /// poison message。
+    ///
+    /// **这是一条按取值逐个裁定的名单，不是按「在制品/成品」这类事实断言推出来的。** 其余五个取值
+    /// 一律放行＝沿用今天的行为，本次不对它们做任何判断；<c>operation</c> 曾被考虑纳入本名单，实测
+    /// 显示它今天存在**会成功过账**的形态（无库存维度且恰好命中一条 quality 台账时落 2 条流水），
+    /// 挡掉它属于跨 Quality/Inventory 的产品语义决策，不在 #2976 范围内。
+    ///
+    /// 完备性由 <c>QualityInspectionSourceTypeGateContractTests</c> 机器化钉住：本名单与
+    /// <see cref="StockBearingSourceTypes"/> 必须**恰好**划分 <c>QualityInspectionSourceTypes.All</c>，
+    /// Quality 新增第七个取值时该契约变红，逼迫作者显式归类，而不是静默落进某一边。
+    /// </summary>
+    public static readonly IReadOnlySet<string> NonStockBearingSourceTypes =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            QualityInspectionSourceTypes.FirstArticle,
+        };
+
+    /// <summary>
+    /// 放行的来源环节：本消费者对它们**沿用今天的行为**，不代表它们都一定有对应库存台账。
+    /// 放行之后的三条出口里有两条是**静默成功落库**（<c>payload.StockRelease</c> 已给出库位、
+    /// 或 payload 四件套齐全），只有「解析不出唯一 quality 台账」那条会抛 <c>KnownException</c>。
+    /// 所以这里不能把「放行」当成「出错一定会响」——放行的失败方向既可能是响，也可能是把别人的
+    /// quality 库存静默转成 unrestricted/restricted/blocked。
+    /// </summary>
+    public static readonly IReadOnlySet<string> StockBearingSourceTypes =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            QualityInspectionSourceTypes.Receiving,
+            QualityInspectionSourceTypes.Operation,
+            QualityInspectionSourceTypes.Final,
+            QualityInspectionSourceTypes.Maintenance,
+            QualityInspectionSourceTypes.CustomerReturn,
+        };
 
     private readonly IntegrationEventConsumerGuard<InspectionResultIntegrationEvent> consumerGuard = new(
         new IntegrationEventEnvelopeValidator(),
@@ -45,6 +87,18 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForStockStatus
 
     private async Task HandleValidEventAsync(InspectionResultIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
+        var payloadSourceType = integrationEvent.Payload.SourceType?.Trim() ?? string.Empty;
+        if (NonStockBearingSourceTypes.Contains(payloadSourceType))
+        {
+            // gate-and-skip：跳过但留痕。误挡时要有人能从日志里发现，不做静默丢弃。
+            logger?.LogInformation(
+                "Consumer {Consumer} skipped quality inspection result {EventId} because inspection source type '{SourceType}' does not carry inventory stock.",
+                ConsumerName,
+                integrationEvent.EventId,
+                payloadSourceType);
+            return;
+        }
+
         var targetStatus = integrationEvent.EventType switch
         {
             QualityIntegrationEventTypes.InspectionPassed => StockQualityStatus.Unrestricted,

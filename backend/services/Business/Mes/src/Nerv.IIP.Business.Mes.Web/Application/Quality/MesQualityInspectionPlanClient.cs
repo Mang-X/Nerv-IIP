@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Contracts.ProductEngineering;
 using Nerv.IIP.ServiceAuth;
+using Nerv.IIP.Contracts.Quality;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Quality;
 
@@ -105,7 +106,7 @@ public sealed class MesQualityInspectionPlanClient(
                     string.Equals(x.EnvironmentId, environmentId, StringComparison.Ordinal) &&
                     string.Equals(x.Status, ProductionEngineeringContractStatuses.Active, StringComparison.OrdinalIgnoreCase) &&
                     string.Equals(x.SkuCode, skuCode, StringComparison.Ordinal) &&
-                    string.Equals(x.Category, "operation", StringComparison.Ordinal) &&
+                    string.Equals(x.Category, QualityInspectionSourceTypes.Operation, StringComparison.Ordinal) &&
                     string.Equals(x.WorkCenterId, workCenterId, StringComparison.Ordinal));
         }
     }

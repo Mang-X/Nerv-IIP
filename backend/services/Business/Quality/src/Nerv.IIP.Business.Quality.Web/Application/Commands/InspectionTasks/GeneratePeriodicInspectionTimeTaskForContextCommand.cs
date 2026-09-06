@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionTaskAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.PeriodicInspectionOperationAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
+using Nerv.IIP.Contracts.Quality;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionTasks;
 
@@ -77,7 +78,7 @@ public sealed class GeneratePeriodicInspectionTimeTaskForContextCommandHandler(
             context.OrganizationId,
             context.EnvironmentId,
             context.InspectionPlanId,
-            sourceType: "operation",
+            sourceType: QualityInspectionSourceTypes.Operation,
             sourceService: "mes",
             sourceDocumentId: context.WorkOrderId,
             sourceDocumentLineId: $"{context.OperationId}:periodic-time:{context.Id.Id:D}:{window.Sequence}",
