@@ -2,6 +2,24 @@
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <!--
+      下面三条本项目源码一行也没用到（编译产物 Nerv.IIP.Web.dll 对它们的 AssemblyRef 数为 0），它们钉住的
+      是「传递解析结果」而不是编译期需要（关联 #3157）。三个包都只由 NetCorePal.Extensions.AspNetCore 3.3.0
+      传递引入，而它的 nuspec 只声明下界不声明上界；CPM 的 PackageVersion 又只约束直接 PackageReference、
+      不约束传递依赖（全仓未启用 CentralPackageTransitivePinningEnabled），于是 NuGet 按「最低适用版本」
+      把它们解析到 9.0.0 / 11.3.0 / 11.5.1，低于 backend/Directory.Packages.props 声明的
+      10.0.8 / 11.3.1 / 11.11.0。声明为直接引用后 CPM 才生效。
+      删掉这三行分叉会立刻复活——#3157 实施期实测：删掉后重新 restore 并重算 manifest，检查器 EXIT=1
+      并逐条报出 9.0.0 / 11.3.0 / 11.5.1 三条低于下界。而 dotnet restore 的 locked mode 对这类分叉零
+      鉴别力（见 scripts/verify-restore-lock-contract.ps1 的说明），所以做「清理无用引用」时不要删。
+      本项目的 packages.lock.json 已进 docs/reference/api/platform-gateway-restore.manifest.json，
+      承担方是 Script Governance 的 restore lock contract 门禁，而不是这段注释。
+      本项目是这个闭包里独立承重的那一处：PlatformGateway.Web 自己那两条钉子今天是冗余的（删掉它
+      单独一处门禁不红），因为 NuGet 取全图最大值时正是靠这里的三条把版本抬上去。
+    -->
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="FluentValidation.AspNetCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
     <PackageReference Include="NetCorePal.Extensions.AspNetCore" />
   </ItemGroup>
 

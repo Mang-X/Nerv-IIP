@@ -46,6 +46,18 @@ manifest 的 `inputs` 语义在 #3145 中有意扩面：由「seed 项目的 res
 
 已知无法覆盖、且不假装覆盖的：lock 中 `contentHash` 是否为包的真实哈希（需要下载每个包），以及只有 `resolved` 而无 `requested` 的 `Transitive` 条目（没有声明的范围可比）。`main` 上先于本门禁存在的分叉登记在 `scripts/restore-lock-drift-exemptions.json`，按四元组全等匹配，且登记后不再命中即判红。
 
+### 合同覆盖面：多份 manifest，由模式推导（#3157）
+
+#3145 落地时全仓只有 BusinessGateway 一份 manifest，检查器的 manifest 路径和 CI 的路由规则都写死了那一个路径。#3157 起覆盖面不再是单份：
+
+- **受合同约束的 manifest 集合 = `docs/reference/api/*-restore.manifest.json` 的全部匹配项**，由 `scripts/verify-restore-lock-contract.ps1` 在运行时发现，不在脚本里枚举；发现结果为空判红，不得在空集上通过。
+- `scripts/lib/CiImpactPlan.ps1` 把**同一模式**路由到 `scripts` 标志（因而调度 `Script Governance` job）。两处用同一模式而不是各自维护一份名单，是为了让「检查器读到的集合」与「CI 调度到的集合」不能分叉——否则新增一份 manifest 会得到一个「声明了合同但没有任何东西读」的文件，正是本门禁存在的理由本身（#3003 / #3135 / #3140 同形）。
+- 每份 manifest 独立声明自己的 seed 项目与闭包；共享库同时落在多个闭包里是允许的，其 lock 会被各份 manifest 分别校验。
+
+当前在册两份：BusinessGateway（seed 闭包 17 个项目）与 PlatformGateway（12 个项目，`docs/reference/api/platform-gateway-restore.manifest.json`）。后者只承担 restore 合同，不记录 canonicalization toolchain——本页上文的 SDK/reference pack/Roslyn 固定要求只适用于 BusinessGateway 的 client surface canonicalization，PlatformGateway 没有那条产线，写进去会是一条无人校验的断言。
+
+**本页不主张全仓 lock 已被守住。** 两个 seed 闭包之外的项目仍然没有 lock、也不在任何 manifest 里。
+
 ## Roslyn 解析与编译语义
 
 实现必须显式固定而非依赖默认值：
