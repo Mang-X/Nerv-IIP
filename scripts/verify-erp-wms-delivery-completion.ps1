@@ -105,7 +105,7 @@ function Invoke-Man527DiagnosticCommand {
         Write-Man527DiagnosticFile -Path $OutputPath -Content $result.Stdout
     }
     catch {
-        Write-Man527DiagnosticFile -Path $OutputPath -Content "Diagnostic command failed: $($_.Exception.Message)"
+        Write-Man527DiagnosticFile -Path $OutputPath -Content "Diagnostic command failed ($($_.Exception.GetType().Name)); see job log."
     }
 }
 
@@ -122,7 +122,8 @@ function Export-Man527FailureDiagnostics {
             database = $databaseName
             capVersion = $capVersion
             deliveryOrderNo = $deliveryOrderNo
-            failure = $FailureRecord.Exception.Message
+            failure = 'Business verification failed; see job log.'
+            failureType = $FailureRecord.Exception.GetType().Name
         } | ConvertTo-Json -Depth 8)
     $artifactPaths.Add([IO.Path]::GetFullPath($summaryPath))
 
@@ -160,14 +161,29 @@ ORDER BY schemaname, relname;
     $redisPath = Join-Path $diagnosticsRoot 'redis-stream-state.txt'
     $redisLines = [Collections.Generic.List[string]]::new()
     foreach ($streamName in @('WmsIntegrationEvent', 'Nerv.IIP.Contracts.Wms.WmsIntegrationEvent')) {
-        foreach ($redisArguments in @(@('XINFO', 'STREAM', $streamName), @('XINFO', 'GROUPS', $streamName))) {
+        foreach ($redisArguments in @(@('XLEN', $streamName), @('XINFO', 'GROUPS', $streamName))) {
             try {
-                $result = Invoke-NativeCommandOutput -Command 'docker' -Arguments (@('compose', '-f', $composeFile, 'exec', '-T', 'redis', 'redis-cli') + $redisArguments) -WorkingDirectory $root -Name 'man527-diagnostics-redis'
+                $result = Invoke-NativeCommandOutput -Command 'docker' -Arguments (@('compose', '-f', $composeFile, 'exec', '-T', 'redis', 'redis-cli', '--json') + $redisArguments) -WorkingDirectory $root -Name 'man527-diagnostics-redis'
                 $redisLines.Add("COMMAND redis-cli $($redisArguments -join ' ')")
-                $redisLines.Add("$($result.Stdout)")
+                $metadata = ConvertFrom-Json -InputObject $result.Stdout
+                if ([string]::Equals($redisArguments[0], 'XLEN', [StringComparison]::Ordinal)) {
+                    $redisLines.Add("length=$([long]$metadata)")
+                }
+                else {
+                    foreach ($group in $metadata) {
+                        $redisLines.Add(([ordered]@{
+                            name = [string]$group.name
+                            consumers = [long]$group.consumers
+                            pending = [long]$group.pending
+                            lastDeliveredId = [string]$group.'last-delivered-id'
+                            entriesRead = $group.'entries-read'
+                            lag = $group.lag
+                        } | ConvertTo-Json -Compress))
+                    }
+                }
             }
             catch {
-                $redisLines.Add("COMMAND redis-cli $($redisArguments -join ' ') FAILED: $($_.Exception.Message)")
+                $redisLines.Add("COMMAND redis-cli $($redisArguments -join ' ') FAILED ($($_.Exception.GetType().Name)); see job log.")
             }
         }
     }
@@ -1122,7 +1138,8 @@ finally {
             verifiedAtUtc = [DateTimeOffset]::UtcNow
             scenarioStatus = 'failed'
             deliveryOrderNo = $deliveryOrderNo
-            scenarioError = if ($null -ne $scenarioError) { Protect-NervAcceptanceWmsDiagnosticText -Text $scenarioError.Exception.Message -SensitiveValues @($internalToken, $PostgresAdminConnectionString, $databaseConnectionString, $RedisConnectionString) } else { 'Business evidence was not produced.' }
+            scenarioError = 'Business verification failed; see job log.'
+            scenarioErrorType = $scenarioError.Exception.GetType().Name
         }
     }
     $evidencePayload.cleanup = $cleanupEvidence
