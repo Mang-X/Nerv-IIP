@@ -52,6 +52,15 @@ public sealed class QualityInspectionSourceServiceContractTests
         // 缺了这一半，用例名里的 exactly 就是不成立的完备性声明——而**漏掉的正是 #3191 复发所需的
         // 全部条件**：Quality 侧新增一个 sourceService 而公开词表不认、跨服务的门自然也不认，
         // 本票修的缺陷原样回来，且这条契约照绿。这里直接反射域内值域逐值比对，不靠抽样。
+        //
+        // ⚠ 两道断言的分工不可互换，**谁都不是对方的冗余**（#3191 复审实测）：
+        //   · 上面那个硬编码 8 项字典（Contract_vocabulary_freezes_every_inspection_source_service）
+        //     才是**唯一的词表漂移门**——它钉的是「词表本身不许悄悄变」。
+        //   · 本断言②钉的是「Domain 值域**不得脱离词表派生**」。由于 InspectionRecord.SourceServices
+        //     今天正是 new(QualityInspectionSourceServices.All, ...) 派生而来，它在当前实现下**按构造成立**。
+        // 后果：**两边同时加同一个值**时，红的是那个硬编码字典，本断言②是**绿**的。
+        // 所以谁要是觉得那个字典"重复了、删掉吧"，唯一的词表漂移防线就没了，而这里照绿。
+        // 真要动，先想清楚删掉之后「词表漂移」由谁接住。
         Assert.Equal(
             QualityInspectionSourceServices.All.Order(StringComparer.Ordinal),
             DomainSourceServices().Order(StringComparer.Ordinal));
@@ -61,6 +70,8 @@ public sealed class QualityInspectionSourceServiceContractTests
 
     private static IReadOnlyCollection<string> DomainSourceServices()
     {
+        // 反射取不到就显式 throw，而不是回空集合悄悄放行：字段改名会让断言②退化成恒真，
+        // 那种失效方向是不可见的（#3191 复审的第三条绕法）。
         var field = typeof(InspectionRecord).GetField("SourceServices", BindingFlags.NonPublic | BindingFlags.Static)
             ?? throw new InvalidOperationException(
                 "InspectionRecord.SourceServices 不存在：域内来源服务值域改名后，本契约会退化成只断言单向，必须同步。");
