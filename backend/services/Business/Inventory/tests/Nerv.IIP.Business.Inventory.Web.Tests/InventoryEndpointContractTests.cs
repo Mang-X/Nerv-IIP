@@ -1141,6 +1141,12 @@ public sealed class InventoryEndpointContractTests
     ///
     /// 反向读数：把命令处理器里的 <c>TryNormalize</c> 改回 <c>Normalize</c>，本用例读到
     /// <c>500 / 未知错误</c>。
+    ///
+    /// **本用例不覆盖空白取值**：命令校验器的 <c>RequiredInventoryCode(50)</c> 在管道里就把它挡下
+    /// （实测回包 <c>{"success":false,"message":"'source Quali…"}</c>），**根本走不到词表分支**。
+    /// 也就是说 <c>UnsupportedMessage</c> 的空白支在 HTTP 写面**不可达**，它唯一可达的入口是 CAP
+    /// 消费路径的 source 侧，由 <c>InventoryMovementRequestedConsumerTests</c> 的 <c>[InlineData("", null)]</c>
+    /// 覆盖——这是「存活变异的两种成因」里的**分支不可达**，不是覆盖缺口（#3186 复审 S7）。
     /// </summary>
     [Theory]
     [InlineData("quarantine", InventoryQualityStatuses.Unrestricted)]
@@ -1195,9 +1201,9 @@ public sealed class InventoryEndpointContractTests
         var body = await response.Content.ReadAsStringAsync();
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Contains("\"success\":false", body, StringComparison.Ordinal);
-        Assert.Contains("quarantine", body, StringComparison.Ordinal);
-        // 缺陷侧的判别：非法取值不得再被报成「未知错误」。
+        // 缺陷侧的判别：非法取值不得再被报成「未知错误」（500 / code 99999）。
         Assert.DoesNotContain("99999", body, StringComparison.Ordinal);
+        Assert.Contains("quarantine", body, StringComparison.Ordinal);
     }
 
     [Fact]

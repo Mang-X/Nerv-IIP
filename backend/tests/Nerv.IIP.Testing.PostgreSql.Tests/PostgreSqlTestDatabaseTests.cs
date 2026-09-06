@@ -401,11 +401,20 @@ public sealed class PostgreSqlTestDatabaseTests
         var password = new NpgsqlConnectionStringBuilder(baseConnectionString).Password;
         if (!string.IsNullOrEmpty(password))
         {
-            // 只对被脱敏字段（detail=…）按 SanitizeDiagnostic 真正承诺的 **token 语义** 判定。
-            // 原先对整段 exception.ToString() 做子串判定，比实现契约更强：口令若恰是本用例自建库名
-            // database=nerv_initializer_failure_xxx 的子 token（如 `nerv`），会得到一条假红（#3190）。
-            var detail = ExtractDiagnosticDetail(exception.Message);
-            Assert.DoesNotMatch($@"(?<![A-Za-z0-9_]){Regex.Escape(password)}(?![A-Za-z0-9_])", detail);
+            // 作用域仍是**整段** exception.ToString()，只把判定从「子串」换成 SanitizeDiagnostic
+            // 真正承诺的 **token 边界**语义（#3190）。
+            //
+            // 换 token 语义就足以消除假红：口令若恰是本用例自建库名
+            // database=nerv_initializer_failure_xxx 的子 token（如 `nerv`），后面跟着 `_`，
+            // 按 token 边界本就不该命中。
+            //
+            // **不要再把作用域收窄到 detail= 那一段**：CreateFailure 里只有 detail 过 Sanitize()，
+            // host / port / database / usernameConfigured 都是原样插值且排在 detail 之前；
+            // 收窄会让「口令泄漏进这几个未脱敏字段」以及泄漏进堆栈/内层异常这两类**恰恰最该看住的**
+            // 情形彻底失去检验（#3190 复审 B3 实证）。
+            Assert.DoesNotMatch(
+                $@"(?<![A-Za-z0-9_]){Regex.Escape(password)}(?![A-Za-z0-9_])",
+                exception.ToString());
         }
         Assert.Empty(await FindDatabasesAsync(baseConnectionString, [createdDatabaseName]));
     }
@@ -466,14 +475,6 @@ public sealed class PostgreSqlTestDatabaseTests
             initializeAsync: null,
             executeAdminCommandAsync: executor,
             cancellationToken: CancellationToken.None);
-    }
-
-    private static string ExtractDiagnosticDetail(string message)
-    {
-        const string marker = "detail=";
-        var start = message.IndexOf(marker, StringComparison.Ordinal);
-        Assert.True(start >= 0, message);
-        return message[(start + marker.Length)..];
     }
 
     private static string SanitizeDiagnostic(string value, string?[] sensitiveValues)

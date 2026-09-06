@@ -751,11 +751,32 @@ public sealed class InventoryMovementRequestedConsumerTests
     /// 反向读数：把 <c>TryNormalize</c> 改回 <c>Normalize</c>，<c>ThrowsAsync&lt;KnownException&gt;</c>
     /// 直接红在实际抛出的 <c>ArgumentOutOfRangeException</c> 上。
     /// </summary>
+    /// <remarks>
+    /// **source 与 target 两侧都要有 InlineData。** 只打 source 时，把 target 那行改回
+    /// <c>Normalize</c> 后本用例仍全绿——唯一会红的是 KnownException 计数台账那条记账断言，
+    /// 改个数字就没了（#3186 复审 B2 实测）。
+    ///
+    /// **且必须断言消息含被拒的那个取值。** target 侧紧邻着一条同型守卫
+    /// （<c>target status must match the inspection event type</c>），只断言
+    /// <c>ThrowsAsync&lt;KnownException&gt;</c> 会被它兜住——本仓「相邻同型守卫会兜住变异」那条。
+    /// 所以这里同时反向断言消息**不**是那条相邻守卫的。
+    /// </remarks>
     [Theory]
-    [InlineData("quarantine")]
-    [InlineData("not-a-status")]
-    public async Task Quality_inspection_result_consumer_rejects_unknown_stock_release_source_status_as_known_exception(string sourceQualityStatus)
+    [InlineData("quarantine", null)]
+    [InlineData("not-a-status", null)]
+    [InlineData(StockQualityStatus.Quality, "quarantine")]
+    [InlineData(StockQualityStatus.Quality, "not-a-status")]
+    // 空白 **source** 是另一支失败文案（"…is required."），单独覆盖：否则删掉那个分支、
+    // 或让它回落到 "'' is not supported" 都不会红（#3186 复审 S7）。
+    //
+    // 空白 **target** 不在此列——它是**设计上的可选**：留空表示「按事件类型推导目标状态」，
+    // 不是错误输入，所以没有对应的 InlineData。
+    [InlineData("", null)]
+    public async Task Quality_inspection_result_consumer_rejects_unknown_stock_release_status_as_known_exception(
+        string sourceQualityStatus,
+        string? targetQualityStatus)
     {
+        var rejected = targetQualityStatus ?? sourceQualityStatus;
         await using var dbContext = CreateContext();
         dbContext.StockLedgers.Add(CreateQualityLedger("LOC-B-02", "LOT-002", 5m));
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -775,10 +796,22 @@ public sealed class InventoryMovementRequestedConsumerTests
                     null,
                     sourceQualityStatus,
                     "company",
-                    "owner-001")),
+                    "owner-001",
+                    targetQualityStatus)),
             CancellationToken.None));
 
-        Assert.Contains(sourceQualityStatus, exception.Message, StringComparison.Ordinal);
+        if (string.IsNullOrWhiteSpace(rejected))
+        {
+            Assert.Contains("required", exception.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("is not supported", exception.Message, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.Contains(rejected, exception.Message, StringComparison.Ordinal);
+        }
+
+        // 不是被相邻的同型守卫兜住的。
+        Assert.DoesNotContain("must match the inspection event type", exception.Message, StringComparison.Ordinal);
         Assert.Empty(dbContext.StockMovements);
         Assert.Equal(5m, dbContext.StockLedgers.Single(x => x.LocationCode == "LOC-B-02").OnHandQuantity);
     }
