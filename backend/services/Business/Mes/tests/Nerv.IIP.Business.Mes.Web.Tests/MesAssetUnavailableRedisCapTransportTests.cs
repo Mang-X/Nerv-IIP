@@ -1,5 +1,6 @@
 using DotNetCore.CAP;
 using DotNetCore.CAP.Persistence;
+using DotNetCore.CAP.Transport;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -37,9 +38,32 @@ public sealed class MesAssetUnavailableRedisCapTransportTests(ITestOutputHelper 
         await MesPostgresLaneDatabase.ResetSchemaAsync();
         var poison = new PoisonSwitch();
         var arrivals = new ArrivalLog();
-        await using var factory = CreateFactory(poison, arrivals);
+        var subscription = new MesAssetUnavailableSubscription();
+        await using var factory = CreateFactory(poison, arrivals, subscription);
         using var client = factory.CreateClient();
-        await InitializeAsync(factory);
+        var initializing = InitializeAsync(factory);
+        try
+        {
+            await TestTimeout.RunAsync("MES actual Subscribe entered", async token =>
+                await subscription.Entered.Task.WaitAsync(token), TimeSpan.FromSeconds(30));
+            Assert.False(initializing.IsCompleted);
+            // #3183：实际 Subscribe 被门闩阻挡时，首发前边界必须有界失败并保留 caller cancellation。
+            await Assert.ThrowsAsync<TestTimeoutException>(() =>
+                subscription.WaitAsync(TimeSpan.FromMilliseconds(100)).AsTask());
+            using var cancellation = new CancellationTokenSource();
+            var cancelledWait = subscription.WaitAsync(TimeSpan.FromSeconds(30), cancellation.Token).AsTask();
+            cancellation.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelledWait);
+            using var scope = factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            Assert.Equal(0, await db.Database.SqlQuery<int>(
+                $"SELECT count(*)::int AS \"Value\" FROM cap.published").SingleAsync());
+        }
+        finally
+        {
+            subscription.Release();
+        }
+        await initializing;
 
         var fromUtc = DateTimeOffset.Parse("2026-08-31T08:00:00Z");
         const string idempotencyKey = "maintenance.AssetUnavailable:ASSET-CNC-01:20260831080000";
@@ -396,8 +420,14 @@ public sealed class MesAssetUnavailableRedisCapTransportTests(ITestOutputHelper 
         return value.ValueKind == JsonValueKind.String ? value.GetString()! : value.ToString();
     }
 
-    private static WebApplicationFactory<Program> CreateFactory(PoisonSwitch poison, ArrivalLog arrivals)
+    private static WebApplicationFactory<Program> CreateFactory(
+        PoisonSwitch poison, ArrivalLog arrivals, MesAssetUnavailableSubscription? subscription = null)
     {
+        if (subscription is null)
+        {
+            subscription = new MesAssetUnavailableSubscription();
+            subscription.Release();
+        }
         var settings = new Dictionary<string, string?>
         {
             ["Persistence:Provider"] = "PostgreSQL",
@@ -424,6 +454,14 @@ public sealed class MesAssetUnavailableRedisCapTransportTests(ITestOutputHelper 
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(settings));
             builder.ConfigureServices(services =>
             {
+                services.AddSingleton(subscription);
+                var consumerFactory = services.Single(x => x.ServiceType == typeof(IConsumerClientFactory));
+                services.Remove(consumerFactory);
+                services.AddSingleton<IConsumerClientFactory>(provider =>
+                    new MesAssetUnavailableSubscription.ConsumerFactory(
+                        (IConsumerClientFactory)ActivatorUtilities.CreateInstance(provider, consumerFactory.ImplementationType!),
+                        subscription,
+                        provider.GetRequiredService<IOptions<CapOptions>>().Value));
                 services.Configure<CapOptions>(options =>
                 {
                     options.FailedRetryCount = 2;
@@ -455,6 +493,8 @@ public sealed class MesAssetUnavailableRedisCapTransportTests(ITestOutputHelper 
         await db.Database.MigrateAsync();
         await scope.ServiceProvider.GetRequiredService<IStorageInitializer>().InitializeAsync(CancellationToken.None);
         await scope.ServiceProvider.GetRequiredService<IBootstrapper>().BootstrapAsync(CancellationToken.None);
+        await scope.ServiceProvider.GetRequiredService<MesAssetUnavailableSubscription>()
+            .WaitAsync(TimeSpan.FromSeconds(30));
     }
 
     private static async Task PublishAsync<TEvent>(WebApplicationFactory<Program> factory, string topic, TEvent integrationEvent)
