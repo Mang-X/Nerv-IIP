@@ -123,7 +123,10 @@ function New-FixtureRepository {
         [string] $DuplicateInput = '',
         [switch] $EmptyInputs,
         [switch] $EmptyLockPaths,
-        [switch] $OmitExemptionFile)
+        [switch] $OmitExemptionFile,
+        # #3157: where to write the manifest. Cases that exercise discovery put it under
+        # docs/reference/api/ so the checker has to find it by pattern instead of being handed it.
+        [string] $ManifestRelativePath = 'manifest.json')
 
     [System.IO.Directory]::CreateDirectory($Root) | Out-Null
 
@@ -179,7 +182,7 @@ function New-FixtureRepository {
         lock    = [ordered]@{ paths = @($lockPaths) }
     }
 
-    Write-FixtureFile -Path (Join-Path $Root 'manifest.json') -Content (ConvertTo-Json $manifest -Depth 8)
+    Write-FixtureFile -Path (Join-Path $Root $ManifestRelativePath) -Content (ConvertTo-Json $manifest -Depth 8)
 
     if (-not $OmitExemptionFile) {
         Write-FixtureFile -Path (Join-Path $Root 'exemptions.json') `
@@ -252,7 +255,7 @@ try {
         Add-Content -LiteralPath (Join-Path $root 'lib/Lib.csproj') -Value '<!-- edited after the manifest was written -->'
     }
     Assert-Contract -Condition (-not $case2.Passed) -Message 'An edited .csproj that the manifest still pins by its old hash must fail.'
-    Assert-Contract -Condition ($case2.Message.Contains('has drifted from the manifest', [StringComparison]::Ordinal)) `
+    Assert-Contract -Condition ($case2.Message.Contains('has drifted from manifest.json', [StringComparison]::Ordinal)) `
         -Message "The failure must say the input drifted. Actual: $($case2.Message)"
     Assert-Contract -Condition ($case2.Message.Contains('lib/Lib.csproj', [StringComparison]::Ordinal)) `
         -Message "The failure must name the drifted file. Actual: $($case2.Message)"
@@ -419,6 +422,53 @@ try {
     Assert-Contract -Condition ($case20.Message.Contains('each with a registered lock', [StringComparison]::Ordinal)) `
         -Message "The success output must state the closure conclusion. Actual: $($case20.Message)"
 
+    # --- Case 21: discovery. No -ManifestPath is passed, and the only manifest sits at the derived
+    # location. This is the case that distinguishes "the checker reads a manifest it was handed" from
+    # "the checker finds every manifest under contract". Cases 1-20 all hand it an explicit path, so
+    # without this one the whole discovery path added in #3157 would be untested. ---
+    $case21Root = Join-Path $fixtureRoot 'discovers-manifest-by-pattern'
+    New-FixtureRepository -Root $case21Root -ManifestRelativePath 'docs/reference/api/contoso-restore.manifest.json'
+    $case21 = Invoke-Verifier -Name 'restore-lock-discovers-manifest-by-pattern' -Arguments @(
+        '-RepositoryRoot', $case21Root,
+        '-ExemptionPath', 'exemptions.json')
+    Assert-Contract -Condition $case21.Passed `
+        -Message "A manifest at the derived location must be discovered without -ManifestPath. Actual: $($case21.Message)"
+    Assert-Contract -Condition ($case21.Message.Contains('contoso-restore.manifest.json', [StringComparison]::Ordinal)) `
+        -Message "The output must name the discovered manifest. Actual: $($case21.Message)"
+
+    # --- Case 22: discovery finding nothing must fail, not pass over an empty set. A derived rule
+    # whose pattern stops matching would otherwise report success while checking no file at all —
+    # strictly worse than the ungated state, because the green would be read as evidence. ---
+    $case22Root = Join-Path $fixtureRoot 'discovers-no-manifest'
+    New-FixtureRepository -Root $case22Root -ManifestRelativePath 'docs/reference/api/not-a-manifest.json'
+    $case22 = Invoke-Verifier -Name 'restore-lock-discovers-no-manifest' -Arguments @(
+        '-RepositoryRoot', $case22Root,
+        '-ExemptionPath', 'exemptions.json')
+    Assert-Contract -Condition (-not $case22.Passed) -Message 'Discovering no manifest must fail the check.'
+    Assert-Contract -Condition ($case22.Message.Contains('No restore manifest was discovered', [StringComparison]::Ordinal)) `
+        -Message "The failure must say nothing was discovered. Actual: $($case22.Message)"
+
+    # --- Case 23: every discovered manifest is checked, not just the first. The clean manifest sorts
+    # before the broken one, so an implementation that stops after one would be green here. This is
+    # the assertion that makes 'two manifests are under contract' true rather than 'two manifests
+    # exist and one is under contract'. ---
+    $case23Root = Join-Path $fixtureRoot 'checks-every-discovered-manifest'
+    New-FixtureRepository -Root $case23Root -ManifestRelativePath 'docs/reference/api/aaa-restore.manifest.json'
+    Write-FixtureFile -Path (Join-Path $case23Root 'docs/reference/api/zzz-restore.manifest.json') `
+        -Content (ConvertTo-Json ([ordered]@{
+            schema  = 1
+            project = 'seed/Seed.csproj'
+            inputs  = @([ordered]@{ path = 'seed/Seed.csproj'; sha256 = 'not-the-real-hash' })
+            lock    = [ordered]@{ paths = @('seed/packages.lock.json', 'lib/packages.lock.json') }
+        }) -Depth 8)
+    $case23 = Invoke-Verifier -Name 'restore-lock-checks-every-discovered-manifest' -Arguments @(
+        '-RepositoryRoot', $case23Root,
+        '-ExemptionPath', 'exemptions.json')
+    Assert-Contract -Condition (-not $case23.Passed) `
+        -Message 'A broken manifest that sorts after a clean one must still be reported.'
+    Assert-Contract -Condition ($case23.Message.Contains('zzz-restore.manifest.json', [StringComparison]::Ordinal)) `
+        -Message "The failure must name the second manifest. Actual: $($case23.Message)"
+
     if ($script:Failures.Count -gt 0) {
         Write-Host "Restore lock contract tests failed ($($script:Failures.Count) assertions):"
         foreach ($failure in $script:Failures) {
@@ -428,7 +478,7 @@ try {
         exit 1
     }
 
-    Write-Host 'Restore lock contract tests passed (20 cases).'
+    Write-Host 'Restore lock contract tests passed (23 cases).'
     # Explicit, because the success path would otherwise inherit the exit code of whatever native
     # command ran last. That is green today only by accident of case 20 succeeding; append a case
     # that expects a failure after it and this script would report red while every assertion passed.
