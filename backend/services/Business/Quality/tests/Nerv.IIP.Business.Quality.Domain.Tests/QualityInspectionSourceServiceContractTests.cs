@@ -40,13 +40,31 @@ public sealed class QualityInspectionSourceServiceContractTests
     [Fact]
     public void Inspection_record_accepts_exactly_the_contract_source_services()
     {
+        // ① contract ⊆ domain：词表里的每个取值 Domain 都必须收。
         foreach (var sourceService in QualityInspectionSourceServices.All)
         {
             var record = CreateRecord(sourceService);
             Assert.Equal(sourceService, record.SourceService);
         }
 
+        // ② domain ⊆ contract：Domain 不得多收词表以外的取值。
+        //
+        // 缺了这一半，用例名里的 exactly 就是不成立的完备性声明——而**漏掉的正是 #3191 复发所需的
+        // 全部条件**：Quality 侧新增一个 sourceService 而公开词表不认、跨服务的门自然也不认，
+        // 本票修的缺陷原样回来，且这条契约照绿。这里直接反射域内值域逐值比对，不靠抽样。
+        Assert.Equal(
+            QualityInspectionSourceServices.All.Order(StringComparer.Ordinal),
+            DomainSourceServices().Order(StringComparer.Ordinal));
+
         Assert.Throws<ArgumentException>(() => CreateRecord(QualityIntegrationEventSources.BusinessMes));
+    }
+
+    private static IReadOnlyCollection<string> DomainSourceServices()
+    {
+        var field = typeof(InspectionRecord).GetField("SourceServices", BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException(
+                "InspectionRecord.SourceServices 不存在：域内来源服务值域改名后，本契约会退化成只断言单向，必须同步。");
+        return (HashSet<string>)field.GetValue(null)!;
     }
 
     private static InspectionRecord CreateRecord(string sourceService)
