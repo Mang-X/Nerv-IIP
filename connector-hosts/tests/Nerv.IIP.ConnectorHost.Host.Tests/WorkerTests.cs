@@ -104,12 +104,12 @@ public sealed class WorkerTests
                 "second reporting wait entered before timer registration",
                 () => $"reportingCycles={protocol.ReportingCycles}, now={clock.GetUtcNow():O}");
 
-            clock.Advance(TimeSpan.FromSeconds(4));
             signal.ReleaseSecondWait();
             await ObserveAsync(
                 signal.SecondWaitArmed.Task,
                 "second reporting wait armed (new heartbeat timer registered)",
                 () => $"reportingCycles={protocol.ReportingCycles}, now={clock.GetUtcNow():O}");
+            clock.Advance(TimeSpan.FromSeconds(4));
             await ObserveAsync(
                 monitor.Checked.Task,
                 "first connection check",
