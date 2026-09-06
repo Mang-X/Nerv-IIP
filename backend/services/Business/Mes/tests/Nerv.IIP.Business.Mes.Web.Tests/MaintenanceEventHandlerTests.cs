@@ -695,14 +695,20 @@ public sealed class MaintenanceEventHandlerTests
     }
 
     [Fact]
-    public void PostgreSQL_profile_uses_persistent_dead_letter_store()
+    public void Persistence_registration_resolves_scoped_persistent_dead_letter_store()
     {
-        using var factory = new MesPostgreSqlWebApplicationFactory();
-        using var scope = factory.Services.CreateScope();
+        var services = new ServiceCollection();
+        services.AddSingleton<IMediator, NoopMediator>();
+        services.AddMesPostgreSqlPersistence("Host=localhost;Database=nerv_iip_mes_dead_letter_test;Username=nerv;Password=nerv");
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
 
         var store = scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>();
 
         Assert.IsType<PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>(store);
+        Assert.Same(store, scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>());
+        using var otherScope = provider.CreateScope();
+        Assert.NotSame(store, otherScope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>());
     }
 
     private static AssetUnavailableIntegrationEvent CreateUnavailableEvent(DateTimeOffset fromUtc, int eventVersion = MaintenanceIntegrationEventVersions.V1)
@@ -834,21 +840,6 @@ public sealed class MaintenanceEventHandlerTests
             _ = request;
             _ = cancellationToken;
             throw new NotSupportedException("Noop mediator cannot stream requests.");
-        }
-    }
-
-    private sealed class MesPostgreSqlWebApplicationFactory : WebApplicationFactory<Program>
-    {
-        protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
-        {
-            builder.ConfigureAppConfiguration((_, configuration) =>
-            {
-                configuration.AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["ConnectionStrings:PostgreSQL"] = "Host=localhost;Database=nerv_iip_mes_dead_letter_test;Username=nerv;Password=nerv",
-                    ["InternalService:BearerToken"] = "test-internal-token",
-                });
-            });
         }
     }
 
