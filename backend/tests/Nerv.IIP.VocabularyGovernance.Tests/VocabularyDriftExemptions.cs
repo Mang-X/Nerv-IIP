@@ -268,15 +268,9 @@ internal static class VocabularyDriftExemptions
             "mes",
             "同值不同义：需求计划的供给来源系统（与同一构造第 2 位的 work-order 源单据类型配套），非检验来源服务。",
             $"{Svc}/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Planning/PlanningInputAdapters.cs"),
-        // 库存预留来源服务是 Inventory 自己的轴（与 InventoryIntegrationEventSources.BusinessMes 成对出现，
-        // 见各处上下文），其权威是 Contracts.Inventory；该轴今天没有 Mes 常量，但补它属 Inventory 的值域决策，
-        // 不能拿检验来源服务顶替——两条轴的取值集合并不相同（检验轴有 mes-operation / purchase-receipt，预留轴没有）。
-        ..Group(
-            "mes",
-            "同值不同义：库存预留来源服务（Inventory 自有轴，权威在 Contracts.Inventory），非检验来源服务。",
-            $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Commands/StockReservations/ReleaseStockReservationsBySourceCommand.cs",
-            $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Expiry/StockReservationExpirationOptions.cs",
-            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/IntegrationEventHandlers/InventoryReservationExpiredIntegrationEventHandlerForMarkMesRequestExpired.cs"),
+        // #3191 已销账：库存预留来源服务是 Inventory 自己的轴，此前该轴没有 Mes 常量，三处调用点只能写
+        // 裸字面量。已给 InventoryMovementSourceServices 补 Mes = "mes"（纯加法）并改常量引用，
+        // 对应豁免已删除——它本来就属「待销账延期」而非「永久裁决」，登记成后者会让这三处永远不再被追。
         ..Group(
             "mes",
             "同值不同义：世界史种子里补产工单的来源计划参考 sourceSystem（与 sourceDocumentType 配套），非检验来源服务。",

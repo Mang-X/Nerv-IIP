@@ -41,6 +41,17 @@ public static class InventoryMovementSourceServices
     /// 各自独立演化，不可互相引用（#1370 ③ 批次 D 补值；消费端 Inventory 对该字段只透传、无白名单校验）。
     /// </summary>
     public const string Maintenance = "maintenance";
+
+    /// <summary>
+    /// MES 侧发起的库存预留所写的来源服务短名（载荷 <c>SourceService</c> 面）。与事件信封来源
+    /// <see cref="InventoryIntegrationEventSources.BusinessMes"/>（<c>business-mes</c>）恰好是**两个面**，
+    /// 预留读写路径两个取值都接受（见 <c>StockReservationExpirationOptions</c> 与
+    /// <c>ReleaseStockReservationsBySourceCommand</c>）。
+    /// #3191 补值：这条轴此前没有 Mes 常量，三处调用点只能写裸字面量；与检验来源服务轴
+    /// <c>Nerv.IIP.Contracts.Quality.QualityInspectionSourceServices.Mes</c> 同值但不同义
+    /// （取值集合都不同：检验轴有 mes-operation / purchase-receipt，本轴没有），不可互相引用。
+    /// </summary>
+    public const string Mes = "mes";
 }
 
 public static class InventoryMovementRequestTypes

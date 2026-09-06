@@ -38,6 +38,10 @@ public sealed class InspectionResultMesScopeTests
         },
         // 终检：来源单据是入库申请单号，不是工单／工序身份。
         { QualityInspectionSourceTypes.Final, QualityInspectionSourceServices.Mes, "FGR-REQ-001", null, null },
+        // MesOwned 守卫的**唯一**鉴别格：来源环节是工序、但来源服务不归 MES。既有的非 MES 行都同时
+        // 是非工序来源环节，会被后面那道 sourceType 判据兜住，删掉 MesOwned 守卫照样绿——
+        // 没有这一行，那道守卫零鉴别力。
+        { QualityInspectionSourceTypes.Operation, QualityInspectionSourceServices.Erp, "WO-001", null, null },
         // 非 MES 归属：收货检的来源单据是收货单号。
         { QualityInspectionSourceTypes.Receiving, QualityInspectionSourceServices.PurchaseReceipt, "RCV-001", null, null },
         { QualityInspectionSourceTypes.CustomerReturn, QualityInspectionSourceServices.CustomerReturn, "RMA-001", null, null },

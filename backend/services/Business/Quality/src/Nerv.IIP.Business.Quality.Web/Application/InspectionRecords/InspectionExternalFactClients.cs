@@ -100,11 +100,14 @@ public sealed record ErpPurchaseReceiptLineFact(
 public sealed class ErpPurchaseReceiptInspectionSourceDocumentVerifier(
     IErpPurchaseReceiptFactClient receiptFactClient) : IInspectionSourceDocumentVerifier
 {
+    // 三个取值都在**来源服务**轴上（与 record.SourceService 比较）。此前两处借了别的轴的同值常量：
+    // WmsSourceDocumentTypes.PurchaseReceipt 是来源**单据类型**，QualityInspectionSourceTypes.Wms 是
+    // 来源**环节**词表里那个被注释为「服务轴遗留项」的成员——都是这条轴当年无词表可引的产物（#3191）。
     private static readonly string[] SupportedSourceServices =
     [
-        WmsSourceDocumentTypes.PurchaseReceipt,
+        QualityInspectionSourceServices.PurchaseReceipt,
         QualityInspectionSourceServices.Erp,
-        QualityInspectionSourceTypes.Wms,
+        QualityInspectionSourceServices.Wms,
     ];
 
     public async Task<InspectionSourceDocumentVerification> VerifyAsync(
