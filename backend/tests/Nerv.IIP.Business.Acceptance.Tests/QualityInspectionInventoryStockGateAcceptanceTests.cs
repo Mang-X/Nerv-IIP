@@ -1,8 +1,8 @@
 using FluentValidation;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Inventory.Domain;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
@@ -389,7 +389,6 @@ public sealed class QualityInspectionInventoryStockGateAcceptanceTests
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
             => Entries.Add(new LogEntry(logLevel, formatter(state, exception)));
     }
-
 }
 
 internal static class QualityInspectionInventoryStockGateFacts
