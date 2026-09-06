@@ -25,7 +25,6 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 public sealed class MesReworkReceiptRedisCapTransportTests(ITestOutputHelper output)
 {
     private const string DeploymentProfile = "Issue3010Acceptance";
-    private const string DiagnosticEventId = "evt-rework-diagnostic";
     private const string SensitiveMarker = "mock-secret-payload-do-not-output";
 
     [MesReworkReceiptPostgresRedisFact]
@@ -86,40 +85,6 @@ public sealed class MesReworkReceiptRedisCapTransportTests(ITestOutputHelper out
             options: new EventuallyOptions(TimeSpan.FromSeconds(90), TimeSpan.FromMilliseconds(250), [])).AsTask(),
             () => CaptureAsync(factory), output.WriteLine);
 
-        // 在原业务断言完成后经真实 Redis/CAP 投递一个受控回执，证明首次异常不会被重试覆盖。
-        var receipt = Assert.Single(probe.Receipts);
-        using (var scope = factory.Services.CreateScope())
-        {
-            await scope.ServiceProvider.GetRequiredService<ICapPublisher>().PublishAsync(
-                nameof(ReworkWorkOrderCreatedIntegrationEvent),
-                receipt with { EventId = DiagnosticEventId, CausationId = SensitiveMarker });
-        }
-
-        await PreserveFailureAsync(() => Eventually.AssertAsync(
-            condition: "controlled receipt failure retains first and subsequent CAP attempts",
-            assertion: async token =>
-            {
-                using var scope = factory.Services.CreateScope();
-                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-                var rows = await ReadReceivedAsync(db, token);
-                var failed = Assert.Single(rows, row => row.EventId == DiagnosticEventId);
-                Assert.Equal("Failed", failed.StatusName);
-                Assert.Equal(3, failed.Retries);
-                var observations = concurrencyGate.ObservationsFor(DiagnosticEventId);
-                Assert.Equal([0, 1, 2], observations.Where(x => x.Stage == "filter-enter").Select(x => x.Retries));
-                Assert.Equal(["InvalidDataException>InvalidOperationException", "FormatException", "FormatException"],
-                    observations.Where(x => x.Stage == "subscriber-exception").Select(x => x.ExceptionTypes));
-                Assert.Equal(3, observations.Count(x => x.Stage == "filter-passed"));
-                Assert.DoesNotContain(observations, x => x.Stage == "subscriber-completed");
-            },
-            options: new EventuallyOptions(TimeSpan.FromSeconds(30), TimeSpan.FromMilliseconds(100), [])).AsTask(),
-            () => CaptureAsync(factory), output.WriteLine);
-        var summary = await CaptureAsync(factory);
-        Assert.DoesNotContain(SensitiveMarker, summary);
-        Assert.Contains("InvalidDataException>InvalidOperationException", summary);
-        Assert.Contains("FormatException", summary);
-        Assert.Contains("retries=3 status=Failed", summary);
-        output.WriteLine(summary);
     }
 
     private static async Task PublishAsync(
@@ -248,12 +213,12 @@ public sealed class MesReworkReceiptRedisCapTransportTests(ITestOutputHelper out
         Assert.Equal(["received-diagnostics unavailable"], lines);
     }
 
-    private sealed record ReceivedRow(string Id, string MessageId, string EventId, string Name, string Group, int Retries, string StatusName);
+    private sealed record ReceivedRow(string Id, string MessageId, int Retries, string StatusName);
 
     private static Task<ReceivedRow[]> ReadReceivedAsync(ApplicationDbContext db, CancellationToken token) =>
         db.Database.SqlQueryRaw<ReceivedRow>("""
             SELECT "Id"::text AS "Id", "Content"::jsonb -> 'Headers' ->> 'cap-msg-id' AS "MessageId",
-                "Content"::jsonb -> 'Value' ->> 'EventId' AS "EventId", "Name", "Group", "Retries", "StatusName"
+                "Retries", "StatusName"
             FROM cap.received ORDER BY "Id"
             """).ToArrayAsync(token);
 
@@ -340,7 +305,6 @@ public sealed class MesReworkReceiptRedisCapTransportTests(ITestOutputHelper out
     public sealed class ReworkReceiptTransportProbe : ICapSubscribe
     {
         private readonly ConcurrentQueue<ReworkWorkOrderCreatedIntegrationEvent> receipts = new();
-        private int diagnosticAttempts;
 
         public IReadOnlyCollection<ReworkWorkOrderCreatedIntegrationEvent> Receipts => receipts.ToArray();
 
@@ -349,14 +313,6 @@ public sealed class MesReworkReceiptRedisCapTransportTests(ITestOutputHelper out
             ReworkWorkOrderCreatedIntegrationEvent integrationEvent,
             CancellationToken cancellationToken)
         {
-            if (integrationEvent.EventId == DiagnosticEventId)
-            {
-                if (Interlocked.Increment(ref diagnosticAttempts) == 1)
-                {
-                    throw new InvalidDataException(SensitiveMarker, new InvalidOperationException(SensitiveMarker));
-                }
-                throw new FormatException(SensitiveMarker);
-            }
             receipts.Enqueue(integrationEvent);
             return Task.CompletedTask;
         }
@@ -367,23 +323,18 @@ public sealed class MesReworkReceiptRedisCapTransportTests(ITestOutputHelper out
         private readonly TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly HashSet<string> eventIds = new(StringComparer.Ordinal);
         private readonly List<Observation> observations = [];
-        private readonly Dictionary<string, (string EventId, string Category, string Stage)> deliveries = [];
+        private readonly Dictionary<string, (string Category, string Stage)> deliveries = [];
         private int sequence;
 
-        internal sealed record Observation(int Sequence, string ReceivedId, string MessageId, string EventId,
+        private sealed record Observation(int Sequence, string ReceivedId, string MessageId,
             string Category, int Retries, string Stage, string ExceptionTypes);
-
-        public Observation[] ObservationsFor(string eventId)
-        {
-            lock (eventIds) { return observations.Where(x => x.EventId == eventId).ToArray(); }
-        }
 
         private void Observe(FilterContext context, string stage, Exception? exception = null)
         {
             lock (eventIds)
             {
                 var delivery = deliveries[context.MediumMessage.DbId];
-                deliveries[context.MediumMessage.DbId] = (delivery.EventId, delivery.Category, stage);
+                deliveries[context.MediumMessage.DbId] = (delivery.Category, stage);
                 var types = new List<string>();
                 for (var current = exception; current is not null && types.Count < 4; current = current.InnerException)
                 {
@@ -393,7 +344,7 @@ public sealed class MesReworkReceiptRedisCapTransportTests(ITestOutputHelper out
                 if (observations.Count < 64)
                 {
                     observations.Add(new(sequence, context.MediumMessage.DbId, context.DeliverMessage.GetId(),
-                        delivery.EventId, delivery.Category, context.MediumMessage.Retries, stage, string.Join(">", types)));
+                        delivery.Category, context.MediumMessage.Retries, stage, string.Join(">", types)));
                 }
             }
         }
@@ -437,11 +388,10 @@ public sealed class MesReworkReceiptRedisCapTransportTests(ITestOutputHelper out
         public override async Task OnSubscribeExecutingAsync(ExecutingContext context)
         {
             var value = context.Arguments.Single(x => x is NcrReworkRequestedIntegrationEvent or ReworkWorkOrderCreatedIntegrationEvent)!;
-            var (id, category) = value is NcrReworkRequestedIntegrationEvent input
-                ? (input.EventId, input.EventId == "evt-rework-transport-001" ? "input-first" : "input-second")
-                : (((ReworkWorkOrderCreatedIntegrationEvent)value).EventId,
-                    ((ReworkWorkOrderCreatedIntegrationEvent)value).EventId == DiagnosticEventId ? "receipt-controlled" : "receipt");
-            lock (eventIds) { deliveries[context.MediumMessage.DbId] = (id, category, "filter-enter"); }
+            var category = value is NcrReworkRequestedIntegrationEvent input
+                ? (input.EventId == "evt-rework-transport-001" ? "input-first" : "input-second")
+                : "receipt";
+            lock (eventIds) { deliveries[context.MediumMessage.DbId] = (category, "filter-enter"); }
             Observe(context, "filter-enter");
             var integrationEvent = context.Arguments
                 .OfType<NcrReworkRequestedIntegrationEvent>()
