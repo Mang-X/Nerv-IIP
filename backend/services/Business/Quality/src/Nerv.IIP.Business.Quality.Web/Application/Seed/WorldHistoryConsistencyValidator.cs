@@ -137,7 +137,7 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         }
 
         // 2) 质量 ↔ 报工数量对账：工序检验的受检量必须等于一期工单的投料量。
-        if (string.Equals(task.SourceType, "operation", StringComparison.Ordinal))
+        if (string.Equals(task.SourceType, QualityInspectionSourceTypes.Operation, StringComparison.Ordinal))
         {
             if (!workOrderQuantities.TryGetValue(task.SourceDocumentId, out var workOrderPlan))
             {

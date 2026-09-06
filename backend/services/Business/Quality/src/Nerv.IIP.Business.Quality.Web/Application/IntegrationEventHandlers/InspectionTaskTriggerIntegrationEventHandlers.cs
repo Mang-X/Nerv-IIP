@@ -168,7 +168,7 @@ public sealed class MesOperationCompletedIntegrationEventHandlerForCreateInspect
             dbContext,
             integrationEvent.OrganizationId,
             integrationEvent.EnvironmentId,
-            sourceType: "operation",
+            sourceType: QualityInspectionSourceTypes.Operation,
             sourceService: "mes",
             sourceDocumentId: payload.WorkOrderId,
             sourceDocumentLineId: payload.OperationTaskId,
@@ -215,7 +215,7 @@ public sealed class MesFinishedGoodsReceiptRequestedIntegrationEventHandlerForCr
             dbContext,
             integrationEvent.OrganizationId,
             integrationEvent.EnvironmentId,
-            sourceType: "final",
+            sourceType: QualityInspectionSourceTypes.Final,
             sourceService: "mes",
             sourceDocumentId: payload.RequestNo,
             sourceDocumentLineId: payload.WorkOrderId,
@@ -239,7 +239,7 @@ public sealed class MesFinishedGoodsReceiptRequestedIntegrationEventHandlerForCr
 public static class FirstArticleInspection
 {
     /// <summary>首件任务与首件检验档的来源环节，等于 <c>InspectionPlan.Category</c>。</summary>
-    public const string SourceType = "first-article";
+    public const string SourceType = QualityInspectionSourceTypes.FirstArticle;
 
     /// <summary>首件任务的来源服务：触发事实来自 MES 报工。</summary>
     public const string SourceService = "mes";

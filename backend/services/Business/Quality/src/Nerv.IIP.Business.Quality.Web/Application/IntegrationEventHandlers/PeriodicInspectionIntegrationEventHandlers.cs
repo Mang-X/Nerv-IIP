@@ -9,6 +9,7 @@ using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
+using Nerv.IIP.Contracts.Quality;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.IntegrationEventHandlers;
 
@@ -119,7 +120,7 @@ internal static class PeriodicInspectionReleaseProjection
                     plan.OrganizationId == integrationEvent.OrganizationId
                     && plan.EnvironmentId == integrationEvent.EnvironmentId
                     && plan.Status == "active"
-                    && plan.Category == "operation"
+                    && plan.Category == QualityInspectionSourceTypes.Operation
                     && plan.SkuCode == payload.SkuCode.Trim()
                     && plan.WorkCenterId != null
                     && workCenterIds.Contains(plan.WorkCenterId)
@@ -560,7 +561,7 @@ internal static class PeriodicInspectionQuantityTaskGeneration
                     context.OrganizationId,
                     context.EnvironmentId,
                     context.InspectionPlanId,
-                    sourceType: "operation",
+                    sourceType: QualityInspectionSourceTypes.Operation,
                     sourceService: "mes",
                     sourceDocumentId: context.WorkOrderId,
                     sourceDocumentLineId: $"{context.OperationId}:periodic-quantity:{context.Id.Id:D}:{window.Sequence}",
