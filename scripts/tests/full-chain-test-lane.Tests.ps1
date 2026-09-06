@@ -26,6 +26,56 @@ function Assert-Contract([bool]$Condition, [string]$Message) {
     if (-not $Condition) { throw $Message }
 }
 
+function Assert-FullChainScriptLiveOutputContract {
+    param([string] $Source)
+
+    # Governance / Regression: #3166 requires every script-kind member to opt in,
+    # independent of its identity or position. Execute the production action.
+    $ast = [Management.Automation.Language.Parser]::ParseInput($Source, [ref]$null, [ref]$null)
+    $assignment = $ast.Find({ param($node)
+        $node -is [Management.Automation.Language.AssignmentStatementAst] -and
+        [string]::Equals($node.Left.Extent.Text, '$memberAction', [StringComparison]::Ordinal)
+    }, $true)
+    $action = $assignment.Right.Expression.ScriptBlock.GetScriptBlock()
+    $calls = [Collections.Generic.List[object]]::new()
+    function Invoke-NativeCommandWithTimeout {
+        param($Command, $Arguments, $WorkingDirectory, $TimeoutSeconds, $Name, [switch] $LiveOutput)
+        $calls.Add([pscustomobject]@{ Command = $Command; Arguments = $Arguments; Timeout = $TimeoutSeconds; Name = $Name; Live = $LiveOutput.IsPresent })
+    }
+    function Invoke-PwshScript {
+        param($ScriptPath, $Arguments, $WorkingDirectory, $TimeoutSeconds, $Name)
+        $calls.Add([pscustomobject]@{ Command = 'pwsh'; Arguments = $Arguments; Timeout = $TimeoutSeconds; Name = $Name; Live = $false })
+    }
+    function Get-NervRuntimeMemorySnapshot { param($Phase) return @{} }
+    function Write-NervFullChainSummarySnapshot { }
+    $summary = @{ readiness = @{ postgres = 'passed'; redis = 'passed' } }
+    $canonicalResultEnabled = $false
+    $scriptEntrypointTimeoutSeconds = 900
+    foreach ($ids in @(
+        @('new-script-a', 'ncr-rework-cost-closure', 'new-script-b'),
+        @('new-script-b', 'new-script-a'),
+        @('ncr-rework-cost-closure', 'new-script-b', 'new-script-a')
+    )) {
+        for ($memberIndex = 0; $memberIndex -lt $ids.Count; $memberIndex++) {
+            $id = $ids[$memberIndex]
+            $member = @{ id = $id; dependencies = @{ redis = $true }; entrypoint = @{ kind = 'script'; path = "scripts/$id.ps1" } }
+            $entrypointKind = $member.entrypoint.kind
+            $memberResultsDirectory = Join-Path $fixtureRoot "live-$id"
+            $resultFile = "full-chain-$id.trx"
+            $memberSummary = @{ memory = @{} }
+            $before = $calls.Count
+            & $action $id
+            Assert-Contract ($calls.Count -eq $before + 1) "Script '$id' must invoke exactly one managed command."
+            $call = $calls[$before]
+            Assert-Contract $call.Live "Script '$id' at index $memberIndex must enable LiveOutput."
+            Assert-Contract ($call.Timeout -eq 900) "Script '$id' must preserve its entrypoint budget."
+            Assert-Contract ([string]::Equals($call.Command, 'pwsh', [StringComparison]::Ordinal) -and
+                [string]::Equals($call.Name, "full-chain-$id-entrypoint", [StringComparison]::Ordinal) -and
+                [string]::Equals(($call.Arguments -join '|'), (@('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $repoRoot $member.entrypoint.path)) -join '|'), [StringComparison]::Ordinal)) "Script '$id' must preserve its managed invocation."
+        }
+    }
+}
+
 function Assert-FullChainDeadlineAdmissionContract {
     param(
         [Parameter(Mandatory)] [scriptblock] $Admission,
@@ -606,6 +656,17 @@ try {
         [Environment]::SetEnvironmentVariable('COMPOSE_PROJECT_NAME', $savedComposeProject)
     }
     $runnerContent = [IO.File]::ReadAllText($runnerPath)
+    Assert-FullChainScriptLiveOutputContract -Source $runnerContent
+    foreach ($liveMutation in @(
+        @{ Name = 'disabled'; Replacement = '-LiveOutput:$false' },
+        @{ Name = 'NCR-only'; Replacement = '-LiveOutput:([string]::Equals($admittedMemberId, ''ncr-rework-cost-closure'', [StringComparison]::Ordinal))' },
+        @{ Name = 'first-index-only'; Replacement = '-LiveOutput:($memberIndex -eq 0)' }
+    )) {
+        $liveFailure = $null
+        try { Assert-FullChainScriptLiveOutputContract -Source $runnerContent.Replace('-LiveOutput', $liveMutation.Replacement) }
+        catch { $liveFailure = $_ }
+        Assert-Contract ($null -ne $liveFailure -and $liveFailure.Exception.Message.Contains('must enable LiveOutput', [StringComparison]::Ordinal)) "LiveOutput mutation '$($liveMutation.Name)' must fail the opt-in behavior."
+    }
     foreach ($requiredFragment in @(
         'Import-NervFullChainTestLaneManifest',
         'Get-NervFullChainTrxResult',
