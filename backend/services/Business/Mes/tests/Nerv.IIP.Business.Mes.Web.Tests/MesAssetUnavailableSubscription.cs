@@ -47,12 +47,20 @@ internal sealed class MesAssetUnavailableSubscription
             Assert.Contains(prefix + nameof(AssetUnavailableIntegrationEvent), actualTopics);
             Assert.Contains(prefix + "nerv-iip.issue2966acceptance.business-maintenance.maintenance.asset-unavailable.v2", actualTopics);
             boundary.Entered.TrySetResult();
-            await TestTimeout.RunAsync("MES controlled actual Subscribe release", async token =>
-                await boundary.released.Task.WaitAsync(token), TimeSpan.FromSeconds(30));
-            // CAP Redis Subscribe awaits CreateStreamWithConsumerGroupAsync for each exact topic/group,
-            // then assigns its listening topics. No group creation, cursor change or message IO here.
-            await inner.SubscribeAsync(actualTopics);
-            boundary.subscribed.TrySetResult();
+            try
+            {
+                await TestTimeout.RunAsync("MES controlled actual Subscribe release", async token =>
+                    await boundary.released.Task.WaitAsync(token), TimeSpan.FromSeconds(30));
+                // CAP Redis Subscribe awaits CreateStreamWithConsumerGroupAsync for each exact topic/group,
+                // then assigns its listening topics. No group creation, cursor change or message IO here.
+                await inner.SubscribeAsync(actualTopics);
+                boundary.subscribed.TrySetResult();
+            }
+            catch (Exception failure)
+            {
+                boundary.subscribed.TrySetException(failure);
+                throw;
+            }
         }
 
         public Task ListeningAsync(TimeSpan timeout, CancellationToken token) => inner.ListeningAsync(timeout, token);
