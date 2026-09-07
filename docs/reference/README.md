@@ -14,6 +14,7 @@
 | [`api/platform-gateway-restore.manifest.json`](api/platform-gateway-restore.manifest.json) | `Nerv.IIP.PlatformGateway.Web.csproj` 的 evaluated ProjectReference 闭包（12 个项目）及其 `packages.lock.json` | 闭包成员、其 `PackageReference` 或任一 lock 变更时与代码原子更新 | `scripts/verify-restore-lock-contract.ps1`（Script Governance job） | 既有机器输入；与 BusinessGateway 那份不同，本份不记录 canonicalization toolchain，纯粹是 restore 合同的 hash 台账（#3157） |
 | [`data/database-schema-catalog.md`](data/database-schema-catalog.md) | EF Core migrations、EntityConfigurations、DbContext | Schema/迁移变更时同步人工解释；物理结构以代码为准 | 后端开发、数据库治理、发布排障 | 人工维护 |
 | [`demo/factory-world-bible.md`](demo/factory-world-bible.md) | `WalkthroughSeedSpec`、对应 seed 与行为测试 | 最小走查设定/价格/工时调整时与代码投影一起修改 | Product、Demo、真实走查 | 人工维护，与 seed/spec 共同受控 |
+| [`frontend/navigation-map.md`](frontend/navigation-map.md) | Console/Business Console/PDA 导航代码、AppShell、Gateway/OpenAPI、IAM/permission producer | 只维护 producer 指针与核对方法，不复制完整 route/page/facade/permission/端口清单 | Frontend、Product、Docs、Agent | 人工索引；精确事实回到 producer |
 | [`frontline/contract-page-scope-action.md`](frontline/contract-page-scope-action.md) | BusinessGateway OpenAPI、Gateway 授权/代理实现、generated client、业务服务与页面代码 | 公开 operation、scope、action 或页面消费变化时复核 | 一线页面、PDA/Console 产品与验收 | 人工维护 |
 | [`frontline/acceptance-evidence.md`](frontline/acceptance-evidence.md) | 当前公开读写面与真实验收输入 | 真实验收证据口径变化时更新 | PDA/Console 真实账号验收 | 人工模板 |
 | [`glossary.md`](glossary.md) | 当前领域边界、公开契约与产品语义 | 术语边界变化时同步 | 全仓文档与命名评审 | 人工维护 |
