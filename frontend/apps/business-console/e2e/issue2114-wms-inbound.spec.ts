@@ -1,22 +1,16 @@
 import { expect, test } from '@playwright/test'
 import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
-import type * as Api from '../../../packages/api-client/src/generated/business-console/types.gen'
-import type { NervIipPlatformGatewayWebApplicationAuthConsoleAuthResponse as Auth } from '../../../packages/api-client/src/generated/types.gen'
+import type * as Api from '@nerv-iip/api-client'
+import type { ConsoleAuthResponse as Auth } from '@nerv-iip/api-client'
 import { runProcurement, type PublicCall, type Row } from './procurementScenario'
 
-type Inbound =
-  Api.NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsInboundOrderItem
-type Task =
-  Api.NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWarehouseTaskItem
-type MovementList =
-  Api.NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryMovementListResponse
-type Availability =
-  Api.NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryAvailabilityResponse
-type Completion =
-  Api.NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteWmsMovementResponse
-type Action =
-  Api.NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWarehouseTaskActionResult
+type Inbound = Api.BusinessConsoleWmsInboundOrderItem
+type Task = Api.BusinessConsoleWmsWarehouseTaskItem
+type MovementList = Api.BusinessConsoleInventoryMovementListResponse
+type Availability = Api.BusinessConsoleInventoryAvailabilityResponse
+type Completion = Api.BusinessConsoleCompleteWmsMovementResponse
+type Action = Api.BusinessConsoleWmsWarehouseTaskActionResult
 const evidencePath = process.env.NERV_IIP_NERV2114_EVIDENCE_PATH
 const scenario = process.env.NERV_IIP_NERV2114_SCENARIO!
 const scope = { organizationId: 'org-001', environmentId: 'env-dev' }
@@ -76,20 +70,19 @@ test('NERV-2114 真实采购收货经仓管上架形成唯一批次库存', asyn
       beforeCall: pace,
       afterReceipt: async ({ call, query, order, report }) => {
         report.worker = { principalId: auth.principal!.principalId, calls: workerCalls }
-        const catalog =
-          await workerCall<Api.NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWorkScopeCatalog>(
-            'GET',
-            query(`${wms}/work-scopes/receipts`),
-          )
+        const catalog = await workerCall<Api.BusinessConsoleWmsWorkScopeCatalog>(
+          'GET',
+          query(`${wms}/work-scopes/receipts`),
+        )
         const pool = catalog.items!.filter(
           (item) => item.scopeKind === 'work-pool' && item.siteCode === 'SITE-001',
         )
         expect(pool).toHaveLength(1)
         expect(catalog.actorPrincipalId).toBe(auth.principal!.principalId)
         const workScope = { scopeKind: 'work-pool', scopeId: pool[0].scopeId! }
-        const requirement = order.requirement as { skuCode: string; unitOfMeasureCode: string }
-        const quantity = order.quantity as number
-        const suffix = (order.purchaseOrderNo as string).replace('PO-', '')
+        const requirement = order.requirement
+        const quantity = order.quantity
+        const suffix = order.purchaseOrderNo.replace('PO-', '')
         const inboundOrderNo = `IB-${suffix}`
         const lotNo = `LOT-${suffix}`
         const inventoryQuery = {
@@ -104,42 +97,40 @@ test('NERV-2114 真实采购收货经仓管上架形成唯一批次库存', asyn
             query('/api/business-console/v1/inventory/availability', inventoryQuery),
           )
         expect((await availability()).availableQuantity).toBe(0)
-        const inbound =
-          await call<Api.NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateWmsInboundOrderResponse>(
-            'POST',
-            query(`${wms}/inbound-orders`),
-            {
-              ...scope,
-              inboundOrderNo,
-              sourceDocumentType: 'purchase-receipt',
-              sourceDocumentId: order.purchaseReceiptNo as string,
-              siteCode: 'SITE-001',
-              lines: [
-                {
-                  lineNo: '10',
-                  skuCode: requirement.skuCode,
-                  uomCode: requirement.unitOfMeasureCode,
-                  receivedQuantity: quantity,
-                  stagingLocationCode: 'loc-raw-01',
-                  lotNo,
-                  qualityStatus: 'unrestricted',
-                  ownerType: 'company',
-                },
-              ],
-            } satisfies Api.NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateWmsInboundOrderRequest,
-          )
+        const inbound = await call<Api.BusinessConsoleCreateWmsInboundOrderResponse>(
+          'POST',
+          query(`${wms}/inbound-orders`),
+          {
+            ...scope,
+            inboundOrderNo,
+            sourceDocumentType: 'purchase-receipt',
+            sourceDocumentId: order.purchaseReceiptNo,
+            siteCode: 'SITE-001',
+            lines: [
+              {
+                lineNo: '10',
+                skuCode: requirement.skuCode,
+                uomCode: requirement.unitOfMeasureCode,
+                receivedQuantity: quantity,
+                stagingLocationCode: 'loc-raw-01',
+                lotNo,
+                qualityStatus: 'unrestricted',
+                ownerType: 'company',
+              },
+            ],
+          } satisfies Api.BusinessConsoleCreateWmsInboundOrderRequest,
+        )
         expect(inbound.inboundOrderId).toMatch(/\S/)
-        const assignment =
-          await call<Api.NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsAssignmentResult>(
-            'POST',
-            query(`${wms}/inbound-orders/${inbound.inboundOrderId}/assignment`),
-            {
-              poolCode: pool[0].poolCode!,
-              operatorPrincipalId: auth.principal!.principalId,
-              expectedVersion: 1,
-              idempotencyKey: `${suffix}-assign`,
-            } satisfies Api.NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAssignWmsResourceRequest,
-          )
+        const assignment = await call<Api.BusinessConsoleWmsAssignmentResult>(
+          'POST',
+          query(`${wms}/inbound-orders/${inbound.inboundOrderId}/assignment`),
+          {
+            poolCode: pool[0].poolCode!,
+            operatorPrincipalId: auth.principal!.principalId,
+            expectedVersion: 1,
+            idempotencyKey: `${suffix}-assign`,
+          } satisfies Api.BusinessConsoleAssignWmsResourceRequest,
+        )
         expect(assignment.operatorPrincipalId).toBe(auth.principal!.principalId)
         const inboundRead = async () => {
           const result = await workerCall<{ items: Inbound[] }>(
@@ -156,18 +147,17 @@ test('NERV-2114 真实采购收货经仓管上架形成唯一批次库存', asyn
           assignedOperatorUserId: auth.principal!.principalId,
           assignedPoolCode: pool[0].poolCode,
         })
-        const task =
-          await workerCall<Api.NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateWmsWarehouseTaskResponse>(
-            'POST',
-            query(`${wms}/inbound-orders/${inbound.inboundOrderId}/putaway-tasks`),
-            {
-              taskNo: `PT-${suffix}`,
-              lineNo: '10',
-              fromLocationCode: 'loc-raw-01',
-              toLocationCode: 'loc-wip-01',
-              quantity,
-            } satisfies Api.NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateWmsPutawayTaskRequest,
-          )
+        const task = await workerCall<Api.BusinessConsoleCreateWmsWarehouseTaskResponse>(
+          'POST',
+          query(`${wms}/inbound-orders/${inbound.inboundOrderId}/putaway-tasks`),
+          {
+            taskNo: `PT-${suffix}`,
+            lineNo: '10',
+            fromLocationCode: 'loc-raw-01',
+            toLocationCode: 'loc-wip-01',
+            quantity,
+          } satisfies Api.BusinessConsoleCreateWmsPutawayTaskRequest,
+        )
         expect(task.warehouseTaskId).toMatch(/\S/)
         const taskRead = async () => {
           const result = await workerCall<{ items: Task[] }>(
@@ -196,7 +186,7 @@ test('NERV-2114 真实采购收货经仓管上架形成唯一批次库存', asyn
           expectedVersion: started.version!,
           idempotencyKey: `${suffix}-putaway`,
           executedQuantity: quantity,
-        } satisfies Api.NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteWmsWarehouseTaskRequest
+        } satisfies Api.BusinessConsoleCompleteWmsWarehouseTaskRequest
         const completedTask = await workerCall<Action>(
           'POST',
           query(`${wms}/putaway-tasks/${task.warehouseTaskId}/complete`),
@@ -217,7 +207,7 @@ test('NERV-2114 真实采购收货经仓管上架形成唯一批次库存', asyn
           ...workScope,
           expectedVersion: (await inboundRead()).version!,
           idempotencyKey: `${suffix}-complete`,
-        } satisfies Api.NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteWmsInboundOrderRequest
+        } satisfies Api.BusinessConsoleCompleteWmsInboundOrderRequest
         const complete = () =>
           workerCall<Completion>(
             'POST',
@@ -275,7 +265,7 @@ test('NERV-2114 真实采购收货经仓管上架形成唯一批次库存', asyn
         expect((await complete()).requestId).toBe(accepted.requestId)
         expect(await movements()).toEqual(first)
         const erp = await call<{
-          items: Api.NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseOrderItem[]
+          items: Api.BusinessConsoleErpPurchaseOrderItem[]
         }>(
           'GET',
           query('/api/business-console/v1/erp/procurement/purchase-orders', {

@@ -23,6 +23,17 @@ import {
 
 export type Row = Record<string, unknown>
 export type PublicCall = <T>(method: 'GET' | 'POST', endpoint: string, body?: Row) => Promise<T>
+export type ProcurementSupplyOrder = {
+  requirement: MbomMaterialLineFact
+  quantity: number
+  quotationNo: SupplierQuotation['quotationNo']
+  purchaseOrderNo: string
+  purchaseReceiptNo: string
+  purchaseReceiptId: RecordReceiptResponse['purchaseReceiptId']
+  approvalChainId: ApprovalChain['chainId']
+  readback: PurchaseOrder
+  wms?: Row
+}
 export type ProcurementOptions = {
   page: Page
   issue: string
@@ -35,7 +46,7 @@ export type ProcurementOptions = {
   afterReceipt?: (context: {
     call: PublicCall
     query: (endpoint: string, extra?: Row) => string
-    order: Row
+    order: ProcurementSupplyOrder
     report: Row
   }) => Promise<void>
 }
@@ -299,7 +310,7 @@ export async function runProcurement(options: ProcurementOptions) {
         receivedQuantity: quantity,
         unitPrice: quote.unitPrice,
       })
-      const supplyOrder = {
+      const supplyOrder: ProcurementSupplyOrder = {
         requirement,
         quantity,
         quotationNo: quote.quotationNo,
