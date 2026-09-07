@@ -14,6 +14,7 @@
 | 数据库发布、迁移、备份、恢复与 seed | [`database-release.md`](database-release.md) | `scripts/install/migrate-*.ps1`、migration manifest、EF migrations、ADR 0009 |
 | FileStorage 停服离线迁移、切换与回滚 | [`file-storage-offline-migration.md`](file-storage-offline-migration.md) | ADR 0027、FileStorage/provider 实现、对应迁移实现 |
 | PDA / Capacitor / APK 构建与部署 | [`mobile-pda-deployment.md`](mobile-pda-deployment.md) | `frontend/apps/business-pda/scripts/pda-apk-build.ps1`、Capacitor/Android 配置 |
+| ERP 销售订单 → DemandPlanning 演示与跨进程验证 | [`erp-sales-order-demand-planning.md`](erp-sales-order-demand-planning.md) | ERP/DemandPlanning 当前代码、AppHost 配置与 `scripts/verify-erp-sales-order-demand-planning.ps1` |
 | Scheduling 订单紧急度归档/恢复与保留发布 | [`scheduling-order-urgency-retention.md`](scheduling-order-urgency-retention.md) | BusinessScheduling/FileStorage 当前代码、配置、迁移与 `scripts/verify-business-scheduling-urgency-retention.ps1` |
 
 ## 操作纪律
