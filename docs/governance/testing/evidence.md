@@ -7,7 +7,8 @@
 - `dotnet test` / VSTest 的自然退出码是测试结果权威；不得用 `continue-on-error`、shell 管道或状态恢复包装器把失败改成绿色。
 - 证据采集与上传可以在失败后执行，但只能观察、脱敏和归档，不能改变测试步骤的成功/失败结论。
 - raw TRX、stdout/stderr、请求/响应正文、连接串和未脱敏附件不得作为 retained artifact 上传；保留产物只包含规范化 TRX、结构化测试记录、摘要与有界诊断。
-- 失败测试原始消息留在受访问控制的 Actions job log；retained evidence 只保存隐私安全的固定/脱敏表示。
+- 失败测试原始消息留在 Actions job log；retained evidence 只保存隐私安全的固定/脱敏表示。
+- 失败详情的脱敏表示由**闭合构造**产生，不是由敏感模式黑名单过滤产生：输出只能是固定前缀加上闭合字段名集合与闭合 token 字母表；原始消息的子串只有同时被具名字段抽取器捕获、且整体落在 token 字母表内才会出现，其余一律折叠成不可逆摘要。未被识别的消息形态回落到固定文案。放宽留存面等于修改这个语法，不能靠新增黑名单模式实现。
 
 当前 artifact 结构、schema、保留期、文件命名和 redaction 细节由 TestEvidence producer 与测试定义，不能靠本文复制第二份实现规范。
 
