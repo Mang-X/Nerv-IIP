@@ -163,6 +163,11 @@ public sealed class InventoryReviewFollowUpTests
         // 的同值常量上，两个常量今天恰好都是 ":out"，行为一致、缺陷潜伏；真写面后缀一改探针就静默失配，
         // 同一个 asOfDate 会被重复下发。
         //
+        // **鉴别力口径**：本用例钉的不变量是「探针后缀随 OutboundLegSuffix 变化」。
+        // 因为 TransferOutLegSuffix 与 OutboundLegSuffix 今天**同值**，只改绑定（B4-E）或只改后缀（B4-C）
+        // 都不会红，**必须两变量发散才红**（B4-D）。这是这类潜伏缺陷的固有形状，
+        // 但因此**它不算一条单变量防线**，方向表里已按此标注。
+        //
         // **夹具必须让探针成为唯一的阻挡物**：第一版写成「跑两遍」是零鉴别力的——第一遍把台账可用量
         // 转光后，服务在 `quantity <= 0` 那道相邻守卫上就 continue 了，**根本走不到探针**
         // （本仓「相邻同型守卫会兜住变异」的同族陷阱，实测两个判别格都不红才发现）。
@@ -201,12 +206,19 @@ public sealed class InventoryReviewFollowUpTests
             Options.Create(new ExpiredStockBlockingOptions { Enabled = true }),
             sender);
 
+        // **前置条件**（必须在 act 之前断言）：台账仍有可用量、仍然过期，`quantity <= 0` 那道
+        // 相邻守卫拦不住它，于是只剩探针能拦。放在 act 之后会遮蔽真正的判据——探针一旦失配就会
+        // 真下发、把台账转光，这条先炸成裸的 Expected True/Actual False，读起来像夹具坏了。
+        Assert.True(
+            ledger.AvailableQuantity > 0,
+            "前置条件不成立：台账已无可用量，`quantity <= 0` 守卫会先拦下，本用例测不到探针。");
+
         var dispatched = await service.BlockExpiredAvailableStockAsync(Today, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        // 台账仍有可用量、仍然过期，`quantity <= 0` 那道守卫拦不住它——只剩探针能拦。
-        Assert.True(ledger.AvailableQuantity > 0);
-        Assert.Equal(0, dispatched);
+        Assert.True(
+            dispatched == 0,
+            $"探针未命中已落库的出库腿，过期封锁重复下发了 {dispatched} 笔状态调拨，幂等性丢失。");
         Assert.Empty(sender.Commands);
     }
 

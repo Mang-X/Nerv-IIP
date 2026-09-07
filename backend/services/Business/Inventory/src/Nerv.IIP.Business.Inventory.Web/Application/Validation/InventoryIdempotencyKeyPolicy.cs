@@ -26,7 +26,8 @@ namespace Nerv.IIP.Business.Inventory.Web.Application.Validation;
 /// ⑥ <see cref="Compose"/> 越界就地拒绝；⑦ <see cref="Compose"/> 调用点闭集；⑧ 绕过面闭集
 /// （⑦⑧ 实测红在**不同**断言上，不是一条）；⑨ FEFO 腿序号上限真被执行；
 /// ⑩ <c>count-code:</c> 前缀键的**真实构造入口**（不是两个常量之间的算术）；
-/// ⑪ 过期封锁的重入探针与状态调拨写面常量同源；⑫ 幂等键列集合非空且计数封闭。
+/// ⑪ 过期封锁的重入探针与状态调拨写面常量同源（**此格需两变量发散才红**：两个常量今天同值，
+/// 只改绑定或只改后缀都不红，故不算单变量防线）；⑫ 幂等键列集合非空且计数封闭。
 ///
 /// 测试侧 2 个：登记集计数封闭；检测分支不可被单边删除（半失配曾经全绿）。
 ///
@@ -60,12 +61,12 @@ internal static class InventoryIdempotencyKeyPolicy
     /// 落库前给幂等键追加后缀的入口：绝不截断（截断会把仅末几位不同的两个键折叠成同一个），
     /// 超出列宽就地抛 <c>KnownException</c>，而不是把越界值送进数据库换一个 22001。
     /// **不要把这里读成「<c>Application/</c> 下所有拼接都走这里」**——那是完备性主张，已知为假。
-/// 源码闭集扫描实际断言的是**两类形状**：`+` 拼接（**单行与跨行都算、左右操作数都算**）
-/// 与插值串续写（前缀后缀都算）。**以下在构造上不在扫描视野内，是已知缺口**：
-/// <c>string.Concat</c> / <c>string.Format</c> / <c>StringBuilder.Append</c> / <c>Span</c> 拼接；
-/// 经**局部别名**转手后再跟**非字面量**后缀（`var k = x.IdempotencyKey; k + SomeSuffix;`）；
-/// 以及别名转手后再插值（语句里已不含 <c>IdempotencyKey</c> 一词，纯文本扫描追不到）。
-/// 覆盖后两类需要数据流分析，本仓不做——**加新写面时别指望扫描替你兜底，请显式走本方法。**
+    /// 源码闭集扫描实际断言的是**两类形状**：`+` 拼接（**单行与跨行都算、左右操作数都算**）
+    /// 与插值串续写（前缀后缀都算）。**以下在构造上不在扫描视野内，是已知缺口**：
+    /// <c>string.Concat</c> / <c>string.Format</c> / <c>StringBuilder.Append</c> / <c>Span</c> 拼接；
+    /// 经**局部别名**转手后再跟**非字面量**后缀（`var k = x.IdempotencyKey; k + SomeSuffix;`）；
+    /// 以及别名转手后再插值（语句里已不含 <c>IdempotencyKey</c> 一词，纯文本扫描追不到）。
+    /// 覆盖后两类需要数据流分析，本仓不做——**加新写面时别指望扫描替你兜底，请显式走本方法。**
     /// </summary>
     public static string Compose(string idempotencyKey, string suffix)
     {

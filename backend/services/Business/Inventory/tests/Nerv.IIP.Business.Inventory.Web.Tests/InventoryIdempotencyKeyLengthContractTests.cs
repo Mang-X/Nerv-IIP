@@ -78,22 +78,25 @@ public sealed partial class InventoryIdempotencyKeyLengthContractTests
 
     /// </summary>
     /// <summary>
-    /// 「改写了幂等键但**不落库**」的具名豁免闭集：键是「文件 + 该文件内的命中数」，
-    /// **不含语句原文**——原文会被任何重排版撞掉，制造假红（用行号也一样，都试过）。
-    /// 计数封闭：已登记文件里新增一处绕过会改变计数，未登记文件出现绕过会多出一项，两种都红。
+    /// 「改写了幂等键但**不落库**」的具名豁免闭集：键是「文件 + **归一化后的语句原文**」。
+    /// **为什么带原文**：只记 (文件, 命中数) 更弱——在**已登记文件内部**用一条落库向裸拼接
+    /// **顶替**掉合法命中，计数不变、护栏全绿（实测过）。带上原文才是逐条身份。
+    /// **原文不会造成假红**：语句已经过剥注释 → 折平 → 空白归一，折行与多余空格都被吸收
+    /// （这两个假红格实测在归一化后转绿），所以「怕重排版」不再是放弃原文的理由。
     /// 逐条理由：
     /// - <c>ReserveStockCommand.cs</c>：FEFO 重放查询的 <c>StartsWith</c> 前缀谓词，构造的是查询前缀。
     /// - <c>Seed/*</c>：<c>$"{SourceDocumentId}|{IdempotencyKey}"</c> 形态的**种子比对键**，
-    ///   只做内存内去重/差分（<c>HashSet</c>、投影 <c>Key</c> 属性），**不写进任何 idempotency_key 列**。
+    ///   只做内存内去重/差分，**不写进任何 idempotency_key 列**。
     /// </summary>
-    private static readonly (string RelativePath, int BypassHitCount)[] ExpectedBypassExemptions =
+    private static readonly string[] ExpectedBypassExemptions =
     [
-        ("Commands/StockReservations/ReserveStockCommand.cs", 1),
-        ("Seed/WorldHistoryConsistencyValidator.cs", 2),
-        ("Seed/WorldHistoryInventorySpec.cs", 1),
-        ("Seed/WorldHistoryReservationSeedService.cs", 1),
-        ("Seed/WorldHistoryReservationSpec.cs", 1),
-        ("Seed/WorldHistorySeedService.cs", 1),
+        "Commands/StockReservations/ReserveStockCommand.cs | var existing = await dbContext.StockReservations.Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.SourceService == request.SourceService && x.SourceDocumentId == request.SourceDocumentId &&(x.IdempotencyKey == request.IdempotencyKey || x.IdempotencyKey.StartsWith(request.IdempotencyKey + ReserveFefoStockCommandHandler.PartSuffixPrefix))).OrderBy(x => x.ExpiryDate ?? DateOnly.MaxValue).ThenBy(x => x.LotNo).ToListAsync(cancellationToken)",
+        "Seed/WorldHistoryConsistencyValidator.cs | public string Key => $\"{SourceDocumentId}|{IdempotencyKey}\"",
+        "Seed/WorldHistoryConsistencyValidator.cs | public string Key => $\"{SourceDocumentId}|{IdempotencyKey}\"",
+        "Seed/WorldHistoryInventorySpec.cs | public string MovementKey => string.Create(CultureInfo.InvariantCulture,$\"{SourceDocumentId}|{IdempotencyKey}\")",
+        "Seed/WorldHistoryReservationSeedService.cs | ).ToArrayAsync(cancellationToken)).Select(x => $\"{x.SourceDocumentId}|{x.IdempotencyKey}\").ToHashSet(StringComparer.Ordinal)",
+        "Seed/WorldHistoryReservationSpec.cs | public string ReservationKey => string.Create(CultureInfo.InvariantCulture,$\"{SourceDocumentId}|{IdempotencyKey}\")",
+        "Seed/WorldHistorySeedService.cs | ).ToArrayAsync(cancellationToken)).Select(x => $\"{x.SourceDocumentId}|{x.IdempotencyKey}\").ToHashSet(StringComparer.Ordinal)",
     ];
 
     [Fact]
@@ -315,6 +318,13 @@ public sealed partial class InventoryIdempotencyKeyLengthContractTests
     ///    - **别名后再插值**：`var k = request.IdempotencyKey; $"{k}:out";` —— 语句里已经没有
     ///      `IdempotencyKey` 这个词，纯文本扫描在构造上追不到。
     ///    要堵死后两类得上数据流分析，本类不做，故如实登记为**已知缺口**。
+    ///
+    ///    **曾经是缺口、现已闭合的（记下来免得有人当成还开着）**：
+    ///    - `$@"…"` / `@$"…"` 逐字插值——正则原先只认 `$"`，现已放宽；
+    ///    - 裸拼接与 `Compose(...)` 写在**同一条语句**里——原先整条语句被无条件豁免，
+    ///      也就是「越规范地用了 `Compose`，同一语句里的裸拼接越被放行」，
+    ///      现改成只剔除 `Compose(...)` 子表达式再判；
+    ///    - 原始插值串 `$"""…"""` 判不了，改用 **fail-closed 负空间断言**禁止它出现在扫描面。
     /// 3. **看不到「从零构造一把键」的路径**：本类只检查「拿一把已有的幂等键去改写」，
     ///    像 <c>CreateStockCountTaskIdempotency</c> 那样从别的字段现拼出一把新键的位点，
     ///    这条正则命不中（那类余量由 <see cref="Stock_count_task_code_prefix_still_clears_the_idempotency_key_column"/>
@@ -378,15 +388,25 @@ public sealed partial class InventoryIdempotencyKeyLengthContractTests
         //    逐行匹配对「跨行加法」在构造上就看不见（实测该形状原本存活）。
         var actualBypassSites = sources
             .Where(source => !string.Equals(source.Relative, PolicySourceRelativePath, StringComparison.Ordinal))
-            .Select(source => (
-                RelativePath: source.Relative,
-                BypassHitCount: StatementsOf(source.Text).Count(IsIdempotencyKeyRewrite)))
-            .Where(site => site.BypassHitCount > 0)
-            .OrderBy(site => site.RelativePath, StringComparer.Ordinal)
+            .SelectMany(source => StatementsOf(source.Text)
+                .Where(IsIdempotencyKeyRewrite)
+                .Select(statement => $"{source.Relative} | {statement}"))
+            .OrderBy(site => site, StringComparer.Ordinal)
             .ToArray();
-        Assert.Equal(
-            ExpectedBypassExemptions.OrderBy(site => site.RelativePath, StringComparer.Ordinal).ToArray(),
-            actualBypassSites);
+        Assert.Equal(ExpectedBypassExemptions, actualBypassSites);
+
+        // ②b 负空间（fail-closed）：**原始插值串** $""" ... """ 的 body 取不到，
+        //     本扫描在构造上判不了它。与其留成潜伏缺口，不如禁止它出现在扫描面里——
+        //     一旦有人引入，这条先红，逼着人回来先把扫描补上。（$@" / @$" 已由正则覆盖，不在此禁。）
+        var rawInterpolated = sources
+            .Where(source => source.Text.Contains("$\"\"\"", StringComparison.Ordinal))
+            .Select(source => source.Relative)
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .ToArray();
+        Assert.True(
+            rawInterpolated.Length == 0,
+            "扫描面里出现了原始插值串（$\"\"\"），本扫描判不了它的内容，请先扩展扫描再引入："
+                + string.Join(", ", rawInterpolated));
 
         // ③ 分支自检：**每个方向都要有自己的非空锚点**。
         //    否则「只删掉其中一个分支」时，树上恰好没有该形状的位点，闭集比对照旧成立 → 无声缴械半边护栏
@@ -482,7 +502,7 @@ public sealed partial class InventoryIdempotencyKeyLengthContractTests
 
         static void Flush(List<string> sink, StringBuilder buffer)
         {
-            var statement = buffer.ToString().Trim();
+            var statement = TightenPunctuation(buffer.ToString()).Trim();
             if (statement.Length > 0)
             {
                 sink.Add(statement);
@@ -498,26 +518,25 @@ public sealed partial class InventoryIdempotencyKeyLengthContractTests
     /// </summary>
     private static bool IsIdempotencyKeyRewrite(string statement)
     {
-        // 走 Compose 的语句本身不算绕过。
-        if (statement.Contains("InventoryIdempotencyKeyPolicy.Compose(", StringComparison.Ordinal))
-        {
-            return false;
-        }
+        // 走 Compose 的**子表达式**不算绕过——但只剔掉那一段，不豁免整条语句。
+        // 整条豁免是危险的：真实写面本来就常在一条表达式里同时构造两把键，
+        // 那种写法下「越是规范地用了 Compose，同一语句里的裸拼接越是被豁免」。
+        var scrubbed = WithoutComposeCalls(statement);
 
         // 方向①②：加法与幂等键**相邻**——左右两侧都算，不再只认键在左操作数。
-        if (IdempotencyKeyAdditionRegex().IsMatch(statement))
+        if (IdempotencyKeyAdditionRegex().IsMatch(scrubbed))
         {
             return true;
         }
 
         // 方向⑤⑥：任意标识符 `+` / `+=` 一段以冒号开头的字面量——堵局部别名后跟字面量后缀。
-        if (ColonLiteralAppendRegex().IsMatch(statement))
+        if (ColonLiteralAppendRegex().IsMatch(scrubbed))
         {
             return true;
         }
 
         // 方向③④：插值串里带幂等键，且该串**除了这个洞之外还有别的字面内容**（前缀或后缀都算）。
-        foreach (Match interpolation in InterpolatedStringRegex().Matches(statement))
+        foreach (Match interpolation in InterpolatedStringRegex().Matches(scrubbed))
         {
             var body = interpolation.Groups["body"].Value;
             if (!body.Contains("IdempotencyKey", StringComparison.OrdinalIgnoreCase))
@@ -630,6 +649,107 @@ public sealed partial class InventoryIdempotencyKeyLengthContractTests
             "count-code 前缀与盘点单号上界之和超出幂等键列宽。");
     }
 
+    /// <summary>
+    /// 去掉标点两侧的空白（<c>. , ( ) [ ]</c>），**只在字符串字面量之外**处理。
+    /// 空白归一只压掉「多打的空格」，压不掉「在成员访问处折行」——折行折平后会留下 <c>X .Y</c>，
+    /// 与未折行的 <c>X.Y</c> 文本不同，登记原文就会假红（实测 F1 折在 <c>.</c> 上时确实红了）。
+    /// 这一步把两者收敛成同一形态。
+    /// </summary>
+    private static string TightenPunctuation(string text)
+    {
+        const string Punctuation = ".,()[]";
+        var result = new StringBuilder(text.Length);
+        var inString = false;
+        var escaped = false;
+        foreach (var character in text)
+        {
+            if (inString)
+            {
+                result.Append(character);
+                if (escaped)
+                {
+                    escaped = false;
+                }
+                else if (character == '\\')
+                {
+                    escaped = true;
+                }
+                else if (character == '"')
+                {
+                    inString = false;
+                }
+
+                continue;
+            }
+
+            if (character == '"')
+            {
+                inString = true;
+                result.Append(character);
+                continue;
+            }
+
+            if (character == ' ' && result.Length > 0 && Punctuation.Contains(result[^1], StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (Punctuation.Contains(character, StringComparison.Ordinal))
+            {
+                while (result.Length > 0 && result[^1] == ' ')
+                {
+                    result.Length--;
+                }
+            }
+
+            result.Append(character);
+        }
+
+        return result.ToString();
+    }
+
+    /// <summary>
+    /// 剔除语句里的 <c>InventoryIdempotencyKeyPolicy.Compose(...)</c> 子表达式（按括号配平），
+    /// 剩下的部分才拿去判绕过。**注意**：配平不理会字符串字面量里的括号，
+    /// 对本仓现有写法足够，但这是本助手的已知边界。
+    /// </summary>
+    private static string WithoutComposeCalls(string statement)
+    {
+        const string Marker = "InventoryIdempotencyKeyPolicy.Compose(";
+        var result = statement;
+        int index;
+        while ((index = result.IndexOf(Marker, StringComparison.Ordinal)) >= 0)
+        {
+            var depth = 0;
+            var end = -1;
+            for (var cursor = index + Marker.Length - 1; cursor < result.Length; cursor++)
+            {
+                if (result[cursor] == '(')
+                {
+                    depth++;
+                }
+                else if (result[cursor] == ')')
+                {
+                    depth--;
+                    if (depth == 0)
+                    {
+                        end = cursor;
+                        break;
+                    }
+                }
+            }
+
+            if (end < 0)
+            {
+                return result.Remove(index);
+            }
+
+            result = result.Remove(index, end - index + 1);
+        }
+
+        return result;
+    }
+
     /// <summary>纯注释行（<c>//</c> / <c>///</c> / <c>*</c> 开头）不算代码行。块注释中间行以 <c>*</c> 起始，一并剥掉。</summary>
     private static bool IsCodeLine(string line)
     {
@@ -692,7 +812,7 @@ public sealed partial class InventoryIdempotencyKeyLengthContractTests
     private static partial Regex ColonLiteralAppendRegex();
 
     /// <summary>插值字符串整体，<c>body</c> 组是引号之间的内容。</summary>
-    [GeneratedRegex(@"\$""(?<body>[^""]*)""", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"(?:\$@?|@\$)""(?<body>[^""]*)""", RegexOptions.CultureInvariant)]
     private static partial Regex InterpolatedStringRegex();
 
     /// <summary>插值串里的洞 <c>{...}</c>，用于判断「除了洞之外还有没有别的字面内容」。</summary>
