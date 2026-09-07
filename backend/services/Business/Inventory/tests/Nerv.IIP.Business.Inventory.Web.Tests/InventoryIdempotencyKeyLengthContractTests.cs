@@ -276,11 +276,30 @@ public sealed partial class InventoryIdempotencyKeyLengthContractTests
         Assert.EndsWith(suffix, exact, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// 落库前改写幂等键的位点必须全部经过 <c>InventoryIdempotencyKeyPolicy.Compose</c>（#3176 B1-b）。
+    /// </summary>
+    /// <remarks>
+    /// **为什么需要这条**：光有 <c>Compose</c> 不算防线——「有人把 <c>Compose(k, s)</c> 换成裸 <c>k + s</c>」
+    /// 在纯行为测试上是完全绿的（实测 M5b：5 通过 / 0 失败）。只有源码闭集扫描才让「绕过」变红。
+    ///
+    /// **这条护栏的值域边界（声明什么被放弃了，别把它读成完备）**：
+    /// 1. **扫描面只有** <c>backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/</c>
+    ///    这一棵树。同服务的 <c>Domain/</c>、<c>Infrastructure/</c>、<c>Endpoints/</c>，以及**其它服务**，
+    ///    都在值域之外——别的服务往 Inventory 的列里写超长键，这条抓不到（那是另一票的事）。
+    /// 2. **只认两种形状**：`{标识符}IdempotencyKey + …` 的字符串加法，和 `$"{…IdempotencyKey}…"`
+    ///    这种「把键嵌进插值后还有后续内容」。**`string.Concat` / `string.Format` / `StringBuilder.Append`
+    ///    / `Span` 拼接一律不在视野内**——不是「确认过没有」，是**扫描面在构造上就看不见**。
+    /// 3. **看不到「从零构造一把键」的路径**：本类只检查「拿一把已有的幂等键去改写」，
+    ///    像 <c>CreateStockCountTaskIdempotency</c> 那样从别的字段现拼出一把新键的位点，
+    ///    这条正则命不中（那类余量由 <see cref="Stock_count_task_code_prefix_still_clears_the_idempotency_key_column"/>
+    ///    单独按算术钉住，且**只钉了 count-code 这一处**，不是全仓）。
+    /// 4. 两个登记集（<see cref="ExpectedComposeSites"/>、<see cref="ExpectedBypassExemptions"/>）都**非空**，
+    ///    再加 <c>sources.Length >= 20</c> 的下界，所以「正则失配 / 扫描面塌成空集」也会红，不会静默放行。
+    /// </remarks>
     [Fact]
     public void Every_pre_persist_rewrite_of_an_idempotency_key_goes_through_Compose()
     {
-        // #3176 B1-b：光有 Compose 不算防线——「有人把 Compose(k, s) 换成裸 k + s」在纯行为测试上
-        // 是完全绿的（复审实测 M5b：5 通过 / 0 失败）。这条是**源码闭集扫描**，它才让绕过变红。
         var applicationRoot = Path.Combine(FindRepoRoot(), InventoryWebApplicationRelativeRoot);
         Assert.True(Directory.Exists(applicationRoot), applicationRoot);
 
@@ -399,7 +418,12 @@ public sealed partial class InventoryIdempotencyKeyLengthContractTests
     [GeneratedRegex(@"InventoryIdempotencyKeyPolicy\.Compose\(", RegexOptions.CultureInvariant)]
     private static partial Regex ComposeCallRegex();
 
-    /// <summary>匹配「拿幂等键做字符串加法」与「把幂等键嵌进插值后还有后续内容」两种改写形状。</summary>
+    /// <summary>
+    /// 匹配「拿幂等键做字符串加法」与「把幂等键嵌进插值后还有后续内容」两种改写形状。
+    /// **只有这两种**：<c>string.Concat</c> / <c>string.Format</c> / <c>StringBuilder</c> / <c>Span</c>
+    /// 拼接一律不在本正则视野内，值域边界见
+    /// <see cref="Every_pre_persist_rewrite_of_an_idempotency_key_goes_through_Compose"/> 的 remarks。
+    /// </summary>
     [GeneratedRegex(@"[Ii]dempotencyKey\s*\+\s*|\$""\{[^}]*[Ii]dempotencyKey[^}]*\}[^""]", RegexOptions.CultureInvariant)]
     private static partial Regex IdempotencyKeyRewriteRegex();
 
