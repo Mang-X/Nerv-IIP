@@ -303,7 +303,6 @@ test('NERV-1851 独立读取 MBOM 与 Inventory 真实缺料事实', async ({ pa
     expect(organizationId).toBe(NERV1851_BASELINE.organizationId)
     expect(environmentId).toBe(NERV1851_BASELINE.environmentId)
     await expect(page).toHaveURL(new URL('/', baseURL!).toString())
-    sessionCredential = await captureSessionCredential(page)
     report.runtime.userAgent = await page.evaluate(() => navigator.userAgent)
 
     for (const route of ['/engineering/mbom', '/inventory/availability'] as const) {
@@ -315,6 +314,9 @@ test('NERV-1851 独立读取 MBOM 与 Inventory 真实缺料事实', async ({ pa
       uiPages.push(pageEvidence)
       expect(response?.ok(), `real Chromium page ${route} should return HTTP 2xx`).toBe(true)
     }
+
+    // 整页导航会刷新会话；在最后一次导航后捕获凭据，供后续只读 API 使用。
+    sessionCredential = await captureSessionCredential(page)
 
     const listCall = await call(
       queryPath('/api/business-console/v1/engineering/manufacturing-boms', {
