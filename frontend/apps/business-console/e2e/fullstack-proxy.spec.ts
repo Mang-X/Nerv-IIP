@@ -4,8 +4,13 @@ const baseURL = process.env.NERV_IIP_PLAYWRIGHT_BASE_URL
 const adminPassword = process.env.NERV_IIP_FULLSTACK_ADMIN_PASSWORD
 
 test.skip(!baseURL || !adminPassword, 'requires a managed full-stack session')
+// Authentication requests contain session credentials; retain only the explicit read evidence below.
+test.use({ trace: 'off' })
 
-test('dynamic origin uses both same-origin gateway proxies @smoke', async ({ page, request }) => {
+test('dynamic origin authenticates MBOM and inventory reads through both gateway proxies @smoke', async ({
+  page,
+  request,
+}, testInfo) => {
   const viteOrigin = new URL(baseURL!).origin
   const apiRequests: string[] = []
   page.on('request', (request) => {
@@ -46,12 +51,50 @@ test('dynamic origin uses both same-origin gateway proxies @smoke', async ({ pag
   const login = await loginResponse
   expect(login.status()).toBeGreaterThanOrEqual(200)
   expect(login.status()).toBeLessThan(300)
+  const accessToken: string = (await login.json()).data.accessToken
   // Each full-stack session has a unique admin password and JWT signing key. A platform
   // proxy routed to another session fails this login; a business proxy routed to another
   // session rejects the resulting bearer token. The two successful responses therefore
   // prove both proxy targets belong to this session, not only that they are same-origin.
   await expect(page).toHaveURL(new URL('/', baseURL!).toString())
 
+  const scope = 'organizationId=org-001&environmentId=env-dev'
+  const read = async (path: string) => {
+    const response = await page.evaluate(
+      async ({ path, accessToken }) => {
+        const response = await fetch(path, { headers: { Authorization: `Bearer ${accessToken}` } })
+        return { status: response.status, body: await response.json() }
+      },
+      { path, accessToken },
+    )
+    expect(response.status, path).toBe(200)
+    return { path, ...response }
+  }
+  const mbomList = await read(
+    `/api/business-console/v1/engineering/manufacturing-boms?${scope}&skuCode=FG-QJ-P1-L&status=Published&skip=0&take=100`,
+  )
+  expect(mbomList.body.data.items).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ bomCode: 'MBOM-FG-QJ-P1-L', revision: '2' }),
+    ]),
+  )
+  const mbomDetail = await read(
+    `/api/business-console/v1/engineering/manufacturing-boms/MBOM-FG-QJ-P1-L/2?${scope}`,
+  )
+  const material = mbomDetail.body.data.materialLines.find(
+    (line: { isPhantom: boolean }) => !line.isPhantom,
+  )
+  expect(material).toMatchObject({ skuCode: 'PK-BOX-01', unitOfMeasureCode: 'pcs' })
+  const availability = await read(
+    `/api/business-console/v1/inventory/availability?${scope}&skuCode=${material.skuCode}&uomCode=${material.unitOfMeasureCode}&siteCode=SITE-001`,
+  )
+  const movements = await read(
+    `/api/business-console/v1/inventory/movements?${scope}&skuCode=${material.skuCode}&siteCode=SITE-001&movementType=inbound&page=1&pageSize=100`,
+  )
+  await testInfo.attach('mbom-inventory-browser-reads', {
+    contentType: 'application/json',
+    body: JSON.stringify({ origin: viteOrigin, mbomList, mbomDetail, availability, movements }),
+  })
   const skuResponse = page.waitForResponse(
     (response) => new URL(response.url()).pathname === '/api/business-console/v1/master-data/skus',
   )
