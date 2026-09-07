@@ -31,6 +31,7 @@ export type ProcurementOptions = {
   headSha: string
   sessionId: string
   includeRodRawMaterial?: boolean
+  beforeCall?: () => Promise<void>
   afterReceipt?: (context: {
     call: PublicCall
     query: (endpoint: string, extra?: Row) => string
@@ -82,6 +83,7 @@ export async function runProcurement(options: ProcurementOptions) {
     return url.pathname + url.search
   }
   const call = async <T>(method: 'GET' | 'POST', endpoint: string, body?: Row): Promise<T> => {
+    await options.beforeCall?.()
     const response = await page.request.fetch(new URL(endpoint, baseURL).toString(), {
       method,
       data: body,

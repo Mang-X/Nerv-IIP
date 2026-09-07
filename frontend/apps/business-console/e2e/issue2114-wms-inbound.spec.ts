@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import path from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import type * as Api from '../../../packages/api-client/src/generated/business-console/types.gen'
 import type { NervIipPlatformGatewayWebApplicationAuthConsoleAuthResponse as Auth } from '../../../packages/api-client/src/generated/types.gen'
 import { runProcurement, type PublicCall, type Row } from './procurementScenario'
@@ -44,11 +45,14 @@ test('NERV-2114 真实采购收货经仓管上架形成唯一批次库存', asyn
   expect(auth.principal!.principalId).toBe('user-emp-049')
   await expect(worker).toHaveURL(new URL('/', process.env.NERV_IIP_PLAYWRIGHT_BASE_URL).toString())
   const workerCalls: Row[] = []
+  // BusinessGateway 默认每个 IP 每 60 秒最多 300 次；本批逐项读回以低于该速率执行，429 仍失败。
+  const pace = () => delay(250)
   const workerCall: PublicCall = async <T>(
     method: 'GET' | 'POST',
     endpoint: string,
     body?: Row,
   ) => {
+    await pace()
     const response = await worker.request.fetch(endpoint, {
       method,
       data: body,
@@ -67,6 +71,7 @@ test('NERV-2114 真实采购收货经仓管上架形成唯一批次库存', asyn
       headSha: process.env.NERV_IIP_NERV2114_HEAD_SHA!,
       sessionId: process.env.NERV_IIP_NERV2114_SESSION_ID!,
       includeRodRawMaterial: true,
+      beforeCall: pace,
       afterReceipt: async ({ call, query, order, report }) => {
         report.worker = { principalId: auth.principal!.principalId, calls: workerCalls }
         const catalog =
