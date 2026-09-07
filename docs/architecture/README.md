@@ -13,7 +13,7 @@
 | Integration | [`integration/README.md`](integration/README.md) | Gateway/OpenAPI 契约链、Connector Host 身份与协议 |
 | Data | [`data/README.md`](data/README.md) | 数据架构任务路由；Schema 规则与目录分别回到 Governance / Reference |
 | Business | [`business/README.md`](business/README.md) | 业务域、MasterData、现场 scope、Scheduling、设备/MES/ERP/WMS/Planning 当前边界 |
-| Frontend | [`frontend/README.md`](frontend/README.md) | 前端 workspace、app/package 职责与依赖方向 |
+| Frontend | [`frontend/README.md`](frontend/README.md) | 前端 workspace、app/package、导航壳层与依赖方向 |
 | Mobile | [`mobile/README.md`](mobile/README.md) | PDA / Capacitor 运行时架构 |
 
 ## 按任务路由
@@ -28,6 +28,7 @@
 | 业务域划分与平台/业务边界 | [`business/domain-architecture.md`](business/domain-architecture.md) |
 | MasterData / 现场作业 / Scheduling / MES / ERP / WMS / Planning | [`business/README.md`](business/README.md) 后只选直接相关专题 |
 | 前端工作区、应用和包职责 | [`frontend/workspace-structure.md`](frontend/workspace-structure.md) |
+| 前端导航壳层与应用边界 | [`frontend/navigation.md`](frontend/navigation.md)；产品 IA 与当前事实分别回到 [`../product/navigation.md`](../product/navigation.md) / [`../reference/frontend/navigation-map.md`](../reference/frontend/navigation-map.md) |
 | PDA / Capacitor 运行时 | [`mobile/capacitor.md`](mobile/capacitor.md) |
 | 业务导航、页面 IA 与产品语义 | [`../product/README.md`](../product/README.md) |
 | 数据库 Schema 规则 / 当前目录 | [`data/README.md`](data/README.md) |
@@ -45,8 +46,13 @@ Platform 其它专题（File Storage、Notification、Observability、缓存、A
 - 用户、角色旅程、业务语义、IA 和 UX：[`../product/README.md`](../product/README.md)。
 - 长期不可轻易反转的决策及理由：[`../adr/README.md`](../adr/README.md)。
 
-## M2 迁移兼容
+## M2 后的目录契约
 
-M2-B 至 M2-L 已逐步把混合生命周期内容迁出 `docs/architecture/` 平铺层。旧 owner 文件名只在仍有高价值历史/活跃引用时保留**短兼容导航**，不得继续写正文；删除条件由 M2-M/M4 统一收口。
+M2 已把原先混在 `docs/architecture/` 平铺层的 Product、Governance、Reference、Runbook、Status 与 Report 内容迁到各自权威住所。此后遵循下面的稳定规则：
 
-M2-K 的 canonical owner 已迁入 `overview/`、`platform/`、`integration/` 与 `data/`。M2-L 的 12 个冻结 owner 已迁入 `business/`、`frontend/` 与 `mobile/`，其中混合 owner 的 Governance/Runbook/历史证据已拆出。当前入口、AGENTS、ADR、产品文档和活跃 README 应直接链接 canonical path；历史 spec/report 可通过 shim 保持可追溯。
+1. **Current Architecture 正文只从本页进入主题目录。** 新增或继续维护的现态架构不得回到根目录平铺旧文件名。
+2. **根目录旧 `.md` 文件只允许作为显式兼容 shim。** shim 只说明 canonical owner 与必要迁移背景，不继续累积架构、产品、状态、规则、命令或事实总账。
+3. **新链接不得以 shim 作为权威来源。** 遇到旧路径时先跟随其导航到 Product / Architecture / Governance / Reference / Runbook / Status / Report 的 canonical path，再引用最终 owner。
+4. [`implementation-readiness.md`](implementation-readiness.md) 只保留 M1 旧链接兼容；当前状态唯一入口仍是 [`../status/current.md`](../status/current.md)。
+5. `script-automation-governance.md` 与 `test-evidence-governance.md` 仍包含既有测试契约读取的冻结兼容字面，因此在对应 consumer 迁出前不能物理删除；它们不是 Current Architecture 或第二份 Governance。
+6. 冻结 ADR、Report、Status archive 与 `docs/superpowers/**` 不为消除旧 URL 批量改写。物理删除兼容 shim 时应先证明活跃消费者和机器依赖已清零，再运行 Docs/链接与受影响门禁。
