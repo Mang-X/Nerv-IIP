@@ -10,7 +10,7 @@
     },
     {
       "path": "backend/Directory.Packages.props",
-      "sha256": "dc9c1d56a2a10e761d0507978e2edbb5d2a4448fab5dd27cf33c375a1c208c01"
+      "sha256": "72c32ac47d3e7ca2247942e5ae6a15fabb2717a9d952f49418a8a4822b88f517"
     },
     {
       "path": "backend/Directory.Build.props",
@@ -106,11 +106,11 @@
     },
     {
       "path": "backend/common/Web/Nerv.IIP.Web/packages.lock.json",
-      "sha256": "441893dee81acd78be6ba9d3c510e8b0989fca1b34b30644cb2487de6a473276"
+      "sha256": "dfcc812a6c01f27c1a318e5ef7f4aa8d02652a222c7e78a099fd7d6eb0e0280a"
     },
     {
       "path": "backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/packages.lock.json",
-      "sha256": "7853eaff1ce15c51b9c0e08dece8d0b3bba3a900924b95fd8df0de792e63cd29"
+      "sha256": "590352e39c0b4dba5acad591f2f0fa5a37f5407152c8aad5c51ad1363c0e0dcf"
     }
   ],
   "lock": {
