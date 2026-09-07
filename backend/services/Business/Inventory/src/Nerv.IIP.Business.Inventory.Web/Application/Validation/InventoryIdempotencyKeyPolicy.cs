@@ -18,11 +18,20 @@ namespace Nerv.IIP.Business.Inventory.Web.Application.Validation;
 /// 本类型改的是**失败形态**（500 崩溃 → 400 可归因拒绝），**不是**「不再逃逸」。
 ///
 /// **由哪条读数看守（实测强度，不是完备性主张）**：
-/// <c>InventoryIdempotencyKeyLengthContractTests</c> 覆盖到的互不重叠方向共六个：改列宽、
-/// 改状态调拨校验器上界、改 FEFO 校验器上界、拆掉 <see cref="Compose"/> 的守卫、
-/// 在 <c>Application/</c> 下绕过 <see cref="Compose"/> 裸拼接（由源码闭集扫描承担）、
-/// 以及取消 FEFO 腿序号上限。**单纯把某个后缀字面量改长（上界仍由 <see cref="BaseMaxLengthFor"/> 派生）
-/// 不会红，也不应该红**——那种改法上界会自动跟着变，行为仍然正确。
+/// 互不重叠的方向按「生产侧 / 测试侧」分列——**测试侧只证明「护栏不会静默缴械」，
+/// 不给生产代码增加鉴别力，两者不混计**。
+///
+/// 生产侧 12 个：① 列宽 = <see cref="ColumnMaxLength"/>；② 状态调拨校验器上界由派生得来；
+/// ③ FEFO 校验器上界由派生得来；④ 状态调拨「上界 + 最长后缀 == 列宽」；⑤ FEFO 同上（反手抄）；
+/// ⑥ <see cref="Compose"/> 越界就地拒绝；⑦ <see cref="Compose"/> 调用点闭集；⑧ 绕过面闭集
+/// （⑦⑧ 实测红在**不同**断言上，不是一条）；⑨ FEFO 腿序号上限真被执行；
+/// ⑩ <c>count-code:</c> 前缀键的**真实构造入口**（不是两个常量之间的算术）；
+/// ⑪ 过期封锁的重入探针与状态调拨写面常量同源；⑫ 幂等键列集合非空且计数封闭。
+///
+/// 测试侧 2 个：登记集计数封闭；检测分支不可被单边删除（半失配曾经全绿）。
+///
+/// **单纯把某个后缀字面量改长（上界仍由 <see cref="BaseMaxLengthFor"/> 派生）不会红，也不应该红**
+/// ——那种改法上界会自动跟着变，行为仍然正确。
 /// </remarks>
 internal static class InventoryIdempotencyKeyPolicy
 {
@@ -50,7 +59,13 @@ internal static class InventoryIdempotencyKeyPolicy
     /// <summary>
     /// 落库前给幂等键追加后缀的入口：绝不截断（截断会把仅末几位不同的两个键折叠成同一个），
     /// 超出列宽就地抛 <c>KnownException</c>，而不是把越界值送进数据库换一个 22001。
-    /// 「<c>Application/</c> 下所有拼接都走这里」由契约测试的源码闭集扫描断言，不是靠约定。
+    /// **不要把这里读成「<c>Application/</c> 下所有拼接都走这里」**——那是完备性主张，已知为假。
+/// 源码闭集扫描实际断言的是**两类形状**：`+` 拼接（**单行与跨行都算、左右操作数都算**）
+/// 与插值串续写（前缀后缀都算）。**以下在构造上不在扫描视野内，是已知缺口**：
+/// <c>string.Concat</c> / <c>string.Format</c> / <c>StringBuilder.Append</c> / <c>Span</c> 拼接；
+/// 经**局部别名**转手后再跟**非字面量**后缀（`var k = x.IdempotencyKey; k + SomeSuffix;`）；
+/// 以及别名转手后再插值（语句里已不含 <c>IdempotencyKey</c> 一词，纯文本扫描追不到）。
+/// 覆盖后两类需要数据流分析，本仓不做——**加新写面时别指望扫描替你兜底，请显式走本方法。**
     /// </summary>
     public static string Compose(string idempotencyKey, string suffix)
     {
