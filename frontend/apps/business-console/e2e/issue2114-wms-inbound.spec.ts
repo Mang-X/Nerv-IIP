@@ -116,7 +116,7 @@ test('NERV-2114 真实采购收货经仓管上架形成唯一批次库存', asyn
                   stagingLocationCode: 'loc-raw-01',
                   lotNo,
                   qualityStatus: 'unrestricted',
-                  ownerType: 'own',
+                ownerType: 'company',
                 },
               ],
             } satisfies Api.NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateWmsInboundOrderRequest,
@@ -129,7 +129,7 @@ test('NERV-2114 真实采购收货经仓管上架形成唯一批次库存', asyn
             {
               poolCode: pool[0].poolCode!,
               operatorPrincipalId: auth.principal!.principalId,
-              expectedVersion: 0,
+            expectedVersion: 1,
               idempotencyKey: `${suffix}-assign`,
             } satisfies Api.NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAssignWmsResourceRequest,
           )
