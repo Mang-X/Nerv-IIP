@@ -325,6 +325,13 @@ public sealed partial class InventoryIdempotencyKeyLengthContractTests
     ///      也就是「越规范地用了 `Compose`，同一语句里的裸拼接越被放行」，
     ///      现改成只剔除 `Compose(...)` 子表达式再判；
     ///    - 原始插值串 `$"""…"""` 判不了，改用 **fail-closed 负空间断言**禁止它出现在扫描面。
+    ///
+    ///    **仍开着的一条（登记，未修）**：登记键是「文件 + 归一化原文」，**同一文件里两条归一化后
+    ///    逐字相同的语句无法互相区分**（现存实例：`WorldHistoryConsistencyValidator.cs` 里两条
+    ///    `public string Key => $"{SourceDocumentId}|{IdempotencyKey}"`）。将来其中一条变成落库向，
+    ///    登记集零变化、护栏不红。多重度本身是被强制的（同文件再加一条同文原文会红），
+    ///    但「哪一条是哪一条」在构造上分不出。**此条为读代码推断，未跑变异**——
+    ///    构造不出只动一个变量、且能把两条区分开的判别格。
     /// 3. **看不到「从零构造一把键」的路径**：本类只检查「拿一把已有的幂等键去改写」，
     ///    像 <c>CreateStockCountTaskIdempotency</c> 那样从别的字段现拼出一把新键的位点，
     ///    这条正则命不中（那类余量由 <see cref="Stock_count_task_code_prefix_still_clears_the_idempotency_key_column"/>
@@ -393,6 +400,16 @@ public sealed partial class InventoryIdempotencyKeyLengthContractTests
                 .Select(statement => $"{source.Relative} | {statement}"))
             .OrderBy(site => site, StringComparer.Ordinal)
             .ToArray();
+        // 失败消息给**差集**：xUnit 默认的 Collections differ 会把两串截成 `···`，
+        // 每次红都得回源码里翻，而这是一条后来人必须维护的登记式护栏。
+        var unregistered = actualBypassSites.Except(ExpectedBypassExemptions, StringComparer.Ordinal).ToArray();
+        var vanished = ExpectedBypassExemptions.Except(actualBypassSites, StringComparer.Ordinal).ToArray();
+        Assert.True(
+            unregistered.Length == 0 && vanished.Length == 0,
+            $"绕过面闭集对不上。未登记的新增命中 {unregistered.Length} 条：{Environment.NewLine}"
+                + string.Join(Environment.NewLine, unregistered)
+                + $"{Environment.NewLine}登记了却不再命中的 {vanished.Length} 条（多为原文变动，需同步登记）：{Environment.NewLine}"
+                + string.Join(Environment.NewLine, vanished));
         Assert.Equal(ExpectedBypassExemptions, actualBypassSites);
 
         // ②b 负空间（fail-closed）：**原始插值串** $""" ... """ 的 body 取不到，
@@ -450,7 +467,7 @@ public sealed partial class InventoryIdempotencyKeyLengthContractTests
     private static IEnumerable<string> StatementsOf(string text)
     {
         var flattened = WhitespaceRegex().Replace(
-            string.Join(' ', text.Split('\n').Select(line => line.TrimEnd('\r')).Where(IsCodeLine)),
+            string.Join(' ', text.Split('\n').Select(line => CodeOf(line.TrimEnd('\r'))).Where(line => line.Length > 0)),
             " ");
 
         // 断句符是 `;` 与 `{` `}`，但**必须跳过字符串字面量内部**：插值串 $"{a}|{b}" 自带花括号，
@@ -710,8 +727,8 @@ public sealed partial class InventoryIdempotencyKeyLengthContractTests
 
     /// <summary>
     /// 剔除语句里的 <c>InventoryIdempotencyKeyPolicy.Compose(...)</c> 子表达式（按括号配平），
-    /// 剩下的部分才拿去判绕过。**注意**：配平不理会字符串字面量里的括号，
-    /// 对本仓现有写法足够，但这是本助手的已知边界。
+    /// 剩下的部分才拿去判绕过。配平**跳过字符串与字符字面量**（后缀字面量里带括号也不会算错），
+    /// 且**配不到右括号时 fail-closed：不剔除**——宁可多判一次绕过，也不要让整条语句失明。
     /// </summary>
     private static string WithoutComposeCalls(string statement)
     {
@@ -722,13 +739,40 @@ public sealed partial class InventoryIdempotencyKeyLengthContractTests
         {
             var depth = 0;
             var end = -1;
+            var quote = '\0';
+            var escaped = false;
             for (var cursor = index + Marker.Length - 1; cursor < result.Length; cursor++)
             {
-                if (result[cursor] == '(')
+                var character = result[cursor];
+                if (quote != '\0')
+                {
+                    if (escaped)
+                    {
+                        escaped = false;
+                    }
+                    else if (character == '\\')
+                    {
+                        escaped = true;
+                    }
+                    else if (character == quote)
+                    {
+                        quote = '\0';
+                    }
+
+                    continue;
+                }
+
+                if (character is '"' or '\'')
+                {
+                    quote = character;
+                    continue;
+                }
+
+                if (character == '(')
                 {
                     depth++;
                 }
-                else if (result[cursor] == ')')
+                else if (character == ')')
                 {
                     depth--;
                     if (depth == 0)
@@ -739,9 +783,13 @@ public sealed partial class InventoryIdempotencyKeyLengthContractTests
                 }
             }
 
+            // **fail-closed**：配不到右括号就**不剔除**，把整条语句原样交给后面的形状判定。
+            // 原先这里是 `return result.Remove(index)`——截断到语句尾，那是 fail-open：
+            // marker 之后只要出现一个不配平的 `(`（注释里、字面量里都行），
+            // 整条语句就对绕过判定失明（实测可让「摘掉 Compose 换裸拼接」全绿）。
             if (end < 0)
             {
-                return result.Remove(index);
+                return result;
             }
 
             result = result.Remove(index, end - index + 1);
@@ -750,18 +798,70 @@ public sealed partial class InventoryIdempotencyKeyLengthContractTests
         return result;
     }
 
-    /// <summary>纯注释行（<c>//</c> / <c>///</c> / <c>*</c> 开头）不算代码行。块注释中间行以 <c>*</c> 起始，一并剥掉。</summary>
-    private static bool IsCodeLine(string line)
+    /// <summary>
+    /// 取一行里的**代码部分**：整行注释返回空串，**行尾注释也要剥掉**。
+    /// 剥的时候必须跳过字符串与字符字面量里的 <c>//</c>（例如 URL、正则），所以复用同一套
+    /// 字符串感知扫描。**只剥 <c>//</c> 行注释**；块注释 <c>/* */</c> 只按「整行以 * 或 /* 开头」处理，
+    /// 行内块注释不剥——这是本助手的已知边界。
+    /// </summary>
+    /// <remarks>
+    /// 为什么必须剥行尾注释：<c>Compose(</c> 的调用点是**逐文件精确计数**的，
+    /// 只剥整行注释的话，一句 <c>// …Compose(</c> 行尾注释就能把被摘掉的调用「补回计数」，
+    /// 让「摘掉 Compose 换裸拼接」整个假绿（实测过，全量 295 全绿）。
+    /// </remarks>
+    private static string CodeOf(string line)
     {
         var trimmed = line.TrimStart();
-        return !trimmed.StartsWith("//", StringComparison.Ordinal)
-            && !trimmed.StartsWith("*", StringComparison.Ordinal)
-            && !trimmed.StartsWith("/*", StringComparison.Ordinal);
+        if (trimmed.StartsWith("//", StringComparison.Ordinal)
+            || trimmed.StartsWith("*", StringComparison.Ordinal)
+            || trimmed.StartsWith("/*", StringComparison.Ordinal))
+        {
+            return string.Empty;
+        }
+
+        var quote = '\0';
+        var escaped = false;
+        for (var index = 0; index < line.Length; index++)
+        {
+            var character = line[index];
+            if (quote != '\0')
+            {
+                if (escaped)
+                {
+                    escaped = false;
+                }
+                else if (character == '\\')
+                {
+                    escaped = true;
+                }
+                else if (character == quote)
+                {
+                    quote = '\0';
+                }
+
+                continue;
+            }
+
+            if (character is '"' or '\'')
+            {
+                quote = character;
+                continue;
+            }
+
+            if (character == '/' && index + 1 < line.Length && line[index + 1] == '/')
+            {
+                return line[..index];
+            }
+        }
+
+        return line;
     }
 
     private static string CodeLinesOf(string text)
     {
-        return string.Join('\n', text.Split('\n').Select(line => line.TrimEnd('\r')).Where(IsCodeLine));
+        return string.Join(
+            '\n',
+            text.Split('\n').Select(line => CodeOf(line.TrimEnd('\r'))).Where(line => line.Length > 0));
     }
 
     private static IProperty[] IdempotencyKeyColumns(IModel model)
