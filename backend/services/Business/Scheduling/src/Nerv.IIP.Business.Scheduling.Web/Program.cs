@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using FastEndpoints;
@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Scheduling.Domain;
+using Nerv.IIP.Business.Scheduling.Web;
 using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventConverters;
@@ -161,30 +162,10 @@ try
     builder.Services.AddScoped<MesOperationTaskManuallyDispatchedIntegrationEventHandlerForUpsertOverride>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
-    if (isTesting)
-    {
-        builder.Services.AddIntegrationEvents(typeof(Program));
-    }
-    else
-    {
-        builder.Services.AddIntegrationEvents(typeof(Program))
-            .UseCap<ApplicationDbContext>(b =>
-            {
-                b.RegisterServicesFromAssemblies(typeof(Program));
-                b.AddContextIntegrationFilters();
-            });
-
-        builder.Services.AddCap(x =>
-        {
-            x.Version = builder.Configuration["Cap:Version"] ?? "v1";
-            x.UseEntityFramework<ApplicationDbContext>();
-            x.JsonSerializerOptions.AddNetCorePalJsonConverters();
-            x.UseConfiguredTransport(builder.Configuration, builder.Environment.EnvironmentName);
-            x.UseIntegrationEventDeadLetterOnFailedThreshold();
-            x.UseDashboard();
-        });
-        builder.Services.AddNervIipCanonicalTopicSubscriptions(builder.Environment.EnvironmentName);
-    }
+    builder.Services.AddSchedulingCapIntegrationEvents(
+        builder.Configuration,
+        builder.Environment.EnvironmentName,
+        isTesting);
 
     builder.Services.AddMediatR(cfg =>
         cfg.RegisterServicesFromAssemblies(Assembly.GetExecutingAssembly())
