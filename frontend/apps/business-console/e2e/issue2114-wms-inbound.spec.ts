@@ -121,7 +121,7 @@ test('NERV-2114 真实采购收货经仓管上架形成唯一批次库存', asyn
                   stagingLocationCode: 'loc-raw-01',
                   lotNo,
                   qualityStatus: 'unrestricted',
-                ownerType: 'company',
+                  ownerType: 'company',
                 },
               ],
             } satisfies Api.NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateWmsInboundOrderRequest,
@@ -134,7 +134,7 @@ test('NERV-2114 真实采购收货经仓管上架形成唯一批次库存', asyn
             {
               poolCode: pool[0].poolCode!,
               operatorPrincipalId: auth.principal!.principalId,
-            expectedVersion: 1,
+              expectedVersion: 1,
               idempotencyKey: `${suffix}-assign`,
             } satisfies Api.NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAssignWmsResourceRequest,
           )
@@ -307,6 +307,7 @@ test('NERV-2114 真实采购收货经仓管上架形成唯一批次库存', asyn
     )
     await worker.goto('/wms/putaway')
     expect((await responsePromise).status()).toBe(200)
+    await worker.getByPlaceholder('任务号/来源单/物料').fill(`PT-N2114-${scenario}-1`)
     await expect(
       worker
         .getByRole('row')
