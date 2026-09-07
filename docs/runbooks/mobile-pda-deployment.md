@@ -5,7 +5,7 @@
 > `frontend/pnpm-lock.yaml`（@capacitor/\* 锁定版本）。
 >
 > 配套：测试层次见 `docs/architecture/mobile-pda-testing-and-smoke.md`；
-> 端架构见 `docs/architecture/mobile-pda-capacitor-architecture.md`。
+> 端架构见 `docs/architecture/mobile/capacitor.md`。
 
 本文档说明 PDA 的 **配置 + 脚本基线** 如何提交到仓库，以及在 **干净环境** 里如何可复现地产出 APK。
 
