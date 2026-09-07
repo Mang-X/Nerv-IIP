@@ -1,6 +1,6 @@
 # 架构决策记录（ADR）
 
-本目录只记录**长期有效的架构取舍、替代方案与理由**。当前系统结构放在 [`../architecture/`](../architecture/README.md)，当前工程规则放在 [`../governance/`](../governance/README.md)，操作命令与恢复步骤放在 [`../runbooks/`](../runbooks/README.md)，实施进度与证据放在 [`../status/`](../status/README.md)、Issue 与 PR。
+本目录只记录**长期有效的架构取舍、替代方案与理由**。当前系统结构放在 [`../architecture/`](../architecture/README.md)，当前工程规则放在 [`../governance/`](../governance/README.md)，操作命令与恢复步骤放在 [`../runbooks/`](../runbooks/README.md)，实施进度与证据放在 [`../status/current.md`](../status/current.md)、Issue 与 PR。
 
 ## 阅读规则
 
