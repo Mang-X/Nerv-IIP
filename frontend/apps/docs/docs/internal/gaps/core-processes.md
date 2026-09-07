@@ -5,7 +5,7 @@
 ## 证据页面
 
 - `/processes/`
-- `docs/architecture/frontend-structure.md`
+- `docs/architecture/frontend/workspace-structure.md`
 - `docs/architecture/frontend-navigation-map.md`
 - `frontend/apps/business-console/src/navigation.ts`
 
