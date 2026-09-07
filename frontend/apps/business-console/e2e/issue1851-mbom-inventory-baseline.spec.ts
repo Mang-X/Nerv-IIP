@@ -35,14 +35,8 @@ test.use({ trace: 'off' })
 type JsonRecord = Record<string, unknown>
 
 class PublicCallError extends Error {
-  constructor(
-    readonly method: 'GET',
-    readonly path: string,
-    readonly status: number,
-    readonly request: JsonRecord,
-    readonly payload: unknown,
-  ) {
-    super(`${method} ${path} returned HTTP ${status}: ${safeText(JSON.stringify(payload))}`)
+  constructor(readonly status: number) {
+    super(`Public business GET failed with HTTP ${status}`)
     this.name = 'PublicCallError'
   }
 }
@@ -93,30 +87,15 @@ function optionalNumber(record: JsonRecord, field: string, source: string): numb
   return value
 }
 
-function safeText(value: unknown): string {
-  return textOf(value)
-    .replace(/authorization/gi, '<redacted-header>')
-    .replace(/bearer\s+[^\s"']+/gi, '<redacted-credential>')
-    .replace(/password/gi, '<redacted-field>')
-    .replace(/(?:access|refresh)[_-]?token/gi, '<redacted-field>')
-    .slice(0, 1600)
-}
-
-function publicJson(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(publicJson)
-  if (value === null || typeof value !== 'object') {
-    return typeof value === 'string' ? safeText(value) : value
-  }
-  return Object.fromEntries(
-    Object.entries(value as JsonRecord)
-      .filter(([key]) => !/(authorization|password|access[_-]?token|refresh[_-]?token)/i.test(key))
-      .map(([key, item]) => [key, publicJson(item)]),
-  )
+function failureFact(error: unknown): JsonRecord {
+  return error instanceof PublicCallError
+    ? { type: 'public-call', status: error.status }
+    : { type: 'runtime' }
 }
 
 async function jsonOf(response: APIResponse): Promise<unknown> {
   const contentType = response.headers()['content-type'] ?? ''
-  if (!contentType.includes('json')) return { text: safeText(await response.text()) }
+  if (!contentType.includes('json')) throw new Error('Public business GET did not return JSON.')
   return response.json()
 }
 
@@ -246,7 +225,6 @@ test('NERV-1851 独立读取 MBOM 与 Inventory 真实缺料事实', async ({ pa
       method: 'GET',
       headers: { authorization: sessionCredential },
     })
-    const payload = await jsonOf(response)
     const summary = {
       method: 'GET',
       path: new URL(url).pathname + new URL(url).search,
@@ -254,18 +232,11 @@ test('NERV-1851 独立读取 MBOM 与 Inventory 真实缺料事实', async ({ pa
       correlationId:
         response.headers()['x-correlation-id'] ?? response.headers().traceparent ?? null,
     }
-    const evidence = { request: summary, response: publicJson(payload) }
-    calls.push(evidence)
+    calls.push({ request: summary })
     if (!response.ok()) {
-      throw new PublicCallError(
-        'GET',
-        summary.path,
-        response.status(),
-        summary,
-        publicJson(payload),
-      )
+      throw new PublicCallError(response.status())
     }
-    return { payload, summary, publicPayload: publicJson(payload) }
+    return { payload: await jsonOf(response), summary }
   }
 
   try {
@@ -385,16 +356,18 @@ test('NERV-1851 独立读取 MBOM 与 Inventory 真实缺料事实', async ({ pa
                 'totalCount',
                 `Inventory movements ${requirement.skuCode}`,
               )
-        movements.push(
-          ...pageRows
-            .map(parseMovement)
-            .filter(
-              (movement) =>
-                movement.uomCode.trim().toUpperCase() ===
-                requirement.unitOfMeasureCode.trim().toUpperCase(),
-            ),
-        )
-        movementPages.push({ request: movementCall.summary, response: movementCall.publicPayload })
+        const pageMovements = pageRows
+          .map(parseMovement)
+          .filter(
+            (movement) =>
+              movement.uomCode.trim().toUpperCase() ===
+              requirement.unitOfMeasureCode.trim().toUpperCase(),
+          )
+        movements.push(...pageMovements)
+        movementPages.push({
+          request: movementCall.summary,
+          response: { totalCount, items: pageMovements },
+        })
         if (pageRows.length === 0 || movements.length >= totalCount) break
         pageNumber += 1
         if (pageNumber > 100) {
@@ -416,15 +389,15 @@ test('NERV-1851 独立读取 MBOM 与 Inventory 真实缺料事实', async ({ pa
         sources: {
           mbomList: {
             request: listCall.summary,
-            response: publicJson(listMatch),
+            response: { materialLines: listLines },
           },
           mbomDetail: {
             request: detailCall.summary,
-            response: publicJson(detail),
+            response: { materialLines: detailLines },
           },
           inventoryAvailability: {
             request: availabilityCall.summary,
-            response: availabilityCall.publicPayload,
+            response: availability,
           },
           inventoryMovements: movementPages,
         },
@@ -456,13 +429,12 @@ test('NERV-1851 独立读取 MBOM 与 Inventory 真实缺料事实', async ({ pa
       : 'sufficient'
     report.conclusion = 'runtime-confirmed'
   } catch (error) {
-    report.failure = {
-      type: error instanceof PublicCallError ? 'public-call' : 'runtime',
-      message: safeText(error instanceof Error ? error.message : error),
-    }
-    throw error
+    report.failure = failureFact(error)
+    throw error instanceof PublicCallError
+      ? error
+      : new Error('MBOM/Inventory baseline verification failed.')
   } finally {
     await mkdir(path.dirname(evidencePath!), { recursive: true })
-    await writeFile(evidencePath!, JSON.stringify(publicJson(report), null, 2), 'utf8')
+    await writeFile(evidencePath!, JSON.stringify(report, null, 2), 'utf8')
   }
 })
