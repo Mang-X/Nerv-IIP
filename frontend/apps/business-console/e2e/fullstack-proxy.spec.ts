@@ -48,6 +48,7 @@ test('dynamic origin authenticates MBOM and inventory reads through both gateway
   const login = await loginResponse
   expect(login.status()).toBeGreaterThanOrEqual(200)
   expect(login.status()).toBeLessThan(300)
+  const accessToken: string = (await login.json()).data.accessToken
   // Each full-stack session has a unique admin password and JWT signing key. A platform
   // proxy routed to another session fails this login; a business proxy routed to another
   // session rejects the resulting bearer token. The two successful responses therefore
@@ -62,7 +63,6 @@ test('dynamic origin authenticates MBOM and inventory reads through both gateway
   expect(sku.status()).toBeGreaterThanOrEqual(200)
   expect(sku.status()).toBeLessThan(300)
 
-  const accessToken: string = (await login.json()).data.accessToken
   const scope = 'organizationId=org-001&environmentId=env-dev'
   const read = async (path: string) => {
     const response = await page.evaluate(async ({ path, accessToken }) => {
