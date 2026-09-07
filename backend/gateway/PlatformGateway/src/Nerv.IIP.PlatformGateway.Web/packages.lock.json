@@ -583,7 +583,7 @@
       "nerv.iip.web": {
         "type": "Project",
         "dependencies": {
-          "FluentValidation": "[11.11.0, )",
+          "FluentValidation": "[12.1.1, )",
           "FluentValidation.AspNetCore": "[11.3.1, )",
           "Microsoft.EntityFrameworkCore": "[10.0.8, )",
           "NetCorePal.Extensions.AspNetCore": "[3.3.0, )"
@@ -591,7 +591,7 @@
       },
       "FluentValidation": {
         "type": "CentralTransitive",
-        "requested": "[11.11.0, )",
+        "requested": "[12.1.1, )",
         "resolved": "12.1.1",
         "contentHash": "EPpkIe1yh1a0OXyC100oOA8WMbZvqUu5plwhvYcb7oSELfyUZzfxV48BLhvs3kKo4NwG7MGLNgy1RJiYtT8Dpw=="
       },
