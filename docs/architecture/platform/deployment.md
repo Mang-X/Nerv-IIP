@@ -36,6 +36,16 @@
 
 `infra/docker-compose.dev.yml` 只承担本地依赖兜底，不是平台服务拓扑来源。`infra/compose/` 下的 legacy overlay 可以继续服务既有验证，但不得扩张成第二套完整平台图。
 
+### legacy MES 库存链路限制
+
+`infra/compose/nerv-iip.platform.yml` 不下发以下仓储位置配置，因此不支持这些链路：
+
+- **MES→WMS 领料：**不下发 `MaterialIssue__*`。领料事件未携带来源/线边库位且部署未配置时，WMS 在站点解析成功后将消息写入 `unresolved-location` 死信；站点本身无法唯一解析时先进入 `unresolved-site`。失败分支以 `MesMaterialIssueRequestedIntegrationEventHandler` 为准。
+- **MES 线边收料：**不下发 `Inventory__SiteCode`、`Inventory__SourceLocationCodes__N`、`Inventory__LineSideLocationCode`。`InventoryMesMaterialSupplyLocationResolver` 在站点、来源候选库位或线边库位缺失时抛出 `MATERIAL_SUPPLY_LOCATION_UNCONFIGURED`。
+- **MES 完工入库：**不下发 `Inventory__SiteCode`、`Inventory__FinishedGoodsLocationCode`。`ConfiguredMesFinishedGoodsReceiptLocationResolver` 在成品仓站点或库位缺失时抛出 `FINISHED_GOODS_LOCATION_UNCONFIGURED`；独立成品仓站点的配置覆盖键为 `Inventory:FinishedGoodsSiteCode`。
+
+完整平台拓扑使用平台级 AppHost 生成的 Aspire Compose 产物，操作见 [`../../runbooks/deployment.md`](../../runbooks/deployment.md)。位置配置及非 Development 环境门控仍以 AppHost、MES/WMS 的配置绑定和上述 resolver/handler 为准。
+
 ## 服务与配置边界
 
 1. 服务间 HTTP 地址是部署输入。当前服务继续消费既有 `Xxx:BaseUrl` 配置键；AppHost、生成的 Compose 和安装入口负责提供环境对应值，服务代码不能把非 Development 环境静默回退到 localhost。
