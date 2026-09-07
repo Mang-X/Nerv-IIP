@@ -12,8 +12,9 @@
 | Platform | [`platform/README.md`](platform/README.md) | IAM、File Storage、Notification、Observability、SDK、缓存、AI/Knowledge、部署等控制面架构 |
 | Integration | [`integration/README.md`](integration/README.md) | Gateway/OpenAPI 契约链、Connector Host 身份与协议 |
 | Data | [`data/README.md`](data/README.md) | 数据架构任务路由；Schema 规则与目录分别回到 Governance / Reference |
-
-业务领域与前端架构仍由 M2-L 后续治理；在完成迁移前，现有 `business-platform-domain-architecture.md`、`frontend-structure.md`、`frontend-navigation-map.md` 等 Current Architecture owner 继续保留原路径，不由 M2-K 越界改写。
+| Business | [`business/README.md`](business/README.md) | 业务域、MasterData、现场 scope、Scheduling、设备/MES/ERP/WMS/Planning 当前边界 |
+| Frontend | [`frontend/README.md`](frontend/README.md) | 前端 workspace、app/package 职责与依赖方向 |
+| Mobile | [`mobile/README.md`](mobile/README.md) | PDA / Capacitor 运行时架构 |
 
 ## 按任务路由
 
@@ -22,20 +23,17 @@
 | 服务边界、事实所有权、跨域调用 | [`overview/context-map.md`](overview/context-map.md) + [`platform/core-domain-model.md`](platform/core-domain-model.md) |
 | 仓库目录、solution / package 放置与依赖边界 | [`overview/repo-layout.md`](overview/repo-layout.md) |
 | IAM、认证、授权上下文 | [`platform/iam-authentication.md`](platform/iam-authentication.md) + [`../governance/security/authorization.md`](../governance/security/authorization.md) |
-| File Storage | [`platform/file-storage.md`](platform/file-storage.md) |
-| Notification | [`platform/notification.md`](platform/notification.md) |
-| Observability / 日志 / 平台告警 | [`platform/observability.md`](platform/observability.md) |
-| 缓存 | [`platform/caching.md`](platform/caching.md) |
-| AI / Knowledge | [`platform/ai-boundaries.md`](platform/ai-boundaries.md) + [`platform/knowledge-source-lifecycle.md`](platform/knowledge-source-lifecycle.md) |
-| Platform SDK | [`platform/sdk.md`](platform/sdk.md) |
-| 当前部署拓扑 | [`platform/deployment.md`](platform/deployment.md)；执行操作见 [`../runbooks/deployment.md`](../runbooks/deployment.md) |
 | API、Gateway、OpenAPI 与生成客户端 | [`integration/api-contracts.md`](integration/api-contracts.md) + [`../governance/api/contracts-and-codegen.md`](../governance/api/contracts-and-codegen.md) |
 | Connector Host / 平台接入 | [`integration/connector-protocol-v1.md`](integration/connector-protocol-v1.md) + [`integration/connector-host-machine-auth.md`](integration/connector-host-machine-auth.md) |
+| 业务域划分与平台/业务边界 | [`business/domain-architecture.md`](business/domain-architecture.md) |
+| MasterData / 现场作业 / Scheduling / MES / ERP / WMS / Planning | [`business/README.md`](business/README.md) 后只选直接相关专题 |
+| 前端工作区、应用和包职责 | [`frontend/workspace-structure.md`](frontend/workspace-structure.md) |
+| PDA / Capacitor 运行时 | [`mobile/capacitor.md`](mobile/capacitor.md) |
+| 业务导航、页面 IA 与产品语义 | [`../product/README.md`](../product/README.md) |
 | 数据库 Schema 规则 / 当前目录 | [`data/README.md`](data/README.md) |
-| 业务域划分与平台/业务边界 | [`business-platform-domain-architecture.md`](business-platform-domain-architecture.md) |
-| 前端工作区、应用和包职责 | [`frontend-structure.md`](frontend-structure.md) |
-| 业务导航、页面 IA 与产品语义 | [`frontend-navigation-map.md`](frontend-navigation-map.md) + [`../product/README.md`](../product/README.md) |
 | 测试有效性、确定性与 evidence | [`../governance/testing/README.md`](../governance/testing/README.md) + [`../runbooks/testing/README.md`](../runbooks/testing/README.md) + [`../reference/testing/README.md`](../reference/testing/README.md) |
+
+Platform 其它专题（File Storage、Notification、Observability、缓存、AI/Knowledge、SDK、部署）从 [`platform/README.md`](platform/README.md) 继续路由。
 
 ## 不属于 Architecture 的内容
 
@@ -49,10 +47,6 @@
 
 ## M2 迁移兼容
 
-M2-B 至 M2-K 已逐步把混合生命周期内容迁出 `docs/architecture/` 平铺层。旧 owner 文件名只在仍有高价值历史/活跃引用时保留**短兼容导航**，不得继续写正文；删除条件由 M2-M/M4 统一收口。
+M2-B 至 M2-L 已逐步把混合生命周期内容迁出 `docs/architecture/` 平铺层。旧 owner 文件名只在仍有高价值历史/活跃引用时保留**短兼容导航**，不得继续写正文；删除条件由 M2-M/M4 统一收口。
 
-M2-K 的 canonical owner 已迁入 `overview/`、`platform/`、`integration/` 与 `data/` 路由。以下旧路径只作为兼容 shim：
-
-`ai-boundaries.md`、`caching-baseline.md`、`connector-host-machine-auth.md`、`connector-platform-protocol-v1.md`、`context-map.md`、`core-domain-model-v1.md`、`file-storage-baseline.md`、`iam-authentication-baseline.md`、`knowledge-source-lifecycle.md`、`notification-baseline.md`、`observability-baseline.md`、`platform-sdk-baseline.md`、`repo-layout.md`。
-
-当前入口、AGENTS、ADR 和活跃 README 应直接链接 canonical path；历史 spec/report 可通过 shim 保持可追溯。
+M2-K 的 canonical owner 已迁入 `overview/`、`platform/`、`integration/` 与 `data/`。M2-L 的 12 个冻结 owner 已迁入 `business/`、`frontend/` 与 `mobile/`，其中混合 owner 的 Governance/Runbook/历史证据已拆出。当前入口、AGENTS、ADR、产品文档和活跃 README 应直接链接 canonical path；历史 spec/report 可通过 shim 保持可追溯。
