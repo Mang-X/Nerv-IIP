@@ -196,18 +196,15 @@ function parseMovement(record: JsonRecord, index: number): InventoryMovementFact
 }
 
 async function captureSessionCredential(page: Page): Promise<string> {
-  const businessRequest = page.waitForRequest(
-    (request) => {
-      const pathname = new URL(request.url()).pathname
-      return (
-        pathname === '/api/business-console/v1/master-data/skus' &&
-        Boolean(request.headers().authorization)
-      )
+  const businessResponse = page.waitForResponse(
+    (response) => {
+      const pathname = new URL(response.url()).pathname
+      return pathname === '/api/business-console/v1/master-data/skus' && response.ok()
     },
     { timeout: 120_000 },
   )
   await page.goto('/master-data/skus', { waitUntil: 'domcontentloaded', timeout: 120_000 })
-  const credential = (await businessRequest).headers().authorization
+  const credential = (await businessResponse).request().headers().authorization
   if (!credential)
     throw new Error('Authenticated public business request had no bearer credential.')
   return credential
