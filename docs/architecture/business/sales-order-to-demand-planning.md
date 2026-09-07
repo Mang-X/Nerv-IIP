@@ -1,44 +1,47 @@
 # ERP 销售订单到 DemandPlanning 需求桥
 
-## 边界与事实源
+本文只描述 ERP SalesOrder 生命周期到 DemandPlanning `DemandSource` 的**当前事实所有权、事件契约语义、版本收敛和预测冲减边界**。演示 seed、真实跨进程验证、脚本预算和诊断操作见 [`../../runbooks/erp-sales-order-demand-planning.md`](../../runbooks/erp-sales-order-demand-planning.md)；M2-L 清理前的混合正文冻结于 [`../../reports/m2-l-sales-order-to-demand-planning-pre-clean-2026-09-07.md`](../../reports/m2-l-sales-order-to-demand-planning-pre-clean-2026-09-07.md)。
 
-ERP 拥有销售订单、客户、站点、行数量/单位/要求交期、状态和单调递增的订单业务版本。DemandPlanning 不读取 ERP schema，也不复制订单金额或履约事实；它只消费 ERP 公共生命周期事件，维护订单级版本水位，并把每个有效订单行投影为 `demand_type=sales-order` 的 DemandSource。
+## 事实所有权
 
-ERP 发布三个 v1 具体事件：`SalesOrderReleasedIntegrationEvent`、`SalesOrderChangedIntegrationEvent`、`SalesOrderCancelledIntegrationEvent`。每个事件携带完整订单行快照、organization/environment、stable order id/no、customer、site、order version、correlation/causation，以及只含 ASCII 字母数字、冒号、下划线和连字符的稳定幂等键。
+ERP 拥有销售订单、客户、站点、行数量/UOM/要求交期、状态和单调递增订单业务版本。DemandPlanning 不读取 ERP schema，也不复制金额、信用或履约事实；它只消费 ERP 公共生命周期事件，维护订单级版本水位，并把有效订单行投影为 `demand_type=sales-order` 的需求来源。
 
-## 收敛规则
+`sales-order` demand type 由 ERP 集成拥有；Planning 手工需求不能伪装成销售订单来源。历史手工行或导入数据需要迁移分类时也不能形成假的 ERP 文档引用。
 
-1. 初次释放（含信用冻结解除）建立或更新每个非取消订单行的 DemandSource。
-2. changed 是完整快照；数量/交期按更高 `orderVersion` 更新，快照中缺失或标记取消的既有行归零并保留 `source_status=cancelled`。
-3. cancelled 将订单下所有既有需求行归零并保留取消状态；订单水位墓碑阻止迟到的低版本 release/change 复活需求。
-4. 相同 consumer + idempotency key 只处理一次；合法但低版本的不同事件仍写 inbox 审计，却不回滚投影。
-5. envelope 或业务字段错误进入 DemandPlanning 持久 DLQ；数据库/网络瞬态错误仍由 CAP 重试，handler 不把业务拒绝变成 poison message。
-6. MRP 只读取 `source_status=active AND quantity>0` 的需求。pegging 和生产建议沿用 `source_reference`，因此可回溯到 ERP 订单号。
+## 生命周期事件
 
-## 预测输入与订单冲减
+ERP 的销售订单生命周期通过 released / changed / cancelled 事实表达。事件必须携带：
 
-DemandPlanning 同时拥有计划员维护的 `ForecastInput`：每条预测按 SKU、单位、工厂和预测期间记录数量，并配置向前、向后订单冲减窗口。预测编号由 `forecast` 编码规则生成；新建请求使用稳定幂等键，重试相同内容返回首次分配的编号，同键改动任一创建字段则拒绝，避免超时重试产生重复或静默覆盖。
+- organization/environment；
+- 稳定 order id / order no；
+- customer、site 与完整有效订单行快照；
+- 单调递增 `orderVersion`；
+- correlation/causation；
+- 稳定业务幂等键。
 
-Business Console `/planning` 的“预测管理”页签提供预测筛选、新建和编辑。SKU、工厂、单位都从对应主数据类型中搜索选择，日期使用统一日期组件；字段错误在提交后同时显示于字段旁和汇总区，加载或保存失败只通过 toast 给出可操作提示，不在页面保留常驻错误条。销售订单冲减相同 SKU 与工厂的预测数量；单位在存在权威换算时归一到计划单位，并且订单日期必须落在配置窗口内。剩余数量才进入 MRP 输入；本阶段不提供删除、批量导入或版本历史。
+DemandPlanning 只消费公开 contract，不引用 ERP Domain/Web/Infrastructure，也不通过 Gateway 查询 ERP 数据库来补齐缺失行。
 
-## 可复用演示前置路径：SO-DEMO-001
+## 版本收敛
 
-AppHost 为 ERP 显式开启 `Erp:Seed:SalesOrderDemandDemo:Enabled`。该 seed 幂等创建并保留 released 的 `QUO-DEMO-001` / `SO-DEMO-001`（客户 `CUST-DEMO-001`、SKU `SKU-DEMO-001`、UOM `EA`、站点 `SITE-001`），并通过正常 Unit of Work/CAP outbox 发布 released 事实；不会覆盖同编号的租户事实，若保留编号已被不兼容数据占用则启动明确失败。跨服务演示 profile 必须使用 Redis 或 RabbitMQ transport，不能使用仅进程内的 InMemory transport。
+1. 初次 released 建立/更新每个有效订单行的 DemandSource。
+2. changed 是完整快照；只接受高于当前 watermark 的版本。数量/交期随新版本更新，快照中缺失或取消的既有行归零并保留取消来源状态。
+3. cancelled 将订单下既有需求行归零并推进订单水位；低版本 release/change 不能复活已取消需求。
+4. 相同 consumer + idempotency key 只执行一次；合法但低版本的不同事件可以留下 inbox 审计，但不回滚投影。
+5. 合法业务拒绝与 poison message 进入受控 DLQ/诊断路径；数据库或 transport 瞬态失败由消息基础设施重试，handler 不吞掉失败伪造成功。
+6. MRP 只消费有效、正数量的需求投影；pegging/计划建议继续携带稳定 `source_reference`，因此可追溯 ERP 订单而无需复制订单详情。
 
-该开关与 L1 背景历史开关 `LeaderDemo:History:Enabled` 都只允许在 Development 使用：非 Development 环境下任一开关为 `true`，ERP 会在建立 host 后、执行迁移与开始监听之前抛出 `InvalidOperationException` 拒绝启动（fail-closed），与其余业务服务一致，避免演示数据写进非开发环境的真实账套。
+## 预测与订单冲减
 
-默认 AppHost 演示应直接复用 seed 订单，不要再通过创建 API 手工创建同号订单。若要演示完整手工录入流程，先关闭 `Erp:Seed:SalesOrderDemandDemo:Enabled`，再执行下列前置步骤。`scripts/verify-erp-sales-order-demand-planning.ps1` 始终创建一次性数据库和独立服务进程，不连接 AppHost dev 数据库，因此不与默认 seed 冲突。
+DemandPlanning 还拥有计划员维护的 Forecast：SKU、工厂/站点、UOM、预测期间、数量以及向前/向后订单冲减窗口属于 Planning 事实。销售订单只作为实际需求输入参与冲减，不取得 Forecast 所有权。
 
-1. 在同一 organization/environment 准备 active 客户 `CUST-001`，配置足够信用额度，或先走信用冻结后审批释放路径。
-2. 准备 active SKU `SKU-FG-A`、UOM `EA`、站点 `SITE-001`，以及能生成生产建议的 released ProductionVersion/MBOM/Routing 和必要库存快照。
-3. 创建并批准报价，至少包含一行 `SKU-FG-A`、正数量和要求交期。
-4. 关闭 demo seed 时，从报价创建销售订单 `SO-DEMO-001`，显式提交 `siteCode=SITE-001`；使用默认 seed 时跳过创建，直接等待 DemandPlanning consumer 收敛 released 事实。
-5. 在 `/planning` 验证来源 `SO-DEMO-001`、订单行、客户、版本与 active 状态；点击来源可进入 `/erp/sales/orders?keyword=SO-DEMO-001`。
-6. 运行覆盖要求交期的 MRP，验证 pegging/计划工单建议的 demand source reference 为 `SO-DEMO-001`。
-7. 重放相同事件，再依次投递更高版本 change、低版本 change 和 cancel；验证重复/乱序不回滚，新数量可见，取消后 quantity=0/status=cancelled 且后续 MRP 不再使用该需求。
+冲减按同 SKU 与工厂/站点匹配，并在存在权威 UOM 换算时统一到计划单位；订单日期必须落在配置的冲减窗口内。剩余 Forecast 数量进入 MRP。Forecast 的创建/更新同样使用稳定幂等语义，超时重试不得产生第二条预测或静默覆盖不同内容。
 
-`sales-order` demand type 由 ERP 集成独占；Planning 手工录入不再提供该类型，迁移会把没有上游文档 ID 的旧手工 `sales-order` 行归类为 `manual`，避免和真实订单行重复计数。
+页面是否提供创建/编辑/删除/导入、字段布局和交互文案属于 Product/Frontend，不改变上述事实边界。
 
-真实跨进程验收运行 `scripts/verify-erp-sales-order-demand-planning.ps1`。脚本使用一次性 PostgreSQL 数据库保存 ERP outbox 与 DemandPlanning inbox/watermark/DemandSource，使用 Redis CAP transport，分别启动 MasterData、ERP、DemandPlanning 进程。独立 probe 以不同 transport key 注入同一业务版本重放和低版本迟到消息，强制越过 inbox 首层去重，并等待两个 event id 都进入持久 inbox 后再验证 watermark 不回滚；完全相同 idempotency key 的重复投递由真实 Redis 消费套件单独覆盖。CAP 10.0.1 同一次消费最多立即尝试三次；默认后台扫描每 60 秒运行，但失败消息需早于默认 240 秒 lookback 才可被回捡。确定性 fallback probe 因此连续让 changed v2 三次立即尝试失败，先证明投影保持 v1，再由测试 profile 的 30 秒安全 lookback 下限和 2 秒扫描间隔触发第 4 次并更新持久 v2 投影。实际 acceptance 只覆盖 ERP/DemandPlanning 进程的该 run-scoped profile，生产未配置时仍使用 CAP 默认值；90 秒 gate 为 30 秒 eligibility、扫描和 CI 调度保留余量，不再宣称覆盖默认 240 秒 fallback。成功证据输出到 `artifacts/acceptance/man517/sales-order-demand-planning-evidence.json`；失败时在清理前输出脱敏的最后 HTTP 观测、ERP/DemandPlanning CAP 表、DemandPlanning inbox/DLQ/投影、Redis stream/group/pending 和服务日志尾到 `artifacts/acceptance/man517/diagnostics/`，CI 以 `if: always()` 保留 artifact。finally 删除测试库并停止托管进程，但不会停止脚本启动前已运行的基础设施。不要用 InMemory provider 代替该验收。
+## 一致性不变量
 
-该脚本的 HTTP 调用没有任何隐式请求预算。查询轮询传入自己的绝对 deadline，状态变更 POST 只能经 `Invoke-JsonPost` 传入一次性有界预算（默认 90 秒，`ValidateRange(60, 180)`）；缺少 `-Deadline`/`-TimeoutSeconds` 或两者同时传入都直接失败。此前 5 秒的隐式默认会在冷 CI runner 上取消已经进入 ERP handler 的 change-line POST：服务端记 HTTP 499、v2 事件不发布，两个无关 PR 的首轮 CI 因此随机变红。状态变更只发一次：调用点必须落在验收主流程的语句位置上，不得出现在任何循环**或嵌套 scriptblock** 里（管道 `ForEach-Object`、`.ForEach()`、`& $block` 与自建重试助手同属一类，静态上都无法断定只跑一次），且两个请求函数的调用点必须逐个具名传参，不得使用位置参数或 splatting，HTTP method 必须是字面量。POST 超时后提交结果不确定，重试即重复写，收敛只由随后的查询轮询证明。失败诊断输出 `stage`、`classification`、脱敏 URI、`budgetMs` 和 `elapsedMs`；`classification` 区分 `connect`（连接或 TLS 握手未建立）、`send`（请求发出后传输中断）、`server-cancelled`（HTTP 499，服务端主动取消）、`deadline`（客户端预算耗尽）、`http`（其他非 2xx）、`business`（HTTP 200 但 `success=false`）和 `protocol`（响应不是合法 JSON 或缺少 `success`）。fault-injection probe 除按名字断言单条结果外，还按 TRX Counters 钉死 executed=1/passed=1/failed=0/skipped=0。清理在 finally 中逐项复核并写出 `artifacts/acceptance/man517/cleanup-evidence.json`：托管进程按 pid + 启动时间确认身份（PID 会被复用），一次性数据库按精确库名，compose 服务只统计本次运行启动的那些，任一项剩余不为 0 都记为清理失败。以上约束由 `scripts/tests/erp-sales-order-demand-planning-verify-script.Tests.ps1`（AST 级源契约）和 `scripts/tests/erp-sales-order-demand-planning-http-helper.Tests.ps1`（对一次性 loopback fixture 的行为断言）共同守住。
+1. ERP 订单详情只由 ERP 拥有；Planning 的订单投影必须能回到稳定 source reference/version。
+2. 同一订单版本的重复、乱序或迟到事件不会把 watermark 倒退。
+3. cancel 是有版本的业务事实，不通过删除 DemandSource 表达。
+4. 不使用跨 schema 外键或同步数据库读取完成收敛。
+5. Gateway/UI 聚合不成为订单或 DemandSource owner。
