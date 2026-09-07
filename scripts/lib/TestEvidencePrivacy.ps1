@@ -88,23 +88,51 @@ function Get-NervRetainedFailureGrammar {
         '<redacted(?:-body|-value):[0-9a-f]{16}>',
         '<redacted(?:-pem)?>'
     )
+    # Digit budget (#3213 round 2). A bare integer is simultaneously the reading this feature exists
+    # to keep (`observations=7`, `Expected: 3`, `arrivals=0`) and the highest-risk business payload
+    # there is (phone 11, bank card 16-19, national ID 18, order number >=8, money >=5). They are the
+    # *same token class*, so no pattern can separate them — only a magnitude bound can. Every
+    # diagnostic reading this repository's own helpers emit is either a small count or a `hh:mm:ss`
+    # duration, which has its own token, so the bound is set at four integer digits.
+    #
+    # Registered loss, deliberately not worked around: any reading whose magnitude needs five or
+    # more digits (byte counts, tick counts, large ids) is digested and cannot be read back. That
+    # is the price of not shipping phone numbers to a public artifact, and it is the honest
+    # statement of what this alphabet admits — see docs/governance/testing/evidence.md.
+    $boundedNumber = '(?<!["''])-?[0-9]{1,4}(?:\.[0-9]{1,4})?(?!["''])'
+    $identifierDigitGuard = '(?![A-Za-z0-9_.]*[0-9]{5})'
     $tokens = @(
-        '[A-Za-z_][A-Za-z0-9_.]*\s*[:=]\s*(?:-?[0-9]+(?:\.[0-9]+)?|true|false|null)',
+        # The key/value shape carries the same digit budget as a bare number; without it
+        # `salary=250000` rides through on the key/value alternative after the bare-number
+        # alternative has already refused it.
+        ('[A-Za-z_][A-Za-z0-9_.]*\s*[:=]\s*(?:' + $boundedNumber + '|true|false|null)'),
         # Quote guards on the digit-bearing shapes only. A number that sits inside quotes is a
         # string payload, not a reading: `"phone":"13800000000"` and `"WO20260907"` would otherwise
         # surrender their digits to the number alternative. The guard is per-alternative rather than
         # global so the `<redacted-…>` markers can still match when a quote precedes them, which the
         # fixed-point re-validation depends on.
         '(?<!["''])[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?(?!["''])',
-        '(?<!["''])[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?!["''])',
-        '(?<!["''])-?[0-9]+(?:\.[0-9]+)?(?!["''])',
-        # Case-sensitive on purpose (the alternation as a whole is IgnoreCase for the prose
-        # vocabulary): requiring an initial capital keeps `System.Exception` and `Assert.Equal`
-        # while dropping lowercase dotted material such as hostnames (`example.invalid`), and
-        # requiring a capital on the suffix keeps `EqualException` while dropping `terror`.
-        # Lowercase readings still land through the key/value shape (`cap.published=3`).
-        '(?-i:[A-Z][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+)',
-        '(?-i:[A-Za-z_][A-Za-z0-9_]*(?:Exception|Failure|Error|Timeout))',
+        # GUIDs are deliberately NOT admitted. A GUID inside a failure *message* is an entity,
+        # aggregate or tenant identifier — a subject identifier, which is exactly what evidence
+        # privacy exists to withhold. Nothing is lost for provenance: the retained record already
+        # carries `definitionId`, `testInstanceId`, `workflowRunId`, `headSha` and `testedSha` as
+        # first-class collector-produced fields rather than as text scraped out of a message.
+        $boundedNumber,
+        # Dotted names are admitted only when they are *type-shaped*, not merely capitalised.
+        # "Uppercase and dotted" is not a type-name predicate: `Zhang.Wei` and `Li.Ming` satisfy it
+        # and are people. Admission therefore requires either an exception-style final segment or a
+        # literal `Assert.` prefix, which is the whole of what the extractors can legitimately place
+        # in `type`. Registered loss: ordinary type names (`Nerv.IIP.Business.Mes.WorkOrder`) are
+        # digested; the failing test's full name already locates the code.
+        # Case-sensitive on purpose — the alternation as a whole is IgnoreCase for the prose
+        # vocabulary, so without `(?-i:)` the capital requirements below would not bind at all.
+        # An identifier may not carry a long digit run. Without this an "exception name" is a
+        # smuggling channel: `Customer110101199003078888Error` satisfies the suffix rule and would
+        # ship a national ID. Real type names never contain five consecutive digits, so the bound
+        # costs nothing and closes the class rather than leaving it to look accidentally covered.
+        ('(?-i:' + $identifierDigitGuard + '[A-Z][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*\.(?:[A-Za-z_][A-Za-z0-9_]*)?(?:Exception|Failure|Error|Timeout))'),
+        ('(?-i:' + $identifierDigitGuard + 'Assert\.[A-Z][A-Za-z0-9_]*)'),
+        ('(?-i:' + $identifierDigitGuard + '[A-Za-z_][A-Za-z0-9_]*(?:Exception|Failure|Error|Timeout))'),
         # Closed prose vocabulary. These words appear in the message templates this repository's
         # own test helpers and xUnit emit; they carry no payload. A word outside the list is
         # digested, so forgetting to add one degrades readability, never privacy.
@@ -210,12 +238,22 @@ function ConvertTo-NervRetainedFailureText {
 
     $source = [string]$Text
     $fields = [Collections.Specialized.OrderedDictionary]::new()
+    # `type` goes through the same value reducer as every other field. It used to be written
+    # straight from the extractor's capture, which meant the extractor's regex — not the token
+    # alphabet — decided what could land in it, and the two do not agree: the capture class allows
+    # dots, so anything ending in `Error` rode through unreduced and unbounded. Nothing may reach a
+    # retained field except through `ConvertTo-NervRetainedDiagnosticValue`.
+    $typeCandidate = $null
     $typeMatch = [regex]::Match($source, '(?m)^\s*(?<value>[A-Za-z_][A-Za-z0-9_.]*(?:Exception|Error))\s*:')
     if (-not $typeMatch.Success) {
         $assertMatch = [regex]::Match($source, '(?m)Assert\.(?<value>[A-Za-z]+)\(\)\s*Failure')
-        if ($assertMatch.Success) { $fields['type'] = "Assert.$($assertMatch.Groups['value'].Value)" }
+        if ($assertMatch.Success) { $typeCandidate = "Assert.$($assertMatch.Groups['value'].Value)" }
     }
-    else { $fields['type'] = $typeMatch.Groups['value'].Value }
+    else { $typeCandidate = $typeMatch.Groups['value'].Value }
+    if (-not [string]::IsNullOrWhiteSpace($typeCandidate)) {
+        $reducedType = ConvertTo-NervRetainedDiagnosticValue $typeCandidate
+        if (-not [string]::IsNullOrWhiteSpace($reducedType)) { $fields['type'] = $reducedType }
+    }
 
     $namedCaptures = @(
         [pscustomobject]@{ Field = 'condition'; Pattern = "(?m)Condition\s*'(?<value>[^']*)'" },

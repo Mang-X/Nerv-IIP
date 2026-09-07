@@ -418,7 +418,10 @@ foreach ($rejection in $retainedGrammarRejections) {
 
 $retainedDiagnosticValueCases = @(
     [pscustomobject]@{ Name = 'numeric reading'; Input = 'arrivals=0 attempts=3'; Expected = 'arrivals=0 attempts=3' },
-    [pscustomobject]@{ Name = 'dotted identifier'; Input = 'Nerv.IIP.Testing.Eventually'; Expected = 'Nerv.IIP.Testing.Eventually' },
+    [pscustomobject]@{ Name = 'type-shaped dotted identifier'; Input = 'Nerv.IIP.Testing.EventuallyTimeoutException'; Expected = 'Nerv.IIP.Testing.EventuallyTimeoutException' },
+    # Round 2: 'dotted and capitalised' is not a type-name predicate (`Zhang.Wei` satisfies it),
+    # so a dotted name is admitted only when it is exception-shaped or `Assert.`-prefixed.
+    [pscustomobject]@{ Name = 'non-type dotted identifier is digested'; Input = 'Nerv.IIP.Testing.Eventually'; Expected = '<redacted-value:a45210483b3c6258>' },
     [pscustomobject]@{ Name = 'free text digests whole'; Input = 'Zhang Wei'; Expected = '<redacted-value:5d5f4c7181009832>' },
     [pscustomobject]@{ Name = 'identifier-glued digits stay digested'; Input = 'WO-20260907-0001'; Expected = '<redacted-value:245142f4d4555a95>' },
     [pscustomobject]@{ Name = 'field separator cannot survive'; Input = 'a;b'; Expected = '<redacted-value:c8687a08aa5d6ed2>' },
@@ -430,6 +433,126 @@ foreach ($case in $retainedDiagnosticValueCases) {
     Assert-Equal $case.Expected (ConvertTo-NervRetainedDiagnosticValue $case.Input) "Retained diagnostic value reduction changed for '$($case.Name)'."
 }
 Assert-True (-not (ConvertTo-NervRetainedDiagnosticValue 'a;b').Contains(';', [StringComparison]::Ordinal)) 'A retained diagnostic value must never contain the rendered field separator.'
+
+# #3213 round 2. Every case below is a reproduction the independent review ran against the round-1
+# head, where each one shipped its payload verbatim into the retained text. They are pinned here as
+# the alphabet's admission contract: the bare-number class is simultaneously the reading this
+# feature exists to keep and the highest-risk business payload there is, so what separates them is
+# a magnitude bound, and a bound nobody re-checks drifts back.
+$retainedAdmissionCases = @(
+    [pscustomobject]@{ Name = 'phone number'; Input = "Assert.Equal() Failure`nExpected: 13800000000`nActual:   13900000000"; Absent = @('13800000000', '13900000000') },
+    [pscustomobject]@{ Name = 'bank card'; Input = "Assert.Equal() Failure`nExpected: 622202123456789012`nActual:   1"; Absent = @('622202123456789012') },
+    [pscustomobject]@{ Name = 'national id'; Input = "Assert.Equal() Failure`nExpected: 110101199003078888`nActual:   1"; Absent = @('110101199003078888') },
+    [pscustomobject]@{ Name = 'guid subject identifier'; Input = "Assert.Equal() Failure`nExpected: 3f2504e0-4f89-11d3-9a0c-0305e82c3301`nActual:   1"; Absent = @('3f2504e0', '0305e82c3301') },
+    [pscustomobject]@{ Name = 'dotted person name'; Input = "Assert.Equal() Failure`nExpected: Zhang.Wei`nActual:   Li.Ming"; Absent = @('Zhang.Wei', 'Li.Ming') },
+    [pscustomobject]@{ Name = 'salary key/value'; Input = "Assert.Equal() Failure`nExpected: salary=250000`nActual:   1"; Absent = @('250000') },
+    [pscustomobject]@{ Name = 'digits smuggled inside an exception name'; Input = 'Customer110101199003078888Error : boom'; Absent = @('110101199003078888') }
+)
+foreach ($case in $retainedAdmissionCases) {
+    $retained = ConvertTo-NervRetainedFailureText $case.Input
+    Assert-True (Test-NervRetainedFailureText $retained) "Admission case '$($case.Name)' must still satisfy the retained-failure grammar."
+    foreach ($absent in @($case.Absent)) {
+        Assert-True (-not $retained.Contains($absent, [StringComparison]::Ordinal)) "The token alphabet admitted business payload '$absent' for '$($case.Name)'."
+    }
+}
+
+# The admission contract stated as a two-sided token matrix. The left column is what the alphabet
+# must keep or the feature is the trivial "retain nothing" solution it replaced; the right column is
+# what it must refuse or the artifact ships subject identifiers to a public 14-day download.
+$retainedTokenAdmission = @(
+    [pscustomobject]@{ Token = 'System.Exception'; Admitted = $true },
+    [pscustomobject]@{ Token = 'Nerv.IIP.Testing.EventuallyTimeoutException'; Admitted = $true },
+    [pscustomobject]@{ Token = 'EqualException'; Admitted = $true },
+    [pscustomobject]@{ Token = 'Assert.Equal'; Admitted = $true },
+    [pscustomobject]@{ Token = 'observations=7'; Admitted = $true },
+    [pscustomobject]@{ Token = 'arrivals=0'; Admitted = $true },
+    [pscustomobject]@{ Token = 'cap.published=3'; Admitted = $true },
+    [pscustomobject]@{ Token = '00:00:30.0021000'; Admitted = $true },
+    [pscustomobject]@{ Token = '2026'; Admitted = $true },
+    [pscustomobject]@{ Token = '-5'; Admitted = $true },
+    [pscustomobject]@{ Token = '13800000000'; Admitted = $false },
+    [pscustomobject]@{ Token = '622202123456789012'; Admitted = $false },
+    [pscustomobject]@{ Token = '110101199003078888'; Admitted = $false },
+    [pscustomobject]@{ Token = '20260907'; Admitted = $false },
+    [pscustomobject]@{ Token = '12345'; Admitted = $false },
+    [pscustomobject]@{ Token = 'salary=250000'; Admitted = $false },
+    [pscustomobject]@{ Token = '3f2504e0-4f89-11d3-9a0c-0305e82c3301'; Admitted = $false },
+    [pscustomobject]@{ Token = 'Zhang.Wei'; Admitted = $false },
+    [pscustomobject]@{ Token = 'example.invalid'; Admitted = $false },
+    [pscustomobject]@{ Token = 'Nerv.IIP.Business.Mes.WorkOrder'; Admitted = $false },
+    [pscustomobject]@{ Token = 'Customer110101199003078888Error'; Admitted = $false }
+)
+foreach ($admission in $retainedTokenAdmission) {
+    $reduced = ConvertTo-NervRetainedDiagnosticValue $admission.Token
+    if ($admission.Admitted) {
+        Assert-Equal $admission.Token $reduced "Token '$($admission.Token)' must stay readable; digesting it makes artifact-only diagnosis impossible."
+    }
+    else {
+        Assert-True ($reduced -match '^<redacted-value:[0-9a-f]{16}>$') "Token '$($admission.Token)' must not be admitted by the alphabet. Reduced=[$reduced]"
+    }
+}
+
+# `type` used to be written straight from its extractor, so the extractor's capture class rather
+# than the token alphabet decided what could land there, and the two disagreed. These two cases are
+# the discriminating pair: the first is a genuine type name and must survive, the second is the same
+# extractor capture carrying a digit run and must not.
+Assert-True ((ConvertTo-NervRetainedFailureText 'System.InvalidOperationException : boom').Contains('type=System.InvalidOperationException', [StringComparison]::Ordinal)) `
+    'A genuine exception type name must remain readable in the type field.'
+# Both halves are load-bearing. Asserting only "the digits are gone" has zero discriminating power:
+# restore the bypass and the final grammar re-validation rejects the unreduced render and falls back
+# to the fixed prose, which also has no digits — an adjacent same-type guard absorbing the mutation.
+# The `type=<redacted-value:…>` half is what fails when `type` skips the reducer, because the prose
+# fallback carries no field at all. Verified by mutation M4.
+$retainedSmuggledType = ConvertTo-NervRetainedFailureText 'Customer110101199003078888Error : boom'
+Assert-True (-not $retainedSmuggledType.Contains('110101199003078888', [StringComparison]::Ordinal)) `
+    'The type field must go through the same value reducer as every other field.'
+Assert-True ($retainedSmuggledType -match 'type=<redacted-value:[0-9a-f]{16}>$') `
+    "A type the alphabet refuses must be reduced to a digest in place, not degrade the whole record to the fixed prose. Actual=[$retainedSmuggledType]" 
+
+# ⚠️ Registered, deliberate, NOT a hole: an exception *type name* is a source identifier, and this
+# repository is public, so retaining it discloses nothing `git clone` does not. This assertion
+# exists so the choice is visible and has to be argued with rather than quietly rediscovered.
+Assert-True ((ConvertTo-NervRetainedFailureText 'ZhangWeiSecretException : boom').Contains('type=ZhangWeiSecretException', [StringComparison]::Ordinal)) `
+    'Exception type names are retained by design as public source identifiers; change this only by changing the documented trade-off.'
+
+# Fixed-point acceptance, stated honestly. A raw message that imitates the prefix DOES pass through
+# verbatim when it is entirely inside the alphabet — and that is sound, because what it can carry is
+# then exactly what the grammar would have emitted anyway. The load-bearing claim is therefore not
+# "imitation cannot pass" but "what an imitation can carry is bounded by the alphabet", so the case
+# that must be red is one whose payload is inside the *old* alphabet and outside the current one.
+$retainedPrefixImitation = 'Test failed; retained diagnostics: expected=13800000000 622202123456789012 Zhang.Wei'
+$retainedPrefixImitationResult = ConvertTo-NervRetainedFailureText $retainedPrefixImitation
+foreach ($absent in @('13800000000', '622202123456789012', 'Zhang.Wei')) {
+    Assert-True (-not $retainedPrefixImitationResult.Contains($absent, [StringComparison]::Ordinal)) `
+        "A prefix-imitating raw message carried '$absent' through the fixed-point check."
+}
+$retainedPrefixLegal = 'Test failed; retained diagnostics: expected=3; actual=0'
+Assert-Equal $retainedPrefixLegal (ConvertTo-NervRetainedFailureText $retainedPrefixLegal) `
+    'A text that is wholly inside the alphabet must be accepted verbatim; that is what makes retention a fixed point.'
+
+# The diagnostic readings that survive are narrower than "the failure message". These assertions
+# pin the *actual* reach so the PR narrative cannot drift wider than the implementation.
+$retainedReachCases = @(
+    [pscustomobject]@{ Name = 'TestTimeout operation text is digested, not readable'; Input = "Nerv.IIP.Testing.TestTimeoutException : Operation 'MES arrival projection' timed out after 00:00:30.0000000."; Absent = @('MES arrival projection'); Present = @('type=Nerv.IIP.Testing.TestTimeoutException', 'elapsed=00:00:30.0000000') },
+    [pscustomobject]@{ Name = 'Assert.Single count is not extracted'; Input = 'Assert.Single() Failure: The collection contained 3 items'; Absent = @('collection contained'); Present = @('type=Assert.Single') },
+    [pscustomobject]@{ Name = 'plain exception message is not extracted'; Input = 'System.InvalidOperationException : The projection row was never written'; Absent = @('projection row was never written'); Present = @('type=System.InvalidOperationException') },
+    # ⚠️ #3195 family A constraint. Instrumentation appended to a TestTimeout message is dropped
+    # whole; the same readings survive only inside `Eventually`'s `Last observation:`. #3213 does
+    # not make family A's instrumentation readable by itself — family A must shape its output into
+    # a captured field.
+    [pscustomobject]@{ Name = '#3195 instrumentation appended to TestTimeout is dropped'; Input = "Nerv.IIP.Testing.TestTimeoutException : Operation 'MES arrival' timed out after 00:00:30.0000000. publishStartedAt=12.5 consumeObservedAt=42.5"; Absent = @('publishStartedAt', 'consumeObservedAt'); Present = @('elapsed=00:00:30.0000000') },
+    [pscustomobject]@{ Name = '#3195 instrumentation inside Last observation survives'; Input = "Nerv.IIP.Testing.EventuallyTimeoutException : Condition 'c' was not satisfied after 00:00:30.0000000 (5 observations). Last observation: publishStartedAt=12.5 consumeObservedAt=42.5"; Absent = @(); Present = @('publishStartedAt=12.5', 'consumeObservedAt=42.5', 'observations=5') }
+)
+foreach ($case in $retainedReachCases) {
+    $retained = ConvertTo-NervRetainedFailureText $case.Input
+    Assert-True (Test-NervRetainedFailureText $retained) "Reach case '$($case.Name)' must satisfy the retained-failure grammar."
+    foreach ($absent in @($case.Absent)) {
+        Assert-True (-not $retained.Contains($absent, [StringComparison]::Ordinal)) "Reach case '$($case.Name)' unexpectedly retained '$absent'."
+    }
+    foreach ($present in @($case.Present)) {
+        Assert-True ($retained.Contains($present, [StringComparison]::Ordinal)) "Reach case '$($case.Name)' dropped '$present'."
+    }
+}
 
 $redactionFailureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-test-evidence-redaction-contract-$([Guid]::NewGuid().ToString('N'))"
 try {
