@@ -13,7 +13,7 @@
 | Integration | [`integration/README.md`](integration/README.md) | Gateway/OpenAPI 契约链、Connector Host 身份与协议 |
 | Data | [`data/README.md`](data/README.md) | 数据架构任务路由；Schema 规则与目录分别回到 Governance / Reference |
 | Business | [`business/README.md`](business/README.md) | 业务域、MasterData、现场 scope、Scheduling、设备/MES/ERP/WMS/Planning 当前边界 |
-| Frontend | [`frontend/README.md`](frontend/README.md) | 前端 workspace、app/package 职责与依赖方向 |
+| Frontend | [`frontend/README.md`](frontend/README.md) | 前端 workspace、app/package 职责、导航壳层与依赖方向 |
 | Mobile | [`mobile/README.md`](mobile/README.md) | PDA / Capacitor 运行时架构 |
 
 ## 按任务路由
@@ -28,8 +28,10 @@
 | 业务域划分与平台/业务边界 | [`business/domain-architecture.md`](business/domain-architecture.md) |
 | MasterData / 现场作业 / Scheduling / MES / ERP / WMS / Planning | [`business/README.md`](business/README.md) 后只选直接相关专题 |
 | 前端工作区、应用和包职责 | [`frontend/workspace-structure.md`](frontend/workspace-structure.md) |
+| 前端导航壳层与应用责任 | [`frontend/navigation.md`](frontend/navigation.md) |
+| 业务导航、角色入口与产品 IA | [`../product/navigation.md`](../product/navigation.md) |
+| 当前 route/page/facade/permission 导航事实 | [`../reference/frontend/navigation-map.md`](../reference/frontend/navigation-map.md) |
 | PDA / Capacitor 运行时 | [`mobile/capacitor.md`](mobile/capacitor.md) |
-| 业务导航、页面 IA 与产品语义 | [`../product/README.md`](../product/README.md) |
 | 数据库 Schema 规则 / 当前目录 | [`data/README.md`](data/README.md) |
 | 测试有效性、确定性与 evidence | [`../governance/testing/README.md`](../governance/testing/README.md) + [`../runbooks/testing/README.md`](../runbooks/testing/README.md) + [`../reference/testing/README.md`](../reference/testing/README.md) |
 
@@ -47,6 +49,6 @@ Platform 其它专题（File Storage、Notification、Observability、缓存、A
 
 ## M2 迁移兼容
 
-M2-B 至 M2-L 已逐步把混合生命周期内容迁出 `docs/architecture/` 平铺层。旧 owner 文件名只在仍有高价值历史/活跃引用时保留**短兼容导航**，不得继续写正文；删除条件由 M2-M/M4 统一收口。
+M2-B 至 M2-N 已逐步把混合生命周期内容迁出 `docs/architecture/` 平铺层。旧 owner 文件名只在仍有高价值历史/活跃引用时保留**短兼容导航**，不得继续写正文；删除条件由 M2-M/M4 统一收口。
 
-M2-K 的 canonical owner 已迁入 `overview/`、`platform/`、`integration/` 与 `data/`。M2-L 的 12 个冻结 owner 已迁入 `business/`、`frontend/` 与 `mobile/`，其中混合 owner 的 Governance/Runbook/历史证据已拆出。当前入口、AGENTS、ADR、产品文档和活跃 README 应直接链接 canonical path；历史 spec/report 可通过 shim 保持可追溯。
+M2-K 的 canonical owner 已迁入 `overview/`、`platform/`、`integration/` 与 `data/`。M2-L 的 12 个冻结 owner 已迁入 `business/`、`frontend/` 与 `mobile/`。M2-N 将 `frontend-navigation-map.md` 拆为 Product / Governance / Reference / Architecture 四个独立 owner，并把原正文冻结到 Reports。当前入口、AGENTS、产品文档和活跃 README 应优先链接 canonical path；历史 spec/report 可通过 shim 与冻结报告保持可追溯。
