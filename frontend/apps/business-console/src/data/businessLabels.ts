@@ -75,18 +75,6 @@ export const APPROVAL_DECISION_LABELS: Readonly<Record<string, string>> = {
  * unrestricted / quality / restricted / blocked——写入时 Normalize，读面回的必是其一。
  * 别名（qualified/available → unrestricted，inspection/quality-inspection → quality，
  * conditional-release → restricted，rejected → blocked）一并登记，供直接展示别名的场合兜底。
- *
- * `quarantine` 是**历史遗留**取值。此前 Quality 种子把它写进
- * `InspectionRecord.StockReleaseDimension.SourceQualityStatus`；**后端已于 #3186 统一**，种子改写
- * `quality`，新写入不再产生 `quarantine`。
- *
- * 这里此前那句「质量域这条路径不走 Inventory 的 Normalize」**是错的**——它一直会经集成事件走到
- * `StockQualityStatus.Normalize`，正因如此才抛异常，那就是 #3186 的缺陷本体。
- *
- * **词条仍须保留，不要删**：演示库里已落库的历史记录仍带 `quarantine`，删掉词条它们会以原始码值上屏。
- * 解除条件：演示库重建后
- * `select count(*) from quality.inspection_records where source_quality_status <> 'quality'
- * and source_quality_status is not null` 读到 0。
  */
 export const QUALITY_STATUS_LABELS: Readonly<Record<string, string>> = {
   unrestricted: '非限制使用',
@@ -99,8 +87,6 @@ export const QUALITY_STATUS_LABELS: Readonly<Record<string, string>> = {
   'conditional-release': '条件放行',
   blocked: '冻结',
   rejected: '已拒收',
-  // 质量域专有（见上方说明）；译「隔离」而非「检验隔离」，避免与 quality=待检 混淆。
-  quarantine: '隔离',
 }
 
 /**
