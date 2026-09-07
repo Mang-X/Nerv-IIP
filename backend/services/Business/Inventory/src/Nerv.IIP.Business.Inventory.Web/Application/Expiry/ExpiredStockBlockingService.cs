@@ -51,10 +51,12 @@ public sealed class ExpiredStockBlockingService(
 
             var sourceDocumentId = $"{source.Id}:{asOfDate:yyyyMMdd}";
             var idempotencyKey = $"expiry-block:{source.Id}:{asOfDate:yyyyMMdd}";
-            // 读面去重探针：腿键必须与 PostStockMovementCommandHandler 拼出来的完全一致（#3176 S2）。
+            // 读面去重探针：本方法下面发的是 PostStockStatusTransferCommand，所以腿键必须与
+            // **PostStockStatusTransferCommandHandler** 拼出来的完全一致——绑错写面的话，
+            // 真写面后缀一改探针就静默失配，过期封锁会重复下发状态调拨、丢掉幂等性（#3176 B4）。
             var outboundKey = InventoryIdempotencyKeyPolicy.Compose(
                 idempotencyKey,
-                PostStockMovementCommandHandler.TransferOutLegSuffix);
+                PostStockStatusTransferCommandHandler.OutboundLegSuffix);
             if (await dbContext.StockMovements.AnyAsync(x =>
                     x.OrganizationId == source.OrganizationId
                     && x.EnvironmentId == source.EnvironmentId
