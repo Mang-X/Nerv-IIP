@@ -39,7 +39,7 @@ PlatformGateway 与 BusinessGateway 分别拥有自己的 OpenAPI 输出和生�
 
 ## Platform SDK 边界
 
-Platform SDK 是平台向应用、Connector Host 和扩展提供的稳定能力集合，模块与能力基线由 [`../platform-sdk-baseline.md`](../platform-sdk-baseline.md) 维护。SDK 应从 OpenAPI、公开 DTO 和版本化协议生成或包装，不依赖服务端 Domain、Infrastructure 或数据库模型；SDK/ApplicationVersion 的版本治理见 Governance。
+Platform SDK 是平台向应用、Connector Host 和扩展提供的稳定能力集合，模块与能力基线由 [`../platform/sdk.md`](../platform/sdk.md) 维护。SDK 应从 OpenAPI、公开 DTO 和版本化协议生成或包装，不依赖服务端 Domain、Infrastructure 或数据库模型；SDK/ApplicationVersion 的版本治理见 Governance。
 
 ## Business PDA / Mobile 边界
 

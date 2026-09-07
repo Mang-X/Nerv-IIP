@@ -1,59 +1,58 @@
 # Architecture 文档入口
 
-本页路由系统的**当前架构**。`docs/architecture/` 仍处于 M2 分类迁移期；文件位于本目录不等于它就是当前 Architecture。普通任务只读取与目标范围直接相关的当前架构页。
+本目录只承载 **Current Architecture**：系统现在由哪些组件组成、边界在哪里、事实归谁、依赖方向和交互方式是什么。项目进度、一次性调查、操作步骤、规范性规则和人工查询总账分别进入 Status / Reports、Runbook、Governance 与 Reference。
 
-## 基础边界
+当前实现行为最终以代码、配置、公开契约、迁移、测试和命令帮助为准；Architecture 不维护第二份可漂移的 endpoint、版本、Schema、CI job 或完成状态清单。
 
-- [平台上下文地图](context-map.md)：服务职责、事实所有权与交互方式。
-- [仓库布局说明](repo-layout.md)：顶层目录、放置规则与引用边界。
-- [业务平台领域架构](business-platform-domain-architecture.md)：业务域划分与平台/业务边界。
-- [核心领域模型](core-domain-model-v1.md)：首批平台领域事实与关系。
-- [Platform SDK 基线](platform-sdk-baseline.md)：公开客户端能力与服务内部实现的边界。
+## 主题目录
+
+| 主题 | 当前入口 | 主要问题 |
+| --- | --- | --- |
+| Overview | [`overview/README.md`](overview/README.md) | 仓库级上下文、事实所有权、目录与依赖边界 |
+| Platform | [`platform/README.md`](platform/README.md) | IAM、File Storage、Notification、Observability、SDK、缓存、AI/Knowledge、部署等控制面架构 |
+| Integration | [`integration/README.md`](integration/README.md) | Gateway/OpenAPI 契约链、Connector Host 身份与协议 |
+| Data | [`data/README.md`](data/README.md) | 数据架构任务路由；Schema 规则与目录分别回到 Governance / Reference |
+
+业务领域与前端架构仍由 M2-L 后续治理；在完成迁移前，现有 `business-platform-domain-architecture.md`、`frontend-structure.md`、`frontend-navigation-map.md` 等 Current Architecture owner 继续保留原路径，不由 M2-K 越界改写。
 
 ## 按任务路由
 
-| 任务 | 当前文档 |
+| 任务 | 先读 |
 | --- | --- |
-| 前端工作区、应用和包职责 | [frontend-structure.md](frontend-structure.md) |
-| 业务导航、页面 IA 与产品语义 | [frontend-navigation-map.md](frontend-navigation-map.md) + [`../product/README.md`](../product/README.md) |
-| API、Gateway、OpenAPI 与生成客户端的当前边界 | [`integration/api-contracts.md`](integration/api-contracts.md) + [`../governance/api/contracts-and-codegen.md`](../governance/api/contracts-and-codegen.md) |
-| Connector Host / 平台协议 | [connector-platform-protocol-v1.md](connector-platform-protocol-v1.md)、[connector-host-machine-auth.md](connector-host-machine-auth.md) |
-| 数据库命名与 Schema 规则 | [`../governance/data/database-schema.md`](../governance/data/database-schema.md)；当前 Schema 人工目录见 [`../reference/data/database-schema-catalog.md`](../reference/data/database-schema-catalog.md) |
-| 当前工程 Governance | [`../governance/README.md`](../governance/README.md) |
-| 当前 Reference | [`../reference/README.md`](../reference/README.md) |
-| 本地开发与排障 | [`../runbooks/local-development.md`](../runbooks/local-development.md) |
-| 部署拓扑 | [`platform/deployment.md`](platform/deployment.md) |
-| 部署、Compose 与 release-install 操作 | [`../runbooks/deployment.md`](../runbooks/deployment.md) |
-| CI / 构建 / 交付规则 | [`../governance/delivery/README.md`](../governance/delivery/README.md) |
-| 数据库发布、迁移与恢复 | [`../runbooks/database-release.md`](../runbooks/database-release.md) |
-| 脚本治理与操作排障 | [`../governance/script-automation.md`](../governance/script-automation.md) + [`../runbooks/script-automation.md`](../runbooks/script-automation.md) |
-| 测试有效性、确定性、证据、真实依赖与 PDA | [`../governance/testing/README.md`](../governance/testing/README.md) + [`../runbooks/testing/README.md`](../runbooks/testing/README.md) + [`../reference/testing/README.md`](../reference/testing/README.md) |
-| 文档语言与决策分层 | [`../governance/docs/language.md`](../governance/docs/language.md)、[`../governance/decisions/records.md`](../governance/decisions/records.md) |
-| 可观测性 | [observability-baseline.md](observability-baseline.md) |
+| 服务边界、事实所有权、跨域调用 | [`overview/context-map.md`](overview/context-map.md) + [`platform/core-domain-model.md`](platform/core-domain-model.md) |
+| 仓库目录、solution / package 放置与依赖边界 | [`overview/repo-layout.md`](overview/repo-layout.md) |
+| IAM、认证、授权上下文 | [`platform/iam-authentication.md`](platform/iam-authentication.md) + [`../governance/security/authorization.md`](../governance/security/authorization.md) |
+| File Storage | [`platform/file-storage.md`](platform/file-storage.md) |
+| Notification | [`platform/notification.md`](platform/notification.md) |
+| Observability / 日志 / 平台告警 | [`platform/observability.md`](platform/observability.md) |
+| 缓存 | [`platform/caching.md`](platform/caching.md) |
+| AI / Knowledge | [`platform/ai-boundaries.md`](platform/ai-boundaries.md) + [`platform/knowledge-source-lifecycle.md`](platform/knowledge-source-lifecycle.md) |
+| Platform SDK | [`platform/sdk.md`](platform/sdk.md) |
+| 当前部署拓扑 | [`platform/deployment.md`](platform/deployment.md)；执行操作见 [`../runbooks/deployment.md`](../runbooks/deployment.md) |
+| API、Gateway、OpenAPI 与生成客户端 | [`integration/api-contracts.md`](integration/api-contracts.md) + [`../governance/api/contracts-and-codegen.md`](../governance/api/contracts-and-codegen.md) |
+| Connector Host / 平台接入 | [`integration/connector-protocol-v1.md`](integration/connector-protocol-v1.md) + [`integration/connector-host-machine-auth.md`](integration/connector-host-machine-auth.md) |
+| 数据库 Schema 规则 / 当前目录 | [`data/README.md`](data/README.md) |
+| 业务域划分与平台/业务边界 | [`business-platform-domain-architecture.md`](business-platform-domain-architecture.md) |
+| 前端工作区、应用和包职责 | [`frontend-structure.md`](frontend-structure.md) |
+| 业务导航、页面 IA 与产品语义 | [`frontend-navigation-map.md`](frontend-navigation-map.md) + [`../product/README.md`](../product/README.md) |
+| 测试有效性、确定性与 evidence | [`../governance/testing/README.md`](../governance/testing/README.md) + [`../runbooks/testing/README.md`](../runbooks/testing/README.md) + [`../reference/testing/README.md`](../reference/testing/README.md) |
 
 ## 不属于 Architecture 的内容
 
-- 当前全仓级状态位于 [`../status/current.md`](../status/current.md)。
-- 当前 Governance 位于 [`../governance/README.md`](../governance/README.md)。
-- 当前 Product 位于 [`../product/README.md`](../product/README.md)。
-- 当前 Runbook 位于 [`../runbooks/README.md`](../runbooks/README.md)。
-- 当前 Reference 位于 [`../reference/README.md`](../reference/README.md)。
-- 历史阶段与状态快照位于 [`../status/archive/`](../status/archive/)。
-- 调查、实验、审计和修复记录位于 [`../reports/README.md`](../reports/README.md)。
-- 当前任务进度、负责人和验收证据位于 GitHub/Linear。
+- 项目重点、阻塞、里程碑与当前实施摘要：[`../status/current.md`](../status/current.md)。
+- 历史时点判断和迁移前快照：[`../status/archive/`](../status/archive/) 与 [`../reports/`](../reports/)。
+- 可执行命令、启动、迁移、恢复和排障：[`../runbooks/README.md`](../runbooks/README.md)。
+- 强制工程规则：[`../governance/README.md`](../governance/README.md)。
+- Schema、权限、码表、事件消费、矩阵和技术资料人工目录：[`../reference/README.md`](../reference/README.md)。
+- 用户、角色旅程、业务语义、IA 和 UX：[`../product/README.md`](../product/README.md)。
+- 长期不可轻易反转的决策及理由：[`../adr/README.md`](../adr/README.md)。
 
-M2-B 已迁出纵切历史与报告；M2-C 已迁出 Product；M2-D 已迁出 Runbook；M2-E 已迁出 Reference；M2-F 已迁出本批纯 Governance；M2-G 已拆脚本治理；M2-H 已拆测试有效性、确定性、证据、真实依赖 lane 与 PDA 测试五个混合 owner；M2-I 已拆 API/codegen 总账、BusinessGateway surface 与 facade coverage 的现态职责；M2-J 已拆后端 bootstrap、CI 构建实测与部署基线的混合生命周期。上述旧文件名只保留短兼容入口，不能再作为正文读取；兼容入口删除条件由 M2-M 汇总后交给 M4。
+## M2 迁移兼容
 
-## 迁移期类型提示
+M2-B 至 M2-K 已逐步把混合生命周期内容迁出 `docs/architecture/` 平铺层。旧 owner 文件名只在仍有高价值历史/活跃引用时保留**短兼容导航**，不得继续写正文；删除条件由 M2-M/M4 统一收口。
 
-- M2-D 的旧 Runbook 文件名仅为兼容入口。
-- M2-E 的旧 Reference 文件名仅为兼容入口。
-- M2-F 的旧 Governance 文件名仅为兼容入口。
-- M2-G 的 `script-automation-governance.md` 仅为兼容入口；当前规则与操作分别位于 `docs/governance/script-automation.md`、`docs/runbooks/script-automation.md`。
-- M2-H 的 `backend-test-determinism.md`、`test-evidence-governance.md`、`test-validity-governance.md`、`real-dependency-test-lanes.md`、`mobile-pda-testing-and-smoke.md` 仅为兼容入口；当前测试治理从 `docs/governance/testing/` 路由。
-- M2-I 的 `api-contract-and-codegen.md`、`business-gateway-api-surface-canonicalization.md` 与 `facade-coverage-matrix.md` 仅为兼容入口；当前 API 架构从 `docs/architecture/integration/api-contracts.md` 路由，规则/操作/机器事实分别位于 Governance、Runbook 与 Reference。
-- M2-J 的 `backend-bootstrap-plan.md`、`backend-ci-build-strategy.md` 与 `deployment-baseline.md` 仅为兼容入口；当前部署架构从 `docs/architecture/platform/deployment.md` 路由，当前交付规则与操作分别位于 Governance / Runbook，历史计划与审计位于 Archive / Reports。
-- 其它 `*-catalog.md`、`*-matrix.*`、`*-inventory.md` 仍可能属于 Reference、Report 或机器伴随物，按正文生命周期判断。
-- `*-investigation.md`、`*-spike.md`、`*-remediation.md` 的完整正文已由 M2-B 迁往 Reports；同名短页只可能是兼容入口。
+M2-K 的 canonical owner 已迁入 `overview/`、`platform/`、`integration/` 与 `data/` 路由。以下旧路径只作为兼容 shim：
 
-物理迁移与混合大文件拆分由 [GitHub #2290](https://github.com/Mang-X/Nerv-IIP/issues/2290) 跟踪；本阶段不建立永久分类 manifest。
+`ai-boundaries.md`、`caching-baseline.md`、`connector-host-machine-auth.md`、`connector-platform-protocol-v1.md`、`context-map.md`、`core-domain-model-v1.md`、`file-storage-baseline.md`、`iam-authentication-baseline.md`、`knowledge-source-lifecycle.md`、`notification-baseline.md`、`observability-baseline.md`、`platform-sdk-baseline.md`、`repo-layout.md`。
+
+当前入口、AGENTS、ADR 和活跃 README 应直接链接 canonical path；历史 spec/report 可通过 shim 保持可追溯。

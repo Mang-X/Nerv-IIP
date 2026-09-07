@@ -16,7 +16,7 @@
 - Platform SDK、HTTP API、事件和协议的兼容主版本必须与平台主版本边界一致；受管应用的 `ApplicationVersion` 仍只表示应用自身业务/镜像/发布版本，两者不得混用。
 - 同一主版本内应保持向后兼容：新增可选字段、新增 endpoint、新增能力码或错误码可以作为兼容演进。
 - 删除字段、改变字段语义或必填性、改变认证/授权语义、改变事件含义或移除能力属于破坏性变更，必须经过明确的主版本治理和迁移窗口。
-- SDK 应由 OpenAPI、公开 DTO 与版本化协议生成或包装，不得引用服务端 Domain、Infrastructure 或数据库模型。SDK 模块/能力边界以 `docs/architecture/platform-sdk-baseline.md` 为权威；本页不复制模块清单。
+- SDK 应由 OpenAPI、公开 DTO 与版本化协议生成或包装，不得引用服务端 Domain、Infrastructure 或数据库模型。SDK 模块/能力边界以 `docs/architecture/platform/sdk.md` 为权威；本页不复制模块清单。
 - 一次性兼容例外必须记录到 Reference，写明精确范围和失效条件；例外不得反向放宽一般版本规则。
 
 ## OpenAPI 与 operationId

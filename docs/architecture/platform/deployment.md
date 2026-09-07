@@ -11,7 +11,7 @@
 - Compose 生成/准备/部署行为：`nerv.ps1` 与 `infra/aspire/README.md`。
 - legacy Compose 迁移资产：`infra/compose/`。
 - 安装、迁移与打包入口：`scripts/install/`、`scripts/package/`。
-- 观测边界：[`../observability-baseline.md`](../observability-baseline.md)。
+- 观测边界：[`observability.md`](observability.md)。
 - 长期部署决策：[`../../adr/0008-multi-target-deployment-and-aspire-apphost.md`](../../adr/0008-multi-target-deployment-and-aspire-apphost.md)。
 
 当文档与上述 producer 冲突时，以 producer 为准并修正文档。
@@ -51,7 +51,7 @@
 1. 服务间 HTTP 地址是部署输入。当前服务继续消费既有 `Xxx:BaseUrl` 配置键；AppHost、生成的 Compose 和安装入口负责提供环境对应值，服务代码不能把非 Development 环境静默回退到 localhost。
 2. 基础设施选择、消息 provider、数据库连接、内部认证材料、Connector Host scope 与环境差异由部署 profile 注入；精确键名、默认值和 fail-fast 行为以 AppHost、服务配置与安装脚本为准。
 3. 数据库 schema 迁移属于服务自己的 migrations/migrator 边界，部署拓扑只编排其依赖；发布操作必须遵循 [`../../runbooks/database-release.md`](../../runbooks/database-release.md)。
-4. 观测资源可以由 AppHost、Compose 或安装 profile 接入，但日志、trace、metric 与业务/审计事实仍保持独立边界，详见 [`../observability-baseline.md`](../observability-baseline.md)。
+4. 观测资源可以由 AppHost、Compose 或安装 profile 接入，但日志、trace、metric 与业务/审计事实仍保持独立边界，详见 [`observability.md`](observability.md)。
 5. 安装包和脚本可以是不同交付入口，但必须消费同一部署模型与配置语义，不能发明只存在于某个脚本中的隐式服务图或配置键。
 
 ## Connector Host 边界
