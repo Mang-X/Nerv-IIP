@@ -154,30 +154,31 @@ test('NERV-2115 隔离外购与活塞杆自制供给满足同一冻结需求', a
           quantity: raw[0].quantity,
           idempotencyKey: 'n2115-mixed-raw-issue',
         } satisfies Api.BusinessConsoleMesCreateMaterialIssueRequest
-        const issue = await call<{ referenceId: string }>(
+        const issue = await call<Api.BusinessConsoleAcceptedResponse>(
           'POST',
           query(`${mes}/work-orders/${workOrderId}/material-issue-requests`, workScope),
           issueRequest,
         )
+        expect(issue.downstreamDocumentId).toMatch(/\S/)
         expect(
           (
-            await call<{ referenceId: string }>(
+            await call<Api.BusinessConsoleAcceptedResponse>(
               'POST',
               query(`${mes}/work-orders/${workOrderId}/material-issue-requests`, workScope),
               issueRequest,
             )
-          ).referenceId,
-        ).toBe(issue.referenceId)
+          ).downstreamDocumentId,
+        ).toBe(issue.downstreamDocumentId)
         const readIssue = () =>
           call<Api.BusinessConsoleMesMaterialIssueRequestRow>(
             'GET',
-            query(`${mes}/material-issue-requests/${issue.referenceId}`, workScope),
+            query(`${mes}/material-issue-requests/${issue.downstreamDocumentId}`, workScope),
           )
         report.materialIssue = await readIssue()
         await call(
           'POST',
           query(
-            `${mes}/material-issue-requests/${issue.referenceId}/line-side-receipts`,
+            `${mes}/material-issue-requests/${issue.downstreamDocumentId}/line-side-receipts`,
             workScope,
           ),
           {
@@ -217,7 +218,7 @@ test('NERV-2115 隔离外购与活塞杆自制供给满足同一冻结需求', a
                       materialId: 'RM-BAR-01',
                       materialLotId: rawLot,
                       consumedQuantity: raw[0].quantity,
-                      materialIssueRequestNo: issue.referenceId,
+                      materialIssueRequestNo: issue.downstreamDocumentId!,
                     },
                   ]
                 : [],
