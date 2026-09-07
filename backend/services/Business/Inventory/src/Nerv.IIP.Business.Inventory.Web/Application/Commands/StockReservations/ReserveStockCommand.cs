@@ -183,7 +183,8 @@ public sealed class ReserveFefoStockCommandValidator : AbstractValidator<Reserve
         RuleFor(x => x.SourceService).RequiredInventoryCode(100);
         RuleFor(x => x.SourceDocumentId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.SourceDocumentLineId).MaximumLength(150);
-        RuleFor(x => x.IdempotencyKey).RequiredInventoryCode(InventoryValidationRules.IdempotencyKeyMaxLength);
+        // 有效上界不是列宽 128，而是「列宽 − handler 追加的最长分配腿后缀」（#3176）。
+        RuleFor(x => x.IdempotencyKey).RequiredInventoryCode(ReserveFefoStockCommandHandler.BaseIdempotencyKeyMaxLength);
         RuleFor(x => x.SkuCode).RequiredInventoryCode(100);
         RuleFor(x => x.UomCode).RequiredInventoryCode(50);
         RuleFor(x => x.SiteCode).RequiredInventoryCode(100);
@@ -193,7 +194,7 @@ public sealed class ReserveFefoStockCommandValidator : AbstractValidator<Reserve
         RuleFor(x => x.OwnerId).OptionalInventoryCode(100);
         RuleFor(x => x.Quantity).GreaterThan(0);
         RuleFor(x => x.IdempotencyKey)
-            .Must(x => !x.Contains(":part-", StringComparison.Ordinal))
+            .Must(x => !x.Contains(ReserveFefoStockCommandHandler.PartSuffixPrefix, StringComparison.Ordinal))
             .WithMessage("FEFO reservation idempotency key cannot contain the reserved ':part-' suffix.");
     }
 }
@@ -203,7 +204,25 @@ public sealed class ReserveFefoStockCommandHandler(
     IOptions<StockReservationExpirationOptions>? options = null)
     : ICommandHandler<ReserveFefoStockCommand, ReserveFefoStockResult>
 {
-    private const int MaxFefoCandidateLedgers = 1000;
+    /// <summary>FEFO 一次请求最多命中的候选台账数，也就是最多产生多少条分配腿。</summary>
+    public const int MaxFefoCandidateLedgers = 1000;
+
+    /// <summary>分配腿后缀前缀；第 1 腿沿用原键，第 n（n≥2）腿是 <c>{key}:part-{n}</c>。</summary>
+    public const string PartSuffixPrefix = ":part-";
+
+    /// <summary>
+    /// 基础幂等键上界 = 幂等键列宽 − 最长分配腿后缀（序号最大为 <see cref="MaxFefoCandidateLedgers"/>）。
+    /// 后缀是变长的，上界由候选台账上限决定；改动其一即改动本上界（#3176）。
+    /// </summary>
+    public static readonly int BaseIdempotencyKeyMaxLength =
+        InventoryIdempotencyKeyPolicy.BaseMaxLengthFor(PartSuffix(MaxFefoCandidateLedgers));
+
+    /// <summary>第 <paramref name="partIndex"/> 条分配腿的后缀。</summary>
+    public static string PartSuffix(int partIndex)
+    {
+        return FormattableString.Invariant($"{PartSuffixPrefix}{partIndex}");
+    }
+
     private readonly StockReservationExpirationOptions expirationOptions = options?.Value ?? new StockReservationExpirationOptions();
 
     public async Task<ReserveFefoStockResult> Handle(ReserveFefoStockCommand request, CancellationToken cancellationToken)
@@ -213,7 +232,7 @@ public sealed class ReserveFefoStockCommandHandler(
                 && x.EnvironmentId == request.EnvironmentId
                 && x.SourceService == request.SourceService
                 && x.SourceDocumentId == request.SourceDocumentId
-                && (x.IdempotencyKey == request.IdempotencyKey || x.IdempotencyKey.StartsWith(request.IdempotencyKey + ":part-")))
+                && (x.IdempotencyKey == request.IdempotencyKey || x.IdempotencyKey.StartsWith(request.IdempotencyKey + ReserveFefoStockCommandHandler.PartSuffixPrefix)))
             .OrderBy(x => x.ExpiryDate ?? DateOnly.MaxValue)
             .ThenBy(x => x.LotNo)
             .ToListAsync(cancellationToken);
@@ -281,7 +300,9 @@ public sealed class ReserveFefoStockCommandHandler(
         {
             var ledger = ledgers[index];
             var quantity = Math.Min(remaining, ledger.AvailableQuantity);
-            var idempotencyKey = allocations.Count == 0 ? request.IdempotencyKey : $"{request.IdempotencyKey}:part-{allocations.Count + 1}";
+            var idempotencyKey = allocations.Count == 0
+                ? request.IdempotencyKey
+                : InventoryIdempotencyKeyPolicy.Compose(request.IdempotencyKey, PartSuffix(allocations.Count + 1));
             var reservation = StockReservation.Reserve(
                 ledger,
                 request.SourceService,
