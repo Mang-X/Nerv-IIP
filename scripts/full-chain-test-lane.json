@@ -60,6 +60,18 @@
       "dependencies": { "postgres": true, "redis": false, "externalProcesses": false },
       "diagnosticSchemas": ["erp", "wms"],
       "expectedTestIdentities": ["Nerv.IIP.Business.FullChain.Tests.ErpReturnClosurePostgresAcceptanceTests.Purchase_return_and_sales_rma_close_through_real_postgres_contexts_with_replay_safety"]
+    },
+    {
+      "id": "ncr-rework-cost-closure",
+      "service": "Quality+MES+ERP",
+      "tier": "core",
+      "status": "active",
+      "project": "backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj",
+      "filter": "FullyQualifiedName=Nerv.IIP.Business.FullChain.Tests.NcrReworkCostClosurePostgresRedisAcceptanceTests.Public_ncr_rework_closes_one_traceable_work_order_and_independent_erp_cost",
+      "entrypoint": { "kind": "script", "path": "scripts/verify-ncr-rework-cost-closure.ps1" },
+      "dependencies": { "postgres": true, "redis": true, "externalProcesses": true },
+      "diagnosticSchemas": ["approval", "erp", "inventory", "master_data", "mes", "product_engineering", "quality"],
+      "expectedTestIdentities": ["Nerv.IIP.Business.FullChain.Tests.NcrReworkCostClosurePostgresRedisAcceptanceTests.Public_ncr_rework_closes_one_traceable_work_order_and_independent_erp_cost"]
     }
   ]
 }

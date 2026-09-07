@@ -1033,6 +1033,60 @@ try {
     foreach ($forbidden in @('excludedTests', 'excludedTestClasses', 'residualExclusions')) {
         Assert-Contract ($runnerSourceText.IndexOf($forbidden, [StringComparison]::Ordinal) -lt 0) "The FullChain runner must not grow an exclusion registry ('$forbidden')."
     }
+    $ncrMember = @($manifest.members | Where-Object { [string]::Equals([string]$_.id, 'ncr-rework-cost-closure', [StringComparison]::Ordinal) })
+    Assert-Contract ($ncrMember.Count -eq 1) 'The NCR rework cost closure member must exist exactly once.'
+    $ncrEntrypointSource = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/verify-ncr-rework-cost-closure.ps1'))
+    foreach ($requiredRedisOwnershipFragment in @(
+        'lib/RedisTestNamespaceCleanup.ps1',
+        'ConvertTo-NervRedisCliContext',
+        'Cap__TopicNamePrefix = $redisNamespace',
+        'Get-Man2813RedisKeys',
+        "@('UNLINK', `$key)",
+        'foreignRedisSentinelPreserved'
+    )) {
+        Assert-Contract ($ncrEntrypointSource.Contains($requiredRedisOwnershipFragment, [StringComparison]::Ordinal)) "NCR entrypoint must implement Redis ownership contract fragment '$requiredRedisOwnershipFragment'."
+    }
+    Assert-Contract (-not $ncrEntrypointSource.Contains('function ConvertTo-Man2813RedisCliContext', [StringComparison]::Ordinal)) 'The NCR entrypoint must reuse the governed Redis connection parser rather than define another authority.'
+    $ncrCleanupFixture = [ordered]@{
+        cleanup = [ordered]@{
+            managedProcessRemaining = 0
+            exactDatabaseRemaining = 0
+            ownedRedisKeyRemaining = 0
+            ownedComposeServiceRemaining = 0
+            foreignRedisSentinelPreserved = $true
+            foreignRedisSentinelRemaining = 0
+            errors = @()
+        }
+    }
+    [IO.File]::WriteAllText($memberEvidencePath, (($ncrCleanupFixture | ConvertTo-Json -Depth 10) + "`n"), [Text.UTF8Encoding]::new($false))
+    $verifiedNcrEvidence = Assert-NervFullChainMemberEvidence -Member $ncrMember[0] -MemberResultsDirectory $memberEvidenceRoot -RepositoryRoot $repoRoot
+    Assert-Contract (
+        [string]::Equals([string]$verifiedNcrEvidence.cleanup, 'passed', [StringComparison]::Ordinal) -and
+        [string]::Equals([string]$verifiedNcrEvidence.diagnosticEvidence, 'entrypoint-evidence-verified', [StringComparison]::Ordinal)
+    ) 'Zero NCR process, database, compose-service, and error readbacks must satisfy cleanup evidence.'
+    foreach ($readbackName in @('managedProcessRemaining', 'exactDatabaseRemaining', 'ownedRedisKeyRemaining', 'ownedComposeServiceRemaining', 'foreignRedisSentinelRemaining')) {
+        $ncrCleanupMutation = ($ncrCleanupFixture | ConvertTo-Json -Depth 10 | ConvertFrom-Json -Depth 10)
+        $ncrCleanupMutation.cleanup.$readbackName = 1
+        [IO.File]::WriteAllText($memberEvidencePath, (($ncrCleanupMutation | ConvertTo-Json -Depth 10) + "`n"), [Text.UTF8Encoding]::new($false))
+        $nonZeroRejected = $false
+        try { Assert-NervFullChainMemberEvidence -Member $ncrMember[0] -MemberResultsDirectory $memberEvidenceRoot -RepositoryRoot $repoRoot | Out-Null }
+        catch { $nonZeroRejected = $_.Exception.Message.Contains("'$readbackName' readback must be zero", [StringComparison]::Ordinal) }
+        Assert-Contract $nonZeroRejected "NCR cleanup mutation '$readbackName=1' must fail closed."
+    }
+    $foreignSentinelMutation = ($ncrCleanupFixture | ConvertTo-Json -Depth 10 | ConvertFrom-Json -Depth 10)
+    $foreignSentinelMutation.cleanup.foreignRedisSentinelPreserved = $false
+    [IO.File]::WriteAllText($memberEvidencePath, (($foreignSentinelMutation | ConvertTo-Json -Depth 10) + "`n"), [Text.UTF8Encoding]::new($false))
+    $foreignSentinelRejected = $false
+    try { Assert-NervFullChainMemberEvidence -Member $ncrMember[0] -MemberResultsDirectory $memberEvidenceRoot -RepositoryRoot $repoRoot | Out-Null }
+    catch { $foreignSentinelRejected = $_.Exception.Message.Contains('foreign Redis sentinel was preserved', [StringComparison]::Ordinal) }
+    Assert-Contract $foreignSentinelRejected 'A false NCR foreign Redis sentinel preservation result must fail closed.'
+    $ncrErrorMutation = ($ncrCleanupFixture | ConvertTo-Json -Depth 10 | ConvertFrom-Json -Depth 10)
+    $ncrErrorMutation.cleanup.errors = @('cleanup failed')
+    [IO.File]::WriteAllText($memberEvidencePath, (($ncrErrorMutation | ConvertTo-Json -Depth 10) + "`n"), [Text.UTF8Encoding]::new($false))
+    $cleanupErrorRejected = $false
+    try { Assert-NervFullChainMemberEvidence -Member $ncrMember[0] -MemberResultsDirectory $memberEvidenceRoot -RepositoryRoot $repoRoot | Out-Null }
+    catch { $cleanupErrorRejected = $_.Exception.Message.Contains('must contain an empty errors array', [StringComparison]::Ordinal) }
+    Assert-Contract $cleanupErrorRejected 'A non-empty NCR cleanup errors array must fail closed.'
 
     $summaries = @($manifest.members | ForEach-Object {
         [pscustomobject]@{ memberId = $_.id; outcome = 'passed'; cleanup = 'passed'; expected = 1; discovered = 1; passed = 1; failed = 0; skipped = 0; dependencyEvidence = 'passed'; diagnosticEvidence = 'fixture-verified' }

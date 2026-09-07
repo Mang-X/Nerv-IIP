@@ -612,6 +612,53 @@ try {
         -not $protectedWmsDiagnostic.Contains('endpoint-secret', [StringComparison]::Ordinal)) 'MAN-527 diagnostic redaction must remove every caller-declared sensitive value.'
     Assert-Contract ($protectedWmsDiagnostic.Contains('<redacted>', [StringComparison]::Ordinal)) 'MAN-527 diagnostic redaction must retain an explicit redaction marker.'
     $manifest = Import-NervAcceptanceScenarioMatrixManifest -ManifestPath $manifestPath -V1ManifestPath $v1ManifestPath -RepositoryRoot $repoRoot
+    $runtimeManifestAuthority = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json -Depth 50
+    $runtimeV1Authority = Get-Content -LiteralPath $v1ManifestPath -Raw | ConvertFrom-Json -Depth 50
+    Assert-NervAcceptanceRuntimeManifestObject -Manifest $runtimeManifestAuthority -V1Manifest $runtimeV1Authority -RepositoryRoot $repoRoot | Out-Null
+
+    # Cardinality and order come from the two manifests. These accepted mutations make a fixed
+    # total, fixed active count, fixed index, or fixed active-id list fail this contract suite.
+    $addedManifest = Copy-JsonObject $runtimeManifestAuthority
+    $addedV1 = Copy-JsonObject $runtimeV1Authority
+    $addedScenario = Copy-JsonObject $addedManifest.scenarios[0]
+    $addedSourceAlias = [string]$addedScenario.v1Alias
+    $addedScenario.id = 'runtime-dynamic-member'
+    $addedScenario.v1Alias = 'runtime-dynamic-member'
+    $addedScenario.ownerIssue = '#2813'
+    $addedScenario.testProjects[0].frozenTestIdentities = @('Nerv.IIP.Business.FullChain.Tests.RuntimeDynamicTests.Runtime_dynamic_member')
+    $addedSourceMember = @($addedV1.members | Where-Object { [string]::Equals([string]$_.id, $addedSourceAlias, [StringComparison]::Ordinal) })
+    Assert-Contract ($addedSourceMember.Count -eq 1) 'The dynamic-member fixture must resolve its cloned v1 source exactly once.'
+    $addedMember = Copy-JsonObject $addedSourceMember[0]
+    $addedMember.id = 'runtime-dynamic-member'
+    $addedMember.service = 'RuntimeDynamic'
+    $addedMember.filter = 'FullyQualifiedName=Nerv.IIP.Business.FullChain.Tests.RuntimeDynamicTests.Runtime_dynamic_member'
+    $addedMember.expectedTestIdentities = @('Nerv.IIP.Business.FullChain.Tests.RuntimeDynamicTests.Runtime_dynamic_member')
+    $addedManifest.scenarios = @($addedManifest.scenarios) + @($addedScenario)
+    $addedV1.members = @($addedV1.members) + @($addedMember)
+    Assert-NervAcceptanceRuntimeManifestObject -Manifest $addedManifest -V1Manifest $addedV1 -RepositoryRoot $repoRoot | Out-Null
+
+    $removedManifest = Copy-JsonObject $runtimeManifestAuthority
+    $removedV1 = Copy-JsonObject $runtimeV1Authority
+    $removedAlias = [string]$removedManifest.scenarios[0].v1Alias
+    $removedManifest.scenarios = @($removedManifest.scenarios | Select-Object -Skip 1)
+    $removedV1.members = @($removedV1.members | Where-Object { -not [string]::Equals([string]$_.id, $removedAlias, [StringComparison]::Ordinal) })
+    Assert-NervAcceptanceRuntimeManifestObject -Manifest $removedManifest -V1Manifest $removedV1 -RepositoryRoot $repoRoot | Out-Null
+
+    $reorderedManifest = Copy-JsonObject $runtimeManifestAuthority
+    $reorderedV1 = Copy-JsonObject $runtimeV1Authority
+    $reorderedManifest.scenarios = @(@($reorderedManifest.scenarios | Select-Object -Skip 1) + @($reorderedManifest.scenarios | Select-Object -First 1))
+    $reorderedV1.members = @(@($reorderedV1.members | Select-Object -Skip 1) + @($reorderedV1.members | Select-Object -First 1))
+    Assert-NervAcceptanceRuntimeManifestObject -Manifest $reorderedManifest -V1Manifest $reorderedV1 -RepositoryRoot $repoRoot | Out-Null
+
+    $missingBlockedManifest = Copy-JsonObject $runtimeManifestAuthority
+    $blockedScenario = @($missingBlockedManifest.scenarios | Where-Object { [string]::Equals([string]$_.id, 'equipment-unavailable-scheduling-mes', [StringComparison]::Ordinal) })
+    Assert-Contract ($blockedScenario.Count -eq 1) 'The runtime authority fixture must contain one governed blocked scenario.'
+    $missingBlockedManifest.scenarios = @($missingBlockedManifest.scenarios | Where-Object { -not [string]::Equals([string]$_.id, 'equipment-unavailable-scheduling-mes', [StringComparison]::Ordinal) })
+    $missingBlockedRejected = $false
+    try { Assert-NervAcceptanceRuntimeManifestObject -Manifest $missingBlockedManifest -V1Manifest $runtimeV1Authority -RepositoryRoot $repoRoot | Out-Null }
+    catch { $missingBlockedRejected = $_.Exception.Message.Contains("exactly one blocked 'equipment-unavailable-scheduling-mes'", [StringComparison]::Ordinal) }
+    Assert-Contract $missingBlockedRejected 'A missing governed blocked identity/status pair must fail closed.'
+
     $manifestDigest = Get-NervAcceptanceManifestDigest -ManifestPath $manifestPath
     $artifact = New-SalesPlanningArtifact -Manifest $manifest -ManifestDigest $manifestDigest
     $artifactPath = Join-Path $fixtureRoot 'planning-artifact.json'

@@ -263,29 +263,36 @@ function Assert-NervAcceptanceRuntimeManifestObject {
 
     if ($Manifest.scenarios -isnot [array]) { throw 'Acceptance scenario manifest scenarios must be an array.' }
     $scenarios = @($Manifest.scenarios)
-    if ($scenarios.Count -ne 6) { throw "Acceptance scenario manifest must contain exactly 6 scenarios; observed $($scenarios.Count)." }
     $ids = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     $aliases = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     $identities = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     foreach ($scenario in $scenarios) { Assert-NervAcceptanceScenarioShape -Scenario $scenario -Ids $ids -Aliases $aliases -Identities $identities -RepositoryRoot $RepositoryRoot }
 
-    $expectedIds = @('sales-order-demand', 'wms-delivery-erp', 'mes-produced-lot-inventory', 'telemetry-runtime-maintenance', 'erp-return-closure', 'equipment-unavailable-scheduling-mes')
-    $observedIds = @($scenarios | ForEach-Object { [string]$_.id })
-    if (-not (Test-NervAcceptanceOrdinalSequenceEqual -Left $observedIds -Right $expectedIds)) { throw 'Acceptance scenario manifest ids are not in the approved stable order.' }
-    for ($index = 0; $index -lt 5; $index++) {
-        if (-not [string]::Equals([string]$scenarios[$index].status, 'active', [StringComparison]::Ordinal) -or
-            -not [string]::Equals([string]$scenarios[$index].tier, 'core', [StringComparison]::Ordinal)) {
-            throw "scenario '$($scenarios[$index].id)' must be active/core."
-        }
+    $validatedV1Manifest = Assert-NervAcceptanceRuntimeV1ManifestObject -V1Manifest $V1Manifest
+    $activeCore = @($scenarios | Where-Object {
+        [string]::Equals([string]$_.status, 'active', [StringComparison]::Ordinal) -and
+        [string]::Equals([string]$_.tier, 'core', [StringComparison]::Ordinal)
+    })
+    $expectedActiveCount = @($validatedV1Manifest.members).Count
+    if ($activeCore.Count -ne $expectedActiveCount) {
+        throw "Acceptance scenario manifest active/core count must equal the FullChain v1 member count; expected $expectedActiveCount, observed $($activeCore.Count)."
     }
-    $blocked = $scenarios[5]
-    if (-not [string]::Equals([string]$blocked.status, 'blocked', [StringComparison]::Ordinal) -or
-        -not [string]::Equals([string]$blocked.tier, 'extended', [StringComparison]::Ordinal) -or
+    $blockedMatches = @($scenarios | Where-Object {
+        [string]::Equals([string]$_.id, 'equipment-unavailable-scheduling-mes', [StringComparison]::Ordinal) -and
+        [string]::Equals([string]$_.status, 'blocked', [StringComparison]::Ordinal)
+    })
+    if ($blockedMatches.Count -ne 1) {
+        throw "Acceptance scenario manifest must contain exactly one blocked 'equipment-unavailable-scheduling-mes' scenario; observed $($blockedMatches.Count)."
+    }
+    if ($scenarios.Count -ne ($activeCore.Count + $blockedMatches.Count)) {
+        throw 'Acceptance scenario manifest may contain only FullChain-backed active/core scenarios and the unique governed blocked scenario.'
+    }
+    $blocked = $blockedMatches[0]
+    if (-not [string]::Equals([string]$blocked.tier, 'extended', [StringComparison]::Ordinal) -or
         -not [string]::Equals([string]$blocked.ownerIssue, '#1240', [StringComparison]::Ordinal)) {
         throw "scenario '$($blocked.id)' must be blocked/extended and owned by #1240."
     }
 
-    $validatedV1Manifest = Assert-NervAcceptanceRuntimeV1ManifestObject -V1Manifest $V1Manifest
     Assert-NervAcceptanceV1Closure -Manifest $Manifest -V1Manifest $validatedV1Manifest -RepositoryRoot $RepositoryRoot
     return $Manifest
 }
