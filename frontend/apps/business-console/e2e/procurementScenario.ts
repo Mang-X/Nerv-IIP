@@ -43,6 +43,12 @@ export type ProcurementOptions = {
   sessionId: string
   includeRodRawMaterial?: boolean
   beforeCall?: () => Promise<void>
+  afterSupply?: (context: {
+    call: PublicCall
+    query: (endpoint: string, extra?: Row) => string
+    report: Row
+    orders: ProcurementSupplyOrder[]
+  }) => Promise<void>
   afterReceipt?: (context: {
     call: PublicCall
     query: (endpoint: string, extra?: Row) => string
@@ -69,7 +75,7 @@ export async function runProcurement(options: ProcurementOptions) {
   expect(process.env.NERV_IIP_FULLSTACK_STATE_ROOT).toBeTruthy()
   expect(['purchased', 'mixed']).toContain(scenario)
   const calls: Row[] = []
-  const orders: Row[] = []
+  const orders: ProcurementSupplyOrder[] = []
   const uiPages: Row[] = []
   const report: Row = {
     issue,
@@ -128,6 +134,8 @@ export async function runProcurement(options: ProcurementOptions) {
     token = `Bearer ${auth.accessToken}`
     await expect(page).toHaveURL(new URL('/', baseURL).toString())
     report.userAgent = await page.evaluate(() => navigator.userAgent)
+    // 公开写入期间卸载首页，避免后台会话刷新使捕获的 access token 失效。
+    await page.goto('about:blank')
 
     for (const [code, name] of partners) {
       await call('POST', '/api/business-console/v1/master-data/business-partners', {
@@ -323,6 +331,7 @@ export async function runProcurement(options: ProcurementOptions) {
       orders.push(supplyOrder)
       await options.afterReceipt?.({ call, query, order: supplyOrder, report })
     }
+    await options.afterSupply?.({ call, query, report, orders })
     // API 操作完成后才导航，避免浏览器恢复会话导致已捕获 token 轮换。
     for (const route of ['/erp/procurement/purchase-orders', '/erp/procurement/receipts']) {
       const responsePromise = page.waitForResponse(
