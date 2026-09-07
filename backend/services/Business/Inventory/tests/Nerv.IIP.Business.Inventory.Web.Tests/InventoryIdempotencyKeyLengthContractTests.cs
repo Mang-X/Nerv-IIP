@@ -72,10 +72,13 @@ public sealed partial class InventoryIdempotencyKeyLengthContractTests
     /// 「在幂等键上直接做字符串加法 / 把它嵌进插值再续写」的**具名豁免**闭集。
     /// 当前唯一一条是 FEFO 重放查询的 <c>StartsWith</c> 谓词：它构造的是查询前缀、不落库。
     /// 这个集合非空，因此扫描正则一旦失配也会红。
+    /// 定位键用「文件 + 该行代码文本」而不是行号——行号会被上方任何无关编辑撞掉，制造假红。
     /// </summary>
     private static readonly string[] ExpectedBypassExemptions =
     [
-        "Commands/StockReservations/ReserveStockCommand.cs:235",
+        "Commands/StockReservations/ReserveStockCommand.cs | "
+            + "&& (x.IdempotencyKey == request.IdempotencyKey "
+            + "|| x.IdempotencyKey.StartsWith(request.IdempotencyKey + ReserveFefoStockCommandHandler.PartSuffixPrefix)))",
     ];
 
     [Fact]
@@ -306,9 +309,9 @@ public sealed partial class InventoryIdempotencyKeyLengthContractTests
             .Where(source => !string.Equals(source.Relative, PolicySourceRelativePath, StringComparison.Ordinal))
             .SelectMany(source => source.Text
                 .Split('\n')
-                .Select((line, index) => (Site: $"{source.Relative}:{index + 1}", Line: line))
-                .Where(entry => IdempotencyKeyRewriteRegex().IsMatch(entry.Line))
-                .Select(entry => entry.Site))
+                .Select(line => line.TrimEnd('\r'))
+                .Where(line => IdempotencyKeyRewriteRegex().IsMatch(line))
+                .Select(line => $"{source.Relative} | {line.Trim()}"))
             .OrderBy(site => site, StringComparer.Ordinal)
             .ToArray();
         Assert.Equal(ExpectedBypassExemptions, actualBypassSites);
