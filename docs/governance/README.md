@@ -14,6 +14,7 @@
 | BusinessGateway client API surface | [`api/business-gateway-surface.md`](api/business-gateway-surface.md) |
 | Facade coverage 分类 | [`api/facade-coverage.md`](api/facade-coverage.md) |
 | 后端 CleanDDD / NetCorePal | [`backend/clean-ddd-netcorepal.md`](backend/clean-ddd-netcorepal.md) |
+| CI / 构建 / 交付 | [`delivery/README.md`](delivery/README.md) |
 | 前端设计系统 | [`frontend/design-system.md`](frontend/design-system.md) |
 | 授权、主体与 scope | [`security/authorization.md`](security/authorization.md) |
 | KnownException 用户可见性 | [`errors/user-visibility.md`](errors/user-visibility.md) |
