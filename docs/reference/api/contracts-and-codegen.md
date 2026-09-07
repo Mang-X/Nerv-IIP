@@ -9,7 +9,7 @@
 | API 运行时架构 | `docs/architecture/integration/api-contracts.md` |
 | API/codegen 治理 | `docs/governance/api/contracts-and-codegen.md` |
 | API/codegen Runbook | `docs/runbooks/api-codegen.md` |
-| Platform SDK 能力基线 | `docs/architecture/platform-sdk-baseline.md` |
+| Platform SDK 能力基线 | `docs/architecture/platform/sdk.md` |
 | BusinessGateway surface 治理 | `docs/governance/api/business-gateway-surface.md` |
 | BusinessGateway restore manifest | `docs/reference/api/business-gateway-surface-restore.manifest.json` |
 | Facade coverage 治理 | `docs/governance/api/facade-coverage.md` |
