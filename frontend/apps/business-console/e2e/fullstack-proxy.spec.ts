@@ -55,14 +55,6 @@ test('dynamic origin authenticates MBOM and inventory reads through both gateway
   // prove both proxy targets belong to this session, not only that they are same-origin.
   await expect(page).toHaveURL(new URL('/', baseURL!).toString())
 
-  const skuResponse = page.waitForResponse(
-    (response) => new URL(response.url()).pathname === '/api/business-console/v1/master-data/skus',
-  )
-  await page.goto('/master-data/skus')
-  const sku = await skuResponse
-  expect(sku.status()).toBeGreaterThanOrEqual(200)
-  expect(sku.status()).toBeLessThan(300)
-
   const scope = 'organizationId=org-001&environmentId=env-dev'
   const read = async (path: string) => {
     const response = await page.evaluate(async ({ path, accessToken }) => {
@@ -85,6 +77,13 @@ test('dynamic origin authenticates MBOM and inventory reads through both gateway
     contentType: 'application/json',
     body: JSON.stringify({ origin: viteOrigin, mbomList, mbomDetail, availability, movements }),
   })
+  const skuResponse = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === '/api/business-console/v1/master-data/skus',
+  )
+  await page.goto('/master-data/skus')
+  const sku = await skuResponse
+  expect(sku.status()).toBeGreaterThanOrEqual(200)
+  expect(sku.status()).toBeLessThan(300)
   expect(apiRequests.length).toBeGreaterThanOrEqual(2)
   expect(apiRequests.every((url) => new URL(url).origin === viteOrigin)).toBe(true)
 })
