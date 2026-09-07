@@ -239,12 +239,16 @@ public sealed class ScopedCallerAuthenticationTests
 
         var defaultScheme = await provider.GetRequiredService<IAuthenticationSchemeProvider>()
             .GetDefaultAuthenticateSchemeAsync();
+        await using var unqualifiedScope = provider.CreateAsyncScope();
+        var unqualifiedResult = await Context(unqualifiedScope.ServiceProvider, "Bearer user.credential.value")
+            .AuthenticateAsync();
         await using var wrongTokenScope = provider.CreateAsyncScope();
         var wrongTokenResult = await Context(wrongTokenScope.ServiceProvider, "Bearer internal.service.tokeX")
             .AuthenticateAsync(InternalServiceAuthentication.SchemeName);
 
         Assert.NotNull(defaultScheme);
         Assert.NotEqual(InternalServiceAuthentication.SchemeName, defaultScheme.Name);
+        Assert.True(unqualifiedResult.None);
         Assert.False(wrongTokenResult.Succeeded);
         Assert.False(wrongTokenResult.None);
         Assert.NotNull(wrongTokenResult.Failure);
