@@ -21,7 +21,7 @@ Connector Host 的机器身份、短期 access token、capability scope / permis
 ## 权威路由
 
 - 授权与权限治理：[`../../governance/security/authorization.md`](../../governance/security/authorization.md)。
-- 当前 permission 人工目录：[`../../reference/security/permission-catalog.md`](../../reference/security/permission-catalog.md)。
+- 当前授权/权限人工目录：[`../../reference/security/authorization-catalog.md`](../../reference/security/authorization-catalog.md)。
 - 部署、secret 与运行配置操作：[`../../runbooks/deployment.md`](../../runbooks/deployment.md)。
 - 平台上下文所有权：[`../overview/context-map.md`](../overview/context-map.md)。
 
