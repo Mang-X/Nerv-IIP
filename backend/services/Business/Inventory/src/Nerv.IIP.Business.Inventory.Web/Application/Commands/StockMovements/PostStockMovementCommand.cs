@@ -80,12 +80,15 @@ public sealed class PostStockMovementCommandHandler(
     : ICommandHandler<PostStockMovementCommand, PostStockMovementResult>
 {
     private const string TransferMovementType = InventoryMovementTypes.Transfer;
-    private const string TransferOutLegSuffix = ":out";
-    private const string TransferInLegSuffix = ":in";
+    internal const string TransferOutLegSuffix = ":out";
+    internal const string TransferInLegSuffix = ":in";
 
-    /// <summary>调拨基础幂等键上限：列宽 128 减去最长腿后缀（:out，4 位），两腿拼接后都不越界。</summary>
-    public const int TransferBaseIdempotencyKeyMaxLength =
-        InventoryValidationRules.IdempotencyKeyMaxLength - 4;
+    /// <summary>
+    /// 调拨基础幂等键上限 = 幂等键列宽 − 最长腿后缀，两腿拼接后都不越界。
+    /// 不再手抄 <c>- 4</c>：后缀改了这里自动跟着改（#3176）。
+    /// </summary>
+    internal static readonly int TransferBaseIdempotencyKeyMaxLength =
+        InventoryIdempotencyKeyPolicy.BaseMaxLengthFor(TransferOutLegSuffix, TransferInLegSuffix);
 
     private static readonly HashSet<string> ExternalMovementTypes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -413,7 +416,7 @@ public sealed class PostStockMovementCommandHandler(
     /// </summary>
     private static string TransferLegKey(string idempotencyKey, string suffix)
     {
-        return idempotencyKey + suffix;
+        return InventoryIdempotencyKeyPolicy.Compose(idempotencyKey, suffix);
     }
 
     private static StockMovement CreateTransferInMovementOrReject(

@@ -44,7 +44,8 @@ public sealed class PostStockStatusTransferCommandValidator : AbstractValidator<
         RuleFor(x => x.SourceService).RequiredInventoryCode(100);
         RuleFor(x => x.SourceDocumentId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.SourceDocumentLineId).MaximumLength(150);
-        RuleFor(x => x.IdempotencyKey).RequiredInventoryCode(InventoryValidationRules.IdempotencyKeyMaxLength);
+        // 有效上界不是列宽 128，而是「列宽 − handler 追加的最长腿后缀」（#3176）。
+        RuleFor(x => x.IdempotencyKey).RequiredInventoryCode(PostStockStatusTransferCommandHandler.BaseIdempotencyKeyMaxLength);
         RuleFor(x => x.SkuCode).RequiredInventoryCode(100);
         RuleFor(x => x.UomCode).RequiredInventoryCode(50);
         RuleFor(x => x.SiteCode).RequiredInventoryCode(100);
@@ -61,6 +62,19 @@ public sealed class PostStockStatusTransferCommandValidator : AbstractValidator<
 public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<PostStockStatusTransferCommand, PostStockStatusTransferResult>
 {
+    /// <summary>状态调拨出库腿后缀。</summary>
+    internal const string OutboundLegSuffix = ":out";
+
+    /// <summary>状态调拨入库腿后缀。</summary>
+    internal const string InboundLegSuffix = ":in";
+
+    /// <summary>
+    /// 基础幂等键上界 = 幂等键列宽 − 两腿中最长的后缀。校验器直接用它，
+    /// 不再用列宽本身——否则 125–128 字符的合法键会通过校验、落库时炸 22001（#3176）。
+    /// </summary>
+    internal static readonly int BaseIdempotencyKeyMaxLength =
+        InventoryIdempotencyKeyPolicy.BaseMaxLengthFor(OutboundLegSuffix, InboundLegSuffix);
+
     public async Task<PostStockStatusTransferResult> Handle(PostStockStatusTransferCommand request, CancellationToken cancellationToken)
     {
         // 状态取值来自 HTTP 写面与集成事件消费者，是外部输入：非法取值走 KnownException（400），
@@ -81,8 +95,8 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
             throw new KnownException("Source and target stock status must be different.");
         }
 
-        var outboundKey = $"{request.IdempotencyKey}:out";
-        var inboundKey = $"{request.IdempotencyKey}:in";
+        var outboundKey = InventoryIdempotencyKeyPolicy.Compose(request.IdempotencyKey, OutboundLegSuffix);
+        var inboundKey = InventoryIdempotencyKeyPolicy.Compose(request.IdempotencyKey, InboundLegSuffix);
         var existingOutbound = await FindMovementAsync(request, outboundKey, cancellationToken);
         var existingInbound = await FindMovementAsync(request, inboundKey, cancellationToken);
         if (existingOutbound is not null && existingInbound is not null)

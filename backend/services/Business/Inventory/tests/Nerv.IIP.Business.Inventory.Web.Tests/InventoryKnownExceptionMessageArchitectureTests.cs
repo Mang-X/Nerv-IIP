@@ -31,6 +31,7 @@ public sealed class InventoryKnownExceptionMessageArchitectureTests
         Target($"{InventoryWebRoot}/Application/Commands/StockCounts/ConfirmStockCountAdjustmentCommand.cs", "ConfirmStockCountAdjustmentCommandHandler", "Handle", 6, "公开盘点调整确认 facade"),
         Excluded($"{InventoryWebRoot}/Application/Commands/StockStatusTransfers/PostStockStatusTransferCommand.cs", "PostStockStatusTransferCommandHandler", "Handle", 7, "质量状态转移为 internal endpoint"),
         Excluded($"{InventoryWebRoot}/Application/Commands/StockReservations/RenewStockReservationCommand.cs", "RenewStockReservationCommandHandler", "Handle", 1, "reservation renew 为 internal endpoint"),
+        Target($"{InventoryWebRoot}/Application/Validation/InventoryIdempotencyKeyPolicy.cs", "InventoryIdempotencyKeyPolicy", "Compose", 1, "公开 postInventoryMovement facade 的调拨腿键拼接兜底（#3176）"),
     ];
 
     private static readonly IReadOnlyCollection<InventoryPostingRejectedSite> ExpectedPostingRejectedSites =
@@ -56,8 +57,8 @@ public sealed class InventoryKnownExceptionMessageArchitectureTests
         var discovered = InventoryKnownExceptionUserMessageSourceAnalyzer.DiscoverKnownExceptions(documents);
         var expectedKeys = ExpectedKnownExceptionSites.Select(site => site.Key).ToArray();
 
-        Assert.Equal(41, discovered.Sum(site => site.DirectKnownExceptionCount));
-        Assert.Equal(19, ExpectedKnownExceptionSites
+        Assert.Equal(42, discovered.Sum(site => site.DirectKnownExceptionCount));
+        Assert.Equal(20, ExpectedKnownExceptionSites
             .Where(site => site.Kind == InventoryKnownExceptionSiteKind.Target)
             .Sum(site => site.DirectKnownExceptionCount));
         Assert.Equal(22, ExpectedKnownExceptionSites
