@@ -509,11 +509,20 @@ Assert-True (-not $retainedSmuggledType.Contains('110101199003078888', [StringCo
 Assert-True ($retainedSmuggledType -match 'type=<redacted-value:[0-9a-f]{16}>$') `
     "A type the alphabet refuses must be reduced to a digest in place, not degrade the whole record to the fixed prose. Actual=[$retainedSmuggledType]" 
 
-# ⚠️ Registered, deliberate, NOT a hole: an exception *type name* is a source identifier, and this
-# repository is public, so retaining it discloses nothing `git clone` does not. This assertion
-# exists so the choice is visible and has to be argued with rather than quietly rediscovered.
+# ⚠️ Registered, deliberate, NOT a hole. An exception *type name* is a compile-time source
+# identifier and therefore cannot carry run-time data, so its exposure surface is identically the
+# exposure surface of the source itself: retaining it adds no new exposure whether the repository is
+# public or private. The argument deliberately does not appeal to current repository visibility — a
+# reason that expires when a setting changes is a reason nobody re-derives in time.
+#
+# This holds only for an identifier that is *nothing but* an identifier. The one exception —
+# a sensitive string spelled into the identifier itself — is removed by the long-digit-run guard in
+# `Get-NervRetainedFailureGrammar`. The two are a pair: delete that guard and this premise becomes
+# false. The case below is asserted alongside it for that reason.
 Assert-True ((ConvertTo-NervRetainedFailureText 'ZhangWeiSecretException : boom').Contains('type=ZhangWeiSecretException', [StringComparison]::Ordinal)) `
-    'Exception type names are retained by design as public source identifiers; change this only by changing the documented trade-off.'
+    'Exception type names are retained by design: a compile-time source identifier cannot carry run-time data, so its exposure surface is identically the source''s. Change this only by changing the documented trade-off.'
+Assert-True (-not (ConvertTo-NervRetainedFailureText 'Customer110101199003078888Error : boom').Contains('110101199003078888', [StringComparison]::Ordinal)) `
+    'The long-digit-run guard is the other half of the type-name retention: without it a type name can spell a sensitive string and stop being "only source".'
 
 # Fixed-point acceptance, stated honestly. A raw message that imitates the prefix DOES pass through
 # verbatim when it is entirely inside the alphabet — and that is sound, because what it can carry is

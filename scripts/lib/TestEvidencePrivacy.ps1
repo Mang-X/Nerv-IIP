@@ -126,10 +126,17 @@ function Get-NervRetainedFailureGrammar {
         # digested; the failing test's full name already locates the code.
         # Case-sensitive on purpose — the alternation as a whole is IgnoreCase for the prose
         # vocabulary, so without `(?-i:)` the capital requirements below would not bind at all.
-        # An identifier may not carry a long digit run. Without this an "exception name" is a
-        # smuggling channel: `Customer110101199003078888Error` satisfies the suffix rule and would
-        # ship a national ID. Real type names never contain five consecutive digits, so the bound
-        # costs nothing and closes the class rather than leaving it to look accidentally covered.
+        # An identifier may not carry a long digit run.
+        #
+        # ⚠️ DO NOT DELETE AS REDUNDANT. This guard and the decision to retain exception type names
+        # verbatim are a *pair*, and neither is closed without the other. Type names are admitted
+        # because a type name is a compile-time source identifier and therefore cannot carry
+        # run-time data — but that argument holds only for identifiers that are *nothing but* an
+        # identifier. `Customer110101199003078888Error` satisfies the suffix rule while embedding a
+        # national ID in its own spelling, which is the single case where "it is only source" stops
+        # being true. This guard is what removes that exception, so removing the guard silently
+        # falsifies the premise the type-name retention rests on and reopens the smuggling path.
+        # Real type names never contain five consecutive digits, so the bound costs nothing.
         ('(?-i:' + $identifierDigitGuard + '[A-Z][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*\.(?:[A-Za-z_][A-Za-z0-9_]*)?(?:Exception|Failure|Error|Timeout))'),
         ('(?-i:' + $identifierDigitGuard + 'Assert\.[A-Z][A-Za-z0-9_]*)'),
         ('(?-i:' + $identifierDigitGuard + '[A-Za-z_][A-Za-z0-9_]*(?:Exception|Failure|Error|Timeout))'),
