@@ -100,7 +100,7 @@ test('NERV-2114 真实采购收货经仓管上架形成唯一批次库存', asyn
         const inbound =
           await call<Api.NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateWmsInboundOrderResponse>(
             'POST',
-            `${wms}/inbound-orders`,
+            query(`${wms}/inbound-orders`),
             {
               ...scope,
               inboundOrderNo,
@@ -125,7 +125,7 @@ test('NERV-2114 真实采购收货经仓管上架形成唯一批次库存', asyn
         const assignment =
           await call<Api.NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsAssignmentResult>(
             'POST',
-            `${wms}/inbound-orders/${inbound.inboundOrderId}/assignment`,
+            query(`${wms}/inbound-orders/${inbound.inboundOrderId}/assignment`),
             {
               poolCode: pool[0].poolCode!,
               operatorPrincipalId: auth.principal!.principalId,
@@ -152,7 +152,7 @@ test('NERV-2114 真实采购收货经仓管上架形成唯一批次库存', asyn
         const task =
           await workerCall<Api.NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateWmsWarehouseTaskResponse>(
             'POST',
-            `${wms}/inbound-orders/${inbound.inboundOrderId}/putaway-tasks`,
+            query(`${wms}/inbound-orders/${inbound.inboundOrderId}/putaway-tasks`),
             {
               taskNo: `PT-${suffix}`,
               lineNo: '10',
@@ -182,7 +182,7 @@ test('NERV-2114 真实采购收货经仓管上架形成唯一批次库存', asyn
         })
         const started = await workerCall<Action>(
           'POST',
-          `${wms}/putaway-tasks/${task.warehouseTaskId}/start`,
+          query(`${wms}/putaway-tasks/${task.warehouseTaskId}/start`),
           { expectedVersion: queued.version!, idempotencyKey: `${suffix}-start` },
         )
         const taskComplete = {
@@ -192,13 +192,13 @@ test('NERV-2114 真实采购收货经仓管上架形成唯一批次库存', asyn
         } satisfies Api.NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteWmsWarehouseTaskRequest
         const completedTask = await workerCall<Action>(
           'POST',
-          `${wms}/putaway-tasks/${task.warehouseTaskId}/complete`,
+          query(`${wms}/putaway-tasks/${task.warehouseTaskId}/complete`),
           taskComplete,
         )
         expect(
           await workerCall<Action>(
             'POST',
-            `${wms}/putaway-tasks/${task.warehouseTaskId}/complete`,
+            query(`${wms}/putaway-tasks/${task.warehouseTaskId}/complete`),
             taskComplete,
           ),
         ).toEqual(completedTask)
@@ -214,7 +214,7 @@ test('NERV-2114 真实采购收货经仓管上架形成唯一批次库存', asyn
         const complete = () =>
           workerCall<Completion>(
             'POST',
-            `${wms}/inbound-orders/${inbound.inboundOrderId}/complete`,
+            query(`${wms}/inbound-orders/${inbound.inboundOrderId}/complete`),
             completeRequest,
           )
         const accepted = await complete()
