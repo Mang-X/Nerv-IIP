@@ -270,8 +270,14 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForStockStatus
     private async Task<bool> IsAlreadyProcessedAsync(InspectionResultIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         var payload = integrationEvent.Payload;
-        var outboundKey = $"{integrationEvent.IdempotencyKey}:out";
-        var inboundKey = $"{integrationEvent.IdempotencyKey}:in";
+        // 读面去重探针：腿键必须与 PostStockStatusTransferCommandHandler 拼出来的完全一致，
+        // 因此后缀引用同一份常量、拼接也走同一个入口（#3176 S2）。
+        var outboundKey = InventoryIdempotencyKeyPolicy.Compose(
+            integrationEvent.IdempotencyKey,
+            PostStockStatusTransferCommandHandler.OutboundLegSuffix);
+        var inboundKey = InventoryIdempotencyKeyPolicy.Compose(
+            integrationEvent.IdempotencyKey,
+            PostStockStatusTransferCommandHandler.InboundLegSuffix);
         var outboundExists = await dbContext.StockMovements.AnyAsync(
             x => x.OrganizationId == integrationEvent.OrganizationId
                 && x.EnvironmentId == integrationEvent.EnvironmentId

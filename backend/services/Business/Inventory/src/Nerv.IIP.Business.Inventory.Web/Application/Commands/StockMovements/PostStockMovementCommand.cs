@@ -80,14 +80,14 @@ public sealed class PostStockMovementCommandHandler(
     : ICommandHandler<PostStockMovementCommand, PostStockMovementResult>
 {
     private const string TransferMovementType = InventoryMovementTypes.Transfer;
-    public const string TransferOutLegSuffix = ":out";
-    public const string TransferInLegSuffix = ":in";
+    internal const string TransferOutLegSuffix = ":out";
+    internal const string TransferInLegSuffix = ":in";
 
     /// <summary>
     /// 调拨基础幂等键上限 = 幂等键列宽 − 最长腿后缀，两腿拼接后都不越界。
     /// 不再手抄 <c>- 4</c>：后缀改了这里自动跟着改（#3176）。
     /// </summary>
-    public static readonly int TransferBaseIdempotencyKeyMaxLength =
+    internal static readonly int TransferBaseIdempotencyKeyMaxLength =
         InventoryIdempotencyKeyPolicy.BaseMaxLengthFor(TransferOutLegSuffix, TransferInLegSuffix);
 
     private static readonly HashSet<string> ExternalMovementTypes = new(StringComparer.OrdinalIgnoreCase)

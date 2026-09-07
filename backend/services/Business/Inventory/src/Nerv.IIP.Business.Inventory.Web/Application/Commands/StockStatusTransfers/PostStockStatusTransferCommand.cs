@@ -63,16 +63,16 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
     : ICommandHandler<PostStockStatusTransferCommand, PostStockStatusTransferResult>
 {
     /// <summary>状态调拨出库腿后缀。</summary>
-    public const string OutboundLegSuffix = ":out";
+    internal const string OutboundLegSuffix = ":out";
 
     /// <summary>状态调拨入库腿后缀。</summary>
-    public const string InboundLegSuffix = ":in";
+    internal const string InboundLegSuffix = ":in";
 
     /// <summary>
     /// 基础幂等键上界 = 幂等键列宽 − 两腿中最长的后缀。校验器直接用它，
     /// 不再用列宽本身——否则 125–128 字符的合法键会通过校验、落库时炸 22001（#3176）。
     /// </summary>
-    public static readonly int BaseIdempotencyKeyMaxLength =
+    internal static readonly int BaseIdempotencyKeyMaxLength =
         InventoryIdempotencyKeyPolicy.BaseMaxLengthFor(OutboundLegSuffix, InboundLegSuffix);
 
     public async Task<PostStockStatusTransferResult> Handle(PostStockStatusTransferCommand request, CancellationToken cancellationToken)

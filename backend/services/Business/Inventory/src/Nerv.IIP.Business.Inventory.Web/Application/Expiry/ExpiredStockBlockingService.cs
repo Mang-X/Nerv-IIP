@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using MediatR;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
+using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockStatusTransfers;
 using Nerv.IIP.Contracts.Inventory;
 
@@ -49,8 +50,11 @@ public sealed class ExpiredStockBlockingService(
             }
 
             var sourceDocumentId = $"{source.Id}:{asOfDate:yyyyMMdd}";
-            var outboundKey = $"expiry-block:{source.Id}:{asOfDate:yyyyMMdd}:out";
             var idempotencyKey = $"expiry-block:{source.Id}:{asOfDate:yyyyMMdd}";
+            // 读面去重探针：腿键必须与 PostStockMovementCommandHandler 拼出来的完全一致（#3176 S2）。
+            var outboundKey = InventoryIdempotencyKeyPolicy.Compose(
+                idempotencyKey,
+                PostStockMovementCommandHandler.TransferOutLegSuffix);
             if (await dbContext.StockMovements.AnyAsync(x =>
                     x.OrganizationId == source.OrganizationId
                     && x.EnvironmentId == source.EnvironmentId

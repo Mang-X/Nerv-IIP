@@ -205,20 +205,20 @@ public sealed class ReserveFefoStockCommandHandler(
     : ICommandHandler<ReserveFefoStockCommand, ReserveFefoStockResult>
 {
     /// <summary>FEFO 一次请求最多命中的候选台账数，也就是最多产生多少条分配腿。</summary>
-    public const int MaxFefoCandidateLedgers = 1000;
+    internal const int MaxFefoCandidateLedgers = 1000;
 
     /// <summary>分配腿后缀前缀；第 1 腿沿用原键，第 n（n≥2）腿是 <c>{key}:part-{n}</c>。</summary>
-    public const string PartSuffixPrefix = ":part-";
+    internal const string PartSuffixPrefix = ":part-";
 
     /// <summary>
     /// 基础幂等键上界 = 幂等键列宽 − 最长分配腿后缀（序号最大为 <see cref="MaxFefoCandidateLedgers"/>）。
     /// 后缀是变长的，上界由候选台账上限决定；改动其一即改动本上界（#3176）。
     /// </summary>
-    public static readonly int BaseIdempotencyKeyMaxLength =
+    internal static readonly int BaseIdempotencyKeyMaxLength =
         InventoryIdempotencyKeyPolicy.BaseMaxLengthFor(PartSuffix(MaxFefoCandidateLedgers));
 
     /// <summary>第 <paramref name="partIndex"/> 条分配腿的后缀。</summary>
-    public static string PartSuffix(int partIndex)
+    internal static string PartSuffix(int partIndex)
     {
         return FormattableString.Invariant($"{PartSuffixPrefix}{partIndex}");
     }

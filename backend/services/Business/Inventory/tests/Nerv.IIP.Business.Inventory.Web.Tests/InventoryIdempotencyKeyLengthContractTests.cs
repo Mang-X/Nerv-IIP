@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text.RegularExpressions;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -12,6 +14,7 @@ using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
 using Nerv.IIP.Business.Inventory.Infrastructure;
+using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockCounts;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockReservations;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockStatusTransfers;
@@ -31,16 +34,48 @@ namespace Nerv.IIP.Business.Inventory.Web.Tests;
 ///   跑「恰好顶到校验器上界」的基础键，把它**实际落库的键长**与**从 EF 模型读到的列宽**直接对撞
 ///   → 这条不经过任何策略常量，handler 换个更长的后缀而没有同步上界就红。
 /// </summary>
-public sealed class InventoryIdempotencyKeyLengthContractTests
+public sealed partial class InventoryIdempotencyKeyLengthContractTests
 {
-    /// <summary>所有承载幂等键的实体：新增一张带 idempotency_key 的表就要登记进来。</summary>
-    private static readonly (Type EntityType, string PropertyName)[] IdempotencyKeyProperties =
+    /// <summary>
+    /// <c>idempotency_key</c> 这一列在 Inventory 的 EF 模型里的**具名豁免**：
+    /// 该表来自共享的 <c>Nerv.IIP.Messaging.CAP</c> 死信箱，列宽 500、不由本策略管辖。
+    /// 豁免必须具名且被计数封闭——「名单里没有」不构成豁免。
+    /// </summary>
+    private const string DeadLetterEntityName = "Nerv.IIP.Messaging.CAP.IntegrationEventDeadLetter";
+
+    /// <summary>
+    /// EF 模型里 <c>idempotency_key</c> 列的总数（含上面那条具名豁免）。真库读数见 PR 正文。
+    /// 这条计数是**下界**：新增一张带该列的表、或改列名让值域塌成空集，都会红——
+    /// 否则 <c>Assert.All</c> 对空集恒真，护栏会静默缴械。
+    /// </summary>
+    private const int IdempotencyKeyColumnCount = 6;
+
+    private const string InventoryWebApplicationRelativeRoot =
+        "backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application";
+
+    private const string PolicySourceRelativePath = "Validation/InventoryIdempotencyKeyPolicy.cs";
+
+    /// <summary>
+    /// <c>Application/</c> 下调用 <c>InventoryIdempotencyKeyPolicy.Compose</c> 的位点闭集（逐文件精确计数）。
+    /// 把任一处换成裸 <c>+</c> 拼接，对应计数会掉到 0 而红（实测 M5b）。
+    /// </summary>
+    private static readonly (string RelativePath, int ComposeCallCount)[] ExpectedComposeSites =
     [
-        (typeof(StockMovement), nameof(StockMovement.IdempotencyKey)),
-        (typeof(StockReservation), nameof(StockReservation.IdempotencyKey)),
-        (typeof(StockCountTask), nameof(StockCountTask.IdempotencyKey)),
-        (typeof(StockCountAdjustment), nameof(StockCountAdjustment.IdempotencyKey)),
-        (typeof(InventoryAuthorityResolutionPendingAudit), nameof(InventoryAuthorityResolutionPendingAudit.IdempotencyKey)),
+        ("Commands/StockMovements/PostStockMovementCommand.cs", 1),
+        ("Commands/StockReservations/ReserveStockCommand.cs", 1),
+        ("Commands/StockStatusTransfers/PostStockStatusTransferCommand.cs", 2),
+        ("Expiry/ExpiredStockBlockingService.cs", 1),
+        ("IntegrationEventHandlers/QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer.cs", 2),
+    ];
+
+    /// <summary>
+    /// 「在幂等键上直接做字符串加法 / 把它嵌进插值再续写」的**具名豁免**闭集。
+    /// 当前唯一一条是 FEFO 重放查询的 <c>StartsWith</c> 谓词：它构造的是查询前缀、不落库。
+    /// 这个集合非空，因此扫描正则一旦失配也会红。
+    /// </summary>
+    private static readonly string[] ExpectedBypassExemptions =
+    [
+        "Commands/StockReservations/ReserveStockCommand.cs:235",
     ];
 
     [Fact]
@@ -49,13 +84,23 @@ public sealed class InventoryIdempotencyKeyLengthContractTests
         using var fixture = CreateModelFixture();
         var model = fixture.DbContext.GetService<IDesignTimeModel>().Model;
 
-        foreach (var (entityType, propertyName) in IdempotencyKeyProperties)
-        {
-            var property = model.FindEntityType(entityType)?.FindProperty(propertyName);
-            Assert.NotNull(property);
-            Assert.Equal("idempotency_key", property.GetColumnName());
-            Assert.Equal(InventoryIdempotencyKeyPolicy.ColumnMaxLength, property.GetMaxLength());
-        }
+        // 从 EF 模型**闭集枚举**，不是手写白名单：新增一张带 idempotency_key 的表会自动进值域。
+        var columns = IdempotencyKeyColumns(model);
+        Assert.Equal(IdempotencyKeyColumnCount, columns.Length);
+
+        var exempted = columns
+            .Where(property => property.DeclaringType.Name == DeadLetterEntityName)
+            .ToArray();
+        Assert.Single(exempted);
+        Assert.Equal(500, Assert.Single(exempted).GetMaxLength());
+
+        var governed = columns.Except(exempted).ToArray();
+        Assert.Equal(IdempotencyKeyColumnCount - 1, governed.Length);
+        Assert.All(
+            governed,
+            property => Assert.Equal(
+                InventoryIdempotencyKeyPolicy.ColumnMaxLength,
+                property.GetMaxLength()));
     }
 
     [Fact]
@@ -141,10 +186,8 @@ public sealed class InventoryIdempotencyKeyLengthContractTests
     {
         using var fixture = CreateModelFixture();
         var model = fixture.DbContext.GetService<IDesignTimeModel>().Model;
-        var movementColumnWidth = model.FindEntityType(typeof(StockMovement))!
-            .FindProperty(nameof(StockMovement.IdempotencyKey))!.GetMaxLength()!.Value;
-        var reservationColumnWidth = model.FindEntityType(typeof(StockReservation))!
-            .FindProperty(nameof(StockReservation.IdempotencyKey))!.GetMaxLength()!.Value;
+        var movementColumnWidth = ColumnWidthOf(model, typeof(StockMovement), nameof(StockMovement.IdempotencyKey));
+        var reservationColumnWidth = ColumnWidthOf(model, typeof(StockReservation), nameof(StockReservation.IdempotencyKey));
 
         // 1) 状态调拨：基础键恰好顶到校验器上界，handler 拼出的两腿键都必须还塞得进列。
         await using (var dbContext = CreateContext("status-transfer"))
@@ -212,20 +255,177 @@ public sealed class InventoryIdempotencyKeyLengthContractTests
     [Fact]
     public void Compose_refuses_to_overflow_the_column_instead_of_letting_the_database_throw()
     {
+        // 后缀取自 handler 自己，不在测试里另抄一份（#3176 S4）。
+        var suffix = PostStockStatusTransferCommandHandler.OutboundLegSuffix;
         var atColumnWidth = new string('k', InventoryIdempotencyKeyPolicy.ColumnMaxLength);
 
-        // 落库前拼接的唯一入口必须就地拒绝（KnownException → 400），而不是把越界值送进库换一个
-        // DbUpdateException(22001)——那个类型不被 KnownException 拦截器覆盖，会逃逸出 CAP 消费者。
+        // 落库前拼接必须就地拒绝（KnownException → 400），而不是把越界值送进库换一个
+        // DbUpdateException(22001)。注意：这只改变**失败形态**，两种异常在 CAP 消费者内都会逃逸（#877 同族）。
         var exception = Assert.Throws<KnownException>(
-            () => InventoryIdempotencyKeyPolicy.Compose(atColumnWidth, ":out"));
+            () => InventoryIdempotencyKeyPolicy.Compose(atColumnWidth, suffix));
         Assert.Contains("超出长度上限", exception.Message, StringComparison.Ordinal);
 
         // 恰好塞满不拒绝，也绝不截断。
         var exact = InventoryIdempotencyKeyPolicy.Compose(
-            new string('k', InventoryIdempotencyKeyPolicy.ColumnMaxLength - 4),
-            ":out");
+            new string('k', InventoryIdempotencyKeyPolicy.ColumnMaxLength - suffix.Length),
+            suffix);
         Assert.Equal(InventoryIdempotencyKeyPolicy.ColumnMaxLength, exact.Length);
-        Assert.EndsWith(":out", exact, StringComparison.Ordinal);
+        Assert.EndsWith(suffix, exact, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Every_pre_persist_rewrite_of_an_idempotency_key_goes_through_Compose()
+    {
+        // #3176 B1-b：光有 Compose 不算防线——「有人把 Compose(k, s) 换成裸 k + s」在纯行为测试上
+        // 是完全绿的（复审实测 M5b：5 通过 / 0 失败）。这条是**源码闭集扫描**，它才让绕过变红。
+        var applicationRoot = Path.Combine(FindRepoRoot(), InventoryWebApplicationRelativeRoot);
+        Assert.True(Directory.Exists(applicationRoot), applicationRoot);
+
+        var sources = Directory
+            .EnumerateFiles(applicationRoot, "*.cs", SearchOption.AllDirectories)
+            .Select(path => (
+                Relative: Path.GetRelativePath(applicationRoot, path).Replace(Path.DirectorySeparatorChar, '/'),
+                Text: File.ReadAllText(path)))
+            .ToArray();
+        // 下界：扫描面塌成空集时（改目录名 / 改后缀名）这条先红，而不是让后面的比较对空集恒真。
+        Assert.True(sources.Length >= 20, $"扫描面只找到 {sources.Length} 个源文件，值域可疑。");
+
+        // ① Compose 调用点闭集：逐文件精确计数。摘掉任一处会把该文件的计数打到 0。
+        var actualComposeSites = sources
+            .Select(source => (RelativePath: source.Relative, ComposeCallCount: ComposeCallRegex().Matches(source.Text).Count))
+            .Where(site => site.ComposeCallCount > 0)
+            .OrderBy(site => site.RelativePath, StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(
+            ExpectedComposeSites.OrderBy(site => site.RelativePath, StringComparer.Ordinal).ToArray(),
+            actualComposeSites);
+
+        // ② 绕过面闭集：任何「在幂等键上直接做字符串加法 / 把幂等键嵌进插值再续写」的位点，
+        //    都必须是登记过的那一条查询谓词。登记集非空，因此正则失效也会红，不会静默放行。
+        var actualBypassSites = sources
+            .Where(source => !string.Equals(source.Relative, PolicySourceRelativePath, StringComparison.Ordinal))
+            .SelectMany(source => source.Text
+                .Split('\n')
+                .Select((line, index) => (Site: $"{source.Relative}:{index + 1}", Line: line))
+                .Where(entry => IdempotencyKeyRewriteRegex().IsMatch(entry.Line))
+                .Select(entry => entry.Site))
+            .OrderBy(site => site, StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(ExpectedBypassExemptions, actualBypassSites);
+    }
+
+    [Fact]
+    public void Fefo_longest_part_suffix_is_the_one_at_the_leg_index_cap()
+    {
+        // #3176 S3 上半：118 完全建立在「腿序号 ≤ MaxFefoCandidateLedgers」之上，
+        // 逐个求值取最大，不靠「序号越大后缀越长」的推断。
+        var suffixLengths = Enumerable
+            .Range(2, ReserveFefoStockCommandHandler.MaxFefoCandidateLedgers - 1)
+            .Select(index => ReserveFefoStockCommandHandler.PartSuffix(index).Length)
+            .ToArray();
+        Assert.Equal(
+            ReserveFefoStockCommandHandler.PartSuffix(ReserveFefoStockCommandHandler.MaxFefoCandidateLedgers).Length,
+            suffixLengths.Max());
+    }
+
+    [Fact]
+    public async Task Fefo_rejects_more_candidate_ledgers_than_the_leg_index_cap()
+    {
+        // #3176 S3 下半：上一条只证明「若序号 ≤ 上限则后缀不超长」；这条证明**上限真的被执行**——
+        // 该守卫此前在全仓零覆盖（删掉 Take 与超限 throw 后契约测试全绿）。
+        await using var dbContext = CreateContext("fefo-cap");
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        for (var index = 0; index <= ReserveFefoStockCommandHandler.MaxFefoCandidateLedgers; index++)
+        {
+            dbContext.StockLedgers.Add(SeedLedger("unrestricted", 1m, $"LOC-CAP-{index:D5}", today.AddYears(1)));
+        }
+
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => new ReserveFefoStockCommandHandler(dbContext)
+            .Handle(FefoCommand(new string('k', 10)) with { Quantity = 1m }, CancellationToken.None));
+        Assert.Contains(
+            ReserveFefoStockCommandHandler.MaxFefoCandidateLedgers.ToString(CultureInfo.InvariantCulture),
+            exception.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Fefo_top_out_leg_key_fills_the_reservation_column_exactly()
+    {
+        // #3176 S8/S9：118 是由 :part-1000 决定的，而 handler 驱动的夹具只跑到 :part-2（125 位）。
+        // 顶格那一格必须有直接读数，且要有**反松弛等式**——只写 <= 抓不住「上界被手抄成更小的数」。
+        using var fixture = CreateModelFixture();
+        var reservationColumnWidth = ColumnWidthOf(
+            fixture.DbContext.GetService<IDesignTimeModel>().Model,
+            typeof(StockReservation),
+            nameof(StockReservation.IdempotencyKey));
+        var longestPartSuffix = ReserveFefoStockCommandHandler.PartSuffix(
+            ReserveFefoStockCommandHandler.MaxFefoCandidateLedgers);
+
+        var topOutKey = InventoryIdempotencyKeyPolicy.Compose(
+            new string('k', ReserveFefoStockCommandHandler.BaseIdempotencyKeyMaxLength),
+            longestPartSuffix);
+        Assert.Equal(reservationColumnWidth, topOutKey.Length);
+
+        // 再宽一位就必须被拒——证明 118 是顶格值，不是随手留的余量。
+        Assert.Throws<KnownException>(() => InventoryIdempotencyKeyPolicy.Compose(
+            new string('k', ReserveFefoStockCommandHandler.BaseIdempotencyKeyMaxLength + 1),
+            longestPartSuffix));
+    }
+
+    [Fact]
+    public void Stock_count_task_code_prefix_still_clears_the_idempotency_key_column()
+    {
+        // #3176 S6：盘点任务的键是 "count-code:" + CountTaskCode，当前 11 + 100 = 111 ≤ 128，
+        // 是**无守卫的余量**。CountTaskCode 一旦放宽到 118 就静默变缺陷，这条把余量钉住。
+        using var fixture = CreateModelFixture();
+        var columnWidth = ColumnWidthOf(
+            fixture.DbContext.GetService<IDesignTimeModel>().Model,
+            typeof(StockCountTask),
+            nameof(StockCountTask.IdempotencyKey));
+
+        var longestKey = InventoryIdempotencyKeyPolicy.Compose(
+            CreateStockCountTaskIdempotency.CountCodePrefix,
+            new string('k', CreateStockCountTaskIdempotency.CountTaskCodeMaxLength));
+        Assert.True(
+            longestKey.Length <= columnWidth,
+            $"count-code 前缀键最长 {longestKey.Length} 位，超出列宽 {columnWidth}。");
+    }
+
+    [GeneratedRegex(@"InventoryIdempotencyKeyPolicy\.Compose\(", RegexOptions.CultureInvariant)]
+    private static partial Regex ComposeCallRegex();
+
+    /// <summary>匹配「拿幂等键做字符串加法」与「把幂等键嵌进插值后还有后续内容」两种改写形状。</summary>
+    [GeneratedRegex(@"[Ii]dempotencyKey\s*\+\s*|\$""\{[^}]*[Ii]dempotencyKey[^}]*\}[^""]", RegexOptions.CultureInvariant)]
+    private static partial Regex IdempotencyKeyRewriteRegex();
+
+    private static IProperty[] IdempotencyKeyColumns(IModel model)
+    {
+        return model.GetEntityTypes()
+            .SelectMany(entityType => entityType.GetProperties())
+            .Where(property => string.Equals(property.GetColumnName(), "idempotency_key", StringComparison.Ordinal))
+            .ToArray();
+    }
+
+    private static int ColumnWidthOf(IModel model, Type entityType, string propertyName)
+    {
+        return model.FindEntityType(entityType)!.FindProperty(propertyName)!.GetMaxLength()!.Value;
+    }
+
+    private static string FindRepoRoot()
+    {
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory);
+             directory is not null;
+             directory = directory.Parent)
+        {
+            if (Directory.Exists(Path.Combine(directory.FullName, InventoryWebApplicationRelativeRoot)))
+            {
+                return directory.FullName;
+            }
+        }
+
+        throw new InvalidOperationException("Cannot locate the repository root from the test output directory.");
     }
 
     private static void AssertBoundary(int baseMaxLength, Func<int, bool> validate)
@@ -315,6 +515,16 @@ public sealed class InventoryIdempotencyKeyLengthContractTests
         string locationCode = "LOC-A-01",
         DateOnly? expiryDate = null)
     {
+        dbContext.StockLedgers.Add(SeedLedger(qualityStatus, quantity, locationCode, expiryDate));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+    }
+
+    private static StockLedger SeedLedger(
+        string qualityStatus,
+        decimal quantity,
+        string locationCode,
+        DateOnly? expiryDate)
+    {
         var ledger = StockLedger.Create(
             "org-001",
             "env-dev",
@@ -351,9 +561,7 @@ public sealed class InventoryIdempotencyKeyLengthContractTests
             null,
             expiryDate);
         ledger.ApplyMovement(movement);
-        dbContext.StockLedgers.Add(ledger);
-        dbContext.StockMovements.Add(movement);
-        await dbContext.SaveChangesAsync(CancellationToken.None);
+        return ledger;
     }
 
     private static ApplicationDbContext CreateContext(string name)
