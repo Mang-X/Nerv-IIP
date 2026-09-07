@@ -1,6 +1,14 @@
 <Project>
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <!--
+      传递依赖也受 PackageVersion 约束。不开这个属性时，PackageVersion 只管声明了直接
+      PackageReference 的项目，凡是只经传递取得某个包的宿主都不受约束 —— NuGet 按「最低适用版本」
+      解析到依赖方 nuspec 声明的下界。本仓已因此累计四次分叉（#3136 MediatR、#3152 与 #3157
+      EF Core 与 FluentValidation.AspNetCore、#3237 DotNetCore.CAP 8.4.1），四次都是人工发现。
+      开启后该类问题在构造上不再可能发生（关联 #3226）。
+    -->
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
 
   <ItemGroup>
