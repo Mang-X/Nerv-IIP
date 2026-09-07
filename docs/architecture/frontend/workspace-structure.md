@@ -2,6 +2,8 @@
 
 本文只描述 `frontend/` 的**当前 app/package 职责、依赖方向、配置分层以及路由/状态/API 组织边界**。命令、Node/pnpm/依赖版本和测试入口以 `frontend/package.json`、各 app/package 的 `package.json`、Vite 配置及相应 Runbook 为准；产品 IA/角色旅程不在本文维护。M2-L 拆分前的混合正文冻结于 [`../../reports/m2-l-frontend-structure-pre-split-2026-09-07.md`](../../reports/m2-l-frontend-structure-pre-split-2026-09-07.md)。
 
+为何采用 pnpm `apps/*` / `packages/*` 工作区、配置分层与生成代码隔离，见 [ADR 0006](../../adr/0006-frontend-workspace-structure.md)；为何采用 Vue Router 文件路由与页面共置，见 [ADR 0007](../../adr/0007-vue-router-file-routing-colocation.md)。本页不复制替代方案与历史理由，只随当前仓库结构更新现态。
+
 ## 工作区边界
 
 ```text
@@ -60,6 +62,8 @@ frontend/
 
 ## 与其它文档类型的边界
 
+- 工作区、配置分层与生成隔离的决策理由：[ADR 0006](../../adr/0006-frontend-workspace-structure.md)。
+- 文件路由与页面共置的决策理由：[ADR 0007](../../adr/0007-vue-router-file-routing-colocation.md)。
 - 视觉 token、共享组件规则：[`../../governance/frontend/design-system.md`](../../governance/frontend/design-system.md)。
 - API/OpenAPI/codegen：[`../integration/api-contracts.md`](../integration/api-contracts.md) 与 [`../../governance/api/contracts-and-codegen.md`](../../governance/api/contracts-and-codegen.md)。
 - 产品导航、角色旅程、页面语义：[`../../product/README.md`](../../product/README.md)。
