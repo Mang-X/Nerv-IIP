@@ -2,4 +2,4 @@
 
 本文件只为冻结报告中的原相对链接保留，不是报告正文或第二份 Architecture。
 
-当前文档：[`../architecture/overview/repo-layout.md`](../architecture/overview/repo-layout.md)
+当前文档：[`../architecture/integration/connector-protocol-v1.md`](../architecture/integration/connector-protocol-v1.md)
