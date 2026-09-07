@@ -2,6 +2,7 @@
 
 - 状态：已接受
 - 日期：2026-05-13
+- 修订依据：[ADR 0023](0023-filestorage-tus-proxy-staging-final-complete-invariants.md)
 
 ## 背景
 
@@ -104,6 +105,7 @@ Nerv-IIP 需要同时支撑事务数据、缓存、异步消息、对象文件�
 14. `observability` 索引只保存定位与过滤所需元数据以及可选 message preview，不保存完整原始日志正文；完整日志通过 File Storage chunk 读取。
 15. `LogChunk` 是默认必需索引；`LogEntryIndex` 是可选加速索引。未启用细粒度索引时，Gateway 通过 `LogChunk` 缩小候选文件块后扫描 `.jsonl.gz` 内容返回结果。
 16. `LogChunk` 首版索引模型必须保持跨数据库可迁移，避免把 JSONB、GIN、trigram、全文检索等 PostgreSQL 专有能力写成默认契约；这些能力只允许作为 PostgreSQL profile 的可选优化。
+17. [ADR 0023](0023-filestorage-tus-proxy-staging-final-complete-invariants.md) 仅部分取代决策第 7 条与本节第 2 条中的 Upload Provider 分类语义：tus 是传输协议，PlatformGateway proxy 是外部入口拓扑，storage provider 是字节后端，三者不得再作为同一类 provider。决策第 6–7 条和本节第 2 条中关于二进制存储基线、File Storage 事实所有权、元数据与授权职责、其它服务只引用 `fileId` / `FileReference`、不暴露对象存储键以及由 File Storage 适配对象存储后端的部分仍有效。
 
 ## 范围之外
 
