@@ -22,7 +22,9 @@
 | 当前工程 Governance | [`../governance/README.md`](../governance/README.md) |
 | 当前 Reference | [`../reference/README.md`](../reference/README.md) |
 | 本地开发与排障 | [`../runbooks/local-development.md`](../runbooks/local-development.md) |
-| 部署拓扑 | [deployment-baseline.md](deployment-baseline.md) |
+| 部署拓扑 | [`platform/deployment.md`](platform/deployment.md) |
+| 部署、Compose 与 release-install 操作 | [`../runbooks/deployment.md`](../runbooks/deployment.md) |
+| CI / 构建 / 交付规则 | [`../governance/delivery/README.md`](../governance/delivery/README.md) |
 | 数据库发布、迁移与恢复 | [`../runbooks/database-release.md`](../runbooks/database-release.md) |
 | 脚本治理与操作排障 | [`../governance/script-automation.md`](../governance/script-automation.md) + [`../runbooks/script-automation.md`](../runbooks/script-automation.md) |
 | 测试有效性、确定性、证据、真实依赖与 PDA | [`../governance/testing/README.md`](../governance/testing/README.md) + [`../runbooks/testing/README.md`](../runbooks/testing/README.md) + [`../reference/testing/README.md`](../reference/testing/README.md) |
@@ -40,7 +42,7 @@
 - 调查、实验、审计和修复记录位于 [`../reports/README.md`](../reports/README.md)。
 - 当前任务进度、负责人和验收证据位于 GitHub/Linear。
 
-M2-B 已迁出纵切历史与报告；M2-C 已迁出 Product；M2-D 已迁出 Runbook；M2-E 已迁出 Reference；M2-F 已迁出本批纯 Governance；M2-G 已拆脚本治理；M2-H 已拆测试有效性、确定性、证据、真实依赖 lane 与 PDA 测试五个混合 owner；M2-I 已拆 API/codegen 总账、BusinessGateway surface 与 facade coverage 的现态职责。上述旧文件名只保留短兼容入口，不能再作为正文读取；兼容入口删除条件由 M2-M 汇总后交给 M4。
+M2-B 已迁出纵切历史与报告；M2-C 已迁出 Product；M2-D 已迁出 Runbook；M2-E 已迁出 Reference；M2-F 已迁出本批纯 Governance；M2-G 已拆脚本治理；M2-H 已拆测试有效性、确定性、证据、真实依赖 lane 与 PDA 测试五个混合 owner；M2-I 已拆 API/codegen 总账、BusinessGateway surface 与 facade coverage 的现态职责；M2-J 已拆后端 bootstrap、CI 构建实测与部署基线的混合生命周期。上述旧文件名只保留短兼容入口，不能再作为正文读取；兼容入口删除条件由 M2-M 汇总后交给 M4。
 
 ## 迁移期类型提示
 
@@ -50,6 +52,7 @@ M2-B 已迁出纵切历史与报告；M2-C 已迁出 Product；M2-D 已迁出 Ru
 - M2-G 的 `script-automation-governance.md` 仅为兼容入口；当前规则与操作分别位于 `docs/governance/script-automation.md`、`docs/runbooks/script-automation.md`。
 - M2-H 的 `backend-test-determinism.md`、`test-evidence-governance.md`、`test-validity-governance.md`、`real-dependency-test-lanes.md`、`mobile-pda-testing-and-smoke.md` 仅为兼容入口；当前测试治理从 `docs/governance/testing/` 路由。
 - M2-I 的 `api-contract-and-codegen.md`、`business-gateway-api-surface-canonicalization.md` 与 `facade-coverage-matrix.md` 仅为兼容入口；当前 API 架构从 `docs/architecture/integration/api-contracts.md` 路由，规则/操作/机器事实分别位于 Governance、Runbook 与 Reference。
+- M2-J 的 `backend-bootstrap-plan.md`、`backend-ci-build-strategy.md` 与 `deployment-baseline.md` 仅为兼容入口；当前部署架构从 `docs/architecture/platform/deployment.md` 路由，当前交付规则与操作分别位于 Governance / Runbook，历史计划与审计位于 Archive / Reports。
 - 其它 `*-catalog.md`、`*-matrix.*`、`*-inventory.md` 仍可能属于 Reference、Report 或机器伴随物，按正文生命周期判断。
 - `*-investigation.md`、`*-spike.md`、`*-remediation.md` 的完整正文已由 M2-B 迁往 Reports；同名短页只可能是兼容入口。
 
