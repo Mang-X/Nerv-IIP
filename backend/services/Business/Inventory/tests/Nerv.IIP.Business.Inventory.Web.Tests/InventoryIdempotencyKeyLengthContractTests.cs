@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NetCorePal.Extensions.Primitives;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountAdjustmentAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountTaskAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
@@ -39,6 +40,7 @@ public sealed class InventoryIdempotencyKeyLengthContractTests
         (typeof(StockReservation), nameof(StockReservation.IdempotencyKey)),
         (typeof(StockCountTask), nameof(StockCountTask.IdempotencyKey)),
         (typeof(StockCountAdjustment), nameof(StockCountAdjustment.IdempotencyKey)),
+        (typeof(InventoryAuthorityResolutionPendingAudit), nameof(InventoryAuthorityResolutionPendingAudit.IdempotencyKey)),
     ];
 
     [Fact]
