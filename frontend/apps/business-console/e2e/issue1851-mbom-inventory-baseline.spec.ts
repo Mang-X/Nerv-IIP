@@ -1,4 +1,4 @@
-import { expect, test, type APIResponse, type Page } from '@playwright/test'
+import { expect, test, type APIResponse } from '@playwright/test'
 import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
@@ -29,6 +29,8 @@ test.skip(
   'requires a managed FullStack session and NERV-1851 evidence metadata',
 )
 test.setTimeout(12 * 60 * 1000)
+// 登录响应含会话凭据，只保留下方显式业务读取证据。
+test.use({ trace: 'off' })
 
 type JsonRecord = Record<string, unknown>
 
@@ -195,21 +197,6 @@ function parseMovement(record: JsonRecord, index: number): InventoryMovementFact
   }
 }
 
-async function captureSessionCredential(page: Page): Promise<string> {
-  const businessResponse = page.waitForResponse(
-    (response) => {
-      const pathname = new URL(response.url()).pathname
-      return pathname === '/api/business-console/v1/master-data/skus' && response.ok()
-    },
-    { timeout: 120_000 },
-  )
-  await page.goto('/master-data/skus', { waitUntil: 'domcontentloaded', timeout: 120_000 })
-  const credential = (await businessResponse).request().headers().authorization
-  if (!credential)
-    throw new Error('Authenticated public business request had no bearer credential.')
-  return credential
-}
-
 test('NERV-1851 独立读取 MBOM 与 Inventory 真实缺料事实', async ({ page }) => {
   test.skip(
     test.info().project.name !== 'desktop',
@@ -294,26 +281,15 @@ test('NERV-1851 独立读取 MBOM 与 Inventory 真实缺料事实', async ({ pa
     await page.getByRole('button', { name: '登录' }).click()
     const login = await loginResponse
     expect(login.ok()).toBe(true)
-    const principal = asRecord(asRecord(dataOf(await login.json())).principal)
+    const loginSession = asRecord(dataOf(await login.json()))
+    const principal = asRecord(loginSession.principal)
+    sessionCredential = `Bearer ${requiredText(loginSession, 'accessToken', 'login response')}`
     const organizationId = requiredText(principal, 'organizationId', 'login principal')
     const environmentId = requiredText(principal, 'environmentId', 'login principal')
     expect(organizationId).toBe(NERV1851_BASELINE.organizationId)
     expect(environmentId).toBe(NERV1851_BASELINE.environmentId)
     await expect(page).toHaveURL(new URL('/', baseURL!).toString())
     report.runtime.userAgent = await page.evaluate(() => navigator.userAgent)
-
-    for (const route of ['/engineering/mbom', '/inventory/availability'] as const) {
-      const response = await page.goto(route, {
-        waitUntil: 'domcontentloaded',
-        timeout: 120_000,
-      })
-      const pageEvidence = { route, status: response?.status() ?? null, url: page.url() }
-      uiPages.push(pageEvidence)
-      expect(response?.ok(), `real Chromium page ${route} should return HTTP 2xx`).toBe(true)
-    }
-
-    // 整页导航会刷新会话；在最后一次导航后捕获凭据，供后续只读 API 使用。
-    sessionCredential = await captureSessionCredential(page)
 
     const listCall = await call(
       queryPath('/api/business-console/v1/engineering/manufacturing-boms', {
@@ -453,6 +429,17 @@ test('NERV-1851 独立读取 MBOM 与 Inventory 真实缺料事实', async ({ pa
           inventoryMovements: movementPages,
         },
       })
+    }
+
+    // 整页导航会恢复并轮换会话；所有 API 读取先在同一次登录会话中完成。
+    for (const route of ['/engineering/mbom', '/inventory/availability'] as const) {
+      const response = await page.goto(route, {
+        waitUntil: 'domcontentloaded',
+        timeout: 120_000,
+      })
+      const pageEvidence = { route, status: response?.status() ?? null, url: page.url() }
+      uiPages.push(pageEvidence)
+      expect(response?.ok(), `real Chromium page ${route} should return HTTP 2xx`).toBe(true)
     }
 
     report.materials = materials
