@@ -57,7 +57,7 @@
 | Membership          | 以 `userId + organizationId + environmentId` 表达主体在当前租户环境中的成员资格；可关联多个 role，也可持有 membership data scopes。                                                                                                | [Membership.cs](../../backend/services/Iam/src/Nerv.IIP.Iam.Domain/AggregatesModel/MembershipAggregate/Membership.cs)                                                                                                                                                              |
 | Role                | 聚合 `permissionCodes`，并可持有 role data scopes；角色名是管理/展示文本，不参与业务代码分支。                                                                                                                                     | [Role.cs](../../backend/services/Iam/src/Nerv.IIP.Iam.Domain/AggregatesModel/RoleAggregate/Role.cs)                                                                                                                                                                                |
 | `permissionCodes`   | 当前 membership 下全部未删除角色权限的 `Distinct + OrderBy` 结果；前端可用来裁剪入口，Gateway/IAM 逐请求校验仍是最终边界。                                                                                                         | [IamRepositories.cs](../../backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/Repositories/IamRepositories.cs)、[AuthorizedBusinessProxyEndpoint.cs](../../backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/Auth/AuthorizedBusinessProxyEndpoint.cs) |
-| `roleIds`           | 当前 membership 的全部 role ID；`/auth/me` 返回它们供角色 catalog 展示和审计，不作为动作授权条件。                                                                                                                                 | [IamAuthService.cs](../../backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Auth/IamAuthService.cs)、[API 契约与代码生成规范](api-contract-and-codegen.md#控制台-iam-管理-api)                                                                                               |
+| `roleIds`           | 当前 membership 的全部 role ID；`/auth/me` 返回它们供角色 catalog 展示和审计，不作为动作授权条件。                                                                                                                                 | [IamAuthService.cs](../../backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Auth/IamAuthService.cs)、[API 契约运行时架构](integration/api-contracts.md)                                                                                                                        |
 | 当前有效 data scope | legacy `DataScope` 仍是 membership scopes 与 role scopes 的兼容并集；MAN-627 新增的 permission-aware `ScopeGrants` 只取真正授予本次 permission 的 role scopes，并附加当前 membership scopes，保留 `sourceKind/sourceId` 审计来源。 | [IamRepositories.cs](../../backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/Repositories/IamRepositories.cs)                                                                                                                                                                   |
 
 当前实现的多角色算法可概括为：
@@ -147,7 +147,7 @@ Maintenance 工单等有限读面解析 site/workshop/production-line，再收�
 | --------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | 菜单/入口可见性 | 用当前 principal 的 `permissionCodes` 裁剪导航、首页板块和快捷入口，减少注定 403 的请求。                                           | Business Console [navigation.ts](../../frontend/apps/business-console/src/navigation.ts)、[BusinessLayout.vue](../../frontend/apps/business-console/src/layouts/BusinessLayout.vue)；PDA [useWorkbenchHome.ts](../../frontend/apps/business-pda/src/composables/useWorkbenchHome.ts)。 | 看得见不代表能看到所有行或能执行动作；隐藏入口也不是安全边界。                        |
 | 数据范围        | 服务端只返回 actor 被授权范围内的对象；scope 解析、分页、搜索和筛选必须在服务端完成。                                               | IAM authorization 返回 `DataScope`，BusinessGateway 的有限读面通过 [BusinessGatewayDataScopeFilter.cs](../../backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/Auth/BusinessGatewayDataScopeFilter.cs) 下推。                                               | 有 read permission 不代表 Organization 全量；当前某个读面已过滤不代表其它域自动继承。 |
-| 可执行动作授权  | 服务端逐请求校验 actor 的 permissionCode、organization/environment、资源/数据范围，并继续执行领域状态、业务不变式、冲突和幂等门禁。 | [AuthorizedBusinessProxyEndpoint.cs](../../backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/Auth/AuthorizedBusinessProxyEndpoint.cs)、[IAM 认证与授权基线](iam-authentication-baseline.md#授权模型)。                                                      | 行可见、菜单可见、`roleIds` 匹配或前端按钮启用都不能代替后端动作授权。                |
+| 可执行动作授权  | 服务端逐请求校验 actor 的 permissionCode、organization/environment、资源/数据范围，并继续执行领域状态、业务不变式、冲突和幂等门禁。 | [AuthorizedBusinessProxyEndpoint.cs](../../backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/Auth/AuthorizedBusinessProxyEndpoint.cs)、[IAM 认证与授权当前架构](platform/iam-authentication.md)。                                                            | 行可见、菜单可见、`roleIds` 匹配或前端按钮启用都不能代替后端动作授权。                |
 
 Business Console 路由守卫和导航当前采用“任一 required permission 命中”来允许进入；
 PDA 多数页面只标记 `requiresAuth`，首页/快捷入口才按权限裁剪。因此前端入口行为本身也不能
@@ -318,12 +318,12 @@ World Bible L1 背景历史引擎可以生成设备遥测、报警、维修和�
 ## 10. 关联架构文档
 
 - 当前交付与 seed/profile 事实：[实施状态清单](implementation-readiness.md)
-- IAM、Gateway、MasterData 的上下文所有权：[平台上下文地图](context-map.md)
+- IAM、Gateway、MasterData 的上下文所有权：[平台上下文地图](overview/context-map.md)
 - permission、principalType 与组织/环境/资源授权基线：[统一授权矩阵](authorization-matrix.md)
-- 会话、principal 与服务端授权层次：[IAM 认证与授权基线](iam-authentication-baseline.md)
+- 会话、principal 与服务端授权层次：[IAM 认证与授权当前架构](platform/iam-authentication.md)
 - MasterData 人/时间与资源层级：[基础数据模块产品业务设计](master-data-module-product-design.md)
 - Gateway facade、principal 与 worker directory 公开契约：
-  [API 契约与代码生成规范](api-contract-and-codegen.md)
+  [API 契约运行时架构](integration/api-contracts.md)
 - 前端请求/状态/认证边界：[前端结构与命名规范](frontend-structure.md)
 - Business Console 菜单与 route-ready 边界：[前端导航地图](frontend-navigation-map.md)
 - PDA 当前产品与技术边界：[PDA 模块产品设计](mobile-pda-module-product-design.md)
