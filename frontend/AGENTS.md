@@ -1,7 +1,7 @@
 # 前端目录路由
 
 - **命令或版本：** 以 `frontend/package.json` 和受影响 package 的 `package.json` 为准。
-- **页面、路由、状态或 API 消费：** 先读 `docs/architecture/frontend-structure.md`。
+- **页面、路由、状态、API 消费或 app/package 边界：** 先读 `docs/architecture/frontend/workspace-structure.md`；只有涉及 PDA/Capacitor 运行时再补读 `docs/architecture/mobile/capacitor.md`，不要默认加载整个 Architecture 目录。
 - **共享设计系统、shadcn-vue、语义 token、公共组件导入边界：** 读 `docs/governance/frontend/design-system.md`。
 - **NvUI 组件、导入、命名、token 或冻结源码：** 先读 `frontend/DESIGN/governance.md`、`docs/adr/0020-nvui-naming-token-namespaces-and-style-isolation.md` 与最近子树的 `AGENTS.md`；NvUI 专属规则优先于通用设计系统规则。
 - **本地跑单测、判读红结果或多 worktree 并行跑测：** 读 `docs/runbooks/testing/frontend-vitest-local.md`。

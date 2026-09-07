@@ -21,6 +21,7 @@
 | 数据库 Schema | [`data/database-schema.md`](data/database-schema.md) |
 | 持久化启动与真实 PostgreSQL 测试生命周期 | [`data/persistence-startup.md`](data/persistence-startup.md) |
 | ReferenceData / CodeSet | [`data/reference-data.md`](data/reference-data.md) |
+| BusinessMasterData 所有权变更审批与审计 | [`data/master-data-ownership.md`](data/master-data-ownership.md) |
 | 集成事件消费分类 | [`integration/event-consumption.md`](integration/event-consumption.md) |
 | 脚本与自动化 | [`script-automation.md`](script-automation.md) |
 | 测试有效性、确定性、证据、真实依赖与 PDA | [`testing/README.md`](testing/README.md) |
