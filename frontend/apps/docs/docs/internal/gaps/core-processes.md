@@ -6,7 +6,7 @@
 
 - `/processes/`
 - `docs/architecture/frontend/workspace-structure.md`
-- `docs/architecture/frontend-navigation-map.md`
+- `docs/reference/frontend/navigation-map.md`
 - `frontend/apps/business-console/src/navigation.ts`
 
 ## 建议 Issue 标题
