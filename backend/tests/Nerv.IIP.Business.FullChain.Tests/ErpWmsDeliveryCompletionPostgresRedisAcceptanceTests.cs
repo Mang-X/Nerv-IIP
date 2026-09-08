@@ -16,6 +16,8 @@ namespace Nerv.IIP.Business.FullChain.Tests;
 
 public sealed class ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests
 {
+    private const string ReplayIdentityHeader = "man527-replay-identity";
+
     [RealPostgresRedisErpWmsDeliveryFact]
     public async Task External_process_replays_completed_wms_event_without_duplicate_delivery_or_receivable_facts()
     {
@@ -47,7 +49,6 @@ public sealed class ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests
         await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(CancellationToken.None);
 
         WmsIntegrationEvent replay;
-        int receivedBeforeReplay;
         await using (var sourceScope = provider.CreateAsyncScope())
         {
             var dbContext = sourceScope.ServiceProvider.GetRequiredService<ErpDbContext>();
@@ -99,30 +100,29 @@ public sealed class ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests
                     payloadLines,
                     "erp-delivery-order",
                     deliveryOrderNo));
-            // One-shot baseline read outside any bounded window: there is no caller token to honour here.
-            receivedBeforeReplay = await CountSiblingConsumerReceiptsAsync(
-                postgres,
-                processed.EventId,
-                CancellationToken.None);
         }
 
         var publisher = provider.GetRequiredService<ICapPublisher>();
-        await publisher.PublishAsync(nameof(WmsIntegrationEvent), replay);
-        await publisher.PublishAsync(nameof(WmsIntegrationEvent), replay);
+        var replayRun = Guid.NewGuid().ToString("N");
+        string[] replayIdentities = [$"{replayRun}:1", $"{replayRun}:2"];
+        foreach (var identity in replayIdentities)
+        {
+            await publisher.PublishAsync(nameof(WmsIntegrationEvent), replay,
+                new Dictionary<string, string?> { [ReplayIdentityHeader] = identity });
+        }
 
-        // Real Redis CAP transport across processes: the only observable fact is the sibling-consumer receipt
-        // count in PostgreSQL, so poll it on a bounded budget and report the last sanitized observation.
-        var expectedReceipts = receivedBeforeReplay + 2;
+        // CAP persists Succeeded only after the target subscriber returns. Both physical replays must
+        // complete before unchanged business facts can prove idempotency; a sibling receipt cannot do so.
         var receivedAfterReplay = await Eventually.WaitAsync(
-            condition: "ERP received both repeated WMS completion envelopes through the real Redis CAP transport",
-            observe: async token => await CountSiblingConsumerReceiptsAsync(postgres, replay.EventId, token),
-            isSatisfied: count => count >= expectedReceipts,
-            describe: count => $"siblingReceipts={count}; before={receivedBeforeReplay}; expected>={expectedReceipts}",
+            condition: "ERP target consumer completed both repeated WMS envelopes through the real Redis CAP transport",
+            observe: async token => await CountCompletedTargetReplaysAsync(postgres, capVersion, replayIdentities, token),
+            isSatisfied: count => count == 2,
+            describe: count => $"targetSucceededReplayIdentities={count}; expected=2; capVersion={capVersion}",
             options: new EventuallyOptions(
                 Timeout: TimeSpan.FromSeconds(45),
                 PollInterval: TimeSpan.FromMilliseconds(250),
                 SensitiveValues: [postgres, redis]));
-        Assert.True(receivedAfterReplay >= expectedReceipts);
+        Assert.Equal(2, receivedAfterReplay);
 
         await using var verificationScope = provider.CreateAsyncScope();
         var verificationDbContext = verificationScope.ServiceProvider.GetRequiredService<ErpDbContext>();
@@ -143,27 +143,34 @@ public sealed class ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests
             && x.EventId == replay.EventId));
     }
 
-    private static async Task<int> CountSiblingConsumerReceiptsAsync(
+    private static async Task<int> CountCompletedTargetReplaysAsync(
         string connectionString,
-        string eventId,
+        string capVersion,
+        string[] replayIdentities,
         CancellationToken cancellationToken)
     {
-        // Successful Redis CAP deliveries are not retained in cap_received_messages in this profile.
-        // The sibling WMS consumer durably rejects this outbound event type once per physical envelope.
+        // UseEntityFramework writes CAP transport state to cap.received, not the ERP ORM-mapped tables.
+        // DISTINCT prevents redelivery of one identity from standing in for completion of the other.
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandType = CommandType.Text;
         command.CommandText = """
-            SELECT COUNT(*)
-            FROM erp.integration_event_dead_letters
-            WHERE consumer_name = @consumer_name
-              AND event_id = @event_id;
+            SELECT COUNT(DISTINCT "Content"::jsonb -> 'Headers' ->> @replay_header)
+            FROM cap.received
+            WHERE "Group" = @consumer_group
+              AND "Version" = @cap_version
+              AND "Name" = @event_name
+              AND "StatusName" = 'Succeeded'
+              AND "Content"::jsonb -> 'Headers' ->> @replay_header = ANY(@replay_identities);
             """;
         command.Parameters.AddWithValue(
-            "consumer_name",
-            WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt.ConsumerName);
-        command.Parameters.AddWithValue("event_id", eventId);
+            "consumer_group",
+            $"{WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAccountReceivable.ConsumerName}.{capVersion}");
+        command.Parameters.AddWithValue("cap_version", capVersion);
+        command.Parameters.AddWithValue("event_name", nameof(WmsIntegrationEvent));
+        command.Parameters.AddWithValue("replay_header", ReplayIdentityHeader);
+        command.Parameters.AddWithValue("replay_identities", replayIdentities);
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
     }
 }

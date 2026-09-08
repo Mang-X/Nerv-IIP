@@ -2,11 +2,14 @@
 #   Category: check
 #   SideEffects:
 #     - Parses the ERP sales-order to DemandPlanning cross-process verification script
+#     - Runs isolated child processes for the real-entry permanent-residual and three mutation contracts
 #     - Runs the exact script-governance gate for the MAN-703 HTTP fixture
 #   Writes:
+#     - Temporary real-entry and mutation harnesses, cleanup evidence, and watchdog logs under the system temp directory
 #     - artifacts/script-logs/man703-fixture-governance/**
 #     - A temporary canonical-result failure fixture under .superpowers/sdd/**
 #   Cleanup:
+#     - Removes the temporary real-entry and mutation harnesses, evidence, and watchdog logs
 #     - Removes the temporary canonical-result failure fixture
 #   Requires:
 #     - PowerShell 7
@@ -194,6 +197,273 @@ Assert-Contract ($content.Contains("Erp__Seed__SalesOrderDemandDemo__Enabled = '
 Assert-Contract (-not [string]::IsNullOrWhiteSpace((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest'))) 'Verify script must define one fail-closed JSON request path.'
 Assert-Contract (-not [string]::IsNullOrWhiteSpace((Get-FunctionContractText -Name 'invoke-man517jsonrequest'))) 'PowerShell function contract lookup must follow case-insensitive command-name semantics.'
 Assert-Contract (-not [string]::IsNullOrWhiteSpace((Get-FunctionContractText -Name 'Wait-ErpSalesOrderReady'))) 'Verify script must poll the ERP sales-order query after health before mutation.'
+
+# --- NERV-1874 / MAN-517 readiness identity contract ----------------------------------------
+# Generic /health is shared by every business process. Readiness therefore has
+# to prove the managed process still owns its reserved port and that the
+# response came from the service-specific read-only route before business flow.
+$readinessFunctionAst = Get-FunctionDefinitionAst -Name 'Wait-Healthy'
+$readinessFunctionText = Get-FunctionContractText -Name 'Wait-Healthy'
+Assert-Contract ($null -ne $readinessFunctionAst) 'MAN-517 readiness must have one shared readiness function.'
+foreach ($parameterName in @('ServiceContract', 'Headers', 'Ownership', 'ManagedProcess', 'Observation')) {
+    Assert-Contract ($null -ne (Get-ParameterAst -Function $readinessFunctionAst -Name $parameterName)) "MAN-517 readiness must bind its canonical $parameterName explicitly."
+}
+foreach ($forbiddenParameterName in @('ServiceName', 'IdentityUri', 'ExpectedCommand', 'ExpectedArguments')) {
+    Assert-Contract ($null -eq (Get-ParameterAst -Function $readinessFunctionAst -Name $forbiddenParameterName)) "MAN-517 readiness must not accept caller-selected $forbiddenParameterName."
+}
+Assert-Contract ($readinessFunctionText.Contains('Read-Man517ListenerAuthority', [StringComparison]::Ordinal)) 'Readiness must re-check the exact managed listener authority before accepting health.'
+Assert-Contract ($readinessFunctionText.Contains('Test-Man517ServiceIdentityResponse', [StringComparison]::Ordinal)) 'Readiness must validate a service-specific response shape instead of accepting generic /health.'
+Assert-Contract ($readinessFunctionText.Contains('service identity mismatch', [StringComparison]::Ordinal)) 'Readiness failures must identify a wrong service on the invocation port.'
+Assert-Contract ($readinessFunctionText.Contains('Read-Man517ProcessIdentity', [StringComparison]::Ordinal)) 'Readiness must read the actual operating-system process identity before any HTTP request.'
+Assert-Contract ($readinessFunctionText.Contains('canonical process identity mismatch', [StringComparison]::Ordinal)) 'Readiness must bind the managed process executable and arguments to the canonical service contract.'
+Assert-Contract ($readinessFunctionText.Contains('unavailable', [StringComparison]::Ordinal)) 'Readiness observations must report unavailable when an HTTP response was not reached.'
+Assert-Contract ($readinessFunctionText.Contains('ConvertTo-Json', [StringComparison]::Ordinal)) 'Readiness observations must be normalized from the response returned by the real HTTP request.'
+Assert-Contract (-not $readinessFunctionText.Contains('AllowEmptyDemandPlanning', [StringComparison]::Ordinal)) 'DemandPlanning empty-result policy must come from the canonical contract, not a readiness call-site switch.'
+$readinessFailureText = Get-FunctionContractText -Name 'New-Man517ReadinessFailure'
+Assert-Contract ($readinessFailureText.Contains('Get-Man517ProcessFailureCause', [StringComparison]::Ordinal)) 'Early process exit diagnostics must retain the bind/root failure cause.'
+Assert-Contract ($readinessFailureText.Contains('exitCode=', [StringComparison]::Ordinal)) 'Early process exit diagnostics must retain the managed process exit code.'
+foreach ($readinessCall in (Get-CommandCallAsts -Name 'Wait-Healthy')) {
+    foreach ($parameterName in @('ServiceContract', 'Headers', 'Ownership', 'ManagedProcess')) {
+        Assert-Contract (Test-CommandHasParameter -Call $readinessCall -Name $parameterName) "Every MAN-517 readiness call must bind -$parameterName so service identity cannot be inferred from /health."
+    }
+    foreach ($forbiddenParameterName in @('ServiceName', 'IdentityUri', 'ExpectedCommand', 'ExpectedArguments')) {
+        Assert-Contract (-not (Test-CommandHasParameter -Call $readinessCall -Name $forbiddenParameterName)) "Every MAN-517 readiness call must reject caller-selected -$forbiddenParameterName."
+    }
+}
+Assert-Contract (-not $content.Contains('ExpectedCommand', [StringComparison]::Ordinal)) 'The verifier must have one canonical launch contract and no caller-selected ExpectedCommand boundary.'
+Assert-Contract (-not $content.Contains('ExpectedArguments', [StringComparison]::Ordinal)) 'The verifier must have one canonical launch contract and no caller-selected ExpectedArguments boundary.'
+Assert-Contract (-not [string]::IsNullOrWhiteSpace((Get-FunctionContractText -Name 'Get-Man517CanonicalServiceContract'))) 'MAN-517 must define one canonical service contract producer.'
+Assert-Contract (-not [string]::IsNullOrWhiteSpace((Get-FunctionContractText -Name 'Compare-Man517CanonicalServiceContract'))) 'MAN-517 must compare caller input with a freshly produced canonical service contract.'
+Assert-Contract (-not [string]::IsNullOrWhiteSpace((Get-FunctionContractText -Name 'Resolve-Man517CanonicalServiceContract'))) 'MAN-517 readiness entry points must resolve canonical service provenance before using launch or response fields.'
+Assert-Contract (-not [string]::IsNullOrWhiteSpace((Get-FunctionContractText -Name 'Read-Man517ProcessIdentity'))) 'MAN-517 must read process executable and full arguments from the operating system.'
+Assert-Contract ((Get-FunctionContractText -Name 'Read-Man517ProcessIdentity').Contains('Win32_Process', [StringComparison]::Ordinal) -or
+    (Get-FunctionContractText -Name 'Read-Man517ProcessIdentity').Contains('/proc/', [StringComparison]::Ordinal) -or
+    (Get-FunctionContractText -Name 'Read-Man517ProcessIdentity').Contains("'/bin/ps'", [StringComparison]::Ordinal)) 'MAN-517 OS process readback must use a platform process authority.'
+Assert-Contract ((Get-FunctionContractText -Name 'Start-Man517OwnedProcess').Contains('ServiceContract', [StringComparison]::Ordinal)) 'Managed process startup must accept the canonical service contract.'
+Assert-Contract (-not (Get-FunctionContractText -Name 'Start-Man517OwnedProcess').Contains('ActualProcessOverride', [StringComparison]::Ordinal)) 'Canonical managed process startup must not expose a caller-selected actual-process override.'
+Assert-Contract (-not [string]::IsNullOrWhiteSpace((Get-FunctionContractText -Name 'Start-Man517ForgedResponderProcess'))) 'The forged production-entry responder must have one centralized launch recipe.'
+foreach ($identityRoute in @(
+        '/api/business/v1/master-data/resources?organizationId=org-001&environmentId=env-dev&resourceType=work-center',
+        '/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev',
+        '/api/business/v1/erp/sales-orders?organizationId=org-001&environmentId=env-dev')) {
+    Assert-Contract ($content.Contains($identityRoute, [StringComparison]::Ordinal)) "MAN-517 readiness must use the existing service-specific read-only route '$identityRoute'."
+}
+Assert-Contract ($content.Contains('identityUri=', [StringComparison]::Ordinal)) 'Readiness diagnostics must retain the exact identity route that failed.'
+
+# The readiness contract is also exercised from the production verifier entry
+# point. Each negative control must use a real managed process/HTTP listener and
+# retain its own failure plus zero-process/zero-port cleanup readback; helper
+# shape tests alone cannot prove ownership or bind diagnostics.
+Assert-Contract (-not [string]::IsNullOrWhiteSpace((Get-FunctionContractText -Name 'Invoke-Man517ReadinessNegativeProbes'))) 'MAN-517 must expose a production-entry readiness negative-probe matrix.'
+foreach ($negativeScenarioId in @('wrong-service-port', 'bind-address-in-use', 'wrong-port', 'pid-reuse', 'response-identity-forged')) {
+    Assert-Contract ($content.Contains($negativeScenarioId, [StringComparison]::Ordinal)) "MAN-517 production readiness evidence must retain the '$negativeScenarioId' counterexample."
+}
+Assert-Contract ($content.Contains('readiness-negative-evidence.json', [StringComparison]::Ordinal)) 'MAN-517 readiness negative probes must write retained evidence independently of positive FullChain evidence.'
+Assert-Contract ($content.Contains('remainingPorts', [StringComparison]::Ordinal)) 'Each readiness negative probe must verify exact port cleanup.'
+Assert-Contract ($content.Contains('remainingProcesses', [StringComparison]::Ordinal)) 'Each readiness negative probe must verify exact process cleanup.'
+Assert-Contract ($content.Contains('full-shape', [StringComparison]::OrdinalIgnoreCase)) 'The forged production-entry case must exercise a full-shape DemandPlanning response.'
+Assert-Contract ($content.Contains('readinessAcceptedUnexpectedly', [StringComparison]::Ordinal)) 'A negative probe must fail when readiness unexpectedly returns success, rather than synthesizing a failure observation.'
+Assert-Contract (-not [string]::IsNullOrWhiteSpace((Get-FunctionContractText -Name 'Assert-Man517ReadinessNegativeEvidence'))) 'MAN-517 must validate retained negative evidence instead of trusting the probe summary.'
+Assert-Contract ((Get-FunctionContractText -Name 'Start-Man517ForgedResponderProcess').Contains("Get-Command -Name 'pwsh'", [StringComparison]::Ordinal) -and
+    (Get-FunctionContractText -Name 'Start-Man517ForgedResponderProcess').Contains('Start-ManagedBackgroundProcess', [StringComparison]::Ordinal)) 'Forged identity response must come from a real managed HTTP responder, not an injected function mock.'
+Assert-Contract ($content.Contains('TcpListener', [StringComparison]::Ordinal)) 'Bind and wrong-port readiness negatives must use real TCP listeners.'
+
+# The response-shape guard is deliberately exercised with the shared /health
+# envelope and each service's existing read-only envelope. A generic 200/true
+# response must never be accepted as one of the three service identities.
+$identityFunctionText = Get-FunctionContractText -Name 'Test-Man517ServiceIdentityResponse'
+Assert-Contract (-not [string]::IsNullOrWhiteSpace($identityFunctionText)) 'The service identity response validator must be present for behavioral contract coverage.'
+$canonicalContractFunctionText = Get-FunctionContractText -Name 'Get-Man517CanonicalServiceContract'
+Invoke-Expression $canonicalContractFunctionText
+$canonicalContractComparisonText = Get-FunctionContractText -Name 'Compare-Man517CanonicalServiceContract'
+Invoke-Expression $canonicalContractComparisonText
+$canonicalContractResolverText = Get-FunctionContractText -Name 'Resolve-Man517CanonicalServiceContract'
+Invoke-Expression $canonicalContractResolverText
+$canonicalContractValidatorText = Get-FunctionContractText -Name 'Test-Man517CanonicalServiceContract'
+Invoke-Expression $canonicalContractValidatorText
+Invoke-Expression $identityFunctionText
+$genericHealthEnvelope = [pscustomobject]@{ success = $true; data = [pscustomobject]@{} }
+foreach ($serviceName in @('masterdata', 'demand-planning', 'erp')) {
+    $serviceContract = Get-Man517CanonicalServiceContract -ServiceName $serviceName -Port 54321
+    Assert-Contract (-not (Test-Man517ServiceIdentityResponse -ServiceContract $serviceContract -Response $genericHealthEnvelope)) "Generic /health response must not identify '$serviceName'."
+}
+$masterDataShapeContract = Get-Man517CanonicalServiceContract -ServiceName 'masterdata' -Port 54321
+Assert-Contract (Test-Man517ServiceIdentityResponse -ServiceContract $masterDataShapeContract -Response ([pscustomobject]@{
+    success = $true; data = [pscustomobject]@{ resources = @(); total = 0 }
+})) 'MasterData identity must accept the existing resources-list response shape.'
+$demandPlanningShapeContract = Get-Man517CanonicalServiceContract -ServiceName 'demand-planning' -Port 54321
+Assert-Contract (-not (Test-Man517ServiceIdentityResponse -ServiceContract $demandPlanningShapeContract -Response ([pscustomobject]@{
+    success = $true; data = @()
+}))) 'DemandPlanning identity must reject an empty array unless an independently verified managed process allows the legitimate empty read result.'
+Assert-Contract (-not (Test-Man517ServiceIdentityResponse -ServiceContract $demandPlanningShapeContract -Response ([pscustomobject]@{
+    success = $true; data = @([pscustomobject]@{ sourceReference = 'forged' })
+}))) 'DemandPlanning identity must reject a legal envelope containing a forged row without the complete service response contract.'
+Assert-Contract (Test-Man517ServiceIdentityResponse -ServiceContract $demandPlanningShapeContract -Response ([pscustomobject]@{
+    success = $true; data = @([pscustomobject]@{
+        demandSourceId = 'demand-001'
+        demandType = 'sales-order'
+        sourceReference = 'SO-DEMO-001'
+        sourceLineReference = '10'
+        customerCode = 'CUST-001'
+        sourceVersion = 1
+        sourceStatus = 'active'
+        skuCode = 'SKU-001'
+        uomCode = 'EA'
+        siteCode = 'SITE-001'
+        quantity = 2
+        dueDate = '2026-08-15'
+    })
+})) 'DemandPlanning identity must accept the existing demand-list response shape.'
+$erpShapeContract = Get-Man517CanonicalServiceContract -ServiceName 'erp' -Port 54321
+Assert-Contract (Test-Man517ServiceIdentityResponse -ServiceContract $erpShapeContract -Response ([pscustomobject]@{
+    success = $true; data = [pscustomobject]@{ items = @(); total = 0 }
+})) 'ERP identity must accept the existing sales-order-list response shape.'
+
+# Exercise the exact readiness function with an equivalent wrong-service
+# response and an already-exited managed process. The injected responders are
+# limited to this source-contract test; the production FullChain run below
+# remains the real-process/real-HTTP evidence owner.
+$failureCauseFunctionText = Get-FunctionContractText -Name 'Get-Man517ProcessFailureCause'
+Invoke-Expression $failureCauseFunctionText
+Invoke-Expression $readinessFailureText
+$canonicalProcessIdentityText = Get-FunctionContractText -Name 'Test-Man517CanonicalProcessIdentity'
+Invoke-Expression $canonicalProcessIdentityText
+Invoke-Expression $readinessFunctionText
+function Protect-Man517DiagnosticText([string]$Text) { return $Text }
+function Read-Man517ListenerAuthority([object]$Ownership) {
+    return [pscustomobject]@{
+        ServiceName = $Ownership.ServiceName
+        Port = $Ownership.Port
+        OwnerProcessId = $Ownership.ProcessId
+        OwnerProcessStartTime = $Ownership.ProcessStartTime
+        ListenerProcessId = $Ownership.ProcessId
+        ListenerProcessStartTime = $Ownership.ProcessStartTime
+        ObservedAtUtc = [DateTimeOffset]::UtcNow
+    }
+}
+function Read-Man517ProcessIdentity([int]$ProcessId) {
+    $managedProcess = if ($ProcessId -eq 8) { $forgedProcess } else { $readinessProcess }
+    return [pscustomobject]@{
+        ProcessId = $managedProcess.ProcessId
+        ProcessStartTime = $managedProcess.ProcessStartTime
+        ExecutablePath = $managedProcess.ExecutablePath
+        Arguments = @($managedProcess.Arguments)
+        CommandLine = "$($managedProcess.ExecutablePath) $($managedProcess.Arguments -join ' ')"
+        Provenance = 'test-process-authority'
+    }
+}
+$readinessContract = Get-Man517CanonicalServiceContract -ServiceName 'demand-planning' -Port 54321
+$script:readinessHealthCallCount = 0
+$script:readinessIdentityCallCount = 0
+function Invoke-RestMethod {
+    param([string]$Method, [string]$Uri, [int]$TimeoutSec)
+    $script:readinessHealthCallCount++
+    return 'Healthy'
+}
+function Invoke-Man517JsonRequest {
+    param([hashtable]$Headers, [string]$Uri, [string]$Stage, [datetime]$Deadline, [string]$Method, [AllowNull()][hashtable]$Observation)
+    $script:readinessIdentityCallCount++
+    return [pscustomobject]@{ success = $true; data = [pscustomobject]@{} }
+}
+$readinessOwnership = [pscustomobject]@{
+    ServiceName = 'demand-planning'
+    Port = 54321
+    ProcessId = 7
+    ProcessStartTime = [datetime]::Now
+}
+$readinessProcess = [pscustomobject]@{
+    ProcessId = 7
+    ExecutablePath = $readinessContract.LaunchExecutable
+    Arguments = @($readinessContract.LaunchArguments)
+    ProcessStartTime = $readinessOwnership.ProcessStartTime
+    LogDirectory = 'test-logs'
+    StderrPath = ''
+    StdoutPath = ''
+    Process = [pscustomobject]@{ HasExited = $false; ExitCode = 0 }
+}
+$wrongServiceFailure = $null
+$wrongServiceObservation = @{}
+try {
+    Wait-Healthy -ServiceContract $readinessContract -Headers @{} -ManagedProcess $readinessProcess -Ownership $readinessOwnership -Observation $wrongServiceObservation -TimeoutSeconds 2 | Out-Null
+}
+catch { $wrongServiceFailure = $_.Exception }
+Assert-Contract ($null -ne $wrongServiceFailure -and $wrongServiceFailure.Message.Contains('service identity mismatch', [StringComparison]::Ordinal)) "A wrong service returning generic Healthy must fail closed as an identity mismatch. Actual: failure=$($wrongServiceFailure | Out-String) observation=$($wrongServiceObservation | ConvertTo-Json -Compress) calls=$script:readinessHealthCallCount/$script:readinessIdentityCallCount"
+Assert-Contract ($script:readinessHealthCallCount -eq 1 -and $script:readinessIdentityCallCount -eq 1) 'The wrong-service counterexample must reach the identity route once and must not proceed to business requests.'
+Assert-Contract ($wrongServiceObservation.healthResponseObserved -eq $true -and $wrongServiceObservation.identityResponseObserved -eq $true) 'Readiness observation must record that both real HTTP responses were reached before rejecting the identity shape.'
+Assert-Contract ([string]::Equals([string]$wrongServiceObservation.healthObservation, 'Healthy', [StringComparison]::Ordinal) -and [string]$wrongServiceObservation.identityObservation -match 'success') 'Readiness observation must retain normalized values returned by the actual health and identity responders.'
+
+$forgedProcess = [pscustomobject]@{
+    ProcessId = 8
+    ExecutablePath = '/usr/local/microsoft/powershell/7/pwsh'
+    Arguments = @([IO.Path]::GetFullPath($verifyScript))
+    ProcessStartTime = $readinessOwnership.ProcessStartTime
+    LogDirectory = 'test-logs'
+    StderrPath = ''
+    StdoutPath = ''
+    Process = [pscustomobject]@{ HasExited = $false; ExitCode = 0 }
+}
+$callerMutatedContract = $readinessContract.PSObject.Copy()
+$callerMutatedContract.LaunchExecutable = $forgedProcess.ExecutablePath
+$callerMutatedContract.LaunchArguments = @($forgedProcess.Arguments)
+$forgedProcessFailure = $null
+$forgedProcessObservation = @{}
+$script:readinessHealthCallCount = 0
+$script:readinessIdentityCallCount = 0
+try {
+    Wait-Healthy -ServiceContract $readinessContract -Headers @{} -ManagedProcess $forgedProcess -Ownership $readinessOwnership -Observation $forgedProcessObservation -TimeoutSeconds 2 | Out-Null
+}
+catch { $forgedProcessFailure = $_.Exception }
+Assert-Contract ($null -ne $forgedProcessFailure -and $forgedProcessFailure.Message.Contains('canonical process identity mismatch', [StringComparison]::Ordinal)) "A forged responder executable must fail before a generic health response can self-identify as DemandPlanning. Actual: failure=$($forgedProcessFailure | Out-String) observation=$($forgedProcessObservation | ConvertTo-Json -Compress) calls=$script:readinessHealthCallCount/$script:readinessIdentityCallCount"
+Assert-Contract ($script:readinessHealthCallCount -eq 0 -and $script:readinessIdentityCallCount -eq 0) 'A forged responder command mismatch must not issue HTTP requests.'
+Assert-Contract (-not $forgedProcessObservation.healthResponseObserved -and -not $forgedProcessObservation.identityResponseObserved -and [string]::Equals([string]$forgedProcessObservation.healthObservation, 'unavailable', [StringComparison]::Ordinal) -and [string]::Equals([string]$forgedProcessObservation.identityObservation, 'unavailable', [StringComparison]::Ordinal)) 'A command mismatch must retain unavailable HTTP observations.'
+
+# A caller can make the forged process look canonical by rewriting the launch
+# fields on an otherwise valid contract. The production entry must reject that
+# mutation before consulting either HTTP endpoint, even when the OS readback
+# exactly matches the rewritten fields.
+$callerMutationFailure = $null
+$callerMutationOwnership = $readinessOwnership.PSObject.Copy()
+$callerMutationOwnership.ProcessId = $forgedProcess.ProcessId
+$callerMutationObservation = @{
+    healthResponseObserved = $false
+    identityResponseObserved = $false
+    healthObservation = 'unavailable'
+    identityObservation = 'unavailable'
+}
+$script:readinessHealthCallCount = 0
+$script:readinessIdentityCallCount = 0
+try {
+    Wait-Healthy -ServiceContract $callerMutatedContract -Headers @{} -ManagedProcess $forgedProcess -Ownership $callerMutationOwnership -Observation $callerMutationObservation -TimeoutSeconds 2 | Out-Null
+}
+catch { $callerMutationFailure = $_.Exception }
+Assert-Contract ($null -ne $callerMutationFailure -and $callerMutationFailure.Message.Contains('canonical service contract producer', [StringComparison]::Ordinal)) "A caller-mutated launch contract must fail at the production readiness entry before process identity or HTTP acceptance. Actual: failure=$($callerMutationFailure | Out-String) observation=$($callerMutationObservation | ConvertTo-Json -Compress) calls=$script:readinessHealthCallCount/$script:readinessIdentityCallCount"
+Assert-Contract ($script:readinessHealthCallCount -eq 0 -and $script:readinessIdentityCallCount -eq 0) 'A caller-mutated launch contract must not issue health or identity requests.'
+Assert-Contract (-not $callerMutationObservation.healthResponseObserved -and -not $callerMutationObservation.identityResponseObserved -and [string]::Equals([string]$callerMutationObservation.healthObservation, 'unavailable', [StringComparison]::Ordinal) -and [string]::Equals([string]$callerMutationObservation.identityObservation, 'unavailable', [StringComparison]::Ordinal)) 'A caller-mutated contract must retain unavailable HTTP observations.'
+
+$readinessProcess.Process.HasExited = $true
+$readinessProcess.Process.ExitCode = 73
+$script:readinessHealthCallCount = 0
+$script:readinessIdentityCallCount = 0
+$earlyExitFailure = $null
+$earlyExitObservation = @{}
+try {
+    Wait-Healthy -ServiceContract $readinessContract -Headers @{} -ManagedProcess $readinessProcess -Ownership $readinessOwnership -Observation $earlyExitObservation -TimeoutSeconds 2 | Out-Null
+}
+catch { $earlyExitFailure = $_.Exception }
+Assert-Contract ($null -ne $earlyExitFailure -and $earlyExitFailure.Message.Contains('exitCode=73', [StringComparison]::Ordinal)) 'An exited target process must fail closed with its exact exit code.'
+Assert-Contract ($script:readinessHealthCallCount -eq 0 -and $script:readinessIdentityCallCount -eq 0) 'An exited target process must not issue health, identity, or business requests.'
+Assert-Contract (-not $earlyExitObservation.healthResponseObserved -and -not $earlyExitObservation.identityResponseObserved -and [string]::Equals([string]$earlyExitObservation.healthObservation, 'unavailable', [StringComparison]::Ordinal) -and [string]::Equals([string]$earlyExitObservation.identityObservation, 'unavailable', [StringComparison]::Ordinal)) 'Readiness observation must retain unavailable for both HTTP stages when the managed process exits before any request.'
+$failureLogPath = Join-Path ([IO.Path]::GetTempPath()) "man517-bind-cause-$([Guid]::NewGuid().ToString('N')).log"
+try {
+    [IO.File]::WriteAllText($failureLogPath, "System.IO.IOException: Failed to bind to address`n ---> Microsoft.AspNetCore.Connections.AddressInUseException: Address already in use`n ---> System.Net.Sockets.SocketException (48): Address already in use")
+    $readinessProcess.StderrPath = $failureLogPath
+    $bindCause = Get-Man517ProcessFailureCause -ManagedProcess $readinessProcess
+    Assert-Contract ($bindCause.Contains('AddressInUseException', [StringComparison]::Ordinal) -and $bindCause.Contains('SocketException', [StringComparison]::Ordinal)) 'Early bind diagnostics must retain both the AddressInUseException and innermost SocketException evidence.'
+}
+finally {
+    if (Test-Path -LiteralPath $failureLogPath) { Remove-Item -LiteralPath $failureLogPath -Force }
+}
+
 foreach ($functionName in @('Invoke-JsonPost', 'Wait-Demand', 'Assert-DemandStable', 'Wait-ErpSalesOrderReady')) {
     $functionText = Get-FunctionContractText -Name $functionName
     Assert-Contract ($functionText.Contains('Invoke-Man517JsonRequest', [StringComparison]::Ordinal)) "$functionName must use the shared fail-closed JSON request path."
@@ -375,9 +645,265 @@ Assert-Contract ($content.Contains('Get-Man517RemainingProcessNames -Descriptors
 Assert-Contract ((Get-FunctionContractText -Name 'Get-Man517RemainingProcessNames').Contains('StartTime', [StringComparison]::Ordinal)) 'Process cleanup verification must confirm identity by start time, because PIDs are reused.'
 Assert-Contract ($content.Contains("SELECT count(*) FROM pg_database WHERE datname = '`$databaseName';", [StringComparison]::Ordinal)) 'Cleanup must verify the exact disposable database is gone, and only that one.'
 Assert-Contract ($content.Contains('disposable database still present', [StringComparison]::Ordinal)) 'A surviving disposable database must be reported as a cleanup failure.'
-Assert-Contract ($content.Contains('script-owned compose services still running', [StringComparison]::Ordinal)) 'Cleanup must verify only the compose services this run started are gone.'
+Assert-Contract ($content.Contains('script-owned compose cleanup did not converge before deadline', [StringComparison]::Ordinal)) 'Cleanup must fail when its owned Compose services do not converge before the deadline.'
 Assert-Contract ($content.Contains('cleanup-evidence.json', [StringComparison]::Ordinal)) 'Cleanup accounting must be written as reusable evidence.'
 Assert-Contract ($content.Contains('sales-order-demand-planning-evidence.json', [StringComparison]::Ordinal)) 'Verify script must write reusable acceptance evidence.'
+Assert-Contract ($content.Contains('$readinessIdentityReadback', [StringComparison]::Ordinal)) 'Acceptance evidence must retain the verified service-specific identity route for every managed process.'
+Assert-Contract ($content.Contains('readinessIdentity =', [StringComparison]::Ordinal)) 'Acceptance evidence must publish readiness identity separately from generic health and port ownership.'
+
+# #2957 Regression：Compose stop 返回后的第一次状态读取仍可能短暂看到 owned service。
+# 直接执行生产 observation core，并以单一可控 runtime 证明收敛、尾窗、永久残留、readback 失败与 ownership。
+$composeWaitFunctionText = Get-FunctionContractText -Name 'Wait-Man517OwnedComposeServicesStopped'
+$composeObservationCoreFunctionText = Get-FunctionContractText -Name 'Invoke-Man517OwnedComposeServicesStoppedObservation'
+Assert-Contract (-not [string]::IsNullOrWhiteSpace($composeWaitFunctionText)) 'Verify script must define bounded observation for owned Compose services.'
+Assert-Contract (-not [string]::IsNullOrWhiteSpace($composeObservationCoreFunctionText)) 'Verify script must define the production Compose observation core.'
+Invoke-Expression $composeObservationCoreFunctionText
+
+$script:composeObservedBudgets = [System.Collections.Generic.List[int]]::new()
+$script:composeRuntimeDelayCalls = [System.Collections.Generic.List[int]]::new()
+$script:composeObservationMode = 'sequence'
+$script:composeObservationQueue = $null
+$script:composeFixtureElapsedMilliseconds = [long]0
+$script:composeQueryDurationMilliseconds = 0
+$script:composeFixtureRuntime = [System.Func[string, int, long]]{
+    param([string]$Operation, [int]$Milliseconds)
+    if ([string]::Equals($Operation, 'delay', [StringComparison]::Ordinal)) {
+        $script:composeRuntimeDelayCalls.Add($Milliseconds)
+        $script:composeFixtureElapsedMilliseconds += $Milliseconds
+    }
+    return $script:composeFixtureElapsedMilliseconds
+}
+function Protect-ScriptAutomationText { param([AllowNull()][string]$Text) return $Text }
+function Get-Man517ComposeRunningServicesObservation {
+    param([string]$ComposeFile, [int]$Attempt, [int]$RemainingDeadlineMilliseconds)
+    $script:composeObservedBudgets.Add($RemainingDeadlineMilliseconds)
+    if ($script:composeQueryDurationMilliseconds -gt 0) {
+        $script:composeFixtureElapsedMilliseconds += $script:composeQueryDurationMilliseconds
+        if (-not [string]::Equals($script:composeObservationMode, 'persistent', [StringComparison]::Ordinal)) {
+            $script:composeQueryDurationMilliseconds = 0
+        }
+    }
+    if ([string]::Equals($script:composeObservationMode, 'readback-failure', [StringComparison]::Ordinal)) {
+        $failure = [InvalidOperationException]::new("fixture canonical readback unavailable at attempt $Attempt")
+        $failure.Data['Query'] = 'fixture compose ps'
+        $failure.Data['LogPath'] = $null
+        $failure.Data['LogStatus'] = 'unavailable'
+        $failure.Data['LogUnavailableReason'] = 'fixture canonical readback unavailable'
+        throw $failure
+    }
+    if ([string]::Equals($script:composeObservationMode, 'persistent', [StringComparison]::Ordinal)) {
+        return [pscustomobject]@{ runningServices = @('postgres'); observedAtUtc = [DateTimeOffset]::UtcNow; query = 'fixture compose ps'; logPath = "fixture://persistent/attempt-$Attempt"; logStatus = 'available'; logUnavailableReason = $null }
+    }
+    return $script:composeObservationQueue.Dequeue()
+}
+
+$transientSequence = [System.Collections.Generic.Queue[object]]::new()
+$transientSequence.Enqueue([pscustomobject]@{ runningServices = @('postgres'); observedAtUtc = [DateTimeOffset]::UtcNow; query = 'fixture compose ps'; logPath = 'fixture://transient/attempt-1'; logStatus = 'available'; logUnavailableReason = $null })
+$transientSequence.Enqueue([pscustomobject]@{ runningServices = @(); observedAtUtc = [DateTimeOffset]::UtcNow; query = 'fixture compose ps'; logPath = 'fixture://transient/attempt-2'; logStatus = 'available'; logUnavailableReason = $null })
+$oldSingleSample = $transientSequence.Peek()
+Assert-Contract (@($oldSingleSample.runningServices).Count -eq 1) 'The regression fixture must make the old single-sample implementation fail on its first observation.'
+$script:composeObservationMode = 'sequence'
+$script:composeObservationQueue = $transientSequence
+$script:composeFixtureElapsedMilliseconds = 0
+$script:composeQueryDurationMilliseconds = 40
+$script:composeObservedBudgets.Clear()
+$script:composeRuntimeDelayCalls.Clear()
+$transientResult = Invoke-Man517OwnedComposeServicesStoppedObservation -OwnedServices @('postgres') -ComposeFile 'fixture-compose.yml' -DeadlineMilliseconds 3000 -Runtime $script:composeFixtureRuntime
+Assert-Contract $transientResult.converged 'The production observer must converge across postgres -> empty.'
+Assert-Contract ($transientResult.attempts -eq 2 -and @($transientResult.remainingNames).Count -eq 0) 'Transient convergence must consume both observations and report remaining=0.'
+Assert-Contract ($transientResult.elapsedMilliseconds -eq 290 -and $script:composeRuntimeDelayCalls.Count -eq 1 -and $script:composeRuntimeDelayCalls[0] -eq 250) 'Transient convergence must deterministically pace its two observations without a busy loop.'
+
+$script:composeObservationMode = 'persistent'
+$script:composeFixtureElapsedMilliseconds = 0
+$script:composeQueryDurationMilliseconds = 10
+$script:composeObservedBudgets.Clear()
+$script:composeRuntimeDelayCalls.Clear()
+$persistentResult = Invoke-Man517OwnedComposeServicesStoppedObservation -OwnedServices @('postgres') -ComposeFile 'fixture-compose.yml' -DeadlineMilliseconds 1000 -Runtime $script:composeFixtureRuntime
+Assert-Contract (-not $persistentResult.converged -and [string]::Equals($persistentResult.status, 'timed-out', [StringComparison]::Ordinal)) 'A permanent owned residual must fail closed at the deadline.'
+Assert-Contract ($persistentResult.attempts -gt 2 -and $persistentResult.elapsedMilliseconds -eq $persistentResult.deadlineMilliseconds) 'Permanent residual must use repeated observation and stop at the controlled deadline.'
+Assert-Contract (@($persistentResult.remainingNames).Count -eq 1 -and [string]::Equals([string]$persistentResult.remainingNames[0], 'postgres', [StringComparison]::Ordinal)) 'Permanent residual evidence must retain the owned service name.'
+foreach ($diagnosticField in @('lastObservation', 'query', 'logPath')) {
+    Assert-Contract (-not [string]::IsNullOrWhiteSpace([string]$persistentResult.$diagnosticField)) "Permanent residual evidence must retain $diagnosticField."
+}
+
+# 第一次查询占用 1600ms，尾窗首次 readback 仍为残留；下一次 fresh readback 才为空。
+$tailWindowSequence = [System.Collections.Generic.Queue[object]]::new()
+$tailWindowSequence.Enqueue([pscustomobject]@{ runningServices = @('postgres'); observedAtUtc = [DateTimeOffset]::UtcNow; query = 'fixture compose ps'; logPath = 'fixture://tail/attempt-1'; logStatus = 'available'; logUnavailableReason = $null })
+$tailWindowSequence.Enqueue([pscustomobject]@{ runningServices = @('postgres'); observedAtUtc = [DateTimeOffset]::UtcNow; query = 'fixture compose ps'; logPath = 'fixture://tail/attempt-2'; logStatus = 'available'; logUnavailableReason = $null })
+$tailWindowSequence.Enqueue([pscustomobject]@{ runningServices = @(); observedAtUtc = [DateTimeOffset]::UtcNow; query = 'fixture compose ps'; logPath = 'fixture://tail/attempt-3'; logStatus = 'available'; logUnavailableReason = $null })
+$script:composeObservationMode = 'sequence'
+$script:composeObservationQueue = $tailWindowSequence
+$script:composeFixtureElapsedMilliseconds = 0
+$script:composeQueryDurationMilliseconds = 1600
+$script:composeObservedBudgets.Clear()
+$script:composeRuntimeDelayCalls.Clear()
+$tailWindowResult = Invoke-Man517OwnedComposeServicesStoppedObservation -OwnedServices @('postgres') -ComposeFile 'fixture-compose.yml' -DeadlineMilliseconds 2000 -Runtime $script:composeFixtureRuntime
+Assert-Contract ($tailWindowResult.converged -and $tailWindowResult.attempts -eq 3 -and $tailWindowResult.elapsedMilliseconds -eq 1750) 'A service that stops after the first tail-window readback must still converge on the next fresh observation.'
+Assert-Contract ($script:composeObservedBudgets.Count -eq 3 -and $script:composeObservedBudgets[0] -eq 2000 -and $script:composeObservedBudgets[1] -eq 250 -and $script:composeObservedBudgets[2] -eq 250) 'Every tail query must receive the exact controlled remaining millisecond budget without rounding up.'
+Assert-Contract ($tailWindowSequence.Count -eq 0) 'Tail-window convergence must consume the third empty observation instead of reusing the second stale state.'
+
+$foreignSequence = [System.Collections.Generic.Queue[object]]::new()
+$foreignSequence.Enqueue([pscustomobject]@{ runningServices = @('postgres'); observedAtUtc = [DateTimeOffset]::UtcNow; query = 'fixture compose ps'; logPath = 'fixture://foreign/attempt-1'; logStatus = 'available'; logUnavailableReason = $null })
+$script:composeObservationMode = 'sequence'
+$script:composeObservationQueue = $foreignSequence
+$script:composeFixtureElapsedMilliseconds = 0
+$script:composeQueryDurationMilliseconds = 0
+$script:composeObservedBudgets.Clear()
+$script:composeRuntimeDelayCalls.Clear()
+$foreignServiceResult = Invoke-Man517OwnedComposeServicesStoppedObservation -OwnedServices @('redis') -ComposeFile 'fixture-compose.yml' -DeadlineMilliseconds 3000 -Runtime $script:composeFixtureRuntime
+Assert-Contract ($foreignServiceResult.converged -and @($foreignServiceResult.remainingNames).Count -eq 0) 'A running service not owned by this invocation must not enter the cleanup verdict.'
+
+$readbackFailure = $null
+try {
+    $script:composeObservationMode = 'readback-failure'
+    $script:composeFixtureElapsedMilliseconds = 0
+    $script:composeQueryDurationMilliseconds = 25
+    $script:composeObservedBudgets.Clear()
+    $script:composeRuntimeDelayCalls.Clear()
+    Invoke-Man517OwnedComposeServicesStoppedObservation -OwnedServices @('postgres') -ComposeFile 'fixture-compose.yml' -DeadlineMilliseconds 3000 -Runtime $script:composeFixtureRuntime | Out-Null
+}
+catch { $readbackFailure = $_.Exception }
+Assert-Contract ($null -ne $readbackFailure) 'A failed Compose readback must fail closed instead of becoming remaining=0.'
+foreach ($diagnosticField in @('deadlineMilliseconds', 'attempts', 'elapsedMilliseconds', 'lastObservation', 'fixture canonical readback unavailable')) {
+    Assert-Contract ($readbackFailure.Message.Contains($diagnosticField, [StringComparison]::Ordinal)) "Readback failure must retain $diagnosticField."
+}
+Assert-Contract ([string]::Equals([string]$readbackFailure.Data['Query'], 'fixture compose ps', [StringComparison]::Ordinal)) 'Readback failure must retain the actual query.'
+Assert-Contract ([string]::Equals([string]$readbackFailure.Data['LogStatus'], 'unavailable', [StringComparison]::Ordinal) -and -not [string]::IsNullOrWhiteSpace([string]$readbackFailure.Data['LogUnavailableReason'])) 'Readback failure must explicitly record unavailable log evidence and its reason.'
+Assert-Contract (@($readbackFailure.Data['RemainingNames']).Count -eq 1) 'Readback failure must retain owned services as remaining rather than claiming zero.'
+
+# cleanup-evidence.json 的失败态必须从生产投影写出 deadline、attempts、elapsed 与最后观察诊断。
+$composeCleanupEvidenceFunctionText = Get-FunctionContractText -Name 'New-Man517ComposeCleanupEvidence'
+$composeCleanupOutcomeFunctionText = Get-FunctionContractText -Name 'Register-Man517OwnedComposeCleanupOutcome'
+Assert-Contract (-not [string]::IsNullOrWhiteSpace($composeCleanupEvidenceFunctionText)) 'Verify script must define the production Compose cleanup evidence projection.'
+Assert-Contract (-not [string]::IsNullOrWhiteSpace($composeCleanupOutcomeFunctionText)) 'Verify script must define the production Compose cleanup outcome consumer.'
+Invoke-Expression $composeCleanupEvidenceFunctionText
+Invoke-Expression $composeCleanupOutcomeFunctionText
+$readbackObservation = [pscustomobject]@{
+    status = 'readback-failed'
+    deadlineMilliseconds = $readbackFailure.Data['DeadlineMilliseconds']
+    attempts = $readbackFailure.Data['Attempts']
+    elapsedMilliseconds = $readbackFailure.Data['ElapsedMilliseconds']
+    remainingNames = [string[]]@($readbackFailure.Data['RemainingNames'])
+    lastObservation = $readbackFailure.Data['LastObservation']
+    query = $readbackFailure.Data['Query']
+    logPath = $readbackFailure.Data['LogPath']
+    logStatus = $readbackFailure.Data['LogStatus']
+    logUnavailableReason = $readbackFailure.Data['LogUnavailableReason']
+    failureMessage = $readbackFailure.Message
+}
+$cleanupEvidenceFixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-man517-cleanup-evidence-$([Guid]::NewGuid().ToString('N'))"
+try {
+    [System.IO.Directory]::CreateDirectory($cleanupEvidenceFixtureRoot) | Out-Null
+    foreach ($failureEvidenceCase in @(
+        @{ Name = 'persistent'; Observation = $persistentResult; ErrorCode = 'owned-resource-cleanup-failed' },
+        @{ Name = 'readback'; Observation = $readbackObservation; ErrorCode = 'cleanup-verification-failed' }
+    )) {
+        $cleanupEvidencePath = Join-Path $cleanupEvidenceFixtureRoot "$($failureEvidenceCase.Name)-cleanup-evidence.json"
+        $failureCleanupFailures = [System.Collections.Generic.List[string]]::new()
+        $failureCleanupErrorCodes = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        $failureComposeEvidence = Register-Man517OwnedComposeCleanupOutcome `
+            -OwnedServices @('postgres') `
+            -Observation $failureEvidenceCase.Observation `
+            -CleanupFailures $failureCleanupFailures `
+            -CleanupErrorCodes $failureCleanupErrorCodes
+        [ordered]@{
+            composeServices = $failureComposeEvidence
+            cleanupFailures = @($failureCleanupFailures)
+            cleanupErrorCodes = @($failureCleanupErrorCodes)
+        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $cleanupEvidencePath -Encoding utf8
+        $writtenCleanupDocument = Get-Content -LiteralPath $cleanupEvidencePath -Raw | ConvertFrom-Json
+        $writtenComposeEvidence = $writtenCleanupDocument.composeServices
+        Assert-Contract (@($writtenCleanupDocument.cleanupFailures).Count -eq 1 -and -not [string]::IsNullOrWhiteSpace([string]$writtenCleanupDocument.cleanupFailures[0])) "$($failureEvidenceCase.Name) cleanup must register one failure."
+        Assert-Contract (@($writtenCleanupDocument.cleanupErrorCodes).Count -eq 1 -and [string]::Equals([string]$writtenCleanupDocument.cleanupErrorCodes[0], [string]$failureEvidenceCase.ErrorCode, [StringComparison]::Ordinal)) "$($failureEvidenceCase.Name) cleanup must retain its failure code."
+        Assert-Contract ([string]::Equals([string]$writtenComposeEvidence.status, [string]$failureEvidenceCase.Observation.status, [StringComparison]::Ordinal)) "$($failureEvidenceCase.Name) cleanup evidence must retain status."
+        Assert-Contract ([int]$writtenComposeEvidence.deadlineMilliseconds -eq [int]$failureEvidenceCase.Observation.deadlineMilliseconds) "$($failureEvidenceCase.Name) cleanup evidence must retain deadlineMilliseconds."
+        Assert-Contract ([int]$writtenComposeEvidence.attempts -eq [int]$failureEvidenceCase.Observation.attempts -and [int]$writtenComposeEvidence.attempts -gt 0) "$($failureEvidenceCase.Name) cleanup evidence must retain attempts."
+        Assert-Contract ([long]$writtenComposeEvidence.elapsedMilliseconds -eq [long]$failureEvidenceCase.Observation.elapsedMilliseconds) "$($failureEvidenceCase.Name) cleanup evidence must retain elapsedMilliseconds."
+        Assert-Contract (-not [string]::IsNullOrWhiteSpace([string]$writtenComposeEvidence.lastObservation) -and -not [string]::IsNullOrWhiteSpace([string]$writtenComposeEvidence.query)) "$($failureEvidenceCase.Name) cleanup evidence must retain the last observation and query."
+        Assert-Contract (-not [string]::IsNullOrWhiteSpace([string]$writtenComposeEvidence.logStatus)) "$($failureEvidenceCase.Name) cleanup evidence must retain structured log availability."
+    }
+}
+finally {
+    if (Test-Path -LiteralPath $cleanupEvidenceFixtureRoot) { Remove-Item -LiteralPath $cleanupEvidenceFixtureRoot -Recurse -Force }
+}
+
+# 查询 adapter 只消费 canonical 一次性命令 seam；不拥有第二套 process wait/exit/stream/cleanup。
+$composeObservationFunctionAst = Get-FunctionDefinitionAst -Name 'Get-Man517ComposeRunningServicesObservation'
+$composeObservationFunctionText = Get-FunctionContractText -Name 'Get-Man517ComposeRunningServicesObservation'
+Assert-Contract ($null -ne $composeObservationFunctionAst) 'Verify script must define the Compose state-query adapter.'
+$canonicalObservationCalls = Get-CommandCallAsts -Name 'Invoke-NativeCommandOutput' -Scope $composeObservationFunctionAst
+Assert-Contract ($canonicalObservationCalls.Count -eq 1) 'Compose readback must use exactly one canonical native-command call.'
+Assert-Contract (-not (Test-CommandHasParameter -Call $canonicalObservationCalls[0] -Name 'PersistOutput')) 'Best-effort observation logging must not make canonical readback persistence verdict-affecting.'
+Assert-Contract (-not (Test-CommandHasParameter -Call $canonicalObservationCalls[0] -Name 'LogDirectory')) 'Canonical readback must not touch an observation artifact path before the query succeeds.'
+Assert-Contract ([string]::Equals((Get-CommandParameterValueText -Call $canonicalObservationCalls[0] -Name 'TimeoutMilliseconds'), '$RemainingDeadlineMilliseconds', [StringComparison]::Ordinal)) 'Compose readback must pass the exact remaining millisecond budget to the canonical seam.'
+foreach ($forbiddenCommand in @('Start-ManagedBackgroundProcess', 'Start-Process', 'Stop-Process', 'Get-Content')) {
+    Assert-Contract ((Get-CommandCallAsts -Name $forbiddenCommand -Scope $composeObservationFunctionAst).Count -eq 0) "Compose readback must not recreate local process lifecycle command '$forbiddenCommand'."
+}
+$composeStopCalls = @(Get-CommandCallAsts -Name 'Invoke-DockerCompose' | Where-Object { $_.Extent.Text.Contains("'stop'", [StringComparison]::Ordinal) })
+Assert-Contract ($composeStopCalls.Count -eq 1) 'MAN-517 must issue exactly one owned Compose stop request.'
+
+Invoke-Expression $composeObservationFunctionText
+$script:capturedComposeQueryTimeoutMilliseconds = $null
+$script:composeCanonicalFailure = $null
+$script:composeEvidenceWriteFailure = $false
+function Invoke-NativeCommandOutput {
+    param(
+        [string]$Command,
+        [string[]]$Arguments,
+        [string]$WorkingDirectory,
+        [string]$Name,
+        [string]$LogDirectory,
+        [switch]$PersistOutput,
+        [int]$TimeoutMilliseconds
+    )
+    $script:capturedComposeQueryTimeoutMilliseconds = $TimeoutMilliseconds
+    Assert-Contract (-not $PSBoundParameters.ContainsKey('LogDirectory') -and -not $PSBoundParameters.ContainsKey('PersistOutput')) 'Compose readback must run independently of best-effort observation persistence.'
+    if ($null -ne $script:composeCanonicalFailure) { throw $script:composeCanonicalFailure }
+    return [pscustomobject]@{ Stdout = "postgres`n"; Stderr = ''; LogDirectory = $null }
+}
+function Write-Man517DiagnosticFile {
+    param([string]$Path, [AllowNull()][string]$Content)
+    if ($script:composeEvidenceWriteFailure) { throw 'fixture observation artifact unavailable' }
+    [System.IO.Directory]::CreateDirectory((Split-Path -Parent $Path)) | Out-Null
+    Set-Content -LiteralPath $Path -Value $Content -Encoding utf8
+}
+$adapterFixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-man517-compose-adapter-$([Guid]::NewGuid().ToString('N'))"
+try {
+    $root = $adapterFixtureRoot
+    $adapterResult = Get-Man517ComposeRunningServicesObservation -ComposeFile 'fixture-compose.yml' -Attempt 1 -RemainingDeadlineMilliseconds 1950
+    Assert-Contract ($script:capturedComposeQueryTimeoutMilliseconds -eq 1950) 'The production adapter must preserve the exact 1950ms remaining budget.'
+    Assert-Contract (@($adapterResult.runningServices).Count -eq 1 -and [string]::Equals([string]$adapterResult.runningServices[0], 'postgres', [StringComparison]::Ordinal)) 'The production adapter must consume canonical stdout.'
+    Assert-Contract ([string]::Equals([string]$adapterResult.logStatus, 'available', [StringComparison]::Ordinal) -and (Test-Path -LiteralPath $adapterResult.logPath -PathType Container)) 'Successful best-effort observation logging must publish its available path.'
+
+    $script:composeEvidenceWriteFailure = $true
+    $adapterWithoutLog = Get-Man517ComposeRunningServicesObservation -ComposeFile 'fixture-compose.yml' -Attempt 2 -RemainingDeadlineMilliseconds 825
+    Assert-Contract (@($adapterWithoutLog.runningServices).Count -eq 1 -and [string]::Equals([string]$adapterWithoutLog.runningServices[0], 'postgres', [StringComparison]::Ordinal)) 'A valid readback verdict must survive observation-log persistence failure.'
+    Assert-Contract ([string]::Equals([string]$adapterWithoutLog.logStatus, 'unavailable', [StringComparison]::Ordinal) -and $adapterWithoutLog.logUnavailableReason.Contains('fixture observation artifact unavailable', [StringComparison]::Ordinal)) 'Observation-log persistence failure must be recorded as unavailable with its reason.'
+    $script:composeEvidenceWriteFailure = $false
+
+    foreach ($failureCase in @(
+        @{ Name = 'nonzero'; Exception = [InvalidOperationException]::new("Command 'docker' exited with 17. Output: fixture-nonzero") },
+        @{ Name = 'signal'; Exception = [InvalidOperationException]::new("Command 'docker' exited with 137. Terminated by signal SIGKILL (9): fixture-signal") },
+        @{ Name = 'timeout'; Exception = [TimeoutException]::new("Command 'docker' timed out after 125 milliseconds while reading output. Logs: fixture-timeout") },
+        @{ Name = 'unavailable'; Exception = [InvalidOperationException]::new("Failed to start command 'docker'. fixture-unavailable") }
+    )) {
+        $script:composeCanonicalFailure = $failureCase.Exception
+        $adapterFailure = $null
+        try {
+            Get-Man517ComposeRunningServicesObservation -ComposeFile 'fixture-compose.yml' -Attempt 3 -RemainingDeadlineMilliseconds 125 | Out-Null
+        }
+        catch { $adapterFailure = $_.Exception }
+        Assert-Contract ($null -ne $adapterFailure) "Canonical $($failureCase.Name) readback failure must fail closed."
+        Assert-Contract ($adapterFailure.Message.Contains($failureCase.Exception.Message, [StringComparison]::Ordinal)) "Canonical $($failureCase.Name) diagnostics must be preserved by the adapter."
+        Assert-Contract (-not [string]::IsNullOrWhiteSpace([string]$adapterFailure.Data['Query'])) "Canonical $($failureCase.Name) failure must retain the actual query."
+        Assert-Contract ([string]::Equals([string]$adapterFailure.Data['LogStatus'], 'unavailable', [StringComparison]::Ordinal) -and -not [string]::IsNullOrWhiteSpace([string]$adapterFailure.Data['LogUnavailableReason'])) "Canonical $($failureCase.Name) failure must record unavailable log evidence and its reason."
+    }
+}
+finally {
+    if (Test-Path -LiteralPath $adapterFixtureRoot) { Remove-Item -LiteralPath $adapterFixtureRoot -Recurse -Force }
+}
+$script:composeCanonicalFailure = $null
+
 foreach ($parameterName in @('CanonicalResultPath', 'TrackIdentifier', 'Repository', 'RunId', 'RunAttempt', 'TestedSha', 'ManifestDigest', 'ScenarioId')) {
     $parameterMatches = @($scriptAst.ParamBlock.Parameters | Where-Object { [string]::Equals($_.Name.VariablePath.UserPath, $parameterName, [StringComparison]::OrdinalIgnoreCase) })
     Assert-Contract ($parameterMatches.Count -eq 1) "Verify script must accept caller-supplied canonical result parameter '$parameterName'."
@@ -421,6 +947,218 @@ Assert-Contract ($workflowContent.Contains('if: always()', [StringComparison]::O
 Assert-Contract ($workflowContent.Contains('actions/upload-artifact@v4', [StringComparison]::Ordinal)) 'CI must retain MAN-517 diagnostics as an artifact.'
 
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
+
+# 真实入口的永久 residual 行为必须在未注入 runtime 的隔离进程里有界结束。
+# 父进程 watchdog 只识别「入口不终止」；业务 timed-out 与 evidence 都由子进程生产。
+function New-Man517PermanentResidualHarnessContent {
+    param(
+        [Parameter(Mandatory)] [string]$WaitFunctionText,
+        [Parameter(Mandatory)] [string]$OutcomeFunctionText
+    )
+
+    $fixtureAndAssertions = @'
+function Protect-ScriptAutomationText {
+    param([AllowNull()][string]$Text)
+    return $Text
+}
+
+function Get-Man517ComposeRunningServicesObservation {
+    param([string]$ComposeFile, [int]$Attempt, [int]$RemainingDeadlineMilliseconds)
+    return [pscustomobject]@{
+        runningServices = [string[]]@('postgres')
+        observedAtUtc = [DateTimeOffset]::UtcNow
+        query = 'fixture compose ps --services --status running'
+        logPath = "fixture://permanent-residual/attempt-$Attempt"
+        logStatus = 'available'
+        logUnavailableReason = $null
+    }
+}
+
+$observation = Wait-Man517OwnedComposeServicesStopped `
+    -OwnedServices @('postgres') `
+    -ComposeFile 'fixture-compose.yml' `
+    -DeadlineMilliseconds 1000
+$cleanupFailures = [System.Collections.Generic.List[string]]::new()
+$cleanupErrorCodes = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+$composeEvidence = Register-Man517OwnedComposeCleanupOutcome `
+    -OwnedServices @('postgres') `
+    -Observation $observation `
+    -CleanupFailures $cleanupFailures `
+    -CleanupErrorCodes $cleanupErrorCodes
+$document = [ordered]@{
+    composeServices = $composeEvidence
+    cleanupFailures = @($cleanupFailures)
+    cleanupErrorCodes = @($cleanupErrorCodes)
+}
+[IO.Directory]::CreateDirectory((Split-Path -Parent $EvidencePath)) | Out-Null
+[IO.File]::WriteAllText(
+    $EvidencePath,
+    ($document | ConvertTo-Json -Depth 8),
+    [Text.UTF8Encoding]::new($false))
+
+if ($observation.converged -or -not [string]::Equals([string]$observation.status, 'timed-out', [StringComparison]::Ordinal)) {
+    throw 'Permanent owned residual must fail closed as timed-out.'
+}
+if ([int]$observation.attempts -le 1) {
+    throw 'Permanent owned residual must be read more than once.'
+}
+if ([long]$observation.elapsedMilliseconds -lt [long]$observation.deadlineMilliseconds) {
+    throw 'Permanent owned residual must reach its internal deadline before timing out.'
+}
+if (@($observation.remainingNames).Count -ne 1 -or
+    -not [string]::Equals([string]$observation.remainingNames[0], 'postgres', [StringComparison]::Ordinal)) {
+    throw 'Permanent owned residual must retain postgres as remaining.'
+}
+if ($cleanupFailures.Count -ne 1 -or
+    -not $cleanupErrorCodes.Contains('owned-resource-cleanup-failed')) {
+    throw 'Permanent owned residual must register an owned-resource cleanup failure.'
+}
+if (-not [string]::Equals([string]$composeEvidence.status, [string]$observation.status, [StringComparison]::Ordinal) -or
+    [int]$composeEvidence.attempts -ne [int]$observation.attempts -or
+    [int]$composeEvidence.remaining -ne 1 -or
+    @($composeEvidence.remainingNames).Count -ne 1 -or
+    -not [string]::Equals([string]$composeEvidence.remainingNames[0], 'postgres', [StringComparison]::Ordinal)) {
+    throw 'Production cleanup evidence must consume the same permanent-residual observation.'
+}
+'@
+
+    return @(
+        'param([Parameter(Mandatory)] [string]$EvidencePath)'
+        '$ErrorActionPreference = ''Stop'''
+        $composeObservationCoreFunctionText
+        $WaitFunctionText
+        $composeCleanupEvidenceFunctionText
+        $OutcomeFunctionText
+        $fixtureAndAssertions
+    ) -join [Environment]::NewLine
+}
+
+$entryFixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-man517-real-entry-$([Guid]::NewGuid().ToString('N'))"
+$entryHarnessPath = Join-Path $entryFixtureRoot 'permanent-residual-entry.ps1'
+$entryEvidencePath = Join-Path $entryFixtureRoot 'cleanup-evidence.json'
+$entryMutationHarnessPath = Join-Path $entryFixtureRoot 'permanent-residual-frozen-elapsed.ps1'
+$entryMutationEvidencePath = Join-Path $entryFixtureRoot 'mutation-cleanup-evidence.json'
+$entrySkippedFailureHarnessPath = Join-Path $entryFixtureRoot 'permanent-residual-skipped-failure.ps1'
+$entrySkippedFailureEvidencePath = Join-Path $entryFixtureRoot 'skipped-failure-cleanup-evidence.json'
+$entryForgedEvidenceHarnessPath = Join-Path $entryFixtureRoot 'permanent-residual-forged-evidence.ps1'
+$entryForgedEvidencePath = Join-Path $entryFixtureRoot 'forged-cleanup-evidence.json'
+$entryLogDirectory = Join-Path $entryFixtureRoot 'logs'
+$entryWatchdogMilliseconds = 30000
+try {
+    [IO.Directory]::CreateDirectory($entryFixtureRoot) | Out-Null
+    $entryHarnessContent = New-Man517PermanentResidualHarnessContent `
+        -WaitFunctionText $composeWaitFunctionText `
+        -OutcomeFunctionText $composeCleanupOutcomeFunctionText
+    [IO.File]::WriteAllText($entryHarnessPath, $entryHarnessContent, [Text.UTF8Encoding]::new($false))
+
+    Invoke-NativeCommandOutput `
+        -Command ([Environment]::ProcessPath) `
+        -Arguments @('-NoLogo', '-NoProfile', '-File', $entryHarnessPath, '-EvidencePath', $entryEvidencePath) `
+        -WorkingDirectory $repoRoot `
+        -Name 'man517-real-entry-permanent-residual' `
+        -LogDirectory (Join-Path $entryLogDirectory 'baseline') `
+        -TimeoutMilliseconds $entryWatchdogMilliseconds | Out-Null
+
+    Assert-Contract (Test-Path -LiteralPath $entryEvidencePath -PathType Leaf) 'The real entry must publish cleanup evidence before the child process exits.'
+    $entryDocument = Get-Content -LiteralPath $entryEvidencePath -Raw | ConvertFrom-Json
+    $entryEvidence = $entryDocument.composeServices
+    Assert-Contract (@($entryDocument.cleanupFailures).Count -eq 1 -and -not [string]::IsNullOrWhiteSpace([string]$entryDocument.cleanupFailures[0])) 'The real production consumer must register permanent residual as a cleanup failure.'
+    Assert-Contract (@($entryDocument.cleanupErrorCodes).Count -eq 1 -and [string]::Equals([string]$entryDocument.cleanupErrorCodes[0], 'owned-resource-cleanup-failed', [StringComparison]::Ordinal)) 'The real production consumer must retain the owned-resource cleanup failure code.'
+    Assert-Contract ([string]::Equals([string]$entryEvidence.status, 'timed-out', [StringComparison]::Ordinal)) 'The real entry evidence must retain timed-out status.'
+    Assert-Contract ([int]$entryEvidence.attempts -gt 1) 'The real entry evidence must retain repeated attempts.'
+    Assert-Contract ([long]$entryEvidence.elapsedMilliseconds -ge [long]$entryEvidence.deadlineMilliseconds) 'The real entry evidence must retain internal deadline exhaustion.'
+    Assert-Contract ([int]$entryEvidence.remaining -eq 1 -and @($entryEvidence.remainingNames).Count -eq 1 -and [string]::Equals([string]$entryEvidence.remainingNames[0], 'postgres', [StringComparison]::Ordinal)) 'The real entry evidence must retain the permanent owned residual.'
+    foreach ($diagnosticField in @('lastObservation', 'query', 'logStatus')) {
+        Assert-Contract (-not [string]::IsNullOrWhiteSpace([string]$entryEvidence.$diagnosticField)) "The real entry evidence must retain $diagnosticField."
+    }
+    Assert-Contract ([Linq.Enumerable]::Contains([string[]]@($entryEvidence.PSObject.Properties.Name), 'logUnavailableReason', [StringComparer]::Ordinal)) 'The real entry evidence must retain logUnavailableReason, including an available null value.'
+
+    $failureCondition = 'if (-not $Observation.converged) {'
+    $skippedFailureCondition = 'if ($false) {'
+    $skippedFailureOutcomeFunctionText = $composeCleanupOutcomeFunctionText.Replace($failureCondition, $skippedFailureCondition)
+    Assert-Contract (-not [string]::Equals($skippedFailureOutcomeFunctionText, $composeCleanupOutcomeFunctionText, [StringComparison]::Ordinal)) 'The skipped-failure mutation must alter the production cleanup consumer.'
+    Assert-Contract (-not $skippedFailureOutcomeFunctionText.Contains($failureCondition, [StringComparison]::Ordinal)) 'The skipped-failure mutation must replace the production non-convergence condition exactly once.'
+    $entrySkippedFailureHarnessContent = New-Man517PermanentResidualHarnessContent `
+        -WaitFunctionText $composeWaitFunctionText `
+        -OutcomeFunctionText $skippedFailureOutcomeFunctionText
+    [IO.File]::WriteAllText($entrySkippedFailureHarnessPath, $entrySkippedFailureHarnessContent, [Text.UTF8Encoding]::new($false))
+
+    $skippedFailureMutationRejected = $false
+    try {
+        Invoke-NativeCommandOutput `
+            -Command ([Environment]::ProcessPath) `
+            -Arguments @('-NoLogo', '-NoProfile', '-File', $entrySkippedFailureHarnessPath, '-EvidencePath', $entrySkippedFailureEvidencePath) `
+            -WorkingDirectory $repoRoot `
+            -Name 'man517-production-consumer-skipped-failure-mutation' `
+            -LogDirectory (Join-Path $entryLogDirectory 'skipped-failure') `
+            -TimeoutMilliseconds $entryWatchdogMilliseconds | Out-Null
+    }
+    catch {
+        $skippedFailureMutationRejected = $_.Exception -isnot [TimeoutException] -and $_.Exception.Message.Contains('exited with 1', [StringComparison]::Ordinal)
+        $global:LASTEXITCODE = 0
+    }
+    Assert-Contract $skippedFailureMutationRejected 'A production consumer that skips permanent-residual failure registration must fail the direct contract.'
+    $skippedFailureDocument = Get-Content -LiteralPath $entrySkippedFailureEvidencePath -Raw | ConvertFrom-Json
+    Assert-Contract (@($skippedFailureDocument.cleanupFailures).Count -eq 0 -and @($skippedFailureDocument.cleanupErrorCodes).Count -eq 0) 'The skipped-failure mutation must actually remove production cleanup failure accounting.'
+
+    $evidenceObservationArgument = '-Observation $Observation'
+    $forgedEvidenceObservationArgument = "-Observation ([pscustomobject]@{ remainingNames = [string[]]@(); status = 'converged'; deadlineMilliseconds = `$Observation.deadlineMilliseconds; attempts = 1; elapsedMilliseconds = 0; lastObservation = 'forged-success'; query = 'forged-success'; logPath = `$null; logStatus = 'available'; logUnavailableReason = `$null })"
+    $forgedEvidenceOutcomeFunctionText = $composeCleanupOutcomeFunctionText.Replace($evidenceObservationArgument, $forgedEvidenceObservationArgument)
+    Assert-Contract (-not [string]::Equals($forgedEvidenceOutcomeFunctionText, $composeCleanupOutcomeFunctionText, [StringComparison]::Ordinal)) 'The forged-evidence mutation must alter the production cleanup consumer.'
+    Assert-Contract (-not $forgedEvidenceOutcomeFunctionText.Contains($evidenceObservationArgument, [StringComparison]::Ordinal)) 'The forged-evidence mutation must replace the production evidence observation exactly once.'
+    $entryForgedEvidenceHarnessContent = New-Man517PermanentResidualHarnessContent `
+        -WaitFunctionText $composeWaitFunctionText `
+        -OutcomeFunctionText $forgedEvidenceOutcomeFunctionText
+    [IO.File]::WriteAllText($entryForgedEvidenceHarnessPath, $entryForgedEvidenceHarnessContent, [Text.UTF8Encoding]::new($false))
+
+    $forgedEvidenceMutationRejected = $false
+    try {
+        Invoke-NativeCommandOutput `
+            -Command ([Environment]::ProcessPath) `
+            -Arguments @('-NoLogo', '-NoProfile', '-File', $entryForgedEvidenceHarnessPath, '-EvidencePath', $entryForgedEvidencePath) `
+            -WorkingDirectory $repoRoot `
+            -Name 'man517-production-consumer-forged-evidence-mutation' `
+            -LogDirectory (Join-Path $entryLogDirectory 'forged-evidence') `
+            -TimeoutMilliseconds $entryWatchdogMilliseconds | Out-Null
+    }
+    catch {
+        $forgedEvidenceMutationRejected = $_.Exception -isnot [TimeoutException] -and $_.Exception.Message.Contains('exited with 1', [StringComparison]::Ordinal)
+        $global:LASTEXITCODE = 0
+    }
+    Assert-Contract $forgedEvidenceMutationRejected 'A production consumer that writes forged successful cleanup evidence must fail the direct contract.'
+    $forgedEvidenceDocument = Get-Content -LiteralPath $entryForgedEvidencePath -Raw | ConvertFrom-Json
+    Assert-Contract ([string]::Equals([string]$forgedEvidenceDocument.composeServices.status, 'converged', [StringComparison]::Ordinal) -and [int]$forgedEvidenceDocument.composeServices.remaining -eq 0) 'The forged-evidence mutation must actually replace the permanent-residual evidence with false success.'
+
+    $elapsedReturn = 'return [long]$clock.ElapsedMilliseconds'
+    $frozenElapsedReturn = 'return [long]0'
+    $mutatedWaitFunctionText = $composeWaitFunctionText.Replace($elapsedReturn, $frozenElapsedReturn)
+    Assert-Contract (-not [string]::Equals($mutatedWaitFunctionText, $composeWaitFunctionText, [StringComparison]::Ordinal)) 'The frozen-elapsed mutation must alter the production entry runtime.'
+    Assert-Contract (-not $mutatedWaitFunctionText.Contains($elapsedReturn, [StringComparison]::Ordinal)) 'The frozen-elapsed mutation must replace the production elapsed return exactly once.'
+    $entryMutationHarnessContent = New-Man517PermanentResidualHarnessContent `
+        -WaitFunctionText $mutatedWaitFunctionText `
+        -OutcomeFunctionText $composeCleanupOutcomeFunctionText
+    [IO.File]::WriteAllText($entryMutationHarnessPath, $entryMutationHarnessContent, [Text.UTF8Encoding]::new($false))
+
+    $frozenElapsedTimedOutAtWatchdog = $false
+    try {
+        Invoke-NativeCommandOutput `
+            -Command ([Environment]::ProcessPath) `
+            -Arguments @('-NoLogo', '-NoProfile', '-File', $entryMutationHarnessPath, '-EvidencePath', $entryMutationEvidencePath) `
+            -WorkingDirectory $repoRoot `
+            -Name 'man517-real-entry-frozen-elapsed-mutation' `
+            -LogDirectory (Join-Path $entryLogDirectory 'frozen-elapsed') `
+            -TimeoutMilliseconds $entryWatchdogMilliseconds | Out-Null
+    }
+    catch {
+        $frozenElapsedTimedOutAtWatchdog = $_.Exception -is [TimeoutException]
+    }
+    Assert-Contract $frozenElapsedTimedOutAtWatchdog 'A frozen production elapsed value must hit only the external watchdog and fail the direct contract.'
+    Assert-Contract (-not (Test-Path -LiteralPath $entryMutationEvidencePath -PathType Leaf)) 'A non-terminating entry must not fabricate completed cleanup evidence.'
+}
+finally {
+    if (Test-Path -LiteralPath $entryFixtureRoot) { Remove-Item -LiteralPath $entryFixtureRoot -Recurse -Force }
+}
+
 Invoke-PwshScript `
     -ScriptPath $governanceScript `
     -Arguments @('-Path', $fixtureScript) `

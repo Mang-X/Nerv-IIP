@@ -13,7 +13,12 @@ internal static class MesInspectionResultEventFactory
         string inspectionPlanId,
         string skuCode,
         string sourceService,
-        string? dispositionReason = null)
+        string? dispositionReason = null,
+        // "in-process" 是 NCR 的来源环节取值，在 Contracts 里零命中，payload.SourceType 面上
+        // 真实生产者发不出来——与 #3191 裁定点名的夹具缺陷同族，故默认值取工序检（#3191）。
+        string sourceType = QualityInspectionSourceTypes.Operation,
+        string? workOrderId = null,
+        string? operationTaskId = null)
     {
         var result = eventType == QualityIntegrationEventTypes.InspectionPassed
             ? "passed"
@@ -35,7 +40,7 @@ internal static class MesInspectionResultEventFactory
             new InspectionResultPayload(
                 inspectionRecordId,
                 inspectionPlanId,
-                "in-process",
+                sourceType,
                 sourceService,
                 sourceDocumentId,
                 skuCode,
@@ -43,6 +48,8 @@ internal static class MesInspectionResultEventFactory
                 result,
                 dispositionReason ?? (eventType == QualityIntegrationEventTypes.InspectionRejected ? "critical-defect" : null),
                 [],
-                occurredAtUtc));
+                occurredAtUtc,
+                WorkOrderId: workOrderId,
+                OperationTaskId: operationTaskId));
     }
 }

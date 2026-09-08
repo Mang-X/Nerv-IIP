@@ -68,13 +68,19 @@ public sealed class MesWorkOrderIntegrationEventTests
             "EA");
         var tasks = workOrder.Release(
             new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero),
+            WorkOrderReleaseFactTime.NotLaterThan(new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero), null),
             [
                 new RoutingStepSnapshot("OP-020", 20, "WC-020", [], TimeSpan.FromMinutes(30)),
                 new RoutingStepSnapshot("OP-010", 10, "WC-010", [], TimeSpan.FromMinutes(60))
             ]);
 
+        // 发布时刻远早于「现在」：转换器一旦回落 UtcNow，下面两条断言都红。
+        var releasedAtUtc = new DateTimeOffset(2026, 5, 20, 6, 30, 0, TimeSpan.Zero);
         var integrationEvent = new WorkOrderReleasedIntegrationEventConverter()
-            .Convert(new WorkOrderReleasedDomainEvent(workOrder, tasks));
+            .Convert(new WorkOrderReleasedDomainEvent(
+                workOrder,
+                tasks,
+                WorkOrderReleaseFactTime.NotLaterThan(releasedAtUtc, null)));
 
         Assert.Equal(MesIntegrationEventTypes.WorkOrderReleased, integrationEvent.EventType);
         Assert.Equal(MesIntegrationEventSources.BusinessMes, integrationEvent.SourceService);
@@ -86,6 +92,8 @@ public sealed class MesWorkOrderIntegrationEventTests
         Assert.Equal("SKU-001", integrationEvent.Payload.SkuCode);
         Assert.Equal(10, integrationEvent.Payload.PlannedQuantity);
         Assert.Equal(["OP-010", "OP-020"], integrationEvent.Payload.Operations.Select(x => x.OperationId));
+        Assert.Equal(releasedAtUtc, integrationEvent.Payload.ReleasedAtUtc);
+        Assert.Equal(releasedAtUtc, integrationEvent.OccurredAtUtc);
     }
 
     [Fact]

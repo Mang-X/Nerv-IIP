@@ -116,6 +116,7 @@ const {
   filters,
   finishedGoodsReceiptRequests,
   materialIssueRequests,
+  materialIssueRequestsError,
   materialIssueRequestsPending,
   materialReadiness,
   materialReadinessError,
@@ -186,8 +187,13 @@ const blockingReasons = computed(() => [
   ...(materialReadiness.value?.blockingReasons ?? []),
 ])
 const blockingReasonDisplays = computed(() => describeMesReadinessReasons(blockingReasons.value))
-const errorMessage = computed(
-  () => formatError(detailError.value) || formatError(materialReadinessError.value),
+// 三张子表各读各的面，失败也各归各的表：合成一条页面级错误行会让「哪张表挂了」丢失。
+const detailErrorMessage = computed(() => inlineErrorMessage(detailError.value))
+const materialReadinessErrorMessage = computed(() =>
+  inlineErrorMessage(materialReadinessError.value),
+)
+const materialIssueRequestsErrorMessage = computed(() =>
+  inlineErrorMessage(materialIssueRequestsError.value),
 )
 
 // 工单头部四卡：状态与用料给「能不能开工」的结论，工序进度给「做到哪了」。
@@ -881,9 +887,6 @@ function formatStatus(value?: string | null) {
   }
   return value ? (map[value.toLowerCase()] ?? value) : '未知'
 }
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
 </script>
 
 <template>
@@ -1046,8 +1049,6 @@ function formatError(error: unknown) {
       <MesWorkScopeSelect permission-code="business.mes.work-orders.read" />
     </div>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
-
     <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <NvMetricCard
         variant="alert"
@@ -1084,7 +1085,7 @@ function formatError(error: unknown) {
             ? materialShortageCount > 0
               ? '缺料项需先由仓库补发，否则无法开工。'
               : '用料已备齐，可按工序顺序开工。'
-            : '尚未取得用料齐套结论，先解决上方读取阻塞后刷新。'
+            : '尚未取得用料齐套结论，可在下方「用料齐套」表查看读取状态并重试。'
         "
       />
     </div>
@@ -1151,9 +1152,12 @@ function formatError(error: unknown) {
         :rows="operationTasks"
         row-key="operationTaskId"
         :loading="detailPending"
+        :error="detailError"
+        :error-message="detailErrorMessage"
         :empty-message="operationTasksEmptyMessage"
         :searchable="false"
         :column-settings="false"
+        @retry="refreshDetail"
       >
         <template #cell-status="{ row }">
           <NvStatusBadge :value="row.status" :label="statusLabel(row.status)" />
@@ -1206,9 +1210,12 @@ function formatError(error: unknown) {
         :rows="materialRows"
         :row-key="(r) => `${r.materialId}-${r.materialLotId}`"
         :loading="materialReadinessPending"
+        :error="materialReadinessError"
+        :error-message="materialReadinessErrorMessage"
         empty-message="暂无用料行。先到「制造 BOM」发布物料清单；还需工单已下达/排产、且有生效生产版本，三者缺一不可。"
         :searchable="false"
         :column-settings="false"
+        @retry="refreshMaterialReadiness"
       >
         <template #cell-requiredQuantity="{ row }"
           ><span class="tabular-nums">{{ formatQuantity(row.requiredQuantity) }}</span></template
@@ -1279,10 +1286,13 @@ function formatError(error: unknown) {
         :rows="materialIssueRows"
         :row-key="(r) => r.requestId ?? ''"
         :loading="materialIssueRequestsPending"
+        :error="materialIssueRequestsError"
+        :error-message="materialIssueRequestsErrorMessage"
         empty-message="本工单还没有领料单。缺料时在上方「发起领料」，仓库接单后这里会出现出库单号。"
         :searchable="false"
         :column-settings="false"
         data-testid="material-issue-requests"
+        @retry="refreshMaterialIssueRequests"
       >
         <template #cell-requestedQuantity="{ row }"
           ><span class="tabular-nums">{{ formatQuantity(row.requestedQuantity) }}</span></template

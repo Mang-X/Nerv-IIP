@@ -378,7 +378,6 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 const sheetStubs = {
   NvSheet: { template: '<div><slot /></div>' },
-  DialogRoot: { template: '<div><slot /></div>' },
   NvSheetContent: { template: '<aside><slot /></aside>' },
   NvSheetHeader: { template: '<div><slot /></div>' },
   NvSheetTitle: { template: '<h2><slot /></h2>' },

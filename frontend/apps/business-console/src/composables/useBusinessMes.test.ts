@@ -360,6 +360,10 @@ vi.mock('@nerv-iip/api-client', () => ({
     key: [{ _id: 'listBusinessConsoleMesShiftHandovers' }],
     query: vi.fn(),
   })),
+  getBusinessConsoleMesShiftHandoverQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'getBusinessConsoleMesShiftHandover' }],
+    query: vi.fn(),
+  })),
   listBusinessConsoleMesWorkOrdersQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleMesWorkOrders' }],
     query: vi.fn(),
@@ -959,6 +963,14 @@ describe('business MES composables', () => {
     expect(
       coladaState.queryFactoriesById.get('listBusinessConsoleMesCapacityImpacts')?.(),
     ).toMatchObject({ enabled: false })
+  })
+
+  it('keeps the current WIP request disabled when the consuming page lacks operations permission', () => {
+    useMesWipSummary(() => false)
+
+    expect(coladaState.queryFactoriesById.get('getBusinessConsoleMesWipSummary')?.()).toMatchObject(
+      { enabled: false },
+    )
   })
 
   it('does not refetch MES lists when business context is empty', async () => {

@@ -260,7 +260,7 @@ const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
 const pagedRows = computed(() => sortedRows.value)
 const totalItems = computed(() => skusTotal.value + pendingLocalSkus.value.length)
 
-const listErrorMessage = computed(() => formatError(skusError.value))
+const listErrorMessage = computed(() => inlineErrorMessage(skusError.value))
 function inOptions(options: readonly { value: string }[], value: string) {
   return options.some((option) => option.value === value)
 }
@@ -470,9 +470,6 @@ function syncContextFromFilters(open: boolean) {
   if (open) createShowErrors.value = false
   createForm.organizationId = filters.organizationId
   createForm.environmentId = filters.environmentId
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 function isNonEmpty(value: string) {
   return value.trim().length > 0

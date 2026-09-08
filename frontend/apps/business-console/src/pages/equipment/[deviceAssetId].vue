@@ -152,7 +152,7 @@ const controlSheetOpen = ref(false)
 const deviceAssetIdRef = computed(() => filters.deviceAssetId)
 const { health, healthError, healthPending, refreshHealth } =
   useBusinessEquipmentHealth(deviceAssetIdRef)
-const healthErrorMessage = computed(() => formatError(healthError.value))
+const healthErrorMessage = computed(() => inlineErrorMessage(healthError.value))
 const {
   commands: controlCommands,
   commandsError: controlCommandsError,
@@ -161,7 +161,7 @@ const {
   historyFilters: controlHistoryFilters,
 } = useBusinessDeviceControlCommands(deviceAssetIdRef)
 const { page: controlPage, pageSize: controlPageSize } = usePagedList(controlHistoryFilters)
-const controlCommandsErrorMessage = computed(() => formatError(controlCommandsError.value))
+const controlCommandsErrorMessage = computed(() => inlineErrorMessage(controlCommandsError.value))
 
 type ControlCommandRow = (typeof controlCommands)['value'][number]
 const controlColumns: NvDataTableColumn<ControlCommandRow>[] = [
@@ -182,9 +182,9 @@ function controlCommandRowKey(row: ControlCommandRow) {
 }
 
 const currentState = computed(() => device.value?.currentState)
-const errorMessage = computed(() => formatError(deviceError.value))
+const errorMessage = computed(() => inlineErrorMessage(deviceError.value))
 const telemetryErrorMessage = computed(() =>
-  formatError(
+  inlineErrorMessage(
     historyError.value ||
       oeeError.value ||
       runtimeAvailabilityError.value ||
@@ -195,7 +195,7 @@ const oeeDegradedReasons = computed(() =>
   (oee.value?.degradedReasons ?? []).map(describeTelemetryOeeDegradation),
 )
 const maintenanceErrorMessage = computed(() =>
-  formatError(
+  inlineErrorMessage(
     maintenanceAvailabilityError.value ||
       reliabilityError.value ||
       workOrdersError.value ||
@@ -636,9 +636,6 @@ function formatDateTime(value?: string | null) {
   if (!value) return '无'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 </script>
 

@@ -64,6 +64,11 @@ public sealed class StoredFileRecord
         };
     }
 
+    public void HoldForTemplateAssetRetirement()
+    {
+        Status = FileStorageFileStatus.PhysicalHold;
+    }
+
     public void MarkDeleted(DateTimeOffset deletedAtUtc, string reason, TimeSpan? physicalDeleteGrace = null)
     {
         Status = FileStorageFileStatus.Deleted;

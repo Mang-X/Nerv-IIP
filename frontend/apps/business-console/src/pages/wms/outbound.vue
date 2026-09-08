@@ -142,7 +142,7 @@ function onLineSkuChange(line: { skuCode: string; uomCode: string }, skuCode: st
  */
 const listErrorMessage = computed(() =>
   outboundOrdersError.value
-    ? `取不到出库单列表，当前出库情况无法判断：${formatError(outboundOrdersError.value)}`
+    ? `取不到出库单列表，当前出库情况无法判断：${inlineErrorMessage(outboundOrdersError.value)}`
     : '',
 )
 
@@ -446,10 +446,6 @@ function formatDateTime(value?: string | null) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
-
 function refreshAll() {
   void refreshWorkScopes()
   void refreshOutboundOrders()

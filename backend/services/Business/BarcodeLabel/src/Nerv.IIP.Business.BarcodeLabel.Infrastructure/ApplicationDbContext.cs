@@ -1,18 +1,20 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using NetCorePal.Extensions.Primitives;
+using NetCorePal.Extensions.Repository.EntityFrameworkCore;
 using Nerv.IIP.Business.BarcodeLabel.Domain;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.ScanRecordAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.TraceabilityAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.TemplateAssetRetirementDecisionAggregate;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure;
 
 public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, IMediator mediator)
-    : AppDbContextBase(options, mediator), IPostgreSqlCapDataStorage
+    : AppDbContextBase(options, mediator), IPostgreSqlCapDataStorage, ITransactionUnitOfWork
 {
     private static readonly UniqueConflictMapping[] ScanRecordUniqueConflicts =
     [
@@ -65,6 +67,22 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
             ["epcis_events.organization_id", "epcis_events.environment_id", "epcis_events.event_type", "epcis_events.gtin", "epcis_events.serial_number"])
     ];
 
+    private static readonly UniqueConflictMapping RetirementDecisionFileConflict = new(
+        ["UX_template_asset_retirement_decisions_file"],
+        [
+            "template_asset_retirement_decisions.organization_id",
+            "template_asset_retirement_decisions.environment_id",
+            "template_asset_retirement_decisions.template_file_id"
+        ]);
+
+    private static readonly UniqueConflictMapping RetirementDecisionIdempotencyConflict = new(
+        ["UX_template_asset_retirement_decisions_idempotency"],
+        [
+            "template_asset_retirement_decisions.organization_id",
+            "template_asset_retirement_decisions.environment_id",
+            "template_asset_retirement_decisions.idempotency_key"
+        ]);
+
     public DbSet<BarcodeRule> BarcodeRules => Set<BarcodeRule>();
 
     public DbSet<LabelTemplate> LabelTemplates => Set<LabelTemplate>();
@@ -73,9 +91,14 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
 
     public DbSet<LabelPrintItem> LabelPrintItems => Set<LabelPrintItem>();
 
+    public DbSet<TemplateAssetRetirementDecision> TemplateAssetRetirementDecisions => Set<TemplateAssetRetirementDecision>();
+
     public DbSet<ScanRecord> ScanRecords => Set<ScanRecord>();
 
     public DbSet<EpcisEvent> EpcisEvents => Set<EpcisEvent>();
+
+    Task ITransactionUnitOfWork.RollbackAsync(CancellationToken cancellationToken) =>
+        base.RollbackAsync(CancellationToken.None);
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -123,6 +146,28 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
                     knownException = new KnownException("条码追溯事件已存在，请检查事件类型和唯一标识。", exception);
                     return true;
                 }
+            }
+        }
+
+        return TryMapTemplateAssetRetirementUniqueConflict(exception, out knownException);
+    }
+
+    private bool TryMapTemplateAssetRetirementUniqueConflict(
+        DbUpdateException exception,
+        out KnownException knownException)
+    {
+        foreach (var current in EnumerateExceptions(exception))
+        {
+            if (IsUniqueConflict(current, RetirementDecisionFileConflict))
+            {
+                knownException = new KnownException("模板资产已存在退役裁决，不能创建第二条记录。", exception);
+                return true;
+            }
+
+            if (IsUniqueConflict(current, RetirementDecisionIdempotencyConflict))
+            {
+                knownException = new KnownException("模板资产退役幂等键与已有记录不一致，请检查提交内容。", exception);
+                return true;
             }
         }
 

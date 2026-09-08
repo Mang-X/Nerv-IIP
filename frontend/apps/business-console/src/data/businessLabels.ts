@@ -75,11 +75,6 @@ export const APPROVAL_DECISION_LABELS: Readonly<Record<string, string>> = {
  * unrestricted / quality / restricted / blocked——写入时 Normalize，读面回的必是其一。
  * 别名（qualified/available → unrestricted，inspection/quality-inspection → quality，
  * conditional-release → restricted，rejected → blocked）一并登记，供直接展示别名的场合兜底。
- *
- * `quarantine` 是**质量域**的说法：`InspectionRecord.StockReleaseDimension.SourceQualityStatus`
- * 存的就是它（`Quality/.../Seed/WorldHistorySeedService.cs:32`），表示「已进质量冻结库位、等判定」。
- * 质量域这条路径不走 Inventory 的 Normalize，所以它不在上面那四个规范值里，但确实会上屏。
- * 两个域对同一语义用了不同码值，属跨域词汇不一致，已登记为后端缺口——在它统一之前这里必须收着。
  */
 export const QUALITY_STATUS_LABELS: Readonly<Record<string, string>> = {
   unrestricted: '非限制使用',
@@ -92,8 +87,6 @@ export const QUALITY_STATUS_LABELS: Readonly<Record<string, string>> = {
   'conditional-release': '条件放行',
   blocked: '冻结',
   rejected: '已拒收',
-  // 质量域专有（见上方说明）；译「隔离」而非「检验隔离」，避免与 quality=待检 混淆。
-  quarantine: '隔离',
 }
 
 /**
@@ -158,6 +151,7 @@ export const TRACE_NODE_TYPE_LABELS: Readonly<Record<string, string>> = {
   operator: '报工人',
   'device-asset': '生产设备',
   'inspection-result': '不良记录',
+  'nonconformance-report': '不合格品报告',
   'produced-lot': '产出批次',
   serial: '产出序列号',
   'produced-lot-or-serial': '产出批次/序列号',
@@ -472,6 +466,22 @@ export const MES_QUALITY_ITEM_STATUS_LABELS: Readonly<Record<string, string>> = 
 export const MES_HANDOVER_STATUS_LABELS: Readonly<Record<string, string>> = {
   open: '待接班',
   accepted: '已接班',
+}
+
+/**
+ * 交接单遗留问题的来源域，取值来自 MES 域枚举 ShiftHandoverIssueCategory（Equipment / Quality），
+ * 读面按枚举名回显字符串，`normalizeCode` 归一后查表。
+ */
+export const MES_HANDOVER_ISSUE_CATEGORY_LABELS: Readonly<Record<string, string>> = {
+  equipment: '设备',
+  quality: '质量',
+}
+
+/** 交接单遗留问题的严重度，取值来自 MES 域枚举 ShiftHandoverIssueSeverity（Low / Medium / High）。 */
+export const MES_HANDOVER_ISSUE_SEVERITY_LABELS: Readonly<Record<string, string>> = {
+  low: '低',
+  medium: '中',
+  high: '高',
 }
 
 /** 不合格品报告（NCR）状态，与后端 NonconformanceReport 的三个状态字一一对应。 */

@@ -151,7 +151,7 @@ public sealed class MesListQueryCompositionTests
             Assert.Contains("take", parameters.Keys);
             Assert.Contains("keyword", parameters.Keys);
             Assert.Equal(0, parameters["skip"].GetProperty("schema").GetProperty("default").GetInt32());
-            Assert.Equal(OffsetPage.DefaultTake, parameters["take"].GetProperty("schema").GetProperty("default").GetInt32());
+            Assert.Equal(100, parameters["take"].GetProperty("schema").GetProperty("default").GetInt32());
         }
     }
 

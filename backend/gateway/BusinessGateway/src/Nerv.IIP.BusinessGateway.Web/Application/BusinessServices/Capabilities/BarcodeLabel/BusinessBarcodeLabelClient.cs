@@ -47,6 +47,21 @@ public interface IBusinessBarcodeLabelClient
         string internalBearerToken,
         BusinessConsoleBarcodeScanListRequest request,
         CancellationToken cancellationToken);
+
+    Task<BusinessConsoleBarcodePrintLifecycleResponse> DispatchPrintBatchAsync(
+        string internalBearerToken,
+        BusinessConsoleDispatchBarcodePrintBatchRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleReprintBarcodeLabelResponse> ReprintLabelAsync(
+        string internalBearerToken,
+        BusinessConsoleReprintBarcodeLabelRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleBarcodePrintLifecycleResponse> VoidLabelAsync(
+        string internalBearerToken,
+        BusinessConsoleVoidBarcodeLabelRequest request,
+        CancellationToken cancellationToken);
 }
 
 public sealed class HttpBusinessBarcodeLabelClient(HttpClient httpClient)
@@ -175,5 +190,44 @@ public sealed class HttpBusinessBarcodeLabelClient(HttpClient httpClient)
                 ("skip", request.Skip),
                 ("take", request.Take)),
             null,
+            cancellationToken);
+
+    public Task<BusinessConsoleBarcodePrintLifecycleResponse> DispatchPrintBatchAsync(
+        string internalBearerToken,
+        BusinessConsoleDispatchBarcodePrintBatchRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleBarcodePrintLifecycleResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/internal/v1/barcodes/print-batches/{Uri.EscapeDataString(request.PrintBatchId)}/dispatch?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId)),
+            request.Body,
+            cancellationToken);
+
+    public Task<BusinessConsoleReprintBarcodeLabelResponse> ReprintLabelAsync(
+        string internalBearerToken,
+        BusinessConsoleReprintBarcodeLabelRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleReprintBarcodeLabelResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/internal/v1/barcodes/print-batches/{Uri.EscapeDataString(request.PrintBatchId)}/items/{request.SequenceNo}/reprint?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId)),
+            request.Body,
+            cancellationToken);
+
+    public Task<BusinessConsoleBarcodePrintLifecycleResponse> VoidLabelAsync(
+        string internalBearerToken,
+        BusinessConsoleVoidBarcodeLabelRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleBarcodePrintLifecycleResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/internal/v1/barcodes/print-batches/{Uri.EscapeDataString(request.PrintBatchId)}/items/{request.SequenceNo}/void?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId)),
+            request.Body,
             cancellationToken);
 }

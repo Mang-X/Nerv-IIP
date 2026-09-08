@@ -3,6 +3,8 @@ using FluentValidation;
 using MediatR;
 using Nerv.IIP.Business.Mes.Web.Application.Auth;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ChangeoverRecordAggregate;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
@@ -148,6 +150,19 @@ public sealed record ListProductionReportsRequest(
     string? WorkCenterId = null,
     string? ShiftId = null,
     string? DeviceAssetId = null);
+
+public sealed record QueryProductionStatisticsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    ProductionStatisticsDimension Dimension,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc,
+    DateOnly? BusinessDate = null,
+    string? ShiftCode = null,
+    string? WorkCenterId = null,
+    string? SkuId = null,
+    int Skip = 0,
+    int Take = 100);
 
 public sealed record GetProductionReportRequest(
     string OrganizationId,
@@ -486,6 +501,37 @@ public sealed record RecoverDowntimeRequest(
     [property: RouteParam] string DowntimeEventId,
     DateTimeOffset? RecoveredAtUtc);
 
+public sealed record StartChangeoverRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkCenterId,
+    string DeviceAssetId,
+    string OperatorId,
+    ChangeoverToolingCheckResult? ToolingCheckResult,
+    DateTimeOffset StartedAtUtc,
+    string IdempotencyKey);
+
+public sealed class StartChangeoverRequestValidator : Validator<StartChangeoverRequest>
+{
+    public StartChangeoverRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.WorkCenterId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.OperatorId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ToolingCheckResult).NotNull().IsInEnum();
+        RuleFor(x => x.StartedAtUtc).NotEmpty();
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+    }
+}
+
+public sealed record CompleteChangeoverRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string ChangeoverRecordId,
+    DateTimeOffset? CompletedAtUtc);
+
 public sealed record ListShiftHandoversRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -505,6 +551,11 @@ public sealed record ListScheduleResultsRequest(
     int Skip = 0,
     int Take = 20);
 
+public sealed record GetShiftHandoverRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string HandoverId);
+
 public sealed record CreateShiftHandoverRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -512,13 +563,21 @@ public sealed record CreateShiftHandoverRequest(
     string TeamId,
     DateTimeOffset? HandoverAtUtc,
     string? IdempotencyKey = null,
-    string? TeamName = null);
+    string? TeamName = null,
+    string? OutgoingUserId = null,
+    string? OutgoingUserName = null,
+    IReadOnlyCollection<ShiftHandoverWipItemInput>? WipItems = null,
+    IReadOnlyCollection<ShiftHandoverUnfinishedWorkOrderInput>? UnfinishedWorkOrders = null,
+    IReadOnlyCollection<ShiftHandoverOpenIssueInput>? OpenIssues = null,
+    IReadOnlyCollection<ShiftHandoverAttachmentInput>? Attachments = null);
 
 public sealed record AcceptShiftHandoverRequest(
     string OrganizationId,
     string EnvironmentId,
     [property: RouteParam] string HandoverId,
-    DateTimeOffset? AcceptedAtUtc);
+    DateTimeOffset? AcceptedAtUtc,
+    string? IncomingUserId = null,
+    string? IncomingUserName = null);
 
 public sealed record TraceabilityWorkOrderRequest(
     string OrganizationId,
@@ -795,11 +854,21 @@ public sealed class ReleaseWorkOrderEndpoint(ISender sender, TimeProvider timePr
 
     public override async Task HandleAsync(ReleaseWorkOrderRequest req, CancellationToken ct)
     {
+        // 这里是请求体进入系统的信任边界：req.ReleasedAtUtc 由调用方给，可能落在未来。
+        // 发布事实的时刻落在未来时，该工单工序此后的**每一条**报工都会被 Quality 的
+        // PeriodicInspectionOperation 判为「报工早于发布」抛出、整封进死信——正是 #3117 修的那个缺陷
+        // 换了个入口。发布是一件已经发生的事，故在此夹到当前时刻；仓库内部的常量与种子不跨这条边界，
+        // 不重复付这份时钟依赖（「不晚于既有活动（报工或工序完工）」那半条不变量由
+        // WorkOrderReleaseFactTime 承担）。
+        var nowUtc = timeProvider.GetUtcNow();
+        var releasedAtUtc = req.ReleasedAtUtc is { } supplied
+            ? WorkOrderReleaseFactTime.UntrustedCandidate(supplied, nowUtc)
+            : nowUtc;
         var response = await sender.Send(new ReleaseWorkOrderCommand(
             req.OrganizationId,
             req.EnvironmentId,
             req.WorkOrderId,
-            req.ReleasedAtUtc ?? timeProvider.GetUtcNow()), ct);
+            releasedAtUtc), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -1395,6 +1464,30 @@ public sealed class ListProductionReportsEndpoint(ISender sender)
     }
 }
 
+public sealed class QueryProductionStatisticsEndpoint(ISender sender)
+    : MesEndpoint<QueryProductionStatisticsRequest, ProductionStatisticsResponse>
+{
+    public override void Configure() =>
+        ConfigureMesContract(MesEndpointContracts.Get<QueryProductionStatisticsEndpoint>());
+
+    public override async Task HandleAsync(QueryProductionStatisticsRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new QueryProductionStatisticsQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.Dimension,
+            req.WindowStartUtc,
+            req.WindowEndUtc,
+            req.BusinessDate,
+            req.ShiftCode,
+            req.WorkCenterId,
+            req.SkuId,
+            req.Skip,
+            req.Take), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
 public sealed class GetProductionReportEndpoint(ISender sender)
     : MesEndpoint<GetProductionReportRequest, GetProductionReportResponse>
 {
@@ -1649,6 +1742,42 @@ public sealed class ConfirmDowntimeRecoveryEndpoint(ISender sender, TimeProvider
     }
 }
 
+public sealed class StartChangeoverEndpoint(ISender sender)
+    : MesEndpoint<StartChangeoverRequest, MesAcceptedResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<StartChangeoverEndpoint>());
+
+    public override async Task HandleAsync(StartChangeoverRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new StartChangeoverCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.WorkCenterId,
+            req.DeviceAssetId,
+            req.OperatorId,
+            req.ToolingCheckResult!.Value,
+            req.StartedAtUtc,
+            req.IdempotencyKey), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
+public sealed class CompleteChangeoverEndpoint(ISender sender, TimeProvider timeProvider)
+    : MesEndpoint<CompleteChangeoverRequest, MesAcceptedResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<CompleteChangeoverEndpoint>());
+
+    public override async Task HandleAsync(CompleteChangeoverRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new CompleteChangeoverCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.ChangeoverRecordId,
+            req.CompletedAtUtc ?? timeProvider.GetUtcNow()), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
 public sealed class ListScheduleResultsEndpoint(ISender sender)
     : MesEndpoint<ListScheduleResultsRequest, MesScheduleResultListResponse>
 {
@@ -1687,6 +1816,20 @@ public sealed class ListShiftHandoversEndpoint(ISender sender)
     }
 }
 
+public sealed class GetShiftHandoverEndpoint(ISender sender)
+    : MesEndpoint<GetShiftHandoverRequest, MesShiftHandoverDetail>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<GetShiftHandoverEndpoint>());
+
+    public override async Task HandleAsync(GetShiftHandoverRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(
+            new GetShiftHandoverQuery(req.OrganizationId, req.EnvironmentId, req.HandoverId),
+            ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
 public sealed class CreateShiftHandoverEndpoint(ISender sender, TimeProvider timeProvider)
     : MesEndpoint<CreateShiftHandoverRequest, MesAcceptedResponse>
 {
@@ -1701,7 +1844,13 @@ public sealed class CreateShiftHandoverEndpoint(ISender sender, TimeProvider tim
             req.TeamId,
             req.HandoverAtUtc ?? timeProvider.GetUtcNow(),
             req.IdempotencyKey,
-            req.TeamName), ct);
+            req.TeamName,
+            req.OutgoingUserId,
+            req.OutgoingUserName,
+            req.WipItems,
+            req.UnfinishedWorkOrders,
+            req.OpenIssues,
+            req.Attachments), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -1717,7 +1866,9 @@ public sealed class AcceptShiftHandoverEndpoint(ISender sender, TimeProvider tim
             req.OrganizationId,
             req.EnvironmentId,
             req.HandoverId,
-            req.AcceptedAtUtc ?? timeProvider.GetUtcNow()), ct);
+            req.AcceptedAtUtc ?? timeProvider.GetUtcNow(),
+            req.IncomingUserId,
+            req.IncomingUserName), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -1831,6 +1982,7 @@ public static class MesEndpointContracts
         new(typeof(GetWipSummaryEndpoint), "GET", "/api/business/v1/mes/wip", MesPermissionCodes.OperationsRead, "getBusinessMesWipSummary"),
         new(typeof(RecordProductionReportEndpoint), "POST", "/api/business/v1/mes/production-reports", MesPermissionCodes.ReportingWrite, "recordBusinessMesProductionReport"),
         new(typeof(ListProductionReportsEndpoint), "GET", "/api/business/v1/mes/production-reports", MesPermissionCodes.ReportingRead, "listBusinessMesProductionReports"),
+        new(typeof(QueryProductionStatisticsEndpoint), "GET", "/api/business/v1/mes/production-statistics", MesPermissionCodes.ReportingRead, "queryBusinessMesProductionStatistics"),
         new(typeof(GetProductionReportEndpoint), "GET", "/api/business/v1/mes/production-reports/{reportNo}", MesPermissionCodes.ReportingRead, "getBusinessMesProductionReport"),
         new(typeof(ReverseProductionReportEndpoint), "POST", "/api/business/v1/mes/production-reports/{reportNo}/reverse", MesPermissionCodes.ReportingWrite, "reverseBusinessMesProductionReport"),
         new(typeof(ListTelemetryProductionReportCandidatesEndpoint), "GET", "/api/business/v1/mes/telemetry-production-report-candidates", MesPermissionCodes.ReportingRead, "listBusinessMesTelemetryProductionReportCandidates"),
@@ -1846,7 +1998,10 @@ public static class MesEndpointContracts
         new(typeof(ListDowntimeEventsEndpoint), "GET", "/api/business/v1/mes/downtime-events", MesPermissionCodes.DowntimeRead, "listBusinessMesDowntimeEvents"),
         new(typeof(RecordDowntimeEventEndpoint), "POST", "/api/business/v1/mes/downtime-events", MesPermissionCodes.DowntimeManage, "recordBusinessMesDowntimeEvent"),
         new(typeof(ConfirmDowntimeRecoveryEndpoint), "POST", "/api/business/v1/mes/downtime-events/{downtimeEventId}/recover", MesPermissionCodes.DowntimeManage, "confirmBusinessMesDowntimeRecovery"),
+        new(typeof(StartChangeoverEndpoint), "POST", "/api/business/v1/mes/changeover-records", MesPermissionCodes.OperationsManage, "startBusinessMesChangeover"),
+        new(typeof(CompleteChangeoverEndpoint), "POST", "/api/business/v1/mes/changeover-records/{changeoverRecordId}/complete", MesPermissionCodes.OperationsManage, "completeBusinessMesChangeover"),
         new(typeof(ListShiftHandoversEndpoint), "GET", "/api/business/v1/mes/shift-handovers", MesPermissionCodes.HandoversRead, "listBusinessMesShiftHandovers"),
+        new(typeof(GetShiftHandoverEndpoint), "GET", "/api/business/v1/mes/shift-handovers/{handoverId}", MesPermissionCodes.HandoversRead, "getBusinessMesShiftHandover"),
         new(typeof(CreateShiftHandoverEndpoint), "POST", "/api/business/v1/mes/shift-handovers", MesPermissionCodes.HandoversManage, "createBusinessMesShiftHandover"),
         new(typeof(AcceptShiftHandoverEndpoint), "POST", "/api/business/v1/mes/shift-handovers/{handoverId}/accept", MesPermissionCodes.HandoversManage, "acceptBusinessMesShiftHandover"),
         new(typeof(GetWorkOrderTraceabilityEndpoint), "GET", "/api/business/v1/mes/traceability/work-orders/{workOrderId}", MesPermissionCodes.TraceabilityRead, "getBusinessMesWorkOrderTraceability"),

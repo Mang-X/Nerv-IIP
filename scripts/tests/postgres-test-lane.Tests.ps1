@@ -25,22 +25,11 @@ function Assert-MasterDataDiagnosticSchemas([object]$Member) {
         throw 'The MasterData member must retain restricted business_masterdata and CAP outbox diagnostics.'
     }
 }
-$script:GovernedPostgresMemberIds = @(
-    'inventory-postgres-profile',
-    'masterdata-postgres-profile',
-    'scheduling-postgres-profile',
-    'apphub-postgres-profile',
-    'barcodelabel-postgres-profile',
-    'filestorage-postgres-profile',
-    'industrialtelemetry-postgres-profile',
-    'quality-postgres-profile',
-    'mes-postgres-profile',
-    'wms-postgres-profile',
-    'erp-postgres-profile',
-    'demandplanning-postgres-profile',
-    'acceptance-postgres-profile',
-    'maintenance-device-pause-postgres'
-)
+# NERV-3185：受治理成员集合从 manifest 的 active 状态**推导**，不再冻结一份手写名单。
+# 冻结名单与 manifest 互为对照、一起不动就一起绿，`masterdata-device-reference-concurrency`
+# 正是这样以 active 身份跑在零个 job 上而所有门禁照绿的（#3003 / #3135 同形的第四例）。
+# 推导入口与 runner 的 -AllActiveMembers 是同一个函数，两者不可能各自漂移。
+$script:GovernedPostgresMemberIds = @(Import-NervPostgresTestLaneMembers -ManifestPath $manifestPath -RepositoryRoot $repoRoot | ForEach-Object { [string]$_.id })
 function Get-NervCSharpMethodBody([string]$Source, [string]$MethodName) {
     $signatureIndex = $Source.IndexOf(" $MethodName(", [StringComparison]::Ordinal)
     if ($signatureIndex -lt 0) { return $null }
@@ -131,57 +120,102 @@ function Assert-SchedulingLaneOwnedDatabase([string]$SourcePath) {
         throw "Scheduling lane source '$([IO.Path]::GetFileName($SourcePath))' must not create an inner database the lane cannot diagnose or clean."
     }
 }
-function Assert-PostgresWorkflowMemberBatch([string]$WorkflowPath) {
+# NERV-3185：CI 的 postgres 选择集必须由 manifest 的 active 状态推导，不得回退成硬编码名单。
+# 结构面：postgres-tests 步骤只能是一次 runner 调用，且必须带 -AllActiveMembers、不得带 -MemberId。
+function Assert-PostgresWorkflowAllActiveSelection([string]$WorkflowPath) {
+    $invalidSelectionMessage = 'The authoritative PostgreSQL test step must derive its member set from the manifest through a single AST-validated -AllActiveMembers runner invocation.'
+    $command = Get-PostgresWorkflowRunnerCommand -WorkflowPath $WorkflowPath -StatementCount 1
+    if ($null -eq $command) { throw $invalidSelectionMessage }
+    if (@(Get-PostgresRunnerCommandParameter -Command $command -ParameterName 'MemberId').Count -ne 0) { throw $invalidSelectionMessage }
+    if (@(Get-PostgresRunnerCommandParameter -Command $command -ParameterName 'AllActiveMembers').Count -ne 1) { throw $invalidSelectionMessage }
+}
+
+function Get-PostgresRunnerCommandParameter([object]$Command, [string]$ParameterName) {
+    return @($Command.CommandElements | Where-Object {
+            $_ -is [System.Management.Automation.Language.CommandParameterAst] -and
+            [string]::Equals($_.ParameterName, $ParameterName, [StringComparison]::OrdinalIgnoreCase)
+        })
+}
+
+# 解析 postgres-tests 步骤里的 runner 调用。StatementCount 为 0 表示不限制语句数（变异夹具会用
+# 「赋值 + 调用」两条语句的旧形态），为正数则要求恰好那么多条——注释不是语句，因此注释掩码
+# 变异不会把被注释掉的那行算进来。
+function Get-PostgresWorkflowRunnerCommand([string]$WorkflowPath, [int]$StatementCount = 0) {
     $document = ConvertFrom-NervCiRequiredSummaryWorkflow -Path $WorkflowPath -WorkingDirectory $repoRoot
     $job = $document.jobs.'postgres-provider-tests'
     $testSteps = @($job.steps | Where-Object { [string]::Equals((Get-NervCiRequiredSummaryStringValue -Object $_ -PropertyName 'id'), 'postgres-tests', [StringComparison]::Ordinal) })
     if ($testSteps.Count -ne 1) { throw 'PostgreSQL Provider Tests must contain exactly one authoritative postgres-tests step.' }
-    $invalidBatchMessage = 'The authoritative PostgreSQL test step must select every governed lane member exactly through one AST-validated assignment and runner invocation.'
-    $expectedMemberIds = @($script:GovernedPostgresMemberIds)
     $run = [regex]::Replace([string]$testSteps[0].run, '\$\{\{.*?\}\}', 'github-expression')
     $tokens = $null
     $parseErrors = $null
     $ast = [System.Management.Automation.Language.Parser]::ParseInput($run, [ref]$tokens, [ref]$parseErrors)
-    if ($parseErrors.Count -ne 0 -or $ast.EndBlock.Statements.Count -ne 2) { throw $invalidBatchMessage }
-
-    $assignment = $ast.EndBlock.Statements[0]
-    if ($assignment -isnot [System.Management.Automation.Language.AssignmentStatementAst] -or
-        $assignment.Operator -ne [System.Management.Automation.Language.TokenKind]::Equals -or
-        $assignment.Left -isnot [System.Management.Automation.Language.VariableExpressionAst] -or
-        -not [string]::Equals($assignment.Left.VariablePath.UserPath, 'members', [StringComparison]::Ordinal)) {
-        throw $invalidBatchMessage
-    }
-    $arrayExpression = if ($assignment.Right -is [System.Management.Automation.Language.CommandExpressionAst]) { $assignment.Right.Expression } else { $null }
-    $arrayLiteral = if ($arrayExpression -is [System.Management.Automation.Language.ArrayExpressionAst] -and
-        $arrayExpression.SubExpression.Statements.Count -eq 1 -and
-        $arrayExpression.SubExpression.Statements[0] -is [System.Management.Automation.Language.PipelineAst] -and
-        $arrayExpression.SubExpression.Statements[0].PipelineElements.Count -eq 1 -and
-        $arrayExpression.SubExpression.Statements[0].PipelineElements[0] -is [System.Management.Automation.Language.CommandExpressionAst]) {
-        $arrayExpression.SubExpression.Statements[0].PipelineElements[0].Expression
-    } else { $null }
-    $memberValues = if ($arrayLiteral -is [System.Management.Automation.Language.ArrayLiteralAst]) { @($arrayLiteral.Elements) } else { @() }
-    if ($memberValues.Count -ne $expectedMemberIds.Count) { throw $invalidBatchMessage }
-    for ($memberIndex = 0; $memberIndex -lt $expectedMemberIds.Count; $memberIndex++) {
-        if ($memberValues[$memberIndex] -isnot [System.Management.Automation.Language.StringConstantExpressionAst] -or
-            -not [string]::Equals($memberValues[$memberIndex].Value, $expectedMemberIds[$memberIndex], [StringComparison]::Ordinal)) {
-            throw $invalidBatchMessage
+    if ($parseErrors.Count -ne 0) { $script:PostgresWorkflowStatements = @(); return $null }
+    $statements = @($ast.EndBlock.Statements)
+    $script:PostgresWorkflowStatements = $statements
+    if ($StatementCount -gt 0 -and $statements.Count -ne $StatementCount) { return $null }
+    foreach ($statement in $statements) {
+        if ($statement -isnot [System.Management.Automation.Language.PipelineAst] -or $statement.PipelineElements.Count -ne 1) { continue }
+        $candidate = $statement.PipelineElements[0]
+        if ($candidate -is [System.Management.Automation.Language.CommandAst] -and
+            [string]::Equals($candidate.GetCommandName(), './scripts/run-postgres-test-lane.ps1', [StringComparison]::Ordinal)) {
+            return $candidate
         }
     }
+    return $null
+}
 
-    $pipeline = $ast.EndBlock.Statements[1]
-    $command = if ($pipeline -is [System.Management.Automation.Language.PipelineAst] -and $pipeline.PipelineElements.Count -eq 1) { $pipeline.PipelineElements[0] } else { $null }
-    if ($command -isnot [System.Management.Automation.Language.CommandAst] -or
-        -not [string]::Equals($command.GetCommandName(), './scripts/run-postgres-test-lane.ps1', [StringComparison]::Ordinal)) {
-        throw $invalidBatchMessage
+# 语义面：ci.yml 到底会选中哪些 member id。-AllActiveMembers 走 runner 自己的推导入口，
+# 硬编码名单形态则把名单原样读出来——这样「active 集合恰等于 CI 选择集」才是一条能被变异杀掉的
+# 判据，而不是一条由写法保证的同义反复。
+function Get-PostgresWorkflowSelectedMemberId([string]$WorkflowPath) {
+    $command = Get-PostgresWorkflowRunnerCommand -WorkflowPath $WorkflowPath
+    if ($null -eq $command) { throw 'The postgres-tests step must invoke ./scripts/run-postgres-test-lane.ps1 exactly once.' }
+    $statements = @($script:PostgresWorkflowStatements)
+    if (@(Get-PostgresRunnerCommandParameter -Command $command -ParameterName 'AllActiveMembers').Count -eq 1) {
+        return @(Import-NervPostgresTestLaneMembers -ManifestPath $manifestPath -RepositoryRoot $repoRoot | ForEach-Object { [string]$_.id })
     }
-    $memberParameters = @($command.CommandElements | Where-Object { $_ -is [System.Management.Automation.Language.CommandParameterAst] -and [string]::Equals($_.ParameterName, 'MemberId', [StringComparison]::OrdinalIgnoreCase) })
-    if ($memberParameters.Count -ne 1) { throw $invalidBatchMessage }
+    $memberParameters = @(Get-PostgresRunnerCommandParameter -Command $command -ParameterName 'MemberId')
+    if ($memberParameters.Count -ne 1) { throw 'The postgres-tests step must select its members through exactly one selection parameter.' }
     $parameterIndex = [Array]::IndexOf([object[]]$command.CommandElements, $memberParameters[0])
-    $memberArgument = if ($parameterIndex -ge 0 -and $parameterIndex + 1 -lt $command.CommandElements.Count) { $command.CommandElements[$parameterIndex + 1] } else { $null }
-    if ($memberArgument -isnot [System.Management.Automation.Language.VariableExpressionAst] -or
-        -not [string]::Equals($memberArgument.VariablePath.UserPath, 'members', [StringComparison]::Ordinal)) {
-        throw $invalidBatchMessage
+    $memberArgument = $null
+    if ($parameterIndex -ge 0 -and $parameterIndex + 1 -lt $command.CommandElements.Count) { $memberArgument = $command.CommandElements[$parameterIndex + 1] }
+    $arrayLiteral = $null
+    if ($memberArgument -is [System.Management.Automation.Language.VariableExpressionAst]) {
+        $variableName = $memberArgument.VariablePath.UserPath
+        foreach ($statement in $statements) {
+            if ($statement -isnot [System.Management.Automation.Language.AssignmentStatementAst]) { continue }
+            if ($statement.Left -isnot [System.Management.Automation.Language.VariableExpressionAst]) { continue }
+            if (-not [string]::Equals($statement.Left.VariablePath.UserPath, $variableName, [StringComparison]::Ordinal)) { continue }
+            $rightExpression = $null
+            if ($statement.Right -is [System.Management.Automation.Language.CommandExpressionAst]) { $rightExpression = $statement.Right.Expression }
+            $arrayLiteral = Get-PostgresArrayLiteral -Expression $rightExpression
+        }
     }
+    else { $arrayLiteral = Get-PostgresArrayLiteral -Expression $memberArgument }
+    if ($null -eq $arrayLiteral) { throw 'The postgres-tests member list must be a literal array of member ids.' }
+    return @($arrayLiteral.Elements | ForEach-Object {
+            if ($_ -isnot [System.Management.Automation.Language.StringConstantExpressionAst]) { throw 'The postgres-tests member list must contain string constants only.' }
+            [string]$_.Value
+        })
+}
+
+# 身份集合一律用序数比较：-in / -notin 是 culture-aware，对 member id 这种身份敏感值不能用
+# （ordinal-comparison-layers 门禁已就此拦下过本 PR 的初版）。
+function New-PostgresOrdinalSet([string[]]$Values) {
+    return [Collections.Generic.HashSet[string]]::new([string[]]@($Values), [StringComparer]::Ordinal)
+}
+
+function Get-PostgresArrayLiteral([object]$Expression) {
+    if ($Expression -is [System.Management.Automation.Language.ArrayLiteralAst]) { return $Expression }
+    if ($Expression -is [System.Management.Automation.Language.ArrayExpressionAst] -and
+        $Expression.SubExpression.Statements.Count -eq 1 -and
+        $Expression.SubExpression.Statements[0] -is [System.Management.Automation.Language.PipelineAst] -and
+        $Expression.SubExpression.Statements[0].PipelineElements.Count -eq 1 -and
+        $Expression.SubExpression.Statements[0].PipelineElements[0] -is [System.Management.Automation.Language.CommandExpressionAst]) {
+        $inner = $Expression.SubExpression.Statements[0].PipelineElements[0].Expression
+        if ($inner -is [System.Management.Automation.Language.ArrayLiteralAst]) { return $inner }
+    }
+    return $null
 }
 try {
     [IO.Directory]::CreateDirectory($fixtureRoot) | Out-Null
@@ -225,7 +259,13 @@ try {
         'Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_device_reference_batch_uses_two_fixed_relational_reads_for_one_and_two_hundred_references',
         'Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_disable_endpoint_transaction_fact_persists_audit_and_cap_outbox_with_operation_identity',
         'Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_store_persists_master_data_aggregates',
-        'Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_work_calendar_update_replaces_owned_details_after_reload'
+        'Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_work_calendar_update_replaces_owned_details_after_reload',
+        'Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTestsToolingAudit.Tooling_audit_is_scoped_and_excludes_sensitive_request_content_on_postgres',
+        'Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTestsToolingAudit.Tooling_audit_migration_preserves_predecessor_data_and_installs_append_only_schema_on_postgres',
+        'Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTestsToolingAudit.Tooling_commands_commit_business_and_exact_audit_facts_through_mediator_on_postgres',
+        'Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTestsToolingAudit.Tooling_concurrent_usage_replay_commits_one_increment_and_one_audit_on_postgres',
+        'Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTestsToolingAudit.Tooling_replays_are_idempotent_and_conflicting_payloads_preserve_first_winner_on_postgres',
+        'Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTestsToolingAudit.Tooling_save_failure_rolls_back_business_and_audit_together_on_postgres'
     )
     Assert-Contract ([string]::Equals([string]$masterDataMember.service, 'MasterData', [StringComparison]::Ordinal)) 'The first checklist-three batch must register MasterData as its own lane member.'
     Assert-Contract ([string]::Equals([string]$masterDataMember.project, 'backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/Nerv.IIP.Business.MasterData.Web.Tests.csproj', [StringComparison]::Ordinal)) 'The MasterData member must target the owning test project.'
@@ -240,7 +280,7 @@ try {
     $missingCapRejected = $false
     try { Assert-MasterDataDiagnosticSchemas -Member $missingCapMember } catch { $missingCapRejected = $_.Exception.Message.Contains('CAP outbox diagnostics', [StringComparison]::Ordinal) }
     Assert-Contract $missingCapRejected 'Removing CAP from the MasterData diagnostic schemas must fail the contract.'
-    Assert-Contract ([string]::Equals((@($masterDataMember.expectedTestIdentities) -join "`n"), ($masterDataIdentities -join "`n"), [StringComparison]::Ordinal)) 'The MasterData member must freeze exactly the five profile identities and exclude the world-bible seed test.'
+    Assert-Contract ([string]::Equals((@($masterDataMember.expectedTestIdentities) -join "`n"), ($masterDataIdentities -join "`n"), [StringComparison]::Ordinal)) 'The MasterData member must freeze exactly the eleven governed profile identities and exclude the world-bible seed test.'
 
     $schedulingMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'scheduling-postgres-profile' -RepositoryRoot $repoRoot
     $schedulingIdentities = @(
@@ -248,13 +288,17 @@ try {
         'Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_calendar_event_handler_changes_the_generated_plan_query_state_once',
         'Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_records_generated_calendar_invalidation_without_matching_released_or_other_calendar_plans',
         'Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_records_invalidation_for_a_generated_plan_matched_by_resource',
+        # #3191：检验结论那条通路此前只有 EF InMemory 覆盖，两条谓词（WorkOrderOrOperation 关联子查询、
+        # 发布闸门的 ReasonCode 排除）的真 provider 翻译从未被检验，故新增两条并在此冻结。
+        'Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_release_gate_blocks_quality_blocked_and_allows_quality_released',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_translates_the_work_order_or_operation_scope_for_quality_inspection_results',
         'Nerv.IIP.Business.Scheduling.Web.Tests.ScheduleReleaseGovernancePostgresProfileTests.Concurrent_releases_converge_to_one_active_plan_with_monotonic_revisions',
         'Nerv.IIP.Business.Scheduling.Web.Tests.ScheduleReleaseGovernancePostgresProfileTests.Migration_normalizes_historical_duplicate_releases_with_exact_timestamp_tie'
     )
     Assert-Contract ([string]::Equals([string]$schedulingMember.service, 'Scheduling', [StringComparison]::Ordinal)) 'The second checklist-three batch must register Scheduling as its own lane member.'
     Assert-Contract ([string]::Equals([string]$schedulingMember.project, 'backend/services/Business/Scheduling/tests/Nerv.IIP.Business.Scheduling.Web.Tests/Nerv.IIP.Business.Scheduling.Web.Tests.csproj', [StringComparison]::Ordinal)) 'The Scheduling member must target the owning test project.'
     Assert-Contract (@($schedulingMember.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$schedulingMember.diagnosticSchemas[0], 'scheduling', [StringComparison]::Ordinal)) 'The Scheduling member must own its restricted diagnostic schema declaration.'
-    Assert-Contract ([string]::Equals((@($schedulingMember.expectedTestIdentities) -join "`n"), ($schedulingIdentities -join "`n"), [StringComparison]::Ordinal)) 'The Scheduling member must freeze exactly the six governed profile and capacity identities.'
+    Assert-Contract ([string]::Equals((@($schedulingMember.expectedTestIdentities) -join "`n"), ($schedulingIdentities -join "`n"), [StringComparison]::Ordinal)) 'The Scheduling member must freeze exactly the eight governed profile and capacity identities.'
     $schedulingFilterClasses = @(
         'Nerv.IIP.Business.Scheduling.Web.Tests.OrderUrgencyRetentionPostgresCapacityTests',
         'Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests',
@@ -269,6 +313,28 @@ try {
         Assert-Contract (Test-Path -LiteralPath $schedulingSourcePath -PathType Leaf) "The Scheduling lane source '$schedulingSourcePath' must exist."
         Assert-SchedulingLaneOwnedDatabase -SourcePath $schedulingSourcePath
     }
+    # #2967：AssetUnavailable v2 的 inbox 双身份 claim、迁移前滚与索引列变异证明落在独立成员，
+    # 与 scheduling-postgres-profile 共用同一受治理数据库（同一序列化 collection），身份集合在此冻结。
+    $schedulingAssetMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'scheduling-asset-unavailable-postgres' -RepositoryRoot $repoRoot
+    $schedulingAssetIdentities = @(
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Concurrent_claims_with_different_event_ids_and_same_business_key_commit_one_result',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Concurrent_claims_with_same_event_id_and_different_business_keys_commit_one_result',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Event_id_unique_index_wrong_column_mutation_is_rejected',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Idempotency_key_unique_index_wrong_column_mutation_is_rejected',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Inbox_identity_lock_fails_closed_without_an_active_transaction',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Migration_fails_closed_on_historical_event_instance_with_ambiguous_business_keys',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Migration_upgrades_distinct_historical_event_instances_and_old_schema_already_forbids_same_key_duplicates',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Save_changes_absorbs_event_id_inbox_conflict_as_zero_rows',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Save_changes_absorbs_idempotency_key_inbox_conflict_as_zero_rows'
+    )
+    Assert-Contract ([string]::Equals([string]$schedulingAssetMember.service, 'Scheduling', [StringComparison]::Ordinal)) 'The Scheduling AssetUnavailable member must belong to the Scheduling service.'
+    Assert-Contract ([string]::Equals([string]$schedulingAssetMember.project, [string]$schedulingMember.project, [StringComparison]::Ordinal)) 'The Scheduling AssetUnavailable member must target the same owning test project as the profile member.'
+    Assert-Contract (@($schedulingAssetMember.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$schedulingAssetMember.diagnosticSchemas[0], 'scheduling', [StringComparison]::Ordinal)) 'The Scheduling AssetUnavailable member must own its restricted diagnostic schema declaration.'
+    Assert-Contract ([string]::Equals((@($schedulingAssetMember.expectedTestIdentities) -join "`n"), ($schedulingAssetIdentities -join "`n"), [StringComparison]::Ordinal)) 'The Scheduling AssetUnavailable member must freeze exactly the nine inbox, lock, save-conflict, migration and index-mutation identities.'
+    Assert-Contract ([string]$schedulingAssetMember.filter).Contains('FullyQualifiedName~Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests', [StringComparison]::Ordinal) 'The Scheduling AssetUnavailable member filter must select its owning test class.'
+    $schedulingAssetSourcePath = Join-Path $schedulingSourceDirectory 'AssetUnavailableInboxPostgresProfileTests.cs'
+    Assert-Contract (Test-Path -LiteralPath $schedulingAssetSourcePath -PathType Leaf) "The Scheduling lane source '$schedulingAssetSourcePath' must exist."
+    Assert-SchedulingLaneOwnedDatabase -SourcePath $schedulingAssetSourcePath
     $innerDatabaseSourcePath = Join-Path $fixtureRoot 'inner-database-scheduling-source.cs'
     [IO.File]::WriteAllText(
         $innerDatabaseSourcePath,
@@ -300,7 +366,23 @@ try {
 
     $smallServiceMembers = @(
         @{ id = 'barcodelabel-postgres-profile'; service = 'BarcodeLabel'; schema = 'barcode'; identities = @(
-                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Postgres_unique_conflicts_are_mapped_for_scan_natural_key_and_epcis_event')
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Canceled_attempt_facts_commit_outside_the_rolling_back_command_transaction',
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Canceled_dispatch_preserves_the_original_cancellation_when_another_dispatch_committed_first',
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Canceled_reprint_attempt_does_not_overwrite_facts_when_the_item_was_concurrently_voided',
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Canceled_reprint_attempt_facts_commit_outside_the_rolling_back_command_transaction',
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Conflicting_snapshot_checksum_is_unknown_on_postgres',
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Delivery_unknown_batch_holds_template_asset_retirement_on_postgres',
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Failed_batch_keeps_its_template_asset_reachable_on_postgres',
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Legacy_partial_owner_and_unknown_partitions_fail_closed_on_postgres',
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Postgres_unique_conflicts_are_mapped_for_scan_natural_key_and_epcis_event',
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_and_cross_file_template_rebind_preserve_a_consistent_marker_on_postgres',
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_and_new_batch_freeze_cannot_both_commit_on_postgres',
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_and_template_reuse_cannot_both_commit_on_postgres',
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_idempotency_and_unique_conflicts_are_stable_on_postgres',
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_rejects_when_inactive_template_rebind_to_target_file_commits_while_waiting_on_postgres',
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_reference_and_reuse_matrix_is_enforced_on_postgres',
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Sent_and_printed_batches_follow_the_item_reprint_matrix_on_postgres',
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Template_create_observation_fails_closed_when_same_code_appears_before_target_file_lock_on_postgres')
             source = 'backend/services/Business/BarcodeLabel/tests/Nerv.IIP.Business.BarcodeLabel.Web.Tests/BarcodeLabelPostgresProfileTests.cs'
             innerDatabaseFactory = 'TemporaryPostgresDatabase.CreateAsync' },
         @{ id = 'filestorage-postgres-profile'; service = 'FileStorage'; schema = 'filestorage'; identities = @(
@@ -308,12 +390,26 @@ try {
                 'Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Expand_migration_keeps_legacy_completed_write_readable_by_new_protocol',
                 'Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Independent_gate_registries_claim_one_database_owner_and_create_one_file_fact',
                 'Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Metadata_usage_and_download_grant_survive_web_host_restart',
-                'Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Recovery_batch_prioritizes_never_attempted_intent_before_due_retries')
+                'Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Recovery_batch_prioritizes_never_attempted_intent_before_due_retries',
+                'Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Retirement_acceptance_replays_frozen_horizon_and_holds_content_and_legacy_gc_on_postgres',
+                'Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Retirement_concurrent_duplicate_waits_for_row_lock_and_rollback_is_atomic_on_postgres',
+                'Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Retirement_verifier_rejects_each_wire_and_resource_constraint_without_writes_on_postgres')
             source = 'backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/FileStorageRestartPersistenceTests.cs'
             innerDatabaseFactory = 'PostgreSqlTestDatabase.CreateAsync' },
         @{ id = 'maintenance-device-pause-postgres'; service = 'Maintenance'; schema = 'maintenance'; identities = @(
                 'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceIntegrationEventHandlerTests.Device_disabled_consumer_durably_blocks_pm_generation_on_postgres')
             source = 'backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceIntegrationEventHandlerTests.cs'
+            innerDatabaseFactory = 'TemporaryPostgresDatabase.CreateAsync' },
+        # #2968：Maintenance v2 工单入口的目录精确命中、v1+v2 双发同事务与回滚、v1 零漂移证明落在独立成员，
+        # 与 maintenance-device-pause-postgres 同一测试项目、各自独立的运行器数据库；身份集合在此冻结。
+        @{ id = 'maintenance-asset-unavailable-v2-postgres'; service = 'Maintenance'; schema = 'maintenance'; identities = @(
+                'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.V1_free_text_still_publishes_only_the_v1_envelope_without_touching_the_catalog',
+                'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.V2_exact_code_commits_work_order_with_v1_companion_and_v2_canonical_outbox_rows_in_one_transaction',
+                'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.V2_near_miss_cross_scope_or_free_text_codes_are_rejected_by_the_database_predicate_with_zero_rows',
+                'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.V2_null_reason_code_commits_a_plain_work_order_without_asset_unavailable_outbox_rows',
+                'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.V2_outbox_failure_rolls_back_the_work_order_and_the_already_published_v1_companion',
+                'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.V1_companion_outbox_failure_rolls_back_the_work_order_before_the_v2_envelope_is_attempted')
+            source = 'backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceAssetUnavailableV2PostgresTests.cs'
             innerDatabaseFactory = 'TemporaryPostgresDatabase.CreateAsync' }
     )
     foreach ($smallServiceMember in $smallServiceMembers) {
@@ -351,7 +447,7 @@ try {
     # Quality 同理：provider 类中只有 25 条是真实 PostgreSQL 证明；Periodic Inspection 的
     # 窄 harness 另行纳入数据库 builder 归属核验，但不承载测试身份。
     $qualityMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'quality-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($qualityMember.expectedTestIdentities).Count -eq 25) 'The Quality member must freeze exactly its twenty-five governed PostgreSQL identities.'
+    Assert-Contract (@($qualityMember.expectedTestIdentities).Count -eq 26) 'The Quality member must freeze exactly its twenty-six governed PostgreSQL identities.'
     Assert-Contract (@($qualityMember.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$qualityMember.diagnosticSchemas[0], 'quality', [StringComparison]::Ordinal)) 'Quality business and CAP tables share one schema, which the member must declare.'
     $qualityLaneSources = @(
             'PeriodicInspectionPostgresConcurrencyTests.cs',
@@ -395,16 +491,25 @@ try {
     Assert-Contract ($qualityPinnedBuilders -eq 6) 'The Quality lane sources must keep exactly their six pinned raw builders; a new unpinned one silently reintroduces the public-schema history table.'
 
     $telemetryMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'industrialtelemetry-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($telemetryMember.expectedTestIdentities).Count -eq 15) 'The IndustrialTelemetry member must freeze exactly its fifteen governed PostgreSQL identities.'
+    Assert-Contract (@($telemetryMember.expectedTestIdentities).Count -eq 16) 'The IndustrialTelemetry member must freeze exactly its sixteen governed PostgreSQL identities.'
     Assert-Contract (@($telemetryMember.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$telemetryMember.diagnosticSchemas[0], 'industrial_telemetry', [StringComparison]::Ordinal)) 'IndustrialTelemetry business and CAP tables share one schema, which the member must declare.'
     Assert-MethodScopedFilter -Member $telemetryMember
     Assert-MethodScopedFilter -Member $qualityMember
     # MES：base 的既有证明加上替代料快照 1 条、OperationActualTimeSettlement 7 条原子性/并发/归属隔离证明，
     # 以及停机读面 3 条（列表行投影、按原因聚合的时长结算与名次、按原因过滤与汇总面）、报工 OEE 维度快照迁移 1 条
-    # 和 NCR 返工工单 7 条来源、物料、幂等、并发与范围隔离证明，共有 48 条真实 PostgreSQL 证明；
+    # 和 NCR 返工工单 8 条来源、物料、幂等、并发、范围隔离与追溯证明、停机原因迁移 1 条及生产统计 3 条聚合契约证明，
+    # 再保留独立协作参与者读面与自领并发的唯一 owner/participant/receipt/业务冲突证明，以及 #3010 的
+    # 返工 UoW 成功、outbox 失败回滚与外层事务归属 3 条证明，以及 #2966 的停机事件 v1/v2 跨事务并发单效、
+    # 幂等键与 eventId 两条唯一约束各自拒绝其等价错误变异、同 EventId 异业务键并发单效，以及收件箱迁移
+    # 「真重复保留最早行」与「歧义历史 fail-closed」共 6 条证明，共有 63 条真实 PostgreSQL 证明（该叙述在 main 上原写 62、与断言的 63 差 1，此处按断言更正）；再加 #3117 的直投发布时刻下界 1 条
+    # （按既有活动取下界的聚合查询与三分量归属谓词由真实 provider 执行），共 64 条；
     # CAP 的原生存储表落在独立 cap schema，业务表与 EF 侧 cap_* 表落在 mes schema，两者都必须声明才能在失败时留下完整诊断。
     $mesMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'mes-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($mesMember.expectedTestIdentities).Count -eq 48) 'The MES member must freeze exactly its forty-eight governed PostgreSQL identities.'
+    Assert-Contract (@($mesMember.expectedTestIdentities).Count -eq 67) 'The MES member must freeze exactly its sixty-seven governed PostgreSQL identities.'
+    $mesCollaborationIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.MesCollaborationPostgresTests.Reportable_scope_matches_a_registered_participant_on_postgres'
+    $mesClaimIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.OperationTaskClaimPostgresTests.Concurrent_claims_persist_one_owner_participant_and_receipt_and_reject_the_loser_on_postgres'
+    Assert-Contract (@($mesMember.expectedTestIdentities | Where-Object { [string]::Equals([string]$_, $mesCollaborationIdentity, [StringComparison]::Ordinal) }).Count -eq 1) 'The MES member must freeze the participant-only reportable-scope PostgreSQL identity exactly once.'
+    Assert-Contract (@($mesMember.expectedTestIdentities | Where-Object { [string]::Equals([string]$_, $mesClaimIdentity, [StringComparison]::Ordinal) }).Count -eq 1) 'The MES member must freeze the concurrent operation-task claim PostgreSQL identity exactly once.'
     $mesSaveBoundaryIdentities = @(
         'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_blank_defect_number_early_return_persists_only_inbox',
         'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_missing_defect_early_return_persists_only_inbox',
@@ -420,19 +525,22 @@ try {
     Assert-Contract (@($mesSaveBoundaryIdentities | Where-Object { -not $mesIdentitySet.Contains($_) }).Count -eq 0) 'The MES member must freeze all nine CAP save-boundary PostgreSQL identities.'
     Assert-Contract ([string]::Equals((@($mesMember.diagnosticSchemas) -join ','), 'mes,cap', [StringComparison]::Ordinal)) 'The MES member must declare both the mes schema and the native CAP storage schema.'
     Assert-MethodScopedFilter -Member $mesMember
-    foreach ($mesSource in @(
-            'MesCapSaveBoundaryPostgresTests.cs',
-            'MesCapSubscriptionTests.cs',
-            'MesCollaborationPostgresTests.cs',
-            'MesDowntimeReadFacePostgresTests.cs',
-            'MesMaterialSubstituteSnapshotPostgresTests.cs',
-            'MesSchedulePlanProvenancePostgresTests.cs',
-            'OperationActualTimeSettlementPostgresTests.cs',
-            'RushWorkOrderHttpPostgresTests.cs',
-            'SkuDisabledConsumerTests.cs',
-            'TelemetryProductionReportCandidatePostgresTests.cs',
-            'WorkOrderCapitalizationConcurrencyPostgresTests.cs',
-            'WorkOrderTransformationApplicationPostgresTests.cs')) {
+    # MES lane 的扫描面**从冻结身份派生**，不再手工列举。
+    # 人工名单会静默偏斜：改前它漏了 6 个已登记的 PostgreSQL 测试类
+    # （#3000 的 WorkOrderReleaseProjectionBackfillPostgresTests、两条 NcrReworkRequested*、
+    # DowntimeReasonCodeMigration、ProductionReportOeeDimensionSnapshot、WorkOrderTransformation），
+    # 而漏登记就是漏防线——Assert-LaneOwnedDatabase 根本没扫到那些文件。
+    # 身份形如 <Namespace>.<Class>.<Method>，倒数第二段即类名，类名即源文件名。
+    # 去重与排序都走序数比较器：`Sort-Object -Unique` 会折叠可忽略字符，
+    # 两个只差一个 bidi 字符的类名会被并成一个，扫描面因此静默变窄（ordinal-comparison-layers 门禁点名过这一处）。
+    $mesSourceSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($mesIdentity in @($mesMember.expectedTestIdentities)) {
+        $segments = ([string]$mesIdentity).Split('.')
+        [void]$mesSourceSet.Add("$($segments[$segments.Length - 2]).cs")
+    }
+    $mesSourceNames = [Collections.Generic.List[string]]::new([string[]]@($mesSourceSet))
+    $mesSourceNames.Sort([StringComparer]::Ordinal)
+    foreach ($mesSource in $mesSourceNames) {
         $mesSourcePath = Join-Path $repoRoot "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/$mesSource"
         Assert-Contract (Test-Path -LiteralPath $mesSourcePath -PathType Leaf) "MES lane source '$mesSource' must exist."
         Assert-LaneOwnedDatabase -SourcePath $mesSourcePath -InnerDatabaseFactory 'PostgreSqlTestDatabase.CreateAsync'
@@ -527,10 +635,10 @@ try {
         Assert-Contract (-not $redisCapIdentities.Contains($frozenIdentityKey)) 'No identity may be owned by both the postgres and redis-cap lanes.'
     }
     $erpMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'erp-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 16) 'The ERP member must freeze exactly its sixteen PostgreSQL identities.'
+    Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 17) 'The ERP member must freeze exactly its seventeen PostgreSQL identities.'
     Assert-Contract ([string]::Equals([string]$erpMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) 'ERP keeps runner-owned databases for failure diagnostics.'
     $acceptanceMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'acceptance-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($acceptanceMember.expectedTestIdentities).Count -eq 3) 'The cross-service acceptance member must freeze exactly its three PostgreSQL identities.'
+    Assert-Contract (@($acceptanceMember.expectedTestIdentities).Count -eq 8) 'The cross-service acceptance member must freeze exactly its eight PostgreSQL identities.'
     Assert-Contract ([string]::Equals((@($acceptanceMember.diagnosticSchemas) -join ','), 'industrial_telemetry,inventory,maintenance,wms', [StringComparison]::Ordinal)) 'The cross-service acceptance member must declare every schema its scenarios migrate.'
     Assert-Contract ([string]::Equals([string]$acceptanceMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) 'The cross-service acceptance member keeps runner-owned databases so its four-schema end state stays diagnosable.'
     Assert-MethodScopedFilter -Member $acceptanceMember
@@ -539,7 +647,8 @@ try {
             'backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/ErpCostAccountingPostgresAcceptanceTests.cs',
             'backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/WorkCenterMachineOverheadRatePostgresAcceptanceTests.cs',
             'backend/tests/Nerv.IIP.Business.Acceptance.Tests/RuntimeHoursMaintenancePostgresAcceptanceTests.cs',
-            'backend/tests/Nerv.IIP.Business.Acceptance.Tests/WmsInventoryRpcIdempotencyAcceptanceTests.cs')) {
+            'backend/tests/Nerv.IIP.Business.Acceptance.Tests/WmsInventoryRpcIdempotencyAcceptanceTests.cs',
+            'backend/tests/Nerv.IIP.Business.Acceptance.Tests/QualityInspectionInventoryStockGateAcceptanceTests.cs')) {
         $runnerOwnedSourcePath = Join-Path $repoRoot $runnerOwnedSource
         Assert-Contract (Test-Path -LiteralPath $runnerOwnedSourcePath -PathType Leaf) "Lane source '$runnerOwnedSource' must exist."
         $runnerOwnedSourceText = [IO.File]::ReadAllText($runnerOwnedSourcePath)
@@ -550,6 +659,10 @@ try {
     $runtimeHoursSource = [IO.File]::ReadAllText((Join-Path $repoRoot 'backend/tests/Nerv.IIP.Business.Acceptance.Tests/RuntimeHoursMaintenancePostgresAcceptanceTests.cs'))
     Assert-Contract (-not $runtimeHoursSource.Contains('EnsureCreatedAsync(', [StringComparison]::Ordinal)) 'Lane members must migrate rather than EnsureCreated, which silently skips schema creation on an existing member database.'
     Assert-Contract ($runtimeHoursSource.Contains('MigrateAsync(', [StringComparison]::Ordinal)) 'The cross-service acceptance member must create its schemas through migrations.'
+    # #2976：Quality→Inventory 来源环节门的用例同样跑在共享成员库上，同样只能靠迁移建表。
+    $stockGateSource = [IO.File]::ReadAllText((Join-Path $repoRoot 'backend/tests/Nerv.IIP.Business.Acceptance.Tests/QualityInspectionInventoryStockGateAcceptanceTests.cs'))
+    Assert-Contract (-not $stockGateSource.Contains('EnsureCreatedAsync(', [StringComparison]::Ordinal)) 'Lane members must migrate rather than EnsureCreated, which silently skips schema creation on an existing member database.'
+    Assert-Contract ($stockGateSource.Contains('MigrateAsync(', [StringComparison]::Ordinal)) 'The Quality-to-Inventory stock gate member must create its schema through migrations.'
 
     # 逐成员、逐冻结身份地把"先重置再迁移"和"重置用 CASCADE"变成门禁，而不是靠每个作者自觉。
     $resetDeclaringSources = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
@@ -686,7 +799,8 @@ try {
     $uncoveredIdentities = @(
         foreach ($policyRule in @($policyDocument.rules | Where-Object { [string]::Equals([string]$_.requiredLane, 'postgres', [StringComparison]::Ordinal) })) {
             foreach ($policyIdentity in @($policyRule.testIdentities)) {
-                if (-not $manifestIdentities.Contains([string]$policyIdentity) -and -not $exemptIdentities.Contains([string]$policyIdentity)) { [string]$policyIdentity }
+                if (-not $manifestIdentities.Contains([string]$policyIdentity) -and
+                    -not $exemptIdentities.Contains([string]$policyIdentity)) { [string]$policyIdentity }
             }
         }
     )
@@ -699,7 +813,8 @@ try {
     $mutatedUncovered = @(
         foreach ($policyRule in @($policyDocument.rules | Where-Object { [string]::Equals([string]$_.requiredLane, 'postgres', [StringComparison]::Ordinal) })) {
             foreach ($policyIdentity in @($policyRule.testIdentities)) {
-                if (-not $mutatedIdentities.Contains([string]$policyIdentity) -and -not $exemptIdentities.Contains([string]$policyIdentity)) { [string]$policyIdentity }
+                if (-not $mutatedIdentities.Contains([string]$policyIdentity) -and
+                    -not $exemptIdentities.Contains([string]$policyIdentity)) { [string]$policyIdentity }
             }
         }
     )
@@ -707,7 +822,9 @@ try {
     # deferred 登记必须写明理由，且不得被 runner 选中执行。
     foreach ($deferredMember in @($manifestDocument.members | Where-Object { [string]::Equals([string]$_.status, 'deferred', [StringComparison]::Ordinal) })) {
         Assert-Contract (-not [string]::IsNullOrWhiteSpace([string]$deferredMember.deferredReason)) "Deferred member '$($deferredMember.id)' must record why it cannot join the lane."
-        $selectedMemberIdSet = [Collections.Generic.HashSet[string]]::new([string[]]@($script:GovernedPostgresMemberIds), [StringComparer]::Ordinal)
+        # 判据锚在 workflow **实际**会选中的集合上（从 ci.yml 解析出来），不锚在受治理名单上：
+        # 后者现在由 active 推导，拿它判「deferred 未被选中」会退化成同义反复。
+        $selectedMemberIdSet = [Collections.Generic.HashSet[string]]::new([string[]]@(Get-PostgresWorkflowSelectedMemberId -WorkflowPath (Join-Path $repoRoot '.github/workflows/ci.yml')), [StringComparer]::Ordinal)
         Assert-Contract (-not $selectedMemberIdSet.Contains([string]$deferredMember.id)) "Deferred member '$($deferredMember.id)' must not be selected by the hosted job."
         $deferredRejected = $false
         try { Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId ([string]$deferredMember.id) -RepositoryRoot $repoRoot | Out-Null }
@@ -719,33 +836,114 @@ try {
     $runner = [IO.File]::ReadAllText($runnerPath)
     $workflowPath = Join-Path $repoRoot '.github/workflows/ci.yml'
     $workflow = [IO.File]::ReadAllText($workflowPath)
-    Assert-PostgresWorkflowMemberBatch -WorkflowPath $workflowPath
-    $authoritativeAssignment = "`$members = @('" + ($selectedMemberIds -join "', '") + "')"
-    Assert-Contract ($workflow.Contains($authoritativeAssignment, [StringComparison]::Ordinal)) 'The authoritative workflow assignment must select the full governed member batch.'
-    $droppedMemberCases = @(
-        foreach ($droppedMemberId in @('maintenance-device-pause-postgres', 'apphub-postgres-profile', 'masterdata-postgres-profile')) {
-            $remainingIds = @($selectedMemberIds | Where-Object { -not [string]::Equals($_, $droppedMemberId, [StringComparison]::Ordinal) })
-            @{ name = $droppedMemberId; assignment = "`$members = @('" + ($remainingIds -join "', '") + "')" }
-        }
-    )
-    foreach ($droppedMemberCase in $droppedMemberCases) {
-        $mutatedWorkflowPath = Join-Path $fixtureRoot "dropped-$($droppedMemberCase.name)-ci.yml"
-        [IO.File]::WriteAllText($mutatedWorkflowPath, $workflow.Replace($authoritativeAssignment, [string]$droppedMemberCase.assignment), [Text.UTF8Encoding]::new($false))
-        $workflowMutationRejected = $false
-        try { Assert-PostgresWorkflowMemberBatch -WorkflowPath $mutatedWorkflowPath } catch { $workflowMutationRejected = $true }
-        Assert-Contract $workflowMutationRejected "Removing $($droppedMemberCase.name) from the authoritative workflow step must fail the structural contract."
+    Assert-PostgresWorkflowAllActiveSelection -WorkflowPath $workflowPath
+
+    # NERV-3185 的核心判据：manifest 的 active 集合必须**恰等于** CI 的实际选择集。
+    # 恰等于是双向的——少选要红（本票的缺陷方向），多选也要红（选中一个 deferred 成员）。
+    # CI 侧的集合是从 ci.yml 解析出来的，不是假定的，因此下面每条变异都能真的杀掉它。
+    $manifestActiveMemberIds = @(Import-NervPostgresTestLaneMembers -ManifestPath $manifestPath -RepositoryRoot $repoRoot | ForEach-Object { [string]$_.id })
+    $workflowSelectedMemberIds = @(Get-PostgresWorkflowSelectedMemberId -WorkflowPath $workflowPath)
+    $workflowSelectedMemberIdSet = New-PostgresOrdinalSet -Values $workflowSelectedMemberIds
+    $manifestActiveMemberIdSet = New-PostgresOrdinalSet -Values $manifestActiveMemberIds
+    $unselectedActiveMemberIds = @($manifestActiveMemberIds | Where-Object { -not $workflowSelectedMemberIdSet.Contains([string]$_) })
+    Assert-Contract ($unselectedActiveMemberIds.Count -eq 0) "Every active PostgreSQL lane member must be selected by the hosted job; unselected: $($unselectedActiveMemberIds -join ', ')."
+    $unregisteredSelectedMemberIds = @($workflowSelectedMemberIds | Where-Object { -not $manifestActiveMemberIdSet.Contains([string]$_) })
+    Assert-Contract ($unregisteredSelectedMemberIds.Count -eq 0) "The hosted job must not select a member that is not an active manifest member; unexpected: $($unregisteredSelectedMemberIds -join ', ')."
+    Assert-Contract ([string]::Equals(($workflowSelectedMemberIds -join '|'), ($manifestActiveMemberIds -join '|'), [StringComparison]::Ordinal)) 'The hosted job selection set must equal the manifest active member set in manifest order.'
+    # 本票的具体实例：这条成员是 active、无 deferredReason，却曾经不在 CI 名单里，
+    # 它的 8 条真 PostgreSQL 并发用例因此跑在零个 job 上。
+    # 集合本身用 [StringComparer]::Ordinal 构造，比较即为序数；字面量先绑定成变量，
+    # 以免 .Contains('literal') 落进 ordinal 门禁的「无显式 StringComparison」形态。
+    $deviceReferenceConcurrencyMemberId = 'masterdata-device-reference-concurrency'
+    Assert-Contract ($workflowSelectedMemberIdSet.Contains($deviceReferenceConcurrencyMemberId)) 'The MasterData device-reference concurrency member must be selected by the hosted job.'
+
+    # 变异对照①（少选，本票缺陷方向）：把 -AllActiveMembers 换回硬编码名单并掉一个成员。
+    # 每条变异都单独确认红在「active 未被选中」那条判据上，而不是被相邻守卫兜住。
+    # 用显式拼接构造锚点，避免在 PowerShell 字符串里同时转义反引号续行符和换行符时出错。
+    $backtick = [string][char]0x60
+    $newline = [string][char]0x0A
+    $allActiveInvocation = './scripts/run-postgres-test-lane.ps1 ' + $backtick + $newline + '            -AllActiveMembers ' + $backtick
+    Assert-Contract ($workflow.Contains($allActiveInvocation, [StringComparison]::Ordinal)) 'The mutation fixture must start from the authoritative all-active invocation.'
+    function New-PostgresHardCodedWorkflow([string[]]$MemberIds, [switch]$CommentMasked) {
+        $assignment = '$members = @(' + "'" + ($MemberIds -join "', '") + "'" + ')'
+        $prefix = if ($CommentMasked) { '# $members = @(' + "'never-selected-sentinel'" + ')' + $newline + '          ' + $assignment } else { $assignment }
+        $replacement = $prefix + $newline + '          ./scripts/run-postgres-test-lane.ps1 ' + $backtick + $newline + '            -MemberId $members ' + $backtick
+        return $workflow.Replace($allActiveInvocation, $replacement)
     }
+    foreach ($droppedMemberId in @('masterdata-device-reference-concurrency', 'maintenance-device-pause-postgres', 'apphub-postgres-profile', 'masterdata-postgres-profile')) {
+        $remainingIds = @($manifestActiveMemberIds | Where-Object { -not [string]::Equals($_, $droppedMemberId, [StringComparison]::Ordinal) })
+        $mutatedWorkflowPath = Join-Path $fixtureRoot "dropped-$droppedMemberId-ci.yml"
+        [IO.File]::WriteAllText($mutatedWorkflowPath, (New-PostgresHardCodedWorkflow -MemberIds $remainingIds), [Text.UTF8Encoding]::new($false))
+        $mutatedSelectedMemberIds = @(Get-PostgresWorkflowSelectedMemberId -WorkflowPath $mutatedWorkflowPath)
+        $mutatedSelectedMemberIdSet = New-PostgresOrdinalSet -Values $mutatedSelectedMemberIds
+        $mutatedUnselected = @($manifestActiveMemberIds | Where-Object { -not $mutatedSelectedMemberIdSet.Contains([string]$_) })
+        Assert-Contract ($mutatedUnselected.Count -eq 1 -and [string]::Equals($mutatedUnselected[0], $droppedMemberId, [StringComparison]::Ordinal)) "Dropping '$droppedMemberId' must be reported by the active-selection contract naming exactly that member."
+        # 同一条变异也必须被结构面拒绝：回退成硬编码名单本身就是被禁止的形状。
+        $structuralRejected = $false
+        try { Assert-PostgresWorkflowAllActiveSelection -WorkflowPath $mutatedWorkflowPath } catch { $structuralRejected = $_.Exception.Message.Contains('-AllActiveMembers runner invocation', [StringComparison]::Ordinal) }
+        Assert-Contract $structuralRejected "Reverting the workflow to a hard-coded member list for '$droppedMemberId' must fail the structural contract."
+    }
+    # 变异对照②（多选，反向）：把一个 deferred 成员塞进选择集，必须红在「不得选中未登记为 active 的成员」上。
+    foreach ($deferredMember in @($manifestDocument.members | Where-Object { [string]::Equals([string]$_.status, 'deferred', [StringComparison]::Ordinal) })) {
+        $overSelectedIds = @($manifestActiveMemberIds) + @([string]$deferredMember.id)
+        $overSelectedWorkflowPath = Join-Path $fixtureRoot "over-selected-$([string]$deferredMember.id)-ci.yml"
+        [IO.File]::WriteAllText($overSelectedWorkflowPath, (New-PostgresHardCodedWorkflow -MemberIds $overSelectedIds), [Text.UTF8Encoding]::new($false))
+        $overSelectedMemberIds = @(Get-PostgresWorkflowSelectedMemberId -WorkflowPath $overSelectedWorkflowPath)
+        $overSelectedExtra = @($overSelectedMemberIds | Where-Object { -not $manifestActiveMemberIdSet.Contains([string]$_) })
+        Assert-Contract ($overSelectedExtra.Count -eq 1 -and [string]::Equals($overSelectedExtra[0], [string]$deferredMember.id, [StringComparison]::Ordinal)) "Selecting deferred member '$($deferredMember.id)' must be reported by the exact-equality contract."
+        $overSelectedSet = [Collections.Generic.HashSet[string]]::new([string[]]@($overSelectedMemberIds), [StringComparer]::Ordinal)
+        Assert-Contract ($overSelectedSet.Contains([string]$deferredMember.id)) "The deferred-selection direction must observe '$($deferredMember.id)' in the mutated selection set."
+    }
+    # 变异对照③：注释不得掩盖一条真实生效的硬编码赋值。
     $commentMaskedWorkflowPath = Join-Path $fixtureRoot 'comment-masked-dropped-last-member-ci.yml'
-    $commentMaskedAssignment = "# $authoritativeAssignment`n          `$members = @('" + (@($selectedMemberIds | Select-Object -First ($selectedMemberIds.Count - 1)) -join "', '") + "')"
-    [IO.File]::WriteAllText($commentMaskedWorkflowPath, $workflow.Replace($authoritativeAssignment, $commentMaskedAssignment), [Text.UTF8Encoding]::new($false))
-    $commentMaskedMutationRejected = $false
-    try { Assert-PostgresWorkflowMemberBatch -WorkflowPath $commentMaskedWorkflowPath } catch { $commentMaskedMutationRejected = $true }
-    Assert-Contract $commentMaskedMutationRejected 'A comment must not mask an active workflow assignment that drops a governed member.'
+    [IO.File]::WriteAllText($commentMaskedWorkflowPath, (New-PostgresHardCodedWorkflow -MemberIds @($manifestActiveMemberIds | Select-Object -First ($manifestActiveMemberIds.Count - 1)) -CommentMasked), [Text.UTF8Encoding]::new($false))
+    $commentMaskedSelectedMemberIds = @(Get-PostgresWorkflowSelectedMemberId -WorkflowPath $commentMaskedWorkflowPath)
+    $commentMaskedSelectedMemberIdSet = New-PostgresOrdinalSet -Values $commentMaskedSelectedMemberIds
+    $commentMaskedUnselected = @($manifestActiveMemberIds | Where-Object { -not $commentMaskedSelectedMemberIdSet.Contains([string]$_) })
+    Assert-Contract ($commentMaskedUnselected.Count -eq 1) 'A comment must not mask an active workflow assignment that drops a governed member.'
+
+    # 推导链的另一端：runner 的 -AllActiveMembers 必须真的跟着 manifest 走，而不是碰巧等于当前名单。
+    # 用 fixture manifest 加一个全新的 active 哨兵成员——没有任何调用方名单需要改动，它就应当被选中；
+    # 这正是本票「下一个新增的 active member 会静默重犯」所要堵死的那条路径。
+    $sentinelManifest = [IO.File]::ReadAllText($manifestPath) | ConvertFrom-Json -Depth 20
+    $sentinelSource = @($sentinelManifest.members | Where-Object { [string]::Equals([string]$_.status, 'active', [StringComparison]::Ordinal) } | Select-Object -First 1)[0]
+    $activeSentinel = $sentinelSource.PSObject.Copy()
+    $activeSentinel.id = 'active-sentinel-postgres'
+    $sentinelManifest.members = @($sentinelManifest.members) + @($activeSentinel)
+    $sentinelManifestPath = Join-Path $fixtureRoot 'active-sentinel-manifest.json'
+    [IO.File]::WriteAllText($sentinelManifestPath, (($sentinelManifest | ConvertTo-Json -Depth 20) + "`n"), [Text.UTF8Encoding]::new($false))
+    $sentinelResolvedIds = @(Import-NervPostgresTestLaneMembers -ManifestPath $sentinelManifestPath -RepositoryRoot $repoRoot | ForEach-Object { [string]$_.id })
+    Assert-Contract ([string]::Equals(($sentinelResolvedIds -join '|'), ((@($manifestActiveMemberIds) + @('active-sentinel-postgres')) -join '|'), [StringComparison]::Ordinal)) 'All-active resolution must pick up a newly registered active member in manifest order without any caller-owned member list.'
+    # 反向：哨兵改成 deferred 后必须被排除。
+    $deferredSentinelManifest = [IO.File]::ReadAllText($sentinelManifestPath) | ConvertFrom-Json -Depth 20
+    $deferredSentinel = @($deferredSentinelManifest.members | Where-Object { [string]::Equals([string]$_.id, 'active-sentinel-postgres', [StringComparison]::Ordinal) })[0]
+    $deferredSentinel.status = 'deferred'
+    $deferredSentinel | Add-Member -NotePropertyName 'deferredReason' -NotePropertyValue '契约夹具：验证 all-active 推导会排除 deferred 成员。' -Force
+    $deferredSentinelManifestPath = Join-Path $fixtureRoot 'deferred-sentinel-manifest.json'
+    [IO.File]::WriteAllText($deferredSentinelManifestPath, (($deferredSentinelManifest | ConvertTo-Json -Depth 20) + "`n"), [Text.UTF8Encoding]::new($false))
+    $deferredSentinelResolvedIds = @(Import-NervPostgresTestLaneMembers -ManifestPath $deferredSentinelManifestPath -RepositoryRoot $repoRoot | ForEach-Object { [string]$_.id })
+    Assert-Contract ([string]::Equals(($deferredSentinelResolvedIds -join '|'), ($manifestActiveMemberIds -join '|'), [StringComparison]::Ordinal)) 'All-active resolution must exclude a member after its manifest status becomes deferred.'
+    # 空 active 集合必须失败关闭，而不是静默跑零个成员。
+    $zeroActiveManifest = [IO.File]::ReadAllText($manifestPath) | ConvertFrom-Json -Depth 20
+    foreach ($zeroActiveMember in @($zeroActiveManifest.members)) {
+        if ([string]::Equals([string]$zeroActiveMember.status, 'active', [StringComparison]::Ordinal)) {
+            $zeroActiveMember.status = 'deferred'
+            $zeroActiveMember | Add-Member -NotePropertyName 'deferredReason' -NotePropertyValue '契约夹具：验证空 active 集合失败关闭。' -Force
+        }
+    }
+    $zeroActiveManifestPath = Join-Path $fixtureRoot 'zero-active-manifest.json'
+    [IO.File]::WriteAllText($zeroActiveManifestPath, (($zeroActiveManifest | ConvertTo-Json -Depth 20) + "`n"), [Text.UTF8Encoding]::new($false))
+    $zeroActiveRejected = $false
+    try { Import-NervPostgresTestLaneMembers -ManifestPath $zeroActiveManifestPath -RepositoryRoot $repoRoot | Out-Null }
+    catch { $zeroActiveRejected = $_.Exception.Message.Contains('does not contain any active members', [StringComparison]::Ordinal) }
+    Assert-Contract $zeroActiveRejected 'All-active resolution must fail closed on an empty active set instead of selecting nothing.'
+    # -MemberId 与 -AllActiveMembers 必须互斥，否则两种选择口径可以同时出现在一次调用里。
+    Assert-Contract ($runner.Contains("ParameterSetName = 'AllActiveMembers'", [StringComparison]::Ordinal) -and $runner.Contains("ParameterSetName = 'SelectedMembers'", [StringComparison]::Ordinal)) 'The runner must expose all-active and explicit selection as mutually exclusive parameter sets.'
     Assert-Contract ($runner.Contains('[string[]] $MemberId', [StringComparison]::Ordinal)) 'The runner must accept an explicit ordered member batch.'
     Assert-Contract ($runner.Contains('foreach ($selectedMemberId in $MemberId)', [StringComparison]::Ordinal)) 'The runner must execute every selected member instead of authenticating only the pilot.'
     Assert-Contract ($runner.Contains("Join-Path `$ResultsDirectory ([string]`$member.id)", [StringComparison]::Ordinal)) 'Each selected member must own an isolated TRX directory.'
     Assert-Contract ($runner.Contains('$summary.members = @($memberSummaries)', [StringComparison]::Ordinal)) 'The dependency summary must retain per-member evidence.'
-    Assert-Contract ($runner.Contains("`$memberSummaries.Count -ne `$MemberId.Count", [StringComparison]::Ordinal)) 'The aggregate runner must reject incomplete member execution.'
+    Assert-Contract ($runner.Contains("`$memberSummaries.Count -ne `$selectedMemberIds.Count", [StringComparison]::Ordinal)) 'The aggregate runner must reject incomplete member execution.'
     Assert-Contract ($runner.Contains("GetEnvironmentVariable('NERV_IIP_TEST_POSTGRES')", [StringComparison]::Ordinal)) 'The runner must consume the frozen external PostgreSQL variable.'
     Assert-Contract (-not $runner.Contains('NERV_IIP_TEST_POSTGRES_ADMIN', [StringComparison]::Ordinal) -and -not $workflow.Contains('NERV_IIP_TEST_POSTGRES_ADMIN', [StringComparison]::Ordinal)) 'No CI-only PostgreSQL connection-string contract may be introduced.'
     Assert-Contract ($runner.Contains('$databaseCreated = $true', [StringComparison]::Ordinal) -and $runner.Contains('if ($databaseCreated)', [StringComparison]::Ordinal)) 'Cleanup must only target a database created by this runner.'

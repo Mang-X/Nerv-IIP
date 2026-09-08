@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.MasterData.Domain;
@@ -17,6 +20,7 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkillAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamMemberAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ToolingAssetAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UnitOfMeasureAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UomConversionAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate;
@@ -80,6 +84,7 @@ public sealed class MasterDataSchemaConventionTests
             typeof(CodeCounter),
             typeof(CodeIdempotencyKey),
             typeof(MasterDataLifecycleAuditEntry),
+            typeof(ToolingAuditEntry),
         };
 
         var failures = new List<string>();
@@ -89,6 +94,83 @@ public sealed class MasterDataSchemaConventionTests
         failures.AddRange(SchemaConventionAssertions.MigrationsHistoryTableIsInSchema(fixture.DbContext, MasterDataFacts.ServiceName, MasterDataFacts.Schema));
 
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+    }
+
+    [Fact]
+    public void Tooling_audit_schema_has_append_only_identity_and_target_indexes()
+    {
+        using var fixture = CreateFixture();
+        var entityType = fixture.DbContext.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(ToolingAuditEntry));
+        Assert.NotNull(entityType);
+
+        var operationIndex = Assert.Single(entityType.GetIndexes(), candidate =>
+            candidate.IsUnique &&
+            candidate.Properties.Select(property => property.Name)
+                .SequenceEqual(["OrganizationId", "EnvironmentId", "OperationId"]));
+        Assert.Equal("ux_tooling_audit_operation", operationIndex.GetDatabaseName());
+
+        var targetIndex = Assert.Single(entityType.GetIndexes(), candidate =>
+            !candidate.IsUnique &&
+            candidate.Properties.Select(property => property.Name)
+                .SequenceEqual(["OrganizationId", "EnvironmentId", "ToolingCode", "OccurredAtUtc"]));
+        Assert.Equal("ix_tooling_audit_target_time", targetIndex.GetDatabaseName());
+        var constraints = entityType.GetCheckConstraints().ToDictionary(constraint => constraint.Name!);
+        Assert.Equal(
+            "\"OperationKind\" IN ('tooling-register', 'tooling-status', 'tooling-usage')",
+            constraints["ck_tooling_audit_operation_kind"].Sql);
+        Assert.Equal(
+            "(\"OperationKind\" = 'tooling-register' AND \"BeforeStatus\" IS NULL AND \"AfterStatus\" = 'Available' AND \"BeforeUsageCount\" IS NULL AND \"AfterUsageCount\" = 0 AND \"UsageDelta\" IS NULL AND \"Reason\" IS NULL) OR (\"OperationKind\" = 'tooling-status' AND \"BeforeStatus\" IS NOT NULL AND \"AfterStatus\" IS NOT NULL AND \"BeforeUsageCount\" IS NULL AND \"AfterUsageCount\" IS NULL AND \"UsageDelta\" IS NULL AND \"Reason\" IS NOT NULL) OR (\"OperationKind\" = 'tooling-usage' AND \"BeforeStatus\" IS NULL AND \"AfterStatus\" IS NULL AND \"BeforeUsageCount\" >= 0 AND \"AfterUsageCount\" = \"BeforeUsageCount\" + \"UsageDelta\" AND \"UsageDelta\" > 0 AND \"Reason\" IS NULL)",
+            constraints["ck_tooling_audit_summary_shape"].Sql);
+    }
+
+    [Fact]
+    public void Tooling_audit_migration_installs_database_append_only_trigger()
+    {
+        using var fixture = CreateFixture();
+        var script = fixture.DbContext.GetService<IMigrator>().GenerateScript(
+            "20260728232043_AddPrincipalScopeContextAudit",
+            "20260825081539_AddToolingOperationAudit");
+
+        Assert.Contains("CREATE TRIGGER trg_tooling_audit_append_only", script, StringComparison.Ordinal);
+        Assert.Contains("RETURNS trigger", script, StringComparison.Ordinal);
+        Assert.Contains("LANGUAGE plpgsql", script, StringComparison.Ordinal);
+        Assert.Contains(
+            "RAISE EXCEPTION 'business_masterdata.tooling_audit_entries is append-only'",
+            script,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "BEFORE UPDATE OR DELETE ON business_masterdata.tooling_audit_entries",
+            script,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "EXECUTE FUNCTION business_masterdata.reject_tooling_audit_mutation()",
+            script,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Tooling_audit_down_script_rejects_existing_facts_before_destructive_statements()
+    {
+        using var fixture = CreateFixture();
+        var script = fixture.DbContext.GetService<IMigrator>().GenerateScript(
+            "20260825081539_AddToolingOperationAudit",
+            "20260728232043_AddPrincipalScopeContextAudit");
+
+        const string guard = "IF EXISTS (\n        SELECT 1\n        FROM business_masterdata.tooling_audit_entries\n    ) THEN";
+        Assert.Contains(guard, script, StringComparison.Ordinal);
+        Assert.Contains(
+            "RAISE EXCEPTION\n            'Cannot downgrade AddToolingOperationAudit while tooling audit facts exist. Preserve the evidence and roll forward with a corrective migration.'",
+            script,
+            StringComparison.Ordinal);
+        var guardPosition = script.IndexOf(guard, StringComparison.Ordinal);
+        var dropTablePosition = script.IndexOf(
+            "DROP TABLE business_masterdata.tooling_audit_entries",
+            StringComparison.Ordinal);
+        var dropFunctionPosition = script.IndexOf(
+            "DROP FUNCTION IF EXISTS business_masterdata.reject_tooling_audit_mutation()",
+            StringComparison.Ordinal);
+        Assert.True(guardPosition >= 0 && guardPosition < dropTablePosition, script);
+        Assert.True(dropTablePosition < dropFunctionPosition, script);
     }
 
     [Fact]

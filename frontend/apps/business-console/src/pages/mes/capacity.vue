@@ -68,7 +68,7 @@ const impactSegments = computed(() =>
     },
   ]),
 )
-const errorMessage = computed(() => formatError(capacityImpactsError.value))
+const errorMessage = computed(() => inlineErrorMessage(capacityImpactsError.value))
 watch(statusFilter, (value) => {
   filters.status = value === 'all' ? undefined : value
 })
@@ -132,9 +132,6 @@ function formatDateTime(value?: string | null) {
   if (!value) return '无'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 </script>
 
@@ -208,8 +205,6 @@ function formatError(error: unknown) {
       </template>
     </NvToolbar>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
-
     <NvDataTable
       manual
       :page="page"
@@ -221,9 +216,12 @@ function formatError(error: unknown) {
       :rows="capacityImpacts"
       row-key="impactId"
       :loading="capacityImpactsPending"
+      :error="capacityImpactsError"
+      :error-message="errorMessage"
       :searchable="false"
       :column-settings="false"
       empty-message="暂无产能影响。先在「设备与停机」登记停机，再回到这里跟踪对产线产能的影响。"
+      @retry="refreshCapacityImpacts"
     >
       <template #cell-workCenterId="{ row }">
         <CodeWithNameCell :code="workCenterCode(row)" :name="workCenterName(row)" fallback="无" />

@@ -16,6 +16,7 @@ public static class InternalServiceAuthentication
     public const string SchemeName = "InternalService";
     public const string PolicyName = "InternalService";
     public const string DefaultDevelopmentBearerToken = "local-internal-service-token";
+    private const string AuthorizationOnlyDefaultSchemeName = "InternalService.AuthorizationOnly";
 
     public static IServiceCollection AddNervIipInternalServiceTokenProvider(
         this IServiceCollection services,
@@ -60,9 +61,29 @@ public static class InternalServiceAuthentication
         if (!services.Any(descriptor => descriptor.ServiceType == typeof(InternalServiceAuthenticationSchemeRegistration)))
         {
             services.TryAddSingleton<InternalServiceAuthenticationSchemeRegistration>();
+            services.AddOptions<InternalServiceAuthenticationOptions>(SchemeName)
+                .Configure<IInternalServiceTokenProvider>((options, tokenProvider) =>
+                    options.BearerToken = tokenProvider.BearerToken);
             builder.AddScheme<InternalServiceAuthenticationOptions, InternalServiceAuthenticationHandler>(
                 SchemeName,
-                options => options.BearerToken = ResolveBearerToken(configuration, environment));
+                _ => { });
+            if (!useAsDefaultScheme)
+            {
+                builder.AddScheme<AuthenticationSchemeOptions, AuthorizationOnlyDefaultAuthenticationHandler>(
+                    AuthorizationOnlyDefaultSchemeName,
+                    _ => { });
+                services.PostConfigure<AuthenticationOptions>(options =>
+                {
+                    if (HasConfiguredDefaultScheme(options))
+                    {
+                        return;
+                    }
+
+                    // Keep unqualified authentication passive. The InternalService policy names its scheme,
+                    // while a host default registered before or after this method remains authoritative.
+                    options.DefaultScheme = AuthorizationOnlyDefaultSchemeName;
+                });
+            }
         }
 
         AddInternalServicePolicy(services);
@@ -79,6 +100,14 @@ public static class InternalServiceAuthentication
                 policy.RequireClaim("token_type", "internal_service");
             }));
     }
+
+    private static bool HasConfiguredDefaultScheme(AuthenticationOptions options)
+        => !string.IsNullOrWhiteSpace(options.DefaultScheme)
+           || !string.IsNullOrWhiteSpace(options.DefaultAuthenticateScheme)
+           || !string.IsNullOrWhiteSpace(options.DefaultChallengeScheme)
+           || !string.IsNullOrWhiteSpace(options.DefaultForbidScheme)
+           || !string.IsNullOrWhiteSpace(options.DefaultSignInScheme)
+           || !string.IsNullOrWhiteSpace(options.DefaultSignOutScheme);
 
     internal static string ResolveBearerToken(IConfiguration configuration, IHostEnvironment environment)
     {
@@ -97,6 +126,16 @@ public static class InternalServiceAuthentication
     }
 
     private sealed class InternalServiceAuthenticationSchemeRegistration;
+}
+
+internal sealed class AuthorizationOnlyDefaultAuthenticationHandler(
+    IOptionsMonitor<AuthenticationSchemeOptions> options,
+    ILoggerFactory logger,
+    UrlEncoder encoder)
+    : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
+{
+    protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+        => Task.FromResult(AuthenticateResult.NoResult());
 }
 
 public interface IInternalServiceTokenProvider

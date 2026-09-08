@@ -225,6 +225,11 @@ public interface IBusinessMesClient
         BusinessConsoleMesListWithoutStatusRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleMesProductionStatisticsResponse> QueryProductionStatisticsAsync(
+        string internalBearerToken,
+        BusinessConsoleMesProductionStatisticsRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleMesProductionReportDetailResponse> GetProductionReportAsync(
         string internalBearerToken,
         string reportNo,
@@ -299,15 +304,21 @@ public interface IBusinessMesClient
         BusinessConsoleMesListRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleMesShiftHandoverDetail> GetShiftHandoverAsync(
+        string internalBearerToken,
+        string handoverId,
+        BusinessConsoleMesShiftHandoverDetailRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleAcceptedResponse> CreateShiftHandoverAsync(
         string internalBearerToken,
-        BusinessConsoleMesCreateShiftHandoverRequest request,
+        BusinessConsoleMesCreateShiftHandoverForwardRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleAcceptedResponse> AcceptShiftHandoverAsync(
         string internalBearerToken,
         string handoverId,
-        BusinessConsoleMesAcceptShiftHandoverRequest request,
+        BusinessConsoleMesAcceptShiftHandoverForwardRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleMesTraceabilityResponse> GetWorkOrderTraceabilityAsync(
@@ -599,13 +610,14 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             null,
             cancellationToken);
 
-    public Task<BusinessConsoleMesReverseProductionReportResponse> ReverseProductionReportAsync(
+    public async Task<BusinessConsoleMesReverseProductionReportResponse> ReverseProductionReportAsync(
         string internalBearerToken,
         string reportNo,
         BusinessConsoleMesReverseProductionReportRequest request,
         string actor,
-        CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleMesReverseProductionReportResponse>(
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamReverseProductionReportResponse>(
             internalBearerToken,
             HttpMethod.Post,
             $"/api/business/v1/mes/production-reports/{Uri.EscapeDataString(reportNo)}/reverse",
@@ -617,6 +629,22 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
                 request.ReversedAtUtc,
                 request.IdempotencyKey),
             cancellationToken);
+
+        if (response.ProductionReportId is null ||
+            response.ProductionReportId.Id == Guid.Empty ||
+            string.IsNullOrWhiteSpace(response.ReportNo) ||
+            string.IsNullOrWhiteSpace(response.OriginalReportNo))
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
+
+        return new BusinessConsoleMesReverseProductionReportResponse(
+            response.ProductionReportId.Id.ToString(),
+            response.ReportNo,
+            response.OriginalReportNo);
+    }
 
     public async Task<BusinessConsoleMesCreateReceiptResponse> RetryFinishedGoodsReceiptInventoryPostingAsync(
         string internalBearerToken,
@@ -849,6 +877,37 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             "/api/business/v1/mes/production-reports?" + ListQueryWithoutStatus(request),
             null,
             cancellationToken);
+
+    public async Task<BusinessConsoleMesProductionStatisticsResponse> QueryProductionStatisticsAsync(
+        string internalBearerToken,
+        BusinessConsoleMesProductionStatisticsRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<BusinessConsoleMesProductionStatisticsResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/mes/production-statistics?" + ProductionStatisticsQuery(request),
+            null,
+            cancellationToken);
+
+        if (!string.Equals(response.OrganizationId, request.OrganizationId, StringComparison.Ordinal) ||
+            !string.Equals(response.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal) ||
+            response.Dimension != request.Dimension ||
+            response.WindowStartUtc != request.WindowStartUtc ||
+            response.WindowEndUtc != request.WindowEndUtc ||
+            response.Skip != request.Skip ||
+            response.Take != request.Take ||
+            response.Items is null ||
+            response.Items.Any(item =>
+                item.Dimension != request.Dimension || item.DegradedReasons is null))
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
+
+        return response;
+    }
 
     public Task<BusinessConsoleMesProductionReportDetailResponse> GetProductionReportAsync(
         string internalBearerToken,
@@ -1104,9 +1163,22 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             null,
             cancellationToken);
 
+    public Task<BusinessConsoleMesShiftHandoverDetail> GetShiftHandoverAsync(
+        string internalBearerToken,
+        string handoverId,
+        BusinessConsoleMesShiftHandoverDetailRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesShiftHandoverDetail>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/mes/shift-handovers/{Uri.EscapeDataString(handoverId)}?" +
+            ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken);
+
     public Task<BusinessConsoleAcceptedResponse> CreateShiftHandoverAsync(
         string internalBearerToken,
-        BusinessConsoleMesCreateShiftHandoverRequest request,
+        BusinessConsoleMesCreateShiftHandoverForwardRequest request,
         CancellationToken cancellationToken) =>
         SendAcceptedAsync(
             internalBearerToken,
@@ -1118,7 +1190,7 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
     public Task<BusinessConsoleAcceptedResponse> AcceptShiftHandoverAsync(
         string internalBearerToken,
         string handoverId,
-        BusinessConsoleMesAcceptShiftHandoverRequest request,
+        BusinessConsoleMesAcceptShiftHandoverForwardRequest request,
         CancellationToken cancellationToken) =>
         SendAcceptedAsync(
             internalBearerToken,
@@ -1355,6 +1427,20 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             ("skip", request.Skip),
             ("take", request.Take));
 
+    private static string ProductionStatisticsQuery(BusinessConsoleMesProductionStatisticsRequest request) =>
+        Query(
+            ("organizationId", request.OrganizationId),
+            ("environmentId", request.EnvironmentId),
+            ("dimension", JsonNamingPolicy.CamelCase.ConvertName(request.Dimension.ToString())),
+            ("windowStartUtc", request.WindowStartUtc),
+            ("windowEndUtc", request.WindowEndUtc),
+            ("businessDate", request.BusinessDate),
+            ("shiftCode", request.ShiftCode),
+            ("workCenterId", request.WorkCenterId),
+            ("skuId", request.SkuId),
+            ("skip", request.Skip),
+            ("take", request.Take));
+
     private static string ProductionPlanListQuery(BusinessConsoleMesProductionPlanListRequest request) =>
         Query(
             ("organizationId", request.OrganizationId),
@@ -1407,6 +1493,11 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         string? ReportNo);
 
     private sealed record DownstreamProductionReportId(Guid Id);
+
+    private sealed record DownstreamReverseProductionReportResponse(
+        DownstreamProductionReportId? ProductionReportId,
+        string? ReportNo,
+        string? OriginalReportNo);
 
     private sealed record DownstreamCreateFinishedGoodsReceiptRequestResponse(
         DownstreamFinishedGoodsReceiptRequestId? FinishedGoodsReceiptRequestId,

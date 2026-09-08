@@ -197,6 +197,8 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
         {
             "receiving" => "receiving",
             "operation" => "in-process",
+            // 首件不合格发生在制程内，与工序检验同属过程不合格，不另立 NCR 来源词。
+            "first-article" => "in-process",
             "final" => "final",
             "customer-return" => "customer-return",
             _ => throw new InvalidOperationException($"Inspection source type '{inspectionSourceType}' cannot open an NCR."),

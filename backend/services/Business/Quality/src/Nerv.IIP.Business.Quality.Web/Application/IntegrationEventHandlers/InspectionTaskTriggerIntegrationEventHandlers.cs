@@ -115,7 +115,7 @@ public sealed class ErpPurchaseReceiptRecordedIntegrationEventHandlerForCreateIn
                 integrationEvent.OrganizationId,
                 integrationEvent.EnvironmentId,
                 sourceType: QualityInspectionSourceTypes.Receiving,
-                sourceService: "erp",
+                sourceService: QualityInspectionSourceServices.Erp,
                 sourceDocumentId: payload.PurchaseReceiptNo,
                 sourceDocumentLineId: line.LineReference,
                 skuCode: line.SkuCode,
@@ -168,8 +168,8 @@ public sealed class MesOperationCompletedIntegrationEventHandlerForCreateInspect
             dbContext,
             integrationEvent.OrganizationId,
             integrationEvent.EnvironmentId,
-            sourceType: "operation",
-            sourceService: "mes",
+            sourceType: QualityInspectionSourceTypes.Operation,
+            sourceService: QualityInspectionSourceServices.Mes,
             sourceDocumentId: payload.WorkOrderId,
             sourceDocumentLineId: payload.OperationTaskId,
             skuCode: payload.SkuCode,
@@ -215,8 +215,8 @@ public sealed class MesFinishedGoodsReceiptRequestedIntegrationEventHandlerForCr
             dbContext,
             integrationEvent.OrganizationId,
             integrationEvent.EnvironmentId,
-            sourceType: "final",
-            sourceService: "mes",
+            sourceType: QualityInspectionSourceTypes.Final,
+            sourceService: QualityInspectionSourceServices.Mes,
             sourceDocumentId: payload.RequestNo,
             sourceDocumentLineId: payload.WorkOrderId,
             skuCode: payload.SkuCode,
@@ -228,6 +228,151 @@ public sealed class MesFinishedGoodsReceiptRequestedIntegrationEventHandlerForCr
             sourceDocumentType: "finished-goods-receipt",
             occurredAtUtc: integrationEvent.OccurredAtUtc,
             triggerIdempotencyKey: integrationEvent.IdempotencyKey,
+            cancellationToken);
+        await InspectionTaskGeneration.SaveChangesIgnoreDuplicateTasksAsync(dbContext, cancellationToken);
+    }
+}
+
+/// <summary>
+/// 首件检验任务的**唯一身份**（#2779）：写面按此键建任务，读面按同一键定位任务，两侧不得各写一份等价谓词。
+/// </summary>
+public static class FirstArticleInspection
+{
+    /// <summary>首件任务与首件检验档的来源环节，等于 <c>InspectionPlan.Category</c>。</summary>
+    public const string SourceType = QualityInspectionSourceTypes.FirstArticle;
+
+    /// <summary>首件任务的来源服务：触发事实来自 MES 报工。</summary>
+    public const string SourceService = QualityInspectionSourceServices.Mes;
+
+    /// <summary>首件取样数量固定为 1 个报工单位，不随本次报工良品数变动。</summary>
+    public const decimal SampleQuantity = 1m;
+
+    /// <summary>
+    /// 首件检验记录的来源单据身份。<c>InspectionRecord</c> 没有来源行字段，其唯一键
+    /// <c>ux_inspection_records_source_attempt</c> 也不含工序，所以首件必须把工序编进来源单据身份里；
+    /// 否则同一工单同一 SKU 的两道工序会共用一条检验记录——后判定的那道工序会静默复用前一道的结论。
+    /// </summary>
+    public static string SourceDocumentId(string workOrderId, string operationId) =>
+        $"{workOrderId}:{operationId}";
+
+    /// <summary>
+    /// <see cref="SourceDocumentId"/> 的逆函数，与编码点同住一处（#3191）。下游服务不得自行按
+    /// <c>:</c> 切这串复合身份——那等于把 Quality 的内部编码约定复制一份到别的服务里。
+    /// </summary>
+    public static bool TryParseSourceDocumentId(string? sourceDocumentId, out string workOrderId, out string operationId)
+    {
+        workOrderId = string.Empty;
+        operationId = string.Empty;
+        if (string.IsNullOrWhiteSpace(sourceDocumentId))
+        {
+            return false;
+        }
+
+        var segments = sourceDocumentId.Split(':');
+        if (segments.Length != 2 || segments[0].Length == 0 || segments[1].Length == 0)
+        {
+            return false;
+        }
+
+        workOrderId = segments[0];
+        operationId = segments[1];
+        return true;
+    }
+
+    /// <summary>
+    /// 按「工单 + 工序」构成，不用事件 <c>IdempotencyKey</c>，因此同一工序多次换型、多次报工只开一张任务；
+    /// 它同时是 <c>ux_inspection_tasks_scope_trigger_key</c> 上的读面定位键。
+    /// </summary>
+    public static string TriggerIdempotencyKey(
+        string organizationId,
+        string environmentId,
+        string workOrderId,
+        string operationId) =>
+        $"quality:first-article:{organizationId}:{environmentId}:{workOrderId}:{operationId}";
+}
+
+/// <summary>
+/// 首件触发点（#2779）：工单工序开工／换型后的第一件报工开出 <c>first-article</c> 检验任务。
+/// 报工事件不带换型标识，因此「换型」与「开工」在事件面不可分辨，同一工序只开一张首件任务。
+/// </summary>
+[IntegrationEventConsumer(nameof(ProductionReportRecordedIntegrationEvent), ConsumerName)]
+public sealed class MesProductionReportRecordedIntegrationEventHandlerForCreateFirstArticleInspectionTask(
+    ApplicationDbContext dbContext,
+    IIntegrationEventDeadLetterStore deadLetterStore)
+    : IIntegrationEventHandler<ProductionReportRecordedIntegrationEvent>, ICapSubscribe
+{
+    public const string ConsumerName = "business-quality.mes-production-report-first-article-inspection";
+
+    private readonly IntegrationEventConsumerGuard<ProductionReportRecordedIntegrationEvent> consumerGuard = new(
+        new IntegrationEventEnvelopeValidator(),
+        deadLetterStore,
+        new IntegrationEventConsumerOptions(
+            ConsumerName,
+            MesIntegrationEventTypes.ProductionReportRecorded,
+            MesIntegrationEventVersions.V1));
+
+    public Task HandleAsync(ProductionReportRecordedIntegrationEvent integrationEvent, CancellationToken cancellationToken) =>
+        consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
+
+    [CapSubscribe(nameof(ProductionReportRecordedIntegrationEvent), Group = ConsumerName)]
+    public Task HandleCapAsync(ProductionReportRecordedIntegrationEvent integrationEvent, CancellationToken cancellationToken) =>
+        HandleAsync(integrationEvent, cancellationToken);
+
+    private async Task HandleValidEventAsync(
+        ProductionReportRecordedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken)
+    {
+        var payload = integrationEvent.Payload;
+        if (payload.IsReversal)
+        {
+            return;
+        }
+
+        // 首件检验档按「SKU + 工序工作中心」配置，而报工事件不带 SKU；工单发布事实
+        // （mes.WorkOrderReleased）在 Quality 内已按工单工序落成档案，SKU 与工作中心都从那里取。
+        // 报工先于发布到达时该行尚未落库，此处放过——读面对同一情形回 not-synchronized，门禁照拒。
+        //
+        // 工作中心**不取 payload.WorkCenterId**（#2780）：读面 ResolveMissingTaskStatusAsync 拿
+        // 这一行的 WorkCenterId 去 MatchPlanAsync，触发点若改用报工事件里的那一个，两侧就会对同一道
+        // 工序给出不同答案——读面命中档回 not-opened（门禁放行），触发点 plan is null 静默 return，
+        // 任务永不开出，于是该工序**每一次**报工都被放行、门禁永久失效。两侧必须由同一个事实驱动。
+        // 这也正是域内既有的不变量：PeriodicInspectionOperation.RecordProductionReport 在工单已发布时
+        // 就要求报工的工作中心等于发布事实的工作中心，不等即判为无效业务事实。
+        var operation = await dbContext.PeriodicInspectionOperations
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == integrationEvent.OrganizationId
+                && x.EnvironmentId == integrationEvent.EnvironmentId
+                && x.WorkOrderId == payload.WorkOrderId
+                && x.OperationId == payload.OperationTaskId)
+            .Select(x => new { x.SkuCode, x.WorkCenterId })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (operation is null || string.IsNullOrWhiteSpace(operation.SkuCode))
+        {
+            return;
+        }
+
+        await InspectionTaskGeneration.TryAddTaskAsync(
+            dbContext,
+            integrationEvent.OrganizationId,
+            integrationEvent.EnvironmentId,
+            sourceType: FirstArticleInspection.SourceType,
+            sourceService: FirstArticleInspection.SourceService,
+            sourceDocumentId: FirstArticleInspection.SourceDocumentId(payload.WorkOrderId, payload.OperationTaskId),
+            sourceDocumentLineId: payload.OperationTaskId,
+            skuCode: operation.SkuCode,
+            quantity: FirstArticleInspection.SampleQuantity,
+            uomCode: payload.UomCode,
+            batchNo: null,
+            serialNo: null,
+            workCenterId: operation.WorkCenterId,
+            sourceDocumentType: null,
+            occurredAtUtc: integrationEvent.OccurredAtUtc,
+            triggerIdempotencyKey: FirstArticleInspection.TriggerIdempotencyKey(
+                integrationEvent.OrganizationId,
+                integrationEvent.EnvironmentId,
+                payload.WorkOrderId,
+                payload.OperationTaskId),
             cancellationToken);
         await InspectionTaskGeneration.SaveChangesIgnoreDuplicateTasksAsync(dbContext, cancellationToken);
     }
@@ -405,7 +550,7 @@ internal static class InspectionTaskGeneration
             || message.Contains("UNIQUE constraint failed", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static Task<InspectionPlan?> MatchPlanAsync(
+    public static Task<InspectionPlan?> MatchPlanAsync(
         ApplicationDbContext dbContext,
         string organizationId,
         string environmentId,

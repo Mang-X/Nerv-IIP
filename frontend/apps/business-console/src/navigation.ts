@@ -196,6 +196,12 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           to: { path: '/master-data/devices' },
           requiredPermissions: [P.masterDataResourcesRead],
         },
+        {
+          title: '工装与模具',
+          icon: WrenchIcon,
+          to: { path: '/master-data/tooling' },
+          requiredPermissions: [P.masterDataResourcesRead],
+        },
       ],
     },
     {
@@ -512,6 +518,12 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           title: '报工记录',
           icon: ClipboardCheckIcon,
           to: { path: '/mes/production-reports' },
+          requiredPermissions: [P.mesReportingRead],
+        },
+        {
+          title: '生产日报',
+          icon: TrendingUpIcon,
+          to: { path: '/mes/reports' },
           requiredPermissions: [P.mesReportingRead],
         },
         {

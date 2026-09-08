@@ -72,7 +72,7 @@ const { page, pageSize } = usePagedList(filters, {
  */
 const listErrorMessage = computed(() =>
   wcsTasksError.value
-    ? `取不到设备任务列表，设备执行情况无法判断：${formatError(wcsTasksError.value)}`
+    ? `取不到设备任务列表，设备执行情况无法判断：${inlineErrorMessage(wcsTasksError.value)}`
     : '',
 )
 
@@ -297,9 +297,6 @@ function formatDateTime(value?: string | null) {
   if (!value) return '—'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 </script>
 

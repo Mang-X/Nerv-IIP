@@ -135,7 +135,7 @@ const sortedRows = computed(() => {
 const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
 const pagedRows = computed(() => sortedRows.value)
 
-const listErrorMessage = computed(() => formatError(codesError.value))
+const listErrorMessage = computed(() => inlineErrorMessage(codesError.value))
 
 const columns: NvDataTableColumn<BusinessConsoleResourceItem>[] = [
   { key: 'code', header: '编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
@@ -269,9 +269,6 @@ function syncFormOnOpen(open: boolean) {
   createForm.organizationId = filters.organizationId
   createForm.environmentId = filters.environmentId
   createForm.codeSet = selectedCodeSet.value
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 function isNonEmpty(value: string) {
   return value.trim().length > 0

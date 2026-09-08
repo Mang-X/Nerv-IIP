@@ -845,7 +845,14 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
           <template v-else-if="bodyState === 'error'">
             <TableRow class="hover:bg-transparent">
               <TableCell :colspan="colSpan" class="h-40 p-0">
-                <div class="flex flex-col items-center justify-center gap-2 py-10 text-center">
+                <!-- role="alert"（= assertive + atomic 的活动区域）承担读屏播报：
+                     列表已渲染时分页失败，错误面板是唯一变化的部分，不播报读屏用户
+                     察觉不到。此前由各页面手写错误行携带，页面改接组件一等 error
+                     态后无人承担。包住整个插槽，调用点自定义呈现同样被播报。 -->
+                <div
+                  role="alert"
+                  class="flex flex-col items-center justify-center gap-2 py-10 text-center"
+                >
                   <slot name="error" :message="resolvedErrorMessage" :error="error">
                     <div class="nv-dt-state-icon nv-dt-state-icon--error">
                       <TriangleAlertIcon class="size-5" aria-hidden="true" />

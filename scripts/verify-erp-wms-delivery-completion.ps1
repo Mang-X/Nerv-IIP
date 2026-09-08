@@ -105,7 +105,7 @@ function Invoke-Man527DiagnosticCommand {
         Write-Man527DiagnosticFile -Path $OutputPath -Content $result.Stdout
     }
     catch {
-        Write-Man527DiagnosticFile -Path $OutputPath -Content "Diagnostic command failed: $($_.Exception.Message)"
+        Write-Man527DiagnosticFile -Path $OutputPath -Content "Diagnostic command failed ($($_.Exception.GetType().Name)); see job log."
     }
 }
 
@@ -122,7 +122,8 @@ function Export-Man527FailureDiagnostics {
             database = $databaseName
             capVersion = $capVersion
             deliveryOrderNo = $deliveryOrderNo
-            failure = $FailureRecord.Exception.Message
+            failure = 'Business verification failed; see job log.'
+            failureType = $FailureRecord.Exception.GetType().Name
         } | ConvertTo-Json -Depth 8)
     $artifactPaths.Add([IO.Path]::GetFullPath($summaryPath))
 
@@ -160,14 +161,29 @@ ORDER BY schemaname, relname;
     $redisPath = Join-Path $diagnosticsRoot 'redis-stream-state.txt'
     $redisLines = [Collections.Generic.List[string]]::new()
     foreach ($streamName in @('WmsIntegrationEvent', 'Nerv.IIP.Contracts.Wms.WmsIntegrationEvent')) {
-        foreach ($redisArguments in @(@('XINFO', 'STREAM', $streamName), @('XINFO', 'GROUPS', $streamName))) {
+        foreach ($redisArguments in @(@('XLEN', $streamName), @('XINFO', 'GROUPS', $streamName))) {
             try {
-                $result = Invoke-NativeCommandOutput -Command 'docker' -Arguments (@('compose', '-f', $composeFile, 'exec', '-T', 'redis', 'redis-cli') + $redisArguments) -WorkingDirectory $root -Name 'man527-diagnostics-redis'
+                $result = Invoke-NativeCommandOutput -Command 'docker' -Arguments (@('compose', '-f', $composeFile, 'exec', '-T', 'redis', 'redis-cli', '--json') + $redisArguments) -WorkingDirectory $root -Name 'man527-diagnostics-redis'
                 $redisLines.Add("COMMAND redis-cli $($redisArguments -join ' ')")
-                $redisLines.Add("$($result.Stdout)")
+                $metadata = ConvertFrom-Json -InputObject $result.Stdout
+                if ([string]::Equals($redisArguments[0], 'XLEN', [StringComparison]::Ordinal)) {
+                    $redisLines.Add("length=$([long]$metadata)")
+                }
+                else {
+                    foreach ($group in $metadata) {
+                        $redisLines.Add(([ordered]@{
+                            name = [string]$group.name
+                            consumers = [long]$group.consumers
+                            pending = [long]$group.pending
+                            lastDeliveredId = [string]$group.'last-delivered-id'
+                            entriesRead = $group.'entries-read'
+                            lag = $group.lag
+                        } | ConvertTo-Json -Compress))
+                    }
+                }
             }
             catch {
-                $redisLines.Add("COMMAND redis-cli $($redisArguments -join ' ') FAILED: $($_.Exception.Message)")
+                $redisLines.Add("COMMAND redis-cli $($redisArguments -join ' ') FAILED ($($_.Exception.GetType().Name)); see job log.")
             }
         }
     }
@@ -220,6 +236,124 @@ function Wait-Healthy {
         catch { Start-Sleep -Milliseconds 500 }
     } while ((Get-Date) -lt $deadline)
     throw "Service did not become healthy at $Uri. Logs: $($ManagedProcess.LogDirectory)"
+}
+
+function ConvertFrom-Man527RedisStreamGroupOutput {
+    param([string]$Output)
+
+    $lines = @($Output -split '\r?\n')
+    $groups = [System.Collections.Generic.List[string]]::new()
+    for ($index = 0; $index + 1 -lt $lines.Count; $index++) {
+        if ([string]::Equals([string]$lines[$index], 'name', [StringComparison]::Ordinal)) {
+            $groups.Add([string]$lines[$index + 1])
+        }
+    }
+    return $groups.ToArray()
+}
+
+function Get-Man527RedisStreamGroupNames {
+    param([string]$ComposeFile, [string]$StreamName)
+
+    $result = Invoke-NativeCommandOutput `
+        -Command 'docker' `
+        -Arguments @('compose', '-f', $ComposeFile, 'exec', '-T', 'redis', 'redis-cli', '--raw', 'XINFO', 'GROUPS', $StreamName) `
+        -WorkingDirectory $root `
+        -TimeoutSeconds 10 `
+        -Name 'man527-erp-cap-consumer-readiness'
+    $output = "$($result.Stdout)`n$($result.Stderr)".Trim()
+    if ($output.StartsWith('ERR ', [StringComparison]::Ordinal)) {
+        throw "Redis XINFO GROUPS failed for topic '$StreamName': $output"
+    }
+    return @(ConvertFrom-Man527RedisStreamGroupOutput -Output $result.Stdout)
+}
+
+function Wait-Man527ErpCapConsumerReady {
+    param(
+        [string]$ComposeFile,
+        [object]$ManagedProcess,
+        [string]$Topic,
+        [string]$Consumer,
+        [string]$GroupBase,
+        [string]$CapVersion,
+        [ValidateRange(0, 60)][int]$TimeoutSeconds = 60
+    )
+
+    $expectedGroup = "$GroupBase.$CapVersion"
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
+    $firstRegistrationBoundary = $null
+    do {
+        if ($ManagedProcess.Process.HasExited) {
+            throw "MAN-527 ERP exited before CAP consumer readiness: topic='$Topic'; group='$expectedGroup'; consumer='$Consumer'; run identity='$CapVersion'; logs='$($ManagedProcess.LogDirectory)'."
+        }
+
+        try {
+            $observedGroups = @(Get-Man527RedisStreamGroupNames -ComposeFile $ComposeFile -StreamName $Topic)
+            $groupSet = [Collections.Generic.HashSet[string]]::new([string[]]$observedGroups, [StringComparer]::Ordinal)
+            if ($groupSet.Contains($expectedGroup)) {
+                return [pscustomobject][ordered]@{
+                    topic = $Topic
+                    group = $expectedGroup
+                    groupBase = $GroupBase
+                    consumer = $Consumer
+                    capVersion = $CapVersion
+                }
+            }
+            if ($null -eq $firstRegistrationBoundary) {
+                $observedGroupText = if ($observedGroups.Count -eq 0) { '<none>' } else { $observedGroups -join ', ' }
+                $firstRegistrationBoundary = "target group missing; observed groups=$observedGroupText"
+            }
+        }
+        catch {
+            if ($null -eq $firstRegistrationBoundary) {
+                $firstRegistrationBoundary = $_.Exception.Message
+            }
+        }
+
+        if ([DateTimeOffset]::UtcNow -ge $deadline) { break }
+        Start-Sleep -Milliseconds 500
+    } while ($true)
+
+    throw "MAN-527 ERP CAP consumer did not become ready before business actions: topic='$Topic'; group='$expectedGroup'; consumer='$Consumer'; run identity='$CapVersion'; first registration boundary='$firstRegistrationBoundary'; logs='$($ManagedProcess.LogDirectory)'."
+}
+
+function Invoke-Man527FirstBusinessActionAfterConsumerReady {
+    param(
+        [string]$ComposeFile,
+        [object]$ManagedProcess,
+        [string]$Topic,
+        [string]$Consumer,
+        [string]$GroupBase,
+        [string]$CapVersion,
+        [ValidateRange(0, 60)][int]$TimeoutSeconds = 60,
+        [string]$WmsUrl,
+        [hashtable]$Headers,
+        [string]$SiteCode,
+        [string]$PoolCode,
+        [string]$DisplayName,
+        [string]$AssignerPrincipalId,
+        [string]$OperatorPrincipalId
+    )
+
+    $readiness = Wait-Man527ErpCapConsumerReady `
+        -ComposeFile $ComposeFile `
+        -ManagedProcess $ManagedProcess `
+        -Topic $Topic `
+        -Consumer $Consumer `
+        -GroupBase $GroupBase `
+        -CapVersion $CapVersion `
+        -TimeoutSeconds $TimeoutSeconds
+    $businessResult = New-WmsWorkPoolFixture `
+        -WmsUrl $WmsUrl `
+        -Headers $Headers `
+        -SiteCode $SiteCode `
+        -PoolCode $PoolCode `
+        -DisplayName $DisplayName `
+        -AssignerPrincipalId $AssignerPrincipalId `
+        -OperatorPrincipalId $OperatorPrincipalId
+    return [pscustomobject][ordered]@{
+        readiness = $readiness
+        businessResult = $businessResult
+    }
 }
 
 function Wait-WmsOutboundOrderEvent {
@@ -462,6 +596,9 @@ $databaseConnectionString = if ($PostgresAdminConnectionString -match '(?i)Datab
     "$($PostgresAdminConnectionString.TrimEnd(';'));Database=$databaseName"
 }
 $capVersion = "man527-$([Guid]::NewGuid().ToString('N').Substring(0, 12))"
+$erpCompletionTopic = 'WmsIntegrationEvent'
+$erpCompletionConsumer = 'WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAccountReceivable'
+$erpCompletionGroupBase = 'business-erp.wms-outbound-completed-ar-accrual'
 $internalToken = "man527-$([Guid]::NewGuid().ToString('N'))"
 $deliveryOrderNo = "DO-MAN527-$([Guid]::NewGuid().ToString('N').Substring(0, 8).ToUpperInvariant())"
 $wmsActorPrincipalId = "man527-operator-$([Guid]::NewGuid().ToString('N').Substring(0, 8))"
@@ -576,7 +713,13 @@ try {
         'X-Causation-Id' = 'acceptance-script'
         'X-Authenticated-Actor' = 'user:man527-acceptance'
     }
-    $workPoolFixture = New-WmsWorkPoolFixture `
+    $businessAdmission = Invoke-Man527FirstBusinessActionAfterConsumerReady `
+        -ComposeFile $composeFile `
+        -ManagedProcess $erpProcess `
+        -Topic $erpCompletionTopic `
+        -Consumer $erpCompletionConsumer `
+        -GroupBase $erpCompletionGroupBase `
+        -CapVersion $capVersion `
         -WmsUrl $wmsUrl `
         -Headers $headers `
         -SiteCode $wmsSiteCode `
@@ -584,6 +727,9 @@ try {
         -DisplayName '拣货与发运' `
         -AssignerPrincipalId $wmsSupervisorPrincipalId `
         -OperatorPrincipalId $wmsActorPrincipalId
+    $erpConsumerReadiness = $businessAdmission.readiness
+    $workPoolFixture = $businessAdmission.businessResult
+    Write-Diagnostic "MAN-527 ERP CAP consumer ready: topic='$($erpConsumerReadiness.topic)'; group='$($erpConsumerReadiness.group)'; consumer='$($erpConsumerReadiness.consumer)'; run identity='$($erpConsumerReadiness.capVersion)'."
     Wait-ErpSalesOrder -ErpUrl $erpUrl -Headers $headers | Out-Null
     Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/delivery-orders" -Headers $headers -Body @{
         organizationId = 'org-001'
@@ -828,7 +974,7 @@ try {
         verifiedAtUtc = [DateTimeOffset]::UtcNow
         scenarioStatus = 'passed'
         deliveryOrderNo = $deliveryOrderNo
-        transport = 'Redis CAP across separate ERP, WMS, Inventory, and replay-probe processes'
+        transport = "Redis CAP across separate ERP, WMS, Inventory, and replay-probe processes; readiness topic='$($erpConsumerReadiness.topic)' group='$($erpConsumerReadiness.group)' consumer='$($erpConsumerReadiness.consumer)' capVersion='$($erpConsumerReadiness.capVersion)'"
         persistence = 'Disposable real PostgreSQL database'
         wmsOutboundOrder = [ordered]@{
             outboundOrderNo = $outbound.outboundOrderNo
@@ -992,7 +1138,8 @@ finally {
             verifiedAtUtc = [DateTimeOffset]::UtcNow
             scenarioStatus = 'failed'
             deliveryOrderNo = $deliveryOrderNo
-            scenarioError = if ($null -ne $scenarioError) { Protect-NervAcceptanceWmsDiagnosticText -Text $scenarioError.Exception.Message -SensitiveValues @($internalToken, $PostgresAdminConnectionString, $databaseConnectionString, $RedisConnectionString) } else { 'Business evidence was not produced.' }
+            scenarioError = 'Business verification failed; see job log.'
+            scenarioErrorType = $scenarioError.Exception.GetType().Name
         }
     }
     $evidencePayload.cleanup = $cleanupEvidence

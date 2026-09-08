@@ -5,6 +5,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
+using Nerv.IIP.Business.Mes.Web.Application.Quality;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -20,9 +21,13 @@ public sealed class ProductionReportOeeDimensionSnapshotCommandTests
         using (var setupScope = services.CreateScope())
         {
             var dbContext = setupScope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
-            dbContext.WorkOrders.Add(WorkOrder.Create(
+            // #3119：未下达的工单不受理报工，夹具因此必须先补记发布（生产上这一步由下达完成）。
+            var workOrder = WorkOrder.Create(
                 "org-001", "env-dev", "WO-OEE-001", "SKU-001", "PV-001", 10m, 10,
-                reportedAtUtc.AddHours(8)));
+                reportedAtUtc.AddHours(8));
+            workOrder.MarkReleased();
+            workOrder.ClearDomainEvents();
+            dbContext.WorkOrders.Add(workOrder);
             var task = OperationTask.Create(
                 "org-001", "env-dev", "WO-OEE-001", "OP-OEE-10",
                 OperationTaskLifecycleStatus.InProgress, 10, "WC-LEGACY", [],
@@ -48,7 +53,8 @@ public sealed class ProductionReportOeeDimensionSnapshotCommandTests
                 30);
             var handler = new RecordProductionReportCommandHandler(
                 dbContext,
-                new StubSnapshotProvider(snapshot));
+                new StubSnapshotProvider(snapshot),
+                TestMesFirstArticleGate.Allowing);
 
             await handler.Handle(
                 new RecordProductionReportCommand(

@@ -22,7 +22,21 @@ public sealed record ReworkWorkOrderCreatedDomainEvent(
     string CorrelationId,
     string CausationId) : IDomainEvent;
 
-public sealed record WorkOrderReleasedDomainEvent(WorkOrder WorkOrder, IReadOnlyCollection<OperationTask> OperationTasks) : IDomainEvent;
+/// <param name="ReleasedAt">
+/// 发布事实的时刻。由发布动作的调用方给出，不由转换器取 <c>UtcNow</c>。
+/// 类型是 <see cref="WorkOrderReleaseFactTime"/> 而不是裸 <c>DateTimeOffset</c>：
+/// 「不晚于任何一条**既有活动**（报工，或工序完工）」这条不变量由该类型的构造口径承担（#3117）。
+///
+/// <b>强度按实测写，别读强了</b>：编译器强制的是「**交出一个显式的下界参数**」，
+/// **不是**「你确实去查过」——第二参可以传 <c>null</c>，而 <c>null</c>（真的没有既有活动）
+/// 与 <c>null</c>（压根没去查）在类型层面不可区分。完整说明见
+/// <see cref="WorkOrderReleaseFactTime"/> 的类型注释；两处措辞必须保持一致，
+/// 上一轮就是因为只改了其中一处、另一处原样存活而被判阻断。
+/// </param>
+public sealed record WorkOrderReleasedDomainEvent(
+    WorkOrder WorkOrder,
+    IReadOnlyCollection<OperationTask> OperationTasks,
+    WorkOrderReleaseFactTime ReleasedAt) : IDomainEvent;
 
 public sealed record WorkOrderCompletedDomainEvent(WorkOrder WorkOrder, DateTimeOffset CompletedAtUtc) : IDomainEvent;
 

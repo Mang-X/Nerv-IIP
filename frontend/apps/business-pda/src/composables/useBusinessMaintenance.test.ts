@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, shallowRef, type ShallowRef } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
+import { createBusinessConsoleMaintenanceWorkOrderV2MutationOptions } from '@nerv-iip/api-client'
 import { useBusinessMaintenance } from './useBusinessMaintenance'
 import { useAuthStore } from '@/stores/auth'
 
@@ -28,7 +29,9 @@ vi.mock('@nerv-iip/api-client', () => ({
     key: [{ _id: 'listBusinessConsoleMaintenanceWorkOrders' }],
     query: vi.fn(),
   })),
-  createBusinessConsoleMaintenanceWorkOrderMutationOptions: vi.fn(() => ({
+  // v1 入口保留在生成客户端里，但 PDA 生产路径**不再消费**；这里故意只给 v2 提供
+  // mutation options：若实现回落到 v1，`useMutation` 会拿到 undefined 而整套用例红。
+  createBusinessConsoleMaintenanceWorkOrderV2MutationOptions: vi.fn(() => ({
     mutation: vi.fn(),
     _tag: 'createWorkOrder',
   })),
@@ -180,7 +183,7 @@ describe('useBusinessMaintenance', () => {
       openedBy: 'evil',
       deviceAssetId: 'D1',
       priority: 'high',
-      assetUnavailableReason: 'x',
+      assetUnavailableReasonCode: 'Hyd-Leak_01',
     } as never)
 
     expect(coladaState.mutate.createWorkOrder).toHaveBeenCalledTimes(1)
@@ -191,11 +194,37 @@ describe('useBusinessMaintenance', () => {
       openedBy: 'admin',
       deviceAssetId: 'D1',
       priority: 'high',
-      assetUnavailableReason: 'x',
+      assetUnavailableReasonCode: 'Hyd-Leak_01',
     })
     // Injection wins over hostile input.
     expect(arg.body.organizationId).toBe('org-001')
     expect(arg.body.openedBy).toBe('admin')
+  })
+
+  it('走 v2 建单入口，并把停机原因码与 null 路径原样送到请求体', async () => {
+    seedPrincipal()
+    const { createWorkOrder } = useBusinessMaintenance()
+
+    await createWorkOrder({
+      deviceAssetId: 'D1',
+      priority: 'high',
+      assetUnavailableReasonCode: 'Hyd-Leak_01',
+    } as never)
+    await createWorkOrder({
+      deviceAssetId: 'D1',
+      priority: 'high',
+      assetUnavailableReasonCode: null,
+    } as never)
+
+    expect(createBusinessConsoleMaintenanceWorkOrderV2MutationOptions).toHaveBeenCalled()
+    const first = coladaState.mutate.createWorkOrder.mock.calls[0][0].body
+    const second = coladaState.mutate.createWorkOrder.mock.calls[1][0].body
+    // 原值：大小写与空白都不许在这层被"修正"（Maintenance v2 按请求原值精确命中目录）。
+    expect(first.assetUnavailableReasonCode).toBe('Hyd-Leak_01')
+    expect(first).not.toHaveProperty('assetUnavailableReason')
+    // 空值路径：null，而不是空串或伪默认码。
+    expect(second.assetUnavailableReasonCode).toBeNull()
+    expect(second.assetUnavailableReasonCode).not.toBe('')
   })
 
   it('preserves an untyped GUID-shaped device code at the create request boundary', async () => {
@@ -205,12 +234,12 @@ describe('useBusinessMaintenance', () => {
     await createWorkOrder({
       deviceAssetId: ' 019F1000-0000-7000-8000-0000000000AB ',
       priority: 'high',
-      assetUnavailableReason: 'bearing damage',
+      assetUnavailableReasonCode: 'Bearing-Damage',
     } as never)
     await createWorkOrder({
       deviceAssetId: ' DEV-A ',
       priority: 'high',
-      assetUnavailableReason: 'bearing damage',
+      assetUnavailableReasonCode: 'Bearing-Damage',
     } as never)
 
     expect(coladaState.mutate.createWorkOrder.mock.calls[0][0].body.deviceAssetId).toBe(
@@ -236,7 +265,7 @@ describe('useBusinessMaintenance', () => {
     const intent = {
       deviceAssetId: 'D-DETERMINATE',
       priority: 'high',
-      assetUnavailableReason: 'bearing damage',
+      assetUnavailableReasonCode: 'Bearing-Damage',
     } as const
 
     await expect(
@@ -288,7 +317,7 @@ describe('useBusinessMaintenance', () => {
       createWorkOrder({
         deviceAssetId: 'D1',
         priority: 'high',
-        assetUnavailableReason: 'x',
+        assetUnavailableReasonCode: 'Hyd-Leak_01',
       } as never),
     ).rejects.toThrow('登录态未就绪')
     expect(coladaState.mutate.createWorkOrder).not.toHaveBeenCalled()

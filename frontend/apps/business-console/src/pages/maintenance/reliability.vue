@@ -103,9 +103,9 @@ watch(
   { immediate: true },
 )
 
-const errorMessage = computed(() => formatError(reliabilityError.value))
-const trendErrorMessage = computed(() => formatError(trend.trendError.value))
-const summaryErrorMessage = computed(() => formatError(summary.summaryError.value))
+const errorMessage = computed(() => inlineErrorMessage(reliabilityError.value))
+const trendErrorMessage = computed(() => inlineErrorMessage(trend.trendError.value))
+const summaryErrorMessage = computed(() => inlineErrorMessage(summary.summaryError.value))
 const hasDeviceScope = computed(() => filters.deviceAssetId.trim().length > 0)
 const hasCharacteristic = computed(() => trend.filters.characteristicCode.trim().length > 0)
 
@@ -263,10 +263,6 @@ function fromDateInput(value: string, dayOffset: number) {
   if (!y || !m || !d) return new Date().toISOString()
   return new Date(y, m - 1, d + dayOffset).toISOString()
 }
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
-
 function refreshAll() {
   void refreshReliability()
   void trend.refreshTrend()

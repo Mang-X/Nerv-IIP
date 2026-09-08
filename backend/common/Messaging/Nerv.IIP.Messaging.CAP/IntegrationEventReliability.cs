@@ -15,6 +15,13 @@ public sealed record IntegrationEventConsumerOptions(
     public IReadOnlyCollection<string> SupportedEventTypes { get; init; } = [ExpectedEventType];
     public bool IgnoreUnsupportedEventTypes { get; init; }
 
+    /// <summary>
+    /// Accept an empty <see cref="IIntegrationEventEnvelope.CausationId"/> as a legal value. Wire contracts that
+    /// normalise a missing causation to the empty string (Maintenance AssetUnavailable v2) opt in per consumer;
+    /// a <c>null</c> or whitespace-only causation is still rejected as a missing envelope field.
+    /// </summary>
+    public bool AllowEmptyCausationId { get; init; }
+
     public IntegrationEventConsumerOptions(
         string consumerName,
         IReadOnlyCollection<string> supportedEventTypes,
@@ -75,6 +82,13 @@ public sealed class IntegrationEventEnvelopeValidator
 
         foreach (var (fieldName, value) in GetRequiredStringFields(integrationEvent))
         {
+            if (options.AllowEmptyCausationId &&
+                fieldName == nameof(IIntegrationEventEnvelope.CausationId) &&
+                value is { Length: 0 })
+            {
+                continue;
+            }
+
             if (string.IsNullOrWhiteSpace(value))
             {
                 return IntegrationEventEnvelopeValidationResult.Invalid(
@@ -498,12 +512,269 @@ public sealed record IntegrationEventDeadLetterMessage(
             integrationEvent.SourceService,
             integrationEvent.IdempotencyKey,
             integrationEvent.GetType().FullName ?? typeof(TIntegrationEvent).FullName ?? typeof(TIntegrationEvent).Name,
-            JsonSerializer.Serialize(integrationEvent, integrationEvent.GetType()),
+            SerializeForForensics(integrationEvent),
             failureCode,
             failureMessage,
             IntegrationEventDeadLetterStatus.Pending,
             DateTimeOffset.UtcNow,
             null);
+    }
+
+    /// <summary>
+    /// Dead letters must be writable for exactly the objects that violate their own contract. Typed serialization
+    /// runs the contract converters (type-level and property-level), and converters in this repository validate on
+    /// write too, so an envelope that breaks its wire contract would make <see cref="Create{TIntegrationEvent}"/>
+    /// itself throw (#3101). Fall back to <see cref="ForensicJson"/>, which walks the object graph with no converter
+    /// at all, so nested property converters cannot re-introduce the failure.
+    /// </summary>
+    private static string SerializeForForensics(IIntegrationEventEnvelope integrationEvent)
+    {
+        try
+        {
+            return JsonSerializer.Serialize(integrationEvent, integrationEvent.GetType());
+        }
+        catch (Exception typedFailure)
+        {
+            try
+            {
+                return ForensicJson.Serialize(integrationEvent);
+            }
+            catch (Exception forensicFailure)
+            {
+                // 结构性兜底：无论投影因何失败（含 OutOfMemoryException——这里能捕获且必须捕获，
+                // 否则"越该进 DLQ 越写不进"原样复现），死信都以只含信封身份列的字面 JSON 写入。
+                return ForensicJson.SerializeIdentityOnly(integrationEvent, typedFailure, forensicFailure);
+            }
+        }
+    }
+}
+
+public static class ForensicJson
+{
+    private const int MaxDepth = 32;
+
+    public static string Serialize(object? value)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            WriteValue(writer, value, 0, new HashSet<object>(ReferenceEqualityComparer.Instance));
+        }
+
+        return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    /// <summary>
+    /// Last-resort dead-letter body: only the <see cref="IIntegrationEventEnvelope"/> scalar members (each read
+    /// defensively) plus the two failures that got us here. Built with the raw writer so nothing here can throw
+    /// for a reason that depends on the payload.
+    /// </summary>
+    public static string SerializeIdentityOnly(IIntegrationEventEnvelope integrationEvent, Exception typedFailure, Exception forensicFailure)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            WriteIdentity(writer, "eventId", () => integrationEvent.EventId);
+            WriteIdentity(writer, "eventType", () => integrationEvent.EventType);
+            WriteIdentity(writer, "eventVersion", () => integrationEvent.EventVersion.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            WriteIdentity(writer, "occurredAtUtc", () => integrationEvent.OccurredAtUtc.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
+            WriteIdentity(writer, "sourceService", () => integrationEvent.SourceService);
+            WriteIdentity(writer, "correlationId", () => integrationEvent.CorrelationId);
+            WriteIdentity(writer, "causationId", () => integrationEvent.CausationId);
+            WriteIdentity(writer, "organizationId", () => integrationEvent.OrganizationId);
+            WriteIdentity(writer, "environmentId", () => integrationEvent.EnvironmentId);
+            WriteIdentity(writer, "actor", () => integrationEvent.Actor);
+            WriteIdentity(writer, "idempotencyKey", () => integrationEvent.IdempotencyKey);
+            writer.WriteString("payload", "<unserializable>");
+            writer.WriteString("typedSerializationFailure", Describe(typedFailure));
+            writer.WriteString("forensicSerializationFailure", Describe(forensicFailure));
+            writer.WriteEndObject();
+        }
+
+        return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private static void WriteIdentity(Utf8JsonWriter writer, string name, Func<string?> read)
+    {
+        string? value;
+        try
+        {
+            value = read();
+        }
+        catch (Exception exception)
+        {
+            value = $"<unreadable: {exception.GetType().Name}>";
+        }
+
+        writer.WriteString(name, value);
+    }
+
+    private static string Describe(Exception exception) => $"{exception.GetType().Name}: {exception.Message}";
+
+    private static void WriteValue(Utf8JsonWriter writer, object? value, int depth, HashSet<object> ancestors)
+    {
+        switch (value)
+        {
+            case null:
+                writer.WriteNullValue();
+                return;
+            case string text:
+                writer.WriteStringValue(text);
+                return;
+            case bool boolean:
+                writer.WriteBooleanValue(boolean);
+                return;
+            case float single:
+                WriteFloating(writer, single, float.IsFinite(single));
+                return;
+            case double @double:
+                WriteFloating(writer, @double, double.IsFinite(@double));
+                return;
+            case byte or sbyte or short or ushort or int or uint or long or ulong or decimal:
+                writer.WriteRawValue(Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture)!, skipInputValidation: false);
+                return;
+            case DateTimeOffset dateTimeOffset:
+                writer.WriteStringValue(dateTimeOffset);
+                return;
+            case DateTime dateTime:
+                writer.WriteStringValue(dateTime);
+                return;
+            case DateOnly dateOnly:
+                writer.WriteStringValue(dateOnly.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
+                return;
+            case TimeOnly timeOnly:
+                writer.WriteStringValue(timeOnly.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
+                return;
+            case TimeSpan timeSpan:
+                writer.WriteStringValue(timeSpan.ToString("c", System.Globalization.CultureInfo.InvariantCulture));
+                return;
+            case Guid guid:
+                writer.WriteStringValue(guid);
+                return;
+            case Enum enumeration:
+                writer.WriteStringValue(enumeration.ToString());
+                return;
+            case JsonElement element:
+                element.WriteTo(writer);
+                return;
+            case byte[] bytes:
+                writer.WriteBase64StringValue(bytes);
+                return;
+            // 框架/反射类型不展开：`Type`/`MemberInfo` 的反射图深不见底（展开到 OOM），`Uri`/`Exception`/`Delegate`
+            // 等展开后体积失控且无取证价值；统一写 ToString。
+            case Type or System.Reflection.MemberInfo or System.Reflection.Assembly or Uri or Exception or Delegate
+                or System.Globalization.CultureInfo or System.Text.RegularExpressions.Regex or Version or Stream:
+                writer.WriteStringValue(Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture));
+                return;
+        }
+
+        if (depth >= MaxDepth || !ancestors.Add(value))
+        {
+            writer.WriteStringValue($"<{value.GetType().Name}: depth or cycle limit>");
+            return;
+        }
+
+        try
+        {
+            switch (value)
+            {
+                case System.Collections.IDictionary dictionary:
+                    WriteDictionary(writer, dictionary, depth, ancestors);
+                    return;
+                case System.Collections.IEnumerable enumerable:
+                    WriteEnumerable(writer, enumerable, depth, ancestors);
+                    return;
+            }
+
+            writer.WriteStartObject();
+            foreach (var property in value.GetType().GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+            {
+                if (!property.CanRead || property.GetIndexParameters().Length > 0)
+                {
+                    continue;
+                }
+
+                object? propertyValue;
+                try
+                {
+                    propertyValue = property.GetValue(value);
+                }
+                catch (Exception exception)
+                {
+                    propertyValue = $"<unreadable: {exception.GetType().Name}>";
+                }
+
+                writer.WritePropertyName(JsonNamingPolicy.CamelCase.ConvertName(property.Name));
+                WriteValue(writer, propertyValue, depth + 1, ancestors);
+            }
+
+            writer.WriteEndObject();
+        }
+        finally
+        {
+            ancestors.Remove(value);
+        }
+    }
+
+    private static void WriteFloating(Utf8JsonWriter writer, double value, bool isFinite)
+    {
+        // NaN / ±Infinity 不是 JSON 数字，writer 不放行；显式写成字符串。
+        if (isFinite)
+        {
+            writer.WriteNumberValue(value);
+        }
+        else
+        {
+            writer.WriteStringValue(value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+    }
+
+    private static void WriteDictionary(Utf8JsonWriter writer, System.Collections.IDictionary dictionary, int depth, HashSet<object> ancestors)
+    {
+        writer.WriteStartObject();
+        var seenNames = new HashSet<string>(StringComparer.Ordinal);
+        try
+        {
+            foreach (System.Collections.DictionaryEntry entry in dictionary)
+            {
+                var name = Convert.ToString(entry.Key, System.Globalization.CultureInfo.InvariantCulture) ?? "null";
+                // 两个键 ToString 相同会产出重复属性名，jsonb 会静默丢前者：冲突时追加序号。
+                var unique = name;
+                for (var suffix = 2; !seenNames.Add(unique); suffix++)
+                {
+                    unique = $"{name}#{suffix}";
+                }
+
+                writer.WritePropertyName(unique);
+                WriteValue(writer, entry.Value, depth + 1, ancestors);
+            }
+        }
+        catch (Exception exception)
+        {
+            writer.WriteString("<enumeration failed>", $"{exception.GetType().Name}: {exception.Message}");
+        }
+
+        writer.WriteEndObject();
+    }
+
+    private static void WriteEnumerable(Utf8JsonWriter writer, System.Collections.IEnumerable enumerable, int depth, HashSet<object> ancestors)
+    {
+        writer.WriteStartArray();
+        try
+        {
+            foreach (var item in enumerable)
+            {
+                WriteValue(writer, item, depth + 1, ancestors);
+            }
+        }
+        catch (Exception exception)
+        {
+            // 枚举中途抛（惰性序列、已释放的 reader 等）：保留已写出的元素，追加失败说明，不让整份取证丢失。
+            writer.WriteStringValue($"<enumeration failed: {exception.GetType().Name}: {exception.Message}>");
+        }
+
+        writer.WriteEndArray();
     }
 }
 
@@ -594,6 +865,21 @@ public sealed class IntegrationEventDeadLetterReplayExecutor(
 public sealed class IntegrationEventCapFailureDeadLetterer(IIntegrationEventDeadLetterStore deadLetterStore)
 {
     public const string HandlerRetryExhaustedFailureCode = "handler-retry-exhausted";
+
+    /// <summary>
+    /// The transport delivered a message that the typed contract rejected before any handler ran (for example a
+    /// wire-contract <see cref="JsonException"/> thrown by a contract converter on read). The original wire body is
+    /// preserved verbatim: re-serialising through the same contract is exactly what cannot work for it (#3101).
+    /// </summary>
+    public const string ContractRejectedFailureCode = "contract-rejected";
+
+    /// <summary>
+    /// Wrapper property used when the wire body is not JSON at all; <c>EventJson</c> is stored in a JSON column on
+    /// PostgreSQL, so a non-JSON body is kept verbatim as a string inside a JSON object instead of being dropped.
+    /// </summary>
+    public const string RawBodyPropertyName = "rawBody";
+
+    private const string DataUriBase64Marker = ";base64,";
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
         PropertyNameCaseInsensitive = true
@@ -607,43 +893,137 @@ public sealed class IntegrationEventCapFailureDeadLetterer(IIntegrationEventDead
             return;
         }
 
-        var integrationEvent = failedInfo.Message.Value as IIntegrationEventEnvelope
-            ?? TryDeserializeEnvelope(failedInfo.Message);
-        if (integrationEvent is null)
-        {
-            return;
-        }
-
         var consumerName = ReadHeader(failedInfo.Message, Headers.Group)
             ?? ReadHeader(failedInfo.Message, Headers.MessageName)
             ?? "unknown.consumer";
         var failureMessage = ReadHeader(failedInfo.Message, Headers.Exception)
             ?? "CAP subscriber exhausted retry attempts.";
+
+        if (failedInfo.Message.Value is IIntegrationEventEnvelope typedValue)
+        {
+            await deadLetterStore.AddAsync(
+                IntegrationEventDeadLetterMessage.Create(consumerName, typedValue, HandlerRetryExhaustedFailureCode, failureMessage),
+                cancellationToken);
+            return;
+        }
+
+        var json = ExtractJson(failedInfo.Message.Value);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return;
+        }
+
+        var eventType = ResolveEventType(ReadHeader(failedInfo.Message, Headers.Type))
+            ?? ResolveEventType(ReadHeader(failedInfo.Message, Headers.MessageName));
+        JsonException? contractRejection = null;
+        if (eventType is not null)
+        {
+            try
+            {
+                if (JsonSerializer.Deserialize(json, eventType, SerializerOptions) is IIntegrationEventEnvelope integrationEvent)
+                {
+                    await deadLetterStore.AddAsync(
+                        IntegrationEventDeadLetterMessage.Create(consumerName, integrationEvent, HandlerRetryExhaustedFailureCode, failureMessage),
+                        cancellationToken);
+                    return;
+                }
+            }
+            catch (JsonException exception)
+            {
+                contractRejection = exception;
+            }
+        }
+
+        var eventClrType = eventType?.FullName
+            ?? ReadHeader(failedInfo.Message, Headers.Type)
+            ?? ReadHeader(failedInfo.Message, Headers.MessageName)
+            ?? "unknown";
         await deadLetterStore.AddAsync(
-            IntegrationEventDeadLetterMessage.Create(
-                consumerName,
-                integrationEvent,
-                HandlerRetryExhaustedFailureCode,
-                failureMessage),
+            CreateRawDeadLetter(consumerName, eventClrType, json, contractRejection, failureMessage),
             cancellationToken);
     }
 
-    private static IIntegrationEventEnvelope? TryDeserializeEnvelope(Message message)
+    /// <summary>
+    /// Builds a dead letter for a body the typed contract refused: identity columns are read leniently from the raw
+    /// JSON (missing ones stay <c>null</c>) and <see cref="IntegrationEventDeadLetterMessage.EventJson"/> is the
+    /// original wire body, so replay tooling and operators see exactly what the transport delivered.
+    /// </summary>
+    private static IntegrationEventDeadLetterMessage CreateRawDeadLetter(
+        string consumerName,
+        string eventClrType,
+        string json,
+        JsonException? contractRejection,
+        string transportFailureMessage)
     {
-        var eventType = ResolveEventType(ReadHeader(message, Headers.Type))
-            ?? ResolveEventType(ReadHeader(message, Headers.MessageName));
-        if (eventType is null)
+        string? eventId = null, eventTypeName = null, sourceService = null, idempotencyKey = null;
+        int? eventVersion = null;
+        string eventJson;
+        try
         {
-            return null;
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind == JsonValueKind.Object)
+            {
+                eventId = ReadString(document.RootElement, nameof(IIntegrationEventEnvelope.EventId));
+                eventTypeName = ReadString(document.RootElement, nameof(IIntegrationEventEnvelope.EventType));
+                sourceService = ReadString(document.RootElement, nameof(IIntegrationEventEnvelope.SourceService));
+                idempotencyKey = ReadString(document.RootElement, nameof(IIntegrationEventEnvelope.IdempotencyKey));
+                eventVersion = ReadInt32(document.RootElement, nameof(IIntegrationEventEnvelope.EventVersion));
+            }
+
+            eventJson = json;
+        }
+        catch (JsonException)
+        {
+            // Not JSON at all: keep the body verbatim inside a JSON wrapper so the JSON column still accepts it.
+            eventJson = JsonSerializer.Serialize(new Dictionary<string, string> { [RawBodyPropertyName] = json });
         }
 
-        var json = ExtractJson(message.Value);
-        if (string.IsNullOrWhiteSpace(json))
+        var failureMessage = contractRejection is null
+            ? transportFailureMessage
+            : $"{contractRejection.Message} ({transportFailureMessage})";
+        return new IntegrationEventDeadLetterMessage(
+            Guid.CreateVersion7(),
+            consumerName,
+            eventId,
+            eventTypeName,
+            eventVersion,
+            sourceService,
+            idempotencyKey,
+            eventClrType,
+            eventJson,
+            ContractRejectedFailureCode,
+            failureMessage,
+            IntegrationEventDeadLetterStatus.Pending,
+            DateTimeOffset.UtcNow,
+            null);
+    }
+
+    private static string? ReadString(JsonElement element, string propertyName)
+    {
+        foreach (var property in element.EnumerateObject())
         {
-            return null;
+            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                return property.Value.ValueKind == JsonValueKind.String ? property.Value.GetString() : property.Value.ToString();
+            }
         }
 
-        return JsonSerializer.Deserialize(json, eventType, SerializerOptions) as IIntegrationEventEnvelope;
+        return null;
+    }
+
+    private static int? ReadInt32(JsonElement element, string propertyName)
+    {
+        foreach (var property in element.EnumerateObject())
+        {
+            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                return property.Value.ValueKind == JsonValueKind.Number && property.Value.TryGetInt32(out var value)
+                    ? value
+                    : null;
+            }
+        }
+
+        return null;
     }
 
     private static Type? ResolveEventType(string? eventTypeName)
@@ -686,17 +1066,45 @@ public sealed class IntegrationEventCapFailureDeadLetterer(IIntegrationEventDead
                 : null;
     }
 
+    /// <summary>
+    /// CAP persists a received message whose body could not be bound to the subscriber parameter as a
+    /// <c>data:&lt;name&gt;;base64,&lt;payload&gt;</c> string. Decode it so the dead letter carries the wire JSON, not the
+    /// storage encoding.
+    /// </summary>
     private static string? ExtractJson(object? value)
     {
         return value switch
         {
             null => null,
-            string text => text,
+            string text => DecodeDataUri(text),
             JsonElement element => element.GetRawText(),
             byte[] bytes => Encoding.UTF8.GetString(bytes),
             IIntegrationEventEnvelope envelope => JsonSerializer.Serialize(envelope, envelope.GetType(), SerializerOptions),
             _ => JsonSerializer.Serialize(value, value.GetType(), SerializerOptions)
         };
+    }
+
+    private static string DecodeDataUri(string text)
+    {
+        if (!text.StartsWith("data:", StringComparison.Ordinal))
+        {
+            return text;
+        }
+
+        var marker = text.IndexOf(DataUriBase64Marker, StringComparison.Ordinal);
+        if (marker < 0)
+        {
+            return text;
+        }
+
+        try
+        {
+            return Encoding.UTF8.GetString(Convert.FromBase64String(text[(marker + DataUriBase64Marker.Length)..]));
+        }
+        catch (FormatException)
+        {
+            return text;
+        }
     }
 
     private static string? ReadHeader(Message message, string name)

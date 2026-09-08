@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.BarcodeLabel.Domain;
+using Nerv.IIP.Business.BarcodeLabel.Infrastructure.Concurrency;
 using NetCorePal.Extensions.DependencyInjection;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure;
@@ -31,6 +32,7 @@ public static class BarcodeLabelPersistenceServiceCollectionExtensions
         });
         services.AddRepositories(typeof(ApplicationDbContext).Assembly);
         services.AddUnitOfWork<ApplicationDbContext>();
+        services.AddScoped<ITemplateAssetRetirementFence, PostgresTemplateAssetRetirementFence>();
         return services;
     }
 }

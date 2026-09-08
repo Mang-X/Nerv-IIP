@@ -213,6 +213,143 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.FileStorage.Infrastructure.Records.TemplateAssetRetirementRecord", b =>
+                {
+                    b.Property<string>("DecisionId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("decision_id")
+                        .HasComment("Upstream retirement decision and audit reference.");
+
+                    b.Property<DateTimeOffset>("AcceptedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("accepted_at_utc")
+                        .HasComment("UTC acceptance, physical hold and quota release timestamp.");
+
+                    b.Property<long>("BarcodeLeaseSeconds")
+                        .HasColumnType("bigint")
+                        .HasColumnName("barcode_lease_seconds")
+                        .HasComment("Frozen BarcodeLabel retirement lease, in seconds.");
+
+                    b.Property<long>("BarcodeMaxBackoffSeconds")
+                        .HasColumnType("bigint")
+                        .HasColumnName("barcode_max_backoff_seconds")
+                        .HasComment("Frozen BarcodeLabel retirement maximum backoff, in seconds.");
+
+                    b.Property<string>("Checksum")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("checksum")
+                        .HasComment("Frozen canonical SHA-256 of the retired asset.");
+
+                    b.Property<long>("ClientWindowSeconds")
+                        .HasColumnType("bigint")
+                        .HasColumnName("client_window_seconds")
+                        .HasComment("Frozen upstream client replay request, in seconds.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Owning environment.");
+
+                    b.Property<string>("FileId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("file_id")
+                        .HasComment("Retired file identity; retained after file metadata removal.");
+
+                    b.Property<long>("GcIntervalSeconds")
+                        .HasColumnType("bigint")
+                        .HasColumnName("gc_interval_seconds")
+                        .HasComment("Frozen FileStorage collector interval, in seconds.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Owning organization.");
+
+                    b.Property<string>("OwnerId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("owner_id")
+                        .HasComment("Frozen owner resource identity.");
+
+                    b.Property<string>("OwnerService")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("owner_service")
+                        .HasComment("Frozen owning service.");
+
+                    b.Property<string>("OwnerType")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("owner_type")
+                        .HasComment("Frozen owner resource type.");
+
+                    b.Property<long>("PhysicalGraceSeconds")
+                        .HasColumnType("bigint")
+                        .HasColumnName("physical_grace_seconds")
+                        .HasComment("Frozen physical grace, in seconds.");
+
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("purpose")
+                        .HasComment("Authorized file purpose.");
+
+                    b.Property<long>("ReplayHorizonSeconds")
+                        .HasColumnType("bigint")
+                        .HasColumnName("replay_horizon_seconds")
+                        .HasComment("Frozen shared replay duration H; terminal deadline is assigned by physical completion.");
+
+                    b.Property<long>("ReplayPolicyVersion")
+                        .HasColumnType("bigint")
+                        .HasColumnName("replay_policy_version")
+                        .HasComment("Version of the frozen horizon policy.");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("size_bytes")
+                        .HasComment("Business quota bytes released by acceptance.");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("status")
+                        .HasComment("Physical lifecycle state; acceptance alone is physical-hold.");
+
+                    b.Property<long>("StorageLeaseSeconds")
+                        .HasColumnType("bigint")
+                        .HasColumnName("storage_lease_seconds")
+                        .HasComment("Frozen FileStorage retirement executor lease, in seconds.");
+
+                    b.Property<long>("StorageMaxBackoffSeconds")
+                        .HasColumnType("bigint")
+                        .HasColumnName("storage_max_backoff_seconds")
+                        .HasComment("Frozen FileStorage retirement executor maximum backoff, in seconds.");
+
+                    b.HasKey("DecisionId");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "FileId")
+                        .IsUnique();
+
+                    b.ToTable("template_asset_retirements", "filestorage", t =>
+                        {
+                            t.HasComment("Durable label-template retirement receipts and frozen replay inputs.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.FileStorage.Infrastructure.Records.UploadSessionRecord", b =>
                 {
                     b.Property<string>("UploadSessionId")

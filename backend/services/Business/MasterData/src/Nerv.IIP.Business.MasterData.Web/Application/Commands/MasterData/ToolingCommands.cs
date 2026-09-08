@@ -1,6 +1,9 @@
 using Microsoft.EntityFrameworkCore;
+using System.Security.Cryptography;
+using System.Text;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ToolingAssetAggregate;
 using Nerv.IIP.Business.MasterData.Infrastructure.Repositories;
+using Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverters;
 
 namespace Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 
@@ -13,50 +16,299 @@ public sealed record RegisterToolingAssetCommand(
     IReadOnlyCollection<string> WorkCenterCodes,
     IReadOnlyCollection<string> SkuCodes,
     long? MaintenanceLifeCount,
-    string? IdempotencyKey) : ICommand<MasterDataResourceResult>;
+    string? IdempotencyKey,
+    ToolingOperationAuditContext AuditContext) : ICommand<MasterDataResourceResult>;
 
 public sealed class RegisterToolingAssetCommandHandler(
     IToolingAssetRepository repository,
-    MasterDataCodingService codingService) : ICommandHandler<RegisterToolingAssetCommand, MasterDataResourceResult>
+    MasterDataCodingService codingService,
+    ApplicationDbContext dbContext,
+    IToolingAuditOperationCoordinator operationCoordinator) : ICommandHandler<RegisterToolingAssetCommand, MasterDataResourceResult>
 {
     public async Task<MasterDataResourceResult> Handle(RegisterToolingAssetCommand request, CancellationToken cancellationToken)
     {
+        var context = request.AuditContext;
+        var operationId = context.OperationId;
+        if (!string.IsNullOrWhiteSpace(request.IdempotencyKey) &&
+            !string.Equals(request.IdempotencyKey.Trim(), operationId, StringComparison.Ordinal))
+        {
+            throw new KnownException("工装注册请求体与审计标头中的幂等标识不一致。");
+        }
+
+        var fingerprint = ToolingAuditCommand.Fingerprint(
+            ToolingAuditEntry.RegisterOperation,
+            ToolingAuditCommand.NormalizeOptionalCode(request.Code),
+            ToolingAssetStatus.Available,
+            0L);
+        return await operationCoordinator.ExecuteAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            operationId,
+            request.Code,
+            token => HandleCoreAsync(request, context, operationId, fingerprint, token),
+            cancellationToken);
+    }
+
+    private async Task<MasterDataResourceResult> HandleCoreAsync(
+        RegisterToolingAssetCommand request,
+        ToolingOperationAuditContext context,
+        string operationId,
+        string fingerprint,
+        CancellationToken cancellationToken)
+    {
+        var replay = await ToolingAuditCommand.FindReplayAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            operationId,
+            context.Actor,
+            fingerprint,
+            cancellationToken);
+        if (replay is not null)
+        {
+            var replayedAsset = await repository.FindAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                replay.ToolingCode,
+                cancellationToken)
+                ?? throw new KnownException($"工装操作 '{operationId}' 指向的工装资产不存在。");
+            if (!replayedAsset.MatchesRegistration(
+                    request.Name,
+                    request.ToolingType,
+                    request.WorkCenterCodes,
+                    request.SkuCodes,
+                    request.MaintenanceLifeCount))
+            {
+                throw new KnownException($"工装操作 '{operationId}' 与此前持久化的注册内容冲突。");
+            }
+
+            return new MasterDataResourceResult("tooling-asset", replayedAsset.Code, replayedAsset.Name);
+        }
+
+        var codingFingerprint = MasterDataCodingService.Fingerprint(
+            request.Name,
+            request.ToolingType,
+            request.WorkCenterCodes,
+            request.SkuCodes,
+            request.MaintenanceLifeCount);
         var allocation = await codingService.AllocateAsync(
-            request.OrganizationId, request.EnvironmentId, "tooling-asset", request.Code, request.IdempotencyKey,
-            MasterDataCodingService.Fingerprint(request.Name, request.ToolingType, request.WorkCenterCodes, request.SkuCodes, request.MaintenanceLifeCount),
+            request.OrganizationId, request.EnvironmentId, "tooling-asset", request.Code, operationId,
+            codingFingerprint,
             cancellationToken);
         if (allocation.IsIdempotentReplay)
-            return new MasterDataResourceResult("tooling-asset", allocation.Code, request.Name);
+        {
+            throw new KnownException($"工装注册操作 '{operationId}' 缺少可归因的审计事实，禁止将历史操作归因给当前请求。");
+        }
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, cancellationToken))
             throw new KnownException($"工装资产 '{allocation.Code}' 已存在。");
 
         var asset = ToolingAsset.Register(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Name,
             request.ToolingType, request.WorkCenterCodes, request.SkuCodes, request.MaintenanceLifeCount);
         await repository.AddAsync(asset, cancellationToken);
+        dbContext.ToolingAuditEntries.Add(ToolingAuditEntry.Register(
+            request.OrganizationId,
+            request.EnvironmentId,
+            asset.Id.ToString(),
+            asset.Code,
+            context.Actor,
+            context.CorrelationId,
+            context.CausationId,
+            operationId,
+            fingerprint,
+            DateTimeOffset.UtcNow));
         return new MasterDataResourceResult("tooling-asset", asset.Code, asset.Name);
     }
 }
 
-public sealed record ChangeToolingStatusCommand(string OrganizationId, string EnvironmentId, string Code, ToolingAssetStatus Status, string Reason) : ICommand;
+public sealed record ChangeToolingStatusCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string Code,
+    ToolingAssetStatus Status,
+    ToolingOperationAuditContext.ToolingAuditSafeText Reason,
+    ToolingOperationAuditContext AuditContext) : ICommand;
 
-public sealed class ChangeToolingStatusCommandHandler(IToolingAssetRepository repository) : ICommandHandler<ChangeToolingStatusCommand>
+public sealed class ChangeToolingStatusCommandHandler(
+    IToolingAssetRepository repository,
+    ApplicationDbContext dbContext,
+    IToolingAuditOperationCoordinator operationCoordinator) : ICommandHandler<ChangeToolingStatusCommand>
 {
     public async Task Handle(ChangeToolingStatusCommand request, CancellationToken cancellationToken)
     {
+        var context = request.AuditContext;
+        var operationId = context.OperationId;
+        var reason = request.Reason.Value;
+        var fingerprint = ToolingAuditCommand.Fingerprint(
+            ToolingAuditEntry.StatusOperation,
+            ToolingAuditCommand.NormalizeRequiredCode(request.Code),
+            request.Status,
+            reason);
+        await operationCoordinator.ExecuteAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            operationId,
+            request.Code,
+            async token =>
+            {
+                await HandleCoreAsync(request, context, operationId, reason, fingerprint, token);
+                return true;
+            },
+            cancellationToken);
+    }
+
+    private async Task HandleCoreAsync(
+        ChangeToolingStatusCommand request,
+        ToolingOperationAuditContext context,
+        string operationId,
+        string reason,
+        string fingerprint,
+        CancellationToken cancellationToken)
+    {
+        if (await ToolingAuditCommand.FindReplayAsync(
+                dbContext,
+                request.OrganizationId,
+                request.EnvironmentId,
+                operationId,
+                context.Actor,
+                fingerprint,
+                cancellationToken) is not null)
+        {
+            return;
+        }
+
         var asset = await repository.FindAsync(request.OrganizationId, request.EnvironmentId, request.Code, cancellationToken)
             ?? throw new KnownException($"未找到工装资产 '{request.Code}'。");
-        asset.ChangeStatus(request.Status, request.Reason);
+        var before = asset.Status;
+        asset.ChangeStatus(request.Status, reason);
+        dbContext.ToolingAuditEntries.Add(ToolingAuditEntry.Status(
+            request.OrganizationId,
+            request.EnvironmentId,
+            asset.Id.ToString(),
+            asset.Code,
+            context.Actor,
+            context.CorrelationId,
+            context.CausationId,
+            operationId,
+            fingerprint,
+            before,
+            asset.Status,
+            reason,
+            DateTimeOffset.UtcNow));
     }
 }
 
-public sealed record RecordToolingUsageCommand(string OrganizationId, string EnvironmentId, string Code, long Count) : ICommand;
-public sealed class RecordToolingUsageCommandHandler(IToolingAssetRepository repository) : ICommandHandler<RecordToolingUsageCommand>
+public sealed record RecordToolingUsageCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string Code,
+    long Count,
+    ToolingOperationAuditContext AuditContext) : ICommand;
+public sealed class RecordToolingUsageCommandHandler(
+    IToolingAssetRepository repository,
+    ApplicationDbContext dbContext,
+    IToolingAuditOperationCoordinator operationCoordinator) : ICommandHandler<RecordToolingUsageCommand>
 {
     public async Task Handle(RecordToolingUsageCommand request, CancellationToken cancellationToken)
     {
+        var context = request.AuditContext;
+        var operationId = context.OperationId;
+        var fingerprint = ToolingAuditCommand.Fingerprint(
+            ToolingAuditEntry.UsageOperation,
+            ToolingAuditCommand.NormalizeRequiredCode(request.Code),
+            request.Count);
+        await operationCoordinator.ExecuteAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            operationId,
+            request.Code,
+            async token =>
+            {
+                await HandleCoreAsync(request, context, operationId, fingerprint, token);
+                return true;
+            },
+            cancellationToken);
+    }
+
+    private async Task HandleCoreAsync(
+        RecordToolingUsageCommand request,
+        ToolingOperationAuditContext context,
+        string operationId,
+        string fingerprint,
+        CancellationToken cancellationToken)
+    {
+        if (await ToolingAuditCommand.FindReplayAsync(
+                dbContext,
+                request.OrganizationId,
+                request.EnvironmentId,
+                operationId,
+                context.Actor,
+                fingerprint,
+                cancellationToken) is not null)
+        {
+            return;
+        }
+
         var asset = await repository.FindAsync(request.OrganizationId, request.EnvironmentId, request.Code, cancellationToken)
             ?? throw new KnownException($"未找到工装资产 '{request.Code}'。");
+        var before = asset.UsageCount;
         asset.RecordUsage(request.Count);
+        dbContext.ToolingAuditEntries.Add(ToolingAuditEntry.Usage(
+            request.OrganizationId,
+            request.EnvironmentId,
+            asset.Id.ToString(),
+            asset.Code,
+            context.Actor,
+            context.CorrelationId,
+            context.CausationId,
+            operationId,
+            fingerprint,
+            before,
+            asset.UsageCount,
+            request.Count,
+            DateTimeOffset.UtcNow));
+    }
+}
+
+internal static class ToolingAuditCommand
+{
+    public static string NormalizeRequiredCode(string code) =>
+        string.IsNullOrWhiteSpace(code)
+            ? throw new KnownException("工装编码不能为空。")
+            : code.Trim().ToUpperInvariant();
+
+    public static string NormalizeOptionalCode(string? code) =>
+        string.IsNullOrWhiteSpace(code) ? "<allocated>" : code.Trim().ToUpperInvariant();
+
+    public static string Fingerprint(params object?[] parts)
+    {
+        var canonical = MasterDataCodingService.Fingerprint(parts);
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
+    }
+
+    public static async Task<ToolingAuditEntry?> FindReplayAsync(
+        ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        string operationId,
+        string actor,
+        string fingerprint,
+        CancellationToken cancellationToken)
+    {
+        var existing = await dbContext.ToolingAuditEntries.AsNoTracking().SingleOrDefaultAsync(
+            entry => entry.OrganizationId == organizationId &&
+                entry.EnvironmentId == environmentId &&
+                entry.OperationId == operationId,
+            cancellationToken);
+        if (existing is null)
+        {
+            return null;
+        }
+        if (!existing.Matches(actor.Trim(), fingerprint))
+        {
+            throw new KnownException($"工装操作 '{operationId}' 与此前持久化的请求内容冲突。");
+        }
+
+        return existing;
     }
 }
 

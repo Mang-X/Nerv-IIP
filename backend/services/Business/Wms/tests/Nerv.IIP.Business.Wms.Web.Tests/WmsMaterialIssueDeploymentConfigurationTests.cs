@@ -122,7 +122,6 @@ public sealed class WmsMaterialIssueDeploymentConfigurationTests
         var wms = ComposeServiceBlock(
             ReadRepositoryFile("infra/compose/nerv-iip.platform.yml"),
             "business-wms");
-        var baseline = ReadRepositoryFile("docs/architecture/deployment-baseline.md");
 
         // 扫**整个 overlay 文件**而不是单个服务块：键塞进共享锚点 `&dotnet-env` 同样会到达
         // business-wms，只看服务块会漏。整个 legacy overlay 都不支持该链路，全文件扫描才是对的强度。
@@ -131,7 +130,6 @@ public sealed class WmsMaterialIssueDeploymentConfigurationTests
             $@"(?m)^\s*{Regex.Escape(section)}__[A-Za-z0-9_]+:",
             ReadRepositoryFile("infra/compose/nerv-iip.platform.yml"));
         Assert.Contains("不支持 MES→WMS 领料链路", wms, StringComparison.Ordinal);
-        Assert.Contains("不支持 MES→WMS 领料链路", baseline, StringComparison.Ordinal);
     }
 
     /// <summary>

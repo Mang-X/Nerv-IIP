@@ -16,6 +16,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Maintenance;
 using Nerv.IIP.Contracts.Quality;
+using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Testing;
 using Npgsql;
 using System.Data;
@@ -27,6 +28,8 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 public sealed class MesCapSubscriptionTests
 {
     private const string AssetUnavailableTopic = "AssetUnavailableIntegrationEvent";
+    private const string AssetUnavailableV2DevelopmentTopic =
+        "nerv-iip.development.business-maintenance.maintenance.asset-unavailable.v2";
     private const string AssetRestoredTopic = "AssetRestoredIntegrationEvent";
     private const string SchedulePlanReleasedTopic = "SchedulePlanReleasedIntegrationEvent";
     private const string SchedulePlanInvalidatedTopic = "SchedulePlanInvalidatedIntegrationEvent";
@@ -67,6 +70,12 @@ public sealed class MesCapSubscriptionTests
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, StockMovementPostedTopic));
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, StockMovementPostingFailedTopic));
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, SkuDisabledTopic));
+        var v2Candidate = Assert.Single(candidates, candidate =>
+            CandidateSubscribesToTopic(candidate, AssetUnavailableV2DevelopmentTopic));
+        var v1Candidate = Assert.Single(candidates, candidate =>
+            candidate.ImplTypeInfo.AsType() == typeof(AssetUnavailableIntegrationEventHandlerForReschedule) &&
+            CandidateSubscribesToTopic(candidate, AssetUnavailableTopic));
+        Assert.Equal(v1Candidate.Attribute.Group, v2Candidate.Attribute.Group);
     }
 
     [Fact]
@@ -127,6 +136,19 @@ public sealed class MesCapSubscriptionTests
             descriptor.Lifetime == ServiceLifetime.Scoped);
         Assert.Contains(services, descriptor =>
             descriptor.ServiceType == typeof(SkuDisabledIntegrationEventHandlerForProjectMesSkuAvailability) &&
+            descriptor.Lifetime == ServiceLifetime.Scoped);
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(MesAssetUnavailableCanonicalProcessor) &&
+            descriptor.Lifetime == ServiceLifetime.Scoped);
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(AssetUnavailableV2IntegrationEventHandlerForReschedule) &&
+            descriptor.Lifetime == ServiceLifetime.Scoped);
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(IIntegrationEventDeadLetterReplayHandler) &&
+            descriptor.ImplementationType == typeof(MesAssetUnavailableDeadLetterReplayHandler) &&
+            descriptor.Lifetime == ServiceLifetime.Scoped);
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(IntegrationEventDeadLetterReplayExecutor) &&
             descriptor.Lifetime == ServiceLifetime.Scoped);
     }
 
