@@ -13,6 +13,27 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 
 public sealed class BusinessGatewayMachineOverheadTests
 {
+    [Theory]
+    [InlineData("/api/business-console/v1/erp/finance/work-order-costs/WO-001")]
+    [InlineData("/api/business-console/v1/erp/finance/work-center-machine-overhead-reconciliations?accountingPeriodCode=2026-08")]
+    public async Task Facades_reject_forbidden_principal_before_downstream_request(string path)
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(WorkOrderPayload()));
+        var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
+        await using var lease = Lease(auth, handler);
+        using var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        var separator = path.Contains('?', StringComparison.Ordinal) ? "&" : "?";
+
+        var response = await client.GetAsync($"{path}{separator}organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(BusinessGatewayPermissions.ErpFinanceRead, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("org-001", auth.LastRequirement.OrganizationId);
+        Assert.Equal("env-dev", auth.LastRequirement.EnvironmentId);
+        Assert.Equal(0, handler.CallCount);
+    }
+
     [Fact]
     public async Task Work_order_facade_preserves_scope_lineage_and_available_not_applicable_unavailable_zero_states()
     {
@@ -102,54 +123,32 @@ public sealed class BusinessGatewayMachineOverheadTests
     }
 
     [Fact]
-    public async Task Work_order_client_fails_closed_when_unavailable_null_is_mutated_to_zero()
+    public async Task Work_order_facade_fails_closed_when_unavailable_null_is_mutated_to_zero()
     {
         var payload = JsonNode.Parse(JsonSerializer.Serialize(WorkOrderPayload()))!;
         payload["data"]!["actualMachineHours"] = 0m;
-        var client = ClientReturning(payload.ToJsonString());
-
-        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
-            client.GetWorkOrderCostVarianceAsync(
-                "internal-token",
-                new("WO-001", "org-001", "env-dev"),
-                CancellationToken.None));
-
-        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
-        Assert.Equal("downstream-invalid-response", exception.Message);
+        await AssertInvalidPayloadRejectedByFacade(
+            payload, "/api/business-console/v1/erp/finance/work-order-costs/WO-001");
     }
 
     [Fact]
-    public async Task Work_order_client_fails_closed_when_applied_field_is_renamed_to_actual()
+    public async Task Work_order_facade_fails_closed_when_applied_field_is_renamed_to_actual()
     {
         var payload = JsonNode.Parse(JsonSerializer.Serialize(WorkOrderPayload()))!;
         var data = payload["data"]!.AsObject();
         data["actualFixedMachineOverhead"] = null;
         data.Remove("appliedFixedMachineOverhead");
-        var client = ClientReturning(payload.ToJsonString());
-
-        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
-            client.GetWorkOrderCostVarianceAsync(
-                "internal-token",
-                new("WO-001", "org-001", "env-dev"),
-                CancellationToken.None));
-
-        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        await AssertInvalidPayloadRejectedByFacade(
+            payload, "/api/business-console/v1/erp/finance/work-order-costs/WO-001");
     }
 
     [Fact]
-    public async Task Period_client_fails_closed_when_variance_field_is_deleted()
+    public async Task Period_facade_fails_closed_when_variance_field_is_deleted()
     {
         var payload = JsonNode.Parse(JsonSerializer.Serialize(PeriodPayload()))!;
         payload["data"]!["items"]![0]!.AsObject().Remove("underOverAppliedTotalAmount");
-        var client = ClientReturning(payload.ToJsonString());
-
-        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
-            client.ListMachineOverheadReconciliationsAsync(
-                "internal-token",
-                new("org-001", "env-dev", "2026-08"),
-                CancellationToken.None));
-
-        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        await AssertInvalidPayloadRejectedByFacade(
+            payload, "/api/business-console/v1/erp/finance/work-center-machine-overhead-reconciliations?accountingPeriodCode=2026-08");
     }
 
     private static BusinessGatewayTestHostLease Lease(
@@ -166,14 +165,23 @@ public sealed class BusinessGatewayMachineOverheadTests
         });
     }
 
-    private static HttpBusinessErpClient ClientReturning(string json) =>
-        new(new HttpClient(new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+    private static async Task AssertInvalidPayloadRejectedByFacade(JsonNode payload, string path)
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
-            Content = new StringContent(json, Encoding.UTF8, "application/json"),
-        }))
-        {
-            BaseAddress = new Uri("http://erp.local"),
+            Content = new StringContent(payload.ToJsonString(), Encoding.UTF8, "application/json"),
         });
+        await using var lease = Lease(FakeBusinessGatewayAuthorizationClient.Allowed(), handler);
+        using var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        var separator = path.Contains('?', StringComparison.Ordinal) ? "&" : "?";
+
+        var response = await client.GetAsync($"{path}{separator}organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+        Assert.Contains("downstream-invalid-response", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.Equal(1, handler.CallCount);
+    }
 
     private static object WorkOrderPayload() => new
     {
