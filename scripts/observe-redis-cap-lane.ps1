@@ -131,11 +131,7 @@ try {
             try {
                 # INFO's named sections contain numeric statistics, not stream values or command arguments.
                 $result = Invoke-NativeCommandOutput -Command 'redis-cli' -Arguments @('--raw', '-h', '127.0.0.1', '-p', '6379', 'INFO', 'cpu', 'clients', 'commandstats', 'latencystats') -WorkingDirectory $repoRoot -TimeoutSeconds 2 -Name 'redis-cap-observation-redis'
-                $values = [ordered]@{}
-                foreach ($line in $result.Stdout -split "`r?`n") {
-                    if ($line -match '^(used_cpu_sys|used_cpu_user|connected_clients|blocked_clients):([0-9.]+)$') { $values[$Matches[1]] = [double]::Parse($Matches[2], [Globalization.CultureInfo]::InvariantCulture) }
-                    elseif ($line -match '^(cmdstat|latency_percentiles_usec)_(exists|xgroup|xreadgroup|xadd|xack|xpending|xclaim|xautoclaim|eval|evalsha|info):([a-z0-9_=.,]+)$') { $values[$Matches[1] + '_' + $Matches[2]] = $Matches[3] }
-                }
+                $values = ConvertFrom-RedisCapInfo -Info $result.Stdout
                 [void](Write-Observation @{ kind = 'redis'; utc = [DateTimeOffset]::UtcNow.ToString('O'); elapsedSeconds = $clock.Elapsed.TotalSeconds; collectionSeconds = $clock.Elapsed.TotalSeconds - $started; values = $values })
             }
             catch { [void](Write-Observation @{ kind = 'redis-unavailable'; utc = [DateTimeOffset]::UtcNow.ToString('O'); failureType = $_.Exception.GetType().Name }) }

@@ -15,6 +15,17 @@ function Assert-Observation([bool]$Condition, [string]$Message) {
     if (-not $Condition) { throw $Message }
 }
 
+# Captured from Redis 8.10.1 INFO after an owned XGROUP CREATE fixture command.
+$redisInfo = @'
+cmdstat_xgroup|create:calls=1,usec=171,usec_per_call=171.00,rejected_calls=0,failed_calls=0
+latency_percentiles_usec_xgroup|create:p50=171.007,p99=171.007,p99.9=171.007
+cmdstat_xgroup|destroy:calls=1,usec=10
+cmdstat_get:calls=1,usec=10
+cmdstat_xgroup|create:payload="secret-value"
+'@
+$redisValues = ConvertFrom-RedisCapInfo -Info $redisInfo
+Assert-Observation ($redisValues.Count -eq 2 -and $redisValues['cmdstat_xgroup|create'] -ceq 'calls=1,usec=171,usec_per_call=171.00,rejected_calls=0,failed_calls=0' -and $redisValues['latency_percentiles_usec_xgroup|create'] -ceq 'p50=171.007,p99=171.007,p99.9=171.007') 'Actual XGROUP CREATE statistics and percentiles must survive; other subcommands, commands and command arguments must not.'
+
 # NERV-2127: accepting discovery or another invocation must fail this regression.
 $members = @([pscustomobject]@{ id = 'mes'; project = 'backend/mes.csproj'; filter = 'FullyQualifiedName=Example' })
 $processes = @{

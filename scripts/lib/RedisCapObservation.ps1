@@ -9,6 +9,16 @@
 #   Requires:
 #     - PowerShell 7
 
+function ConvertFrom-RedisCapInfo {
+    param([string]$Info)
+    $values = [ordered]@{}
+    foreach ($line in $Info -split "`r?`n") {
+        if ($line -match '^(used_cpu_sys|used_cpu_user|connected_clients|blocked_clients):([0-9.]+)$') { $values[$Matches[1]] = [double]::Parse($Matches[2], [Globalization.CultureInfo]::InvariantCulture) }
+        elseif ($line -match '^(cmdstat|latency_percentiles_usec)_(exists|xgroup\|create|xreadgroup|xadd|xack|xpending|xclaim|xautoclaim|eval|evalsha|info):([a-z0-9_=.,]+)$') { $values[$Matches[1] + '_' + $Matches[2]] = $Matches[3] }
+    }
+    return $values
+}
+
 function Write-RedisCapObservationRecord {
     param([string]$Path, [long]$MaxBytes, [object]$Record)
     $line = ($Record | ConvertTo-Json -Depth 10 -Compress) + "`n"
