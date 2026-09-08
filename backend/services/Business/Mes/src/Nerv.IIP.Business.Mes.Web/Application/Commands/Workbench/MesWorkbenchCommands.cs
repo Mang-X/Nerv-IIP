@@ -1221,14 +1221,18 @@ public sealed class ConfirmLineSideMaterialReceiptCommandHandler(
         // 过账位置不再由 MES 臆造，Inventory 也就不会再以 NEGATIVE_ON_HAND 全拒（#1322）。
         var postingQuantity = request.ReceivedQuantity ??
             materialRequest.RequestedQuantity - materialRequest.ReceivedQuantity;
-        var locations = await supplyLocationResolver.ResolveAsync(
+        // 成功腿已实扣时沿用冻结来源；再次查可用量会把已扣完的正常重试挡住。
+        var locations = materialRequest.PendingReceiptQuantity > 0m
+            ? materialRequest.RequireTransferLocations()
+            : await supplyLocationResolver.ResolveAsync(
             new MesMaterialSupplyLocationRequest(
                 materialRequest.OrganizationId,
                 materialRequest.EnvironmentId,
                 materialRequest.MaterialId,
                 materialRequest.UomCode,
                 request.MaterialLotId ?? materialRequest.MaterialLotId,
-                postingQuantity),
+                postingQuantity,
+                materialRequest.GetSourceAllocations().FirstOrDefault()?.OwnerType ?? "company"),
             cancellationToken);
 
         MesDomainRuleGuard.Enforce(() =>
