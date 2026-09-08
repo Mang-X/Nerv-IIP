@@ -50,7 +50,7 @@ function Read-ProcessTable {
         if (-not [int]::TryParse([IO.Path]::GetFileName($directory), [ref]$processNumber)) { continue }
         try {
             $stat = [IO.File]::ReadAllText((Join-Path $directory 'stat'))
-            $tail = $stat.Substring($stat.LastIndexOf(')') + 2).Split(' ')
+            $tail = $stat.Substring($stat.LastIndexOf(')', [StringComparison]::Ordinal) + 2).Split(' ')
             $arguments = [IO.File]::ReadAllText((Join-Path $directory 'cmdline')).Split([char]0, [StringSplitOptions]::RemoveEmptyEntries)
             $table[$processNumber] = [pscustomobject]@{ parent = [int]$tail[1]; startTicks = $tail[19]; arguments = $arguments }
         }
@@ -125,7 +125,7 @@ try {
                 [void](Write-Observation @{ kind = 'collector-exited'; utc = [DateTimeOffset]::UtcNow.ToString('O'); processId = $collector.targetId; collectorProcessId = $collector.handle.ProcessId; file = [IO.Path]::GetFileName($collector.csvPath); memberId = $collector.memberId; exitCode = $collector.handle.Process.ExitCode; targetStillPresent = $table.ContainsKey($collector.targetId); bytes = if (Test-Path -LiteralPath $collector.csvPath) { (Get-Item -LiteralPath $collector.csvPath).Length } else { $null } })
             }
         }
-        if ($status.outcome -ceq 'size-limit') { break }
+        if ([string]::Equals($status.outcome, 'size-limit', [StringComparison]::Ordinal)) { break }
         if ($clock.Elapsed.TotalSeconds -ge $nextRedis) {
             $started = $clock.Elapsed.TotalSeconds
             try {
@@ -139,11 +139,11 @@ try {
         }
         Start-Sleep -Milliseconds 250
     }
-    if ($status.outcome -ceq 'running') { $status.outcome = if ($clock.Elapsed.TotalSeconds -ge $DurationSeconds) { 'deadline' } else { 'stopped' } }
+    if ([string]::Equals($status.outcome, 'running', [StringComparison]::Ordinal)) { $status.outcome = if ($clock.Elapsed.TotalSeconds -ge $DurationSeconds) { 'deadline' } else { 'stopped' } }
 }
 catch { $status.outcome = 'failed'; $status.failureType = $_.Exception.GetType().Name }
 finally {
-    if ($status.outcome -ceq 'running') { $status.outcome = 'interrupted' }
+    if ([string]::Equals($status.outcome, 'running', [StringComparison]::Ordinal)) { $status.outcome = 'interrupted' }
     $remainingCollectors = 0
     foreach ($collector in $collectors) {
         $collectorId = $collector.handle.ProcessId

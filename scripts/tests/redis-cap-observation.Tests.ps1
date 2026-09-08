@@ -24,7 +24,7 @@ cmdstat_get:calls=1,usec=10
 cmdstat_xgroup|create:payload="secret-value"
 '@
 $redisValues = ConvertFrom-RedisCapInfo -Info $redisInfo
-Assert-Observation ($redisValues.Count -eq 2 -and $redisValues['cmdstat_xgroup|create'] -ceq 'calls=1,usec=171,usec_per_call=171.00,rejected_calls=0,failed_calls=0' -and $redisValues['latency_percentiles_usec_xgroup|create'] -ceq 'p50=171.007,p99=171.007,p99.9=171.007') 'Actual XGROUP CREATE statistics and percentiles must survive; other subcommands, commands and command arguments must not.'
+Assert-Observation ($redisValues.Count -eq 2 -and [string]::Equals($redisValues['cmdstat_xgroup|create'], 'calls=1,usec=171,usec_per_call=171.00,rejected_calls=0,failed_calls=0', [StringComparison]::Ordinal) -and [string]::Equals($redisValues['latency_percentiles_usec_xgroup|create'], 'p50=171.007,p99=171.007,p99.9=171.007', [StringComparison]::Ordinal)) 'Actual XGROUP CREATE statistics and percentiles must survive; other subcommands, commands and command arguments must not.'
 
 # NERV-2127: accepting discovery or another invocation must fail this regression.
 $members = @([pscustomobject]@{ id = 'mes'; project = 'backend/mes.csproj'; filter = 'FullyQualifiedName=Example' })
@@ -38,7 +38,7 @@ $processes = @{
     302 = [pscustomobject]@{ parent = 301; arguments = @('dotnet', 'exec', '/sdk/testhost.dll') }
 }
 $identity = Resolve-RedisCapObservedTesthost -ProcessId 102 -Processes $processes -LaneProcessId 100 -Members $members -ResultsDirectory '/results'
-Assert-Observation ($null -ne $identity -and $identity.memberId -ceq 'mes' -and $identity.executionProcessId -eq 101) 'Formal testhost must associate with its execution member.'
+Assert-Observation ($null -ne $identity -and [string]::Equals($identity.memberId, 'mes', [StringComparison]::Ordinal) -and $identity.executionProcessId -eq 101) 'Formal testhost must associate with its execution member.'
 Assert-Observation ($null -ne (Resolve-RedisCapObservedTesthost -ProcessId 102 -Processes $processes -LaneProcessId 1 -Members $members -ResultsDirectory '/results')) 'A lane owner that is PID 1 in a container must remain observable.'
 foreach ($excluded in @(101, 202, 302)) {
     Assert-Observation ($null -eq (Resolve-RedisCapObservedTesthost -ProcessId $excluded -Processes $processes -LaneProcessId 100 -Members $members -ResultsDirectory '/results')) 'Discovery, launcher and foreign invocation must not be observed.'

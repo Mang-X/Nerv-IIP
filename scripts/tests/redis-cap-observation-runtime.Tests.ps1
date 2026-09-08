@@ -40,15 +40,15 @@ dd if=/dev/zero of="$output" bs=1024 count=2 2>/dev/null
     foreach ($scenario in @('natural', 'early-exit', 'size-limit', 'stop', 'cancel', 'deadline', 'disabled', 'missing-tool')) {
         $output = Join-Path $fixtureRoot $scenario
         $results = Join-Path $fixtureRoot "$scenario-results"
-        $tool = if ($scenario -ceq 'early-exit') { '/usr/bin/false' } elseif ($scenario -ceq 'size-limit') { $noisyTool } elseif ($scenario -ceq 'missing-tool') { Join-Path $fixtureRoot 'missing-counters' } else { $CountersPath }
-        $limit = if ($scenario -ceq 'size-limit') { 1024 } else { 8388608 }
-        $duration = if ($scenario -ceq 'deadline') { '3' } else { '30' }
+        $tool = if ([string]::Equals($scenario, 'early-exit', [StringComparison]::Ordinal)) { '/usr/bin/false' } elseif ([string]::Equals($scenario, 'size-limit', [StringComparison]::Ordinal)) { $noisyTool } elseif ([string]::Equals($scenario, 'missing-tool', [StringComparison]::Ordinal)) { Join-Path $fixtureRoot 'missing-counters' } else { $CountersPath }
+        $limit = if ([string]::Equals($scenario, 'size-limit', [StringComparison]::Ordinal)) { 1024 } else { 8388608 }
+        $duration = if ([string]::Equals($scenario, 'deadline', [StringComparison]::Ordinal)) { '3' } else { '30' }
         $observerArguments = @('-NoProfile', '-File', (Join-Path $repoRoot 'scripts/observe-redis-cap-lane.ps1'), '-LaneProcessId', [string]$PID, '-ResultsDirectory', $results, '-OutputDirectory', $output, '-CountersPath', $tool, '-ManifestPath', $manifest, '-DurationSeconds', $duration, '-MaxFileBytes', [string]$limit)
-        if ($scenario -ceq 'disabled') { $observerArguments += '-Disabled' }
+        if ([string]::Equals($scenario, 'disabled', [StringComparison]::Ordinal)) { $observerArguments += '-Disabled' }
         $observer = Start-ManagedBackgroundProcess -Command 'pwsh' -Arguments $observerArguments -WorkingDirectory $repoRoot -Name "observation-$scenario"
         $test = Start-ManagedBackgroundProcess -Command 'dotnet' -Arguments @('test', $project, '--configuration', 'Release', '--no-build', '--filter', 'FullyQualifiedName=Probe.Observed', '--results-directory', (Join-Path $results 'probe'), '--logger', 'trx') -WorkingDirectory $fixtureRoot -Name "observation-test-$scenario"
         $ownedIds = @()
-        if ($scenario -cin @('stop', 'cancel')) {
+        if ([Linq.Enumerable]::Contains[string]([string[]](@('stop', 'cancel')), [string]($scenario), [StringComparer]::Ordinal)) {
             $wait = [Diagnostics.Stopwatch]::StartNew()
             $started = $false
             while (-not $started -and $wait.Elapsed.TotalSeconds -lt 15) {
@@ -66,32 +66,32 @@ dd if=/dev/zero of="$output" bs=1024 count=2 2>/dev/null
             Assert-Observation ($test.Process.WaitForExit(20000)) 'Probe testhost must exit inside its own test budget.'
             Assert-Observation ($test.Process.ExitCode -eq 0) 'Observation must not alter the probe test result.'
         }
-        if ($scenario -ceq 'cancel') {
+        if ([string]::Equals($scenario, 'cancel', [StringComparison]::Ordinal)) {
             Invoke-NativeCommandOutput -Command '/bin/kill' -Arguments @('-INT', [string]$observer.Process.Id) -TimeoutSeconds 2 -Name 'observation-cancel-signal' | Out-Null
         }
         else { [IO.File]::WriteAllText((Join-Path $output 'stop'), 'stop') }
         Assert-Observation ($observer.Process.WaitForExit(15000)) 'Observer must finish after the stop marker.'
         $state = Get-Content (Join-Path $output 'status.json') -Raw | ConvertFrom-Json
         Write-Host ($state | ConvertTo-Json -Compress)
-        $expectedHosts = if ($scenario -cin @('disabled', 'missing-tool')) { 0 } else { 1 }
+        $expectedHosts = if ([Linq.Enumerable]::Contains[string]([string[]](@('disabled', 'missing-tool')), [string]($scenario), [StringComparer]::Ordinal)) { 0 } else { 1 }
         Assert-Observation ($state.observedTesthosts -eq $expectedHosts -and $state.remainingCollectors -eq 0) 'The expected actual execution testhost count must be observed and all collectors reaped.'
         foreach ($ownedId in $ownedIds) { Assert-Observation ($null -eq (Get-Process -Id $ownedId -ErrorAction SilentlyContinue)) "Owned observation PID $ownedId must be gone after cleanup." }
-        if ($scenario -cin @('stop', 'cancel')) {
+        if ([Linq.Enumerable]::Contains[string]([string[]](@('stop', 'cancel')), [string]($scenario), [StringComparer]::Ordinal)) {
             Assert-Observation (-not $test.Process.HasExited) 'Observer cleanup must not stop the testhost.'
             Assert-Observation ($test.Process.WaitForExit(15000) -and $test.Process.ExitCode -eq 0) 'The testhost must retain its original successful exit after observation stops.'
         }
-        if ($scenario -ceq 'disabled') { Assert-Observation ($state.outcome -ceq 'disabled') 'Explicitly disabled observation must report disabled without changing the test.' }
-        if ($scenario -ceq 'cancel') { Assert-Observation ($state.outcome -ceq 'interrupted') 'SIGINT must retain an interrupted outcome, not running after cleanup.' }
-        if ($scenario -ceq 'missing-tool') { Assert-Observation ($state.outcome -ceq 'unavailable-tool') 'Missing counters must report unavailable-tool without changing the test.' }
-        if ($scenario -ceq 'early-exit') { Assert-Observation ($state.collectorFailures -gt 0) 'Early tool exits must be reported separately from the passing test.' }
-        elseif ($scenario -ceq 'size-limit') {
+        if ([string]::Equals($scenario, 'disabled', [StringComparison]::Ordinal)) { Assert-Observation ([string]::Equals($state.outcome, 'disabled', [StringComparison]::Ordinal)) 'Explicitly disabled observation must report disabled without changing the test.' }
+        if ([string]::Equals($scenario, 'cancel', [StringComparison]::Ordinal)) { Assert-Observation ([string]::Equals($state.outcome, 'interrupted', [StringComparison]::Ordinal)) 'SIGINT must retain an interrupted outcome, not running after cleanup.' }
+        if ([string]::Equals($scenario, 'missing-tool', [StringComparison]::Ordinal)) { Assert-Observation ([string]::Equals($state.outcome, 'unavailable-tool', [StringComparison]::Ordinal)) 'Missing counters must report unavailable-tool without changing the test.' }
+        if ([string]::Equals($scenario, 'early-exit', [StringComparison]::Ordinal)) { Assert-Observation ($state.collectorFailures -gt 0) 'Early tool exits must be reported separately from the passing test.' }
+        elseif ([string]::Equals($scenario, 'size-limit', [StringComparison]::Ordinal)) {
             Assert-Observation (@(Get-ChildItem $output -Filter '*.csv' | Where-Object Length -gt 1024).Count -eq 0) 'Kernel file-size limit must bound every collector output.'
-            Assert-Observation (@(Get-ChildItem $output -Filter '*.csv' | Where-Object Length -eq 1024).Count -gt 0) 'The size-limit regression must actually reach the kernel cap.'
+            Assert-Observation (@(Get-ChildItem $output -Filter '*.csv' | Where-Object { $_.Length -eq 1024 }).Count -gt 0) 'The size-limit regression must actually reach the kernel cap.'
         }
-        elseif ($scenario -ceq 'deadline') { Assert-Observation ($state.outcome -ceq 'deadline') 'The observer must stop at its own deadline without a caller stop marker.' }
-        elseif ($scenario -ceq 'natural') {
-            $cpu = @(Get-ChildItem $output -Filter 'cpu-*.csv' | Import-Csv | Where-Object { $_.'Counter Type' -ceq 'Metric' })
-            $threads = @(Get-ChildItem $output -Filter 'clr-*.csv' | Import-Csv | Where-Object { $_.'Counter Name' -ceq 'ThreadPool Thread Count' -and $_.'Counter Type' -ceq 'Metric' })
+        elseif ([string]::Equals($scenario, 'deadline', [StringComparison]::Ordinal)) { Assert-Observation ([string]::Equals($state.outcome, 'deadline', [StringComparison]::Ordinal)) 'The observer must stop at its own deadline without a caller stop marker.' }
+        elseif ([string]::Equals($scenario, 'natural', [StringComparison]::Ordinal)) {
+            $cpu = @(Get-ChildItem $output -Filter 'cpu-*.csv' | Import-Csv | Where-Object { [string]::Equals($_.'Counter Type', 'Metric', [StringComparison]::Ordinal) })
+            $threads = @(Get-ChildItem $output -Filter 'clr-*.csv' | Import-Csv | Where-Object { [string]::Equals($_.'Counter Name', 'ThreadPool Thread Count', [StringComparison]::Ordinal) -and [string]::Equals($_.'Counter Type', 'Metric', [StringComparison]::Ordinal) })
             Assert-Observation ($cpu.Count -gt 0 -and $threads.Count -gt 0) 'Actual testhost must yield ProcessorCount and absolute ThreadPool metrics.'
         }
         [void]$observer.Stop.Invoke('Observer regression complete'); $observer = $null

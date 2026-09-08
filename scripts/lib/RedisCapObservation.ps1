@@ -31,7 +31,7 @@ function Write-RedisCapObservationRecord {
 function Resolve-RedisCapObservedTesthost {
     param([int]$ProcessId, [hashtable]$Processes, [int]$LaneProcessId, [object[]]$Members, [string]$ResultsDirectory)
     $candidate = $Processes[$ProcessId]
-    if ($null -eq $candidate -or -not @($candidate.arguments | Where-Object { [IO.Path]::GetFileName($_) -ceq 'testhost.dll' }).Count) { return $null }
+    if ($null -eq $candidate -or -not @($candidate.arguments | Where-Object { [string]::Equals([IO.Path]::GetFileName($_), 'testhost.dll', [StringComparison]::Ordinal) }).Count) { return $null }
     $ancestor = [int]$candidate.parent
     $execution = $null
     $visited = [Collections.Generic.HashSet[int]]::new()
@@ -40,12 +40,12 @@ function Resolve-RedisCapObservedTesthost {
         $process = $Processes[$ancestor]
         if ($null -eq $process) { return $null }
         $arguments = [string[]]$process.arguments
-        if ($arguments -ccontains '--list-tests') { return $null }
+        if ([Linq.Enumerable]::Contains[string]([string[]]($arguments), [string]('--list-tests'), [StringComparer]::Ordinal)) { return $null }
         $resultIndex = [Array]::IndexOf($arguments, '--results-directory')
         $filterIndex = [Array]::IndexOf($arguments, '--filter')
-        if ($arguments -ccontains 'test' -and $resultIndex -ge 0 -and $resultIndex + 1 -lt $arguments.Length -and $filterIndex -ge 0 -and $filterIndex + 1 -lt $arguments.Length) {
+        if ([Linq.Enumerable]::Contains[string]([string[]]($arguments), [string]('test'), [StringComparer]::Ordinal) -and $resultIndex -ge 0 -and $resultIndex + 1 -lt $arguments.Length -and $filterIndex -ge 0 -and $filterIndex + 1 -lt $arguments.Length) {
             foreach ($member in $Members) {
-                if ($arguments -ccontains [string]$member.project -and
+                if ([Linq.Enumerable]::Contains[string]([string[]]($arguments), [string]([string]$member.project), [StringComparer]::Ordinal) -and
                     [string]::Equals($arguments[$filterIndex + 1], [string]$member.filter, [StringComparison]::Ordinal) -and
                     [string]::Equals($arguments[$resultIndex + 1], (Join-Path $ResultsDirectory ([string]$member.id)), [StringComparison]::Ordinal)) {
                     $execution = [pscustomobject]@{ memberId = [string]$member.id; executionProcessId = $ancestor; processId = $ProcessId }
