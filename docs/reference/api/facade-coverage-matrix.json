@@ -769,8 +769,13 @@
       "method": "GET",
       "route": "/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations",
       "operationId": "listErpWorkCenterMachineOverheadReconciliations",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; follows the ERP finance month-end reconciliation Business Console phase. Issues #2383 and #2384 intentionally deliver the period reconciliation service read contract without Gateway/UI."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleErpWorkCenterMachineOverheadReconciliations"
+      ]
     },
     {
       "service": "Erp",
@@ -785,8 +790,13 @@
       "method": "GET",
       "route": "/api/business/v1/erp/finance/work-order-costs/{workOrderId}",
       "operationId": "getErpWorkOrderCostVariance",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade and generated client are delivered by follow-up issues; Issues #2277 and #2384 intentionally expose only the ERP service work-order cost, variance, and machine-overhead read contract."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleErpWorkOrderCostVariance"
+      ]
     },
     {
       "service": "Erp",
