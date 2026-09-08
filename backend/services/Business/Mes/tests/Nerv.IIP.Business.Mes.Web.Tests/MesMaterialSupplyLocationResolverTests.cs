@@ -18,13 +18,13 @@ public sealed class MesMaterialSupplyLocationResolverTests
             Content = new StringContent(JsonSerializer.Serialize(new { data = new {
                 availableQuantity = 100 + companyQuantity,
                 items = new[] {
-                    new { lotNo = "LOT-01", availableQuantity = 50m, movementAllowed = true, ownerType = "production", ownerId = (string?)null, serialNo = (string?)null, qualityStatus = "Unrestricted" },
-                    new { lotNo = "LOT-01", availableQuantity = 50m, movementAllowed = true, ownerType = "supplier", ownerId = (string?)"SUP-01", serialNo = (string?)null, qualityStatus = "Unrestricted" },
-                    new { lotNo = "LOT-01", availableQuantity = 50m, movementAllowed = true, ownerType = "company", ownerId = (string?)"OTHER-01", serialNo = (string?)null, qualityStatus = "Unrestricted" },
-                    new { lotNo = "LOT-01", availableQuantity = 50m, movementAllowed = false, ownerType = "company", ownerId = (string?)null, serialNo = (string?)null, qualityStatus = "Unrestricted" },
-                    new { lotNo = "LOT-01", availableQuantity = 50m, movementAllowed = true, ownerType = "company", ownerId = (string?)null, serialNo = (string?)"SER-01", qualityStatus = "Unrestricted" },
-                    new { lotNo = "LOT-01", availableQuantity = 50m, movementAllowed = true, ownerType = "company", ownerId = (string?)null, serialNo = (string?)null, qualityStatus = "Blocked" },
-                    new { lotNo = "LOT-01", availableQuantity = (decimal)companyQuantity, movementAllowed = true, ownerType = "company", ownerId = (string?)null, serialNo = (string?)null, qualityStatus = "Unrestricted" }
+                    new { lotNo = "LOT-01", availableQuantity = 50m, movementAllowed = true, ownerType = "production", ownerId = (string?)null, serialNo = (string?)null, qualityStatus = "unrestricted" },
+                    new { lotNo = "LOT-01", availableQuantity = 50m, movementAllowed = true, ownerType = "supplier", ownerId = (string?)"SUP-01", serialNo = (string?)null, qualityStatus = "unrestricted" },
+                    new { lotNo = "LOT-01", availableQuantity = 50m, movementAllowed = true, ownerType = "company", ownerId = (string?)"OTHER-01", serialNo = (string?)null, qualityStatus = "unrestricted" },
+                    new { lotNo = "LOT-01", availableQuantity = 50m, movementAllowed = false, ownerType = "company", ownerId = (string?)null, serialNo = (string?)null, qualityStatus = "unrestricted" },
+                    new { lotNo = "LOT-01", availableQuantity = 50m, movementAllowed = true, ownerType = "company", ownerId = (string?)null, serialNo = (string?)"SER-01", qualityStatus = "unrestricted" },
+                    new { lotNo = "LOT-01", availableQuantity = 50m, movementAllowed = true, ownerType = "company", ownerId = (string?)null, serialNo = (string?)null, qualityStatus = "blocked" },
+                    new { lotNo = "LOT-01", availableQuantity = (decimal)companyQuantity, movementAllowed = true, ownerType = "company", ownerId = (string?)null, serialNo = (string?)null, qualityStatus = "unrestricted" }
                 }
             }}), System.Text.Encoding.UTF8, "application/json")
         });
@@ -152,7 +152,7 @@ public sealed class MesMaterialSupplyLocationResolverTests
 
     private static HttpResponseMessage AvailabilityResponse(decimal quantity, string? lotNo = null)
     {
-        object[] items = [new { lotNo, availableQuantity = quantity, movementAllowed = true, ownerType = "company", ownerId = (string?)null, serialNo = (string?)null, qualityStatus = "Unrestricted" }];
+        object[] items = [new { lotNo, availableQuantity = quantity, movementAllowed = true, ownerType = "company", ownerId = (string?)null, serialNo = (string?)null, qualityStatus = "unrestricted" }];
         return new(HttpStatusCode.OK)
         {
             Content = new StringContent(JsonSerializer.Serialize(new

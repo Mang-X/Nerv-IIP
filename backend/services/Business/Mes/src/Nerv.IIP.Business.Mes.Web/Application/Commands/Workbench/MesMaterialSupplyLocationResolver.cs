@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using Microsoft.Extensions.Logging;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
+using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
@@ -112,7 +113,7 @@ public sealed class InventoryMesMaterialSupplyLocationResolver(
             var lines = inventoryLines
                 .Where(x => x.MovementAllowed && x.AvailableQuantity > 0m &&
                     x.OwnerType == request.OwnerType && x.OwnerId is null &&
-                    x.SerialNo is null && x.QualityStatus == "Unrestricted")
+                    x.SerialNo is null && x.QualityStatus == InventoryQualityStatuses.Unrestricted)
                 .OrderBy(x => x.LotNo ?? string.Empty, StringComparer.Ordinal);
             foreach (var line in lines)
             {
@@ -159,7 +160,7 @@ public sealed class InventoryMesMaterialSupplyLocationResolver(
             $"siteCode={Uri.EscapeDataString(siteCode)}",
             $"locationCode={Uri.EscapeDataString(locationCode)}",
             $"ownerType={Uri.EscapeDataString(request.OwnerType)}",
-            "qualityStatus=Unrestricted",
+            $"qualityStatus={InventoryQualityStatuses.Unrestricted}",
         };
         // MES 的 MaterialLotId 是线边追溯批次，不一定等于 Inventory 的来源批次。
         // 来源批次由 Inventory 返回的 dimension lines 决定；这里不能拿工单批号精确过滤库存。
