@@ -5,6 +5,13 @@ namespace Nerv.IIP.Business.Acceptance.Tests;
 
 internal static class WmsTrustedCompletionAcceptanceFixture
 {
+    public sealed class ReceiptRoute : Nerv.IIP.Business.Wms.Web.Application.Inventory.IWmsPurchaseReceiptPostingRouteClient
+    {
+        public Task<Nerv.IIP.Contracts.Erp.PurchaseReceiptInventoryPostingRoute?> GetAsync(
+            string organizationId, string environmentId, string receiptNo, CancellationToken cancellationToken) =>
+            Task.FromResult<Nerv.IIP.Contracts.Erp.PurchaseReceiptInventoryPostingRoute?>(Nerv.IIP.Contracts.Erp.PurchaseReceiptInventoryPostingRoute.Wms);
+    }
+
     public const string ActorPrincipalId = "acceptance-warehouse-operator";
     public const string PoolCode = "POOL-ACCEPTANCE-SITE-01";
 
