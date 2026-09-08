@@ -247,7 +247,7 @@ test('NERV-2115 隔离外购与活塞杆自制供给满足同一冻结需求', a
                 )?.status,
               { timeout: 60000 },
             )
-            .toBe('completed')
+            .toBe('Completed')
         }
         report.completedRod = await detail()
         expect((await readIssue()).consumedQuantity).toBe(raw[0].quantity)
