@@ -102,6 +102,16 @@ public interface IBusinessErpClient
         BusinessConsoleListErpWorkCenterCostRatesRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleErpWorkOrderCostVarianceResponse> GetWorkOrderCostVarianceAsync(
+        string internalBearerToken,
+        BusinessConsoleGetErpWorkOrderCostVarianceRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleErpMachineOverheadReconciliationListResponse> ListMachineOverheadReconciliationsAsync(
+        string internalBearerToken,
+        BusinessConsoleListErpMachineOverheadReconciliationsRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleErpJournalVoucherListResponse> ListJournalVouchersAsync(
         string internalBearerToken,
         BusinessConsoleErpListRequest request,
@@ -456,6 +466,66 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
             null,
             cancellationToken);
 
+    public async Task<BusinessConsoleErpWorkOrderCostVarianceResponse> GetWorkOrderCostVarianceAsync(
+        string internalBearerToken,
+        BusinessConsoleGetErpWorkOrderCostVarianceRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<BusinessConsoleErpWorkOrderCostVarianceResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/erp/finance/work-order-costs/{Uri.EscapeDataString(request.WorkOrderId)}?" + Query(
+                ("pageNumber", request.PageNumber),
+                ("pageSize", request.PageSize)),
+            null,
+            cancellationToken,
+            configureRequest: message => AddMachineOverheadScopeHeaders(message, request.OrganizationId, request.EnvironmentId));
+
+        ValidateMachineOverheadState(
+            response.MachineCostStatus,
+            response.MachineCostUnavailableReason,
+            response.ActualMachineHours,
+            response.AppliedFixedMachineOverhead,
+            response.AppliedVariableMachineOverhead,
+            response.AppliedMachineOverheadTotal);
+        foreach (var operation in response.MachineOverheadOperations)
+        {
+            ValidateMachineOverheadState(
+                operation.Status,
+                operation.UnavailableReason,
+                operation.ActualMachineHours,
+                operation.AppliedFixedMachineOverhead,
+                operation.AppliedVariableMachineOverhead,
+                operation.AppliedMachineOverheadTotal);
+        }
+
+        return response;
+    }
+
+    public async Task<BusinessConsoleErpMachineOverheadReconciliationListResponse> ListMachineOverheadReconciliationsAsync(
+        string internalBearerToken,
+        BusinessConsoleListErpMachineOverheadReconciliationsRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<BusinessConsoleErpMachineOverheadReconciliationListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations?" + Query(
+                ("accountingPeriodCode", request.AccountingPeriodCode),
+                ("workCenterId", request.WorkCenterId),
+                ("pageNumber", request.PageNumber),
+                ("pageSize", request.PageSize)),
+            null,
+            cancellationToken,
+            configureRequest: message => AddMachineOverheadScopeHeaders(message, request.OrganizationId, request.EnvironmentId));
+
+        ValidateMachineOverheadStatus(response.ReconciliationStatus, response.ReconciliationUnavailableReason);
+        foreach (var item in response.Items)
+            ValidateMachineOverheadStatus(item.ReconciliationStatus, item.UnavailableReason);
+
+        return response;
+    }
+
     public Task<BusinessConsoleErpJournalVoucherListResponse> ListJournalVouchersAsync(
         string internalBearerToken,
         BusinessConsoleErpListRequest request,
@@ -790,6 +860,59 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
             ("environmentId", request.EnvironmentId),
             ("sourceDocumentNo", request.SourceDocumentNo),
             ("sourceType", request.SourceType));
+
+    private static void AddMachineOverheadScopeHeaders(
+        HttpRequestMessage request,
+        string organizationId,
+        string environmentId)
+    {
+        request.Headers.TryAddWithoutValidation("X-Organization-Id", organizationId);
+        request.Headers.TryAddWithoutValidation("X-Environment-Id", environmentId);
+    }
+
+    private static void ValidateMachineOverheadState(
+        BusinessConsoleMachineOverheadReadStatus status,
+        string? unavailableReason,
+        params decimal?[] amounts)
+    {
+        ValidateMachineOverheadStatus(status, unavailableReason);
+        var valid = status switch
+        {
+            BusinessConsoleMachineOverheadReadStatus.Available =>
+                amounts.All(amount => amount.HasValue),
+            BusinessConsoleMachineOverheadReadStatus.NotApplicable or
+                BusinessConsoleMachineOverheadReadStatus.Unavailable =>
+                amounts.All(amount => !amount.HasValue),
+            _ => false,
+        };
+
+        if (!valid)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
+    }
+
+    private static void ValidateMachineOverheadStatus(
+        BusinessConsoleMachineOverheadReadStatus status,
+        string? unavailableReason)
+    {
+        var valid = status switch
+        {
+            BusinessConsoleMachineOverheadReadStatus.Available => unavailableReason is null,
+            BusinessConsoleMachineOverheadReadStatus.NotApplicable or
+                BusinessConsoleMachineOverheadReadStatus.Unavailable => !string.IsNullOrWhiteSpace(unavailableReason),
+            _ => false,
+        };
+
+        if (!valid)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
+    }
 
     private static string ErpListQuery(BusinessConsoleErpListRequest request) =>
         Query(
