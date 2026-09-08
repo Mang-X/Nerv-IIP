@@ -79,6 +79,8 @@
 
 `material_issue_requests` 的线边收料过账状态还包括 `pending_issue_leg_count`、`pending_issue_leg_posted_indexes_json` 和 `source_allocations_json`：前两列保证跨库位出库明细全部收到 Inventory 回执后才完成收料，后一列持久化实际来源站点/库位/批次/数量分配，避免异步重试丢失多库位明细。MES 的 `material_lot_id` 是线边追溯批次；来源批次由 Inventory availability 的明细返回，不能用工单批号过滤库存。
 
+`source_allocations_json` 的每项同时可冻结 `OwnerType`/`OwnerId`；旧四字段 JSON 缺少货权时仍读取为 `production/null`，不从当前库存推断或改写为公司货权。`production_report_material_consumptions.owner_type`（最长 50，默认 `production`）与可空 `owner_id`（最长 100）保存耗料货权，冲销复制原耗料身份；`material_issue_request_no` 保留供料单关联，退料可读取该单的来源快照。当前正常领料、耗料与 movement 路径仍维持既有 `production/null` 行为，公司料选择与过账激活另行交付。新增列的 migration 不搬移 Inventory 账、不改写旧来源 JSON；开始保存显式货权后应前滚修复，执行 `Down` 会丢失耗料货权快照。
+
 `material_issue_requests` 以 `is_supplementary` 和可空 `original_material_issue_request_no` 表达补料语义；历史迁移行默认为普通领料且无来源。来源通过同一组织/环境、工单和物料的复合自引用外键持久化，检查约束禁止普通领料带来源、补料缺少来源和直接自引用；`ix_material_issue_requests_scope_original_request` 支撑按来源业务号查询，来源存在性、补料链路和创建入口校验由 MES 应用读写子项负责。
 
 已知差距：

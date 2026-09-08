@@ -136,6 +136,7 @@
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.MesChangeoverRecordPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.MesMaterialSubstituteSnapshotPostgresTests",
+        "Nerv.IIP.Business.Mes.Web.Tests.MesMaterialOwnershipSnapshotPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.MesProductionStatisticsPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.MesSchedulePlanProvenancePostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedHandlerPostgresTests",
