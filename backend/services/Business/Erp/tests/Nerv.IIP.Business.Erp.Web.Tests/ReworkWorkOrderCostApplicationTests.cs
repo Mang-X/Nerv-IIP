@@ -81,8 +81,8 @@ public sealed class ReworkWorkOrderCostApplicationTests
 
         var response = await new ListWorkOrderCostsQueryHandler(db).Handle(
             new ListWorkOrderCostsQuery(
-                "org-001",
-                "env-dev",
+                " org-001 ",
+                " env-dev ",
                 SourceNcrId: "ncr-001"),
             CancellationToken.None);
 
