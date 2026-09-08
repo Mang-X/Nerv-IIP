@@ -1,5 +1,6 @@
 using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Maintenance.Infrastructure;
 using Nerv.IIP.Business.Maintenance.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
@@ -14,7 +15,8 @@ namespace Nerv.IIP.Business.Maintenance.Web.Application.IntegrationEventHandlers
 public sealed class OpenWorkOrderWhenAlarmRaisedHandler(
     ISender sender,
     ApplicationDbContext dbContext,
-    IIntegrationEventDeadLetterStore deadLetterStore)
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    IOptions<MaintenanceAlarmPolicyOptions> alarmPolicy)
     : IIntegrationEventHandler<AlarmRaisedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-maintenance.alarm-raised";
@@ -57,17 +59,17 @@ public sealed class OpenWorkOrderWhenAlarmRaisedHandler(
         }
 
         await sender.Send(
-            new CreateMaintenanceWorkOrderCommand(
+            new CreateMaintenanceWorkOrderV2Command(
                 integrationEvent.OrganizationId,
                 integrationEvent.EnvironmentId,
                 integrationEvent.Payload.DeviceAssetId,
                 string.IsNullOrWhiteSpace(integrationEvent.Payload.Priority) ? integrationEvent.Payload.Severity : integrationEvent.Payload.Priority,
                 integrationEvent.Payload.ExternalAlarmId,
                 IndustrialTelemetryIntegrationEventSources.IndustrialTelemetry,
-                integrationEvent.Payload.AlarmCode,
-                BuildDiagnosticDescription(integrationEvent.Payload),
-                integrationEvent.Payload.AlarmCode,
-                integrationEvent.Payload.TagKey,
+                alarmPolicy.Value.ResolveReasonCode(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, integrationEvent.Payload.AlarmCode),
+                DiagnosticDescription: BuildDiagnosticDescription(integrationEvent.Payload),
+                FailureModeCode: integrationEvent.Payload.AlarmCode,
+                FailureCauseCode: integrationEvent.Payload.TagKey,
                 IdempotencyKey: BuildInternalIdempotencyKey(integrationEvent)),
             cancellationToken);
     }

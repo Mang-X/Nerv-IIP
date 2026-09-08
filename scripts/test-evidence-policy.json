@@ -32,6 +32,12 @@
   ],
   "sources": [
     {
+      "id": "maintenance-alarm-policy-postgres-redis",
+      "sourcePath": "backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceAlarmPolicyRedisCapTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES and NERV_IIP_TEST_REDIS to run the real PostgreSQL \\+ Redis CAP Maintenance alarm policy proof\\.\";$"
+    },
+    {
       "id": "apphub-postgres",
       "sourcePath": "backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/AppHubPostgresProfileTests.cs",
       "sourceOrdinal": 1,
@@ -333,6 +339,23 @@
     }
   ],
   "rules": [
+    {
+      "id": "maintenance-alarm-policy-postgres-redis",
+      "sourceId": "maintenance-alarm-policy-postgres-redis",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Maintenance\\.Web\\.Tests\\.MaintenanceAlarmPolicyRedisCapTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES and NERV_IIP_TEST_REDIS to run the real PostgreSQL \\+ Redis CAP Maintenance alarm policy proof\\.$",
+      "allowedLanes": ["backend"],
+      "requiredLane": "redis-cap",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAlarmPolicyRedisCapTests.Alarm_policy_preserves_plain_creation_dual_facts_and_failed_message_retry_on_redis_cap"
+      ],
+      "expectedRuntimeTestCount": 1
+    },
     {
       "id": "connector-opcua-opt-in",
       "sourceId": "connector-opcua-opt-in",

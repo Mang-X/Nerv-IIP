@@ -2,6 +2,20 @@
   "schemaVersion": 1,
   "members": [
     {
+      "id": "maintenance-alarm-policy-redis-cap",
+      "service": "Maintenance",
+      "tier": "core",
+      "status": "active",
+      "project": "backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/Nerv.IIP.Business.Maintenance.Web.Tests.csproj",
+      "filter": "FullyQualifiedName=Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAlarmPolicyRedisCapTests.Alarm_policy_preserves_plain_creation_dual_facts_and_failed_message_retry_on_redis_cap",
+      "databasePrefix": "nerv_iip_maintenance",
+      "capVersionPrefix": "n3256-maint",
+      "diagnosticSchemas": ["maintenance", "cap"],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAlarmPolicyRedisCapTests.Alarm_policy_preserves_plain_creation_dual_facts_and_failed_message_retry_on_redis_cap"
+      ]
+    },
+    {
       "id": "demandplanning-sales-order-redis-cap",
       "service": "DemandPlanning",
       "tier": "core",

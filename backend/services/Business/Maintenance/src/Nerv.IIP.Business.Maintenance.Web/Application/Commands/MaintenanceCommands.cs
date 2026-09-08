@@ -292,7 +292,10 @@ public sealed record CreateMaintenanceWorkOrderV2Command(
     string? AssetUnavailableReasonCode,
     string? AssignedTechnicianUserId = null,
     int? EstimatedLaborMinutes = null,
-    string? IdempotencyKey = null) : ICommand<MaintenanceWorkOrderCommandResult>;
+    string? IdempotencyKey = null,
+    string? DiagnosticDescription = null,
+    string? FailureModeCode = null,
+    string? FailureCauseCode = null) : ICommand<MaintenanceWorkOrderCommandResult>;
 
 public sealed class CreateMaintenanceWorkOrderV2CommandValidator : AbstractValidator<CreateMaintenanceWorkOrderV2Command>
 {
@@ -303,6 +306,9 @@ public sealed class CreateMaintenanceWorkOrderV2CommandValidator : AbstractValid
         RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.Priority).NotEmpty().MaximumLength(50);
         RuleFor(x => x.SourceAlarmId).MaximumLength(150);
+        RuleFor(x => x.DiagnosticDescription).MaximumLength(1000);
+        RuleFor(x => x.FailureModeCode).MaximumLength(100);
+        RuleFor(x => x.FailureCauseCode).MaximumLength(100);
         RuleFor(x => x.OpenedBy).NotEmpty().MaximumLength(150);
         // null = 不标记不可用；非 null 必须是 1–100 字符的目录码。空字符串在这里失败，纯空白与近似值在目录精确命中处失败。
         RuleFor(x => x.AssetUnavailableReasonCode)
@@ -403,6 +409,9 @@ public sealed class CreateMaintenanceWorkOrderV2CommandHandler(ApplicationDbCont
                 request.SourceAlarmId,
                 request.Priority,
                 request.OpenedBy,
+                diagnosticDescription: request.DiagnosticDescription,
+                failureModeCode: request.FailureModeCode,
+                failureCauseCode: request.FailureCauseCode,
                 assignedTechnicianUserId: request.AssignedTechnicianUserId,
                 estimatedLaborMinutes: request.EstimatedLaborMinutes);
 
@@ -431,8 +440,9 @@ public sealed class CreateMaintenanceWorkOrderV2CommandHandler(ApplicationDbCont
     /// 指纹字段名与 v1 不同（<c>AssetUnavailableReasonCode</c> 而非 <c>AssetUnavailableReason</c>），且原因码取请求原值：
     /// 同一 key 下原因码或其它字段不同 → 冲突；同一 key 跨 v1/v2 复用 → 冲突，不会把不同原因合并为同一意图。
     /// </summary>
-    private static string CreateFingerprint(CreateMaintenanceWorkOrderV2Command request) =>
-        MaintenanceIdempotencyFingerprints.Hash(new
+    private static string CreateFingerprint(CreateMaintenanceWorkOrderV2Command request)
+    {
+        var fingerprint = MaintenanceIdempotencyFingerprints.Hash(new
         {
             Version = "v2",
             DeviceAssetId = request.DeviceAssetId.Trim(),
@@ -443,6 +453,17 @@ public sealed class CreateMaintenanceWorkOrderV2CommandHandler(ApplicationDbCont
             AssignedTechnicianUserId = MaintenanceText.Optional(request.AssignedTechnicianUserId),
             request.EstimatedLaborMinutes,
         });
+        // Preserve existing HTTP v2 receipts when no internal diagnostic context is supplied.
+        return request.DiagnosticDescription is null && request.FailureModeCode is null && request.FailureCauseCode is null
+            ? fingerprint
+            : MaintenanceIdempotencyFingerprints.Hash(new
+            {
+                fingerprint,
+                DiagnosticDescription = MaintenanceText.Optional(request.DiagnosticDescription),
+                FailureModeCode = MaintenanceText.Optional(request.FailureModeCode),
+                FailureCauseCode = MaintenanceText.Optional(request.FailureCauseCode),
+            });
+    }
 }
 
 public sealed class CreateMaintenanceWorkOrderV2CommandLock : ICommandLock<CreateMaintenanceWorkOrderV2Command>

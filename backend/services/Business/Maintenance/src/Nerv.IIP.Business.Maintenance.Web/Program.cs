@@ -73,6 +73,10 @@ try
     builder.Services.AddKnownExceptionErrorModelInterceptor();
     builder.Services.AddNervIipLocalization();
     builder.Services.Configure<MaintenanceCompletionOptions>(builder.Configuration.GetSection("Maintenance:Completion"));
+    builder.Services.AddSingleton<Microsoft.Extensions.Options.IValidateOptions<MaintenanceAlarmPolicyOptions>, MaintenanceAlarmPolicyOptionsValidator>();
+    builder.Services.AddOptions<MaintenanceAlarmPolicyOptions>()
+        .Bind(builder.Configuration.GetSection(MaintenanceAlarmPolicyOptions.SectionName))
+        .ValidateOnStart();
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, MaintenanceIntegrationEventDeadLetterStore>();
     builder.Services.AddScoped<OpenWorkOrderWhenAlarmRaisedHandler>();
     builder.Services.AddScoped<MarkWorkOrderAlarmClearedHandler>();
@@ -131,6 +135,8 @@ try
     builder.Services.AddConfigurationServiceEndpointProvider();
 
     var app = builder.Build();
+    // IOptions caches this startup snapshot; configuration changes apply after a service restart.
+    _ = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<MaintenanceAlarmPolicyOptions>>().Value;
     app.UseNervIipCorrelation();
     var autoMigrate = builder.Configuration.GetValue<bool>("Persistence:AutoMigrate");
     if (autoMigrate && !app.Environment.IsDevelopment())
