@@ -87,6 +87,33 @@ describe('maintenance downtime reason directory', () => {
     },
   )
 
+  it.each([
+    { status: 401, message: 'Unauthorized', expected: '登录已过期，请重新登录。' },
+    {
+      status: 400,
+      message: '当前工厂停机原因目录已停用，请联系设备主管',
+      expected: '当前工厂停机原因目录已停用，请联系设备主管',
+    },
+    {
+      status: 200,
+      message: '当前工厂停机原因目录已停用，请联系设备主管',
+      expected: '当前工厂停机原因目录已停用，请联系设备主管',
+    },
+  ])(
+    'preserves the actionable reason from a $status rejected directory read',
+    async ({ status, message, expected }) => {
+      const { directory, requests, wrapper } = harness()
+      await flushPromises()
+      requests[0]!.resolve(Response.json({ success: false, message }, { status }))
+      await flushPromises()
+      expect(directory.state.value).toBe('failed')
+      expect(directory.message.value).toBe(expected)
+      expect(wrapper.text()).toBe(expected)
+      expect(directory.options.value).toEqual([])
+      wrapper.unmount()
+    },
+  )
+
   it('sends the real SDK mutation to v2 with a raw code or explicit null and refreshes the list', async () => {
     const posts: Array<{ url: string; body: Record<string, unknown> }> = []
     let reads = 0

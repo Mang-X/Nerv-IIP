@@ -4,6 +4,7 @@ import {
 } from '@nerv-iip/api-client'
 import { useQuery } from '@pinia/colada'
 import { computed, ref } from 'vue'
+import { inlineErrorMessage, isForbiddenError } from '@/utils/notify'
 import { hasBusinessContext, type BusinessContextFields } from './businessContextBinding'
 import { useScopeBoundListResponse } from './useListFreshness'
 
@@ -33,8 +34,7 @@ export function useMaintenanceDowntimeReasonDirectory(scope: BusinessContextFiel
   const state = computed(() => {
     if (!enabled.value) return 'scope-pending'
     if (query.error.value) {
-      const error = query.error.value as { status?: number; response?: { status?: number } }
-      return error.status === 403 || error.response?.status === 403 ? 'forbidden' : 'failed'
+      return isForbiddenError(query.error.value) ? 'forbidden' : 'failed'
     }
     if (query.isLoading.value || response.value === undefined) return 'loading'
     if (response.value.success !== true) return 'failed'
@@ -56,7 +56,7 @@ export function useMaintenanceDowntimeReasonDirectory(scope: BusinessContextFiel
       case 'forbidden':
         return '没有停机原因读取权限，请联系管理员开通'
       case 'failed':
-        return '停机原因读取失败，请重试'
+        return inlineErrorMessage(query.error.value ?? response.value, '停机原因读取失败，请重试')
       case 'empty':
         return keyword.value.trim()
           ? '没有匹配的停机原因，请调整搜索词'
