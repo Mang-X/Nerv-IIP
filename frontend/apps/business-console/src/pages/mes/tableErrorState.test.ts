@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, type Component } from 'vue'
 
 import CapacityPage from './capacity.vue'
+import DispatchPage from './dispatch.vue'
+import OverviewPage from './index.vue'
 import DowntimePage from './downtime.vue'
 import FoundationPage from './foundation.vue'
 import HandoversPage from './handovers.vue'
@@ -34,6 +36,8 @@ const readFailure = vi.hoisted(() => new Error('mes-read-face-unavailable'))
 // 一个 hook 供多张表时（工单详情）列出全部错误字段，逐表各自落错误态。
 const overrides = vi.hoisted(() => ({
   useMesCapacityImpacts: ['capacityImpactsError'],
+  useMesDispatchTasks: ['dispatchTasksError'],
+  useMesOverview: ['overviewError'],
   useMesDowntimeEvents: ['downtimeEventsError'],
   useMesFinishedGoodsReceipts: ['receiptRequestsError'],
   useMesFoundationReadiness: ['readinessError'],
@@ -59,6 +63,8 @@ const retryHandlers = vi.hoisted(
     ({
       useMesFoundationReadiness: ['refreshReadiness'],
       useMesSchedules: ['refreshScheduleHistory'],
+      useMesDispatchTasks: ['refreshDispatchTasks'],
+      useMesOverview: ['refreshOverview'],
       useMesWorkOrderDetail: [
         'refreshDetail',
         'refreshMaterialReadiness',
@@ -84,6 +90,7 @@ vi.mock('@/composables/useBusinessMes', async (importOriginal) => {
     patched[hook] = (...args: unknown[]) => ({
       ...original(...args),
       ...Object.fromEntries(errorKeys.map((key) => [key, computed(() => readFailure)])),
+      ...(hook === 'useMesOverview' ? { overviewState: computed(() => 'error') } : {}),
       ...Object.fromEntries(refreshKeys.map((key) => [key, retrySpies[key]])),
     })
   }
@@ -220,6 +227,28 @@ describe('MES 列表页读面失败时落到表格错误态（#2854）', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
   })
+
+  // #2708：默认分组没有行时也必须有错误面板；切换平铺不能丢失重试行为。
+  for (const { name, page, flat, refresh } of [
+    { name: '派工分组', page: DispatchPage, flat: false, refresh: 'refreshDispatchTasks' },
+    { name: '派工平铺', page: DispatchPage, flat: true, refresh: 'refreshDispatchTasks' },
+    { name: '生产总览', page: OverviewPage, flat: false, refresh: 'refreshOverview' },
+  ]) {
+    it(`${name}：失败面板承接错误与重试，不呈现业务空态`, async () => {
+      const wrapper = await mountPage(page)
+      if (flat) await wrapper.get('[aria-label="平铺列表"]').trigger('click')
+      expect(wrapper.text()).toContain('数据加载失败')
+      expect(wrapper.text()).not.toContain(readFailure.message)
+      expect(wrapper.text()).not.toContain('暂无工序')
+      expect(wrapper.text()).not.toContain('本次读取的范围内没有阻塞记录')
+      const retries = wrapper.findAll('button').filter((button) => button.text() === '重新加载')
+      expect(retries).toHaveLength(1)
+      retrySpies[refresh].mockClear()
+      await retries[0].trigger('click')
+      expect(retrySpies[refresh]).toHaveBeenCalledTimes(1)
+      wrapper.unmount()
+    })
+  }
 
   for (const { name, page, absentText } of pages) {
     it(`${name}：显示错误态与重试入口，不显示空态或「未发起」文案`, async () => {
