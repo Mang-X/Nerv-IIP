@@ -32,7 +32,7 @@ public sealed class ErpListQueryCompositionTests
         Assert.Equal("env-dev", tenant.EnvironmentId);
         Assert.Equal(2, page.Skip);
         Assert.Equal(25, page.Take);
-        Assert.Equal("sup-002", keyword.Value);
+        Assert.Equal("SuP-002", keyword.Value);
         Assert.Equal(" org-001 ", query.OrganizationId);
         Assert.Equal("  SuP-002 ", query.Keyword);
     }

@@ -19,9 +19,8 @@ public sealed class ListWorkOrderCostsQueryValidator : AbstractValidator<ListWor
 {
     public ListWorkOrderCostsQueryValidator()
     {
-        this.AddTenantRules(query => query.OrganizationId, query => query.EnvironmentId);
-        RuleFor(x => x.OrganizationId).MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).MaximumLength(100);
+        RuleFor(x => x.OrganizationId).Must(value => !string.IsNullOrWhiteSpace(value)).MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).Must(value => !string.IsNullOrWhiteSpace(value)).MaximumLength(100);
         RuleFor(x => x.WorkOrderId).MaximumLength(100);
         RuleFor(x => x.SourceNcrId).MaximumLength(100);
         RuleFor(x => x.SourceWorkOrderId).MaximumLength(100);

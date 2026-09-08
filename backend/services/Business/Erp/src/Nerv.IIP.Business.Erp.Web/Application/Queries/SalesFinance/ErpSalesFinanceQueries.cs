@@ -58,9 +58,9 @@ public sealed class ListOpportunitiesQueryHandler(ApplicationDbContext dbContext
         if (keyword != null)
         {
             query = query.Where(x =>
-                x.OpportunityNo.ToLower().Contains(keyword)
-                || x.CustomerCode.ToLower().Contains(keyword)
-                || x.Topic.ToLower().Contains(keyword));
+                x.OpportunityNo.Contains(keyword)
+                || x.CustomerCode.Contains(keyword)
+                || x.Topic.Contains(keyword));
         }
 
         var total = await query.CountAsync(cancellationToken);
@@ -136,9 +136,9 @@ public sealed class ListQuotationsQueryHandler(ApplicationDbContext dbContext)
         if (keyword != null)
         {
             query = query.Where(x =>
-                x.QuotationNo.ToLower().Contains(keyword)
-                || x.CustomerCode.ToLower().Contains(keyword)
-                || x.Lines.Any(line => line.SkuCode.ToLower().Contains(keyword)));
+                x.QuotationNo.Contains(keyword)
+                || x.CustomerCode.Contains(keyword)
+                || x.Lines.Any(line => line.SkuCode.Contains(keyword)));
         }
 
         var total = await query.CountAsync(cancellationToken);
@@ -250,9 +250,9 @@ public sealed class ListDeliveryOrdersQueryHandler(ApplicationDbContext dbContex
         if (keyword != null)
         {
             query = query.Where(x =>
-                x.DeliveryOrderNo.ToLower().Contains(keyword)
-                || x.SalesOrderNo.ToLower().Contains(keyword)
-                || x.CustomerCode.ToLower().Contains(keyword));
+                x.DeliveryOrderNo.Contains(keyword)
+                || x.SalesOrderNo.Contains(keyword)
+                || x.CustomerCode.Contains(keyword));
         }
 
         var total = await query.CountAsync(cancellationToken);
@@ -318,9 +318,9 @@ public sealed class ListSalesOrdersQueryHandler(ApplicationDbContext dbContext)
         if (keyword != null)
         {
             query = query.Where(x =>
-                x.SalesOrderNo.ToLower().Contains(keyword)
-                || x.CustomerCode.ToLower().Contains(keyword)
-                || x.QuotationNo.ToLower().Contains(keyword));
+                x.SalesOrderNo.Contains(keyword)
+                || x.CustomerCode.Contains(keyword)
+                || x.QuotationNo.Contains(keyword));
         }
 
         var total = await query.CountAsync(cancellationToken);
@@ -395,9 +395,9 @@ public sealed class ListAccountPayablesQueryHandler(ApplicationDbContext dbConte
         if (keyword != null)
         {
             query = query.Where(x =>
-                x.PayableNo.ToLower().Contains(keyword)
-                || x.SourceDocumentNo.ToLower().Contains(keyword)
-                || x.SupplierCode.ToLower().Contains(keyword));
+                x.PayableNo.Contains(keyword)
+                || x.SourceDocumentNo.Contains(keyword)
+                || x.SupplierCode.Contains(keyword));
         }
 
         var total = await query.CountAsync(cancellationToken);
@@ -488,9 +488,9 @@ public sealed class ListAccountReceivablesQueryHandler(ApplicationDbContext dbCo
         if (keyword != null)
         {
             query = query.Where(x =>
-                x.ReceivableNo.ToLower().Contains(keyword)
-                || x.SourceDocumentNo.ToLower().Contains(keyword)
-                || x.CustomerCode.ToLower().Contains(keyword));
+                x.ReceivableNo.Contains(keyword)
+                || x.SourceDocumentNo.Contains(keyword)
+                || x.CustomerCode.Contains(keyword));
         }
 
         var total = await query.CountAsync(cancellationToken);
@@ -569,9 +569,9 @@ public sealed class ListCostCandidatesQueryHandler(ApplicationDbContext dbContex
         if (keyword != null)
         {
             query = query.Where(x =>
-                x.CandidateNo.ToLower().Contains(keyword)
-                || x.SourceType.ToLower().Contains(keyword)
-                || x.SourceDocumentNo.ToLower().Contains(keyword));
+                x.CandidateNo.Contains(keyword)
+                || x.SourceType.Contains(keyword)
+                || x.SourceDocumentNo.Contains(keyword));
         }
 
         var total = await query.CountAsync(cancellationToken);
@@ -650,10 +650,10 @@ public sealed class ListJournalVouchersQueryHandler(ApplicationDbContext dbConte
         if (keyword != null)
         {
             query = query.Where(x =>
-                x.VoucherNo.ToLower().Contains(keyword)
+                x.VoucherNo.Contains(keyword)
                 || x.Lines.Any(line =>
-                    line.AccountCode.ToLower().Contains(keyword)
-                    || line.Memo.ToLower().Contains(keyword)));
+                    line.AccountCode.Contains(keyword)
+                    || line.Memo.Contains(keyword)));
         }
 
         var total = await query.CountAsync(cancellationToken);

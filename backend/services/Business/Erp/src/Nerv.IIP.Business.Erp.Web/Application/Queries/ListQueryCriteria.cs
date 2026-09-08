@@ -54,7 +54,7 @@ public sealed record SearchTerm
     public string? Value { get; }
 
     public static SearchTerm From(string? value) =>
-        new(string.IsNullOrWhiteSpace(value) ? null : value.Trim().ToLowerInvariant());
+        new(string.IsNullOrWhiteSpace(value) ? null : value.Trim());
 }
 
 public static class ListQueryValidationExtensions
