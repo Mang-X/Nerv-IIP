@@ -42,6 +42,7 @@ export type ProcurementOptions = {
   headSha: string
   sessionId: string
   includeRodRawMaterial?: boolean
+  inventoryPostingRoute?: RecordReceiptRequest['inventoryPostingRoute']
   beforeCall?: () => Promise<void>
   afterSupply?: (context: {
     call: PublicCall
@@ -285,6 +286,7 @@ export async function runProcurement(options: ProcurementOptions) {
         .toBe('released')
       const receiptRequest = {
         ...scope,
+        inventoryPostingRoute: options.inventoryPostingRoute,
         purchaseReceiptNo: `PR-${issue.replace('NERV-', 'N')}-${scenario}-${index + 1}`,
         purchaseOrderNo,
         lines: [

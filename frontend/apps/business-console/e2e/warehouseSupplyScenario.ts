@@ -67,6 +67,7 @@ export async function runWarehouseSupply(
     await runProcurement({
       ...options,
       includeRodRawMaterial: true,
+      inventoryPostingRoute: 'wms',
       beforeCall: pace,
       afterReceipt: async ({ call, query, order, report }) => {
         report.worker = { principalId: auth.principal!.principalId, calls: workerCalls }
