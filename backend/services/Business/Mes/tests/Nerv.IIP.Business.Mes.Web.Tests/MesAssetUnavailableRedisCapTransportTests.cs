@@ -38,7 +38,7 @@ public sealed class MesAssetUnavailableRedisCapTransportTests(ITestOutputHelper 
         await MesPostgresLaneDatabase.ResetSchemaAsync();
         var poison = new PoisonSwitch();
         var arrivals = new ArrivalLog();
-        var subscription = new MesAssetUnavailableSubscription();
+        var subscription = new MesAssetUnavailableSubscription(output.WriteLine);
         await using var factory = CreateFactory(poison, arrivals, subscription);
         using var client = factory.CreateClient();
         var initializing = InitializeAsync(factory);
@@ -422,12 +422,12 @@ public sealed class MesAssetUnavailableRedisCapTransportTests(ITestOutputHelper 
         return value.ValueKind == JsonValueKind.String ? value.GetString()! : value.ToString();
     }
 
-    private static WebApplicationFactory<Program> CreateFactory(
+    private WebApplicationFactory<Program> CreateFactory(
         PoisonSwitch poison, ArrivalLog arrivals, MesAssetUnavailableSubscription? subscription = null)
     {
         if (subscription is null)
         {
-            subscription = new MesAssetUnavailableSubscription();
+            subscription = new MesAssetUnavailableSubscription(output.WriteLine);
             subscription.Release();
         }
         var settings = new Dictionary<string, string?>
