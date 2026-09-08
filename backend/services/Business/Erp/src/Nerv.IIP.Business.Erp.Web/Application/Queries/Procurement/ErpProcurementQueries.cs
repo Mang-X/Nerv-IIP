@@ -3,6 +3,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseRequisitionAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.RequestForQuotationAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Queries;
+using Nerv.IIP.Contracts.Erp;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.Queries.Procurement;
 
@@ -411,7 +412,8 @@ public sealed record GetPurchaseReceiptSourceDocumentQuery(
 public sealed record PurchaseReceiptSourceDocumentResponse(
     string PurchaseReceiptNo,
     string Status,
-    IReadOnlyCollection<PurchaseReceiptSourceDocumentLineResponse> Lines);
+    IReadOnlyCollection<PurchaseReceiptSourceDocumentLineResponse> Lines,
+    PurchaseReceiptInventoryPostingRoute InventoryPostingRoute = PurchaseReceiptInventoryPostingRoute.Direct);
 
 public sealed record PurchaseReceiptSourceDocumentLineResponse(
     string LineNo,
@@ -446,7 +448,8 @@ public sealed class GetPurchaseReceiptSourceDocumentQueryHandler(ApplicationDbCo
                         line.ReceivedQuantity,
                         line.LotNo,
                         line.QualityStatus))
-                    .ToArray()))
+                    .ToArray(),
+                x.InventoryPostingRoute))
             .SingleOrDefaultAsync(cancellationToken);
     }
 }

@@ -236,6 +236,7 @@ public sealed class PurchaseReceiptEntityTypeConfiguration : IEntityTypeConfigur
         builder.Property(x => x.CurrencyCode).HasColumnName("currency_code").IsRequired().HasMaxLength(10).HasComment("Receipt currency code copied from purchase order.");
         builder.Property(x => x.ExchangeRate).HasColumnName("exchange_rate").IsRequired().HasPrecision(18, 8).HasComment("Receipt exchange rate to local currency.");
         builder.Property(x => x.QualityStatus).HasColumnName("quality_status").IsRequired().HasMaxLength(50).HasComment("Receipt quality state summary.");
+        builder.Property(x => x.InventoryPostingRoute).HasColumnName("inventory_posting_route").IsRequired().HasConversion<string>().HasMaxLength(20).HasDefaultValue(Nerv.IIP.Contracts.Erp.PurchaseReceiptInventoryPostingRoute.Direct).HasComment("Immutable inventory posting owner: Direct ERP request or Wms putaway; legacy receipts remain Direct.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Purchase receipt status.");
         builder.Property(x => x.RecordedAtUtc).HasColumnName("recorded_at_utc").IsRequired().HasComment("UTC recording time.");
         builder.HasMany(x => x.Lines).WithOne().HasForeignKey("PurchaseReceiptId").OnDelete(DeleteBehavior.Cascade);

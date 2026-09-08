@@ -29,9 +29,14 @@ public sealed class PurchaseReceipt : Entity<PurchaseReceiptId>, IAggregateRoot
     {
     }
 
-    private PurchaseReceipt(PurchaseOrder order, string purchaseReceiptNo, IEnumerable<PurchaseReceiptLineDraft> lineDrafts, decimal exchangeRate)
+    private PurchaseReceipt(PurchaseOrder order, string purchaseReceiptNo, IEnumerable<PurchaseReceiptLineDraft> lineDrafts, decimal exchangeRate, PurchaseReceiptInventoryPostingRoute inventoryPostingRoute)
     {
         ArgumentNullException.ThrowIfNull(order);
+        if (!Enum.IsDefined(inventoryPostingRoute))
+        {
+            throw new ArgumentOutOfRangeException(nameof(inventoryPostingRoute));
+        }
+        InventoryPostingRoute = inventoryPostingRoute;
         OrganizationId = order.OrganizationId;
         EnvironmentId = order.EnvironmentId;
         PurchaseReceiptNo = ErpText.Required(purchaseReceiptNo, nameof(purchaseReceiptNo));
@@ -63,9 +68,12 @@ public sealed class PurchaseReceipt : Entity<PurchaseReceiptId>, IAggregateRoot
         var qualityStatuses = lines.Select(x => x.QualityStatus).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         QualityStatus = qualityStatuses.Length == 1 ? qualityStatuses[0] : "mixed";
         this.AddDomainEvent(new PurchaseReceiptRecordedDomainEvent(this));
-        foreach (var line in lines)
+        if (InventoryPostingRoute == PurchaseReceiptInventoryPostingRoute.Direct)
         {
-            this.AddDomainEvent(new PurchaseReceiptInventoryMovementRequestedDomainEvent(this, line));
+            foreach (var line in lines)
+            {
+                this.AddDomainEvent(new PurchaseReceiptInventoryMovementRequestedDomainEvent(this, line));
+            }
         }
     }
 
@@ -79,12 +87,13 @@ public sealed class PurchaseReceipt : Entity<PurchaseReceiptId>, IAggregateRoot
     public decimal ExchangeRate { get; private set; }
     public string QualityStatus { get; private set; } = string.Empty;
     public PurchaseReceiptStatus Status { get; private set; }
+    public PurchaseReceiptInventoryPostingRoute InventoryPostingRoute { get; private set; }
     public DateTime RecordedAtUtc { get; private set; }
     public IReadOnlyCollection<PurchaseReceiptLine> Lines => lines;
 
-    public static PurchaseReceipt Record(PurchaseOrder order, string purchaseReceiptNo, IEnumerable<PurchaseReceiptLineDraft> lines, decimal exchangeRate = 1m)
+    public static PurchaseReceipt Record(PurchaseOrder order, string purchaseReceiptNo, IEnumerable<PurchaseReceiptLineDraft> lines, decimal exchangeRate = 1m, PurchaseReceiptInventoryPostingRoute inventoryPostingRoute = PurchaseReceiptInventoryPostingRoute.Direct)
     {
-        return new PurchaseReceipt(order, purchaseReceiptNo, lines, exchangeRate);
+        return new PurchaseReceipt(order, purchaseReceiptNo, lines, exchangeRate, inventoryPostingRoute);
     }
 
     public void Cancel()
