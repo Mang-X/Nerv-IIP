@@ -214,7 +214,7 @@ public sealed class MaintenanceIntegrationEventHandlerTests
         await using var dbContext = CreateDbContext();
         var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
         var sender = new CommandOnlySender(dbContext);
-        var handler = new OpenWorkOrderWhenAlarmRaisedHandler(sender, dbContext, deadLetterStore);
+        var handler = new OpenWorkOrderWhenAlarmRaisedHandler(sender, dbContext, deadLetterStore, Microsoft.Extensions.Options.Options.Create(new MaintenanceAlarmPolicyOptions()));
         var alarm = CreateAlarmRaisedEvent();
 
         await handler.HandleAsync(alarm, CancellationToken.None);
@@ -227,7 +227,7 @@ public sealed class MaintenanceIntegrationEventHandlerTests
         Assert.Equal("OVER_TEMP", workOrders[0].FailureModeCode);
         Assert.Equal("temperature", workOrders[0].FailureCauseCode);
         Assert.Contains("96.5", workOrders[0].DiagnosticDescription, StringComparison.Ordinal);
-        Assert.True(workOrders[0].AssetUnavailable);
+        Assert.False(workOrders[0].AssetUnavailable);
         Assert.Equal(1, sender.CreateWorkOrderCommandCount);
         Assert.Equal(1, await dbContext.ProcessedIntegrationEvents.CountAsync());
         Assert.Empty(await deadLetterStore.ListAsync(OpenWorkOrderWhenAlarmRaisedHandler.ConsumerName, IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
@@ -239,7 +239,7 @@ public sealed class MaintenanceIntegrationEventHandlerTests
         await using var dbContext = CreateDbContext();
         var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
         var sender = new CommandOnlySender(dbContext);
-        var handler = new OpenWorkOrderWhenAlarmRaisedHandler(sender, dbContext, deadLetterStore);
+        var handler = new OpenWorkOrderWhenAlarmRaisedHandler(sender, dbContext, deadLetterStore, Microsoft.Extensions.Options.Options.Create(new MaintenanceAlarmPolicyOptions()));
         var alarm = CreateAlarmRaisedEvent();
         var releasedAlarm = alarm with { EventId = "evt-alarm-001-released" };
 
@@ -258,7 +258,7 @@ public sealed class MaintenanceIntegrationEventHandlerTests
     {
         await using var dbContext = CreateDbContext();
         var deadLetterStore = new MaintenanceIntegrationEventDeadLetterStore(dbContext);
-        var handler = new OpenWorkOrderWhenAlarmRaisedHandler(new CommandOnlySender(dbContext), dbContext, deadLetterStore);
+        var handler = new OpenWorkOrderWhenAlarmRaisedHandler(new CommandOnlySender(dbContext), dbContext, deadLetterStore, Microsoft.Extensions.Options.Options.Create(new MaintenanceAlarmPolicyOptions()));
 
         await handler.HandleAsync(CreateAlarmRaisedEvent(eventVersion: 2), CancellationToken.None);
 
@@ -307,7 +307,7 @@ public sealed class MaintenanceIntegrationEventHandlerTests
         await using var dbContext = CreateDbContext();
         var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
         var sender = new CommandOnlySender(dbContext);
-        var raisedHandler = new OpenWorkOrderWhenAlarmRaisedHandler(sender, dbContext, deadLetterStore);
+        var raisedHandler = new OpenWorkOrderWhenAlarmRaisedHandler(sender, dbContext, deadLetterStore, Microsoft.Extensions.Options.Options.Create(new MaintenanceAlarmPolicyOptions()));
         var clearedHandler = new MarkWorkOrderAlarmClearedHandler(sender, dbContext, deadLetterStore);
         var clearedAtUtc = new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero);
 
@@ -327,9 +327,14 @@ public sealed class MaintenanceIntegrationEventHandlerTests
     public async Task Stable_rule_alarm_events_open_one_work_order_and_clear_runtime_window()
     {
         await using var dbContext = CreateDbContext();
+        dbContext.DowntimeReasons.Add(Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.DowntimeReasonAggregate.DowntimeReason.Create("org-001", "env-dev", "Thermal_Custom", "Thermal alarm"));
+        await dbContext.SaveChangesAsync();
         var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
         var sender = new CommandOnlySender(dbContext);
-        var raisedHandler = new OpenWorkOrderWhenAlarmRaisedHandler(sender, dbContext, deadLetterStore);
+        var raisedHandler = new OpenWorkOrderWhenAlarmRaisedHandler(sender, dbContext, deadLetterStore, Microsoft.Extensions.Options.Options.Create(new MaintenanceAlarmPolicyOptions
+        {
+            Entries = [new() { OrganizationId = "org-001", EnvironmentId = "env-dev", Mode = "WorkOrderAndOccupy", AssetUnavailableReasonCode = "Thermal_Custom" }],
+        }));
         var clearedHandler = new MarkWorkOrderAlarmClearedHandler(sender, dbContext, deadLetterStore);
         var raisedAtUtc = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
         var clearedAtUtc = raisedAtUtc.AddHours(1);
@@ -511,10 +516,10 @@ public sealed class MaintenanceIntegrationEventHandlerTests
 
         public async Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
         {
-            if (request is CreateMaintenanceWorkOrderCommand command)
+            if (request is CreateMaintenanceWorkOrderV2Command command)
             {
                 CreateWorkOrderCommandCount++;
-                var handler = new CreateMaintenanceWorkOrderCommandHandler(dbContext);
+                var handler = new CreateMaintenanceWorkOrderV2CommandHandler(dbContext);
                 var id = await handler.Handle(command, cancellationToken);
                 await dbContext.SaveChangesAsync(cancellationToken);
                 return (TResponse)(object)id;
