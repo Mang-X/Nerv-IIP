@@ -21,7 +21,7 @@ $processes = @{
     100 = [pscustomobject]@{ parent = 1; arguments = @('pwsh', 'lane.ps1') }
     101 = [pscustomobject]@{ parent = 100; arguments = @('dotnet', 'test', 'backend/mes.csproj', '--filter', 'FullyQualifiedName=Example', '--results-directory', '/results/mes') }
     102 = [pscustomobject]@{ parent = 101; arguments = @('dotnet', 'exec', '/sdk/testhost.dll') }
-    201 = [pscustomobject]@{ parent = 100; arguments = @('dotnet', 'test', 'backend/mes.csproj', '--list-tests', '--filter', 'FullyQualifiedName=Example') }
+    201 = [pscustomobject]@{ parent = 100; arguments = @('dotnet', 'test', 'backend/mes.csproj', '--list-tests', '--filter', 'FullyQualifiedName=Example', '--results-directory', '/results/mes') }
     202 = [pscustomobject]@{ parent = 201; arguments = @('dotnet', 'exec', '/sdk/testhost.dll') }
     301 = [pscustomobject]@{ parent = 1; arguments = @('dotnet', 'test', 'backend/mes.csproj', '--filter', 'FullyQualifiedName=Example', '--results-directory', '/results/mes') }
     302 = [pscustomobject]@{ parent = 301; arguments = @('dotnet', 'exec', '/sdk/testhost.dll') }
@@ -31,6 +31,15 @@ Assert-Observation ($null -ne $identity -and $identity.memberId -ceq 'mes' -and 
 Assert-Observation ($null -ne (Resolve-RedisCapObservedTesthost -ProcessId 102 -Processes $processes -LaneProcessId 1 -Members $members -ResultsDirectory '/results')) 'A lane owner that is PID 1 in a container must remain observable.'
 foreach ($excluded in @(101, 202, 302)) {
     Assert-Observation ($null -eq (Resolve-RedisCapObservedTesthost -ProcessId $excluded -Processes $processes -LaneProcessId 100 -Members $members -ResultsDirectory '/results')) 'Discovery, launcher and foreign invocation must not be observed.'
+}
+foreach ($mismatch in @(
+    @('dotnet', 'test', 'backend/other.csproj', '--filter', 'FullyQualifiedName=Example', '--results-directory', '/results/mes'),
+    @('dotnet', 'test', 'backend/mes.csproj', '--filter', 'FullyQualifiedName=Other', '--results-directory', '/results/mes'),
+    @('dotnet', 'test', 'backend/mes.csproj', '--filter', 'FullyQualifiedName=Example', '--results-directory', '/other-results/mes')
+)) {
+    $processes[401] = [pscustomobject]@{ parent = 100; arguments = $mismatch }
+    $processes[402] = [pscustomobject]@{ parent = 401; arguments = @('dotnet', 'exec', '/sdk/testhost.dll') }
+    Assert-Observation ($null -eq (Resolve-RedisCapObservedTesthost -ProcessId 402 -Processes $processes -LaneProcessId 100 -Members $members -ResultsDirectory '/results')) 'A same-owner testhost with a different project, filter or result directory must be excluded independently.'
 }
 
 $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv2127-$([Guid]::NewGuid().ToString('N'))"

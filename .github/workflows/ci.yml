@@ -943,15 +943,27 @@ jobs:
           $observationDirectory = 'artifacts/redis-cap-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/observation'
           [IO.Directory]::CreateDirectory($observationDirectory) | Out-Null
           $toolsDirectory = Join-Path $env:RUNNER_TEMP 'redis-cap-observation-tools'
-          $installation = Invoke-DotNetOutput -Arguments @('tool', 'install', 'dotnet-counters', '--version', '10.0.731102', '--tool-path', $toolsDirectory) -TimeoutSeconds 60 -Name 'redis-cap-observation-tool'
-          $toolVersion = (Invoke-NativeCommandOutput -Command (Join-Path $toolsDirectory 'dotnet-counters') -Arguments @('--version') -TimeoutSeconds 5 -Name 'redis-cap-observation-tool-version').Stdout.Trim()
-          @{ dotnetCountersVersion = $toolVersion } | ConvertTo-Json | Set-Content (Join-Path $observationDirectory 'tool.json')
           "counters-path=$(Join-Path $toolsDirectory 'dotnet-counters')" >> $env:GITHUB_OUTPUT
+          try {
+            $installation = Invoke-DotNetOutput -Arguments @('tool', 'install', 'dotnet-counters', '--version', '10.0.731102', '--tool-path', $toolsDirectory) -TimeoutSeconds 60 -Name 'redis-cap-observation-tool'
+            $toolVersion = (Invoke-NativeCommandOutput -Command (Join-Path $toolsDirectory 'dotnet-counters') -Arguments @('--version') -TimeoutSeconds 5 -Name 'redis-cap-observation-tool-version').Stdout.Trim()
+            @{ outcome = 'available'; dotnetCountersVersion = $toolVersion } | ConvertTo-Json | Set-Content (Join-Path $observationDirectory 'tool.json')
+          }
+          catch {
+            @{ outcome = 'unavailable'; failureType = $_.Exception.GetType().Name } | ConvertTo-Json | Set-Content (Join-Path $observationDirectory 'tool.json')
+            Write-Warning "Redis/CAP observation tool unavailable: $($_.Exception.GetType().Name)"
+          }
           $images = @{}
           foreach ($service in @(@('redis', $env:REDIS_SERVICE_ID), @('postgres', $env:POSTGRES_SERVICE_ID))) {
-            $imageId = (Invoke-NativeCommandOutput -Command 'docker' -Arguments @('inspect', '--format', '{{.Image}}', $service[1]) -TimeoutSeconds 5 -Name "redis-cap-$($service[0])-image").Stdout.Trim()
-            $digests = (Invoke-NativeCommandOutput -Command 'docker' -Arguments @('image', 'inspect', '--format', '{{json .RepoDigests}}', $imageId) -TimeoutSeconds 5 -Name "redis-cap-$($service[0])-digest").Stdout.Trim() | ConvertFrom-Json
-            $images[$service[0]] = @{ imageId = $imageId; repoDigests = $digests }
+            try {
+              $imageId = (Invoke-NativeCommandOutput -Command 'docker' -Arguments @('inspect', '--format', '{{.Image}}', $service[1]) -TimeoutSeconds 5 -Name "redis-cap-$($service[0])-image").Stdout.Trim()
+              $digests = (Invoke-NativeCommandOutput -Command 'docker' -Arguments @('image', 'inspect', '--format', '{{json .RepoDigests}}', $imageId) -TimeoutSeconds 5 -Name "redis-cap-$($service[0])-digest").Stdout.Trim() | ConvertFrom-Json
+              $images[$service[0]] = @{ outcome = 'available'; imageId = $imageId; repoDigests = $digests }
+            }
+            catch {
+              $images[$service[0]] = @{ outcome = 'unavailable'; failureType = $_.Exception.GetType().Name }
+              Write-Warning "Redis/CAP $($service[0]) image metadata unavailable: $($_.Exception.GetType().Name)"
+            }
           }
           $images | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $observationDirectory 'service-images.json')
           $testedSha = (git rev-parse HEAD).Trim()

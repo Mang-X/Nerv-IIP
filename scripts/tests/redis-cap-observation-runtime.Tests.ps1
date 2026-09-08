@@ -37,15 +37,18 @@ dd if=/dev/zero of="$output" bs=1024 count=2 2>/dev/null
     [IO.File]::SetUnixFileMode($noisyTool, [IO.UnixFileMode]::UserRead -bor [IO.UnixFileMode]::UserWrite -bor [IO.UnixFileMode]::UserExecute)
     @{ members = @(@{ id = 'probe'; status = 'active'; project = $project; filter = 'FullyQualifiedName=Probe.Observed' }) } | ConvertTo-Json -Depth 4 | Set-Content $manifest
     Invoke-DotNetOutput -Arguments @('build', $project, '--configuration', 'Release') -WorkingDirectory $fixtureRoot -TimeoutSeconds 120 -Name 'observation-probe-build' | Out-Null
-    foreach ($scenario in @('natural', 'early-exit', 'size-limit', 'stop', 'deadline')) {
+    foreach ($scenario in @('natural', 'early-exit', 'size-limit', 'stop', 'cancel', 'deadline', 'disabled', 'missing-tool')) {
         $output = Join-Path $fixtureRoot $scenario
         $results = Join-Path $fixtureRoot "$scenario-results"
-        $tool = if ($scenario -ceq 'early-exit') { '/usr/bin/false' } elseif ($scenario -ceq 'size-limit') { $noisyTool } else { $CountersPath }
+        $tool = if ($scenario -ceq 'early-exit') { '/usr/bin/false' } elseif ($scenario -ceq 'size-limit') { $noisyTool } elseif ($scenario -ceq 'missing-tool') { Join-Path $fixtureRoot 'missing-counters' } else { $CountersPath }
         $limit = if ($scenario -ceq 'size-limit') { 1024 } else { 8388608 }
         $duration = if ($scenario -ceq 'deadline') { '3' } else { '30' }
-        $observer = Start-ManagedBackgroundProcess -Command 'pwsh' -Arguments @('-NoProfile', '-File', (Join-Path $repoRoot 'scripts/observe-redis-cap-lane.ps1'), '-LaneProcessId', [string]$PID, '-ResultsDirectory', $results, '-OutputDirectory', $output, '-CountersPath', $tool, '-ManifestPath', $manifest, '-DurationSeconds', $duration, '-MaxFileBytes', [string]$limit) -WorkingDirectory $repoRoot -Name "observation-$scenario"
+        $observerArguments = @('-NoProfile', '-File', (Join-Path $repoRoot 'scripts/observe-redis-cap-lane.ps1'), '-LaneProcessId', [string]$PID, '-ResultsDirectory', $results, '-OutputDirectory', $output, '-CountersPath', $tool, '-ManifestPath', $manifest, '-DurationSeconds', $duration, '-MaxFileBytes', [string]$limit)
+        if ($scenario -ceq 'disabled') { $observerArguments += '-Disabled' }
+        $observer = Start-ManagedBackgroundProcess -Command 'pwsh' -Arguments $observerArguments -WorkingDirectory $repoRoot -Name "observation-$scenario"
         $test = Start-ManagedBackgroundProcess -Command 'dotnet' -Arguments @('test', $project, '--configuration', 'Release', '--no-build', '--filter', 'FullyQualifiedName=Probe.Observed', '--results-directory', (Join-Path $results 'probe'), '--logger', 'trx') -WorkingDirectory $fixtureRoot -Name "observation-test-$scenario"
-        if ($scenario -ceq 'stop') {
+        $ownedIds = @()
+        if ($scenario -cin @('stop', 'cancel')) {
             $wait = [Diagnostics.Stopwatch]::StartNew()
             $started = $false
             while (-not $started -and $wait.Elapsed.TotalSeconds -lt 15) {
@@ -55,20 +58,31 @@ dd if=/dev/zero of="$output" bs=1024 count=2 2>/dev/null
             }
             Assert-Observation $started 'Cancellation regression must first observe an owned collector process.'
             Assert-Observation (-not $test.Process.HasExited) 'Stop regression must stop observation while the actual testhost is still running.'
+            $ownedIds = @(Get-ScriptAutomationProcessTreeIds -ProcessId $observer.Process.Id)
+            Write-Host "Owned observation process tree before $scenario signal: $($ownedIds -join ',')"
+            Assert-Observation ($ownedIds.Count -ge 3) 'The cleanup regression must include live collector descendants, not only the observer root.'
         }
         else {
             Assert-Observation ($test.Process.WaitForExit(20000)) 'Probe testhost must exit inside its own test budget.'
             Assert-Observation ($test.Process.ExitCode -eq 0) 'Observation must not alter the probe test result.'
         }
-        [IO.File]::WriteAllText((Join-Path $output 'stop'), 'stop')
+        if ($scenario -ceq 'cancel') {
+            Invoke-NativeCommandOutput -Command '/bin/kill' -Arguments @('-INT', [string]$observer.Process.Id) -TimeoutSeconds 2 -Name 'observation-cancel-signal' | Out-Null
+        }
+        else { [IO.File]::WriteAllText((Join-Path $output 'stop'), 'stop') }
         Assert-Observation ($observer.Process.WaitForExit(15000)) 'Observer must finish after the stop marker.'
         $state = Get-Content (Join-Path $output 'status.json') -Raw | ConvertFrom-Json
         Write-Host ($state | ConvertTo-Json -Compress)
-        Assert-Observation ($state.observedTesthosts -eq 1 -and $state.remainingCollectors -eq 0) 'Exactly one actual execution testhost must be observed and all collectors reaped.'
-        if ($scenario -ceq 'stop') {
+        $expectedHosts = if ($scenario -cin @('disabled', 'missing-tool')) { 0 } else { 1 }
+        Assert-Observation ($state.observedTesthosts -eq $expectedHosts -and $state.remainingCollectors -eq 0) 'The expected actual execution testhost count must be observed and all collectors reaped.'
+        foreach ($ownedId in $ownedIds) { Assert-Observation ($null -eq (Get-Process -Id $ownedId -ErrorAction SilentlyContinue)) "Owned observation PID $ownedId must be gone after cleanup." }
+        if ($scenario -cin @('stop', 'cancel')) {
             Assert-Observation (-not $test.Process.HasExited) 'Observer cleanup must not stop the testhost.'
             Assert-Observation ($test.Process.WaitForExit(15000) -and $test.Process.ExitCode -eq 0) 'The testhost must retain its original successful exit after observation stops.'
         }
+        if ($scenario -ceq 'disabled') { Assert-Observation ($state.outcome -ceq 'disabled') 'Explicitly disabled observation must report disabled without changing the test.' }
+        if ($scenario -ceq 'cancel') { Assert-Observation ($state.outcome -ceq 'interrupted') 'SIGINT must retain an interrupted outcome, not running after cleanup.' }
+        if ($scenario -ceq 'missing-tool') { Assert-Observation ($state.outcome -ceq 'unavailable-tool') 'Missing counters must report unavailable-tool without changing the test.' }
         if ($scenario -ceq 'early-exit') { Assert-Observation ($state.collectorFailures -gt 0) 'Early tool exits must be reported separately from the passing test.' }
         elseif ($scenario -ceq 'size-limit') {
             Assert-Observation (@(Get-ChildItem $output -Filter '*.csv' | Where-Object Length -gt 1024).Count -eq 0) 'Kernel file-size limit must bound every collector output.'

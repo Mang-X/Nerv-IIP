@@ -147,6 +147,7 @@ try {
 }
 catch { $status.outcome = 'failed'; $status.failureType = $_.Exception.GetType().Name }
 finally {
+    if ($status.outcome -ceq 'running') { $status.outcome = 'interrupted' }
     $remainingCollectors = 0
     foreach ($collector in $collectors) {
         $collectorId = $collector.handle.ProcessId
