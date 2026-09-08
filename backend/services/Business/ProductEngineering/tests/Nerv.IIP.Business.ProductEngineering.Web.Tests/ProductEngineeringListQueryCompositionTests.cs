@@ -1,7 +1,6 @@
 using System.Net;
 using System.Text.Json;
 using FluentValidation;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.StandardOperationAggregate;
@@ -23,7 +22,7 @@ public sealed class ProductEngineeringListQueryCompositionTests
         Assert.Equal("org-001", tenant.OrganizationId);
         Assert.Equal("env-dev", tenant.EnvironmentId);
         Assert.Equal((0, 1), (OffsetPage.From(-1, 0).Skip, OffsetPage.From(-1, 0).Take));
-        Assert.Equal(OffsetPage.MaxTake, OffsetPage.From(0, OffsetPage.MaxTake + 1).Take);
+        Assert.Equal(500, OffsetPage.From(0, 501).Take);
         Assert.Null(SearchTerm.From("   ").Value);
         Assert.Equal("pump", SearchTerm.From(" PuMp ").Value);
     }
@@ -47,26 +46,30 @@ public sealed class ProductEngineeringListQueryCompositionTests
     [Trait("Contract", "Regression")]
     public async Task Standard_operation_list_http_contract_composes_tenant_search_and_page_rules()
     {
-        await using var provider = CreateInMemoryProvider();
-        using var scope = provider.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        await SeedStandardOperationsAsync(dbContext);
-        var handler = new ListStandardOperationsQueryHandler(dbContext);
-
-        var defaults = await handler.Handle(
-            new ListStandardOperationsQuery(" org-001 ", " env-dev ", null, "   "),
-            CancellationToken.None);
-        Assert.Equal(101, defaults.Total);
-        Assert.Equal(OffsetPage.DefaultTake, defaults.Items.Count);
-
-        var normalized = await handler.Handle(
-            new ListStandardOperationsQuery(" org-001 ", " env-dev ", null, " pUmP ", Skip: -1, Take: 0),
-            CancellationToken.None);
-        Assert.Equal("OP-000", Assert.Single(normalized.Items).OperationCode);
-
         using var factory = ProductEngineeringWebTestFactory.Create("product-engineering-list-composition");
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await SeedStandardOperationsAsync(dbContext);
+        const string route = "/api/business/v1/engineering/standard-operations?organizationId=%20org-001%20&environmentId=%20env-dev%20";
+        using var defaultsResponse = await client.GetAsync(route + "&search=%20%20%20");
+        using var defaultsBody = JsonDocument.Parse(await defaultsResponse.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.OK, defaultsResponse.StatusCode);
+        var defaults = defaultsBody.RootElement.GetProperty("data");
+        Assert.Equal(501, defaults.GetProperty("total").GetInt32());
+        Assert.Equal(100, defaults.GetProperty("items").GetArrayLength());
+
+        using var normalizedResponse = await client.GetAsync(route + "&search=%20pUmP%20&skip=-1&take=0");
+        using var normalizedBody = JsonDocument.Parse(await normalizedResponse.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.OK, normalizedResponse.StatusCode);
+        var normalized = normalizedBody.RootElement.GetProperty("data");
+        Assert.Equal("OP-000", Assert.Single(normalized.GetProperty("items").EnumerateArray()).GetProperty("operationCode").GetString());
+
+        using var upperResponse = await client.GetAsync(route + "&take=501");
+        using var upperBody = JsonDocument.Parse(await upperResponse.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.OK, upperResponse.StatusCode);
+        Assert.Equal(500, upperBody.RootElement.GetProperty("data").GetProperty("items").GetArrayLength());
         var missingTenant = await client.GetAsync(
             "/api/business/v1/engineering/standard-operations?environmentId=env-dev");
         var missingTenantBody = JsonDocument.Parse(await missingTenant.Content.ReadAsStringAsync()).RootElement;
@@ -145,14 +148,14 @@ public sealed class ProductEngineeringListQueryCompositionTests
                 parameter.GetProperty("name").GetString() == "environmentId");
             Assert.Equal(0, FindParameter(parameters, "skip").GetProperty("schema").GetProperty("default").GetInt32());
             Assert.Equal(
-                OffsetPage.DefaultTake,
+                100,
                 FindParameter(parameters, "take").GetProperty("schema").GetProperty("default").GetInt32());
         }
     }
 
     private static async Task SeedStandardOperationsAsync(ApplicationDbContext dbContext)
     {
-        dbContext.StandardOperations.AddRange(Enumerable.Range(0, 101).Select(index =>
+        dbContext.StandardOperations.AddRange(Enumerable.Range(0, 501).Select(index =>
             StandardOperation.Create(
                 "org-001",
                 "env-dev",
@@ -180,15 +183,6 @@ public sealed class ProductEngineeringListQueryCompositionTests
             isOutsourced: false,
             description: null));
         await dbContext.SaveChangesAsync(CancellationToken.None);
-    }
-
-    private static ServiceProvider CreateInMemoryProvider()
-    {
-        var services = new ServiceCollection();
-        services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
-        services.AddDbContext<ApplicationDbContext>(options =>
-            options.UseInMemoryDatabase($"product-engineering-list-composition-{Guid.NewGuid():N}"));
-        return services.BuildServiceProvider();
     }
 
     private static void AssertTenantValidation<T>(
