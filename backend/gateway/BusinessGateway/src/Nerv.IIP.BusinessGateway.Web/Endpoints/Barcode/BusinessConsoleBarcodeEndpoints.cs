@@ -3,6 +3,7 @@ using FluentValidation;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
+using Nerv.IIP.BusinessGateway.Web.Endpoints.Validation;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Barcode;
@@ -324,12 +325,10 @@ public sealed class BusinessConsoleBarcodeRuleListRequestValidator : Validator<B
 {
     public BusinessConsoleBarcodeRuleListRequestValidator()
     {
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        this.Tenant(x => x.OrganizationId, x => x.EnvironmentId);
         RuleFor(x => x.Status).MaximumLength(30);
-        RuleFor(x => x.Keyword).MaximumLength(100);
-        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
-        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+        this.OptionalKeyword(x => x.Keyword);
+        this.OffsetPagination(x => x.Skip, x => x.Take, 1, 500);
     }
 }
 
@@ -337,11 +336,9 @@ public sealed class BusinessConsoleBarcodeTemplateListRequestValidator : Validat
 {
     public BusinessConsoleBarcodeTemplateListRequestValidator()
     {
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        this.Tenant(x => x.OrganizationId, x => x.EnvironmentId);
         RuleFor(x => x.Status).MaximumLength(30);
-        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
-        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+        this.OffsetPagination(x => x.Skip, x => x.Take, 1, 500);
     }
 }
 
@@ -349,13 +346,11 @@ public sealed class BusinessConsoleBarcodePrintBatchListRequestValidator : Valid
 {
     public BusinessConsoleBarcodePrintBatchListRequestValidator()
     {
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        this.Tenant(x => x.OrganizationId, x => x.EnvironmentId);
         RuleFor(x => x.SourceDocumentType).MaximumLength(100);
         RuleFor(x => x.SourceDocumentId).MaximumLength(150);
         RuleFor(x => x.Status).MaximumLength(30);
-        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
-        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+        this.OffsetPagination(x => x.Skip, x => x.Take, 1, 500);
     }
 }
 
@@ -363,14 +358,12 @@ public sealed class BusinessConsoleBarcodeScanListRequestValidator : Validator<B
 {
     public BusinessConsoleBarcodeScanListRequestValidator()
     {
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        this.Tenant(x => x.OrganizationId, x => x.EnvironmentId);
         RuleFor(x => x.DeviceCode).MaximumLength(100);
         RuleFor(x => x.ScannedValue).MaximumLength(200);
         RuleFor(x => x.SourceWorkflow).MaximumLength(100);
         RuleFor(x => x.SourceDocumentId).MaximumLength(150);
-        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
-        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+        this.OffsetPagination(x => x.Skip, x => x.Take, 1, 500);
     }
 }
 
@@ -379,8 +372,7 @@ public sealed class BusinessConsoleDispatchBarcodePrintBatchRequestValidator : V
     public BusinessConsoleDispatchBarcodePrintBatchRequestValidator()
     {
         RuleFor(x => x.PrintBatchId).NotEmpty().MaximumLength(150);
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        this.Tenant(x => x.OrganizationId, x => x.EnvironmentId);
         RuleFor(x => x.Body).NotNull();
         RuleFor(x => x.Body.PrinterId).NotEmpty().MaximumLength(100).When(x => x.Body is not null);
     }
@@ -392,8 +384,7 @@ public sealed class BusinessConsoleReprintBarcodeLabelRequestValidator : Validat
     {
         RuleFor(x => x.PrintBatchId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.SequenceNo).GreaterThan(0);
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        this.Tenant(x => x.OrganizationId, x => x.EnvironmentId);
         RuleFor(x => x.Body).NotNull();
         RuleFor(x => x.Body.PrinterId).NotEmpty().MaximumLength(100).When(x => x.Body is not null);
     }
@@ -405,8 +396,7 @@ public sealed class BusinessConsoleVoidBarcodeLabelRequestValidator : Validator<
     {
         RuleFor(x => x.PrintBatchId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.SequenceNo).GreaterThan(0);
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        this.Tenant(x => x.OrganizationId, x => x.EnvironmentId);
         RuleFor(x => x.Body).NotNull();
         RuleFor(x => x.Body.Reason).NotEmpty().MaximumLength(500).When(x => x.Body is not null);
     }
