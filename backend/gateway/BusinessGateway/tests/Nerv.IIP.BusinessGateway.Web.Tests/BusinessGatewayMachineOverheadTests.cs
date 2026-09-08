@@ -66,6 +66,12 @@ public sealed class BusinessGatewayMachineOverheadTests
         Assert.Equal(0m, body["machineOverheadOperations"]![1]!["appliedFixedMachineOverhead"]!.GetValue<decimal>());
         Assert.Equal("rate-002", body["machineOverheadOperations"]![1]!["workCenterMachineOverheadRateId"]!.GetValue<string>());
         Assert.Equal(7, body["machineOverheadOperations"]![1]!["rateRevision"]!.GetValue<int>());
+        Assert.Equal("settlement-001", body["machineOverheadOperations"]![0]!["settlementId"]!.GetValue<string>());
+        Assert.Equal(3L, body["machineOverheadOperations"]![0]!["settlementRevision"]!.GetValue<long>());
+        Assert.Equal("event-001", body["machineOverheadOperations"]![0]!["sourceEventId"]!.GetValue<string>());
+        Assert.Equal("settlement-002", body["machineOverheadOperations"]![1]!["settlementId"]!.GetValue<string>());
+        Assert.Equal(4L, body["machineOverheadOperations"]![1]!["settlementRevision"]!.GetValue<long>());
+        Assert.Equal("event-002", body["machineOverheadOperations"]![1]!["sourceEventId"]!.GetValue<string>());
     }
 
     [Fact]
@@ -95,6 +101,7 @@ public sealed class BusinessGatewayMachineOverheadTests
         Assert.Equal(11, item["revision"]!.GetValue<int>());
         Assert.Equal(7, item["rateRevision"]!.GetValue<int>());
         Assert.Equal("CNY", item["currencyCode"]!.GetValue<string>());
+        Assert.Equal("None", item["abnormalDowntimeDisposition"]!.GetValue<string>());
     }
 
     [Fact]
@@ -308,7 +315,7 @@ public sealed class BusinessGatewayMachineOverheadTests
                     overAppliedFixedOverheadAmount = 0m,
                     abnormalDowntimeTicks = 0L,
                     abnormalDowntimeHours = 0m,
-                    abnormalDowntimeDisposition = "absorbed",
+                    abnormalDowntimeDisposition = "None",
                     isReadyForClose = true,
                     reconciliationStatus = "available",
                     unavailableReason = (string?)null,

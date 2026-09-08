@@ -7043,7 +7043,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     pageSize: number;
     totalCount: number;
     items: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpMachineOverheadReconciliationItem>;
-    accountingPeriodStatus: string | null;
+    accountingPeriodStatus: 'open' | 'closed' | null;
     reconciliationStatus: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMachineOverheadReadStatus;
     reconciliationUnavailableReason: string | null;
 };
@@ -7071,7 +7071,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     overAppliedFixedOverheadAmount: number;
     abnormalDowntimeTicks: number;
     abnormalDowntimeHours: number;
-    abnormalDowntimeDisposition: string;
+    abnormalDowntimeDisposition: 'None' | 'Pending' | 'PeriodExpense';
     isReadyForClose: boolean;
     reconciliationStatus: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMachineOverheadReadStatus;
     unavailableReason: string | null;

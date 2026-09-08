@@ -39,6 +39,13 @@ public sealed class MachineOverheadOpenApiDocumentProcessor : IDocumentProcessor
 
     public void Process(DocumentProcessorContext context)
     {
+        SetEnum(context, "BusinessConsoleErpMachineOverheadReconciliationListResponse",
+            "accountingPeriodStatus", "open", "closed");
+        FindSchemaBySuffix(context, "BusinessConsoleErpMachineOverheadReconciliationListResponse")
+            .Properties["accountingPeriodStatus"].Enumeration.Add(null!);
+        SetEnum(context, "BusinessConsoleErpMachineOverheadReconciliationItem",
+            "abnormalDowntimeDisposition", "None", "Pending", "PeriodExpense");
+
         foreach (var (schemaSuffix, propertyNames) in RequiredNullableProperties)
         {
             var schema = FindSchemaBySuffix(context, schemaSuffix);
@@ -53,6 +60,17 @@ public sealed class MachineOverheadOpenApiDocumentProcessor : IDocumentProcessor
                 property.IsRequired = true;
                 property.IsNullableRaw = true;
             }
+        }
+    }
+
+    private static void SetEnum(DocumentProcessorContext context, string schemaSuffix, string propertyName,
+        params string[] values)
+    {
+        var property = FindSchemaBySuffix(context, schemaSuffix).Properties[propertyName];
+        property.Enumeration.Clear();
+        foreach (var value in values)
+        {
+            property.Enumeration.Add(value);
         }
     }
 

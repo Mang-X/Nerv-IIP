@@ -58803,7 +58803,12 @@
           "accountingPeriodStatus": {
             "type": "string",
             "minLength": 1,
-            "nullable": true
+            "nullable": true,
+            "enum": [
+              "open",
+              "closed",
+              null
+            ]
           },
           "reconciliationStatus": {
             "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMachineOverheadReadStatus"
@@ -58941,7 +58946,12 @@
           },
           "abnormalDowntimeDisposition": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "enum": [
+              "None",
+              "Pending",
+              "PeriodExpense"
+            ]
           },
           "isReadyForClose": {
             "type": "boolean"

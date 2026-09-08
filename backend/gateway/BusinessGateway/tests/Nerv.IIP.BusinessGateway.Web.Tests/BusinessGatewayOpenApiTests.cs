@@ -639,6 +639,12 @@ public sealed class BusinessGatewayOpenApiTests
             "available",
             "notApplicable",
             "unavailable");
+        AssertStringEnumProperty(document, "BusinessConsoleErpMachineOverheadReconciliationListResponse",
+            "accountingPeriodStatus", "open", "closed", null!);
+        AssertStringEnumProperty(document, "BusinessConsoleErpMachineOverheadReconciliationItem",
+            "abnormalDowntimeDisposition", "None", "Pending", "PeriodExpense");
+        AssertRequiredNullableSchemaProperties(document, "BusinessConsoleErpMachineOverheadReconciliationListResponse",
+            "accountingPeriodStatus", "reconciliationUnavailableReason");
         AssertRequiredSchemaProperties(
             document,
             "BusinessConsoleErpWorkOrderCostVarianceResponse",
