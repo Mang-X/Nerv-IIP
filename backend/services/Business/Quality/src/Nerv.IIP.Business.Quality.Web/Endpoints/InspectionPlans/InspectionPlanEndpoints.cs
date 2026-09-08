@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 using Nerv.IIP.Business.Quality.Web.Application.Auth;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionPlans;
+using Nerv.IIP.Business.Quality.Web.Application.Queries;
 using Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Endpoints.NonconformanceReports;
 
@@ -37,7 +38,7 @@ public sealed record ListInspectionPlansRequest(
     string? Status,
     string? Keyword,
     int Skip = 0,
-    int Take = 100);
+    int Take = OffsetPage.DefaultTake);
 
 public sealed record ListInspectionPlansEndpointResponse(IReadOnlyCollection<InspectionPlanResponse> Items, int Total);
 

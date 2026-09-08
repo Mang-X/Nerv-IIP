@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
+using Nerv.IIP.Business.Erp.Web.Application.Queries;
 using Nerv.IIP.Contracts.Quality;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.Queries.Finance;
@@ -23,8 +24,7 @@ public sealed class ListWorkOrderCostsQueryValidator : AbstractValidator<ListWor
         RuleFor(x => x.WorkOrderId).MaximumLength(100);
         RuleFor(x => x.SourceNcrId).MaximumLength(100);
         RuleFor(x => x.SourceWorkOrderId).MaximumLength(100);
-        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
-        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+        this.AddPageRules(query => query.Skip, query => query.Take);
     }
 }
 
@@ -63,11 +63,10 @@ public sealed class ListWorkOrderCostsQueryHandler(ApplicationDbContext dbContex
         ListWorkOrderCostsQuery request,
         CancellationToken cancellationToken)
     {
-        var organizationId = request.OrganizationId.Trim();
-        var environmentId = request.EnvironmentId.Trim();
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
         var costs = dbContext.WorkOrderCosts
             .AsNoTracking()
-            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId);
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
 
         if (!string.IsNullOrWhiteSpace(request.WorkOrderId))
         {
