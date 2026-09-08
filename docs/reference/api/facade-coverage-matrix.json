@@ -4276,6 +4276,7 @@
       "method": "GET",
       "route": "/api/business/v1/quality/inspection-plans",
       "operationId": "listBusinessQualityInspectionPlans",
+      "note": "#2126：复用组合式租户、关键词与分页 criteria；保留检验计划专属筛选、公开字段、默认值和校验语义。",
       "classification": "exposed",
       "gateways": [
         "business"

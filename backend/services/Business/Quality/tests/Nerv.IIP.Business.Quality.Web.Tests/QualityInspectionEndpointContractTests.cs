@@ -171,6 +171,7 @@ public sealed class QualityInspectionEndpointContractTests
     }
 
     [Theory]
+    [InlineData("/api/business/v1/quality/inspection-plans")]
     [InlineData("/api/business/v1/quality/inspection-records")]
     [InlineData("/api/business/v1/quality/inspection-tasks")]
     [InlineData("/api/business/v1/quality/spc/control-charts")]

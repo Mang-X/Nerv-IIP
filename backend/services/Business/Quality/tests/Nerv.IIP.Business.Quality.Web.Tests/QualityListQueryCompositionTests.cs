@@ -7,6 +7,7 @@ using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionTaskAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.SpcControlChartAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
 using Nerv.IIP.Business.Quality.Web.Application.Queries;
+using Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionRecords;
 using Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionTasks;
 using Nerv.IIP.Business.Quality.Web.Application.Queries.Spc;
@@ -61,6 +62,8 @@ public sealed class QualityListQueryCompositionTests
             new ListInspectionTasksQuery("org-001", "env-dev", null, null, Take: 201, ScopeKind: "invalid"));
         var spcResult = new ListSpcControlChartsQueryValidator().Validate(
             new ListSpcControlChartsQuery("org-001", "env-dev", Keyword: new string('x', 201), Take: 501));
+        var planResult = new ListInspectionPlansQueryValidator().Validate(
+            new ListInspectionPlansQuery("org-001", "env-dev", null, null, null, null, null, Keyword: new string('x', 201), Take: 501));
 
         Assert.Contains(recordResult.Errors, error => error.PropertyName == "Skip");
         Assert.Contains(recordResult.Errors, error => error.PropertyName == "Take");
@@ -68,6 +71,8 @@ public sealed class QualityListQueryCompositionTests
         Assert.Contains(taskResult.Errors, error => error.PropertyName == "ScopeKind");
         Assert.Contains(spcResult.Errors, error => error.PropertyName == "Keyword");
         Assert.Contains(spcResult.Errors, error => error.PropertyName == "Take");
+        Assert.Contains(planResult.Errors, error => error.PropertyName == "Keyword");
+        Assert.Contains(planResult.Errors, error => error.PropertyName == "Take");
     }
 
     [Fact]
@@ -77,7 +82,12 @@ public sealed class QualityListQueryCompositionTests
         dbContext.InspectionRecords.AddRange(
             NewInspectionRecord("org-001", "env-dev", "REC-A"),
             NewInspectionRecord("org-001", "env-dev", "REC-B"),
+            NewInspectionRecord("org-001", "env-other", "REC-CROSS-ENVIRONMENT"),
             NewInspectionRecord("org-other", "env-dev", "REC-CROSS-TENANT"));
+        foreach (var entry in dbContext.ChangeTracker.Entries<InspectionRecord>())
+        {
+            entry.Property(x => x.CreatedAtUtc).CurrentValue = new DateTime(2026, 8, 30, entry.Entity.SourceDocumentId == "REC-A" ? 8 : 9, 0, 0, DateTimeKind.Utc);
+        }
         await dbContext.SaveChangesAsync();
 
         var result = await new ListInspectionRecordsQueryHandler(dbContext).Handle(
@@ -94,7 +104,7 @@ public sealed class QualityListQueryCompositionTests
             CancellationToken.None);
 
         Assert.Equal(2, result.Total);
-        Assert.Single(result.Items);
+        Assert.Equal("REC-A", Assert.Single(result.Items).SourceDocumentId);
         Assert.DoesNotContain(result.Items, item => item.SourceDocumentId == "REC-CROSS-TENANT");
     }
 
@@ -105,6 +115,7 @@ public sealed class QualityListQueryCompositionTests
         dbContext.InspectionTasks.AddRange(
             NewInspectionTask("org-001", "env-dev", "WO-PUMP-A", DateTimeOffset.Parse("2026-08-30T08:00:00Z")),
             NewInspectionTask("org-001", "env-dev", "WO-PUMP-B", DateTimeOffset.Parse("2026-08-30T09:00:00Z")),
+            NewInspectionTask("org-001", "env-other", "WO-PUMP-CROSS-ENVIRONMENT", DateTimeOffset.Parse("2026-08-30T10:00:00Z")),
             NewInspectionTask("org-other", "env-dev", "WO-PUMP-CROSS-TENANT", DateTimeOffset.Parse("2026-08-30T10:00:00Z")));
         await dbContext.SaveChangesAsync();
 
@@ -131,6 +142,7 @@ public sealed class QualityListQueryCompositionTests
         dbContext.SpcControlCharts.AddRange(
             SpcControlChart.Create("org-001", "env-dev", "SKU-PUMP-A", "length", "WC-01", 5),
             SpcControlChart.Create("org-001", "env-dev", "SKU-PUMP-B", "length", "WC-01", 5),
+            SpcControlChart.Create("org-001", "env-other", "SKU-PUMP-CROSS-ENVIRONMENT", "length", "WC-01", 5),
             SpcControlChart.Create("org-other", "env-dev", "SKU-PUMP-CROSS-TENANT", "length", "WC-01", 5));
         await dbContext.SaveChangesAsync();
 
@@ -146,6 +158,33 @@ public sealed class QualityListQueryCompositionTests
         Assert.Equal(2, result.Total);
         Assert.Equal("SKU-PUMP-B", Assert.Single(result.Items).SkuCode);
         Assert.Equal(0, result.LockedCount);
+    }
+
+    [Fact]
+    public async Task Inspection_plan_list_uses_normalized_tenant_page_and_keyword()
+    {
+        await using var dbContext = CreateDbContext();
+        var plans = new[]
+        {
+            InspectionPlan.Create("org-001", "env-dev", "PLAN-PUMP-A", "receiving", null, null, null, null, null),
+            InspectionPlan.Create("org-001", "env-dev", "PLAN-PUMP-B", "receiving", null, null, null, null, null),
+            InspectionPlan.Create("org-001", "env-dev", "PLAN-OTHER", "receiving", null, null, null, null, null),
+            InspectionPlan.Create("org-other", "env-dev", "PLAN-PUMP-CROSS-TENANT", "receiving", null, null, null, null, null),
+            InspectionPlan.Create("org-001", "env-other", "PLAN-PUMP-CROSS-ENVIRONMENT", "receiving", null, null, null, null, null)
+        };
+        dbContext.InspectionPlans.AddRange(plans);
+        for (var index = 0; index < plans.Length; index++)
+        {
+            dbContext.Entry(plans[index]).Property(x => x.CreatedAtUtc).CurrentValue = new DateTime(2026, 8, 30, 8 + index, 0, 0, DateTimeKind.Utc);
+        }
+        await dbContext.SaveChangesAsync();
+
+        var result = await new ListInspectionPlansQueryHandler(dbContext).Handle(
+            new ListInspectionPlansQuery(" org-001 ", " env-dev ", null, null, null, null, null, Keyword: "  pUmP ", Skip: 1, Take: 1),
+            CancellationToken.None);
+
+        Assert.Equal(2, result.Total);
+        Assert.Equal("PLAN-PUMP-A", Assert.Single(result.Items).PlanCode);
     }
 
     private static ApplicationDbContext CreateDbContext()

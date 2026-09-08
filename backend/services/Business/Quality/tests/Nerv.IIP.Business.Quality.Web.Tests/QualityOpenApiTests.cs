@@ -69,6 +69,10 @@ public sealed class QualityOpenApiTests
 
         AssertListQueryContract(
             document,
+            "/api/business/v1/quality/inspection-plans",
+            hasKeyword: true);
+        AssertListQueryContract(
+            document,
             "/api/business/v1/quality/inspection-records",
             hasKeyword: false);
         AssertListQueryContract(
