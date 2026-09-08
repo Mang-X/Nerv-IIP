@@ -8,6 +8,72 @@ namespace Nerv.IIP.Business.FullChain.Tests;
 public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTestTransportContractTests
 {
     [Fact]
+    public async Task Reply_reads_fail_without_interrupting_the_caller_or_exposing_connection_input()
+    {
+        const string invalidConnection = "unsupported-private-setting=private-secret";
+        var groups = await MesInventoryProducedLotPostgresRedisAcceptanceTests.ReadReplyGroupsAsync(invalidConnection, "v1");
+        Assert.Equal(new[] { "success group=unavailable", "failure group=unavailable" }, groups);
+        var rows = await MesInventoryProducedLotPostgresRedisAcceptanceTests.ReadReplyRowsAsync(invalidConnection, "v1",
+            new MesInventoryProducedLotPostgresRedisAcceptanceTests.ReplyTarget(true, "org", "env", "doc", "key"));
+        Assert.Equal("unavailable", rows.Availability);
+        Assert.Empty(rows.Rows);
+    }
+
+    [Fact]
+    public void Reply_summary_retains_only_structural_rows_and_marks_truncation()
+    {
+        var rows = Enumerable.Range(1, 33).Select(index =>
+            new MesInventoryProducedLotPostgresRedisAcceptanceTests.ReplyRow(index,
+                "private-event", "password=private-key", "private-payload", index)).ToArray();
+        var summary = MesInventoryProducedLotPostgresRedisAcceptanceTests.SummarizeReplyRows("success", "published",
+            new MesInventoryProducedLotPostgresRedisAcceptanceTests.ReplyRows("available", rows));
+        Assert.Contains("observed=32+ truncated=true", summary);
+        Assert.Contains("rowId=32/status=unknown/retries=32", summary);
+        Assert.DoesNotContain("rowId=33", summary);
+        Assert.DoesNotContain("private", summary);
+        Assert.DoesNotContain("password", summary);
+    }
+
+    [Theory]
+    [InlineData("unknown")]
+    [InlineData("unavailable")]
+    public void Reply_summary_does_not_present_missing_evidence_as_zero(string availability)
+    {
+        var summary = MesInventoryProducedLotPostgresRedisAcceptanceTests.SummarizeReplyRows("failure", "received",
+            new MesInventoryProducedLotPostgresRedisAcceptanceTests.ReplyRows(availability, []));
+        Assert.Contains($"received={availability} observed=unknown", summary);
+        Assert.DoesNotContain("observed=0", summary);
+        Assert.Equal("unknown", MesInventoryProducedLotPostgresRedisAcceptanceTests.SafeStreamId("secret-stream-value"));
+        Assert.Equal("123-4", MesInventoryProducedLotPostgresRedisAcceptanceTests.SafeStreamId("123-4"));
+    }
+
+    [Fact]
+    public async Task Reply_diagnostic_failure_preserves_original_exception_and_output_precedes_cleanup()
+    {
+        var original = new InvalidOperationException("original-business-failure");
+        var sequence = new List<string>();
+        var actual = await Assert.ThrowsAsync<TimeoutException>(async () =>
+        {
+            try
+            {
+                try { throw original; }
+                catch (InvalidOperationException caught)
+                {
+                    await MesInventoryProducedLotPostgresRedisAcceptanceTests.WriteReplyFailureEvidenceAsync(
+                        () => throw new Exception("password=private-diagnostic-failure"), sequence.Add);
+                    throw new TimeoutException("existing wrapper", caught);
+                }
+            }
+            finally { sequence.Add("cleanup"); }
+        });
+        Assert.Same(original, actual.InnerException);
+        Assert.Equal(new[] { "MAN528 reply unavailable", "cleanup" }, sequence);
+        await MesInventoryProducedLotPostgresRedisAcceptanceTests.WriteReplyFailureEvidenceAsync(
+            () => Task.FromResult(new[] { "MAN528 reply unavailable" }),
+            _ => throw new InvalidOperationException("output unavailable"));
+    }
+
+    [Fact]
     public void Cap_transport_evidence_parses_official_pg_envelope_and_redis_body_shapes()
     {
         const string eventId = "evt-parser-shape";
