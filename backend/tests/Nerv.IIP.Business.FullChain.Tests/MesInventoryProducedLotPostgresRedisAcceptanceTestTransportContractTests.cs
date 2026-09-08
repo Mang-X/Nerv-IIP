@@ -8,6 +8,48 @@ namespace Nerv.IIP.Business.FullChain.Tests;
 public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTestTransportContractTests
 {
     [Fact]
+    public async Task Reply_chains_start_independently_and_keep_own_identity_and_output_order()
+    {
+        var targets = new[]
+        {
+            new MesInventoryProducedLotPostgresRedisAcceptanceTests.ReplyTarget(true, "org", "env", "success-doc", "success-key"),
+            new MesInventoryProducedLotPostgresRedisAcceptanceTests.ReplyTarget(false, "org", "env", "failure-doc", "failure-key"),
+        };
+        var releases = targets.ToDictionary(target => target.Alias,
+            _ => new TaskCompletionSource<MesInventoryProducedLotPostgresRedisAcceptanceTests.ReplyRows>());
+        var started = new List<string>();
+        var receivedIdentities = new Dictionary<string, string[]>();
+        var capture = MesInventoryProducedLotPostgresRedisAcceptanceTests.ReadReplyChainsAsync(targets, (target, eventIds) =>
+        {
+            if (eventIds is null)
+            {
+                started.Add(target.Alias);
+                return releases[target.Alias].Task;
+            }
+            receivedIdentities.Add(target.Alias, eventIds);
+            return Task.FromResult(new MesInventoryProducedLotPostgresRedisAcceptanceTests.ReplyRows("available", []));
+        });
+        try
+        {
+            Assert.Equal(new[] { "success", "failure" }, started);
+            Assert.Empty(receivedIdentities);
+        }
+        finally
+        {
+            foreach (var target in targets.Reverse())
+            {
+                releases[target.Alias].SetResult(new MesInventoryProducedLotPostgresRedisAcceptanceTests.ReplyRows("available",
+                    [new(1, $"{target.Alias}-reply", "envelope-key", "Succeeded", 0)]));
+            }
+        }
+        var summaries = await capture;
+        Assert.Equal(new[] { "success-reply" }, receivedIdentities["success"]);
+        Assert.Equal(new[] { "failure-reply" }, receivedIdentities["failure"]);
+        Assert.StartsWith("MAN528 reply success published=", summaries[0][0]);
+        Assert.StartsWith("MAN528 reply failure published=", summaries[1][0]);
+    }
+
+    [Fact]
     public async Task Reply_reads_fail_without_interrupting_the_caller_or_exposing_connection_input()
     {
         const string invalidConnection = "unsupported-private-setting=private-secret";

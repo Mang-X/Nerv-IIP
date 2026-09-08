@@ -126,30 +126,36 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
 
     internal static async Task<string[]> ReadReplyGroupsAsync(string redis, string version)
     {
-        var summaries = new List<string>();
-        foreach (var success in new[] { true, false })
+        try
         {
-            var target = new ReplyTarget(success, "", "", "", "");
-            try
+            await using var connection = await ConnectionMultiplexer.ConnectAsync(redis);
+            var database = connection.GetDatabase();
+            return await Task.WhenAll(ReadGroupAsync(true), ReadGroupAsync(false));
+
+            async Task<string> ReadGroupAsync(bool success)
             {
-                await using var connection = await ConnectionMultiplexer.ConnectAsync(redis);
-                var database = connection.GetDatabase();
-                if (!await database.KeyExistsAsync(target.Topic))
+                var target = new ReplyTarget(success, "", "", "", "");
+                try
                 {
-                    summaries.Add($"{target.Alias} group=absent");
-                    continue;
+                    if (!await database.KeyExistsAsync(target.Topic))
+                    {
+                        return $"{target.Alias} group=absent";
+                    }
+                    var groups = await database.StreamGroupInfoAsync(target.Topic);
+                    var matches = groups.Where(group => group.Name == target.Group(version)).ToArray();
+                    return matches.Length == 0 ? $"{target.Alias} group=absent" :
+                        $"{target.Alias} group=present consumers={matches[0].ConsumerCount} pending={matches[0].PendingMessageCount} lastDeliveredId={SafeStreamId(matches[0].LastDeliveredId)} lag={matches[0].Lag?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "unknown"}";
                 }
-                var groups = await database.StreamGroupInfoAsync(target.Topic);
-                var matches = groups.Where(group => group.Name == target.Group(version)).ToArray();
-                summaries.Add(matches.Length == 0 ? $"{target.Alias} group=absent" :
-                    $"{target.Alias} group=present consumers={matches[0].ConsumerCount} pending={matches[0].PendingMessageCount} lastDeliveredId={SafeStreamId(matches[0].LastDeliveredId)} lag={matches[0].Lag?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "unknown"}");
-            }
-            catch (Exception)
-            {
-                summaries.Add($"{target.Alias} group=unavailable");
+                catch (Exception)
+                {
+                    return $"{target.Alias} group=unavailable";
+                }
             }
         }
-        return summaries.ToArray();
+        catch (Exception)
+        {
+            return ["success group=unavailable", "failure group=unavailable"];
+        }
     }
 
     internal static string SafeStreamId(string? value) =>
@@ -174,19 +180,28 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
     private static async Task<string[]> ReadReplyFailureEvidenceAsync(string inventory, string mes, string redis,
         string version, ReplyTarget[] targets, string[] before)
     {
+        var groups = ReadReplyGroupsAsync(redis, version);
+        var replies = ReadReplyChainsAsync(targets, (target, eventIds) =>
+            ReadReplyRowsAsync(eventIds is null ? inventory : mes, version, target, eventIds));
         var lines = before.Select(line => $"MAN528 reply before {line}").ToList();
-        lines.AddRange((await ReadReplyGroupsAsync(redis, version)).Select(line => $"MAN528 reply failure {line}"));
-        foreach (var target in targets)
-        {
-            var published = await ReadReplyRowsAsync(inventory, version, target);
-            lines.Add($"MAN528 reply {SummarizeReplyRows(target.Alias, "published", published)}");
-            var received = published.Availability == "available" && published.Rows.Count <= 32
-                ? await ReadReplyRowsAsync(mes, version, target, published.Rows.Select(row => row.EventId).Distinct(StringComparer.Ordinal).ToArray())
-                : new ReplyRows("unknown", []);
-            lines.Add($"MAN528 reply {SummarizeReplyRows(target.Alias, "received", received)} completion=unproven");
-        }
+        lines.AddRange((await groups).Select(line => $"MAN528 reply failure {line}"));
+        lines.AddRange((await replies).SelectMany(chain => chain));
         return lines.ToArray();
     }
+
+    internal static Task<string[][]> ReadReplyChainsAsync(ReplyTarget[] targets,
+        Func<ReplyTarget, string[]?, Task<ReplyRows>> readRows) => Task.WhenAll(targets.Select(async target =>
+        {
+            var published = await readRows(target, null);
+            var received = published.Availability == "available" && published.Rows.Count <= 32
+                ? await readRows(target, published.Rows.Select(row => row.EventId).Distinct(StringComparer.Ordinal).ToArray())
+                : new ReplyRows("unknown", []);
+            return new[]
+            {
+                $"MAN528 reply {SummarizeReplyRows(target.Alias, "published", published)}",
+                $"MAN528 reply {SummarizeReplyRows(target.Alias, "received", received)} completion=unproven",
+            };
+        }));
 
     internal static async Task WriteReplyFailureEvidenceAsync(Func<Task<string[]>> capture, Action<string> write)
     {
