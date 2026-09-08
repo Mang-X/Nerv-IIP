@@ -11,6 +11,7 @@ import {
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { recoverLifecycleAction } from '@/composables/lifecycleAction'
 import { useMaintenanceWorkOrders } from '@/composables/useBusinessMaintenance'
+import { useMaintenanceDowntimeReasonDirectory } from '@/composables/useMaintenanceDowntimeReasonDirectory'
 import {
   useBusinessWorkers,
   useBusinessMasterDataResources,
@@ -198,9 +199,26 @@ const createForm = reactive({
   sourceAlarmId: '',
   assignedTechnicianUserId: '',
   estimatedLaborMinutes: '',
-  assetUnavailableReason: '',
+  assetUnavailableReasonCode: '',
+  unavailabilityMode: 'none',
 })
 const createError = shallowRef('')
+const downtimeReasons = useMaintenanceDowntimeReasonDirectory(filters)
+const {
+  keyword: reasonKeyword,
+  options: downtimeReasonOptions,
+  state: directoryState,
+  message: directoryMessage,
+  total: reasonsTotal,
+} = downtimeReasons
+watch(
+  () => [filters.organizationId, filters.environmentId],
+  () => {
+    createForm.assetUnavailableReasonCode = ''
+    reasonKeyword.value = ''
+  },
+  { flush: 'sync' },
+)
 
 interface SparePartRow {
   id: number
@@ -375,7 +393,9 @@ function openCreate(prefill: Partial<typeof createForm> = {}) {
   createForm.sourceAlarmId = prefill.sourceAlarmId ?? ''
   createForm.assignedTechnicianUserId = ''
   createForm.estimatedLaborMinutes = ''
-  createForm.assetUnavailableReason = ''
+  createForm.assetUnavailableReasonCode = ''
+  createForm.unavailabilityMode = 'none'
+  reasonKeyword.value = ''
   createError.value = ''
   createOpen.value = true
 }
@@ -389,6 +409,13 @@ async function submitCreate() {
     createError.value = '预估工时需为非负整数。'
     return
   }
+  if (
+    createForm.unavailabilityMode === 'reason' &&
+    (directoryState.value !== 'ok' || !createForm.assetUnavailableReasonCode)
+  ) {
+    createError.value = directoryMessage.value || '请选择设备占用原因。'
+    return
+  }
   const body = {
     organizationId: filters.organizationId,
     environmentId: filters.environmentId,
@@ -397,7 +424,8 @@ async function submitCreate() {
     openedBy: personLabel(createForm.openedByUserId),
     sourceAlarmId: createForm.sourceAlarmId.trim() || undefined,
     assignedTechnicianUserId: createForm.assignedTechnicianUserId || undefined,
-    assetUnavailableReason: createForm.assetUnavailableReason.trim() || undefined,
+    assetUnavailableReasonCode:
+      createForm.unavailabilityMode === 'reason' ? createForm.assetUnavailableReasonCode : null,
     ...(estimatedLaborMinutes !== undefined ? { estimatedLaborMinutes } : {}),
   }
   try {
@@ -772,17 +800,44 @@ watch(
               />
             </NvField>
             <NvField class="sm:col-span-2">
-              <NvFieldLabel for="mwo-asset-unavailable-reason">设备占用原因</NvFieldLabel>
-              <NvInput
-                id="mwo-asset-unavailable-reason"
-                v-model="createForm.assetUnavailableReason"
-                maxlength="200"
-                autocomplete="off"
-                placeholder="设备停下来了才填，如：主轴异响，无法运转"
+              <NvFieldLabel for="mwo-unavailability-mode">设备占用登记</NvFieldLabel>
+              <NvSearchSelect
+                id="mwo-unavailability-mode"
+                v-model="createForm.unavailabilityMode"
+                :options="[
+                  { value: 'none', label: '不登记设备不可用' },
+                  { value: 'reason', label: '登记设备不可用' },
+                ]"
+                aria-label="设备占用登记"
               />
               <NvFieldDescription>
-                填写后从建单时刻登记该设备不可用，工单完工时自动释放；留空则只建工单、不登记占用。
+                登记后从建单时刻占用设备，工单完工时自动释放。
               </NvFieldDescription>
+            </NvField>
+            <NvField v-if="createForm.unavailabilityMode === 'reason'" class="sm:col-span-2">
+              <NvFieldLabel for="mwo-asset-unavailable-reason">设备占用原因</NvFieldLabel>
+              <NvEntityPicker
+                id="mwo-asset-unavailable-reason"
+                v-model="createForm.assetUnavailableReasonCode"
+                v-model:search="reasonKeyword"
+                title="停机原因"
+                :options="downtimeReasonOptions"
+                :server-search="true"
+                :total-count="reasonsTotal"
+                :loading="directoryState === 'loading'"
+                :empty-text="directoryMessage"
+                placeholder="请选择停机原因"
+              />
+              <NvFieldDescription v-if="directoryMessage" role="status">
+                {{ directoryMessage }}；也可选择“不登记设备不可用”继续建单。
+              </NvFieldDescription>
+              <NvButton
+                v-if="directoryState === 'failed'"
+                type="button"
+                variant="outline"
+                @click="downtimeReasons.refresh()"
+                >重试读取停机原因</NvButton
+              >
             </NvField>
           </NvFieldGroup>
 

@@ -48,7 +48,7 @@
 - 分派与每个动作都带期望版本、业务原因和幂等键；详情的可用动作由服务端按当前权威状态返回，前端不得自行猜测越级操作。
 - 工单详情返回追加式生命周期审计，显示动作主体、当时的技师/班组、原因、前后状态、版本和权威时间。既有一步完工 facade 保留，供已上线调用兼容迁移。
 - “我的工单”只在显式`self`范围下成立，并由 Gateway 从认证 principal 派生；班组队列使用显式`team`范围。客户端不能提交 actor 或借用未授权范围。
-- PC 新建维护工单可填写“设备占用原因”：填写后从建单时刻登记设备不可用，工单完工时释放；留空只创建工单，不登记占用。
+- PC 新建维护工单明确选择“不登记设备不可用”或“登记设备不可用”。登记时从当前业务范围的权威停机原因目录检索选择，原因码原样提交 v2；不登记提交 null。目录加载、无权限、读取失败与空结果分别反馈，不回退自由文本或默认码；读取失败保留已选意图，用户可重试或明确改选不登记。切换组织/环境清除旧原因，登记模式下须重新选择才能提交。
 - PDA 故障报修的“设备占用原因”改为从本组织/环境的权威停机原因目录中选择，提交 v2 `assetUnavailableReasonCode`（目录码原值，不 trim、不改大小写）；用户可明确选择“不登记设备不可用”，该路径提交 null。目录读取失败、无权限、词表不可用或组织尚未配置时分别给出可归因的错误态，界面上不再提供自由文本输入，也不使用默认原因码——此时只能提交不登记设备停机的报修。
 - 完工时登记的停机原因和停机时长是维修结果事实，不替代建单时的设备占用登记。
 
@@ -60,7 +60,7 @@
 ## 5. 数据来源(facade 代码事实)
 - 保养计划:`listBusinessConsoleMaintenancePlans`(纯 DB 投影,支持 `deviceAssetId` 过滤;返回 `interval`/`nextDueOn`/`runtimeHourInterval`/`nextDueRuntimeHours`/`lastGeneratedRuntimeHours`,**不含**剩余小时——剩余由前端派生)、`createBusinessConsoleMaintenancePlan`(`interval` 可空、`runtimeHourInterval` 可选,二选一或都填)、`updateBusinessConsoleMaintenancePlan`(仅更新触发配置,转发到 BusinessMaintenance `PUT /api/business/v1/maintenance/plans/{planId}`)、`generateDueBusinessConsoleMaintenanceWorkOrders`。
 - 运行小时:`queryBusinessConsoleTelemetryRuntimeHours`(窗口聚合 `totalRuntimeHours` / `hasRuntimeSamples` / 日粒度)。
-- 工单:`createBusinessConsoleMaintenanceWorkOrder`以可选`assetUnavailableReason`区分“只建工单”和“同时登记设备占用”；`listBusinessConsoleMaintenanceWorkOrders`在分页前按`status`、`deviceAssetId`、`keyword`和受信任的 technician/team 范围过滤；`getBusinessConsoleMaintenanceWorkOrder`返回详情、`allowedActions`与生命周期；`assignBusinessConsoleMaintenanceWorkOrder`和`transitionBusinessConsoleMaintenanceWorkOrder`完成分派及状态动作。可靠性 / 点检 / 备件 / 可用窗口继续使用各自 facade，设备详情按返回设备字段客户端收敛。
+- 工单:`createBusinessConsoleMaintenanceWorkOrderV2`以`assetUnavailableReasonCode`的 null 或目录码区分“只建工单”和“同时登记设备占用”，目录读取使用`listBusinessConsoleSearchableDirectory`的`downtime-reason`；`listBusinessConsoleMaintenanceWorkOrders`在分页前按`status`、`deviceAssetId`、`keyword`和受信任的 technician/team 范围过滤；`getBusinessConsoleMaintenanceWorkOrder`返回详情、`allowedActions`与生命周期；`assignBusinessConsoleMaintenanceWorkOrder`和`transitionBusinessConsoleMaintenanceWorkOrder`完成分派及状态动作。可靠性 / 点检 / 备件 / 可用窗口继续使用各自 facade，设备详情按返回设备字段客户端收敛。
 
 ## 6. 领域口径(代码事实)
 - `MaintenancePlan.Interval` **可空**:运行小时型计划无日历触发、无 `NextDueOn`,只在累计运行小时越过阈值时开单(PM 调度器 `generate-due`)。一个计划必须至少有一个触发(日历 / 运行小时 / 两者)。
@@ -83,6 +83,6 @@
 - 三档触发模式可切换,运行小时模式字段/快捷值/字段级校验齐;运行小时型计划提交 `interval` 为空(真纯运行小时,起始日不产生日历工单)。
 - 已存在计划可从列表进入编辑,正确预填日历/运行小时/两者配置;切换模式只更新未来触发配置,移除的触发显式清空,保存成功后列表即时刷新,校验失败不发请求。
 - 列表三态可辨、运行小时型显剩余小时;设备详情累计运行小时 + 距下次保养(多计划取最紧迫)正确,按设备范围查询不受全局分页影响。
-- PC 新建维护工单填写设备占用原因时，请求携带`assetUnavailableReason`并登记设备不可用；留空时保持只建工单的既有行为。
+- PC 新建维护工单选中设备占用原因时走 v2，请求携带原值`assetUnavailableReasonCode`；明确不登记提交 null。相同创建意图重试保留幂等键，改变原因形成新意图；成功后保留权威回执确认与列表刷新。
 - PDA 报修选中停机原因时，请求走`createBusinessConsoleMaintenanceWorkOrderV2`并携带原值`assetUnavailableReasonCode`；不选原因时该字段为 null；目录不可用时不得回退自由文本或默认码。
 - 门禁:前端 typecheck/test/build + touched fmt;后端 Maintenance + BusinessGateway + FacadeCoverage 全绿。
