@@ -685,6 +685,8 @@ public sealed class ListDeviceControlCommandsRequestValidator : Validator<ListDe
 {
     public ListDeviceControlCommandsRequestValidator()
     {
+        RuleFor(x => x.OrganizationId).MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).MaximumLength(100);
         RuleFor(x => x.DeviceAssetId).MaximumLength(150);
         RuleFor(x => x.Status).MaximumLength(50);
         RuleFor(x => x.ToUtc).GreaterThan(x => x.FromUtc).When(x => x.FromUtc is not null && x.ToUtc is not null);
@@ -717,6 +719,8 @@ public sealed class ListDeviceControlBindingsRequestValidator : Validator<ListDe
 {
     public ListDeviceControlBindingsRequestValidator()
     {
+        RuleFor(x => x.OrganizationId).MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).MaximumLength(100);
         RuleFor(x => x.DeviceAssetId).MaximumLength(150);
     }
 }
