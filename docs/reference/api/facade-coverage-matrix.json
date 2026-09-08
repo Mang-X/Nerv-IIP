@@ -764,7 +764,7 @@
       "route": "/api/business/v1/erp/finance/work-order-costs",
       "operationId": "listErpWorkOrderCosts",
       "classification": "deferred",
-      "note": "#2121：复用组合式租户与分页 validator；保留公开字段、默认值、分页拒绝语义与工单成本专属筛选。",
+      "note": "#2121：复用租户 criteria 与分页 validator；保留租户专属校验及错误消息、公开字段、默认值、分页拒绝语义与工单成本专属筛选。",
       "followUp": "BusinessGateway facade pending; follows a future ERP work-order cost analysis Business Console phase. Issue #2814 intentionally delivers service-side readback without Console/PDA computation or UI changes."
     },
     {
