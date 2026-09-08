@@ -20,6 +20,33 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class MesIssue557ExecutionTests
 {
+    [Theory]
+    [InlineData("company")]
+    [InlineData("production")]
+    public async Task Receipt_retry_reuses_settled_source_when_warehouse_stock_is_already_consumed(string ownerType)
+    {
+        await using var db = CreateDbContext($"{nameof(Receipt_retry_reuses_settled_source_when_warehouse_stock_is_already_consumed)}-{ownerType}");
+        var now = Utc("2026-09-08T00:00:00Z");
+        var issue = MaterialIssueRequest.Create("org-001", "env-dev", "MIR-RETRY", "WO-01", "OP-01", "MAT-01", "KG", 4m, now);
+        issue.ConfirmLineSideReceipt(new MaterialTransferLocations("SITE-001", "WH-01", "SITE-001", "LINE-01",
+            [new MaterialTransferAllocation("SITE-001", "WH-01", "LOT-01", 4m, ownerType)]), now, 4m, "LOT-01");
+        issue.MarkInventoryPosted(issue.PendingPostingToken!, MaterialTransferLeg.WarehouseIssue, now);
+        issue.MarkInventoryPostingFailed("FAILED", "入库失败", now, issue.PendingPostingToken);
+        issue.ClearDomainEvents();
+        db.MaterialIssueRequests.Add(issue);
+        await db.SaveChangesAsync();
+
+        // 未配置查询器必然拒绝重新选源；已经成功扣账的仓库腿无需再次寻找可用量。
+        var resolver = new InventoryMesMaterialSupplyLocationResolver(new MesMaterialSupplyLocationOptions());
+        await new ConfirmLineSideMaterialReceiptCommandHandler(db, resolver).Handle(
+            new ConfirmLineSideMaterialReceiptCommand("org-001", "env-dev", issue.RequestNo, now, 4m, "LOT-01"), CancellationToken.None);
+        var receipt = Assert.IsType<Nerv.IIP.Business.Mes.Domain.DomainEvents.MaterialLineSideReceiptConfirmedDomainEvent>(Assert.Single(issue.GetDomainEvents()));
+        var movement = new Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters.MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(receipt);
+        Assert.Equal(ownerType, movement.Payload.OwnerType);
+        Assert.Equal(4m, movement.Payload.Quantity);
+        Assert.Equal(0m, issue.ReceivedQuantity);
+    }
+
     private static readonly TimeProvider AuthorizationClock = new FixedTimeProvider(Utc("2026-06-29T09:00:00Z"));
     [Fact]
     public async Task Operation_action_lock_is_scoped_to_tenant_and_operation_task()

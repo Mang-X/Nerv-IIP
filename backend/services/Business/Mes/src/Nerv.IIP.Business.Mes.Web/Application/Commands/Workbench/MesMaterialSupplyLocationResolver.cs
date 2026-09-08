@@ -32,7 +32,8 @@ public sealed record MesMaterialSupplyLocationRequest(
     string MaterialId,
     string UomCode,
     string? MaterialLotId,
-    decimal Quantity);
+    decimal Quantity,
+    string OwnerType = "company");
 
 public interface IMesMaterialSupplyLocationResolver
 {
@@ -93,7 +94,7 @@ public sealed class InventoryMesMaterialSupplyLocationResolver(
         {
             // 仅在没有接入 Inventory 客户端的装配下成立（单测/离线夹具）：退回配置里的首选来源库位。
             // 运行时 Program.cs 一定注入 MesInventoryHttpClient，因此真实链路永远走下面的实时持仓查询。
-            return [new MaterialTransferAllocation(siteCode, candidates[0], request.MaterialLotId, request.Quantity)];
+            return [new MaterialTransferAllocation(siteCode, candidates[0], request.MaterialLotId, request.Quantity, request.OwnerType)];
         }
 
         var remaining = request.Quantity;
@@ -108,19 +109,11 @@ public sealed class InventoryMesMaterialSupplyLocationResolver(
 
             var availability = await GetAvailabilityAsync(request, siteCode, locationCode, cancellationToken);
             var inventoryLines = availability.Items ?? [];
-            IEnumerable<MesMaterialSupplyAvailabilityLine> lines;
-            if (inventoryLines.Count > 0)
-            {
-                lines = inventoryLines
-                    .Where(x => x.MovementAllowed && x.AvailableQuantity > 0m)
-                    .OrderBy(x => x.LotNo ?? string.Empty, StringComparer.Ordinal);
-            }
-            else
-            {
-                lines = availability.AvailableQuantity > 0m
-                    ? [new MesMaterialSupplyAvailabilityLine(null, availability.AvailableQuantity)]
-                    : [];
-            }
+            var lines = inventoryLines
+                .Where(x => x.MovementAllowed && x.AvailableQuantity > 0m &&
+                    x.OwnerType == request.OwnerType && x.OwnerId is null &&
+                    x.SerialNo is null && x.QualityStatus == "Unrestricted")
+                .OrderBy(x => x.LotNo ?? string.Empty, StringComparer.Ordinal);
             foreach (var line in lines)
             {
                 var available = Math.Max(0m, line.AvailableQuantity);
@@ -131,7 +124,7 @@ public sealed class InventoryMesMaterialSupplyLocationResolver(
                 }
 
                 var allocated = Math.Min(remaining, available);
-                allocations.Add(new MaterialTransferAllocation(siteCode, locationCode, line.LotNo, allocated));
+                allocations.Add(new MaterialTransferAllocation(siteCode, locationCode, line.LotNo, allocated, line.OwnerType, line.OwnerId));
                 remaining -= allocated;
             }
         }
@@ -165,6 +158,8 @@ public sealed class InventoryMesMaterialSupplyLocationResolver(
             $"uomCode={Uri.EscapeDataString(request.UomCode)}",
             $"siteCode={Uri.EscapeDataString(siteCode)}",
             $"locationCode={Uri.EscapeDataString(locationCode)}",
+            $"ownerType={Uri.EscapeDataString(request.OwnerType)}",
+            "qualityStatus=Unrestricted",
         };
         // MES 的 MaterialLotId 是线边追溯批次，不一定等于 Inventory 的来源批次。
         // 来源批次由 Inventory 返回的 dimension lines 决定；这里不能拿工单批号精确过滤库存。
@@ -219,4 +214,8 @@ internal sealed record MesMaterialSupplyAvailability(
 internal sealed record MesMaterialSupplyAvailabilityLine(
     string? LotNo,
     decimal AvailableQuantity,
-    bool MovementAllowed = true);
+    string OwnerType,
+    string? OwnerId,
+    bool MovementAllowed = true,
+    string? SerialNo = null,
+    string? QualityStatus = null);
