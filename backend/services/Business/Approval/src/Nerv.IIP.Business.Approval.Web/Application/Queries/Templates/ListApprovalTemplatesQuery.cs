@@ -41,8 +41,6 @@ public sealed class ListApprovalTemplatesQueryValidator : AbstractValidator<List
 {
     public ListApprovalTemplatesQueryValidator()
     {
-        RuleFor(query => query.OrganizationId).OptionalApprovalCode(100);
-        RuleFor(query => query.EnvironmentId).OptionalApprovalCode(100);
         this.AddOffsetPageRules(query => query.Skip, query => query.Take);
     }
 }

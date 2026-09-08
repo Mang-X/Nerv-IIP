@@ -164,8 +164,10 @@ public sealed class ApprovalEndpointContractTests
         Assert.True(validator.Validate(new ListApprovalTemplatesQuery(null, null, null, null, 0, 100)).IsValid);
         Assert.True(validator.Validate(new ListApprovalTemplatesQuery("org-001", null, null, null, 0, 100)).IsValid);
         Assert.True(validator.Validate(new ListApprovalTemplatesQuery(null, "env-dev", null, null, 0, 100)).IsValid);
-        Assert.False(validator.Validate(new ListApprovalTemplatesQuery("org;drop", null, null, null, 0, 100)).IsValid);
-        Assert.False(validator.Validate(new ListApprovalTemplatesQuery(null, "env dev", null, null, 0, 100)).IsValid);
+        Assert.True(validator.Validate(new ListApprovalTemplatesQuery("org;drop", null, null, null, 0, 100)).IsValid);
+        Assert.True(validator.Validate(new ListApprovalTemplatesQuery(null, "env dev", null, null, 0, 100)).IsValid);
+        Assert.True(validator.Validate(new ListApprovalTemplatesQuery(new string('o', 101), null, null, null, 0, 100)).IsValid);
+        Assert.True(validator.Validate(new ListApprovalTemplatesQuery(null, new string('e', 101), null, null, 0, 100)).IsValid);
 
         Assert.False(new ListApprovalChainsQueryValidator().Validate(
             new ListApprovalChainsQuery("", "env-dev", null, null, null, null, null, 0, 100)).IsValid);
