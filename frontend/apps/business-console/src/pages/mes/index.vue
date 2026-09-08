@@ -55,26 +55,6 @@ const {
 const isReady = computed(() => overviewState.value === 'ready')
 const stateNote = computed(() => readStateNote(overviewState.value))
 const errorMessage = computed(() => inlineErrorMessage(overviewError.value))
-// 顶部状态条：只在「没读到」时出现，且必须说清楚原因 + 给重试出路，不含任何「正常 / 无阻塞」措辞。
-const readNotice = computed(() => {
-  if (overviewState.value === 'idle') {
-    return {
-      text: '尚未选择业务范围（组织与环境），现场数据未读取，暂时无法判断产线状态。',
-      class: 'border-border bg-muted/40 text-muted-foreground',
-      retry: false,
-    }
-  }
-  if (overviewState.value === 'error') {
-    return {
-      text: errorMessage.value
-        ? `现场数据获取失败，无法判断当前是否存在阻塞：${errorMessage.value}`
-        : '现场数据获取失败，无法判断当前是否存在阻塞。',
-      class: 'border-destructive/40 bg-destructive/5 text-destructive',
-      retry: true,
-    }
-  }
-  return null
-})
 // facade 回的 count key 是 kebab-case（work-orders / operation-tasks）。
 // 曾按 PascalCase 取值，于是两个总量恒为 0、整个驾驶舱看着像没数据——
 // 这里按「去分隔符 + 小写」归一化匹配，两种写法都认。
@@ -341,8 +321,6 @@ const pendingWorkItems = computed(() =>
 const blockerEmptyMessage = computed(() => {
   if (overviewState.value === 'idle') return '尚未选择业务范围，未读取现场阻塞。'
   if (overviewState.value === 'loading') return '正在读取现场阻塞。'
-  if (overviewState.value === 'error')
-    return '现场阻塞获取失败，无法判断现场是否存在阻塞。请点右上角「刷新」重试。'
   return '本次读取的范围内没有阻塞记录。物料、质量、设备或产能出现卡点时会汇总到这里。'
 })
 const pendingEmptyMessage = computed(() => {
@@ -398,29 +376,13 @@ function countValue(key: string) {
       </template>
     </NvPageHeader>
 
-    <div
-      v-if="readNotice"
-      :class="
-        cn(
-          'flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3',
-          readNotice.class,
-        )
-      "
+    <p
+      v-if="overviewState === 'idle'"
+      class="rounded-lg border border-border bg-muted/40 p-3 text-sm text-muted-foreground"
       role="alert"
     >
-      <p class="text-sm">{{ readNotice.text }}</p>
-      <NvButton
-        v-if="readNotice.retry"
-        size="sm"
-        type="button"
-        variant="outline"
-        :disabled="overviewPending"
-        @click="refreshOverview"
-      >
-        <RefreshCwIcon aria-hidden="true" />
-        重试
-      </NvButton>
-    </div>
+      尚未选择业务范围（组织与环境），现场数据未读取，暂时无法判断产线状态。
+    </p>
 
     <div class="grid gap-4 xl:grid-cols-3">
       <RouterLink
@@ -494,6 +456,9 @@ function countValue(key: string) {
           :rows="isReady ? blockers : []"
           :row-key="(r) => `${r.areaCode}-${r.code}`"
           :loading="overviewPending"
+          :error="overviewError"
+          :error-message="errorMessage"
+          @retry="refreshOverview"
           :searchable="false"
           :column-settings="false"
           max-body-height="20rem"
