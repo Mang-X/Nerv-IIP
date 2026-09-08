@@ -911,6 +911,7 @@ public sealed class DemandPlanningEndpointContractTests
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             dbContext.DemandSources.AddRange(
+                DemandSource.Create("org-001", "env-dev", "manual", "VALVE-001", "SKU-VALVE", "pcs", "SITE-01", 1m, new DateOnly(2026, 5, 31)),
                 DemandSource.Create("org-001", "env-dev", "manual", "PUMP-002", "SKU-OTHER", "pcs", "SITE-01", 2m, new DateOnly(2026, 6, 2)),
                 DemandSource.Create("org-001", "env-dev", "manual", "PUMP-001", "SKU-OTHER", "pcs", "SITE-01", 1m, new DateOnly(2026, 6, 1)),
                 DemandSource.Create("org-001", "env-dev", "manual", "OTHER-001", "SKU-PUMP", "pcs", "SITE-01", 3m, new DateOnly(2026, 6, 3)),
