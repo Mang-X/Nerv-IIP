@@ -85,7 +85,8 @@ public sealed class FileStorageSkeletonTests(FileStorageWebApplicationFactory fa
             "diagnostic-log",
             "engineering-document",
             "maintenance-photo",
-            "quality-evidence"
+            "quality-evidence",
+            "shift-handover-photo"
         };
         var configuredPurposes = FileStorageTestConfiguration.Default
             .GetSection("FileStorage:PurposePolicies")

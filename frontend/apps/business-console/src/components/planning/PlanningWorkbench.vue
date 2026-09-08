@@ -260,13 +260,9 @@ const canSubmitMps = computed(
 const errorMessage = computed(
   () =>
     [demandsError, mpsBucketsError, mrpRunsError, suggestionsError]
-      .map((ref) => formatError(ref.value))
+      .map((ref) => inlineErrorMessage(ref.value))
       .find(Boolean) ?? '',
 )
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
-
 // 时段视图只关心三份读数据的加载/失败态（不掺入各写操作的错误）。
 const planningDataPending = computed(
   () => demandsPending.value || mpsBucketsPending.value || suggestionsPending.value,
@@ -274,7 +270,7 @@ const planningDataPending = computed(
 const planningDataError = computed(
   () =>
     [demandsError, mpsBucketsError, suggestionsError]
-      .map((ref) => formatError(ref.value))
+      .map((ref) => inlineErrorMessage(ref.value))
       .find(Boolean) ?? '',
 )
 

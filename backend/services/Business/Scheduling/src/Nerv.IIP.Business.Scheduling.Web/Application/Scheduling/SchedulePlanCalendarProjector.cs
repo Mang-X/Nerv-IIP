@@ -1,3 +1,4 @@
+using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
@@ -98,7 +99,7 @@ public static class SchedulePlanCalendarProjector
             return ScheduleBlockKindContract.LineChange;
         }
 
-        if (code.Contains("changeover", StringComparison.Ordinal) || code.Contains("setup", StringComparison.Ordinal) ||
+        if (code.Contains(EquipmentRuntimeDeviceStates.Changeover, StringComparison.Ordinal) || code.Contains("setup", StringComparison.Ordinal) ||
             code.Contains("tooling", StringComparison.Ordinal))
         {
             return ScheduleBlockKindContract.Changeover;

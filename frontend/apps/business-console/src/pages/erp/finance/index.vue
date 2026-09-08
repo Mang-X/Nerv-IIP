@@ -16,7 +16,8 @@ import {
 import { ArrowRightIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
-import { UNAVAILABLE_TEXT, erpReadState, formatAmount, formatDate, formatError } from '../shared'
+import { inlineErrorMessage } from '@/utils/notify'
+import { UNAVAILABLE_TEXT, erpReadState, formatAmount, formatDate } from '../shared'
 
 definePage({
   meta: {
@@ -219,7 +220,7 @@ function refreshAll() {
         <p class="text-sm font-medium text-destructive-strong">财务摘要读取失败</p>
         <p class="mt-1 text-sm text-muted-foreground">
           没有取到应收、应付与待入账成本，现在无法判断余额，上面的金额一律显「—」。{{
-            formatError(summaryError)
+            inlineErrorMessage(summaryError)
           }}
         </p>
       </div>

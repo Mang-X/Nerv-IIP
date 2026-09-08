@@ -32,6 +32,7 @@ public static class SchedulingPersistenceServiceCollectionExtensions
         services.AddRepositories(typeof(ApplicationDbContext).Assembly);
         services.AddUnitOfWork<ApplicationDbContext>();
         services.AddScoped<IScheduleReleaseScopeLock, PostgreSqlScheduleReleaseScopeLock>();
+        services.AddScoped<IAssetUnavailableInboxIdentityLock, PostgreSqlAssetUnavailableInboxIdentityLock>();
         return services;
     }
 }

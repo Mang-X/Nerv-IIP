@@ -56,7 +56,7 @@ Nerv-IIP 的首要价值不是承载业务逻辑，而是稳定接入、发现�
 
 1. 第一迭代脚手架需要创建 Connector Host 最小宿主、Docker Connector 原型以及注册、心跳、状态同步三条基本链路的契约定义。
 2. AppHub 负责应用目录与实例事实，Ops 负责执行动作、任务记录与审计闭环，二者职责需要在接口设计中严格分开。
-3. v1 协议基线、共享契约落点与首批公开接口以 docs/architecture/connector-platform-protocol-v1.md 为准；若后续调整传输机制，应在该文档中增量演进而不是回退到口头约定。
+3. v1 协议基线、共享契约落点与首批公开接口以 docs/architecture/integration/connector-protocol-v1.md 为准；若后续调整传输机制，应在该文档中增量演进而不是回退到口头约定。
 4. 首批可以在单仓中用项目引用加快开发，但发布边界必须按 Platform SDK、版本化协议包、OpenAPI 或等价契约表达，不能要求 Connector Host 跟随主平台源码或小版本同步升级。
 5. 第二阶段低风险动作闭环的当前落地范围以 docs/architecture/second-vertical-slice-ops.md 为准。
 

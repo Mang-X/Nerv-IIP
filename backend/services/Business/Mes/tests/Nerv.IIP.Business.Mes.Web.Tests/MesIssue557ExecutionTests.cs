@@ -14,6 +14,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Behaviors;
 using Nerv.IIP.Business.Mes.Web.Application.Errors;
 using Nerv.IIP.ServiceAuth;
 using System.Net;
+using Nerv.IIP.Business.Mes.Web.Application.Quality;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -732,7 +733,7 @@ public sealed class MesIssue557ExecutionTests
         await using var dbContext = CreateDbContext(nameof(Scrap_report_requires_material_consumption_lots_to_drive_inventory_writeoff));
         SeedStartedOutputOperation(dbContext);
         await dbContext.SaveChangesAsync();
-        var handler = new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance);
+        var handler = new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance, TestMesFirstArticleGate.Allowing);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new RecordProductionReportCommand(
@@ -784,7 +785,8 @@ public sealed class MesIssue557ExecutionTests
         await dbContext.SaveChangesAsync();
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
-            new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance).Handle(
+            new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance,
+            TestMesFirstArticleGate.Allowing).Handle(
                 new RecordProductionReportCommand(
                     "org-001", "env-dev", "WO-OVER-001", "OP-10",
                     GoodQuantity: 20.000001m,
@@ -806,7 +808,7 @@ public sealed class MesIssue557ExecutionTests
         await using var dbContext = CreateDbContext(nameof(Output_operation_report_auto_generates_output_lot_and_persists_genealogy_breakpoint));
         SeedStartedOutputOperation(dbContext);
         await dbContext.SaveChangesAsync();
-        var handler = new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance);
+        var handler = new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance, TestMesFirstArticleGate.Allowing);
 
         var result = await handler.Handle(
             new RecordProductionReportCommand(
@@ -837,7 +839,8 @@ public sealed class MesIssue557ExecutionTests
         await using var dbContext = CreateDbContext(nameof(Output_operation_report_rejects_duplicate_explicit_output_lot_before_database_unique_constraint));
         SeedStartedOutputOperation(dbContext);
         await dbContext.SaveChangesAsync();
-        var handler = new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance);
+        var handler = new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance,
+            TestMesFirstArticleGate.Allowing);
         await handler.Handle(
             new RecordProductionReportCommand(
                 "org-001",

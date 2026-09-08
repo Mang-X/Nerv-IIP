@@ -13,6 +13,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
+using Nerv.IIP.Business.Mes.Web.Application.Quality;
 using Nerv.IIP.Contracts.Mes;
 using Npgsql;
 
@@ -474,6 +475,10 @@ public sealed class OperationActualTimeSettlementPostgresTests
 
             builder.ConfigureAppConfiguration((_, configuration) =>
                 configuration.AddInMemoryCollection(settings));
+            // 本用例的被测对象是工时结算与出站消息。报工路径每次都会同步问 Quality 首件进度（#2780），
+            // 本 lane 里没有 Quality 在跑，因此在测试宿主里把门禁换成放行实现。
+            builder.ConfigureServices(services =>
+                services.AddScoped<IMesFirstArticleGate>(_ => TestMesFirstArticleGate.Allowing));
         });
     }
 
@@ -496,10 +501,17 @@ public sealed class OperationActualTimeSettlementPostgresTests
         await dbContext.SaveChangesAsync();
     }
 
-    private static WorkOrder CreateWorkOrder() =>
-        WorkOrder.Create(
+    private static WorkOrder CreateWorkOrder()
+    {
+        var workOrder = WorkOrder.Create(
             "org-001", "env-dev", "WO-001", "SKU-001", "PV-001", 10m, 1,
             At(480));
+        // #3119：未下达的工单不受理报工，报工类夹具因此必须先补记发布（生产上这一步由下达完成）。
+        // 清掉发布留下的领域事件：本组用例断言的是结算出站消息，夹具自己造的事件不该混进去。
+        workOrder.MarkReleased();
+        workOrder.ClearDomainEvents();
+        return workOrder;
+    }
 
     private static OperationTask CreateRunningTask()
     {

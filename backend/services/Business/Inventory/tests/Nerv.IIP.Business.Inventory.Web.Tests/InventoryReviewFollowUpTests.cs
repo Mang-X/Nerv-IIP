@@ -156,6 +156,73 @@ public sealed class InventoryReviewFollowUpTests
     }
 
     [Fact]
+    public async Task Expired_stock_blocking_reentry_probe_matches_the_status_transfer_write_face_leg_key()
+    {
+        // #3176 B4：过期封锁的重入去重靠一条读面探针，它必须用**状态调拨写面**的腿后缀拼键
+        // （这个方法发的是 PostStockStatusTransferCommand）。原先误绑到 PostStockMovementCommandHandler
+        // 的同值常量上，两个常量今天恰好都是 ":out"，行为一致、缺陷潜伏；真写面后缀一改探针就静默失配，
+        // 同一个 asOfDate 会被重复下发。
+        //
+        // **鉴别力口径**：本用例钉的不变量是「探针后缀随 OutboundLegSuffix 变化」。
+        // 因为 TransferOutLegSuffix 与 OutboundLegSuffix 今天**同值**，只改绑定（B4-E）或只改后缀（B4-C）
+        // 都不会红，**必须两变量发散才红**（B4-D）。这是这类潜伏缺陷的固有形状，
+        // 但因此**它不算一条单变量防线**，方向表里已按此标注。
+        //
+        // **夹具必须让探针成为唯一的阻挡物**：第一版写成「跑两遍」是零鉴别力的——第一遍把台账可用量
+        // 转光后，服务在 `quantity <= 0` 那道相邻守卫上就 continue 了，**根本走不到探针**
+        // （本仓「相邻同型守卫会兜住变异」的同族陷阱，实测两个判别格都不红才发现）。
+        // 这里改成：预先落一条「上一轮已下发」的出库腿流水、**台账可用量原样保留**，
+        // 于是唯一能阻止再次下发的就只有探针。
+        await using var dbContext = CreateContext();
+        await SeedLedgerAsync(dbContext, "LOT-REENTRY", new DateOnly(2026, 7, 1), 5m);
+        var ledger = dbContext.StockLedgers.Single(x => x.LotNo == "LOT-REENTRY");
+        var sourceDocumentId = $"{ledger.Id}:{Today:yyyyMMdd}";
+        var idempotencyKey = $"expiry-block:{ledger.Id}:{Today:yyyyMMdd}";
+
+        // 键按**写面**的常量拼——写这条流水的就是状态调拨 handler。探针若绑了别的写面，这里就对不上。
+        dbContext.StockMovements.Add(StockMovement.Post(
+            ledger.OrganizationId,
+            ledger.EnvironmentId,
+            InventoryMovementTypes.StatusTransferOut,
+            "inventory-expiry",
+            sourceDocumentId,
+            null,
+            idempotencyKey + PostStockStatusTransferCommandHandler.OutboundLegSuffix,
+            ledger.SkuCode,
+            ledger.UomCode,
+            ledger.SiteCode,
+            ledger.LocationCode,
+            ledger.LotNo,
+            ledger.SerialNo,
+            ledger.QualityStatus,
+            ledger.OwnerType,
+            ledger.OwnerId,
+            -1m));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var sender = new RecordingStatusTransferSender(dbContext);
+        var service = new ExpiredStockBlockingService(
+            dbContext,
+            Options.Create(new ExpiredStockBlockingOptions { Enabled = true }),
+            sender);
+
+        // **前置条件**（必须在 act 之前断言）：台账仍有可用量、仍然过期，`quantity <= 0` 那道
+        // 相邻守卫拦不住它，于是只剩探针能拦。放在 act 之后会遮蔽真正的判据——探针一旦失配就会
+        // 真下发、把台账转光，这条先炸成裸的 Expected True/Actual False，读起来像夹具坏了。
+        Assert.True(
+            ledger.AvailableQuantity > 0,
+            "前置条件不成立：台账已无可用量，`quantity <= 0` 守卫会先拦下，本用例测不到探针。");
+
+        var dispatched = await service.BlockExpiredAvailableStockAsync(Today, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.True(
+            dispatched == 0,
+            $"探针未命中已落库的出库腿，过期封锁重复下发了 {dispatched} 笔状态调拨，幂等性丢失。");
+        Assert.Empty(sender.Commands);
+    }
+
+    [Fact]
     public async Task Status_transfer_without_request_dates_preserves_source_batch_dates()
     {
         await using var dbContext = CreateContext();

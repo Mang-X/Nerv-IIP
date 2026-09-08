@@ -7,9 +7,10 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Tests;
 // NERV-688 拆解③：IndustrialTelemetry 的 PostgreSQL profile 用例统一使用 lane runner 注入的成员数据库
 // （NERV_IIP_TEST_POSTGRES），不再自建内层数据库——内层数据库既不能被外层失败诊断读取，也不能被外层
 // finally 清理证明。每个用例先删除 industrial_telemetry schema 再迁移，因此同一成员数据库内的用例之间
-// 没有残留。IndustrialTelemetry 的业务表与 CAP 的 CAPPublishedMessage/CAPReceivedMessage/CAPLock 表经
-// 实测（migrate 后查 pg_namespace/pg_class）确认全部落在同一个 industrial_telemetry schema，因此只需声
-// 明一个诊断 schema。
+// 没有残留。IndustrialTelemetry 的业务表与 netcorepal 映射的三张 CAP 存储表经实测（migrate 后查
+// pg_namespace/pg_class）确认全部落在同一个 industrial_telemetry schema，因此只需声明一个诊断 schema。
+// 注意那三张表运行时零写入（生产 outbox 在 cap."published"/"received"/"lock"），此处只用于确定
+// 迁移的建表落点，不能作为消息投递的取证面。
 //
 // CollectionName 复用 WebApplicationFactoryCollection 而不是新建一个 collection：
 // IndustrialTelemetryIdempotentConcurrencyTests 已经因 FastEndpoints 8.1.0 的静态进程状态被绑定到

@@ -82,8 +82,9 @@ const statusValue = ref()
 | `NvSelectContent` | 下拉浮层容器                           |
 | `NvSelectItem`    | 选项，`value` 为选项值                 |
 
-| 属性          | 说明                          | 类型     | 默认 |
-| ------------- | ----------------------------- | -------- | ---- |
-| `v-model`     | 绑定选中值（`NvSelect`）      | `string` | —    |
-| `placeholder` | 未选中占位（`NvSelectValue`） | `string` | —    |
-| `value`       | 选项值（`NvSelectItem`）      | `string` | —    |
+| 属性          | 说明                              | 类型      | 默认    |
+| ------------- | --------------------------------- | --------- | ------- |
+| `v-model`     | 绑定选中值（`NvSelect`）          | `string`  | —       |
+| `placeholder` | 未选中占位（`NvSelectValue`）     | `string`  | —       |
+| `value`       | 选项值（`NvSelectItem`）          | `string`  | —       |
+| `invalid`     | 触发器错误态（`NvSelectTrigger`） | `boolean` | `false` |

@@ -322,7 +322,7 @@ async function confirmComplete() {
  */
 const listErrorMessage = computed(() =>
   inboundOrdersError.value
-    ? `取不到入库单列表，当前收货情况无法判断：${formatError(inboundOrdersError.value)}`
+    ? `取不到入库单列表，当前收货情况无法判断：${inlineErrorMessage(inboundOrdersError.value)}`
     : '',
 )
 /**
@@ -419,9 +419,6 @@ function formatDateTime(value?: string | null) {
   if (!value) return '—'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 </script>
 

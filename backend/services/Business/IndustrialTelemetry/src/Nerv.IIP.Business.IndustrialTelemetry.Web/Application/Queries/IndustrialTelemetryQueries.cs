@@ -525,7 +525,8 @@ public sealed record OeeResponse(
     decimal? QualityRate,
     decimal? OeeRate,
     bool IsDegraded,
-    IReadOnlyCollection<string> DegradedReasons);
+    IReadOnlyCollection<string> DegradedReasons,
+    decimal ChangeoverLossMinutes = 0m);
 
 public sealed record QueryRuntimeHoursQuery(
     string OrganizationId,
@@ -636,7 +637,8 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
                 ? Math.Round(availabilityRate.Value * factors.PerformanceRate.Value * factors.QualityRate.Value, 6)
                 : null,
             factors.DegradedReasons.Count > 0,
-            factors.DegradedReasons);
+            factors.DegradedReasons,
+            Math.Round(runtimeRates.ChangeoverLossMinutes, 6));
     }
 
     private static OeeProductionFactors CalculateProductionFactors(
@@ -722,12 +724,13 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
     {
         if (states.Count == 0)
         {
-            return new OeeRuntimeRates(0m, 0m, 0m);
+            return new OeeRuntimeRates(0m, 0m, 0m, 0m);
         }
 
         var totalTicks = windowEndUtc.UtcTicks - windowStartUtc.UtcTicks;
         var loadingTicks = 0L;
         var productiveRuntimeTicks = 0L;
+        var changeoverTicks = 0L;
         for (var i = 0; i < states.Count; i++)
         {
             var segmentStart = states[i].OccurredAtUtc < windowStartUtc ? windowStartUtc : states[i].OccurredAtUtc;
@@ -744,6 +747,10 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
 
             var segmentTicks = segmentEnd.UtcTicks - segmentStart.UtcTicks;
             loadingTicks += segmentTicks;
+            if (EquipmentRuntimeDeviceStates.IsChangeoverState(states[i].State))
+            {
+                changeoverTicks += segmentTicks;
+            }
             if (IsProductiveRuntimeState(states[i].State))
             {
                 productiveRuntimeTicks += segmentTicks;
@@ -752,12 +759,16 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
 
         if (loadingTicks <= 0)
         {
-            return new OeeRuntimeRates(0m, 0m, 0m);
+            return new OeeRuntimeRates(0m, 0m, 0m, decimal.Divide(changeoverTicks, TimeSpan.TicksPerMinute));
         }
 
         var availabilityRate = decimal.Divide(productiveRuntimeTicks, loadingTicks);
         var loadingRate = totalTicks <= 0 ? 0m : decimal.Divide(loadingTicks, totalTicks);
-        return new OeeRuntimeRates(availabilityRate, loadingRate, decimal.Divide(productiveRuntimeTicks, TimeSpan.TicksPerHour));
+        return new OeeRuntimeRates(
+            availabilityRate,
+            loadingRate,
+            decimal.Divide(productiveRuntimeTicks, TimeSpan.TicksPerHour),
+            decimal.Divide(changeoverTicks, TimeSpan.TicksPerMinute));
     }
 
     private static bool IsProductiveRuntimeState(string state)
@@ -770,7 +781,11 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
         return EquipmentRuntimeDeviceStates.IsPlannedDownState(state);
     }
 
-    private sealed record OeeRuntimeRates(decimal AvailabilityRate, decimal LoadingRate, decimal ProductiveRuntimeHours);
+    private sealed record OeeRuntimeRates(
+        decimal AvailabilityRate,
+        decimal LoadingRate,
+        decimal ProductiveRuntimeHours,
+        decimal ChangeoverLossMinutes);
 
     private sealed record OeeProductionFactors(
         decimal? GoodQuantity,

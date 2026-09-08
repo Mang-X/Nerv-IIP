@@ -58,8 +58,10 @@
 
 改业务模块时**同步更新**文档；文档落后于代码 = 未完成：
 
-- **模块产品业务文档**：每个业务域一份，是该域产品/IA/UX/分期/验收的依据。范例：`docs/architecture/master-data-module-product-design.md`（基础数据）。新域开工先立此文档。
-- **导航总图**：`docs/architecture/frontend-navigation-map.md`——IA/导航变更必须同步。
+- **模块产品业务文档**：每个业务域一份，是该域产品/IA/UX/分期/验收的依据。范例：`docs/product/master-data/design.md`（基础数据）。新域开工先立此文档。
+- **导航产品 IA**：`docs/product/navigation.md`——角色入口、菜单信息架构或跨域任务变化时同步。
+- **导航工程规则**：`docs/governance/frontend/navigation.md`——BusinessGateway、RBAC、菜单层级或壳层使用规则变化时同步。
+- **导航当前事实索引**：`docs/reference/frontend/navigation-map.md`——生产者路径或职责发生变化时同步；route、permission、facade 精确事实直接回到代码/OpenAPI，不手抄状态表。
 - **后端缺口**：发现门面缺端点，**整批审计后向 Codex 提交汇总 Issue**（不要遇到一个发一个），并在模块文档「后端缺口」回填 Issue 号。
 - 顺序铁律：**先有/先更文档方案 → 再重构**。
 
@@ -93,7 +95,7 @@ src/components/                  应用级组件（非 @nerv-iip/ui 原版）
 ## 5. 权限：拆分与同步（务必仔细）
 
 - `src/navigation.ts` 的 `requiredPermissions` 是 RBAC 钩子（当前多为宽松默认）；**网关 BusinessGateway 的授权校验才是权威**。
-- 新增页面/操作时：① 明确该页/该操作所需**权限码**，与后端 `BusinessGatewayPermissions` 对齐；② 在 nav 项与 `definePage` 挂权限；③ 按角色画像（计划员/班组长/仓管/质量/设备/采购销售财务，见导航图角色矩阵）裁剪可见域与页。
+- 新增页面/操作时：① 明确该页/该操作所需**权限码**，与后端 `BusinessGatewayPermissions` 对齐；② 在 nav 项与 `definePage` 挂权限；③ 按角色画像（计划员/班组长/仓管/质量/设备/采购销售财务，见 `docs/product/navigation.md`）裁剪可见域与页。
 - **前端隐藏 ≠ 后端放行**：能写的操作必须有对应权限语义，前端可见性与网关授权**一起改、保持一致**，不留宽松空洞。
 - 权限拆分（域级 / 页级 / 操作级）与业务角色**同步设计**；权限相关改动在 PR 里说明前后端如何对齐。
 

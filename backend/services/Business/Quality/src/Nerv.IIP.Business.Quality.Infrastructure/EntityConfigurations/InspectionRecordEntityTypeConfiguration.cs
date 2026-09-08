@@ -20,7 +20,7 @@ public sealed class InspectionRecordEntityTypeConfiguration : IEntityTypeConfigu
         builder.Property(x => x.InspectionPlanId).HasColumnName("inspection_plan_id").HasComment("Optional inspection plan version id used for this record.");
         builder.Property(x => x.SourceType).HasColumnName("source_type").IsRequired().HasMaxLength(50).HasComment("Inspection source type: receiving, operation, final, maintenance or customer-return.");
         builder.Property(x => x.SourceService).HasColumnName("source_service").IsRequired().HasMaxLength(100).HasComment("Source service or document family that requested the inspection.");
-        builder.Property(x => x.SourceDocumentId).HasColumnName("source_document_id").IsRequired().HasMaxLength(150).HasComment("Source document or operation public id.");
+        builder.Property(x => x.SourceDocumentId).HasColumnName("source_document_id").IsRequired().HasMaxLength(250).HasComment("Source document or operation public id, or the composite first-article source identity '{workOrderId}:{operationTaskId}' produced by FirstArticleInspection.SourceDocumentId.");
         builder.Property(x => x.SkuCode).HasColumnName("sku_code").IsRequired().HasMaxLength(100).HasComment("SKU code inspected as a Quality reference.");
         builder.Property(x => x.AttemptNumber).HasColumnName("attempt_number").IsRequired().HasDefaultValue(1).HasComment("One-based inspection attempt number within the same source and SKU history.");
         builder.Property(x => x.ReinspectionOfInspectionRecordId).HasColumnName("reinspection_of_inspection_record_id").HasComment("Previous inspection record id targeted by this reinspection attempt; null for the initial attempt.");

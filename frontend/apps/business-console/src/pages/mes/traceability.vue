@@ -85,7 +85,7 @@ watch(
 )
 
 const nodes = computed(() => traceability.value?.nodes ?? [])
-const errorMessage = computed(() => formatError(traceabilityError.value))
+const errorMessage = computed(() => inlineErrorMessage(traceabilityError.value))
 const batchModel = computed({
   get: () => filters.batchOrSerial ?? '',
   set: (value: string) => {
@@ -145,10 +145,6 @@ const columns: NvDataTableColumn<NodeRow>[] = [
   { key: 'displayName', header: '名称' },
   { key: 'status', header: '状态', width: 'w-28' },
 ]
-
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
 function firstQuery(value: unknown) {
   if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : ''
   return typeof value === 'string' ? value : ''
@@ -228,16 +224,17 @@ function firstQuery(value: unknown) {
       </template>
     </NvToolbar>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
-
     <NvDataTable
       :columns="columns"
       :rows="nodes"
       row-key="nodeId"
       :loading="traceabilityPending"
+      :error="traceabilityError"
+      :error-message="errorMessage"
       :searchable="false"
       :column-settings="false"
       empty-message="暂无追溯数据。先选择查询类型并填入工单、批次/序列号或物料批，再查询它经过的工序、用料与检验记录。"
+      @retry="refreshTraceability"
     >
       <template #cell-status="{ row }">
         <NvStatusBadge :value="row.status" :label="statusLabel(row.status)" />

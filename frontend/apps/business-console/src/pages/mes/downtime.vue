@@ -138,7 +138,7 @@ const reasonFilterOptions = computed(() => [
   { value: 'all', label: '全部原因' },
   ...downtimeReasonOptions.value.map((option) => ({ value: option.value, label: option.name })),
 ])
-const errorMessage = computed(() => formatError(downtimeEventsError.value))
+const errorMessage = computed(() => inlineErrorMessage(downtimeEventsError.value))
 // 停机原因目录读失败的**唯一归因点**：写面（登记入口 blocker）与读面（原因筛选）共用同一句话。
 // 归因分两处必然漂移——同一个 403 在两个面上会说成两种话；本页此前读面干脆什么都不说，
 // 下拉静默只剩「全部原因」，用户看不出是没权限还是真没配。
@@ -527,9 +527,6 @@ function formatDateTime(value?: string | null) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
 </script>
 
 <template>
@@ -633,7 +630,12 @@ function formatError(error: unknown) {
       </template>
     </NvToolbar>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
+    <!--
+      这一行留着不删（#2854 只删「表格数据源」那条手写错误行）：它归因的是**停机原因词表**
+      这个另一个读面（403 = 没权限看词表 / 其它 = 真读挂了），与表格数据源
+      `downtimeEventsError` 不同源——词表挂了时停机事件表照样可以有数据，表格没有状态可以
+      承担这句话。与 `operation-tasks.vue` / `work-orders/index.vue` 保留作业范围提示行同判据。
+    -->
     <p
       v-if="downtimeReasonsMessage"
       class="text-sm text-destructive"
@@ -654,9 +656,12 @@ function formatError(error: unknown) {
       :rows="downtimeEvents"
       row-key="downtimeEventId"
       :loading="downtimeEventsPending"
+      :error="downtimeEventsError"
+      :error-message="errorMessage"
       :searchable="false"
       :column-settings="false"
       empty-message="暂无停机事件。点击上方「登记停机」记录设备异常，登记后可在这里跟进恢复与影响范围。"
+      @retry="refreshDowntimeEvents"
     >
       <template #cell-deviceAssetId="{ row }">
         <CodeWithNameCell :code="deviceCode(row)" :name="deviceName(row)" fallback="未指定" />

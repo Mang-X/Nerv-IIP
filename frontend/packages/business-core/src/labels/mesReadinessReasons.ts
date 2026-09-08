@@ -30,6 +30,12 @@ export const MES_READINESS_REASON_DISPLAYS: Readonly<
     label: '齐套快照缺失',
     nextStep: '确认工单已绑定生产版本，重新下达以生成齐套需求快照',
   },
+  WORK_ORDER_NOT_RELEASED: {
+    code: 'WORK_ORDER_NOT_RELEASED',
+    category: '其他门禁',
+    label: '工单未下达',
+    nextStep: '先在工单列表下达该工单，再开工或报工',
+  },
   PREVIOUS_OPERATION_INCOMPLETE: {
     code: 'PREVIOUS_OPERATION_INCOMPLETE',
     category: '前序工序',

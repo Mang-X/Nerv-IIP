@@ -1050,6 +1050,7 @@ function Get-NervFullStackGuardianSensitiveValues {
         'Parameters__iam-secrets-pepper',
         'Parameters__iam-enterprise-identity-mfa-code',
         'Parameters__internal-service-bearer-token',
+        'Parameters__template-asset-retirement-proof-secret-base64',
         'Parameters__redis-password',
         'Parameters__minio-root-password',
         'Parameters__iam-seed-admin-password',
@@ -1598,6 +1599,9 @@ function New-NervFullStackSecretEnvironment {
             'Parameters__iam-secrets-pepper' = New-NervFullStackSecretValue -Bytes 48
             'Parameters__iam-enterprise-identity-mfa-code' = '654321'
             'Parameters__internal-service-bearer-token' = New-NervFullStackSecretValue -Bytes 48
+            'Parameters__template-asset-retirement-proof-issuer' = 'nerv-fullstack-template-asset-retirement'
+            'Parameters__template-asset-retirement-proof-audience' = 'nerv-barcodelabel-template-asset-retirement'
+            'Parameters__template-asset-retirement-proof-secret-base64' = New-NervFullStackSecretValue -Bytes 32
             'Parameters__redis-password' = New-NervFullStackSecretValue -Bytes 24
             'Parameters__minio-root-user' = "nerv-$SessionId"
             'Parameters__minio-root-password' = New-NervFullStackSecretValue -Bytes 24

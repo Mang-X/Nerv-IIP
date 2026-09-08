@@ -1,4 +1,6 @@
+using System.ComponentModel.DataAnnotations;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkCenterMachineOverheadRateAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 
@@ -47,12 +49,40 @@ public sealed record WorkOrderCostVarianceResponse(
     decimal? CapitalizedCost,
     decimal? CapitalizationVarianceAmount,
     decimal? ActualMachineHours,
-    string MachineCostStatus,
-    string MachineCostUnavailableReason,
+    [property: Required] MachineOverheadReadStatus MachineCostStatus,
+    string? MachineCostUnavailableReason,
+    string? MachineCurrencyCode,
     int PageNumber,
     int PageSize,
     int TotalOperations,
-    IReadOnlyList<OperationLaborVarianceItem> Operations);
+    IReadOnlyList<OperationLaborVarianceItem> Operations,
+    decimal? AppliedFixedMachineOverhead,
+    decimal? AppliedVariableMachineOverhead,
+    decimal? AppliedMachineOverheadTotal,
+    [property: Required] int MachineOverheadPageNumber,
+    [property: Required] int MachineOverheadPageSize,
+    [property: Required] int TotalMachineOverheadOperations,
+    [property: Required] IReadOnlyList<OperationMachineOverheadItem> MachineOverheadOperations);
+
+public sealed record OperationMachineOverheadItem(
+    [property: Required] string OperationTaskId,
+    [property: Required] string WorkCenterId,
+    [property: Required] string SettlementId,
+    [property: Required] long SettlementRevision,
+    [property: Required] MachineOverheadReadStatus Status,
+    string? UnavailableReason,
+    decimal? ActualMachineHours,
+    decimal? AppliedFixedMachineOverhead,
+    decimal? AppliedVariableMachineOverhead,
+    decimal? AppliedMachineOverheadTotal,
+    [property: Required] string AccountingPeriodCode,
+    [property: Required] string CurrencyCode,
+    string? DeviceAssetId,
+    string? MachineTimeBasisCode,
+    [property: Required] string WorkCenterMachineOverheadRateId,
+    [property: Required] int RateRevision,
+    [property: Required] DateTimeOffset CompletedAtUtc,
+    [property: Required] string SourceEventId);
 
 public sealed record OperationLaborVarianceItem(
     string OperationTaskId,
@@ -90,7 +120,7 @@ public sealed record CoveredLaborReportItem(
 public sealed class GetWorkOrderCostVarianceQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<GetWorkOrderCostVarianceQuery, WorkOrderCostVarianceResponse>
 {
-    private const string MachineCostUnavailableReason = "machine_cost_read_contract_deferred";
+    private const string MachineOverheadNotApplicableReason = "machine_overhead_not_applicable";
     private const string NumericOverflowReason = "numeric_overflow";
     private const string WorkOrderNotCompletedReason = "work_order_not_completed";
 
@@ -176,15 +206,71 @@ public sealed class GetWorkOrderCostVarianceQueryHandler(ApplicationDbContext db
             && capitalizedCost.HasValue
                 ? TryCalculate(() => totalAccumulatedCost.Value - capitalizedCost.Value, ref hasNumericOverflow)
                 : null;
-        decimal? machineHours;
+        var machineSettlements = await dbContext.OperationMachineOverheadSettlements.AsNoTracking()
+            .Where(settlement => settlement.OrganizationId == organizationId
+                && settlement.EnvironmentId == environmentId
+                && settlement.WorkOrderId == workOrderId
+                && dbContext.OperationMachineOverheadSettlementStates.Any(state =>
+                    state.OrganizationId == settlement.OrganizationId
+                    && state.EnvironmentId == settlement.EnvironmentId
+                    && state.OperationTaskId == settlement.OperationTaskId
+                    && state.ActiveRevision == settlement.SettlementRevision))
+            .OrderBy(x => x.OperationTaskId)
+            .ThenBy(x => x.SettlementRevision)
+            .ToListAsync(cancellationToken);
+        var machineOperationResults = machineSettlements.Select(BuildMachineOperation).ToArray();
+        var machineOperations = machineOperationResults
+            .Skip((request.PageNumber - 1) * request.PageSize)
+            .Take(request.PageSize)
+            .ToArray();
+        var applicableMachineSettlements = machineSettlements
+            .Where(x => x.Applicability == MachineOverheadApplicability.Applicable)
+            .ToArray();
+        var machineCurrencies = applicableMachineSettlements
+            .Select(x => x.CurrencyCode)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        decimal? machineHours = null;
+        decimal? appliedFixedMachineOverhead = null;
+        decimal? appliedVariableMachineOverhead = null;
+        decimal? appliedMachineOverheadTotal = null;
+        MachineOverheadReadStatus machineCostStatus;
+        string? machineCostUnavailableReason;
         try
         {
-            machineHours = await ActiveMachineHoursAsync(organizationId, environmentId, workOrderId, cancellationToken);
+            if (machineSettlements.Count == 0)
+            {
+                machineCostStatus = MachineOverheadReadStatus.Unavailable;
+                machineCostUnavailableReason = "operation_not_settled";
+            }
+            else if (applicableMachineSettlements.Length == 0)
+            {
+                machineCostStatus = MachineOverheadReadStatus.NotApplicable;
+                machineCostUnavailableReason = MachineOverheadNotApplicableReason;
+            }
+            else if (machineCurrencies.Length != 1)
+            {
+                machineCostStatus = MachineOverheadReadStatus.Unavailable;
+                machineCostUnavailableReason = "currency_conflict";
+            }
+            else
+            {
+                machineHours = Round(applicableMachineSettlements.Sum(x => x.ActualMachineHours!.Value));
+                appliedFixedMachineOverhead = Round(applicableMachineSettlements.Sum(x => x.FixedAmount));
+                appliedVariableMachineOverhead = Round(applicableMachineSettlements.Sum(x => x.VariableAmount));
+                appliedMachineOverheadTotal = Round(applicableMachineSettlements.Sum(x => x.Amount));
+                machineCostStatus = MachineOverheadReadStatus.Available;
+                machineCostUnavailableReason = null;
+            }
         }
         catch (OverflowException)
         {
-            hasNumericOverflow = true;
             machineHours = null;
+            appliedFixedMachineOverhead = null;
+            appliedVariableMachineOverhead = null;
+            appliedMachineOverheadTotal = null;
+            machineCostStatus = MachineOverheadReadStatus.Unavailable;
+            machineCostUnavailableReason = NumericOverflowReason;
         }
 
         if (hasNumericOverflow)
@@ -212,12 +298,20 @@ public sealed class GetWorkOrderCostVarianceQueryHandler(ApplicationDbContext db
             capitalizedCost,
             capitalizationVarianceAmount,
             machineHours,
-            "unavailable",
-            MachineCostUnavailableReason,
+            machineCostStatus,
+            machineCostUnavailableReason,
+            machineCostStatus == MachineOverheadReadStatus.Available ? machineCurrencies[0] : null,
             request.PageNumber,
             request.PageSize,
             operationResults.Length,
-            page);
+            page,
+            appliedFixedMachineOverhead,
+            appliedVariableMachineOverhead,
+            appliedMachineOverheadTotal,
+            request.PageNumber,
+            request.PageSize,
+            machineOperationResults.Length,
+            machineOperations);
     }
 
     private static OperationLaborVarianceItem BuildOperation(
@@ -332,25 +426,29 @@ public sealed class GetWorkOrderCostVarianceQueryHandler(ApplicationDbContext db
         return null;
     }
 
-    private async Task<decimal?> ActiveMachineHoursAsync(
-        string organizationId,
-        string environmentId,
-        string workOrderId,
-        CancellationToken cancellationToken)
+    private static OperationMachineOverheadItem BuildMachineOperation(
+        OperationMachineOverheadSettlement settlement)
     {
-        var hours = await dbContext.OperationMachineOverheadSettlements.AsNoTracking()
-            .Where(settlement => settlement.OrganizationId == organizationId
-                && settlement.EnvironmentId == environmentId
-                && settlement.WorkOrderId == workOrderId
-                && settlement.ActualMachineHours != null
-                && dbContext.OperationMachineOverheadSettlementStates.Any(state =>
-                    state.OrganizationId == settlement.OrganizationId
-                    && state.EnvironmentId == settlement.EnvironmentId
-                    && state.OperationTaskId == settlement.OperationTaskId
-                    && state.ActiveRevision == settlement.SettlementRevision))
-            .Select(x => x.ActualMachineHours)
-            .ToListAsync(cancellationToken);
-        return hours.Count == 0 ? null : Round(hours.Sum(x => x!.Value));
+        var isApplicable = settlement.Applicability == MachineOverheadApplicability.Applicable;
+        return new(
+            settlement.OperationTaskId,
+            settlement.WorkCenterId,
+            settlement.Id.ToString(),
+            settlement.SettlementRevision,
+            isApplicable ? MachineOverheadReadStatus.Available : MachineOverheadReadStatus.NotApplicable,
+            isApplicable ? null : MachineOverheadNotApplicableReason,
+            isApplicable ? Round(settlement.ActualMachineHours!.Value) : null,
+            isApplicable ? Round(settlement.FixedAmount) : null,
+            isApplicable ? Round(settlement.VariableAmount) : null,
+            isApplicable ? Round(settlement.Amount) : null,
+            settlement.AccountingPeriodCode,
+            settlement.CurrencyCode,
+            settlement.DeviceAssetId,
+            settlement.MachineTimeBasisCode,
+            settlement.WorkCenterMachineOverheadRateId.ToString(),
+            settlement.RateRevision,
+            settlement.CompletedAtUtc,
+            settlement.SourceEventId);
     }
 
     private static WorkOrderCostVarianceResponse Unavailable(
@@ -363,7 +461,8 @@ public sealed class GetWorkOrderCostVarianceQueryHandler(ApplicationDbContext db
             organizationId, environmentId, workOrderId, null, "actualOperation",
             "unavailable", reason, null, null, null, null, null, null, null,
             "notApplicable", "actual_payroll_rate_not_modeled",
-            null, null, null, null, null, "unavailable", MachineCostUnavailableReason,
+            null, null, null, null, null, MachineOverheadReadStatus.Unavailable, "operation_not_settled", null,
+            request.PageNumber, request.PageSize, 0, [], null, null, null,
             request.PageNumber, request.PageSize, 0, []);
 
     private static decimal? TryCalculate(Func<decimal> calculation, ref bool hasNumericOverflow)

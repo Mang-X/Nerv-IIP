@@ -237,23 +237,74 @@ public sealed class ZplV1LabelCompilerTests
     }
 
     [Theory]
-    [InlineData("MAT>8INJECT")]
-    [InlineData("MAT>;INJECT")]
-    [InlineData("MAT>:INJECT")]
-    public void Compiler_rejects_code128_control_sequences_in_barcode_data(string labelValue)
+    [InlineData("MAT>8VALUE", "^FD>:MAT>08VALUE^FS")]
+    [InlineData("MAT>;VALUE", "^FD>:MAT>0;VALUE^FS")]
+    [InlineData("MAT>:VALUE", "^FD>:MAT>0:VALUE^FS")]
+    public void Compiler_encodes_literal_greater_than_in_plain_code128_data(
+        string labelValue,
+        string expectedDataFragment)
     {
-        Assert.Throws<ArgumentException>(() => Compile(PlainItem(labelValue)));
+        var zpl = CompileText(PlainItem(labelValue));
+
+        Assert.Contains(expectedDataFragment, zpl, StringComparison.Ordinal);
+        Assert.DoesNotContain($"^FD>:{labelValue}^FS", zpl, StringComparison.Ordinal);
     }
 
     [Theory]
-    [InlineData("LOT>8INJECT", "SN-001")]
-    [InlineData("LOT-001", "SN>;INJECT")]
-    [InlineData("LOT>:INJECT", "SN-001")]
-    public void Compiler_rejects_gs1_128_control_sequences_in_application_identifier_data(string lotNo, string serialNumber)
+    [InlineData("LOT>8VALUE", "SN-001", "10LOT>08VALUE>821SN-001", "10LOT>8VALUE")]
+    [InlineData("LOT-001", "SN>;VALUE", "10LOT-001>821SN>0;VALUE", "21SN>;VALUE")]
+    [InlineData("LOT>:VALUE", "SN-001", "10LOT>0:VALUE>821SN-001", "10LOT>:VALUE")]
+    public void Compiler_encodes_literal_greater_than_in_gs1_128_application_identifier_data(
+        string lotNo,
+        string serialNumber,
+        string expectedDataFragment,
+        string forbiddenRawFragment)
     {
         var gs1 = new Gs1BarcodeValue("09501101530003", lotNo, serialNumber, null);
 
-        Assert.Throws<ArgumentException>(() => Compile(Gs1Item(gs1, Gs1LabelBarcodeType.Gs1128)));
+        var zpl = CompileText(Gs1Item(gs1, Gs1LabelBarcodeType.Gs1128));
+
+        Assert.Contains(expectedDataFragment, zpl, StringComparison.Ordinal);
+        Assert.DoesNotContain(forbiddenRawFragment, zpl, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(PlainLabelBarcodeType.Qr, "^FDQA,MAT>8VALUE^FS")]
+    [InlineData(PlainLabelBarcodeType.DataMatrix, "^FDMAT>8VALUE^FS")]
+    public void Compiler_keeps_greater_than_literal_outside_code128_invoked_mode(
+        PlainLabelBarcodeType barcodeType,
+        string expectedDataFragment)
+    {
+        var zpl = CompileText(PlainItem("MAT>8VALUE", barcodeType));
+
+        Assert.Contains(expectedDataFragment, zpl, StringComparison.Ordinal);
+        Assert.DoesNotContain("MAT>08VALUE", zpl, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Compiler_keeps_greater_than_literal_in_text_fields()
+    {
+        var item = PlainItem("MAT-0001") with
+        {
+            VariableValuesJson = "{\"skuCode\":\">8TEXT\"}",
+        };
+
+        var zpl = CompileText(item);
+
+        Assert.Contains("^FD>8TEXT^FS", zpl, StringComparison.Ordinal);
+        Assert.DoesNotContain("^FD>08TEXT^FS", zpl, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Compiler_keeps_leading_greater_than_literal_in_gs1_datamatrix_data()
+    {
+        var gs1 = new Gs1BarcodeValue("09501101530003", ">8LOT", ">;SERIAL", null);
+
+        var zpl = CompileText(Gs1Item(gs1, Gs1LabelBarcodeType.DataMatrix));
+
+        Assert.Contains("^FD_1010950110153000310>8LOT_121>;SERIAL^FS", zpl, StringComparison.Ordinal);
+        Assert.DoesNotContain("10>08LOT", zpl, StringComparison.Ordinal);
+        Assert.DoesNotContain("21>0;SERIAL", zpl, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -295,7 +346,9 @@ public sealed class ZplV1LabelCompilerTests
     {
         // Contract sources, independent from the compiler implementation:
         // - GitHub Issue #2065, approved specification revision 2, "minimum golden vectors".
-        // - Zebra ZPL Programming Guide P1099958-001 (2018-01-31), ^BC, ^BX quality 200, and ^FH.
+        // - GitHub Issue #2149, regression contract for literal > in Code 128 data contexts.
+        // - Zebra ZPL Programming Guide, ^BC invocation table (>0 encodes a literal > in subsets A/B),
+        //   ^BX quality 200, and ^FH.
         // - GS1 DataMatrix Guideline release 2.5.1, sections 2.2.1 and 2.2.2.
         // The vectors are direct ASCII ZPL fragments compared with ordinal semantics; no compiler output
         // or generated snapshot is used to derive them. The GS1 Data Matrix vector uses ^BX-native _1
@@ -304,7 +357,9 @@ public sealed class ZplV1LabelCompilerTests
         return new TheoryData<LabelCompilationItem, string, string>
         {
             { PlainItem("MAT-0001", PlainLabelBarcodeType.Code128), "^BCN,100,Y,N,N,A", "^FD>:MAT-0001^FS" },
+            { PlainItem("MAT>8VALUE", PlainLabelBarcodeType.Code128), "^BCN,100,Y,N,N,A", "^FD>:MAT>08VALUE^FS" },
             { Gs1Item(gs1, Gs1LabelBarcodeType.Gs1128), "^BCN,100,Y,N,N,A", "^FD>;>8010950110153000310123456>821789012^FS" },
+            { Gs1Item(new Gs1BarcodeValue("09501101530003", "LOT>8VALUE", "SN-001", null), Gs1LabelBarcodeType.Gs1128), "^BCN,100,Y,N,N,A", "^FD>;>8010950110153000310LOT>08VALUE>821SN-001^FS" },
             { PlainItem("https://example.invalid/items/SN0001", PlainLabelBarcodeType.Qr), "^BQ,2,6,Q,7", "^FDQA,https://example.invalid/items/SN0001^FS" },
             { PlainItem("DM-SN0001", PlainLabelBarcodeType.DataMatrix), "^BXN,6,200", "^FDDM-SN0001^FS" },
             { Gs1Item(gs1, Gs1LabelBarcodeType.DataMatrix), "^BXN,6,200", "^FD_1010950110153000310123456_121789012^FS" },

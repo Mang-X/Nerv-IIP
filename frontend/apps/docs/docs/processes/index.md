@@ -84,6 +84,8 @@ flowchart LR
 | 报工 / 完工入库   | `/mes/production-reports`, `/mes/receipts`          | `/api/business-console/v1/mes/production-reports`, `/api/business-console/v1/mes/finished-goods-receipt-requests`                          | 完工入库等待 Inventory/WMS 过账事实回写。                                                        |
 | 库存移动          | `/inventory/movements`                              | `/api/business-console/v1/inventory/movements`                                                                                             | 可解释 posted 或 failed 的库存过账结果。                                                         |
 
+PDA 返工任务复用既有工序执行与报工入口，不增加新的顶级入口。页面只根据服务端返工类型与完整的来源 NCR、源工单事实显示“返工”；来源不完整或服务端未开放 `report` 动作时停止操作。报工 POST 返回后还会按报工编号公开回读，并核对同一报工记录、工单与工序，回读未见或错实体时不显示成功。
+
 ## 仓储库存
 
 仓储库存：收货 -> 上架 -> 库存 -> 拣货 -> 出库。

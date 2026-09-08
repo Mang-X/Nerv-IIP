@@ -1,3 +1,4 @@
+using System.Globalization;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 
 namespace Nerv.IIP.Business.Quality.Domain.AggregatesModel.PeriodicInspectionOperationAggregate;
@@ -13,6 +14,24 @@ public partial record PeriodicInspectionRuntimeContextId : IGuidStronglyTypedId,
 }
 
 public sealed record PeriodicInspectionTimeWindow(long Sequence, DateTime DueAtUtc);
+
+/// <summary>
+/// 补投的重建发布事实被既有权威事实顶掉的那一个属性。
+/// </summary>
+public sealed record PeriodicInspectionReleaseFactSubstitution(
+    string Attribute,
+    string ReconstructedValue,
+    string AuthoritativeValue);
+
+/// <summary>
+/// 经权威事实校正后、真正写进投影的发布事实。<see cref="Substitutions"/> 非空表示重建值被顶掉过，
+/// 调用方须把它留痕。
+/// </summary>
+public sealed record PeriodicInspectionReleaseFacts(
+    string SkuCode,
+    int OperationSequence,
+    string WorkCenterId,
+    IReadOnlyList<PeriodicInspectionReleaseFactSubstitution> Substitutions);
 
 public sealed record PeriodicInspectionQuantityWindow(
     long Sequence,
@@ -143,6 +162,97 @@ public sealed class PeriodicInspectionOperation : Entity<PeriodicInspectionOpera
                 plan);
             context.Reconcile(ProductionReports, CompletedAtUtc);
             RuntimeContexts.Add(context);
+        }
+    }
+
+    /// <summary>
+    /// 用重建的发布事实补投（#3000 回填）时，先让它与既有权威事实对齐。
+    ///
+    /// 回填载荷里的 SKU / 工序号 / 工作中心取自 MES **当前**的工单与工序行，而完工事实是 MES 当初
+    /// 直投过来的那一份；两者不一致时权威的是后者——重建来源本就无法权威知晓这些属性，
+    /// 不一致只说明重建精度不足，**不构成业务事实冲突**。若照 <c>ApplyRelease</c> 的直投语义把它判成
+    /// 冲突，整封补投事件会被判为无效业务事实进死信，该工单一行都补不上、继续 <c>not-synchronized</c>
+    /// 被门禁永久拒——正是本票要消除的形态。
+    ///
+    /// 因此这里以既有完工事实为准，并把被顶掉的属性交回调用方留痕（不静默）。
+    /// 已知可达的不一致只有 SKU 一项：MES 的 <c>OperationTask</c> 在未传 SKU 时把 <c>SkuCode</c>
+    /// 回落成工单号，该值随完工事件进入 <c>CompletionSkuCode</c>；工序号在构造后不可变，
+    /// 工作中心在工序完工后被 <c>ApplyScheduleAssignment</c> 拒绝改写。三项统一处理，不为其中两项另立分支。
+    /// </summary>
+    public PeriodicInspectionReleaseFacts ResolveReconstructedReleaseFacts(
+        string skuCode,
+        int operationSequence,
+        string workCenterId)
+    {
+        var reconstructedSkuCode = Required(skuCode);
+        var reconstructedWorkCenterId = Required(workCenterId);
+        if (!CompletedAtUtc.HasValue)
+        {
+            return new PeriodicInspectionReleaseFacts(
+                reconstructedSkuCode,
+                operationSequence,
+                reconstructedWorkCenterId,
+                []);
+        }
+
+        var substitutions = new List<PeriodicInspectionReleaseFactSubstitution>();
+        if (CompletionSkuCode != reconstructedSkuCode)
+        {
+            substitutions.Add(new PeriodicInspectionReleaseFactSubstitution(
+                "sku-code",
+                reconstructedSkuCode,
+                CompletionSkuCode!));
+        }
+
+        if (CompletionOperationSequence != operationSequence)
+        {
+            substitutions.Add(new PeriodicInspectionReleaseFactSubstitution(
+                "operation-sequence",
+                operationSequence.ToString(CultureInfo.InvariantCulture),
+                CompletionOperationSequence!.Value.ToString(CultureInfo.InvariantCulture)));
+        }
+
+        if (CompletionWorkCenterId != reconstructedWorkCenterId)
+        {
+            substitutions.Add(new PeriodicInspectionReleaseFactSubstitution(
+                "work-center-id",
+                reconstructedWorkCenterId,
+                CompletionWorkCenterId!));
+        }
+
+        return new PeriodicInspectionReleaseFacts(
+            CompletionSkuCode!,
+            CompletionOperationSequence!.Value,
+            CompletionWorkCenterId!,
+            substitutions);
+    }
+
+    /// <summary>
+    /// 补投发布事实（#3000 回填）时，把补投之前已经累计的产量与已经流逝的时间**记为已生成**，
+    /// 不追认那段时间的周期巡检窗口。
+    ///
+    /// 直投路径上发布事实先到、报工后到，窗口是随产量逐步生成的；回填是反过来——
+    /// 发布事实补到一张已经报了很久的工序上，<c>Reconcile</c> 会把全部历史产量一次性算进
+    /// <see cref="PeriodicInspectionRuntimeContext.QuantityHighWater"/>、把最早报工算进
+    /// <c>FirstActivityAtUtc</c>。不做这一步，一次回填就会为**已经流走的**产量和时间成批开出
+    /// 已过期的巡检任务；产量积压超过
+    /// <see cref="PeriodicInspectionRuntimeContext.MaximumSupportedPendingQuantityWindows"/> 时
+    /// <c>TakeDueQuantityWindows</c> 还会抛出，整张工单被判为无效业务事实进死信、回填对它失效——
+    /// 那正是本票要消除的「永久 not-synchronized」。
+    ///
+    /// 只在**本次刚补上发布事实**的工序上调用：调用方按「已有发布事实的工序不覆盖」筛过，
+    /// 因此此刻聚合里的运行上下文恰好就是本次新建的那些。
+    /// </summary>
+    public void SkipPeriodicWindowsAccruedBefore(DateTime observedAtUtc)
+    {
+        if (observedAtUtc.Kind != DateTimeKind.Utc)
+        {
+            throw new ArgumentException("Observation time must be UTC.", nameof(observedAtUtc));
+        }
+
+        foreach (var context in RuntimeContexts)
+        {
+            context.SkipWindowsAccruedBefore(observedAtUtc);
         }
     }
 
@@ -483,6 +593,40 @@ public sealed class PeriodicInspectionRuntimeContext : Entity<PeriodicInspection
         {
             NextTimeWindowAtUtc = TryAddTicks(FirstActivityAtUtc.Value, GetIntervalTicks());
         }
+    }
+
+    /// <summary>
+    /// 把补投之前已经累计的产量窗口与已经流逝的时间窗口记为已生成。取值口径与
+    /// <see cref="TakeDueQuantityWindows"/> / <see cref="TakeDueTimeWindows"/> 完全一致
+    /// （同一个 <c>floor(高水位 / 间隔)</c>、同一个 <c>GetIntervalTicks</c>），
+    /// 差别只是不产出窗口——因此「跳过的」与「本会开出的」是同一批，不会多跳也不会少跳。
+    /// </summary>
+    internal void SkipWindowsAccruedBefore(DateTime observedAtUtc)
+    {
+        if (QuantityInterval.HasValue)
+        {
+            LastGeneratedQuantityWindowSequence =
+                decimal.ToInt64(decimal.Floor(QuantityHighWater / QuantityInterval.Value));
+        }
+
+        if (!TimeIntervalHours.HasValue || !FirstActivityAtUtc.HasValue || !NextTimeWindowAtUtc.HasValue)
+        {
+            return;
+        }
+
+        var intervalTicks = GetIntervalTicks();
+        var elapsedTicks = (observedAtUtc - FirstActivityAtUtc.Value).Ticks;
+        if (elapsedTicks < intervalTicks)
+        {
+            return;
+        }
+
+        var accruedWindows = elapsedTicks / intervalTicks;
+        TimeScheduleAnchorAtUtc ??= FirstActivityAtUtc.Value;
+        LastGeneratedTimeWindowSequence = accruedWindows;
+        NextTimeWindowAtUtc = TryAddTicks(
+            FirstActivityAtUtc.Value,
+            checked(intervalTicks * (accruedWindows + 1)));
     }
 
     public IReadOnlyList<PeriodicInspectionTimeWindow> TakeDueTimeWindows(DateTime nowUtc, int maxWindows)

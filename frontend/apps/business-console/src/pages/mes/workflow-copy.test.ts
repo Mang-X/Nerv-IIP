@@ -390,7 +390,7 @@ const uiStubs = {
     </template></div>`,
   },
   DataTablePagination: true,
-  DialogRoot: {
+  NvDialog: {
     props: ['open'],
     template: '<div><slot /></div>',
   },
@@ -477,11 +477,11 @@ const uiStubs = {
   NvSelectTrigger: {
     template: '<button><slot /></button>',
   },
-  SelectValue: {
+  NvSelectValue: {
     props: ['placeholder'],
     template: '<span>{{ placeholder }}</span>',
   },
-  // 只选控件内部自带 reka Dialog/Popover，与本文件的 DialogRoot 桩不兼容；
+  // 只选控件内部自带 reka Dialog/Popover，与本文件的 NvDialog 桩不兼容；
   // 桩成带同名 id 的输入位，保留「选中某个候选」的语义。
   NvEntityPicker: {
     props: ['modelValue', 'options', 'id'],

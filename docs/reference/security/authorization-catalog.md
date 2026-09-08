@@ -62,6 +62,7 @@
 - `business.inventory.movements.create`
 - `business.inventory.ledger.read`
 - `business.inventory.counts.manage`
+- `business.inventory.expired-stock.override`
 
 ### MES
 

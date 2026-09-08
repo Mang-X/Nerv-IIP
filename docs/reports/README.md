@@ -6,7 +6,7 @@
 
 - `investigations/`：事故、故障和兼容问题调查。
 - `spikes/`：时间盒实验与可行性预研。
-- `audits/`：时点盘点、交付审计和证据核对；M2-H 的 TestEvidence、determinism、真实依赖 lane 与 PDA 测试形成史也冻结于此。
+- `audits/`：时点盘点、交付审计和证据核对；M2-H 的 TestEvidence、determinism、真实依赖 lane 与 PDA 测试形成史也冻结于此；M2-J 的 MAN-669 CI 构建实测与迁移前部署基线审计也从此进入。
 - `remediation/`：一次性数据或实现修复过程及证据。
 
 部分包含大量相对源码链接的冻结报告暂保留在 `docs/reports/` 根目录，以维持迁移前相同的链接深度和原始正文；这不是新的分类例外或项目状态总账。根目录中的短兼容指针只用于保持这些冻结报告原有的同目录链接可访问。

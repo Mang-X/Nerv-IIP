@@ -170,7 +170,6 @@ public sealed class MesInventoryLocationDeploymentConfigurationTests
         var mes = ComposeServiceBlock(
             ReadRepositoryFile("infra/compose/nerv-iip.platform.yml"),
             "business-mes");
-        var baseline = ReadRepositoryFile("docs/architecture/deployment-baseline.md");
 
         // 扫**整个 overlay 文件**而不是单个服务块：键塞进共享锚点 `&dotnet-env` 同样会到达
         // business-mes，只看服务块会漏。整个 legacy overlay 都不支持该链路，全文件扫描才是对的强度。
@@ -182,7 +181,6 @@ public sealed class MesInventoryLocationDeploymentConfigurationTests
         }
 
         Assert.Contains("不支持线边收料", mes, StringComparison.Ordinal);
-        Assert.Contains("MATERIAL_SUPPLY_LOCATION_UNCONFIGURED", baseline, StringComparison.Ordinal);
     }
 
     /// <summary>

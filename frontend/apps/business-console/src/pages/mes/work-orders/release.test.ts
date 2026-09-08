@@ -150,7 +150,6 @@ const uiStubs = {
   },
   NvDropdownMenuSeparator: true,
   NvDialog: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
-  DialogRoot: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
   NvDialogContent: { template: '<section><slot /></section>' },
   NvDialogHeader: { template: '<header><slot /></header>' },
   NvDialogTitle: { template: '<h2><slot /></h2>' },
@@ -175,12 +174,19 @@ const uiStubs = {
   NvSelectTrigger: { template: '<button type="button"><slot /></button>' },
   NvSelectContent: { template: '<div><slot /></div>' },
   NvSelectItem: { template: '<div><slot /></div>' },
-  SelectValue: true,
+  NvSelectValue: true,
   NvStatusBadge: true,
   Spinner: true,
   RouterLink: { props: ['to'], template: '<a><slot /></a>' },
 }
 
+/**
+ * 基础夹具是 `status: 'created'` + 一道 `queued` 工序，因此 `blockReasons` **必须**带上
+ * `WORK_ORDER_NOT_RELEASED`——#3119 的守卫让 `MesOperationTaskActionReadinessEvaluator`
+ * 对这个组合无条件产出该码，「created + 空 blockReasons」这个输入服务端已经回不出来了。
+ * 上一版夹具停在空数组，于是本文件的下达用例整体寄生在一份与服务端契约漂移的 mock 上
+ * （它们对 `blockReasons` 本来是有鉴别力的，失真的是输入，不是断言）。
+ */
 function workOrder(overrides: Record<string, unknown> = {}) {
   return {
     workOrderId: 'WO-1',
@@ -194,7 +200,7 @@ function workOrder(overrides: Record<string, unknown> = {}) {
         operationTaskId: 'OP-1',
         operationSequence: 10,
         status: 'queued',
-        blockReasons: [],
+        blockReasons: ['WORK_ORDER_NOT_RELEASED: 工单尚未下达，请先下达工单后再开工或报工。'],
         evaluatedAtUtc: '2026-08-25T00:00:00.000Z',
       },
     ],
@@ -270,7 +276,7 @@ describe('work-order list — release entry', () => {
             operationTaskId: 'OP-2',
             operationSequence: 20,
             status: 'queued',
-            blockReasons: [],
+            blockReasons: ['WORK_ORDER_NOT_RELEASED: 工单尚未下达，请先下达工单后再开工或报工。'],
             evaluatedAtUtc: '2026-08-25T00:00:00.000Z',
           },
         ],
@@ -304,6 +310,36 @@ describe('work-order list — release entry', () => {
     expect(refreshWorkOrders).toHaveBeenCalledTimes(1)
     expect(refreshOperationTasks).toHaveBeenCalledTimes(1)
     expect(notifySuccess).toHaveBeenCalledWith(expect.stringContaining('WO-20260825-002'))
+  })
+
+  /**
+   * #3119 回归。本文件其余下达用例的夹具都写死 `blockReasons: []`，
+   * **而守卫上线后后端对 `created` 工单的 queued 工序恒回 `WORK_ORDER_NOT_RELEASED`**——
+   * 那个组合已经不是服务端回得出的输入，18 条绿全部寄生在一份漂移的 mock 上。
+   * 这一条用后端真正会回的载荷，钉住「下达」按钮**不被那条『你还没下达』的理由禁掉」。
+   */
+  it('keeps the release action enabled when the row carries WORK_ORDER_NOT_RELEASED', async () => {
+    releaseState.items = [
+      workOrder({
+        operationTasks: [
+          {
+            operationTaskId: 'OP-1',
+            operationSequence: 10,
+            status: 'queued',
+            blockReasons: ['WORK_ORDER_NOT_RELEASED: 工单尚未下达，请先下达工单后再开工或报工。'],
+            evaluatedAtUtc: '2026-08-25T00:00:00.000Z',
+          },
+        ],
+      }),
+    ]
+    const wrapper = mountPage()
+
+    const action = button(wrapper, '下达')
+    expect(action.attributes('disabled')).toBeUndefined()
+    await action.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('确认下达工单')
   })
 
   it('allows a covering workshop manage scope to preflight a work-center list row', async () => {
@@ -352,7 +388,10 @@ describe('work-order list — release entry', () => {
             operationTaskId: 'OP-1',
             operationSequence: 10,
             status: 'queued',
-            blockReasons: [reason],
+            blockReasons: [
+              reason,
+              'WORK_ORDER_NOT_RELEASED: 工单尚未下达，请先下达工单后再开工或报工。',
+            ],
             evaluatedAtUtc: '2026-08-25T00:00:00.000Z',
           },
         ],
@@ -397,7 +436,10 @@ describe('work-order list — release entry', () => {
           operationTaskId: 'OP-1',
           operationSequence: 10,
           status: 'queued',
-          blockReasons: ['MATERIAL_REQUIREMENT_SNAPSHOT_MISSING: 工单缺少齐套需求快照'],
+          blockReasons: [
+            'MATERIAL_REQUIREMENT_SNAPSHOT_MISSING: 工单缺少齐套需求快照',
+            'WORK_ORDER_NOT_RELEASED: 工单尚未下达，请先下达工单后再开工或报工。',
+          ],
           evaluatedAtUtc: '2026-08-25T00:00:00.000Z',
         },
       ],
@@ -415,20 +457,23 @@ describe('work-order list — release entry', () => {
     expect(releaseWorkOrder).not.toHaveBeenCalled()
   })
 
-  it('fails closed when a non-queued task has no release readiness facts', async () => {
-    const latest = workOrder({
-      status: 'started',
-      operationTasks: [
-        {
-          operationTaskId: 'OP-1',
-          operationSequence: 10,
-          status: 'inProgress',
-          blockReasons: [],
-          evaluatedAtUtc: '2026-08-25T00:00:00.000Z',
-        },
-      ],
-    })
-    readWorkOrderForRelease.mockResolvedValue(latest)
+  // #3118：后端 `ReleaseWorkOrderCommandHandler` 的下达守卫不看工序状态，工序在制的
+  // created 工单照样受理。界面此前要求全部工序 queued，比后端更严，把「事后补下达」
+  // 这条自愈路径整个藏掉；这里钉住的是「界面不得比后端守卫更严」。
+  it('releases a work order whose operation is already in progress, and the dialog states the premise', async () => {
+    releaseState.items = [
+      workOrder({
+        operationTasks: [
+          {
+            operationTaskId: 'OP-1',
+            operationSequence: 10,
+            status: 'inProgress',
+            blockReasons: [],
+            evaluatedAtUtc: '2026-08-25T00:00:00.000Z',
+          },
+        ],
+      }),
+    ]
     const wrapper = mountPage()
 
     const action = button(wrapper, '下达')
@@ -437,8 +482,32 @@ describe('work-order list — release entry', () => {
     await flushPromises()
 
     expect(readWorkOrderForRelease).toHaveBeenCalledWith('WO-1')
-    expect(wrapper.text()).not.toContain('确认下达工单')
-    expect(releaseWorkOrder).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('确认下达工单')
+    expect(wrapper.get('[data-testid="release-retroactive-notice"]').text()).toContain(
+      '该工单已有工序不在排队中。',
+    )
+    expect(wrapper.find('[data-testid="release-validation-message"]').exists()).toBe(false)
+
+    await wrapper.get('input[type="checkbox"]').setValue(true)
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(releaseWorkOrder).toHaveBeenCalledTimes(1)
+    expect(releaseWorkOrder).toHaveBeenCalledWith(
+      'WO-1',
+      expect.objectContaining({ confirmWarnings: true }),
+    )
+  })
+
+  // 全部工序仍在排队时不该背上这句前提说明。
+  it('does not show the not-all-queued notice when every operation is still queued', async () => {
+    const wrapper = mountPage()
+
+    await button(wrapper, '下达').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('确认下达工单')
+    expect(wrapper.find('[data-testid="release-retroactive-notice"]').exists()).toBe(false)
   })
 
   it.each([

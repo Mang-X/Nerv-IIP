@@ -16,9 +16,10 @@
 #     - NERV_IIP_TEST_POSTGRES targeting a PostgreSQL administration database
 #     - NERV_IIP_TEST_REDIS targeting a Redis endpoint
 
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName = 'SelectedMembers')]
 param(
-    [Parameter(Mandatory)] [string[]] $MemberId,
+    [Parameter(Mandatory, ParameterSetName = 'SelectedMembers')] [string[]] $MemberId,
+    [Parameter(Mandatory, ParameterSetName = 'AllActiveMembers')] [switch] $AllActiveMembers,
     [Parameter(Mandatory)] [string] $DatabaseSuffix,
     [Parameter(Mandatory)] [string] $ResultsDirectory,
     [Parameter(Mandatory)] [string] $SummaryPath,
@@ -30,15 +31,22 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'lib/RedisCapTestLane.ps1')
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-if ($MemberId.Count -eq 0) { throw 'At least one Redis/CAP lane member is required.' }
 if ($DatabaseSuffix -cnotmatch '^[a-z0-9_]{1,20}$') { throw 'DatabaseSuffix must contain 1-20 PostgreSQL-safe lowercase characters.' }
-$memberIdSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
-$selectedMembers = @(
-    foreach ($selectedMemberId in $MemberId) {
-        if ([string]::IsNullOrWhiteSpace($selectedMemberId) -or -not $memberIdSet.Add($selectedMemberId)) { throw "Redis/CAP lane member ids must be non-empty and unique; observed '$selectedMemberId'." }
-        Import-NervRedisCapTestLaneMember -ManifestPath $ManifestPath -MemberId $selectedMemberId -RepositoryRoot $repoRoot
-    }
-)
+if ([string]::Equals($PSCmdlet.ParameterSetName, 'AllActiveMembers', [StringComparison]::Ordinal)) {
+    $selectedMembers = @(Import-NervRedisCapTestLaneMembers -ManifestPath $ManifestPath -RepositoryRoot $repoRoot)
+    [string[]]$selectedMemberIds = @($selectedMembers | ForEach-Object { [string]$_.id })
+}
+else {
+    if ($MemberId.Count -eq 0) { throw 'At least one Redis/CAP lane member is required.' }
+    $memberIdSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $selectedMembers = @(
+        foreach ($selectedMemberId in $MemberId) {
+            if ([string]::IsNullOrWhiteSpace($selectedMemberId) -or -not $memberIdSet.Add($selectedMemberId)) { throw "Redis/CAP lane member ids must be non-empty and unique; observed '$selectedMemberId'." }
+            Import-NervRedisCapTestLaneMember -ManifestPath $ManifestPath -MemberId $selectedMemberId -RepositoryRoot $repoRoot
+        }
+    )
+    [string[]]$selectedMemberIds = @($MemberId)
+}
 
 function ConvertTo-PgEnvironment {
     param([Parameter(Mandatory)] [string] $ConnectionString)
@@ -121,7 +129,7 @@ $savedTestPostgres = [Environment]::GetEnvironmentVariable('NERV_IIP_TEST_POSTGR
 $savedCapVersion = [Environment]::GetEnvironmentVariable('NERV_IIP_TEST_CAP_VERSION')
 $savedCapTopicPrefix = [Environment]::GetEnvironmentVariable('NERV_IIP_TEST_CAP_TOPIC_PREFIX')
 $savedDatabaseLifecycle = [Environment]::GetEnvironmentVariable('NERV_IIP_TEST_DATABASE_LIFECYCLE')
-$summary = [ordered]@{ schemaVersion = 2; lane = 'redis-cap'; selectedMemberIds = @($MemberId); readiness = [ordered]@{ postgres = 'not-run'; redis = 'not-run' }; postgresVersion = ''; redisVersion = ''; expected = 0; discovered = 0; passed = 0; failed = 0; skipped = 0; cleanup = 'not-run'; members = @() }
+$summary = [ordered]@{ schemaVersion = 2; lane = 'redis-cap'; selectedMemberIds = @($selectedMemberIds); readiness = [ordered]@{ postgres = 'not-run'; redis = 'not-run' }; postgresVersion = ''; redisVersion = ''; expected = 0; discovered = 0; passed = 0; failed = 0; skipped = 0; cleanup = 'not-run'; members = @() }
 $memberSummaries = [Collections.Generic.List[object]]::new()
 $failure = $null
 try {
@@ -272,17 +280,17 @@ finally {
         $summary.failed += [int]$memberSummary.failed
         $summary.skipped += [int]$memberSummary.skipped
     }
-    if ($memberSummaries.Count -ne $MemberId.Count) {
+    if ($memberSummaries.Count -ne $selectedMemberIds.Count) {
         $summary.cleanup = 'incomplete'
-        if ($null -eq $failure) { $failure = [InvalidOperationException]::new("Redis/CAP lane selected $($MemberId.Count) members but summarized $($memberSummaries.Count).") }
+        if ($null -eq $failure) { $failure = [InvalidOperationException]::new("Redis/CAP lane selected $($selectedMemberIds.Count) members but summarized $($memberSummaries.Count).") }
     }
     elseif (@($memberSummaries | Where-Object { -not [string]::Equals([string]$_.cleanup, 'passed', [StringComparison]::Ordinal) }).Count -gt 0) { $summary.cleanup = 'failed' }
     else { $summary.cleanup = 'passed' }
-    try { Assert-NervRedisCapTestLaneSummary -SelectedMemberIds @($MemberId) -MemberSummaries @($memberSummaries) }
+    try { Assert-NervRedisCapTestLaneSummary -SelectedMemberIds @($selectedMemberIds) -MemberSummaries @($memberSummaries) }
     catch { if ($null -eq $failure) { $failure = $_ } }
     $summaryDirectory = Split-Path -Parent $SummaryPath
     if (-not [string]::IsNullOrWhiteSpace($summaryDirectory)) { [IO.Directory]::CreateDirectory($summaryDirectory) | Out-Null }
     [IO.File]::WriteAllText($SummaryPath, (($summary | ConvertTo-Json -Depth 12) + "`n"), [Text.UTF8Encoding]::new($false))
 }
 if ($null -ne $failure) { throw $failure }
-Write-Host "Redis/CAP lane members '$($MemberId -join ',')' passed: discovered=$($summary.discovered) passed=$($summary.passed) skipped=$($summary.skipped) cleanup=$($summary.cleanup)."
+Write-Host "Redis/CAP lane members '$($selectedMemberIds -join ',')' passed: discovered=$($summary.discovered) passed=$($summary.passed) skipped=$($summary.skipped) cleanup=$($summary.cleanup)."

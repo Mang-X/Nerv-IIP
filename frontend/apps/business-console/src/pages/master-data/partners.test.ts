@@ -115,11 +115,10 @@ const alertDialogStubs = {
 }
 // 对话框就地渲染（不 teleport），便于填写表单。
 const dialogStubs = {
-  // NvDialog/NvDialogTrigger/NvDialogClose 是 reka-ui 原语再导出，组件名仍是 DialogRoot/DialogTrigger/DialogClose。
+  // NvDialog/NvDialogTrigger/NvDialogClose 是 reka-ui 原语的带 name 浅拷贝别名（barrel 已补 name），
+  // 组件名即 Nv 名，故 stub 键按 Nv 名写。
   NvDialog: { template: '<div><slot /></div>' },
-  DialogRoot: { template: '<div><slot /></div>' },
   NvDialogTrigger: { template: '<div><slot /></div>' },
-  DialogTrigger: { template: '<div><slot /></div>' },
   NvDialogContent: { template: '<div><slot /></div>' },
   NvDialogHeader: { template: '<div><slot /></div>' },
   NvDialogFooter: { template: '<div><slot /></div>' },
@@ -135,9 +134,8 @@ const selectStubs = {
       '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
   NvSelectTrigger: { template: '<span><slot /></span>' },
-  // NvSelectValue 是 reka-ui SelectValue 再导出，组件名仍是 SelectValue。
+  // NvSelectValue 是 reka-ui SelectValue 的带 name 浅拷贝别名，组件名即 NvSelectValue。
   NvSelectValue: { template: '<span />' },
-  SelectValue: { template: '<span />' },
   NvSelectContent: { template: '<slot />' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }

@@ -739,6 +739,99 @@ public sealed class InventoryMovementRequestedConsumerTests
         Assert.Equal(5m, dbContext.StockLedgers.Single(x => x.LocationCode == "LOC-B-02").OnHandQuantity);
     }
 
+    /// <summary>
+    /// #3186：<c>payload.StockRelease.SourceQualityStatus</c> 是 Quality 侧原样透传的外部输入，
+    /// 词表外的取值应当表达成 <c>KnownException</c>（业务拒绝），而不是
+    /// <c>ArgumentOutOfRangeException</c>（本服务的编程缺陷）。
+    ///
+    /// **本用例断言的是异常的分类，不是它的投递结局。** 它用 <c>ThrowsAsync</c> 断言——也就是说
+    /// 异常**照样逃逸出消费者入口**，这一点改动前后相同：<c>IntegrationEventConsumerGuard</c>
+    /// 不吞异常、无 <c>ISubscribeFilter</c>、无按类型的 catch。能不能被吸收由 #877 承接。
+    ///
+    /// 反向读数：把 <c>TryNormalize</c> 改回 <c>Normalize</c>，<c>ThrowsAsync&lt;KnownException&gt;</c>
+    /// 直接红在实际抛出的 <c>ArgumentOutOfRangeException</c> 上。
+    /// </summary>
+    /// <remarks>
+    /// **source 与 target 两侧都要有 InlineData。** 只打 source 时，把 target 那行改回
+    /// <c>Normalize</c> 后本用例仍全绿——唯一会红的是 KnownException 计数台账那条记账断言，
+    /// 改个数字就没了（#3186 复审 B2 实测）。
+    ///
+    /// **且必须断言消息含被拒的那个取值。** target 侧紧邻着一条同型守卫
+    /// （<c>target status must match the inspection event type</c>）——本仓「相邻同型守卫会兜住变异」那条。
+    ///
+    /// 两条消息断言**各自承接不同的一格**，别把功劳记错、更别据此删掉其中一条：
+    /// <list type="bullet">
+    /// <item><c>Assert.Contains(rejected, …)</c> 承接**今天**的相邻守卫兜底：实测该守卫开火时，
+    /// 真正把变异杀掉的是这一条，不是下面那条。</item>
+    /// <item><c>Assert.DoesNotContain("must match the inspection event type", …)</c> 承接**将来**：
+    /// 一旦相邻守卫的消息也开始携带取值，上一条就失效，那时只剩这条是唯一防线。</item>
+    /// </list>
+    ///
+    /// **覆盖量按 3 格记，不是 5 格。** 定向变异算出的支配关系：
+    /// <c>("not-a-status", null)</c> 的杀伤集合 ⊂ <c>("quarantine", null)</c>，
+    /// <c>(quality,"not-a-status")</c> ⊂ <c>(quality,"quarantine")</c>；最小覆盖集是
+    /// <c>{("quarantine",null), (quality,"quarantine"), ("",null)}</c>。
+    /// 另两行保留是为可读性，**不计入覆盖量**。
+    ///
+    /// 两者是**支配关系不是等价关系**：往 <c>Aliases</c> 加回 <c>["quarantine"]</c> 的变异只红
+    /// <c>quarantine</c> 那两行——即 <c>"quarantine"</c> 额外钉住 #2976 的「别名表不得放宽」裁定，
+    /// <c>"not-a-status"</c> 没有这一份。
+    /// </remarks>
+    [Theory]
+    [InlineData("quarantine", null)]
+    [InlineData("not-a-status", null)]
+    [InlineData(StockQualityStatus.Quality, "quarantine")]
+    [InlineData(StockQualityStatus.Quality, "not-a-status")]
+    // 空白 **source** 是另一支失败文案（"…is required."），单独覆盖：否则删掉那个分支、
+    // 或让它回落到 "'' is not supported" 都不会红（#3186 复审 S7）。
+    //
+    // 空白 **target** 不在此列——它是**设计上的可选**：留空表示「按事件类型推导目标状态」，
+    // 不是错误输入，所以没有对应的 InlineData。
+    [InlineData("", null)]
+    public async Task Quality_inspection_result_consumer_rejects_unknown_stock_release_status_as_known_exception(
+        string sourceQualityStatus,
+        string? targetQualityStatus)
+    {
+        var rejected = targetQualityStatus ?? sourceQualityStatus;
+        await using var dbContext = CreateContext();
+        dbContext.StockLedgers.Add(CreateQualityLedger("LOC-B-02", "LOT-002", 5m));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer(
+            new CommandExecutingSender(dbContext),
+            dbContext,
+            new InMemoryIntegrationEventDeadLetterStore());
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.HandleAsync(
+            CreateInspectionEvent(
+                QualityIntegrationEventTypes.InspectionPassed,
+                new StockReleaseDimensionPayload(
+                    "kg",
+                    "SITE-01",
+                    "LOC-B-02",
+                    "LOT-002",
+                    null,
+                    sourceQualityStatus,
+                    "company",
+                    "owner-001",
+                    targetQualityStatus)),
+            CancellationToken.None));
+
+        if (string.IsNullOrWhiteSpace(rejected))
+        {
+            Assert.Contains("required", exception.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("is not supported", exception.Message, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.Contains(rejected, exception.Message, StringComparison.Ordinal);
+        }
+
+        // 不是被相邻的同型守卫兜住的。
+        Assert.DoesNotContain("must match the inspection event type", exception.Message, StringComparison.Ordinal);
+        Assert.Empty(dbContext.StockMovements);
+        Assert.Equal(5m, dbContext.StockLedgers.Single(x => x.LocationCode == "LOC-B-02").OnHandQuantity);
+    }
+
     [Fact]
     public async Task Quality_inspection_result_consumer_accepts_matching_stock_release_target_status()
     {

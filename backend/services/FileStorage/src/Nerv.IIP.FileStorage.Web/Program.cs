@@ -67,6 +67,9 @@ if (hasStorageConfiguration && !useMinio)
 }
 
 builder.Services.AddFastEndpoints();
+builder.Services.AddSingleton(TemplateAssetRetirementOptions.Load(builder.Configuration));
+builder.Services.AddSingleton<TemplateAssetRetirementProof>();
+builder.Services.AddScoped<TemplateAssetRetirementStore>();
 // Upload-session / download-grant expiry and file retention are scheduling semantics, so the clock behind
 // them is injected rather than read from DateTimeOffset.UtcNow: tests replace this registration to advance
 // past a TTL without waiting. Every path that writes or reads those columns resolves this one registration

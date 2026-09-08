@@ -2,11 +2,11 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import { h, nextTick } from 'vue'
 
-// 根/触发器无样式，barrel 里是 reka DialogRoot 的重导出。
-import { DialogRoot as NvSheet } from 'reka-ui'
+// 根/触发器无样式，barrel 里是 reka DialogRoot 的带名浅拷贝别名。
 import NvSheetContent from './NvSheetContent.vue'
 import NvSheetHeader from './NvSheetHeader.vue'
 import NvSheetTitle from './NvSheetTitle.vue'
+import { NvSheet } from '.'
 
 /**
  * 抽屉版式的两条硬约束。

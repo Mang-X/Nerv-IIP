@@ -10,6 +10,7 @@ import {
   getBusinessConsolePrincipalWorkContextQueryOptions,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
   getBusinessConsoleMesWorkOrderDetailQueryKey,
+  getBusinessConsoleMesProductionReport,
   getBusinessConsoleMesCurrentOperationSopsQueryOptions,
   listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions,
   listBusinessConsoleMesMaterialIssueRequests,
@@ -44,6 +45,7 @@ import {
   type BusinessConsoleMesOperationTaskListEnvelope,
   type BusinessConsoleMesOperationTaskRow,
   type BusinessConsoleMesProductionReportListEnvelope,
+  type BusinessConsoleMesProductionReportDetail,
   type BusinessConsoleMesProductionReportRow,
   type BusinessConsoleMesTelemetryCandidateRow,
   type BusinessConsoleMesReceiptRequestListEnvelope,
@@ -169,10 +171,33 @@ function scopeQuery(filters: MesScope) {
   }
 }
 
-interface MesSelectedWorkScope {
+export interface MesSelectedWorkScope {
   kind: string
   id: string
   displayName?: string
+}
+
+export interface MesReportExecutionContext {
+  principalId: string
+  organizationId: string
+  environmentId: string
+  scopeKind: string
+  scopeId: string
+  generation: number
+}
+
+function hasSameReportExecutionContext(
+  current: MesReportExecutionContext,
+  frozen: MesReportExecutionContext,
+) {
+  return (
+    current.principalId === frozen.principalId &&
+    current.organizationId === frozen.organizationId &&
+    current.environmentId === frozen.environmentId &&
+    current.scopeKind === frozen.scopeKind &&
+    current.scopeId === frozen.scopeId &&
+    current.generation === frozen.generation
+  )
 }
 
 export interface MesWorkScopeOption {
@@ -1462,12 +1487,106 @@ export function useMesScrapReasonCodes(shouldLoad: () => boolean) {
   }
 }
 
-export function useMesProductionReports() {
+const REPORTABLE_TASK_PAGE_SIZE = 100
+
+export function useMesProductionReports(workOrderId?: Readonly<Ref<string>>) {
   const auth = useAuthStore()
   const filters = defaultFilters()
   const reportScope = useMesPrincipalWorkScope(filters, MES_REPORTING_WRITE_PERMISSION)
   const queryCache = useQueryCache()
   const scopeReady = computed(() => hasScope(filters))
+  const reportContextIdentity = computed(() => {
+    const selectedScope = reportScope.selectedScope.value
+    return [
+      reportScope.principalIdentity.value,
+      filters.organizationId,
+      filters.environmentId,
+      selectedScope?.kind ?? '',
+      selectedScope?.id ?? '',
+    ].join('\u0000')
+  })
+  const contextGeneration = shallowRef(0)
+  watch(
+    reportContextIdentity,
+    () => {
+      contextGeneration.value += 1
+    },
+    { immediate: true, flush: 'sync' },
+  )
+  const reportContext = computed<MesReportExecutionContext | undefined>(() => {
+    const selectedScope = reportScope.selectedScope.value
+    if (!selectedScope || !hasScope(filters)) return undefined
+    return {
+      principalId: reportScope.principalIdentity.value,
+      organizationId: filters.organizationId,
+      environmentId: filters.environmentId,
+      scopeKind: selectedScope.kind,
+      scopeId: selectedScope.id,
+      generation: contextGeneration.value,
+    }
+  })
+
+  const reportableTasksQuery = useQuery(() => {
+    const context = reportContext.value
+    const requestedWorkOrderId = workOrderId?.value.trim() ?? ''
+    return {
+      key: [
+        'mes-reporting-write-authority',
+        context?.principalId ?? '',
+        context?.organizationId ?? '',
+        context?.environmentId ?? '',
+        context?.scopeKind ?? '',
+        context?.scopeId ?? '',
+        context?.generation ?? 0,
+        requestedWorkOrderId,
+      ],
+      enabled: Boolean(context && requestedWorkOrderId),
+      query: async ({ signal }) => {
+        if (!context || !requestedWorkOrderId) return undefined
+        const items: BusinessConsoleMesOperationTaskRow[] = []
+        let skip = 0
+        while (true) {
+          const response = await listBusinessConsoleMesReportableOperationTasks({
+            query: {
+              organizationId: context.organizationId,
+              environmentId: context.environmentId,
+              workOrderId: requestedWorkOrderId,
+              scopeKind: context.scopeKind,
+              scopeId: context.scopeId,
+              skip,
+              take: REPORTABLE_TASK_PAGE_SIZE,
+            },
+            signal,
+          })
+          const envelope = response.data
+          if (!envelope?.success || !envelope.data) {
+            throw new Error(envelope?.message?.trim() || '可报工任务权威集合读取失败。')
+          }
+          const page = envelope.data.items ?? []
+          items.push(...page)
+          skip += page.length
+          if (
+            page.length < REPORTABLE_TASK_PAGE_SIZE ||
+            (envelope.data.total !== undefined && skip >= envelope.data.total)
+          ) {
+            return { generation: context.generation, items }
+          }
+        }
+      },
+    }
+  })
+  const reportableTasks = computed(() => {
+    const context = reportContext.value
+    const response = reportableTasksQuery.data.value
+    return context && response?.generation === context.generation ? response.items : undefined
+  })
+  const reportableTasksReady = computed(
+    () =>
+      Boolean(reportContext.value && workOrderId?.value.trim()) &&
+      !reportableTasksQuery.isLoading.value &&
+      !reportableTasksQuery.error.value &&
+      reportableTasks.value !== undefined,
+  )
 
   const reportsQuery = useQuery(() => ({
     ...listBusinessConsoleMesProductionReportsQueryOptions({
@@ -1514,6 +1633,62 @@ export function useMesProductionReports() {
     reportScopeMessage: reportScope.scopeMessage,
     reportScopePending: reportScope.scopePending,
     reportScopeReady: reportScope.scopeReady,
+    reportScope: reportScope.selectedScope,
+    reportContext,
+    contextGeneration,
+    reportableTasks,
+    reportableTasksPending: reportableTasksQuery.isLoading,
+    reportableTasksError: reportableTasksQuery.error,
+    reportableTasksReady,
+    refreshReportableTasks: () =>
+      reportContext.value && workOrderId?.value.trim()
+        ? reportableTasksQuery.refetch()
+        : Promise.resolve(),
+    confirmReport: async (input: {
+      reportNo: string
+      productionReportId: string
+      workOrderId: string
+      operationTaskId: string
+      context: MesReportExecutionContext
+    }): Promise<BusinessConsoleMesProductionReportDetail> => {
+      const reportNo = input.reportNo.trim()
+      const assertCurrentContext = () => {
+        const currentContext = reportContext.value
+        if (
+          !currentContext ||
+          !reportNo ||
+          !hasSameReportExecutionContext(currentContext, input.context)
+        ) {
+          throw new Error('报工公开回读上下文无效，尚不能确认成功。')
+        }
+      }
+      assertCurrentContext()
+      let report: BusinessConsoleMesProductionReportDetail | undefined
+      try {
+        const { data } = await getBusinessConsoleMesProductionReport({
+          path: { reportNo },
+          query: {
+            organizationId: input.context.organizationId,
+            environmentId: input.context.environmentId,
+          },
+          throwOnError: true,
+        })
+        report = data?.success ? data.data?.report : undefined
+      } catch {
+        assertCurrentContext()
+        throw new Error('报工已受理，但公开记录尚未回读到同一工单与工序，请重试核验。')
+      }
+      assertCurrentContext()
+      if (
+        report?.reportNo?.trim() !== reportNo ||
+        report.productionReportId?.trim() !== input.productionReportId.trim() ||
+        report.workOrderId?.trim() !== input.workOrderId.trim() ||
+        report.operationTaskId?.trim() !== input.operationTaskId.trim()
+      ) {
+        throw new Error('报工已受理，但公开记录尚未回读到同一工单与工序，请重试核验。')
+      }
+      return report
+    },
     recordReport: async (input: RecordReportInput) => {
       const selectedScope = reportScope.requireSelectedScope()
       const { idempotencyKey: suppliedKey, ...payload } = input
@@ -1545,32 +1720,40 @@ export function useMesProductionReports() {
           `mes-report-${Date.now()}-${Math.random()}`,
         currentPayload,
       )
-      if (input.completesOperation) {
-        try {
-          const workOrderId = input.workOrderId?.trim()
-          const operationTaskId = input.operationTaskId?.trim()
-          const authoritative = operationTaskId
-            ? await readExactOperationTask(
-                filters,
-                operationTaskId,
-                selectedScope,
-                workOrderId,
-                'reportable',
-              )
-            : undefined
+      try {
+        const workOrderId = input.workOrderId?.trim()
+        const operationTaskId = input.operationTaskId?.trim()
+        const authoritative = operationTaskId
+          ? await readExactOperationTask(
+              filters,
+              operationTaskId,
+              selectedScope,
+              workOrderId,
+              'reportable',
+            )
+          : undefined
+        const samePair =
+          authoritative?.workOrderId === workOrderId &&
+          authoritative?.operationTaskId === operationTaskId
+        const reportAllowed = authoritative?.allowedActions?.some(
+          (action) => action.trim().toLowerCase() === 'report',
+        )
+        if (input.completesOperation) {
           assertLifecycleActionExecutable({
             domain: 'mes-operation-task',
             action: 'report-complete',
             facts: {
-              status:
-                authoritative?.workOrderId === workOrderId ? authoritative?.status : undefined,
+              status: samePair ? authoritative?.status : undefined,
               idempotentReplay: isReplay,
             },
           })
-        } catch (error) {
-          if (!isReplay) clearPendingBusinessIntent(scope)
-          throw error
         }
+        if (!isReplay && (!samePair || !reportAllowed)) {
+          throw new Error('当前工序不可报工，服务端未开放 report 动作。')
+        }
+      } catch (error) {
+        if (!isReplay) clearPendingBusinessIntent(scope)
+        throw error
       }
       const frozenPayload =
         pending.payloadSnapshot !== undefined

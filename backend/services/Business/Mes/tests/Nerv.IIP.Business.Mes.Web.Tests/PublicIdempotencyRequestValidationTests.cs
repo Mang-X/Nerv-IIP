@@ -1,3 +1,4 @@
+using System.Text.Json;
 using FluentValidation;
 using Nerv.IIP.Business.Mes.Web.Endpoints.Mes;
 
@@ -5,6 +6,25 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class PublicIdempotencyRequestValidationTests
 {
+    [Fact]
+    public void Start_changeover_rejects_a_missing_tooling_check_result()
+    {
+        var request = JsonSerializer.Deserialize<StartChangeoverRequest>("""
+            {
+              "organizationId": "org-001",
+              "environmentId": "env-dev",
+              "workCenterId": "WC-01",
+              "deviceAssetId": "DEV-01",
+              "operatorId": "operator-01",
+              "startedAtUtc": "2026-09-05T01:00:00Z",
+              "idempotencyKey": "changeover-001"
+            }
+            """, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        Assert.NotNull(request);
+        Assert.False(new StartChangeoverRequestValidator().Validate(request).IsValid);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]

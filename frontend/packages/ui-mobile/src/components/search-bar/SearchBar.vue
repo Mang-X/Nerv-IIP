@@ -24,8 +24,28 @@ const focused = ref(false)
 
 const expanded = computed(() => focused.value || !!model.value)
 
+/**
+ * 用户把关键词清空（点清除按钮、或退格删到空）是一次明确的「回到全量」检索意图，必须让
+ * 只监听 `@search` 的消费方看得见：否则输入框空了、列表还按旧关键词过滤，空结果还会继续
+ * 显示「没有匹配的 XXX」。这条错位不是观感问题——工人据此判断本组织没配这个码，转而走
+ * 「不登记」分支，本该记录的数据就丢了。
+ *
+ * 走计算属性的写入面而不是 `watch(model)`：只有 `v-model` 的写入（= 用户敲键盘、或本组件
+ * 的清除按钮）才经过这里，父组件自己把绑定值置空（如打开抽屉时重置）不会误触发重查。
+ *
+ * `cancel` 的语义不同：它是「退出搜索」，收起还是重查由消费方通过 `@cancel` 自己决定，
+ * 所以那条路径**不**顺手 emit `search`。
+ */
+const keyword = computed<string>({
+  get: () => model.value,
+  set: (value) => {
+    model.value = value
+    if (value === '') emit('search', '')
+  },
+})
+
 function clear() {
-  model.value = ''
+  keyword.value = ''
 }
 function cancel() {
   model.value = ''
@@ -39,7 +59,7 @@ function cancel() {
     <div class="min-h-touch flex flex-1 items-center gap-2 rounded-full bg-muted px-3.5">
       <Search class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
       <input
-        v-model="model"
+        v-model="keyword"
         type="search"
         :placeholder="placeholder"
         :aria-label="ariaLabel"

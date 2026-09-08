@@ -1,4 +1,5 @@
 using System.Reflection;
+using Nerv.IIP.Contracts.Maintenance;
 using Nerv.IIP.Contracts.Mes;
 
 namespace Nerv.IIP.FacadeCoverage.Tests;
@@ -35,6 +36,20 @@ public sealed class CapSubscribeTopicConventionTests
     ];
 
     [Fact]
+    public void Canonical_topic_authority_accepts_declared_templates_and_rejects_an_undeclared_topic()
+    {
+        Assert.True(IsAllowedSubscriptionTopic(
+            typeof(AssetUnavailableV2IntegrationEvent),
+            AssetUnavailableIntegrationEventTopics.V2Template));
+        Assert.True(IsAllowedSubscriptionTopic(
+            typeof(MesOperationActualTimeSettledV2IntegrationEvent),
+            MesActualTimeIntegrationEventTopics.SettledV2Template));
+        Assert.False(IsAllowedSubscriptionTopic(
+            typeof(AssetUnavailableV2IntegrationEvent),
+            "nerv-iip.{deployment-profile}.business-maintenance.maintenance.asset-unavailable.v3"));
+    }
+
+    [Fact]
     public void CapSubscribe_topics_match_the_event_short_name()
     {
         var checkedCount = 0;
@@ -64,13 +79,12 @@ public sealed class CapSubscribeTopicConventionTests
                         continue;
                     }
 
-                    var eventShortName = parameters[0].ParameterType.Name;
-                    var canonicalTemplate = MesActualTimeIntegrationEventTopics.CanonicalSubscriptionTemplate(parameters[0].ParameterType);
+                    var eventType = parameters[0].ParameterType;
+                    var eventShortName = eventType.Name;
                     foreach (var topic in topics)
                     {
                         checkedCount++;
-                        if (!string.Equals(topic, eventShortName, StringComparison.Ordinal)
-                            && !string.Equals(topic, canonicalTemplate, StringComparison.Ordinal))
+                        if (!IsAllowedSubscriptionTopic(eventType, topic))
                         {
                             violations.Add(
                                 $"{assemblyName} :: {type.Name}.{method.Name} subscribes to topic \"{topic}\" " +
@@ -91,6 +105,17 @@ public sealed class CapSubscribeTopicConventionTests
             "CapSubscribe topics must equal the event short name (netcorepal publishes typeof(T).Name):\n  "
                 + string.Join("\n  ", violations));
     }
+
+    private static bool IsAllowedSubscriptionTopic(Type integrationEventType, string topic) =>
+        string.Equals(topic, integrationEventType.Name, StringComparison.Ordinal)
+        || string.Equals(
+            topic,
+            CanonicalSubscriptionTemplate(integrationEventType),
+            StringComparison.Ordinal);
+
+    private static string? CanonicalSubscriptionTemplate(Type integrationEventType) =>
+        AssetUnavailableIntegrationEventTopics.CanonicalSubscriptionTemplate(integrationEventType)
+        ?? MesActualTimeIntegrationEventTopics.CanonicalSubscriptionTemplate(integrationEventType);
 
     private static bool ImplementsCapSubscribe(Type type) =>
         type.GetInterfaces().Any(i => string.Equals(i.Name, "ICapSubscribe", StringComparison.Ordinal));

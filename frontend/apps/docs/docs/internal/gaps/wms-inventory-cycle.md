@@ -9,7 +9,7 @@
 - `frontend/apps/business-console/src/pages/inventory`
 - `backend/services/Business/Wms/`
 - `backend/services/Business/Inventory/`
-- `docs/architecture/business-platform-domain-architecture.md`
+- `docs/architecture/business/domain-architecture.md`
 
 ## 建议 Issue 标题
 

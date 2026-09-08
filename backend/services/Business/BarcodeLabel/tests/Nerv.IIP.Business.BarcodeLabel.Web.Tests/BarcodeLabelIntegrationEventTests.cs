@@ -102,7 +102,7 @@ public sealed class BarcodeLabelIntegrationEventTests
     private static LabelPrintBatch NewPrintBatch()
     {
         var rule = BarcodeRule.Create("org-001", "env-dev", "FG", "code128", "FG", 13, "none", ["wms.inbound"], "active");
-        return LabelPrintBatch.Create(
+        return LabelPrintBatch.CreateLegacyWithoutReplaySnapshot(
             "org-001",
             "env-dev",
             rule,
