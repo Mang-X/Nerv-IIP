@@ -2,6 +2,9 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Security.Cryptography;
 using FastEndpoints;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -10,6 +13,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.IdentityModel.Tokens;
+using Nerv.IIP.BusinessGateway.Web.Application.Auth;
+using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
+using Nerv.IIP.BusinessGateway.Web.Endpoints.Erp;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Web.Endpoints.Erp;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
@@ -22,7 +29,8 @@ using WmsDb = Nerv.IIP.Business.Wms.Infrastructure.ApplicationDbContext;
 
 namespace Nerv.IIP.Business.Acceptance.Tests;
 
-// NERV-2121 DomainInvariant/PublicContract/ProviderBehavior：真实 HTTP 端点与 PostgreSQL。
+// NERV-2121/2122 DomainInvariant/PublicContract/ProviderBehavior：真实 Gateway→ERP→WMS HTTP 与 PostgreSQL。
+// IAM 权限检查为允许桩；不证明真实 IAM 授权。
 // publisher 仅记录库存意图，不证明 Redis/CAP 或外部进程 FullChain。
 [Collection(AcceptancePostgresLaneDatabase.CollectionName)]
 public sealed class PurchaseReceiptPostingRoutePostgresAcceptanceTests
@@ -39,6 +47,45 @@ public sealed class PurchaseReceiptPostingRoutePostgresAcceptanceTests
         await using var erp = new WebApplicationFactory<RecordPurchaseReceiptEndpoint>()
             .WithWebHostBuilder(builder => Configure(builder, events));
         using var erpClient = Client(erp);
+        using var rsa = RSA.Create(2048);
+        var signingKey = new RsaSecurityKey(rsa) { KeyId = "receipt-route-test" };
+        var publicKey = JsonWebKeyConverter.ConvertFromRSASecurityKey(new RsaSecurityKey(rsa.ExportParameters(false)) { KeyId = signingKey.KeyId });
+        await using var gateway = new WebApplicationFactory<RecordBusinessConsoleErpPurchaseReceiptEndpoint>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Testing");
+                foreach (var service in new[] { "Iam", "MasterData", "Inventory", "Quality", "ProductEngineering",
+                    "DemandPlanning", "Erp", "Wms", "Approval", "BarcodeLabel", "Notification", "FileStorage",
+                    "Mes", "Scheduling", "IndustrialTelemetry", "Maintenance", "AppHub" })
+                    builder.UseSetting($"{service}:BaseUrl", $"http://{service.ToLowerInvariant()}.test");
+                builder.UseSetting("InternalService:BearerToken", Token);
+                builder.UseSetting("Iam:Jwt:JwksJson", JsonSerializer.Serialize(new { keys = new[] { publicKey } }));
+                builder.UseSetting("Iam:Jwt:Issuer", "receipt-route-test");
+                builder.UseSetting("Iam:Jwt:Audience", "receipt-route-test");
+                builder.UseSetting("Security:Cors:AllowedOrigins", "http://receipt-route.test");
+                builder.ConfigureTestServices(services =>
+                {
+                    // FastEndpoints 在同进程宿主间共享序列化选项；保留 ERP 的强类型 ID wire converter。
+                    services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(options =>
+                        options.SerializerOptions.AddNetCorePalJsonConverters());
+                    services.AddFastEndpoints(options =>
+                    {
+                        options.Assemblies = [typeof(RecordBusinessConsoleErpPurchaseReceiptEndpoint).Assembly];
+                        options.DisableAutoDiscovery = true;
+                        options.IncludeAbstractValidators = true;
+                    });
+                    services.RemoveAll<IBusinessGatewayAuthorizationClient>();
+                    services.AddSingleton<IBusinessGatewayAuthorizationClient>(new AllowedAuthorization());
+                    services.AddHttpClient<IBusinessErpClient, HttpBusinessErpClient>(client => client.BaseAddress = erpClient.BaseAddress)
+                        .ConfigurePrimaryHttpMessageHandler(() => erp.Server.CreateHandler());
+                });
+            });
+        using var gatewayClient = gateway.CreateClient();
+        var now = TimeProvider.System.GetUtcNow().UtcDateTime;
+        gatewayClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer",
+            new JwtSecurityTokenHandler().WriteToken(new JwtSecurityToken("receipt-route-test", "receipt-route-test",
+                [new Claim("sub", "receipt-user"), new Claim("organizationId", Organization), new Claim("environmentId", EnvironmentId)],
+                now.AddMinutes(-1), now.AddMinutes(10), new SigningCredentials(signingKey, SecurityAlgorithms.RsaSha256))));
         await using (var scope = erp.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ErpDb>();
@@ -57,17 +104,20 @@ public sealed class PurchaseReceiptPostingRoutePostgresAcceptanceTests
 
         foreach (var route in new[] { "direct", "wms" })
         {
-            var payload = new
+            var payload = new Dictionary<string, object?>
             {
-                organizationId = Organization, environmentId = EnvironmentId,
-                purchaseReceiptNo = $"RCV-{route}", purchaseOrderNo = $"PO-{route}",
-                inventoryPostingRoute = route, idempotencyKey = $"receipt-{route}",
-                lines = new[] { new { purchaseOrderLineNo = "1", receivedQuantity = 10m, qualityStatus = "unrestricted", locationCode = "RECEIVING" } },
+                ["organizationId"] = Organization, ["environmentId"] = EnvironmentId,
+                ["purchaseReceiptNo"] = $"RCV-{route}", ["purchaseOrderNo"] = $"PO-{route}",
+                ["idempotencyKey"] = $"receipt-{route}",
+                ["lines"] = new[] { new { purchaseOrderLineNo = "1", receivedQuantity = 10m, qualityStatus = "unrestricted" } },
             };
-            using var first = await erpClient.PostAsJsonAsync("/api/business/v1/erp/purchase-receipts", payload);
+            if (route == "wms") payload["inventoryPostingRoute"] = route;
+            using var first = await gatewayClient.PostAsJsonAsync("/api/business-console/v1/erp/procurement/purchase-receipts", payload);
             var firstData = await SuccessfulData(first);
-            using var replay = await erpClient.PostAsJsonAsync("/api/business/v1/erp/purchase-receipts", payload);
+            using var replay = await gatewayClient.PostAsJsonAsync("/api/business-console/v1/erp/procurement/purchase-receipts", payload);
             Assert.Equal(firstData.GetRawText(), (await SuccessfulData(replay)).GetRawText());
+            using var source = await erpClient.GetAsync($"/api/business/v1/erp/purchase-receipts/RCV-{route}/source-document?organizationId={Organization}&environmentId={EnvironmentId}");
+            Assert.Equal(route, (await SuccessfulData(source)).GetProperty("inventoryPostingRoute").GetString());
         }
 
         var directMovement = Assert.Single(events.Published.OfType<InventoryMovementRequestedIntegrationEvent>());
@@ -195,6 +245,15 @@ public sealed class PurchaseReceiptPostingRoutePostgresAcceptanceTests
             return Task.CompletedTask;
         }
     }
+
+    private sealed class AllowedAuthorization : IBusinessGatewayAuthorizationClient
+    {
+        public Task<BusinessGatewayAuthorizationResult> CheckAsync(string bearerToken,
+            BusinessGatewayPermissionRequirement requirement, CancellationToken cancellationToken) =>
+            Task.FromResult(BusinessGatewayAuthorizationResult.Allowed("receipt-user", "user", "receipt-user",
+                requirement.OrganizationId, requirement.EnvironmentId));
+    }
+
 }
 
 public sealed class ReceiptRoutePostgresFactAttribute : FactAttribute

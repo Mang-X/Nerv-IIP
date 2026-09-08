@@ -59911,6 +59911,9 @@
             "maxLength": 150,
             "minLength": 0,
             "nullable": true
+          },
+          "inventoryPostingRoute": {
+            "$ref": "#/components/schemas/NervIIPContractsErpPurchaseReceiptInventoryPostingRoute"
           }
         }
       },
@@ -59941,6 +59944,18 @@
             "nullable": false
           }
         }
+      },
+      "NervIIPContractsErpPurchaseReceiptInventoryPostingRoute": {
+        "type": "string",
+        "description": "",
+        "x-enumNames": [
+          "Direct",
+          "Wms"
+        ],
+        "enum": [
+          "direct",
+          "wms"
+        ]
       },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpSalesOrderListResponse": {
         "allOf": [

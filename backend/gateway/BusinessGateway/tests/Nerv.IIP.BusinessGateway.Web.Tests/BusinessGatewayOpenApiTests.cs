@@ -569,6 +569,14 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/erp/procurement/supplier-quotations", "get", "listBusinessConsoleErpSupplierQuotations");
         AssertOperationId(paths, "/api/business-console/v1/erp/procurement/purchase-orders", "post", "createBusinessConsoleErpPurchaseOrder");
         AssertOperationId(paths, "/api/business-console/v1/erp/procurement/purchase-receipts", "post", "recordBusinessConsoleErpPurchaseReceipt");
+        // NERV-2122 PublicContract：可选路径只公开 ERP 认可的两个字符串值。
+        var receiptSchemas = document.RootElement.GetProperty("components").GetProperty("schemas");
+        var receiptSchema = receiptSchemas.EnumerateObject().Single(x => x.Name.EndsWith("BusinessConsoleRecordErpPurchaseReceiptRequest", StringComparison.Ordinal)).Value;
+        var postingRoute = receiptSchema.GetProperty("properties").GetProperty("inventoryPostingRoute");
+        var routeSchema = receiptSchemas.GetProperty(postingRoute.GetProperty("$ref").GetString()!.Split('/')[^1]);
+        Assert.Equal("string", routeSchema.GetProperty("type").GetString());
+        Assert.Equal(new[] { "direct", "wms" }, routeSchema.GetProperty("enum").EnumerateArray().Select(x => x.GetString()));
+        Assert.DoesNotContain(receiptSchema.GetProperty("required").EnumerateArray(), x => x.GetString() == "inventoryPostingRoute");
         // #1345：ERP RecordPurchaseReceiptCommand 的 qualityStatus 为必填，网关契约必须同样声明必填，
         // 否则 PC 收货结构性 400；字段存在但非必填同样会让前端漏填。
         AssertSchemaProperties(
