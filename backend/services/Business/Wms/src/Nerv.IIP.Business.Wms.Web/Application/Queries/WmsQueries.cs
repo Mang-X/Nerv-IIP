@@ -1728,8 +1728,8 @@ public sealed class ListSupplierReturnRequestsQueryHandler(ApplicationDbContext 
         var keyword = ListQueryCriteria.NormalizeKeyword(request.Keyword);
         var query = dbContext.SupplierReturnRequests
             .AsNoTracking()
-            .Where(x => x.OrganizationId == tenant.OrganizationId)
-            .Where(x => x.EnvironmentId == tenant.EnvironmentId);
+            .Where(x => request.OrganizationId == null || x.OrganizationId == tenant.OrganizationId)
+            .Where(x => request.EnvironmentId == null || x.EnvironmentId == tenant.EnvironmentId);
         if (WmsListQueryFilters.TryParseStatus<SupplierReturnRequestStatus>(request.Status, out var status))
         {
             query = query.Where(x => x.Status == status);

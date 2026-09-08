@@ -901,6 +901,39 @@ public sealed class WmsEndpointContractTests
         Assert.Equal(expiryDate, fact.ExpiryDate);
     }
 
+    // Issue #2120: preserve the v1 independently optional tenant filters.
+    [Theory]
+    [Trait("Category", "PublicContract")]
+    [Trait("Category", "Regression")]
+    [InlineData(null, "env-dev", 2)]
+    [InlineData("org-001", null, 2)]
+    [InlineData(null, null, 3)]
+    [InlineData("org-001", "env-dev", 1)]
+    [InlineData("", "env-dev", 0)]
+    [InlineData("org-001", "", 0)]
+    public async Task Supplier_return_query_preserves_optional_tenant_filters(string? organizationId, string? environmentId, int expectedCount)
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.SupplierReturnRequests.AddRange(
+            CreateSupplierReturnRequest("IN-OPTIONAL-001", "QI-1"),
+            CreateSupplierReturnRequest("IN-OPTIONAL-002", "QI-2", "org-002"),
+            CreateSupplierReturnRequest("IN-OPTIONAL-003", "QI-3", environmentId: "env-other"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new ListSupplierReturnRequestsQueryHandler(dbContext).Handle(
+            new ListSupplierReturnRequestsQuery(organizationId, environmentId), CancellationToken.None);
+
+        Assert.Equal(expectedCount, result.Total);
+        Assert.Equal(expectedCount, result.Items.Count);
+        Assert.All(result.Items, item =>
+        {
+            if (organizationId is not null) Assert.Equal(organizationId, item.OrganizationId);
+            if (environmentId is not null) Assert.Equal(environmentId, item.EnvironmentId);
+        });
+    }
+
     [Fact]
     public async Task Supplier_return_query_filters_status_keyword_before_offset_page_and_total_count()
     {
@@ -1627,11 +1660,11 @@ public sealed class WmsEndpointContractTests
             assignedPoolCode: "POOL-TEST");
     }
 
-    private static SupplierReturnRequest CreateSupplierReturnRequest(string inboundOrderNo, string inspectionRecordId, string organizationId = "org-001")
+    private static SupplierReturnRequest CreateSupplierReturnRequest(string inboundOrderNo, string inspectionRecordId, string organizationId = "org-001", string environmentId = "env-dev")
     {
         return SupplierReturnRequest.Create(
             organizationId,
-            "env-dev",
+            environmentId,
             inboundOrderNo,
             "10",
             inspectionRecordId,
