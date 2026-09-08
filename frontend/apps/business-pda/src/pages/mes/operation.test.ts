@@ -49,7 +49,7 @@ type OperationActionContext = {
   environmentId: string
   scopeKind: string
   scopeId: string
-  action: 'start' | 'pause' | 'resume' | 'complete'
+  action: 'claim' | 'start' | 'pause' | 'resume' | 'complete'
   workOrderId: string
   operationTaskId: string
 }
@@ -68,6 +68,9 @@ const pauseTask = vi.fn(
   async (_workOrderId: string, _operationTaskId: string, _options: ActionOptions) => {},
 )
 const resumeTask = vi.fn(
+  async (_workOrderId: string, _operationTaskId: string, _options: ActionOptions) => {},
+)
+const claimTask = vi.fn(
   async (_workOrderId: string, _operationTaskId: string, _options: ActionOptions) => {},
 )
 const captureOperationActionContext = vi.fn(
@@ -176,6 +179,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     pauseTask,
     resumeTask,
     completeTask,
+    claimTask,
     actionPending: ref(false),
     operationListScope: operationListScopeRef,
     operationListContextIdentity: operationListContextIdentityRef,
@@ -216,6 +220,7 @@ describe('PDA MES operation execution page', () => {
     startTask.mockReset().mockResolvedValue(undefined)
     pauseTask.mockReset().mockResolvedValue(undefined)
     resumeTask.mockReset().mockResolvedValue(undefined)
+    claimTask.mockReset().mockResolvedValue(undefined)
     refresh.mockClear()
     refreshSops.mockClear()
     tasksErrorRef.value = null
@@ -338,6 +343,39 @@ describe('PDA MES operation execution page', () => {
     await flushPromises()
     // BottomSheet 内容 teleport 到 body
     expect(document.body.textContent).toContain('完成')
+    wrapper.unmount()
+  })
+
+  it('lets the current operator claim an unassigned queued task in the selected work center', async () => {
+    operationTasksRef.value = [
+      {
+        ...defaultTasks[1],
+        workCenterId: 'WC-A',
+        assignedUserId: null,
+        assignedUserName: null,
+      },
+    ]
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+
+    await wrapper.get('[data-row]').trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="action-claim"]')!.click()
+    await flushPromises()
+
+    expect(claimTask).toHaveBeenCalledTimes(1)
+    expect(claimTask).toHaveBeenCalledWith(
+      'WO-2026-0002',
+      'OP-2',
+      expect.objectContaining({
+        idempotencyKey: expect.any(String),
+        context: expect.objectContaining({
+          action: 'claim',
+          scopeKind: 'work-center',
+          scopeId: 'WC-A',
+        }),
+      }),
+    )
+    expect(document.body.textContent).toContain('任务领取请求已受理')
     wrapper.unmount()
   })
 

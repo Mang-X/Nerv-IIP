@@ -263,6 +263,72 @@ public sealed class MaintenancePublicHttpLifecycleAcceptanceTests
             integrationEvent => integrationEvent.GetType().Name == "MaintenanceWorkOrderOpenedIntegrationEvent");
     }
 
+    /// <summary>
+    /// 钉住 <see cref="AllowedAuthorizationClient"/> 的投影语义与真实 IAM
+    /// <c>/internal/iam/v1/authorization/check</c> 逐字段一致：ScopeGrants 与 Roles 受
+    /// <c>IncludePrincipalContext</c> 门控（Roles 关时为空集合），DataScope 与 principal
+    /// 身份字段不受门控。没有这条契约，桩会把「端点漏传 IncludePrincipalContext」这一类
+    /// 缺陷无声兜住（#2887 / #3095）。
+    /// </summary>
+    [Fact]
+    public async Task Authorization_stub_mirrors_iam_principal_context_projection()
+    {
+        var stub = new AllowedAuthorizationClient();
+
+        var withContext = await stub.CheckAsync(
+            InternalToken,
+            StubRequirement(includePrincipalContext: true),
+            CancellationToken.None);
+        var withoutContext = await stub.CheckAsync(
+            InternalToken,
+            StubRequirement(includePrincipalContext: false),
+            CancellationToken.None);
+
+        // 受门控：ScopeGrants —— 开关为真才回吐，为假时 IAM 回 null。
+        Assert.NotNull(withContext.ScopeGrants);
+        var grant = Assert.Single(withContext.ScopeGrants!);
+        Assert.Equal("role", grant.SourceKind);
+        Assert.Equal("maintenance-admin", grant.SourceId);
+        Assert.Equal("organization", grant.ScopeKind);
+        Assert.Equal(OrganizationId, grant.ScopeId);
+        Assert.Equal(
+            [BusinessGatewayPermissions.MaintenanceWorkOrdersRead],
+            grant.ApplicablePermissionCodes);
+        Assert.True(grant.OrganizationWide);
+        Assert.Null(withoutContext.ScopeGrants);
+
+        // 受门控：Roles —— 开关为假时是空集合而不是 null。
+        Assert.Equal(AllowedAuthorizationClient.PrincipalRoles, withContext.Roles);
+        Assert.NotNull(withoutContext.Roles);
+        Assert.Empty(withoutContext.Roles!);
+
+        // 不受门控：DataScope 由 IAM 无条件回传，绝不允许一起被门控掉。
+        Assert.Same(AllowedAuthorizationClient.PrincipalDataScope, withContext.DataScope);
+        Assert.Same(AllowedAuthorizationClient.PrincipalDataScope, withoutContext.DataScope);
+
+        // 不受门控：principal 身份字段与授权范围回执。
+        foreach (var result in new[] { withContext, withoutContext })
+        {
+            Assert.True(result.IsAllowed);
+            Assert.Equal(PrincipalId, result.PrincipalId);
+            Assert.Equal("user", result.PrincipalType);
+            Assert.Equal("admin", result.LoginName);
+            Assert.Equal(OrganizationId, result.AuthorizedOrganizationId);
+            Assert.Equal(EnvironmentId, result.AuthorizedEnvironmentId);
+        }
+
+        Assert.Equal(2, stub.CheckCount);
+    }
+
+    private static BusinessGatewayPermissionRequirement StubRequirement(bool includePrincipalContext) =>
+        new(
+            BusinessGatewayPermissions.MaintenanceWorkOrdersRead,
+            OrganizationId,
+            EnvironmentId,
+            "maintenance-work-order",
+            "man631-http-stub-contract",
+            includePrincipalContext);
+
     private static WebApplicationFactory<MaintenanceProgram> CreateMaintenanceFactory(
         MaintenanceLifecycleDockerDependencies dependencies,
         ErrorLogCapture logCapture,
@@ -471,8 +537,20 @@ public sealed class MaintenancePublicHttpLifecycleAcceptanceTests
         }
     }
 
+    /// <summary>
+    /// 站位真实 IAM <c>/internal/iam/v1/authorization/check</c>。投影语义必须与
+    /// <c>backend/services/Iam/src/Nerv.IIP.Iam.Web/Endpoints/Authorization/AuthorizationCheckEndpoint.cs</c>
+    /// 逐字段一致，否则这条 FullChain 链路上任何一个端点漏传 <c>IncludePrincipalContext</c>
+    /// 都会被本桩无声兜住（#2887 即为此类假绿的代价）。
+    /// </summary>
     private sealed class AllowedAuthorizationClient : IBusinessGatewayAuthorizationClient
     {
+        /// <summary>IAM 侧 <c>authorization.DataScope</c> 不受 IncludePrincipalContext 门控，此处取无限制值域。</summary>
+        internal static readonly AuthorizationDataScope PrincipalDataScope = new([], [], []);
+
+        internal static readonly IReadOnlyCollection<AuthorizationRole> PrincipalRoles =
+            [new AuthorizationRole("role-maintenance-admin", "maintenance-admin")];
+
         private int checkCount;
 
         public int CheckCount => Volatile.Read(ref checkCount);
@@ -485,19 +563,35 @@ public sealed class MaintenancePublicHttpLifecycleAcceptanceTests
             Interlocked.Increment(ref checkCount);
             Assert.False(string.IsNullOrWhiteSpace(bearerToken));
             cancellationToken.ThrowIfCancellationRequested();
+
+            // AuthorizationCheckEndpoint.cs:48 `req.IncludePrincipalContext ? authorization.ScopeGrants : null`
+            var projectedScopeGrants = requirement.IncludePrincipalContext
+                ? ScopeGrantsFor(requirement)
+                : null;
+
+            // AuthorizationCheckEndpoint.cs:38-40 `req.IncludePrincipalContext ? await roles.ResolveRolesAsync(...) : []`
+            var projectedRoles = requirement.IncludePrincipalContext ? PrincipalRoles : [];
+
+            // AuthorizationCheckEndpoint.cs:41-47：principal.UserId / PrincipalType / LoginName 与
+            // authorization.DataScope 均无条件回传，不受该开关影响。
             return Task.FromResult(BusinessGatewayAuthorizationResult.Allowed(
                 PrincipalId,
                 "user",
                 "admin",
                 requirement.OrganizationId,
                 requirement.EnvironmentId,
-                scopeGrants:
-                [
-                    new AuthorizationScopeGrant(
-                        "role", "maintenance-admin", "organization", OrganizationId,
-                        [requirement.PermissionCode], OrganizationWide: true),
-                ]));
+                PrincipalDataScope,
+                projectedScopeGrants,
+                projectedRoles));
         }
+
+        private static IReadOnlyCollection<AuthorizationScopeGrant> ScopeGrantsFor(
+            BusinessGatewayPermissionRequirement requirement) =>
+        [
+            new AuthorizationScopeGrant(
+                "role", "maintenance-admin", "organization", OrganizationId,
+                [requirement.PermissionCode], OrganizationWide: true),
+        ];
     }
 
     private sealed class StaticInternalServiceTokenProvider(string token) : IInternalServiceTokenProvider

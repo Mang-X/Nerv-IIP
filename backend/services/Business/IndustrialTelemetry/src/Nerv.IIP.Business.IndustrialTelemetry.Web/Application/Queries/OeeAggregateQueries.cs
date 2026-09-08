@@ -394,6 +394,7 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
         var deviceIds = group.Facts.Select(x => x.DeviceAssetId).Distinct(StringComparer.Ordinal).ToArray();
         long loadingTicks = 0;
         long productiveTicks = 0;
+        long changeoverTicks = 0;
         var stateSampleCount = 0;
         var productiveHoursByDevice = new Dictionary<string, decimal>(StringComparer.Ordinal);
         foreach (var deviceId in deviceIds)
@@ -401,6 +402,7 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
             statesByDevice.TryGetValue(deviceId, out var deviceStates);
             var deviceLoadingTicks = 0L;
             var deviceProductiveTicks = 0L;
+            var deviceChangeoverTicks = 0L;
             var deviceStateSampleCount = 0;
             var deviceHasCompleteCoverage = true;
             if (!runtimeWindows.TryGetValue(new DeviceBucketKey(deviceId, group.Key), out var deviceRuntimeWindows))
@@ -413,11 +415,13 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
                 var runtime = CalculateRuntime(deviceStates ?? [], window.StartUtc, window.EndUtc);
                 deviceLoadingTicks += runtime.LoadingTicks;
                 deviceProductiveTicks += runtime.ProductiveTicks;
+                deviceChangeoverTicks += runtime.ChangeoverTicks;
                 deviceStateSampleCount += runtime.StateSampleCount;
                 deviceHasCompleteCoverage &= runtime.HasCompleteCoverage;
             }
             loadingTicks += deviceLoadingTicks;
             productiveTicks += deviceProductiveTicks;
+            changeoverTicks += deviceChangeoverTicks;
             stateSampleCount += deviceStateSampleCount;
             productiveHoursByDevice[deviceId] = decimal.Divide(deviceProductiveTicks, TimeSpan.TicksPerHour);
             if (deviceHasCompleteCoverage) continue;
@@ -538,7 +542,8 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
             outputUomCode,
             performanceRate is null ? null : Math.Round(expectedOutputQuantity, 6),
             degradedReasons.Count > 0,
-            degradedReasons.OrderBy(x => x).ToArray());
+            degradedReasons.OrderBy(x => x).ToArray(),
+            Math.Round(decimal.Divide(changeoverTicks, TimeSpan.TicksPerMinute), 6));
     }
 
     private static void EnsureStateMaterializationLimit(int materializedStateCount)
@@ -564,6 +569,7 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
                 .ToArray();
         long loadingTicks = 0;
         long productiveTicks = 0;
+        long changeoverTicks = 0;
         for (var index = 0; index < points.Length; index++)
         {
             var segmentStart = points[index].OccurredAtUtc < startUtc ? startUtc : points[index].OccurredAtUtc;
@@ -575,6 +581,10 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
 
             var ticks = segmentEnd.UtcTicks - segmentStart.UtcTicks;
             loadingTicks += ticks;
+            if (EquipmentRuntimeDeviceStates.IsChangeoverState(points[index].State))
+            {
+                changeoverTicks += ticks;
+            }
             if (EquipmentRuntimeDeviceStates.IsProductiveRuntime(points[index].State))
             {
                 productiveTicks += ticks;
@@ -583,7 +593,7 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
 
         var hasCompleteCoverage = carryIn is not null ||
             inWindow.FirstOrDefault()?.OccurredAtUtc == startUtc;
-        return new RuntimeTotals(loadingTicks, productiveTicks, points.Length, hasCompleteCoverage);
+        return new RuntimeTotals(loadingTicks, productiveTicks, changeoverTicks, points.Length, hasCompleteCoverage);
     }
 
     private static void AddHistoricalDimensionDegradation(
@@ -653,7 +663,7 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
             request.Skip,
             request.Take);
 
-    private sealed record RuntimeTotals(long LoadingTicks, long ProductiveTicks, int StateSampleCount, bool HasCompleteCoverage);
+    private sealed record RuntimeTotals(long LoadingTicks, long ProductiveTicks, long ChangeoverTicks, int StateSampleCount, bool HasCompleteCoverage);
     private sealed record StatePoint(DateTimeOffset OccurredAtUtc, string State);
     private sealed record RuntimeWindow(DateTimeOffset StartUtc, DateTimeOffset EndUtc);
     private sealed record RuntimeOwnership(

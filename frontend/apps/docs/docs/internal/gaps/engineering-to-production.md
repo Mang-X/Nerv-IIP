@@ -7,7 +7,7 @@
 - `/getting-started/engineering-to-production`
 - `frontend/apps/business-console/src/pages/engineering`
 - `backend/services/Business/ProductEngineering/`
-- `docs/architecture/business-platform-domain-architecture.md`
+- `docs/architecture/business/domain-architecture.md`
 
 ## 建议 Issue 标题
 

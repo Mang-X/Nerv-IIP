@@ -6,6 +6,7 @@
 
 - [`vertical-slices/`](vertical-slices/)：第一至第四阶段纵切形成过程与历史验收口径。
 - `implementation-readiness-2026-08-26.md`：与迁移前原文件使用同一 Git blob。
+- [`backend-bootstrap-plan.md`](backend-bootstrap-plan.md)：M2-J 迁移前的后端启动与首批实施阶段计划，与旧 Architecture 文件使用同一 Git blob。
 - `project-status-dashboard-2026-05-26.html`：2026 年 5 月生成并更新的非实时看板。
 
 调查、实验、审计与修复记录不放在状态目录，统一从 [`../../reports/README.md`](../../reports/README.md) 进入。

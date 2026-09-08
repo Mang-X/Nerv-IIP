@@ -18,9 +18,12 @@ public sealed class OperationActualTimeSettlementCommandTests
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
         var startedAtUtc = DateTimeOffset.Parse("2026-08-26T01:00:00Z");
+        // #3119：未下达的工单不受理报工，夹具因此必须先补记发布（生产上这一步由下达完成）。
         var workOrder = WorkOrder.Create(
             "org-001", "env-dev", "WO-001", "SKU-001", "PV-001", 10m, 1,
             startedAtUtc.AddHours(8));
+        workOrder.MarkReleased();
+        workOrder.ClearDomainEvents();
         var task = OperationTask.Create(
             "org-001", "env-dev", "WO-001", "OP-001",
             OperationTaskLifecycleStatus.InProgress, 10, "WC-001", [], startedAtUtc,
@@ -29,7 +32,8 @@ public sealed class OperationActualTimeSettlementCommandTests
         dbContext.OperationTasks.Add(task);
         await dbContext.SaveChangesAsync();
 
-        var handler = new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance);
+        var handler = new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance,
+            TestMesFirstArticleGate.Allowing);
         var staged = await handler.Handle(
             new RecordProductionReportCommand(
                 "org-001", "env-dev", "WO-001", "OP-001", 4m, 0m, false,

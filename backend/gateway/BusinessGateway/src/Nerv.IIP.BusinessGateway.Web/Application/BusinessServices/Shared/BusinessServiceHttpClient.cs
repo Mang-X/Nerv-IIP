@@ -28,6 +28,72 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
         Action<HttpRequestMessage>? configureRequest = null,
         bool failClosedOnFailureEnvelope = false)
     {
+        using var response = await SendRequestAsync(
+            internalBearerToken,
+            method,
+            requestUri,
+            body,
+            cancellationToken,
+            jsonOptions,
+            configureRequest);
+        try
+        {
+            return await ReadResponseDataAsync<TResponse>(
+                response,
+                jsonOptions ?? JsonOptions,
+                cancellationToken,
+                failClosedOnFailureEnvelope);
+        }
+        catch (JsonException ex)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response",
+                ex);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response",
+                ex);
+        }
+    }
+
+    protected async Task SendNoContentAsync(
+        string internalBearerToken,
+        HttpMethod method,
+        string requestUri,
+        object? body,
+        CancellationToken cancellationToken,
+        JsonSerializerOptions? jsonOptions = null,
+        Action<HttpRequestMessage>? configureRequest = null)
+    {
+        using var response = await SendRequestAsync(
+            internalBearerToken,
+            method,
+            requestUri,
+            body,
+            cancellationToken,
+            jsonOptions,
+            configureRequest);
+        if (response.StatusCode != HttpStatusCode.NoContent)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
+    }
+
+    private async Task<HttpResponseMessage> SendRequestAsync(
+        string internalBearerToken,
+        HttpMethod method,
+        string requestUri,
+        object? body,
+        CancellationToken cancellationToken,
+        JsonSerializerOptions? jsonOptions,
+        Action<HttpRequestMessage>? configureRequest)
+    {
         using var request = new HttpRequestMessage(method, requestUri);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalBearerToken);
         var idempotencyKey = BusinessGatewayIdempotencyKey.FromBody(body);
@@ -71,49 +137,28 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
                 ex);
         }
 
+        if (response.IsSuccessStatusCode)
+        {
+            return response;
+        }
+
         using (response)
         {
-            if (!response.IsSuccessStatusCode)
+            if (response.StatusCode == HttpStatusCode.BadRequest)
             {
-                if (response.StatusCode == HttpStatusCode.BadRequest)
-                {
-                    var downstreamMessage = await ReadDownstreamEnvelopeMessageAsync(
-                        response,
-                        cancellationToken);
-                    throw BusinessServiceProxyException.FromDownstreamBusinessMessage(downstreamMessage);
-                }
-
-                var envelope = await ReadDownstreamErrorEnvelopeAsync(response, cancellationToken);
-                throw BusinessServiceProxyException.FromDownstreamError(
-                    response.StatusCode,
-                    envelope.SemanticCode,
-                    envelope.Message,
-                    envelope.ErrorData,
-                    envelope.AllowMessageAsSemanticCode);
-            }
-
-            try
-            {
-                return await ReadResponseDataAsync<TResponse>(
+                var downstreamMessage = await ReadDownstreamEnvelopeMessageAsync(
                     response,
-                    jsonOptions ?? JsonOptions,
-                    cancellationToken,
-                    failClosedOnFailureEnvelope);
+                    cancellationToken);
+                throw BusinessServiceProxyException.FromDownstreamBusinessMessage(downstreamMessage);
             }
-            catch (JsonException ex)
-            {
-                throw BusinessServiceProxyException.FromSafeDownstreamMessage(
-                    HttpStatusCode.BadGateway,
-                    "downstream-invalid-response",
-                    ex);
-            }
-            catch (InvalidOperationException ex)
-            {
-                throw BusinessServiceProxyException.FromSafeDownstreamMessage(
-                    HttpStatusCode.BadGateway,
-                    "downstream-invalid-response",
-                    ex);
-            }
+
+            var envelope = await ReadDownstreamErrorEnvelopeAsync(response, cancellationToken);
+            throw BusinessServiceProxyException.FromDownstreamError(
+                response.StatusCode,
+                envelope.SemanticCode,
+                envelope.Message,
+                envelope.ErrorData,
+                envelope.AllowMessageAsSemanticCode);
         }
     }
 

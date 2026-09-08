@@ -1,5 +1,7 @@
 using DotNetCore.CAP;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using System.Text.Json;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
@@ -141,22 +143,25 @@ public sealed class ResourceChangedIntegrationEventHandlerForInvalidateScheduleP
 }
 
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Maintenance.AssetUnavailableIntegrationEvent", ConsumerName)]
-public sealed class AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans(
-    ApplicationDbContext dbContext,
-    IIntegrationEventDeadLetterStore deadLetterStore,
-    ISender sender,
-    ILogger<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans> logger)
+public sealed class AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans
     : IIntegrationEventHandler<AssetUnavailableIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-scheduling.asset-unavailable";
 
-    private readonly IntegrationEventConsumerGuard<AssetUnavailableIntegrationEvent> consumerGuard = new(
-        new IntegrationEventEnvelopeValidator(),
-        deadLetterStore,
-        new IntegrationEventConsumerOptions(
+    private readonly IntegrationEventConsumerGuard<AssetUnavailableIntegrationEvent> consumerGuard;
+    private readonly IAssetUnavailableCanonicalProcessor processor;
+
+    public AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans(
+        IIntegrationEventDeadLetterStore deadLetterStore,
+        IAssetUnavailableCanonicalProcessor processor)
+    {
+        this.processor = processor;
+        consumerGuard = new IntegrationEventConsumerGuard<AssetUnavailableIntegrationEvent>(
+            new IntegrationEventEnvelopeValidator(), deadLetterStore, new IntegrationEventConsumerOptions(
             ConsumerName,
             MaintenanceIntegrationEventTypes.AssetUnavailable,
             MaintenanceIntegrationEventVersions.V1));
+    }
 
     public async Task HandleAsync(AssetUnavailableIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
@@ -171,18 +176,107 @@ public sealed class AssetUnavailableIntegrationEventHandlerForInvalidateSchedule
 
     private async Task HandleValidEventAsync(AssetUnavailableIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
-        if (!await SchedulingProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
+        await processor.ProcessAsync(new AssetUnavailableCanonicalInput(
+            integrationEvent, integrationEvent.Payload.DeviceAssetId, integrationEvent.Payload.Reason), cancellationToken);
+    }
+}
+
+[IntegrationEventConsumer("Nerv.IIP.Contracts.Maintenance.AssetUnavailableV2IntegrationEvent", AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName)]
+public sealed class AssetUnavailableV2IntegrationEventHandlerForInvalidateSchedulePlans(
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    IAssetUnavailableCanonicalProcessor processor)
+    : IIntegrationEventHandler<AssetUnavailableV2IntegrationEvent>, ICapSubscribe
+{
+    private readonly IntegrationEventConsumerGuard<AssetUnavailableV2IntegrationEvent> consumerGuard = new(
+        new IntegrationEventEnvelopeValidator(), deadLetterStore, new IntegrationEventConsumerOptions(
+            AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName,
+            MaintenanceIntegrationEventTypes.AssetUnavailable,
+            MaintenanceIntegrationEventVersions.V2));
+
+    public async Task HandleAsync(AssetUnavailableV2IntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        // 纵深防御，不是可达路径：v2 wire 契约的 converter 在 Read 时就拒绝非 business-maintenance 的 source，
+        // 经 CAP 投递的 envelope 到不了这里；本分支只对进程内直接构造的对象生效，把它完整落进 DLQ 以便追查。
+        if (!string.Equals(integrationEvent.SourceService, MaintenanceIntegrationEventSources.BusinessMaintenance, StringComparison.Ordinal))
         {
+            await deadLetterStore.AddAsync(new IntegrationEventDeadLetterMessage(
+                Guid.CreateVersion7(),
+                AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName,
+                integrationEvent.EventId,
+                integrationEvent.EventType,
+                integrationEvent.EventVersion,
+                integrationEvent.SourceService,
+                integrationEvent.IdempotencyKey,
+                typeof(AssetUnavailableV2IntegrationEvent).FullName!,
+                JsonSerializer.Serialize(new
+                {
+                    integrationEvent.EventId,
+                    integrationEvent.EventType,
+                    integrationEvent.EventVersion,
+                    integrationEvent.OccurredAtUtc,
+                    integrationEvent.SourceService,
+                    integrationEvent.CorrelationId,
+                    integrationEvent.CausationId,
+                    integrationEvent.OrganizationId,
+                    integrationEvent.EnvironmentId,
+                    integrationEvent.Actor,
+                    integrationEvent.IdempotencyKey,
+                    integrationEvent.Payload
+                }, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+                "unexpected-source-service",
+                "AssetUnavailable v2 requires the business-maintenance source service.",
+                IntegrationEventDeadLetterStatus.Pending,
+                DateTimeOffset.UtcNow,
+                null), cancellationToken);
             return;
         }
+        await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
+    }
 
-        await SchedulingPlanInvalidationService.InvalidateByResourceAsync(
-            sender,
-            integrationEvent,
-            SchedulingPlanInvalidationReasons.EquipmentUnavailable,
-            integrationEvent.Payload.DeviceAssetId,
-            logger,
+    [CapSubscribe(AssetUnavailableIntegrationEventTopics.V2Template, Group = AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName)]
+    public Task HandleCapAsync(AssetUnavailableV2IntegrationEvent integrationEvent, CancellationToken cancellationToken) =>
+        HandleAsync(integrationEvent, cancellationToken);
+
+    private Task HandleValidEventAsync(AssetUnavailableV2IntegrationEvent integrationEvent, CancellationToken cancellationToken) =>
+        processor.ProcessAsync(new AssetUnavailableCanonicalInput(
+            integrationEvent, integrationEvent.Payload.DeviceAssetId, integrationEvent.Payload.ReasonCode), cancellationToken);
+}
+
+/// <summary>
+/// v1/v2 归一后的处理输入。<paramref name="UpstreamReason"/> 只作为上游事实随输入传递（v1 的 Reason / v2 的 ReasonCode），
+/// Scheduling 不复制 Maintenance 的原因目录、不解释其业务语义、也不据此分支；它存在是为了让 seam 上的观测
+/// （日志、测试装饰器）能看到上游原样的原因，而不是被 Scheduling 改写过的版本。
+/// </summary>
+public sealed record AssetUnavailableCanonicalInput(
+    IIntegrationEventEnvelope Envelope,
+    string DeviceAssetId,
+    string UpstreamReason);
+
+public interface IAssetUnavailableCanonicalProcessor
+{
+    Task ProcessAsync(AssetUnavailableCanonicalInput input, CancellationToken cancellationToken);
+}
+
+public sealed class AssetUnavailableCanonicalProcessor(
+    ISender sender,
+    ILogger<AssetUnavailableCanonicalProcessor> logger) : IAssetUnavailableCanonicalProcessor
+{
+    public async Task ProcessAsync(
+        AssetUnavailableCanonicalInput input,
+        CancellationToken cancellationToken)
+    {
+        var result = await sender.Send(
+            new ProcessAssetUnavailableCommand(input.Envelope, input.DeviceAssetId),
             cancellationToken);
+        if (result.MatchedPlanCount == 0)
+        {
+            logger.LogInformation(
+                "Scheduling input change {EventType} for resource {AffectedResourceId} matched no schedule plan in {OrganizationId}/{EnvironmentId}.",
+                input.Envelope.EventType,
+                input.DeviceAssetId,
+                input.Envelope.OrganizationId,
+                input.Envelope.EnvironmentId);
+        }
     }
 }
 
@@ -326,10 +420,34 @@ public sealed class StockAvailabilityChangedIntegrationEventHandlerForInvalidate
 public sealed class QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    ISender sender)
+    ISender sender,
+    ILogger<QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans> logger)
     : IIntegrationEventHandler<InspectionResultIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-scheduling.quality-inspection-result";
+
+    /// <summary>
+    /// 收哪些来源服务（#3191）：检验对象归属 MES 工单／工序的两个 payload 取值，引公开词表。
+    /// <c>business-mes</c> 是历史**信封面**别名，此处作为入站兼容保留，但它不再是唯一被收的值——
+    /// 原实现只收它，而真实生产者一个都发不出来，于是这道门对所有检验结论恒为不通过。
+    /// </summary>
+    private static readonly HashSet<string> AcceptedSourceServices = new(StringComparer.OrdinalIgnoreCase)
+    {
+        QualityInspectionSourceServices.Mes,
+        QualityInspectionSourceServices.MesOperation,
+        QualityIntegrationEventSources.BusinessMes,
+    };
+
+    /// <summary>
+    /// 收哪些来源环节（#3191）：只有工序检与首件的来源单据身份是工单／工序，能落到排程的
+    /// 计划指派上。<c>final</c> 的来源单据是入库申请单号、<c>receiving</c> 是收货单号，
+    /// 都永远匹配不到工单——放进来只会把「0 命中」变成噪声，压掉真正需要被看见的 0 命中。
+    /// </summary>
+    private static readonly HashSet<string> AcceptedSourceTypes = new(StringComparer.Ordinal)
+    {
+        QualityInspectionSourceTypes.Operation,
+        QualityInspectionSourceTypes.FirstArticle,
+    };
 
     private static readonly string[] SupportedEventTypes =
     [
@@ -359,7 +477,19 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForInvalidateS
 
     private async Task HandleValidEventAsync(InspectionResultIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
-        if (!string.Equals(integrationEvent.Payload.SourceService, QualityIntegrationEventSources.BusinessMes, StringComparison.OrdinalIgnoreCase))
+        var payload = integrationEvent.Payload;
+        if (!AcceptedSourceServices.Contains(payload.SourceService?.Trim() ?? string.Empty)
+            || !AcceptedSourceTypes.Contains(payload.SourceType?.Trim() ?? string.Empty))
+        {
+            return;
+        }
+
+        // 排程要匹配的是计划指派上的工单／工序身份。首件与周期检的 SourceDocumentId 是 Quality 内部
+        // 的复合串，排程侧不去拆它（拆等于把 Quality 的编码约定复制一份过来）——生产者已把工单／
+        // 工序结构化发布在 payload 上，这里按「工单 → 工序 → 来源单据」取。指派侧同时按
+        // WorkOrderId 与 OperationId 匹配，所以工序身份同样是可用的作用域值。
+        var scopeValue = FirstNonEmpty(payload.WorkOrderId, payload.OperationTaskId, payload.SourceDocumentId);
+        if (scopeValue is null)
         {
             return;
         }
@@ -377,9 +507,23 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForInvalidateS
             sender,
             integrationEvent,
             reason,
-            integrationEvent.Payload.SourceDocumentId,
-            integrationEvent.Payload.SkuCode,
+            scopeValue,
+            payload.SkuCode,
+            logger,
             cancellationToken);
+    }
+
+    private static string? FirstNonEmpty(params string?[] candidates)
+    {
+        foreach (var candidate in candidates)
+        {
+            if (!string.IsNullOrWhiteSpace(candidate))
+            {
+                return candidate.Trim();
+            }
+        }
+
+        return null;
     }
 }
 
@@ -545,11 +689,12 @@ internal static class SchedulingPlanInvalidationService
         string reasonCode,
         string sourceDocumentId,
         string? affectedSkuCode,
+        ILogger logger,
         CancellationToken cancellationToken)
         where TIntegrationEvent : IIntegrationEventEnvelope
     {
         var normalizedSource = Required(sourceDocumentId, nameof(sourceDocumentId));
-        await sender.Send(
+        var result = await sender.Send(
             ToCommand(
                 integrationEvent,
                 reasonCode,
@@ -558,6 +703,17 @@ internal static class SchedulingPlanInvalidationService
                 affectedWorkOrderId: null,
                 affectedSkuCode),
             cancellationToken);
+        // 0 命中必须留痕：这条通路原本连日志都没有，门修好之后若身份对不上（工单号口径不一致、
+        // 计划里没有这张工单），表现仍然是「什么都没发生」，与门恒不通过在现场无法区分。
+        if (result.MatchedPlanCount == 0)
+        {
+            logger.LogInformation(
+                "Scheduling input change {EventType} for work order or operation {AffectedScopeValue} matched no schedule plan in {OrganizationId}/{EnvironmentId}.",
+                integrationEvent.EventType,
+                normalizedSource,
+                integrationEvent.OrganizationId,
+                integrationEvent.EnvironmentId);
+        }
     }
 
     public static async Task InvalidateAllGeneratedPlansAsync<TIntegrationEvent>(
@@ -590,7 +746,7 @@ internal static class SchedulingPlanInvalidationService
         return value.Trim();
     }
 
-    private static RecordSchedulePlanInvalidationsCommand ToCommand<TIntegrationEvent>(
+    internal static RecordSchedulePlanInvalidationsCommand ToCommand<TIntegrationEvent>(
         TIntegrationEvent integrationEvent,
         string reasonCode,
         SchedulePlanInvalidationScope scope,
@@ -659,6 +815,40 @@ internal static class SchedulingProcessedIntegrationEventInbox
                 record.IdempotencyKey,
                 record.ProcessedAtUtc),
             cancellationToken);
+    }
+
+    /// <summary>
+    /// 双身份 claim：同 consumer 下 EventId 或 IdempotencyKey 任一已被记录即视为重复。串行化由
+    /// <see cref="IAssetUnavailableInboxIdentityLock"/>（Infrastructure）提供；两条唯一索引是最后一道防线，
+    /// 冲突由 <c>ApplicationDbContext.SaveChanges</c> 吞成 0 行而不是抛出。
+    /// </summary>
+    public static async Task<bool> TryRecordAssetUnavailableAsync(
+        ApplicationDbContext dbContext,
+        IAssetUnavailableInboxIdentityLock identityLock,
+        string consumerName,
+        IIntegrationEventEnvelope integrationEvent,
+        CancellationToken cancellationToken)
+    {
+        await identityLock.AcquireAsync(consumerName, integrationEvent, cancellationToken);
+
+        if (dbContext.ProcessedIntegrationEvents.Local.Any(x =>
+                x.ConsumerName == consumerName &&
+                (x.EventId == integrationEvent.EventId || x.IdempotencyKey == integrationEvent.IdempotencyKey)) ||
+            await dbContext.ProcessedIntegrationEvents.AnyAsync(x =>
+                x.ConsumerName == consumerName &&
+                (x.EventId == integrationEvent.EventId || x.IdempotencyKey == integrationEvent.IdempotencyKey),
+                cancellationToken))
+            return false;
+
+        dbContext.ProcessedIntegrationEvents.Add(new ProcessedIntegrationEvent(
+            consumerName,
+            integrationEvent.EventId,
+            integrationEvent.EventType,
+            integrationEvent.EventVersion,
+            integrationEvent.SourceService,
+            integrationEvent.IdempotencyKey,
+            DateTimeOffset.UtcNow));
+        return true;
     }
 
     private sealed class EventInstanceInboxEnvelope(IIntegrationEventEnvelope source) : IIntegrationEventEnvelope

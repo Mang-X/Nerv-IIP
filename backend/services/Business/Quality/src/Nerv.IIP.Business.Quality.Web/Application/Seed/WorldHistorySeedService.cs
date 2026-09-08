@@ -6,6 +6,7 @@ using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionTaskAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
 using Nerv.IIP.Contracts.Approval;
+using Nerv.IIP.Contracts.Inventory;
 using System.Globalization;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.Seed;
@@ -36,7 +37,14 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
 
     private const string ClosureActor = "system:business-quality-world-history";
     private const string HoldSiteCode = WorldHistorySpec.SiteCode;
-    private const string HoldQualityStatus = "quarantine";
+    /// <summary>
+    /// 不合格件持有时写入检验记录库存维度的来源质量状态。
+    ///
+    /// 必须取 Inventory 认得的取值：该字段经 <c>InspectionResultIntegrationEvent</c> 原样透传给
+    /// Inventory 的 <c>StockQualityStatus.Normalize</c>，取 <c>quarantine</c> 这类别名表外的值会让
+    /// 消费者抛出非 <c>KnownException</c>（#3186）。<c>quality</c> 就是「待检持有」的规范表达。
+    /// </summary>
+    private const string HoldQualityStatus = InventoryQualityStatuses.Quality;
     private const string HoldOwnerType = "own";
 
     public async Task<WorldHistoryQualitySeedReport> SeedAsync(

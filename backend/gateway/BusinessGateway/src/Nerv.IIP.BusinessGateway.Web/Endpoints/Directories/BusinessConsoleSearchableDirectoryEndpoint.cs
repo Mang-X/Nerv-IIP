@@ -64,7 +64,10 @@ public sealed class BusinessConsoleSearchableDirectoryEndpoint(
                 req.OrganizationId,
                 req.EnvironmentId,
                 scopeKind ?? "organization",
-                scopeId ?? req.OrganizationId),
+                scopeId ?? req.OrganizationId,
+                // 本端点用 ResolveAuthorizedScope 消费 scope grants；IAM 只在该开关为真时回传 grants，
+                // 否则 ScopeGrants 恒为 null 而落入「无授权范围」分支。
+                IncludePrincipalContext: true),
             BusinessGatewayAuthorizationContinuityMode.ReadCacheAllowed,
             ct);
         if (bearerToken is null)

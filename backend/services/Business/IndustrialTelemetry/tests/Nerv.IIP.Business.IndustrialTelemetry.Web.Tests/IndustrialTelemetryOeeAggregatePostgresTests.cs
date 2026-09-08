@@ -15,6 +15,31 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Tests;
 public sealed class IndustrialTelemetryOeeAggregatePostgresTests
 {
     [RealPostgresFact]
+    public async Task Changeover_runtime_is_an_availability_loss_and_is_reported_separately_on_postgres()
+    {
+        await IndustrialTelemetryPostgresLaneDatabase.ResetSchemaAsync();
+        await using var db = CreateLaneDbContext();
+        await db.Database.MigrateAsync();
+        var start = DateTimeOffset.Parse("2026-08-30T08:00:00Z");
+
+        db.DeviceStateSnapshots.AddRange(
+            State("org-001", "DEV-CHANGEOVER", "running", start, "changeover-1"),
+            State("org-001", "DEV-CHANGEOVER", "changeover", start.AddMinutes(30), "changeover-2"),
+            State("org-001", "DEV-CHANGEOVER", "running", start.AddMinutes(50), "changeover-3"));
+        db.OeeProductionFacts.Add(Fact(
+            "CHANGEOVER", start.AddMinutes(10), "DEV-CHANGEOVER", "WC-CHANGEOVER",
+            40m, 0m, 0m, "PCS", 60m, new DateOnly(2026, 8, 30)));
+        await db.SaveChangesAsync();
+
+        var bucket = Assert.Single((await new QueryOeeAggregateBucketsQueryHandler(db).Handle(new(
+            "org-001", "env-dev", OeeAggregateDimension.Device, start, start.AddHours(1),
+            DeviceAssetId: "DEV-CHANGEOVER"), CancellationToken.None)).Buckets);
+
+        Assert.Equal(20m, bucket.ChangeoverLossMinutes);
+        Assert.Equal(0.666667m, bucket.AvailabilityRate);
+    }
+
+    [RealPostgresFact]
     public async Task Six_dimensions_and_exact_filters_share_weighted_apq_and_scope_on_postgres()
     {
         await IndustrialTelemetryPostgresLaneDatabase.ResetSchemaAsync();

@@ -113,10 +113,14 @@ public sealed class MaintenanceListQueryCompositionTests
     public async Task Public_list_endpoints_apply_composed_defaults_bounds_and_keywords()
     {
         await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
-        db.MaintenanceWorkOrders.AddRange(
-            MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEVICE-PUMP-01", "high", "reporter"),
-            MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEVICE-PUMP-02", "high", "reporter"),
-            MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEVICE-OTHER", "high", "reporter"));
+        var firstWorkOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEVICE-PUMP-01", "high", "reporter");
+        var secondWorkOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEVICE-PUMP-02", "high", "reporter");
+        var otherWorkOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEVICE-OTHER", "high", "reporter");
+        db.MaintenanceWorkOrders.AddRange(firstWorkOrder, secondWorkOrder, otherWorkOrder);
+        var openedAtUtc = new DateTimeOffset(2026, 8, 31, 0, 0, 0, TimeSpan.Zero);
+        db.Entry(firstWorkOrder).Property(x => x.OpenedAtUtc).CurrentValue = openedAtUtc.AddMinutes(2);
+        db.Entry(secondWorkOrder).Property(x => x.OpenedAtUtc).CurrentValue = openedAtUtc.AddMinutes(1);
+        db.Entry(otherWorkOrder).Property(x => x.OpenedAtUtc).CurrentValue = openedAtUtc;
         db.MaintenancePlans.AddRange(
             MaintenancePlan.Create("org-001", "env-dev", "DEVICE-PUMP", "PM-PUMP-01", "P7D", new DateOnly(2026, 8, 1), "maintenance"),
             MaintenancePlan.Create("org-001", "env-dev", "DEVICE-PUMP", "PM-PUMP-02", "P7D", new DateOnly(2026, 8, 1), "maintenance"),

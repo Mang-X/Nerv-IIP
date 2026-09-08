@@ -173,7 +173,7 @@ const mbomSegments = computed(() => {
   return pagedBreakdownSegments(mbomsTotal.value, segments)
 })
 
-const listErrorMessage = computed(() => formatError(mbomsError.value))
+const listErrorMessage = computed(() => inlineErrorMessage(mbomsError.value))
 
 const columns: NvDataTableColumn<BusinessConsoleManufacturingBomItem>[] = [
   { key: 'bomCode', header: 'BOM 编号', cellClass: 'font-medium' },
@@ -401,10 +401,6 @@ async function openView(row: BusinessConsoleManufacturingBomItem) {
   } finally {
     detailPending.value = false
   }
-}
-
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 function formatScrap(rate?: number | null) {
   if (rate == null) return '—'

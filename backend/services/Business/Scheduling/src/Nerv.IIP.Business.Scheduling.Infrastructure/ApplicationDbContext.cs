@@ -55,16 +55,31 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
         bool acceptAllChangesOnSuccess,
         CancellationToken cancellationToken = default)
     {
-        return ProcessedIntegrationEventInbox.SaveChangesOrIgnoreDuplicateAsync<ProcessedIntegrationEvent>(
-            this,
-            token => base.SaveChangesAsync(acceptAllChangesOnSuccess, token),
-            cancellationToken);
+        return SaveInboxChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
     }
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
-        return ProcessedIntegrationEventInbox.SaveChangesOrIgnoreDuplicate<ProcessedIntegrationEvent>(
-            this,
-            () => base.SaveChanges(acceptAllChangesOnSuccess));
+        try { return base.SaveChanges(acceptAllChangesOnSuccess); }
+        catch (DbUpdateException exception) when (IsInboxIdentityConflict(exception))
+        {
+            ChangeTracker.Clear();
+            return 0;
+        }
     }
+
+    private async Task<int> SaveInboxChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken)
+    {
+        try { return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken); }
+        catch (DbUpdateException exception) when (IsInboxIdentityConflict(exception))
+        {
+            ChangeTracker.Clear();
+            return 0;
+        }
+    }
+
+    private bool IsInboxIdentityConflict(DbUpdateException exception) =>
+        ChangeTracker.Entries<ProcessedIntegrationEvent>().Any(x => x.State == EntityState.Added) &&
+        (ProcessedIntegrationEventInbox.IsUniqueConflict(exception, this, "ux_processed_integration_events_consumer_idempotency_key") ||
+         ProcessedIntegrationEventInbox.IsUniqueConflict(exception, this, "ux_processed_integration_events_consumer_event_id"));
 }

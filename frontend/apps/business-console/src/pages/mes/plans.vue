@@ -155,7 +155,7 @@ const convertContextItems = computed(() => {
     { label: '计划开始', value: formatDateTime(plan.plannedStartUtc) },
   ]
 })
-const errorMessage = computed(() => formatError(productionPlansError.value))
+const errorMessage = computed(() => inlineErrorMessage(productionPlansError.value))
 const hasActiveFilters = computed(
   () =>
     Boolean(keyword.value.trim()) ||
@@ -314,9 +314,6 @@ function normalizeSourceQuery(value: unknown): string {
 function newPlanIdempotencyKey(scope: string) {
   return `${scope}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
 </script>
 
 <template>
@@ -366,8 +363,6 @@ function formatError(error: unknown) {
       </template>
     </NvToolbar>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
-
     <NvDataTable
       manual
       :page="page"
@@ -381,9 +376,12 @@ function formatError(error: unknown) {
       row-key="productionPlanId"
       :client-sort="false"
       :loading="productionPlansPending"
+      :error="productionPlansError"
+      :error-message="errorMessage"
       :searchable="false"
       :column-settings="false"
       :empty-message="emptyMessage"
+      @retry="refreshProductionPlans"
     >
       <template #cell-sourceSystem="{ row }">
         <div class="flex flex-col gap-0.5">

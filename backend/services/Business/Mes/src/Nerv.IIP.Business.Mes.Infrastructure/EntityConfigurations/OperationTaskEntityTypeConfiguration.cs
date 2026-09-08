@@ -50,7 +50,7 @@ public sealed class OperationTaskEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.RowVersion).HasColumnName("row_version")
             .HasConversion(x => x.VersionNumber, x => new RowVersion(x))
             .HasComment("Optimistic row version.");
-        builder.Property(x => x.AssignedUserId).HasColumnName("assigned_user_id").HasMaxLength(100).HasComment("Assigned operator or person public id captured by MES dispatch.");
+        builder.Property(x => x.AssignedUserId).HasColumnName("assigned_user_id").HasMaxLength(100).IsConcurrencyToken().HasComment("Assigned operator or person public id captured by MES dispatch and used to serialize assignment ownership changes.");
         builder.Property(x => x.AssignedUserName).HasColumnName("assigned_user_name").HasMaxLength(200).HasComment("Display name snapshot of the assigned worker captured by MES dispatch.");
         builder.Property(x => x.DeviceAssetId).HasColumnName("device_asset_id").HasMaxLength(100).HasComment("Assigned MasterData device asset public id captured by MES dispatch.");
         builder.Property(x => x.ManualDispatchRevision)

@@ -379,6 +379,9 @@ public sealed class MesIntegrationEventTests
         Assert.Equal("LOT-OIL-A", integrationEvent.Payload.LotNo);
         Assert.Equal(-3m, integrationEvent.Payload.Quantity);
         Assert.Equal("WO-001", integrationEvent.CorrelationId);
+        // NERV-2117：快照扩展尚未激活公司料过账，默认路径继续 production/null。
+        Assert.Equal("production", integrationEvent.Payload.OwnerType);
+        Assert.Null(integrationEvent.Payload.OwnerId);
     }
 
     [Fact]

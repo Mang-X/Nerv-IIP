@@ -1,0 +1,92 @@
+{
+  "$comment": [
+    "#3124 台账：EF 模型声明、但 CAP 运行时从不写入的表（netcorepal 的 ICapDataStorage 三件套）。",
+    "生产 outbox/inbox/lock 由 DotNetCore.CAP.PostgreSql 的 PostgreSqlDataStorage 落在 cap schema。",
+    "键=Infrastructure 程序集名，值=schema.table，两向比对；新服务接 CAP 必须来这里登记。",
+    "本文件刻意不是 .cs：源码面禁止这些表名以字符串字面量出现在 backend 的 C# 源码里，",
+    "台账放在 C# 之外，防线才不需要给自己开豁免。",
+    "Reference 目录 docs/reference/data/database-schema-catalog.md 与本台账由测试机器校验一致。"
+  ],
+  "faces": {
+    "Nerv.IIP.AppHub.Infrastructure": [
+      "apphub.cap_locks",
+      "apphub.cap_published_messages",
+      "apphub.cap_received_messages"
+    ],
+    "Nerv.IIP.Business.Approval.Infrastructure": [
+      "business_approval.cap_locks",
+      "business_approval.cap_published_messages",
+      "business_approval.cap_received_messages"
+    ],
+    "Nerv.IIP.Business.BarcodeLabel.Infrastructure": [
+      "barcode.CAPLock",
+      "barcode.CAPPublishedMessage",
+      "barcode.CAPReceivedMessage"
+    ],
+    "Nerv.IIP.Business.DemandPlanning.Infrastructure": [
+      "demand_planning.cap_locks",
+      "demand_planning.cap_published_messages",
+      "demand_planning.cap_received_messages"
+    ],
+    "Nerv.IIP.Business.Erp.Infrastructure": [
+      "erp.cap_locks",
+      "erp.cap_published_messages",
+      "erp.cap_received_messages"
+    ],
+    "Nerv.IIP.Business.IndustrialTelemetry.Infrastructure": [
+      "industrial_telemetry.CAPLock",
+      "industrial_telemetry.CAPPublishedMessage",
+      "industrial_telemetry.CAPReceivedMessage"
+    ],
+    "Nerv.IIP.Business.Inventory.Infrastructure": [
+      "inventory.cap_locks",
+      "inventory.cap_published_messages",
+      "inventory.cap_received_messages"
+    ],
+    "Nerv.IIP.Business.Maintenance.Infrastructure": [
+      "maintenance.CAPLock",
+      "maintenance.CAPPublishedMessage",
+      "maintenance.CAPReceivedMessage"
+    ],
+    "Nerv.IIP.Business.MasterData.Infrastructure": [
+      "business_masterdata.cap_locks",
+      "business_masterdata.cap_published_messages",
+      "business_masterdata.cap_received_messages"
+    ],
+    "Nerv.IIP.Business.Mes.Infrastructure": [
+      "mes.cap_locks",
+      "mes.cap_published_messages",
+      "mes.cap_received_messages"
+    ],
+    "Nerv.IIP.Business.ProductEngineering.Infrastructure": [
+      "product_engineering.cap_locks",
+      "product_engineering.cap_published_messages",
+      "product_engineering.cap_received_messages"
+    ],
+    "Nerv.IIP.Business.Quality.Infrastructure": [
+      "quality.cap_locks",
+      "quality.cap_published_messages",
+      "quality.cap_received_messages"
+    ],
+    "Nerv.IIP.Business.Scheduling.Infrastructure": [
+      "scheduling.cap_locks",
+      "scheduling.cap_published_messages",
+      "scheduling.cap_received_messages"
+    ],
+    "Nerv.IIP.Business.Wms.Infrastructure": [
+      "wms.CAPLock",
+      "wms.CAPPublishedMessage",
+      "wms.CAPReceivedMessage"
+    ],
+    "Nerv.IIP.Notification.Infrastructure": [
+      "notification.cap_locks",
+      "notification.cap_published_messages",
+      "notification.cap_received_messages"
+    ],
+    "Nerv.IIP.Ops.Infrastructure": [
+      "ops.cap_locks",
+      "ops.cap_published_messages",
+      "ops.cap_received_messages"
+    ]
+  }
+}

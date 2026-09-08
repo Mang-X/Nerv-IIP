@@ -424,8 +424,8 @@ public sealed class WorkCenterMachineOverheadRatePostgresAcceptanceTests
         var fractional = WorkCenterMachineOverheadReconciliation.Record(
             "org-pg", "env-pg", "WC-PG", "2026-06",
             reconciliationRate.Id, reconciliationRate.Revision, "CNY",
-            1.0000005m, 2.0000005m, 1,
-            0.1000005m, 0.2000005m, 0.3000015m,
+            1.0000005m, 2.0000015m, 1,
+            0.1000005m, 0.2000015m, 0.3000035m,
             1, AbnormalDowntimeDisposition.PeriodExpense,
             2, "system:test", "ledger:fractional", "provider precision proof",
             new DateTimeOffset(2026, 6, 30, 17, 0, 0, TimeSpan.Zero));
@@ -433,8 +433,23 @@ public sealed class WorkCenterMachineOverheadRatePostgresAcceptanceTests
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
         var fractionalReadback = await db.WorkCenterMachineOverheadReconciliations.SingleAsync(x => x.Id == fractional.Id);
-        Assert.Equal(1.000001m, fractionalReadback.ActualFixedOverheadAmount);
+        Assert.Equal(1.000000m, fractionalReadback.ActualFixedOverheadAmount);
+        Assert.Equal(2.000002m, fractionalReadback.ActualVariableOverheadAmount);
         Assert.Equal(3.000002m, fractionalReadback.ActualTotalOverheadAmount);
+        Assert.Equal(0.100000m, fractionalReadback.AppliedFixedAmount);
+        Assert.Equal(0.200002m, fractionalReadback.AppliedVariableAmount);
+        Assert.Equal(0.300004m, fractionalReadback.AppliedTotalAmount);
+        Assert.Equal(0.000002m, fractionalReadback.AppliedRoundingDifferenceAmount);
+        Assert.Equal(0.900000m, fractionalReadback.UnderOverAppliedFixedAmount);
+        Assert.Equal(1.800000m, fractionalReadback.UnderOverAppliedVariableAmount);
+        Assert.Equal(2.699998m, fractionalReadback.UnderOverAppliedTotalAmount);
+        Assert.Equal(0.900000m, fractionalReadback.UnallocatedFixedOverheadAmount);
+        Assert.Equal(0m, fractionalReadback.OverAppliedFixedOverheadAmount);
+        Assert.Equal(
+            fractionalReadback.AppliedTotalAmount,
+            fractionalReadback.AppliedFixedAmount
+                + fractionalReadback.AppliedVariableAmount
+                + fractionalReadback.AppliedRoundingDifferenceAmount);
         Assert.Equal(0.000000000028m, fractionalReadback.AppliedMachineHours);
         Assert.Equal(0.000000000028m, fractionalReadback.AbnormalDowntimeHours);
 

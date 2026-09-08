@@ -1,6 +1,7 @@
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ChangeoverRecordAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
@@ -20,6 +21,14 @@ using DomainScheduledOperationSnapshot = Nerv.IIP.Business.Mes.Domain.Aggregates
 using DomainWorkCenterUnavailability = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability;
 using DomainDefectRecord = Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate.DefectRecord;
 using DomainShiftHandover = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandover;
+using ShiftHandoverId = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverId;
+using ShiftHandoverIssueCategory = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverIssueCategory;
+using ShiftHandoverIssueSeverity = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverIssueSeverity;
+using ShiftHandoverWipItemSnapshot = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverWipItemSnapshot;
+using ShiftHandoverUnfinishedWorkOrderSnapshot = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverUnfinishedWorkOrderSnapshot;
+using ShiftHandoverOpenIssueSnapshot = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverOpenIssueSnapshot;
+using ShiftHandoverAttachmentSnapshot = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverAttachmentSnapshot;
+using Nerv.IIP.Business.Mes.Web.Application.Quality;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.Business.Mes.Web.Application.Errors;
 using Nerv.IIP.Business.Mes.Web.Application.Approvals;
@@ -36,6 +45,11 @@ public sealed record MesOperationActionResponse(
     string Status,
     DateTimeOffset ChangedAtUtc);
 
+/// <summary>
+/// 下达工单。其中 <c>ReleasedAtUtc</c> 是下达时刻，
+/// **已在 HTTP 端点（<c>ReleaseWorkOrderEndpoint</c>）夹到不晚于当前时刻**——
+/// 那里是请求体进入系统的信任边界，未来值只可能从那里来，本处不再重复夹一遍。
+/// </summary>
 public sealed record ReleaseWorkOrderCommand(
     string OrganizationId,
     string EnvironmentId,
@@ -131,8 +145,45 @@ public sealed class ReleaseWorkOrderCommandHandler(
             }
         }
 
-        workOrder.MarkReleased(operationSnapshots);
-        return new MesAcceptedResponse("Accepted", request.WorkOrderId, request.ReleasedAtUtc);
+        // 工单在 created 状态就能开工、报工、乃至完工（#3113），下达因此可能发生在已有活动之后。
+        // 发给 Quality 的发布时刻必须按**最早既有活动**取下界，口径与 #3000 回填同一处实现。
+        var earliestReportedAtUtc = await dbContext.ProductionReports
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.WorkOrderId == request.WorkOrderId)
+            .MinAsync(x => (DateTimeOffset?)x.ReportedAtUtc, cancellationToken);
+
+        // 完工这一面必须一起进下界，**不能只按报工算**：工序动作 "complete"
+        // （本文件 ChangeOperationTaskStateCommandHandler 的 "complete" 分支）把 pendingProductionReportNos
+        // 传 []，完工时刻取 request.ChangedAtUtc，**不产生任何报工行**。于是「零报工、却已有完工」可达，
+        // 只按报工取下界时这里查不到任何活动 → 发布事实取调用方时刻 → 被 Quality 的完工守卫
+        // （PeriodicInspectionOperation 的 CompletedAtUtc < releasedAtUtc）判冲突整封进死信（#3117 第三轮）。
+        // 不新增查询：operationSnapshots 已在上面读进内存，ExistingEndUtc 就是完工时刻。
+        // 关于不按状态过滤：取消也会写 ExistingEndUtc（OperationTask.Cancel）。
+        // **但取消态在生产上进不到这条下界，这里如实写清，不再声称它有用例承担：**
+        // OperationTask.Cancel 的生产调用点恰 1 处（本文件 ChangeWorkOrderStateCommandHandler 的取消分支），
+        // 它先把工单整单 Cancel、再 foreach 取消全部工序（无部分取消路径）；
+        // 而 WorkOrder.ThrowIfCannotRelease 把 CancelledStatus 与其余终态一并拒掉。
+        // 故「工单可下达 + 存在已取消工序」在系统层不可达，加不加状态过滤对可达输入是等价变异。
+        // 保留「不过滤」是因为它不依赖「哪些状态会写 ExistingEndUtc」这份枚举的完备性，方向上恒偏早、
+        // 对 Quality 那三条 throw 守卫恒安全（**只对那三条守卫，不覆盖窗口生成语义**）。
+        var earliestOperationEndUtc = operationSnapshots
+            .Where(x => x.ExistingEndUtc.HasValue)
+            .Select(x => (DateTimeOffset?)x.ExistingEndUtc!.Value)
+            .Min();
+        var earliestExistingActivityAtUtc = earliestReportedAtUtc is { } report
+            ? (earliestOperationEndUtc is { } end && end < report ? end : report)
+            : earliestOperationEndUtc;
+
+        var releasedAt = WorkOrderReleaseFactTime.NotLaterThan(request.ReleasedAtUtc, earliestExistingActivityAtUtc);
+
+        workOrder.MarkReleased(operationSnapshots, releasedAt);
+
+        // 回执回**实际落到发布事实上的时刻**，不回 request.ReleasedAtUtc：
+        // 被既有活动下界压过或被夹到当前时刻时，调用方否则无从得知自己给的时刻已被改写。
+        return new MesAcceptedResponse("Accepted", request.WorkOrderId, releasedAt.Value);
     }
 }
 
@@ -1301,6 +1352,34 @@ public sealed record AssignDispatchTaskCommand(
     string? TeamName = null,
     IReadOnlyCollection<DispatchParticipantInput>? Participants = null) : ICommand<MesAcceptedResponse>, IOperationTaskConcurrencyRetryCommand;
 
+public sealed record ClaimDispatchTaskCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string OperationTaskId,
+    string AssignedUserId,
+    string AssignedUserName,
+    string? DeviceAssetId,
+    string? ShiftId,
+    DateTimeOffset AssignedAtUtc,
+    string Actor,
+    string IdempotencyKey,
+    string? TeamId = null,
+    string? TeamName = null) : ICommand<MesAcceptedResponse>, IOperationTaskConcurrencyRetryCommand;
+
+public sealed class ClaimDispatchTaskCommandValidator : AbstractValidator<ClaimDispatchTaskCommand>
+{
+    public ClaimDispatchTaskCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.OperationTaskId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.AssignedUserId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.AssignedUserName).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.Actor).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+    }
+}
+
 public sealed class AssignDispatchTaskCommandValidator : AbstractValidator<AssignDispatchTaskCommand>
 {
     public AssignDispatchTaskCommandValidator()
@@ -1404,8 +1483,7 @@ public sealed class AssignDispatchTaskCommandHandler(
             task.RequiredSkillCode,
             cancellationToken);
 
-        MesDomainRuleGuard.Enforce(() =>
-            task.Assign(
+        MesDomainRuleGuard.Enforce(() => task.Assign(
                 request.AssignedUserId,
                 request.DeviceAssetId,
                 request.ShiftId,
@@ -1440,6 +1518,103 @@ public sealed class AssignDispatchTaskCommandHandler(
         dbContext.Entry(task).Property(x => x.AssignedAtUtc).IsModified = true;
         return new MesAcceptedResponse("Accepted", request.OperationTaskId, request.AssignedAtUtc);
     }
+}
+
+public sealed class ClaimDispatchTaskCommandHandler(
+    ApplicationDbContext dbContext,
+    IMesWorkerSkillQualificationGate workerSkillQualificationGate)
+    : ICommandHandler<ClaimDispatchTaskCommand, MesAcceptedResponse>
+{
+    private const string ClaimRuleKey = "operation-task-claim";
+
+    public ClaimDispatchTaskCommandHandler(ApplicationDbContext dbContext)
+        : this(dbContext, UnconfiguredMesWorkerSkillQualificationGate.Instance)
+    {
+    }
+
+    public async Task<MesAcceptedResponse> Handle(
+        ClaimDispatchTaskCommand request,
+        CancellationToken cancellationToken)
+    {
+        var idempotencyKey = request.IdempotencyKey.Trim();
+        var operationTaskId = request.OperationTaskId.Trim();
+        var assignedUserId = request.AssignedUserId.Trim();
+        var fingerprint = FormattableString.Invariant(
+            $"{operationTaskId.Length}:{operationTaskId}{assignedUserId.Length}:{assignedUserId}");
+        var existing = dbContext.CodeIdempotencyKeys.Local.FirstOrDefault(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.RuleKey == ClaimRuleKey &&
+                x.IdempotencyKey == idempotencyKey)
+            ?? await dbContext.CodeIdempotencyKeys.AsNoTracking().SingleOrDefaultAsync(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.RuleKey == ClaimRuleKey &&
+                x.IdempotencyKey == idempotencyKey,
+                cancellationToken);
+        if (existing is not null)
+        {
+            if (!string.Equals(existing.PayloadFingerprint, fingerprint, StringComparison.Ordinal))
+            {
+                throw new MesIdempotencyConflictException();
+            }
+
+            return new MesAcceptedResponse("Accepted", request.OperationTaskId, existing.CreatedAtUtc);
+        }
+
+        var task = await dbContext.OperationTasks.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.OperationTaskIdValue == request.OperationTaskId,
+            cancellationToken)
+            ?? throw new KnownException($"未找到工序任务，OperationTaskId = {request.OperationTaskId}");
+
+        var qualityIssues = await ReadinessReasonCodes.GetActiveQualityHoldIssuesAsync(
+            dbContext, request.OrganizationId, request.EnvironmentId, task.WorkOrderId,
+            task.OperationTaskIdValue, cancellationToken);
+        if (qualityIssues.Count > 0)
+        {
+            throw new KnownException(string.Join("; ", qualityIssues.Select(x => x.Code)));
+        }
+
+        var equipmentIssues = await ReadinessReasonCodes.GetEquipmentBlockingIssuesAsync(
+            dbContext, request.OrganizationId, request.EnvironmentId, task.WorkCenterId,
+            task.WorkOrderId, request.AssignedAtUtc, cancellationToken);
+        if (equipmentIssues.Count > 0)
+        {
+            throw new KnownException(string.Join("; ", equipmentIssues.Select(x => x.Code)));
+        }
+
+        await workerSkillQualificationGate.EnsureQualifiedAsync(
+            task.OrganizationId, task.EnvironmentId, request.AssignedUserId,
+            task.RequiredSkillCode, cancellationToken);
+
+        MesDomainRuleGuard.Enforce(() => task.Claim(
+            request.AssignedUserId, request.AssignedUserName, request.DeviceAssetId,
+            request.ShiftId, request.AssignedAtUtc, request.Actor, request.TeamId, request.TeamName));
+
+        var existingParticipants = await dbContext.OperationTaskParticipants
+            .Where(x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.OperationTaskId == request.OperationTaskId)
+            .ToArrayAsync(cancellationToken);
+        dbContext.OperationTaskParticipants.RemoveRange(existingParticipants);
+        dbContext.OperationTaskParticipants.Add(OperationTaskParticipant.Register(
+            request.OrganizationId, request.EnvironmentId, request.OperationTaskId,
+            request.AssignedUserId, request.AssignedUserName, 100m));
+        dbContext.Entry(task).Property(x => x.AssignedUserId).IsModified = true;
+        dbContext.Entry(task).Property(x => x.AssignedUserName).IsModified = true;
+        dbContext.Entry(task).Property(x => x.DeviceAssetId).IsModified = true;
+        dbContext.Entry(task).Property(x => x.ShiftId).IsModified = true;
+        dbContext.Entry(task).Property(x => x.TeamId).IsModified = true;
+        dbContext.Entry(task).Property(x => x.TeamName).IsModified = true;
+        dbContext.Entry(task).Property(x => x.AssignedAtUtc).IsModified = true;
+        dbContext.CodeIdempotencyKeys.Add(new CodeIdempotencyKey(
+            request.OrganizationId, request.EnvironmentId, ClaimRuleKey, idempotencyKey,
+            request.OperationTaskId, fingerprint, request.AssignedAtUtc));
+        return new MesAcceptedResponse("Accepted", request.OperationTaskId, request.AssignedAtUtc);
+    }
+
 }
 
 public sealed record ChangeOperationTaskStateCommand(
@@ -2491,6 +2666,134 @@ public sealed class ConfirmDowntimeRecoveryCommandHandler(ApplicationDbContext d
     }
 }
 
+/// <summary>交班时点的在制清点行。</summary>
+public sealed record ShiftHandoverWipItemInput(
+    string WorkOrderId,
+    string? OperationTaskId,
+    decimal Quantity);
+
+/// <summary>交班时点的未完工单进度快照。</summary>
+public sealed record ShiftHandoverUnfinishedWorkOrderInput(
+    string WorkOrderId,
+    decimal PlannedQuantity,
+    decimal CompletedQuantity,
+    string WorkOrderStatus);
+
+/// <summary>随交班一并提交的 FileStorage 附件引用；文件名、内容类型与大小是交班时点快照。</summary>
+public sealed record ShiftHandoverAttachmentInput(
+    string FileId,
+    string FileName,
+    string ContentType,
+    long SizeBytes);
+
+/// <summary>交班时点的遗留问题；<c>Category</c>/<c>Severity</c> 走字符串词表，见 <see cref="ShiftHandoverVocabulary"/>。</summary>
+public sealed record ShiftHandoverOpenIssueInput(
+    string Category,
+    string Severity,
+    string Description,
+    string? ReferenceId = null);
+
+/// <summary>
+/// 遗留问题类别与严重度的字符串词表。
+///
+/// MES 服务端没有注册 <c>JsonStringEnumConverter</c>，域枚举直接进公开契约会被序列化成整数，
+/// 因此写面与读面一律用字符串，只在域内保持闭合枚举。
+/// </summary>
+public static class ShiftHandoverVocabulary
+{
+    public static ShiftHandoverIssueCategory ParseCategory(string? value) =>
+        TryParseClosed<ShiftHandoverIssueCategory>(value, out var category)
+            ? category
+            : throw new KnownException($"未知的遗留问题类别：{value}，仅支持 Equipment 或 Quality。");
+
+    public static ShiftHandoverIssueSeverity ParseSeverity(string? value) =>
+        TryParseClosed<ShiftHandoverIssueSeverity>(value, out var severity)
+            ? severity
+            : throw new KnownException($"未知的遗留问题严重度：{value}，仅支持 Low、Medium 或 High。");
+
+    /// <summary>
+    /// 词表取自枚举本身，写面不再各自抄一份小写字面量。
+    /// <c>Enum.TryParse</c> 会把 <c>"7"</c> 这类数字串解析成未定义的枚举值，公开写面收到的又是客户端
+    /// 给的任意字符串，因此必须再过一道 <c>IsDefined</c>——这条分支是真实可达的。
+    /// </summary>
+    private static bool TryParseClosed<TEnum>(string? value, out TEnum parsed)
+        where TEnum : struct, Enum =>
+        Enum.TryParse(value?.Trim(), ignoreCase: true, out parsed) && Enum.IsDefined(parsed);
+}
+
+public sealed record StartChangeoverCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkCenterId,
+    string DeviceAssetId,
+    string OperatorId,
+    ChangeoverToolingCheckResult ToolingCheckResult,
+    DateTimeOffset StartedAtUtc,
+    string IdempotencyKey) : ICommand<MesAcceptedResponse>;
+
+public sealed class StartChangeoverCommandHandler(
+    ApplicationDbContext dbContext,
+    MesCodingService? codingService = null)
+    : ICommandHandler<StartChangeoverCommand, MesAcceptedResponse>
+{
+    private readonly MesCodingService _codingService = codingService ?? new MesCodingService();
+
+    public async Task<MesAcceptedResponse> Handle(StartChangeoverCommand request, CancellationToken cancellationToken)
+    {
+        var allocation = await _codingService.AllocateAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            "changeover-record",
+            null,
+            request.IdempotencyKey,
+            MesCodingService.Fingerprint(
+                request.WorkCenterId,
+                request.DeviceAssetId,
+                request.OperatorId,
+                request.ToolingCheckResult,
+                request.StartedAtUtc),
+            cancellationToken);
+        if (allocation.IsIdempotentReplay)
+        {
+            return new MesAcceptedResponse("Accepted", allocation.Code, request.StartedAtUtc);
+        }
+
+        var record = ChangeoverRecord.Start(
+            request.OrganizationId,
+            request.EnvironmentId,
+            allocation.Code,
+            request.WorkCenterId,
+            request.DeviceAssetId,
+            request.OperatorId,
+            request.ToolingCheckResult,
+            request.StartedAtUtc);
+        dbContext.ChangeoverRecords.Add(record);
+        return new MesAcceptedResponse("Accepted", record.ChangeoverNo, request.StartedAtUtc);
+    }
+}
+
+public sealed record CompleteChangeoverCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string ChangeoverRecordId,
+    DateTimeOffset CompletedAtUtc) : ICommand<MesAcceptedResponse>;
+
+public sealed class CompleteChangeoverCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<CompleteChangeoverCommand, MesAcceptedResponse>
+{
+    public async Task<MesAcceptedResponse> Handle(CompleteChangeoverCommand request, CancellationToken cancellationToken)
+    {
+        var record = await dbContext.ChangeoverRecords.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.ChangeoverNo == request.ChangeoverRecordId,
+            cancellationToken) ?? throw new KnownException($"未找到换型记录，ChangeoverRecordId = {request.ChangeoverRecordId}");
+
+        record.Complete(request.CompletedAtUtc);
+        return new MesAcceptedResponse("Accepted", record.ChangeoverNo, request.CompletedAtUtc);
+    }
+}
+
 public sealed record CreateShiftHandoverCommand(
     string OrganizationId,
     string EnvironmentId,
@@ -2498,7 +2801,13 @@ public sealed record CreateShiftHandoverCommand(
     string TeamId,
     DateTimeOffset HandoverAtUtc,
     string? IdempotencyKey = null,
-    string? TeamName = null) : ICommand<MesAcceptedResponse>;
+    string? TeamName = null,
+    string? OutgoingUserId = null,
+    string? OutgoingUserName = null,
+    IReadOnlyCollection<ShiftHandoverWipItemInput>? WipItems = null,
+    IReadOnlyCollection<ShiftHandoverUnfinishedWorkOrderInput>? UnfinishedWorkOrders = null,
+    IReadOnlyCollection<ShiftHandoverOpenIssueInput>? OpenIssues = null,
+    IReadOnlyCollection<ShiftHandoverAttachmentInput>? Attachments = null) : ICommand<MesAcceptedResponse>;
 
 public sealed class CreateShiftHandoverCommandHandler(ApplicationDbContext dbContext, MesCodingService? codingService = null)
     : ICommandHandler<CreateShiftHandoverCommand, MesAcceptedResponse>
@@ -2524,15 +2833,39 @@ public sealed class CreateShiftHandoverCommandHandler(ApplicationDbContext dbCon
             request.EnvironmentId,
             request.HandoverAtUtc,
             cancellationToken);
-        var handover = DomainShiftHandover.Create(
-            request.OrganizationId,
-            request.EnvironmentId,
-            allocation.Code,
-            request.ShiftId,
-            request.TeamId,
-            openIssueCount,
-            request.HandoverAtUtc,
-            request.TeamName);
+        DomainShiftHandover handover = null!;
+        MesDomainRuleGuard.Enforce(() =>
+            handover = DomainShiftHandover.Create(
+                request.OrganizationId,
+                request.EnvironmentId,
+                allocation.Code,
+                request.ShiftId,
+                request.TeamId,
+                openIssueCount,
+                request.HandoverAtUtc,
+                request.TeamName,
+                request.OutgoingUserId,
+                request.OutgoingUserName,
+                [.. (request.WipItems ?? []).Select(x => new ShiftHandoverWipItemSnapshot(
+                    x.WorkOrderId,
+                    x.OperationTaskId,
+                    x.Quantity))],
+                [.. (request.UnfinishedWorkOrders ?? []).Select(x => new ShiftHandoverUnfinishedWorkOrderSnapshot(
+                    x.WorkOrderId,
+                    x.PlannedQuantity,
+                    x.CompletedQuantity,
+                    x.WorkOrderStatus))],
+                [.. (request.OpenIssues ?? []).Select(x => new ShiftHandoverOpenIssueSnapshot(
+                    ShiftHandoverVocabulary.ParseCategory(x.Category),
+                    ShiftHandoverVocabulary.ParseSeverity(x.Severity),
+                    x.Description,
+                    x.ReferenceId))],
+                [.. (request.Attachments ?? []).Select(x => new ShiftHandoverAttachmentSnapshot(
+                    x.FileId,
+                    x.FileName,
+                    x.ContentType,
+                    x.SizeBytes))]));
+
         dbContext.ShiftHandovers.Add(handover);
         return new MesAcceptedResponse("Accepted", handover.HandoverNo, request.HandoverAtUtc);
     }
@@ -2568,23 +2901,38 @@ public sealed record AcceptShiftHandoverCommand(
     string OrganizationId,
     string EnvironmentId,
     string HandoverId,
-    DateTimeOffset AcceptedAtUtc) : ICommand<MesAcceptedResponse>;
+    DateTimeOffset AcceptedAtUtc,
+    string? IncomingUserId = null,
+    string? IncomingUserName = null) : ICommand<MesAcceptedResponse>;
 
 public sealed class AcceptShiftHandoverCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<AcceptShiftHandoverCommand, MesAcceptedResponse>
 {
     public async Task<MesAcceptedResponse> Handle(AcceptShiftHandoverCommand request, CancellationToken cancellationToken)
     {
+        // x.Id 是强类型 GuidId：谓词里 x.Id.Id.ToString() 无法被 EF 翻译（真机 500）。
+        // 先按业务单号命中；只有请求确实是 Guid 时才用先物化好的强类型 Id 直接比较（可翻译）。
         var handover = await dbContext.ShiftHandovers.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
-                (x.HandoverNo == request.HandoverId || x.Id.Id.ToString() == request.HandoverId),
-            cancellationToken)
+                x.HandoverNo == request.HandoverId,
+            cancellationToken);
+        if (handover is null && Guid.TryParse(request.HandoverId, out var handoverGuid))
+        {
+            var handoverId = new ShiftHandoverId(handoverGuid);
+            handover = await dbContext.ShiftHandovers.SingleOrDefaultAsync(
+                x => x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    x.Id == handoverId,
+                cancellationToken);
+        }
+
+        handover = handover
             ?? throw new KnownException($"未找到班次交接，HandoverId = {request.HandoverId}");
 
         try
         {
-            handover.Accept(request.AcceptedAtUtc);
+            handover.Accept(request.AcceptedAtUtc, request.IncomingUserId, request.IncomingUserName);
         }
         catch (InvalidOperationException exception)
         {

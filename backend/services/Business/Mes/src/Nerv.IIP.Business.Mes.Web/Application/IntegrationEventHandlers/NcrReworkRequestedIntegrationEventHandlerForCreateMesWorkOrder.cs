@@ -18,7 +18,8 @@ public sealed class NcrReworkRequestedIntegrationEventHandlerForCreateMesWorkOrd
     MesCodingService codingService,
     IIntegrationEventDeadLetterStore deadLetterStore,
     IMesMaterialRequirementSnapshotProvider materialSnapshotProvider,
-    IMesReworkWorkOrderScopeCoordinator scopeCoordinator)
+    IMesReworkWorkOrderScopeCoordinator scopeCoordinator,
+    TimeProvider timeProvider)
     : IIntegrationEventHandler<NcrReworkRequestedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-mes.quality-ncr-rework-requested";
@@ -225,7 +226,16 @@ public sealed class NcrReworkRequestedIntegrationEventHandlerForCreateMesWorkOrd
             throw new KnownException(MaterialReadinessGuards.MissingRequirementSnapshotReason);
         }
 
-        var reworkOperationTasks = reworkWorkOrder.Release(payload.RequestedAtUtc, reworkRouting);
+        // payload.RequestedAtUtc 来自 Quality 的跨服务载荷，属跨信任边界的输入：
+        // 它落在未来（对端时钟漂移或数据错误）时，该返工工序此后的每一条报工都会被
+        // Quality 判为「报工早于发布」进死信。发布是一件已经发生的事，故在这里夹到当前时刻。
+        // 返工工单与工序在这一刻才建出，不可能已有报工或完工，既有活动下界项传 null（#3117）。
+        var reworkOperationTasks = reworkWorkOrder.Release(
+            payload.RequestedAtUtc,
+            WorkOrderReleaseFactTime.NotLaterThan(
+                WorkOrderReleaseFactTime.UntrustedCandidate(payload.RequestedAtUtc, timeProvider.GetUtcNow()),
+                null),
+            reworkRouting);
         dbContext.OperationTasks.AddRange(reworkOperationTasks);
     }
 

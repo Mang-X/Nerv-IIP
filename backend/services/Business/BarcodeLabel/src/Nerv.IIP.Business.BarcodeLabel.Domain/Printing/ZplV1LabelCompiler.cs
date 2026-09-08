@@ -9,12 +9,16 @@ public sealed class CompiledLabelDocument
 {
     private readonly byte[] payload;
 
-    internal CompiledLabelDocument(ReadOnlySpan<byte> payload)
+    internal CompiledLabelDocument(ReadOnlySpan<byte> payload, int dpi, string capability)
     {
         this.payload = payload.ToArray();
+        Dpi = dpi;
+        Capability = capability;
     }
 
     public ReadOnlyMemory<byte> Payload => payload;
+    public int Dpi { get; }
+    public string Capability { get; }
 }
 
 public static class ZplV1LabelCompiler
@@ -28,7 +32,7 @@ public static class ZplV1LabelCompiler
         IReadOnlyCollection<LabelCompilationItem> items)
     {
         var boundDocuments = LabelTemplateBinder.BindBatch(template, schema, items);
-        var payloads = ImmutableArray.CreateBuilder<byte[]>(boundDocuments.Length);
+        var result = ImmutableArray.CreateBuilder<CompiledLabelDocument>(boundDocuments.Length);
         foreach (var document in boundDocuments)
         {
             var payload = CompileDocument(document);
@@ -37,17 +41,24 @@ public static class ZplV1LabelCompiler
                 throw StrictJson.Contract($"Compiled ZPL payload exceeds {MaximumPayloadBytes} UTF-8 bytes.");
             }
 
-            payloads.Add(payload);
-        }
-
-        var result = ImmutableArray.CreateBuilder<CompiledLabelDocument>(payloads.Count);
-        foreach (var payload in payloads)
-        {
-            result.Add(new CompiledLabelDocument(payload));
+            result.Add(new CompiledLabelDocument(
+                payload,
+                document.Template.Media.Dpi,
+                Capability(document.BarcodePayload)));
         }
 
         return result.MoveToImmutable();
     }
+
+    private static string Capability(LabelBarcodePayload payload) => payload switch
+    {
+        PlainLabelBarcodePayload { Type: PlainLabelBarcodeType.Code128 } => "code128",
+        PlainLabelBarcodePayload { Type: PlainLabelBarcodeType.Qr } => "qr",
+        PlainLabelBarcodePayload { Type: PlainLabelBarcodeType.DataMatrix } => "datamatrix",
+        Gs1LabelBarcodePayload { Type: Gs1LabelBarcodeType.Gs1128 } => "gs1-128",
+        Gs1LabelBarcodePayload { Type: Gs1LabelBarcodeType.DataMatrix } => "gs1-datamatrix",
+        _ => throw new InvalidOperationException("Unsupported label barcode payload."),
+    };
 
     private static byte[] CompileDocument(BoundLabelDocument document)
     {
@@ -113,11 +124,10 @@ public static class ZplV1LabelCompiler
         switch (barcodeType)
         {
             case PlainLabelBarcodeType.Code128:
-                EnsureCode128Data(value, "Code 128");
                 builder.Append("^BCN,")
                     .Append(field.Height.ToString(CultureInfo.InvariantCulture))
                     .Append(",Y,N,N,A^FD>:")
-                    .Append(value)
+                    .Append(EncodeForCode128(value))
                     .Append("^FS");
                 return;
             case PlainLabelBarcodeType.Qr:
@@ -160,11 +170,10 @@ public static class ZplV1LabelCompiler
     }
 
     private static string EncodeGs1ForCode128(Gs1BarcodeValue value, string separatorEscape) =>
-        EncodeGs1(value, separatorEscape, segment =>
-        {
-            EnsureCode128Data(segment, "GS1-128");
-            return segment;
-        });
+        EncodeGs1(value, separatorEscape, EncodeForCode128);
+
+    private static string EncodeForCode128(string value) =>
+        value.Replace(">", ">0", StringComparison.Ordinal);
 
     private static string EncodeGs1ForDataMatrix(Gs1BarcodeValue value, string separatorEscape) =>
         EncodeGs1(value, separatorEscape, EncodeForDataMatrix);
@@ -198,14 +207,6 @@ public static class ZplV1LabelCompiler
         }
 
         return builder.ToString();
-    }
-
-    private static void EnsureCode128Data(string value, string context)
-    {
-        if (value.Contains('>'))
-        {
-            throw StrictJson.Contract($"{context} data cannot contain the ZPL Code 128 control introducer '>'.");
-        }
     }
 
     private static void ValidateFixedDigits(string? value, int length, string name)

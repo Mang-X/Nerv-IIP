@@ -1,6 +1,12 @@
 import type { BusinessConsoleMesOperationTaskRow } from '@nerv-iip/api-client'
 import { operationTaskStatusLabel } from '@nerv-iip/business-core'
 import type { OperationActionContext } from '@/composables/useBusinessMes'
+import {
+  hasCompleteReworkAuthority,
+  isReworkWorkOrder,
+  parseMesWorkOrderAuthority,
+  type MesWorkOrderAuthority,
+} from '@/composables/mes/mesWorkOrderAuthority'
 
 export type OperationActionKind = 'start' | 'pause' | 'resume' | 'complete'
 
@@ -34,7 +40,7 @@ export const OPERATION_SUCCESS_TITLES: Record<OperationActionKind, string> = {
 export function actionsForOperationTask(
   task: BusinessConsoleMesOperationTaskRow | null,
 ): OperationActionKind[] {
-  if (!task?.allowedActions) return []
+  if (!task?.allowedActions || !hasCompleteReworkAuthority(task)) return []
   return task.allowedActions.flatMap((value) => {
     const normalized = value.trim().toLowerCase() as OperationActionKind
     return recognizedActions.has(normalized) ? [normalized] : []
@@ -63,7 +69,7 @@ export function taskDisplayReference(task: BusinessConsoleMesOperationTaskRow) {
 export function operationTaskRowTitle(task: BusinessConsoleMesOperationTaskRow) {
   const sequence = task.operationSequence === undefined ? '' : `工序 ${task.operationSequence}`
   const workOrder = workOrderLabel(task)
-  return sequence ? `${workOrder} · ${sequence}` : workOrder
+  return withReworkLabel(sequence ? `${workOrder} · ${sequence}` : workOrder, task)
 }
 
 export function operationTaskRowSubtitle(task: BusinessConsoleMesOperationTaskRow) {
@@ -71,7 +77,19 @@ export function operationTaskRowSubtitle(task: BusinessConsoleMesOperationTaskRo
   if (task.workCenterId) parts.push(`工作中心 ${task.workCenterId}`)
   if (task.operationCode) parts.push(`工序 ${task.operationCode}`)
   if (task.assignedUserName) parts.push(`受派 ${task.assignedUserName}`)
+  const source = reworkSourceLabel(task)
+  if (source) parts.push(source)
   return parts.join(' · ')
+}
+
+export function withReworkLabel(label: string, item: MesWorkOrderAuthority) {
+  return isReworkWorkOrder(item) && hasCompleteReworkAuthority(item) ? `返工 · ${label}` : label
+}
+
+export function reworkSourceLabel(item: MesWorkOrderAuthority) {
+  const authority = parseMesWorkOrderAuthority(item)
+  if (authority?.kind !== 'rework') return ''
+  return `来源 NCR ${authority.sourceNcrCode}（${authority.sourceNcrId}） · 源工单 ${authority.sourceWorkOrderId}`
 }
 
 export function formatOperationDate(value?: string | null) {

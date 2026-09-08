@@ -67,10 +67,6 @@ const STATUS_LABELS: Record<string, string> = {
   // `quality` 的别名是 inspection / quality-inspection，语义是「已收但未放行、等质检结论」，
   // 工厂里叫「待检库存」，所以用「待检」而不是「质检中」。
   quality: '待检',
-  // 注意：`quarantine` 不在库存那四个规范值里，它来自质量域 —— Quality 的
-  // StockReleaseDimension 用它表示「进了质量冻结库位、等判定」（WorldHistorySeedService）。
-  // 所以留着词条，但别理解成库存质量状态。
-  quarantine: '隔离',
   restricted: '受限使用',
   queued: '排队中',
   ready: '可开工',
@@ -153,7 +149,6 @@ const TONE_BY_STATUS: Record<StatusTone, string[]> = {
     'pendingconfirmation',
     'planned',
     'quality',
-    'quarantine',
     'queued',
     'restricted',
     'requested',

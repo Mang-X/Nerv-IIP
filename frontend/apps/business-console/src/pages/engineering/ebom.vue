@@ -160,7 +160,7 @@ const ebomSegments = computed(() => {
   return pagedBreakdownSegments(ebomsTotal.value, segments)
 })
 
-const listErrorMessage = computed(() => formatError(ebomsError.value))
+const listErrorMessage = computed(() => inlineErrorMessage(ebomsError.value))
 
 const columns: NvDataTableColumn<BusinessConsoleEngineeringBomItem>[] = [
   { key: 'bomCode', header: 'BOM 编号', cellClass: 'font-medium' },
@@ -329,10 +329,6 @@ async function openView(row: BusinessConsoleEngineeringBomItem) {
   } finally {
     detailPending.value = false
   }
-}
-
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 function uomLabel(code?: string | null) {
   if (!code) return '—'

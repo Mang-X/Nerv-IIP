@@ -36,8 +36,14 @@ public sealed class WorkCenterMachineOverheadReconciliationApplicationTests
         Assert.Equal(600m, item.AppliedFixedAmount);
         Assert.Equal(200m, item.AppliedVariableAmount);
         Assert.Equal(800m, item.AppliedTotalAmount);
+        Assert.Equal(400m, item.UnderOverAppliedFixedAmount);
         Assert.Equal(400m, item.UnallocatedFixedOverheadAmount);
         Assert.Equal(700m, item.UnderOverAppliedTotalAmount);
+        Assert.Equal("open", response.AccountingPeriodStatus);
+        Assert.Equal(MachineOverheadReadStatus.Available, response.ReconciliationStatus);
+        Assert.Null(response.ReconciliationUnavailableReason);
+        Assert.Equal(MachineOverheadReadStatus.Available, item.ReconciliationStatus);
+        Assert.Null(item.UnavailableReason);
     }
 
     [Fact]
@@ -67,6 +73,10 @@ public sealed class WorkCenterMachineOverheadReconciliationApplicationTests
         await close.Handle(command, CancellationToken.None);
         await db.SaveChangesAsync();
         Assert.Equal(AccountingPeriodStatus.Closed, (await db.AccountingPeriods.SingleAsync()).Status);
+        var closedRead = await new ListWorkCenterMachineOverheadReconciliationsQueryHandler(db).Handle(
+            new("org-a", "env-a", "2026-08", "WC-01"), CancellationToken.None);
+        Assert.Equal("closed", closedRead.AccountingPeriodStatus);
+        Assert.Equal(MachineOverheadReadStatus.Available, closedRead.ReconciliationStatus);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => close.Handle(command, CancellationToken.None));
         (await db.AccountingPeriods.SingleAsync()).Reopen("user:controller", "approved adjustment window");
@@ -74,6 +84,37 @@ public sealed class WorkCenterMachineOverheadReconciliationApplicationTests
         await close.Handle(command with { Reason = "re-close after approved window" }, CancellationToken.None);
         await db.SaveChangesAsync();
         Assert.Equal(AccountingPeriodStatus.Closed, (await db.AccountingPeriods.SingleAsync()).Status);
+    }
+
+    [Fact]
+    public async Task Period_read_distinguishes_unreconciled_not_applicable_and_missing_period()
+    {
+        await using var db = CreateDb();
+        AddPeriodAndRate(db, "org-a", "env-a", "WC-01", "2026-08");
+        db.WorkCenterMachineOverheadRates.Add(WorkCenterMachineOverheadRate.DefineNotApplicable(
+            "org-a", "env-a", "WC-MANUAL", "2026-08", "CNY", 1,
+            "system:test", "manual work center", new(2026, 7, 31, 16, 0, 0, TimeSpan.Zero)));
+        await db.SaveChangesAsync();
+        var handler = new ListWorkCenterMachineOverheadReconciliationsQueryHandler(db);
+
+        var unreconciled = await handler.Handle(
+            new("org-a", "env-a", "2026-08", "WC-01"), CancellationToken.None);
+        Assert.Equal("open", unreconciled.AccountingPeriodStatus);
+        Assert.Equal(MachineOverheadReadStatus.Unavailable, unreconciled.ReconciliationStatus);
+        Assert.Equal("reconciliation_not_recorded", unreconciled.ReconciliationUnavailableReason);
+        Assert.Empty(unreconciled.Items);
+
+        var notApplicable = await handler.Handle(
+            new("org-a", "env-a", "2026-08", "WC-MANUAL"), CancellationToken.None);
+        Assert.Equal(MachineOverheadReadStatus.NotApplicable, notApplicable.ReconciliationStatus);
+        Assert.Equal("machine_overhead_not_applicable", notApplicable.ReconciliationUnavailableReason);
+        Assert.Empty(notApplicable.Items);
+
+        var missing = await handler.Handle(
+            new("org-a", "env-a", "2099-01", "WC-01"), CancellationToken.None);
+        Assert.Null(missing.AccountingPeriodStatus);
+        Assert.Equal(MachineOverheadReadStatus.Unavailable, missing.ReconciliationStatus);
+        Assert.Equal("accounting_period_not_found", missing.ReconciliationUnavailableReason);
     }
 
     [Fact]
@@ -89,6 +130,12 @@ public sealed class WorkCenterMachineOverheadReconciliationApplicationTests
         var state = await db.OperationMachineOverheadSettlementStates.SingleAsync();
         AddActiveSettlement(db, "org-a", "env-a", "WC-01", "2026-08", "OP-A", 2, 20, state);
         await db.SaveChangesAsync();
+        var readHandler = new ListWorkCenterMachineOverheadReconciliationsQueryHandler(db);
+        var changedSnapshotRead = await readHandler.Handle(
+            new("org-a", "env-a", "2026-08", "WC-01"), CancellationToken.None);
+        Assert.Equal(MachineOverheadReadStatus.Unavailable, changedSnapshotRead.ReconciliationStatus);
+        Assert.Equal("active_settlement_changed", changedSnapshotRead.ReconciliationUnavailableReason);
+        Assert.Equal("active_settlement_changed", Assert.Single(changedSnapshotRead.Items).UnavailableReason);
         var close = new CloseAccountingPeriodCommandHandler(db, new PostgreSqlErpAdvisoryLockAllocator(db));
         await Assert.ThrowsAsync<KnownException>(() => close.Handle(
             new("org-a", "env-a", "2026-08", "user:controller", "close"), CancellationToken.None));
@@ -99,6 +146,10 @@ public sealed class WorkCenterMachineOverheadReconciliationApplicationTests
             "CNY", 2, "user:controller", "approved rate correction",
             new DateTimeOffset(2026, 8, 31, 13, 0, 0, TimeSpan.Zero)));
         await db.SaveChangesAsync();
+        var changedRateRead = await readHandler.Handle(
+            new("org-a", "env-a", "2026-08", "WC-01"), CancellationToken.None);
+        Assert.Equal(MachineOverheadReadStatus.Unavailable, changedRateRead.ReconciliationStatus);
+        Assert.Equal("machine_overhead_rate_changed", changedRateRead.ReconciliationUnavailableReason);
         await Assert.ThrowsAsync<KnownException>(() => close.Handle(
             new("org-a", "env-a", "2026-08", "user:controller", "close"), CancellationToken.None));
     }
@@ -148,6 +199,44 @@ public sealed class WorkCenterMachineOverheadReconciliationApplicationTests
     }
 
     [Fact]
+    public async Task Reconciliation_freezes_actual_pool_to_six_decimal_to_even_before_persistence()
+    {
+        await using var db = CreateDb();
+        AddPeriodAndRate(db, "org-a", "env-a", "WC-01", "2026-08");
+        await db.SaveChangesAsync();
+
+        await Reconcile(db, 1.0000005m, 2.0000015m);
+        await db.SaveChangesAsync();
+
+        var reconciliation = await db.WorkCenterMachineOverheadReconciliations.SingleAsync();
+        Assert.Equal(1.000000m, reconciliation.ActualFixedOverheadAmount);
+        Assert.Equal(2.000002m, reconciliation.ActualVariableOverheadAmount);
+        Assert.Equal(3.000002m, reconciliation.ActualTotalOverheadAmount);
+        Assert.Equal(3.000002m, reconciliation.UnderOverAppliedTotalAmount);
+    }
+
+    [Fact]
+    public async Task Period_read_rejects_reconciliation_currency_that_differs_from_latest_rate()
+    {
+        await using var db = CreateDb();
+        AddPeriodAndRate(db, "org-a", "env-a", "WC-01", "2026-08");
+        await db.SaveChangesAsync();
+        var rate = await db.WorkCenterMachineOverheadRates.SingleAsync();
+        db.WorkCenterMachineOverheadReconciliations.Add(WorkCenterMachineOverheadReconciliation.Record(
+            "org-a", "env-a", "WC-01", "2026-08", rate.Id, rate.Revision, "USD",
+            0m, 0m, 0, 0m, 0m, 0m, 0, AbnormalDowntimeDisposition.None, 1,
+            "system:test", "ledger:test", "currency mutation", DateTimeOffset.UtcNow));
+        await db.SaveChangesAsync();
+
+        var response = await new ListWorkCenterMachineOverheadReconciliationsQueryHandler(db).Handle(
+            new("org-a", "env-a", "2026-08", "WC-01"), CancellationToken.None);
+
+        Assert.Equal(MachineOverheadReadStatus.Unavailable, response.ReconciliationStatus);
+        Assert.Equal("currency_conflict", response.ReconciliationUnavailableReason);
+        Assert.Equal("currency_conflict", Assert.Single(response.Items).UnavailableReason);
+    }
+
+    [Fact]
     public async Task Reconciliation_history_has_bounded_stable_pagination()
     {
         await using var db = CreateDb();
@@ -165,7 +254,10 @@ public sealed class WorkCenterMachineOverheadReconciliationApplicationTests
         Assert.Equal(3, response.TotalCount);
         Assert.Equal(2, response.PageNumber);
         Assert.Equal(1, response.PageSize);
-        Assert.Equal(2, Assert.Single(response.Items).Revision);
+        var historicalItem = Assert.Single(response.Items);
+        Assert.Equal(2, historicalItem.Revision);
+        Assert.Equal(MachineOverheadReadStatus.Unavailable, historicalItem.ReconciliationStatus);
+        Assert.Equal("superseded_reconciliation", historicalItem.UnavailableReason);
     }
 
     private static ApplicationDbContext CreateDb()

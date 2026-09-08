@@ -1113,6 +1113,10 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ConsumerName", "EventId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_processed_integration_events_consumer_event_id");
+
                     b.HasIndex("ConsumerName", "IdempotencyKey")
                         .IsUnique()
                         .HasDatabaseName("ux_processed_integration_events_consumer_idempotency_key");

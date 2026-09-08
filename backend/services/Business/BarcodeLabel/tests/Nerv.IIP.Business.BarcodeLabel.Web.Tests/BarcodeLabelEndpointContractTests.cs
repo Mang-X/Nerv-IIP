@@ -19,7 +19,7 @@ public sealed class BarcodeLabelEndpointContractTests
     {
         var contracts = BarcodeLabelEndpointContracts.All.ToArray();
 
-        Assert.Equal(13, contracts.Length);
+        Assert.Equal(16, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/barcodes/rules"
             && x.PermissionCode == BarcodeLabelPermissionCodes.TemplatesManage
@@ -50,13 +50,28 @@ public sealed class BarcodeLabelEndpointContractTests
             && x.PermissionCode == BarcodeLabelPermissionCodes.Print
             && x.OperationId == "dispatchBusinessBarcodePrintBatch");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/business/internal/v1/barcodes/print-batches/{printBatchId}/dispatch"
+            && x.PermissionCode == BarcodeLabelPermissionCodes.Print
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "dispatchScopedBusinessBarcodePrintBatch");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/barcodes/print-batches/{printBatchId}/items/{sequenceNo}/reprint"
             && x.PermissionCode == BarcodeLabelPermissionCodes.Print
             && x.OperationId == "reprintBusinessBarcodeLabel");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/business/internal/v1/barcodes/print-batches/{printBatchId}/items/{sequenceNo}/reprint"
+            && x.PermissionCode == BarcodeLabelPermissionCodes.Print
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "reprintScopedBusinessBarcodeLabel");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/barcodes/print-batches/{printBatchId}/items/{sequenceNo}/void"
             && x.PermissionCode == BarcodeLabelPermissionCodes.Print
             && x.OperationId == "voidBusinessBarcodeLabel");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/business/internal/v1/barcodes/print-batches/{printBatchId}/items/{sequenceNo}/void"
+            && x.PermissionCode == BarcodeLabelPermissionCodes.Print
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "voidScopedBusinessBarcodeLabel");
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/barcodes/print-batches"
             && x.PermissionCode == BarcodeLabelPermissionCodes.Print
@@ -91,8 +106,11 @@ public sealed class BarcodeLabelEndpointContractTests
     [InlineData(typeof(ListLabelTemplatesEndpoint))]
     [InlineData(typeof(CreateLabelPrintBatchEndpoint))]
     [InlineData(typeof(DispatchLabelPrintBatchEndpoint))]
+    [InlineData(typeof(ScopedDispatchLabelPrintBatchEndpoint))]
     [InlineData(typeof(ReprintLabelEndpoint))]
+    [InlineData(typeof(ScopedReprintLabelEndpoint))]
     [InlineData(typeof(VoidLabelEndpoint))]
+    [InlineData(typeof(ScopedVoidLabelEndpoint))]
     [InlineData(typeof(ListLabelPrintBatchesEndpoint))]
     [InlineData(typeof(GetLabelPrintBatchEndpoint))]
     [InlineData(typeof(RecordScanEndpoint))]

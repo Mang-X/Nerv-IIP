@@ -3,6 +3,28 @@ import { expect, type Page, type Route } from '@playwright/test'
 export const STORAGE_KEY = 'nerv-iip.business-pda.auth'
 export const CREATED_MAINTENANCE_WORK_ORDER_ID = '33333333-3333-3333-3333-333333333333'
 
+/**
+ * 停机原因目录（`downtime-reason`）的模拟条目。码保留混合大小写：Maintenance 只对
+ * `ReasonCode` 做 trim（`MaintenanceText.Required`），不改大小写，所以这是后端造得出的
+ * 真实形状，可以承担"原样提交"的断言。
+ */
+export const DOWNTIME_REASON_DIRECTORY = [
+  {
+    id: 'reason-1',
+    displayName: '液压泄漏',
+    code: 'Hyd-Leak_01',
+    sourceService: 'maintenance',
+    context: { reasonCategory: 'equipment', lossCategory: 'availability' },
+  },
+  {
+    id: 'reason-2',
+    displayName: '主轴异响',
+    code: 'Spindle-Noise',
+    sourceService: 'maintenance',
+    context: { reasonCategory: 'equipment', lossCategory: 'availability' },
+  },
+]
+
 export const principal = {
   principalId: 'principal-1',
   principalType: 'User',
@@ -318,6 +340,7 @@ const countExecutions = [
 export const authorizedWorkScopes = [
   { kind: 'work-center', id: 'WC-A', displayName: '精加工一线' },
   { kind: 'work-center', id: 'WC-B', displayName: '精加工二线' },
+  { kind: 'workshop', id: 'WS-A', displayName: '机加工车间' },
 ]
 
 /**
@@ -390,7 +413,7 @@ const mesManyOperationTasks = Array.from({ length: 501 }, (_, index) => ({
   operationTaskNo: null,
   status: 'Queued',
   operationSequence: index + 1,
-  workCenterId: 'WC-MANY',
+  workCenterId: 'WC-A',
   qualityStatus: 'Pending',
   allowedActions: ['start'],
   blockReasons: [],
@@ -780,23 +803,49 @@ export async function routeBusinessConsoleApi(route: Route) {
     )
   }
 
-  // 报修：维修工单 list / create
+  // 报修：停机原因目录（Maintenance 权威 downtime-reason 词表，经网关 searchable directory）。
+  // 只回本 principal organization/environment 的码——跨租户码由网关过滤掉，模拟层同样不给。
+  if (pathname === '/api/business-console/v1/directories/downtime-reason') {
+    const keyword = requestUrl.searchParams.get('keyword')?.trim() ?? ''
+    const items = DOWNTIME_REASON_DIRECTORY.filter(
+      (item) => !keyword || item.displayName.includes(keyword) || item.code.includes(keyword),
+    )
+    return fulfillJson(
+      route,
+      envelope({
+        directoryType: 'downtime-reason',
+        status: 'available',
+        items,
+        total: items.length,
+        sourceService: 'maintenance',
+        authorityDirectoryType: 'downtime-reason',
+        rankingMode: 'default',
+        rankingStatus: 'applied',
+        ordering: 'default',
+        orderingExplanation: '按目录默认顺序',
+      }),
+    )
+  }
+
+  // 报修：v2 建单（#2964 迁移后 PDA 生产路径唯一的创建入口）
+  if (pathname === '/api/business-console/v2/maintenance/work-orders' && method === 'POST') {
+    const body = route.request().postDataJSON() as { idempotencyKey: string }
+    return fulfillJson(
+      route,
+      envelope({
+        workOrderId: CREATED_MAINTENANCE_WORK_ORDER_ID,
+        operationReceipt: confirmedOperation(
+          'maintenance.work-order.create',
+          CREATED_MAINTENANCE_WORK_ORDER_ID,
+          body.idempotencyKey,
+          'open',
+        ),
+      }),
+    )
+  }
+
+  // 报修：维修工单 list（v1 读面不变）
   if (pathname === '/api/business-console/v1/maintenance/work-orders') {
-    if (method === 'POST') {
-      const body = route.request().postDataJSON() as { idempotencyKey: string }
-      return fulfillJson(
-        route,
-        envelope({
-          workOrderId: CREATED_MAINTENANCE_WORK_ORDER_ID,
-          operationReceipt: confirmedOperation(
-            'maintenance.work-order.create',
-            CREATED_MAINTENANCE_WORK_ORDER_ID,
-            body.idempotencyKey,
-            'open',
-          ),
-        }),
-      )
-    }
     return fulfillJson(
       route,
       envelope({
@@ -967,7 +1016,13 @@ export async function routeBusinessConsoleApi(route: Route) {
       : workOrderScopedItems
     const skip = Number(requestUrl.searchParams.get('skip') ?? 0)
     const take = Number(requestUrl.searchParams.get('take') ?? 100)
-    const items = scopedItems.slice(skip, skip + take)
+    const items = scopedItems
+      .slice(skip, skip + take)
+      .map((task) =>
+        pathname === `${base}/reportable-operation-tasks`
+          ? { ...task, allowedActions: ['report'] }
+          : task,
+      )
     return fulfillJson(route, envelope({ items, total: scopedItems.length }))
   }
   if (pathname === `${base}/work-orders`) {
@@ -1009,6 +1064,29 @@ export async function routeBusinessConsoleApi(route: Route) {
       )
     }
     return fulfillJson(route, envelope({ items: [], total: 0 }))
+  }
+  const productionReportDetailMatch = pathname.match(
+    /^\/api\/business-console\/v1\/mes\/production-reports\/([^/]+)$/,
+  )
+  if (method === 'GET' && productionReportDetailMatch) {
+    const reportNo = decodeURIComponent(productionReportDetailMatch[1])
+    return fulfillJson(
+      route,
+      envelope({
+        report: {
+          productionReportId: '019f-e2e-production-report',
+          reportNo,
+          workOrderId: 'WO-1',
+          operationTaskId: 'OP-1',
+          goodQuantity: 5,
+          scrapQuantity: 0,
+          reworkQuantity: 0,
+          reportedAtUtc: nowUtc,
+        },
+        consumedMaterialLots: [],
+        laborAllocations: [],
+      }),
+    )
   }
   if (pathname === `${base}/telemetry-production-report-candidates`) {
     return fulfillJson(route, envelope({ items: [], total: 0 }))

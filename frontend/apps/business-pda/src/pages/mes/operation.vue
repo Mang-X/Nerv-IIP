@@ -70,6 +70,7 @@ const {
   pauseTask,
   resumeTask,
   completeTask,
+  claimTask,
   actionPending,
   operationListScope,
   operationListContextIdentity,
@@ -213,9 +214,21 @@ const confirmingComplete = ref(false)
 const result = ref<ResultState | null>(null)
 const openingSopFileId = ref<string | null>(null)
 const sopFileError = ref('')
-const toast = reactive({ show: false, message: '', type: 'error' as const })
+const toast = reactive<{ show: boolean; message: string; type: 'success' | 'error' }>({
+  show: false,
+  message: '',
+  type: 'error',
+})
 
 const availableActions = computed(() => actionsFor(selected.value))
+const canClaimSelectedTask = computed(() => {
+  const task = selected.value
+  return (
+    operationListScope.value?.kind === 'work-center' &&
+    task?.status?.trim().toLowerCase() === 'queued' &&
+    !task.assignedUserId?.trim()
+  )
+})
 
 const scanActive = computed(() => selected.value === null && result.value === null)
 const scanGate = useMesScanGate()
@@ -529,6 +542,36 @@ async function runAction(action: ActionKind) {
   }
 }
 
+async function claimSelectedTask() {
+  if (!operationScopeReady.value) {
+    toast.type = 'error'
+    toast.message = operationScopeMessage.value
+    toast.show = true
+    return
+  }
+  const task = selected.value
+  if (!task?.workOrderId || !task.operationTaskId || !canClaimSelectedTask.value) return
+  const context = captureOperationActionContext('claim', task.workOrderId, task.operationTaskId)
+  try {
+    const claimed = await claimTask(task.workOrderId, task.operationTaskId, {
+      idempotencyKey: makeIdempotencyKey(),
+      context,
+    })
+    if (!isOperationActionContextCurrent(context)) return
+    selected.value = claimed
+    await refresh()
+    closeSheet()
+    toast.type = 'success'
+    toast.message = '任务领取请求已受理'
+    toast.show = true
+  } catch (error) {
+    if (!isOperationActionContextCurrent(context)) return
+    toast.type = 'error'
+    toast.message = describeRequestError(error, '领取任务失败，请刷新后重试。').message
+    toast.show = true
+  }
+}
+
 async function retry() {
   if (!operationScopeReady.value) {
     toast.message = operationScopeMessage.value
@@ -675,6 +718,7 @@ async function onScanAccepted(value: MesScanAccepted) {
       :opening-sop-file-id="openingSopFileId"
       :sop-file-error="sopFileError"
       :operation-result-unknown="operationResultUnknown"
+      :can-claim="canClaimSelectedTask"
       @update:open="sheetOpen = $event"
       @action="runAction"
       @retry="retry"
@@ -683,6 +727,7 @@ async function onScanAccepted(value: MesScanAccepted) {
       @cancel-complete="confirmingComplete = false"
       @refresh-sops="() => refreshSops()"
       @open-sop="openSopFile"
+      @claim="claimSelectedTask"
     >
       <template #context-scan>
         <MesScanPrevalidation

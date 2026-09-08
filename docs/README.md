@@ -42,6 +42,15 @@
 - 阶段与状态快照：[`status/archive/README.md`](status/archive/README.md)。
 - `architecture/implementation-readiness.md`：旧链接兼容入口，不再承载状态或裁决。
 
+## 迁移兼容路径
+
+M2 后，`architecture/` 根目录的旧平铺文件名只承担显式兼容导航；Current Architecture 从 [`architecture/README.md`](architecture/README.md) 的主题目录进入。使用旧 URL 时遵循以下规则：
+
+1. 先跟随 shim 到最终 canonical owner，再引用 Product / Architecture / Governance / Reference / Runbook / Status / Report 的当前路径；新文档和新 Agent 指令不得把 shim 当权威来源。
+2. shim 只做兼容，不追加新正文、项目状态、运行命令、机器事实或实现总账。
+3. 冻结 ADR、Report、Status archive 与 `superpowers/` 允许保留历史 URL；不为“清零字符串”批量改写历史正文。
+4. 物理删除旧路径前，必须先清理活跃消费者和机器依赖，再通过 Docs/链接及实际受影响门禁；该删除属于后续兼容清理，不在普通文档修改中顺手执行。
+
 ## 权威来源纪律
 
 1. 当前命令、版本、目录、生成入口和实现行为优先以代码、配置、脚本、帮助输出和测试为准。

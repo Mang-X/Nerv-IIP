@@ -7,7 +7,7 @@ public partial record InspectionTaskId : IGuidStronglyTypedId;
 
 public sealed class InspectionTask : Entity<InspectionTaskId>, IAggregateRoot
 {
-    private static readonly HashSet<string> SourceTypes = ["receiving", "operation", "final"];
+    private static readonly HashSet<string> SourceTypes = ["receiving", "operation", "final", "first-article"];
     private static readonly HashSet<string> SourceServices = ["wms", "erp", "mes"];
 
     private InspectionTask()
@@ -289,8 +289,7 @@ public sealed class InspectionTask : Entity<InspectionTaskId>, IAggregateRoot
     }
 
     private static bool IsPeriodicTrigger(string triggerIdempotencyKey) =>
-        triggerIdempotencyKey.StartsWith("quality:periodic-time:", StringComparison.Ordinal)
-        || triggerIdempotencyKey.StartsWith("quality:periodic-quantity:", StringComparison.Ordinal);
+        PeriodicInspectionSourceLine.IsPeriodicTriggerKey(triggerIdempotencyKey);
 }
 
 public sealed class InspectionTaskAlreadyClaimedException()

@@ -55,6 +55,30 @@ public sealed class MaintenanceAggregateTests
     }
 
     [Fact]
+    public void Cancelling_a_work_order_releases_the_registered_asset_occupation()
+    {
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001");
+        workOrder.MarkAssetUnavailable(DateTimeOffset.UtcNow, "planned maintenance");
+
+        workOrder.Cancel();
+
+        Assert.Equal(MaintenanceWorkOrderStatus.Cancelled, workOrder.Status);
+        var restored = Assert.Single(workOrder.GetDomainEvents().OfType<AssetRestoredDomainEvent>());
+        Assert.Equal(workOrder.CancelledAtUtc, restored.RestoredAtUtc);
+    }
+
+    [Fact]
+    public void Cancelling_a_work_order_does_not_release_when_no_asset_occupation_was_registered()
+    {
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001");
+
+        workOrder.Cancel();
+
+        Assert.Equal(MaintenanceWorkOrderStatus.Cancelled, workOrder.Status);
+        Assert.DoesNotContain(workOrder.GetDomainEvents(), x => x is AssetRestoredDomainEvent);
+    }
+
+    [Fact]
     public void Repair_start_cannot_be_before_work_order_opened_time()
     {
         var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001");

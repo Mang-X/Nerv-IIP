@@ -85,8 +85,11 @@ public sealed class LeaderDemoScaleSeedService(
                     LeaderDemoScaleSpec.Priority(index),
                     dueUtc,
                     "pcs");
+                // earliestStartUtc（当日零点）是排产用的最早可开工时刻；发布事实的时刻另取。
+                // 工序在这一刻才建出，无既有活动（报工或完工）。种子的 nowUtc 恒不早于当日零点，无需再夹（#3117）。
                 var operations = workOrder.Release(
                     earliestStartUtc,
+                    WorkOrderReleaseFactTime.NotLaterThan(earliestStartUtc, null),
                     LeaderDemoScaleSpec.Stages
                         .Select(stage => new RoutingStepSnapshot(
                             LeaderDemoScaleSpec.OperationTaskId(index, stage),

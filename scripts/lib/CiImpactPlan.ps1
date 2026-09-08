@@ -199,6 +199,30 @@ function Get-NervCiImpactPlan {
             continue
         }
 
+        # #3145: a restore manifest is the hash ledger that scripts/verify-restore-lock-contract.ps1
+        # reads, and the checker runs in the 'Script Governance' job, whose `if` is
+        # `scripts != false || backend != false`. Left to the generic 'docs/' rule below, a PR that
+        # edits only a manifest routes to 'docs' alone, the job is skipped, and the one gate that
+        # reads the file never runs on the change it exists to catch — the shape this repository has
+        # already been caught by in #3003, #3135 and #3140. It routes to 'docs' as well because it is
+        # still a Reference document. 'backend' is deliberately not selected: the checker reads files
+        # only, and pulling in the 45-minute backend shards would buy nothing.
+        #
+        # #3157: this was a single hardcoded path when only BusinessGateway had a manifest, and the
+        # comment above already named the #3003/#3135/#3140 shape while the rule underneath it was a
+        # whitelist of one — so adding PlatformGateway's manifest would have routed to 'docs' alone
+        # and reproduced the very defect the comment warns about. The rule is now DERIVED from the
+        # same 'docs/reference/api/*-restore.manifest.json' pattern the checker discovers manifests
+        # by, so the routing set and the checked set cannot drift apart: a manifest that the checker
+        # picks up is a manifest this router selects 'scripts' for, by construction rather than by
+        # someone remembering to edit two files. Widening the whitelist from one entry to two would
+        # have left the same trap armed for the third manifest.
+        if ($path.StartsWith('docs/reference/api/', [StringComparison]::Ordinal) -and
+            $path.EndsWith('-restore.manifest.json', [StringComparison]::Ordinal)) {
+            foreach ($flag in @('docs', 'scripts')) { Select-Impact -Name $flag -Reason $reason }
+            continue
+        }
+
         # Agent-harness configuration only reaches local agent runtimes: the skill payload
         # directories these install into are gitignored, and no CI job reads them. They
         # route to 'docs' like the AGENTS.md guidance they sit beside. 'skills/' is the

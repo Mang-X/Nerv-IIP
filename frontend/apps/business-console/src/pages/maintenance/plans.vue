@@ -111,7 +111,7 @@ const generateForm = reactive({
 })
 const generateError = shallowRef('')
 
-const listErrorMessage = computed(() => formatError(plansError.value))
+const listErrorMessage = computed(() => inlineErrorMessage(plansError.value))
 // 服务端错误走 toast；这里只留点提交后的字段级校验汇总。
 const generateErrorMessage = computed(() => generateError.value)
 // 发起人由当前登录账号带出，不让用户手打自己的名字。
@@ -255,10 +255,6 @@ async function submitGenerate() {
   } catch (error) {
     notifyOperationFailure('生成到期工单失败', error, '生成到期工单失败，请稍后重试。')
   }
-}
-
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 </script>
 

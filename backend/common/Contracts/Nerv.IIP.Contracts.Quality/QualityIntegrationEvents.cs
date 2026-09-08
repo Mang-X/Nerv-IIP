@@ -38,10 +38,78 @@ public static class QualityIntegrationEventSources
     public const string BusinessMes = "business-mes";
 }
 
+/// <summary>
+/// 检验来源环节词表。取值域由 <c>InspectionRecord.SourceTypes</c> 锁死，而
+/// <c>InspectionResultIntegrationEvent</c> 的 <c>payload.SourceType</c> 直接取自
+/// <c>record.SourceType</c>，所以这里就是跨服务消费者按来源环节分流时的**唯一**取值来源；
+/// 消费侧不得再写裸字面量（#2976）。
+///
+/// <c>Wms</c> 是来源**服务**取值，不是来源环节，历史上落在本类里；WMS/ERP 两个消费者用它匹配
+/// <c>payload.SourceService</c>。保留原位不动，但由 <c>QualityInspectionSourceTypeContractTests</c>
+/// 明写为「服务轴遗留项」，避免后来人把它当成第七个来源环节。
+/// </summary>
 public static class QualityInspectionSourceTypes
 {
     public const string Wms = "wms";
     public const string Receiving = "receiving";
+    public const string Operation = "operation";
+    public const string Final = "final";
+    public const string FirstArticle = "first-article";
+    public const string Maintenance = "maintenance";
+    public const string CustomerReturn = "customer-return";
+
+    /// <summary>六个来源环节取值（不含服务轴的 <see cref="Wms"/>）。</summary>
+    public static readonly IReadOnlyList<string> All =
+    [
+        Receiving,
+        Operation,
+        Final,
+        FirstArticle,
+        Maintenance,
+        CustomerReturn,
+    ];
+}
+
+/// <summary>
+/// 检验来源**服务**词表。取值域由 <c>InspectionRecord.SourceServices</c> 锁死，而
+/// <c>InspectionResultIntegrationEvent</c> 的 <c>payload.SourceService</c> 直接取自
+/// <c>record.SourceService</c>，所以这里就是跨服务消费者按来源服务分流时的**唯一**取值来源
+/// （#3191，姿势同 #2976 对来源环节轴做过的那次）。
+///
+/// 注意与 <see cref="QualityIntegrationEventSources"/> 的区别：后者是**事件信封**来源面
+/// （<c>"business-quality"</c> / <c>"business-mes"</c>），本类是 **payload 来源面**，两个轴取值不相交。
+/// 拿信封面常量去比 payload 面取值必然恒不相等——#3191 的缺陷就是这么来的。
+/// </summary>
+public static class QualityInspectionSourceServices
+{
+    public const string Inventory = "inventory";
+    public const string Wms = "wms";
+    public const string Mes = "mes";
+    public const string Erp = "erp";
+    public const string Maintenance = "maintenance";
+    public const string PurchaseReceipt = "purchase-receipt";
+    public const string MesOperation = "mes-operation";
+    public const string CustomerReturn = "customer-return";
+
+    /// <summary>八个来源服务取值。</summary>
+    public static readonly IReadOnlyList<string> All =
+    [
+        Inventory,
+        Wms,
+        Mes,
+        Erp,
+        Maintenance,
+        PurchaseReceipt,
+        MesOperation,
+        CustomerReturn,
+    ];
+
+    /// <summary>
+    /// 检验对象归属 MES 工单/工序的两个取值。MES 与 Scheduling 的入站门都引这一份，
+    /// 不再各写一份字面量。<c>QualityIntegrationEventSources.BusinessMes</c> 是历史入站别名，
+    /// 不属于本词表，只在 MES 入站侧额外接受（#1370 ③ 批次 D）。
+    /// </summary>
+    public static readonly IReadOnlyList<string> MesOwned = [Mes, MesOperation];
 }
 
 public static class QualityStockReleaseTargetStatuses
@@ -317,7 +385,16 @@ public sealed record InspectionResultPayload(
     string? LocationCode = null,
     string? OwnerType = null,
     string? OwnerId = null,
-    string? UomCode = null);
+    string? UomCode = null,
+    /// <summary>
+    /// 检验对象所属 MES 工单公开 id；非 MES 归属的检验（收货检、终检、维修检、退货检）为 null。
+    /// 由 Quality 侧解出并结构化发布，消费者不得再自行拆 <see cref="SourceDocumentId"/> 复合串（#3191）。
+    /// </summary>
+    string? WorkOrderId = null,
+    /// <summary>
+    /// 检验对象所属 MES 工序任务公开 id；来源为工单级检验或非 MES 归属检验时为 null。
+    /// </summary>
+    string? OperationTaskId = null);
 
 public sealed record StockReleaseDimensionPayload(
     string UomCode,
