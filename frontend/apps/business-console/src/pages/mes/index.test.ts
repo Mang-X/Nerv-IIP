@@ -178,7 +178,7 @@ describe('MES index page', () => {
     for (const claim of SAFETY_CLAIMS) {
       expect(text).not.toContain(claim)
     }
-    expect(text).toContain('现场数据获取失败，无法判断当前是否存在阻塞')
+    expect(text).toContain('数据加载失败')
     expect(text).toContain('重试')
     expect(text).toContain('无法判断现场是否存在阻塞')
   })
