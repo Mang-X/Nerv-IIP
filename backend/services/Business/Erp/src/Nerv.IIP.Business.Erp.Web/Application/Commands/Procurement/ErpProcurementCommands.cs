@@ -801,7 +801,8 @@ public sealed record RecordPurchaseReceiptCommand(
     string PurchaseOrderNo,
     IReadOnlyCollection<PurchaseReceiptCommandLine> Lines,
     string? IdempotencyKey = null,
-    decimal ExchangeRate = 1m) : ICommand<PurchaseReceiptId>;
+    decimal ExchangeRate = 1m,
+    PurchaseReceiptInventoryPostingRoute InventoryPostingRoute = PurchaseReceiptInventoryPostingRoute.Direct) : ICommand<PurchaseReceiptId>;
 
 public sealed class RecordPurchaseReceiptCommandValidator : AbstractValidator<RecordPurchaseReceiptCommand>
 {
@@ -834,12 +835,18 @@ public sealed class RecordPurchaseReceiptCommandHandler(ApplicationDbContext dbC
 
     public async Task<PurchaseReceiptId> Handle(RecordPurchaseReceiptCommand request, CancellationToken cancellationToken)
     {
+        // Direct 保留旧指纹，使升级前的幂等键仍可重放；WMS 显式绑定不同路径。
+        var fingerprint = ErpCodingService.Fingerprint(request.PurchaseOrderNo, request.ExchangeRate, request.Lines.Select(x => $"{x.PurchaseOrderLineNo}:{x.ReceivedQuantity}:{x.QualityStatus}:{x.FinalDelivery}"));
+        if (request.InventoryPostingRoute != PurchaseReceiptInventoryPostingRoute.Direct)
+        {
+            fingerprint = ErpCodingService.Fingerprint(fingerprint, request.InventoryPostingRoute);
+        }
         var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
             request.EnvironmentId, "purchase-receipt",
             request.PurchaseReceiptNo,
             request.IdempotencyKey,
-            ErpCodingService.Fingerprint(request.PurchaseOrderNo, request.ExchangeRate, request.Lines.Select(x => $"{x.PurchaseOrderLineNo}:{x.ReceivedQuantity}:{x.QualityStatus}:{x.FinalDelivery}")),
+            fingerprint,
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -866,7 +873,8 @@ public sealed class RecordPurchaseReceiptCommandHandler(ApplicationDbContext dbC
                 order,
                 allocation.Code,
                 request.Lines.Select(x => new PurchaseReceiptLineDraft(x.PurchaseOrderLineNo, x.ReceivedQuantity, x.QualityStatus, x.LocationCode, x.LotNo, x.FinalDelivery)),
-                request.ExchangeRate);
+                request.ExchangeRate,
+                request.InventoryPostingRoute);
         }
         catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
         {

@@ -51,7 +51,7 @@ public sealed class ContractBoundaryTests
         new(
             typeof(PurchaseReceipt).Assembly,
             typeof(ErpReceiptQualityStatuses).Assembly,
-            [typeof(ErpReceiptQualityStatuses).FullName!]),
+            [typeof(ErpReceiptQualityStatuses).FullName!, typeof(PurchaseReceiptInventoryPostingRoute).FullName!]),
         // #1891 / #1892 将在对应 Domain 引用化时使用；先登记开门边界，禁止放宽到整个契约程序集。
         new(
             typeof(StockMovement).Assembly,
@@ -127,7 +127,7 @@ public sealed class ContractBoundaryTests
                 "Nerv.IIP.Business.Approval.Domain -> Nerv.IIP.Contracts.Approval: "
                 + "Nerv.IIP.Contracts.Approval.ApprovalChainStatuses,Nerv.IIP.Contracts.Approval.ApprovalDecisions",
                 "Nerv.IIP.Business.Erp.Domain -> Nerv.IIP.Contracts.Erp: "
-                + "Nerv.IIP.Contracts.Erp.ErpReceiptQualityStatuses",
+                + "Nerv.IIP.Contracts.Erp.ErpReceiptQualityStatuses,Nerv.IIP.Contracts.Erp.PurchaseReceiptInventoryPostingRoute",
                 "Nerv.IIP.Business.Inventory.Domain -> Nerv.IIP.Contracts.Inventory: "
                 + "Nerv.IIP.Contracts.Inventory.InventoryMovementTypes,Nerv.IIP.Contracts.Inventory.InventoryQualityStatuses",
                 "Nerv.IIP.Business.Quality.Domain -> Nerv.IIP.Contracts.Quality: "
