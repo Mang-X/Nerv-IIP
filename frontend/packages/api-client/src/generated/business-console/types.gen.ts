@@ -7328,6 +7328,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     purchaseOrderNo: string;
     lines: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseReceiptLine>;
     idempotencyKey?: string | null;
+    inventoryPostingRoute?: NervIipContractsErpPurchaseReceiptInventoryPostingRoute;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseReceiptLine = {
@@ -7335,6 +7336,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     receivedQuantity?: number;
     qualityStatus: string;
 };
+
+export type NervIipContractsErpPurchaseReceiptInventoryPostingRoute = 'direct' | 'wms';
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpSalesOrderListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpSalesOrderListResponse | null;
