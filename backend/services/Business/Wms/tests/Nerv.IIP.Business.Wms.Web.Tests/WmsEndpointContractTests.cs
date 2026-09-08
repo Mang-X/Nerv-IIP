@@ -1530,6 +1530,7 @@ public sealed class WmsEndpointContractTests
                 services.RemoveAll<IIntegrationEventPublisher>();
                 services.AddInMemoryDistributedLock();
                 services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
+                services.AddSingleton<Nerv.IIP.Business.Wms.Web.Application.Inventory.IWmsPurchaseReceiptPostingRouteClient>(new WmsReceiptRouteFixture());
                 services.AddDbContext<ApplicationDbContext>(options =>
                     options
                         .UseInMemoryDatabase(databaseName)

@@ -857,7 +857,8 @@ $excludedSelectors = @(
 # （双身份 claim 并发、迁移前滚与索引列变异证明）整类进入 real-postgres lane 后为 78；#1962 的
 # MES 换型记录与 IndustrialTelemetry 换型损失各增加 1 条真实 PostgreSQL selector，当前总数为 80。
 # NERV-2117 的 MES 货权快照 PostgreSQL 类新增 1 个 selector，总数为 81。
-Assert-Contract ($excludedSelectors.Count -eq 81) 'Every currently excluded real-dependency test selector must be explicitly classified.'
+# NERV-2121 的采购收货路径互斥 Acceptance PostgreSQL 类新增 1 个 selector，总数为 82。
+Assert-Contract ($excludedSelectors.Count -eq 82) '所有已排除的真实依赖测试选择器必须显式分类。'
 Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]('Nerv.IIP.Business.Erp.Web.Tests.OperationLaborSettlementRedisCapTransportTests'))) 'The ERP operation-labor Redis/CAP class must be excluded from the fast shard and owned by the Redis/CAP lane.'
 foreach ($selector in @('Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresConcurrencyTests', 'Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresContinuationTests', 'Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresMigrationTests')) {
     Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]$selector)) "The Quality periodic-inspection PostgreSQL class '$selector' must be excluded from the fast shard and owned by the real PostgreSQL lane."

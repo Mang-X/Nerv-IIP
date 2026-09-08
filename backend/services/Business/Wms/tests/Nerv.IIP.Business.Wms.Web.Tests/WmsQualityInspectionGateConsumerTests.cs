@@ -33,7 +33,7 @@ public sealed class WmsQualityInspectionGateConsumerTests
             var createdInbound = QualityRequiredInboundOrder("IN-QA-PASS-001");
             dbContext.InboundOrders.Add(createdInbound);
             await dbContext.SaveChangesAsync(CancellationToken.None);
-            await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+            await new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
                 new CompleteInboundOrderCommand(createdInbound.Id, "idem-in-pass-001")
                     .TrustedFor(dbContext, createdInbound),
                 CancellationToken.None);
@@ -65,7 +65,7 @@ public sealed class WmsQualityInspectionGateConsumerTests
             var createdInbound = QualityRequiredInboundOrder("IN-QA-REJ-001");
             dbContext.InboundOrders.Add(createdInbound);
             await dbContext.SaveChangesAsync(CancellationToken.None);
-            await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+            await new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
                 new CompleteInboundOrderCommand(createdInbound.Id, "idem-in-rej-001")
                     .TrustedFor(dbContext, createdInbound),
                 CancellationToken.None);
@@ -97,7 +97,7 @@ public sealed class WmsQualityInspectionGateConsumerTests
             var createdInbound = QualityRequiredInboundOrder("IN-QA-RETURN-001");
             dbContext.InboundOrders.Add(createdInbound);
             await dbContext.SaveChangesAsync(CancellationToken.None);
-            await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+            await new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
                 new CompleteInboundOrderCommand(createdInbound.Id, "idem-in-return-001")
                     .TrustedFor(dbContext, createdInbound),
                 CancellationToken.None);
@@ -131,7 +131,7 @@ public sealed class WmsQualityInspectionGateConsumerTests
             var createdInbound = QualityRequiredInboundOrder("IN-QA-COND-001");
             dbContext.InboundOrders.Add(createdInbound);
             await dbContext.SaveChangesAsync(CancellationToken.None);
-            await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+            await new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
                 new CompleteInboundOrderCommand(createdInbound.Id, "idem-in-cond-001")
                     .TrustedFor(dbContext, createdInbound),
                 CancellationToken.None);
@@ -163,7 +163,7 @@ public sealed class WmsQualityInspectionGateConsumerTests
             var createdInbound = QualityRequiredInboundOrder("IN-QA-DIV-001");
             dbContext.InboundOrders.Add(createdInbound);
             await dbContext.SaveChangesAsync(CancellationToken.None);
-            await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+            await new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
                 new CompleteInboundOrderCommand(createdInbound.Id, "idem-in-div-001")
                     .TrustedFor(dbContext, createdInbound),
                 CancellationToken.None);
@@ -204,7 +204,7 @@ public sealed class WmsQualityInspectionGateConsumerTests
                 var createdInbound = QualityRequiredInboundOrder(scenario.InboundOrderNo);
                 dbContext.InboundOrders.Add(createdInbound);
                 await dbContext.SaveChangesAsync(CancellationToken.None);
-                await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+                await new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
                     new CompleteInboundOrderCommand(createdInbound.Id, $"idem-{scenario.InboundOrderNo.ToLowerInvariant()}")
                         .TrustedFor(dbContext, createdInbound),
                     CancellationToken.None);

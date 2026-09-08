@@ -307,18 +307,22 @@ public sealed class CompleteInboundOrderCommandHandler
 {
     private readonly ApplicationDbContext dbContext;
     private readonly WarehouseAssignedResourceExecutionAuthorizer executionAuthorizer;
+    private readonly IWmsPurchaseReceiptPostingRouteClient purchaseReceiptPostingRouteClient;
 
     public CompleteInboundOrderCommandHandler(
         ApplicationDbContext dbContext,
+        IWmsPurchaseReceiptPostingRouteClient purchaseReceiptPostingRouteClient,
         WarehouseAssignedResourceExecutionAuthorizer executionAuthorizer)
     {
         this.dbContext = dbContext;
         this.executionAuthorizer = executionAuthorizer;
+        this.purchaseReceiptPostingRouteClient = purchaseReceiptPostingRouteClient;
     }
 
-    public CompleteInboundOrderCommandHandler(ApplicationDbContext dbContext)
+    public CompleteInboundOrderCommandHandler(ApplicationDbContext dbContext, IWmsPurchaseReceiptPostingRouteClient purchaseReceiptPostingRouteClient)
         : this(
             dbContext,
+            purchaseReceiptPostingRouteClient,
             WarehouseAssignedResourceCompletionExecution.CreateAuthorizer(dbContext))
     {
     }
@@ -370,6 +374,14 @@ public sealed class CompleteInboundOrderCommandHandler
         if (inbound.Status != InboundOrderStatus.Open)
         {
             throw new WmsLifecycleConflictException("complete-inbound", inbound.Status.ToString());
+        }
+
+        if (string.Equals(inbound.SourceDocumentType, WmsSourceDocumentTypes.PurchaseReceipt, StringComparison.OrdinalIgnoreCase)
+            && await purchaseReceiptPostingRouteClient.GetAsync(
+                inbound.OrganizationId, inbound.EnvironmentId, inbound.SourceDocumentId, cancellationToken)
+                != Nerv.IIP.Contracts.Erp.PurchaseReceiptInventoryPostingRoute.Wms)
+        {
+            throw new KnownException("采购收货来源不存在或未选择 WMS 库存过账路径，无法完成入库。");
         }
 
         var inventoryLocationsByLine = await InboundInventoryLocationResolver.ResolveAsync(
