@@ -115,6 +115,23 @@ describe('半栏栅格 placeholder 契约', () => {
       '搜索设备台账或直接输入，如 DEV-SMT-01',
     ])
 
+    // 阈值是「达到 16 字即违规」。这条边界由真实数据承重——`plan-code` 迁移前的原文
+    // 「可选，如 PM-SMT-01-M」恰好 16 字——所以必须有正例钉住，否则阈值改成 17 也照绿。
+    const atLimit = `
+      <div class="grid gap-3 sm:grid-cols-2">
+        <NvField><NvInput placeholder="可选，如 PM-SMT-01-M" /></NvField>
+      </div>`
+    expect([...'可选，如 PM-SMT-01-M'].length).toBe(16)
+    expect(findOffenders(atLimit).map((o) => o.text)).toEqual(['可选，如 PM-SMT-01-M'])
+
+    // 15 字必须放行，否则「达到 16」会退化成「达到 15」。
+    const belowLimit = `
+      <div class="grid gap-3 sm:grid-cols-2">
+        <NvField><NvInput placeholder="可选，如 PM-SMT-01M" /></NvField>
+      </div>`
+    expect([...'可选，如 PM-SMT-01M'].length).toBe(15)
+    expect(findOffenders(belowLimit)).toEqual([])
+
     const compliant = `
       <div class="grid gap-3 sm:grid-cols-2">
         <NvField class="sm:col-span-2"><NvInput placeholder="设备停下来了才填，如：主轴异响，无法运转" /></NvField>
