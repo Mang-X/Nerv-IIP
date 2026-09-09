@@ -41,8 +41,8 @@ public sealed class BackorderOrderAggregateTests
     [Fact]
     public void Stable_operational_code_is_deterministic_and_bounded()
     {
-        var first = WmsText.StableOperationalCode("BO", new string('O', 100), new string('L', 100));
-        var replay = WmsText.StableOperationalCode("BO", new string('O', 100), new string('L', 100));
+        var first = WmsText.StableOperationalCode("BO", WmsOperationalCodePolicy.BackorderOrderNoMaxLength, new string('O', 100), new string('L', 100));
+        var replay = WmsText.StableOperationalCode("BO", WmsOperationalCodePolicy.BackorderOrderNoMaxLength, new string('O', 100), new string('L', 100));
 
         Assert.Equal(first, replay);
         Assert.StartsWith("BO-", first, StringComparison.Ordinal);

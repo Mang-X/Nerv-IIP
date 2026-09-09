@@ -227,7 +227,7 @@ public sealed class WorldHistoryWarehouseOpsSeedService(ApplicationDbContext dbC
                 WorldHistoryCalendar.AddWorkingDays(receiptDay, 3), asOfDate);
 
             drafts.Add(new WorldHistorySupplierReturnDraft(
-                SupplierReturnNo: $"RTS-{inboundOrderNo}-{WorldHistoryWmsSpec.LineNo}-{inspectionRecordId}",
+                SupplierReturnNo: SupplierReturnRequest.ComposeSupplierReturnNo(inboundOrderNo, WorldHistoryWmsSpec.LineNo, inspectionRecordId),
                 InboundOrderNo: inboundOrderNo,
                 InspectionRecordId: inspectionRecordId,
                 SkuCode: purchase.SkuCode,

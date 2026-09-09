@@ -65,17 +65,40 @@ public static class WmsText
             .ToArray();
     }
 
-    public static string StableOperationalCode(string prefix, params string[] parts)
+    /// <summary>
+    /// 有界且确定性的运营单号构造：短取值原样可读，超界回落到 <c>{前缀}-{sha256}</c>，
+    /// 同样的输入永远得到同样的单号（幂等重放据此复算）。
+    /// </summary>
+    /// <param name="prefix">单号前缀，会被规范化为大写。</param>
+    /// <param name="maxLength">
+    /// 构造上界。**必须由 <see cref="WmsOperationalCodePolicy"/> 从承载列宽派生**，不得手抄数字：
+    /// 该单号被写进哪几列，上界就是那几列宽度的最小值。
+    /// </param>
+    /// <param name="parts">参与构造的取值，按顺序以 <c>-</c> 连接。</param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// 连回落形态（前缀 + 64 位十六进制摘要）都塞不进 <paramref name="maxLength"/> 时就地拒绝，
+    /// 而不是把越界值送进数据库换一个 22001。
+    /// </exception>
+    public static string StableOperationalCode(string prefix, int maxLength, params string[] parts)
     {
         var normalizedPrefix = Required(prefix, nameof(prefix)).ToUpperInvariant();
         var normalizedParts = parts.Select((part, index) => Required(part, $"parts[{index}]")).ToArray();
         var candidate = $"{normalizedPrefix}-{string.Join('-', normalizedParts)}";
-        if (candidate.Length <= 100)
+        if (candidate.Length <= maxLength)
         {
             return candidate;
         }
 
         var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(candidate))).ToLowerInvariant();
-        return $"{normalizedPrefix}-{hash}";
+        var fallback = $"{normalizedPrefix}-{hash}";
+        if (fallback.Length > maxLength)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maxLength),
+                maxLength,
+                $"前缀 '{normalizedPrefix}' 的稳定单号回落形态需要 {fallback.Length} 个字符，承载列只放得下 {maxLength} 个。");
+        }
+
+        return fallback;
     }
 }

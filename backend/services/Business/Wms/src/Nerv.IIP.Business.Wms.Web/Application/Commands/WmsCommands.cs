@@ -1606,7 +1606,7 @@ public sealed class CompleteOutboundOrderCommandHandler
         dbContext.InventoryMovementRequests.AddRange(movementRequests);
         foreach (var line in outbound.Lines.Where(x => x.BackorderQuantity > 0))
         {
-            var backorderNo = WmsText.StableOperationalCode("BO", outbound.OutboundOrderNo, line.LineNo);
+            var backorderNo = WmsText.StableOperationalCode("BO", WmsOperationalCodePolicy.BackorderOrderNoMaxLength, outbound.OutboundOrderNo, line.LineNo);
             var backorder = BackorderOrder.Create(
                 outbound.OrganizationId,
                 outbound.EnvironmentId,
@@ -1619,7 +1619,7 @@ public sealed class CompleteOutboundOrderCommandHandler
                 line.PickLocationCode,
                 line.BackorderQuantity);
             dbContext.BackorderOrders.Add(backorder);
-            dbContext.WarehouseTasks.Add(backorder.CreateReplenishmentRecommendation(WmsText.StableOperationalCode("RPL", outbound.OutboundOrderNo, line.LineNo)));
+            dbContext.WarehouseTasks.Add(backorder.CreateReplenishmentRecommendation(WmsText.StableOperationalCode("RPL", WmsOperationalCodePolicy.ReplenishmentTaskNoMaxLength, outbound.OutboundOrderNo, line.LineNo)));
         }
 
         return new CompleteWmsMovementResult(movementRequests.First().Id, null);
