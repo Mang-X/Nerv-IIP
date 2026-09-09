@@ -249,6 +249,7 @@ public sealed class PurchaseReceiptLineEntityTypeConfiguration : IEntityTypeConf
 {
     public void Configure(EntityTypeBuilder<PurchaseReceiptLine> builder)
     {
+        builder.Property(x => x.UnitPrice).HasColumnName("unit_price").HasPrecision(18, 6).HasComment("Frozen purchase unit price in receipt currency; null for legacy receipts without a valuation snapshot.");
         builder.ToTable("purchase_receipt_lines", table => table.HasComment("ERP purchase receipt lines."));
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Purchase receipt line id.");

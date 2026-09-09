@@ -125,6 +125,7 @@ public sealed class PurchaseReceiptLine : Entity<PurchaseReceiptLineId>
         ReceivedQuantity = ErpText.Positive(draft.ReceivedQuantity, nameof(draft.ReceivedQuantity));
         QualityStatus = ValidateQualityStatus(draft.QualityStatus, nameof(draft.QualityStatus));
         SkuCode = orderLine.SkuCode;
+        UnitPrice = orderLine.UnitPrice;
         UomCode = orderLine.UomCode;
         LocationCode = string.IsNullOrWhiteSpace(draft.LocationCode) ? siteCode : draft.LocationCode.Trim();
         LotNo = string.IsNullOrWhiteSpace(draft.LotNo) ? null : draft.LotNo.Trim();
@@ -136,6 +137,7 @@ public sealed class PurchaseReceiptLine : Entity<PurchaseReceiptLineId>
     public string LocationCode { get; private set; } = string.Empty;
     public string? LotNo { get; private set; }
     public decimal ReceivedQuantity { get; private set; }
+    public decimal? UnitPrice { get; private set; }
     public string QualityStatus { get; private set; } = string.Empty;
 
     internal static string ValidateQualityStatus(string value, string parameterName)

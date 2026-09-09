@@ -837,9 +837,10 @@
       "expiresOn": null,
       "exitCondition": null,
       "testIdentities": [
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsQualityInspectionGateConsumerTests.Supplier_return_numbers_stay_within_the_outbound_order_no_column_on_postgres",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsQualityInspectionGateConsumerTests.Quality_events_persist_gate_and_putaway_outcome_on_postgres"
       ],
-      "expectedRuntimeTestCount": 1
+      "expectedRuntimeTestCount": 2
     },
     {
       "id": "inventory-postgres-profile",
