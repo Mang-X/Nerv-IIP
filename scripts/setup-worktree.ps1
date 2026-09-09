@@ -2,6 +2,7 @@
 #   Category: release-install
 #   SideEffects:
 #     - Mirrors the main worktree's installed agent skills into a fresh worktree (idempotent)
+#     - Republishes repo-tracked skills (skills/**) into the installed agent skill payload
 #     - Installs skills in the MAIN worktree via the skills CLI only when they are missing there
 #     - Restores frontend pnpm dependencies for a freshly created worktree (idempotent)
 #     - Optionally restores backend/.NET solutions when NERV_SETUP_BACKEND=1
@@ -71,7 +72,6 @@ if ($null -eq $mainRoot) {
 }
 elseif (Test-NervSkillsPayloadPresent -RepoRoot $root) {
   Write-SetupStep 'skills present - skipping'
-  New-NervSkillLinkLayer -RepoRoot $root
 }
 else {
   $mainSkills = Join-Path $mainRoot '.agents/skills'
@@ -94,7 +94,6 @@ else {
       foreach ($skill in Get-ChildItem -LiteralPath $mainSkills -Force) {
         Copy-Item -LiteralPath $skill.FullName -Destination (Join-Path $targetSkills $skill.Name) -Recurse -Force
       }
-      New-NervSkillLinkLayer -RepoRoot $root
     }
     catch {
       Write-Warning "[setup] skills mirror failed: $($_.Exception.Message)"
@@ -104,6 +103,11 @@ else {
     Write-SetupStep 'skills: unavailable in the main worktree - skipping'
   }
 }
+
+# 安装与镜像都以「payload 已存在」为终点，因此 skills/ 的改动到不了已播种的工作树。
+# 项目技能的源在仓库里，重新发布是本地拷贝，直接每次覆盖，取消这条漂移的存在条件。
+Sync-NervRepoSkillPayload -RepoRoot $root
+New-NervSkillLinkLayer -RepoRoot $root
 
 # --- Frontend dependencies (needed for typecheck / test / build / preview) ---
 if (-not (Test-Path (Join-Path $root 'frontend/node_modules'))) {
