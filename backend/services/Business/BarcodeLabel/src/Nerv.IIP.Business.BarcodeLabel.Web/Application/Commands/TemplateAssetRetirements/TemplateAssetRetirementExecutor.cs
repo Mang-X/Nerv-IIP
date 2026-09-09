@@ -5,6 +5,7 @@ using System.Net.Http.Json;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.TemplateAssetRetirementDecisionAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Infrastructure.Retirement;
 using Nerv.IIP.Contracts.FileStorage;
+using Nerv.IIP.Contracts.BarcodeLabel;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.TemplateAssetRetirements;
 
@@ -51,7 +52,7 @@ public sealed class TemplateAssetRetirementSigner(TemplateAssetRetirementExecuto
             Number(decision.ReplayPolicyVersion!.Value), Number(decision.ClientWindowSeconds!.Value),
             Number(decision.ExecutorLeaseSeconds!.Value), Number(decision.ExecutorMaxBackoffSeconds!.Value),
             decision.OrganizationId, decision.EnvironmentId, decision.TemplateFileId, decision.TemplateAssetSha256,
-            "business-barcode-label", "label-template", decision.TemplateCode, "barcode-label-template"];
+            BarcodeLabelIntegrationEventSources.BusinessBarcodeLabel, "label-template", decision.TemplateCode, "barcode-label-template"];
         var payload = Encoding.UTF8.GetBytes(string.Join('\n', fields.Select(value =>
             $"{Number(Encoding.UTF8.GetByteCount(value))}:{value}")));
         return new(Encode(payload), Encode(HMACSHA256.HashData(options.Key, payload)));
