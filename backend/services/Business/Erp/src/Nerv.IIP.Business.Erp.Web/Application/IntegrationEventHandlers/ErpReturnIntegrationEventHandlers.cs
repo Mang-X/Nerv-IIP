@@ -9,6 +9,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
+using Nerv.IIP.Business.Erp.Web.Application.Validation;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Contracts.Wms;
@@ -285,7 +286,7 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPur
         dbContext.DebitNotes.AddRange(debitNotes);
         dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForPurchaseReturn(
             purchaseReturn,
-            $"JV-PRTN-{purchaseReturn.PurchaseReturnNo}",
+            ErpVoucherNoPolicy.Compose(VoucherFamily.PurchaseReturn, purchaseReturn.PurchaseReturnNo),
             DateOnly.FromDateTime(integrationEvent.OccurredAtUtc.UtcDateTime)));
     }
 
