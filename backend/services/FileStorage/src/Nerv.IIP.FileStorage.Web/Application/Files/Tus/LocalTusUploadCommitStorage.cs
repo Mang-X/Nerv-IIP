@@ -8,7 +8,8 @@ namespace Nerv.IIP.FileStorage.Web.Application.Files.Tus;
 /// <remarks>
 /// 这不是 ADR 0024 的 <c>IStorageProvider</c>：按 <c>ObjectKey</c> 定位 final、staging/final 分区与 atomic
 /// promote 仍属 #994 / #1012。本类型只是把 #1628 留下的 storage seam 接到当前已在运行的本地 tus 字节面上。
-/// 由于它从不改动 final，所有失败都据实报告为 ProvenNoFinalActionStarted，使会话可以重新打开并续传。
+/// 它从不改动 final：本类自己返回的失败（没有字节面、文件不存在）报告为 ProvenNoFinalActionStarted，使会话可以重新打开并续传；
+/// 读盘或哈希抛出的异常不在此捕获，由调用方按既有规则收成 RetryableUnavailable（FinalMayExist）。
 /// </remarks>
 public sealed class LocalTusUploadCommitStorage(ILocalTusFileStoreAccessor accessor) : IUploadCommitStorage
 {

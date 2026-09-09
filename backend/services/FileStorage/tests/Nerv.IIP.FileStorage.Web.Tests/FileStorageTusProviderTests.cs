@@ -43,20 +43,55 @@ public sealed class FileStorageTusProviderTests
     [Fact]
     public async Task CreateUploadSession_WithTusConfiguration_ReturnsTusUploadInstructions()
     {
-        await using var factory = CreateFactoryWithTusProvider();
+        var rootPath = CreateTempDirectory();
+        try
+        {
+            await using var factory = CreateFactoryWithTusProvider(rootPath);
+            var client = CreateInternalServiceClient(factory);
+
+            var response = await client.PostAsJsonAsync("/api/files/v1/upload-sessions", CreateUploadRequest());
+
+            response.EnsureSuccessStatusCode();
+            var created = await response.Content.ReadFromJsonAsync<CreateUploadSessionResponse>();
+            Assert.NotNull(created);
+            Assert.Equal("tus", created.Provider);
+            Assert.Equal("tus", created.UploadMode);
+            Assert.Equal($"/api/files/v1/tus/{created.UploadSessionId}", created.Upload.Url);
+            Assert.Equal("tus", created.Upload.Headers["x-nerv-upload-mode"]);
+            Assert.DoesNotContain(created.Upload.Headers, header => header.Key.Contains("object", StringComparison.OrdinalIgnoreCase));
+            AssertObjectKeyIsNotExposed(created);
+        }
+        finally
+        {
+            DeleteTempDirectory(rootPath);
+        }
+    }
+
+    /// <summary>
+    /// server-proxy 部署没有本地字节面：生产注册的提交存储报告“最终存储动作从未开始”，complete 返回 503 且会话回到 open。
+    /// 这是 provider 切换对既有 server-proxy 部署“行为不变”的唯一行为承担。
+    /// </summary>
+    [Fact]
+    public async Task CompleteUploadSession_ServerProxyOnProductionCommitStorage_ReturnsServiceUnavailableAndReopensSession()
+    {
+        await using var factory = new FileStorageWebApplicationFactory();
         var client = CreateInternalServiceClient(factory);
+        var createResponse = await client.PostAsJsonAsync("/api/files/v1/upload-sessions", CreateUploadRequest());
+        createResponse.EnsureSuccessStatusCode();
+        var created = (await createResponse.Content.ReadFromJsonAsync<CreateUploadSessionResponse>())!;
+        Assert.Equal("server-proxy", created.Provider);
 
-        var response = await client.PostAsJsonAsync("/api/files/v1/upload-sessions", CreateUploadRequest());
+        var completeResponse = await client.PostAsJsonAsync(
+            $"/api/files/v1/upload-sessions/{created.UploadSessionId}/complete",
+            new CompleteUploadSessionRequest("org-001", "prod", "application-package", "sha256:test", 4096));
 
-        response.EnsureSuccessStatusCode();
-        var created = await response.Content.ReadFromJsonAsync<CreateUploadSessionResponse>();
-        Assert.NotNull(created);
-        Assert.Equal("tus", created.Provider);
-        Assert.Equal("tus", created.UploadMode);
-        Assert.Equal($"/api/files/v1/tus/{created.UploadSessionId}", created.Upload.Url);
-        Assert.Equal("tus", created.Upload.Headers["x-nerv-upload-mode"]);
-        Assert.DoesNotContain(created.Upload.Headers, header => header.Key.Contains("object", StringComparison.OrdinalIgnoreCase));
-        AssertObjectKeyIsNotExposed(created);
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, (int)completeResponse.StatusCode);
+        Assert.Contains("最终存储提交暂不可用", await completeResponse.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        using var scope = factory.Services.CreateScope();
+        var session = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().UploadSessions
+            .SingleAsync(x => x.UploadSessionId == created.UploadSessionId);
+        Assert.Equal(UploadSessionState.Open, session.State);
+        Assert.Null(session.CommitId);
     }
 
     [Fact]

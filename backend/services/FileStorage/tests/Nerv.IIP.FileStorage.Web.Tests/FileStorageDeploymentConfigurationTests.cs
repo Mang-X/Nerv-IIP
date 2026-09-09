@@ -76,7 +76,7 @@ public sealed class FileStorageDeploymentConfigurationTests
             appHostFileStorage,
             StringComparison.Ordinal);
 
-        // compose 的 tus 盘同时承载已 complete 文件的字节，容器可写层不能作为它的落点。
+        // tus 盘同时承载已 complete 文件的字节，两侧都必须给出显式落点并挂持久卷；容器可写层与系统 temp 都不是。
         Assert.Contains(
             "FileStorage__Tus__RootPath: /var/lib/nerv-iip/filestorage/tus",
             fileStorage,
@@ -89,6 +89,13 @@ public sealed class FileStorageDeploymentConfigurationTests
             "volumes:\n  nerv-iip-file-storage:",
             platform.Replace("\r\n", "\n", StringComparison.Ordinal),
             StringComparison.Ordinal);
+        Assert.Contains(
+            ".WithEnvironment(\"FileStorage__Tus__RootPath\", fileStorageTusRootPath)",
+            appHostFileStorage,
+            StringComparison.Ordinal);
+        Assert.Contains("new ContainerMountAnnotation(", appHostFileStorage, StringComparison.Ordinal);
+        Assert.Contains("\"nerv-iip-file-storage\"", appHostFileStorage, StringComparison.Ordinal);
+        Assert.Contains("ContainerMountType.Volume", appHostFileStorage, StringComparison.Ordinal);
     }
 
     private static string ReadRepositoryFile(string relativePath)

@@ -116,6 +116,19 @@ builder.Services.AddNervIipObservability(builder.Configuration, "file-storage");
 builder.Services.AddNervIipLocalization();
 
 var app = builder.Build();
+// 读 app.Configuration 而非 builder.Configuration：测试宿主的 ConfigureAppConfiguration 要到 Build() 才生效，
+// 与上面按 IConfiguration 惰性判定 provider 的口径一致。
+var tusRootPath = app.Configuration["FileStorage:Tus:RootPath"];
+if (string.Equals(app.Configuration["FileStorage:UploadProvider"], "tus", StringComparison.OrdinalIgnoreCase)
+    && (string.IsNullOrWhiteSpace(tusRootPath) || !Path.IsPathRooted(tusRootPath)))
+{
+    // tus 盘承载已 complete 文件的字节；系统 temp、进程 cwd 或容器可写层都不是持久落点（ADR 0024 §5）。
+    throw new InvalidOperationException(
+        "FileStorage:UploadProvider=tus requires FileStorage:Tus:RootPath to be an explicit absolute path " +
+        $"(configured={(string.IsNullOrWhiteSpace(tusRootPath) ? "<missing>" : "<relative>")}). " +
+        "Point it at persistent storage; a temporary directory or container writable layer is not accepted.");
+}
+
 if (persistence.AutoMigrate)
 {
     using var scope = app.Services.CreateScope();
