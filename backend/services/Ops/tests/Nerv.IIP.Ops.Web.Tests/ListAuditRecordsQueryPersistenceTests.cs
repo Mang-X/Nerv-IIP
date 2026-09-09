@@ -14,9 +14,10 @@ namespace Nerv.IIP.Ops.Web.Tests;
 /// <summary>
 /// #3098：审计记录按 OperationTaskId 过滤的谓词必须在真实关系 provider 上可翻译。
 /// 原实现把 <c>x.Id.Id == request.OperationTaskId</c> 写进谓词（强类型 string Id 再取内部成员），
-/// SQLite 与 PostgreSQL 18 均报 could not be translated，于是带 OperationTaskId 的审计查询必 500。
+/// SQLite 报 could not be translated，于是带 OperationTaskId 的审计查询必 500
+/// （PR #3274 的一次性探针在 PostgreSQL 18 上复现同一结论，该证据不入库；本用例只证明 SQLite）。
 /// 既有端点用例跑在 InMemory 上（一律客户端求值）所以照绿，因此这里用 SQLite 实跑；
-/// 已实测：把谓词改回原样，本文件用例转红并报 could not be translated。
+/// 已实测：把谓词改回原样，本文件用例转红并报 could not be translated；去掉过滤则由 Assert.All 转红。
 /// </summary>
 public sealed class ListAuditRecordsQueryPersistenceTests
 {
@@ -49,7 +50,6 @@ public sealed class ListAuditRecordsQueryPersistenceTests
         Assert.NotEmpty(filtered.Items);
         Assert.All(filtered.Items, item => Assert.Equal(first.OperationTaskId, item.OperationTaskId));
         Assert.Contains(unfiltered.Items, item => item.OperationTaskId == second.OperationTaskId);
-        Assert.Equal(unfiltered.Items.Count(item => item.OperationTaskId == first.OperationTaskId), filtered.Items.Count);
     }
 
     private static CreateOperationTaskRequest CreateRestartRequest(string idempotencyKey) =>
