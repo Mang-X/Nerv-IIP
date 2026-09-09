@@ -16,6 +16,24 @@ public sealed class BackorderOrder : Entity<BackorderOrderId>, IAggregateRoot
     {
     }
 
+    /// <summary>
+    /// 缺量单号的**唯一构造入口**（#3228）：种类与上界由 <see cref="WmsOperationalCodeKind.Backorder"/>
+    /// 承载，应用层不再自己拼前缀。
+    /// </summary>
+    public static string ComposeBackorderOrderNo(string outboundOrderNo, string outboundOrderLineNo)
+    {
+        return WmsText.StableOperationalCode(WmsOperationalCodeKind.Backorder, outboundOrderNo, outboundOrderLineNo);
+    }
+
+    /// <summary>
+    /// 补货建议任务号的**唯一构造入口**（#3228）：种类与上界由
+    /// <see cref="WmsOperationalCodeKind.ReplenishmentTask"/> 承载。
+    /// </summary>
+    public static string ComposeReplenishmentTaskNo(string outboundOrderNo, string outboundOrderLineNo)
+    {
+        return WmsText.StableOperationalCode(WmsOperationalCodeKind.ReplenishmentTask, outboundOrderNo, outboundOrderLineNo);
+    }
+
     private BackorderOrder(
         string organizationId,
         string environmentId,
@@ -70,11 +88,16 @@ public sealed class BackorderOrder : Entity<BackorderOrderId>, IAggregateRoot
         decimal backorderQuantity) =>
         new(organizationId, environmentId, backorderOrderNo, outboundOrderNo, outboundOrderLineNo, skuCode, uomCode, siteCode, pickLocationCode, backorderQuantity);
 
-    public WarehouseTask CreateReplenishmentRecommendation(string taskNo) =>
+    /// <summary>
+    /// 补货建议任务号由聚合自己算（#3228）：它需要的两个输入 <see cref="OutboundOrderNo"/> 与
+    /// <see cref="OutboundOrderLineNo"/> 本来就在聚合上，收一个 <c>string taskNo</c> 只会让调用方
+    /// 有机会传错种类的号（实测：把 RPL 换成 BO 种类，全仓无一条断言会红）。不收参数即不可传错。
+    /// </summary>
+    public WarehouseTask CreateReplenishmentRecommendation() =>
         WarehouseTask.CreateReplenishment(
             OrganizationId,
             EnvironmentId,
-            taskNo,
+            ComposeReplenishmentTaskNo(OutboundOrderNo, OutboundOrderLineNo),
             BackorderOrderNo,
             OutboundOrderLineNo,
             SkuCode,

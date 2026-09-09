@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Nerv.IIP.Business.Wms.Domain;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.SupplierReturnAggregate;
@@ -253,12 +254,14 @@ public sealed class WmsQualityInspectionGateConsumerTests
     /// EF InMemory 看不见列宽，同一条用例在 InMemory 下恒绿。
     /// </summary>
     /// <remarks>
-    /// 三个夹具走的是三条**互不等价**的输入区间，缺一条就丢一份鉴别力：
+    /// 两个夹具走的是两条**互不等价**的输入区间：
     /// ① 朴素拼法恰好等于 outbound 列宽 —— 可读形态必须原样保留（挡「一律走摘要」）；
     /// ② 朴素拼法只超出 outbound 列宽 1 个字符 —— 这是**唯一**能区分「上界取两列最小值」与
-    ///    「上界取退供自己那列的 300」的区间，落在 (100, 300] 里；
-    /// ③ 各组件按自己列宽取满（朴素拼法 356）—— 顶格，挡「完全不设上界」。
-    /// 注意 ③ 单独存在时**不具备**区分 ①②那两种上界的能力：356 在两种上界下都会回落到摘要形态。
+    ///    「上界取退供自己那列的 300」的区间，落在 (100, 300] 里。
+    ///
+    /// **这里没有「各组件顶格」那一格**（朴素拼法 356）：实测它在 100 与 300 两种上界下都回落到
+    /// 摘要形态，是一组等价输入，跨两轮变异从未单独承重，却要在真库上多付一次建单往返。
+    /// 它作为零成本的回归护栏留在 <c>WmsOperationalCodeKindTests</c> 的 theory 里。
     /// </remarks>
     [WmsRealPostgresFact]
     public async Task Supplier_return_numbers_stay_within_the_outbound_order_no_column_on_postgres()
@@ -318,7 +321,7 @@ public sealed class WmsQualityInspectionGateConsumerTests
             Assert.True(
                 outbound.OutboundOrderNo.Length <= outboundOrderNoColumnMaxLength,
                 $"[{boundaryCase.Name}] 退供派生出库单号长度 {outbound.OutboundOrderNo.Length} 超出承载列宽 {outboundOrderNoColumnMaxLength}。");
-            Assert.StartsWith($"{SupplierReturnRequest.SupplierReturnNoPrefix}-", outbound.OutboundOrderNo, StringComparison.Ordinal);
+            Assert.StartsWith($"{WmsOperationalCodeKind.SupplierReturn.Prefix}-", outbound.OutboundOrderNo, StringComparison.Ordinal);
 
             if (boundaryCase.KeepsReadableForm)
             {
@@ -346,8 +349,6 @@ public sealed class WmsQualityInspectionGateConsumerTests
         int outboundOrderNoColumnMaxLength)
     {
         var inboundOrderNoMax = ColumnMaxLength(dbContext, typeof(InboundOrder), nameof(InboundOrder.InboundOrderNo));
-        var lineNoMax = ColumnMaxLength(dbContext, typeof(InboundOrderLine), nameof(InboundOrderLine.LineNo));
-        var inspectionRecordIdMax = ColumnMaxLength(dbContext, typeof(SupplierReturnRequest), nameof(SupplierReturnRequest.InspectionRecordId));
 
         // "RTS-" + 入库单号 + "-" + 行号 + "-" + 检验记录号：固定开销 6 个字符。
         const int FixedOverhead = 6;
@@ -374,19 +375,15 @@ public sealed class WmsQualityInspectionGateConsumerTests
                 LineNo,
                 OverByOneInspectionRecordId,
                 KeepsReadableForm: false),
-            new SupplierReturnBoundaryCase(
-                "component-maximums",
-                "MX-" + new string('M', inboundOrderNoMax - 3),
-                new string('L', lineNoMax),
-                new string('Q', inspectionRecordIdMax),
-                KeepsReadableForm: false),
         };
 
         Assert.Equal(outboundOrderNoColumnMaxLength, cases[0].NaiveComposition.Length);
         Assert.Equal(outboundOrderNoColumnMaxLength + 1, cases[1].NaiveComposition.Length);
-        Assert.Equal(
-            FixedOverhead + inboundOrderNoMax + lineNoMax + inspectionRecordIdMax,
-            cases[2].NaiveComposition.Length);
+        // ② 必须落在 (outbound 列宽, supplier_return 列宽] 里，否则它退化成与「顶格」等价的输入。
+        Assert.InRange(
+            cases[1].NaiveComposition.Length,
+            outboundOrderNoColumnMaxLength + 1,
+            WmsOperationalCodeKind.SupplierReturnNoColumnMaxLength);
         return cases;
     }
 

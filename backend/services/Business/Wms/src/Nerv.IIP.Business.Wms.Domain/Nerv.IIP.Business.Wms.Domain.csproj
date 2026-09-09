@@ -8,6 +8,10 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
   <ItemGroup>
+    <!-- 契约测试需要直接检验 WmsOperationalCodeKind 的构造不变量（上界必须放得下回落形态）。 -->
+    <InternalsVisibleTo Include="Nerv.IIP.Business.Wms.Domain.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="NetCorePal.Extensions.CodeAnalysis" />
     <PackageReference Include="NetCorePal.Extensions.Domain.Abstractions" />
     <PackageReference Include="NetCorePal.Extensions.Primitives" />

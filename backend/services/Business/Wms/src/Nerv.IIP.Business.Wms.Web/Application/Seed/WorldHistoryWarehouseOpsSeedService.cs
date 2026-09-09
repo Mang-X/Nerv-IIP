@@ -227,6 +227,10 @@ public sealed class WorldHistoryWarehouseOpsSeedService(ApplicationDbContext dbC
                 WorldHistoryCalendar.AddWorkingDays(receiptDay, 3), asOfDate);
 
             drafts.Add(new WorldHistorySupplierReturnDraft(
+                // 这个值是**幂等探针**：上面先拿它查库去重，而落库行的单号由 SupplierReturnRequest.Create
+                // 自己算。两处一旦发散，探针永远查不中，种子重跑就重复插入，违反
+                // docs/adr/0009-database-migration-release-and-seed-strategy.md 的种子幂等要求。
+                // 当前种子输入远低于 100，改前改后逐字节相同——这是预防性收敛，不是在修一个现存发散。
                 SupplierReturnNo: SupplierReturnRequest.ComposeSupplierReturnNo(inboundOrderNo, WorldHistoryWmsSpec.LineNo, inspectionRecordId),
                 InboundOrderNo: inboundOrderNo,
                 InspectionRecordId: inspectionRecordId,

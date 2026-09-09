@@ -13,19 +13,16 @@ public sealed class SupplierReturnRequest : Entity<SupplierReturnRequestId>, IAg
 {
     public const string ReturnToSupplierDisposition = "return-to-supplier";
 
-    /// <summary>退供单号前缀。</summary>
-    public const string SupplierReturnNoPrefix = "RTS";
-
     /// <summary>
-    /// 退供单号的**唯一构造入口**（#3228）。上界由 <see cref="WmsOperationalCodePolicy.SupplierReturnNoMaxLength"/>
-    /// 从「supplier_return_no 与 outbound_order_no 两列宽的最小值」派生——这个值不只落退供自己那张表，
-    /// 退供派生的出库单会把它原样当作出库单号。种子计划复用本方法，不得再自己拼一遍格式串。
+    /// 退供单号的**唯一构造入口**（#3228）。种类与上界由
+    /// <see cref="WmsOperationalCodeKind.SupplierReturn"/> 承载：这个值不只落退供自己那张表，
+    /// 退供派生的出库单会把它原样当作出库单号，故上界取两列宽的最小值。
+    /// 世界史种子的幂等探针复用本方法，不得再自己拼一遍格式串。
     /// </summary>
     public static string ComposeSupplierReturnNo(string inboundOrderNo, string inboundOrderLineNo, string inspectionRecordId)
     {
         return WmsText.StableOperationalCode(
-            SupplierReturnNoPrefix,
-            WmsOperationalCodePolicy.SupplierReturnNoMaxLength,
+            WmsOperationalCodeKind.SupplierReturn,
             inboundOrderNo,
             inboundOrderLineNo,
             inspectionRecordId);
