@@ -123,7 +123,8 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
 
         var distinctSources = new[]
         {
-            // 摘要式之间：只有段划分不同；摘要输入不带长度前缀就会塌成同号。
+            // 摘要式之间：只有段划分不同。**只删长度前缀不会塌**（U+001F 分隔符单独已足够消歧，实测不红）；
+            // 真正塌成同号需要摘要输入**退化成朴素连字符拼接**（分隔符换成 - 且去掉长度前缀）。
             ErpVoucherNoPolicy.Compose(VoucherFamily.WorkOrderCapitalization, head + "-" + tail, "Z"),
             ErpVoucherNoPolicy.Compose(VoucherFamily.WorkOrderCapitalization, head, tail + "-Z"),
             // 跨族：同样两段，族不同。

@@ -12,8 +12,8 @@ namespace Nerv.IIP.Business.Erp.Web.Application.Validation;
 /// <remarks>
 /// 族名必须只含 <c>[A-Z0-9]</c>（既不含 <see cref="ErpVoucherNoPolicy.RawSeparator"/>
 /// 也不含 <see cref="ErpVoucherNoPolicy.DigestMarker"/>），且短到摘要式仍塞得进列宽——
-/// 这两条由 <c>ErpVoucherNoLengthContractTests</c> **从 <see cref="All"/> 枚举**后断言，
-/// 新增族自动进入覆盖面，不靠任何手抄名单。
+/// 这两条由 <c>ErpVoucherNoLengthContractTests</c> 从 <see cref="All"/> 枚举后断言；
+/// 而 <see cref="All"/> 是否漏登记，由同一个类里的反射对撞断言看住（含族名互异）。
 /// </remarks>
 public sealed class VoucherFamily
 {
@@ -49,7 +49,12 @@ public sealed class VoucherFamily
     /// <summary>成本待定档凭证。</summary>
     public static VoucherFamily CostCandidate { get; } = new("COST");
 
-    /// <summary>全部族的闭集。契约用例从这里枚举，新增族不会静默漏检。</summary>
+    /// <summary>
+    /// 全部族的登记表。契约用例从这里枚举。
+    /// **这是手工登记表**：类型里声明一个族却不追加到这里，编译期不会拦——
+    /// 补住这个方向的是契约用例里那条反射对撞（<c>All_enumerates_every_declared_family_and_names_stay_distinct</c>），
+    /// 不是这个列表本身。
+    /// </summary>
     public static IReadOnlyList<VoucherFamily> All { get; } =
     [
         WorkOrderCapitalization,
@@ -92,7 +97,8 @@ public sealed class VoucherFamily
 /// </list>
 /// ① 族名是 <see cref="VoucherFamily"/> 闭集里的 <c>[A-Z0-9]</c> 串，既不含 <see cref="RawSeparator"/>
 /// 也不含 <see cref="DigestMarker"/>，因此「<c>JV-</c> 之后第一个 <c>-</c> 或 <c>~</c>」唯一地划出族名边界——
-/// 族集合**由类型 + 契约用例保证前缀无关**，不靠名单维护。
+/// 族名的字符集由契约用例逐族断言，而登记表是否漏了某个已声明的族由反射对撞断言看住；
+/// **私有构造只关死了「外部造新族」，没关死「类型内声明却不登记」**，后者靠那条断言而不是靠类型。
 /// ② 同一族内，原样式与摘要式在族名后那一位分别是 <c>-</c> 与 <c>~</c>，两个值域天然不相交。
 /// ③ 摘要式之间：摘要输入是**带长度前缀、以 U+001F 分隔**的规范串（见 <see cref="CanonicalKey"/>），
 /// 不同段划分不会拼成同一个输入，故只剩 SHA-256 碰撞。

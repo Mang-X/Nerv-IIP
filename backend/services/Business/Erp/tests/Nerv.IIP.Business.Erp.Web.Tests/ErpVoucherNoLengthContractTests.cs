@@ -1,3 +1,4 @@
+using System.Reflection;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -54,7 +55,8 @@ public sealed class ErpVoucherNoLengthContractTests
     /// <item><c>OperationMachineOverheadSettlementIntegrationEventHandlers.cs:195</c> → <c>machine-{OperationTaskId}-r{rev}</c>；</item>
     /// <item>同文件 <c>:347</c> → <c>machine-{OperationTaskId}-r{rev}-void</c>。</item>
     /// </list>
-    /// <c>OperationTaskId</c> 列宽 100，<c>SettlementRevision</c> 是 <c>long</c>（十进制最多 19 位），
+    /// <c>OperationTaskId</c> 列宽 100，<c>SettlementRevision</c> 是**单调递增的非负** <c>long</c>
+    /// 修订号（十进制最多 19 位；若取到负值则含负号 20 位，宽度 135、上界 247——本条按非负值域算），
     /// 故最宽形状 <c>machine-{100}-r{19}-void</c> = 8+100+2+19+5 = <b>134</b>。
     /// 于是改前 <c>JV-WOC-ADJ-{workOrderId}-{sourceId}</c> 的类型上界是 11+100+1+134 = <b>246</b>，
     /// **不是**票面估的 148，也不是本 PR 首轮写的 212（首轮只枚举了前 3 个调用点）。
@@ -98,9 +100,14 @@ public sealed class ErpVoucherNoLengthContractTests
     }
 
     /// <summary>
-    /// 族**从 <see cref="VoucherFamily.All"/> 闭集枚举**，不是手抄名单：
-    /// 新增族自动进入这条覆盖面。断言的是「族名字符集」与「摘要式仍塞得进列宽」——
+    /// 族从 <see cref="VoucherFamily.All"/> 枚举，断言「族名字符集」与「摘要式仍塞得进列宽」——
     /// 改闭集类型前这两条靠运行期 <c>AssertFamily</c> 守，现在由类型 + 本条共同承担。
+    ///
+    /// **<see cref="VoucherFamily.All"/> 本身是手工登记表**：类型里声明一个族却不追加进 <c>All</c>，
+    /// 编译期没有任何机制会拦（实测：这么干时本条与
+    /// <see cref="Saturated_production_inputs_stay_within_the_column_width"/> 都是绿的，
+    /// 那个族哪怕族名含 <c>-</c> 也能一路进生产）。补住这个方向的是
+    /// <see cref="All_enumerates_every_declared_family_and_names_stay_distinct"/>，别把本条读成完备。
     /// </summary>
     [Theory]
     [MemberData(nameof(AllFamilies))]
@@ -270,6 +277,50 @@ public sealed class ErpVoucherNoLengthContractTests
     {
         Assert.Throws<ArgumentException>(() => ErpVoucherNoPolicy.Compose(VoucherFamily.AccountPayable));
         Assert.Throws<ArgumentException>(() => ErpVoucherNoPolicy.Compose(VoucherFamily.AccountPayable, " "));
+    }
+
+    /// <summary>
+    /// <see cref="VoucherFamily.All"/> 与**类型里实际声明的族**对撞，并断言族名两两互异。
+    ///
+    /// 为什么需要这条：<c>All</c> 的键是「有没有人手工把它加进列表」，不是「类型里存在几个族」。
+    /// 只靠从 <c>All</c> 枚举的用例，一个**声明了但没登记**的族（哪怕族名含
+    /// <see cref="ErpVoucherNoPolicy.RawSeparator"/>，正是调整族改名要消灭的形状）可以一路进生产而全绿。
+    /// 族名互异同理：改名撞车此前只被一份手抄的逐族断言**偶然**抓到。
+    ///
+    /// **值域边界**：反射面是 <see cref="VoucherFamily"/> 上的 <c>static</c> 属性与字段（按引用去重，
+    /// 因为自动属性的 backing field 与属性是同一个实例）。
+    /// 用别的方式（例如静态方法返回值）造出来的族不在这个面上——那种写法当前不存在，
+    /// 但**本条不覆盖它**，别读成「任何新族都逃不掉」。
+    /// </summary>
+    [Fact]
+    public void All_enumerates_every_declared_family_and_names_stay_distinct()
+    {
+        var declared = DeclaredFamilies();
+
+        Assert.NotEmpty(declared);
+        Assert.Equal(declared.Length, VoucherFamily.All.Count);
+        Assert.Equal(
+            declared.Select(family => family.Name).Order(StringComparer.Ordinal),
+            VoucherFamily.All.Select(family => family.Name).Order(StringComparer.Ordinal));
+        Assert.Equal(
+            VoucherFamily.All.Count,
+            VoucherFamily.All.Select(family => family.Name).Distinct(StringComparer.Ordinal).Count());
+    }
+
+    private static VoucherFamily[] DeclaredFamilies()
+    {
+        const BindingFlags Flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
+        var fromProperties = typeof(VoucherFamily)
+            .GetProperties(Flags)
+            .Where(property => property.PropertyType == typeof(VoucherFamily))
+            .Select(property => (VoucherFamily)property.GetValue(null)!);
+        var fromFields = typeof(VoucherFamily)
+            .GetFields(Flags)
+            .Where(field => field.FieldType == typeof(VoucherFamily))
+            .Select(field => (VoucherFamily)field.GetValue(null)!);
+        // 自动属性的编译器生成 backing field 与属性持有**同一个实例**，按引用去重即可，
+        // 不必按 CompilerGenerated 特性做形状判断。
+        return fromProperties.Concat(fromFields).Distinct(ReferenceEqualityComparer.Instance).Cast<VoucherFamily>().ToArray();
     }
 
     public static TheoryData<VoucherFamily> AllFamilies()
