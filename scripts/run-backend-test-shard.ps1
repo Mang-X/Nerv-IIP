@@ -13,14 +13,9 @@
 #     - .NET SDK 10
 
 <#
-.SYNOPSIS
-Restores and runs one classified backend fast test shard from scripts/backend-test-shards.json.
-
 .PARAMETER TimeoutSeconds
-Budget for the single `dotnet test` invocation. The default is the budget the CI shard steps rely on
-(they never pass this parameter). A local run whose CPU is shared with other worktrees can exceed it
-without any test failing and is reported as `Command 'dotnet' timed out after N seconds`, not as a
-test failure; raise the budget for that run instead of treating the red as a failing test (#2870).
+Budget for the single `dotnet test` invocation. CI never passes it (its budget is the step
+`timeout-minutes`), so the default only applies locally; raise it when other worktrees share the CPU (#2870).
 #>
 
 [CmdletBinding()]
@@ -36,8 +31,7 @@ param(
     [Parameter(Mandatory)]
     [string] $TrxFilePrefix,
 
-    # 1800 is the default, not a ceiling; the upper bound is owned by Invoke-NativeCommandOutput (#2870).
-    [ValidateRange(1, [int]::MaxValue)]
+    # Bounds are owned by Invoke-NativeCommandOutput; 1800 is a default, not a ceiling (#2870).
     [int] $TimeoutSeconds = 1800,
 
     [string] $ManifestPath = (Join-Path $PSScriptRoot 'backend-test-shards.json')
