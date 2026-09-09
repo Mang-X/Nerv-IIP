@@ -97,7 +97,9 @@ public sealed class ProductionMaterialConsumedIntegrationEventConverter
             consumptionLocation.LocationCode,
             consumption.MaterialLotId,
             -consumption.ConsumedQuantity,
-            occurredAtUtc);
+            occurredAtUtc,
+            ownerType: consumption.OwnerType,
+            ownerId: consumption.OwnerId);
     }
 
     internal static InventoryMovementRequestedIntegrationEvent NewInventoryMovementRequested(
@@ -117,7 +119,9 @@ public sealed class ProductionMaterialConsumedIntegrationEventConverter
         decimal? unitCost = null,
         DateOnly? productionDate = null,
         DateOnly? expiryDate = null,
-        string? unitCostAuthorityReference = null)
+        string? unitCostAuthorityReference = null,
+        string ownerType = "production",
+        string? ownerId = null)
     {
         var movementType = quantity < 0 ? InventoryMovementTypes.Outbound : InventoryMovementTypes.Inbound;
         return new InventoryMovementRequestedIntegrationEvent(
@@ -145,8 +149,8 @@ public sealed class ProductionMaterialConsumedIntegrationEventConverter
                 lotNo,
                 null,
                 "Unrestricted",
-                "production",
-                null,
+                ownerType,
+                ownerId,
                 quantity,
                 requestedAtUtc,
                 UnitCost: unitCost,
@@ -558,7 +562,9 @@ public sealed class MaterialIssueRequestedIntegrationEventConverter
             sourceLocationCode,
             sourceLotNo,
             -Math.Abs(domainEvent.IssuedQuantity),
-            occurredAtUtc);
+            occurredAtUtc,
+            ownerType: allocation?.OwnerType ?? "production",
+            ownerId: allocation?.OwnerId);
     }
 }
 
@@ -589,7 +595,9 @@ public sealed class MaterialLineSideReceiptConfirmedIntegrationEventConverter
             locations.TargetLocationCode,
             request.MaterialLotId,
             Math.Abs(domainEvent.ReceivedQuantity),
-            occurredAtUtc);
+            occurredAtUtc,
+            ownerType: locations.SourceAllocations.FirstOrDefault()?.OwnerType ?? "production",
+            ownerId: locations.SourceAllocations.FirstOrDefault()?.OwnerId);
     }
 }
 
@@ -623,7 +631,9 @@ public sealed class MaterialLineSideReturnRequestedIntegrationEventConverter
             locations.TargetLocationCode,
             domainEvent.MaterialLotId,
             -Math.Abs(domainEvent.ReturnedQuantity),
-            occurredAtUtc);
+            occurredAtUtc,
+            ownerType: locations.SourceAllocations.FirstOrDefault()?.OwnerType ?? "production",
+            ownerId: locations.SourceAllocations.FirstOrDefault()?.OwnerId);
     }
 }
 
@@ -657,7 +667,9 @@ public sealed class MaterialReturnedToWarehouseIntegrationEventConverter
             locations.SourceLocationCode,
             domainEvent.MaterialLotId,
             Math.Abs(domainEvent.ReturnedQuantity),
-            occurredAtUtc);
+            occurredAtUtc,
+            ownerType: locations.SourceAllocations.FirstOrDefault()?.OwnerType ?? "production",
+            ownerId: locations.SourceAllocations.FirstOrDefault()?.OwnerId);
     }
 }
 

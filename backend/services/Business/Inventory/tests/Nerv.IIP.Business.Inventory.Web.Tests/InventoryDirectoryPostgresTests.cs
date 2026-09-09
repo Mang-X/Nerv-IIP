@@ -483,7 +483,12 @@ public sealed class InventoryDirectoryPostgresTests
             Keyword: keyword,
             Skip: 0,
             Take: 20);
-        var values = InventoryDirectoryEfQueries.BuildValues(db, request, directoryType);
+        var values = InventoryDirectoryEfQueries.BuildValues(
+            db,
+            request,
+            TenantScope.From(request.OrganizationId, request.EnvironmentId),
+            SearchTerm.From(request.Keyword),
+            directoryType);
         var countPlan = await ExplainAsync(InventoryDirectoryEfQueries.BuildCount(values));
         var pagePlan = await ExplainAsync(InventoryDirectoryEfQueries.BuildPage(values, request.Skip, request.Take));
         return $"COUNT PLAN:{Environment.NewLine}{countPlan}{Environment.NewLine}PAGE PLAN:{Environment.NewLine}{pagePlan}";

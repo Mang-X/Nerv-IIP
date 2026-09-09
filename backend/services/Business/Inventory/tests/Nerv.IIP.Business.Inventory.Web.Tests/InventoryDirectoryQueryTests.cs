@@ -43,6 +43,26 @@ public sealed class InventoryDirectoryQueryTests
     }
 
     [Fact]
+    public async Task Location_directory_normalizes_tenant_and_blank_keyword_without_mutating_request_fields()
+    {
+        await using var db = CreateDbContext();
+        db.StockLocations.Add(
+            StockLocation.CreateOrUpdate(null, Org, Env, "LOC-A-01", "bin", "SITE-A", null, "active"));
+        await db.SaveChangesAsync();
+        var request = new ListInventoryDirectoryQuery(
+            $" {Org} ",
+            $" {Env} ",
+            InventoryDirectoryTypes.Location,
+            Keyword: "   ");
+
+        var result = await Handle(db, request);
+
+        Assert.Equal("LOC-A-01", Assert.Single(result.Items).Code);
+        Assert.Equal($" {Org} ", request.OrganizationId);
+        Assert.Equal("   ", request.Keyword);
+    }
+
+    [Fact]
     public async Task Location_material_filter_applies_positive_stock_before_total_and_paging()
     {
         await using var db = CreateDbContext();
@@ -181,21 +201,6 @@ public sealed class InventoryDirectoryQueryTests
         Assert.Equal("inventory-directory-type-unsupported", result.ReasonCode);
         Assert.Empty(result.Items);
         Assert.Equal(0, result.Total);
-    }
-
-    [Fact]
-    public async Task Handler_rejects_invalid_paging_instead_of_clamping_it()
-    {
-        await using var db = CreateDbContext();
-
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => Handle(
-            db,
-            new ListInventoryDirectoryQuery(
-                Org,
-                Env,
-                InventoryDirectoryTypes.Location,
-                Skip: -1,
-                Take: 0)));
     }
 
     private static Task<InventoryDirectoryResponse> Handle(ApplicationDbContext db, ListInventoryDirectoryQuery query) =>

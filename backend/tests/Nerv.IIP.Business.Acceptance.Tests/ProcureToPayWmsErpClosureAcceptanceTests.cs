@@ -43,7 +43,7 @@ public sealed class ProcureToPayWmsErpClosureAcceptanceTests
         wmsDb.InboundOrders.Add(inbound);
         await wmsDb.SaveChangesAsync(CancellationToken.None);
 
-        await new CompleteInboundOrderCommandHandler(wmsDb).Handle(
+        await new CompleteInboundOrderCommandHandler(wmsDb, new WmsTrustedCompletionAcceptanceFixture.ReceiptRoute()).Handle(
             new CompleteInboundOrderCommand(
                 inbound.Id,
                 "wms-complete:p2p:001",

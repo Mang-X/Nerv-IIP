@@ -746,9 +746,8 @@ jobs:
         id: postgres-tests
         shell: pwsh
         run: |
-          $members = @('inventory-postgres-profile', 'masterdata-postgres-profile', 'scheduling-postgres-profile', 'apphub-postgres-profile', 'barcodelabel-postgres-profile', 'filestorage-postgres-profile', 'industrialtelemetry-postgres-profile', 'quality-postgres-profile', 'mes-changeover-postgres', 'mes-postgres-profile', 'wms-postgres-profile', 'erp-postgres-profile', 'demandplanning-postgres-profile', 'acceptance-postgres-profile', 'maintenance-device-pause-postgres', 'scheduling-asset-unavailable-postgres', 'maintenance-asset-unavailable-v2-postgres')
           ./scripts/run-postgres-test-lane.ps1 `
-            -MemberId $members `
+            -AllActiveMembers `
             -DatabaseSuffix ${{ github.run_id }}_${{ github.run_attempt }} `
             -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/postgres `
             -SummaryPath artifacts/postgres-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
@@ -935,7 +934,38 @@ jobs:
         timeout-minutes: 3
         id: redis-cap-evidence-environment
         shell: pwsh
+        env:
+          REDIS_SERVICE_ID: ${{ job.services.redis.id }}
+          POSTGRES_SERVICE_ID: ${{ job.services.postgres.id }}
         run: |
+          . ./scripts/lib/ScriptAutomation.ps1
+          ./scripts/tests/redis-cap-observation.Tests.ps1
+          $observationDirectory = 'artifacts/redis-cap-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/observation'
+          [IO.Directory]::CreateDirectory($observationDirectory) | Out-Null
+          $toolsDirectory = Join-Path $env:RUNNER_TEMP 'redis-cap-observation-tools'
+          "counters-path=$(Join-Path $toolsDirectory 'dotnet-counters')" >> $env:GITHUB_OUTPUT
+          try {
+            $installation = Invoke-DotNetOutput -Arguments @('tool', 'install', 'dotnet-counters', '--version', '10.0.731102', '--tool-path', $toolsDirectory) -TimeoutSeconds 60 -Name 'redis-cap-observation-tool'
+            $toolVersion = (Invoke-NativeCommandOutput -Command (Join-Path $toolsDirectory 'dotnet-counters') -Arguments @('--version') -TimeoutSeconds 5 -Name 'redis-cap-observation-tool-version').Stdout.Trim()
+            @{ outcome = 'available'; dotnetCountersVersion = $toolVersion } | ConvertTo-Json | Set-Content (Join-Path $observationDirectory 'tool.json')
+          }
+          catch {
+            @{ outcome = 'unavailable'; failureType = $_.Exception.GetType().Name } | ConvertTo-Json | Set-Content (Join-Path $observationDirectory 'tool.json')
+            Write-Warning "Redis/CAP observation tool unavailable: $($_.Exception.GetType().Name)"
+          }
+          $images = @{}
+          foreach ($service in @(@('redis', $env:REDIS_SERVICE_ID), @('postgres', $env:POSTGRES_SERVICE_ID))) {
+            try {
+              $imageId = (Invoke-NativeCommandOutput -Command 'docker' -Arguments @('inspect', '--format', '{{.Image}}', $service[1]) -TimeoutSeconds 5 -Name "redis-cap-$($service[0])-image").Stdout.Trim()
+              $digests = (Invoke-NativeCommandOutput -Command 'docker' -Arguments @('image', 'inspect', '--format', '{{json .RepoDigests}}', $imageId) -TimeoutSeconds 5 -Name "redis-cap-$($service[0])-digest").Stdout.Trim() | ConvertFrom-Json
+              $images[$service[0]] = @{ outcome = 'available'; imageId = $imageId; repoDigests = $digests }
+            }
+            catch {
+              $images[$service[0]] = @{ outcome = 'unavailable'; failureType = $_.Exception.GetType().Name }
+              Write-Warning "Redis/CAP $($service[0]) image metadata unavailable: $($_.Exception.GetType().Name)"
+            }
+          }
+          $images | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $observationDirectory 'service-images.json')
           $testedSha = (git rev-parse HEAD).Trim()
           "runner-image=$env:ImageOS@$env:ImageVersion" >> $env:GITHUB_OUTPUT
           "dotnet-sdk=$(dotnet --version)" >> $env:GITHUB_OUTPUT
@@ -947,11 +977,36 @@ jobs:
         id: redis-cap-tests
         shell: pwsh
         run: |
-          ./scripts/run-redis-cap-test-lane.ps1 `
-            -AllActiveMembers `
-            -DatabaseSuffix ${{ github.run_id }}_${{ github.run_attempt }} `
-            -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/redis-cap `
-            -SummaryPath artifacts/redis-cap-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
+          . ./scripts/lib/ScriptAutomation.ps1
+          $observationDirectory = 'artifacts/redis-cap-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/observation'
+          $observer = $null
+          try {
+            try {
+              $observer = Start-ManagedBackgroundProcess -Command 'pwsh' -Arguments @('-NoProfile', '-File', './scripts/observe-redis-cap-lane.ps1', '-LaneProcessId', [string]$PID, '-ResultsDirectory', 'artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/redis-cap', '-OutputDirectory', $observationDirectory, '-CountersPath', '${{ steps.redis-cap-evidence-environment.outputs.counters-path }}') -Name 'redis-cap-observation'
+            }
+            catch { Write-Warning "Redis/CAP observation start unavailable: $($_.Exception.GetType().Name)" }
+            ./scripts/run-redis-cap-test-lane.ps1 `
+              -AllActiveMembers `
+              -DatabaseSuffix ${{ github.run_id }}_${{ github.run_attempt }} `
+              -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/redis-cap `
+              -SummaryPath artifacts/redis-cap-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
+          }
+          finally {
+            if ($null -ne $observer) {
+              try {
+                [IO.File]::WriteAllText((Join-Path $observationDirectory 'stop'), 'stop')
+                [void]$observer.Process.WaitForExit(15000)
+                [void]$observer.Stop.Invoke('Redis/CAP lane completed')
+              }
+              catch { Write-Warning "Redis/CAP observation cleanup unavailable: $($_.Exception.GetType().Name)" }
+            }
+            try {
+              . ./scripts/lib/RedisCapObservation.ps1
+              $phaseCount = Export-RedisCapFixturePhases -ResultsDirectory 'artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/redis-cap' -OutputPath (Join-Path $observationDirectory 'fixture-phases.jsonl')
+              Write-Host "Redis/CAP retained fixture phase count=$phaseCount"
+            }
+            catch { Write-Warning "Redis/CAP fixture phases unavailable: $($_.Exception.GetType().Name)" }
+          }
 
       - name: Collect Redis/CAP transport evidence
         timeout-minutes: 5
@@ -1000,7 +1055,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: redis-cap-dependency-summary-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/redis-cap-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
+          path: |
+            artifacts/redis-cap-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
+            artifacts/redis-cap-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/observation/
           if-no-files-found: error
           retention-days: 14
 
@@ -1565,6 +1622,10 @@ jobs:
             artifacts/acceptance/**
             artifacts/fullstack/**
             artifacts/script-logs/**
+            artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/full-chain/erp-wms-delivery-completion/entrypoint-evidence.json
+            artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/full-chain/erp-wms-delivery-completion/diagnostics/failure-summary.json
+            artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/full-chain/erp-wms-delivery-completion/diagnostics/postgres-state.txt
+            artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/full-chain/erp-wms-delivery-completion/diagnostics/redis-stream-state.txt
           if-no-files-found: error
           retention-days: 14
 

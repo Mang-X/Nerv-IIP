@@ -1904,6 +1904,21 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("organization_id")
                         .HasComment("Organization tenant id.");
 
+                    b.Property<string>("OwnerId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("owner_id")
+                        .HasComment("Frozen inventory owner id; null for company and legacy production ownership.");
+
+                    b.Property<string>("OwnerType")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasDefaultValue("production")
+                        .HasColumnName("owner_type")
+                        .HasComment("Frozen inventory owner type; historical consumption facts retain production ownership.");
+
                     b.Property<string>("ReportNo")
                         .IsRequired()
                         .HasMaxLength(100)

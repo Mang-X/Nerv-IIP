@@ -9,6 +9,7 @@ using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
+using Nerv.IIP.Contracts.Quality;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.IntegrationEventHandlers;
 
@@ -119,7 +120,7 @@ internal static class PeriodicInspectionReleaseProjection
                     plan.OrganizationId == integrationEvent.OrganizationId
                     && plan.EnvironmentId == integrationEvent.EnvironmentId
                     && plan.Status == "active"
-                    && plan.Category == "operation"
+                    && plan.Category == QualityInspectionSourceTypes.Operation
                     && plan.SkuCode == payload.SkuCode.Trim()
                     && plan.WorkCenterId != null
                     && workCenterIds.Contains(plan.WorkCenterId)
@@ -560,10 +561,14 @@ internal static class PeriodicInspectionQuantityTaskGeneration
                     context.OrganizationId,
                     context.EnvironmentId,
                     context.InspectionPlanId,
-                    sourceType: "operation",
-                    sourceService: "mes",
+                    sourceType: QualityInspectionSourceTypes.Operation,
+                    sourceService: QualityInspectionSourceServices.Mes,
                     sourceDocumentId: context.WorkOrderId,
-                    sourceDocumentLineId: $"{context.OperationId}:periodic-quantity:{context.Id.Id:D}:{window.Sequence}",
+                    sourceDocumentLineId: PeriodicInspectionSourceLine.LineId(
+                        context.OperationId,
+                        PeriodicInspectionSourceLine.QuantityKind,
+                        context.Id.Id,
+                        window.Sequence),
                     skuCode: context.SkuCode,
                     quantity: window.ThresholdQuantity,
                     uomCode: context.UomCode!,
@@ -571,7 +576,10 @@ internal static class PeriodicInspectionQuantityTaskGeneration
                     serialNo: null,
                     generatedAtUtc,
                     dueAtUtc: generatedAtUtc.AddHours(24),
-                    triggerIdempotencyKey: $"quality:periodic-quantity:{context.Id.Id:D}:{window.Sequence}");
+                    triggerIdempotencyKey: PeriodicInspectionSourceLine.TriggerIdempotencyKey(
+                        PeriodicInspectionSourceLine.QuantityKind,
+                        context.Id.Id,
+                        window.Sequence));
                 if (context.AssignedInspectorUserId is not null || context.AssignedTeamId is not null)
                 {
                     task.Assign(

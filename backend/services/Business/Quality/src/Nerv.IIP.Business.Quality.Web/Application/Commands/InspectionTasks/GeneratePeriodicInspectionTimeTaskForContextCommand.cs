@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionTaskAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.PeriodicInspectionOperationAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
+using Nerv.IIP.Contracts.Quality;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionTasks;
 
@@ -77,10 +78,14 @@ public sealed class GeneratePeriodicInspectionTimeTaskForContextCommandHandler(
             context.OrganizationId,
             context.EnvironmentId,
             context.InspectionPlanId,
-            sourceType: "operation",
-            sourceService: "mes",
+            sourceType: QualityInspectionSourceTypes.Operation,
+            sourceService: QualityInspectionSourceServices.Mes,
             sourceDocumentId: context.WorkOrderId,
-            sourceDocumentLineId: $"{context.OperationId}:periodic-time:{context.Id.Id:D}:{window.Sequence}",
+            sourceDocumentLineId: PeriodicInspectionSourceLine.LineId(
+                context.OperationId,
+                PeriodicInspectionSourceLine.TimeKind,
+                context.Id.Id,
+                window.Sequence),
             skuCode: context.SkuCode,
             quantity: context.QuantityHighWater,
             uomCode: context.UomCode!,
@@ -88,7 +93,10 @@ public sealed class GeneratePeriodicInspectionTimeTaskForContextCommandHandler(
             serialNo: null,
             createdAtUtc,
             dueAtUtc: createdAtUtc.AddHours(24),
-            triggerIdempotencyKey: $"quality:periodic-time:{context.Id.Id:D}:{window.Sequence}");
+            triggerIdempotencyKey: PeriodicInspectionSourceLine.TriggerIdempotencyKey(
+                PeriodicInspectionSourceLine.TimeKind,
+                context.Id.Id,
+                window.Sequence));
         if (context.AssignedInspectorUserId is not null || context.AssignedTeamId is not null)
         {
             task.Assign(

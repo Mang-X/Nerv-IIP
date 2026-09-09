@@ -759,6 +759,10 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
+businessWms = businessWms
+    .WithEnvironment("Erp__BaseUrl", businessErp.GetEndpoint("http"))
+    .WithReference(businessErp);
+
 businessDemandPlanning = businessDemandPlanning
     .WithEnvironment("Erp__BaseUrl", businessErp.GetEndpoint("http"))
     .WithReference(businessErp)

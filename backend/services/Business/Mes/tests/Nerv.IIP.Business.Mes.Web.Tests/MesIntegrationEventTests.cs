@@ -14,6 +14,35 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class MesIntegrationEventTests
 {
+    // NERV-2118：还原 production 硬编码会使公司料各条库存事件失败。
+    [Theory]
+    [InlineData("company")]
+    [InlineData("production")]
+    public void Material_movements_keep_frozen_owner_through_receipt_consumption_reversal_and_return(string ownerType)
+    {
+        var now = DateTimeOffset.Parse("2026-09-08T00:00:00Z");
+        var issue = MaterialIssueRequest.Create("org-001", "env-dev", "MIR-OWNER", "WO-01", "OP-01", "MAT-01", "KG", 4m, now);
+        issue.ConfirmLineSideReceipt(new MaterialTransferLocations("SITE-001", "WH-01", "SITE-001", "LINE-01",
+            [new MaterialTransferAllocation("SITE-001", "WH-01", "LOT-01", 4m, ownerType)]), now, 4m, "LOT-01");
+        var outbound = new MaterialIssueRequestedIntegrationEventConverter().Convert(issue.GetDomainEvents().OfType<MaterialIssueRequestedDomainEvent>().Single());
+        var inbound = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(issue.GetDomainEvents().OfType<MaterialLineSideReceiptConfirmedDomainEvent>().Single());
+        issue.MarkInventoryPosted(issue.PendingPostingToken!, MaterialTransferLeg.WarehouseIssue, now);
+        issue.MarkInventoryPosted(issue.PendingPostingToken!, MaterialTransferLeg.LineSideReceipt, now);
+        var consumption = ProductionReportMaterialConsumption.Record("org-001", "env-dev", "PR-01", "WO-01", "OP-01", "MAT-01", "LOT-01", "KG", 1m, "MIR-OWNER", "SITE-001", "LINE-01", ownerType);
+        var consumed = new ProductionMaterialConsumedIntegrationEventConverter().Convert(new ProductionMaterialConsumedDomainEvent(consumption));
+        var reversed = new ProductionMaterialConsumedIntegrationEventConverter().Convert(new ProductionMaterialConsumedDomainEvent(ProductionReportMaterialConsumption.Reverse(consumption, "PR-REVERSE")));
+        issue.ReturnLineSideMaterial(now, 3m, 1m);
+        var returnOut = new MaterialLineSideReturnRequestedIntegrationEventConverter().Convert(issue.GetDomainEvents().OfType<MaterialLineSideReturnRequestedDomainEvent>().Single());
+        var returnIn = new MaterialReturnedToWarehouseIntegrationEventConverter().Convert(issue.GetDomainEvents().OfType<MaterialReturnedToWarehouseDomainEvent>().Single());
+        foreach (var movement in new[] { outbound, inbound, consumed, reversed, returnOut, returnIn })
+        {
+            Assert.Equal(ownerType, movement.Payload.OwnerType);
+            Assert.Null(movement.Payload.OwnerId);
+            Assert.Equal("LOT-01", movement.Payload.LotNo);
+        }
+        Assert.Equal(new[] { -4m, 4m, -1m, 1m, -3m, 3m }, new[] { outbound, inbound, consumed, reversed, returnOut, returnIn }.Select(x => x.Payload.Quantity));
+    }
+
     /// <summary>对齐库存世界观种子的成品仓事实（SITE-001 / WH-WB-FG-01，#1331）。</summary>
     private static readonly IMesFinishedGoodsReceiptLocationResolver FinishedGoodsLocationResolver =
         new ConfiguredMesFinishedGoodsReceiptLocationResolver(new MesFinishedGoodsReceiptLocationOptions
@@ -379,6 +408,9 @@ public sealed class MesIntegrationEventTests
         Assert.Equal("LOT-OIL-A", integrationEvent.Payload.LotNo);
         Assert.Equal(-3m, integrationEvent.Payload.Quantity);
         Assert.Equal("WO-001", integrationEvent.CorrelationId);
+        // NERV-2117：快照扩展尚未激活公司料过账，默认路径继续 production/null。
+        Assert.Equal("production", integrationEvent.Payload.OwnerType);
+        Assert.Null(integrationEvent.Payload.OwnerId);
     }
 
     [Fact]

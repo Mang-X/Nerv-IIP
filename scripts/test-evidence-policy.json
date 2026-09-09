@@ -104,6 +104,12 @@
       "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL ERP cost-accounting acceptance test\\.\";$"
     },
     {
+      "id": "erp-purchase-receipt-route",
+      "sourcePath": "backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/PurchaseReceiptPostingRoutePostgresTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL ERP purchase-receipt route acceptance test\\.\";$"
+    },
+    {
       "id": "erp-scale-seed",
       "sourcePath": "backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/LeaderDemoScaleSeedPostgresTests.cs",
       "sourceOrdinal": 1,
@@ -246,6 +252,12 @@
       "sourcePath": "backend/tests/Nerv.IIP.Business.Acceptance.Tests/RuntimeHoursMaintenancePostgresAcceptanceTests.cs",
       "sourceOrdinal": 1,
       "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run this real PostgreSQL runtime-hours to Maintenance acceptance test\\.\";$"
+    },
+    {
+      "id": "acceptance-receipt-route",
+      "sourcePath": "backend/tests/Nerv.IIP.Business.Acceptance.Tests/PurchaseReceiptPostingRoutePostgresAcceptanceTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the ERP and WMS receipt-route HTTP acceptance test\\.\";$"
     },
     {
       "id": "fullchain-erp-return",
@@ -549,7 +561,7 @@
       "id": "acceptance-runtime-maintenance",
       "sourceId": "acceptance-runtime-maintenance",
       "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.Acceptance\\.Tests\\.(?:RuntimeHoursMaintenancePostgresAcceptanceTests|WmsInventoryRpcIdempotencyAcceptanceTests)\\..+$",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Acceptance\\.Tests\\.(?:RuntimeHoursMaintenancePostgresAcceptanceTests|WmsInventoryRpcIdempotencyAcceptanceTests|QualityInspectionInventoryStockGateAcceptanceTests)\\..+$",
       "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run this real PostgreSQL runtime-hours to Maintenance acceptance test\\.$",
       "allowedLanes": [
         "backend"
@@ -560,11 +572,33 @@
       "expiresOn": null,
       "exitCondition": null,
       "testIdentities": [
+        "Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_every_stock_bearing_inspection_source_type_still_transfers_quality_stock",
+        "Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_first_article_inspection_result_at_validator_upper_bound_never_reaches_inventory_stock_commands",
+        "Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_first_article_inspection_result_with_generated_codes_never_reaches_inventory_stock_commands",
+        "Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_first_article_inspection_result_with_short_identity_posts_no_stock_movement",
+        "Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_receiving_inspection_result_still_transfers_quality_stock",
         "Nerv.IIP.Business.Acceptance.Tests.RuntimeHoursMaintenancePostgresAcceptanceTests.Runtime_hour_interval_generates_pm_work_order_from_industrial_telemetry_runtime_hours_on_postgres",
         "Nerv.IIP.Business.Acceptance.Tests.WmsInventoryRpcIdempotencyAcceptanceTests.Postgres_count_execution_timeout_and_concurrent_retry_converges_inventory_and_wms",
         "Nerv.IIP.Business.Acceptance.Tests.WmsInventoryRpcIdempotencyAcceptanceTests.Postgres_count_task_same_code_different_key_unique_conflict_reruns_as_domain_conflict"
       ],
-      "expectedRuntimeTestCount": 3
+      "expectedRuntimeTestCount": 8
+    },
+    {
+      "id": "acceptance-receipt-route",
+      "sourceId": "acceptance-receipt-route",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Acceptance\\.Tests\\.PurchaseReceiptPostingRoutePostgresAcceptanceTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the ERP and WMS receipt-route HTTP acceptance test\\.$",
+      "allowedLanes": ["backend"],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Acceptance.Tests.PurchaseReceiptPostingRoutePostgresAcceptanceTests.Public_receipt_routes_are_exclusive_and_replay_preserves_identity_on_postgres"
+      ],
+      "expectedRuntimeTestCount": 1
     },
     {
       "id": "apphub-postgres",
@@ -1275,7 +1309,7 @@
       "id": "mes-production-candidate",
       "sourceId": "mes-production-candidate",
       "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.Mes\\.Web\\.Tests\\.(?:CreatedWorkOrderReleaseBackfillPostgresTests|DowntimeReasonCodeMigrationPostgresTests|LeaderDemoScaleSeedPostgresTests|MesChangeoverRecordPostgresTests|MesCollaborationPostgresTests|MesDowntimeReadFacePostgresTests|MesMaterialSubstituteSnapshotPostgresTests|MesProductionStatisticsPostgresTests|MesSchedulePlanProvenancePostgresTests|NcrReworkRequestedHandlerPostgresTests|NcrReworkRequestedOutboxPostgresTests|OperationActualTimeSettlementPostgresTests|OperationTaskClaimPostgresTests|ProductionReportOeeDimensionSnapshotPostgresTests|RushWorkOrderHttpPostgresTests|SkuDisabledConsumerTests|TelemetryProductionReportCandidatePostgresTests|WorkOrderCapitalizationConcurrencyPostgresTests|WorkOrderReleaseFactTimePostgresTests|WorkOrderReleaseProjectionBackfillPostgresTests|WorkOrderTransformationApplicationPostgresTests|WorkOrderTransformationPostgresTests)\\..+$",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Mes\\.Web\\.Tests\\.(?:CreatedWorkOrderReleaseBackfillPostgresTests|DowntimeReasonCodeMigrationPostgresTests|LeaderDemoScaleSeedPostgresTests|MesChangeoverRecordPostgresTests|MesCollaborationPostgresTests|MesDowntimeReadFacePostgresTests|MesMaterialOwnershipSnapshotPostgresTests|MesMaterialSubstituteSnapshotPostgresTests|MesProductionStatisticsPostgresTests|MesSchedulePlanProvenancePostgresTests|NcrReworkRequestedHandlerPostgresTests|NcrReworkRequestedOutboxPostgresTests|OperationActualTimeSettlementPostgresTests|OperationTaskClaimPostgresTests|ProductionReportOeeDimensionSnapshotPostgresTests|RushWorkOrderHttpPostgresTests|SkuDisabledConsumerTests|TelemetryProductionReportCandidatePostgresTests|WorkOrderCapitalizationConcurrencyPostgresTests|WorkOrderReleaseFactTimePostgresTests|WorkOrderReleaseProjectionBackfillPostgresTests|WorkOrderTransformationApplicationPostgresTests|WorkOrderTransformationPostgresTests)\\..+$",
       "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run real PostgreSQL MES candidate proof\\.$",
       "allowedLanes": [
         "backend"
@@ -1296,6 +1330,7 @@
         "Nerv.IIP.Business.Mes.Web.Tests.MesDowntimeReadFacePostgresTests.Reason_code_filter_narrows_rows_only_and_blank_reason_code_is_not_a_filter",
         "Nerv.IIP.Business.Mes.Web.Tests.MesDowntimeReadFacePostgresTests.Reason_summary_settles_recovered_and_ongoing_minutes_and_ranks_by_duration_then_code",
         "Nerv.IIP.Business.Mes.Web.Tests.MesMaterialSubstituteSnapshotPostgresTests.Substitute_snapshot_migration_and_cross_scope_readback_hold_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.MesMaterialOwnershipSnapshotPostgresTests.Legacy_and_explicit_ownership_survive_persistence_and_document_links_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.MesProductionStatisticsPostgresTests.Four_dimensions_filters_and_second_page_use_scoped_production_totals_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.MesProductionStatisticsPostgresTests.Legacy_reports_keep_quantities_in_an_explicitly_degraded_dimension_bucket",
         "Nerv.IIP.Business.Mes.Web.Tests.MesProductionStatisticsPostgresTests.Reversal_offsets_the_original_business_bucket_and_non_positive_totals_have_no_rates",
@@ -1337,7 +1372,7 @@
         "Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationPostgresTests.Split_lineage_audit_and_work_order_version_survive_postgres_scope_recreation",
         "Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationPostgresTests.Stale_work_order_version_is_rejected_by_postgresql_concurrency_token"
       ],
-      "expectedRuntimeTestCount": 50
+      "expectedRuntimeTestCount": 51
     },
     {
       "id": "mes-cap-postgres",
@@ -1447,6 +1482,24 @@
         "Nerv.IIP.Business.Erp.Web.Tests.WorkCenterMachineOverheadRatePostgresAcceptanceTests.Migration_persists_monthly_rate_and_enforces_scope_period_revision_on_postgres"
       ],
       "expectedRuntimeTestCount": 16
+    },
+    {
+      "id": "erp-purchase-receipt-route",
+      "sourceId": "erp-purchase-receipt-route",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Erp\\.Web\\.Tests\\.PurchaseReceiptPostingRoutePostgresTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL ERP purchase-receipt route acceptance test\\.$",
+      "allowedLanes": ["backend"],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Erp.Web.Tests.PurchaseReceiptPostingRoutePostgresTests.Routes_persist_replay_without_events_and_keep_financial_facts_on_postgres",
+        "Nerv.IIP.Business.Erp.Web.Tests.PurchaseReceiptPostingRoutePostgresTests.Legacy_receipt_migrates_to_direct_and_old_key_replays_on_postgres"
+      ],
+      "expectedRuntimeTestCount": 2
     },
     {
       "id": "erp-scale-seed",
