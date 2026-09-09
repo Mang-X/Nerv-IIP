@@ -70,9 +70,9 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         // ② 新构造入口的顶格产出必须真的落得进去。
         var saturated = new[]
         {
-            ErpVoucherNoPolicy.Compose("WOC", workOrderId, movementId),
-            ErpVoucherNoPolicy.Compose("WOCADJ", workOrderId, adjustmentSourceId),
-            ErpVoucherNoPolicy.Compose("AP", payableNo),
+            ErpVoucherNoPolicy.Compose(VoucherFamily.WorkOrderCapitalization, workOrderId, movementId),
+            ErpVoucherNoPolicy.Compose(VoucherFamily.WorkOrderCostAdjustment, workOrderId, adjustmentSourceId),
+            ErpVoucherNoPolicy.Compose(VoucherFamily.AccountPayable, payableNo),
         };
         await using (var write = new ApplicationDbContext(options, new NoopMediator()))
         {
@@ -97,7 +97,7 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         await using (var replay = new ApplicationDbContext(options, new NoopMediator()))
         {
             replay.JournalVouchers.Add(BalancedVoucher(
-                ErpVoucherNoPolicy.Compose("WOC", workOrderId, movementId),
+                ErpVoucherNoPolicy.Compose(VoucherFamily.WorkOrderCapitalization, workOrderId, movementId),
                 postingDate));
             var error = await Assert.ThrowsAsync<DbUpdateException>(() => replay.SaveChangesAsync());
             var postgres = Assert.IsType<PostgresException>(error.InnerException);
@@ -124,17 +124,15 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         var distinctSources = new[]
         {
             // 摘要式之间：只有段划分不同；摘要输入不带长度前缀就会塌成同号。
-            ErpVoucherNoPolicy.Compose("WOC", head + "-" + tail, "Z"),
-            ErpVoucherNoPolicy.Compose("WOC", head, tail + "-Z"),
+            ErpVoucherNoPolicy.Compose(VoucherFamily.WorkOrderCapitalization, head + "-" + tail, "Z"),
+            ErpVoucherNoPolicy.Compose(VoucherFamily.WorkOrderCapitalization, head, tail + "-Z"),
             // 跨族：同样两段，族不同。
-            ErpVoucherNoPolicy.Compose("WOC", saturatedWorkOrderId, saturatedSourceId),
-            ErpVoucherNoPolicy.Compose("WOCADJ", saturatedWorkOrderId, saturatedSourceId),
+            ErpVoucherNoPolicy.Compose(VoucherFamily.WorkOrderCapitalization, saturatedWorkOrderId, saturatedSourceId),
+            ErpVoucherNoPolicy.Compose(VoucherFamily.WorkOrderCostAdjustment, saturatedWorkOrderId, saturatedSourceId),
             // 改前 JV-WOC- 是 JV-WOC-ADJ- 的前缀，这两行改前是同一个凭证号。
-            ErpVoucherNoPolicy.Compose("WOC", "ADJ-WO-0001", "RPT-0001"),
-            ErpVoucherNoPolicy.Compose("WOCADJ", "WO-0001", "RPT-0001"),
+            ErpVoucherNoPolicy.Compose(VoucherFamily.WorkOrderCapitalization, "ADJ-WO-0001", "RPT-0001"),
+            ErpVoucherNoPolicy.Compose(VoucherFamily.WorkOrderCostAdjustment, "WO-0001", "RPT-0001"),
         };
-        Assert.Equal(distinctSources.Length, distinctSources.Distinct(StringComparer.Ordinal).Count());
-
         await using (var setup = new ApplicationDbContext(options, new NoopMediator()))
         {
             await setup.Database.MigrateAsync();
@@ -161,6 +159,9 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
                 .Select(x => x.VoucherNo)
                 .ToListAsync();
             Assert.Equal(distinctSources.Length, persisted.Count);
+            // 顺序刻意如此：**先落库**（塌号在这里就是 23505），再在读回结果上核对互异。
+            // 这条内存断言若放在写库之前会短路，唯一索引那一层就永远不被检验。
+            Assert.Equal(distinctSources.Length, persisted.Distinct(StringComparer.Ordinal).Count());
             Assert.All(persisted, voucherNo => Assert.True(
                 voucherNo.Length <= ErpVoucherNoPolicy.ColumnMaxLength,
                 $"凭证号 {voucherNo} 长度 {voucherNo.Length} 超出列宽。"));

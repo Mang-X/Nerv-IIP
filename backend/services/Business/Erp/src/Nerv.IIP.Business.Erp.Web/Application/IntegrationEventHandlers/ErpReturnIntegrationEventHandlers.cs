@@ -286,7 +286,7 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPur
         dbContext.DebitNotes.AddRange(debitNotes);
         dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForPurchaseReturn(
             purchaseReturn,
-            ErpVoucherNoPolicy.Compose("PRTN", purchaseReturn.PurchaseReturnNo),
+            ErpVoucherNoPolicy.Compose(VoucherFamily.PurchaseReturn, purchaseReturn.PurchaseReturnNo),
             DateOnly.FromDateTime(integrationEvent.OccurredAtUtc.UtcDateTime)));
     }
 

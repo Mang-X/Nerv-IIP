@@ -890,7 +890,7 @@ public static class FinanceVoucherFactory
 
     public static string GoodsReceiptIrAccrualVoucherNo(string purchaseReceiptNo)
     {
-        return ErpVoucherNoPolicy.Compose("GRIR", purchaseReceiptNo);
+        return ErpVoucherNoPolicy.Compose(VoucherFamily.GoodsReceiptIrAccrual, purchaseReceiptNo);
     }
 
     public static JournalVoucher ForGoodsReceiptIrAccrual(PurchaseReceipt receipt, decimal amount, string voucherNo)
@@ -928,7 +928,7 @@ public static class FinanceVoucherFactory
         return JournalVoucher.Post(
             creditNote.OrganizationId,
             creditNote.EnvironmentId,
-            ErpVoucherNoPolicy.Compose("CN", creditNote.CreditNoteNo),
+            ErpVoucherNoPolicy.Compose(VoucherFamily.CreditNote, creditNote.CreditNoteNo),
             postingDate,
             [
                 LocalDebit(SalesReturnsAccountCode, creditNote.Amount, creditNote.CurrencyCode, creditNote.ExchangeRate, $"Credit note {creditNote.CreditNoteNo}"),
@@ -963,7 +963,7 @@ public static class FinanceVoucherFactory
         return JournalVoucher.Post(
             invoice.OrganizationId,
             invoice.EnvironmentId,
-            ErpVoucherNoPolicy.Compose("AP", payable.PayableNo),
+            ErpVoucherNoPolicy.Compose(VoucherFamily.AccountPayable, payable.PayableNo),
             invoice.InvoiceDate,
             lines);
     }
@@ -973,7 +973,7 @@ public static class FinanceVoucherFactory
         return JournalVoucher.Post(
             payable.OrganizationId,
             payable.EnvironmentId,
-            ErpVoucherNoPolicy.Compose("AP", payable.PayableNo),
+            ErpVoucherNoPolicy.Compose(VoucherFamily.AccountPayable, payable.PayableNo),
             payable.InvoiceDate,
             [
                 LocalDebit(DirectPayableExpenseAccountCode, payable.Amount, payable.CurrencyCode, payable.ExchangeRate, $"Direct AP expense {payable.SourceDocumentNo}"),
@@ -986,7 +986,7 @@ public static class FinanceVoucherFactory
         return JournalVoucher.Post(
             receivable.OrganizationId,
             receivable.EnvironmentId,
-            ErpVoucherNoPolicy.Compose("AR", receivable.ReceivableNo),
+            ErpVoucherNoPolicy.Compose(VoucherFamily.AccountReceivable, receivable.ReceivableNo),
             receivable.InvoiceDate,
             [
                 LocalDebit(AccountsReceivableAccountCode, receivable.Amount, receivable.CurrencyCode, receivable.ExchangeRate, $"AR {receivable.ReceivableNo}"),
@@ -999,7 +999,7 @@ public static class FinanceVoucherFactory
         return JournalVoucher.Post(
             candidate.OrganizationId,
             candidate.EnvironmentId,
-            ErpVoucherNoPolicy.Compose("COST", candidate.CandidateNo),
+            ErpVoucherNoPolicy.Compose(VoucherFamily.CostCandidate, candidate.CandidateNo),
             DateOnly.FromDateTime(candidate.CreatedAtUtc),
             [
                 LocalDebit("5001", candidate.Amount, candidate.CurrencyCode, candidate.ExchangeRate, $"Cost candidate {candidate.SourceDocumentNo}"),
