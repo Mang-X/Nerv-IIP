@@ -915,6 +915,20 @@ catch {
 }
 Assert-Contract ($runnerBypassText.Contains("A parameter cannot be found that matches parameter name 'TestCommand'", [StringComparison]::Ordinal)) 'The production fast-shard runner must reject a command replacement parameter before test execution.'
 
+# #2870 — the 1800s default is CI's budget, not a ceiling. A local runner sharing CPU with other
+# worktrees legitimately needs more, so a budget above the default must reach shard resolution
+# (and fail there on the unknown id) instead of dying at parameter binding.
+$runnerBudgetText = ''
+try {
+    Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-File', $runnerPath, '-ShardId', 'not-a-shard', '-ResultsDirectory', $timeoutResultsDirectory, '-TrxFilePrefix', 'budget-contract', '-TimeoutSeconds', '1801') -WorkingDirectory $repoRoot -Name 'backend-test-shard-timeout-budget-contract' | Out-Null
+    throw 'The fast-shard runner must not run an unknown shard.'
+}
+catch {
+    $runnerBudgetText = $_.Exception.Message
+}
+Assert-Contract (-not $runnerBudgetText.Contains("Cannot validate argument on parameter 'TimeoutSeconds'", [StringComparison]::Ordinal)) 'The fast-shard runner must accept a timeout budget above its 1800s default (#2870).'
+Assert-Contract ($runnerBudgetText.Contains("Backend test shard 'not-a-shard' must be defined exactly once", [StringComparison]::Ordinal)) 'A timeout budget above the default must reach shard resolution unchanged.'
+
 $staleSelectorText = ''
 try {
     Assert-BackendTestShardSelectorDiscovery -Selector 'Nerv.IIP.Tests.StaleSelector' -MethodSelector $true -DiscoveredTests @()

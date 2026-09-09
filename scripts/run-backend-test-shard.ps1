@@ -25,7 +25,11 @@ param(
     [Parameter(Mandatory)]
     [string] $TrxFilePrefix,
 
-    [ValidateRange(1, 1800)]
+    # The default is the budget CI relies on; ci.yml never passes this parameter, so the CI
+    # behaviour stays put. The upper bound is the helper's own millisecond limit, not a second
+    # ceiling of 1800: a local run whose CPU is shared with other worktrees exceeds 1800s without
+    # any test failing, and the only honest answer is to let that caller raise its budget (#2870).
+    [ValidateRange(1, 2147483)]
     [int] $TimeoutSeconds = 1800,
 
     [string] $ManifestPath = (Join-Path $PSScriptRoot 'backend-test-shards.json')
