@@ -10,6 +10,8 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -24,6 +26,21 @@ using Nerv.IIP.Business.Wms.Web.Application.Inventory;
 using Nerv.IIP.Business.Wms.Web.Endpoints.Wms;
 using Nerv.IIP.Contracts.Inventory;
 using NetCorePal.Extensions.DistributedTransactions;
+using MediatR;
+using NetCorePal.Extensions.DependencyInjection;
+using NetCorePal.Extensions.DistributedLocks;
+using Nerv.IIP.Business.Inventory.Infrastructure;
+using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
+using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
+using Nerv.IIP.Business.Mes.Domain.DomainEvents;
+using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Messaging.CAP;
+using Microsoft.Extensions.Logging.Abstractions;
+using InventoryDb = Nerv.IIP.Business.Inventory.Infrastructure.ApplicationDbContext;
 using ErpDb = Nerv.IIP.Business.Erp.Infrastructure.ApplicationDbContext;
 using WmsDb = Nerv.IIP.Business.Wms.Infrastructure.ApplicationDbContext;
 
@@ -31,7 +48,7 @@ namespace Nerv.IIP.Business.Acceptance.Tests;
 
 // NERV-2121/2122 DomainInvariant/PublicContract/ProviderBehavior：真实 Gateway→ERP→WMS HTTP 与 PostgreSQL。
 // IAM 权限检查为允许桩；不证明真实 IAM 授权。
-// publisher 仅记录库存意图，不证明 Redis/CAP 或外部进程 FullChain。
+// #3268：Inventory 使用真实 PostgreSQL/命令/事件转换，事件由测试直接调用消费者交付；不证明 Redis/CAP 或外部进程 FullChain。
 [Collection(AcceptancePostgresLaneDatabase.CollectionName)]
 public sealed class PurchaseReceiptPostingRoutePostgresAcceptanceTests
 {
@@ -42,7 +59,7 @@ public sealed class PurchaseReceiptPostingRoutePostgresAcceptanceTests
     [ReceiptRoutePostgresFact]
     public async Task Public_receipt_routes_are_exclusive_and_replay_preserves_identity_on_postgres()
     {
-        await AcceptancePostgresLaneDatabase.ResetSchemaAsync("erp", "wms");
+        await AcceptancePostgresLaneDatabase.ResetSchemaAsync("erp", "wms", "inventory");
         var events = new RecordingPublisher();
         await using var erp = new WebApplicationFactory<RecordPurchaseReceiptEndpoint>()
             .WithWebHostBuilder(builder => Configure(builder, events));
@@ -109,7 +126,7 @@ public sealed class PurchaseReceiptPostingRoutePostgresAcceptanceTests
                 ["organizationId"] = Organization, ["environmentId"] = EnvironmentId,
                 ["purchaseReceiptNo"] = $"RCV-{route}", ["purchaseOrderNo"] = $"PO-{route}",
                 ["idempotencyKey"] = $"receipt-{route}",
-                ["lines"] = new[] { new { purchaseOrderLineNo = "1", receivedQuantity = 10m, qualityStatus = "unrestricted" } },
+                ["lines"] = new[] { new { purchaseOrderLineNo = "1", receivedQuantity = 10m, qualityStatus = "unrestricted", lotNo = "LOT-ROUTE" } },
             };
             if (route == "wms") payload["inventoryPostingRoute"] = route;
             using var first = await gatewayClient.PostAsJsonAsync("/api/business-console/v1/erp/procurement/purchase-receipts", payload);
@@ -130,10 +147,11 @@ public sealed class PurchaseReceiptPostingRoutePostgresAcceptanceTests
         Assert.Equal(10m, directMovement.Payload.Quantity);
         Assert.Equal(2m, directMovement.Payload.UnitCost);
 
+        var wmsEvents = new RecordingPublisher();
         await using var wms = new WebApplicationFactory<CompleteInboundOrderEndpoint>()
             .WithWebHostBuilder(builder =>
             {
-                Configure(builder, new RecordingPublisher());
+                Configure(builder, wmsEvents);
                 builder.ConfigureTestServices(services =>
                 {
                     services.AddFastEndpoints(options =>
@@ -152,7 +170,22 @@ public sealed class PurchaseReceiptPostingRoutePostgresAcceptanceTests
         {
             var db = scope.ServiceProvider.GetRequiredService<WmsDb>();
             AcceptancePostgresLaneDatabase.AssertUsesGovernedDatabase(db);
+            await db.GetService<IMigrator>().MigrateAsync("20260729205928_CompleteWmsWorkPoolExecutionBoundary");
+            // 真实旧 schema 中已成立的无价请求：升级只加可空列，不补价或产生新库存事件。
+            await db.Database.ExecuteSqlRawAsync("""
+                INSERT INTO wms.inventory_movement_requests
+                    (id, organization_id, environment_id, movement_type, source_document_id, source_document_line_id,
+                     idempotency_key, sku_code, uom_code, site_code, location_code, quality_status, owner_type,
+                     quantity, status, inventory_movement_id, created_at_utc, posted_at_utc)
+                VALUES ('00000000-0000-0000-0000-000000002131', 'org-route', 'env-route', 'inbound', 'IN-LEGACY', '1',
+                    'legacy-complete', 'SKU-01', 'ea', 'SITE-01', 'RECEIVING', 'unrestricted', 'company',
+                    8, 'Posted', 'LEGACY-MOVEMENT', '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z')
+                """);
             await db.Database.MigrateAsync();
+            var legacy = await db.InventoryMovementRequests.SingleAsync();
+            Assert.Null(legacy.UnitCost);
+            Assert.Equal("LEGACY-MOVEMENT", legacy.InventoryMovementId);
+            Assert.Equal(8m, legacy.Quantity);
             foreach (var (org, env) in new[] { (Organization, EnvironmentId), ("org-other", EnvironmentId), (Organization, "env-other") })
                 await WmsTrustedCompletionAcceptanceFixture.SeedAsync(db, org, env, "SITE-01");
         }
@@ -171,7 +204,7 @@ public sealed class PurchaseReceiptPostingRoutePostgresAcceptanceTests
                 organizationId = org, environmentId = env, inboundOrderNo = $"IN-{suffix}",
                 sourceDocumentType = "purchase-receipt", sourceDocumentId = source, siteCode = "SITE-01",
                 lines = new[] { new { lineNo = "1", skuCode = "SKU-01", uomCode = "ea", receivedQuantity = 10m,
-                    stagingLocationCode = "RECEIVING", qualityStatus = "unrestricted", ownerType = "company" } },
+                    stagingLocationCode = "RECEIVING", qualityStatus = "unrestricted", ownerType = "company", lotNo = "LOT-ROUTE" } },
             });
             var id = (await SuccessfulData(created)).GetProperty("inboundOrderId").GetString();
             long version;
@@ -211,6 +244,94 @@ public sealed class PurchaseReceiptPostingRoutePostgresAcceptanceTests
         }
         await using var finalScope = erp.Services.CreateAsyncScope();
         Assert.Equal(2, await finalScope.ServiceProvider.GetRequiredService<ErpDb>().PurchaseReceipts.CountAsync());
+        Assert.Single(events.Published.OfType<InventoryMovementRequestedIntegrationEvent>());
+        var wmsMovement = Assert.Single(wmsEvents.Published.OfType<InventoryMovementRequestedIntegrationEvent>());
+        Assert.Equal(2m, wmsMovement.Payload.UnitCost);
+        await using (var read = wms.Services.CreateAsyncScope())
+            Assert.Equal(2m, (await read.ServiceProvider.GetRequiredService<WmsDb>().InventoryMovementRequests.SingleAsync(x => x.SourceDocumentId == "IN-wms")).UnitCost);
+
+        await AssertPostedValueAndConsumptionAsync(directMovement, erp, consume: false);
+        await AcceptancePostgresLaneDatabase.ResetSchemaAsync("inventory");
+        await AssertPostedValueAndConsumptionAsync(wmsMovement, erp, consume: true);
+    }
+
+    private static async Task AssertPostedValueAndConsumptionAsync(
+        InventoryMovementRequestedIntegrationEvent receipt,
+        WebApplicationFactory<RecordPurchaseReceiptEndpoint> erp,
+        bool consume)
+    {
+        var published = new RecordingPublisher();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(PostStockMovementCommand).Assembly)
+            .AddUnitOfWorkBehaviors());
+        services.AddIntegrationEvents(typeof(StockMovementPostedIntegrationEventConverter));
+        services.AddInventoryPostgreSqlPersistence(AcceptancePostgresLaneDatabase.ConnectionString);
+        services.AddInMemoryDistributedLock();
+        services.AddSingleton<IInventoryIntegrationEventContextAccessor, ReceiptInventoryContext>();
+        services.AddSingleton<IIntegrationEventPublisher>(published);
+        await using var provider = services.BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<InventoryDb>();
+        AcceptancePostgresLaneDatabase.AssertUsesGovernedDatabase(db);
+        await db.Database.MigrateAsync();
+        var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+        var consumer = new InventoryMovementRequestedIntegrationEventHandlerForPostingMovement(
+            NullLogger<InventoryMovementRequestedIntegrationEventHandlerForPostingMovement>.Instance,
+            sender, new InMemoryIntegrationEventDeadLetterStore(), published);
+        await consumer.HandleAsync(receipt, CancellationToken.None);
+        await consumer.HandleAsync(receipt, CancellationToken.None);
+        db.ChangeTracker.Clear();
+        var ledger = Assert.Single(await db.StockLedgers.ToArrayAsync());
+        Assert.Equal(10m, ledger.OnHandQuantity);
+        Assert.Equal(20m, ledger.InventoryValue);
+        Assert.Single(await db.StockMovements.ToArrayAsync());
+        if (!consume) return;
+
+        var payload = receipt.Payload;
+        var transfer = new PostStockMovementCommand(Organization, EnvironmentId, "transfer", "wms",
+            "ISSUE-ROUTE", "1", "issue-route", payload.SkuCode, payload.UomCode, payload.SiteCode,
+            payload.LocationCode, payload.LotNo, null, "unrestricted", payload.OwnerType, payload.OwnerId, -4m,
+            TransferInSiteCode: payload.SiteCode, TransferInLocationCode: "LINE-SIDE", TransferInQuantity: 4m);
+        await sender.Send(transfer);
+        await sender.Send(transfer);
+        var consumption = ProductionReportMaterialConsumption.Record(Organization, EnvironmentId, "REPORT-ROUTE", "WO-ROUTE",
+            "OP-10", payload.SkuCode, "LOT-ROUTE", payload.UomCode, 3m, "ISSUE-ROUTE",
+            payload.SiteCode, "LINE-SIDE", payload.OwnerType, payload.OwnerId);
+        var requested = new ProductionMaterialConsumedIntegrationEventConverter().Convert(
+            Assert.Single(consumption.GetDomainEvents().OfType<ProductionMaterialConsumedDomainEvent>()));
+        await consumer.HandleAsync(requested, CancellationToken.None);
+        await consumer.HandleAsync(requested, CancellationToken.None);
+        var posted = Assert.Single(published.Published.OfType<StockMovementPostedIntegrationEvent>(),
+            x => x.Payload.SourceDocumentId == "REPORT-ROUTE");
+        Assert.Equal(-3m, posted.Payload.Quantity);
+        Assert.Equal(2m, posted.Payload.UnitCost);
+        Assert.Equal(-6m, posted.Payload.MovementAmount);
+        db.ChangeTracker.Clear();
+        Assert.Equal(4, await db.StockMovements.CountAsync());
+        Assert.Equal(7m, await db.StockLedgers.SumAsync(x => x.OnHandQuantity));
+        Assert.Equal(14m, await db.StockLedgers.SumAsync(x => x.InventoryValue));
+        Assert.Equal(20m, await db.StockLedgers.SumAsync(x => x.InventoryValue) - posted.Payload.MovementAmount);
+
+        await using var erpScope = erp.Services.CreateAsyncScope();
+        var erpDb = erpScope.ServiceProvider.GetRequiredService<ErpDb>();
+        var cost = WorkOrderCost.Open(Organization, EnvironmentId, "WO-ROUTE", "FG-ROUTE");
+        cost.RecordLabor("REPORT-ROUTE", "WC-ROUTE", 1m, 1m, "CNY", false, posted.OccurredAtUtc);
+        erpDb.WorkOrderCosts.Add(cost);
+        await erpDb.SaveChangesAsync();
+        var costConsumer = new StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost(
+            erpDb, new InMemoryIntegrationEventDeadLetterStore(), erpDb);
+        await costConsumer.HandleAsync(posted, CancellationToken.None);
+        await costConsumer.HandleAsync(posted, CancellationToken.None);
+        erpDb.ChangeTracker.Clear();
+        var persistedCost = await erpDb.WorkOrderCosts.Include(x => x.Details).SingleAsync();
+        Assert.Equal(6m, persistedCost.MaterialCost);
+        Assert.Single(persistedCost.Details, x => x.Type == WorkOrderCostDetailType.Material);
+    }
+
+    private sealed class ReceiptInventoryContext : IInventoryIntegrationEventContextAccessor
+    {
+        public InventoryIntegrationEventContext GetContext() => new("receipt-valuation", "receipt-valuation", "system:test");
     }
 
     private static void Configure(IWebHostBuilder builder, RecordingPublisher publisher)

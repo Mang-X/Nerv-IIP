@@ -37,7 +37,8 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
         string? inventoryReservationId,
         DateOnly? productionDate,
         DateOnly? expiryDate,
-        bool publishCreatedEvent = true)
+        bool publishCreatedEvent = true,
+        decimal? unitCost = null)
     {
         OrganizationId = WmsText.Required(organizationId, nameof(organizationId));
         EnvironmentId = WmsText.Required(environmentId, nameof(environmentId));
@@ -55,6 +56,7 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
         OwnerType = WmsText.Required(ownerType, nameof(ownerType)).ToLowerInvariant();
         OwnerId = WmsText.Optional(ownerId);
         Quantity = WmsText.NonZero(quantity, nameof(quantity));
+        UnitCost = unitCost;
         InventoryReservationId = WmsText.Optional(inventoryReservationId);
         ProductionDate = productionDate;
         ExpiryDate = expiryDate;
@@ -89,6 +91,7 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
     /// and count-adjustment uses the counted-minus-expected variance.
     /// </summary>
     public decimal Quantity { get; private set; }
+    public decimal? UnitCost { get; private set; }
     public InventoryMovementRequestStatus Status { get; private set; }
     public string? InventoryMovementId { get; private set; }
     public string? FailureCode { get; private set; }
@@ -115,7 +118,8 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
         decimal quantity,
         string? inventoryReservationId = null,
         DateOnly? ProductionDate = null,
-        DateOnly? ExpiryDate = null)
+        DateOnly? ExpiryDate = null,
+        decimal? unitCost = null)
     {
         return new InventoryMovementRequest(
             organizationId,
@@ -136,7 +140,8 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
             quantity,
             inventoryReservationId,
             ProductionDate,
-            ExpiryDate);
+            ExpiryDate,
+            unitCost: unitCost);
     }
 
     public static InventoryMovementRequest RecordPosted(
