@@ -413,7 +413,9 @@ public sealed record PurchaseReceiptSourceDocumentResponse(
     string PurchaseReceiptNo,
     string Status,
     IReadOnlyCollection<PurchaseReceiptSourceDocumentLineResponse> Lines,
-    PurchaseReceiptInventoryPostingRoute InventoryPostingRoute = PurchaseReceiptInventoryPostingRoute.Direct);
+    PurchaseReceiptInventoryPostingRoute InventoryPostingRoute = PurchaseReceiptInventoryPostingRoute.Direct,
+    string? CurrencyCode = null,
+    decimal? ExchangeRate = null);
 
 public sealed record PurchaseReceiptSourceDocumentLineResponse(
     string LineNo,
@@ -421,7 +423,9 @@ public sealed record PurchaseReceiptSourceDocumentLineResponse(
     string UomCode,
     decimal ReceivedQuantity,
     string? LotNo,
-    string Status);
+    string Status,
+    decimal? UnitPrice = null,
+    decimal? EstimatedUnitCost = null);
 
 public sealed class GetPurchaseReceiptSourceDocumentQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<GetPurchaseReceiptSourceDocumentQuery, PurchaseReceiptSourceDocumentResponse?>
@@ -447,9 +451,13 @@ public sealed class GetPurchaseReceiptSourceDocumentQueryHandler(ApplicationDbCo
                         line.UomCode,
                         line.ReceivedQuantity,
                         line.LotNo,
-                        line.QualityStatus))
+                        line.QualityStatus,
+                        line.UnitPrice,
+                        line.UnitPrice * x.ExchangeRate))
                     .ToArray(),
-                x.InventoryPostingRoute))
+                x.InventoryPostingRoute,
+                x.CurrencyCode,
+                x.ExchangeRate))
             .SingleOrDefaultAsync(cancellationToken);
     }
 }
