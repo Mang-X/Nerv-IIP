@@ -56,7 +56,7 @@
 FileStorage 的 tus 目录同时承载已 complete 文件的字节，因此部署必须给它一个显式、绝对、持久的位置：
 
 1. `FileStorage__UploadProvider=tus` 与 `FileStorage__Tus__RootPath` 由 AppHost 一起下发；生成的 Compose 产物把该路径放在 `nerv-iip-file-storage` 命名卷的挂载点内，legacy overlay 有对应的同名卷。
-2. 只设 provider 不设 root path、或 root path 不是绝对路径时，服务在启动阶段拒绝并给出脱敏诊断；系统临时目录与容器可写层都不接受（[ADR 0024](../adr/0024-filestorage-storage-provider-and-local-production-semantics.md) §5）。
+2. 只设 provider 不设 root path、或 root path 不是绝对路径时，服务在启动阶段拒绝并给出脱敏诊断（诊断只输出 `<missing>` / `<relative>`，不回显路径值）。[ADR 0024](../adr/0024-filestorage-storage-provider-and-local-production-semantics.md) §5 还要求该位置**持久**——系统临时目录与容器可写层不合规，但持久性当前不由启动校验判定（归 #1012），配错仍能启动，需要部署方自己保证。
 3. 更换该卷或该路径等同于更换文件存储后端：已 complete 的文件元数据仍在数据库，但字节会读不到。迁移按 [`file-storage-offline-migration.md`](file-storage-offline-migration.md) 执行，不要靠重挂空卷绕过。
 
 ## Release-install 与数据库迁移

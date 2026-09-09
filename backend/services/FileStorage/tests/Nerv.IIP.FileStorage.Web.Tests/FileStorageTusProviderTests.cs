@@ -90,6 +90,8 @@ public sealed class FileStorageTusProviderTests
         using var scope = factory.Services.CreateScope();
         var session = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().UploadSessions
             .SingleAsync(x => x.UploadSessionId == created.UploadSessionId);
+        // 承重的是下面这条状态断言，不是上面的 503：删掉 TryGet 分支后会走 NRE → RetryableUnavailable，
+        // 状态码仍是 503，只有「会话回到 open」能把那个变异杀掉。改这条前先想清楚防线还剩什么。
         Assert.Equal(UploadSessionState.Open, session.State);
         Assert.Null(session.CommitId);
     }

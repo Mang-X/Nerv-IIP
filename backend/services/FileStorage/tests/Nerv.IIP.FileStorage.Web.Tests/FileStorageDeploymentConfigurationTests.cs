@@ -68,7 +68,10 @@ public sealed class FileStorageDeploymentConfigurationTests
         var platform = ReadRepositoryFile("infra/compose/nerv-iip.platform.yml");
         var appHost = ReadRepositoryFile("infra/aspire/Nerv.IIP.AppHost/Program.cs");
         var fileStorage = ComposeServiceBlock(platform, "file-storage");
-        var appHostFileStorage = TextBetween(appHost, "var fileStorage =", "var notification =");
+        var appHostFileStorage = TextBetween(
+            appHost.Replace("\r\n", "\n", StringComparison.Ordinal),
+            "const string FileStorageContainerDataRoot",
+            "var notification =");
 
         Assert.Contains("FileStorage__UploadProvider: tus", fileStorage, StringComparison.Ordinal);
         Assert.Contains(
@@ -93,9 +96,23 @@ public sealed class FileStorageDeploymentConfigurationTests
             ".WithEnvironment(\"FileStorage__Tus__RootPath\", fileStorageTusRootPath)",
             appHostFileStorage,
             StringComparison.Ordinal);
-        Assert.Contains("new ContainerMountAnnotation(", appHostFileStorage, StringComparison.Ordinal);
-        Assert.Contains("\"nerv-iip-file-storage\"", appHostFileStorage, StringComparison.Ordinal);
-        Assert.Contains("ContainerMountType.Volume", appHostFileStorage, StringComparison.Ordinal);
+
+        // 断落点的值而不是变量名：只断变量名时，把 publish 分支改成 /tmp/tus 仍然全绿——绝对路径过得了启动守卫，
+        // 而字节会落进容器可写层。下面三条把「挂载点常量 → publish 落点由它拼出 → 卷挂在同一常量上」钉成一条链。
+        // 先做空白归一，免得换行或缩进变化把断言变成假红。
+        var appHostNormalized = Regex.Replace(appHostFileStorage, @"\s+", " ");
+        Assert.Contains(
+            "const string FileStorageContainerDataRoot = \"/home/app\";",
+            appHostNormalized,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "? $\"{FileStorageContainerDataRoot}/nerv-iip/file-storage/tus\"",
+            appHostNormalized,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "new ContainerMountAnnotation( \"nerv-iip-file-storage\", FileStorageContainerDataRoot, ContainerMountType.Volume,",
+            appHostNormalized,
+            StringComparison.Ordinal);
     }
 
     private static string ReadRepositoryFile(string relativePath)

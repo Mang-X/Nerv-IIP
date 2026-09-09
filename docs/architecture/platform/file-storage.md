@@ -12,7 +12,7 @@ Knowledge、Ops、AppHub 与业务域可以引用文件，但文件的业务语�
 
 1. 当前通用文件 metadata 使用 PostgreSQL-backed 实现；`filestorage` schema 与服务代码是持久化事实来源，运行环境不以 InMemory 作为 metadata 实现。
 2. 当前通用文件字节只有本地 tus 链路可用，当前部署（AppHost 生成产物与 legacy overlay）都显式选择它；代码内的 provider 缺省值仍是 `server-proxy`，而 `server-proxy` 只产生占位上传指令，仓库没有与其对应的通用字节 `PUT` endpoint，其 complete 会失败关闭并把上传会话重新打开。
-3. complete 的提交证据由服务从本地 tus 字节读回实际 size 与 canonical SHA-256，再与冻结的提交意图比对；该字节目录同时承载已 complete 文件，必须是显式、绝对、持久的位置，未按此配置时服务启动即失败关闭（ADR 0024 §5）。staging/final 分区、按 `ObjectKey` 定位 final 与 atomic promote 仍未实现。
+3. complete 的提交证据由服务从本地 tus 字节读回实际 size 与 canonical SHA-256，再与冻结的提交意图比对；该字节目录同时承载已 complete 文件，必须是显式、绝对、持久的位置（ADR 0024 §5）；其中「显式且绝对」在启动期校验，不满足即失败关闭，「持久」的判定手段仍未实现。staging/final 分区、按 `ObjectKey` 定位 final 与 atomic promote 仍未实现。
 4. MinIO 当前服务独立的 `VersionedArchive` 合规归档边界，不是通用 File Storage 的当前字节后端。
 5. `ObjectKey` 可以作为 File Storage 内部持久化事实存在，但不得暴露到公开 API、Gateway facade、SDK DTO 或业务持久化模型。
 6. UI、外部应用、Connector Host 与业务服务不得绕过 File Storage 直接访问对象存储；上传、完成、下载都必须经过受控会话或授权入口。

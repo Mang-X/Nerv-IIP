@@ -122,11 +122,12 @@ var tusRootPath = app.Configuration["FileStorage:Tus:RootPath"];
 if (string.Equals(app.Configuration["FileStorage:UploadProvider"], "tus", StringComparison.OrdinalIgnoreCase)
     && (string.IsNullOrWhiteSpace(tusRootPath) || !Path.IsPathRooted(tusRootPath)))
 {
-    // tus 盘承载已 complete 文件的字节；系统 temp、进程 cwd 或容器可写层都不是持久落点（ADR 0024 §5）。
+    // tus 盘承载已 complete 文件的字节，ADR 0024 §5 要求显式、绝对、持久的 root。这里只判前两项：
+    // 「持久」需要 storage identity / mount identity 探测，归 #1012，所以不在文案里宣称已经拒绝 temp。
     throw new InvalidOperationException(
         "FileStorage:UploadProvider=tus requires FileStorage:Tus:RootPath to be an explicit absolute path " +
         $"(configured={(string.IsNullOrWhiteSpace(tusRootPath) ? "<missing>" : "<relative>")}). " +
-        "Point it at persistent storage; a temporary directory or container writable layer is not accepted.");
+        "Point it at persistent storage.");
 }
 
 if (persistence.AutoMigrate)
