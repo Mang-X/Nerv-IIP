@@ -380,6 +380,9 @@ public sealed class WmsQualityInspectionGateConsumerTests
         Assert.Equal(outboundOrderNoColumnMaxLength, cases[0].NaiveComposition.Length);
         Assert.Equal(outboundOrderNoColumnMaxLength + 1, cases[1].NaiveComposition.Length);
         // ② 必须落在 (outbound 列宽, supplier_return 列宽] 里，否则它退化成与「顶格」等价的输入。
+        // **这不是一条新增防线**：紧邻上一行的 Assert.Equal 把 ② 钉成恰好 outbound+1，比本区间严格更强，
+        // 任何能触发本断言的变异都会先触发那条 Equal（实测：只有把 Equal 松掉之后才轮到这里）。
+        // 留着只作为 Equal 将来被松绑时的兜底。
         Assert.InRange(
             cases[1].NaiveComposition.Length,
             outboundOrderNoColumnMaxLength + 1,

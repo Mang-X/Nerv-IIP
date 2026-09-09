@@ -1606,11 +1606,9 @@ public sealed class CompleteOutboundOrderCommandHandler
         dbContext.InventoryMovementRequests.AddRange(movementRequests);
         foreach (var line in outbound.Lines.Where(x => x.BackorderQuantity > 0))
         {
-            var backorderNo = BackorderOrder.ComposeBackorderOrderNo(outbound.OutboundOrderNo, line.LineNo);
-            var backorder = BackorderOrder.Create(
+            var backorder = BackorderOrder.CreateForShortPick(
                 outbound.OrganizationId,
                 outbound.EnvironmentId,
-                backorderNo,
                 outbound.OutboundOrderNo,
                 line.LineNo,
                 line.SkuCode,

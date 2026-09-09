@@ -150,6 +150,9 @@ public sealed class WmsShortPickBackorderTests
             var replenishment = Assert.Single(await assertionContext.WarehouseTasks.AsNoTracking()
                 .Where(x => x.TaskType == WarehouseTaskType.Replenishment).ToListAsync());
             Assert.Equal(backorder.BackorderOrderNo, replenishment.SourceOrderNo);
+            // 上一行由聚合自洽，换错种类仍成立；这两行才分得清「号是哪一类」（#3228）。
+            Assert.StartsWith("BO-", backorder.BackorderOrderNo, StringComparison.Ordinal);
+            Assert.StartsWith("RPL-", replenishment.TaskNo, StringComparison.Ordinal);
             await new CloseBackorderOrderCommandHandler(assertionContext).Handle(
                 new CloseBackorderOrderCommand(backorderId, "stock-restored"), CancellationToken.None);
             await assertionContext.SaveChangesAsync();

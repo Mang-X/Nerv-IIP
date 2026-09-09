@@ -160,6 +160,28 @@ public sealed class WmsOperationalCodeKindTests
             $"聚合上的退供单号长度 {request.SupplierReturnNo.Length} 超出 outbound_order_no 的 {WmsOperationalCodeKind.OutboundOrderNoColumnMaxLength}。");
     }
 
+    /// <summary>
+    /// 短拣生产入口自算的缺量单号必须是 <see cref="WmsOperationalCodeKind.Backorder"/> 那一类。
+    /// </summary>
+    /// <remarks>
+    /// 这条断言存在的理由是实测：在引入 <see cref="BackorderOrder.CreateForShortPick"/> 之前，
+    /// 把生产端拼号处的 BO 种类换成 RPL 种类，**全仓零断言会红**——真 PostgreSQL 的短拣链路用例
+    /// 对 <c>backorder_order_no</c> 没有任何前缀断言，而「补货任务的 SourceOrderNo 等于缺量单号」
+    /// 由聚合自洽、换了种类仍然成立。与补货任务号那一侧是同一缺陷形状。
+    /// </remarks>
+    [Fact]
+    public void Short_pick_backorder_number_is_composed_from_the_backorder_kind()
+    {
+        var backorder = BackorderOrder.CreateForShortPick(
+            "org-001", "env-dev", "OUT-001", "LINE-001", "SKU-001", "pcs", "SITE-01", "PICK-01", 3m);
+
+        Assert.Equal(BackorderOrder.ComposeBackorderOrderNo("OUT-001", "LINE-001"), backorder.BackorderOrderNo);
+        Assert.StartsWith("BO-", backorder.BackorderOrderNo, StringComparison.Ordinal);
+        Assert.Equal("OUT-001", backorder.OutboundOrderNo);
+        Assert.Equal("LINE-001", backorder.OutboundOrderLineNo);
+        Assert.Equal(3m, backorder.BackorderQuantity);
+    }
+
     /// <summary>缺量单号与补货任务号也各自只有一个构造入口，且受各自承载列宽约束。</summary>
     [Theory]
     [InlineData("BO")]
