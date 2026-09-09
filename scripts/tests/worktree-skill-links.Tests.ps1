@@ -151,6 +151,38 @@ try {
         throw 'Test-NervSkillsPayloadPresent must report false when .agents/skills is absent.'
     }
 
+    # 源→安装层的发布契约：agent 读的是 .agents/skills 的 payload，而安装与镜像都以
+    # 「payload 已存在」为终点。这里断言的是同一份输入下 agent 到底读到哪一版正文。
+    # thirdparty 只有 payload、没有 skills/ 源；alpha 两边都有。
+    $syncRoot = New-Fixture -PayloadNames @('alpha', 'thirdparty')
+    $fixtures.Add($syncRoot)
+    $trackedSource = Join-Path $syncRoot 'skills/alpha'
+    New-Item -ItemType Directory -Path $trackedSource -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $trackedSource 'SKILL.md') -Value 'name: alpha edited' -NoNewline
+    # 源里已删除的文件必须一并消失，否则安装层会累积出源里没有的判据。
+    Set-Content -LiteralPath (Join-Path $syncRoot '.agents/skills/alpha/OBSOLETE.md') -Value 'stale' -NoNewline
+
+    Sync-NervRepoSkillPayload -RepoRoot $syncRoot
+    New-NervSkillLinkLayer -RepoRoot $syncRoot
+
+    $published = Get-Content -LiteralPath (Join-Path $syncRoot '.claude/skills/alpha/SKILL.md') -Raw
+    if (-not [string]::Equals($published, 'name: alpha edited', [StringComparison]::Ordinal)) {
+        throw "A repo-tracked skill must reach the agent as its tracked source, got '$published'."
+    }
+    if (Test-Path -LiteralPath (Join-Path $syncRoot '.agents/skills/alpha/OBSOLETE.md')) {
+        throw 'Republishing must drop payload files that no longer exist in the tracked source.'
+    }
+
+    # 只发布仓库里有源的技能：第三方 payload 归 skills-lock.json，删掉它们会让 agent 静默少一批技能。
+    $thirdPartyPath = Join-Path $syncRoot '.agents/skills/thirdparty/SKILL.md'
+    if (-not (Test-Path -LiteralPath $thirdPartyPath)) {
+        throw 'Republishing repo-tracked skills must not delete a payload without a tracked source.'
+    }
+    $thirdParty = Get-Content -LiteralPath $thirdPartyPath -Raw
+    if (-not [string]::Equals($thirdParty, 'name: thirdparty', [StringComparison]::Ordinal)) {
+        throw "Republishing repo-tracked skills must leave a payload without a tracked source untouched, got '$thirdParty'."
+    }
+
     # 接线：库对、测试绿，不代表调用点还在。按 AST 断言 setup-worktree.ps1 真的调用了本库，
     # 而不是文本匹配——注释掉的调用不产生 CommandAst，因而会被这条杀掉。
     $setupPath = Join-Path $repoRoot 'scripts/setup-worktree.ps1'
@@ -170,7 +202,7 @@ try {
         $commandName = $node.GetCommandName()
         if ($null -ne $commandName) { [void]$invokedNames.Add($commandName) }
     }
-    foreach ($required in @('New-NervSkillLinkLayer', 'Test-NervSkillsPayloadPresent')) {
+    foreach ($required in @('New-NervSkillLinkLayer', 'Test-NervSkillsPayloadPresent', 'Sync-NervRepoSkillPayload')) {
         if (-not $invokedNames.Contains($required)) {
             throw "scripts/setup-worktree.ps1 must invoke '$required'; the link layer is otherwise never built for a real worktree."
         }

@@ -37,7 +37,7 @@ pwsh -NoProfile -File scripts/get-ci-impact-plan.ps1 -BaseSha <base> -HeadSha <h
 
 再定位两轴的判据来源——**这一步归协调者，不是席位的活**。席位收到的应是成品清单，不是搜索任务：
 
-- **标准来源**：根到每个改动路径的 `AGENTS.md` 与 `AGENTS.override.md`；再从 `docs/governance/README.md`、`docs/architecture/README.md` 与 `docs/adr/README.md` 按改动面挑出相关的当前规则、架构和决策记录，列成文件清单。Reference 只在改动涉及其查询事实时加入，冻结 Report 不作为当前标准。
+- **标准来源**：判据面由**改动路径**决定，不是一份固定清单——三处都要走一遍，列成文件清单。①根到每个改动路径的 `AGENTS.md` 与 `AGENTS.override.md`；②从 `docs/README.md` 按改动面路由到当前 Governance、Architecture、ADR 与 Product（Reference 只在改动涉及其查询事实时加入，冻结 Report 与 Status 快照不作为当前标准，`docs/architecture/` 根目录的兼容 shim 一律跟随到 canonical owner 再引用）；③改动路径自带的成文约定——前端设计系统看 `frontend/DESIGN/` 与 `DESIGN.md`，技能看 `skills/README.md`，以及被改代码自身的 doc 注释（组件 JSDoc 同属成文约定）。
 - **规格来源**：票号取自 PR body 的 `Fixes #` / `Closes #`。取不到就问用户。仍然没有，就地判定**无规格可依**，规格轴席位不派。
 
 完成判据：head SHA、base SHA、改动路径清单、标准来源清单、规格来源（票号或「无规格可依」）都拿到。

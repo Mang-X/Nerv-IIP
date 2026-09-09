@@ -20,6 +20,7 @@
 
 $script:NervAgentSkillsRelative = '.agents/skills'
 $script:NervClaudeSkillsRelative = '.claude/skills'
+$script:NervRepoSkillsRelative = 'skills'
 
 function Get-NervSkillPayloadNames {
     <#
@@ -82,5 +83,32 @@ function New-NervSkillLinkLayer {
             $payload = Join-Path (Join-Path $RepoRoot $script:NervAgentSkillsRelative) $name
             Copy-Item -LiteralPath $payload -Destination $entry -Recurse -Force
         }
+    }
+}
+
+function Sync-NervRepoSkillPayload {
+    <#
+        .SYNOPSIS
+        Republishes every repo-tracked skill so the installed payload equals its source.
+
+        .DESCRIPTION
+        `skills/<name>` is the tracked source of a project skill; `.agents/skills/<name>` is
+        what an agent actually loads. Installing and mirroring both stop once a payload
+        exists, so without this step an edit to the source never reaches a worktree that was
+        already seeded, and the agent keeps loading the pre-edit text with nothing failing.
+    #>
+    param([Parameter(Mandatory)] [string] $RepoRoot)
+
+    $sourceRoot = Join-Path $RepoRoot $script:NervRepoSkillsRelative
+    if (-not (Test-Path -LiteralPath $sourceRoot)) { return }
+
+    $payloadRoot = Join-Path $RepoRoot $script:NervAgentSkillsRelative
+    New-Item -ItemType Directory -Path $payloadRoot -Force | Out-Null
+
+    foreach ($source in Get-ChildItem -LiteralPath $sourceRoot -Force -Directory) {
+        $target = Join-Path $payloadRoot $source.Name
+        # 先删后拷：Copy-Item -Force 只覆盖同名文件，源里已删除的文件会永远留在安装层。
+        if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
+        Copy-Item -LiteralPath $source.FullName -Destination $target -Recurse -Force
     }
 }
