@@ -16,6 +16,7 @@ using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Erp.Web.Application.Queries.Finance;
+using Nerv.IIP.Business.Erp.Web.Application.Validation;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Messaging.CAP;
@@ -30,6 +31,157 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 [Collection("ERP PostgreSQL acceptance")]
 public sealed class ErpCostAccountingPostgresAcceptanceTests
 {
+    /// <summary>
+    /// #3229：<c>voucher_no</c> 列宽 100，而改前所有派生凭证号都是「前缀 + 100 宽上游单号（+ 上游 id）」。
+    /// 这条用例在**同一张真表**上先复现改前形状的 22001，再证明新构造入口的顶格产出真能落库。
+    /// EF InMemory 看不见列宽也看不见唯一索引，所以这两个读数只有在真 Postgres 上才成立。
+    /// </summary>
+    [ErpCostPostgresFact(Timeout = 60_000)]
+    public async Task PostgreSQL_saturated_derived_voucher_numbers_persist_where_the_pre_change_shape_overflows()
+    {
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        var options = ErpPostgresLaneDatabase.CreateOptions();
+        var postingDate = new DateOnly(2026, 9, 9);
+        var workOrderId = new string('W', 100);
+        var movementId = Guid.NewGuid().ToString();
+        var adjustmentSourceId = new string('S', 100);
+        var payableNo = new string('P', 100);
+
+        await using (var setup = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            await setup.Database.MigrateAsync();
+            ErpPostgresLaneDatabase.AssertUsesGovernedDatabase(setup);
+            setup.GLAccounts.Add(GLAccount.Create(VoucherOrganizationId, VoucherEnvironmentId, "1405-WIP", "Work in process", GLAccountType.Asset));
+            setup.GLAccounts.Add(GLAccount.Create(VoucherOrganizationId, VoucherEnvironmentId, "1406-FINISHED-GOODS", "Finished goods inventory", GLAccountType.Asset));
+            await setup.SaveChangesAsync();
+        }
+
+        // ① 缺陷复现：改前的构造式在这张真表上就是 22001，不是推断。
+        await using (var overflow = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            var preChangeVoucherNo = $"JV-WOC-{workOrderId}-{movementId}";
+            Assert.Equal(144, preChangeVoucherNo.Length);
+            overflow.JournalVouchers.Add(BalancedVoucher(preChangeVoucherNo, postingDate));
+            var error = await Assert.ThrowsAsync<DbUpdateException>(() => overflow.SaveChangesAsync());
+            var postgres = Assert.IsType<PostgresException>(error.InnerException);
+            Assert.Equal(PostgresErrorCodes.StringDataRightTruncation, postgres.SqlState);
+        }
+
+        // ② 新构造入口的顶格产出必须真的落得进去。
+        var saturated = new[]
+        {
+            ErpVoucherNoPolicy.Compose("WOC", workOrderId, movementId),
+            ErpVoucherNoPolicy.Compose("WOCADJ", workOrderId, adjustmentSourceId),
+            ErpVoucherNoPolicy.Compose("AP", payableNo),
+        };
+        await using (var write = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            foreach (var voucherNo in saturated)
+            {
+                write.JournalVouchers.Add(BalancedVoucher(voucherNo, postingDate));
+            }
+
+            await write.SaveChangesAsync();
+        }
+
+        await using (var verify = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            var persisted = await verify.JournalVouchers
+                .Where(x => x.OrganizationId == VoucherOrganizationId && x.EnvironmentId == VoucherEnvironmentId)
+                .Select(x => x.VoucherNo)
+                .ToListAsync();
+            Assert.Equal(saturated.Order(StringComparer.Ordinal), persisted.Order(StringComparer.Ordinal));
+        }
+
+        // ③ 同一来源仍然稳定地得到同一个凭证号，所以第二次落库撞的是那条唯一索引，而不是悄悄记出第二张凭证。
+        await using (var replay = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            replay.JournalVouchers.Add(BalancedVoucher(
+                ErpVoucherNoPolicy.Compose("WOC", workOrderId, movementId),
+                postingDate));
+            var error = await Assert.ThrowsAsync<DbUpdateException>(() => replay.SaveChangesAsync());
+            var postgres = Assert.IsType<PostgresException>(error.InnerException);
+            Assert.Equal(PostgresErrorCodes.UniqueViolation, postgres.SqlState);
+            Assert.Contains("voucher_no", postgres.ConstraintName, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>
+    /// #3229 的风险点：有界化不得把原本不同的凭证塌成同号。
+    /// 这条用例把三对「改前会塌 / 现在必须分开」的来源一起插进带唯一索引的真表——塌了就是 23505。
+    /// </summary>
+    [ErpCostPostgresFact(Timeout = 60_000)]
+    public async Task PostgreSQL_distinct_sources_never_collapse_onto_one_voucher_number()
+    {
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        var options = ErpPostgresLaneDatabase.CreateOptions();
+        var postingDate = new DateOnly(2026, 9, 9);
+        var head = new string('X', 60);
+        var tail = new string('Y', 60);
+        var saturatedWorkOrderId = new string('W', 100);
+        var saturatedSourceId = new string('S', 100);
+
+        var distinctSources = new[]
+        {
+            // 摘要式之间：只有段划分不同；摘要输入不带长度前缀就会塌成同号。
+            ErpVoucherNoPolicy.Compose("WOC", head + "-" + tail, "Z"),
+            ErpVoucherNoPolicy.Compose("WOC", head, tail + "-Z"),
+            // 跨族：同样两段，族不同。
+            ErpVoucherNoPolicy.Compose("WOC", saturatedWorkOrderId, saturatedSourceId),
+            ErpVoucherNoPolicy.Compose("WOCADJ", saturatedWorkOrderId, saturatedSourceId),
+            // 改前 JV-WOC- 是 JV-WOC-ADJ- 的前缀，这两行改前是同一个凭证号。
+            ErpVoucherNoPolicy.Compose("WOC", "ADJ-WO-0001", "RPT-0001"),
+            ErpVoucherNoPolicy.Compose("WOCADJ", "WO-0001", "RPT-0001"),
+        };
+        Assert.Equal(distinctSources.Length, distinctSources.Distinct(StringComparer.Ordinal).Count());
+
+        await using (var setup = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            await setup.Database.MigrateAsync();
+            ErpPostgresLaneDatabase.AssertUsesGovernedDatabase(setup);
+            setup.GLAccounts.Add(GLAccount.Create(VoucherOrganizationId, VoucherEnvironmentId, "1405-WIP", "Work in process", GLAccountType.Asset));
+            setup.GLAccounts.Add(GLAccount.Create(VoucherOrganizationId, VoucherEnvironmentId, "1406-FINISHED-GOODS", "Finished goods inventory", GLAccountType.Asset));
+            await setup.SaveChangesAsync();
+        }
+
+        await using (var write = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            foreach (var voucherNo in distinctSources)
+            {
+                write.JournalVouchers.Add(BalancedVoucher(voucherNo, postingDate));
+            }
+
+            await write.SaveChangesAsync();
+        }
+
+        await using (var verify = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            var persisted = await verify.JournalVouchers
+                .Where(x => x.OrganizationId == VoucherOrganizationId && x.EnvironmentId == VoucherEnvironmentId)
+                .Select(x => x.VoucherNo)
+                .ToListAsync();
+            Assert.Equal(distinctSources.Length, persisted.Count);
+            Assert.All(persisted, voucherNo => Assert.True(
+                voucherNo.Length <= ErpVoucherNoPolicy.ColumnMaxLength,
+                $"凭证号 {voucherNo} 长度 {voucherNo.Length} 超出列宽。"));
+        }
+    }
+
+    private const string VoucherOrganizationId = "org-voucher-no";
+
+    private const string VoucherEnvironmentId = "env-voucher-no";
+
+    private static JournalVoucher BalancedVoucher(string voucherNo, DateOnly postingDate)
+        => JournalVoucher.Post(
+            VoucherOrganizationId,
+            VoucherEnvironmentId,
+            voucherNo,
+            postingDate,
+            [
+                new JournalVoucherLineDraft("1406-FINISHED-GOODS", 10m, 0m, "debit leg"),
+                new JournalVoucherLineDraft("1405-WIP", 0m, 10m, "credit leg"),
+            ]);
+
     [ErpCostPostgresFact(Timeout = 30_000)]
     public async Task PostgreSQL_rework_origin_arriving_after_cost_events_stays_isolated_and_queryable()
     {

@@ -5,6 +5,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.GLAccountAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Business.Erp.Web.Application.Validation;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Mes;
@@ -280,7 +281,7 @@ public sealed class StockMovementPostedIntegrationEventHandlerForAccumulateMater
             if (variance > 0m) lines.Add(new("5101-PRODUCTION-VARIANCE", variance, 0m, $"Uncapitalized variance {completedCost.WorkOrderId}"));
             else if (variance < 0m) lines.Add(new("5101-PRODUCTION-VARIANCE", 0m, -variance, $"Over-capitalized variance {completedCost.WorkOrderId}"));
             completedCost.RecordWipClearance(wipClearance);
-            dbContext.JournalVouchers.Add(JournalVoucher.Post(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, $"JV-WOC-{completedCost.WorkOrderId}-{payload.InventoryMovementId}", DateOnly.FromDateTime(payload.PostedAtUtc.UtcDateTime), lines));
+            dbContext.JournalVouchers.Add(JournalVoucher.Post(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, ErpVoucherNoPolicy.Compose("WOC", completedCost.WorkOrderId, payload.InventoryMovementId), DateOnly.FromDateTime(payload.PostedAtUtc.UtcDateTime), lines));
             await CostingIntegrationEventUnitOfWork.SaveEntitiesAsync(dbContext, unitOfWork, cancellationToken);
             return;
         }
@@ -328,7 +329,7 @@ internal static class CostVariancePosting
             : new[] { new JournalVoucherLineDraft("5101-PRODUCTION-VARIANCE", amount, 0m, $"Unfavorable variance {sourceId}"), new JournalVoucherLineDraft("1405-WIP", 0m, amount, $"Late cost input {sourceId}") };
         if (cost.IsFullyCapitalized)
             cost.RecordWipClearance(costDelta);
-        dbContext.JournalVouchers.Add(JournalVoucher.Post(cost.OrganizationId, cost.EnvironmentId, $"JV-WOC-ADJ-{cost.WorkOrderId}-{sourceId}", DateOnly.FromDateTime(occurredAtUtc.UtcDateTime), lines));
+        dbContext.JournalVouchers.Add(JournalVoucher.Post(cost.OrganizationId, cost.EnvironmentId, ErpVoucherNoPolicy.Compose("WOCADJ", cost.WorkOrderId, sourceId), DateOnly.FromDateTime(occurredAtUtc.UtcDateTime), lines));
     }
 }
 

@@ -12,6 +12,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReturnAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
+using Nerv.IIP.Business.Erp.Web.Application.Validation;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 
@@ -760,7 +761,7 @@ public sealed class PostJournalVoucherCommandValidator : AbstractValidator<PostJ
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
-        RuleFor(x => x.VoucherNo).MaximumLength(100);
+        RuleFor(x => x.VoucherNo).MaximumLength(ErpVoucherNoPolicy.ColumnMaxLength);
         RuleFor(x => x.PostingDate).NotEqual(default(DateOnly));
         RuleFor(x => x.Lines).NotEmpty().Must(x => x.Count >= 2).WithMessage("At least two voucher lines are required.");
         RuleForEach(x => x.Lines).ChildRules(line =>
@@ -889,7 +890,7 @@ public static class FinanceVoucherFactory
 
     public static string GoodsReceiptIrAccrualVoucherNo(string purchaseReceiptNo)
     {
-        return $"JV-GRIR-{purchaseReceiptNo}";
+        return ErpVoucherNoPolicy.Compose("GRIR", purchaseReceiptNo);
     }
 
     public static JournalVoucher ForGoodsReceiptIrAccrual(PurchaseReceipt receipt, decimal amount, string voucherNo)
@@ -927,7 +928,7 @@ public static class FinanceVoucherFactory
         return JournalVoucher.Post(
             creditNote.OrganizationId,
             creditNote.EnvironmentId,
-            $"JV-CN-{creditNote.CreditNoteNo}",
+            ErpVoucherNoPolicy.Compose("CN", creditNote.CreditNoteNo),
             postingDate,
             [
                 LocalDebit(SalesReturnsAccountCode, creditNote.Amount, creditNote.CurrencyCode, creditNote.ExchangeRate, $"Credit note {creditNote.CreditNoteNo}"),
@@ -962,7 +963,7 @@ public static class FinanceVoucherFactory
         return JournalVoucher.Post(
             invoice.OrganizationId,
             invoice.EnvironmentId,
-            $"JV-AP-{payable.PayableNo}",
+            ErpVoucherNoPolicy.Compose("AP", payable.PayableNo),
             invoice.InvoiceDate,
             lines);
     }
@@ -972,7 +973,7 @@ public static class FinanceVoucherFactory
         return JournalVoucher.Post(
             payable.OrganizationId,
             payable.EnvironmentId,
-            $"JV-AP-{payable.PayableNo}",
+            ErpVoucherNoPolicy.Compose("AP", payable.PayableNo),
             payable.InvoiceDate,
             [
                 LocalDebit(DirectPayableExpenseAccountCode, payable.Amount, payable.CurrencyCode, payable.ExchangeRate, $"Direct AP expense {payable.SourceDocumentNo}"),
@@ -985,7 +986,7 @@ public static class FinanceVoucherFactory
         return JournalVoucher.Post(
             receivable.OrganizationId,
             receivable.EnvironmentId,
-            $"JV-AR-{receivable.ReceivableNo}",
+            ErpVoucherNoPolicy.Compose("AR", receivable.ReceivableNo),
             receivable.InvoiceDate,
             [
                 LocalDebit(AccountsReceivableAccountCode, receivable.Amount, receivable.CurrencyCode, receivable.ExchangeRate, $"AR {receivable.ReceivableNo}"),
@@ -998,7 +999,7 @@ public static class FinanceVoucherFactory
         return JournalVoucher.Post(
             candidate.OrganizationId,
             candidate.EnvironmentId,
-            $"JV-COST-{candidate.CandidateNo}",
+            ErpVoucherNoPolicy.Compose("COST", candidate.CandidateNo),
             DateOnly.FromDateTime(candidate.CreatedAtUtc),
             [
                 LocalDebit("5001", candidate.Amount, candidate.CurrencyCode, candidate.ExchangeRate, $"Cost candidate {candidate.SourceDocumentNo}"),
