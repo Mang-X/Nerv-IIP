@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import path from 'node:path'
 import type * as Api from '@nerv-iip/api-client'
 import { runWarehouseSupply } from './warehouseSupplyScenario'
+import type { Row } from './procurementScenario'
 import {
   calculateRequiredQuantity,
   selectConcreteMaterialLines,
@@ -194,7 +195,85 @@ test('NERV-2115 隔离外购与活塞杆自制供给满足同一冻结需求', a
         const productionReports: Api.BusinessConsoleRecordProductionReportResponse[] = []
         report.productionReports = productionReports
         const producedLotNo = 'LOT-N2115-mixed-ROD'
+        // 用户批准的隔离演示数据；不是行业工资或客户生产费率。
+        const rateWindow = {
+          effectiveFromUtc: new Date(Date.now() - 86_400_000).toISOString(),
+          effectiveToUtc: new Date(Date.now() + 86_400_000).toISOString(),
+        }
+        const preparation: Row[] = []
+        report.productionPreparation = preparation
         for (const [index, task] of tasks.entries()) {
+          const rates = '/api/business-console/v1/erp/finance/work-center-cost-rates'
+          const rate = {
+            ...scope,
+            workCenterId: task.workCenterId!,
+            hourlyRate: [60, 90, 75][index],
+            currencyCode: 'CNY',
+            ...rateWindow,
+            reason: 'NERV-2115 隔离走查测试专用模拟人工费率，不用于生产核算',
+          } satisfies Api.BusinessConsoleConfigureErpWorkCenterCostRateRequest
+          await call('POST', rates, rate)
+          const rateReadback = await call<Api.BusinessConsoleErpWorkCenterCostRateListResponse>(
+            'GET',
+            query(rates, { workCenterId: task.workCenterId, atUtc: new Date().toISOString() }),
+          )
+          expect(rateReadback.items).toHaveLength(1)
+          expect(rateReadback.items![0]).toMatchObject({
+            hourlyRate: rate.hourlyRate,
+            currencyCode: 'CNY',
+            isCurrentEffectiveRevision: true,
+          })
+          const centers = await call<Api.BusinessConsoleResourceListResponse>(
+            'GET',
+            query('/api/business-console/v1/master-data/resources', {
+              resourceType: 'work-center',
+            }),
+          )
+          const center = centers.resources!.filter((item) => item.code === task.workCenterId)
+          expect(center).toHaveLength(1)
+          const deviceCode = `DEV-N2115-${index + 1}`
+          await call('POST', '/api/business-console/v1/master-data/device-assets', {
+            ...scope,
+            code: deviceCode,
+            model: ['走查切断机', '走查数控车床', '走查外圆磨床'][index],
+            lineCode: center[0].lineCode!,
+            workCenterCode: task.workCenterId!,
+            assetClassCode: 'machine',
+            manufacturer: '隔离走查模拟设备',
+            serialNo: `SN-N2115-${index + 1}`,
+            capacityUomCode: 'pcs',
+            criticality: 'normal',
+            maintainable: true,
+            telemetryEnabled: false,
+            siteCode: 'SITE-001',
+            workshopCode: center[0].workshopCode,
+            externalReferences: { purpose: 'NERV-2115 测试专用' },
+            idempotencyKey: `n2115-device-${index}`,
+          } satisfies Api.BusinessConsoleRegisterDeviceAssetRequest)
+          const devices = await call<Api.BusinessConsoleResourceListResponse>(
+            'GET',
+            query('/api/business-console/v1/master-data/device-assets', {
+              workCenterCode: task.workCenterId,
+              keyword: deviceCode,
+              take: 100,
+            }),
+          )
+          expect(devices.resources).toHaveLength(1)
+          const device = devices.resources![0]
+          expect(device.deviceAssetId).toMatch(/\S/)
+          await call(
+            'POST',
+            query(`${mes}/dispatch-tasks/${task.operationTaskId}/assign`, workScope),
+            {
+              deviceAssetId: device.deviceAssetId,
+              idempotencyKey: `n2115-dispatch-${index}`,
+            } satisfies Api.BusinessConsoleMesAssignDispatchTaskRequest,
+          )
+          const assigned = (await detail()).operationTasks!.find(
+            (item) => item.operationTaskId === task.operationTaskId,
+          )!
+          expect(assigned.deviceAssetId).toBe(device.deviceAssetId)
+          preparation.push({ rate, rateReadback, device, assigned })
           await call(
             'POST',
             query(`${mes}/operation-tasks/${task.operationTaskId}/start`, workScope),
