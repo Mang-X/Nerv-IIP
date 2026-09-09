@@ -69,7 +69,7 @@ foreach ($shard in $ownedShards) {
         $discovery = Invoke-DotNetOutput -Name "backend-real-postgres-discovery-$($shard.id)" -WorkingDirectory $repositoryRoot -TimeoutSeconds 1800 -Arguments @(
             'test', [string] $shard.solutionFilter, '--configuration', 'Release', '--list-tests', '--filter', "FullyQualifiedName~$selector"
         )
-        $discovered = @($discovery.Stdout -split "`r?`n" | ForEach-Object { $_.Trim() })
+        $discovered = @(Get-BackendTestShardDiscoveredTests -DiscoveryOutput ([string] $discovery.Stdout))
         $isMethodSelector = $methodSelectors -contains $selector
         $discovered = Assert-BackendTestShardSelectorDiscovery -Selector $selector -MethodSelector $isMethodSelector -DiscoveredTests $discovered
 

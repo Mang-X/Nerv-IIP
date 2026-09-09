@@ -933,6 +933,67 @@ Assert-BackendTestShardSelectorExecution -Selector $classSelector -DiscoveredTes
     [pscustomobject]@{ testName = "$classSelector.CaseTwo"; outcome = 'Passed' }
 )
 
+# --- #3279 --------------------------------------------------------------------------------------
+# `dotnet test --list-tests` 的 stdout 天然带空行（表头前后各一行，本地化表头也一样）。此前
+# verify-backend-real-postgres-tests.ps1 直接把 Trim 过的行喂给 Assert-BackendTestShardSelectorDiscovery
+# 的 Mandatory [string[]]，空串元素撞上 PowerShell 的元素非空校验，第一个 selector 就
+# `Cannot bind argument to parameter 'DiscoveredTests' because it is an empty string` 中断——
+# 后面所有 selector 一个都不被检验，而且现象长得像「本机环境问题」。
+# 这条用例喂真实形状的样本（前导空行 + 表头 + 空行 + 身份 + 尾随空行 + CRLF + 纯空白行），
+# 断言解析既不抛、条数又正确，并且解析结果能被下游 Mandatory 参数接住。
+$listTestsSampleIdentity = 'Nerv.IIP.Inventory.Tests.InventoryDirectoryPostgresTests'
+$listTestsSample = "`r`n" + ((@(
+    'Test run for /w/bin/Release/net10.0/Nerv.IIP.Inventory.Tests.dll (.NETCoreApp,Version=v10.0)',
+    'VSTest version 17.0.0 (x64)',
+    '',
+    'The following Tests are available:',
+    '',
+    "    $listTestsSampleIdentity.ListsDirectory",
+    "    $listTestsSampleIdentity.FiltersDirectory",
+    '   ',
+    ''
+)) -join "`r`n")
+$listTestsParseText = ''
+$listTestsParsed = @()
+try {
+    $listTestsParsed = @(Get-BackendTestShardDiscoveredTests -DiscoveryOutput $listTestsSample)
+}
+catch {
+    $listTestsParseText = $_.Exception.Message
+}
+Assert-Contract ([string]::Equals($listTestsParseText, '', [StringComparison]::Ordinal)) "Parsing --list-tests output containing blank lines must not throw; observed: $listTestsParseText"
+Assert-Contract ($listTestsParsed.Count -eq 5) "Parsing --list-tests output must drop every blank and whitespace-only line and keep the remaining 5 preamble, header and identity lines; observed $($listTestsParsed.Count)."
+Assert-Contract (@($listTestsParsed | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -eq 0) 'Parsed --list-tests lines must never contain an empty element, which a Mandatory [string[]] parameter rejects at bind time.'
+$listTestsDiscovery = ''
+$listTestsMatched = @()
+try {
+    $listTestsMatched = @(Assert-BackendTestShardSelectorDiscovery -Selector $listTestsSampleIdentity -MethodSelector $false -DiscoveredTests $listTestsParsed)
+}
+catch {
+    $listTestsDiscovery = $_.Exception.Message
+}
+Assert-Contract ([string]::Equals($listTestsDiscovery, '', [StringComparison]::Ordinal)) "Blank-line-bearing --list-tests output must bind to the discovery assertion; observed: $listTestsDiscovery"
+Assert-Contract ($listTestsMatched.Count -eq 2) "A class selector must match both discovered tests from real --list-tests output; matched $($listTestsMatched.Count)."
+
+# 真实触发面比「正文里的空行」更窄也更硬：`dotnet test` 的 stdout 以换行结尾，`-split` 因此**必然**
+# 多出一个尾随空元素——本机对真实 Erp selector 抓的 148 行 --list-tests 输出，旧解析得到 149 个元素、
+# 其中 1 个空元素，全部来自这一条尾随换行。也就是说旧写法从来就过不了第一个 selector。这条用例喂一份
+# 没有任何正文空行、只有尾随换行的样本，确保护栏不是只挡「正文空行」这个更宽的形状。
+$trailingNewlineOnlySample = "以下测试可用:`n    $listTestsSampleIdentity.ListsDirectory`n"
+$trailingNewlineOnlyParsed = @(Get-BackendTestShardDiscoveredTests -DiscoveryOutput $trailingNewlineOnlySample)
+Assert-Contract ($trailingNewlineOnlyParsed.Count -eq 2) "A --list-tests capture whose only blank element comes from the trailing newline must parse into 2 lines; observed $($trailingNewlineOnlyParsed.Count)."
+$trailingNewlineOnlyDiscovery = ''
+try {
+    Assert-BackendTestShardSelectorDiscovery -Selector $listTestsSampleIdentity -MethodSelector $true -DiscoveredTests $trailingNewlineOnlyParsed | Out-Null
+}
+catch {
+    $trailingNewlineOnlyDiscovery = $_.Exception.Message
+}
+Assert-Contract ([string]::Equals($trailingNewlineOnlyDiscovery, '', [StringComparison]::Ordinal)) "The trailing newline every dotnet test capture ends with must not reach the Mandatory [string[]] element check; observed: $trailingNewlineOnlyDiscovery"
+
+$realPostgresVerifierSource = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/verify-backend-real-postgres-tests.ps1') -Raw
+Assert-Contract ($realPostgresVerifierSource.Contains('Get-BackendTestShardDiscoveredTests -DiscoveryOutput', [StringComparison]::Ordinal)) 'The real PostgreSQL verifier must parse --list-tests through the governed helper instead of splitting stdout inline.'
+
 $notExecutedSelectorText = ''
 try {
     Assert-BackendTestShardSelectorExecution -Selector 'Nerv.IIP.Tests.DiscoveredSelector' -DiscoveredTests @('Nerv.IIP.Tests.DiscoveredSelector.Case') -TrxResults @()

@@ -267,6 +267,33 @@ function Assert-BackendTestShardProjectExecution {
     }
 }
 
+function Get-BackendTestShardDiscoveredTests {
+    <#
+        把 `dotnet test --list-tests` 的原始 stdout 转成用例身份行集合。
+
+        #3279：此前 verify-backend-real-postgres-tests.ps1 直接 `-split "`r?`n" | Trim()` 就把结果
+        喂给 Assert-BackendTestShardSelectorDiscovery 的 `[Parameter(Mandatory)] [string[]]`。
+        `dotnet test` 的 stdout **以换行结尾**，`-split` 因此必然多出一个尾随空元素（本机对真实
+        Erp selector 抓的 148 行输出：旧解析 149 元素、空元素 1 个，全部来自这一条尾随换行），
+        VSTest 的 --list-tests 正文里还会出现表头前后的空行，Trim 后就是空串元素；而
+        `Mandatory` 的 `[string[]]` 会对**元素**做非空校验，`AllowEmptyCollection` 只放行空集合、
+        不放行空串元素，于是第一个 selector（Erp）就 `Cannot bind argument to parameter
+        'DiscoveredTests' because it is an empty string` 中断，后面所有 selector 一个都不被检验。
+        裸跑同一条 --list-tests RC=0 且能正常发现用例——挂的是解析层，不是发现层。这个现象极易被
+        误判成「本机环境问题」而长期没人修（PR #3275 的实施席位就是这么归因的）。
+
+        刻意**不**给下游参数加 `AllowEmptyString()` 来绕过：空串不是合法用例身份，下游那道元素
+        非空校验是有价值的守卫，正解是在解析层把它挡住。
+    #>
+    param(
+        [Parameter(Mandatory)] [AllowEmptyString()] [AllowNull()] [string] $DiscoveryOutput
+    )
+
+    return @(([string] $DiscoveryOutput) -split "`r?`n" |
+        ForEach-Object { ([string] $_).Trim() } |
+        Where-Object { -not [string]::IsNullOrEmpty($_) })
+}
+
 function Assert-BackendTestShardSelectorDiscovery {
     param(
         [Parameter(Mandatory)] [string] $Selector,
