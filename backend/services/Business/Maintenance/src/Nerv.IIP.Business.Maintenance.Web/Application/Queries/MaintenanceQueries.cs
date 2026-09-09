@@ -1120,24 +1120,39 @@ internal static class MaintenanceAvailabilityWindowCalculator
             throw new KnownException("deviceAssetIds is required in P0 maintenance availability.");
         }
 
+        // 占用窗口是 [AssetUnavailableFromUtc, 释放时刻]，与查询窗口求交才进读面。
+        // 「释放时刻」是唯一判据，由三个释放来源派生：完工（CompletedAtUtc）、取消（CancelledAtUtc，
+        // 与完工一样会发 AssetRestoredDomainEvent）、报警清除（AlarmClearedAtUtc，报警单的占用随报警消失）。
+        // 三者皆无即尚未释放（null），右边界取查询窗口末端。
+        // 绝不按状态枚举列举：曾经的 `Status == Open || CompletedAtUtc != null` 把在途五态
+        // （Accepted/InProgress/Paused/WaitingForParts/Cancelled）整段从读面上抹掉，
+        // 连带让降级口径的设备运行工时（窗口时长 − 不可用时长）把正在维修的小时数算成运行。
+        // 先投影出释放时刻再过滤，让这个判据在整个查询里只写一次。
         var workOrders = await dbContext.MaintenanceWorkOrders
             .Where(x => x.OrganizationId == contract.OrganizationId)
             .Where(x => x.EnvironmentId == contract.EnvironmentId)
             .Where(x => deviceAssetIds.Contains(x.DeviceAssetId))
             .Where(x => x.AssetUnavailable)
             .Where(x => x.AssetUnavailableFromUtc != null)
-            .Where(x => x.Status == MaintenanceWorkOrderStatus.Open || x.CompletedAtUtc != null)
+            .Select(x => new
+            {
+                x.Id,
+                x.DeviceAssetId,
+                x.SourceAlarmId,
+                x.AssetUnavailableFromUtc,
+                ReleasedAtUtc = x.CompletedAtUtc ?? x.CancelledAtUtc ?? x.AlarmClearedAtUtc,
+                x.SourcePlanCode,
+                x.SourceReferenceId,
+            })
             .Where(x => x.AssetUnavailableFromUtc < contract.WindowEndUtc)
-            .Where(x => x.Status == MaintenanceWorkOrderStatus.Open || x.CompletedAtUtc > contract.WindowStartUtc)
+            .Where(x => x.ReleasedAtUtc == null || x.ReleasedAtUtc > contract.WindowStartUtc)
             .OrderBy(x => x.AssetUnavailableFromUtc)
             .Select(x => new MaintenanceWorkOrderAvailabilityProjection(
                 x.Id,
                 x.DeviceAssetId,
                 x.SourceAlarmId,
-                x.Status,
                 x.AssetUnavailableFromUtc!.Value,
-                x.AlarmClearedAtUtc,
-                x.CompletedAtUtc,
+                x.ReleasedAtUtc,
                 x.SourcePlanCode,
                 x.SourceReferenceId))
             .ToArrayAsync(cancellationToken);
@@ -1179,9 +1194,7 @@ internal static class MaintenanceAvailabilityWindowCalculator
         var windows = new List<EquipmentRuntimeAvailabilityWindowContract>();
         foreach (var workOrder in workOrders)
         {
-            var endUtc = workOrder.Status == MaintenanceWorkOrderStatus.Open
-                ? workOrder.AlarmClearedAtUtc ?? contract.WindowEndUtc
-                : workOrder.CompletedAtUtc!.Value;
+            var endUtc = workOrder.ReleasedAtUtc ?? contract.WindowEndUtc;
             AddWindow(
                 windows,
                 workOrder.DeviceAssetId,
@@ -1362,10 +1375,8 @@ internal sealed record MaintenanceWorkOrderAvailabilityProjection(
     MaintenanceWorkOrderId WorkOrderId,
     string DeviceAssetId,
     string? SourceAlarmId,
-    MaintenanceWorkOrderStatus Status,
     DateTimeOffset AssetUnavailableFromUtc,
-    DateTimeOffset? AlarmClearedAtUtc,
-    DateTimeOffset? CompletedAtUtc,
+    DateTimeOffset? ReleasedAtUtc,
     string? SourcePlanCode = null,
     string? SourceReferenceId = null);
 
