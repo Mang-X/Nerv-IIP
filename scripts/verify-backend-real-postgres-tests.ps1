@@ -69,9 +69,10 @@ foreach ($shard in $ownedShards) {
         $discovery = Invoke-DotNetOutput -Name "backend-real-postgres-discovery-$($shard.id)" -WorkingDirectory $repositoryRoot -TimeoutSeconds 1800 -Arguments @(
             'test', [string] $shard.solutionFilter, '--configuration', 'Release', '--list-tests', '--filter', "FullyQualifiedName~$selector"
         )
-        $discovered = @(Get-BackendTestShardDiscoveredTests -DiscoveryOutput ([string] $discovery.Stdout))
         $isMethodSelector = $methodSelectors -contains $selector
-        $discovered = Assert-BackendTestShardSelectorDiscovery -Selector $selector -MethodSelector $isMethodSelector -DiscoveredTests $discovered
+        # #3279：把原始 stdout 整体交给断言函数切行。这里刻意不在调用方保留一个「行」中间物——
+        # 那正是 dotnet test 结尾换行产生的空元素撞上 Mandatory [string[]] 元素非空校验的入口。
+        $discovered = @(Assert-BackendTestShardSelectorDiscovery -Selector $selector -MethodSelector $isMethodSelector -DiscoveryOutput ([string] $discovery.Stdout))
 
         $selectorSlug = ($selector -replace '[^A-Za-z0-9._-]', '_')
         $selectorDirectory = Join-Path $resultsRoot $selectorSlug

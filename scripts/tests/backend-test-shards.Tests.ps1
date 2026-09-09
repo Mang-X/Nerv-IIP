@@ -918,7 +918,7 @@ Assert-Contract ($runnerBypassText.Contains("A parameter cannot be found that ma
 
 $staleSelectorText = ''
 try {
-    Assert-BackendTestShardSelectorDiscovery -Selector 'Nerv.IIP.Tests.StaleSelector' -MethodSelector $true -DiscoveredTests @()
+    Assert-BackendTestShardSelectorDiscovery -Selector 'Nerv.IIP.Tests.StaleSelector' -MethodSelector $true -DiscoveryOutput ''
 }
 catch {
     $staleSelectorText = $_.Exception.Message
@@ -926,7 +926,7 @@ catch {
 Assert-Contract ($staleSelectorText.Contains("Real PostgreSQL selector 'Nerv.IIP.Tests.StaleSelector' discovery must match exactly one test", [StringComparison]::Ordinal)) 'A stale real PostgreSQL selector must fail discovery before execution.'
 
 $classSelector = 'Nerv.IIP.Tests.ClassSelector'
-$classDiscovery = @(Assert-BackendTestShardSelectorDiscovery -Selector $classSelector -MethodSelector $false -DiscoveredTests @("$classSelector.CaseOne", "$classSelector.CaseTwo"))
+$classDiscovery = @(Assert-BackendTestShardSelectorDiscovery -Selector $classSelector -MethodSelector $false -DiscoveryOutput "$classSelector.CaseOne`n$classSelector.CaseTwo")
 Assert-Contract ($classDiscovery.Count -eq 2) 'A class-scoped real PostgreSQL selector must retain every discovered test.'
 Assert-BackendTestShardSelectorExecution -Selector $classSelector -DiscoveredTests $classDiscovery -TrxResults @(
     [pscustomobject]@{ testName = "$classSelector.CaseOne"; outcome = 'Passed' },
@@ -934,13 +934,10 @@ Assert-BackendTestShardSelectorExecution -Selector $classSelector -DiscoveredTes
 )
 
 # --- #3279 --------------------------------------------------------------------------------------
-# `dotnet test --list-tests` 的 stdout 天然带空行（表头前后各一行，本地化表头也一样）。此前
-# verify-backend-real-postgres-tests.ps1 直接把 Trim 过的行喂给 Assert-BackendTestShardSelectorDiscovery
-# 的 Mandatory [string[]]，空串元素撞上 PowerShell 的元素非空校验，第一个 selector 就
-# `Cannot bind argument to parameter 'DiscoveredTests' because it is an empty string` 中断——
-# 后面所有 selector 一个都不被检验，而且现象长得像「本机环境问题」。
-# 这条用例喂真实形状的样本（前导空行 + 表头 + 空行 + 身份 + 尾随空行 + CRLF + 纯空白行），
-# 断言解析既不抛、条数又正确，并且解析结果能被下游 Mandatory 参数接住。
+# 缺陷与修法的完整归因写在 scripts/lib/BackendTestShardSelectors.ps1 的函数注释里，这里不复述。
+# 要点只有一条：Assert-BackendTestShardSelectorDiscovery 收的是 --list-tests 的**原始 stdout**，
+# 切行发生在函数内部，调用方在类型上拿不到「行」这个中间物。下面两条喂真实形状的原始输出：
+# 表头前后空行、纯空白行、CRLF、以及 dotnet test 必然带的尾随换行，都不得让断言崩在绑定或匹配上。
 $listTestsSampleIdentity = 'Nerv.IIP.Inventory.Tests.InventoryDirectoryPostgresTests'
 $listTestsSample = "`r`n" + ((@(
     'Test run for /w/bin/Release/net10.0/Nerv.IIP.Inventory.Tests.dll (.NETCoreApp,Version=v10.0)',
@@ -953,46 +950,48 @@ $listTestsSample = "`r`n" + ((@(
     '   ',
     ''
 )) -join "`r`n")
-$listTestsParseText = ''
-$listTestsParsed = @()
-try {
-    $listTestsParsed = @(Get-BackendTestShardDiscoveredTests -DiscoveryOutput $listTestsSample)
-}
-catch {
-    $listTestsParseText = $_.Exception.Message
-}
-Assert-Contract ([string]::Equals($listTestsParseText, '', [StringComparison]::Ordinal)) "Parsing --list-tests output containing blank lines must not throw; observed: $listTestsParseText"
-Assert-Contract ($listTestsParsed.Count -eq 5) "Parsing --list-tests output must drop every blank and whitespace-only line and keep the remaining 5 preamble, header and identity lines; observed $($listTestsParsed.Count)."
-Assert-Contract (@($listTestsParsed | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -eq 0) 'Parsed --list-tests lines must never contain an empty element, which a Mandatory [string[]] parameter rejects at bind time.'
 $listTestsDiscovery = ''
 $listTestsMatched = @()
 try {
-    $listTestsMatched = @(Assert-BackendTestShardSelectorDiscovery -Selector $listTestsSampleIdentity -MethodSelector $false -DiscoveredTests $listTestsParsed)
+    $listTestsMatched = @(Assert-BackendTestShardSelectorDiscovery -Selector $listTestsSampleIdentity -MethodSelector $false -DiscoveryOutput $listTestsSample)
 }
 catch {
     $listTestsDiscovery = $_.Exception.Message
 }
-Assert-Contract ([string]::Equals($listTestsDiscovery, '', [StringComparison]::Ordinal)) "Blank-line-bearing --list-tests output must bind to the discovery assertion; observed: $listTestsDiscovery"
-Assert-Contract ($listTestsMatched.Count -eq 2) "A class selector must match both discovered tests from real --list-tests output; matched $($listTestsMatched.Count)."
+Assert-Contract ([string]::Equals($listTestsDiscovery, '', [StringComparison]::Ordinal)) "Raw --list-tests output carrying blank, whitespace-only and trailing lines must not break selector discovery; observed: $listTestsDiscovery"
+Assert-Contract ($listTestsMatched.Count -eq 2) "A class selector must match exactly the two indented identities in a raw --list-tests capture; matched $($listTestsMatched.Count)."
+Assert-Contract ([string]::Equals(($listTestsMatched -join '|'), "$listTestsSampleIdentity.ListsDirectory|$listTestsSampleIdentity.FiltersDirectory", [StringComparison]::Ordinal)) 'Discovered identities must be returned without the leading indentation dotnet test writes.'
 
-# 真实触发面比「正文里的空行」更窄也更硬：`dotnet test` 的 stdout 以换行结尾，`-split` 因此**必然**
-# 多出一个尾随空元素——本机对真实 Erp selector 抓的 148 行 --list-tests 输出，旧解析得到 149 个元素、
-# 其中 1 个空元素，全部来自这一条尾随换行。也就是说旧写法从来就过不了第一个 selector。这条用例喂一份
-# 没有任何正文空行、只有尾随换行的样本，确保护栏不是只挡「正文空行」这个更宽的形状。
+# 真实触发面比「正文里的空行」更窄也更硬：`dotnet test` 的 stdout 以换行结尾，切行**必然**多出一个
+# 尾随空元素——本机对真实 Erp selector 抓的 148 行 --list-tests 输出，按行切得到 149 个元素、其中 1 个
+# 空元素，全部来自这一条尾随换行。也就是说旧写法从来就过不了第一个 selector。这条用例喂一份没有任何
+# 正文空行、只有尾随换行的最窄样本，确保护栏不是只挡「正文空行」这个更宽的形状。
 $trailingNewlineOnlySample = "以下测试可用:`n    $listTestsSampleIdentity.ListsDirectory`n"
-$trailingNewlineOnlyParsed = @(Get-BackendTestShardDiscoveredTests -DiscoveryOutput $trailingNewlineOnlySample)
-Assert-Contract ($trailingNewlineOnlyParsed.Count -eq 2) "A --list-tests capture whose only blank element comes from the trailing newline must parse into 2 lines; observed $($trailingNewlineOnlyParsed.Count)."
 $trailingNewlineOnlyDiscovery = ''
+$trailingNewlineOnlyMatched = @()
 try {
-    Assert-BackendTestShardSelectorDiscovery -Selector $listTestsSampleIdentity -MethodSelector $true -DiscoveredTests $trailingNewlineOnlyParsed | Out-Null
+    $trailingNewlineOnlyMatched = @(Assert-BackendTestShardSelectorDiscovery -Selector $listTestsSampleIdentity -MethodSelector $true -DiscoveryOutput $trailingNewlineOnlySample)
 }
 catch {
     $trailingNewlineOnlyDiscovery = $_.Exception.Message
 }
-Assert-Contract ([string]::Equals($trailingNewlineOnlyDiscovery, '', [StringComparison]::Ordinal)) "The trailing newline every dotnet test capture ends with must not reach the Mandatory [string[]] element check; observed: $trailingNewlineOnlyDiscovery"
+Assert-Contract ([string]::Equals($trailingNewlineOnlyDiscovery, '', [StringComparison]::Ordinal)) "The trailing newline every dotnet test capture ends with must not break a method selector; observed: $trailingNewlineOnlyDiscovery"
+Assert-Contract ($trailingNewlineOnlyMatched.Count -eq 1) "A method selector must match exactly one identity despite the trailing newline; matched $($trailingNewlineOnlyMatched.Count)."
 
-$realPostgresVerifierSource = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/verify-backend-real-postgres-tests.ps1') -Raw
-Assert-Contract ($realPostgresVerifierSource.Contains('Get-BackendTestShardDiscoveredTests -DiscoveryOutput', [StringComparison]::Ordinal)) 'The real PostgreSQL verifier must parse --list-tests through the governed helper instead of splitting stdout inline.'
+# 参数收的是 [string] 而不是 [string[]]，所以「调用方自己按行切、把带空元素的行数组递进来」这个
+# 缺陷形状在**参数类型上**就不可表达：PowerShell 拒绝把多元素数组转成 String，绑定当场失败。
+# 这条断言钉的就是这个结构性性质——它取代了任何「看调用方源码有没有写某个字符串」的文本护栏，
+# 后者对续行、splatting 一律假红，对「注释里留串、调用点复原」又是假绿（#3214 同族教训）。
+# 边界说清楚：单元素数组仍会被 PowerShell 解包成字符串，但缺陷形状（身份行 + 空元素）元素数必然 ≥2，
+# 所以落不进那个缝里。
+$lineArrayText = ''
+try {
+    Assert-BackendTestShardSelectorDiscovery -Selector $listTestsSampleIdentity -MethodSelector $false -DiscoveryOutput @("$listTestsSampleIdentity.ListsDirectory", '') | Out-Null
+}
+catch {
+    $lineArrayText = $_.Exception.Message
+}
+Assert-Contract ($lineArrayText.Contains("Cannot process argument transformation on parameter 'DiscoveryOutput'", [StringComparison]::Ordinal)) "A pre-split line array must be rejected at the parameter boundary, which is what makes the #3279 defect shape unrepresentable rather than merely unwritten; observed: $lineArrayText"
 
 $notExecutedSelectorText = ''
 try {
