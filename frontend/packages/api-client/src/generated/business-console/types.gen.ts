@@ -3532,7 +3532,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleD
     dueDate?: string;
 };
 
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsolePlanningContextRequest = {
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDemandSourceListRequest = {
     [key: string]: never;
 };
 
@@ -3641,6 +3641,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     inputCoverageStart?: string | null;
     inputCoverageEnd?: string | null;
     failureReason?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsolePlanningContextRequest = {
+    [key: string]: never;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMrpPeggingListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -7324,6 +7328,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     purchaseOrderNo: string;
     lines: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseReceiptLine>;
     idempotencyKey?: string | null;
+    inventoryPostingRoute?: NervIipContractsErpPurchaseReceiptInventoryPostingRoute;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseReceiptLine = {
@@ -7331,6 +7336,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     receivedQuantity?: number;
     qualityStatus: string;
 };
+
+export type NervIipContractsErpPurchaseReceiptInventoryPostingRoute = 'direct' | 'wms';
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpSalesOrderListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpSalesOrderListResponse | null;
@@ -14333,6 +14340,9 @@ export type ListBusinessConsolePlanningDemandsData = {
     query: {
         organizationId: string;
         environmentId: string;
+        keyword?: string | null;
+        skip?: number;
+        take?: number;
     };
     url: '/api/business-console/v1/planning/demands';
 };

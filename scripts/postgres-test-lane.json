@@ -392,13 +392,15 @@
       "status": "active",
       "databaseOwnership": "runner",
       "project": "backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/Nerv.IIP.Business.Erp.Web.Tests.csproj",
-      "filter": "FullyQualifiedName~Nerv.IIP.Business.Erp.Web.Tests.BusinessPartnerChangedPostgresAcceptanceTests|FullyQualifiedName~Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests|FullyQualifiedName~Nerv.IIP.Business.Erp.Web.Tests.WorkCenterMachineOverheadRatePostgresAcceptanceTests",
+      "filter": "FullyQualifiedName~Nerv.IIP.Business.Erp.Web.Tests.BusinessPartnerChangedPostgresAcceptanceTests|FullyQualifiedName~Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests|FullyQualifiedName~Nerv.IIP.Business.Erp.Web.Tests.WorkCenterMachineOverheadRatePostgresAcceptanceTests|FullyQualifiedName~Nerv.IIP.Business.Erp.Web.Tests.PurchaseReceiptPostingRoutePostgresTests",
       "databasePrefix": "nerv_iip_erp",
       "diagnosticSchemas": [
         "erp"
       ],
       "expectedTestIdentities": [
         "Nerv.IIP.Business.Erp.Web.Tests.BusinessPartnerChangedPostgresAcceptanceTests.PostgreSQL_consumer_persists_disabled_partner_and_changes_new_PO_SO_behavior",
+        "Nerv.IIP.Business.Erp.Web.Tests.PurchaseReceiptPostingRoutePostgresTests.Routes_persist_replay_without_events_and_keep_financial_facts_on_postgres",
+        "Nerv.IIP.Business.Erp.Web.Tests.PurchaseReceiptPostingRoutePostgresTests.Legacy_receipt_migrates_to_direct_and_old_key_replays_on_postgres",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_capitalized_settlement_reads_back_balanced_voucher_and_unique_lineage_indexes",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_closed_period_stays_replayable_then_reopen_posts_machine_overhead_exactly_once",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_concurrent_report_and_actual_settlement_leave_only_actual_labor_active",
@@ -442,15 +444,17 @@
       "status": "active",
       "databaseOwnership": "runner",
       "project": "backend/tests/Nerv.IIP.Business.Acceptance.Tests/Nerv.IIP.Business.Acceptance.Tests.csproj",
-      "filter": "FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_every_stock_bearing_inspection_source_type_still_transfers_quality_stock|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_first_article_inspection_result_at_validator_upper_bound_never_reaches_inventory_stock_commands|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_first_article_inspection_result_with_generated_codes_never_reaches_inventory_stock_commands|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_first_article_inspection_result_with_short_identity_posts_no_stock_movement|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_receiving_inspection_result_still_transfers_quality_stock|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.RuntimeHoursMaintenancePostgresAcceptanceTests.Runtime_hour_interval_generates_pm_work_order_from_industrial_telemetry_runtime_hours_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.WmsInventoryRpcIdempotencyAcceptanceTests.Postgres_count_execution_timeout_and_concurrent_retry_converges_inventory_and_wms|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.WmsInventoryRpcIdempotencyAcceptanceTests.Postgres_count_task_same_code_different_key_unique_conflict_reruns_as_domain_conflict",
+      "filter": "FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.PurchaseReceiptPostingRoutePostgresAcceptanceTests.Public_receipt_routes_are_exclusive_and_replay_preserves_identity_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_every_stock_bearing_inspection_source_type_still_transfers_quality_stock|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_first_article_inspection_result_at_validator_upper_bound_never_reaches_inventory_stock_commands|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_first_article_inspection_result_with_generated_codes_never_reaches_inventory_stock_commands|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_first_article_inspection_result_with_short_identity_posts_no_stock_movement|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_receiving_inspection_result_still_transfers_quality_stock|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.RuntimeHoursMaintenancePostgresAcceptanceTests.Runtime_hour_interval_generates_pm_work_order_from_industrial_telemetry_runtime_hours_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.WmsInventoryRpcIdempotencyAcceptanceTests.Postgres_count_execution_timeout_and_concurrent_retry_converges_inventory_and_wms|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.WmsInventoryRpcIdempotencyAcceptanceTests.Postgres_count_task_same_code_different_key_unique_conflict_reruns_as_domain_conflict",
       "databasePrefix": "nerv_iip_acceptance",
       "diagnosticSchemas": [
+        "erp",
         "industrial_telemetry",
         "inventory",
         "maintenance",
         "wms"
       ],
       "expectedTestIdentities": [
+        "Nerv.IIP.Business.Acceptance.Tests.PurchaseReceiptPostingRoutePostgresAcceptanceTests.Public_receipt_routes_are_exclusive_and_replay_preserves_identity_on_postgres",
         "Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_every_stock_bearing_inspection_source_type_still_transfers_quality_stock",
         "Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_first_article_inspection_result_at_validator_upper_bound_never_reaches_inventory_stock_commands",
         "Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_first_article_inspection_result_with_generated_codes_never_reaches_inventory_stock_commands",

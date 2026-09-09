@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using FastEndpoints;
 using Nerv.IIP.Contracts.Coding;
+using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.Contracts.Scheduling;
 
@@ -2833,6 +2834,13 @@ public sealed record BusinessConsolePlanningContextRequest(
     string OrganizationId,
     string EnvironmentId);
 
+public sealed record BusinessConsoleDemandSourceListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Keyword = null,
+    int Skip = 0,
+    int Take = 100);
+
 public sealed record BusinessConsoleMpsListRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -3558,7 +3566,9 @@ public sealed record BusinessConsoleRecordErpPurchaseReceiptRequest(
     string? PurchaseReceiptNo,
     string PurchaseOrderNo,
     IReadOnlyCollection<BusinessConsoleErpPurchaseReceiptLine> Lines,
-    string? IdempotencyKey = null);
+    string? IdempotencyKey = null,
+    [property: JsonConverter(typeof(PurchaseReceiptInventoryPostingRouteJsonConverter))]
+    PurchaseReceiptInventoryPostingRoute InventoryPostingRoute = PurchaseReceiptInventoryPostingRoute.Direct);
 
 public sealed record BusinessConsoleErpPurchaseReceiptLine(
     string PurchaseOrderLineNo,

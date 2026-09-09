@@ -606,6 +606,7 @@
       "route": "/api/business/v1/erp/delivery-orders",
       "operationId": "listErpDeliveryOrders",
       "classification": "exposed",
+      "note": "#2121：复用组合式租户、关键词与分页 criteria；保留公开字段、默认值与发货单专属状态语义。",
       "gateways": [
         "business"
       ],
@@ -697,6 +698,7 @@
       "route": "/api/business/v1/erp/finance/cost-candidates",
       "operationId": "listErpCostCandidates",
       "classification": "exposed",
+      "note": "#2121：复用组合式租户、关键词与分页 criteria；保留公开字段、默认值与成本候选专属状态语义。",
       "gateways": [
         "business"
       ],
@@ -762,6 +764,7 @@
       "route": "/api/business/v1/erp/finance/work-order-costs",
       "operationId": "listErpWorkOrderCosts",
       "classification": "deferred",
+      "note": "#2121：复用租户 criteria 与分页 validator；保留租户专属校验及错误消息、公开字段、默认值、分页拒绝语义与工单成本专属筛选。",
       "followUp": "BusinessGateway facade pending; follows a future ERP work-order cost analysis Business Console phase. Issue #2814 intentionally delivers service-side readback without Console/PDA computation or UI changes."
     },
     {
@@ -817,6 +820,7 @@
       "route": "/api/business/v1/erp/finance/payables",
       "operationId": "listErpAccountPayables",
       "classification": "exposed",
+      "note": "#2121：复用组合式租户、关键词与分页 criteria；保留公开字段、默认值与应付账款专属筛选。",
       "gateways": [
         "business"
       ],
@@ -890,6 +894,7 @@
       "route": "/api/business/v1/erp/finance/receivables",
       "operationId": "listErpAccountReceivables",
       "classification": "exposed",
+      "note": "#2121：复用组合式租户、关键词与分页 criteria；保留公开字段、默认值与应收账款专属筛选。",
       "gateways": [
         "business"
       ],
@@ -963,6 +968,7 @@
       "route": "/api/business/v1/erp/finance/vouchers",
       "operationId": "listErpJournalVouchers",
       "classification": "exposed",
+      "note": "#2121：复用组合式租户、关键词与分页 criteria；保留公开字段、默认值与会计凭证专属状态语义。",
       "gateways": [
         "business"
       ],
@@ -989,6 +995,7 @@
       "route": "/api/business/v1/erp/opportunities",
       "operationId": "listErpOpportunities",
       "classification": "exposed",
+      "note": "#2121：复用组合式租户、关键词与分页 criteria；保留公开字段、默认值与商机专属状态语义。",
       "gateways": [
         "business"
       ],
@@ -1015,6 +1022,7 @@
       "route": "/api/business/v1/erp/purchase-orders",
       "operationId": "listErpPurchaseOrders",
       "classification": "exposed",
+      "note": "#2121：复用组合式租户、关键词与分页 criteria；保留公开字段、默认值与采购订单专属筛选。",
       "gateways": [
         "business"
       ],
@@ -1086,6 +1094,7 @@
       "route": "/api/business/v1/erp/purchase-requisitions",
       "operationId": "listErpPurchaseRequisitions",
       "classification": "exposed",
+      "note": "#2121：复用组合式租户、关键词与分页 criteria；保留公开字段、默认值与采购申请专属筛选。",
       "gateways": [
         "business"
       ],
@@ -1125,6 +1134,7 @@
       "route": "/api/business/v1/erp/quotations",
       "operationId": "listErpQuotations",
       "classification": "exposed",
+      "note": "#2121：复用组合式租户、关键词与分页 criteria；保留公开字段、默认值与报价专属状态语义。",
       "gateways": [
         "business"
       ],
@@ -1164,6 +1174,7 @@
       "route": "/api/business/v1/erp/rfqs",
       "operationId": "listErpRequestsForQuotation",
       "classification": "exposed",
+      "note": "#2121：复用组合式租户、关键词与分页 criteria；保留公开字段、默认值与询价单专属状态语义。",
       "gateways": [
         "business"
       ],
@@ -1177,6 +1188,7 @@
       "route": "/api/business/v1/erp/supplier-quotations",
       "operationId": "listErpSupplierQuotations",
       "classification": "exposed",
+      "note": "#2121：复用组合式租户、关键词与分页 criteria；保留公开字段、默认值与供应商报价专属筛选。",
       "gateways": [
         "business"
       ],
@@ -1203,6 +1215,7 @@
       "route": "/api/business/v1/erp/sales-orders",
       "operationId": "listErpSalesOrders",
       "classification": "exposed",
+      "note": "#2121：复用组合式租户、关键词与分页 criteria；保留公开字段、默认值与销售订单专属状态语义。",
       "gateways": [
         "business"
       ],
@@ -4263,6 +4276,7 @@
       "method": "GET",
       "route": "/api/business/v1/quality/inspection-plans",
       "operationId": "listBusinessQualityInspectionPlans",
+      "note": "#2126：复用组合式租户、关键词与分页 criteria；保留检验计划专属筛选、公开字段、默认值和校验语义。",
       "classification": "exposed",
       "gateways": [
         "business"
@@ -4317,6 +4331,7 @@
       "route": "/api/business/v1/quality/inspection-records",
       "operationId": "listBusinessQualityInspectionRecords",
       "classification": "exposed",
+      "note": "#2126：复用组合式租户与分页 criteria；保留检验记录专属筛选、公开字段、默认值和校验语义。",
       "gateways": [
         "business"
       ],
@@ -4377,6 +4392,7 @@
       "route": "/api/business/v1/quality/inspection-tasks",
       "operationId": "listBusinessQualityInspectionTasks",
       "classification": "exposed",
+      "note": "#2126：复用组合式租户、关键词与分页 criteria；保留任务工作台专属 scope、逾期筛选、Take 上限和响应契约。",
       "gateways": [
         "business"
       ],
@@ -4655,6 +4671,7 @@
       "route": "/api/business/v1/quality/spc/control-charts",
       "operationId": "listBusinessQualitySpcControlCharts",
       "classification": "exposed",
+      "note": "#2126：复用组合式租户、关键词与分页 criteria；保留 SPC 台账专属锁定状态、统计字段和响应契约。",
       "gateways": [
         "business"
       ],

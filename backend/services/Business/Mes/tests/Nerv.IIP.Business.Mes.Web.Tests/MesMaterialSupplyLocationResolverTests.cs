@@ -7,6 +7,46 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class MesMaterialSupplyLocationResolverTests
 {
+    // NERV-2118 Regression：同批次其它货权不能冒充公司可用量。
+    [Theory]
+    [InlineData(2, true)]
+    [InlineData(0, false)]
+    public async Task Resolver_uses_only_company_owned_movable_stock(int companyQuantity, bool succeeds)
+    {
+        using var handler = new AvailabilityHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(JsonSerializer.Serialize(new { data = new {
+                availableQuantity = 100 + companyQuantity,
+                items = new[] {
+                    new { lotNo = "LOT-01", availableQuantity = 50m, movementAllowed = true, ownerType = "production", ownerId = (string?)null, serialNo = (string?)null, qualityStatus = "unrestricted" },
+                    new { lotNo = "LOT-01", availableQuantity = 50m, movementAllowed = true, ownerType = "supplier", ownerId = (string?)"SUP-01", serialNo = (string?)null, qualityStatus = "unrestricted" },
+                    new { lotNo = "LOT-01", availableQuantity = 50m, movementAllowed = true, ownerType = "company", ownerId = (string?)"OTHER-01", serialNo = (string?)null, qualityStatus = "unrestricted" },
+                    new { lotNo = "LOT-01", availableQuantity = 50m, movementAllowed = false, ownerType = "company", ownerId = (string?)null, serialNo = (string?)null, qualityStatus = "unrestricted" },
+                    new { lotNo = "LOT-01", availableQuantity = 50m, movementAllowed = true, ownerType = "company", ownerId = (string?)null, serialNo = (string?)"SER-01", qualityStatus = "unrestricted" },
+                    new { lotNo = "LOT-01", availableQuantity = 50m, movementAllowed = true, ownerType = "company", ownerId = (string?)null, serialNo = (string?)null, qualityStatus = "blocked" },
+                    new { lotNo = "LOT-01", availableQuantity = (decimal)companyQuantity, movementAllowed = true, ownerType = "company", ownerId = (string?)null, serialNo = (string?)null, qualityStatus = "unrestricted" }
+                }
+            }}), System.Text.Encoding.UTF8, "application/json")
+        });
+        using var client = new HttpClient(handler) { BaseAddress = new Uri("http://inventory.local") };
+        var resolver = new InventoryMesMaterialSupplyLocationResolver(new MesMaterialSupplyLocationOptions
+        {
+            SiteCode = "SITE-001", SourceLocationCodes = ["WH-01"], LineSideLocationCode = "LINE-01"
+        }, new MesInventoryHttpClient(client));
+        var request = new MesMaterialSupplyLocationRequest("org-001", "env-dev", "MAT-01", "KG", "LOT-01", 2m);
+        if (!succeeds)
+        {
+            await Assert.ThrowsAsync<KnownException>(() => resolver.ResolveAsync(request, CancellationToken.None));
+            return;
+        }
+
+        var result = await resolver.ResolveAsync(request, CancellationToken.None);
+        var allocation = Assert.Single(result.SourceAllocations);
+        Assert.Equal("company", allocation.OwnerType);
+        Assert.Null(allocation.OwnerId);
+        Assert.Equal(2m, allocation.Quantity);
+    }
+
     [Fact]
     public async Task Resolver_does_not_use_mes_work_order_lot_as_inventory_source_lot()
     {
@@ -112,9 +152,7 @@ public sealed class MesMaterialSupplyLocationResolverTests
 
     private static HttpResponseMessage AvailabilityResponse(decimal quantity, string? lotNo = null)
     {
-        object[] items = lotNo is null
-            ? []
-            : [new { lotNo, availableQuantity = quantity, movementAllowed = true }];
+        object[] items = [new { lotNo, availableQuantity = quantity, movementAllowed = true, ownerType = "company", ownerId = (string?)null, serialNo = (string?)null, qualityStatus = "unrestricted" }];
         return new(HttpStatusCode.OK)
         {
             Content = new StringContent(JsonSerializer.Serialize(new

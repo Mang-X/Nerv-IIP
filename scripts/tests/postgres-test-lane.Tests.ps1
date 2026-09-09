@@ -635,12 +635,12 @@ try {
         Assert-Contract (-not $redisCapIdentities.Contains($frozenIdentityKey)) 'No identity may be owned by both the postgres and redis-cap lanes.'
     }
     $erpMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'erp-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 17) 'The ERP member must freeze exactly its seventeen PostgreSQL identities.'
+    Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 19) 'The ERP member must freeze exactly its nineteen PostgreSQL identities.'
     Assert-Contract ([string]::Equals([string]$erpMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) 'ERP keeps runner-owned databases for failure diagnostics.'
     $acceptanceMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'acceptance-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($acceptanceMember.expectedTestIdentities).Count -eq 8) 'The cross-service acceptance member must freeze exactly its eight PostgreSQL identities.'
-    Assert-Contract ([string]::Equals((@($acceptanceMember.diagnosticSchemas) -join ','), 'industrial_telemetry,inventory,maintenance,wms', [StringComparison]::Ordinal)) 'The cross-service acceptance member must declare every schema its scenarios migrate.'
-    Assert-Contract ([string]::Equals([string]$acceptanceMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) 'The cross-service acceptance member keeps runner-owned databases so its four-schema end state stays diagnosable.'
+    Assert-Contract (@($acceptanceMember.expectedTestIdentities).Count -eq 9) '跨服务验收成员必须冻结九条 PostgreSQL 测试身份。'
+    Assert-Contract ([string]::Equals((@($acceptanceMember.diagnosticSchemas) -join ','), 'erp,industrial_telemetry,inventory,maintenance,wms', [StringComparison]::Ordinal)) '跨服务验收成员必须声明所有被迁移的 schema。'
+    Assert-Contract ([string]::Equals([string]$acceptanceMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) '跨服务验收成员使用 runner-owned 数据库，保持最终状态可诊断。'
     Assert-MethodScopedFilter -Member $acceptanceMember
     foreach ($runnerOwnedSource in @(
             'backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/BusinessPartnerChangedPostgresAcceptanceTests.cs',

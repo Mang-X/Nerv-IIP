@@ -59,7 +59,7 @@ MasterData 字段与事实 owner 见 [`master-data-field-ownership.md`](master-d
 | BarcodeLabel | 条码规则、模板引用、打印批次/传输事实、扫码记录、追溯事件 | 库存余额、业务单据状态、物理打印确认之外的设备事实 | MasterData、Inventory、File Storage |
 | BusinessApproval | 审批模板、审批链、审批记录、业务审批状态 | 平台 Ops 任务、平台审计 | IAM、Notification |
 | ERP | 采购/SRM-lite、销售/CRM-lite/OMS-lite、应收应付、凭证、成本核算 | WMS 执行、库存余额 | MasterData、Planning、Inventory、WMS、MES |
-| WMS | 收货/入库/出库、拣货、上架、复核、盘点执行、WCS 任务映射 | 库存余额、采购/销售/工单业务状态、WCS 内部调度 | MasterData、Inventory、Quality、BarcodeLabel |
+| WMS | 收货/入库/出库、拣货、上架、复核、盘点执行、WCS 任务映射 | 库存余额、采购/销售/工单业务状态、WCS 内部调度 | MasterData、Inventory、Quality、BarcodeLabel、ERP 采购收货来源 |
 | MES | 工单、工序任务、报工、排产结果消费、完工入库请求、执行侧不可用投影 | 库存余额、设备维护事实、排程算法 | MasterData、ProductEngineering、Planning、Inventory/WMS、Quality、Telemetry、Maintenance |
 | IndustrialTelemetry | tag/采集点、设备状态、报警、时序摘要、OEE 输入事实 | PLC/DCS 控制、资产主数据、维修处置 | Connector Host、MasterData |
 | Maintenance | 维修工单、保养计划、点检、故障、停机原因、资产恢复判定、备件需求事实 | 设备主数据、库存余额、MES 工单 | MasterData、Telemetry、Inventory、MES |
@@ -98,6 +98,10 @@ PlannedPurchaseSuggestion
 ```
 
 ERP 拥有采购和财务事实，WMS 拥有仓储执行，Inventory 拥有库存过账，Quality 拥有放行。退货会计补偿边界见 [`erp-return-accounting.md`](erp-return-accounting.md)。
+
+采购收货的库存过账路径由 ERP 在收货时冻结：`Direct` 由 ERP 发起库存请求，`Wms` 由 WMS 入库执行发起。WMS 在采购来源入库首次完成、创建库存请求之前，通过 ERP 公开来源查询核对同一组织、环境和收货单的冻结路径；仅 `Wms` 放行，直接路径（含历史直接收货）、不存在的来源与查询失败均不能生成新请求。已有请求的匹配重放继续返回原请求身份，不借此修补历史库存事实。
+
+WMS 的 ERP HTTP 客户端使用 `Erp:BaseUrl`（环境变量 `Erp__BaseUrl`）；Aspire AppHost 从 ERP HTTP endpoint 注入地址和资源引用，不增加反向启动等待。精确配置注册以 WMS `Program.cs` 与 AppHost 为准。
 
 ### 订单到交付到应收
 

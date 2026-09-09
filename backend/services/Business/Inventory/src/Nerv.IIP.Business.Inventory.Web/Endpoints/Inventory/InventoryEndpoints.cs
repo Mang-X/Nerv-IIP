@@ -73,7 +73,7 @@ public sealed record ListInventoryDirectoryRequest(
     string? SkuCode = null,
     string? Keyword = null,
     int Skip = 0,
-    int Take = 50);
+    int Take = OffsetPage.DefaultTake);
 
 public sealed record PostStockMovementRequest(
     string OrganizationId,

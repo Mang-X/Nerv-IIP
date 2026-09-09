@@ -5445,6 +5445,30 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Planning_demand_list_facade_forwards_composed_query_fields()
+    {
+        var planning = new RecordingPlanningClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessPlanningClient>();
+            services.AddSingleton<IBusinessPlanningClient>(planning);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/planning/demands?organizationId=org-001&environmentId=env-dev&keyword=%20pump%20&skip=7&take=23");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", planning.LastInternalToken);
+        Assert.Equal(
+            new BusinessConsoleDemandSourceListRequest("org-001", "env-dev", " pump ", 7, 23),
+            planning.LastDemandListRequest);
+    }
+
+    [Fact]
     public async Task Planning_mrp_run_list_exposes_input_degradation_sources()
     {
         var planning = new RecordingPlanningClient();
@@ -6065,6 +6089,55 @@ public sealed class BusinessGatewayProxyTests
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal("receipt-001", document.RootElement.GetProperty("data").GetProperty("purchaseReceiptId").GetString());
     }
+
+    // NERV-2122 PublicContract：公开输入不得丢失冻结路径或把未知路径静默变为 direct。
+    [Theory]
+    [InlineData(null, "direct")]
+    [InlineData("direct", "direct")]
+    [InlineData("wms", "wms")]
+    public async Task Erp_purchase_receipt_preserves_inventory_posting_route(string? route, string expected)
+    {
+        var erp = new RecordingErpClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(erp);
+        });
+        var client = BusinessGatewayTestHost.Authenticated(lease.CreateClient());
+        var payload = ReceiptRoutePayload();
+        if (route is not null) payload["inventoryPostingRoute"] = route;
+        using var response = await client.PostAsJsonAsync("/api/business-console/v1/erp/procurement/purchase-receipts", payload);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var forwarded = JsonSerializer.SerializeToElement(erp.LastRecordPurchaseReceiptRequest, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.Equal(expected, forwarded.GetProperty("inventoryPostingRoute").GetString());
+    }
+
+    [Theory]
+    [InlineData("unknown")]
+    [InlineData(1)]
+    [InlineData(null)]
+    public async Task Erp_purchase_receipt_rejects_unsupported_inventory_posting_route(object? route)
+    {
+        var erp = new RecordingErpClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(erp);
+        });
+        var client = BusinessGatewayTestHost.Authenticated(lease.CreateClient());
+        var payload = ReceiptRoutePayload();
+        payload["inventoryPostingRoute"] = route;
+        using var response = await client.PostAsJsonAsync("/api/business-console/v1/erp/procurement/purchase-receipts", payload);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Null(erp.LastRecordPurchaseReceiptRequest);
+    }
+
+    private static Dictionary<string, object?> ReceiptRoutePayload() => new()
+    {
+        ["organizationId"] = "org-001", ["environmentId"] = "env-dev",
+        ["purchaseReceiptNo"] = "RCV-route", ["purchaseOrderNo"] = "PO-route",
+        ["lines"] = new[] { new { purchaseOrderLineNo = "1", receivedQuantity = 10m, qualityStatus = "unrestricted" } },
+    };
 
     [Fact]
     public async Task Erp_procurement_purchase_receipt_rejects_unknown_quality_status_with_chinese_message()
@@ -16320,6 +16393,8 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
 
     public BusinessConsoleMpsListRequest? LastMpsListRequest { get; private set; }
 
+    public BusinessConsoleDemandSourceListRequest? LastDemandListRequest { get; private set; }
+
     public BusinessConsoleCreateMpsBucketRequest? LastCreateMpsRequest { get; private set; }
 
     public string? LastUpdateMpsId { get; private set; }
@@ -16464,10 +16539,11 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
 
     public Task<BusinessConsoleDemandSourceListResponse> ListDemandSourcesAsync(
         string internalBearerToken,
-        BusinessConsolePlanningContextRequest request,
+        BusinessConsoleDemandSourceListRequest request,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
+        LastDemandListRequest = request;
         return Task.FromResult(new BusinessConsoleDemandSourceListResponse([]));
     }
 

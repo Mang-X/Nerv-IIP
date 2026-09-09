@@ -2917,10 +2917,12 @@ public sealed class MesPersistenceContractTests
         Assert.Equal(MaterialIssueRequest.PartiallyReceivedStatus, await dbContext.MaterialIssueRequests.Select(x => x.Status).SingleAsync());
     }
 
-    [Fact]
-    public async Task Production_report_can_reference_consumed_material_lots_for_traceability()
+    [Theory]
+    [InlineData("production")]
+    [InlineData("company")]
+    public async Task Production_report_can_reference_consumed_material_lots_for_traceability(string ownerType)
     {
-        var services = CreateServices(nameof(Production_report_can_reference_consumed_material_lots_for_traceability));
+        var services = CreateServices($"{nameof(Production_report_can_reference_consumed_material_lots_for_traceability)}-{ownerType}");
         var now = DateTimeOffset.Parse("2026-05-27T08:00:00Z");
 
         using (var scope = services.CreateScope())
@@ -2957,7 +2959,11 @@ public sealed class MesPersistenceContractTests
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var request = await dbContext.MaterialIssueRequests.SingleAsync();
-            request.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, now.AddMinutes(10), materialLotId: "LOT-OIL-A");
+            var locations = MaterialSupplyTestFixtures.Locations;
+            request.ConfirmAndPostLineSideReceipt(new MaterialTransferLocations(
+                locations.SourceSiteCode, locations.SourceLocationCode, locations.TargetSiteCode, locations.TargetLocationCode,
+                [new MaterialTransferAllocation(locations.SourceSiteCode, locations.SourceLocationCode, "LOT-OIL-A", 4m, ownerType)]),
+                now.AddMinutes(10), materialLotId: "LOT-OIL-A");
             await dbContext.SaveChangesAsync();
 
             var handler = new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance, TestMesFirstArticleGate.Allowing);
@@ -2978,6 +2984,10 @@ public sealed class MesPersistenceContractTests
         }
 
         using var recreatedScope = services.CreateScope();
+        var consumption = await recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
+            .ProductionReportMaterialConsumptions.SingleAsync();
+        Assert.Equal(ownerType, consumption.OwnerType);
+        Assert.Null(consumption.OwnerId);
         var traceability = await new GetMaterialLotTraceabilityQueryHandler(
             recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>())
             .Handle(new GetMaterialLotTraceabilityQuery("org-001", "env-dev", "LOT-OIL-A"), CancellationToken.None);

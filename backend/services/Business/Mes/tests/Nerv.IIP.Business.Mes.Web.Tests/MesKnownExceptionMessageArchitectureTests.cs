@@ -69,6 +69,7 @@ public sealed class MesKnownExceptionMessageArchitectureTests
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/ProductEngineering/MesEngineeringChangeCommands.cs", "RecordEngineeringChangeDecisionCommandHandler", "Handle", 3, "Engineering Change deferred 与 dynamic 透传排除"),
         Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Production/MesProductionQueries.cs", "GetProductionReportQueryHandler", "Handle", 1, "同步公开报工详情查询"),
         Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Production/TelemetryProductionReportCandidateQueries.cs", "GetTelemetryProductionReportCandidateQueryHandler", "Handle", 1, "同步公开遥测报工候选查询"),
+        Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/ListQueryCriteria.cs", "TenantScope", "From", 2, "同步公开列表查询租户校验"),
         Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/WorkOrders/GetWorkOrderTransformationQuery.cs", "GetWorkOrderTransformationQueryHandler", "Handle", 1, "同步公开工单转换读回不存在拒绝"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/MesWorkbenchQueries.cs", "GetMaterialReadinessQueryHandler", "Handle", 1, "dynamic readiness message 透传"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/MesWorkbenchQueries.cs", "GetMaterialIssueRequestQueryHandler", "Handle", 1, "领料详情在当前组织与环境 scope 内不存在的统一中文拒绝"),
@@ -86,9 +87,9 @@ public sealed class MesKnownExceptionMessageArchitectureTests
         var documents = ReadMesSourceDocuments();
         var discovered = MesKnownExceptionUserMessageSourceAnalyzer.Discover(documents);
 
-        Assert.Equal(72, discovered.Count);
-        Assert.Equal(168, discovered.Sum(site => site.DirectKnownExceptionCount));
-        Assert.Equal(164, documents.Sum(document => CountOccurrences(document.Text, "new KnownException")));
+        Assert.Equal(73, discovered.Count);
+        Assert.Equal(170, discovered.Sum(site => site.DirectKnownExceptionCount));
+        Assert.Equal(166, documents.Sum(document => CountOccurrences(document.Text, "new KnownException")));
         Assert.Equal(ExpectedLedger.Count, discovered.Count);
 
         var expectedByKey = ExpectedLedger.ToDictionary(site => site.Key, StringComparer.Ordinal);
@@ -102,7 +103,7 @@ public sealed class MesKnownExceptionMessageArchitectureTests
         var excluded = ExpectedLedger.Where(site => site.Kind == MesKnownExceptionSiteKind.Excluded).ToArray();
         var violations = MesKnownExceptionUserMessageSourceAnalyzer.Analyze(documents, excluded);
         Assert.Empty(violations);
-        Assert.Equal(20, ExpectedLedger.Where(site => site.Kind == MesKnownExceptionSiteKind.Target).Sum(site => site.DirectKnownExceptionCount));
+        Assert.Equal(22, ExpectedLedger.Where(site => site.Kind == MesKnownExceptionSiteKind.Target).Sum(site => site.DirectKnownExceptionCount));
     }
 
     [Fact]

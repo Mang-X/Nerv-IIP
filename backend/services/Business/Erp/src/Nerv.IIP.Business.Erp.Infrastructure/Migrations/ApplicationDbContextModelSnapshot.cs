@@ -1896,6 +1896,15 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnName("exchange_rate")
                         .HasComment("Receipt exchange rate to local currency.");
 
+                    b.Property<string>("InventoryPostingRoute")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("Direct")
+                        .HasColumnName("inventory_posting_route")
+                        .HasComment("Immutable inventory posting owner: Direct ERP request or Wms putaway; legacy receipts remain Direct.");
+
                     b.Property<string>("OrganizationId")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -2012,6 +2021,12 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("sku_code")
                         .HasComment("MasterData SKU code copied from purchase order line for stock posting.");
+
+                    b.Property<decimal?>("UnitPrice")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("unit_price")
+                        .HasComment("Frozen purchase unit price in receipt currency; null for legacy receipts without a valuation snapshot.");
 
                     b.Property<string>("UomCode")
                         .IsRequired()

@@ -49,7 +49,7 @@ public sealed class WmsInventoryMultilinePostingAcceptanceTests
         wmsDb.InboundOrders.Add(inbound);
         await wmsDb.SaveChangesAsync(CancellationToken.None);
 
-        await new CompleteInboundOrderCommandHandler(wmsDb).Handle(
+        await new CompleteInboundOrderCommandHandler(wmsDb, new WmsTrustedCompletionAcceptanceFixture.ReceiptRoute()).Handle(
             new CompleteInboundOrderCommand(
                 inbound.Id,
                 "idem-in-multi-001",
