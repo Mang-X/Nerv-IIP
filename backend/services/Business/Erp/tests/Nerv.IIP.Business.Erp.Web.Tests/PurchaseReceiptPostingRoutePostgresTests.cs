@@ -36,7 +36,7 @@ public sealed class PurchaseReceiptPostingRoutePostgresTests
             foreach (var suffix in new[] { "direct", "wms" })
             {
                 var order = PurchaseOrder.Create("org-route", "env-route", $"PO-{suffix}", "SUP-001", "SITE-001",
-                    [new PurchaseOrderLineDraft("10", "SKU-001", "pcs", 2m, 12.5m, new DateOnly(2026, 9, 1))]);
+                    [new PurchaseOrderLineDraft("10", "SKU-001", "pcs", 3m, 12.5m, new DateOnly(2026, 9, 1))]);
                 order.MarkApprovalRequested($"approval-{suffix}");
                 order.ReleaseAfterApproval($"approval-{suffix}");
                 db.PurchaseOrders.Add(order);
@@ -65,9 +65,20 @@ public sealed class PurchaseReceiptPostingRoutePostgresTests
                     var inbound = new PurchaseReceiptInventoryMovementRequestedIntegrationEventConverter().Convert(Assert.Single(movements));
                     Assert.Equal("inbound", inbound.Payload.MovementType);
                     Assert.Equal(2m, inbound.Payload.Quantity);
+                    Assert.Equal(12.5m, inbound.Payload.UnitCost);
                 }
                 recorded = new PurchaseReceiptRecordedIntegrationEventConverter().Convert(
                     Assert.Single(receipt.GetDomainEvents().OfType<PurchaseReceiptRecordedDomainEvent>()));
+                await db.SaveChangesAsync();
+            }
+
+            await using (var amend = provider.CreateAsyncScope())
+            {
+                var db = amend.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var order = await db.PurchaseOrders.Include(x => x.Lines).SingleAsync(x => x.PurchaseOrderNo == $"PO-{suffix}");
+                var change = order.RequestChange([new PurchaseOrderLineChangeDraft("10", 3m, 99m, new DateOnly(2026, 9, 1))]);
+                change.AssignApprovalChain($"amend-{suffix}");
+                order.ApplyApprovedChange($"amend-{suffix}");
                 await db.SaveChangesAsync();
             }
 
@@ -79,6 +90,10 @@ public sealed class PurchaseReceiptPostingRoutePostgresTests
                 Assert.NotNull(source);
                 Assert.Equal(route, source.InventoryPostingRoute);
                 Assert.Equal(2m, Assert.Single(source.Lines).ReceivedQuantity);
+                Assert.Equal("CNY", source.CurrencyCode);
+                Assert.Equal(1m, source.ExchangeRate);
+                Assert.Equal(12.5m, Assert.Single(source.Lines).UnitPrice);
+                Assert.Equal(12.5m, Assert.Single(source.Lines).EstimatedUnitCost);
                 Assert.Equal(receiptId, await Handler(read.ServiceProvider).Handle(command, CancellationToken.None));
                 Assert.Empty(db.PurchaseReceipts.Local.Single().GetDomainEvents());
                 await db.SaveChangesAsync();
@@ -128,7 +143,7 @@ public sealed class PurchaseReceiptPostingRoutePostgresTests
         await using (var setup = provider.CreateAsyncScope())
         {
             var db = setup.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var previousMigration = db.Database.GetMigrations().Last(x => !x.EndsWith("_AddPurchaseReceiptInventoryPostingRoute", StringComparison.Ordinal));
+            var previousMigration = db.Database.GetMigrations().TakeWhile(x => !x.EndsWith("_AddPurchaseReceiptInventoryPostingRoute", StringComparison.Ordinal)).Last();
             await db.GetService<IMigrator>().MigrateAsync(previousMigration);
             var order = PurchaseOrder.Create("org-route", "env-route", "PO-legacy", "SUP-001", "SITE-001",
                 [new PurchaseOrderLineDraft("10", "SKU-001", "pcs", 2m, 12.5m, new DateOnly(2026, 9, 1))]);
@@ -167,12 +182,23 @@ public sealed class PurchaseReceiptPostingRoutePostgresTests
             new("org-route", "env-route", "RCV-legacy"), CancellationToken.None);
         Assert.Equal(PurchaseReceiptInventoryPostingRoute.Direct, source!.InventoryPostingRoute);
         Assert.Equal(2m, Assert.Single(source.Lines).ReceivedQuantity);
+        Assert.Null(Assert.Single(source.Lines).UnitPrice);
+        Assert.Null(Assert.Single(source.Lines).EstimatedUnitCost);
         Assert.Equal(receipt.Id, await Handler(read.ServiceProvider).Handle(command, CancellationToken.None));
         Assert.Empty(receipt.GetDomainEvents());
         var conflict = await Assert.ThrowsAsync<KnownException>(() => Handler(read.ServiceProvider).Handle(
             command with { InventoryPostingRoute = PurchaseReceiptInventoryPostingRoute.Wms }, CancellationToken.None));
         Assert.Contains("conflicts", conflict.Message, StringComparison.Ordinal);
         Assert.Equal(1, await readDb.PurchaseReceipts.CountAsync());
+        var recorded = new PurchaseReceiptRecordedIntegrationEventConverter().Convert(new PurchaseReceiptRecordedDomainEvent(receipt));
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var consumer = new PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual(readDb, deadLetters);
+        await consumer.HandleAsync(recorded, CancellationToken.None);
+        await readDb.SaveChangesAsync();
+        await consumer.HandleAsync(recorded, CancellationToken.None);
+        await readDb.SaveChangesAsync();
+        Assert.Equal(25m, Assert.Single(await readDb.JournalVouchers.Include(x => x.Lines).ToArrayAsync()).Lines.Sum(x => x.DebitAmount));
+        Assert.Null(Assert.Single(receipt.Lines).UnitPrice);
     }
 
     private static RecordPurchaseReceiptCommand Command(string suffix) => new(
