@@ -15909,6 +15909,32 @@ internal sealed class RecordingBusinessFileStorageClient : IBusinessFileStorageC
             "image/jpeg",
             2048));
     }
+
+    public string? LastAuthorizedFileId { get; private set; }
+
+    public string? LastAuthorizedOrganizationId { get; private set; }
+
+    public string? LastAuthorizedEnvironmentId { get; private set; }
+
+    public Task<ShiftHandoverAttachmentDownloadTicket> AuthorizeShiftHandoverAttachmentDownloadAsync(
+        string internalBearerToken,
+        string fileId,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastAuthorizedFileId = fileId;
+        LastAuthorizedOrganizationId = organizationId;
+        LastAuthorizedEnvironmentId = environmentId;
+        return Task.FromResult(new ShiftHandoverAttachmentDownloadTicket(
+            "/api/files/v1/download-grants/grant-handover-1/content",
+            new Dictionary<string, string>
+            {
+                ["X-Organization-Id"] = organizationId,
+                ["X-Environment-Id"] = environmentId,
+            }));
+    }
 }
 
 /// <summary>字节面替身：与 JSON 面分属两个 typed client（弹性契约不同，见 ADR 0015）。</summary>
@@ -15920,11 +15946,7 @@ internal sealed class RecordingBusinessFileTransferClient : IBusinessFileTransfe
 
     public string? LastTusPatchUploadSessionId { get; private set; }
 
-    public string? LastAttachmentContentFileId { get; private set; }
-
-    public string? LastAttachmentContentOrganizationId { get; private set; }
-
-    public string? LastAttachmentContentEnvironmentId { get; private set; }
+    public ShiftHandoverAttachmentDownloadTicket? LastAttachmentTicket { get; private set; }
 
     public Task ProxyShiftHandoverAttachmentTusHeadAsync(
         string internalBearerToken,
@@ -15955,16 +15977,12 @@ internal sealed class RecordingBusinessFileTransferClient : IBusinessFileTransfe
 
     public Task StreamShiftHandoverAttachmentContentAsync(
         string internalBearerToken,
-        string fileId,
-        string organizationId,
-        string environmentId,
+        ShiftHandoverAttachmentDownloadTicket ticket,
         HttpResponse targetResponse,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
-        LastAttachmentContentFileId = fileId;
-        LastAttachmentContentOrganizationId = organizationId;
-        LastAttachmentContentEnvironmentId = environmentId;
+        LastAttachmentTicket = ticket;
         targetResponse.ContentType = "application/octet-stream";
         return targetResponse.Body.WriteAsync("handover photo bytes"u8.ToArray(), cancellationToken).AsTask();
     }

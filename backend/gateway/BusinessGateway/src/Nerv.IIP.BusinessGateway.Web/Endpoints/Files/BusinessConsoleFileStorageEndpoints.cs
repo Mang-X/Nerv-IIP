@@ -335,7 +335,8 @@ public sealed class PatchBusinessConsoleShiftHandoverAttachmentTusUploadEndpoint
 [Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(byte[]), StatusCodes.Status200OK, "application/octet-stream")]
 public sealed class DownloadBusinessConsoleShiftHandoverAttachmentContentEndpoint(
     IBusinessGatewayAuthorizationClient auth,
-    IBusinessFileTransferClient files,
+    IBusinessFileStorageClient files,
+    IBusinessFileTransferClient transfer,
     IInternalServiceTokenProvider tokenProvider)
     : EndpointWithoutRequest
 {
@@ -346,12 +347,20 @@ public sealed class DownloadBusinessConsoleShiftHandoverAttachmentContentEndpoin
             BusinessGatewayPermissions.MesHandoversRead,
             "mes-shift-handover-attachment",
             Route<string>("fileId")!,
-            (organizationId, environmentId, cancellationToken) => files.StreamShiftHandoverAttachmentContentAsync(
-                tokenProvider.BearerToken,
-                Route<string>("fileId")!,
-                organizationId,
-                environmentId,
-                HttpContext.Response,
-                cancellationToken),
+            async (organizationId, environmentId, cancellationToken) =>
+            {
+                // 授权（用途复核 + 签发 + URL 校验）走 JSON 面的弹性管线；只有取字节那一跳走字节面。
+                var ticket = await files.AuthorizeShiftHandoverAttachmentDownloadAsync(
+                    tokenProvider.BearerToken,
+                    Route<string>("fileId")!,
+                    organizationId,
+                    environmentId,
+                    cancellationToken);
+                await transfer.StreamShiftHandoverAttachmentContentAsync(
+                    tokenProvider.BearerToken,
+                    ticket,
+                    HttpContext.Response,
+                    cancellationToken);
+            },
             ct);
 }

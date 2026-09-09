@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http.Headers;
-using Nerv.IIP.Contracts.FileStorage;
 
 namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
@@ -28,15 +27,14 @@ public interface IBusinessFileTransferClient
         CancellationToken cancellationToken);
 
     /// <summary>
-    /// 交接班附件字节面。下载授权由本方法在服务端签发并**立即兑换**，调用方拿不到 downloadGrantId：
-    /// FileStorage 的 grant id 是全服务共用命名空间且兑换面不校验用途，一旦把 id 交到调用方手里，
-    /// 任何持交接班读权限的主体都能兑换别的门面（例如工程 SOP）签发的 grant。见 #3096 审核 A1。
+    /// 兑换已授权凭据取字节。凭据由 <see cref="IBusinessFileStorageClient.AuthorizeShiftHandoverAttachmentDownloadAsync"/>
+    /// 在 JSON 面产出（用途已复核、URL 已校验），调用方全程拿不到 FileStorage 的 downloadGrantId——
+    /// 该 id 是全服务共用命名空间且兑换面不校验用途，交出去就成了跨门面兑换通道（#3096 审核 A1）。
+    /// 本方法只做一跳真字节转发，这是本 client 存在的全部理由（#3096 审核 Q2）。
     /// </summary>
     Task StreamShiftHandoverAttachmentContentAsync(
         string internalBearerToken,
-        string fileId,
-        string organizationId,
-        string environmentId,
+        ShiftHandoverAttachmentDownloadTicket ticket,
         HttpResponse targetResponse,
         CancellationToken cancellationToken);
 }
@@ -63,8 +61,6 @@ public sealed class HttpBusinessFileTransferClient(HttpClient httpClient)
         "Transfer-Encoding",
         "Upgrade",
     };
-
-    protected override bool AcceptsBareDownstreamErrorPayload => true;
 
     public Task ProxyShiftHandoverAttachmentTusHeadAsync(
         string internalBearerToken,
@@ -95,49 +91,19 @@ public sealed class HttpBusinessFileTransferClient(HttpClient httpClient)
             additionalHeaders: null,
             cancellationToken);
 
-    public async Task StreamShiftHandoverAttachmentContentAsync(
+    public Task StreamShiftHandoverAttachmentContentAsync(
         string internalBearerToken,
-        string fileId,
-        string organizationId,
-        string environmentId,
+        ShiftHandoverAttachmentDownloadTicket ticket,
         HttpResponse targetResponse,
-        CancellationToken cancellationToken)
-    {
-        // business.mes.handovers.read 只授权读交接班照片。FileStorage 的 download-grant 不看用途，
-        // 所以用途口径必须在这里收：否则持交接班读权限的人可以拿任意 fileId（例如工程 SOP 文件）换字节。
-        var metadata = await SendAsync<FileMetadataResponse>(
-            internalBearerToken,
+        CancellationToken cancellationToken) =>
+        ProxyRawAsync(
             HttpMethod.Get,
-            $"/api/files/v1/files/{Uri.EscapeDataString(fileId)}",
-            body: null,
-            cancellationToken);
-        if (!string.Equals(metadata.FilePurpose, ShiftHandoverAttachments.FilePurpose, StringComparison.Ordinal))
-        {
-            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
-                HttpStatusCode.NotFound,
-                "filestorage-file-not-shift-handover-attachment");
-        }
-
-        var grant = await SendAsync<DownloadGrantResponse>(
-            internalBearerToken,
-            HttpMethod.Post,
-            $"/api/files/v1/files/{Uri.EscapeDataString(fileId)}/download-grants",
-            new CreateDownloadGrantRequest(organizationId, environmentId),
-            cancellationToken);
-
-        FileStorageRoutes.RequireProxyableDownstreamUrl(
-            grant.Download.Url,
-            FileStorageRoutes.DownstreamDownloadGrantPrefix);
-
-        await ProxyRawAsync(
-            HttpMethod.Get,
-            grant.Download.Url,
+            ticket.DownstreamUrl,
             internalBearerToken,
             sourceRequest: null,
             targetResponse,
-            grant.Download.Headers,
+            ticket.TransferHeaders,
             cancellationToken);
-    }
 
     private static string TusRequestUri(string uploadSessionId) =>
         $"/api/files/v1/tus/{Uri.EscapeDataString(uploadSessionId)}";

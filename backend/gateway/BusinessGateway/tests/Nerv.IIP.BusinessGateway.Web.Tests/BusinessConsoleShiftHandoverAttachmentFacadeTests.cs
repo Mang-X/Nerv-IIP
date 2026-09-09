@@ -82,12 +82,12 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
 
     // ADR 0023 决策 1.3 / ADR 0030：调用方不得取得 FileStorage 内部地址。姊妹网关同型用例：
     // GatewayConsoleFileStorageTests.File_storage_http_client_rejects_* 。
-    [Theory]
-    [InlineData("https://filestorage.internal/api/files/v1/tus/ups-handover-1")]
-    [InlineData("//filestorage.internal/api/files/v1/tus/ups-handover-1")]
-    [InlineData("/api/files/v2/tus/ups-handover-1")]
-    public async Task Upload_session_refuses_a_transfer_url_that_is_not_a_proxyable_internal_path(string downstreamUrl)
+    // 实现是单个 StartsWith 前缀判定，三种「非可代理 URL」在它下面同生同死（#3096 审核 S3：
+    // 等价输入不虚增鉴别力）。保留绝对 URL 一条即可，它是 ADR 0023 决策 1.3 真正要防的形态。
+    [Fact]
+    public async Task Upload_session_refuses_a_transfer_url_that_is_not_a_proxyable_internal_path()
     {
+        const string downstreamUrl = "https://filestorage.internal/api/files/v1/tus/ups-handover-1";
         var client = CreateClient(new StubHandler(_ => Json(UploadSession("tus", downstreamUrl))));
 
         var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
@@ -148,19 +148,18 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
     // #3085 的下载口径：FileStorage 的 download-grant 不看用途，门面不看就等于把交接班读权限
     // 变成通用文件读权限。
     [Fact]
-    public async Task Content_refuses_a_file_whose_purpose_is_not_a_shift_handover_photo()
+    public async Task Download_authorization_refuses_a_file_whose_purpose_is_not_a_shift_handover_photo()
     {
         var handler = new StubHandler(request => request.RequestUri!.AbsolutePath switch
         {
             "/api/files/v1/files/file-sop-v2" => Json(FileMetadata("engineering-document", "file-sop-v2")),
             var path => throw new InvalidOperationException($"Unexpected downstream call: {path}"),
         });
-        var client = CreateTransferClient(handler);
-        var httpContext = ResponseContext();
+        var client = CreateClient(handler);
 
         var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
-            client.StreamShiftHandoverAttachmentContentAsync(
-                "internal-test-token", "file-sop-v2", "org-001", "env-dev", httpContext.Response, CancellationToken.None));
+            client.AuthorizeShiftHandoverAttachmentDownloadAsync(
+                "internal-test-token", "file-sop-v2", "org-001", "env-dev", CancellationToken.None));
 
         Assert.Equal(HttpStatusCode.NotFound, exception.StatusCode);
         Assert.Equal("filestorage-file-not-shift-handover-attachment", exception.Message);
@@ -168,9 +167,9 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
         Assert.Single(handler.Requests);
     }
 
-    // #3096 审核 C3(a)：content 腿必须把 org/env 带到下游 content 端点，否则真实 FileStorage 必 400。
+    // #3096 审核 C3(a)：取字节那一跳必须把 org/env 带到下游 content 端点，否则真实 FileStorage 必 400。
     [Fact]
-    public async Task Content_signs_the_grant_server_side_and_forwards_the_transfer_headers_downstream()
+    public async Task Download_authorization_signs_the_grant_server_side_and_the_byte_hop_forwards_its_headers()
     {
         var handler = new StubHandler(request => request.RequestUri!.AbsolutePath switch
         {
@@ -189,18 +188,21 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
                 new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent("photo"u8.ToArray()) },
             var path => throw new InvalidOperationException($"Unexpected downstream call: {path}"),
         });
-        var client = CreateTransferClient(handler);
+        var jsonClient = CreateClient(handler);
+        var transferClient = CreateTransferClient(handler);
         var httpContext = ResponseContext();
 
-        await client.StreamShiftHandoverAttachmentContentAsync(
-            "internal-test-token", "file-handover-1", "org-001", "env-dev", httpContext.Response, CancellationToken.None);
+        var ticket = await jsonClient.AuthorizeShiftHandoverAttachmentDownloadAsync(
+            "internal-test-token", "file-handover-1", "org-001", "env-dev", CancellationToken.None);
+        await transferClient.StreamShiftHandoverAttachmentContentAsync(
+            "internal-test-token", ticket, httpContext.Response, CancellationToken.None);
 
         // grant 请求体带的是调用方上下文
         using var grantBody = JsonDocument.Parse(handler.Bodies[1]!);
         Assert.Equal("org-001", grantBody.RootElement.GetProperty("organizationId").GetString());
         Assert.Equal("env-dev", grantBody.RootElement.GetProperty("environmentId").GetString());
 
-        // content 请求必须带 FileStorage 要求的传输头
+        // 取字节那一跳必须带 FileStorage 要求的传输头
         var contentRequest = handler.Requests[2];
         Assert.Equal(HttpMethod.Get, contentRequest.Method);
         Assert.Equal("org-001", contentRequest.Headers.GetValues("X-Organization-Id").Single());
@@ -211,7 +213,7 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
     }
 
     [Fact]
-    public async Task Content_refuses_to_follow_a_grant_url_that_is_not_a_proxyable_internal_path()
+    public async Task Download_authorization_refuses_a_grant_url_that_is_not_a_proxyable_internal_path()
     {
         var handler = new StubHandler(request => request.RequestUri!.AbsolutePath switch
         {
@@ -224,12 +226,11 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
                     new Dictionary<string, string>()))),
             var path => throw new InvalidOperationException($"Unexpected downstream call: {path}"),
         });
-        var client = CreateTransferClient(handler);
-        var httpContext = ResponseContext();
+        var client = CreateClient(handler);
 
         var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
-            client.StreamShiftHandoverAttachmentContentAsync(
-                "internal-test-token", "file-handover-1", "org-001", "env-dev", httpContext.Response, CancellationToken.None));
+            client.AuthorizeShiftHandoverAttachmentDownloadAsync(
+                "internal-test-token", "file-handover-1", "org-001", "env-dev", CancellationToken.None));
 
         Assert.Equal("filestorage-transfer-url-not-proxyable", exception.Message);
         // 拒绝必须发生在跟随之前
@@ -440,9 +441,13 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
         Assert.Equal("handover photo bytes", await response.Content.ReadAsStringAsync());
         Assert.Equal(BusinessGatewayPermissions.MesHandoversRead, auth.LastRequirement!.PermissionCode);
         Assert.Equal("mes-shift-handover-attachment", auth.LastRequirement.ResourceType);
-        Assert.Equal("file-handover-1", transfer.LastAttachmentContentFileId);
-        Assert.Equal("org-001", transfer.LastAttachmentContentOrganizationId);
-        Assert.Equal("env-dev", transfer.LastAttachmentContentEnvironmentId);
+        // 授权在 JSON 面完成，取字节在字节面完成；两段的接缝就是这张进程内凭据。
+        Assert.Equal("file-handover-1", files.LastAuthorizedFileId);
+        Assert.Equal("org-001", files.LastAuthorizedOrganizationId);
+        Assert.Equal("env-dev", files.LastAuthorizedEnvironmentId);
+        Assert.Equal(
+            "/api/files/v1/download-grants/grant-handover-1/content",
+            transfer.LastAttachmentTicket!.DownstreamUrl);
     }
 
     // 反向：SOP 下载面不因为本票而对交接班读者开门。
@@ -495,7 +500,7 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
                 $"{route} 不得成为 grant id 的兑换面，实际 {(int)response.StatusCode}");
         }
 
-        Assert.Null(transfer.LastAttachmentContentFileId);
+        Assert.Null(transfer.LastAttachmentTicket);
     }
 
     // =====================================================================
@@ -638,22 +643,41 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
     // =====================================================================
 
     /// <summary>
-    /// 会失败的具体输入：`shift-handover-photo` 允许 20,971,520 bytes，单次 tus <c>PATCH</c> 传这个体量
-    /// 需要端到端持续 ≥2 MB/s 才能压进 10 秒；现场手机网络必然超时。字节面注册因此不得带有限总超时，
-    /// 时限由调用方取消令牌承担（HttpClient 默认 100 秒同样不够，所以这里钉的是「无限」而不是「更长」）。
+    /// #3096 第三轮阻断 E1 的承担方。
+    ///
+    /// **本断言读的是 Polly 弹性管线层**（`AddResilienceHandler` 内的 `AddTimeout`），不是
+    /// `HttpClient.Timeout`——上一版断言读的是后者，够不到 10 秒总超时所在的那一层，
+    /// 因此「把 NonIdempotentSafe 加回字节面」的变异对它零鉴别力。
+    ///
+    /// 会失败的具体输入：`shift-handover-photo` 允许 20,971,520 bytes，&lt; 2 MB/s 的现场网络下
+    /// 单次满额 tus `PATCH` 必然超过 10 秒。两发并发打同一个延迟 11 秒的下游：JSON 面必须被
+    /// 管线切断（504 `downstream-timeout`），字节面必须活到下游返回。
     /// </summary>
     [Fact]
-    public async Task Byte_face_http_client_carries_no_finite_total_timeout()
+    public async Task Json_face_is_cut_at_ten_seconds_while_the_byte_face_survives_the_same_delay()
     {
-        await using var factory = BusinessGatewayTestHost.CreateDedicatedFactory();
-        var factories = factory.Services.GetRequiredService<IHttpClientFactory>();
+        await using var factory = BusinessGatewayTestHost.CreateDedicatedFactory(
+            configureBuilder: builder => builder.ConfigureServices(services =>
+                services.AddSingleton<IHttpMessageHandlerBuilderFilter>(
+                    new FileStorageSlowHandlerFilter(TimeSpan.FromSeconds(11)))));
+        var json = factory.Services.GetRequiredService<IBusinessFileStorageClient>();
+        var transfer = factory.Services.GetRequiredService<IBusinessFileTransferClient>();
+        var httpContext = ResponseContext();
 
-        using var transferClient = factories.CreateClient(nameof(IBusinessFileTransferClient));
-        using var jsonClient = factories.CreateClient(nameof(IBusinessFileStorageClient));
+        var jsonCall = Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            json.CreateSopFileDownloadGrantAsync(
+                "internal-test-token",
+                "file-sop-v2",
+                new BusinessConsoleCreateSopFileDownloadGrantRequest("org-001", "env-dev"),
+                CancellationToken.None));
+        var byteCall = transfer.ProxyShiftHandoverAttachmentTusHeadAsync(
+            "internal-test-token", "ups-handover-1", httpContext.Response, CancellationToken.None);
 
-        Assert.Equal(Timeout.InfiniteTimeSpan, transferClient.Timeout);
-        // 对照：JSON 面不受本条约束，仍是 HttpClient 默认总超时。
-        Assert.NotEqual(Timeout.InfiniteTimeSpan, jsonClient.Timeout);
+        await Task.WhenAll(jsonCall, byteCall);
+
+        Assert.Equal(HttpStatusCode.GatewayTimeout, (await jsonCall).StatusCode);
+        Assert.Equal("downstream-timeout", (await jsonCall).Message);
+        Assert.Equal(StatusCodes.Status204NoContent, httpContext.Response.StatusCode);
     }
 
     /// <summary>
@@ -771,6 +795,33 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
         catch (Exception)
         {
             // 见调用点注释：本用例只以下游计数为判据。
+        }
+    }
+
+    private sealed class FileStorageSlowHandlerFilter(TimeSpan delay) : IHttpMessageHandlerBuilderFilter
+    {
+        public Action<HttpMessageHandlerBuilder> Configure(Action<HttpMessageHandlerBuilder> next) =>
+            builder =>
+            {
+                next(builder);
+                if (builder.Name is nameof(IBusinessFileStorageClient) or nameof(IBusinessFileTransferClient))
+                {
+                    builder.PrimaryHandler = new SlowHandler(delay);
+                }
+            };
+    }
+
+    private sealed class SlowHandler(TimeSpan delay) : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            await Task.Delay(delay, cancellationToken);
+            return new HttpResponseMessage(HttpStatusCode.NoContent)
+            {
+                Content = new StringContent(string.Empty),
+            };
         }
     }
 

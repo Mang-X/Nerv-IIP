@@ -29,7 +29,27 @@ public interface IBusinessFileStorageClient
         string uploadSessionId,
         BusinessConsoleCompleteShiftHandoverAttachmentUploadRequest request,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// 交接班附件下载的**唯一**授权入口：复核用途、签发 download grant、校验下游 URL 可代理，
+    /// 返回只在网关进程内流转的取字节凭据。用途复核只在本方法一处把关（#3096 审核 A1）；
+    /// 这两发都是纯 JSON RPC，因此留在 JSON 面的弹性管线上（#3096 审核 Q2）。
+    /// </summary>
+    Task<ShiftHandoverAttachmentDownloadTicket> AuthorizeShiftHandoverAttachmentDownloadAsync(
+        string internalBearerToken,
+        string fileId,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken);
 }
+
+/// <summary>
+/// 已通过用途复核并签发完成的取字节凭据。**不出网关进程**：它携带 FileStorage 内部路径，
+/// 既不是公开契约类型，也不进 OpenAPI。
+/// </summary>
+public sealed record ShiftHandoverAttachmentDownloadTicket(
+    string DownstreamUrl,
+    IReadOnlyDictionary<string, string> TransferHeaders);
 
 /// <summary>
 /// FileStorage 的 JSON 面。挂在按幂等性二分的 <c>NonIdempotentSafe</c> 弹性管线上（10 秒总超时 + 熔断）；
@@ -158,6 +178,42 @@ public sealed class HttpBusinessFileStorageClient(HttpClient httpClient)
             file.FileName,
             file.ContentType,
             file.SizeBytes);
+    }
+
+    public async Task<ShiftHandoverAttachmentDownloadTicket> AuthorizeShiftHandoverAttachmentDownloadAsync(
+        string internalBearerToken,
+        string fileId,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken)
+    {
+        // business.mes.handovers.read 只授权读交接班照片。FileStorage 的 download-grant 不看用途，
+        // 所以用途口径必须在这里收：否则持交接班读权限的人可以拿任意 fileId（例如工程 SOP 文件）换字节。
+        var metadata = await SendAsync<FileMetadataResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/files/v1/files/{Uri.EscapeDataString(fileId)}",
+            body: null,
+            cancellationToken);
+        if (!string.Equals(metadata.FilePurpose, ShiftHandoverAttachments.FilePurpose, StringComparison.Ordinal))
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.NotFound,
+                "filestorage-file-not-shift-handover-attachment");
+        }
+
+        var grant = await SendAsync<DownloadGrantResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/files/v1/files/{Uri.EscapeDataString(fileId)}/download-grants",
+            new CreateDownloadGrantRequest(organizationId, environmentId),
+            cancellationToken);
+
+        FileStorageRoutes.RequireProxyableDownstreamUrl(
+            grant.Download.Url,
+            FileStorageRoutes.DownstreamDownloadGrantPrefix);
+
+        return new ShiftHandoverAttachmentDownloadTicket(grant.Download.Url, grant.Download.Headers);
     }
 }
 
