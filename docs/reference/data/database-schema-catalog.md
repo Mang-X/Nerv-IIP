@@ -465,6 +465,8 @@ Schema 演进说明（发布、降级与恢复操作统一见 [`../../runbooks/d
 
 数据库 Schema：`wms`
 
+`inventory_movement_requests.unit_cost` 保存首次采购收货请求从 ERP 精确来源行取得的本位币单位暂估成本，单位与请求 UOM 一致；重放和失败重试沿用该快照。该列可空以保留旧请求及非估值请求语义，迁移不回填历史价格，也不重新发送旧请求。
+
 维护服务：`backend/services/Business/Wms`
 
 权威来源：

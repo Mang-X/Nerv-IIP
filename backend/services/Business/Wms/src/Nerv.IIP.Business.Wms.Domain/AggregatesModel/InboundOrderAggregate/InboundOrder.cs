@@ -178,7 +178,8 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         string idempotencyKey,
         long expectedVersion,
         IReadOnlyCollection<InboundOrderLineCapture>? captures = null,
-        IReadOnlyDictionary<string, string>? inventoryLocationByLine = null)
+        IReadOnlyDictionary<string, string>? inventoryLocationByLine = null,
+        IReadOnlyDictionary<string, decimal>? unitCostsByLine = null)
     {
         EnsureExpectedVersion(expectedVersion);
         EnsureOpen();
@@ -214,7 +215,8 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
                 line.OwnerId,
                 line.ReceivedQuantity,
                 ProductionDate: line.ProductionDate,
-                ExpiryDate: line.ExpiryDate))
+                ExpiryDate: line.ExpiryDate,
+                unitCost: unitCostsByLine?[line.LineNo]))
             .ToArray();
         this.AddDomainEvent(new InboundOrderCompletedDomainEvent(this));
         return requests;
@@ -283,7 +285,8 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
     public IReadOnlyCollection<InventoryMovementRequest> RetryInventoryPosting(
         string idempotencyKey,
         IReadOnlyDictionary<string, string>? inventoryLocationByLine = null,
-        IReadOnlyCollection<string>? failedLineNos = null)
+        IReadOnlyCollection<string>? failedLineNos = null,
+        IReadOnlyDictionary<string, decimal?>? unitCostsByLine = null)
     {
         if (Status != InboundOrderStatus.InventoryPostingFailed)
         {
@@ -313,7 +316,8 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
                 line.OwnerId,
                 line.ReceivedQuantity,
                 ProductionDate: line.ProductionDate,
-                ExpiryDate: line.ExpiryDate))
+                ExpiryDate: line.ExpiryDate,
+                unitCost: unitCostsByLine?[line.LineNo]))
             .ToArray();
         return requests;
     }

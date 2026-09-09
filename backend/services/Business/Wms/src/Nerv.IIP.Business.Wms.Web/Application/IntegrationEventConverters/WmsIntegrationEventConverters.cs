@@ -348,6 +348,7 @@ internal static class InventoryMovementRequestEventMapping
             quantity,
             requestedAtUtc,
             request.InventoryReservationId,
+            UnitCost: request.UnitCost,
             ProductionDate: request.ProductionDate,
             ExpiryDate: request.ExpiryDate);
     }

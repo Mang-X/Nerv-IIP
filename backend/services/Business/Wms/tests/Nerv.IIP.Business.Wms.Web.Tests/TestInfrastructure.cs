@@ -8,9 +8,12 @@ internal sealed class WmsReceiptRouteFixture(
     Nerv.IIP.Contracts.Erp.PurchaseReceiptInventoryPostingRoute? route = Nerv.IIP.Contracts.Erp.PurchaseReceiptInventoryPostingRoute.Wms)
     : Nerv.IIP.Business.Wms.Web.Application.Inventory.IWmsPurchaseReceiptPostingRouteClient
 {
-    public Task<Nerv.IIP.Contracts.Erp.PurchaseReceiptInventoryPostingRoute?> GetAsync(
-        string organizationId, string environmentId, string receiptNo, CancellationToken cancellationToken) =>
-        Task.FromResult(route);
+    public Task<IReadOnlyDictionary<string, decimal>> GetUnitCostsAsync(
+        string organizationId, string environmentId, string receiptNo,
+        IReadOnlyCollection<InboundOrderLine> lines, CancellationToken cancellationToken) =>
+        route == Nerv.IIP.Contracts.Erp.PurchaseReceiptInventoryPostingRoute.Wms
+            ? Task.FromResult<IReadOnlyDictionary<string, decimal>>(lines.ToDictionary(x => x.LineNo, _ => 2m))
+            : throw new NetCorePal.Extensions.Primitives.KnownException("采购收货来源不存在或未选择 WMS 库存过账路径，无法完成入库。");
 }
 
 internal sealed class NoopMediator : IMediator
