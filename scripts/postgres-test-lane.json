@@ -403,6 +403,8 @@
         "Nerv.IIP.Business.Erp.Web.Tests.PurchaseReceiptPostingRoutePostgresTests.Routes_persist_replay_without_events_and_keep_financial_facts_on_postgres",
         "Nerv.IIP.Business.Erp.Web.Tests.PurchaseReceiptPostingRoutePostgresTests.Legacy_receipt_migrates_to_direct_and_old_key_replays_on_postgres",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_capitalized_settlement_reads_back_balanced_voucher_and_unique_lineage_indexes",
+        "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_saturated_derived_voucher_numbers_persist_where_the_pre_change_shape_overflows",
+        "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_distinct_sources_never_collapse_onto_one_voucher_number",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_closed_period_stays_replayable_then_reopen_posts_machine_overhead_exactly_once",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_concurrent_report_and_actual_settlement_leave_only_actual_labor_active",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_fault_after_save_rolls_back_settlement_inbox_lineage_and_cost",
