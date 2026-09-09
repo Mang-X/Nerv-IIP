@@ -77,14 +77,15 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAcc
             return;
         }
 
-        var order = await dbContext.PurchaseOrders
+        var hasLegacyLines = receipt.Lines.Any(x => x.UnitPrice is null);
+        var order = hasLegacyLines ? await dbContext.PurchaseOrders
             .Include(x => x.Lines)
             .SingleOrDefaultAsync(x =>
                 x.OrganizationId == receipt.OrganizationId
                 && x.EnvironmentId == receipt.EnvironmentId
                 && x.PurchaseOrderNo == receipt.PurchaseOrderNo,
-                cancellationToken);
-        if (order is null)
+                cancellationToken) : null;
+        if (hasLegacyLines && order is null)
         {
             await DeadLetterAsync(
                 integrationEvent,
@@ -148,7 +149,7 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAcc
 
     private static ReceiptAccrualDecision TryCalculateReceiptAmount(
         PurchaseReceipt receipt,
-        PurchaseOrder order,
+        PurchaseOrder? order,
         out decimal amount,
         out string failureCode,
         out string failureMessage)
@@ -156,7 +157,7 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAcc
         amount = 0m;
         failureCode = string.Empty;
         failureMessage = string.Empty;
-        var orderLines = order.Lines.ToDictionary(x => x.LineNo, StringComparer.Ordinal);
+        var orderLines = order?.Lines.ToDictionary(x => x.LineNo, StringComparer.Ordinal);
         foreach (var receiptLine in receipt.Lines)
         {
             if (!IsPayableQuality(receiptLine.QualityStatus))
@@ -166,7 +167,14 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAcc
                 return ReceiptAccrualDecision.Failed;
             }
 
-            if (!orderLines.TryGetValue(receiptLine.PurchaseOrderLineNo, out var orderLine))
+            if (receiptLine.UnitPrice is { } frozenUnitPrice)
+            {
+                amount += receiptLine.ReceivedQuantity * frozenUnitPrice;
+                continue;
+            }
+
+            // 只有迁移前未冻结单价的旧行才沿用 PO 定价；调用方已保证旧记录订单存在。
+            if (!orderLines!.TryGetValue(receiptLine.PurchaseOrderLineNo, out var orderLine))
             {
                 failureCode = "missing-source-facts";
                 failureMessage = $"Purchase order line '{receiptLine.PurchaseOrderLineNo}' was not found for receipt '{receipt.PurchaseReceiptNo}'.";

@@ -27,6 +27,7 @@ public sealed class ProcurementInventoryPostingAcceptanceTests
             .Single();
 
         await handler.HandleAsync(movementEvent, CancellationToken.None);
+        await handler.HandleAsync(movementEvent, CancellationToken.None);
 
         var movement = Assert.Single(inventoryDb.StockMovements);
         Assert.Equal("inbound", movement.MovementType);
@@ -34,8 +35,11 @@ public sealed class ProcurementInventoryPostingAcceptanceTests
         Assert.Equal("RCV-001", movement.SourceDocumentId);
         Assert.Equal("unrestricted", movement.QualityStatus);
         Assert.Equal(2m, movement.Quantity);
+        Assert.Equal(12.5m, movement.UnitCost);
+        Assert.Equal(25m, movement.MovementAmount);
         var ledger = Assert.Single(inventoryDb.StockLedgers);
         Assert.Equal(2m, ledger.OnHandQuantity);
+        Assert.Equal(25m, ledger.InventoryValue);
         Assert.Equal("unrestricted", ledger.QualityStatus);
         Assert.Empty(publisher.Published);
     }

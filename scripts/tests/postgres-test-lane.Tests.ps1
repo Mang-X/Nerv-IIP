@@ -588,11 +588,11 @@ try {
     $silentSkipDetected = [IO.File]::ReadAllText($silentSkipSourcePath).Contains('if (string.IsNullOrWhiteSpace(connectionString))', [StringComparison]::Ordinal)
     Assert-Contract $silentSkipDetected 'The silent-return detector must recognize the pattern it forbids.'
 
-    # WMS：五个类共 20 条用例，只有 9 条是真实 PostgreSQL 证明，因此 filter 逐条精确到方法。
+    # WMS：五个类只有 10 条是真实 PostgreSQL 证明，因此 filter 逐条精确到方法。
     # 归属 test-owned：NERV-822③ 的 #1563 已把这五个类的手写建库收敛到共享 PostgreSqlTestDatabase，
     # lane 因此只证明执行数与冻结身份，不声称能在成员数据库里留下诊断。
     $wmsMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'wms-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($wmsMember.expectedTestIdentities).Count -eq 9) 'The WMS member must freeze exactly its nine governed PostgreSQL identities.'
+    Assert-Contract (@($wmsMember.expectedTestIdentities).Count -eq 10) 'The WMS member must freeze exactly its ten governed PostgreSQL identities.'
     Assert-Contract ([string]::Equals([string]$wmsMember.databaseOwnership, 'test-owned', [StringComparison]::Ordinal)) 'WMS tests own governed temporary databases per NERV-822, so the member must be registered as test-owned.'
     Assert-MethodScopedFilter -Member $wmsMember
     foreach ($wmsSource in @(
@@ -635,7 +635,7 @@ try {
         Assert-Contract (-not $redisCapIdentities.Contains($frozenIdentityKey)) 'No identity may be owned by both the postgres and redis-cap lanes.'
     }
     $erpMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'erp-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 19) 'The ERP member must freeze exactly its nineteen PostgreSQL identities.'
+    Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 21) 'The ERP member must freeze exactly its twenty-one PostgreSQL identities.'
     Assert-Contract ([string]::Equals([string]$erpMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) 'ERP keeps runner-owned databases for failure diagnostics.'
     $acceptanceMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'acceptance-postgres-profile' -RepositoryRoot $repoRoot
     Assert-Contract (@($acceptanceMember.expectedTestIdentities).Count -eq 9) '跨服务验收成员必须冻结九条 PostgreSQL 测试身份。'
