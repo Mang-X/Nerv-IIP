@@ -26,28 +26,33 @@ public sealed class MaintenanceAvailabilityWindowPostgresAcceptanceTests
         AcceptancePostgresLaneDatabase.AssertUsesGovernedDatabase(dbContext);
         await dbContext.Database.MigrateAsync();
 
-        var now = DateTimeOffset.UtcNow;
-        var windowStartUtc = now.AddHours(-3);
-        var windowEndUtc = now.AddHours(3);
+        // 时刻一律取整秒的固定锚点，且凡是要参与等值断言的时刻都显式写死：
+        // timestamptz 只存到微秒，聚合里的 DateTimeOffset 是 100ns，把 UtcNow 直接拿去和从库回读的值比
+        // 会在 Linux 上必红、在 macOS 上因时钟粒度恰好为 0 而假绿（本票 CI run 33730774188 实证）。
+        var windowStartUtc = new DateTimeOffset(2026, 7, 1, 0, 0, 0, TimeSpan.Zero);
+        var windowEndUtc = windowStartUtc.AddHours(6);
+        var unavailableFromUtc = windowStartUtc.AddHours(1);
+        var cancelledAtUtc = windowStartUtc.AddHours(3);
 
         var inFlight = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-PG-A", "high", "maintenance");
-        inFlight.MarkAssetUnavailable(now.AddHours(-2), "repair downtime");
+        inFlight.MarkAssetUnavailable(unavailableFromUtc, "repair downtime");
         inFlight.Accept("tech-001");
         inFlight.StartWork();
 
         var cancelled = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-PG-B", "high", "maintenance");
-        cancelled.MarkAssetUnavailable(now.AddHours(-2), "repair downtime");
+        cancelled.MarkAssetUnavailable(unavailableFromUtc, "repair downtime");
         cancelled.Cancel();
 
         // 释放早于查询窗口起点的工单不得进读面 —— 证明求交谓词的右边界那一支真的在 PostgreSQL 上生效。
         var releasedBeforeWindow = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-PG-C", "high", "maintenance");
-        releasedBeforeWindow.MarkAssetUnavailable(now.AddHours(-9), "repair downtime");
+        releasedBeforeWindow.MarkAssetUnavailable(windowStartUtc.AddHours(-6), "repair downtime");
         releasedBeforeWindow.Accept("tech-001");
         releasedBeforeWindow.StartWork();
         releasedBeforeWindow.Finish("已修复", "mechanical-failure", 30, spareParts: null, technicianUserId: "tech-001");
 
         dbContext.MaintenanceWorkOrders.AddRange(inFlight, cancelled, releasedBeforeWindow);
-        dbContext.Entry(releasedBeforeWindow).Property(x => x.CompletedAtUtc).CurrentValue = now.AddHours(-8);
+        dbContext.Entry(cancelled).Property(x => x.CancelledAtUtc).CurrentValue = cancelledAtUtc;
+        dbContext.Entry(releasedBeforeWindow).Property(x => x.CompletedAtUtc).CurrentValue = windowStartUtc.AddHours(-3);
         await dbContext.SaveChangesAsync();
 
         var response = await new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext).Handle(
@@ -61,10 +66,12 @@ public sealed class MaintenanceAvailabilityWindowPostgresAcceptanceTests
             CancellationToken.None);
 
         var inFlightWindow = Assert.Single(response.Items, x => x.DeviceAssetId == "DEV-CNC-PG-A");
+        Assert.Equal(unavailableFromUtc, inFlightWindow.StartUtc);
         Assert.Equal(windowEndUtc, inFlightWindow.EndUtc);
 
         var cancelledWindow = Assert.Single(response.Items, x => x.DeviceAssetId == "DEV-CNC-PG-B");
-        Assert.Equal(cancelled.CancelledAtUtc, cancelledWindow.EndUtc);
+        Assert.Equal(unavailableFromUtc, cancelledWindow.StartUtc);
+        Assert.Equal(cancelledAtUtc, cancelledWindow.EndUtc);
 
         Assert.DoesNotContain(response.Items, x => x.DeviceAssetId == "DEV-CNC-PG-C");
     }
