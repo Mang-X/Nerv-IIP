@@ -638,6 +638,25 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
     // =====================================================================
 
     /// <summary>
+    /// 会失败的具体输入：`shift-handover-photo` 允许 20,971,520 bytes，单次 tus <c>PATCH</c> 传这个体量
+    /// 需要端到端持续 ≥2 MB/s 才能压进 10 秒；现场手机网络必然超时。字节面注册因此不得带有限总超时，
+    /// 时限由调用方取消令牌承担（HttpClient 默认 100 秒同样不够，所以这里钉的是「无限」而不是「更长」）。
+    /// </summary>
+    [Fact]
+    public async Task Byte_face_http_client_carries_no_finite_total_timeout()
+    {
+        await using var factory = BusinessGatewayTestHost.CreateDedicatedFactory();
+        var factories = factory.Services.GetRequiredService<IHttpClientFactory>();
+
+        using var transferClient = factories.CreateClient(nameof(IBusinessFileTransferClient));
+        using var jsonClient = factories.CreateClient(nameof(IBusinessFileStorageClient));
+
+        Assert.Equal(Timeout.InfiniteTimeSpan, transferClient.Timeout);
+        // 对照：JSON 面不受本条约束，仍是 HttpClient 默认总超时。
+        Assert.NotEqual(Timeout.InfiniteTimeSpan, jsonClient.Timeout);
+    }
+
+    /// <summary>
     /// 会失败的具体输入：弱网下连续几次慢 tus <c>PATCH</c> 把共享熔断器打开
     /// （FailureRatio 0.5 / MinimumThroughput 10 / BreakDuration 15s），连带打掉建会话、complete
     /// 与 SOP 下载。这里反过来验隔离：把 JSON 面的熔断器打满之后，字节面必须仍能到达下游。
