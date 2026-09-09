@@ -211,19 +211,19 @@
     },
     {
       "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WmsQualityInspectionGateConsumerTests.cs",
-      "sourceSha256": "7c5f3fdd1af982c605fc0cdec294c38a48af8f59429e6d93dddc7a8223cd465a",
-      "factoryCallCount": 1,
+      "sourceSha256": "c33808058a392f76fa2513180357b8b1eb16405a6fc659999cd171a8ddb257f4",
+      "factoryCallCount": 2,
       "ownerships": [
         {
           "strategy": "best-effort-dispose",
-          "factoryCallCount": 1,
+          "factoryCallCount": 2,
           "reason": "The WMS quality-gate proof is inventoried without widening the two-domain cleanup regression scope."
         }
       ]
     },
     {
       "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WmsShortPickBackorderTests.cs",
-      "sourceSha256": "b8da4ebb4ee618d54c0fe3f757eb7dda37cb9c3e4d576a8bc0237e3a5aacf6cb",
+      "sourceSha256": "e45cfe4178cad7beb4ec153b47e75a3d157e713f448f7f65feeffb9251a33363",
       "factoryCallCount": 1,
       "ownerships": [
         {

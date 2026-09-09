@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Nerv.IIP.Business.Wms.Domain;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.SupplierReturnAggregate;
@@ -248,6 +249,154 @@ public sealed class WmsQualityInspectionGateConsumerTests
         Assert.Equal("QI-001", supplierReturn.InspectionRecordId);
     }
 
+    /// <summary>
+    /// 退供单号必须塞得进 <c>outbound_order_no</c>（#3228）。**只能在真 Postgres 上跑**——
+    /// EF InMemory 看不见列宽，同一条用例在 InMemory 下恒绿。
+    /// </summary>
+    /// <remarks>
+    /// 两个夹具走的是两条**互不等价**的输入区间：
+    /// ① 朴素拼法恰好等于 outbound 列宽 —— 可读形态必须原样保留（挡「一律走摘要」）；
+    /// ② 朴素拼法只超出 outbound 列宽 1 个字符 —— 这是**唯一**能区分「上界取两列最小值」与
+    ///    「上界取退供自己那列的 300」的区间，落在 (100, 300] 里。
+    ///
+    /// **这里没有「各组件顶格」那一格**（朴素拼法 356）：实测它在 100 与 300 两种上界下都回落到
+    /// 摘要形态，是一组等价输入，跨两轮变异从未单独承重，却要在真库上多付一次建单往返。
+    /// 它作为零成本的回归护栏留在 <c>WmsOperationalCodeKindTests</c> 的 theory 里。
+    /// </remarks>
+    [WmsRealPostgresFact]
+    public async Task Supplier_return_numbers_stay_within_the_outbound_order_no_column_on_postgres()
+    {
+        var postgresConnectionString = Environment.GetEnvironmentVariable(PostgresConnectionStringEnvironmentVariable)!;
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(postgresConnectionString, "nerv_wms_return_no_bound");
+
+        IReadOnlyList<SupplierReturnBoundaryCase> cases;
+        int outboundOrderNoColumnMaxLength;
+
+        await using (var dbContext = CreatePostgresContext(database.ConnectionString))
+        {
+            await dbContext.Database.MigrateAsync();
+            outboundOrderNoColumnMaxLength = ColumnMaxLength(dbContext, typeof(OutboundOrder), nameof(OutboundOrder.OutboundOrderNo));
+            cases = SupplierReturnBoundaryCases(dbContext, outboundOrderNoColumnMaxLength);
+
+            foreach (var boundaryCase in cases)
+            {
+                var createdInbound = QualityRequiredInboundOrder(boundaryCase.InboundOrderNo, boundaryCase.LineNo);
+                dbContext.InboundOrders.Add(createdInbound);
+                await dbContext.SaveChangesAsync(CancellationToken.None);
+                await new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
+                    new CompleteInboundOrderCommand(createdInbound.Id, $"idem-in-bound-{boundaryCase.Name}")
+                        .TrustedFor(dbContext, createdInbound),
+                    CancellationToken.None);
+                await dbContext.SaveChangesAsync(CancellationToken.None);
+
+                var handler = new QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate(
+                    dbContext,
+                    new InMemoryIntegrationEventDeadLetterStore());
+                await handler.HandleAsync(
+                    CreateInspectionEvent(
+                        QualityIntegrationEventTypes.InspectionRejected,
+                        boundaryCase.InboundOrderNo,
+                        inspectionRecordId: boundaryCase.InspectionRecordId),
+                    CancellationToken.None);
+                dbContext.ChangeTracker.Clear();
+            }
+        }
+
+        await using var assertionContext = CreatePostgresContext(database.ConnectionString);
+        Assert.Equal(cases.Count, await assertionContext.SupplierReturnRequests.CountAsync());
+
+        foreach (var boundaryCase in cases)
+        {
+            var expectedNo = SupplierReturnRequest.ComposeSupplierReturnNo(
+                boundaryCase.InboundOrderNo,
+                boundaryCase.LineNo,
+                boundaryCase.InspectionRecordId);
+            var supplierReturn = await assertionContext.SupplierReturnRequests
+                .SingleAsync(x => x.InboundOrderNo == boundaryCase.InboundOrderNo);
+            var outbound = await assertionContext.OutboundOrders
+                .SingleAsync(x => x.OutboundOrderNo == supplierReturn.SupplierReturnNo);
+
+            // 有界构造必须仍可复算：重放同一份检验结论要落到同一张退供单/出库单上。
+            Assert.Equal(expectedNo, supplierReturn.SupplierReturnNo);
+            Assert.True(
+                outbound.OutboundOrderNo.Length <= outboundOrderNoColumnMaxLength,
+                $"[{boundaryCase.Name}] 退供派生出库单号长度 {outbound.OutboundOrderNo.Length} 超出承载列宽 {outboundOrderNoColumnMaxLength}。");
+            Assert.StartsWith($"{WmsOperationalCodeKind.SupplierReturn.Prefix}-", outbound.OutboundOrderNo, StringComparison.Ordinal);
+
+            if (boundaryCase.KeepsReadableForm)
+            {
+                Assert.Equal(boundaryCase.NaiveComposition, supplierReturn.SupplierReturnNo);
+            }
+            else
+            {
+                Assert.NotEqual(boundaryCase.NaiveComposition, supplierReturn.SupplierReturnNo);
+            }
+        }
+    }
+
+    private sealed record SupplierReturnBoundaryCase(
+        string Name,
+        string InboundOrderNo,
+        string LineNo,
+        string InspectionRecordId,
+        bool KeepsReadableForm)
+    {
+        public string NaiveComposition => $"RTS-{InboundOrderNo}-{LineNo}-{InspectionRecordId}";
+    }
+
+    private static IReadOnlyList<SupplierReturnBoundaryCase> SupplierReturnBoundaryCases(
+        ApplicationDbContext dbContext,
+        int outboundOrderNoColumnMaxLength)
+    {
+        var inboundOrderNoMax = ColumnMaxLength(dbContext, typeof(InboundOrder), nameof(InboundOrder.InboundOrderNo));
+
+        // "RTS-" + 入库单号 + "-" + 行号 + "-" + 检验记录号：固定开销 6 个字符。
+        const int FixedOverhead = 6;
+        const string LineNo = "LINE-001";
+        // 两条短用例的检验记录号必须彼此不同（消费者按检验记录号构成幂等键，同号第二条会被收件箱吞掉），
+        // 但长度须相等，否则朴素拼法的长度算术就对不上。
+        const string ExactInspectionRecordId = "QI-001";
+        const string OverByOneInspectionRecordId = "QI-002";
+
+        var exactInboundLength = outboundOrderNoColumnMaxLength - FixedOverhead - LineNo.Length - ExactInspectionRecordId.Length;
+        Assert.InRange(exactInboundLength, 3, inboundOrderNoMax);
+
+        var cases = new[]
+        {
+            new SupplierReturnBoundaryCase(
+                "exact",
+                "EX-" + new string('E', exactInboundLength - 3),
+                LineNo,
+                ExactInspectionRecordId,
+                KeepsReadableForm: true),
+            new SupplierReturnBoundaryCase(
+                "over-by-one",
+                "OV-" + new string('O', exactInboundLength - 2),
+                LineNo,
+                OverByOneInspectionRecordId,
+                KeepsReadableForm: false),
+        };
+
+        Assert.Equal(outboundOrderNoColumnMaxLength, cases[0].NaiveComposition.Length);
+        Assert.Equal(outboundOrderNoColumnMaxLength + 1, cases[1].NaiveComposition.Length);
+        // ② 必须落在 (outbound 列宽, supplier_return 列宽] 里，否则它退化成与「顶格」等价的输入。
+        // **这不是一条新增防线**：紧邻上一行的 Assert.Equal 把 ② 钉成恰好 outbound+1，比本区间严格更强，
+        // 任何能触发本断言的变异都会先触发那条 Equal（实测：只有把 Equal 松掉之后才轮到这里）。
+        // 留着只作为 Equal 将来被松绑时的兜底。
+        Assert.InRange(
+            cases[1].NaiveComposition.Length,
+            outboundOrderNoColumnMaxLength + 1,
+            WmsOperationalCodeKind.SupplierReturnNoColumnMaxLength);
+        return cases;
+    }
+
+    private static int ColumnMaxLength(ApplicationDbContext dbContext, Type entityType, string propertyName)
+    {
+        var maxLength = dbContext.Model.FindEntityType(entityType)!.FindProperty(propertyName)!.GetMaxLength();
+        Assert.True(maxLength.HasValue, $"{entityType.Name}.{propertyName} 没有配置列宽，夹具无法顶格。");
+        return maxLength!.Value;
+    }
+
     private static IReadOnlyCollection<PostgresInspectionScenario> PostgresInspectionScenarios()
     {
         return
@@ -273,7 +422,7 @@ public sealed class WmsQualityInspectionGateConsumerTests
         ];
     }
 
-    private static InboundOrder QualityRequiredInboundOrder(string inboundOrderNo)
+    private static InboundOrder QualityRequiredInboundOrder(string inboundOrderNo, string lineNo = "LINE-001")
     {
         return InboundOrder.Create(
             "org-001",
@@ -282,13 +431,14 @@ public sealed class WmsQualityInspectionGateConsumerTests
             "purchase-receipt",
             "PO-001",
             "SITE-01",
-            [new InboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 5m, "LOC-STAGE", "LOT-001", null, "quality", "company", "owner-001")]);
+            [new InboundOrderLineDraft(lineNo, "SKU-FG-1000", "kg", 5m, "LOC-STAGE", "LOT-001", null, "quality", "company", "owner-001")]);
     }
 
     private static InspectionResultIntegrationEvent CreateInspectionEvent(
         string eventType,
         string inboundOrderNo,
-        decimal inspectedQuantity = 5m)
+        decimal inspectedQuantity = 5m,
+        string inspectionRecordId = "QI-001")
     {
         var result = eventType == QualityIntegrationEventTypes.InspectionPassed
             ? "passed"
@@ -306,9 +456,9 @@ public sealed class WmsQualityInspectionGateConsumerTests
             "org-001",
             "env-dev",
             "system:quality",
-            $"quality:inspection-result:org-001:env-dev:QI-001:{eventType}",
+            $"quality:inspection-result:org-001:env-dev:{inspectionRecordId}:{eventType}",
             new InspectionResultPayload(
-                "QI-001",
+                inspectionRecordId,
                 "PLAN-001",
                 "receiving",
                 "wms",

@@ -117,12 +117,18 @@ public sealed class PurchaseReceiptPostingRoutePostgresAcceptanceTests
             using var replay = await gatewayClient.PostAsJsonAsync("/api/business-console/v1/erp/procurement/purchase-receipts", payload);
             Assert.Equal(firstData.GetRawText(), (await SuccessfulData(replay)).GetRawText());
             using var source = await erpClient.GetAsync($"/api/business/v1/erp/purchase-receipts/RCV-{route}/source-document?organizationId={Organization}&environmentId={EnvironmentId}");
-            Assert.Equal(route, (await SuccessfulData(source)).GetProperty("inventoryPostingRoute").GetString());
+            var sourceData = await SuccessfulData(source);
+            Assert.Equal(route, sourceData.GetProperty("inventoryPostingRoute").GetString());
+            Assert.Equal("CNY", sourceData.GetProperty("currencyCode").GetString());
+            Assert.Equal(1m, sourceData.GetProperty("exchangeRate").GetDecimal());
+            Assert.Equal(2m, sourceData.GetProperty("lines")[0].GetProperty("unitPrice").GetDecimal());
+            Assert.Equal(2m, sourceData.GetProperty("lines")[0].GetProperty("estimatedUnitCost").GetDecimal());
         }
 
         var directMovement = Assert.Single(events.Published.OfType<InventoryMovementRequestedIntegrationEvent>());
         Assert.Equal("RCV-direct", directMovement.Payload.SourceDocumentId);
         Assert.Equal(10m, directMovement.Payload.Quantity);
+        Assert.Equal(2m, directMovement.Payload.UnitCost);
 
         await using var wms = new WebApplicationFactory<CompleteInboundOrderEndpoint>()
             .WithWebHostBuilder(builder =>

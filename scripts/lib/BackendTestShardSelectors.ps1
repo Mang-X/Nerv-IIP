@@ -268,13 +268,38 @@ function Assert-BackendTestShardProjectExecution {
 }
 
 function Assert-BackendTestShardSelectorDiscovery {
+    <#
+        收 `dotnet test --list-tests` 的**原始 stdout**，就地切行并断言 selector 的发现结果。
+
+        #3279：这个参数原本是 `[Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $DiscoveredTests`，
+        由唯一的生产调用方 verify-backend-real-postgres-tests.ps1 自己 `-split "`r?`n" | Trim()` 后传进来。
+        `dotnet test` 的 stdout 以换行结尾，`-split` 因此**必然**多出一个尾随空元素（VSTest 正文里表头
+        前后还会再出现空行）；而 `Mandatory` 的 `[string[]]` 会对**元素**做非空校验，`AllowEmptyCollection`
+        只放行空集合、不放行空串元素，于是第一个 selector（Erp）就以
+        `Cannot bind argument to parameter 'DiscoveredTests' because it is an empty string` 中断，
+        后面所有 selector 一个都不被检验。裸跑同一条 --list-tests RC=0 且能正常发现用例——挂的是解析层。
+
+        修法刻意选「把边界往上挪一层」而不是「在调用方补一个过滤」：调用方在**类型上**就不再持有
+        「行」这个中间物，也就没有把带空元素的 `[string[]]` 递进来的形状可言。等价地说，这个缺陷不再
+        依赖任何文本护栏或调用方自律来防守——它在参数类型上不可表达。同理刻意**不**给参数加
+        `AllowEmptyString()` 之类的放行属性来绕过原报错：空串不是合法用例身份，那道校验本身没错。
+
+        为什么不复用 FullChainTestLane.ps1 的 `Get-NervFullChainDiscoveredTestIdentities`（#3135 已按
+        身份形状识别、不依赖本地化表头）：它要一个 `-RootNamespace` 锚，而本脚本每次 discovery 都跑在
+        **多项目 slnf** 上，一次输出里横跨 Erp / AppHub / Testing.PostgreSql 等多个根命名空间，取不到
+        单一锚；且它会把 `[Theory]` 的多行参数化用例截断到 `(` 前再去重，而这里的 method selector 断言
+        的正是「恰好一条」——换成那套折叠口径等于悄悄改掉本函数的判据。这里因此只做切行 + Trim，
+        身份筛选仍由下面的 `StartsWith($Selector)` 承担（本地化表头、`Test run for ...dll`、
+        `VSTest version` 这些噪声行都通不过它）。
+    #>
     param(
         [Parameter(Mandatory)] [string] $Selector,
         [Parameter(Mandatory)] [bool] $MethodSelector,
-        [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $DiscoveredTests
+        [Parameter(Mandatory)] [AllowEmptyString()] [AllowNull()] [string] $DiscoveryOutput
     )
 
-    $matchedTests = @($DiscoveredTests | Where-Object { $_.StartsWith($Selector, [StringComparison]::Ordinal) })
+    $discoveredLines = @(([string] $DiscoveryOutput) -split "`r?`n" | ForEach-Object { ([string] $_).Trim() })
+    $matchedTests = @($discoveredLines | Where-Object { $_.StartsWith($Selector, [StringComparison]::Ordinal) })
     if ($matchedTests.Count -eq 0 -or ($MethodSelector -and $matchedTests.Count -ne 1)) {
         $expected = if ($MethodSelector) { 'exactly one test' } else { 'at least one test' }
         throw "Real PostgreSQL selector '$Selector' discovery must match $expected; matched $($matchedTests.Count)."
