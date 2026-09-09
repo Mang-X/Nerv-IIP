@@ -21,12 +21,17 @@ using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Testing;
 using Npgsql;
 using StackExchange.Redis;
+using Xunit.Abstractions;
 using MesDbContext = Nerv.IIP.Business.Mes.Infrastructure.ApplicationDbContext;
 
 namespace Nerv.IIP.Business.FullChain.Tests;
 
 public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
 {
+    private readonly ITestOutputHelper output;
+
+    public MesInventoryProducedLotPostgresRedisAcceptanceTests(ITestOutputHelper output) => this.output = output;
+
     private const decimal ClientSuppliedUnitCost = 99.99m;
     private const decimal ErpCapitalizedUnitCost = 12.34m;
     private const decimal ReceiptQuantity = 5m;
@@ -124,6 +129,14 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         Assert.Equal(0L, receivedMessageSnapshot.GetReceivedCount(failureEvent.EventId));
         Assert.Equal(0L, receivedMessageSnapshot.GetReceivedCount(failureReplayEvent.EventId));
         Assert.Equal(0L, receivedMessageSnapshot.GetReceivedCount(pendingEvent.EventId));
+        var replyTargets = new[]
+        {
+            new ReplyTarget(true, successEvent.OrganizationId, successEvent.EnvironmentId,
+                successEvent.Payload.SourceDocumentId, successEvent.Payload.IdempotencyKey),
+            new ReplyTarget(false, failureEvent.OrganizationId, failureEvent.EnvironmentId,
+                failureEvent.Payload.SourceDocumentId, failureEvent.Payload.IdempotencyKey),
+        };
+        var replyGroupsBeforePublish = await ReadReplyGroupsAsync(redis, capVersion);
         await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), successEvent);
         await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), successReplayEvent);
         await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), failureEvent);
@@ -283,6 +296,10 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         }
         catch (EventuallyTimeoutException timeout)
         {
+            await WriteReplyFailureEvidenceAsync(
+                () => ReadReplyFailureEvidenceAsync(inventoryPostgres, mesPostgres, redis,
+                    capVersion, replyTargets, replyGroupsBeforePublish),
+                output.WriteLine);
             // The final read is diagnostic only. CAP may retain or ACK the PEL depending on where the
             // subscriber failure occurred; the final facts preserve both the exact PEL shape and the CAP
             // received status/retry fact for diagnosis.

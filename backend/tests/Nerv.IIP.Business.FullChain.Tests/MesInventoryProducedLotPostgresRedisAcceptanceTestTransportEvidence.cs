@@ -29,6 +29,192 @@ namespace Nerv.IIP.Business.FullChain.Tests;
 
 public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
 {
+    internal sealed record ReplyTarget(bool Success, string OrganizationId, string EnvironmentId,
+        string SourceDocumentId, string IdempotencyKey)
+    {
+        public string Alias => Success ? "success" : "failure";
+        public string Topic => Success ? nameof(StockMovementPostedIntegrationEvent) : nameof(StockMovementPostingFailedIntegrationEvent);
+        public string Group(string version) => $"business-mes.stock-movement-{(Success ? "posted" : "posting-failed")}.{version}";
+    }
+
+    internal sealed record ReplyRow(long RowId, string EventId, string IdempotencyKey, string Status, int Retries);
+    internal sealed record ReplyRows(string Availability, IReadOnlyList<ReplyRow> Rows);
+
+    // Only CAP's current Message { Value: object } storage shape is supported. A different shape
+    // makes the observation unknown; it must never turn into an exact zero-match claim.
+    internal const string ReplyPublishedSql = """
+        SELECT EXISTS (
+            SELECT 1 FROM cap.published WHERE "Version" = @version AND "Name" = @topic
+            AND ("Content" IS NULL
+                OR jsonb_typeof("Content"::jsonb #> '{Value,EventId}') IS DISTINCT FROM 'string'
+                OR jsonb_typeof("Content"::jsonb #> '{Value,IdempotencyKey}') IS DISTINCT FROM 'string'
+                OR jsonb_typeof("Content"::jsonb #> '{Value,OrganizationId}') IS DISTINCT FROM 'string'
+                OR jsonb_typeof("Content"::jsonb #> '{Value,EnvironmentId}') IS DISTINCT FROM 'string'
+                OR jsonb_typeof("Content"::jsonb #> '{Value,Payload,SourceDocumentId}') IS DISTINCT FROM 'string'
+                OR jsonb_typeof("Content"::jsonb #> '{Value,Payload,IdempotencyKey}') IS DISTINCT FROM 'string'));
+        SELECT "Id", "Content"::jsonb #>> '{Value,EventId}',
+            "Content"::jsonb #>> '{Value,IdempotencyKey}', "StatusName", "Retries"
+        FROM cap.published
+        WHERE "Version" = @version AND "Name" = @topic
+            AND "Content"::jsonb #>> '{Value,OrganizationId}' = @organization
+            AND "Content"::jsonb #>> '{Value,EnvironmentId}' = @environment
+            AND "Content"::jsonb #>> '{Value,Payload,SourceDocumentId}' = @document
+            AND "Content"::jsonb #>> '{Value,Payload,IdempotencyKey}' = @idempotency
+        ORDER BY "Id" LIMIT 33;
+        """;
+
+    internal const string ReplyReceivedSql = """
+        SELECT EXISTS (
+            SELECT 1 FROM cap.received WHERE "Version" = @version AND "Name" = @topic AND "Group" = @group
+            AND ("Content" IS NULL
+                OR jsonb_typeof("Content"::jsonb #> '{Value,EventId}') IS DISTINCT FROM 'string'
+                OR jsonb_typeof("Content"::jsonb #> '{Value,IdempotencyKey}') IS DISTINCT FROM 'string'));
+        SELECT "Id", "Content"::jsonb #>> '{Value,EventId}',
+            "Content"::jsonb #>> '{Value,IdempotencyKey}', "StatusName", "Retries"
+        FROM cap.received
+        WHERE "Version" = @version AND "Name" = @topic AND "Group" = @group
+            AND "Content"::jsonb #>> '{Value,EventId}' = ANY(@event_ids)
+        ORDER BY "Id" LIMIT 33;
+        """;
+
+    internal static async Task<ReplyRows> ReadReplyRowsAsync(string connectionString, string version,
+        ReplyTarget target, string[]? replyEventIds = null)
+    {
+        try
+        {
+            await using var connection = new NpgsqlConnection(connectionString);
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = replyEventIds is null ? ReplyPublishedSql : ReplyReceivedSql;
+            command.Parameters.AddWithValue("version", version);
+            command.Parameters.AddWithValue("topic", target.Topic);
+            if (replyEventIds is null)
+            {
+                command.Parameters.AddWithValue("organization", target.OrganizationId);
+                command.Parameters.AddWithValue("environment", target.EnvironmentId);
+                command.Parameters.AddWithValue("document", target.SourceDocumentId);
+                command.Parameters.AddWithValue("idempotency", target.IdempotencyKey);
+            }
+            else
+            {
+                command.Parameters.AddWithValue("group", target.Group(version));
+                command.Parameters.AddWithValue("event_ids", replyEventIds);
+            }
+
+            await using var reader = await command.ExecuteReaderAsync();
+            await reader.ReadAsync();
+            var unsupported = reader.GetBoolean(0);
+            await reader.NextResultAsync();
+            var rows = new List<ReplyRow>();
+            while (await reader.ReadAsync())
+            {
+                if (reader.IsDBNull(1) || reader.IsDBNull(2))
+                {
+                    unsupported = true;
+                }
+                rows.Add(new ReplyRow(reader.GetInt64(0), reader.IsDBNull(1) ? "" : reader.GetString(1), reader.IsDBNull(2) ? "" : reader.GetString(2),
+                    reader.GetString(3), reader.GetInt32(4)));
+            }
+            return new ReplyRows(unsupported ? "unknown" : "available", rows);
+        }
+        catch (Exception)
+        {
+            // The failure may contain credentials or message content. Never include it in output.
+            return new ReplyRows("unavailable", []);
+        }
+    }
+
+    internal static async Task<string[]> ReadReplyGroupsAsync(string redis, string version)
+    {
+        try
+        {
+            await using var connection = await ConnectionMultiplexer.ConnectAsync(redis);
+            var database = connection.GetDatabase();
+            return await Task.WhenAll(ReadGroupAsync(true), ReadGroupAsync(false));
+
+            async Task<string> ReadGroupAsync(bool success)
+            {
+                var target = new ReplyTarget(success, "", "", "", "");
+                try
+                {
+                    if (!await database.KeyExistsAsync(target.Topic))
+                    {
+                        return $"{target.Alias} group=absent";
+                    }
+                    var groups = await database.StreamGroupInfoAsync(target.Topic);
+                    var matches = groups.Where(group => group.Name == target.Group(version)).ToArray();
+                    return matches.Length == 0 ? $"{target.Alias} group=absent" :
+                        $"{target.Alias} group=present consumers={matches[0].ConsumerCount} pending={matches[0].PendingMessageCount} lastDeliveredId={SafeStreamId(matches[0].LastDeliveredId)} lag={matches[0].Lag?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "unknown"}";
+                }
+                catch (Exception)
+                {
+                    return $"{target.Alias} group=unavailable";
+                }
+            }
+        }
+        catch (Exception)
+        {
+            return ["success group=unavailable", "failure group=unavailable"];
+        }
+    }
+
+    internal static string SafeStreamId(string? value) =>
+        value is not null && value.Length <= 41 && value.Count(character => character == '-') == 1 &&
+        value.All(character => char.IsAsciiDigit(character) || character == '-') ? value : "unknown";
+
+    internal static string SummarizeReplyRows(string alias, string leg, ReplyRows observation)
+    {
+        var state = observation.Availability;
+        var truncated = observation.Rows.Count > 32;
+        var rows = observation.Rows.Take(32).Select(row =>
+            $"rowId={row.RowId}/status={SafeReplyStatus(row.Status)}/retries={row.Retries}");
+        return $"{alias} {leg}={state} observed={observation.Rows.Count switch { > 32 => "32+", _ when state != "available" => "unknown", _ => observation.Rows.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) }} truncated={truncated.ToString().ToLowerInvariant()} [{string.Join(",", rows)}]";
+    }
+
+    private static string SafeReplyStatus(string status) => status switch
+    {
+        "Scheduled" or "Succeeded" or "Failed" or "Delayed" or "Queued" => status,
+        _ => "unknown",
+    };
+
+    private static async Task<string[]> ReadReplyFailureEvidenceAsync(string inventory, string mes, string redis,
+        string version, ReplyTarget[] targets, string[] before)
+    {
+        var groups = ReadReplyGroupsAsync(redis, version);
+        var replies = ReadReplyChainsAsync(targets, (target, eventIds) =>
+            ReadReplyRowsAsync(eventIds is null ? inventory : mes, version, target, eventIds));
+        var lines = before.Select(line => $"MAN528 reply before {line}").ToList();
+        lines.AddRange((await groups).Select(line => $"MAN528 reply failure {line}"));
+        lines.AddRange((await replies).SelectMany(chain => chain));
+        return lines.ToArray();
+    }
+
+    internal static Task<string[][]> ReadReplyChainsAsync(ReplyTarget[] targets,
+        Func<ReplyTarget, string[]?, Task<ReplyRows>> readRows) => Task.WhenAll(targets.Select(async target =>
+        {
+            var published = await readRows(target, null);
+            var received = published.Availability == "available" && published.Rows.Count <= 32
+                ? await readRows(target, published.Rows.Select(row => row.EventId).Distinct(StringComparer.Ordinal).ToArray())
+                : new ReplyRows("unknown", []);
+            return new[]
+            {
+                $"MAN528 reply {SummarizeReplyRows(target.Alias, "published", published)}",
+                $"MAN528 reply {SummarizeReplyRows(target.Alias, "received", received)} completion=unproven",
+            };
+        }));
+
+    internal static async Task WriteReplyFailureEvidenceAsync(Func<Task<string[]>> capture, Action<string> write)
+    {
+        string[] lines;
+        try { lines = await capture(); }
+        catch (Exception) { lines = ["MAN528 reply unavailable"]; }
+        foreach (var line in lines)
+        {
+            try { write(line); }
+            catch (Exception) { return; }
+        }
+    }
+
     private static async Task<MessagingFacts> ReadMessagingFactsAsync(
         string inventoryConnectionString,
         string redisConnectionString,
