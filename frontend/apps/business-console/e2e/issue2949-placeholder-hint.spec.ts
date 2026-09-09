@@ -126,9 +126,17 @@ async function measurePlaceholder(page: Page, selector: string) {
   })
 }
 
-/** hint 是会换行的 <p>：量横向溢出与实际占用高度。 */
+/**
+ * hint 是会换行的 `<p>`：量横向溢出与实际占用高度。
+ *
+ * 定位必须落到唯一元素并断言 `count() === 1`：早先用 `:has-text()` 是**子串**匹配且
+ * `$eval` 只取首个命中，同页出现两条含相同子串的说明行时会静默量错元素而照绿
+ * ——失败方向是假绿，这种读数不能要。
+ */
 async function measureHint(page: Page, text: string) {
-  return page.$eval(`[data-slot="nv-field-description"]:has-text("${text}")`, (el) => {
+  const target = page.locator('[data-slot="nv-field-description"]').filter({ hasText: text })
+  await expect(target, `hint「${text}」必须唯一命中`).toHaveCount(1)
+  return target.evaluate((el) => {
     const p = el as HTMLParagraphElement
     const rect = p.getBoundingClientRect()
     return {
@@ -202,9 +210,11 @@ test('#2949 半栏栅格 hint 迁移后真实排版核验', async ({ page }, tes
   // 3. 标准工序
   await page.goto('/engineering/standard-operations', { waitUntil: 'domcontentloaded' })
   await page.getByRole('button', { name: '新建工序' }).click()
+  // 控制键以 'INHOUSE' 预填，placeholder 恒为空——量它是恒真断言，没有鉴别力。
+  // 这里改断言预填值仍在（删 placeholder 没把这一格弄塌），宽度面交给 hint。
+  await expect(page.locator('#op-control')).toHaveValue('INHOUSE')
   await capture(page, outDir, '03-standard-operations', {
-    input: '#op-control',
-    hint: 'INHOUSE',
+    hint: '例如：INHOUSE / INHOUSE-QC。',
     container: dialog,
   })
   await page.keyboard.press('Escape')
@@ -213,7 +223,8 @@ test('#2949 半栏栅格 hint 迁移后真实排版核验', async ({ page }, tes
   await page.goto('/master-data/skill-catalog', { waitUntil: 'domcontentloaded' })
   await page.getByRole('button', { name: '新建技能' }).click()
   await capture(page, outDir, '04-skill-catalog', {
-    hint: '例如：机加工',
+    input: '#skill-group',
+    hint: '例如：机加工。',
     container: dialog,
   })
   await page.keyboard.press('Escape')
@@ -227,14 +238,15 @@ test('#2949 半栏栅格 hint 迁移后真实排版核验', async ({ page }, tes
   await page.keyboard.press('Escape')
 
   // 6/7. EBOM / MBOM 修订号
-  for (const [name, route] of [
-    ['06-ebom', '/engineering/ebom'],
-    ['07-mbom', '/engineering/mbom'],
+  for (const [name, route, selector] of [
+    ['06-ebom', '/engineering/ebom', '#ebom-rev'],
+    ['07-mbom', '/engineering/mbom', '#mbom-rev'],
   ] as const) {
     await page.goto(route, { waitUntil: 'domcontentloaded' })
     await page.getByRole('button', { name: '发布新版本' }).click()
     await capture(page, outDir, name, {
-      hint: '例如 A、B、001',
+      input: selector,
+      hint: '例如 A、B、001。',
       container: dialog,
     })
     await page.keyboard.press('Escape')

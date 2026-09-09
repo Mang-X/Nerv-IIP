@@ -21,6 +21,13 @@ import { describe, expect, it } from 'vitest'
  *     否则 `` :placeholder="`自动合计 ${round2(x)}`" `` 会因为表达式长被误判，
  *     而它渲染出来只有「自动合计 0」——那是活的计算值，不是示例。
  *
+ * **这条契约扫的是写法，看不见运行时初值。** 字段若带非空初值（`documents.vue` 的
+ * `contentType: 'application/pdf'`、`standard-operations.vue` 的 `controlKey: 'INHOUSE'`），
+ * 它的 placeholder 对用户**从来不可见**——placeholder 只在空值时渲染——这类命中是判据
+ * 假阳，不是真实截断缺陷。#2949 那批 7 处命中里就有 2 处属此。判定要不要动，得回去看
+ * 表单初值，别只看这里报的行号。反过来也成立：给预填字段配长 placeholder 会被这条误伤，
+ * 那时正确处置是删掉那个够不着的 placeholder，而不是给它补一行说明。
+ *
  * 注意：不要用 `input.scrollWidth === clientWidth` 证明 placeholder 未被截断。
  * 空值未聚焦的 `<input>`，placeholder 根本不计入 `scrollWidth`，该等式恒成立。
  * #2706 走查已实证读数本身有效（填满字符时 2800 > 453），但它对 placeholder
