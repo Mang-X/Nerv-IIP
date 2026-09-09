@@ -276,7 +276,7 @@ public sealed class BusinessConsoleCompleteShiftHandoverAttachmentUploadRequestV
 [Authorize(Policy = BusinessGatewayPolicies.BusinessConsoleAuthenticated)]
 public sealed class GetBusinessConsoleShiftHandoverAttachmentTusOffsetEndpoint(
     IBusinessGatewayAuthorizationClient auth,
-    IBusinessFileStorageClient files,
+    IBusinessFileTransferClient files,
     IInternalServiceTokenProvider tokenProvider)
     : EndpointWithoutRequest
 {
@@ -308,7 +308,7 @@ public sealed class GetBusinessConsoleShiftHandoverAttachmentTusOffsetEndpoint(
 [Authorize(Policy = BusinessGatewayPolicies.BusinessConsoleAuthenticated)]
 public sealed class PatchBusinessConsoleShiftHandoverAttachmentTusUploadEndpoint(
     IBusinessGatewayAuthorizationClient auth,
-    IBusinessFileStorageClient files,
+    IBusinessFileTransferClient files,
     IInternalServiceTokenProvider tokenProvider)
     : EndpointWithoutRequest
 {
@@ -335,7 +335,7 @@ public sealed class PatchBusinessConsoleShiftHandoverAttachmentTusUploadEndpoint
 [Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(byte[]), StatusCodes.Status200OK, "application/octet-stream")]
 public sealed class DownloadBusinessConsoleShiftHandoverAttachmentContentEndpoint(
     IBusinessGatewayAuthorizationClient auth,
-    IBusinessFileStorageClient files,
+    IBusinessFileTransferClient files,
     IInternalServiceTokenProvider tokenProvider)
     : EndpointWithoutRequest
 {

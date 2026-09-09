@@ -15876,16 +15876,6 @@ internal sealed class RecordingBusinessFileStorageClient : IBusinessFileStorageC
 
     public BusinessConsoleCompleteShiftHandoverAttachmentUploadRequest? LastCompleteRequest { get; private set; }
 
-    public string? LastTusHeadUploadSessionId { get; private set; }
-
-    public string? LastTusPatchUploadSessionId { get; private set; }
-
-    public string? LastAttachmentContentFileId { get; private set; }
-
-    public string? LastAttachmentContentOrganizationId { get; private set; }
-
-    public string? LastAttachmentContentEnvironmentId { get; private set; }
-
     public Task<BusinessConsoleShiftHandoverAttachmentUploadSessionResponse> CreateShiftHandoverAttachmentUploadSessionAsync(
         string internalBearerToken,
         string ownerId,
@@ -15919,6 +15909,22 @@ internal sealed class RecordingBusinessFileStorageClient : IBusinessFileStorageC
             "image/jpeg",
             2048));
     }
+}
+
+/// <summary>字节面替身：与 JSON 面分属两个 typed client（弹性契约不同，见 ADR 0015）。</summary>
+internal sealed class RecordingBusinessFileTransferClient : IBusinessFileTransferClient
+{
+    public string? LastInternalToken { get; private set; }
+
+    public string? LastTusHeadUploadSessionId { get; private set; }
+
+    public string? LastTusPatchUploadSessionId { get; private set; }
+
+    public string? LastAttachmentContentFileId { get; private set; }
+
+    public string? LastAttachmentContentOrganizationId { get; private set; }
+
+    public string? LastAttachmentContentEnvironmentId { get; private set; }
 
     public Task ProxyShiftHandoverAttachmentTusHeadAsync(
         string internalBearerToken,
@@ -15955,7 +15961,7 @@ internal sealed class RecordingBusinessFileStorageClient : IBusinessFileStorageC
         HttpResponse targetResponse,
         CancellationToken cancellationToken)
     {
-        LastContentInternalToken = internalBearerToken;
+        LastInternalToken = internalBearerToken;
         LastAttachmentContentFileId = fileId;
         LastAttachmentContentOrganizationId = organizationId;
         LastAttachmentContentEnvironmentId = environmentId;

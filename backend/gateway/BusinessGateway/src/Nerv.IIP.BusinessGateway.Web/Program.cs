@@ -144,6 +144,15 @@ builder.Services.AddHttpClient<IBusinessFileStorageClient, HttpBusinessFileStora
 {
     client.BaseAddress = fileStorageBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
+// 字节面单独注册（ADR 0015：同一客户端读写弹性需求不同就拆成两个 HttpClient）。
+// NonIdempotentSafe 的 10 秒总超时是按 JSON RPC 形状定的，会在弱网下必然切断
+// shift-handover-photo 允许的 20,971,520 bytes 级 tus PATCH，并把共享熔断器连带打开，
+// 连累建会话/complete/SOP 下载。流式传输的时限由调用方 CancellationToken 承担。
+builder.Services.AddHttpClient<IBusinessFileTransferClient, HttpBusinessFileTransferClient>(client =>
+{
+    client.BaseAddress = fileStorageBaseAddress;
+    client.Timeout = Timeout.InfiniteTimeSpan;
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>();
 builder.Services.AddHttpClient<IBusinessMesClient, HttpBusinessMesClient>(client =>
 {
     client.BaseAddress = mesBaseAddress;

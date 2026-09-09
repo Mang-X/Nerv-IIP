@@ -20,8 +20,17 @@
 
 1. **代理拓扑不再唯一。** BusinessGateway 可以暴露受控 tus 代理入口，与 PlatformGateway 并列。两者的共同约束不变：客户端只取得网关自有 URL，不得取得 FileStorage 内部 URL、存储地址、`ObjectKey` 或长期存储凭据；网关只做鉴权与代理，文件事实仍由 FileStorage 拥有。
 2. **业务面的字节通路按用途分面。** 业务侧每条文件门面固定一个 `filePurpose` 与 owner，不从请求体读取；在签发下载授权或交付字节之前必须复核目标文件的用途属于本门面。业务域读权限不得因为共用 FileStorage 而退化成通用文件读权限。
-3. **业务面不得把 FileStorage 的 download grant id 交给调用方。** grant id 是 FileStorage 全服务共用命名空间，其兑换面不校验用途；一旦交给调用方，任一业务门面的读权限持有者都能兑换其它门面签发的 grant。业务面的下载授权必须由网关在服务端签发并立即兑换，对外只暴露以业务标识（如 `fileId`）为入参的单跳字节路由。
+3. **本 ADR 之后新开的业务字节面不得把 FileStorage 的 download grant id 交给调用方。** grant id 是 FileStorage 全服务共用命名空间，其兑换面不校验用途；一旦交给调用方，任一业务门面的读权限持有者都能兑换其它门面签发的 grant。新开业务面的下载授权必须由网关在服务端签发并立即兑换，对外只暴露以业务标识（如 `fileId`）为入参的单跳字节路由。
+
+   **既有存量例外（登记，不追认为合规形状）**：工程 SOP 文件面
+   `POST /api/business-console/v1/files/{fileId}/download-grants` 与
+   `GET /api/business-console/v1/files/download-grants/{downloadGrantId}/content`
+   早于本 ADR，仍把 grant id 交给调用方。它当前不构成跨门面兑换：该 grant id 只能由持
+   `business.engineering.documents.read` 的主体开出，且兑换面要求同一权限码，命名空间内没有
+   第二个权限口径可被跨越。**再新增任何一个消费该 content 路由的权限口径，就会立即让它变成本
+   决策要防的兑换通道**；届时必须先按本决策改造，不得沿用。该存量的收敛不在本 ADR 范围内。
 4. **传输语义不变。** tus 协议语义、staging/final 生命周期、`ObjectKey` 不公开、complete 提交不变量与失败矩阵完全按 ADR 0023 执行，本 ADR 不修改其中任何一条。
+5. **字节面与 JSON 面的弹性契约必须分开。** [ADR 0015](0015-gateway-http-client-resilience-strategy.md) 的策略表按幂等性二分，只覆盖 JSON RPC 形状；把字节流挂在其 `NonIdempotentSafe` 注册上，会用为单次 JSON 调用设计的总超时切断合法的大文件传输，并让共享熔断器把同一下游的 JSON 面一起打掉。业务字节面必须按 ADR 0015 关于「同一客户端读写弹性需求不同就拆成两个 HttpClient 注册」的口径独立注册；流式传输的时限由调用方的取消令牌承担，不由固定总超时承担。
 
 ## 已考虑的替代方案
 
@@ -36,3 +45,5 @@
 2. 业务面的下载不再有可分享的短期 URL——字节路由要求 `Authorization` 与组织/环境上下文。需要在页面上直接渲染图片的调用方必须自行取字节并构造 blob，不能把 URL 直接交给 `<img src>`。这与 grant id 从未真正可匿名访问（兑换仍需组织/环境头）的现状一致，不构成能力回退。
 3. 每次取字节多一次 FileStorage 往返（用途复核 + 签发 + 兑换）。这是把用途口径收在网关侧的直接成本。
 4. 自研 tus endpoint 的退役范围扩大：它现在有两个网关消费方，ADR 0023 决策 1.1 的退役工作必须同时迁移两处。
+5. 同一下游（FileStorage）在 BusinessGateway 有两个 typed client 注册。它们的差别只有弹性契约，不是领域切分；新增字节路由时必须落在字节面注册上，否则决策 5 会被静默绕过。
+6. 决策 3 的存量例外是**一条会过期的豁免**：它依赖「SOP content 路由只有一个权限口径」这一当前事实。该事实由权限口径本身承担，不由本 ADR 承担。

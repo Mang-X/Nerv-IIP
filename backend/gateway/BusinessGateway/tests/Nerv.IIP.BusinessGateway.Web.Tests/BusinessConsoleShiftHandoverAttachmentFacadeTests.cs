@@ -5,6 +5,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Http;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.Contracts.FileStorage;
@@ -154,7 +155,7 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
             "/api/files/v1/files/file-sop-v2" => Json(FileMetadata("engineering-document", "file-sop-v2")),
             var path => throw new InvalidOperationException($"Unexpected downstream call: {path}"),
         });
-        var client = CreateClient(handler);
+        var client = CreateTransferClient(handler);
         var httpContext = ResponseContext();
 
         var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
@@ -188,7 +189,7 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
                 new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent("photo"u8.ToArray()) },
             var path => throw new InvalidOperationException($"Unexpected downstream call: {path}"),
         });
-        var client = CreateClient(handler);
+        var client = CreateTransferClient(handler);
         var httpContext = ResponseContext();
 
         await client.StreamShiftHandoverAttachmentContentAsync(
@@ -223,7 +224,7 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
                     new Dictionary<string, string>()))),
             var path => throw new InvalidOperationException($"Unexpected downstream call: {path}"),
         });
-        var client = CreateClient(handler);
+        var client = CreateTransferClient(handler);
         var httpContext = ResponseContext();
 
         var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
@@ -247,7 +248,7 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
             response.Content = new ByteArrayContent([]);
             return response;
         });
-        var client = CreateClient(handler);
+        var client = CreateTransferClient(handler);
         var httpContext = ResponseContext();
 
         await client.ProxyShiftHandoverAttachmentTusHeadAsync(
@@ -276,7 +277,7 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
             response.Content = new ByteArrayContent([]);
             return response;
         });
-        var client = CreateClient(handler);
+        var client = CreateTransferClient(handler);
         var httpContext = ResponseContext();
         httpContext.Request.Method = "PATCH";
         httpContext.Request.ContentType = "application/offset+octet-stream";
@@ -300,7 +301,7 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
     [InlineData("timeout")]
     public async Task Byte_paths_report_downstream_unavailability_instead_of_leaking_a_transport_failure(string failure)
     {
-        var client = CreateClient(new StubHandler(_ => failure == "transport"
+        var client = CreateTransferClient(new StubHandler(_ => failure == "transport"
             ? throw new HttpRequestException("connection refused")
             : throw new TaskCanceledException("timed out")));
         var httpContext = ResponseContext();
@@ -377,7 +378,8 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         var files = new RecordingBusinessFileStorageClient();
-        await using var lease = LeaseHost(auth, files);
+        var transfer = new RecordingBusinessFileTransferClient();
+        await using var lease = LeaseHost(auth, files, transfer);
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
         using var request = new HttpRequestMessage(new HttpMethod(method), TusRoute);
@@ -394,8 +396,8 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         Assert.Equal(BusinessGatewayPermissions.MesHandoversManage, auth.LastRequirement!.PermissionCode);
         // HEAD 与 PATCH 必须落到各自那条腿上，不能共用一个按可空性分派的方法。
-        Assert.Equal(method == "HEAD" ? "ups-handover-1" : null, files.LastTusHeadUploadSessionId);
-        Assert.Equal(method == "PATCH" ? "ups-handover-1" : null, files.LastTusPatchUploadSessionId);
+        Assert.Equal(method == "HEAD" ? "ups-handover-1" : null, transfer.LastTusHeadUploadSessionId);
+        Assert.Equal(method == "PATCH" ? "ups-handover-1" : null, transfer.LastTusPatchUploadSessionId);
     }
 
     [Fact]
@@ -403,7 +405,8 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
     {
         var auth = FakeBusinessGatewayAuthorizationClient.AllowOnly(BusinessGatewayPermissions.MesHandoversRead);
         var files = new RecordingBusinessFileStorageClient();
-        await using var lease = LeaseHost(auth, files);
+        var transfer = new RecordingBusinessFileTransferClient();
+        await using var lease = LeaseHost(auth, files, transfer);
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
         using var request = new HttpRequestMessage(HttpMethod.Head, TusRoute);
@@ -414,7 +417,7 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Equal(BusinessGatewayPermissions.MesHandoversManage, auth.LastRequirement!.PermissionCode);
-        Assert.Null(files.LastTusHeadUploadSessionId);
+        Assert.Null(transfer.LastTusHeadUploadSessionId);
     }
 
     // #3085 票面写死的失败输入：只持 handovers.read 的主体在旧口径下换不出下载地址。
@@ -423,7 +426,8 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
     {
         var auth = FakeBusinessGatewayAuthorizationClient.AllowOnly(BusinessGatewayPermissions.MesHandoversRead);
         var files = new RecordingBusinessFileStorageClient();
-        await using var lease = LeaseHost(auth, files);
+        var transfer = new RecordingBusinessFileTransferClient();
+        await using var lease = LeaseHost(auth, files, transfer);
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
         using var request = new HttpRequestMessage(HttpMethod.Get, ContentRoute);
@@ -436,9 +440,9 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
         Assert.Equal("handover photo bytes", await response.Content.ReadAsStringAsync());
         Assert.Equal(BusinessGatewayPermissions.MesHandoversRead, auth.LastRequirement!.PermissionCode);
         Assert.Equal("mes-shift-handover-attachment", auth.LastRequirement.ResourceType);
-        Assert.Equal("file-handover-1", files.LastAttachmentContentFileId);
-        Assert.Equal("org-001", files.LastAttachmentContentOrganizationId);
-        Assert.Equal("env-dev", files.LastAttachmentContentEnvironmentId);
+        Assert.Equal("file-handover-1", transfer.LastAttachmentContentFileId);
+        Assert.Equal("org-001", transfer.LastAttachmentContentOrganizationId);
+        Assert.Equal("env-dev", transfer.LastAttachmentContentEnvironmentId);
     }
 
     // 反向：SOP 下载面不因为本票而对交接班读者开门。
@@ -469,7 +473,8 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
     {
         var auth = FakeBusinessGatewayAuthorizationClient.AllowOnly(BusinessGatewayPermissions.MesHandoversRead);
         var files = new RecordingBusinessFileStorageClient();
-        await using var lease = LeaseHost(auth, files);
+        var transfer = new RecordingBusinessFileTransferClient();
+        await using var lease = LeaseHost(auth, files, transfer);
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
 
@@ -490,7 +495,190 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
                 $"{route} 不得成为 grant id 的兑换面，实际 {(int)response.StatusCode}");
         }
 
-        Assert.Null(files.LastAttachmentContentFileId);
+        Assert.Null(transfer.LastAttachmentContentFileId);
+    }
+
+    // =====================================================================
+    // #3096 第二轮阻断 A：FileStorage 的错误载体是裸 {code,message}，不套平台 envelope
+    // =====================================================================
+
+    // 会失败的具体输入：配额不足时 FileStorage 回 409 file-storage-conflict。
+    // 基类默认只认 success:false envelope，不声明裸载体的话 code 会落空成 downstream-request-failed。
+    [Theory]
+    [InlineData(HttpStatusCode.Conflict, "file-storage-conflict")]
+    [InlineData(HttpStatusCode.NotFound, "file-storage-not-found")]
+    [InlineData(HttpStatusCode.ServiceUnavailable, "file-storage-unavailable")]
+    public async Task Non_bad_request_downstream_failures_keep_the_file_storage_semantic_code(
+        HttpStatusCode downstreamStatus,
+        string downstreamCode)
+    {
+        var client = CreateClient(new StubHandler(_ => new HttpResponseMessage(downstreamStatus)
+        {
+            Content = JsonContent.Create(new { code = downstreamCode, message = "配额不足。" }),
+        }));
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.CreateShiftHandoverAttachmentUploadSessionAsync(
+                "internal-test-token", "user-admin", UploadRequest(), CancellationToken.None));
+
+        Assert.Equal(downstreamStatus, exception.StatusCode);
+        Assert.Equal(downstreamCode, exception.SemanticCode);
+    }
+
+    // =====================================================================
+    // #3096 第二轮阻断 B：既有 SOP 面被本 PR 改到的行为，逐条钉住
+    // =====================================================================
+
+    [Theory]
+    [InlineData("transport", HttpStatusCode.ServiceUnavailable, "downstream-unavailable")]
+    [InlineData("timeout", HttpStatusCode.ServiceUnavailable, "downstream-timeout")]
+    public async Task Sop_download_grant_maps_transport_failures_instead_of_letting_them_escape(
+        string failure,
+        HttpStatusCode expectedStatus,
+        string expectedMessage)
+    {
+        var client = CreateClient(new StubHandler(_ => failure == "transport"
+            ? throw new HttpRequestException("connection refused")
+            : throw new TaskCanceledException("timed out")));
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.CreateSopFileDownloadGrantAsync(
+                "internal-test-token",
+                "file-sop-v2",
+                new BusinessConsoleCreateSopFileDownloadGrantRequest("org-001", "env-dev"),
+                CancellationToken.None));
+
+        Assert.Equal(expectedStatus, exception.StatusCode);
+        Assert.Equal(expectedMessage, exception.Message);
+    }
+
+    [Theory]
+    [InlineData("transport", "downstream-unavailable")]
+    [InlineData("timeout", "downstream-timeout")]
+    public async Task Sop_content_maps_transport_failures_instead_of_letting_them_escape(
+        string failure,
+        string expectedMessage)
+    {
+        var client = CreateClient(new StubHandler(_ => failure == "transport"
+            ? throw new HttpRequestException("connection refused")
+            : throw new TaskCanceledException("timed out")));
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.DownloadSopFileContentAsync(
+                "internal-test-token",
+                "grant-sop-v2",
+                new Dictionary<string, string>(),
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, exception.StatusCode);
+        Assert.Equal(expectedMessage, exception.Message);
+    }
+
+    [Fact]
+    public async Task Sop_download_grant_preserves_a_bad_request_reason_from_file_storage()
+    {
+        var client = CreateClient(new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.BadRequest)
+        {
+            Content = JsonContent.Create(new { code = "file-storage-bad-request", message = "文件上下文不匹配。" }),
+        }));
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.CreateSopFileDownloadGrantAsync(
+                "internal-test-token",
+                "file-sop-v2",
+                new BusinessConsoleCreateSopFileDownloadGrantRequest("org-001", "env-dev"),
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadRequest, exception.StatusCode);
+        Assert.Equal("文件上下文不匹配。", exception.Message);
+    }
+
+    [Fact]
+    public async Task Sop_download_grant_rejects_an_unproxyable_transfer_url_instead_of_echoing_it()
+    {
+        var client = CreateClient(new StubHandler(_ => Json(new DownloadGrantResponse(
+            "file-sop-v2",
+            DateTimeOffset.Parse("2026-09-02T08:10:00Z"),
+            new TransferInstructions(
+                "https://filestorage.internal/api/files/v1/download-grants/grant-sop-v2/content",
+                new Dictionary<string, string>())))));
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.CreateSopFileDownloadGrantAsync(
+                "internal-test-token",
+                "file-sop-v2",
+                new BusinessConsoleCreateSopFileDownloadGrantRequest("org-001", "env-dev"),
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("filestorage-transfer-url-not-proxyable", exception.Message);
+    }
+
+    [Fact]
+    public async Task Sop_download_grant_reports_an_invalid_downstream_body()
+    {
+        var client = CreateClient(new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(string.Empty),
+        }));
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.CreateSopFileDownloadGrantAsync(
+                "internal-test-token",
+                "file-sop-v2",
+                new BusinessConsoleCreateSopFileDownloadGrantRequest("org-001", "env-dev"),
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
+    }
+
+    // =====================================================================
+    // #3096 第二轮阻断 E：字节面不得与 JSON 面共用 NonIdempotentSafe 管线
+    // =====================================================================
+
+    /// <summary>
+    /// 会失败的具体输入：弱网下连续几次慢 tus <c>PATCH</c> 把共享熔断器打开
+    /// （FailureRatio 0.5 / MinimumThroughput 10 / BreakDuration 15s），连带打掉建会话、complete
+    /// 与 SOP 下载。这里反过来验隔离：把 JSON 面的熔断器打满之后，字节面必须仍能到达下游。
+    /// </summary>
+    [Fact]
+    public async Task Byte_face_keeps_reaching_downstream_after_the_json_faces_circuit_breaker_opens()
+    {
+        var counter = new FileStorageCallCounter();
+        await using var factory = BusinessGatewayTestHost.CreateDedicatedFactory(
+            configureBuilder: builder => builder.ConfigureServices(services =>
+                services.AddSingleton<IHttpMessageHandlerBuilderFilter>(
+                    new FileStorageFailingHandlerFilter(counter))));
+        var json = factory.Services.GetRequiredService<IBusinessFileStorageClient>();
+        var transfer = factory.Services.GetRequiredService<IBusinessFileTransferClient>();
+
+        // 熔断前每发都是 503，熔断后是 Polly 的 BrokenCircuitException（该异常未被网关映射，
+        // 属既有面缺陷、已交回登记）。本用例的鉴别点是**是否触达下游**，不钉异常类型。
+        for (var i = 0; i < 20; i++)
+        {
+            await CallAndSwallowAsync(() => json.CreateSopFileDownloadGrantAsync(
+                "internal-test-token",
+                "file-sop-v2",
+                new BusinessConsoleCreateSopFileDownloadGrantRequest("org-001", "env-dev"),
+                CancellationToken.None));
+        }
+
+        var jsonCallsBefore = counter.JsonCalls;
+        var httpContext = ResponseContext();
+        await transfer.ProxyShiftHandoverAttachmentTusHeadAsync(
+            "internal-test-token", "ups-handover-1", httpContext.Response, CancellationToken.None);
+
+        // 字节面这一发必须真的打到下游。
+        Assert.True(counter.TransferCalls > 0, "字节面没有到达下游，说明它仍挂在 JSON 面的熔断器上");
+
+        // 反向确认 JSON 面此刻确已熔断：再发一次，下游计数不再增长。
+        await CallAndSwallowAsync(() => json.CreateSopFileDownloadGrantAsync(
+            "internal-test-token",
+            "file-sop-v2",
+            new BusinessConsoleCreateSopFileDownloadGrantRequest("org-001", "env-dev"),
+            CancellationToken.None));
+        Assert.Equal(jsonCallsBefore, counter.JsonCalls);
     }
 
     // =====================================================================
@@ -533,11 +721,14 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
 
     private static BusinessGatewayTestHostLease LeaseHost(
         FakeBusinessGatewayAuthorizationClient auth,
-        IBusinessFileStorageClient files) =>
+        IBusinessFileStorageClient files,
+        IBusinessFileTransferClient? transfer = null) =>
         BusinessGatewayTestHost.Lease(auth, services =>
         {
             services.RemoveAll<IBusinessFileStorageClient>();
             services.AddSingleton(files);
+            services.RemoveAll<IBusinessFileTransferClient>();
+            services.AddSingleton(transfer ?? new RecordingBusinessFileTransferClient());
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(
                 new TestInternalServiceTokenProvider("internal-test-token"));
@@ -546,8 +737,69 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
     private static HttpBusinessFileStorageClient CreateClient(StubHandler handler) =>
         new(new HttpClient(handler) { BaseAddress = new Uri("http://file-storage.local") });
 
+    private static HttpBusinessFileTransferClient CreateTransferClient(StubHandler handler) =>
+        new(new HttpClient(handler) { BaseAddress = new Uri("http://file-storage.local") });
+
     private static HttpResponseMessage Json<T>(T payload) =>
         new(HttpStatusCode.OK) { Content = JsonContent.Create(payload) };
+
+    private static async Task CallAndSwallowAsync(Func<Task> call)
+    {
+        try
+        {
+            await call();
+        }
+        catch (Exception)
+        {
+            // 见调用点注释：本用例只以下游计数为判据。
+        }
+    }
+
+    private sealed class FileStorageCallCounter
+    {
+        private int jsonCalls;
+        private int transferCalls;
+
+        public int JsonCalls => Volatile.Read(ref jsonCalls);
+
+        public int TransferCalls => Volatile.Read(ref transferCalls);
+
+        public void RecordJson() => Interlocked.Increment(ref jsonCalls);
+
+        public void RecordTransfer() => Interlocked.Increment(ref transferCalls);
+    }
+
+    private sealed class FileStorageFailingHandlerFilter(FileStorageCallCounter counter)
+        : IHttpMessageHandlerBuilderFilter
+    {
+        public Action<HttpMessageHandlerBuilder> Configure(Action<HttpMessageHandlerBuilder> next) =>
+            builder =>
+            {
+                next(builder);
+                if (string.Equals(builder.Name, nameof(IBusinessFileStorageClient), StringComparison.Ordinal))
+                {
+                    builder.PrimaryHandler = new CountingUnavailableHandler(counter.RecordJson);
+                }
+                else if (string.Equals(builder.Name, nameof(IBusinessFileTransferClient), StringComparison.Ordinal))
+                {
+                    builder.PrimaryHandler = new CountingUnavailableHandler(counter.RecordTransfer);
+                }
+            };
+    }
+
+    private sealed class CountingUnavailableHandler(Action record) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            record();
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+            {
+                Content = new StringContent(string.Empty),
+            });
+        }
+    }
 
     private sealed class StubHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory)
         : HttpMessageHandler
