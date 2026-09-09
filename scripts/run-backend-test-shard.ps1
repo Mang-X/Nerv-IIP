@@ -14,8 +14,8 @@
 
 <#
 .PARAMETER TimeoutSeconds
-Budget for the single `dotnet test` invocation. CI never passes it (its budget is the step
-`timeout-minutes`), so the default only applies locally; raise it when other worktrees share the CPU (#2870).
+Budget for the single `dotnet test` invocation. Exceeding it fails as a timeout, not as a test
+failure; raise it for a local run whose CPU is shared with other worktrees (#2870).
 #>
 
 [CmdletBinding()]
