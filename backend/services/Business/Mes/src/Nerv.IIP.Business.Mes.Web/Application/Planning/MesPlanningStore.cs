@@ -24,7 +24,9 @@ public sealed record PlannedOperationTask(
     TimeSpan Duration,
     // 产出 SKU 必须由调用方给出：这条记录以前没有 SKU 字段，于是 PersistentMesPlanningStore
     // 落库时只能不传，让 OperationTask 回落成工单号（#3112）。声明为必填而非可空默认，
-    // 是为了让"建工序却拿不到 SKU"在编译期就不可表达，而不是落到运行时或悄悄回落。
+    // 关掉的是**漏传**——「建工序却没给 SKU」不再可表达。
+    // 它**关不掉「传错」**：这仍是一个 string，把工单号当实参传进来照样编译；
+    // 「传的是不是工单真实 SKU」由用例断言承担，不由类型承担。
     // 位置放在可选尾巴之前，因为 C# 要求必填参数先于可选参数。
     string SkuCode,
     DateTimeOffset? ExistingStartUtc = null,

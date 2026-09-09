@@ -805,7 +805,11 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
                 // 持久化契约（OperationTaskEntityTypeConfiguration）也把该列声明为"copied from the MES work order"。
                 // 下面的常规分支（无 WorkCenterId）本来就传 request.SkuId，这条捷径分支漏传会让
                 // 工序带上工单号形状的值，随完工事件与 WorkOrderReleased 的 SkuCode 不同源（#3112）。
-                request.SkuId));
+                // UomCode/PlannedQuantity 一并取同一个 request：这两项常规分支也传，
+                // 同一条命令的两个分支不该在"工序从工单抄哪些字段"上给出不同答案。
+                request.SkuId,
+                request.UomCode,
+                request.PlannedQuantity));
             var plan = scheduler.Schedule(
                 await GetScheduleOperationsAsync(request.OrganizationId, request.EnvironmentId, cancellationToken),
                 await GetUnavailabilitiesAsync(request.OrganizationId, request.EnvironmentId, cancellationToken));

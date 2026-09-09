@@ -86,7 +86,7 @@ Reference 与源码冲突时，以当前代码/契约/测试为准并修正本�
 | MES | `ReworkWorkOrderCreatedIntegrationEvent` | MES | Quality：按 organization/environment/NCR 来源事实绑定系统返工工单回执；ERP：在既有 `WorkOrderCost` 上登记 NCR 与来源工单归因 | `consumed-internally` |
 | MES | `WorkOrderCompletedIntegrationEvent` | MES | ERP | `consumed-internally` |
 | MES | `WorkOrderClosedIntegrationEvent` | MES | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
-| MES | `MesOperationTaskCompletedIntegrationEvent` | MES | Quality | `consumed-internally` |
+| MES | `MesOperationTaskCompletedIntegrationEvent` | MES | Quality | `consumed-internally`。payload `skuCode` 取 `OperationTask.SkuCode`，而该列按持久化契约是**从工单抄来的产出 SKU**；此前有三条建工序路径不传 SKU、令其回落成工单号，Quality 的工序巡检一致性守卫按 SKU 比对 `WorkOrderReleased` 与本事件，凡这三条路径建出的工序**先发布后完工必进死信**（#3112）。修源后同一道工序两个事件的 `skuCode` 恒相等，该死信在新数据上归零。**消费关系与分类不变**（消费方仍只有 Quality）：变的是同一条消费路径上「必然失败」变为「正常处理」，按 `docs/governance/integration/event-consumption.md` 的 dead-letter 语义触发器在此登记。存量数据的订正与 Quality 侧校正层的收缩归 #3286 |
 | MES | V1 `MesOperationActualTimeSettledIntegrationEvent`；V2 `MesOperationActualTimeSettledV2IntegrationEvent` | MES | ERP：V1 归集实际人工；V2 归集机器制造费用 | `consumed-internally`（V1/V2） |
 | MES | V1 `MesOperationActualTimeSettlementVoidedIntegrationEvent`；V2 `MesOperationActualTimeSettlementVoidedV2IntegrationEvent` | MES | ERP：V1 精确冲销实际人工；V2 精确冲销机器制造费用 | `consumed-internally`（V1/V2） |
 | MES | `MesOperationTaskManuallyDispatchedIntegrationEvent` | MES | Scheduling | `consumed-internally` |
