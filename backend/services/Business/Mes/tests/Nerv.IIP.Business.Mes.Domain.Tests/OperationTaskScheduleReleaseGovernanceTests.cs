@@ -70,7 +70,8 @@ public sealed class OperationTaskScheduleReleaseGovernanceTests
     }
 
     private static OperationTask CreateTask() => OperationTask.Queue(
-        "org-001", "env-dev", "WO-001", "OP-10", 10, "WC-OLD", [], At(0), TimeSpan.FromHours(1));
+        "org-001", "env-dev", "WO-001", "OP-10", 10, "WC-OLD", [], At(0), TimeSpan.FromHours(1),
+        "SKU-001");
 
     private static DateTimeOffset At(int hour) => DateTimeOffset.Parse("2026-07-18T00:00:00Z").AddHours(hour);
 }

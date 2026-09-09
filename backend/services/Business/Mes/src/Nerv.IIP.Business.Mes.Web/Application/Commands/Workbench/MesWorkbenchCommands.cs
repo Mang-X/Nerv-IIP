@@ -800,7 +800,12 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
                 request.RequestedAtUtc,
                 TimeSpan.FromMinutes(30),
                 null,
-                null));
+                null,
+                // 产出 SKU 取工单的 SkuId：工序级 SKU 在本模型里不可表达，
+                // 持久化契约（OperationTaskEntityTypeConfiguration）也把该列声明为"copied from the MES work order"。
+                // 下面的常规分支（无 WorkCenterId）本来就传 request.SkuId，这条捷径分支漏传会让
+                // 工序带上工单号形状的值，随完工事件与 WorkOrderReleased 的 SkuCode 不同源（#3112）。
+                request.SkuId));
             var plan = scheduler.Schedule(
                 await GetScheduleOperationsAsync(request.OrganizationId, request.EnvironmentId, cancellationToken),
                 await GetUnavailabilitiesAsync(request.OrganizationId, request.EnvironmentId, cancellationToken));

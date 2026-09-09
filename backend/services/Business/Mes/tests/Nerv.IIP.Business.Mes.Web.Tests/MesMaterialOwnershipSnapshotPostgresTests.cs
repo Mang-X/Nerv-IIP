@@ -31,7 +31,8 @@ public sealed class MesMaterialOwnershipSnapshotPostgresTests
             await setup.GetService<IMigrator>().MigrateAsync("20260905025040_AddMesChangeoverRecords");
             setup.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-01", "FG-01", "PV-01", 4m, 1, Now));
             setup.OperationTasks.Add(OperationTask.Create("org-001", "env-dev", "WO-01", "OP-01",
-                OperationTaskLifecycleStatus.InProgress, 10, "WC-01", [], Now, TimeSpan.FromHours(1), null, null));
+                OperationTaskLifecycleStatus.InProgress, 10, "WC-01", [], Now, TimeSpan.FromHours(1), null, null,
+                "SKU-001"));
             foreach (var reportNo in new[] { "PR-OLD", "PR-NEW", "PR-REVERSE" })
             {
                 setup.ProductionReports.Add(ProductionReport.Record("org-001", "env-dev", reportNo, "WO-01", "OP-01", 1m, 0m, false, Now));

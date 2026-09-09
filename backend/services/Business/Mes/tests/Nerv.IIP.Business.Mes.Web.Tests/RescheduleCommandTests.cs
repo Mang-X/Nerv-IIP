@@ -12,7 +12,7 @@ public sealed class RescheduleCommandTests
         var store = new InMemoryMesPlanningStore();
         var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
         store.AddWorkOrder(new PlannedWorkOrder("org-001", "env-dev", "WO-001", "SKU-1", null, 1m, 10, now.AddHours(12)));
-        store.AddOperationTask(new PlannedOperationTask("WO-001", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2)));
+        store.AddOperationTask(new PlannedOperationTask("WO-001", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2), "SKU-001"));
 
         var handler = new RescheduleCommandHandler(store, new RuleScheduler());
         var first = await handler.Handle(new RescheduleCommand("org-001", "env-dev", RescheduleTrigger.Manual, now), CancellationToken.None);

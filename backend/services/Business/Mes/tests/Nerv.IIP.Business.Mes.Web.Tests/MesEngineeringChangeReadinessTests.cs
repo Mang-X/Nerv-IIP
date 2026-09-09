@@ -58,7 +58,8 @@ public sealed class MesEngineeringChangeReadinessTests
                 DateTimeOffset.Parse("2026-07-06T08:00:00Z"),
                 TimeSpan.FromHours(1),
                 null,
-                null));
+                null,
+                "SKU-001"));
             dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
                 "org-001",
                 "env-dev",
@@ -129,7 +130,8 @@ public sealed class MesEngineeringChangeReadinessTests
             dbContext.WorkOrders.Add(released);
             dbContext.OperationTasks.Add(OperationTask.Create(
                 "org-001", "env-dev", "WO-CHAIN", "OP-CHAIN", OperationTaskLifecycleStatus.Queued, 10,
-                "WC-ASSEMBLY", [], DateTimeOffset.Parse("2026-07-06T08:00:00Z"), TimeSpan.FromHours(1), null, null));
+                "WC-ASSEMBLY", [], DateTimeOffset.Parse("2026-07-06T08:00:00Z"), TimeSpan.FromHours(1), null, null,
+                "SKU-001"));
             dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
                 "org-001", "env-dev", "WO-CHAIN", null, "MAT-CHAIN", null, 10m, 10m, 0m, "test",
                 "PV-1:MAT-CHAIN", DateTimeOffset.Parse("2026-07-06T07:00:00Z"), []));

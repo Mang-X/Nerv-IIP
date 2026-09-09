@@ -333,7 +333,8 @@ public sealed class MesMaterialRequirementSnapshotConsumerTests
             Latest,
             TimeSpan.FromHours(1),
             null,
-            null);
+            null,
+            "SKU-001");
 
     private static MaterialRequirement Requirement(
         string? operationTaskId,
