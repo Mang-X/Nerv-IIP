@@ -103,6 +103,17 @@ function Assert-EnvironmentArtifact {
         }
     }
 
+    # #3097：tus 盘承载已 complete 文件的字节，生成产物必须给 FileStorage 一个容器内绝对路径并挂命名卷；
+    # 系统 temp 或容器可写层不是持久落点（ADR 0024 §5）。
+    $fileStorage = $Services['file-storage']
+    if (-not [string]::Equals([string] $fileStorage['FileStorage__UploadProvider'], 'tus', [StringComparison]::Ordinal)) {
+        throw "Published FileStorage must select the tus upload provider; observed '$($fileStorage['FileStorage__UploadProvider'])'."
+    }
+    $tusRootPath = [string] $fileStorage['FileStorage__Tus__RootPath']
+    if (-not $tusRootPath.StartsWith('/home/app/', [StringComparison]::Ordinal)) {
+        throw "Published FileStorage must place FileStorage__Tus__RootPath under the app-owned volume mount; observed '$tusRootPath'."
+    }
+
     if (-not $Services.ContainsKey('business-barcode-label')) {
         throw 'Published artifact is missing the business-barcode-label resource.'
     }
@@ -164,6 +175,14 @@ try {
         $composePath = Join-Path $outputPath 'docker-compose.yaml'
         if (-not (Test-Path -LiteralPath $composePath -PathType Leaf)) { throw "Aspire publish did not produce $composePath." }
         Assert-EnvironmentArtifact -Services (Get-ComposeProjectEnvironments -ComposePath $composePath) -EnvironmentName $environmentName
+        $composeText = [IO.File]::ReadAllText($composePath)
+        if ($composeText -notmatch '(?m)^\s+- type: "volume"\s*\n\s+target: "/home/app"\s*\n\s+source: "nerv-iip-file-storage"' -and
+            $composeText -notmatch '(?m)^\s+- "nerv-iip-file-storage:/home/app"') {
+            throw 'Published FileStorage service must mount the nerv-iip-file-storage volume at /home/app.'
+        }
+        if ($composeText -notmatch '(?m)^volumes:(?:.*\n)+?\s+nerv-iip-file-storage:') {
+            throw 'Published Compose artifact must declare the nerv-iip-file-storage volume.'
+        }
     }
     Write-Diagnostic 'Aspire Development and Production Compose artifacts preserve environment, migration, seed, BarcodeLabel printer, and FileStorage endpoint profiles.'
 }

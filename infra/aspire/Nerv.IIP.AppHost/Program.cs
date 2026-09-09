@@ -83,6 +83,27 @@ if (fullStackEphemeral &&
 string SessionVolume(string persistentName) =>
     fullStackEphemeral ? $"{persistentName}-{fullStackSessionId}" : persistentName;
 
+// 与 scripts/lib/FullStackSessionState.ps1 的 Get-NervFullStackStateRoot 同一推导，本机项目资源的持久数据落在这里。
+static string LocalStateRoot()
+{
+    var configured = Environment.GetEnvironmentVariable("NERV_IIP_FULLSTACK_STATE_ROOT");
+    if (!string.IsNullOrWhiteSpace(configured))
+    {
+        return Path.GetFullPath(configured);
+    }
+
+    if (OperatingSystem.IsWindows())
+    {
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Nerv-IIP");
+    }
+
+    var xdgStateHome = Environment.GetEnvironmentVariable("XDG_STATE_HOME");
+    var stateBase = string.IsNullOrWhiteSpace(xdgStateHome)
+        ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "state")
+        : xdgStateHome;
+    return Path.Combine(stateBase, "nerv-iip");
+}
+
 builder.AddDockerComposeEnvironment("compose");
 
 var iamJwtSigningKeyId = builder.AddParameter("iam-jwt-signing-key-id", secret: true);
@@ -267,10 +288,26 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
+// 上传字节走 tus：complete 的提交证据由 FileStorage 从本地 tus 盘读回，默认的 server-proxy 没有字节面。
+// tus 盘同时承载已 complete 文件的字节，FileStorage:Tus:RootPath 必须显式、绝对、持久（ADR 0024 §5），缺它服务拒绝启动：
+//  - 运行模式：与 fullstack 会话状态同根的本机状态目录；ephemeral 会话按 session id 隔离。
+//  - publish 模式：容器内路径 + 命名卷。挂载点取 /home/app：SDK 生成的镜像以非 root 的 app(1654) 运行，
+//    /home/app 是镜像里唯一归 app 所有的目录，命名卷首次创建时继承该属主；挂到镜像里不存在的路径会得到 root 所有、进程写不进的挂载点。
+const string FileStorageContainerDataRoot = "/home/app";
+var fileStorageTusRootPath = builder.ExecutionContext.IsPublishMode
+    ? $"{FileStorageContainerDataRoot}/nerv-iip/file-storage/tus"
+    : Path.Combine(LocalStateRoot(), "file-storage", SessionVolume("tus"));
 var fileStorage = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_FileStorage_Web>("file-storage")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5104, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
+    .WithEnvironment("FileStorage__UploadProvider", "tus")
+    .WithEnvironment("FileStorage__Tus__RootPath", fileStorageTusRootPath)
+    .WithAnnotation(new ContainerMountAnnotation(
+        "nerv-iip-file-storage",
+        FileStorageContainerDataRoot,
+        ContainerMountType.Volume,
+        isReadOnly: false))
     .WithEnvironment("Storage__Provider", "MinIO")
     .WithEnvironment("Storage__MinIO__Endpoint", minio.GetEndpoint("api"))
     .WithEnvironment("Storage__MinIO__AccessKey", minioRootUser)

@@ -137,6 +137,28 @@ public sealed class FileStorageStartupGovernanceTests
         Assert.DoesNotContain(bucket, exception.Message, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(null, "<missing>")]
+    [InlineData("", "<missing>")]
+    [InlineData("data/tus", "<relative>")]
+    public void Tus_upload_provider_requires_an_explicit_absolute_root_path(string? rootPath, string expectedDiagnostic)
+    {
+        using var factory = CreateFactory(
+            "Development",
+            provider: "PostgreSQL",
+            connectionString: PostgreSqlConnectionString,
+            storageSettings: new Dictionary<string, string?>
+            {
+                ["FileStorage:UploadProvider"] = "tus",
+                ["FileStorage:Tus:RootPath"] = rootPath
+            });
+
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+
+        Assert.Contains("FileStorage:UploadProvider=tus requires FileStorage:Tus:RootPath", exception.Message, StringComparison.Ordinal);
+        Assert.Contains($"configured={expectedDiagnostic}", exception.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Unknown_versioned_storage_provider_fails_fast()
     {

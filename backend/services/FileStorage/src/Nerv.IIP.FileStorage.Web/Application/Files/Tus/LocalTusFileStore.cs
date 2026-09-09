@@ -11,8 +11,8 @@ public sealed class LocalTusFileStore
 
     public LocalTusFileStore(IConfiguration configuration)
     {
-        rootPath = configuration["FileStorage:Tus:RootPath"]
-            ?? Path.Combine(Path.GetTempPath(), "nerv-iip", "filestorage", "tus");
+        // 不回落系统 temp：该目录承载已 complete 文件的字节（ADR 0024 §5）。缺配置由 Program.cs 在启动时拒绝。
+        rootPath = configuration["FileStorage:Tus:RootPath"]!;
     }
 
     public long GetOffset(string uploadSessionId)
