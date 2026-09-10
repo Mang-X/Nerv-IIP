@@ -1192,6 +1192,29 @@ public sealed class CreateMaterialIssueRequestCommandHandler(ApplicationDbContex
     private sealed record FrozenMaterialSelection(decimal RequiredQuantity, string? SubstitutedMaterialId);
 }
 
+/// <summary>按请求里的 RequestId（业务单号或 Guid 字符串）定位领料申请。</summary>
+internal static class MaterialIssueRequestLookup
+{
+    /// <summary>
+    /// x.Id 是强类型 GuidId：谓词里对它再取内部成员（x.Id.Id == guid）无法被 EF 翻译（真机 500，#3098）。
+    /// 先按业务单号命中；只有请求确实是 Guid 时才用先物化好的强类型 Id 直接比较（可翻译）。
+    /// </summary>
+    public static async Task<MaterialIssueRequest?> FindAsync(
+        IQueryable<MaterialIssueRequest> scopedQuery,
+        string requestId,
+        CancellationToken cancellationToken)
+    {
+        var materialRequest = await scopedQuery.SingleOrDefaultAsync(x => x.RequestNo == requestId, cancellationToken);
+        if (materialRequest is null && Guid.TryParse(requestId, out var requestGuid))
+        {
+            var materialRequestId = new MaterialIssueRequestId(requestGuid);
+            materialRequest = await scopedQuery.SingleOrDefaultAsync(x => x.Id == materialRequestId, cancellationToken);
+        }
+
+        return materialRequest;
+    }
+}
+
 public sealed record ConfirmLineSideMaterialReceiptCommand(
     string OrganizationId,
     string EnvironmentId,
@@ -1210,13 +1233,8 @@ public sealed class ConfirmLineSideMaterialReceiptCommandHandler(
         var scopedQuery = dbContext.MaterialIssueRequests.Where(x =>
             x.OrganizationId == request.OrganizationId &&
             x.EnvironmentId == request.EnvironmentId);
-        var materialRequest = Guid.TryParse(request.RequestId, out var requestGuid)
-            ? await scopedQuery.SingleOrDefaultAsync(x => x.Id.Id == requestGuid, cancellationToken)
-            : await scopedQuery.SingleOrDefaultAsync(x => x.RequestNo == request.RequestId, cancellationToken);
-        if (materialRequest is null)
-        {
-            throw new KnownException($"未找到领料申请，RequestId = {request.RequestId}");
-        }
+        var materialRequest = await MaterialIssueRequestLookup.FindAsync(scopedQuery, request.RequestId, cancellationToken)
+            ?? throw new KnownException($"未找到领料申请，RequestId = {request.RequestId}");
 
         if (materialRequest.Status is not MaterialIssueRequest.RequestedStatus and
             not MaterialIssueRequest.PartiallyReceivedStatus)
@@ -1286,13 +1304,8 @@ public sealed class ReturnLineSideMaterialCommandLock(ApplicationDbContext dbCon
             .Where(x =>
                 x.OrganizationId == command.OrganizationId &&
                 x.EnvironmentId == command.EnvironmentId);
-        var materialRequest = Guid.TryParse(command.RequestId, out var requestGuid)
-            ? await scopedQuery.SingleOrDefaultAsync(x => x.Id.Id == requestGuid, cancellationToken)
-            : await scopedQuery.SingleOrDefaultAsync(x => x.RequestNo == command.RequestId, cancellationToken);
-        if (materialRequest is null)
-        {
-            throw new KnownException($"未找到领料申请，RequestId = {command.RequestId}");
-        }
+        var materialRequest = await MaterialIssueRequestLookup.FindAsync(scopedQuery, command.RequestId, cancellationToken)
+            ?? throw new KnownException($"未找到领料申请，RequestId = {command.RequestId}");
 
         return new CommandLockSettings(
             $"business-mes:material-issue-return:{materialRequest.OrganizationId}:{materialRequest.EnvironmentId}:{materialRequest.Id.Id:D}",
@@ -1308,13 +1321,8 @@ public sealed class ReturnLineSideMaterialCommandHandler(ApplicationDbContext db
         var scopedQuery = dbContext.MaterialIssueRequests.Where(x =>
             x.OrganizationId == request.OrganizationId &&
             x.EnvironmentId == request.EnvironmentId);
-        var materialRequest = Guid.TryParse(request.RequestId, out var requestGuid)
-            ? await scopedQuery.SingleOrDefaultAsync(x => x.Id.Id == requestGuid, cancellationToken)
-            : await scopedQuery.SingleOrDefaultAsync(x => x.RequestNo == request.RequestId, cancellationToken);
-        if (materialRequest is null)
-        {
-            throw new KnownException($"未找到领料申请，RequestId = {request.RequestId}");
-        }
+        var materialRequest = await MaterialIssueRequestLookup.FindAsync(scopedQuery, request.RequestId, cancellationToken)
+            ?? throw new KnownException($"未找到领料申请，RequestId = {request.RequestId}");
 
         try
         {
