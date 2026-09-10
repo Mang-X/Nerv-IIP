@@ -681,6 +681,41 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
     }
 
     /// <summary>
+    /// 字节面**不是零策略**：ADR 0015 决策 3.2「只要客户端能够发起非幂等写操作，就必须使用无自动
+    /// 重试的非幂等安全策略」对它仍然适用（tus <c>PATCH</c> 是非幂等写）。streaming-safe 档只去掉
+    /// 总超时，熔断必须还在。
+    ///
+    /// **本断言读的是 Polly 弹性管线层**（`AddResilienceHandler` 内的 `AddCircuitBreaker`）：连续失败
+    /// 打满阈值后，后续调用必须快速失败而**不再触达下游**。若字节面退回零策略，下游计数会继续增长。
+    /// </summary>
+    [Fact]
+    public async Task Byte_face_still_carries_a_circuit_breaker_after_dropping_the_total_timeout()
+    {
+        var counter = new FileStorageCallCounter();
+        await using var factory = BusinessGatewayTestHost.CreateDedicatedFactory(
+            configureBuilder: builder => builder.ConfigureServices(services =>
+                services.AddSingleton<IHttpMessageHandlerBuilderFilter>(
+                    new FileStorageFailingHandlerFilter(counter))));
+        var transfer = factory.Services.GetRequiredService<IBusinessFileTransferClient>();
+
+        for (var i = 0; i < 20; i++)
+        {
+            var context = ResponseContext();
+            await CallAndSwallowAsync(() => transfer.ProxyShiftHandoverAttachmentTusHeadAsync(
+                "internal-test-token", "ups-handover-1", context.Response, CancellationToken.None));
+        }
+
+        var reachedBefore = counter.TransferCalls;
+        Assert.True(reachedBefore > 0, "夹具本身没打到下游，用例无鉴别力");
+
+        var afterBreak = ResponseContext();
+        await CallAndSwallowAsync(() => transfer.ProxyShiftHandoverAttachmentTusHeadAsync(
+            "internal-test-token", "ups-handover-1", afterBreak.Response, CancellationToken.None));
+
+        Assert.Equal(reachedBefore, counter.TransferCalls);
+    }
+
+    /// <summary>
     /// 会失败的具体输入：弱网下连续几次慢 tus <c>PATCH</c> 把共享熔断器打开
     /// （FailureRatio 0.5 / MinimumThroughput 10 / BreakDuration 15s），连带打掉建会话、complete
     /// 与 SOP 下载。这里反过来验隔离：把 JSON 面的熔断器打满之后，字节面必须仍能到达下游。
