@@ -647,7 +647,7 @@ try {
     Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 21) 'The ERP member must freeze exactly its twenty-one PostgreSQL identities.'
     Assert-Contract ([string]::Equals([string]$erpMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) 'ERP keeps runner-owned databases for failure diagnostics.'
     $acceptanceMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'acceptance-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($acceptanceMember.expectedTestIdentities).Count -eq 12) '跨服务验收成员必须冻结十二条 PostgreSQL 测试身份。'
+    Assert-Contract (@($acceptanceMember.expectedTestIdentities).Count -eq 15) '跨服务验收成员必须冻结十五条 PostgreSQL 测试身份。'
     Assert-Contract ([string]::Equals((@($acceptanceMember.diagnosticSchemas) -join ','), 'erp,industrial_telemetry,inventory,maintenance,mes,wms', [StringComparison]::Ordinal)) '跨服务验收成员必须声明所有被迁移的 schema。'
     Assert-Contract ([string]::Equals([string]$acceptanceMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) '跨服务验收成员使用 runner-owned 数据库，保持最终状态可诊断。'
     Assert-MethodScopedFilter -Member $acceptanceMember
@@ -658,7 +658,8 @@ try {
             'backend/tests/Nerv.IIP.Business.Acceptance.Tests/RuntimeHoursMaintenancePostgresAcceptanceTests.cs',
             'backend/tests/Nerv.IIP.Business.Acceptance.Tests/WmsInventoryRpcIdempotencyAcceptanceTests.cs',
             'backend/tests/Nerv.IIP.Business.Acceptance.Tests/QualityInspectionInventoryStockGateAcceptanceTests.cs',
-            'backend/tests/Nerv.IIP.Business.Acceptance.Tests/QualityFirstArticleMesQualityHoldAcceptanceTests.cs')) {
+            'backend/tests/Nerv.IIP.Business.Acceptance.Tests/QualityFirstArticleMesQualityHoldAcceptanceTests.cs',
+            'backend/tests/Nerv.IIP.Business.Acceptance.Tests/MesDefectDispositionReferenceAcceptanceTests.cs')) {
         $runnerOwnedSourcePath = Join-Path $repoRoot $runnerOwnedSource
         Assert-Contract (Test-Path -LiteralPath $runnerOwnedSourcePath -PathType Leaf) "Lane source '$runnerOwnedSource' must exist."
         $runnerOwnedSourceText = [IO.File]::ReadAllText($runnerOwnedSourcePath)
@@ -677,6 +678,10 @@ try {
     $mesQualityHoldSource = [IO.File]::ReadAllText((Join-Path $repoRoot 'backend/tests/Nerv.IIP.Business.Acceptance.Tests/QualityFirstArticleMesQualityHoldAcceptanceTests.cs'))
     Assert-Contract (-not $mesQualityHoldSource.Contains('EnsureCreatedAsync(', [StringComparison]::Ordinal)) 'Lane members must migrate rather than EnsureCreated, which silently skips schema creation on an existing member database.'
     Assert-Contract ($mesQualityHoldSource.Contains('MigrateAsync(', [StringComparison]::Ordinal)) 'The Quality-to-MES quality hold member must create its schema through migrations.'
+    # #3318：Quality→MES 处置引用身份列宽的用例同样跑在共享成员库上，同样只能靠迁移建表。
+    $mesDispositionReferenceSource = [IO.File]::ReadAllText((Join-Path $repoRoot 'backend/tests/Nerv.IIP.Business.Acceptance.Tests/MesDefectDispositionReferenceAcceptanceTests.cs'))
+    Assert-Contract (-not $mesDispositionReferenceSource.Contains('EnsureCreatedAsync(', [StringComparison]::Ordinal)) 'Lane members must migrate rather than EnsureCreated, which silently skips schema creation on an existing member database.'
+    Assert-Contract ($mesDispositionReferenceSource.Contains('MigrateAsync(', [StringComparison]::Ordinal)) 'The Quality-to-MES disposition reference member must create its schema through migrations.'
 
     # 逐成员、逐冻结身份地把"先重置再迁移"和"重置用 CASCADE"变成门禁，而不是靠每个作者自觉。
     $resetDeclaringSources = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
