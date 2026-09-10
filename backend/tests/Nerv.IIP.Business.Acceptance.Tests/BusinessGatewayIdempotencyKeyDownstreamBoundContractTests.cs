@@ -455,7 +455,8 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
         [typeof(BusinessConsoleCreateTeamRequest)] = [MasterDataCodeKeyColumn],
         [typeof(BusinessConsoleCreateDepartmentRequest)] = [MasterDataCodeKeyColumn],
         // 这处端点级值取 200（= 下游 master_data_lifecycle_audit.operation_id 列宽），不取 150。
-        // 全局钳 BusinessGatewayIdempotencyKey.MaximumLength = 150 会让 151..200 的键先撞 409，
+        // 全局钳 BusinessGatewayIdempotencyKey.MaximumLength = 150 会让 151..200 的键先被拒
+        // （#3287 第一步落地后是 400 idempotency-key-too-long；在那之前是 409 idempotency-key-mismatch），
         // 于是 OpenAPI 里新写的 maxLength: 200 对客户端是一句假承诺——该缺陷的真因在全局钳，
         // 归 #3287（该票已追加此侧面）；用一个更小的数在这里掩盖它是打补丁，本票不做。
         [typeof(BusinessConsoleSetMasterDataResourceEnabledRequest)] = [MasterDataLifecycleOperationColumn],

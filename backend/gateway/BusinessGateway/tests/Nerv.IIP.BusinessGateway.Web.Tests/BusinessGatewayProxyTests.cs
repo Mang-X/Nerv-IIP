@@ -936,9 +936,52 @@ public sealed class BusinessGatewayProxyTests
 
         using var response = await client.SendAsync(request);
 
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        // #3287 ①：非法字符是入参形状问题，公开响应必须是 400 + 指名原因的稳定消息。
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        Assert.Equal("idempotency-key-mismatch", document.RootElement.GetProperty("message").GetString());
+        Assert.Equal(
+            "idempotency-key-invalid-characters",
+            document.RootElement.GetProperty("message").GetString());
+        Assert.Equal(400, document.RootElement.GetProperty("code").GetInt32());
+        Assert.Equal(0, masterData.ToolingCallCount);
+    }
+
+    // #3287 ①的真公开面证据：键经 header 进入，绕开端点级 FluentValidation（它只看请求体），
+    // 因此这一格隔离出来的正是全局钳 BusinessGatewayIdempotencyKey.MaximumLength 那条分支。
+    // 151 个 'a' 全部落在 IsAllowed 允许集内，只触犯长度一条规则。
+    [Fact]
+    public async Task Master_data_tooling_write_facade_rejects_over_length_idempotency_before_downstream()
+    {
+        var masterData = new RecordingMasterDataClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/api/business-console/v1/master-data/tooling-assets/usage")
+        {
+            Content = JsonContent.Create(new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                code = "TOOL-001",
+                count = 3L,
+            }),
+        };
+        request.Headers.Add("X-Idempotency-Key", new string('a', 151));
+
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(
+            "idempotency-key-too-long",
+            document.RootElement.GetProperty("message").GetString());
+        Assert.Equal(400, document.RootElement.GetProperty("code").GetInt32());
         Assert.Equal(0, masterData.ToolingCallCount);
     }
 

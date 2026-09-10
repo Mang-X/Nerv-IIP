@@ -93,10 +93,14 @@ internal static class BusinessGatewayIdempotencyKey
         }
 
         var normalized = value.Trim();
-        if (normalized.Length > MaximumLength
-            || normalized.Any(ch => !IsAllowed(ch)))
+        if (normalized.Length > MaximumLength)
         {
-            throw Mismatch();
+            throw TooLong();
+        }
+
+        if (normalized.Any(ch => !IsAllowed(ch)))
+        {
+            throw InvalidCharacters();
         }
 
         return normalized;
@@ -112,8 +116,39 @@ internal static class BusinessGatewayIdempotencyKey
             or '/'
             or '-';
 
+    /// <summary>
+    /// 409 只留给「同一请求里出现了两个互不相同的幂等键」这一件事。本文件里有且只有
+    /// 三个调用点，覆盖它的全部形态（改动本方法射程时请连同这份枚举一起改）：
+    /// <list type="number">
+    /// <item><description><see cref="Resolve{TRequest}"/>：标准头、legacy 头与请求体三者归一化后不一致。</description></item>
+    /// <item><description><see cref="ResolveForAudit"/>：同上，只是键取自审计路径的 body 对象。</description></item>
+    /// <item><description><see cref="NormalizeHeaders"/>：<b>同一个头名重复出现</b>且多个取值归一化后不一致
+    /// （例如两行 <c>Idempotency-Key</c>）——这一条不在上面两条的「三来源」枚举里。</description></item>
+    /// </list>
+    /// 共同点是调用方需要去查「是不是同一个键被用在了别的意图上」。输入本身的形状问题
+    /// （超长、非法字符）不属于冲突，见 <see cref="TooLong"/> 与 <see cref="InvalidCharacters"/>。
+    /// </summary>
     private static BusinessServiceProxyException Mismatch() =>
         BusinessServiceProxyException.FromSafeDownstreamMessage(
             HttpStatusCode.Conflict,
             "idempotency-key-mismatch");
+
+    /// <summary>
+    /// 幂等键超过 <see cref="MaximumLength"/>。这是入参超长，不是键冲突，所以是 400 而不是 409：
+    /// 409 会把调用方引到「查查这个键是不是重复用了」的方向，而真正要做的是把键改短。
+    /// 本方法不改变值域——被拒的输入集合与改动前逐字相同，只改状态码与稳定消息。
+    /// </summary>
+    private static BusinessServiceProxyException TooLong() =>
+        BusinessServiceProxyException.FromSafeDownstreamMessage(
+            HttpStatusCode.BadRequest,
+            "idempotency-key-too-long");
+
+    /// <summary>
+    /// 幂等键含 <see cref="IsAllowed"/> 之外的字符。与 <see cref="TooLong"/> 同理：
+    /// 这是入参形状不合法，不是键冲突，因此是 400。
+    /// </summary>
+    private static BusinessServiceProxyException InvalidCharacters() =>
+        BusinessServiceProxyException.FromSafeDownstreamMessage(
+            HttpStatusCode.BadRequest,
+            "idempotency-key-invalid-characters");
 }

@@ -37,10 +37,12 @@ public sealed class BusinessGatewayIdempotencySafetyTests
         Assert.Equal("idempotency-key-mismatch", exception.Message);
     }
 
+    // #3287 ①：非法字符拒的是入参形状，不是「同一个键被用在了别的意图上」，所以是 400。
+    // 夹具只触犯字符规则一条：两个取值都在 150 字符以内，不会先撞长度上界。
     [Theory]
     [InlineData("contains space")]
     [InlineData("包含中文")]
-    public void Invalid_key_characters_fail_closed(string key)
+    public void Invalid_key_characters_fail_closed_with_a_stable_400(string key)
     {
         var context = new DefaultHttpContext();
         context.Request.Headers["Idempotency-Key"] = key;
@@ -50,8 +52,42 @@ public sealed class BusinessGatewayIdempotencySafetyTests
                 context,
                 new RequestWithIdempotencyKey(null)));
 
-        Assert.Equal(HttpStatusCode.Conflict, exception.StatusCode);
-        Assert.Equal("idempotency-key-mismatch", exception.Message);
+        Assert.Equal(HttpStatusCode.BadRequest, exception.StatusCode);
+        Assert.Equal("idempotency-key-invalid-characters", exception.Message);
+    }
+
+    // #3287 ①：超长拒的是入参超长，不是键冲突。夹具全部使用 IsAllowed 允许的字符，
+    // 因此只触犯长度一条规则——否则相邻的字符守卫会把长度分支的变异一起兜住。
+    [Theory]
+    [InlineData(151)]
+    [InlineData(512)]
+    public void Over_length_key_fails_closed_with_a_stable_400(int length)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Headers["Idempotency-Key"] = new string('a', length);
+
+        var exception = Assert.Throws<BusinessServiceProxyException>(() =>
+            BusinessGatewayIdempotencyKey.Resolve(
+                context,
+                new RequestWithIdempotencyKey(null)));
+
+        Assert.Equal(HttpStatusCode.BadRequest, exception.StatusCode);
+        Assert.Equal("idempotency-key-too-long", exception.Message);
+    }
+
+    // 长度上界本身不动（#3287 第一步零值域变化）：150 字符仍然必须被接受并原样解析。
+    [Fact]
+    public void Key_at_the_maximum_length_is_still_accepted()
+    {
+        var key = new string('a', 150);
+        var context = new DefaultHttpContext();
+        context.Request.Headers["Idempotency-Key"] = key;
+
+        var resolved = BusinessGatewayIdempotencyKey.Resolve(
+            context,
+            new RequestWithIdempotencyKey(null));
+
+        Assert.Equal(key, resolved.IdempotencyKey);
     }
 
     [Fact]
