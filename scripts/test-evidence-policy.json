@@ -1214,7 +1214,7 @@
       "id": "quality-postgres",
       "sourceId": "quality-postgres",
       "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.Quality\\.Web\\.Tests\\.(?:PeriodicInspectionPostgresConcurrencyTests|PeriodicInspectionPostgresContinuationTests|PeriodicInspectionPostgresMigrationTests|QualityCalibrationRecordQueryTests|QualityCapaRedrivePostgresProfileTests|QualityInspectionTaskPostgresProfileTests|QualityNcrDispositionPostgresProfileTests|QualityReasonPostgresProfileTests|QualityReinspectionPostgresProfileTests|QualitySpcAnalysisTests|WorkOrderReleaseFactBacklogPostgresTests|WorkOrderReleaseProjectionBackfillPostgresTests|WorldHistoryQualitySeedPostgresTests)\\..+$",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Quality\\.Web\\.Tests\\.(?:InspectionRecordSourceLinePostgresTests|PeriodicInspectionPostgresConcurrencyTests|PeriodicInspectionPostgresContinuationTests|PeriodicInspectionPostgresMigrationTests|QualityCalibrationRecordQueryTests|QualityCapaRedrivePostgresProfileTests|QualityInspectionTaskPostgresProfileTests|QualityNcrDispositionPostgresProfileTests|QualityReasonPostgresProfileTests|QualityReinspectionPostgresProfileTests|QualitySpcAnalysisTests|WorkOrderReleaseFactBacklogPostgresTests|WorkOrderReleaseProjectionBackfillPostgresTests|WorldHistoryQualitySeedPostgresTests)\\..+$",
       "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run Quality PostgreSQL profile tests\\.$",
       "allowedLanes": [
         "backend"
@@ -1225,6 +1225,8 @@
       "expiresOn": null,
       "exitCondition": null,
       "testIdentities": [
+        "Nerv.IIP.Business.Quality.Web.Tests.InspectionRecordSourceLinePostgresTests.Migration_leaves_existing_records_without_a_source_line_and_keeps_their_dedup_group_protected",
+        "Nerv.IIP.Business.Quality.Web.Tests.InspectionRecordSourceLinePostgresTests.Two_operations_of_the_same_work_order_and_sku_persist_as_independent_records_on_postgres",
         "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresConcurrencyTests.Concurrent_quantity_reports_create_each_window_once_and_atomically_advance_watermark_on_postgres",
         "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresConcurrencyTests.Concurrent_same_event_id_uses_one_inbox_fact_and_resumes_a_supported_bounded_backlog_on_postgres",
         "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresConcurrencyTests.Concurrent_time_generation_creates_one_window_task_and_atomically_advances_watermark_on_postgres",
@@ -1254,7 +1256,7 @@
         "Nerv.IIP.Business.Quality.Web.Tests.WorkOrderReleaseProjectionBackfillPostgresTests.Backfill_commits_the_window_baseline_and_the_yielded_sku_under_real_constraints_on_postgres",
         "Nerv.IIP.Business.Quality.Web.Tests.WorldHistoryQualitySeedPostgresTests.Full_scale_history_seed_stays_within_the_startup_budget_and_reruns_clean"
       ],
-      "expectedRuntimeTestCount": 28
+      "expectedRuntimeTestCount": 30
     },
     {
       "id": "masterdata-postgres",

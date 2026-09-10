@@ -274,6 +274,7 @@ public sealed class QualityFirstArticleMesQualityHoldAcceptanceTests
             FirstArticleInspection.SourceType,
             FirstArticleInspection.SourceService,
             FirstArticleInspection.SourceDocumentId(workOrderId, operationTaskId),
+            sourceDocumentLineId: null,
             Sku,
             1m,
             null,

@@ -447,7 +447,7 @@ try {
     # Quality 同理：provider 类中只有这批是真实 PostgreSQL 证明；Periodic Inspection 的
     # 窄 harness 另行纳入数据库 builder 归属核验，但不承载测试身份。
     $qualityMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'quality-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($qualityMember.expectedTestIdentities).Count -eq 27) 'The Quality member must freeze exactly its twenty-seven governed PostgreSQL identities.'
+    Assert-Contract (@($qualityMember.expectedTestIdentities).Count -eq 29) 'The Quality member must freeze exactly its twenty-nine governed PostgreSQL identities.'
     Assert-Contract (@($qualityMember.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$qualityMember.diagnosticSchemas[0], 'quality', [StringComparison]::Ordinal)) 'Quality business and CAP tables share one schema, which the member must declare.'
     # Quality lane 的扫描面**从冻结身份派生**，与下面 MES lane 同一口径，不再手工列举：
     # 手工名单记的是写名单那一刻的世界，后来者静默漏掉，而漏登记就是漏防线——
@@ -495,7 +495,7 @@ try {
         Assert-Contract ($historyOverrides -eq $rawNpgsqlBuilders) "Every raw DbContext option builder in '$qualitySource' must pin __EFMigrationsHistory to the quality schema; observed $rawNpgsqlBuilders builders and $historyOverrides pinned."
         $qualityPinnedBuilders += $historyOverrides
     }
-    Assert-Contract ($qualityPinnedBuilders -eq 6) 'The Quality lane sources must keep exactly their six pinned raw builders; a new unpinned one silently reintroduces the public-schema history table.'
+    Assert-Contract ($qualityPinnedBuilders -eq 7) 'The Quality lane sources must keep exactly their seven pinned raw builders; a new unpinned one silently reintroduces the public-schema history table.'
 
     $telemetryMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'industrialtelemetry-postgres-profile' -RepositoryRoot $repoRoot
     Assert-Contract (@($telemetryMember.expectedTestIdentities).Count -eq 16) 'The IndustrialTelemetry member must freeze exactly its sixteen governed PostgreSQL identities.'

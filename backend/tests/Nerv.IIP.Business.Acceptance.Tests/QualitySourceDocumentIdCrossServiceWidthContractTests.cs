@@ -28,13 +28,33 @@ namespace Nerv.IIP.Business.Acceptance.Tests;
 /// <item><see cref="First_article_composite_identity_at_the_mes_id_upper_bound_fits_every_receiving_column"/>：
 /// 首件复合身份的上界由 **MES 工单 id / 工序任务 id 列宽**派生，复合拼法取自生产代码
 /// <c>FirstArticleInspection.SourceDocumentId</c>——复合构成被加长（多一段、分隔符变长）即红；</item>
-/// <item><see cref="Periodic_source_line_identity_at_its_structural_upper_bound_fits_every_receiving_column"/>：
+/// <item><see cref="Periodic_source_line_identity_at_its_structural_upper_bound_fits_its_own_carrier_columns"/>：
 /// 周期检来源行身份的上界由 **Quality 工序 id 列宽 + 最长 kind + Guid "D" 位数 + long 最大位数**派生，
 /// 拼法取自生产代码 <c>PeriodicInspectionSourceLine.LineId</c>；</item>
-/// <item><see cref="Quality_task_side_identity_columns_never_exceed_the_record_side_producer_column"/>：
-/// 任务侧那两列的取值会经 <c>InspectionTask.InspectionRecordSourceDocumentId()</c> 变成检验记录的来源身份，
-/// 因此它们不得宽于检验记录那一列。</item>
+/// <item><see cref="Quality_task_side_identity_columns_never_exceed_their_record_side_counterparts"/>：
+/// 任务侧那两列的取值会**逐列**搬到检验记录的同名列上；来源单据列要求任务侧不宽于记录侧，
+/// 来源行列要求两侧**等宽**（记录侧那一列的唯一非空写入者就是任务侧的拷贝）。</item>
 /// </list>
+///
+/// <para><b>#3319 改写了后两条的前提，没有删掉它们。</b>改前任务侧的来源单据与来源行两列会经
+/// <c>InspectionTask.InspectionRecordSourceDocumentId()</c> 二选一地变成检验记录的**同一列**
+/// （<c>inspection_records.source_document_id</c>），周期检因此把复合来源行送过服务边界。
+/// 该二分已整段退休：检验记录多了 <c>source_document_line_id</c>，两列各搬各的。
+/// 于是——
+/// <list type="bullet">
+/// <item>第 4 条从「两列都 ≤ 记录侧来源单据列」改写成「按列配对」。
+/// <b>改写后与改写前不可比，不是它的超集</b>：改前那条的额外强度绑在已经不存在的二分上
+/// （来源行会被搬进记录侧的**来源单据**列），今天两列同为 250 才使两个形态恰好等价。
+/// 把记录侧来源行列单边放宽到 500、任务侧放到 300，改前那条必红（300 &gt; 250）而「逐列 ≤」会绿——
+/// 那正是改写**放弃**的那一段耦合。为了不把这段强度白丢，来源行那一列改成**等宽**断言：
+/// 记录侧更窄 = 任务侧取值搬过去时溢出，记录侧更宽 = 一段永远到不了的幽灵宽度
+/// （该列的非空取值只有一个来源：<c>CreateInspectionRecordFromTaskCommand</c> 拷贝任务侧那一列；
+/// 直录录入命令恒写 null，复检拷贝上一条）。等宽在上面那格变异下报红。</item>
+/// <item>第 3 条的承接列从 MES 侧那几列改写成 Quality 侧的来源行两列——周期检来源行不再进
+/// <c>payload.SourceDocumentId</c>（那一列现在是工单公开 id），它**不再跨服务**，
+/// 因此对 MES 列宽的要求已不是它的约束。放弃的正是这一段，且是因为它真的不成立了，
+/// 不是因为不方便断言。首件复合身份仍进 <c>payload.SourceDocumentId</c>，第 2 条原样保留。</item>
+/// </list></para>
 ///
 /// **合同分类**（<c>docs/governance/testing/validity.md</c>）：<c>ProviderBehavior</c> + <c>Regression</c>。
 /// <c>ProviderBehavior</c> 的权威来源是两侧的 migration / EntityConfiguration 列宽约束；
@@ -55,6 +75,9 @@ namespace Nerv.IIP.Business.Acceptance.Tests;
 public sealed class QualitySourceDocumentIdCrossServiceWidthContractTests
 {
     private const string SourceDocumentIdColumn = "source_document_id";
+
+    /// <summary>#3319 起来源行有自己的列，任务侧与记录侧同名。</summary>
+    private const string SourceDocumentLineIdColumn = "source_document_line_id";
 
     /// <summary>
     /// MES 模型里 <c>source_document_id</c> 这一列的**具名豁免**：<c>work_orders</c> 的同名列属于
@@ -124,8 +147,12 @@ public sealed class QualitySourceDocumentIdCrossServiceWidthContractTests
         AssertFitsEveryReceivingColumn(composite, "首件复合来源身份");
     }
 
+    /// <summary>
+    /// #3319 后周期检来源行留在 Quality 自己的两列里（任务侧与记录侧的 <c>source_document_line_id</c>），
+    /// 不再经 <c>payload.SourceDocumentId</c> 过界，因此它的承接列就是这两列。
+    /// </summary>
     [Fact]
-    public void Periodic_source_line_identity_at_its_structural_upper_bound_fits_every_receiving_column()
+    public void Periodic_source_line_identity_at_its_structural_upper_bound_fits_its_own_carrier_columns()
     {
         using var quality = CreateQualityModelOnlyDbContext();
         var qualityModel = quality.GetService<IDesignTimeModel>().Model;
@@ -144,27 +171,48 @@ public sealed class QualitySourceDocumentIdCrossServiceWidthContractTests
             long.MaxValue);
 
         Assert.True(
-            lineId.Length > PreChangeMesReceivingWidth,
-            $"周期检来源行身份上界 {lineId.Length} 未超过改前列宽 {PreChangeMesReceivingWidth}；"
-            + "若这条不再成立，说明周期检那一支已不在本缺陷射程内，需要重述而不是删掉断言。");
-        AssertFitsEveryReceivingColumn(lineId, "周期检复合来源行身份");
+            lineId.Length > operationIdWidth,
+            "周期检来源行身份必须严格长于工序 id 段，否则本用例退化为同义反复。");
+        foreach (var table in new[] { "inspection_tasks", QualityProducerTable })
+        {
+            var width = ColumnWidth(qualityModel, table, SourceDocumentLineIdColumn);
+            Assert.True(
+                lineId.Length <= width,
+                $"周期检复合来源行身份上界 {lineId.Length} 超出承接列 {table}.{SourceDocumentLineIdColumn} 的 {width}。");
+        }
     }
 
+    /// <summary>
+    /// 任务侧的来源单据与来源行两列，自 #3319 起**逐列**搬到检验记录的同名列上
+    /// （改前是二选一地搬进记录侧的来源单据那一列）。因此约束按列配对，不再共用一个上界。
+    ///
+    /// <para>两列的约束强度不同，因为写入者数量不同：</para>
+    /// <list type="bullet">
+    /// <item><b>来源单据列只能要求「不宽于」</b>：记录侧那一列另有写入者（直录录入命令、
+    /// 首件的复合来源身份），把它钉成等宽会在那些写入者需要更宽时报**假红**。</item>
+    /// <item><b>来源行列要求「等宽」</b>：记录侧那一列的非空取值只有一个来源——
+    /// <c>CreateInspectionRecordFromTaskCommand</c> 原样拷贝任务侧那一列（直录录入命令恒写 null，
+    /// 复检拷贝上一条，种子两侧同源）。因此记录侧更宽的那一段是**永远到不了的幽灵宽度**，
+    /// 更窄则是搬运时溢出，两个方向都该红。</item>
+    /// </list>
+    /// </summary>
     [Fact]
-    public void Quality_task_side_identity_columns_never_exceed_the_record_side_producer_column()
+    public void Quality_task_side_identity_columns_never_exceed_their_record_side_counterparts()
     {
         using var quality = CreateQualityModelOnlyDbContext();
         var qualityModel = quality.GetService<IDesignTimeModel>().Model;
-        var producerWidth = ColumnWidth(qualityModel, QualityProducerTable, SourceDocumentIdColumn);
 
-        // InspectionTask.InspectionRecordSourceDocumentId() 会把这两列之一变成检验记录的来源身份，
-        // 于是它们的宽度共同决定了产出侧的实际上界。
+        var taskDocumentWidth = ColumnWidth(qualityModel, "inspection_tasks", SourceDocumentIdColumn);
+        var recordDocumentWidth = ColumnWidth(qualityModel, QualityProducerTable, SourceDocumentIdColumn);
         Assert.True(
-            ColumnWidth(qualityModel, "inspection_tasks", SourceDocumentIdColumn) <= producerWidth,
-            "inspection_tasks.source_document_id 宽于 inspection_records.source_document_id：任务侧取值搬到记录侧时会自己溢出。");
-        Assert.True(
-            ColumnWidth(qualityModel, "inspection_tasks", "source_document_line_id") <= producerWidth,
-            "inspection_tasks.source_document_line_id 宽于 inspection_records.source_document_id：周期检来源行搬到记录侧时会自己溢出。");
+            taskDocumentWidth <= recordDocumentWidth,
+            $"inspection_tasks.{SourceDocumentIdColumn} 宽 {taskDocumentWidth}，宽于 "
+            + $"{QualityProducerTable}.{SourceDocumentIdColumn} 的 {recordDocumentWidth}："
+            + "任务侧取值原样搬到记录侧时会自己溢出。");
+
+        Assert.Equal(
+            ColumnWidth(qualityModel, "inspection_tasks", SourceDocumentLineIdColumn),
+            ColumnWidth(qualityModel, QualityProducerTable, SourceDocumentLineIdColumn));
     }
 
     private static void AssertFitsEveryReceivingColumn(string identity, string label)
