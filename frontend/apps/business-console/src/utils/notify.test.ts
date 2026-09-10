@@ -40,10 +40,30 @@ describe('friendlyErrorMessage', () => {
       '工单完工回执异常，请刷新后重试；仍失败请联系管理员。',
     ],
     ['idempotency-conflict', '该操作标识已用于其他内容，请刷新后重新发起。'],
+    ['idempotency-key-too-long', '操作标识过长，本次未提交；请重新发起，仍失败请联系管理员。'],
+    [
+      'idempotency-key-invalid-characters',
+      '操作标识含不支持的字符，本次未提交；请重新发起，仍失败请联系管理员。',
+    ],
     ['lifecycle-conflict', '状态已被其他操作更新'],
   ])('把稳定错误值 %s 映射为精确中文文案', (wireValue, message) => {
     expect(friendlyErrorMessage({ message: wireValue }, '原有兜底')).toBe(message)
   })
+
+  // #3287：这两条码必须**先**被稳定表短路。下面那条通用正则
+  // `/\b409\b|conflict|idempotency|intent|lifecycle|already bound/i` 是按**子串**匹配的，
+  // `idempotency-key-too-long` 会命中 `idempotency` 并回「操作意图发生冲突」——
+  // 那正是这两条错误码要消灭的误导。这一格断言的是「没有回那句」，不是「表里有条目」。
+  it.each(['idempotency-key-too-long', 'idempotency-key-invalid-characters'])(
+    '%s 不再落到通用冲突正则的「操作意图发生冲突」文案',
+    (wireValue) => {
+      const message = friendlyErrorMessage({ message: wireValue }, '原有兜底')
+      expect(message).not.toContain('冲突')
+      expect(message).not.toContain('刷新列表并核实最新状态')
+      expect(message).not.toContain(wireValue)
+      expect(message).toContain('本次未提交')
+    },
+  )
 
   it('未登记的稳定值继续使用原有兜底，不猜测文案', () => {
     expect(friendlyErrorMessage({ message: 'future-stable-error' }, '原有兜底')).toBe('原有兜底')

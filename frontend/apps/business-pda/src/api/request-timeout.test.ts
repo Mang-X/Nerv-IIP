@@ -162,6 +162,12 @@ describe('describeRequestError', () => {
       '工单完工回执异常，请刷新后重试；仍失败请联系管理员。',
     ],
     [409, 'idempotency-conflict', '该操作标识已用于其他内容，请刷新后重新发起。'],
+    [400, 'idempotency-key-too-long', '操作标识过长，本次未提交；请重新发起，仍失败请联系管理员。'],
+    [
+      400,
+      'idempotency-key-invalid-characters',
+      '操作标识含不支持的字符，本次未提交；请重新发起，仍失败请联系管理员。',
+    ],
     [409, 'lifecycle-conflict', '状态已被其他操作更新'],
   ])(
     'shows stable wire value %s/%s as exact Chinese without changing determinate status',
@@ -186,6 +192,20 @@ describe('describeRequestError', () => {
       describeRequestError({ status: 409, message: 'future-stable-error' }, '原有兜底').message,
     ).toContain('状态已变化')
   })
+
+  // #3287：400 在 actionableHttpMessage 里没有本地文案（只覆盖 401/403/404/409/422/5xx），
+  // 回落链是 `actionableMessage ?? serverMessage ?? fallback` —— serverMessage 排在 fallback
+  // **之前**且非空，所以未登记时屏上就是裸英文码。这一格断言的是「屏上没有裸码」。
+  it.each(['idempotency-key-too-long', 'idempotency-key-invalid-characters'])(
+    'never surfaces the raw wire value %s to the operator on a 400',
+    (wireValue) => {
+      const result = describeRequestError({ status: 400, message: wireValue }, '原有兜底')
+      expect(result.message).not.toContain(wireValue)
+      expect(result.message).not.toBe('原有兜底')
+      expect(result.message).toContain('本次未提交')
+      expect(result).toMatchObject({ kind: 'business', status: 400, indeterminate: false })
+    },
+  )
 
   it('keeps a 5xx indeterminate even when its body contains a known stable wire value', () => {
     expect(describeRequestError({ status: 503, message: 'lifecycle-conflict' })).toMatchObject({

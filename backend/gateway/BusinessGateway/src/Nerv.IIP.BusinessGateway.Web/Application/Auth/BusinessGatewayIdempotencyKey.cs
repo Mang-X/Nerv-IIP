@@ -117,10 +117,16 @@ internal static class BusinessGatewayIdempotencyKey
             or '-';
 
     /// <summary>
-    /// 409 只留给「同一请求的多个幂等键来源互相不一致」这一件事：标准头、legacy 头与请求体
-    /// 归一化后给出两个不同的值，调用方需要去查「是不是同一个键被用在了别的意图上」。
-    /// 输入本身的形状问题（超长、非法字符）不属于冲突，见 <see cref="TooLong"/> 与
-    /// <see cref="InvalidCharacters"/>。
+    /// 409 只留给「同一请求里出现了两个互不相同的幂等键」这一件事。本文件里有且只有
+    /// 三个调用点，覆盖它的全部形态（改动本方法射程时请连同这份枚举一起改）：
+    /// <list type="number">
+    /// <item><description><see cref="Resolve{TRequest}"/>：标准头、legacy 头与请求体三者归一化后不一致。</description></item>
+    /// <item><description><see cref="ResolveForAudit"/>：同上，只是键取自审计路径的 body 对象。</description></item>
+    /// <item><description><see cref="NormalizeHeaders"/>：<b>同一个头名重复出现</b>且多个取值归一化后不一致
+    /// （例如两行 <c>Idempotency-Key</c>）——这一条不在上面两条的「三来源」枚举里。</description></item>
+    /// </list>
+    /// 共同点是调用方需要去查「是不是同一个键被用在了别的意图上」。输入本身的形状问题
+    /// （超长、非法字符）不属于冲突，见 <see cref="TooLong"/> 与 <see cref="InvalidCharacters"/>。
     /// </summary>
     private static BusinessServiceProxyException Mismatch() =>
         BusinessServiceProxyException.FromSafeDownstreamMessage(
