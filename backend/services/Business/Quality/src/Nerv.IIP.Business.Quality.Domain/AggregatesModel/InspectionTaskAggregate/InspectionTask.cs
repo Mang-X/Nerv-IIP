@@ -42,10 +42,6 @@ public sealed class InspectionTask : Entity<InspectionTaskId>, IAggregateRoot
             Required(triggerIdempotencyKey),
             nameof(triggerIdempotencyKey));
         SourceDocumentLineId = Optional(sourceDocumentLineId);
-        if (IsPeriodicTrigger(TriggerIdempotencyKey) && SourceDocumentLineId is null)
-        {
-            throw new ArgumentException("Periodic inspection tasks require a stable source document line.", nameof(sourceDocumentLineId));
-        }
         SkuCode = Required(skuCode);
         Quantity = Positive(quantity, nameof(quantity));
         UomCode = Required(uomCode);
@@ -122,9 +118,6 @@ public sealed class InspectionTask : Entity<InspectionTaskId>, IAggregateRoot
             dueAtUtc,
             triggerIdempotencyKey);
     }
-
-    public string InspectionRecordSourceDocumentId() =>
-        IsPeriodicTrigger(TriggerIdempotencyKey) ? SourceDocumentLineId! : SourceDocumentId;
 
     public void Start(string assignedUserId, DateTimeOffset startedAtUtc)
     {
@@ -289,9 +282,6 @@ public sealed class InspectionTask : Entity<InspectionTaskId>, IAggregateRoot
             ? normalized
             : throw new ArgumentException($"Unsupported value '{value}'.", parameterName);
     }
-
-    private static bool IsPeriodicTrigger(string triggerIdempotencyKey) =>
-        PeriodicInspectionSourceLine.IsPeriodicTriggerKey(triggerIdempotencyKey);
 }
 
 public sealed class InspectionTaskAlreadyClaimedException()
