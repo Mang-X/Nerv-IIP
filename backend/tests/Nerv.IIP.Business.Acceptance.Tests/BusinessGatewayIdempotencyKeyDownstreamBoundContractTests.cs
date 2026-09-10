@@ -364,23 +364,29 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
             "DemandPlanning");
 
     /// <summary>
-    /// 下游**零**幂等键长度权威的封闭豁免集。
+    /// 下游**零**幂等键长度权威的封闭豁免集。**目前为空**。
     /// </summary>
     /// <remarks>
-    /// 进这份集合的门槛是「已穷举下游、确认它对键长度不施加任何约束」，不是「暂时没查到」。
-    /// 目前唯一一项：Wms 受控分配家族。5 条命令
-    /// （<c>AssignInboundOrder / AssignPutawayTask / AssignOutboundOrder / AssignPickingTask /
-    /// AssignCountExecution</c>）逐条枚举 <c>AbstractValidator&lt;C&gt;</c> 命中数均为 0，
-    /// 唯一校验器 <c>WarehouseAssignmentCommandValidator&lt;TCommand&gt;</c>
-    /// （<c>WarehouseAssignmentCommands.cs:120</c>）是 sealed 开放泛型且全仓零引用，从未被闭合；
-    /// 落库列 <c>warehouse_assignment_receipts.idempotency_key</c>(128) 存的是
-    /// <c>WmsText.IdempotencyKey</c> 派生出的定长 75 字符值，不约束原始键。
-    /// ⇒ 对这个位点**网关端点级规则是唯一的长度防线**，理由是下游命令层零校验（#3291），不是列宽。
+    /// <para>进这份集合的门槛是「已穷举下游、确认它对键长度不施加任何约束」，不是「暂时没查到」。</para>
+    /// <para><b>唯一曾经的一项已于 #3291 退役</b>：Wms 受控分配家族
+    /// （<c>BusinessConsoleAssignWmsResourceRequest</c>）当时下游 5 条命令零校验——
+    /// 规则全写在 sealed 开放泛型 <c>WarehouseAssignmentCommandValidator&lt;TCommand&gt;</c> 上，
+    /// 无法派生闭合、程序集扫描也不注册泛型定义，实测真实 host 里 <c>IValidator&lt;C&gt;</c> 解析数均为 0。
+    /// #3291 改成「静态辅助 + 5 个具体校验器」姿势后，这 5 条命令各有可解析的 128 上界，
+    /// 该位点因此从豁免集移出、登记为 <c>validator(...)</c>×5 参与不等式。</para>
+    /// <para><b>集合为空不等于本条断言退化</b>：
+    /// <see cref="Only_pinned_requests_are_registered_without_a_downstream_authority"/> 是双向的——
+    /// 任何人把某个位点改登记成 <see cref="NoDownstreamAuthority"/> 让它退出不等式，
+    /// 而不同时往这份集合里加一项，立刻红。空集是「今天没有任何位点需要退出不等式」这一事实本身，
+    /// 不要为了让机制「看起来在用」而留一个假项。</para>
+    /// <para><b>这条断言不会自己退役（#3291 实测，写清楚避免误信）</b>：它只锁「登记 None 必须同时进集合」
+    /// 这一个方向，**不**验证豁免理由今天是否还成立。实测过：只落 Wms 侧的 5 个具体校验器、
+    /// 本文件一字不动，本类 5 条断言全部照绿——豁免项不会因为下游长出权威而报红。
+    /// 所以下游修复时必须**人工**把对应位点从这里移出并登记真实权威；
+    /// 想要真正的自动退役，得让 <see cref="NoDownstreamAuthority"/> 携带它声称「无约束」的下游命令类型，
+    /// 并断言那些类型解析出的上界确实为 0。今天集合为空，没有位点可以承载这个机制，故不预建。</para>
     /// </remarks>
-    private static readonly HashSet<Type> RequestsWithoutDownstreamAuthority =
-    [
-        typeof(BusinessConsoleAssignWmsResourceRequest),
-    ];
+    private static readonly HashSet<Type> RequestsWithoutDownstreamAuthority = [];
 
     /// <summary>
     /// 「网关请求类型 → 下游权威」的登记表。**这张表是手写的链接，数值不是**：
@@ -408,10 +414,22 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
             [Command<ReportWarehouseTaskExceptionCommand>()],
         [typeof(BusinessConsoleCompleteWmsWarehouseTaskRequest)] = [Command<CompleteWarehouseTaskActionCommand>()],
 
-        // 分配家族下游零校验（见 RequestsWithoutDownstreamAuthority 的说明与 #3291）：
-        // 不为了让表格好看而填一个数——填任何数都是编造权威。
+        // 分配家族：一个网关端点族（5 个 endpoint 共用同一个 request 类型）转发到 5 条不同的下游命令，
+        // 所以 5 条全部登记、有效上界取其中最小（#3281 判据）。
+        // #3291 之前这 5 条命令的规则挂在从未闭合的 sealed 开放泛型校验器上、一条都没跑过，
+        // 此处曾登记为 None；修复后各自有具体校验器（WarehouseAssignmentValidation.Configure，
+        // IdempotencyKey MaximumLength(128)），由 Wms 侧
+        // WarehouseAssignmentValidatorRegistrationTests 从真实 host 容器与 MediatR 管道两面钉住。
+        // 落库列 warehouse_assignment_receipts.idempotency_key(128) 存的是 WmsText.IdempotencyKey
+        // 派生的 75 字符定长值，对原始键零约束，仍**不**登记为权威。
         [typeof(BusinessConsoleAssignWmsResourceRequest)] =
-            [None("Wms 受控分配家族 5 条命令均无具体校验器，唯一开放泛型校验器从未闭合；#3291")],
+        [
+            Command<AssignInboundOrderCommand>(),
+            Command<AssignPutawayTaskCommand>(),
+            Command<AssignOutboundOrderCommand>(),
+            Command<AssignPickingTaskCommand>(),
+            Command<AssignCountExecutionCommand>(),
+        ],
 
         [typeof(BusinessConsoleCompleteWmsInboundOrderRequest)] = [Command<CompleteInboundOrderCommand>()],
         [typeof(BusinessConsoleCompleteWmsOutboundOrderRequest)] = [Command<CompleteOutboundOrderCommand>()],
@@ -437,7 +455,8 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
         [typeof(BusinessConsoleCreateTeamRequest)] = [MasterDataCodeKeyColumn],
         [typeof(BusinessConsoleCreateDepartmentRequest)] = [MasterDataCodeKeyColumn],
         // 这处端点级值取 200（= 下游 master_data_lifecycle_audit.operation_id 列宽），不取 150。
-        // 全局钳 BusinessGatewayIdempotencyKey.MaximumLength = 150 会让 151..200 的键先撞 409，
+        // 全局钳 BusinessGatewayIdempotencyKey.MaximumLength = 150 会让 151..200 的键先被拒
+        // （#3287 第一步落地后是 400 idempotency-key-too-long；在那之前是 409 idempotency-key-mismatch），
         // 于是 OpenAPI 里新写的 maxLength: 200 对客户端是一句假承诺——该缺陷的真因在全局钳，
         // 归 #3287（该票已追加此侧面）；用一个更小的数在这里掩盖它是打补丁，本票不做。
         [typeof(BusinessConsoleSetMasterDataResourceEnabledRequest)] = [MasterDataLifecycleOperationColumn],

@@ -16,6 +16,11 @@ describe('stableErrorMessage', () => {
       '工单完工回执异常，请刷新后重试；仍失败请联系管理员。',
     ],
     ['idempotency-conflict', '该操作标识已用于其他内容，请刷新后重新发起。'],
+    ['idempotency-key-too-long', '操作标识过长，本次未提交；请重新发起，仍失败请联系管理员。'],
+    [
+      'idempotency-key-invalid-characters',
+      '操作标识含不支持的字符，本次未提交；请重新发起，仍失败请联系管理员。',
+    ],
     ['lifecycle-conflict', '状态已被其他操作更新'],
   ])('maps the exact stable wire value %s to actionable Chinese', (wireValue, message) => {
     expect(stableErrorMessage(wireValue)).toBe(message)
