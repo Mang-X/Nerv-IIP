@@ -1,6 +1,8 @@
 using System.Reflection;
 using FluentValidation;
+using FluentValidation.Internal;
 using FluentValidation.Results;
+using FluentValidation.Validators;
 using MediatR;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -31,11 +33,24 @@ namespace Nerv.IIP.Business.Wms.Web.Tests;
 /// 这个缺陷**编译期完全无声**：类照样编译、规则照样写得整整齐齐。
 /// 所以这里断言的落点必须是「容器解析得到」与「管道里跑到」，而不是「源码里有这些 RuleFor」。</para>
 ///
-/// <para><b>值域怎么来</b>：命令集合由**反射** Wms.Web 程序集里
-/// <see cref="IWarehouseAssignmentCommand"/> 的全部具体实现得到，不是手写名单。
-/// <see cref="Fixtures"/> 只提供各命令的构造夹具，其键集必须与反射集合逐一相等
+/// <para><b>两层值域都不是手写名单</b>：</para>
+/// <list type="number">
+/// <item><b>命令值域</b>由**反射** Wms.Web 程序集里 <see cref="IWarehouseAssignmentCommand"/>
+/// 的全部具体实现得到。<see cref="Fixtures"/> 只提供各命令的构造夹具，其键集必须与反射集合逐一相等
 /// （<see cref="Every_assignment_command_has_a_fixture"/>），
-/// 新增第 6 条分配命令而不给它校验器或夹具都会红。</para>
+/// 新增第 6 条分配命令而不给它校验器或夹具都会红。</item>
+/// <item><b>规则分量值域</b>由**校验器自己建出来的规则树**得到：遍历
+/// <see cref="IValidationRule"/> 及其 <see cref="IRuleComponent"/>，
+/// 键取 <c>(成员, 是否集合元素规则, 分量校验器名)</c>。
+/// <see cref="Every_rule_discriminates_on_every_assignment_command"/> 断言
+/// 「声明出来的分量集合」与「15 个违例格实际打红的分量集合」**双向相等**。
+/// ⇒ 删掉任意一个违例格 ⇒ 有分量没被打红 ⇒ 红；
+/// 新增一条规则而不补格 ⇒ 同样红。覆盖面不再是手写名单。</item>
+/// </list>
+/// <para><b>为什么必须细到「分量」而不是「成员」</b>：成员级覆盖挡不住删格——
+/// 删掉「OrganizationId 空」之后「OrganizationId 超 100」仍然覆盖着同一个成员，
+/// 名单缩水而门禁照绿。分量级把 <c>NotEmptyValidator</c> 与 <c>MaximumLengthValidator</c>
+/// 当成两个必须各自被打红的位点。</para>
 ///
 /// <para><b>本类不证明什么</b>：不证明网关侧上界与这里一致（那是
 /// <c>BusinessGatewayIdempotencyKeyDownstreamBoundContractTests</c> 的射程）；
@@ -43,6 +58,14 @@ namespace Nerv.IIP.Business.Wms.Web.Tests;
 /// 的 SHA256 派生值，列宽对原始键零约束）；
 /// 端到端那条只对每条命令各跑一格违例 + 一格异字段对照，
 /// 逐字段的鉴别力由 <see cref="Every_rule_discriminates_on_every_assignment_command"/> 承担。</para>
+///
+/// <para><b>「× 5 条命令」这一维的真实鉴别力（写明口径，别把 120 格读成 120 份）</b>：
+/// 5 条命令共用同一份 <c>WarehouseAssignmentValidation.Configure&lt;TCommand&gt;</c>，
+/// 所以对**规则级**变异（改上界、删规则）这 5 份是**等价输入**——
+/// 规则级鉴别力只有 1 份，实测 M6–M10 每格红数均为 1 即此故。
+/// 这一维非等价的只有一条窄面：某条命令的校验器**存在但体内没调 <c>Configure</c>**
+/// （或调了别的规则集），那时只有它那 24 格会红。
+/// 保留 <c>foreach</c> 的代价是一行，收益是这条窄面，但不得据此宣称 120 份独立鉴别力。</para>
 /// </remarks>
 [Collection(WebApplicationFactoryCollection.Name)]
 public sealed class WarehouseAssignmentValidatorRegistrationTests
@@ -161,6 +184,34 @@ public sealed class WarehouseAssignmentValidatorRegistrationTests
     ];
 
     /// <summary>
+    /// 各长度上界的**钉死值**。数值来自承载列宽这一独立第二来源，不是从校验器抄回来的。
+    /// </summary>
+    /// <remarks>
+    /// <para>逐条与 <c>WmsEntityTypeConfigurations.cs</c> 里
+    /// <c>warehouse_assignment_receipts</c> 的承载列宽精确相等：
+    /// <c>PoolCode</c>/<c>pool_code</c>=150、<c>OperatorPrincipalId</c>/<c>operator_principal_id</c>=150、
+    /// <c>AssignerPrincipalId</c>/<c>assigned_by_principal_id</c>=150、
+    /// <c>AuthorizedSiteCodes</c> 每项/<c>site_code</c>=100、
+    /// <c>IdempotencyKey</c>/<c>idempotency_key</c>=128。
+    /// <c>OrganizationId</c>/<c>EnvironmentId</c> 的 100 与全平台租户列宽一致。
+    /// ⇒ 这些数不是「凭空钉的」，也不是「唯一来源是从未执行过的源码」：schema 是独立来源。</para>
+    /// <para><b>为什么要有这张表</b>：<see cref="AtBoundCases"/> 只能钉住**今天已有**的那几条长度规则；
+    /// 新加一条 <c>MaximumLength</c> 而不补 at-bound 格时，分量覆盖断言会逼作者补违例格，
+    /// 却不强制他补上界格，数值就会没人钉。这张表与规则树**双向相等**比对
+    /// （<see cref="Declared_length_bounds_match_the_pinned_table"/>），新增/删除/改值三种方向都红。</para>
+    /// </remarks>
+    private static readonly LengthBound[] PinnedLengthBounds =
+    [
+        new("OrganizationId", false, 100),
+        new("EnvironmentId", false, 100),
+        new("AssignerPrincipalId", false, 150),
+        new("AuthorizedSiteCodes", true, 100),
+        new("PoolCode", false, 150),
+        new("OperatorPrincipalId", false, 150),
+        new("IdempotencyKey", false, 128),
+    ];
+
+    /// <summary>
     /// <see cref="Fixtures"/> 的键集必须**恰好**等于反射出的分配命令集合。
     /// </summary>
     /// <remarks>
@@ -212,12 +263,15 @@ public sealed class WarehouseAssignmentValidatorRegistrationTests
         using var scope = factory.Services.CreateScope();
 
         var failures = new List<string>();
-        var checkedCells = 0;
         foreach (var commandType in AssignmentCommandTypes())
         {
             var validator = (IValidator)scope.ServiceProvider
                 .GetRequiredService(typeof(IValidator<>).MakeGenericType(commandType));
             var build = Fixtures[commandType];
+
+            // 覆盖面的值域由**校验器自己建出来的规则树**给出，不是这个文件里的名单。
+            var declared = DeclaredComponents(validator, commandType, failures);
+            var exercised = new HashSet<RuleComponent>();
 
             // 基线：全字段合法必须零错误。没有它，下面每一格「有错」都可能是「什么都拦」。
             var baseline = Validate(validator, build(Valid));
@@ -228,8 +282,12 @@ public sealed class WarehouseAssignmentValidatorRegistrationTests
 
             foreach (var ruleCase in InvalidCases)
             {
-                checkedCells++;
                 var result = Validate(validator, build(ruleCase.Break(Valid)));
+                foreach (var error in result.Errors)
+                {
+                    exercised.Add(RuleComponent.FromFailure(error));
+                }
+
                 if (result.IsValid)
                 {
                     failures.Add($"{commandType.Name} / {ruleCase.Name}：违例入参被判为合法。");
@@ -262,16 +320,59 @@ public sealed class WarehouseAssignmentValidatorRegistrationTests
 
             foreach (var boundCase in AtBoundCases)
             {
-                checkedCells++;
                 var result = Validate(validator, build(boundCase.Break(Valid)));
                 if (!result.IsValid)
                 {
                     failures.Add($"{commandType.Name} / {boundCase.Name}：恰好取到上界的合法入参被拒：{Describe(result)}");
                 }
             }
+
+            // at-bound 覆盖面同样从规则树派生：每条长度规则都必须有一格「恰好取到它的上界」。
+            // 没有这段，新加一条 MaximumLength 时只会被逼着补违例格（超界会红），
+            // 界在哪则无人钉——而 PinnedLengthBounds 钉的是声明值，钉不到「运行时真的接受 max」。
+            foreach (var (rule, isCollectionElement) in Rules(validator))
+            {
+                var member = NormalizeMember(rule.Member?.Name ?? rule.PropertyName);
+                foreach (var component in rule.Components)
+                {
+                    if (component.Validator is not ILengthValidator { Max: > 0 } length)
+                    {
+                        continue;
+                    }
+
+                    var pinned = AtBoundCases.Any(boundCase =>
+                        MemberLength(boundCase.Break(Valid), member, isCollectionElement) == length.Max);
+                    if (!pinned)
+                    {
+                        failures.Add(
+                            $"{commandType.Name}：长度规则 {new LengthBound(member, isCollectionElement, length.Max)} "
+                            + "没有任何 AtBoundCases 格把它的上界恰好取到，"
+                            + "「超界会红」证不到「界在哪」。");
+                    }
+                }
+            }
+
+            // 双向相等：声明了却没有任何违例格打红它 ⇒ 覆盖面缩水；
+            // 打红了却不在声明里 ⇒ 规则树读法失配。两个方向都必须红。
+            var uncovered = declared.Except(exercised).OrderBy(x => x.ToString(), StringComparer.Ordinal).ToArray();
+            var unexpected = exercised.Except(declared).OrderBy(x => x.ToString(), StringComparer.Ordinal).ToArray();
+            if (uncovered.Length > 0)
+            {
+                failures.Add(
+                    $"{commandType.Name}：校验器声明了这些规则分量，却没有任何违例格把它打红"
+                    + $"（{uncovered.Length}）：{string.Join(", ", uncovered.Select(x => x.ToString()))}。"
+                    + "违例格名单不得少于规则树——要么补格，要么说明为什么这条规则不需要防线。");
+            }
+
+            if (unexpected.Length > 0)
+            {
+                failures.Add(
+                    $"{commandType.Name}：违例格打红了规则树里读不到的分量"
+                    + $"（{unexpected.Length}）：{string.Join(", ", unexpected.Select(x => x.ToString()))}。"
+                    + "多半是规则树读法（成员名归一 / 集合规则判定 / ErrorCode）失配。");
+            }
         }
 
-        Assert.Equal((InvalidCases.Length + AtBoundCases.Length) * Fixtures.Count, checkedCells);
         Assert.True(failures.Count == 0, string.Join("\n", failures));
     }
 
@@ -304,6 +405,162 @@ public sealed class WarehouseAssignmentValidatorRegistrationTests
             Assert.DoesNotContain("128", emptyPool.Message, StringComparison.Ordinal);
         }
     }
+
+    /// <summary>
+    /// 校验器实际声明的长度上界集合必须与 <see cref="PinnedLengthBounds"/> **双向相等**。
+    /// </summary>
+    /// <remarks>
+    /// 这条钉的是**数值本身**（来源是承载列宽，见 <see cref="PinnedLengthBounds"/> 的说明），
+    /// 与「分量被打红了没有」是两件事：把 <c>MaximumLength(128)</c> 改成 <c>(129)</c> 时，
+    /// 分量覆盖那条会因为 129 字符入参不再被拒而红，本条则直接指出 128→129 这个数变了。
+    /// </remarks>
+    [Fact]
+    public async Task Declared_length_bounds_match_the_pinned_table()
+    {
+        await using var factory = CreateHost();
+        using var scope = factory.Services.CreateScope();
+
+        var expected = PinnedLengthBounds
+            .Select(x => x.ToString())
+            .OrderBy(x => x, StringComparer.Ordinal)
+            .ToArray();
+
+        foreach (var commandType in AssignmentCommandTypes())
+        {
+            var validator = (IValidator)scope.ServiceProvider
+                .GetRequiredService(typeof(IValidator<>).MakeGenericType(commandType));
+
+            var actual = new List<string>();
+            foreach (var (rule, isCollectionElement) in Rules(validator))
+            {
+                foreach (var component in rule.Components)
+                {
+                    if (component.Validator is ILengthValidator { Max: > 0 } length)
+                    {
+                        actual.Add(new LengthBound(
+                            NormalizeMember(rule.Member?.Name ?? rule.PropertyName),
+                            isCollectionElement,
+                            length.Max).ToString());
+                    }
+                }
+            }
+
+            Assert.Equal(expected, actual.OrderBy(x => x, StringComparer.Ordinal).ToArray());
+        }
+    }
+
+    /// <summary>
+    /// 读出某个 at-bound 夹具里目标成员的**长度**，用来核对它是否恰好取到该规则的上界。
+    /// </summary>
+    /// <remarks>
+    /// 成员按名字从 <see cref="AssignmentInput"/> 反射取，不维护第二张手写映射表；
+    /// 集合元素规则取集合里最长的那一项（本类的 at-bound 夹具都只放一项）。
+    /// </remarks>
+    private static int? MemberLength(AssignmentInput input, string member, bool collectionElement)
+    {
+        var property = typeof(AssignmentInput).GetProperty(member, BindingFlags.Instance | BindingFlags.Public);
+        var value = property?.GetValue(input);
+        if (collectionElement)
+        {
+            return value is IReadOnlyCollection<string> items && items.Count > 0
+                ? items.Max(item => item?.Length ?? 0)
+                : null;
+        }
+
+        return (value as string)?.Length;
+    }
+
+    /// <summary>校验器规则树里的一个分量：成员 × 是否集合元素规则 × 分量校验器名。</summary>
+    private readonly record struct RuleComponent(string Member, bool CollectionElement, string Validator)
+    {
+        /// <summary>
+        /// 从一条 <see cref="ValidationFailure"/> 反推它命中的分量。
+        /// </summary>
+        /// <remarks>
+        /// <c>PropertyName</c> 在真实 host 里被 netcorepal 解析成 camelCase，
+        /// 集合元素则带 <c>[n]</c> 下标——正是这个下标把
+        /// <c>RuleFor(集合).NotEmpty()</c> 与 <c>RuleForEach(集合).NotEmpty()</c> 区分开，
+        /// 否则两者会塌成同一个键、少一个位点还照绿。
+        /// </remarks>
+        public static RuleComponent FromFailure(ValidationFailure failure)
+        {
+            var name = failure.PropertyName;
+            var bracket = name.IndexOf('[', StringComparison.Ordinal);
+            var collectionElement = bracket >= 0;
+            if (collectionElement)
+            {
+                name = name[..bracket];
+            }
+
+            return new RuleComponent(NormalizeMember(name), collectionElement, failure.ErrorCode);
+        }
+
+        public override string ToString() =>
+            CollectionElement ? $"{Member}[].{Validator}" : $"{Member}.{Validator}";
+    }
+
+    /// <summary>一条长度上界：成员 × 是否集合元素规则 × 上界值。</summary>
+    private readonly record struct LengthBound(string Member, bool CollectionElement, int Max)
+    {
+        public override string ToString() =>
+            CollectionElement ? $"{Member}[]<={Max}" : $"{Member}<={Max}";
+    }
+
+    /// <summary>
+    /// 遍历校验器建出来的规则树，同时给出「这条规则是不是 <c>RuleForEach</c> 建的集合元素规则」。
+    /// </summary>
+    private static IEnumerable<(IValidationRule Rule, bool IsCollectionElement)> Rules(IValidator validator)
+    {
+        // FluentValidation 的 AbstractValidator 自身就是规则的 IEnumerable；
+        // 读规则树而不是读源码文本，所以经共享入口 Configure<TCommand> 加进来的规则同样读得到。
+        var rules = Assert.IsAssignableFrom<IEnumerable<IValidationRule>>(validator);
+        foreach (var rule in rules)
+        {
+            var isCollectionElement = rule.GetType().GetInterfaces().Any(x =>
+                x.IsGenericType && x.GetGenericTypeDefinition() == typeof(ICollectionRule<,>));
+            yield return (rule, isCollectionElement);
+        }
+    }
+
+    private static HashSet<RuleComponent> DeclaredComponents(
+        IValidator validator,
+        Type commandType,
+        List<string> failures)
+    {
+        var declared = new HashSet<RuleComponent>();
+        foreach (var (rule, isCollectionElement) in Rules(validator))
+        {
+            var member = NormalizeMember(rule.Member?.Name ?? rule.PropertyName);
+            foreach (var component in rule.Components)
+            {
+                var key = new RuleComponent(member, isCollectionElement, component.Validator.Name);
+                if (!declared.Add(key))
+                {
+                    // 同一分量出现两次会在集合里塌成一个，其中一份就再也没人要求覆盖。
+                    // 不静默合并：逼当轮显式处理（拆成不同 ErrorCode，或说明为什么重复是有意的）。
+                    failures.Add(
+                        $"{commandType.Name}：规则树里出现重复分量 {key}，"
+                        + "覆盖面集合会把它塌成一个位点，必须显式处理而不是静默合并。");
+                }
+            }
+        }
+
+        if (declared.Count == 0)
+        {
+            failures.Add($"{commandType.Name}：从规则树读到 0 个分量，覆盖面断言已退化成空断言。");
+        }
+
+        return declared;
+    }
+
+    /// <summary>
+    /// 成员名归一：规则树给的是反射成员名（PascalCase），
+    /// <see cref="ValidationFailure.PropertyName"/> 在真实 host 里是 camelCase，两者必须能对上。
+    /// 归一只动每一段的首字母大小写，不做模糊匹配。
+    /// </summary>
+    private static string NormalizeMember(string member) =>
+        string.Join('.', member.Split('.').Select(segment =>
+            segment.Length == 0 ? segment : char.ToUpperInvariant(segment[0]) + segment[1..]));
 
     private static IReadOnlyList<Type> AssignmentCommandTypes() =>
         typeof(IWarehouseAssignmentCommand).Assembly.GetTypes()
