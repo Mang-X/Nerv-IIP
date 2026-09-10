@@ -93,10 +93,14 @@ internal static class BusinessGatewayIdempotencyKey
         }
 
         var normalized = value.Trim();
-        if (normalized.Length > MaximumLength
-            || normalized.Any(ch => !IsAllowed(ch)))
+        if (normalized.Length > MaximumLength)
         {
-            throw Mismatch();
+            throw TooLong();
+        }
+
+        if (normalized.Any(ch => !IsAllowed(ch)))
+        {
+            throw InvalidCharacters();
         }
 
         return normalized;
@@ -112,8 +116,33 @@ internal static class BusinessGatewayIdempotencyKey
             or '/'
             or '-';
 
+    /// <summary>
+    /// 409 只留给「同一请求的多个幂等键来源互相不一致」这一件事：标准头、legacy 头与请求体
+    /// 归一化后给出两个不同的值，调用方需要去查「是不是同一个键被用在了别的意图上」。
+    /// 输入本身的形状问题（超长、非法字符）不属于冲突，见 <see cref="TooLong"/> 与
+    /// <see cref="InvalidCharacters"/>。
+    /// </summary>
     private static BusinessServiceProxyException Mismatch() =>
         BusinessServiceProxyException.FromSafeDownstreamMessage(
             HttpStatusCode.Conflict,
             "idempotency-key-mismatch");
+
+    /// <summary>
+    /// 幂等键超过 <see cref="MaximumLength"/>。这是入参超长，不是键冲突，所以是 400 而不是 409：
+    /// 409 会把调用方引到「查查这个键是不是重复用了」的方向，而真正要做的是把键改短。
+    /// 本方法不改变值域——被拒的输入集合与改动前逐字相同，只改状态码与稳定消息。
+    /// </summary>
+    private static BusinessServiceProxyException TooLong() =>
+        BusinessServiceProxyException.FromSafeDownstreamMessage(
+            HttpStatusCode.BadRequest,
+            "idempotency-key-too-long");
+
+    /// <summary>
+    /// 幂等键含 <see cref="IsAllowed"/> 之外的字符。与 <see cref="TooLong"/> 同理：
+    /// 这是入参形状不合法，不是键冲突，因此是 400。
+    /// </summary>
+    private static BusinessServiceProxyException InvalidCharacters() =>
+        BusinessServiceProxyException.FromSafeDownstreamMessage(
+            HttpStatusCode.BadRequest,
+            "idempotency-key-invalid-characters");
 }
