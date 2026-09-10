@@ -539,6 +539,13 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
     /// gateway src 里 <c>DbContext</c> / <c>AddDbContext</c> 命中 0 处；唯一的缓存位点是
     /// <c>BusinessGatewayAuthorization</c> 的授权判定缓存，其缓存键由 bearer token 与授权要求构成，
     /// 不含幂等键。</item>
+    /// <item>⚠️ 网关对该键还有**第三条**处置路径，别把上面几条读成穷举：
+    /// <c>AuthorizedBusinessProxyEndpoint.CreateAuditContext</c> 会经
+    /// <c>BusinessGatewayIdempotencyKey.ResolveForAudit</c> 把键放进 <c>BusinessServiceAuditContext</c>
+    /// 并作为审计头转发下游。但它**够不到这两个位点**：确认报警与解除搁置的 <c>ForwardAsync</c>
+    /// 都不构造审计上下文（<c>RequireAuditContext</c> / <c>RequireIdempotentAuditContext</c> 一次都没调）。
+    /// 今天这两个入口的调用方全部落在 <c>Endpoints/MasterData/</c> 下（工装三处走 idempotent 那个重载，
+    /// 其余主数据写面走另一个）——不写条数，那个数会过期。故不影响本登记的结论。</item>
     /// </list>
     /// <para>⚠️ <b>新增下游存储时必须撤销本登记</b>：一旦这两条命令开始接收该键、或该键开始落进
     /// IndustrialTelemetry 的任何一张表，本登记就不再为真，必须移出本集合并登记真实权威
