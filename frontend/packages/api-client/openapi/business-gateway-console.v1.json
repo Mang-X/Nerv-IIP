@@ -14825,6 +14825,16 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Unauthorized"
           },
@@ -15616,6 +15626,16 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Unauthorized"
           },
@@ -15753,6 +15773,16 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Unauthorized"
           },
@@ -15865,6 +15895,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateRushWorkOrderResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
                 }
               }
             }
@@ -16052,6 +16092,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
                 }
               }
             }
@@ -16583,16 +16633,6 @@
           "x-position": 1
         },
         "responses": {
-          "409": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
-                }
-              }
-            }
-          },
           "200": {
             "description": "Success",
             "content": {
@@ -16603,11 +16643,31 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Unauthorized"
           },
           "403": {
             "description": "Forbidden"
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -18685,6 +18745,16 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Unauthorized"
           },
@@ -19077,6 +19147,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesCreateReceiptResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
                 }
               }
             }
@@ -19767,6 +19847,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
                 }
               }
             }
@@ -46551,6 +46641,8 @@
           },
           "idempotencyKey": {
             "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
             "nullable": true
           }
         }
@@ -47212,7 +47304,9 @@
             "nullable": true
           },
           "idempotencyKey": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 0
           }
         }
       },
@@ -47353,6 +47447,8 @@
           },
           "idempotencyKey": {
             "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
             "nullable": true
           }
         }
@@ -47540,6 +47636,8 @@
           },
           "idempotencyKey": {
             "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
             "nullable": true
           }
         }
@@ -47743,7 +47841,9 @@
             }
           },
           "idempotencyKey": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0
           },
           "isSupplementary": {
             "type": "boolean"
@@ -48212,7 +48312,8 @@
           },
           "idempotencyKey": {
             "type": "string",
-            "minLength": 1
+            "maxLength": 150,
+            "minLength": 0
           }
         }
       },
@@ -49573,7 +49674,9 @@
             "nullable": true
           },
           "idempotencyKey": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0
           }
         }
       },
@@ -50181,7 +50284,9 @@
             "format": "date-time"
           },
           "idempotencyKey": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0
           },
           "producedLotNo": {
             "type": "string",
@@ -50382,7 +50487,9 @@
             "format": "date-time"
           },
           "idempotencyKey": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0
           }
         }
       },
@@ -50864,7 +50971,9 @@
             }
           },
           "idempotencyKey": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0
           },
           "teamName": {
             "type": "string",

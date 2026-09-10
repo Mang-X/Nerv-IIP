@@ -9,6 +9,28 @@ using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Mes;
 
+// ---------------------------------------------------------------------------
+// #3324 端点级幂等键上界：本文件里 10 个 *RequestValidator 的共同口径
+// ---------------------------------------------------------------------------
+// 每条规则的值**不得大于**它下游权威解析出的上界。注意机器只校验这一个方向：
+// BusinessGatewayIdempotencyKeyDownstreamBoundContractTests 的
+// Gateway_never_promises_a_longer_idempotency_key_than_its_downstream_accepts
+// 断言的是 `网关值 <= 下游值`，把某条规则**收窄**不会红（反方向归 #3287）。
+// 登记表同时钉住「链接必须存在」：下游改名或删除会让权威解析失败而报红。
+//
+// 为什么写在校验器上而不是集中一张表：端点级规则会进 OpenAPI 的 maxLength，
+// 对客户端是真实契约；集中表不会。
+//
+// 只加上界、不加 NotEmpty —— 本票不改这些字段的必填语义。
+//
+// ⚠️ 值域边界（不要读成「这些规则挡住了所有超长键」）：FastEndpoints 的 DTO 校验
+// 跑在 AuthorizedBusinessProxyEndpoint.HandleAsync **之前**，而经
+// Idempotency-Key / X-Idempotency-Key 头传来的键要到 HandleAsync 里
+// BusinessGatewayIdempotencyKey.Resolve 才写进 DTO。⇒ 这 10 条规则**只约束请求体
+// 路径**；头部路径今天仍只由全局钳（150）兜住。该顺序缺陷由 #3330 承接，
+// 并且是 #3327 抬钳的硬前置。
+// ---------------------------------------------------------------------------
+
 [Tags("Business Console MES")]
 [HttpGet("/api/business-console/v1/mes/foundation-readiness")]
 [BusinessGatewayOperationId("getBusinessConsoleMesFoundationReadiness")]
@@ -360,6 +382,18 @@ public sealed class ConvertBusinessConsoleMesPlanToWorkOrderEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         mes.ConvertPlanToWorkOrderAsync(tokenProvider.BearerToken, request.ProductionPlanId, request, cancellationToken);
+}
+
+/// <summary>
+/// 端点级幂等键长度上界（#3324）。本处下游权威：
+/// MES 侧 ConvertPlanToWorkOrderCommandHandler 把原始键交给 CodeAllocator，落 mes.code_idempotency_keys.idempotency_key(150)。
+/// 共同口径见本文件顶部的「#3324 端点级幂等键上界」注释块。
+/// </summary>
+public sealed class BusinessConsoleMesConvertPlanToWorkOrderRequestValidator
+    : Validator<BusinessConsoleMesConvertPlanToWorkOrderRequest>
+{
+    public BusinessConsoleMesConvertPlanToWorkOrderRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
 }
 
 [Tags("Business Console MES")]
@@ -736,6 +770,18 @@ public sealed class ForceReleaseBusinessConsoleMesQualityHoldEndpoint(
     }
 }
 
+/// <summary>
+/// 端点级幂等键长度上界（#3324）。本处下游权威：
+/// MES 侧 ForceReleaseQualityHoldCommandValidator(512) 与落库列 mes.quality_hold_transitions.idempotency_key(512)。
+/// 共同口径见本文件顶部的「#3324 端点级幂等键上界」注释块。
+/// </summary>
+public sealed class BusinessConsoleMesForceReleaseQualityHoldRequestValidator
+    : Validator<BusinessConsoleMesForceReleaseQualityHoldRequest>
+{
+    public BusinessConsoleMesForceReleaseQualityHoldRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(512);
+}
+
 [Tags("Business Console MES")]
 [HttpGet("/api/business-console/v1/mes/quality-holds/{sourceDocumentId}/timeline")]
 [BusinessGatewayOperationId("getBusinessConsoleMesQualityHoldTimeline")]
@@ -783,6 +829,18 @@ public sealed class ReverseBusinessConsoleMesProductionReportEndpoint(
             cancellationToken);
 }
 
+/// <summary>
+/// 端点级幂等键长度上界（#3324）。本处下游权威：
+/// MES 侧 ReverseProductionReportCommandHandler 走 CodeAllocator，落 mes.code_idempotency_keys.idempotency_key(150)。
+/// 共同口径见本文件顶部的「#3324 端点级幂等键上界」注释块。
+/// </summary>
+public sealed class BusinessConsoleMesReverseProductionReportRequestValidator
+    : Validator<BusinessConsoleMesReverseProductionReportRequest>
+{
+    public BusinessConsoleMesReverseProductionReportRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+}
+
 [Tags("Business Console MES")]
 [HttpPost("/api/business-console/v1/mes/finished-goods-receipt-requests/{requestNo}/inventory-posting/retry")]
 [BusinessGatewayOperationId("retryBusinessConsoleMesFinishedGoodsReceiptInventoryPosting")]
@@ -825,6 +883,18 @@ public sealed class CreateBusinessConsoleMesRushWorkOrderEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         mes.CreateRushWorkOrderAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+/// <summary>
+/// 端点级幂等键长度上界（#3324）。本处下游权威：
+/// MES 侧 CreateRushWorkOrderCommandHandler 走 CodeAllocator，落 mes.code_idempotency_keys.idempotency_key(150)。
+/// 共同口径见本文件顶部的「#3324 端点级幂等键上界」注释块。
+/// </summary>
+public sealed class BusinessConsoleCreateRushWorkOrderRequestValidator
+    : Validator<BusinessConsoleCreateRushWorkOrderRequest>
+{
+    public BusinessConsoleCreateRushWorkOrderRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
 }
 
 [Tags("Business Console MES")]
@@ -899,6 +969,18 @@ public sealed class CreateBusinessConsoleMesMaterialIssueRequestEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         mes.CreateMaterialIssueRequestAsync(tokenProvider.BearerToken, request.WorkOrderId, request, cancellationToken);
+}
+
+/// <summary>
+/// 端点级幂等键长度上界（#3324）。本处下游权威：
+/// MES 侧 CreateMaterialIssueRequestCommandHandler 走 CodeAllocator，落 mes.code_idempotency_keys.idempotency_key(150)。
+/// 共同口径见本文件顶部的「#3324 端点级幂等键上界」注释块。
+/// </summary>
+public sealed class BusinessConsoleMesCreateMaterialIssueRequestValidator
+    : Validator<BusinessConsoleMesCreateMaterialIssueRequest>
+{
+    public BusinessConsoleMesCreateMaterialIssueRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
 }
 
 [Tags("Business Console MES")]
@@ -1049,6 +1131,18 @@ public sealed class ReturnBusinessConsoleMesLineSideMaterialEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         mes.ReturnLineSideMaterialAsync(tokenProvider.BearerToken, request.RequestId, request, cancellationToken);
+}
+
+/// <summary>
+/// 端点级幂等键长度上界（#3324）。本处下游权威：
+/// MES 侧 ReturnLineSideMaterialCommandValidator(150)；承载列是无界 text，上界只由该校验器承担。
+/// 共同口径见本文件顶部的「#3324 端点级幂等键上界」注释块。
+/// </summary>
+public sealed class BusinessConsoleMesReturnLineSideMaterialRequestValidator
+    : Validator<BusinessConsoleMesReturnLineSideMaterialRequest>
+{
+    public BusinessConsoleMesReturnLineSideMaterialRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
 }
 
 [Tags("Business Console MES")]
@@ -1884,6 +1978,18 @@ public sealed class RecordBusinessConsoleMesDefectEndpoint(
             cancellationToken);
 }
 
+/// <summary>
+/// 端点级幂等键长度上界（#3324）。本处下游权威：
+/// MES 侧 RecordDefectRequestValidator(150) 与 CodeAllocator 落库列 mes.code_idempotency_keys.idempotency_key(150)，取最小。
+/// 共同口径见本文件顶部的「#3324 端点级幂等键上界」注释块。
+/// </summary>
+public sealed class BusinessConsoleMesRecordDefectRequestValidator
+    : Validator<BusinessConsoleMesRecordDefectRequest>
+{
+    public BusinessConsoleMesRecordDefectRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+}
+
 [Tags("Business Console MES")]
 [HttpPost("/api/business-console/v2/mes/defects")]
 [BusinessGatewayOperationId("recordBusinessConsoleMesDefectV2")]
@@ -2143,6 +2249,18 @@ public sealed class CreateBusinessConsoleMesFinishedGoodsReceiptRequestEndpoint(
         mes.CreateFinishedGoodsReceiptRequestAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
+/// <summary>
+/// 端点级幂等键长度上界（#3324）。本处下游权威：
+/// MES 侧 CreateFinishedGoodsReceiptRequestCommandHandler 走 CodeAllocator，落 mes.code_idempotency_keys.idempotency_key(150)。
+/// 共同口径见本文件顶部的「#3324 端点级幂等键上界」注释块。
+/// </summary>
+public sealed class BusinessConsoleMesCreateReceiptRequestValidator
+    : Validator<BusinessConsoleMesCreateReceiptRequest>
+{
+    public BusinessConsoleMesCreateReceiptRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+}
+
 [Tags("Business Console MES")]
 [HttpGet("/api/business-console/v1/mes/downtime-events")]
 [BusinessGatewayOperationId("listBusinessConsoleMesDowntimeEvents")]
@@ -2272,6 +2390,18 @@ public sealed class RecordBusinessConsoleMesDowntimeEventEndpoint(
         throw BusinessServiceProxyException.FromSafeDownstreamMessage(
             System.Net.HttpStatusCode.BadRequest,
             "work-center-required-use-v2");
+}
+
+/// <summary>
+/// 端点级幂等键长度上界（#3324）。本处下游权威：
+/// MES 侧 RecordDowntimeEventRequestValidator(150) 与 CodeAllocator 落库列 mes.code_idempotency_keys.idempotency_key(150)，取最小。
+/// 共同口径见本文件顶部的「#3324 端点级幂等键上界」注释块。
+/// </summary>
+public sealed class BusinessConsoleMesRecordDowntimeEventRequestValidator
+    : Validator<BusinessConsoleMesRecordDowntimeEventRequest>
+{
+    public BusinessConsoleMesRecordDowntimeEventRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
 }
 
 [Tags("Business Console MES")]
@@ -2491,6 +2621,18 @@ public sealed class CreateBusinessConsoleMesShiftHandoverEndpoint(
                 request.Attachments),
             cancellationToken);
     }
+}
+
+/// <summary>
+/// 端点级幂等键长度上界（#3324）。本处下游权威：
+/// MES 侧 CreateShiftHandoverCommandHandler 走 CodeAllocator，落 mes.code_idempotency_keys.idempotency_key(150)。
+/// 共同口径见本文件顶部的「#3324 端点级幂等键上界」注释块。
+/// </summary>
+public sealed class BusinessConsoleMesCreateShiftHandoverRequestValidator
+    : Validator<BusinessConsoleMesCreateShiftHandoverRequest>
+{
+    public BusinessConsoleMesCreateShiftHandoverRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
 }
 
 [Tags("Business Console MES")]

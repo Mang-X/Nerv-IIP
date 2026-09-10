@@ -20,6 +20,9 @@ using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.Coding;
 
+using MesEndpointRequests = Nerv.IIP.Business.Mes.Web.Endpoints.Mes;
+using MesQualityAggregate = Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
+
 using DemandPlanningDbContext = Nerv.IIP.Business.DemandPlanning.Infrastructure.ApplicationDbContext;
 using ErpDbContext = Nerv.IIP.Business.Erp.Infrastructure.ApplicationDbContext;
 using MasterDataDbContext = Nerv.IIP.Business.MasterData.Infrastructure.ApplicationDbContext;
@@ -72,8 +75,15 @@ namespace Nerv.IIP.Business.Acceptance.Tests;
 /// 都超出本票射程。链接写错的**方向**是：指向一个更宽的下游 ⇒ 假绿。链接失效（改名/删除）⇒ 红。</item>
 /// <item>不证明下游校验器上界与下游列宽一致——那是各服务自己的契约
 /// （Inventory 有 <c>InventoryIdempotencyKeyLengthContractTests</c>，其它服务不一定有）。</item>
-/// <item>不证明 118 个带 <c>IdempotencyKey</c> 的网关请求里那些**没有**端点级规则的位点安全——
-/// 它们只吃全局钳，归 #3287。</item>
+/// <item>不证明「受全局钳作用、但**没有**端点级规则」的那些网关请求安全——它们只吃全局钳，归 #3287。
+/// （此处原写「118 个」，是单行 grep 的产物，已被 #3287 第 0 步的反射测量推翻；
+/// 该计数每落一张子票就变，故不在这里复述数字。）</item>
+/// <item><b>不覆盖头部路径</b>：FastEndpoints 的 DTO 校验跑在
+/// <c>AuthorizedBusinessProxyEndpoint.HandleAsync</c> **之前**，而经 <c>Idempotency-Key</c> /
+/// <c>X-Idempotency-Key</c> 头传来的键要到 <c>HandleAsync</c> 里 <c>BusinessGatewayIdempotencyKey.Resolve</c>
+/// 才写进 DTO。⇒ 本类枚举到的**每一条**端点级规则（不止本票补的那些，既有的同样如此）
+/// **只约束请求体路径**；头部路径仍只由全局钳约束。所以本类全绿**不等于**「网关不会把超长键送下去」。
+/// 该顺序缺陷由 #3330 承接，并且是 #3327 抬钳的硬前置。</item>
 /// <item>不覆盖 CAP 事件信封键（<c>EventIds.Idempotency(...)</c> 产出、落 inbox 的 512/500/300 那些）：
 /// 那不是网关承诺的值域。</item>
 /// <item>不覆盖「验证类型是泛型形参」的开放泛型校验器（今日网关侧为 0，
@@ -354,6 +364,18 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
     private static readonly DownstreamAuthority MesCodeKeyColumn =
         Column<CodeIdempotencyKey>(MesModel, nameof(CodeIdempotencyKey.IdempotencyKey), "Mes");
 
+    /// <summary>
+    /// 强制放行质量保留的幂等键落库列（#3324）。写入点实读：网关 <c>ForceReleaseQualityHoldAsync</c>
+    /// 以 <c>X-Idempotency-Key</c> 头转发原始键，MES 侧 <c>MesQualityHoldRequestContext.Resolve</c>
+    /// 只 <c>Trim</c>，再经 <c>QualityHoldTransition.Record</c>（构造器同样只 <c>Trim</c>）落本列，
+    /// 落库的就是调用方原始键，列宽因此可达、不是幽灵权威。
+    /// </summary>
+    private static readonly DownstreamAuthority MesQualityHoldTransitionColumn =
+        Column<MesQualityAggregate.QualityHoldTransition>(
+            MesModel,
+            nameof(MesQualityAggregate.QualityHoldTransition.IdempotencyKey),
+            "Mes");
+
     private static readonly DownstreamAuthority ErpCodeKeyColumn =
         Column<CodeIdempotencyKey>(ErpModel, nameof(CodeIdempotencyKey.IdempotencyKey), "Erp");
 
@@ -396,9 +418,26 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
     /// → 下游服务 <c>*EndpointContracts</c> 里同路径的 endpoint → 它 <c>HandleAsync</c> 里发出的命令
     /// → 该命令的校验器 / 该命令 handler 把幂等键写进的那一列。</para>
     /// <para><b>登记列宽的前提</b>：必须实读写入点，确认落库的就是调用方原始键。
-    /// 走 <c>CodeAllocator</c> 的位点（MasterData 全部、Erp 收货、Mes 三个写面、DemandPlanning 需求来源）
-    /// 与 MasterData 生命周期审计的 <c>OperationId</c> 都只 <c>Trim</c>、不派生，列宽因此可达；
-    /// Wms 两张 receipt 表落的是 <c>WmsText.IdempotencyKey</c> 的 SHA256 派生值，列宽不可达，**不登记**。</para>
+    /// 走 <c>CodeAllocator</c> 的位点（MasterData、Erp 收货、Mes 工作台与生产写面、DemandPlanning 需求来源）、
+    /// MasterData 生命周期审计的 <c>OperationId</c>、Mes 质量保留时间线的 <c>IdempotencyKey</c>
+    /// 都只 <c>Trim</c>、不派生，列宽因此可达。</para>
+    ///
+    /// <para><b>「派生」不是一个判据，要分两类（#3290 与 #3176 是两条不同的判例，别混用）</b>：</para>
+    /// <list type="number">
+    /// <item><b>摘要/哈希类派生</b>（输出定长，与输入长度无关）⇒ 列宽对原始键**零约束**，是幽灵权威，不登记。
+    /// 实例：Wms 两张 receipt 表落的是 <c>WmsText.IdempotencyKey</c> 的 SHA256，恒 75 字符定长（#3290）。</item>
+    /// <item><b>拼接类派生</b>（长度单调：原始键每长一个字符，派生键就长一个字符）⇒ 列宽**仍然是真权威**，
+    /// 只是有效上界 = 列宽 − 最长附加段（#3176）。**不要把这一类当幽灵权威豁免掉。**
+    /// <para>⚠️ <c>InventoryIdempotencyKeyPolicy.BaseMaxLengthFor</c> /
+    /// <c>ErpCodingIdempotencyKeyPolicy.BaseMaxLengthFor</c> 是这条判据的**同族实现，但不能直接套用**：
+    /// 它们的 <c>params string[] suffixes</c> 只吃**定长字面量**后缀（取 <c>Max(x =&gt; x.Length)</c>）。
+    /// 附加段里若含**变长**片段（组织/环境/单号这类由调用方决定的值），必须按**各段自己的列宽**
+    /// 取最坏值再相减，不能把变长段当字面量丢进去——那样算出来的上界会偏大，是假承诺。
+    /// 正确算法的实例见本表下方 RetryFinishedGoodsReceiptInventoryPosting 那段注释。</para></item>
+    /// </list>
+    ///
+    /// <para>另有第三种「不登记」，与派生无关：<b>承载列本身无界</b>。Mes 线边退料把原始键作 JSON 字典键落
+    /// <c>text</c> 列，<c>GetMaxLength()</c> 为 null，该位点上界由命令校验器单独承担。</para>
     /// </summary>
     private static readonly Dictionary<Type, DownstreamAuthority[]> DownstreamBounds = new()
     {
@@ -470,6 +509,53 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
         [typeof(BusinessConsoleMesSplitWorkOrderRequest)] = [Command<SplitWorkOrderCommand>()],
         [typeof(BusinessConsoleMesMergeWorkOrdersRequest)] = [Command<MergeWorkOrdersCommand>()],
 
+        // ---- Mes（#3324：#3287 差集里 Mes 侧、下游可声明**正**上界的位点）----
+        // 不写条数：那个计数每落一张子票就变，复述它等于制造一处会过期的手抄事实
+        // （与本类 <remarks> 里删掉「118 个」同一条理由）。
+        // 转发链逐条实读：网关 endpoint 的 ForwardAsync → BusinessMesClient 的路径字面量
+        // → MesEndpoints.cs 里同路径的 MesEndpointContracts 条目 → 它 HandleAsync 里发出的命令。
+        //
+        // 下面 6 处的下游 handler 只把原始键交给 MesCodingService/CodeAllocator，
+        // CodeAllocator.Normalize（CodeAllocator.cs:359-362）只 Trim、不派生，
+        // 落 mes.code_idempotency_keys.idempotency_key(150)，故列宽对原始键可达。
+        [typeof(BusinessConsoleCreateRushWorkOrderRequest)] = [MesCodeKeyColumn],
+        [typeof(BusinessConsoleMesConvertPlanToWorkOrderRequest)] = [MesCodeKeyColumn],
+        [typeof(BusinessConsoleMesCreateMaterialIssueRequest)] = [MesCodeKeyColumn],
+        [typeof(BusinessConsoleMesCreateReceiptRequest)] = [MesCodeKeyColumn],
+        [typeof(BusinessConsoleMesCreateShiftHandoverRequest)] = [MesCodeKeyColumn],
+        [typeof(BusinessConsoleMesReverseProductionReportRequest)] = [MesCodeKeyColumn],
+
+        // 这两处除了同一条 CodeAllocator 列，还先撞下游端点请求 DTO 自己的校验器
+        // （RecordDefectRequestValidator / RecordDowntimeEventRequestValidator）。
+        // 两个权威今天同为 150，但它们互相独立：谁先收窄谁就是有效上界，故都登记、取最小。
+        [typeof(BusinessConsoleMesRecordDefectRequest)] =
+            [DownstreamRequest<MesEndpointRequests.RecordDefectRequest>(), MesCodeKeyColumn],
+        [typeof(BusinessConsoleMesRecordDowntimeEventRequest)] =
+            [DownstreamRequest<MesEndpointRequests.RecordDowntimeEventRequest>(), MesCodeKeyColumn],
+
+        // 强制放行质量保留：键走 X-Idempotency-Key 头进 MES，命令校验器与落库列同为 512。
+        [typeof(BusinessConsoleMesForceReleaseQualityHoldRequest)] =
+            [Command<ForceReleaseQualityHoldCommand>(), MesQualityHoldTransitionColumn],
+
+        // ⚠️ BusinessConsoleMesRetryFinishedGoodsReceiptInventoryPostingRequest **故意不在这张表里**，
+        // 网关侧也没有给它补端点级规则。原因不是「查不到权威」，而是**查出来的权威是负数**：
+        // 原始键经 FinishedGoodsReceiptRequest.BuildInventoryPostingRetryIdempotencyKey 拼成
+        // "mes:finished-goods-receipt:{org}:{env}:{requestNo}:{原始键}" 后跨服务进 Inventory，
+        // 撞 PostStockMovementCommandValidator 与 stock_movements.idempotency_key(128)。
+        // 拼接是长度单调的，所以那个 128 **是**真权威（不是 #3290 那种哈希幽灵权威），
+        // 但按各段列宽取最坏情况，前缀本身就是 27 + 100+1 + 100+1 + 100+1 = 330 > 128 ——
+        // 也就是说这条腿在最坏情况下连空键都放不下，不存在任何**正**的合法上界可供声明。
+        // 登记一个正数（无论 200 还是 128）都会是一句站不住的承诺，故本票整处不登记，
+        // 缺陷如实上报给编排者定夺。详见 PR 正文「完工入库重投」一节。
+
+        // 线边退料：**不登记承载列**，但理由与上一条不同——不是派生值，是那一列无界。
+        // 原始键（只 Trim）作为 JSON 字典的键落 material_issue_requests
+        // .line_side_return_idempotency_keys_json，该列 HasColumnType("text") 且没有 HasMaxLength，
+        // GetMaxLength() 为 null ⇒ 登记它只会让 Every_declared_downstream_authority_resolves 报「解析不到」。
+        // 该列对键长度不施加上界，本位点的上界由命令校验器单独承担。
+        [typeof(BusinessConsoleMesReturnLineSideMaterialRequest)] =
+            [Command<ReturnLineSideMaterialCommand>()],
+
         // ---- DemandPlanning ----
         [typeof(BusinessConsoleCreateOrUpdateDemandSourceRequest)] = [DemandPlanningCodeKeyColumn],
         [typeof(BusinessConsoleCreateOrUpdateForecastInputRequest)] = [Command<CreateOrUpdateForecastInputCommand>()],
@@ -524,7 +610,7 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
         public override string ToString() => $"none({reason})";
     }
 
-    /// <summary>下游命令自己的校验器对 <c>IdempotencyKey</c> 施加的上界。</summary>
+    /// <summary>下游命令（或下游端点请求 DTO，见 <c>DownstreamRequest</c>）自己的校验器对 <c>IdempotencyKey</c> 施加的上界。</summary>
     private sealed class CommandValidatorBound(Type commandType) : ResolvableDownstreamAuthority
     {
         public override int Resolve()
@@ -578,6 +664,17 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
     }
 
     private static DownstreamAuthority Command<TCommand>() => new CommandValidatorBound(typeof(TCommand));
+
+    /// <summary>
+    /// 下游服务**HTTP 端点请求 DTO** 自己的校验器施加的上界（#3324）。
+    /// 网关转发的 body 先撞这一层，再进命令层，所以它与命令校验器是两个独立的下游权威，
+    /// 有效上界取两者最小（#3281 判据）。解析机制与 <see cref="CommandValidatorBound"/> 完全相同：
+    /// 在该类型所在程序集里找 <c>IValidator&lt;T&gt;</c> 实现并读它建出来的规则。
+    /// <para><b>这只是文档性命名</b>：它与 <see cref="Command{TCommand}"/> 构造的是同一个
+    /// <see cref="CommandValidatorBound"/>，<c>ToString()</c> 也一样打 <c>validator(...)</c>，
+    /// 机器上**不区分**这两种权威，别指望它能挡住把命令类型传进来的误用。</para>
+    /// </summary>
+    private static DownstreamAuthority DownstreamRequest<TRequest>() => new CommandValidatorBound(typeof(TRequest));
 
     private static DownstreamAuthority Column<TEntity>(Func<DbContext> contextFactory, string propertyName, string label) =>
         new ColumnWidthBound(contextFactory, typeof(TEntity), propertyName, label);
