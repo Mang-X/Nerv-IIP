@@ -20460,6 +20460,10 @@ export type CreateBusinessConsoleErpPurchaseOrderData = {
 
 export type CreateBusinessConsoleErpPurchaseOrderErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -20468,6 +20472,8 @@ export type CreateBusinessConsoleErpPurchaseOrderErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleErpPurchaseOrderError = CreateBusinessConsoleErpPurchaseOrderErrors[keyof CreateBusinessConsoleErpPurchaseOrderErrors];
 
 export type CreateBusinessConsoleErpPurchaseOrderResponses = {
     /**
@@ -20607,6 +20613,10 @@ export type CreateBusinessConsoleErpRequestForQuotationData = {
 
 export type CreateBusinessConsoleErpRequestForQuotationErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -20615,6 +20625,8 @@ export type CreateBusinessConsoleErpRequestForQuotationErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleErpRequestForQuotationError = CreateBusinessConsoleErpRequestForQuotationErrors[keyof CreateBusinessConsoleErpRequestForQuotationErrors];
 
 export type CreateBusinessConsoleErpRequestForQuotationResponses = {
     /**
@@ -20669,6 +20681,10 @@ export type ReceiveBusinessConsoleErpSupplierQuotationData = {
 
 export type ReceiveBusinessConsoleErpSupplierQuotationErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -20677,6 +20693,8 @@ export type ReceiveBusinessConsoleErpSupplierQuotationErrors = {
      */
     403: unknown;
 };
+
+export type ReceiveBusinessConsoleErpSupplierQuotationError = ReceiveBusinessConsoleErpSupplierQuotationErrors[keyof ReceiveBusinessConsoleErpSupplierQuotationErrors];
 
 export type ReceiveBusinessConsoleErpSupplierQuotationResponses = {
     /**
@@ -20875,6 +20893,10 @@ export type CreateBusinessConsoleErpSalesOrderData = {
 
 export type CreateBusinessConsoleErpSalesOrderErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -20883,6 +20905,8 @@ export type CreateBusinessConsoleErpSalesOrderErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleErpSalesOrderError = CreateBusinessConsoleErpSalesOrderErrors[keyof CreateBusinessConsoleErpSalesOrderErrors];
 
 export type CreateBusinessConsoleErpSalesOrderResponses = {
     /**
@@ -20942,6 +20966,10 @@ export type OpenBusinessConsoleErpOpportunityData = {
 
 export type OpenBusinessConsoleErpOpportunityErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -20950,6 +20978,8 @@ export type OpenBusinessConsoleErpOpportunityErrors = {
      */
     403: unknown;
 };
+
+export type OpenBusinessConsoleErpOpportunityError = OpenBusinessConsoleErpOpportunityErrors[keyof OpenBusinessConsoleErpOpportunityErrors];
 
 export type OpenBusinessConsoleErpOpportunityResponses = {
     /**
@@ -21009,6 +21039,10 @@ export type CreateBusinessConsoleErpQuotationData = {
 
 export type CreateBusinessConsoleErpQuotationErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -21017,6 +21051,8 @@ export type CreateBusinessConsoleErpQuotationErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleErpQuotationError = CreateBusinessConsoleErpQuotationErrors[keyof CreateBusinessConsoleErpQuotationErrors];
 
 export type CreateBusinessConsoleErpQuotationResponses = {
     /**
@@ -21134,6 +21170,10 @@ export type ReleaseBusinessConsoleErpDeliveryOrderData = {
 
 export type ReleaseBusinessConsoleErpDeliveryOrderErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -21142,6 +21182,8 @@ export type ReleaseBusinessConsoleErpDeliveryOrderErrors = {
      */
     403: unknown;
 };
+
+export type ReleaseBusinessConsoleErpDeliveryOrderError = ReleaseBusinessConsoleErpDeliveryOrderErrors[keyof ReleaseBusinessConsoleErpDeliveryOrderErrors];
 
 export type ReleaseBusinessConsoleErpDeliveryOrderResponses = {
     /**
@@ -21201,6 +21243,10 @@ export type CreateBusinessConsoleErpAccountPayableData = {
 
 export type CreateBusinessConsoleErpAccountPayableErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -21209,6 +21255,8 @@ export type CreateBusinessConsoleErpAccountPayableErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleErpAccountPayableError = CreateBusinessConsoleErpAccountPayableErrors[keyof CreateBusinessConsoleErpAccountPayableErrors];
 
 export type CreateBusinessConsoleErpAccountPayableResponses = {
     /**
@@ -21268,6 +21316,10 @@ export type CreateBusinessConsoleErpAccountReceivableData = {
 
 export type CreateBusinessConsoleErpAccountReceivableErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -21276,6 +21328,8 @@ export type CreateBusinessConsoleErpAccountReceivableErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleErpAccountReceivableError = CreateBusinessConsoleErpAccountReceivableErrors[keyof CreateBusinessConsoleErpAccountReceivableErrors];
 
 export type CreateBusinessConsoleErpAccountReceivableResponses = {
     /**
@@ -21335,6 +21389,10 @@ export type CreateBusinessConsoleErpCostCandidateData = {
 
 export type CreateBusinessConsoleErpCostCandidateErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -21343,6 +21401,8 @@ export type CreateBusinessConsoleErpCostCandidateErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleErpCostCandidateError = CreateBusinessConsoleErpCostCandidateErrors[keyof CreateBusinessConsoleErpCostCandidateErrors];
 
 export type CreateBusinessConsoleErpCostCandidateResponses = {
     /**
@@ -21402,6 +21462,10 @@ export type PostBusinessConsoleErpJournalVoucherData = {
 
 export type PostBusinessConsoleErpJournalVoucherErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -21410,6 +21474,8 @@ export type PostBusinessConsoleErpJournalVoucherErrors = {
      */
     403: unknown;
 };
+
+export type PostBusinessConsoleErpJournalVoucherError = PostBusinessConsoleErpJournalVoucherErrors[keyof PostBusinessConsoleErpJournalVoucherErrors];
 
 export type PostBusinessConsoleErpJournalVoucherResponses = {
     /**
@@ -21429,6 +21495,10 @@ export type ApproveBusinessConsoleErpPaymentExecutionData = {
 
 export type ApproveBusinessConsoleErpPaymentExecutionErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -21437,6 +21507,8 @@ export type ApproveBusinessConsoleErpPaymentExecutionErrors = {
      */
     403: unknown;
 };
+
+export type ApproveBusinessConsoleErpPaymentExecutionError = ApproveBusinessConsoleErpPaymentExecutionErrors[keyof ApproveBusinessConsoleErpPaymentExecutionErrors];
 
 export type ApproveBusinessConsoleErpPaymentExecutionResponses = {
     /**
@@ -21485,6 +21557,10 @@ export type RegisterBusinessConsoleErpCashReceiptData = {
 
 export type RegisterBusinessConsoleErpCashReceiptErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -21493,6 +21569,8 @@ export type RegisterBusinessConsoleErpCashReceiptErrors = {
      */
     403: unknown;
 };
+
+export type RegisterBusinessConsoleErpCashReceiptError = RegisterBusinessConsoleErpCashReceiptErrors[keyof RegisterBusinessConsoleErpCashReceiptErrors];
 
 export type RegisterBusinessConsoleErpCashReceiptResponses = {
     /**
