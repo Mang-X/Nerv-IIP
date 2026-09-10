@@ -8,8 +8,13 @@ namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 /// 弹性契约：ADR 0015 的策略表按幂等性二分、只覆盖 JSON RPC 形状，其 10 秒总超时会在弱网下
 /// 必然切断 <c>shift-handover-photo</c> 允许的 20,971,520 bytes 级 tus <c>PATCH</c>
 /// （`FileStorage.Web/appsettings.json` 的 `MaximumFileSizeBytes`），并把共享熔断器连带打开。
-/// 依 ADR 0015「同一客户端读写弹性需求不同就拆成两个 HttpClient 注册」拆出，时限由调用方
-/// <see cref="CancellationToken"/> 承担。
+/// 拆分依据是 <b>ADR 0030 决策 5</b>——它对 ADR 0015 决策 2 的「单次调用超时为 10 秒」作了
+/// 部分修订，使该参数不适用于经网关代理的字节流传输跳；接缝划在「每一跳实际发起什么」上，
+/// 依据是 ADR 0015 决策 1 末行的原话「策略选择以客户端实际可发起的操作为准，不以客户端名称、
+/// 所属 Gateway 或页面来源推断。」时限改由调用方的 <see cref="CancellationToken"/> 承担。
+///
+/// 注意<b>不是</b>依 ADR 0015 决策 3.3 拆的：该条原文带「且读操作确需自动重试时」这一限定，
+/// 而本次拆分与重试无关（两面都不自动重试）。
 /// </summary>
 public interface IBusinessFileTransferClient
 {
