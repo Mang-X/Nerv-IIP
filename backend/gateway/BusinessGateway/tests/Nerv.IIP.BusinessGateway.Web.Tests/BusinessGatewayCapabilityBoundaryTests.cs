@@ -1494,6 +1494,24 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
         seedCapabilities.Add(
             Identity("Class", "HttpBusinessQualityScrapReasonCodeClient"),
             "Quality");
+        // 字节面与 JSON 面同属 FileStorage 能力，但必须是两个 typed client：
+        // 它们的弹性契约不同（ADR 0015），DI 注册也因此分开。
+        AddManagedType(
+            seedCapabilities,
+            legacyDeclarations,
+            "Interface",
+            "IBusinessFileTransferClient",
+            "FileStorage",
+            "Capabilities/FileStorage/BusinessFileTransferClient.cs",
+            includeInLegacy: false);
+        AddManagedType(
+            seedCapabilities,
+            legacyDeclarations,
+            "Class",
+            "HttpBusinessFileTransferClient",
+            "FileStorage",
+            "Capabilities/FileStorage/BusinessFileTransferClient.cs",
+            includeInLegacy: false);
         seedCapabilities[Identity("Interface", "IBusinessBarcodeResolverClient")] = "BarcodeLabel";
         seedCapabilities[Identity("Class", "HttpBusinessBarcodeResolverClient")] = "BarcodeLabel";
         AddManagedType(

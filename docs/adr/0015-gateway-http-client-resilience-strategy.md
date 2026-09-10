@@ -2,6 +2,7 @@
 
 - 状态：已接受
 - 日期：2026-05-28
+- 修订依据：[ADR 0030：BusinessGateway 按用途分面的受控文件字节通路](0030-business-gateway-purpose-scoped-file-transfer.md)
 
 ## 背景
 
@@ -64,7 +65,9 @@ pipeline
 
 ## 实施说明
 
-本节只提供导航，不声明交付状态：
+1. 自 [ADR 0030](0030-business-gateway-purpose-scoped-file-transfer.md) 起，决策 2 的「单次调用超时为 10 秒」**不适用于经网关代理的字节流传输跳**（当前落点：BusinessGateway 的业务文件字节面）。该跳的时限改由调用方的取消令牌承担。**其余部分继续完全有效**：决策 2 的熔断参数与「不自动重试」、决策 1 末行「策略选择以客户端实际可发起的操作为准」、决策 3.2 对「能发起非幂等写操作」客户端必须使用无自动重试策略的要求（字节面的 tus `PATCH` 属非幂等写，因此仍须挂无重试策略，不允许零策略注册）、以及决策 3.4 关于 ADR 不维护客户端清单的口径。纯 JSON RPC 的调用不受本项影响，仍按决策 1/2/3 原样处理。
+
+本节其余部分只提供导航，不声明交付状态：
 
 - PlatformGateway producer：[`../../backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/GatewayHttpClientResilience.cs`](../../backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/GatewayHttpClientResilience.cs)
 - BusinessGateway producer：[`../../backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/BusinessGatewayHttpClientResilience.cs`](../../backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/BusinessGatewayHttpClientResilience.cs)

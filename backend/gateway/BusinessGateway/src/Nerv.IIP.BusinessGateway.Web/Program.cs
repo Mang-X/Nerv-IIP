@@ -144,6 +144,16 @@ builder.Services.AddHttpClient<IBusinessFileStorageClient, HttpBusinessFileStora
 {
     client.BaseAddress = fileStorageBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
+// 字节面单独注册。ADR 0015 决策 2 的 10 秒总超时是按单次 JSON 调用定的，会切断
+// shift-handover-photo 允许的 20,971,520 bytes 级 tus PATCH，并把同一 client 的熔断器打开、
+// 连累 JSON 面。该参数对字节流跳的不适用由 ADR 0030 决策 5 部分修订登记。
+// 注意这**不是**零策略：ADR 0015 决策 3.2 对能发起非幂等写的客户端仍适用（tus PATCH 是非幂等写），
+// 因此挂 streaming-safe——保留熔断与「不自动重试」，只去掉总超时。
+builder.Services.AddHttpClient<IBusinessFileTransferClient, HttpBusinessFileTransferClient>(client =>
+{
+    client.BaseAddress = fileStorageBaseAddress;
+    client.Timeout = Timeout.InfiniteTimeSpan;
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayStreamingSafeResilience();
 builder.Services.AddHttpClient<IBusinessMesClient, HttpBusinessMesClient>(client =>
 {
     client.BaseAddress = mesBaseAddress;

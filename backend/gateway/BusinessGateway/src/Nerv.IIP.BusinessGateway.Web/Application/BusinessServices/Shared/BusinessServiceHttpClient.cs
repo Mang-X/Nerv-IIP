@@ -18,6 +18,14 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
     protected virtual bool IsRegisteredLegacySemanticCode(string? code) =>
         code is not null && RegisteredSharedLegacySemanticCodes.Contains(code);
 
+    /// <summary>
+    /// 下游错误载体是否为裸 <c>{code,message}</c>（不套平台 ResponseData envelope）。
+    /// 默认 <c>false</c>：只认 <c>success:false</c> envelope。FileStorage 直接 <c>WriteAsJsonAsync</c>
+    /// 写出 <c>FileStorageError</c>，不选入的话非 400 响应的 code 与 message 会双双落空。
+    /// 这里只描述**载体形状**，不承载任何下游领域规则。
+    /// </summary>
+    protected virtual bool AcceptsBareDownstreamErrorPayload => false;
+
     protected async Task<TResponse> SendAsync<TResponse>(
         string internalBearerToken,
         HttpMethod method,
@@ -108,34 +116,7 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
             request.Content = JsonContent.Create(body, options: jsonOptions ?? JsonOptions);
         }
 
-        HttpResponseMessage response;
-        try
-        {
-            response = await httpClient.SendAsync(request, cancellationToken);
-        }
-        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
-        {
-            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
-                HttpStatusCode.ServiceUnavailable,
-                "downstream-timeout",
-                ex);
-        }
-        catch (Polly.Timeout.TimeoutRejectedException ex)
-        {
-            // 网关 resilience 管道超时（#1306 修法 3）：不再逃逸成 500/「未知错误」，
-            // 以 504 + downstream-timeout 透传，前端映射为可行动提示（任务可能仍在处理）。
-            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
-                HttpStatusCode.GatewayTimeout,
-                "downstream-timeout",
-                ex);
-        }
-        catch (HttpRequestException ex)
-        {
-            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
-                HttpStatusCode.ServiceUnavailable,
-                "downstream-unavailable",
-                ex);
-        }
+        var response = await SendRawAsync(request, HttpCompletionOption.ResponseContentRead, cancellationToken);
 
         if (response.IsSuccessStatusCode)
         {
@@ -159,6 +140,45 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
                 envelope.Message,
                 envelope.ErrorData,
                 envelope.AllowMessageAsSemanticCode);
+        }
+    }
+
+    /// <summary>
+    /// 唯一一份下游传输故障映射：JSON 面（<see cref="SendAsync{TResponse}"/>）与字节代理面共用。
+    /// 字节面需要 <see cref="HttpCompletionOption.ResponseHeadersRead"/> 才能流式转发，
+    /// 因此这里暴露 completionOption；异常口径不允许在 capability client 里另抄一份。
+    /// </summary>
+    protected async Task<HttpResponseMessage> SendRawAsync(
+        HttpRequestMessage request,
+        HttpCompletionOption completionOption,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await httpClient.SendAsync(request, completionOption, cancellationToken);
+        }
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.ServiceUnavailable,
+                "downstream-timeout",
+                ex);
+        }
+        catch (Polly.Timeout.TimeoutRejectedException ex)
+        {
+            // 网关 resilience 管道超时（#1306 修法 3）：不再逃逸成 500/「未知错误」，
+            // 以 504 + downstream-timeout 透传，前端映射为可行动提示（任务可能仍在处理）。
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.GatewayTimeout,
+                "downstream-timeout",
+                ex);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.ServiceUnavailable,
+                "downstream-unavailable",
+                ex);
         }
     }
 
@@ -259,11 +279,16 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
         JsonElement root,
         HttpStatusCode statusCode)
     {
-        if (root.ValueKind != JsonValueKind.Object ||
-            !root.TryGetProperty("success", out var success) ||
-            success.ValueKind != JsonValueKind.False)
+        if (root.ValueKind != JsonValueKind.Object)
         {
             return DownstreamErrorEnvelope.Invalid;
+        }
+
+        if (!root.TryGetProperty("success", out var success) || success.ValueKind != JsonValueKind.False)
+        {
+            return AcceptsBareDownstreamErrorPayload
+                ? ParseBareDownstreamErrorPayload(root)
+                : DownstreamErrorEnvelope.Invalid;
         }
 
         var message = root.TryGetProperty("message", out var messageValue) &&
@@ -304,6 +329,19 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
         }
 
         return DownstreamErrorEnvelope.Invalid;
+    }
+
+    private DownstreamErrorEnvelope ParseBareDownstreamErrorPayload(JsonElement root)
+    {
+        var code = root.TryGetProperty("code", out var codeValue) && codeValue.ValueKind == JsonValueKind.String
+            ? codeValue.GetString()
+            : null;
+        var message = root.TryGetProperty("message", out var messageValue) && messageValue.ValueKind == JsonValueKind.String
+            ? messageValue.GetString()
+            : null;
+        return code is null && message is null
+            ? DownstreamErrorEnvelope.Invalid
+            : new(code, message, [], AllowMessageAsSemanticCode: IsRegisteredLegacySemanticCode(message));
     }
 
     private static IReadOnlyCollection<JsonElement> ReadDownstreamErrorData(JsonElement root)
