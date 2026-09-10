@@ -149,9 +149,16 @@ public sealed class HttpBusinessFileTransferClient(HttpClient httpClient)
 
     private static void CopyResponseHeaders(HttpResponseMessage sourceResponse, HttpResponse targetResponse)
     {
+        // `Connection` 头自身列出的字段同样是 hop-by-hop（RFC 9110 §7.6.1），必须连同静态名单
+        // 一起挡掉；只比静态名单会把下游声明的动态 token 原样转发给浏览器。
+        var connectionHeaderValues = sourceResponse.Headers.Connection
+            .SelectMany(value => value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
         foreach (var header in sourceResponse.Headers.Concat(sourceResponse.Content.Headers))
         {
-            if (!HopByHopResponseHeaders.Contains(header.Key))
+            if (!HopByHopResponseHeaders.Contains(header.Key)
+                && !connectionHeaderValues.Contains(header.Key))
             {
                 targetResponse.Headers[header.Key] = header.Value.ToArray();
             }

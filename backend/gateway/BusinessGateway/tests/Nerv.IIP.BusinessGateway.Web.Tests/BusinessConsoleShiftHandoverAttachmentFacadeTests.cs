@@ -263,6 +263,40 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
         Assert.Equal("512", httpContext.Response.Headers["Upload-Offset"]);
     }
 
+    /// <summary>
+    /// #3096 第七轮 ④：<c>Connection</c> 头**自身列出的字段**同样是 hop-by-hop（RFC 9110 §7.6.1），
+    /// 只比静态名单会把下游声明的动态 token 原样转发给浏览器。
+    ///
+    /// 会失败的具体输入：下游回 <c>Connection: X-Downstream-Hop</c> 且真的带了 <c>X-Downstream-Hop</c>
+    /// ——只比静态九项时该头会被转发出去。同一响应里的 <c>Upload-Offset</c> 是**阴性对照**：它不在
+    /// <c>Connection</c> 里，必须照常转发，否则本断言会退化成「什么都不转发也能通过」。
+    /// </summary>
+    [Fact]
+    public async Task Byte_face_drops_headers_that_the_downstream_lists_in_its_connection_header()
+    {
+        var handler = new StubHandler(_ =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.NoContent);
+            response.Headers.TryAddWithoutValidation("Connection", "X-Downstream-Hop");
+            response.Headers.TryAddWithoutValidation("X-Downstream-Hop", "internal-only");
+            response.Headers.TryAddWithoutValidation("Upload-Offset", "512");
+            response.Content = new ByteArrayContent([]);
+            return response;
+        });
+        var client = CreateTransferClient(handler);
+        var httpContext = ResponseContext();
+
+        await client.ProxyShiftHandoverAttachmentTusHeadAsync(
+            "internal-test-token", "ups-handover-1", httpContext.Response, CancellationToken.None);
+
+        Assert.False(
+            httpContext.Response.Headers.ContainsKey("X-Downstream-Hop"),
+            "下游在 Connection 里点名的头是 hop-by-hop，不得转发给调用方");
+        Assert.False(httpContext.Response.Headers.ContainsKey("Connection"));
+        // 阴性对照：未被点名的头必须照常转发
+        Assert.Equal("512", httpContext.Response.Headers["Upload-Offset"]);
+    }
+
     [Fact]
     public async Task Tus_patch_proxy_forwards_the_resume_headers_and_the_chunk_bytes()
     {
@@ -654,7 +688,11 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
     /// `Task.Delay` 被后端确定性 checker 判为 unexplained finding）。
     ///
     /// 会失败的具体输入：`shift-handover-photo` 允许 20,971,520 bytes，&lt; 2 MB/s 的现场网络下
-    /// 单次满额 tus `PATCH` 必然超过 10 秒。鉴别点是**JSON 面被自己的管线切断的那一刻，字节面仍然在等**。
+    /// 单次满额 tus `PATCH` 必然超过 10 秒。
+    ///
+    /// **鉴别点是闸门放行后的 <c>await byteCall</c> 正常完成**：字节面若也挂着 10 秒总超时，它会在
+    /// 闸门放行之前就抛出，该 <c>await</c> 直接红。方法体里那句 <c>Assert.False(byteCall.IsCompleted)</c>
+    /// 是**冗余确认、非新增鉴别力**——清洁重建下删掉它重跑，M1 仍被杀（#3096 第六轮实测）。
     /// </summary>
     [Fact]
     public async Task Json_face_is_cut_by_its_pipeline_timeout_while_the_byte_face_stays_open()
