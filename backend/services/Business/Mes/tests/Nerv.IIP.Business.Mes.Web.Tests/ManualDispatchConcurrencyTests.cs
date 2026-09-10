@@ -397,7 +397,8 @@ public sealed class ManualDispatchConcurrencyTests
             At(0),
             TimeSpan.FromMinutes(30),
             null,
-            null);
+            null,
+            "SKU-001");
         if (activeDeviceAssetId is not null)
         {
             task.Assign("operator-seed", activeDeviceAssetId, "shift-a", At(1), "user:seed-001");

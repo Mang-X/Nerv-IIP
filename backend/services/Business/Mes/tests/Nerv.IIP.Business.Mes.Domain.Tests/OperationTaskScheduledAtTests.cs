@@ -12,7 +12,8 @@ public sealed class OperationTaskScheduledAtTests
     private static readonly DateTimeOffset EarliestStart = new(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
 
     private static OperationTask Queue() => OperationTask.Queue(
-        "org-001", "env-dev", "WO-01", "OP-10", 10, "WC-1", [], EarliestStart, TimeSpan.FromMinutes(30));
+        "org-001", "env-dev", "WO-01", "OP-10", 10, "WC-1", [], EarliestStart, TimeSpan.FromMinutes(30),
+        "SKU-001");
 
     [Fact]
     public void Manual_dispatch_never_sets_scheduled_at()

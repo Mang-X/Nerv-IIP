@@ -221,7 +221,8 @@ public sealed class MesIntegrationEventTests
         var start = DateTimeOffset.Parse("2026-07-15T08:00:00Z");
         var task = OperationTask.Queue(
             "org-001", "env-dev", "WO-001", "OP-10", 10, "WC-1", [],
-            start, TimeSpan.FromHours(1));
+            start, TimeSpan.FromHours(1),
+            "SKU-001");
         task.Assign("operator-1", "DEVICE-2", "SHIFT-1", start.AddMinutes(-5), "user:planner-1");
         var dispatchedDomainEvent = Assert.IsType<OperationTaskManuallyDispatchedDomainEvent>(
             Assert.Single(task.GetDomainEvents()));

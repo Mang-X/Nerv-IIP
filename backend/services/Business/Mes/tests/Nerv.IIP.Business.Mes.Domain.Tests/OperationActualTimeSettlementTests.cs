@@ -258,7 +258,8 @@ public sealed class OperationActualTimeSettlementTests
         var task = OperationTask.Create(
             "org-001", "env-dev", "WO-001", "OP-001",
             OperationTaskLifecycleStatus.Completed, 10, "WC-001", [], startedAtUtc,
-            TimeSpan.FromHours(1), startedAtUtc, startedAtUtc.AddHours(1));
+            TimeSpan.FromHours(1), startedAtUtc, startedAtUtc.AddHours(1),
+            "SKU-001");
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
             task.ReopenAfterReportReversal(
@@ -358,7 +359,8 @@ public sealed class OperationActualTimeSettlementTests
             "WC-001",
             [],
             earliestStartUtc,
-            TimeSpan.FromHours(1));
+            TimeSpan.FromHours(1),
+            "SKU-001");
 
     private static OperationActualTimeSettlementSnapshot Settlement(OperationTask task) =>
         Assert.Single(task.GetDomainEvents().OfType<OperationActualTimeSettledDomainEvent>()).Settlement;
