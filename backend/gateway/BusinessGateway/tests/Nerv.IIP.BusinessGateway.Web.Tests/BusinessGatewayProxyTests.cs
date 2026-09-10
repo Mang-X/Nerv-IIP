@@ -3641,7 +3641,7 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
-    public async Task Mes_downtime_v2_write_rejects_missing_work_center_before_authorization_or_forwarding()
+    public async Task Mes_downtime_v2_write_rejects_missing_work_center_after_authorization_and_before_forwarding()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         var mes = new RecordingMesClient();
@@ -3667,7 +3667,9 @@ public sealed class BusinessGatewayProxyTests
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Equal(0, mes.RecordDowntimeCallCount);
-        Assert.Null(auth.LastContinuityMode);
+        // #3330：鉴权已前移到 DTO 校验之前，写操作照旧要求实时鉴权；端点级规则随后把请求拒成 400，
+        // 不转发给下游（上一条断言）。
+        Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
     }
 
     // #1947：停机读面的原因码归 Maintenance 目录所有，中文名必须由门面补齐（api-contract-and-codegen §17），
@@ -5807,7 +5809,7 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
-    public async Task Erp_work_center_cost_rate_facade_rejects_an_omitted_effective_start_before_authorization()
+    public async Task Erp_work_center_cost_rate_facade_rejects_an_omitted_effective_start_after_authorization()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         await using var lease = LeaseHost(auth);
@@ -5827,7 +5829,8 @@ public sealed class BusinessGatewayProxyTests
             });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Equal(0, auth.CallCount);
+        // #3330：鉴权已前移到 DTO 校验之前，所以载荷不合法的请求也会先付一次鉴权往返。
+        Assert.Equal(1, auth.CallCount);
     }
 
     [Fact]
@@ -7050,7 +7053,7 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
-    public async Task Barcode_resolve_facade_rejects_page_offset_overflow_before_authorization_and_downstream()
+    public async Task Barcode_resolve_facade_rejects_page_offset_overflow_after_authorization_and_before_downstream()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         var barcode = new RecordingBarcodeLabelClient();
@@ -7072,7 +7075,9 @@ public sealed class BusinessGatewayProxyTests
         });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Equal(0, auth.CallCount);
+        // #3330：鉴权已前移到 DTO 校验之前，所以载荷不合法的请求也会先付一次鉴权往返；
+        // 真正承重的是下面这条——溢出的 pageOffset 绝不会被转发到下游。
+        Assert.Equal(1, auth.CallCount);
         Assert.Equal(0, barcode.ResolveCallCount);
     }
 
@@ -15158,12 +15163,18 @@ internal sealed class RecordingInventoryClient : IBusinessInventoryClient
             request.PageSize));
     }
 
+    public int MovementCallCount { get; private set; }
+
+    public BusinessConsolePostStockMovementRequest? LastMovementRequest { get; private set; }
+
     public Task<BusinessConsolePostStockMovementResponse> PostMovementAsync(
         string internalBearerToken,
         BusinessConsolePostStockMovementRequest request,
         CancellationToken cancellationToken,
         IReadOnlyCollection<string>? forwardedPermissions = null)
     {
+        MovementCallCount++;
+        LastMovementRequest = request;
         LastInternalToken = internalBearerToken;
         LastForwardedPermissions = forwardedPermissions ?? [];
         return Task.FromResult(new BusinessConsolePostStockMovementResponse("move-001", 10, 8));

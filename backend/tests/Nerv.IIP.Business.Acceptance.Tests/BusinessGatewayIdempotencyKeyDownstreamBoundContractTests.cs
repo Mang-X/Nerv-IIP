@@ -89,12 +89,13 @@ namespace Nerv.IIP.Business.Acceptance.Tests;
 /// <item>不证明「受全局钳作用、但**没有**端点级规则」的那些网关请求安全——它们只吃全局钳，归 #3287。
 /// （此处原写「118 个」，是单行 grep 的产物，已被 #3287 第 0 步的反射测量推翻；
 /// 该计数每落一张子票就变，故不在这里复述数字。）</item>
-/// <item><b>不覆盖头部路径</b>：FastEndpoints 的 DTO 校验跑在
-/// <c>AuthorizedBusinessProxyEndpoint.HandleAsync</c> **之前**，而经 <c>Idempotency-Key</c> /
-/// <c>X-Idempotency-Key</c> 头传来的键要到 <c>HandleAsync</c> 里 <c>BusinessGatewayIdempotencyKey.Resolve</c>
-/// 才写进 DTO。⇒ 本类枚举到的**每一条**端点级规则（不止本票补的那些，既有的同样如此）
-/// **只约束请求体路径**；头部路径仍只由全局钳约束。所以本类全绿**不等于**「网关不会把超长键送下去」。
-/// 该顺序缺陷由 #3330 承接，并且是 #3327 抬钳的硬前置。</item>
+/// <item><b>头部路径的覆盖是间接的</b>：#3330 已把 <c>BusinessGatewayIdempotencyKey.Resolve</c>
+/// 从 <c>AuthorizedBusinessProxyEndpoint.HandleAsync</c> 挪到 DTO 校验之前
+/// （<c>OnBeforeValidateAsync</c>），因此经 <c>Idempotency-Key</c> / <c>X-Idempotency-Key</c>
+/// 头传来的键在校验发生时已归一化写进 DTO，本类枚举到的端点级规则对头部与请求体两条来源同时生效。
+/// 但那条「归一化先于校验」的性质由网关自己的
+/// <c>BusinessGatewayRequestPipelineOrderTests</c> 证明，**不是本类证的**：
+/// 本类只读校验器规则值、不发请求。若那个次序被改回去，本类照样全绿而头部路径重新裸奔。</item>
 /// <item>不覆盖 CAP 事件信封键（<c>EventIds.Idempotency(...)</c> 产出、落 inbox 的 512/500/300 那些）：
 /// 那不是网关承诺的值域。</item>
 /// <item>不覆盖「验证类型是泛型形参」的开放泛型校验器（今日网关侧为 0，

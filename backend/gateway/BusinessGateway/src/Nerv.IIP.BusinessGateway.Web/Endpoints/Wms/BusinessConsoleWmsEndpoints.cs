@@ -2051,10 +2051,10 @@ public sealed class BusinessConsoleRetryWmsOutboundInventoryPostingRequestValida
 {
     public BusinessConsoleRetryWmsOutboundInventoryPostingRequestValidator()
     {
-        // 只补长度上界，**不加 NotEmpty**：FastEndpoints 的 DTO 校验跑在
-        // AuthorizedBusinessProxyEndpoint.HandleAsync（含鉴权）之前，补上必填会把
-        // 未授权调用方的 403 变成 400（BusinessGatewayAuthorizationTests 实测），
-        // 那是鉴权顺序上的行为改变，不在本票射程内。
+        // 只补长度上界，**不加 NotEmpty**：加必填是值域决定，归 #3287 的子票，不在这里顺手做。
+        // 原先写在这里的理由（「补上必填会把未授权调用方的 403 变成 400」）已由 #3330 消除：
+        // 鉴权与幂等键归一化都已前移到 DTO 校验之前
+        // （AuthorizedBusinessProxyEndpoint.OnBeforeValidateAsync），端点级规则命中不再改写鉴权结论。
         RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
 }

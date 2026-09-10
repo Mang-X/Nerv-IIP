@@ -117,6 +117,10 @@ public sealed class BusinessGatewayBarcodeLifecycleEndpointTests
         Assert.Equal(0, barcode.LifecycleCallCount);
     }
 
+    // #3330 后这条仍然成立，但成立的**理由**换了：鉴权已前移到 DTO 校验之前，
+    // 只是缺了 organizationId 或 environmentId 时请求没有指名租户作用域，
+    // AuthorizedBusinessProxyEndpoint 判定此时作不出有意义的鉴权结论，把它推迟给 DTO 校验先答
+    // （否则一个确实有权限、只是漏填查询参数的调用方会被告知「你没有权限」）。
     [Theory]
     [InlineData("dispatch", "organizationId=org-001")]
     [InlineData("dispatch", "environmentId=env-dev")]
