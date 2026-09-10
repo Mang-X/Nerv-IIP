@@ -182,8 +182,15 @@ public sealed class BusinessGatewayRequestPipelineOrderTests
         Assert.Equal(0, headerInventory.MovementCallCount);
         Assert.Equal(0, bodyInventory.MovementCallCount);
 
-        // 只断言「两边一样」还不够：把 Resolve 的异常改成逃逸，两边会一起变成同一个 500，
-        // 上面那条等式照样成立。所以超过全局钳这一格必须再钉住具体形状。
+        // 上面第一条是**绝对锚**（不是「两边一样」这种相对断言），所以两条来源一起劣化成 500
+        // 会直接红——本用例不存在「两边一起坏掉还全绿」的漏洞。本 PR 里另一条两路径等价断言
+        // （Header_supplied_key_is_bound_by_the_endpoint_level_rule）同样被绝对状态码锚住。
+        //
+        // 但 over-endpoint-bound 这一格在「Resolve 的异常改成逃逸」那格变异下**不会红**，
+        // 原因是**该变异对它不可达**，不是断言弱：129 字符 < 全局钳 150，
+        // BusinessGatewayIdempotencyKey.Normalize 根本不抛，执行流进不了被变异的 catch。
+        // （本仓判例：变异存活分「覆盖缺口」与「分支不可达」两种成因，这里是后者。）
+        // 下面这条 Assert.Contains 钉的是稳定 wire 码本身，与那格变异无关，别当冗余删掉。
         if (keyKind == "over-global-clamp")
         {
             Assert.Contains("idempotency-key-too-long", headerBody, StringComparison.Ordinal);
@@ -217,8 +224,10 @@ public sealed class BusinessGatewayRequestPipelineOrderTests
     /// 校验过的 DTO 取值分叉。
     /// </summary>
     /// <remarks>
-    /// <c>ResolveForAudit</c> 是幂等键的第二条读取路径，它在 <c>ForwardAsync</c> 体内被调用，
-    /// 因而永远在 <c>Resolve</c> 之后。<c>Resolve</c> 已把归一化结果写回 DTO，
+    /// <c>ResolveForAudit</c> 是幂等键的第二条读取路径。它在生产代码里**只有一个调用点**
+    /// （<c>AuthorizedBusinessProxyEndpoint.CreateAuditContext</c>），经
+    /// <c>RequireAuditContext</c> / <c>RequireIdempotentAuditContext</c> 由各端点的
+    /// <c>ForwardAsync</c> 覆写体触达，因而永远在 <c>Resolve</c> 之后。<c>Resolve</c> 已把归一化结果写回 DTO，
     /// 于是 <c>ResolveForAudit</c> 看到的三个来源（标准头 / legacy 头 / 请求体）此时必然一致：
     /// 它既不会再抛 409，返回值也恒等于那个受端点级规则约束过的值。
     /// </remarks>

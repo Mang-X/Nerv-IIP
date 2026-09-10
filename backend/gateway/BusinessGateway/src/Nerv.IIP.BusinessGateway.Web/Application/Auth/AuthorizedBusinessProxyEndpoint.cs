@@ -147,7 +147,14 @@ public abstract class AuthorizedBusinessProxyEndpoint<TRequest, TResponse>(
     /// <list type="number">
     /// <item><description><b>作用域访问器抛</b>——它们读的是尚未经过 DTO 校验的请求对象，
     /// 例如 <c>request.Problem.OrganizationId</c> 在 <c>problem</c> 缺失时会解空引用。
-    /// 这里用 catch 而不是逐个端点登记「哪个访问器会抛」，是为了不留一份会被后来者绕过的名单。</description></item>
+    /// 这里用 catch 而不是逐个端点登记「哪个访问器会抛」，是为了不留一份会被后来者绕过的名单。
+    /// <para><b>这个 <c>catch (Exception)</c> 不吞异常</b>（看到裸 catch 请先读完这段）：
+    /// 它只是**不在这里**作鉴权判断，异常本身并没有被消化掉。两条出路都已实测：
+    /// 若 DTO 校验随后放行，<see cref="HandleAsync" /> 会再调一次 <see cref="BuildRequirements" />，
+    /// 同一个异常在**没有任何 catch** 的路径上原样抛出，交给宿主的异常处理中间件；
+    /// 若 DTO 校验拒绝，请求根本走不到 <see cref="HandleAsync" />，
+    /// 这时的静默与鉴权前移**之前**逐字相同（那时异常同样不会发生，因为校验先答）。
+    /// ⇒ 无论哪条，都不存在「异常被这里咽掉、故障因此隐身」的窗口。</para></description></item>
     /// <item><description><b>请求没有指名租户作用域</b>——权限是「某主体在某组织/某环境内的权限」，
     /// 组织或环境为空时不存在可判定的权限问题。此时
     /// <see cref="BusinessGatewayAuthorization.RequireAnyPermissionAsync" /> 会因为

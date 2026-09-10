@@ -1360,10 +1360,12 @@ public sealed class BusinessGatewayWmsTests
     /// 该断言故意放在 <c>wms.Calls</c> 这条**闭集**断言之前：规则一旦被放宽，
     /// 那次请求会被转发，<c>Calls</c> 多一项，两条断言一起红。
     /// 改动本用例时不要把那次 400 请求挪到闭集断言之后。
-    /// <para><b>#3330 起 <c>auth.Requirements</c> 对这一条不再有鉴别力</b>：鉴权已前移到 DTO 校验之前，
-    /// 那次被 400 拒掉的请求同样会走一次鉴权，所以 <c>Requirements</c> 里恒定多出一项
-    /// <c>WmsReceiptsManage</c>——它现在证的是「鉴权先于校验」，不再是「非法值没走到鉴权」。
-    /// 承担 <c>ExpectedVersion</c> 那条规则的仍然是 <c>wms.Calls</c>。</para>
+    /// <para><b>#3330 起 <c>auth.Requirements</c> 换了鉴别对象，不是失去了鉴别力</b>：
+    /// 鉴权已前移到 DTO 校验之前，那次被 400 拒掉的请求同样会走一次鉴权，
+    /// 所以 <c>Requirements</c> 里恒定多出一项 <c>WmsReceiptsManage</c>。
+    /// 这一项现在钉的是「<b>鉴权先于校验</b>」——把鉴权挪回 <c>HandleAsync</c> 体内，
+    /// 这条闭集立刻转红（#3330 的 M1 变异实测）。**因此它不是冗余断言，不要删。**
+    /// 换过去之后，承担 <c>ExpectedVersion</c> 那条规则的是 <c>wms.Calls</c>。</para>
     /// </remarks>
     [Fact]
     public async Task Wms_assignment_facades_inject_trusted_assigner_sites_route_resource_ids_and_reject_a_zero_expected_version()
