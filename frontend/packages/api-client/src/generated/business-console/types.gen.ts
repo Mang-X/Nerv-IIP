@@ -9939,6 +9939,10 @@ export type RetryBusinessConsoleWmsOutboundInventoryPostingData = {
 
 export type RetryBusinessConsoleWmsOutboundInventoryPostingErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -9947,6 +9951,8 @@ export type RetryBusinessConsoleWmsOutboundInventoryPostingErrors = {
      */
     403: unknown;
 };
+
+export type RetryBusinessConsoleWmsOutboundInventoryPostingError = RetryBusinessConsoleWmsOutboundInventoryPostingErrors[keyof RetryBusinessConsoleWmsOutboundInventoryPostingErrors];
 
 export type RetryBusinessConsoleWmsOutboundInventoryPostingResponses = {
     /**
@@ -12881,6 +12887,10 @@ export type PublishBusinessConsoleEngineeringSopDocumentData = {
 
 export type PublishBusinessConsoleEngineeringSopDocumentErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -12889,6 +12899,8 @@ export type PublishBusinessConsoleEngineeringSopDocumentErrors = {
      */
     403: unknown;
 };
+
+export type PublishBusinessConsoleEngineeringSopDocumentError = PublishBusinessConsoleEngineeringSopDocumentErrors[keyof PublishBusinessConsoleEngineeringSopDocumentErrors];
 
 export type PublishBusinessConsoleEngineeringSopDocumentResponses = {
     /**
@@ -20100,6 +20112,10 @@ export type PostBusinessConsoleInventoryMovementData = {
 
 export type PostBusinessConsoleInventoryMovementErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -20108,6 +20124,8 @@ export type PostBusinessConsoleInventoryMovementErrors = {
      */
     403: unknown;
 };
+
+export type PostBusinessConsoleInventoryMovementError = PostBusinessConsoleInventoryMovementErrors[keyof PostBusinessConsoleInventoryMovementErrors];
 
 export type PostBusinessConsoleInventoryMovementResponses = {
     /**
@@ -22508,6 +22526,10 @@ export type CreateBusinessConsoleBarcodePrintBatchData = {
 
 export type CreateBusinessConsoleBarcodePrintBatchErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -22516,6 +22538,8 @@ export type CreateBusinessConsoleBarcodePrintBatchErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleBarcodePrintBatchError = CreateBusinessConsoleBarcodePrintBatchErrors[keyof CreateBusinessConsoleBarcodePrintBatchErrors];
 
 export type CreateBusinessConsoleBarcodePrintBatchResponses = {
     /**
@@ -22728,6 +22752,10 @@ export type RecordBusinessConsoleBarcodeScanData = {
 
 export type RecordBusinessConsoleBarcodeScanErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -22736,6 +22764,8 @@ export type RecordBusinessConsoleBarcodeScanErrors = {
      */
     403: unknown;
 };
+
+export type RecordBusinessConsoleBarcodeScanError = RecordBusinessConsoleBarcodeScanErrors[keyof RecordBusinessConsoleBarcodeScanErrors];
 
 export type RecordBusinessConsoleBarcodeScanResponses = {
     /**

@@ -220,6 +220,19 @@ public sealed class ConfirmBusinessConsoleInventoryCountAdjustmentEndpoint(
     }
 }
 
+public sealed class BusinessConsolePostStockMovementRequestValidator
+    : Validator<BusinessConsolePostStockMovementRequest>
+{
+    public BusinessConsolePostStockMovementRequestValidator()
+    {
+        // 只补长度上界，**不加 NotEmpty**：FastEndpoints 的 DTO 校验跑在
+        // AuthorizedBusinessProxyEndpoint.HandleAsync（含鉴权）之前，补上必填会把
+        // 未授权调用方的 403 变成 400（BusinessGatewayAuthorizationTests 实测），
+        // 那是鉴权顺序上的行为改变，不在本票射程内。
+        RuleFor(x => x.IdempotencyKey).MaximumLength(128);
+    }
+}
+
 public sealed class BusinessConsoleConfirmStockCountAdjustmentRequestValidator
     : Validator<BusinessConsoleConfirmStockCountAdjustmentRequest>
 {
