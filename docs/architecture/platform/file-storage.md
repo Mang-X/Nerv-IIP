@@ -17,7 +17,7 @@ Knowledge、Ops、AppHub 与业务域可以引用文件，但文件的业务语�
 5. `ObjectKey` 可以作为 File Storage 内部持久化事实存在，但不得暴露到公开 API、Gateway facade、SDK DTO 或业务持久化模型。
 6. UI、外部应用、Connector Host 与业务服务不得绕过 File Storage 直接访问对象存储；上传、完成、下载都必须经过受控会话或授权入口。
 7. purpose、content type / extension、quota、retention 等当前策略由 File Storage 自己的配置与实现解释；其它服务不能维护平行 allowlist 或配额事实。
-8. BusinessGateway 当前有两组面向业务控制台的文件面：工程 SOP 文件的下载授权与内容（门在 `business.engineering.documents.read`，以 `fileId` 为入参、网关侧不复核 purpose，并把 download grant id 交给调用方），以及交接班附件的上传与下载（门在 `business.mes.handovers.manage` / `business.mes.handovers.read`，用途与 owner 由网关固定，grant id 不出网关）。**两组的形态不同不是笔误**：适用于新开业务面的约束、既有 SOP 面的存量例外及其失效条件，以 [ADR 0030](../../adr/0030-business-gateway-purpose-scoped-file-transfer.md) 决策 2/3 为准，本页不复述规则。
+8. BusinessGateway 当前有两组面向业务控制台的文件面：工程 SOP 文件的下载授权与内容（门在 `business.engineering.documents.read`，以 `fileId` 为入参、网关侧不复核 purpose，并把 download grant id 交给调用方），以及交接班附件的上传与下载（门在 `business.mes.handovers.manage` / `business.mes.handovers.read`，用途与 owner 由网关固定，grant id 不出网关）。**两组的形态不同不是笔误**：适用于新开业务面的约束，以及既有 SOP 面被定性为**已登记、未论证安全的缺口**（不是豁免、也不设条件式判据）这一点，均以 [ADR 0030](../../adr/0030-business-gateway-purpose-scoped-file-transfer.md) 决策 2/3 为准，本页不复述规则。
 
 ## 契约与目标边界
 
