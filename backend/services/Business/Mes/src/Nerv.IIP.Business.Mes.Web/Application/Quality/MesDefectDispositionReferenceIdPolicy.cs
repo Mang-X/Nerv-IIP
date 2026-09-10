@@ -8,7 +8,7 @@ namespace Nerv.IIP.Business.Mes.Web.Application.Quality;
 /// 上跑出读数，不是静态推导）：
 /// <c>NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefect</c> 按 <c>DispositionType</c> 三选一取出
 /// <c>payload.ReworkWorkOrderId</c> / <c>ScrapMovementId</c> / <c>ReturnDocumentId</c>，
-/// 交给 <c>DefectRecord.AcceptDisposition</c> **逐字**（只 Trim，无截断、无派生）写进
+/// 交给 <c>DefectRecord.AcceptDisposition</c> **逐字**（只在消费者侧归一化一次，无截断、无派生）写进
 /// <c>defect_records.disposition_reference_id</c>。改前这一列是 <c>varchar(100)</c>，
 /// 而 Quality 侧这三个值的产出列 <c>nonconformance_reports.{rework_work_order_id, scrap_movement_id, return_document_id}</c>
 /// 都是 <c>varchar(150)</c>：101–150 字符的合法处置引用落库即 <c>22001</c>。

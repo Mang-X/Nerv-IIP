@@ -73,14 +73,17 @@ public sealed class NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefe
         };
 
         // #3318：referenceId 是 Quality 的处置引用身份，产出列宽 150；它被 AcceptDisposition 逐字
-        // （只 Trim）写进 defect_records.disposition_reference_id。改前该列只有 100，101–150 字符的
+        // 写进 defect_records.disposition_reference_id。改前该列只有 100，101–150 字符的
         // 合法引用在 SaveChangesAsync 抛 DbUpdateException(22001)——而这个 handler 函数体内一条 catch
         // 都没有，异常直接逃逸出 HandleAsync 变成 poison message（#877），整条消费链卡死。
         // 这里就地判长并走死信：既不截断（截断会静默伪造一个指不到任何对象的下游引用，
         // 而行上没有任何字段记录它被截断过），也不抛出（抛出就是回到 poison message）。
         // 列宽已加宽到与 Quality 产出列一致，因此今天合法的引用走不到这条分支；
-        // 它看守的是「将来任一侧列宽再变」。归一化在这里做一次，AcceptDisposition 收到的就是
-        // 落库那一份取值，守卫量的和落库的是同一个字符串。
+        // 它看守的是「将来任一侧列宽再变」。
+        //
+        // **归一化只此一处**：DefectRecord.AcceptDisposition 已不再自己 Trim（见那边的参数注释），
+        // 原样落库。因此「守卫量的字符串 == 落库的字符串」是构造上成立的，
+        // 不依赖「两处归一化必须保持幂等等价」这条约定——那条约定一旦被谁改分叉，没有任何东西会红。
         var normalizedReferenceId = string.IsNullOrWhiteSpace(referenceId) ? null : referenceId.Trim();
         if (normalizedReferenceId is not null && MesDefectDispositionReferenceIdPolicy.ExceedsColumn(normalizedReferenceId))
         {

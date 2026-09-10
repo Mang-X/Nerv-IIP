@@ -207,6 +207,62 @@ public sealed class MesDefectDispositionReferenceIdLengthContractTests
     }
 
     /// <summary>
+    /// **守卫量的那个字符串，必须就是落库的那个字符串**（#3318 复审要改 2）。
+    ///
+    /// 守卫在写入之前按长度拦截。只要「归一化」发生在两个地方（消费者 Trim 一次、
+    /// <c>DefectRecord.AcceptDisposition</c> 再 Trim 一次），这个前提就靠「两处保持幂等等价」这条
+    /// **约定**撑着：今天 <c>Trim</c> 幂等所以等价，哪一侧将来分叉（比如再去零宽字符）就悄悄不成立，
+    /// 而没有任何东西会红。本票的处置是**删掉域那一层**，让前提由构造成立而不是靠约定。
+    ///
+    /// 两段断言：
+    /// <list type="number">
+    /// <item>走**真实消费者**：带前后空白、Trim 后恰好等于列宽的入站取值 —— 落库值必须**逐字节等于**
+    /// 守卫量的那一份（Trim 后的形态、长度等于列宽），不是原始带空白的那一份；</item>
+    /// <item>直接调**域方法**并传一个带空白的取值 —— 必须**原样**存下来。这一段才是牙：
+    /// 谁把 <c>Trim()</c>（或任何别的归一化）加回 <c>AcceptDisposition</c>，这条就红。
+    /// 只有第 ① 段的话，因为 <c>Trim</c> 幂等，加回去也照绿。</item>
+    /// </list>
+    /// </summary>
+    [Fact]
+    public async Task The_string_the_guard_measures_is_the_string_that_is_persisted()
+    {
+        await using var connection = await CreateOpenSqliteConnectionAsync();
+        await using var dbContext = CreateSqliteDbContext(connection);
+        await dbContext.Database.EnsureCreatedAsync();
+        await SeedDefectAsync(dbContext, DefectNo);
+
+        // ① 入站带空白，Trim 后恰好等于列宽：落库的是归一化后的那一份，长度等于列宽。
+        var normalized = new string('n', MesDefectDispositionReferenceIdPolicy.ColumnMaxLength);
+        var padded = $"  {normalized}\t";
+        Assert.NotEqual(normalized, padded);
+        Assert.True(
+            MesDefectDispositionReferenceIdPolicy.ExceedsColumn(padded),
+            "带空白的原始取值必须超出列宽，否则本用例分不出「量的是哪一份」。");
+
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var consumer = new NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefect(dbContext, deadLetters);
+        await consumer.HandleAsync(DispositionEvent("evt-3318-normalized", DefectNo, padded), CancellationToken.None);
+        dbContext.ChangeTracker.Clear();
+
+        var persisted = (await dbContext.DefectRecords.AsNoTracking().SingleAsync()).DispositionReferenceId;
+        Assert.Equal(normalized, persisted);
+        Assert.Equal(MesDefectDispositionReferenceIdPolicy.ColumnMaxLength, persisted!.Length);
+        Assert.Empty(await deadLetters.ListAsync(null, null, CancellationToken.None));
+
+        // ② 域方法不得再做第二次归一化：传什么存什么。
+        var defect = DefectRecord.Create(
+            Org, Env, "DEF-3318-VERBATIM", WorkOrderId, "OP-10", "SURFACE", 1m,
+            DateTimeOffset.Parse("2026-09-10T04:00:00Z"));
+        defect.AcceptDisposition(
+            "NCR-3318",
+            "NCR-2026-3318",
+            QualityNcrDispositionTypes.Rework,
+            padded,
+            DateTimeOffset.Parse("2026-09-10T05:00:00Z"));
+        Assert.Equal(padded, defect.DispositionReferenceId);
+    }
+
+    /// <summary>
     /// 受管的 <c>disposition_reference_id</c> 列，从 EF 模型**闭集枚举**（不是手写白名单）：
     /// 新增一张带该列的表会自动进值域并让计数断言红。
     /// </summary>
