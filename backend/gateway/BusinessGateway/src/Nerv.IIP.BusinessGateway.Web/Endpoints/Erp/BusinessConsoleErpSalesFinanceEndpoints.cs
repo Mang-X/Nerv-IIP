@@ -724,7 +724,7 @@ public sealed class GetBusinessConsoleErpCostCandidateBySourceDocumentEndpoint(
 
 /// <summary>
 /// 端点级幂等键长度上界（#3325）。本处下游权威：Erp 侧 OpenOpportunityCommandHandler 把原始键交给 CodeAllocator，
-/// 落 erp.code_idempotency_keys.idempotency_key(150)；该命令的校验器没有幂等键规则。
+/// 落 erp.code_idempotency_keys.idempotency_key(150)；该命令的校验器没有幂等键长度规则。
 /// 共同口径见 BusinessConsoleErpProcurementEndpoints.cs 顶部的「#3325 端点级幂等键上界」注释块。
 /// </summary>
 public sealed class BusinessConsoleOpenErpOpportunityRequestValidator
@@ -736,7 +736,7 @@ public sealed class BusinessConsoleOpenErpOpportunityRequestValidator
 
 /// <summary>
 /// 端点级幂等键长度上界（#3325）。本处下游权威：Erp 侧 CreateQuotationCommandHandler 把原始键交给 CodeAllocator，
-/// 落 erp.code_idempotency_keys.idempotency_key(150)；该命令的校验器没有幂等键规则。
+/// 落 erp.code_idempotency_keys.idempotency_key(150)；该命令的校验器没有幂等键长度规则。
 /// 共同口径见 BusinessConsoleErpProcurementEndpoints.cs 顶部的「#3325 端点级幂等键上界」注释块。
 /// </summary>
 public sealed class BusinessConsoleCreateErpQuotationRequestValidator
@@ -748,7 +748,7 @@ public sealed class BusinessConsoleCreateErpQuotationRequestValidator
 
 /// <summary>
 /// 端点级幂等键长度上界（#3325）。本处下游权威：Erp 侧 CreateSalesOrderCommandHandler 把原始键交给 CodeAllocator，
-/// 落 erp.code_idempotency_keys.idempotency_key(150)；该命令的校验器没有幂等键规则。
+/// 落 erp.code_idempotency_keys.idempotency_key(150)；该命令的校验器没有幂等键长度规则。
 /// 同一个键还进 ErpCommandCausationIds.ForHttpCommand，但那是无条件 SHA256 截 24 位的定长摘要，
 /// 对原始键零约束（#3290 的幽灵权威形状），故**不**作为权威登记。
 /// 共同口径见 BusinessConsoleErpProcurementEndpoints.cs 顶部的「#3325 端点级幂等键上界」注释块。
@@ -762,7 +762,7 @@ public sealed class BusinessConsoleCreateErpSalesOrderRequestValidator
 
 /// <summary>
 /// 端点级幂等键长度上界（#3325）。本处下游权威：Erp 侧 ReleaseDeliveryOrderCommandHandler 把原始键交给 CodeAllocator，
-/// 落 erp.code_idempotency_keys.idempotency_key(150)；该命令的校验器没有幂等键规则。
+/// 落 erp.code_idempotency_keys.idempotency_key(150)；该命令的校验器没有幂等键长度规则。
 /// 共同口径见 BusinessConsoleErpProcurementEndpoints.cs 顶部的「#3325 端点级幂等键上界」注释块。
 /// </summary>
 public sealed class BusinessConsoleReleaseErpDeliveryOrderRequestValidator
@@ -774,7 +774,7 @@ public sealed class BusinessConsoleReleaseErpDeliveryOrderRequestValidator
 
 /// <summary>
 /// 端点级幂等键长度上界（#3325）。本处下游权威：Erp 侧 CreateAccountPayableCommandHandler 把原始键交给 CodeAllocator，
-/// 落 erp.code_idempotency_keys.idempotency_key(150)；该命令的校验器没有幂等键规则。
+/// 落 erp.code_idempotency_keys.idempotency_key(150)；该命令的校验器没有幂等键长度规则。
 /// 共同口径见 BusinessConsoleErpProcurementEndpoints.cs 顶部的「#3325 端点级幂等键上界」注释块。
 /// </summary>
 public sealed class BusinessConsoleCreateErpAccountPayableRequestValidator
@@ -786,7 +786,7 @@ public sealed class BusinessConsoleCreateErpAccountPayableRequestValidator
 
 /// <summary>
 /// 端点级幂等键长度上界（#3325）。本处下游权威：Erp 侧 CreateAccountReceivableCommandHandler 把原始键交给 CodeAllocator，
-/// 落 erp.code_idempotency_keys.idempotency_key(150)；该命令的校验器没有幂等键规则。
+/// 落 erp.code_idempotency_keys.idempotency_key(150)；该命令的校验器没有幂等键长度规则。
 /// 共同口径见 BusinessConsoleErpProcurementEndpoints.cs 顶部的「#3325 端点级幂等键上界」注释块。
 /// </summary>
 public sealed class BusinessConsoleCreateErpAccountReceivableRequestValidator
@@ -798,7 +798,7 @@ public sealed class BusinessConsoleCreateErpAccountReceivableRequestValidator
 
 /// <summary>
 /// 端点级幂等键长度上界（#3325）。本处下游权威：Erp 侧 CreateCostCandidateCommandHandler 把原始键交给 CodeAllocator，
-/// 落 erp.code_idempotency_keys.idempotency_key(150)；该命令的校验器没有幂等键规则。
+/// 落 erp.code_idempotency_keys.idempotency_key(150)；该命令的校验器没有幂等键长度规则。
 /// 共同口径见 BusinessConsoleErpProcurementEndpoints.cs 顶部的「#3325 端点级幂等键上界」注释块。
 /// </summary>
 public sealed class BusinessConsoleCreateErpCostCandidateRequestValidator
@@ -810,7 +810,7 @@ public sealed class BusinessConsoleCreateErpCostCandidateRequestValidator
 
 /// <summary>
 /// 端点级幂等键长度上界（#3325）。本处下游权威：Erp 侧 PostJournalVoucherCommandHandler 把原始键交给 CodeAllocator，
-/// 落 erp.code_idempotency_keys.idempotency_key(150)；该命令的校验器没有幂等键规则。
+/// 落 erp.code_idempotency_keys.idempotency_key(150)；该命令的校验器没有幂等键长度规则。
 /// 分配器产出的是凭证号（allocation.Code，另一列），幂等键本身不参与凭证号构成，
 /// 因此与 #3278 正在改的凭证号形状无交集。
 /// 共同口径见 BusinessConsoleErpProcurementEndpoints.cs 顶部的「#3325 端点级幂等键上界」注释块。
@@ -824,7 +824,7 @@ public sealed class BusinessConsolePostErpJournalVoucherRequestValidator
 
 /// <summary>
 /// 端点级幂等键长度上界（#3325）。本处下游权威：Erp 侧 ApprovePaymentExecutionCommandHandler 把原始键交给 CodeAllocator，
-/// 落 erp.code_idempotency_keys.idempotency_key(150)；该命令**没有任何校验器**。
+/// 落 erp.code_idempotency_keys.idempotency_key(150)；该命令**没有任何校验器**，因而同样没有幂等键长度规则。
 /// 共同口径见 BusinessConsoleErpProcurementEndpoints.cs 顶部的「#3325 端点级幂等键上界」注释块。
 /// </summary>
 public sealed class BusinessConsoleApproveErpPaymentExecutionRequestValidator
@@ -836,7 +836,7 @@ public sealed class BusinessConsoleApproveErpPaymentExecutionRequestValidator
 
 /// <summary>
 /// 端点级幂等键长度上界（#3325）。本处下游权威：Erp 侧 RegisterCashReceiptCommandHandler 把原始键交给 CodeAllocator，
-/// 落 erp.code_idempotency_keys.idempotency_key(150)；该命令**没有任何校验器**。
+/// 落 erp.code_idempotency_keys.idempotency_key(150)；该命令**没有任何校验器**，因而同样没有幂等键长度规则。
 /// 共同口径见 BusinessConsoleErpProcurementEndpoints.cs 顶部的「#3325 端点级幂等键上界」注释块。
 /// </summary>
 public sealed class BusinessConsoleRegisterErpCashReceiptRequestValidator

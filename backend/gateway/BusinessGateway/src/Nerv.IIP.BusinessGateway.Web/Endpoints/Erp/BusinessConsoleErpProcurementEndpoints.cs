@@ -285,7 +285,7 @@ public sealed class BusinessConsoleCreateErpPurchaseRequisitionRequestValidator 
         RuleFor(x => x.Quantity).GreaterThan(0);
         // 端点级幂等键长度上界（#3325）。本处下游权威：
         // Erp 侧 CreatePurchaseRequisitionFromSuggestionCommandHandler 把原始键交给 CodeAllocator，
-        // 落 erp.code_idempotency_keys.idempotency_key(150)；该命令没有幂等键校验器。
+        // 落 erp.code_idempotency_keys.idempotency_key(150)；该命令的校验器没有幂等键长度规则。
         // 共同口径见本文件顶部的「#3325 端点级幂等键上界」注释块。
         RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
@@ -318,7 +318,7 @@ public sealed class BusinessConsoleConvertErpPurchaseRequisitionsRequestValidato
 /// <summary>
 /// 端点级幂等键长度上界（#3325）。本处下游权威：
 /// Erp 侧 CreateRequestForQuotationCommandHandler 把原始键交给 CodeAllocator，
-/// 落 erp.code_idempotency_keys.idempotency_key(150)；该命令没有幂等键校验器。
+/// 落 erp.code_idempotency_keys.idempotency_key(150)；该命令的校验器没有幂等键长度规则。
 /// 共同口径见本文件顶部的「#3325 端点级幂等键上界」注释块。
 /// </summary>
 public sealed class BusinessConsoleCreateErpRequestForQuotationRequestValidator
@@ -331,7 +331,7 @@ public sealed class BusinessConsoleCreateErpRequestForQuotationRequestValidator
 /// <summary>
 /// 端点级幂等键长度上界（#3325）。本处下游权威：
 /// Erp 侧 ReceiveSupplierQuotationCommandHandler 把原始键交给 CodeAllocator，
-/// 落 erp.code_idempotency_keys.idempotency_key(150)；该命令没有幂等键校验器。
+/// 落 erp.code_idempotency_keys.idempotency_key(150)；该命令的校验器没有幂等键长度规则。
 /// 共同口径见本文件顶部的「#3325 端点级幂等键上界」注释块。
 /// </summary>
 public sealed class BusinessConsoleReceiveErpSupplierQuotationRequestValidator
@@ -345,7 +345,7 @@ public sealed class BusinessConsoleReceiveErpSupplierQuotationRequestValidator
 /// 端点级幂等键长度上界（#3325）。本处下游权威：
 /// Erp 侧 CreatePurchaseOrderCommandHandler 把原始键交给 CodeAllocator（TryPeekReplay 与
 /// AllocateAsync 两处都是原样传入），落 erp.code_idempotency_keys.idempotency_key(150)；
-/// 该命令的校验器没有幂等键规则。
+/// 该命令的校验器没有幂等键长度规则。
 /// 共同口径见本文件顶部的「#3325 端点级幂等键上界」注释块。
 /// </summary>
 public sealed class BusinessConsoleCreateErpPurchaseOrderRequestValidator

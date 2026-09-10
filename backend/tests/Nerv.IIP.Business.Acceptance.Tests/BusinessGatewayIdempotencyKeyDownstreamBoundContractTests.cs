@@ -606,6 +606,10 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
         // 这些命令**没有一条**带幂等键长度规则（实读 Erp Web 程序集里全部
         // `RuleFor(x => x.IdempotencyKey)` 共 5 处，无一属于这批命令），
         // 所以登记列宽不是「顺带加一个」，而是这些位点**唯一**的下游权威。
+        // ⚠️ 措辞要准：**不是**「这批命令零校验器」——多数命令有校验器，只是那些校验器
+        // 都不含幂等键长度规则。真正连校验器都不存在的只有 ApprovePaymentExecutionCommand
+        // 与 RegisterCashReceiptCommand 两条。两句话的下游结论相同（登记列宽即唯一权威），
+        // 但前一句是量词越界，会被后续票直接抄走。
         [typeof(BusinessConsoleApproveErpPaymentExecutionRequest)] = [ErpCodeKeyColumn],
         [typeof(BusinessConsoleCreateErpAccountPayableRequest)] = [ErpCodeKeyColumn],
         [typeof(BusinessConsoleCreateErpAccountReceivableRequest)] = [ErpCodeKeyColumn],
