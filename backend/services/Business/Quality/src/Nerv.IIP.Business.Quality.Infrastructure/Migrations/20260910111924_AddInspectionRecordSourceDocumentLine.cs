@@ -25,7 +25,8 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
     /// <item><b>改写会把跨服务身份悬空。</b>周期检存量记录的来源单据身份（复合窗口身份）**已经出界**：
     /// MES 的 <c>quality_hold_contexts</c> 按 <c>ux_quality_hold_contexts_scope_source</c>
     /// （含 <c>source_document_id</c>）建了行。把记录侧改写成工单号之后，同一条链的后续事件会开出
-    /// **第二行**而不是更新既有行，旧行的 hold 永远得不到释放。那是一次跨服务数据迁移。</item>
+    /// **第二行**而不是更新既有行——**事件驱动的释放路径从此够不到旧行**（人工强制释放仍可按旧来源
+    /// 单据身份定位，见 MES 工作台的强制释放命令）。要连 MES 侧那批行一起搬，那是一次跨服务数据迁移。</item>
     /// <item><b>回填目标集合有歧义。</b>join 只对「有任务指回来」的记录成立；复检记录（attempt ≥ 2）
     /// 没有任务指向它，要沿 <c>reinspection_of_inspection_record_id</c> 递归回溯；而本缺陷本身就会造成
     /// 「多张任务复用同一条记录」的坏数据，那些行该按哪张任务回填没有唯一答案。</item>

@@ -34,8 +34,30 @@ namespace Nerv.IIP.Business.Quality.Web.Application.IntegrationEventConverters;
 /// WHERE source_document_line_id IS NULL
 ///   AND source_type = 'operation'
 ///   AND source_document_id ~ '^[^:]+:(periodic-time|periodic-quantity):[0-9a-fA-F-]{36}:[0-9]+$';
-/// </code>
-/// 本票没有用一次数据迁移把它清零，理由写在
+/// </code></para>
+///
+/// <para><b>⚠️ 这条 SQL 严于守卫，两者不等价，别把它读成守卫的等价改写。</b>
+/// <see cref="PeriodicInspectionSourceLine.TryParseOperationId"/> 只校验「4 段 + 第 2 段是闭集 kind
+/// + 第 1 段非空」，**不校验第 3、4 段**；SQL 却把第 3 段钉成 36 位 Guid 字面、第 4 段钉成十进制数字。
+/// 因此存在 SQL 判 false、守卫仍会命中的取值（例如 <c>OP-1:periodic-time:not-a-guid:1</c>、
+/// <c>OP-1:periodic-time:{guid}:abc</c>）。
+/// ⇒ <b>退役判据的充分性额外依赖一个前提：来源行只由唯一铸造函数产出，产不出畸形的第 3、4 段。</b>
+/// 该前提今天成立——全仓铸造点恰两处，且都走
+/// <see cref="PeriodicInspectionSourceLine.LineId"/>（<c>Guid</c> 与 <c>long</c> 强类型入参）：
+/// <c>PeriodicInspectionIntegrationEventHandlers</c>（quantity 支）与
+/// <c>GeneratePeriodicInspectionTimeTaskForContextCommand</c>（time 支）。
+/// <b>删这条分支之前必须连这个前提一起复核</b>，不能只看 SQL 返 0。
+/// 反方向也核过：SQL 少一道 <c>MesOwned</c> 过滤只会让退役**推迟**（安全方向），
+/// 正则对两种 kind 全覆盖且不误伤（<c>WO-001</c>、首件的 <c>{工单}:{工序}</c> 复合串、空首段、
+/// 伪造 kind 都不匹配）。</para>
+///
+/// <para><b>SQL 里那两个 kind 是手抄的第二份。</b>它们的权威定义是
+/// <see cref="PeriodicInspectionSourceLine.TimeKind"/> 与
+/// <see cref="PeriodicInspectionSourceLine.QuantityKind"/>（今天没有第三种）。这段 SQL 住在注释里、
+/// 派生不出来，因此**新增 kind 时必须同步改这里**，否则新 kind 的存量行会被这条查询漏掉、
+/// 让退役判据静默变松。</para>
+///
+/// <para>本票没有用一次数据迁移把它清零，理由写在
 /// <c>20260910111924_AddInspectionRecordSourceDocumentLine</c> 的取舍说明里（改写这批记录的来源身份
 /// 会把 MES 侧按旧身份建的保留上下文行悬空，那是一次跨服务数据迁移）。</para>
 /// </summary>
@@ -70,8 +92,9 @@ internal static class InspectionResultMesScope
 
         // #3319 之前写入的周期检记录：复合窗口身份在**来源单据**那一列，来源行为空。
         // 那时工单号没有被编进任何一列，能还原的只有工序——与改前逐字相同的答案。
-        // 守卫写成「来源行为空 且 来源单据是复合窗口身份」，与类注释里那条退役查询的谓词逐字同构：
-        // 查询返回 0 的那一刻，这个分支在生产数据上恒不成立，可以整段删除。
+        // 守卫写成「来源行为空 且 来源单据是复合窗口身份」，与类注释里那条退役查询同向但**不等价**：
+        // 那条 SQL 更严（它还钉了第 3、4 段的形状，本守卫不校验），因此「查询返 0」只有在
+        // 「来源行只由唯一铸造函数产出」这个前提下才等于「本分支恒不成立」。退役前两者都要复核。
         if (record.SourceDocumentLineId is null
             && PeriodicInspectionSourceLine.TryParseOperationId(record.SourceDocumentId, out var legacyOperationId))
         {
