@@ -1351,8 +1351,18 @@ public sealed class BusinessGatewayWmsTests
         Assert.Null(wms.LastWorkScopeCatalogRequest);
     }
 
+    /// <summary>
+    /// 分配门面：注入可信 assigner 与站点、按路由分派资源 id，**并拒绝 expectedVersion = 0**（#3326）。
+    /// </summary>
+    /// <remarks>
+    /// 名字里的第三段是 #3326 追加的：网关端点级 <c>ExpectedVersion</c> 规则曾写
+    /// <c>GreaterThanOrEqualTo(0)</c>，而下游 5 条分配命令一律 <c>GreaterThan(0)</c>。
+    /// 该断言故意放在 <c>wms.Calls</c> 与 <c>auth.Requirements</c> 两条**闭集**断言之前：
+    /// 规则一旦被放宽，那次请求会被转发（Calls 多一项）或至少走到鉴权（Requirements 多一项），
+    /// 三条断言会一起红。改动本用例时不要把那次 400 请求挪到闭集断言之后。
+    /// </remarks>
     [Fact]
-    public async Task Wms_assignment_facades_inject_trusted_assigner_sites_and_route_resource_ids()
+    public async Task Wms_assignment_facades_inject_trusted_assigner_sites_route_resource_ids_and_reject_a_zero_expected_version()
     {
         var wms = new RecordingWmsClient();
         var auth = ScopeAuth(
@@ -1431,6 +1441,25 @@ public sealed class BusinessGatewayWmsTests
                 resourceId,
                 idempotencyKey);
         }
+
+        // #3326：下游 5 条分配命令一律 GreaterThan(0)（WarehouseAssignmentValidation.Configure），
+        // 领域 Version 从 1 起且只增，0 不是合法的乐观并发版本。网关此前写 GreaterThanOrEqualTo(0)，
+        // 会把一个下游必然拒绝的值放行出去。除 expectedVersion 外的字段与上面通过的场景逐字相同，
+        // 所以 400 只可能来自这一条规则；下面两条集合断言同时证明它在转发与鉴权之前就被拒。
+        var rejectedZeroVersion = await client.PostAsJsonAsync(
+            "/api/business-console/v1/wms/inbound-orders/inbound-001/assignment"
+            + "?organizationId=org-001&environmentId=env-dev",
+            new
+            {
+                inboundOrderId = "forged-resource",
+                poolCode = "POOL-WAREHOUSE",
+                operatorPrincipalId = "user-emp-049",
+                idempotencyKey = "assign-inbound-zero-version",
+                expectedVersion = 0,
+                assignerPrincipalId = "forged-principal",
+                authorizedSiteCodes = new[] { "FORGED-SITE" },
+            });
+        Assert.Equal(HttpStatusCode.BadRequest, rejectedZeroVersion.StatusCode);
 
         Assert.Equal(
             [

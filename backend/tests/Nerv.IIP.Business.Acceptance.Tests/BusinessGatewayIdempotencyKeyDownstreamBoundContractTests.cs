@@ -7,7 +7,10 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Commands;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
+using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.PrintBatches;
+using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.Scans;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockCounts;
+using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.LifecycleAuditAggregate;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
@@ -23,11 +26,18 @@ using Nerv.IIP.Coding;
 
 using MesEndpointRequests = Nerv.IIP.Business.Mes.Web.Endpoints.Mes;
 using MesQualityAggregate = Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
+using MasterDataToolingAggregate = Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ToolingAssetAggregate;
+using BarcodeLabelPrintBatchAggregate = Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
+using BarcodeLabelScanRecordAggregate = Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.ScanRecordAggregate;
+using InventoryStockMovementAggregate = Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
 
+using BarcodeLabelDbContext = Nerv.IIP.Business.BarcodeLabel.Infrastructure.ApplicationDbContext;
 using DemandPlanningDbContext = Nerv.IIP.Business.DemandPlanning.Infrastructure.ApplicationDbContext;
 using ErpDbContext = Nerv.IIP.Business.Erp.Infrastructure.ApplicationDbContext;
+using InventoryDbContext = Nerv.IIP.Business.Inventory.Infrastructure.ApplicationDbContext;
 using MasterDataDbContext = Nerv.IIP.Business.MasterData.Infrastructure.ApplicationDbContext;
 using MesDbContext = Nerv.IIP.Business.Mes.Infrastructure.ApplicationDbContext;
+using ProductEngineeringDbContext = Nerv.IIP.Business.ProductEngineering.Infrastructure.ApplicationDbContext;
 
 namespace Nerv.IIP.Business.Acceptance.Tests;
 
@@ -386,6 +396,44 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
             nameof(CodeIdempotencyKey.IdempotencyKey),
             "DemandPlanning");
 
+    private static readonly DownstreamAuthority ProductEngineeringCodeKeyColumn =
+        Column<CodeIdempotencyKey>(
+            ProductEngineeringModel,
+            nameof(CodeIdempotencyKey.IdempotencyKey),
+            "ProductEngineering");
+
+    /// <summary>
+    /// 工装写操作的审计身份列（#3326）。写入点实读：网关 <c>RequireIdempotentAuditContext</c>
+    /// 以 <c>X-Idempotency-Key</c> 头转发原始键，MasterData 侧
+    /// <c>ToolingOperationAuditContext.ToolingAuditSafeText.HttpAdmission.GetRequiredContext</c>
+    /// 从该头读出 <c>OperationId</c>（只做形状校验、不派生），再经
+    /// <c>ToolingAuditEntry.Register/Status/Usage</c>（构造器只 <c>Trim</c>）落本列，
+    /// 落库的就是调用方原始键，列宽因此可达、不是幽灵权威。
+    /// </summary>
+    private static readonly DownstreamAuthority MasterDataToolingOperationColumn =
+        Column<MasterDataToolingAggregate.ToolingAuditEntry>(
+            MasterDataModel,
+            nameof(MasterDataToolingAggregate.ToolingAuditEntry.OperationId),
+            "MasterData");
+
+    private static readonly DownstreamAuthority BarcodeLabelPrintBatchKeyColumn =
+        Column<BarcodeLabelPrintBatchAggregate.LabelPrintBatch>(
+            BarcodeLabelModel,
+            nameof(BarcodeLabelPrintBatchAggregate.LabelPrintBatch.IdempotencyKey),
+            "BarcodeLabel");
+
+    private static readonly DownstreamAuthority BarcodeLabelScanRecordKeyColumn =
+        Column<BarcodeLabelScanRecordAggregate.ScanRecord>(
+            BarcodeLabelModel,
+            nameof(BarcodeLabelScanRecordAggregate.ScanRecord.IdempotencyKey),
+            "BarcodeLabel");
+
+    private static readonly DownstreamAuthority InventoryStockMovementKeyColumn =
+        Column<InventoryStockMovementAggregate.StockMovement>(
+            InventoryModel,
+            nameof(InventoryStockMovementAggregate.StockMovement.IdempotencyKey),
+            "Inventory");
+
     /// <summary>
     /// 下游**零**幂等键长度权威的封闭豁免集。**目前为空**。
     /// </summary>
@@ -587,6 +635,111 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
         // ---- ProductEngineering ----
         [typeof(BusinessConsoleCreateStandardOperationRequest)] = [Command<CreateStandardOperationCommand>()],
 
+        // ---- ProductEngineering（#3326：#3287 差集里 ProductEngineering 侧的位点）----
+        // 转发链逐条实读：网关 endpoint 的 ForwardAsync → HttpBusinessProductEngineeringClient 的路径字面量
+        // → ProductEngineeringReleaseEndpoints.cs 里同路径的 ProductEngineeringEndpointContracts 条目
+        // → 它 HandleAsync 里发出的命令 → 该命令 handler 的写入点。
+        //
+        // 这些位点的 handler 都把**原始键**交给 ProductEngineeringCodingService.AllocateAsync
+        // → CodeAllocator，CodeAllocator.Normalize（CodeAllocator.cs:359-362）只 Trim、不派生，
+        // 落 product_engineering 库的 code_idempotency_keys.idempotency_key(150)，故列宽对原始键可达。
+        // ⚠️ 措辞要准：这些命令**每一条都有校验器**（各自的 AbstractValidator<T>），
+        // 只是没有一条含幂等键长度规则——实读 ProductEngineering Web 程序集里全部
+        // `RuleFor(x => x.IdempotencyKey)` 只有 1 处，属于 CreateStandardOperationCommand（上一条）。
+        // 所以登记列宽不是「顺带加一个」，而是这些位点**唯一**的下游权威。
+        [typeof(BusinessConsoleRegisterEngineeringDocumentRequest)] = [ProductEngineeringCodeKeyColumn],
+        [typeof(BusinessConsolePublishSopDocumentRequest)] = [ProductEngineeringCodeKeyColumn],
+        [typeof(BusinessConsoleCreateEngineeringItemRevisionRequest)] = [ProductEngineeringCodeKeyColumn],
+        [typeof(BusinessConsoleReleaseEngineeringBomRequest)] = [ProductEngineeringCodeKeyColumn],
+        [typeof(BusinessConsoleReleaseManufacturingBomRequest)] = [ProductEngineeringCodeKeyColumn],
+        [typeof(BusinessConsoleReleaseRoutingRequest)] = [ProductEngineeringCodeKeyColumn],
+        [typeof(BusinessConsoleReleaseEngineeringChangeRequest)] = [ProductEngineeringCodeKeyColumn],
+
+        // ---- MasterData（#3326）----
+        // 建 SKU 与本表里其它登记 MasterDataCodeKeyColumn 的 create 位点同路：
+        // MasterDataCodingService → CodeAllocator（只 Trim），落同一张 master_data 的
+        // code_idempotency_keys.idempotency_key。不写条数：那个数每落一张子票就变
+        // （与本类 <remarks> 里删掉「118 个」同一条理由）。
+        [typeof(BusinessConsoleCreateSkuRequest)] = [MasterDataCodeKeyColumn],
+
+        // 工装三处的键**不经请求体进命令**：网关 RequireIdempotentAuditContext 把它放进
+        // X-Idempotency-Key 头（BusinessMasterDataClient.ConfigureAuditHeaders），MasterData 侧
+        // ToolingOperationAuditContext...HttpAdmission.GetRequiredContext 从该头读出 OperationId，
+        // 落 tooling_audit_entries.operation_id(200)。详见 MasterDataToolingOperationColumn 的注释。
+        // 注册工装还额外把同一个 OperationId 交给 MasterDataCodingService → CodeAllocator，
+        // 落 code_idempotency_keys.idempotency_key(150)；两条腿都登记，有效上界取最小（#3281 判据）。
+        // ⚠️ 措辞要准：这三条命令**连校验器都不存在**（MasterData Web 程序集里
+        // AbstractValidator<RegisterToolingAssetCommand/ChangeToolingStatusCommand/RecordToolingUsageCommand>
+        // 各 0 个；该程序集内 `RuleFor(...IdempotencyKey)` 共 0 处），列宽因此是唯一的下游权威。
+        // ⚠️ HttpAdmission.RequireIdentity 另有一条 MaxIdentityLength = 200 的头长度上限，与该列同值；
+        // 它是 private const，本表的解析机制够不到，故不登记——它不改变有效上界。
+        // 状态变更与用量登记这两处端点级值取 200（= 下游列宽），与
+        // BusinessConsoleSetMasterDataResourceEnabledRequest 是同一形状：全局钳 150 会让 151..200 的键
+        // 先被拒，于是 OpenAPI 里的 maxLength: 200 对客户端是一句假承诺——真因在全局钳，归 #3287；
+        // 用一个更小的数在这里掩盖它是打补丁，本票不做。
+        [typeof(BusinessConsoleRegisterToolingAssetRequest)] =
+            [MasterDataToolingOperationColumn, MasterDataCodeKeyColumn],
+        [typeof(BusinessConsoleChangeToolingStatusRequest)] = [MasterDataToolingOperationColumn],
+        [typeof(BusinessConsoleRecordToolingUsageRequest)] = [MasterDataToolingOperationColumn],
+
+        // ---- BarcodeLabel（#3326）----
+        // 转发链：CreateBusinessConsoleBarcodePrintBatchEndpoint / RecordBusinessConsoleBarcodeScanEndpoint
+        // → HttpBusinessBarcodeLabelClient 的 "/api/business/v1/barcodes/print-batches"
+        // 与 "/api/business/v1/barcodes/scans" → BarcodeLabelEndpoints.cs 同路径的
+        // CreateLabelPrintBatchEndpoint / RecordScanEndpoint → 各自的命令。
+        // 两处的命令校验器各带一条 MaximumLength(128)，落库列 label_print_batches.idempotency_key(128)
+        // 与 scan_records.idempotency_key(128) 同宽；域构造只 BarcodeLabelText.Required（Trim），
+        // 落的就是调用方原始键，故命令校验器与列宽两个权威都登记、取最小。
+        // ⚠️ 这两处的下游上界 128 **小于**网关全局钳 150：本票补规则之前，129..150 的键在网关放行、
+        // 到 BarcodeLabel 才被拒。
+        [typeof(BusinessConsoleCreateBarcodePrintBatchRequest)] =
+            [Command<CreateLabelPrintBatchCommand>(), BarcodeLabelPrintBatchKeyColumn],
+        [typeof(BusinessConsoleRecordBarcodeScanRequest)] =
+            [Command<RecordScanCommand>(), BarcodeLabelScanRecordKeyColumn],
+
+        // ---- Wms（#3326）：出库过账重投 ----
+        // 转发链：RetryBusinessConsoleWmsOutboundInventoryPostingEndpoint → BusinessWmsClient 的
+        // "/api/business/v1/wms/outbound-orders/{id}/inventory-posting/retry"
+        // → RetryOutboundInventoryPostingEndpoint → RetryOutboundInventoryPostingCommand。
+        // handler 第一件事就是把键喂给 WmsText.IdempotencyKey——无条件 SHA256，产出恒 75 字符的
+        // "wms-key-v2:<64 hex>"；此后进 Inventory 预留键与 InventoryMovementRequests 的都是那个**定长**派生值，
+        // 对原始键零约束（#3290 幽灵权威），故沿途各列一概不登记。
+        // 命令校验器 MaximumLength(150) 是这一处**唯一**的下游权威。
+        [typeof(BusinessConsoleRetryWmsOutboundInventoryPostingRequest)] =
+            [Command<RetryOutboundInventoryPostingCommand>()],
+
+        // ---- Inventory（#3326）：库存移动过账 ----
+        // 转发链：PostBusinessConsoleInventoryMovementEndpoint → BusinessInventoryClient 的
+        // "/api/inventory/v1/movements" → PostStockMovementEndpoint → PostStockMovementCommand。
+        // 这条腿是**直接**调用，不是 #3332 那条经 BuildInventoryPostingRetryIdempotencyKey 拼前缀后
+        // 跨服务进 Inventory 的派生路径：请求体里的原始键原样进命令，非调拨移动原样落
+        // stock_movements.idempotency_key(128)（StockMovement 构造只 InventoryText.Required，即 Trim）。
+        // 命令校验器 RequiredInventoryCode(InventoryValidationRules.IdempotencyKeyMaxLength) 与列同宽，
+        // 两个权威互相独立，都登记、取最小。
+        // ⚠️ 下游上界 128 **小于**网关全局钳 150。
+        // ⚠️ 本条**不覆盖调拨支**（MovementType = transfer）：那一支在 handler 里再拼 ":out" / ":in"，
+        // 有效上界收到 PostStockMovementCommandHandler.TransferBaseIdempotencyKeyMaxLength（列宽 − 最长腿后缀），
+        // 由 InventoryPostingRejectedException 在运行时拒绝。那是**条件**上界，而网关这条规则是无条件的，
+        // 对该支仍偏宽——如实写在这里，不在本票里私自收窄：收窄会把非调拨的合法长键挡在门外，
+        // 而「网关比下游窄」这个方向归 #3287，本类不断言。
+        [typeof(BusinessConsolePostStockMovementRequest)] =
+            [Command<PostStockMovementCommand>(), InventoryStockMovementKeyColumn],
+
+        // ⚠️ BusinessConsoleAcknowledgeAlarmRequest 与 BusinessConsoleUnshelveAlarmRequest
+        // **故意不在这张表里**，网关侧也没有给它们补端点级规则。原因不是「查不到权威」，
+        // 而是**键在下游边界上蒸发**（与 #3328 同形）：IndustrialTelemetry 的
+        // AcknowledgeAlarmRequest / UnshelveAlarmRequest 这两个端点 DTO 虽然带 IdempotencyKey 字段，
+        // 但 AcknowledgeAlarmEndpoint / UnshelveAlarmEndpoint 的 HandleAsync **没有把它传进命令**
+        // （AcknowledgeAlarmCommand 与 UnshelveAlarmCommand 的构造参数里根本没有这个成员），
+        // 这两个 DTO 也各自没有校验器——实读 `Validator<AcknowledgeAlarmRequest>` 与
+        // `Validator<UnshelveAlarmRequest>` 在 IndustrialTelemetry 下各 0 处。
+        // ⚠️ 这一句的射程**只到这两个位点**，不是对整个 IndustrialTelemetry 程序集的枚举：
+        // 该程序集里带幂等键长度规则的校验器不止一个（ShelveAlarm 的端点 DTO 与命令、
+        // DeviceControlCommand 的端点 DTO 与命令都有），只是**没有一个作用于这两个位点**。
+        // 「与本位点相关的枚举」写成「整程序集的枚举」是量词越界，同形问题在 #3325 那轮已被抓过一次。
+        // 键既不进命令也不落库 ⇒ 下游不存在任何长度权威，声明任何上界都是对一个无人消费的入参
+        // 编一句承诺。缺陷如实上报给编排者定夺，本票整两处不登记。
+
         // ---- IndustrialTelemetry（网关侧分别落在 Equipment 与 Telemetry 两个端点文件） ----
         [typeof(BusinessConsoleShelveAlarmRequest)] = [Command<ShelveAlarmCommand>()],
         [typeof(BusinessConsoleTelemetryDeviceControlCommandRequest)] = [Command<CreateDeviceControlCommandCommand>()],
@@ -736,6 +889,15 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
 
     private static DbContext DemandPlanningModel() => ModelOnly<DemandPlanningDbContext>(
         options => new DemandPlanningDbContext(options, NullMediator.Instance));
+
+    private static DbContext ProductEngineeringModel() => ModelOnly<ProductEngineeringDbContext>(
+        options => new ProductEngineeringDbContext(options, NullMediator.Instance));
+
+    private static DbContext BarcodeLabelModel() => ModelOnly<BarcodeLabelDbContext>(
+        options => new BarcodeLabelDbContext(options, NullMediator.Instance));
+
+    private static DbContext InventoryModel() => ModelOnly<InventoryDbContext>(
+        options => new InventoryDbContext(options, NullMediator.Instance));
 
     /// <summary>
     /// 只用于读 EF 模型：不开连接、不建库。连接串必须语法合法，Npgsql 才肯建 provider。
