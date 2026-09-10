@@ -2,6 +2,7 @@ using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Web.Application.Quality;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
@@ -74,6 +75,28 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForUpdateMesHo
         }
 
         var sourceDocumentId = payload.SourceDocumentId.Trim();
+
+        // #3315：这一段的取值是 Quality 的来源单据身份，首件与周期检发过来的是**复合串**（见 :191 的说明），
+        // 长度上界由 Quality 的产出列宽决定，不是 MES 自己的工单/工序 id 宽度。它被逐字写进
+        // quality_hold_contexts.source_document_id 与 quality_hold_transitions.source_document_id 两列，
+        // 超宽时 SaveChangesAsync 抛 DbUpdateException(22001)——下面那两个 catch 只接 InvalidOperationException /
+        // ArgumentException，接不住它，异常会逃逸出 HandleAsync 变成 poison message（#877），整条消费链卡死。
+        // 这里就地判长并走死信：既不截断（截断会把两道工序的首件结论折叠成同一条保留上下文），
+        // 也不抛出（抛出就是回到 poison message）。列宽已加宽到与 Quality 产出列一致，
+        // 因此今天合法的复合身份走不到这条分支；它看守的是「将来任一侧列宽/复合构成再变」。
+        if (MesQualityHoldSourceDocumentIdPolicy.ExceedsColumn(sourceDocumentId))
+        {
+            await deadLetterStore.AddAsync(
+                IntegrationEventDeadLetterMessage.Create(
+                    ConsumerName,
+                    integrationEvent,
+                    MesQualityHoldSourceDocumentIdPolicy.OverlongFailureCode,
+                    MesQualityHoldSourceDocumentIdPolicy.OverlongFailureMessage(sourceDocumentId)),
+                cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
         MesInspectionSource? source;
         try
         {
@@ -140,7 +163,7 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForUpdateMesHo
                 dbContext.QualityHoldContexts.Add(hold);
                 if (hold.Active)
                 {
-                    AddTransition(integrationEvent, sourceService, "hold-applied", payload.InspectionRecordId);
+                    AddTransition(integrationEvent, sourceService, sourceDocumentId, "hold-applied", payload.InspectionRecordId);
                 }
             }
             else
@@ -158,6 +181,7 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForUpdateMesHo
                     AddTransition(
                         integrationEvent,
                         sourceService,
+                        sourceDocumentId,
                         wasActive ? "inspection-released" : "hold-applied",
                         wasActive ? existing.HeldInspectionRecordId! : payload.InspectionRecordId);
                 }
@@ -177,12 +201,22 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForUpdateMesHo
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
-    private void AddTransition(InspectionResultIntegrationEvent integrationEvent, string sourceService, string eventKind, string holdCycleId)
+    /// <summary>
+    /// 时间线与保留上下文必须写**同一个**来源身份取值。此前这里第二次从
+    /// <c>payload.SourceDocumentId</c> 派生（再 Trim 一次），与调用方已经算好的那一份是两地等价派生：
+    /// 改一处就静默漂移，而且长度守卫（#3315）也只看得住其中一份。改为由调用方传入。
+    /// </summary>
+    private void AddTransition(
+        InspectionResultIntegrationEvent integrationEvent,
+        string sourceService,
+        string sourceDocumentId,
+        string eventKind,
+        string holdCycleId)
     {
         var payload = integrationEvent.Payload;
         dbContext.QualityHoldTransitions.Add(QualityHoldTransition.Record(
             integrationEvent.OrganizationId, integrationEvent.EnvironmentId, sourceService,
-            payload.SourceDocumentId.Trim(), holdCycleId, integrationEvent.CorrelationId, eventKind,
+            sourceDocumentId, holdCycleId, integrationEvent.CorrelationId, eventKind,
             integrationEvent.Actor, payload.RecordedAtUtc, payload.DispositionReason, payload.InspectionRecordId,
             payload.InspectionPlanId, "automatic", integrationEvent.IdempotencyKey));
     }
