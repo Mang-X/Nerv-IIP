@@ -12,6 +12,7 @@ using Nerv.IIP.Business.Erp.Web.Application.Approval;
 using Nerv.IIP.Business.Erp.Web.Application.MasterData;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
+using Nerv.IIP.Business.Erp.Web.Application.Validation;
 using Nerv.IIP.Business.Erp.Web.Application.Wms;
 using Nerv.IIP.Contracts.Approval;
 using Nerv.IIP.Contracts.Erp;
@@ -152,6 +153,12 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandValidator :
         RuleForEach(x => x.RfqSupplierCodes).NotEmpty().MaximumLength(100);
         RuleFor(x => x.RfqNo).MaximumLength(100);
         RuleFor(x => x.CurrencyCode).NotEmpty().MaximumLength(10);
+        // #3288：改前本块**完全没有** IdempotencyKey 规则。有效上界不是列宽 150，而是
+        // 「列宽 − handler 在 RFQ 分支追加的 :rfq」——上界从列宽派生，不手抄。
+        // 只加长度规则、**不加 NotEmpty**：本命令的 IdempotencyKey 是可空可选参数，
+        // 「不传幂等键」今天合法，把它变成 400 是另一个语义决定（#3287），不在本票射程。
+        RuleFor(x => x.IdempotencyKey)
+            .MaximumLength(ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler.BaseIdempotencyKeyMaxLength);
     }
 }
 
@@ -162,6 +169,17 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
     : ICommandHandler<ConvertPurchaseRequisitionsToPurchaseOrderCommand, ConvertPurchaseRequisitionsToPurchaseOrderResult>
 {
     private const string RequisitionLineNo = "10";
+
+    /// <summary>
+    /// 本写面在 RFQ 分支落库前给幂等键追加的后缀。同一条命令的幂等键在 PO 分支是**原样**使用
+    /// （:258→:296），在 RFQ 分支才加后缀，因此有效上界取两者的最小值，即列宽减去这个后缀。
+    /// </summary>
+    internal const string RfqIdempotencyKeySuffix = ErpCodingIdempotencyKeyPolicy.RequestForQuotationSuffix;
+
+    /// <summary>基础幂等键上界，由列宽减去 <see cref="RfqIdempotencyKeySuffix"/> 派生（#3288）。</summary>
+    internal static readonly int BaseIdempotencyKeyMaxLength =
+        ErpCodingIdempotencyKeyPolicy.BaseMaxLengthFor(RfqIdempotencyKeySuffix);
+
     private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
     private readonly IPurchaseOrderApprovalClient _approvalClient = approvalClient ?? new GeneratedPurchaseOrderApprovalClient();
 
@@ -432,7 +450,9 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
             request.RfqNo,
             request.RfqNo is null
                 ? StableIdempotencyKey("pr-to-rfq", request.RfqSupplierCodes!, requisitions.Select(x => x.RequisitionNo))
-                : request.IdempotencyKey is null ? null : $"{request.IdempotencyKey}:rfq",
+                : request.IdempotencyKey is null
+                    ? null
+                    : ErpCodingIdempotencyKeyPolicy.Compose(request.IdempotencyKey, RfqIdempotencyKeySuffix),
             ErpCodingService.Fingerprint(request.RfqSupplierCodes!, requisitions.Select(x => x.RequisitionNo)),
             cancellationToken);
         if (await dbContext.RequestForQuotations.AnyAsync(x =>
@@ -925,6 +945,12 @@ public sealed class RecordSupplierInvoiceCommandValidator : AbstractValidator<Re
         RuleFor(x => x.QuantityTolerance).GreaterThanOrEqualTo(0);
         RuleFor(x => x.AmountTolerance).GreaterThanOrEqualTo(0);
         RuleFor(x => x.PriceTolerancePercent).GreaterThanOrEqualTo(0).When(x => x.PriceTolerancePercent.HasValue);
+        // #3288：改前本块**完全没有** IdempotencyKey 规则，且本命令走 Erp 自有端点、
+        // 连业务网关那道全局钳都不在路径上。同一把键在 :946 原样分配发票号、在 :1037 加
+        // :account-payable 分配应付号，有效上界取两者最小值＝列宽 − 后缀，从列宽派生不手抄。
+        // 只加长度规则、**不加 NotEmpty**：该参数今天可空可选（#3287 才回答该不该必填）。
+        RuleFor(x => x.IdempotencyKey)
+            .MaximumLength(RecordSupplierInvoiceCommandHandler.BaseIdempotencyKeyMaxLength);
         RuleFor(x => x.Lines).NotEmpty();
         RuleForEach(x => x.Lines).ChildRules(line =>
         {
@@ -939,6 +965,10 @@ public sealed class RecordSupplierInvoiceCommandValidator : AbstractValidator<Re
 public sealed class RecordSupplierInvoiceCommandHandler(ApplicationDbContext dbContext, ErpCodingService? codingService = null)
     : ICommandHandler<RecordSupplierInvoiceCommand, SupplierInvoiceId>
 {
+    /// <summary>基础幂等键上界，由列宽减去应付写面后缀派生（#3288）。</summary>
+    internal static readonly int BaseIdempotencyKeyMaxLength =
+        ErpCodingIdempotencyKeyPolicy.BaseMaxLengthFor(ErpCodingIdempotencyKeyPolicy.AccountPayableSuffix);
+
     private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
 
     public async Task<SupplierInvoiceId> Handle(RecordSupplierInvoiceCommand request, CancellationToken cancellationToken)
@@ -1034,7 +1064,11 @@ public sealed class RecordSupplierInvoiceCommandHandler(ApplicationDbContext dbC
             request.EnvironmentId,
             "account-payable",
             request.PayableNo,
-            request.IdempotencyKey is null ? null : $"{request.IdempotencyKey}:account-payable",
+            request.IdempotencyKey is null
+                ? null
+                : ErpCodingIdempotencyKeyPolicy.Compose(
+                    request.IdempotencyKey,
+                    ErpCodingIdempotencyKeyPolicy.AccountPayableSuffix),
             ErpCodingService.Fingerprint(invoice.InvoiceNo, invoice.SupplierCode, invoice.TotalAmount, invoice.CurrencyCode, invoice.InvoiceDate, invoice.DueDate, "MATCHED"),
             cancellationToken);
         var payable = AccountPayable.Create(
@@ -1070,13 +1104,22 @@ public sealed class ReleaseSupplierInvoicePaymentHoldCommandValidator : Abstract
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.InvoiceNo).NotEmpty().MaximumLength(100);
         RuleFor(x => x.PayableNo).MaximumLength(100);
-        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        // #3288：改前手抄 MaximumLength(150)＝列宽本身，而 handler 落库前追加
+        // :account-payable，150 的键拼出 166 进 varchar(150)。上界改为从列宽派生。
+        // 这里的 NotEmpty 是**改前就有**的（本命令的 IdempotencyKey 是非空必填参数），不是本票新增。
+        RuleFor(x => x.IdempotencyKey)
+            .NotEmpty()
+            .MaximumLength(ReleaseSupplierInvoicePaymentHoldCommandHandler.BaseIdempotencyKeyMaxLength);
     }
 }
 
 public sealed class ReleaseSupplierInvoicePaymentHoldCommandHandler(ApplicationDbContext dbContext, ErpCodingService? codingService = null)
     : ICommandHandler<ReleaseSupplierInvoicePaymentHoldCommand, SupplierInvoiceId>
 {
+    /// <summary>基础幂等键上界，由列宽减去应付写面后缀派生（#3288）。</summary>
+    internal static readonly int BaseIdempotencyKeyMaxLength =
+        ErpCodingIdempotencyKeyPolicy.BaseMaxLengthFor(ErpCodingIdempotencyKeyPolicy.AccountPayableSuffix);
+
     private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
 
     public async Task<SupplierInvoiceId> Handle(ReleaseSupplierInvoicePaymentHoldCommand request, CancellationToken cancellationToken)
@@ -1110,7 +1153,9 @@ public sealed class ReleaseSupplierInvoicePaymentHoldCommandHandler(ApplicationD
             request.EnvironmentId,
             "account-payable",
             request.PayableNo,
-            $"{request.IdempotencyKey}:account-payable",
+            ErpCodingIdempotencyKeyPolicy.Compose(
+                request.IdempotencyKey,
+                ErpCodingIdempotencyKeyPolicy.AccountPayableSuffix),
             ErpCodingService.Fingerprint(invoice.InvoiceNo, invoice.SupplierCode, invoice.TotalAmount, invoice.CurrencyCode, invoice.ExchangeRate, invoice.InvoiceDate, invoice.DueDate, "HELD-RELEASE"),
             cancellationToken);
         var existingPayable = await dbContext.AccountPayables.SingleOrDefaultAsync(x =>
