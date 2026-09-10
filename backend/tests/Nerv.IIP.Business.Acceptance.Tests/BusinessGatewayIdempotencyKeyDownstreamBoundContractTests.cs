@@ -699,16 +699,25 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
         [typeof(BusinessConsoleMesForceReleaseQualityHoldRequest)] =
             [Command<ForceReleaseQualityHoldCommand>(), MesQualityHoldTransitionColumn],
 
-        // ⚠️ BusinessConsoleMesRetryFinishedGoodsReceiptInventoryPostingRequest **故意不在这张表里**，
-        // 网关侧也没有给它补端点级规则。原因不是「查不到权威」，而是**查出来的权威是负数**：
-        // 原始键经 FinishedGoodsReceiptRequest.BuildInventoryPostingRetryIdempotencyKey 拼成
-        // "mes:finished-goods-receipt:{org}:{env}:{requestNo}:{原始键}" 后跨服务进 Inventory，
-        // 撞 PostStockMovementCommandValidator 与 stock_movements.idempotency_key(128)。
-        // 拼接是长度单调的，所以那个 128 **是**真权威（不是 #3290 那种哈希幽灵权威），
-        // 但按各段列宽取最坏情况，前缀本身就是 27 + 100+1 + 100+1 + 100+1 = 330 > 128 ——
-        // 也就是说这条腿在最坏情况下连空键都放不下，不存在任何**正**的合法上界可供声明。
-        // 登记一个正数（无论 200 还是 128）都会是一句站不住的承诺，故本票整处不登记，
-        // 缺陷如实上报给编排者定夺。详见 PR 正文「完工入库重投」一节。
+        // ⚠️ BusinessConsoleMesRetryFinishedGoodsReceiptInventoryPostingRequest **仍不在这张表里**，
+        // 网关侧也仍没有端点级规则——但**理由已经换了一个**，别沿用旧的那句。
+        //
+        // 旧理由（#3324 当时成立、现已作废）：原始键被拼成
+        // "mes:finished-goods-receipt:{org}:{env}:{requestNo}:{原始键}" 跨服务进 Inventory，
+        // 纯拼接长度单调 ⇒ stock_movements.idempotency_key(128) 是真权威，
+        // 而按各段列宽取最坏情况前缀本身就 27 + 100+1 + 100+1 + 100+1 = 330 > 128，
+        // 连空键都放不下 ⇒ 不存在任何**正**的上界可供声明。
+        //
+        // 新事实（#3332 已修）：该键改为**两段式回落**
+        // （FinishedGoodsReceiptInventoryPostingKey，上界与承载列的关系由
+        // MesFinishedGoodsReceiptInventoryPostingKeyBoundContractTests 从两侧 EF 模型派生钉住）。
+        // 于是那一列对本位点变成**条件性派生**，与 WmsText.LineIdempotencyKey 同形，
+        // **不是** #3290 那种无条件摘要的纯幽灵权威——两支都要读：
+        //   · 整键 ≤ 128 ⇒ 逐字保持 ⇒ 那一列**是**这一支的真权威；
+        //   · 整键 > 128 ⇒ 回落成定长 ⇒ 那一列对原始键**零约束**。
+        // 因此可登记的**有效上界**取 Mes 命令校验器
+        // （RetryFinishedGoodsReceiptInventoryPostingCommandValidator），而该列的 128 只约束前一支。
+        // 登记与补端点级规则归 #3327（它同时负责让差集闭合），本票有意不在这里加行。
 
         // 线边退料：**不登记承载列**，但理由与上一条不同——不是派生值，是那一列无界。
         // 原始键（只 Trim）作为 JSON 字典的键落 material_issue_requests
