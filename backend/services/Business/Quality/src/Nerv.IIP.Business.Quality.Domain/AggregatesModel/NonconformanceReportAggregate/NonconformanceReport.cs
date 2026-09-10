@@ -196,8 +196,9 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
     /// （<see cref="SourceTypes"/>，四个取值）。两个值域故意不同——检验侧说的是「这次检验发生在哪个环节」，
     /// NCR 侧说的是「这条不合格属于哪一类来源」，`operation` 与 `in-process` 的差别就是本方法存在的理由。
     ///
-    /// ⚠ 覆盖面由 <c>NonconformanceReportSourceTypeMappingTests</c> 两条断言闭合：一条管「词表每个取值都有映射」，
-    /// 一条逐条钉住映射目标。按点名补分支而不看那两条断言，下一个新增取值仍会走到 <c>_ =></c> 抛出（#2981）。
+    /// ⚠ 覆盖面由 <c>NonconformanceReportSourceTypeMappingTests</c> 三条断言闭合：一条管「词表每个取值都有映射」，
+    /// 一条逐条钉住映射目标，一条钉住下面 <c>_ =></c> 兜底臂**必须抛**、不得静默落进某个来源桶。
+    /// 按点名补分支而不看那三条断言，下一个新增取值仍会走到兜底臂（#2981）。
     /// </summary>
     private static string ToNcrSourceType(string inspectionSourceType)
     {
@@ -207,11 +208,14 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
             "operation" => "in-process",
             // 首件不合格发生在制程内，与工序检验同属过程不合格，不另立 NCR 来源词。
             "first-article" => "in-process",
-            // 维保来源检验（InspectionPlan.Category = "maintenance"，按 deviceAssetId 组织）发生在生产现场的
-            // 设备点检/校验环节：既不是来料、不是成品终检、也不是客户退货，落 in-process 与首件同理（#2981）。
-            // 另有两条连带后果支持这个目标：① RequiresEffectiveCapa 只对 customer-return 强制 CAPA，映到
-            // customer-return 会给设备类不合格强加客户投诉口径的整改；② Inventory 放行门把 maintenance 归为
-            // 承载库存的来源，与 in-process 处置路径（blocked 库存释放/报废核销）一致。
+            // 维保来源检验（InspectionPlan.Category 可取 "maintenance"，计划上的 deviceAssetId 为可选项，
+            // 当前没有守卫强制两者绑定）发生在生产现场的设备点检/校验环节：既不是来料、不是成品终检、
+            // 也不是客户退货，落 in-process 与首件同理（#2981）。
+            // 连带后果佐证：RequiresEffectiveCapa 只对 customer-return 强制有效性 CAPA，映到 customer-return
+            // 会给设备类不合格强加客户投诉口径的整改。
+            // ⚠ 不要拿 Inventory 放行门的 NonStockBearingSourceTypes 名单佐证本目标：那份名单自述是
+            // 「按取值逐个裁定、对其余五个取值不做任何判断」，且 first-article 与 operation 同映 in-process
+            // 却分属该门两侧——两者不同构，推不出任何映射目标。
             "maintenance" => "in-process",
             "final" => "final",
             "customer-return" => "customer-return",
