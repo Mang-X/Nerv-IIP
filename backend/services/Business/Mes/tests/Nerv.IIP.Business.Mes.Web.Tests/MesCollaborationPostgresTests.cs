@@ -33,7 +33,8 @@ public sealed class MesCollaborationPostgresTests
             now,
             TimeSpan.FromHours(1),
             null,
-            null);
+            null,
+            "SKU-001");
         operation.Assign("lead-worker", null, null, now, assignedUserName: "Lead Worker");
         operation.Start(now.AddMinutes(1));
         db.WorkOrders.Add(workOrder);

@@ -25,7 +25,9 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 /// **值域边界（声明放弃了什么，别读成完备）**：
 /// 1. 列宽读的是 **EF 模型**而不是迁移脚本，模型/迁移漂移不由本类负责。
 /// 2. **本类不证明「所有凭证号都走 <see cref="ErpVoucherNoPolicy.Compose"/>」**——那需要源码扫描，
-///    #3231 的实证是这类扫描不收敛，故本票不做。绕开 <c>Compose</c> 直接 <c>$"JV-…"</c> 仍然编译得过。
+///    #3176 / PR #3214 的实证是这类扫描不收敛，故本票不做；#3231 另已实测「换成不可拼接的包装类型」
+///    只关得掉 <c>+</c>，插值 / <c>Concat</c> / <c>Format</c> / <c>ToString()</c> 关不掉。
+///    绕开 <c>Compose</c> 直接 <c>$"JV-…"</c> 仍然编译得过。
 /// 3. **唯一索引下真的插得进/插不进**由真 Postgres 用例负责（见
 ///    <c>ErpCostAccountingPostgresAcceptanceTests</c>），EF InMemory 既看不见列宽也看不见唯一索引，
 ///    本类的绿**不能**读成「落库不会 22001」。

@@ -32,7 +32,8 @@ public sealed class ProductionReportOeeDimensionSnapshotCommandTests
                 "org-001", "env-dev", "WO-OEE-001", "OP-OEE-10",
                 OperationTaskLifecycleStatus.InProgress, 10, "WC-LEGACY", [],
                 reportedAtUtc.AddHours(-1), TimeSpan.FromHours(1),
-                reportedAtUtc.AddHours(-1), null);
+                reportedAtUtc.AddHours(-1), null,
+                "SKU-001");
             task.Assign(null, "DEV-CNC-ALIAS", "EARLY", reportedAtUtc.AddHours(-2));
             task.ClearDomainEvents();
             dbContext.OperationTasks.Add(task);

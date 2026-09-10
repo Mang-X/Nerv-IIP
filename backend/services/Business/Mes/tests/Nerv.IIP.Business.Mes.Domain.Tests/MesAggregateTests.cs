@@ -252,10 +252,12 @@ public sealed class MesAggregateTests
         {
             OperationTask.Queue(
                 "org-001", "env-dev", "WO-2095-RELEASE", "OP-10", 10, "WC-MIX", [], releasedAtUtc,
-                TimeSpan.FromMinutes(30)),
+                TimeSpan.FromMinutes(30),
+                "SKU-001"),
             OperationTask.Queue(
                 "org-001", "env-dev", "WO-2095-RELEASE", "OP-20", 20, "WC-PACK", [], releasedAtUtc,
-                TimeSpan.FromMinutes(15)),
+                TimeSpan.FromMinutes(15),
+                "SKU-001"),
         };
         workOrder.ClearDomainEvents();
 
@@ -428,7 +430,7 @@ public sealed class MesAggregateTests
         var dueUtc = DateTimeOffset.Parse("2026-05-23T10:00:00Z");
 
         Assert.Throws<ArgumentException>(() => WorkOrder.Create("", "env-dev", "WO-001", "SKU-001", "PV-001", 1m, 10, dueUtc));
-        Assert.Throws<ArgumentException>(() => OperationTask.Queue("", "env-dev", "WO-001", "OP-10", 10, "WC-A", [], dueUtc, TimeSpan.FromMinutes(30)));
+        Assert.Throws<ArgumentException>(() => OperationTask.Queue("", "env-dev", "WO-001", "OP-10", 10, "WC-A", [], dueUtc, TimeSpan.FromMinutes(30), "SKU-001"));
         Assert.Throws<ArgumentException>(() => ProductionReport.Record("", "env-dev", "PRPT-001", "WO-001", "OP-10", 1m, 0m, true, dueUtc));
         Assert.Throws<ArgumentException>(() => FinishedGoodsReceiptRequest.Create("", "env-dev", "FGR-001", "WO-001", "SKU-001", 1m, "PCS", dueUtc));
     }
@@ -480,7 +482,8 @@ public sealed class MesAggregateTests
             DateTimeOffset.Parse("2026-06-01T08:00:00Z"),
             TimeSpan.FromMinutes(30),
             DateTimeOffset.Parse("2026-06-01T08:05:00Z"),
-            null);
+            null,
+            "SKU-001");
 
         var exception = Assert.Throws<KnownException>(() => task.ApplyScheduleAssignment(
             "WC-OIL",
@@ -507,7 +510,8 @@ public sealed class MesAggregateTests
             DateTimeOffset.Parse("2026-06-01T08:00:00Z"),
             TimeSpan.FromMinutes(30),
             DateTimeOffset.Parse("2026-06-01T08:05:00Z"),
-            null);
+            null,
+            "SKU-001");
 
         var exception = Assert.Throws<KnownException>(() => task.Assign(
             "operator-001",

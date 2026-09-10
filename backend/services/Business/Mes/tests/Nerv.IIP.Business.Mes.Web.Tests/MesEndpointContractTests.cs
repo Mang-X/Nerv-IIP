@@ -517,7 +517,8 @@ public sealed class MesEndpointContractTests
             DateTimeOffset.Parse("2026-07-28T08:00:00Z"),
             TimeSpan.FromHours(1),
             null,
-            null));
+            null,
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
         var sender = new RealOperationActionSender(
             new ChangeOperationTaskStateCommandHandler(dbContext));
@@ -1326,7 +1327,8 @@ public sealed class MesEndpointContractTests
             "WC-10",
             [],
             now,
-            TimeSpan.FromMinutes(30));
+            TimeSpan.FromMinutes(30),
+            "SKU-001");
         operationTask.Assign(null, "DEV-695-LOCAL", null, now.AddMinutes(5), "user:dispatcher-695");
         operationTask.ClearDomainEvents();
         dbContext.WorkOrders.Add(workOrder);
@@ -2950,9 +2952,9 @@ public sealed class MesEndpointContractTests
         var now = DateTimeOffset.Parse("2026-06-03T08:00:00Z");
         dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-QUALITY", "SKU-001", "PV-001", 1m, 10, now));
         dbContext.OperationTasks.AddRange(
-            OperationTask.Create("org-001", "env-dev", "WO-QUALITY", "OP-10", OperationTaskLifecycleStatus.Queued, 10, "WC-10", [], now, TimeSpan.FromHours(1), null, null),
-            OperationTask.Create("org-001", "env-dev", "WO-QUALITY", "OP-20", OperationTaskLifecycleStatus.Queued, 20, "WC-10", [], now, TimeSpan.FromHours(1), null, null),
-            OperationTask.Create("org-001", "env-dev", "WO-QUALITY", "OP-30", OperationTaskLifecycleStatus.Queued, 30, "WC-10", [], now, TimeSpan.FromHours(1), null, null));
+            OperationTask.Create("org-001", "env-dev", "WO-QUALITY", "OP-10", OperationTaskLifecycleStatus.Queued, 10, "WC-10", [], now, TimeSpan.FromHours(1), null, null, "SKU-001"),
+            OperationTask.Create("org-001", "env-dev", "WO-QUALITY", "OP-20", OperationTaskLifecycleStatus.Queued, 20, "WC-10", [], now, TimeSpan.FromHours(1), null, null, "SKU-001"),
+            OperationTask.Create("org-001", "env-dev", "WO-QUALITY", "OP-30", OperationTaskLifecycleStatus.Queued, 30, "WC-10", [], now, TimeSpan.FromHours(1), null, null, "SKU-001"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         await new RecordDefectCommandHandler(dbContext).Handle(
@@ -3104,7 +3106,8 @@ public sealed class MesEndpointContractTests
             now,
             TimeSpan.FromHours(1),
             null,
-            null));
+            null,
+            "SKU-001"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var handler = new RecordDefectCommandHandler(dbContext);
