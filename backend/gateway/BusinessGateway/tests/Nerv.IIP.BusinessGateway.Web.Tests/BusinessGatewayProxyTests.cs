@@ -946,9 +946,13 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(0, masterData.ToolingCallCount);
     }
 
-    // #3287 ①的真公开面证据：键经 header 进入，绕开端点级 FluentValidation（它只看请求体），
-    // 因此这一格隔离出来的正是全局钳 BusinessGatewayIdempotencyKey.MaximumLength 那条分支。
-    // 151 个 'a' 全部落在 IsAllowed 允许集内，只触犯长度一条规则。
+    // #3287 ①的真公开面证据：键长按全局钳派生并 +1，因此它先撞全局钳
+    // （BusinessGatewayIdempotencyKey.MaximumLength），而不是本位点的端点级规则（200）——
+    // 这一格隔离出来的正是全局钳那条分支。
+    // ⚠️ 这里原写「键经 header 进入，绕开端点级 FluentValidation（它只看请求体）」，
+    // #3330 之后已不成立：归一化挪到了 DTO 校验之前，头部来的键同样受端点级规则约束。
+    // 隔离靠的是「钳 + 1 > 端点级上界」，不是「头部绕开校验」。
+    // 全部字符落在 IsAllowed 允许集内，只触犯长度一条规则。
     [Fact]
     public async Task Master_data_tooling_write_facade_rejects_over_length_idempotency_before_downstream()
     {
@@ -972,7 +976,11 @@ public sealed class BusinessGatewayProxyTests
                 count = 3L,
             }),
         };
-        request.Headers.Add("X-Idempotency-Key", new string('a', 151));
+        // 长度按全局钳派生：#3327 抬钳后手抄的 151 不再越界（本位点端点级上界是 200，
+        // 而 #3330 之后头部键在校验前已归一化写回 DTO），用例会从「超长被拒」退化成「合法键被转发」。
+        request.Headers.Add(
+            "X-Idempotency-Key",
+            new string('a', BusinessGatewayIdempotencyKey.MaximumKeyLength + 1));
 
         using var response = await client.SendAsync(request);
 
@@ -4815,6 +4823,69 @@ public sealed class BusinessGatewayProxyTests
         Assert.NotEqual("supervisor-1", mes.LastForceReleaseQualityHoldActor);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.True(document.RootElement.GetProperty("data").GetProperty("accepted").GetBoolean());
+    }
+
+    // #3287 ②的运行时证据（母票原文写明「151–512 会被 409 挡掉」只是代码推断、未做运行时验证）。
+    // 本位点的端点级上界是 512（= 下游 ForceReleaseQualityHoldCommand 校验器与
+    // quality_hold_transitions.idempotency_key 列宽，两者一致，由验收侧
+    // BusinessGatewayIdempotencyKeyDownstreamBoundContractTests 与下游对撞钉住）；
+    // 抬钳前全局钳 150 会把 151..512 的合法键在入口拒掉。
+    //
+    // ⚠️ 前两格的长度**故意写成绝对值、不按 MaximumKeyLength 派生**：
+    // 派生会让这两格自指——把钳改回 150 时夹具也跟着变成 150，用例照绿，
+    // 「151..512 现在真的过得去」这句话就没有任何东西在证。
+    //   · 151 = 母票②那段值域的下界（旧钳 + 1）。
+    //   · 512 = 本位点端点级上界那一格。若哪天该上界降到 512 以下，这一格会红——那正是要的：
+    //     它迫使当轮显式确认「母票②那段值域是否仍然对外承诺」，而不是静默缩水。
+    // 第三格才按钳派生，它证的是另一件事：兜底仍在（否则把钳改成 int.MaxValue 不会红）。
+    //
+    // 键走 X-Idempotency-Key 头 —— #3330 之后头部来源在 DTO 校验前已归一化写回 DTO，
+    // 因此这三格同时经过端点级规则与全局钳两道，正是母票②描述的那条路径。
+    [Theory]
+    [InlineData(151, null, HttpStatusCode.OK, 1)]
+    [InlineData(512, null, HttpStatusCode.OK, 1)]
+    [InlineData(null, 1, HttpStatusCode.BadRequest, 0)]
+    public async Task Mes_quality_hold_force_release_accepts_keys_up_to_the_global_clamp(
+        int? absoluteLength,
+        int? lengthOverClamp,
+        HttpStatusCode expectedStatus,
+        int expectedForwardCount)
+    {
+        var key = new string(
+            'k',
+            absoluteLength ?? BusinessGatewayIdempotencyKey.MaximumKeyLength + lengthOverClamp!.Value);
+        var mes = new RecordingMesClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        using var forceRequest = new HttpRequestMessage(HttpMethod.Post,
+            "/api/business-console/v1/mes/quality-holds/QH-001/force-release?organizationId=org-001&environmentId=env-dev");
+        forceRequest.Headers.TryAddWithoutValidation("X-Correlation-Id", "corr-gateway-clamp");
+        forceRequest.Headers.TryAddWithoutValidation("X-Idempotency-Key", key);
+        forceRequest.Content = JsonContent.Create(
+            new { reason = "quality-override", sourceService = "BusinessMes", releasedAtUtc = (DateTimeOffset?)null });
+
+        var response = await client.SendAsync(forceRequest);
+
+        Assert.Equal(expectedStatus, response.StatusCode);
+        Assert.Equal(expectedForwardCount, mes.ForceReleaseQualityHoldCallCount);
+        if (expectedForwardCount > 0)
+        {
+            // 「放行」不够，还要**原样**：截断或改写会让下游的幂等查找命中不到同一行。
+            Assert.Equal(key, mes.LastForceReleaseQualityHoldRequest!.IdempotencyKey);
+        }
+        else
+        {
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.Equal(
+                "idempotency-key-too-long",
+                document.RootElement.GetProperty("message").GetString());
+        }
     }
 
     [Fact]

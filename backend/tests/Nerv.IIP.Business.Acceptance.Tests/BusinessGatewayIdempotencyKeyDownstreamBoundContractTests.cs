@@ -21,6 +21,7 @@ using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionTasks;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.QualityReasons;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
+using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.Coding;
 
@@ -42,20 +43,27 @@ using ProductEngineeringDbContext = Nerv.IIP.Business.ProductEngineering.Infrast
 namespace Nerv.IIP.Business.Acceptance.Tests;
 
 /// <summary>
-/// 网关端点级幂等键长度上界与其下游权威上界之间的机器可验关系（#3284）。
+/// 网关幂等键长度值域的三条机器可验关系（#3284 建立，#3327 补齐闭合与全局钳）。
 /// </summary>
 /// <remarks>
-/// <para><b>被证的真不变量</b>：对每个带端点级 <c>MaximumLength</c> 规则的网关请求类型，
-/// <c>网关端点级上界 ≤ 该端点下游的权威上界</c>——即「网关对外承诺的绝不比下游能接受的宽」。
-/// 反方向（网关比下游窄，把合法键挡在门外）由 #3287 承担，本类**不**断言。</para>
+/// <para><b>被证的三条真不变量</b>：</para>
+/// <list type="number">
+/// <item><b>端点级上界 ≤ 下游权威上界</b>（#3284）——「网关对外承诺的绝不比下游能接受的宽」，
+/// 见 <see cref="Gateway_never_promises_a_longer_idempotency_key_than_its_downstream_accepts"/>。</item>
+/// <item><b>受钳的每个请求类型都被上界覆盖或被显式豁免</b>（#3327）——
+/// 见 <see cref="Every_clamped_gateway_request_is_bounded_by_an_endpoint_rule_or_registered_without_downstream_authority"/>。
+/// 这一条把「有多少请求只吃全局钳、保护力未知」从 0 收敛到「要么有权威派生的上界、要么理由经过实测」。</item>
+/// <item><b>全局钳不比任何端点级规则更严</b>（#3327）——
+/// 见 <see cref="Global_clamp_is_never_stricter_than_any_endpoint_level_bound"/>，
+/// 它挡的是「OpenAPI 声明合法、入口先打 400」这种假承诺。</item>
+/// </list>
+/// <para>第 1 条的反方向（网关比下游**窄**，把合法键挡在门外）本类仍**不**断言：
+/// 收窄一条端点级规则不会让任何一条红。</para>
 ///
-/// <para><b>为什么断言端点级规则值本身，而不是 <c>min(端点级规则值, 全局钳 150)</c></b>：
-/// 全局钳（<c>BusinessGatewayIdempotencyKey.MaximumLength = 150</c>）会把一切压到 150。
-/// min 形式**只对 MasterData 生命周期开关那一处**（原值 512、下游列宽 200）恒真——
-/// <c>min(512, 150) = 150 ≤ 200</c>，512 照样通过，那一格零鉴别力。
-/// 对本票另外 5 处 150→128，min 形式**仍会红**（<c>min(150, 150) = 150 &gt; 128</c>），并非零鉴别力。
-/// 即便如此这里也不采用 min 形式：它把「两个互不知情的常量偶然盖住一个洞」写进契约，
-/// 任何人调大或去掉全局钳，端点级的死值立刻能打出 22001。</para>
+/// <para><b>为什么第 1 条断言端点级规则值本身，而不是 <c>min(端点级规则值, 全局钳)</c></b>：
+/// min 形式会把「两个互不知情的常量偶然盖住一个洞」写进契约——
+/// 钳一旦调大或去掉，端点级的死值立刻能打出 22001，而契约仍是绿的。
+/// 不写今天的钳值：那个数会变（本票就把它从 150 改成了 512），复述它等于制造一处会过期的手抄事实。</para>
 ///
 /// <para><b>枚举面从哪来（不是手写名单）</b>：网关端点级位点由**反射网关程序集**得到——
 /// 枚举所有可无参构造的 <see cref="IValidator"/> 实现，实例化后读它建出来的规则，
@@ -86,16 +94,22 @@ namespace Nerv.IIP.Business.Acceptance.Tests;
 /// 都超出本票射程。链接写错的**方向**是：指向一个更宽的下游 ⇒ 假绿。链接失效（改名/删除）⇒ 红。</item>
 /// <item>不证明下游校验器上界与下游列宽一致——那是各服务自己的契约
 /// （Inventory 有 <c>InventoryIdempotencyKeyLengthContractTests</c>，其它服务不一定有）。</item>
-/// <item>不证明「受全局钳作用、但**没有**端点级规则」的那些网关请求安全——它们只吃全局钳，归 #3287。
-/// （此处原写「118 个」，是单行 grep 的产物，已被 #3287 第 0 步的反射测量推翻；
-/// 该计数每落一张子票就变，故不在这里复述数字。）</item>
-/// <item><b>头部路径的覆盖是间接的</b>：#3330 已把 <c>BusinessGatewayIdempotencyKey.Resolve</c>
-/// 从 <c>AuthorizedBusinessProxyEndpoint.HandleAsync</c> 挪到 DTO 校验之前
-/// （<c>OnBeforeValidateAsync</c>），因此经 <c>Idempotency-Key</c> / <c>X-Idempotency-Key</c>
-/// 头传来的键在校验发生时已归一化写进 DTO，本类枚举到的端点级规则对头部与请求体两条来源同时生效。
-/// 但那条「归一化先于校验」的性质由网关自己的
-/// <c>BusinessGatewayRequestPipelineOrderTests</c> 证明，**不是本类证的**：
-/// 本类只读校验器规则值、不发请求。若那个次序被改回去，本类照样全绿而头部路径重新裸奔。</item>
+/// <item>「受全局钳作用、但**没有**端点级规则」这一面已由 #3327 的闭合断言收掉，
+/// 但收掉的方式是**二选一**：要么有端点级规则，要么登记为「下游零权威」并由
+/// <see cref="Registered_absence_of_downstream_authority_is_still_true"/> 实测理由。
+/// 闭合断言**不覆盖**「根本没有 <c>IdempotencyKey</c> 属性、却经审计头携带幂等键」的那 3 个
+/// <c>TRequest</c>，见该断言自己的注释。
+/// （此处原写「118 个」，是单行 grep 的产物，已被反射测量推翻；该计数每落一张子票就变，
+/// 故不在这里复述数字。）</item>
+/// <item><b>头部路径的覆盖是间接的，而且这一条被证伪过两次</b>：#3330 把
+/// <c>BusinessGatewayIdempotencyKey.Resolve</c> 从 <c>AuthorizedBusinessProxyEndpoint.HandleAsync</c>
+/// 挪到 DTO 校验之前（<c>OnBeforeValidateAsync</c>）；#3327 又把它从「鉴权作不出结论时的早返回」
+/// 里拆出来（#3345 审核实测：那条支路上头部键仍绕过端点级规则并被转发下去）。
+/// 两步都落地后，经 <c>Idempotency-Key</c> / <c>X-Idempotency-Key</c> 头传来的键在校验发生时
+/// 已归一化写进 DTO，本类枚举到的端点级规则对头部与请求体两条来源同时生效。
+/// <b>但那条性质由网关自己的 <c>BusinessGatewayRequestPipelineOrderTests</c> 证明，不是本类证的</b>：
+/// 本类只读校验器规则值、不发请求。若那个次序被改回去（哪怕只在一条支路上），
+/// 本类照样全绿而头部路径重新裸奔——这正是它被证伪两次都没被本类抓到的原因。</item>
 /// <item>不覆盖 CAP 事件信封键（<c>EventIds.Idempotency(...)</c> 产出、落 inbox 的 512/500/300 那些）：
 /// 那不是网关承诺的值域。</item>
 /// <item>不覆盖「验证类型是泛型形参」的开放泛型校验器（今日网关侧为 0，
@@ -140,6 +154,119 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
             unregistered.Length == 0 && stale.Length == 0,
             $"网关新增了端点级幂等键上界但未登记下游权威（{unregistered.Length}）：{Describe(unregistered)}"
             + $"；登记表里的位点在网关侧已不存在端点级上界、且不在封闭豁免集里（{stale.Length}）：{Describe(stale)}");
+    }
+
+    /// <summary>
+    /// 受全局钳作用的每一个网关代理请求类型，**要么**有端点级 <c>IdempotencyKey</c> 长度规则，
+    /// **要么**被登记为「下游零权威」（#3327 的闭合断言）。
+    /// </summary>
+    /// <remarks>
+    /// <para><b>为什么是二选一，而不是「必须有端点级规则」</b>：对**下游根本不消费这把键**的请求
+    /// （今天是 IndustrialTelemetry 确认报警 / 解除搁置两处，键的消费者是网关自己的 operation-receipt），
+    /// 逼它挂一条 <c>MaximumLength</c> 只能手抄一个**没有权威来源**的数字，
+    /// 并把「这里有幂等保护」的错觉写进公开 OpenAPI 契约。豁免那一支走
+    /// <see cref="NoDownstreamAuthority"/> + <see cref="RequestsWithoutDownstreamAuthority"/>，
+    /// 其**理由**由 <see cref="Registered_absence_of_downstream_authority_is_still_true"/> 按下游命令类型实测，
+    /// 不是「说一句就算」。</para>
+    ///
+    /// <para><b>两个维度必须与钳的实际作用判据逐字一致</b>，否则量的不是同一个集合：</para>
+    /// <list type="bullet">
+    /// <item>维度 A（本条自己枚举）= <see cref="AuthorizedBusinessProxyEndpoint{TRequest,TResponse}"/>
+    /// 全部**非抽象**后代的 <c>TRequest</c>，按
+    /// <c>GetProperty("IdempotencyKey", Instance | Public)</c> 且 <c>PropertyType == typeof(string)</c> 过滤
+    /// —— 与 <c>BusinessGatewayIdempotencyKey.Resolve&lt;TRequest&gt;</c> 里那两行逐字相同。
+    /// 取**顶层请求对象**而不是「所有带该属性的类型」：后者会混进 <c>...Response</c> / <c>...Item</c>
+    /// 这类根本不经过钳的嵌套类型。</item>
+    /// <item>维度 B = <see cref="GatewayEndpointLevelBounds"/>，复用同文件的反射枚举
+    /// （其丢弃集由 <see cref="Gateway_validator_enumeration_discards_nothing"/> 钉为空），不另写一份。</item>
+    /// </list>
+    ///
+    /// <para><b>三条自检，每条挡一种「量到空气」的退化</b>：</para>
+    /// <list type="number">
+    /// <item>维度 A 非空——反射一旦失配（基类改名、泛型元数变化）会退化成空集，而差集对空集恒为空。</item>
+    /// <item>反向差集（B − A）为空——它是「两个维度可比」的判据。若哪天维度 A 被改成了另一个集合而
+    /// 恰好仍非空，闭合断言会对着错的值域报绿；反向差集会先红。</item>
+    /// <item>豁免集 ⊆ 维度 A——登记为「下游零权威」却已经不受钳作用（例如网关那个字段被摘掉了）
+    /// 的项必须清出去，否则豁免会在一个已经不存在的位点上继续挂着。</item>
+    /// </list>
+    ///
+    /// <para><b>本条不覆盖什么（写清楚，避免「护栏自称完备」）</b>：</para>
+    /// <list type="number">
+    /// <item><b>没有 <c>IdempotencyKey</c> 属性、但仍会携带幂等键的那一面不在闭合集里。</b>
+    /// <c>BusinessGatewayIdempotencyKey.ResolveForAudit</c> 从
+    /// <c>Idempotency-Key</c> / <c>X-Idempotency-Key</c> 头取键放进审计上下文并转发下游，
+    /// 它的调用面（<c>RequireAuditContext</c> / <c>RequireIdempotentAuditContext</c>）里有 3 个
+    /// <c>TRequest</c> **根本没有该属性**——实读复核为
+    /// <c>BusinessConsoleUpdateMasterDataResourceRequest</c>、
+    /// <c>BusinessConsoleAddTeamMemberRequest</c>、<c>BusinessConsoleRemoveTeamMemberRequest</c>
+    /// （#3330 席位登记时把后两个写成了去掉 <c>BusinessConsole</c> 前缀的名字，那是 MasterData 服务自己的
+    /// 同名 DTO，网关程序集里没有那两个类型；结论一致，名字以此处为准）。
+    /// 它们的头部键**只受全局钳约束**，且没有 DTO 属性可挂端点级规则
+    /// ⇒ 既不在维度 A 里，也不在本条的闭合集里。
+    /// <b>⇒ 本条全绿不等于「网关所有幂等键都受端点级约束」。</b></item>
+    /// <item>不看守服务自有端点（如 <c>ErpProcurementEndpoints.cs</c>，#3288 的位点 2、3）——
+    /// 它们完全在全局钳射程之外，本类整体都不看守。</item>
+    /// <item>不证明端点级规则的**值**对不对：那由
+    /// <see cref="Gateway_never_promises_a_longer_idempotency_key_than_its_downstream_accepts"/> 承担。</item>
+    /// </list>
+    /// </remarks>
+    [Fact]
+    public void Every_clamped_gateway_request_is_bounded_by_an_endpoint_rule_or_registered_without_downstream_authority()
+    {
+        var clamped = ClampedProxyRequestTypes();
+
+        // 值域非空：反射失配会退化成空集，而差集对空集恒为空、Assert.All 对空集恒真。
+        Assert.NotEmpty(clamped);
+
+        var bounded = GatewayEndpointLevelBounds().Keys.ToHashSet();
+
+        var uncovered = clamped.Except(bounded).Except(RequestsWithoutDownstreamAuthority).ToArray();
+        var incomparable = bounded.Except(clamped).ToArray();
+        var strayExemptions = RequestsWithoutDownstreamAuthority.Except(clamped).ToArray();
+
+        Assert.True(
+            uncovered.Length == 0 && incomparable.Length == 0 && strayExemptions.Length == 0,
+            $"受全局钳作用、却既无端点级幂等键上界、也未登记为「下游零权威」（{uncovered.Length}）：{Describe(uncovered)}"
+            + $"；有端点级上界却不在受钳集合里、两个维度已不可比（{incomparable.Length}）：{Describe(incomparable)}"
+            + $"；登记为「下游零权威」却已不受全局钳作用（{strayExemptions.Length}）：{Describe(strayExemptions)}");
+    }
+
+    /// <summary>
+    /// 全局钳 <c>BusinessGatewayIdempotencyKey.MaximumLength</c> 不得比任何端点级规则更严。
+    /// </summary>
+    /// <remarks>
+    /// <para><b>是 <c>&gt;=</c> 不是 <c>==</c></b>：钳的角色是兜底，只需「不比任何端点更严」。
+    /// <c>==</c> 会把它绑死在端点级最大值上，任何人**收紧**那个最大值都被迫同步改钳。</para>
+    ///
+    /// <para><b>它挡的是什么</b>：钳一旦小于某条端点级规则，那条规则声明在 OpenAPI 里的
+    /// <c>maxLength</c> 就有一段是**假承诺**——契约说合法、入口先打 400
+    /// （<c>idempotency-key-too-long</c>）。#3287 侧面④点名的就是这个形状。</para>
+    ///
+    /// <para><b>为什么用反射读那个 <c>private const</c>，而不是加 <c>InternalsVisibleTo</c> 直接引用</b>：
+    /// C# 的 <c>const</c> 在**引用方**编译期内联。直接引用会把当时的值烤进本测试程序集，
+    /// 之后只重建网关而不重建测试时，本条会拿着一个陈旧的数报绿（本仓已有判例）。
+    /// 反射走的是网关程序集的字段元数据，运行时才读，没有这个窗口。
+    /// 代价是字段改名会让解析失败——所以下面对「解析得到」本身也断言，改名即红，不静默跳过。</para>
+    /// </remarks>
+    [Fact]
+    public void Global_clamp_is_never_stricter_than_any_endpoint_level_bound()
+    {
+        var bounds = GatewayEndpointLevelBounds();
+        Assert.NotEmpty(bounds);
+
+        var clamp = ResolveGlobalClamp();
+
+        var falsePromises = bounds
+            .Where(pair => pair.Value > clamp)
+            .OrderBy(pair => pair.Key.FullName, StringComparer.Ordinal)
+            .Select(pair => $"  {pair.Key.FullName}: 端点级上界 {pair.Value} > 全局钳 {clamp}")
+            .ToArray();
+
+        Assert.True(
+            falsePromises.Length == 0,
+            $"全局钳比端点级规则更严，这些位点声明在 OpenAPI 里的 maxLength 有一段是假承诺"
+            + $"（{falsePromises.Length} 处 / 共比较 {bounds.Count} 处，钳 = {clamp}）：\n"
+            + string.Join("\n", falsePromises));
     }
 
     /// <summary>
@@ -337,10 +464,85 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
         IReadOnlyDictionary<Type, int> Bounds,
         IReadOnlyList<string> Discarded);
 
+    /// <summary>网关程序集。用一个位于其中的公开类型取，避免手抄程序集名字符串。</summary>
+    private static Assembly GatewayAssembly =>
+        typeof(BusinessConsoleSetMasterDataResourceEnabledRequest).Assembly;
+
+    /// <summary>
+    /// 受全局钳作用的网关代理请求类型（维度 A）：
+    /// <see cref="AuthorizedBusinessProxyEndpoint{TRequest,TResponse}"/> 全部**非抽象**后代的
+    /// <c>TRequest</c>，按 <c>BusinessGatewayIdempotencyKey.Resolve</c> 自己的判据过滤。
+    /// </summary>
+    /// <remarks>
+    /// 判据必须与 <c>Resolve</c> 逐字一致：<c>GetProperty("IdempotencyKey", Instance | Public)</c>
+    /// 且 <c>PropertyType == typeof(string)</c>。属性名写成 <c>IdempotencyKey</c> 但类型不是
+    /// <c>string</c> 的请求**不受钳作用**（<c>Resolve</c> 会原样返回），因此也不进本集合——
+    /// 今天这样的类型是 0 个，但判据按 <c>Resolve</c> 写而不是按今天的事实写。
+    /// </remarks>
+    private static HashSet<Type> ClampedProxyRequestTypes()
+    {
+        var clamped = new HashSet<Type>();
+        foreach (var type in GatewayAssembly.GetTypes())
+        {
+            if (type.IsAbstract || ProxyRequestType(type) is not { } requestType)
+            {
+                continue;
+            }
+
+            if (requestType.GetProperty(IdempotencyKeyPropertyName, BindingFlags.Instance | BindingFlags.Public)
+                ?.PropertyType == typeof(string))
+            {
+                clamped.Add(requestType);
+            }
+        }
+
+        return clamped;
+    }
+
+    /// <summary>
+    /// 沿继承链找 <see cref="AuthorizedBusinessProxyEndpoint{TRequest,TResponse}"/> 的闭合实参 <c>TRequest</c>。
+    /// 走继承链而不是 <c>IsAssignableFrom</c>：需要的是泛型实参本身，基类可能被中间抽象类再包一层。
+    /// </summary>
+    private static Type? ProxyRequestType(Type type)
+    {
+        for (var current = type.BaseType; current is not null; current = current.BaseType)
+        {
+            if (current.IsGenericType
+                && current.GetGenericTypeDefinition() == typeof(AuthorizedBusinessProxyEndpoint<,>))
+            {
+                return current.GetGenericArguments()[0];
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// 从网关程序集的字段元数据读全局钳的值。见
+    /// <see cref="Global_clamp_is_never_stricter_than_any_endpoint_level_bound"/> 注释里
+    /// 「为什么不直接引用那个 const」。
+    /// </summary>
+    private static int ResolveGlobalClamp()
+    {
+        const string clampTypeName = "Nerv.IIP.BusinessGateway.Web.Application.Auth.BusinessGatewayIdempotencyKey";
+        const string clampFieldName = "MaximumLength";
+
+        var clampType = GatewayAssembly.GetType(clampTypeName);
+        Assert.True(clampType is not null, $"网关程序集里找不到 {clampTypeName}，全局钳的值解析不到。");
+
+        var field = clampType!.GetField(
+            clampFieldName,
+            BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
+        Assert.True(
+            field is not null,
+            $"{clampTypeName} 上找不到字段 {clampFieldName}，全局钳的值解析不到（改名了就把这里一起改，别让它静默跳过）。");
+
+        return Assert.IsType<int>(field!.GetRawConstantValue());
+    }
+
     internal static GatewayValidatorEnumeration EnumerateGatewayValidators()
     {
-        var assembly = typeof(Nerv.IIP.BusinessGateway.Web.Application.BusinessServices
-            .BusinessConsoleSetMasterDataResourceEnabledRequest).Assembly;
+        var assembly = GatewayAssembly;
 
         var bounds = new Dictionary<Type, int>();
         var discarded = new List<string>();
@@ -565,6 +767,12 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
     /// <see cref="Registered_absence_of_downstream_authority_is_still_true"/>，而它的射程
     /// **只到被点名的下游命令类型**：上面第 2–5 条（头、列、域事件、网关存储）
     /// 今天仍然由人工实读承担，没有机器守着。</para>
+    ///
+    /// <para><b>第三个方向（#3327）</b>：<see
+    /// cref="Every_clamped_gateway_request_is_bounded_by_an_endpoint_rule_or_registered_without_downstream_authority"/>
+    /// 还要求本集合 ⊆ 受全局钳作用的请求类型。⇒ 若哪天这两处的 <c>IdempotencyKey</c> 字段被摘掉
+    /// （像 #3328 对 Mes 那 5 处做的那样），它们不再受钳作用，本登记必须**一并清除**，
+    /// 而不是留在这里对着一个不存在的位点继续挂着。</para>
     /// </remarks>
     private static readonly HashSet<Type> RequestsWithoutDownstreamAuthority =
     [
@@ -655,11 +863,12 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
         [typeof(BusinessConsoleCreateWorkCalendarRequest)] = [MasterDataCodeKeyColumn],
         [typeof(BusinessConsoleCreateTeamRequest)] = [MasterDataCodeKeyColumn],
         [typeof(BusinessConsoleCreateDepartmentRequest)] = [MasterDataCodeKeyColumn],
-        // 这处端点级值取 200（= 下游 master_data_lifecycle_audit.operation_id 列宽），不取 150。
-        // 全局钳 BusinessGatewayIdempotencyKey.MaximumLength = 150 会让 151..200 的键先被拒
-        // （#3287 第一步落地后是 400 idempotency-key-too-long；在那之前是 409 idempotency-key-mismatch），
-        // 于是 OpenAPI 里新写的 maxLength: 200 对客户端是一句假承诺——该缺陷的真因在全局钳，
-        // 归 #3287（该票已追加此侧面）；用一个更小的数在这里掩盖它是打补丁，本票不做。
+        // 这处端点级值取 200（= 下游 master_data_lifecycle_audit.operation_id 列宽），不取一个更小的数。
+        // ⚠️ 这段原先写「全局钳 150 会让 151..200 的键先被拒，于是 maxLength: 200 是一句假承诺」——
+        // **该状态已由 #3327 消除，别再照着读**：钳已抬到 >= max(端点级)，
+        // Global_clamp_is_never_stricter_than_any_endpoint_level_bound 现在把这条关系钉住，
+        // 本位点的 200 对客户端是真承诺。保留这段是为了记住**当时为什么不把它改成 150**：
+        // 用一个更小的数在这里掩盖另一处组件的缺陷是打补丁，#3287 两次禁止。
         [typeof(BusinessConsoleSetMasterDataResourceEnabledRequest)] = [MasterDataLifecycleOperationColumn],
 
         // ---- Mes ----
@@ -699,25 +908,35 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
         [typeof(BusinessConsoleMesForceReleaseQualityHoldRequest)] =
             [Command<ForceReleaseQualityHoldCommand>(), MesQualityHoldTransitionColumn],
 
-        // ⚠️ BusinessConsoleMesRetryFinishedGoodsReceiptInventoryPostingRequest **仍不在这张表里**，
-        // 网关侧也仍没有端点级规则——但**理由已经换了一个**，别沿用旧的那句。
+        // 完工入库过账重投（#3324 移出、#3332 修好键的构成、#3327 接回来）。
+        // ⚠️ 别沿用 #3324 当时那句「不存在任何正的上界」——那句的前提已经不在了。
         //
-        // 旧理由（#3324 当时成立、现已作废）：原始键被拼成
+        // 旧事实（#3324 当时成立、现已作废）：原始键被拼成
         // "mes:finished-goods-receipt:{org}:{env}:{requestNo}:{原始键}" 跨服务进 Inventory，
         // 纯拼接长度单调 ⇒ stock_movements.idempotency_key(128) 是真权威，
         // 而按各段列宽取最坏情况前缀本身就 27 + 100+1 + 100+1 + 100+1 = 330 > 128，
-        // 连空键都放不下 ⇒ 不存在任何**正**的上界可供声明。
+        // 连空键都放不下 ⇒ 那时确实不存在任何**正**的上界可供声明。
         //
-        // 新事实（#3332 已修）：该键改为**两段式回落**
-        // （FinishedGoodsReceiptInventoryPostingKey，上界与承载列的关系由
-        // MesFinishedGoodsReceiptInventoryPostingKeyBoundContractTests 从两侧 EF 模型派生钉住）。
-        // 于是那一列对本位点变成**条件性派生**，与 WmsText.LineIdempotencyKey 同形，
-        // **不是** #3290 那种无条件摘要的纯幽灵权威——两支都要读：
-        //   · 整键 ≤ 128 ⇒ 逐字保持 ⇒ 那一列**是**这一支的真权威；
-        //   · 整键 > 128 ⇒ 回落成定长 ⇒ 那一列对原始键**零约束**。
-        // 因此可登记的**有效上界**取 Mes 命令校验器
-        // （RetryFinishedGoodsReceiptInventoryPostingCommandValidator），而该列的 128 只约束前一支。
-        // 登记与补端点级规则归 #3327（它同时负责让差集闭合），本票有意不在这里加行。
+        // 新事实（#3332）：该键改为**两段式回落**（FinishedGoodsReceiptInventoryPostingKey.BuildRetry）。
+        // 于是 stock_movements.idempotency_key 对本位点是**条件性派生**，与 WmsText.LineIdempotencyKey
+        // 同形，**不是** #3290 那种无条件摘要的纯幽灵权威。两支都要读，哪一支走哪条写死在这里：
+        //   · 整键 <= FinishedGoodsReceiptInventoryPostingKey.ColumnMaxLength（128）
+        //     ⇒ BuildRetry 返回 candidate 本身、**逐字保持**（含调用方原始键的那个字符串原样落库）
+        //     ⇒ 那一列**是**这一支的真权威，有效上界 = 128 − 可读作用域段长度 − 1。
+        //   · 整键 > 128
+        //     ⇒ BuildRetry 返回 {作用域摘要}.{尾段摘要}，两段都是定长 base64url
+        //     ⇒ 落库值与原始键长度无关，那一列对原始键**零约束**。
+        // ⇒ 该列**不能**登记为本位点的上界（它只约束前一支，而端点级规则是无条件的）；
+        //    但它**也不是**「完全不承重」——不要把这条读成「那一列可以随意收窄」。
+        //    该列与回落形态之间的关系由 MesFinishedGoodsReceiptInventoryPostingKeyBoundContractTests
+        //    从两侧 EF 模型派生钉住，不由本表承担。
+        // ⇒ 可登记的**有效上界**取 Mes 命令校验器
+        //    RetryFinishedGoodsReceiptInventoryPostingCommandValidator（MesProductionCommands.cs，
+        //    RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(200)），它是本位点**唯一**可解析的下游权威：
+        //    下游端点 DTO RetryFinishedGoodsReceiptInventoryPostingRequest 没有自己的校验器
+        //    （实读 Mes Web 程序集里 AbstractValidator<RetryFinishedGoodsReceiptInventoryPostingRequest> 共 0 个）。
+        [typeof(BusinessConsoleMesRetryFinishedGoodsReceiptInventoryPostingRequest)] =
+            [Command<RetryFinishedGoodsReceiptInventoryPostingCommand>()],
 
         // 线边退料：**不登记承载列**，但理由与上一条不同——不是派生值，是那一列无界。
         // 原始键（只 Trim）作为 JSON 字典的键落 material_issue_requests
@@ -796,9 +1015,9 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
         // ⚠️ HttpAdmission.RequireIdentity 另有一条 MaxIdentityLength = 200 的头长度上限，与该列同值；
         // 它是 private const，本表的解析机制够不到，故不登记——它不改变有效上界。
         // 状态变更与用量登记这两处端点级值取 200（= 下游列宽），与
-        // BusinessConsoleSetMasterDataResourceEnabledRequest 是同一形状：全局钳 150 会让 151..200 的键
-        // 先被拒，于是 OpenAPI 里的 maxLength: 200 对客户端是一句假承诺——真因在全局钳，归 #3287；
-        // 用一个更小的数在这里掩盖它是打补丁，本票不做。
+        // BusinessConsoleSetMasterDataResourceEnabledRequest 同一形状。
+        // ⚠️ 同一句「151..200 被全局钳先拒、maxLength: 200 是假承诺」的旧表述**已随 #3327 抬钳作废**，
+        // 理由与那一处逐字相同，见该处注释。
         [typeof(BusinessConsoleRegisterToolingAssetRequest)] =
             [MasterDataToolingOperationColumn, MasterDataCodeKeyColumn],
         [typeof(BusinessConsoleChangeToolingStatusRequest)] = [MasterDataToolingOperationColumn],
@@ -812,8 +1031,8 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
         // 两处的命令校验器各带一条 MaximumLength(128)，落库列 label_print_batches.idempotency_key(128)
         // 与 scan_records.idempotency_key(128) 同宽；域构造只 BarcodeLabelText.Required（Trim），
         // 落的就是调用方原始键，故命令校验器与列宽两个权威都登记、取最小。
-        // ⚠️ 这两处的下游上界 128 **小于**网关全局钳 150：本票补规则之前，129..150 的键在网关放行、
-        // 到 BarcodeLabel 才被拒。
+        // ⚠️ 这两处的下游上界 128 **小于**网关全局钳：本票补规则之前，「> 128 且 <= 钳」的键在网关放行、
+        // 到 BarcodeLabel 才被拒。不写钳的具体数：#3327 已把它从 150 改到 512，这类现在时的数字会过期。
         [typeof(BusinessConsoleCreateBarcodePrintBatchRequest)] =
             [Command<CreateLabelPrintBatchCommand>(), BarcodeLabelPrintBatchKeyColumn],
         [typeof(BusinessConsoleRecordBarcodeScanRequest)] =
@@ -838,7 +1057,8 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
         // stock_movements.idempotency_key(128)（StockMovement 构造只 InventoryText.Required，即 Trim）。
         // 命令校验器 RequiredInventoryCode(InventoryValidationRules.IdempotencyKeyMaxLength) 与列同宽，
         // 两个权威互相独立，都登记、取最小。
-        // ⚠️ 下游上界 128 **小于**网关全局钳 150。
+        // ⚠️ 下游上界 128 **小于**网关全局钳（不写钳的具体数，它会变；关系由
+        // Global_clamp_is_never_stricter_than_any_endpoint_level_bound 与本条不等式各自看守）。
         // ⚠️ 本条**不覆盖调拨支**（MovementType = transfer）：那一支在 handler 里再拼 ":out" / ":in"，
         // 有效上界收到 PostStockMovementCommandHandler.TransferBaseIdempotencyKeyMaxLength（列宽 − 最长腿后缀），
         // 由 InventoryPostingRejectedException 在运行时拒绝。那是**条件**上界，而网关这条规则是无条件的，

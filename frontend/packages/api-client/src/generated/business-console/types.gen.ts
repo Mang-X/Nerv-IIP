@@ -15592,6 +15592,10 @@ export type RetryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingData = {
 
 export type RetryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -15600,6 +15604,8 @@ export type RetryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingErrors = 
      */
     403: unknown;
 };
+
+export type RetryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingError = RetryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingErrors[keyof RetryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingErrors];
 
 export type RetryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingResponses = {
     /**
