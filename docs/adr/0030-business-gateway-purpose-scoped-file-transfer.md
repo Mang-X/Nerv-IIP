@@ -24,15 +24,10 @@
 2. **业务面的字节通路按用途分面。** 业务侧每条文件门面固定一个 `filePurpose` 与 owner，不从请求体读取；在签发下载授权或交付字节之前必须复核目标文件的用途属于本门面。业务域读权限不得因为共用 FileStorage 而退化成通用文件读权限。
 3. **本 ADR 之后新开的业务字节面不得把 FileStorage 的 download grant id 交给调用方。** grant id 是 FileStorage 全服务共用命名空间，其兑换面不校验用途；一旦交给调用方，任一业务门面的读权限持有者都能兑换其它门面签发的 grant。新开业务面的下载授权必须由网关在服务端签发并立即兑换，对外只暴露以业务标识（如 `fileId`）为入参的单跳字节路由。
 
-   **既有存量例外（登记，不追认为合规形状）**：工程 SOP 文件面
-   `POST /api/business-console/v1/files/{fileId}/download-grants` 与
-   `GET /api/business-console/v1/files/download-grants/{downloadGrantId}/content`
-   早于本 ADR，仍把 grant id 交给调用方。它当前不构成跨门面兑换：该 grant id 只能由持
-   `business.engineering.documents.read` 的主体开出，且兑换面要求同一权限码，命名空间内没有
-   第二个权限口径可被跨越。**再新增任何一个消费该 content 路由的权限口径，就会立即让它变成本
-   决策要防的兑换通道**；届时必须先按本决策改造，不得沿用。该存量的收敛不在本 ADR 范围内，由 [Issue #3297](https://github.com/Mang-X/Nerv-IIP/issues/3297) 承接。
+   **既有存量例外（登记，不追认为合规形状）**：本 ADR 之前已经开出、且把 download grant id 交给调用方的业务文件面继续存在，本决策不追溯要求其改造。该豁免**不是无条件的**，它只在一个条件成立时有效——**该 grant id 的签发面与兑换面要求同一个权限码，命名空间内不存在第二个权限口径可被跨越**。一旦有第二个权限口径开始消费同一条兑换路由，该条件即告失效，存量面必须先按本决策改造后才能继续使用，不得沿用。
 
-   **#3297 选路的关键前提**：FileStorage 当前**没有按 `downloadGrantId` 反查所属 file 的读面**——以 `uploadSessionId`/`downloadGrantId` 为键的公开路由都不回出归属事实，因此网关侧无法在兑换时复核 grant 属于哪个用途。存量面要么照本决策改成「授权在服务端签发并立即兑换、不交出 id」，要么先由 FileStorage 提供该反查能力；这两条路的代价差别就落在这个前提上。
+   存量面的收敛路径有两条：改成「授权在服务端签发并立即兑换、不交出 id」，或由 FileStorage 提供按 grant id 反查其所属文件的能力，使网关能在兑换时复核用途。两条路的取舍取决于 FileStorage 是否提供该能力，属实现裁量，不由本 ADR 决定。
+
 4. **传输语义不变。** tus 协议语义、staging/final 生命周期、`ObjectKey` 不公开、complete 提交不变量与失败矩阵完全按 ADR 0023 执行，本 ADR 不修改其中任何一条。
 5. **字节流跳不适用 [ADR 0015](0015-gateway-http-client-resilience-strategy.md) 决策 2 的 10 秒总超时；该参数对字节流跳的适用性由本 ADR 部分修订。**
 

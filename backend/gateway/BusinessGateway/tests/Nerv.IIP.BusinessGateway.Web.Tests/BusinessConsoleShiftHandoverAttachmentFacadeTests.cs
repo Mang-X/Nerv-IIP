@@ -682,10 +682,14 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
         Assert.Equal(HttpStatusCode.GatewayTimeout, jsonFailure.StatusCode);
         Assert.Equal("downstream-timeout", jsonFailure.Message);
 
-        // 鉴别点：此刻字节面**仍在等**——它没有被同一档总超时切断。闸门未放行，故不可能已完成。
+        // 冗余确认，非新增鉴别力：本行只是把「此刻字节面仍在等」写在时点上，便于阅读。
+        // 实测（清洁重建下删掉本行重跑）M1 仍被杀，说明真正承重的是下面那句 `await byteCall`
+        // ——字节面若也挂了 10 秒总超时，它会在闸门放行前就抛异常，`await` 直接红。
         Assert.False(byteCall.IsCompleted, "字节面与 JSON 面一同被切断，说明它仍挂着总超时");
 
         gate.SetResult();
+
+        // 鉴别点在这里：闸门放行后字节面必须仍然活着并正常完成。
         await byteCall;
         Assert.Equal(StatusCodes.Status204NoContent, httpContext.Response.StatusCode);
     }
