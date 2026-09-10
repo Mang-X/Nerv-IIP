@@ -141,9 +141,12 @@ try
     builder.Services.AddScoped<ICorrectiveActionCodeGenerator, CorrectiveActionCodeGenerator>();
     builder.Services.AddScoped<ICapaAutomationService, CapaAutomationService>();
     builder.Services.AddSingleton(TimeProvider.System);
+    builder.Services.AddSingleton<CollectorRegistry>(Metrics.DefaultRegistry);
+    builder.Services.AddSingleton<WorkOrderReleaseFactBacklogMetrics>();
     builder.Services.AddHostedService<InspectionTaskOverdueScheduler>();
     builder.Services.AddHostedService<PeriodicInspectionTimeTaskScheduler>();
     builder.Services.AddHostedService<PeriodicInspectionQuantityContinuationScheduler>();
+    builder.Services.AddHostedService<WorkOrderReleaseFactBacklogScanner>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
     if (isTesting)
