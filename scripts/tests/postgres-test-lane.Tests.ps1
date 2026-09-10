@@ -457,6 +457,10 @@ try {
     # 去重与排序都走序数比较器：`Sort-Object -Unique` 会折叠可忽略字符，
     # 两个只差一个 bidi 字符的类名会被并成一个，扫描面因此静默变窄。
     #
+    # 下面三条点名断言用「显式序数比较 + .Count -eq 1」而不是 HashSet.Contains：
+    # 序数语义就写在断言里，不靠接收方类型推出来，同时顺带断言了不重复；
+    # 口径与本文件 MES lane 的身份点名一致。
+    #
     # 唯一的显式补项是 Periodic Inspection 的**窄 harness**：它自己不承载任何测试身份，
     # 因而派生不出来，但那个共享的裸 builder（CreateOptions）就住在它里面，
     # 漏掉它等于把下面「六个钉住的裸 builder」这条契约的主要承担者移出扫描面。
@@ -469,9 +473,9 @@ try {
     $qualityLaneSourceNames = [Collections.Generic.List[string]]::new([string[]]@($qualitySourceSet))
     $qualityLaneSourceNames.Sort([StringComparer]::Ordinal)
     $qualityLaneSources = @($qualityLaneSourceNames)
-    Assert-Contract ($qualitySourceSet.Contains('QualityReasonPostgresProfileTests.cs')) 'Quality lane source enumeration must include the scrap-reason PostgreSQL profile test.'
-    Assert-Contract ($qualitySourceSet.Contains('WorkOrderReleaseProjectionBackfillPostgresTests.cs')) 'Quality lane source enumeration must include the release-projection backfill PostgreSQL test the hand-kept list used to miss.'
-    Assert-Contract ($qualitySourceSet.Contains('WorkOrderReleaseFactBacklogPostgresTests.cs')) 'Quality lane source enumeration must include the release-fact backlog PostgreSQL test.'
+    Assert-Contract (@($qualityLaneSources | Where-Object { [string]::Equals([string]$_, 'QualityReasonPostgresProfileTests.cs', [StringComparison]::Ordinal) }).Count -eq 1) 'Quality lane source enumeration must include the scrap-reason PostgreSQL profile test exactly once.'
+    Assert-Contract (@($qualityLaneSources | Where-Object { [string]::Equals([string]$_, 'WorkOrderReleaseProjectionBackfillPostgresTests.cs', [StringComparison]::Ordinal) }).Count -eq 1) 'Quality lane source enumeration must include the release-projection backfill PostgreSQL test the hand-kept list used to miss, exactly once.'
+    Assert-Contract (@($qualityLaneSources | Where-Object { [string]::Equals([string]$_, 'WorkOrderReleaseFactBacklogPostgresTests.cs', [StringComparison]::Ordinal) }).Count -eq 1) 'Quality lane source enumeration must include the release-fact backlog PostgreSQL test exactly once.'
     foreach ($qualitySource in $qualityLaneSources) {
         $qualitySourcePath = Join-Path $repoRoot "backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/$qualitySource"
         Assert-Contract (Test-Path -LiteralPath $qualitySourcePath -PathType Leaf) "Quality lane source '$qualitySource' must exist."
