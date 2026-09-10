@@ -646,20 +646,24 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
     /// #3096 第三轮阻断 E1 的承担方。
     ///
     /// **本断言读的是 Polly 弹性管线层**（`AddResilienceHandler` 内的 `AddTimeout`），不是
-    /// `HttpClient.Timeout`——上一版断言读的是后者，够不到 10 秒总超时所在的那一层，
+    /// `HttpClient.Timeout`——早先那版读的是后者，够不到 10 秒总超时所在的那一层，
     /// 因此「把 NonIdempotentSafe 加回字节面」的变异对它零鉴别力。
     ///
+    /// **没有墙钟等待**：下游由 <see cref="TaskCompletionSource"/> 闸住，放行时机由测试显式决定；
+    /// 那 10 秒是 Polly 自己的计时器走的，不是本用例 sleep 出来的（#3096 第五轮 CI 红：
+    /// `Task.Delay` 被后端确定性 checker 判为 unexplained finding）。
+    ///
     /// 会失败的具体输入：`shift-handover-photo` 允许 20,971,520 bytes，&lt; 2 MB/s 的现场网络下
-    /// 单次满额 tus `PATCH` 必然超过 10 秒。两发并发打同一个延迟 11 秒的下游：JSON 面必须被
-    /// 管线切断（504 `downstream-timeout`），字节面必须活到下游返回。
+    /// 单次满额 tus `PATCH` 必然超过 10 秒。鉴别点是**JSON 面被自己的管线切断的那一刻，字节面仍然在等**。
     /// </summary>
     [Fact]
-    public async Task Json_face_is_cut_at_ten_seconds_while_the_byte_face_survives_the_same_delay()
+    public async Task Json_face_is_cut_by_its_pipeline_timeout_while_the_byte_face_stays_open()
     {
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await using var factory = BusinessGatewayTestHost.CreateDedicatedFactory(
             configureBuilder: builder => builder.ConfigureServices(services =>
                 services.AddSingleton<IHttpMessageHandlerBuilderFilter>(
-                    new FileStorageSlowHandlerFilter(TimeSpan.FromSeconds(11)))));
+                    new FileStorageGatedHandlerFilter(gate))));
         var json = factory.Services.GetRequiredService<IBusinessFileStorageClient>();
         var transfer = factory.Services.GetRequiredService<IBusinessFileTransferClient>();
         var httpContext = ResponseContext();
@@ -673,10 +677,16 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
         var byteCall = transfer.ProxyShiftHandoverAttachmentTusHeadAsync(
             "internal-test-token", "ups-handover-1", httpContext.Response, CancellationToken.None);
 
-        await Task.WhenAll(jsonCall, byteCall);
+        // JSON 面由它自己的 NonIdempotentSafe 管线在 10 秒处切断。
+        var jsonFailure = await jsonCall;
+        Assert.Equal(HttpStatusCode.GatewayTimeout, jsonFailure.StatusCode);
+        Assert.Equal("downstream-timeout", jsonFailure.Message);
 
-        Assert.Equal(HttpStatusCode.GatewayTimeout, (await jsonCall).StatusCode);
-        Assert.Equal("downstream-timeout", (await jsonCall).Message);
+        // 鉴别点：此刻字节面**仍在等**——它没有被同一档总超时切断。闸门未放行，故不可能已完成。
+        Assert.False(byteCall.IsCompleted, "字节面与 JSON 面一同被切断，说明它仍挂着总超时");
+
+        gate.SetResult();
+        await byteCall;
         Assert.Equal(StatusCodes.Status204NoContent, httpContext.Response.StatusCode);
     }
 
@@ -833,7 +843,7 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
         }
     }
 
-    private sealed class FileStorageSlowHandlerFilter(TimeSpan delay) : IHttpMessageHandlerBuilderFilter
+    private sealed class FileStorageGatedHandlerFilter(TaskCompletionSource gate) : IHttpMessageHandlerBuilderFilter
     {
         public Action<HttpMessageHandlerBuilder> Configure(Action<HttpMessageHandlerBuilder> next) =>
             builder =>
@@ -841,18 +851,19 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
                 next(builder);
                 if (builder.Name is nameof(IBusinessFileStorageClient) or nameof(IBusinessFileTransferClient))
                 {
-                    builder.PrimaryHandler = new SlowHandler(delay);
+                    builder.PrimaryHandler = new GatedHandler(gate);
                 }
             };
     }
 
-    private sealed class SlowHandler(TimeSpan delay) : HttpMessageHandler
+    /// <summary>下游挂起直到测试显式放行；不使用墙钟等待。</summary>
+    private sealed class GatedHandler(TaskCompletionSource gate) : HttpMessageHandler
     {
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
-            await Task.Delay(delay, cancellationToken);
+            await gate.Task.WaitAsync(cancellationToken);
             return new HttpResponseMessage(HttpStatusCode.NoContent)
             {
                 Content = new StringContent(string.Empty),
