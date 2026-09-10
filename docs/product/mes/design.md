@@ -230,6 +230,8 @@ OpenAPI、生成客户端、MES domain 或 persistence；Quality、Inventory、W
 重复执行不改变质量侧投影；回填也不追认补投之前的周期巡检窗口，因此既不额外开出首件检验任务，
 也不会为历史产量与历史时长成批补开已过期的周期巡检。
 **部署顺序是硬约束：#3000 的回填必须先于本门禁上线执行**，顺序颠倒会让这批在制工序在回填完成前被持续拒绝。
+「还有多少工序卡在这个状态、卡了多久」由 Quality 的存量巡检指标回答（[#2983](https://github.com/Mang-X/Nerv-IIP/issues/2983)），
+开关、指标与恢复动作见 [Quality 工单发布事实缺失巡检 Runbook](../../runbooks/quality-release-fact-backlog.md)。
 
 被拦下时的提示直接点名入口位置；操作员在 `/mes/operation-tasks` 的行操作里就地进入「首件检验记录」。
 该入口**只切页签、不带任何单据上下文**——质量检验页一旦在 query 上看到工单/工序/来源单据，就会
