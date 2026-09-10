@@ -34,7 +34,11 @@ Quality 的巡检 `BackgroundService` 默认关闭。开关关闭时它不建计
 
 `StaleAfter` 是**年龄下限，不是告警阈值**：低于它的行仍可能自行恢复，计进来会让指标在正常流量下抖出非零值。
 
-取值依据是该状态还能自行恢复多久。发布投影缺失只有一条不需要人介入的恢复通道——CAP 对 `mes.WorkOrderReleased` 的自动重投；业务事实非法那一支由消费者守卫写死信后正常返回、不触发重投，因此进入重试循环的只剩基础设施故障，预算为 `FailedRetryCount × FailedRetryInterval`。本仓两者都不覆盖，适用 CAP 自身默认值，默认下限取其上的整点余量。调整 `Cap:FailedRetryInterval` 时须同步重算 `StaleAfter`。
+取值依据是该状态还能自行恢复多久。发布投影缺失只有一条不需要人介入的恢复通道——CAP 对 `mes.WorkOrderReleased` 的自动重投；业务事实非法那一支由消费者守卫写死信后正常返回、不触发重投，因此进入重试循环的只剩基础设施故障，预算为 `FailedRetryCount × FailedRetryInterval`。
+
+**不配 `StaleAfter` 时下限由服务自己算**：取「基线」与「当前生效的 CAP 重投预算」的较大者。预算里的重投间隔读的是**生效值**（`Cap:FailedRetryInterval`，也覆盖 `Cap__FailedRetryInterval` 环境变量），因此调大该键时下限自动跟着抬高，不需要人工重算；`FailedRetryCount` 在本仓没有配置键，取 CAP 默认值。
+
+显式配了 `StaleAfter` 就以显式值为准——那是运维的明示选择。把它配到低于自愈预算，Gauge 会开始把还能自愈的行计成积压。
 
 ## 恢复
 

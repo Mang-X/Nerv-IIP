@@ -1,4 +1,7 @@
+using System.Globalization;
+using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Messaging.CAP;
 using Prometheus;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.Scheduling;
@@ -119,17 +122,49 @@ public sealed class WorkOrderReleaseFactBacklogScanner(
     internal static readonly TimeSpan DefaultInterval = TimeSpan.FromMinutes(15);
 
     /// <summary>
-    /// 年龄下限的默认值。取值依据是**该状态还能自行恢复多久**：投影缺失只有一条不需要人介入的恢复通道——
-    /// CAP 对 <c>mes.WorkOrderReleased</c> 的重投。业务事实非法那一支由
-    /// <c>IntegrationEventConsumerGuard</c> 写死信后正常返回、不抛异常，因此进入 CAP 重试循环的只剩基础设施故障，
-    /// 其自愈预算恰为 <c>FailedRetryCount × FailedRetryInterval</c>。本仓两者都不覆盖
-    /// （<c>Cap:FailedRetryInterval</c> 在所有 appsettings 与 AppHost 里均未设置，<c>FailedRetryCount</c> 连配置键都没有），
-    /// 所以适用的是 CAP 自身的默认预算——实测 <c>FailedRetryCount=50</c>、<c>FailedRetryInterval=60</c>，
-    /// 即 50 分钟；默认下限取其上的整点余量 1 小时。
-    /// 这条耦合由 <c>WorkOrderReleaseFactBacklogScannerTests</c> 按 <c>CapOptions</c> 实际默认值机检，
-    /// CAP 改默认值时会红，届时须重算而不是改断言。
+    /// 年龄下限的**基线**。取 1 小时是为了给 CAP 默认自愈预算（实测 <c>FailedRetryCount=50</c> ×
+    /// <c>FailedRetryInterval=60s</c> = 50 分钟）留整点余量；真正生效的默认值见
+    /// <see cref="ResolveDefaultStaleAfter"/>，它会在预算被配置调大时跟着抬高。
     /// </summary>
-    internal static readonly TimeSpan DefaultStaleAfter = TimeSpan.FromHours(1);
+    internal static readonly TimeSpan BaselineStaleAfter = TimeSpan.FromHours(1);
+
+    /// <summary>
+    /// 默认年龄下限 = <c>max(基线, CAP 自动重投预算)</c>。
+    ///
+    /// 取值依据是**该状态还能自行恢复多久**：投影缺失只有一条不需要人介入的恢复通道——CAP 对
+    /// <c>mes.WorkOrderReleased</c> 的重投。业务事实非法那一支由 <c>IntegrationEventConsumerGuard</c>
+    /// 写死信后正常返回、不抛异常，因此进入 CAP 重试循环的只剩基础设施故障，其自愈预算恰为
+    /// <c>FailedRetryCount × FailedRetryInterval</c>。
+    ///
+    /// 这里**读生效值而不是包默认值**：<see cref="CapMessagingConfiguration.FailedRetryIntervalConfigurationKey"/>
+    /// 是可配置的（下界 1），一旦有人把它调大，「包默认值 50×60s」就不再是这个部署的自愈预算，
+    /// 而按包默认值算出的下限会静默失效——那正是这条推导最容易守错的变量。
+    /// <c>FailedRetryCount</c> 在本仓没有配置键，只能取 <see cref="CapOptions"/> 的默认值。
+    /// 同一个 <see cref="IConfiguration"/> 也覆盖环境变量，所以部署期用 <c>Cap__FailedRetryInterval</c>
+    /// 注入的值同样被看见。
+    ///
+    /// 配置里显式给了 <c>Quality:ReleaseFactBacklog:StaleAfter</c> 时以显式值为准——那是运维的明示选择，
+    /// 本方法只决定「没给」时用什么。
+    /// </summary>
+    internal static TimeSpan ResolveDefaultStaleAfter(IConfiguration configuration)
+    {
+        var capDefaults = new CapOptions();
+        var retryIntervalSeconds = capDefaults.FailedRetryInterval;
+        // 非法值不在此处兜底：CapMessagingConfiguration.UseConfiguredRecovery 会在启动阶段直接抛，
+        // 进程根本起不来，这里再补一层"回落"只会掩盖那条 fail-closed。
+        if (int.TryParse(
+                configuration[CapMessagingConfiguration.FailedRetryIntervalConfigurationKey],
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out var configuredRetryIntervalSeconds)
+            && configuredRetryIntervalSeconds >= 1)
+        {
+            retryIntervalSeconds = configuredRetryIntervalSeconds;
+        }
+
+        var redeliveryBudget = TimeSpan.FromSeconds((double)capDefaults.FailedRetryCount * retryIntervalSeconds);
+        return redeliveryBudget > BaselineStaleAfter ? redeliveryBudget : BaselineStaleAfter;
+    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -146,7 +181,7 @@ public sealed class WorkOrderReleaseFactBacklogScanner(
         }
 
         var interval = PositiveTimeSpanSetting(IntervalConfigurationKey, DefaultInterval);
-        var staleAfter = PositiveTimeSpanSetting(StaleAfterConfigurationKey, DefaultStaleAfter);
+        var staleAfter = PositiveTimeSpanSetting(StaleAfterConfigurationKey, ResolveDefaultStaleAfter(configuration));
 
         using var timer = new PeriodicTimer(interval, timeProvider);
         await TryScanAllScopesAsync(scopes, staleAfter, stoppingToken);

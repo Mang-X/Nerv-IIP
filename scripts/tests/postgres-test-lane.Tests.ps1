@@ -444,31 +444,34 @@ try {
     # IndustrialTelemetry 的既有混合类只有 7 条真实 PostgreSQL 证明；#2604 登记历史 fact 类的 2 条，
     # #2601 再登记多维 OEE 查询类的 6 条；混合类仍必须方法级 filter，专用 provider 类也由精确 identity 冻结；否则 TRX 身份集合
     # 不等于冻结身份而红。
-    # Quality 同理：provider 类中只有 25 条是真实 PostgreSQL 证明；Periodic Inspection 的
+    # Quality 同理：provider 类中只有这批是真实 PostgreSQL 证明；Periodic Inspection 的
     # 窄 harness 另行纳入数据库 builder 归属核验，但不承载测试身份。
     $qualityMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'quality-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($qualityMember.expectedTestIdentities).Count -eq 26) 'The Quality member must freeze exactly its twenty-six governed PostgreSQL identities.'
+    Assert-Contract (@($qualityMember.expectedTestIdentities).Count -eq 27) 'The Quality member must freeze exactly its twenty-seven governed PostgreSQL identities.'
     Assert-Contract (@($qualityMember.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$qualityMember.diagnosticSchemas[0], 'quality', [StringComparison]::Ordinal)) 'Quality business and CAP tables share one schema, which the member must declare.'
-    $qualityLaneSources = @(
-            'PeriodicInspectionPostgresConcurrencyTests.cs',
-            'PeriodicInspectionPostgresContinuationTests.cs',
-            'PeriodicInspectionPostgresMigrationTests.cs',
-            'PeriodicInspectionPostgresProfileTests.cs',
-            'QualityCalibrationRecordQueryTests.cs',
-            'QualityCapaRedrivePostgresProfileTests.cs',
-            'QualityNcrDispositionPostgresProfileTests.cs',
-            'QualityInspectionTaskPostgresProfileTests.cs',
-            'QualityReasonPostgresProfileTests.cs',
-            'QualityReinspectionPostgresProfileTests.cs',
-            'QualitySpcAnalysisTests.cs')
-    $hasQualityReasonSource = $false
-    foreach ($qualitySource in $qualityLaneSources) {
-        if ([string]::Equals([string]$qualitySource, 'QualityReasonPostgresProfileTests.cs', [StringComparison]::Ordinal)) {
-            $hasQualityReasonSource = $true
-            break
-        }
+    # Quality lane 的扫描面**从冻结身份派生**，与下面 MES lane 同一口径，不再手工列举：
+    # 手工名单记的是写名单那一刻的世界，后来者静默漏掉，而漏登记就是漏防线——
+    # Assert-LaneOwnedDatabase 与下面的钉表扫描根本扫不到没列出来的文件。
+    # 改前它就已经漏了 #3000 的 WorkOrderReleaseProjectionBackfillPostgresTests.cs。
+    # 身份形如 <Namespace>.<Class>.<Method>，倒数第二段即类名，类名即源文件名。
+    # 去重与排序都走序数比较器：`Sort-Object -Unique` 会折叠可忽略字符，
+    # 两个只差一个 bidi 字符的类名会被并成一个，扫描面因此静默变窄。
+    #
+    # 唯一的显式补项是 Periodic Inspection 的**窄 harness**：它自己不承载任何测试身份，
+    # 因而派生不出来，但那个共享的裸 builder（CreateOptions）就住在它里面，
+    # 漏掉它等于把下面「六个钉住的裸 builder」这条契约的主要承担者移出扫描面。
+    $qualitySourceSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    [void]$qualitySourceSet.Add('PeriodicInspectionPostgresProfileTests.cs')
+    foreach ($qualityIdentity in @($qualityMember.expectedTestIdentities)) {
+        $qualitySegments = ([string]$qualityIdentity).Split('.')
+        [void]$qualitySourceSet.Add("$($qualitySegments[$qualitySegments.Length - 2]).cs")
     }
-    Assert-Contract $hasQualityReasonSource 'Quality lane source enumeration must include the scrap-reason PostgreSQL profile test.'
+    $qualityLaneSourceNames = [Collections.Generic.List[string]]::new([string[]]@($qualitySourceSet))
+    $qualityLaneSourceNames.Sort([StringComparer]::Ordinal)
+    $qualityLaneSources = @($qualityLaneSourceNames)
+    Assert-Contract ($qualitySourceSet.Contains('QualityReasonPostgresProfileTests.cs')) 'Quality lane source enumeration must include the scrap-reason PostgreSQL profile test.'
+    Assert-Contract ($qualitySourceSet.Contains('WorkOrderReleaseProjectionBackfillPostgresTests.cs')) 'Quality lane source enumeration must include the release-projection backfill PostgreSQL test the hand-kept list used to miss.'
+    Assert-Contract ($qualitySourceSet.Contains('WorkOrderReleaseFactBacklogPostgresTests.cs')) 'Quality lane source enumeration must include the release-fact backlog PostgreSQL test.'
     foreach ($qualitySource in $qualityLaneSources) {
         $qualitySourcePath = Join-Path $repoRoot "backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/$qualitySource"
         Assert-Contract (Test-Path -LiteralPath $qualitySourcePath -PathType Leaf) "Quality lane source '$qualitySource' must exist."
@@ -478,8 +481,8 @@ try {
     # 直接 new DbContextOptionsBuilder 的 Quality 类必须把迁移历史表钉在 quality schema：
     # 默认落 public 时 ResetSchemaAsync 删不掉它，下一条用例的 MigrateAsync 会以为迁移已应用而静默不建表。
     # 只扫 InspectionTask 一个文件会留下盲区：SpcAnalysis 的 CreatePostgresProvider 与 Calibration 的
-    # refused 探针也各有一处裸 builder（都已钉，但写的是 "quality" 字面量）。契约因此覆盖全部七个
-    # Quality lane 源（含 Periodic Inspection 窄 harness），正则同时接受常量与字面量两种钉法。
+    # refused 探针也各有一处裸 builder（都已钉，但写的是 "quality" 字面量）。契约因此覆盖上面派生出的
+    # 全部 Quality lane 源（含 Periodic Inspection 窄 harness），正则同时接受常量与字面量两种钉法。
     $qualityPinnedBuilders = 0
     foreach ($qualitySource in $qualityLaneSources) {
         $qualitySourceText = [IO.File]::ReadAllText((Join-Path $repoRoot "backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/$qualitySource"))
