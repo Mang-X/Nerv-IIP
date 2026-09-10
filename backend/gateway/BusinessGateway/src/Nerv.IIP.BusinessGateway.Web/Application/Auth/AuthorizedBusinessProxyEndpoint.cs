@@ -49,11 +49,49 @@ public abstract class AuthorizedBusinessProxyEndpoint<TRequest, TResponse>(
     /// <para>短路方式是把响应标记为已开始（<see cref="Endpoint{TRequest,TResponse}.ResponseStarted" />）：
     /// <c>ExecAsync</c> 在 PreProcessors 之后、<c>HandleAsync</c> 之前检查该标记；
     /// 校验失败分支同样只在未开始时才写错误体，因此先写出的 403/400/409 不会被覆盖。</para>
+    ///
+    /// <para><b>两步的耦合已在 #3345 拆开：鉴权可以推迟，归一化不推迟。</b>
+    /// <see cref="TryBuildRequirements" /> 作不出鉴权结论时，#3330 把**两步一起**推迟到
+    /// <see cref="HandleAsync" />，于是那条支路上头部来的键在校验时仍是 <c>null</c>、端点级规则恒过。
+    /// 该支路**能走到 <see cref="ForwardAsync" /></b>——#3345 审核用真 HTTP 探针实测：
+    /// 请求体的作用域字段**缺省**（是 <c>null</c>，不是空串）∧ 令牌也没有
+    /// <c>organizationId</c> / <c>environmentId</c> 声明（两者都为 <c>null</c> 时
+    /// <c>BusinessGatewayAuthorization</c> 的作用域相等门 <c>string.Equals(null, null)</c> 为真）
+    /// ∧ 键走头部 ⇒ <c>200</c>、<c>forwarded=1</c>、下游收到 300 字符的键。
+    /// 我此前在这里写的「该支路今天走不到 <see cref="ForwardAsync" />」**是错的，已删**。</para>
+    ///
+    /// <para><b>为什么在这条支路上让归一化先于（推迟的）鉴权，不违反上面第 2 条</b>：
+    /// 第 2 条护的是「**已认证但无权限**的调用方恒定拿 403」，前提是**作得出**权限结论。
+    /// 而 <see cref="TryBuildRequirements" /> 返回 <c>false</c> 的定义就是**作不出**——
+    /// 见该方法注释里 #3330 自己写下的判断：那里的 403 是「拿空串跟令牌比出来的结果，
+    /// **不是一句关于权限的真话**」，所以 #3330 明确把这一情形「留给 DTO 校验回答」。
+    /// 让归一化先跑，正是把这一情形真正交给 DTO 校验回答（此前它拿不到头部键，等于没回答）。
+    /// ⇒ 本改动**没有**反转 #3330 的方向，而是补齐了它；
+    /// 凡是作得出鉴权结论的请求（<see cref="TryBuildRequirements" /> 为真），鉴权仍然先行。</para>
+    ///
+    /// <para><b>可观察行为在这条支路上确实变了，如实登记</b>：作用域**缺省或为空串**
+    /// （<see cref="TryBuildRequirements" /> 里 <c>IsNullOrWhiteSpace</c> 为真的**整条支路**，
+    /// 两种取值都算——别按「缺省」一种读窄了）且键违反端点级规则时，响应从 403 变成 400；
+    /// 其中「作用域缺省 ∧ 令牌也无作用域声明」那一格更是从 <c>200</c>（键已转发下去）变成 400。
+    /// 方向是「用一句真话（这把键太长）替换一句关于权限的假话、以及替换一次危险的放行」，
+    /// 但它是行为变更，不是纯重构。五格探针（<c>BusinessGatewayRequestPipelineOrderTests</c> 里
+    /// <c>Deferred_authorization_still_binds_header_supplied_keys_to_the_endpoint_level_rule</c>，
+    /// 缺省与空串两种取值都覆盖）把改动前后的每一格都钉住。</para>
     /// </remarks>
     public override async Task OnBeforeValidateAsync(TRequest req, CancellationToken ct)
     {
         if (!TryBuildRequirements(req, out var requirements))
         {
+            // 鉴权推迟了（见 TryBuildRequirements），**归一化不跟着推迟**。#3345 审核实测：
+            // 两者写在同一个早返回里时，这条支路上经头传来的键在 DTO 校验发生时仍是 null，
+            // 端点级规则恒过，键一路进 ForwardAsync（探针：作用域字段缺省 ∧ 令牌无
+            // organizationId/environmentId 声明 ∧ 键走头部 ⇒ 200 + forwarded=1 + 键长 300）。
+            // Resolve 不依赖鉴权结论（只要 HttpContext 与请求对象），所以这里可以、也必须先跑。
+            if (!await NormalizeIdempotencyKeyAsync(req, ct))
+            {
+                ResponseStarted = true;
+            }
+
             return;
         }
 
@@ -110,6 +148,19 @@ public abstract class AuthorizedBusinessProxyEndpoint<TRequest, TResponse>(
             return false;
         }
 
+        return await NormalizeIdempotencyKeyAsync(req, ct);
+    }
+
+    /// <summary>
+    /// 就地把幂等键归一化写回 DTO。返回 <c>false</c> 表示响应已写出，调用方应停止后续处理。
+    /// </summary>
+    /// <remarks>
+    /// 从 <see cref="AuthorizeAndNormalizeAsync" /> 里拆出来，是因为它**不依赖鉴权结论**：
+    /// 只要 <see cref="HttpContext" /> 与请求对象。#3330 把两者写在一起是实现耦合，
+    /// 不是逻辑依赖；#3345 的残余窗口就是这个耦合的直接后果。
+    /// </remarks>
+    private async Task<bool> NormalizeIdempotencyKeyAsync(TRequest req, CancellationToken ct)
+    {
         try
         {
             // Resolve 用反射就地写回 DTO 的 IdempotencyKey（返回的就是同一个实例），
@@ -138,11 +189,17 @@ public abstract class AuthorizedBusinessProxyEndpoint<TRequest, TResponse>(
             .ToArray();
 
     /// <summary>
-    /// 判断这个请求现在能不能作出**有意义的**鉴权结论。作不出时前置钩子不鉴权，
-    /// 交由 DTO 校验先答；若校验放行，<see cref="HandleAsync" /> 会补齐鉴权与归一化，
-    /// 因此这两类请求的可观察行为与鉴权前移之前逐字相同，也不存在未鉴权的转发。
+    /// 判断这个请求现在能不能作出**有意义的**鉴权结论。作不出时前置钩子**不鉴权**，
+    /// 交由 DTO 校验先答；若校验放行，<see cref="HandleAsync" /> 会补齐鉴权，
+    /// 因此不存在未鉴权的转发。
     /// </summary>
     /// <remarks>
+    /// <para>⚠️ <b>这里原写「这两类请求的可观察行为与鉴权前移之前逐字相同」，#3327 之后**不再成立**</b>：
+    /// 那句的前提是「鉴权与幂等键归一化一起推迟」，而 #3327 已把归一化留在前置钩子里
+    /// （<see cref="OnBeforeValidateAsync" />），正因为一起推迟会让头部来的键绕过端点级规则并被转发下去。
+    /// ⇒ 本支路上「键违反端点级规则」的请求，响应确实与从前不同；变更集与实测见
+    /// <see cref="OnBeforeValidateAsync" /> 的注释。**鉴权本身的行为没变**——推迟的仍然只是鉴权。</para>
+    ///
     /// <para>两种作不出结论的情形：</para>
     /// <list type="number">
     /// <item><description><b>作用域访问器抛</b>——它们读的是尚未经过 DTO 校验的请求对象，

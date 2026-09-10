@@ -8,7 +8,7 @@ using Nerv.IIP.ServiceAuth;
 namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Erp;
 
 // 本文件末尾的 *RequestValidator 是 #3325 补的端点级幂等键上界。
-// 共同口径（方向、为什么写在校验器上、只约束请求体路径、失败响应形状）
+// 共同口径（方向、为什么写在校验器上、头部与请求体两条来源的覆盖边界、失败响应形状）
 // 写在 BusinessConsoleErpProcurementEndpoints.cs 顶部的「#3325 端点级幂等键上界」注释块，
 // 不在这里复制第二份。
 

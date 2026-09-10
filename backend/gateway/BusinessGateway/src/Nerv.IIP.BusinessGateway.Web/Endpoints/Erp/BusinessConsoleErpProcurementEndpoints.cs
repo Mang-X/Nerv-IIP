@@ -29,12 +29,14 @@ namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Erp;
 // 因此列宽仍是真权威、只是有效上界要减去后缀；那个减法已经由下游命令校验器
 // （ErpCodingIdempotencyKeyPolicy.BaseMaxLengthFor）算好，见该处自己的注释。
 //
-// ⚠️ 值域边界（不要读成「这些规则挡住了所有超长键」）：FastEndpoints 的 DTO 校验
-// 跑在 AuthorizedBusinessProxyEndpoint.HandleAsync **之前**，而经
-// Idempotency-Key / X-Idempotency-Key 头传来的键要到 HandleAsync 里
-// BusinessGatewayIdempotencyKey.Resolve 才写进 DTO。⇒ 这些规则**只约束请求体路径**；
-// 头部路径今天仍只由全局钳（150）兜住。该顺序缺陷由 #3330 承接，
-// 并且是 #3327 抬钳的硬前置。
+// ⚠️ 值域边界（#3327 按 #3330 落地后的事实重写；#3325 当时写的那句已作废，别沿用）：
+// #3330 已把鉴权与 BusinessGatewayIdempotencyKey.Resolve 从
+// AuthorizedBusinessProxyEndpoint.HandleAsync 挪进 OnBeforeValidateAsync，
+// 即 FastEndpoints 执行序里 DTO 校验**之前**的那一格。⇒ 经 Idempotency-Key /
+// X-Idempotency-Key 头传来的键在校验发生时已归一化写回 DTO，这些规则对**头部与
+// 请求体两条来源同时生效**（#3325 当时只对请求体生效）。#3330 之后残留的那条「鉴权推迟时
+// 归一化也跟着推迟」的支路已由 #3327 关掉，经过与实测见 BusinessConsoleMesEndpoints.cs
+// 顶部同名段落，不在这里复制第二份。
 //
 // ⚠️ 校验失败的响应形状是 FastEndpoints 默认的
 // {"statusCode":400,"message":"One or more errors occurred!","errors":{...}}，

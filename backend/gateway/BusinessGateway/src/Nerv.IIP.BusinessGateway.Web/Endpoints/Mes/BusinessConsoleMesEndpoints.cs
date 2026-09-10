@@ -10,25 +10,34 @@ using Nerv.IIP.ServiceAuth;
 namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Mes;
 
 // ---------------------------------------------------------------------------
-// #3324 端点级幂等键上界：本文件里 10 个 *RequestValidator 的共同口径
+// #3324 端点级幂等键上界：本文件里 *RequestValidator 的共同口径
 // ---------------------------------------------------------------------------
 // 每条规则的值**不得大于**它下游权威解析出的上界。注意机器只校验这一个方向：
 // BusinessGatewayIdempotencyKeyDownstreamBoundContractTests 的
 // Gateway_never_promises_a_longer_idempotency_key_than_its_downstream_accepts
 // 断言的是 `网关值 <= 下游值`，把某条规则**收窄**不会红（反方向归 #3287）。
 // 登记表同时钉住「链接必须存在」：下游改名或删除会让权威解析失败而报红。
+// 不写条数：那个计数每落一张子票就变，复述它等于制造一处会过期的手抄事实。
 //
 // 为什么写在校验器上而不是集中一张表：端点级规则会进 OpenAPI 的 maxLength，
 // 对客户端是真实契约；集中表不会。
 //
 // 只加上界、不加 NotEmpty —— 本票不改这些字段的必填语义。
 //
-// ⚠️ 值域边界（不要读成「这些规则挡住了所有超长键」）：FastEndpoints 的 DTO 校验
-// 跑在 AuthorizedBusinessProxyEndpoint.HandleAsync **之前**，而经
-// Idempotency-Key / X-Idempotency-Key 头传来的键要到 HandleAsync 里
-// BusinessGatewayIdempotencyKey.Resolve 才写进 DTO。⇒ 这 10 条规则**只约束请求体
-// 路径**；头部路径今天仍只由全局钳（150）兜住。该顺序缺陷由 #3330 承接，
-// 并且是 #3327 抬钳的硬前置。
+// 值域边界（#3327 按 #3330 落地后的事实重写；#3324 当时写的那句已作废，别沿用）：
+// #3330 已把鉴权与 BusinessGatewayIdempotencyKey.Resolve 从
+// AuthorizedBusinessProxyEndpoint.HandleAsync 挪进 OnBeforeValidateAsync，
+// 即 FastEndpoints 执行序里 DTO 校验**之前**的那一格。⇒ 经 Idempotency-Key /
+// X-Idempotency-Key 头传来的键在校验发生时已归一化写回 DTO，本文件这些规则
+// 对**头部与请求体两条来源同时生效**（#3324 当时只对请求体生效）。
+// ⚠️ 我在 #3327 第一版这里写过一个「残余窗口」，并断言它「走不到 ForwardAsync」——
+// **那句是错的，#3345 审核用真 HTTP 探针实测走到了**（作用域字段缺省 ∧ 令牌无
+// organizationId/environmentId 声明 ∧ 键走头部 ⇒ 200 + forwarded=1 + 键长 300）。
+// 该窗口已在 #3327 本票内关掉：AuthorizedBusinessProxyEndpoint 把归一化从
+// 「鉴权推迟」的那个早返回里拆了出来，鉴权可以推迟、归一化不推迟。
+// ⇒ 本文件这些规则对头部来源在**两条支路上都生效**。
+// 「归一化先于校验」这条性质由网关自己的 BusinessGatewayRequestPipelineOrderTests
+// 证明（含那五格探针），不由本文件这些规则证明：本文件只写规则值，不发请求。
 // ---------------------------------------------------------------------------
 
 [Tags("Business Console MES")]
@@ -839,6 +848,42 @@ public sealed class BusinessConsoleMesReverseProductionReportRequestValidator
 {
     public BusinessConsoleMesReverseProductionReportRequestValidator() =>
         RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+}
+
+/// <summary>
+/// 端点级幂等键长度上界（#3327 补，#3324 当时因「算不出正上界」把本位点移出）。
+/// </summary>
+/// <remarks>
+/// <para><b>本处下游权威取命令校验器，不取承载列，理由是那一列对本位点是「条件性派生」</b>
+/// （与 <c>WmsText.LineIdempotencyKey</c> 同形，**不是** #3290 那种无条件摘要的纯幽灵权威）。
+/// 键经 <c>FinishedGoodsReceiptRequest.RetryInventoryPosting</c> →
+/// <c>FinishedGoodsReceiptInventoryPostingKey.BuildRetry</c> 拼成
+/// <c>{可读作用域}:{原始键}</c> 后跨服务进 Inventory，两支要分开读：</para>
+/// <list type="bullet">
+/// <item><b>整键 ≤ <c>FinishedGoodsReceiptInventoryPostingKey.ColumnMaxLength</c>（128）⇒ 逐字保持</b>
+/// —— 落进 <c>stock_movements.idempotency_key</c> 的就是含原始键的那个字符串，
+/// 那一列**是**这一支的真权威（长度单调）。</item>
+/// <item><b>整键 &gt; 128 ⇒ 作用域段与尾段一起回落成定长摘要</b>（#3332）
+/// —— 落库值与原始键长度无关，那一列对原始键**零约束**。</item>
+/// </list>
+/// <para>⇒ 那一列**不构成本位点的上界**（它只约束前一支），但也**不是**「完全不承重」——
+/// 别把这条读成「该列可以随意收窄」。可登记的**有效上界**因此取 Mes 命令校验器
+/// <c>RetryFinishedGoodsReceiptInventoryPostingCommandValidator</c>
+/// （<c>IdempotencyKey</c> <c>MaximumLength(200)</c>），登记见
+/// <c>BusinessGatewayIdempotencyKeyDownstreamBoundContractTests.DownstreamBounds</c>。</para>
+/// <para><b>补这条规则改变了本位点超长键的响应形状</b>：此前超长键落到全局钳上，
+/// 拿的是带稳定码 <c>idempotency-key-too-long</c> 的 400；补规则之后
+/// 201..512 的键先被 DTO 校验拒，拿的是 FastEndpoints 默认的
+/// <c>{"statusCode":400,"message":"One or more errors occurred!","errors":{...}}</c>，前端拿不到稳定码。
+/// 这与 #3325 给 Erp 新补规则的那批位点是同一个缺陷，归 #3333，本票不在这里私自统一。
+/// OpenAPI 快照里本端点新增的那条 <c>400</c> 响应就是它。</para>
+/// <para>共同口径见本文件顶部的「#3324 端点级幂等键上界」注释块。</para>
+/// </remarks>
+public sealed class BusinessConsoleMesRetryFinishedGoodsReceiptInventoryPostingRequestValidator
+    : Validator<BusinessConsoleMesRetryFinishedGoodsReceiptInventoryPostingRequest>
+{
+    public BusinessConsoleMesRetryFinishedGoodsReceiptInventoryPostingRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(200);
 }
 
 [Tags("Business Console MES")]

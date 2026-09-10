@@ -6,7 +6,58 @@ namespace Nerv.IIP.BusinessGateway.Web.Application.Auth;
 
 internal static class BusinessGatewayIdempotencyKey
 {
-    private const int MaximumLength = 150;
+    /// <summary>
+    /// 全局幂等键长度钳。**它的角色是兜底，不是约束**（#3287 契约裁定）：
+    /// 真正决定各端点值域的是端点级 <c>MaximumLength</c> 规则——那些规则进 OpenAPI 的
+    /// <c>maxLength</c>，对客户端是公开契约；钳只负责挡住荒谬输入。
+    /// </summary>
+    /// <remarks>
+    /// <para><b>为什么它不得小于任何端点级规则值</b>：小了就会出现「契约声明
+    /// <c>maxLength: 512</c>，实际 151–512 被入口 400 拒」这种**假承诺**。
+    /// 该关系由验收侧的
+    /// <c>BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
+    /// .Global_clamp_is_never_stricter_than_any_endpoint_level_bound</c> 机器钉住
+    /// （用 <c>&gt;=</c> 不用 <c>==</c>：钳是兜底，只需「不比任何端点更严」；
+    /// <c>==</c> 会把它绑死在端点最大值上，任何人收紧那个最大值就被迫同步改钳）。</para>
+    ///
+    /// <para><b>150 → 512 抬高的安全性靠什么成立（#3327；不是「试出来的」）</b>：
+    /// 抬钳唯一放行的新输入是「长度落在旧钳与新钳之间的键」。它安全的前提是三条合取，
+    /// 每一条今天都有机器在守：</para>
+    /// <list type="number">
+    /// <item>受钳的每一个网关请求类型，要么有端点级规则、要么被登记为「下游零权威」
+    /// （<c>Every_clamped_gateway_request_is_bounded_by_an_endpoint_rule_or_registered_without_downstream_authority</c>）。</item>
+    /// <item>每条端点级规则 ≤ 其下游权威上界
+    /// （<c>Gateway_never_promises_a_longer_idempotency_key_than_its_downstream_accepts</c>）。</item>
+    /// <item>端点级规则对**头部与请求体两条来源同时生效**——#3330 把
+    /// <see cref="Resolve{TRequest}"/> 挪到了 DTO 校验之前，
+    /// #3327 又把它从「鉴权推迟」的那个早返回里拆出来（<c>BusinessGatewayRequestPipelineOrderTests</c>：
+    /// <c>Header_supplied_key_is_bound_by_the_endpoint_level_rule</c> 守普通路径，
+    /// <c>Deferred_authorization_still_binds_header_supplied_keys_to_the_endpoint_level_rule</c>
+    /// 五格守鉴权推迟那条支路）。
+    /// <para>⚠️ **这一条是三条里最脆的，历史值得记住**：它不是「一直成立」——
+    /// #3330 之前整条头部路径都不受端点级规则约束；#3330 之后仍有一条支路不受约束，
+    /// 而且我在 #3327 第一版里把那条支路误判成「走不到 <c>ForwardAsync</c>」，
+    /// 被真 HTTP 探针实测证伪（作用域字段缺省 ∧ 令牌无作用域声明 ∧ 键走头部
+    /// ⇒ <c>200</c> + <c>forwarded=1</c> + 键长 300）。改动 <c>OnBeforeValidateAsync</c>
+    /// 的任何人都要先问：**这条路径上 <see cref="Resolve{TRequest}"/> 还跑不跑？**</para></item>
+    /// </list>
+    /// <para>⇒ 抬钳后仍没有任何请求能把超出自己下游承受力的键送下去。
+    /// 反过来说，**谁把第 3 条改回去，钳就重新变成头部路径上唯一的防线**，
+    /// 而那时它已经是 512、拦不住什么了。</para>
+    /// </remarks>
+    private const int MaximumLength = 512;
+
+    /// <summary>
+    /// 全局钳的值，供网关自有测试按边界构造夹具（<c>MaximumKeyLength + 1</c> 之类），
+    /// 不必手抄一个会随 <see cref="MaximumLength"/> 变化的数字。
+    /// </summary>
+    /// <remarks>
+    /// **故意是属性而不是把 <see cref="MaximumLength"/> 改成 <c>internal const</c>**：
+    /// C# 的 <c>const</c> 在引用方编译期内联，测试程序集会把当时的值烤进去，
+    /// 之后只重建本程序集时那些夹具仍用旧值——本仓已有「const 内联导致变异测试假绿假红」的判例。
+    /// 属性在运行时读，没有这个窗口。
+    /// </remarks>
+    internal static int MaximumKeyLength => MaximumLength;
 
     public static TRequest Resolve<TRequest>(HttpContext context, TRequest request)
         where TRequest : notnull
