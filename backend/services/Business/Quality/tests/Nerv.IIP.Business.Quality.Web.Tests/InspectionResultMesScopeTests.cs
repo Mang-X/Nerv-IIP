@@ -31,9 +31,16 @@ public sealed class InspectionResultMesScopeTests
         // 周期检：工序从来源行的复合窗口身份还原，工单直接取来源单据。
         { QualityInspectionSourceTypes.Operation, QualityInspectionSourceServices.Mes, "WO-001", PeriodicTimeLineId, "WO-001", "OP-010" },
         { QualityInspectionSourceTypes.Operation, QualityInspectionSourceServices.MesOperation, "WO-001", PeriodicQuantityLineId, "WO-001", "OP-010" },
-        // 周期检那一支读的是**来源行**而不是来源单据：把复合窗口身份摆到来源单据那一列上，
-        // 工序就不该被还原出来。没有这一行，把解析对象改回 SourceDocumentId 照样绿。
+        // 周期检那一支读的是**来源行**而不是来源单据：把复合窗口身份摆到来源单据那一列、而来源行是
+        // 一个普通工序任务 id 时，工单号就该原样给出、工序取来源行那一列。没有这一行，
+        // 把解析对象改回 SourceDocumentId 照样绿。
         { QualityInspectionSourceTypes.Operation, QualityInspectionSourceServices.Mes, PeriodicTimeLineId, "OP-010", PeriodicTimeLineId, null },
+        // **存量形状**（#3319 迁移不回填 ⇒ 库里真实存在）：复合窗口身份在来源单据那一列、来源行为空。
+        // 必须还原成改前逐字相同的答案 (null, 工序)：解成 (复合窗口身份, null) 会让 MES 两张表都查不到
+        // 而落 unknown-source-document 死信，Scheduling 侧静默不失效。复检会把这个形状拷到新记录上
+        // 并重新发布，所以它不是「读不到就算了」的历史数据。
+        { QualityInspectionSourceTypes.Operation, QualityInspectionSourceServices.Mes, PeriodicTimeLineId, null, null, "OP-010" },
+        { QualityInspectionSourceTypes.Operation, QualityInspectionSourceServices.MesOperation, PeriodicQuantityLineId, null, null, "OP-010" },
         // 终检：来源单据是入库申请单号，不是工单／工序身份。
         { QualityInspectionSourceTypes.Final, QualityInspectionSourceServices.Mes, "FGR-REQ-001", "WO-001", null, null },
         // MesOwned 守卫的**唯一**鉴别格：来源环节是工序、但来源服务不归 MES。既有的非 MES 行都同时

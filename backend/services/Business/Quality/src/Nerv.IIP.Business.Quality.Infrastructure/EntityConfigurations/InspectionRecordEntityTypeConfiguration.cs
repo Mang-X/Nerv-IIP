@@ -49,6 +49,9 @@ public sealed class InspectionRecordEntityTypeConfiguration : IEntityTypeConfigu
         // 第二条被 FindBySourceDocumentAsync 跨行复用成同一条结论。
         // AreNullsDistinct(false)：直录检验没有来源行，该列为 NULL；PG 默认「NULL 互不相等」会让
         // 这一组去重整组失效（新行永远挡不住），因此必须显式把 NULL 当同一个值比较。
+        // 射程说准：改后只有直录录入命令还写 NULL，任务驱动的写面一律带来源行，
+        // 所以这条 NULL 语义保的是直录路径与迁移前存量行，不保「跨迁移的同一条链」——
+        // 那条链会断开，属于本票声明的行为变化（见迁移 AddInspectionRecordSourceDocumentLine 的取舍说明）。
         // 本仓既有姿势见 ApprovalDecision / DeviceStateSnapshot / TelemetryRawSample / TelemetrySummary。
         builder.HasIndex(x => new
             {

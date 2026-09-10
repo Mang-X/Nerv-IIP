@@ -275,6 +275,47 @@ public sealed class InspectionRecordSourceLineIdentityTests
         Assert.Equal(2, reinspection.AttemptNumber);
     }
 
+    /// <summary>
+    /// 存量周期检记录的形状 <c>(复合窗口身份, NULL)</c> 会被复检**原样拷到新记录上**——所以它不是
+    /// 「只读不写」的历史数据，新代码会继续产出它并重新发布集成事件。这一格钉住可达性；
+    /// 那个形状解出来是什么，由 <c>InspectionResultMesScopeTests</c> 的对应格看守。
+    /// </summary>
+    [Fact]
+    public void Reinspecting_a_pre_migration_periodic_record_reproduces_the_legacy_shape()
+    {
+        var legacy = InspectionRecord.Create(
+            "org-001",
+            "env-dev",
+            null,
+            QualityInspectionSourceTypes.Operation,
+            QualityInspectionSourceServices.Mes,
+            // 改前周期检把复合窗口身份搬进了来源单据那一列，来源行那一列当时还不存在。
+            PeriodicInspectionSourceLine.LineId(
+                "OP-50",
+                PeriodicInspectionSourceLine.TimeKind,
+                Guid.Parse("0f9c1a2b-3d4e-4f50-8617-2a3b4c5d6e7f"),
+                9),
+            sourceDocumentLineId: null,
+            "SKU-FG-6000",
+            10m,
+            null,
+            null,
+            [InspectionResultLineInput.Fail("appearance", "scratch", "外观划伤", 1m, [])],
+            "外观划伤",
+            ["file-001"]);
+
+        var reinspection = InspectionRecord.Reinspect(
+            legacy,
+            null,
+            [InspectionResultLineInput.Pass("appearance", "ok", null, [])],
+            null,
+            []);
+
+        Assert.Null(reinspection.SourceDocumentLineId);
+        Assert.Equal(legacy.SourceDocumentId, reinspection.SourceDocumentId);
+        Assert.Equal(2, reinspection.AttemptNumber);
+    }
+
     /// <summary>直录检验没有来源行：链身份只到来源单据一级，来源行列为空。</summary>
     [Fact]
     public void Directly_recorded_inspections_carry_no_source_line()

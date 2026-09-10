@@ -17,12 +17,14 @@ public sealed class InspectionTaskTests
     /// 都在 <c>PeriodicInspectionIntegrationEventTests</c> 与 <c>PeriodicInspectionPostgresConcurrencyTests</c>
     /// 里被逐字断言。</para>
     ///
-    /// <para><b>本用例只覆盖铸造端</b>：铸造函数不得产出会被 <c>Optional()</c> 归一成 null 的空白来源行
-    /// ——那是「没有来源行的周期检任务」现在唯一还能进来的入口。声明放弃的是「调用方绕开铸造函数
-    /// 直接传 null」这一支：退休那道守卫之后，领域层没有判据能识别它，改由上面两处生产路径断言看守。</para>
+    /// <para><b>本用例只覆盖「铸造出来的来源行原样落到任务上」这一段</b>：<c>CreatePending</c> 会把它交给
+    /// <c>Optional()</c>，任何归一、截断或宽度守卫的改动都会在这里报红。**它不覆盖**「周期检必须有来源行」
+    /// ——那条判据随二分退休已经没有主语了，改由上面两处生产路径的逐字断言看守。
+    /// 也别把它读成「铸造函数不会产出空来源行」：<c>LineId</c> 是纯插值，kind 与 Guid 段恒非空，
+    /// 那句话在构造上不可证伪，因此本用例不写它。</para>
     /// </summary>
     [Fact]
-    public void Periodic_source_line_mint_never_yields_a_blank_source_line()
+    public void A_minted_periodic_source_line_reaches_the_task_verbatim()
     {
         var lineId = PeriodicInspectionSourceLine.LineId(
             "OP-10",
@@ -40,7 +42,6 @@ public sealed class InspectionTaskTests
                 Guid.Parse("0f9c1a2b-3d4e-4f50-8617-2a3b4c5d6e7f"),
                 1));
 
-        Assert.False(string.IsNullOrWhiteSpace(lineId));
         Assert.Equal(lineId, task.SourceDocumentLineId);
     }
 
