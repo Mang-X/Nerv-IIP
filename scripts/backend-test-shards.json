@@ -128,6 +128,7 @@
         "backend/tests/Nerv.IIP.Business.Performance.Tests/Nerv.IIP.Business.Performance.Tests.csproj"
       ],
       "excludedTestClasses": [
+        "Nerv.IIP.Business.Acceptance.Tests.MesDefectDispositionReferenceAcceptanceTests",
         "Nerv.IIP.Business.Acceptance.Tests.PurchaseReceiptPostingRoutePostgresAcceptanceTests",
         "Nerv.IIP.Business.Acceptance.Tests.QualityFirstArticleMesQualityHoldAcceptanceTests",
         "Nerv.IIP.Business.Acceptance.Tests.RuntimeHoursMaintenancePostgresAcceptanceTests",
@@ -139,8 +140,8 @@
         "Nerv.IIP.Business.Mes.Web.Tests.LeaderDemoScaleSeedPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.MesChangeoverRecordPostgresTests",
-        "Nerv.IIP.Business.Mes.Web.Tests.MesMaterialSubstituteSnapshotPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.MesMaterialOwnershipSnapshotPostgresTests",
+        "Nerv.IIP.Business.Mes.Web.Tests.MesMaterialSubstituteSnapshotPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.MesProductionStatisticsPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.MesSchedulePlanProvenancePostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedHandlerPostgresTests",

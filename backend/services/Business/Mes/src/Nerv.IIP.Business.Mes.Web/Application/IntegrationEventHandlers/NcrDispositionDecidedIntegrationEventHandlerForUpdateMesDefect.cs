@@ -1,6 +1,7 @@
 using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Web.Application.Quality;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Messaging.CAP;
@@ -70,11 +71,35 @@ public sealed class NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefe
             QualityNcrDispositionTypes.ConditionalRelease or QualityNcrDispositionTypes.SortAndScreen => null,
             _ => null,
         };
+
+        // #3318：referenceId 是 Quality 的处置引用身份，产出列宽 150；它被 AcceptDisposition 逐字
+        // （只 Trim）写进 defect_records.disposition_reference_id。改前该列只有 100，101–150 字符的
+        // 合法引用在 SaveChangesAsync 抛 DbUpdateException(22001)——而这个 handler 函数体内一条 catch
+        // 都没有，异常直接逃逸出 HandleAsync 变成 poison message（#877），整条消费链卡死。
+        // 这里就地判长并走死信：既不截断（截断会静默伪造一个指不到任何对象的下游引用，
+        // 而行上没有任何字段记录它被截断过），也不抛出（抛出就是回到 poison message）。
+        // 列宽已加宽到与 Quality 产出列一致，因此今天合法的引用走不到这条分支；
+        // 它看守的是「将来任一侧列宽再变」。归一化在这里做一次，AcceptDisposition 收到的就是
+        // 落库那一份取值，守卫量的和落库的是同一个字符串。
+        var normalizedReferenceId = string.IsNullOrWhiteSpace(referenceId) ? null : referenceId.Trim();
+        if (normalizedReferenceId is not null && MesDefectDispositionReferenceIdPolicy.ExceedsColumn(normalizedReferenceId))
+        {
+            await deadLetterStore.AddAsync(
+                IntegrationEventDeadLetterMessage.Create(
+                    ConsumerName,
+                    integrationEvent,
+                    MesDefectDispositionReferenceIdPolicy.OverlongFailureCode,
+                    MesDefectDispositionReferenceIdPolicy.OverlongFailureMessage(normalizedReferenceId)),
+                cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
         defect.AcceptDisposition(
             integrationEvent.Payload.NcrId,
             integrationEvent.Payload.NcrCode,
             integrationEvent.Payload.DispositionType,
-            referenceId,
+            normalizedReferenceId,
             integrationEvent.Payload.ChangedAtUtc);
         await dbContext.SaveChangesAsync(cancellationToken);
     }
