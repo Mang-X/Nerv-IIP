@@ -33671,7 +33671,7 @@
         "properties": {
           "idempotencyKey": {
             "type": "string",
-            "maxLength": 150,
+            "maxLength": 128,
             "minLength": 0,
             "nullable": false
           },
@@ -33693,7 +33693,7 @@
         "properties": {
           "idempotencyKey": {
             "type": "string",
-            "maxLength": 150,
+            "maxLength": 128,
             "minLength": 0,
             "nullable": false
           },
@@ -33721,7 +33721,7 @@
         "properties": {
           "idempotencyKey": {
             "type": "string",
-            "maxLength": 150,
+            "maxLength": 128,
             "minLength": 0,
             "nullable": false
           },
@@ -33755,7 +33755,7 @@
         "properties": {
           "idempotencyKey": {
             "type": "string",
-            "maxLength": 150,
+            "maxLength": 128,
             "minLength": 0,
             "nullable": false
           },
@@ -53211,7 +53211,7 @@
           },
           "idempotencyKey": {
             "type": "string",
-            "maxLength": 512,
+            "maxLength": 200,
             "minLength": 0,
             "nullable": false
           },
@@ -58037,7 +58037,7 @@
           },
           "idempotencyKey": {
             "type": "string",
-            "maxLength": 150,
+            "maxLength": 128,
             "minLength": 0,
             "nullable": false
           }
