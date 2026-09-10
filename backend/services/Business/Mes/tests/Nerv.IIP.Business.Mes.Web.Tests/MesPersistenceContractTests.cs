@@ -160,7 +160,7 @@ public sealed class MesPersistenceContractTests
         {
             var store = scope.ServiceProvider.GetRequiredService<IMesPlanningStore>();
             store.AddWorkOrder(new PlannedWorkOrder("org-001", "env-dev", "WO-001", "SKU-1", null, 1m, 10, now.AddHours(12)));
-            store.AddOperationTask(new PlannedOperationTask("WO-001", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2)));
+            store.AddOperationTask(new PlannedOperationTask("WO-001", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2), "SKU-001"));
 
             var handler = new RescheduleCommandHandler(store, scope.ServiceProvider.GetRequiredService<RuleScheduler>());
             await handler.Handle(new RescheduleCommand("org-001", "env-dev", RescheduleTrigger.Manual, now), CancellationToken.None);
@@ -192,7 +192,7 @@ public sealed class MesPersistenceContractTests
             var store = scope.ServiceProvider.GetRequiredService<IMesPlanningStore>();
             store.MapDeviceAssetToWorkCenter("ASSET-CNC-01", "WC-A");
             store.AddWorkOrder(new PlannedWorkOrder("org-001", "env-dev", "WO-001", "SKU-1", null, 1m, 10, now.AddDays(1)));
-            store.AddOperationTask(new PlannedOperationTask("WO-001", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2)));
+            store.AddOperationTask(new PlannedOperationTask("WO-001", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2), "SKU-001"));
             await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().SaveChangesAsync();
         }
 
@@ -224,9 +224,9 @@ public sealed class MesPersistenceContractTests
         using var scope = services.CreateScope();
         var store = scope.ServiceProvider.GetRequiredService<IMesPlanningStore>();
         store.AddWorkOrder(new PlannedWorkOrder("org-a", "env-dev", "WO-SHARED", "SKU-A", null, 1m, 10, now.AddHours(4)));
-        store.AddOperationTask(new PlannedOperationTask("WO-SHARED", "OP-A", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromMinutes(30), OrganizationId: "org-a", EnvironmentId: "env-dev"));
+        store.AddOperationTask(new PlannedOperationTask("WO-SHARED", "OP-A", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromMinutes(30), "SKU-001", OrganizationId: "org-a", EnvironmentId: "env-dev"));
         store.AddWorkOrder(new PlannedWorkOrder("org-b", "env-dev", "WO-SHARED", "SKU-B", null, 1m, 10, now.AddHours(4)));
-        store.AddOperationTask(new PlannedOperationTask("WO-SHARED", "OP-B", OperationTaskStatus.Queued, 10, "WC-B", [], now, TimeSpan.FromMinutes(30), OrganizationId: "org-b", EnvironmentId: "env-dev"));
+        store.AddOperationTask(new PlannedOperationTask("WO-SHARED", "OP-B", OperationTaskStatus.Queued, 10, "WC-B", [], now, TimeSpan.FromMinutes(30), "SKU-001", OrganizationId: "org-b", EnvironmentId: "env-dev"));
         await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().SaveChangesAsync();
 
         var orgAOperations = await store.GetScheduleOperationsAsync("org-a", "env-dev");
@@ -248,9 +248,9 @@ public sealed class MesPersistenceContractTests
         var store = scope.ServiceProvider.GetRequiredService<IMesPlanningStore>();
         store.MapDeviceAssetToWorkCenter("ASSET-CNC-01", "WC-A");
         store.AddWorkOrder(new PlannedWorkOrder("org-a", "env-dev", "WO-A", "SKU-A", null, 1m, 10, now.AddHours(4)));
-        store.AddOperationTask(new PlannedOperationTask("WO-A", "OP-A", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(1), OrganizationId: "org-a", EnvironmentId: "env-dev"));
+        store.AddOperationTask(new PlannedOperationTask("WO-A", "OP-A", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(1), "SKU-001", OrganizationId: "org-a", EnvironmentId: "env-dev"));
         store.AddWorkOrder(new PlannedWorkOrder("org-b", "env-dev", "WO-B", "SKU-B", null, 1m, 10, now.AddHours(4)));
-        store.AddOperationTask(new PlannedOperationTask("WO-B", "OP-B", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(1), OrganizationId: "org-b", EnvironmentId: "env-dev"));
+        store.AddOperationTask(new PlannedOperationTask("WO-B", "OP-B", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(1), "SKU-001", OrganizationId: "org-b", EnvironmentId: "env-dev"));
         await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().SaveChangesAsync();
 
         var handler = new AssetUnavailableIntegrationEventHandlerForReschedule(
@@ -317,7 +317,8 @@ public sealed class MesPersistenceContractTests
                 now,
                 TimeSpan.FromMinutes(45),
                 null,
-                null));
+                null,
+                "SKU-001"));
             dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
                 "org-001",
                 "env-dev",
@@ -509,7 +510,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             null,
-            null));
+            null,
+            "SKU-001"));
         dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
             "org-001",
             "env-dev",
@@ -592,7 +594,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             null,
-            null));
+            null,
+            "SKU-001"));
         dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
             "org-001",
             "env-dev",
@@ -645,7 +648,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             null,
-            null));
+            null,
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
 
         var snapshotProvider = new FakeMesMaterialRequirementSnapshotProvider(
@@ -849,7 +853,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             null,
-            null));
+            null,
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
 
         var releaseException = await Assert.ThrowsAsync<KnownException>(() =>
@@ -888,7 +893,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             null,
-            null));
+            null,
+            "SKU-001"));
         dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
             "org-001",
             "env-dev",
@@ -1152,7 +1158,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             null,
-            null));
+            null,
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
 
         var consumer = new QualityInspectionResultIntegrationEventHandlerForUpdateMesHoldContext(dbContext, deadLetters);
@@ -1212,7 +1219,8 @@ public sealed class MesPersistenceContractTests
                 now,
                 TimeSpan.FromMinutes(45),
                 null,
-                null),
+                null,
+                "SKU-001"),
             OperationTask.Create(
                 "org-001",
                 "env-dev",
@@ -1225,7 +1233,8 @@ public sealed class MesPersistenceContractTests
                 now,
                 TimeSpan.FromMinutes(45),
                 null,
-                null));
+                null,
+                "SKU-001"));
         await dbContext.SaveChangesAsync();
 
         var qualityConsumer = new QualityInspectionResultIntegrationEventHandlerForUpdateMesHoldContext(dbContext, deadLetters);
@@ -1304,7 +1313,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             null,
-            null));
+            null,
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
 
         var qualityConsumer = new QualityInspectionResultIntegrationEventHandlerForUpdateMesHoldContext(dbContext, deadLetters);
@@ -1833,7 +1843,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             null,
-            null));
+            null,
+            "SKU-001"));
         dbContext.WorkCenterUnavailabilities.Add(Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability.Open(
             "org-001",
             "env-dev",
@@ -1887,7 +1898,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             null,
-            null));
+            null,
+            "SKU-001"));
         dbContext.WorkCenterUnavailabilities.Add(Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability.Open(
             "org-001",
             "env-dev",
@@ -1930,7 +1942,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             null,
-            null));
+            null,
+            "SKU-001"));
         dbContext.WorkCenterUnavailabilities.Add(Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability.Open(
             "org-001",
             "env-dev",
@@ -1978,7 +1991,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             null,
-            null));
+            null,
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
 
         var response = await new AssignDispatchTaskCommandHandler(dbContext).Handle(
@@ -2035,7 +2049,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             null,
-            null));
+            null,
+            "SKU-001"));
         dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
             "org-001",
             "env-dev",
@@ -2103,7 +2118,8 @@ public sealed class MesPersistenceContractTests
                 now,
                 TimeSpan.FromMinutes(45),
                 null,
-                null));
+                null,
+                "SKU-001"));
             dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
                 "org-001",
                 "env-dev",
@@ -2158,7 +2174,8 @@ public sealed class MesPersistenceContractTests
                 now,
                 TimeSpan.FromMinutes(45),
                 null,
-                null));
+                null,
+                "SKU-001"));
             await dbContext.SaveChangesAsync();
 
             await new AssignDispatchTaskCommandHandler(dbContext).Handle(
@@ -2206,7 +2223,8 @@ public sealed class MesPersistenceContractTests
         var task = OperationTask.Create(
             "org-001", "env-dev", "WO-LEGACY-001", "OP-LEGACY-10",
             OperationTaskLifecycleStatus.Queued, 10, "WC-FILL", [], now,
-            TimeSpan.FromMinutes(45), null, null);
+            TimeSpan.FromMinutes(45), null, null,
+            "SKU-001");
         task.ApplyScheduleAssignment("WC-FILL", "device-legacy-01", now, now.AddMinutes(45), now);
         dbContext.OperationTasks.Add(task);
         await dbContext.SaveChangesAsync();
@@ -2269,7 +2287,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             null,
-            null));
+            null,
+            "SKU-001"));
         dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
             "org-001",
             "env-dev",
@@ -2325,7 +2344,8 @@ public sealed class MesPersistenceContractTests
                 now,
                 TimeSpan.FromMinutes(45),
                 now,
-                null));
+                null,
+                "SKU-001"));
             var materialIssue = MaterialIssueRequest.Create(
                 "org-001",
                 "env-dev",
@@ -2379,7 +2399,8 @@ public sealed class MesPersistenceContractTests
             dbContext.OperationTasks.Add(OperationTask.Create(
                 "org-001", "env-dev", "WO-COLLAB-001", "OP-COLLAB-10",
                 OperationTaskLifecycleStatus.InProgress, 10, "WC-001", [], now,
-                TimeSpan.FromMinutes(40), now, null));
+                TimeSpan.FromMinutes(40), now, null,
+                "SKU-001"));
             await dbContext.SaveChangesAsync();
 
             await new AssignDispatchTaskCommandHandler(dbContext).Handle(
@@ -2435,7 +2456,8 @@ public sealed class MesPersistenceContractTests
         var task = OperationTask.Create(
             "org-001", "env-dev", "WO-LEGACY-001", "OP-LEGACY-10",
             OperationTaskLifecycleStatus.InProgress, 10, "WC-001", [], now,
-            TimeSpan.FromMinutes(40), now, null);
+            TimeSpan.FromMinutes(40), now, null,
+            "SKU-001");
         task.Assign("legacy-worker", null, "shift-a", now, assignedUserName: "Legacy Worker");
         dbContext.OperationTasks.Add(task);
         await dbContext.SaveChangesAsync();
@@ -2486,7 +2508,8 @@ public sealed class MesPersistenceContractTests
                 now,
                 TimeSpan.FromMinutes(45),
                 now,
-                null));
+                null,
+                "SKU-001"));
             dbContext.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
                 "org-001",
                 "env-dev",
@@ -2715,7 +2738,8 @@ public sealed class MesPersistenceContractTests
                 now,
                 TimeSpan.FromMinutes(45),
                 now,
-                null));
+                null,
+                "SKU-001"));
             dbContext.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
                 "org-001",
                 "env-dev",
@@ -2808,7 +2832,8 @@ public sealed class MesPersistenceContractTests
             reportedAtUtc,
             TimeSpan.FromMinutes(45),
             reportedAtUtc,
-            null));
+            null,
+            "SKU-001"));
         dbContext.ProductionReports.Add(ProductionReport.Record(
             organizationId,
             "env-dev",
@@ -2863,7 +2888,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             null,
-            null));
+            null,
+            "SKU-001"));
         dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
             "org-001",
             "env-dev",
@@ -2941,7 +2967,8 @@ public sealed class MesPersistenceContractTests
                 now,
                 TimeSpan.FromMinutes(45),
                 now,
-                now.AddMinutes(45)));
+                now.AddMinutes(45),
+                "SKU-001"));
             dbContext.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
                 "org-001",
                 "env-dev",
@@ -3019,7 +3046,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             now,
-            now.AddMinutes(45)));
+            now.AddMinutes(45),
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
@@ -3061,7 +3089,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             now,
-            now.AddMinutes(45)));
+            now.AddMinutes(45),
+            "SKU-001"));
         dbContext.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
             "org-001",
             "env-dev",
@@ -3133,7 +3162,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             now,
-            now.AddMinutes(45)));
+            now.AddMinutes(45),
+            "SKU-001"));
         var otherRequest = MaterialIssueRequest.Create(
             "org-001",
             "env-dev",
@@ -3188,7 +3218,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             now,
-            now.AddMinutes(45)));
+            now.AddMinutes(45),
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
@@ -3229,7 +3260,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             now,
-            now.AddMinutes(45)));
+            now.AddMinutes(45),
+            "SKU-001"));
         var lotARequest = MaterialIssueRequest.Create("org-001", "env-dev", "MIR-IDEMP-A", "WO-IDEMP-001", "OP-IDEMP-10", "MAT-OIL", "L", 10m, now.AddMinutes(1));
         lotARequest.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, now.AddMinutes(5), 10m, "LOT-OIL-A");
         var lotBRequest = MaterialIssueRequest.Create("org-001", "env-dev", "MIR-IDEMP-B", "WO-IDEMP-001", "OP-IDEMP-10", "MAT-OIL", "L", 10m, now.AddMinutes(2));
@@ -3289,7 +3321,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             now,
-            now.AddMinutes(45)));
+            now.AddMinutes(45),
+            "SKU-001"));
         dbContext.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
             "org-001",
             "env-dev",
@@ -3351,7 +3384,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             now,
-            null));
+            null,
+            "SKU-001"));
         var materialIssue = MaterialIssueRequest.Create(
             "org-001",
             "env-dev",
@@ -3473,7 +3507,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             now,
-            null));
+            null,
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
 
         var reportResult = await new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance, TestMesFirstArticleGate.Allowing, codingService).Handle(
@@ -3550,7 +3585,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             now,
-            null));
+            null,
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
 
         var report = await new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance, TestMesFirstArticleGate.Allowing, codingService).Handle(
@@ -3591,7 +3627,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             now,
-            null));
+            null,
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
         var duplicateReport = await new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance, TestMesFirstArticleGate.Allowing, codingService).Handle(
             new RecordProductionReportCommand(
@@ -3641,7 +3678,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             null,
-            null));
+            null,
+            "SKU-001"));
         dbContext.WorkOrders.Add(WorkOrder.Create("org-b", "env-dev", "WO-B", "SKU-B", null, 1m, 5, now.AddDays(2)));
         await dbContext.SaveChangesAsync();
 

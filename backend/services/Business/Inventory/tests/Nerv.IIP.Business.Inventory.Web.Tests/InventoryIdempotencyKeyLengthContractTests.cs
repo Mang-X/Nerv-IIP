@@ -41,12 +41,16 @@ namespace Nerv.IIP.Business.Inventory.Web.Tests;
 ///    曾经有一套源码闭集扫描试图证明它，三轮下来每轮都能找出新的绕法
 ///    （跨行 <c>+</c>、左加法、<c>$@"</c>、<c>$"""</c>、同语句 <c>Compose(</c>、行尾注释补计数、
 ///    字面量里的括号），本质是在用文本近似手搓一个 C# 词法分析器，**不收敛**，已按裁定移除。
-///    结构性封闭见 #3231：把键换成不可拼接的包装类型，届时靠**类型不可表达**而不是靠扫描证明。
+///    **「结构性封闭」也不是退路（#3231 实测读数）**：把键换成不可拼接的包装类型只关得掉
+///    <c>key + ":out"</c> 一种写法，<c>$"{key}:out"</c> / <c>string.Concat</c> / <c>string.Format</c> /
+///    <c>key.ToString() + ":out"</c> 照样编译并产出完全相同的键——所以「靠**类型不可表达**而不是靠扫描
+///    证明」这句话在本仓能落地的任何设计下都成立不了（机制见
+///    <c>InventoryIdempotencyKeyPolicy.Compose</c> 的 summary）。
 ///
 ///    **这条移除有代价，写在这里免得它悄悄消失**：被删掉的是**真跑过的鉴别力**，不是死代码——
 ///    「摘掉 <c>Compose</c> 换裸拼接」「新增未登记的绕过位点」「同语句里 <c>Compose</c> 与裸拼接并存」
 ///    「用一句行尾注释补回调用计数」等格此前都实测能打红，此后**都不再红**。
-///    也就是说：**在 #3231 落地前，「有人绕开 <c>Compose</c> 直接拼接幂等键」处于零防线状态**，
+///    也就是说：**「有人绕开 <c>Compose</c> 直接拼接幂等键」当前处于零防线状态，且没有已知的便宜关法**，
 ///    唯一的约束是 <c>Compose</c> 的 doc 里那句约定。**别把本类的绿读成「拼接方式已被看住」**——
 ///    本类看住的是「上界算得对不对、顶格键塞不塞得进列」，看不住「有没有人走别的路拼这把键」。
 /// </summary>
@@ -65,11 +69,6 @@ public sealed class InventoryIdempotencyKeyLengthContractTests
     /// 否则 <c>Assert.All</c> 对空集恒真，护栏会静默缴械。
     /// </summary>
     private const int IdempotencyKeyColumnCount = 6;
-
-    /// <summary>
-    /// 「在幂等键上直接做字符串加法 / 把它嵌进插值再续写」的**具名豁免**闭集。
-    /// 当前唯一一条是 FEFO 重放查询的 <c>StartsWith</c> 谓词：它构造的是查询前缀、不落库。
-    /// 这个集合非空，因此扫描正则一旦失配也会红。
 
     [Fact]
     public void Idempotency_key_column_width_matches_the_policy_constant()

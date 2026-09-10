@@ -63,7 +63,24 @@ internal static class InventoryIdempotencyKeyPolicy
     /// 超出列宽就地抛 <c>KnownException</c>，而不是把越界值送进数据库换一个 22001。
     /// 本方法是幂等键落库前拼接的**唯一入口**。**这是约定，不是护栏**——
     /// 当前没有任何机制能在编译期阻止绕过（`key + ":out"` 照样编译得过）。
-    /// 结构性封闭（把键换成不可拼接的包装类型，使 `key + ":out"` 编译不过）见 #3231。
+    ///
+    /// **「换成不可拼接的包装类型」不是出路（#3231 实测读数，不是猜测，也不是待办）**：
+    /// 包装类型加 <c>[Obsolete(error)] operator +</c> 只关得掉 <c>key + ":out"</c> 这一种写法；
+    /// <c>$"{key}:out"</c>、<c>string.Concat(key, ":out")</c>、<c>string.Format("{0}:out", key)</c>、
+    /// <c>key.ToString() + ":out"</c> 全部照样编译通过，且产出与本方法**完全相同**的键。
+    /// 机制：netcorepal 的 <c>IStringStronglyTypedId</c> 生成器会生成
+    /// <c>public override string ToString()</c>，而 <c>[Obsolete]</c> 打在 override 上只在**声明处**
+    /// 报 CS0809，调用处不报错；实测唯一能全关的是 <c>readonly ref struct</c>，
+    /// 而它不能作 EF 属性、不能作 record 成员、不能跨 <c>await</c>、不能作泛型实参、
+    /// 不能被 JSON 序列化——对这个值不可用。
+    ///
+    /// 唯一可能覆盖全部写法的方向是把判据从文本挪到 **Roslyn 语义模型**上：「对该键类型的值做任何
+    /// 字符串化或拼接」是 symbol 级判定，对换行、逐字插值、局部别名天然免疫。
+    /// 这类判定在本仓**已有先例**——多个服务的边界 / 来源测试就是
+    /// <c>CSharpCompilation.Create</c> + <c>MetadataReference</c> + <c>GetSemanticModel</c> 这一套
+    /// （例如 <c>MesMaterialRequirementSnapshotBoundaryTests</c>，它连局部别名都跟踪），
+    /// 可以照这条路做。但注意它们**跑在测试期，不是编译期**：把同一判定变成编译期 / IDE 里就报错
+    /// 的形态是另一件事，在那之前本方法的「唯一入口」始终只是约定。
     /// </summary>
     public static string Compose(string idempotencyKey, string suffix)
     {

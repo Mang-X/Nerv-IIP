@@ -34,7 +34,8 @@ public sealed class OperationTaskClaimTests
     }
 
     private static OperationTask NewTask(string operationTaskId) => OperationTask.Queue(
-        "org-001", "env-dev", "WO-001", operationTaskId, 10, "WC-001", [], At(0), TimeSpan.FromHours(1));
+        "org-001", "env-dev", "WO-001", operationTaskId, 10, "WC-001", [], At(0), TimeSpan.FromHours(1),
+        "SKU-001");
 
     private static DateTimeOffset At(int minute) =>
         DateTimeOffset.Parse("2026-08-30T08:00:00Z").AddMinutes(minute);

@@ -229,7 +229,7 @@ public sealed class BusinessConsoleConfirmStockCountAdjustmentRequestValidator
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.CountedQuantity).GreaterThan(0);
-        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(128);
     }
 }
 

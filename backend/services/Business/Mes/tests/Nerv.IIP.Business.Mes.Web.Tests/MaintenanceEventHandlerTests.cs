@@ -342,7 +342,7 @@ public sealed class MaintenanceEventHandlerTests
         var store = scope.ServiceProvider.GetRequiredService<IMesPlanningStore>();
         store.MapDeviceAssetToWorkCenter("ASSET-CNC-01", "WC-A");
         store.AddWorkOrder(new PlannedWorkOrder("org-001", "env-dev", "WO-001", "SKU-1", null, 1m, 10, now.AddDays(1)));
-        store.AddOperationTask(new PlannedOperationTask("WO-001", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2)));
+        store.AddOperationTask(new PlannedOperationTask("WO-001", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2), "SKU-001"));
         await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().SaveChangesAsync();
     }
 
@@ -353,7 +353,7 @@ public sealed class MaintenanceEventHandlerTests
         var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
         store.MapDeviceAssetToWorkCenter("ASSET-CNC-01", "WC-A");
         store.AddWorkOrder(new PlannedWorkOrder("org-001", "env-dev", "WO-001", "SKU-1", null, 1m, 10, now.AddDays(1)));
-        store.AddOperationTask(new PlannedOperationTask("WO-001", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2)));
+        store.AddOperationTask(new PlannedOperationTask("WO-001", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2), "SKU-001"));
         await using var dbContext = CreateDbContext();
 
         var handler = new AssetUnavailableIntegrationEventHandlerForReschedule(
@@ -376,7 +376,7 @@ public sealed class MaintenanceEventHandlerTests
         var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
         store.MapDeviceAssetToWorkCenter("ASSET-CNC-01", "WC-A");
         store.AddWorkOrder(new PlannedWorkOrder("org-001", "env-dev", "WO-001", "SKU-1", null, 1m, 10, now.AddDays(1)));
-        store.AddOperationTask(new PlannedOperationTask("WO-001", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2)));
+        store.AddOperationTask(new PlannedOperationTask("WO-001", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2), "SKU-001"));
         var databaseRoot = new InMemoryDatabaseRoot();
         var options = CreateDbContextOptions($"mes-unavailable-{Guid.CreateVersion7():N}", databaseRoot);
         var integrationEvent = CreateUnavailableEvent(now);
@@ -412,7 +412,7 @@ public sealed class MaintenanceEventHandlerTests
         var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
         store.MapDeviceAssetToWorkCenter("ASSET-CNC-01", "WC-A");
         store.AddWorkOrder(new PlannedWorkOrder("org-001", "env-dev", "WO-001", "SKU-1", null, 1m, 10, now.AddDays(1)));
-        store.AddOperationTask(new PlannedOperationTask("WO-001", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2)));
+        store.AddOperationTask(new PlannedOperationTask("WO-001", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2), "SKU-001"));
         var databaseRoot = new InMemoryDatabaseRoot();
         var options = CreateDbContextOptions($"mes-unavailable-idem-{Guid.CreateVersion7():N}", databaseRoot);
         var integrationEvent = CreateUnavailableEvent(now);
@@ -451,7 +451,7 @@ public sealed class MaintenanceEventHandlerTests
         var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
         store.MapDeviceAssetToWorkCenter("ASSET-CNC-01", "WC-A");
         store.AddWorkOrder(new PlannedWorkOrder("org-001", "env-dev", "WO-001", "SKU-1", null, 1m, 10, now.AddDays(1)));
-        store.AddOperationTask(new PlannedOperationTask("WO-001", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2)));
+        store.AddOperationTask(new PlannedOperationTask("WO-001", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2), "SKU-001"));
         var databaseRoot = new InMemoryDatabaseRoot();
         var options = CreateDbContextOptions($"mes-unavailable-v2-{Guid.CreateVersion7():N}", databaseRoot);
         var v1 = CreateUnavailableEvent(now) with { IdempotencyKey = "asset-unavailable:WO-001:2026-05-22T08:00:00.0000000+00:00" };

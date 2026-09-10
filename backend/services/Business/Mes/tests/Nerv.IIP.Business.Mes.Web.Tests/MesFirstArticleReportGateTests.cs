@@ -147,7 +147,8 @@ public sealed class MesFirstArticleReportGateTests
             Now,
             TimeSpan.FromMinutes(45),
             Now,
-            null));
+            null,
+            "SKU-001"));
     }
 
     private static (ServiceProvider Services, RecordingFirstArticleGate Gate) CreateServices(string databaseName)

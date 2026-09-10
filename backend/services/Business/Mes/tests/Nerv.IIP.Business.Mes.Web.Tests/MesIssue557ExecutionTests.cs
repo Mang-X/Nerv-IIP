@@ -151,7 +151,8 @@ public sealed class MesIssue557ExecutionTests
             Utc("2026-06-29T08:00:00Z"),
             TimeSpan.FromHours(4),
             null,
-            null));
+            null,
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
         var handler = new ChangeOperationTaskStateCommandHandler(dbContext);
         var command = new ChangeOperationTaskStateCommand(
@@ -191,7 +192,8 @@ public sealed class MesIssue557ExecutionTests
             Utc("2026-06-29T08:00:00Z"),
             TimeSpan.FromHours(4),
             null,
-            null));
+            null,
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
         var handler = new ChangeOperationTaskStateCommandHandler(dbContext);
 
@@ -238,7 +240,8 @@ public sealed class MesIssue557ExecutionTests
             Utc("2026-06-29T08:00:00Z"),
             TimeSpan.FromHours(4),
             null,
-            null));
+            null,
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
         var handler = new ChangeOperationTaskStateCommandHandler(dbContext);
         var first = new ChangeOperationTaskStateCommand(
@@ -507,7 +510,8 @@ public sealed class MesIssue557ExecutionTests
                 Utc("2026-06-29T08:00:00Z"),
                 TimeSpan.FromHours(1),
                 null,
-                null));
+                null,
+                "SKU-001"));
         }
         await dbContext.SaveChangesAsync();
 
@@ -545,7 +549,8 @@ public sealed class MesIssue557ExecutionTests
             Utc("2026-06-29T08:00:00Z"),
             TimeSpan.FromHours(4),
             null,
-            null));
+            null,
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
 
         var handler = new ChangeOperationTaskStateCommandHandler(dbContext);
@@ -593,7 +598,8 @@ public sealed class MesIssue557ExecutionTests
             Utc("2026-06-29T08:00:00Z"),
             TimeSpan.FromHours(4),
             null,
-            null));
+            null,
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
 
         var exception = await Assert.ThrowsAsync<MesLifecycleConflictException>(() =>
@@ -736,7 +742,8 @@ public sealed class MesIssue557ExecutionTests
             Utc("2026-06-29T08:00:00Z"),
             TimeSpan.FromHours(4),
             null,
-            null));
+            null,
+            "SKU-001"));
         dbContext.ProductionReports.Add(ProductionReport.Record(
             "org-001", "env-dev", "PR-OP-10-001", "WO-001", "OP-10",
             1m, 0m, false, Utc("2026-06-29T11:59:00Z")));
@@ -801,11 +808,13 @@ public sealed class MesIssue557ExecutionTests
                 "org-001", "env-dev", "WO-OVER-001", "OP-10",
                 OperationTaskLifecycleStatus.InProgress, 10, "WC-10", [],
                 Utc("2026-06-29T08:00:00Z"), TimeSpan.FromHours(1),
-                Utc("2026-06-29T08:00:00Z"), null),
+                Utc("2026-06-29T08:00:00Z"), null,
+                "SKU-001"),
             OperationTask.Create(
                 "org-001", "env-dev", "WO-OVER-001", "OP-20",
                 OperationTaskLifecycleStatus.Queued, 20, "WC-20", [],
-                Utc("2026-06-29T09:00:00Z"), TimeSpan.FromHours(1), null, null));
+                Utc("2026-06-29T09:00:00Z"), TimeSpan.FromHours(1), null, null,
+                "SKU-001"));
         dbContext.ProductionReports.Add(ProductionReport.Record(
             "org-001", "env-dev", "RPT-OVER-001", "WO-OVER-001", "OP-10",
             100m, 0m, false, Utc("2026-06-29T09:00:00Z")));
@@ -1167,7 +1176,8 @@ public sealed class MesIssue557ExecutionTests
             Utc("2026-06-29T08:00:00Z"),
             TimeSpan.FromHours(1),
             null,
-            null));
+            null,
+            "SKU-001"));
         dbContext.OperationTasks.Add(OperationTask.Create(
             "org-001",
             "env-dev",
@@ -1180,7 +1190,8 @@ public sealed class MesIssue557ExecutionTests
             Utc("2026-06-29T09:00:00Z"),
             TimeSpan.FromHours(1),
             secondStatus == OperationTaskLifecycleStatus.InProgress ? Utc("2026-06-29T09:00:00Z") : null,
-            null));
+            null,
+            "SKU-001"));
     }
 
     private static void SeedStartedOutputOperation(ApplicationDbContext dbContext)
@@ -1201,7 +1212,8 @@ public sealed class MesIssue557ExecutionTests
             Utc("2026-06-29T08:00:00Z"),
             TimeSpan.FromHours(1),
             Utc("2026-06-29T08:00:00Z"),
-            null));
+            null,
+            "SKU-001"));
     }
 
     private static MaterialIssueRequest SeedReceivedMaterialIssue(ApplicationDbContext dbContext, decimal receivedQuantity)

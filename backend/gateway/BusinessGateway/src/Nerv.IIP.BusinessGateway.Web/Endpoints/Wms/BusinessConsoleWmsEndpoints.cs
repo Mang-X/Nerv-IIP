@@ -2130,7 +2130,7 @@ public sealed class BusinessConsoleStartWmsWarehouseTaskRequestValidator
         RuleFor(x => x.WarehouseTaskId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(128);
         RuleFor(x => x.ExpectedVersion).GreaterThanOrEqualTo(0);
         AddScopeRules();
     }
@@ -2152,7 +2152,7 @@ public sealed class BusinessConsoleRecordWmsWarehouseTaskProgressRequestValidato
         RuleFor(x => x.WarehouseTaskId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(128);
         RuleFor(x => x.ExpectedVersion).GreaterThanOrEqualTo(0);
         RuleFor(x => x.ExecutedQuantity).GreaterThanOrEqualTo(0);
         RuleFor(x => x.ScopeKind)
@@ -2170,7 +2170,7 @@ public sealed class BusinessConsoleReportWmsWarehouseTaskExceptionRequestValidat
         RuleFor(x => x.WarehouseTaskId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(128);
         RuleFor(x => x.ExpectedVersion).GreaterThanOrEqualTo(0);
         RuleFor(x => x.ExceptionCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
@@ -2189,7 +2189,7 @@ public sealed class BusinessConsoleCompleteWmsWarehouseTaskRequestValidator
         RuleFor(x => x.WarehouseTaskId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(128);
         RuleFor(x => x.ExpectedVersion).GreaterThanOrEqualTo(0);
         RuleFor(x => x.ExecutedQuantity).GreaterThanOrEqualTo(0);
         RuleFor(x => x.DifferenceReason).MaximumLength(500);

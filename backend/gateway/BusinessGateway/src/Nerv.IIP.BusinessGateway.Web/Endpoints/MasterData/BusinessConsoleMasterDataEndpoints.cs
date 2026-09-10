@@ -916,7 +916,7 @@ public sealed class BusinessConsoleSetMasterDataResourceEnabledRequestValidator 
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ResourceType).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Code).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(512);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(200);
         RuleFor(x => x.CodeSet).MaximumLength(100);
         // 生命周期原因是审计事实，MasterData 侧对空原因稳定拒绝（#878）。
         // 网关同口径先拦一道：非空 + 同一 500 长度上限，拒绝信息在此就已明确。
