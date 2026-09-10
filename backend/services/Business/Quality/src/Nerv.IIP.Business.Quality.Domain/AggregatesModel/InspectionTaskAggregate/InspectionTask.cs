@@ -38,7 +38,9 @@ public sealed class InspectionTask : Entity<InspectionTaskId>, IAggregateRoot
         SourceType = Supported(sourceType, SourceTypes, nameof(sourceType));
         SourceService = Supported(sourceService, SourceServices, nameof(sourceService));
         SourceDocumentId = Required(sourceDocumentId);
-        TriggerIdempotencyKey = Required(triggerIdempotencyKey);
+        TriggerIdempotencyKey = InspectionTaskTriggerKey.EnsureWithinColumn(
+            Required(triggerIdempotencyKey),
+            nameof(triggerIdempotencyKey));
         SourceDocumentLineId = Optional(sourceDocumentLineId);
         if (IsPeriodicTrigger(TriggerIdempotencyKey) && SourceDocumentLineId is null)
         {
