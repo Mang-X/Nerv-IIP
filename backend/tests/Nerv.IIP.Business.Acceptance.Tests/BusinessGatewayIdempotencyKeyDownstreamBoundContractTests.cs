@@ -128,12 +128,18 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
         var declared = DownstreamBounds.Keys.ToHashSet();
 
         var unregistered = enumerated.Except(declared).ToArray();
-        var stale = declared.Except(enumerated).ToArray();
+
+        // stale 要扣掉封闭豁免集（#3328）：登记为「下游零权威」的位点**本来就可能没有端点级规则**——
+        // 网关对一个下游根本不消费的键声明 maxLength 是假承诺，本仓判例明令不做。
+        // 这一支的完备性由 Only_pinned_requests_are_registered_without_a_downstream_authority
+        // （双向钉住登记表与封闭集）与 Registered_absence_of_downstream_authority_is_still_true
+        // （按下游命令类型实测「真的没有」）两条共同承担，不是从值域里消失。
+        var stale = declared.Except(enumerated).Except(RequestsWithoutDownstreamAuthority).ToArray();
 
         Assert.True(
             unregistered.Length == 0 && stale.Length == 0,
             $"网关新增了端点级幂等键上界但未登记下游权威（{unregistered.Length}）：{Describe(unregistered)}"
-            + $"；登记表里的位点在网关侧已不存在端点级上界（{stale.Length}）：{Describe(stale)}");
+            + $"；登记表里的位点在网关侧已不存在端点级上界、且不在封闭豁免集里（{stale.Length}）：{Describe(stale)}");
     }
 
     /// <summary>
@@ -212,6 +218,69 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
             unexpected.Length == 0 && missing.Length == 0,
             $"未在封闭豁免集里却登记成「下游零权威」（{unexpected.Length}）：{Describe(unexpected)}"
             + $"；封闭豁免集里却已有下游权威（{missing.Length}）：{Describe(missing)}");
+    }
+
+    /// <summary>
+    /// 「下游零权威」的登记项，其**理由今天仍然成立**：它点名的每个下游命令类型，
+    /// 既不带 <c>IdempotencyKey</c> 成员，也解析不出任何长度上界。
+    /// </summary>
+    /// <remarks>
+    /// <para>这条是 #3290 在注释里写下、但当时**没有位点可以承载**的那个机制：
+    /// 「想要真正的自动退役，得让 <see cref="NoDownstreamAuthority"/> 携带它声称「无约束」的下游命令类型，
+    /// 并断言那些类型解析出的上界确实为 0。」#3328 给出了第一批这样的位点，故就地建起来。</para>
+    /// <para><b>它挡的是什么</b>：有人把幂等键接进 <c>AcknowledgeAlarmCommand</c> /
+    /// <c>UnshelveAlarmCommand</c>（加构造参数、或给命令挂一条幂等键长度规则）之后，
+    /// 「下游零权威」这句就不再为真——本条立刻红，迫使当轮把登记改成真实权威，
+    /// 而不是让一句过期的豁免理由被制度性固化（#3290 判例：封闭豁免集只锁一致性、不验理由）。</para>
+    /// <para><b>它不挡什么（写清楚，避免「护栏自称完备」）</b>：它只看**被点名的那些命令类型**。
+    /// 「网关请求 → 下游命令」这条链接仍然是手写的（与 <see cref="DownstreamBounds"/> 同一条局限），
+    /// 点名了一个错的命令类型 ⇒ 本条会对着错的类型报绿。链接本身的正确性靠 review，不靠本条。
+    /// 另外它**不**覆盖「键落进下游某张表但不经命令」这条路径——那条由登记时的人工实读承担，
+    /// 见 <see cref="RequestsWithoutDownstreamAuthority"/> 上的证据清单。</para>
+    /// </remarks>
+    [Fact]
+    public void Registered_absence_of_downstream_authority_is_still_true()
+    {
+        var pinned = DownstreamBounds
+            .SelectMany(pair => pair.Value.OfType<NoDownstreamAuthority>()
+                .Select(authority => (Request: pair.Key, Authority: authority)))
+            .ToArray();
+
+        // 值域非空：封闭集一旦空掉，Assert.All 对空集恒真，本条会静默退化成空断言。
+        Assert.NotEmpty(pinned);
+
+        var violations = new List<string>();
+        foreach (var (request, authority) in pinned)
+        {
+            // 每条豁免都必须点名它声称「无权威」的下游命令：不点名就没有可验证的内容，
+            // 那正是 #3290 里「理由不可复核」的形状。
+            Assert.NotEmpty(authority.DownstreamCommands);
+
+            foreach (var command in authority.DownstreamCommands)
+            {
+                if (command.GetProperty(IdempotencyKeyPropertyName, BindingFlags.Instance | BindingFlags.Public)
+                    is not null)
+                {
+                    violations.Add(
+                        $"  {request.Name} 登记为「下游零权威」，但 {command.Name} 已经带上了 {IdempotencyKeyPropertyName} 成员"
+                        + "——键已进入下游，必须撤销本登记并登记真实权威。");
+                    continue;
+                }
+
+                var bound = new CommandValidatorBound(command).Resolve();
+                if (bound > 0)
+                {
+                    violations.Add(
+                        $"  {request.Name} 登记为「下游零权威」，但 {command.Name} 的校验器解析出上界 {bound}"
+                        + "——必须撤销本登记并登记真实权威。");
+                }
+            }
+        }
+
+        Assert.True(
+            violations.Count == 0,
+            $"「下游零权威」的登记理由已不成立（{violations.Count} 处 / 共检查 {pinned.Length} 项）：\n"
+            + string.Join("\n", violations));
     }
 
     [Fact]
@@ -436,29 +505,65 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
             "Inventory");
 
     /// <summary>
-    /// 下游**零**幂等键长度权威的封闭豁免集。**目前为空**。
+    /// 下游**零**幂等键长度权威的封闭豁免集。
     /// </summary>
     /// <remarks>
-    /// <para>进这份集合的门槛是「已穷举下游、确认它对键长度不施加任何约束」，不是「暂时没查到」。</para>
-    /// <para><b>唯一曾经的一项已于 #3291 退役</b>：Wms 受控分配家族
-    /// （<c>BusinessConsoleAssignWmsResourceRequest</c>）当时下游 5 条命令零校验——
-    /// 规则全写在 sealed 开放泛型 <c>WarehouseAssignmentCommandValidator&lt;TCommand&gt;</c> 上，
-    /// 无法派生闭合、程序集扫描也不注册泛型定义，实测真实 host 里 <c>IValidator&lt;C&gt;</c> 解析数均为 0。
-    /// #3291 改成「静态辅助 + 5 个具体校验器」姿势后，这 5 条命令各有可解析的 128 上界，
-    /// 该位点因此从豁免集移出、登记为 <c>validator(...)</c>×5 参与不等式。</para>
-    /// <para><b>集合为空不等于本条断言退化</b>：
-    /// <see cref="Only_pinned_requests_are_registered_without_a_downstream_authority"/> 是双向的——
-    /// 任何人把某个位点改登记成 <see cref="NoDownstreamAuthority"/> 让它退出不等式，
-    /// 而不同时往这份集合里加一项，立刻红。空集是「今天没有任何位点需要退出不等式」这一事实本身，
-    /// 不要为了让机制「看起来在用」而留一个假项。</para>
-    /// <para><b>这条断言不会自己退役（#3291 实测，写清楚避免误信）</b>：它只锁「登记 None 必须同时进集合」
-    /// 这一个方向，**不**验证豁免理由今天是否还成立。实测过：只落 Wms 侧的 5 个具体校验器、
-    /// 本文件一字不动，本类 5 条断言全部照绿——豁免项不会因为下游长出权威而报红。
-    /// 所以下游修复时必须**人工**把对应位点从这里移出并登记真实权威；
-    /// 想要真正的自动退役，得让 <see cref="NoDownstreamAuthority"/> 携带它声称「无约束」的下游命令类型，
-    /// 并断言那些类型解析出的上界确实为 0。今天集合为空，没有位点可以承载这个机制，故不预建。</para>
+    /// <para>进这份集合的门槛是「已穷举下游、确认它对键长度不施加任何约束」，不是「暂时没查到」。
+    /// 登记进来的位点**不参与**上界不等式，也**不要求**网关侧有端点级规则——
+    /// 对一个下游根本不消费的键声明 <c>maxLength</c> 是假承诺，本仓判例明令不做。</para>
+    ///
+    /// <para><b>今天的两项（#3328）</b>：<c>BusinessConsoleAcknowledgeAlarmRequest</c> 与
+    /// <c>BusinessConsoleUnshelveAlarmRequest</c>。它们的 <c>IdempotencyKey</c> **不是空头字段**——
+    /// 消费者是**网关自己**：<c>BusinessIndustrialTelemetryClient.AcknowledgeAlarmAsync</c>（该方法里
+    /// <c>string.IsNullOrWhiteSpace(request.IdempotencyKey) ? null : BusinessConsoleOperationReceipts.Accepted(...)</c>）
+    /// 与同文件的 <c>UnshelveAlarmAsync</c> 用它决定是否签发 operation-receipt，
+    /// 前端 <c>confirmBusinessConsoleOperation</c> 再拿 <c>receipt.idempotencyKey</c> 与本次业务意图比对。
+    /// 摘掉字段 = 控制台与 PDA 的「确认报警 / 解除搁置」每次都抛「写操作缺少权威回执」，
+    /// 所以 #3328 对这两处的裁定是**保留字段**，而不是像 Mes 那 5 处那样摘掉。</para>
+    ///
+    /// <para><b>「下游零权威」这句实测坐实过（#3328，均为实读，不是推断）</b>：</para>
+    /// <list type="number">
+    /// <item>下游端点 <c>AcknowledgeAlarmEndpoint</c> / <c>UnshelveAlarmEndpoint</c> 的 <c>HandleAsync</c>
+    /// 拿到了 DTO 上的键却**不往命令里传**；<see cref="AcknowledgeAlarmCommand"/> 与
+    /// <see cref="UnshelveAlarmCommand"/> 的构造参数里没有这个成员（本类
+    /// <see cref="Registered_absence_of_downstream_authority_is_still_true"/> 按类型实测这一条）。</item>
+    /// <item>IndustrialTelemetry 服务 src 里 <c>Idempotency-Key</c> / <c>X-Idempotency-Key</c>
+    /// 命中 <b>0 处</b> ⇒ 网关补的那个请求头在下游根本没人读，走头也进不来。</item>
+    /// <item>该服务 EF 模型里承载 <c>IdempotencyKey</c> 列的实体共三个：
+    /// <c>AlarmShelveIdempotency</c>（唯一写入点在 <c>ShelveAlarmCommandHandler</c> 内）、
+    /// <c>DeviceControlCommand</c>、CAP 的 <c>IntegrationEventDeadLetter</c>（存的是信封键）。
+    /// 没有一个能从 acknowledge / unshelve 到达。</item>
+    /// <item><c>AlarmAcknowledgedDomainEvent</c> 与 <c>AlarmUnshelvedDomainEvent</c> 在 Domain 之外
+    /// **零引用**（无集成事件转换器、无 handler）⇒ 不发 CAP，也就没有信封键这条腿。</item>
+    /// <item>网关自身**没有任何存储**：<c>Nerv.IIP.BusinessGateway.Web.csproj</c> 不引用任何 EF/Npgsql 包，
+    /// gateway src 里 <c>DbContext</c> / <c>AddDbContext</c> 命中 0 处；唯一的缓存位点是
+    /// <c>BusinessGatewayAuthorization</c> 的授权判定缓存，其缓存键由 bearer token 与授权要求构成，
+    /// 不含幂等键。</item>
+    /// </list>
+    /// <para>⚠️ <b>新增下游存储时必须撤销本登记</b>：一旦这两条命令开始接收该键、或该键开始落进
+    /// IndustrialTelemetry 的任何一张表，本登记就不再为真，必须移出本集合并登记真实权威
+    /// （命令校验器上界 / 承载列列宽）。</para>
+    ///
+    /// <para><b>为什么不顺手把键接下去（这是判断题，不是漏做）</b>：同族的
+    /// <c>ShelveAlarm</c> 之所以真有下游键，是因为 <c>Shelve</c> **不是**自然幂等——
+    /// <c>ShelveAlarmCommandHandler</c> 为它建了 <c>AlarmShelveIdempotencies</c> 去重表 + payload 指纹，
+    /// 用来挡「A→B→延迟的 A」。而 <c>AlarmEvent.Acknowledge</c> 首句是
+    /// <c>if (AcknowledgedAtUtc is not null) return;</c>、<c>AlarmEvent.Unshelve</c> 首句是
+    /// <c>if (Status != "shelved") return false;</c>——**早退即幂等**，不改状态也不发域事件。
+    /// 给一条重放本来就无副作用的路径再加一张去重表是过度防御，#3328 因此明确不做。</para>
+    ///
+    /// <para><b>这份集合不会自己退役的那一半仍然存在（#3290 判例，写清楚避免误信）</b>：
+    /// <see cref="Only_pinned_requests_are_registered_without_a_downstream_authority"/> 只锁
+    /// 「登记 None 必须同时进本集合」这一个方向。真正验证理由的是
+    /// <see cref="Registered_absence_of_downstream_authority_is_still_true"/>，而它的射程
+    /// **只到被点名的下游命令类型**：上面第 2–5 条（头、列、域事件、网关存储）
+    /// 今天仍然由人工实读承担，没有机器守着。</para>
     /// </remarks>
-    private static readonly HashSet<Type> RequestsWithoutDownstreamAuthority = [];
+    private static readonly HashSet<Type> RequestsWithoutDownstreamAuthority =
+    [
+        typeof(BusinessConsoleAcknowledgeAlarmRequest),
+        typeof(BusinessConsoleUnshelveAlarmRequest),
+    ];
 
     /// <summary>
     /// 「网关请求类型 → 下游权威」的登记表。**这张表是手写的链接，数值不是**：
@@ -726,20 +831,33 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
         [typeof(BusinessConsolePostStockMovementRequest)] =
             [Command<PostStockMovementCommand>(), InventoryStockMovementKeyColumn],
 
-        // ⚠️ BusinessConsoleAcknowledgeAlarmRequest 与 BusinessConsoleUnshelveAlarmRequest
-        // **故意不在这张表里**，网关侧也没有给它们补端点级规则。原因不是「查不到权威」，
-        // 而是**键在下游边界上蒸发**（与 #3328 同形）：IndustrialTelemetry 的
-        // AcknowledgeAlarmRequest / UnshelveAlarmRequest 这两个端点 DTO 虽然带 IdempotencyKey 字段，
-        // 但 AcknowledgeAlarmEndpoint / UnshelveAlarmEndpoint 的 HandleAsync **没有把它传进命令**
-        // （AcknowledgeAlarmCommand 与 UnshelveAlarmCommand 的构造参数里根本没有这个成员），
-        // 这两个 DTO 也各自没有校验器——实读 `Validator<AcknowledgeAlarmRequest>` 与
-        // `Validator<UnshelveAlarmRequest>` 在 IndustrialTelemetry 下各 0 处。
-        // ⚠️ 这一句的射程**只到这两个位点**，不是对整个 IndustrialTelemetry 程序集的枚举：
-        // 该程序集里带幂等键长度规则的校验器不止一个（ShelveAlarm 的端点 DTO 与命令、
-        // DeviceControlCommand 的端点 DTO 与命令都有），只是**没有一个作用于这两个位点**。
-        // 「与本位点相关的枚举」写成「整程序集的枚举」是量词越界，同形问题在 #3325 那轮已被抓过一次。
-        // 键既不进命令也不落库 ⇒ 下游不存在任何长度权威，声明任何上界都是对一个无人消费的入参
-        // 编一句承诺。缺陷如实上报给编排者定夺，本票整两处不登记。
+        // ---- IndustrialTelemetry：确认报警 / 解除搁置（#3328 裁定：保留字段，登记为「下游零权威」）----
+        // 这两处**没有**端点级 MaximumLength 规则，这是有意的：网关对一个下游根本不消费的键声明
+        // maxLength 会把「这里有幂等保护」的错觉写进公开 OpenAPI 契约（本仓判例：护栏自称完备比有洞更坏）。
+        // 它们靠 None(...) 进入本表并被封闭豁免集钉住，因此
+        // Every_gateway_endpoint_level_bound_is_covered_by_the_downstream_map 的 stale 那一支扣掉它们。
+        //
+        // ⚠️ 措辞要准（#3325 那轮抓过同形的量词越界）：说的是「**没有一条**作用于这两个位点的
+        // 幂等键长度规则」，不是「整个 IndustrialTelemetry 程序集没有」——该程序集里有好几条
+        // （ShelveAlarm 的端点 DTO 与命令、DeviceControlCommand 的端点 DTO 与命令），
+        // 只是没有一条落在这两条腿上。
+        //
+        // 键为什么保留、「下游零权威」凭什么成立、以及新增下游存储时必须撤销本登记，
+        // 全部写在 RequestsWithoutDownstreamAuthority 的注释里（含五条实测证据与自动退役机制）。
+        [typeof(BusinessConsoleAcknowledgeAlarmRequest)] =
+        [
+            None(
+                "键的消费者是网关自己的 operation-receipt（BusinessIndustrialTelemetryClient.AcknowledgeAlarmAsync），"
+                + "不进下游命令、不落下游任何一列",
+                typeof(AcknowledgeAlarmCommand)),
+        ],
+        [typeof(BusinessConsoleUnshelveAlarmRequest)] =
+        [
+            None(
+                "键的消费者是网关自己的 operation-receipt（BusinessIndustrialTelemetryClient.UnshelveAlarmAsync），"
+                + "不进下游命令、不落下游任何一列",
+                typeof(UnshelveAlarmCommand)),
+        ],
 
         // ---- IndustrialTelemetry（网关侧分别落在 Equipment 与 Telemetry 两个端点文件） ----
         [typeof(BusinessConsoleShelveAlarmRequest)] = [Command<ShelveAlarmCommand>()],
@@ -803,9 +921,17 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
     /// <summary>
     /// 显式登记「该位点下游不存在任何幂等键长度权威」：参与完备性覆盖与封闭豁免集，但不参与上界不等式。
     /// </summary>
-    private sealed class NoDownstreamAuthority(string reason) : DownstreamAuthority
+    private sealed class NoDownstreamAuthority(string reason, params Type[] downstreamCommands) : DownstreamAuthority
     {
-        public override string ToString() => $"none({reason})";
+        /// <summary>本项声称「对幂等键长度不施加任何约束」的下游命令类型。</summary>
+        /// <remarks>
+        /// 它不是装饰：<see cref="Registered_absence_of_downstream_authority_is_still_true"/> 会对这些类型实测，
+        /// 一旦其中任何一个长出 <c>IdempotencyKey</c> 成员或幂等键长度规则，本登记立刻报红。
+        /// </remarks>
+        public IReadOnlyList<Type> DownstreamCommands { get; } = downstreamCommands;
+
+        public override string ToString() =>
+            $"none({reason}; downstream: {string.Join(", ", downstreamCommands.Select(x => x.Name))})";
     }
 
     /// <summary>下游命令（或下游端点请求 DTO，见 <c>DownstreamRequest</c>）自己的校验器对 <c>IdempotencyKey</c> 施加的上界。</summary>
@@ -877,7 +1003,8 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
     private static DownstreamAuthority Column<TEntity>(Func<DbContext> contextFactory, string propertyName, string label) =>
         new ColumnWidthBound(contextFactory, typeof(TEntity), propertyName, label);
 
-    private static DownstreamAuthority None(string reason) => new NoDownstreamAuthority(reason);
+    private static DownstreamAuthority None(string reason, params Type[] downstreamCommands) =>
+        new NoDownstreamAuthority(reason, downstreamCommands);
 
     private static DbContext MasterDataModel() => ModelOnly<MasterDataDbContext>(
         options => new MasterDataDbContext(options, NullMediator.Instance));

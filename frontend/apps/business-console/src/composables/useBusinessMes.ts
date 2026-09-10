@@ -1144,7 +1144,6 @@ export function useMesWorkOrders(options: UseMesWorkOrdersOptions = {}) {
         organizationId: string
         environmentId: string
         confirmWarnings: boolean
-        idempotencyKey: string
       },
     ) => {
       const selectedReadScope = workOrderReadScope.requireSelectedScope()
@@ -2412,7 +2411,6 @@ export function useMesDispatchTasks() {
         assignedUserId?: string
         deviceAssetId?: string
         shiftId?: string
-        idempotencyKey: string
       },
     ) =>
       assignMutation.mutateAsync({
@@ -3107,7 +3105,6 @@ export function useMesDowntimeEvents() {
         organizationId: string
         environmentId: string
         recoveredAtUtc: string
-        idempotencyKey: string
       },
     ) =>
       recoverMutation.mutateAsync({
@@ -3171,14 +3168,15 @@ export function useMesShiftHandovers() {
     ),
     handoverDetailError: detailQuery.error,
     handoverDetailPending: detailQuery.isLoading,
+    // #3328：接班的网关请求体已经空了（原来只有一个下游从不消费的 idempotencyKey），
+    // 组织/环境仍走 query，所以这里不再传 body。
     acceptShiftHandover: (
       handoverId: string,
-      body: { organizationId: string; environmentId: string; idempotencyKey: string },
+      context: { organizationId: string; environmentId: string },
     ) =>
       acceptMutation.mutateAsync({
         path: { handoverId },
-        query: { organizationId: body.organizationId, environmentId: body.environmentId },
-        body,
+        query: { organizationId: context.organizationId, environmentId: context.environmentId },
       }),
     createShiftHandover: (body: BusinessConsoleMesCreateShiftHandoverRequest) =>
       createMutation.mutateAsync({ body }),

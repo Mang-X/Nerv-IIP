@@ -35,7 +35,7 @@ public sealed class BusinessMesMaterialIssueClientTests
         var client = ClientReturning(
             """{"data":{"status":"Accepted","referenceId":"MIR-000123","acceptedAtUtc":"2026-07-31T08:05:00Z"}}""");
         var request = new BusinessConsoleMesConfirmLineSideReceiptRequest(
-            "MIR-000123", "org", "env", "LOT-A", 7m, null, "idem-2");
+            "MIR-000123", "org", "env", "LOT-A", 7m, null);
 
         var response = await client.ConfirmLineSideMaterialReceiptAsync("token", "MIR-000123", request, CancellationToken.None);
 

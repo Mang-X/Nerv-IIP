@@ -72,7 +72,6 @@ const props = defineProps<{
       assignedUserId: string
       deviceAssetId?: string
       shiftId?: string
-      idempotencyKey: string
     },
   ) => Promise<unknown>
   pending?: boolean
@@ -224,7 +223,6 @@ async function submit() {
       assignedUserId: assignedUserId.value,
       deviceAssetId: deviceAssetId.value || undefined,
       shiftId: shiftId.value || undefined,
-      idempotencyKey: `dispatch-assign-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
     })
     notifySuccess(
       selectedWorker.value?.displayName

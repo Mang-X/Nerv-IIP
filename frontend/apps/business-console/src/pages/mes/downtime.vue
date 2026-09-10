@@ -510,9 +510,9 @@ async function confirmRecover() {
       organizationId: filters.organizationId,
       environmentId: filters.environmentId,
       recoveredAtUtc: new Date().toISOString(),
-      // #1219 稳定幂等键：同一停机事件的恢复是同一业务意图，键不掺时间戳，
-      // 重复点击/重试由后端幂等或 KnownException 兜住。
-      idempotencyKey: `downtime-recover-${row.downtimeEventId}`,
+      // #3328：这里原来传一个稳定幂等键（#1219），但 MES 侧从来不消费它，网关也已把该字段
+      // 从公开契约摘掉。重放安全由下游 WorkCenterUnavailability.Close 的赋值幂等承担：
+      // 同一份入参写出同一个 ToUtc（MesWriteReplaySafetyTests 钉住这一条）。
     })
     notifySuccess('停机已恢复，该工作中心的开工拦截已解除。')
     recoverTarget.value = null

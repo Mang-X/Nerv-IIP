@@ -1256,7 +1256,6 @@ public sealed class AssignBusinessConsoleMesDispatchTaskEndpoint(
                 assignedUserName,
                 request.DeviceAssetId,
                 request.ShiftId,
-                request.IdempotencyKey,
                 teamId,
                 teamName,
                 participants),
@@ -2674,7 +2673,6 @@ public sealed class AcceptBusinessConsoleMesShiftHandoverEndpoint(
             new BusinessConsoleMesAcceptShiftHandoverForwardRequest(
                 request.OrganizationId,
                 request.EnvironmentId,
-                request.IdempotencyKey,
                 incomingUserId,
                 incomingUserName),
             cancellationToken);

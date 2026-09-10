@@ -296,12 +296,13 @@ describe('work-order list — release entry', () => {
     await flushPromises()
 
     expect(releaseWorkOrder).toHaveBeenCalledTimes(1)
+    // #3328：idempotencyKey 已从网关公开契约摘掉，请求体只剩三项。
     expect(releaseWorkOrder).toHaveBeenCalledWith('WO-2', {
       organizationId: 'org-1',
       environmentId: 'prod',
       confirmWarnings: true,
-      idempotencyKey: expect.stringMatching(/^release-work-order-WO-2-/),
     })
+    expect(releaseWorkOrder.mock.calls[0]?.[1]).not.toHaveProperty('idempotencyKey')
     expect(releaseWorkOrder.mock.calls[0]?.[1]).not.toHaveProperty('actor')
     expect(releaseWorkOrder.mock.calls[0]?.[1]).not.toHaveProperty('principalId')
     expect(releaseWorkOrder.mock.calls[0]?.[1]).not.toHaveProperty('scopeId')
@@ -569,7 +570,11 @@ describe('work-order list — release entry', () => {
     expect(releaseWorkOrder).not.toHaveBeenCalled()
   })
 
-  it('keeps the server reason and reuses the same idempotency key for retry', async () => {
+  // #3328：原来这里断言「重试复用同一个幂等键」。键已从公开契约摘掉（MES 侧从不消费它），
+  // 改断言它今天真正能证的那句：**服务端失败后重试发出的请求与首次逐字相同**。
+  // 有人把一个每次都新铸的键加回请求体，本条会红。重放安全的权威落在下游
+  // WorkOrder.Release → ThrowIfCannotRelease 的 released 分支（MesWriteReplaySafetyTests）。
+  it('keeps the server reason and replays an identical request on retry', async () => {
     const serverError = new Error('质量方案缺失：QUALITY_PLAN_MISSING')
     releaseWorkOrder
       .mockRejectedValueOnce(serverError)
@@ -595,9 +600,8 @@ describe('work-order list — release entry', () => {
     await flushPromises()
 
     expect(releaseWorkOrder).toHaveBeenCalledTimes(2)
-    expect(releaseWorkOrder.mock.calls[1]?.[1]?.idempotencyKey).toBe(
-      releaseWorkOrder.mock.calls[0]?.[1]?.idempotencyKey,
-    )
+    expect(releaseWorkOrder.mock.calls[1]).toEqual(releaseWorkOrder.mock.calls[0])
+    expect(releaseWorkOrder.mock.calls[0]?.[1]).not.toHaveProperty('idempotencyKey')
   })
 
   it('reports the current preflight failure instead of a previous mutation error', async () => {

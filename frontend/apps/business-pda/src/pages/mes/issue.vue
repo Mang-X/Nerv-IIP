@@ -308,19 +308,14 @@ async function submitReceive() {
   if (!requestId) return
   if (!receiveValid.value) return
   const quantity = receivedQuantity.value
-  // 首次提交铸造稳定幂等键，重试复用同键。
-  if (operationKey.value === '') {
-    operationKey.value = makeIdempotencyKey()
-  }
   submitting.value = true
   receiving.value = null
   const doSubmit = () =>
     confirmLineSideReceipt(
       requestId,
-      {
-        ...(quantity === null ? {} : { receivedQuantity: quantity }),
-        idempotencyKey: operationKey.value,
-      },
+      // #3328：线边收料的 idempotencyKey 已从网关公开契约摘掉——MES 侧从不消费它，
+      // 重放安全由 MaterialIssueRequest.ConfirmLineSideReceipt 的「过账尚未回执」守卫承担。
+      quantity === null ? {} : { receivedQuantity: quantity },
       {
         workOrderId: req?.workOrderId,
       },

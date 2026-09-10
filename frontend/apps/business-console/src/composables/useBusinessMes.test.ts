@@ -2028,7 +2028,6 @@ describe('business MES composables', () => {
       organizationId: 'org-001',
       environmentId: 'env-dev',
       confirmWarnings: true,
-      idempotencyKey: 'release-key',
     })
 
     const mutation = vi
@@ -2109,7 +2108,6 @@ describe('business MES composables', () => {
         organizationId: 'org-001',
         environmentId: 'env-dev',
         confirmWarnings: true,
-        idempotencyKey: 'release-key',
       }),
     ).rejects.toThrow('齐套快照缺失')
 
