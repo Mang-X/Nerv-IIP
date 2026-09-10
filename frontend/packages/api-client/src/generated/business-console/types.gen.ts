@@ -15182,6 +15182,10 @@ export type ConvertBusinessConsoleMesPlanToWorkOrderData = {
 
 export type ConvertBusinessConsoleMesPlanToWorkOrderErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -15190,6 +15194,8 @@ export type ConvertBusinessConsoleMesPlanToWorkOrderErrors = {
      */
     403: unknown;
 };
+
+export type ConvertBusinessConsoleMesPlanToWorkOrderError = ConvertBusinessConsoleMesPlanToWorkOrderErrors[keyof ConvertBusinessConsoleMesPlanToWorkOrderErrors];
 
 export type ConvertBusinessConsoleMesPlanToWorkOrderResponses = {
     /**
@@ -15469,6 +15475,10 @@ export type ForceReleaseBusinessConsoleMesQualityHoldData = {
 
 export type ForceReleaseBusinessConsoleMesQualityHoldErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -15477,6 +15487,8 @@ export type ForceReleaseBusinessConsoleMesQualityHoldErrors = {
      */
     403: unknown;
 };
+
+export type ForceReleaseBusinessConsoleMesQualityHoldError = ForceReleaseBusinessConsoleMesQualityHoldErrors[keyof ForceReleaseBusinessConsoleMesQualityHoldErrors];
 
 export type ForceReleaseBusinessConsoleMesQualityHoldResponses = {
     /**
@@ -15534,6 +15546,10 @@ export type ReverseBusinessConsoleMesProductionReportData = {
 
 export type ReverseBusinessConsoleMesProductionReportErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -15542,6 +15558,8 @@ export type ReverseBusinessConsoleMesProductionReportErrors = {
      */
     403: unknown;
 };
+
+export type ReverseBusinessConsoleMesProductionReportError = ReverseBusinessConsoleMesProductionReportErrors[keyof ReverseBusinessConsoleMesProductionReportErrors];
 
 export type ReverseBusinessConsoleMesProductionReportResponses = {
     /**
@@ -15593,6 +15611,10 @@ export type CreateBusinessConsoleMesRushWorkOrderData = {
 
 export type CreateBusinessConsoleMesRushWorkOrderErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -15601,6 +15623,8 @@ export type CreateBusinessConsoleMesRushWorkOrderErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleMesRushWorkOrderError = CreateBusinessConsoleMesRushWorkOrderErrors[keyof CreateBusinessConsoleMesRushWorkOrderErrors];
 
 export type CreateBusinessConsoleMesRushWorkOrderResponses = {
     /**
@@ -15689,6 +15713,10 @@ export type CreateBusinessConsoleMesMaterialIssueRequestData = {
 
 export type CreateBusinessConsoleMesMaterialIssueRequestErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -15697,6 +15725,8 @@ export type CreateBusinessConsoleMesMaterialIssueRequestErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleMesMaterialIssueRequestError = CreateBusinessConsoleMesMaterialIssueRequestErrors[keyof CreateBusinessConsoleMesMaterialIssueRequestErrors];
 
 export type CreateBusinessConsoleMesMaterialIssueRequestResponses = {
     /**
@@ -15898,6 +15928,10 @@ export type ReturnBusinessConsoleMesLineSideMaterialData = {
 };
 
 export type ReturnBusinessConsoleMesLineSideMaterialErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
     /**
      * Unauthorized
      */
@@ -16674,6 +16708,10 @@ export type RecordBusinessConsoleMesDefectData = {
 
 export type RecordBusinessConsoleMesDefectErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -16682,6 +16720,8 @@ export type RecordBusinessConsoleMesDefectErrors = {
      */
     403: unknown;
 };
+
+export type RecordBusinessConsoleMesDefectError = RecordBusinessConsoleMesDefectErrors[keyof RecordBusinessConsoleMesDefectErrors];
 
 export type RecordBusinessConsoleMesDefectResponses = {
     /**
@@ -16810,6 +16850,10 @@ export type CreateBusinessConsoleMesFinishedGoodsReceiptRequestData = {
 
 export type CreateBusinessConsoleMesFinishedGoodsReceiptRequestErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -16818,6 +16862,8 @@ export type CreateBusinessConsoleMesFinishedGoodsReceiptRequestErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleMesFinishedGoodsReceiptRequestError = CreateBusinessConsoleMesFinishedGoodsReceiptRequestErrors[keyof CreateBusinessConsoleMesFinishedGoodsReceiptRequestErrors];
 
 export type CreateBusinessConsoleMesFinishedGoodsReceiptRequestResponses = {
     /**
@@ -17080,6 +17126,10 @@ export type CreateBusinessConsoleMesShiftHandoverData = {
 
 export type CreateBusinessConsoleMesShiftHandoverErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -17088,6 +17138,8 @@ export type CreateBusinessConsoleMesShiftHandoverErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleMesShiftHandoverError = CreateBusinessConsoleMesShiftHandoverErrors[keyof CreateBusinessConsoleMesShiftHandoverErrors];
 
 export type CreateBusinessConsoleMesShiftHandoverResponses = {
     /**
