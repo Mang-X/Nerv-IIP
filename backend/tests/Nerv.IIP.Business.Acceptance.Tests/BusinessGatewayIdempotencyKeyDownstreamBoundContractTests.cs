@@ -6,6 +6,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Commands;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
+using Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockCounts;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.LifecycleAuditAggregate;
@@ -592,6 +593,45 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
 
         // ---- Erp ----
         [typeof(BusinessConsoleRecordErpPurchaseReceiptRequest)] = [ErpCodeKeyColumn],
+
+        // ---- Erp（#3325：#3287 差集里 Erp 侧的位点）----
+        // 不写条数：那个计数每落一张子票就变（与本类 <remarks> 里删掉「118 个」同一条理由）。
+        // 转发链逐条实读：网关 endpoint 的 ForwardAsync → HttpBusinessErpClient 的路径字面量
+        // → ErpProcurementEndpointContracts / ErpSalesEndpointContracts / ErpFinanceEndpointContracts
+        // 里同路径的 endpoint → 它 HandleAsync 里发出的命令 → 该命令 handler 的写入点。
+        //
+        // 下面这些位点的下游 handler 都把**原始键**交给 ErpCodingService → CodeAllocator，
+        // CodeAllocator.Normalize（CodeAllocator.cs:359-362）只 Trim、不派生，
+        // 落 erp.code_idempotency_keys.idempotency_key(150)，故列宽对原始键可达。
+        // 这些命令**没有一条**带幂等键长度规则（实读 Erp Web 程序集里全部
+        // `RuleFor(x => x.IdempotencyKey)` 共 5 处，无一属于这批命令），
+        // 所以登记列宽不是「顺带加一个」，而是这些位点**唯一**的下游权威。
+        [typeof(BusinessConsoleApproveErpPaymentExecutionRequest)] = [ErpCodeKeyColumn],
+        [typeof(BusinessConsoleCreateErpAccountPayableRequest)] = [ErpCodeKeyColumn],
+        [typeof(BusinessConsoleCreateErpAccountReceivableRequest)] = [ErpCodeKeyColumn],
+        [typeof(BusinessConsoleCreateErpCostCandidateRequest)] = [ErpCodeKeyColumn],
+        [typeof(BusinessConsoleCreateErpPurchaseOrderRequest)] = [ErpCodeKeyColumn],
+        [typeof(BusinessConsoleCreateErpPurchaseRequisitionRequest)] = [ErpCodeKeyColumn],
+        [typeof(BusinessConsoleCreateErpQuotationRequest)] = [ErpCodeKeyColumn],
+        [typeof(BusinessConsoleCreateErpRequestForQuotationRequest)] = [ErpCodeKeyColumn],
+        [typeof(BusinessConsoleCreateErpSalesOrderRequest)] = [ErpCodeKeyColumn],
+        [typeof(BusinessConsoleOpenErpOpportunityRequest)] = [ErpCodeKeyColumn],
+        [typeof(BusinessConsolePostErpJournalVoucherRequest)] = [ErpCodeKeyColumn],
+        [typeof(BusinessConsoleReceiveErpSupplierQuotationRequest)] = [ErpCodeKeyColumn],
+        [typeof(BusinessConsoleRegisterErpCashReceiptRequest)] = [ErpCodeKeyColumn],
+        [typeof(BusinessConsoleReleaseErpDeliveryOrderRequest)] = [ErpCodeKeyColumn],
+
+        // 采购申请转采购订单：**唯一登记命令校验器而不是列宽的 Erp 位点**，理由是拼接。
+        // PO 分支原样使用原始键；RFQ 分支落库前经 ErpCodingIdempotencyKeyPolicy.Compose
+        // 追加 ":rfq"（ErpProcurementCommands.cs:452-455）。拼接的长度是**单调**的
+        // （原始键每长一个字符派生键就长一个字符），所以那一列**是**真权威，
+        // 不是 #3290 那种定长哈希幽灵权威——但它在这条腿上的**有效**上界是 150 − 4 = 146。
+        // 登记表因此指向已经做完这个减法的 ConvertPurchaseRequisitionsToPurchaseOrderCommandValidator
+        // （其值由 ErpCodingIdempotencyKeyPolicy.BaseMaxLengthFor(":rfq") 从 ColumnMaxLength 派生，#3288）；
+        // 若在这里再登记一次原始列宽，登记的就是一个把该腿高估 4 个字符的数——
+        // 因为取最小它不会改变不等式结果，但那正是「结论对、理由错」的形状，故不登。
+        [typeof(BusinessConsoleConvertErpPurchaseRequisitionsRequest)] =
+            [Command<ConvertPurchaseRequisitionsToPurchaseOrderCommand>()],
     };
 
     private abstract class DownstreamAuthority;

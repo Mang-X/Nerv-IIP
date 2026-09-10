@@ -27010,6 +27010,16 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Unauthorized"
           },
@@ -27333,6 +27343,16 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Unauthorized"
           },
@@ -27466,6 +27486,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleReceiveErpSupplierQuotationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
                 }
               }
             }
@@ -27870,6 +27900,16 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Unauthorized"
           },
@@ -28009,6 +28049,16 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Unauthorized"
           },
@@ -28144,6 +28194,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateErpQuotationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
                 }
               }
             }
@@ -28397,6 +28457,16 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Unauthorized"
           },
@@ -28438,6 +28508,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateErpAccountPayableResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
                 }
               }
             }
@@ -28581,6 +28661,16 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Unauthorized"
           },
@@ -28716,6 +28806,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateErpCostCandidateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
                 }
               }
             }
@@ -28859,6 +28959,16 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Unauthorized"
           },
@@ -28998,6 +29108,16 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Unauthorized"
           },
@@ -29094,6 +29214,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfString"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
                 }
               }
             }
@@ -59503,6 +59633,8 @@
           },
           "idempotencyKey": {
             "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
             "nullable": true
           }
         }
@@ -59565,6 +59697,8 @@
           },
           "idempotencyKey": {
             "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
             "nullable": true
           }
         }
@@ -59755,6 +59889,8 @@
           },
           "idempotencyKey": {
             "type": "string",
+            "maxLength": 146,
+            "minLength": 0,
             "nullable": true
           },
           "currencyCode": {
@@ -59823,6 +59959,8 @@
           },
           "idempotencyKey": {
             "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
             "nullable": true
           }
         }
@@ -59912,6 +60050,8 @@
           },
           "idempotencyKey": {
             "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
             "nullable": true
           }
         }
@@ -60236,6 +60376,8 @@
           },
           "idempotencyKey": {
             "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
             "nullable": true
           }
         }
@@ -60400,6 +60542,8 @@
           },
           "idempotencyKey": {
             "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
             "nullable": true
           }
         }
@@ -60518,6 +60662,8 @@
           },
           "idempotencyKey": {
             "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
             "nullable": true
           }
         }
@@ -60702,6 +60848,8 @@
           },
           "idempotencyKey": {
             "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
             "nullable": true
           }
         }
@@ -60786,6 +60934,8 @@
           },
           "idempotencyKey": {
             "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
             "nullable": true
           }
         }
@@ -60849,6 +60999,8 @@
           },
           "idempotencyKey": {
             "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
             "nullable": true
           }
         }
@@ -60912,6 +61064,8 @@
           },
           "idempotencyKey": {
             "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
             "nullable": true
           }
         }
@@ -60972,6 +61126,8 @@
           },
           "idempotencyKey": {
             "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
             "nullable": true
           }
         }
@@ -61021,7 +61177,9 @@
             "type": "string"
           },
           "idempotencyKey": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0
           },
           "paymentCurrencyCode": {
             "type": "string",
@@ -61093,7 +61251,9 @@
             "type": "string"
           },
           "idempotencyKey": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0
           }
         }
       },
