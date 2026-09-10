@@ -1357,9 +1357,13 @@ public sealed class BusinessGatewayWmsTests
     /// <remarks>
     /// 名字里的第三段是 #3326 追加的：网关端点级 <c>ExpectedVersion</c> 规则曾写
     /// <c>GreaterThanOrEqualTo(0)</c>，而下游 5 条分配命令一律 <c>GreaterThan(0)</c>。
-    /// 该断言故意放在 <c>wms.Calls</c> 与 <c>auth.Requirements</c> 两条**闭集**断言之前：
-    /// 规则一旦被放宽，那次请求会被转发（Calls 多一项）或至少走到鉴权（Requirements 多一项），
-    /// 三条断言会一起红。改动本用例时不要把那次 400 请求挪到闭集断言之后。
+    /// 该断言故意放在 <c>wms.Calls</c> 这条**闭集**断言之前：规则一旦被放宽，
+    /// 那次请求会被转发，<c>Calls</c> 多一项，两条断言一起红。
+    /// 改动本用例时不要把那次 400 请求挪到闭集断言之后。
+    /// <para><b>#3330 起 <c>auth.Requirements</c> 对这一条不再有鉴别力</b>：鉴权已前移到 DTO 校验之前，
+    /// 那次被 400 拒掉的请求同样会走一次鉴权，所以 <c>Requirements</c> 里恒定多出一项
+    /// <c>WmsReceiptsManage</c>——它现在证的是「鉴权先于校验」，不再是「非法值没走到鉴权」。
+    /// 承担 <c>ExpectedVersion</c> 那条规则的仍然是 <c>wms.Calls</c>。</para>
     /// </remarks>
     [Fact]
     public async Task Wms_assignment_facades_inject_trusted_assigner_sites_route_resource_ids_and_reject_a_zero_expected_version()
@@ -1477,6 +1481,8 @@ public sealed class BusinessGatewayWmsTests
                 BusinessGatewayPermissions.WmsShipmentsManage,
                 BusinessGatewayPermissions.WmsShipmentsManage,
                 BusinessGatewayPermissions.InventoryCountsManage,
+                // #3330：expectedVersion = 0 那次请求先鉴权、后被端点级规则拒成 400。
+                BusinessGatewayPermissions.WmsReceiptsManage,
             ],
             auth.Requirements.Select(requirement => requirement.PermissionCode).ToArray());
         Assert.All(auth.Requirements, requirement => Assert.True(requirement.IncludePrincipalContext));

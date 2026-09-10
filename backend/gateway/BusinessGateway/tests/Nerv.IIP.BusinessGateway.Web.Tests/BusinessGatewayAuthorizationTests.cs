@@ -331,6 +331,9 @@ public sealed class BusinessGatewayAuthorizationTests
         Assert.Equal(0, auth.CallCount);
     }
 
+    // #3330 后这条仍然成立，但成立的**理由**换了：鉴权已前移到 DTO 校验之前，
+    // 只是该端点的作用域访问器（request.Problem.OrganizationId）在 problem 缺失时解不出作用域，
+    // 于是 AuthorizedBusinessProxyEndpoint 把鉴权推迟给 DTO 校验先答。
     [Fact]
     public async Task Business_console_scheduling_endpoint_rejects_missing_problem_before_permission_check()
     {
@@ -346,7 +349,7 @@ public sealed class BusinessGatewayAuthorizationTests
     }
 
     [Fact]
-    public async Task Business_console_routing_release_rejects_blank_operation_code_before_permission_check()
+    public async Task Business_console_routing_release_rejects_blank_operation_code_after_permission_check()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         await using var lease = LeaseHost(auth);
@@ -375,11 +378,13 @@ public sealed class BusinessGatewayAuthorizationTests
         });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Equal(0, auth.CallCount);
+        // #3330：鉴权已前移到 DTO 校验之前（AuthorizedBusinessProxyEndpoint.OnBeforeValidateAsync），
+        // 所以载荷不合法的请求也会先付一次鉴权往返；此处鉴权放行、随后由端点级规则拒成 400。
+        Assert.Equal(1, auth.CallCount);
     }
 
     [Fact]
-    public async Task Business_console_alarm_rule_endpoint_rejects_invalid_comparison_operator_before_permission_check()
+    public async Task Business_console_alarm_rule_endpoint_rejects_invalid_comparison_operator_after_permission_check()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         await using var lease = LeaseHost(auth);
@@ -402,13 +407,15 @@ public sealed class BusinessGatewayAuthorizationTests
         });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Equal(0, auth.CallCount);
+        // #3330：鉴权已前移到 DTO 校验之前（AuthorizedBusinessProxyEndpoint.OnBeforeValidateAsync），
+        // 所以载荷不合法的请求也会先付一次鉴权往返；此处鉴权放行、随后由端点级规则拒成 400。
+        Assert.Equal(1, auth.CallCount);
     }
 
     [Theory]
     [InlineData("POST", "/api/business-console/v1/quality/reason-codes", "low", "rework")]
     [InlineData("PUT", "/api/business-console/v1/quality/reason-codes/QR-SCRATCH", "major", "use-as-is")]
-    public async Task Business_console_quality_reason_endpoint_rejects_invalid_catalog_values_before_permission_check(
+    public async Task Business_console_quality_reason_endpoint_rejects_invalid_catalog_values_after_permission_check(
         string method,
         string path,
         string severity,
@@ -435,7 +442,9 @@ public sealed class BusinessGatewayAuthorizationTests
         var response = await client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Equal(0, auth.CallCount);
+        // #3330：鉴权已前移到 DTO 校验之前（AuthorizedBusinessProxyEndpoint.OnBeforeValidateAsync），
+        // 所以载荷不合法的请求也会先付一次鉴权往返；此处鉴权放行、随后由端点级规则拒成 400。
+        Assert.Equal(1, auth.CallCount);
     }
 
     [Theory]
