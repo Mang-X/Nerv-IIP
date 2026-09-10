@@ -102,7 +102,10 @@ public sealed class ErpKnownExceptionMessageArchitectureTests
 
         // #3288：幂等键加后缀后越界时就地拒绝。调用方之一是
         // ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler（同步申请转换 facade），故为 Target。
-        Target(ErpCodingIdempotencyKeyPolicyPath, "ErpCodingIdempotencyKeyPolicy", "Compose", 1, "shared helper reaches sync requisition conversion facade"),
+        // 它是**防御性**分支——走 HTTP 时命令校验器先按派生上界拒在入口，当前只有绕过校验器的
+        // 调用方能走到；但「类型上沿 facade 可达」成立，所以消息仍按 Target 受中文/安全/长度约束。
+        // 同一句话也写在 ErpCodingIdempotencyKeyPolicy.Compose 的 summary 里，两处必须一致。
+        Target(ErpCodingIdempotencyKeyPolicyPath, "ErpCodingIdempotencyKeyPolicy", "Compose", 1, "defensive helper; reaches sync requisition conversion facade behind the command validator"),
     ];
 
     private static readonly IReadOnlyDictionary<string, int> DynamicTargetSiteCounts = new Dictionary<string, int>(StringComparer.Ordinal)

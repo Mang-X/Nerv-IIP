@@ -29,6 +29,24 @@ namespace Nerv.IIP.Business.Erp.Web.Application.Validation;
 /// <c>string.Format</c> / <c>key.ToString() + ":rfq"</c> 照样编译并产出完全相同的键。
 /// 所以「<see cref="Compose"/> 是唯一入口」在本仓**只是约定，不是护栏**，别把契约用例的绿读成
 /// 「没有人绕开它拼这把键」。
+///
+/// **射程边界一：本类型只管「加后缀」那三处，不管前缀式同列写入。**
+/// 已知**不在射程内**的同列写入还有集成事件消费者的
+/// <c>$"{ConsumerName}:{payload.IdempotencyKey}"</c> **前缀**式构造——
+/// <c>ErpReturnIntegrationEventHandlers.cs:247</c>、同文件 <c>:269</c>
+/// （形如 <c>{ConsumerName}:{key}:{InvoiceNo}</c>，段数更多）、同文件 <c>:451</c>，
+/// 以及 <c>WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt.cs:180</c>。
+/// 那些键由发布侧 converter 生成而非调用方直接可控，与本票「合法 API 输入即可触发」不同族，
+/// **未处理，也不由本类型或其契约用例看守**。
+///
+/// **射程边界二：<see cref="ColumnMaxLength"/> 只钉住 7 份配置里的 1 份（#3307）。**
+/// <c>CodeIdempotencyKey</c> 是共享实体（<c>common/Coding/Nerv.IIP.Coding/CodeEntities.cs</c>），
+/// 但它的 EF 配置 <c>CodeEntityTypeConfigurations.cs</c> 在 **7 个服务里逐字节复制**
+/// （Erp / MasterData / ProductEngineering / Quality / Maintenance / Mes / DemandPlanning，
+/// 均在各自的 <c>:35</c> 写 <c>HasMaxLength(150)</c>，本 PR 已实读复核 7/7）。
+/// 本常量与 <c>ErpCodingIdempotencyKeyLengthContractTests</c> 的模型对撞**只覆盖 Erp 那一份**：
+/// 另外 6 份任意一份被单边改宽改窄，本机制**一格都不会红**。
+/// **别读成「列宽已被钉住」**——那是 #3307 承接的面，本 PR 有意不扩。
 /// </remarks>
 public static class ErpCodingIdempotencyKeyPolicy
 {
@@ -75,8 +93,16 @@ public static class ErpCodingIdempotencyKeyPolicy
     /// 那会让两次不同的创建请求换回同一个业务号），超出列宽就地抛
     /// <see cref="KnownException"/>，而不是把越界值送进数据库换一个 22001。
     ///
-    /// 命中这条的前提是调用方绕过了命令校验器（例如内部直接构造命令、或消费者路径），
-    /// 走 HTTP 的请求会先被校验器按 <see cref="BaseMaxLengthFor"/> 的上界拒在入口。
+    /// **可达性口径（与 <c>ErpKnownExceptionMessageArchitectureTests</c> 的台账登记同一句话）**：
+    /// 这条 <see cref="KnownException"/> 在调用图上**沿同步公开 facade 可达**
+    /// （调用方之一是 <c>ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler</c>，
+    /// 属「sync requisition conversion facade」），因此它按 <c>Target</c> 登记、
+    /// 消息必须是可静态分析的中文且不泄露内部细节——这一点不因下面那句而放松。
+    ///
+    /// 同时它是一条**防御性**分支：走 HTTP 的请求会先被命令校验器按
+    /// <see cref="BaseMaxLengthFor"/> 的上界拒在入口，所以在**当前**调用图下真正能走到这里的
+    /// 只有绕过校验器的调用方（内部直接构造命令、或后续新增的消费者路径）。
+    /// 「类型上可达」与「今天谁会走到」是两件事，两者都如实写在这里，别只引其中一句。
     /// </summary>
     public static string Compose(string idempotencyKey, string suffix)
     {

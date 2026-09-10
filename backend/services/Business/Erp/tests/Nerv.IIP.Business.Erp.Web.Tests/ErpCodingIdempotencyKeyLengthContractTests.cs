@@ -22,11 +22,44 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 /// <item><see cref="Every_suffixing_write_face_rejects_a_base_key_that_would_overflow_the_column"/>：
 /// 逐个写面跑**真实校验器**，上界那一位放行、+1 位拒绝；</item>
 /// <item><see cref="Composed_keys_of_a_max_length_base_key_exactly_saturate_the_column"/>：拿真实
-/// <c>Compose</c> 跑「恰好顶到上界」的基础键，把**实际落库的键长**与**从 EF 模型读到的列宽**直接对撞
-/// → 这条不经过任何策略常量，是三条腿里唯一的真对撞；把某个校验器上界手抄回 150 时红的就是它；</item>
+/// <c>Compose</c> 跑「恰好顶到上界」的基础键，把**实际产出的键长**与**从 EF 模型读到的列宽**直接对撞
+/// → 这条不经过 <see cref="ErpCodingIdempotencyKeyPolicy.ColumnMaxLength"/>，是唯一的真对撞；</item>
 /// <item><see cref="Optional_idempotency_keys_stay_optional"/>：把护栏「只加长度规则、不加
 /// <c>NotEmpty()</c>」当断言写死——后来人顺手补 <c>NotEmpty()</c> 会红，而不是静默把
 /// 「不传幂等键」这条今天合法的路径变成 400（那属 #3287 的语义决定）。</item>
+/// </list>
+///
+/// **哪种「手抄」由哪条用例看守（逐格实跑读数，别把两种手抄位置合并叙述）**：
+/// 上界在本仓有**两个**可被手抄的位置——handler 上的 <c>BaseIdempotencyKeyMaxLength</c>
+/// 和校验器里 <c>MaximumLength(...)</c> 的实参。它们由**不同**用例看守：
+/// <list type="table">
+/// <item><term>改校验器实参（手抄回 150 / 整条规则删掉）</term>
+/// <description>红 <see cref="Every_suffixing_write_face_rejects_a_base_key_that_would_overflow_the_column"/>；
+/// <see cref="Composed_keys_of_a_max_length_base_key_exactly_saturate_the_column"/> **仍绿**——
+/// 后者的输入取自 <see cref="SuffixingWriteFaces"/>，读的是 handler 常量，**不经过校验器实参**。</description></item>
+/// <item><term>改 handler 常量（手抄成列宽 / 让 <c>BaseMaxLengthFor</c> 不扣后缀）</term>
+/// <description>红 <see cref="Composed_keys_of_a_max_length_base_key_exactly_saturate_the_column"/>
+/// 等一族；此时校验器在新上界上**自洽**，边界用例反而不红。</description></item>
+/// <item><term>单边改 EF <c>HasMaxLength</c></term>
+/// <description>红 <see cref="Code_idempotency_key_column_width_matches_the_policy_constant"/>
+/// 与 <see cref="Composed_keys_of_a_max_length_base_key_exactly_saturate_the_column"/>。</description></item>
+/// <item><term>把某个 handler 的上界绑到**别的写面的后缀**</term>
+/// <description>红那一行写面的三格（详见 <see cref="SuffixingWriteFaces"/> 的鉴别力说明）。</description></item>
+/// </list>
+///
+/// **合同分类（`docs/governance/testing/validity.md` 六类合同来源）**：
+/// <c>ProviderBehavior</c> + <c>Regression</c>。
+/// <list type="bullet">
+/// <item><c>ProviderBehavior</c> 的权威来源是 **migration / schema 约束**：
+/// <c>code_idempotency_keys.idempotency_key</c> 的物理类型 <c>character varying(150)</c>
+/// （<c>Migrations/20260527073242_AddNumberingCounters.cs:47</c> 与
+/// <c>Migrations/ApplicationDbContextModelSnapshot.cs:4910-4915</c>），加上 PostgreSQL 对超宽赋值
+/// 抛 <c>22001</c> 的官方行为。预期值由该来源推导，**不是**从当前实现输出反抄的。
+/// **但本类的执行形态只是「EF 模型读取 + 纯函数」**，按 validity.md「Provider 与 lane 的证明范围」，
+/// 它**不能**证明真库落库行为；那一面由 PR 正文里一次性 <c>postgres:18</c> 的 22001 读数承担。</item>
+/// <item><c>Regression</c> 的权威来源是 **GitHub #3288**（正文 + 可达性坐实评论里的逐位点判定表）：
+/// 错误行为「校验器按列宽放行、落库才炸」、期望行为「越界就地拒绝」均出自该 Issue 的验收条件，
+/// 本类的边界用例即最小复现，且在旧实现上确实失败（PR 正文 M1 / M2 / M3 三格实测）。</item>
 /// </list>
 ///
 /// **值域边界（声明放弃了什么，别读成完备）**：
@@ -38,11 +71,17 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 /// 的包装类型」只关得掉 <c>+</c>。绕开 <c>Compose</c> 直接 <c>$"{key}:rfq"</c> 仍然编译得过，
 /// 且**不会红**。别把本类的绿读成「拼接方式已被看住」。</item>
 /// <item>本类枚举的写面是**票面点名的那三处**（#3288 逐位点判定表），不是「Erp 里所有会把值写进
-/// <c>idempotency_key</c> 的路径」。已知**不在本类射程内**的同列写入还有
-/// <c>ErpReturnIntegrationEventHandlers</c> / <c>WmsInboundOrderCompleted…</c> 等消费者的
-/// <c>$"{ConsumerName}:{payload.IdempotencyKey}"</c> **前缀**式构造——那些是集成事件路径、
-/// 键由发布侧 converter 生成而非调用方直接可控，与本票的「调用方可控的合法 API 输入」不同族，
+/// <c>idempotency_key</c> 的路径」。已知**不在本类射程内**的同列写入还有集成事件消费者的
+/// <c>$"{ConsumerName}:{payload.IdempotencyKey}"</c> **前缀**式构造，逐处为：
+/// <c>ErpReturnIntegrationEventHandlers.cs:247</c>、同文件 <c>:269</c>
+/// （<c>{ConsumerName}:{key}:{InvoiceNo}</c>，段数更多）、同文件 <c>:451</c>，
+/// 以及 <c>WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt.cs:180</c>。
+/// 那些键由发布侧 converter 生成而非调用方直接可控，与本票的「调用方可控的合法 API 输入」不同族，
 /// 故不在本 PR 一并处理，也**不由本类看守**。</item>
+/// <item><see cref="ErpCodingIdempotencyKeyPolicy.ColumnMaxLength"/> 的对撞**只覆盖 Erp 那一份 EF 配置**。
+/// <c>CodeIdempotencyKey</c> 是共享实体，但其 <c>CodeEntityTypeConfigurations.cs</c> 在 **7 个服务里
+/// 逐字节复制**（各自 <c>:35</c> 均为 <c>HasMaxLength(150)</c>，本 PR 实读复核 7/7）。
+/// 另外 6 份被单边改动时本类**一格都不会红**——那是 **#3307** 承接的面，别读成「列宽已被钉住」。</item>
 /// <item>「顶格键在真库里到底炸不炸 22001」由真 Postgres 验证（本 PR 正文给了一次性容器读数）；
 /// EF InMemory 与 model-only 上下文都看不见列宽，本类的绿**不能**读成「落库不会 22001」。</item>
 /// </list>
@@ -160,8 +199,14 @@ public sealed class ErpCodingIdempotencyKeyLengthContractTests
     /// <summary>
     /// 三条腿里唯一的**真对撞**：拿真实 <see cref="ErpCodingIdempotencyKeyPolicy.Compose"/>
     /// 跑「恰好顶到该写面上界」的基础键，把它**实际产出的键长**与**从 EF 模型读到的列宽**直接比。
-    /// 这条不经过 <see cref="ErpCodingIdempotencyKeyPolicy.ColumnMaxLength"/>，
-    /// 所以把任何一个校验器上界手抄回 150 时红的就是它。
+    /// 这条不经过 <see cref="ErpCodingIdempotencyKeyPolicy.ColumnMaxLength"/>。
+    ///
+    /// **本条看守的是 handler 常量侧的手抄，不是校验器侧（实跑读数，别读反）**：
+    /// 输入全部取自 <see cref="SuffixingWriteFaces"/>，那里读的是三个 handler 的
+    /// <c>BaseIdempotencyKeyMaxLength</c> 与后缀常量，**不经过校验器 <c>MaximumLength(...)</c> 的实参**。
+    /// 所以把某个**校验器实参**手抄回 150（或整条规则删掉）时，红的是
+    /// <see cref="Every_suffixing_write_face_rejects_a_base_key_that_would_overflow_the_column"/>，
+    /// **本条仍绿**；只有 handler 常量或列宽被动过，本条才红。
     /// </summary>
     [Theory]
     [MemberData(nameof(SuffixingWriteFaces))]
@@ -258,6 +303,25 @@ public sealed class ErpCodingIdempotencyKeyLengthContractTests
             "位点 3 改前就有 NotEmpty，不得在本票里被弱化。");
     }
 
+    /// <summary>
+    /// 三条 <c>[Theory]</c> 的数据源：写面名、该写面的基础上界、该写面追加的后缀。
+    ///
+    /// **鉴别力口径（别把 3 行读成 3 份独立防线）**：三条 Theory 的断言只消费
+    /// <c>bound</c> 与 <c>suffix</c>，<c>faceName</c> 只进失败消息和一条非空断言。
+    /// 而第 2 行（<c>RecordSupplierInvoiceCommandHandler</c>）与第 3 行
+    /// （<c>ReleaseSupplierInvoicePaymentHoldCommandHandler</c>）今天**这两个值完全同值**
+    /// （都是 134 + <c>:account-payable</c>，因为两个 handler 共用同一个后缀常量）。
+    /// 所以在「只动上界 / 只动后缀 / 只动列宽」这一族变异下，**第 3 行是第 2 行的等价输入**，
+    /// 红数里含重复计数，不是三份独立鉴别力——PR 正文的 M4（红 11 含 3 格重复）、
+    /// M5（红 7 含 2 格重复）已按这个口径标注，别把那两个红数直接当收益读。
+    ///
+    /// **第 3 行唯一独立的鉴别力**是「这个 handler 的上界绑对了**自己**的后缀」：
+    /// 把 <c>ReleaseSupplierInvoicePaymentHoldCommandHandler.BaseIdempotencyKeyMaxLength</c>
+    /// 改绑到 <see cref="ErpCodingIdempotencyKeyPolicy.RequestForQuotationSuffix"/> 时，
+    /// 第 3 行的 <c>bound</c> 变成 146 而 <c>suffix</c> 仍是 <c>:account-payable</c>，
+    /// 只有第 3 行的三格红、第 2 行全绿（PR 正文 M10 实测：红 3）。
+    /// 这一格是本数据源保留三行而不是两行的**唯一**理由。
+    /// </summary>
     public static TheoryData<string, int, string> SuffixingWriteFaces()
     {
         return new TheoryData<string, int, string>
