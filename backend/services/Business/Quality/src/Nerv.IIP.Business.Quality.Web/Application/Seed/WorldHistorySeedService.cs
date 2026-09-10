@@ -298,6 +298,7 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
             fact.SourceType,
             fact.SourceService,
             fact.SourceDocumentId,
+            fact.SourceDocumentLineId,
             fact.SkuCode,
             fact.Quantity,
             fact.BatchNo,

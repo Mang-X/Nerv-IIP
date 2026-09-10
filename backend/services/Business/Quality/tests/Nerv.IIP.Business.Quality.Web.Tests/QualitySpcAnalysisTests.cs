@@ -319,6 +319,7 @@ public sealed class QualitySpcAnalysisTests
                 "operation",
                 "mes-operation",
                 $"WO-SPC-{index:000}",
+                sourceDocumentLineId: null,
                 "SKU-RM-1000",
                 1m,
                 null,

@@ -21,6 +21,7 @@ public sealed class InspectionRecordEntityTypeConfiguration : IEntityTypeConfigu
         builder.Property(x => x.SourceType).HasColumnName("source_type").IsRequired().HasMaxLength(50).HasComment("Inspection source type; value domain is QualityInspectionSourceTypes.");
         builder.Property(x => x.SourceService).HasColumnName("source_service").IsRequired().HasMaxLength(100).HasComment("Source service or document family that requested the inspection.");
         builder.Property(x => x.SourceDocumentId).HasColumnName("source_document_id").IsRequired().HasMaxLength(250).HasComment("Source document or operation public id, or the composite first-article source identity '{workOrderId}:{operationTaskId}' produced by FirstArticleInspection.SourceDocumentId.");
+        builder.Property(x => x.SourceDocumentLineId).HasColumnName("source_document_line_id").HasMaxLength(250).HasComment("Optional source document line, operation task id or stable periodic-operation window identity copied from the inspection task; null for directly recorded inspections without a source line.");
         builder.Property(x => x.SkuCode).HasColumnName("sku_code").IsRequired().HasMaxLength(100).HasComment("SKU code inspected as a Quality reference.");
         builder.Property(x => x.AttemptNumber).HasColumnName("attempt_number").IsRequired().HasDefaultValue(1).HasComment("One-based inspection attempt number within the same source and SKU history.");
         builder.Property(x => x.ReinspectionOfInspectionRecordId).HasColumnName("reinspection_of_inspection_record_id").HasComment("Previous inspection record id targeted by this reinspection attempt; null for the initial attempt.");
@@ -44,6 +45,14 @@ public sealed class InspectionRecordEntityTypeConfiguration : IEntityTypeConfigu
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC time when the inspection was recorded.");
         builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").IsRequired().HasComment("UTC time when the inspection record was last changed.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceService, x.SourceDocumentId });
+        // 来源行维度进唯一键（#3319）：同一工单两道工序做同一 SKU 检验，改前会撞同一个 attempt 1，
+        // 第二条被 FindBySourceDocumentAsync 跨行复用成同一条结论。
+        // AreNullsDistinct(false)：直录检验没有来源行，该列为 NULL；PG 默认「NULL 互不相等」会让
+        // 这一组去重整组失效（新行永远挡不住），因此必须显式把 NULL 当同一个值比较。
+        // 射程说准：改后只有直录录入命令还写 NULL，任务驱动的写面一律带来源行，
+        // 所以这条 NULL 语义保的是直录路径与迁移前存量行，不保「跨迁移的同一条链」——
+        // 那条链会断开，属于本票声明的行为变化（见迁移 AddInspectionRecordSourceDocumentLine 的取舍说明）。
+        // 本仓既有姿势见 ApprovalDecision / DeviceStateSnapshot / TelemetryRawSample / TelemetrySummary。
         builder.HasIndex(x => new
             {
                 x.OrganizationId,
@@ -51,11 +60,13 @@ public sealed class InspectionRecordEntityTypeConfiguration : IEntityTypeConfigu
                 x.SourceType,
                 x.SourceService,
                 x.SourceDocumentId,
+                x.SourceDocumentLineId,
                 x.SkuCode,
                 x.AttemptNumber,
             })
             .IsUnique()
-            .HasDatabaseName("ux_inspection_records_source_attempt");
+            .HasDatabaseName("ux_inspection_records_source_attempt")
+            .AreNullsDistinct(false);
         builder.HasIndex(x => x.ReinspectionOfInspectionRecordId)
             .IsUnique()
             .HasFilter("\"reinspection_of_inspection_record_id\" IS NOT NULL")

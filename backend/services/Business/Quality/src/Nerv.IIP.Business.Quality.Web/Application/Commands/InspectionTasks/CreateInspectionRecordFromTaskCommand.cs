@@ -117,14 +117,16 @@ public sealed class CreateInspectionRecordFromTaskCommandHandler(
             throw new QualityLifecycleConflictException("create-inspection-record-from-task", task.Status);
         }
 
-        var inspectionSourceDocumentId = task.InspectionRecordSourceDocumentId();
+        // 检验记录原样承接任务的来源单据 + 来源行两段身份（#3319）：任务侧曾按触发幂等键的文本形状
+        // 二选一地把其中一列搬成记录的来源单据身份，那个二分连同它的构造守卫已整段退休。
         var existing = await inspectionRecordRepository.FindBySourceDocumentAsync(
             task.OrganizationId,
             task.EnvironmentId,
             task.SourceType,
             task.SourceService,
             task.SkuCode,
-            inspectionSourceDocumentId,
+            task.SourceDocumentId,
+            task.SourceDocumentLineId,
             cancellationToken);
         if (existing is not null)
         {
@@ -156,7 +158,8 @@ public sealed class CreateInspectionRecordFromTaskCommandHandler(
             plan,
             task.SourceType,
             task.SourceService,
-            inspectionSourceDocumentId,
+            task.SourceDocumentId,
+            task.SourceDocumentLineId,
             task.SkuCode,
             task.Quantity,
             task.BatchNo,

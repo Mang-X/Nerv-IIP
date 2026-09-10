@@ -11,7 +11,9 @@ namespace Nerv.IIP.Business.Mes.Web.Application.Quality;
 /// <c>quality_hold_contexts.source_document_id</c> 与 <c>quality_hold_transitions.source_document_id</c>。
 /// 改前这两列都是 <c>varchar(100)</c>，而 Quality 侧同一个值的产出列是 <c>varchar(250)</c>：
 /// 首件用复合身份 <c>{workOrderId}:{operationTaskId}</c>（两段各取 MES 工单/工序 id 列宽 100 ⇒ **201**），
-/// 周期检用复合行号 <c>{operationId}:{kind}:{contextId}:{sequence}</c>。两支都能超过 100。
+/// 周期检改前也用复合行号 <c>{operationId}:{kind}:{contextId}:{sequence}</c>；#3319 起它留在 Quality 的
+/// 来源行列里，周期检的 <c>payload.SourceDocumentId</c> 已恢复成工单公开 id。首件那一支仍能超过 100，
+/// 存量事件与在途重投里也仍可能出现周期检的旧复合形状，因此本策略的上界不因此放宽。
 ///
 /// **后果比一次写入失败更糟**：这是 CAP 消费者，handler 只对 <c>InvalidOperationException</c>
 /// （以及 <c>ArgumentException</c>）有死信分支，<c>SaveChangesAsync</c> 抛的

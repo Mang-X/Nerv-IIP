@@ -206,6 +206,7 @@ public sealed class QualityListQueryCompositionTests
             "receiving",
             "wms",
             sourceDocumentId,
+            sourceDocumentLineId: null,
             "SKU-PUMP",
             1m,
             null,

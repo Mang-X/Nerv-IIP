@@ -215,6 +215,8 @@ public sealed class RecordSchedulePlanInvalidationsPostgresProfileTests
         Assert.Equal(SchedulingPlanInvalidationReasons.QualityBlocked, firstArticle.ReasonCode);
 
         // ② 周期检复合行号 + 结构化工序身份（无工单号）→ 走 assignment.OperationId 那一支。
+        //    这是 #3319 之前的生产者形状；改后周期检也会带工单号，但存量与在途事件仍是这个形状，
+        //    这条消费分支因此不能退休。
         await handler.HandleAsync(
             CreateInspectionEvent(
                 "evt-quality-periodic",
