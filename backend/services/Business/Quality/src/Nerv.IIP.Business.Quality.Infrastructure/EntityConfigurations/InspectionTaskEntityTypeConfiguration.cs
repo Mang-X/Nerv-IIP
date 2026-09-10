@@ -33,7 +33,7 @@ public sealed class InspectionTaskEntityTypeConfiguration : IEntityTypeConfigura
         builder.Property(x => x.StartedAtUtc).HasColumnName("started_at_utc").HasComment("UTC time when inspection work started.");
         builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc").HasComment("UTC time when inspection work completed.");
         builder.Property(x => x.OverdueReminderSentAtUtc).HasColumnName("overdue_reminder_sent_at_utc").HasComment("UTC time when the overdue reminder event was first emitted.");
-        builder.Property(x => x.TriggerIdempotencyKey).HasColumnName("trigger_idempotency_key").IsRequired().HasMaxLength(300).HasComment("Idempotency key derived from the source event and source line.");
+        builder.Property(x => x.TriggerIdempotencyKey).HasColumnName("trigger_idempotency_key").IsRequired().HasMaxLength(474).HasComment("Idempotency key derived from the source event and source line; upper bound governed by InspectionTaskTriggerKey.MaxLength.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Status, x.DueAtUtc })
             .HasDatabaseName("ix_inspection_tasks_scope_status_due");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.AssignedUserId, x.Status, x.DueAtUtc, x.Id })
