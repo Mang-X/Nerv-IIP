@@ -1224,8 +1224,15 @@ public sealed class InspectionAggregateTests
         Assert.Equal("OP-REPORT-001", ncr.SourceDocumentId);
     }
 
+    /// <summary>
+    /// #2981：此处原有 <c>Maintenance_inspection_cannot_open_ncr_without_explicit_source_mapping</c>，
+    /// 断言维保来源检验开 NCR **必抛**——它把「<c>ToNcrSourceType</c> 漏了 maintenance」这个缺陷固化成了契约，
+    /// 使缺陷侧反而受门禁保护。该断言已由 <c>NonconformanceReportSourceTypeMappingTests</c> 承接并反转：
+    /// <c>Maintenance_inspection_failure_opens_an_in_process_ncr</c> 钉住新的正确行为，
+    /// <c>Inspection_source_types_map_to_pinned_ncr_source_types</c> 钉住全部六个取值的映射目标。
+    /// </summary>
     [Fact]
-    public void Maintenance_inspection_cannot_open_ncr_without_explicit_source_mapping()
+    public void Maintenance_inspection_opens_ncr_and_no_longer_cements_the_missing_mapping()
     {
         var record = InspectionRecord.Create(
             "org-001",
@@ -1242,12 +1249,14 @@ public sealed class InspectionAggregateTests
             "Maintenance inspection failed",
             []);
 
-        var exception = Assert.Throws<InvalidOperationException>(() => NonconformanceReport.OpenFromInspection(
+        var ncr = NonconformanceReport.OpenFromInspection(
             "NCR-INS-003",
             record,
             "Maintenance inspection failed",
-            []));
-        Assert.Contains("maintenance", exception.Message, StringComparison.OrdinalIgnoreCase);
+            []);
+
+        Assert.Equal("in-process", ncr.SourceType);
+        Assert.Equal("MAINT-001", ncr.SourceDocumentId);
     }
 
     private static InspectionPlan NewPlan()
