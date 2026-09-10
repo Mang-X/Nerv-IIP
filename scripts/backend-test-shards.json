@@ -129,6 +129,7 @@
       ],
       "excludedTestClasses": [
         "Nerv.IIP.Business.Acceptance.Tests.PurchaseReceiptPostingRoutePostgresAcceptanceTests",
+        "Nerv.IIP.Business.Acceptance.Tests.QualityFirstArticleMesQualityHoldAcceptanceTests",
         "Nerv.IIP.Business.Acceptance.Tests.RuntimeHoursMaintenancePostgresAcceptanceTests",
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests",
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.WorldHistoryLabelSeedPostgresTests",

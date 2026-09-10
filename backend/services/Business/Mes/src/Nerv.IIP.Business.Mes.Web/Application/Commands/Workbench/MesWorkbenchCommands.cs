@@ -205,7 +205,13 @@ public sealed class ForceReleaseQualityHoldCommandValidator : AbstractValidator<
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.SourceService).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.SourceDocumentId).NotEmpty().MaximumLength(100);
+        // #3315：这条上界必须跟着 quality_hold_contexts / quality_hold_transitions 的列宽走，不能手抄。
+        // 消费者能落库的来源身份（首件复合 201、周期检复合 225）都超过 100，改前它们**根本存不下**，
+        // 所以这里的 100 是自洽的；列宽加宽之后它们能存在了，若这条仍写 100，工作台手工强制放行
+        // 就会对**每一条复合来源身份**回 400 —— 「可达但手工放不掉」。
+        // 注意：同文件 ConvertPlanToWorkOrderCommandValidator 的 SourceDocumentId 是另一个面
+        //（work_orders.source_document_id，DemandPlanning 计划单溯源，宽 100），**不要**一起改。
+        RuleFor(x => x.SourceDocumentId).NotEmpty().MaximumLength(MesQualityHoldSourceDocumentIdPolicy.ColumnMaxLength);
         RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
         RuleFor(x => x.Actor).NotEmpty().MaximumLength(100);
         RuleFor(x => x.CorrelationId).NotEmpty().MaximumLength(200);
