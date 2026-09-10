@@ -117,7 +117,8 @@ public sealed class MesLifecycleConflictTests
             Utc("2026-07-27T07:00:00Z"),
             TimeSpan.FromHours(1),
             null,
-            null));
+            null,
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
 
         var response = await new ReleaseWorkOrderCommandHandler(

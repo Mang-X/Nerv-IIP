@@ -183,7 +183,8 @@ public sealed class TelemetryProductionReportAutomationTests
             DateTimeOffset.Parse("2026-07-11T07:00:00Z"),
             TimeSpan.FromHours(1),
             DateTimeOffset.Parse("2026-07-11T07:00:00Z"),
-            null);
+            null,
+            "SKU-001");
         operation.Assign(null, "DEV-PACK-01", null, DateTimeOffset.Parse("2026-07-11T07:00:00Z"));
         dbContext.WorkOrders.Add(workOrder);
         dbContext.OperationTasks.Add(operation);

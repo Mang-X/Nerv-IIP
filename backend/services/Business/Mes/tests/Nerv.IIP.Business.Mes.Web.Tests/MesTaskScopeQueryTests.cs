@@ -334,7 +334,8 @@ public sealed class MesTaskScopeQueryTests
             now,
             TimeSpan.FromHours(1),
             null,
-            null);
+            null,
+            "SKU-001");
         var blocked = OperationTask.Create(
             "org-001",
             "env-dev",
@@ -347,7 +348,8 @@ public sealed class MesTaskScopeQueryTests
             now.AddMinutes(1),
             TimeSpan.FromHours(1),
             null,
-            null);
+            null,
+            "SKU-001");
         previous.Assign("emp011", null, null, now, teamId: "TEAM-AS");
         blocked.Assign("emp012", null, null, now, teamId: "TEAM-AS");
         dbContext.WorkOrders.Add(workOrder);
@@ -645,7 +647,8 @@ public sealed class MesTaskScopeQueryTests
             earliestStartUtc,
             TimeSpan.FromHours(1),
             null,
-            null);
+            null,
+            "SKU-001");
         task.Assign(
             assignedUserId,
             null,

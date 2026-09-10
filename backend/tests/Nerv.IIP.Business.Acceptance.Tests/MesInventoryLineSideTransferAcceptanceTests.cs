@@ -1160,7 +1160,8 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             now,
             TimeSpan.FromMinutes(30),
             null,
-            null);
+            null,
+            "SKU-001");
         operationTask.Start(now);
         mesDb.OperationTasks.Add(operationTask);
         mesDb.MaterialRequirements.Add(MaterialRequirement.Capture(

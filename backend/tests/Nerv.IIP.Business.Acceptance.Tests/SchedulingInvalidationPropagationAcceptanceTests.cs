@@ -88,7 +88,8 @@ public sealed class SchedulingInvalidationPropagationAcceptanceTests
             "WC-OIL",
             [],
             DateTimeOffset.Parse("2026-06-01T12:00:00Z"),
-            TimeSpan.FromMinutes(90)));
+            TimeSpan.FromMinutes(90),
+            "SKU-001"));
         await mesDb.SaveChangesAsync();
         var mesHandler = new SchedulePlanInvalidatedIntegrationEventHandlerForMarkInvalidated(
             mesDb,
