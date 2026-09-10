@@ -1819,11 +1819,7 @@ export const getBusinessConsoleMesShiftHandover = <ThrowOnError extends boolean 
 export const acceptBusinessConsoleMesShiftHandover = <ThrowOnError extends boolean = false>(options: Options<AcceptBusinessConsoleMesShiftHandoverData, ThrowOnError>): RequestResult<AcceptBusinessConsoleMesShiftHandoverResponses, AcceptBusinessConsoleMesShiftHandoverErrors, ThrowOnError> => (options.client ?? client).post<AcceptBusinessConsoleMesShiftHandoverResponses, AcceptBusinessConsoleMesShiftHandoverErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/business-console/v1/mes/shift-handovers/{handoverId}/accept',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
+    ...options
 });
 
 export const getBusinessConsoleMesWorkOrderTraceability = <ThrowOnError extends boolean = false>(options: Options<GetBusinessConsoleMesWorkOrderTraceabilityData, ThrowOnError>): RequestResult<GetBusinessConsoleMesWorkOrderTraceabilityResponses, GetBusinessConsoleMesWorkOrderTraceabilityErrors, ThrowOnError> => (options.client ?? client).get<GetBusinessConsoleMesWorkOrderTraceabilityResponses, GetBusinessConsoleMesWorkOrderTraceabilityErrors, ThrowOnError>({

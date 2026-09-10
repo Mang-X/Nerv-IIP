@@ -82,6 +82,5 @@ public sealed class BusinessConsoleMesCollaborationValidationTests
             "worker-a",
             null,
             "shift-a",
-            "idem-001",
             participants);
 }

@@ -509,10 +509,17 @@ async function confirmRecover() {
     await recoverDowntimeEvent(row.downtimeEventId, {
       organizationId: filters.organizationId,
       environmentId: filters.environmentId,
+      // ⚠️ 每次点击都在这里现铸时刻，所以一次重放送下去的**不是**同一份入参。
       recoveredAtUtc: new Date().toISOString(),
-      // #1219 稳定幂等键：同一停机事件的恢复是同一业务意图，键不掺时间戳，
-      // 重复点击/重试由后端幂等或 KnownException 兜住。
-      idempotencyKey: `downtime-recover-${row.downtimeEventId}`,
+      // #3328：这里原来传一个稳定幂等键（#1219），但 MES 侧从来不消费它（它既不进命令也不落库），
+      // 网关也已把该字段从公开契约摘掉——摘掉是安全的，因为它本来就拦不住任何东西。
+      //
+      // 重放第二次的真实后果，两句都要说：
+      //   ① **不产生重复行** —— 下游 WorkCenterUnavailability.Close 只有一句赋值、不累积
+      //      （MesWriteReplaySafetyTests.Closing_a_downtime_twice_with_the_same_instant_does_not_accumulate 钉住）；
+      //   ② **但会把恢复时刻覆盖成更晚的值** —— 因为上面那行每次现铸，且 Close 零前置守卫。
+      // ⇒ 这条腿**不叫幂等**。②（含「可以恢复一个已恢复的停机」）是 Close 零守卫的既有缺陷，
+      // 本 PR 之前就如此，#3328 明确不修，由编排者另行立票。
     })
     notifySuccess('停机已恢复，该工作中心的开工拦截已解除。')
     recoverTarget.value = null

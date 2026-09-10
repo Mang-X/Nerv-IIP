@@ -533,8 +533,10 @@ describe('MES downtime recovery entry', () => {
     expect(body.organizationId).toBe('org')
     expect(body.environmentId).toBe('dev')
     expect(body.recoveredAtUtc).toBeTruthy()
-    // #1219：幂等键对同一停机事件稳定（不含时间戳），二次点击不产生新键。
-    expect(body.idempotencyKey).toBe('downtime-recover-DT-0001')
+    // #3328：#1219 那个「对同一停机事件稳定的幂等键」已从网关公开契约摘掉——MES 侧从不消费它。
+    // 这里改断言请求体**不含**幂等键（有人加回来会红）；重放安全的权威落在下游
+    // WorkCenterUnavailability.Close 的赋值幂等（MesWriteReplaySafetyTests）。
+    expect(body).not.toHaveProperty('idempotencyKey')
   })
 })
 

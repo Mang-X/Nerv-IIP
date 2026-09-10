@@ -446,10 +446,11 @@ describe('MES handovers read-face guard', () => {
     await wrapper.get('[data-testid="accept-handover-form"]').trigger('submit')
     await flushPromises()
 
+    // #3328：接班的请求体已经空了（原来只有一个 MES 从不消费的 idempotencyKey），
+    // 组织/环境仍作为上下文传给 composable 并落在 query 上。
     expect(mutations.acceptShiftHandover).toHaveBeenCalledWith('handover-001', {
       organizationId: 'org-001',
       environmentId: 'env-dev',
-      idempotencyKey: 'mes-handover-accept-stable',
     })
     expect(mutations.refreshHandovers).toHaveBeenCalledTimes(1)
     expect(mutations.notifySuccess).toHaveBeenCalledWith('接班已受理，服务端已受理。')
@@ -505,8 +506,12 @@ describe('MES handovers read-face guard', () => {
     expect(mutations.acceptShiftHandover).toHaveBeenCalledTimes(1)
   })
 
+  // #3328：原来这里断言「重试复用同一个稳定幂等键」。键已从公开契约摘掉，
+  // 于是把断言改成它今天真正能证的那句：**确定性失败后重试仍然发出与首次逐字相同的请求**
+  // （没有任何随每次尝试变化的字段）。有人把一个每次都新铸的键加回请求体，本条会红。
+  // 重放安全的权威落在 MES 侧 ShiftHandover.Accept 的幂等早退（MesWriteReplaySafetyTests）。
   it.each([403, 404, 409, 422])(
-    'keeps the stable accept key retryable after deterministic HTTP %s rejection',
+    'keeps accept retryable with an identical payload after deterministic HTTP %s rejection',
     async (status) => {
       const error = { response: { status } }
       mutations.acceptShiftHandover
@@ -530,12 +535,10 @@ describe('MES handovers read-face guard', () => {
       await flushPromises()
 
       expect(mutations.acceptShiftHandover).toHaveBeenCalledTimes(2)
-      expect(mutations.acceptShiftHandover.mock.calls[0]?.[1].idempotencyKey).toBe(
-        'mes-handover-accept-stable',
+      expect(mutations.acceptShiftHandover.mock.calls[1]).toEqual(
+        mutations.acceptShiftHandover.mock.calls[0],
       )
-      expect(mutations.acceptShiftHandover.mock.calls[1]?.[1].idempotencyKey).toBe(
-        'mes-handover-accept-stable',
-      )
+      expect(mutations.acceptShiftHandover.mock.calls[0]?.[1]).not.toHaveProperty('idempotencyKey')
     },
   )
 

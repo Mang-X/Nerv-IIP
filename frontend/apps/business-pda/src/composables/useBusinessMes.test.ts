@@ -1995,14 +1995,14 @@ describe('pda useBusinessMes composables', () => {
     expect(payload.body.idempotencyKey).toBe('op-issue-1')
   })
 
-  it('forwards the caller-supplied key when confirming a line-side material receipt', async () => {
+  // #3328：线边收料的 idempotencyKey 已从网关公开契约摘掉（MES 侧从不消费它），
+  // 所以这里不再断言「把调用方给的键转发下去」，改为断言请求体只带该端点真正消费的字段、
+  // 且**不含**幂等键——有人把它加回来会红。重放安全的权威落在 MES 侧
+  // MaterialIssueRequest.ConfirmLineSideReceipt 的「过账尚未回执」守卫（MesWriteReplaySafetyTests）。
+  it('confirms a line-side material receipt without an idempotency key in the body', async () => {
     const { confirmLineSideReceipt } = useMesMaterialIssue()
 
-    await confirmLineSideReceipt(
-      'req-2',
-      { receivedQuantity: 4, idempotencyKey: 'op-confirm-1' },
-      { workOrderId: 'wo-2' },
-    )
+    await confirmLineSideReceipt('req-2', { receivedQuantity: 4 }, { workOrderId: 'wo-2' })
 
     expect(confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions).toHaveBeenCalled()
     expect(listBusinessConsoleMesMaterialIssueRequests).toHaveBeenCalledWith({
@@ -2017,8 +2017,8 @@ describe('pda useBusinessMes composables', () => {
     )
     const payload = mutateAsync!.mock.calls[0][0]
     expect(payload.path).toEqual({ requestId: 'req-2' })
-    expect(payload.body).toMatchObject({ receivedQuantity: 4 })
-    expect(payload.body.idempotencyKey).toBe('op-confirm-1')
+    expect(payload.body).toEqual({ receivedQuantity: 4 })
+    expect(payload.body).not.toHaveProperty('idempotencyKey')
   })
 
   it('replays a return with the same key after the authoritative list shows zero returnable quantity', async () => {

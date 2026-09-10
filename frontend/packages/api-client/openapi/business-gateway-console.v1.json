@@ -19986,19 +19986,6 @@
             }
           }
         ],
-        "requestBody": {
-          "x-name": "BusinessConsoleMesAcceptShiftHandoverRequest",
-          "description": "",
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAcceptShiftHandoverRequest"
-              }
-            }
-          },
-          "required": true,
-          "x-position": 1
-        },
         "responses": {
           "200": {
             "description": "Success",
@@ -47438,9 +47425,6 @@
         "properties": {
           "confirmWarnings": {
             "type": "boolean"
-          },
-          "idempotencyKey": {
-            "type": "string"
           }
         }
       },
@@ -48485,9 +48469,6 @@
             "items": {
               "type": "string"
             }
-          },
-          "idempotencyKey": {
-            "type": "string"
           }
         }
       },
@@ -48691,9 +48672,6 @@
           "shiftId": {
             "type": "string",
             "nullable": true
-          },
-          "idempotencyKey": {
-            "type": "string"
           },
           "participants": {
             "type": "array",
@@ -50785,9 +50763,6 @@
           "recoveredAtUtc": {
             "type": "string",
             "format": "date-time"
-          },
-          "idempotencyKey": {
-            "type": "string"
           }
         }
       },
@@ -51208,12 +51183,7 @@
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAcceptShiftHandoverRequest": {
         "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "idempotencyKey": {
-            "type": "string"
-          }
-        }
+        "additionalProperties": false
       },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesTraceabilityResponse": {
         "allOf": [
