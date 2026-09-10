@@ -1926,7 +1926,10 @@ public sealed class BusinessConsoleAssignWmsResourceRequestValidator
         RuleFor(x => x.PoolCode).NotEmpty().MaximumLength(150);
         RuleFor(x => x.OperatorPrincipalId).MaximumLength(150);
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(128);
-        RuleFor(x => x.ExpectedVersion).GreaterThanOrEqualTo(0);
+        // 下游 5 条分配命令一律 GreaterThan(0)（WarehouseAssignmentValidation.Configure）：
+        // 领域 Version 从 1 起且只增，0 不是合法的乐观并发版本；
+        // 网关此前写 GreaterThanOrEqualTo(0)，是在放行一个下游必然拒绝的值（#3326）。
+        RuleFor(x => x.ExpectedVersion).GreaterThan(0);
     }
 }
 
@@ -2040,6 +2043,19 @@ public sealed class BusinessConsoleCreateWmsPickingTaskRequestValidator
         RuleFor(x => x.FromLocationCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ToLocationCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Quantity).GreaterThan(0);
+    }
+}
+
+public sealed class BusinessConsoleRetryWmsOutboundInventoryPostingRequestValidator
+    : Validator<BusinessConsoleRetryWmsOutboundInventoryPostingRequest>
+{
+    public BusinessConsoleRetryWmsOutboundInventoryPostingRequestValidator()
+    {
+        // 只补长度上界，**不加 NotEmpty**：FastEndpoints 的 DTO 校验跑在
+        // AuthorizedBusinessProxyEndpoint.HandleAsync（含鉴权）之前，补上必填会把
+        // 未授权调用方的 403 变成 400（BusinessGatewayAuthorizationTests 实测），
+        // 那是鉴权顺序上的行为改变，不在本票射程内。
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
 }
 

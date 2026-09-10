@@ -3302,6 +3302,16 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Unauthorized"
           },
@@ -9811,6 +9821,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEngineeringEntityResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
                 }
               }
             }
@@ -26273,6 +26293,16 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Unauthorized"
           },
@@ -31086,6 +31116,16 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Unauthorized"
           },
@@ -31572,6 +31612,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRecordBarcodeScanResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
                 }
               }
             }
@@ -33345,7 +33395,8 @@
           "expectedVersion": {
             "type": "integer",
             "format": "int64",
-            "minimum": 0.0
+            "minimum": 0.0,
+            "exclusiveMinimum": true
           }
         }
       },
@@ -34497,7 +34548,9 @@
         "additionalProperties": false,
         "properties": {
           "idempotencyKey": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0
           }
         }
       },
@@ -42120,6 +42173,8 @@
           },
           "idempotencyKey": {
             "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
             "nullable": true
           },
           "itemCode": {
@@ -42177,6 +42232,8 @@
           },
           "idempotencyKey": {
             "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
             "nullable": true
           }
         }
@@ -42429,6 +42486,8 @@
           },
           "idempotencyKey": {
             "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
             "nullable": true
           }
         }
@@ -42580,6 +42639,8 @@
           },
           "idempotencyKey": {
             "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
             "nullable": true
           }
         }
@@ -43434,6 +43495,8 @@
           },
           "idempotencyKey": {
             "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
             "nullable": true
           }
         }
@@ -43646,6 +43709,8 @@
           },
           "idempotencyKey": {
             "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
             "nullable": true
           }
         }
@@ -44051,6 +44116,8 @@
           },
           "idempotencyKey": {
             "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
             "nullable": true
           }
         }
@@ -52184,6 +52251,8 @@
           },
           "idempotencyKey": {
             "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
             "nullable": true
           }
         }
@@ -55467,6 +55536,8 @@
           },
           "idempotencyKey": {
             "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
             "nullable": true
           }
         }
@@ -55508,6 +55579,8 @@
           },
           "idempotencyKey": {
             "type": "string",
+            "maxLength": 200,
+            "minLength": 0,
             "nullable": true
           }
         }
@@ -55546,6 +55619,8 @@
           },
           "idempotencyKey": {
             "type": "string",
+            "maxLength": 200,
+            "minLength": 0,
             "nullable": true
           }
         }
@@ -58082,7 +58157,9 @@
             "nullable": true
           },
           "idempotencyKey": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 0
           },
           "skuCode": {
             "type": "string"
@@ -63251,7 +63328,9 @@
             "type": "string"
           },
           "idempotencyKey": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 0
           },
           "labelValuesJson": {
             "type": "string"
@@ -63650,7 +63729,9 @@
             "type": "string"
           },
           "idempotencyKey": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 0
           },
           "result": {
             "type": "string"
