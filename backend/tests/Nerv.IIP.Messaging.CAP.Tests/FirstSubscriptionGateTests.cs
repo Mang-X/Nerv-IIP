@@ -118,15 +118,14 @@ public sealed class FirstSubscriptionGateTests
         var first = await factory.CreateAsync("group-01", 1);
         var second = await factory.CreateAsync("group-02", 1);
 
-        var firstSubscription = first.SubscribeAsync(["topic"]);
-        var secondSubscription = second.SubscribeAsync(["topic"]);
+        var subscriptions = await DispatchEveryConsumerGroupAsync([first, second]);
 
         Assert.Equal(1, probe.InFlight);
-        Assert.False(secondSubscription.IsCompleted);
+        Assert.False(subscriptions[1].IsCompleted);
 
         probe.ReleaseFollowers();
         probe.ReleaseFirstSubscription();
-        await Task.WhenAll(firstSubscription, secondSubscription).WaitAsync(FailureTimeout);
+        await Task.WhenAll(subscriptions).WaitAsync(FailureTimeout);
     }
 
     /// <summary>闸门只改并发形状，不改参数：inner 收到的 topics 必须逐字一致，顺序一致。</summary>
