@@ -1064,4 +1064,56 @@ public sealed class MesAggregateTests
             ((IList<string>)reference.SourceDemandReferences!).Add("DEMAND-003"));
         Assert.Equal(2, reference.SourceDemandReferences!.Count);
     }
+
+    /// <summary>
+    /// 停机恢复时刻不得早于停机开始时刻——否则落库的是一段**负时长**的不可用窗口（#3343）。
+    /// </summary>
+    /// <remarks>
+    /// <para><b>夹具刻意只触犯这一条守卫</b>：<c>Open</c> 传 <c>toUtc: null</c>，所以
+    /// <c>Close</c> 的第一条守卫（「已有结束时刻则拒绝」）在本夹具上**不可达**。
+    /// 两条守卫抛的是同一个 <c>KnownException</c> 类型，若夹具同时触犯两条，
+    /// 删掉本条守卫仍会被另一条兜住、<c>Assert.Throws</c> 照样绿——所以这里既隔离夹具、
+    /// 又断言到**消息**，两道都用上。</para>
+    ///
+    /// <para><b>为什么负时长窗口有害而不只是难看</b>：这段窗口会进排程的重叠判定
+    /// （<c>RuleScheduler</c> 按 <c>FromUtc</c>/<c>ToUtc</c> 判重叠并把候选推到
+    /// <c>conflict.ToUtc.Value</c>），也会进工序动作的开工拦截
+    /// （<c>MesOperationTaskActionReadinessEvaluator</c> 判 <c>ToUtc > evaluatedAtUtc</c>）。
+    /// 一个 <c>ToUtc &lt; FromUtc</c> 的窗口在这两处都会被静默当成「已经结束」。</para>
+    ///
+    /// <para><b>本用例不证明什么</b>：不证明 <c>WorkCenterUnavailability.Open</c> 也拒绝负时长窗口
+    /// ——它**不拒**，<c>Open(..., toUtc:</c> 早于 <c>fromUtc, ...)</c> 今天仍然构造得出来。
+    /// 那是构造器不是生命周期方法，#3343 按「只登记不修」处置，见 PR 正文的同族登记清单。</para>
+    /// </remarks>
+    [Fact]
+    public void Closing_a_downtime_earlier_than_its_start_is_rejected()
+    {
+        var fromUtc = DateTimeOffset.Parse("2026-05-23T08:00:00Z");
+        var downtime = WorkCenterUnavailability.Open(
+            "org-001", "env-dev", "DTE-000009", "WC-A", fromUtc, null, "设备待修", "DEV-CNC-01");
+
+        var exception = Assert.Throws<KnownException>(() => downtime.Close(fromUtc.AddHours(-1)));
+
+        Assert.Equal("停机恢复时间不能早于停机开始时间。", exception.Message);
+        Assert.Null(downtime.ToUtc);
+    }
+
+    /// <summary>
+    /// 恰好等于停机开始时刻的恢复是**允许**的：守卫是 <c>&lt;</c> 不是 <c>&lt;=</c>，零时长窗口合法。
+    /// </summary>
+    /// <remarks>
+    /// 这条钉的是边界方向。没有它，把 <c>restoredAtUtc &lt; FromUtc</c> 收紧成 <c>&lt;=</c>
+    /// 不会被任何断言发现——而那会拒掉一次「开机瞬间就恢复」的合法补录。
+    /// </remarks>
+    [Fact]
+    public void Closing_a_downtime_exactly_at_its_start_is_allowed()
+    {
+        var fromUtc = DateTimeOffset.Parse("2026-05-23T08:00:00Z");
+        var downtime = WorkCenterUnavailability.Open(
+            "org-001", "env-dev", "DTE-000010", "WC-A", fromUtc, null, "设备待修", "DEV-CNC-01");
+
+        downtime.Close(fromUtc);
+
+        Assert.Equal(fromUtc, downtime.ToUtc);
+    }
 }
