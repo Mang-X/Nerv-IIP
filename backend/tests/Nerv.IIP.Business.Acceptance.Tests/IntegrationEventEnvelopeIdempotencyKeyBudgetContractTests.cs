@@ -59,12 +59,31 @@ namespace Nerv.IIP.Business.Acceptance.Tests;
 /// <item><b>不证明登记表穷举了所有承载该键的列。</b>新增一个消费侧写入点不会让本类报红。</item>
 /// <item><b>故意不登记</b> <c>integration_event_dead_letters.idempotency_key</c>(500)：
 /// 写入端走 <c>TruncateOptional</c> **截断**，截断列不构成上界，登记它等于登记一个假权威。</item>
-/// <item><b>故意不登记</b> <c>inspection_tasks.trigger_idempotency_key</c>(474)：
-/// 它确实逐字承载 Mes 两条事件的信封键（另两条是 <c>{事件键}:{行号}</c>），
-/// 是一条**更窄但事件专属**的列，由 <c>InspectionTaskTriggerKey</c> 与
+/// <item><b>故意不登记</b> <c>inspection_tasks.trigger_idempotency_key</c>(474)，
+/// 它是一条**更窄但事件专属**的列，由 <c>InspectionTaskTriggerKey</c> 与
 /// <c>InspectionTaskTriggerKeyCrossServiceWidthContractTests</c> 自己看守（#2977 / #3318）。
-/// 把它并进平台预算会把全平台压到 474，让今天长度落在 475..512、在自己链路上完全合法的键无谓改形，
-/// 反而破坏存量键逐字保持。**所以本类的「所有承载列」量词限定在平台 inbox 那一族。**</item>
+/// <para><b>不登记的依据不是「它只承载别人的键」，而是下面这条逐位点实读</b>
+/// （<c>InspectionTaskTriggerIntegrationEventHandlers.cs</c> 里写这一列的**全部 4 个位点**）：</para>
+/// <list type="table">
+/// <item><term><c>:73</c></term><description>消费 <c>WmsIntegrationEvent</c> 的
+/// <c>WmsIntegrationEventTypes.InboundOrderCompleted</c>，写 <c>{信封键}:{line.LineReference}</c>
+/// —— <b>射程内唯一到达该列的位点</b>。</description></item>
+/// <item><term><c>:129</c></term><description>消费 Erp <c>PurchaseReceiptRecordedIntegrationEvent</c>，
+/// 写 <c>{信封键}:{line.LineReference}</c>。Erp 本 PR **未接入**。</description></item>
+/// <item><term><c>:183</c></term><description>消费 Mes <c>MesOperationTaskCompletedIntegrationEvent</c>，
+/// **逐字**写信封键。Mes 本 PR **未接入**。</description></item>
+/// <item><term><c>:230</c></term><description>消费 Mes <c>FinishedGoodsReceiptRequestedIntegrationEvent</c>，
+/// **逐字**写信封键。Mes 本 PR **未接入**。</description></item>
+/// </list>
+/// <para>⇒ <b>真正的安全依据</b>：本 PR 接入的四个 producer 里，只有 <c>wms:inbound-completed</c>
+/// 到得了这一列，而它的最坏长度是
+/// <c>4（"wms:"）+ 17（"inbound-completed"）+ 1（":"）+ 100（org）+ 1 + 100（env）+ 1 + 100（InboundOrderNo）= <b>324</b></c>
+/// （四段列宽全部实读自 Wms EF 模型），<b>324 &lt; 512 ⇒ 构造上到不了回落分支</b>
+/// ⇒ 这一列上的值与改动前**逐字相同**，本 PR 没有、也不可能削弱那条 474 的守卫。
+/// 另外三条的 producer 本 PR 根本没碰，形态零变化。</para>
+/// <para>而**不把 474 并进** <see cref="IntegrationEventIdempotencyKey.Budget"/> 的理由是另一件事：
+/// 并进来会把全平台预算压到 474，让今天长度落在 475..512、在自己链路上完全合法的键无谓改形，
+/// 反而破坏存量键逐字保持。**所以本类的「所有承载列」量词限定在平台 inbox 那一族。**</para></item>
 /// <item><b>不证明所有 producer 都已接入。</b>本 PR 接入的是
 /// <see cref="ConvertedProducerKeys"/> 那四个服务；其余 producer 仍是纯拼接，
 /// 不接入的不会让本类报红。**不新建源码文本扫描护栏**去看守这件事（#3176 / PR #3214 实证不收敛）。</item>

@@ -61,9 +61,13 @@ namespace Nerv.IIP.Contracts.IntegrationEvents;
 /// （#3176 / PR #3214 三轮实证这类扫描不收敛），接入面枚举写在 PR 正文。</item>
 /// <item><b><see cref="Budget"/> 只覆盖平台 inbox 那一族承载列。</b>
 /// 若某条信封键还被写进**更窄的、事件专属的**列，有效上界按 #3281 取最小值，
-/// 那一段不由本类型保证。今天已实读的一例：<c>inspection_tasks.trigger_idempotency_key</c>(474)
-/// 逐字承载 Mes 两条事件的信封键（另两条是 <c>{事件键}:{行号}</c>），
+/// 那一段不由本类型保证。今天已实读的一例：<c>inspection_tasks.trigger_idempotency_key</c>(474)，
 /// 由 <c>InspectionTaskTriggerKey</c> 与其跨服务契约用例自己看守（#2977 / #3318）。
+/// 写它的 4 个位点逐个实读后是：Wms <c>InboundOrderCompleted</c> 与 Erp <c>PurchaseReceiptRecorded</c>
+/// 写 <c>{信封键}:{行号}</c>，Mes 两条**逐字**写信封键；
+/// 接入面里只有 <c>wms:inbound-completed</c> 到得了那一列，最坏 324 &lt; <see cref="Budget"/>
+/// ⇒ 恒走逐字分支、那一列的值零变化。详细算式与逐位点归属写在
+/// <c>IntegrationEventEnvelopeIdempotencyKeyBudgetContractTests</c> 的类注释里。
 /// 本类型**没有**把它并进 <see cref="Budget"/>：并进来会把全平台预算压到 474，
 /// 让今天长度落在 475..512 的键（在自己的链路上完全合法）无谓改形，反而破坏存量键逐字保持。</item>
 /// <item><b>不证明不同 <paramref name="prefix"/> 之间不撞。</b><c>p1 + X == p2 + Y</c>
