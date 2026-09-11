@@ -160,6 +160,10 @@ public static class NotificationSummaryList
     /// 再往下列只是把摘要撑长。<b>不由列宽反算</b> —— 反算会让条数随列宽漂移，
     /// 并且把一个产品判断伪装成算术。
     /// </para>
+    /// <para>
+    /// ⚠️ 工业告警摘要那处的语义段数上界也恰好是 5，那是<b>数值巧合，与本常量没有任何关联</b>：
+    /// 那处根本不走本类型。调整本产品数时不必、也不应该去看那边的段数。
+    /// </para>
     /// </summary>
     public const int MaxListedItems = 5;
 

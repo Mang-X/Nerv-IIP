@@ -22,6 +22,17 @@ namespace Nerv.IIP.Notification.Web.Application.Commands.Notifications;
 /// 构造时把取值写回 <see cref="Request"/>，让「命令携带的 Request.Summary」与
 /// <see cref="Summary"/> 由构造成立地相等：读哪一个都是同一份，不存在「哪个说了算」。
 /// </para>
+/// <para>
+/// ⚠️ <b>「夹紧由命令层保证」成立的前提是调用方闭集，而这个闭集靠的是引用拓扑，不是类型可见性。</b>
+/// 本类型是 <c>public</c>，任何引用了 <c>Nerv.IIP.Notification.Web</c> 的工程都能构造它；
+/// 今天构造不出来，只是因为除本服务外引用它的工程都不消费本命名空间的类型
+/// （测试工程，以及 Aspire AppHost 那条 <c>IsAspireProjectResource</c> 的编排引用）。
+/// </para>
+/// <para>
+/// ⚠️ <b>失效方向：</b>将来任何工程新增一条指向 <c>Nerv.IIP.Notification.Web</c> 的
+/// <c>ProjectReference</c>，闭集会<b>静默变宽</b>，而今天<b>没有任何门禁会因此报红</b>。
+/// 这是已知边界、如实登记，不是已被守住的性质 —— 要守住它需要一条引用拓扑门禁，不在本票范围。
+/// </para>
 /// </summary>
 public sealed record SubmitNotificationIntentCommand : ICommand<NotificationIntentResponse>
 {

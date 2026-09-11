@@ -106,7 +106,15 @@ public sealed class NotificationSummaryBoundTests
     /// ⭐ 校验器按 FastEndpoints 的方式从<b>真实 host 容器</b>构造（<see cref="ActivatorUtilities"/> + 根 provider）。
     /// <para>
     /// 这条钉的是「规则写了但容器里解析不到」这一形态：
-    /// 若 <see cref="NotificationSummaryBudget"/> 没被注册，这里构造就会抛，而不是让长度规则悄悄消失。
+    /// 若 <see cref="NotificationSummaryBudget"/> 没被注册（或被注册成 Scoped 而校验器是单例），
+    /// 这里构造就会抛，而不是让长度规则悄悄消失。
+    /// </para>
+    /// <para>
+    /// ⚠️ <b>本条只覆盖「构造」这一层，不覆盖「规则是否真被请求管道调用」。</b>
+    /// 构造这一层之所以可信，是因为 FastEndpoints 自己也走 <see cref="ActivatorUtilities"/> + 根 provider，
+    /// 测试与生产会以<b>同一方式</b>炸；但「这份校验器有没有挂在那个端点上、有没有在 handler 之前跑」
+    /// 由 <see cref="Http_submitted_summary_over_the_bound_is_rejected_by_the_endpoint_validator_and_nothing_is_persisted()"/>
+    /// 用响应体里的字段级错误承担。<b>两条合起来才闭合这一形态，单独读任何一条都会读过头。</b>
     /// </para>
     /// <para>
     /// 上界不读规则树元数据、直接跑<b>边界对</b>：恰好 bound 通过、bound+1 失败，
@@ -438,7 +446,9 @@ public sealed class NotificationSummaryBoundTests
         // 语义段之间用 "; " 连接。这同时钉住「这一处没有被改走同质枚举集合那条路径」：
         // 那条路径用 ", " 连接，并且在段数超过 MaxListedItems 时会把段当枚举项丢掉。
         // ⚠️ 今天 parts 最多 5 段、恰等于 MaxListedItems，所以「丢段」这一面还够不着；
-        // 能被这组断言杀掉的是「改了路由」，不是「已经丢了段」。段数一旦长到 6，丢段才成为现实风险。
+        // 能被这组断言杀掉的是「改了路由」，不是「已经丢了段」。
+        // ⚠️ 这两个 5 是「数值巧合、互不关联」：段数长到 6，或者 MaxListedItems 被调到 5 以下，
+        // 都会让「丢段」从不可达变成现实风险 —— 两个方向都要看，别只盯段数。
         Assert.Contains("; tag temp.bearing", summary, StringComparison.Ordinal);
         Assert.Contains("; observed 97.5 C", summary, StringComparison.Ordinal);
         Assert.Contains("; threshold 80 C", summary, StringComparison.Ordinal);
