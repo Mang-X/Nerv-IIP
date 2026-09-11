@@ -1050,6 +1050,24 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal("retry-out-001", wms.LastRetryOutboundRequest.IdempotencyKey);
     }
 
+    /// <summary>
+    /// WCS 写门面：域权限、内部服务令牌与路由 id，**并拒绝 dispatch 的 expectedVersion = 0**（#3336）。
+    /// </summary>
+    /// <remarks>
+    /// 名字里的第四段是 #3336 追加的。这一处的下游权威**不是** FluentValidation：
+    /// <c>DispatchWcsTaskCommand</c> 没有校验器。<c>DispatchWcsTaskCommandHandler</c> 里
+    /// 与该字段相关的出口有四个，**只有两个消费它**——新建走
+    /// <c>ClaimWcsExecution(_, ExpectedVersion)</c>、<c>Failed</c> 重试走
+    /// <c>ValidateWcsExecution</c> 的**双参**重载，两者都落到
+    /// <c>WarehouseTask.EnsureExpectedVersion</c> 的相等判定（<c>Version</c> 从 1 起且只增），
+    /// 0 永远匹配不上；另两个出口不看该字段（幂等重放走**单参**重载、已有非 <c>Failed</c> 任务直接 409）。
+    /// 网关此前写 <c>GreaterThanOrEqualTo(0)</c>，放行的是**在消费该字段的两条路径上**必被拒绝的值。
+    /// **直接承担这条规则的是那条 <c>BadRequest</c> 断言**（M5 实测：回退这一条，它先红）。
+    /// 那次 400 仍然必须留在 <c>wms.Calls</c> 这条**闭集**断言之前：那是第二道网——若状态码断言
+    /// 日后被放宽或删掉，被放行的请求会被转发，<c>Calls</c> 多一次 <c>dispatch-wcs</c>，
+    /// 且 <c>LastDispatchWcsRequest</c> 会被 0 覆盖，末尾那条
+    /// <c>Assert.Equal(3, ...ExpectedVersion)</c> 一起接住。不要把它挪到闭集断言之后。
+    /// </remarks>
     [Fact]
     public async Task Wcs_write_facades_use_automation_permission_internal_token_and_route_ids()
     {
@@ -1086,6 +1104,17 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal(HttpStatusCode.OK, fail.StatusCode);
         Assert.Equal(HttpStatusCode.OK, complete.StatusCode);
         Assert.All(auth.Requirements, requirement => Assert.Equal(BusinessGatewayPermissions.WmsAutomationManage, requirement.PermissionCode));
+
+        // #3336：除 expectedVersion 外与上面通过的那次 dispatch 逐字相同，所以 400 只可能来自这一条规则。
+        var rejectedZeroVersion = await client.PostAsJsonAsync("/api/business-console/v1/wms/wcs-tasks/warehouse-task-001/dispatch?organizationId=org-001&environmentId=env-dev", new
+        {
+            expectedVersion = 0,
+            adapterType = "agv",
+            externalTaskId = "EXT-001",
+            payloadJson = "{}",
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, rejectedZeroVersion.StatusCode);
+
         Assert.Equal(["dispatch-wcs", "fail-wcs", "complete-wcs"], wms.Calls);
         Assert.Equal("internal-test-token", wms.LastInternalToken);
         Assert.Equal("warehouse-task-001", wms.LastDispatchWcsRequest!.WarehouseTaskId);
@@ -2419,6 +2448,22 @@ public sealed class BusinessGatewayWmsTests
         Assert.Null(wms.LastPutawayTaskRequest);
     }
 
+    /// <summary>
+    /// 工序动作门面：逐条透出可信 actor 与作业范围，**并拒绝 expectedVersion = 0**（#3336）。
+    /// </summary>
+    /// <remarks>
+    /// 名字里的第二段是 #3336 追加的：四条网关端点级 <c>ExpectedVersion</c> 规则曾写
+    /// <c>GreaterThanOrEqualTo(0)</c>，而下游共享入口
+    /// <c>WarehouseTaskActionValidation.Configure</c> 写 <c>GreaterThan(0)</c>
+    /// （领域 <c>WarehouseTask.Version</c> 从 1 起且只增）。
+    /// **直接承担这四条规则的是那四条 <c>BadRequest</c> 断言**（M1-M4 实测：回退任一条，
+    /// 对应那行先红，闭集断言根本走不到）。四次 400 仍然必须留在 <c>wms.Calls</c> 这条**闭集**断言
+    /// 之前：那是第二道网——若日后有人把状态码断言放宽或删掉，被放行的请求会被转发，
+    /// <c>Calls</c> 多一项，闭集接住。挪到闭集之后就同时拆掉这道网。
+    /// <para><b><c>auth.Requirements</c> 里因此恒定多出四项 <c>WmsReceiptsManage</c></b>：
+    /// #3330 起鉴权前移到 DTO 校验之前（<c>AuthorizedBusinessProxyEndpoint.OnBeforeValidateAsync</c>），
+    /// 被 400 拒掉的请求同样会走一次鉴权。这四项钉的是「鉴权先于校验」，不是 <c>ExpectedVersion</c>。</para>
+    /// </remarks>
     [Fact]
     public async Task Wms_manual_actions_attest_actor_and_scope_for_all_putaway_and_picking_transitions()
     {
@@ -2473,6 +2518,22 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal(HttpStatusCode.OK, pickingComplete.StatusCode);
         AssertTaskScope(wms.LastCompleteTaskRequest!, "picking-001", "site", "SITE-A");
 
+        // #3336：四条动作规则各自的隔离位点。除 expectedVersion 外与上面 putaway 那四次逐字相同
+        // （同一 taskKind、同一 scope），所以 400 只可能来自被点名的那一条规则。
+        // 四次刻意**不**写成循环：回退任一条规则时，失败行号直接点出是哪一条。
+        var startZeroVersion = await PostTaskActionAsync(
+            client, "putaway", "putaway-001", "start", "work-pool", "POOL-A", expectedVersion: 0);
+        Assert.Equal(HttpStatusCode.BadRequest, startZeroVersion.StatusCode);
+        var progressZeroVersion = await PostTaskActionAsync(
+            client, "putaway", "putaway-001", "progress", "work-pool", "POOL-A", expectedVersion: 0);
+        Assert.Equal(HttpStatusCode.BadRequest, progressZeroVersion.StatusCode);
+        var exceptionZeroVersion = await PostTaskActionAsync(
+            client, "putaway", "putaway-001", "exception", "work-pool", "POOL-A", expectedVersion: 0);
+        Assert.Equal(HttpStatusCode.BadRequest, exceptionZeroVersion.StatusCode);
+        var completeZeroVersion = await PostTaskActionAsync(
+            client, "putaway", "putaway-001", "complete", "work-pool", "POOL-A", expectedVersion: 0);
+        Assert.Equal(HttpStatusCode.BadRequest, completeZeroVersion.StatusCode);
+
         Assert.Equal(
             [
                 "start-putaway",
@@ -2496,6 +2557,11 @@ public sealed class BusinessGatewayWmsTests
                 BusinessGatewayPermissions.WmsShipmentsManage,
                 BusinessGatewayPermissions.WmsShipmentsManage,
                 BusinessGatewayPermissions.WmsShipmentsManage,
+                // #3330/#3336：四次 expectedVersion = 0 的 putaway 请求先鉴权、后被端点级规则拒成 400。
+                BusinessGatewayPermissions.WmsReceiptsManage,
+                BusinessGatewayPermissions.WmsReceiptsManage,
+                BusinessGatewayPermissions.WmsReceiptsManage,
+                BusinessGatewayPermissions.WmsReceiptsManage,
             ],
             auth.Requirements.Select(requirement => requirement.PermissionCode).ToArray());
         Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
@@ -2571,7 +2637,8 @@ public sealed class BusinessGatewayWmsTests
         string warehouseTaskId,
         string action,
         string scopeKind,
-        string scopeId)
+        string scopeId,
+        long expectedVersion = 3)
     {
         object body = action switch
         {
@@ -2579,7 +2646,7 @@ public sealed class BusinessGatewayWmsTests
             {
                 warehouseTaskId = "forged-task-id",
                 idempotencyKey = $"idem-{taskKind}-{action}",
-                expectedVersion = 3,
+                expectedVersion,
                 actorUserId = "forged-user",
                 authorizedTeamIds = new[] { "forged-team" },
                 authorizedSiteCodes = new[] { "forged-site" },
@@ -2589,7 +2656,7 @@ public sealed class BusinessGatewayWmsTests
             {
                 warehouseTaskId = "forged-task-id",
                 idempotencyKey = $"idem-{taskKind}-{action}",
-                expectedVersion = 3,
+                expectedVersion,
                 executedQuantity = 2m,
                 actorUserId = "forged-user",
                 authorizedTeamIds = new[] { "forged-team" },
@@ -2600,7 +2667,7 @@ public sealed class BusinessGatewayWmsTests
             {
                 warehouseTaskId = "forged-task-id",
                 idempotencyKey = $"idem-{taskKind}-{action}",
-                expectedVersion = 3,
+                expectedVersion,
                 exceptionCode = "LOCATION_BLOCKED",
                 reason = "Location is blocked.",
                 actorUserId = "forged-user",
@@ -2612,7 +2679,7 @@ public sealed class BusinessGatewayWmsTests
             {
                 warehouseTaskId = "forged-task-id",
                 idempotencyKey = $"idem-{taskKind}-{action}",
-                expectedVersion = 3,
+                expectedVersion,
                 executedQuantity = 2m,
                 differenceReason = "Verified difference.",
                 actorUserId = "forged-user",
