@@ -3,6 +3,7 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.DomainEvents;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Wms;
+using Nerv.IIP.Contracts.IntegrationEvents;
 
 namespace Nerv.IIP.Business.Wms.Web.Application.IntegrationEventConverters;
 
@@ -83,7 +84,7 @@ public sealed class InboundOrderCompletedIntegrationEventConverter
             WmsIntegrationEventTypes.InboundOrderCompleted,
             order.OrganizationId,
             order.EnvironmentId,
-            $"wms:inbound-completed:{order.OrganizationId}:{order.EnvironmentId}:{order.InboundOrderNo}",
+            EventIds.Idempotency("inbound-completed", order.OrganizationId, order.EnvironmentId, order.InboundOrderNo),
             new WmsIntegrationPayload(
                 order.InboundOrderNo,
                 line.LineNo,
@@ -127,7 +128,7 @@ public sealed class OutboundOrderCompletedIntegrationEventConverter
             WmsIntegrationEventTypes.OutboundOrderCompleted,
             order.OrganizationId,
             order.EnvironmentId,
-            $"wms:outbound-completed:{order.OrganizationId}:{order.EnvironmentId}:{order.OutboundOrderNo}",
+            EventIds.Idempotency("outbound-completed", order.OrganizationId, order.EnvironmentId, order.OutboundOrderNo),
             new WmsIntegrationPayload(
                 publicReference,
                 line.LineNo,
@@ -169,7 +170,7 @@ public sealed class OutboundOrderCancelledIntegrationEventConverter
             WmsIntegrationEventTypes.OutboundOrderCancelled,
             order.OrganizationId,
             order.EnvironmentId,
-            $"wms:outbound-cancelled:{order.OrganizationId}:{order.EnvironmentId}:{order.OutboundOrderNo}",
+            EventIds.Idempotency("outbound-cancelled", order.OrganizationId, order.EnvironmentId, order.OutboundOrderNo),
             new WmsIntegrationPayload(
                 order.OutboundOrderNo,
                 line?.LineNo,
@@ -205,7 +206,7 @@ public sealed class CountExecutionCompletedIntegrationEventConverter
             WmsIntegrationEventTypes.CountExecutionCompleted,
             count.OrganizationId,
             count.EnvironmentId,
-            $"wms:count-completed:{count.OrganizationId}:{count.EnvironmentId}:{count.CountNo}",
+            EventIds.Idempotency("count-completed", count.OrganizationId, count.EnvironmentId, count.CountNo),
             new WmsIntegrationPayload(count.CountNo, null, count.SkuCode, count.UomCode, count.SiteCode, count.LocationCode, count.VarianceQuantity, count.Status.ToString(), null, null));
     }
 }
@@ -220,7 +221,7 @@ public sealed class WcsTaskDispatchedIntegrationEventConverter
             WmsIntegrationEventTypes.WcsTaskDispatched,
             task.OrganizationId,
             task.EnvironmentId,
-            $"wms:wcs-dispatched:{task.OrganizationId}:{task.EnvironmentId}:{task.AdapterType}:{task.ExternalTaskId}:{task.AttemptCount}",
+            EventIds.Idempotency("wcs-dispatched", task.OrganizationId, task.EnvironmentId, task.AdapterType, task.ExternalTaskId, task.AttemptCount.ToString()),
             new WmsIntegrationPayload(task.ExternalTaskId, null, null, null, null, null, null, task.Status.ToString(), null, null));
     }
 }
@@ -235,7 +236,7 @@ public sealed class WcsTaskFailedIntegrationEventConverter
             WmsIntegrationEventTypes.WcsTaskFailed,
             task.OrganizationId,
             task.EnvironmentId,
-            $"wms:wcs-failed:{task.OrganizationId}:{task.EnvironmentId}:{task.AdapterType}:{task.ExternalTaskId}:{task.FailureCode}",
+            EventIds.Idempotency("wcs-failed", task.OrganizationId, task.EnvironmentId, task.AdapterType, task.ExternalTaskId, task.FailureCode ?? string.Empty),
             new WmsIntegrationPayload(task.ExternalTaskId, null, null, null, null, null, null, task.Status.ToString(), task.FailureCode, task.FailureMessage));
     }
 }
@@ -250,7 +251,7 @@ public sealed class WcsTaskCompletedIntegrationEventConverter
             WmsIntegrationEventTypes.WcsTaskCompleted,
             task.OrganizationId,
             task.EnvironmentId,
-            $"wms:wcs-completed:{task.OrganizationId}:{task.EnvironmentId}:{task.AdapterType}:{task.ExternalTaskId}:{task.AttemptCount}",
+            EventIds.Idempotency("wcs-completed", task.OrganizationId, task.EnvironmentId, task.AdapterType, task.ExternalTaskId, task.AttemptCount.ToString()),
             new WmsIntegrationPayload(task.ExternalTaskId, null, null, null, null, null, null, task.Status.ToString(), null, null));
     }
 }
@@ -264,7 +265,7 @@ public sealed class WcsTaskRetryExhaustedIntegrationEventConverter
         return WmsIntegrationEventFactory.NewEvent(
             WmsIntegrationEventTypes.WcsTaskRetryExhausted,
             task.OrganizationId, task.EnvironmentId,
-            $"wms:wcs-retry-exhausted:{task.OrganizationId}:{task.EnvironmentId}:{task.AdapterType}:{task.DeviceId}:{task.ExternalTaskId}",
+            EventIds.Idempotency("wcs-retry-exhausted", task.OrganizationId, task.EnvironmentId, task.AdapterType, task.DeviceId, task.ExternalTaskId),
             new WmsIntegrationPayload(task.ExternalTaskId, null, null, null, null, null, null, task.Status.ToString(), task.FailureCode, task.FailureMessage, AdapterType: task.AdapterType));
     }
 }
@@ -279,7 +280,7 @@ public sealed class WcsTaskCancelledIntegrationEventConverter
             WmsIntegrationEventTypes.WcsTaskCancelled,
             task.OrganizationId,
             task.EnvironmentId,
-            $"wms:wcs-cancelled:{task.OrganizationId}:{task.EnvironmentId}:{task.AdapterType}:{task.ExternalTaskId}:{task.AttemptCount}",
+            EventIds.Idempotency("wcs-cancelled", task.OrganizationId, task.EnvironmentId, task.AdapterType, task.ExternalTaskId, task.AttemptCount.ToString()),
             new WmsIntegrationPayload(
                 task.ExternalTaskId,
                 null,
@@ -355,5 +356,10 @@ internal static class InventoryMovementRequestEventMapping
 
 internal static class EventIds
 {
-    public static string Idempotency(params string[] parts) => $"wms:{string.Join(':', parts)}";
+    /// <summary>
+    /// 信封幂等键：走平台预算出处（#3339）。装得下逐字保持，装不下整键摘要。
+    /// 改动前是 <c>$"wms:{string.Join(':', parts)}"</c>，未超预算时产出逐字相同。
+    /// </summary>
+    public static string Idempotency(params string[] parts) =>
+        IntegrationEventIdempotencyKey.ComposeServiceScoped("wms:", parts);
 }
