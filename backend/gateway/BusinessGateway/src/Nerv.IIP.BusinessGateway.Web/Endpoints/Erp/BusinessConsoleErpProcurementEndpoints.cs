@@ -38,11 +38,17 @@ namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Erp;
 // 归一化也跟着推迟」的支路已由 #3327 关掉，经过与实测见 BusinessConsoleMesEndpoints.cs
 // 顶部同名段落，不在这里复制第二份。
 //
-// ⚠️ 校验失败的响应形状是 FastEndpoints 默认的
+// ⚠️ 校验失败的响应形状（#3333 已修，下面这段按修后事实重写，别沿用 #3325 当时那句）：
+// 曾经是 FastEndpoints 默认的
 // {"statusCode":400,"message":"One or more errors occurred!","errors":{...}}，
-// 前端拿不到稳定错误码。既有位点今天就是这个形状，本票不引入新形状；
-// 但对本票新补规则的这些位点，行为确实变了——它们原先没有端点级规则、
-// 超长键落到全局钳上因而能拿到稳定码。该缺陷归 #3333。
+// 顶层 message 是英文常量、前端拿不到稳定码。现在 Program.cs 的
+// Errors.ResponseBuilder 把它成形为与全局钳、KnownException、鉴权拒绝同一个
+// {"success":false,"message":"request-payload-invalid","code":400,"errorData":[...]} 信封，
+// 稳定码已在前端 STABLE_ERROR_MESSAGES 登记。
+// ⇒ 本文件这批端点级规则拒绝超长键时，与落到全局钳上是**同一种形状**，
+// 差别只剩稳定码本身（request-payload-invalid vs idempotency-key-too-long）。
+// ⚠️ 但**仍然不携带字段身份**：逐字段原因只在 errorData 里、不上屏，
+// 「显示具体哪个字段错了」是另一票，别把这段读成已经做到了。
 // ---------------------------------------------------------------------------
 
 [Tags("Business Console ERP")]

@@ -2239,9 +2239,9 @@ jobs:
     # 新判据：增删 step 后按 main 上最近若干次 run 的**整 job** 观测最大值重新推导，
     # 取其约 2 倍；不要只看新 step 自身耗时。
     #
-    # step 预算合计 173m（35 个 step：3m checkout
-    # + 34 × 5m；2026-08-23 逐 step 实测求和，2026-09-02 按 #2863 新增两个 step 重算，
-    # 2026-09-05 按 #3145 新增两个 step 重算），
+    # step 预算合计 178m（36 个 step：3m checkout
+    # + 35 × 5m；2026-08-23 逐 step 实测求和，2026-09-02 按 #2863 新增两个 step 重算，
+    # 2026-09-05 按 #3145 新增两个 step 重算，2026-09-11 按 #3349 新增一个 step 重算），
     # 且仅为逐 step 上限。
     # 合计超过 job 预算对层级 B 是正确的，也不是 scripts/lib/CiWorkflowBudgets.ps1
     # 执行的约束：「step 预算合计低于 job 预算」只适用于层级 A（会从 `if: always()`
@@ -2329,6 +2329,13 @@ jobs:
         timeout-minutes: 5
         shell: pwsh
         run: ./scripts/tests/redis-cap-test-lane.Tests.ps1
+
+      # #3349：基线复算脚本一旦把缺失/畸形产物读成 0，就会把「没采到」呈现成「指标很好」。
+      # 这一步守的是该脚本的 fail-closed 契约本身，CONTROL 之外每格只破坏一个位点。
+      - name: Test Redis/CAP observation baseline recomputation
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/redis-cap-observation-baseline.Tests.ps1
 
       - name: Test FullChain lane contract
         timeout-minutes: 5
