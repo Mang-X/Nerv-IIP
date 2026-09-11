@@ -16,6 +16,20 @@ using Nerv.IIP.Business.Maintenance.Infrastructure;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Tests;
 
+/// <summary>
+/// 断言钉的是 <c>ErrorMessage</c> 而不是 <c>ValidationFailure.PropertyName</c>：后者由
+/// <c>ValidatorOptions.Global.PropertyNameResolver</c> 决定，而 <c>app.UseFastEndpoints(...)</c>
+/// 在启动时会把它换成 camelCase 解析器（<c>OrganizationId</c> → <c>organizationId</c>）并且不还原。
+/// 本程序集里只要有任何一个用例先启动过 <see cref="WebApplicationFactory{TEntryPoint}"/>，之后直接
+/// <c>new</c> 出来的校验器就拿到 camelCase 名，于是「断 PascalCase 字面量」这件事会随
+/// <c>NERV_IIP_TEST_ORDER_SEED</c> 决定的执行顺序时红时绿（#3342：seed <c>man662-06</c> 下稳定红 6 条）。
+///
+/// <c>AddTenantRules</c> 用 <c>WithMessage</c> 钉死了这两句文案、模板里不含 <c>{PropertyName}</c>
+/// 占位符，因此 <c>ErrorMessage</c> 不受 <c>PropertyNameResolver</c> / <c>DisplayNameResolver</c> 影响。
+/// 文案与字段一一对应，所以这不是把断言放宽：仍然能分辨是组织标识还是环境标识被打红。
+/// ⚠️ 不要改回大小写不敏感比较 <c>PropertyName</c>：那样虽然也能分辨是哪个字段被打红，却把「解析器
+/// 被换过」这件事一并掩盖掉——PascalCase 与 camelCase 都会过，命名策略本身不再有任何鉴别力。
+/// </summary>
 [Collection(WebApplicationFactoryCollection.Name)]
 public sealed class MaintenanceListQueryCompositionTests
 {
@@ -29,7 +43,7 @@ public sealed class MaintenanceListQueryCompositionTests
             new ListMaintenanceWorkOrdersQuery(organizationId!, environmentId!));
 
         Assert.False(result.IsValid);
-        Assert.Contains(result.Errors, error => error.PropertyName is "OrganizationId" or "EnvironmentId");
+        Assert.Contains(result.Errors, error => error.ErrorMessage is "组织标识不能为空。" or "环境标识不能为空。");
     }
 
     [Theory]
@@ -42,7 +56,7 @@ public sealed class MaintenanceListQueryCompositionTests
             new ListMaintenancePlansQuery(organizationId!, environmentId!));
 
         Assert.False(result.IsValid);
-        Assert.Contains(result.Errors, error => error.PropertyName is "OrganizationId" or "EnvironmentId");
+        Assert.Contains(result.Errors, error => error.ErrorMessage is "组织标识不能为空。" or "环境标识不能为空。");
     }
 
     [Theory]
@@ -55,7 +69,7 @@ public sealed class MaintenanceListQueryCompositionTests
             new ListDowntimeReasonsQuery(organizationId!, environmentId!));
 
         Assert.False(result.IsValid);
-        Assert.Contains(result.Errors, error => error.PropertyName is "OrganizationId" or "EnvironmentId");
+        Assert.Contains(result.Errors, error => error.ErrorMessage is "组织标识不能为空。" or "环境标识不能为空。");
     }
 
     [Fact]
