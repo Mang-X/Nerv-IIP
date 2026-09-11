@@ -154,8 +154,17 @@ public sealed class MesFinishedGoodsReceiptInventoryPostingKeyBoundContractTests
             FinishedGoodsReceiptInventoryPostingKey.BuildRetry(scope[0], scope[1], scope[2], new string('k', callerKeyLength)),
         })
         {
+            // PropertyName 用 OrdinalIgnoreCase 比对：app.UseFastEndpoints(...) 启动时会把
+            // ValidatorOptions.Global.PropertyNameResolver 换成 camelCase 解析器且不还原，本程序集里
+            // 有用例会启动 WebApplicationFactory，之后这里拿到的就是 camelCase 名（#3342）。
+            // 这一处的危险形态与 #3342 其余位点不同：下面断言的是「没有落在这条规则上的失败」，
+            // 过滤器一旦对不上就退化成**恒空过滤 + 恒真断言**（空转），永远不会红——
+            // 即 #3318 那条「断言还在跑，但它要证的事已不存在」。
+            // 不能改断 ErrorMessage：Inventory 的 RequiredInventoryCode 里 WithMessage 模板是
+            // "{PropertyName} may only contain ..."，含 {PropertyName} 占位符，NotEmpty/MaximumLength
+            // 更是默认文案，文案本身就随同一个解析器漂移。
             var failures = validator.Validate(MovementCommandCarrying(scope, key)).Errors
-                .Where(error => string.Equals(error.PropertyName, IdempotencyKeyPropertyName, StringComparison.Ordinal))
+                .Where(error => string.Equals(error.PropertyName, IdempotencyKeyPropertyName, StringComparison.OrdinalIgnoreCase))
                 .Select(error => error.ErrorMessage)
                 .ToArray();
 

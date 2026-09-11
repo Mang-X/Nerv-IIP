@@ -27,8 +27,12 @@ namespace Nerv.IIP.Business.Maintenance.Web.Tests;
 /// <c>AddTenantRules</c> 用 <c>WithMessage</c> 钉死了这两句文案、模板里不含 <c>{PropertyName}</c>
 /// 占位符，因此 <c>ErrorMessage</c> 不受 <c>PropertyNameResolver</c> / <c>DisplayNameResolver</c> 影响。
 /// 文案与字段一一对应，所以这不是把断言放宽：仍然能分辨是组织标识还是环境标识被打红。
-/// ⚠️ 不要改回大小写不敏感比较 <c>PropertyName</c>：那样虽然也能分辨是哪个字段被打红，却把「解析器
-/// 被换过」这件事一并掩盖掉——PascalCase 与 camelCase 都会过，命名策略本身不再有任何鉴别力。
+/// ⚠️ 这里优先断 <c>ErrorMessage</c> 而不是用 <c>OrdinalIgnoreCase</c> 比 <c>PropertyName</c>，理由**不是**
+/// 「后者会掩盖解析器被换过」——断 <c>ErrorMessage</c> 在大小写这一维同样瞎。真正的差别是
+/// <c>ErrorMessage</c> 钉住的是「**哪条规则**失败」（文案与规则一一对应），比「哪个成员失败」更细：
+/// 同一字段上再加一条规则时，断 <c>PropertyName</c> 会被新规则兜住，断 <c>ErrorMessage</c> 不会。
+/// #3342 里文案含 <c>{PropertyName}</c> 占位符或走 FluentValidation 默认文案的那些位点用不了这条口径，
+/// 按 <c>OrdinalIgnoreCase</c> 处置。
 /// </summary>
 [Collection(WebApplicationFactoryCollection.Name)]
 public sealed class MaintenanceListQueryCompositionTests

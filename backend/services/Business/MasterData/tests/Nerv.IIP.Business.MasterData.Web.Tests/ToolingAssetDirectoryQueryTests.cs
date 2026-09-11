@@ -118,12 +118,12 @@ public sealed class ToolingAssetDirectoryQueryTests
         var result = validator.Validate(new ListToolingAssetsQuery("", "", new string('x', 201), (ToolingAssetStatus)99, -1, 501));
 
         Assert.Equal(6, result.Errors.Count);
-        AssertFailure(result, "组织标识不能为空。");
-        AssertFailure(result, "环境标识不能为空。");
-        AssertFailure(result, "关键字不能超过 200 个字符。");
-        AssertFailure(result, "工装状态无效。");
-        AssertFailure(result, "skip 不能小于 0。");
-        AssertFailure(result, "take 必须在 1 至 500 之间。");
+        AssertFailure(result, nameof(ListToolingAssetsQuery.OrganizationId), "组织标识不能为空。");
+        AssertFailure(result, nameof(ListToolingAssetsQuery.EnvironmentId), "环境标识不能为空。");
+        AssertFailure(result, nameof(ListToolingAssetsQuery.Keyword), "关键字不能超过 200 个字符。");
+        AssertFailure(result, nameof(ListToolingAssetsQuery.Status), "工装状态无效。");
+        AssertFailure(result, nameof(ListToolingAssetsQuery.Skip), "skip 不能小于 0。");
+        AssertFailure(result, nameof(ListToolingAssetsQuery.Take), "take 必须在 1 至 500 之间。");
     }
 
     /// <summary>
@@ -135,9 +135,14 @@ public sealed class ToolingAssetDirectoryQueryTests
     /// </summary>
     private static void AssertFailure(
         FluentValidation.Results.ValidationResult result,
+        string propertyName,
         string errorMessage)
     {
-        Assert.Single(result.Errors, failure => failure.ErrorMessage == errorMessage);
+        var failure = Assert.Single(result.Errors, failure => failure.ErrorMessage == errorMessage);
+
+        // 「这条文案挂在哪个字段上」这一维照样钉住，只是忽略大小写：解析器换成 camelCase 后
+        // 名字只差首字母大小写，成员名写错仍然红。
+        Assert.Equal(propertyName, failure.PropertyName, ignoreCase: true);
     }
 
     private static ServiceProvider CreateProvider()
