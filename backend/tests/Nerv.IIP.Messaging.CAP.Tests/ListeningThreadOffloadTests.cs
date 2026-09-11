@@ -100,6 +100,33 @@ public sealed class ListeningThreadOffloadTests
     }
 
     /// <summary>
+    /// 验收 4 的另一面：token <b>已取消</b>时，连专用线程都不该起。
+    ///
+    /// <para>把 <c>cancellationToken</c> 交给 <c>StartNew</c> 的承重之处就在这里——token 已取消时任务直接转
+    /// <c>Canceled</c>、<b>委托根本不被调度</b>；若改传 <c>CancellationToken.None</c>，委托会被调度、
+    /// 专用线程会被起起来、进 inner 再立刻抛出，等于为一个已经取消的订阅白付一条线程。
+    /// 宿主关闭与消费组注册重叠时这条路径是可达的（CAP 传的是它自己的 <c>_cts.Token</c>）。</para>
+    ///
+    /// <para>⚠️ 仅断言「await 抛 <see cref="OperationCanceledException"/>」区分不了这两种写法：
+    /// <c>Faulted</c>(内含 OCE) 与 <c>Canceled</c> 在 <c>await</c> 处都抛 OCE。所以这里断的是
+    /// <b>线程有没有被起</b>与 <c>IsCanceled</c>。</para>
+    /// </summary>
+    [Fact]
+    public async Task Already_cancelled_token_starts_no_dedicated_thread()
+    {
+        var inner = new BlockingConsumerClient();
+        var client = new DecoratedConsumerClient(inner);
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+
+        var (_, listening) = await StartListeningAsync(client, cancellation.Token);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => listening);
+        Assert.True(listening.IsCanceled);
+        Assert.Null(inner.ExecutingThread);
+    }
+
+    /// <summary>
     /// 边界：inner 若<b>正常返回</b>一个已完成的 Task（不是上游那种永不返回的形态），装饰器必须原样透传完成，
     /// 不能因为多了一层 <c>StartNew</c>/<c>Unwrap</c> 就把结果吞掉或改变完成语义。
     /// </summary>
