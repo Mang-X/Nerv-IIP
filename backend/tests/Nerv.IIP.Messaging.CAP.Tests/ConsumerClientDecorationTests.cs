@@ -10,8 +10,9 @@ using Xunit;
 namespace Nerv.IIP.Messaging.CAP.Tests;
 
 /// <summary>
-/// #3350（#3236 拆解 2/5）：装饰器骨架只做透传。这里的断言分两类——
-/// 一类钉住「挂载点确实在」（S3/S4 要挂的位置），一类是反证：装饰前后可观察行为逐字相同。
+/// #3350（#3236 拆解 2/5）：装饰器骨架<b>在消息路径上 100% 透传</b>，唯一有自身行为的代码在 DI 组装期
+/// （<c>AddServices</c> 的 fail closed）。这里的断言分两类——一类钉住「挂载点确实在」（S3/S4 要挂的位置），
+/// 一类是反证：装饰前后可观察行为逐字相同。
 /// </summary>
 public sealed class ConsumerClientDecorationTests
 {
@@ -112,8 +113,14 @@ public sealed class ConsumerClientDecorationTests
     }
 
     /// <summary>
-    /// 上界闭合：脚本触及的成员集合必须等于 <see cref="IConsumerClient"/> 的全部成员。
-    /// 上游新增成员时这条先红，反证用例不会悄悄少覆盖一个转发面。
+    /// 上界闭合，<b>粒度是成员名</b>：脚本触及的成员名集合必须等于 <see cref="IConsumerClient"/>（经
+    /// <see cref="Type.GetInterfaces"/> 递归收进 <see cref="IAsyncDisposable"/>）的全部成员名。
+    ///
+    /// <para>⚠️ 残留边界，别读成完全闭合：<b>上游新增成员会让这条红；给已有成员名新增第二个访问器不会</b>
+    /// ——名字集合没变。今天两个可写属性的 setter 之所以被覆盖，是因为反证脚本各做了 set → 读回 → 核对
+    /// inner 侧收到，不是因为这条断言拦得住。访问器那一面由编译器兜住：<see cref="IConsumerClient"/> 的成员
+    /// 新增访问器会让 <c>DecoratedConsumerClient</c> 不再实现该接口而编译失败，所以它不会静默漏掉——
+    /// 但那不是这条用例的功劳。</para>
     /// </summary>
     [Fact]
     public async Task TranscriptCoversEveryConsumerClientMember()

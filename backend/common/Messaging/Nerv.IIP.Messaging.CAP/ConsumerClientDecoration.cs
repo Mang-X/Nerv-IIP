@@ -8,7 +8,12 @@ namespace Nerv.IIP.Messaging.CAP;
 /// <summary>
 /// Wraps the transport's <see cref="IConsumerClientFactory"/> and every <see cref="IConsumerClient"/> it creates
 /// so that later work (#3351 首轮订阅闸门、#3352 <see cref="IConsumerClient.ListeningAsync"/> 专用线程) has one
-/// place to hook into. <b>This skeleton forwards every member verbatim and adds no behaviour of its own.</b>
+/// place to hook into.
+///
+/// <para><b>消息路径 100% 透传</b>：<see cref="DecoratedConsumerClientFactory"/> 与
+/// <see cref="DecoratedConsumerClient"/> 的每一个成员都逐字转发 inner，没有任何自身行为。本文件里唯一有自身
+/// 行为的代码在 <b>DI 组装期</b>——<see cref="AddServices"/> 的 fail closed。#3351 / #3352 要加的行为恰恰在
+/// 消息路径上，与本骨架的边界互补。</para>
 ///
 /// <para>Registration mechanics: the transport package registers <see cref="IConsumerClientFactory"/> from its own
 /// <see cref="ICapOptionsExtension.AddServices"/>, and <c>AddCap</c> runs the extensions in registration order.
@@ -23,8 +28,9 @@ internal sealed class ConsumerClientDecorationExtension : ICapOptionsExtension
             descriptor => descriptor.ServiceType == typeof(IConsumerClientFactory));
         if (transportDescriptor?.ImplementationType is null)
         {
-            // Fail closed. Silently skipping would leave the decorator unmounted while every gate stays green,
-            // which would turn #3351/#3352 into no-ops that nothing reports on.
+            // Fail closed，且这是本文件唯一有自身行为的代码——它在 DI 组装期，不在消息路径上。
+            // 静默跳过会让装饰器不挂载而所有门禁照绿，把 #3351/#3352 变成没人报告的空操作；
+            // 只记日志等于静默（CI 不读警告）。抛异常把「没挂上」从静默变成每个宿主启动即失败。
             throw new InvalidOperationException(
                 $"The CAP transport did not register an {nameof(IConsumerClientFactory)} with a concrete implementation type, "
                 + $"so {nameof(ConsumerClientDecorationExtension)} cannot wrap it. "
