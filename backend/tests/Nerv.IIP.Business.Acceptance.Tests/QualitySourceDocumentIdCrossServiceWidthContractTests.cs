@@ -62,8 +62,16 @@ namespace Nerv.IIP.Business.Acceptance.Tests;
 ///
 /// **值域边界（声明放弃了什么，别读成完备）**：
 /// <list type="bullet">
-/// <item>列宽读的是 **EF 模型**而不是迁移脚本。只改迁移不改模型（或反之）本类抓不到，
-/// 那是「模型/迁移漂移」另一类护栏（pending model changes 门禁）的职责。</item>
+/// <item>列宽读的是 **EF 模型**而不是迁移脚本。模型与迁移单边漂移不由本类抓——
+/// 它由 EF 自己在 <c>MigrateAsync</c> 内的 <c>ValidateMigrations</c> 抛
+/// <c>PendingModelChangesWarning</c>（<c>InvalidOperationException</c>：
+/// 「The model for context 'X' has pending changes.」）暴露，因而只在**跑真库迁移的用例**上显形。
+/// <b>本仓没有 pending-model-changes 门禁</b>——<c>HasPendingModelChanges</c> 全仓零调用点，
+/// <c>.github/</c> 与 <c>scripts/</c> 里也没有任何 job 或脚本跑
+/// <c>dotnet ef migrations has-pending-model-changes</c>（#3347 三条枚举路径实读）。
+/// 在 PR 上这条保护由 <c>PostgreSQL Provider Tests</c> job 承担：业务服务路径恒选中 impact-plan 的
+/// <c>postgresql</c> gate（#3347 实测），因此 Quality/MES 这两侧的漂移在引入它的那个 PR 上就会红。
+/// 别照抄别处注释里那句「由 pending-model-changes 门禁承担」。</item>
 /// <item>本类只覆盖 <c>InspectionResultPayload.SourceDocumentId</c> 这一条跨服务字段对。
 /// 其它 Quality → MES / MES → Quality 的字段对已在 PR 正文按跨服务字段对逐条枚举并登记，
 /// **本票只登记不修**，也**不由本类看守**。</item>
