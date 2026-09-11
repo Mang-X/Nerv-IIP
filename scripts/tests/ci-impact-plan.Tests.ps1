@@ -618,9 +618,27 @@ function Assert-FullChainProjectReferenceCoverage {
     # 引用关系的唯一权威是 Nerv.IIP.Business.FullChain.Tests.csproj 的 ProjectReference，
     # 新增一条引用而忘了更新 CiImpactPlan 的集合/分支，这里立刻红。
     #
-    # **本契约不保证什么（别读成完备）**：它只覆盖 .csproj 里的**编译期** ProjectReference。
-    # FullChain 的运行时依赖面比这更大（seed 路径、跨服务事件转换器/处理器等由
-    # Test-FullChainSeedPath / Test-CrossServiceIntegrationEventPath 另行覆盖），那些不在本契约射程内。
+    # **本契约不保证什么（别读成完备）**：
+    #
+    # (a) 它只覆盖 .csproj 里的**编译期** ProjectReference。FullChain 的运行时依赖面比这更大
+    #     （seed 路径、跨服务事件转换器/处理器等由 Test-FullChainSeedPath /
+    #     Test-CrossServiceIntegrationEventPath 另行覆盖），那些不在本契约射程内。
+    #
+    # (b) **它只看守一个方向**：「csproj 里有这条引用 ⇒ CiImpactPlan 必须选中 full_chain」。
+    #     **反向不看守** —— csproj 里删掉一条引用、而上面那个名单里还留着该服务，本契约**不会红**。
+    #     这个方向是**刻意选的、也是安全的**：残留名单只会让 full_chain lane **过度选中**
+    #     （多跑一次重 lane），不会让它**漏选**；而漏选才是 #3338 要修的那类缺陷
+    #     （改了网关却不跑 FullChain，缺陷带着绿灯进 main）。⛔ 别把本契约读成双向完备。
+    #
+    # (c) ⚠️ **一个「绿得理由不对」的已知边界（登记，未在 #3338 修）**：下面业务服务那一面用的是
+    #     **合成探针路径**。今天 5 个被引用服务全都在 CiImpactPlan 的 $knownBusinessServiceNames 里，
+    #     所以没有假过。但**将来若 FullChain 引用了一个尚未登记进那份名单的业务服务**，探针路径会命中
+    #     CiImpactPlan 的 `-not $knownBusinessServiceNameSet.Contains(...)` 分支走 Select-AllImpacts
+    #     **全量点亮**，于是本契约照样通过 —— **CI 行为仍然正确**（全选是保守的），
+    #     **但本契约那一刻是因为错误的理由变绿的**，它并没有证明「名单覆盖了该服务」。
+    #     **可辨识特征（实测读数，#3338）**：已登记服务的探针点亮 7 个 flag、full_chain 的 reason 前缀是
+    #     `changed:`；未登记服务点亮 20 个 flag、reason 前缀是 `unclassified-business-service:`。
+    #     后来人若要收掉这一格，就从这个前缀入手。
     $projectPath = Join-Path $repoRoot 'backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj'
     Assert-Contract (Test-Path -LiteralPath $projectPath) 'FullChain test project must exist for the dependency-edge contract.'
 
