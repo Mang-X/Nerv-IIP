@@ -404,8 +404,15 @@ describe('WMS 拒绝原因代码（#1397 / 台账 #81）', () => {
     expect(forbidden).not.toBe('没有权限执行此操作。')
   })
 
+  // 替身码在 #3155 换过一次：原来用的是 `unprocessable`，而它其实是 WMS 中间件真会外发的
+  // 稳定码（`WmsUnprocessableException.SafeCode`），只是当时两侧没登记。#3155 把后端注册表与
+  // 前端词表焊成单向包含之后它被登记了，于是**不再是**「未登记的代码」，拿它做替身就测不到本条性质。
+  // 顺带说明为什么登记它是修复而不是回退：`unprocessable` 的语义是业务前置条件不满足，
+  // 落到 422 泛化分支拿到的「请检查填写项」根本没有填写项可查——正是本 describe 块要消灭的那类文案。
   it('未登记的代码不猜语义，落回原有分层兜底', () => {
-    expect(friendlyErrorMessage({ message: 'unprocessable' })).toContain('请检查填写项')
+    expect(
+      friendlyErrorMessage({ message: 'unprocessable-entity-for-an-unlisted-reason' }),
+    ).toContain('请检查填写项')
   })
 
   it('分层链上的三个入口都能拿到中文原因（toast 与行内同一口径）', () => {

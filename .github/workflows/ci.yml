@@ -2239,9 +2239,10 @@ jobs:
     # 新判据：增删 step 后按 main 上最近若干次 run 的**整 job** 观测最大值重新推导，
     # 取其约 2 倍；不要只看新 step 自身耗时。
     #
-    # step 预算合计 178m（36 个 step：3m checkout
-    # + 35 × 5m；2026-08-23 逐 step 实测求和，2026-09-02 按 #2863 新增两个 step 重算，
-    # 2026-09-05 按 #3145 新增两个 step 重算，2026-09-11 按 #3349 新增一个 step 重算），
+    # step 预算合计 188m（38 个 step：3m checkout
+    # + 37 × 5m；2026-08-23 逐 step 实测求和，2026-09-02 按 #2863 新增两个 step 重算，
+    # 2026-09-05 按 #3145 新增两个 step 重算，2026-09-11 按 #3349 新增一个 step 重算，
+    # 2026-09-12 按 #3155 新增两个 step 重算），
     # 且仅为逐 step 上限。
     # 合计超过 job 预算对层级 B 是正确的，也不是 scripts/lib/CiWorkflowBudgets.ps1
     # 执行的约束：「step 预算合计低于 job 预算」只适用于层级 A（会从 `if: always()`
@@ -2476,6 +2477,25 @@ jobs:
         timeout-minutes: 5
         shell: pwsh
         run: ./scripts/verify-restore-lock-contract.ps1
+
+      # #3155：后端发布的稳定码与前端展示词表此前没有任何机械关联。后端把码改名、前端词表不动，
+      # 用户就重新看到裸英文码（channel A：信封 message 位就是码本身，不含中文），
+      # 或者一条阻断码静默拦掉工单下达（channel B：未登记的码走
+      # describeMesReadinessReason 兜底，RELEASE_IGNORED_TASK_BLOCKERS.has(code) 为 false）——
+      # 两种后果之前都**全仓零红**：后端那侧只有逐字 pin 断言，它保证码不被悄悄改名，
+      # 不保证前端认得它（#3333 / PR #3359 的 M5 格实测：后端红 1、前端三包全绿）。
+      # 方向是单向包含（后端 ⊆ 前端）：前端为已下线的历史码保留展示是合法的，反向要求会误报。
+      # 检查器两侧都读源码文本，因此它自己可以无声缴械（改注册表类名、清空注册表、
+      # 清空前端表、把嵌套键当成码），上面那一步守的就是这件事，每种缴械形态各有 fixture。
+      - name: Test stable code frontend vocabulary checker
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/stable-code-frontend-vocabulary.Tests.ps1
+
+      - name: Run stable code frontend vocabulary check
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/verify-stable-code-frontend-vocabulary.ps1
 
   ci-summary:
     name: CI Summary

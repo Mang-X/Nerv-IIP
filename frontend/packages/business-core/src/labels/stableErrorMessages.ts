@@ -34,6 +34,23 @@ export const STABLE_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   // 不是可交给操作工的可行动文案。字段级中文文案是另一票。
   'request-payload-invalid': '提交的内容有误，请检查后重新提交；仍失败请联系管理员。',
   'lifecycle-conflict': '状态已被其他操作更新',
+  // #3155：以下四条此前**没有任何一侧登记**，后端一直在发、前端一直不认，所以直接裸码上屏。
+  // 它们现在与上面各条一样受跨语言契约约束：后端注册表里的每个码必须在本表登记，由
+  // `scripts/verify-stable-code-frontend-vocabulary.ps1` 在 CI 强制（方向是后端 ⊆ 本表）。
+  //
+  // 网关幂等键钳的第三条（另两条在上面）。语义是「同一次请求里出现了两个互不相同的幂等键」，
+  // 不是「这个键被别人用过」——后者是 `idempotency-conflict`。两句文案刻意分开：
+  // PC 的 notify.ts 通用正则按子串 `idempotency` 命中会把两者都说成「操作意图发生冲突」，
+  // 那对本条是误导（真正要做的是刷新页面重发，而不是去查键的历史用途）。
+  'idempotency-key-mismatch': '本次请求的操作标识前后不一致，请刷新页面后重新发起。',
+  // WMS 拒绝路径的两条**兜底**码（`WmsLifecycleConflictMiddleware`）。中段那些更具体的
+  // kebab 原因码（如 `resource-not-assigned-to-self`）由 `SafeOutboundCode` 原样外发，
+  // 它们不是常量声明、不在契约扫描面内——见检查器头部的边界声明，别读成「WMS 全部拒绝原因都已登记」。
+  forbidden: '没有执行该操作的权限，请联系管理员确认你的作业范围。',
+  unprocessable: '当前数据不满足该操作的前置条件，请刷新后核对。',
+  // MES `MesRoutingSnapshotMissingException` 经 `MesLifecycleConflictMiddleware` 外发时，
+  // 信封 message 位是**裸码**（KnownException 那条路径才带中文），故必须在本表登记。
+  ROUTING_SNAPSHOT_MISSING: '工单缺少已发布生产版本的工艺路线快照，请先维护并发布生产版本。',
 }
 
 export function stableErrorMessage(value: unknown): string {
