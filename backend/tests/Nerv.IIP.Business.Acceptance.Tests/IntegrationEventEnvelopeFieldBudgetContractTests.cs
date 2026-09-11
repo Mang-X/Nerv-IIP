@@ -48,6 +48,14 @@ namespace Nerv.IIP.Business.Acceptance.Tests;
 /// <item><b>不证明这四列是该值的全部承载列。</b>某个**服务专属**的写入点若把同一个值落进更窄的列，
 /// 有效上界按 #3281 取最小，责任在那个服务 —— 同 #3339 处置
 /// <c>inspection_tasks.trigger_idempotency_key</c>(474) 的判例。</item>
+/// <item><b>⚠️ <see cref="InboxOwners"/> 那份 9 个服务的名单本身是**声明式白名单**，不由任何东西派生。</b>
+/// 「字段维度」有反向断言看守（<see cref="No_unbudgeted_envelope_field_is_carried_by_the_inbox_table"/>
+/// 会在 inbox 冒出闭集外的信封字段时报红），但**「服务维度」没有**：
+/// 将来新增第 10 个拥有 <c>processed_integration_events</c> 的服务，
+/// 它若把某一列开得比 <see cref="IntegrationEventEnvelopeFieldBudget"/> 更窄，
+/// **本类一条都不会红**（名单里没有它，<c>Min</c> 自然算不到它）。
+/// 这是本仓「白名单记的是写名单那刻的世界」的同形边界，**登记在此，不假装它不存在**。
+/// ⛔ 不用源码文本扫描去补（#3176 / PR #3214 三轮实证不收敛）。</item>
 /// <item><b>不证明所有消费者都走 <c>IntegrationEventConsumerGuard</c>。</b>绕开 Guard 的不受闸保护。</item>
 /// </list>
 /// </remarks>

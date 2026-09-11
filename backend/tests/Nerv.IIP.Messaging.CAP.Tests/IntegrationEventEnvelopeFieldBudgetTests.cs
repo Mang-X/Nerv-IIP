@@ -22,6 +22,13 @@ public sealed class IntegrationEventEnvelopeFieldBudgetTests
     private const string EventType = "budget.Event";
 
     /// <summary>闸的边界：恰好等于预算放行，多一个字符判死信。</summary>
+    /// <remarks>
+    /// ⭐ <b>「新闸不会误杀既有事件」这条性质由这里承担，不由回归面承担</b>（PR #3371 复审的修正）：
+    /// 把一批既有消费者用例跑绿**证不到不误杀** —— 那些用例的夹具取值远离边界，
+    /// 它们绿只说明「今天的夹具没撞上闸」，不说明「闸放行了所有合法长度」。
+    /// 真正把「上界之内一律放行」钉住的是本条的**前半段**（长度恰为预算 ⇒ 必须进 handler），
+    /// 而后半段（预算 +1 ⇒ 必须死信）钉的是闸真的拦得住。两段合起来才是闸的完整语义。
+    /// </remarks>
     [Theory]
     [InlineData(nameof(IIntegrationEventEnvelope.IdempotencyKey))]
     [InlineData(nameof(IIntegrationEventEnvelope.EventId))]
