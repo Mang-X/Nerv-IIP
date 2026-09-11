@@ -128,6 +128,36 @@ public sealed class FirstSubscriptionGateTests
         await Task.WhenAll(subscriptions).WaitAsync(FailureTimeout);
     }
 
+    /// <summary>
+    /// 放行<b>不得在首个调用者自己的栈上</b>把其余消费组串行跑完：那等于首个调用者的线程替 17 个组做完了
+    /// 启动工作，本票就又变回一个线程占用源。
+    ///
+    /// <para><b>怎么做到确定性。</b> 放行首个订阅的 <c>TaskCompletionSource</c> 是<b>默认</b>选项（续体内联），
+    /// 所以 <see cref="SubscribeProbe.ReleaseFirstSubscription"/> 这一次调用会在<b>测试线程</b>上一路把首个订阅
+    /// 跑完并触发闸门放行。闸门若也用默认选项，其余 17 个组的续体就会接着在同一次调用里内联跑完 ——
+    /// 那么这一行返回时 <see cref="SubscribeProbe.FollowersEntered"/> 就已经是 17；
+    /// 用 <see cref="TaskCreationOptions.RunContinuationsAsynchronously"/> 则是 0。
+    /// 这条断言取的就是「那一行返回的瞬间」，不含任何时序假设。</para>
+    /// </summary>
+    [Fact]
+    public async Task ReleasingTheFirstSubscription_DoesNotRunTheRemainingConsumerGroupsOnItsOwnStack()
+    {
+        var probe = new SubscribeProbe(expectedFollowers: ConsumerGroupCount - 1);
+        var gate = new FirstSubscriptionGate();
+        var clients = CreateClients(probe, gate);
+
+        var subscriptions = await DispatchEveryConsumerGroupAsync(clients);
+        Assert.Equal(0, probe.FollowersEntered);
+
+        probe.ReleaseFirstSubscription();
+
+        Assert.Equal(0, probe.FollowersEntered);
+
+        probe.ReleaseFollowers();
+        await Task.WhenAll(subscriptions).WaitAsync(FailureTimeout);
+        Assert.Equal(ConsumerGroupCount - 1, probe.FollowersEntered);
+    }
+
     /// <summary>闸门只改并发形状，不改参数：inner 收到的 topics 必须逐字一致，顺序一致。</summary>
     [Fact]
     public async Task TheGate_ForwardsTheTopicsVerbatim()
@@ -219,6 +249,7 @@ public sealed class FirstSubscriptionGateTests
         private int entered;
         private int inFlight;
         private int followersInFlight;
+        private int followersEntered;
         private bool firstSubscriptionExited;
 
         public string? FirstSubscriptionFailure { get; init; }
@@ -230,6 +261,9 @@ public sealed class FirstSubscriptionGateTests
         public int PeakInFlightWhileFirstSubscriptionRan { get; private set; }
 
         public int PeakConcurrentFollowerSubscriptions { get; private set; }
+
+        /// <summary>单调计数：进入过 inner <c>SubscribeAsync</c> 的非首个消费组数，退出不减。</summary>
+        public int FollowersEntered { get { lock (sync) { return followersEntered; } } }
 
         public IReadOnlyList<string> Transcript { get { lock (sync) { return [.. transcript]; } } }
 
@@ -261,6 +295,7 @@ public sealed class FirstSubscriptionGateTests
 
                 if (!isFirst)
                 {
+                    followersEntered++;
                     followersInFlight++;
                     PeakConcurrentFollowerSubscriptions =
                         Math.Max(PeakConcurrentFollowerSubscriptions, followersInFlight);
