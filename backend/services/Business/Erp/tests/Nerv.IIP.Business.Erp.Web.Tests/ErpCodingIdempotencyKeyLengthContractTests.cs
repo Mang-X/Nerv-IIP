@@ -353,9 +353,15 @@ public sealed class ErpCodingIdempotencyKeyLengthContractTests
 
         var overBound = validate(new string('k', bound + 1));
         Assert.False(overBound.IsValid, $"上界 {bound} 加一位必须拒绝。");
+        // PropertyName 用 OrdinalIgnoreCase 比对：app.UseFastEndpoints(...) 启动时会把
+        // ValidatorOptions.Global.PropertyNameResolver 换成 camelCase 解析器且不还原，同程序集里只要有
+        // 用例先启动过 host，这里拿到的就是 camelCase 名（#3342）。容忍的只有这一维进程级大小写差异——
+        // 成员名写成别的成员或不存在的名字照样红（#3342 的变异矩阵为此各跑了一格）。
+        // 这几条规则用的是 FluentValidation 默认文案，文案里嵌的正是同一个受解析器影响的展示名，
+        // 所以这里不能像 #3342 其余位点那样改断 ErrorMessage。
         Assert.Contains(
             overBound.Errors,
-            error => string.Equals(error.PropertyName, "IdempotencyKey", StringComparison.Ordinal));
+            error => string.Equals(error.PropertyName, "IdempotencyKey", StringComparison.OrdinalIgnoreCase));
     }
 
     private static ConvertPurchaseRequisitionsToPurchaseOrderCommand ConvertCommand(string? idempotencyKey)
