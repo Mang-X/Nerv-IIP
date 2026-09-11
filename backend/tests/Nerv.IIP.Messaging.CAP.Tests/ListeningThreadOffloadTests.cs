@@ -98,7 +98,10 @@ public sealed class ListeningThreadOffloadTests
 
         var dedicated = inner.ExecutingThread!;
         Assert.False(dedicated.IsThreadPoolThread);
-        // 取消之前阻塞调用必须仍未返回，否则下面那条「取消后返回」就是空过断言。
+        // 冗余但有用的**早失败守卫**：取消之前阻塞调用本就不该返回。
+        // ⚠️ 它**不是**防空过的那一道——复审两步实测：只删这条，整程序集仍绿 72/72；
+        // 造真正的空过场景（夹具让阻塞调用提前返回）并同时删掉它，仍红 3（含本条用例）。
+        // 真正兜住空过的是本用例末尾那条 ThrowsAnyAsync<OperationCanceledException>(listening.WaitAsync)。
         Assert.False(inner.Exited.Task.IsCompleted);
 
         await cancellation.CancelAsync();
