@@ -70,8 +70,7 @@ public sealed class FirstSubscriptionGateTests
         var gate = new FirstSubscriptionGate();
         var clients = CreateClients(probe, gate);
 
-        var dispatch = Task.Run(() => clients.Select(client => client.SubscribeAsync(["topic"])).ToArray());
-        var subscriptions = await dispatch.WaitAsync(FailureTimeout);
+        var subscriptions = await DispatchEveryConsumerGroupAsync(clients);
 
         // 派发已经返回，而首个订阅仍未完成 ⇒ 没有任何一次调用阻塞了派发方。
         Assert.All(subscriptions, subscription => Assert.False(subscription.IsCompleted));
@@ -93,7 +92,7 @@ public sealed class FirstSubscriptionGateTests
         var gate = new FirstSubscriptionGate();
         var clients = CreateClients(probe, gate);
 
-        var subscriptions = clients.Select(client => client.SubscribeAsync(["topic"])).ToArray();
+        var subscriptions = await DispatchEveryConsumerGroupAsync(clients);
         probe.ReleaseFirstSubscription();
 
         var firstFailure = await Assert.ThrowsAsync<InvalidOperationException>(() => subscriptions[0].WaitAsync(FailureTimeout));
@@ -146,6 +145,16 @@ public sealed class FirstSubscriptionGateTests
         Assert.Equal([("group-01", "topic-b|topic-a|topic-b")], probe.ObservedTopics);
     }
 
+    /// <summary>
+    /// 复刻上游的<b>同步</b> <c>foreach</c>：逐个调用 <c>SubscribeAsync</c>、只收集返回的 <see cref="Task"/>，
+    /// <c>ToArray</c> 把整个循环在这里跑完。放在 <see cref="Task.Run(Func{object})"/> 上并有界等它返回，
+    /// 是为了让「闸门阻塞了派发方」这种实现表现为<b>有界的红</b>而不是把整个测试进程挂死；成功路径上这条
+    /// 有界等待从不兑现，快照仍然取自「18 次调用全部返回之后」这个确定时刻。
+    /// </summary>
+    private static Task<Task[]> DispatchEveryConsumerGroupAsync(IConsumerClient[] clients) =>
+        Task.Run(() => clients.Select(client => client.SubscribeAsync(["topic"])).ToArray())
+            .WaitAsync(FailureTimeout);
+
     private static IConsumerClient[] CreateClients(SubscribeProbe probe, FirstSubscriptionGate gate) =>
         [.. Enumerable
             .Range(1, ConsumerGroupCount)
@@ -161,8 +170,7 @@ public sealed class FirstSubscriptionGateTests
         var gate = new FirstSubscriptionGate();
         var clients = CreateClients(probe, gate);
 
-        // 复刻上游的同步 foreach：逐个调用、只收集返回的 Task。ToArray 把整个循环在这里跑完。
-        var subscriptions = clients.Select(client => client.SubscribeAsync(["topic"])).ToArray();
+        var subscriptions = await DispatchEveryConsumerGroupAsync(clients);
 
         var inFlightAfterDispatch = probe.InFlight;
         var transcriptAfterDispatch = probe.Transcript;
