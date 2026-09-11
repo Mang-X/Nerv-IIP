@@ -6,13 +6,15 @@ using Nerv.IIP.Contracts.Wms;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Notification.Infrastructure;
 using Nerv.IIP.Notification.Web.Application.Commands.Notifications;
+using Nerv.IIP.Notification.Web.Application.Notifications;
 using NetCorePal.Extensions.DistributedTransactions;
 
 namespace Nerv.IIP.Notification.Web.Application.IntegrationEventHandlers;
 
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Wms.WmsIntegrationEvent", ConsumerName)]
 public sealed class WcsRetryExhaustedIntegrationEventHandlerForNotification(
-    ISender sender, ApplicationDbContext dbContext, IIntegrationEventDeadLetterStore deadLetterStore, TimeProvider timeProvider)
+    ISender sender, ApplicationDbContext dbContext, IIntegrationEventDeadLetterStore deadLetterStore, TimeProvider timeProvider,
+    NotificationSummaryBudget summaryBudget)
     : IIntegrationEventHandler<WmsIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "notification.wms-wcs-retry-exhausted";
@@ -31,6 +33,6 @@ public sealed class WcsRetryExhaustedIntegrationEventHandlerForNotification(
         }
         if (!await NotificationProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, timeProvider.GetUtcNow(), cancellationToken)) return;
         var request = new SubmitNotificationIntentRequest(integrationEvent.SourceService, integrationEvent.EventType, integrationEvent.EventId, NotificationContractConstants.IntentTypeTask, NotificationContractConstants.SeverityCritical, integrationEvent.IdempotencyKey, new NotificationResourceRef("wcs-task", integrationEvent.Payload.PublicReference, null), "WCS retry attempts exhausted", $"WCS task {integrationEvent.Payload.PublicReference} exhausted retry attempts: {integrationEvent.Payload.DiagnosticCode} {integrationEvent.Payload.DiagnosticMessage}", ["role:wms-operator"]);
-        await sender.Send(new SubmitNotificationIntentCommand(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, request, timeProvider.GetUtcNow()), cancellationToken);
+        await sender.Send(new SubmitNotificationIntentCommand(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, request, NotificationSummary.Render(request.Summary, summaryBudget), timeProvider.GetUtcNow()), cancellationToken);
     }
 }

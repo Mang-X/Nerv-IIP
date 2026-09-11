@@ -7,6 +7,7 @@ using Nerv.IIP.Contracts.Scheduling;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Notification.Infrastructure;
 using Nerv.IIP.Notification.Web.Application.Commands.Notifications;
+using Nerv.IIP.Notification.Web.Application.Notifications;
 using NetCorePal.Extensions.DistributedTransactions;
 using NetCorePal.Extensions.Primitives;
 
@@ -18,7 +19,8 @@ public sealed class ScheduleConflictDetectedIntegrationEventHandlerForNotificati
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
     IConfiguration configuration,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    NotificationSummaryBudget summaryBudget)
     : IIntegrationEventHandler<ScheduleConflictDetectedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "notification.scheduling-conflict-detected";
@@ -101,7 +103,7 @@ public sealed class ScheduleConflictDetectedIntegrationEventHandlerForNotificati
                 : $"Schedule plan {planId} has conflict {conflictId} ({reasonCode}) for work order {workOrderId}.",
             SuggestedRecipientRefs: recipientRefs);
 
-        await sender.Send(new SubmitNotificationIntentCommand(organizationId, environmentId, request, timeProvider.GetUtcNow()), cancellationToken);
+        await sender.Send(new SubmitNotificationIntentCommand(organizationId, environmentId, request, NotificationSummary.Render(request.Summary, summaryBudget), timeProvider.GetUtcNow()), cancellationToken);
     }
 
     private static string Required(string? value, string message)
@@ -130,7 +132,8 @@ public sealed class SchedulePlanInvalidatedIntegrationEventHandlerForNotificatio
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
     IConfiguration configuration,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    NotificationSummaryBudget summaryBudget)
     : IIntegrationEventHandler<SchedulePlanInvalidatedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "notification.scheduling-plan-invalidated";
@@ -173,9 +176,9 @@ public sealed class SchedulePlanInvalidatedIntegrationEventHandlerForNotificatio
         var planId = Required(payload.PlanId, "Schedule plan id is required.");
         var reasonCode = Required(payload.ReasonCode, "Schedule invalidation reason is required.");
         var operationCount = payload.AffectedOperations.Count;
-        var resourceSummary = payload.AffectedResourceIds.Count == 0
-            ? "no specific resource"
-            : string.Join(", ", payload.AffectedResourceIds);
+        // 同质枚举集合（资源标识）：先截项、后由 Render 整体夹紧。
+        // 截字符会产出不存在的资源标识，收件人拿 WC-PRESS-0 去搜会搜不到、或搜到另一台设备。
+        var resourceSummary = NotificationSummaryList.Describe(payload.AffectedResourceIds, "no specific resource");
         var recipientRefs = configuration.GetSection("Scheduling:InvalidationNotification:RecipientRefs").Get<string[]>() ?? [];
         recipientRefs = recipientRefs
             .Where(x => !string.IsNullOrWhiteSpace(x))
@@ -209,7 +212,7 @@ public sealed class SchedulePlanInvalidatedIntegrationEventHandlerForNotificatio
             Summary: $"Schedule plan {planId} was invalidated by {reasonCode}; {operationCount} operation(s), resources: {resourceSummary}.",
             SuggestedRecipientRefs: recipientRefs);
 
-        await sender.Send(new SubmitNotificationIntentCommand(organizationId, environmentId, request, timeProvider.GetUtcNow()), cancellationToken);
+        await sender.Send(new SubmitNotificationIntentCommand(organizationId, environmentId, request, NotificationSummary.Render(request.Summary, summaryBudget), timeProvider.GetUtcNow()), cancellationToken);
     }
 
     private static string Required(string? value, string message)

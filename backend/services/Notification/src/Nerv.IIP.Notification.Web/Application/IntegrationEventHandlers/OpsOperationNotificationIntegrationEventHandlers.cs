@@ -9,6 +9,7 @@ using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Notification.Infrastructure;
 using Nerv.IIP.Notification.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Notification.Web.Application.Commands.Notifications;
+using Nerv.IIP.Notification.Web.Application.Notifications;
 using NetCorePal.Extensions.DistributedTransactions;
 using NetCorePal.Extensions.Primitives;
 
@@ -19,7 +20,8 @@ public sealed class OperationTaskCompletedIntegrationEventHandlerForNotification
     ISender sender,
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    IOptions<OpsNotificationRecipientOptions> recipientOptions)
+    IOptions<OpsNotificationRecipientOptions> recipientOptions,
+    NotificationSummaryBudget summaryBudget)
     : IIntegrationEventHandler<OperationTaskCompletedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "notification.operation-task-completed";
@@ -45,6 +47,7 @@ public sealed class OperationTaskCompletedIntegrationEventHandlerForNotification
         await OpsNotificationConsumer.SubmitOnceAsync(
             sender,
             dbContext,
+            summaryBudget,
             ConsumerName,
             integrationEvent,
             payload.OperationTaskId,
@@ -62,7 +65,8 @@ public sealed class OperationApprovalRequestedIntegrationEventHandlerForNotifica
     ISender sender,
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    IOptions<OpsNotificationRecipientOptions> recipientOptions)
+    IOptions<OpsNotificationRecipientOptions> recipientOptions,
+    NotificationSummaryBudget summaryBudget)
     : IIntegrationEventHandler<OperationApprovalRequestedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "notification.operation-approval-requested";
@@ -88,6 +92,7 @@ public sealed class OperationApprovalRequestedIntegrationEventHandlerForNotifica
         await OpsNotificationConsumer.SubmitOnceAsync(
             sender,
             dbContext,
+            summaryBudget,
             ConsumerName,
             integrationEvent,
             payload.OperationTaskId,
@@ -105,7 +110,8 @@ public sealed class OperationApprovalApprovedIntegrationEventHandlerForNotificat
     ISender sender,
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    IOptions<OpsNotificationRecipientOptions> recipientOptions)
+    IOptions<OpsNotificationRecipientOptions> recipientOptions,
+    NotificationSummaryBudget summaryBudget)
     : IIntegrationEventHandler<OperationApprovalApprovedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "notification.operation-approval-approved";
@@ -131,6 +137,7 @@ public sealed class OperationApprovalApprovedIntegrationEventHandlerForNotificat
         await OpsNotificationConsumer.SubmitOnceAsync(
             sender,
             dbContext,
+            summaryBudget,
             ConsumerName,
             integrationEvent,
             payload.OperationTaskId,
@@ -148,7 +155,8 @@ public sealed class OperationApprovalRejectedIntegrationEventHandlerForNotificat
     ISender sender,
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    IOptions<OpsNotificationRecipientOptions> recipientOptions)
+    IOptions<OpsNotificationRecipientOptions> recipientOptions,
+    NotificationSummaryBudget summaryBudget)
     : IIntegrationEventHandler<OperationApprovalRejectedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "notification.operation-approval-rejected";
@@ -174,6 +182,7 @@ public sealed class OperationApprovalRejectedIntegrationEventHandlerForNotificat
         await OpsNotificationConsumer.SubmitOnceAsync(
             sender,
             dbContext,
+            summaryBudget,
             ConsumerName,
             integrationEvent,
             payload.OperationTaskId,
@@ -191,6 +200,7 @@ internal static class OpsNotificationConsumer
     public static async Task SubmitOnceAsync(
         ISender sender,
         ApplicationDbContext dbContext,
+        NotificationSummaryBudget summaryBudget,
         string consumerName,
         IIntegrationEventEnvelope integrationEvent,
         string operationTaskId,
@@ -235,6 +245,7 @@ internal static class OpsNotificationConsumer
             organizationId,
             environmentId,
             request,
+            NotificationSummary.Render(request.Summary, summaryBudget),
             DateTimeOffset.UtcNow), cancellationToken);
     }
 

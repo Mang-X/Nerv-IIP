@@ -73,7 +73,8 @@ public sealed class MesEngineeringChangeNotificationAcceptanceTests
             notificationDb,
             new InMemoryIntegrationEventDeadLetterStore(),
             CreateNotificationConfiguration(),
-            TimeProvider.System);
+            TimeProvider.System,
+            NotificationSummaryBudget.FromModel(notificationDb.Model));
         await notificationHandler.HandleAsync(impactEvent, CancellationToken.None);
 
         var intent = await notificationDb.NotificationIntents
@@ -127,7 +128,8 @@ public sealed class MesEngineeringChangeNotificationAcceptanceTests
             notificationDb,
             new InMemoryIntegrationEventDeadLetterStore(),
             CreateNotificationConfiguration(),
-            TimeProvider.System);
+            TimeProvider.System,
+            NotificationSummaryBudget.FromModel(notificationDb.Model));
         await notificationHandler.HandleAsync(impactEvent, CancellationToken.None);
 
         var intent = await notificationDb.NotificationIntents
