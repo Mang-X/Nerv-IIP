@@ -871,12 +871,15 @@ public sealed class BusinessConsoleMesReverseProductionReportRequestValidator
 /// <c>RetryFinishedGoodsReceiptInventoryPostingCommandValidator</c>
 /// （<c>IdempotencyKey</c> <c>MaximumLength(200)</c>），登记见
 /// <c>BusinessGatewayIdempotencyKeyDownstreamBoundContractTests.DownstreamBounds</c>。</para>
-/// <para><b>补这条规则改变了本位点超长键的响应形状</b>：此前超长键落到全局钳上，
-/// 拿的是带稳定码 <c>idempotency-key-too-long</c> 的 400；补规则之后
-/// 201..512 的键先被 DTO 校验拒，拿的是 FastEndpoints 默认的
+/// <para><b>补这条规则改变了本位点超长键的响应形状</b>（#3333 已修，本段按修后事实重写）：
+/// 此前超长键落到全局钳上，拿的是带稳定码 <c>idempotency-key-too-long</c> 的 400；
+/// 补规则之后 201..512 的键先被 DTO 校验拒，当时拿的是 FastEndpoints 默认的
 /// <c>{"statusCode":400,"message":"One or more errors occurred!","errors":{...}}</c>，前端拿不到稳定码。
-/// 这与 #3325 给 Erp 新补规则的那批位点是同一个缺陷，归 #3333，本票不在这里私自统一。
-/// OpenAPI 快照里本端点新增的那条 <c>400</c> 响应就是它。</para>
+/// #3333 把校验失败也成形为同一个 <c>ResponseData</c> 信封
+/// （<c>message</c> 位是稳定码 <c>request-payload-invalid</c>，见
+/// <c>BusinessGatewayValidationErrorResponse</c>），⇒ 两条上界现在只差稳定码本身，形状一致。
+/// OpenAPI 快照里本端点那条 <c>400</c> 响应的 schema 也因此从 <c>FastEndpointsErrorResponse</c>
+/// 换成了共享信封。</para>
 /// <para>共同口径见本文件顶部的「#3324 端点级幂等键上界」注释块。</para>
 /// </remarks>
 public sealed class BusinessConsoleMesRetryFinishedGoodsReceiptInventoryPostingRequestValidator

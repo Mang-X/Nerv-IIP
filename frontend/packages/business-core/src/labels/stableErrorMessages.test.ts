@@ -21,6 +21,7 @@ describe('stableErrorMessage', () => {
       'idempotency-key-invalid-characters',
       '操作标识含不支持的字符，本次未提交；请重新发起，仍失败请联系管理员。',
     ],
+    ['request-payload-invalid', '提交的内容有误，请检查后重新提交；仍失败请联系管理员。'],
     ['lifecycle-conflict', '状态已被其他操作更新'],
   ])('maps the exact stable wire value %s to actionable Chinese', (wireValue, message) => {
     expect(stableErrorMessage(wireValue)).toBe(message)

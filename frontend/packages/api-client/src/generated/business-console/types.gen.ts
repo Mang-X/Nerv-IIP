@@ -90,14 +90,6 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
     [key: string]: never;
 };
 
-export type FastEndpointsErrorResponse = {
-    statusCode?: number;
-    message?: string;
-    errors?: {
-        [key: string]: Array<string>;
-    };
-};
-
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateWmsInboundOrderResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateWmsInboundOrderResponse | null;
 };
@@ -8719,7 +8711,7 @@ export type GetBusinessConsoleWorkbenchSummaryErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -8771,7 +8763,7 @@ export type ListBusinessConsoleWmsInboundOrdersErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -8804,7 +8796,7 @@ export type CreateBusinessConsoleWmsInboundOrderErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -8840,7 +8832,7 @@ export type GetBusinessConsoleWmsReceiptWorkScopesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -8876,7 +8868,7 @@ export type GetBusinessConsoleWmsShipmentWorkScopesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -8912,7 +8904,7 @@ export type GetBusinessConsoleWmsCountWorkScopesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9067,7 +9059,7 @@ export type AssignBusinessConsoleWmsInboundOrderErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9107,7 +9099,7 @@ export type AssignBusinessConsoleWmsPutawayTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9147,7 +9139,7 @@ export type AssignBusinessConsoleWmsOutboundOrderErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9187,7 +9179,7 @@ export type AssignBusinessConsoleWmsPickingTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9227,7 +9219,7 @@ export type AssignBusinessConsoleWmsCountExecutionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9267,7 +9259,7 @@ export type CreateBusinessConsoleWmsPutawayTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9311,7 +9303,7 @@ export type ListBusinessConsoleWmsPutawayTasksErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9351,7 +9343,7 @@ export type StartBusinessConsoleWmsPutawayTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9393,7 +9385,7 @@ export type RecordBusinessConsoleWmsPutawayTaskProgressErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9435,7 +9427,7 @@ export type ReportBusinessConsoleWmsPutawayTaskExceptionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9477,7 +9469,7 @@ export type CompleteBusinessConsoleWmsPutawayTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9523,7 +9515,7 @@ export type CompleteBusinessConsoleWmsInboundOrderErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9570,7 +9562,7 @@ export type ListBusinessConsoleWmsOutboundOrdersErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9603,7 +9595,7 @@ export type CreateBusinessConsoleWmsOutboundOrderErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9641,7 +9633,7 @@ export type CreateBusinessConsoleWmsPickingTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9685,7 +9677,7 @@ export type ListBusinessConsoleWmsPickingTasksErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9725,7 +9717,7 @@ export type StartBusinessConsoleWmsPickingTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9767,7 +9759,7 @@ export type RecordBusinessConsoleWmsPickingTaskProgressErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9809,7 +9801,7 @@ export type ReportBusinessConsoleWmsPickingTaskExceptionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9851,7 +9843,7 @@ export type CompleteBusinessConsoleWmsPickingTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9897,7 +9889,7 @@ export type CompleteBusinessConsoleWmsOutboundOrderErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9937,7 +9929,7 @@ export type RetryBusinessConsoleWmsOutboundInventoryPostingErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9981,7 +9973,7 @@ export type ListBusinessConsoleWmsCountExecutionsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10014,7 +10006,7 @@ export type CreateBusinessConsoleWmsCountExecutionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10058,7 +10050,7 @@ export type CompleteBusinessConsoleWmsCountExecutionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10098,7 +10090,7 @@ export type DispatchBusinessConsoleWmsWcsTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10138,7 +10130,7 @@ export type FailBusinessConsoleWmsWcsTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10176,7 +10168,7 @@ export type CompleteBusinessConsoleWmsWcsTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10219,7 +10211,7 @@ export type ListBusinessConsoleWmsWcsTasksErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10263,7 +10255,7 @@ export type ListBusinessConsoleWmsReceivingQualityGatesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10303,7 +10295,7 @@ export type ListBusinessConsoleWmsSupplierReturnRequestsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10403,7 +10395,7 @@ export type GetBusinessConsoleTelemetryConnectorTagCoverageErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10442,7 +10434,7 @@ export type ListBusinessConsoleTelemetryTagsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10480,7 +10472,7 @@ export type GetBusinessConsoleTelemetryTagCurrentValueErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10520,7 +10512,7 @@ export type ListBusinessConsoleTelemetryAlarmRulesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10553,7 +10545,7 @@ export type CreateOrUpdateBusinessConsoleTelemetryAlarmRuleErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10595,7 +10587,7 @@ export type ListBusinessConsoleTelemetryDeviceControlCommandsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10628,7 +10620,7 @@ export type CreateBusinessConsoleTelemetryDeviceControlCommandErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10667,7 +10659,7 @@ export type GetBusinessConsoleTelemetryDeviceControlCommandErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10707,7 +10699,7 @@ export type ListBusinessConsoleTelemetryDeviceControlBindingsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10740,7 +10732,7 @@ export type CreateOrUpdateBusinessConsoleTelemetryDeviceControlBindingErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10775,7 +10767,7 @@ export type DisableBusinessConsoleTelemetryDeviceControlBindingErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10808,7 +10800,7 @@ export type RecordBusinessConsoleTelemetrySampleErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10850,7 +10842,7 @@ export type ListBusinessConsoleTelemetryAlarmsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10883,7 +10875,7 @@ export type PostBusinessConsoleTelemetryAlarmErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10923,7 +10915,7 @@ export type QueryBusinessConsoleTelemetryDeviceHistoryErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10962,7 +10954,7 @@ export type QueryBusinessConsoleTelemetryOeeErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11052,7 +11044,7 @@ export type QueryBusinessConsoleTelemetryRuntimeAvailabilityErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11091,7 +11083,7 @@ export type QueryBusinessConsoleTelemetryRuntimeHoursErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11128,7 +11120,7 @@ export type SearchBusinessConsoleObjectsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11161,7 +11153,7 @@ export type PreviewBusinessConsoleSchedulingPlanErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11199,7 +11191,7 @@ export type ListBusinessConsoleSchedulingPlansErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11232,7 +11224,7 @@ export type CreateBusinessConsoleSchedulingPlanErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11265,7 +11257,7 @@ export type CreateBusinessConsoleSchedulingWorkbenchPlanErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11300,7 +11292,7 @@ export type CreateBusinessConsoleSchedulingPlanRevisionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11338,7 +11330,7 @@ export type GetBusinessConsoleSchedulingPlanErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11376,7 +11368,7 @@ export type GetBusinessConsoleSchedulingPlanGanttErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11414,7 +11406,7 @@ export type ReleaseBusinessConsoleSchedulingPlanErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11452,7 +11444,7 @@ export type RevokeBusinessConsoleSchedulingPlanErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11488,7 +11480,7 @@ export type UpsertBusinessConsoleSchedulingOperationOverrideErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11525,7 +11517,7 @@ export type ListBusinessConsoleOrderUrgenciesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11563,7 +11555,7 @@ export type GetBusinessConsoleOrderUrgencyErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11598,7 +11590,7 @@ export type SetBusinessConsoleOrderUrgencyBusinessPriorityErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11639,7 +11631,7 @@ export type ListBusinessConsoleQualityInspectionPlansErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11672,7 +11664,7 @@ export type CreateBusinessConsoleQualityInspectionPlanErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11707,7 +11699,7 @@ export type ActivateBusinessConsoleQualityInspectionPlanErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11748,7 +11740,7 @@ export type ListBusinessConsoleQualityInspectionRecordsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11813,7 +11805,7 @@ export type CreateBusinessConsoleQualityReinspectionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11851,7 +11843,7 @@ export type OpenBusinessConsoleQualityNcrFromInspectionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11898,7 +11890,7 @@ export type ListBusinessConsoleQualityInspectionTasksErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11938,7 +11930,7 @@ export type GetBusinessConsoleQualityInspectionTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11978,7 +11970,7 @@ export type AssignBusinessConsoleQualityInspectionTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -12020,7 +12012,7 @@ export type ClaimBusinessConsoleQualityInspectionTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -12066,7 +12058,7 @@ export type CreateBusinessConsoleQualityInspectionRecordFromTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -12105,7 +12097,7 @@ export type ListBusinessConsoleQualityInspectionPlanCharacteristicsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -12177,7 +12169,7 @@ export type GetBusinessConsoleQualityNcrErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -12215,7 +12207,7 @@ export type GetBusinessConsoleQualityInspectionRecordErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -12256,7 +12248,7 @@ export type QueryBusinessConsoleQualitySpcControlChartErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -12297,7 +12289,7 @@ export type QueryBusinessConsoleQualityProcessCapabilityErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -12518,7 +12510,7 @@ export type ListBusinessConsoleQualityReasonCodesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -12551,7 +12543,7 @@ export type CreateBusinessConsoleQualityReasonCodeErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -12590,7 +12582,7 @@ export type ListBusinessConsoleQualityScrapReasonCodesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -12628,7 +12620,7 @@ export type GetBusinessConsoleQualityReasonCodeErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -12666,7 +12658,7 @@ export type UpdateBusinessConsoleQualityReasonCodeErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -12704,7 +12696,7 @@ export type ArchiveBusinessConsoleQualityReasonCodeErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -12852,7 +12844,7 @@ export type RegisterBusinessConsoleEngineeringDocumentErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -12885,7 +12877,7 @@ export type PublishBusinessConsoleEngineeringSopDocumentErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -13020,7 +13012,7 @@ export type CreateBusinessConsoleEngineeringItemRevisionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -13086,7 +13078,7 @@ export type ReleaseBusinessConsoleEngineeringBomErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -13194,7 +13186,7 @@ export type GetBusinessConsoleEngineeringBomExplosionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -13232,7 +13224,7 @@ export type GetBusinessConsoleEngineeringBomWhereUsedErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -13273,7 +13265,7 @@ export type GetBusinessConsoleEngineeringBomDiffErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -13381,7 +13373,7 @@ export type GetBusinessConsoleEngineeringManufacturingBomExplosionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -13419,7 +13411,7 @@ export type GetBusinessConsoleEngineeringManufacturingBomWhereUsedErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -13452,7 +13444,7 @@ export type ReleaseBusinessConsoleEngineeringManufacturingBomErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -13552,7 +13544,7 @@ export type ReleaseBusinessConsoleEngineeringRoutingErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -13619,7 +13611,7 @@ export type CreateBusinessConsoleEngineeringStandardOperationErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -13686,7 +13678,7 @@ export type UpdateBusinessConsoleEngineeringStandardOperationErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -13721,7 +13713,7 @@ export type ArchiveBusinessConsoleEngineeringStandardOperationErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -13754,7 +13746,7 @@ export type ReleaseBusinessConsoleEngineeringChangeErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -13787,7 +13779,7 @@ export type CancelScheduledBusinessConsoleEngineeringChangeErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -13820,7 +13812,7 @@ export type RescheduleBusinessConsoleEngineeringChangeErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -13853,7 +13845,7 @@ export type PreviewBusinessConsoleEngineeringChangeImpactErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -13985,7 +13977,7 @@ export type CreateBusinessConsoleEngineeringProductionVersionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -14023,7 +14015,7 @@ export type UpdateBusinessConsoleEngineeringProductionVersionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -14061,7 +14053,7 @@ export type ArchiveBusinessConsoleEngineeringProductionVersionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -14133,7 +14125,7 @@ export type GetBusinessConsolePrincipalWorkContextErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -14176,7 +14168,7 @@ export type ListBusinessConsolePlanningMpsBucketsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -14209,7 +14201,7 @@ export type CreateBusinessConsolePlanningMpsBucketErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -14244,7 +14236,7 @@ export type UpdateBusinessConsolePlanningMpsBucketErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -14282,7 +14274,7 @@ export type ReviewBusinessConsolePlanningMpsBucketErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -14320,7 +14312,7 @@ export type ReleaseBusinessConsolePlanningMpsBucketErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -14386,7 +14378,7 @@ export type CreateOrUpdateBusinessConsolePlanningDemandErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -14424,7 +14416,7 @@ export type CancelBusinessConsolePlanningDemandErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -14464,7 +14456,7 @@ export type ListBusinessConsolePlanningForecastsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -14497,7 +14489,7 @@ export type CreateOrUpdateBusinessConsolePlanningForecastErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -14560,7 +14552,7 @@ export type RunBusinessConsolePlanningMrpErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -14661,7 +14653,7 @@ export type AcceptBusinessConsolePlanningSuggestionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -14699,7 +14691,7 @@ export type RejectBusinessConsolePlanningSuggestionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -15192,7 +15184,7 @@ export type ConvertBusinessConsoleMesPlanToWorkOrderErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -15485,7 +15477,7 @@ export type ForceReleaseBusinessConsoleMesQualityHoldErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -15556,7 +15548,7 @@ export type ReverseBusinessConsoleMesProductionReportErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -15594,7 +15586,7 @@ export type RetryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingErrors = 
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -15627,7 +15619,7 @@ export type CreateBusinessConsoleMesRushWorkOrderErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -15729,7 +15721,7 @@ export type CreateBusinessConsoleMesMaterialIssueRequestErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -15945,7 +15937,7 @@ export type ReturnBusinessConsoleMesLineSideMaterialErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -16022,7 +16014,7 @@ export type AssignBusinessConsoleMesDispatchTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -16062,7 +16054,7 @@ export type ClaimBusinessConsoleMesOperationTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -16224,7 +16216,7 @@ export type StartBusinessConsoleMesOperationTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -16271,7 +16263,7 @@ export type PauseBusinessConsoleMesOperationTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -16318,7 +16310,7 @@ export type ResumeBusinessConsoleMesOperationTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -16365,7 +16357,7 @@ export type CompleteBusinessConsoleMesOperationTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -16479,7 +16471,7 @@ export type RecordBusinessConsoleMesProductionReportErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -16525,7 +16517,7 @@ export type QueryBusinessConsoleMesProductionStatisticsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -16724,7 +16716,7 @@ export type RecordBusinessConsoleMesDefectErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -16757,7 +16749,7 @@ export type RecordBusinessConsoleMesDefectV2Errors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -16866,7 +16858,7 @@ export type CreateBusinessConsoleMesFinishedGoodsReceiptRequestErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17006,7 +16998,7 @@ export type RecordBusinessConsoleMesDowntimeEventV2Errors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17142,7 +17134,7 @@ export type CreateBusinessConsoleMesShiftHandoverErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17409,7 +17401,7 @@ export type ListBusinessConsoleMesLineSideInventoryBalancesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17449,7 +17441,7 @@ export type SplitBusinessConsoleMesWorkOrderErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17491,7 +17483,7 @@ export type MergeBusinessConsoleMesWorkOrdersErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17535,7 +17527,7 @@ export type GetBusinessConsoleMesWorkOrderTransformationErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17656,7 +17648,7 @@ export type RegisterBusinessConsoleDeviceAssetErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17722,7 +17714,7 @@ export type CreateBusinessConsoleSkuErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17763,7 +17755,7 @@ export type ListBusinessConsoleProductCategoriesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17796,7 +17788,7 @@ export type CreateBusinessConsoleProductCategoryErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17834,7 +17826,7 @@ export type GetBusinessConsoleProductCategoryErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17872,7 +17864,7 @@ export type UpdateBusinessConsoleProductCategoryErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17910,7 +17902,7 @@ export type ArchiveBusinessConsoleProductCategoryErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17951,7 +17943,7 @@ export type ListBusinessConsoleSkillsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17984,7 +17976,7 @@ export type CreateBusinessConsoleSkillErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18022,7 +18014,7 @@ export type GetBusinessConsoleSkillErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18060,7 +18052,7 @@ export type UpdateBusinessConsoleSkillErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18098,7 +18090,7 @@ export type ArchiveBusinessConsoleSkillErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18139,7 +18131,7 @@ export type GetBusinessConsoleMasterDataResourceDetailErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18175,7 +18167,7 @@ export type UpdateBusinessConsoleMasterDataResourceErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18211,7 +18203,7 @@ export type DisableBusinessConsoleMasterDataResourceErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18247,7 +18239,7 @@ export type EnableBusinessConsoleMasterDataResourceErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18280,7 +18272,7 @@ export type CreateBusinessConsoleBusinessPartnerErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18313,7 +18305,7 @@ export type CreateBusinessConsoleUnitOfMeasureErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18346,7 +18338,7 @@ export type CreateBusinessConsoleUomConversionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18385,7 +18377,7 @@ export type ListBusinessConsoleWorkshopsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18418,7 +18410,7 @@ export type CreateBusinessConsoleWorkshopErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18465,7 +18457,7 @@ export type ListBusinessConsoleWorkersErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18498,7 +18490,7 @@ export type CreateBusinessConsoleWorkerErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18531,7 +18523,7 @@ export type CreateBusinessConsoleSiteErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18564,7 +18556,7 @@ export type CreateBusinessConsoleProductionLineErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18597,7 +18589,7 @@ export type CreateBusinessConsoleWorkCenterErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18630,7 +18622,7 @@ export type CreateBusinessConsoleShiftErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18663,7 +18655,7 @@ export type CreateBusinessConsoleWorkCalendarErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18696,7 +18688,7 @@ export type CreateBusinessConsoleTeamErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18735,7 +18727,7 @@ export type ListBusinessConsoleTeamMembersErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18770,7 +18762,7 @@ export type AddBusinessConsoleTeamMemberErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18806,7 +18798,7 @@ export type RemoveBusinessConsoleTeamMemberErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18839,7 +18831,7 @@ export type CreateBusinessConsoleDepartmentErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18872,7 +18864,7 @@ export type AssignBusinessConsolePersonnelSkillErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18938,7 +18930,7 @@ export type CreateBusinessConsoleReferenceDataCodeErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18974,7 +18966,7 @@ export type ListBusinessConsoleCodeRulesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19012,7 +19004,7 @@ export type GetBusinessConsoleCodeRuleErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19047,7 +19039,7 @@ export type CreateBusinessConsoleCodeRuleVersionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19082,7 +19074,7 @@ export type PreviewBusinessConsoleCodeRuleErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19122,7 +19114,7 @@ export type ListBusinessConsoleToolingAssetsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19161,7 +19153,7 @@ export type RegisterBusinessConsoleToolingAssetErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19201,7 +19193,7 @@ export type ChangeBusinessConsoleToolingStatusErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19241,7 +19233,7 @@ export type RecordBusinessConsoleToolingUsageErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19290,7 +19282,7 @@ export type ListBusinessConsoleMaintenanceWorkOrdersErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19329,7 +19321,7 @@ export type CreateBusinessConsoleMaintenanceWorkOrderErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19368,7 +19360,7 @@ export type CreateBusinessConsoleMaintenanceWorkOrderV2Errors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19409,7 +19401,7 @@ export type CompleteBusinessConsoleMaintenanceWorkOrderErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19450,7 +19442,7 @@ export type GetBusinessConsoleMaintenanceWorkOrderErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19485,7 +19477,7 @@ export type AssignBusinessConsoleMaintenanceWorkOrderErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19521,7 +19513,7 @@ export type TransitionBusinessConsoleMaintenanceWorkOrderErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19561,7 +19553,7 @@ export type ListBusinessConsoleMaintenancePlansErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19594,7 +19586,7 @@ export type CreateBusinessConsoleMaintenancePlanErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19629,7 +19621,7 @@ export type UpdateBusinessConsoleMaintenancePlanErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19662,7 +19654,7 @@ export type GenerateDueBusinessConsoleMaintenanceWorkOrdersErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19700,7 +19692,7 @@ export type ListBusinessConsoleMaintenanceInspectionsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19733,7 +19725,7 @@ export type RecordBusinessConsoleMaintenanceInspectionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19773,7 +19765,7 @@ export type QueryBusinessConsoleMaintenanceInspectionMeasurementTrendErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19811,7 +19803,7 @@ export type ListBusinessConsoleMaintenanceSparePartsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19844,7 +19836,7 @@ export type CreateBusinessConsoleMaintenanceSparePartErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19884,7 +19876,7 @@ export type QueryBusinessConsoleMaintenanceAssetReliabilityErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19924,7 +19916,7 @@ export type QueryBusinessConsoleMaintenanceReliabilitySummaryErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19964,7 +19956,7 @@ export type QueryBusinessConsoleMaintenanceAvailabilityWindowsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20116,7 +20108,7 @@ export type PostBusinessConsoleInventoryMovementErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20253,7 +20245,7 @@ export type ConfirmBusinessConsoleInventoryCountAdjustmentErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20291,7 +20283,7 @@ export type RestartBusinessConsoleInventoryCountTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20329,7 +20321,7 @@ export type CancelBusinessConsoleInventoryCountTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20380,7 +20372,7 @@ export type CreateBusinessConsoleSopFileDownloadGrantErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20449,7 +20441,7 @@ export type ListBusinessConsoleErpPurchaseOrdersErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20482,7 +20474,7 @@ export type CreateBusinessConsoleErpPurchaseOrderErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20522,7 +20514,7 @@ export type GetBusinessConsoleErpWorkOrderCostVarianceErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20562,7 +20554,7 @@ export type ListBusinessConsoleErpWorkCenterMachineOverheadReconciliationsErrors
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20602,7 +20594,7 @@ export type ListBusinessConsoleErpRequestsForQuotationErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20635,7 +20627,7 @@ export type CreateBusinessConsoleErpRequestForQuotationErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20703,7 +20695,7 @@ export type ReceiveBusinessConsoleErpSupplierQuotationErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20743,7 +20735,7 @@ export type ListBusinessConsoleErpPurchaseRequisitionsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20776,7 +20768,7 @@ export type CreateBusinessConsoleErpPurchaseRequisitionFromSuggestionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20809,7 +20801,7 @@ export type ConvertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrderErrors =
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20842,7 +20834,7 @@ export type RecordBusinessConsoleErpPurchaseReceiptErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20882,7 +20874,7 @@ export type ListBusinessConsoleErpSalesOrdersErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20915,7 +20907,7 @@ export type CreateBusinessConsoleErpSalesOrderErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20955,7 +20947,7 @@ export type ListBusinessConsoleErpOpportunitiesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20988,7 +20980,7 @@ export type OpenBusinessConsoleErpOpportunityErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -21028,7 +21020,7 @@ export type ListBusinessConsoleErpQuotationsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -21061,7 +21053,7 @@ export type CreateBusinessConsoleErpQuotationErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -21159,7 +21151,7 @@ export type ListBusinessConsoleErpDeliveryOrdersErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -21192,7 +21184,7 @@ export type ReleaseBusinessConsoleErpDeliveryOrderErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -21232,7 +21224,7 @@ export type ListBusinessConsoleErpPayablesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -21265,7 +21257,7 @@ export type CreateBusinessConsoleErpAccountPayableErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -21305,7 +21297,7 @@ export type ListBusinessConsoleErpReceivablesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -21338,7 +21330,7 @@ export type CreateBusinessConsoleErpAccountReceivableErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -21378,7 +21370,7 @@ export type ListBusinessConsoleErpCostCandidatesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -21411,7 +21403,7 @@ export type CreateBusinessConsoleErpCostCandidateErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -21451,7 +21443,7 @@ export type ListBusinessConsoleErpJournalVouchersErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -21484,7 +21476,7 @@ export type PostBusinessConsoleErpJournalVoucherErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -21517,7 +21509,7 @@ export type ApproveBusinessConsoleErpPaymentExecutionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -21579,7 +21571,7 @@ export type RegisterBusinessConsoleErpCashReceiptErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -21789,7 +21781,7 @@ export type GetBusinessConsoleErpFinanceSummaryErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -21923,7 +21915,7 @@ export type ListBusinessConsoleErpWorkCenterCostRatesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -21956,7 +21948,7 @@ export type ConfigureBusinessConsoleErpWorkCenterCostRateErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -21993,7 +21985,7 @@ export type GetBusinessConsoleEquipmentOverviewErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -22031,7 +22023,7 @@ export type GetBusinessConsoleEquipmentDeviceErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -22069,7 +22061,7 @@ export type GetBusinessConsoleEquipmentDeviceHealthErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -22109,7 +22101,7 @@ export type GetBusinessConsoleEquipmentAvailabilityErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -22151,7 +22143,7 @@ export type ListBusinessConsoleEquipmentAlarmsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -22192,7 +22184,7 @@ export type AcknowledgeBusinessConsoleEquipmentAlarmErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -22234,7 +22226,7 @@ export type ShelveBusinessConsoleEquipmentAlarmErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -22276,7 +22268,7 @@ export type UnshelveBusinessConsoleEquipmentAlarmErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -22363,7 +22355,7 @@ export type ListBusinessConsoleBarcodeRulesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -22429,7 +22421,7 @@ export type ListBusinessConsoleBarcodeTemplatesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -22497,7 +22489,7 @@ export type ListBusinessConsoleBarcodePrintBatchesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -22530,7 +22522,7 @@ export type CreateBusinessConsoleBarcodePrintBatchErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -22600,7 +22592,7 @@ export type DispatchBusinessConsoleBarcodePrintBatchErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -22640,7 +22632,7 @@ export type ReprintBusinessConsoleBarcodeLabelErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -22680,7 +22672,7 @@ export type VoidBusinessConsoleBarcodeLabelErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -22723,7 +22715,7 @@ export type ListBusinessConsoleBarcodeScansErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -22756,7 +22748,7 @@ export type RecordBusinessConsoleBarcodeScanErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -22789,7 +22781,7 @@ export type ResolveBusinessConsoleBarcodeErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -22829,7 +22821,7 @@ export type ListBusinessConsoleApprovalTemplatesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -22899,7 +22891,7 @@ export type ListBusinessConsoleApprovalChainsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -22998,7 +22990,7 @@ export type ListBusinessConsoleApprovalTasksErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -23042,7 +23034,7 @@ export type ListBusinessConsoleApprovalDecisionsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -23114,7 +23106,7 @@ export type ListBusinessConsoleApprovalDelegationsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -23147,7 +23139,7 @@ export type CreateBusinessConsoleApprovalDelegationErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -23185,7 +23177,7 @@ export type RevokeBusinessConsoleApprovalDelegationErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */

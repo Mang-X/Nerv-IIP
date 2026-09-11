@@ -21,6 +21,18 @@ export const STABLE_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   'idempotency-key-too-long': '操作标识过长，本次未提交；请重新发起，仍失败请联系管理员。',
   'idempotency-key-invalid-characters':
     '操作标识含不支持的字符，本次未提交；请重新发起，仍失败请联系管理员。',
+  // #3333：网关**校验层**（FastEndpoints 的 DTO 校验器 + 模型绑定失败）的统一稳定码。
+  // 此前这条通道走 FastEndpoints 默认形状，顶层 message 是英文常量
+  // `One or more errors occurred!`——两端都只读顶层 message，于是那句英文直接上屏。
+  // 现在网关把它成形为与 KnownException 同一个信封并放这条码（后端权威：
+  // `BusinessGatewayValidationErrorResponse.StableErrorCode`）。
+  //
+  // ⚠️ 文案边界（别读成「已经能显示具体哪个字段错了」）：这条码是**整条请求被校验拒绝**的
+  // 唯一码，不携带字段身份。逐字段原因在响应的 `errorData` 里，但**没有任何前端位点消费它**，
+  // 也不该由这张表承载——那张袋子里的句子是 FluentValidation 按 UI 文化出的默认句
+  // （属性名仍是英文驼峰，如「'idempotency Key' 必须小于或等于128个字符」），
+  // 不是可交给操作工的可行动文案。字段级中文文案是另一票。
+  'request-payload-invalid': '提交的内容有误，请检查后重新提交；仍失败请联系管理员。',
   'lifecycle-conflict': '状态已被其他操作更新',
 }
 
