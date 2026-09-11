@@ -1486,7 +1486,8 @@ $liveAssignments = Get-NervSourceSkipAssignments -RepoRoot $repoRoot
 # #2966 注册 MES 停机事件 v2 契约拒收/poison 重放的真实 PostgreSQL + Redis/CAP proof，增至 49。
 # #2968 注册 Maintenance v2 工单入口的目录精确命中/双发同事务/v1 零漂移真实 PostgreSQL proof，增至 50。
 # NERV-2121 注册采购收货路径互斥 Acceptance PostgreSQL proof，source 从 51 增至 52。
-Assert-Equal 52 $liveAssignments.Count '已批准的 source skip 清单变更必须显式分类。'
+# #3365 注册 CAP Redis 连接池预热在真实宿主里的装配 proof（发布侧第一次 SendAsync 返回时池已 N/N 建满），增至 53。
+Assert-Equal 53 $liveAssignments.Count '已批准的 source skip 清单变更必须显式分类。'
 Assert-True (($liveAssignments | Where-Object sourcePath -like '*SimulatedConnectorHostProcessTests.cs').sourceText.Contains('Windows runs the platform-specific executable resolution contract only', [StringComparison]::Ordinal)) 'Quote-aware scanner must retain semicolons inside a C# string literal.'
 $livePolicy = Import-NervTestEvidencePolicy -Path (Join-Path $repoRoot 'scripts/test-evidence-policy.json')
 $liveViolations = Test-NervTestEvidencePolicy -Policy $livePolicy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)

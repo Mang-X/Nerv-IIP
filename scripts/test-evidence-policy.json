@@ -342,6 +342,12 @@
       "sourcePath": "backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/InventoryDirectoryPostgresTests.cs",
       "sourceOrdinal": 3,
       "sourceReasonPattern": "^Skip = GetSkipReason\\(Environment\\.GetEnvironmentVariable\\(\"NERV_IIP_TEST_POSTGRES\"\\)\\);$"
+    },
+    {
+      "id": "mes-connection-pool-warmup-postgres-redis",
+      "sourcePath": "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/RedisConnectionPoolWarmupRealHostTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES and NERV_IIP_TEST_REDIS to run the real PostgreSQL \\+ Redis CAP connection pool warmup proof\\.\";$"
     }
   ],
   "rules": [
@@ -1610,6 +1616,26 @@
         "Nerv.IIP.Business.Performance.Tests.SchedulingScaleBenchmarkTests.SchedulingScale_APS_Lite_100_500_1000_outputs_repeatable_PostgreSQL_evidence"
       ],
       "expectedRuntimeTestCount": 1
+    },
+    {
+      "id": "mes-connection-pool-warmup-postgres-redis",
+      "sourceId": "mes-connection-pool-warmup-postgres-redis",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Mes\\.Web\\.Tests\\.RedisConnectionPoolWarmupRealHostTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES and NERV_IIP_TEST_REDIS to run the real PostgreSQL \\+ Redis CAP connection pool warmup proof\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "redis-cap",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Mes.Web.Tests.RedisConnectionPoolWarmupRealHostTests.First_publish_in_a_real_cap_host_leaves_every_connection_pool_slot_completed",
+        "Nerv.IIP.Business.Mes.Web.Tests.RedisConnectionPoolWarmupRealHostTests.Real_cap_host_resolves_the_decorated_consumer_client_factory"
+      ],
+      "expectedRuntimeTestCount": 2
     }
   ]
 }
