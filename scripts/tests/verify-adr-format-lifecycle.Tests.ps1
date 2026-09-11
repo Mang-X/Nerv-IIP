@@ -162,16 +162,21 @@ try {
     Write-Fixture $markdown 'docs/superpowers/plans/history.md' '[冻结计划](retired.md)'
     Write-Fixture $markdown 'docs/status/archive/history.md' '[冻结快照](retired.md)'
     Write-Fixture $markdown 'tests/fixtures/input.md' '[机器夹具](fixture-only.md)'
+    Write-Fixture $markdown 'node_modules/dependency/README.md' '[第三方文档](dependency-only.md)'
     Write-Fixture $markdown 'frontend/apps/docs/guide.md' '[站点语义](extensionless-route)'
-    Assert-Gate '解析真实导航而非代码示例；冻结正文保留历史语义' $baseline 0 -MarkdownRoot $markdown
+    Write-Fixture $markdown 'frontend/apps/design-system/docs/component.md' '[站点语义](another-extensionless-route)'
+    Write-Fixture $markdown '.claude/README.md' '[当前入口](../docs/README.md)'
+    Assert-Gate '解析真实导航而非代码示例；冻结正文与站点消费者边界' $baseline 0 -MarkdownRoot $markdown
 
     Write-Fixture $markdown 'README.md' "[引用式][lost]`n`n[lost]: reference-lost.md`n`n![图](picture-lost.svg)"
     Write-Fixture $markdown 'docs/superpowers/AGENTS.md' '[当前指令](current-guide-lost.md)'
+    Write-Fixture $markdown '.claude/README.md' '[当前入口](hidden-guide-lost.md)'
     Remove-Item -LiteralPath (Join-Path $markdown 'docs/architecture/README.md')
-    Assert-Gate '引用式链接、图片、活跃指令和入口缺失均失败关闭' $baseline 1 @(
+    Assert-Gate '引用式链接、图片、活跃指令、隐藏目录和入口缺失均失败关闭' $baseline 1 @(
         '[DOC_LINK] README.md -> reference-lost.md',
         '[DOC_LINK] README.md -> picture-lost.svg',
         '[DOC_LINK] docs/superpowers/AGENTS.md -> current-guide-lost.md',
+        '[DOC_LINK] .claude/README.md -> hidden-guide-lost.md',
         '[DOC_ENTRY] 当前入口不存在：docs/architecture/README.md'
     ) -MarkdownRoot $markdown
 

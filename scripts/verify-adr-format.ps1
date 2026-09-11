@@ -47,6 +47,29 @@ function Get-MarkdownLines {
     }
 }
 
+function Get-RepositoryMarkdownFiles {
+    param([string] $Root)
+
+    # 先剪枝再下降，避免本地依赖/构建产物的规模影响轻量检查。
+    # -Force 包含 .github/.claude 等当前协作入口；不跟随目录符号链接。
+    $pending = [System.Collections.Generic.Stack[string]]::new()
+    $pending.Push($Root)
+    while ($pending.Count -gt 0) {
+        foreach ($item in Get-ChildItem -LiteralPath $pending.Pop() -Force) {
+            if ($item.PSIsContainer) {
+                if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { continue }
+                if ($item.Name -match '^(?:\.git|node_modules|bin|obj|dist|\.vitepress|\.cache|fixtures)$') { continue }
+                $relative = [IO.Path]::GetRelativePath($Root, $item.FullName).Replace('\', '/')
+                if ([string]::Equals($relative, 'artifacts', [StringComparison]::Ordinal)) { continue }
+                $pending.Push($item.FullName)
+            }
+            elseif ([string]::Equals($item.Extension, '.md', [StringComparison]::OrdinalIgnoreCase)) {
+                $item
+            }
+        }
+    }
+}
+
 function Test-CurrentMarkdownLinks {
     param(
         [string] $Root,
@@ -64,15 +87,16 @@ function Test-CurrentMarkdownLinks {
         }
     }
     $checkedDocuments = 0
-    foreach ($file in Get-ChildItem -LiteralPath $Root -Filter '*.md' -File -Recurse) {
+    foreach ($file in Get-RepositoryMarkdownFiles -Root $Root) {
         $path = [IO.Path]::GetRelativePath($Root, $file.FullName).Replace('\', '/')
-        # 机器夹具、依赖、构建产物不是人工文档。VitePress 正文使用站点路由解析器，
-        # 由其既有 build 负责；README/AGENTS 仍作为仓库文档检查。
-        if ($path -match '(?:^|/)(?:\.git|node_modules|bin|obj|fixtures)/' -or $path.StartsWith('artifacts/', [StringComparison]::Ordinal)) { continue }
+        # 冻结正文保留时点语义。两个 VitePress 应用的正文由各自 package.json
+        # 的 vitepress build 解析（含无扩展名路由）；仓库 suite 不复制站点解析器。
+        # 这些目录中的 README/AGENTS 仍是当前协作入口，继续检查。
         $isEntry = [string]::Equals($file.Name, 'README.md', [StringComparison]::Ordinal) -or
             [string]::Equals($file.Name, 'AGENTS.md', [StringComparison]::Ordinal)
         if (-not $isEntry -and ($path -match '^docs/(?:adr|reports|superpowers|status/archive)/' -or
-                $path.StartsWith('frontend/apps/docs/', [StringComparison]::Ordinal))) { continue }
+                $path.StartsWith('frontend/apps/docs/', [StringComparison]::Ordinal) -or
+                $path.StartsWith('frontend/apps/design-system/docs/', [StringComparison]::Ordinal))) { continue }
 
         # 使用 PowerShell 自带的 Markdown parser，先渲染再取真实 href/src。
         # 引用式链接、图片、转义和代码示例无需再实现一套 Markdown 正则解析器。
@@ -91,7 +115,7 @@ function Test-CurrentMarkdownLinks {
         }
         $checkedDocuments++
     }
-    Write-Host "当前 Markdown 本地目标已检查（$checkedDocuments 个文件）；不验证外链、标题锚点或内容语义。"
+    Write-Host "当前 Markdown 本地目标已检查（$checkedDocuments 个文件）；不验证外链、标题锚点、站点路由或内容语义。"
 }
 
 if (-not (Test-Path -LiteralPath $AdrRoot -PathType Container)) {
