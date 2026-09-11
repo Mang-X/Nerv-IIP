@@ -147,7 +147,9 @@ try {
 # 任意首页
 
 [引用式][guide]
+
 [guide]: <notes%20(一).md> "说明"
+
 ![图片](picture.svg)
 [目录](docs/)
 [外链](https://example.invalid/not-checked)
@@ -202,7 +204,9 @@ try {
     foreach ($sitePath in @('frontend/apps/docs', 'frontend/apps/design-system/docs')) {
         Write-Fixture $siteMarkdown "$sitePath/page.md" @'
 [源文件][missing]
-[missing]: missing-source.md#任意标题
+
+[missing]: missing-source.md#section
+
 ![图片](missing-image.svg)
 ![无扩展名图片](missing-image)
 [页面路由](generated-route)
@@ -210,10 +214,10 @@ try {
 '@
     }
     Assert-Gate '站点正文不能隐藏显式文件、引用式链接或图片断链' $baseline 1 @(
-        '[DOC_LINK] frontend/apps/docs/page.md -> missing-source.md#任意标题',
+        '[DOC_LINK] frontend/apps/docs/page.md -> missing-source.md#section',
         '[DOC_LINK] frontend/apps/docs/page.md -> missing-image.svg',
         '[DOC_LINK] frontend/apps/docs/page.md -> missing-image',
-        '[DOC_LINK] frontend/apps/design-system/docs/page.md -> missing-source.md#任意标题',
+        '[DOC_LINK] frontend/apps/design-system/docs/page.md -> missing-source.md#section',
         '[DOC_LINK] frontend/apps/design-system/docs/page.md -> missing-image.svg',
         '[DOC_LINK] frontend/apps/design-system/docs/page.md -> missing-image'
     ) -MarkdownRoot $siteMarkdown
