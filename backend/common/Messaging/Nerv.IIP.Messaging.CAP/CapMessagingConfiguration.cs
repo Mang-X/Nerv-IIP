@@ -19,6 +19,7 @@ public static class CapMessagingConfiguration
     public const string RedisConnectionStringConfigurationKey = "Messaging:Redis:ConnectionString";
     public const string RedisConnectionStringFallbackKey = "ConnectionStrings:Redis";
     public const string RedisCachingFallbackKey = "Caching:Redis";
+    public const string RedisConnectionPoolSizeConfigurationKey = "Messaging:Redis:ConnectionPoolSize";
     public const string RabbitMqConnectionStringConfigurationKey = "Messaging:RabbitMQ:ConnectionString";
     public const string RabbitMqConnectionStringFallbackKey = "ConnectionStrings:rabbitmq";
     public const string FailedRetryIntervalConfigurationKey = "Cap:FailedRetryInterval";
@@ -27,6 +28,35 @@ public static class CapMessagingConfiguration
     public const string TopicNamePrefixConfigurationKey = "Cap:TopicNamePrefix";
     private const string DevelopmentEnvironmentName = "Development";
     private const int MinimumFallbackWindowLookbackSeconds = 30;
+    private const int MinimumRedisConnectionPoolSize = 1;
+
+    /// <summary>
+    /// CAP 的 Redis 传输默认开 10 条 <c>ConnectionMultiplexer</c>
+    /// （上游 <c>CapRedisOptionsPostConfigure</c> 在取值为 <c>default</c> 时回填 10）。本仓默认收到 1，理由如下。
+    ///
+    /// <para><b>为什么默认 1。</b>上游 <c>AsyncLazyRedisConnection</c> 派生自 <c>Lazy&lt;Task&lt;RedisConnection&gt;&gt;</c>，
+    /// 它的 <c>CreatedConnection</c> 是 <c>IsValueCreated ? Value.GetAwaiter().GetResult() : null</c>。
+    /// 在 <c>Lazy&lt;Task&lt;…&gt;&gt;</c> 上 <c>IsValueCreated</c> 只表示工厂已跑、Task 已产生，<b>不表示 Task 已完成</b>，
+    /// 于是连接在途时读它就是<b>同步阻塞当前线程</b>。<c>RedisConnectionPool.ConnectAsync()</c> 里第一个调用者走
+    /// <c>await lazy</c> 不阻塞，<b>第二个及以后</b>遍历到「已创建但在途」的 lazy 时解引用 <c>CreatedConnection</c>
+    /// ⇒ 全部同步阻塞池线程。宿主一次性起十几个消费组时，这批阻塞叠在 <c>ThreadPool</c> 的
+    /// 每秒约一条的注入速率上，表现为 <c>EXISTS</c>/<c>XGROUP</c> 跨过 SE.Redis 的 5s <c>SyncTimeout</c>。
+    /// 取值为 1 时，第一条连接建成后 <c>_poolAlreadyConfigured</c> 恒 true、<c>QuietConnection</c> 直接返回那条已完成的连接，
+    /// 上面那个 <c>foreach</c> 再也到不了阻塞点。</para>
+    ///
+    /// <para><b>取舍。</b>SE.Redis 的 <c>ConnectionMultiplexer</c> 本身是多路复用设计、官方推荐单例，
+    /// 因此单条连接在正常负载下够用；但<b>吞吐上界确实从 10 条连接降到 1 条</b>——
+    /// 单条多路复用连接上的大 payload 或慢命令会排在同一条 TCP 管道上互相挡道。</para>
+    ///
+    /// <para><b>什么情况下该调大。</b>当某个宿主被观测到「Redis 侧 CPU 与网络都不饱和、
+    /// 但 SE.Redis 超时诊断里 <c>qs</c>（排队中的同步命令）持续偏高」时，说明瓶颈在单条管道而非线程池，
+    /// 可通过 <see cref="RedisConnectionPoolSizeConfigurationKey"/> 按宿主调大。</para>
+    ///
+    /// <para><b>调大会重新打开哪个窗口。</b>取值 &gt; 1 会让连接池重新存在「多条 slot、部分在途」的状态，
+    /// 也就重新打开上面描述的 <c>CreatedConnection</c> 同步阻塞窗口；该窗口只在进程启动后的首轮建连期间存在，
+    /// 但首轮恰好也是十几个消费组同时订阅的时刻。调大前应确认该宿主的消费组数量与 <c>ThreadPool</c> 最小线程数。</para>
+    /// </summary>
+    private const int DefaultRedisConnectionPoolSize = 1;
 
     public static CapOptions UseConfiguredRecovery(
         this CapOptions options,
@@ -86,7 +116,18 @@ public static class CapMessagingConfiguration
             var redisConnectionString = ReadRedisConnectionString(configuration);
             var redisConfiguration = ConfigurationOptions.Parse(redisConnectionString);
             redisConfiguration.AbortOnConnectFail = false;
-            options.UseRedis(redisOptions => redisOptions.Configuration = redisConfiguration);
+            var redisConnectionPoolSize = ReadOptionalPositiveInt(
+                configuration,
+                RedisConnectionPoolSizeConfigurationKey,
+                MinimumRedisConnectionPoolSize) ?? DefaultRedisConnectionPoolSize;
+            options.UseRedis(redisOptions =>
+            {
+                redisOptions.Configuration = redisConfiguration;
+
+                // 下界必须挡在这里：上游 CapRedisOptionsPostConfigure 对取值为 default（0）的
+                // ConnectionPoolSize 会静默回填 10，配错成 0 时不会报错，只会悄悄退回上游默认。
+                redisOptions.ConnectionPoolSize = (uint)redisConnectionPoolSize;
+            });
             return options;
         }
 
