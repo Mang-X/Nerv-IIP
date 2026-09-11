@@ -49,10 +49,21 @@
     allowlist of permanent exceptions.
 
     What counts as a code — and what does not. Identity here is "declared as a public const in a
-    producer registry", not "looks like a code". That distinction is measured, not stylistic: a
-    literal-shape scan for `"CODE: ..."` over MES finds 14 codes and MISSES
-    `WORK_ORDER_NOT_RELEASED`, because that one is assembled from a const rather than written as one
-    literal. The face and the shape are not the same set, and neither contains the other.
+    producer registry", not "looks like a code". That distinction is measured, not stylistic, and it
+    is checkable in both directions without counting anything:
+
+      * The shape misses declarations. `WORK_ORDER_NOT_RELEASED` never appears inside a single
+        string literal — it is assembled as `WorkOrderNotReleased + ": ..."` — so a scan for
+        `"CODE: ..."` literals cannot see it, while this checker reads it straight off the registry.
+      * The declarations miss shapes. Codes such as `MATERIAL_REQUIREMENT_SOURCE_UNAVAILABLE` exist
+        only as literals at their throw sites and are not declared anywhere, so the literal scan
+        sees them and this checker does not (they are KnownException messages carrying their own
+        Chinese — see the out-of-scope list above).
+
+    Neither set contains the other. No count is quoted here on purpose: the literal-shape number
+    moves whenever a code is hoisted into a registry, so it would go stale without ever going red.
+    To re-measure, run the scan yourself and say which head you ran it on:
+      git grep -rhoE '"[A-Z][A-Z0-9_]{2,}: [^"]*"' -- 'backend/**/src/**/*.cs'
 
     Registration is therefore an act: declare the const. Codes written as bare literals at the
     emission site are NOT in this checker's face and get no protection from it — that is exactly how
@@ -72,10 +83,28 @@
         required to be.
       * Field-level validation copy inside `errorData`. Ruled out of scope by #3333.
 
-    Discovery, not a name list. Channel A's producers are found by globbing backend/**/src/**/*.cs
-    for the two member names and the class-name suffix — there is no registered list of producer
+    Discovery, not a name list. Channel A's producers are found by walking every *.cs under
+    backend/** and dropping build and test output by path segment (`tests`, `obj`, `bin`), then
+    matching the two member names and the class-name suffix. There is no registered list of producer
     files, so a new service that follows the idiom is picked up without editing this checker. That is
     the property a whitelist would not have (#3122: three evasions, all of them newcomers).
+
+    DO NOT "tidy" that scan face back into a `backend/**/src/**/*.cs` glob. It was written that way
+    first and it was wrong: the shared contract assemblies under backend/common/Contracts/** have no
+    `src` directory, so `EquipmentRuntimeReasonCodes` — which the readiness registry re-exports —
+    fell outside the face. That surfaced as eight "could not be resolved" failures rather than as a
+    quiet pass, and only because an unresolvable reference is a hard failure here. The exclusion
+    list is the contract; the `/src/` glob is the bug it replaced. Anyone reconciling this comment
+    with the code should change the comment, never the face.
+
+    Known consequence of defining the face by exclusion, registered rather than silently tolerated:
+    backend/common/Testing/** is inside it, because the excluded segment is `tests` and that
+    directory is `Testing` — 21 .cs files on this head (`git ls-files 'backend/common/Testing/**/*.cs'`),
+    declaring zero producers. It is left in the face rather than excluded: those are shared libraries
+    that could legitimately declare a stable code, and a directory with no producers contributes
+    nothing to either comparison. It is a potential source of false positives, not a defect today —
+    if a fixture there ever declares a code that is not a real producer, exclude that file
+    explicitly instead of widening the excluded word to `test*`, which would also drop product code.
 
     A gate that reads source text can disarm itself silently: rename the registry, empty it, and a
     containment comparison over two empty sets passes. So every step that could produce an empty set

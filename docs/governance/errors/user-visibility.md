@@ -96,8 +96,12 @@ UI 可以进一步把稳定 code 映射成更友好文案，但不能靠前端�
 | MES readiness 阻断原因（`CODE: 中文`） | `MesReadinessReasonCodes` | `MES_READINESS_REASON_DISPLAYS` | 中文事实仍显示，但 `describeMesReadinessReason` 走兜底，码拿不到标签与下一步，且 `RELEASE_IGNORED_TASK_BLOCKERS.has(code)` 为 false，**静默阻断下达** |
 
 **登记行为是「在 producer 类里声明一个 `public const string`」**，不是「写出一个长得像码的字面量」。
-这条区分是实测的：按 `"CODE: 中文"` 字面量形状扫 MES 得到 14 个码，**漏掉 `WORK_ORDER_NOT_RELEASED`**
-（它由常量拼接而成），两个口径互不包含。以裸字面量写在产出点的码不在检查器扫描面内，也就不受这条契约保护——
+这条区分是实测的，而且两个方向都不依赖计数：形状口径**看不见 `WORK_ORDER_NOT_RELEASED`**
+（它写成 `WorkOrderNotReleased + ": …"`，从不整串出现在一个字面量里），声明口径**看不见
+`MATERIAL_REQUIREMENT_SOURCE_UNAVAILABLE` 这类只存在于 throw 点字面量、从未声明的码**，
+两个口径互不包含。此处刻意不写命中条数：那个数会随着码被收进注册表而变，写死就会过期而不报红；
+要复量请自己跑并注明 head：
+`git grep -rhoE '"[A-Z][A-Z0-9_]{2,}: [^"]*"' -- 'backend/**/src/**/*.cs'`。以裸字面量写在产出点的码不在检查器扫描面内，也就不受这条契约保护——
 `WORK_ORDER_NOT_FOUND` 就是这样与 `WORK_ORDER_NOT_RELEASED` 相隔一行却长期无人看守的（#3155）。
 把这段残余也关上需要枚举「一个码的所有写法」，#3214 / #3176 三轮实测该形态不收敛，故不做。
 
