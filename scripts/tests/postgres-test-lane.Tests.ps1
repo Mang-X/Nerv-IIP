@@ -597,16 +597,20 @@ try {
     $silentSkipDetected = [IO.File]::ReadAllText($silentSkipSourcePath).Contains('if (string.IsNullOrWhiteSpace(connectionString))', [StringComparison]::Ordinal)
     Assert-Contract $silentSkipDetected 'The silent-return detector must recognize the pattern it forbids.'
 
-    # WMS：五个类只有 10 条是真实 PostgreSQL 证明，因此 filter 逐条精确到方法。
-    # 归属 test-owned：NERV-822③ 的 #1563 已把这五个类的手写建库收敛到共享 PostgreSqlTestDatabase，
+    # WMS：六个类只有 11 条是真实 PostgreSQL 证明，因此 filter 逐条精确到方法。
+    # 归属 test-owned：NERV-822③ 的 #1563 已把这些类的手写建库收敛到共享 PostgreSqlTestDatabase，
     # lane 因此只证明执行数与冻结身份，不声称能在成员数据库里留下诊断。
+    # 第 11 条由 #3305 加入（WcsTaskCallbackValidatorTests）：failure_message 改无界后，
+    # 「物理列类型是 text」「越界 failure_code 仍是 22001」两个方向只有真库分得开，
+    # InMemory provider 对两者都无感、在那上面跑会双向假绿。
     $wmsMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'wms-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($wmsMember.expectedTestIdentities).Count -eq 10) 'The WMS member must freeze exactly its ten governed PostgreSQL identities.'
+    Assert-Contract (@($wmsMember.expectedTestIdentities).Count -eq 11) 'The WMS member must freeze exactly its eleven governed PostgreSQL identities.'
     Assert-Contract ([string]::Equals([string]$wmsMember.databaseOwnership, 'test-owned', [StringComparison]::Ordinal)) 'WMS tests own governed temporary databases per NERV-822, so the member must be registered as test-owned.'
     Assert-MethodScopedFilter -Member $wmsMember
     foreach ($wmsSource in @(
             'WarehouseTaskActionConcurrencyPostgresTests.cs',
             'WcsDispatchConcurrencyPostgresTests.cs',
+            'WcsTaskCallbackValidatorTests.cs',
             'WmsQualityInspectionGateConsumerTests.cs',
             'WmsShortPickBackorderTests.cs',
             'WmsWorkAssignmentMigrationPostgresTests.cs')) {

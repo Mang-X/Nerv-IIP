@@ -1486,7 +1486,9 @@ $liveAssignments = Get-NervSourceSkipAssignments -RepoRoot $repoRoot
 # #2966 注册 MES 停机事件 v2 契约拒收/poison 重放的真实 PostgreSQL + Redis/CAP proof，增至 49。
 # #2968 注册 Maintenance v2 工单入口的目录精确命中/双发同事务/v1 零漂移真实 PostgreSQL proof，增至 50。
 # NERV-2121 注册采购收货路径互斥 Acceptance PostgreSQL proof，source 从 51 增至 52。
-Assert-Equal 52 $liveAssignments.Count '已批准的 source skip 清单变更必须显式分类。'
+# #3305 注册 WCS 回调宽度 proof（failure_message 改无界后，物理列类型与越界 failure_code 的 22001
+# 只有真库分得开，InMemory provider 对两者都无感），增至 53。
+Assert-Equal 53 $liveAssignments.Count '已批准的 source skip 清单变更必须显式分类。'
 Assert-True (($liveAssignments | Where-Object sourcePath -like '*SimulatedConnectorHostProcessTests.cs').sourceText.Contains('Windows runs the platform-specific executable resolution contract only', [StringComparison]::Ordinal)) 'Quote-aware scanner must retain semicolons inside a C# string literal.'
 $livePolicy = Import-NervTestEvidencePolicy -Path (Join-Path $repoRoot 'scripts/test-evidence-policy.json')
 $liveViolations = Test-NervTestEvidencePolicy -Policy $livePolicy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)

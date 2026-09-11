@@ -218,6 +218,12 @@
       "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run WMS WCS dispatch concurrency tests\\.\";$"
     },
     {
+      "id": "wms-wcs-callback-bound",
+      "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WcsTaskCallbackValidatorTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the WCS callback bound Postgres test\\.\";$"
+    },
+    {
       "id": "wms-quality-gate",
       "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WmsQualityInspectionGateConsumerTests.cs",
       "sourceOrdinal": 1,
@@ -985,6 +991,25 @@
         "Nerv.IIP.Business.Wms.Web.Tests.WcsDispatchConcurrencyPostgresTests.Concurrent_wcs_claim_inserts_keep_one_owner_and_classify_the_loser"
       ],
       "expectedRuntimeTestCount": 2
+    },
+    {
+      "id": "wms-wcs-callback-bound",
+      "sourceId": "wms-wcs-callback-bound",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Wms\\.Web\\.Tests\\.WcsTaskCallbackValidatorTests\\.Real_postgres_rejects_an_over_long_failure_code_and_stores_an_unbounded_message$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the WCS callback bound Postgres test\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Wms.Web.Tests.WcsTaskCallbackValidatorTests.Real_postgres_rejects_an_over_long_failure_code_and_stores_an_unbounded_message"
+      ],
+      "expectedRuntimeTestCount": 1
     },
     {
       "id": "wms-assignment-migration",

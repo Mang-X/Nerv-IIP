@@ -210,6 +210,18 @@
       ]
     },
     {
+      "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WcsTaskCallbackValidatorTests.cs",
+      "sourceSha256": "d884a0755cc043a5297b76c3745de5b76adb56745a92fcd8a8416de10cb98d6a",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "best-effort-dispose",
+          "factoryCallCount": 1,
+          "reason": "The #3305 WCS callback bound proof uses the shared helper lifecycle and makes no explicit DROP-failure claim."
+        }
+      ]
+    },
+    {
       "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WmsQualityInspectionGateConsumerTests.cs",
       "sourceSha256": "c33808058a392f76fa2513180357b8b1eb16405a6fc659999cd171a8ddb257f4",
       "factoryCallCount": 2,
