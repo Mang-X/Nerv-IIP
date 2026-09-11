@@ -425,3 +425,82 @@ describe('WMS 拒绝原因代码（#1397 / 台账 #81）', () => {
     ).toContain('出库单 OB-1')
   })
 })
+
+// #3333：把字符串追到屏幕（PC 侧那一格）。
+//
+// 为什么这一格不写成 `friendlyErrorMessage('request-payload-invalid')`：那只证明了链路中段。
+// #3308 的判例是「治理合规 + 七格变异全绿，却在屏上甩裸英文码」——链路末端才是被修的东西。
+// 所以这里喂的是**网关实际写出的整个响应体**（下面那段 JSON 逐字节取自
+// `BusinessGatewayValidationFailureEnvelopeTests` 覆盖的同一条通道的实跑输出），
+// 走的是页面真正调用的 `notifyOperationFailure`，断言的是**toast 收到的那句话**
+// ——toast 就是 PC 侧的屏幕（反馈规范：操作结果一律 toast，不留常驻文字）。
+describe('#3333 网关校验失败的响应体在 PC 屏上是中文', () => {
+  /**
+   * 网关校验失败的**原样响应体**。generated client 在失败时 `JSON.parse` 响应文本后
+   * 直接 throw 这个对象（见 `client.gen.ts` 的 `throw jsonError ?? textError`），
+   * 所以页面 catch 到的就是它；error 拦截器再把原始 `Response` 以非枚举属性挂上去。
+   */
+  const gatewayValidationFailureBody = JSON.parse(
+    '{"success":false,"message":"request-payload-invalid","code":400,"errorData":' +
+      '[{"name":"idempotencyKey","reason":"\'idempotency Key\' 必须小于或等于128个字符。您输入了129个字符。"}]}',
+  ) as Record<string, unknown>
+
+  function asThrownByClient() {
+    const error = { ...gatewayValidationFailureBody }
+    Object.defineProperty(error, 'response', {
+      configurable: true,
+      enumerable: false,
+      value: { status: 400 },
+    })
+    return error
+  }
+
+  it('toast 上的是可操作中文，不是英文常量也不是裸稳定码', () => {
+    notifyOperationFailure('提交失败', asThrownByClient(), '提交失败，请稍后重试')
+
+    expect(toastError).toHaveBeenCalledWith(
+      '提交失败：提交的内容有误，请检查后重新提交；仍失败请联系管理员。',
+    )
+    const shown = String(toastError.mock.calls[0][0])
+    expect(shown).not.toContain('request-payload-invalid')
+    expect(shown).not.toContain('One or more errors occurred')
+    // 兜底句也不算修好：它是「什么都没取到」的信号，不是这次失败的原因。
+    expect(shown).not.toBe('提交失败，请稍后重试')
+  })
+
+  // errorData 里的逐字段原因**不上屏**。这一格是那条边界的护栏：哪天有人让
+  // `serverErrorMessage` 去读 errorData，「'idempotency Key' 必须小于或等于128个字符」
+  // 这种半英文句子就会顶掉上面那句中文。
+  it('errorData 里的字段级句子不进 toast', () => {
+    notifyOperationFailure('提交失败', asThrownByClient(), '提交失败，请稍后重试')
+
+    const shown = String(toastError.mock.calls[0][0])
+    expect(shown).not.toContain('idempotency Key')
+    expect(shown).not.toContain('128')
+  })
+
+  // 旧形状（FastEndpoints 默认）作为对照。
+  //
+  // ⚠️ 这里要如实记一笔：#3333 票面说「用户看到的是英文常量」——那句话对 PDA 成立
+  // （`actionableHttpMessage(400)` 返回 undefined，回落链 `actionableMessage ?? serverMessage`
+  // 直接把英文常量上屏，见 PDA 那一格），但**对 PC 不成立**。PC 这条链上
+  // `friendlyErrorMessage` 的所有分支都匹配不到 `One or more errors occurred!`，
+  // 也不含中文，于是返回 fallback ⇒ 屏上是调用方的**通用兜底句**。
+  // 缺陷同样成立（用户拿不到任何可操作原因），但成因和症状与票面描述不同，别沿用那句话。
+  it('对照：旧的 FastEndpoints 默认形状在 PC 上退化成通用兜底（不是英文常量）', () => {
+    notifyOperationFailure(
+      '提交失败',
+      {
+        statusCode: 400,
+        message: 'One or more errors occurred!',
+        errors: { idempotencyKey: ["'idempotency Key' 必须小于或等于128个字符。"] },
+      },
+      '提交失败，请稍后重试',
+    )
+
+    expect(toastError).toHaveBeenCalledWith('提交失败，请稍后重试')
+    const shown = String(toastError.mock.calls[0][0])
+    expect(shown).not.toContain('One or more errors occurred')
+    expect(shown).not.toContain('提交的内容有误')
+  })
+})
