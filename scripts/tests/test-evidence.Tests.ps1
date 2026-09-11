@@ -1488,7 +1488,11 @@ $liveAssignments = Get-NervSourceSkipAssignments -RepoRoot $repoRoot
 # NERV-2121 注册采购收货路径互斥 Acceptance PostgreSQL proof，source 从 51 增至 52。
 # #3305 注册 WCS 回调宽度 proof（failure_message 改无界后，物理列类型与越界 failure_code 的 22001
 # 只有真库分得开，InMemory provider 对两者都无感），增至 53。
-Assert-Equal 53 $liveAssignments.Count '已批准的 source skip 清单变更必须显式分类。'
+# #3360 注册信封字段长度闸的真库 proof（超界键在真 PostgreSQL 上是 22001 逃逸成 poison 还是落成
+# 可重放死信，只有真库分得开）。⭐ 这一条**不是新增了一次跳过，而是让一次一直存在的跳过第一次变得可见**：
+# 那两条用例原先是裸 [Fact] 加方法体内 return，无库时被**计为通过**，既不产生 Skip 也就不触发本清单；
+# 修掉假通过后登记义务才浮出来。增至 54。
+Assert-Equal 54 $liveAssignments.Count '已批准的 source skip 清单变更必须显式分类。'
 Assert-True (($liveAssignments | Where-Object sourcePath -like '*SimulatedConnectorHostProcessTests.cs').sourceText.Contains('Windows runs the platform-specific executable resolution contract only', [StringComparison]::Ordinal)) 'Quote-aware scanner must retain semicolons inside a C# string literal.'
 $livePolicy = Import-NervTestEvidencePolicy -Path (Join-Path $repoRoot 'scripts/test-evidence-policy.json')
 $liveViolations = Test-NervTestEvidencePolicy -Policy $livePolicy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)

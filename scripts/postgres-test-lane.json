@@ -551,6 +551,23 @@
       "expectedTestIdentities": [
         "Nerv.IIP.Business.Inventory.Web.Tests.InventoryDirectoryPostgresTests.PostgreSql_fixture_allocates_parallel_run_scoped_ports_and_cleans_each_run"
       ]
+    },
+    {
+      "id": "notification-envelope-field-budget-postgres",
+      "service": "Notification",
+      "tier": "core",
+      "status": "active",
+      "databaseOwnership": "test-owned",
+      "project": "backend/services/Notification/tests/Nerv.IIP.Notification.Web.Tests/Nerv.IIP.Notification.Web.Tests.csproj",
+      "filter": "FullyQualifiedName~Nerv.IIP.Notification.Web.Tests.NotificationEnvelopeFieldBudgetPostgresTests",
+      "databasePrefix": "nerv_notification_envelope_budget",
+      "diagnosticSchemas": [
+        "notification"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Notification.Web.Tests.NotificationEnvelopeFieldBudgetPostgresTests.Oversized_envelope_field_dead_letters_and_stays_replayable_on_postgres",
+        "Nerv.IIP.Notification.Web.Tests.NotificationEnvelopeFieldBudgetPostgresTests.Without_the_gate_an_oversized_key_raises_22001_on_postgres"
+      ]
     }
   ],
   "scaleSeedExemptions": [
