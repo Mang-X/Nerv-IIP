@@ -2147,7 +2147,9 @@ public sealed class BusinessConsoleStartWmsWarehouseTaskRequestValidator
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(128);
-        RuleFor(x => x.ExpectedVersion).GreaterThanOrEqualTo(0);
+        // 下游共享入口 WarehouseTaskActionValidation.Configure 写 GreaterThan(0)；
+        // 领域 WarehouseTask.Version 从 1 起且只增，0 不是合法的乐观并发版本（#3336）。
+        RuleFor(x => x.ExpectedVersion).GreaterThan(0);
         AddScopeRules();
     }
 
@@ -2169,7 +2171,9 @@ public sealed class BusinessConsoleRecordWmsWarehouseTaskProgressRequestValidato
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(128);
-        RuleFor(x => x.ExpectedVersion).GreaterThanOrEqualTo(0);
+        // 下游共享入口 WarehouseTaskActionValidation.Configure 写 GreaterThan(0)；
+        // 领域 WarehouseTask.Version 从 1 起且只增，0 不是合法的乐观并发版本（#3336）。
+        RuleFor(x => x.ExpectedVersion).GreaterThan(0);
         RuleFor(x => x.ExecutedQuantity).GreaterThanOrEqualTo(0);
         RuleFor(x => x.ScopeKind)
             .Must(BusinessConsoleWmsScopeKinds.Contains)
@@ -2187,7 +2191,9 @@ public sealed class BusinessConsoleReportWmsWarehouseTaskExceptionRequestValidat
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(128);
-        RuleFor(x => x.ExpectedVersion).GreaterThanOrEqualTo(0);
+        // 下游共享入口 WarehouseTaskActionValidation.Configure 写 GreaterThan(0)；
+        // 领域 WarehouseTask.Version 从 1 起且只增，0 不是合法的乐观并发版本（#3336）。
+        RuleFor(x => x.ExpectedVersion).GreaterThan(0);
         RuleFor(x => x.ExceptionCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
         RuleFor(x => x.ScopeKind)
@@ -2206,7 +2212,9 @@ public sealed class BusinessConsoleCompleteWmsWarehouseTaskRequestValidator
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(128);
-        RuleFor(x => x.ExpectedVersion).GreaterThanOrEqualTo(0);
+        // 下游共享入口 WarehouseTaskActionValidation.Configure 写 GreaterThan(0)；
+        // 领域 WarehouseTask.Version 从 1 起且只增，0 不是合法的乐观并发版本（#3336）。
+        RuleFor(x => x.ExpectedVersion).GreaterThan(0);
         RuleFor(x => x.ExecutedQuantity).GreaterThanOrEqualTo(0);
         RuleFor(x => x.DifferenceReason).MaximumLength(500);
         RuleFor(x => x.ScopeKind)
@@ -2224,7 +2232,18 @@ public sealed class BusinessConsoleDispatchWmsWcsTaskRequestValidator
         RuleFor(x => x.WarehouseTaskId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.ExpectedVersion).GreaterThanOrEqualTo(0);
+        // 这一处的下游权威不是 FluentValidation：DispatchWcsTaskCommand 没有校验器。
+        // DispatchWcsTaskCommandHandler 里与该字段相关的出口有四个，**只有两个消费它**：
+        //   · 新建 WCS 任务  → ClaimWcsExecution(_, ExpectedVersion)
+        //   · Failed 重试    → ValidateWcsExecution(_, ExpectedVersion)   ← **双参**重载
+        // 这两条都走领域 WarehouseTask.EnsureExpectedVersion 的**相等**判定（Version 从 1 起且只增），
+        // 0 永远匹配不上 ⇒ 这两条必然拒绝，约束比 GreaterThan(0) 更强。
+        // 另两个出口**根本不看该字段**：幂等重放（MatchesDispatch 为真）走 ValidateWcsExecution 的
+        // **单参**重载；已有非 Failed 的 WCS 任务则直接 409。
+        // ⚠️ 因此本规则带来一条行为变化：expectedVersion = 0 的**幂等重放**改前得 200、改后被网关 400。
+        // 这是有意接受的——0 能在那条分支通过只是它恰好不检查，不是被设计成 don't-care 哨兵。
+        // 网关只取「> 0」这一段，不把相等判定前移（#3336）。
+        RuleFor(x => x.ExpectedVersion).GreaterThan(0);
         RuleFor(x => x.AdapterType).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ExternalTaskId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.PayloadJson).NotEmpty();
