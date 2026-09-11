@@ -58335,8 +58335,7 @@
           "countedQuantity": {
             "type": "number",
             "format": "decimal",
-            "minimum": 0.0,
-            "exclusiveMinimum": true
+            "minimum": 0.0
           },
           "idempotencyKey": {
             "type": "string",

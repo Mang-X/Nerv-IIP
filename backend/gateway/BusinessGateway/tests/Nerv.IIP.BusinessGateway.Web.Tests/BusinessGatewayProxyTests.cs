@@ -9315,8 +9315,14 @@ public sealed class BusinessGatewayProxyTests
         Assert.Null(masterData.LastUpdateRequest);
     }
 
+    /// <summary>
+    /// #3355：实盘数 0 是合法盘点结果（账面有货、实盘没有）。网关此前写 <c>GreaterThan(0)</c>
+    /// 比下游 <c>ConfirmStockCountAdjustmentCommandValidator</c> 的 <c>GreaterThanOrEqualTo(0)</c> 更严，
+    /// 把「盘亏到零」挡在入口。此处钉住的是「0 转发到下游」，不是「0 返回 200」——
+    /// 只断状态码的话，把规则删光同样绿。
+    /// </summary>
     [Fact]
-    public async Task Count_adjustment_rejects_zero_counted_quantity()
+    public async Task Count_adjustment_forwards_zero_counted_quantity_downstream()
     {
         var inventory = new RecordingInventoryClient();
         await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
@@ -9335,7 +9341,48 @@ public sealed class BusinessGatewayProxyTests
             idempotencyKey = "idem-001",
         });
 
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(1, inventory.ConfirmCountAdjustmentCallCount);
+        Assert.Equal(0m, inventory.LastConfirmCountAdjustmentRequest?.CountedQuantity);
+    }
+
+    /// <summary>
+    /// #3355 的另一半：对齐到 <c>GreaterThanOrEqualTo(0)</c> 之后，负数仍然必须被拒且不得转发
+    /// ——盘点结果为负在业务上不成立，下游命令校验器与领域守卫（<c>EnsureReadyForAdjustment</c>
+    /// 对 <c>countedQuantity &lt; 0</c> 抛 <c>ArgumentOutOfRangeException</c>）都拒它。
+    /// <para>
+    /// ⚠️ <b>后两条断言今天对变异零独立鉴别力，但不得删。</b>#3355 审核实测：把下界放宽成
+    /// <c>GreaterThanOrEqualTo(-1)</c> 时，本用例在第一条状态码断言上就失败
+    /// （<c>Expected: BadRequest / Actual: OK</c>），<c>ConfirmCountAdjustmentCallCount</c> 与
+    /// <c>LastConfirmCountAdjustmentRequest</c> 两条**根本没执行**。结构上也是如此：只要校验失败就
+    /// 不进 <c>AuthorizedBusinessProxyEndpoint.HandleAsync</c>，「400」与「不转发」由构造同真同假。
+    /// 保留它们防的是**将来执行序变化**——#3345 在本基类上抓到过「响应已写出但请求仍被转发下去」
+    /// 的真实形状。届时这两条是唯一会红的断言。**不要以「今天冗余」为由删除。**
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Count_adjustment_rejects_negative_counted_quantity()
+    {
+        var inventory = new RecordingInventoryClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessInventoryClient>();
+            services.AddSingleton<IBusinessInventoryClient>(inventory);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/inventory/count-tasks/count-001/adjustments?organizationId=org-001&environmentId=env-dev", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            countedQuantity = -1,
+            idempotencyKey = "idem-001",
+        });
+
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, inventory.ConfirmCountAdjustmentCallCount);
+        Assert.Null(inventory.LastConfirmCountAdjustmentRequest);
     }
 
     [Fact]
@@ -15257,12 +15304,21 @@ internal sealed class RecordingInventoryClient : IBusinessInventoryClient
         CancellationToken cancellationToken) =>
         Task.FromResult(new BusinessConsoleCreateStockCountTaskResponse("count-001", 1));
 
+    public int ConfirmCountAdjustmentCallCount { get; private set; }
+
+    public BusinessConsoleConfirmStockCountAdjustmentRequest? LastConfirmCountAdjustmentRequest { get; private set; }
+
     public Task<BusinessConsoleConfirmStockCountAdjustmentResponse> ConfirmCountAdjustmentAsync(
         string internalBearerToken,
         string countTaskId,
         BusinessConsoleConfirmStockCountAdjustmentRequest request,
-        CancellationToken cancellationToken) =>
-        Task.FromResult(new BusinessConsoleConfirmStockCountAdjustmentResponse("move-001", 1, 11, "posted", null));
+        CancellationToken cancellationToken)
+    {
+        ConfirmCountAdjustmentCallCount++;
+        LastConfirmCountAdjustmentRequest = request;
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleConfirmStockCountAdjustmentResponse("move-001", 1, 11, "posted", null));
+    }
 
     public string? LastRestartedCountTaskId { get; private set; }
 
