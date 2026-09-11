@@ -33946,7 +33946,8 @@
           "expectedVersion": {
             "type": "integer",
             "format": "int64",
-            "minimum": 0.0
+            "minimum": 0.0,
+            "exclusiveMinimum": true
           }
         }
       },
@@ -33968,7 +33969,8 @@
           "expectedVersion": {
             "type": "integer",
             "format": "int64",
-            "minimum": 0.0
+            "minimum": 0.0,
+            "exclusiveMinimum": true
           },
           "executedQuantity": {
             "type": "number",
@@ -33996,7 +33998,8 @@
           "expectedVersion": {
             "type": "integer",
             "format": "int64",
-            "minimum": 0.0
+            "minimum": 0.0,
+            "exclusiveMinimum": true
           },
           "exceptionCode": {
             "type": "string",
@@ -34030,7 +34033,8 @@
           "expectedVersion": {
             "type": "integer",
             "format": "int64",
-            "minimum": 0.0
+            "minimum": 0.0,
+            "exclusiveMinimum": true
           },
           "executedQuantity": {
             "type": "number",
@@ -34847,7 +34851,8 @@
           "expectedVersion": {
             "type": "integer",
             "format": "int64",
-            "minimum": 0.0
+            "minimum": 0.0,
+            "exclusiveMinimum": true
           },
           "adapterType": {
             "type": "string",
