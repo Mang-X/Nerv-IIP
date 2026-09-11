@@ -49,14 +49,10 @@ public sealed class NotificationEnvelopeFieldBudgetPostgresTests
     private const string ConsumerName = "notification.envelope-budget.postgres";
     private const string SampleEventType = "budget.PostgresEvent";
 
-    [Fact]
+    [NotificationEnvelopeBudgetPostgresFact]
     public async Task Without_the_gate_an_oversized_key_raises_22001_on_postgres()
     {
         var baseConnectionString = LaneConnectionString();
-        if (baseConnectionString is null)
-        {
-            return;
-        }
 
         await using var database = await PostgreSqlTestDatabase.CreateAsync(
             baseConnectionString,
@@ -84,14 +80,10 @@ public sealed class NotificationEnvelopeFieldBudgetPostgresTests
         Assert.Equal("22001", postgres.SqlState);
     }
 
-    [Fact]
+    [NotificationEnvelopeBudgetPostgresFact]
     public async Task Oversized_envelope_field_dead_letters_and_stays_replayable_on_postgres()
     {
         var baseConnectionString = LaneConnectionString();
-        if (baseConnectionString is null)
-        {
-            return;
-        }
 
         await using var database = await PostgreSqlTestDatabase.CreateAsync(
             baseConnectionString,
@@ -184,11 +176,39 @@ public sealed class NotificationEnvelopeFieldBudgetPostgresTests
         return services.BuildServiceProvider();
     }
 
-    /// <summary>⛔ 不提供默认连接串：缺环境变量就跳过，绝不回落到本机共享实例。</summary>
-    private static string? LaneConnectionString()
+    /// <summary>
+    /// ⛔ 不提供默认连接串，绝不回落到本机共享实例。
+    /// <para>缺环境变量时由 <see cref="NotificationEnvelopeBudgetPostgresFactAttribute"/> 在**用例进入之前**
+    /// 标成 Skip，所以走到这里就一定有值；真没有就抛，**不静默 return**。</para>
+    /// </summary>
+    private static string LaneConnectionString()
     {
         var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES");
-        return string.IsNullOrWhiteSpace(connectionString) ? null : connectionString;
+        return string.IsNullOrWhiteSpace(connectionString)
+            ? throw new InvalidOperationException(
+                "NERV_IIP_TEST_POSTGRES 缺失却仍进入了真库用例：Skip 特性没起作用。")
+            : connectionString;
+    }
+
+    /// <summary>
+    /// 缺 <c>NERV_IIP_TEST_POSTGRES</c> 时把用例标成 **Skip**。
+    /// </summary>
+    /// <remarks>
+    /// ⚠️ <b>为什么不能用裸 <c>[Fact]</c> 加方法体内 <c>return</c></b>（PR #3371 复审抓出的形态）：
+    /// 那样在无库环境下用例会被**计为通过**，报告里是「130 通过 / 0 跳过」——
+    /// **「根本没跑」在读数里完全不可见**。skipped 至少看得见，假通过连线索都不留，
+    /// 会让后来人（包括写它的我）拿一个空转的绿当成证据。
+    /// 本仓既有同形写法：<c>AppHubRealPostgresFactAttribute</c> 等。
+    /// </remarks>
+    internal sealed class NotificationEnvelopeBudgetPostgresFactAttribute : FactAttribute
+    {
+        public NotificationEnvelopeBudgetPostgresFactAttribute()
+        {
+            if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")))
+            {
+                Skip = "Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL envelope-field budget dead-letter proof.";
+            }
+        }
     }
 
     private sealed record BudgetPostgresSamplePayload(string Value);
