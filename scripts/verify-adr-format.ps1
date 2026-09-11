@@ -89,33 +89,39 @@ function Test-CurrentMarkdownLinks {
     $checkedDocuments = 0
     foreach ($file in Get-RepositoryMarkdownFiles -Root $Root) {
         $path = [IO.Path]::GetRelativePath($Root, $file.FullName).Replace('\', '/')
-        # 冻结正文保留时点语义。两个 VitePress 应用的正文由各自 package.json
-        # 的 vitepress build 解析（含无扩展名路由）；仓库 suite 不复制站点解析器。
-        # 这些目录中的 README/AGENTS 仍是当前协作入口，继续检查。
+        # 冻结正文保留时点语义；这些目录中的 README/AGENTS 仍是当前协作入口。
         $isEntry = [string]::Equals($file.Name, 'README.md', [StringComparison]::Ordinal) -or
             [string]::Equals($file.Name, 'AGENTS.md', [StringComparison]::Ordinal)
-        if (-not $isEntry -and ($path -match '^docs/(?:adr|reports|superpowers|status/archive)/' -or
-                $path.StartsWith('frontend/apps/docs/', [StringComparison]::Ordinal) -or
-                $path.StartsWith('frontend/apps/design-system/docs/', [StringComparison]::Ordinal))) { continue }
+        if (-not $isEntry -and $path -match '^docs/(?:adr|reports|superpowers|status/archive)/') { continue }
+        $isSiteDocument = -not $isEntry -and (
+            $path.StartsWith('frontend/apps/docs/', [StringComparison]::Ordinal) -or
+            $path.StartsWith('frontend/apps/design-system/docs/', [StringComparison]::Ordinal))
 
         # 使用 PowerShell 自带的 Markdown parser，先渲染再取真实 href/src。
         # 引用式链接、图片、转义和代码示例无需再实现一套 Markdown 正则解析器。
         $html = [string](ConvertFrom-Markdown -InputObject ([IO.File]::ReadAllText($file.FullName))).Html
         $html = [regex]::Replace($html, '(?s)<!--.*?(?:-->|\z)', '')
-        $linkPattern = '<(?:a|img)\b[^>]*?\b(?:href|src)\s*=\s*(?<quote>["''])(?<target>.*?)\k<quote>'
+        $linkPattern = '<(?<element>a|img)\b[^>]*?\b(?:href|src)\s*=\s*(?<quote>["''])(?<target>.*?)\k<quote>'
         foreach ($link in [regex]::Matches($html, $linkPattern, [Text.RegularExpressions.RegexOptions]::IgnoreCase -bor [Text.RegularExpressions.RegexOptions]::CultureInvariant)) {
             $target = [Net.WebUtility]::HtmlDecode($link.Groups['target'].Value)
             # 外链、站点绝对路由和锚点不是仓库相对文件目标；不访问网络或锁定标题文案。
             if ($target -match '^(?:[A-Za-z][A-Za-z0-9+.-]*:|/|#)') { continue }
             $destination = [Uri]::UnescapeDataString(($target -split '[?#]', 2)[0])
             if ([string]::IsNullOrEmpty($destination)) { continue }
+            # VitePress 的无扩展名 / .html 页面路由由各站点 build 解析。
+            # 只豁免 a 的路由目标；显式文件与 img 仍检查，不跳过整篇活文档。
+            if ($isSiteDocument -and [string]::Equals($link.Groups['element'].Value, 'a', [StringComparison]::OrdinalIgnoreCase)) {
+                $extension = [IO.Path]::GetExtension($destination)
+                if ([string]::IsNullOrEmpty($extension) -or
+                    [string]::Equals($extension, '.html', [StringComparison]::OrdinalIgnoreCase)) { continue }
+            }
             if (-not (Test-Path -LiteralPath (Join-Path $file.DirectoryName $destination))) {
                 $Findings.Add("[DOC_LINK] $path -> $target")
             }
         }
         $checkedDocuments++
     }
-    Write-Host "当前 Markdown 本地目标已检查（$checkedDocuments 个文件）；不验证外链、标题锚点、站点路由或内容语义。"
+    Write-Host "当前 Markdown 本地目标已检查（$checkedDocuments 个文件）；不验证外链、标题锚点、站点页面路由或内容语义。"
 }
 
 if (-not (Test-Path -LiteralPath $AdrRoot -PathType Container)) {
