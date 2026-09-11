@@ -2,6 +2,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
+using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Mes.Domain.Tests;
 
@@ -18,11 +19,12 @@ namespace Nerv.IIP.Business.Mes.Domain.Tests;
 /// <para><b>两类不同的安全性，别混为一谈</b>：</para>
 /// <list type="number">
 /// <item><b>被守卫挡住</b>（下达工单、确认线边收料、接班）：第二次直接抛/早退，压根不进写入路径。</item>
-/// <item><b>一次赋值、不累积</b>（确认停机恢复）：没有任何前置守卫，它对重放的抵抗力仅止于
-/// 「第二次写的是同一个字段而不是追加一笔」。⚠️ **这一支不叫幂等**：真实调用点每次现铸恢复时刻，
-/// 重放会把 <c>ToUtc</c> 覆盖成更晚的值（详见该用例注释）。这一类也**最脆**——
-/// 写入方法一旦变成累积式，安全性立刻消失且不会有守卫兜住，
-/// 所以那里断言的是「同一入参第二次施加后状态与第一次后逐字相同」，不是「第二次抛了」。</item>
+/// <item><b>一次赋值、不累积</b>（确认停机恢复）：⚠️ <b>#3343 之后本类已空</b>。
+/// 这一类原本只有「确认停机恢复」一员：<c>Close</c> 曾经零前置守卫，对重放的抵抗力仅止于
+/// 「第二次写的是同一个字段而不是追加一笔」——不产生重复行，**但会把恢复时刻覆盖成更晚的值**，
+/// 所以它从来不叫幂等。#3343 给 <c>Close</c> 补上「已有结束时刻则拒绝」的守卫后，
+/// 它已并入第 1 类（被守卫挡住）。<b>保留这一条描述是因为它解释了本类用例为什么那样写</b>，
+/// 不要读成「现在还有成员落在这一类」。</item>
 /// </list>
 ///
 /// <para><b>本类不证明什么</b>：不证明这些动作在**并发**下安全（那是乐观并发/命令锁的射程），
@@ -113,39 +115,45 @@ public sealed class MesWriteReplaySafetyTests
     }
 
     /// <summary>
-    /// 确认停机恢复：<c>Close</c> **没有任何前置守卫**，它对重放的全部抵抗力就是「一次赋值、不累积」。
+    /// 确认停机恢复：第二次撞 <c>Close</c> 的「已有结束时刻」守卫被拒，恢复时刻保持首次值。
     /// </summary>
     /// <remarks>
-    /// <para><b>本用例证的是「不累积」，不是「幂等」——两者不是一回事，别读混。</b>
-    /// 这里两次传同一个时刻，断言第二次写完后的 <c>ToUtc</c> 与第一次逐字相同：
-    /// <c>Close</c> 一旦变成累积式（哪怕只在第二次分支上偏移），本条立刻红。
-    /// 换句话说，它钉住的是「重放不产生第二笔效果」，而不是「重放没有任何影响」。</para>
+    /// <para>⚠️ <b>本用例的前提在 #3343 被改掉了，它的分类随之从第 ②' 类挪进第 ① 类——
+    /// 这是改写不是新增，别当成「旧断言过时可删」。</b>上一版（#3328）写的是
+    /// 「<c>Close</c> 零前置守卫，对重放的全部抵抗力就是一次赋值、不累积」，
+    /// 断言两次传<b>同一个</b>时刻后 <c>ToUtc</c> 逐字相同。#3343 给 <c>Close</c> 补了
+    /// 「已有结束时刻则拒绝」的守卫之后，那个写法**证不到自己的名字**了：
+    /// 同一个时刻的第二次调用现在会抛，走不到「是否累积」那一步。</para>
     ///
-    /// <para>⚠️ <b>真实调用点送来的并不是同一份入参</b>（这一条我起初写错过，登记在此避免被继承）：
+    /// <para><b>所以这一版换成更强的形态，并且保留原用例真正要证的那件事</b>——
+    /// 「重放不产生第二笔效果」。这里第二次故意传一个<b>更晚</b>的时刻（<c>+3h</c>，正是真实调用点
+    /// 会送来的形状，见下段），断言：<c>KnownException</c> 抛出，且 <c>ToUtc</c> 仍是**首次**那个值。
+    /// 后半句同时钉住「守卫排在赋值之前」——把 <c>Close</c> 改成先赋值再 <c>throw</c>，
+    /// 异常断言照样绿，本条的第二个断言会红。</para>
+    ///
+    /// <para><b>真实调用点送来的不是同一份入参</b>（#3328 登记、#3343 沿用）：
     /// 控制台 <c>pages/mes/downtime.vue</c> 的 <c>confirmRecover()</c> 在**函数体内**现铸
     /// <c>new Date().toISOString()</c>，所以一次真实重放带的是**更晚的** <c>RecoveredAtUtc</c>；
-    /// 网关侧 <c>RecoveredAtUtc</c> 也**不是必填**（OpenAPI 该 schema 根本没有 <c>required</c> 列表）。
-    /// ⇒ 真实重放的后果是：<b>不产生重复行</b>（本用例证的那一半成立），
-    /// <b>但会把恢复时刻覆盖成更晚的值</b>。所以 #3328 摘掉网关那个幂等键是安全的
-    /// （它本来也拦不住这件事，下游从不消费它），但**不要**因此说这条腿「幂等」。</para>
+    /// 网关侧 <c>RecoveredAtUtc</c> 也**不是必填**。在 #3343 之前，这意味着重复点击「恢复」
+    /// 会把恢复时刻静默改写成最后一次点击的时间；现在第二次被拒，现场事实保持首次那一次。</para>
     ///
-    /// <para>⚠️ 「零前置守卫」本身是另一个缺陷（可以「恢复」一个已恢复的停机，也可写出早于
-    /// <c>FromUtc</c> 的 <c>ToUtc</c>，还包括上一段那个覆盖）。#3328 明确**不修**它，编排者另行立票；
-    /// 本用例只钉「不累积」这一条，不要把它读成「Close 已经被守住了」。</para>
+    /// <para><b>本用例不证明什么</b>：不证明 <c>Close</c> 的另一条守卫（拒绝早于 <c>FromUtc</c>
+    /// 的恢复时刻）——这里第二次的时刻晚于 <c>FromUtc</c>，那条守卫在本夹具上**不可达**，
+    /// 刻意如此，免得两条同型守卫互相兜住变异。那条由
+    /// <c>MesAggregateTests.Closing_a_downtime_earlier_than_its_start_is_rejected</c> 单独覆盖。</para>
     /// </remarks>
     [Fact]
-    public void Closing_a_downtime_twice_with_the_same_instant_does_not_accumulate()
+    public void Closing_an_already_recovered_downtime_is_rejected_and_keeps_the_first_instant()
     {
         var downtime = WorkCenterUnavailability.Open(
             "org-001", "env-dev", "DTE-000007", "WC-A", Anchor, null, "设备待修", "DEV-CNC-01");
-        var recoveredAtUtc = Anchor.AddHours(2);
+        var firstRecoveredAtUtc = Anchor.AddHours(2);
 
-        downtime.Close(recoveredAtUtc);
-        var afterFirst = downtime.ToUtc;
-        downtime.Close(recoveredAtUtc);
+        downtime.Close(firstRecoveredAtUtc);
 
-        Assert.Equal(recoveredAtUtc, afterFirst);
-        Assert.Equal(afterFirst, downtime.ToUtc);
+        var exception = Assert.Throws<KnownException>(() => downtime.Close(Anchor.AddHours(3)));
+        Assert.Equal("该停机事件已恢复，不能重复恢复。", exception.Message);
+        Assert.Equal(firstRecoveredAtUtc, downtime.ToUtc);
     }
 
     private static WorkOrder NewWorkOrder() => WorkOrder.Create(
