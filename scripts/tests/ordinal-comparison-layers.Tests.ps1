@@ -213,12 +213,16 @@ foreach ($invalidOrdinalSetCase in @(
 # #3312: the ordinal-HashSet exemption has to be reachable from the *top-level script scope*, not
 # only from inside a function.
 #
-# Every case above this block — and every case in this file before #3312 — wraps its probe in
-# `function Test-... { }`. That is why the gap survived: `Test-NervOrdinalContractDirectFunctionAssignment`
-# returned false outright when there was no enclosing function, so the exemption was structurally
-# unreachable in flat scripts, and flat scripts are exactly what every file under scripts/tests/ is.
-# The exemption read as complete and had never once applied there. A suite that only ever probes one
-# of the two scopes cannot see that.
+# No case in this file before #3312 ever probed this exemption from the top level. That is why the
+# gap survived: `Test-NervOrdinalContractDirectFunctionAssignment` returned false outright when there
+# was no enclosing function, so the exemption was structurally unreachable in flat scripts, and flat
+# scripts are exactly what every file under scripts/tests/ is. The exemption read as complete and had
+# never once applied there.
+#
+# That claim is constructive, not a count of how the probes happen to be written: running the *base*
+# version of this file against the *base* (unfixed) library is green, so the pre-existing suite had
+# zero discrimination against the defect. Running the base file against the fixed library is green
+# too — which is the other half: the block below is the entire discrimination this change adds.
 #
 # The parity is asserted by *construction*, not by two hand-maintained copies: the function-scoped
 # probe is the top-level probe wrapped verbatim. Keeping two literal sources would let them drift
@@ -277,10 +281,25 @@ foreach ($topLevelCrossScopeCase in @(
 #                                                        Test-NervOrdinalContractDirectFunctionAssignment
 #                                                        did not make it reachable
 #
-# All three were confirmed by measurement, not by reading: the same source probed at top level and
-# wrapped in a function reports 1 and 0 respectively on this head, exactly as the HashSet case did
-# before #3312. They are left alone because #3312 is a single-point fix, not a rewrite of the
-# scope model — each needs its own decision about what "same scope" means for that proof.
+# The third one has a control-flow proof that needs no fixture: it does call the function this change
+# fixed, but only at OrdinalComparisonContract.ps1:1048, and its own walk to a FunctionDefinitionAst
+# (:1035) plus its own `$null -eq $scope -> return $false` (:1036) run first. Top level never reaches
+# :1048, so the fix cannot have made it reachable.
+#
+# The behavioural readings backing all three are reproducible, and the fixture matters — a probe that
+# does not actually reach the exemption reports 0 in both scopes and proves nothing either way. The
+# one that reaches the third exemption is:
+#
+#     $comparison = [StringComparison]::Ordinal
+#     $null = $value.StartsWith('prefix', $comparison)
+#
+# Top level reports 1 and the same two lines wrapped in a function report 0; calling
+# `Test-NervOrdinalContractOrdinalLocalArgument` directly on that invocation returns False at top
+# level and True inside a function, which is what attributes the difference to this exemption rather
+# than to some other rule.
+#
+# They are left alone because #3312 is a single-point fix, not a rewrite of the scope model — each
+# needs its own decision about what "same scope" means for that proof.
 #
 # Boundary, stated rather than implied: the closure argument above is only about *this* mechanism.
 # An exemption could be unreachable in flat scripts for some unrelated reason, and the probes here
