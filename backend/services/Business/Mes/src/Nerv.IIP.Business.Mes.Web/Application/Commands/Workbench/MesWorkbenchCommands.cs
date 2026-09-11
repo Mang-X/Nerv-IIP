@@ -854,7 +854,7 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
                 cancellationToken);
             if (materialCapture.IsMissing)
             {
-                throw new KnownException("MATERIAL_REQUIREMENT_SNAPSHOT_MISSING: 工单缺少齐套需求快照，无法确认物料齐套。");
+                throw new KnownException(MaterialReadinessGuards.MissingRequirementSnapshotReason);
             }
         }
 
@@ -2124,7 +2124,8 @@ public sealed class AuthorizeAndStartOperationTaskCommandHandler(
 internal static class MaterialReadinessGuards
 {
     internal const string MissingRequirementSnapshotReason =
-        "MATERIAL_REQUIREMENT_SNAPSHOT_MISSING: 工单缺少齐套需求快照，无法确认物料齐套。";
+        MesReadinessReasonCodes.MaterialRequirementSnapshotMissing +
+        ": 工单缺少齐套需求快照，无法确认物料齐套。";
 
     internal sealed record AutomaticRebindEdge(
         string WorkOrderId,
@@ -2216,7 +2217,7 @@ internal static class MaterialReadinessGuards
     public static string FormatShortageReason(string materialId, string? materialLotId, decimal shortage)
     {
         var lot = string.IsNullOrWhiteSpace(materialLotId) ? string.Empty : $"，批次 {materialLotId}";
-        return $"MATERIAL_SHORTAGE: 物料 {materialId}{lot} 缺口 {shortage:0.######}";
+        return $"{MesReadinessReasonCodes.MaterialShortage}: 物料 {materialId}{lot} 缺口 {shortage:0.######}";
     }
 
     /// <summary>

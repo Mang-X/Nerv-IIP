@@ -205,7 +205,7 @@ public sealed class RecordProductionReportCommandHandler(
         if (string.Equals(workOrder.Status, WorkOrder.CreatedStatus, StringComparison.Ordinal))
         {
             throw new KnownException(
-                MaterialReadinessGuards.DescribeForUser([MesReadinessReasonCodes.WorkOrderNotReleasedReason]));
+                MaterialReadinessGuards.DescribeForUser([MesReadinessReasonTexts.WorkOrderNotReleasedReason]));
         }
 
         var operationTask = await dbContext.OperationTasks.SingleOrDefaultAsync(

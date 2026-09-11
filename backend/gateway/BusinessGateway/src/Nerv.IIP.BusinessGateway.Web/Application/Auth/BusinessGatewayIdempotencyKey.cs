@@ -4,6 +4,26 @@ using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
 namespace Nerv.IIP.BusinessGateway.Web.Application.Auth;
 
+/// <summary>
+/// 网关全局幂等键钳对外发布的稳定 wire 码注册表（#3155）。
+///
+/// 契约：本类的每个 <c>public const string</c> 都必须在前端
+/// <c>frontend/packages/business-core/src/labels/stableErrorMessages.ts</c> 的
+/// <c>STABLE_ERROR_MESSAGES</c> 里登记，由
+/// <c>scripts/verify-stable-code-frontend-vocabulary.ps1</c> 在 CI 强制。
+/// 这三条码的信封 <c>message</c> 位就是码本身、不带任何中文，前端认不出就直接裸码上屏
+/// （PDA 的 400 回落链是 actionableMessage ?? serverMessage ?? fallback）。
+///
+/// ⚠️ 类名后缀 <c>StableWireCodes</c> 是检查器的发现约定，不是装饰：它按这个后缀在
+/// <c>backend/**/src/**</c> 全树发现注册表，新服务照此命名即自动进扫描面，不必登记到名单里。
+/// </summary>
+internal static class BusinessGatewayIdempotencyStableWireCodes
+{
+    public const string TooLong = "idempotency-key-too-long";
+    public const string InvalidCharacters = "idempotency-key-invalid-characters";
+    public const string Mismatch = "idempotency-key-mismatch";
+}
+
 internal static class BusinessGatewayIdempotencyKey
 {
     /// <summary>
@@ -182,7 +202,7 @@ internal static class BusinessGatewayIdempotencyKey
     private static BusinessServiceProxyException Mismatch() =>
         BusinessServiceProxyException.FromSafeDownstreamMessage(
             HttpStatusCode.Conflict,
-            "idempotency-key-mismatch");
+            BusinessGatewayIdempotencyStableWireCodes.Mismatch);
 
     /// <summary>
     /// 幂等键超过 <see cref="MaximumLength"/>。这是入参超长，不是键冲突，所以是 400 而不是 409：
@@ -192,7 +212,7 @@ internal static class BusinessGatewayIdempotencyKey
     private static BusinessServiceProxyException TooLong() =>
         BusinessServiceProxyException.FromSafeDownstreamMessage(
             HttpStatusCode.BadRequest,
-            "idempotency-key-too-long");
+            BusinessGatewayIdempotencyStableWireCodes.TooLong);
 
     /// <summary>
     /// 幂等键含 <see cref="IsAllowed"/> 之外的字符。与 <see cref="TooLong"/> 同理：
@@ -201,5 +221,5 @@ internal static class BusinessGatewayIdempotencyKey
     private static BusinessServiceProxyException InvalidCharacters() =>
         BusinessServiceProxyException.FromSafeDownstreamMessage(
             HttpStatusCode.BadRequest,
-            "idempotency-key-invalid-characters");
+            BusinessGatewayIdempotencyStableWireCodes.InvalidCharacters);
 }

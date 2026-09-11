@@ -23,6 +23,11 @@ describe('stableErrorMessage', () => {
     ],
     ['request-payload-invalid', '提交的内容有误，请检查后重新提交；仍失败请联系管理员。'],
     ['lifecycle-conflict', '状态已被其他操作更新'],
+    // #3155 补登记的四条：此前后端一直在发、本表一直不认，于是裸码上屏。
+    ['idempotency-key-mismatch', '本次请求的操作标识前后不一致，请刷新页面后重新发起。'],
+    ['forbidden', '没有执行该操作的权限，请联系管理员确认你的作业范围。'],
+    ['unprocessable', '当前数据不满足该操作的前置条件，请刷新后核对。'],
+    ['ROUTING_SNAPSHOT_MISSING', '工单缺少已发布生产版本的工艺路线快照，请先维护并发布生产版本。'],
   ])('maps the exact stable wire value %s to actionable Chinese', (wireValue, message) => {
     expect(stableErrorMessage(wireValue)).toBe(message)
   })

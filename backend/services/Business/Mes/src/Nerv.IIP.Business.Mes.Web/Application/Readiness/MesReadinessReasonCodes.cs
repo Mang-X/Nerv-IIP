@@ -2,24 +2,46 @@ using Nerv.IIP.Contracts.EquipmentRuntime;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Readiness;
 
+/// <summary>
+/// 开工/报工门禁阻断原因的**码注册表**，也是 #3155 建立的跨语言契约在后端这一侧的权威面。
+///
+/// 契约：本类的每个 <c>public const string</c> 都必须在前端
+/// <c>frontend/packages/business-core/src/labels/mesReadinessReasons.ts</c> 的
+/// <c>MES_READINESS_REASON_DISPLAYS</c> 里登记，由
+/// <c>scripts/verify-stable-code-frontend-vocabulary.ps1</c> 在 CI 强制。方向是单向包含
+/// （后端 ⊆ 前端）：前端为已下线的历史码保留展示是合法的，反向要求会误报。
+///
+/// ⚠️ 因此本类只装**码**，不装完整原因串——注册表里混进 <c>CODE: 中文</c> 形态的常量会让
+/// 检查器把整句当成一个码去前端词表里找，永远找不到。成句的原因串放
+/// <see cref="MesReadinessReasonTexts"/>。
+///
+/// ⚠️ 登记行为就是「在本类声明一个 public const」。以裸字面量形式直接写进
+/// <c>blockReasons</c> 的码**不在检查器的扫描面内**，也就享受不到这条契约；
+/// <c>WORK_ORDER_NOT_FOUND</c> 曾经就是这样漏掉的（#3155）。
+/// 私有常量刻意排除在外：它们不会作为阻断码外发（<see cref="SourceUnavailable"/> 在
+/// <see cref="NormalizeIndustrialTelemetryReasonCode"/> 里被归一化掉，从不上读面）。
+/// </summary>
 public static class MesReadinessReasonCodes
 {
     /// <summary>
     /// 工单尚未下达（#3119）。工单在 <c>created</c> 状态就能带 <c>InProgress</c> 工序并被报工受理是缺陷
     /// （定性见 #3113），本码是准入侧的拒绝理由：开工由
     /// <c>MesOperationTaskActionReadinessEvaluator</c> 产出，报工由
-    /// <c>RecordProductionReportCommandHandler</c> 产出，两处共用本文件这一份措辞。
+    /// <c>RecordProductionReportCommandHandler</c> 产出，两处共用
+    /// <see cref="MesReadinessReasonTexts.WorkOrderNotReleasedReason"/> 这一份措辞。
     /// </summary>
     public const string WorkOrderNotReleased = "WORK_ORDER_NOT_RELEASED";
 
     /// <summary>
-    /// <see cref="WorkOrderNotReleased"/> 的完整 <c>CODE: 中文</c> 原因串。
-    /// 读面原样上屏（前端 <c>describeMesReadinessReason</c> 按码取标签与下一步动作），
-    /// 写操作被拒时经 <c>MaterialReadinessGuards.DescribeForUser</c> 剥掉英文码后再进 KnownException。
+    /// 阻断动作的工序找不到所属生产工单。#3155 的票面反例：本码与
+    /// <see cref="WorkOrderNotReleased"/> 出自同一个 evaluator、相隔一行，却因为写成裸字面量
+    /// 而长期不在任何契约的扫描面内。
     /// </summary>
-    public const string WorkOrderNotReleasedReason =
-        WorkOrderNotReleased + ": 工单尚未下达，请先下达工单后再开工或报工。";
+    public const string WorkOrderNotFound = "WORK_ORDER_NOT_FOUND";
 
+    public const string PreviousOperationIncomplete = "PREVIOUS_OPERATION_INCOMPLETE";
+    public const string MaterialShortage = "MATERIAL_SHORTAGE";
+    public const string MaterialRequirementSnapshotMissing = "MATERIAL_REQUIREMENT_SNAPSHOT_MISSING";
     public const string QualityPlanMissing = "QUALITY_PLAN_MISSING";
     public const string QualityHoldActive = "QUALITY_HOLD_ACTIVE";
     public const string ActiveAlarm = EquipmentRuntimeReasonCodes.ActiveAlarm;
@@ -165,6 +187,21 @@ public static class MesReadinessReasonCodes
 
         return Downtime;
     }
+}
+
+/// <summary>
+/// 成句的 <c>CODE: 中文</c> 阻断原因串。与 <see cref="MesReadinessReasonCodes"/> 分开放，
+/// 是因为那边是跨语言契约的扫描面、只能装码（见该类注释）。
+/// </summary>
+public static class MesReadinessReasonTexts
+{
+    /// <summary>
+    /// <see cref="MesReadinessReasonCodes.WorkOrderNotReleased"/> 的完整 <c>CODE: 中文</c> 原因串。
+    /// 读面原样上屏（前端 <c>describeMesReadinessReason</c> 按码取标签与下一步动作），
+    /// 写操作被拒时经 <c>MaterialReadinessGuards.DescribeForUser</c> 剥掉英文码后再进 KnownException。
+    /// </summary>
+    public const string WorkOrderNotReleasedReason =
+        MesReadinessReasonCodes.WorkOrderNotReleased + ": 工单尚未下达，请先下达工单后再开工或报工。";
 }
 
 public sealed record EquipmentReadinessClassification(

@@ -115,7 +115,7 @@ public sealed class CreateMaintenanceWorkOrderCommandHandler(ApplicationDbContex
                     && x.OrganizationId == request.OrganizationId
                     && x.EnvironmentId == request.EnvironmentId,
                 cancellationToken)
-                ?? throw new KnownException("stored-maintenance-work-order-receipt-is-invalid");
+                ?? throw new KnownException(MaintenanceStableWireCodes.StoredWorkOrderReceiptIsInvalid);
             return new MaintenanceWorkOrderCommandResult(
                 replayed.Id,
                 parsedReceipt.Status,
@@ -131,7 +131,7 @@ public sealed class CreateMaintenanceWorkOrderCommandHandler(ApplicationDbContex
                 cancellationToken);
             if (existing is not null)
             {
-                throw new KnownException("source-alarm-already-bound-to-a-different-create-intent");
+                throw new KnownException(MaintenanceStableWireCodes.SourceAlarmAlreadyBound);
             }
         }
 
@@ -352,7 +352,7 @@ public sealed class CreateMaintenanceWorkOrderV2CommandHandler(ApplicationDbCont
                     && x.OrganizationId == request.OrganizationId
                     && x.EnvironmentId == request.EnvironmentId,
                 cancellationToken)
-                ?? throw new KnownException("stored-maintenance-work-order-receipt-is-invalid");
+                ?? throw new KnownException(MaintenanceStableWireCodes.StoredWorkOrderReceiptIsInvalid);
             return new MaintenanceWorkOrderCommandResult(
                 replayed.Id,
                 parsedReceipt.Status,
@@ -383,7 +383,7 @@ public sealed class CreateMaintenanceWorkOrderV2CommandHandler(ApplicationDbCont
                 cancellationToken);
             if (existing is not null)
             {
-                throw new KnownException("source-alarm-already-bound-to-a-different-create-intent");
+                throw new KnownException(MaintenanceStableWireCodes.SourceAlarmAlreadyBound);
             }
         }
 
@@ -649,7 +649,7 @@ public sealed class CompleteMaintenanceWorkOrderCommandHandler(
                 out var changedAtUtc) ||
             changedAtUtc == default)
         {
-            throw new KnownException("stored-maintenance-completion-receipt-is-invalid");
+            throw new KnownException(MaintenanceStableWireCodes.StoredCompletionReceiptIsInvalid);
         }
 
         var storedVersion = workOrder.Version;
@@ -659,7 +659,7 @@ public sealed class CompleteMaintenanceWorkOrderCommandHandler(
                 System.Globalization.CultureInfo.InvariantCulture,
                 out storedVersion) || storedVersion < 0))
         {
-            throw new KnownException("stored-maintenance-completion-receipt-is-invalid");
+            throw new KnownException(MaintenanceStableWireCodes.StoredCompletionReceiptIsInvalid);
         }
 
         return new MaintenanceWorkOrderCommandResult(
