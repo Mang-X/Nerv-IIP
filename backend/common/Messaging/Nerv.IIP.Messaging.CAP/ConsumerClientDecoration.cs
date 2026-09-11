@@ -7,13 +7,12 @@ namespace Nerv.IIP.Messaging.CAP;
 
 /// <summary>
 /// Wraps the transport's <see cref="IConsumerClientFactory"/> and every <see cref="IConsumerClient"/> it creates
-/// so that later work (#3351 首轮订阅闸门、#3352 <see cref="IConsumerClient.ListeningAsync"/> 专用线程) has one
-/// place to hook into.
+/// so that the first-subscription gate (#3351) and later work (#3352 <see cref="IConsumerClient.ListeningAsync"/>
+/// 专用线程) has one place to hook into.
 ///
-/// <para><b>消息路径 100% 透传</b>：<see cref="DecoratedConsumerClientFactory"/> 与
-/// <see cref="DecoratedConsumerClient"/> 的每一个成员都逐字转发 inner，没有任何自身行为。本文件里唯一有自身
-/// 行为的代码在 <b>DI 组装期</b>——<see cref="AddServices"/> 的 fail closed。#3351 / #3352 要加的行为恰恰在
-/// 消息路径上，与本骨架的边界互补。</para>
+/// <para><b>消息路径上目前只有一处自身行为</b>：<see cref="FirstSubscriptionGate"/>（#3351）。
+/// <see cref="DecoratedConsumerClient"/> 的其余成员仍逐字转发 inner。本文件里 DI 组装期的自身行为是
+/// <see cref="AddServices"/> 的 fail closed。</para>
 ///
 /// <para>Registration mechanics: the transport package registers <see cref="IConsumerClientFactory"/> from its own
 /// <see cref="ICapOptionsExtension.AddServices"/>, and <c>AddCap</c> runs the extensions in registration order.
@@ -56,13 +55,78 @@ internal sealed class TransportConsumerClientFactory(IConsumerClientFactory inne
 
 internal sealed class DecoratedConsumerClientFactory(TransportConsumerClientFactory transport) : IConsumerClientFactory
 {
+    // One gate per factory == one gate per host: AddServices registers the factory as a singleton, and CAP resolves
+    // IConsumerClientFactory once per CapConsumerRegister. Every client this factory hands out therefore shares it.
+    private readonly FirstSubscriptionGate firstSubscriptionGate = new();
+
     internal IConsumerClientFactory Inner => transport.Inner;
 
     public async Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent) =>
-        new DecoratedConsumerClient(await transport.Inner.CreateAsync(groupName, groupConcurrent));
+        new DecoratedConsumerClient(
+            await transport.Inner.CreateAsync(groupName, groupConcurrent),
+            firstSubscriptionGate);
 }
 
-internal sealed class DecoratedConsumerClient(IConsumerClient inner) : IConsumerClient
+/// <summary>
+/// #3351（#3236 拆解 3/5）：<b>首轮订阅闸门</b>。
+///
+/// <para><b>要消除的窗口。</b> 上游 <c>IConsumerRegister.Default.ExecuteAsync</c> 的 <c>foreach</c>
+/// 对每个消费组只 <c>await</c> 两个同步已完成的调用，然后 <c>Task.Factory.StartNew(..., LongRunning)</c>
+/// <b>不等待就进下一组</b> ⇒ 全部消费组的 <see cref="IConsumerClient.SubscribeAsync"/> 同时起飞。
+/// Redis 传输下它们共用一个 <c>RedisConnectionPool</c>，而 <c>RedisConnectionPool.ConnectAsync()</c> 的
+/// <c>foreach</c> 对「已创建但仍在途」的 <c>AsyncLazyRedisConnection</c> 会解引用 <c>CreatedConnection</c>
+/// （<c>Value.GetAwaiter().GetResult()</c>）⇒ <b>同步阻塞</b>。第一个调用者走 <c>await lazy</c> 不阻塞，
+/// 第二个及以后在它在途时到达就全部阻塞。</para>
+///
+/// <para><b>闸门做什么。</b> 第一个 <see cref="RunAsync"/> 独占执行；在它完成之前到达的其余调用者
+/// <b>异步</b>等待它，完成后一次性全部放行。<b>之后不再拦</b>——闸门只解决「第一条连接在途时存在第二个
+/// 调用者」这一个前提，不是通用限流器。</para>
+///
+/// <para><b>为什么必须异步等待。</b> 阻塞等待（<c>.Wait()</c> / <c>.Result</c> / <c>lock</c>）会把本票变成
+/// <b>新的线程占用源</b>，那正是 #3352 要消除的东西；而且上游那个 <c>foreach</c> 是同步跑的，阻塞会直接卡住
+/// 它。<see cref="TaskCreationOptions.RunContinuationsAsynchronously"/> 另外保证放行时的续体不在首个调用者
+/// 的栈上串行跑完。</para>
+///
+/// <para><b>首个调用者失败也要放行。</b> 放行写在 <c>finally</c> 里：否则首轮订阅一抛异常，其余消费组就永远
+/// 等下去——静默地再也不消费任何消息。首个调用者自己的异常照常传播给它自己的调用方。</para>
+/// </summary>
+internal sealed class FirstSubscriptionGate
+{
+    private readonly TaskCompletionSource firstSubscriptionCompleted =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private int firstSubscriptionClaimed;
+
+    public Task RunAsync(Func<Task> subscribe)
+    {
+        ArgumentNullException.ThrowIfNull(subscribe);
+
+        return Interlocked.CompareExchange(ref firstSubscriptionClaimed, 1, 0) == 0
+            ? RunFirstSubscriptionAsync(subscribe)
+            : RunAfterFirstSubscriptionAsync(subscribe);
+    }
+
+    private async Task RunFirstSubscriptionAsync(Func<Task> subscribe)
+    {
+        try
+        {
+            await subscribe().ConfigureAwait(false);
+        }
+        finally
+        {
+            firstSubscriptionCompleted.TrySetResult();
+        }
+    }
+
+    private async Task RunAfterFirstSubscriptionAsync(Func<Task> subscribe)
+    {
+        await firstSubscriptionCompleted.Task.ConfigureAwait(false);
+        await subscribe().ConfigureAwait(false);
+    }
+}
+
+internal sealed class DecoratedConsumerClient(IConsumerClient inner, FirstSubscriptionGate firstSubscriptionGate)
+    : IConsumerClient
 {
     internal IConsumerClient Inner => inner;
 
@@ -83,7 +147,8 @@ internal sealed class DecoratedConsumerClient(IConsumerClient inner) : IConsumer
     public Task<ICollection<string>> FetchTopicsAsync(IEnumerable<string> topicNames) =>
         inner.FetchTopicsAsync(topicNames);
 
-    public Task SubscribeAsync(IEnumerable<string> topics) => inner.SubscribeAsync(topics);
+    public Task SubscribeAsync(IEnumerable<string> topics) =>
+        firstSubscriptionGate.RunAsync(() => inner.SubscribeAsync(topics));
 
     public Task ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
         inner.ListeningAsync(timeout, cancellationToken);

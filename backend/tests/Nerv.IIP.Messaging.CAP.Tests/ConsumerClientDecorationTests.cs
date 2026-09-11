@@ -96,7 +96,7 @@ public sealed class ConsumerClientDecorationTests
     public async Task DecoratedClient_ProducesTheSameTranscriptAsTheUndecoratedClient()
     {
         var undecorated = await ExerciseAsync(static inner => inner);
-        var decorated = await ExerciseAsync(static inner => new DecoratedConsumerClient(inner));
+        var decorated = await ExerciseAsync(static inner => new DecoratedConsumerClient(inner, new FirstSubscriptionGate()));
 
         Assert.Equal(undecorated.CallerObservations, decorated.CallerObservations);
         Assert.Equal(undecorated.InnerCalls, decorated.InnerCalls);
@@ -106,7 +106,7 @@ public sealed class ConsumerClientDecorationTests
     public async Task DecoratedClient_PropagatesFailuresIdenticallyToTheUndecoratedClient()
     {
         var undecorated = await ExerciseFailuresAsync(static inner => inner);
-        var decorated = await ExerciseFailuresAsync(static inner => new DecoratedConsumerClient(inner));
+        var decorated = await ExerciseFailuresAsync(static inner => new DecoratedConsumerClient(inner, new FirstSubscriptionGate()));
 
         Assert.Equal(undecorated, decorated);
         Assert.NotEmpty(undecorated);
@@ -125,7 +125,7 @@ public sealed class ConsumerClientDecorationTests
     [Fact]
     public async Task TranscriptCoversEveryConsumerClientMember()
     {
-        var exercised = (await ExerciseAsync(static inner => new DecoratedConsumerClient(inner))).ExercisedMembers;
+        var exercised = (await ExerciseAsync(static inner => new DecoratedConsumerClient(inner, new FirstSubscriptionGate()))).ExercisedMembers;
 
         var declared = typeof(IConsumerClient)
             .GetInterfaces()
