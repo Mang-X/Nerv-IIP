@@ -7,13 +7,13 @@ namespace Nerv.IIP.Messaging.CAP;
 
 /// <summary>
 /// Wraps the transport's <see cref="IConsumerClientFactory"/> and every <see cref="IConsumerClient"/> it creates
-/// so that later work (#3351 首轮订阅闸门、#3352 <see cref="IConsumerClient.ListeningAsync"/> 专用线程) has one
-/// place to hook into.
+/// so that later work has one place to hook into. #3350 建这层骨架时留的挂载点，#3352 是第一个挂上来的
+/// （<see cref="DecoratedConsumerClient.ListeningAsync"/> 的专用线程）。#3351 的首轮订阅闸门已随连接池方向
+/// 一并关闭，不再是本骨架的下游。
 ///
-/// <para><b>消息路径 100% 透传</b>：<see cref="DecoratedConsumerClientFactory"/> 与
-/// <see cref="DecoratedConsumerClient"/> 的每一个成员都逐字转发 inner，没有任何自身行为。本文件里唯一有自身
-/// 行为的代码在 <b>DI 组装期</b>——<see cref="AddServices"/> 的 fail closed。#3351 / #3352 要加的行为恰恰在
-/// 消息路径上，与本骨架的边界互补。</para>
+/// <para><b>#3352 起，<see cref="DecoratedConsumerClient.ListeningAsync"/> 不再是纯转发</b>：它把 inner 的
+/// 永久阻塞挪到专用线程上。<b>其余每一个成员仍然逐字转发 inner</b>，没有任何自身行为；另一处有自身行为的代码
+/// 在 <b>DI 组装期</b>——<see cref="AddServices"/> 的 fail closed。</para>
 ///
 /// <para>Registration mechanics: the transport package registers <see cref="IConsumerClientFactory"/> from its own
 /// <see cref="ICapOptionsExtension.AddServices"/>, and <c>AddCap</c> runs the extensions in registration order.
@@ -85,8 +85,45 @@ internal sealed class DecoratedConsumerClient(IConsumerClient inner) : IConsumer
 
     public Task SubscribeAsync(IEnumerable<string> topics) => inner.SubscribeAsync(topics);
 
+    /// <summary>
+    /// #3352：把 inner 的<b>永久阻塞</b>挪到专用线程，让它不再常驻占用一条线程池 worker。
+    ///
+    /// <para><b>缺陷形态</b>（对 <c>DotNetCore.CAP.RedisStreams</c> 10.0.1 反编译实读）：上游
+    /// <c>RedisConsumerClient.ListeningAsync</c> <b>不是 <c>async</c></b>，它 fire-and-forget 掉轮询任务之后进入
+    /// <c>while (true) { ThrowIfCancellationRequested(); WaitHandle.WaitOne(timeout); }</c>——<b>永不返回、
+    /// 同步阻塞调用线程</b>。
+    /// </para>
+    ///
+    /// <para><b>为什么落在线程池上</b>：调用点 <c>ConsumerRegister.ExecuteAsync</c> 确实用了
+    /// <c>Task.Factory.StartNew(…, TaskCreationOptions.LongRunning, …)</c>，但它的委托是 <c>async</c>，
+    /// <b>专用线程在第一个真 await（<c>CreateAsync</c>）处就已经交还</b>；等执行到 <c>ListeningAsync</c> 时
+    /// 续体早已跑在线程池线程上。⇒ 上游那个 <c>LongRunning</c> <b>完全白给</b>，每个消费组常驻钉住一条 worker
+    /// 且永不释放（线程数 = 消费组数 × <c>ConsumerThreadCount</c>）。
+    /// </para>
+    ///
+    /// <para>⚠️ <b>常驻占线程的不是轮询循环</b>：<c>PollStreamsLatestMessagesAsync</c> 是 await 链、不常驻。
+    /// 归因写错会让人去调 poll delay，那治不到这里。
+    /// </para>
+    ///
+    /// <para><b>为什么用 <c>Func&lt;Task&gt;</c> + <c>Unwrap()</c> 而不是 <c>Action</c></b>：真实 inner 永不正常返回
+    /// （取消时<b>同步抛出</b> <see cref="OperationCanceledException"/>，因为它不是 <c>async</c>，异常不会变成
+    /// faulted Task）；但装饰器不能只对这一种 inner 成立——inner 若返回一个真的 <c>Task</c>，
+    /// <c>Unwrap()</c> 会接着等它，并在它完成后<b>立刻交还专用线程</b>。两种形态都正确传播。
+    /// </para>
+    ///
+    /// <para>把 <paramref name="cancellationToken"/> 传给 <c>StartNew</c>：委托抛出的 OCE 与该 token 匹配时，
+    /// 任务转为 <c>Canceled</c> 而不是 <c>Faulted</c>，<c>await</c> 它照样抛 <see cref="OperationCanceledException"/>
+    /// ——调用方 <c>ConsumerRegister</c> 正是用 <c>catch (OperationCanceledException)</c> 收尾的。
+    /// <c>DenyChildAttach</c> 防止 inner 内部起的任务把专用线程的生命周期拖长。
+    /// </para>
+    /// </summary>
     public Task ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
-        inner.ListeningAsync(timeout, cancellationToken);
+        Task.Factory.StartNew(
+            () => inner.ListeningAsync(timeout, cancellationToken),
+            cancellationToken,
+            TaskCreationOptions.LongRunning | TaskCreationOptions.DenyChildAttach,
+            TaskScheduler.Default)
+            .Unwrap();
 
     public Task CommitAsync(object? sender) => inner.CommitAsync(sender);
 
