@@ -20,6 +20,7 @@ using Nerv.IIP.Localization;
 using Nerv.IIP.Observability;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.AspNetCore;
+using NetCorePal.Extensions.Dto;
 
 const string BusinessConsoleCorsPolicy = "business-console-cors";
 var builder = WebApplication.CreateBuilder(args);
@@ -225,6 +226,15 @@ app.UseFastEndpoints(c =>
     c.Serializer.Options.Converters.Add(new EquipmentRuntimeSourceTypeJsonConverter());
     c.Serializer.Options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
     c.Endpoints.NameGenerator = BusinessGatewayOperationIdConvention.Generate;
+    // #3333：校验失败改用与本网关其它失败通道同一个 ResponseData 信封 + 稳定错误码。
+    // ProducesMetadataType 必须跟着改，否则 OpenAPI 上的 400 仍然登记成 FastEndpoints
+    // 默认的 ErrorResponse，生成的 api-client 会给出一个运行时永不出现的类型。
+    c.Errors.ResponseBuilder = BusinessGatewayValidationErrorResponse.Build;
+    c.Errors.ProducesMetadataType = typeof(ResponseData);
+    // 内容协商也要跟着换：默认的 application/problem+json 声明的是 RFC7807 problem details，
+    // 而这条通道现在写的是本网关的 ResponseData 信封。不带 charset 参数是为了让 OpenAPI 的
+    // media type 键与本文档其它响应一致（带参数会生成 "application/json; charset=utf-8" 这个键）。
+    c.Errors.ContentType = "application/json";
 }).UseSwaggerGen();
 app.Run();
 
