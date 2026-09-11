@@ -75,9 +75,9 @@ public sealed class FirstSubscriptionGateTests
         // 派发已经返回，而首个订阅仍未完成 ⇒ 没有任何一次调用阻塞了派发方。
         Assert.All(subscriptions, subscription => Assert.False(subscription.IsCompleted));
 
-        probe.ReleaseFirstSubscription();
-        await probe.AllFollowersEntered.WaitAsync(FailureTimeout);
+        // 这条只问「派发有没有被阻塞」，所以放行不带任何并发条件——并发形状归上面那两条。
         probe.ReleaseFollowers();
+        probe.ReleaseFirstSubscription();
         await Task.WhenAll(subscriptions).WaitAsync(FailureTimeout);
     }
 
@@ -93,13 +93,12 @@ public sealed class FirstSubscriptionGateTests
         var clients = CreateClients(probe, gate);
 
         var subscriptions = await DispatchEveryConsumerGroupAsync(clients);
+        probe.ReleaseFollowers();
         probe.ReleaseFirstSubscription();
 
         var firstFailure = await Assert.ThrowsAsync<InvalidOperationException>(() => subscriptions[0].WaitAsync(FailureTimeout));
         Assert.Equal("first subscription failed", firstFailure.Message);
 
-        await probe.AllFollowersEntered.WaitAsync(FailureTimeout);
-        probe.ReleaseFollowers();
         await Task.WhenAll(subscriptions.Skip(1)).WaitAsync(FailureTimeout);
 
         Assert.All(subscriptions.Skip(1), subscription => Assert.Equal(TaskStatus.RanToCompletion, subscription.Status));
@@ -125,9 +124,8 @@ public sealed class FirstSubscriptionGateTests
         Assert.Equal(1, probe.InFlight);
         Assert.False(secondSubscription.IsCompleted);
 
-        probe.ReleaseFirstSubscription();
-        await probe.AllFollowersEntered.WaitAsync(FailureTimeout);
         probe.ReleaseFollowers();
+        probe.ReleaseFirstSubscription();
         await Task.WhenAll(firstSubscription, secondSubscription).WaitAsync(FailureTimeout);
     }
 
@@ -226,7 +224,7 @@ public sealed class FirstSubscriptionGateTests
 
         public string? FirstSubscriptionFailure { get; init; }
 
-        public Task AllFollowersEntered => expectedFollowers == 0 ? Task.CompletedTask : allFollowersEntered.Task;
+        public Task AllFollowersEntered => allFollowersEntered.Task;
 
         public int InFlight { get { lock (sync) { return inFlight; } } }
 
