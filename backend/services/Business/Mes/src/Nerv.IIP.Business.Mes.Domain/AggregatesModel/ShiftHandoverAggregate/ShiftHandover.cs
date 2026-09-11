@@ -35,7 +35,7 @@ public sealed class ShiftHandoverWipItem : Entity<ShiftHandoverWipItemId>
     private ShiftHandoverWipItem(string workOrderId, string? operationTaskId, decimal quantity)
     {
         Id = new ShiftHandoverWipItemId(Guid.CreateVersion7());
-        WorkOrderId = ShiftHandoverGuard.RequiredBounded(workOrderId, nameof(workOrderId), 100);
+        WorkOrderId = DomainGuard.RequiredBounded(workOrderId, nameof(workOrderId), 100);
         OperationTaskId = ShiftHandoverGuard.OptionalBounded(operationTaskId, nameof(operationTaskId), 100);
         Quantity = quantity >= 0
             ? quantity
@@ -69,7 +69,7 @@ public sealed class ShiftHandoverUnfinishedWorkOrder : Entity<ShiftHandoverUnfin
         string workOrderStatus)
     {
         Id = new ShiftHandoverUnfinishedWorkOrderId(Guid.CreateVersion7());
-        WorkOrderId = ShiftHandoverGuard.RequiredBounded(workOrderId, nameof(workOrderId), 100);
+        WorkOrderId = DomainGuard.RequiredBounded(workOrderId, nameof(workOrderId), 100);
         PlannedQuantity = plannedQuantity > 0
             ? plannedQuantity
             : throw new ArgumentOutOfRangeException(nameof(plannedQuantity), "未完工单计划数量必须为正数。");
@@ -81,7 +81,7 @@ public sealed class ShiftHandoverUnfinishedWorkOrder : Entity<ShiftHandoverUnfin
             throw new InvalidOperationException("完成数量已达到计划数量的工单不是未完工单。");
         }
 
-        WorkOrderStatus = ShiftHandoverGuard.RequiredBounded(workOrderStatus, nameof(workOrderStatus), 30);
+        WorkOrderStatus = DomainGuard.RequiredBounded(workOrderStatus, nameof(workOrderStatus), 30);
     }
 
     /// <summary>MES work-order business id carried over to the incoming team.</summary>
@@ -120,7 +120,7 @@ public sealed class ShiftHandoverOpenIssue : Entity<ShiftHandoverOpenIssueId>
         Id = new ShiftHandoverOpenIssueId(Guid.CreateVersion7());
         Category = category;
         Severity = severity;
-        Description = ShiftHandoverGuard.RequiredBounded(description, nameof(description), 1000);
+        Description = DomainGuard.RequiredBounded(description, nameof(description), 1000);
         ReferenceId = ShiftHandoverGuard.OptionalBounded(referenceId, nameof(referenceId), 100);
     }
 
@@ -160,9 +160,9 @@ public sealed class ShiftHandoverAttachment : Entity<ShiftHandoverAttachmentId>
     private ShiftHandoverAttachment(string fileId, string fileName, string contentType, long sizeBytes)
     {
         Id = new ShiftHandoverAttachmentId(Guid.CreateVersion7());
-        FileId = ShiftHandoverGuard.RequiredBounded(fileId, nameof(fileId), 150);
-        FileName = ShiftHandoverGuard.RequiredBounded(fileName, nameof(fileName), 255);
-        ContentType = ShiftHandoverGuard.RequiredBounded(contentType, nameof(contentType), 150);
+        FileId = DomainGuard.RequiredBounded(fileId, nameof(fileId), 150);
+        FileName = DomainGuard.RequiredBounded(fileName, nameof(fileName), 255);
+        ContentType = DomainGuard.RequiredBounded(contentType, nameof(contentType), 150);
         SizeBytes = sizeBytes >= 0
             ? sizeBytes
             : throw new ArgumentOutOfRangeException(nameof(sizeBytes), "交接班附件大小不能为负数。");
@@ -376,14 +376,6 @@ public sealed class ShiftHandover : Entity<ShiftHandoverId>, IAggregateRoot
 
 internal static class ShiftHandoverGuard
 {
-    internal static string RequiredBounded(string value, string parameterName, int maxLength)
-    {
-        var normalized = DomainGuard.Required(value, parameterName);
-        return normalized.Length <= maxLength
-            ? normalized
-            : throw new ArgumentOutOfRangeException(parameterName, $"Value cannot exceed {maxLength} characters.");
-    }
-
     internal static string? OptionalBounded(string? value, string parameterName, int maxLength)
     {
         if (string.IsNullOrWhiteSpace(value))

@@ -39,7 +39,7 @@ public sealed class MesKnownExceptionMessageArchitectureTests
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Quality/MesFirstArticleGate.cs", "HttpMesFirstArticleGate", "EnsureAllows", 3, "中文首件门禁业务拒绝与稳定错误码"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Quality/MesFirstArticleGate.cs", "HttpMesFirstArticleGate", "EnsureDecisionAllows", 3, "中文首件门禁业务拒绝与稳定错误码"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Quality/MesQualityInspectionPlanClient.cs", "MesQualityInspectionPlanClient", "HasActiveOperationPlanAsync", 4, "稳定错误码 QUALITY_PLAN_SOURCE_UNAVAILABLE 与 Quality provider 失败透传"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "AcceptShiftHandoverCommandHandler", "Handle", 2, "其中 1 处为中文静态消息，另 1 处为 dynamic exception.Message 透传，非本层静态目标"),
+        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "AcceptShiftHandoverCommandHandler", "Handle", 1, "已有中文静态消息，非本层英文候选"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "AssignDispatchTaskCommandHandler", "Handle", 3, "已有中文静态消息，非本层英文候选"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "ClaimDispatchTaskCommandHandler", "Handle", 3, "PDA 自领任务的中文静态业务拒绝"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "ChangeOperationTaskStateCommandHandler", "EnsurePreviousOperationsCompletedAsync", 1, "已有中文静态消息，非本层英文候选"),
@@ -88,8 +88,8 @@ public sealed class MesKnownExceptionMessageArchitectureTests
         var discovered = MesKnownExceptionUserMessageSourceAnalyzer.Discover(documents);
 
         Assert.Equal(73, discovered.Count);
-        Assert.Equal(170, discovered.Sum(site => site.DirectKnownExceptionCount));
-        Assert.Equal(166, documents.Sum(document => CountOccurrences(document.Text, "new KnownException")));
+        Assert.Equal(169, discovered.Sum(site => site.DirectKnownExceptionCount));
+        Assert.Equal(165, documents.Sum(document => CountOccurrences(document.Text, "new KnownException")));
         Assert.Equal(ExpectedLedger.Count, discovered.Count);
 
         var expectedByKey = ExpectedLedger.ToDictionary(site => site.Key, StringComparer.Ordinal);

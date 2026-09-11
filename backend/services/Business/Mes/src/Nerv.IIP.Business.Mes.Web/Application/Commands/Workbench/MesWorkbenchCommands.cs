@@ -2860,9 +2860,8 @@ public sealed class CreateShiftHandoverCommandHandler(ApplicationDbContext dbCon
             request.EnvironmentId,
             request.HandoverAtUtc,
             cancellationToken);
-        DomainShiftHandover handover = null!;
-        MesDomainRuleGuard.Enforce(() =>
-            handover = DomainShiftHandover.Create(
+        var handover = MesDomainRuleGuard.Enforce(() =>
+            DomainShiftHandover.Create(
                 request.OrganizationId,
                 request.EnvironmentId,
                 allocation.Code,
@@ -2957,14 +2956,8 @@ public sealed class AcceptShiftHandoverCommandHandler(ApplicationDbContext dbCon
         handover = handover
             ?? throw new KnownException($"未找到班次交接，HandoverId = {request.HandoverId}");
 
-        try
-        {
-            handover.Accept(request.AcceptedAtUtc, request.IncomingUserId, request.IncomingUserName);
-        }
-        catch (InvalidOperationException exception)
-        {
-            throw new KnownException(exception.Message);
-        }
+        MesDomainRuleGuard.Enforce(() =>
+            handover.Accept(request.AcceptedAtUtc, request.IncomingUserId, request.IncomingUserName));
 
         return new MesAcceptedResponse("Accepted", handover.HandoverNo, handover.AcceptedAtUtc ?? request.AcceptedAtUtc);
     }
