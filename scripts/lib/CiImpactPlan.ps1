@@ -44,6 +44,15 @@ function Get-NervCiImpactPlan {
     $salesOrderDemandBusinessServiceNameSet = [Collections.Generic.HashSet[string]]::new(
         [string[]]@('Erp', 'DemandPlanning', 'MasterData'),
         [StringComparer]::Ordinal)
+    # #3338：被 Nerv.IIP.Business.FullChain.Tests 直接 ProjectReference 的业务服务。
+    # 与上面那个集合**语义不同、不可合并**：上面是「sales-order-demand 这个场景需要谁」，
+    # 这里是「FullChain 测试程序集在编译期就引用了谁」——引用了就意味着改它可能让 FullChain 变红。
+    # ⚠️ 这仍是一份名单，但它的**完备性**由 scripts/tests/ci-impact-plan.Tests.ps1 的
+    # Assert-FullChainProjectReferenceCoverage 从 .csproj 的 ProjectReference **派生**出来看守：
+    # 新增一条 ProjectReference 而忘了更新本集合，那条契约立刻红。别手工往这里加而不跑那条契约。
+    $fullChainReferencedBusinessServiceNameSet = [Collections.Generic.HashSet[string]]::new(
+        [string[]]@('Erp', 'DemandPlanning', 'Maintenance', 'Mes', 'Wms'),
+        [StringComparer]::Ordinal)
     $acceptanceScenarioMatrixOwningPathSet = [Collections.Generic.HashSet[string]]::new(
         [string[]]@(
             'scripts/acceptance-scenario-matrix.json'
@@ -354,7 +363,8 @@ function Get-NervCiImpactPlan {
                 continue
             }
             Select-BusinessServices -Services @((ConvertTo-NervCiImpactServiceId -Name $serviceName)) -Reason $reason
-            if ($salesOrderDemandBusinessServiceNameSet.Contains($serviceName)) {
+            if ($salesOrderDemandBusinessServiceNameSet.Contains($serviceName) -or
+                $fullChainReferencedBusinessServiceNameSet.Contains($serviceName)) {
                 Select-Impact -Name 'full_chain' -Reason $reason
             }
             if ((Test-MessagingImpactPath -Path $path) -or (Test-CrossServiceIntegrationEventPath -Path $path)) {
@@ -365,7 +375,11 @@ function Get-NervCiImpactPlan {
         }
 
         if ($path.StartsWith('backend/gateway/BusinessGateway/', [StringComparison]::Ordinal)) {
-            foreach ($flag in @('backend', 'business_gateway', 'openapi_codegen', 'frontend', 'frontend_packages')) { Select-Impact -Name $flag -Reason $reason }
+            # #3338：FullChain.Tests 直接 ProjectReference 了 BusinessGateway.Web，
+            # MaintenancePublicHttpLifecycleAcceptanceTests 用 WebApplicationFactory<GatewayProgram>
+            # 真发 HTTP 打网关位点 —— 这条依赖边此前漏了，改网关不触发 FullChain lane（#3330 / PR #3337 实例：
+            # 改的是 AuthorizedBusinessProxyEndpoint 的执行序、影响所有代理端点，而那一轮该面零读数）。
+            foreach ($flag in @('backend', 'business_gateway', 'openapi_codegen', 'frontend', 'frontend_packages', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
             continue
         }
         if ($path.StartsWith('backend/gateway/PlatformGateway/', [StringComparison]::Ordinal)) {
