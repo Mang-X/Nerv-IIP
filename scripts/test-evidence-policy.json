@@ -348,6 +348,12 @@
       "sourcePath": "backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/InventoryDirectoryPostgresTests.cs",
       "sourceOrdinal": 3,
       "sourceReasonPattern": "^Skip = GetSkipReason\\(Environment\\.GetEnvironmentVariable\\(\"NERV_IIP_TEST_POSTGRES\"\\)\\);$"
+    },
+    {
+      "id": "notification-envelope-field-budget-postgres",
+      "sourcePath": "backend/services/Notification/tests/Nerv.IIP.Notification.Web.Tests/NotificationEnvelopeFieldBudgetPostgresTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL envelope-field budget dead-letter proof\\.\";$"
     }
   ],
   "rules": [
@@ -1635,6 +1641,26 @@
         "Nerv.IIP.Business.Performance.Tests.SchedulingScaleBenchmarkTests.SchedulingScale_APS_Lite_100_500_1000_outputs_repeatable_PostgreSQL_evidence"
       ],
       "expectedRuntimeTestCount": 1
+    },
+    {
+      "id": "notification-envelope-field-budget-postgres",
+      "sourceId": "notification-envelope-field-budget-postgres",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Notification\\.Web\\.Tests\\.NotificationEnvelopeFieldBudgetPostgresTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL envelope-field budget dead-letter proof\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Notification.Web.Tests.NotificationEnvelopeFieldBudgetPostgresTests.Oversized_envelope_field_dead_letters_and_stays_replayable_on_postgres",
+        "Nerv.IIP.Notification.Web.Tests.NotificationEnvelopeFieldBudgetPostgresTests.Without_the_gate_an_oversized_key_raises_22001_on_postgres"
+      ],
+      "expectedRuntimeTestCount": 2
     }
   ]
 }

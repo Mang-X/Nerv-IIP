@@ -283,6 +283,18 @@
       ]
     },
     {
+      "sourcePath": "backend/services/Notification/tests/Nerv.IIP.Notification.Web.Tests/NotificationEnvelopeFieldBudgetPostgresTests.cs",
+      "sourceSha256": "8b17b79ea564f8b006f25312b2774ebf31bbaec7013f0116593e9c2355574913",
+      "factoryCallCount": 2,
+      "ownerships": [
+        {
+          "strategy": "best-effort-dispose",
+          "factoryCallCount": 2,
+          "reason": "两条信封字段预算的真库证据用例各自 await using 一个受治理临时库，走共享 helper 的 dispose 生命周期，不声称显式 DROP 失败证据。"
+        }
+      ]
+    },
+    {
       "sourcePath": "backend/services/Notification/tests/Nerv.IIP.Notification.Web.Tests/NotificationPostgresProfileTests.cs",
       "sourceSha256": "d0d0142ed59bb7972de977fc21daf70580a41666b13d87280e335b14b7a9d6de",
       "factoryCallCount": 1,
