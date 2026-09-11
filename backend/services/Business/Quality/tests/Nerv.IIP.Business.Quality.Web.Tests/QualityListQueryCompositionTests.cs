@@ -65,14 +65,20 @@ public sealed class QualityListQueryCompositionTests
         var planResult = new ListInspectionPlansQueryValidator().Validate(
             new ListInspectionPlansQuery("org-001", "env-dev", null, null, null, null, null, Keyword: new string('x', 201), Take: 501));
 
-        Assert.Contains(recordResult.Errors, error => error.PropertyName == "Skip");
-        Assert.Contains(recordResult.Errors, error => error.PropertyName == "Take");
-        Assert.Contains(taskResult.Errors, error => error.PropertyName == "Take");
-        Assert.Contains(taskResult.Errors, error => error.PropertyName == "ScopeKind");
-        Assert.Contains(spcResult.Errors, error => error.PropertyName == "Keyword");
-        Assert.Contains(spcResult.Errors, error => error.PropertyName == "Take");
-        Assert.Contains(planResult.Errors, error => error.PropertyName == "Keyword");
-        Assert.Contains(planResult.Errors, error => error.PropertyName == "Take");
+        // PropertyName 用 OrdinalIgnoreCase 比对：app.UseFastEndpoints(...) 启动时会把
+        // ValidatorOptions.Global.PropertyNameResolver 换成 camelCase 解析器且不还原，同程序集里只要有
+        // 用例先启动过 host，这里拿到的就是 camelCase 名（#3342）。容忍的只有这一维进程级大小写差异——
+        // 成员名写成别的成员或不存在的名字照样红（#3342 的变异矩阵为此各跑了一格）。
+        // 这几条规则用的是 FluentValidation 默认文案，文案里嵌的正是同一个受解析器影响的展示名，
+        // 所以这里不能像 #3342 其余位点那样改断 ErrorMessage。
+        Assert.Contains(recordResult.Errors, error => string.Equals(error.PropertyName, "Skip", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(recordResult.Errors, error => string.Equals(error.PropertyName, "Take", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(taskResult.Errors, error => string.Equals(error.PropertyName, "Take", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(taskResult.Errors, error => string.Equals(error.PropertyName, "ScopeKind", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(spcResult.Errors, error => string.Equals(error.PropertyName, "Keyword", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(spcResult.Errors, error => string.Equals(error.PropertyName, "Take", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(planResult.Errors, error => string.Equals(error.PropertyName, "Keyword", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(planResult.Errors, error => string.Equals(error.PropertyName, "Take", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
