@@ -7,14 +7,21 @@ namespace Nerv.IIP.Notification.Web.Application.Notifications;
 /// 告警摘要的渲染上界（#3305）。
 /// </summary>
 /// <remarks>
-/// <para><b>要解决的形状</b>：本服务的集成事件消费者把**上游服务的自由文本**插值进
-/// <c>SubmitNotificationIntentRequest.Summary</c>，而 <c>Summary</c> 落进两张有界表。
-/// 这条路径上没有任何长度闸：消费者走 <c>sender.Send(SubmitNotificationIntentCommand)</c>，
-/// **不过** HTTP 端点上那个 <c>Validator&lt;SubmitNotificationIntentRequest&gt;</c>
-/// （那份也只有 <c>NotEmpty()</c>）；<c>NotificationIntent</c> 构造器只 <c>Required</c> 不截断；
-/// <c>IntegrationEventConsumerGuard</c> 只对**信封**校验失败写死信，handler 抛的异常原样逃逸。
-/// ⇒ 超长摘要以 <c>DbUpdateException</c>（Npgsql 22001）逃出消费者、被 CAP 重试到 poison，
-/// 表现是「告警永远送不到收件人，而上游服务写库是成功的」——症状不在上游那一侧显现。</para>
+/// <para>⚠️ <b>本类型的生产职责已被 #3346 / PR #3364 接手，以下「要解决的形状」是它被写出来时的历史背景。</b>
+/// 当时那条路径上确实没有任何长度闸：消费者走 <c>sender.Send(SubmitNotificationIntentCommand)</c>，
+/// **不过** HTTP 端点上那个 <c>Validator&lt;SubmitNotificationIntentRequest&gt;</c>；
+/// <c>NotificationIntent</c> 构造器只 <c>Required</c> 不截断；<c>IntegrationEventConsumerGuard</c>
+/// 只对**信封**校验失败写死信，handler 抛的异常原样逃逸 ⇒ 超长摘要以 <c>DbUpdateException</c>
+/// （Npgsql 22001）逃出消费者、被 CAP 重试到 poison，表现是「告警永远送不到收件人，而上游服务写库是成功的」。</para>
+///
+/// <para><b>现状（合并 #3364 之后）</b>：那道闸<b>已经有了，但不在这里</b>——
+/// <c>SubmitNotificationIntentCommand</c> 不收裸 <c>string</c>，进程内拼装走
+/// <c>NotificationSummary.Render</c>（夹紧）、外部提交走 <c>NotificationSummary.FromSubmitted</c>（超界抛），
+/// 上界由 <c>NotificationSummaryBudget.FromModel</c> 派生。
+/// ⇒ <b><see cref="ResolveSummaryMaxLength"/> 目前没有任何生产调用方</b>；
+/// <b><see cref="Fit"/> 在生产路径上只以恒等形态承重</b>（handler 传 <see cref="int.MaxValue"/>，
+/// 截断分支生产不可达）。本类型与它的用例仍在测真实行为，但<b>它们守的那条路径生产已经不走了</b>——
+/// 是否用 <c>NotificationSummaryBudget</c> 收编掉本类型属 #3305 的设计取舍，不在解冲突范围。</para>
 ///
 /// <para><b>为什么截断责任在本服务这一侧</b>：摘要是**渲染产物**，原文留在产出它的服务里
 /// （WCS 诊断报文的原文在 <c>business_wms.wcs_tasks.failure_message</c>，那一列已按 #3305 改为无界

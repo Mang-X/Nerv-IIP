@@ -89,6 +89,15 @@ public sealed class WcsFailureMessageCrossServiceSummaryContractTests
     {
         using var wms = CreateWmsModel();
         using var notification = CreateNotificationModel();
+        // ⚠️ 本用例取的是 NotificationSummaryText.ResolveSummaryMaxLength 这一份派生，
+        // 而**生产路径自 #3364 起已改走 NotificationSummaryBudget.FromModel**。两份今天算出同一个值
+        // （同样两张承载列、同样取列宽最小值、同样从 EF 模型现读），所以下面的结论仍然为真；
+        // 但「用例量的上界」与「生产夹紧用的上界」之间**不再由构造保证相等**，是两份独立派生今天恰好同值。
+        // 静默分叉由两条针对 EF 模型的反向枚举断言堵住：
+        //   NotificationSummaryTextTests.Every_summary_column_in_the_model_is_a_declared_landing_column
+        //   与 NotificationSummaryBudget 侧对 CarryingColumns 的同型断言。
+        // 谁再加一张带 Summary 的承载表而只登记其中一份，那一份会红 —— 不会静默漏出第三个承载面。
+        // ⛔ 不要为了「对齐生产」改这里的取值来源：那会把两份派生合成一份，反而让上面那道对撞失去意义。
         var summaryBound = NotificationSummaryText.ResolveSummaryMaxLength(notification.Model);
         var externalTaskIdWidth = WmsWidth(wms.Model, nameof(WcsTask.ExternalTaskId));
         var failureCodeWidth = WmsWidth(wms.Model, nameof(WcsTask.FailureCode));
