@@ -10,11 +10,49 @@ using System.Diagnostics;
 
 namespace Nerv.IIP.Notification.Web.Application.Commands.Notifications;
 
-public sealed record SubmitNotificationIntentCommand(
-    string OrganizationId,
-    string EnvironmentId,
-    SubmitNotificationIntentRequest Request,
-    DateTimeOffset Now) : ICommand<NotificationIntentResponse>;
+/// <summary>
+/// 提交通知意图。
+/// <para>
+/// 摘要不收裸 <see cref="string"/>：调用方必须先经 <see cref="NotificationSummary"/> 的两个具名工厂之一
+/// 产出取值 —— 进程内拼装走 <see cref="NotificationSummary.Render"/>（夹紧），
+/// 外部提交走 <see cref="NotificationSummary.FromSubmitted"/>（超界抛）。
+/// 后来者在编译期必须显式选一个，选错也是响亮失败而不是静默溢出。
+/// </para>
+/// <para>
+/// 构造时把取值写回 <see cref="Request"/>，让「命令携带的 Request.Summary」与
+/// <see cref="Summary"/> 由构造成立地相等：读哪一个都是同一份，不存在「哪个说了算」。
+/// </para>
+/// </summary>
+public sealed record SubmitNotificationIntentCommand : ICommand<NotificationIntentResponse>
+{
+    public SubmitNotificationIntentCommand(
+        string organizationId,
+        string environmentId,
+        SubmitNotificationIntentRequest request,
+        NotificationSummary summary,
+        DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(summary);
+
+        OrganizationId = organizationId;
+        EnvironmentId = environmentId;
+        Summary = summary;
+        Request = request with { Summary = summary.Value };
+        Now = now;
+    }
+
+    public string OrganizationId { get; }
+
+    public string EnvironmentId { get; }
+
+    /// <summary><see cref="SubmitNotificationIntentRequest.Summary"/> 恒等于 <see cref="Summary"/> 的取值。</summary>
+    public SubmitNotificationIntentRequest Request { get; }
+
+    public NotificationSummary Summary { get; }
+
+    public DateTimeOffset Now { get; }
+}
 
 public sealed class SubmitNotificationIntentCommandHandler(
     INotificationIntentRepository repository,

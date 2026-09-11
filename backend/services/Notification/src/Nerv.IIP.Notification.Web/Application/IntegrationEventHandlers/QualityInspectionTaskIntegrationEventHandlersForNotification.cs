@@ -7,6 +7,7 @@ using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Notification.Infrastructure;
 using Nerv.IIP.Notification.Web.Application.Commands.Notifications;
+using Nerv.IIP.Notification.Web.Application.Notifications;
 using NetCorePal.Extensions.DistributedTransactions;
 using NetCorePal.Extensions.Primitives;
 
@@ -18,7 +19,8 @@ public sealed class InspectionTaskOverdueIntegrationEventHandlerForNotification(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
     IConfiguration configuration,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    NotificationSummaryBudget summaryBudget)
     : IIntegrationEventHandler<InspectionTaskOverdueIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "notification.quality-inspection-task-overdue";
@@ -89,7 +91,7 @@ public sealed class InspectionTaskOverdueIntegrationEventHandlerForNotification(
             Summary: $"Inspection task {inspectionTaskId} for {payload.SourceType}/{payload.SourceService} document {sourceDocumentId} is overdue since {payload.DueAtUtc:O}.",
             SuggestedRecipientRefs: recipientRefs);
 
-        await sender.Send(new SubmitNotificationIntentCommand(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, request, timeProvider.GetUtcNow()), cancellationToken);
+        await sender.Send(new SubmitNotificationIntentCommand(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, request, NotificationSummary.Render(request.Summary, summaryBudget), timeProvider.GetUtcNow()), cancellationToken);
     }
 
     private static bool TryRequired(string? value, out string required)
