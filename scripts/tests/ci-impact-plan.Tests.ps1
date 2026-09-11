@@ -605,6 +605,68 @@ function Assert-ImpactCase {
     }
 }
 
+function Assert-FullChainProjectReferenceCoverage {
+    # #3338：把「FullChain lane 的依赖边」从**手抄**改成**从 .csproj 派生**看守。
+    #
+    # 背景：CiImpactPlan.ps1 的路径分发是一串手写 if 分支，每条各自硬编码一组 flag，
+    # 没有任何从项目引用关系派生的机制。于是 `backend/gateway/BusinessGateway/` 那条漏了
+    # full_chain（#3330 / PR #3337 实例），而 Wms / Mes / Maintenance 三个被 FullChain 直接
+    # 引用的业务服务同样没被 salesOrderDemand 那个集合覆盖。逐条补名单每轮必复发
+    # （本仓同形状已栽三次：#3003 / #3135 / #3300）。
+    #
+    # 本契约不消灭名单，而是**让名单的完备性由一条不会过期的派生断言看守**：
+    # 引用关系的唯一权威是 Nerv.IIP.Business.FullChain.Tests.csproj 的 ProjectReference，
+    # 新增一条引用而忘了更新 CiImpactPlan 的集合/分支，这里立刻红。
+    #
+    # **本契约不保证什么（别读成完备）**：它只覆盖 .csproj 里的**编译期** ProjectReference。
+    # FullChain 的运行时依赖面比这更大（seed 路径、跨服务事件转换器/处理器等由
+    # Test-FullChainSeedPath / Test-CrossServiceIntegrationEventPath 另行覆盖），那些不在本契约射程内。
+    $projectPath = Join-Path $repoRoot 'backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj'
+    Assert-Contract (Test-Path -LiteralPath $projectPath) 'FullChain test project must exist for the dependency-edge contract.'
+
+    [xml] $projectXml = Get-Content -LiteralPath $projectPath -Raw
+    $referenceRoot = Split-Path -Parent $projectPath
+    $referencedPaths = [Collections.Generic.List[string]]::new()
+    foreach ($node in $projectXml.SelectNodes('//ProjectReference')) {
+        $include = [string]$node.GetAttribute('Include')
+        if ([string]::IsNullOrWhiteSpace($include)) { continue }
+        $resolved = [IO.Path]::GetFullPath((Join-Path $referenceRoot ($include -replace '\\', [IO.Path]::DirectorySeparatorChar)))
+        $relative = $resolved.Substring($repoRoot.Length).TrimStart([char]'/', [char]'\') -replace '\\', '/'
+        [void]$referencedPaths.Add($relative)
+    }
+
+    # 正向判据：解析必须真的产出东西。没有这一条，解析一旦失败（改名/改结构）会让下面
+    # 每一条 foreach 断言退化成「空集即真」而全绿——那是本仓成文教训里最典型的假绿形态。
+    Assert-Contract ($referencedPaths.Count -gt 0) 'FullChain dependency-edge contract parsed zero ProjectReference entries; the contract would be vacuously true.'
+
+    $businessServiceNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $nonBusinessReferences = [Collections.Generic.List[string]]::new()
+    foreach ($relative in $referencedPaths) {
+        $match = [regex]::Match($relative, '^backend/services/Business/([^/]+)/')
+        if ($match.Success) { [void]$businessServiceNames.Add($match.Groups[1].Value) }
+        else { [void]$nonBusinessReferences.Add($relative) }
+    }
+
+    # 同上：两个分支各自也不许是空集。
+    Assert-Contract ($businessServiceNames.Count -gt 0) 'FullChain dependency-edge contract resolved zero referenced business services.'
+    Assert-Contract ($nonBusinessReferences.Count -gt 0) 'FullChain dependency-edge contract resolved zero non-business references.'
+
+    # ① 业务服务这一面：被 FullChain 引用的每个服务，改它必须选中 full_chain。
+    #    用该服务 .csproj 之外的真实路径不可得时，这里直接对服务名断言覆盖关系——
+    #    判定发生在 CiImpactPlan 的集合里，因此断言集合包含关系比造夹具更直接、也无夹具选取偏差。
+    foreach ($serviceName in $businessServiceNames) {
+        $servicePath = "backend/services/Business/$serviceName/src/probe/FullChainDependencyEdgeProbe.cs"
+        $plan = Get-NervCiImpactPlan -ChangedPaths @($servicePath)
+        Assert-Contract ([bool]$plan.full_chain) "FullChain references business service '$serviceName', so changing it must select the full_chain lane (path: $servicePath)."
+    }
+
+    # ② 非业务服务这一面（网关 / common/*）：直接用被引用项目的 .csproj 路径作夹具。
+    foreach ($relative in $nonBusinessReferences) {
+        $plan = Get-NervCiImpactPlan -ChangedPaths @($relative)
+        Assert-Contract ([bool]$plan.full_chain) "FullChain references '$relative', so changing it must select the full_chain lane."
+    }
+}
+
 function Assert-PostgresLaneOwningPathsRoute {
     foreach ($owningPath in @(
             'scripts/run-postgres-test-lane.ps1',
@@ -963,6 +1025,7 @@ Assert-ImpactCase -Name 'openapi-generation-script' -Paths @('scripts/export-gat
 Assert-PostgresLaneOwningPathsRoute
 Assert-RedisCapLaneOwningPathsRoute
 Assert-FullChainLaneOwningPathsRoute
+Assert-FullChainProjectReferenceCoverage
 Assert-AcceptanceScenarioMatrixOwningPathsRoute
 Assert-AcceptanceScenarioMatrixRuntimeOwningPathsRoute
 Assert-AcceptanceScenarioMatrixRuntimePathMutationsDoNotAliasOwners
@@ -1005,20 +1068,27 @@ Assert-ImpactCase -Name 'world-history-seed-platform-service' -Paths @('backend/
     backend = $true; redis_cap = $false; full_chain = $true
 }
 
+# ⚠️ #3338：下面这几条反例的夹具服务从 Mes 换成 Quality，**换的是夹具、不是期望值**。
+# 原因：#3338 起 Mes / Wms / Maintenance / Erp / DemandPlanning 因**被 FullChain 直接 ProjectReference**
+# 而无条件选中 full_chain，用 Mes 当夹具会让这几条反例的 full_chain 维度恒为 true、**失去鉴别力**
+# （本仓判例：结构变更会静默抽掉上一票断言的前提，而断言还在跑、还在绿）。
+# Quality 同样是已登记业务服务，但**不**被 FullChain 引用、也不在 sales-order-demand 集合里，
+# 因此 full_chain 对它仍是干净的指示器，这几条反例要钉的「按目录段整段比对、不做前缀包含」
+# 与「相邻 Application 子目录不扩面」原样成立。⛔ 别把夹具换回 Mes。
 # NERV-1711 反例：同前缀但不同目录不得触发，钉住「按目录段整段比对」而不是前缀包含。
-Assert-ImpactCase -Name 'integration-event-converters-prefix-collision' -Paths @('backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/IntegrationEventConvertersLegacy/LegacyShim.cs') -Flags @{
+Assert-ImpactCase -Name 'integration-event-converters-prefix-collision' -Paths @('backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/IntegrationEventConvertersLegacy/LegacyShim.cs') -Flags @{
     backend = $true; postgresql = $true; redis_cap = $false; full_chain = $false
-} -Services @('mes')
+} -Services @('quality')
 
-Assert-ImpactCase -Name 'seed-prefix-collision' -Paths @('backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/SeedlingCatalog/SeedlingCatalogQuery.cs') -Flags @{
+Assert-ImpactCase -Name 'seed-prefix-collision' -Paths @('backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/SeedlingCatalog/SeedlingCatalogQuery.cs') -Flags @{
     backend = $true; postgresql = $true; redis_cap = $false; full_chain = $false
-} -Services @('mes')
+} -Services @('quality')
 
 # NERV-1711 反例：同一服务的相邻 Application 子目录仍然只是普通后端改动，
 # 钉住新规则没有退化成「任何 backend/services 路径都跑重 lane」。
-Assert-ImpactCase -Name 'sibling-application-directory-stays-narrow' -Paths @('backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/WorkOrderQuery.cs') -Flags @{
+Assert-ImpactCase -Name 'sibling-application-directory-stays-narrow' -Paths @('backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Queries/WorkOrderQuery.cs') -Flags @{
     backend = $true; postgresql = $true; redis_cap = $false; full_chain = $false
-} -Services @('mes')
+} -Services @('quality')
 
 # NERV-1711 反例：测试工程里的同名目录不在 backend/services/ 之下，
 # 钉住新规则带着服务前缀限定（处理器的 redis_cap 仍由既有 messaging 规则给出）。
@@ -1030,9 +1100,9 @@ Assert-ImpactCase -Name 'test-project-integration-event-handlers-not-a-service' 
     backend = $true; redis_cap = $true; full_chain = $false
 }
 
-Assert-ImpactCase -Name 'capitalized-is-not-cap' -Paths @('backend/services/Business/Mes/src/CapitalizedUnitCost.cs') -Flags @{
+Assert-ImpactCase -Name 'capitalized-is-not-cap' -Paths @('backend/services/Business/Quality/src/CapitalizedUnitCost.cs') -Flags @{
     backend = $true; postgresql = $true; redis_cap = $false; full_chain = $false
-} -Services @('mes')
+} -Services @('quality')
 
 Assert-ImpactCase -Name 'capacity-is-not-cap' -Paths @('backend/services/Business/Scheduling/src/FiniteCapacityScheduler.cs') -Flags @{
     backend = $true; postgresql = $true; redis_cap = $false; full_chain = $false
