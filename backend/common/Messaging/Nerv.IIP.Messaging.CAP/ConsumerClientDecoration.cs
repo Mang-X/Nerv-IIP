@@ -10,10 +10,10 @@ namespace Nerv.IIP.Messaging.CAP;
 /// so that later work (#3351 首轮订阅闸门、#3352 <see cref="IConsumerClient.ListeningAsync"/> 专用线程) has one
 /// place to hook into.
 ///
-/// <para><b>消息路径 100% 透传</b>：<see cref="DecoratedConsumerClientFactory"/> 与
-/// <see cref="DecoratedConsumerClient"/> 的每一个成员都逐字转发 inner，没有任何自身行为。本文件里唯一有自身
-/// 行为的代码在 <b>DI 组装期</b>——<see cref="AddServices"/> 的 fail closed。#3351 / #3352 要加的行为恰恰在
-/// 消息路径上，与本骨架的边界互补。</para>
+/// <para><b>#3365 起，<see cref="DecoratedConsumerClientFactory.CreateAsync"/> 不再是纯转发</b>：它是连接池
+/// 预热的消费侧挂载点（发布侧在 <see cref="WarmedTransport.SendAsync"/>）。#3350 建这层骨架时写的就是
+/// 「给后续工作一个挂载点」，#3365 是第一个挂上来的。<see cref="DecoratedConsumerClient"/> 仍然<b>逐字透传</b>：
+/// 它的每一个成员都原样转发 inner，没有任何自身行为——预热在工厂那一层已经完成，client 被造出来时池已经建满。</para>
 ///
 /// <para>Registration mechanics: the transport package registers <see cref="IConsumerClientFactory"/> from its own
 /// <see cref="ICapOptionsExtension.AddServices"/>, and <c>AddCap</c> runs the extensions in registration order.
@@ -54,12 +54,22 @@ internal sealed class TransportConsumerClientFactory(IConsumerClientFactory inne
     public IConsumerClientFactory Inner { get; } = inner;
 }
 
-internal sealed class DecoratedConsumerClientFactory(TransportConsumerClientFactory transport) : IConsumerClientFactory
+internal sealed class DecoratedConsumerClientFactory(
+    TransportConsumerClientFactory transport,
+    RedisConnectionPoolWarmup warmup) : IConsumerClientFactory
 {
     internal IConsumerClientFactory Inner => transport.Inner;
 
-    public async Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent) =>
-        new DecoratedConsumerClient(await transport.Inner.CreateAsync(groupName, groupConcurrent));
+    /// <summary>
+    /// #3365：<b>先预热、再创建</b>。顺序是承重的——<see cref="IConsumerClient"/> 的 SubscribeAsync /
+    /// CommitAsync / 轮询都经 <c>RedisStreamManager</c> 触到连接池，而 client 只能由本方法产出，
+    /// 所以在这里 await 完预热就覆盖了消费侧的全部池入口。
+    /// </summary>
+    public async Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent)
+    {
+        await warmup.WarmAsync().ConfigureAwait(false);
+        return new DecoratedConsumerClient(await transport.Inner.CreateAsync(groupName, groupConcurrent));
+    }
 }
 
 internal sealed class DecoratedConsumerClient(IConsumerClient inner) : IConsumerClient

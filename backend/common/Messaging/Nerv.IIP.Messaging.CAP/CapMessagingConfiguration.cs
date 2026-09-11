@@ -90,6 +90,9 @@ public static class CapMessagingConfiguration
             // Must come after UseRedis: AddCap runs ICapOptionsExtension.AddServices in registration order, and the
             // decoration extension captures the IConsumerClientFactory descriptor the Redis extension registers.
             options.RegisterExtension(new ConsumerClientDecorationExtension());
+            // #3365：同样必须在 UseRedis 之后——本扩展要捕获 Redis 扩展登记的 ITransport 与连接池描述符。
+            // 放在装饰器扩展之后，是因为消费侧挂载点住在 DecoratedConsumerClientFactory 里。
+            options.RegisterExtension(new RedisConnectionPoolWarmupExtension());
             return options;
         }
 

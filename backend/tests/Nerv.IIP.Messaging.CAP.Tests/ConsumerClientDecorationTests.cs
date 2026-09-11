@@ -82,7 +82,9 @@ public sealed class ConsumerClientDecorationTests
     public async Task Factory_WrapsEveryCreatedClientSoDownstreamWorkHasAMountPoint()
     {
         var inner = new RecordingConsumerClient();
-        var factory = new DecoratedConsumerClientFactory(new TransportConsumerClientFactory(new StubFactory(inner)));
+        var factory = new DecoratedConsumerClientFactory(
+            new TransportConsumerClientFactory(new StubFactory(inner)),
+            new RedisConnectionPoolWarmup(() => Task.CompletedTask));
 
         var created = await factory.CreateAsync("group-a", 3);
 
