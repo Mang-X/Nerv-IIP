@@ -24,10 +24,21 @@ namespace Nerv.IIP.Messaging.CAP;
 /// 「在途」状态在构造上不可能再出现，<c>CreatedConnection</c> 的每一次解引用都立即返回，窗口永久关闭。
 /// <b>池大小一动不动</b>。</para>
 ///
-/// <para><b>为什么不走 <c>pool.ConnectAsync()</c> 预热</b>：那条路自己就解引用 <c>CreatedConnection</c>
-/// （预热自身开窗口）；而且它的 foreach 命中第一个 <c>!IsValueCreated</c> 的槽位就 <c>return</c>，
-/// <b>一次只会建 1 个槽位</b>。同理，「并发上来池自然会建满」是错的——上游 <c>ConnectAsync()</c> 在
-/// 第一个槽位建成后会一直复用它（<c>ConnectionCapacity == 0</c> 即返回），后续槽位要等负载把容量顶上去才逐个增长。
+/// <para><b>为什么不走 <c>pool.ConnectAsync()</c> 预热</b>，以及<b>为什么「并发上来池自然会建满」是错的</b>
+/// ——这两件事是<b>同一段上游代码决定的</b>，不是观察到的巧合。<c>RedisConnectionPool.ConnectAsync()</c>
+/// 的主循环（10.0.1 反编译逐字）：
+/// <code>
+/// foreach (var connection in _connections)
+/// {
+///     if (!connection.IsValueCreated) return (await connection).Connection;   // 建第 1 个就 return
+///     if (connection.CreatedConnection.ConnectionCapacity == 0L)              // ← 同步阻塞点
+///         return connection.CreatedConnection.Connection;                     // 容量没顶上去就一直复用它
+/// }
+/// </code>
+/// ⇒ ① 拿它当预热用，<b>一次只会建 1 个槽位</b>，而且它自己就解引用 <c>CreatedConnection</c>（预热自身开窗口）；
+/// ② <b>并发再高也不会把池填满</b>：首个槽位建成后，只要 <c>ConnectionCapacity == 0</c> 就一直被复用，
+/// 后续槽位要等负载把容量顶上去才逐个增长——这正是 #3236 链条上观察到的
+/// <c>6→8→13→16→18→20→22</c> 逐级爬升（历时数十秒），以及「40 路并发下不预热时池只建了 1/10 个槽位」的成因。
 /// 预热改为<b>直接 await 每个 <c>AsyncLazyRedisConnection</c></b>（其 <c>GetAwaiter()</c> 是 public），
 /// 全程不碰 <c>CreatedConnection</c>。</para>
 ///

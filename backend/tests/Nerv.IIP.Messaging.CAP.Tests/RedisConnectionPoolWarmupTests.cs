@@ -55,6 +55,60 @@ public sealed class RedisConnectionPoolWarmupTests
         Assert.All(connections, connection => Assert.True(connection.Value.IsCompletedSuccessfully));
     }
 
+    /// <summary>
+    /// ⭐ 验收 A（机制断言）：<b>直接把缺陷本身量出来</b>——有槽位在途时，
+    /// <c>RedisConnectionPool.ConnectAsync()</c> 的<b>同步段</b>会把调用线程钉住；
+    /// 槽位全部完成之后，同一个调用的同步段 ≈ 0。
+    ///
+    /// <para><b>阻塞发生在哪一行</b>（对 10.0.1 反编译实读）：全部槽位 <c>IsValueCreated</c> 之后
+    /// <c>_poolAlreadyConfigured</c> 变真，<c>QuietConnection</c> 于是走
+    /// <c>OrderBy(c =&gt; c.CreatedConnection?.ConnectionCapacity ...)</c>，对<b>每个</b>槽位解引用
+    /// <c>CreatedConnection</c>，而它是 <c>Value.GetAwaiter().GetResult()</c>。
+    /// 所以这条与 <c>ConcurrentBag</c> 的枚举顺序无关，是构造性的。</para>
+    ///
+    /// <para>⚠️ <b>这条用例对本仓实现没有鉴别力</b>，它一格变异都杀不掉——它断言的是<b>上游前提</b>
+    /// （缺陷存在、且「全部完成」确实能关掉窗口）。它和形状契约测试一起构成退役判据的另一半：
+    /// 上游哪天把阻塞形态改掉，这条会红，届时该退役的是<b>整层垫片</b>，不是这条断言。</para>
+    ///
+    /// <para>阈值说明：不可连通端点下，上游 <c>ConnectAsync</c> 固定重试 5 轮、轮间 <c>Task.Delay(2s)</c>
+    /// ⇒ 在途时长有 <b>10 秒级的硬下界</b>，与 1000 ms 的判据之间有一个数量级的余量，
+    /// 不是一个贴边的时序阈值。</para>
+    /// </summary>
+    [Fact]
+    public async Task Connect_blocks_the_caller_while_a_slot_is_in_flight_and_stops_blocking_once_every_slot_completed()
+    {
+        using var provider = CapRedisStreamsShapeContractTests.BuildRedisProvider();
+        var slots = provider.GetRequiredService<RedisConnectionPoolSlots>();
+        var pool = provider.GetRequiredService(slots.PoolServiceType);
+        var connections = slots.Read(pool).ToArray();
+        var connectAsync = slots.PoolServiceType.GetMethod("ConnectAsync")!;
+
+        // 制造在途槽位：触发全部 Lazy 但不等待它们完成。
+        foreach (var connection in connections)
+        {
+            _ = connection.Value;
+        }
+
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var inFlightCall = (Task)connectAsync.Invoke(pool, null)!;
+        var blockedMilliseconds = clock.ElapsedMilliseconds;
+
+        // 走到「全部完成」——这正是预热结束后池所处的状态。
+        await Task.WhenAll(connections.Select(async connection => await connection));
+        await inFlightCall;
+
+        clock.Restart();
+        _ = (Task)connectAsync.Invoke(pool, null)!;
+        var warmMilliseconds = clock.ElapsedMilliseconds;
+
+        Assert.True(
+            blockedMilliseconds >= 1000,
+            $"在途槽位应当把 ConnectAsync 的同步段钉住，实测同步段 {blockedMilliseconds} ms。");
+        Assert.True(
+            warmMilliseconds < 100,
+            $"槽位全部完成后同步段应当 ≈0，实测 {warmMilliseconds} ms（在途窗口没有被关掉）。");
+    }
+
     /// <summary>两个挂载点都会调 <c>WarmAsync()</c>；池只能预热一次，否则第二个挂载点会重建 N 条连接。</summary>
     [Fact]
     public void Warmup_runs_once_and_every_caller_awaits_the_same_task()
