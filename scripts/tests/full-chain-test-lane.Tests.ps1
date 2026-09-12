@@ -824,8 +824,10 @@ try {
         '/repo/bin/Release/net10.0/Nerv.IIP.Business.FullChain.Tests.dll (.NETCoreApp,Version=v10.0)的测试运行',
         '以下测试可用:'
     ) + $listTestsBodyLines
-    $englishIdentities = @(Get-NervFullChainDiscoveredTestIdentities -DiscoveryLines $englishDiscovery -RootNamespace $fullChainRootNamespace)
-    $chineseIdentities = @(Get-NervFullChainDiscoveredTestIdentities -DiscoveryLines $chineseDiscovery -RootNamespace $fullChainRootNamespace)
+    # #3285：夹具从「行数组」改成 `-join "`r`n"` 的**原始 stdout**，因为函数现在收 stdout、自己切行。
+    # 解析口径（不锚表头、整行完全匹配、`[Theory]` 截断）一个字没动，下面这些断言逐字保留。
+    $englishIdentities = @(Get-NervFullChainDiscoveredTestIdentities -DiscoveryOutput ($englishDiscovery -join "`r`n") -RootNamespace $fullChainRootNamespace)
+    $chineseIdentities = @(Get-NervFullChainDiscoveredTestIdentities -DiscoveryOutput ($chineseDiscovery -join "`r`n") -RootNamespace $fullChainRootNamespace)
     $expectedIdentities = @(
         "$fullChainRootNamespace.AlphaTests.First_case",
         "$fullChainRootNamespace.AlphaTests.Second_case",
@@ -835,14 +837,14 @@ try {
     Assert-Contract ([string]::Equals(($englishIdentities -join "`n"), ($chineseIdentities -join "`n"), [StringComparison]::Ordinal)) 'FullChain discovery parsing must not depend on the localized --list-tests header.'
 
     # 表头整行缺失也必须得到同一结果：证明解析确实没有把表头当锚点，而不是「碰巧两种表头都不匹配」。
-    $headerlessIdentities = @(Get-NervFullChainDiscoveredTestIdentities -DiscoveryLines $listTestsBodyLines -RootNamespace $fullChainRootNamespace)
+    $headerlessIdentities = @(Get-NervFullChainDiscoveredTestIdentities -DiscoveryOutput ($listTestsBodyLines -join "`n") -RootNamespace $fullChainRootNamespace)
     Assert-Contract ([string]::Equals(($headerlessIdentities -join "`n"), ($expectedIdentities -join "`n"), [StringComparison]::Ordinal)) 'FullChain discovery must yield the same identities when no header line is present at all.'
 
     # MSBuild 的构建输出行以被测程序集名开头；只要解析退化成「前缀匹配」就会把它当成一条用例，
     # 拼进 filter 后整个 residual 跑法作废。这两条断言的鉴别力由「把整行完全匹配放松成前缀匹配」
     # 这个变异实测过。
     Assert-Contract (@($englishIdentities | Where-Object { $_.Contains(' -> ', [StringComparison]::Ordinal) }).Count -eq 0) 'FullChain discovery must reject MSBuild build output lines.'
-    $buildOnlyIdentities = @(Get-NervFullChainDiscoveredTestIdentities -DiscoveryLines @("  $fullChainRootNamespace -> /repo/x.dll") -RootNamespace $fullChainRootNamespace)
+    $buildOnlyIdentities = @(Get-NervFullChainDiscoveredTestIdentities -DiscoveryOutput "  $fullChainRootNamespace -> /repo/x.dll" -RootNamespace $fullChainRootNamespace)
     Assert-Contract ($buildOnlyIdentities.Count -eq 0) 'A build output line alone must produce no FullChain identity.'
 
     # `[Theory]` 按参数逐行列出；不截断就会得到跑不起来的 filter，且同一方法被重复计数。
@@ -851,15 +853,70 @@ try {
         "    $fullChainRootNamespace.ThetaTests.Theory_case(value: 2)",
         "    $fullChainRootNamespace.ThetaTests.Theory_case(value: `"a -> b`")"
     )
-    $theoryIdentities = @(Get-NervFullChainDiscoveredTestIdentities -DiscoveryLines $theoryDiscovery -RootNamespace $fullChainRootNamespace)
+    $theoryIdentities = @(Get-NervFullChainDiscoveredTestIdentities -DiscoveryOutput ($theoryDiscovery -join "`n") -RootNamespace $fullChainRootNamespace)
     Assert-Contract ($theoryIdentities.Count -eq 1 -and [string]::Equals($theoryIdentities[0], "$fullChainRootNamespace.ThetaTests.Theory_case", [StringComparison]::Ordinal)) 'FullChain discovery must truncate [Theory] arguments to one method-level identity.'
 
     # 只有一段（没有类型名）不是用例身份；别的程序集的用例也不属于本项目。
-    $foreignIdentities = @(Get-NervFullChainDiscoveredTestIdentities -DiscoveryLines @(
+    $foreignIdentities = @(Get-NervFullChainDiscoveredTestIdentities -DiscoveryOutput (@(
         "    $fullChainRootNamespace.OnlyOneSegment",
         '    Nerv.IIP.Business.Acceptance.Tests.OtherTests.Other_case'
-    ) -RootNamespace $fullChainRootNamespace)
+    ) -join "`n") -RootNamespace $fullChainRootNamespace)
     Assert-Contract ($foreignIdentities.Count -eq 0) 'FullChain discovery must ignore non-identity and foreign-assembly lines.'
+
+    # === #3285 参数边界：调用方在类型上拿不到「行」 ==============================================
+    # 缺陷与修法的完整归因写在 scripts/lib/FullChainTestLane.ps1 的函数注释里，这里不复述。要点一条：
+    # Get-NervFullChainDiscoveredTestIdentities 收的是 --list-tests 的**原始 stdout**，切行在函数内部。
+    # 下面这条喂真实形状的原始捕获：表头前后空行、纯空白行、CRLF 与 dotnet test 必然带的尾随换行，
+    # 都不得让解析崩在绑定或匹配上。
+    $rawDiscoveryCapture = "`r`n" + ((@(
+        "  $fullChainRootNamespace -> /repo/bin/Release/net10.0/$fullChainRootNamespace.dll",
+        'Test run for /repo/bin/Release/net10.0/Nerv.IIP.Business.FullChain.Tests.dll (.NETCoreApp,Version=v10.0)',
+        'VSTest version 17.0.0 (x64)',
+        '',
+        'The following Tests are available:',
+        '   ',
+        "    $fullChainRootNamespace.AlphaTests.First_case",
+        "    $fullChainRootNamespace.AlphaTests.Second_case",
+        "    $fullChainRootNamespace.BetaTests.Nested_case",
+        '   ',
+        ''
+    )) -join "`r`n")
+    $rawCaptureFailure = ''
+    $rawCaptureIdentities = @()
+    try { $rawCaptureIdentities = @(Get-NervFullChainDiscoveredTestIdentities -DiscoveryOutput $rawDiscoveryCapture -RootNamespace $fullChainRootNamespace) }
+    catch { $rawCaptureFailure = $_.Exception.Message }
+    Assert-Contract ([string]::Equals($rawCaptureFailure, '', [StringComparison]::Ordinal)) "Raw --list-tests stdout carrying blank, whitespace-only, CRLF and trailing lines must not break FullChain discovery; observed: $rawCaptureFailure"
+    Assert-Contract ([string]::Equals(($rawCaptureIdentities -join "`n"), ($expectedIdentities -join "`n"), [StringComparison]::Ordinal)) 'A raw --list-tests capture must yield exactly the same identity set as the pre-split fixtures.'
+
+    # 真实触发面比「正文里的空行」更窄也更硬：`dotnet test` 的 stdout 以换行结尾，切行**必然**多出一个
+    # 尾随空元素。这条喂一份没有任何正文空行、只有尾随换行的最窄样本，确保结论不是只对更宽的形状成立。
+    $trailingNewlineOnlyCapture = "以下测试可用:`n    $fullChainRootNamespace.AlphaTests.First_case`n"
+    $trailingNewlineOnlyFailure = ''
+    $trailingNewlineOnlyIdentities = @()
+    try { $trailingNewlineOnlyIdentities = @(Get-NervFullChainDiscoveredTestIdentities -DiscoveryOutput $trailingNewlineOnlyCapture -RootNamespace $fullChainRootNamespace) }
+    catch { $trailingNewlineOnlyFailure = $_.Exception.Message }
+    Assert-Contract ([string]::Equals($trailingNewlineOnlyFailure, '', [StringComparison]::Ordinal)) "The trailing newline every dotnet test capture ends with must not break FullChain discovery; observed: $trailingNewlineOnlyFailure"
+    Assert-Contract ($trailingNewlineOnlyIdentities.Count -eq 1) "A trailing-newline-only capture must still yield exactly one identity; got $($trailingNewlineOnlyIdentities.Count)."
+
+    # 承重格（#3285 的结构性主张）：参数收 [string] 而不是 [string[]]，所以「调用方自己按行切、把带空
+    # 元素的行数组递进来」这个缺陷形状在**参数类型上**就不可表达——PowerShell 拒绝把多元素数组转成
+    # String，绑定当场失败。这条断言取代任何「看调用方源码有没有写某个过滤字符串」的文本护栏，后者对
+    # 续行、splatting 假红，对「注释里留串、调用点复原」假绿（#3214 同族教训）。
+    # 边界说清楚：单元素数组仍会被 PowerShell 解包成字符串，但缺陷形状（身份行 + 尾随空元素）元素数
+    # 必然 ≥2，落不进那个缝里。把参数退回 `[string[]]` 时，这条断言必红。
+    $preSplitLineArrayFailure = ''
+    try {
+        Get-NervFullChainDiscoveredTestIdentities -DiscoveryOutput @(
+            "    $fullChainRootNamespace.AlphaTests.First_case",
+            ''
+        ) -RootNamespace $fullChainRootNamespace | Out-Null
+    }
+    catch { $preSplitLineArrayFailure = $_.Exception.Message }
+    Assert-Contract ($preSplitLineArrayFailure.Contains("Cannot process argument transformation on parameter 'DiscoveryOutput'", [StringComparison]::Ordinal)) "A pre-split line array must be rejected at the FullChain discovery parameter boundary, which is what makes the #3285 defect shape unrepresentable rather than merely unwritten; observed: $preSplitLineArrayFailure"
+
+    # 哨兵：同一个函数在同一轮里对「合法原始 stdout」必须仍然给出 3 条身份。承重格红而这条绿，
+    # 才能区分「护栏有鉴别力」与「整段崩了/变异根本没生效」。
+    Assert-Contract (@(Get-NervFullChainDiscoveredTestIdentities -DiscoveryOutput ($listTestsBodyLines -join "`n") -RootNamespace $fullChainRootNamespace).Count -eq 3) 'Sentinel: a well-formed raw capture must still yield the three fixture identities.'
 
     # residual = 发现全集 − 冻结成员集。
     $residualFixture = @(Get-NervFullChainResidualTestIdentities -DiscoveredIdentities $expectedIdentities -ClaimedIdentities @("$fullChainRootNamespace.AlphaTests.First_case"))
@@ -878,7 +935,7 @@ try {
 
     # 本项目当前的真实身份必须与 manifest 冻结的 5 条相容：冻结身份是发现集的子集。
     $realDiscoveryFixture = @(@($manifest.members | ForEach-Object { "    $([string]$_.expectedTestIdentities[0])" }) + $listTestsBodyLines)
-    $realDiscovered = @(Get-NervFullChainDiscoveredTestIdentities -DiscoveryLines $realDiscoveryFixture -RootNamespace $fullChainRootNamespace)
+    $realDiscovered = @(Get-NervFullChainDiscoveredTestIdentities -DiscoveryOutput ($realDiscoveryFixture -join "`r`n") -RootNamespace $fullChainRootNamespace)
     $realClaimed = @($manifest.members | ForEach-Object { [string]$_.expectedTestIdentities[0] })
     $realResidual = @(Get-NervFullChainResidualTestIdentities -DiscoveredIdentities $realDiscovered -ClaimedIdentities $realClaimed)
     Assert-NervFullChainDiscoveryClosure -DiscoveredIdentities $realDiscovered -ClaimedIdentities $realClaimed -ResidualIdentities $realResidual
