@@ -12,8 +12,9 @@
 $script:nervScriptVariableScopeQualifiers = [Collections.Generic.HashSet[string]]::new(
     [string[]]@('local', 'script', 'global', 'private', 'variable'),
     [StringComparer]::OrdinalIgnoreCase)
-# Binding rules and their shipped floors implement the #1509 ruling recorded in
-# docs/architecture/script-automation-governance.md; update that decision table with this library.
+# 当前绑定规则与别名下限以本库和对应测试为准，治理见
+# docs/governance/script-automation.md；#1509 的形成过程见
+# docs/reports/audits/script-automation-governance-evolution-2026-08.md。
 $script:nervScriptVariableItemCanonicalNames = @('Set-Item', 'New-Item')
 $script:nervScriptVariableItemCommands = [Collections.Hashtable]::new([StringComparer]::OrdinalIgnoreCase)
 foreach ($itemCanonicalName in $script:nervScriptVariableItemCanonicalNames) {
