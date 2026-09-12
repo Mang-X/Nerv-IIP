@@ -57,9 +57,10 @@ function New-SelectionFixtureRoot {
 #
 # 阴性对照分两格，鉴别力**天差地别**，不要混为一谈：
 #
-#   * run 体内的 **shell 注释**（`# ./scripts/tests/x.Tests.ps1`）—— **这一格才有鉴别力**。
-#     它是 #3300 复审实测出的最便宜绕法 G1：一行注释就能把 x 记成已选中并从 runner 摘掉，
-#     而且在 diff 里像一条无辜注释、可抵赖。把过滤去掉这一格立刻转红。
+#   * run 体内的 **`#` 注释与 pwsh 块注释**（整行 `#`、行尾 `#`、`<# … #>` 单行与多行）
+#     —— **这四格才有鉴别力**，是 #3300 复审实测出的最便宜绕法：一条注释就能把 x 记成已选中
+#     并从 runner 摘掉，而且在 diff 里像无辜注释、可抵赖（行尾注释甚至只是**修改一行**，
+#     块注释在 `shell: pwsh` 的 step 里还是完全合法写法）。去掉对应过滤这几格立刻转红。
 #   * **YAML 层注释**（step 之间那种）—— **这一格恒真、零鉴别力**，保留只为记录形态：
 #     YAML 解析器根本不会把它交给任何 step 的 `run`，因此任何实现都不会命中它。
 #     ⛔ 不要把它读成「注释绕法已被守住」—— 守住那件事的是上面那格。
@@ -90,27 +91,50 @@ jobs:
   shell-comment-job:
     runs-on: ubuntu-latest
     steps:
-      - name: Mentions a test only in a shell comment inside the run body
+      - name: Mentions tests only inside comments in the run body
         run: |
           # ./scripts/tests/shell-commented.Tests.ps1 的逐字契约断言，故保持逐处加固。
+          echo ok  # ./scripts/tests/trailing-commented.Tests.ps1
+          <# ./scripts/tests/block-commented.Tests.ps1 #>
+          <#
+          ./scripts/tests/multiline-block-commented.Tests.ps1
+          #>
           echo unrelated
 '@
 $shapeRoot = New-SelectionFixtureRoot -WorkflowContent $shapeWorkflow -TestFiles @{
     'inline.Tests.ps1' = '# inline'
     'block.Tests.ps1' = '# block'
     'commented.Tests.ps1' = '# commented'
-    'shell-commented.Tests.ps1' = '# shell commented'
+    'shell-commented.Tests.ps1' = '# whole-line shell comment'
+    'trailing-commented.Tests.ps1' = '# trailing shell comment'
+    'block-commented.Tests.ps1' = '# single-line pwsh block comment'
+    'multiline-block-commented.Tests.ps1' = '# multi-line pwsh block comment'
 }
 try {
     $shapeSelections = Get-NervScriptTestWorkflowSelections -RepositoryRoot $shapeRoot
     Assert-Selection ($shapeSelections.ContainsKey('inline.Tests.ps1')) 'A one-line run: reference must be detected.'
     Assert-Selection ($shapeSelections.ContainsKey('block.Tests.ps1')) 'A reference inside a multi-line run: block must be detected — this is the positive control for the multi-line scan face.'
     Assert-Selection (-not $shapeSelections.ContainsKey('commented.Tests.ps1')) 'A name that only appears in a YAML-level comment must not count as selection (zero-discrimination control: no implementation can reach it).'
-    Assert-Selection (-not $shapeSelections.ContainsKey('shell-commented.Tests.ps1')) `
-        'A name that only appears in a shell comment inside a run body must not count as selection — this is the G1 control and it does discriminate: drop the comment filter and it turns red.'
+    # 四种 run 体内注释形态，每一种都有鉴别力：去掉对应的过滤，对应那条立刻转红。
+    # 行尾注释（S5）与块注释（S6/S7）比整行注释（G1）更值得关：整行注释在 diff 里是**新增一行**，
+    # 行尾注释是**修改一行**，块注释在 `shell: pwsh` 的 step 里还是完全合法的写法 —— 都更不显眼。
+    foreach ($commentShape in @(
+            [pscustomobject]@{ Name = 'shell-commented.Tests.ps1'; Shape = 'a whole-line shell comment' },
+            [pscustomobject]@{ Name = 'trailing-commented.Tests.ps1'; Shape = 'a trailing shell comment after a real command' },
+            [pscustomobject]@{ Name = 'block-commented.Tests.ps1'; Shape = 'a single-line pwsh block comment' },
+            [pscustomobject]@{ Name = 'multiline-block-commented.Tests.ps1'; Shape = 'a multi-line pwsh block comment' }
+        )) {
+        Assert-Selection (-not $shapeSelections.ContainsKey($commentShape.Name)) `
+            "A name that only appears in $($commentShape.Shape) inside a run body must not count as selection."
+    }
 
     $shapePlan = Get-NervScriptTestSelectionPlan -RepositoryRoot $shapeRoot -Registry @()
-    $shapeExpected = [Collections.Generic.HashSet[string]]::new([string[]]@('commented.Tests.ps1', 'shell-commented.Tests.ps1'), [StringComparer]::Ordinal)
+    $shapeExpected = [Collections.Generic.HashSet[string]]::new([string[]]@(
+            'commented.Tests.ps1',
+            'shell-commented.Tests.ps1',
+            'trailing-commented.Tests.ps1',
+            'block-commented.Tests.ps1',
+            'multiline-block-commented.Tests.ps1'), [StringComparer]::Ordinal)
     Assert-Selection ($shapeExpected.SetEquals([string[]] $shapePlan.RunnerSelected)) `
         'The discovery runner must select exactly the complement: both comment-only files and nothing else.'
 
@@ -120,7 +144,7 @@ try {
     $newcomerPlan = Get-NervScriptTestSelectionPlan -RepositoryRoot $shapeRoot -Registry @()
     Assert-Selection (@($newcomerPlan.RunnerSelected | Where-Object { [string]::Equals($_, 'newcomer.Tests.ps1', [StringComparison]::Ordinal) }).Count -eq 1) `
         'A newly added scripts/tests file must land in the discovery runner set without any registration.'
-    Assert-Selection ($newcomerPlan.All.Count -eq 5 -and $newcomerPlan.WorkflowSelected.Count -eq 2 -and $newcomerPlan.RunnerSelected.Count -eq 3) `
+    Assert-Selection ($newcomerPlan.All.Count -eq 8 -and $newcomerPlan.WorkflowSelected.Count -eq 2 -and $newcomerPlan.RunnerSelected.Count -eq 6) `
         'The plan must stay a total partition after a file is added.'
 }
 finally { Remove-Item -LiteralPath $shapeRoot -Recurse -Force -ErrorAction SilentlyContinue }

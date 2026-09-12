@@ -87,22 +87,31 @@ $script:NervScriptTestTrackingPattern = '^#[1-9][0-9]*$'
 # 本库声明的覆盖面：种类闭集、字段必填/禁填矩阵、目标存在性、父子引用真实性、票号**形态**、
 # Requirement 的**出处**。不声明「豁免理由为真」，也不声明「无票排除不可拼写」。
 
-# ⚠️ workflow-mention 面的覆盖边界（#3300 复审实测三格，两格只声明不关）：
+# ⚠️ workflow-mention 面的覆盖边界（#3300 复审逐格实测，关掉的与放行的都逐字列在这里）。
 #
-#    G1 run 体内的 shell 注释 ⇒ **已关**（见 Get-NervScriptTestWorkflowSelections 的注释行过滤），
-#       因为它一行就够、且在 diff 里像一条无辜注释，可抵赖。
-#    G2 新增一个 `if: false` 的 step 点名该测试 ⇒ **不关，声明**。
-#    G3 在 `nightly-business-performance.yml`（`on:` 只有 schedule 与 workflow_dispatch，PR 上从不
-#       触发）里点名该测试 ⇒ **不关，声明**。
+# 【已关】run 体内的 `#` 注释与 pwsh 块注释，四种形态：
+#    整行 `#`、**行尾 `#`**、`<# … #>` 单行、`<# … #>` 多行。
+#    实现见 Get-NervScriptTestWorkflowSelections：先去块注释、再逐行截掉 `#` 之后的部分。
+#    ⚠️ 量词要准：**不是**「run 体内的注释都关掉了」，是「`#` 系注释的上述四种形态」。
+#    关它们的理由是**可抵赖性**最高：整行注释在 diff 里是新增一行，行尾注释只是**修改一行**，
+#    而 `<# … #>` 在 `shell: pwsh` 的 step 里本就是合法写法 —— 三者都能伪装成无辜注释。
+#    过滤对当前仓库**行为中性**：加过滤前后 ALL=61 WF=31 OOB=6 RUN=24，55 行成员清单逐字相同。
+#    失败方向安全：截断只会**减少**命中 ⇒ 文件落回 runner ⇒ 被跑。
 #
-#    不关 G2/G3 的理由：判定「`if:` 在本次事件下是否为真」与「哪些工作流会在 PR 上触发」都要把这个
-#    选取器变成一个 GitHub 表达式求值器与事件模型，是本仓已判定永不收敛的那条路（#3176 / PR #3214，
-#    护栏自身 655→1139 行后被裁定移除）。G2/G3 与 G1 的关键区别是**可抵赖性**：`if: false` 和
-#    「把 CI 的测试挪进 nightly」在 diff 里一眼就是错的，shell 注释不是。
-#
-#    同理不覆盖的还有：改 runner 自己的 ci.yml step（加 `if: false`）、在 runner 里插 `exit 0`、
-#    伪造一个父测试再在其源码加一行引用。前两者是自指缴械面——任何护栏都能被改护栏本身缴械；
-#    后者要挡住就得证明父测试真的执行了子测试，成本远超收益。
+# 【放行，逐条声明】
+#    N1 **嵌套**块注释 `<# 外 <# 内 #> 名字 #>`：非贪婪匹配停在第一个 `#>`，`名字 #>` 作为正文残留
+#       ⇒ 会被记成选中。实测确认。不关的理由是它要求一个带嵌套计数的扫描器，而正确处理嵌套还得
+#       同时处理 here-string 与引号内的 `<#` —— 那是 #3176 / PR #3214 判定永不收敛的那条路
+#       （护栏自身 655→1139 行后被裁定移除）。可抵赖性也低：嵌套块注释在 diff 里不像无辜写法。
+#    N2 **不可判定的非执行提及**：`if: false` 的 step 点名；在 PR 上从不触发的工作流
+#       （如 nightly-business-performance.yml，`on:` 只有 schedule 与 workflow_dispatch）里点名；
+#       `: ./x`、引号字符串里的名字、here-doc 体内的名字、`false && ./x` 之类永不执行的语句。
+#       要判它们就得同时实现 GitHub 表达式求值、事件触发模型和一个 shell 语义分析器 —— 同上，
+#       是永不收敛的那条路。这些写法与已关的注释形态的关键区别是**在 diff 里一眼就是错的**。
+#    N3 **自指缴械面**：改 runner 自己的 ci.yml step（加 `if: false`）、在 runner 里插 `exit 0`。
+#       任何护栏都能被改护栏本身缴械，追它没有终点。
+#    N4 **伪造父测试**：新建一个被 CI 点名的父测试，再在其源码里加一行对目标的引用。
+#       要挡住就得证明父测试真的执行了子测试，成本远超收益。
 $script:NervScriptTestOutOfBandRegistry = @(
     [pscustomobject]@{
         Name = 'postgres-test-database-consumers.Tests.ps1'
@@ -156,6 +165,12 @@ function Get-NervScriptTestOutOfBandRegistry {
         `[AllowEmptyCollection()]` 形同虚设，报出来的是 PowerShell 的绑定错误
         「Cannot bind argument to parameter 'Registry' because it is null」——
         那是一条与本库无关的诊断，会让人以为登记机制坏了。用数组包装保住空集合语义。
+
+        ⚠️ 次生影响，写探针时会踩：`,@(...)` 输出的是**一层包装**，所以
+        `@(Get-NervScriptTestOutOfBandRegistry).Count` 得到 **1** 而不是条目数。
+        直接赋值（`$r = Get-NervScriptTestOutOfBandRegistry`）与管道（`| ForEach-Object`）
+        都仍然按条目展开，本库唯一的生产调用点是直接赋值，因此仓库内零影响。
+        探针里要数条目就别再套一层 `@()`。
     #>
     [CmdletBinding()]
     param()
@@ -188,6 +203,12 @@ function Get-NervScriptTestFiles {
 }
 
 function Test-NervScriptTestNameCharacter {
+    <#
+        ⚠️ `[char]::IsLetterOrDigit` 对 CJK 返回 True，所以 `x.Tests.ps1的`（名字后**紧贴**汉字、
+        中间无空格）会被判成「右侧不是边界」⇒ 不命中 ⇒ 该文件落回发现式 runner ⇒ **被跑**。
+        方向是安全的（漏判成「没被点名」而不是「已被点名」）。真实 ci.yml 里的中文注释都在名字
+        与汉字之间留了空格，实测仍然命中，因此这条不影响当前选中集合。
+    #>
     [CmdletBinding()]
     param([Parameter(Mandatory)] [char] $Value)
 
@@ -283,7 +304,8 @@ function Get-NervScriptTestWorkflowSelections {
                 #
                 # 过滤后与过滤前在当前仓库逐项等价（ALL=61 WF=31 OOB=6 RUN=24），
                 # 即这一条只关掉绕法、不改变今天的选中集合。
-                $run = @(([string] $runProperty.Value) -split "`n" | Where-Object { -not $_.TrimStart().StartsWith('#', [StringComparison]::Ordinal) }) -join "`n"
+                $runBody = [regex]::Replace([string] $runProperty.Value, '(?s)<#.*?#>', '')
+                $run = @($runBody -split "`n" | ForEach-Object { $_ -replace '(^|\s)#.*$', '' }) -join "`n"
                 foreach ($name in $names) {
                     if (-not (Test-NervScriptTestReference -Text $run -Name $name)) { continue }
                     if (-not $selections.ContainsKey($name)) { $selections[$name] = [Collections.Generic.List[string]]::new() }

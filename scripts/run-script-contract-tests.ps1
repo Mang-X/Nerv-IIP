@@ -27,7 +27,14 @@ param(
     # 否则一个挂死的测试会把预算吃光、由 GitHub 的 step timeout 收场，而 GitHub 杀步时不会打印
     # 本 runner 的 FAIL 诊断与该测试的 stdout/stderr 尾巴 —— 最需要诊断的那次反而什么都拿不到。
     # 300s 的来源：CI 上单测试实测最大 41.1s（erp-sales-order-demand-planning-verify-script），
-    # 取其约 7 倍；一次挂死后仍剩约 10m，足够跑完其余测试并由本 runner 自己报红。
+    # 取其约 7 倍；第六名就掉到 6.5s，分布极陡，300s 不会误杀。
+    #
+    # 与 15m（900s）step 预算的算术，把界说全而不是只算一次：
+    #   一次挂死：300 + 176（其余测试 CI 实测合计）= 476s  < 900s ⇒ 本 runner 自报红，诊断齐全。
+    #   两次挂死：600 + 176 = 776s                        < 900s ⇒ 仍能自报。
+    #   三次挂死：900 + 176 = 1076s                       > 900s ⇒ 退回 GitHub 杀步，拿不到本
+    #             runner 的 FAIL 行与 stdout/stderr 尾巴。三次并发挂死时诊断能力确实会掉，
+    #             这是已知边界，不是被覆盖的情形。
     [ValidateRange(1, 2147483)] [int] $TimeoutSeconds = 300,
     [int] $FailureOutputLineCount = 40
 )
