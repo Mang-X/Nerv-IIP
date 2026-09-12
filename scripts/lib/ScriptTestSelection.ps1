@@ -114,6 +114,35 @@ function Get-NervScriptTestFiles {
     return @(Get-NervStringsSorted -Values ([string[]] $names) -Comparer ([StringComparer]::Ordinal))
 }
 
+function Test-NervScriptTestReference {
+    <#
+        文本里是否**以整名形式**出现该测试文件名。
+
+        朴素的 `$text.Contains($name)` 在这里是 fail-open 的：`test-lane.Tests.ps1` 是
+        `full-chain-test-lane.Tests.ps1` 的子串，于是引用后者会把前者也标成「已被选中」并从
+        发现式 runner 里摘掉——正好是本票要消除的那种静默漏跑。因此要求命中位置左侧不是
+        文件名字符（字母、数字、`_`、`.`、`-`）；右侧不需要判定，因为名字以 `.Tests.ps1` 结尾，
+        而更长的名字只可能在左侧多出字符。
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [AllowEmptyString()] [string] $Text,
+        [Parameter(Mandatory)] [string] $Name
+    )
+
+    $searchIndex = 0
+    while ($searchIndex -le ($Text.Length - $Name.Length)) {
+        $matchIndex = $Text.IndexOf($Name, $searchIndex, [StringComparison]::Ordinal)
+        if ($matchIndex -lt 0) { return $false }
+        if ($matchIndex -eq 0) { return $true }
+        $previous = $Text[$matchIndex - 1]
+        if (-not ([char]::IsLetterOrDigit($previous) -or $previous -eq '_' -or $previous -eq '.' -or $previous -eq '-')) { return $true }
+        $searchIndex = $matchIndex + 1
+    }
+
+    return $false
+}
+
 function Get-NervScriptTestWorkflowSelections {
     [CmdletBinding()]
     param(
@@ -157,7 +186,7 @@ function Get-NervScriptTestWorkflowSelections {
 
                 $run = [string] $runProperty.Value
                 foreach ($name in $names) {
-                    if (-not $run.Contains($name, [StringComparison]::Ordinal)) { continue }
+                    if (-not (Test-NervScriptTestReference -Text $run -Name $name)) { continue }
                     if (-not $selections.ContainsKey($name)) { $selections[$name] = [Collections.Generic.List[string]]::new() }
                     $stepNameProperty = $step.PSObject.Properties['name']
                     $stepName = if ($null -eq $stepNameProperty) { '(unnamed)' } else { [string] $stepNameProperty.Value }
@@ -225,7 +254,7 @@ function Assert-NervScriptTestOutOfBandRegistry {
             }
             $parentSource = [IO.File]::ReadAllText($parentPath)
             $invokingLines = @([IO.File]::ReadAllLines($parentPath) | Where-Object {
-                    (-not $_.TrimStart().StartsWith('#', [StringComparison]::Ordinal)) -and $_.Contains($name, [StringComparison]::Ordinal)
+                    (-not $_.TrimStart().StartsWith('#', [StringComparison]::Ordinal)) -and (Test-NervScriptTestReference -Text $_ -Name $name)
                 })
             if ($parentSource.Length -eq 0 -or $invokingLines.Count -eq 0) {
                 throw "Out-of-band script test registry entry '$name' claims parent '$parent', but that parent has no non-comment reference to it."

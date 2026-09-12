@@ -107,6 +107,38 @@ try {
 finally { Remove-Item -LiteralPath $shapeRoot -Recurse -Force -ErrorAction SilentlyContinue }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 1b. 子串不算引用
+#
+# `lane.Tests.ps1` 是 `full-chain-lane.Tests.ps1` 的子串。若按朴素子串判定，引用后者就会把
+# 前者也标成「已被工作流选中」并从 runner 里摘掉——静默漏跑，正是本票要消除的形态。
+# ─────────────────────────────────────────────────────────────────────────────
+$substringWorkflow = @'
+name: Substring
+on: [push]
+jobs:
+  longer-only:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Longer name only
+        run: ./scripts/tests/full-chain-lane.Tests.ps1
+'@
+$substringRoot = New-SelectionFixtureRoot -WorkflowContent $substringWorkflow -TestFiles @{
+    'full-chain-lane.Tests.ps1' = '# longer'
+    'lane.Tests.ps1' = '# shorter'
+}
+try {
+    $substringSelections = Get-NervScriptTestWorkflowSelections -RepositoryRoot $substringRoot
+    Assert-Selection ($substringSelections.ContainsKey('full-chain-lane.Tests.ps1')) 'The referenced longer file must be selected.'
+    Assert-Selection (-not $substringSelections.ContainsKey('lane.Tests.ps1')) 'A file whose name is only a substring of a referenced name must not count as selected.'
+
+    Assert-Selection (Test-NervScriptTestReference -Text './scripts/tests/lane.Tests.ps1' -Name 'lane.Tests.ps1') 'A path-prefixed whole-name reference must match.'
+    Assert-Selection (Test-NervScriptTestReference -Text 'lane.Tests.ps1' -Name 'lane.Tests.ps1') 'A reference at index 0 must match.'
+    Assert-Selection (-not (Test-NervScriptTestReference -Text 'full-chain-lane.Tests.ps1' -Name 'lane.Tests.ps1')) 'A name preceded by a name character must not match.'
+    Assert-Selection (Test-NervScriptTestReference -Text 'full-chain-lane.Tests.ps1 and ./lane.Tests.ps1' -Name 'lane.Tests.ps1') 'A later whole-name occurrence must still match after a rejected substring hit.'
+}
+finally { Remove-Item -LiteralPath $substringRoot -Recurse -Force -ErrorAction SilentlyContinue }
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 2. 扫描面塌掉必须 throw，不得伪装成「没有遗漏」
 # ─────────────────────────────────────────────────────────────────────────────
 $emptyRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-script-test-selection-empty-$([guid]::NewGuid().ToString('N'))"
