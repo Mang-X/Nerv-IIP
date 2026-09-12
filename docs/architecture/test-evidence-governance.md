@@ -7,7 +7,14 @@
 - Producer/manifest 导航：[`../reference/testing/producers.md`](../reference/testing/producers.md)
 - 历史演进审计：[`../reports/audits/test-evidence-governance-evolution-2026-08.md`](../reports/audits/test-evidence-governance-evolution-2026-08.md)
 
-完整 M2-H 前正文可从 Git `6e8747a8f93a6398c45c8eb2f2a33ad3a7b64019:docs/architecture/test-evidence-governance.md` 追溯。最终删除条件由 M2-M/M4 收口。
+完整 M2-H 前正文可从 Git `6e8747a8f93a6398c45c8eb2f2a33ad3a7b64019:docs/architecture/test-evidence-governance.md` 追溯。
+
+## 退出约定
+
+- 已核实的直接机器消费者：`scripts/tests/test-evidence.Tests.ps1` 中 `$governanceDocPath` / `$governanceDoc` 的读取和 `$requiredText` 循环。下面的命令、历史 run ID、标题措辞与时点数字只为该旧断言兼容，不是独立权威来源。
+- 删除条件：移除针对本页自然语言与历史字面的断言，不将其复制到当前 Governance；保留 skip、zero-execution、TRX、脱敏、provenance、超时预算和畸形 baseline 等真实行为回归。代码旁说明、CI 路径选择和活跃文档的旧路径引用必须在该批次迁出；历史依据使用上方冻结审计与记录时点的 Git 树。
+- 验证条件：通过既有 TestEvidence、backend-shards、Script Governance 与文档结构检查；记录实际 commit/run、执行范围及未执行项。不能仅凭文档链接绿色推断该消费者已迁出。
+- 责任与最迟退出阶段：[NERV-1377](https://linear.app/mangax/issue/NERV-1377) 的 M4「TestEvidence / ScriptAutomation 消费者迁移」批次，最迟在 M4 最终验收前删除；仍有阻塞时必须在该票给出精确文件与读取点，不接受未具名的潜在消费者作为保留理由。
 
 ## 兼容字面锚（非 Governance）
 
