@@ -28,6 +28,8 @@ describe('stableErrorMessage', () => {
     ['forbidden', '没有执行该操作的权限，请联系管理员确认你的作业范围。'],
     ['unprocessable', '当前数据不满足该操作的前置条件，请刷新后核对。'],
     ['ROUTING_SNAPSHOT_MISSING', '工单缺少已发布生产版本的工艺路线快照，请先维护并发布生产版本。'],
+    // #3272：网关熔断打开（BrokenCircuitException → 503）。
+    ['downstream-circuit-open', '服务暂时不可用，本次请求未发出；请稍后重试。'],
   ])('maps the exact stable wire value %s to actionable Chinese', (wireValue, message) => {
     expect(stableErrorMessage(wireValue)).toBe(message)
   })
