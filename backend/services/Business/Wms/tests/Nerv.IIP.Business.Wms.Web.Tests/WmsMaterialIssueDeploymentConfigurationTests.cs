@@ -81,7 +81,13 @@ public sealed class WmsMaterialIssueDeploymentConfigurationTests
     /// 真不变量仍在：<c>WH-WB-*</c> 不得进入普通 Development / 生产回落面。失效的只是原实现方式——
     /// 它禁的是整份文件，把「只在 leader-demo 分支下发」也一并禁掉，而 leader-demo 恰恰是唯一会把
     /// 这七个库位建成行的 profile。于是收窄为：<c>WH-WB-*</c> 只允许出现在 <c>leaderDemoHistoryEnabled</c>
-    /// 门控的那一支里，本条从领料侧独立复核一遍。
+    /// 门控的那一支里。
+    ///
+    /// ⚠️ 本条是**弱复核**，不是与 MES 侧等强度的交叉验证：它只保证 <c>WH-WB-*</c> 没被挪出带门控的
+    /// 语句、且门控推导式未被改。**臂级归属**（字面量到底落在 <c>?</c> 的哪一臂）由 MES 侧
+    /// <c>AppHost_confines_world_bible_location_literals_to_the_leader_demo_branch</c> 承担——
+    /// 实测「两臂交换」「嵌套三元」「verbatim 字面量」「普通臂换码表外的码」四类改写都是 MES 红、
+    /// 本条绿。判红时以 MES 侧为准，不要把本条的绿读成臂级归属没问题。
     /// </summary>
     [Fact]
     public void AppHost_confines_world_bible_location_literals_to_the_leader_demo_branch()

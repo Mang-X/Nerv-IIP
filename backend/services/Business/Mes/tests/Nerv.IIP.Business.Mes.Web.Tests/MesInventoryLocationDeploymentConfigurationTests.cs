@@ -139,7 +139,19 @@ public sealed class MesInventoryLocationDeploymentConfigurationTests
     /// 覆盖边界（声明多少就断言多少）：本条只覆盖**经 <c>DeploymentWarehouseLocation(s)</c> 下发的
     /// 回落实参字面量**。实参形状受 <see cref="DeploymentFallbackLiterals"/> fail-closed 约束，
     /// 因此「换一个未登记的新前缀」「把值经 const/变量转手」都会转红，而不是被前缀白名单静默放行。
-    /// ⚠️ 不覆盖：部署方通过配置键显式覆盖的值（那是部署面事实，仓库里无从校验）。
+    ///
+    /// ⚠️ 已实测**不覆盖**的四类（声明多少断言多少，别把本条的绿读成这些也被挡住了）：
+    /// 1. 部署方通过配置键显式覆盖的值——部署面事实，仓库里无从校验。
+    /// 2. **AppHost 源码内的后置旁路**：保留受治理调用，其后再 <c>WithEnvironment("MaterialIssue__SourceLocationCode", "…")</c>
+    ///    直接覆盖。实测用白名单外的新前缀（如 <c>"RM-STORE-01"</c>）时本条与 WMS 侧**都不红**；
+    ///    换成 <c>"WH-WB-BOGUS-01"</c> 则被 <c>AppHost_confines_every_location_literal_to_the_gated_helpers</c>
+    ///    拦下。⇒ 洞只在「白名单外的新前缀 + 后置旁路」这一格上，与本 PR 无关（merge-base 同样放行），已登记跟进。
+    /// 3. **库位存在 ≠ 有 Unrestricted 可用量**：把来源指到 <c>WH-WB-QC-01</c>（隔离区）或
+    ///    <c>WH-WB-SHIP-01</c>（发货暂存）本条不红（实测），但线边收料照样恒定失效。本条只声称
+    ///    「是种子建出行的库位」，不声称「该库位上有可领的量」。
+    /// 4. 分叉共 5 个值，端到端真栈只跑了线边收料（用到 <c>SourceLocationCodes</c> +
+    ///    <c>LineSideLocationCode</c>）；<c>FinishedGoodsLocationCode</c>（#1331 完工入库）只有接线读数、
+    ///    没有过账读数。
     /// </summary>
     [Fact]
     public void AppHost_leader_demo_location_fallbacks_are_all_seeded_as_inventory_stock_locations()
