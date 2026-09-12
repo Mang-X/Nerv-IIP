@@ -8,6 +8,7 @@ public sealed class TemplateAssetRetirementExecutionStore(ApplicationDbContext d
         long clientWindowSeconds, long leaseSeconds, long maxBackoffSeconds, CancellationToken ct)
     {
         var now = clock.GetUtcNow();
+        await CleanupAsync(ct);
         await ExpireAsync(now, ct);
         var candidate = await db.TemplateAssetRetirementDecisions.AsNoTracking()
             .Where(x => x.Status == TemplateAssetRetirementDecision.PendingStatus
@@ -46,17 +47,32 @@ public sealed class TemplateAssetRetirementExecutionStore(ApplicationDbContext d
         var now = clock.GetUtcNow();
         await ExpireAsync(now, ct, decision.Id);
         // The deadline belongs to the result CAS itself: an in-flight success cannot clear the hold.
-        await db.TemplateAssetRetirementDecisions
+        var changed = await db.TemplateAssetRetirementDecisions
             .Where(x => x.Id == decision.Id && x.ExecutionLeaseId == decision.ExecutionLeaseId
                 && x.Status == TemplateAssetRetirementDecision.PendingStatus && now < x.RecoveryUntilUtc)
             .ExecuteUpdateAsync(update => update
                 .SetProperty(x => x.Status, TemplateAssetRetirementDecision.QuotaReleasedStatus)
                 .SetProperty(x => x.QuotaReleasedAtUtc, quotaReleasedAtUtc)
                 .SetProperty(x => x.ReplayHorizonSeconds, replayHorizonSeconds)
+                .SetProperty(x => x.CompletedAtUtc, now)
+                .SetProperty(x => x.ReplayUntilUtc, now.AddSeconds(replayHorizonSeconds))
                 .SetProperty(x => x.ExecutionLeaseId, (Guid?)null)
                 .SetProperty(x => x.NextAttemptAtUtc, (DateTimeOffset?)null)
                 .SetProperty(x => x.UpdatedAtUtc, now), ct);
+        if (changed != 0)
+        {
+            db.TemplateAssetRetirementReplayFences.Add(new(decision, now.AddSeconds(replayHorizonSeconds)));
+            await db.SaveChangesAsync(ct);
+        }
         await transaction.CommitAsync(ct);
+    }
+
+    public Task<int> CleanupAsync(CancellationToken ct)
+    {
+        var now = clock.GetUtcNow();
+        return db.TemplateAssetRetirementDecisions
+            .Where(x => x.Status == TemplateAssetRetirementDecision.QuotaReleasedStatus && now >= x.ReplayUntilUtc)
+            .ExecuteDeleteAsync(ct);
     }
 
     public async Task RetryAsync(TemplateAssetRetirementDecision decision, CancellationToken ct)

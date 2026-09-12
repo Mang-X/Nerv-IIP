@@ -1126,6 +1126,9 @@
       "testIdentities": [
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Canceled_attempt_facts_commit_outside_the_rolling_back_command_transaction",
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_executor_recovers_lost_response_after_restart_with_frozen_inputs_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_retention_deadline_preserves_http_replay_fence_and_zero_execution_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_cleanup_preserves_pending_failed_attempt_and_permanent_unknown_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_retention_migration_preserves_historical_terminal_clock_on_postgres",
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_executor_concurrent_delivery_and_abandoned_lease_recover_once_on_postgres",
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_executor_deadline_unknown_wins_both_inflight_orderings_on_postgres",
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_executor_result_before_deadline_commits_on_postgres",
@@ -1150,7 +1153,7 @@
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Sent_and_printed_batches_follow_the_item_reprint_matrix_on_postgres",
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Template_create_observation_fails_closed_when_same_code_appears_before_target_file_lock_on_postgres"
       ],
-      "expectedRuntimeTestCount": 25
+      "expectedRuntimeTestCount": 28
     },
     {
       "id": "industrialtelemetry-postgres",

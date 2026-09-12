@@ -60,6 +60,10 @@ public sealed class CreateOrUpdateLabelTemplateCommandHandler(
                 x => x.OrganizationId == request.OrganizationId
                     && x.EnvironmentId == request.EnvironmentId
                     && x.TemplateFileId == request.TemplateFileId,
+                cancellationToken) || await dbContext.TemplateAssetRetirementReplayFences.AnyAsync(
+                x => x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId
+                    && x.TemplateFileId == request.TemplateFileId,
                 cancellationToken))
         {
             throw new KnownException("模板资产已经退役，不能重新用于标签模板。");
