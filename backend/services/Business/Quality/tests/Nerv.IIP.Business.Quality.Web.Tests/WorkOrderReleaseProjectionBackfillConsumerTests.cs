@@ -155,63 +155,107 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
     }
 
     /// <summary>
-    /// R-c 端到端：存量在制工单里有一道工序已经有完工事实，且它的 <c>CompletionSkuCode</c> 与工单 SkuId 不等
-    /// （MES 的 <c>OperationTask</c> 在未传 SKU 时把 <c>SkuCode</c> 回落成工单号，该值随完工事件进了 Quality）。
-    /// 回填一次后，该工单**全部**工序读首件确认都不得是 <c>not-synchronized</c>——
-    /// 一道工序的重建值与权威事实不一致，不能让同工单其余工序一起失去补投。
+    /// #3286 的收缩落点：某道工序已有完工事实，且它的 <c>CompletionSkuCode</c> 与工单 SkuId 不等。
+    /// 该差异**不再由 Quality 投影层顶成权威值**——工序 SKU 按 MES 模型就是工单 SKU 的副本
+    /// （工序级 SKU 在该模型里不可表达），#3112 又已删掉「未传 SKU 回落成工单号」那条来源，
+    /// 于是不一致只可能来自建工序那一刻抄错。抄错是上游缺陷，顶成权威值会把它变成看不见的既成事实。
+    /// 该工序因此照 <c>ApplyRelease</c> 的冲突语义被拒，留下**待处理**（<c>Pending</c>）痕迹，
+    /// 而不是「已按权威事实处置」（<c>Ignored</c>）那种痕迹。
+    ///
+    /// <para>被拒的粒度仍是**工序**：同工单其余工序照常补投，读首件确认不得是 <c>not-synchronized</c>。</para>
+    ///
+    /// <para><b>本用例是「按属性收缩」那一格的隔离变异靶</b>：把 <c>sku-code</c> 那条 substitution 加回
+    /// <c>ResolveReconstructedReleaseFacts</c>（并把返回值的 SKU 改回 <c>CompletionSkuCode</c>），
+    /// OP-10 改走让位路径——<c>SkuCode</c> 变成 <c>WO-001</c>、痕迹变成
+    /// <c>backfill-release-fact-substituted</c>/<c>Ignored</c>、确认状态不再是 <c>not-synchronized</c>——
+    /// 本用例必红。</para>
     /// </summary>
     [Fact]
-    public async Task Backfill_covers_every_operation_even_when_one_carries_conflicting_completion_facts()
+    public async Task Backfill_rejects_the_operation_whose_completion_sku_disagrees_instead_of_yielding_to_it()
     {
         await using var dbContext = CreateDbContext();
         dbContext.InspectionPlans.Add(FirstArticlePlan());
-        // 巡检档配在**载荷 SKU** 上：让位后不得再拿它给 OP-10 建运行上下文，
-        // 而没让位的 OP-20 必须照常建出来——后者是正对照，证明档确实取得到。
         dbContext.InspectionPlans.Add(PeriodicPlan());
         await dbContext.SaveChangesAsync();
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
-        // OP-10 先完工，完工事实带的是回落成工单号的 junk SKU。
+        // OP-10 先完工，完工事实带的是工单号形状的 junk SKU（#3112 之前由回落产生，之后只能由传错产生）。
         await HandleCompletionAsync(dbContext, OperationCompleted("OP-10", skuCode: "WO-001"), deadLetters);
 
         await HandleBackfillAsync(dbContext, Backfill(operationIds: ["OP-10", "OP-20"]), deadLetters);
 
-        foreach (var operationId in new[] { "OP-10", "OP-20" })
-        {
-            var confirmation = await ConfirmAsync(dbContext, operationId);
-            Assert.NotEqual(QualityFirstArticleConfirmationStatuses.NotSynchronized, confirmation.Status);
-        }
-
-        // 让位：冲突属性取既有权威事实，而不是丢弃该工序。
-        var completed = await dbContext.PeriodicInspectionOperations
+        // 不让位：这道工序没拿到发布事实，投影里的 SKU 也没被改写成 WO-001。
+        var rejected = await dbContext.PeriodicInspectionOperations
             .Include(x => x.RuntimeContexts)
             .SingleAsync(x => x.OperationId == "OP-10");
-        Assert.Equal("WO-001", completed.SkuCode);
-        Assert.Equal(ReleasedAtUtc.UtcDateTime, completed.ReleasedAtUtc);
-        // 让位到权威 SKU 后不得依据**载荷 SKU** 的巡检档建上下文——
-        // 一条声明着 WO-001、却绑着 SKU-FG-1000 那张档的运行上下文是真错。
-        Assert.Empty(completed.RuntimeContexts);
-        var untouched = await dbContext.PeriodicInspectionOperations
+        Assert.Null(rejected.ReleasedAtUtc);
+        Assert.Null(rejected.SkuCode);
+        Assert.Empty(rejected.RuntimeContexts);
+        Assert.Equal(
+            QualityFirstArticleConfirmationStatuses.NotSynchronized,
+            (await ConfirmAsync(dbContext, "OP-10")).Status);
+
+        // 正对照：同工单的 OP-20 照常补投并建出周期运行上下文，证明档在本夹具里确实取得到，
+        // 「OP-10 没建上下文」不是因为根本没档。
+        var applied = await dbContext.PeriodicInspectionOperations
             .Include(x => x.RuntimeContexts)
             .SingleAsync(x => x.OperationId == "OP-20");
-        Assert.Single(untouched.RuntimeContexts);
-        // 差异不静默。
-        var notice = Assert.Single(await deadLetters.ListAsync(null, null, CancellationToken.None));
-        Assert.Equal("backfill-release-fact-substituted", notice.FailureCode);
-        Assert.Contains("sku-code", notice.FailureMessage, StringComparison.Ordinal);
-        // 已按权威事实处置完，只是留痕；不该混进「待处理」队列。
-        Assert.Equal(IntegrationEventDeadLetterStatus.Ignored, notice.Status);
+        Assert.Equal(ReleasedAtUtc.UtcDateTime, applied.ReleasedAtUtc);
+        Assert.Equal("SKU-FG-1000", applied.SkuCode);
+        Assert.Single(applied.RuntimeContexts);
+        Assert.NotEqual(
+            QualityFirstArticleConfirmationStatuses.NotSynchronized,
+            (await ConfirmAsync(dbContext, "OP-20")).Status);
 
-        // 再跑一次：行数与内容不变，且不新增首件检验任务。
-        var before = await SnapshotAsync(dbContext);
+        // 差异不静默，且落的是**待处理**队列：上游缺陷要有人去改，不是「已处置」。
+        var notice = Assert.Single(await deadLetters.ListAsync(null, null, CancellationToken.None));
+        Assert.Equal("backfill-operation-rejected", notice.FailureCode);
+        Assert.Equal(IntegrationEventDeadLetterStatus.Pending, notice.Status);
+        Assert.Contains("OP-10", notice.FailureMessage, StringComparison.Ordinal);
+
+        // 再跑一次：被拒工序仍不落发布事实，也不开出首件检验任务。
         await HandleBackfillAsync(
             dbContext,
             Backfill(eventId: "evt-backfill-second", operationIds: ["OP-10", "OP-20"]),
             deadLetters);
 
-        Assert.Equal(before, await SnapshotAsync(dbContext));
+        Assert.Null((await dbContext.PeriodicInspectionOperations
+            .SingleAsync(x => x.OperationId == "OP-10")).ReleasedAtUtc);
         Assert.Empty(await dbContext.InspectionTasks
             .Where(x => x.SourceType == FirstArticleInspection.SourceType)
             .ToArrayAsync());
+    }
+
+    /// <summary>
+    /// 工序号那条 substitution 的独立承重格（#3286 验收：SKU 收缩之后另外两条仍要有鉴别力）。
+    /// 载荷把 OP-10 记成工序号 10，权威完工事实说它是 20 → 让位取 20 并留痕。
+    ///
+    /// <para><b>本用例之前该格零承重</b>：本文件的夹具从未构造过「工序号不等」的输入
+    /// （<c>OperationCompleted</c> 与 <c>Backfill</c> 都写死 10），删掉 <c>operation-sequence</c>
+    /// 那条 substitution 一个用例都不红。写进投影的值取的是权威值、与该条 substitution 无关，
+    /// 因此本用例的承重点是**留痕**那一面。</para>
+    /// </summary>
+    [Fact]
+    public async Task Backfill_yields_the_operation_sequence_to_the_authoritative_completion_and_leaves_a_trace()
+    {
+        await using var dbContext = CreateDbContext();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        await HandleCompletionAsync(
+            dbContext,
+            OperationCompleted("OP-10", skuCode: "SKU-FG-1000", operationSequence: 20),
+            deadLetters);
+
+        await HandleBackfillAsync(dbContext, Backfill(), deadLetters);
+
+        var operation = await dbContext.PeriodicInspectionOperations.SingleAsync();
+        Assert.Equal(20, operation.OperationSequence);
+        Assert.Equal(ReleasedAtUtc.UtcDateTime, operation.ReleasedAtUtc);
+        var notice = Assert.Single(await deadLetters.ListAsync(null, null, CancellationToken.None));
+        Assert.Equal("backfill-release-fact-substituted", notice.FailureCode);
+        Assert.Contains(
+            "operation-sequence reconstructed='10' authoritative='20'",
+            notice.FailureMessage,
+            StringComparison.Ordinal);
+        Assert.Equal(IntegrationEventDeadLetterStatus.Ignored, notice.Status);
     }
 
     /// <summary>
@@ -514,7 +558,8 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
     private static MesOperationTaskCompletedIntegrationEvent OperationCompleted(
         string operationId,
         string skuCode,
-        string workCenterId = "WC-MIX") => new(
+        string workCenterId = "WC-MIX",
+        int operationSequence = 10) => new(
         $"evt-complete-{operationId}",
         MesIntegrationEventTypes.OperationTaskCompleted,
         MesIntegrationEventVersions.V1,
@@ -527,7 +572,7 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
         "system:mes",
         $"mes:operation-completed:org-001:env-dev:WO-001:{operationId}",
         new OperationTaskCompletedPayload(
-            "WO-001", operationId, skuCode, 10, workCenterId, 1000m, "EA", false,
+            "WO-001", operationId, skuCode, operationSequence, workCenterId, 1000m, "EA", false,
             DateTimeOffset.Parse("2026-08-20T00:00:00Z")));
 
     private static async Task<string[]> SnapshotAsync(ApplicationDbContext dbContext) =>
