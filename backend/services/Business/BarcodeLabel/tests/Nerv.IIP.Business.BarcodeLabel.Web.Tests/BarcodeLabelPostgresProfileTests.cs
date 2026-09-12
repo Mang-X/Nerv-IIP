@@ -2,6 +2,9 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Time.Testing;
+using Nerv.IIP.Business.BarcodeLabel.Infrastructure.Retirement;
 using Microsoft.Extensions.DependencyInjection;
 using NetCorePal.Extensions.DependencyInjection;
 using NetCorePal.Extensions.DistributedTransactions;
@@ -29,6 +32,180 @@ namespace Nerv.IIP.Business.BarcodeLabel.Web.Tests;
 public sealed partial class BarcodeLabelPostgresProfileTests
 {
     private const string PostgresConnectionStringEnvironmentVariable = "NERV_IIP_TEST_POSTGRES";
+
+    // Oracle: #3045 / #3028, one durable decision, frozen inputs, seven-day recovery boundary.
+    [RealPostgresFact]
+    public async Task Retirement_executor_recovers_lost_response_after_restart_with_frozen_inputs_on_postgres()
+    {
+        await ResetAndMigrateSchemaAsync();
+        var decision = await SeedExecutionDecisionAsync();
+        var clock = new FakeTimeProvider(ExecutionEpoch);
+        var remote = new RetirementTransport(decision, loseResponses: true);
+        await RunRetirementHostAsync(clock, remote, "pending");
+        var first = await ReadExecutionDecisionAsync();
+        Assert.Equal(ExecutionEpoch, first.FirstSentAtUtc);
+        Assert.Equal(ExecutionEpoch.AddDays(7), first.RecoveryUntilUtc);
+        Assert.Equal("pending", first.Status);
+        Assert.Equal(1, remote.Acceptances);
+
+        // Fresh context/executor after the original short proof has expired; the remote receipt is retained.
+        clock.Advance(TimeSpan.FromMinutes(11));
+        remote.LoseResponses = false;
+        await RunRetirementHostAsync(clock, remote, "quota-released",
+            ExecutionOptions with { ClientWindowSeconds = 1, LeaseSeconds = 1 });
+        var completed = await ReadExecutionDecisionAsync();
+        Assert.Equal("quota-released", completed.Status);
+        Assert.Equal(2592000, completed.ClientWindowSeconds);
+        Assert.Equal(300, completed.ExecutorLeaseSeconds);
+        Assert.Equal(2592000, completed.ReplayHorizonSeconds);
+        Assert.Equal(ExecutionEpoch, completed.QuotaReleasedAtUtc);
+        Assert.Equal(2, remote.Requests.Count);
+        Assert.NotEqual(remote.Requests[0].Signature, remote.Requests[1].Signature);
+        Assert.Equal(1, remote.Acceptances);
+        Assert.False(await ExecuteRetirementAsync(clock, remote));
+        Assert.Equal(2, remote.Requests.Count);
+    }
+
+    [RealPostgresFact]
+    public async Task Retirement_executor_concurrent_delivery_and_abandoned_lease_recover_once_on_postgres()
+    {
+        await ResetAndMigrateSchemaAsync();
+        var decision = await SeedExecutionDecisionAsync();
+        var clock = new FakeTimeProvider(ExecutionEpoch);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var remote = new RetirementTransport(decision) { BeforeResponse = async ct =>
+        {
+            entered.TrySetResult();
+            await release.Task.WaitAsync(ct);
+        }};
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var first = ExecuteRetirementAsync(clock, remote, ct: timeout.Token);
+        try
+        {
+            await entered.Task.WaitAsync(timeout.Token);
+            Assert.False(await ExecuteRetirementAsync(clock, remote, ct: timeout.Token));
+            Assert.Single(remote.Requests);
+        }
+        finally { release.TrySetResult(); }
+        await first;
+        Assert.Equal("quota-released", (await ReadExecutionDecisionAsync()).Status);
+
+        await ResetAndMigrateSchemaAsync();
+        decision = await SeedExecutionDecisionAsync();
+        await using (var abandoned = CreatePostgresDbContext(LaneConnectionString))
+            Assert.NotNull(await new TemplateAssetRetirementExecutionStore(abandoned, clock).ClaimAsync(2592000, 300, 300, timeout.Token));
+        var restartedRemote = new RetirementTransport(decision);
+        Assert.False(await ExecuteRetirementAsync(clock, restartedRemote));
+        clock.Advance(TimeSpan.FromMinutes(5));
+        Assert.True(await ExecuteRetirementAsync(clock, restartedRemote));
+        Assert.Single(restartedRemote.Requests);
+        Assert.Equal("quota-released", (await ReadExecutionDecisionAsync()).Status);
+    }
+
+    [RealPostgresFact]
+    public async Task Retirement_executor_deadline_unknown_wins_both_inflight_orderings_on_postgres()
+    {
+        foreach (var afterBoundary in new[] { TimeSpan.Zero, TimeSpan.FromTicks(10) })
+        foreach (var expiryFirst in new[] { false, true })
+        {
+            await ResetAndMigrateSchemaAsync();
+            var decision = await SeedExecutionDecisionAsync();
+            var clock = new FakeTimeProvider(ExecutionEpoch);
+            var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var remote = new RetirementTransport(decision) { BeforeResponse = async ct =>
+            {
+                entered.TrySetResult();
+                await release.Task.WaitAsync(ct);
+            }};
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var inFlight = ExecuteRetirementAsync(clock, remote, ct: timeout.Token);
+            try
+            {
+                await entered.Task.WaitAsync(timeout.Token);
+                clock.Advance(TimeSpan.FromDays(7) + afterBoundary);
+                if (expiryFirst) Assert.False(await ExecuteRetirementAsync(clock, remote, ct: timeout.Token));
+            }
+            finally { release.TrySetResult(); }
+            await inFlight;
+            await AssertPermanentUnknownAsync(clock, remote);
+        }
+    }
+
+    [RealPostgresFact]
+    public async Task Retirement_result_waiting_for_row_lock_samples_deadline_after_lock_on_postgres()
+    {
+        await ResetAndMigrateSchemaAsync();
+        await SeedExecutionDecisionAsync();
+        var clock = new FakeTimeProvider(ExecutionEpoch);
+        await using var claimant = CreatePostgresDbContext(LaneConnectionString);
+        var claim = await new TemplateAssetRetirementExecutionStore(claimant, clock).ClaimAsync(2592000, 300, 300, default);
+        Assert.NotNull(claim);
+        await using var holder = CreatePostgresDbContext(LaneConnectionString);
+        await using var transaction = await holder.Database.BeginTransactionAsync();
+        _ = await holder.TemplateAssetRetirementDecisions.FromSqlInterpolated(
+            $"SELECT * FROM barcode.template_asset_retirement_decisions WHERE id = {claim.Id.Id} FOR UPDATE").SingleAsync();
+        await using var completing = CreatePostgresDbContext(LaneConnectionString);
+        await completing.Database.OpenConnectionAsync();
+        var completingPid = ((Npgsql.NpgsqlConnection)completing.Database.GetDbConnection()).ProcessID;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var completion = new TemplateAssetRetirementExecutionStore(completing, clock)
+            .CompleteAsync(claim, ExecutionEpoch, 2592000, timeout.Token);
+        try
+        {
+            await Eventually.WaitAsync("retirement result waits for owned row", async ct =>
+            {
+                await using var command = holder.Database.GetDbConnection().CreateCommand();
+                command.Transaction = holder.Database.CurrentTransaction!.GetDbTransaction();
+                command.CommandText = $"SELECT cardinality(pg_blocking_pids({completingPid}))";
+                return Convert.ToInt32(await command.ExecuteScalarAsync(ct));
+            }, count => count > 0, count => $"blockingProcesses={count}",
+                new EventuallyOptions(TimeSpan.FromSeconds(15), TimeSpan.FromMilliseconds(20), [LaneConnectionString]));
+            clock.Advance(TimeSpan.FromDays(7));
+        }
+        finally { await transaction.CommitAsync(); }
+        await completion;
+        Assert.Equal("execution-outcome-unknown", (await ReadExecutionDecisionAsync()).Status);
+    }
+
+    [RealPostgresFact]
+    public async Task Retirement_executor_result_before_deadline_commits_on_postgres()
+    {
+        await ResetAndMigrateSchemaAsync();
+        var decision = await SeedExecutionDecisionAsync();
+        var clock = new FakeTimeProvider(ExecutionEpoch);
+        var remote = new RetirementTransport(decision) { BeforeResponse = _ =>
+        {
+            clock.Advance(TimeSpan.FromDays(7) - TimeSpan.FromTicks(10));
+            return Task.CompletedTask;
+        }};
+        await ExecuteRetirementAsync(clock, remote);
+        Assert.Equal("quota-released", (await ReadExecutionDecisionAsync()).Status);
+        clock.Advance(TimeSpan.FromDays(1));
+        Assert.False(await ExecuteRetirementAsync(clock, remote));
+        Assert.Equal("quota-released", (await ReadExecutionDecisionAsync()).Status);
+    }
+
+    [RealPostgresFact]
+    public async Task Retirement_executor_unknown_preserves_both_remote_outcome_counterexamples_on_postgres()
+    {
+        foreach (var accepted in new[] { false, true })
+        {
+            await ResetAndMigrateSchemaAsync();
+            var decision = await SeedExecutionDecisionAsync();
+            var clock = new FakeTimeProvider(ExecutionEpoch);
+            var remote = new RetirementTransport(decision, loseResponses: true) { Accept = accepted };
+            await ExecuteRetirementAsync(clock, remote);
+            // Model either remote physical completion or no acceptance at all; both are unobservable locally.
+            remote.PhysicallyCompleted = accepted;
+            clock.Advance(TimeSpan.FromDays(7));
+            Assert.False(await ExecuteRetirementAsync(clock, remote));
+            await AssertPermanentUnknownAsync(clock, remote);
+            Assert.Equal(accepted ? 1 : 0, remote.Acceptances);
+            Assert.Equal(accepted, remote.PhysicallyCompleted);
+        }
+    }
 
     [RealPostgresFact]
     public async Task Retirement_reference_and_reuse_matrix_is_enforced_on_postgres()

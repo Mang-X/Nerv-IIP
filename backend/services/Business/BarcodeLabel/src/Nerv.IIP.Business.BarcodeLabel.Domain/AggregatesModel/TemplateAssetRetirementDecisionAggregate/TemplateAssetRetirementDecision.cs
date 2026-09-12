@@ -7,6 +7,8 @@ public partial record TemplateAssetRetirementDecisionId : IGuidStronglyTypedId;
 public sealed class TemplateAssetRetirementDecision : Entity<TemplateAssetRetirementDecisionId>, IAggregateRoot
 {
     public const string PendingStatus = "pending";
+    public const string QuotaReleasedStatus = "quota-released";
+    public const string ExecutionOutcomeUnknownStatus = "execution-outcome-unknown";
     public const string UnreferencedResult = "unreferenced";
     public const string RequiredPermission = "business.barcodes.template-assets.retire";
 
@@ -62,6 +64,16 @@ public sealed class TemplateAssetRetirementDecision : Entity<TemplateAssetRetire
     public string Status { get; private set; } = string.Empty;
     public DateTimeOffset CreatedAtUtc { get; private set; }
     public DateTimeOffset UpdatedAtUtc { get; private set; }
+    public DateTimeOffset? FirstSentAtUtc { get; private set; }
+    public DateTimeOffset? RecoveryUntilUtc { get; private set; }
+    public Guid? ExecutionLeaseId { get; private set; }
+    public DateTimeOffset? NextAttemptAtUtc { get; private set; }
+    public long? ReplayPolicyVersion { get; private set; }
+    public long? ClientWindowSeconds { get; private set; }
+    public long? ExecutorLeaseSeconds { get; private set; }
+    public long? ExecutorMaxBackoffSeconds { get; private set; }
+    public DateTimeOffset? QuotaReleasedAtUtc { get; private set; }
+    public long? ReplayHorizonSeconds { get; private set; }
 
     public static TemplateAssetRetirementDecision Create(
         string organizationId,
