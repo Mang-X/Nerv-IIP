@@ -9,13 +9,18 @@ namespace Nerv.IIP.Business.Quality.Web.Tests;
 
 /// <summary>
 /// 回填在**真实约束**下的写入路径（#3000）。InMemory 不校验 check constraint，也不跑迁移，
-/// 下面两条写入因此只有在真库上才有读数：
+/// 下面两点因此只有在真库上才有读数——两点的**范围不同**，逐条写明：
 /// <list type="number">
 /// <item><c>SkipWindowsAccruedBefore</c> 同时写 <c>last_generated_time_window_sequence</c> 与
 /// <c>time_schedule_anchor_at_utc</c>，这两列受 <c>ck_periodic_inspection_runtime_time_watermark</c> 配对约束。</item>
-/// <item>**被拒工序**留下的 release 快照是**整组 NULL** 那一支，受
-/// <c>ck_periodic_inspection_operations_release_snapshot</c> 约束（四列全 NULL 或四列全有值，二选一）。
-/// #3286 之前这一格写的是「让位取权威 SKU」那一支，见下面用例注释。</item>
+/// <item>被拒工序那一行——release 快照四列**整组 NULL**，由完工处理器先前写出、补投并未改写——
+/// 在**活着的** <c>ck_periodic_inspection_operations_release_snapshot</c>（四列全 NULL 或四列全有值，二选一）
+/// 下**提交通过**。
+/// <b>本条的 PG 专属部分仅限「提交通过」这一点，别读宽了</b>：拒绝路径上**没有**对那四列的写——
+/// <c>ApplyRelease</c> 里抛 <c>Operation completion facts conflict with work-order release facts.</c>
+/// 的那条完工冲突判据执行在四列赋值**之前**——因此下面对被拒工序那四列的 null 断言
+/// 在 InMemory 上会得到**一模一样**的读数，它们不是 PG 专属证据。
+/// #3286 之前这一格写的是「让位取权威 SKU」那一支（那才是真正的让位**写入**），见下面用例注释。</item>
 /// </list>
 /// </summary>
 [Collection(QualityPostgresLaneDatabase.CollectionName)]
