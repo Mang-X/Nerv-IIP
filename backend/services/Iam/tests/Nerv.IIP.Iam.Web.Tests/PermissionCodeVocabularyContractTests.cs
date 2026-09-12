@@ -19,6 +19,7 @@ public sealed class PermissionCodeVocabularyContractTests
             ["BarcodePrint"] = "business.barcodes.print",
             ["BarcodeScansWrite"] = "business.barcodes.scans.write",
             ["BarcodeTemplatesManage"] = "business.barcodes.templates.manage",
+            ["BarcodeTemplateAssetsRetire"] = "business.barcodes.template-assets.retire",
             ["ConnectorsHeartbeatsWrite"] = "connectors.heartbeats.write",
             ["ConnectorsRegistrationsWrite"] = "connectors.registrations.write",
             ["ConnectorsStateSnapshotsWrite"] = "connectors.state-snapshots.write",

@@ -610,16 +610,6 @@ var businessBarcodeLabel = WithNervIipTelemetry(WithAppHostEnvironment(builder.A
     .WithReference(fileStorage)
     .WaitFor(businessBarcodeLabelDatabase)
     .WaitFor(fileStorage);
-if (fullStackEphemeral)
-{
-    var templateAssetRetirementProofIssuer = builder.AddParameter("template-asset-retirement-proof-issuer");
-    var templateAssetRetirementProofAudience = builder.AddParameter("template-asset-retirement-proof-audience");
-    var templateAssetRetirementProofSecretBase64 = builder.AddParameter("template-asset-retirement-proof-secret-base64", secret: true);
-    businessBarcodeLabel = businessBarcodeLabel
-        .WithEnvironment("TemplateAssetRetirementProof__Issuer", templateAssetRetirementProofIssuer)
-        .WithEnvironment("TemplateAssetRetirementProof__Audience", templateAssetRetirementProofAudience)
-        .WithEnvironment("TemplateAssetRetirementProof__SecretBase64", templateAssetRetirementProofSecretBase64);
-}
 if (localDevelopmentAppHost)
 {
     businessBarcodeLabel = businessBarcodeLabel
@@ -998,6 +988,21 @@ var businessGateway = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddPro
     .WaitFor(businessIndustrialTelemetry)
     .WaitFor(businessMaintenance)
     .WaitFor(redis);
+
+if (fullStackEphemeral)
+{
+    var templateAssetRetirementProofIssuer = builder.AddParameter("template-asset-retirement-proof-issuer");
+    var templateAssetRetirementProofAudience = builder.AddParameter("template-asset-retirement-proof-audience");
+    var templateAssetRetirementProofSecretBase64 = builder.AddParameter("template-asset-retirement-proof-secret-base64", secret: true);
+    businessBarcodeLabel = businessBarcodeLabel
+        .WithEnvironment("TemplateAssetRetirementProof__Issuer", templateAssetRetirementProofIssuer)
+        .WithEnvironment("TemplateAssetRetirementProof__Audience", templateAssetRetirementProofAudience)
+        .WithEnvironment("TemplateAssetRetirementProof__SecretBase64", templateAssetRetirementProofSecretBase64);
+    businessGateway = businessGateway
+        .WithEnvironment("TemplateAssetRetirementProof__Issuer", templateAssetRetirementProofIssuer)
+        .WithEnvironment("TemplateAssetRetirementProof__Audience", templateAssetRetirementProofAudience)
+        .WithEnvironment("TemplateAssetRetirementProof__SecretBase64", templateAssetRetirementProofSecretBase64);
+}
 
 var connectorHost = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_ConnectorHost_Host>("connector-host")))
     .WithEnvironment("ConnectorHost__CycleSeconds", "1")
