@@ -8,11 +8,18 @@
 - scanner / ordinal / 迁移演进审计：[`../reports/audits/script-automation-governance-evolution-2026-08.md`](../reports/audits/script-automation-governance-evolution-2026-08.md)
 - 当前命令/参数/规则事实：`nerv.ps1 help`、目标脚本 `Get-Help`、`scripts/check-script-governance.ps1`、`scripts/lib/ScriptAutomation.ps1` 与对应测试
 
-完整 M2-G 前正文可从 Git `26e88a62e2223ba7da2443c6471b34d971d4ad28:docs/architecture/script-automation-governance.md` 追溯。历史 ADR、Superpowers spec/plan 和冻结报告中的旧链接可在 M2 迁移期继续通过本页导航；最终删除条件由 M2-M/M4 收口。
+完整 M2-G 前正文可从 Git `26e88a62e2223ba7da2443c6471b34d971d4ad28:docs/architecture/script-automation-governance.md` 追溯。历史 ADR、Superpowers spec/plan 和冻结报告中的旧链接可在迁移期继续通过本页导航；不得据此建立新的当前事实源。
+
+## 退出约定
+
+- 已核实的直接机器消费者：`scripts/tests/test-evidence.Tests.ps1` 中的 `$registeredScriptPath`、`$scriptGovernanceDoc` 和 `$registeredPath` 文档读取及逐字断言。它们读取下面的路径锚、迁移行与收口声明，不是脚本执行、脱敏、ordinal 或进程所有权的行为证明。
+- 删除条件：在同一消费者迁移批次移除上述文案耦合，保留实际行为与负向测试；迁出代码旁说明、CI 路径选择和活跃文档的旧路径引用；冻结历史通过上方审计与记录时点的 Git 树追溯。不得把旧字面断言平移到 canonical Governance。
+- 验证条件：实际通过既有 Script Governance、TestEvidence、backend-shards 及文档结构检查，并在 PR 登记精确 commit/run 和未执行项；本页本身不证明引用已清零或测试已通过。
+- 责任与最迟退出阶段：[NERV-1377](https://linear.app/mangax/issue/NERV-1377) 的 M4「TestEvidence / ScriptAutomation 消费者迁移」批次，最迟在 M4 最终验收前删除。若届时仍阻塞，必须在该票列出具体文件与读取点，不能用“可能还有消费者”延长兼容窗口。
 
 ## TestEvidence 冻结兼容锚
 
-> 下列内容**不是当前脚本 Governance，也不是可维护 registry**。`scripts/tests/test-evidence.Tests.ps1` 仍读取这些 pre-M2-G 自描述字面；#2400 的 Scope Gate 明确 M2-H 不修改测试代码，因此本轮只保留既有测试真正读取的最小冻结锚，不把它们迁回 canonical Governance。任何脚本新增、分类变化或 ordinal 规则变化都不得修改本节；移除这组历史字面耦合应由专门拥有该测试合同的后续清理完成，兼容页本身最终由 M2-M/M4 收口。
+> 下列内容**不是当前脚本 Governance，也不是可维护 registry**。`scripts/tests/test-evidence.Tests.ps1` 仍读取这些 pre-M2-G 自描述字面；#2400 的 Scope Gate 明确 M2-H 不修改测试代码，因此本节只保留既有测试真正读取的最小冻结锚，不把它们迁回 canonical Governance。任何脚本新增、分类变化或 ordinal 规则变化都不得修改本节；退出按上方约定执行。
 
 兼容路径锚：
 

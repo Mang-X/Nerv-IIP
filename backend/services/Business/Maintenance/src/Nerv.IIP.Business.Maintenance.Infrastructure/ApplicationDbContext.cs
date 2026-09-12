@@ -32,6 +32,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
         ArgumentNullException.ThrowIfNull(modelBuilder);
         modelBuilder.HasDefaultSchema(MaintenanceFacts.Schema);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
+        modelBuilder.ConfigureCodingEntities();
         base.OnModelCreating(modelBuilder);
     }
 

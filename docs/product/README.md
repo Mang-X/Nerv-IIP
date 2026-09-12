@@ -8,6 +8,7 @@
 | --- | --- |
 | 跨端导航 / 信息架构 | [`navigation.md`](navigation.md) |
 | 基础数据 | [`master-data/design.md`](master-data/design.md) |
+| 条码标签 | [`barcode/design.md`](barcode/design.md) |
 | 产品工程 | [`product-engineering/design.md`](product-engineering/design.md) |
 | MES | [`mes/design.md`](mes/design.md) |
 | 库存与 WMS | [`inventory/design.md`](inventory/design.md) |
