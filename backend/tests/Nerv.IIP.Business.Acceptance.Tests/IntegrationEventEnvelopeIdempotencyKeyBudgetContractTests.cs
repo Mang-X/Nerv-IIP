@@ -105,9 +105,20 @@ namespace Nerv.IIP.Business.Acceptance.Tests;
 /// <para>而**不把 474 并进** <see cref="IntegrationEventIdempotencyKey.Budget"/> 的理由是另一件事：
 /// 并进来会把全平台预算压到 474，让今天长度落在 475..512、在自己链路上完全合法的键无谓改形，
 /// 反而破坏存量键逐字保持。**所以本类的「所有承载列」量词限定在平台 inbox 那一族。**</para></item>
-/// <item><b>不证明所有 producer 都已接入。</b>本 PR 接入的是
-/// <see cref="ConvertedProducerKeys"/> 那四个服务；其余 producer 仍是纯拼接，
-/// 不接入的不会让本类报红。**不新建源码文本扫描护栏**去看守这件事（#3176 / PR #3214 实证不收敛）。</item>
+/// <item><b>不证明所有 producer 都已接入。</b>本类登记的是
+/// <see cref="ConvertedProducerKeys"/> 那九个服务（#3368 四个 + #3370 五个）；
+/// #3370 第 1 问判定为 🟢 的六个 producer（DemandPlanning / Erp / MasterData /
+/// BarcodeLabel / Maintenance / Ops）**仍是纯拼接**，不接入的不会让本类报红。
+/// **不新建源码文本扫描护栏**去看守这件事（#3176 / PR #3214 实证不收敛）；
+/// 让 producer 枚举退化成编译期强制那条路已实证可行、按规模另票承接（#3382）。</item>
+/// <item><b>⚠️ 已登记边界：<c>ComposeServiceScoped</c> 在少于 3 段时抛，旧实现会产出短键。</b>
+/// <c>MinimumTailParts = 2</c> 要求「1 个 kind 段 + 至少 2 个尾段」，
+/// 而改动前各服务那份 <c>$"{prefix}{string.Join(':', parts)}"</c> 对任意段数都照产出。
+/// ⇒ 若将来有人用 &lt;3 段调用某个已委派服务的 <c>EventIds.Idempotency</c>，
+/// 拿到的是 <c>ArgumentException</c> 而不是一把短键。
+/// 这是 <b>#3368 引入的入口性质，不是 #3370 新增的</b>：今天全部调用点都 ≥4 段
+/// （#3370 已逐点核过，五个服务整程序集全绿即是未触发的读数），因此**本票不修**、只登记。
+/// 本类**不看守**这条——它是构造前置条件，不是长度性质。</item>
 /// </list>
 /// </remarks>
 public sealed class IntegrationEventEnvelopeIdempotencyKeyBudgetContractTests

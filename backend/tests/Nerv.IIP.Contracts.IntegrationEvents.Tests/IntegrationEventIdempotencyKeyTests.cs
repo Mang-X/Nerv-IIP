@@ -193,6 +193,14 @@ public sealed class IntegrationEventIdempotencyKeyTests
     /// 前缀长到放不下摘要时就地抛：否则回落形态自己就超预算，
     /// 那是「护栏产出越界值」而不是「护栏挡住越界值」。
     /// </summary>
+    [Fact]
+    public void A_prefix_too_long_to_leave_room_for_the_digest_throws()
+    {
+        var tooLong = new string('p', IntegrationEventIdempotencyKey.MaxPrefixLength) + ':';
+
+        Assert.Throws<ArgumentException>(() => IntegrationEventIdempotencyKey.Compose(tooLong, "a", "b"));
+    }
+
     /// <summary>
     /// #3370：<c>ComposeServiceScoped</c> 把 <c>parts[0]</c> **并进回落前缀**，
     /// 所以当第一段本身是**可变长数据**（不是短字面量 kind）时，它会在前缀超界处抛，
@@ -218,14 +226,6 @@ public sealed class IntegrationEventIdempotencyKeyTests
         Assert.Equal(
             IntegrationEventIdempotencyKey.ComposeServiceScoped("quality:", "short-kind", "tail-1", "tail-2"),
             IntegrationEventIdempotencyKey.Compose("quality:", "short-kind", "tail-1", "tail-2"));
-    }
-
-    [Fact]
-    public void A_prefix_too_long_to_leave_room_for_the_digest_throws()
-    {
-        var tooLong = new string('p', IntegrationEventIdempotencyKey.MaxPrefixLength) + ':';
-
-        Assert.Throws<ArgumentException>(() => IntegrationEventIdempotencyKey.Compose(tooLong, "a", "b"));
     }
 
     /// <summary>
