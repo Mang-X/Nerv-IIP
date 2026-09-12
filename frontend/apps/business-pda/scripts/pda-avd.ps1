@@ -35,7 +35,7 @@
 
 # PDA L3（Android 模拟器 + APK）设施：AVD 生命周期脚本。
 # 方案：frontend/DESIGN/roadmaps/2026-07-15-pda-device-sim-detection-plan.md §5 / §8 M3b；
-# 文档：docs/architecture/mobile-pda-testing-and-smoke.md「L3 Android 模拟器 + APK」节。
+# 文档：docs/runbooks/testing/mobile-pda.md「L3 Android 模拟器 + APK」节。
 # 本脚本只管 AVD 创建/启动/关停/状态；APK 构建安装归 pda-apk-build.ps1，扫码注入归 pda-adb-scan.ps1。
 
 [CmdletBinding()]
@@ -92,7 +92,7 @@ if (-not [string]::IsNullOrWhiteSpace($Serial) -and $Serial -notmatch '^emulator
 
 $sdkRoot = Resolve-PdaAndroidHome
 if ([string]::IsNullOrWhiteSpace($sdkRoot)) {
-    Write-Diagnostic -Level 'ERROR' -Message '缺少 Android SDK：ANDROID_HOME/ANDROID_SDK_ROOT 与当前平台约定位置均无 platform-tools/adb。安装口径见 docs/architecture/mobile-pda-deployment.md。'
+    Write-Diagnostic -Level 'ERROR' -Message '缺少 Android SDK：ANDROID_HOME/ANDROID_SDK_ROOT 与当前平台约定位置均无 platform-tools/adb。安装口径见 docs/runbooks/mobile-pda-deployment.md。'
     exit 1
 }
 $env:ANDROID_HOME = $sdkRoot
