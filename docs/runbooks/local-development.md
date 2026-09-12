@@ -2,7 +2,7 @@
 
 本文承载本地启动、Aspire、基础设施容器和部署产物的排障规则。部署拓扑由
 `docs/adr/0008-multi-target-deployment-and-aspire-apphost.md` 与
-`docs/architecture/deployment-baseline.md` 承载。
+`docs/architecture/platform/deployment.md` 承载。
 
 ## 启动与生命周期
 
