@@ -290,7 +290,9 @@ try {
     # 只有 full-chain 是白名单选取。将来若有**第三个** heavy lane 采用白名单选取，本机制不覆盖它 ——
     # 通用的跨 lane 静态护栏只能是登记式簿记、拿不出鉴别力证据，因此刻意不造。
     $rootNamespace = [IO.Path]::GetFileNameWithoutExtension($fullChainProject)
-    $discoveredIdentities = @(Get-NervFullChainDiscoveredTestIdentities -DiscoveryLines $discoveryLines -RootNamespace $rootNamespace)
+    # #3285：这里递的是**原始 stdout**，不是上面那个 $discoveryLines。切行已经收进函数内部，本调用点
+    # 在类型上拿不到「行」这个中间物，所以无论上面的过滤将来怎么改，都不可能再把带空元素的数组递进去。
+    $discoveredIdentities = @(Get-NervFullChainDiscoveredTestIdentities -DiscoveryOutput $discovery.Stdout -RootNamespace $rootNamespace)
     # 刻意取 $manifest.members（全部成员）而不是 $selectedMembers：-MemberId 只跑一个成员时，
     # 另外 4 个成员的重依赖用例不该落进 residual 被无依赖重跑。
     $claimedIdentities = @($manifest.members | ForEach-Object { [string]$_.expectedTestIdentities[0] })

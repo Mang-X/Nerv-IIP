@@ -88,6 +88,12 @@ try {
             [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_POSTGRES', $targetConnection)
             $discovery = Invoke-DotNetOutput -Name "postgres-lane-$($member.id)-discovery" -WorkingDirectory $repoRoot -TimeoutSeconds 1800 -Arguments @('test', [string]$member.project, '--configuration', 'Release', '--list-tests', '--filter', [string]$member.filter)
             $expectedIdentitySet = [Collections.Generic.HashSet[string]]::new([string[]]@($member.expectedTestIdentities), [StringComparer]::Ordinal)
+            # #3285：这一行**没有**过滤空白元素，`dotnet test` 的 stdout 以换行结尾 ⇒ 切行必然多出一个
+            # 尾随空元素。它今天不炸，靠的是紧跟着这层按冻结身份集合 `Contains` 的过滤把空串滤掉，
+            # 而 $discovered 之后也只喂给本脚本自己的计数比较、不再递进任何 `[string[]]` 公开参数。
+            # 说清楚性质：这是**巧合，不是守卫**——身份过滤一旦放松（例如改成前缀匹配或整段挪走），
+            # 空元素就会重新流到下游。此处不改，是因为这里根本没有可收口的参数边界；真正的结构性
+            # 收口在 scripts/lib/FullChainTestLane.ps1 / BackendTestShardSelectors.ps1 的函数入参上。
             $discovered = @($discovery.Stdout -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $expectedIdentitySet.Contains([string]$_) })
             $memberSummary.discovered = $discovered.Count
             if ($discovered.Count -ne @($member.expectedTestIdentities).Count) { throw "PostgreSQL lane member '$($member.id)' discovery expected $(@($member.expectedTestIdentities).Count) frozen tests but found $($discovered.Count)." }

@@ -16,6 +16,22 @@ function ConvertTo-NervCiImpactServiceId {
 }
 
 function Get-NervCiImpactPlan {
+    <#
+        #3285 扫描时点名、复核后**判定不改**，把理由写在这里，免得后来人以为这里已经安全：
+
+        本参数是「`Mandatory [string[]]` 公开参数今天收着一段被切好的进程 stdout」这个形状的位点之一
+        （`scripts/get-ci-impact-plan.ps1` 的 Diff 参数集把 `git diff --name-only` 的 stdout 切行后
+        递进来）。同面直连一跳的另一处是 `Get-NervStringsSorted -Values`（带 `AllowEmptyString`，由类型免疫）；
+        隔一跳的还有 `Get-NervDockerInspectObjects -Identifiers`（`FullStackSessionRuntime.ps1:1651`，
+        `[AllowEmptyCollection()] [string[]]`、**没有** `AllowEmptyString` 因而不免疫，今天不炸只因
+        生产者 `Get-NervDockerListedValues` 在 `FullStackSessionRuntime.ps1:1645` 内部就过滤掉了空白行）。若该调用点的 `IsNullOrWhiteSpace` 过滤被去掉，`git diff` 输出的尾随换行同样会产生空
+        元素、同样在绑定处报 `because it is an empty string` ——**它不靠类型，靠调用方过滤**。
+
+        不照 #3279/#3285 改成收原始 stdout 的原因是本参数的契约不是「某个进程的输出」：Paths 参数集
+        直接从命令行收路径列表，测试也从 13 个调用点递字面路径数组。把它改成 `[string] $DiffOutput`
+        等于把一个通用的「路径集合」入参钉死到 `git diff` 这一个生产者上，反而更窄更错。这里能收紧的
+        只有「空元素非法」这一条，而 `Mandatory [string[]]` 本来就已经在表达它。
+    #>
     param(
         [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $ChangedPaths
     )

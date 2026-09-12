@@ -121,9 +121,47 @@ function Get-NervFullChainDiscoveredTestIdentities {
         匹配「根命名空间 + 至少两段标识符」，路径里的 `/`、空格和 `->` 都落在字符集之外。刻意不额外加
         一条 ` -> ` 的特判——那条分支在这个正则下永远命中不到，是拿不出鉴别力证据的死代码。
         `[Theory]` 会按用例参数逐行列出（`...Method(x: 1)`），截断到第一个 `(` 后去重，得到方法级身份。
+
+        #3285：这个参数原本是 `[Parameter(Mandatory)] [AllowEmptyCollection()] [AllowNull()] [string[]] $DiscoveryLines`，
+        由调用方自己把 `dotnet test --list-tests` 的 stdout 切成行再递进来。`Mandatory` 的 `[string[]]`
+        会对**元素**做非空校验（`AllowEmptyCollection` 只放行空集合、不放行空串元素），而 `dotnet test`
+        的 stdout 必然以换行结尾 ⇒ 切行必然多出一个尾随空元素。于是「会不会在绑定处当场炸掉」完全取决
+        于调用方有没有在调用前过滤空白——靠自律，不靠类型。#3279 / PR #3282 里同族的
+        `Assert-BackendTestShardSelectorDiscovery` 已经这样兑现过一次：漏了过滤，第一个 selector 就以
+        `Cannot bind argument to parameter ... because it is an empty string` 中断，后面所有 selector
+        一个都不被检验，而现象长得像「本机环境问题」。
+
+        本函数因此照抄 #3282 的姿势把边界往上挪一层：公开参数收**原始 stdout**，切行发生在函数内部，
+        调用方在**类型上**就不再持有「行」这个中间物，缺陷形状不再可表达（而不是「碰巧没人写出来」）。
+        这个性质由 scripts/tests/full-chain-test-lane.Tests.ps1 的承重变异格钉住（把类型退回
+        `[string[]]`、或放松成 `[object]`，都必须红）。
+
+        `[AllowEmptyString()]` 是**刻意放行**，不是疏漏：空 stdout 与 `$null` 都是**合法的可观测
+        状态**（发现阶段确实可能什么都没输出），而本票要治的病正是「一个合法的真实 stdout 形态撞成
+        **参数绑定失败**、而不是有意义的域错误」。若把空输入也做成绑定失败，就是同一个病换个位置
+        复发：调用者拿到的仍然是一句读不懂的绑定错误，仍然在任何域判断之前中断。因此空输入在这里
+        **绑定成功并返回 0 条身份**，由下游 `Assert-NervFullChainDiscoveryClosure` 的 `missingClaims`
+        分支抛出说得清的域错误，消息原文以
+        `FullChain lane manifest freezes identities that discovery did not report:` 开头。
+        刻意**只引函数名与消息原文、不写行号**：本文件内的自指行号会被「在它上方新增注释」这种
+        纯文本改动推着漂走（本段自己就漂过一次——上一轮写的 `:206-:210` 在本轮加注释后已指到别的
+        函数上），而那条消息是被 scripts/tests/full-chain-test-lane.Tests.ps1 的断言钉死的（改措辞
+        即红），因此消息原文比行号可靠。
+        这条行为已写成断言：删掉 `[AllowEmptyString()]` 必红。
+
+        刻意**不**写 `[AllowNull()]`：本机实测过，`[string]` 参数上 `$null` 在校验**之前**就被转成
+        `''`，所以裸 `[string]` 与 `[AllowNull()] [string]` 对 `$null` 报的都是
+        `because it is an empty string`，而单独一个 `[AllowEmptyString()]` 就同时覆盖 `''` 与 `$null`。
+        也就是说 `[AllowNull()]` 在这个签名上**拿不出鉴别力证据**（删掉它整套测试全绿 = 等价变异，
+        不是覆盖缺口）。照本函数上面对 ` -> ` 特判的同一条处置：死属性不留。⚠️ 附带事实，不在本票
+        改动面内：#3282 的同族 `Assert-BackendTestShardSelectorDiscovery` 签名里带着同样inert的
+        `[AllowNull()]`。
+
+        #3135 的解析口径（不锚表头、整行完全匹配身份形状、`[Theory]` 截断到 `(`）一个字都没动：
+        本次只挪参数边界，不碰识别逻辑。
     #>
     param(
-        [Parameter(Mandatory)] [AllowEmptyCollection()] [AllowNull()] [string[]] $DiscoveryLines,
+        [Parameter(Mandatory)] [AllowEmptyString()] [string] $DiscoveryOutput,
         [Parameter(Mandatory)] [string] $RootNamespace
     )
 
@@ -132,7 +170,8 @@ function Get-NervFullChainDiscoveredTestIdentities {
     }
     $identityPattern = '^' + [regex]::Escape($RootNamespace) + '(?:\.[A-Za-z_][A-Za-z0-9_]*){2,}$'
     $identities = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
-    foreach ($rawLine in @($DiscoveryLines)) {
+    $discoveryLines = @(([string] $DiscoveryOutput) -split "`r?`n")
+    foreach ($rawLine in $discoveryLines) {
         $line = ([string]$rawLine).Trim()
         if ([string]::IsNullOrWhiteSpace($line)) { continue }
         $parenthesisIndex = $line.IndexOf('(', [StringComparison]::Ordinal)
