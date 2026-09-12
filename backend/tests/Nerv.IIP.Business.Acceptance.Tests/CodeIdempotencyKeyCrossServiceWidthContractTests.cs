@@ -40,7 +40,8 @@ namespace Nerv.IIP.Business.Acceptance.Tests;
 /// 这三条都是**「某一侧偏离唯一出处」**，断言的两侧一侧是单一常量、另一侧是该服务**真实的 EF 模型**
 /// （migration 正是从这个模型生成的），不是两份手抄值互比。</para>
 ///
-/// <para><b>本测试项目是本仓唯一能写这句话的地方</b>：它同时引用全部 16 个业务服务的 Web 项目，
+/// <para><b>本测试项目是本仓唯一能写这句话的地方</b>：它的 csproj 有 16 条 <c>ProjectReference</c>
+/// （13 个业务服务 + BusinessGateway + Notification + AppHub，实读），
 /// 因而能在同一个进程里读到 7 个服务各自的 EF 模型。单服务的测试项目做不到——
 /// PR #3303 的 <c>ErpCodingIdempotencyKeyLengthContractTests</c> 只能证明 Erp 那一份没被改，
 /// 另外 6 份任意一份漂移它一格都不会红，那正是本票承接的面。</para>
@@ -69,7 +70,14 @@ namespace Nerv.IIP.Business.Acceptance.Tests;
 /// 别照抄别处那句「由 pending-model-changes 门禁承担」。</item>
 /// <item>闭集的成立机制是**本测试项目的引用拓扑**，不是包归属。某个新服务如果没有被
 /// <c>Nerv.IIP.Business.Acceptance.Tests.csproj</c> 引用，它就不在遍历面上——
-/// 失效方向是**假绿**。今天 16 个业务服务 + Notification + AppHub 全部在引用表里（实读 csproj）。</item>
+/// 失效方向是**假绿**。
+/// 今天在引用表里的是 **13 个业务服务 + BusinessGateway + Notification + AppHub**（16 条 <c>ProjectReference</c>，实读）。
+/// <b>明确不在遍历面上的 DbContext 宿主有三个：<c>Iam</c> / <c>FileStorage</c> / <c>Ops</c></b>——
+/// 本测试项目只引用它们的 <c>Contracts.*</c> 与 <c>Sdk.*</c>，不引用其 <c>*.Infrastructure</c>
+/// （实读：这三个 <c>*.Infrastructure.dll</c> 都不出现在本测试项目的输出目录里，而受管的 7 个都在）。
+/// 今天它们**都不引用 <c>Nerv.IIP.Coding</c>**（csproj 面零命中）所以没有实际漏网，
+/// 但**别把这句读成「全仓都在面上」**：这三个若开始持有本共享实体，本类不会红，失效方向是**假绿**，
+/// 届时要把它们的 Web 项目加进本测试项目的引用表。</item>
 /// <item>读的是 **EF 模型**而不是 migration 脚本文本。模型与迁移单边漂移不由本类抓。</item>
 /// <item>本类只管这一个共享实体的这一列。全仓其它 <c>idempotency_key</c> 列
 /// （BarcodeLabel / Inventory / Wms 的 128、消费者收件箱的 512、死信箱的 500 等）
@@ -84,8 +92,19 @@ public sealed class CodeIdempotencyKeyCrossServiceWidthContractTests
     /// <summary>改前 7 份副本各自手抄的列宽。7/7 实读一致——缺陷是「可以漂移」，不是「已经漂了」。</summary>
     private const int PreChangeDuplicatedWidth = 150;
 
-    /// <summary>改前逐字节复制的份数。</summary>
+    /// <summary>
+    /// 改前逐字节复制的份数。**这是冻结的历史事实，永远不该变**——
+    /// 它描述 #3307 改前那 7 份副本，与「今天有几个服务受管」不是同一件事。
+    /// </summary>
     private const int PreChangeDuplicateCount = 7;
+
+    /// <summary>
+    /// **今天**受管的服务数，即 <see cref="GovernedServices"/> 显式列出的条数。
+    /// 与 <see cref="PreChangeDuplicateCount"/> 今天同为 7 只是巧合：
+    /// 合法新增第 8 个持有本共享实体的服务时**该改的是这一个**，
+    /// ⛔ 不要去改那个写着「改前份数」的历史常量。
+    /// </summary>
+    private const int GovernedServiceCount = 7;
 
     private static IEnumerable<(string Service, Func<DbContext> Factory)> GovernedServices()
     {
@@ -129,7 +148,7 @@ public sealed class CodeIdempotencyKeyCrossServiceWidthContractTests
             readings.Add((service, entityType.GetTableName(), property!.GetMaxLength()));
         }
 
-        Assert.Equal(PreChangeDuplicateCount, readings.Count);
+        Assert.Equal(GovernedServiceCount, readings.Count);
         Assert.All(
             readings,
             reading =>
@@ -158,7 +177,7 @@ public sealed class CodeIdempotencyKeyCrossServiceWidthContractTests
             .OrderBy(type => type.Assembly.GetName().Name, StringComparer.Ordinal)
             .ToArray();
 
-        Assert.Equal(PreChangeDuplicateCount, asserted.Length);
+        Assert.Equal(GovernedServiceCount, asserted.Length);
         Assert.Equal(
             discovered.Select(type => type.Assembly.GetName().Name).ToArray(),
             asserted.Select(type => type.Assembly.GetName().Name).ToArray());
