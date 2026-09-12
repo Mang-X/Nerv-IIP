@@ -53,6 +53,6 @@ M2 已把原先混在 `docs/architecture/` 平铺层的 Product、Governance、R
 1. **Current Architecture 正文只从本页进入主题目录。** 新增或继续维护的现态架构不得回到根目录平铺旧文件名。
 2. **根目录旧 `.md` 文件只允许作为显式兼容 shim。** shim 只说明 canonical owner 与必要迁移背景，不继续累积架构、产品、状态、规则、命令或事实总账。
 3. **新链接不得以 shim 作为权威来源。** 遇到旧路径时先跟随其导航到 Product / Architecture / Governance / Reference / Runbook / Status / Report 的 canonical path，再引用最终 owner。
-4. [`implementation-readiness.md`](implementation-readiness.md) 只保留 M1 旧链接兼容；当前状态唯一入口仍是 [`../status/current.md`](../status/current.md)。
+4. 当前状态唯一入口是 [`../status/current.md`](../status/current.md)；已退役入口的历史从 [`../status/archive/README.md`](../status/archive/README.md) 与 Git 追溯。
 5. `script-automation-governance.md` 与 `test-evidence-governance.md` 仍包含既有测试契约读取的冻结兼容字面，因此在对应 consumer 迁出前不能物理删除；它们不是 Current Architecture 或第二份 Governance。
 6. 冻结 ADR、Report、Status archive 与 `docs/superpowers/**` 不为消除旧 URL 批量改写。物理删除兼容 shim 时应先证明活跃消费者和机器依赖已清零，再运行 Docs/链接与受影响门禁。

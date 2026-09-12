@@ -10,7 +10,7 @@
 - **Reference：** 当前 Schema 目录、码表、矩阵、权限导航、术语和技术资料从 `docs/reference/README.md` 路由；Reference 是 producer 的人工索引/解释层，不得成为独立运行时事实源。
 - **历史状态：** `docs/status/archive/README.md` 是可维护的目录索引；目录内日期化快照和纵切历史正文为冻结资产，禁止原地修订。
 - **冻结报告：** 调查、实验、审计与修复记录从 `docs/reports/README.md` 路由。报告正文只证明声明的时点和范围，完成后冻结；不得把其中的计数、命令或通过结果升级为当前事实。
-- **迁移兼容入口：** M2 后 `docs/architecture/` 根目录旧平铺文件只允许作为显式兼容 shim。遇到 shim 必须跟随其指针到 canonical owner 后再工作；**不得向 shim 写新正文，也不得在新文档、README、Agent 指令中新增以 shim 为权威来源的链接**。`docs/architecture/implementation-readiness.md` 只兼容旧链接，当前状态仍从 `docs/status/current.md` 读取。
+- **迁移兼容入口：** M2 后 `docs/architecture/` 根目录旧平铺文件只允许作为显式兼容 shim。遇到 shim 必须跟随其指针到 canonical owner 后再工作；**不得向 shim 写新正文，也不得在新文档、README、Agent 指令中新增以 shim 为权威来源的链接**。当前状态从 `docs/status/current.md` 读取，退役入口的历史通过 `docs/status/archive/README.md` 和 Git 追溯。
 - **冻结历史引用：** ADR、Report、Status archive 与 `docs/superpowers/**` 中的历史 URL 不为迁移清理批量改写；它们只反映当时上下文。物理删除 shim 前先清理活跃消费者与机器依赖，并通过 Docs/链接和受影响门禁。
 - **机器输入或生成物：** 按 `docs/governance/docs/language.md` 的分类纪律处理，不因所在目录宽泛而跳过 consumer/producers；不得复制平行机器 registry。
 - **ADR：** 新增或修订前读取 `docs/adr/README.md` 与 `docs/governance/decisions/records.md`。
