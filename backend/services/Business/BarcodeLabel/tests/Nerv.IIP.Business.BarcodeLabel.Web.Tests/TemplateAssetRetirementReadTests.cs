@@ -114,10 +114,32 @@ public sealed class TemplateAssetRetirementReadTests
         Assert.Equal(0, wire.Calls);
     }
 
+    [Theory]
+    [InlineData("other-org", "env")]
+    [InlineData("org", "other-env")]
+    public async Task Foreign_fence_cannot_bypass_metadata_ownership_validation(string ownerOrganization, string ownerEnvironment)
+    {
+        using var db = CreateDb();
+        var template = LabelTemplate.Create("org", "env", "TPL", "模板", "file", "{}", "inactive");
+        var foreign = TemplateAssetRetirementDecision.Create(ownerOrganization, ownerEnvironment,
+            new LabelTemplateId(Guid.NewGuid()), "TPL", "file", Checksum,
+            "foreign-key", "user", TemplateAssetRetirementDecision.RequiredPermission, "reason", "trace");
+        db.LabelTemplates.Add(template);
+        db.TemplateAssetRetirementReplayFences.Add(new TemplateAssetRetirementReplayFence(foreign, Now));
+        await db.SaveChangesAsync();
+        using var wire = new MetadataHandler(true, ownerOrganization, ownerEnvironment);
+        using var http = new HttpClient(wire) { BaseAddress = new Uri("https://file-storage.invalid") };
+        using var adapter = new HttpFileStorageLabelTemplateAssetAdapter(new HttpFileStorageClient(http), http, TimeSpan.FromSeconds(1));
+        var handler = new GetTemplateAssetRetirementQueryHandler(db, adapter, new FakeTimeProvider(Now));
+        await Assert.ThrowsAsync<InvalidDataException>(() => handler.Handle(
+            new GetTemplateAssetRetirementQuery("org", "env", template.Id, "file"), CancellationToken.None));
+        Assert.Equal(1, wire.Calls);
+    }
+
     private static ApplicationDbContext CreateDb() => new(new DbContextOptionsBuilder<ApplicationDbContext>()
         .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options, null!);
 
-    private sealed class MetadataHandler(bool allowed) : HttpMessageHandler
+    private sealed class MetadataHandler(bool allowed, string organization = "org", string environment = "env") : HttpMessageHandler
     {
         public int Calls { get; private set; }
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -128,7 +150,7 @@ public sealed class TemplateAssetRetirementReadTests
             Assert.Equal("/api/files/v1/files/file", request.RequestUri!.AbsolutePath);
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = JsonContent.Create(new FileMetadataResponse("file", "org", "env",
+                Content = JsonContent.Create(new FileMetadataResponse("file", organization, environment,
                     new OwnerReference("business-barcode-label", "label-template", "TPL"), "barcode-label-template",
                     "template.json", "application/vnd.nerv-iip.label-template+json", 10, Checksum, "available", Now, Now)),
             });
