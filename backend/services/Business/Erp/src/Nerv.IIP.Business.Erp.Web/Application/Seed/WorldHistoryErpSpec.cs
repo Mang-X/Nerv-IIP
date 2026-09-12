@@ -45,25 +45,33 @@ public static class WorldHistoryErpSpec
         new("密封件", ["SUP-WB-SEL-01", "SUP-WB-SEL-02"], ["RM-SEL-01", "RM-SEL-02", "RM-SEL-03", "RM-SEL-04"], "pcs", 3m, 7m, 1000, 6000, 500),
         new("减振油", ["SUP-WB-OIL-01"], ["RM-OIL-01", "RM-OIL-02"], "l", 14m, 21m, 300, 1500, 100),
         new("包材", ["SUP-WB-PKG-01", "SUP-WB-PKG-02"], ["PK-BOX-01", "PK-BOX-02", "PK-BOX-03", "PK-BOX-04", "PK-PLT-01", "PK-FLM-01"], "pcs", 2m, 9m, 500, 3000, 250),
-        // 配件三族（连接环 / 防尘罩 / 紧固件）：L0 MBOM 第 7–9 行每张 BOM 都引用，
-        // 单台用量 2 + 1 + 4 = 7 pcs，是外购件里单台用量最大的一族，故批量与权重都高于密封件。
-        // 供应商按材质分工：金属件走沙钢精特（SUP-WB-BAR-02），橡塑防尘罩走苏州橡塑密封（SUP-WB-SEL-02）。
+        // 配件（L0 MBOM 第 7–9 行，每张 BOM 都引用）按材质拆成两个品类，而不是合成一族。
+        // 原因是 BuildPurchasePlan 里 random.Pick(SupplierCodes) 与 random.Pick(MaterialSkuCodes)
+        // 是两次**互相独立**的抽样：品类内部无法表达「哪家供哪个料」，一族两材质会让演示页面
+        // 出现「向特钢厂采购橡塑防尘罩」。品类边界是唯一能表达供货关系的地方，故沿用既有族的
+        // 惯例——同一品类的两家供应商必须同材质（棒料两家都是特钢厂、密封件两家都是密封厂）。
+        // 金属配件：连接环（单台 2 pcs）+ 紧固件（单台 4 pcs），合 6 pcs/台，由两家特钢厂供货。
         new(
-            "配件",
-            ["SUP-WB-BAR-02", "SUP-WB-SEL-02"],
+            "金属配件",
+            ["SUP-WB-BAR-01", "SUP-WB-BAR-02"],
             [
                 "RM-ACC-01", "RM-ACC-02", "RM-ACC-03",
-                "RM-ACC-04", "RM-ACC-05", "RM-ACC-06",
                 "RM-ACC-07", "RM-ACC-08", "RM-ACC-09", "RM-ACC-10"
             ],
             "pcs", 2m, 7m, 3000, 14000, 500),
+        // 橡塑配件：防尘罩（单台 1 pcs），由两家密封 / 橡塑厂供货。
+        new(
+            "橡塑配件",
+            ["SUP-WB-SEL-01", "SUP-WB-SEL-02"],
+            ["RM-ACC-04", "RM-ACC-05", "RM-ACC-06"],
+            "pcs", 3m, 5m, 1500, 6000, 250),
         // 成品箱贴标签：L0 MBOM 第 11 行，单台 1 pcs。本族只登记 BOM 实际引用的 PK-LBL-03；
         // PK-LBL-01/02 不被任何 BOM 引用，不需要采购历史。
         new("标签", ["SUP-WB-PKG-02"], ["PK-LBL-03"], "pcs", 0.2m, 0.5m, 1500, 6000, 250),
     ];
 
-    /// <summary>采购品类抽样权重：结构件用量最大，配件次之（单台 7 pcs），包材与标签按单台用量收尾。</summary>
-    public static readonly IReadOnlyList<int> PurchaseCategoryWeights = [5, 5, 4, 3, 2, 3, 6, 2];
+    /// <summary>采购品类抽样权重：结构件用量最大，金属配件次之（单台 6 pcs），橡塑配件 / 包材 / 标签按单台用量收尾。</summary>
+    public static readonly IReadOnlyList<int> PurchaseCategoryWeights = [5, 5, 4, 3, 2, 3, 5, 2, 2];
 
     /// <summary>单张历史采购单的确定性内容。</summary>
     public static WorldHistoryPurchasePlan BuildPurchasePlan(int index, DateOnly orderDate, DateOnly asOfDate)

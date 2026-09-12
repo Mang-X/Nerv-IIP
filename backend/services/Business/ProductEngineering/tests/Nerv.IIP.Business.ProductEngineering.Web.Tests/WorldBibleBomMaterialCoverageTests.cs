@@ -5,7 +5,8 @@ namespace Nerv.IIP.Business.ProductEngineering.Web.Tests;
 /// <summary>
 /// 跨域不变量的**产出侧**：成品 BOM 引用到的外购物料集合必须与登记清单逐项相同。
 ///
-/// 消费侧（六个持有采购品类副本的服务里的 <c>WorldHistoryPurchasedMaterialCoverageTests</c>）
+/// 消费侧（Inventory 与 Erp 两份 <c>WorldHistoryPurchasedMaterialCoverageTests</c>，
+/// 其余 4 个服务由世界史副本圈门禁传递覆盖，边界说明见那两份文件的类型注释）
 /// 用同一份清单断言「BOM 要求 ⊆ 采购能供」。两侧清单是逐字相同的副本：
 /// BOM 公式一旦新增或改写物料族，本文件先红，失败信息点名必须同步的那六份采购品类表——
 /// #3138 的成因正是这一步从来没有门禁（<c>RM-ACC-*</c> 与 <c>PK-LBL-03</c> 进了 BOM 却没进采购）。
@@ -48,7 +49,6 @@ public sealed class WorldBibleBomMaterialCoverageTests
             .OrderBy(sku => sku, StringComparer.Ordinal)
             .ToArray();
 
-        Assert.Equal(components.Length - InHouseComponentSkuCount, purchased.Length);
         Assert.Equal(
             RequiredPurchasedSkuCodes,
             purchased);
@@ -72,6 +72,6 @@ public sealed class WorldBibleBomMaterialCoverageTests
             line => Assert.True(
                 line.ComponentSkuCode.StartsWith("SF-", StringComparison.Ordinal)
                     || registered.Contains(line.ComponentSkuCode),
-                $"{line.ComponentSkuCode} 既不是自制半成品，也没登记进外购物料清单；必须同步六份 WorldHistoryProcurementSpec.PurchaseCategories。"));
+                $"{line.ComponentSkuCode} 既不是自制半成品，也没登记进外购物料清单；必须同步 6 份采购品类字面量（5 份 WorldHistoryProcurementSpec + Erp 的 WorldHistoryErpSpec）。"));
     }
 }

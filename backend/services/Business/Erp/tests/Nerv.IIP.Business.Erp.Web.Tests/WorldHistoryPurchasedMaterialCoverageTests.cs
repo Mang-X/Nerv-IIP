@@ -13,10 +13,27 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 /// <c>PurchaseCategories</c> 里，于是演示库上这 11 个 SKU 的 <c>stock_ledgers</c> **一行都没有**，
 /// 实时齐套查询沿 MBOM 11 行去问库存时每张工单都带着永久缺口。
 ///
-/// 本文件在六个持有采购品类副本的服务里各存一份**逐字相同**的副本（仅命名空间与 using 别名不同），
-/// 任一侧漏补品类都会在它自己的 lane 里变红，而不是等到演示当场。
 /// 期望集合的权威来源是 ProductEngineering <c>WorldBibleSpec</c> 的 BOM 行公式与 MasterData 物料档案；
 /// 由 BOM 反推该集合的那一侧断言在 <c>WorldBibleBomMaterialCoverageTests</c>。
+///
+/// <para><b>覆盖边界（声明依赖，不声称完备）</b></para>
+/// <para>
+/// 采购品类字面量在 6 个服务里各存一份。本文件只存 2 份：Inventory（副本圈代表）与 Erp。
+/// 其余 4 份（Wms / Quality / BarcodeLabel / Approval）**不靠本文件覆盖**，而是靠
+/// <c>Nerv.IIP.VocabularyGovernance.Tests.VocabularyDriftGovernanceTests</c> 的世界史副本圈：
+/// <c>WorldHistoryProcurementSpec.cs</c> 登记在该测试的 <c>ReplicaFileNames</c> 里，
+/// <c>World_history_replica_files_stay_identical_member_by_member</c> 逐成员断言 5 份逐字相同，
+/// 所以「Inventory 这份满足包含关系」可以传递到那 4 份。**这条传递依赖副本圈继续成立**——
+/// 副本圈若被削弱或把本文件名摘掉，那 4 个服务就同时失去覆盖，届时必须把本文件补回去。
+/// Erp 的字面量在 <c>WorldHistoryErpSpec.cs</c> 里，文件名不同故**不在副本圈内**，只能由它自己那份覆盖。
+/// </para>
+/// <para>
+/// <b>已知洞（本票不修）</b>：副本圈的扫描面排除了 <c>tests</c> 路径段
+/// （<c>VocabularyDriftGovernanceTests</c> 的 <c>LoadScannedDocuments</c>），所以本文件这两份**同名测试副本
+/// 在结构上进不了副本圈**。实测：把其中一份的 <c>RequiredPurchasedSkuCodes</c> 删掉一项并把
+/// <c>RequiredPurchasedSkuCount</c> 同步减 1，两侧测试与副本圈门禁**全绿** ⇒ 期望集合可以单侧静默缩水。
+/// 挡这个洞需要给期望集合补跨副本 digest，属另一张票；在那之前，改本文件的清单必须人工同步另一份。
+/// </para>
 /// </summary>
 public sealed class WorldHistoryPurchasedMaterialCoverageTests(ITestOutputHelper output)
 {
