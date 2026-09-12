@@ -46,13 +46,13 @@ Platform 其它专题（File Storage、Notification、Observability、缓存、A
 - 用户、角色旅程、业务语义、IA 和 UX：[`../product/README.md`](../product/README.md)。
 - 长期不可轻易反转的决策及理由：[`../adr/README.md`](../adr/README.md)。
 
-## M2 后的目录契约
+## M4 后的目录契约
 
-M2 已把原先混在 `docs/architecture/` 平铺层的 Product、Governance、Reference、Runbook、Status 与 Report 内容迁到各自权威住所。此后遵循下面的稳定规则：
+M2 已把原先混在 `docs/architecture/` 平铺层的 Product、Governance、Reference、Runbook、Status 与 Report 内容迁到各自权威住所；M4 完成迁移期兼容入口退出。此后遵循下面的稳定规则：
 
-1. **Current Architecture 正文只从本页进入主题目录。** 新增或继续维护的现态架构不得回到根目录平铺旧文件名。
-2. **根目录旧 `.md` 文件只允许作为显式兼容 shim。** shim 只说明 canonical owner 与必要迁移背景，不继续累积架构、产品、状态、规则、命令或事实总账。
-3. **新链接不得以 shim 作为权威来源。** 遇到旧路径时先跟随其导航到 Product / Architecture / Governance / Reference / Runbook / Status / Report 的 canonical path，再引用最终 owner。
-4. 当前状态唯一入口是 [`../status/current.md`](../status/current.md)；已退役入口的历史从 [`../status/archive/README.md`](../status/archive/README.md) 与 Git 追溯。
-5. **测试逐字依赖不是兼容页的长期保留理由。** 应从消费方解除对历史标题、计数、运行编号与登记文案的耦合，保留真实行为回归；不得把旧文案合同平移到当前 Governance。解除文案耦合后，仍须逐项核清代码旁说明、CI 路由及活跃文档入链，不能据此直接宣称兼容页可删除。
-6. 冻结 ADR、Report、Status archive 与 `docs/superpowers/**` 不为消除旧 URL 批量改写。物理删除兼容 shim 时应先证明活跃消费者和机器依赖已清零，再运行 Docs/链接与受影响门禁。
+1. **Current Architecture 正文只从本页进入主题目录。** 根目录只保留本 `README.md` 与主题目录，不再保留旧文件名 shim，也不得新增平铺正文。
+2. **新链接只能引用 canonical owner。** Product / Architecture / Governance / Reference / Runbook / Status / Report 各自维护自己的当前职责，不通过旧 Architecture 路径转发。
+3. 当前状态唯一入口是 [`../status/current.md`](../status/current.md)；历史时点判断从 [`../status/archive/README.md`](../status/archive/README.md)、[`../reports/README.md`](../reports/README.md) 与 Git 历史追溯。
+4. 冻结 ADR、Report、Status archive 与 `docs/superpowers/**` 不为消除历史路径字面批量改写；其中的旧路径属于对应提交时点的坐标，不重新升级成当前入口。
+5. **测试和脚本不得逐字依赖人工文档来证明运行行为。** 当前机器事实由代码、workflow、manifest、脚本帮助与现有行为测试生产；文档只解释稳定边界。
+6. 以后确需移动当前文档时，应在同一迁移批次更新活跃消费者并运行现有 Docs/链接门禁。只有确有跨版本消费者时才允许短期兼容入口，并须在对应 Issue/PR 写明消费者、删除条件与最迟退出阶段；不得建立永久墓碑。
