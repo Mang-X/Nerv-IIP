@@ -1,7 +1,7 @@
 # Script-Governance:
 #   Category: check
 #   SideEffects:
-#     - Runs the ADR gate against temporary fixtures and the repository ADR directory
+#     - Runs the documentation gate against temporary fixtures and the repository
 #   Writes:
 #     - Fixtures under an owned operating-system temporary directory
 #   Cleanup:
@@ -9,8 +9,8 @@
 #   Requires:
 #     - PowerShell 7
 
-# 保留现有 CI 调用路径；不再读取脚本 AST 或 Governance 的自然语言表格。
-# 每个红批检查具体失败原因；绿批证明修改正文和导航措辞不改变结构结论。
+# 保留现有 CI 调用路径；不读取脚本 AST 或 Governance 的自然语言表格。
+# 通用结构正反例不随文档目录、标题或每条链接新增独立 fixture。
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $PSNativeCommandUseErrorActionPreference = $false
@@ -21,7 +21,9 @@ $checked = 0
 
 function Write-Fixture {
     param([string] $Root, [string] $Name, [string] $Content)
-    [IO.File]::WriteAllText((Join-Path $Root $Name), $Content, [Text.UTF8Encoding]::new($false))
+    $path = Join-Path $Root $Name
+    [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($path)) | Out-Null
+    [IO.File]::WriteAllText($path, $Content, [Text.UTF8Encoding]::new($false))
 }
 
 function New-FixtureRoot {
@@ -67,9 +69,12 @@ function Assert-Gate {
         [string] $Name,
         [string] $Root,
         [int] $ExpectedExit,
-        [string[]] $ExpectedFragments = @()
+        [string[]] $ExpectedFragments = @(),
+        [string] $MarkdownRoot
     )
-    $output = & pwsh -NoProfile -File $gatePath -AdrRoot $Root 2>&1
+    $arguments = @('-NoProfile', '-File', $gatePath, '-AdrRoot', $Root)
+    if (-not [string]::IsNullOrEmpty($MarkdownRoot)) { $arguments += @('-MarkdownRoot', $MarkdownRoot) }
+    $output = & pwsh @arguments 2>&1
     $exitCode = $LASTEXITCODE
     $text = @($output) -join "`n"
     if ($exitCode -ne $ExpectedExit) {
@@ -132,8 +137,103 @@ try {
     Write-Fixture $empty 'README.md' '# 只有导航不能证明有 ADR'
     Assert-Gate '零记录不能成为绿色证据' $empty 1 @('[ADR_EMPTY]')
 
-    Assert-Gate '当前仓库 ADR 与索引' (Join-Path $repoRoot 'docs/adr') 0
-    Write-Host "ADR 结构回归通过（$checked 个批次）；不证明生产或业务链路已验证。"
+    $markdown = Join-Path $temporaryRoot 'markdown'
+    foreach ($entry in @('docs/README.md', 'docs/adr/README.md', 'docs/architecture/README.md')) {
+        Write-Fixture $markdown $entry '# 任意导航标题'
+    }
+    Write-Fixture $markdown 'notes (一).md' '# 任意正文'
+    Write-Fixture $markdown 'picture.svg' '<svg />'
+    Write-Fixture $markdown 'README.md' @'
+# 任意首页
+
+[引用式][guide]
+
+[guide]: <notes%20(一).md> "说明"
+
+![图片](picture.svg)
+[目录](docs/)
+[外链](https://example.invalid/not-checked)
+[站点路由](/site-route)
+`[代码示例](missing-inline.md)`
+<!-- <a href="missing-comment.md">注释</a> -->
+```markdown
+[示例](missing-fenced.md)
+```
+'@
+    Write-Fixture $markdown 'docs/reports/audit.md' '[冻结历史](retired.md)'
+    Write-Fixture $markdown 'docs/superpowers/plans/history.md' '[冻结计划](retired.md)'
+    Write-Fixture $markdown 'docs/status/archive/history.md' '[冻结快照](retired.md)'
+    Write-Fixture $markdown 'tests/fixtures/input.md' '[机器夹具](fixture-only.md)'
+    Write-Fixture $markdown 'node_modules/dependency/README.md' '[第三方文档](dependency-only.md)'
+    Write-Fixture $markdown 'frontend/apps/docs/guide.md' '[站点语义](extensionless-route)'
+    Write-Fixture $markdown 'frontend/apps/design-system/docs/component.md' '[站点语义](another-extensionless-route)'
+    Write-Fixture $markdown '.claude/README.md' '[当前入口](../docs/README.md)'
+    Assert-Gate '解析真实导航而非代码示例；冻结正文与站点消费者边界' $baseline 0 -MarkdownRoot $markdown
+
+    Write-Fixture $markdown 'README.md' "[引用式][lost]`n`n[lost]: reference-lost.md`n`n![图](picture-lost.svg)"
+    Write-Fixture $markdown 'docs/superpowers/AGENTS.md' '[当前指令](current-guide-lost.md)'
+    Write-Fixture $markdown '.claude/README.md' '[当前入口](hidden-guide-lost.md)'
+    Remove-Item -LiteralPath (Join-Path $markdown 'docs/architecture/README.md')
+    Assert-Gate '引用式链接、图片、活跃指令、隐藏目录和入口缺失均失败关闭' $baseline 1 @(
+        '[DOC_LINK] README.md -> reference-lost.md',
+        '[DOC_LINK] README.md -> picture-lost.svg',
+        '[DOC_LINK] docs/superpowers/AGENTS.md -> current-guide-lost.md',
+        '[DOC_LINK] .claude/README.md -> hidden-guide-lost.md',
+        '[DOC_ENTRY] 当前入口不存在：docs/architecture/README.md'
+    ) -MarkdownRoot $markdown
+
+    # 站点消费者拥有页面路由，不等于站点正文中的普通文件和图片均可免检。
+    # 共用一份通用夹具；错误文件目标与合法路由共存，避免以误报冒充漏检修复。
+    $siteMarkdown = Join-Path $temporaryRoot 'site-markdown'
+    foreach ($entry in @('docs/README.md', 'docs/adr/README.md', 'docs/architecture/README.md')) {
+        Write-Fixture $siteMarkdown $entry '# 当前入口'
+    }
+    foreach ($sitePath in @('frontend/apps/docs', 'frontend/apps/design-system/docs')) {
+        Write-Fixture $siteMarkdown "$sitePath/target.md" '# 文件目标'
+        Write-Fixture $siteMarkdown "$sitePath/asset.svg" '<svg />'
+        Write-Fixture $siteMarkdown "$sitePath/page.md" @'
+[源文件](target.md#任意标题)
+![图片](asset.svg)
+[页面路由](generated-route)
+[HTML 页面路由](generated-route.html)
+`[代码示例](missing-example.md)`
+'@
+    }
+    Assert-Gate '站点文件目标有效；页面路由仍由站点构建负责' $baseline 0 -MarkdownRoot $siteMarkdown
+
+    foreach ($sitePath in @('frontend/apps/docs', 'frontend/apps/design-system/docs')) {
+        Write-Fixture $siteMarkdown "$sitePath/page.md" @'
+[源文件][missing]
+
+[missing]: missing-source.md#section
+
+![图片](missing-image.svg)
+![无扩展名图片](missing-image)
+[页面路由](generated-route)
+[HTML 页面路由](generated-route.html)
+'@
+    }
+    Assert-Gate '站点正文不能隐藏显式文件、引用式链接或图片断链' $baseline 1 @(
+        '[DOC_LINK] frontend/apps/docs/page.md -> missing-source.md#section',
+        '[DOC_LINK] frontend/apps/docs/page.md -> missing-image.svg',
+        '[DOC_LINK] frontend/apps/docs/page.md -> missing-image',
+        '[DOC_LINK] frontend/apps/design-system/docs/page.md -> missing-source.md#section',
+        '[DOC_LINK] frontend/apps/design-system/docs/page.md -> missing-image.svg',
+        '[DOC_LINK] frontend/apps/design-system/docs/page.md -> missing-image'
+    ) -MarkdownRoot $siteMarkdown
+
+    foreach ($sitePath in @('frontend/apps/docs', 'frontend/apps/design-system/docs')) {
+        Write-Fixture $siteMarkdown "$sitePath/page.md" '[源文件](target.md)'
+    }
+    Write-Fixture $siteMarkdown 'frontend/apps/docs/README.md' '[协作文件](missing-entry-target)'
+    Write-Fixture $siteMarkdown 'frontend/apps/design-system/docs/AGENTS.md' '[协作文件](missing-entry-target)'
+    Assert-Gate '站点 README 与 AGENTS 不借用页面路由豁免' $baseline 1 @(
+        '[DOC_LINK] frontend/apps/docs/README.md -> missing-entry-target',
+        '[DOC_LINK] frontend/apps/design-system/docs/AGENTS.md -> missing-entry-target'
+    ) -MarkdownRoot $siteMarkdown
+
+    Assert-Gate '当前仓库 ADR、索引与活文档本地目标' (Join-Path $repoRoot 'docs/adr') 0 -MarkdownRoot $repoRoot
+    Write-Host "文档结构回归通过（$checked 个批次）；不证明生产或业务链路已验证。"
 }
 finally {
     if (Test-Path -LiteralPath $temporaryRoot) {
