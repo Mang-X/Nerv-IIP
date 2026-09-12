@@ -141,8 +141,12 @@ function Get-NervFullChainDiscoveredTestIdentities {
         **参数绑定失败**、而不是有意义的域错误」。若把空输入也做成绑定失败，就是同一个病换个位置
         复发：调用者拿到的仍然是一句读不懂的绑定错误，仍然在任何域判断之前中断。因此空输入在这里
         **绑定成功并返回 0 条身份**，由下游 `Assert-NervFullChainDiscoveryClosure` 的 `missingClaims`
-        分支（本文件 :206-:210）抛出说得清的域错误
-        （`FullChain lane manifest freezes identities that discovery did not report: ...`）。
+        分支抛出说得清的域错误，消息原文以
+        `FullChain lane manifest freezes identities that discovery did not report:` 开头。
+        刻意**只引函数名与消息原文、不写行号**：本文件内的自指行号会被「在它上方新增注释」这种
+        纯文本改动推着漂走（本段自己就漂过一次——上一轮写的 `:206-:210` 在本轮加注释后已指到别的
+        函数上），而那条消息是被 scripts/tests/full-chain-test-lane.Tests.ps1 的断言钉死的（改措辞
+        即红），因此消息原文比行号可靠。
         这条行为已写成断言：删掉 `[AllowEmptyString()]` 必红。
 
         刻意**不**写 `[AllowNull()]`：本机实测过，`[string]` 参数上 `$null` 在校验**之前**就被转成
