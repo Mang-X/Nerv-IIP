@@ -23,7 +23,9 @@ public sealed class TemplateAssetRetirementEndpointTests
     {
         var auth = mode switch
         {
-            "allowed" => FakeBusinessGatewayAuthorizationClient.Allowed(),
+            "allowed" => new FakeBusinessGatewayAuthorizationClient(_ => true,
+                allowedResult: BusinessGatewayAuthorizationResult.Allowed(
+                    "user-other", "user", "other", "org-001", "env-dev")),
             "missing-subject" => FakeBusinessGatewayAuthorizationClient.AllowedWithoutPrincipal(),
             "other-permission" => FakeBusinessGatewayAuthorizationClient.AllowOnly(BusinessGatewayPermissions.BarcodeTemplatesManage),
             _ => FakeBusinessGatewayAuthorizationClient.Forbidden(),
@@ -64,7 +66,7 @@ public sealed class TemplateAssetRetirementEndpointTests
         var encoded = signed.Proof.Split('.')[0];
         var payload = Encoding.UTF8.GetString(Convert.FromBase64String(
             encoded.Replace('-', '+').Replace('_', '/') + new string('=', (4 - encoded.Length % 4) % 4)));
-        Assert.Contains("\n10:user-admin\n", payload, StringComparison.Ordinal);
+        Assert.Equal("10:user-other", payload.Split('\n')[6]);
         Assert.Contains("business.barcodes.template-assets.retire", payload, StringComparison.Ordinal);
     }
 }
