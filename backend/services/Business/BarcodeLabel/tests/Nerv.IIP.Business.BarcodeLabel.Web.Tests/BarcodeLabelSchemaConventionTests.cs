@@ -10,6 +10,7 @@ using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggre
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.ScanRecordAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.TraceabilityAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.TemplateAssetRetirementDecisionAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Infrastructure;
 using Nerv.IIP.Testing.EntityFramework;
 
@@ -29,6 +30,8 @@ public sealed class BarcodeLabelSchemaConventionTests
             typeof(LabelPrintItem),
             typeof(ScanRecord),
             typeof(EpcisEvent),
+            typeof(TemplateAssetRetirementDecision),
+            typeof(TemplateAssetRetirementReplayFence),
         };
         var failures = new List<string>();
 

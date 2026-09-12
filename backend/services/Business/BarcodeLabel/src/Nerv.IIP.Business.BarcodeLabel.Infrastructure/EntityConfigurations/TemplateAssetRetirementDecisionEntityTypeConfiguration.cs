@@ -43,6 +43,9 @@ public sealed class TemplateAssetRetirementDecisionEntityTypeConfiguration
         builder.Property(x => x.ExecutorMaxBackoffSeconds).HasColumnName("executor_max_backoff_seconds").HasComment("Retirement retry backoff in seconds, frozen on first send.");
         builder.Property(x => x.QuotaReleasedAtUtc).HasColumnName("quota_released_at_utc").HasComment("UTC quota release time reported by FileStorage, absent for unknown outcomes.");
         builder.Property(x => x.ReplayHorizonSeconds).HasColumnName("replay_horizon_seconds").HasComment("Frozen replay horizon in seconds returned by FileStorage.");
+        builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc").HasComment("UTC local terminal completion time, absent for pending or unknown outcomes.");
+        builder.Property(x => x.ReplayUntilUtc).HasColumnName("replay_until_utc").HasComment("Frozen UTC replay deadline, local completion plus the agreed horizon.");
+        builder.HasIndex(x => new { x.Status, x.ReplayUntilUtc });
         builder.HasIndex(x => new { x.Status, x.NextAttemptAtUtc });
         builder.HasIndex(x => new { x.Status, x.RecoveryUntilUtc });
     }

@@ -74,6 +74,8 @@ public sealed class TemplateAssetRetirementDecision : Entity<TemplateAssetRetire
     public long? ExecutorMaxBackoffSeconds { get; private set; }
     public DateTimeOffset? QuotaReleasedAtUtc { get; private set; }
     public long? ReplayHorizonSeconds { get; private set; }
+    public DateTimeOffset? CompletedAtUtc { get; private set; }
+    public DateTimeOffset? ReplayUntilUtc { get; private set; }
 
     public static TemplateAssetRetirementDecision Create(
         string organizationId,

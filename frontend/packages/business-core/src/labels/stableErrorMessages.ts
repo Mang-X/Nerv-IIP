@@ -4,6 +4,7 @@
  * 只负责展示，不归一化或猜测相似值；未知值返回空串，由各端保留原有兜底链。
  */
 export const STABLE_ERROR_MESSAGES: Readonly<Record<string, string>> = {
+  'replay-window-expired': '模板资产退役的重放窗口已过期，不能重新执行或复用该资产。',
   'stored-maintenance-work-order-receipt-is-invalid':
     '工单创建回执异常，请刷新后重试；仍失败请联系管理员。',
   'source-alarm-already-bound-to-a-different-create-intent':
