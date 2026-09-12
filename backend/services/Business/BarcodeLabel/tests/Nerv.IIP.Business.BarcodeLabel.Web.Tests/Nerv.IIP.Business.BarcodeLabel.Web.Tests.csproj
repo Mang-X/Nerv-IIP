@@ -26,6 +26,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Nerv.IIP.Business.BarcodeLabel.Web\Nerv.IIP.Business.BarcodeLabel.Web.csproj" />
+    <ProjectReference Include="..\..\..\..\..\gateway\BusinessGateway\src\Nerv.IIP.BusinessGateway.Web\Nerv.IIP.BusinessGateway.Web.csproj" Aliases="Gateway" />
     <ProjectReference Include="..\..\..\..\FileStorage\src\Nerv.IIP.FileStorage.Web\Nerv.IIP.FileStorage.Web.csproj" Aliases="FileStorage" />
     <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.BarcodeLabel\Nerv.IIP.Contracts.BarcodeLabel.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Inventory\Nerv.IIP.Contracts.Inventory.csproj" />

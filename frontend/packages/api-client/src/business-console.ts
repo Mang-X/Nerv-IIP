@@ -2885,6 +2885,17 @@ export type BusinessConsoleMesProductionStatisticsRequest =
 
 // #2975: scoped barcode-label lifecycle commands exposed through BusinessGateway.
 export {
+  retireBusinessConsoleBarcodeTemplateAsset,
+  retireBusinessConsoleBarcodeTemplateAssetMutationOptions,
+} from './generated/business-console'
+
+export type {
+  RetireBusinessConsoleBarcodeTemplateAssetData,
+  RetireBusinessConsoleBarcodeTemplateAssetErrors,
+  RetireBusinessConsoleBarcodeTemplateAssetResponse,
+} from './generated/business-console'
+
+export {
   dispatchBusinessConsoleBarcodePrintBatch,
   dispatchBusinessConsoleBarcodePrintBatchMutationOptions,
   reprintBusinessConsoleBarcodeLabel,

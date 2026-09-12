@@ -17,6 +17,22 @@ namespace Nerv.IIP.Iam.Web.Tests;
 /// </summary>
 public sealed class IamErpRoleSeedTests
 {
+    [Fact]
+    public async Task Template_asset_retirement_is_in_the_catalog_and_only_the_default_platform_administrator()
+    {
+        const string permission = "business.barcodes.template-assets.retire";
+        await using var dbContext = CreateDbContext();
+        await CreateSeed(dbContext).SeedAsync();
+        var roles = await dbContext.Roles.Include(role => role.Permissions).ToListAsync();
+        var granted = Assert.Single(roles, role => role.Permissions.Any(p => p.PermissionCode == permission));
+        Assert.Equal("Platform Administrator", granted.RoleName);
+        Assert.Contains(permission, Nerv.IIP.Iam.Domain.NervIipSeedPermissions.All);
+        var catalog = Nerv.IIP.Iam.Web.Application.Permissions.IamPermissionCatalog.List();
+        Assert.True(Assert.Single(catalog.Items, item => item.Code == permission).Seeded);
+        var memoryRole = Assert.Single(new InMemoryIamStore().Roles, role => role.PermissionCodes.Contains(permission));
+        Assert.Equal("Platform Administrator", memoryRole.RoleName);
+    }
+
     private static readonly IReadOnlyDictionary<string, (string RoleName, string[] PermissionCodes)> ExpectedRoles =
         new Dictionary<string, (string RoleName, string[] PermissionCodes)>(StringComparer.Ordinal)
         {

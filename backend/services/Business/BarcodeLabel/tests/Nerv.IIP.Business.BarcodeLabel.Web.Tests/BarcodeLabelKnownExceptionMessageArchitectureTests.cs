@@ -21,7 +21,7 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
     private static readonly IReadOnlyCollection<BarcodeLabelKnownExceptionSite> ExpectedSites =
     [
         Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Infrastructure/ApplicationDbContext.cs"), "ApplicationDbContext", "TryMapUniqueConflict", 2),
-        Excluded(SourcePath("Nerv.IIP.Business.BarcodeLabel.Infrastructure/ApplicationDbContext.cs"), "ApplicationDbContext", "TryMapTemplateAssetRetirementUniqueConflict", 2, "Template asset retirement is internal until a later issue adds its public facade"),
+        Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Infrastructure/ApplicationDbContext.cs"), "ApplicationDbContext", "TryMapTemplateAssetRetirementUniqueConflict", 2),
         Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/BarcodeRules/CreateOrUpdateBarcodeRuleCommand.cs"), "CreateOrUpdateBarcodeRuleCommandHandler", "Handle", 4),
         Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/LabelTemplates/CreateOrUpdateLabelTemplateCommand.cs"), "CreateOrUpdateLabelTemplateCommandHandler", "Handle", 2),
         Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/PrintBatches/CreateLabelPrintBatchCommand.cs"), "CreateLabelPrintBatchCommandHandler", "Handle", 5),
@@ -30,8 +30,8 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
         Excluded(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/PrintBatches/PrintLabelLifecycleCommands.cs"), "LabelPrintLifecycleKnownExceptionMapper", "Create", 9, "PrintLabel lifecycle endpoint is internal/no-facade"),
         Excluded(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/PrintBatches/PrintLabelLifecycleCommands.cs"), "LabelPrintLifecycle", "CompileFrozenBatchAsync", 1, "PrintLabel lifecycle helper is internal/no-facade"),
         Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/Scans/RecordScanCommand.cs"), "RecordScanCommandHandler", "Handle", 6),
-        Excluded(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/TemplateAssetRetirements/CreateTemplateAssetRetirementDecisionCommand.cs"), "CreateTemplateAssetRetirementDecisionCommandHandler", "Handle", 9, "Template asset retirement is internal until a later issue adds its public facade"),
-        Excluded(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/TemplateAssetRetirements/CreateTemplateAssetRetirementDecisionCommand.cs"), "CreateTemplateAssetRetirementDecisionCommandHandler", "EnsureSameRequest", 1, "Template asset retirement is internal until a later issue adds its public facade"),
+        Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/TemplateAssetRetirements/CreateTemplateAssetRetirementDecisionCommand.cs"), "CreateTemplateAssetRetirementDecisionCommandHandler", "Handle", 9),
+        Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/TemplateAssetRetirements/CreateTemplateAssetRetirementDecisionCommand.cs"), "CreateTemplateAssetRetirementDecisionCommandHandler", "EnsureSameRequest", 1),
         Excluded(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/TemplateAssetRetirements/CreateTemplateAssetRetirementDecisionCommand.cs"), "CreateTemplateAssetRetirementDecisionCommandHandler", "RejectExpiredAsync", 1, "#3047 requires exact stable replay-window-expired wire code; HTTP retention regression proves transport"),
         Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Queries/PrintBatches/GetLabelPrintBatchQuery.cs"), "GetLabelPrintBatchQueryHandler", "Handle", 1),
         Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Queries/ListQueryCriteria.cs"), "TenantScope", "From", 2),
@@ -57,9 +57,9 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
 
         var expectedKeys = ExpectedSites.Select(site => site.Key).ToArray();
         Assert.Equal(expectedKeys.Length, expectedKeys.Distinct(StringComparer.Ordinal).Count());
-        Assert.Equal(22, ExpectedSites.Where(site => site.Kind == BarcodeLabelKnownExceptionSiteKind.Target)
+        Assert.Equal(34, ExpectedSites.Where(site => site.Kind == BarcodeLabelKnownExceptionSiteKind.Target)
             .Sum(site => site.DirectKnownExceptionCount));
-        Assert.Equal(25, ExpectedSites.Where(site => site.Kind == BarcodeLabelKnownExceptionSiteKind.Excluded)
+        Assert.Equal(13, ExpectedSites.Where(site => site.Kind == BarcodeLabelKnownExceptionSiteKind.Excluded)
             .Sum(site => site.DirectKnownExceptionCount));
 
         var discovered = BarcodeLabelUserMessageSourceAnalyzer.Discover(documents);
