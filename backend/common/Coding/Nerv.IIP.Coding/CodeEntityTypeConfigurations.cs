@@ -80,6 +80,15 @@ public static class CodingModelBuilderExtensions
         builder.Property(x => x.RuleKey).HasColumnName("rule_key").IsRequired().HasMaxLength(100).HasComment("Code rule key governed by the idempotency key.");
         builder.Property(x => x.IdempotencyKey).HasColumnName("idempotency_key").IsRequired().HasMaxLength(CodeIdempotencyKey.IdempotencyKeyMaxLength).HasComment("Client supplied stable idempotency key for ordinary create requests.");
         builder.Property(x => x.Code).HasColumnName("code").IsRequired().HasMaxLength(128).HasComment("Allocated business code returned for this idempotency key.");
+        // 已知边界，未立案（#3307 实读登记）：payload_fingerprint 与 idempotency_key 一样是**原样落库**——
+        // CodeAllocator.Fingerprint 是 string.Join('|', ...)，**不是摘要**。因此 1000 是对**原始拼接结果**
+        // 的真上界（不像存定长摘要的列那样对原始输入零约束），而该结果的长度由**请求字段总长**决定：
+        // 字段够宽的命令走进 CodeAllocator 会在 SaveChangesAsync 撞 PostgreSQL 22001，而**不是**在入口被拒——
+        // 与 #3288 同形。
+        // ⚠️ 这句话**不是**「这里是安全的」，也不是「1000 够用」——它只说明上界在哪、由谁决定、越界时在哪里炸。
+        // 当前**无实测溢出**（本仓 #3318 / #3273 / #3275 / #3322 那一族每张都由真实溢出触发，这条不是），
+        // 故按「不过度防御、不为边界问题大量开票」未单独立案。
+        // 重启条件是**真的撞到 22001**，不是「理论上可能」。
         builder.Property(x => x.PayloadFingerprint).HasColumnName("payload_fingerprint").IsRequired().HasMaxLength(1000).HasComment("Canonical request payload fingerprint used to reject key reuse with different create data.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").HasComment("UTC timestamp when the idempotency key was first recorded.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.RuleKey, x.IdempotencyKey }).IsUnique().HasDatabaseName("ux_code_idempotency_keys_scope");
