@@ -193,6 +193,33 @@ public sealed class IntegrationEventIdempotencyKeyTests
     /// 前缀长到放不下摘要时就地抛：否则回落形态自己就超预算，
     /// 那是「护栏产出越界值」而不是「护栏挡住越界值」。
     /// </summary>
+    /// <summary>
+    /// #3370：<c>ComposeServiceScoped</c> 把 <c>parts[0]</c> **并进回落前缀**，
+    /// 所以当第一段本身是**可变长数据**（不是短字面量 kind）时，它会在前缀超界处抛，
+    /// 而 <see cref="IntegrationEventIdempotencyKey.Compose"/> 把同一段当尾段、照常回落。
+    /// <para>这不是风格差异，是 Quality SPC 那条位点必须直接用 <c>Compose</c> 的**唯一理由**：
+    /// 那里的第一段是 <c>alertKey</c>，自己就含 org/env/sku/characteristic/workCenter 五段。
+    /// 两个出口在**不抛**时逐字相同，这条也一并钉住——否则「换个出口」会被当成行为变更。</para>
+    /// </summary>
+    [Fact]
+    public void A_variable_length_first_part_throws_through_the_service_scoped_entry_but_not_through_compose()
+    {
+        var longFirstPart = new string('a', IntegrationEventIdempotencyKey.Budget);
+
+        Assert.Throws<ArgumentException>(
+            () => IntegrationEventIdempotencyKey.ComposeServiceScoped("quality:", longFirstPart, "tail-1", "tail-2"));
+
+        var composed = IntegrationEventIdempotencyKey.Compose("quality:", longFirstPart, "tail-1", "tail-2");
+        Assert.True(
+            IntegrationEventIdempotencyKey.IsDigested("quality:", composed),
+            $"同一组输入经 Compose 应走回落分支，实际是：{composed}");
+
+        // 不抛的取值上，两个出口逐字相同 —— 「改走 Compose」不是行为变更。
+        Assert.Equal(
+            IntegrationEventIdempotencyKey.ComposeServiceScoped("quality:", "short-kind", "tail-1", "tail-2"),
+            IntegrationEventIdempotencyKey.Compose("quality:", "short-kind", "tail-1", "tail-2"));
+    }
+
     [Fact]
     public void A_prefix_too_long_to_leave_room_for_the_digest_throws()
     {
