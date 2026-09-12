@@ -22,4 +22,4 @@
 - 服务边界、事实所有权、协议、部署和工程治理仍从 [`../architecture/README.md`](../architecture/README.md) 路由。
 - 通用运行验收证据模板不放在 Product；现场角色旅程对应模板位于 [`../reference/frontline/acceptance-evidence.md`](../reference/frontline/acceptance-evidence.md)。
 - 工厂设定与人工走查最小数据属于 Reference，当前住所为 [`../reference/demo/factory-world-bible.md`](../reference/demo/factory-world-bible.md)。
-- `docs/architecture/*-module-product-design.md`、`docs/architecture/frontend-navigation-map.md` 等旧路径在 M2 迁移期只可能是兼容入口，不能作为 Product 正文继续维护。
+- M4 后 `docs/architecture/*-module-product-design.md`、`docs/architecture/frontend-navigation-map.md` 等旧平铺路径已退出；当前 Product 链接只指向本目录或其它 canonical owner，历史旧路径通过冻结材料和 Git 追溯。

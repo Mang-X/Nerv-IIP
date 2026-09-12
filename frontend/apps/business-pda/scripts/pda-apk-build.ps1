@@ -37,7 +37,7 @@
 #     - Network access to Gradle/Maven repositories on the first run
 
 # PDA dev 调试 APK 可复现构建入口（方案 frontend/DESIGN/roadmaps/2026-07-15-pda-device-sim-detection-plan.md §5 / §8 M3a；
-# 部署口径 docs/architecture/mobile-pda-deployment.md）。
+# 部署口径 docs/runbooks/mobile-pda-deployment.md）。
 # 默认产出 L3 dev 冒烟用 debug APK：基址指向宿主 vite dev 统一双代理入口
 # http://10.0.2.2:5126（模拟器内 10.0.2.2 = 宿主回环），并注入 NERV_PDA_DEV_APK=1
 # 使 capacitor.config.ts 切到 androidScheme http + cleartext true（仅本次构建生效）。
@@ -74,7 +74,7 @@ $androidDir = Join-Path $appDir 'android'
 # --- 1. 工具链前置检查。
 $androidHome = Resolve-PdaAndroidHome
 if ([string]::IsNullOrWhiteSpace($androidHome)) {
-    Write-Diagnostic -Level 'ERROR' -Message '缺少 Android SDK：ANDROID_HOME/ANDROID_SDK_ROOT 与当前平台约定位置均无 platform-tools/adb。安装口径见 docs/architecture/mobile-pda-deployment.md（sdkmanager 装 platform-tools/build-tools/platforms/emulator/系统镜像）。'
+    Write-Diagnostic -Level 'ERROR' -Message '缺少 Android SDK：ANDROID_HOME/ANDROID_SDK_ROOT 与当前平台约定位置均无 platform-tools/adb。安装口径见 docs/runbooks/mobile-pda-deployment.md（sdkmanager 装 platform-tools/build-tools/platforms/emulator/系统镜像）。'
     exit 1
 }
 $env:ANDROID_HOME = $androidHome
@@ -82,7 +82,7 @@ Write-Diagnostic "ANDROID_HOME=$androidHome"
 
 $resolvedJavaHome = Resolve-PdaJavaHome21
 if ([string]::IsNullOrWhiteSpace($resolvedJavaHome)) {
-    Write-Diagnostic -Level 'ERROR' -Message '缺少兼容 JDK：JAVA_HOME、PATH 中的 java 与当前平台约定位置均未探测到 JDK 21–24。Capacitor 8 的 android 库 sourceCompatibility=21。安装口径见 docs/architecture/mobile-pda-deployment.md。'
+    Write-Diagnostic -Level 'ERROR' -Message '缺少兼容 JDK：JAVA_HOME、PATH 中的 java 与当前平台约定位置均未探测到 JDK 21–24。Capacitor 8 的 android 库 sourceCompatibility=21。安装口径见 docs/runbooks/mobile-pda-deployment.md。'
     exit 1
 }
 $env:JAVA_HOME = $resolvedJavaHome

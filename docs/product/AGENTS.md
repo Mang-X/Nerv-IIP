@@ -6,4 +6,4 @@
 - 产品正文可以记录当前能力边界和明确后续产品缺口，但不得复制 GitHub/Linear 任务进度、CI run、一次性调查结果或历史状态总账。
 - 当前实现事实以代码、公开契约和测试为准；当产品裁决与当前实现存在差距时，要明确区分“目标产品语义”和“当前实现事实”。
 - 通用运行证据、环境启动、测试 lane 与证据 manifest 模板属于 Reference / Runbook / Governance，不要混回 Product。
-- M2 迁移兼容页只导航，不追加 Product 或 Governance 正文；删除条件由 M2-M/M4 统一处理。
+- M4 后旧 Architecture/Product 迁移兼容页已退出；Product 正文只引用当前 canonical owner。历史旧路径通过冻结材料和 Git 追溯，不重新建立兼容页。
