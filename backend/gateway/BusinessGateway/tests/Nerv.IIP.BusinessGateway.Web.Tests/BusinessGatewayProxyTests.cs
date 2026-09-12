@@ -17539,6 +17539,30 @@ internal sealed class RecordingErpClient : IBusinessErpClient
 
 internal sealed class RecordingBarcodeLabelClient : IBusinessBarcodeLabelClient, IBusinessBarcodeResolverClient
 {
+    public Nerv.IIP.Contracts.BarcodeLabel.GetTemplateAssetRetirementRequest? LastRetirementReadRequest { get; private set; }
+
+    public Task<Nerv.IIP.Contracts.BarcodeLabel.TemplateAssetRetirementResponse> GetTemplateAssetRetirementAsync(
+        string internalBearerToken, Nerv.IIP.Contracts.BarcodeLabel.GetTemplateAssetRetirementRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastRetirementReadRequest = request;
+        return Task.FromResult(new Nerv.IIP.Contracts.BarcodeLabel.TemplateAssetRetirementResponse(
+            request.FileId, null, Guid.Parse("11111111-1111-1111-1111-111111111111"),
+            Nerv.IIP.Contracts.BarcodeLabel.TemplateAssetRetirementStatus.QuotaReleased));
+    }
+
+    public Nerv.IIP.Contracts.BarcodeLabel.RetireTemplateAssetRequest? LastRetirementRequest { get; private set; }
+
+    public Task<Nerv.IIP.Contracts.BarcodeLabel.RetireTemplateAssetResponse> RetireTemplateAssetAsync(
+        string internalBearerToken, Nerv.IIP.Contracts.BarcodeLabel.RetireTemplateAssetRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastRetirementRequest = request;
+        return Task.FromResult(new Nerv.IIP.Contracts.BarcodeLabel.RetireTemplateAssetResponse(Guid.NewGuid()));
+    }
+
     public BusinessBarcodeResolveResponse ResolveResponse { get; init; } = new(
         "resolved",
         null,

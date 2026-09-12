@@ -9,6 +9,8 @@ using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.PrintBatches;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.Scans;
+using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.TemplateAssetRetirements;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.TemplateAssetRetirementDecisionAggregate;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockCounts;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
@@ -23,6 +25,7 @@ using Nerv.IIP.Business.Quality.Web.Application.Commands.QualityReasons;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
+using Nerv.IIP.BusinessGateway.Web.Endpoints.Barcode;
 using Nerv.IIP.Coding;
 
 using MesEndpointRequests = Nerv.IIP.Business.Mes.Web.Endpoints.Mes;
@@ -1037,6 +1040,11 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
             [Command<CreateLabelPrintBatchCommand>(), BarcodeLabelPrintBatchKeyColumn],
         [typeof(BusinessConsoleRecordBarcodeScanRequest)] =
             [Command<RecordScanCommand>(), BarcodeLabelScanRecordKeyColumn],
+        // 退役入口原样转发 IdempotencyKey 到 decision 命令与持久化列。
+        [typeof(RetireBusinessConsoleBarcodeTemplateAssetRequest)] =
+            [Command<CreateTemplateAssetRetirementDecisionCommand>(),
+                Column<TemplateAssetRetirementDecision>(BarcodeLabelModel,
+                    nameof(TemplateAssetRetirementDecision.IdempotencyKey), "BarcodeLabel")],
 
         // ---- Wms（#3326）：出库过账重投 ----
         // 转发链：RetryBusinessConsoleWmsOutboundInventoryPostingEndpoint → BusinessWmsClient 的

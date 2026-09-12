@@ -478,6 +478,12 @@ public static class BarcodeLabelEndpointContracts
 {
     public static readonly IReadOnlyCollection<BarcodeLabelEndpointContract> All =
     [
+        new(typeof(GetTemplateAssetRetirementEndpoint), "GET", "/api/business/v1/barcodes/template-assets/retirement",
+            Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.TemplateAssetRetirementDecisionAggregate.TemplateAssetRetirementDecision.RequiredPermission,
+            InternalServiceAuthorizationPolicy.Name, "getBusinessBarcodeTemplateAssetRetirement"),
+        new(typeof(RetireTemplateAssetEndpoint), "POST", Nerv.IIP.Contracts.BarcodeLabel.TemplateAssetRetirementProofV1.Route,
+            Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.TemplateAssetRetirementDecisionAggregate.TemplateAssetRetirementDecision.RequiredPermission,
+            InternalServiceAuthorizationPolicy.Name, "retireBusinessBarcodeTemplateAsset"),
         new(typeof(ListBarcodeRulesEndpoint), "GET", "/api/business/v1/barcodes/rules", BarcodeLabelPermissionCodes.TemplatesManage, InternalServiceAuthorizationPolicy.Name, "listBusinessBarcodeRules"),
         new(typeof(CreateOrUpdateBarcodeRuleEndpoint), "POST", "/api/business/v1/barcodes/rules", BarcodeLabelPermissionCodes.TemplatesManage, InternalServiceAuthorizationPolicy.Name, "createOrUpdateBusinessBarcodeRule"),
         new(typeof(CreateOrUpdateLabelTemplateEndpoint), "POST", "/api/business/v1/barcodes/templates", BarcodeLabelPermissionCodes.TemplatesManage, InternalServiceAuthorizationPolicy.Name, "createOrUpdateBusinessBarcodeTemplate"),

@@ -201,6 +201,24 @@
     },
     {
       "service": "BarcodeLabel",
+      "method": "POST",
+      "route": "/api/business/v1/barcodes/template-assets/retire",
+      "operationId": "retireBusinessBarcodeTemplateAsset",
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["retireBusinessConsoleBarcodeTemplateAsset"]
+    },
+    {
+      "service": "BarcodeLabel",
+      "method": "GET",
+      "route": "/api/business/v1/barcodes/template-assets/retirement",
+      "operationId": "getBusinessBarcodeTemplateAssetRetirement",
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["getBusinessConsoleBarcodeTemplateAssetRetirement"]
+    },
+    {
+      "service": "BarcodeLabel",
       "method": "GET",
       "route": "/api/business/v1/barcodes/print-batches",
       "operationId": "listBusinessBarcodePrintBatches",

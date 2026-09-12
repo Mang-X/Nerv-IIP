@@ -8356,6 +8356,23 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleB
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfTemplateAssetRetirementResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsBarcodeLabelTemplateAssetRetirementResponse | null;
+};
+
+export type NervIipContractsBarcodeLabelTemplateAssetRetirementResponse = {
+    fileId?: string;
+    checksum?: string | null;
+    decisionId?: string | null;
+    status?: NervIipContractsBarcodeLabelTemplateAssetRetirementStatus | null;
+};
+
+export type NervIipContractsBarcodeLabelTemplateAssetRetirementStatus = 'pending' | 'quota-released' | 'execution-outcome-unknown' | 'replay-window-expired';
+
+export type NervIipContractsBarcodeLabelGetTemplateAssetRetirementRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodeResolveResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebEndpointsBarcodeBusinessConsoleBarcodeResolveResponse | null;
 };
@@ -8383,6 +8400,24 @@ export type NervIipBusinessGatewayWebEndpointsBarcodeBusinessConsoleBarcodeResol
     scannedValue: string;
     pageIndex?: number;
     pageSize?: number;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfRetireTemplateAssetResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsBarcodeLabelRetireTemplateAssetResponse | null;
+};
+
+export type NervIipContractsBarcodeLabelRetireTemplateAssetResponse = {
+    decisionId?: string;
+};
+
+export type NervIipBusinessGatewayWebEndpointsBarcodeRetireBusinessConsoleBarcodeTemplateAssetRequest = {
+    organizationId: string;
+    environmentId: string;
+    templateId: string;
+    fileId: string;
+    checksum: string;
+    reason: string;
+    idempotencyKey: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleApprovalTemplateListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -22770,6 +22805,44 @@ export type RecordBusinessConsoleBarcodeScanResponses = {
 
 export type RecordBusinessConsoleBarcodeScanResponse = RecordBusinessConsoleBarcodeScanResponses[keyof RecordBusinessConsoleBarcodeScanResponses];
 
+export type GetBusinessConsoleBarcodeTemplateAssetRetirementData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        templateId: string;
+        fileId: string;
+    };
+    url: '/api/business-console/v1/barcode/template-assets/retirement';
+};
+
+export type GetBusinessConsoleBarcodeTemplateAssetRetirementErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleBarcodeTemplateAssetRetirementError = GetBusinessConsoleBarcodeTemplateAssetRetirementErrors[keyof GetBusinessConsoleBarcodeTemplateAssetRetirementErrors];
+
+export type GetBusinessConsoleBarcodeTemplateAssetRetirementResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfTemplateAssetRetirementResponse;
+};
+
+export type GetBusinessConsoleBarcodeTemplateAssetRetirementResponse = GetBusinessConsoleBarcodeTemplateAssetRetirementResponses[keyof GetBusinessConsoleBarcodeTemplateAssetRetirementResponses];
+
 export type ResolveBusinessConsoleBarcodeData = {
     body: NervIipBusinessGatewayWebEndpointsBarcodeBusinessConsoleBarcodeResolveRequest;
     path?: never;
@@ -22802,6 +22875,39 @@ export type ResolveBusinessConsoleBarcodeResponses = {
 };
 
 export type ResolveBusinessConsoleBarcodeResponse = ResolveBusinessConsoleBarcodeResponses[keyof ResolveBusinessConsoleBarcodeResponses];
+
+export type RetireBusinessConsoleBarcodeTemplateAssetData = {
+    body: NervIipBusinessGatewayWebEndpointsBarcodeRetireBusinessConsoleBarcodeTemplateAssetRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/barcode/template-assets/retire';
+};
+
+export type RetireBusinessConsoleBarcodeTemplateAssetErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type RetireBusinessConsoleBarcodeTemplateAssetError = RetireBusinessConsoleBarcodeTemplateAssetErrors[keyof RetireBusinessConsoleBarcodeTemplateAssetErrors];
+
+export type RetireBusinessConsoleBarcodeTemplateAssetResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfRetireTemplateAssetResponse;
+};
+
+export type RetireBusinessConsoleBarcodeTemplateAssetResponse = RetireBusinessConsoleBarcodeTemplateAssetResponses[keyof RetireBusinessConsoleBarcodeTemplateAssetResponses];
 
 export type ListBusinessConsoleApprovalTemplatesData = {
     body?: never;

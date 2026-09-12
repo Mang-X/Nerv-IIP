@@ -66,6 +66,10 @@ public sealed class CreateLabelPrintBatchCommandHandler(
                 x => x.OrganizationId == request.OrganizationId
                     && x.EnvironmentId == request.EnvironmentId
                     && x.TemplateFileId == template.TemplateFileId,
+                cancellationToken) || await dbContext.TemplateAssetRetirementReplayFences.AnyAsync(
+                x => x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId
+                    && x.TemplateFileId == template.TemplateFileId,
                 cancellationToken))
         {
             throw new KnownException("模板资产已经退役，不能冻结到新打印批次。");

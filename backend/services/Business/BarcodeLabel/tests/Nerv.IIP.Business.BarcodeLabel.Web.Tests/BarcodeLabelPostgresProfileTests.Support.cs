@@ -65,10 +65,13 @@ public sealed partial class BarcodeLabelPostgresProfileTests
         return services.BuildServiceProvider();
     }
 
-    private static ServiceProvider CreateRetirementCommandProvider(SaveChangesInterceptor? interceptor = null)
+    private static ServiceProvider CreateRetirementCommandProvider(SaveChangesInterceptor? interceptor = null, TimeProvider? clock = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddSingleton(clock ?? TimeProvider.System);
+        services.AddSingleton(Prometheus.Metrics.NewCustomRegistry());
+        services.AddSingleton<TemplateAssetRetirementMetrics>();
         services.AddMediatR(configuration => configuration
             .RegisterServicesFromAssembly(typeof(CreateTemplateAssetRetirementDecisionCommand).Assembly)
             .AddUnitOfWorkBehaviors());

@@ -92,6 +92,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<LabelPrintItem> LabelPrintItems => Set<LabelPrintItem>();
 
     public DbSet<TemplateAssetRetirementDecision> TemplateAssetRetirementDecisions => Set<TemplateAssetRetirementDecision>();
+    public DbSet<TemplateAssetRetirementReplayFence> TemplateAssetRetirementReplayFences => Set<TemplateAssetRetirementReplayFence>();
 
     public DbSet<ScanRecord> ScanRecords => Set<ScanRecord>();
 

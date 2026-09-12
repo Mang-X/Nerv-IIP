@@ -1,8 +1,16 @@
+using Nerv.IIP.Contracts.BarcodeLabel;
+
 namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
 
 public interface IBusinessBarcodeLabelClient
 {
+    Task<TemplateAssetRetirementResponse> GetTemplateAssetRetirementAsync(
+        string internalBearerToken, GetTemplateAssetRetirementRequest request, CancellationToken cancellationToken);
+
+    Task<RetireTemplateAssetResponse> RetireTemplateAssetAsync(
+        string internalBearerToken, RetireTemplateAssetRequest request, CancellationToken cancellationToken);
+
     Task<BusinessConsoleBarcodeRuleListResponse> ListRulesAsync(
         string internalBearerToken,
         BusinessConsoleBarcodeRuleListRequest request,
@@ -67,6 +75,18 @@ public interface IBusinessBarcodeLabelClient
 public sealed class HttpBusinessBarcodeLabelClient(HttpClient httpClient)
     : BusinessServiceHttpClient(httpClient), IBusinessBarcodeLabelClient
 {
+    public Task<TemplateAssetRetirementResponse> GetTemplateAssetRetirementAsync(
+        string internalBearerToken, GetTemplateAssetRetirementRequest request, CancellationToken cancellationToken) =>
+        SendAsync<TemplateAssetRetirementResponse>(internalBearerToken, HttpMethod.Get,
+            "/api/business/v1/barcodes/template-assets/retirement?" + Query(
+                ("organizationId", request.OrganizationId), ("environmentId", request.EnvironmentId),
+                ("templateId", request.TemplateId), ("fileId", request.FileId)), null, cancellationToken);
+
+    public Task<RetireTemplateAssetResponse> RetireTemplateAssetAsync(
+        string internalBearerToken, RetireTemplateAssetRequest request, CancellationToken cancellationToken) =>
+        SendAsync<RetireTemplateAssetResponse>(internalBearerToken, HttpMethod.Post,
+            TemplateAssetRetirementProofV1.Route, request, cancellationToken);
+
     public Task<BusinessConsoleBarcodeRuleListResponse> ListRulesAsync(
         string internalBearerToken,
         BusinessConsoleBarcodeRuleListRequest request,

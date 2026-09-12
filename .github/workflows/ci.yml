@@ -2209,6 +2209,15 @@ jobs:
     # 层级 B（失败后没有 step 运行）。job 预算是按观测运行时间设定的快速失败上限
     # （docs/architecture/test-evidence-governance.md 的层级 B 规则）。
     #
+    # 35m 的来源（#3300，2026-09-12 实跑）：#2700（2026-08-28）把预算定在 20m，依据是当时
+    # 整 job 观测最大值 10.05m。#3300 给本 job 加了两个 step，其中发现式 runner 一次跑掉 26 个
+    # 此前零 job 选中的契约测试。带这两个 step 的首次 CI 实跑（run 34682156085 / job 103522801021）
+    # 整 job 耗时 16m55s（08:01:39→08:18:34），其中 runner step 216s、选取契约 step 4s。
+    # 按本 job 自己写下的判据「按整 job 观测最大值重新推导、取其约 2 倍」：16.9m → 35m。
+    # 这不是「只看新 step 秒级」的旧判据：新增量只有 3.7m，整 job 从 9.7m 涨到 16.9m 的其余部分
+    # 是运行器速度波动（本 job 已记录的 1.26x–1.62x 区间），两者都进了重新推导。
+    # 下面保留 20m 那次推导的完整记录，因为新判据仍然建立在它之上。
+    #
     # 20m 的来源（#2700，2026-08-28 实测）：样本为 main 上 08-22 至 08-28 的 50 次 run
     # （最近 25 次连续，更早区间每 4 次取 1）。整个 job 的观测区间是 6.63m–10.05m；
     # 在最近 25 次连续采样中，19 次落在 9m 以上，中位数约 9.6m。
@@ -2239,17 +2248,15 @@ jobs:
     # 新判据：增删 step 后按 main 上最近若干次 run 的**整 job** 观测最大值重新推导，
     # 取其约 2 倍；不要只看新 step 自身耗时。
     #
-    # step 预算合计 188m（38 个 step：3m checkout
-    # + 37 × 5m；2026-08-23 逐 step 实测求和，2026-09-02 按 #2863 新增两个 step 重算，
-    # 2026-09-05 按 #3145 新增两个 step 重算，2026-09-11 按 #3349 新增一个 step 重算，
-    # 2026-09-12 按 #3155 新增两个 step 重算），
+    # step 预算合计 208m（40 个 step：3m checkout
+    # + 38 × 5m + 1 × 15m；逐 step 上限求和，最近一次随 #3300 的两个新 step 重算），
     # 且仅为逐 step 上限。
     # 合计超过 job 预算对层级 B 是正确的，也不是 scripts/lib/CiWorkflowBudgets.ps1
     # 执行的约束：「step 预算合计低于 job 预算」只适用于层级 A（会从 `if: always()`
     # step 发布证据、而该 step 会被 job 级超时取消的 job）。本 job 没有此类 step，
     # 因此门禁从不读取这个数字——新增 step 时须人工保持其准确。
     # 该合计只保留一个当前值：增删 step 直接改这个数字，不要追加历史增量句。
-    timeout-minutes: 20
+    timeout-minutes: 35
     runs-on: ubuntu-latest
     needs: impact-plan
     if: >-
@@ -2496,6 +2503,26 @@ jobs:
         timeout-minutes: 5
         shell: pwsh
         run: ./scripts/verify-stable-code-frontend-vocabulary.ps1
+
+      # #3300：上面每一个 `Test …` step 都是手写点名，名单记录的是写名单那一刻的世界。
+      # 下面两步把「哪些 scripts/tests 文件被选中」从点名换成补集选取：
+      # 选取契约先验证登记面没有烂掉，再由发现式 runner 跑掉补集。
+      # 新增一个 scripts/tests/*.Tests.ps1 的默认归宿因此是「被 runner 跑到」而不是「零 job 选中」。
+      - name: Test script contract test selection
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/script-test-selection.Tests.ps1
+
+      # 该 step 以 exit code 表达结果，因此必须独占一个 run step：与其它命令同处一个 step 时
+      # 失败会被后续命令的退出码吞掉。
+      #
+      # 15m 而不是按当前成员数取约 2 倍（2026-09-12 CI 实测 216s ⇒ 约 8m）：这一步的成员是算出来的
+      # 补集，新增契约测试会自动落进来，它的耗时按设计会随仓库增长。层级 B 的 step 预算只是逐 step
+      # 上限、不参与 job 快速失败判定，因此这里留出超过当前成员的余量，避免每加一个测试就改预算。
+      - name: Run discovered script contract tests
+        timeout-minutes: 15
+        shell: pwsh
+        run: ./scripts/run-script-contract-tests.ps1
 
   ci-summary:
     name: CI Summary

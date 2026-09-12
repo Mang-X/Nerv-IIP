@@ -30,7 +30,7 @@
 | 服务 | 总数 | exposed | deferred | internal |
 | --- | ---: | ---: | ---: | ---: |
 | Approval | 16 | 11 | 4 | 1 |
-| BarcodeLabel | 16 | 13 | 0 | 3 |
+| BarcodeLabel | 18 | 15 | 0 | 3 |
 | DemandPlanning | 16 | 16 | 0 | 0 |
 | Erp | 59 | 45 | 13 | 1 |
 | IndustrialTelemetry | 28 | 25 | 1 | 2 |
@@ -42,7 +42,7 @@
 | Quality | 43 | 30 | 12 | 1 |
 | Scheduling | 15 | 13 | 1 | 1 |
 | Wms | 49 | 37 | 7 | 5 |
-| **Total** | **444** | **371** | **46** | **27** |
+| **Total** | **446** | **373** | **46** | **27** |
 
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 

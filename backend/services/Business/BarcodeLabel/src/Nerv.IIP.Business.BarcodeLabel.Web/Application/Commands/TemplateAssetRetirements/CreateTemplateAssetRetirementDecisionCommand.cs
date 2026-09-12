@@ -38,13 +38,18 @@ public sealed class CreateTemplateAssetRetirementDecisionCommandValidator
 
 public sealed class CreateTemplateAssetRetirementDecisionCommandHandler(
     ApplicationDbContext dbContext,
-    ITemplateAssetRetirementFence retirementFence)
+    ITemplateAssetRetirementFence retirementFence,
+    TimeProvider clock,
+    TemplateAssetRetirementMetrics metrics)
     : ICommandHandler<CreateTemplateAssetRetirementDecisionCommand, TemplateAssetRetirementDecisionId>
 {
+    public const string StableErrorCode = "replay-window-expired";
+
     public async Task<TemplateAssetRetirementDecisionId> Handle(
         CreateTemplateAssetRetirementDecisionCommand request,
         CancellationToken cancellationToken)
     {
+        await RejectExpiredAsync(request, cancellationToken);
         var replay = await FindByIdempotencyKeyAsync(request, cancellationToken);
         if (replay is not null)
         {
@@ -58,6 +63,7 @@ public sealed class CreateTemplateAssetRetirementDecisionCommandHandler(
             request.TemplateFileId,
             cancellationToken);
 
+        await RejectExpiredAsync(request, cancellationToken);
         replay = await FindByIdempotencyKeyAsync(request, cancellationToken);
         if (replay is not null)
         {
@@ -174,6 +180,20 @@ public sealed class CreateTemplateAssetRetirementDecisionCommandHandler(
                 && x.EnvironmentId == request.EnvironmentId
                 && x.IdempotencyKey == request.IdempotencyKey,
             cancellationToken);
+
+    private async Task RejectExpiredAsync(CreateTemplateAssetRetirementDecisionCommand request, CancellationToken ct)
+    {
+        var digest = TemplateAssetRetirementReplayFence.DigestKey(request.IdempotencyKey);
+        var now = clock.GetUtcNow();
+        if (await dbContext.TemplateAssetRetirementReplayFences.AnyAsync(x =>
+                x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId
+                && (x.TemplateFileId == request.TemplateFileId || x.IdempotencyKeyDigest == digest)
+                && now >= x.ReplayUntilUtc, ct))
+        {
+            metrics.RecordExpiredReplay();
+            throw new KnownException(StableErrorCode);
+        }
+    }
 
     private static TemplateAssetRetirementDecisionId EnsureSameRequest(
         TemplateAssetRetirementDecision existing,
