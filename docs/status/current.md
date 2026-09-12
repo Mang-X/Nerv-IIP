@@ -34,6 +34,5 @@
 
 1. 当前实现行为以代码、配置、公开契约、测试和命令帮助为准；本页不能替代实现核查。
 2. 当前进度、负责人、依赖和验收证据以 GitHub/Linear 为准；本页不复制 Issue 正文。
-3. [`../architecture/implementation-readiness.md`](../architecture/implementation-readiness.md) 仅为旧路径兼容入口。
-4. [`archive/`](archive/) 中的日期化文件是时点快照，不得用来覆盖当前事实，也不得原地追加修订。
-5. 完成的重点从本页删除；历史通过 Git、GitHub/Linear 与冻结快照追溯。
+3. [`archive/`](archive/) 中的日期化文件是时点快照，不得用来覆盖当前事实，也不得原地追加修订。
+4. 完成的重点从本页删除；历史通过 Git、GitHub/Linear 与冻结快照追溯。
