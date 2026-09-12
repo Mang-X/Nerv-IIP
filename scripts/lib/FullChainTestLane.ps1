@@ -133,15 +133,31 @@ function Get-NervFullChainDiscoveredTestIdentities {
 
         本函数因此照抄 #3282 的姿势把边界往上挪一层：公开参数收**原始 stdout**，切行发生在函数内部，
         调用方在**类型上**就不再持有「行」这个中间物，缺陷形状不再可表达（而不是「碰巧没人写出来」）。
-        同理刻意**不**给参数加 `AllowEmptyString()` 之类的放行属性去绕过原报错——空串不是合法身份，
-        那道校验本身没错，错的是让调用方有机会构造出带空元素的数组。这个性质由
-        scripts/tests/full-chain-test-lane.Tests.ps1 的承重变异格钉住（把类型退回 `[string[]]` 必红）。
+        这个性质由 scripts/tests/full-chain-test-lane.Tests.ps1 的承重变异格钉住（把类型退回
+        `[string[]]`、或放松成 `[object]`，都必须红）。
+
+        `[AllowEmptyString()]` 是**刻意放行**，不是疏漏：空 stdout 与 `$null` 都是**合法的可观测
+        状态**（发现阶段确实可能什么都没输出），而本票要治的病正是「一个合法的真实 stdout 形态撞成
+        **参数绑定失败**、而不是有意义的域错误」。若把空输入也做成绑定失败，就是同一个病换个位置
+        复发：调用者拿到的仍然是一句读不懂的绑定错误，仍然在任何域判断之前中断。因此空输入在这里
+        **绑定成功并返回 0 条身份**，由下游 `Assert-NervFullChainDiscoveryClosure` 的 `missingClaims`
+        分支（本文件 :206-:210）抛出说得清的域错误
+        （`FullChain lane manifest freezes identities that discovery did not report: ...`）。
+        这条行为已写成断言：删掉 `[AllowEmptyString()]` 必红。
+
+        刻意**不**写 `[AllowNull()]`：本机实测过，`[string]` 参数上 `$null` 在校验**之前**就被转成
+        `''`，所以裸 `[string]` 与 `[AllowNull()] [string]` 对 `$null` 报的都是
+        `because it is an empty string`，而单独一个 `[AllowEmptyString()]` 就同时覆盖 `''` 与 `$null`。
+        也就是说 `[AllowNull()]` 在这个签名上**拿不出鉴别力证据**（删掉它整套测试全绿 = 等价变异，
+        不是覆盖缺口）。照本函数上面对 ` -> ` 特判的同一条处置：死属性不留。⚠️ 附带事实，不在本票
+        改动面内：#3282 的同族 `Assert-BackendTestShardSelectorDiscovery` 签名里带着同样inert的
+        `[AllowNull()]`。
 
         #3135 的解析口径（不锚表头、整行完全匹配身份形状、`[Theory]` 截断到 `(`）一个字都没动：
         本次只挪参数边界，不碰识别逻辑。
     #>
     param(
-        [Parameter(Mandatory)] [AllowEmptyString()] [AllowNull()] [string] $DiscoveryOutput,
+        [Parameter(Mandatory)] [AllowEmptyString()] [string] $DiscoveryOutput,
         [Parameter(Mandatory)] [string] $RootNamespace
     )
 

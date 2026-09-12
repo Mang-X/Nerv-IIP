@@ -866,8 +866,10 @@ try {
     # === #3285 参数边界：调用方在类型上拿不到「行」 ==============================================
     # 缺陷与修法的完整归因写在 scripts/lib/FullChainTestLane.ps1 的函数注释里，这里不复述。要点一条：
     # Get-NervFullChainDiscoveredTestIdentities 收的是 --list-tests 的**原始 stdout**，切行在函数内部。
-    # 下面这条喂真实形状的原始捕获：表头前后空行、纯空白行、CRLF 与 dotnet test 必然带的尾随换行，
-    # 都不得让解析崩在绑定或匹配上。
+    # 下面这条喂真实形状的原始捕获：表头前后空行、纯空白行、以及 dotnet test 必然带的尾随换行，
+    # 都不得让解析崩在绑定或匹配上。夹具用 CRLF 书写只是为了贴近真实捕获，**不**声称它检验了 CRLF：
+    # 本机实测把内部切法从 `-split "`r?`n"` 改成 `-split "`n"` 整脚本仍全绿（紧随其后的 `.Trim()`
+    # 把 `\r` 吃掉了），CRLF 在这套夹具里鉴别力为 0。这里如实记下，免得被读成一条被检验的独立危害。
     $rawDiscoveryCapture = "`r`n" + ((@(
         "  $fullChainRootNamespace -> /repo/bin/Release/net10.0/$fullChainRootNamespace.dll",
         'Test run for /repo/bin/Release/net10.0/Nerv.IIP.Business.FullChain.Tests.dll (.NETCoreApp,Version=v10.0)',
@@ -885,7 +887,7 @@ try {
     $rawCaptureIdentities = @()
     try { $rawCaptureIdentities = @(Get-NervFullChainDiscoveredTestIdentities -DiscoveryOutput $rawDiscoveryCapture -RootNamespace $fullChainRootNamespace) }
     catch { $rawCaptureFailure = $_.Exception.Message }
-    Assert-Contract ([string]::Equals($rawCaptureFailure, '', [StringComparison]::Ordinal)) "Raw --list-tests stdout carrying blank, whitespace-only, CRLF and trailing lines must not break FullChain discovery; observed: $rawCaptureFailure"
+    Assert-Contract ([string]::Equals($rawCaptureFailure, '', [StringComparison]::Ordinal)) "Raw --list-tests stdout carrying blank, whitespace-only and trailing lines must not break FullChain discovery; observed: $rawCaptureFailure"
     Assert-Contract ([string]::Equals(($rawCaptureIdentities -join "`n"), ($expectedIdentities -join "`n"), [StringComparison]::Ordinal)) 'A raw --list-tests capture must yield exactly the same identity set as the pre-split fixtures.'
 
     # 真实触发面比「正文里的空行」更窄也更硬：`dotnet test` 的 stdout 以换行结尾，切行**必然**多出一个
@@ -902,8 +904,10 @@ try {
     # 元素的行数组递进来」这个缺陷形状在**参数类型上**就不可表达——PowerShell 拒绝把多元素数组转成
     # String，绑定当场失败。这条断言取代任何「看调用方源码有没有写某个过滤字符串」的文本护栏，后者对
     # 续行、splatting 假红，对「注释里留串、调用点复原」假绿（#3214 同族教训）。
-    # 边界说清楚：单元素数组仍会被 PowerShell 解包成字符串，但缺陷形状（身份行 + 尾随空元素）元素数
-    # 必然 ≥2，落不进那个缝里。把参数退回 `[string[]]` 时，这条断言必红。
+    # 边界按实测写，不按推测写：本机对**真函数**逐个 arity 量过，`@()`、1 元素、2 元素三种数组
+    # **全部**在绑定处被拒（命名参数绑定不做 collection→scalar 解包；`[string]@('a','b')` 在表达式
+    # 上下文会 join，但绑定器不走那条路）。也就是说没有「单元素数组会被解包成字符串」这个缝——
+    # 保护比「只挡 ≥2 元素」更强。把参数退回 `[string[]]`、或放松成 `[object]`，这条断言都必红。
     $preSplitLineArrayFailure = ''
     try {
         Get-NervFullChainDiscoveredTestIdentities -DiscoveryOutput @(
@@ -913,6 +917,31 @@ try {
     }
     catch { $preSplitLineArrayFailure = $_.Exception.Message }
     Assert-Contract ($preSplitLineArrayFailure.Contains("Cannot process argument transformation on parameter 'DiscoveryOutput'", [StringComparison]::Ordinal)) "A pre-split line array must be rejected at the FullChain discovery parameter boundary, which is what makes the #3285 defect shape unrepresentable rather than merely unwritten; observed: $preSplitLineArrayFailure"
+
+    # `[AllowEmptyString()]` 是刻意放行，理由写在 scripts/lib/FullChainTestLane.ps1 的函数注释里：
+    # 空 stdout 与 $null 都是合法的可观测状态，把它们也做成**绑定失败**就是 #3285 这个病换个位置
+    # 复发——调用者拿到的仍是一句读不懂的绑定错误，仍然在任何域判断之前中断。正确行为是绑定成功、
+    # 返回 0 条身份，再由 Assert-NervFullChainDiscoveryClosure 的 missingClaims 分支抛出域错误。
+    # 下面两条断言把该行为钉住：删掉 [AllowEmptyString()] 时**两条都红**。
+    # $null 这条仍然单列，是因为它钉的是**行为**（null 产出 0 条身份）而不是某个属性：实测 `[string]`
+    # 参数上 $null 在校验前就被转成 ''，所以承担它的其实也是 [AllowEmptyString()]。
+    $emptyOutputFailure = ''
+    $emptyOutputIdentities = @()
+    try { $emptyOutputIdentities = @(Get-NervFullChainDiscoveredTestIdentities -DiscoveryOutput '' -RootNamespace $fullChainRootNamespace) }
+    catch { $emptyOutputFailure = $_.Exception.Message }
+    Assert-Contract ([string]::Equals($emptyOutputFailure, '', [StringComparison]::Ordinal) -and $emptyOutputIdentities.Count -eq 0) "Empty --list-tests stdout is a legitimate observable state and must bind and yield zero identities rather than fail at the parameter boundary, which would relocate the #3285 defect instead of removing it; observed: $emptyOutputFailure"
+
+    $nullOutputFailure = ''
+    $nullOutputIdentities = @()
+    try { $nullOutputIdentities = @(Get-NervFullChainDiscoveredTestIdentities -DiscoveryOutput $null -RootNamespace $fullChainRootNamespace) }
+    catch { $nullOutputFailure = $_.Exception.Message }
+    Assert-Contract ([string]::Equals($nullOutputFailure, '', [StringComparison]::Ordinal) -and $nullOutputIdentities.Count -eq 0) "A null discovery capture must bind and yield zero identities for the same reason an empty one does; the downstream closure assertion is what must report it, not the parameter binder; observed: $nullOutputFailure"
+
+    # 空发现集必须在**下游**被说清楚：这是上面两条「刻意放行」成立的前提——放行不等于放过。
+    $emptyDiscoveryClosureRejected = $false
+    try { Assert-NervFullChainDiscoveryClosure -DiscoveredIdentities @() -ClaimedIdentities @("$fullChainRootNamespace.AlphaTests.First_case") -ResidualIdentities @() }
+    catch { $emptyDiscoveryClosureRejected = $_.Exception.Message.Contains('discovery did not report', [StringComparison]::Ordinal) }
+    Assert-Contract $emptyDiscoveryClosureRejected 'An empty discovery set must fail closed at the closure assertion with a domain error naming the unreported frozen identities.'
 
     # 哨兵：同一个函数在同一轮里对「合法原始 stdout」必须仍然给出 3 条身份。承重格红而这条绿，
     # 才能区分「护栏有鉴别力」与「整段崩了/变异根本没生效」。

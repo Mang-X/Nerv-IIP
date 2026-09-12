@@ -19,9 +19,12 @@ function Get-NervCiImpactPlan {
     <#
         #3285 扫描时点名、复核后**判定不改**，把理由写在这里，免得后来人以为这里已经安全：
 
-        本参数是本仓唯一另一处「`Mandatory [string[]]` 公开参数今天收着一段被切好的进程 stdout」的
-        位点（`scripts/get-ci-impact-plan.ps1` 的 Diff 参数集把 `git diff --name-only` 的 stdout 切行后
-        递进来）。若该调用点的 `IsNullOrWhiteSpace` 过滤被去掉，`git diff` 输出的尾随换行同样会产生空
+        本参数是「`Mandatory [string[]]` 公开参数今天收着一段被切好的进程 stdout」这个形状的位点之一
+        （`scripts/get-ci-impact-plan.ps1` 的 Diff 参数集把 `git diff --name-only` 的 stdout 切行后
+        递进来）。同面直连一跳的另一处是 `Get-NervStringsSorted -Values`（带 `AllowEmptyString`，由类型免疫）；
+        隔一跳的还有 `Get-NervDockerInspectObjects -Identifiers`（`FullStackSessionRuntime.ps1:1651`，
+        `[AllowEmptyCollection()] [string[]]`、**没有** `AllowEmptyString` 因而不免疫，今天不炸只因
+        生产者 `Get-NervDockerListedValues` 在 `:1645` 内部就过滤掉了空白行）。若该调用点的 `IsNullOrWhiteSpace` 过滤被去掉，`git diff` 输出的尾随换行同样会产生空
         元素、同样在绑定处报 `because it is an empty string` ——**它不靠类型，靠调用方过滤**。
 
         不照 #3279/#3285 改成收原始 stdout 的原因是本参数的契约不是「某个进程的输出」：Paths 参数集
