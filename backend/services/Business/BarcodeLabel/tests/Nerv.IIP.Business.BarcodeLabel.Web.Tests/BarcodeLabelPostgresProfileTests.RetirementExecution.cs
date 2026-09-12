@@ -20,6 +20,18 @@ public sealed partial class BarcodeLabelPostgresProfileTests
     private static readonly TemplateAssetRetirementExecutorOptions ExecutionOptions = new(
         "synthetic-retirement-execution-key-3045"u8.ToArray(), "business-barcode-label", "file-storage", 2592000, 300, 300);
 
+    private static async Task AssertRetirementFactMetricsAsync(TimeProvider clock, params string[] expected)
+    {
+        var registry = Prometheus.Metrics.NewCustomRegistry();
+        var metrics = new TemplateAssetRetirementMetrics(registry,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<TemplateAssetRetirementMetrics>.Instance);
+        await using var db = CreatePostgresDbContext(LaneConnectionString);
+        await metrics.RefreshAsync(db, clock.GetUtcNow(), default);
+        var samples = await TemplateAssetRetirementMetricsTests.SamplesAsync(registry);
+        Assert.Contains("accepted_decisions 1", samples);
+        Assert.Contains("terminal_decisions{outcome=\"failure\"} 0", samples);
+        foreach (var sample in expected) Assert.Contains(sample, samples);
+    }
 
     private static async Task AssertPermanentUnknownAsync(FakeTimeProvider clock, RetirementTransport remote)
     {
@@ -59,12 +71,14 @@ public sealed partial class BarcodeLabelPostgresProfileTests
     }
 
     private static async Task<bool> ExecuteRetirementAsync(FakeTimeProvider clock, RetirementTransport remote,
-        TemplateAssetRetirementExecutorOptions? options = null, CancellationToken ct = default)
+        TemplateAssetRetirementExecutorOptions? options = null, CancellationToken ct = default,
+        TemplateAssetRetirementMetrics? metrics = null)
     {
         await using var db = CreatePostgresDbContext(LaneConnectionString);
         using var http = new HttpClient(remote, disposeHandler: false) { BaseAddress = new Uri("http://retirement.test") };
         var settings = options ?? ExecutionOptions;
-        return await new TemplateAssetRetirementExecutor(new(db, clock), new CountingRetirementSigner(new(settings, clock), remote), new(http), settings, clock)
+        metrics ??= new(Prometheus.Metrics.NewCustomRegistry(), Microsoft.Extensions.Logging.Abstractions.NullLogger<TemplateAssetRetirementMetrics>.Instance);
+        return await new TemplateAssetRetirementExecutor(new(db, clock), new CountingRetirementSigner(new(settings, clock), remote), new(http), settings, clock, metrics)
             .ExecuteNextAsync(ct);
     }
 
@@ -76,6 +90,8 @@ public sealed partial class BarcodeLabelPostgresProfileTests
         using var host = new HostBuilder().ConfigureServices(services =>
         {
             services.AddLogging();
+            services.AddSingleton(Prometheus.Metrics.NewCustomRegistry());
+            services.AddSingleton<TemplateAssetRetirementMetrics>();
             services.AddSingleton<TimeProvider>(clock);
             services.AddSingleton(settings);
             services.AddSingleton<ITemplateAssetRetirementSigner>(new CountingRetirementSigner(new(settings, clock), remote));

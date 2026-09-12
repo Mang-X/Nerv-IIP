@@ -80,6 +80,8 @@ try
     builder.Services.AddSingleton<ITemplateAssetRetirementSigner, TemplateAssetRetirementSigner>();
     builder.Services.AddScoped<TemplateAssetRetirementExecutionStore>();
     builder.Services.AddScoped<TemplateAssetRetirementExecutor>();
+    builder.Services.AddSingleton<CollectorRegistry>(Metrics.DefaultRegistry);
+    builder.Services.AddSingleton<TemplateAssetRetirementMetrics>();
     if (!isTesting) builder.Services.AddHostedService<TemplateAssetRetirementWorker>();
     var fileStorageBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(
         builder.Configuration,
@@ -271,7 +273,14 @@ try
     }).UseSwaggerGen();
     app.UseHttpMetrics();
     app.MapHealthChecks("/health");
-    app.MapMetrics();
+    app.MapMetrics(options => options.Registry = app.Services.GetRequiredService<CollectorRegistry>());
+    var retirementMetrics = app.Services.GetRequiredService<TemplateAssetRetirementMetrics>();
+    app.Services.GetRequiredService<CollectorRegistry>().AddBeforeCollectCallback(async ct =>
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        await retirementMetrics.RefreshAsync(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+            scope.ServiceProvider.GetRequiredService<TimeProvider>().GetUtcNow(), ct);
+    });
 
     await app.RunAsync();
 }

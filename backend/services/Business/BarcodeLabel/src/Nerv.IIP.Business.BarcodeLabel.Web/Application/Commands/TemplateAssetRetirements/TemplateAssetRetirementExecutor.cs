@@ -75,12 +75,16 @@ public sealed class TemplateAssetRetirementClient(HttpClient http)
 
 public sealed class TemplateAssetRetirementExecutor(TemplateAssetRetirementExecutionStore store,
     ITemplateAssetRetirementSigner signer, TemplateAssetRetirementClient client,
-    TemplateAssetRetirementExecutorOptions options, TimeProvider clock)
+    TemplateAssetRetirementExecutorOptions options, TimeProvider clock, TemplateAssetRetirementMetrics metrics)
 {
     public async Task<bool> ExecuteNextAsync(CancellationToken ct)
     {
         var decision = await store.ClaimAsync(options.ClientWindowSeconds, options.LeaseSeconds, options.MaxBackoffSeconds, ct);
-        if (decision is null) return false;
+        if (decision is null)
+        {
+            metrics.RecordUnknownExclusions(await store.CountUnknownExclusionsAsync(ct));
+            return false;
+        }
         if (clock.GetUtcNow() >= decision.RecoveryUntilUtc)
         {
             await store.RetryAsync(decision, ct);

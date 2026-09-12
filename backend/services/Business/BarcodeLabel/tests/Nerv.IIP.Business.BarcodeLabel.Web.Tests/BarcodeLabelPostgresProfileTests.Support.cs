@@ -70,6 +70,8 @@ public sealed partial class BarcodeLabelPostgresProfileTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton(clock ?? TimeProvider.System);
+        services.AddSingleton(Prometheus.Metrics.NewCustomRegistry());
+        services.AddSingleton<TemplateAssetRetirementMetrics>();
         services.AddMediatR(configuration => configuration
             .RegisterServicesFromAssembly(typeof(CreateTemplateAssetRetirementDecisionCommand).Assembly)
             .AddUnitOfWorkBehaviors());
