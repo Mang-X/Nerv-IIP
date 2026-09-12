@@ -82,6 +82,24 @@
 
 PowerShell variable binding 的完整 AST 判定、已知静态残余和 mutation matrix 由 `scripts/lib/ScriptVariableBinding.ps1`、checker 与 `scripts/tests/script-governance-scan-boundary.Tests.ps1` 生产。Governance 不复制逐轮审计出来的 binding 拼写清单；改变机器覆盖面时必须同步机器契约与对应测试。
 
+## `scripts/tests` 的 CI 选取闭合
+
+`scripts/tests/*.Tests.ps1` 被哪个 job 执行，是**算出来的补集**，不是手写名单：
+
+```
+发现式 runner 选中 = glob(scripts/tests/*.Tests.ps1) − 工作流 run: 体点名 − 显式出界登记
+```
+
+规则：
+
+1. 新增契约测试的默认归宿是「被发现式 runner 执行」。忘记登记的后果是**被跑**，不是静默不跑；因此不存在「写在那里、绿着、从未执行过」的默认状态。
+2. 「被工作流点名」由 `.github/workflows/**` 每个 step 的 `run` 体推导，口径必须覆盖多行 `run: |` 块；只出现在注释里不算选中。
+3. 要让某个文件不被 runner 执行，必须写进出界登记并给出理由，种类限于「由另一个已被 CI 选中的测试嵌套执行」与「需要该执行面不具备的真实依赖或必填参数」。出界不等于无需覆盖，只说明覆盖它属于另一条 lane。
+4. 登记面自身必须可证伪：目标文件不存在、理由为空、种类不在闭集内、嵌套条目的父测试不在 CI 上或其源码并未引用该子测试、登记项同时又被工作流点名——任一情形都 fail closed。
+5. 扫描面塌掉（工作流目录缺失、零个工作流文件、零个测试文件、推导出的点名集合为空）必须报错，不得被读成「没有遗漏」。
+
+精确实现与失败诊断由 `scripts/lib/ScriptTestSelection.ps1`、`scripts/run-script-contract-tests.ps1` 与 `scripts/tests/script-test-selection.Tests.ps1` 生产；本页不维护逐文件名单、数量或出界条目表。
+
 ## 标识符比较
 
 脚本中表示身份或治理契约的名称、路径、SHA、lane、status、code、key、namespace 等字符串必须使用明确的 ordinal 语义，不能依赖 PowerShell/.NET 默认 culture-aware 比较或排序。

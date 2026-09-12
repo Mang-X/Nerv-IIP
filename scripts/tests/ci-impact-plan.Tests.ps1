@@ -305,10 +305,20 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
     $scriptGovernanceSteps = @($scriptGovernanceProperty.Value.steps)
     $scriptGovernanceStepTimeouts = @($scriptGovernanceSteps | ForEach-Object { [int]$_.'timeout-minutes' })
     $scriptGovernanceStepBudgetMinutes = ($scriptGovernanceStepTimeouts | Measure-Object -Sum).Sum
-    $fiveMinuteStepCount = @($scriptGovernanceStepTimeouts | Where-Object { $_ -eq 5 }).Count
+    # #3300：这里原本写死「checkout 之外全是 5m」，于是任何一个非 5m 的 step 都会让这条注释契约
+    # 无法被如实满足，反过来把 step 预算钉成一个值。改成按预算分组生成期望文本：形态不再被假设，
+    # 注释仍必须与实际 step 预算逐项相符。既有全 5m 的形态生成的字符串与改动前逐字相同。
+    # SortedDictionary[int, int] 而不是 Group-Object/Sort-Object：分组键是分钟数，必须按数值升序，
+    # 而那两个 cmdlet 的键比较是 culture collation（scripts/tests/ordinal-comparison-layers.Tests.ps1）。
+    $scriptGovernanceTailMinuteCounts = [Collections.Generic.SortedDictionary[int, int]]::new()
+    foreach ($tailTimeout in @($scriptGovernanceStepTimeouts | Select-Object -Skip 1)) {
+        $tailMinutes = [int]$tailTimeout
+        if ($scriptGovernanceTailMinuteCounts.ContainsKey($tailMinutes)) { $scriptGovernanceTailMinuteCounts[$tailMinutes] += 1 }
+        else { $scriptGovernanceTailMinuteCounts[$tailMinutes] = 1 }
+    }
     $workflowSource = [IO.File]::ReadAllText($Path)
     $expectedBudgetHeadline = "step 预算合计 $($scriptGovernanceStepBudgetMinutes)m（$($scriptGovernanceSteps.Count) 个 step：3m checkout"
-    $expectedBudgetContinuation = "+ $fiveMinuteStepCount × 5m；"
+    $expectedBudgetContinuation = "+ $(@($scriptGovernanceTailMinuteCounts.GetEnumerator() | ForEach-Object { "$($_.Value) × $($_.Key)m" }) -join ' + ')；"
     $contractSteps = @($scriptGovernanceSteps | Where-Object {
             [string]::Equals([string]$_.name, 'Test acceptance scenario matrix contract', [StringComparison]::Ordinal)
         })
@@ -339,7 +349,8 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
         [int]$equivalenceContractStep.'timeout-minutes' -eq 5 -and
         $null -eq $equivalenceContractStep.PSObject.Properties['if']) 'The equivalence fixture contract must run as one unconditional five-minute pwsh step.'
 
-    Assert-Contract ($scriptGovernanceStepTimeouts.Count -eq $scriptGovernanceSteps.Count -and $scriptGovernanceStepTimeouts[0] -eq 3 -and $fiveMinuteStepCount -eq ($scriptGovernanceSteps.Count - 1)) 'Script Governance budget comment contract expects one three-minute checkout and all remaining steps to have five-minute timeouts.'
+    Assert-Contract ($scriptGovernanceStepTimeouts.Count -eq $scriptGovernanceSteps.Count -and $scriptGovernanceStepTimeouts[0] -eq 3 -and @($scriptGovernanceStepTimeouts | Where-Object { $_ -le 0 }).Count -eq 0) 'Script Governance budget comment contract expects one three-minute checkout and a positive explicit timeout on every step.'
+    Assert-Contract ((@($scriptGovernanceTailMinuteCounts.GetEnumerator() | ForEach-Object { $_.Key * $_.Value }) | Measure-Object -Sum).Sum + 3 -eq $scriptGovernanceStepBudgetMinutes) 'The Script Governance budget breakdown must add up to the declared step budget sum.'
     Assert-Contract ($workflowSource.Contains($expectedBudgetHeadline, [StringComparison]::Ordinal) -and $workflowSource.Contains($expectedBudgetContinuation, [StringComparison]::Ordinal)) "Script Governance budget comment must match its actual $($scriptGovernanceSteps.Count)-step/$($scriptGovernanceStepBudgetMinutes)m structure."
     Assert-Contract (-not $workflowSource.Contains('实际为 103m', [StringComparison]::Ordinal)) 'Script Governance budget comment must not retain the obsolete 103m historical sentence.'
 
@@ -1489,12 +1500,12 @@ try {
 
 '@
     $workflowWithoutAcceptanceRuntimeContract = $workflow.Replace($acceptanceRuntimeContractStep, '').Replace(
-        'step 预算合计 188m（38 个 step：3m checkout',
-        'step 预算合计 183m（37 个 step：3m checkout').Replace(
-        '+ 37 × 5m；',
-        '+ 36 × 5m；')
+        'step 预算合计 208m（40 个 step：3m checkout',
+        'step 预算合计 203m（39 个 step：3m checkout').Replace(
+        '+ 38 × 5m + 1 × 15m；',
+        '+ 37 × 5m + 1 × 15m；')
     Assert-Contract (-not [string]::Equals($workflowWithoutAcceptanceRuntimeContract, $workflow, [StringComparison]::Ordinal)) 'Acceptance runtime workflow mutation must remove the canonical pure fixture contract step.'
-    Assert-Contract ($workflowWithoutAcceptanceRuntimeContract.Contains('step 预算合计 183m（37 个 step：3m checkout', [StringComparison]::Ordinal) -and $workflowWithoutAcceptanceRuntimeContract.Contains('+ 36 × 5m；', [StringComparison]::Ordinal)) 'Acceptance runtime workflow mutation must keep its budget comment truthful at 37 steps and 183m.'
+    Assert-Contract ($workflowWithoutAcceptanceRuntimeContract.Contains('step 预算合计 203m（39 个 step：3m checkout', [StringComparison]::Ordinal) -and $workflowWithoutAcceptanceRuntimeContract.Contains('+ 37 × 5m + 1 × 15m；', [StringComparison]::Ordinal)) 'Acceptance runtime workflow mutation must keep its budget comment truthful at 39 steps and 203m.'
     $workflowWithoutAcceptanceRuntimeContractPath = Join-Path $workflowMutationRoot 'script-governance-drops-acceptance-runtime-contract.yml'
     [IO.File]::WriteAllText($workflowWithoutAcceptanceRuntimeContractPath, $workflowWithoutAcceptanceRuntimeContract, [Text.UTF8Encoding]::new($false))
     $runtimeWorkflowContractFailure = $null
@@ -1511,10 +1522,10 @@ try {
 
 '@
     $workflowWithoutAcceptanceEquivalenceContract = $workflow.Replace($acceptanceEquivalenceContractStep, '').Replace(
-        'step 预算合计 188m（38 个 step：3m checkout',
-        'step 预算合计 183m（37 个 step：3m checkout').Replace(
-        '+ 37 × 5m；',
-        '+ 36 × 5m；')
+        'step 预算合计 208m（40 个 step：3m checkout',
+        'step 预算合计 203m（39 个 step：3m checkout').Replace(
+        '+ 38 × 5m + 1 × 15m；',
+        '+ 37 × 5m + 1 × 15m；')
     $workflowWithoutAcceptanceEquivalenceContractPath = Join-Path $workflowMutationRoot 'script-governance-drops-acceptance-equivalence-contract.yml'
     [IO.File]::WriteAllText($workflowWithoutAcceptanceEquivalenceContractPath, $workflowWithoutAcceptanceEquivalenceContract, [Text.UTF8Encoding]::new($false))
     $equivalenceWorkflowContractFailure = $null
@@ -1522,16 +1533,16 @@ try {
     Assert-Contract ($null -ne $equivalenceWorkflowContractFailure) 'Removing the equivalence Script Governance fixture step must fail the workflow contract.'
 
     $workflowWithIncorrectBudgetComment = $workflow.Replace(
-        'step 预算合计 188m（38 个 step：3m checkout',
-        'step 预算合计 183m（37 个 step：3m checkout').Replace(
-        '+ 37 × 5m；',
-        '+ 36 × 5m；')
-    Assert-Contract (-not [string]::Equals($workflowWithIncorrectBudgetComment, $workflow, [StringComparison]::Ordinal)) 'Script Governance budget-comment mutation must alter the canonical 38-step/188m comment.'
+        'step 预算合计 208m（40 个 step：3m checkout',
+        'step 预算合计 203m（39 个 step：3m checkout').Replace(
+        '+ 38 × 5m + 1 × 15m；',
+        '+ 37 × 5m + 1 × 15m；')
+    Assert-Contract (-not [string]::Equals($workflowWithIncorrectBudgetComment, $workflow, [StringComparison]::Ordinal)) 'Script Governance budget-comment mutation must alter the canonical 40-step/208m comment.'
     $workflowWithIncorrectBudgetCommentPath = Join-Path $workflowMutationRoot 'script-governance-uses-incorrect-budget-comment.yml'
     [IO.File]::WriteAllText($workflowWithIncorrectBudgetCommentPath, $workflowWithIncorrectBudgetComment, [Text.UTF8Encoding]::new($false))
     $budgetCommentContractFailure = $null
     try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithIncorrectBudgetCommentPath } catch { $budgetCommentContractFailure = $_ }
-    $expectedBudgetCommentDiagnostic = 'Script Governance budget comment must match its actual 38-step/188m structure.'
+    $expectedBudgetCommentDiagnostic = 'Script Governance budget comment must match its actual 40-step/208m structure.'
     $observedBudgetCommentDiagnostic = if ($null -eq $budgetCommentContractFailure) { '<none>' } else { [string]$budgetCommentContractFailure.Exception.Message }
     Assert-Contract ([string]::Equals($observedBudgetCommentDiagnostic, $expectedBudgetCommentDiagnostic, [StringComparison]::Ordinal)) "An incorrect Script Governance budget comment must fail with the exact budget diagnostic. Observed: $observedBudgetCommentDiagnostic"
 
