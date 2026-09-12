@@ -158,7 +158,8 @@ internal static class PeriodicInspectionReleaseProjection
                             continue;
                         }
 
-                        // 重建值先与既有权威事实对齐：不一致时以权威事实为准，被顶掉的属性留痕。
+                        // 重建值先与既有权威事实对齐：工序号与工作中心不一致时以权威事实为准、被顶掉的属性留痕；
+                        // SKU 自 #3286 起不在对齐范围内，不一致直接落到下面 ApplyRelease 的冲突语义。
                         var facts = authority == ReleaseFactAuthority.ReconstructedLowerBound
                             ? operation.ResolveReconstructedReleaseFacts(
                                 payload.SkuCode,
@@ -170,9 +171,11 @@ internal static class PeriodicInspectionReleaseProjection
                                 operationPayload.WorkCenterId.Trim(),
                                 []);
 
-                        // 巡检档按**校正后**的 SKU 与工作中心筛。档是按载荷 SKU 查出来的，
-                        // 因此让位到别的 SKU 时这里筛不出档、该工序不建周期运行上下文——
-                        // 拿载荷 SKU 的档去配一条声明着另一个 SKU 的上下文才是真错。
+                        // 巡检档按**校正后**的工作中心筛：让位到别的工作中心时，
+                        // 拿载荷工作中心的档去配一条声明着另一个工作中心的上下文才是真错。
+                        // SKU 那一半自 #3286 起**恒真**——两条分支的 facts.SkuCode 都等于载荷 SKU，
+                        // 而 plans 本就是按载荷 SKU 查出来的。留着它是为了让这行跟着 facts 走而不是跟着载荷走，
+                        // **它现在没有鉴别力**，别把它当 SKU 面的防线读。
                         var snapshots = plans
                             .Where(plan => plan.SkuCode == facts.SkuCode && plan.WorkCenterId == facts.WorkCenterId)
                             .OrderBy(plan => plan.PlanCode, StringComparer.Ordinal)
