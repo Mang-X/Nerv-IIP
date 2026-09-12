@@ -86,6 +86,12 @@ function Test-CurrentMarkdownLinks {
             $Findings.Add("[DOC_ENTRY] 当前入口不存在：$entry")
         }
     }
+    $missingNavigation = [System.Collections.Generic.HashSet[string]]::new(
+        [string[]]@('docs/adr/README.md', 'docs/architecture/README.md'), [StringComparer]::Ordinal)
+    $regexOptions = [Text.RegularExpressions.RegexOptions]::IgnoreCase -bor [Text.RegularExpressions.RegexOptions]::CultureInvariant
+    # 先识别完整标签，再消费完整属性值；引号内的 > 或 href 文本不是新属性。
+    $tagPattern = '<(?<element>a|img)(?=\s|/?>)(?<attributes>(?:[^"''>]|"[^"]*"|''[^'']*'')*)>'
+    $attributePattern = '(?<name>[^\s=/"''<>]+)(?:\s*=\s*(?:"(?<target>[^"]*)"|''(?<target>[^'']*)''|(?<target>[^\s"''=<>`]+)))?'
     $checkedDocuments = 0
     foreach ($file in Get-RepositoryMarkdownFiles -Root $Root) {
         $path = [IO.Path]::GetRelativePath($Root, $file.FullName).Replace('\', '/')
@@ -101,25 +107,46 @@ function Test-CurrentMarkdownLinks {
         # 引用式链接、图片、转义和代码示例无需再实现一套 Markdown 正则解析器。
         $html = [string](ConvertFrom-Markdown -InputObject ([IO.File]::ReadAllText($file.FullName))).Html
         $html = [regex]::Replace($html, '(?s)<!--.*?(?:-->|\z)', '')
-        $linkPattern = '<(?<element>a|img)\b[^>]*?\b(?:href|src)\s*=\s*(?<quote>["''])(?<target>.*?)\k<quote>'
-        foreach ($link in [regex]::Matches($html, $linkPattern, [Text.RegularExpressions.RegexOptions]::IgnoreCase -bor [Text.RegularExpressions.RegexOptions]::CultureInvariant)) {
-            $target = [Net.WebUtility]::HtmlDecode($link.Groups['target'].Value)
+        foreach ($tag in [regex]::Matches($html, $tagPattern, $regexOptions)) {
+            $isAnchor = [string]::Equals($tag.Groups['element'].Value, 'a', [StringComparison]::OrdinalIgnoreCase)
+            $targetAttribute = if ($isAnchor) { 'href' } else { 'src' }
+            $target = $null
+            foreach ($attribute in [regex]::Matches($tag.Groups['attributes'].Value, $attributePattern, $regexOptions)) {
+                if ([string]::Equals($attribute.Groups['name'].Value, $targetAttribute, [StringComparison]::OrdinalIgnoreCase)) {
+                    $target = [Net.WebUtility]::HtmlDecode($attribute.Groups['target'].Value)
+                    break
+                }
+            }
+            if ([string]::IsNullOrEmpty($target)) { continue }
             # 外链、站点绝对路由和锚点不是仓库相对文件目标；不访问网络或锁定标题文案。
             if ($target -match '^(?:[A-Za-z][A-Za-z0-9+.-]*:|/|#)') { continue }
             $destination = [Uri]::UnescapeDataString(($target -split '[?#]', 2)[0])
             if ([string]::IsNullOrEmpty($destination)) { continue }
             # VitePress 的无扩展名 / .html 页面路由由各站点 build 解析。
             # 只豁免 a 的路由目标；显式文件与 img 仍检查，不跳过整篇活文档。
-            if ($isSiteDocument -and [string]::Equals($link.Groups['element'].Value, 'a', [StringComparison]::OrdinalIgnoreCase)) {
+            if ($isSiteDocument -and $isAnchor) {
                 $extension = [IO.Path]::GetExtension($destination)
                 if ([string]::IsNullOrEmpty($extension) -or
                     [string]::Equals($extension, '.html', [StringComparison]::OrdinalIgnoreCase)) { continue }
             }
-            if (-not (Test-Path -LiteralPath (Join-Path $file.DirectoryName $destination))) {
+            $absoluteDestination = [IO.Path]::GetFullPath((Join-Path $file.DirectoryName $destination))
+            if (-not (Test-Path -LiteralPath $absoluteDestination)) {
                 $Findings.Add("[DOC_LINK] $path -> $target")
+                continue
+            }
+            if ($isAnchor -and [string]::Equals($path, 'docs/README.md', [StringComparison]::Ordinal)) {
+                # 目录导航与 README 导航等价；图片、代码和 data 属性不能充当入口。
+                if (Test-Path -LiteralPath $absoluteDestination -PathType Container) {
+                    $absoluteDestination = Join-Path $absoluteDestination 'README.md'
+                }
+                $navigation = [IO.Path]::GetRelativePath($Root, $absoluteDestination).Replace('\', '/')
+                $null = $missingNavigation.Remove($navigation)
             }
         }
         $checkedDocuments++
+    }
+    foreach ($entry in $missingNavigation) {
+        $Findings.Add("[DOC_ENTRY_LINK] docs/README.md -> $entry")
     }
     Write-Host "当前 Markdown 本地目标已检查（$checkedDocuments 个文件）；不验证外链、标题锚点、站点页面路由或内容语义。"
 }
