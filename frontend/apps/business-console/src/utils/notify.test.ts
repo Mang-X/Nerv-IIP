@@ -82,6 +82,24 @@ describe('friendlyErrorMessage', () => {
     expect(friendlyErrorMessage(new Error('downstream-timeout'))).not.toContain('网络异常')
   })
 
+  // #3272：网关熔断打开（`BrokenCircuitException` → 503 + `downstream-circuit-open`）。
+  //
+  // 这一格断言的**不是**「表里有条目」，而是「正则改写不到它」——这是 #3308 栽过的那一格。
+  // 实测过的失效方向：这个串不命中 friendlyErrorMessage 里的任何一条正则
+  // （`downstream-timeout` / `\b503\b` / `service unavailable` / `timeout` 都不匹配它），
+  // 所以**不登记就会一路落到通用兜底**「操作失败，请稍后重试。」，而不是落到 502/503 那句。
+  // 因此下面既要断言拿到了这句，也要断言没有退化成兜底、没有被折进 5xx 通用句、没有裸码上屏。
+  it('熔断打开（downstream-circuit-open）→ 说出「本次请求未发出」，不被通用正则改写（#3272）', () => {
+    const message = friendlyErrorMessage({ message: 'downstream-circuit-open' }, '原有兜底')
+    expect(message).toBe('服务暂时不可用，本次请求未发出；请稍后重试。')
+    // 没有退化成兜底 —— 证明这条码确实被稳定表接住了。
+    expect(message).not.toBe('原有兜底')
+    // 没有被折进 502/503 的通用句 —— 那句说的是「结果可能尚未确认」，与熔断的事实相反。
+    expect(message).not.toContain('刷新列表核实')
+    // 没有把技术串甩给用户。
+    expect(message).not.toContain('downstream')
+  })
+
   it('网络错误 → 人话', () => {
     expect(friendlyErrorMessage(new Error('Failed to fetch'))).toContain('刷新列表核实')
     expect(friendlyErrorMessage('NetworkError when attempting')).toContain('结果可能尚未确认')

@@ -51,6 +51,23 @@ export const STABLE_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   // MES `MesRoutingSnapshotMissingException` 经 `MesLifecycleConflictMiddleware` 外发时，
   // 信封 message 位是**裸码**（KnownException 那条路径才带中文），故必须在本表登记。
   ROUTING_SNAPSHOT_MISSING: '工单缺少已发布生产版本的工艺路线快照，请先维护并发布生产版本。',
+  // #3272：BusinessGateway 熔断打开（`BusinessServiceHttpClient` 对
+  // `Polly.CircuitBreaker.BrokenCircuitException` 的映射，503）。此前该异常未被映射、
+  // 逃逸成 500「未知错误」。
+  //
+  // 为什么必须登记在这张表里：`friendlyErrorMessage` 的正则链**没有一条命中这个串**
+  // （`downstream-timeout` / `\b503\b` / `service unavailable` / `timeout` 都不匹配它），
+  // 不登记就一路落到通用 fallback「操作失败，请稍后重试。」——那句说不出下面这个事实。
+  // 本表的查表在 `friendlyErrorMessage` 里排在所有正则分支之前，登记后正则改写不到它（#3308）。
+  //
+  // 文案承载的事实只有一条，且只对熔断成立：**请求没有发往下游**，所以本次写入必然未发生，
+  // 重试是安全的、不需要先去列表核实。这正是它与 `downstream-unavailable`（已发出后连接失败，
+  // 结果不确定）必须分成两条码的原因。
+  //
+  // ⚠️ 射程边界：PDA 侧看不到这句。`describeRequestError` 对 `status >= 500` 恒取
+  // `actionableHttpMessage(503)` 的本地指引，`serverMessage` 只是它的回落项——那条链里
+  // 这条码不上屏（也因此 PDA 不会甩裸码）。这条登记服务的是 PC 侧的 `friendlyErrorMessage`。
+  'downstream-circuit-open': '服务暂时不可用，本次请求未发出；请稍后重试。',
 }
 
 export function stableErrorMessage(value: unknown): string {
