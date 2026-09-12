@@ -145,6 +145,14 @@ public sealed class HttpFileStorageLabelTemplateAssetAdapter : ILabelTemplateAss
         }
     }
 
+    public async Task<string> GetChecksumAsync(
+        LabelTemplateAssetReference reference, CancellationToken cancellationToken)
+    {
+        var metadata = await ReadMetadataAsync(reference.FileId, cancellationToken);
+        var digest = ValidateMetadata(metadata, reference);
+        return $"{Sha256Prefix}{Convert.ToHexString(digest).ToLowerInvariant()}";
+    }
+
     public void Dispose() => downloadClient.Dispose();
 
     private async Task<FileMetadataResponse> ReadMetadataAsync(

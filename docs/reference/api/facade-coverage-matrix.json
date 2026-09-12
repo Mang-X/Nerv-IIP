@@ -211,6 +211,15 @@
     {
       "service": "BarcodeLabel",
       "method": "GET",
+      "route": "/api/business/v1/barcodes/template-assets/retirement",
+      "operationId": "getBusinessBarcodeTemplateAssetRetirement",
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["getBusinessConsoleBarcodeTemplateAssetRetirement"]
+    },
+    {
+      "service": "BarcodeLabel",
+      "method": "GET",
       "route": "/api/business/v1/barcodes/print-batches",
       "operationId": "listBusinessBarcodePrintBatches",
       "classification": "exposed",

@@ -15,6 +15,7 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
         $"{BarcodeLabelSourceRoot}/Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/Scans/RecordScanCommand.cs",
         $"{BarcodeLabelSourceRoot}/Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/TemplateAssetRetirements/CreateTemplateAssetRetirementDecisionCommand.cs",
         $"{BarcodeLabelSourceRoot}/Nerv.IIP.Business.BarcodeLabel.Web/Application/Queries/PrintBatches/GetLabelPrintBatchQuery.cs",
+        $"{BarcodeLabelSourceRoot}/Nerv.IIP.Business.BarcodeLabel.Web/Application/Queries/LabelTemplates/GetTemplateAssetRetirementQuery.cs",
         $"{BarcodeLabelSourceRoot}/Nerv.IIP.Business.BarcodeLabel.Web/Application/Queries/ListQueryCriteria.cs",
     ];
 
@@ -34,6 +35,7 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
         Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/TemplateAssetRetirements/CreateTemplateAssetRetirementDecisionCommand.cs"), "CreateTemplateAssetRetirementDecisionCommandHandler", "EnsureSameRequest", 1),
         Excluded(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/TemplateAssetRetirements/CreateTemplateAssetRetirementDecisionCommand.cs"), "CreateTemplateAssetRetirementDecisionCommandHandler", "RejectExpiredAsync", 1, "#3047 requires exact stable replay-window-expired wire code; HTTP retention regression proves transport"),
         Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Queries/PrintBatches/GetLabelPrintBatchQuery.cs"), "GetLabelPrintBatchQueryHandler", "Handle", 1),
+        Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Queries/LabelTemplates/GetTemplateAssetRetirementQuery.cs"), "GetTemplateAssetRetirementQueryHandler", "Handle", 2),
         Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Queries/ListQueryCriteria.cs"), "TenantScope", "From", 2),
     ];
 
@@ -57,7 +59,7 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
 
         var expectedKeys = ExpectedSites.Select(site => site.Key).ToArray();
         Assert.Equal(expectedKeys.Length, expectedKeys.Distinct(StringComparer.Ordinal).Count());
-        Assert.Equal(34, ExpectedSites.Where(site => site.Kind == BarcodeLabelKnownExceptionSiteKind.Target)
+        Assert.Equal(36, ExpectedSites.Where(site => site.Kind == BarcodeLabelKnownExceptionSiteKind.Target)
             .Sum(site => site.DirectKnownExceptionCount));
         Assert.Equal(13, ExpectedSites.Where(site => site.Kind == BarcodeLabelKnownExceptionSiteKind.Excluded)
             .Sum(site => site.DirectKnownExceptionCount));

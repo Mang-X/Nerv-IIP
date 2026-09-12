@@ -13,6 +13,33 @@ namespace Nerv.IIP.Business.BarcodeLabel.Web.Tests;
 
 public sealed class HttpFileStorageLabelTemplateAssetAdapterTests
 {
+    // PublicContract #3049 A: metadata supplies the retirement checksum without download/execute IO.
+    [Fact]
+    public async Task Retirement_checksum_reads_metadata_without_creating_a_download_grant()
+    {
+        var metadata = CreateMetadata(Encoding.UTF8.GetBytes(TemplateJson));
+        var fileStorage = new RecordingFileStorageClient(metadata with { Checksum = metadata.Checksum!.ToUpperInvariant() });
+        var download = new RecordingHttpMessageHandler(_ => throw new InvalidOperationException("Unexpected download"));
+        using var adapter = CreateAdapter(fileStorage, download);
+        Assert.Equal(metadata.Checksum, await adapter.GetChecksumAsync(CreateReference(), CancellationToken.None));
+        Assert.Equal(1, fileStorage.MetadataCalls);
+        Assert.Equal(0, fileStorage.GrantCalls);
+        Assert.Equal(0, download.Calls);
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidMetadataCases))]
+    public async Task Retirement_checksum_rejects_metadata_outside_the_template_asset_contract(
+        Func<FileMetadataResponse, FileMetadataResponse> change)
+    {
+        var fileStorage = new RecordingFileStorageClient(change(CreateMetadata(Encoding.UTF8.GetBytes(TemplateJson))));
+        var download = new RecordingHttpMessageHandler(_ => throw new InvalidOperationException("Unexpected download"));
+        using var adapter = CreateAdapter(fileStorage, download);
+        await Assert.ThrowsAsync<InvalidDataException>(() => adapter.GetChecksumAsync(CreateReference(), CancellationToken.None));
+        Assert.Equal(0, fileStorage.GrantCalls);
+        Assert.Equal(0, download.Calls);
+    }
+
     private const int MaximumAssetBytes = 65536;
     private const string TemplateJson = """
         {"format":"nerv-iip.label-template","version":1,"media":{"dpi":203,"widthDots":812,"heightDots":406},"fields":[{"kind":"barcode","x":40,"y":90,"moduleWidth":2,"height":100,"variable":"label.value"}]}

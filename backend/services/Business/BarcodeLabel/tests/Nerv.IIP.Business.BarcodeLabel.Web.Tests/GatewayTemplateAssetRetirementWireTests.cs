@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.TemplateAssetRetirementDecisionAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.TemplateAssetRetirements;
+using Nerv.IIP.Business.BarcodeLabel.Web.Application.Queries.LabelTemplates;
 using Nerv.IIP.Contracts.BarcodeLabel;
 using GatewayClient = Gateway::Nerv.IIP.BusinessGateway.Web.Application.BusinessServices.HttpBusinessBarcodeLabelClient;
 using GatewaySigner = Gateway::Nerv.IIP.BusinessGateway.Web.Application.BusinessServices.TemplateAssetRetirementProofSigner;
@@ -22,6 +23,40 @@ namespace Nerv.IIP.Business.BarcodeLabel.Web.Tests;
 [Collection(WebApplicationFactoryCollection.Name)]
 public sealed class GatewayTemplateAssetRetirementWireTests
 {
+    [Fact]
+    public async Task Gateway_read_client_reaches_production_query_endpoint_without_a_proof_or_command()
+    {
+        var requests = new RecordingSender();
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Testing");
+            builder.UseSetting("InternalService:BearerToken", "retirement-read-token");
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<ISender>();
+                services.AddSingleton<ISender>(requests);
+            });
+        });
+        factory.UseKestrel(0);
+        using var factoryClient = factory.CreateClient();
+        using var http = new HttpClient(new SocketsHttpHandler()) { BaseAddress = factoryClient.BaseAddress };
+        var client = new GatewayClient(http);
+        var request = new GetTemplateAssetRetirementRequest("org-read", "env-read", Guid.NewGuid(), "file + 读");
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var response = await client.GetTemplateAssetRetirementAsync("retirement-read-token", request, timeout.Token);
+        Assert.Equal(TemplateAssetRetirementStatus.ExecutionOutcomeUnknown, response.Status);
+        Assert.Equal(request.FileId, response.FileId);
+        var query = Assert.Single(requests.Reads);
+        Assert.Equal(request.TemplateId, query.TemplateId.Id);
+        Assert.Equal(request.OrganizationId, query.OrganizationId);
+        Assert.Equal(request.EnvironmentId, query.EnvironmentId);
+        Assert.Empty(requests.Commands);
+        var error = await Assert.ThrowsAsync<GatewayError>(() =>
+            client.GetTemplateAssetRetirementAsync("wrong-token", request, timeout.Token));
+        Assert.Equal(HttpStatusCode.Unauthorized, error.StatusCode);
+        Assert.Single(requests.Reads);
+    }
+
     [Fact]
     public async Task Gateway_signer_and_client_reach_production_endpoint_over_actual_http_and_reject_invalid_proofs()
     {
@@ -90,9 +125,16 @@ public sealed class GatewayTemplateAssetRetirementWireTests
     {
         public TemplateAssetRetirementDecisionId DecisionId { get; } = new(Guid.NewGuid());
         public List<CreateTemplateAssetRetirementDecisionCommand> Commands { get; } = [];
+        public List<GetTemplateAssetRetirementQuery> Reads { get; } = [];
 
         public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
         {
+            if (request is GetTemplateAssetRetirementQuery read)
+            {
+                Reads.Add(read);
+                return Task.FromResult((TResponse)(object)new TemplateAssetRetirementResponse(
+                    read.FileId, null, DecisionId.Id, TemplateAssetRetirementStatus.ExecutionOutcomeUnknown));
+            }
             Commands.Add(Assert.IsType<CreateTemplateAssetRetirementDecisionCommand>(request));
             return Task.FromResult((TResponse)(object)DecisionId);
         }
