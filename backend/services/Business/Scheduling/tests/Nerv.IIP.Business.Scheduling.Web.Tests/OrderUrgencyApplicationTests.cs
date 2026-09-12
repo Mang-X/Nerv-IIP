@@ -4,7 +4,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
-using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.OrderUrgencyAggregate;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
@@ -14,6 +13,7 @@ using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 using Nerv.IIP.Business.Scheduling.Web.Application.Urgency;
 using Nerv.IIP.Business.Scheduling.Web.Endpoints.Scheduling;
+using Nerv.IIP.Testing.EntityFramework;
 using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Tests;
@@ -438,27 +438,6 @@ public sealed class OrderUrgencyApplicationTests
     {
         var utc = value.ToUniversalTime();
         return new DateTimeOffset(utc.Year, utc.Month, utc.Day, utc.Hour, utc.Minute - utc.Minute % 15, 0, TimeSpan.Zero);
-    }
-
-    // SQLite provider 无法翻译 DateTimeOffset 的排序/聚合/比较（仓库已知坑：EF 测试 provider 翻译差异），
-    // 测试专用 ModelCustomizer 把所有 DateTimeOffset 列统一转成 long（值均为 UTC，ToBinary 排序与时间序一致）。
-    // 不能子类化 ApplicationDbContext：netcorepal source generator 会对派生类生成不兼容的 partial 覆写。
-    private sealed class SqliteDateTimeOffsetModelCustomizer(ModelCustomizerDependencies dependencies)
-        : RelationalModelCustomizer(dependencies)
-    {
-        private static readonly DateTimeOffsetToBinaryConverter Converter = new();
-
-        public override void Customize(ModelBuilder modelBuilder, DbContext context)
-        {
-            base.Customize(modelBuilder, context);
-            foreach (var property in modelBuilder.Model.GetEntityTypes().SelectMany(entity => entity.GetProperties()))
-            {
-                if (property.ClrType == typeof(DateTimeOffset) || property.ClrType == typeof(DateTimeOffset?))
-                {
-                    property.SetValueConverter(Converter);
-                }
-            }
-        }
     }
 
     private sealed class SelectCountingInterceptor : DbCommandInterceptor
