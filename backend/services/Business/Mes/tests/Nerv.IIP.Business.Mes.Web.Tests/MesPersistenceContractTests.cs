@@ -3283,8 +3283,25 @@ public sealed class MesPersistenceContractTests
                 "report-idempotent-lot",
                 [new ConsumedMaterialLotInput("MAT-OIL", "LOT-OIL-A", 1m, "MIR-IDEMP-A")]),
             CancellationToken.None);
+        // 这次 SaveChanges 不是收尾，是这条用例成立的前提（#3156）。
+        // 直呼 handler 的夹具没有 UoW，第一次报工只把 ProductionReport 放进变更跟踪器、不落库；
+        // 于是重放分支的 `dbContext.ProductionReports.SingleAsync(...)` 查不到它，
+        // 抛 `InvalidOperationException: Sequence contains no elements`。
+        // 那也是个异常，所以原来的 `ThrowsAnyAsync<Exception>` 照样绿——
+        // 把 MesProductionCommands.cs 里 Fingerprint 的最后一个参数换成 string.Empty
+        // （即幂等指纹不再含耗料批次）后实测仍 `通过: 1`，对本用例名字里那条不变量零鉴别力。
+        // 真实路径上第一次报工是落库的，补这一行让重放分支查得到它，
+        // 变异下第二次调用就变成「换了耗料批次却被当作重放接受」并正常返回，
+        // 下面的断言随即以「没抛异常」转红——红因正是这条不变量本身。
+        await dbContext.SaveChangesAsync();
 
-        await Assert.ThrowsAnyAsync<Exception>(() =>
+        // 断类型不断消息：MesIdempotencyConflictException 没有自定义消息，
+        // 写消息等于断言一句框架默认文本。
+        // 这份第二次调用的载荷除幂等指纹冲突外不触犯任何其它守卫——实测把它的幂等键换成新键后
+        // 报工正常成功、不抛异常，所以下面的绿只可能来自指纹一致性这一条。
+        // 边界：本用例经 handler 的默认 MesCodingService（进程内 CodeAllocator，无 store），
+        // 不覆盖 EF 持久化分配器那条冲突路径。
+        await Assert.ThrowsAsync<MesIdempotencyConflictException>(() =>
             handler.Handle(
                 new RecordProductionReportCommand(
                     "org-001",
