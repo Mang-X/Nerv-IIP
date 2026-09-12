@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Nerv.IIP.Business.Wms.Infrastructure;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260909042900_AddInventoryMovementRequestUnitCost")]
+    partial class AddInventoryMovementRequestUnitCost
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1749,9 +1752,10 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasComment("WCS failure diagnostic code.");
 
                     b.Property<string>("FailureMessage")
-                        .HasColumnType("text")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
                         .HasColumnName("failure_message")
-                        .HasComment("WCS failure diagnostic message; unbounded raw text from the external WCS.");
+                        .HasComment("WCS failure diagnostic message.");
 
                     b.Property<bool>("IsTerminalFailure")
                         .ValueGeneratedOnAdd()

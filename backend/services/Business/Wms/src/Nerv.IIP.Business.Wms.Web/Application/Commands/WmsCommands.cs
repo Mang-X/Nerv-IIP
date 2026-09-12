@@ -377,13 +377,10 @@ public sealed class CompleteInboundOrderCommandHandler
             throw new WmsLifecycleConflictException("complete-inbound", inbound.Status.ToString());
         }
 
-        if (string.Equals(inbound.SourceDocumentType, WmsSourceDocumentTypes.PurchaseReceipt, StringComparison.OrdinalIgnoreCase)
-            && await purchaseReceiptPostingRouteClient.GetAsync(
-                inbound.OrganizationId, inbound.EnvironmentId, inbound.SourceDocumentId, cancellationToken)
-                != Nerv.IIP.Contracts.Erp.PurchaseReceiptInventoryPostingRoute.Wms)
-        {
-            throw new KnownException("采购收货来源不存在或未选择 WMS 库存过账路径，无法完成入库。");
-        }
+        var unitCostsByLine = string.Equals(inbound.SourceDocumentType, WmsSourceDocumentTypes.PurchaseReceipt, StringComparison.OrdinalIgnoreCase)
+            ? await purchaseReceiptPostingRouteClient.GetUnitCostsAsync(
+                inbound.OrganizationId, inbound.EnvironmentId, inbound.SourceDocumentId, inbound.Lines, cancellationToken)
+            : null;
 
         var inventoryLocationsByLine = await InboundInventoryLocationResolver.ResolveAsync(
             dbContext,
@@ -400,7 +397,8 @@ public sealed class CompleteInboundOrderCommandHandler
                 baseIdempotencyKey,
                 request.ExpectedVersion,
                 request.Lines,
-                inventoryLocationsByLine);
+                inventoryLocationsByLine,
+                unitCostsByLine);
         }
         catch (ArgumentException exception)
         {
@@ -544,7 +542,8 @@ public sealed class RetryInboundInventoryPostingCommandHandler(ApplicationDbCont
         var movementRequests = inbound.RetryInventoryPosting(
             WmsText.IdempotencyKey(request.IdempotencyKey),
             retryLocationsByLine,
-            failedLineNos);
+            failedLineNos,
+            failedRequestsByLine.ToDictionary(pair => pair.Key, pair => pair.Value.UnitCost, StringComparer.Ordinal));
         dbContext.InventoryMovementRequests.AddRange(movementRequests);
         return new CompleteWmsMovementResult(movementRequests.First().Id, null);
     }

@@ -467,6 +467,7 @@ public sealed class InventoryMovementRequestEntityTypeConfiguration : IEntityTyp
         builder.Property(x => x.ProductionDate).HasColumnName("production_date").HasComment("Optional production date carried to Inventory for inbound postings.");
         builder.Property(x => x.ExpiryDate).HasColumnName("expiry_date").HasComment("Optional expiry date carried to Inventory for FEFO-managed batches.");
         builder.Property(x => x.Quantity).HasColumnName("quantity").IsRequired().HasPrecision(18, 6).HasComment("Movement quantity requested from Inventory.");
+        builder.Property(x => x.UnitCost).HasColumnName("unit_cost").HasPrecision(18, 6).HasComment("Frozen receipt cost per movement UOM in base currency; null for legacy or unvalued requests.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Posting status for the Inventory request.");
         builder.Property(x => x.InventoryMovementId).HasColumnName("inventory_movement_id").HasMaxLength(150).HasComment("Public Inventory movement id returned after posting.");
         builder.Property(x => x.FailureCode).HasColumnName("failure_code").HasMaxLength(100).HasComment("Inventory posting failure code.");
