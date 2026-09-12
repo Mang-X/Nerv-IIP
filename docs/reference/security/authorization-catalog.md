@@ -120,6 +120,7 @@
 ### Barcode / Approval / ERP / Scheduling
 
 - `business.barcodes.templates.manage`
+- `business.barcodes.template-assets.retire`（默认仅 Platform Administrator 的 `All`，无岗位默认）
 - `business.barcodes.print`
 - `business.barcodes.scans.write`
 - `business.approvals.read`
