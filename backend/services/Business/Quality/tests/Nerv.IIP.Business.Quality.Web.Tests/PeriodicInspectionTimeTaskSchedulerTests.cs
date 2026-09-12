@@ -208,8 +208,8 @@ public sealed class PeriodicInspectionTimeTaskSchedulerTests
     /// budget elapsed. On a saturated runner those continuations are exactly what starves, which is what
     /// #3323 recorded on CI (2 observations inside a 2 s / 10 ms window). Handing that window the fake clock
     /// instead does not help and is not available here: nothing may advance this clock while the wait is in
-    /// flight, because the very same clock drives the subject's <c>PeriodicTimer</c> and any advance large
-    /// enough to release a poll would also fire an extra scan that the assertions below forbid.
+    /// flight, and delegating that advance to someone else would couple the poll cadence to the subject's
+    /// own tick semantics, because the very same clock drives its <c>PeriodicTimer</c>.
     /// </para>
     /// <para>
     /// An edge needs one continuation rather than a serviced poll cadence, so a healthy run never consults a
