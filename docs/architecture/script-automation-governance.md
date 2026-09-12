@@ -14,7 +14,7 @@
 
 TestEvidence 对本页路径锚、迁移表和收口声明的逐字读取已移除；这些冻结字面不再保留，不恢复成可维护 registry，也不平移到当前 Governance。脚本执行、脱敏、ordinal、进程所有权及负向行为回归继续由原有 producer 和测试负责。
 
-后续迁移仍需核对 `scripts/check-script-governance.ps1`、`scripts/lib/ScriptVariableBinding.ps1`、`scripts/lib/BackendTestShardTimings.ps1`、`scripts/verify-solution-configuration-membership.ps1`、`scripts/verify-backend-test-shards.ps1` 与 `scripts/tests/script-governance-scan-boundary.Tests.ps1` 的代码旁说明，以及 CI 和活跃文档的实际入链；当前规则指向 Governance，历史形成过程指向相应报告，不把两者混为一处事实源。
+后续迁移仍需核对 `scripts/check-script-governance.ps1`、`scripts/lib/ScriptVariableBinding.ps1`、`scripts/verify-backend-test-shards.ps1` 与 `scripts/tests/script-governance-scan-boundary.Tests.ps1` 的代码旁说明，以及 CI 和活跃文档的实际入链；当前规则指向 Governance，历史形成过程指向相应报告，不把两者混为一处事实源。
 
 删除条件：当前脚本、CI 与活跃文档不再引用本路径，历史已有明确 Git/归档追溯，并实际通过既有文档结构、Script Governance、TestEvidence 与相关 backend-shards 检查。删除 PR 必须记录精确 head/run、执行结果和未执行项，不能仅凭链接或聚合绿色推断行为验证完成。
 
