@@ -23,9 +23,22 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 /// <c>Nerv.IIP.VocabularyGovernance.Tests.VocabularyDriftGovernanceTests</c> 的世界史副本圈：
 /// <c>WorldHistoryProcurementSpec.cs</c> 登记在该测试的 <c>ReplicaFileNames</c> 里，
 /// <c>World_history_replica_files_stay_identical_member_by_member</c> 逐成员断言 5 份逐字相同，
-/// 所以「Inventory 这份满足包含关系」可以传递到那 4 份。**这条传递依赖副本圈继续成立**——
-/// 副本圈若被削弱或把本文件名摘掉，那 4 个服务就同时失去覆盖，届时必须把本文件补回去。
-/// Erp 的字面量在 <c>WorldHistoryErpSpec.cs</c> 里，文件名不同故**不在副本圈内**，只能由它自己那份覆盖。
+/// 所以「Inventory 这份满足包含关系」可以传递到那 4 份。Erp 的字面量在 <c>WorldHistoryErpSpec.cs</c> 里，
+/// 文件名不同故**不在副本圈内**，只能由它自己那份覆盖。
+/// </para>
+/// <para>
+/// <b>这条传递的失效方向（逐条写出，不声称完备之外还有兜底）</b>——出现下列任一情况时，
+/// 那 4 个服务立刻失去覆盖，必须把本文件按服务补回去：
+/// <list type="number">
+/// <item>副本圈被整体削弱，或 <c>ReplicaFileNames</c> 里摘掉 <c>WorldHistoryProcurementSpec.cs</c>（显式，会有 diff）；</item>
+/// <item><b>静默</b>：把 <c>WorldHistoryProcurementSpec.PurchaseCategories</c> 登记进
+/// <c>VocabularyDriftGovernanceTests</c> 的 <c>KnownReplicaDrifts</c> 白名单。该白名单现有 7 条，
+/// 其中 2 条就落在本规格上（<c>BuildPurchasePlan(...)</c> 与 <c>WorldHistoryPurchasePlan.&lt;类型头&gt;</c>，
+/// Approval 副本的存量分裂），再加一条本成员即可合法出局且门禁保持全绿；</item>
+/// <item><b>静默</b>：某一份把成员**改名**。<c>ReplicaConsistencyChecker</c> 按成员键分组后
+/// <c>if (texts.Count &lt;= 1) continue;</c>，改名后的成员退化成单份、不参与比对，
+/// 其余 4 份仍然互相一致 ⇒ 副本圈不报红，而那一份已经可以任意漂移。</item>
+/// </list>
 /// </para>
 /// <para>
 /// <b>已知洞（本票不修）</b>：副本圈的扫描面排除了 <c>tests</c> 路径段
