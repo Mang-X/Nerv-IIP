@@ -78,10 +78,20 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 /// 以及 <c>WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt.cs:180</c>。
 /// 那些键由发布侧 converter 生成而非调用方直接可控，与本票的「调用方可控的合法 API 输入」不同族，
 /// 故不在本 PR 一并处理，也**不由本类看守**。</item>
-/// <item><see cref="ErpCodingIdempotencyKeyPolicy.ColumnMaxLength"/> 的对撞**只覆盖 Erp 那一份 EF 配置**。
-/// <c>CodeIdempotencyKey</c> 是共享实体，但其 <c>CodeEntityTypeConfigurations.cs</c> 在 **7 个服务里
-/// 逐字节复制**（各自 <c>:35</c> 均为 <c>HasMaxLength(150)</c>，本 PR 实读复核 7/7）。
-/// 另外 6 份被单边改动时本类**一格都不会红**——那是 **#3307** 承接的面，别读成「列宽已被钉住」。</item>
+/// <item><b>#3307 改写了本条，没有删掉它。</b>改前这里写的是「<see cref="ErpCodingIdempotencyKeyPolicy.ColumnMaxLength"/>
+/// 的对撞只覆盖 Erp 那一份 EF 配置，另外 6 份被单边改动本类一格都不会红」。
+/// 那 7 份逐字节副本已被 #3307 整体删除，配置收进
+/// <c>Nerv.IIP.Coding.CodingModelBuilderExtensions.ConfigureCodingEntities</c>，
+/// <see cref="ErpCodingIdempotencyKeyPolicy.ColumnMaxLength"/> 也改成直接引用
+/// <c>CodeIdempotencyKey.IdempotencyKeyMaxLength</c>。
+/// <b>于是本类 <see cref="Code_idempotency_key_column_width_matches_the_policy_constant"/> 里
+/// 「受管列宽 == 策略常量」那一句对**列宽本身**已退化成同义反复</b>（两侧同源，一起动）。
+/// 它没有被删，是因为同一个方法里另外两段仍有鉴别力且不属于本票射程：
+/// 死信箱那一列的具名豁免（500）与 <see cref="IdempotencyKeyColumnCount"/> 的闭集计数。
+/// <b>「7 个服务的列宽一致」这件事今天由
+/// <c>Nerv.IIP.Business.Acceptance.Tests.CodeIdempotencyKeyCrossServiceWidthContractTests</c> 承担</b>——
+/// 只有那个测试项目同时引用 7 个服务，能在一个进程里读到 7 份真实 EF 模型。
+/// 别把本类的绿读成「7 份都被看住了」。</item>
 /// <item>「顶格键在真库里到底炸不炸 22001」由真 Postgres 验证（本 PR 正文给了一次性容器读数）；
 /// EF InMemory 与 model-only 上下文都看不见列宽，本类的绿**不能**读成「落库不会 22001」。</item>
 /// </list>

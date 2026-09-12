@@ -1,3 +1,4 @@
+using Nerv.IIP.Coding;
 using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.Validation;
@@ -41,23 +42,31 @@ namespace Nerv.IIP.Business.Erp.Web.Application.Validation;
 /// 那些键由发布侧 converter 生成而非调用方直接可控，与本票「合法 API 输入即可触发」不同族，
 /// **未处理，也不由本类型或其契约用例看守**。
 ///
-/// **射程边界二：<see cref="ColumnMaxLength"/> 只钉住 7 份配置里的 1 份（#3307）。**
-/// <c>CodeIdempotencyKey</c> 是共享实体（<c>common/Coding/Nerv.IIP.Coding/CodeEntities.cs</c>），
-/// 但它的 EF 配置 <c>CodeEntityTypeConfigurations.cs</c> 在 **7 个服务里逐字节复制**
-/// （Erp / MasterData / ProductEngineering / Quality / Maintenance / Mes / DemandPlanning，
-/// 均在各自的 <c>:35</c> 写 <c>HasMaxLength(150)</c>，本 PR 已实读复核 7/7）。
-/// 本常量与 <c>ErpCodingIdempotencyKeyLengthContractTests</c> 的模型对撞**只覆盖 Erp 那一份**：
-/// 另外 6 份任意一份被单边改宽改窄，本机制**一格都不会红**。
-/// **别读成「列宽已被钉住」**——那是 #3307 承接的面，本 PR 有意不扩。
+/// **射程边界二（#3307 已收口，改写自「只钉住 7 份里的 1 份」）。**
+/// <c>CodeIdempotencyKey</c> 是共享实体（<c>common/Coding/Nerv.IIP.Coding/CodeEntities.cs</c>）。
+/// 改前它的 EF 配置 <c>CodeEntityTypeConfigurations.cs</c> 在 **7 个服务里逐字节复制**、各写一遍
+/// <c>HasMaxLength(150)</c>，本常量当时是手抄的第 8 份，只与 Erp 那一份对撞。
+/// #3307 已把那 7 份整体删除、配置收进
+/// <c>CodingModelBuilderExtensions.ConfigureCodingEntities</c>，<see cref="ColumnMaxLength"/>
+/// 也不再手抄数字而是直接引用 <see cref="CodeIdempotencyKey.IdempotencyKeyMaxLength"/>。
+/// **仍然别读成「列宽已被全仓钉死」**：收拢消灭的是「7 份互相漂移」，
+/// 不是「谁都改不动这一列」；剩下的失效方向（服务不调那个扩展 / 另写一份本地配置盖掉）
+/// 由 <c>CodeIdempotencyKeyCrossServiceWidthContractTests</c> 从 7 个服务的真实 EF 模型逐个读取来看守。
 /// </remarks>
 public static class ErpCodingIdempotencyKeyPolicy
 {
     /// <summary>
-    /// <c>code_idempotency_keys.idempotency_key</c> 列宽。EF 侧仍写死
-    /// <c>HasMaxLength(150)</c>（迁移的真相在那边），由 <c>ErpCodingIdempotencyKeyLengthContractTests</c>
-    /// 从 EF 模型闭集枚举后与本常量对撞，任一单边改动即红。
+    /// <c>code_idempotency_keys.idempotency_key</c> 列宽。
+    /// **不再手抄数字**：直接引用共享实体上的 <see cref="CodeIdempotencyKey.IdempotencyKeyMaxLength"/>，
+    /// 那也是 EF 配置（<c>CodingModelBuilderExtensions.ConfigureCodingEntities</c>）用的同一个常量（#3307）。
+    ///
+    /// <para>于是 <c>ErpCodingIdempotencyKeyLengthContractTests</c> 里那条「模型宽度 == 本常量」的对撞
+    /// 对**列宽本身**已退化成同义反复；它没有被删，因为它的值域里还有一条不属于本票的具名豁免
+    /// （死信箱那一列的 500）和一条闭集计数——那两段仍有鉴别力。
+    /// 真正承担「7 个服务的列宽一致」的是
+    /// <c>CodeIdempotencyKeyCrossServiceWidthContractTests</c>。</para>
     /// </summary>
-    public const int ColumnMaxLength = 150;
+    public const int ColumnMaxLength = CodeIdempotencyKey.IdempotencyKeyMaxLength;
 
     /// <summary>
     /// 采购申请转 RFQ 写面在落库前追加的后缀。
