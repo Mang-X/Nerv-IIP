@@ -15,6 +15,7 @@ import {
   NvDialogTitle,
   NvEntityPicker,
   NvField,
+  NvFieldDescription,
   NvFieldError,
   NvFieldGroup,
   NvFieldLabel,
@@ -281,12 +282,8 @@ function submitForm() {
 
           <NvField v-if="!isEditMode">
             <NvFieldLabel for="plan-code">计划编号</NvFieldLabel>
-            <NvInput
-              id="plan-code"
-              v-model="form.planCode"
-              autocomplete="off"
-              placeholder="可选，如 PM-SMT-01-M"
-            />
+            <NvInput id="plan-code" v-model="form.planCode" autocomplete="off" placeholder="可选" />
+            <NvFieldDescription>可自定义计划编号，如 PM-SMT-01-M。</NvFieldDescription>
           </NvField>
 
           <NvField v-if="usesCalendar">
