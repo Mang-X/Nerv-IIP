@@ -5,7 +5,7 @@ using System.Net.Http.Json;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.TemplateAssetRetirementDecisionAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Infrastructure.Retirement;
 using Nerv.IIP.Contracts.FileStorage;
-using Nerv.IIP.Contracts.BarcodeLabel;
+using BarcodeLabelIntegrationEventSources = Nerv.IIP.Contracts.BarcodeLabel.BarcodeLabelIntegrationEventSources;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.TemplateAssetRetirements;
 
