@@ -776,7 +776,7 @@ Assert-True ($facadePrivacyImport.Extent.StartOffset -lt $facadeParsingImport.Ex
 Assert-True ($facadeParsingImport.Extent.StartOffset -lt $facadeArtifactsImport.Extent.StartOffset) `
     'TestEvidence.ps1 must load TestEvidenceParsing.ps1 before TestEvidenceArtifacts.ps1.'
 Assert-True ($facadeArtifactsImport.Extent.StartOffset -lt $facadeProvenanceImport.Extent.StartOffset) `
-    'TestEvidence.ps1 must load TestEvidenceProvenance.ps1 before TestEvidenceBaseline.ps1.'
+    'TestEvidence.ps1 must load TestEvidenceArtifacts.ps1 before TestEvidenceProvenance.ps1.'
 Assert-True ($facadeProvenanceImport.Extent.StartOffset -lt $facadeBaselineImport.Extent.StartOffset) `
     'TestEvidence.ps1 must load TestEvidenceProvenance.ps1 before TestEvidenceBaseline.ps1.'
 
