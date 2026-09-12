@@ -183,8 +183,9 @@ function Get-BackendTestShardPolicyIdentityKey {
         It carries the registering source, the rule and the frozen test identity — and deliberately
         carries no lane and no shard. That absence is the whole #1507 property: re-homing a project
         between shards changes which shard *holds* an exclusion, never which policy row governs it,
-        so a rearrangement cannot invalidate a key. See docs/architecture/test-evidence-governance.md
-        ("Timing data is a cache, not a governed asset").
+        so a rearrangement cannot invalidate a key. 当前 policy/timing 边界见
+        docs/governance/testing/evidence.md；#1507 的形成过程见
+        docs/reports/audits/test-evidence-governance-evolution-2026-08.md。
 
         "No lane and no shard" is enforced, not just written down: scripts/tests/backend-test-shards.Tests.ps1
         splits the key back into its three segments and compares each against the match it came from,
