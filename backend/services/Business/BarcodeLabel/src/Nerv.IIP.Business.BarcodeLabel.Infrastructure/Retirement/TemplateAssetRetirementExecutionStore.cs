@@ -4,6 +4,10 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Retirement;
 
 public sealed class TemplateAssetRetirementExecutionStore(ApplicationDbContext db, TimeProvider clock)
 {
+    public Task<int> CountUnknownExclusionsAsync(CancellationToken ct) =>
+        db.TemplateAssetRetirementDecisions.CountAsync(
+            x => x.Status == TemplateAssetRetirementDecision.ExecutionOutcomeUnknownStatus, ct);
+
     public async Task<TemplateAssetRetirementDecision?> ClaimAsync(
         long clientWindowSeconds, long leaseSeconds, long maxBackoffSeconds, CancellationToken ct)
     {

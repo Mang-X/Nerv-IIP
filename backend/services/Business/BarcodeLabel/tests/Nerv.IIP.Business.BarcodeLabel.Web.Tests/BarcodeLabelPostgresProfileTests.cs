@@ -49,6 +49,7 @@ public sealed partial class BarcodeLabelPostgresProfileTests
         var decision = await SeedExecutionDecisionAsync();
         var clock = new FakeTimeProvider(ExecutionEpoch);
         var remote = new RetirementTransport(decision, loseResponses: true);
+        await AssertRetirementFactMetricsAsync(clock, "pending_decisions 1", "terminal_decisions{outcome=\"success\"} 0");
         await RunRetirementHostAsync(clock, remote, "pending");
         var first = await ReadExecutionDecisionAsync();
         Assert.Equal(ExecutionEpoch, first.FirstSentAtUtc);
@@ -68,6 +69,8 @@ public sealed partial class BarcodeLabelPostgresProfileTests
         Assert.Equal(2592000, completed.ReplayHorizonSeconds);
         Assert.Equal(ExecutionEpoch, completed.QuotaReleasedAtUtc);
         Assert.Equal(2, remote.Requests.Count);
+        // Recreate the collector/DbContext against persisted facts, as a restarted process does.
+        await AssertRetirementFactMetricsAsync(clock, "pending_decisions 0", "terminal_decisions{outcome=\"success\"} 1");
         Assert.NotEqual(remote.Requests[0].Signature, remote.Requests[1].Signature);
         Assert.Equal(1, remote.Acceptances);
         Assert.False(await ExecuteRetirementAsync(clock, remote));
@@ -208,7 +211,17 @@ public sealed partial class BarcodeLabelPostgresProfileTests
             // Model either remote physical completion or no acceptance at all; both are unobservable locally.
             remote.PhysicallyCompleted = accepted;
             clock.Advance(TimeSpan.FromDays(7));
-            Assert.False(await ExecuteRetirementAsync(clock, remote));
+            var registry = Prometheus.Metrics.NewCustomRegistry();
+            var metrics = new TemplateAssetRetirementMetrics(registry,
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<TemplateAssetRetirementMetrics>.Instance);
+            for (var scan = 0; scan < 3; scan++)
+                Assert.False(await ExecuteRetirementAsync(clock, remote, metrics: metrics));
+            Assert.Equal(1, remote.Signatures);
+            Assert.Single(remote.Requests);
+            Assert.Contains("zero_reexecution_fence_hits_total{cause=\"execution-outcome-unknown\"} 3",
+                await TemplateAssetRetirementMetricsTests.SamplesAsync(registry));
+            await AssertRetirementFactMetricsAsync(clock, "execution_outcome_unknown_decisions 1",
+                "terminal_decisions{outcome=\"success\"} 0");
             await AssertPermanentUnknownAsync(clock, remote);
             Assert.Equal(accepted ? 1 : 0, remote.Acceptances);
             Assert.Equal(accepted, remote.PhysicallyCompleted);
@@ -286,7 +299,11 @@ public sealed partial class BarcodeLabelPostgresProfileTests
                     ["ConnectionStrings:PostgreSQL"] = LaneConnectionString,
                     ["InternalService:BearerToken"] = "retirement-http-token",
                 }));
-            builder.ConfigureServices(services => services.AddSingleton<TimeProvider>(clock ?? new RetirementProofCases.Clock()));
+            builder.ConfigureServices(services =>
+            {
+                services.AddSingleton<TimeProvider>(clock ?? new RetirementProofCases.Clock());
+                services.AddSingleton(Prometheus.Metrics.NewCustomRegistry());
+            });
         });
 
     // #3047 / #3028: local terminal clock + frozen H, permanent minimal fence after detail cleanup.
@@ -342,6 +359,12 @@ public sealed partial class BarcodeLabelPostgresProfileTests
             Assert.Equal(1, remote.Signatures);
             Assert.Single(remote.Requests);
             Assert.Equal(1, remote.Acceptances);
+            await AssertRetirementFactMetricsAsync(clock, "terminal_decisions{outcome=\"success\"} 1",
+                $"replay_window_expired_decisions {(offset < 0 ? 0 : 1)}");
+            var exposed = await client.GetStringAsync("/metrics");
+            Assert.Contains("nerv_iip_barcode_retirement_accepted_decisions 1", exposed);
+            if (offset >= 0)
+                Assert.Contains($"zero_reexecution_fence_hits_total{{cause=\"replay-window-expired\"}} {offset + 1}", exposed);
         }
 
         await using var provider = CreateRetirementCommandProvider(clock: clock);

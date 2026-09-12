@@ -39,7 +39,8 @@ public sealed class CreateTemplateAssetRetirementDecisionCommandValidator
 public sealed class CreateTemplateAssetRetirementDecisionCommandHandler(
     ApplicationDbContext dbContext,
     ITemplateAssetRetirementFence retirementFence,
-    TimeProvider clock)
+    TimeProvider clock,
+    TemplateAssetRetirementMetrics metrics)
     : ICommandHandler<CreateTemplateAssetRetirementDecisionCommand, TemplateAssetRetirementDecisionId>
 {
     public const string StableErrorCode = "replay-window-expired";
@@ -188,7 +189,10 @@ public sealed class CreateTemplateAssetRetirementDecisionCommandHandler(
                 x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId
                 && (x.TemplateFileId == request.TemplateFileId || x.IdempotencyKeyDigest == digest)
                 && now >= x.ReplayUntilUtc, ct))
+        {
+            metrics.RecordExpiredReplay();
             throw new KnownException(StableErrorCode);
+        }
     }
 
     private static TemplateAssetRetirementDecisionId EnsureSameRequest(
