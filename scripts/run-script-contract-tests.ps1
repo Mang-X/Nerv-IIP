@@ -23,7 +23,12 @@
 
 [CmdletBinding()]
 param(
-    [ValidateRange(1, 2147483)] [int] $TimeoutSeconds = 600,
+    # 单个测试的上限，不是整步的上限。必须**明显小于** ci.yml 给本步的 step 预算（当前 15m），
+    # 否则一个挂死的测试会把预算吃光、由 GitHub 的 step timeout 收场，而 GitHub 杀步时不会打印
+    # 本 runner 的 FAIL 诊断与该测试的 stdout/stderr 尾巴 —— 最需要诊断的那次反而什么都拿不到。
+    # 300s 的来源：CI 上单测试实测最大 41.1s（erp-sales-order-demand-planning-verify-script），
+    # 取其约 7 倍；一次挂死后仍剩约 10m，足够跑完其余测试并由本 runner 自己报红。
+    [ValidateRange(1, 2147483)] [int] $TimeoutSeconds = 300,
     [int] $FailureOutputLineCount = 40
 )
 

@@ -58,9 +58,9 @@ $script:NervScriptTestTrackingPattern = '^#[1-9][0-9]*$'
 #                必须给 Parent（且 Parent 源码真的引用它）、禁止给 Tracking。
 #   excluded   ：该测试在发现式 runner 的执行环境里根本跑不起来（需要真实外部依赖或必填参数）。
 #                这是**永久性**的执行面判断，不指向任何待办，因此禁止给 Tracking、禁止给 Parent。
-#                必须给 Requirement，且该字符串必须出现在目标文件**自己的** `Requires:` header 里
-#                —— 把「为什么跑不起来」从自由散文压成一条可被机器反驳的引用：目标文件没声明过的
-#                依赖，不能拿来当豁免理由。它不代表该测试无需覆盖，只代表覆盖它属于另一条 lane。
+#                必须给 Requirement，且该字符串必须出现在目标文件**自己的** `Requires:` header 里。
+#                ⚠️ 这只是把散文压成引用，**不是**一道能挡住滥用的门：真实成本见下方「覆盖边界」。
+#                它不代表该测试无需覆盖，只代表覆盖它属于另一条 lane。
 #   quarantine ：该测试**应当跑、也确实被选中过**，但当前在本执行面上红，且修它不属于当前这张票。
 #                必须给 Tracking（`#<issue>`）、禁止给 Parent。这是一条**有期限的**登记：
 #                票销账时删掉这一行，该文件立刻回到发现式 runner 的选中集合，**不需要改 runner 源码**
@@ -72,12 +72,37 @@ $script:NervScriptTestTrackingPattern = '^#[1-9][0-9]*$'
 #    因此一条指向已关闭 issue 的 quarantine 不会被本门禁抓到；防住它的是 #3404/#3405 这类票
 #    自身的验收条目（「解除本文件的 quarantine 登记」写在票里），不是这里。
 #
-# ⚠️ 还有一条**本库抓不到**的绕法，明写在这里而不是假装不存在：把一个其实是「红了但没人修」的
-#    文件写成 `excluded`，并从目标文件的 `Requires:` 里挑一条真实存在但与红因无关的依赖
-#    （例如人人都有的 `PowerShell 7`）当 Requirement。Requirement 校验能把散文压成引用、
-#    让这种登记在 diff 里显眼且可反驳，但**判断该依赖是不是真的不满足属于人工复审，不属于本门禁**。
-#    本库声明的覆盖面到此为止：种类闭集、字段必填/禁填矩阵、目标存在性、父子引用真实性、
-#    票号形态、Requirement 的**出处**。不声明「豁免理由为真」。
+# ⚠️ `excluded` 的真实成本（#3300 复审实测，逐条读数写在这里，不要靠印象）：
+#
+#    1. Requirement 是**子串**匹配（`$_.Contains($requirement, Ordinal)`）：`'o'`、`'7'`、`'Power'`
+#       都能通过。它约束的是「引用出自目标文件的 Requires 段」，不是「这条依赖真的不满足」。
+#    2. **61 个测试里 59 个在自己的 `Requires:` 里声明了 `PowerShell 7`**（另 2 个没有 Requires 段）。
+#       ⇒ 对其中任意一个写 `excluded` + `Requirement = 'PowerShell 7'` 都是绿的，实测已确认。
+#    3. `Requires:` 段内容**本身没有任何门禁**：往目标文件 header 加一行
+#       `#     - a mythical daemon` 再据此 excluded 同样绿，`check-script-governance.ps1` 也是 EXIT=0。
+#
+#    ⇒ 一条 `excluded` 可以静默摘掉任意测试。本库把它压成了一条**具名、带理由、在 diff 里显眼、
+#      且引用可被逐字反驳**的数据表条目 —— 到此为止。判断「该依赖是不是真的不满足」属于人工复审。
+#
+# 本库声明的覆盖面：种类闭集、字段必填/禁填矩阵、目标存在性、父子引用真实性、票号**形态**、
+# Requirement 的**出处**。不声明「豁免理由为真」，也不声明「无票排除不可拼写」。
+
+# ⚠️ workflow-mention 面的覆盖边界（#3300 复审实测三格，两格只声明不关）：
+#
+#    G1 run 体内的 shell 注释 ⇒ **已关**（见 Get-NervScriptTestWorkflowSelections 的注释行过滤），
+#       因为它一行就够、且在 diff 里像一条无辜注释，可抵赖。
+#    G2 新增一个 `if: false` 的 step 点名该测试 ⇒ **不关，声明**。
+#    G3 在 `nightly-business-performance.yml`（`on:` 只有 schedule 与 workflow_dispatch，PR 上从不
+#       触发）里点名该测试 ⇒ **不关，声明**。
+#
+#    不关 G2/G3 的理由：判定「`if:` 在本次事件下是否为真」与「哪些工作流会在 PR 上触发」都要把这个
+#    选取器变成一个 GitHub 表达式求值器与事件模型，是本仓已判定永不收敛的那条路（#3176 / PR #3214，
+#    护栏自身 655→1139 行后被裁定移除）。G2/G3 与 G1 的关键区别是**可抵赖性**：`if: false` 和
+#    「把 CI 的测试挪进 nightly」在 diff 里一眼就是错的，shell 注释不是。
+#
+#    同理不覆盖的还有：改 runner 自己的 ci.yml step（加 `if: false`）、在 runner 里插 `exit 0`、
+#    伪造一个父测试再在其源码加一行引用。前两者是自指缴械面——任何护栏都能被改护栏本身缴械；
+#    后者要挡住就得证明父测试真的执行了子测试，成本远超收益。
 $script:NervScriptTestOutOfBandRegistry = @(
     [pscustomobject]@{
         Name = 'postgres-test-database-consumers.Tests.ps1'
@@ -125,10 +150,17 @@ $script:NervScriptTestOutOfBandRegistry = @(
 )
 
 function Get-NervScriptTestOutOfBandRegistry {
+    <#
+        ⚠️ `,` 前缀不是可有可无的：`return @()` 经函数输出会退化成 $null，于是当登记表被清空时
+        （#3404/#3405 销账后删到一条不剩就会发生）调用方收到的不是空集合而是 $null，
+        `[AllowEmptyCollection()]` 形同虚设，报出来的是 PowerShell 的绑定错误
+        「Cannot bind argument to parameter 'Registry' because it is null」——
+        那是一条与本库无关的诊断，会让人以为登记机制坏了。用数组包装保住空集合语义。
+    #>
     [CmdletBinding()]
     param()
 
-    return @($script:NervScriptTestOutOfBandRegistry)
+    return ,@($script:NervScriptTestOutOfBandRegistry)
 }
 
 function Get-NervScriptTestFiles {
@@ -155,15 +187,30 @@ function Get-NervScriptTestFiles {
     return @(Get-NervStringsSorted -Values ([string[]] $names) -Comparer ([StringComparer]::Ordinal))
 }
 
+function Test-NervScriptTestNameCharacter {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)] [char] $Value)
+
+    return ([char]::IsLetterOrDigit($Value) -or $Value -eq '_' -or $Value -eq '.' -or $Value -eq '-')
+}
+
 function Test-NervScriptTestReference {
     <#
         文本里是否**以整名形式**出现该测试文件名。
 
-        朴素的 `$text.Contains($name)` 在这里是 fail-open 的：`test-lane.Tests.ps1` 是
-        `full-chain-test-lane.Tests.ps1` 的子串，于是引用后者会把前者也标成「已被选中」并从
-        发现式 runner 里摘掉——正好是本票要消除的那种静默漏跑。因此要求命中位置左侧不是
-        文件名字符（字母、数字、`_`、`.`、`-`）；右侧不需要判定，因为名字以 `.Tests.ps1` 结尾，
-        而更长的名字只可能在左侧多出字符。
+        朴素的 `$text.Contains($name)` 在这里是 fail-open 的：若 A 的文件名是 B 的子串，
+        引用 B 就会把 A 也标成「已被选中」并从发现式 runner 里摘掉 —— 正好是本票要消除的
+        那种静默漏跑。因此**左右两侧都要判定**：命中位置的前一个字符与后一个字符都不能是
+        文件名字符（字母、数字、`_`、`.`、`-`）。
+
+        ⚠️ 不是只判左侧。这里曾写过「右侧不需要判定，因为名字以 `.Tests.ps1` 结尾，更长的名字
+        只可能在左侧多出字符」——**那条命题是假的**，#3300 复审用反例推翻：
+        `pnpm-invocation.Tests.ps1` 是 `pnpm-invocation.Tests.ps1-extra.Tests.ps1` 的**前缀**，
+        点名后者会连带把前者摘出 runner。准确说法：只判左侧能挡住「短名是长名的后缀或中缀」，
+        挡不住「短名是长名的前缀」。
+
+        ⚠️ 这是**前瞻性加固，当前仓库零触发**：61 个文件的 3660 个有序对里子串命中数为 0。
+        留它是因为命名碰撞只需有人新增一个文件就会出现，而它的失效方向是静默漏跑。
     #>
     [CmdletBinding()]
     param(
@@ -175,9 +222,10 @@ function Test-NervScriptTestReference {
     while ($searchIndex -le ($Text.Length - $Name.Length)) {
         $matchIndex = $Text.IndexOf($Name, $searchIndex, [StringComparison]::Ordinal)
         if ($matchIndex -lt 0) { return $false }
-        if ($matchIndex -eq 0) { return $true }
-        $previous = $Text[$matchIndex - 1]
-        if (-not ([char]::IsLetterOrDigit($previous) -or $previous -eq '_' -or $previous -eq '.' -or $previous -eq '-')) { return $true }
+        $afterIndex = $matchIndex + $Name.Length
+        $leftIsBoundary = ($matchIndex -eq 0) -or (-not (Test-NervScriptTestNameCharacter -Value $Text[$matchIndex - 1]))
+        $rightIsBoundary = ($afterIndex -ge $Text.Length) -or (-not (Test-NervScriptTestNameCharacter -Value $Text[$afterIndex]))
+        if ($leftIsBoundary -and $rightIsBoundary) { return $true }
         $searchIndex = $matchIndex + 1
     }
 
@@ -225,7 +273,17 @@ function Get-NervScriptTestWorkflowSelections {
                 $runProperty = $step.PSObject.Properties['run']
                 if ($null -eq $runProperty -or $null -eq $runProperty.Value) { continue }
 
-                $run = [string] $runProperty.Value
+                # 只看 run 体里的**非注释行**。
+                #
+                # G1（#3300 复审实测）：`run: |` 块里加一行 shell 注释 `# ./scripts/tests/x.Tests.ps1`
+                # 就能把 x 记成「已被工作流选中」并从发现式 runner 摘掉 —— 一行、且在 diff 里看起来
+                # 像一条无辜注释，是所有绕法里最便宜、最可抵赖的一条。ci.yml 今天就有四处这种写法
+                # （1431/1902/2006/2069 都在 run 体里用中文注释提到 full-chain-test-lane.Tests.ps1；
+                # 该文件同时在 2351 真被跑，所以今天无害 —— 但那是巧合不是设计）。
+                #
+                # 过滤后与过滤前在当前仓库逐项等价（ALL=61 WF=31 OOB=6 RUN=24），
+                # 即这一条只关掉绕法、不改变今天的选中集合。
+                $run = @(([string] $runProperty.Value) -split "`n" | Where-Object { -not $_.TrimStart().StartsWith('#', [StringComparison]::Ordinal) }) -join "`n"
                 foreach ($name in $names) {
                     if (-not (Test-NervScriptTestReference -Text $run -Name $name)) { continue }
                     if (-not $selections.ContainsKey($name)) { $selections[$name] = [Collections.Generic.List[string]]::new() }
@@ -357,10 +415,13 @@ function Assert-NervScriptTestOutOfBandRegistry {
             throw "Out-of-band script test registry entry '$name' has kind '$kind' but still names a parent; only nested entries have one."
         }
 
-        # Tracking 的必填/禁填按 Kind 分叉，这是让三种 Kind 互不可替代的那一半：
-        # 把一条 quarantine 写成 excluded 会撞上「excluded 不许有 Tracking」，
-        # 把一条 excluded 写成 quarantine 会撞上「quarantine 必须有 Tracking」。
-        # 于是「无票静默排除」没有可用的拼写。
+        # Tracking 的必填/禁填按 Kind 分叉：把一条 quarantine 改写成 excluded 时若忘了删 Tracking
+        # 会转红，把一条 excluded 写成 quarantine 时缺 Tracking 也会转红。
+        #
+        # ⛔ 这**不等于**「无票静默排除没有可用的拼写」—— 那句话一度写在这里，是假的。
+        #    重新写一条干净的 `excluded`（不带 Tracking、Requirement 取目标文件确实声明过的依赖）
+        #    照样能把任意测试静默摘掉。成本见 Get-NervScriptTestDeclaredRequirements 上方的说明。
+        #    这一条矩阵关掉的只是「改写时忘了删 Tracking」这一支。
         $requirement = Get-NervScriptTestRegistryField -Entry $entry -Name 'Requirement'
         if ([string]::Equals($kind, 'excluded', [StringComparison]::Ordinal)) {
             if ([string]::IsNullOrWhiteSpace($requirement)) {

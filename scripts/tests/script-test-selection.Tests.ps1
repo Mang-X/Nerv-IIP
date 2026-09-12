@@ -52,9 +52,17 @@ function New-SelectionFixtureRoot {
 #
 # 这是本文件最承重的一组断言。#3300 的筛查面之所以会数错，正是因为按行 grep `run:.*Tests.ps1`
 # 数不到写在 `run: |` 块里的引用（ci.yml:942 的 redis-cap-observation.Tests.ps1 就是这种）。
-# 阳性对照（多行块必须命中）与阴性对照（注释里的名字必须不命中）都在这里钉死：少了阳性对照，
-# 一个只认一行式的实现会「看起来」正确并把多行选中的文件误判成零选中；少了阴性对照，注释里
-# 提一嘴就能把一个文件从 runner 里摘出去。
+# 阳性对照：多行 `run: |` 块里的引用必须命中。少了它，一个只认一行式的实现会「看起来」正确，
+# 并把多行选中的文件误判成零选中。
+#
+# 阴性对照分两格，鉴别力**天差地别**，不要混为一谈：
+#
+#   * run 体内的 **shell 注释**（`# ./scripts/tests/x.Tests.ps1`）—— **这一格才有鉴别力**。
+#     它是 #3300 复审实测出的最便宜绕法 G1：一行注释就能把 x 记成已选中并从 runner 摘掉，
+#     而且在 diff 里像一条无辜注释、可抵赖。把过滤去掉这一格立刻转红。
+#   * **YAML 层注释**（step 之间那种）—— **这一格恒真、零鉴别力**，保留只为记录形态：
+#     YAML 解析器根本不会把它交给任何 step 的 `run`，因此任何实现都不会命中它。
+#     ⛔ 不要把它读成「注释绕法已被守住」—— 守住那件事的是上面那格。
 # ─────────────────────────────────────────────────────────────────────────────
 $shapeWorkflow = @'
 name: Shape
@@ -73,27 +81,38 @@ jobs:
           . ./scripts/lib/ScriptAutomation.ps1
           ./scripts/tests/block.Tests.ps1
           echo done
-  comment-job:
+  yaml-comment-job:
     runs-on: ubuntu-latest
     steps:
       # ./scripts/tests/commented.Tests.ps1 is deliberately only mentioned here.
       - name: Unrelated
         run: echo unrelated
+  shell-comment-job:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mentions a test only in a shell comment inside the run body
+        run: |
+          # ./scripts/tests/shell-commented.Tests.ps1 的逐字契约断言，故保持逐处加固。
+          echo unrelated
 '@
 $shapeRoot = New-SelectionFixtureRoot -WorkflowContent $shapeWorkflow -TestFiles @{
     'inline.Tests.ps1' = '# inline'
     'block.Tests.ps1' = '# block'
     'commented.Tests.ps1' = '# commented'
+    'shell-commented.Tests.ps1' = '# shell commented'
 }
 try {
     $shapeSelections = Get-NervScriptTestWorkflowSelections -RepositoryRoot $shapeRoot
     Assert-Selection ($shapeSelections.ContainsKey('inline.Tests.ps1')) 'A one-line run: reference must be detected.'
     Assert-Selection ($shapeSelections.ContainsKey('block.Tests.ps1')) 'A reference inside a multi-line run: block must be detected — this is the positive control for the multi-line scan face.'
-    Assert-Selection (-not $shapeSelections.ContainsKey('commented.Tests.ps1')) 'A name that only appears in a workflow comment must not count as selection.'
+    Assert-Selection (-not $shapeSelections.ContainsKey('commented.Tests.ps1')) 'A name that only appears in a YAML-level comment must not count as selection (zero-discrimination control: no implementation can reach it).'
+    Assert-Selection (-not $shapeSelections.ContainsKey('shell-commented.Tests.ps1')) `
+        'A name that only appears in a shell comment inside a run body must not count as selection — this is the G1 control and it does discriminate: drop the comment filter and it turns red.'
 
     $shapePlan = Get-NervScriptTestSelectionPlan -RepositoryRoot $shapeRoot -Registry @()
-    Assert-Selection ($shapePlan.RunnerSelected.Count -eq 1 -and [string]::Equals($shapePlan.RunnerSelected[0], 'commented.Tests.ps1', [StringComparison]::Ordinal)) `
-        'The discovery runner must select exactly the complement: the commented-only file and nothing else.'
+    $shapeExpected = [Collections.Generic.HashSet[string]]::new([string[]]@('commented.Tests.ps1', 'shell-commented.Tests.ps1'), [StringComparer]::Ordinal)
+    Assert-Selection ($shapeExpected.SetEquals([string[]] $shapePlan.RunnerSelected)) `
+        'The discovery runner must select exactly the complement: both comment-only files and nothing else.'
 
     # 新增一个文件后，它必须自动落进 runner 集合 —— 这是「后来者不掉队」的直接证据，
     # 而不是「有人记得改名单」。
@@ -101,16 +120,23 @@ try {
     $newcomerPlan = Get-NervScriptTestSelectionPlan -RepositoryRoot $shapeRoot -Registry @()
     Assert-Selection (@($newcomerPlan.RunnerSelected | Where-Object { [string]::Equals($_, 'newcomer.Tests.ps1', [StringComparison]::Ordinal) }).Count -eq 1) `
         'A newly added scripts/tests file must land in the discovery runner set without any registration.'
-    Assert-Selection ($newcomerPlan.All.Count -eq 4 -and $newcomerPlan.WorkflowSelected.Count -eq 2 -and $newcomerPlan.RunnerSelected.Count -eq 2) `
+    Assert-Selection ($newcomerPlan.All.Count -eq 5 -and $newcomerPlan.WorkflowSelected.Count -eq 2 -and $newcomerPlan.RunnerSelected.Count -eq 3) `
         'The plan must stay a total partition after a file is added.'
 }
 finally { Remove-Item -LiteralPath $shapeRoot -Recurse -Force -ErrorAction SilentlyContinue }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 1b. 子串不算引用
+# 1b. 子串不算引用（前瞻性加固，当前仓库零触发）
 #
-# `lane.Tests.ps1` 是 `full-chain-lane.Tests.ps1` 的子串。若按朴素子串判定，引用后者就会把
-# 前者也标成「已被工作流选中」并从 runner 里摘掉——静默漏跑，正是本票要消除的形态。
+# 若 A 的文件名是 B 的子串，朴素子串判定下引用 B 就会把 A 也标成「已被工作流选中」并从 runner
+# 摘掉——静默漏跑，正是本票要消除的形态。
+#
+# ⚠️ 分寸：**当前仓库里一对这样的名字都没有**（61 个文件 3660 个有序对，子串命中数 0，
+# 下面那条断言就是这个读数）。这里用的是合成名字，不是实例。留这一格是因为命名碰撞只需有人
+# 新增一个文件就会出现，而它的失效方向是静默漏跑。
+#
+# 两侧都要判：只判左侧挡得住「短名是长名的后缀/中缀」，挡不住「短名是长名的**前缀**」
+# （`x.Tests.ps1` vs `x.Tests.ps1-extra.Tests.ps1`）。两个方向各一条用例。
 # ─────────────────────────────────────────────────────────────────────────────
 $substringWorkflow = @'
 name: Substring
@@ -119,24 +145,44 @@ jobs:
   longer-only:
     runs-on: ubuntu-latest
     steps:
-      - name: Longer name only
-        run: ./scripts/tests/full-chain-lane.Tests.ps1
+      - name: Longer names only
+        run: |
+          ./scripts/tests/full-chain-lane.Tests.ps1
+          ./scripts/tests/lane.Tests.ps1-extra.Tests.ps1
 '@
 $substringRoot = New-SelectionFixtureRoot -WorkflowContent $substringWorkflow -TestFiles @{
-    'full-chain-lane.Tests.ps1' = '# longer'
+    'full-chain-lane.Tests.ps1' = '# longer, shorter name is its suffix'
+    'lane.Tests.ps1-extra.Tests.ps1' = '# longer, shorter name is its prefix'
     'lane.Tests.ps1' = '# shorter'
 }
 try {
     $substringSelections = Get-NervScriptTestWorkflowSelections -RepositoryRoot $substringRoot
     Assert-Selection ($substringSelections.ContainsKey('full-chain-lane.Tests.ps1')) 'The referenced longer file must be selected.'
-    Assert-Selection (-not $substringSelections.ContainsKey('lane.Tests.ps1')) 'A file whose name is only a substring of a referenced name must not count as selected.'
+    Assert-Selection ($substringSelections.ContainsKey('lane.Tests.ps1-extra.Tests.ps1')) 'The referenced prefix-shaped longer file must be selected.'
+    Assert-Selection (-not $substringSelections.ContainsKey('lane.Tests.ps1')) 'A file whose name is only a substring of two referenced names must not count as selected.'
 
     Assert-Selection (Test-NervScriptTestReference -Text './scripts/tests/lane.Tests.ps1' -Name 'lane.Tests.ps1') 'A path-prefixed whole-name reference must match.'
     Assert-Selection (Test-NervScriptTestReference -Text 'lane.Tests.ps1' -Name 'lane.Tests.ps1') 'A reference at index 0 must match.'
-    Assert-Selection (-not (Test-NervScriptTestReference -Text 'full-chain-lane.Tests.ps1' -Name 'lane.Tests.ps1')) 'A name preceded by a name character must not match.'
+    Assert-Selection (Test-NervScriptTestReference -Text "& (Join-Path `$r 'lane.Tests.ps1')" -Name 'lane.Tests.ps1') 'A quoted reference must match.'
+    Assert-Selection (Test-NervScriptTestReference -Text 'lane.Tests.ps1:982 调用' -Name 'lane.Tests.ps1') 'A reference followed by a line number must match.'
+    Assert-Selection (-not (Test-NervScriptTestReference -Text 'full-chain-lane.Tests.ps1' -Name 'lane.Tests.ps1')) 'A name preceded by a name character must not match (suffix shape).'
+    Assert-Selection (-not (Test-NervScriptTestReference -Text 'lane.Tests.ps1-extra.Tests.ps1' -Name 'lane.Tests.ps1')) 'A name followed by a name character must not match (prefix shape) — the left-only check used to let this through.'
     Assert-Selection (Test-NervScriptTestReference -Text 'full-chain-lane.Tests.ps1 and ./lane.Tests.ps1' -Name 'lane.Tests.ps1') 'A later whole-name occurrence must still match after a rejected substring hit.'
 }
 finally { Remove-Item -LiteralPath $substringRoot -Recurse -Force -ErrorAction SilentlyContinue }
+
+# 「当前仓库零触发」是一条读数，不是印象：把它当断言写下来，将来第一次出现同形状名字时这里会红，
+# 提醒复审这条加固从「前瞻」变成了「在承重」。
+$collisionPairs = 0
+$allTestNames = @(Get-NervScriptTestFiles -RepositoryRoot $repoRoot)
+foreach ($leftName in $allTestNames) {
+    foreach ($rightName in $allTestNames) {
+        if ([string]::Equals($leftName, $rightName, [StringComparison]::Ordinal)) { continue }
+        if ($rightName.Contains($leftName, [StringComparison]::Ordinal)) { $collisionPairs++ }
+    }
+}
+Assert-Selection ($collisionPairs -eq 0) "scripts/tests currently has $collisionPairs substring-colliding name pairs; the whole-name boundary has stopped being merely prophylactic and the narrative around it must be updated."
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 2. 扫描面塌掉必须 throw，不得伪装成「没有遗漏」
