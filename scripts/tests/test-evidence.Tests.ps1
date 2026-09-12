@@ -26,8 +26,8 @@ $facadeOwnedResponsibilityContracts = @(
         FunctionNames = @(
             'New-NervTestEvidenceViolation',
             'Import-NervTestEvidencePolicy',
-            'Get-NervSourceSkipAssignments',
             'Test-NervQuarantineRuleMetadata',
+            'Get-NervSourceSkipAssignments',
             'Test-NervTestEvidencePolicy',
             'Test-NervRuleApplies',
             'Get-NervTestEvidenceViolations'
@@ -546,9 +546,9 @@ $retainedReachCases = @(
     [pscustomobject]@{ Name = 'Assert.Single count is not extracted'; Input = 'Assert.Single() Failure: The collection contained 3 items'; Absent = @('collection contained'); Present = @('type=Assert.Single') },
     [pscustomobject]@{ Name = 'plain exception message is not extracted'; Input = 'System.InvalidOperationException : The projection row was never written'; Absent = @('projection row was never written'); Present = @('type=System.InvalidOperationException') },
     # ⚠️ #3195 family A constraint. Instrumentation appended to a TestTimeout message is dropped
-# whole; the same readings survive only inside `Eventually`'s `Last observation:`. #3213 does
-# not make family A's instrumentation readable by itself — family A must shape its output into
-# a captured field.
+    # whole; the same readings survive only inside `Eventually`'s `Last observation:`. #3213 does
+    # not make family A's instrumentation readable by itself — family A must shape its output into
+    # a captured field.
     [pscustomobject]@{ Name = '#3195 instrumentation appended to TestTimeout is dropped'; Input = "Nerv.IIP.Testing.TestTimeoutException : Operation 'MES arrival' timed out after 00:00:30.0000000. publishStartedAt=12.5 consumeObservedAt=42.5"; Absent = @('publishStartedAt', 'consumeObservedAt'); Present = @('elapsed=00:00:30.0000000') },
     [pscustomobject]@{ Name = '#3195 instrumentation inside Last observation survives'; Input = "Nerv.IIP.Testing.EventuallyTimeoutException : Condition 'c' was not satisfied after 00:00:30.0000000 (5 observations). Last observation: publishStartedAt=12.5 consumeObservedAt=42.5"; Absent = @(); Present = @('publishStartedAt=12.5', 'consumeObservedAt=42.5', 'observations=5') }
 )
@@ -2388,7 +2388,7 @@ foreach ($malformedSchemaCase in @(
     $malformedSummary = $null
     $malformedError = $null
     try {
-        $malformedSummary = New-NervTestEvidenceSummary -Records $compatibleRecords -RunMetadata $compatibleRun -TrxParseResult $compatibleParseResult -Violations @() -Baseline $null -PriorAttemptOutcome $null -TopCount 5
+        $malformedSummary = New-NervTestEvidenceSummary -Records $compatibleRecords -RunMetadata $compatibleRun -TrxParseResult $compatibleParseResult -Violations @() -Baseline $malformedBaseline -PriorAttemptOutcome $null -TopCount 5
     }
     catch { $malformedError = [string]$_.Exception.Message }
     Assert-Equal $null $malformedError "Baseline schemaVersion case '$($malformedSchemaCase.Name)' must be reported as an unavailable reason, never thrown."
@@ -3319,6 +3319,105 @@ finally {
     if (Test-Path $ciFixtureRoot) { Remove-Item $ciFixtureRoot -Recurse -Force }
 }
 Assert-True (-not (Test-Path $ciFixtureRoot)) 'CI budget fixtures must be cleaned up.'
+
+$governanceDocPath = Join-Path $repoRoot 'docs/architecture/test-evidence-governance.md'
+Assert-True (Test-Path $governanceDocPath) 'Test evidence governance document is missing.'
+$governanceDoc = Get-Content $governanceDocPath -Raw
+foreach ($requiredText in @(
+    'optional', 'environment-gated', 'quarantined',
+    'unregistered-skip', 'illegal-quarantine', 'zero-execution',
+    'backend-shard-1', 'MAN-669', 'recovered-after-rerun', 'report-only',
+    'continue-on-error', 'Nerv-IIP Platform CI/Test Governance', 'MAN-663',
+    'selectedLaneResults', 'incompatible-granularity-or-duration-metric', 'single-lane collector',
+    '2000-01-01T00:00:00Z', 'Actions job log',
+    'pwsh scripts/generate-test-evidence-baseline.ps1 -EvidenceRoot artifacts/test-evidence -OutputPath scripts/test-evidence-baseline.json',
+    'raw TRX', '30819675007', '91706113150', '9dafb512c992b240222c8d9b5ada43e4bfc8ac3d',
+    # #1507. The operator contract has to keep saying which of the two things it governs, or the
+    # boundary decays back into "one file, two purposes" the next time someone adds a gate.
+    'Timing data is a cache, not a governed asset',
+    'assembly-not-in-baseline', 'ambiguous-assembly-in-baseline', 'no-compatible-assembly',
+    'timing-assembly-missing', 'timing-source-unavailable',
+    'scripts/update-backend-test-shard-timings.ps1', 'scripts/report-backend-test-shard-balance.ps1',
+    'There are no longer any mandatory refresh triggers'
+)) {
+    Assert-True ($governanceDoc.Contains($requiredText)) "Governance document is missing '$requiredText'."
+}
+foreach ($registeredScriptPath in @(
+    'update-backend-test-shard-timings.ps1', 'report-backend-test-shard-balance.ps1', 'scripts/lib/BackendTestShardTimings.ps1'
+)) {
+    Assert-True ((Get-Content (Join-Path $repoRoot 'docs/architecture/script-automation-governance.md') -Raw).Contains($registeredScriptPath)) "Script governance registry is missing '$registeredScriptPath'."
+}
+$scriptGovernanceDoc = Get-Content (Join-Path $repoRoot 'docs/architecture/script-automation-governance.md') -Raw
+foreach ($registeredPath in @(
+    'collect-test-evidence.ps1',
+    'generate-test-evidence-baseline.ps1',
+    'scripts/lib/TestEvidence.ps1',
+    'scripts/lib/TestEvidencePolicy.ps1',
+    'scripts/lib/TestEvidencePrivacy.ps1',
+    'scripts/lib/TestEvidenceParsing.ps1',
+    'scripts/lib/TestEvidenceArtifacts.ps1',
+    'scripts/lib/TestEvidenceProvenance.ps1',
+    'scripts/lib/TestEvidenceBaseline.ps1',
+    'scripts/tests/test-evidence.Tests.ps1'
+)) {
+    Assert-True ($scriptGovernanceDoc.Contains($registeredPath)) "Script governance registry is missing '$registeredPath'."
+}
+Assert-True ($scriptGovernanceDoc.Contains(
+    '| `scripts/lib/TestEvidencePolicy.ps1` | `check` library | 已受治理 |',
+    [StringComparison]::Ordinal)) `
+    'Script governance registry must retain the TestEvidencePolicy.ps1 migration row.'
+Assert-True ($scriptGovernanceDoc.Contains(
+    '| `scripts/lib/TestEvidencePrivacy.ps1` | `check` library | 已受治理 |',
+    [StringComparison]::Ordinal)) `
+    'Script governance registry must retain the TestEvidencePrivacy.ps1 migration row.'
+Assert-True ($scriptGovernanceDoc.Contains(
+    '| `scripts/lib/TestEvidenceParsing.ps1` | `check` library | 已受治理 |',
+    [StringComparison]::Ordinal)) `
+    'Script governance registry must retain the TestEvidenceParsing.ps1 migration row.'
+Assert-True ($scriptGovernanceDoc.Contains(
+    '| `scripts/lib/TestEvidenceArtifacts.ps1` | `check` library | 已受治理 |',
+    [StringComparison]::Ordinal)) `
+    'Script governance registry must retain the TestEvidenceArtifacts.ps1 migration row.'
+Assert-True ($scriptGovernanceDoc.Contains(
+    '| `scripts/lib/TestEvidenceBaseline.ps1` | `check` library | 已受治理 |',
+    [StringComparison]::Ordinal)) `
+    'Script governance registry must retain the TestEvidenceBaseline.ps1 migration row.'
+Assert-True ($scriptGovernanceDoc.Contains(
+    '| `scripts/lib/TestEvidenceProvenance.ps1` | `check` library | 已受治理 |',
+    [StringComparison]::Ordinal)) `
+    'Script governance registry must retain the TestEvidenceProvenance.ps1 migration row.'
+Assert-True ($scriptGovernanceDoc.Contains('### 八份收口声明', [StringComparison]::Ordinal)) `
+    'Script governance must count all eight executable ordinal closure declarations.'
+Assert-True ($scriptGovernanceDoc.Contains('**八份声明的强度上界怎么读**', [StringComparison]::Ordinal)) `
+    'Script governance must keep the closeout declaration count aligned in its strength-bound heading.'
+Assert-True ($scriptGovernanceDoc.Contains(
+    '| `scripts/lib/TestEvidence.ps1` | 全文件按上述扫描面**零发现**，**零豁免**。 | `scripts/tests/test-evidence.Tests.ps1` |',
+    [StringComparison]::Ordinal)) `
+    'Script governance must document the zero-finding, zero-exemption facade ordinal declaration.'
+Assert-True ($scriptGovernanceDoc.Contains(
+    '| `scripts/lib/TestEvidencePolicy.ps1` | 全文件按上述扫描面**零发现**，**零豁免**。 | `scripts/tests/test-evidence.Tests.ps1` |',
+    [StringComparison]::Ordinal)) `
+    'Script governance must document the zero-finding, zero-exemption Policy ordinal declaration.'
+Assert-True ($scriptGovernanceDoc.Contains(
+    '| `scripts/lib/TestEvidencePrivacy.ps1` | 全文件按上述扫描面**零发现**，**零豁免**。 | `scripts/tests/test-evidence.Tests.ps1` |',
+    [StringComparison]::Ordinal)) `
+    'Script governance must document the zero-finding, zero-exemption Privacy ordinal declaration.'
+Assert-True ($scriptGovernanceDoc.Contains(
+    '| `scripts/lib/TestEvidenceParsing.ps1` | 全文件按上述扫描面**零发现**，**零豁免**。 | `scripts/tests/test-evidence.Tests.ps1` |',
+    [StringComparison]::Ordinal)) `
+    'Script governance must document the zero-finding, zero-exemption Parsing ordinal declaration.'
+Assert-True ($scriptGovernanceDoc.Contains(
+    '| `scripts/lib/TestEvidenceArtifacts.ps1` | 全文件按上述扫描面**零发现**，具名豁免 **1 条**：`New-NervTestEvidenceSummary` 里 `Group-Object { Get-NervRetainedSkipReason $_ }`',
+    [StringComparison]::Ordinal)) `
+    'Script governance must document the single exact Artifacts ordinal exception.'
+Assert-True ($scriptGovernanceDoc.Contains(
+    '| `scripts/lib/TestEvidenceBaseline.ps1` | 全文件按上述扫描面**零发现**，**零豁免**。 | `scripts/tests/test-evidence.Tests.ps1` |',
+    [StringComparison]::Ordinal)) `
+    'Script governance must document the zero-finding, zero-exemption Baseline ordinal declaration.'
+Assert-True ($scriptGovernanceDoc.Contains(
+    '| `scripts/lib/TestEvidenceProvenance.ps1` | 全文件按上述扫描面**零发现**，**零豁免**。 | `scripts/tests/test-evidence.Tests.ps1` |',
+    [StringComparison]::Ordinal)) `
+    'Script governance must document the zero-finding, zero-exemption Provenance ordinal declaration.'
 
 # ---------------------------------------------------------------------------------------------
 # Get-NervOrdinalRankedTop decides the *content and order* of summary.json's slowestAssemblies and
