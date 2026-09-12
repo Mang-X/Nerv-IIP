@@ -13,6 +13,46 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 // PublicContract: #3043 requires realtime IAM, no client-controlled proof identity, and no forwarding on denial.
 public sealed class TemplateAssetRetirementEndpointTests
 {
+    // PublicContract #3049 A: the read uses the retirement permission and never needs a signing secret.
+    [Theory]
+    [InlineData(true, HttpStatusCode.OK)]
+    [InlineData(false, HttpStatusCode.Forbidden)]
+    public async Task Retirement_read_requires_its_own_permission_without_signing(bool allowed, HttpStatusCode expected)
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.AllowOnly(allowed
+            ? BusinessGatewayPermissions.BarcodeTemplateAssetsRetire
+            : BusinessGatewayPermissions.BarcodeTemplatesManage);
+        var barcode = new RecordingBarcodeLabelClient();
+        await using var lease = BusinessGatewayTestHost.Lease(auth, services =>
+        {
+            services.RemoveAll<IBusinessBarcodeLabelClient>();
+            services.AddSingleton<IBusinessBarcodeLabelClient>(barcode);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-read-token"));
+            services.Configure<BusinessGatewayTemplateAssetRetirementProofOptions>(options => options.SecretBase64 = "");
+        });
+        using var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        var templateId = Guid.NewGuid();
+        using var response = await client.GetAsync(
+            $"/api/business-console/v1/barcode/template-assets/retirement?organizationId=org-001&environmentId=env-dev&templateId={templateId:D}&fileId=file-old");
+        Assert.Equal(expected, response.StatusCode);
+        Assert.Equal(BusinessGatewayPermissions.BarcodeTemplateAssetsRetire, auth.LastRequirement!.PermissionCode);
+        Assert.Equal(templateId.ToString("D"), auth.LastRequirement.ResourceId);
+        Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
+        Assert.Null(barcode.LastRetirementRequest);
+        if (allowed)
+        {
+            Assert.Equal("internal-read-token", barcode.LastInternalToken);
+            Assert.Equal(templateId, barcode.LastRetirementReadRequest!.TemplateId);
+            var json = await response.Content.ReadAsStringAsync();
+            Assert.Contains("quota-released", json, StringComparison.Ordinal);
+            Assert.DoesNotContain("proof", json, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("reason", json, StringComparison.OrdinalIgnoreCase);
+        }
+        else Assert.Null(barcode.LastRetirementReadRequest);
+    }
+
     [Theory]
     [InlineData("allowed", HttpStatusCode.OK)]
     [InlineData("forbidden", HttpStatusCode.Forbidden)]

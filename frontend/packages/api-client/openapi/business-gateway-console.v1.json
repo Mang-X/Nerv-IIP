@@ -31747,6 +31747,83 @@
         ]
       }
     },
+    "/api/business-console/v1/barcode/template-assets/retirement": {
+      "get": {
+        "tags": [
+          "Business Console Barcode",
+          "Api"
+        ],
+        "operationId": "getBusinessConsoleBarcodeTemplateAssetRetirement",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "templateId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "guid"
+            }
+          },
+          {
+            "name": "fileId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfTemplateAssetRetirementResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/barcode/resolve": {
       "post": {
         "tags": [
@@ -63832,6 +63909,73 @@
         }
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodeScanListRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "NetCorePalExtensionsDtoResponseDataOfTemplateAssetRetirementResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPContractsBarcodeLabelTemplateAssetRetirementResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPContractsBarcodeLabelTemplateAssetRetirementResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "fileId": {
+            "type": "string"
+          },
+          "checksum": {
+            "type": "string",
+            "nullable": true
+          },
+          "decisionId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "status": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPContractsBarcodeLabelTemplateAssetRetirementStatus"
+              }
+            ]
+          }
+        }
+      },
+      "NervIIPContractsBarcodeLabelTemplateAssetRetirementStatus": {
+        "type": "string",
+        "description": "",
+        "x-enumNames": [
+          "Pending",
+          "QuotaReleased",
+          "ExecutionOutcomeUnknown",
+          "ReplayWindowExpired"
+        ],
+        "enum": [
+          "pending",
+          "quota-released",
+          "execution-outcome-unknown",
+          "replay-window-expired"
+        ]
+      },
+      "NervIIPContractsBarcodeLabelGetTemplateAssetRetirementRequest": {
         "type": "object",
         "additionalProperties": false
       },
