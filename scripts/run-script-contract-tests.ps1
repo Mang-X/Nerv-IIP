@@ -41,7 +41,14 @@ Write-Host "  discovered under scripts/tests: $($plan.All.Count)"
 Write-Host "  selected by a workflow run body: $($plan.WorkflowSelected.Count)"
 Write-Host "  registered out of band: $($plan.OutOfBand.Count)"
 foreach ($entry in $plan.OutOfBand) {
-    Write-Host "    [$($entry.Kind)] $($entry.Name) — $($entry.Reason)"
+    $entryTracking = Get-NervScriptTestRegistryField -Entry $entry -Name 'Tracking'
+    $tracking = if ([string]::IsNullOrWhiteSpace($entryTracking)) { '' } else { " (tracking $entryTracking)" }
+    Write-Host "    [$($entry.Kind)]$tracking $($entry.Name) — $($entry.Reason)"
+}
+$quarantined = @($plan.OutOfBand | Where-Object { [string]::Equals((Get-NervScriptTestRegistryField -Entry $_ -Name 'Kind'), 'quarantine', [StringComparison]::Ordinal) })
+Write-Host "  of which quarantined against a tracking issue: $($quarantined.Count)"
+foreach ($entry in $quarantined) {
+    Write-Host "    quarantined $(Get-NervScriptTestRegistryField -Entry $entry -Name 'Name') tracking $(Get-NervScriptTestRegistryField -Entry $entry -Name 'Tracking')"
 }
 Write-Host "  selected by this discovery runner: $($plan.RunnerSelected.Count)"
 
@@ -89,12 +96,12 @@ foreach ($name in $plan.RunnerSelected) {
 }
 
 Write-Host ''
-Write-Host "Script contract test discovery runner: passed=$passedCount skipped=$($plan.OutOfBand.Count) total=$($plan.All.Count) failed=$($failures.Count)"
+Write-Host "Script contract test discovery runner: passed=$passedCount skipped=$($plan.OutOfBand.Count) total=$($plan.All.Count) failed=$($failures.Count) (skipped = $(@($plan.OutOfBand).Count - $quarantined.Count) nested/excluded + $($quarantined.Count) quarantined)"
 
 if ($failures.Count -gt 0) {
     Write-Host "Failed script contract tests: $($failures -join ', ')"
     exit 1
 }
 
-Write-Host "Discovered script contract tests passed: $passedCount of $($plan.All.Count) files, $($plan.WorkflowSelected.Count) run by named workflow steps, $($plan.OutOfBand.Count) registered out of band."
+Write-Host "Discovered script contract tests passed: $passedCount of $($plan.All.Count) files, $($plan.WorkflowSelected.Count) run by named workflow steps, $($plan.OutOfBand.Count) registered out of band ($($quarantined.Count) quarantined against a tracking issue)."
 exit 0

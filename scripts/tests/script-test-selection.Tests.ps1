@@ -174,13 +174,13 @@ jobs:
 $registryRoot = New-SelectionFixtureRoot -WorkflowContent $registryWorkflow -TestFiles @{
     'parent.Tests.ps1' = "& (Join-Path `$PSScriptRoot 'child.Tests.ps1')`n"
     'child.Tests.ps1' = '# child'
-    'orphan.Tests.ps1' = '# orphan'
+    'orphan.Tests.ps1' = "# Script-Governance:`n#   Category: check`n#   Requires:`n#     - PowerShell 7`n#     - a real widget daemon`n# orphan`n"
     'stranger.Tests.ps1' = '# stranger'
 }
 try {
     $goodRegistry = @(
-        [pscustomobject]@{ Name = 'child.Tests.ps1'; Kind = 'nested'; Parent = 'parent.Tests.ps1'; Reason = 'parent runs it' },
-        [pscustomobject]@{ Name = 'orphan.Tests.ps1'; Kind = 'excluded'; Parent = $null; Reason = 'needs a real dependency' }
+        [pscustomobject]@{ Name = 'child.Tests.ps1'; Kind = 'nested'; Parent = 'parent.Tests.ps1'; Tracking = $null; Reason = 'parent runs it' },
+        [pscustomobject]@{ Name = 'orphan.Tests.ps1'; Kind = 'excluded'; Parent = $null; Tracking = $null; Requirement = 'a real widget daemon'; Reason = 'needs a real dependency' }
     )
     $goodPlan = Get-NervScriptTestSelectionPlan -RepositoryRoot $registryRoot -Registry $goodRegistry
     Assert-Selection ($goodPlan.RunnerSelected.Count -eq 1 -and [string]::Equals($goodPlan.RunnerSelected[0], 'stranger.Tests.ps1', [StringComparison]::Ordinal)) `
@@ -189,52 +189,110 @@ try {
     foreach ($rot in @(
             [pscustomobject]@{
                 Name = 'missing-file'
-                Registry = @([pscustomobject]@{ Name = 'deleted.Tests.ps1'; Kind = 'excluded'; Parent = $null; Reason = 'stale' })
+                Registry = @([pscustomobject]@{ Name = 'deleted.Tests.ps1'; Kind = 'excluded'; Parent = $null; Tracking = $null; Requirement = 'a real widget daemon'; Reason = 'stale' })
             },
             [pscustomobject]@{
                 Name = 'empty-reason'
-                Registry = @([pscustomobject]@{ Name = 'orphan.Tests.ps1'; Kind = 'excluded'; Parent = $null; Reason = '   ' })
+                Registry = @([pscustomobject]@{ Name = 'orphan.Tests.ps1'; Kind = 'excluded'; Parent = $null; Tracking = $null; Requirement = 'a real widget daemon'; Reason = '   ' })
             },
             [pscustomobject]@{
                 Name = 'unknown-kind'
-                Registry = @([pscustomobject]@{ Name = 'orphan.Tests.ps1'; Kind = 'someday'; Parent = $null; Reason = 'later' })
+                Registry = @([pscustomobject]@{ Name = 'orphan.Tests.ps1'; Kind = 'someday'; Parent = $null; Tracking = $null; Requirement = 'a real widget daemon'; Reason = 'later' })
             },
             [pscustomobject]@{
                 Name = 'duplicate'
                 Registry = @(
-                    [pscustomobject]@{ Name = 'orphan.Tests.ps1'; Kind = 'excluded'; Parent = $null; Reason = 'first' },
-                    [pscustomobject]@{ Name = 'orphan.Tests.ps1'; Kind = 'excluded'; Parent = $null; Reason = 'second' })
+                    [pscustomobject]@{ Name = 'orphan.Tests.ps1'; Kind = 'excluded'; Parent = $null; Tracking = $null; Requirement = 'a real widget daemon'; Reason = 'first' },
+                    [pscustomobject]@{ Name = 'orphan.Tests.ps1'; Kind = 'excluded'; Parent = $null; Tracking = $null; Requirement = 'a real widget daemon'; Reason = 'second' })
             },
             [pscustomobject]@{
                 Name = 'nested-without-parent'
-                Registry = @([pscustomobject]@{ Name = 'child.Tests.ps1'; Kind = 'nested'; Parent = ''; Reason = 'somebody runs it' })
+                Registry = @([pscustomobject]@{ Name = 'child.Tests.ps1'; Kind = 'nested'; Parent = ''; Tracking = $null; Reason = 'somebody runs it' })
             },
             [pscustomobject]@{
                 Name = 'nested-parent-not-in-ci'
-                Registry = @([pscustomobject]@{ Name = 'child.Tests.ps1'; Kind = 'nested'; Parent = 'stranger.Tests.ps1'; Reason = 'claimed' })
+                Registry = @([pscustomobject]@{ Name = 'child.Tests.ps1'; Kind = 'nested'; Parent = 'stranger.Tests.ps1'; Tracking = $null; Reason = 'claimed' })
             },
             [pscustomobject]@{
                 Name = 'nested-parent-does-not-reference-child'
-                Registry = @([pscustomobject]@{ Name = 'orphan.Tests.ps1'; Kind = 'nested'; Parent = 'parent.Tests.ps1'; Reason = 'claimed' })
+                Registry = @([pscustomobject]@{ Name = 'orphan.Tests.ps1'; Kind = 'nested'; Parent = 'parent.Tests.ps1'; Tracking = $null; Reason = 'claimed' })
             },
             [pscustomobject]@{
                 Name = 'excluded-with-parent'
-                Registry = @([pscustomobject]@{ Name = 'orphan.Tests.ps1'; Kind = 'excluded'; Parent = 'parent.Tests.ps1'; Reason = 'confused' })
+                Registry = @([pscustomobject]@{ Name = 'orphan.Tests.ps1'; Kind = 'excluded'; Parent = 'parent.Tests.ps1'; Tracking = $null; Requirement = 'a real widget daemon'; Reason = 'confused' })
             },
             [pscustomobject]@{
                 Name = 'contradicts-workflow'
-                Registry = @([pscustomobject]@{ Name = 'parent.Tests.ps1'; Kind = 'excluded'; Parent = $null; Reason = 'but CI runs it' })
+                Registry = @([pscustomobject]@{ Name = 'parent.Tests.ps1'; Kind = 'excluded'; Parent = $null; Tracking = $null; Requirement = 'PowerShell 7'; Reason = 'but CI runs it' })
+            },
+            # quarantine 的四种腐烂形态。前两条是裁决点名的 fail-closed 要求：票号为空、票号形态不对。
+            # 后两条守住「三种 Kind 互不可替代」：quarantine 不许带 Parent、非 quarantine 不许带 Tracking
+            # —— 于是「无票静默排除」既写不成 quarantine（缺票号）也写不成 excluded（带了票号就红）。
+            [pscustomobject]@{
+                Name = 'excluded-without-requirement'
+                Registry = @([pscustomobject]@{ Name = 'orphan.Tests.ps1'; Kind = 'excluded'; Parent = $null; Tracking = $null; Requirement = ''; Reason = 'needs a real dependency' })
+            },
+            [pscustomobject]@{
+                Name = 'excluded-requirement-not-declared-by-the-file'
+                Registry = @([pscustomobject]@{ Name = 'orphan.Tests.ps1'; Kind = 'excluded'; Parent = $null; Tracking = $null; Requirement = 'a GPU'; Reason = 'needs a real dependency' })
+            },
+            [pscustomobject]@{
+                Name = 'excluded-on-a-file-with-no-requires-block'
+                Registry = @([pscustomobject]@{ Name = 'stranger.Tests.ps1'; Kind = 'excluded'; Parent = $null; Tracking = $null; Requirement = 'anything'; Reason = 'no header at all' })
+            },
+            [pscustomobject]@{
+                Name = 'quarantine-carrying-requirement'
+                Registry = @([pscustomobject]@{ Name = 'orphan.Tests.ps1'; Kind = 'quarantine'; Parent = $null; Tracking = '#3404'; Requirement = 'a real widget daemon'; Reason = 'red on linux #3404' })
+            },
+            [pscustomobject]@{
+                Name = 'quarantine-without-tracking'
+                Registry = @([pscustomobject]@{ Name = 'orphan.Tests.ps1'; Kind = 'quarantine'; Parent = $null; Tracking = ''; Reason = 'red on linux' })
+            },
+            [pscustomobject]@{
+                Name = 'quarantine-with-malformed-tracking'
+                Registry = @([pscustomobject]@{ Name = 'orphan.Tests.ps1'; Kind = 'quarantine'; Parent = $null; Tracking = '3404'; Reason = 'red on linux' })
+            },
+            [pscustomobject]@{
+                Name = 'quarantine-with-zero-tracking'
+                Registry = @([pscustomobject]@{ Name = 'orphan.Tests.ps1'; Kind = 'quarantine'; Parent = $null; Tracking = '#0'; Reason = 'red on linux' })
+            },
+            [pscustomobject]@{
+                Name = 'quarantine-with-parent'
+                Registry = @([pscustomobject]@{ Name = 'orphan.Tests.ps1'; Kind = 'quarantine'; Parent = 'parent.Tests.ps1'; Tracking = '#3404'; Reason = 'red on linux' })
+            },
+            [pscustomobject]@{
+                Name = 'quarantine-pointing-at-missing-file'
+                Registry = @([pscustomobject]@{ Name = 'deleted.Tests.ps1'; Kind = 'quarantine'; Parent = $null; Tracking = '#3404'; Reason = 'red on linux' })
+            },
+            [pscustomobject]@{
+                Name = 'excluded-carrying-tracking'
+                Registry = @([pscustomobject]@{ Name = 'orphan.Tests.ps1'; Kind = 'excluded'; Parent = $null; Tracking = '#3404'; Requirement = 'a real widget daemon'; Reason = 'needs a real dependency' })
+            },
+            [pscustomobject]@{
+                Name = 'nested-carrying-tracking'
+                Registry = @([pscustomobject]@{ Name = 'child.Tests.ps1'; Kind = 'nested'; Parent = 'parent.Tests.ps1'; Tracking = '#3404'; Reason = 'parent runs it' })
             }
         )) {
         $failure = Get-SelectionFailure { Get-NervScriptTestSelectionPlan -RepositoryRoot $registryRoot -Registry $rot.Registry }
         Assert-Selection ($null -ne $failure) "Registry rot '$($rot.Name)' must fail closed."
     }
 
+    # quarantine 的正路：带合法票号 ⇒ 从 runner 摘掉；**删掉这一行 ⇒ 立刻回到 runner**。
+    # 后半句是解除成本的直接读数：解除只需删一条登记，不需要碰 runner 源码。
+    $quarantineRegistry = @(
+        [pscustomobject]@{ Name = 'orphan.Tests.ps1'; Kind = 'quarantine'; Parent = $null; Tracking = '#3404'; Reason = 'red on linux, tracked' })
+    $quarantinePlan = Get-NervScriptTestSelectionPlan -RepositoryRoot $registryRoot -Registry $quarantineRegistry
+    Assert-Selection (@($quarantinePlan.RunnerSelected | Where-Object { [string]::Equals($_, 'orphan.Tests.ps1', [StringComparison]::Ordinal) }).Count -eq 0) `
+        'A well-formed quarantine entry must remove its file from the discovery runner set.'
+    $liftedPlan = Get-NervScriptTestSelectionPlan -RepositoryRoot $registryRoot -Registry @()
+    Assert-Selection (@($liftedPlan.RunnerSelected | Where-Object { [string]::Equals($_, 'orphan.Tests.ps1', [StringComparison]::Ordinal) }).Count -eq 1) `
+        'Deleting the quarantine entry must put the file straight back into the discovery runner set, with no other edit.'
+
     # 只在注释里引用子测试的父测试不算数：否则加一行注释就能把一个文件从 runner 摘掉。
     [IO.File]::WriteAllText((Join-Path $registryRoot 'scripts/tests/parent.Tests.ps1'), "# child.Tests.ps1`n", [Text.UTF8Encoding]::new($false))
     $commentOnlyFailure = Get-SelectionFailure {
         Get-NervScriptTestSelectionPlan -RepositoryRoot $registryRoot -Registry @(
-            [pscustomobject]@{ Name = 'child.Tests.ps1'; Kind = 'nested'; Parent = 'parent.Tests.ps1'; Reason = 'claimed' })
+            [pscustomobject]@{ Name = 'child.Tests.ps1'; Kind = 'nested'; Parent = 'parent.Tests.ps1'; Tracking = $null; Reason = 'claimed' })
     }
     Assert-Selection ($null -ne $commentOnlyFailure) 'A nested claim backed only by a comment in the parent must fail closed.'
 }
@@ -250,7 +308,7 @@ foreach ($name in $plan.WorkflowSelected) {
     Assert-Selection ($covered.Add($name)) "Script test '$name' appears in more than one selection bucket."
 }
 foreach ($entry in $plan.OutOfBand) {
-    Assert-Selection ($covered.Add([string] $entry.Name)) "Script test '$($entry.Name)' appears in more than one selection bucket."
+    Assert-Selection ($covered.Add((Get-NervScriptTestRegistryField -Entry $entry -Name 'Name'))) "Script test '$($entry.Name)' appears in more than one selection bucket."
 }
 foreach ($name in $plan.RunnerSelected) {
     Assert-Selection ($covered.Add($name)) "Script test '$name' appears in more than one selection bucket."
@@ -270,9 +328,21 @@ Assert-Selection ($workflowSource.Contains('run: ./scripts/tests/script-test-sel
 $runnerSource = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/run-script-contract-tests.ps1'))
 Assert-Selection ($runnerSource.Contains('Get-NervScriptTestSelectionPlan', [StringComparison]::Ordinal)) `
     'The discovery runner must take its selection from the shared plan rather than from a list of its own.'
-foreach ($name in $plan.RunnerSelected) {
+# 对 All 而不是只对 RunnerSelected 断言：runner 源码里一个测试文件名都不许出现。
+# 这同时是「解除 quarantine 只需删一条登记」的直接证据——被摘掉的文件名也不在 runner 里，
+# 所以把它放回选中集合不需要碰 runner 源码。
+foreach ($name in $plan.All) {
     Assert-Selection (-not $runnerSource.Contains($name, [StringComparison]::Ordinal)) `
-        "The discovery runner must not name '$name' literally; naming files is the defect #3300 exists to remove."
+        "The discovery runner must not name '$name' literally; naming files is the defect #3300 exists to remove, and it would also make lifting a quarantine a runner edit."
 }
 
-Write-Output "Script test selection contracts passed: $($plan.All.Count) files, $($plan.WorkflowSelected.Count) workflow-selected, $($plan.OutOfBand.Count) out of band, $($plan.RunnerSelected.Count) discovery-runner selected."
+$quarantined = @($plan.OutOfBand | Where-Object { [string]::Equals((Get-NervScriptTestRegistryField -Entry $_ -Name 'Kind'), 'quarantine', [StringComparison]::Ordinal) })
+foreach ($entry in $quarantined) {
+    $entryTracking = Get-NervScriptTestRegistryField -Entry $entry -Name 'Tracking'
+    $entryReason = Get-NervScriptTestRegistryField -Entry $entry -Name 'Reason'
+    Assert-Selection (-not [string]::IsNullOrWhiteSpace($entryTracking)) "Quarantined '$($entry.Name)' must carry a tracking issue."
+    Assert-Selection ($entryReason.Contains($entryTracking, [StringComparison]::Ordinal)) `
+        "Quarantined '$($entry.Name)' must state its lift condition against $entryTracking in the reason, so the registry is readable without cross-referencing code."
+}
+
+Write-Output "Script test selection contracts passed: $($plan.All.Count) files, $($plan.WorkflowSelected.Count) workflow-selected, $($plan.OutOfBand.Count) out of band ($($quarantined.Count) quarantined), $($plan.RunnerSelected.Count) discovery-runner selected."

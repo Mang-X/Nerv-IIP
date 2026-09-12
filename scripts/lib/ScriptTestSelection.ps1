@@ -48,38 +48,79 @@ step 的 `run` 整体文本匹配，而不是按行 grep。scripts/tests/script-
 
 $script:NervScriptTestDirectory = 'scripts/tests'
 $script:NervScriptTestSuffix = '.Tests.ps1'
-$script:NervScriptTestOutOfBandKinds = @('nested', 'excluded')
+$script:NervScriptTestOutOfBandKinds = @('nested', 'excluded', 'quarantine')
+$script:NervScriptTestTrackingPattern = '^#[1-9][0-9]*$'
 
 # 唯一的人工维护面。每条都由 Assert-NervScriptTestOutOfBandRegistry 自证，不是自由文本备注。
+# 三种 Kind 互不可替代，字段要求各不相同，因此填错种类一定会撞上另一种的必填/禁填而转红：
 #
-#   nested   ：该测试由另一个**已在 CI 上被选中**的测试作为子进程或子脚本执行，独立再跑一遍只是重复。
-#              必须给出 Parent，且 Parent 的源码必须真的引用它。
-#   excluded ：该测试在发现式 runner 的执行环境里根本跑不起来（需要真实外部依赖或必填参数）。
-#              必须给出 Reason；它**不代表**该测试无需覆盖，只代表覆盖它属于另一条 lane。
+#   nested     ：该测试由另一个**已在 CI 上被选中**的测试作为子进程或子脚本执行，独立再跑一遍只是重复。
+#                必须给 Parent（且 Parent 源码真的引用它）、禁止给 Tracking。
+#   excluded   ：该测试在发现式 runner 的执行环境里根本跑不起来（需要真实外部依赖或必填参数）。
+#                这是**永久性**的执行面判断，不指向任何待办，因此禁止给 Tracking、禁止给 Parent。
+#                必须给 Requirement，且该字符串必须出现在目标文件**自己的** `Requires:` header 里
+#                —— 把「为什么跑不起来」从自由散文压成一条可被机器反驳的引用：目标文件没声明过的
+#                依赖，不能拿来当豁免理由。它不代表该测试无需覆盖，只代表覆盖它属于另一条 lane。
+#   quarantine ：该测试**应当跑、也确实被选中过**，但当前在本执行面上红，且修它不属于当前这张票。
+#                必须给 Tracking（`#<issue>`）、禁止给 Parent。这是一条**有期限的**登记：
+#                票销账时删掉这一行，该文件立刻回到发现式 runner 的选中集合，**不需要改 runner 源码**
+#                （scripts/tests/script-test-selection.Tests.ps1 对这两点各有一条断言）。
+#
+# ⚠️ Tracking 的覆盖边界（声明多少就只断言多少）：本库**只校验票号形态与目标文件存在**。
+#    「该 issue 是否真的存在」「是否已经关闭」**不在覆盖面内** —— 那需要联网查 GitHub，而
+#    script-governance job 既没有 token 也不应为一条注释性字段引入网络依赖与非确定性。
+#    因此一条指向已关闭 issue 的 quarantine 不会被本门禁抓到；防住它的是 #3404/#3405 这类票
+#    自身的验收条目（「解除本文件的 quarantine 登记」写在票里），不是这里。
+#
+# ⚠️ 还有一条**本库抓不到**的绕法，明写在这里而不是假装不存在：把一个其实是「红了但没人修」的
+#    文件写成 `excluded`，并从目标文件的 `Requires:` 里挑一条真实存在但与红因无关的依赖
+#    （例如人人都有的 `PowerShell 7`）当 Requirement。Requirement 校验能把散文压成引用、
+#    让这种登记在 diff 里显眼且可反驳，但**判断该依赖是不是真的不满足属于人工复审，不属于本门禁**。
+#    本库声明的覆盖面到此为止：种类闭集、字段必填/禁填矩阵、目标存在性、父子引用真实性、
+#    票号形态、Requirement 的**出处**。不声明「豁免理由为真」。
 $script:NervScriptTestOutOfBandRegistry = @(
     [pscustomobject]@{
         Name = 'postgres-test-database-consumers.Tests.ps1'
         Kind = 'nested'
         Parent = 'postgres-test-lane.Tests.ps1'
+        Tracking = $null
         Reason = 'postgres-test-lane.Tests.ps1:982 直接 `&` 调用它，父测试已在 Script Governance 上被点名执行。'
     },
     [pscustomobject]@{
         Name = 'redis-test-namespace-cleanup.Tests.ps1'
         Kind = 'nested'
         Parent = 'redis-cap-test-lane.Tests.ps1'
+        Tracking = $null
         Reason = 'redis-cap-test-lane.Tests.ps1:402 直接 `&` 调用它，父测试已在 Script Governance 上被点名执行。'
     },
     [pscustomobject]@{
         Name = 'script-automation-live-output.Tests.ps1'
         Kind = 'nested'
         Parent = 'script-automation-signal-exit.Tests.ps1'
+        Tracking = $null
         Reason = 'script-automation-signal-exit.Tests.ps1:60 以子进程方式跑它并对非零退出 throw（#3168 的 6726b1467）。'
     },
     [pscustomobject]@{
         Name = 'redis-cap-observation-runtime.Tests.ps1'
         Kind = 'excluded'
         Parent = $null
+        Tracking = $null
+        Requirement = 'dotnet-counters'
         Reason = '它有必填参数 -CountersPath，且自述 Requires 为 Linux、prlimit、timeout、redis-cli 与 dotnet-counters；这些只在 Redis/CAP lane 的服务容器里成立，不属于 Script Governance 的无依赖执行面。'
+    },
+    [pscustomobject]@{
+        Name = 'fullstack-process-runtime.Tests.ps1'
+        Kind = 'quarantine'
+        Parent = $null
+        Tracking = '#3404'
+        Reason = 'Linux 上既有缺陷，#3300 的发现式 runner 首次把它接上 CI 时才被看见，非本 PR 引入（该文件与 scripts/lib/FullStackProcessRuntime.ps1 最后改动于 2026-08-22/23，此前零 job 选中）：真实子进程 fixture 上 Get-NervFullStackProcessIdentityState 把本次测试自己启动的 root 判成 Mismatched 而非 Active。macOS 本机绿、Linux CI 红。解除条件：#3404 修复后删掉本条登记。'
+    },
+    [pscustomobject]@{
+        Name = 'fullstack-session-state-v2.Tests.ps1'
+        Kind = 'quarantine'
+        Parent = $null
+        Tracking = '#3405'
+        Reason = 'Linux 上既有缺陷，#3300 的发现式 runner 首次把它接上 CI 时才被看见，非本 PR 引入（该文件最后改动于 2026-08-22，此前零 job 选中）：canonical legacy manifest 在 Linux 上没有被分类为 v0。macOS 本机绿、Linux CI 红。解除条件：#3405 修复后删掉本条登记。'
     }
 )
 
@@ -203,6 +244,58 @@ function Get-NervScriptTestWorkflowSelections {
     return $selections
 }
 
+function Get-NervScriptTestRegistryField {
+    <#
+        登记条目的字段读取一律走这里。
+
+        Set-StrictMode 下直接写 `$entry.Tracking` 在缺字段时抛 PropertyNotFound，而登记条目按 Kind
+        只填自己需要的字段；把「字段缺失」和「字段为空」都归一成空字符串，判定矩阵才能只讲
+        必填/禁填，不必先讲 PowerShell 的属性存在性。
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [object] $Entry,
+        [Parameter(Mandatory)] [string] $Name
+    )
+
+    $property = $Entry.PSObject.Properties[$Name]
+    if ($null -eq $property -or $null -eq $property.Value) { return '' }
+    return [string] $property.Value
+}
+
+function Get-NervScriptTestDeclaredRequirements {
+    <#
+        读目标脚本 Script-Governance header 里 `Requires:` 段下的条目行。
+
+        只认 header 注释块内 `#   Requires:` 之后、缩进更深的 `#     - ` 行；遇到同级或更浅的
+        header 键（`#   <Key>:`）即结束。文件没有该段时返回空集合，由调用方 fail closed。
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string] $Path
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return @() }
+
+    $requirements = [Collections.Generic.List[string]]::new()
+    $inRequires = $false
+    foreach ($line in [IO.File]::ReadAllLines($Path)) {
+        if (-not $line.StartsWith('#', [StringComparison]::Ordinal)) {
+            if ($inRequires) { break }
+            continue
+        }
+        if ($line.StartsWith('#   Requires:', [StringComparison]::Ordinal)) { $inRequires = $true; continue }
+        if (-not $inRequires) { continue }
+        if ($line.StartsWith('#     - ', [StringComparison]::Ordinal)) {
+            $requirements.Add($line.Substring('#     - '.Length).Trim())
+            continue
+        }
+        break
+    }
+
+    return @($requirements)
+}
+
 function Assert-NervScriptTestOutOfBandRegistry {
     [CmdletBinding()]
     param(
@@ -216,7 +309,7 @@ function Assert-NervScriptTestOutOfBandRegistry {
     $known = [Collections.Generic.HashSet[string]]::new([string[]] $Names, [StringComparer]::Ordinal)
 
     foreach ($entry in $Registry) {
-        $name = [string] $entry.Name
+        $name = Get-NervScriptTestRegistryField -Entry $entry -Name 'Name'
         if ([string]::IsNullOrWhiteSpace($name)) {
             throw 'Out-of-band script test registry has an entry without a name.'
         }
@@ -227,12 +320,12 @@ function Assert-NervScriptTestOutOfBandRegistry {
             throw "Out-of-band script test registry lists '$name', which is not a file under $script:NervScriptTestDirectory; the registration face has rotted."
         }
 
-        $kind = [string] $entry.Kind
+        $kind = Get-NervScriptTestRegistryField -Entry $entry -Name 'Kind'
         if (@($script:NervScriptTestOutOfBandKinds | Where-Object { [string]::Equals($_, $kind, [StringComparison]::Ordinal) }).Count -ne 1) {
             throw "Out-of-band script test registry entry '$name' declares unknown kind '$kind'; allowed kinds are $($script:NervScriptTestOutOfBandKinds -join ', ')."
         }
 
-        if ([string]::IsNullOrWhiteSpace([string] $entry.Reason)) {
+        if ([string]::IsNullOrWhiteSpace((Get-NervScriptTestRegistryField -Entry $entry -Name 'Reason'))) {
             throw "Out-of-band script test registry entry '$name' has no reason; an unexplained exemption is indistinguishable from an oversight."
         }
 
@@ -241,7 +334,7 @@ function Assert-NervScriptTestOutOfBandRegistry {
         }
 
         if ([string]::Equals($kind, 'nested', [StringComparison]::Ordinal)) {
-            $parent = [string] $entry.Parent
+            $parent = Get-NervScriptTestRegistryField -Entry $entry -Name 'Parent'
             if ([string]::IsNullOrWhiteSpace($parent)) {
                 throw "Out-of-band script test registry entry '$name' is nested but names no parent."
             }
@@ -260,8 +353,43 @@ function Assert-NervScriptTestOutOfBandRegistry {
                 throw "Out-of-band script test registry entry '$name' claims parent '$parent', but that parent has no non-comment reference to it."
             }
         }
-        elseif ($null -ne $entry.Parent) {
+        elseif (-not [string]::IsNullOrWhiteSpace((Get-NervScriptTestRegistryField -Entry $entry -Name 'Parent'))) {
             throw "Out-of-band script test registry entry '$name' has kind '$kind' but still names a parent; only nested entries have one."
+        }
+
+        # Tracking 的必填/禁填按 Kind 分叉，这是让三种 Kind 互不可替代的那一半：
+        # 把一条 quarantine 写成 excluded 会撞上「excluded 不许有 Tracking」，
+        # 把一条 excluded 写成 quarantine 会撞上「quarantine 必须有 Tracking」。
+        # 于是「无票静默排除」没有可用的拼写。
+        $requirement = Get-NervScriptTestRegistryField -Entry $entry -Name 'Requirement'
+        if ([string]::Equals($kind, 'excluded', [StringComparison]::Ordinal)) {
+            if ([string]::IsNullOrWhiteSpace($requirement)) {
+                throw "Out-of-band script test registry entry '$name' is excluded but names no requirement; 'it does not run here' has to point at something."
+            }
+            $targetPath = Join-Path (Join-Path $RepositoryRoot $script:NervScriptTestDirectory) $name
+            $declaredRequirements = @(Get-NervScriptTestDeclaredRequirements -Path $targetPath)
+            if ($declaredRequirements.Count -eq 0) {
+                throw "Out-of-band script test registry entry '$name' is excluded, but that file declares no Script-Governance 'Requires:' block to justify it."
+            }
+            if (@($declaredRequirements | Where-Object { $_.Contains($requirement, [StringComparison]::Ordinal) }).Count -eq 0) {
+                throw "Out-of-band script test registry entry '$name' is excluded on requirement '$requirement', which does not appear in that file's own 'Requires:' block ($($declaredRequirements -join ' | '))."
+            }
+        }
+        elseif (-not [string]::IsNullOrWhiteSpace($requirement)) {
+            throw "Out-of-band script test registry entry '$name' has kind '$kind' but names requirement '$requirement'; only excluded entries are justified by an unmet dependency."
+        }
+
+        $tracking = Get-NervScriptTestRegistryField -Entry $entry -Name 'Tracking'
+        if ([string]::Equals($kind, 'quarantine', [StringComparison]::Ordinal)) {
+            if ([string]::IsNullOrWhiteSpace($tracking)) {
+                throw "Out-of-band script test registry entry '$name' is quarantined but names no tracking issue; an untracked quarantine is just a silent exclusion."
+            }
+            if ($tracking -notmatch $script:NervScriptTestTrackingPattern) {
+                throw "Out-of-band script test registry entry '$name' declares tracking issue '$tracking', which is not of the form '#<issue number>'."
+            }
+        }
+        elseif (-not [string]::IsNullOrWhiteSpace($tracking)) {
+            throw "Out-of-band script test registry entry '$name' has kind '$kind' but names tracking issue '$tracking'; only quarantine entries are time-boxed against a ticket."
         }
     }
 }
@@ -279,7 +407,7 @@ function Get-NervScriptTestSelectionPlan {
     $workflowSelections = Get-NervScriptTestWorkflowSelections -RepositoryRoot $RepositoryRoot
     Assert-NervScriptTestOutOfBandRegistry -RepositoryRoot $RepositoryRoot -Registry $Registry -Names $names -WorkflowSelections $workflowSelections
 
-    $outOfBandNames = [Collections.Generic.HashSet[string]]::new([string[]]@($Registry | ForEach-Object { [string] $_.Name }), [StringComparer]::Ordinal)
+    $outOfBandNames = [Collections.Generic.HashSet[string]]::new([string[]]@($Registry | ForEach-Object { Get-NervScriptTestRegistryField -Entry $_ -Name 'Name' }), [StringComparer]::Ordinal)
     $runnerSelected = @($names | Where-Object { (-not $workflowSelections.ContainsKey($_)) -and (-not $outOfBandNames.Contains($_)) })
 
     return [pscustomobject]@{
