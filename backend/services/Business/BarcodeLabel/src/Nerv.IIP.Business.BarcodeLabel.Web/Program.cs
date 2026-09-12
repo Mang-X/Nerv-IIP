@@ -150,11 +150,13 @@ try
             ConnectTimeout = services.GetRequiredService<IOptions<FileStorageClientOptions>>().Value.ConnectTimeout,
         })
         .UseHttpClientMetrics();
-    builder.Services.AddScoped<ILabelTemplateAssetPort>(services =>
+    builder.Services.AddScoped<HttpFileStorageLabelTemplateAssetAdapter>(services =>
         new HttpFileStorageLabelTemplateAssetAdapter(
             services.GetRequiredService<IFileStorageClient>(),
             services.GetRequiredService<IHttpClientFactory>().CreateClient(FileStorageClientOptions.DownloadClientName),
             services.GetRequiredService<IOptions<FileStorageClientOptions>>().Value.DownloadTimeout));
+    builder.Services.AddScoped<ILabelTemplateAssetPort>(services =>
+        services.GetRequiredService<HttpFileStorageLabelTemplateAssetAdapter>());
     builder.Services.AddSingleton<IValidateOptions<LabelPrinterOptions>, LabelPrinterOptionsValidator>();
     builder.Services
         .AddOptions<LabelPrinterOptions>()
