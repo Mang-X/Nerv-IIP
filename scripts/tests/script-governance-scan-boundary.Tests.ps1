@@ -181,7 +181,7 @@ $nonBindingLeftTypes = @('IndexExpressionAst', 'MemberExpressionAst')
 $leftShapeCorpus = @(
     '$a = 1', '$a += 1', '$a ??= 1', '$a = $b = 1', '${a b} = 1', '$script:a = 1', '$env:X = 1',
     '$a, $b = 1, 2', '($a, $b), $c = 1',
-    '[string] $a = 1', '[string[]] ($a, $b) = 1', '[int] ($a) = 1', '[ref] $a = 1',
+    '[string] $a = 1', '[string[]] ($a, $b) = 1, 2', '[int] ($a) = 1', '[ref] $a = 1',
     '[ValidateNotNullOrEmpty()] $a = 1',
     '($a) = 1', '(($a)) = 1',
     '$h[0] = 1', '$h[$i] = 1', '$h[0][1] = 1', '$global:h[0] = 1', '$h[0] ??= 1',
