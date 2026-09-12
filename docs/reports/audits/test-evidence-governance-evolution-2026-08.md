@@ -12,8 +12,10 @@
 
 ## 历史来源
 
-M2-H 拆分前完整正文冻结于 Git：
+M2-H 拆分前完整正文冻结于 Git，可直接查阅[固定版本原文](https://github.com/Mang-X/Nerv-IIP/blob/6e8747a8f93a6398c45c8eb2f2a33ad3a7b64019/docs/architecture/test-evidence-governance.md)：
 
 `6e8747a8f93a6398c45c8eb2f2a33ad3a7b64019:docs/architecture/test-evidence-governance.md`
+
+代码旁引用的历史章节与详细论证应在上述固定版本查阅；本页只做冻结结论与原文导航，不复制原文章节、运行数字或推导过程。
 
 其中出现的 run ID、SHA、成员数和时点通过结果只对当时基线成立，不得用于证明当前 PR/main。

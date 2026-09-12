@@ -11,6 +11,17 @@
 
 部分包含大量相对源码链接的冻结报告暂保留在 `docs/reports/` 根目录，以维持迁移前相同的链接深度和原始正文；这不是新的分类例外或项目状态总账。根目录中的短兼容指针只用于保持这些冻结报告原有的同目录链接可访问。
 
+## 治理文档迁移追溯
+
+已退役的 Architecture 治理入口不再恢复为当前规则或机器登记表。冻结记录中的旧路径文字按记录时点的 Git 树追溯：
+
+| 主题 | 冻结记录 | 迁移前原文 |
+| --- | --- | --- |
+| 测试证据 | [演进审计](audits/test-evidence-governance-evolution-2026-08.md) | [M2-H 前正文](https://github.com/Mang-X/Nerv-IIP/blob/6e8747a8f93a6398c45c8eb2f2a33ad3a7b64019/docs/architecture/test-evidence-governance.md) |
+| 脚本自动化 | [演进审计](audits/script-automation-governance-evolution-2026-08.md) / [signal 与 memory 调查](investigations/script-automation-signal-memory-2026-08.md) | [M2-G 前正文](https://github.com/Mang-X/Nerv-IIP/blob/26e88a62e2223ba7da2443c6471b34d971d4ad28/docs/architecture/script-automation-governance.md) |
+
+当前规则分别从[测试证据治理](../governance/testing/evidence.md)和[脚本自动化治理](../governance/script-automation.md)进入；历史文字、旧命令和历史通过结果不能替代这些当前入口及其生产者。
+
 ## 使用规则
 
 1. 报告中的提交、运行 ID、版本、数量和通过结果只对报告声明的基线与范围成立。
