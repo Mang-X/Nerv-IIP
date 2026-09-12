@@ -369,7 +369,7 @@ public sealed class GetEngineeringChangeImpactPreviewQueryHandler(ApplicationDbC
     {
         if (request.AffectedVersions.Count == 0)
         {
-            throw new KnownException("At least one affected version is required for impact preview.");
+            throw new KnownException("影响预览至少需要一个受影响版本。");
         }
 
         var nodes = new Dictionary<string, EngineeringChangeImpactNode>(StringComparer.OrdinalIgnoreCase);
