@@ -3,13 +3,13 @@
   # 只提高 step 预算，否则严格不等式将不再保护证据 step。
   #
   # 由 scripts/tests/test-evidence.Tests.ps1 强制执行（由下方 Script Governance job 运行）。
-  # 此规则的叙述性副本：docs/architecture/test-evidence-governance.md。
+  # 当前证据治理：docs/governance/testing/evidence.md。
   #
   # ---------------------------------------------------------------------------------------------
   # 构建策略（MAN-669 PR-B / PR-C）。此主题与上述超时策略分开；两个 PR
   # 都未变更预算，因此这里的任何内容都不参与 Test-NervCiWorkflowBudgets 强制的算术。
   # 这里只保留结论——每项测量、run id、样本限制和重新开启条件仅位于唯一的
-  # 位置：docs/architecture/backend-ci-build-strategy.md。不得在此复述数字：MAN-664
+  # 位置：docs/reports/audits/backend-ci-build-strategy-man-669.md。不得在此复述数字：MAN-664
   # 将重新测量，而复制到四个文件中的数字会在其中三个文件中漂移。
   #
   #   * 每个分片继续只 restore 和 build 自己的 .slnf。build-once（一个串行 build job，
@@ -20,7 +20,7 @@
       # 每个 step 只运行一个 script，不在一个 `run:` 块中串联：两个 script 都会在 stdout 报告发现的问题
       # 并以 1 退出；若串联，第二个 script 的 `$LASTEXITCODE` 会覆盖第一个的值，
       # 使真实失败变绿（已测量）。原因：
-      # docs/architecture/backend-ci-build-strategy.md ("走查收尾" 第 3 条).
+      # docs/reports/audits/backend-ci-build-strategy-man-669.md ("走查收尾" 第 3 条).
       - name: Validate backend test shard classification
         timeout-minutes: 5
         shell: pwsh
@@ -30,7 +30,7 @@
   script-governance:
     name: Script Governance
     # 层级 B（失败后没有 step 运行）。job 预算是按观测运行时间设定的快速失败上限
-    # （docs/architecture/test-evidence-governance.md 的层级 B 规则）。
+    # （docs/governance/testing/evidence.md 的 CI timeout 规则）。
     #
     # 20m 的来源（#2700，2026-08-28 实测）：样本为 main 上 08-22 至 08-28 的 50 次 run
     # （最近 25 次连续，更早区间每 4 次取 1）。整个 job 的观测区间是 6.63m–10.05m；
@@ -40,7 +40,7 @@
       # and the library rule set are asserted here, in CI, not only in the local gate. Deliberately
       # split out of scripts/tests/check-script-governance.Tests.ps1, which also drives the
       # ScriptAutomation stream-drain and detached-process fixtures; this file is 4.7s of checker
-      # runs against small fixtures. Ruling: docs/architecture/script-automation-governance.md.
+      # runs against small fixtures. Ruling: docs/governance/script-automation.md.
       - name: Test script governance scan boundary
         timeout-minutes: 5
         shell: pwsh

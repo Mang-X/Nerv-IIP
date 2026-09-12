@@ -2,7 +2,7 @@
 # these assertions match whole sentences instead of the short fragments a thrown (and therefore
 # width-wrapped) message forced — this file used to also scrape the command log to reassemble that
 # text, and both workarounds are gone. Why the shape matters:
-# docs/architecture/backend-ci-build-strategy.md ("走查收尾" 第 3 条).
+# docs/reports/audits/backend-ci-build-strategy-man-669.md ("走查收尾" 第 3 条).
 #
 # Whitespace is collapsed so that where the script chose to break lines is not part of the
 # contract. The assertions are about content, not layout.
@@ -11,7 +11,7 @@
     # this contract then turned into a red Backend Test Shard Governance job until a human
     # regenerated and re-committed the snapshot. That is the exact human refresh ceremony #1507
     # deleted, re-imposed by a test, over a warning whose own text says "This is report-only".
-    # docs/architecture/test-evidence-governance.md states the same rule in prose: coverage gaps are
+    # docs/governance/testing/evidence.md states the same rule in prose: coverage gaps are
     # report-only warnings, and the committed snapshot is never required to be complete.
     #
     # The gap count is printed instead of asserted, so a human reading the job log can see the
@@ -21,7 +21,7 @@
     # allowed to estimate over. Asserting zero gaps here is the deleted red gate wearing another
     # costume: it would turn "someone added a test project" into a red Backend Test Shard Governance
     # job until a human regenerated and re-committed the snapshot, which is the #1507 ceremony. The
-    # same rule is stated in prose in docs/architecture/test-evidence-governance.md.
+    # same rule is stated in prose in docs/governance/testing/evidence.md.
     #
     # So the gap count is printed for a human reading the job log, and only key stability is asserted.
     $keyResolutionByLayout = [ordered]@{}
@@ -30,7 +30,7 @@
     #     which is what makes the split a faithful inverse. This is what catches a key that returns a
     #     constant, an empty string, drops a segment, or splices in an extra field such as
     #     `requiredLane` — the last of which is why the "carries no lane" claim in
-    #     docs/architecture/test-evidence-governance.md is now enforced rather than merely written.
+    #     docs/reports/audits/test-evidence-governance-evolution-2026-08.md is now enforced rather than merely written.
     $structuralKeyChecks = 0
     foreach ($shard in @($manifest.fastShards)) {
         foreach ($selector in @(Get-BackendTestShardExcludedSelectors -Shard $shard)) {
@@ -39,7 +39,7 @@
     # ("a selected real-dependency lane executed nothing") meaningful while leaving a re-shard unable
     # to change a verdict. Asserted rather than described: every rule must decide identically for a
     # logical lane and for every shard spelling of it.
-    # Narrative: docs/architecture/test-evidence-governance.md, "Timing data is a cache, not a
+    # Narrative: docs/reports/audits/test-evidence-governance-evolution-2026-08.md, "Timing data is a cache, not a
     # governed asset" (lane as applicability condition versus identity key).
     $logicalLanesUnderTest = @('backend', 'connector-host', 'postgres', 'full-chain', 'performance', 'redis-cap')
     $laneSuffixCases = 0
