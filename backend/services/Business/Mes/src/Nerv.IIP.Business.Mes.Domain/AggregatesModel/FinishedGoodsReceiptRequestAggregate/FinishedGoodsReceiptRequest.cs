@@ -110,23 +110,24 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
         return request;
     }
 
+    /// <summary>
+    /// 这把幂等键是否属于该完工入库申请的过账作用域。
+    /// <para>判定整个委托给 <see cref="FinishedGoodsReceiptInventoryPostingKey.BelongsToScope"/>：
+    /// 四种键形态**全部由 <c>(org, env, requestNo)</c> 原样重算**后比对，没有「按形状放行」的分支。
+    /// 它被 <c>GetFinishedGoodsReceiptCostAuthorityQuery</c> 当成本授权的作用域守卫用，
+    /// 不得因为键回落而退化（#3332）。</para>
+    /// </summary>
     public static bool IsInventoryPostingIdempotencyKey(
         string organizationId,
         string environmentId,
         string requestNo,
         string? idempotencyKey)
     {
-        if (string.IsNullOrWhiteSpace(idempotencyKey))
-        {
-            return false;
-        }
-
-        var prefix = BuildInventoryPostingIdempotencyKey(
+        return FinishedGoodsReceiptInventoryPostingKey.BelongsToScope(
             DomainGuard.Required(organizationId, nameof(organizationId)),
             DomainGuard.Required(environmentId, nameof(environmentId)),
-            DomainGuard.Required(requestNo, nameof(requestNo)));
-        return string.Equals(idempotencyKey, prefix, StringComparison.Ordinal) ||
-            idempotencyKey.StartsWith(prefix + ":", StringComparison.Ordinal);
+            DomainGuard.Required(requestNo, nameof(requestNo)),
+            idempotencyKey);
     }
 
     public void ApplyCapitalizedUnitCost(decimal unitCost)
@@ -238,9 +239,12 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
         InventoryPostingFailedAtUtc = null;
     }
 
+    // 键的构造与识别全部住在 FinishedGoodsReceiptInventoryPostingKey：
+    // 原来这里是纯前缀拼接，最坏 329（重投 330）远超下游 Inventory 承载列的 128，
+    // 越界值经 CAP 消费者落库后逃逸成 poison message（#3332）。
     private static string BuildInventoryPostingIdempotencyKey(string organizationId, string environmentId, string requestNo)
     {
-        return $"mes:finished-goods-receipt:{organizationId}:{environmentId}:{requestNo}";
+        return FinishedGoodsReceiptInventoryPostingKey.Build(organizationId, environmentId, requestNo);
     }
 
     private static string BuildInventoryPostingRetryIdempotencyKey(
@@ -249,7 +253,11 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
         string requestNo,
         string idempotencyKey)
     {
-        return $"{BuildInventoryPostingIdempotencyKey(organizationId, environmentId, requestNo)}:{DomainGuard.Required(idempotencyKey, nameof(idempotencyKey))}";
+        return FinishedGoodsReceiptInventoryPostingKey.BuildRetry(
+            organizationId,
+            environmentId,
+            requestNo,
+            DomainGuard.Required(idempotencyKey, nameof(idempotencyKey)));
     }
 
     private static string NormalizeFailureMessage(string failureMessage)

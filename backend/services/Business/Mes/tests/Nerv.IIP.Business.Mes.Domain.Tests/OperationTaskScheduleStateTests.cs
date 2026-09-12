@@ -14,7 +14,8 @@ public sealed class OperationTaskScheduleStateTests
         "WC-OLD",
         [],
         DateTimeOffset.Parse("2026-06-01T08:00:00Z"),
-        TimeSpan.FromMinutes(30));
+        TimeSpan.FromMinutes(30),
+        "SKU-001");
 
     [Fact]
     public void Newly_queued_task_has_no_scheduled_at_utc()

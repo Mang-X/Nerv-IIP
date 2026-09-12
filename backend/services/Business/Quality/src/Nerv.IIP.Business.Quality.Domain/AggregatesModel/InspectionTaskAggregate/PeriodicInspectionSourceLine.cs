@@ -3,10 +3,10 @@ namespace Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionTaskAggrega
 /// <summary>
 /// 周期检任务的来源行身份与触发幂等键的**唯一**编码/解码点（#3191）。
 ///
-/// 周期检没有独立的来源单据，来源单据是工单，工序与窗口序号只能编进来源行；而
-/// <c>InspectionTask.InspectionRecordSourceDocumentId()</c> 会把这一串当成检验记录的来源单据身份，
-/// 于是它一路进到 <c>payload.SourceDocumentId</c>。下游要还原工序身份就必须解这一串——
-/// 解码点必须与编码点同住一处，否则两地各写一份等价谓词，改一处就静默漂移。
+/// 周期检没有独立的来源单据，来源单据是工单，工序与窗口序号只能编进来源行。该来源行自 #3319 起
+/// 原样落在 <c>inspection_records.source_document_line_id</c>（不再被搬进来源单据身份那一列），
+/// 下游要还原工序身份仍须解这一串——解码点必须与编码点同住一处，否则两地各写一份等价谓词，
+/// 改一处就静默漂移。
 /// </summary>
 public static class PeriodicInspectionSourceLine
 {
@@ -26,13 +26,9 @@ public static class PeriodicInspectionSourceLine
     public static string TriggerIdempotencyKey(string kind, Guid runtimeContextId, long sequence) =>
         $"{TriggerKeyPrefix}{kind}:{runtimeContextId:D}:{sequence}";
 
-    public static bool IsPeriodicTriggerKey(string triggerIdempotencyKey) =>
-        triggerIdempotencyKey.StartsWith($"{TriggerKeyPrefix}{TimeKind}:", StringComparison.Ordinal)
-        || triggerIdempotencyKey.StartsWith($"{TriggerKeyPrefix}{QuantityKind}:", StringComparison.Ordinal);
-
     /// <summary>
     /// 从来源行身份还原工序 id。不是周期检来源行时返回 false 并把 <paramref name="operationId"/> 置空，
-    /// 调用方据此区分「工序检（来源单据就是工单）」与「周期检（来源单据是复合行号）」。
+    /// 调用方据此区分「工序检（来源行就是工序任务 id）」与「周期检（来源行是复合窗口身份）」。
     /// </summary>
     public static bool TryParseOperationId(string? value, out string operationId)
     {

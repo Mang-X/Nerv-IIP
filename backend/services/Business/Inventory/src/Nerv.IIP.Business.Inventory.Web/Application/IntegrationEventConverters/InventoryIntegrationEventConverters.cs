@@ -1,5 +1,6 @@
 using Nerv.IIP.Business.Inventory.Domain.DomainEvents;
 using Nerv.IIP.Contracts.Inventory;
+using Nerv.IIP.Contracts.IntegrationEvents;
 
 namespace Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventConverters;
 
@@ -158,6 +159,11 @@ internal static class EventIds
 {
     public static string New() => $"evt-{Guid.CreateVersion7():N}";
 
-    public static string Idempotency(params string[] parts) => $"inventory:{string.Join(':', parts)}";
+    /// <summary>
+    /// 信封幂等键：走平台预算出处（#3339）。装得下逐字保持，装不下整键摘要。
+    /// 改动前是 <c>$"inventory:{string.Join(':', parts)}"</c>，未超预算时产出逐字相同。
+    /// </summary>
+    public static string Idempotency(params string[] parts) =>
+        IntegrationEventIdempotencyKey.ComposeServiceScoped("inventory:", parts);
 
 }

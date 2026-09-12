@@ -743,7 +743,8 @@ public sealed partial class MesMaterialScanPrevalidationTests
         db.WorkOrders.Add(workOrder);
         db.OperationTasks.Add(OperationTask.Create(
             "org-001", "env-dev", "WO-001", "OP-10", OperationTaskLifecycleStatus.Queued,
-            10, "WC-01", [], Now, TimeSpan.FromHours(1), null, null));
+            10, "WC-01", [], Now, TimeSpan.FromHours(1), null, null,
+            "SKU-001"));
         if (includeRequirement)
         {
             db.MaterialRequirements.Add(MaterialRequirement.Capture(

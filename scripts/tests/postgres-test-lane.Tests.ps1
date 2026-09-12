@@ -446,31 +446,38 @@ try {
     # IndustrialTelemetry 的既有混合类只有 7 条真实 PostgreSQL 证明；#2604 登记历史 fact 类的 2 条，
     # #2601 再登记多维 OEE 查询类的 6 条；混合类仍必须方法级 filter，专用 provider 类也由精确 identity 冻结；否则 TRX 身份集合
     # 不等于冻结身份而红。
-    # Quality 同理：provider 类中只有 25 条是真实 PostgreSQL 证明；Periodic Inspection 的
+    # Quality 同理：provider 类中只有这批是真实 PostgreSQL 证明；Periodic Inspection 的
     # 窄 harness 另行纳入数据库 builder 归属核验，但不承载测试身份。
     $qualityMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'quality-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($qualityMember.expectedTestIdentities).Count -eq 26) 'The Quality member must freeze exactly its twenty-six governed PostgreSQL identities.'
+    Assert-Contract (@($qualityMember.expectedTestIdentities).Count -eq 29) 'The Quality member must freeze exactly its twenty-nine governed PostgreSQL identities.'
     Assert-Contract (@($qualityMember.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$qualityMember.diagnosticSchemas[0], 'quality', [StringComparison]::Ordinal)) 'Quality business and CAP tables share one schema, which the member must declare.'
-    $qualityLaneSources = @(
-            'PeriodicInspectionPostgresConcurrencyTests.cs',
-            'PeriodicInspectionPostgresContinuationTests.cs',
-            'PeriodicInspectionPostgresMigrationTests.cs',
-            'PeriodicInspectionPostgresProfileTests.cs',
-            'QualityCalibrationRecordQueryTests.cs',
-            'QualityCapaRedrivePostgresProfileTests.cs',
-            'QualityNcrDispositionPostgresProfileTests.cs',
-            'QualityInspectionTaskPostgresProfileTests.cs',
-            'QualityReasonPostgresProfileTests.cs',
-            'QualityReinspectionPostgresProfileTests.cs',
-            'QualitySpcAnalysisTests.cs')
-    $hasQualityReasonSource = $false
-    foreach ($qualitySource in $qualityLaneSources) {
-        if ([string]::Equals([string]$qualitySource, 'QualityReasonPostgresProfileTests.cs', [StringComparison]::Ordinal)) {
-            $hasQualityReasonSource = $true
-            break
-        }
+    # Quality lane 的扫描面**从冻结身份派生**，与下面 MES lane 同一口径，不再手工列举：
+    # 手工名单记的是写名单那一刻的世界，后来者静默漏掉，而漏登记就是漏防线——
+    # Assert-LaneOwnedDatabase 与下面的钉表扫描根本扫不到没列出来的文件。
+    # 改前它就已经漏了 #3000 的 WorkOrderReleaseProjectionBackfillPostgresTests.cs。
+    # 身份形如 <Namespace>.<Class>.<Method>，倒数第二段即类名，类名即源文件名。
+    # 去重与排序都走序数比较器：`Sort-Object -Unique` 会折叠可忽略字符，
+    # 两个只差一个 bidi 字符的类名会被并成一个，扫描面因此静默变窄。
+    #
+    # 下面三条点名断言用「显式序数比较 + .Count -eq 1」而不是 HashSet.Contains：
+    # 序数语义就写在断言里，不靠接收方类型推出来，同时顺带断言了不重复；
+    # 口径与本文件 MES lane 的身份点名一致。
+    #
+    # 唯一的显式补项是 Periodic Inspection 的**窄 harness**：它自己不承载任何测试身份，
+    # 因而派生不出来，但那个共享的裸 builder（CreateOptions）就住在它里面，
+    # 漏掉它等于把下面「六个钉住的裸 builder」这条契约的主要承担者移出扫描面。
+    $qualitySourceSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    [void]$qualitySourceSet.Add('PeriodicInspectionPostgresProfileTests.cs')
+    foreach ($qualityIdentity in @($qualityMember.expectedTestIdentities)) {
+        $qualitySegments = ([string]$qualityIdentity).Split('.')
+        [void]$qualitySourceSet.Add("$($qualitySegments[$qualitySegments.Length - 2]).cs")
     }
-    Assert-Contract $hasQualityReasonSource 'Quality lane source enumeration must include the scrap-reason PostgreSQL profile test.'
+    $qualityLaneSourceNames = [Collections.Generic.List[string]]::new([string[]]@($qualitySourceSet))
+    $qualityLaneSourceNames.Sort([StringComparer]::Ordinal)
+    $qualityLaneSources = @($qualityLaneSourceNames)
+    Assert-Contract (@($qualityLaneSources | Where-Object { [string]::Equals([string]$_, 'QualityReasonPostgresProfileTests.cs', [StringComparison]::Ordinal) }).Count -eq 1) 'Quality lane source enumeration must include the scrap-reason PostgreSQL profile test exactly once.'
+    Assert-Contract (@($qualityLaneSources | Where-Object { [string]::Equals([string]$_, 'WorkOrderReleaseProjectionBackfillPostgresTests.cs', [StringComparison]::Ordinal) }).Count -eq 1) 'Quality lane source enumeration must include the release-projection backfill PostgreSQL test the hand-kept list used to miss, exactly once.'
+    Assert-Contract (@($qualityLaneSources | Where-Object { [string]::Equals([string]$_, 'WorkOrderReleaseFactBacklogPostgresTests.cs', [StringComparison]::Ordinal) }).Count -eq 1) 'Quality lane source enumeration must include the release-fact backlog PostgreSQL test exactly once.'
     foreach ($qualitySource in $qualityLaneSources) {
         $qualitySourcePath = Join-Path $repoRoot "backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/$qualitySource"
         Assert-Contract (Test-Path -LiteralPath $qualitySourcePath -PathType Leaf) "Quality lane source '$qualitySource' must exist."
@@ -480,8 +487,8 @@ try {
     # 直接 new DbContextOptionsBuilder 的 Quality 类必须把迁移历史表钉在 quality schema：
     # 默认落 public 时 ResetSchemaAsync 删不掉它，下一条用例的 MigrateAsync 会以为迁移已应用而静默不建表。
     # 只扫 InspectionTask 一个文件会留下盲区：SpcAnalysis 的 CreatePostgresProvider 与 Calibration 的
-    # refused 探针也各有一处裸 builder（都已钉，但写的是 "quality" 字面量）。契约因此覆盖全部七个
-    # Quality lane 源（含 Periodic Inspection 窄 harness），正则同时接受常量与字面量两种钉法。
+    # refused 探针也各有一处裸 builder（都已钉，但写的是 "quality" 字面量）。契约因此覆盖上面派生出的
+    # 全部 Quality lane 源（含 Periodic Inspection 窄 harness），正则同时接受常量与字面量两种钉法。
     $qualityPinnedBuilders = 0
     foreach ($qualitySource in $qualityLaneSources) {
         $qualitySourceText = [IO.File]::ReadAllText((Join-Path $repoRoot "backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/$qualitySource"))
@@ -490,7 +497,7 @@ try {
         Assert-Contract ($historyOverrides -eq $rawNpgsqlBuilders) "Every raw DbContext option builder in '$qualitySource' must pin __EFMigrationsHistory to the quality schema; observed $rawNpgsqlBuilders builders and $historyOverrides pinned."
         $qualityPinnedBuilders += $historyOverrides
     }
-    Assert-Contract ($qualityPinnedBuilders -eq 6) 'The Quality lane sources must keep exactly their six pinned raw builders; a new unpinned one silently reintroduces the public-schema history table.'
+    Assert-Contract ($qualityPinnedBuilders -eq 7) 'The Quality lane sources must keep exactly their seven pinned raw builders; a new unpinned one silently reintroduces the public-schema history table.'
 
     $telemetryMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'industrialtelemetry-postgres-profile' -RepositoryRoot $repoRoot
     Assert-Contract (@($telemetryMember.expectedTestIdentities).Count -eq 16) 'The IndustrialTelemetry member must freeze exactly its sixteen governed PostgreSQL identities.'
@@ -505,9 +512,11 @@ try {
     # 幂等键与 eventId 两条唯一约束各自拒绝其等价错误变异、同 EventId 异业务键并发单效，以及收件箱迁移
     # 「真重复保留最早行」与「歧义历史 fail-closed」共 6 条证明，共有 63 条真实 PostgreSQL 证明（该叙述在 main 上原写 62、与断言的 63 差 1，此处按断言更正）；再加 #3117 的直投发布时刻下界 1 条
     # （按既有活动取下界的聚合查询与三分量归属谓词由真实 provider 执行），共 64 条；
+    # 再加 #3112 的 MES 两事件 SKU 同源 1 条（加急建单 → 下达 → 完工整条命令链在真库上跑完，
+    # 证明落进 sku_code 列的是工单真实 SKU、且两个出境事件对同一道工序给出同一个 SKU），共 65 条；
     # CAP 的原生存储表落在独立 cap schema，业务表与 EF 侧 cap_* 表落在 mes schema，两者都必须声明才能在失败时留下完整诊断。
     $mesMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'mes-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($mesMember.expectedTestIdentities).Count -eq 67) 'The MES member must freeze exactly its sixty-seven governed PostgreSQL identities.'
+    Assert-Contract (@($mesMember.expectedTestIdentities).Count -eq 68) 'The MES member must freeze exactly its sixty-eight governed PostgreSQL identities.'
     $mesCollaborationIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.MesCollaborationPostgresTests.Reportable_scope_matches_a_registered_participant_on_postgres'
     $mesClaimIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.OperationTaskClaimPostgresTests.Concurrent_claims_persist_one_owner_participant_and_receipt_and_reject_the_loser_on_postgres'
     Assert-Contract (@($mesMember.expectedTestIdentities | Where-Object { [string]::Equals([string]$_, $mesCollaborationIdentity, [StringComparison]::Ordinal) }).Count -eq 1) 'The MES member must freeze the participant-only reportable-scope PostgreSQL identity exactly once.'
@@ -590,16 +599,20 @@ try {
     $silentSkipDetected = [IO.File]::ReadAllText($silentSkipSourcePath).Contains('if (string.IsNullOrWhiteSpace(connectionString))', [StringComparison]::Ordinal)
     Assert-Contract $silentSkipDetected 'The silent-return detector must recognize the pattern it forbids.'
 
-    # WMS：五个类共 20 条用例，只有 9 条是真实 PostgreSQL 证明，因此 filter 逐条精确到方法。
-    # 归属 test-owned：NERV-822③ 的 #1563 已把这五个类的手写建库收敛到共享 PostgreSqlTestDatabase，
+    # WMS：六个类只有 11 条是真实 PostgreSQL 证明，因此 filter 逐条精确到方法。
+    # 归属 test-owned：NERV-822③ 的 #1563 已把这些类的手写建库收敛到共享 PostgreSqlTestDatabase，
     # lane 因此只证明执行数与冻结身份，不声称能在成员数据库里留下诊断。
+    # 第 11 条由 #3305 加入（WcsTaskCallbackValidatorTests）：failure_message 改无界后，
+    # 「物理列类型是 text」「越界 failure_code 仍是 22001」两个方向只有真库分得开，
+    # InMemory provider 对两者都无感、在那上面跑会双向假绿。
     $wmsMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'wms-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($wmsMember.expectedTestIdentities).Count -eq 9) 'The WMS member must freeze exactly its nine governed PostgreSQL identities.'
+    Assert-Contract (@($wmsMember.expectedTestIdentities).Count -eq 11) 'The WMS member must freeze exactly its eleven governed PostgreSQL identities.'
     Assert-Contract ([string]::Equals([string]$wmsMember.databaseOwnership, 'test-owned', [StringComparison]::Ordinal)) 'WMS tests own governed temporary databases per NERV-822, so the member must be registered as test-owned.'
     Assert-MethodScopedFilter -Member $wmsMember
     foreach ($wmsSource in @(
             'WarehouseTaskActionConcurrencyPostgresTests.cs',
             'WcsDispatchConcurrencyPostgresTests.cs',
+            'WcsTaskCallbackValidatorTests.cs',
             'WmsQualityInspectionGateConsumerTests.cs',
             'WmsShortPickBackorderTests.cs',
             'WmsWorkAssignmentMigrationPostgresTests.cs')) {
@@ -637,11 +650,11 @@ try {
         Assert-Contract (-not $redisCapIdentities.Contains($frozenIdentityKey)) 'No identity may be owned by both the postgres and redis-cap lanes.'
     }
     $erpMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'erp-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 19) 'The ERP member must freeze exactly its nineteen PostgreSQL identities.'
+    Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 21) 'The ERP member must freeze exactly its twenty-one PostgreSQL identities.'
     Assert-Contract ([string]::Equals([string]$erpMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) 'ERP keeps runner-owned databases for failure diagnostics.'
     $acceptanceMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'acceptance-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($acceptanceMember.expectedTestIdentities).Count -eq 9) '跨服务验收成员必须冻结九条 PostgreSQL 测试身份。'
-    Assert-Contract ([string]::Equals((@($acceptanceMember.diagnosticSchemas) -join ','), 'erp,industrial_telemetry,inventory,maintenance,wms', [StringComparison]::Ordinal)) '跨服务验收成员必须声明所有被迁移的 schema。'
+    Assert-Contract (@($acceptanceMember.expectedTestIdentities).Count -eq 15) '跨服务验收成员必须冻结十五条 PostgreSQL 测试身份。'
+    Assert-Contract ([string]::Equals((@($acceptanceMember.diagnosticSchemas) -join ','), 'erp,industrial_telemetry,inventory,maintenance,mes,wms', [StringComparison]::Ordinal)) '跨服务验收成员必须声明所有被迁移的 schema。'
     Assert-Contract ([string]::Equals([string]$acceptanceMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) '跨服务验收成员使用 runner-owned 数据库，保持最终状态可诊断。'
     Assert-MethodScopedFilter -Member $acceptanceMember
     foreach ($runnerOwnedSource in @(
@@ -650,7 +663,9 @@ try {
             'backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/WorkCenterMachineOverheadRatePostgresAcceptanceTests.cs',
             'backend/tests/Nerv.IIP.Business.Acceptance.Tests/RuntimeHoursMaintenancePostgresAcceptanceTests.cs',
             'backend/tests/Nerv.IIP.Business.Acceptance.Tests/WmsInventoryRpcIdempotencyAcceptanceTests.cs',
-            'backend/tests/Nerv.IIP.Business.Acceptance.Tests/QualityInspectionInventoryStockGateAcceptanceTests.cs')) {
+            'backend/tests/Nerv.IIP.Business.Acceptance.Tests/QualityInspectionInventoryStockGateAcceptanceTests.cs',
+            'backend/tests/Nerv.IIP.Business.Acceptance.Tests/QualityFirstArticleMesQualityHoldAcceptanceTests.cs',
+            'backend/tests/Nerv.IIP.Business.Acceptance.Tests/MesDefectDispositionReferenceAcceptanceTests.cs')) {
         $runnerOwnedSourcePath = Join-Path $repoRoot $runnerOwnedSource
         Assert-Contract (Test-Path -LiteralPath $runnerOwnedSourcePath -PathType Leaf) "Lane source '$runnerOwnedSource' must exist."
         $runnerOwnedSourceText = [IO.File]::ReadAllText($runnerOwnedSourcePath)
@@ -665,6 +680,14 @@ try {
     $stockGateSource = [IO.File]::ReadAllText((Join-Path $repoRoot 'backend/tests/Nerv.IIP.Business.Acceptance.Tests/QualityInspectionInventoryStockGateAcceptanceTests.cs'))
     Assert-Contract (-not $stockGateSource.Contains('EnsureCreatedAsync(', [StringComparison]::Ordinal)) 'Lane members must migrate rather than EnsureCreated, which silently skips schema creation on an existing member database.'
     Assert-Contract ($stockGateSource.Contains('MigrateAsync(', [StringComparison]::Ordinal)) 'The Quality-to-Inventory stock gate member must create its schema through migrations.'
+    # #3315：Quality→MES 保留上下文列宽的用例同样跑在共享成员库上，同样只能靠迁移建表。
+    $mesQualityHoldSource = [IO.File]::ReadAllText((Join-Path $repoRoot 'backend/tests/Nerv.IIP.Business.Acceptance.Tests/QualityFirstArticleMesQualityHoldAcceptanceTests.cs'))
+    Assert-Contract (-not $mesQualityHoldSource.Contains('EnsureCreatedAsync(', [StringComparison]::Ordinal)) 'Lane members must migrate rather than EnsureCreated, which silently skips schema creation on an existing member database.'
+    Assert-Contract ($mesQualityHoldSource.Contains('MigrateAsync(', [StringComparison]::Ordinal)) 'The Quality-to-MES quality hold member must create its schema through migrations.'
+    # #3318：Quality→MES 处置引用身份列宽的用例同样跑在共享成员库上，同样只能靠迁移建表。
+    $mesDispositionReferenceSource = [IO.File]::ReadAllText((Join-Path $repoRoot 'backend/tests/Nerv.IIP.Business.Acceptance.Tests/MesDefectDispositionReferenceAcceptanceTests.cs'))
+    Assert-Contract (-not $mesDispositionReferenceSource.Contains('EnsureCreatedAsync(', [StringComparison]::Ordinal)) 'Lane members must migrate rather than EnsureCreated, which silently skips schema creation on an existing member database.'
+    Assert-Contract ($mesDispositionReferenceSource.Contains('MigrateAsync(', [StringComparison]::Ordinal)) 'The Quality-to-MES disposition reference member must create its schema through migrations.'
 
     # 逐成员、逐冻结身份地把"先重置再迁移"和"重置用 CASCADE"变成门禁，而不是靠每个作者自觉。
     $resetDeclaringSources = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)

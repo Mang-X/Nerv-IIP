@@ -88,7 +88,8 @@ public sealed class SchedulingInvalidationPropagationAcceptanceTests
             "WC-OIL",
             [],
             DateTimeOffset.Parse("2026-06-01T12:00:00Z"),
-            TimeSpan.FromMinutes(90)));
+            TimeSpan.FromMinutes(90),
+            "SKU-001"));
         await mesDb.SaveChangesAsync();
         var mesHandler = new SchedulePlanInvalidatedIntegrationEventHandlerForMarkInvalidated(
             mesDb,
@@ -110,7 +111,8 @@ public sealed class SchedulingInvalidationPropagationAcceptanceTests
             {
                 ["Scheduling:InvalidationNotification:RecipientRefs:0"] = "role:scheduler",
             }).Build(),
-            new FixedTimeProvider(FixedNow));
+            new FixedTimeProvider(FixedNow),
+            NotificationSummaryBudget.FromModel(notificationDb.Model));
 
         await notificationHandler.HandleAsync(invalidatedEvent, CancellationToken.None);
         await notificationHandler.HandleAsync(invalidatedEvent, CancellationToken.None);

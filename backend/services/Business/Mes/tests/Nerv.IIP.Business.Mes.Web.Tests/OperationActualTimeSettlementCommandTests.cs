@@ -27,7 +27,8 @@ public sealed class OperationActualTimeSettlementCommandTests
         var task = OperationTask.Create(
             "org-001", "env-dev", "WO-001", "OP-001",
             OperationTaskLifecycleStatus.InProgress, 10, "WC-001", [], startedAtUtc,
-            TimeSpan.FromHours(1), startedAtUtc, null);
+            TimeSpan.FromHours(1), startedAtUtc, null,
+            "SKU-001");
         dbContext.WorkOrders.Add(workOrder);
         dbContext.OperationTasks.Add(task);
         await dbContext.SaveChangesAsync();
@@ -67,7 +68,8 @@ public sealed class OperationActualTimeSettlementCommandTests
         var task = OperationTask.Create(
             "org-001", "env-dev", "WO-001", "OP-001",
             OperationTaskLifecycleStatus.InProgress, 10, "WC-001", [], startedAtUtc,
-            TimeSpan.FromHours(1), startedAtUtc, null);
+            TimeSpan.FromHours(1), startedAtUtc, null,
+            "SKU-001");
         dbContext.OperationTasks.Add(task);
         var report = ProductionReport.Record(
             "org-001", "env-dev", "PR-001", "WO-001", "OP-001",
@@ -99,7 +101,8 @@ public sealed class OperationActualTimeSettlementCommandTests
         var task = OperationTask.Create(
             "org-001", "env-dev", "WO-001", "OP-001",
             OperationTaskLifecycleStatus.InProgress, 10, "WC-001", [], startedAtUtc,
-            TimeSpan.FromHours(1), startedAtUtc, null);
+            TimeSpan.FromHours(1), startedAtUtc, null,
+            "SKU-001");
         dbContext.OperationTasks.Add(task);
         await dbContext.SaveChangesAsync();
         task.ClearDomainEvents();

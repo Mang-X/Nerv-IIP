@@ -17,6 +17,7 @@ using Nerv.IIP.Business.Wms.Web.Application.Auth;
 using Nerv.IIP.Business.Wms.Web.Application.Inventory;
 using Nerv.IIP.Business.Wms.Web.Application.Errors;
 using Nerv.IIP.Business.Wms.Web.Application.Queries;
+using Nerv.IIP.Business.Wms.Web.Application.Validation;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Wms;
 
@@ -1606,11 +1607,9 @@ public sealed class CompleteOutboundOrderCommandHandler
         dbContext.InventoryMovementRequests.AddRange(movementRequests);
         foreach (var line in outbound.Lines.Where(x => x.BackorderQuantity > 0))
         {
-            var backorderNo = WmsText.StableOperationalCode("BO", outbound.OutboundOrderNo, line.LineNo);
-            var backorder = BackorderOrder.Create(
+            var backorder = BackorderOrder.CreateForShortPick(
                 outbound.OrganizationId,
                 outbound.EnvironmentId,
-                backorderNo,
                 outbound.OutboundOrderNo,
                 line.LineNo,
                 line.SkuCode,
@@ -1619,7 +1618,7 @@ public sealed class CompleteOutboundOrderCommandHandler
                 line.PickLocationCode,
                 line.BackorderQuantity);
             dbContext.BackorderOrders.Add(backorder);
-            dbContext.WarehouseTasks.Add(backorder.CreateReplenishmentRecommendation(WmsText.StableOperationalCode("RPL", outbound.OutboundOrderNo, line.LineNo)));
+            dbContext.WarehouseTasks.Add(backorder.CreateReplenishmentRecommendation());
         }
 
         return new CompleteWmsMovementResult(movementRequests.First().Id, null);
@@ -2563,6 +2562,24 @@ public sealed record CompleteWcsTaskCommand(
     string ExternalTaskId,
     string CompletionPayloadJson) : ICommand, IWcsTaskCallbackCommand;
 
+/// <summary>
+/// WCS 完成回调的命令层入参规则（#3305 之前这条命令**一条规则都没有**）。
+/// </summary>
+/// <remarks>
+/// <c>CompletionPayloadJson</c> 只有 <c>NotEmpty()</c>、**没有长度规则**：
+/// 它落进的 <c>wcs_tasks.completion_payload_json</c> 是无界列，加一个上界等于凭空发明约束。
+/// 逐条规则今天在真实管道里能不能拦到东西，见
+/// <c>WcsTaskCallbackValidatorTests</c> 的可达性读数——别把「写了规则」读成「拦得住」。
+/// </remarks>
+public sealed class CompleteWcsTaskCommandValidator : AbstractValidator<CompleteWcsTaskCommand>
+{
+    public CompleteWcsTaskCommandValidator()
+    {
+        WcsTaskCallbackValidation.Configure(this);
+        RuleFor(x => x.CompletionPayloadJson).NotEmpty();
+    }
+}
+
 public sealed class CompleteWcsTaskCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<CompleteWcsTaskCommand>
 {
@@ -2694,6 +2711,62 @@ public sealed record FailWcsTaskCommand(
     string ExternalTaskId,
     string FailureCode,
     string FailureMessage) : ICommand, IWcsTaskCallbackCommand;
+
+/// <summary>
+/// WCS 失败回调的命令层入参规则（#3305 之前这条命令**一条规则都没有**）。
+/// </summary>
+/// <remarks>
+/// <para><b>这里是本票唯一「补上界」的位点</b>：<c>FailureCode</c> 是码值，
+/// 落进 <c>wcs_tasks.failure_code</c>（有界），超长在改前会走到 <c>SaveChangesAsync</c> 抛 22001；
+/// 而 <c>WcsTask.Fail</c> 那一行不在任何 <c>catch</c> 里，于是外部 WCS 收到的是 500，
+/// 它会照着重试语义无限重投。上界从承载列宽派生（<see cref="WcsTaskCallbackFieldPolicy"/>）。</para>
+///
+/// <para><b><c>FailureMessage</c> 只有 <c>NotEmpty()</c>，没有长度规则，这是有意的</b>：
+/// 它是外部设备回传的**原始诊断报文**，#3305 把 <c>wcs_tasks.failure_message</c> 改成了无界 <c>text</c>。
+/// 这里再加一条上界等于把刚拆掉的那条约束换个地方装回去。
+/// 下游 Notification 的告警摘要列有界，那一侧由它自己截断渲染（<c>NotificationSummaryText</c>），
+/// 原文完整留在本服务，operator 可下钻。</para>
+///
+/// <para><c>NotEmpty()</c> 两条不是装饰：<c>WcsTask.Fail</c> 用 <c>WmsText.Required</c> 校验这两个值，
+/// 空值抛 <c>ArgumentException</c>，而 handler 里只有 <c>ValidateWcsExecution</c> 被 try 包住，
+/// 这条 <c>ArgumentException</c> 会一路逃逸成 500。</para>
+/// </remarks>
+public sealed class FailWcsTaskCommandValidator : AbstractValidator<FailWcsTaskCommand>
+{
+    public FailWcsTaskCommandValidator()
+    {
+        WcsTaskCallbackValidation.Configure(this);
+        RuleFor(x => x.FailureCode).NotEmpty().MaximumLength(WcsTaskCallbackFieldPolicy.FailureCodeMaxLength);
+        RuleFor(x => x.FailureMessage).NotEmpty();
+    }
+}
+
+/// <summary>
+/// <see cref="IWcsTaskCallbackCommand"/> 三个共有字段的规则入口。
+/// </summary>
+/// <remarks>
+/// 姿势与 <c>WarehouseTaskActionValidation.Configure</c> / <c>WarehouseAssignmentValidation.Configure</c>
+/// 一致：规则写在一处，由每条命令**自己的具体校验器**调用（#3291 的教训——
+/// <c>sealed</c> 开放泛型校验器无法被 <c>AddValidatorsFromAssembly</c> 注册，写了也跑不到）。
+///
+/// <b>这里的六条规则（三个字段 × <c>NotEmpty</c>/<c>MaximumLength</c>）可达性与 <c>FailureCode</c> 那条不同，
+/// 别一起宣称</b>：这三个值在两条回调 handler 里**只出现在 WHERE 谓词**，一次都不落库，
+/// 所以它们本来就不产生 22001；而且 <c>WcsTaskCallbackCommandLock</c> 挂在
+/// <c>NervIipCommandLockBehavior</c> 上、位于校验行为**之外**，会先按这三个值查一次 <c>wcs_tasks</c>，
+/// 无论取值是空还是超长都匹配不到行，一律先抛 <c>KnownException</c>。
+/// 即：<b>这六条在真实管道里全部跑不到，不是只有 <c>MaximumLength</c> 跑不到</b>。
+/// 逐格实测读数见 <c>WcsTaskCallbackValidatorTests</c>。
+/// </remarks>
+internal static class WcsTaskCallbackValidation
+{
+    public static void Configure<TCommand>(AbstractValidator<TCommand> validator)
+        where TCommand : IWcsTaskCallbackCommand
+    {
+        validator.RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(WcsTaskCallbackFieldPolicy.TenantIdMaxLength);
+        validator.RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(WcsTaskCallbackFieldPolicy.TenantIdMaxLength);
+        validator.RuleFor(x => x.ExternalTaskId).NotEmpty().MaximumLength(WcsTaskCallbackFieldPolicy.ExternalTaskIdMaxLength);
+    }
+}
 
 public sealed class WcsTaskCallbackCommandLock<TCommand>(ApplicationDbContext dbContext)
     : ICommandLock<TCommand>

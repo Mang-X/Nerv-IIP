@@ -83,6 +83,27 @@ if (fullStackEphemeral &&
 string SessionVolume(string persistentName) =>
     fullStackEphemeral ? $"{persistentName}-{fullStackSessionId}" : persistentName;
 
+// 与 scripts/lib/FullStackSessionState.ps1 的 Get-NervFullStackStateRoot 同一推导，本机项目资源的持久数据落在这里。
+static string LocalStateRoot()
+{
+    var configured = Environment.GetEnvironmentVariable("NERV_IIP_FULLSTACK_STATE_ROOT");
+    if (!string.IsNullOrWhiteSpace(configured))
+    {
+        return Path.GetFullPath(configured);
+    }
+
+    if (OperatingSystem.IsWindows())
+    {
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Nerv-IIP");
+    }
+
+    var xdgStateHome = Environment.GetEnvironmentVariable("XDG_STATE_HOME");
+    var stateBase = string.IsNullOrWhiteSpace(xdgStateHome)
+        ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "state")
+        : xdgStateHome;
+    return Path.Combine(stateBase, "nerv-iip");
+}
+
 builder.AddDockerComposeEnvironment("compose");
 
 var iamJwtSigningKeyId = builder.AddParameter("iam-jwt-signing-key-id", secret: true);
@@ -130,7 +151,13 @@ if (string.IsNullOrWhiteSpace(gatewayCorsAllowedOrigins))
         : throw new InvalidOperationException("Security:Cors:AllowedOrigins is required outside Development.");
 }
 
-// 主线产品站点/库位（SITE-001 + loc-*）是本地主线种子事实，只在 Development 成立。
+// 本地站点/库位只在 Development 成立，且按 profile 分叉（#3137）：
+// - leader-demo profile（判据 leaderDemoHistoryEnabled）下发 WH-WB-*。只有该 profile 会让 Inventory
+//   跑 WorldHistorySeedService，把 WorldHistoryPhase2Spec.StockLocations 的七个库位真的建成行，
+//   线边收料/领料才查得到可用量。
+// - 普通 Development 维持 loc-*（MasterData inventory-location 码表候选码）。该 profile 下 Inventory
+//   不种任何库位行，loc-* 与 WH-WB-* 都不存在，在手量须经真实流程建立——这是 #2058 的 owner 裁决，
+//   本处不改变它。
 // 非 Development 下 AppHost 不再无条件下发它们（#2008）：部署方要么用与服务同名的配置键显式
 // 给出真实站点/库位（例如 Inventory__SiteCode、MaterialIssue__SourceLocationCode），要么这些键
 // 根本不下发，由服务侧 fail-closed 自己暴露——WMS 领料进死信 unresolved-location，MES 抛
@@ -267,10 +294,26 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
+// 上传字节走 tus：complete 的提交证据由 FileStorage 从本地 tus 盘读回，默认的 server-proxy 没有字节面。
+// tus 盘同时承载已 complete 文件的字节，FileStorage:Tus:RootPath 必须显式、绝对、持久（ADR 0024 §5），缺它服务拒绝启动：
+//  - 运行模式：与 fullstack 会话状态同根的本机状态目录；ephemeral 会话按 session id 隔离。
+//  - publish 模式：容器内路径 + 命名卷。挂载点取 /home/app：SDK 生成的镜像以非 root 的 app(1654) 运行，
+//    /home/app 是镜像里唯一归 app 所有的目录，命名卷首次创建时继承该属主；挂到镜像里不存在的路径会得到 root 所有、进程写不进的挂载点。
+const string FileStorageContainerDataRoot = "/home/app";
+var fileStorageTusRootPath = builder.ExecutionContext.IsPublishMode
+    ? $"{FileStorageContainerDataRoot}/nerv-iip/file-storage/tus"
+    : Path.Combine(LocalStateRoot(), "file-storage", SessionVolume("tus"));
 var fileStorage = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_FileStorage_Web>("file-storage")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5104, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
+    .WithEnvironment("FileStorage__UploadProvider", "tus")
+    .WithEnvironment("FileStorage__Tus__RootPath", fileStorageTusRootPath)
+    .WithAnnotation(new ContainerMountAnnotation(
+        "nerv-iip-file-storage",
+        FileStorageContainerDataRoot,
+        ContainerMountType.Volume,
+        isReadOnly: false))
     .WithEnvironment("Storage__Provider", "MinIO")
     .WithEnvironment("Storage__MinIO__Endpoint", minio.GetEndpoint("api"))
     .WithEnvironment("Storage__MinIO__AccessKey", minioRootUser)
@@ -469,9 +512,12 @@ var businessMes = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject
     .WaitFor(businessProductEngineering)
     .WaitFor(businessInventory)
     .WaitFor(businessQuality);
-// 站点/库位必须与主线产品配置事实一致：MES 过去按 warehouse/production + line-side 臆造位置，库存一律
-// NEGATIVE_ON_HAND 拒绝（#1322）。Development 回落到主线种子事实（SITE-001 + loc-*），其他环境
-// 只下发部署方显式配置的真实值，未配置就不下发（#2008）。
+// 站点/库位必须与库存里真实存在的库位行一致：MES 过去按 warehouse/production + line-side 臆造
+// 位置，库存一律 NEGATIVE_ON_HAND 拒绝（#1322）。Development 回落按 profile 分叉（#3137）：
+// leader-demo 取 Inventory 世界观种子真的建出来的 WH-WB-*（此前该 profile 也发 loc-*，而库存里
+// 没有 loc-* 库位行，线边收料对任何 SKU、任何水位恒报 MATERIAL_SOURCE_LOCATION_UNAVAILABLE）；
+// 普通 Development 维持 loc-*，不推翻 #2058。其他环境只下发部署方显式配置的真实值，
+// 未配置就不下发（#2008）。
 // 单一权威站点键：齐套可用量查询与线边过账都从它回落，避免三份语义重叠的站点配置。
 // 只有真正的多站点部署才需要额外设置 Inventory__SiteCodes__N（跨站点求可用量）。
 businessMes = WithDeploymentEnvironment(
@@ -480,7 +526,9 @@ businessMes = WithDeploymentEnvironment(
     DeploymentWarehouseLocation("Inventory:SiteCode", "SITE-001"));
 var mesSourceLocationCodes = DeploymentWarehouseLocations(
     "Inventory:SourceLocationCodes",
-    ["loc-raw-01", "loc-semi-01", "loc-fg-01"]);
+    leaderDemoHistoryEnabled
+        ? ["WH-WB-RM-01", "WH-WB-SF-01", "WH-WB-FG-01"]
+        : ["loc-raw-01", "loc-semi-01", "loc-fg-01"]);
 for (var sourceLocationIndex = 0; sourceLocationIndex < mesSourceLocationCodes.Count; sourceLocationIndex++)
 {
     businessMes = businessMes.WithEnvironment(
@@ -492,13 +540,17 @@ for (var sourceLocationIndex = 0; sourceLocationIndex < mesSourceLocationCodes.C
 businessMes = WithDeploymentEnvironment(
     businessMes,
     "Inventory__LineSideLocationCode",
-    DeploymentWarehouseLocation("Inventory:LineSideLocationCode", "loc-line-01"));
+    DeploymentWarehouseLocation(
+        "Inventory:LineSideLocationCode",
+        leaderDemoHistoryEnabled ? "WH-WB-LINE-01" : "loc-line-01"));
 // 完工入库目标库位（#1331）：成品仓库位同样取种子事实，站点复用上面的权威 Inventory__SiteCode，
 // 不再让 MES 硬编码 finished-goods/receiving 命名空间。
 businessMes = WithDeploymentEnvironment(
     businessMes,
     "Inventory__FinishedGoodsLocationCode",
-    DeploymentWarehouseLocation("Inventory:FinishedGoodsLocationCode", "loc-fg-01"));
+    DeploymentWarehouseLocation(
+        "Inventory:FinishedGoodsLocationCode",
+        leaderDemoHistoryEnabled ? "WH-WB-FG-01" : "loc-fg-01"));
 businessMes = WithRedisMessagingTransport(businessMes);
 if (rabbitmq is not null)
 {
@@ -652,16 +704,21 @@ var businessWms = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject
     .WithReference(businessInventory)
     .WaitFor(businessWmsDatabase)
     .WaitFor(businessInventory);
-// MES 领料事件不带库位时的默认库位：Development 与主线产品种子（loc-*）同码，其他环境只下发
+// MES 领料事件不带库位时的默认库位：Development 按 profile 分叉——leader-demo 取 Inventory 世界观
+// 种子真的建出来的 WH-WB-*，普通 Development 维持主线码表 loc-*（#3137 / #2058）。其他环境只下发
 // 部署方显式配置的真实库位（#2008）。仓库代码里不再内置演示库位兜底，两者都缺就进死信（#1754）。
 businessWms = WithDeploymentEnvironment(
     businessWms,
     "MaterialIssue__SourceLocationCode",
-    DeploymentWarehouseLocation("MaterialIssue:SourceLocationCode", "loc-raw-01"));
+    DeploymentWarehouseLocation(
+        "MaterialIssue:SourceLocationCode",
+        leaderDemoHistoryEnabled ? "WH-WB-RM-01" : "loc-raw-01"));
 businessWms = WithDeploymentEnvironment(
     businessWms,
     "MaterialIssue__LineSideLocationCode",
-    DeploymentWarehouseLocation("MaterialIssue:LineSideLocationCode", "loc-line-01"));
+    DeploymentWarehouseLocation(
+        "MaterialIssue:LineSideLocationCode",
+        leaderDemoHistoryEnabled ? "WH-WB-LINE-01" : "loc-line-01"));
 businessWms = WithRedisMessagingTransport(businessWms);
 if (rabbitmq is not null)
 {

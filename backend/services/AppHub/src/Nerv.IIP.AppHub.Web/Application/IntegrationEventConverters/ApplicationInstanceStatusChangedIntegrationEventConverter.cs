@@ -2,6 +2,7 @@ using Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationInstanceAggregate;
 using Nerv.IIP.AppHub.Web.Application.IntegrationEvents;
 using Nerv.IIP.Contracts.AppHubQueries;
 using NetCorePal.Extensions.DistributedTransactions;
+using Nerv.IIP.Contracts.IntegrationEvents;
 
 namespace Nerv.IIP.AppHub.Web.Application.IntegrationEventConverters;
 
@@ -25,7 +26,10 @@ public sealed class ApplicationInstanceStatusChangedIntegrationEventConverter
             string.Empty,
             string.Empty,
             AppHubIntegrationEventSources.AppHub,
-            $"apphub:instance-status-changed:{domainEvent.InstanceKey}:{domainEvent.ChangedAtUtc:O}",
+            IntegrationEventIdempotencyKey.Compose(
+                "apphub:instance-status-changed:",
+                domainEvent.InstanceKey,
+                domainEvent.ChangedAtUtc.ToString("O")),
             new ApplicationInstanceStatusChangedPayload(
                 domainEvent.InstanceKey,
                 domainEvent.PreviousStatus,

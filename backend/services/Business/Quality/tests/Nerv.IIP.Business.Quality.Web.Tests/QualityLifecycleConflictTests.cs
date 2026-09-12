@@ -69,7 +69,7 @@ public sealed class QualityLifecycleConflictTests
         var task = NewPendingTask("DOC-EXISTING-STARTED");
         task.Start("inspector-001", DateTimeOffset.Parse("2026-07-27T08:00:00Z"));
 
-        var record = NewInspectionRecord(task.SourceDocumentId);
+        var record = NewInspectionRecord(task.SourceDocumentId, task.SourceDocumentLineId);
         dbContext.InspectionTasks.Add(task);
         dbContext.InspectionRecords.Add(record);
         await dbContext.SaveChangesAsync();
@@ -89,7 +89,7 @@ public sealed class QualityLifecycleConflictTests
     {
         await using var dbContext = CreateDbContext();
         var task = NewPendingTask("DOC-COMPLETED");
-        var record = NewInspectionRecord(task.SourceDocumentId);
+        var record = NewInspectionRecord(task.SourceDocumentId, task.SourceDocumentLineId);
         task.Start("inspector-001", DateTimeOffset.Parse("2026-07-27T08:00:00Z"));
         task.Complete(record.Id, DateTimeOffset.Parse("2026-07-27T08:05:00Z"));
         dbContext.InspectionTasks.Add(task);
@@ -117,7 +117,7 @@ public sealed class QualityLifecycleConflictTests
         typeof(InspectionTask)
             .GetProperty(nameof(InspectionTask.Status))!
             .SetValue(task, status);
-        var record = NewInspectionRecord(task.SourceDocumentId);
+        var record = NewInspectionRecord(task.SourceDocumentId, task.SourceDocumentLineId);
         dbContext.InspectionTasks.Add(task);
         dbContext.InspectionRecords.Add(record);
         await dbContext.SaveChangesAsync();
@@ -611,7 +611,11 @@ public sealed class QualityLifecycleConflictTests
             $"quality-task:{sourceDocumentId}");
     }
 
-    private static InspectionRecord NewInspectionRecord(string sourceDocumentId)
+    /// <summary>
+    /// 「这张任务所在那条链上已有的记录」。链身份自 #3319 起含来源行，因此夹具必须连来源行一起给——
+    /// 只给来源单据的话，任务提交查不到它，本用例证的就不再是重放而是新建。
+    /// </summary>
+    private static InspectionRecord NewInspectionRecord(string sourceDocumentId, string? sourceDocumentLineId)
     {
         return InspectionRecord.Create(
             "org-001",
@@ -620,6 +624,7 @@ public sealed class QualityLifecycleConflictTests
             "receiving",
             "wms",
             sourceDocumentId,
+            sourceDocumentLineId,
             "SKU-RM-1000",
             10m,
             null,

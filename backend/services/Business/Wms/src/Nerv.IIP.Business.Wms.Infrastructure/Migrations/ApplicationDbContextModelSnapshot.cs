@@ -1743,10 +1743,9 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasComment("WCS failure diagnostic code.");
 
                     b.Property<string>("FailureMessage")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)")
+                        .HasColumnType("text")
                         .HasColumnName("failure_message")
-                        .HasComment("WCS failure diagnostic message.");
+                        .HasComment("WCS failure diagnostic message; unbounded raw text from the external WCS.");
 
                     b.Property<bool>("IsTerminalFailure")
                         .ValueGeneratedOnAdd()

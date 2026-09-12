@@ -1,10 +1,16 @@
 using FastEndpoints;
+using FluentValidation;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Erp;
+
+// 本文件末尾的 *RequestValidator 是 #3325 补的端点级幂等键上界。
+// 共同口径（方向、为什么写在校验器上、头部与请求体两条来源的覆盖边界、失败响应形状）
+// 写在 BusinessConsoleErpProcurementEndpoints.cs 顶部的「#3325 端点级幂等键上界」注释块，
+// 不在这里复制第二份。
 
 [Tags("Business Console ERP")]
 [HttpGet("/api/business-console/v1/erp/sales/sales-orders")]
@@ -714,4 +720,128 @@ public sealed class GetBusinessConsoleErpCostCandidateBySourceDocumentEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         erp.GetCostCandidateBySourceDocumentAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+/// <summary>
+/// 端点级幂等键长度上界（#3325）。本处下游权威：Erp 侧 OpenOpportunityCommandHandler 把原始键交给 CodeAllocator，
+/// 落 erp.code_idempotency_keys.idempotency_key(150)；该命令的校验器没有幂等键长度规则。
+/// 共同口径见 BusinessConsoleErpProcurementEndpoints.cs 顶部的「#3325 端点级幂等键上界」注释块。
+/// </summary>
+public sealed class BusinessConsoleOpenErpOpportunityRequestValidator
+    : Validator<BusinessConsoleOpenErpOpportunityRequest>
+{
+    public BusinessConsoleOpenErpOpportunityRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+}
+
+/// <summary>
+/// 端点级幂等键长度上界（#3325）。本处下游权威：Erp 侧 CreateQuotationCommandHandler 把原始键交给 CodeAllocator，
+/// 落 erp.code_idempotency_keys.idempotency_key(150)；该命令的校验器没有幂等键长度规则。
+/// 共同口径见 BusinessConsoleErpProcurementEndpoints.cs 顶部的「#3325 端点级幂等键上界」注释块。
+/// </summary>
+public sealed class BusinessConsoleCreateErpQuotationRequestValidator
+    : Validator<BusinessConsoleCreateErpQuotationRequest>
+{
+    public BusinessConsoleCreateErpQuotationRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+}
+
+/// <summary>
+/// 端点级幂等键长度上界（#3325）。本处下游权威：Erp 侧 CreateSalesOrderCommandHandler 把原始键交给 CodeAllocator，
+/// 落 erp.code_idempotency_keys.idempotency_key(150)；该命令的校验器没有幂等键长度规则。
+/// 同一个键还进 ErpCommandCausationIds.ForHttpCommand，但那是无条件 SHA256 截 24 位的定长摘要，
+/// 对原始键零约束（#3290 的幽灵权威形状），故**不**作为权威登记。
+/// 共同口径见 BusinessConsoleErpProcurementEndpoints.cs 顶部的「#3325 端点级幂等键上界」注释块。
+/// </summary>
+public sealed class BusinessConsoleCreateErpSalesOrderRequestValidator
+    : Validator<BusinessConsoleCreateErpSalesOrderRequest>
+{
+    public BusinessConsoleCreateErpSalesOrderRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+}
+
+/// <summary>
+/// 端点级幂等键长度上界（#3325）。本处下游权威：Erp 侧 ReleaseDeliveryOrderCommandHandler 把原始键交给 CodeAllocator，
+/// 落 erp.code_idempotency_keys.idempotency_key(150)；该命令的校验器没有幂等键长度规则。
+/// 共同口径见 BusinessConsoleErpProcurementEndpoints.cs 顶部的「#3325 端点级幂等键上界」注释块。
+/// </summary>
+public sealed class BusinessConsoleReleaseErpDeliveryOrderRequestValidator
+    : Validator<BusinessConsoleReleaseErpDeliveryOrderRequest>
+{
+    public BusinessConsoleReleaseErpDeliveryOrderRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+}
+
+/// <summary>
+/// 端点级幂等键长度上界（#3325）。本处下游权威：Erp 侧 CreateAccountPayableCommandHandler 把原始键交给 CodeAllocator，
+/// 落 erp.code_idempotency_keys.idempotency_key(150)；该命令的校验器没有幂等键长度规则。
+/// 共同口径见 BusinessConsoleErpProcurementEndpoints.cs 顶部的「#3325 端点级幂等键上界」注释块。
+/// </summary>
+public sealed class BusinessConsoleCreateErpAccountPayableRequestValidator
+    : Validator<BusinessConsoleCreateErpAccountPayableRequest>
+{
+    public BusinessConsoleCreateErpAccountPayableRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+}
+
+/// <summary>
+/// 端点级幂等键长度上界（#3325）。本处下游权威：Erp 侧 CreateAccountReceivableCommandHandler 把原始键交给 CodeAllocator，
+/// 落 erp.code_idempotency_keys.idempotency_key(150)；该命令的校验器没有幂等键长度规则。
+/// 共同口径见 BusinessConsoleErpProcurementEndpoints.cs 顶部的「#3325 端点级幂等键上界」注释块。
+/// </summary>
+public sealed class BusinessConsoleCreateErpAccountReceivableRequestValidator
+    : Validator<BusinessConsoleCreateErpAccountReceivableRequest>
+{
+    public BusinessConsoleCreateErpAccountReceivableRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+}
+
+/// <summary>
+/// 端点级幂等键长度上界（#3325）。本处下游权威：Erp 侧 CreateCostCandidateCommandHandler 把原始键交给 CodeAllocator，
+/// 落 erp.code_idempotency_keys.idempotency_key(150)；该命令的校验器没有幂等键长度规则。
+/// 共同口径见 BusinessConsoleErpProcurementEndpoints.cs 顶部的「#3325 端点级幂等键上界」注释块。
+/// </summary>
+public sealed class BusinessConsoleCreateErpCostCandidateRequestValidator
+    : Validator<BusinessConsoleCreateErpCostCandidateRequest>
+{
+    public BusinessConsoleCreateErpCostCandidateRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+}
+
+/// <summary>
+/// 端点级幂等键长度上界（#3325）。本处下游权威：Erp 侧 PostJournalVoucherCommandHandler 把原始键交给 CodeAllocator，
+/// 落 erp.code_idempotency_keys.idempotency_key(150)；该命令的校验器没有幂等键长度规则。
+/// 分配器产出的是凭证号（allocation.Code，另一列），幂等键本身不参与凭证号构成，
+/// 因此与 #3278 正在改的凭证号形状无交集。
+/// 共同口径见 BusinessConsoleErpProcurementEndpoints.cs 顶部的「#3325 端点级幂等键上界」注释块。
+/// </summary>
+public sealed class BusinessConsolePostErpJournalVoucherRequestValidator
+    : Validator<BusinessConsolePostErpJournalVoucherRequest>
+{
+    public BusinessConsolePostErpJournalVoucherRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+}
+
+/// <summary>
+/// 端点级幂等键长度上界（#3325）。本处下游权威：Erp 侧 ApprovePaymentExecutionCommandHandler 把原始键交给 CodeAllocator，
+/// 落 erp.code_idempotency_keys.idempotency_key(150)；该命令**没有任何校验器**，因而同样没有幂等键长度规则。
+/// 共同口径见 BusinessConsoleErpProcurementEndpoints.cs 顶部的「#3325 端点级幂等键上界」注释块。
+/// </summary>
+public sealed class BusinessConsoleApproveErpPaymentExecutionRequestValidator
+    : Validator<BusinessConsoleApproveErpPaymentExecutionRequest>
+{
+    public BusinessConsoleApproveErpPaymentExecutionRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+}
+
+/// <summary>
+/// 端点级幂等键长度上界（#3325）。本处下游权威：Erp 侧 RegisterCashReceiptCommandHandler 把原始键交给 CodeAllocator，
+/// 落 erp.code_idempotency_keys.idempotency_key(150)；该命令**没有任何校验器**，因而同样没有幂等键长度规则。
+/// 共同口径见 BusinessConsoleErpProcurementEndpoints.cs 顶部的「#3325 端点级幂等键上界」注释块。
+/// </summary>
+public sealed class BusinessConsoleRegisterErpCashReceiptRequestValidator
+    : Validator<BusinessConsoleRegisterErpCashReceiptRequest>
+{
+    public BusinessConsoleRegisterErpCashReceiptRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
 }

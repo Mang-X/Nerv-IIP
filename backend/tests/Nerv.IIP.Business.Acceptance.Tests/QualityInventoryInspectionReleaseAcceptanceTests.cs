@@ -252,6 +252,7 @@ public sealed class QualityInventoryInspectionReleaseAcceptanceTests
             "receiving",
             "purchase-receipt",
             "RCV-QUALITY-001",
+            sourceDocumentLineId: null,
             "SKU-FG-1000",
             3m,
             "LOT-001",

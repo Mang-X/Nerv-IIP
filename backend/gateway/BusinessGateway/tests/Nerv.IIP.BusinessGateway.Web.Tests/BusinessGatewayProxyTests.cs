@@ -936,9 +936,60 @@ public sealed class BusinessGatewayProxyTests
 
         using var response = await client.SendAsync(request);
 
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        // #3287 ①：非法字符是入参形状问题，公开响应必须是 400 + 指名原因的稳定消息。
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        Assert.Equal("idempotency-key-mismatch", document.RootElement.GetProperty("message").GetString());
+        Assert.Equal(
+            "idempotency-key-invalid-characters",
+            document.RootElement.GetProperty("message").GetString());
+        Assert.Equal(400, document.RootElement.GetProperty("code").GetInt32());
+        Assert.Equal(0, masterData.ToolingCallCount);
+    }
+
+    // #3287 ①的真公开面证据：键长按全局钳派生并 +1，因此它先撞全局钳
+    // （BusinessGatewayIdempotencyKey.MaximumLength），而不是本位点的端点级规则（200）——
+    // 这一格隔离出来的正是全局钳那条分支。
+    // ⚠️ 这里原写「键经 header 进入，绕开端点级 FluentValidation（它只看请求体）」，
+    // #3330 之后已不成立：归一化挪到了 DTO 校验之前，头部来的键同样受端点级规则约束。
+    // 隔离靠的是「钳 + 1 > 端点级上界」，不是「头部绕开校验」。
+    // 全部字符落在 IsAllowed 允许集内，只触犯长度一条规则。
+    [Fact]
+    public async Task Master_data_tooling_write_facade_rejects_over_length_idempotency_before_downstream()
+    {
+        var masterData = new RecordingMasterDataClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/api/business-console/v1/master-data/tooling-assets/usage")
+        {
+            Content = JsonContent.Create(new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                code = "TOOL-001",
+                count = 3L,
+            }),
+        };
+        // 长度按全局钳派生：#3327 抬钳后手抄的 151 不再越界（本位点端点级上界是 200，
+        // 而 #3330 之后头部键在校验前已归一化写回 DTO），用例会从「超长被拒」退化成「合法键被转发」。
+        request.Headers.Add(
+            "X-Idempotency-Key",
+            new string('a', BusinessGatewayIdempotencyKey.MaximumKeyLength + 1));
+
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(
+            "idempotency-key-too-long",
+            document.RootElement.GetProperty("message").GetString());
+        Assert.Equal(400, document.RootElement.GetProperty("code").GetInt32());
         Assert.Equal(0, masterData.ToolingCallCount);
     }
 
@@ -3598,7 +3649,7 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
-    public async Task Mes_downtime_v2_write_rejects_missing_work_center_before_authorization_or_forwarding()
+    public async Task Mes_downtime_v2_write_rejects_missing_work_center_after_authorization_and_before_forwarding()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         var mes = new RecordingMesClient();
@@ -3624,7 +3675,9 @@ public sealed class BusinessGatewayProxyTests
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Equal(0, mes.RecordDowntimeCallCount);
-        Assert.Null(auth.LastContinuityMode);
+        // #3330：鉴权已前移到 DTO 校验之前，写操作照旧要求实时鉴权；端点级规则随后把请求拒成 400，
+        // 不转发给下游（上一条断言）。
+        Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
     }
 
     // #1947：停机读面的原因码归 Maintenance 目录所有，中文名必须由门面补齐（api-contract-and-codegen §17），
@@ -4772,6 +4825,69 @@ public sealed class BusinessGatewayProxyTests
         Assert.True(document.RootElement.GetProperty("data").GetProperty("accepted").GetBoolean());
     }
 
+    // #3287 ②的运行时证据（母票原文写明「151–512 会被 409 挡掉」只是代码推断、未做运行时验证）。
+    // 本位点的端点级上界是 512（= 下游 ForceReleaseQualityHoldCommand 校验器与
+    // quality_hold_transitions.idempotency_key 列宽，两者一致，由验收侧
+    // BusinessGatewayIdempotencyKeyDownstreamBoundContractTests 与下游对撞钉住）；
+    // 抬钳前全局钳 150 会把 151..512 的合法键在入口拒掉。
+    //
+    // ⚠️ 前两格的长度**故意写成绝对值、不按 MaximumKeyLength 派生**：
+    // 派生会让这两格自指——把钳改回 150 时夹具也跟着变成 150，用例照绿，
+    // 「151..512 现在真的过得去」这句话就没有任何东西在证。
+    //   · 151 = 母票②那段值域的下界（旧钳 + 1）。
+    //   · 512 = 本位点端点级上界那一格。若哪天该上界降到 512 以下，这一格会红——那正是要的：
+    //     它迫使当轮显式确认「母票②那段值域是否仍然对外承诺」，而不是静默缩水。
+    // 第三格才按钳派生，它证的是另一件事：兜底仍在（否则把钳改成 int.MaxValue 不会红）。
+    //
+    // 键走 X-Idempotency-Key 头 —— #3330 之后头部来源在 DTO 校验前已归一化写回 DTO，
+    // 因此这三格同时经过端点级规则与全局钳两道，正是母票②描述的那条路径。
+    [Theory]
+    [InlineData(151, null, HttpStatusCode.OK, 1)]
+    [InlineData(512, null, HttpStatusCode.OK, 1)]
+    [InlineData(null, 1, HttpStatusCode.BadRequest, 0)]
+    public async Task Mes_quality_hold_force_release_accepts_keys_up_to_the_global_clamp(
+        int? absoluteLength,
+        int? lengthOverClamp,
+        HttpStatusCode expectedStatus,
+        int expectedForwardCount)
+    {
+        var key = new string(
+            'k',
+            absoluteLength ?? BusinessGatewayIdempotencyKey.MaximumKeyLength + lengthOverClamp!.Value);
+        var mes = new RecordingMesClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        using var forceRequest = new HttpRequestMessage(HttpMethod.Post,
+            "/api/business-console/v1/mes/quality-holds/QH-001/force-release?organizationId=org-001&environmentId=env-dev");
+        forceRequest.Headers.TryAddWithoutValidation("X-Correlation-Id", "corr-gateway-clamp");
+        forceRequest.Headers.TryAddWithoutValidation("X-Idempotency-Key", key);
+        forceRequest.Content = JsonContent.Create(
+            new { reason = "quality-override", sourceService = "BusinessMes", releasedAtUtc = (DateTimeOffset?)null });
+
+        var response = await client.SendAsync(forceRequest);
+
+        Assert.Equal(expectedStatus, response.StatusCode);
+        Assert.Equal(expectedForwardCount, mes.ForceReleaseQualityHoldCallCount);
+        if (expectedForwardCount > 0)
+        {
+            // 「放行」不够，还要**原样**：截断或改写会让下游的幂等查找命中不到同一行。
+            Assert.Equal(key, mes.LastForceReleaseQualityHoldRequest!.IdempotencyKey);
+        }
+        else
+        {
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.Equal(
+                "idempotency-key-too-long",
+                document.RootElement.GetProperty("message").GetString());
+        }
+    }
+
     [Fact]
     public async Task Mes_quality_hold_timeline_requires_quality_read_and_returns_full_lineage()
     {
@@ -5764,7 +5880,7 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
-    public async Task Erp_work_center_cost_rate_facade_rejects_an_omitted_effective_start_before_authorization()
+    public async Task Erp_work_center_cost_rate_facade_rejects_an_omitted_effective_start_after_authorization()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         await using var lease = LeaseHost(auth);
@@ -5784,7 +5900,8 @@ public sealed class BusinessGatewayProxyTests
             });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Equal(0, auth.CallCount);
+        // #3330：鉴权已前移到 DTO 校验之前，所以载荷不合法的请求也会先付一次鉴权往返。
+        Assert.Equal(1, auth.CallCount);
     }
 
     [Fact]
@@ -7007,7 +7124,7 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
-    public async Task Barcode_resolve_facade_rejects_page_offset_overflow_before_authorization_and_downstream()
+    public async Task Barcode_resolve_facade_rejects_page_offset_overflow_after_authorization_and_before_downstream()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         var barcode = new RecordingBarcodeLabelClient();
@@ -7029,7 +7146,9 @@ public sealed class BusinessGatewayProxyTests
         });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Equal(0, auth.CallCount);
+        // #3330：鉴权已前移到 DTO 校验之前，所以载荷不合法的请求也会先付一次鉴权往返；
+        // 真正承重的是下面这条——溢出的 pageOffset 绝不会被转发到下游。
+        Assert.Equal(1, auth.CallCount);
         Assert.Equal(0, barcode.ResolveCallCount);
     }
 
@@ -9196,8 +9315,14 @@ public sealed class BusinessGatewayProxyTests
         Assert.Null(masterData.LastUpdateRequest);
     }
 
+    /// <summary>
+    /// #3355：实盘数 0 是合法盘点结果（账面有货、实盘没有）。网关此前写 <c>GreaterThan(0)</c>
+    /// 比下游 <c>ConfirmStockCountAdjustmentCommandValidator</c> 的 <c>GreaterThanOrEqualTo(0)</c> 更严，
+    /// 把「盘亏到零」挡在入口。此处钉住的是「0 转发到下游」，不是「0 返回 200」——
+    /// 只断状态码的话，把规则删光同样绿。
+    /// </summary>
     [Fact]
-    public async Task Count_adjustment_rejects_zero_counted_quantity()
+    public async Task Count_adjustment_forwards_zero_counted_quantity_downstream()
     {
         var inventory = new RecordingInventoryClient();
         await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
@@ -9216,7 +9341,48 @@ public sealed class BusinessGatewayProxyTests
             idempotencyKey = "idem-001",
         });
 
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(1, inventory.ConfirmCountAdjustmentCallCount);
+        Assert.Equal(0m, inventory.LastConfirmCountAdjustmentRequest?.CountedQuantity);
+    }
+
+    /// <summary>
+    /// #3355 的另一半：对齐到 <c>GreaterThanOrEqualTo(0)</c> 之后，负数仍然必须被拒且不得转发
+    /// ——盘点结果为负在业务上不成立，下游命令校验器与领域守卫（<c>EnsureReadyForAdjustment</c>
+    /// 对 <c>countedQuantity &lt; 0</c> 抛 <c>ArgumentOutOfRangeException</c>）都拒它。
+    /// <para>
+    /// ⚠️ <b>后两条断言今天对变异零独立鉴别力，但不得删。</b>#3355 审核实测：把下界放宽成
+    /// <c>GreaterThanOrEqualTo(-1)</c> 时，本用例在第一条状态码断言上就失败
+    /// （<c>Expected: BadRequest / Actual: OK</c>），<c>ConfirmCountAdjustmentCallCount</c> 与
+    /// <c>LastConfirmCountAdjustmentRequest</c> 两条**根本没执行**。结构上也是如此：只要校验失败就
+    /// 不进 <c>AuthorizedBusinessProxyEndpoint.HandleAsync</c>，「400」与「不转发」由构造同真同假。
+    /// 保留它们防的是**将来执行序变化**——#3345 在本基类上抓到过「响应已写出但请求仍被转发下去」
+    /// 的真实形状。届时这两条是唯一会红的断言。**不要以「今天冗余」为由删除。**
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Count_adjustment_rejects_negative_counted_quantity()
+    {
+        var inventory = new RecordingInventoryClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessInventoryClient>();
+            services.AddSingleton<IBusinessInventoryClient>(inventory);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/inventory/count-tasks/count-001/adjustments?organizationId=org-001&environmentId=env-dev", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            countedQuantity = -1,
+            idempotencyKey = "idem-001",
+        });
+
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, inventory.ConfirmCountAdjustmentCallCount);
+        Assert.Null(inventory.LastConfirmCountAdjustmentRequest);
     }
 
     [Fact]
@@ -15115,12 +15281,18 @@ internal sealed class RecordingInventoryClient : IBusinessInventoryClient
             request.PageSize));
     }
 
+    public int MovementCallCount { get; private set; }
+
+    public BusinessConsolePostStockMovementRequest? LastMovementRequest { get; private set; }
+
     public Task<BusinessConsolePostStockMovementResponse> PostMovementAsync(
         string internalBearerToken,
         BusinessConsolePostStockMovementRequest request,
         CancellationToken cancellationToken,
         IReadOnlyCollection<string>? forwardedPermissions = null)
     {
+        MovementCallCount++;
+        LastMovementRequest = request;
         LastInternalToken = internalBearerToken;
         LastForwardedPermissions = forwardedPermissions ?? [];
         return Task.FromResult(new BusinessConsolePostStockMovementResponse("move-001", 10, 8));
@@ -15132,12 +15304,21 @@ internal sealed class RecordingInventoryClient : IBusinessInventoryClient
         CancellationToken cancellationToken) =>
         Task.FromResult(new BusinessConsoleCreateStockCountTaskResponse("count-001", 1));
 
+    public int ConfirmCountAdjustmentCallCount { get; private set; }
+
+    public BusinessConsoleConfirmStockCountAdjustmentRequest? LastConfirmCountAdjustmentRequest { get; private set; }
+
     public Task<BusinessConsoleConfirmStockCountAdjustmentResponse> ConfirmCountAdjustmentAsync(
         string internalBearerToken,
         string countTaskId,
         BusinessConsoleConfirmStockCountAdjustmentRequest request,
-        CancellationToken cancellationToken) =>
-        Task.FromResult(new BusinessConsoleConfirmStockCountAdjustmentResponse("move-001", 1, 11, "posted", null));
+        CancellationToken cancellationToken)
+    {
+        ConfirmCountAdjustmentCallCount++;
+        LastConfirmCountAdjustmentRequest = request;
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleConfirmStockCountAdjustmentResponse("move-001", 1, 11, "posted", null));
+    }
 
     public string? LastRestartedCountTaskId { get; private set; }
 

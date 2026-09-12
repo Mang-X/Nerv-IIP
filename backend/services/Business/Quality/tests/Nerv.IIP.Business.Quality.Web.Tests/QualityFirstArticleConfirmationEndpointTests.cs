@@ -365,6 +365,7 @@ public sealed class QualityFirstArticleConfirmationEndpointTests
             "first-article",
             "mes",
             FirstArticleInspection.SourceDocumentId("WO-001", operationId),
+            sourceDocumentLineId: null,
             "SKU-FG-1000",
             1m,
             null,

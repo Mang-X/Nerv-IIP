@@ -51,7 +51,8 @@ public sealed class ProductionReportOeeDimensionSnapshotPostgresTests
         context.OperationTasks.Add(OperationTask.Create(
             "org-001", "env-dev", "WO-OEE-PG-001", "OP-OEE-PG-10",
             OperationTaskLifecycleStatus.InProgress, 10, "WC-LEGACY", [],
-            reportedAtUtc.AddHours(-1), TimeSpan.FromHours(1), reportedAtUtc.AddHours(-1), null));
+            reportedAtUtc.AddHours(-1), TimeSpan.FromHours(1), reportedAtUtc.AddHours(-1), null,
+            "SKU-001"));
         context.ProductionReports.Add(ProductionReport.Record(
             "org-001", "env-dev", "PR-TEMPLATE", "WO-OEE-PG-001", "OP-OEE-PG-10",
             2m, 1m, false, reportedAtUtc,

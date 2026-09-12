@@ -811,6 +811,8 @@ function Invoke-NativeCommandWithTimeout {
 
         [string] $WorkingDirectory = (Get-Location).Path,
 
+        # Upper bound: this budget is multiplied by 1000 into the [int] milliseconds WaitForExit takes.
+        [ValidateRange(1, 2147483)]
         [int] $TimeoutSeconds = 600,
 
         [string] $Name,
@@ -1020,6 +1022,8 @@ function Invoke-NativeCommandOutput {
 
         [string] $WorkingDirectory = (Get-Location).Path,
 
+        # Upper bound: this budget is multiplied by 1000 into the [int] milliseconds WaitForExit takes.
+        [ValidateRange(1, 2147483)]
         [int] $TimeoutSeconds = 60,
 
         [string] $Name,

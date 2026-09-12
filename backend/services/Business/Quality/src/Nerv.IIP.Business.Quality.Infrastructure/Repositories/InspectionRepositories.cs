@@ -56,6 +56,10 @@ public sealed class InspectionPlanRepository(ApplicationDbContext context)
 
 public interface IInspectionRecordRepository : IRepository<InspectionRecord, InspectionRecordId>
 {
+    /// <summary>
+    /// 按检验链身份定位初检记录。<paramref name="sourceDocumentLineId"/> 是身份的一部分（#3319）：
+    /// 少了它，同一工单两道工序、同一收货单两行会被判成同一条链而复用彼此的结论。
+    /// </summary>
     Task<InspectionRecord?> FindBySourceDocumentAsync(
         string organizationId,
         string environmentId,
@@ -63,6 +67,7 @@ public interface IInspectionRecordRepository : IRepository<InspectionRecord, Ins
         string sourceService,
         string skuCode,
         string sourceDocumentId,
+        string? sourceDocumentLineId,
         CancellationToken cancellationToken = default);
 
     Task<InspectionRecord?> GetScopedAsync(
@@ -86,12 +91,17 @@ public sealed class InspectionRecordRepository(ApplicationDbContext context)
         string sourceService,
         string skuCode,
         string sourceDocumentId,
+        string? sourceDocumentLineId,
         CancellationToken cancellationToken = default)
     {
         var normalizedSourceType = sourceType.Trim().ToLowerInvariant();
         var normalizedSourceService = sourceService.Trim().ToLowerInvariant();
         var normalizedSkuCode = skuCode.Trim();
         var normalizedSourceDocumentId = sourceDocumentId.Trim();
+        // 与聚合的 Optional() 归一同口径：空白来源行等于「没有来源行」，两边都落到 NULL。
+        var normalizedSourceDocumentLineId = string.IsNullOrWhiteSpace(sourceDocumentLineId)
+            ? null
+            : sourceDocumentLineId.Trim();
         return DbContext.InspectionRecords.SingleOrDefaultAsync(
             x => x.OrganizationId == organizationId
                 && x.EnvironmentId == environmentId
@@ -99,6 +109,7 @@ public sealed class InspectionRecordRepository(ApplicationDbContext context)
                 && x.SourceService == normalizedSourceService
                 && x.SkuCode == normalizedSkuCode
                 && x.SourceDocumentId == normalizedSourceDocumentId
+                && x.SourceDocumentLineId == normalizedSourceDocumentLineId
                 && x.AttemptNumber == 1,
             cancellationToken);
     }

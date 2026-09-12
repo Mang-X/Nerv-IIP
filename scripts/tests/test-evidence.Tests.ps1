@@ -1486,7 +1486,13 @@ $liveAssignments = Get-NervSourceSkipAssignments -RepoRoot $repoRoot
 # #2966 注册 MES 停机事件 v2 契约拒收/poison 重放的真实 PostgreSQL + Redis/CAP proof，增至 49。
 # #2968 注册 Maintenance v2 工单入口的目录精确命中/双发同事务/v1 零漂移真实 PostgreSQL proof，增至 50。
 # NERV-2121 注册采购收货路径互斥 Acceptance PostgreSQL proof，source 从 51 增至 52。
-Assert-Equal 52 $liveAssignments.Count '已批准的 source skip 清单变更必须显式分类。'
+# #3305 注册 WCS 回调宽度 proof（failure_message 改无界后，物理列类型与越界 failure_code 的 22001
+# 只有真库分得开，InMemory provider 对两者都无感），增至 53。
+# #3360 注册信封字段长度闸的真库 proof（超界键在真 PostgreSQL 上是 22001 逃逸成 poison 还是落成
+# 可重放死信，只有真库分得开）。⭐ 这一条**不是新增了一次跳过，而是让一次一直存在的跳过第一次变得可见**：
+# 那两条用例原先是裸 [Fact] 加方法体内 return，无库时被**计为通过**，既不产生 Skip 也就不触发本清单；
+# 修掉假通过后登记义务才浮出来。增至 54。
+Assert-Equal 54 $liveAssignments.Count '已批准的 source skip 清单变更必须显式分类。'
 Assert-True (($liveAssignments | Where-Object sourcePath -like '*SimulatedConnectorHostProcessTests.cs').sourceText.Contains('Windows runs the platform-specific executable resolution contract only', [StringComparison]::Ordinal)) 'Quote-aware scanner must retain semicolons inside a C# string literal.'
 $livePolicy = Import-NervTestEvidencePolicy -Path (Join-Path $repoRoot 'scripts/test-evidence-policy.json')
 $liveViolations = Test-NervTestEvidencePolicy -Policy $livePolicy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)
@@ -1534,7 +1540,7 @@ Assert-Equal 2 @($demandPlanningRedisRules[0].testIdentities).Count 'The Redis/C
 $mesMaterialSubstituteIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.MesMaterialSubstituteSnapshotPostgresTests.Substitute_snapshot_migration_and_cross_scope_readback_hold_on_postgres'
 $mesProductionCandidateRules = @($livePolicy.rules | Where-Object { [string]::Equals([string]$_.id, 'mes-production-candidate', [StringComparison]::Ordinal) })
 Assert-Equal 1 $mesProductionCandidateRules.Count 'The MES production candidate PostgreSQL proofs must have one evidence policy rule.'
-Assert-Equal 51 @($mesProductionCandidateRules[0].testIdentities).Count 'The MES production candidate policy rule must freeze its fifty-one governed PostgreSQL identities.'
+Assert-Equal 52 @($mesProductionCandidateRules[0].testIdentities).Count 'The MES production candidate policy rule must freeze its fifty-two governed PostgreSQL identities.'
 $downtimeReasonCodeMigrationIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.DowntimeReasonCodeMigrationPostgresTests.Legacy_reasons_migrate_once_across_all_scopes_and_repeat_stably_on_postgres'
 Assert-True (@($mesProductionCandidateRules[0].testIdentities | Where-Object { [string]::Equals([string]$_, $downtimeReasonCodeMigrationIdentity, [StringComparison]::Ordinal) }).Count -eq 1) 'The MES production candidate policy rule must own the downtime-reason migration identity exactly once.'
 Assert-True ($downtimeReasonCodeMigrationIdentity -cmatch [string]$mesProductionCandidateRules[0].testPattern) 'The MES production candidate policy pattern must match the downtime-reason migration identity.'

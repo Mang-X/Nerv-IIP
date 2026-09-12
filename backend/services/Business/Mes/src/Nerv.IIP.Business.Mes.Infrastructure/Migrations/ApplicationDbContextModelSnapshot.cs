@@ -2188,10 +2188,10 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasComment("MES defect record number allocated by the service numbering counter.");
 
                     b.Property<string>("DispositionReferenceId")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
                         .HasColumnName("disposition_reference_id")
-                        .HasComment("Downstream disposition reference such as rework work order, scrap movement or return document.");
+                        .HasComment("Downstream disposition reference copied verbatim from the Quality NCR: rework work order id, scrap movement id or supplier return document id. Width tracks the Quality producer columns nonconformance_reports.{rework_work_order_id, scrap_movement_id, return_document_id} (150) — see #3318.");
 
                     b.Property<string>("DispositionType")
                         .HasMaxLength(100)
@@ -2404,10 +2404,10 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
 
                     b.Property<string>("SourceDocumentId")
                         .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
+                        .HasMaxLength(250)
+                        .HasColumnType("character varying(250)")
                         .HasColumnName("source_document_id")
-                        .HasComment("Source document id referenced by the Quality inspection record.");
+                        .HasComment("Source document identity copied verbatim from the Quality inspection record; width matches the Quality producer column because first-article and periodic inspections carry a composite identity, not a bare MES work order or operation task id.");
 
                     b.Property<string>("SourceService")
                         .IsRequired()
@@ -2513,10 +2513,10 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
 
                     b.Property<string>("SourceDocumentId")
                         .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
+                        .HasMaxLength(250)
+                        .HasColumnType("character varying(250)")
                         .HasColumnName("source_document_id")
-                        .HasComment("Stable MES source document identifier whose hold lifecycle changed.");
+                        .HasComment("Stable source document identity whose hold lifecycle changed; carries the Quality inspection record source identity verbatim, which for first-article and periodic inspections is a composite value rather than a bare MES id.");
 
                     b.Property<string>("SourceInspectionDocumentId")
                         .HasMaxLength(100)

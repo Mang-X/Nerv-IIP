@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.ProductEngineering.Domain.DomainEvents;
+using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.ProductEngineering;
 
 namespace Nerv.IIP.Business.ProductEngineering.Web.Application.IntegrationEventConverters;
@@ -189,7 +190,8 @@ internal static class EventIds
 {
     public static string New() => $"evt-{Guid.CreateVersion7():N}";
 
-    public static string Idempotency(params string[] parts) => $"product-engineering:{string.Join(':', parts)}";
+    public static string Idempotency(params string[] parts) =>
+        IntegrationEventIdempotencyKey.ComposeServiceScoped("product-engineering:", parts);
 
     public static string AggregateId(Guid? id, params string[] businessParts)
     {

@@ -4927,7 +4927,6 @@ public sealed record BusinessConsoleMesReleaseWorkOrderRequest(
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
     bool ConfirmWarnings,
-    string IdempotencyKey,
     [property: QueryParam] string? ScopeKind = null,
     [property: QueryParam] string? ScopeId = null);
 
@@ -5114,8 +5113,7 @@ public sealed record BusinessConsoleMesConfirmLineSideReceiptRequest(
     [property: QueryParam] string EnvironmentId,
     string? MaterialLotId,
     decimal? ReceivedQuantity,
-    IReadOnlyCollection<string>? EvidenceFileIds,
-    string IdempotencyKey);
+    IReadOnlyCollection<string>? EvidenceFileIds);
 
 public sealed record BusinessConsoleMesReturnLineSideMaterialRequest(
     [property: RouteParam] string RequestId,
@@ -5164,7 +5162,6 @@ public sealed record BusinessConsoleMesAssignDispatchTaskForwardRequest(
     string? AssignedUserName,
     string? DeviceAssetId,
     string? ShiftId,
-    string IdempotencyKey,
     string? TeamId = null,
     string? TeamName = null,
     IReadOnlyCollection<BusinessConsoleMesDispatchParticipantForwardInput>? Participants = null);
@@ -5176,7 +5173,6 @@ public sealed record BusinessConsoleMesAssignDispatchTaskRequest(
     string? AssignedUserId,
     string? DeviceAssetId,
     string? ShiftId,
-    string IdempotencyKey,
     IReadOnlyCollection<BusinessConsoleMesDispatchParticipantRequest>? Participants = null);
 
 public sealed record BusinessConsoleMesClaimOperationTaskRequest(
@@ -5606,8 +5602,7 @@ public sealed record BusinessConsoleMesRecoverDowntimeEventRequest(
     [property: RouteParam] string DowntimeEventId,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
-    DateTimeOffset RecoveredAtUtc,
-    string IdempotencyKey);
+    DateTimeOffset RecoveredAtUtc);
 
 /// <summary>历史规则排程结果列表请求（「规则排程」页的历史读面）。</summary>
 public sealed record BusinessConsoleMesScheduleResultListRequest(
@@ -5746,8 +5741,7 @@ public sealed record BusinessConsoleMesCreateShiftHandoverForwardRequest(
 public sealed record BusinessConsoleMesAcceptShiftHandoverRequest(
     [property: RouteParam] string HandoverId,
     [property: QueryParam] string OrganizationId,
-    [property: QueryParam] string EnvironmentId,
-    string IdempotencyKey);
+    [property: QueryParam] string EnvironmentId);
 
 /// <summary>
 /// 转发给 MES 的接班载荷：接班人身份同样由 Gateway 从认证 principal 注入。
@@ -5755,7 +5749,6 @@ public sealed record BusinessConsoleMesAcceptShiftHandoverRequest(
 public sealed record BusinessConsoleMesAcceptShiftHandoverForwardRequest(
     string OrganizationId,
     string EnvironmentId,
-    string IdempotencyKey,
     string? IncomingUserId,
     string? IncomingUserName);
 

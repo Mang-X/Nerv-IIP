@@ -44,6 +44,7 @@
         "redis-cap"
       ],
       "excludedTests": [
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsQualityInspectionGateConsumerTests.Supplier_return_numbers_stay_within_the_outbound_order_no_column_on_postgres",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsQualityInspectionGateConsumerTests.Quality_events_persist_gate_and_putaway_outcome_on_postgres",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsShortPickBackorderTests.Short_pick_chain_is_durable_and_idempotent_on_postgres",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsWorkAssignmentMigrationPostgresTests.Migration_blocks_ambiguous_multi_adapter_history_before_changing_legacy_schema",
@@ -127,7 +128,9 @@
         "backend/tests/Nerv.IIP.Business.Performance.Tests/Nerv.IIP.Business.Performance.Tests.csproj"
       ],
       "excludedTestClasses": [
+        "Nerv.IIP.Business.Acceptance.Tests.MesDefectDispositionReferenceAcceptanceTests",
         "Nerv.IIP.Business.Acceptance.Tests.PurchaseReceiptPostingRoutePostgresAcceptanceTests",
+        "Nerv.IIP.Business.Acceptance.Tests.QualityFirstArticleMesQualityHoldAcceptanceTests",
         "Nerv.IIP.Business.Acceptance.Tests.RuntimeHoursMaintenancePostgresAcceptanceTests",
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests",
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.WorldHistoryLabelSeedPostgresTests",
@@ -137,8 +140,8 @@
         "Nerv.IIP.Business.Mes.Web.Tests.LeaderDemoScaleSeedPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.MesChangeoverRecordPostgresTests",
-        "Nerv.IIP.Business.Mes.Web.Tests.MesMaterialSubstituteSnapshotPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.MesMaterialOwnershipSnapshotPostgresTests",
+        "Nerv.IIP.Business.Mes.Web.Tests.MesMaterialSubstituteSnapshotPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.MesProductionStatisticsPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.MesSchedulePlanProvenancePostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedHandlerPostgresTests",
@@ -149,6 +152,7 @@
         "Nerv.IIP.Business.Mes.Web.Tests.WorkOrderCapitalizationConcurrencyPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.WorldHistorySeedPostgresTests",
+        "Nerv.IIP.Business.Quality.Web.Tests.InspectionRecordSourceLinePostgresTests",
         "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresConcurrencyTests",
         "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresContinuationTests",
         "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresMigrationTests",

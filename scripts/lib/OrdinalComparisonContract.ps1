@@ -364,6 +364,16 @@ function Test-NervOrdinalContractDirectFunctionAssignment {
         here is a direct statement in the same enclosing execution block as the later reachable
         call site.  A conditional assignment followed by a call outside that conditional therefore
         stays unknown, while statements sequenced within one branch are proven together.
+
+        "Same scope" includes the top-level script scope (#3312).  What this test exists to reject
+        is a value reaching the call site from a *different* scope, and two nodes that both sit
+        outside any function are in the same scope — they are in the one the file itself opens.
+        Treating a null enclosing function as an automatic failure instead made the exemptions
+        downstream of this test structurally unreachable in flat scripts, which is the shape every
+        file under scripts/tests/ has: the exemption read as complete and had never once applied
+        there.  The cross-scope rejection is unchanged and is still carried by the two comparisons
+        below — the enclosing function of the assignment must be the *same* one as the context's
+        (null only matches null), and the assignment must sit directly in the context's own block.
     #>
     param(
         [Parameter(Mandatory)] [System.Management.Automation.Language.AssignmentStatementAst] $Assignment,
@@ -371,8 +381,7 @@ function Test-NervOrdinalContractDirectFunctionAssignment {
     )
 
     $scope = Get-NervOrdinalContractEnclosingFunction -Node $Context
-    if ($null -eq $scope -or
-        -not [object]::ReferenceEquals((Get-NervOrdinalContractEnclosingFunction -Node $Assignment), $scope)) {
+    if (-not [object]::ReferenceEquals((Get-NervOrdinalContractEnclosingFunction -Node $Assignment), $scope)) {
         return $false
     }
     $contextBlock = $Context.Parent

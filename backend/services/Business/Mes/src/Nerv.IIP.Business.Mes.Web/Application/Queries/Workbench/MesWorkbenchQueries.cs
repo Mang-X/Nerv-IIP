@@ -1389,13 +1389,20 @@ public sealed class GetMaterialIssueRequestQueryHandler(ApplicationDbContext dbC
             .Where(x =>
                 x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId);
-        query = Guid.TryParse(request.RequestId, out var requestGuid)
-            ? query.Where(x => x.Id.Id == requestGuid)
-            : query.Where(x => x.RequestNo == request.RequestId);
-        return await ListMaterialIssueRequestsQueryHandler
-            .ProjectRows(query, dbContext)
-            .SingleOrDefaultAsync(cancellationToken)
-            ?? throw new KnownException("未找到领料申请。");
+        // x.Id 是强类型 GuidId：谓词里 x.Id.Id == guid 无法被 EF 翻译（真机 500，#3098）。
+        // 先按业务单号命中；只有请求确实是 Guid 时才用先物化好的强类型 Id 直接比较（可翻译）。
+        var row = await ListMaterialIssueRequestsQueryHandler
+            .ProjectRows(query.Where(x => x.RequestNo == request.RequestId), dbContext)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (row is null && Guid.TryParse(request.RequestId, out var requestGuid))
+        {
+            var requestId = new MaterialIssueRequestId(requestGuid);
+            row = await ListMaterialIssueRequestsQueryHandler
+                .ProjectRows(query.Where(x => x.Id == requestId), dbContext)
+                .SingleOrDefaultAsync(cancellationToken);
+        }
+
+        return row ?? throw new KnownException("未找到领料申请。");
     }
 }
 
