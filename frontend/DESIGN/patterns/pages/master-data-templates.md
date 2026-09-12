@@ -9,7 +9,7 @@
 > - 反馈规范：[`feedback-and-notifications.md`](../feedback-and-notifications.md)（toast 与内联，单一事实源）
 > - 列表基线：[`list-workbench.md`](./list-workbench.md)（FE-2 区块拼装）
 > - 创建/确认流：[`../flows/create-dialog.md`](../flows/create-dialog.md)、[`../flows/confirm-destroy.md`](../flows/confirm-destroy.md)
-> - 产品依据：[`docs/architecture/master-data-module-product-design.md`](../../../../docs/architecture/master-data-module-product-design.md) §6、[`master-data-dictionary-rules.md`](../../../../docs/architecture/master-data-dictionary-rules.md)
+> - 产品依据：[`docs/product/master-data/design.md`](../../../../docs/product/master-data/design.md) §6、[`数据字典 Reference`](../../../../docs/reference/master-data/dictionary.md)
 
 ---
 
