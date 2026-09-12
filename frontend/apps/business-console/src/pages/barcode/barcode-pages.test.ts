@@ -7,6 +7,10 @@ import TemplatesPage from './templates.vue'
 import PrintBatchesPage from './print-batches.vue'
 import ScansPage from './scans.vue'
 
+vi.mock('@/components/barcode/TemplateAssetRetirement.vue', () => ({
+  default: { template: '<span />' },
+}))
+
 const barcode = vi.hoisted(() => ({
   saveRule: vi.fn(),
   saveTemplate: vi.fn(),

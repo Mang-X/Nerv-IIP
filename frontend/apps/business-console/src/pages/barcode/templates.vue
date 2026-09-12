@@ -2,6 +2,7 @@
 import type { BusinessConsoleBarcodeTemplateItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import TemplateAssetRetirement from '@/components/barcode/TemplateAssetRetirement.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { useBarcodeTemplates } from '@/composables/useBusinessBarcode'
 import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
@@ -432,6 +433,18 @@ async function submitTemplate() {
         />
       </template>
       <template #cell-actions="{ row }">
+        <TemplateAssetRetirement
+          v-if="
+            row.templateId && row.templateFileId && filters.organizationId && filters.environmentId
+          "
+          :key="`${filters.organizationId}/${filters.environmentId}/${row.templateId}/${row.templateFileId}`"
+          :organization-id="filters.organizationId"
+          :environment-id="filters.environmentId"
+          :template-id="row.templateId"
+          :file-id="row.templateFileId"
+          :template-name="row.templateName ?? row.templateCode ?? ''"
+          :inactive="row.status === 'disabled'"
+        />
         <NvButton
           size="sm"
           variant="ghost"

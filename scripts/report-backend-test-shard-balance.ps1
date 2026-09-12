@@ -18,18 +18,16 @@
 # same manifest is scripts/verify-backend-test-shards.ps1, and it governs *policy* only — project
 # classification, exclusion registration, solution membership, workflow wiring. Timing never enters
 # it, because a measurement is observed rather than decided and cannot sensibly be "violated".
-# Rationale and the failure this split removes: scripts/lib/BackendTestShardTimings.ps1 and
-# docs/architecture/test-evidence-governance.md ("Timing data is a cache, not a governed asset").
+# 当前 timing/policy 边界见 docs/governance/testing/evidence.md；
+# 缓存与估值行为以 scripts/lib/BackendTestShardTimings.ps1 及对应测试为准。
 #
 # The only nonzero exit is a structurally unusable manifest, which is a defect in a governed file
 # rather than in a measurement. A cache that is missing, stale, corrupt, or valid JSON in the wrong
 # shape is a cache miss, handled inside the library and reported — never an exit code.
 #
-# Classification is `check` + `generate` (like `collect-test-evidence.ps1`) rather than plain
-# `check`: the default path refreshes the timing cache, and `docs/architecture/
-# script-automation-governance.md` reserves `check` for scripts that write no artefact. The written
-# artefact is the gitignored cache declared under Writes: above; `-NoRefresh` reduces this to a pure
-# read.
+# 分类为 check + generate，而非纯 check：默认路径会写入上方 Writes 声明的
+# gitignored timing cache。分类约束见 docs/governance/script-automation.md；
+# -NoRefresh 仅关闭本次刷新，不改变该脚本默认具有生成副作用的事实。
 
 [CmdletBinding()]
 param(
