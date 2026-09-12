@@ -193,6 +193,25 @@ describe('describeRequestError', () => {
     ).toContain('状态已变化')
   })
 
+  // #3272：网关熔断打开走 503 + `downstream-circuit-open`。
+  //
+  // ⚠️ 这一格**不是**在证明词表登记救了 PDA —— 它没有。`describeRequestError` 对
+  // `status >= 500` 让 `prefersServerMessage` 恒为 false，随后取
+  // `actionableMessage ?? serverMessage ?? fallback`，5xx 在 `actionableHttpMessage` 里
+  // **有**本地文案，所以 serverMessage 那一项根本轮不到。#3308 的裸码失效方向只存在于 400
+  // （那里 actionableHttpMessage 返回 undefined）。这一格钉住的就是这个差别：屏上是中文本地
+  // 指引、没有裸码，而这条结论与词表登记与否**无关**。
+  it('surfaces an open circuit (503) as the local Chinese 5xx guidance, never the raw code', () => {
+    const described = describeRequestError(
+      { status: 503, message: 'downstream-circuit-open' },
+      '原有兜底',
+    )
+
+    expect(described.message).toBe('服务暂时不可用，请稍后重试；写操作请先刷新核实结果')
+    expect(described.message).not.toContain('downstream')
+    expect(described.status).toBe(503)
+  })
+
   // #3287：400 在 actionableHttpMessage 里没有本地文案（只覆盖 401/403/404/409/422/5xx），
   // 回落链是 `actionableMessage ?? serverMessage ?? fallback` —— serverMessage 排在 fallback
   // **之前**且非空，所以未登记时屏上就是裸英文码。这一格断言的是「屏上没有裸码」。
