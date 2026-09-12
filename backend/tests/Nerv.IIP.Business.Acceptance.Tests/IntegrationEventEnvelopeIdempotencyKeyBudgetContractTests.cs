@@ -1,3 +1,4 @@
+using System.Globalization;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationInstanceAggregate;
@@ -10,7 +11,20 @@ using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
 using Nerv.IIP.Business.Wms.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalChainAggregate;
+using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalTemplateAggregate;
+using Nerv.IIP.Business.Approval.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
+using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ProductionVersionAggregate;
+using Nerv.IIP.Business.ProductEngineering.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
+using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
+using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Contracts.Approval;
 using Nerv.IIP.Contracts.IntegrationEvents;
+using Nerv.IIP.Contracts.Quality;
 
 using AppHubDbContext = Nerv.IIP.AppHub.Infrastructure.ApplicationDbContext;
 using DemandPlanningDbContext = Nerv.IIP.Business.DemandPlanning.Infrastructure.ApplicationDbContext;
@@ -24,6 +38,13 @@ using NotificationDbContext = Nerv.IIP.Notification.Infrastructure.ApplicationDb
 using QualityDbContext = Nerv.IIP.Business.Quality.Infrastructure.ApplicationDbContext;
 using SchedulingDbContext = Nerv.IIP.Business.Scheduling.Infrastructure.ApplicationDbContext;
 using WmsDbContext = Nerv.IIP.Business.Wms.Infrastructure.ApplicationDbContext;
+using ApprovalDbContext = Nerv.IIP.Business.Approval.Infrastructure.ApplicationDbContext;
+using ApprovalDomainEvents = Nerv.IIP.Business.Approval.Domain.DomainEvents;
+using MesDomainEvents = Nerv.IIP.Business.Mes.Domain.DomainEvents;
+using ProductEngineeringDbContext = Nerv.IIP.Business.ProductEngineering.Infrastructure.ApplicationDbContext;
+using ProductEngineeringDomainEvents = Nerv.IIP.Business.ProductEngineering.Domain.DomainEvents;
+using QualityDomainEvents = Nerv.IIP.Business.Quality.Domain.DomainEvents;
+using SchedulingDomainEvents = Nerv.IIP.Business.Scheduling.Domain.DomainEvents;
 using WmsDomainEvents = Nerv.IIP.Business.Wms.Domain.DomainEvents;
 
 namespace Nerv.IIP.Business.Acceptance.Tests;
@@ -84,9 +105,20 @@ namespace Nerv.IIP.Business.Acceptance.Tests;
 /// <para>而**不把 474 并进** <see cref="IntegrationEventIdempotencyKey.Budget"/> 的理由是另一件事：
 /// 并进来会把全平台预算压到 474，让今天长度落在 475..512、在自己链路上完全合法的键无谓改形，
 /// 反而破坏存量键逐字保持。**所以本类的「所有承载列」量词限定在平台 inbox 那一族。**</para></item>
-/// <item><b>不证明所有 producer 都已接入。</b>本 PR 接入的是
-/// <see cref="ConvertedProducerKeys"/> 那四个服务；其余 producer 仍是纯拼接，
-/// 不接入的不会让本类报红。**不新建源码文本扫描护栏**去看守这件事（#3176 / PR #3214 实证不收敛）。</item>
+/// <item><b>不证明所有 producer 都已接入。</b>本类登记的是
+/// <see cref="ConvertedProducerKeys"/> 那九个服务（#3368 四个 + #3370 五个）；
+/// #3370 第 1 问判定为 🟢 的六个 producer（DemandPlanning / Erp / MasterData /
+/// BarcodeLabel / Maintenance / Ops）**仍是纯拼接**，不接入的不会让本类报红。
+/// **不新建源码文本扫描护栏**去看守这件事（#3176 / PR #3214 实证不收敛）；
+/// 让 producer 枚举退化成编译期强制那条路已实证可行、按规模另票承接（#3382）。</item>
+/// <item><b>⚠️ 已登记边界：<c>ComposeServiceScoped</c> 在少于 3 段时抛，旧实现会产出短键。</b>
+/// <c>MinimumTailParts = 2</c> 要求「1 个 kind 段 + 至少 2 个尾段」，
+/// 而改动前各服务那份 <c>$"{prefix}{string.Join(':', parts)}"</c> 对任意段数都照产出。
+/// ⇒ 若将来有人用 &lt;3 段调用某个已委派服务的 <c>EventIds.Idempotency</c>，
+/// 拿到的是 <c>ArgumentException</c> 而不是一把短键。
+/// 这是 <b>#3368 引入的入口性质，不是 #3370 新增的</b>：今天全部调用点都 ≥4 段
+/// （#3370 已逐点核过，五个服务整程序集全绿即是未触发的读数），因此**本票不修**、只登记。
+/// 本类**不看守**这条——它是构造前置条件，不是长度性质。</item>
 /// </list>
 /// </remarks>
 public sealed class IntegrationEventEnvelopeIdempotencyKeyBudgetContractTests
@@ -220,6 +252,11 @@ public sealed class IntegrationEventEnvelopeIdempotencyKeyBudgetContractTests
         ["Wms.wcs-retry-exhausted"] = WmsRetryExhaustedKey,
         ["AppHub.connector-host-unreachable"] = AppHubConnectorHostUnreachableKey,
         ["Inventory.stock-movement-posted"] = InventoryStockMovementPostedKey,
+        ["Approval.step-resolved"] = ApprovalStepResolvedKey,
+        ["Mes.production-consumption"] = MesProductionConsumptionKey,
+        ["ProductEngineering.production-version-created"] = ProductEngineeringProductionVersionCreatedKey,
+        ["Quality.inspection-conditional-release"] = QualityInspectionConditionalReleaseKey,
+        ["Scheduling.schedule-plan-invalidated"] = SchedulingSchedulePlanInvalidatedKey,
     };
 
     private static ProducerKeyReading IndustrialTelemetryProductionCountKey()
@@ -454,6 +491,249 @@ public sealed class IntegrationEventEnvelopeIdempotencyKeyBudgetContractTests
             .UseNpgsql("Host=127.0.0.1;Database=nerv_iip_envelope_idempotency_budget_contract;Username=nerv;Password=nerv")
             .Options;
         return (DbContext)Activator.CreateInstance(typeof(TContext), options, NullMediator.Instance)!;
+    }
+
+
+    // ---- #3370：第 1 问判定为 🔴 的五个 producer，各取自己最长的那条信封键 ----
+    // 判定口径与上面四个完全相同：段长从**各自 EF 模型**饱和读出、跑**真 converter**、
+    // 与最窄承载列对撞。判定为 🟢 的 producer（DemandPlanning / Erp / MasterData /
+    // BarcodeLabel / Maintenance / Ops）**故意不登记**——它们没有接入，
+    // 登记进来会让 Plain_concatenation_of_the_same_worst_case_input_would_not_fit 这条读数失去意义。
+
+    private static ProducerKeyReading ApprovalStepResolvedKey()
+    {
+        using var model = ModelOnly<ApprovalDbContext>();
+        var chainWidest = Saturate(model, typeof(ApprovalChain), "OrganizationId", "EnvironmentId");
+        var stepWidest = Saturate(model, typeof(ApprovalStep), "ApproverType", "ApproverRef");
+        var decisionWidest = Saturate(
+            model,
+            typeof(ApprovalDecision),
+            "ActorType",
+            "ActorRef",
+            "OnBehalfOfActorType",
+            "OnBehalfOfActorRef",
+            "Decision");
+
+        var template = ApprovalTemplate.Create(
+            chainWidest[0],
+            chainWidest[1],
+            "tpl",
+            "doc",
+            1,
+            true,
+            [new ApprovalTemplateStepDefinition(1, "step", null, stepWidest[0], stepWidest[1], null)]);
+        var chain = ApprovalChain.Start(
+            template,
+            new ApprovalDocumentReference("svc", "doc", "doc-001", null),
+            "system:test");
+        var decision = chain.ResolveStep(
+            1,
+            decisionWidest[0],
+            decisionWidest[1],
+            ApprovalDecisions.Approve,
+            null,
+            decisionWidest[2],
+            decisionWidest[3]);
+        var step = chain.Steps.Single(x => x.StepNo == 1);
+
+        var integrationEvent = new ApprovalStepResolvedIntegrationEventConverter()
+            .Convert(new ApprovalDomainEvents.ApprovalStepResolvedDomainEvent(chain, step, decision));
+
+        const string prefix = "business-approval:step-resolved:";
+        return new ProducerKeyReading(
+            prefix,
+            integrationEvent.IdempotencyKey,
+            PlainLength(
+                prefix,
+                chainWidest[0],
+                chainWidest[1],
+                chain.Id.ToString(),
+                decision.RoundNo.ToString(CultureInfo.InvariantCulture),
+                decision.StepNo.ToString(CultureInfo.InvariantCulture),
+                decisionWidest[0],
+                decisionWidest[1],
+                decisionWidest[2],
+                decisionWidest[3]));
+    }
+
+    private static ProducerKeyReading MesProductionConsumptionKey()
+    {
+        using var model = ModelOnly<MesDbContext>();
+        var widest = Saturate(
+            model,
+            typeof(ProductionReportMaterialConsumption),
+            nameof(ProductionReportMaterialConsumption.OrganizationId),
+            nameof(ProductionReportMaterialConsumption.EnvironmentId),
+            nameof(ProductionReportMaterialConsumption.ReportNo),
+            nameof(ProductionReportMaterialConsumption.MaterialIssueRequestNo),
+            nameof(ProductionReportMaterialConsumption.MaterialId),
+            nameof(ProductionReportMaterialConsumption.MaterialLotId));
+
+        var consumption = ProductionReportMaterialConsumption.Record(
+            widest[0],
+            widest[1],
+            widest[2],
+            "WO-001",
+            "OP-001",
+            widest[4],
+            widest[5],
+            "ea",
+            1m,
+            widest[3],
+            "SITE-001",
+            "WH-01");
+
+        var integrationEvent = new ProductionMaterialConsumedIntegrationEventConverter()
+            .Convert(new MesDomainEvents.ProductionMaterialConsumedDomainEvent(consumption));
+
+        // Mes 那条 EventIds.Idempotency 会先滤掉空白段再交给 Compose，段数是动态的，
+        // 因此它用的是 Compose("mes:", ...) 而不是 ComposeServiceScoped——回落前缀只有服务段。
+        const string prefix = "mes:";
+        return new ProducerKeyReading(
+            prefix,
+            integrationEvent.IdempotencyKey,
+            PlainLength(prefix, "production-consumption", widest[0], widest[1], widest[2], widest[3], widest[4], widest[5]));
+    }
+
+    private static ProducerKeyReading ProductEngineeringProductionVersionCreatedKey()
+    {
+        using var model = ModelOnly<ProductEngineeringDbContext>();
+        var widest = Saturate(
+            model,
+            typeof(ProductionVersion),
+            nameof(ProductionVersion.OrganizationId),
+            nameof(ProductionVersion.EnvironmentId),
+            nameof(ProductionVersion.SkuCode),
+            nameof(ProductionVersion.MbomVersionId),
+            nameof(ProductionVersion.RoutingVersionId));
+
+        var version = ProductionVersion.Create(
+            widest[0],
+            widest[1],
+            widest[2],
+            widest[3],
+            widest[4],
+            new DateOnly(2026, 1, 1),
+            null,
+            null,
+            null,
+            1,
+            true,
+            EngineeringVersionStatus.Published,
+            EngineeringVersionStatus.Published);
+
+        var integrationEvent = new ProductionVersionCreatedIntegrationEventConverter(new StubProductEngineeringContextAccessor())
+            .Convert(new ProductEngineeringDomainEvents.ProductionVersionCreatedDomainEvent(version));
+
+        const string prefix = "product-engineering:production-version-created:";
+        return new ProducerKeyReading(
+            prefix,
+            integrationEvent.IdempotencyKey,
+            PlainLength(prefix, widest[0], widest[1], widest[2], widest[3], widest[4]));
+    }
+
+    private static ProducerKeyReading QualityInspectionConditionalReleaseKey()
+    {
+        using var model = ModelOnly<QualityDbContext>();
+        var widest = Saturate(
+            model,
+            typeof(InspectionRecord),
+            nameof(InspectionRecord.OrganizationId),
+            nameof(InspectionRecord.EnvironmentId),
+            nameof(InspectionRecord.SourceDocumentId));
+
+        // ⚠️ SourceService **不能**按 EF 列宽（100）饱和：域构造器按闭集 QualityInspectionSourceServices.All
+        // 校验，列宽在这条轴上不是有效上界（#3281 判据的反向一例——真上界取「列宽 ∧ 值域」的更小者）。
+        // 这一段从词表实时取最长成员，不手抄。
+        var widestSourceService = QualityInspectionSourceServices.All
+            .MaxBy(value => value.Length)!;
+
+        var record = InspectionRecord.Create(
+            widest[0],
+            widest[1],
+            null,
+            QualityInspectionSourceTypes.Receiving,
+            widestSourceService,
+            widest[2],
+            null,
+            "SKU-001",
+            1m,
+            null,
+            null,
+            [InspectionResultLineInput.Pass("CH-001", "ok", null, [])],
+            null,
+            []);
+
+        var integrationEvent = new InspectionConditionalReleasedIntegrationEventConverter(new StubQualityContextAccessor())
+            .Convert(new QualityDomainEvents.InspectionConditionalReleasedDomainEvent(record));
+
+        const string prefix = "quality:inspection-conditional-release:";
+        return new ProducerKeyReading(
+            prefix,
+            integrationEvent.IdempotencyKey,
+            PlainLength(prefix, widest[0], widest[1], widestSourceService, widest[2], record.Id.ToString()));
+    }
+
+    private static ProducerKeyReading SchedulingSchedulePlanInvalidatedKey()
+    {
+        using var model = ModelOnly<SchedulingDbContext>();
+        var widest = Saturate(
+            model,
+            typeof(SchedulePlanInvalidation),
+            nameof(SchedulePlanInvalidation.OrganizationId),
+            nameof(SchedulePlanInvalidation.EnvironmentId),
+            nameof(SchedulePlanInvalidation.PlanId),
+            nameof(SchedulePlanInvalidation.SourceEventId));
+
+        var occurredAtUtc = DateTimeOffset.Parse("2026-09-12T08:00:00Z", CultureInfo.InvariantCulture);
+        var invalidation = SchedulePlanInvalidation.Create(
+            widest[0],
+            widest[1],
+            widest[2],
+            widest[3],
+            "mes.WorkOrderReleased",
+            "business-mes",
+            "upstream-change",
+            null,
+            null,
+            null,
+            null,
+            occurredAtUtc,
+            occurredAtUtc);
+        var snapshot = new SchedulePlanInvalidatedSnapshot(
+            widest[2],
+            "problem-001",
+            1,
+            "v1",
+            "fingerprint",
+            SchedulePlanLifecycleStatus.Released,
+            []);
+
+        var integrationEvent = new SchedulePlanInvalidatedIntegrationEventConverter(
+                TimeProvider.System,
+                new StubSchedulingContextAccessor())
+            .Convert(new SchedulingDomainEvents.SchedulePlanInvalidatedDomainEvent(invalidation, snapshot));
+
+        const string prefix = "scheduling:schedule-plan-invalidated:";
+        return new ProducerKeyReading(
+            prefix,
+            integrationEvent.IdempotencyKey,
+            PlainLength(prefix, widest[0], widest[1], widest[2], widest[3]));
+    }
+
+    private sealed class StubProductEngineeringContextAccessor : IProductEngineeringIntegrationEventContextAccessor
+    {
+        public ProductEngineeringIntegrationEventContext GetContext() => new("corr-001", "cause-001", "system:test");
+    }
+
+    private sealed class StubQualityContextAccessor : IQualityIntegrationEventContextAccessor
+    {
+        public QualityIntegrationEventContext GetContext() => new("corr-001", "cause-001", "system:test");
+    }
+
+    private sealed class StubSchedulingContextAccessor : ISchedulingIntegrationEventContextAccessor
+    {
+        public SchedulingIntegrationEventContext GetContext() => new("corr-001", "cause-001", "system:test");
     }
 
     private sealed class StubInventoryContextAccessor : IInventoryIntegrationEventContextAccessor

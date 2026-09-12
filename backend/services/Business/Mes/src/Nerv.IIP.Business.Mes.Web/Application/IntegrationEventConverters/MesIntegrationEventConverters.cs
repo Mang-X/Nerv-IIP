@@ -1,13 +1,14 @@
+using System.Globalization;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
+using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Contracts.Quality;
 using NetCorePal.Extensions.DistributedTransactions;
-using System.Globalization;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 
@@ -922,7 +923,9 @@ public sealed class WorkOrderCancelledIntegrationEventConverter
 internal static class EventIds
 {
     public static string Idempotency(params string?[] parts) =>
-        $"mes:{string.Join(':', parts.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!.Trim()))}";
+        IntegrationEventIdempotencyKey.Compose(
+            "mes:",
+            parts.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!.Trim()).ToArray<string?>());
 
     public static void ThrowIfUnsupportedUom(string uomCode, string sourceDocumentId)
     {
