@@ -26,6 +26,14 @@ function Write-Fixture {
     [IO.File]::WriteAllText($path, $Content, [Text.UTF8Encoding]::new($false))
 }
 
+function Write-MarkdownEntries {
+    param([string] $Root)
+    foreach ($entry in @('docs/README.md', 'docs/adr/README.md', 'docs/architecture/README.md')) {
+        Write-Fixture $Root $entry '# 任意导航标题'
+    }
+    Write-Fixture $Root 'docs/README.md' '[记录](adr/README.md) [架构](architecture/README.md)'
+}
+
 function New-FixtureRoot {
     param([string] $Name)
     $root = Join-Path $temporaryRoot $Name
@@ -138,9 +146,7 @@ try {
     Assert-Gate '零记录不能成为绿色证据' $empty 1 @('[ADR_EMPTY]')
 
     $markdown = Join-Path $temporaryRoot 'markdown'
-    foreach ($entry in @('docs/README.md', 'docs/adr/README.md', 'docs/architecture/README.md')) {
-        Write-Fixture $markdown $entry '# 任意导航标题'
-    }
+    Write-MarkdownEntries $markdown
     Write-Fixture $markdown 'notes (一).md' '# 任意正文'
     Write-Fixture $markdown 'picture.svg' '<svg />'
     Write-Fixture $markdown 'README.md' @'
@@ -185,9 +191,7 @@ try {
     # 站点消费者拥有页面路由，不等于站点正文中的普通文件和图片均可免检。
     # 共用一份通用夹具；错误文件目标与合法路由共存，避免以误报冒充漏检修复。
     $siteMarkdown = Join-Path $temporaryRoot 'site-markdown'
-    foreach ($entry in @('docs/README.md', 'docs/adr/README.md', 'docs/architecture/README.md')) {
-        Write-Fixture $siteMarkdown $entry '# 当前入口'
-    }
+    Write-MarkdownEntries $siteMarkdown
     foreach ($sitePath in @('frontend/apps/docs', 'frontend/apps/design-system/docs')) {
         Write-Fixture $siteMarkdown "$sitePath/target.md" '# 文件目标'
         Write-Fixture $siteMarkdown "$sitePath/asset.svg" '<svg />'
@@ -231,6 +235,52 @@ try {
         '[DOC_LINK] frontend/apps/docs/README.md -> missing-entry-target',
         '[DOC_LINK] frontend/apps/design-system/docs/AGENTS.md -> missing-entry-target'
     ) -MarkdownRoot $siteMarkdown
+
+    $navigation = Join-Path $temporaryRoot 'navigation'
+    Write-MarkdownEntries $navigation
+    Write-Fixture $navigation 'docs/README.md' @'
+# 标题与链接标签不受约束
+
+[记录目录](./adr/)
+[架构][architecture]
+
+[architecture]: ./architecture/../architecture/README.md#free-heading
+'@
+    Assert-Gate '目录别名、规范化路径和引用式链接均可作为当前导航' $baseline 0 -MarkdownRoot $navigation
+    Write-Fixture $navigation 'docs/README.md' @'
+# 文件仍在，但没有当前导航
+
+`[记录](adr/README.md)`
+![不是导航](adr/README.md)
+<a data-href="architecture/README.md">不是 href</a>
+<!-- [架构](architecture/README.md) -->
+'@
+    Assert-Gate '代码、图片和 data 属性不能冒充两个当前入口的导航' $baseline 1 @(
+        '[DOC_ENTRY_LINK] docs/README.md -> docs/adr/README.md',
+        '[DOC_ENTRY_LINK] docs/README.md -> docs/architecture/README.md'
+    ) -MarkdownRoot $navigation
+    Write-Fixture $navigation 'docs/README.md' '[记录](adr/README.md)'
+    Assert-Gate '一个当前入口不能代替另一个入口' $baseline 1 @(
+        '[DOC_ENTRY_LINK] docs/README.md -> docs/architecture/README.md'
+    ) -MarkdownRoot $navigation
+
+    Write-MarkdownEntries $navigation
+    Write-Fixture $navigation 'target.md' '# 当前文件'
+    Write-Fixture $navigation 'image.svg' '<svg />'
+    Write-Fixture $navigation 'README.md' @'
+<a data-href="missing-metadata.md" title="href='missing-title.md' >" href="target.md">实际导航</a>
+<a href=target.md>无引号导航</a>
+<img data-src="missing-metadata.svg" title="src='missing-title.svg'" src="image.svg">
+'@
+    Assert-Gate 'HTML 只读取真实目标属性，不把 data 或 title 当作导航' $baseline 0 -MarkdownRoot $navigation
+    Write-Fixture $navigation 'README.md' @'
+<a data-href="target.md" href="actual-missing.md">不能以元数据掩盖断链</a>
+<img data-src="image.svg" src=actual-missing.svg>
+'@
+    Assert-Gate '真实 href 与无引号 src 断链不能被已有 data 目标掩盖' $baseline 1 @(
+        '[DOC_LINK] README.md -> actual-missing.md',
+        '[DOC_LINK] README.md -> actual-missing.svg'
+    ) -MarkdownRoot $navigation
 
     Assert-Gate '当前仓库 ADR、索引与活文档本地目标' (Join-Path $repoRoot 'docs/adr') 0 -MarkdownRoot $repoRoot
     Write-Host "文档结构回归通过（$checked 个批次）；不证明生产或业务链路已验证。"

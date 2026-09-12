@@ -1290,7 +1290,7 @@ else {
     # coverage is currently 163/163 with no gap, and keeping it that way is cheaper than governing
     # exceptions. If a future change genuinely needs a backend project outside the solution, the
     # exemption path is to edit this script (with its own contract test) and go through script
-    # governance; see docs/architecture/script-automation-governance.md.
+    # governance; see docs/governance/script-automation.md.
     $projectsMissingFromSolutionSet = Get-NervStringSet -Values $projectsMissingFromSolution -Comparer ([StringComparer]::Ordinal)
     $backendProjectsMissingFromSolution = @(
         $discoveredBackendProjects |
@@ -1309,7 +1309,7 @@ foreach ($shard in $fastShards) {
     # A shard exists to restore and build only its own dependency closure. Pointing it at
     # backend/Nerv.IIP.sln would keep the "shard" label while every job rebuilt the whole solution
     # again, which MAN-669 PR-B measured and rejected. The measurements, run ids and re-open
-    # conditions live in exactly one place — docs/architecture/backend-ci-build-strategy.md — and
+    # conditions live in exactly one place — docs/reports/audits/backend-ci-build-strategy-man-669.md — and
     # are deliberately not restated here: a restated number is a number that drifts the next time
     # MAN-664 re-measures. The rejection is explicit because the JSON parse below would otherwise
     # report the solution as a malformed solution filter and hide what actually happened.
@@ -1627,7 +1627,7 @@ function Invoke-BackendTestShardValidation {
 # scripts/check-script-governance.ps1 and scripts/verify-solution-configuration-membership.ps1 —
 # deliberately not `throw`, and callers must therefore check the exit code. In particular this file
 # must never share a `run:` block with another script; .github/workflows/ci.yml gives it its own
-# step. Why both rules hold is argued once, in docs/architecture/backend-ci-build-strategy.md
+# step. Why both rules hold is argued once, in docs/reports/audits/backend-ci-build-strategy-man-669.md
 # ("走查收尾" 第 3 条).
 if ($errors.Count -gt 0) {
     Write-Host 'Backend test shard governance failed:'
