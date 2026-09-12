@@ -12,8 +12,8 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 public sealed class MesInventoryLocationDeploymentConfigurationTests
 {
     private const string AppHostProgramPath = "infra/aspire/Nerv.IIP.AppHost/Program.cs";
-    private const string MasterDataDictionaryRulesPath =
-        "backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Seed/MasterDataDictionaryRules.cs";
+    private const string InventoryWorldHistoryPhase2SpecPath =
+        "backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Seed/WorldHistoryPhase2Spec.cs";
     private const string MesProgramPath =
         "backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Program.cs";
 
@@ -90,31 +90,62 @@ public sealed class MesInventoryLocationDeploymentConfigurationTests
         }
     }
 
+    /// <summary>
+    /// AppHost 的 Development 回落库位码必须是 Inventory 种子**真的会建出行来**的库位（#3137）。
+    ///
+    /// 承接说明：本断言取代了原来的「回落码 ⊆ MasterData <c>inventory-location</c> 码表」。原断言的
+    /// 前提是「码表登记过 ⇒ 库位存在」，而该前提是假的——MasterData 只写 <c>ReferenceDataCodes</c> 行，
+    /// 运行时没有任何路径按该码表创建 Inventory 的 <c>StockLocation</c>。于是 <c>loc-*</c> 四个码表条目
+    /// 全程满足原断言，却在库存里一个都不存在，线边收料对任何 SKU 恒定报
+    /// <c>MATERIAL_SOURCE_LOCATION_UNAVAILABLE</c>（#3137），原断言一条都不红。
+    /// 这里改钉真正的运行时前提：回落码必须出现在 Inventory <c>WorldHistoryPhase2Spec.StockLocations</c>
+    /// 里——那是唯一会写出 <c>StockLocation</c> 行的集合。
+    ///
+    /// 两侧都是 fail-closed 提取：范围标记找不到、库位常量名一个都抽不到、常量名解析不出字面量，
+    /// 任一情形都转红而不是放行。
+    /// </summary>
     [Fact]
-    public void AppHost_does_not_reintroduce_world_bible_location_literals()
-    {
-        Assert.DoesNotMatch(@"""WH-WB-[^""]*""", ReadRepositoryFile(AppHostProgramPath));
-    }
-
-    [Fact]
-    public void AppHost_product_location_fallbacks_are_present_in_master_data_dictionary()
+    public void AppHost_location_fallbacks_are_all_seeded_as_inventory_stock_locations()
     {
         var fallbackCodes = DemandLocationLiterals(ReadRepositoryFile(AppHostProgramPath))
             .Select(literal => literal.Value.Trim('"'))
-            .Where(value => value.StartsWith("loc-", StringComparison.Ordinal))
+            // SITE-* 是站点不是库位，库位行里不含它。
+            .Where(value => !value.StartsWith("SITE-", StringComparison.Ordinal))
             .ToHashSet(StringComparer.Ordinal);
-        var dictionaryCodes = Regex
-            .Matches(
-                ReadRepositoryFile(MasterDataDictionaryRulesPath),
-                @"new\(""inventory-location"",\s*""(?<code>[^""]+)""")
-            .Select(match => match.Groups["code"].Value)
-            .ToHashSet(StringComparer.Ordinal);
+        var seededCodes = InventorySeededStockLocationCodes();
 
         Assert.NotEmpty(fallbackCodes);
-        Assert.NotEmpty(dictionaryCodes);
+        Assert.NotEmpty(seededCodes);
         Assert.True(
-            fallbackCodes.IsSubsetOf(dictionaryCodes),
-            $"AppHost fallback 库位码未在 MasterData inventory-location 字典中：{string.Join(", ", fallbackCodes.Except(dictionaryCodes, StringComparer.Ordinal))}");
+            fallbackCodes.IsSubsetOf(seededCodes),
+            "AppHost Development 回落库位码在 Inventory 种子里不存在（线边收料/领料会恒定失效）：" +
+            string.Join(", ", fallbackCodes.Except(seededCodes, StringComparer.Ordinal).Order(StringComparer.Ordinal)));
+    }
+
+    /// <summary>
+    /// Inventory 种子会写出 <c>StockLocation</c> 行的全部库位码：先取 <c>StockLocations</c> 集合初始化器
+    /// 里引用的常量名，再把每个常量名解析成它的字面量。集合里改成裸字面量、或引用了一个不存在的常量，
+    /// 都会让这里抽空/解析失败而转红。
+    /// </summary>
+    private static HashSet<string> InventorySeededStockLocationCodes()
+    {
+        var spec = ReadRepositoryFile(InventoryWorldHistoryPhase2SpecPath);
+        var initializer = TextBetween(spec, "StockLocations =", "];");
+        var constantNames = Regex
+            .Matches(initializer, @"new\(\s*(?<name>[A-Za-z][A-Za-z0-9]*)\s*,")
+            .Select(match => match.Groups["name"].Value)
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.NotEmpty(constantNames);
+        var codes = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var name in constantNames)
+        {
+            var match = Regex.Match(spec, $@"const string {Regex.Escape(name)} = ""(?<value>[^""]+)"";");
+            Assert.True(match.Success, $"Inventory 种子库位常量 {name} 未解析出字面量。");
+            codes.Add(match.Groups["value"].Value);
+        }
+
+        return codes;
     }
 
     [Fact]

@@ -6,7 +6,9 @@ namespace Nerv.IIP.Business.Wms.Web.Tests;
 /// <summary>
 /// 领料默认库位的部署面契约（#2008）。服务读的配置键与 AppHost 下发的环境变量键过去只靠人眼对齐，
 /// 任一侧改名的唯一表现是「领料消息全部进死信」，没有任何测试转红；这里把两侧的键集合对起来。
-/// 同时钉住环境门控：主线产品库位只允许在 Development 回落；历史世界观库位若回归也必须被门禁捕获。
+/// 同时钉住环境门控：种子库位只允许在 Development 回落。回落值本身必须是 Inventory 真的建出来的
+/// 库位行，由 MES 侧 <c>AppHost_location_fallbacks_are_all_seeded_as_inventory_stock_locations</c>
+/// 统一扫整个 AppHost 文件（含本区）承担，这里不再复制一份（#3137）。
 /// </summary>
 public sealed class WmsMaterialIssueDeploymentConfigurationTests
 {
@@ -69,12 +71,6 @@ public sealed class WmsMaterialIssueDeploymentConfigurationTests
                 literal.IsGated,
                 $"受治理站点/库位字面量 {literal.Value} 未经 DeploymentWarehouseLocation(s) 门控下发。");
         }
-    }
-
-    [Fact]
-    public void AppHost_does_not_reintroduce_world_bible_location_literals()
-    {
-        Assert.DoesNotMatch(@"""WH-WB-[^""]*""", ReadRepositoryFile(AppHostProgramPath));
     }
 
     [Fact]
