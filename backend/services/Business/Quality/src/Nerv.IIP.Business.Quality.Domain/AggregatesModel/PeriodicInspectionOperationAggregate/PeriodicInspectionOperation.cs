@@ -166,18 +166,30 @@ public sealed class PeriodicInspectionOperation : Entity<PeriodicInspectionOpera
     }
 
     /// <summary>
-    /// 用重建的发布事实补投（#3000 回填）时，先让它与既有权威事实对齐。
+    /// 用重建的发布事实补投（#3000 回填）时，先让它与既有权威事实对齐——**只对齐工序号与工作中心两项**。
     ///
-    /// 回填载荷里的 SKU / 工序号 / 工作中心取自 MES **当前**的工单与工序行，而完工事实是 MES 当初
+    /// 回填载荷里的工序号与工作中心取自 MES **当前**的工序行，而完工事实是 MES 当初
     /// 直投过来的那一份；两者不一致时权威的是后者——重建来源本就无法权威知晓这些属性，
     /// 不一致只说明重建精度不足，**不构成业务事实冲突**。若照 <c>ApplyRelease</c> 的直投语义把它判成
     /// 冲突，整封补投事件会被判为无效业务事实进死信，该工单一行都补不上、继续 <c>not-synchronized</c>
-    /// 被门禁永久拒——正是本票要消除的形态。
+    /// 被门禁永久拒——正是 #3000 要消除的形态。
     ///
-    /// 因此这里以既有完工事实为准，并把被顶掉的属性交回调用方留痕（不静默）。
-    /// 已知可达的不一致只有 SKU 一项：MES 的 <c>OperationTask</c> 在未传 SKU 时把 <c>SkuCode</c>
-    /// 回落成工单号，该值随完工事件进入 <c>CompletionSkuCode</c>；工序号在构造后不可变，
-    /// 工作中心在工序完工后被 <c>ApplyScheduleAssignment</c> 拒绝改写。三项统一处理，不为其中两项另立分支。
+    /// 因此这两项以既有完工事实为准，并把被顶掉的属性交回调用方留痕（不静默）。
+    ///
+    /// <para><b>SKU 不在对齐范围内（#3286 按属性收缩）。</b>它当初被一起处理，是因为 MES 的
+    /// <c>OperationTask</c> 在未传 SKU 时把 <c>SkuCode</c> 回落成工单号，该值随完工事件进了
+    /// <c>CompletionSkuCode</c>；#3112 已删掉那条回落（<c>OperationTask</c> 构造现为
+    /// <c>SkuCode = DomainGuard.Required(skuCode, nameof(skuCode))</c>）。
+    /// <b>这不等于此后 SKU 必然一致</b>——<c>skuCode</c> 仍是 <c>string</c> 形参，把工单号当实参传进来
+    /// 照样编译、照样落库。消失的只是**回落**这一个来源；剩下的来源是**调用方传错**，而工序 SKU 按 MES 模型
+    /// 就是工单 SKU 的副本（工序级 SKU 在该模型里不可表达，<c>mes.operation_tasks.sku_code</c> 的列注释写明
+    /// copied from the MES work order），两侧取值构造后都不再改写，因此不一致只能是建工序那一刻抄错了。
+    /// 上游抄错不该由本投影层顶成权威值悄悄抹平——那会把一个上游缺陷变成看不见的既成事实。
+    /// SKU 不一致因此照 <c>ApplyRelease</c> 的冲突语义走，由调用方按**工序粒度**记成待处理留痕。</para>
+    ///
+    /// <para>工序号与工作中心留在这里，不是因为它们比 SKU 更可能不一致，而是因为本票没有对它们的判断：
+    /// 它们**当前**不可达（工序号构造后不可变，工作中心在工序完工后被 <c>ApplyScheduleAssignment</c> 拒绝改写），
+    /// 而不可达是当前实现的性质、不是恒真。连它们一起删等于替将来可达的那一天先做了决定。</para>
     /// </summary>
     public PeriodicInspectionReleaseFacts ResolveReconstructedReleaseFacts(
         string skuCode,
@@ -196,14 +208,6 @@ public sealed class PeriodicInspectionOperation : Entity<PeriodicInspectionOpera
         }
 
         var substitutions = new List<PeriodicInspectionReleaseFactSubstitution>();
-        if (CompletionSkuCode != reconstructedSkuCode)
-        {
-            substitutions.Add(new PeriodicInspectionReleaseFactSubstitution(
-                "sku-code",
-                reconstructedSkuCode,
-                CompletionSkuCode!));
-        }
-
         if (CompletionOperationSequence != operationSequence)
         {
             substitutions.Add(new PeriodicInspectionReleaseFactSubstitution(
@@ -221,7 +225,7 @@ public sealed class PeriodicInspectionOperation : Entity<PeriodicInspectionOpera
         }
 
         return new PeriodicInspectionReleaseFacts(
-            CompletionSkuCode!,
+            reconstructedSkuCode,
             CompletionOperationSequence!.Value,
             CompletionWorkCenterId!,
             substitutions);
