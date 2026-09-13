@@ -23,6 +23,11 @@ param(
     [Parameter(Mandatory)] [string] $DatabaseSuffix,
     [Parameter(Mandatory)] [string] $ResultsDirectory,
     [Parameter(Mandatory)] [string] $SummaryPath,
+    # Budget for each member's `dotnet test` discovery/execution invocation. Exceeding it fails as a
+    # timeout, not as a test failure; raise it for a local run whose CPU is shared with other
+    # worktrees (#2870 / #3295). Bounds are owned by Invoke-NativeCommandOutput; 1800 is a default,
+    # not a ceiling, so no ValidateRange is repeated here.
+    [int] $TimeoutSeconds = 1800,
     [string] $ManifestPath = (Join-Path $PSScriptRoot 'redis-cap-test-lane.json')
 )
 
@@ -175,7 +180,7 @@ try {
             [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_CAP_VERSION', $capVersion)
             [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_CAP_TOPIC_PREFIX', $redisNamespace)
             [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_DATABASE_LIFECYCLE', 'external')
-            $discovery = Invoke-DotNetOutput -Name "redis-cap-lane-$($member.id)-discovery" -WorkingDirectory $repoRoot -TimeoutSeconds 1800 -Arguments @('test', [string]$member.project, '--configuration', 'Release', '--list-tests', '--filter', [string]$member.filter)
+            $discovery = Invoke-DotNetOutput -Name "redis-cap-lane-$($member.id)-discovery" -WorkingDirectory $repoRoot -TimeoutSeconds $TimeoutSeconds -Arguments @('test', [string]$member.project, '--configuration', 'Release', '--list-tests', '--filter', [string]$member.filter)
             $expectedIdentitySet = [Collections.Generic.HashSet[string]]::new([string[]]@($member.expectedTestIdentities), [StringComparer]::Ordinal)
             # #3285：这一行**没有**过滤空白元素，`dotnet test` 的 stdout 以换行结尾 ⇒ 切行必然多出一个
             # 尾随空元素。它今天不炸，靠的是紧跟着这层按冻结身份集合 `Contains` 的过滤把空串滤掉，
@@ -187,7 +192,7 @@ try {
             $memberSummary.discovered = $discovered.Count
             if ($discovered.Count -ne @($member.expectedTestIdentities).Count) { throw "Redis/CAP lane member '$($member.id)' discovery expected $(@($member.expectedTestIdentities).Count) frozen tests but found $($discovered.Count)." }
             [IO.Directory]::CreateDirectory($memberResultsDirectory) | Out-Null
-            Invoke-DotNetOutput -Name "redis-cap-lane-$($member.id)-execution" -WorkingDirectory $repoRoot -TimeoutSeconds 1800 -Arguments @('test', [string]$member.project, '--configuration', 'Release', '--no-restore', '--filter', [string]$member.filter, '--logger', "trx;LogFilePrefix=redis-cap-$($member.id)", '--results-directory', $memberResultsDirectory) | Out-Null
+            Invoke-DotNetOutput -Name "redis-cap-lane-$($member.id)-execution" -WorkingDirectory $repoRoot -TimeoutSeconds $TimeoutSeconds -Arguments @('test', [string]$member.project, '--configuration', 'Release', '--no-restore', '--filter', [string]$member.filter, '--logger', "trx;LogFilePrefix=redis-cap-$($member.id)", '--results-directory', $memberResultsDirectory) | Out-Null
             $trxResult = Get-NervRedisCapTrxResult -ResultsDirectory $memberResultsDirectory -ExpectedTestIdentities @($member.expectedTestIdentities) -AllowInvalid
             $memberSummary.passed = $trxResult.passed
             $memberSummary.failed = $trxResult.failed

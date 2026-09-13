@@ -16,6 +16,11 @@
 
 [CmdletBinding()]
 param(
+    # Budget for each shard's `dotnet test` discovery/execution invocation. Exceeding it fails as a
+    # timeout, not as a test failure; raise it for a local run whose CPU is shared with other
+    # worktrees (#2870 / #3295). Bounds are owned by Invoke-NativeCommandOutput; 1800 is a default,
+    # not a ceiling, so no ValidateRange is repeated here.
+    [int] $TimeoutSeconds = 1800,
     [string] $ManifestPath = (Join-Path $PSScriptRoot 'backend-test-shards.json')
 )
 
@@ -66,7 +71,7 @@ foreach ($shard in $ownedShards) {
 
     foreach ($selector in $shardSelectors) {
         $verifiedSelectorCount++
-        $discovery = Invoke-DotNetOutput -Name "backend-real-postgres-discovery-$($shard.id)" -WorkingDirectory $repositoryRoot -TimeoutSeconds 1800 -Arguments @(
+        $discovery = Invoke-DotNetOutput -Name "backend-real-postgres-discovery-$($shard.id)" -WorkingDirectory $repositoryRoot -TimeoutSeconds $TimeoutSeconds -Arguments @(
             'test', [string] $shard.solutionFilter, '--configuration', 'Release', '--list-tests', '--filter', "FullyQualifiedName~$selector"
         )
         $isMethodSelector = $methodSelectors -contains $selector
@@ -77,7 +82,7 @@ foreach ($shard in $ownedShards) {
         $selectorSlug = ($selector -replace '[^A-Za-z0-9._-]', '_')
         $selectorDirectory = Join-Path $resultsRoot $selectorSlug
         New-Item -ItemType Directory -Force -Path $selectorDirectory | Out-Null
-        Invoke-DotNetOutput -Name "backend-real-postgres-execution-$($shard.id)" -WorkingDirectory $repositoryRoot -TimeoutSeconds 1800 -Arguments @(
+        Invoke-DotNetOutput -Name "backend-real-postgres-execution-$($shard.id)" -WorkingDirectory $repositoryRoot -TimeoutSeconds $TimeoutSeconds -Arguments @(
             'test', [string] $shard.solutionFilter, '--configuration', 'Release', '--filter', "FullyQualifiedName~$selector",
             '--logger', "trx;LogFilePrefix=$selectorSlug", '--results-directory', $selectorDirectory
         ) | Out-Null
