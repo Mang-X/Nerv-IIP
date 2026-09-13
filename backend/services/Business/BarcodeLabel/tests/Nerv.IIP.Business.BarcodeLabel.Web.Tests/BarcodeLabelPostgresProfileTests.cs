@@ -20,6 +20,7 @@ using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.BarcodeLabel.Domain;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelSerialCounterAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.ScanRecordAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.TraceabilityAggregate;
@@ -40,6 +41,697 @@ namespace Nerv.IIP.Business.BarcodeLabel.Web.Tests;
 public sealed partial class BarcodeLabelPostgresProfileTests
 {
     private const string PostgresConnectionStringEnvironmentVariable = "NERV_IIP_TEST_POSTGRES";
+
+    [RealPostgresFact]
+    public async Task Serial_allocator_reserves_non_overlapping_ordered_ranges_concurrently_on_postgres()
+    {
+        await ResetAndMigrateSchemaAsync();
+        await using var firstDb = CreatePostgresDbContext(LaneConnectionString);
+        await using var firstTransaction = await firstDb.Database.BeginTransactionAsync();
+        var firstValues = await new PostgresLabelSerialNumberAllocator(firstDb).AllocateAsync(
+            "org-serial", "env-serial", 20, 3, CancellationToken.None);
+        var holderProcessId = ((NpgsqlConnection)firstDb.Database.GetDbConnection()).ProcessID;
+
+        await using var secondDb = CreatePostgresDbContext(LaneConnectionString);
+        await using var secondTransaction = await secondDb.Database.BeginTransactionAsync();
+        var secondTask = new PostgresLabelSerialNumberAllocator(secondDb).AllocateAsync(
+            "org-serial", "env-serial", 20, 3, CancellationToken.None);
+        var waitEdge = await WaitForBlockedWaiterOrCompletionAsync(
+            holderProcessId,
+            secondTask,
+            "serial counter row update");
+        Assert.True(waitEdge.Waiters > 0);
+        Assert.False(waitEdge.CompetingTaskCompleted);
+
+        await firstTransaction.CommitAsync();
+        var secondValues = await secondTask;
+        await secondTransaction.CommitAsync();
+
+        Assert.Equal(firstValues.Order(StringComparer.Ordinal), firstValues);
+        Assert.Equal(secondValues.Order(StringComparer.Ordinal), secondValues);
+        Assert.Empty(firstValues.Intersect(secondValues, StringComparer.Ordinal));
+
+        string nextValue;
+        await using (var nextDb = CreatePostgresDbContext(LaneConnectionString))
+        await using (var nextTransaction = await nextDb.Database.BeginTransactionAsync())
+        {
+            nextValue = Assert.Single(await new PostgresLabelSerialNumberAllocator(nextDb).AllocateAsync(
+                "org-serial", "env-serial", 20, 1, CancellationToken.None));
+            await nextTransaction.CommitAsync();
+        }
+
+        Assert.NotEqual(firstValues[0], nextValue);
+        Assert.NotEqual(secondValues[0], nextValue);
+
+        string otherScopeValue;
+        await using (var otherScopeDb = CreatePostgresDbContext(LaneConnectionString))
+        await using (var otherScopeTransaction = await otherScopeDb.Database.BeginTransactionAsync())
+        {
+            otherScopeValue = Assert.Single(await new PostgresLabelSerialNumberAllocator(otherScopeDb).AllocateAsync(
+                "org-serial-other", "env-serial", 20, 1, CancellationToken.None));
+            await otherScopeTransaction.CommitAsync();
+        }
+
+        Assert.Equal(firstValues[0], otherScopeValue);
+        await using var verificationDb = CreatePostgresDbContext(LaneConnectionString);
+        var currentValues = await verificationDb.LabelSerialCounters
+            .Select(counter => counter.CurrentValue)
+            .Order()
+            .ToArrayAsync();
+        Assert.Equal([1L, 7L], currentValues);
+    }
+
+    [RealPostgresFact]
+    public async Task Concurrent_same_intent_creates_one_batch_and_allocates_once_on_postgres()
+    {
+        await ResetAndMigrateSchemaAsync();
+        var assetPort = new BlockingTemplateAssetPort();
+        await using var provider = CreateRetirementCommandProvider(templateAssetPort: assetPort);
+        BarcodeRuleId ruleId;
+        LabelTemplateId templateId;
+        await using (var setupScope = provider.CreateAsyncScope())
+        {
+            var setupDb = setupScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var rule = BarcodeRule.Create(
+                "org-intent", "env-intent", "INTENT", "code128", "I", 40, "none", ["work-order"], "active");
+            var template = LabelTemplate.Create(
+                "org-intent", "env-intent", "TPL-INTENT", "Intent template", "file-intent",
+                """{"version":1,"variables":[{"name":"skuCode","type":"string","required":true,"maxLength":80}]}""", "active");
+            setupDb.AddRange(rule, template);
+            await setupDb.SaveChangesAsync();
+            ruleId = rule.Id;
+            templateId = template.Id;
+        }
+
+        var command = new CreateLabelPrintBatchCommand(
+            "org-intent", "env-intent", ruleId, templateId, "work-order", "WO-INTENT",
+            "same-intent", """{"skuCode":"SKU-FG-1000"}""", 2);
+        using var callerCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        await using var firstScope = provider.CreateAsyncScope();
+        var firstDb = firstScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var firstTask = firstScope.ServiceProvider.GetRequiredService<ISender>()
+            .Send(command, callerCancellation.Token);
+        await assetPort.WaitUntilEnteredAsync(callerCancellation.Token);
+        var holderProcessId = ((NpgsqlConnection)firstDb.Database.GetDbConnection()).ProcessID;
+
+        await using var secondScope = provider.CreateAsyncScope();
+        var secondTask = secondScope.ServiceProvider.GetRequiredService<ISender>()
+            .Send(command, callerCancellation.Token);
+        try
+        {
+            await WaitForAdvisoryWaitersAsync(holderProcessId, 1, "same print intent reservation fence");
+            Assert.False(secondTask.IsCompleted);
+        }
+        finally
+        {
+            assetPort.Release();
+        }
+
+        var batchIds = await TestTimeout.RunAsync(
+            "same print intent commands finish after the first asset read is released",
+            async cancellationToken => await Task.WhenAll(firstTask, secondTask).WaitAsync(cancellationToken),
+            TimeSpan.FromSeconds(15),
+            callerCancellation.Token,
+            sensitiveValues: [LaneConnectionString]);
+        Assert.Equal(batchIds[0], batchIds[1]);
+        Assert.Equal(1, assetPort.RequestCount);
+
+        await using var verificationDb = CreatePostgresDbContext(LaneConnectionString);
+        Assert.Equal(1, await verificationDb.LabelPrintBatches.CountAsync());
+        Assert.Equal(2, await verificationDb.LabelPrintItems.CountAsync());
+        Assert.Equal(2, await verificationDb.LabelSerialCounters.Select(counter => counter.CurrentValue).SingleAsync());
+    }
+
+    [RealPostgresFact]
+    public async Task Create_handler_preserves_short_rule_capacity_after_wide_partition_advances_on_postgres()
+    {
+        await ResetAndMigrateSchemaAsync();
+        await using (var wideDb = CreatePostgresDbContext(LaneConnectionString))
+        await using (var wideTransaction = await wideDb.Database.BeginTransactionAsync())
+        {
+            _ = await new PostgresLabelSerialNumberAllocator(wideDb).AllocateAsync(
+                "org-short-serial", "env-short-serial", 20, 3844, CancellationToken.None);
+            await wideTransaction.CommitAsync();
+        }
+
+        await using var provider = CreateRetirementCommandProvider();
+        BarcodeRuleId ruleId;
+        LabelTemplateId templateId;
+        await using (var setupScope = provider.CreateAsyncScope())
+        {
+            var setupDb = setupScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var rule = BarcodeRule.Create(
+                "org-short-serial", "env-short-serial", "FG-SHORT", "code128", "FG", 4, "none", ["wms.inbound"], "active");
+            var template = LabelTemplate.Create(
+                "org-short-serial",
+                "env-short-serial",
+                "TPL-SHORT",
+                "Short serial template",
+                "file-template-short",
+                """{"version":1,"variables":[{"name":"skuCode","type":"string","required":true,"maxLength":80}]}""",
+                "active");
+            setupDb.AddRange(rule, template);
+            await setupDb.SaveChangesAsync();
+            ruleId = rule.Id;
+            templateId = template.Id;
+        }
+
+        LabelPrintBatchId batchId;
+        await using (var commandScope = provider.CreateAsyncScope())
+        {
+            batchId = await commandScope.ServiceProvider.GetRequiredService<ISender>().Send(
+                new CreateLabelPrintBatchCommand(
+                    "org-short-serial",
+                    "env-short-serial",
+                    ruleId,
+                    templateId,
+                    "wms.inbound",
+                    "ASN-SHORT",
+                    "short-serial-intent",
+                    """{"skuCode":"SKU-FG-1000"}""",
+                    1));
+        }
+
+        await using var verificationDb = CreatePostgresDbContext(LaneConnectionString);
+        var batch = await verificationDb.LabelPrintBatches
+            .Include(candidate => candidate.Items)
+            .SingleAsync(candidate => candidate.Id == batchId);
+        var item = Assert.Single(batch.Items);
+        Assert.Equal("01", item.SerialNumber);
+        Assert.Equal(4, item.LabelValue.Length);
+        Assert.Equal($"FG{item.SerialNumber}", item.LabelValue);
+        var counterValues = await verificationDb.LabelSerialCounters
+            .Select(counter => counter.CurrentValue)
+            .Order()
+            .ToArrayAsync();
+        Assert.Equal([1L, 3844L], counterValues);
+    }
+
+    [RealPostgresFact]
+    public async Task Create_handlers_preserve_org_environment_scope_and_gs1_serial_authority_on_postgres()
+    {
+        await ResetAndMigrateSchemaAsync();
+        await using var provider = CreateRetirementCommandProvider();
+        var definitions = new[]
+        {
+            new { Organization = "org-a", Environment = "env-a", Code = "PLAIN-A", Type = "code128", Prefix = "A", Length = 40, Gs1PrefixLength = (int?)null },
+            new { Organization = "org-b", Environment = "env-a", Code = "PLAIN-B", Type = "code128", Prefix = "B", Length = 40, Gs1PrefixLength = (int?)null },
+            new { Organization = "org-a", Environment = "env-b", Code = "GS1-C", Type = "gs1-128", Prefix = "0950600013435", Length = 80, Gs1PrefixLength = (int?)7 },
+        };
+        var identities = new List<(string Organization, string Environment, BarcodeRuleId RuleId, LabelTemplateId TemplateId)>();
+        await using (var setupScope = provider.CreateAsyncScope())
+        {
+            var setupDb = setupScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            foreach (var definition in definitions)
+            {
+                var rule = BarcodeRule.Create(
+                    definition.Organization,
+                    definition.Environment,
+                    definition.Code,
+                    definition.Type,
+                    definition.Prefix,
+                    definition.Length,
+                    definition.Type.StartsWith("gs1-", StringComparison.Ordinal) ? "gs1-mod10" : "none",
+                    ["work-order"],
+                    "active",
+                    definition.Gs1PrefixLength);
+                var template = LabelTemplate.Create(
+                    definition.Organization,
+                    definition.Environment,
+                    $"TPL-{definition.Code}",
+                    $"{definition.Code} template",
+                    $"file-{definition.Code.ToLowerInvariant()}",
+                    definition.Type.StartsWith("gs1-", StringComparison.Ordinal)
+                        ? """{"version":1,"variables":[{"name":"skuCode","type":"string","required":true,"maxLength":80},{"name":"lotNo","type":"string","required":true,"maxLength":100},{"name":"serialPrefix","type":"string","required":false,"maxLength":100}]}"""
+                        : """{"version":1,"variables":[{"name":"skuCode","type":"string","required":true,"maxLength":80}]}""",
+                    "active");
+                setupDb.AddRange(rule, template);
+                identities.Add((definition.Organization, definition.Environment, rule.Id, template.Id));
+            }
+
+            await setupDb.SaveChangesAsync();
+        }
+
+        var batchIds = new List<LabelPrintBatchId>();
+        foreach (var identity in identities)
+        {
+            await using var commandScope = provider.CreateAsyncScope();
+            var labelValuesJson = identity.RuleId == identities[2].RuleId
+                ? """{"skuCode":"SKU-FG-1000","lotNo":"LOT-A","serialPrefix":"CALLER-CONTROLLED-"}"""
+                : """{"skuCode":"SKU-FG-1000"}""";
+            batchIds.Add(await commandScope.ServiceProvider.GetRequiredService<ISender>().Send(
+                new CreateLabelPrintBatchCommand(
+                    identity.Organization,
+                    identity.Environment,
+                    identity.RuleId,
+                    identity.TemplateId,
+                    "work-order",
+                    $"WO-{identity.Organization}-{identity.Environment}",
+                    $"intent-{identity.Organization}-{identity.Environment}",
+                    labelValuesJson,
+                    1)));
+        }
+
+        await using var verificationDb = CreatePostgresDbContext(LaneConnectionString);
+        var counters = await verificationDb.LabelSerialCounters
+            .OrderBy(counter => counter.OrganizationId)
+            .ThenBy(counter => counter.EnvironmentId)
+            .Select(counter => new { counter.OrganizationId, counter.EnvironmentId, counter.CurrentValue })
+            .ToArrayAsync();
+        Assert.Equal(3, counters.Length);
+        Assert.All(identities, identity => Assert.Contains(
+            counters,
+            counter => counter.OrganizationId == identity.Organization
+                && counter.EnvironmentId == identity.Environment
+                && counter.CurrentValue == 1));
+
+        var gs1BatchId = batchIds[2];
+        var gs1Item = await verificationDb.LabelPrintItems
+            .SingleAsync(item => item.LabelPrintBatchId == gs1BatchId);
+        Assert.Equal(20, gs1Item.SerialNumber!.Length);
+        Assert.Equal("09506000134352", gs1Item.Gtin);
+        Assert.Equal("LOT-A", gs1Item.LotNo);
+        Assert.Contains($"(21){gs1Item.SerialNumber}", gs1Item.LabelValue, StringComparison.Ordinal);
+        Assert.DoesNotContain("CALLER-CONTROLLED-", gs1Item.LabelValue, StringComparison.Ordinal);
+    }
+
+    [RealPostgresFact]
+    public async Task Create_handlers_allocate_unique_gs1_serials_across_rules_in_same_scope_on_postgres()
+    {
+        await ResetAndMigrateSchemaAsync();
+        await using var provider = CreateRetirementCommandProvider();
+        BarcodeRuleId firstRuleId;
+        BarcodeRuleId secondRuleId;
+        LabelTemplateId firstTemplateId;
+        LabelTemplateId secondTemplateId;
+        await using (var setupScope = provider.CreateAsyncScope())
+        {
+            var setupDb = setupScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var firstRule = BarcodeRule.Create(
+                "org-gs1-rules", "env-gs1-rules", "GS1-A", "gs1-128", "0950600013435", 80,
+                "gs1-mod10", ["work-order"], "active", 7);
+            var secondRule = BarcodeRule.Create(
+                "org-gs1-rules", "env-gs1-rules", "GS1-B", "gs1-128", "0950600013435", 80,
+                "gs1-mod10", ["work-order"], "active", 7);
+            var variableSchema =
+                """{"version":1,"variables":[{"name":"skuCode","type":"string","required":true,"maxLength":80},{"name":"lotNo","type":"string","required":true,"maxLength":100}]}""";
+            var firstTemplate = LabelTemplate.Create(
+                "org-gs1-rules", "env-gs1-rules", "TPL-GS1-A", "GS1 A template", "file-gs1-a",
+                variableSchema, "active");
+            var secondTemplate = LabelTemplate.Create(
+                "org-gs1-rules", "env-gs1-rules", "TPL-GS1-B", "GS1 B template", "file-gs1-b",
+                variableSchema, "active");
+            setupDb.AddRange(firstRule, secondRule, firstTemplate, secondTemplate);
+            await setupDb.SaveChangesAsync();
+            firstRuleId = firstRule.Id;
+            secondRuleId = secondRule.Id;
+            firstTemplateId = firstTemplate.Id;
+            secondTemplateId = secondTemplate.Id;
+        }
+
+        LabelPrintBatchId firstBatchId;
+        await using (var firstScope = provider.CreateAsyncScope())
+        {
+            firstBatchId = await firstScope.ServiceProvider.GetRequiredService<ISender>().Send(
+                new CreateLabelPrintBatchCommand(
+                    "org-gs1-rules", "env-gs1-rules", firstRuleId, firstTemplateId,
+                    "work-order", "WO-GS1-A", "intent-gs1-a",
+                    """{"skuCode":"SKU-FG-1000","lotNo":"LOT-A"}""", 1));
+        }
+
+        LabelPrintBatchId secondBatchId;
+        await using (var secondScope = provider.CreateAsyncScope())
+        {
+            secondBatchId = await secondScope.ServiceProvider.GetRequiredService<ISender>().Send(
+                new CreateLabelPrintBatchCommand(
+                    "org-gs1-rules", "env-gs1-rules", secondRuleId, secondTemplateId,
+                    "work-order", "WO-GS1-B", "intent-gs1-b",
+                    """{"skuCode":"SKU-FG-1000","lotNo":"LOT-B"}""", 1));
+        }
+
+        await using var verificationDb = CreatePostgresDbContext(LaneConnectionString);
+        var items = await verificationDb.LabelPrintItems
+            .Where(item => item.LabelPrintBatchId == firstBatchId || item.LabelPrintBatchId == secondBatchId)
+            .OrderBy(item => item.CreatedAtUtc)
+            .ToArrayAsync();
+        Assert.Equal(2, items.Length);
+        Assert.NotEqual(items[0].SerialNumber, items[1].SerialNumber);
+        Assert.NotEqual(items[0].EpcUri, items[1].EpcUri);
+        Assert.Equal(2, await verificationDb.LabelSerialCounters.Select(counter => counter.CurrentValue).SingleAsync());
+    }
+
+    [RealPostgresFact]
+    public async Task Advisory_lock_domains_do_not_deadlock_crossed_reservation_and_template_keys_on_postgres()
+    {
+        await ResetAndMigrateSchemaAsync();
+        await using var firstDb = CreatePostgresDbContext(LaneConnectionString);
+        await using var firstTransaction = await firstDb.Database.BeginTransactionAsync();
+        await using var secondDb = CreatePostgresDbContext(LaneConnectionString);
+        await using var secondTransaction = await secondDb.Database.BeginTransactionAsync();
+
+        await new PostgresLabelPrintBatchReservationFence(firstDb).AcquireAsync(
+            "org-lock", "env-lock", "A", CancellationToken.None);
+        await new PostgresLabelPrintBatchReservationFence(secondDb).AcquireAsync(
+            "org-lock", "env-lock", "B", CancellationToken.None);
+
+        var firstTemplateTask = new PostgresTemplateAssetRetirementFence(firstDb).AcquireAsync(
+            "org-lock", "env-lock", "B", CancellationToken.None);
+        var secondTemplateTask = new PostgresTemplateAssetRetirementFence(secondDb).AcquireAsync(
+            "org-lock", "env-lock", "A", CancellationToken.None);
+
+        await TestTimeout.RunAsync(
+            "crossed reservation and template lock domains finish without deadlock",
+            async cancellationToken => await Task.WhenAll(firstTemplateTask, secondTemplateTask).WaitAsync(cancellationToken),
+            TimeSpan.FromSeconds(5),
+            sensitiveValues: [LaneConnectionString]);
+    }
+
+    [RealPostgresFact]
+    public async Task Print_item_serial_is_unique_inside_organization_and_environment_on_postgres()
+    {
+        await ResetAndMigrateSchemaAsync();
+        await using var dbContext = CreatePostgresDbContext(LaneConnectionString);
+        var rule = BarcodeRule.Create(
+            "org-serial", "env-serial", "RULE-A", "code128", "A", 40, "none", ["work-order"], "active");
+        var first = AllocatedBatch(rule, "intent-a", "WO-A", "00000000001");
+        dbContext.AddRange(rule, first);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        dbContext.Add(AllocatedBatch(rule, "intent-b", "WO-B", "00000000001"));
+
+        var failure = await Assert.ThrowsAsync<DbUpdateException>(() => dbContext.SaveChangesAsync());
+        var postgresFailure = Assert.IsType<PostgresException>(failure.InnerException);
+        Assert.Equal("UX_label_print_items_serial_number", postgresFailure.ConstraintName);
+
+        dbContext.ChangeTracker.Clear();
+        var secondRule = BarcodeRule.Create(
+            "org-serial", "env-serial", "RULE-B", "code128", "B", 40, "none", ["work-order"], "active");
+        dbContext.AddRange(secondRule, AllocatedBatch(secondRule, "intent-c", "WO-C", "00000000001"));
+        failure = await Assert.ThrowsAsync<DbUpdateException>(() => dbContext.SaveChangesAsync());
+        postgresFailure = Assert.IsType<PostgresException>(failure.InnerException);
+        Assert.Equal("UX_label_print_items_serial_number", postgresFailure.ConstraintName);
+    }
+
+    [RealPostgresFact]
+    public async Task Migration_and_formatter_share_base62_case_order_for_legacy_gs1_serials_on_postgres()
+    {
+        await ResetBarcodeLabelSchemaAsync();
+        await using (var setupDb = CreatePostgresDbContext(LaneConnectionString))
+        {
+            await setupDb.GetService<IMigrator>().MigrateAsync("20260912121435_AddTemplateAssetRetirementRetention");
+            await setupDb.Database.ExecuteSqlRawAsync("""
+                INSERT INTO barcode.label_print_batches (
+                    id, organization_id, environment_id, barcode_rule_id, label_template_id,
+                    source_document_type, source_document_id, idempotency_key, label_values_json,
+                    requested_quantity, status, created_at_utc)
+                VALUES
+                    ('00000000-0000-0000-0000-000000000311', 'org-case-order', 'env-case-order',
+                     '00000000-0000-0000-0000-000000000321', '00000000-0000-0000-0000-000000000331',
+                     'legacy', 'LEGACY-UPPER-1', 'legacy-upper-1', '{{}}', 1, 'pending', '2026-09-01T00:00:00Z'),
+                    ('00000000-0000-0000-0000-000000000312', 'org-case-order', 'env-case-order',
+                     '00000000-0000-0000-0000-000000000322', '00000000-0000-0000-0000-000000000332',
+                     'legacy', 'LEGACY-UPPER-2', 'legacy-upper-2', '{{}}', 1, 'pending', '2026-09-01T00:00:01Z'),
+                    ('00000000-0000-0000-0000-000000000313', 'org-case-order', 'env-case-order',
+                     '00000000-0000-0000-0000-000000000323', '00000000-0000-0000-0000-000000000333',
+                     'legacy', 'LEGACY-LOWER-1', 'legacy-lower-1', '{{}}', 1, 'pending', '2026-09-01T00:00:02Z');
+
+                INSERT INTO barcode.label_print_items (
+                    id, label_print_batch_id, sequence_no, label_value, serial_number, status, created_at_utc)
+                VALUES
+                    ('00000000-0000-0000-0000-000000000341', '00000000-0000-0000-0000-000000000311',
+                     1, 'LEGACY-UPPER-1', '000000000000000A0001', 'created', '2026-09-01T00:00:00Z'),
+                    ('00000000-0000-0000-0000-000000000342', '00000000-0000-0000-0000-000000000312',
+                     1, 'LEGACY-UPPER-2', '000000000000000A0002', 'created', '2026-09-01T00:00:01Z'),
+                    ('00000000-0000-0000-0000-000000000343', '00000000-0000-0000-0000-000000000313',
+                     1, 'LEGACY-LOWER-1', '000000000000000a0001', 'created', '2026-09-01T00:00:02Z');
+                """);
+        }
+
+        await using (var upgradeDb = CreatePostgresDbContext(LaneConnectionString))
+        {
+            await upgradeDb.Database.MigrateAsync();
+        }
+
+        await using var provider = CreateRetirementCommandProvider();
+        BarcodeRuleId ruleId;
+        LabelTemplateId templateId;
+        await using (var setupScope = provider.CreateAsyncScope())
+        {
+            var setupDb = setupScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var rule = BarcodeRule.Create(
+                "org-case-order", "env-case-order", "GS1-CASE", "gs1-128", "0950600013435", 80,
+                "gs1-mod10", ["legacy"], "active", 7);
+            var template = LabelTemplate.Create(
+                "org-case-order", "env-case-order", "TPL-GS1-CASE", "GS1 case-order template", "file-gs1-case",
+                """{"version":1,"variables":[{"name":"skuCode","type":"string","required":true,"maxLength":80},{"name":"lotNo","type":"string","required":true,"maxLength":100}]}""",
+                "active");
+            setupDb.AddRange(rule, template);
+            await setupDb.SaveChangesAsync();
+            ruleId = rule.Id;
+            templateId = template.Id;
+        }
+
+        LabelPrintBatchId batchId;
+        await using (var commandScope = provider.CreateAsyncScope())
+        {
+            batchId = await commandScope.ServiceProvider.GetRequiredService<ISender>().Send(
+                new CreateLabelPrintBatchCommand(
+                    "org-case-order", "env-case-order", ruleId, templateId, "legacy", "LEGACY-NEXT",
+                    "legacy-next", """{"skuCode":"SKU-GS1-CASE","lotNo":"LOT-CASE"}""", 1));
+        }
+
+        await using var verificationDb = CreatePostgresDbContext(LaneConnectionString);
+        var created = await verificationDb.LabelPrintItems
+            .SingleAsync(item => item.LabelPrintBatchId == batchId);
+        Assert.Equal("000000000000000a0002", created.SerialNumber);
+        Assert.Contains("(21)000000000000000a0002", created.LabelValue, StringComparison.Ordinal);
+    }
+
+    [RealPostgresFact]
+    public async Task Migration_excludes_legacy_gs1_serial_above_current_int64_generation_space_on_postgres()
+    {
+        await ResetBarcodeLabelSchemaAsync();
+        await using (var setupDb = CreatePostgresDbContext(LaneConnectionString))
+        {
+            await setupDb.GetService<IMigrator>().MigrateAsync("20260912121435_AddTemplateAssetRetirementRetention");
+            await setupDb.Database.ExecuteSqlRawAsync("""
+                INSERT INTO barcode.label_print_batches (
+                    id, organization_id, environment_id, barcode_rule_id, label_template_id,
+                    source_document_type, source_document_id, idempotency_key, label_values_json,
+                    requested_quantity, status, created_at_utc)
+                VALUES
+                    ('00000000-0000-0000-0000-000000000351', 'org-int64-bound', 'env-int64-bound',
+                     '00000000-0000-0000-0000-000000000352', '00000000-0000-0000-0000-000000000353',
+                     'legacy', 'LEGACY-INT64-BOUND', 'legacy-int64-bound', '{{}}', 1, 'pending', '2026-09-01T00:00:00Z');
+
+                INSERT INTO barcode.label_print_items (
+                    id, label_print_batch_id, sequence_no, label_value, serial_number, status, created_at_utc)
+                VALUES
+                    ('00000000-0000-0000-0000-000000000354', '00000000-0000-0000-0000-000000000351',
+                     1, 'LEGACY-INT64-BOUND', 'zzzzzzzzzzzzzzzz0001', 'created', '2026-09-01T00:00:00Z');
+                """);
+        }
+
+        await using (var upgradeDb = CreatePostgresDbContext(LaneConnectionString))
+        {
+            await upgradeDb.Database.MigrateAsync();
+        }
+
+        await using var verificationDb = CreatePostgresDbContext(LaneConnectionString);
+        Assert.Equal("zzzzzzzzzzzzzzzz0001", await verificationDb.LabelPrintItems
+            .Select(item => item.SerialNumber)
+            .SingleAsync());
+        Assert.False(await verificationDb.LabelSerialCounters.AnyAsync(
+            counter => counter.OrganizationId == "org-int64-bound"
+                && counter.EnvironmentId == "env-int64-bound"));
+    }
+
+    [RealPostgresFact]
+    public async Task Migration_preserves_unambiguous_historical_serials_and_nulls_on_postgres()
+    {
+        await ResetBarcodeLabelSchemaAsync();
+        await using (var setupDb = CreatePostgresDbContext(LaneConnectionString))
+        {
+            await setupDb.GetService<IMigrator>().MigrateAsync("20260912121435_AddTemplateAssetRetirementRetention");
+            await setupDb.Database.ExecuteSqlRawAsync("""
+                INSERT INTO barcode.label_print_batches (
+                    id, organization_id, environment_id, barcode_rule_id, label_template_id,
+                    source_document_type, source_document_id, idempotency_key, label_values_json,
+                    requested_quantity, status, created_at_utc)
+                VALUES
+                    ('00000000-0000-0000-0000-000000000111', 'org-history', 'env-history',
+                     '00000000-0000-0000-0000-000000000121', '00000000-0000-0000-0000-000000000131',
+                     'legacy', 'LEGACY-A', 'legacy-a', '{{}}', 1, 'pending', '2026-09-01T00:00:00Z'),
+                    ('00000000-0000-0000-0000-000000000112', 'org-history', 'env-history',
+                     '00000000-0000-0000-0000-000000000122', '00000000-0000-0000-0000-000000000132',
+                     'legacy', 'LEGACY-B', 'legacy-b', '{{}}', 1, 'pending', '2026-09-01T00:00:01Z'),
+                    ('00000000-0000-0000-0000-000000000113', 'org-history', 'env-history',
+                     '00000000-0000-0000-0000-000000000123', '00000000-0000-0000-0000-000000000133',
+                     'legacy', 'LEGACY-C', 'legacy-c-non-base62', '{{}}', 1, 'pending', '2026-09-01T00:00:02Z');
+
+                INSERT INTO barcode.label_print_items (
+                    id, label_print_batch_id, sequence_no, label_value, serial_number, status, created_at_utc)
+                VALUES
+                    ('00000000-0000-0000-0000-000000000141', '00000000-0000-0000-0000-000000000111',
+                     1, 'LEGACY-SERIAL', '0z', 'created', '2026-09-01T00:00:00Z'),
+                    ('00000000-0000-0000-0000-000000000142', '00000000-0000-0000-0000-000000000112',
+                     1, 'LEGACY-PLAIN', NULL, 'created', '2026-09-01T00:00:01Z'),
+                    ('00000000-0000-0000-0000-000000000143', '00000000-0000-0000-0000-000000000113',
+                     1, 'LEGACY-NON-BASE62', 'LEGACY-SERIAL', 'created', '2026-09-01T00:00:02Z');
+                """);
+        }
+
+        await using (var upgradeDb = CreatePostgresDbContext(LaneConnectionString))
+        {
+            await upgradeDb.Database.MigrateAsync();
+        }
+
+        await using (var verificationDb = CreatePostgresDbContext(LaneConnectionString))
+        {
+            var items = await verificationDb.LabelPrintItems.OrderBy(item => item.Id).ToArrayAsync();
+            Assert.Equal(3, items.Length);
+            Assert.All(items, item =>
+            {
+                Assert.Equal("org-history", item.OrganizationId);
+                Assert.Equal("env-history", item.EnvironmentId);
+            });
+            Assert.Contains(items, item => item.SerialNumber == "0z");
+            Assert.Contains(items, item => item.SerialNumber == "LEGACY-SERIAL");
+            Assert.Null(items.Single(item => item.SerialNumber is null).SerialNumber);
+        }
+
+        await using var provider = CreateRetirementCommandProvider();
+        BarcodeRuleId ruleId;
+        LabelTemplateId templateId;
+        await using (var setupScope = provider.CreateAsyncScope())
+        {
+            var setupDb = setupScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var rule = BarcodeRule.Create(
+                "org-history", "env-history", "HISTORY", "code128", "H", 3,
+                "none", ["legacy"], "active");
+            var template = LabelTemplate.Create(
+                "org-history", "env-history", "TPL-HISTORY", "History template", "file-history",
+                """{"version":1,"variables":[{"name":"skuCode","type":"string","required":true,"maxLength":80}]}""",
+                "active");
+            setupDb.AddRange(rule, template);
+            await setupDb.SaveChangesAsync();
+            ruleId = rule.Id;
+            templateId = template.Id;
+        }
+
+        LabelPrintBatchId batchId;
+        await using (var commandScope = provider.CreateAsyncScope())
+        {
+            batchId = await commandScope.ServiceProvider.GetRequiredService<ISender>().Send(
+                new CreateLabelPrintBatchCommand(
+                    "org-history", "env-history", ruleId, templateId, "legacy", "LEGACY-C",
+                    "legacy-c", """{"skuCode":"SKU-HISTORY"}""", 1));
+        }
+
+        await using var resultDb = CreatePostgresDbContext(LaneConnectionString);
+        Assert.Equal("10", await resultDb.LabelPrintItems
+            .Where(item => item.LabelPrintBatchId == batchId)
+            .Select(item => item.SerialNumber)
+            .SingleAsync());
+        Assert.Equal(62, await resultDb.LabelSerialCounters.Select(counter => counter.CurrentValue).SingleAsync());
+    }
+
+    [RealPostgresFact]
+    public async Task Migration_fails_closed_when_historical_serial_reaches_width_capacity_on_postgres()
+    {
+        await ResetBarcodeLabelSchemaAsync();
+        await using (var setupDb = CreatePostgresDbContext(LaneConnectionString))
+        {
+            await setupDb.GetService<IMigrator>().MigrateAsync("20260912121435_AddTemplateAssetRetirementRetention");
+            await setupDb.Database.ExecuteSqlRawAsync("""
+                INSERT INTO barcode.label_print_batches (
+                    id, organization_id, environment_id, barcode_rule_id, label_template_id,
+                    source_document_type, source_document_id, idempotency_key, label_values_json,
+                    requested_quantity, status, created_at_utc)
+                VALUES
+                    ('00000000-0000-0000-0000-000000000151', 'org-capacity', 'env-capacity',
+                     '00000000-0000-0000-0000-000000000152', '00000000-0000-0000-0000-000000000153',
+                     'legacy', 'LEGACY-CAPACITY', 'legacy-capacity', '{{}}', 1, 'pending', '2026-09-01T00:00:00Z');
+
+                INSERT INTO barcode.label_print_items (
+                    id, label_print_batch_id, sequence_no, label_value, serial_number, status, created_at_utc)
+                VALUES
+                    ('00000000-0000-0000-0000-000000000154', '00000000-0000-0000-0000-000000000151',
+                     1, 'LEGACY-CAPACITY', 'zz', 'created', '2026-09-01T00:00:00Z');
+                """);
+        }
+
+        PostgresException failure;
+        await using (var upgradeDb = CreatePostgresDbContext(LaneConnectionString))
+        {
+            failure = await Assert.ThrowsAsync<PostgresException>(() => upgradeDb.Database.MigrateAsync());
+        }
+
+        Assert.Equal(PostgresErrorCodes.IntegrityConstraintViolation, failure.SqlState);
+        Assert.Contains("AddBarcodeSerialAllocation aborted", failure.MessageText, StringComparison.Ordinal);
+        Assert.Contains("org-capacity / env-capacity / width 2 / zz", failure.MessageText, StringComparison.Ordinal);
+
+        await using var verificationDb = CreatePostgresDbContext(LaneConnectionString);
+        Assert.Equal(1, await verificationDb.Database.SqlQueryRaw<int>(
+            "SELECT count(*)::int AS \"Value\" FROM barcode.label_print_items WHERE serial_number = 'zz'").SingleAsync());
+        Assert.DoesNotContain(
+            "20260913092130_AddBarcodeSerialAllocation",
+            await verificationDb.Database.GetAppliedMigrationsAsync());
+    }
+
+    [RealPostgresFact]
+    public async Task Migration_fails_closed_with_conflict_facts_for_duplicate_historical_serials_on_postgres()
+    {
+        await ResetBarcodeLabelSchemaAsync();
+        await using (var setupDb = CreatePostgresDbContext(LaneConnectionString))
+        {
+            await setupDb.GetService<IMigrator>().MigrateAsync("20260912121435_AddTemplateAssetRetirementRetention");
+            await setupDb.Database.ExecuteSqlRawAsync("""
+                INSERT INTO barcode.label_print_batches (
+                    id, organization_id, environment_id, barcode_rule_id, label_template_id,
+                    source_document_type, source_document_id, idempotency_key, label_values_json,
+                    requested_quantity, status, created_at_utc)
+                VALUES
+                    ('00000000-0000-0000-0000-000000000211', 'org-conflict', 'env-conflict',
+                     '00000000-0000-0000-0000-000000000221', '00000000-0000-0000-0000-000000000231',
+                     'legacy', 'LEGACY-A', 'legacy-a', '{{}}', 1, 'pending', '2026-09-01T00:00:00Z'),
+                    ('00000000-0000-0000-0000-000000000212', 'org-conflict', 'env-conflict',
+                     '00000000-0000-0000-0000-000000000222', '00000000-0000-0000-0000-000000000232',
+                     'legacy', 'LEGACY-B', 'legacy-b', '{{}}', 1, 'pending', '2026-09-01T00:00:01Z');
+
+                INSERT INTO barcode.label_print_items (
+                    id, label_print_batch_id, sequence_no, label_value, serial_number, status, created_at_utc)
+                VALUES
+                    ('00000000-0000-0000-0000-000000000241', '00000000-0000-0000-0000-000000000211',
+                     1, 'LEGACY-DUPLICATE', 'LEGACY-DUPLICATE', 'created', '2026-09-01T00:00:00Z'),
+                    ('00000000-0000-0000-0000-000000000242', '00000000-0000-0000-0000-000000000212',
+                     1, 'LEGACY-DUPLICATE', 'LEGACY-DUPLICATE', 'created', '2026-09-01T00:00:01Z');
+                """);
+        }
+
+        PostgresException failure;
+        await using (var upgradeDb = CreatePostgresDbContext(LaneConnectionString))
+        {
+            failure = await Assert.ThrowsAsync<PostgresException>(() => upgradeDb.Database.MigrateAsync());
+        }
+
+        Assert.Equal(PostgresErrorCodes.IntegrityConstraintViolation, failure.SqlState);
+        Assert.Contains("AddBarcodeSerialAllocation aborted", failure.MessageText, StringComparison.Ordinal);
+        Assert.Contains(
+            "org-conflict / env-conflict / LEGACY-DUPLICATE",
+            failure.MessageText,
+            StringComparison.Ordinal);
+        Assert.Contains("00000000-0000-0000-0000-000000000241@00000000-0000-0000-0000-000000000211", failure.MessageText, StringComparison.Ordinal);
+        Assert.Contains("00000000-0000-0000-0000-000000000242@00000000-0000-0000-0000-000000000212", failure.MessageText, StringComparison.Ordinal);
+
+        await using var verificationDb = CreatePostgresDbContext(LaneConnectionString);
+        Assert.Equal(2, await verificationDb.Database.SqlQueryRaw<int>(
+            "SELECT count(*)::int AS \"Value\" FROM barcode.label_print_items WHERE serial_number = 'LEGACY-DUPLICATE'").SingleAsync());
+        Assert.DoesNotContain(
+            "20260913092130_AddBarcodeSerialAllocation",
+            await verificationDb.Database.GetAppliedMigrationsAsync());
+    }
 
     // Oracle: #3045 / #3028, one durable decision, frozen inputs, seven-day recovery boundary.
     [RealPostgresFact]
@@ -541,7 +1233,7 @@ public sealed partial class BarcodeLabelPostgresProfileTests
                 "file-retirement-001",
                 """{"version":1,"variables":[]}""",
                 "inactive");
-            var batch = LabelPrintBatch.Create(
+            var batch = LabelPrintBatch.ReconstituteHistorical(
                 "org-retirement",
                 "env-retirement",
                 rule,
@@ -599,7 +1291,7 @@ public sealed partial class BarcodeLabelPostgresProfileTests
             var template = LabelTemplate.Create(
                 "org-retirement", "env-retirement", "TPL-RETIREMENT", "Retirement template",
                 "file-retirement-001", """{"version":1,"variables":[]}""", "inactive");
-            var batch = LabelPrintBatch.Create(
+            var batch = LabelPrintBatch.ReconstituteHistorical(
                 "org-retirement",
                 "env-retirement",
                 rule,
@@ -675,7 +1367,7 @@ public sealed partial class BarcodeLabelPostgresProfileTests
             var template = LabelTemplate.Create(
                 "org-retirement", "env-retirement", "TPL-RETIREMENT", "Retirement template",
                 "file-retirement-001", """{"version":1,"variables":[]}""", "inactive");
-            var batch = LabelPrintBatch.Create(
+            var batch = LabelPrintBatch.ReconstituteHistorical(
                 "org-retirement",
                 "env-retirement",
                 rule,
@@ -1303,7 +1995,7 @@ public sealed partial class BarcodeLabelPostgresProfileTests
 
             var replayRule = BarcodeRule.Create(
                 "org-replay", "env-replay", "FG-REPLAY", "code128", "R", 40, "none", ["work-order"], "active");
-            var replayBatch = LabelPrintBatch.Create(
+            var replayBatch = LabelPrintBatch.ReconstituteHistorical(
                 "org-replay",
                 "env-replay",
                 replayRule,
