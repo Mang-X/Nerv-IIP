@@ -34,14 +34,6 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                 nullable: true,
                 comment: "Environment id copied from the owning print batch for scoped serial uniqueness.");
 
-            migrationBuilder.AddColumn<Guid>(
-                name: "barcode_rule_id",
-                schema: "barcode",
-                table: "label_print_items",
-                type: "uuid",
-                nullable: true,
-                comment: "Barcode rule id copied from the owning print batch for rule-scoped serial uniqueness.");
-
             migrationBuilder.AddColumn<string>(
                 name: "organization_id",
                 schema: "barcode",
@@ -59,28 +51,19 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                     id = table.Column<Guid>(type: "uuid", nullable: false, comment: "Label serial counter aggregate id."),
                     organization_id = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false, comment: "Organization tenant id that owns the serial allocation scope."),
                     environment_id = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false, comment: "Environment id for the serial allocation scope."),
-                    barcode_rule_id = table.Column<Guid>(type: "uuid", nullable: false, comment: "Barcode rule id for the serial allocation scope."),
                     current_value = table.Column<long>(type: "bigint", nullable: false, comment: "Highest monotonically allocated counter value in the scope.")
                 },
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_label_serial_counters", x => x.id);
-                    table.ForeignKey(
-                        name: "FK_label_serial_counters_barcode_rules_barcode_rule_id",
-                        column: x => x.barcode_rule_id,
-                        principalSchema: "barcode",
-                        principalTable: "barcode_rules",
-                        principalColumn: "id",
-                        onDelete: ReferentialAction.Restrict);
                 },
-                comment: "Persistent serial allocation counters scoped by organization, environment and barcode rule.");
+                comment: "Persistent serial allocation counters scoped by organization and environment.");
 
             migrationBuilder.Sql(
                 """
                 UPDATE barcode.label_print_items AS item
                 SET organization_id = batch.organization_id,
-                    environment_id = batch.environment_id,
-                    barcode_rule_id = batch.barcode_rule_id
+                    environment_id = batch.environment_id
                 FROM barcode.label_print_batches AS batch
                 WHERE batch.id = item.label_print_batch_id;
                 """);
@@ -92,44 +75,31 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                     conflicting_serials text;
                 BEGIN
                     SELECT string_agg(
-                               format('%s / %s / %s / %s: %s',
-                                      organization_id, environment_id, barcode_rule_id, serial_number, item_refs),
-                               E'\n' ORDER BY organization_id, environment_id, barcode_rule_id, serial_number)
+                               format('%s / %s / %s: %s',
+                                      organization_id, environment_id, serial_number, item_refs),
+                               E'\n' ORDER BY organization_id, environment_id, serial_number)
                     INTO conflicting_serials
                     FROM (
                         SELECT item.organization_id,
                                item.environment_id,
-                               item.barcode_rule_id,
                                item.serial_number,
                                string_agg(
                                    format('%s@%s', item.id, item.label_print_batch_id),
                                    ', ' ORDER BY item.label_print_batch_id, item.id) AS item_refs
                         FROM barcode.label_print_items AS item
                         WHERE item.serial_number IS NOT NULL
-                        GROUP BY item.organization_id, item.environment_id, item.barcode_rule_id, item.serial_number
+                        GROUP BY item.organization_id, item.environment_id, item.serial_number
                         HAVING count(*) > 1
                     ) AS conflicts;
 
                     IF conflicting_serials IS NOT NULL THEN
                         RAISE EXCEPTION USING
                             ERRCODE = 'integrity_constraint_violation',
-                            MESSAGE = 'AddBarcodeSerialAllocation aborted: barcode.label_print_items has duplicate serial_number values inside the same organization/environment/rule. Resolve every item explicitly using docs/runbooks/database-release.md, then retry; the migration did not overwrite or renumber data. organization / environment / barcode_rule_id / serial_number: item_id@label_print_batch_id:' || E'\n' || conflicting_serials;
+                            MESSAGE = 'AddBarcodeSerialAllocation aborted: barcode.label_print_items has duplicate serial_number values inside the same organization/environment. Resolve every item explicitly using docs/runbooks/database-release.md, then retry; the migration did not overwrite or renumber data. organization / environment / serial_number: item_id@label_print_batch_id:' || E'\n' || conflicting_serials;
                     END IF;
                 END
                 $migration$;
                 """);
-
-            migrationBuilder.AlterColumn<Guid>(
-                name: "barcode_rule_id",
-                schema: "barcode",
-                table: "label_print_items",
-                type: "uuid",
-                nullable: false,
-                comment: "Barcode rule id copied from the owning print batch for rule-scoped serial uniqueness.",
-                oldClrType: typeof(Guid),
-                oldType: "uuid",
-                oldNullable: true,
-                oldComment: "Barcode rule id copied from the owning print batch for rule-scoped serial uniqueness.");
 
             migrationBuilder.AlterColumn<string>(
                 name: "environment_id",
@@ -163,21 +133,15 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                 name: "UX_label_print_items_serial_number",
                 schema: "barcode",
                 table: "label_print_items",
-                columns: new[] { "organization_id", "environment_id", "barcode_rule_id", "serial_number" },
+                columns: new[] { "organization_id", "environment_id", "serial_number" },
                 unique: true,
                 filter: "serial_number IS NOT NULL");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_label_serial_counters_barcode_rule_id",
-                schema: "barcode",
-                table: "label_serial_counters",
-                column: "barcode_rule_id");
 
             migrationBuilder.CreateIndex(
                 name: "UX_label_serial_counters_scope",
                 schema: "barcode",
                 table: "label_serial_counters",
-                columns: new[] { "organization_id", "environment_id", "barcode_rule_id" },
+                columns: new[] { "organization_id", "environment_id" },
                 unique: true);
         }
 
@@ -195,11 +159,6 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
 
             migrationBuilder.DropColumn(
                 name: "environment_id",
-                schema: "barcode",
-                table: "label_print_items");
-
-            migrationBuilder.DropColumn(
-                name: "barcode_rule_id",
                 schema: "barcode",
                 table: "label_print_items");
 

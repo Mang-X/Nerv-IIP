@@ -1,5 +1,3 @@
-using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
-
 namespace Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelSerialCounterAggregate;
 
 public partial record LabelSerialCounterId : IGuidStronglyTypedId;
@@ -12,7 +10,6 @@ public sealed class LabelSerialCounter : Entity<LabelSerialCounterId>, IAggregat
 
     public string OrganizationId { get; private set; } = string.Empty;
     public string EnvironmentId { get; private set; } = string.Empty;
-    public BarcodeRuleId BarcodeRuleId { get; private set; } = null!;
     public long CurrentValue { get; private set; }
 }
 
@@ -70,7 +67,6 @@ public interface ILabelSerialNumberAllocator
     Task<IReadOnlyList<string>> AllocateAsync(
         string organizationId,
         string environmentId,
-        BarcodeRuleId barcodeRuleId,
         int serialNumberLength,
         int quantity,
         CancellationToken cancellationToken);

@@ -66,7 +66,6 @@ public sealed class LabelPrintItemEntityTypeConfiguration : IEntityTypeConfigura
         builder.Property(x => x.LabelPrintBatchId).HasColumnName("label_print_batch_id").IsRequired().HasComment("Owning label print batch id.");
         builder.Property(x => x.OrganizationId).HasColumnName("organization_id").IsRequired().HasMaxLength(100).HasComment("Organization tenant id copied from the owning print batch for scoped serial uniqueness.");
         builder.Property(x => x.EnvironmentId).HasColumnName("environment_id").IsRequired().HasMaxLength(100).HasComment("Environment id copied from the owning print batch for scoped serial uniqueness.");
-        builder.Property(x => x.BarcodeRuleId).HasColumnName("barcode_rule_id").IsRequired().HasComment("Barcode rule id copied from the owning print batch for rule-scoped serial uniqueness.");
         builder.Property(x => x.SequenceNo).HasColumnName("sequence_no").IsRequired().HasComment("Generated label sequence number within the print batch.");
         builder.Property(x => x.LabelValue).HasColumnName("label_value").IsRequired().HasMaxLength(200).HasComment("Generated deterministic barcode or label value.");
         builder.Property(x => x.FileId).HasColumnName("file_id").HasMaxLength(150).HasComment("Optional FileStorage file id for rendered label output.");
@@ -82,7 +81,7 @@ public sealed class LabelPrintItemEntityTypeConfiguration : IEntityTypeConfigura
         builder.HasIndex(x => new { x.LabelPrintBatchId, x.SequenceNo }).IsUnique();
         builder.HasIndex(x => x.LabelValue);
         builder.HasIndex(x => new { x.Gtin, x.LotNo, x.SerialNumber });
-        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.BarcodeRuleId, x.SerialNumber })
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SerialNumber })
             .IsUnique()
             .HasFilter("serial_number IS NOT NULL")
             .HasDatabaseName("UX_label_print_items_serial_number");

@@ -398,7 +398,6 @@ public sealed class CreateLabelPrintBatchCommandTests
         public Task<IReadOnlyList<string>> AllocateAsync(
             string organizationId,
             string environmentId,
-            BarcodeRuleId barcodeRuleId,
             int serialNumberLength,
             int quantity,
             CancellationToken cancellationToken)

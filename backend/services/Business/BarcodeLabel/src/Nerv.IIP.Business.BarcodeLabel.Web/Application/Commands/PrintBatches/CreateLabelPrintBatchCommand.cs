@@ -122,7 +122,6 @@ public sealed class CreateLabelPrintBatchCommandHandler(
             var serialNumbers = await serialNumberAllocator.AllocateAsync(
                 organizationId,
                 environmentId,
-                rule.Id,
                 rule.AllocatedSerialNumberLength,
                 request.RequestedQuantity,
                 cancellationToken);
