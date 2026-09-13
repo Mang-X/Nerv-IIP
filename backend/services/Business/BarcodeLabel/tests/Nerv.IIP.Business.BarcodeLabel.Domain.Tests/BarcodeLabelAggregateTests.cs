@@ -262,11 +262,11 @@ public sealed class BarcodeLabelAggregateTests
     }
 
     [Fact]
-    public void Print_batch_moves_from_pending_to_sent_then_printed_only_after_a_printer_result()
+    public void Historical_printable_batch_moves_from_ready_to_sent_then_printed_only_after_a_printer_result()
     {
         var batch = NewPrintBatch(ActiveRule(), "idem-print-lifecycle-001", "ASN-001", 1);
 
-        Assert.Equal("pending", batch.Status);
+        Assert.Equal("ready-to-print", batch.Status);
         Assert.Equal("created", batch.Items.Single().Status);
         Assert.Null(batch.CompletedAtUtc);
 

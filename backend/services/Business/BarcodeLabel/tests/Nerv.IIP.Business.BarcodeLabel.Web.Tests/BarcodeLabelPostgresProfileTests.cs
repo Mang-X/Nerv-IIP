@@ -407,6 +407,121 @@ public sealed partial class BarcodeLabelPostgresProfileTests
     }
 
     [RealPostgresFact]
+    public async Task Concurrent_mes_activation_commits_one_association_and_rejects_overwrite_on_postgres()
+    {
+        await ResetAndMigrateSchemaAsync();
+        LabelPrintBatchId batchId;
+        await using (var setupDb = CreatePostgresDbContext(LaneConnectionString))
+        {
+            var rule = BarcodeRule.Create(
+                "org-mes-activation", "env-mes-activation", "MES-ACTIVATE", "code128", "M", 40,
+                "none", ["work-order"], "active");
+            var batch = AllocatedBatch(rule, "report-intent-concurrent", "WO-CONCURRENT", "MES-SERIAL-001");
+            setupDb.AddRange(rule, batch);
+            await setupDb.SaveChangesAsync();
+            batchId = batch.Id;
+        }
+
+        await using var firstDb = CreatePostgresDbContext(LaneConnectionString);
+        await using var firstTransaction = await firstDb.Database.BeginTransactionAsync();
+        var firstHandler = new ActivateLabelPrintBatchCommandHandler(
+            firstDb,
+            new PostgresLabelPrintBatchActivationFence(firstDb));
+        await firstHandler.Handle(
+            new ActivateLabelPrintBatchCommand(
+                batchId, "org-mes-activation", "env-mes-activation", "report-a", "RPT-A"),
+            CancellationToken.None);
+        await firstDb.SaveChangesAsync();
+        var holderProcessId = ((NpgsqlConnection)firstDb.Database.GetDbConnection()).ProcessID;
+
+        await using var secondDb = CreatePostgresDbContext(LaneConnectionString);
+        await using var secondTransaction = await secondDb.Database.BeginTransactionAsync();
+        var secondHandler = new ActivateLabelPrintBatchCommandHandler(
+            secondDb,
+            new PostgresLabelPrintBatchActivationFence(secondDb));
+        var secondTask = Task.Run(async () =>
+        {
+            await secondHandler.Handle(
+                new ActivateLabelPrintBatchCommand(
+                    batchId, "org-mes-activation", "env-mes-activation", "report-b", "RPT-B"),
+                CancellationToken.None);
+            await secondDb.SaveChangesAsync();
+        });
+
+        var waitEdge = await WaitForAdvisoryWaiterOrCompletionAsync(
+            holderProcessId,
+            secondTask,
+            "MES print-batch activation");
+        Assert.True(waitEdge.Waiters > 0);
+        Assert.False(waitEdge.CompetingTaskCompleted);
+
+        await firstTransaction.CommitAsync();
+        var conflict = await Assert.ThrowsAsync<KnownException>(() => secondTask);
+        Assert.Equal("打印批次已关联其他 MES 生产上报，不能覆盖。", conflict.Message);
+        await secondTransaction.RollbackAsync();
+
+        await using var verificationDb = CreatePostgresDbContext(LaneConnectionString);
+        var persisted = await verificationDb.LabelPrintBatches.SingleAsync(batch => batch.Id == batchId);
+        Assert.Equal("ready-to-print", persisted.Status);
+        Assert.Equal("report-a", persisted.ProductionReportId);
+        Assert.Equal("RPT-A", persisted.ProductionReportNo);
+    }
+
+    [RealPostgresFact]
+    public async Task Mes_activation_migration_preserves_historical_batch_items_and_makes_pending_printable_on_postgres()
+    {
+        await ResetBarcodeLabelSchemaAsync();
+        await using (var setupDb = CreatePostgresDbContext(LaneConnectionString))
+        {
+            await setupDb.GetService<IMigrator>().MigrateAsync("20260913092130_AddBarcodeSerialAllocation");
+            await setupDb.Database.ExecuteSqlRawAsync("""
+                INSERT INTO barcode.label_print_batches (
+                    id, organization_id, environment_id, barcode_rule_id, label_template_id,
+                    source_document_type, source_document_id, idempotency_key, label_values_json,
+                    requested_quantity, status, created_at_utc)
+                VALUES
+                    ('00000000-0000-0000-0000-000000000411', 'org-mes-migration', 'env-mes-migration',
+                     '00000000-0000-0000-0000-000000000421', '00000000-0000-0000-0000-000000000431',
+                     'mes.report', 'WO-MIGRATION', 'report-intent-migration', '{{}}', 1,
+                     'pending', '2026-09-13T00:00:00Z');
+
+                INSERT INTO barcode.label_print_items (
+                    id, label_print_batch_id, organization_id, environment_id, sequence_no,
+                    label_value, serial_number, status, created_at_utc)
+                VALUES
+                    ('00000000-0000-0000-0000-000000000441', '00000000-0000-0000-0000-000000000411',
+                     'org-mes-migration', 'env-mes-migration', 1,
+                     'SERIAL-MIGRATION', 'SERIAL-MIGRATION', 'created', '2026-09-13T00:00:00Z');
+                """);
+        }
+
+        await using (var upgradeDb = CreatePostgresDbContext(LaneConnectionString))
+        {
+            await upgradeDb.Database.MigrateAsync();
+        }
+
+        await using var verificationDb = CreatePostgresDbContext(LaneConnectionString);
+        var status = await verificationDb.Database.SqlQueryRaw<string>("""
+            SELECT status AS "Value"
+            FROM barcode.label_print_batches
+            WHERE id = '00000000-0000-0000-0000-000000000411'
+            """).SingleAsync();
+        Assert.Equal("ready-to-print", status);
+        var preservedItem = await verificationDb.Database.SqlQueryRaw<string>("""
+            SELECT id::text || ':' || serial_number AS "Value"
+            FROM barcode.label_print_items
+            WHERE label_print_batch_id = '00000000-0000-0000-0000-000000000411'
+            """).SingleAsync();
+        Assert.Equal("00000000-0000-0000-0000-000000000441:SERIAL-MIGRATION", preservedItem);
+        var mesColumns = await verificationDb.Database.SqlQueryRaw<string>("""
+            SELECT production_report_id::text || ':' || production_report_no::text AS "Value"
+            FROM barcode.label_print_batches
+            WHERE id = '00000000-0000-0000-0000-000000000411'
+            """).SingleOrDefaultAsync();
+        Assert.Null(mesColumns);
+    }
+
+    [RealPostgresFact]
     public async Task Print_item_serial_is_unique_inside_organization_and_environment_on_postgres()
     {
         await ResetAndMigrateSchemaAsync();

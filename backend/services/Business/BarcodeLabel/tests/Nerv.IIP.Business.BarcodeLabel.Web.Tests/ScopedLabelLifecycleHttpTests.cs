@@ -16,6 +16,7 @@ using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggre
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.Printing;
 using Nerv.IIP.Business.BarcodeLabel.Infrastructure;
+using Nerv.IIP.Business.BarcodeLabel.Infrastructure.Concurrency;
 using NetCorePal.Extensions.DistributedTransactions;
 using NetCorePal.Extensions.Primitives;
 
@@ -30,6 +31,74 @@ public sealed class ScopedLabelLifecycleHttpTests
     private const string TemplateJson =
         """{"format":"nerv-iip.label-template","version":1,"media":{"dpi":203,"widthDots":812,"heightDots":406},"fields":[{"kind":"text","x":40,"y":30,"fontHeight":30,"fontWidth":30,"variable":"skuCode"},{"kind":"barcode","x":40,"y":90,"moduleWidth":2,"height":100,"variable":"label.value"}]}""";
     private static readonly string AssetSha256 = $"sha256:{new string('a', 64)}";
+
+    [Fact]
+    public async Task Reserved_batch_is_rejected_by_dispatch_then_activation_enables_the_existing_batch()
+    {
+        var printer = new RecordingPrinter(LabelPrinterDispatchResult.Sent("activation-job-001"));
+        await using var factory = CreateFactory(printer);
+        var batch = await SeedReservedBatchAsync(factory, "org-001", "env-dev", "report-intent-001");
+        using var client = CreateAuthenticatedClient(factory);
+        var scopeQuery = "?organizationId=org-001&environmentId=env-dev";
+
+        using var rejectedDispatch = await PostLifecycleAsync(
+            client,
+            LifecycleOperation.Dispatch,
+            batch.Id,
+            scopeQuery);
+        var rejectedBody = await rejectedDispatch.Content.ReadAsStringAsync();
+        using var rejectedResult = JsonDocument.Parse(rejectedBody);
+        Assert.False(rejectedResult.RootElement.GetProperty("success").GetBoolean(), rejectedBody);
+        Assert.Empty(printer.Requests);
+
+        using var activation = await client.PostAsync(
+            $"/api/business/internal/v1/barcodes/print-batches/{WireId(batch.Id)}/activate{scopeQuery}",
+            JsonBody(new { productionReportId = "report-id-001", productionReportNo = "PR-001" }));
+        var activationBody = await activation.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, activation.StatusCode);
+        using var activationResult = JsonDocument.Parse(activationBody);
+        Assert.True(activationResult.RootElement.GetProperty("success").GetBoolean(), activationBody);
+
+        using var acceptedDispatch = await PostLifecycleAsync(
+            client,
+            LifecycleOperation.Dispatch,
+            batch.Id,
+            scopeQuery);
+        var acceptedBody = await acceptedDispatch.Content.ReadAsStringAsync();
+        using var acceptedResult = JsonDocument.Parse(acceptedBody);
+        Assert.True(acceptedResult.RootElement.GetProperty("success").GetBoolean(), acceptedBody);
+        Assert.Single(printer.Requests);
+
+        await using var verificationScope = factory.Services.CreateAsyncScope();
+        var verificationDb = verificationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var persisted = await verificationDb.LabelPrintBatches.AsNoTracking().SingleAsync(x => x.Id == batch.Id);
+        Assert.Equal("sent-to-printer", persisted.Status);
+        Assert.Equal("report-id-001", persisted.ProductionReportId);
+        Assert.Equal("PR-001", persisted.ProductionReportNo);
+    }
+
+    [Fact]
+    public async Task Activation_does_not_expose_or_change_a_reserved_batch_from_another_scope()
+    {
+        await using var factory = CreateFactory(new RecordingPrinter(LabelPrinterDispatchResult.Sent("unused")));
+        var batch = await SeedReservedBatchAsync(factory, "org-owner", "env-owner", "report-intent-owned");
+        using var client = CreateAuthenticatedClient(factory);
+
+        using var response = await client.PostAsync(
+            $"/api/business/internal/v1/barcodes/print-batches/{WireId(batch.Id)}/activate" +
+            "?organizationId=org-other&environmentId=env-owner",
+            JsonBody(new { productionReportId = "report-id-other", productionReportNo = "PR-OTHER" }));
+        var body = await response.Content.ReadAsStringAsync();
+        using var result = JsonDocument.Parse(body);
+
+        Assert.False(result.RootElement.GetProperty("success").GetBoolean(), body);
+        await using var verificationScope = factory.Services.CreateAsyncScope();
+        var verificationDb = verificationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var persisted = await verificationDb.LabelPrintBatches.AsNoTracking().SingleAsync(x => x.Id == batch.Id);
+        Assert.Equal("reserved", persisted.Status);
+        Assert.Null(persisted.ProductionReportId);
+        Assert.Null(persisted.ProductionReportNo);
+    }
 
     [Fact]
     public async Task Scoped_dispatch_prints_only_the_batch_owned_by_the_required_scope()
@@ -294,14 +363,64 @@ public sealed class ScopedLabelLifecycleHttpTests
                     services.RemoveAll<IIntegrationEventPublisher>();
                     services.RemoveAll<ILabelPrinter>();
                     services.RemoveAll<ILabelTemplateAssetPort>();
+                    services.RemoveAll<ILabelPrintBatchActivationFence>();
                     services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
                     services.AddSingleton(printer);
                     services.AddSingleton<ILabelTemplateAssetPort, FixedTemplateAssetPort>();
+                    services.AddSingleton<ILabelPrintBatchActivationFence, NoopActivationFence>();
                     services.AddDbContext<ApplicationDbContext>(options => options
                         .UseInMemoryDatabase(databaseName)
                         .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
                 });
             });
+    }
+
+    private static async Task<LabelPrintBatch> SeedReservedBatchAsync(
+        WebApplicationFactory<Program> factory,
+        string organizationId,
+        string environmentId,
+        string reportIntentKey)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var rule = BarcodeRule.Create(
+            organizationId,
+            environmentId,
+            $"RULE-{Guid.CreateVersion7():N}",
+            "code128",
+            "SC",
+            40,
+            "none",
+            ["wms.inbound"],
+            "active");
+        var template = LabelTemplate.Create(
+            organizationId,
+            environmentId,
+            $"TEMPLATE-{Guid.CreateVersion7():N}",
+            "Lifecycle test template",
+            "file-template-001",
+            VariableSchemaJson,
+            "active");
+        var batch = LabelPrintBatch.CreateWithAllocatedSerialNumbers(
+            organizationId,
+            environmentId,
+            rule,
+            template.Id,
+            new LabelPrintBatchSnapshot(
+                template.TemplateFileId,
+                AssetSha256,
+                VariableSchemaJson,
+                rule.BarcodeType,
+                ZplV1LabelCompiler.ContractVersion),
+            "wms.inbound",
+            "ASN-001",
+            reportIntentKey,
+            """{"skuCode":"SKU-FG-1000"}""",
+            1,
+            ["00000000001"]);
+        dbContext.AddRange(rule, template, batch);
+        await dbContext.SaveChangesAsync();
+        return batch;
     }
 
     private static async Task<LabelPrintBatch> SeedBatchAsync(
@@ -378,6 +497,15 @@ public sealed class ScopedLabelLifecycleHttpTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "barcode-label-scoped-http-test-token");
         return client;
+    }
+
+    private sealed class NoopActivationFence : ILabelPrintBatchActivationFence
+    {
+        public Task AcquireAsync(
+            string organizationId,
+            string environmentId,
+            LabelPrintBatchId printBatchId,
+            CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private static Task<HttpResponseMessage> PostLifecycleAsync(

@@ -68,6 +68,12 @@ public sealed class BarcodeLabelOpenApiTests
         using var document = JsonDocument.Parse(await client.GetStringAsync("/swagger/v1/swagger.json"));
         AssertScopedLifecycleOperation(
             document.RootElement,
+            "/api/business/internal/v1/barcodes/print-batches/{printBatchId}/activate",
+            "activateBusinessBarcodePrintBatch",
+            ["printBatchId"],
+            ["productionReportId", "productionReportNo"]);
+        AssertScopedLifecycleOperation(
+            document.RootElement,
             "/api/business/internal/v1/barcodes/print-batches/{printBatchId}/dispatch",
             "dispatchScopedBusinessBarcodePrintBatch",
             ["printBatchId"],

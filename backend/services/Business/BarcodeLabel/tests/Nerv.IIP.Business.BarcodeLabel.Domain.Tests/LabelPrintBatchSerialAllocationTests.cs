@@ -57,6 +57,92 @@ public sealed class LabelPrintBatchSerialAllocationTests
     }
 
     [Fact]
+    public void Newly_allocated_batch_is_reserved_and_cannot_be_dispatched()
+    {
+        var batch = Create(PlainRule("code128"), "{}", ["00000000001"]);
+
+        var exception = Assert.Throws<LabelPrintLifecycleRejectedException>(batch.EnsureCanBeDispatched);
+
+        Assert.Equal("reserved", batch.Status);
+        Assert.Equal(LabelPrintLifecycleRejectionReason.BatchCannotBeDispatched, exception.Reason);
+    }
+
+    [Fact]
+    public void Mes_association_activates_the_reserved_batch_for_dispatch()
+    {
+        var batch = Create(PlainRule("code128"), "{}", ["00000000001"]);
+
+        batch.Activate("report-id-001", "PR-001");
+        batch.EnsureCanBeDispatched();
+        batch.RecordSentToPrinter("printer-01", "job-001");
+
+        Assert.Equal("sent-to-printer", batch.Status);
+        Assert.Equal("report-id-001", batch.ProductionReportId);
+        Assert.Equal("PR-001", batch.ProductionReportNo);
+    }
+
+    [Fact]
+    public void Replaying_the_same_mes_association_returns_the_existing_ready_batch()
+    {
+        var batch = Create(PlainRule("code128"), "{}", ["00000000001"]);
+        batch.Activate("report-id-001", "PR-001");
+
+        batch.Activate("report-id-001", "PR-001");
+
+        Assert.Equal("ready-to-print", batch.Status);
+        Assert.Equal("report-id-001", batch.ProductionReportId);
+        Assert.Equal("PR-001", batch.ProductionReportNo);
+    }
+
+    [Fact]
+    public void Replaying_the_same_mes_association_after_dispatch_preserves_the_sent_batch()
+    {
+        var batch = Create(PlainRule("code128"), "{}", ["00000000001"]);
+        batch.Activate("report-id-001", "PR-001");
+        batch.RecordSentToPrinter("printer-01", "job-001");
+
+        batch.Activate("report-id-001", "PR-001");
+
+        Assert.Equal("sent-to-printer", batch.Status);
+        Assert.Equal("report-id-001", batch.ProductionReportId);
+        Assert.Equal("PR-001", batch.ProductionReportNo);
+        Assert.Equal("printer-01", batch.PrinterId);
+        Assert.Equal("job-001", batch.PrintJobId);
+    }
+
+    [Fact]
+    public void A_different_mes_association_cannot_replace_the_committed_fact()
+    {
+        var batch = Create(PlainRule("code128"), "{}", ["00000000001"]);
+        batch.Activate("report-id-001", "PR-001");
+
+        Assert.Throws<InvalidOperationException>(() => batch.Activate("report-id-002", "PR-002"));
+
+        Assert.Equal("ready-to-print", batch.Status);
+        Assert.Equal("report-id-001", batch.ProductionReportId);
+        Assert.Equal("PR-001", batch.ProductionReportNo);
+    }
+
+    [Fact]
+    public void Controlled_retry_reuses_the_activated_batch_and_allocated_serial()
+    {
+        var batch = Create(PlainRule("code128"), "{}", ["00000000001"]);
+        var batchId = batch.Id;
+        var itemId = batch.Items.Single().Id;
+        var serialNumber = batch.Items.Single().SerialNumber;
+        batch.Activate("report-id-001", "PR-001");
+        batch.RecordPrintFailed("printer-01", "transport unavailable");
+
+        batch.EnsureCanBeDispatched();
+        batch.RecordSentToPrinter("printer-01", "job-retry-001");
+
+        Assert.Equal(batchId, batch.Id);
+        Assert.Equal(itemId, batch.Items.Single().Id);
+        Assert.Equal(serialNumber, batch.Items.Single().SerialNumber);
+        Assert.Equal("sent-to-printer", batch.Status);
+    }
+
+    [Fact]
     public void Allocated_gs1_batch_uses_server_serials_instead_of_caller_serial_prefix()
     {
         var batch = Create(

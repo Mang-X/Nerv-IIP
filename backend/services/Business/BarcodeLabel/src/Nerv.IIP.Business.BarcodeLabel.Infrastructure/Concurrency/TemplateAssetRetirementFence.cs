@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Concurrency;
 
@@ -20,6 +21,15 @@ public interface ILabelPrintBatchReservationFence
         string organizationId,
         string environmentId,
         string idempotencyKey,
+        CancellationToken cancellationToken);
+}
+
+public interface ILabelPrintBatchActivationFence
+{
+    Task AcquireAsync(
+        string organizationId,
+        string environmentId,
+        LabelPrintBatchId printBatchId,
         CancellationToken cancellationToken);
 }
 
@@ -75,6 +85,36 @@ internal sealed class PostgresLabelPrintBatchReservationFence(ApplicationDbConte
             organizationId,
             environmentId,
             idempotencyKey);
+        _ = await dbContext.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock({lockId})",
+            cancellationToken);
+    }
+}
+
+internal sealed class PostgresLabelPrintBatchActivationFence(ApplicationDbContext dbContext)
+    : ILabelPrintBatchActivationFence
+{
+    public async Task AcquireAsync(
+        string organizationId,
+        string environmentId,
+        LabelPrintBatchId printBatchId,
+        CancellationToken cancellationToken)
+    {
+        if (!string.Equals(dbContext.Database.ProviderName, "Npgsql.EntityFrameworkCore.PostgreSQL", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("The label print batch activation fence requires the Npgsql PostgreSQL provider.");
+        }
+
+        if (dbContext.Database.CurrentTransaction is null)
+        {
+            throw new InvalidOperationException("The label print batch activation fence requires an active PostgreSQL transaction.");
+        }
+
+        var lockId = PostgresAdvisoryLockKey.Create(
+            "label-print-batch-activation",
+            organizationId,
+            environmentId,
+            printBatchId.ToString());
         _ = await dbContext.Database.ExecuteSqlInterpolatedAsync(
             $"SELECT pg_advisory_xact_lock({lockId})",
             cancellationToken);
