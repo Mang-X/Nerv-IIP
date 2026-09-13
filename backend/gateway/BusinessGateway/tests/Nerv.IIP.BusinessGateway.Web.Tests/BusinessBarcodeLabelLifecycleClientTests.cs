@@ -22,6 +22,7 @@ public sealed class BusinessBarcodeLabelLifecycleClientTests
                 "intent:Case/A"),
             CancellationToken.None);
 
+        Assert.NotNull(response);
         Assert.Equal("batch-001", response.PrintBatch.PrintBatchId);
         Assert.Equal("opaque:fingerprint-a", response.PrintBatch.ReportIntentFingerprint);
         Assert.Equal(HttpMethod.Get, handler.LastRequest!.Method);
@@ -29,6 +30,25 @@ public sealed class BusinessBarcodeLabelLifecycleClientTests
             "/api/business/v2/barcodes/print-batches/by-idempotency-key?organizationId=org-001&environmentId=env-dev&idempotencyKey=intent%3ACase%2FA",
             handler.LastRequest.RequestUri!.PathAndQuery);
         Assert.Equal("internal-token", handler.LastRequest.Headers.Authorization!.Parameter);
+    }
+
+    [Fact]
+    public async Task Detail_by_idempotency_key_returns_no_batch_for_the_scoped_not_found_result()
+    {
+        var handler = new RecordingResponseHandler(
+            """{"success":false,"data":null,"message":"未找到打印批次。","code":0}""");
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://barcode-label.test") };
+        var client = new HttpBusinessBarcodeLabelClient(httpClient);
+
+        var response = await client.GetPrintBatchByIdempotencyKeyAsync(
+            "internal-token",
+            new BusinessConsoleBarcodePrintBatchByIdempotencyKeyRequest(
+                "org-001",
+                "env-dev",
+                "intent-unknown"),
+            CancellationToken.None);
+
+        Assert.Null(response);
     }
 
     [Fact]

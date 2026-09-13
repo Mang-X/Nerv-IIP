@@ -21,7 +21,6 @@ public sealed class BusinessMesProductionReportCoordinator(
 {
     private const string OnProductionPolicy = "on-production";
     private const string WorkOrderSource = "work-order";
-    private const int PrintBatchPageSize = 500;
 
     private static readonly HashSet<string> SupportedPolicies = new(StringComparer.Ordinal)
     {
@@ -38,10 +37,13 @@ public sealed class BusinessMesProductionReportCoordinator(
         CancellationToken cancellationToken)
     {
         var reportIntentFingerprint = CreateReportIntentFingerprint(request);
-        var existingBatch = await FindExistingBatchAsync(
+        var existingBatch = (await barcodeLabel.GetPrintBatchByIdempotencyKeyAsync(
             internalBearerToken,
-            request,
-            cancellationToken);
+            new BusinessConsoleBarcodePrintBatchByIdempotencyKeyRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.IdempotencyKey),
+            cancellationToken))?.PrintBatch;
         if (existingBatch is not null)
         {
             return await RecordSerialReportAsync(
@@ -183,49 +185,6 @@ public sealed class BusinessMesProductionReportCoordinator(
             !activationConverged);
     }
 
-    private async Task<BusinessConsoleBarcodePrintBatchDetail?> FindExistingBatchAsync(
-        string internalBearerToken,
-        BusinessConsoleRecordProductionReportRequest request,
-        CancellationToken cancellationToken)
-    {
-        var skip = 0;
-        while (true)
-        {
-            var page = await barcodeLabel.ListPrintBatchesAsync(
-                internalBearerToken,
-                new BusinessConsoleBarcodePrintBatchListRequest(
-                    request.OrganizationId,
-                    request.EnvironmentId,
-                    WorkOrderSource,
-                    request.WorkOrderId,
-                    Skip: skip,
-                    Take: PrintBatchPageSize),
-                cancellationToken);
-            var existing = page.PrintBatches.SingleOrDefault(x =>
-                string.Equals(x.IdempotencyKey, request.IdempotencyKey, StringComparison.Ordinal));
-            if (existing is not null)
-            {
-                return (await barcodeLabel.GetPrintBatchAsync(
-                    internalBearerToken,
-                    new BusinessConsoleBarcodePrintBatchRequest(
-                        request.OrganizationId,
-                        request.EnvironmentId,
-                        existing.PrintBatchId),
-                    cancellationToken)).PrintBatch;
-            }
-
-            skip += page.PrintBatches.Count;
-            if (skip >= page.Total)
-            {
-                return null;
-            }
-            if (page.PrintBatches.Count == 0)
-            {
-                throw InvalidResponse();
-            }
-        }
-    }
-
     private async Task<BusinessConsoleBarcodePrintBatchDetail> ActivateAndReadAsync(
         string internalBearerToken,
         BusinessConsoleBarcodePrintBatchRequest batchRequest,
@@ -270,7 +229,6 @@ public sealed class BusinessMesProductionReportCoordinator(
         string reportIntentFingerprint)
     {
         if (!string.Equals(batch.SourceDocumentType, WorkOrderSource, StringComparison.Ordinal) ||
-            !string.Equals(batch.SourceDocumentId, request.WorkOrderId, StringComparison.Ordinal) ||
             !string.Equals(batch.ReportIntentKey, request.IdempotencyKey, StringComparison.Ordinal))
         {
             throw InvalidResponse();
@@ -278,6 +236,10 @@ public sealed class BusinessMesProductionReportCoordinator(
         if (!string.Equals(batch.ReportIntentFingerprint, reportIntentFingerprint, StringComparison.Ordinal))
         {
             throw IdempotencyConflict();
+        }
+        if (!string.Equals(batch.SourceDocumentId, request.WorkOrderId, StringComparison.Ordinal))
+        {
+            throw InvalidResponse();
         }
 
         var quantity = ProductionSerialQuantity(request.GoodQuantity);
