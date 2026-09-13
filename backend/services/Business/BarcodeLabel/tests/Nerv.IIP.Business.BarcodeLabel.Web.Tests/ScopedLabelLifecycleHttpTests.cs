@@ -64,7 +64,7 @@ public sealed class ScopedLabelLifecycleHttpTests
         using var client = CreateAuthenticatedClient(factory);
 
         using var response = await client.GetAsync(
-            $"/api/business/v1/barcodes/print-batches/{WireId(batch.Id)}" +
+            $"/api/business/v2/barcodes/print-batches/{WireId(batch.Id)}" +
             "?organizationId=org-001&environmentId=env-dev");
 
         var body = await response.Content.ReadAsStringAsync();
@@ -73,6 +73,33 @@ public sealed class ScopedLabelLifecycleHttpTests
         Assert.False(result.RootElement.GetProperty("success").GetBoolean(), body);
         Assert.DoesNotContain(WireId(batch.Id), body, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("detail-other-scope", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Legacy_v1_detail_keeps_the_original_unscoped_response_contract()
+    {
+        var printer = new RecordingPrinter(LabelPrinterDispatchResult.Sent("unused"));
+        await using var factory = CreateFactory(printer);
+        var batch = await SeedBatchAsync(factory, "org-001", "env-dev", "legacy-detail-no-scope");
+        using var client = CreateAuthenticatedClient(factory);
+
+        using var response = await client.GetAsync(
+            $"/api/business/v1/barcodes/print-batches/{WireId(batch.Id)}");
+
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var result = JsonDocument.Parse(body);
+        Assert.True(result.RootElement.GetProperty("success").GetBoolean(), body);
+        var detail = result.RootElement.GetProperty("data").GetProperty("printBatch");
+        Assert.Equal("ASN-001", detail.GetProperty("sourceDocumentId").GetString());
+        Assert.False(detail.TryGetProperty("reportIntentKey", out _));
+        Assert.False(detail.TryGetProperty("productionReportId", out _));
+        Assert.False(detail.TryGetProperty("productionReportNo", out _));
+        var item = detail.GetProperty("items")[0];
+        Assert.False(item.TryGetProperty("serialNumber", out _));
+        Assert.False(item.TryGetProperty("lotNo", out _));
+        Assert.False(item.TryGetProperty("gtin", out _));
+        Assert.False(item.TryGetProperty("epcUri", out _));
     }
 
     [Fact]
@@ -92,6 +119,7 @@ public sealed class ScopedLabelLifecycleHttpTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var result = JsonDocument.Parse(body);
         Assert.True(result.RootElement.GetProperty("success").GetBoolean(), body);
+
         Assert.Equal("sent-to-printer", await GetBatchStatusAsync(client, batch.Id));
         Assert.Single(printer.Requests);
     }
@@ -314,6 +342,25 @@ public sealed class ScopedLabelLifecycleHttpTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var result = JsonDocument.Parse(body);
         Assert.True(result.RootElement.GetProperty("success").GetBoolean(), body);
+
+        var after = await LoadBatchAsync(factory, batch.Id);
+        switch (operation)
+        {
+            case LifecycleOperation.Dispatch:
+                Assert.Equal("sent-to-printer", after.Status);
+                Assert.Equal("printer-legacy", Assert.Single(printer.Requests).PrinterId);
+                break;
+            case LifecycleOperation.Reprint:
+                Assert.Equal("printed", Assert.Single(after.Items).Status);
+                Assert.Equal("printer-legacy", Assert.Single(printer.Requests).PrinterId);
+                break;
+            case LifecycleOperation.Void:
+                Assert.Equal("voided", Assert.Single(after.Items).Status);
+                Assert.Empty(printer.Requests);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(operation), operation, null);
+        }
     }
 
     private static WebApplicationFactory<Program> CreateFactory(ILabelPrinter printer)
@@ -413,6 +460,18 @@ public sealed class ScopedLabelLifecycleHttpTests
         return (await GetBatchAsync(client, printBatchId)).GetProperty("status").GetString()!;
     }
 
+    private static async Task<LabelPrintBatch> LoadBatchAsync(
+        WebApplicationFactory<Program> factory,
+        LabelPrintBatchId printBatchId)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        return await dbContext.LabelPrintBatches
+            .Include(batch => batch.Items)
+            .AsNoTracking()
+            .SingleAsync(batch => batch.Id == printBatchId);
+    }
+
     private static async Task<JsonElement> GetBatchAsync(
         HttpClient client,
         LabelPrintBatchId printBatchId,
@@ -420,7 +479,7 @@ public sealed class ScopedLabelLifecycleHttpTests
         string environmentId = "env-dev")
     {
         using var response = await client.GetAsync(
-            $"/api/business/v1/barcodes/print-batches/{WireId(printBatchId)}" +
+            $"/api/business/v2/barcodes/print-batches/{WireId(printBatchId)}" +
             $"?organizationId={organizationId}&environmentId={environmentId}");
         var body = await response.Content.ReadAsStringAsync();
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);

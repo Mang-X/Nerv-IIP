@@ -122,6 +122,70 @@ public sealed partial class BarcodeLabelPostgresProfileTests
     }
 
     [RealPostgresFact]
+    public async Task Create_handler_passes_short_rule_width_to_real_serial_allocator_on_postgres()
+    {
+        await ResetAndMigrateSchemaAsync();
+        await using var provider = CreateRetirementCommandProvider();
+        BarcodeRuleId ruleId;
+        LabelTemplateId templateId;
+        await using (var setupScope = provider.CreateAsyncScope())
+        {
+            var setupDb = setupScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var rule = BarcodeRule.Create(
+                "org-short-serial",
+                "env-short-serial",
+                "FG-SHORT",
+                "code128",
+                "FG",
+                13,
+                "none",
+                ["wms.inbound"],
+                "active");
+            var template = LabelTemplate.Create(
+                "org-short-serial",
+                "env-short-serial",
+                "TPL-SHORT",
+                "Short serial template",
+                "file-template-short",
+                """{"version":1,"variables":[{"name":"skuCode","type":"string","required":true,"maxLength":80}]}""",
+                "active");
+            setupDb.AddRange(rule, template);
+            await setupDb.SaveChangesAsync();
+            ruleId = rule.Id;
+            templateId = template.Id;
+        }
+
+        LabelPrintBatchId batchId;
+        await using (var commandScope = provider.CreateAsyncScope())
+        {
+            batchId = await commandScope.ServiceProvider.GetRequiredService<ISender>().Send(
+                new CreateLabelPrintBatchCommand(
+                    "org-short-serial",
+                    "env-short-serial",
+                    ruleId,
+                    templateId,
+                    "wms.inbound",
+                    "ASN-SHORT",
+                    "short-serial-intent",
+                    """{"skuCode":"SKU-FG-1000"}""",
+                    1));
+        }
+
+        await using var verificationDb = CreatePostgresDbContext(LaneConnectionString);
+        var batch = await verificationDb.LabelPrintBatches
+            .Include(candidate => candidate.Items)
+            .SingleAsync(candidate => candidate.Id == batchId);
+        var item = Assert.Single(batch.Items);
+        Assert.Equal(11, item.SerialNumber!.Length);
+        Assert.Equal(13, item.LabelValue.Length);
+        Assert.Equal($"FG{item.SerialNumber}", item.LabelValue);
+        Assert.Equal(1, await verificationDb.LabelSerialCounters
+            .Where(counter => counter.BarcodeRuleId == ruleId)
+            .Select(counter => counter.CurrentValue)
+            .SingleAsync());
+    }
+
+    [RealPostgresFact]
     public async Task Advisory_lock_domains_do_not_deadlock_crossed_reservation_and_template_keys_on_postgres()
     {
         await ResetAndMigrateSchemaAsync();

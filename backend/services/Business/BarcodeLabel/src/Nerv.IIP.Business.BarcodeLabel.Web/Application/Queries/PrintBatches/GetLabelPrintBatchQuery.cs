@@ -4,12 +4,71 @@ using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggrega
 
 namespace Nerv.IIP.Business.BarcodeLabel.Web.Application.Queries.PrintBatches;
 
-public sealed record GetLabelPrintBatchQuery(
-    LabelPrintBatchId PrintBatchId,
-    string OrganizationId,
-    string EnvironmentId) : IQuery<LabelPrintBatchDetail>;
+public sealed record GetLabelPrintBatchQuery(LabelPrintBatchId PrintBatchId) : IQuery<LabelPrintBatchDetail>;
 
 public sealed record LabelPrintBatchDetail(
+    LabelPrintBatchId PrintBatchId,
+    LabelTemplateId LabelTemplateId,
+    string SourceDocumentType,
+    string SourceDocumentId,
+    string IdempotencyKey,
+    int RequestedQuantity,
+    string Status,
+    string? PrinterId,
+    string? PrintJobId,
+    string? FailureReason,
+    IReadOnlyCollection<LabelPrintItemDetail> Items);
+
+public sealed record LabelPrintItemDetail(
+    int SequenceNo,
+    string LabelValue,
+    string? FileId,
+    string Status,
+    string? VoidReason);
+
+public sealed class GetLabelPrintBatchQueryValidator : AbstractValidator<GetLabelPrintBatchQuery>
+{
+    public GetLabelPrintBatchQueryValidator()
+    {
+        RuleFor(x => x.PrintBatchId).NotEmpty();
+    }
+}
+
+public sealed class GetLabelPrintBatchQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<GetLabelPrintBatchQuery, LabelPrintBatchDetail>
+{
+    public async Task<LabelPrintBatchDetail> Handle(GetLabelPrintBatchQuery request, CancellationToken cancellationToken)
+    {
+        return await dbContext.LabelPrintBatches
+            .Where(x => x.Id == request.PrintBatchId)
+            .Select(x => new LabelPrintBatchDetail(
+                x.Id,
+                x.LabelTemplateId,
+                x.SourceDocumentType,
+                x.SourceDocumentId,
+                x.IdempotencyKey,
+                x.RequestedQuantity,
+                x.Status,
+                x.PrinterId,
+                x.PrintJobId,
+                x.FailureReason,
+                x.Items.OrderBy(item => item.SequenceNo).Select(item => new LabelPrintItemDetail(
+                    item.SequenceNo,
+                    item.LabelValue,
+                    item.FileId,
+                    item.Status,
+                    item.VoidReason)).ToArray()))
+            .SingleOrDefaultAsync(cancellationToken)
+            ?? throw new KnownException($"未找到打印批次，批次 ID = {request.PrintBatchId}。");
+    }
+}
+
+public sealed record GetScopedLabelPrintBatchQuery(
+    LabelPrintBatchId PrintBatchId,
+    string OrganizationId,
+    string EnvironmentId) : IQuery<ScopedLabelPrintBatchDetail>;
+
+public sealed record ScopedLabelPrintBatchDetail(
     LabelPrintBatchId PrintBatchId,
     LabelTemplateId LabelTemplateId,
     string SourceDocumentType,
@@ -23,9 +82,9 @@ public sealed record LabelPrintBatchDetail(
     string? FailureReason,
     string? ProductionReportId,
     string? ProductionReportNo,
-    IReadOnlyCollection<LabelPrintItemDetail> Items);
+    IReadOnlyCollection<ScopedLabelPrintItemDetail> Items);
 
-public sealed record LabelPrintItemDetail(
+public sealed record ScopedLabelPrintItemDetail(
     int SequenceNo,
     string LabelValue,
     string? FileId,
@@ -36,9 +95,9 @@ public sealed record LabelPrintItemDetail(
     string? Gtin,
     string? EpcUri);
 
-public sealed class GetLabelPrintBatchQueryValidator : AbstractValidator<GetLabelPrintBatchQuery>
+public sealed class GetScopedLabelPrintBatchQueryValidator : AbstractValidator<GetScopedLabelPrintBatchQuery>
 {
-    public GetLabelPrintBatchQueryValidator()
+    public GetScopedLabelPrintBatchQueryValidator()
     {
         RuleFor(x => x.PrintBatchId).NotEmpty();
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
@@ -46,16 +105,16 @@ public sealed class GetLabelPrintBatchQueryValidator : AbstractValidator<GetLabe
     }
 }
 
-public sealed class GetLabelPrintBatchQueryHandler(ApplicationDbContext dbContext)
-    : IQueryHandler<GetLabelPrintBatchQuery, LabelPrintBatchDetail>
+public sealed class GetScopedLabelPrintBatchQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<GetScopedLabelPrintBatchQuery, ScopedLabelPrintBatchDetail>
 {
-    public async Task<LabelPrintBatchDetail> Handle(GetLabelPrintBatchQuery request, CancellationToken cancellationToken)
+    public async Task<ScopedLabelPrintBatchDetail> Handle(GetScopedLabelPrintBatchQuery request, CancellationToken cancellationToken)
     {
         return await dbContext.LabelPrintBatches
             .Where(x => x.Id == request.PrintBatchId
                 && x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId)
-            .Select(x => new LabelPrintBatchDetail(
+            .Select(x => new ScopedLabelPrintBatchDetail(
                 x.Id,
                 x.LabelTemplateId,
                 x.SourceDocumentType,
@@ -69,7 +128,7 @@ public sealed class GetLabelPrintBatchQueryHandler(ApplicationDbContext dbContex
                 x.FailureReason,
                 x.ProductionReportId,
                 x.ProductionReportNo,
-                x.Items.OrderBy(item => item.SequenceNo).Select(item => new LabelPrintItemDetail(
+                x.Items.OrderBy(item => item.SequenceNo).Select(item => new ScopedLabelPrintItemDetail(
                     item.SequenceNo,
                     item.LabelValue,
                     item.FileId,

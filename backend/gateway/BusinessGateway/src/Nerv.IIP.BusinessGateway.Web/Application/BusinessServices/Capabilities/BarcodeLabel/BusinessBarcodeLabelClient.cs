@@ -160,7 +160,7 @@ public sealed class HttpBusinessBarcodeLabelClient(HttpClient httpClient)
         SendAsync<BusinessConsoleBarcodePrintBatchResponse>(
             internalBearerToken,
             HttpMethod.Get,
-            $"/api/business/v1/barcodes/print-batches/{Uri.EscapeDataString(request.PrintBatchId)}?" + Query(
+            $"/api/business/v2/barcodes/print-batches/{Uri.EscapeDataString(request.PrintBatchId)}?" + Query(
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId)),
             null,

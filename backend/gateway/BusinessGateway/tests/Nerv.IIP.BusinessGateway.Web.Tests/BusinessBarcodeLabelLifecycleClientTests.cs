@@ -20,7 +20,7 @@ public sealed class BusinessBarcodeLabelLifecycleClientTests
             CancellationToken.None);
 
         Assert.Equal(
-            "/api/business/v1/barcodes/print-batches/batch-001?organizationId=org-001&environmentId=env-dev",
+            "/api/business/v2/barcodes/print-batches/batch-001?organizationId=org-001&environmentId=env-dev",
             handler.LastRequest!.RequestUri!.PathAndQuery);
     }
 
