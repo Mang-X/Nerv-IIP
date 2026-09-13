@@ -407,6 +407,12 @@ public sealed class RecordProductionReportCommandHandler(
         }
 
         dbContext.ProductionReports.Add(report);
+        if (report.SerialNo is not null)
+        {
+            dbContext.ProductionReportSerialNumbers.AddRange(
+                ProductionReportSerialNumber.CreateForReport(report, [report.SerialNo]));
+        }
+
         if (request.CompletesOperation)
         {
             var participants = await dbContext.OperationTaskParticipants

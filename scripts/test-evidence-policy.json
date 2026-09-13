@@ -1358,6 +1358,27 @@
       "expectedRuntimeTestCount": 1
     },
     {
+      "id": "mes-production-report-serial",
+      "sourceId": "mes-production-candidate",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Mes\\.Web\\.Tests\\.ProductionReportSerialNumberPostgresTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run real PostgreSQL MES candidate proof\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.Migration_backfills_only_forward_nonblank_legacy_serials_and_survives_down_up",
+        "Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.Migration_fails_closed_when_forward_legacy_reports_share_a_trimmed_scoped_serial",
+        "Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.PostgreSQL_persists_ordered_serials_and_enforces_ordinal_scoped_uniqueness_and_report_fk"
+      ],
+      "expectedRuntimeTestCount": 3
+    },
+    {
       "id": "mes-production-candidate",
       "sourceId": "mes-production-candidate",
       "classification": "environment-gated",
