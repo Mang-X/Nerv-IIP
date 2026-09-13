@@ -289,8 +289,7 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
     {
         var normalizedReportId = BarcodeLabelText.Required(productionReportId, nameof(productionReportId));
         var normalizedReportNo = BarcodeLabelText.Required(productionReportNo, nameof(productionReportNo));
-        if (Status == ReadyToPrint
-            && ProductionReportId == normalizedReportId
+        if (ProductionReportId == normalizedReportId
             && ProductionReportNo == normalizedReportNo)
         {
             return;

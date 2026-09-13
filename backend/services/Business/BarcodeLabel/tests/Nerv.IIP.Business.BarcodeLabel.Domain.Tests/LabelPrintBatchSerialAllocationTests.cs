@@ -95,6 +95,22 @@ public sealed class LabelPrintBatchSerialAllocationTests
     }
 
     [Fact]
+    public void Replaying_the_same_mes_association_after_dispatch_preserves_the_sent_batch()
+    {
+        var batch = Create(PlainRule("code128"), "{}", ["00000000001"]);
+        batch.Activate("report-id-001", "PR-001");
+        batch.RecordSentToPrinter("printer-01", "job-001");
+
+        batch.Activate("report-id-001", "PR-001");
+
+        Assert.Equal("sent-to-printer", batch.Status);
+        Assert.Equal("report-id-001", batch.ProductionReportId);
+        Assert.Equal("PR-001", batch.ProductionReportNo);
+        Assert.Equal("printer-01", batch.PrinterId);
+        Assert.Equal("job-001", batch.PrintJobId);
+    }
+
+    [Fact]
     public void A_different_mes_association_cannot_replace_the_committed_fact()
     {
         var batch = Create(PlainRule("code128"), "{}", ["00000000001"]);
