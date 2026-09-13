@@ -152,8 +152,7 @@ public sealed class BusinessMesProductionReportCoordinator(
         string reportIntentFingerprint,
         CancellationToken cancellationToken)
     {
-        var quantity = ProductionSerialQuantity(request.GoodQuantity);
-        var serials = ValidateReservedBatch(reserved, request, quantity, reportIntentFingerprint);
+        var serials = ValidateReservedBatch(reserved, request, reportIntentFingerprint);
         var batchRequest = new BusinessConsoleBarcodePrintBatchRequest(
             request.OrganizationId,
             request.EnvironmentId,
@@ -268,7 +267,6 @@ public sealed class BusinessMesProductionReportCoordinator(
     private static IReadOnlyCollection<string> ValidateReservedBatch(
         BusinessConsoleBarcodePrintBatchDetail batch,
         BusinessConsoleRecordProductionReportRequest request,
-        int quantity,
         string reportIntentFingerprint)
     {
         if (!string.Equals(batch.SourceDocumentType, WorkOrderSource, StringComparison.Ordinal) ||
@@ -277,9 +275,14 @@ public sealed class BusinessMesProductionReportCoordinator(
         {
             throw InvalidResponse();
         }
+        if (!string.Equals(batch.ReportIntentFingerprint, reportIntentFingerprint, StringComparison.Ordinal))
+        {
+            throw IdempotencyConflict();
+        }
+
+        var quantity = ProductionSerialQuantity(request.GoodQuantity);
         if (!string.Equals(batch.LabelTemplateId, request.LabelTemplateId, StringComparison.Ordinal) ||
-            batch.RequestedQuantity != quantity ||
-            !string.Equals(batch.ReportIntentFingerprint, reportIntentFingerprint, StringComparison.Ordinal))
+            batch.RequestedQuantity != quantity)
         {
             throw IdempotencyConflict();
         }

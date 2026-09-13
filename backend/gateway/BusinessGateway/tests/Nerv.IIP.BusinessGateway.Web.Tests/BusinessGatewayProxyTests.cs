@@ -4510,7 +4510,7 @@ public sealed class BusinessGatewayProxyTests
         barcode.PrintBatchListResponse = ReservedPrintBatchList();
         var changedRequest = changedField switch
         {
-            "good-quantity" => request with { GoodQuantity = 2m },
+            "good-quantity" => request with { GoodQuantity = 0m },
             "operation-task" => request with { OperationTaskId = "OP-002" },
             "scrap-quantity" => request with { ScrapQuantity = 1m },
             "rework-quantity" => request with { ReworkQuantity = 1m },
@@ -4956,6 +4956,44 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("production-label-template-required", document.RootElement.GetProperty("message").GetString());
         Assert.Equal(0, barcode.CreatePrintBatchCallCount);
         Assert.Equal(0, mes.RecordProductionReportCallCount);
+    }
+
+    [Fact]
+    public async Task First_on_production_report_with_zero_good_quantity_does_not_reserve_serials()
+    {
+        var auth = AllowedOrganizationScope(BusinessGatewayPermissions.MesReportingWrite);
+        var mes = new RecordingMesClient();
+        var masterData = new RecordingMasterDataClient
+        {
+            ResourceDetailResponse = new BusinessConsoleMasterDataResourceDetail(
+                "sku", "SKU-001", "Demo SKU", true, "v1", "org-001", "env-dev",
+                SerialTrackingPolicy: "on-production", DefaultBarcodeRuleCode: "FG"),
+        };
+        var barcode = new RecordingBarcodeLabelClient
+        {
+            PrintBatchListResponse = new BusinessConsoleBarcodePrintBatchListResponse([], 0),
+        };
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IBusinessBarcodeLabelClient>();
+            services.AddSingleton<IBusinessBarcodeLabelClient>(barcode);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/production-reports",
+            ProductionReportBody() with { GoodQuantity = 0m });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(0, barcode.CreatePrintBatchCallCount);
+        Assert.Equal(1, mes.RecordProductionReportCallCount);
+        Assert.Equal("on-production", mes.LastRecordProductionReportRequest?.SerialTrackingPolicy);
+        Assert.Empty(mes.LastRecordProductionReportRequest?.SerialNumbers ?? []);
     }
 
     private static BusinessConsoleRecordProductionReportRequest ProductionReportBody(
