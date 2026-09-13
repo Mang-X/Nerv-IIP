@@ -414,6 +414,77 @@ public sealed class PeriodicInspectionOperationTests
             [PeriodicInspectionPlanSnapshot.From(NewPeriodicPlan())]));
     }
 
+    /// <summary>
+    /// #3129：「只进不退」是 <c>SkipQuantityWindowsAccruedBeforeRelease</c> **方法自身的契约**，
+    /// 本用例钉的就是这条契约——第二次跳过给出更小的值时不得把已生成序号调小，
+    /// 否则同一个序号会被第二次开出。
+    ///
+    /// <para><b>这条契约在一条可达路径上承重</b>，不是纯粹的契约洁癖：
+    /// #3000 回填通道按时刻跳过的数与本方法按数量跳过的数**没有恒定的大小关系**
+    /// （两者分别取自 Quality 本地水位与 MES 自有事实），两条通道交错投递时第二次跳过**可能**更小。
+    /// 「可能」是存在性，不是全称：反例两个方向都有，见
+    /// <c>WorkOrderReleaseProjectionBackfillConsumerTests</c> 的两条交错用例。系统层读数由
+    /// <c>WorkOrderReleaseProjectionBackfillConsumerTests
+    /// .Backfill_then_live_release_does_not_reopen_quantity_windows_the_backfill_already_skipped</c>
+    /// 给出（去掉 <c>Math.Max</c> ⇒ 重开 3 张重复任务、死信 0）。本用例是它的域层对偶，
+    /// 把同一条不变量钉在方法自身上，两条一起红。</para>
+    /// </summary>
+    [Fact]
+    public void Pre_release_skip_never_moves_the_generated_quantity_watermark_backwards()
+    {
+        var operation = ReleasedOperation();
+
+        operation.SkipQuantityWindowsAccruedBeforeRelease(500m);
+        operation.SkipQuantityWindowsAccruedBeforeRelease(250m);
+
+        Assert.Equal(5, Assert.Single(operation.RuntimeContexts).LastGeneratedQuantityWindowSequence);
+    }
+
+    /// <summary>
+    /// #3129：下达前产量除以间隔超过 <c>long.MaxValue</c> 时 fail closed，
+    /// 与 <c>TakeDueQuantityWindows</c> 的序号上界同一条口径。
+    /// 不做这次转换而继续，会把已生成序号写成一个溢出值，随后在
+    /// <c>TakeDueQuantityWindows</c> 的 <c>checked(+1)</c> 处炸在别处、说不出原因。
+    ///
+    /// <para><b>强度按实测写</b>：本用例证明的是**域方法在该输入下 fail closed**，
+    /// **不声称**生产上真能喂进这么大的数（那取决于报工数量列的精度与业务上界，本票没有核过）。
+    /// 它是纵深防御，不是本票缺陷的承重件。</para>
+    /// </summary>
+    [Fact]
+    public void Pre_release_skip_fails_closed_when_the_window_sequence_would_overflow()
+    {
+        // 商必须落在「decimal 表示得下、但超过 long.MaxValue(≈9.22e18)」这个区间里：
+        // 直接拿 decimal.MaxValue 除以一个小间隔，**除法本身**先抛 OverflowException，
+        // 那条路径根本走不到本守卫（实测）。
+        var operation = ReleasedOperation(quantityInterval: 1m);
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => operation.SkipQuantityWindowsAccruedBeforeRelease(10_000_000_000_000_000_000m));
+
+        Assert.Contains("exceeds the supported sequence limit", exception.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// #3129：本方法**只动数量一维**。时间型巡检该不该开与「下达前后」没有业务关系
+    /// （它由 <c>FirstActivityAtUtc</c> 起算、由定时任务生成），把一条数量维的裁定外溢到时间维是错的。
+    /// 少了这一条，把实现改写成复用 <c>SkipWindowsAccruedBefore</c>（数量+时间一起跳）不会被任何用例发现。
+    /// </summary>
+    [Fact]
+    public void Pre_release_skip_leaves_the_time_window_watermark_untouched()
+    {
+        var operation = ReleasedOperation();
+        operation.RecordProductionReport("RPT-001", "WC-001", 250m, "EA", ReleasedAtUtc.AddMinutes(10), false, null);
+        var context = Assert.Single(operation.RuntimeContexts);
+        var timeWatermarkBefore = context.NextTimeWindowAtUtc;
+
+        operation.SkipQuantityWindowsAccruedBeforeRelease(250m);
+
+        Assert.Equal(2, context.LastGeneratedQuantityWindowSequence);
+        Assert.Equal(0, context.LastGeneratedTimeWindowSequence);
+        Assert.Equal(timeWatermarkBefore, context.NextTimeWindowAtUtc);
+        Assert.Null(context.TimeScheduleAnchorAtUtc);
+    }
+
     private static PeriodicInspectionOperation ReleasedOperation(decimal quantityInterval = 100m)
     {
         var operation = PeriodicInspectionOperation.CreatePending("org-001", "env-dev", "WO-001", "OP-001");

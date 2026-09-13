@@ -346,6 +346,74 @@ public sealed class CreatedWorkOrderReleaseBackfillTests
         Assert.Equal(2, body.RootElement.GetProperty("executingOperationsRemediated").GetInt32());
     }
 
+    /// <summary>
+    /// #3129：补下达的发布载荷必须按**工序**带出「下达动作那一刻已经存在的净良品量」。
+    ///
+    /// <para>这条路径是本票裁定最需要生效的那一条——本端点处理的就是「先有产量、后补下达」的
+    /// 存量工单。它走 <c>MarkReleased</c> → 直投转换器 → Quality 的 <c>Authoritative</c> 分支，
+    /// 不带该事实就会把每道工序下达前的全部产量补开成巡检任务。</para>
+    ///
+    /// <para>夹具里两道工序的产量**有意不相等**（250 / 100）：相等时「按工序分组」与
+    /// 「把工单级总量发给每道工序」两种实现给出同一组读数，这一格就没有鉴别力了。</para>
+    /// </summary>
+    [Fact]
+    public async Task Backfilled_release_carries_each_operations_pre_release_good_quantity()
+    {
+        await using var dbContext = CreateDbContext();
+        AddWorkOrder(
+            dbContext,
+            "WO-CREATED-QTY",
+            Created,
+            [(OperationTaskLifecycleStatus.InProgress, 10), (OperationTaskLifecycleStatus.InProgress, 20)]);
+        AddReport(dbContext, "WO-CREATED-QTY", 10, "RPT-QTY-10-A", 150m, Now.AddDays(-3));
+        AddReport(dbContext, "WO-CREATED-QTY", 10, "RPT-QTY-10-B", 100m, Now.AddDays(-2));
+        AddReport(dbContext, "WO-CREATED-QTY", 20, "RPT-QTY-20-A", 100m, Now.AddDays(-1));
+        // 另一张同样待补下达的工单：分组键漏掉工单归属时，它的 999 会串进上面那张。
+        AddWorkOrder(dbContext, "WO-CREATED-OTHER", Created, [(OperationTaskLifecycleStatus.InProgress, 10)]);
+        AddReport(dbContext, "WO-CREATED-OTHER", 10, "RPT-OTHER-10", 999m, Now.AddDays(-1));
+        await dbContext.SaveChangesAsync();
+
+        // **夹具前置条件，写成断言而不是注释**：下面那条 ReleasedAtUtc 断言要检验的是
+        // 「按工序取最早报工」之后**跨工序再取一次 Min**这第二层归约；两道工序的最早报工若相等，
+        // 第二层上 Min == Max，那条断言就退化成等价输入、对 Min→Max 变异零鉴别力。
+        // 这不是假想：把 op20 的报工时刻从 -1d 改成 -3d（**一处单 token 的夹具调整**，数量仍 250/100），
+        // 干净代码仍 9/9 全绿、叠加 Min→Max 变异**也**仍 9/9 全绿——注释挡不住它，本断言挡得住。
+        var earliestReportPerOperation = dbContext.ProductionReports.Local
+            .Where(x => x.WorkOrderId == "WO-CREATED-QTY")
+            .GroupBy(x => x.OperationTaskId)
+            .Select(group => group.Min(x => x.ReportedAtUtc))
+            .Distinct()
+            .ToArray();
+        Assert.Equal(2, earliestReportPerOperation.Length);
+
+        await Backfill(dbContext);
+
+        var integrationEvent = SingleReleasedIntegrationEvent(dbContext, "WO-CREATED-QTY");
+        Assert.Equal(
+            [("OP-WO-CREATED-QTY-10", 250m), ("OP-WO-CREATED-QTY-20", 100m)],
+            integrationEvent.Payload.Operations.Select(x => (x.OperationId, x.PreReleaseGoodQuantity)));
+        // 换键的**等值那一半**也要钉在这里（#3129）：工单级发布时刻下界现在是
+        // 「每道工序的最早报工」再取一次 Min 的**两层归约**，换键前只有一层。
+        // 这一格必须由本用例承担，不能靠既有的
+        // `Release_fact_time_is_pushed_down_to_the_earliest_report_or_completion`——
+        // 那条的夹具只有一道工序，第二层归约上 Min == Max，对它是**等价输入、零鉴别力**；
+        // 本用例的夹具是 op10 报 -3d/-2d、op20 报 -1d，Min≠Max。
+        // 这条不变量出错的后果正是 #3117 的原缺陷：发布时刻晚于既有报工 ⇒ Quality 的
+        // ApplyRelease 判「报工早于发布」⇒ 整封发布事实进死信。
+        Assert.Equal(Now.AddDays(-3), integrationEvent.Payload.ReleasedAtUtc);
+    }
+
+    private static void AddReport(
+        ApplicationDbContext dbContext,
+        string workOrderId,
+        int operationSequence,
+        string reportNo,
+        decimal goodQuantity,
+        DateTimeOffset reportedAtUtc) =>
+        dbContext.ProductionReports.Add(ProductionReport.Record(
+            Organization, Environment, reportNo, workOrderId, $"OP-{workOrderId}-{operationSequence}",
+            goodQuantity: goodQuantity, scrapQuantity: 0m, completesOperation: false, reportedAtUtc: reportedAtUtc));
+
     private static async Task<CreatedWorkOrderReleaseBackfillReport> Backfill(ApplicationDbContext dbContext) =>
         await new BackfillCreatedWorkOrderReleaseCommandHandler(dbContext).Handle(
             new BackfillCreatedWorkOrderReleaseCommand(),
