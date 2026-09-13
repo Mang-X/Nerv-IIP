@@ -10,6 +10,7 @@ public sealed class LabelSerialCounter : Entity<LabelSerialCounterId>, IAggregat
 
     public string OrganizationId { get; private set; } = string.Empty;
     public string EnvironmentId { get; private set; } = string.Empty;
+    public int SerialNumberLength { get; private set; }
     public long CurrentValue { get; private set; }
 }
 

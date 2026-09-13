@@ -385,7 +385,7 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                     b.Property<long>("CurrentValue")
                         .HasColumnType("bigint")
                         .HasColumnName("current_value")
-                        .HasComment("Highest monotonically allocated counter value in the scope.");
+                        .HasComment("Highest monotonically allocated counter value in the collision partition.");
 
                     b.Property<string>("EnvironmentId")
                         .IsRequired()
@@ -401,15 +401,20 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                         .HasColumnName("organization_id")
                         .HasComment("Organization tenant id that owns the serial allocation scope.");
 
+                    b.Property<int>("SerialNumberLength")
+                        .HasColumnType("integer")
+                        .HasColumnName("serial_number_length")
+                        .HasComment("Fixed Base62 serial text width that defines an exact collision partition.");
+
                     b.HasKey("Id");
 
-                    b.HasIndex("OrganizationId", "EnvironmentId")
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SerialNumberLength")
                         .IsUnique()
                         .HasDatabaseName("UX_label_serial_counters_scope");
 
                     b.ToTable("label_serial_counters", "barcode", t =>
                         {
-                            t.HasComment("Persistent serial allocation counters scoped by organization and environment.");
+                            t.HasComment("Persistent serial allocation counters partitioned by organization, environment, and exact serial text width.");
                         });
                 });
 

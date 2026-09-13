@@ -51,13 +51,14 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                     id = table.Column<Guid>(type: "uuid", nullable: false, comment: "Label serial counter aggregate id."),
                     organization_id = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false, comment: "Organization tenant id that owns the serial allocation scope."),
                     environment_id = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false, comment: "Environment id for the serial allocation scope."),
-                    current_value = table.Column<long>(type: "bigint", nullable: false, comment: "Highest monotonically allocated counter value in the scope.")
+                    serial_number_length = table.Column<int>(type: "integer", nullable: false, comment: "Fixed Base62 serial text width that defines an exact collision partition."),
+                    current_value = table.Column<long>(type: "bigint", nullable: false, comment: "Highest monotonically allocated counter value in the collision partition.")
                 },
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_label_serial_counters", x => x.id);
                 },
-                comment: "Persistent serial allocation counters scoped by organization and environment.");
+                comment: "Persistent serial allocation counters partitioned by organization, environment, and exact serial text width.");
 
             migrationBuilder.Sql(
                 """
@@ -97,6 +98,109 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                             ERRCODE = 'integrity_constraint_violation',
                             MESSAGE = 'AddBarcodeSerialAllocation aborted: barcode.label_print_items has duplicate serial_number values inside the same organization/environment. Resolve every item explicitly using docs/runbooks/database-release.md, then retry; the migration did not overwrite or renumber data. organization / environment / serial_number: item_id@label_print_batch_id:' || E'\n' || conflicting_serials;
                     END IF;
+                END
+                $migration$;
+                """);
+
+            migrationBuilder.Sql(
+                """
+                DO $migration$
+                DECLARE
+                    exhausted_spaces text;
+                BEGIN
+                    WITH historical_serials AS (
+                        SELECT item.organization_id,
+                               item.environment_id,
+                               item.serial_number,
+                               char_length(item.serial_number) AS serial_number_length
+                        FROM barcode.label_print_items AS item
+                        WHERE item.serial_number IS NOT NULL
+                          AND item.serial_number COLLATE "C" ~ '^[0-9A-Za-z]{2,20}$'
+                    ),
+                    decoded_serials AS (
+                        SELECT historical.organization_id,
+                               historical.environment_id,
+                               historical.serial_number,
+                               historical.serial_number_length,
+                               sum(
+                                   (strpos(
+                                       '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz',
+                                       substr(historical.serial_number, digit_position.value, 1)) - 1)::numeric
+                                   * power(62::numeric, historical.serial_number_length - digit_position.value)) AS numeric_value
+                        FROM historical_serials AS historical
+                        CROSS JOIN LATERAL generate_series(1, historical.serial_number_length) AS digit_position(value)
+                        GROUP BY historical.organization_id,
+                                 historical.environment_id,
+                                 historical.serial_number,
+                                 historical.serial_number_length
+                    ),
+                    reachable_serials AS (
+                        SELECT decoded.*
+                        FROM decoded_serials AS decoded
+                        WHERE decoded.numeric_value BETWEEN 1 AND 9223372036854775807::numeric
+                    )
+                    SELECT string_agg(
+                               format('%s / %s / width %s / %s',
+                                      organization_id,
+                                      environment_id,
+                                      serial_number_length,
+                                      serial_number),
+                               E'\n' ORDER BY organization_id, environment_id, serial_number_length)
+                    INTO exhausted_spaces
+                    FROM reachable_serials
+                    WHERE numeric_value = CASE
+                        WHEN serial_number_length <= 10
+                            THEN power(62::numeric, serial_number_length) - 1
+                        ELSE 9223372036854775807::numeric
+                    END;
+
+                    IF exhausted_spaces IS NOT NULL THEN
+                        RAISE EXCEPTION USING
+                            ERRCODE = 'integrity_constraint_violation',
+                            MESSAGE = 'AddBarcodeSerialAllocation aborted: a historical serial_number already occupies the final value in a generated width partition. Resolve the affected scope explicitly using docs/runbooks/database-release.md, then retry; the migration did not overwrite or renumber data. organization / environment / width / serial_number:' || E'\n' || exhausted_spaces;
+                    END IF;
+
+                    INSERT INTO barcode.label_serial_counters (
+                        id,
+                        organization_id,
+                        environment_id,
+                        serial_number_length,
+                        current_value)
+                    WITH historical_serials AS (
+                        SELECT item.organization_id,
+                               item.environment_id,
+                               item.serial_number,
+                               char_length(item.serial_number) AS serial_number_length
+                        FROM barcode.label_print_items AS item
+                        WHERE item.serial_number IS NOT NULL
+                          AND item.serial_number COLLATE "C" ~ '^[0-9A-Za-z]{2,20}$'
+                    ),
+                    decoded_serials AS (
+                        SELECT historical.organization_id,
+                               historical.environment_id,
+                               historical.serial_number_length,
+                               sum(
+                                   (strpos(
+                                       '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz',
+                                       substr(historical.serial_number, digit_position.value, 1)) - 1)::numeric
+                                   * power(62::numeric, historical.serial_number_length - digit_position.value)) AS numeric_value
+                        FROM historical_serials AS historical
+                        CROSS JOIN LATERAL generate_series(1, historical.serial_number_length) AS digit_position(value)
+                        GROUP BY historical.organization_id,
+                                 historical.environment_id,
+                                 historical.serial_number,
+                                 historical.serial_number_length
+                    )
+                    SELECT uuidv7(),
+                           decoded.organization_id,
+                           decoded.environment_id,
+                           decoded.serial_number_length,
+                           max(decoded.numeric_value)::bigint
+                    FROM decoded_serials AS decoded
+                    WHERE decoded.numeric_value BETWEEN 1 AND 9223372036854775807::numeric
+                    GROUP BY decoded.organization_id,
+                             decoded.environment_id,
+                             decoded.serial_number_length;
                 END
                 $migration$;
                 """);
@@ -141,7 +245,7 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                 name: "UX_label_serial_counters_scope",
                 schema: "barcode",
                 table: "label_serial_counters",
-                columns: new[] { "organization_id", "environment_id" },
+                columns: new[] { "organization_id", "environment_id", "serial_number_length" },
                 unique: true);
         }
 

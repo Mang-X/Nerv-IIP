@@ -199,12 +199,14 @@ Quality 数量巡检链路依次引入 `AddPeriodicInspectionQuantityWatermark`�
 
 ### 6.6 BarcodeLabel 打印单件序列号 migration
 
-`AddBarcodeSerialAllocation` 为 `barcode.label_print_items` 回填批次的组织/环境归属，安装该 scope 内非空 `serial_number` 唯一索引，并新增持久号段计数器。发布前仍须执行第 2 节的备份、版本冻结与失败停止条件：
+`AddBarcodeSerialAllocation` 为 `barcode.label_print_items` 回填批次的组织/环境归属，安装该 scope 内非空 `serial_number` 唯一索引，并新增按有效序列宽度隔离精确文本碰撞域的持久号段计数器。发布前仍须执行第 2 节的备份、版本冻结与失败停止条件：
 
 1. migration 若发现同一 `organization_id/environment_id` 内存在重复历史序列，会以 SQLSTATE `23000` fail-closed；消息正文逐组列出 `organization / environment / serial_number: item_id@label_print_batch_id`。事务回滚后原行、序列值及 migration history 均保持不变。
-2. 不得自动删除、覆盖、重新编号或给重复值添加后缀。运维须逐项核对实际标签和来源批次，记录真实归属裁决，并通过经批准的数据修正或补救 migration 前滚，再重跑本 migration。
-3. migration 成功后，新批次的普通与 GS1 单件序列均由 BarcodeLabel 号段分配器产生；调用方 `LabelValuesJson` 只承载模板变量及 GS1 lot，不再是序列号来源。已存在且无冲突的历史序列保持原值，历史空值保持为空。
-4. 开始分配新序列后不执行本 migration 的 `Down`：降级会删除号段水位和数据库唯一约束。发布失败时停止新版本服务并优先使用补救 migration 前滚；需要恢复时走第 6 节的批准恢复点。
+2. migration 按当前固定宽度 Base62 正 `Int64` 生成域分类历史非空序列：可达值按 `(organization_id, environment_id, serial_number_length)` 的最大值初始化水位；非 Base62、全零、宽度不在 2–20 或数学值超出当前生成域的值与新生成空间可证明不相交，逐字保留且不推进水位。解析或算术失败必须中止，不得跳过或降级。
+3. 任一碰撞分区的历史最大可达值若已占用该宽度在当前生成器中的容量终点，migration 以 SQLSTATE `23000` fail-closed，并列出 `organization / environment / width / serial_number`；不得把必然失败延迟到升级后的第一个创建请求。
+4. 不得自动删除、覆盖、重新编号或给冲突值添加后缀。运维须逐项核对实际标签和来源批次，记录真实归属裁决，并通过经批准的数据修正或补救 migration 前滚，再重跑本 migration。
+5. migration 成功后，新批次的普通与 GS1 单件序列均由 BarcodeLabel 号段分配器产生；同 org/env、同有效宽度的不同规则共享原子水位，不同宽度互不消耗容量，`label_print_items` 仍保持 org/env 内最终序列文本全局唯一。调用方 `LabelValuesJson` 只承载模板变量及 GS1 lot，不再是序列号来源。已存在且无冲突的历史序列保持原值，历史空值保持为空。
+6. 开始分配新序列后不执行本 migration 的 `Down`：降级会删除号段水位和数据库唯一约束。发布失败时停止新版本服务并优先使用补救 migration 前滚；需要恢复时走第 6 节的批准恢复点。
 
 ## 7. Seed 契约
 

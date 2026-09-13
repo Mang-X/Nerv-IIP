@@ -29,16 +29,17 @@ internal sealed class PostgresLabelSerialNumberAllocator(ApplicationDbContext db
         command.Transaction = transaction.GetDbTransaction();
         command.CommandText = """
             INSERT INTO barcode.label_serial_counters
-                (id, organization_id, environment_id, current_value)
+                (id, organization_id, environment_id, serial_number_length, current_value)
             VALUES
-                (@id, @organization_id, @environment_id, @quantity)
-            ON CONFLICT (organization_id, environment_id)
+                (@id, @organization_id, @environment_id, @serial_number_length, @quantity)
+            ON CONFLICT (organization_id, environment_id, serial_number_length)
             DO UPDATE SET current_value = barcode.label_serial_counters.current_value + EXCLUDED.current_value
             RETURNING current_value;
             """;
         AddParameter(command, "id", Guid.CreateVersion7());
         AddParameter(command, "organization_id", organizationId);
         AddParameter(command, "environment_id", environmentId);
+        AddParameter(command, "serial_number_length", serialNumberLength);
         AddParameter(command, "quantity", quantity);
 
         var result = await command.ExecuteScalarAsync(cancellationToken);
