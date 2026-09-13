@@ -208,6 +208,15 @@ Quality 数量巡检链路依次引入 `AddPeriodicInspectionQuantityWatermark`�
 5. migration 成功后，新批次的普通与 GS1 单件序列均由 BarcodeLabel 号段分配器产生；同 org/env、同有效宽度的不同规则共享原子水位，不同宽度互不消耗容量，`label_print_items` 仍保持 org/env 内最终序列文本全局唯一。调用方 `LabelValuesJson` 只承载模板变量及 GS1 lot，不再是序列号来源。已存在且无冲突的历史序列保持原值，历史空值保持为空。
 6. 开始分配新序列后不执行本 migration 的 `Down`：降级会删除号段水位和数据库唯一约束。发布失败时停止新版本服务并优先使用补救 migration 前滚；需要恢复时走第 6 节的批准恢复点。
 
+### 6.7 BarcodeLabel MES 激活生命周期 migration
+
+`AddBarcodeMesActivation` 为 `barcode.label_print_batches` 新增可空的 `production_report_id` 与 `production_report_no`，并把历史 `pending` 批次改为 `ready-to-print`。发布前仍须执行第 2 节的备份、版本冻结与失败停止条件：
+
+1. 升级期间暂停旧版本 BarcodeLabel 写入，先应用 migration，再启动只创建 `reserved` 新批次的新版本；不得让旧版本在 migration 后继续创建 `pending`。
+2. backfill 只改历史批次状态，不重建或重编号批次和打印项，不改变 `label_print_items.serial_number`，也不为历史批次伪造 MES 关联。
+3. 发布后抽查历史批次仍可 dispatch，新建 `reserved` 批次在 MES 关联前被 dispatch gate 拒绝；同一生产上报关联重放成功，不同关联不得覆盖。
+4. 开始创建 `reserved` 或写入 MES 关联后不执行本 migration 的 `Down`：旧版本无法表达激活门且会把未关联批次误当作可打印。发布失败时停止新版本服务并优先前滚补救；需要恢复时走第 6 节的批准恢复点。
+
 ## 7. Seed 契约
 
 Seed 是显式步骤，不混入普通 Web 启动。每个 seed 至少声明 `seedName`、`seedVersion`、`ownerService`、幂等规则、输入来源、重复执行结果和敏感信息处理。初始管理员密码、客户端密钥、Connector 凭据不得写入日志。

@@ -30,6 +30,8 @@ public enum TemplateAssetReferenceDisposition
 public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
 {
     private const string Pending = "pending";
+    private const string Reserved = "reserved";
+    private const string ReadyToPrint = "ready-to-print";
     private const string SentToPrinter = "sent-to-printer";
     private const string DeliveryUnknown = "delivery-unknown";
     private const string Printed = "printed";
@@ -98,6 +100,8 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
     public string? PrinterId { get; private set; }
     public string? PrintJobId { get; private set; }
     public string? FailureReason { get; private set; }
+    public string? ProductionReportId { get; private set; }
+    public string? ProductionReportNo { get; private set; }
     public DateTimeOffset CreatedAtUtc { get; private set; }
     public DateTimeOffset? CompletedAtUtc { get; private set; }
     public List<LabelPrintItem> Items { get; private set; } = [];
@@ -128,6 +132,7 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
             labelValuesJson,
             requestedQuantity);
         batch.AddHistoricalItems(rule, LabelValueInputs.Parse(labelValuesJson));
+        batch.Status = ReadyToPrint;
         batch.CompleteCreation();
         return batch;
     }
@@ -162,6 +167,7 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
             rule,
             LabelValueInputs.Parse(labelValuesJson),
             NormalizeAllocatedSerialNumbers(allocatedSerialNumbers, requestedQuantity));
+        batch.Status = Reserved;
         batch.CompleteCreation();
         return batch;
     }
@@ -189,6 +195,7 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
             labelValuesJson,
             requestedQuantity);
         batch.AddHistoricalItems(rule, LabelValueInputs.Parse(labelValuesJson));
+        batch.Status = ReadyToPrint;
         batch.CompleteCreation();
         return batch;
     }
@@ -245,7 +252,7 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
             return TemplateAssetReferenceDisposition.Hold;
         }
 
-        if (Status is Pending or Failed)
+        if (Status is Pending or Reserved or ReadyToPrint or Failed)
         {
             return TemplateAssetReferenceDisposition.Reachable;
         }
@@ -268,7 +275,7 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
 
     public void EnsureCanBeDispatched()
     {
-        if (Status is not (Pending or Failed))
+        if (Status is not (ReadyToPrint or Failed))
         {
             throw Reject(
                 Status == DeliveryUnknown
@@ -276,6 +283,27 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
                     : LabelPrintLifecycleRejectionReason.BatchCannotBeDispatched,
                 $"Print batch in status '{Status}' cannot be dispatched.");
         }
+    }
+
+    public void Activate(string productionReportId, string productionReportNo)
+    {
+        var normalizedReportId = BarcodeLabelText.Required(productionReportId, nameof(productionReportId));
+        var normalizedReportNo = BarcodeLabelText.Required(productionReportNo, nameof(productionReportNo));
+        if (Status == ReadyToPrint
+            && ProductionReportId == normalizedReportId
+            && ProductionReportNo == normalizedReportNo)
+        {
+            return;
+        }
+
+        if (Status != Reserved)
+        {
+            throw new InvalidOperationException($"Print batch in status '{Status}' cannot be activated.");
+        }
+
+        ProductionReportId = normalizedReportId;
+        ProductionReportNo = normalizedReportNo;
+        Status = ReadyToPrint;
     }
 
     public bool HasSameIdempotencyPayload(LabelPrintBatch other)
@@ -324,7 +352,7 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
 
     public void RecordSentToPrinter(string printerId, string printJobId)
     {
-        if (Status is not (Pending or Failed))
+        if (Status is not (ReadyToPrint or Failed))
         {
             throw Reject(
                 LabelPrintLifecycleRejectionReason.BatchCannotBeDispatched,
@@ -365,7 +393,7 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
 
     public void RecordDeliveryUnknown(string printerId, string printJobId, string failureReason)
     {
-        if (Status is not (Pending or Failed))
+        if (Status is not (ReadyToPrint or Failed))
         {
             throw new InvalidOperationException($"Print batch in status '{Status}' cannot record unknown delivery.");
         }
@@ -387,7 +415,7 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
 
     public void RecordPrintFailed(string printerId, string failureReason)
     {
-        if (Status is not (Pending or Failed))
+        if (Status is not (ReadyToPrint or Failed))
         {
             throw new InvalidOperationException($"Print batch in status '{Status}' cannot be marked failed.");
         }

@@ -35,6 +35,7 @@ public static class BarcodeLabelPersistenceServiceCollectionExtensions
         services.AddUnitOfWork<ApplicationDbContext>();
         services.AddScoped<ITemplateAssetRetirementFence, PostgresTemplateAssetRetirementFence>();
         services.AddScoped<ILabelPrintBatchReservationFence, PostgresLabelPrintBatchReservationFence>();
+        services.AddScoped<ILabelPrintBatchActivationFence, PostgresLabelPrintBatchActivationFence>();
         services.AddScoped<ILabelSerialNumberAllocator, PostgresLabelSerialNumberAllocator>();
         return services;
     }

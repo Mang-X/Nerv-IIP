@@ -1125,9 +1125,11 @@
       "exitCondition": null,
       "testIdentities": [
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Advisory_lock_domains_do_not_deadlock_crossed_reservation_and_template_keys_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Concurrent_mes_activation_commits_one_association_and_rejects_overwrite_on_postgres",
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Concurrent_same_intent_creates_one_batch_and_allocates_once_on_postgres",
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Create_handler_preserves_short_rule_capacity_after_wide_partition_advances_on_postgres",
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Create_handlers_preserve_org_environment_scope_and_gs1_serial_authority_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Mes_activation_migration_preserves_historical_batch_items_and_makes_pending_printable_on_postgres",
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Migration_and_formatter_share_base62_case_order_for_legacy_gs1_serials_on_postgres",
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Migration_excludes_legacy_gs1_serial_above_current_int64_generation_space_on_postgres",
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Migration_fails_closed_with_conflict_facts_for_duplicate_historical_serials_on_postgres",
@@ -1165,7 +1167,7 @@
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Sent_and_printed_batches_follow_the_item_reprint_matrix_on_postgres",
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Template_create_observation_fails_closed_when_same_code_appears_before_target_file_lock_on_postgres"
       ],
-      "expectedRuntimeTestCount": 40
+      "expectedRuntimeTestCount": 42
     },
     {
       "id": "industrialtelemetry-postgres",

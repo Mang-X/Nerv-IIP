@@ -246,6 +246,14 @@
     {
       "service": "BarcodeLabel",
       "method": "POST",
+      "route": "/api/business/internal/v1/barcodes/print-batches/{printBatchId}/activate",
+      "operationId": "activateBusinessBarcodePrintBatch",
+      "classification": "deferred",
+      "followUp": "#2893 将在 BusinessGateway 报工协调器内消费该 scoped 激活能力，不建立 1:1 Console facade。"
+    },
+    {
+      "service": "BarcodeLabel",
+      "method": "POST",
       "route": "/api/business/v1/barcodes/print-batches/{printBatchId}/dispatch",
       "operationId": "dispatchBusinessBarcodePrintBatch",
       "classification": "internal",
