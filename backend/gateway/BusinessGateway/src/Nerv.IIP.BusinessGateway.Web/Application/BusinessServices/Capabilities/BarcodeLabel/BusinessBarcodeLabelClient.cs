@@ -2,6 +2,10 @@ using Nerv.IIP.Contracts.BarcodeLabel;
 
 namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
+public sealed record BusinessConsoleBarcodePrintBatchByIdempotencyKeyRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string IdempotencyKey);
 
 public interface IBusinessBarcodeLabelClient
 {

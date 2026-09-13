@@ -35,8 +35,12 @@ public sealed class ScopedLabelLifecycleHttpTests
     [Fact]
     public async Task Scoped_v2_idempotency_key_detail_returns_the_same_complete_batch_without_writes()
     {
-        await using var factory = CreateFactory(new RecordingPrinter(LabelPrinterDispatchResult.Sent("unused")));
+        var saveChanges = new RecordingSaveChangesInterceptor();
+        await using var factory = CreateFactory(
+            new RecordingPrinter(LabelPrinterDispatchResult.Sent("unused")),
+            saveChanges);
         var batch = await SeedGs1BatchAsync(factory, "org-001", "env-dev", "report-intent:Case/A");
+        saveChanges.Reset();
         using var client = CreateAuthenticatedClient(factory);
 
         using var byIdResponse = await client.GetAsync(
@@ -58,12 +62,11 @@ public sealed class ScopedLabelLifecycleHttpTests
         using var firstByKey = JsonDocument.Parse(firstByKeyBody);
         using var secondByKey = JsonDocument.Parse(secondByKeyBody);
         var expectedDetail = byId.RootElement.GetProperty("data").GetProperty("printBatch").GetRawText();
-        Assert.Equal(expectedDetail, firstByKey.RootElement.GetProperty("data").GetProperty("printBatch").GetRawText());
+        var firstDetail = firstByKey.RootElement.GetProperty("data").GetProperty("printBatch");
+        Assert.Equal(expectedDetail, firstDetail.GetRawText());
         Assert.Equal(expectedDetail, secondByKey.RootElement.GetProperty("data").GetProperty("printBatch").GetRawText());
-        Assert.Equal(
-            "opaque:report-intent-a",
-            firstByKey.RootElement.GetProperty("data").GetProperty("printBatch")
-                .GetProperty("reportIntentFingerprint").GetString());
+        AssertScopedDetailMatchesBatch(firstDetail, batch);
+        Assert.Equal(0, saveChanges.CallCount);
 
         await using var verificationScope = factory.Services.CreateAsyncScope();
         var verificationDb = verificationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -83,7 +86,11 @@ public sealed class ScopedLabelLifecycleHttpTests
         using var response = await client.GetAsync(
             "/api/business/v2/barcodes/print-batches/by-idempotency-key" +
             "?organizationId=org-owner&environmentId=env-owner&idempotencyKey=intent%3ACase%2FA");
+        using var wrongCaseResponse = await client.GetAsync(
+            "/api/business/v2/barcodes/print-batches/by-idempotency-key" +
+            "?organizationId=org-owner&environmentId=env-owner&idempotencyKey=intent%3Acase%2FA");
         var body = await response.Content.ReadAsStringAsync();
+        var wrongCaseBody = await wrongCaseResponse.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var result = JsonDocument.Parse(body);
@@ -91,6 +98,10 @@ public sealed class ScopedLabelLifecycleHttpTests
         Assert.Equal(
             WireId(expected.Id),
             result.RootElement.GetProperty("data").GetProperty("printBatch").GetProperty("printBatchId").GetString());
+        Assert.Equal(HttpStatusCode.OK, wrongCaseResponse.StatusCode);
+        using var wrongCaseResult = JsonDocument.Parse(wrongCaseBody);
+        Assert.False(wrongCaseResult.RootElement.GetProperty("success").GetBoolean(), wrongCaseBody);
+        Assert.Equal("未找到打印批次。", wrongCaseResult.RootElement.GetProperty("message").GetString());
     }
 
     [Theory]
@@ -569,7 +580,9 @@ public sealed class ScopedLabelLifecycleHttpTests
         Assert.True(result.RootElement.GetProperty("success").GetBoolean(), body);
     }
 
-    private static WebApplicationFactory<Program> CreateFactory(ILabelPrinter printer)
+    private static WebApplicationFactory<Program> CreateFactory(
+        ILabelPrinter printer,
+        RecordingSaveChangesInterceptor? saveChangesInterceptor = null)
     {
         var databaseName = $"barcode-label-scoped-lifecycle-http-{Guid.CreateVersion7():N}";
         return new WebApplicationFactory<Program>()
@@ -596,9 +609,16 @@ public sealed class ScopedLabelLifecycleHttpTests
                     services.AddSingleton(printer);
                     services.AddSingleton<ILabelTemplateAssetPort, FixedTemplateAssetPort>();
                     services.AddSingleton<ILabelPrintBatchActivationFence, NoopActivationFence>();
-                    services.AddDbContext<ApplicationDbContext>(options => options
-                        .UseInMemoryDatabase(databaseName)
-                        .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
+                    services.AddDbContext<ApplicationDbContext>(options =>
+                    {
+                        options
+                            .UseInMemoryDatabase(databaseName)
+                            .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning));
+                        if (saveChangesInterceptor is not null)
+                        {
+                            options.AddInterceptors(saveChangesInterceptor);
+                        }
+                    });
                 });
             });
     }
@@ -860,11 +880,77 @@ public sealed class ScopedLabelLifecycleHttpTests
         return document.RootElement.GetString()!;
     }
 
+    private static string WireId(LabelTemplateId id)
+    {
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(id, JsonOptions));
+        return document.RootElement.GetString()!;
+    }
+
+    private static void AssertScopedDetailMatchesBatch(JsonElement detail, LabelPrintBatch batch)
+    {
+        Assert.Equal(WireId(batch.Id), detail.GetProperty("printBatchId").GetString());
+        Assert.Equal(WireId(batch.LabelTemplateId), detail.GetProperty("labelTemplateId").GetString());
+        Assert.Equal(batch.SourceDocumentType, detail.GetProperty("sourceDocumentType").GetString());
+        Assert.Equal(batch.SourceDocumentId, detail.GetProperty("sourceDocumentId").GetString());
+        Assert.Equal(batch.IdempotencyKey, detail.GetProperty("idempotencyKey").GetString());
+        Assert.Equal(batch.IdempotencyKey, detail.GetProperty("reportIntentKey").GetString());
+        Assert.Equal(batch.ReportIntentFingerprint, detail.GetProperty("reportIntentFingerprint").GetString());
+        Assert.Equal(batch.RequestedQuantity, detail.GetProperty("requestedQuantity").GetInt32());
+        Assert.Equal(batch.Status, detail.GetProperty("status").GetString());
+        Assert.Equal(batch.PrinterId, detail.GetProperty("printerId").GetString());
+        Assert.Equal(batch.PrintJobId, detail.GetProperty("printJobId").GetString());
+        Assert.Equal(batch.FailureReason, detail.GetProperty("failureReason").GetString());
+        Assert.Equal(batch.ProductionReportId, detail.GetProperty("productionReportId").GetString());
+        Assert.Equal(batch.ProductionReportNo, detail.GetProperty("productionReportNo").GetString());
+
+        var actualItems = detail.GetProperty("items").EnumerateArray().ToArray();
+        var expectedItems = batch.Items.OrderBy(item => item.SequenceNo).ToArray();
+        Assert.Equal(expectedItems.Length, actualItems.Length);
+        for (var index = 0; index < expectedItems.Length; index++)
+        {
+            var expected = expectedItems[index];
+            var actual = actualItems[index];
+            Assert.Equal(expected.SequenceNo, actual.GetProperty("sequenceNo").GetInt32());
+            Assert.Equal(expected.LabelValue, actual.GetProperty("labelValue").GetString());
+            Assert.Equal(expected.FileId, actual.GetProperty("fileId").GetString());
+            Assert.Equal(expected.Status, actual.GetProperty("status").GetString());
+            Assert.Equal(expected.VoidReason, actual.GetProperty("voidReason").GetString());
+            Assert.Equal(expected.SerialNumber, actual.GetProperty("serialNumber").GetString());
+            Assert.Equal(expected.LotNo, actual.GetProperty("lotNo").GetString());
+            Assert.Equal(expected.Gtin, actual.GetProperty("gtin").GetString());
+            Assert.Equal(expected.EpcUri, actual.GetProperty("epcUri").GetString());
+        }
+    }
+
     private static JsonSerializerOptions CreateJsonOptions()
     {
         var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
         options.AddNetCorePalJsonConverters();
         return options;
+    }
+
+    private sealed class RecordingSaveChangesInterceptor : SaveChangesInterceptor
+    {
+        public int CallCount { get; private set; }
+
+        public void Reset() => CallCount = 0;
+
+        public override InterceptionResult<int> SavingChanges(
+            DbContextEventData eventData,
+            InterceptionResult<int> result)
+        {
+            CallCount++;
+            return result;
+        }
+
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            CallCount++;
+            return ValueTask.FromResult(result);
+        }
     }
 
     private sealed class RecordingPrinter(LabelPrinterDispatchResult result) : ILabelPrinter

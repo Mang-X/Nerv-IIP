@@ -340,8 +340,8 @@
       "method": "GET",
       "route": "/api/business/v2/barcodes/print-batches/by-idempotency-key",
       "operationId": "getScopedBusinessBarcodePrintBatchByIdempotencyKey",
-      "classification": "internal",
-      "rationale": "Trusted BusinessGateway coordination uses this scoped exact read to recover one idempotent producer result; it is not a standalone frontend facade."
+      "classification": "deferred",
+      "followUp": "#2893 将在 BusinessGateway 报工协调器内消费该 scoped 精确读能力，不建立 1:1 Console facade。"
     },
     {
       "service": "BarcodeLabel",

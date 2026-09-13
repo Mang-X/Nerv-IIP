@@ -4363,11 +4363,6 @@ public sealed record BusinessConsoleBarcodePrintBatchRequest(
     string EnvironmentId,
     string PrintBatchId);
 
-public sealed record BusinessConsoleBarcodePrintBatchByIdempotencyKeyRequest(
-    string OrganizationId,
-    string EnvironmentId,
-    string IdempotencyKey);
-
 public sealed record BusinessConsoleBarcodePrintBatchListRequest(
     string OrganizationId,
     string EnvironmentId,
