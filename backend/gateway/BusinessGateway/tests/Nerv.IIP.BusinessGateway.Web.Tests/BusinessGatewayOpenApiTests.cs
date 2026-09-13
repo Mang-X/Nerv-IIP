@@ -861,6 +861,12 @@ public sealed class BusinessGatewayOpenApiTests
                 .GetProperty("reportIntentFingerprint")
                 .GetProperty("maxLength")
                 .GetInt32());
+        Assert.Equal(
+            1,
+            createPrintBatchSchema.GetProperty("properties")
+                .GetProperty("reportIntentFingerprint")
+                .GetProperty("minLength")
+                .GetInt32());
         if (createPrintBatchSchema.TryGetProperty("required", out var createPrintBatchRequired))
         {
             Assert.DoesNotContain(

@@ -96,7 +96,7 @@ public sealed record CreateLabelPrintBatchRequest(
     string IdempotencyKey,
     string LabelValuesJson,
     int RequestedQuantity,
-    [property: MaxLength(LabelPrintBatch.ReportIntentFingerprintMaxLength)] string? ReportIntentFingerprint = null);
+    [property: MinLength(1), MaxLength(LabelPrintBatch.ReportIntentFingerprintMaxLength)] string? ReportIntentFingerprint = null);
 
 public sealed record CreateLabelPrintBatchResponse(LabelPrintBatchId PrintBatchId);
 

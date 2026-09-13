@@ -4354,7 +4354,7 @@ public sealed record BusinessConsoleCreateBarcodePrintBatchRequest(
     string IdempotencyKey,
     string LabelValuesJson,
     int RequestedQuantity,
-    [property: MaxLength(256)] string? ReportIntentFingerprint = null);
+    [property: MinLength(1), MaxLength(256), JsonSchemaExtensionData("minLength", 1)] string? ReportIntentFingerprint = null);
 
 public sealed record BusinessConsoleCreateBarcodePrintBatchResponse(string PrintBatchId);
 

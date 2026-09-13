@@ -129,6 +129,7 @@ public sealed class BarcodeLabelOpenApiTests
         Assert.True(
             createRequest.Value.GetProperty("properties").TryGetProperty("reportIntentFingerprint", out var createFingerprint),
             createRequest.Value.GetRawText());
+        Assert.Equal(1, createFingerprint.GetProperty("minLength").GetInt32());
         Assert.Equal(256, createFingerprint.GetProperty("maxLength").GetInt32());
         if (createRequest.Value.TryGetProperty("required", out var createRequired))
         {

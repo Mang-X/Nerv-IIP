@@ -63466,8 +63466,8 @@
           "reportIntentFingerprint": {
             "type": "string",
             "maxLength": 256,
-            "minLength": 0,
-            "nullable": true
+            "nullable": true,
+            "minLength": 1
           }
         }
       },
