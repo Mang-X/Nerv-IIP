@@ -197,6 +197,15 @@ Quality 数量巡检链路依次引入 `AddPeriodicInspectionQuantityWatermark`�
 2. 不得通过改大小写、补空白、自动加后缀或静默丢弃任一报工来让 migration 通过。运维须逐组核对 BarcodeLabel/生产记录，显式裁决真实归属并走经批准的数据修正或补救 migration，再重跑本 migration。
 3. migration 成功后，旧单值字段继续承担现有 HTTP 兼容契约；新表是后续多序列号报工切片的持久化基础。本 migration 不安装长期双写开关，也不把冲销复制成第二份序列事实。
 
+### 6.6 BarcodeLabel 单件序列号 migration
+
+`20260913033029_AddBarcodeSerialReservation` 为 `barcode.label_print_items` 回填组织与环境，并新增 `(organization_id, environment_id, serial_number)` 部分唯一索引。旧版 GS1 生成允许不同打印批次产生相同 `serial_number`，因此保留数据的数据库必须先处理歧义历史：
+
+1. 同一组织、环境内存在重复非空 `serial_number` 时，migration 以 `integrity_constraint_violation` 中止；错误消息逐组列出 `organization / environment / serial_number` 和各 `item_id@label_print_batch_id`。migration 不删除、不重编号历史 item，也不创建唯一索引或写入 migration history。
+2. 运维须保留失败日志与数据库快照，按打印批次、实物标签和扫码/EPCIS 事实逐组裁决。只有业务 owner 明确确认后，才能通过单独的补救 migration 或经批准的数据修正废止错误标签或更正序列事实，再重新执行本 migration；不得为通过索引而静默删行或自动重编号。
+3. migration 成功后，旧版本服务不会写入 item 的组织/环境列，不能与新 schema 混合运行；按第 2 节冻结版本，并在迁移完成后整体切换 BarcodeLabel writer。开始写入预留序列后不得执行 `Down`，恢复使用批准的备份或前滚补救 migration。
+4. CI 与本地 PostgreSQL profile 只验证无冲突历史可前滚、歧义历史失败关闭且保留原行，不构成客户生产数据裁决或备份恢复演练。
+
 ## 7. Seed 契约
 
 Seed 是显式步骤，不混入普通 Web 启动。每个 seed 至少声明 `seedName`、`seedVersion`、`ownerService`、幂等规则、输入来源、重复执行结果和敏感信息处理。初始管理员密码、客户端密钥、Connector 凭据不得写入日志。

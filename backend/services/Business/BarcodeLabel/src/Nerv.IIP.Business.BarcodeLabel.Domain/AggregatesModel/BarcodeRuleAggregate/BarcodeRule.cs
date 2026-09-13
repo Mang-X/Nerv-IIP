@@ -65,6 +65,22 @@ public sealed class BarcodeRule : Entity<BarcodeRuleId>, IAggregateRoot
     public DateTimeOffset CreatedAtUtc { get; private set; }
     public DateTimeOffset UpdatedAtUtc { get; private set; }
 
+    public int AllocatedSerialNumberLength
+    {
+        get
+        {
+            if (BarcodeType.StartsWith("gs1-", StringComparison.Ordinal))
+            {
+                return 20;
+            }
+
+            var availableLength = Length - Prefix.Length;
+            return availableLength >= 2
+                ? Math.Min(availableLength, 20)
+                : throw new InvalidOperationException("Barcode rule length must leave at least two characters for an allocated serial number.");
+        }
+    }
+
     public static BarcodeRule Create(
         string organizationId,
         string environmentId,

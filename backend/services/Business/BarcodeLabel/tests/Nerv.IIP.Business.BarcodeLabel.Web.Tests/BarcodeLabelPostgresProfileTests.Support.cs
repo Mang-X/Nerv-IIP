@@ -10,6 +10,7 @@ using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.BarcodeLabel.Domain;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelSerialCounterAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.ScanRecordAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.TraceabilityAggregate;
@@ -17,6 +18,7 @@ using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.TemplateAssetRetirem
 using Nerv.IIP.Business.BarcodeLabel.Domain.Printing;
 using Nerv.IIP.Business.BarcodeLabel.Infrastructure;
 using Nerv.IIP.Business.BarcodeLabel.Infrastructure.Concurrency;
+using Nerv.IIP.Business.BarcodeLabel.Infrastructure.SerialNumbers;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.TemplateAssetRetirements;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.LabelTemplates;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.PrintBatches;
@@ -110,6 +112,8 @@ public sealed partial class BarcodeLabelPostgresProfileTests
         });
         services.AddUnitOfWork<ApplicationDbContext>();
         services.AddScoped<ITemplateAssetRetirementFence, PostgresTemplateAssetRetirementFence>();
+        services.AddScoped<ILabelPrintBatchReservationFence, PostgresLabelPrintBatchReservationFence>();
+        services.AddScoped<ILabelSerialNumberAllocator, PostgresLabelSerialNumberAllocator>();
         services.AddSingleton<ILabelTemplateAssetPort>(new FixedTemplateAssetPort());
         services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
         services.AddSingleton<LabelPrintBatchCreatedIntegrationEventConverter>();
@@ -149,6 +153,7 @@ public sealed partial class BarcodeLabelPostgresProfileTests
                 $"batch-{batchStatus}-{itemStatus}",
                 "{}",
                 itemStatus.StartsWith("mixed-", StringComparison.Ordinal) ? 2 : 1);
+            batch.Activate("report-retirement", "PR-RETIREMENT");
             if (batchStatus == "delivery-unknown")
             {
                 batch.RecordDeliveryUnknown("printer-retirement", "job-retirement", "交付结果未知。");
@@ -253,6 +258,7 @@ public sealed partial class BarcodeLabelPostgresProfileTests
                         1);
                 if (scenario is "partial-snapshot" or "missing-owner" or "unknown-batch" or "unknown-item")
                 {
+                    batch.Activate("report-historical", "PR-HISTORICAL");
                     batch.RecordSentToPrinter("printer-retirement", "job-retirement");
                     batch.VoidItem(1, "不可再打印。");
                 }
@@ -452,6 +458,36 @@ public sealed partial class BarcodeLabelPostgresProfileTests
                 SensitiveValues: [LaneConnectionString]));
     }
 
+    private static async Task<(int Waiters, bool CompetingTaskCompleted)> WaitForBlockedWaiterOrCompletionAsync(
+        int holderProcessId,
+        Task competingTask,
+        string description)
+    {
+        return await Eventually.WaitAsync(
+            condition: $"PostgreSQL lock waiter or early completion for {description}",
+            observe: async cancellationToken =>
+            {
+                await using var connection = new NpgsqlConnection(LaneConnectionString);
+                await connection.OpenAsync(cancellationToken);
+                await using var command = connection.CreateCommand();
+                command.CommandText = """
+                    SELECT count(*)
+                    FROM pg_stat_activity AS waiter
+                    WHERE @holder_pid = ANY(pg_blocking_pids(waiter.pid))
+                    """;
+                command.Parameters.AddWithValue("holder_pid", holderProcessId);
+                var waiters = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
+                return (Waiters: waiters, CompetingTaskCompleted: competingTask.IsCompleted);
+            },
+            isSatisfied: observation => observation.Waiters > 0 || observation.CompetingTaskCompleted,
+            describe: observation =>
+                $"blockedWaiters={observation.Waiters}; competingTaskCompleted={observation.CompetingTaskCompleted}",
+            options: new EventuallyOptions(
+                Timeout: TimeSpan.FromSeconds(15),
+                PollInterval: TimeSpan.FromMilliseconds(50),
+                SensitiveValues: [LaneConnectionString]));
+    }
+
     private sealed class RetirementSaveBarrier : SaveChangesInterceptor
     {
         private readonly TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -545,6 +581,7 @@ public sealed partial class BarcodeLabelPostgresProfileTests
             idempotencyKey,
             """{"skuCode":"SKU-FG-1000"}""",
             1);
+        batch.Activate("report-independent-attempt", "PR-INDEPENDENT-ATTEMPT");
         if (markSent)
         {
             batch.RecordSentToPrinter("printer-original", "initial-job");

@@ -370,12 +370,13 @@ public sealed class CreateLabelPrintBatchCommandTests
             string organizationId,
             string environmentId,
             BarcodeRuleId barcodeRuleId,
+            int serialNumberLength,
             int quantity,
             CancellationToken cancellationToken)
         {
             AllocationCount++;
             var values = Enumerable.Range(0, quantity)
-                .Select(_ => LabelSerialNumber.Format(barcodeRuleId, ++currentValue))
+                .Select(_ => LabelSerialNumber.Format(barcodeRuleId, ++currentValue, serialNumberLength))
                 .ToArray();
             return Task.FromResult<IReadOnlyList<string>>(values);
         }

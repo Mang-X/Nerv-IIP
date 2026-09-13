@@ -50,7 +50,7 @@ public sealed class GetLabelPrintBatchQueryTests
         dbContext.ChangeTracker.Clear();
 
         var detail = await new GetLabelPrintBatchQueryHandler(dbContext)
-            .Handle(new GetLabelPrintBatchQuery(batch.Id), CancellationToken.None);
+            .Handle(new GetLabelPrintBatchQuery(batch.Id, "org-001", "env-dev"), CancellationToken.None);
 
         Assert.Equal("printer-01", detail.PrinterId);
         Assert.Equal("job-001", detail.PrintJobId);

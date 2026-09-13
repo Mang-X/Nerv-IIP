@@ -87,7 +87,7 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                 type: "character varying(30)",
                 maxLength: 30,
                 nullable: false,
-                comment: "Truthful print batch lifecycle status: reserved, ready-to-print, sent-to-printer, delivery-unknown, printed or failed.",
+                comment: "Truthful print batch lifecycle status: reserved, ready-to-print, sent-to-printer, delivery-unknown, printed or failed; concurrent lifecycle writes must match the observed status.",
                 oldClrType: typeof(string),
                 oldType: "character varying(30)",
                 oldMaxLength: 30,
@@ -135,6 +135,39 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                     table.CheckConstraint("ck_label_serial_counters_current_value_positive", "current_value > 0");
                 },
                 comment: "Persistent per-rule allocator state for generated unit serial numbers.");
+
+            migrationBuilder.Sql(
+                """
+                DO $$
+                DECLARE
+                    conflicting_serials text;
+                BEGIN
+                    SELECT string_agg(
+                               format('%s / %s / %s: %s',
+                                      organization_id, environment_id, serial_number, item_refs),
+                               E'\n' ORDER BY organization_id, environment_id, serial_number)
+                    INTO conflicting_serials
+                    FROM (
+                        SELECT item.organization_id,
+                               item.environment_id,
+                               item.serial_number,
+                               string_agg(
+                                   format('%s@%s', item.id, item.label_print_batch_id),
+                                   ', ' ORDER BY item.label_print_batch_id, item.id) AS item_refs
+                        FROM barcode.label_print_items AS item
+                        WHERE item.serial_number IS NOT NULL
+                        GROUP BY item.organization_id, item.environment_id, item.serial_number
+                        HAVING COUNT(*) > 1
+                    ) AS conflicts;
+
+                    IF conflicting_serials IS NOT NULL THEN
+                        RAISE EXCEPTION USING
+                            ERRCODE = 'integrity_constraint_violation',
+                            MESSAGE = 'AddBarcodeSerialReservation aborted: barcode.label_print_items has duplicate serial_number values inside the same organization/environment. Resolve every item explicitly (see docs/runbooks/database-release.md §6.5) and re-run the migration. organization / environment / serial_number: item_id@label_print_batch_id:' || E'\n' || conflicting_serials;
+                    END IF;
+                END
+                $$;
+                """);
 
             migrationBuilder.CreateIndex(
                 name: "UX_label_print_items_scope_serial_number",

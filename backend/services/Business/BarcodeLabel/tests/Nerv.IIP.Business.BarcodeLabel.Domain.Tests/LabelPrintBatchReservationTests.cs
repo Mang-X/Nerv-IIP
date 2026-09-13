@@ -1,6 +1,7 @@
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelSerialCounterAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.Printing;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Domain.Tests;
@@ -54,6 +55,27 @@ public sealed class LabelPrintBatchReservationTests
             Assert.Null(item.LotNo);
             Assert.Null(item.EpcUri);
         });
+    }
+
+    [Fact]
+    public void Reserved_plain_batch_fits_allocated_serial_into_an_existing_thirteen_character_rule()
+    {
+        var rule = BarcodeRule.Create(
+            "org-001",
+            "env-dev",
+            "FG-13",
+            "code128",
+            "FG",
+            13,
+            "none",
+            ["wms.inbound"],
+            "active");
+        var serialNumber = LabelSerialNumber.Format(rule.Id, 1, rule.AllocatedSerialNumberLength);
+
+        var batch = Reserve(rule, "{}", [serialNumber]);
+
+        Assert.Equal(13, batch.Items.Single().LabelValue.Length);
+        Assert.Equal(serialNumber, batch.Items.Single().SerialNumber);
     }
 
     [Fact]

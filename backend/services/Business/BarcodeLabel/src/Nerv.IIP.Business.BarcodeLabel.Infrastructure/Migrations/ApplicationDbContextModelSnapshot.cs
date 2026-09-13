@@ -96,6 +96,7 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
 
                     b.Property<string>("Status")
                         .IsRequired()
+                        .IsConcurrencyToken()
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)")
                         .HasColumnName("status")
@@ -237,7 +238,7 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)")
                         .HasColumnName("status")
-                        .HasComment("Truthful print batch lifecycle status: reserved, ready-to-print, sent-to-printer, delivery-unknown, printed or failed.");
+                        .HasComment("Truthful print batch lifecycle status: reserved, ready-to-print, sent-to-printer, delivery-unknown, printed or failed; concurrent lifecycle writes must match the observed status.");
 
                     b.Property<string>("TemplateAssetSha256")
                         .HasMaxLength(71)

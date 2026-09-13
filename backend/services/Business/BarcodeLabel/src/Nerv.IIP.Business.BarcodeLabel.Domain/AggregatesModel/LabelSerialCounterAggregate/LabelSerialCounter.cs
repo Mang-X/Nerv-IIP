@@ -26,11 +26,23 @@ public static class LabelSerialNumber
 
     public static string Format(BarcodeRuleId barcodeRuleId, long value)
     {
+        return Format(barcodeRuleId, value, RuleTokenWidth + Width);
+    }
+
+    public static string Format(BarcodeRuleId barcodeRuleId, long value, int width)
+    {
         ArgumentNullException.ThrowIfNull(barcodeRuleId);
+        if (width < 2)
+        {
+            throw new ArgumentOutOfRangeException(nameof(width), "Allocated serial width must be at least two characters.");
+        }
+
+        var ruleTokenWidth = Math.Min(RuleTokenWidth, width / 2);
+        var counterWidth = width - ruleTokenWidth;
         Span<byte> digest = stackalloc byte[32];
         SHA256.HashData(barcodeRuleId.Id.ToByteArray(), digest);
-        var ruleTokenValue = BinaryPrimitives.ReadUInt64BigEndian(digest) % Pow62(RuleTokenWidth);
-        return $"{Format(ruleTokenValue, RuleTokenWidth)}{Format(value)}";
+        var ruleTokenValue = BinaryPrimitives.ReadUInt64BigEndian(digest) % Pow62(ruleTokenWidth);
+        return $"{Format(ruleTokenValue, ruleTokenWidth)}{Format((ulong)value, counterWidth)}";
     }
 
     public static string Format(long value)
@@ -45,6 +57,11 @@ public static class LabelSerialNumber
 
     private static string Format(ulong value, int width)
     {
+        if (value == 0 || value >= Pow62(width))
+        {
+            throw new ArgumentOutOfRangeException(nameof(value), $"Serial allocation value does not fit in {width} Base62 characters.");
+        }
+
         Span<char> buffer = stackalloc char[width];
         buffer.Fill('0');
         var remaining = value;
@@ -75,6 +92,7 @@ public interface ILabelSerialNumberAllocator
         string organizationId,
         string environmentId,
         BarcodeRuleId barcodeRuleId,
+        int serialNumberLength,
         int quantity,
         CancellationToken cancellationToken);
 }

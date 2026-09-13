@@ -4,7 +4,10 @@ using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggrega
 
 namespace Nerv.IIP.Business.BarcodeLabel.Web.Application.Queries.PrintBatches;
 
-public sealed record GetLabelPrintBatchQuery(LabelPrintBatchId PrintBatchId) : IQuery<LabelPrintBatchDetail>;
+public sealed record GetLabelPrintBatchQuery(
+    LabelPrintBatchId PrintBatchId,
+    string OrganizationId,
+    string EnvironmentId) : IQuery<LabelPrintBatchDetail>;
 
 public sealed record LabelPrintBatchDetail(
     LabelPrintBatchId PrintBatchId,
@@ -38,6 +41,8 @@ public sealed class GetLabelPrintBatchQueryValidator : AbstractValidator<GetLabe
     public GetLabelPrintBatchQueryValidator()
     {
         RuleFor(x => x.PrintBatchId).NotEmpty();
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
     }
 }
 
@@ -47,7 +52,9 @@ public sealed class GetLabelPrintBatchQueryHandler(ApplicationDbContext dbContex
     public async Task<LabelPrintBatchDetail> Handle(GetLabelPrintBatchQuery request, CancellationToken cancellationToken)
     {
         return await dbContext.LabelPrintBatches
-            .Where(x => x.Id == request.PrintBatchId)
+            .Where(x => x.Id == request.PrintBatchId
+                && x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId)
             .Select(x => new LabelPrintBatchDetail(
                 x.Id,
                 x.LabelTemplateId,
@@ -73,6 +80,6 @@ public sealed class GetLabelPrintBatchQueryHandler(ApplicationDbContext dbContex
                     item.Gtin,
                     item.EpcUri)).ToArray()))
             .SingleOrDefaultAsync(cancellationToken)
-            ?? throw new KnownException($"未找到打印批次，批次 ID = {request.PrintBatchId}。");
+            ?? throw new KnownException("未找到打印批次。");
     }
 }

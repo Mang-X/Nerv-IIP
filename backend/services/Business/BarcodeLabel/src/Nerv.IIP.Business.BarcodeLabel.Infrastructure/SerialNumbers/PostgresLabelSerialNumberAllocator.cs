@@ -13,6 +13,7 @@ public sealed class PostgresLabelSerialNumberAllocator(ApplicationDbContext dbCo
         string organizationId,
         string environmentId,
         BarcodeRuleId barcodeRuleId,
+        int serialNumberLength,
         int quantity,
         CancellationToken cancellationToken)
     {
@@ -58,7 +59,7 @@ public sealed class PostgresLabelSerialNumberAllocator(ApplicationDbContext dbCo
                 ?? throw new InvalidOperationException("The label serial allocator did not return a reserved range."));
 
             return Enumerable.Range(0, quantity)
-                .Select(offset => LabelSerialNumber.Format(barcodeRuleId, checked(firstValue + offset)))
+                .Select(offset => LabelSerialNumber.Format(barcodeRuleId, checked(firstValue + offset), serialNumberLength))
                 .ToArray();
         }
         finally

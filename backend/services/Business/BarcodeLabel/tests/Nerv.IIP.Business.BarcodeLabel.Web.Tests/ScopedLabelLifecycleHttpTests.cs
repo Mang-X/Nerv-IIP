@@ -56,6 +56,26 @@ public sealed class ScopedLabelLifecycleHttpTests
     }
 
     [Fact]
+    public async Task Detail_rejects_a_batch_owned_by_another_scope()
+    {
+        var printer = new RecordingPrinter(LabelPrinterDispatchResult.Sent("unused"));
+        await using var factory = CreateFactory(printer);
+        var batch = await SeedBatchAsync(factory, "org-other", "env-dev", "detail-other-scope", activated: false);
+        using var client = CreateAuthenticatedClient(factory);
+
+        using var response = await client.GetAsync(
+            $"/api/business/v1/barcodes/print-batches/{WireId(batch.Id)}" +
+            "?organizationId=org-001&environmentId=env-dev");
+
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var result = JsonDocument.Parse(body);
+        Assert.False(result.RootElement.GetProperty("success").GetBoolean(), body);
+        Assert.DoesNotContain(WireId(batch.Id), body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("detail-other-scope", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Scoped_dispatch_prints_only_the_batch_owned_by_the_required_scope()
     {
         var printer = new RecordingPrinter(LabelPrinterDispatchResult.Sent("scoped-job-001"));
@@ -172,7 +192,7 @@ public sealed class ScopedLabelLifecycleHttpTests
         await using var factory = CreateFactory(printer);
         var batch = await SeedBatchAsync(factory, "org-002", "env-dev", $"cross-scope-{operation}", printed: true);
         using var client = CreateAuthenticatedClient(factory);
-        var before = await GetBatchAsync(client, batch.Id);
+        var before = await GetBatchAsync(client, batch.Id, "org-002", "env-dev");
 
         using var response = await PostLifecycleAsync(
             client,
@@ -186,7 +206,7 @@ public sealed class ScopedLabelLifecycleHttpTests
         Assert.False(result.RootElement.GetProperty("success").GetBoolean(), body);
         Assert.Contains("未找到打印批次", result.RootElement.GetProperty("message").GetString(), StringComparison.Ordinal);
         Assert.DoesNotContain(WireId(batch.Id), body, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(before.GetRawText(), (await GetBatchAsync(client, batch.Id)).GetRawText());
+        Assert.Equal(before.GetRawText(), (await GetBatchAsync(client, batch.Id, "org-002", "env-dev")).GetRawText());
         Assert.Empty(printer.Requests);
     }
 
@@ -393,9 +413,15 @@ public sealed class ScopedLabelLifecycleHttpTests
         return (await GetBatchAsync(client, printBatchId)).GetProperty("status").GetString()!;
     }
 
-    private static async Task<JsonElement> GetBatchAsync(HttpClient client, LabelPrintBatchId printBatchId)
+    private static async Task<JsonElement> GetBatchAsync(
+        HttpClient client,
+        LabelPrintBatchId printBatchId,
+        string organizationId = "org-001",
+        string environmentId = "env-dev")
     {
-        using var response = await client.GetAsync($"/api/business/v1/barcodes/print-batches/{WireId(printBatchId)}");
+        using var response = await client.GetAsync(
+            $"/api/business/v1/barcodes/print-batches/{WireId(printBatchId)}" +
+            $"?organizationId={organizationId}&environmentId={environmentId}");
         var body = await response.Content.ReadAsStringAsync();
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var document = JsonDocument.Parse(body);

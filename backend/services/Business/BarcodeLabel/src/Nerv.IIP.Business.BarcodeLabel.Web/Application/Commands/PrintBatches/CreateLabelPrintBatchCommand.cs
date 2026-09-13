@@ -127,6 +127,7 @@ public sealed class CreateLabelPrintBatchCommandHandler(
                 organizationId,
                 environmentId,
                 rule.Id,
+                rule.AllocatedSerialNumberLength,
                 request.RequestedQuantity,
                 cancellationToken);
             candidate = LabelPrintBatch.Reserve(

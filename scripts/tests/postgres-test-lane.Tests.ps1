@@ -368,6 +368,9 @@ try {
         @{ id = 'barcodelabel-postgres-profile'; service = 'BarcodeLabel'; schema = 'barcode'; identities = @(
                 'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Print_item_serial_is_unique_inside_organization_and_environment_on_postgres',
                 'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Serial_allocator_reserves_non_overlapping_ordered_ranges_concurrently_on_postgres',
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Advisory_lock_domains_do_not_deadlock_crossed_reservation_and_template_keys_on_postgres',
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Concurrent_different_mes_activations_preserve_the_first_association_on_postgres',
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Migration_fails_closed_with_conflict_facts_for_duplicate_historical_serials_on_postgres',
                 'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_executor_recovers_lost_response_after_restart_with_frozen_inputs_on_postgres',
                 'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_retention_deadline_preserves_http_replay_fence_and_zero_execution_on_postgres',
                 'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_cleanup_preserves_pending_failed_attempt_and_permanent_unknown_on_postgres',

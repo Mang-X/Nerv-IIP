@@ -146,7 +146,10 @@ public sealed record ListLabelPrintBatchesRequest(
 
 public sealed record ListLabelPrintBatchesResponse(IReadOnlyCollection<LabelPrintBatchSummary> PrintBatches, int Total);
 
-public sealed record GetLabelPrintBatchRequest(LabelPrintBatchId PrintBatchId);
+public sealed record GetLabelPrintBatchRequest(
+    LabelPrintBatchId PrintBatchId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
 
 public sealed record GetLabelPrintBatchResponse(LabelPrintBatchDetail PrintBatch);
 
@@ -300,7 +303,10 @@ public sealed class GetLabelPrintBatchEndpoint(ISender sender)
 
     public override async Task HandleAsync(GetLabelPrintBatchRequest req, CancellationToken ct)
     {
-        var batch = await sender.Send(new GetLabelPrintBatchQuery(req.PrintBatchId), ct);
+        var batch = await sender.Send(new GetLabelPrintBatchQuery(
+            req.PrintBatchId,
+            req.OrganizationId,
+            req.EnvironmentId), ct);
         await Send.OkAsync(new GetLabelPrintBatchResponse(batch).AsResponseData(), cancellation: ct);
     }
 }

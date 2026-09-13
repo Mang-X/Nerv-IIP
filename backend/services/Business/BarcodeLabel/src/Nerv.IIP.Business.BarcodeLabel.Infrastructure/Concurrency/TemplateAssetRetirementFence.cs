@@ -42,9 +42,11 @@ internal sealed class PostgresTemplateAssetRetirementFence(ApplicationDbContext 
             throw new InvalidOperationException("The template asset retirement fence requires an active PostgreSQL transaction.");
         }
 
-        var keyBytes = Encoding.UTF8.GetBytes($"{organizationId.Length}:{organizationId}\n{environmentId.Length}:{environmentId}\n{fileId.Length}:{fileId}");
-        var digest = SHA256.HashData(keyBytes);
-        var lockId = BinaryPrimitives.ReadInt64BigEndian(digest);
+        var lockId = PostgresAdvisoryLockKey.Create(
+            "template-asset-retirement",
+            organizationId,
+            environmentId,
+            fileId);
         _ = await dbContext.Database.ExecuteSqlInterpolatedAsync(
             $"SELECT pg_advisory_xact_lock({lockId})",
             cancellationToken);
@@ -70,11 +72,22 @@ internal sealed class PostgresLabelPrintBatchReservationFence(ApplicationDbConte
             throw new InvalidOperationException("The label print batch reservation fence requires an active PostgreSQL transaction.");
         }
 
-        var keyBytes = Encoding.UTF8.GetBytes($"{organizationId.Length}:{organizationId}\n{environmentId.Length}:{environmentId}\n{idempotencyKey.Length}:{idempotencyKey}");
-        var digest = SHA256.HashData(keyBytes);
-        var lockId = BinaryPrimitives.ReadInt64BigEndian(digest);
+        var lockId = PostgresAdvisoryLockKey.Create(
+            "label-print-batch-reservation",
+            organizationId,
+            environmentId,
+            idempotencyKey);
         _ = await dbContext.Database.ExecuteSqlInterpolatedAsync(
             $"SELECT pg_advisory_xact_lock({lockId})",
             cancellationToken);
+    }
+}
+
+internal static class PostgresAdvisoryLockKey
+{
+    public static long Create(string domain, params string[] components)
+    {
+        var framed = string.Join('\n', new[] { domain }.Concat(components).Select(value => $"{value.Length}:{value}"));
+        return BinaryPrimitives.ReadInt64BigEndian(SHA256.HashData(Encoding.UTF8.GetBytes(framed)));
     }
 }
