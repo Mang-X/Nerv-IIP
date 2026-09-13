@@ -17687,6 +17687,8 @@ internal sealed class RecordingBarcodeLabelClient : IBusinessBarcodeLabelClient,
 
     public BusinessConsoleBarcodePrintBatchListRequest? LastPrintBatchListRequest { get; private set; }
 
+    public BusinessConsoleBarcodePrintBatchByIdempotencyKeyRequest? LastPrintBatchByIdempotencyKeyRequest { get; private set; }
+
     public BusinessConsoleRecordBarcodeScanRequest? LastScanRequest { get; private set; }
 
     public BusinessConsoleBarcodeScanListRequest? LastScanListRequest { get; private set; }
@@ -17792,6 +17794,22 @@ internal sealed class RecordingBarcodeLabelClient : IBusinessBarcodeLabelClient,
                     "LOT-A",
                     "09506000134352",
                     "urn:epc:id:sgtin:0950600.013435.00000000001")])));
+    }
+
+    public Task<BusinessConsoleBarcodePrintBatchResponse> GetPrintBatchByIdempotencyKeyAsync(
+        string internalBearerToken,
+        BusinessConsoleBarcodePrintBatchByIdempotencyKeyRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastPrintBatchByIdempotencyKeyRequest = request;
+        return GetPrintBatchAsync(
+            internalBearerToken,
+            new BusinessConsoleBarcodePrintBatchRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                "print-batch-001"),
+            cancellationToken);
     }
 
     public Task<BusinessConsoleBarcodePrintBatchListResponse> ListPrintBatchesAsync(

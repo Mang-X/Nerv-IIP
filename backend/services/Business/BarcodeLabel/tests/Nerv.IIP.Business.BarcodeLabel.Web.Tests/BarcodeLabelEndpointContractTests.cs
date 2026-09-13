@@ -21,7 +21,7 @@ public sealed class BarcodeLabelEndpointContractTests
     {
         var contracts = BarcodeLabelEndpointContracts.All.ToArray();
 
-        Assert.Equal(20, contracts.Length);
+        Assert.Equal(21, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/barcodes/rules"
             && x.PermissionCode == BarcodeLabelPermissionCodes.TemplatesManage
@@ -94,6 +94,11 @@ public sealed class BarcodeLabelEndpointContractTests
             && x.PermissionCode == BarcodeLabelPermissionCodes.Print
             && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
             && x.OperationId == "getScopedBusinessBarcodePrintBatch");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v2/barcodes/print-batches/by-idempotency-key"
+            && x.PermissionCode == BarcodeLabelPermissionCodes.Print
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "getScopedBusinessBarcodePrintBatchByIdempotencyKey");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/barcodes/scans"
             && x.PermissionCode == BarcodeLabelPermissionCodes.ScansWrite
@@ -127,6 +132,7 @@ public sealed class BarcodeLabelEndpointContractTests
     [InlineData(typeof(ListLabelPrintBatchesEndpoint))]
     [InlineData(typeof(GetLabelPrintBatchEndpoint))]
     [InlineData(typeof(GetScopedLabelPrintBatchEndpoint))]
+    [InlineData(typeof(GetScopedLabelPrintBatchByIdempotencyKeyEndpoint))]
     [InlineData(typeof(RecordScanEndpoint))]
     [InlineData(typeof(ListScansEndpoint))]
     [InlineData(typeof(ResolveBarcodeEndpoint))]
@@ -202,6 +208,28 @@ public sealed class BarcodeLabelEndpointContractTests
         Assert.NotNull(detailProperty);
         Assert.Equal(typeof(string), detailProperty.PropertyType);
         Assert.Single(detailProperty.GetCustomAttributes(typeof(JsonRequiredAttribute), inherit: true));
+    }
+
+    [Fact]
+    public void Scoped_idempotency_key_query_validator_requires_a_bounded_key_and_tenant_scope()
+    {
+        var validator = new GetScopedLabelPrintBatchByIdempotencyKeyQueryValidator();
+        var valid = new GetScopedLabelPrintBatchByIdempotencyKeyQuery(
+            "org-001",
+            "env-dev",
+            "report-intent:Case/A");
+
+        Assert.True(validator.Validate(valid).IsValid);
+
+        var invalidResults = new[]
+        {
+            validator.Validate(valid with { OrganizationId = "" }),
+            validator.Validate(valid with { EnvironmentId = "" }),
+            validator.Validate(valid with { IdempotencyKey = "" }),
+            validator.Validate(valid with { IdempotencyKey = new string('k', 129) }),
+        };
+
+        Assert.All(invalidResults, result => Assert.False(result.IsValid));
     }
 
     [Fact]
@@ -321,6 +349,30 @@ public sealed class BarcodeLabelEndpointContractTests
             result = "accepted",
             rejectionReason = (string?)null,
         });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("wrong-token")]
+    public async Task Scoped_idempotency_key_detail_rejects_missing_or_invalid_internal_authorization(string? token)
+    {
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("environment", "Testing");
+                builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+            });
+        using var client = factory.CreateClient();
+        if (token is not null)
+        {
+            client.DefaultRequestHeaders.Authorization = new("Bearer", token);
+        }
+
+        using var response = await client.GetAsync(
+            "/api/business/v2/barcodes/print-batches/by-idempotency-key" +
+            "?organizationId=org-001&environmentId=env-dev&idempotencyKey=report-intent-001");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }

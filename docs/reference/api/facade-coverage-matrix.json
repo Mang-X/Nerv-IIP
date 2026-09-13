@@ -337,6 +337,14 @@
     },
     {
       "service": "BarcodeLabel",
+      "method": "GET",
+      "route": "/api/business/v2/barcodes/print-batches/by-idempotency-key",
+      "operationId": "getScopedBusinessBarcodePrintBatchByIdempotencyKey",
+      "classification": "deferred",
+      "followUp": "#2893 将在 BusinessGateway 报工协调器内消费该 scoped 精确读能力，不建立 1:1 Console facade。"
+    },
+    {
+      "service": "BarcodeLabel",
       "method": "POST",
       "route": "/api/business/v1/barcodes/resolve",
       "operationId": "resolveBusinessBarcode",
