@@ -107,7 +107,7 @@ public sealed class LabelPrintBatchReservationTests
     [Fact]
     public void Reservation_requires_one_unique_serial_per_requested_item()
     {
-        Assert.Throws<ArgumentException>(() => Reserve(PlainRule(), "{}", ["00000000001"] , requestedQuantity: 2));
+        Assert.Throws<ArgumentException>(() => Reserve(PlainRule(), "{}", ["00000000001"], requestedQuantity: 2));
         Assert.Throws<ArgumentException>(() => Reserve(PlainRule(), "{}", ["00000000001", "00000000001"]));
     }
 
