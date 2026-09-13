@@ -18,8 +18,9 @@
 # same manifest is scripts/verify-backend-test-shards.ps1, and it governs *policy* only — project
 # classification, exclusion registration, solution membership, workflow wiring. Timing never enters
 # it, because a measurement is observed rather than decided and cannot sensibly be "violated".
-# 当前 timing/policy 边界见 docs/governance/testing/evidence.md；
-# 缓存与估值行为以 scripts/lib/BackendTestShardTimings.ps1 及对应测试为准。
+# 当前 timing/policy 边界见 docs/governance/testing/evidence.md；M4 后不再经
+# docs/architecture 根目录旧 shim 转发。缓存与估值行为以
+# scripts/lib/BackendTestShardTimings.ps1 及对应测试为准。
 #
 # The only nonzero exit is a structurally unusable manifest, which is a defect in a governed file
 # rather than in a measurement. A cache that is missing, stale, corrupt, or valid JSON in the wrong

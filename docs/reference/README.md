@@ -31,4 +31,4 @@
 3. 机器可读输入或生成伴随物必须与其生产者原子迁移；不得为了 Reference 目录再造第二份 JSON registry、哈希清单或自然语言同步器。
 4. 权限目录尤其不能成为第二份 IAM registry：权限是否存在、默认角色是否拥有、endpoint 是否强制是三个独立 producer 事实，必须分别核实。
 5. 当前 Reference 发生结构变化时同步活跃 README/AGENTS/代码注释；冻结报告、ADR 与 `docs/superpowers/**` 不为清理旧 URL 批量改写。
-6. M2 迁移期旧 `docs/architecture/*` 兼容页只负责导航；最终删除条件由 M2-M/M4 统一收口。
+6. M4 后旧 `docs/architecture/*` 平铺兼容页已退出；Reference 当前链接只指 canonical owner。冻结历史中的旧路径继续按原时点解释，并通过 Git/Reports 追溯。

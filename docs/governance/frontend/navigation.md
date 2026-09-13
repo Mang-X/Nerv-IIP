@@ -54,4 +54,4 @@
 - 改 AppShell 或应用边界：更新 [`../../architecture/frontend/navigation.md`](../../architecture/frontend/navigation.md)。
 - 项目进度、CI run、阶段验收与一次性审计进入 GitHub/Linear、Status 或 Reports，不写回本文。
 
-旧入口 `docs/architecture/frontend-navigation-map.md` 在 M2/M4 期间只保留兼容导航；迁移前正文冻结于日期化 Audit，不再维护。
+旧入口 `docs/architecture/frontend-navigation-map.md` 已在 M4 退出；迁移前正文冻结于日期化 Audit，当前只使用上面的 Product / Architecture / Reference canonical 入口。

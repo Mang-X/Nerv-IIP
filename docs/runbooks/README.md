@@ -27,6 +27,6 @@
 5. **证据与秘密分开。** 记录 commit/release/run、目标、命令结果、日志或 fingerprint；口令、token、连接串等敏感输入不得进入仓库或公开日志。
 6. **Runbook 不保存阶段历史。** 一次性调查、历史形成过程和完成记录进入 Reports/Archive；任务状态和验收证据留在 GitHub/Linear。
 
-## M2 迁移兼容
+## M4 后的路径规则
 
-`docs/architecture/` 下已迁移的旧 Runbook/Governance 文件名在 M2 期间只保留短导航，不能继续维护操作或规则正文；兼容入口及本目录内临时旧相对链接指针的删除条件由 M2-M/M4 统一收口。
+M2/M4 已退出 `docs/architecture/` 根目录旧 Runbook/Governance 文件名。当前操作文档只链接本目录与其它 canonical owner；ADR、Reports、Status archive、Superpowers 等冻结材料中的旧路径作为历史坐标保留，通过 Git 追溯，不恢复为当前兼容入口。
