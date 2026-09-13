@@ -92,6 +92,37 @@ public sealed class BarcodeLabelOpenApiTests
             ["printBatchId", "sequenceNo", "reason"]);
     }
 
+    [Fact]
+    public async Task OpenApi_document_exposes_scoped_v2_print_batch_detail()
+    {
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Testing");
+                builder.ConfigureAppConfiguration((_, configuration) =>
+                    configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["ConnectionStrings:PostgreSQL"] = "Host=unused;Database=nerv_iip_barcode_scoped_detail_openapi;Username=nerv;Password=nerv",
+                        ["InternalService:BearerToken"] = "barcode-label-scoped-detail-openapi-test-token",
+                    }));
+            });
+        using var client = factory.CreateClient();
+
+        using var document = JsonDocument.Parse(await client.GetStringAsync("/swagger/v1/swagger.json"));
+        var operation = document.RootElement
+            .GetProperty("paths")
+            .GetProperty("/api/business/v2/barcodes/print-batches/{printBatchId}")
+            .GetProperty("get");
+
+        Assert.Equal("getScopedBusinessBarcodePrintBatch", operation.GetProperty("operationId").GetString());
+        var parameters = operation.GetProperty("parameters").EnumerateArray().ToArray();
+        foreach (var parameterName in new[] { "printBatchId", "organizationId", "environmentId" })
+        {
+            var parameter = Assert.Single(parameters, item => item.GetProperty("name").GetString() == parameterName);
+            Assert.True(parameter.GetProperty("required").GetBoolean());
+        }
+    }
+
     private static void AssertScopedLifecycleOperation(
         JsonElement root,
         string route,

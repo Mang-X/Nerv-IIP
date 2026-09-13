@@ -19,7 +19,7 @@ public sealed class BarcodeLabelEndpointContractTests
     {
         var contracts = BarcodeLabelEndpointContracts.All.ToArray();
 
-        Assert.Equal(19, contracts.Length);
+        Assert.Equal(20, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/barcodes/rules"
             && x.PermissionCode == BarcodeLabelPermissionCodes.TemplatesManage
@@ -87,6 +87,11 @@ public sealed class BarcodeLabelEndpointContractTests
             && x.PermissionCode == BarcodeLabelPermissionCodes.Print
             && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
             && x.OperationId == "getBusinessBarcodePrintBatch");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v2/barcodes/print-batches/{printBatchId}"
+            && x.PermissionCode == BarcodeLabelPermissionCodes.Print
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "getScopedBusinessBarcodePrintBatch");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/barcodes/scans"
             && x.PermissionCode == BarcodeLabelPermissionCodes.ScansWrite
@@ -119,6 +124,7 @@ public sealed class BarcodeLabelEndpointContractTests
     [InlineData(typeof(ScopedVoidLabelEndpoint))]
     [InlineData(typeof(ListLabelPrintBatchesEndpoint))]
     [InlineData(typeof(GetLabelPrintBatchEndpoint))]
+    [InlineData(typeof(GetScopedLabelPrintBatchEndpoint))]
     [InlineData(typeof(RecordScanEndpoint))]
     [InlineData(typeof(ListScansEndpoint))]
     [InlineData(typeof(ResolveBarcodeEndpoint))]

@@ -329,6 +329,19 @@
     },
     {
       "service": "BarcodeLabel",
+      "method": "GET",
+      "route": "/api/business/v2/barcodes/print-batches/{printBatchId}",
+      "operationId": "getScopedBusinessBarcodePrintBatch",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleBarcodePrintBatch"
+      ]
+    },
+    {
+      "service": "BarcodeLabel",
       "method": "POST",
       "route": "/api/business/v1/barcodes/resolve",
       "operationId": "resolveBusinessBarcode",

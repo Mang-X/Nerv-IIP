@@ -6756,6 +6756,43 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Barcode_print_batch_detail_preserves_serial_mes_and_transport_facts()
+    {
+        var barcode = new RecordingBarcodeLabelClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessBarcodeLabelClient>();
+            services.AddSingleton<IBusinessBarcodeLabelClient>(barcode);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/barcode/print-batches/print-batch-001" +
+            "?organizationId=org-001&environmentId=env-dev");
+        var payload = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(payload);
+        var detail = document.RootElement.GetProperty("data").GetProperty("printBatch");
+        Assert.Equal("print-001", detail.GetProperty("reportIntentKey").GetString());
+        Assert.Equal("printer-01", detail.GetProperty("printerId").GetString());
+        Assert.Equal("job-001", detail.GetProperty("printJobId").GetString());
+        Assert.Equal("report-id-001", detail.GetProperty("productionReportId").GetString());
+        Assert.Equal("PR-001", detail.GetProperty("productionReportNo").GetString());
+        var item = detail.GetProperty("items")[0];
+        Assert.Equal("created", item.GetProperty("status").GetString());
+        Assert.Equal("00000000001", item.GetProperty("serialNumber").GetString());
+        Assert.Equal("LOT-A", item.GetProperty("lotNo").GetString());
+        Assert.Equal("09506000134352", item.GetProperty("gtin").GetString());
+        Assert.Equal(
+            "urn:epc:id:sgtin:0950600.013435.00000000001",
+            item.GetProperty("epcUri").GetString());
+    }
+
+    [Fact]
     public async Task Barcode_facade_forwards_rule_print_batch_template_and_scan_list_paging()
     {
         var barcode = new RecordingBarcodeLabelClient();
@@ -17708,9 +17745,24 @@ internal sealed class RecordingBarcodeLabelClient : IBusinessBarcodeLabelClient,
                 "work-order",
                 "WO-001",
                 "print-001",
+                "print-001",
                 1,
-                "created",
-                [])));
+                "sent-to-printer",
+                "printer-01",
+                "job-001",
+                null,
+                "report-id-001",
+                "PR-001",
+                [new BusinessConsoleBarcodePrintItemDetail(
+                    1,
+                    "(01)09506000134352(10)LOT-A\u001D(21)00000000001",
+                    null,
+                    "created",
+                    null,
+                    "00000000001",
+                    "LOT-A",
+                    "09506000134352",
+                    "urn:epc:id:sgtin:0950600.013435.00000000001")])));
     }
 
     public Task<BusinessConsoleBarcodePrintBatchListResponse> ListPrintBatchesAsync(
