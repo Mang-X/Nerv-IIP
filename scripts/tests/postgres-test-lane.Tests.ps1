@@ -370,6 +370,8 @@ try {
                 'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Concurrent_same_intent_creates_one_batch_and_allocates_once_on_postgres',
                 'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Create_handler_preserves_short_rule_capacity_after_wide_partition_advances_on_postgres',
                 'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Create_handlers_preserve_org_environment_scope_and_gs1_serial_authority_on_postgres',
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Migration_and_formatter_share_base62_case_order_for_legacy_gs1_serials_on_postgres',
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Migration_excludes_legacy_gs1_serial_above_current_int64_generation_space_on_postgres',
                 'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Migration_fails_closed_with_conflict_facts_for_duplicate_historical_serials_on_postgres',
                 'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Migration_fails_closed_when_historical_serial_reaches_width_capacity_on_postgres',
                 'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Migration_preserves_unambiguous_historical_serials_and_nulls_on_postgres',

@@ -434,6 +434,120 @@ public sealed partial class BarcodeLabelPostgresProfileTests
     }
 
     [RealPostgresFact]
+    public async Task Migration_and_formatter_share_base62_case_order_for_legacy_gs1_serials_on_postgres()
+    {
+        await ResetBarcodeLabelSchemaAsync();
+        await using (var setupDb = CreatePostgresDbContext(LaneConnectionString))
+        {
+            await setupDb.GetService<IMigrator>().MigrateAsync("20260912121435_AddTemplateAssetRetirementRetention");
+            await setupDb.Database.ExecuteSqlRawAsync("""
+                INSERT INTO barcode.label_print_batches (
+                    id, organization_id, environment_id, barcode_rule_id, label_template_id,
+                    source_document_type, source_document_id, idempotency_key, label_values_json,
+                    requested_quantity, status, created_at_utc)
+                VALUES
+                    ('00000000-0000-0000-0000-000000000311', 'org-case-order', 'env-case-order',
+                     '00000000-0000-0000-0000-000000000321', '00000000-0000-0000-0000-000000000331',
+                     'legacy', 'LEGACY-UPPER-1', 'legacy-upper-1', '{{}}', 1, 'pending', '2026-09-01T00:00:00Z'),
+                    ('00000000-0000-0000-0000-000000000312', 'org-case-order', 'env-case-order',
+                     '00000000-0000-0000-0000-000000000322', '00000000-0000-0000-0000-000000000332',
+                     'legacy', 'LEGACY-UPPER-2', 'legacy-upper-2', '{{}}', 1, 'pending', '2026-09-01T00:00:01Z'),
+                    ('00000000-0000-0000-0000-000000000313', 'org-case-order', 'env-case-order',
+                     '00000000-0000-0000-0000-000000000323', '00000000-0000-0000-0000-000000000333',
+                     'legacy', 'LEGACY-LOWER-1', 'legacy-lower-1', '{{}}', 1, 'pending', '2026-09-01T00:00:02Z');
+
+                INSERT INTO barcode.label_print_items (
+                    id, label_print_batch_id, sequence_no, label_value, serial_number, status, created_at_utc)
+                VALUES
+                    ('00000000-0000-0000-0000-000000000341', '00000000-0000-0000-0000-000000000311',
+                     1, 'LEGACY-UPPER-1', '000000000000000A0001', 'created', '2026-09-01T00:00:00Z'),
+                    ('00000000-0000-0000-0000-000000000342', '00000000-0000-0000-0000-000000000312',
+                     1, 'LEGACY-UPPER-2', '000000000000000A0002', 'created', '2026-09-01T00:00:01Z'),
+                    ('00000000-0000-0000-0000-000000000343', '00000000-0000-0000-0000-000000000313',
+                     1, 'LEGACY-LOWER-1', '000000000000000a0001', 'created', '2026-09-01T00:00:02Z');
+                """);
+        }
+
+        await using (var upgradeDb = CreatePostgresDbContext(LaneConnectionString))
+        {
+            await upgradeDb.Database.MigrateAsync();
+        }
+
+        await using var provider = CreateRetirementCommandProvider();
+        BarcodeRuleId ruleId;
+        LabelTemplateId templateId;
+        await using (var setupScope = provider.CreateAsyncScope())
+        {
+            var setupDb = setupScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var rule = BarcodeRule.Create(
+                "org-case-order", "env-case-order", "GS1-CASE", "gs1-128", "0950600013435", 80,
+                "gs1-mod10", ["legacy"], "active", 7);
+            var template = LabelTemplate.Create(
+                "org-case-order", "env-case-order", "TPL-GS1-CASE", "GS1 case-order template", "file-gs1-case",
+                """{"version":1,"variables":[{"name":"skuCode","type":"string","required":true,"maxLength":80},{"name":"lotNo","type":"string","required":true,"maxLength":100}]}""",
+                "active");
+            setupDb.AddRange(rule, template);
+            await setupDb.SaveChangesAsync();
+            ruleId = rule.Id;
+            templateId = template.Id;
+        }
+
+        LabelPrintBatchId batchId;
+        await using (var commandScope = provider.CreateAsyncScope())
+        {
+            batchId = await commandScope.ServiceProvider.GetRequiredService<ISender>().Send(
+                new CreateLabelPrintBatchCommand(
+                    "org-case-order", "env-case-order", ruleId, templateId, "legacy", "LEGACY-NEXT",
+                    "legacy-next", """{"skuCode":"SKU-GS1-CASE","lotNo":"LOT-CASE"}""", 1));
+        }
+
+        await using var verificationDb = CreatePostgresDbContext(LaneConnectionString);
+        var created = await verificationDb.LabelPrintItems
+            .SingleAsync(item => item.LabelPrintBatchId == batchId);
+        Assert.Equal("000000000000000a0002", created.SerialNumber);
+        Assert.Contains("(21)000000000000000a0002", created.LabelValue, StringComparison.Ordinal);
+    }
+
+    [RealPostgresFact]
+    public async Task Migration_excludes_legacy_gs1_serial_above_current_int64_generation_space_on_postgres()
+    {
+        await ResetBarcodeLabelSchemaAsync();
+        await using (var setupDb = CreatePostgresDbContext(LaneConnectionString))
+        {
+            await setupDb.GetService<IMigrator>().MigrateAsync("20260912121435_AddTemplateAssetRetirementRetention");
+            await setupDb.Database.ExecuteSqlRawAsync("""
+                INSERT INTO barcode.label_print_batches (
+                    id, organization_id, environment_id, barcode_rule_id, label_template_id,
+                    source_document_type, source_document_id, idempotency_key, label_values_json,
+                    requested_quantity, status, created_at_utc)
+                VALUES
+                    ('00000000-0000-0000-0000-000000000351', 'org-int64-bound', 'env-int64-bound',
+                     '00000000-0000-0000-0000-000000000352', '00000000-0000-0000-0000-000000000353',
+                     'legacy', 'LEGACY-INT64-BOUND', 'legacy-int64-bound', '{{}}', 1, 'pending', '2026-09-01T00:00:00Z');
+
+                INSERT INTO barcode.label_print_items (
+                    id, label_print_batch_id, sequence_no, label_value, serial_number, status, created_at_utc)
+                VALUES
+                    ('00000000-0000-0000-0000-000000000354', '00000000-0000-0000-0000-000000000351',
+                     1, 'LEGACY-INT64-BOUND', 'zzzzzzzzzzzzzzzz0001', 'created', '2026-09-01T00:00:00Z');
+                """);
+        }
+
+        await using (var upgradeDb = CreatePostgresDbContext(LaneConnectionString))
+        {
+            await upgradeDb.Database.MigrateAsync();
+        }
+
+        await using var verificationDb = CreatePostgresDbContext(LaneConnectionString);
+        Assert.Equal("zzzzzzzzzzzzzzzz0001", await verificationDb.LabelPrintItems
+            .Select(item => item.SerialNumber)
+            .SingleAsync());
+        Assert.False(await verificationDb.LabelSerialCounters.AnyAsync(
+            counter => counter.OrganizationId == "org-int64-bound"
+                && counter.EnvironmentId == "env-int64-bound"));
+    }
+
+    [RealPostgresFact]
     public async Task Migration_preserves_unambiguous_historical_serials_and_nulls_on_postgres()
     {
         await ResetBarcodeLabelSchemaAsync();
