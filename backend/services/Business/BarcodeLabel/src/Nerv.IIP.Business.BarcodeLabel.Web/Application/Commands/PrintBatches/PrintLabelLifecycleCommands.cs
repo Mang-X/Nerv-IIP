@@ -5,6 +5,13 @@ using Nerv.IIP.Business.BarcodeLabel.Domain.Printing;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.PrintBatches;
 
+public sealed record ActivateLabelPrintBatchCommand(
+    LabelPrintBatchId PrintBatchId,
+    string OrganizationId,
+    string EnvironmentId,
+    string ProductionReportId,
+    string ProductionReportNo) : ICommand<LabelPrintBatchId>;
+
 public sealed record DispatchLabelPrintBatchCommand(
     LabelPrintBatchId PrintBatchId,
     string PrinterId) : ICommand<LabelPrintBatchId>;
@@ -38,6 +45,18 @@ public sealed record ScopedVoidLabelCommand(
     string OrganizationId,
     string EnvironmentId,
     string Reason) : ICommand<LabelPrintBatchId>;
+
+public sealed class ActivateLabelPrintBatchCommandValidator : AbstractValidator<ActivateLabelPrintBatchCommand>
+{
+    public ActivateLabelPrintBatchCommandValidator()
+    {
+        RuleFor(x => x.PrintBatchId).NotEmpty();
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ProductionReportId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.ProductionReportNo).NotEmpty().MaximumLength(150);
+    }
+}
 
 public sealed class DispatchLabelPrintBatchCommandValidator : AbstractValidator<DispatchLabelPrintBatchCommand>
 {
@@ -101,6 +120,31 @@ public sealed class ScopedVoidLabelCommandValidator : AbstractValidator<ScopedVo
         RuleFor(x => x.OrganizationId).NotEmpty();
         RuleFor(x => x.EnvironmentId).NotEmpty();
         RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+    }
+}
+
+public sealed class ActivateLabelPrintBatchCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<ActivateLabelPrintBatchCommand, LabelPrintBatchId>
+{
+    public async Task<LabelPrintBatchId> Handle(ActivateLabelPrintBatchCommand request, CancellationToken cancellationToken)
+    {
+        var batch = await dbContext.LabelPrintBatches.SingleOrDefaultAsync(
+                x => x.Id == request.PrintBatchId
+                    && x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId,
+                cancellationToken)
+            ?? throw new KnownException($"未找到当前组织和环境内的打印批次，批次 ID = {request.PrintBatchId}。");
+
+        try
+        {
+            batch.Activate(request.ProductionReportId, request.ProductionReportNo);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new KnownException("打印批次无法使用当前 MES 报工关联激活。", exception);
+        }
+
+        return batch.Id;
     }
 }
 

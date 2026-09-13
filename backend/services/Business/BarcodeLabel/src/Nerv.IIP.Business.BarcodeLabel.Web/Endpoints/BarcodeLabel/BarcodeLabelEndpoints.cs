@@ -97,6 +97,13 @@ public sealed record CreateLabelPrintBatchRequest(
 
 public sealed record CreateLabelPrintBatchResponse(LabelPrintBatchId PrintBatchId);
 
+public sealed record ActivateLabelPrintBatchBody(string ProductionReportId, string ProductionReportNo);
+
+public sealed record ActivateLabelPrintBatchRequest(
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    [property: FromBody] ActivateLabelPrintBatchBody Body);
+
 public sealed record DispatchLabelPrintBatchRequest(LabelPrintBatchId PrintBatchId, string PrinterId);
 
 public sealed record ScopedDispatchLabelPrintBatchBody(LabelPrintBatchId PrintBatchId, string PrinterId);
@@ -298,6 +305,23 @@ public sealed class GetLabelPrintBatchEndpoint(ISender sender)
     }
 }
 
+public sealed class ActivateLabelPrintBatchEndpoint(ISender sender)
+    : BarcodeLabelEndpoint<ActivateLabelPrintBatchRequest, ResponseData<LabelPrintLifecycleResponse>>
+{
+    public override void Configure() => ConfigureBarcodeLabelContract(BarcodeLabelEndpointContracts.Get<ActivateLabelPrintBatchEndpoint>());
+
+    public override async Task HandleAsync(ActivateLabelPrintBatchRequest req, CancellationToken ct)
+    {
+        var id = await sender.Send(new ActivateLabelPrintBatchCommand(
+            Route<LabelPrintBatchId>("printBatchId")!,
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.Body.ProductionReportId,
+            req.Body.ProductionReportNo), ct);
+        await Send.OkAsync(new LabelPrintLifecycleResponse(id).AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed class DispatchLabelPrintBatchEndpoint(ISender sender)
     : BarcodeLabelEndpoint<DispatchLabelPrintBatchRequest, ResponseData<LabelPrintLifecycleResponse>>
 {
@@ -489,6 +513,7 @@ public static class BarcodeLabelEndpointContracts
         new(typeof(CreateOrUpdateLabelTemplateEndpoint), "POST", "/api/business/v1/barcodes/templates", BarcodeLabelPermissionCodes.TemplatesManage, InternalServiceAuthorizationPolicy.Name, "createOrUpdateBusinessBarcodeTemplate"),
         new(typeof(ListLabelTemplatesEndpoint), "GET", "/api/business/v1/barcodes/templates", BarcodeLabelPermissionCodes.TemplatesManage, InternalServiceAuthorizationPolicy.Name, "listBusinessBarcodeTemplates"),
         new(typeof(CreateLabelPrintBatchEndpoint), "POST", "/api/business/v1/barcodes/print-batches", BarcodeLabelPermissionCodes.Print, InternalServiceAuthorizationPolicy.Name, "createBusinessBarcodePrintBatch"),
+        new(typeof(ActivateLabelPrintBatchEndpoint), "POST", "/api/business/internal/v1/barcodes/print-batches/{printBatchId}/activate", BarcodeLabelPermissionCodes.Print, InternalServiceAuthorizationPolicy.Name, "activateBusinessBarcodePrintBatch"),
         new(typeof(DispatchLabelPrintBatchEndpoint), "POST", "/api/business/v1/barcodes/print-batches/{printBatchId}/dispatch", BarcodeLabelPermissionCodes.Print, InternalServiceAuthorizationPolicy.Name, "dispatchBusinessBarcodePrintBatch"),
         new(typeof(ScopedDispatchLabelPrintBatchEndpoint), "POST", "/api/business/internal/v1/barcodes/print-batches/{printBatchId}/dispatch", BarcodeLabelPermissionCodes.Print, InternalServiceAuthorizationPolicy.Name, "dispatchScopedBusinessBarcodePrintBatch"),
         new(typeof(ReprintLabelEndpoint), "POST", "/api/business/v1/barcodes/print-batches/{printBatchId}/items/{sequenceNo}/reprint", BarcodeLabelPermissionCodes.Print, InternalServiceAuthorizationPolicy.Name, "reprintBusinessBarcodeLabel"),

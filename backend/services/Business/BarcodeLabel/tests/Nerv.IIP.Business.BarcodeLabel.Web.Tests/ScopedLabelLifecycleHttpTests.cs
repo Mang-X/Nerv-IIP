@@ -14,6 +14,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelSerialCounterAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.Printing;
 using Nerv.IIP.Business.BarcodeLabel.Infrastructure;
 using NetCorePal.Extensions.DistributedTransactions;
@@ -30,6 +31,29 @@ public sealed class ScopedLabelLifecycleHttpTests
     private const string TemplateJson =
         """{"format":"nerv-iip.label-template","version":1,"media":{"dpi":203,"widthDots":812,"heightDots":406},"fields":[{"kind":"text","x":40,"y":30,"fontHeight":30,"fontWidth":30,"variable":"skuCode"},{"kind":"barcode","x":40,"y":90,"moduleWidth":2,"height":100,"variable":"label.value"}]}""";
     private static readonly string AssetSha256 = $"sha256:{new string('a', 64)}";
+
+    [Fact]
+    public async Task Scoped_activation_associates_the_reserved_batch_before_dispatch()
+    {
+        var printer = new RecordingPrinter(LabelPrinterDispatchResult.Sent("unused"));
+        await using var factory = CreateFactory(printer);
+        var batch = await SeedBatchAsync(factory, "org-001", "env-dev", "activate-owned", activated: false);
+        using var client = CreateAuthenticatedClient(factory);
+
+        using var response = await client.PostAsync(
+            $"/api/business/internal/v1/barcodes/print-batches/{WireId(batch.Id)}/activate" +
+            "?organizationId=org-001&environmentId=env-dev",
+            JsonBody(new { productionReportId = "report-id-001", productionReportNo = "PR-001" }));
+
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var result = JsonDocument.Parse(body);
+        Assert.True(result.RootElement.GetProperty("success").GetBoolean(), body);
+        var batchData = await GetBatchAsync(client, batch.Id);
+        Assert.Equal("ready-to-print", batchData.GetProperty("status").GetString());
+        Assert.Equal("report-id-001", batchData.GetProperty("productionReportId").GetString());
+        Assert.Equal("PR-001", batchData.GetProperty("productionReportNo").GetString());
+    }
 
     [Fact]
     public async Task Scoped_dispatch_prints_only_the_batch_owned_by_the_required_scope()
@@ -309,7 +333,8 @@ public sealed class ScopedLabelLifecycleHttpTests
         string organizationId,
         string environmentId,
         string idempotencyKey,
-        bool printed = false)
+        bool printed = false,
+        bool activated = true)
     {
         await using var scope = factory.Services.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -331,7 +356,7 @@ public sealed class ScopedLabelLifecycleHttpTests
             "file-template-001",
             VariableSchemaJson,
             "active");
-        var batch = LabelPrintBatch.Create(
+        var batch = LabelPrintBatch.Reserve(
             organizationId,
             environmentId,
             rule,
@@ -346,7 +371,12 @@ public sealed class ScopedLabelLifecycleHttpTests
             "ASN-001",
             idempotencyKey,
             """{"skuCode":"SKU-FG-1000"}""",
-            1);
+            1,
+            [LabelSerialNumber.Format(1)]);
+        if (activated)
+        {
+            batch.Activate("report-id-001", "PR-001");
+        }
         if (printed)
         {
             batch.RecordSentToPrinter("seed-printer", "seed-job");

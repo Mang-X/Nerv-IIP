@@ -5,6 +5,7 @@ using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelSerialCounterAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.Printing;
 using Nerv.IIP.Business.BarcodeLabel.Infrastructure;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.PrintBatches;
@@ -249,7 +250,7 @@ public sealed class PrintLabelLifecycleCommandTests
     {
         var rule = ActiveRule();
         var template = ActiveTemplate();
-        var batch = LabelPrintBatch.Create(
+        var batch = LabelPrintBatch.Reserve(
             "org-001",
             "env-dev",
             rule,
@@ -264,7 +265,9 @@ public sealed class PrintLabelLifecycleCommandTests
             "ASN-001",
             $"idem-print-{Guid.NewGuid():N}",
             LabelValuesJson,
-            quantity);
+            quantity,
+            Enumerable.Range(1, quantity).Select(value => LabelSerialNumber.Format(value)).ToArray());
+        batch.Activate("report-id-001", "PR-001");
         return (batch, template);
     }
 

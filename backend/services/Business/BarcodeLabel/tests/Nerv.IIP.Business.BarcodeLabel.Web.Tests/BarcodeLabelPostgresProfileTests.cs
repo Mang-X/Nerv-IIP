@@ -21,12 +21,14 @@ using Nerv.IIP.Business.BarcodeLabel.Domain;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelSerialCounterAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.ScanRecordAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.TraceabilityAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.TemplateAssetRetirementDecisionAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.Printing;
 using Nerv.IIP.Business.BarcodeLabel.Infrastructure;
 using Nerv.IIP.Business.BarcodeLabel.Infrastructure.Concurrency;
+using Nerv.IIP.Business.BarcodeLabel.Infrastructure.SerialNumbers;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.TemplateAssetRetirements;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.LabelTemplates;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.PrintBatches;
@@ -40,6 +42,81 @@ namespace Nerv.IIP.Business.BarcodeLabel.Web.Tests;
 public sealed partial class BarcodeLabelPostgresProfileTests
 {
     private const string PostgresConnectionStringEnvironmentVariable = "NERV_IIP_TEST_POSTGRES";
+
+    [RealPostgresFact]
+    public async Task Serial_allocator_reserves_non_overlapping_ordered_ranges_concurrently_on_postgres()
+    {
+        await ResetAndMigrateSchemaAsync();
+
+        var barcodeRuleId = new BarcodeRuleId(Guid.CreateVersion7());
+
+        var allocations = await Task.WhenAll(Enumerable.Range(0, 8).Select(async _ =>
+        {
+            await using var dbContext = CreatePostgresDbContext(LaneConnectionString);
+            await using var transaction = await dbContext.Database.BeginTransactionAsync();
+            var values = await new PostgresLabelSerialNumberAllocator(dbContext).AllocateAsync(
+                "org-serial",
+                "env-serial",
+                barcodeRuleId,
+                3,
+                CancellationToken.None);
+            await transaction.CommitAsync();
+            return values;
+        }));
+
+        var serialNumbers = allocations.SelectMany(values => values).ToArray();
+        Assert.Equal(24, serialNumbers.Distinct(StringComparer.Ordinal).Count());
+        Assert.All(allocations, values => Assert.Equal(values.Order(StringComparer.Ordinal), values));
+
+        var secondRuleId = new BarcodeRuleId(Guid.CreateVersion7());
+        await using (var secondRuleDb = CreatePostgresDbContext(LaneConnectionString))
+        await using (var secondRuleTransaction = await secondRuleDb.Database.BeginTransactionAsync())
+        {
+            var secondRuleValues = await new PostgresLabelSerialNumberAllocator(secondRuleDb).AllocateAsync(
+                "org-serial",
+                "env-serial",
+                secondRuleId,
+                1,
+                CancellationToken.None);
+            Assert.DoesNotContain(secondRuleValues[0], serialNumbers);
+            await secondRuleTransaction.CommitAsync();
+        }
+
+        await using var verificationDb = CreatePostgresDbContext(LaneConnectionString);
+        var currentValues = await verificationDb.LabelSerialCounters
+            .Select(counter => counter.CurrentValue)
+            .Order()
+            .ToArrayAsync();
+        Assert.Equal([1L, 24L], currentValues);
+    }
+
+    [RealPostgresFact]
+    public async Task Print_item_serial_is_unique_inside_organization_and_environment_on_postgres()
+    {
+        await ResetAndMigrateSchemaAsync();
+        await using var dbContext = CreatePostgresDbContext(LaneConnectionString);
+        var rule = BarcodeRule.Create(
+            "org-serial",
+            "env-serial",
+            "RULE-A",
+            "code128",
+            "A",
+            40,
+            "none",
+            ["work-order"],
+            "active");
+        var first = ReservedBatch(rule, "intent-a", "WO-A", "00000000001");
+        dbContext.AddRange(rule, first);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        var second = ReservedBatch(rule, "intent-b", "WO-B", "00000000001");
+        dbContext.Add(second);
+
+        var failure = await Assert.ThrowsAsync<DbUpdateException>(() => dbContext.SaveChangesAsync());
+        var postgresFailure = Assert.IsType<PostgresException>(failure.InnerException);
+        Assert.Equal("UX_label_print_items_scope_serial_number", postgresFailure.ConstraintName);
+    }
 
     // Oracle: #3045 / #3028, one durable decision, frozen inputs, seven-day recovery boundary.
     [RealPostgresFact]
@@ -1290,9 +1367,16 @@ public sealed partial class BarcodeLabelPostgresProfileTests
                     {legacyBatchId}, 'org-legacy', 'env-legacy', {Guid.CreateVersion7()}, {Guid.CreateVersion7()},
                     'legacy', 'LEGACY-001', 'legacy-batch', {legacyLabelValues}, 1, 'pending', {DateTimeOffset.UtcNow})
                 """);
+            await dbContext.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO barcode.label_print_items (
+                    id, label_print_batch_id, sequence_no, label_value, serial_number, status, created_at_utc)
+                VALUES (
+                    {Guid.CreateVersion7()}, {legacyBatchId}, 1, 'LEGACY-SERIAL-001', 'LEGACY-SERIAL-001', 'created', {DateTimeOffset.UtcNow})
+                """);
             await dbContext.Database.MigrateAsync();
 
             var legacy = await dbContext.LabelPrintBatches
+                .Include(batch => batch.Items)
                 .AsNoTracking()
                 .SingleAsync(batch => batch.Id == new LabelPrintBatchId(legacyBatchId));
             Assert.Null(legacy.TemplateFileIdSnapshot);
@@ -1300,6 +1384,9 @@ public sealed partial class BarcodeLabelPostgresProfileTests
             Assert.Null(legacy.VariableSchemaJsonSnapshot);
             Assert.Null(legacy.BarcodeTypeSnapshot);
             Assert.Null(legacy.RendererContractVersion);
+            Assert.Equal("ready-to-print", legacy.Status);
+            Assert.Equal("org-legacy", legacy.Items.Single().OrganizationId);
+            Assert.Equal("env-legacy", legacy.Items.Single().EnvironmentId);
 
             var replayRule = BarcodeRule.Create(
                 "org-replay", "env-replay", "FG-REPLAY", "code128", "R", 40, "none", ["work-order"], "active");

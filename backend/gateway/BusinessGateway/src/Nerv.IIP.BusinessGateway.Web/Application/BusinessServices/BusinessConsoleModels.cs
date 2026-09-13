@@ -4393,14 +4393,26 @@ public sealed record BusinessConsoleBarcodePrintBatchDetail(
     string SourceDocumentType,
     string SourceDocumentId,
     string IdempotencyKey,
+    string ReportIntentKey,
     int RequestedQuantity,
     string Status,
+    string? PrinterId,
+    string? PrintJobId,
+    string? FailureReason,
+    string? ProductionReportId,
+    string? ProductionReportNo,
     IReadOnlyCollection<BusinessConsoleBarcodePrintItemDetail> Items);
 
 public sealed record BusinessConsoleBarcodePrintItemDetail(
     int SequenceNo,
     string LabelValue,
-    string? FileId);
+    string? FileId,
+    string Status,
+    string? VoidReason,
+    string? SerialNumber,
+    string? LotNo,
+    string? Gtin,
+    string? EpcUri);
 
 public sealed record BusinessConsoleRecordBarcodeScanRequest(
     string OrganizationId,

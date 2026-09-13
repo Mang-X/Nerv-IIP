@@ -26,6 +26,7 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
         Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/BarcodeRules/CreateOrUpdateBarcodeRuleCommand.cs"), "CreateOrUpdateBarcodeRuleCommandHandler", "Handle", 4),
         Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/LabelTemplates/CreateOrUpdateLabelTemplateCommand.cs"), "CreateOrUpdateLabelTemplateCommandHandler", "Handle", 2),
         Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/PrintBatches/CreateLabelPrintBatchCommand.cs"), "CreateLabelPrintBatchCommandHandler", "Handle", 5),
+        Target(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/PrintBatches/PrintLabelLifecycleCommands.cs"), "ActivateLabelPrintBatchCommandHandler", "Handle", 2),
         Excluded(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/PrintBatches/PrintLabelLifecycleCommands.cs"), "LabelPrintLifecycle", "LoadBatchAsync", 1, "PrintLabel lifecycle helper is internal/no-facade"),
         Excluded(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/PrintBatches/PrintLabelLifecycleCommands.cs"), "LabelPrintLifecycle", "LoadScopedBatchAsync", 1, "Scoped lifecycle helper remains internal until #2975 adds its public facade"),
         Excluded(SourcePath("Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/PrintBatches/PrintLabelLifecycleCommands.cs"), "LabelPrintLifecycleKnownExceptionMapper", "Create", 9, "PrintLabel lifecycle endpoint is internal/no-facade"),
@@ -59,7 +60,7 @@ public sealed class BarcodeLabelKnownExceptionMessageArchitectureTests
 
         var expectedKeys = ExpectedSites.Select(site => site.Key).ToArray();
         Assert.Equal(expectedKeys.Length, expectedKeys.Distinct(StringComparer.Ordinal).Count());
-        Assert.Equal(36, ExpectedSites.Where(site => site.Kind == BarcodeLabelKnownExceptionSiteKind.Target)
+        Assert.Equal(38, ExpectedSites.Where(site => site.Kind == BarcodeLabelKnownExceptionSiteKind.Target)
             .Sum(site => site.DirectKnownExceptionCount));
         Assert.Equal(13, ExpectedSites.Where(site => site.Kind == BarcodeLabelKnownExceptionSiteKind.Excluded)
             .Sum(site => site.DirectKnownExceptionCount));

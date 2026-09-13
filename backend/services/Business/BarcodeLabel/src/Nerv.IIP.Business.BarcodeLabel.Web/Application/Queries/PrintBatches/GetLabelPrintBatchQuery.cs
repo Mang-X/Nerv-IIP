@@ -12,14 +12,26 @@ public sealed record LabelPrintBatchDetail(
     string SourceDocumentType,
     string SourceDocumentId,
     string IdempotencyKey,
+    string ReportIntentKey,
     int RequestedQuantity,
     string Status,
     string? PrinterId,
     string? PrintJobId,
     string? FailureReason,
+    string? ProductionReportId,
+    string? ProductionReportNo,
     IReadOnlyCollection<LabelPrintItemDetail> Items);
 
-public sealed record LabelPrintItemDetail(int SequenceNo, string LabelValue, string? FileId, string Status, string? VoidReason);
+public sealed record LabelPrintItemDetail(
+    int SequenceNo,
+    string LabelValue,
+    string? FileId,
+    string Status,
+    string? VoidReason,
+    string? SerialNumber,
+    string? LotNo,
+    string? Gtin,
+    string? EpcUri);
 
 public sealed class GetLabelPrintBatchQueryValidator : AbstractValidator<GetLabelPrintBatchQuery>
 {
@@ -42,12 +54,24 @@ public sealed class GetLabelPrintBatchQueryHandler(ApplicationDbContext dbContex
                 x.SourceDocumentType,
                 x.SourceDocumentId,
                 x.IdempotencyKey,
+                x.IdempotencyKey,
                 x.RequestedQuantity,
                 x.Status,
                 x.PrinterId,
                 x.PrintJobId,
                 x.FailureReason,
-                x.Items.OrderBy(item => item.SequenceNo).Select(item => new LabelPrintItemDetail(item.SequenceNo, item.LabelValue, item.FileId, item.Status, item.VoidReason)).ToArray()))
+                x.ProductionReportId,
+                x.ProductionReportNo,
+                x.Items.OrderBy(item => item.SequenceNo).Select(item => new LabelPrintItemDetail(
+                    item.SequenceNo,
+                    item.LabelValue,
+                    item.FileId,
+                    item.Status,
+                    item.VoidReason,
+                    item.SerialNumber,
+                    item.LotNo,
+                    item.Gtin,
+                    item.EpcUri)).ToArray()))
             .SingleOrDefaultAsync(cancellationToken)
             ?? throw new KnownException($"未找到打印批次，批次 ID = {request.PrintBatchId}。");
     }

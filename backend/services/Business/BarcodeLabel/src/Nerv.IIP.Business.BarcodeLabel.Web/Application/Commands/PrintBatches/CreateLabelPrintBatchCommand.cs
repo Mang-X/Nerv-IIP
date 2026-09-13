@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.BarcodeLabel.Domain;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelSerialCounterAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.Printing;
 using Nerv.IIP.Business.BarcodeLabel.Infrastructure.Concurrency;
 
@@ -37,38 +39,74 @@ public sealed class CreateLabelPrintBatchCommandValidator : AbstractValidator<Cr
 public sealed class CreateLabelPrintBatchCommandHandler(
     ApplicationDbContext dbContext,
     ILabelTemplateAssetPort templateAssetPort,
-    ITemplateAssetRetirementFence retirementFence)
+    ITemplateAssetRetirementFence retirementFence,
+    ILabelPrintBatchReservationFence reservationFence,
+    ILabelSerialNumberAllocator serialNumberAllocator)
     : ICommandHandler<CreateLabelPrintBatchCommand, LabelPrintBatchId>
 {
     public async Task<LabelPrintBatchId> Handle(CreateLabelPrintBatchCommand request, CancellationToken cancellationToken)
     {
+        var organizationId = BarcodeLabelText.Required(request.OrganizationId, nameof(request.OrganizationId));
+        var environmentId = BarcodeLabelText.Required(request.EnvironmentId, nameof(request.EnvironmentId));
+        var idempotencyKey = BarcodeLabelText.Required(request.IdempotencyKey, nameof(request.IdempotencyKey));
+        await reservationFence.AcquireAsync(
+            organizationId,
+            environmentId,
+            idempotencyKey,
+            cancellationToken);
+        var existing = await dbContext.LabelPrintBatches
+            .Include(x => x.Items)
+            .SingleOrDefaultAsync(x =>
+                x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.IdempotencyKey == idempotencyKey,
+                cancellationToken);
+        if (existing is not null)
+        {
+            if (!existing.HasSameReservationRequest(
+                    organizationId,
+                    environmentId,
+                    request.BarcodeRuleId,
+                    request.LabelTemplateId,
+                    request.SourceDocumentType,
+                    request.SourceDocumentId,
+                    idempotencyKey,
+                    request.LabelValuesJson,
+                    request.RequestedQuantity))
+            {
+                throw new KnownException("打印批次幂等键与已有记录不一致，请检查提交内容。");
+            }
+
+            return existing.Id;
+        }
+
         var rule = await dbContext.BarcodeRules.SingleOrDefaultAsync(
                 x => x.Id == request.BarcodeRuleId
-                    && x.OrganizationId == request.OrganizationId
-                    && x.EnvironmentId == request.EnvironmentId
+                    && x.OrganizationId == organizationId
+                    && x.EnvironmentId == environmentId
                     && x.Status == BarcodeRule.ActiveStatus,
                 cancellationToken)
             ?? throw new KnownException($"未找到当前组织和环境内可用的条码规则，规则 ID = {request.BarcodeRuleId}。");
         var template = await dbContext.LabelTemplates.SingleOrDefaultAsync(
                 x => x.Id == request.LabelTemplateId
-                    && x.OrganizationId == request.OrganizationId
-                    && x.EnvironmentId == request.EnvironmentId
+                    && x.OrganizationId == organizationId
+                    && x.EnvironmentId == environmentId
                     && x.Status == LabelTemplate.ActiveStatus,
                 cancellationToken)
             ?? throw new KnownException($"未找到当前组织和环境内可用的标签模板，模板 ID = {request.LabelTemplateId}。");
 
         await retirementFence.AcquireAsync(
-            request.OrganizationId,
-            request.EnvironmentId,
+            organizationId,
+            environmentId,
             template.TemplateFileId,
             cancellationToken);
         if (await dbContext.TemplateAssetRetirementDecisions.AnyAsync(
-                x => x.OrganizationId == request.OrganizationId
-                    && x.EnvironmentId == request.EnvironmentId
+                x => x.OrganizationId == organizationId
+                    && x.EnvironmentId == environmentId
                     && x.TemplateFileId == template.TemplateFileId,
                 cancellationToken) || await dbContext.TemplateAssetRetirementReplayFences.AnyAsync(
-                x => x.OrganizationId == request.OrganizationId
-                    && x.EnvironmentId == request.EnvironmentId
+                x => x.OrganizationId == organizationId
+                    && x.EnvironmentId == environmentId
                     && x.TemplateFileId == template.TemplateFileId,
                 cancellationToken))
         {
@@ -81,13 +119,19 @@ public sealed class CreateLabelPrintBatchCommandHandler(
             var asset = await templateAssetPort.GetVerifiedAsync(
                 new LabelTemplateAssetReference(
                     template.TemplateFileId,
-                    request.OrganizationId,
-                    request.EnvironmentId,
+                    organizationId,
+                    environmentId,
                     template.TemplateCode),
                 cancellationToken);
-            candidate = LabelPrintBatch.Create(
-                request.OrganizationId,
-                request.EnvironmentId,
+            var serialNumbers = await serialNumberAllocator.AllocateAsync(
+                organizationId,
+                environmentId,
+                rule.Id,
+                request.RequestedQuantity,
+                cancellationToken);
+            candidate = LabelPrintBatch.Reserve(
+                organizationId,
+                environmentId,
                 rule,
                 template.Id,
                 new LabelPrintBatchSnapshot(
@@ -98,9 +142,10 @@ public sealed class CreateLabelPrintBatchCommandHandler(
                     ZplV1LabelCompiler.ContractVersion),
                 request.SourceDocumentType,
                 request.SourceDocumentId,
-                request.IdempotencyKey,
+                idempotencyKey,
                 request.LabelValuesJson,
-                request.RequestedQuantity);
+                request.RequestedQuantity,
+                serialNumbers);
 
             _ = ZplV1LabelCompiler.CompileBatch(
                 LabelTemplateDocument.Parse(asset.Json),
@@ -118,27 +163,6 @@ public sealed class CreateLabelPrintBatchCommandHandler(
         catch (Exception exception) when (exception is InvalidDataException or ArgumentException or InvalidOperationException)
         {
             throw new KnownException("标签打印批次验证失败，请检查模板资产、变量和条码规则。", exception);
-        }
-
-        var existing = await dbContext.LabelPrintBatches
-            .Include(x => x.Items)
-            .SingleOrDefaultAsync(x =>
-                x.OrganizationId == request.OrganizationId
-                && x.EnvironmentId == request.EnvironmentId
-                && x.IdempotencyKey == request.IdempotencyKey,
-                cancellationToken);
-        if (existing is not null)
-        {
-            try
-            {
-                existing.EnsureSameIdempotencyPayload(candidate);
-            }
-            catch (InvalidOperationException ex)
-            {
-                throw new KnownException("打印批次幂等键与已有记录不一致，请检查提交内容。", ex);
-            }
-
-            return existing.Id;
         }
 
         dbContext.LabelPrintBatches.Add(candidate);

@@ -273,6 +273,7 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
             fact.IdempotencyKey,
             fact.LabelValuesJson,
             fact.RequestedQuantity);
+        batch.Activate($"world-history-{fact.SourceDocumentId}", fact.SourceDocumentId);
 
         if (fact.Printed)
         {

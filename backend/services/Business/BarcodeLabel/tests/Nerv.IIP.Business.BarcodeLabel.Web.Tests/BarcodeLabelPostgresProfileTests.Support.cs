@@ -29,6 +29,29 @@ namespace Nerv.IIP.Business.BarcodeLabel.Web.Tests;
 
 public sealed partial class BarcodeLabelPostgresProfileTests
 {
+    private static LabelPrintBatch ReservedBatch(
+        BarcodeRule rule,
+        string idempotencyKey,
+        string sourceDocumentId,
+        string serialNumber) =>
+        LabelPrintBatch.Reserve(
+            rule.OrganizationId,
+            rule.EnvironmentId,
+            rule,
+            new LabelTemplateId(Guid.CreateVersion7()),
+            new LabelPrintBatchSnapshot(
+                "file-template-serial",
+                $"sha256:{new string('a', 64)}",
+                """{"version":1,"variables":[]}""",
+                rule.BarcodeType,
+                "zpl-v1"),
+            "work-order",
+            sourceDocumentId,
+            idempotencyKey,
+            "{}",
+            1,
+            [serialNumber]);
+
     private static ApplicationDbContext CreatePostgresDbContext(string connectionString)
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()

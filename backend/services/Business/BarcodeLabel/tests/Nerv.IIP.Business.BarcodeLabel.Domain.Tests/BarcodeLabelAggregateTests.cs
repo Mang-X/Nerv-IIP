@@ -1,6 +1,7 @@
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelSerialCounterAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.ScanRecordAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.TraceabilityAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.DomainEvents;
@@ -262,11 +263,11 @@ public sealed class BarcodeLabelAggregateTests
     }
 
     [Fact]
-    public void Print_batch_moves_from_pending_to_sent_then_printed_only_after_a_printer_result()
+    public void Activated_print_batch_moves_from_ready_to_sent_then_printed_only_after_a_printer_result()
     {
         var batch = NewPrintBatch(ActiveRule(), "idem-print-lifecycle-001", "ASN-001", 1);
 
-        Assert.Equal("pending", batch.Status);
+        Assert.Equal("ready-to-print", batch.Status);
         Assert.Equal("created", batch.Items.Single().Status);
         Assert.Null(batch.CompletedAtUtc);
 
@@ -321,7 +322,7 @@ public sealed class BarcodeLabelAggregateTests
     [Fact]
     public void Reprint_rejections_expose_stable_reasons_for_every_unsafe_lifecycle_state()
     {
-        var pending = NewPrintBatch(ActiveRule(), "idem-reject-pending", "ASN-001", 1);
+        var pending = NewReservedPrintBatch(ActiveRule(), new LabelTemplateId(Guid.CreateVersion7()), "idem-reject-pending", "ASN-001", 1);
         AssertReprintRejected(
             pending,
             LabelPrintLifecycleRejectionReason.BatchCannotBeReprinted);
@@ -658,16 +659,30 @@ public sealed class BarcodeLabelAggregateTests
 
     private static LabelPrintBatch NewPrintBatch(BarcodeRule rule, LabelTemplateId templateId, string idempotencyKey, string documentId, int quantity)
     {
-        return LabelPrintBatch.CreateLegacyWithoutReplaySnapshot(
+        var batch = NewReservedPrintBatch(rule, templateId, idempotencyKey, documentId, quantity);
+        batch.Activate($"report-id-{documentId}", $"PR-{documentId}");
+        return batch;
+    }
+
+    private static LabelPrintBatch NewReservedPrintBatch(BarcodeRule rule, LabelTemplateId templateId, string idempotencyKey, string documentId, int quantity)
+    {
+        return LabelPrintBatch.Reserve(
             "org-001",
             "env-dev",
             rule,
             templateId,
+            new LabelPrintBatchSnapshot(
+                "file-template-001",
+                $"sha256:{new string('a', 64)}",
+                """{"version":1,"variables":[]}""",
+                rule.BarcodeType,
+                "zpl-v1"),
             "wms.inbound",
             documentId,
             idempotencyKey,
             """{"sku":"SKU-FG-1000"}""",
-            quantity);
+            quantity,
+            Enumerable.Range(1, quantity).Select(value => LabelSerialNumber.Format(value)).ToArray());
     }
 
     private static ScanRecord NewScan(string idempotencyKey, string scannedValue)

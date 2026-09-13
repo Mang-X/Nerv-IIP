@@ -8248,8 +8248,14 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleB
     sourceDocumentType?: string;
     sourceDocumentId?: string;
     idempotencyKey?: string;
+    reportIntentKey?: string;
     requestedQuantity?: number;
     status?: string;
+    printerId?: string | null;
+    printJobId?: string | null;
+    failureReason?: string | null;
+    productionReportId?: string | null;
+    productionReportNo?: string | null;
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodePrintItemDetail>;
 };
 
@@ -8257,6 +8263,12 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleB
     sequenceNo?: number;
     labelValue?: string;
     fileId?: string | null;
+    status?: string;
+    voidReason?: string | null;
+    serialNumber?: string | null;
+    lotNo?: string | null;
+    gtin?: string | null;
+    epcUri?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodePrintBatchRequest = {
