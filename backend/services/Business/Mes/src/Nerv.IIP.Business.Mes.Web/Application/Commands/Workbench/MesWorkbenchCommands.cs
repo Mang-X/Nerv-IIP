@@ -147,13 +147,42 @@ public sealed class ReleaseWorkOrderCommandHandler(
 
         // 工单在 created 状态就能开工、报工、乃至完工（#3113），下达因此可能发生在已有活动之后。
         // 发给 Quality 的发布时刻必须按**最早既有活动**取下界，口径与 #3000 回填同一处实现。
-        var earliestReportedAtUtc = await dbContext.ProductionReports
+        //
+        // 分组键从「工单级」换成「工序级」（#3129）：同一次往返里多取一个 Sum，**不增加查询**。
+        // 原来这里只有一个 MinAsync，把该工单的报工压成一个工单级标量；而 owner 裁定
+        // 「下达之前已产出的数量不补开巡检任务」需要的是**按工序分辨**的既有产量——
+        // 压成标量之后 Quality 无论怎么推断都补不回来（#3129 探针①）。
+        // 工单级下界仍然要：它由每道工序的最早报工再取 Min 得到，与换键前逐字等值
+        //（Min 对分组是可结合的；工单若一条报工都没有，两种写法都给 null）。
+        //
+        // 「既有」= 下达动作发生这一刻库里已经有的报工行，**不按 ReportedAtUtc 与发布时刻比大小**：
+        // 上面那个 releasedAt 恰恰被夹到「不晚于最早既有活动」，拿它当过滤条件会把这些行全滤掉。
+        // 判据是「这一刻它已经存在」，而这条命令正运行在下达动作里。
+        //
+        // 冲销按 `ReversedReportNo == null` 判，不用 ProductionReport.IsReversal：后者是
+        // `!IsNullOrWhiteSpace(ReversedReportNo)`，EF 翻不动；构造函数把空白串归一成 null，
+        // 故对落库行两者等价。口径与 Quality 侧 QuantityHighWater（非冲销行的 GoodQuantity 之和）逐字一致。
+        var reportFactsByOperation = await dbContext.ProductionReports
             .AsNoTracking()
             .Where(x =>
                 x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
                 x.WorkOrderId == request.WorkOrderId)
-            .MinAsync(x => (DateTimeOffset?)x.ReportedAtUtc, cancellationToken);
+            .GroupBy(x => x.OperationTaskId)
+            .Select(group => new
+            {
+                OperationTaskId = group.Key,
+                EarliestReportedAtUtc = group.Min(x => x.ReportedAtUtc),
+                PreReleaseGoodQuantity = group.Sum(x => x.ReversedReportNo == null ? x.GoodQuantity : 0m),
+            })
+            .ToArrayAsync(cancellationToken);
+        var earliestReportedAtUtc = reportFactsByOperation.Length == 0
+            ? (DateTimeOffset?)null
+            : reportFactsByOperation.Min(x => x.EarliestReportedAtUtc);
+        var preReleaseGoodQuantityByOperationTaskId = reportFactsByOperation.ToDictionary(
+            x => x.OperationTaskId,
+            x => x.PreReleaseGoodQuantity,
+            StringComparer.Ordinal);
 
         // 完工这一面必须一起进下界，**不能只按报工算**：工序动作 "complete"
         // （本文件 ChangeOperationTaskStateCommandHandler 的 "complete" 分支）把 pendingProductionReportNos
@@ -179,7 +208,7 @@ public sealed class ReleaseWorkOrderCommandHandler(
 
         var releasedAt = WorkOrderReleaseFactTime.NotLaterThan(request.ReleasedAtUtc, earliestExistingActivityAtUtc);
 
-        workOrder.MarkReleased(operationSnapshots, releasedAt);
+        workOrder.MarkReleased(operationSnapshots, releasedAt, preReleaseGoodQuantityByOperationTaskId);
 
         // 回执回**实际落到发布事实上的时刻**，不回 request.ReleasedAtUtc：
         // 被既有活动下界压过或被夹到当前时刻时，调用方否则无从得知自己给的时刻已被改写。

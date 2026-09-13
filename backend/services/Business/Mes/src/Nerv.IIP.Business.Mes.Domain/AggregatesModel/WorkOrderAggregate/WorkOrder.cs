@@ -70,6 +70,14 @@ public sealed class SourcePlanReference
 
 public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
 {
+    /// <summary>
+    /// 「本次发布不存在任何下达前既有产量」的唯一写法（#3129）。用它而不是就地写 <c>[]</c>，
+    /// 是为了让「这是一个已被证明为空的事实」与「调用方随手传了个空字典」在阅读上可分辨：
+    /// 引用本字段的两处都在紧邻注释里给出了空成立的自证。
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, decimal> EmptyPreReleaseGoodQuantities =
+        ImmutableDictionary<string, decimal>.Empty;
+
     public const string StandardType = "standard";
     public const string ReworkType = "rework";
     public const string CreatedStatus = "created";
@@ -329,7 +337,15 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
             .ToList();
         Status = ReleasedStatus;
         AdvanceVersion();
-        AddDomainEvent(new WorkOrderReleasedDomainEvent(this, tasks, releasedAt));
+        // 下达前既有产量传空字典（#3129）：本方法**当场**用 routingSteps 建出全新的工序任务，
+        // 那些 OperationTaskId 在这一刻之前不存在，任何报工都不可能引用它们，故每道工序恒为 0。
+        // **这是本方法自身的性质**（与上面「下界项归属」那段不同，那条是调用方的性质）：
+        // 工序由本方法创建这件事由方法体保证，调用方改不了。
+        AddDomainEvent(new WorkOrderReleasedDomainEvent(
+            this,
+            tasks,
+            releasedAt,
+            EmptyPreReleaseGoodQuantities));
         return tasks;
     }
 
@@ -363,7 +379,9 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         AddDomainEvent(new WorkOrderReleasedDomainEvent(
             this,
             [],
-            WorkOrderReleaseFactTime.NotLaterThan(CreatedAtUtc, null)));
+            WorkOrderReleaseFactTime.NotLaterThan(CreatedAtUtc, null),
+            // 本重载不携带任何工序，字典对哪道工序都无从取值，恒空即穷尽（#3129）。
+            EmptyPreReleaseGoodQuantities));
     }
 
     /// <summary>
@@ -375,10 +393,20 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
     /// <para>当前有两个生产调用方：下达命令（<c>ReleaseWorkOrderCommandHandler</c>，过三道 readiness），
     /// 与 <c>created</c> 存量工单的一次性补下达（#3119 的内部运维端点，**有意绕开 readiness**——
     /// 那些拒因恰恰是这批工单当初没被下达的原因）。两者各自查出最早既有活动再传进来。</para>
+    ///
+    /// <para><paramref name="preReleaseGoodQuantityByOperationTaskId"/> 是 #3129 加的第三件事实：
+    /// 下达动作那一刻**每道工序**已经存在的净良品量。它与 <paramref name="releasedAt"/> 不可互相推导——
+    /// 后者是一个被夹紧过的**工单级标量**，既分不出工序、也不含数量。同样由调用方查出后传进来，
+    /// 本方法不检查其完备性；键的口径与「字典里没有某道工序即 0」的自证见
+    /// <see cref="WorkOrderReleasedDomainEvent"/> 的参数注释。</para>
     /// </summary>
-    public void MarkReleased(IReadOnlyCollection<OperationTask> operationTasks, WorkOrderReleaseFactTime releasedAt)
+    public void MarkReleased(
+        IReadOnlyCollection<OperationTask> operationTasks,
+        WorkOrderReleaseFactTime releasedAt,
+        IReadOnlyDictionary<string, decimal> preReleaseGoodQuantityByOperationTaskId)
     {
         ArgumentNullException.ThrowIfNull(operationTasks);
+        ArgumentNullException.ThrowIfNull(preReleaseGoodQuantityByOperationTaskId);
         if (operationTasks.Count == 0)
         {
             throw new ArgumentException("At least one operation task is required.", nameof(operationTasks));
@@ -388,7 +416,11 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
 
         Status = ReleasedStatus;
         AdvanceVersion();
-        AddDomainEvent(new WorkOrderReleasedDomainEvent(this, operationTasks, releasedAt));
+        AddDomainEvent(new WorkOrderReleasedDomainEvent(
+            this,
+            operationTasks,
+            releasedAt,
+            preReleaseGoodQuantityByOperationTaskId));
     }
 
     public void BindProductionVersion(string productionVersionId)

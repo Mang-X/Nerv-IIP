@@ -346,6 +346,52 @@ public sealed class CreatedWorkOrderReleaseBackfillTests
         Assert.Equal(2, body.RootElement.GetProperty("executingOperationsRemediated").GetInt32());
     }
 
+    /// <summary>
+    /// #3129：补下达的发布载荷必须按**工序**带出「下达动作那一刻已经存在的净良品量」。
+    ///
+    /// <para>这条路径是本票裁定最需要生效的那一条——本端点处理的就是「先有产量、后补下达」的
+    /// 存量工单。它走 <c>MarkReleased</c> → 直投转换器 → Quality 的 <c>Authoritative</c> 分支，
+    /// 不带该事实就会把每道工序下达前的全部产量补开成巡检任务。</para>
+    ///
+    /// <para>夹具里两道工序的产量**有意不相等**（250 / 100）：相等时「按工序分组」与
+    /// 「把工单级总量发给每道工序」两种实现给出同一组读数，这一格就没有鉴别力了。</para>
+    /// </summary>
+    [Fact]
+    public async Task Backfilled_release_carries_each_operations_pre_release_good_quantity()
+    {
+        await using var dbContext = CreateDbContext();
+        AddWorkOrder(
+            dbContext,
+            "WO-CREATED-QTY",
+            Created,
+            [(OperationTaskLifecycleStatus.InProgress, 10), (OperationTaskLifecycleStatus.InProgress, 20)]);
+        AddReport(dbContext, "WO-CREATED-QTY", 10, "RPT-QTY-10-A", 150m, Now.AddDays(-3));
+        AddReport(dbContext, "WO-CREATED-QTY", 10, "RPT-QTY-10-B", 100m, Now.AddDays(-2));
+        AddReport(dbContext, "WO-CREATED-QTY", 20, "RPT-QTY-20-A", 100m, Now.AddDays(-1));
+        // 另一张同样待补下达的工单：分组键漏掉工单归属时，它的 999 会串进上面那张。
+        AddWorkOrder(dbContext, "WO-CREATED-OTHER", Created, [(OperationTaskLifecycleStatus.InProgress, 10)]);
+        AddReport(dbContext, "WO-CREATED-OTHER", 10, "RPT-OTHER-10", 999m, Now.AddDays(-1));
+        await dbContext.SaveChangesAsync();
+
+        await Backfill(dbContext);
+
+        var integrationEvent = SingleReleasedIntegrationEvent(dbContext, "WO-CREATED-QTY");
+        Assert.Equal(
+            [("OP-WO-CREATED-QTY-10", 250m), ("OP-WO-CREATED-QTY-20", 100m)],
+            integrationEvent.Payload.Operations.Select(x => (x.OperationId, x.PreReleaseGoodQuantity)));
+    }
+
+    private static void AddReport(
+        ApplicationDbContext dbContext,
+        string workOrderId,
+        int operationSequence,
+        string reportNo,
+        decimal goodQuantity,
+        DateTimeOffset reportedAtUtc) =>
+        dbContext.ProductionReports.Add(ProductionReport.Record(
+            Organization, Environment, reportNo, workOrderId, $"OP-{workOrderId}-{operationSequence}",
+            goodQuantity: goodQuantity, scrapQuantity: 0m, completesOperation: false, reportedAtUtc: reportedAtUtc));
+
     private static async Task<CreatedWorkOrderReleaseBackfillReport> Backfill(ApplicationDbContext dbContext) =>
         await new BackfillCreatedWorkOrderReleaseCommandHandler(dbContext).Handle(
             new BackfillCreatedWorkOrderReleaseCommand(),

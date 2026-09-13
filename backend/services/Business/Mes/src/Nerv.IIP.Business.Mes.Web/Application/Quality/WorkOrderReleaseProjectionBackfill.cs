@@ -277,7 +277,16 @@ internal sealed class BackfillWorkOrderReleaseProjectionCommandHandler(
                             .Select(x => new ReleasedOperationPayload(
                                 x.OperationTaskIdValue,
                                 x.OperationSequence,
-                                x.WorkCenterId))
+                                x.WorkCenterId,
+                                // PreReleaseGoodQuantity 在**这条通道上有意留 null**（#3129），不是漏填。
+                                // 本事件的消费分支是 ReleaseFactAuthority.ReconstructedLowerBound，
+                                // 它在 ApplyRelease 之后无条件调用 SkipPeriodicWindowsAccruedBefore(OccurredAtUtc)，
+                                // 把到「回填执行那一刻」为止的全部累计产量与流逝时间一律记为已生成（#3000 既有取舍）。
+                                // 下达前的产量是该集合的**子集**，本字段填与不填，这条分支上的行为逐字相同；
+                                // 为它多做一次按工序的 Sum 是纯粹的往返开销。
+                                // **失效方向写明**：若哪天有人把那处无条件跳过改窄或删掉，本处就必须同时改成真填，
+                                // 否则 #3129 的裁定会在这条通道上静默失效——无门禁会为此报红。
+                                PreReleaseGoodQuantity: null))
                             .ToArray())));
                 published++;
                 operationsPublished += released.Length;

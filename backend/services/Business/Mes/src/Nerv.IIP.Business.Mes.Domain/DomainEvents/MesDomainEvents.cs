@@ -22,6 +22,8 @@ public sealed record ReworkWorkOrderCreatedDomainEvent(
     string CorrelationId,
     string CausationId) : IDomainEvent;
 
+/// <param name="WorkOrder">被发布的工单聚合。</param>
+/// <param name="OperationTasks">本次发布携带的工序任务集合。</param>
 /// <param name="ReleasedAt">
 /// 发布事实的时刻。由发布动作的调用方给出，不由转换器取 <c>UtcNow</c>。
 /// 类型是 <see cref="WorkOrderReleaseFactTime"/> 而不是裸 <c>DateTimeOffset</c>：
@@ -33,10 +35,24 @@ public sealed record ReworkWorkOrderCreatedDomainEvent(
 /// <see cref="WorkOrderReleaseFactTime"/> 的类型注释；两处措辞必须保持一致，
 /// 上一轮就是因为只改了其中一处、另一处原样存活而被判阻断。
 /// </param>
+/// <param name="PreReleaseGoodQuantityByOperationTaskId">
+/// 下达动作发生那一刻，每道工序**已经存在**的净良品量（非冲销报工行的 <c>GoodQuantity</c> 之和），
+/// 键是 <c>OperationTask.OperationTaskIdValue</c>。工单在 <c>created</c> 状态就能开工报工（#3113），
+/// 该事实只有 MES 在下达那一刻掌握，Quality 拿不到（#3129）。
+///
+/// <b>字典里没有某道工序 = 那道工序一条报工都没有 = 0</b>，不是「没查」：
+/// 三个生产调用方都用 <c>GroupBy(工序)</c> 从该工单**全部**报工行构造本字典，
+/// 空分组天然不出现在结果里。转换器因此按 <c>GetValueOrDefault(id, 0m)</c> 取值。
+///
+/// <b>强度按实测写，别读强了</b>：编译器强制的是「**交出一个显式的字典**」，
+/// **不是**「你确实去查过」——传 <c>[]</c> 与「查完确实全是 0」在类型层面不可区分。
+/// 与 <see cref="WorkOrderReleaseFactTime"/> 第二参那条注释同一个形态、同一个限度。
+/// </param>
 public sealed record WorkOrderReleasedDomainEvent(
     WorkOrder WorkOrder,
     IReadOnlyCollection<OperationTask> OperationTasks,
-    WorkOrderReleaseFactTime ReleasedAt) : IDomainEvent;
+    WorkOrderReleaseFactTime ReleasedAt,
+    IReadOnlyDictionary<string, decimal> PreReleaseGoodQuantityByOperationTaskId) : IDomainEvent;
 
 public sealed record WorkOrderCompletedDomainEvent(WorkOrder WorkOrder, DateTimeOffset CompletedAtUtc) : IDomainEvent;
 

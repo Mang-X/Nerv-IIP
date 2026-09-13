@@ -229,7 +229,7 @@ public sealed class MesAggregateTests
             DateTimeOffset.Parse("2026-08-24T08:00:00Z"));
         workOrder.ClearDomainEvents();
 
-        Assert.Throws<ArgumentException>(() => workOrder.MarkReleased([], WorkOrderReleaseFactTime.NotLaterThan(DateTimeOffset.Parse("2026-08-24T08:00:00Z"), null)));
+        Assert.Throws<ArgumentException>(() => workOrder.MarkReleased([], WorkOrderReleaseFactTime.NotLaterThan(DateTimeOffset.Parse("2026-08-24T08:00:00Z"), null), new Dictionary<string, decimal>()));
 
         Assert.Equal(WorkOrder.CreatedStatus, workOrder.Status);
         Assert.DoesNotContain(workOrder.GetDomainEvents(), x => x is WorkOrderReleasedDomainEvent);
@@ -261,7 +261,7 @@ public sealed class MesAggregateTests
         };
         workOrder.ClearDomainEvents();
 
-        workOrder.MarkReleased(operationTasks, WorkOrderReleaseFactTime.NotLaterThan(releasedAtUtc, null));
+        workOrder.MarkReleased(operationTasks, WorkOrderReleaseFactTime.NotLaterThan(releasedAtUtc, null), new Dictionary<string, decimal>());
 
         Assert.Equal(WorkOrder.ReleasedStatus, workOrder.Status);
         var domainEvent = Assert.IsType<WorkOrderReleasedDomainEvent>(Assert.Single(workOrder.GetDomainEvents()));
@@ -286,7 +286,7 @@ public sealed class MesAggregateTests
             DateTimeOffset.Parse("2026-08-24T08:00:00Z"));
         workOrder.ClearDomainEvents();
 
-        Assert.Throws<ArgumentNullException>(() => workOrder.MarkReleased(null!, WorkOrderReleaseFactTime.NotLaterThan(DateTimeOffset.Parse("2026-08-24T08:00:00Z"), null)));
+        Assert.Throws<ArgumentNullException>(() => workOrder.MarkReleased(null!, WorkOrderReleaseFactTime.NotLaterThan(DateTimeOffset.Parse("2026-08-24T08:00:00Z"), null), new Dictionary<string, decimal>()));
 
         Assert.Equal(WorkOrder.CreatedStatus, workOrder.Status);
         Assert.DoesNotContain(workOrder.GetDomainEvents(), x => x is WorkOrderReleasedDomainEvent);
