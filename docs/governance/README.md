@@ -34,4 +34,4 @@
 3. 规则变化若属于长期取舍，先按 [`decisions/records.md`](decisions/records.md) 判断是否需要 ADR；不能用直接改 Governance 绕过长期决策记录。
 4. 调查、事故、整改批次和历史计数进入 `docs/reports/` 或 Git 历史；完成后的 Report 冻结，不反向成为现态规则。
 5. 不因为迁移 Governance 就新增永久 registry、自然语言 scanner、mutation fixture 或独立 CI step。既有机器契约只做必要路径重定向，不改变其规则语义。
-6. `docs/architecture/*` 的 M2 兼容页只导航；不能把 Governance 正文再长回旧路径。
+6. M4 后旧 `docs/architecture/*` 平铺兼容页已退出；Governance 当前链接必须直达 canonical owner，不把规则正文或转发页长回旧 Architecture 路径。
