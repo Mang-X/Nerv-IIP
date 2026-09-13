@@ -4,7 +4,7 @@
 #     - Creates a temporary backend inventory mirror with mutation projects
 #     - Creates a temporary C# Docker-lookalike fixture inside an existing backend test project
 #   Writes:
-#     - OS temporary directory: backend inventory, workflow, manifest, policy, shard TRX and timing-cache fixtures (temporarily)
+#     - OS temporary directory: backend inventory, workflow, manifest, policy, shard TRX, aggregated selector TRX and timing-cache fixtures (temporarily)
 #     - backend/tests/Nerv.IIP.Testing.Tests/TemporaryDockerLookalikes-*.cs (temporarily)
 #     - artifacts/backend-test-shards-collision-*.cs selector-collision fixture (temporarily)
 #     - artifacts/shard-fixture-*.slnf rearranged solution filters (temporarily)
@@ -36,6 +36,7 @@ $temporarySolutionMemberPath = Join-Path $temporarySolutionMemberDirectory 'Nerv
 $temporaryWorkflowPath = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-{0}.yml" -f [Guid]::NewGuid().ToString('N'))
 $timeoutResultsDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-timeout-{0}" -f [Guid]::NewGuid().ToString('N'))
 $executionTrxDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-execution-{0}" -f [Guid]::NewGuid().ToString('N'))
+$aggregateTrxDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-aggregate-trx-{0}" -f [Guid]::NewGuid().ToString('N'))
 $temporaryPolicyPath = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-policy-{0}.json" -f [Guid]::NewGuid().ToString('N'))
 $temporaryManifestPath = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-manifest-{0}.json" -f [Guid]::NewGuid().ToString('N'))
 # The validator resolves policy sourcePath against the repository root, so the collision fixture
@@ -1022,6 +1023,150 @@ catch {
 }
 Assert-Contract ($notExecutedSelectorText.Contains("Real PostgreSQL selector 'Nerv.IIP.Tests.DiscoveredSelector' must execute every discovered test as Passed", [StringComparison]::Ordinal)) 'A discovered real PostgreSQL selector without TRX execution must fail closed.'
 
+# --- #3283 -------------------------------------------------------------------------------------
+# 一个 selector 的执行证据是**结果目录下全部 TRX 的合并结果**，不是其中按 mtime 最新的那一份。
+# 归因写在 scripts/lib/BackendTestShardSelectors.ps1 的 Get-BackendTestShardSelectorTrxResults
+# 函数注释里，这里只放可执行的对照。样本形状照 `dotnet test <slnf>` 的真实产物做：一份带真实结果，
+# 另外两份是「这个项目没命中过滤器」的空壳——一份**完全没有 `<Results>` 节点**（#3283 实测里
+# StrictMode 抛 `The property 'Results' cannot be found on this object.` 的那一种），一份带**空的
+# `<Results/>`**（不抛、但会把零结果当成「没有不通过的用例」流进下游断言的那一种）。
+$aggregateSelector = 'Nerv.IIP.Tests.AggregateSelector'
+$aggregateDiscovered = @("$aggregateSelector.CaseOne", "$aggregateSelector.CaseTwo")
+$aggregateRealTrxPath = Join-Path $aggregateTrxDirectory 'real-results.trx'
+$aggregateShellNoResultsPath = Join-Path $aggregateTrxDirectory 'shell-without-results-node.trx'
+$aggregateShellEmptyResultsPath = Join-Path $aggregateTrxDirectory 'shell-with-empty-results.trx'
+New-Item -ItemType Directory -Path $aggregateTrxDirectory -Force | Out-Null
+Set-Content -LiteralPath $aggregateRealTrxPath -NoNewline -Value @'
+<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="00000000-0000-0000-0000-000000000011" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Results>
+    <UnitTestResult testId="00000000-0000-0000-0000-000000000012" testName="Nerv.IIP.Tests.AggregateSelector.CaseOne" outcome="Passed" />
+    <UnitTestResult testId="00000000-0000-0000-0000-000000000013" testName="Nerv.IIP.Tests.AggregateSelector.CaseTwo" outcome="Passed" />
+  </Results>
+</TestRun>
+'@
+Set-Content -LiteralPath $aggregateShellNoResultsPath -NoNewline -Value @'
+<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="00000000-0000-0000-0000-000000000014" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <TestDefinitions />
+  <ResultSummary outcome="Completed" />
+</TestRun>
+'@
+Set-Content -LiteralPath $aggregateShellEmptyResultsPath -NoNewline -Value @'
+<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="00000000-0000-0000-0000-000000000015" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Results />
+  <ResultSummary outcome="Completed" />
+</TestRun>
+'@
+
+# mtime 是这里的自变量，所以显式写死而不是靠文件写入顺序——否则这几条断言的鉴别力就变成了
+# 「本机文件系统碰巧按什么顺序落盘」，正是本票要消除的那个不确定性。
+function Set-AggregateTrxWriteTimes {
+    param([Parameter(Mandatory)] [string] $NewestPath)
+
+    $stamp = [datetime]::new(2026, 1, 1, 0, 0, 0, [DateTimeKind]::Utc)
+    $offset = 0
+    foreach ($path in @($aggregateRealTrxPath, $aggregateShellNoResultsPath, $aggregateShellEmptyResultsPath)) {
+        if ([string]::Equals($path, $NewestPath, [StringComparison]::Ordinal)) { continue }
+        (Get-Item -LiteralPath $path).LastWriteTimeUtc = $stamp.AddMinutes($offset)
+        $offset++
+    }
+    (Get-Item -LiteralPath $NewestPath).LastWriteTimeUtc = $stamp.AddMinutes(60)
+}
+
+function Get-AggregateTrxNewestName {
+    return [string] (Get-ChildItem -LiteralPath $aggregateTrxDirectory -Filter '*.trx' -File |
+        Sort-Object LastWriteTimeUtc -Descending |
+        Select-Object -First 1).Name
+}
+
+# StrictMode 在这里是被测条件之一，不是背景设置：#3283 的可见症状就是 StrictMode 下的属性缺失异常。
+# 用 `& { Set-StrictMode … }` 在**进程内**开一个更严格的子作用域，而不是起 `pwsh -File` 子进程——
+# 后者不重定向 stdin，StrictMode 报错会表现为挂住到超时而不是打印真因。
+function Invoke-AggregateTrxReadUnderStrictMode {
+    return & {
+        Set-StrictMode -Version Latest
+        @(Get-BackendTestShardSelectorTrxResults -Selector $aggregateSelector -ResultsDirectory $aggregateTrxDirectory)
+    }
+}
+
+# 第一跑：最新那份是**没有 `<Results>` 节点**的空壳。
+Set-AggregateTrxWriteTimes -NewestPath $aggregateShellNoResultsPath
+Assert-Contract ([string]::Equals((Get-AggregateTrxNewestName), 'shell-without-results-node.trx', [StringComparison]::Ordinal)) "The fixture must actually put an empty-shell TRX at the newest mtime, otherwise the aggregation cell has no discrimination; newest was $(Get-AggregateTrxNewestName)."
+$aggregateFirstRunText = ''
+$aggregateFirstRun = @()
+try {
+    $aggregateFirstRun = @(Invoke-AggregateTrxReadUnderStrictMode)
+}
+catch {
+    $aggregateFirstRunText = $_.Exception.Message
+}
+Assert-Contract ([string]::Equals($aggregateFirstRunText, '', [StringComparison]::Ordinal)) "A results directory whose newest TRX has no <Results> node must not throw under Set-StrictMode -Version Latest; observed: $aggregateFirstRunText"
+Assert-Contract ($aggregateFirstRun.Count -eq 2) "Aggregation must return every UnitTestResult in the directory, not the ones in a single file picked by mtime; returned $($aggregateFirstRun.Count)."
+Assert-BackendTestShardSelectorExecution -Selector $aggregateSelector -DiscoveredTests $aggregateDiscovered -TrxResults $aggregateFirstRun
+
+# 第二跑：同一份输入，只把**空的 `<Results/>`** 那一份改成最新。mtime 顺序变了，证据集合必须逐字不变。
+# 这一条兑现 #3283 评论里追加的验收：同一输入连续两跑选中的证据集合相同。按 mtime 取单份时两跑会
+# 分别得到「属性缺失异常」和「零结果」两种不同结局——那正是它看起来像随机环境故障的原因。
+Set-AggregateTrxWriteTimes -NewestPath $aggregateShellEmptyResultsPath
+Assert-Contract ([string]::Equals((Get-AggregateTrxNewestName), 'shell-with-empty-results.trx', [StringComparison]::Ordinal)) "The second run must actually see a different newest TRX; newest was $(Get-AggregateTrxNewestName)."
+$aggregateSecondRun = @(Invoke-AggregateTrxReadUnderStrictMode)
+$aggregateFirstIdentities = (@($aggregateFirstRun | ForEach-Object { [string] $_.testName }) -join '|')
+$aggregateSecondIdentities = (@($aggregateSecondRun | ForEach-Object { [string] $_.testName }) -join '|')
+Assert-Contract ([string]::Equals($aggregateFirstIdentities, "$aggregateSelector.CaseOne|$aggregateSelector.CaseTwo", [StringComparison]::Ordinal)) "Aggregated evidence must carry both executed identities in a deterministic ordinal order; observed: $aggregateFirstIdentities"
+Assert-Contract ([string]::Equals($aggregateFirstIdentities, $aggregateSecondIdentities, [StringComparison]::Ordinal)) "The same input must yield the same evidence set on two consecutive reads regardless of which TRX carries the newest mtime; run1=$aggregateFirstIdentities run2=$aggregateSecondIdentities"
+Assert-BackendTestShardSelectorExecution -Selector $aggregateSelector -DiscoveredTests $aggregateDiscovered -TrxResults $aggregateSecondRun
+
+# 零证据必须 fail-closed，而且理由要说得出来：目录里有 TRX、`[xml]` 也解析得动，但合并后一条
+# UnitTestResult 都没有。这一支不依赖下游的身份对账 —— 下游的期望集来自 discovery，讲的是
+# 「哪些用例没跑」；这里讲的是「这次运行根本没有任何执行证据」，两句话不是一回事。
+Remove-Item -LiteralPath $aggregateRealTrxPath -Force
+$aggregateZeroEvidenceText = ''
+try {
+    Invoke-AggregateTrxReadUnderStrictMode | Out-Null
+}
+catch {
+    $aggregateZeroEvidenceText = $_.Exception.Message
+}
+Assert-Contract ($aggregateZeroEvidenceText.Contains("Real PostgreSQL selector '$aggregateSelector' found no executed test evidence", [StringComparison]::Ordinal)) "A directory holding only empty-shell TRX files must fail closed instead of asserting over zero results; observed: $aggregateZeroEvidenceText"
+Assert-Contract ($aggregateZeroEvidenceText.Contains('none carries a single UnitTestResult', [StringComparison]::Ordinal)) "The zero-evidence failure must name why it failed, not just that it failed; observed: $aggregateZeroEvidenceText"
+
+# 一份解析不动的 TRX 不能被降级成「这一份贡献零条结果」继续聚合——那是同一个失效方向。
+Set-Content -LiteralPath $aggregateRealTrxPath -NoNewline -Value '<TestRun><Results>'
+$aggregateUnparseableText = ''
+try {
+    Invoke-AggregateTrxReadUnderStrictMode | Out-Null
+}
+catch {
+    $aggregateUnparseableText = $_.Exception.Message
+}
+Assert-Contract ($aggregateUnparseableText.Contains('is not parseable XML', [StringComparison]::Ordinal)) "A corrupt TRX must fail closed rather than contribute zero results to the aggregate; observed: $aggregateUnparseableText"
+
+Get-ChildItem -LiteralPath $aggregateTrxDirectory -Filter '*.trx' -File | Remove-Item -Force
+$aggregateNoTrxText = ''
+try {
+    Invoke-AggregateTrxReadUnderStrictMode | Out-Null
+}
+catch {
+    $aggregateNoTrxText = $_.Exception.Message
+}
+Assert-Contract ($aggregateNoTrxText.Contains('contains no TRX file', [StringComparison]::Ordinal)) "An empty results directory must fail closed with its own diagnostic; observed: $aggregateNoTrxText"
+
+Remove-Item -LiteralPath $aggregateTrxDirectory -Recurse -Force
+$aggregateMissingDirectoryText = ''
+try {
+    Invoke-AggregateTrxReadUnderStrictMode | Out-Null
+}
+catch {
+    $aggregateMissingDirectoryText = $_.Exception.Message
+}
+Assert-Contract ($aggregateMissingDirectoryText.Contains('does not exist', [StringComparison]::Ordinal)) "A missing results directory must fail closed with its own diagnostic rather than a Get-ChildItem ItemNotFoundException; observed: $aggregateMissingDirectoryText"
+
+$realPostgresSource = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/verify-backend-real-postgres-tests.ps1') -Raw
+Assert-Contract ($realPostgresSource.Contains('Get-BackendTestShardSelectorTrxResults', [StringComparison]::Ordinal)) 'The real PostgreSQL verifier must read its TRX evidence through the aggregating reader, not inline.'
+
+
 $runnerSource = Get-Content -LiteralPath $runnerPath -Raw
 Assert-Contract (-not $runnerSource.Contains('No test matches the given testcase filter', [StringComparison]::Ordinal)) 'The zero-execution guard must not depend on localized dotnet console text.'
 Assert-Contract ($runnerSource.Contains('Assert-BackendTestShardProjectExecution', [StringComparison]::Ordinal)) 'The fast shard runner must prove classified-project execution from the TRX the MAN-661 collector consumes.'
@@ -1738,6 +1883,7 @@ finally {
     Remove-Item -LiteralPath $temporaryWorkflowPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $timeoutResultsDirectory -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $executionTrxDirectory -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $aggregateTrxDirectory -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $temporaryPolicyPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $temporaryManifestPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $temporaryCollisionSourcePath -Force -ErrorAction SilentlyContinue

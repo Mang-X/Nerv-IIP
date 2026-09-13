@@ -1,7 +1,7 @@
 # Script-Governance:
 #   Category: library
 #   SideEffects:
-#     - Reads the shard manifest objects and TRX documents its callers hand it
+#     - Reads the shard manifest objects its callers hand it, and the TRX documents under a results directory they name
 #   Writes:
 #     - None
 #   Cleanup:
@@ -307,6 +307,90 @@ function Assert-BackendTestShardSelectorDiscovery {
     }
 
     return $matchedTests
+}
+
+function Get-BackendTestShardSelectorTrxResults {
+    <#
+        一个 selector 的**全部**执行证据：读结果目录下每一份 TRX，合并出 `UnitTestResult` 集合。
+
+        #3283：这里原本是调用方的两行——`Get-ChildItem … | ` 按 `LastWriteTimeUtc` 倒序
+        `| Select-Object -First 1`，再 `[xml]…TestRun.Results.UnitTestResult`。两处都错：
+
+          * **按 mtime 取单份不是身份判据，也不是聚合判据。** 每个 selector 跑的是 `$shard.solutionFilter`
+            （slnf），`dotnet test <slnf>` 给 slnf 里**每个项目各写一份 TRX**（本仓四个 slnf 的项目数
+            12 / 6 / 11 / 37），其中绝大多数是「这个项目没有命中过滤器」的 0 结果空壳。于是「哪一份被
+            选中」取决于文件系统写入完成的先后 —— #3283 观测到同一份代码的两次运行分别停在第 3 个和
+            第 4 个 selector，看起来像随机环境故障，实际是证据选取口径本身不确定。
+          * **空壳 TRX 没有 `<Results>` 节点**，`$trxXml.TestRun.Results` 在 `Set-StrictMode -Version Latest`
+            下抛 `The property 'Results' cannot be found on this object.` —— 一条与被测对象完全无关的
+            报错，把「验证脚本自己坏了」伪装成「真库测试失败了」。
+
+        修法是聚合而不是换一个更聪明的挑选规则：挑选规则再聪明也仍然是挑选，仍然要回答「为什么这一份
+        就是权威的」。聚合不需要回答那个问题 —— 目录里每一份 TRX 的每一条结果都进入对账集合。
+
+        读取顺序按**完整路径序数排序**固定（`Get-BackendTestShardUniqueSorted` 的默认 Ordinal 比较器），
+        所以同一份输入连续跑两次得到的证据集合逐字相同，不随 locale、不随写入顺序变化。
+
+        三处 fail-closed，各自带一条独立的诊断，都在
+        scripts/tests/backend-test-shards.Tests.ps1「#3283」一节里有可执行的对照：
+
+          1. 结果目录不存在 —— `dotnet test` 连 `--results-directory` 都没写出来。
+          2. 目录里一份 TRX 都没有。
+          3. **合并后一条 `UnitTestResult` 都没有** —— 这是本票真正要堵的那一支。TRX 文件存在、
+             `[xml]` 解析得动、甚至可能带一个空的 `<Results/>`，但没有任何一条执行结果。零结果
+             绝不允许悄悄流进下游断言当作「没有不通过的用例」。
+
+        ⚠️ 覆盖边界，声明多少就只断言多少：本函数只保证「目录下所有 TRX 的所有 `UnitTestResult` 都在
+        返回值里」与「零证据必红」。**它不判断这些结果是不是该 selector 的** —— 身份对账是
+        Assert-BackendTestShardSelectorExecution 的职责（`DiscoveredTests` 才是期望集的来源，那一侧
+        由 Assert-BackendTestShardSelectorDiscovery 先行 fail-closed）。聚合只负责把对账的输入补全。
+
+        用 `SelectNodes("//*[local-name()='UnitTestResult']")` 而不是 `.TestRun.Results.UnitTestResult`：
+        前者对「缺 `<Results>`」返回空集合而不是抛属性缺失，命名空间也不必硬编码 —— 与
+        scripts/lib/FullChainTestLane.ps1 里同族的读法一致。
+    #>
+    param(
+        [Parameter(Mandatory)] [string] $Selector,
+        [Parameter(Mandatory)] [string] $ResultsDirectory
+    )
+
+    if (-not (Test-Path -LiteralPath $ResultsDirectory -PathType Container)) {
+        throw "Real PostgreSQL selector '$Selector' found no executed test evidence: results directory '$ResultsDirectory' does not exist."
+    }
+
+    # `@(...)` 不是装饰：Get-BackendTestShardUniqueSorted 的返回值会被 PowerShell 解包，零个元素时
+    # 得到 $null，紧接着的 `.Count` 在 Set-StrictMode -Version Latest 下抛
+    # `The property 'Count' cannot be found on this object.` —— 又一条把「目录里没有 TRX」伪装成
+    # 「验证脚本自己坏了」的路径。本机实测过：去掉这对括号，空目录那条用例立刻以该异常转红。
+    $trxPaths = @(Get-BackendTestShardUniqueSorted -Values @(
+        Get-ChildItem -LiteralPath $ResultsDirectory -Filter '*.trx' -File -Recurse | ForEach-Object { [string] $_.FullName }
+    ))
+    if ($trxPaths.Count -eq 0) {
+        throw "Real PostgreSQL selector '$Selector' found no executed test evidence: '$ResultsDirectory' contains no TRX file."
+    }
+
+    $results = [System.Collections.Generic.List[object]]::new()
+    foreach ($trxPath in $trxPaths) {
+        $document = $null
+        try {
+            $document = [xml] (Get-Content -LiteralPath $trxPath -Raw)
+        }
+        catch {
+            # 解析失败不能降级成「这一份没有结果」而继续聚合：那会把一份损坏的证据算成零贡献，
+            # 恰好是本票要堵的「零结果被当成没有失败」的同一个失效方向。
+            throw "Real PostgreSQL selector '$Selector' TRX evidence '$trxPath' is not parseable XML: $($_.Exception.Message)"
+        }
+
+        foreach ($node in @($document.SelectNodes("//*[local-name()='UnitTestResult']"))) {
+            $results.Add($node)
+        }
+    }
+
+    if ($results.Count -eq 0) {
+        throw "Real PostgreSQL selector '$Selector' found no executed test evidence: aggregated $($trxPaths.Count) TRX file(s) under '$ResultsDirectory' and none carries a single UnitTestResult."
+    }
+
+    return @($results)
 }
 
 function Assert-BackendTestShardSelectorExecution {

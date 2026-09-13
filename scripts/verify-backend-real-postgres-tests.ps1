@@ -86,12 +86,12 @@ foreach ($shard in $ownedShards) {
             'test', [string] $shard.solutionFilter, '--configuration', 'Release', '--filter', "FullyQualifiedName~$selector",
             '--logger', "trx;LogFilePrefix=$selectorSlug", '--results-directory', $selectorDirectory
         ) | Out-Null
-        $trx = Get-NervItemsSorted -Items @(Get-ChildItem -LiteralPath $selectorDirectory -Filter '*.trx' -File) -Comparison { param($left, $right) if ($right.LastWriteTimeUtc -gt $left.LastWriteTimeUtc) { 1 } elseif ($right.LastWriteTimeUtc -lt $left.LastWriteTimeUtc) { -1 } else { 0 } } | Select-Object -First 1
-        if ($null -eq $trx) {
-            throw "Real PostgreSQL selector '$selector' executed without TRX evidence."
-        }
-        [xml] $trxXml = Get-Content -LiteralPath $trx.FullName -Raw
-        $results = @($trxXml.TestRun.Results.UnitTestResult)
+        # #3283：证据是**目录下全部 TRX 的合并结果**，不是其中按 mtime 最新的那一份。
+        # `dotnet test <slnf>` 给 slnf 里每个项目各写一份 TRX，绝大多数是 0 结果空壳；挑哪一份取决于
+        # 文件系统写入先后，两次运行会停在不同的 selector 上。归因与 fail-closed 的三个分支写在
+        # Get-BackendTestShardSelectorTrxResults 的函数注释里，这里不复述。调用方在类型上不再持有
+        # 「某一份 TRX」这个中间物，按 mtime 挑选的形状在这一层已无从表达。
+        $results = @(Get-BackendTestShardSelectorTrxResults -Selector $selector -ResultsDirectory $selectorDirectory)
         Assert-BackendTestShardSelectorExecution -Selector $selector -DiscoveredTests $discovered -TrxResults $results
     }
 }
