@@ -4,7 +4,9 @@
 #     - Creates a temporary backend inventory mirror with mutation projects
 #     - Creates a temporary C# Docker-lookalike fixture inside an existing backend test project
 #   Writes:
-#     - OS temporary directory: backend inventory, workflow, manifest, policy, shard TRX and timing-cache fixtures (temporarily)
+#     - OS temporary directory: backend inventory, workflow, manifest, policy, shard TRX, aggregated selector TRX and timing-cache fixtures (temporarily)
+#     - OS temporary directory: a PATH dotnet shim, its launcher, manifest and TRX fixtures for the real-PostgreSQL verifier (temporarily)
+#     - artifacts/real-postgres-tests/Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests/** shim TRX evidence (temporarily)
 #     - backend/tests/Nerv.IIP.Testing.Tests/TemporaryDockerLookalikes-*.cs (temporarily)
 #     - artifacts/backend-test-shards-collision-*.cs selector-collision fixture (temporarily)
 #     - artifacts/shard-fixture-*.slnf rearranged solution filters (temporarily)
@@ -36,6 +38,8 @@ $temporarySolutionMemberPath = Join-Path $temporarySolutionMemberDirectory 'Nerv
 $temporaryWorkflowPath = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-{0}.yml" -f [Guid]::NewGuid().ToString('N'))
 $timeoutResultsDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-timeout-{0}" -f [Guid]::NewGuid().ToString('N'))
 $executionTrxDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-execution-{0}" -f [Guid]::NewGuid().ToString('N'))
+$aggregateTrxDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-aggregate-trx-{0}" -f [Guid]::NewGuid().ToString('N'))
+$shimRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-dotnet-shim-{0}" -f [Guid]::NewGuid().ToString('N'))
 $temporaryPolicyPath = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-policy-{0}.json" -f [Guid]::NewGuid().ToString('N'))
 $temporaryManifestPath = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-manifest-{0}.json" -f [Guid]::NewGuid().ToString('N'))
 # The validator resolves policy sourcePath against the repository root, so the collision fixture
@@ -1022,6 +1026,449 @@ catch {
 }
 Assert-Contract ($notExecutedSelectorText.Contains("Real PostgreSQL selector 'Nerv.IIP.Tests.DiscoveredSelector' must execute every discovered test as Passed", [StringComparison]::Ordinal)) 'A discovered real PostgreSQL selector without TRX execution must fail closed.'
 
+# --- #3283 -------------------------------------------------------------------------------------
+# 一个 selector 的执行证据是**本轮结果目录下全部 TRX 的合并结果**，不是其中按 mtime 最新的那一份。
+# 归因写在 scripts/lib/BackendTestShardSelectors.ps1 的 Get-BackendTestShardSelectorTrxResults
+# 函数注释里，这里只放可执行的对照。
+#
+# 夹具形状照 `dotnet test <slnf>` 的真实产物做，并且**刻意让「只读其中一份」的任何策略都不成立**：
+# 四份 TRX，序数**第一**份与**最后**一份都是 0 结果空壳（一份完全没有 `<Results>` 节点，一份带空的
+# `<Results/>`），两条真实结果**拆在中间两份**里。⚠️ 这一点是 #3283 复审 B2 点名的：上一版把两条结果
+# 放在同一份、且那一份恰好序数排第一，于是「只读序数第一份」照样全绿——那一节实际只证明了「不按
+# mtime 选」，没有证明「合并全部」。下面的夹具自检断言把这个性质钉死，避免改名或加文件时静默漂回去。
+$aggregateSelector = 'Nerv.IIP.Tests.AggregateSelector'
+$aggregateDiscovered = @("$aggregateSelector.CaseOne", "$aggregateSelector.CaseTwo")
+$aggregateShellNoResultsPath = Join-Path $aggregateTrxDirectory '01-shell-without-results-node.trx'
+$aggregateRealOnePath = Join-Path $aggregateTrxDirectory '02-real-case-one.trx'
+$aggregateRealTwoPath = Join-Path $aggregateTrxDirectory '03-real-case-two.trx'
+$aggregateShellEmptyResultsPath = Join-Path $aggregateTrxDirectory '04-shell-with-empty-results.trx'
+New-Item -ItemType Directory -Path $aggregateTrxDirectory -Force | Out-Null
+Set-Content -LiteralPath $aggregateShellNoResultsPath -NoNewline -Value @'
+<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="00000000-0000-0000-0000-000000000014" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <TestDefinitions />
+  <ResultSummary outcome="Completed" />
+</TestRun>
+'@
+Set-Content -LiteralPath $aggregateRealOnePath -NoNewline -Value @'
+<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="00000000-0000-0000-0000-000000000011" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Results>
+    <UnitTestResult testId="00000000-0000-0000-0000-000000000012" testName="Nerv.IIP.Tests.AggregateSelector.CaseOne" outcome="Passed" />
+  </Results>
+</TestRun>
+'@
+Set-Content -LiteralPath $aggregateRealTwoPath -NoNewline -Value @'
+<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="00000000-0000-0000-0000-000000000013" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Results>
+    <UnitTestResult testId="00000000-0000-0000-0000-000000000016" testName="Nerv.IIP.Tests.AggregateSelector.CaseTwo" outcome="Passed" />
+  </Results>
+</TestRun>
+'@
+Set-Content -LiteralPath $aggregateShellEmptyResultsPath -NoNewline -Value @'
+<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="00000000-0000-0000-0000-000000000015" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Results />
+  <ResultSummary outcome="Completed" />
+</TestRun>
+'@
+
+# 夹具自检：把「聚合才成立」写成断言，而不是写成注释里的一句话。逐份数 UnitTestResult——序数首尾两份
+# 必须为 0，且没有任何单独一份同时带齐两条身份。任何一条不成立，下面那些「聚合」断言就退化成「不按
+# mtime 选」，而退化是静默的。
+# ⚠️ 这里**没有**排序：顺序由下面的 $aggregateOrdinalNames 用序数比较器给出，首/末元素都取自它。
+# 原来多写了一个 `Sort-Object -Property @{ Expression = { $_ } }`，既多余又是 culture collation，
+# 被 scripts/tests/ordinal-comparison-layers.Tests.ps1 判红（#3283 复审 N-B1）。
+$aggregatePerFileCounts = @(
+    Get-ChildItem -LiteralPath $aggregateTrxDirectory -Filter '*.trx' -File |
+        ForEach-Object { [string] $_.FullName } |
+        ForEach-Object {
+            $document = [xml] (Get-Content -LiteralPath $_ -Raw)
+            [pscustomobject]@{ Name = [System.IO.Path]::GetFileName($_); Count = @($document.SelectNodes("//*[local-name()='UnitTestResult']")).Count }
+        }
+)
+$aggregateOrdinalNames = Get-BackendTestShardUniqueSorted -Values @($aggregatePerFileCounts | ForEach-Object { [string] $_.Name })
+Assert-Contract ($aggregatePerFileCounts.Count -eq 4) "The aggregation fixture must hold four TRX files; observed $($aggregatePerFileCounts.Count)."
+$aggregateFirstFileCount = @($aggregatePerFileCounts | Where-Object { [string]::Equals([string] $_.Name, $aggregateOrdinalNames[0], [StringComparison]::Ordinal) })[0].Count
+$aggregateLastFileCount = @($aggregatePerFileCounts | Where-Object { [string]::Equals([string] $_.Name, $aggregateOrdinalNames[$aggregateOrdinalNames.Count - 1], [StringComparison]::Ordinal) })[0].Count
+Assert-Contract ($aggregateFirstFileCount -eq 0) "The ordinally first TRX must carry no result, otherwise 'read only the first file' would satisfy the aggregation assertions; $($aggregateOrdinalNames[0]) carried $aggregateFirstFileCount."
+Assert-Contract ($aggregateLastFileCount -eq 0) "The ordinally last TRX must carry no result, otherwise 'read only the last file' would satisfy the aggregation assertions; $($aggregateOrdinalNames[$aggregateOrdinalNames.Count - 1]) carried $aggregateLastFileCount."
+Assert-Contract (@($aggregatePerFileCounts | Where-Object { $_.Count -ge $aggregateDiscovered.Count }).Count -eq 0) 'No single TRX may carry every discovered identity; if one does, reading one file is enough and the aggregation claim is untested.'
+Assert-Contract ((@($aggregatePerFileCounts | ForEach-Object { [int] $_.Count }) | Measure-Object -Sum).Sum -eq $aggregateDiscovered.Count) 'The fixture must spread exactly the discovered identities across more than one TRX.'
+
+# mtime 是这里的自变量，所以显式写死而不是靠文件写入顺序——否则这几条断言的鉴别力就变成了
+# 「本机文件系统碰巧按什么顺序落盘」，正是本票要消除的那个不确定性。
+function Set-AggregateTrxWriteTimes {
+    param([Parameter(Mandatory)] [string] $NewestPath)
+
+    $stamp = [datetime]::new(2026, 1, 1, 0, 0, 0, [DateTimeKind]::Utc)
+    $offset = 0
+    foreach ($path in @($aggregateShellNoResultsPath, $aggregateRealOnePath, $aggregateRealTwoPath, $aggregateShellEmptyResultsPath)) {
+        if ([string]::Equals($path, $NewestPath, [StringComparison]::Ordinal)) { continue }
+        (Get-Item -LiteralPath $path).LastWriteTimeUtc = $stamp.AddMinutes($offset)
+        $offset++
+    }
+    (Get-Item -LiteralPath $NewestPath).LastWriteTimeUtc = $stamp.AddMinutes(60)
+}
+
+function Get-AggregateTrxNewestName {
+    # 这里的 `Sort-Object` 排的是 DateTime，不是标识符，所以不属于 ordinal-comparison-layers 管的那一类；
+    # 而且「按 mtime 排出最新那份」正是被测对象本身，换成序数 helper 就把用例改没了。
+    return [string] (Get-ChildItem -LiteralPath $aggregateTrxDirectory -Filter '*.trx' -File |
+        Sort-Object LastWriteTimeUtc -Descending |
+        Select-Object -First 1).Name
+}
+
+# StrictMode 在这里是被测条件之一，不是背景设置：#3283 的可见症状就是 StrictMode 下的属性缺失异常。
+# 用 `& { Set-StrictMode … }` 在**进程内**开一个更严格的子作用域，而不是起 `pwsh -File` 子进程——
+# 后者不重定向 stdin，StrictMode 报错会表现为挂住到超时而不是打印真因。
+function Invoke-AggregateTrxReadUnderStrictMode {
+    return & {
+        Set-StrictMode -Version Latest
+        @(Get-BackendTestShardSelectorTrxResults -Selector $aggregateSelector -ResultsDirectory $aggregateTrxDirectory)
+    }
+}
+
+# 第一跑：最新那份是**没有 `<Results>` 节点**的空壳。
+Set-AggregateTrxWriteTimes -NewestPath $aggregateShellNoResultsPath
+Assert-Contract ([string]::Equals((Get-AggregateTrxNewestName), '01-shell-without-results-node.trx', [StringComparison]::Ordinal)) "The fixture must actually put an empty-shell TRX at the newest mtime, otherwise the aggregation cell has no discrimination; newest was $(Get-AggregateTrxNewestName)."
+$aggregateFirstRunText = ''
+$aggregateFirstRun = @()
+try {
+    $aggregateFirstRun = @(Invoke-AggregateTrxReadUnderStrictMode)
+}
+catch {
+    $aggregateFirstRunText = $_.Exception.Message
+}
+Assert-Contract ([string]::Equals($aggregateFirstRunText, '', [StringComparison]::Ordinal)) "A results directory whose newest TRX has no <Results> node must not throw under Set-StrictMode -Version Latest; observed: $aggregateFirstRunText"
+Assert-Contract ($aggregateFirstRun.Count -eq 2) "Aggregation must return every UnitTestResult in the directory, not the ones in a single file picked by mtime; returned $($aggregateFirstRun.Count)."
+Assert-BackendTestShardSelectorExecution -Selector $aggregateSelector -DiscoveredTests $aggregateDiscovered -TrxResults $aggregateFirstRun
+
+# 第二跑：同一份输入，只把**空的 `<Results/>`** 那一份改成最新。mtime 顺序变了，证据集合必须逐字不变。
+# 这一条兑现 #3283 评论里追加的验收：同一输入连续两跑选中的证据集合相同。按 mtime 取单份时两跑会
+# 分别得到「属性缺失异常」和「零结果」两种不同结局——那正是它看起来像随机环境故障的原因。
+Set-AggregateTrxWriteTimes -NewestPath $aggregateShellEmptyResultsPath
+Assert-Contract ([string]::Equals((Get-AggregateTrxNewestName), '04-shell-with-empty-results.trx', [StringComparison]::Ordinal)) "The second run must actually see a different newest TRX; newest was $(Get-AggregateTrxNewestName)."
+$aggregateSecondRun = @(Invoke-AggregateTrxReadUnderStrictMode)
+$aggregateFirstIdentities = (@($aggregateFirstRun | ForEach-Object { [string] $_.testName }) -join '|')
+$aggregateSecondIdentities = (@($aggregateSecondRun | ForEach-Object { [string] $_.testName }) -join '|')
+Assert-Contract ([string]::Equals($aggregateFirstIdentities, "$aggregateSelector.CaseOne|$aggregateSelector.CaseTwo", [StringComparison]::Ordinal)) "Aggregated evidence must carry both executed identities in a deterministic ordinal order; observed: $aggregateFirstIdentities"
+Assert-Contract ([string]::Equals($aggregateFirstIdentities, $aggregateSecondIdentities, [StringComparison]::Ordinal)) "The same input must yield the same evidence set on two consecutive reads regardless of which TRX carries the newest mtime; run1=$aggregateFirstIdentities run2=$aggregateSecondIdentities"
+Assert-BackendTestShardSelectorExecution -Selector $aggregateSelector -DiscoveredTests $aggregateDiscovered -TrxResults $aggregateSecondRun
+
+# 零证据必须 fail-closed，而且理由要说得出来：目录里有 TRX、`[xml]` 也解析得动，但合并后一条
+# UnitTestResult 都没有。这一支不依赖下游的身份对账 —— 下游的期望集来自 discovery，讲的是
+# 「哪些用例没跑」；这里讲的是「这次运行根本没有任何执行证据」，两句话不是一回事。
+Remove-Item -LiteralPath $aggregateRealOnePath -Force
+Remove-Item -LiteralPath $aggregateRealTwoPath -Force
+$aggregateZeroEvidenceText = ''
+try {
+    Invoke-AggregateTrxReadUnderStrictMode | Out-Null
+}
+catch {
+    $aggregateZeroEvidenceText = $_.Exception.Message
+}
+Assert-Contract ($aggregateZeroEvidenceText.Contains("Real PostgreSQL selector '$aggregateSelector' found no executed test evidence", [StringComparison]::Ordinal)) "A directory holding only empty-shell TRX files must fail closed instead of asserting over zero results; observed: $aggregateZeroEvidenceText"
+Assert-Contract ($aggregateZeroEvidenceText.Contains('none carries a single UnitTestResult', [StringComparison]::Ordinal)) "The zero-evidence failure must name why it failed, not just that it failed; observed: $aggregateZeroEvidenceText"
+
+# 一份解析不动的 TRX 不能被降级成「这一份贡献零条结果」继续聚合——那是同一个失效方向。
+Set-Content -LiteralPath $aggregateRealOnePath -NoNewline -Value '<TestRun><Results>'
+$aggregateUnparseableText = ''
+try {
+    Invoke-AggregateTrxReadUnderStrictMode | Out-Null
+}
+catch {
+    $aggregateUnparseableText = $_.Exception.Message
+}
+Assert-Contract ($aggregateUnparseableText.Contains('is not parseable XML', [StringComparison]::Ordinal)) "A corrupt TRX must fail closed rather than contribute zero results to the aggregate; observed: $aggregateUnparseableText"
+
+# 零字节 `.trx` 是同一支的边角：`Get-Content -Raw` 返回 $null、`[xml] $null` **不抛**，不显式判空的话
+# 崩点会漂到 SelectNodes 上，报成一条与 TRX 无关的 `You cannot call a method on a null-valued
+# expression.`——即「函数注释声称有独立诊断」宽于实际（#3283 复审点名）。
+Set-Content -LiteralPath $aggregateRealOnePath -NoNewline -Value ''
+$aggregateEmptyFileText = ''
+try {
+    Invoke-AggregateTrxReadUnderStrictMode | Out-Null
+}
+catch {
+    $aggregateEmptyFileText = $_.Exception.Message
+}
+Assert-Contract ($aggregateEmptyFileText.Contains('is not parseable XML: the document is empty.', [StringComparison]::Ordinal)) "A zero-byte TRX must fail closed through the parse diagnostic, not through a null-reference further down; observed: $aggregateEmptyFileText"
+Assert-Contract (-not $aggregateEmptyFileText.Contains('null-valued expression', [StringComparison]::Ordinal)) "The zero-byte TRX diagnostic must not surface as a null-reference; observed: $aggregateEmptyFileText"
+
+Get-ChildItem -LiteralPath $aggregateTrxDirectory -Filter '*.trx' -File | Remove-Item -Force
+$aggregateNoTrxText = ''
+try {
+    Invoke-AggregateTrxReadUnderStrictMode | Out-Null
+}
+catch {
+    $aggregateNoTrxText = $_.Exception.Message
+}
+Assert-Contract ($aggregateNoTrxText.Contains('contains no TRX file', [StringComparison]::Ordinal)) "An empty results directory must fail closed with its own diagnostic; observed: $aggregateNoTrxText"
+
+# ⚠️ 这条断言的锚点是 #3283 复审点名改过的：原来锚 `does not exist`，而删掉守卫后裸
+# `Get-ChildItem` 抛的 ItemNotFoundException 消息恰好是
+# `Cannot find path '<path>' because it does not exist.` —— 断言自己那句话里点名要排除的异常
+# 正好满足它的锚，于是「整段删掉守卫」照样全绿。现在锚住本守卫**专有**的前半句，并显式排除裸异常。
+Remove-Item -LiteralPath $aggregateTrxDirectory -Recurse -Force
+$aggregateMissingDirectoryText = ''
+try {
+    Invoke-AggregateTrxReadUnderStrictMode | Out-Null
+}
+catch {
+    $aggregateMissingDirectoryText = $_.Exception.Message
+}
+Assert-Contract ($aggregateMissingDirectoryText.Contains("found no executed test evidence: results directory", [StringComparison]::Ordinal)) "A missing results directory must fail closed through this library's own diagnostic; observed: $aggregateMissingDirectoryText"
+Assert-Contract (-not $aggregateMissingDirectoryText.Contains('Cannot find path', [StringComparison]::Ordinal)) "The missing-directory failure must not be a bare Get-ChildItem ItemNotFoundException; observed: $aggregateMissingDirectoryText"
+
+# --- #3283 B1 / B3：生产调用点的**行为**覆盖 -----------------------------------------------------
+# 上面全部是库函数的单元对照。它们一条也不约束 `scripts/verify-backend-real-postgres-tests.ps1`
+# 那一行怎么读证据——#3283 复审 B1 实测：把调用点整段改回 pre-PR 写法，全套契约测试 EXIT=0 全绿，
+# 唯一的绑定是一条 `$source.Contains('Get-BackendTestShardSelectorTrxResults')` 子串断言，而**同文件的
+# 一句中文注释自己就满足它**（配对变异：改回调用点 + 保留注释 ⇒ 绿；改回调用点 + 抹掉注释 ⇒ 红）。
+# 那条断言已删除，换成下面两条端到端用例。
+#
+# 做法：把 `dotnet` 换成一个 PATH 上的 shim，真正**运行生产脚本本体**。真库 lane 是 opt-in、不进 CI，
+# 所以这是它唯一可能拿到的自动化行为覆盖。shim 只做两件事：`--list-tests` 打印冻结身份；执行调用把
+# 一个夹具目录里的 TRX 复制进 `--results-directory`，并按序数文件名递增设置 mtime（于是**最新那份是
+# 空壳**）。
+#
+# 「shim 被绕过」在构造上不可能表现为绿：manifest 里的 `solutionFilter` 是一个**故意不存在**的路径
+# `backend/shim-does-not-need-to-exist.slnf`，真 `dotnet` 碰它必以 MSB1009 失败。所以这不需要一句
+# 「shim 一定会生效」的注释来保证（本机变异实测：不把 shim 放上 PATH ⇒ 红）。
+#
+# ⚠️ **与 test-evidence-policy.json 的耦合**：选择器取的是真实规则 `testing-postgres-lifecycle` 的两条
+# 冻结身份（该规则 `expectedRuntimeTestCount: 2`）。必须用真身份，因为本脚本用 `$PSScriptRoot` 硬编码
+# 加载那份 policy、不接受替身。代价写在这里给排障的人看：**重命名那两个测试会让下面两条契约用例以
+# discovery 报错的形式转红**，那不是 shim 坏了，是身份漂了——同步改 policy 与这里的两个常量即可。
+#
+# ⚠️ **覆盖边界：shim 不是真 `dotnet`。** 它验证的是「本脚本如何解释产物」，不验证 `dotnet test` 的行为。
+# 三条**未建模、也未实测**的差距，逐条列出而不是含糊带过：
+#   1. 真 `dotnet test <slnf>` 在「多数项目零匹配」时的退出码语义；
+#   2. 真 `dotnet test` 是否会往 `--results-directory` 的**子目录**写 TRX —— 也就是说聚合读取用的
+#      `-Recurse` 那一面**至今没有任何用例覆盖**；
+#   3. 真 TRX 带 `<TestDefinitions>` / `<UnitTest id>` / `testId`，shim 的**不带**。当前读法只用
+#      `testName` + `outcome`，所以覆盖是完整的；但同仓 FullChainTestLane.ps1 / PostgresTestLane.ps1
+#      走的是 `testId → TestMethod` 映射，**若将来本函数改成那种读法，这套夹具会太薄而假绿**。
+$realPostgresVerifyPath = Join-Path $repoRoot 'scripts/verify-backend-real-postgres-tests.ps1'
+$shimSelector = 'Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests'
+$shimIdentityOne = "$shimSelector.Initializer_failure_drops_database_and_redacts_diagnostics"
+$shimIdentityTwo = "$shimSelector.Parallel_databases_are_isolated_initialized_and_removed"
+$shimSelectorResultsDirectory = Join-Path $repoRoot (Join-Path 'artifacts/real-postgres-tests' $shimSelector)
+$shimBinDirectory = Join-Path $shimRoot 'bin'
+$shimLogicPath = Join-Path $shimRoot 'dotnet-shim.ps1'
+$shimLauncherPath = Join-Path $shimRoot 'launch-real-postgres-verify.ps1'
+$shimManifestPath = Join-Path $shimRoot 'shim-backend-test-shards.json'
+$shimExecutedTrxDirectory = Join-Path $shimRoot 'executed-trx'
+$shimShellOnlyTrxDirectory = Join-Path $shimRoot 'shell-only-trx'
+foreach ($shimDirectory in @($shimRoot, $shimBinDirectory, $shimExecutedTrxDirectory, $shimShellOnlyTrxDirectory)) {
+    New-Item -ItemType Directory -Path $shimDirectory -Force | Out-Null
+}
+
+function New-ShimTrxFile {
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $Identities,
+        [Parameter(Mandatory)] [bool] $IncludeResultsNode
+    )
+
+    $body = if (-not $IncludeResultsNode) {
+        '  <TestDefinitions />'
+    }
+    else {
+        $rows = @($Identities | ForEach-Object { "    <UnitTestResult testName=`"$_`" outcome=`"Passed`" />" })
+        if ($rows.Count -eq 0) { '  <Results />' } else { "  <Results>`n$($rows -join "`n")`n  </Results>" }
+    }
+    Set-Content -LiteralPath $Path -NoNewline -Value "<?xml version=`"1.0`" encoding=`"utf-8`"?>`n<TestRun xmlns=`"http://microsoft.com/schemas/VisualStudio/TeamTest/2010`">`n$body`n  <ResultSummary outcome=`"Completed`" />`n</TestRun>`n"
+}
+
+# 本轮真实产物：四份，序数首尾都是空壳，两条身份拆在中间两份里（与上面单元夹具同一个性质）。
+New-ShimTrxFile -Path (Join-Path $shimExecutedTrxDirectory '01-shell-without-results-node.trx') -Identities @() -IncludeResultsNode $false
+New-ShimTrxFile -Path (Join-Path $shimExecutedTrxDirectory '02-real-alpha.trx') -Identities @($shimIdentityOne) -IncludeResultsNode $true
+New-ShimTrxFile -Path (Join-Path $shimExecutedTrxDirectory '03-real-beta.trx') -Identities @($shimIdentityTwo) -IncludeResultsNode $true
+New-ShimTrxFile -Path (Join-Path $shimExecutedTrxDirectory '04-shell-with-empty-results.trx') -Identities @() -IncludeResultsNode $true
+# 「本轮一条都没跑」的产物：只有空壳。
+New-ShimTrxFile -Path (Join-Path $shimShellOnlyTrxDirectory '01-shell-without-results-node.trx') -Identities @() -IncludeResultsNode $false
+New-ShimTrxFile -Path (Join-Path $shimShellOnlyTrxDirectory '02-shell-with-empty-results.trx') -Identities @() -IncludeResultsNode $true
+
+Set-Content -LiteralPath $shimLogicPath -NoNewline -Value @'
+$argumentList = @($args | ForEach-Object { [string] $_ })
+$isDiscovery = @($argumentList | Where-Object { [string]::Equals($_, '--list-tests', [StringComparison]::Ordinal) }).Count -gt 0
+if ($isDiscovery) {
+    Write-Output 'The following Tests are available:'
+    foreach ($identity in @(($env:NERV_IIP_SHIM_DISCOVERY -split ';') | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
+        Write-Output "    $identity"
+    }
+    exit 0
+}
+$resultsIndex = -1
+for ($index = 0; $index -lt $argumentList.Count; $index++) {
+    if ([string]::Equals($argumentList[$index], '--results-directory', [StringComparison]::Ordinal)) { $resultsIndex = $index; break }
+}
+if ($resultsIndex -lt 0 -or ($resultsIndex + 1) -ge $argumentList.Count) {
+    Write-Error 'dotnet shim: the execution invocation must carry --results-directory.'
+    exit 2
+}
+$target = $argumentList[$resultsIndex + 1]
+New-Item -ItemType Directory -Path $target -Force | Out-Null
+$stamp = [datetime]::new(2026, 1, 1, 0, 0, 0, [DateTimeKind]::Utc)
+$offset = 0
+# 序数排序，不是 `Sort-Object -Property Name`。这一行住在 here-string 里，
+# ordinal-comparison-layers 的扫描面看不见它——#3283 复审点名的正是这个形状：审核按「发现位置」
+# 点名、门禁按「扫描面」判定，两者不是同一集合，只改被扫到的那一处等于没改同族问题。
+# 这里不能复用仓库 helper：shim 在一个裸 pwsh 进程里跑，没有 dot-source 任何库。
+$sourceNames = [string[]] @(Get-ChildItem -LiteralPath $env:NERV_IIP_SHIM_TRX_SOURCE -Filter '*.trx' -File | ForEach-Object { [string] $_.Name })
+[Array]::Sort($sourceNames, [StringComparer]::Ordinal)
+foreach ($sourceName in $sourceNames) {
+    $copied = Join-Path $target $sourceName
+    Copy-Item -LiteralPath (Join-Path $env:NERV_IIP_SHIM_TRX_SOURCE $sourceName) -Destination $copied -Force
+    # 递增 mtime：序数最后那份（空壳）成为「最新」，于是任何按 mtime 取单份的读法都拿不到结果。
+    (Get-Item -LiteralPath $copied).LastWriteTimeUtc = $stamp.AddMinutes($offset)
+    $offset++
+}
+exit 0
+'@
+
+# shim 的平台包装：CI 与本机都是 POSIX，但 Windows 上不静默跳过——那会变成一个「按平台自动摘掉覆盖」
+# 的白名单洞。两边都落一个转发器，逻辑只有 dotnet-shim.ps1 一份。
+$shimExecutablePath = if ($IsWindows) { Join-Path $shimBinDirectory 'dotnet.cmd' } else { Join-Path $shimBinDirectory 'dotnet' }
+if ($IsWindows) {
+    Set-Content -LiteralPath $shimExecutablePath -NoNewline -Value "@echo off`r`npwsh -NoProfile -File `"$shimLogicPath`" %*`r`n"
+}
+else {
+    Set-Content -LiteralPath $shimExecutablePath -NoNewline -Value "#!/bin/sh`nexec pwsh -NoProfile -File `"$shimLogicPath`" `"`$@`"`n"
+    $chmod = Invoke-NativeCommandOutput -Command '/bin/chmod' -Arguments @('+x', $shimExecutablePath) -WorkingDirectory $repoRoot -Name 'real-postgres-shim-chmod'
+    Assert-Contract ($chmod.ExitCode -eq 0) "The dotnet shim must be executable; chmod exited $($chmod.ExitCode)."
+}
+
+Set-Content -LiteralPath $shimLauncherPath -NoNewline -Value @'
+param(
+    [Parameter(Mandatory)] [string] $ShimBinDirectory,
+    [Parameter(Mandatory)] [string] $VerifyPath,
+    [Parameter(Mandatory)] [string] $ManifestPath,
+    [Parameter(Mandatory)] [string] $DiscoveryIdentities,
+    [Parameter(Mandatory)] [string] $TrxSource,
+    [Parameter(Mandatory)] [string] $OutcomePath
+)
+
+# PATH 在**本进程**里改，而不是靠 ProcessStartInfo 的环境字典：子进程的可执行文件解析用的是启动者的
+# PATH，改在这一层才一定生效（本机实测过两种写法）。
+$env:PATH = $ShimBinDirectory + [IO.Path]::PathSeparator + $env:PATH
+$env:NERV_IIP_TEST_POSTGRES = 'Host=127.0.0.1;Port=1;Database=shim;Username=shim;Password=shim'
+$env:NERV_IIP_SHIM_DISCOVERY = $DiscoveryIdentities
+$env:NERV_IIP_SHIM_TRX_SOURCE = $TrxSource
+
+# 读数写进**文件**再由调用方读，不从子进程的 stderr 文本里捞。pwsh 的 ConciseView 会把错误记录按
+# 控制台宽度折行并加上 `| ` 前缀，于是 `found no executed test evidence` 会被拆成
+# `found no` + 换行 + `      | executed test evidence` —— 断言 `.Contains()` 当场假红（本机实测过一次，
+# 本仓「throw 报错被格式化器折行截断致断言假红」同族）。文件里存**压平成一行**的原文，不经过格式化器。
+$exitCode = 0
+$message = ''
+$captured = ''
+try {
+    $captured = ((& $VerifyPath -ManifestPath $ManifestPath *>&1 | Out-String) -replace '\s+', ' ').Trim()
+}
+catch {
+    $exitCode = 1
+    $message = (([string] $_.Exception.Message) -replace '\s+', ' ').Trim()
+}
+Set-Content -LiteralPath $OutcomePath -NoNewline -Value "EXIT=$exitCode`nMESSAGE=$message`nSTDOUT=$captured`n"
+exit $exitCode
+'@
+
+Set-Content -LiteralPath $shimManifestPath -NoNewline -Value @"
+{
+  "schemaVersion": 1,
+  "solution": "Nerv.IIP.sln",
+  "fastShards": [
+    {
+      "id": "real-postgres-shim",
+      "evidenceLane": "backend",
+      "jobName": "Backend Tests - Shim",
+      "solutionFilter": "backend/shim-does-not-need-to-exist.slnf",
+      "projects": [],
+      "excludedTestClasses": ["$shimSelector"],
+      "excludedTestLanes": ["real-postgres"],
+      "excludedTests": []
+    }
+  ],
+  "heavyLanes": [
+    {
+      "id": "real-postgres",
+      "policyLane": "postgres",
+      "owner": "opt-in real PostgreSQL verification",
+      "ownerScript": "scripts/verify-backend-real-postgres-tests.ps1",
+      "projects": []
+    }
+  ]
+}
+"@
+
+# 每次调用给两个**独立**读数：子进程退出码（由 Invoke-NativeCommandOutput 抛不抛体现）与 launcher
+# 自己写出的 outcome 文件。两者对不上就说明取证方式有问题，而不是挑一个信。
+function Invoke-RealPostgresVerifyWithShim {
+    param([Parameter(Mandatory)] [string] $TrxSource)
+
+    $outcomePath = Join-Path $shimRoot ("outcome-{0}.txt" -f [Guid]::NewGuid().ToString('N'))
+    $threw = $false
+    try {
+        Invoke-NativeCommandOutput -Command 'pwsh' -WorkingDirectory $repoRoot -TimeoutSeconds 180 -Name 'real-postgres-verify-shim' -Arguments @(
+            '-NoProfile', '-File', $shimLauncherPath,
+            '-ShimBinDirectory', $shimBinDirectory,
+            '-VerifyPath', $realPostgresVerifyPath,
+            '-ManifestPath', $shimManifestPath,
+            '-DiscoveryIdentities', "$shimIdentityOne;$shimIdentityTwo",
+            '-TrxSource', $TrxSource,
+            '-OutcomePath', $outcomePath
+        ) | Out-Null
+    }
+    catch {
+        $threw = $true
+    }
+
+    if (-not (Test-Path -LiteralPath $outcomePath)) {
+        throw "The shim launcher wrote no outcome file; the child process never reached its own reporting. Threw=$threw"
+    }
+    $lines = @(Get-Content -LiteralPath $outcomePath)
+    $field = {
+        param($prefix)
+        $matched = @($lines | Where-Object { $_.StartsWith($prefix, [StringComparison]::Ordinal) })
+        if ($matched.Count -eq 0) { return '' }
+        return [string] ($matched[0].Substring($prefix.Length))
+    }
+    $reported = [int] (& $field 'EXIT=')
+    if (($reported -ne 0) -ne $threw) {
+        throw "The two readings disagree: outcome file says EXIT=$reported while the process wrapper threw=$threw. Trust neither until the capture is fixed."
+    }
+    return [pscustomobject]@{
+        ExitCode = $reported
+        Message = [string] (& $field 'MESSAGE=')
+        Stdout = [string] (& $field 'STDOUT=')
+    }
+}
+
+# 端到端 ①：本轮写出四份 TRX，两条身份拆在中间两份里，最新那份是空壳。生产脚本必须验收通过。
+# 这一条同时钉住 B1（调用点真的走聚合读法）与 B2（真的是合并而不是挑一份）：调用点改回 mtime 取单份、
+# 或改成只读序数第一/最后一份，都拿不齐两条身份。
+Remove-Item -LiteralPath $shimSelectorResultsDirectory -Recurse -Force -ErrorAction SilentlyContinue
+$shimHappy = Invoke-RealPostgresVerifyWithShim -TrxSource $shimExecutedTrxDirectory
+Assert-Contract ($shimHappy.ExitCode -eq 0) "The production real-PostgreSQL verifier must accept evidence split across several TRX files whose newest member is an empty shell; it exited $($shimHappy.ExitCode) with: $($shimHappy.Message)"
+Assert-Contract ($shimHappy.Stdout.Contains('Verified 1 of 1 real PostgreSQL test selectors', [StringComparison]::Ordinal)) "The verifier must report the selector as verified; stdout was: $($shimHappy.Stdout)"
+$shimAggregatedNames = Get-BackendTestShardUniqueSorted -Values @(Get-ChildItem -LiteralPath $shimSelectorResultsDirectory -Filter '*.trx' -File | ForEach-Object { [string] $_.Name })
+Assert-Contract ($shimAggregatedNames.Count -eq 4) "The shim run must leave all four TRX files behind for the verifier to aggregate; observed $($shimAggregatedNames.Count): $($shimAggregatedNames -join ', ')."
+
+# 端到端 ②：run scoping。预置一份**上一轮**的、两条身份都 Passed 的 TRX，本轮 shim 只写空壳。
+# 目录若不清空，聚合会把上一轮的 Passed 当成本轮证据 ⇒ 脚本 EXIT=0 放行（复审 B3 实测的正是这一支，
+# 而 pre-PR 的 mtime 取法反倒因为「最新必属本轮」偶然躲开了它）。清空之后必须以零证据转红。
+New-ShimTrxFile -Path (Join-Path $shimSelectorResultsDirectory 'stale-previous-run.trx') -Identities @($shimIdentityOne, $shimIdentityTwo) -IncludeResultsNode $true
+(Get-Item -LiteralPath (Join-Path $shimSelectorResultsDirectory 'stale-previous-run.trx')).LastWriteTimeUtc = [datetime]::new(2025, 1, 1, 0, 0, 0, [DateTimeKind]::Utc)
+$shimStale = Invoke-RealPostgresVerifyWithShim -TrxSource $shimShellOnlyTrxDirectory
+$shimStaleText = $shimStale.Message
+Assert-Contract ($shimStale.ExitCode -ne 0) "A run that executed nothing must fail closed instead of inheriting the previous run's TRX from an unscoped results directory; it exited 0 with stdout: $($shimStale.Stdout)"
+Assert-Contract ($shimStaleText.Contains('found no executed test evidence', [StringComparison]::Ordinal)) "The stale-evidence failure must be the zero-evidence diagnostic, not some other error; observed: $shimStaleText"
+Assert-Contract (-not $shimStaleText.Contains('stale-previous-run', [StringComparison]::Ordinal)) "The previous run's TRX must have been removed before this run's dotnet test, not merely out-ranked; observed: $shimStaleText"
+Assert-Contract (@(Get-ChildItem -LiteralPath $shimSelectorResultsDirectory -Filter 'stale-previous-run.trx' -File).Count -eq 0) 'The verifier must clear the selector results directory before executing, so a previous run cannot contribute evidence.'
 $runnerSource = Get-Content -LiteralPath $runnerPath -Raw
 Assert-Contract (-not $runnerSource.Contains('No test matches the given testcase filter', [StringComparison]::Ordinal)) 'The zero-execution guard must not depend on localized dotnet console text.'
 Assert-Contract ($runnerSource.Contains('Assert-BackendTestShardProjectExecution', [StringComparison]::Ordinal)) 'The fast shard runner must prove classified-project execution from the TRX the MAN-661 collector consumes.'
@@ -1738,6 +2185,9 @@ finally {
     Remove-Item -LiteralPath $temporaryWorkflowPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $timeoutResultsDirectory -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $executionTrxDirectory -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $aggregateTrxDirectory -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $shimRoot -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Join-Path $repoRoot 'artifacts/real-postgres-tests/Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests') -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $temporaryPolicyPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $temporaryManifestPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $temporaryCollisionSourcePath -Force -ErrorAction SilentlyContinue
