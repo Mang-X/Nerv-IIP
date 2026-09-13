@@ -17,9 +17,27 @@
 形状。这里直接问 PowerShell 自己的解析器，写法再怎么折行都判得一样。
 
 **覆盖边界（不自称完备）**：本文件只管下面点名的四个入口。它**不**会发现将来新增的第五个同族
-入口——那种「护栏自称完备」的说法比有洞更坏，所以这里明写出来。仓库里另有约 20 个
-`verify-business-*.ps1` 也跑 `dotnet test`，但它们各自用 180/240/300/600/900 的**单项目**预算，
-不属于本族，也不在本文件的判定面内。
+入口——那种「护栏自称完备」的说法比有洞更坏，所以这里明写出来。下面三段同样是边界而不是免责：
+
+一、**其余跑 `dotnet test` 的 verify 脚本为什么不在判定面内**（按 AST 实读，不是按印象）：
+`scripts/verify-business-*.ps1` 共 **9 个**，它们在 `dotnet test` 调用点上**一个都没有**绑定
+`-TimeoutSeconds`，吃的是 `Invoke-DotNet` 的**隐式默认 600 秒**（`scripts/lib/ScriptAutomation.ps1:1004`）。
+它们身上那些 180/240/300 是 `Invoke-DockerCompose` 与 `restore` 的预算，**不是 test 的**。
+真正在 `dotnet test` 调用点写死字面量的是另外三个脚本：`verify-coding-rule-engine.ps1:30`=300、
+`verify-erp-sales-order-demand-planning.ps1:2419`=180、`verify-erp-wms-delivery-completion.ps1:931`=180。
+
+二、**已知同族但本轮未收**：`scripts/verify-iam-persistent-auth-foundation.ps1:71`=600 与
+`:74`=900。它逐条满足本族身份（本机可跑、`:63` 用 Invoke-DockerCompose 起真 PostgreSQL、对真库跑
+`dotnet test`、预算是字面量、零 CI 调用方、调用方无法抬高），只因数字不是 1800 而落在本轮交集之外。
+⚠️ 不要把它读成「单项目所以不属本族」：`:74` 是 `dotnet test backend/Nerv.IIP.sln`，**跑整个解决方案**，
+在「多工作树争 CPU」这个致因下，900 秒跑整解决方案比 1800 秒跑单成员**更容易**撑穿。
+后续处置回到 #3295。
+
+三、**本文件抓不到的两种「预算被二次收窄」形态**（已实测会绿，不靠再枚举拼法去堵）：
+换一个属性名重钉上界（如 `[ValidateScript({ $_ -le 1800 })]`）、以及在函数体内把传进来的值钳回
+（如 `if ($TimeoutSeconds -gt 1800) { $TimeoutSeconds = 1800 }`）。后者尤其危险：参数在、绑定在、
+默认值在，下面三条断言全过，而 #3295 的缺陷原样复活——调用方传 3600 被无声吃掉。
+要结构性闭合得换判据（判「预算在本脚本内是否被重新赋值/再校验」），那超出本轮射程。
 #>
 
 $ErrorActionPreference = 'Stop'
@@ -56,7 +74,10 @@ foreach ($relativePath in $governedEntrypoints) {
     $default = $parameter.DefaultValue
     Assert-Contract ($default -is [System.Management.Automation.Language.ConstantExpressionAst] -and [int]$default.Value -eq 1800) "'$relativePath' must keep 1800 as the -TimeoutSeconds default so CI behaviour is unchanged; found '$($default)'."
 
-    # --- 2. 待办 3：秒轴上下界由 Invoke-NativeCommandOutput 拥有，调用方再抄一遍就是第二个魔数。
+    # --- 2. 语义：**预算不得在本脚本内被二次收窄**。秒轴上下界由 Invoke-NativeCommandOutput 拥有
+    #        （#3271），调用方再抄一遍就是第二个魔数。下面这条只钉住 ValidateRange 这一种拼法，
+    #        换属性名或在函数体内钳回都绕得过去——那两种形态列在文件头的覆盖边界第三段里，
+    #        按「枚举 vs 结构性闭合」的判例，不在这里继续加拼法。
     $validateRangeAttributes = @($parameter.Attributes | Where-Object {
         $_ -is [System.Management.Automation.Language.AttributeAst] -and
         $_.TypeName.GetReflectionAttributeType() -eq [System.Management.Automation.ValidateRangeAttribute]
