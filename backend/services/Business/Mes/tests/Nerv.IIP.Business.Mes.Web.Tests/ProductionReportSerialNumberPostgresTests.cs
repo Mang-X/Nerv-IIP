@@ -39,9 +39,9 @@ public sealed class ProductionReportSerialNumberPostgresTests
             "operator-1"));
         await db.SaveChangesAsync();
         await db.Database.ExecuteSqlRawAsync("""
-            UPDATE mes.production_reports SET serial_no = E'\tSN-LEGACY\t' WHERE report_no = 'PR-LEGACY';
+            UPDATE mes.production_reports SET serial_no = U&'\00A0SN-LEGACY\3000' WHERE report_no = 'PR-LEGACY';
             UPDATE mes.production_reports SET serial_no = ' SN-LEGACY ' WHERE report_no = 'PR-LEGACY-REV';
-            UPDATE mes.production_reports SET serial_no = E'\t\r\n' WHERE report_no = 'PR-BLANK';
+            UPDATE mes.production_reports SET serial_no = U&'\00A0\3000' WHERE report_no = 'PR-BLANK';
             """);
 
         await migrator.MigrateAsync(targetMigration);
@@ -50,7 +50,7 @@ public sealed class ProductionReportSerialNumberPostgresTests
         await migrator.MigrateAsync(PreviousMigration);
         Assert.False(await TableExistsAsync(db));
         Assert.Equal(3, await db.ProductionReports.CountAsync());
-        Assert.Equal("\tSN-LEGACY\t", await db.ProductionReports
+        Assert.Equal("\u00A0SN-LEGACY\u3000", await db.ProductionReports
             .Where(x => x.ReportNo == "PR-LEGACY")
             .Select(x => x.SerialNo)
             .SingleAsync());
@@ -76,7 +76,7 @@ public sealed class ProductionReportSerialNumberPostgresTests
         _ = await SeedReportAsync(db, "org-001", "env-dev", "PR-DUP-B", "SN-DUP");
         await db.SaveChangesAsync();
         await db.Database.ExecuteSqlRawAsync(
-            "UPDATE mes.production_reports SET serial_no = E'\\tSN-DUP\\t' WHERE report_no = 'PR-DUP-B'");
+            "UPDATE mes.production_reports SET serial_no = U&'\\3000SN-DUP\\00A0' WHERE report_no = 'PR-DUP-B'");
 
         var failure = await Assert.ThrowsAsync<PostgresException>(() => migrator.MigrateAsync(targetMigration));
 
