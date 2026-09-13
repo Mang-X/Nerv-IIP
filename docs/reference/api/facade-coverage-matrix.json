@@ -337,6 +337,14 @@
     },
     {
       "service": "BarcodeLabel",
+      "method": "GET",
+      "route": "/api/business/v2/barcodes/print-batches/by-idempotency-key",
+      "operationId": "getScopedBusinessBarcodePrintBatchByIdempotencyKey",
+      "classification": "internal",
+      "rationale": "Trusted BusinessGateway coordination uses this scoped exact read to recover one idempotent producer result; it is not a standalone frontend facade."
+    },
+    {
+      "service": "BarcodeLabel",
       "method": "POST",
       "route": "/api/business/v1/barcodes/resolve",
       "operationId": "resolveBusinessBarcode",

@@ -33,6 +33,94 @@ public sealed class ScopedLabelLifecycleHttpTests
     private static readonly string AssetSha256 = $"sha256:{new string('a', 64)}";
 
     [Fact]
+    public async Task Scoped_v2_idempotency_key_detail_returns_the_same_complete_batch_without_writes()
+    {
+        await using var factory = CreateFactory(new RecordingPrinter(LabelPrinterDispatchResult.Sent("unused")));
+        var batch = await SeedGs1BatchAsync(factory, "org-001", "env-dev", "report-intent:Case/A");
+        using var client = CreateAuthenticatedClient(factory);
+
+        using var byIdResponse = await client.GetAsync(
+            $"/api/business/v2/barcodes/print-batches/{WireId(batch.Id)}" +
+            "?organizationId=org-001&environmentId=env-dev");
+        using var firstByKeyResponse = await client.GetAsync(
+            "/api/business/v2/barcodes/print-batches/by-idempotency-key" +
+            "?organizationId=org-001&environmentId=env-dev&idempotencyKey=report-intent%3ACase%2FA");
+        using var secondByKeyResponse = await client.GetAsync(
+            "/api/business/v2/barcodes/print-batches/by-idempotency-key" +
+            "?organizationId=org-001&environmentId=env-dev&idempotencyKey=report-intent%3ACase%2FA");
+
+        var byIdBody = await byIdResponse.Content.ReadAsStringAsync();
+        var firstByKeyBody = await firstByKeyResponse.Content.ReadAsStringAsync();
+        var secondByKeyBody = await secondByKeyResponse.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, firstByKeyResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, secondByKeyResponse.StatusCode);
+        using var byId = JsonDocument.Parse(byIdBody);
+        using var firstByKey = JsonDocument.Parse(firstByKeyBody);
+        using var secondByKey = JsonDocument.Parse(secondByKeyBody);
+        var expectedDetail = byId.RootElement.GetProperty("data").GetProperty("printBatch").GetRawText();
+        Assert.Equal(expectedDetail, firstByKey.RootElement.GetProperty("data").GetProperty("printBatch").GetRawText());
+        Assert.Equal(expectedDetail, secondByKey.RootElement.GetProperty("data").GetProperty("printBatch").GetRawText());
+        Assert.Equal(
+            "opaque:report-intent-a",
+            firstByKey.RootElement.GetProperty("data").GetProperty("printBatch")
+                .GetProperty("reportIntentFingerprint").GetString());
+
+        await using var verificationScope = factory.Services.CreateAsyncScope();
+        var verificationDb = verificationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Single(await verificationDb.LabelPrintBatches.AsNoTracking().ToArrayAsync());
+    }
+
+    [Fact]
+    public async Task Scoped_v2_idempotency_key_detail_matches_the_key_and_scope_exactly()
+    {
+        await using var factory = CreateFactory(new RecordingPrinter(LabelPrinterDispatchResult.Sent("unused")));
+        var expected = await SeedReservedBatchAsync(factory, "org-owner", "env-owner", "intent:Case/A");
+        _ = await SeedReservedBatchAsync(factory, "org-owner", "env-owner", "intent:Case/A-extra");
+        _ = await SeedReservedBatchAsync(factory, "org-other", "env-owner", "intent:Case/A");
+        _ = await SeedReservedBatchAsync(factory, "org-owner", "env-other", "intent:Case/A");
+        using var client = CreateAuthenticatedClient(factory);
+
+        using var response = await client.GetAsync(
+            "/api/business/v2/barcodes/print-batches/by-idempotency-key" +
+            "?organizationId=org-owner&environmentId=env-owner&idempotencyKey=intent%3ACase%2FA");
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var result = JsonDocument.Parse(body);
+        Assert.True(result.RootElement.GetProperty("success").GetBoolean(), body);
+        Assert.Equal(
+            WireId(expected.Id),
+            result.RootElement.GetProperty("data").GetProperty("printBatch").GetProperty("printBatchId").GetString());
+    }
+
+    [Theory]
+    [InlineData("org-other", "env-owner", "intent-owned")]
+    [InlineData("org-owner", "env-other", "intent-owned")]
+    [InlineData("org-owner", "env-owner", "intent-unknown")]
+    public async Task Scoped_v2_idempotency_key_detail_uses_one_non_disclosing_not_found_result(
+        string organizationId,
+        string environmentId,
+        string idempotencyKey)
+    {
+        await using var factory = CreateFactory(new RecordingPrinter(LabelPrinterDispatchResult.Sent("unused")));
+        _ = await SeedReservedBatchAsync(factory, "org-owner", "env-owner", "intent-owned");
+        using var client = CreateAuthenticatedClient(factory);
+
+        using var response = await client.GetAsync(
+            "/api/business/v2/barcodes/print-batches/by-idempotency-key?" +
+            $"organizationId={organizationId}&environmentId={environmentId}&idempotencyKey={idempotencyKey}");
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var result = JsonDocument.Parse(body);
+        Assert.False(result.RootElement.GetProperty("success").GetBoolean(), body);
+        Assert.Equal("未找到打印批次。", result.RootElement.GetProperty("message").GetString());
+        Assert.DoesNotContain(WireId((await GetOnlyBatchAsync(factory)).Id), body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("intent-owned", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("opaque:report-intent-a", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Scoped_v2_detail_returns_ordered_serial_gs1_mes_and_transport_facts()
     {
         await using var factory = CreateFactory(new RecordingPrinter(LabelPrinterDispatchResult.Sent("unused")));
@@ -562,6 +650,13 @@ public sealed class ScopedLabelLifecycleHttpTests
         dbContext.AddRange(rule, template, batch);
         await dbContext.SaveChangesAsync();
         return batch;
+    }
+
+    private static async Task<LabelPrintBatch> GetOnlyBatchAsync(WebApplicationFactory<Program> factory)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        return await dbContext.LabelPrintBatches.AsNoTracking().SingleAsync();
     }
 
     private static async Task<LabelPrintBatch> SeedBatchAsync(

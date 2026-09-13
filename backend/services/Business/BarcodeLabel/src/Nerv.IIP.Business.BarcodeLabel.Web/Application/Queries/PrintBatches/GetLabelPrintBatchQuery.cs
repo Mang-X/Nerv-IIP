@@ -61,6 +61,11 @@ public sealed record GetScopedLabelPrintBatchQuery(
     string OrganizationId,
     string EnvironmentId) : IQuery<ScopedLabelPrintBatchDetail>;
 
+public sealed record GetScopedLabelPrintBatchByIdempotencyKeyQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string IdempotencyKey) : IQuery<ScopedLabelPrintBatchDetail>;
+
 public sealed record ScopedLabelPrintBatchDetail(
     LabelPrintBatchId PrintBatchId,
     LabelTemplateId LabelTemplateId,
@@ -112,32 +117,68 @@ public sealed class GetScopedLabelPrintBatchQueryHandler(ApplicationDbContext db
             .Where(x => x.Id == request.PrintBatchId
                 && x.OrganizationId == tenant.OrganizationId
                 && x.EnvironmentId == tenant.EnvironmentId)
-            .Select(x => new ScopedLabelPrintBatchDetail(
-                x.Id,
-                x.LabelTemplateId,
-                x.SourceDocumentType,
-                x.SourceDocumentId,
-                x.IdempotencyKey,
-                x.IdempotencyKey,
-                x.ReportIntentFingerprint,
-                x.RequestedQuantity,
-                x.Status,
-                x.PrinterId,
-                x.PrintJobId,
-                x.FailureReason,
-                x.ProductionReportId,
-                x.ProductionReportNo,
-                x.Items.OrderBy(item => item.SequenceNo).Select(item => new ScopedLabelPrintItemDetail(
-                    item.SequenceNo,
-                    item.LabelValue,
-                    item.FileId,
-                    item.Status,
-                    item.VoidReason,
-                    item.SerialNumber,
-                    item.LotNo,
-                    item.Gtin,
-                    item.EpcUri)).ToArray()))
+            .Select(ScopedLabelPrintBatchProjection.Detail)
             .SingleOrDefaultAsync(cancellationToken)
             ?? throw new KnownException("未找到打印批次。");
     }
+}
+
+public sealed class GetScopedLabelPrintBatchByIdempotencyKeyQueryValidator
+    : AbstractValidator<GetScopedLabelPrintBatchByIdempotencyKeyQuery>
+{
+    public GetScopedLabelPrintBatchByIdempotencyKeyQueryValidator()
+    {
+        this.AddTenantRules(x => x.OrganizationId, x => x.EnvironmentId);
+        RuleFor(x => x.OrganizationId).MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(128);
+    }
+}
+
+public sealed class GetScopedLabelPrintBatchByIdempotencyKeyQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<GetScopedLabelPrintBatchByIdempotencyKeyQuery, ScopedLabelPrintBatchDetail>
+{
+    public async Task<ScopedLabelPrintBatchDetail> Handle(
+        GetScopedLabelPrintBatchByIdempotencyKeyQuery request,
+        CancellationToken cancellationToken)
+    {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        return await dbContext.LabelPrintBatches
+            .Where(x => x.OrganizationId == tenant.OrganizationId
+                && x.EnvironmentId == tenant.EnvironmentId
+                && x.IdempotencyKey == request.IdempotencyKey)
+            .Select(ScopedLabelPrintBatchProjection.Detail)
+            .SingleOrDefaultAsync(cancellationToken)
+            ?? throw new KnownException("未找到打印批次。");
+    }
+}
+
+internal static class ScopedLabelPrintBatchProjection
+{
+    internal static readonly System.Linq.Expressions.Expression<Func<LabelPrintBatch, ScopedLabelPrintBatchDetail>> Detail =
+        batch => new ScopedLabelPrintBatchDetail(
+            batch.Id,
+            batch.LabelTemplateId,
+            batch.SourceDocumentType,
+            batch.SourceDocumentId,
+            batch.IdempotencyKey,
+            batch.IdempotencyKey,
+            batch.ReportIntentFingerprint,
+            batch.RequestedQuantity,
+            batch.Status,
+            batch.PrinterId,
+            batch.PrintJobId,
+            batch.FailureReason,
+            batch.ProductionReportId,
+            batch.ProductionReportNo,
+            batch.Items.OrderBy(item => item.SequenceNo).Select(item => new ScopedLabelPrintItemDetail(
+                item.SequenceNo,
+                item.LabelValue,
+                item.FileId,
+                item.Status,
+                item.VoidReason,
+                item.SerialNumber,
+                item.LotNo,
+                item.Gtin,
+                item.EpcUri)).ToArray());
 }

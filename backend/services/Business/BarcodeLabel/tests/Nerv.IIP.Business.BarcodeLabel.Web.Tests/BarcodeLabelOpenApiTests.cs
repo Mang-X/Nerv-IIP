@@ -150,6 +150,24 @@ public sealed class BarcodeLabelOpenApiTests
         Assert.Contains(
             "reportIntentFingerprint",
             scopedDetail.Value.GetProperty("required").EnumerateArray().Select(item => item.GetString()));
+
+        var byIdempotencyKey = document.RootElement
+            .GetProperty("paths")
+            .GetProperty("/api/business/v2/barcodes/print-batches/by-idempotency-key")
+            .GetProperty("get");
+        Assert.Equal(
+            "getScopedBusinessBarcodePrintBatchByIdempotencyKey",
+            byIdempotencyKey.GetProperty("operationId").GetString());
+        var byKeyParameters = byIdempotencyKey.GetProperty("parameters").EnumerateArray().ToArray();
+        Assert.Equal(
+            new string?[] { "organizationId", "environmentId", "idempotencyKey" },
+            byKeyParameters.Select(parameter => parameter.GetProperty("name").GetString()).ToArray());
+        Assert.All(byKeyParameters, parameter => Assert.True(parameter.GetProperty("required").GetBoolean()));
+
+        var legacyPaths = document.RootElement.GetProperty("paths");
+        Assert.False(legacyPaths.TryGetProperty(
+            "/api/business/v1/barcodes/print-batches/by-idempotency-key",
+            out _));
     }
 
     private static void AssertScopedLifecycleOperation(
