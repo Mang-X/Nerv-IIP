@@ -373,6 +373,19 @@ public sealed class CreatedWorkOrderReleaseBackfillTests
         AddReport(dbContext, "WO-CREATED-OTHER", 10, "RPT-OTHER-10", 999m, Now.AddDays(-1));
         await dbContext.SaveChangesAsync();
 
+        // **夹具前置条件，写成断言而不是注释**：下面那条 ReleasedAtUtc 断言要检验的是
+        // 「按工序取最早报工」之后**跨工序再取一次 Min**这第二层归约；两道工序的最早报工若相等，
+        // 第二层上 Min == Max，那条断言就退化成等价输入、对 Min→Max 变异零鉴别力。
+        // 这不是假想：把 op20 的报工时刻从 -1d 改成 -3d（**一处单 token 的夹具调整**，数量仍 250/100），
+        // 干净代码仍 9/9 全绿、叠加 Min→Max 变异**也**仍 9/9 全绿——注释挡不住它，本断言挡得住。
+        var earliestReportPerOperation = dbContext.ProductionReports.Local
+            .Where(x => x.WorkOrderId == "WO-CREATED-QTY")
+            .GroupBy(x => x.OperationTaskId)
+            .Select(group => group.Min(x => x.ReportedAtUtc))
+            .Distinct()
+            .ToArray();
+        Assert.Equal(2, earliestReportPerOperation.Length);
+
         await Backfill(dbContext);
 
         var integrationEvent = SingleReleasedIntegrationEvent(dbContext, "WO-CREATED-QTY");

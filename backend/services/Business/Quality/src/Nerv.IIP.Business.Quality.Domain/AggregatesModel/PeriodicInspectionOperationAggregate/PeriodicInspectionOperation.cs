@@ -278,8 +278,17 @@ public sealed class PeriodicInspectionOperation : Entity<PeriodicInspectionOpera
     /// <b>这一条在一条可达路径上承重，不是纵深防御</b>。
     /// 「第二次跳过给出更小的值」由**两条通道交错**产生，不需要「同一封发布事实投两次」：
     /// #3000 回填分支（<c>ReleaseFactAuthority.ReconstructedLowerBound</c>）按 <c>OccurredAtUtc</c>
-    /// 把到回填执行那一刻为止的**全部**累计记为已生成，而本方法只跳过 MES 点名的
-    /// 「下达动作之前那一部分」——后者是前者的**真子集**，子集本身就是「更小」的充分条件。
+    /// 把到回填执行那一刻为止的累计记为已生成，本方法则跳过 MES 点名的「下达动作之前那一部分」。
+    ///
+    /// <b>两个数没有恒定的大小关系，别写成全称。</b>「<b>领域意义上</b>下达动作之前产出 ⊆
+    /// 回填执行时刻之前产出」是真的；但**实现出来的两个数**不是——#3000 那一半用的是 Quality 的
+    /// <b>本地</b> <see cref="PeriodicInspectionRuntimeContext.QuantityHighWater"/>，
+    /// 本方法用的是 MES 在下达动作那一刻的<b>自有事实</b>，
+    /// 报工事件滞后时（正是本票要治的「到达顺序」形态）两者可**反向**。
+    /// 两个方向都有可执行反例：<c>preRelease=250</c> 时本方法给出的更小（若无 <c>Math.Max</c> 会把
+    /// 序号从 5 拨回 2 并重开三张重复任务），<c>preRelease=750</c> 时本方法给出的更大（序号 5 → 7）。
+    /// 承重的正是「实现出来的两个数」这一层，不是领域意义那一层；
+    /// <c>Math.Max</c> 因此不能简化成「取后到的那个」。
     /// 交错走得通的三个条件都已逐条实读：两个消费者是不同消费组、inbox 互相独立；
     /// 「已有发布事实的工序只跳过不覆盖」那条 <c>continue</c> 只管 Reconstructed 分支；
     /// 两条通道的 <c>ReleasedAtUtc</c> 过同一个 <c>WorkOrderReleaseFactTime.NotLaterThan</c> 取到同值，

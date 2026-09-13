@@ -516,9 +516,17 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
     /// <b>#3129 × #3000 两条通道交错：下达前产量跳过不得把已生成序号往回拨。</b>
     ///
     /// <para><b>这条路径是可达的，不是纵深防御。</b>两条通道各有一次「跳过」，锚点与口径都不同：
-    /// #3000 回填分支按 <c>OccurredAtUtc</c> 把到回填执行那一刻为止的**全部**累计记为已生成；
-    /// #3129 直投分支只跳过 MES 点名的「下达动作之前那一部分」，是前者的**真子集**
-    /// （这句话同时写在事件消费矩阵 <c>:84</c> 上）。子集这件事本身就是「第二次跳过给出更小的值」的充分条件。</para>
+    /// #3000 回填分支按 <c>OccurredAtUtc</c> 把到回填执行那一刻为止的累计记为已生成，用的是 Quality 的
+    /// **本地** <c>QuantityHighWater</c>；#3129 直投分支跳过 MES 点名的「下达动作之前那一部分」，
+    /// 用的是 MES 在下达动作那一刻的**自有事实**。
+    /// <b>不要写成「后者恒是前者的真子集」</b>——领域意义上是，实现出来的两个数不是，
+    /// 反例见同一文件的
+    /// <c>Live_release_may_carry_more_pre_release_quantity_than_the_backfill_had_already_skipped</c>。
+    /// 本用例取的是**更小**那个方向（存在性，不是全称）。
+    /// （上一版这里把这句话的出处写成「事件消费矩阵 <c>:84</c>」，实际它在
+    /// <c>WorkOrderReleaseProjectionBackfilledIntegrationEvent</c> 那一行、不在
+    /// <c>WorkOrderReleasedIntegrationEvent</c> 那一行；两处的措辞现已一并改正。
+    /// 交叉引用一律按**行标识**给，不再给行号——行号会随文档增删静默漂移，而那份矩阵是人工承重、无门禁。）</para>
     ///
     /// <para><b>交错为什么走得通</b>（逐条，不是推断）：两个消费者是**不同消费组**，
     /// <c>ProcessedIntegrationEvent</c> inbox 互相独立，第二封照常进 handler；
@@ -561,6 +569,45 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
         var context = await dbContext.PeriodicInspectionRuntimeContexts.SingleAsync();
         Assert.Equal(500m, context.QuantityHighWater);
         Assert.Equal(5, context.LastGeneratedQuantityWindowSequence);
+        Assert.Empty(await deadLetters.ListAsync(null, null, CancellationToken.None));
+    }
+
+    /// <summary>
+    /// <b>「#3129 跳过的一定比 #3000 跳过的少」是假的</b>——本用例就是那个反例，
+    /// 它同时是 <c>Math.Max</c> 为什么必须写成 <c>Math.Max</c> 而不是「取后到的那个」的理由。
+    ///
+    /// <para><b>领域意义上</b>「下达动作之前产出」⊆「回填执行时刻之前产出」是真的；
+    /// 但**实现出来的两个数**不是：#3000 那一半用的是 Quality 的**本地** <c>QuantityHighWater</c>，
+    /// 而 #3129 用的是 MES 在下达动作那一刻的**自有事实**。报工事件滞后时（⭐ 正是本票要治的
+    /// 「到达顺序」形态）本地水位小于 MES 的事实，两个数就**反向**了。
+    /// 承重的是后一个（实现出来的两个数），不是前一个。</para>
+    ///
+    /// <para>本用例：Quality 只收到 500 件的报工（回填因此跳到序号 5），而 MES 在下达动作那一刻
+    /// 已经记到 750 件（第三条报工事件还在路上）⇒ 直投那一封把已生成序号推到 <b>7</b>，**比 5 大**。
+    /// 「往前推」不开新任务：按本地水位算的目标 <c>floor(500/100)=5</c> 已不大于 7。</para>
+    /// </summary>
+    [Fact]
+    public async Task Live_release_may_carry_more_pre_release_quantity_than_the_backfill_had_already_skipped()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.InspectionPlans.Add(PeriodicPlan());
+        await dbContext.SaveChangesAsync();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+
+        await HandleReportAsync(dbContext, ProductionReport(reportNo: "RPT-001", goodQuantity: 250m));
+        await HandleReportAsync(dbContext, ProductionReport(
+            reportNo: "RPT-002", goodQuantity: 250m, reportedAtUtc: "2026-08-05T00:00:00Z"));
+        await HandleBackfillAsync(dbContext, Backfill(), deadLetters);
+        Assert.Equal(5, (await dbContext.PeriodicInspectionRuntimeContexts.SingleAsync())
+            .LastGeneratedQuantityWindowSequence);
+
+        // 第三条报工事件还没到 Quality，但 MES 在下达动作那一刻已经数到 750。
+        await HandleLiveReleaseAsync(dbContext, LiveRelease(preReleaseGoodQuantity: 750m), deadLetters);
+
+        var context = await dbContext.PeriodicInspectionRuntimeContexts.SingleAsync();
+        Assert.Equal(500m, context.QuantityHighWater);
+        Assert.Equal(7, context.LastGeneratedQuantityWindowSequence);
+        Assert.Empty(await dbContext.InspectionTasks.ToArrayAsync());
         Assert.Empty(await deadLetters.ListAsync(null, null, CancellationToken.None));
     }
 

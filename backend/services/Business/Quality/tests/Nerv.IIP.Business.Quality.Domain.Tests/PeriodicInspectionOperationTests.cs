@@ -420,8 +420,10 @@ public sealed class PeriodicInspectionOperationTests
     /// 否则同一个序号会被第二次开出。
     ///
     /// <para><b>这条契约在一条可达路径上承重</b>，不是纯粹的契约洁癖：
-    /// #3000 回填通道按时刻跳过的集合与本方法按数量跳过的集合是**超集/真子集**关系，
-    /// 两条通道交错投递时第二次跳过必然更小。系统层读数由
+    /// #3000 回填通道按时刻跳过的数与本方法按数量跳过的数**没有恒定的大小关系**
+    /// （两者分别取自 Quality 本地水位与 MES 自有事实），两条通道交错投递时第二次跳过**可能**更小。
+    /// 「可能」是存在性，不是全称：反例两个方向都有，见
+    /// <c>WorkOrderReleaseProjectionBackfillConsumerTests</c> 的两条交错用例。系统层读数由
     /// <c>WorkOrderReleaseProjectionBackfillConsumerTests
     /// .Backfill_then_live_release_does_not_reopen_quantity_windows_the_backfill_already_skipped</c>
     /// 给出（去掉 <c>Math.Max</c> ⇒ 重开 3 张重复任务、死信 0）。本用例是它的域层对偶，

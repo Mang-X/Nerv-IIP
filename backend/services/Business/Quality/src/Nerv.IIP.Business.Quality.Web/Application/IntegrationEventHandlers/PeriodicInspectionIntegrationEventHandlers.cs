@@ -211,7 +211,12 @@ internal static class PeriodicInspectionReleaseProjection
                             // **与回填分支形状不同不是「忘了对齐」，别把那边的无条件跳过复制过来：**
                             // 回填分支的 SkipPeriodicWindowsAccruedBefore 锚在 integrationEvent.OccurredAtUtc
                             // （= GetUtcNow()），把到「现在」为止的累计**全部**记为已生成，这是 #3000 的既有取舍；
-                            // 本分支跳过的是 MES 点名的「下达动作之前那一部分」，是它的真子集。
+                            // 本分支跳过的是 MES 点名的「下达动作之前那一部分」，锚点与口径都不同：
+                            // 回填那半按 Quality **本地**水位在回填时刻取，本分支按 MES 在下达动作那一刻的
+                            // **自有事实**取。**两个数没有恒定的大小关系**（报工滞后时本分支可以更大，
+                            // 实测见 WorkOrderReleaseProjectionBackfillConsumerTests
+                            // .Live_release_may_carry_more_pre_release_quantity_than_the_backfill_had_already_skipped），
+                            // 因此域侧那一步只进不退。
                             // 复制过来会打掉一类合法输入——
                             // `PeriodicInspectionIntegrationEventTests.Report_before_release_backfills_quantity_windows_from_the_frozen_context`
                             // 钉的就是那类：报工时刻晚于发布时刻，产量是下达之后真实累积的，窗口本就该开
