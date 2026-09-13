@@ -3505,6 +3505,24 @@ public sealed class MesPersistenceContractTests
                 ReportedBy: "operator-serial"),
             CancellationToken.None));
 
+        await Assert.ThrowsAsync<MesIdempotencyConflictException>(() => handler.Handle(
+            new RecordProductionReportCommand(
+                "org-001",
+                "env-dev",
+                "WO-SERIAL-001",
+                "OP-SERIAL-10",
+                2m,
+                0m,
+                false,
+                now.AddMinutes(30),
+                "report-serial-001",
+                [new ConsumedMaterialLotInput("MAT-SERIAL", "LOT-MAT-SERIAL", 2m, "MIR-SERIAL-001")],
+                ProducedLotNo: "LOT-FG-SERIAL",
+                SerialTrackingPolicy: ProductionSerialTrackingPolicies.OnProduction,
+                SerialNumbers: ["SN-SERIAL-01", "SN-SERIAL-02"],
+                ReportedBy: "operator-serial"),
+            CancellationToken.None));
+
         var serialConflict = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new RecordProductionReportCommand(
                 "org-001",
@@ -3523,21 +3541,48 @@ public sealed class MesPersistenceContractTests
             CancellationToken.None));
         Assert.Contains("SN-SERIAL-01", serialConflict.Message, StringComparison.Ordinal);
 
-        var serialTrace = await new GetBatchTraceabilityQueryHandler(dbContext).Handle(
-            new GetBatchTraceabilityQuery("org-001", "env-dev", "SN-SERIAL-01"),
-            CancellationToken.None);
-        Assert.Contains(serialTrace.Nodes, x => x.NodeId == first.ReportNo && x.NodeType == MesTraceabilityNodeType.ProductionReport);
-        Assert.Contains(serialTrace.Nodes, x => x.NodeId == "OP-SERIAL-10" && x.NodeType == MesTraceabilityNodeType.OperationTask);
-        Assert.Contains(serialTrace.Nodes, x => x.NodeId == "WO-SERIAL-001" && x.NodeType == MesTraceabilityNodeType.WorkOrder);
-        Assert.Contains(serialTrace.Nodes, x => x.NodeId == "operator-serial" && x.NodeType == MesTraceabilityNodeType.Operator);
-        Assert.Contains(serialTrace.Nodes, x => x.NodeId == "DEVICE-SERIAL-01" && x.NodeType == MesTraceabilityNodeType.DeviceAsset);
-        Assert.Contains(serialTrace.Nodes, x => x.NodeId == "LOT-MAT-SERIAL" && x.NodeType == MesTraceabilityNodeType.MaterialLot);
+        foreach (var serialNumber in new[] { "SN-SERIAL-02", "SN-SERIAL-01" })
+        {
+            var serialTrace = await new GetBatchTraceabilityQueryHandler(dbContext).Handle(
+                new GetBatchTraceabilityQuery("org-001", "env-dev", serialNumber),
+                CancellationToken.None);
+            Assert.Contains(serialTrace.Nodes, x => x.NodeId == first.ReportNo && x.NodeType == MesTraceabilityNodeType.ProductionReport);
+            Assert.Contains(serialTrace.Nodes, x => x.NodeId == "OP-SERIAL-10" && x.NodeType == MesTraceabilityNodeType.OperationTask);
+            Assert.Contains(serialTrace.Nodes, x => x.NodeId == "WO-SERIAL-001" && x.NodeType == MesTraceabilityNodeType.WorkOrder);
+            Assert.Contains(serialTrace.Nodes, x => x.NodeId == "operator-serial" && x.NodeType == MesTraceabilityNodeType.Operator);
+            Assert.Contains(serialTrace.Nodes, x => x.NodeId == "DEVICE-SERIAL-01" && x.NodeType == MesTraceabilityNodeType.DeviceAsset);
+            Assert.Contains(serialTrace.Nodes, x => x.NodeId == "LOT-MAT-SERIAL" && x.NodeType == MesTraceabilityNodeType.MaterialLot);
+        }
 
         var workOrderTrace = await new GetWorkOrderTraceabilityQueryHandler(dbContext).Handle(
             new GetWorkOrderTraceabilityQuery("org-001", "env-dev", "WO-SERIAL-001"),
             CancellationToken.None);
         Assert.Equal(2, workOrderTrace.Nodes.Count(x => x.NodeType == MesTraceabilityNodeType.Serial));
         Assert.Equal(2, workOrderTrace.Edges.Count(x => x.RelationType == "produced-serial"));
+
+        var legacy = await handler.Handle(
+            new RecordProductionReportCommand(
+                "org-001",
+                "env-dev",
+                "WO-SERIAL-001",
+                "OP-SERIAL-10",
+                1m,
+                0m,
+                false,
+                now.AddMinutes(40),
+                "report-serial-legacy-001",
+                ProducedLotNo: "LOT-FG-SERIAL-LEGACY",
+                SerialNo: "  SN-SERIAL-LEGACY  ",
+                ReportedBy: "operator-serial"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        Assert.Equal(["SN-SERIAL-LEGACY"], legacy.SerialNumbers);
+        Assert.Equal(
+            ["SN-SERIAL-LEGACY"],
+            await dbContext.ProductionReportSerialNumbers
+                .Where(x => x.ReportNo == legacy.ReportNo)
+                .Select(x => x.SerialNumber)
+                .ToArrayAsync());
 
         await new ReverseProductionReportCommandHandler(dbContext, codingService).Handle(
             new ReverseProductionReportCommand(

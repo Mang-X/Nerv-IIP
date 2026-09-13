@@ -14,6 +14,7 @@ using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Web.Application.Auth;
@@ -691,9 +692,10 @@ public sealed class MesEndpointContractTests
     }
 
     [Fact]
-    public async Task Record_production_report_endpoint_returns_strong_id_wire_shape()
+    public async Task Record_production_report_endpoint_preserves_legacy_serial_wire_and_returns_the_collection()
     {
         var productionReportId = Guid.Parse("019f855b-5cb0-7550-a509-d2ee7b021689");
+        var sender = new ProductionReportWireShapeSender(productionReportId);
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
@@ -701,7 +703,7 @@ public sealed class MesEndpointContractTests
                 builder.ConfigureServices(services =>
                 {
                     services.RemoveAll<ISender>();
-                    services.AddSingleton<ISender>(new ProductionReportWireShapeSender(productionReportId));
+                    services.AddSingleton<ISender>(sender);
                 });
             });
         var client = factory.CreateClient();
@@ -719,8 +721,7 @@ public sealed class MesEndpointContractTests
             completesOperation = false,
             reportedAtUtc = "2026-07-21T15:46:24Z",
             idempotencyKey = "wire-shape-001",
-            serialTrackingPolicy = "on-production",
-            serialNumbers = new[] { "SN-WIRE-001" },
+            serialNo = "  SN-WIRE-001  ",
         });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -733,6 +734,9 @@ public sealed class MesEndpointContractTests
         Assert.Equal(productionReportId, id.GetGuid());
         Assert.Equal("PRPT-WIRE-001", root.GetProperty("reportNo").GetString());
         Assert.Equal(["SN-WIRE-001"], root.GetProperty("serialNumbers").EnumerateArray().Select(x => x.GetString()));
+        Assert.Equal("  SN-WIRE-001  ", sender.Command!.SerialNo);
+        Assert.Equal(ProductionSerialTrackingPolicies.None, sender.Command.SerialTrackingPolicy);
+        Assert.Null(sender.Command.SerialNumbers);
     }
 
     // 验收 #1948/#2694：MES 写面端点必须把网关注入的报工人和调用方幂等键原样转交给命令。

@@ -2486,7 +2486,8 @@ public sealed record MesTraceabilityReportContext(
     DateTimeOffset ReportedAtUtc,
     string? ReportedBy,
     string? DeviceAssetId,
-    string OperationTaskId);
+    string OperationTaskId,
+    IReadOnlyCollection<string> SerialNumbers);
 
 public static class MesTraceabilityQueries
 {
@@ -2596,6 +2597,12 @@ public static class MesTraceabilityQueries
                 AddEdge(report.ReportNo, report.DeviceAssetId, "reported-on-device");
             }
 
+            foreach (var serialNumber in report.SerialNumbers)
+            {
+                AddNode(serialNumber, MesTraceabilityNodeType.Serial, serialNumber, "Produced", report.ReportedAtUtc);
+                AddEdge(report.ReportNo, serialNumber, "produced-serial");
+            }
+
             foreach (var defectRecord in defectRecords.Where(x =>
                 string.Equals(x.OperationTaskId, report.OperationTaskId, StringComparison.Ordinal)))
             {
@@ -2689,7 +2696,8 @@ public static class MesTraceabilityQueries
                 x.ReportedAtUtc,
                 x.ReportedBy,
                 x.OeeDeviceAssetId,
-                x.OperationTaskId))],
+                x.OperationTaskId,
+                x.IsReversed ? [] : serialNumbersByReport.GetValueOrDefault(x.ReportNo, [])))],
             nodes,
             edges,
             cancellationToken);
@@ -2774,14 +2782,6 @@ public static class MesTraceabilityQueries
                 AddEdge(report.ReportNo, report.ProducedLotNo, "produced-lot");
             }
 
-            if (!report.IsReversed && serialNumbersByReport.TryGetValue(report.ReportNo, out var serialNumbers))
-            {
-                foreach (var serialNumber in serialNumbers)
-                {
-                    AddNode(serialNumber, MesTraceabilityNodeType.Serial, serialNumber, "Produced");
-                    AddEdge(report.ReportNo, serialNumber, "produced-serial");
-                }
-            }
         }
 
         return true;
@@ -2893,7 +2893,13 @@ public sealed class GetWorkOrderTraceabilityQueryHandler(ApplicationDbContext db
         await dbContext.AppendProductionReportFactsAsync(
             request.OrganizationId,
             request.EnvironmentId,
-            [.. reports.Select(x => new MesTraceabilityReportContext(x.Id, x.ReportedAtUtc, x.ReportedBy, x.OeeDeviceAssetId, x.OperationTaskId))],
+            [.. reports.Select(x => new MesTraceabilityReportContext(
+                x.Id,
+                x.ReportedAtUtc,
+                x.ReportedBy,
+                x.OeeDeviceAssetId,
+                x.OperationTaskId,
+                serialNumbersByReport.GetValueOrDefault(x.Id, [])))],
             nodes,
             edges,
             cancellationToken);
@@ -2907,14 +2913,6 @@ public sealed class GetWorkOrderTraceabilityQueryHandler(ApplicationDbContext db
                 edges.Add(new MesTraceabilityEdge(report.Id, report.ProducedLotNo, "produced-lot"));
             }
 
-            if (serialNumbersByReport.TryGetValue(report.Id, out var serialNumbers))
-            {
-                foreach (var serialNumber in serialNumbers)
-                {
-                    nodes.Add(new MesTraceabilityNode(serialNumber, MesTraceabilityNodeType.Serial, serialNumber, "Produced"));
-                    edges.Add(new MesTraceabilityEdge(report.Id, serialNumber, "produced-serial"));
-                }
-            }
         }
 
         var consumptions = await dbContext.ProductionReportMaterialConsumptions
@@ -2988,11 +2986,6 @@ public sealed class GetBatchTraceabilityQueryHandler(ApplicationDbContext dbCont
             })
             .ToArrayAsync(cancellationToken);
         var producedReportNos = producedReports.Select(x => x.ReportNo).ToArray();
-        var serialNumbersByReport = await dbContext.LoadProductionReportSerialNumbersAsync(
-            request.OrganizationId,
-            request.EnvironmentId,
-            producedReportNos,
-            cancellationToken);
         var consumptions = await dbContext.ProductionReportMaterialConsumptions
             .AsNoTracking()
             .Where(x =>
@@ -3028,8 +3021,17 @@ public sealed class GetBatchTraceabilityQueryHandler(ApplicationDbContext dbCont
                     x.OrganizationId == request.OrganizationId &&
                     x.EnvironmentId == request.EnvironmentId &&
                     consumingReportNos.Contains(x.ReportNo))
-                .Select(x => new MesTraceabilityReportContext(x.ReportNo, x.ReportedAtUtc, x.ReportedBy, x.OeeDeviceAssetId, x.OperationTaskId))
+                .Select(x => new { x.ReportNo, x.ReportedAtUtc, x.ReportedBy, x.OeeDeviceAssetId, x.OperationTaskId })
                 .ToArrayAsync(cancellationToken);
+        var traceReportNos = producedReportNos
+            .Concat(consumingReportNos)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var serialNumbersByReport = await dbContext.LoadProductionReportSerialNumbersAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            traceReportNos,
+            cancellationToken);
 
         var nodes = new List<MesTraceabilityNode>();
         if (consumptions.Length > 0 || producedReports.Length > 0)
@@ -3042,8 +3044,20 @@ public sealed class GetBatchTraceabilityQueryHandler(ApplicationDbContext dbCont
             request.OrganizationId,
             request.EnvironmentId,
             [
-                .. producedReports.Select(x => new MesTraceabilityReportContext(x.ReportNo, x.ReportedAtUtc, x.ReportedBy, x.OeeDeviceAssetId, x.OperationTaskId)),
-                .. consumingReports,
+                .. producedReports.Select(x => new MesTraceabilityReportContext(
+                    x.ReportNo,
+                    x.ReportedAtUtc,
+                    x.ReportedBy,
+                    x.OeeDeviceAssetId,
+                    x.OperationTaskId,
+                    serialNumbersByReport.GetValueOrDefault(x.ReportNo, []))),
+                .. consumingReports.Select(x => new MesTraceabilityReportContext(
+                    x.ReportNo,
+                    x.ReportedAtUtc,
+                    x.ReportedBy,
+                    x.OeeDeviceAssetId,
+                    x.OperationTaskId,
+                    serialNumbersByReport.GetValueOrDefault(x.ReportNo, []))),
             ],
             nodes,
             edges,
@@ -3059,14 +3073,6 @@ public sealed class GetBatchTraceabilityQueryHandler(ApplicationDbContext dbCont
                 edges.Add(new MesTraceabilityEdge(report.ReportNo, report.ProducedLotNo, "produced-lot"));
             }
 
-            if (serialNumbersByReport.TryGetValue(report.ReportNo, out var serialNumbers))
-            {
-                foreach (var serialNumber in serialNumbers)
-                {
-                    nodes.Add(new MesTraceabilityNode(serialNumber, MesTraceabilityNodeType.Serial, serialNumber, "Produced"));
-                    edges.Add(new MesTraceabilityEdge(report.ReportNo, serialNumber, "produced-serial"));
-                }
-            }
             edges.Add(new MesTraceabilityEdge(report.ReportNo, report.OperationTaskId, "reported-operation"));
             edges.Add(new MesTraceabilityEdge(report.OperationTaskId, report.WorkOrderId, "belongs-to-work-order"));
         }
@@ -3177,7 +3183,13 @@ public sealed class GetMaterialLotTraceabilityQueryHandler(ApplicationDbContext 
         await dbContext.AppendProductionReportFactsAsync(
             request.OrganizationId,
             request.EnvironmentId,
-            [.. producedReports.Select(x => new MesTraceabilityReportContext(x.ReportNo, x.ReportedAtUtc, x.ReportedBy, x.OeeDeviceAssetId, x.OperationTaskId))],
+            [.. producedReports.Select(x => new MesTraceabilityReportContext(
+                x.ReportNo,
+                x.ReportedAtUtc,
+                x.ReportedBy,
+                x.OeeDeviceAssetId,
+                x.OperationTaskId,
+                serialNumbersByReport.GetValueOrDefault(x.ReportNo, [])))],
             nodes,
             edges,
             cancellationToken);
@@ -3206,14 +3218,6 @@ public sealed class GetMaterialLotTraceabilityQueryHandler(ApplicationDbContext 
                 edges.Add(new MesTraceabilityEdge(report.ReportNo, report.ProducedLotNo, "produced-lot"));
             }
 
-            if (serialNumbersByReport.TryGetValue(report.ReportNo, out var serialNumbers))
-            {
-                foreach (var serialNumber in serialNumbers)
-                {
-                    nodes.Add(new MesTraceabilityNode(serialNumber, MesTraceabilityNodeType.Serial, serialNumber, "Produced"));
-                    edges.Add(new MesTraceabilityEdge(report.ReportNo, serialNumber, "produced-serial"));
-                }
-            }
         }
 
         await dbContext.AppendReworkFactsAsync(

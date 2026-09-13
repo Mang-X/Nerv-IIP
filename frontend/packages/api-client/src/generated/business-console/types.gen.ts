@@ -4650,6 +4650,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     scrapReasonCode?: string | null;
     defectRecordNo?: string | null;
     producedLotNo?: string | null;
+    serialNo?: string | null;
     serialTrackingPolicy?: string;
     serialNumbers?: Array<string> | null;
 };

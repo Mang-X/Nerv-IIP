@@ -49746,6 +49746,10 @@
             "type": "string",
             "nullable": true
           },
+          "serialNo": {
+            "type": "string",
+            "nullable": true
+          },
           "serialTrackingPolicy": {
             "type": "string"
           },

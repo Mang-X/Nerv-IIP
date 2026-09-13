@@ -11990,6 +11990,36 @@ public sealed class BusinessGatewayProxyTests
         Assert.False(requestBody.RootElement.TryGetProperty("scopeKind", out _));
     }
 
+    [Fact]
+    public async Task Mes_http_client_preserves_the_legacy_single_serial_wire()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(
+            HttpStatusCode.OK,
+            new
+            {
+                productionReportId = new { id = "019f855b-5cb0-7550-a509-d2ee7b021689" },
+                reportNo = "PRPT-LEGACY-001",
+                serialNumbers = new[] { "SN-LEGACY-001" },
+            }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var client = new HttpBusinessMesClient(httpClient);
+
+        var response = await client.RecordProductionReportAsync(
+            "internal-token-001",
+            ProductionReportRequest() with
+            {
+                SerialNo = "SN-LEGACY-001",
+                SerialTrackingPolicy = "none",
+                SerialNumbers = null,
+            },
+            "user-operator",
+            CancellationToken.None);
+
+        Assert.Equal(["SN-LEGACY-001"], response.SerialNumbers);
+        using var requestBody = JsonDocument.Parse(Assert.Single(handler.RequestBodies)!);
+        Assert.Equal("SN-LEGACY-001", requestBody.RootElement.GetProperty("serialNo").GetString());
+    }
+
     [Theory]
     [InlineData("{\"productionReportId\":{\"id\":\"not-a-guid\"},\"reportNo\":\"PRPT-WIRE-001\"}", false)]
     [InlineData("{\"productionReportId\":{\"id\":\"not-a-guid\"},\"reportNo\":\"PRPT-WIRE-001\"}", true)]

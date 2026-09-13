@@ -166,10 +166,11 @@ public sealed class ProductionReportSerialNumberPostgresTests
             Assert.Equal(["SN-B", "SN-A"], detail.Report.SerialNumbers);
 
             var trace = await new GetBatchTraceabilityQueryHandler(read).Handle(
-                new GetBatchTraceabilityQuery("org-001", "env-dev", "SN-A"),
+                new GetBatchTraceabilityQuery("org-001", "env-dev", "SN-B"),
                 CancellationToken.None);
             Assert.Contains(trace.Nodes, x => x.NodeId == "PR-A" && x.NodeType == MesTraceabilityNodeType.ProductionReport);
-            Assert.Contains(trace.Edges, x => x.FromNodeId == "PR-A" && x.ToNodeId == "SN-A" && x.RelationType == "produced-serial");
+            Assert.Contains(trace.Edges, x => x.FromNodeId == "PR-A" && x.ToNodeId == "SN-B" && x.RelationType == "produced-serial");
+            Assert.DoesNotContain(trace.Nodes, x => x.NodeId is "PR-C" or "PR-D");
         }
 
         await using (var duplicate = CreateDbContext(options))

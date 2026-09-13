@@ -982,6 +982,7 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
                 request.ScrapReasonCode,
                 request.DefectRecordNo,
                 request.ProducedLotNo,
+                request.SerialNo,
                 request.SerialTrackingPolicy,
                 request.SerialNumbers,
                 actor),
@@ -1534,6 +1535,7 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         string? ScrapReasonCode,
         string? DefectRecordNo,
         string? ProducedLotNo,
+        string? SerialNo,
         string SerialTrackingPolicy,
         IReadOnlyCollection<string>? SerialNumbers,
         string ReportedBy);

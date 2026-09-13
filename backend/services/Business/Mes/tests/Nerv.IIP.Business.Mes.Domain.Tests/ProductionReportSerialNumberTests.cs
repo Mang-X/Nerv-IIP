@@ -17,6 +17,19 @@ public sealed class ProductionReportSerialNumberTests
         Assert.Empty(ProductionReportSerialNumberAssignment.Create("on-receipt", 1.5m, []).SerialNumbers);
     }
 
+    [Fact]
+    public void Assignment_maps_the_legacy_single_serial_wire_without_silently_losing_it()
+    {
+        var assignment = ProductionReportSerialNumberAssignment.Create(
+            ProductionSerialTrackingPolicies.None,
+            1m,
+            null,
+            "  SN-LEGACY-001  ");
+
+        Assert.Equal(ProductionSerialTrackingPolicies.OnProduction, assignment.SerialTrackingPolicy);
+        Assert.Equal(["SN-LEGACY-001"], assignment.SerialNumbers);
+    }
+
     [Theory]
     [InlineData("on-production", 1.5, "SN-001")]
     [InlineData("on-production", 2, "SN-001")]
@@ -35,6 +48,16 @@ public sealed class ProductionReportSerialNumberTests
 
         Assert.Throws<InvalidOperationException>(() =>
             ProductionReportSerialNumberAssignment.Create(policy, goodQuantity, serialNumbers));
+    }
+
+    [Fact]
+    public void Assignment_rejects_mixing_legacy_and_collection_wires()
+    {
+        Assert.Throws<InvalidOperationException>(() => ProductionReportSerialNumberAssignment.Create(
+            ProductionSerialTrackingPolicies.OnProduction,
+            1m,
+            ["SN-001"],
+            "SN-001"));
     }
 
     [Fact]

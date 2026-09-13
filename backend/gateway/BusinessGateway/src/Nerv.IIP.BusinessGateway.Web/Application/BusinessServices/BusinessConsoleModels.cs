@@ -4772,6 +4772,7 @@ public sealed record BusinessConsoleRecordProductionReportRequest(
     string? ScrapReasonCode = null,
     string? DefectRecordNo = null,
     string? ProducedLotNo = null,
+    string? SerialNo = null,
     string SerialTrackingPolicy = "none",
     IReadOnlyCollection<string>? SerialNumbers = null);
 

@@ -118,6 +118,7 @@ public sealed record RecordProductionReportRequest(
     string? ScrapReasonCode = null,
     string? DefectRecordNo = null,
     string? ProducedLotNo = null,
+    string? SerialNo = null,
     string SerialTrackingPolicy = ProductionSerialTrackingPolicies.None,
     IReadOnlyCollection<string>? SerialNumbers = null,
     // 由 BusinessGateway 从已认证 principal 注入的报工操作人；调用方载荷不自带身份。
@@ -1438,6 +1439,7 @@ public sealed class RecordProductionReportEndpoint(ISender sender)
             req.ScrapReasonCode,
             req.DefectRecordNo,
             req.ProducedLotNo,
+            req.SerialNo,
             req.SerialTrackingPolicy,
             req.SerialNumbers,
             ReportedBy: req.ReportedBy);

@@ -48,6 +48,7 @@ public sealed record RecordProductionReportCommand(
     string? ScrapReasonCode = null,
     string? DefectRecordNo = null,
     string? ProducedLotNo = null,
+    string? SerialNo = null,
     string SerialTrackingPolicy = ProductionSerialTrackingPolicies.None,
     IReadOnlyCollection<string>? SerialNumbers = null,
     string Source = "manual",
@@ -74,6 +75,7 @@ public sealed record RecordProductionReportCommand(
         string? ScrapReasonCode = null,
         string? DefectRecordNo = null,
         string? ProducedLotNo = null,
+        string? SerialNo = null,
         string SerialTrackingPolicy = ProductionSerialTrackingPolicies.None,
         IReadOnlyCollection<string>? SerialNumbers = null,
         string Source = "manual",
@@ -103,6 +105,7 @@ public sealed record RecordProductionReportCommand(
             ScrapReasonCode,
             DefectRecordNo,
             ProducedLotNo,
+            SerialNo,
             SerialTrackingPolicy,
             SerialNumbers,
             Source,
@@ -159,7 +162,8 @@ public sealed class RecordProductionReportCommandHandler(
         var serialAssignment = MesDomainRuleGuard.Enforce(() => ProductionReportSerialNumberAssignment.Create(
             request.SerialTrackingPolicy,
             request.GoodQuantity,
-            request.SerialNumbers));
+            request.SerialNumbers,
+            request.SerialNo));
 
         var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
