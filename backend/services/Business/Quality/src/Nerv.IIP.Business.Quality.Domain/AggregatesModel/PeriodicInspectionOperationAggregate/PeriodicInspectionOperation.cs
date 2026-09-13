@@ -274,14 +274,29 @@ public sealed class PeriodicInspectionOperation : Entity<PeriodicInspectionOpera
     /// **到达时刻才决定内容**的本地报工集合：发布事件先于报工事件到达时那个集合还是空的。
     /// 这就是 #3117 那版判别式「堵一次漏一次」的原因——它落在拿不到信息的一侧。</para>
     ///
-    /// <para><b>本方法只会把水位往前推，不会往回退</b>（<c>Math.Max</c>）：
-    /// 重复投递同一封发布事实、或先经其它路径已经跳过更多时，不得反向把已生成序号调小，
-    /// 那会让同一个序号被第二次开出。
-    /// <b>强度按实测写</b>：把那个 <c>Math.Max</c> 改成直接赋值，整套 Quality.Web.Tests（447 个）
-    /// **全绿**，只有域用例 <c>Pre_release_skip_never_moves_the_generated_quantity_watermark_backwards</c>
-    /// 会红。原因是系统层拿不到「第二次跳过的值更小」这种输入：生产者在第二次下达时重算的既有产量
-    /// 恒是第一次那批的超集，而消费侧的已生成序号又恒不超过本地水位对应的目标值。
-    /// 所以它是**纵深防御**，不是本票缺陷的承重件——别把那条域用例读成「挡住了某条可达路径」。</para>
+    /// <para><b>本方法只会把水位往前推，不会往回退</b>（<c>Math.Max</c>）——
+    /// <b>这一条在一条可达路径上承重，不是纵深防御</b>。
+    /// 「第二次跳过给出更小的值」由**两条通道交错**产生，不需要「同一封发布事实投两次」：
+    /// #3000 回填分支（<c>ReleaseFactAuthority.ReconstructedLowerBound</c>）按 <c>OccurredAtUtc</c>
+    /// 把到回填执行那一刻为止的**全部**累计记为已生成，而本方法只跳过 MES 点名的
+    /// 「下达动作之前那一部分」——后者是前者的**真子集**，子集本身就是「更小」的充分条件。
+    /// 交错走得通的三个条件都已逐条实读：两个消费者是不同消费组、inbox 互相独立；
+    /// 「已有发布事实的工序只跳过不覆盖」那条 <c>continue</c> 只管 Reconstructed 分支；
+    /// 两条通道的 <c>ReleasedAtUtc</c> 过同一个 <c>WorkOrderReleaseFactTime.NotLaterThan</c> 取到同值，
+    /// <c>ApplyRelease</c> 因事实逐字相同提前 return 不抛、随后照常执行跳过。
+    /// 生产形态：直投发布事实进过 DLQ、在 #3000 回填跑完之后才被重投。
+    ///
+    /// <b>读数</b>：换成直接赋值后，系统层用例
+    /// <c>WorkOrderReleaseProjectionBackfillConsumerTests
+    /// .Backfill_then_live_release_does_not_reopen_quantity_windows_the_backfill_already_skipped</c>
+    /// 会红——已生成序号被从 5 拨回 2，随后按本地水位 500 **重开 3/4/5 三张重复任务、死信仍为 0**
+    /// （静默重复，不是可见失败）。域用例
+    /// <c>Pre_release_skip_never_moves_the_generated_quantity_watermark_backwards</c> 同时会红。
+    ///
+    /// <b>为什么本票第一轮判错过</b>：只穷举了「连续两次直投下达」（那条确实被
+    /// <c>WorkOrder.ThrowIfCannotRelease</c> 与 EventId inbox 去重挡死）就下了「输入不可达」的结论，
+    /// 漏掉了跨通道交错。当时 447 个用例全绿的真因是**覆盖缺口**，不是分支不可达——
+    /// 变异存活的两种成因必须先判可达性再下结论，且穷举面要覆盖**全部**写这个水位的通道。</para>
     /// </summary>
     public void SkipQuantityWindowsAccruedBeforeRelease(decimal preReleaseGoodQuantity)
     {

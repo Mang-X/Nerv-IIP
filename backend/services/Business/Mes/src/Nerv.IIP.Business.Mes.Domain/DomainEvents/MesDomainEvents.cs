@@ -40,9 +40,13 @@ public sealed record ReworkWorkOrderCreatedDomainEvent(
 /// 键是 <c>OperationTask.OperationTaskIdValue</c>。工单在 <c>created</c> 状态就能开工报工（#3113），
 /// 该事实只有 MES 在下达那一刻掌握，Quality 拿不到（#3129）。
 ///
-/// <b>字典里没有某道工序 = 那道工序一条报工都没有 = 0</b>，不是「没查」：
-/// 三个生产调用方都用 <c>GroupBy(工序)</c> 从该工单**全部**报工行构造本字典，
-/// 空分组天然不出现在结果里。转换器因此按 <c>GetValueOrDefault(id, 0m)</c> 取值。
+/// <b>字典里没有某道工序 = 那道工序一条报工都没有 = 0</b>，不是「没查」。
+/// <b>按实际构造点穷举</b>（<c>new WorkOrderReleasedDomainEvent(</c> 在 <c>src/</c> 下恰 3 处，均在
+/// <c>WorkOrder.cs</c>）：两处传**空字典**（<c>Release()</c> 与无参 <c>MarkReleased()</c>，
+/// 空成立的依据各自写在调用点紧邻注释里）；只有 <c>MarkReleased(tasks, releasedAt, 字典)</c> 收调用方的字典，
+/// 而它的生产调用方是 <b>2 个</b>——下达命令 <c>ReleaseWorkOrderCommandHandler</c> 与 #3119 的
+/// <c>BackfillCreatedWorkOrderReleaseCommandHandler</c>，两者都用 <c>GroupBy</c>(工序) 从该工单**全部**
+/// 报工行构造，空分组天然不出现在结果里。转换器因此按 <c>GetValueOrDefault(id, 0m)</c> 取值。
 ///
 /// <b>强度按实测写，别读强了</b>：编译器强制的是「**交出一个显式的字典**」，
 /// **不是**「你确实去查过」——传 <c>[]</c> 与「查完确实全是 0」在类型层面不可区分。

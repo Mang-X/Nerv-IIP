@@ -1540,7 +1540,11 @@ Assert-Equal 2 @($demandPlanningRedisRules[0].testIdentities).Count 'The Redis/C
 $mesMaterialSubstituteIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.MesMaterialSubstituteSnapshotPostgresTests.Substitute_snapshot_migration_and_cross_scope_readback_hold_on_postgres'
 $mesProductionCandidateRules = @($livePolicy.rules | Where-Object { [string]::Equals([string]$_.id, 'mes-production-candidate', [StringComparison]::Ordinal) })
 Assert-Equal 1 $mesProductionCandidateRules.Count 'The MES production candidate PostgreSQL proofs must have one evidence policy rule.'
-Assert-Equal 52 @($mesProductionCandidateRules[0].testIdentities).Count 'The MES production candidate policy rule must freeze its fifty-two governed PostgreSQL identities.'
+Assert-Equal 55 @($mesProductionCandidateRules[0].testIdentities).Count 'The MES production candidate policy rule must freeze its fifty-five governed PostgreSQL identities.'
+# #3129 把 52 抬到 55：下达命令与 #3119 补下达两条路径各自把报工按 (工单, 工序) 分组并用
+# SUM(CASE WHEN reversed_report_no IS NULL ...) 排除冲销行，分组键与条件求和都必须由真实 provider 翻译；
+# 第三条钉「一条报工都没有的工序落 0 而不是 null」。三条都是 env-gated skip，
+# 不登记时 collect-test-evidence 会报 'Runtime skip matched 0 applicable rules'（本票在 CI 上先红过一次）。
 $downtimeReasonCodeMigrationIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.DowntimeReasonCodeMigrationPostgresTests.Legacy_reasons_migrate_once_across_all_scopes_and_repeat_stably_on_postgres'
 Assert-True (@($mesProductionCandidateRules[0].testIdentities | Where-Object { [string]::Equals([string]$_, $downtimeReasonCodeMigrationIdentity, [StringComparison]::Ordinal) }).Count -eq 1) 'The MES production candidate policy rule must own the downtime-reason migration identity exactly once.'
 Assert-True ($downtimeReasonCodeMigrationIdentity -cmatch [string]$mesProductionCandidateRules[0].testPattern) 'The MES production candidate policy pattern must match the downtime-reason migration identity.'

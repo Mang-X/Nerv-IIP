@@ -512,6 +512,58 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
         return (string)attribute.ConstructorArguments[index].Value!;
     }
 
+    /// <summary>
+    /// <b>#3129 × #3000 两条通道交错：下达前产量跳过不得把已生成序号往回拨。</b>
+    ///
+    /// <para><b>这条路径是可达的，不是纵深防御。</b>两条通道各有一次「跳过」，锚点与口径都不同：
+    /// #3000 回填分支按 <c>OccurredAtUtc</c> 把到回填执行那一刻为止的**全部**累计记为已生成；
+    /// #3129 直投分支只跳过 MES 点名的「下达动作之前那一部分」，是前者的**真子集**
+    /// （这句话同时写在事件消费矩阵 <c>:84</c> 上）。子集这件事本身就是「第二次跳过给出更小的值」的充分条件。</para>
+    ///
+    /// <para><b>交错为什么走得通</b>（逐条，不是推断）：两个消费者是**不同消费组**，
+    /// <c>ProcessedIntegrationEvent</c> inbox 互相独立，第二封照常进 handler；
+    /// 「已有发布事实的工序只跳过不覆盖」那条 <c>continue</c> 只管 <c>ReconstructedLowerBound</c> 分支，
+    /// 拦不住 <c>Authoritative</c>；两条通道的 <c>ReleasedAtUtc</c> 过同一个
+    /// <c>WorkOrderReleaseFactTime.NotLaterThan</c> 取到同值，<c>ApplyRelease</c> 因事实逐字相同**提前 return
+    /// 不抛**、随后照常执行跳过。生产上的触发形态是「直投发布事实进过 DLQ、在 #3000 回填跑完之后才被重投」。</para>
+    ///
+    /// <para><b>读数</b>：本实现（带 <c>Math.Max</c>）终任务 <b>0</b>；把
+    /// <c>PeriodicInspectionRuntimeContext.SkipQuantityWindowsAccruedBeforeRelease</c> 里的
+    /// <c>Math.Max</c> 换成直接赋值 ⇒ 已生成序号被从 5 拨回 2，随后 <c>AddDueTasks</c>
+    /// 按本地水位 500 重开 3/4/5 三张**重复**任务、死信仍为 0（静默重复，不是可见失败）。</para>
+    /// </summary>
+    [Fact]
+    public async Task Backfill_then_live_release_does_not_reopen_quantity_windows_the_backfill_already_skipped()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.InspectionPlans.Add(PeriodicPlan());
+        await dbContext.SaveChangesAsync();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+
+        // 下达动作发生在两条报工之间：MES 在那一刻只看得到 250，故直投载荷带 250。
+        await HandleReportAsync(dbContext, ProductionReport(reportNo: "RPT-001", goodQuantity: 250m));
+        await HandleReportAsync(dbContext, ProductionReport(
+            reportNo: "RPT-002", goodQuantity: 250m, reportedAtUtc: "2026-08-05T00:00:00Z"));
+
+        // #3000 回填先到（直投那封还在 DLQ 里），把到「现在」为止的 500 件全部记为已生成。
+        await HandleBackfillAsync(dbContext, Backfill(), deadLetters);
+        Assert.Empty(await dbContext.InspectionTasks.ToArrayAsync());
+        Assert.Equal(5, (await dbContext.PeriodicInspectionRuntimeContexts.SingleAsync())
+            .LastGeneratedQuantityWindowSequence);
+
+        // 直投那封随后被重投：事实逐字相同、不判冲突，但它带的 250 比回填已跳过的 500 小。
+        await HandleLiveReleaseAsync(
+            dbContext,
+            LiveRelease(preReleaseGoodQuantity: 250m),
+            deadLetters);
+
+        Assert.Empty(await dbContext.InspectionTasks.ToArrayAsync());
+        var context = await dbContext.PeriodicInspectionRuntimeContexts.SingleAsync();
+        Assert.Equal(500m, context.QuantityHighWater);
+        Assert.Equal(5, context.LastGeneratedQuantityWindowSequence);
+        Assert.Empty(await deadLetters.ListAsync(null, null, CancellationToken.None));
+    }
+
     private static async Task HandleReportAsync(
         ApplicationDbContext dbContext,
         ProductionReportRecordedIntegrationEvent integrationEvent) =>
@@ -612,7 +664,8 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
 
     private static WorkOrderReleasedIntegrationEvent LiveRelease(
         string eventId = "evt-release-WO-001",
-        DateTimeOffset? releasedAtUtc = null) => new(
+        DateTimeOffset? releasedAtUtc = null,
+        decimal? preReleaseGoodQuantity = null) => new(
         eventId,
         MesIntegrationEventTypes.WorkOrderReleased,
         MesIntegrationEventVersions.V1,
@@ -629,17 +682,18 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
             "SKU-FG-1000",
             1000m,
             releasedAtUtc ?? ReleasedAtUtc,
-            [new ReleasedOperationPayload("OP-10", 10, "WC-MIX")]));
+            [new ReleasedOperationPayload("OP-10", 10, "WC-MIX", preReleaseGoodQuantity)]));
 
     private static ProductionReportRecordedIntegrationEvent ProductionReport(
         string reportNo = "RPT-001",
         decimal goodQuantity = 250m,
         string workCenterId = "WC-MIX",
-        string operationId = "OP-10") => new(
+        string operationId = "OP-10",
+        string reportedAtUtc = "2026-08-02T00:00:00Z") => new(
         $"evt-report-{reportNo}",
         MesIntegrationEventTypes.ProductionReportRecorded,
         MesIntegrationEventVersions.V1,
-        DateTimeOffset.Parse("2026-08-02T00:00:00Z"),
+        DateTimeOffset.Parse(reportedAtUtc),
         MesIntegrationEventSources.BusinessMes,
         $"corr-report-{reportNo}",
         "WO-001",
@@ -649,7 +703,7 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
         $"mes:production-report-recorded:org-001:env-dev:{reportNo}",
         new ProductionReportRecordedPayload(
             reportNo, "WO-001", operationId, workCenterId, null, goodQuantity, 0m, 0m, "EA", null,
-            DateTimeOffset.Parse("2026-08-02T00:00:00Z"), false));
+            DateTimeOffset.Parse(reportedAtUtc), false));
 
     private static InspectionPlan FirstArticlePlan()
     {

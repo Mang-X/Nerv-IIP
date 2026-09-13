@@ -672,7 +672,13 @@ public sealed class PeriodicInspectionIntegrationEventTests
     /// 阳性对照的「带值」形态：MES 查过、答案是 0（下达动作发生时这道工序一条报工都没有），
     /// 窗口照常开。它与 <c>Report_before_release_backfills_quantity_windows_from_the_frozen_context</c>
     /// 是同一个场景的两种载荷——后者不带该字段（旧消息），本条带 <c>0</c>（上线后的新消息）。
-    /// 少了这一条，「跳过」那一支被整块删掉时只有探针会红，**判别式退化成无条件跳过不会红**。
+    ///
+    /// <para><b>鉴别力按实测写，别读强了。</b>上一版这里写的是「少了这一条，判别式退化成无条件跳过不会红」，
+    /// **该主张未被证实、且实测为假**：把消费侧改成「字段在场就无条件 <c>SkipPeriodicWindowsAccruedBefore</c>」
+    /// （即保留判空、丢掉数值）这份变异，本用例与探针
+    /// <c>Release_arriving_before_the_report_opens_no_quantity_window_…</c> **一起红（2 红）**。
+    /// 本用例因此**不是**该变异的唯一鉴别力；它的独立价值在于把「MES 查过、答案是 0」这条语义钉在
+    /// **报工晚于下达动作**这一形态上——探针②的形态恰好相反（产量早于下达动作），两者覆盖的是不同方向。</para>
     /// </summary>
     [Fact]
     public async Task Release_carrying_an_explicit_zero_pre_release_quantity_still_opens_the_accrued_windows()

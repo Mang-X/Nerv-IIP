@@ -379,6 +379,15 @@ public sealed class CreatedWorkOrderReleaseBackfillTests
         Assert.Equal(
             [("OP-WO-CREATED-QTY-10", 250m), ("OP-WO-CREATED-QTY-20", 100m)],
             integrationEvent.Payload.Operations.Select(x => (x.OperationId, x.PreReleaseGoodQuantity)));
+        // 换键的**等值那一半**也要钉在这里（#3129）：工单级发布时刻下界现在是
+        // 「每道工序的最早报工」再取一次 Min 的**两层归约**，换键前只有一层。
+        // 这一格必须由本用例承担，不能靠既有的
+        // `Release_fact_time_is_pushed_down_to_the_earliest_report_or_completion`——
+        // 那条的夹具只有一道工序，第二层归约上 Min == Max，对它是**等价输入、零鉴别力**；
+        // 本用例的夹具是 op10 报 -3d/-2d、op20 报 -1d，Min≠Max。
+        // 这条不变量出错的后果正是 #3117 的原缺陷：发布时刻晚于既有报工 ⇒ Quality 的
+        // ApplyRelease 判「报工早于发布」⇒ 整封发布事实进死信。
+        Assert.Equal(Now.AddDays(-3), integrationEvent.Payload.ReleasedAtUtc);
     }
 
     private static void AddReport(

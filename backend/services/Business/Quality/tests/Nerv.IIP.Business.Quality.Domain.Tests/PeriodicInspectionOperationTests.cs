@@ -419,12 +419,13 @@ public sealed class PeriodicInspectionOperationTests
     /// 本用例钉的就是这条契约——第二次跳过给出更小的值时不得把已生成序号调小，
     /// 否则同一个序号会被第二次开出。
     ///
-    /// <para><b>强度按实测写。</b>把方法里的 <c>Math.Max</c> 改成直接赋值，**只有本用例会红**：
-    /// 整套 Quality.Web.Tests（447 个）在那份变异下全绿（本票实测）。
-    /// 原因是系统层拿不到「第二次跳过的值更小」这种输入——生产者在第二次下达时重算的既有产量
-    /// 恒是第一次那批的超集，而 Quality 的已生成序号又恒不超过它本地水位对应的目标值。
-    /// 也就是说 <c>Math.Max</c> 是**纵深防御**，不是本票缺陷的承重件；
-    /// 本用例证明它在契约层成立，**不声称**它挡住了某条可达路径。</para>
+    /// <para><b>这条契约在一条可达路径上承重</b>，不是纯粹的契约洁癖：
+    /// #3000 回填通道按时刻跳过的集合与本方法按数量跳过的集合是**超集/真子集**关系，
+    /// 两条通道交错投递时第二次跳过必然更小。系统层读数由
+    /// <c>WorkOrderReleaseProjectionBackfillConsumerTests
+    /// .Backfill_then_live_release_does_not_reopen_quantity_windows_the_backfill_already_skipped</c>
+    /// 给出（去掉 <c>Math.Max</c> ⇒ 重开 3 张重复任务、死信 0）。本用例是它的域层对偶，
+    /// 把同一条不变量钉在方法自身上，两条一起红。</para>
     /// </summary>
     [Fact]
     public void Pre_release_skip_never_moves_the_generated_quantity_watermark_backwards()

@@ -337,10 +337,16 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
             .ToList();
         Status = ReleasedStatus;
         AdvanceVersion();
-        // 下达前既有产量传空字典（#3129）：本方法**当场**用 routingSteps 建出全新的工序任务，
-        // 那些 OperationTaskId 在这一刻之前不存在，任何报工都不可能引用它们，故每道工序恒为 0。
-        // **这是本方法自身的性质**（与上面「下界项归属」那段不同，那条是调用方的性质）：
-        // 工序由本方法创建这件事由方法体保证，调用方改不了。
+        // 下达前既有产量传空字典（#3129）。
+        // **成立依据是调用方的性质，不是本方法的性质**——上一版这里写反了，如实更正：
+        // 本方法体只保证「按 routingSteps 建出工序行」，**不保证那些 id 此前不存在**，
+        // 因为 OperationTaskId 来自调用方给的 `RoutingStepSnapshot`（上面 `OperationTask.Queue`
+        // 收的就是 `step.OperationTaskId`）。调用方若拿一组已被报工引用过的 id 进来，空字典就是错的。
+        // 当前三个生产调用方都**当场造新工单**（`NcrReworkRequestedIntegrationEventHandlerForCreateMesWorkOrder`
+        // 与两个演示种子 `LeaderDemoSeedService` / `LeaderDemoScaleSeedService`），
+        // 那些 id 在这一刻才生成、不可能已有报工，故空字典成立。
+        // 这与上面「下界项归属」那段是**同一类**要求、同一个限度：新增调用方若可能面对已有活动的工单，
+        // 必须自己按工序查出既有净良品量再走 MarkReleased 那个重载。
         AddDomainEvent(new WorkOrderReleasedDomainEvent(
             this,
             tasks,
