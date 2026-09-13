@@ -50,6 +50,11 @@ public interface IBusinessBarcodeLabelClient
         BusinessConsoleBarcodePrintBatchByIdempotencyKeyRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleBarcodePrintLifecycleResponse> ActivatePrintBatchAsync(
+        string internalBearerToken,
+        BusinessConsoleActivateBarcodePrintBatchRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleBarcodePrintBatchListResponse> ListPrintBatchesAsync(
         string internalBearerToken,
         BusinessConsoleBarcodePrintBatchListRequest request,
@@ -187,6 +192,19 @@ public sealed class HttpBusinessBarcodeLabelClient(HttpClient httpClient)
                 ("environmentId", request.EnvironmentId),
                 ("idempotencyKey", request.IdempotencyKey)),
             null,
+            cancellationToken);
+
+    public Task<BusinessConsoleBarcodePrintLifecycleResponse> ActivatePrintBatchAsync(
+        string internalBearerToken,
+        BusinessConsoleActivateBarcodePrintBatchRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleBarcodePrintLifecycleResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/internal/v1/barcodes/print-batches/{Uri.EscapeDataString(request.PrintBatchId)}/activate?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId)),
+            request.Body,
             cancellationToken);
 
     public Task<BusinessConsoleBarcodePrintBatchListResponse> ListPrintBatchesAsync(

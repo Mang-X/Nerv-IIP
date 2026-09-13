@@ -4631,6 +4631,9 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     reportNo?: string;
     serialNumbers?: Array<string>;
     operationReceipt?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOperationReceipt | null;
+    printBatchId?: string | null;
+    printStatus?: string | null;
+    printingPreparationPending?: boolean;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordProductionReportRequest = {
@@ -4653,6 +4656,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     serialNo?: string | null;
     serialTrackingPolicy?: string;
     serialNumbers?: Array<string> | null;
+    labelTemplateId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConsumedMaterialLotInput = {

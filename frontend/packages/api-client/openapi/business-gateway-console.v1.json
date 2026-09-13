@@ -49666,6 +49666,17 @@
                 "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOperationReceipt"
               }
             ]
+          },
+          "printBatchId": {
+            "type": "string",
+            "nullable": true
+          },
+          "printStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "printingPreparationPending": {
+            "type": "boolean"
           }
         }
       },
@@ -49707,7 +49718,7 @@
           },
           "idempotencyKey": {
             "type": "string",
-            "maxLength": 150,
+            "maxLength": 128,
             "minLength": 0,
             "nullable": false
           },
@@ -49759,6 +49770,10 @@
             "items": {
               "type": "string"
             }
+          },
+          "labelTemplateId": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

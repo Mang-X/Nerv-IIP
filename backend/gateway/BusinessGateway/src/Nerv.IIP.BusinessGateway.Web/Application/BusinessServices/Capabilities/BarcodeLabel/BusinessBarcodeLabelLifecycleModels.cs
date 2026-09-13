@@ -16,6 +16,16 @@ public sealed record BusinessConsoleDispatchBarcodePrintBatchRequest(
 
 public sealed record BusinessConsoleBarcodePrintLifecycleResponse(string PrintBatchId);
 
+public sealed record BusinessConsoleActivateBarcodePrintBatchBody(
+    [property: JsonRequired, Required] string ProductionReportId,
+    [property: JsonRequired, Required] string ProductionReportNo);
+
+public sealed record BusinessConsoleActivateBarcodePrintBatchRequest(
+    [property: RouteParam] string PrintBatchId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    [property: FromBody] BusinessConsoleActivateBarcodePrintBatchBody Body);
+
 public sealed record BusinessConsoleReprintBarcodeLabelBody(
     [property: JsonRequired, Required] string PrintBatchId,
     [property: JsonRequired, Required] int SequenceNo,

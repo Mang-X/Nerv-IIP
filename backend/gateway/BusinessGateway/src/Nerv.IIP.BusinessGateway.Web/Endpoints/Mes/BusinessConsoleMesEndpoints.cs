@@ -1877,7 +1877,7 @@ public sealed class GetBusinessConsoleMesProductionReportEndpoint(
 [Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
 public sealed class RecordBusinessConsoleMesProductionReportEndpoint(
     IBusinessGatewayAuthorizationClient auth,
-    IBusinessMesClient mes,
+    IBusinessMesProductionReportCoordinator coordinator,
     MesPrincipalWorkScopeAuthorizer workScopeAuthorizer,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleRecordProductionReportRequest, BusinessConsoleRecordProductionReportResponse>(
@@ -1907,7 +1907,7 @@ public sealed class RecordBusinessConsoleMesProductionReportEndpoint(
             request.ScopeId,
             request.OperationTaskId,
             cancellationToken);
-        return await mes.RecordProductionReportAsync(
+        return await coordinator.RecordAsync(
             tokenProvider.BearerToken,
             request,
             RequireAuthorizedPrincipalActor().ActorRef,
@@ -1920,7 +1920,7 @@ public sealed class BusinessConsoleRecordProductionReportRequestValidator
 {
     public BusinessConsoleRecordProductionReportRequestValidator()
     {
-        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(128);
         RuleFor(x => x.ScopeKind)
             .NotEmpty()
             .MaximumLength(50)
