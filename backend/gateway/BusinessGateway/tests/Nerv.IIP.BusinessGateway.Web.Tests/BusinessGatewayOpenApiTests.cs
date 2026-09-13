@@ -850,6 +850,33 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches", "post", "createBusinessConsoleBarcodePrintBatch");
         AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches", "get", "listBusinessConsoleBarcodePrintBatches");
         AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}", "get", "getBusinessConsoleBarcodePrintBatch");
+        AssertSchemaProperties(
+            document,
+            "BusinessConsoleCreateBarcodePrintBatchRequest",
+            "reportIntentFingerprint");
+        var createPrintBatchSchema = FindSchemaBySuffix(document, "BusinessConsoleCreateBarcodePrintBatchRequest");
+        Assert.Equal(
+            256,
+            createPrintBatchSchema.GetProperty("properties")
+                .GetProperty("reportIntentFingerprint")
+                .GetProperty("maxLength")
+                .GetInt32());
+        Assert.Equal(
+            1,
+            createPrintBatchSchema.GetProperty("properties")
+                .GetProperty("reportIntentFingerprint")
+                .GetProperty("minLength")
+                .GetInt32());
+        if (createPrintBatchSchema.TryGetProperty("required", out var createPrintBatchRequired))
+        {
+            Assert.DoesNotContain(
+                "reportIntentFingerprint",
+                createPrintBatchRequired.EnumerateArray().Select(value => value.GetString()));
+        }
+        AssertRequiredNullableSchemaProperties(
+            document,
+            "BusinessConsoleBarcodePrintBatchDetail",
+            "reportIntentFingerprint");
         AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}/dispatch", "post", "dispatchBusinessConsoleBarcodePrintBatch");
         AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/reprint", "post", "reprintBusinessConsoleBarcodeLabel");
         AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/void", "post", "voidBusinessConsoleBarcodeLabel");

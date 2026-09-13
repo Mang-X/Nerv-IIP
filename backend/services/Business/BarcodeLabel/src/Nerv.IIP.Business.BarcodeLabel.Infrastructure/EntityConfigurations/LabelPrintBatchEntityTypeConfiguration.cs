@@ -34,6 +34,7 @@ public sealed class LabelPrintBatchEntityTypeConfiguration : IEntityTypeConfigur
         builder.Property(x => x.SourceDocumentType).HasColumnName("source_document_type").IsRequired().HasMaxLength(100).HasComment("Source workflow or document type requesting label printing.");
         builder.Property(x => x.SourceDocumentId).HasColumnName("source_document_id").IsRequired().HasMaxLength(150).HasComment("Source business document public id.");
         builder.Property(x => x.IdempotencyKey).HasColumnName("idempotency_key").IsRequired().HasMaxLength(128).HasComment("Client supplied idempotency key for print batch creation.");
+        builder.Property(x => x.ReportIntentFingerprint).HasColumnName("report_intent_fingerprint").HasMaxLength(LabelPrintBatch.ReportIntentFingerprintMaxLength).HasComment("Optional opaque canonical report-intent fingerprint supplied by the authorized caller; null denotes a general non-MES label intent.");
         builder.Property(x => x.LabelValuesJson).HasColumnName("label_values_json").IsRequired().HasColumnType("text").HasComment("Label variable values JSON captured for repeatable printing.");
         builder.Property(x => x.RequestedQuantity).HasColumnName("requested_quantity").IsRequired().HasComment("Requested number of labels generated for the batch.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasMaxLength(30).HasComment("Truthful print batch lifecycle status: reserved, ready-to-print, sent-to-printer, delivery-unknown, printed or failed.");

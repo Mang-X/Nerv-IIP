@@ -17,7 +17,10 @@ public sealed record CreateLabelPrintBatchCommand(
     string SourceDocumentId,
     string IdempotencyKey,
     string LabelValuesJson,
-    int RequestedQuantity) : ICommand<LabelPrintBatchId>;
+    int RequestedQuantity) : ICommand<LabelPrintBatchId>
+{
+    public string? ReportIntentFingerprint { get; init; }
+}
 
 public sealed class CreateLabelPrintBatchCommandValidator : AbstractValidator<CreateLabelPrintBatchCommand>
 {
@@ -30,6 +33,9 @@ public sealed class CreateLabelPrintBatchCommandValidator : AbstractValidator<Cr
         RuleFor(x => x.SourceDocumentType).NotEmpty().MaximumLength(100);
         RuleFor(x => x.SourceDocumentId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.ReportIntentFingerprint)
+            .Must(value => value is null || !string.IsNullOrWhiteSpace(value))
+            .MaximumLength(LabelPrintBatch.ReportIntentFingerprintMaxLength);
         RuleFor(x => x.LabelValuesJson).NotEmpty();
         RuleFor(x => x.RequestedQuantity).GreaterThan(0);
     }
@@ -67,6 +73,7 @@ public sealed class CreateLabelPrintBatchCommandHandler(
                     request.SourceDocumentType,
                     request.SourceDocumentId,
                     idempotencyKey,
+                    request.ReportIntentFingerprint,
                     request.LabelValuesJson,
                     request.RequestedQuantity))
             {
@@ -139,6 +146,7 @@ public sealed class CreateLabelPrintBatchCommandHandler(
                 request.SourceDocumentType,
                 request.SourceDocumentId,
                 idempotencyKey,
+                request.ReportIntentFingerprint,
                 request.LabelValuesJson,
                 request.RequestedQuantity,
                 serialNumbers);

@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelSerialCounterAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.Printing;
@@ -245,6 +246,107 @@ public sealed class CreateLabelPrintBatchCommandTests
     }
 
     [Fact]
+    public async Task Create_persists_the_opaque_report_intent_fingerprint_without_normalizing_it()
+    {
+        await using var dbContext = CreateDbContext();
+        var rule = ActiveRule();
+        var template = ActiveTemplate();
+        dbContext.AddRange(rule, template);
+        await dbContext.SaveChangesAsync();
+        var command = NewCommand(rule.Id, template.Id) with
+        {
+            ReportIntentFingerprint = "  opaque:Report-Intent/A  ",
+        };
+
+        var batchId = await CreateHandler(dbContext, ValidAssetPort()).Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        var batch = await dbContext.LabelPrintBatches.SingleAsync(x => x.Id == batchId);
+
+        Assert.Equal(
+            "  opaque:Report-Intent/A  ",
+            dbContext.Entry(batch).Property<string>("ReportIntentFingerprint").CurrentValue);
+        Assert.Equal(
+            256,
+            dbContext.Model.FindEntityType(typeof(LabelPrintBatch))!
+                .FindProperty(nameof(LabelPrintBatch.ReportIntentFingerprint))!
+                .GetMaxLength());
+    }
+
+    [Theory]
+    [InlineData(null, null, true)]
+    [InlineData(null, "opaque:report-intent-a", false)]
+    [InlineData("opaque:report-intent-a", null, false)]
+    [InlineData("opaque:report-intent-a", "opaque:report-intent-b", false)]
+    public async Task Same_idempotency_key_compares_the_nullable_report_intent_fingerprint_exactly(
+        string? firstFingerprint,
+        string? replayFingerprint,
+        bool shouldReuse)
+    {
+        await using var dbContext = CreateDbContext();
+        var rule = ActiveRule();
+        var template = ActiveTemplate();
+        dbContext.AddRange(rule, template);
+        await dbContext.SaveChangesAsync();
+        var allocator = new SequentialSerialNumberAllocator();
+        var handler = CreateHandler(dbContext, ValidAssetPort(), allocator);
+        var first = NewCommand(rule.Id, template.Id) with { ReportIntentFingerprint = firstFingerprint };
+        var replay = first with { ReportIntentFingerprint = replayFingerprint };
+        var firstBatchId = await handler.Handle(first, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        if (shouldReuse)
+        {
+            Assert.Equal(firstBatchId, await handler.Handle(replay, CancellationToken.None));
+        }
+        else
+        {
+            var exception = await Assert.ThrowsAsync<KnownException>(
+                () => handler.Handle(replay, CancellationToken.None));
+            Assert.Equal("打印批次幂等键与已有记录不一致，请检查提交内容。", exception.Message);
+        }
+
+        var persisted = Assert.Single(dbContext.LabelPrintBatches);
+        Assert.Equal(firstFingerprint, persisted.ReportIntentFingerprint);
+        Assert.Equal(1, allocator.AllocationCount);
+    }
+
+    [Fact]
+    public async Task Same_idempotency_key_rejects_a_changed_report_intent_fingerprint_without_overwriting_the_first_batch()
+    {
+        await using var dbContext = CreateDbContext();
+        var rule = ActiveRule();
+        var template = ActiveTemplate();
+        dbContext.AddRange(rule, template);
+        await dbContext.SaveChangesAsync();
+        var allocator = new SequentialSerialNumberAllocator();
+        var handler = CreateHandler(dbContext, ValidAssetPort(), allocator);
+        var first = NewCommand(rule.Id, template.Id);
+        var firstBatchId = await handler.Handle(first, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        var firstSerialNumbers = await dbContext.LabelPrintItems
+            .OrderBy(item => item.SequenceNo)
+            .Select(item => item.SerialNumber)
+            .ToArrayAsync();
+
+        var changed = first with { ReportIntentFingerprint = "opaque:report-intent-b" };
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(changed, CancellationToken.None));
+
+        Assert.Equal("打印批次幂等键与已有记录不一致，请检查提交内容。", exception.Message);
+        var persisted = Assert.Single(dbContext.LabelPrintBatches);
+        Assert.Equal(firstBatchId, persisted.Id);
+        Assert.Equal(
+            first.ReportIntentFingerprint,
+            dbContext.Entry(persisted).Property<string>("ReportIntentFingerprint").CurrentValue);
+        Assert.Equal(
+            firstSerialNumbers,
+            await dbContext.LabelPrintItems
+                .OrderBy(item => item.SequenceNo)
+                .Select(item => item.SerialNumber)
+                .ToArrayAsync());
+        Assert.Equal(1, allocator.AllocationCount);
+    }
+
+    [Fact]
     public async Task Same_idempotency_key_rejects_a_changed_request_before_allocating_again()
     {
         await using var dbContext = CreateDbContext();
@@ -329,7 +431,10 @@ public sealed class CreateLabelPrintBatchCommandTests
             "ASN-001",
             "idem-print-001",
             labelValuesJson,
-            1);
+            1)
+        {
+            ReportIntentFingerprint = "opaque:report-intent-a",
+        };
 
     private static ApplicationDbContext CreateDbContext()
     {

@@ -121,6 +121,35 @@ public sealed class BarcodeLabelOpenApiTests
             var parameter = Assert.Single(parameters, item => item.GetProperty("name").GetString() == parameterName);
             Assert.True(parameter.GetProperty("required").GetBoolean());
         }
+
+        var schemas = document.RootElement.GetProperty("components").GetProperty("schemas");
+        var createRequest = Assert.Single(
+            schemas.EnumerateObject(),
+            schema => schema.Name.EndsWith("CreateLabelPrintBatchRequest", StringComparison.Ordinal));
+        Assert.True(
+            createRequest.Value.GetProperty("properties").TryGetProperty("reportIntentFingerprint", out var createFingerprint),
+            createRequest.Value.GetRawText());
+        Assert.Equal(1, createFingerprint.GetProperty("minLength").GetInt32());
+        Assert.Equal(256, createFingerprint.GetProperty("maxLength").GetInt32());
+        if (createRequest.Value.TryGetProperty("required", out var createRequired))
+        {
+            Assert.DoesNotContain(
+                "reportIntentFingerprint",
+                createRequired.EnumerateArray().Select(item => item.GetString()));
+        }
+
+        var scopedDetail = Assert.Single(
+            schemas.EnumerateObject(),
+            schema => schema.Name.EndsWith("ScopedLabelPrintBatchDetail", StringComparison.Ordinal));
+        Assert.True(
+            scopedDetail.Value.GetProperty("properties").TryGetProperty("reportIntentFingerprint", out var scopedFingerprint),
+            scopedDetail.Value.GetRawText());
+        Assert.True(
+            scopedFingerprint.TryGetProperty("nullable", out var nullable) && nullable.GetBoolean(),
+            scopedFingerprint.GetRawText());
+        Assert.Contains(
+            "reportIntentFingerprint",
+            scopedDetail.Value.GetProperty("required").EnumerateArray().Select(item => item.GetString()));
     }
 
     private static void AssertScopedLifecycleOperation(

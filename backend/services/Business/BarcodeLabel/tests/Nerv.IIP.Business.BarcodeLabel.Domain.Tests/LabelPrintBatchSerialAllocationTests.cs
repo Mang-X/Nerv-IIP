@@ -186,6 +186,7 @@ public sealed class LabelPrintBatchSerialAllocationTests
             "wms.inbound",
             "ASN-001",
             "idem-print-001",
+            "opaque:report-intent-a",
             labelValuesJson,
             requestedQuantity ?? serialNumbers.Count,
             serialNumbers);

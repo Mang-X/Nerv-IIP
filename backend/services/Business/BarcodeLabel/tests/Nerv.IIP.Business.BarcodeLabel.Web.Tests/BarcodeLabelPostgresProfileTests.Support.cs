@@ -484,6 +484,7 @@ public sealed partial class BarcodeLabelPostgresProfileTests
             "work-order",
             sourceDocumentId,
             idempotencyKey,
+            "opaque:report-intent-a",
             "{}",
             1,
             [serialNumber]);
