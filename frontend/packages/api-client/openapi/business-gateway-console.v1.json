@@ -49185,6 +49185,13 @@
             "type": "string",
             "description": "提交本条报工的操作人引用；升级前的历史报工为 null。",
             "nullable": true
+          },
+          "serialNumbers": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -49558,6 +49565,13 @@
             "type": "string",
             "description": "提交本条报工的操作人引用；升级前的历史报工为 null。",
             "nullable": true
+          },
+          "serialNumbers": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -49638,6 +49652,12 @@
           },
           "reportNo": {
             "type": "string"
+          },
+          "serialNumbers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "operationReceipt": {
             "nullable": true,
@@ -49726,9 +49746,15 @@
             "type": "string",
             "nullable": true
           },
-          "serialNo": {
-            "type": "string",
-            "nullable": true
+          "serialTrackingPolicy": {
+            "type": "string"
+          },
+          "serialNumbers": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

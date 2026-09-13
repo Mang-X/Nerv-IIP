@@ -719,6 +719,8 @@ public sealed class MesEndpointContractTests
             completesOperation = false,
             reportedAtUtc = "2026-07-21T15:46:24Z",
             idempotencyKey = "wire-shape-001",
+            serialTrackingPolicy = "on-production",
+            serialNumbers = new[] { "SN-WIRE-001" },
         });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -730,6 +732,7 @@ public sealed class MesEndpointContractTests
         Assert.True(wireId.TryGetProperty("id", out var id), rawBody);
         Assert.Equal(productionReportId, id.GetGuid());
         Assert.Equal("PRPT-WIRE-001", root.GetProperty("reportNo").GetString());
+        Assert.Equal(["SN-WIRE-001"], root.GetProperty("serialNumbers").EnumerateArray().Select(x => x.GetString()));
     }
 
     // 验收 #1948/#2694：MES 写面端点必须把网关注入的报工人和调用方幂等键原样转交给命令。
@@ -3740,7 +3743,8 @@ public sealed class MesEndpointContractTests
             Command = Assert.IsType<RecordProductionReportCommand>(request);
             return Task.FromResult((TResponse)(object)new ProductionReportCommandResult(
                 new Domain.AggregatesModel.ProductionReportAggregate.ProductionReportId(productionReportId),
-                "PRPT-WIRE-001"));
+                "PRPT-WIRE-001",
+                ["SN-WIRE-001"]));
         }
 
         public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default) where TRequest : IRequest =>

@@ -982,13 +982,15 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
                 request.ScrapReasonCode,
                 request.DefectRecordNo,
                 request.ProducedLotNo,
-                request.SerialNo,
+                request.SerialTrackingPolicy,
+                request.SerialNumbers,
                 actor),
             cancellationToken);
 
         if (response.ProductionReportId is null ||
             response.ProductionReportId.Id == Guid.Empty ||
-            string.IsNullOrWhiteSpace(response.ReportNo))
+            string.IsNullOrWhiteSpace(response.ReportNo) ||
+            response.SerialNumbers is null)
         {
             throw BusinessServiceProxyException.FromSafeDownstreamMessage(
                 HttpStatusCode.BadGateway,
@@ -998,6 +1000,7 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         return new BusinessConsoleRecordProductionReportResponse(
             response.ProductionReportId.Id.ToString(),
             response.ReportNo,
+            response.SerialNumbers,
             string.IsNullOrWhiteSpace(request.IdempotencyKey)
                 ? null
                 : BusinessConsoleOperationReceipts.Accepted(
@@ -1490,7 +1493,8 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
 
     private sealed record DownstreamRecordProductionReportResponse(
         DownstreamProductionReportId? ProductionReportId,
-        string? ReportNo);
+        string? ReportNo,
+        IReadOnlyCollection<string>? SerialNumbers);
 
     private sealed record DownstreamProductionReportId(Guid Id);
 
@@ -1530,7 +1534,8 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         string? ScrapReasonCode,
         string? DefectRecordNo,
         string? ProducedLotNo,
-        string? SerialNo,
+        string SerialTrackingPolicy,
+        IReadOnlyCollection<string>? SerialNumbers,
         string ReportedBy);
 
     private sealed record DownstreamReverseProductionReportRequest(

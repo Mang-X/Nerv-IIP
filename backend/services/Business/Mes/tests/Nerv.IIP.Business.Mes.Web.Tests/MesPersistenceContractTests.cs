@@ -2834,7 +2834,7 @@ public sealed class MesPersistenceContractTests
             reportedAtUtc,
             null,
             "SKU-001"));
-        dbContext.ProductionReports.Add(ProductionReport.Record(
+        var report = ProductionReport.Record(
             organizationId,
             "env-dev",
             reportNo,
@@ -2847,7 +2847,13 @@ public sealed class MesPersistenceContractTests
             producedLotNo: $"LOT-{reportNo}",
             serialNo: serialNo,
             oeeProjection: new ProductionReportOeeProjection("WC-FILL", deviceAssetId, "PCS", null),
-            reportedBy: reportedBy));
+            reportedBy: reportedBy);
+        dbContext.ProductionReports.Add(report);
+        if (serialNo is not null)
+        {
+            dbContext.ProductionReportSerialNumbers.AddRange(
+                ProductionReportSerialNumber.CreateForReport(report, [serialNo]));
+        }
     }
 
     [Fact]
@@ -3377,6 +3383,183 @@ public sealed class MesPersistenceContractTests
     }
 
     [Fact]
+    public async Task Production_report_serial_collection_is_idempotent_queryable_traceable_and_inactive_after_reversal()
+    {
+        var services = CreateServices(nameof(Production_report_serial_collection_is_idempotent_queryable_traceable_and_inactive_after_reversal));
+        var now = DateTimeOffset.Parse("2026-09-13T08:00:00Z");
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var codingService = new MesCodingService();
+        var workOrder = WorkOrder.Create(
+            "org-001", "env-dev", "WO-SERIAL-001", "SKU-SERIAL", "PV-001", 10m, 20, now.AddHours(8), "PCS");
+        workOrder.MarkReleased();
+        workOrder.Start(now);
+        dbContext.WorkOrders.Add(workOrder);
+        var operationTask = OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-SERIAL-001",
+            "OP-SERIAL-10",
+            OperationTaskLifecycleStatus.InProgress,
+            10,
+            "WC-SERIAL",
+            [],
+            now,
+            TimeSpan.FromMinutes(45),
+            now,
+            null,
+            "SKU-SERIAL");
+        operationTask.Assign(null, "DEVICE-SERIAL-01", null, now, "user:operator-setup");
+        operationTask.ClearDomainEvents();
+        dbContext.OperationTasks.Add(operationTask);
+        var materialIssue = MaterialIssueRequest.Create(
+            "org-001",
+            "env-dev",
+            "MIR-SERIAL-001",
+            "WO-SERIAL-001",
+            "OP-SERIAL-10",
+            "MAT-SERIAL",
+            "PCS",
+            2m,
+            now.AddMinutes(1));
+        materialIssue.ConfirmAndPostLineSideReceipt(
+            MaterialSupplyTestFixtures.Locations,
+            now.AddMinutes(2),
+            2m,
+            "LOT-MAT-SERIAL");
+        materialIssue.ClearDomainEvents();
+        dbContext.MaterialIssueRequests.Add(materialIssue);
+        await dbContext.SaveChangesAsync();
+
+        var handler = new RecordProductionReportCommandHandler(
+            dbContext,
+            TestProductionReportOeeDimensionSnapshotProvider.Instance,
+            TestMesFirstArticleGate.Allowing,
+            codingService);
+        var first = await handler.Handle(
+            new RecordProductionReportCommand(
+                "org-001",
+                "env-dev",
+                "WO-SERIAL-001",
+                "OP-SERIAL-10",
+                2m,
+                0m,
+                false,
+                now.AddMinutes(30),
+                "report-serial-001",
+                [new ConsumedMaterialLotInput("MAT-SERIAL", "LOT-MAT-SERIAL", 2m, "MIR-SERIAL-001")],
+                ProducedLotNo: "LOT-FG-SERIAL",
+                SerialTrackingPolicy: ProductionSerialTrackingPolicies.OnProduction,
+                SerialNumbers: ["  SN-SERIAL-02  ", "SN-SERIAL-01"],
+                ReportedBy: "operator-serial"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var replay = await handler.Handle(
+            new RecordProductionReportCommand(
+                "org-001",
+                "env-dev",
+                "WO-SERIAL-001",
+                "OP-SERIAL-10",
+                2m,
+                0m,
+                false,
+                now.AddMinutes(30),
+                "report-serial-001",
+                [new ConsumedMaterialLotInput("MAT-SERIAL", "LOT-MAT-SERIAL", 2m, "MIR-SERIAL-001")],
+                ProducedLotNo: "LOT-FG-SERIAL",
+                SerialTrackingPolicy: ProductionSerialTrackingPolicies.OnProduction,
+                SerialNumbers: ["SN-SERIAL-02", "  SN-SERIAL-01  "],
+                ReportedBy: "operator-serial"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(first.ReportNo, replay.ReportNo);
+        Assert.Equal(
+            ["SN-SERIAL-02", "SN-SERIAL-01"],
+            await dbContext.ProductionReportSerialNumbers
+                .OrderBy(x => x.SequenceNo)
+                .Select(x => x.SerialNumber)
+                .ToArrayAsync());
+        var detail = await new GetProductionReportQueryHandler(dbContext).Handle(
+            new GetProductionReportQuery("org-001", "env-dev", first.ReportNo),
+            CancellationToken.None);
+        Assert.Equal(["SN-SERIAL-02", "SN-SERIAL-01"], detail.Report.SerialNumbers);
+
+        await Assert.ThrowsAsync<MesIdempotencyConflictException>(() => handler.Handle(
+            new RecordProductionReportCommand(
+                "org-001",
+                "env-dev",
+                "WO-SERIAL-001",
+                "OP-SERIAL-10",
+                2m,
+                0m,
+                false,
+                now.AddMinutes(30),
+                "report-serial-001",
+                [new ConsumedMaterialLotInput("MAT-SERIAL", "LOT-MAT-SERIAL", 2m, "MIR-SERIAL-001")],
+                ProducedLotNo: "LOT-FG-SERIAL",
+                SerialTrackingPolicy: ProductionSerialTrackingPolicies.OnProduction,
+                SerialNumbers: ["SN-SERIAL-02", "SN-SERIAL-03"],
+                ReportedBy: "operator-serial"),
+            CancellationToken.None));
+
+        var serialConflict = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new RecordProductionReportCommand(
+                "org-001",
+                "env-dev",
+                "WO-SERIAL-001",
+                "OP-SERIAL-10",
+                2m,
+                0m,
+                false,
+                now.AddMinutes(35),
+                "report-serial-002",
+                ProducedLotNo: "LOT-FG-SERIAL-2",
+                SerialTrackingPolicy: ProductionSerialTrackingPolicies.OnProduction,
+                SerialNumbers: ["SN-SERIAL-01", "SN-SERIAL-03"],
+                ReportedBy: "operator-serial"),
+            CancellationToken.None));
+        Assert.Contains("SN-SERIAL-01", serialConflict.Message, StringComparison.Ordinal);
+
+        var serialTrace = await new GetBatchTraceabilityQueryHandler(dbContext).Handle(
+            new GetBatchTraceabilityQuery("org-001", "env-dev", "SN-SERIAL-01"),
+            CancellationToken.None);
+        Assert.Contains(serialTrace.Nodes, x => x.NodeId == first.ReportNo && x.NodeType == MesTraceabilityNodeType.ProductionReport);
+        Assert.Contains(serialTrace.Nodes, x => x.NodeId == "OP-SERIAL-10" && x.NodeType == MesTraceabilityNodeType.OperationTask);
+        Assert.Contains(serialTrace.Nodes, x => x.NodeId == "WO-SERIAL-001" && x.NodeType == MesTraceabilityNodeType.WorkOrder);
+        Assert.Contains(serialTrace.Nodes, x => x.NodeId == "operator-serial" && x.NodeType == MesTraceabilityNodeType.Operator);
+        Assert.Contains(serialTrace.Nodes, x => x.NodeId == "DEVICE-SERIAL-01" && x.NodeType == MesTraceabilityNodeType.DeviceAsset);
+        Assert.Contains(serialTrace.Nodes, x => x.NodeId == "LOT-MAT-SERIAL" && x.NodeType == MesTraceabilityNodeType.MaterialLot);
+
+        var workOrderTrace = await new GetWorkOrderTraceabilityQueryHandler(dbContext).Handle(
+            new GetWorkOrderTraceabilityQuery("org-001", "env-dev", "WO-SERIAL-001"),
+            CancellationToken.None);
+        Assert.Equal(2, workOrderTrace.Nodes.Count(x => x.NodeType == MesTraceabilityNodeType.Serial));
+        Assert.Equal(2, workOrderTrace.Edges.Count(x => x.RelationType == "produced-serial"));
+
+        await new ReverseProductionReportCommandHandler(dbContext, codingService).Handle(
+            new ReverseProductionReportCommand(
+                "org-001",
+                "env-dev",
+                first.ReportNo,
+                "serial reversal",
+                now.AddMinutes(45),
+                "operator-reversal",
+                "reverse-serial-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var reversedTrace = await new GetBatchTraceabilityQueryHandler(dbContext).Handle(
+            new GetBatchTraceabilityQuery("org-001", "env-dev", "SN-SERIAL-01"),
+            CancellationToken.None);
+        Assert.Single(reversedTrace.Nodes);
+        Assert.Equal("Unknown", reversedTrace.Nodes.Single().Status);
+        Assert.Empty(reversedTrace.Edges);
+    }
+
+    [Fact]
     public async Task Reverse_production_report_restores_progress_consumption_and_traceability_to_initial_state()
     {
         var services = CreateServices(nameof(Reverse_production_report_restores_progress_consumption_and_traceability_to_initial_state));
@@ -3432,7 +3615,8 @@ public sealed class MesPersistenceContractTests
                 [new ConsumedMaterialLotInput("MAT-OIL", "LOT-OIL-REV", 3m, "MIR-REV-001")],
                 ReworkQuantity: 2m,
                 ProducedLotNo: "LOT-FG-REV",
-                SerialNo: "  SN-REV-001  "),
+                SerialTrackingPolicy: ProductionSerialTrackingPolicies.OnProduction,
+                SerialNumbers: ["  SN-REV-001  ", "SN-REV-002", "SN-REV-003", "SN-REV-004"]),
             CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
@@ -3480,9 +3664,9 @@ public sealed class MesPersistenceContractTests
         Assert.Equal(-2m, reversalReport.ReworkQuantity);
         Assert.Equal(reportResult.ReportNo, reversal.OriginalReportNo);
 
-        var serial = Assert.Single(await dbContext.ProductionReportSerialNumbers.ToArrayAsync());
-        Assert.Equal(reportResult.ReportNo, serial.ReportNo);
-        Assert.Equal("SN-REV-001", serial.SerialNumber);
+        var serials = await dbContext.ProductionReportSerialNumbers.OrderBy(x => x.SequenceNo).ToArrayAsync();
+        Assert.All(serials, serial => Assert.Equal(reportResult.ReportNo, serial.ReportNo));
+        Assert.Equal(["SN-REV-001", "SN-REV-002", "SN-REV-003", "SN-REV-004"], serials.Select(x => x.SerialNumber));
 
         var netConsumed = await dbContext.ProductionReportMaterialConsumptions
             .Where(x => x.MaterialLotId == "LOT-OIL-REV")

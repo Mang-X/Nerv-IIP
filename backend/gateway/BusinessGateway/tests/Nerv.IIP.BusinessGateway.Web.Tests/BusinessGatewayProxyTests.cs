@@ -2523,6 +2523,7 @@ public sealed class BusinessGatewayProxyTests
                         scrapQuantity = 0m,
                         reworkQuantity = 0m,
                         reportedAtUtc = DateTimeOffset.Parse("2026-08-25T09:15:00Z"),
+                        serialNumbers = new[] { "SN-ACTUAL-01", "SN-ACTUAL-02" },
                         operationActualLaborHours = (decimal?)2.75m,
                         operationActualMachineHours = (decimal?)0.25m,
                     },
@@ -2536,6 +2537,7 @@ public sealed class BusinessGatewayProxyTests
                         scrapQuantity = 0m,
                         reworkQuantity = 0m,
                         reportedAtUtc = DateTimeOffset.Parse("2026-08-25T09:20:00Z"),
+                        serialNumbers = Array.Empty<string>(),
                         operationActualLaborHours = (decimal?)null,
                         operationActualMachineHours = (decimal?)null,
                     },
@@ -2554,6 +2556,7 @@ public sealed class BusinessGatewayProxyTests
                     scrapQuantity = 0m,
                     reworkQuantity = 0m,
                     reportedAtUtc = DateTimeOffset.Parse("2026-08-25T09:15:00Z"),
+                    serialNumbers = new[] { "SN-ACTUAL-01", "SN-ACTUAL-02" },
                     operationActualLaborHours = 3.5m,
                     operationActualMachineHours = 0.75m,
                 },
@@ -2640,6 +2643,7 @@ public sealed class BusinessGatewayProxyTests
         var reportRow = reportsJson.RootElement.GetProperty("data").GetProperty("items")[0];
         Assert.Equal(2.75m, reportRow.GetProperty("operationActualLaborHours").GetDecimal());
         Assert.Equal(0.25m, reportRow.GetProperty("operationActualMachineHours").GetDecimal());
+        Assert.Equal(["SN-ACTUAL-01", "SN-ACTUAL-02"], reportRow.GetProperty("serialNumbers").EnumerateArray().Select(x => x.GetString()));
         Assert.False(reportRow.TryGetProperty("operationActualHours", out _));
         var nullReportRow = reportsJson.RootElement.GetProperty("data").GetProperty("items")[1];
         Assert.Equal(JsonValueKind.Null, nullReportRow.GetProperty("operationActualLaborHours").ValueKind);
@@ -2647,6 +2651,7 @@ public sealed class BusinessGatewayProxyTests
         var report = reportJson.RootElement.GetProperty("data").GetProperty("report");
         Assert.Equal(3.5m, report.GetProperty("operationActualLaborHours").GetDecimal());
         Assert.Equal(0.75m, report.GetProperty("operationActualMachineHours").GetDecimal());
+        Assert.Equal(["SN-ACTUAL-01", "SN-ACTUAL-02"], report.GetProperty("serialNumbers").EnumerateArray().Select(x => x.GetString()));
         Assert.False(report.TryGetProperty("operationActualHours", out _));
         var nullReport = nullReportJson.RootElement.GetProperty("data").GetProperty("report");
         Assert.Equal(JsonValueKind.Null, nullReport.GetProperty("operationActualLaborHours").ValueKind);
@@ -11953,6 +11958,7 @@ public sealed class BusinessGatewayProxyTests
         {
             productionReportId = new { id = productionReportId },
             reportNo = "PRPT-WIRE-001",
+            serialNumbers = new[] { "SN-WIRE-001" },
         };
         var handler = new RecordingHandler(_ => JsonResponse(
             HttpStatusCode.OK,
@@ -11968,6 +11974,7 @@ public sealed class BusinessGatewayProxyTests
 
         Assert.Equal(productionReportId, response.ProductionReportId);
         Assert.Equal("PRPT-WIRE-001", response.ReportNo);
+        Assert.Equal(["SN-WIRE-001"], response.SerialNumbers);
         var request = Assert.Single(handler.Requests);
         Assert.Equal(HttpMethod.Post, request.Method);
         Assert.Equal("/api/business/v1/mes/production-reports", request.RequestUri!.PathAndQuery);
@@ -11976,6 +11983,8 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("org-001", requestBody.RootElement.GetProperty("organizationId").GetString());
         Assert.Equal("env-dev", requestBody.RootElement.GetProperty("environmentId").GetString());
         Assert.Equal("wire-shape-001", requestBody.RootElement.GetProperty("idempotencyKey").GetString());
+        Assert.Equal("on-production", requestBody.RootElement.GetProperty("serialTrackingPolicy").GetString());
+        Assert.Equal(["SN-WIRE-001"], requestBody.RootElement.GetProperty("serialNumbers").EnumerateArray().Select(x => x.GetString()));
         // 报工人由 Gateway 从已认证 principal 注入，公开请求 DTO 不带身份字段，也不透传前端作用域选择。
         Assert.Equal("user-operator", requestBody.RootElement.GetProperty("reportedBy").GetString());
         Assert.False(requestBody.RootElement.TryGetProperty("scopeKind", out _));
@@ -13416,7 +13425,9 @@ public sealed class BusinessGatewayProxyTests
         DateTimeOffset.Parse("2026-07-21T15:46:24Z"),
         "wire-shape-001",
         "organization",
-        "org-001");
+        "org-001",
+        SerialTrackingPolicy: "on-production",
+        SerialNumbers: ["SN-WIRE-001"]);
 
     private static BusinessConsoleMesCreateReceiptRequest FinishedGoodsReceiptRequest() => new(
         "org-001",
@@ -19470,7 +19481,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         RecordProductionReportCallCount++;
         LastInternalToken = internalBearerToken;
         LastRecordProductionReportActor = actor;
-        return Task.FromResult(new BusinessConsoleRecordProductionReportResponse("report-001", "PR-001"));
+        return Task.FromResult(new BusinessConsoleRecordProductionReportResponse("report-001", "PR-001", []));
     }
 
     public Task<BusinessConsoleAcceptedResponse> RecordDefectAsync(

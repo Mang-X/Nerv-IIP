@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
@@ -566,7 +567,8 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
                         reportedAtUtc,
                         "rework-trace:report",
                         ProducedLotNo: "LOT-001",
-                        SerialNo: "SN-001",
+                        SerialTrackingPolicy: ProductionSerialTrackingPolicies.OnProduction,
+                        SerialNumbers: ["SN-001"],
                         ReportedBy: "operator-rework"),
                     CancellationToken.None);
             await db.SaveChangesAsync();

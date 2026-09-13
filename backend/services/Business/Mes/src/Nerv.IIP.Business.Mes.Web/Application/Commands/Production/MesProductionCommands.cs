@@ -18,7 +18,10 @@ using NetCorePal.Extensions.Repository;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 
-public sealed record ProductionReportCommandResult(ProductionReportId Id, string ReportNo);
+public sealed record ProductionReportCommandResult(
+    ProductionReportId Id,
+    string ReportNo,
+    IReadOnlyCollection<string> SerialNumbers);
 
 public sealed record ReverseProductionReportCommandResult(ProductionReportId Id, string ReportNo, string OriginalReportNo);
 
@@ -45,7 +48,8 @@ public sealed record RecordProductionReportCommand(
     string? ScrapReasonCode = null,
     string? DefectRecordNo = null,
     string? ProducedLotNo = null,
-    string? SerialNo = null,
+    string SerialTrackingPolicy = ProductionSerialTrackingPolicies.None,
+    IReadOnlyCollection<string>? SerialNumbers = null,
     string Source = "manual",
     // 操作人由前线 HTTP 边界从已认证 principal 注入，不由业务载荷携带。
     string? ReportedBy = null) : ICommand<ProductionReportCommandResult>, IOperationTaskConcurrencyRetryCommand
@@ -70,7 +74,8 @@ public sealed record RecordProductionReportCommand(
         string? ScrapReasonCode = null,
         string? DefectRecordNo = null,
         string? ProducedLotNo = null,
-        string? SerialNo = null,
+        string SerialTrackingPolicy = ProductionSerialTrackingPolicies.None,
+        IReadOnlyCollection<string>? SerialNumbers = null,
         string Source = "manual",
         string? ReportedBy = null)
         : this(
@@ -98,7 +103,8 @@ public sealed record RecordProductionReportCommand(
             ScrapReasonCode,
             DefectRecordNo,
             ProducedLotNo,
-            SerialNo,
+            SerialTrackingPolicy,
+            SerialNumbers,
             Source,
             ReportedBy)
     {
@@ -150,6 +156,11 @@ public sealed class RecordProductionReportCommandHandler(
 
     public async Task<ProductionReportCommandResult> Handle(RecordProductionReportCommand request, CancellationToken cancellationToken)
     {
+        var serialAssignment = MesDomainRuleGuard.Enforce(() => ProductionReportSerialNumberAssignment.Create(
+            request.SerialTrackingPolicy,
+            request.GoodQuantity,
+            request.SerialNumbers));
+
         var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
             request.EnvironmentId, "production-report",
@@ -166,7 +177,8 @@ public sealed class RecordProductionReportCommandHandler(
                 request.ScrapReasonCode,
                 request.DefectRecordNo,
                 request.ProducedLotNo,
-                request.SerialNo,
+                serialAssignment.SerialTrackingPolicy,
+                SerialNumbersFingerprint(serialAssignment.SerialNumbers),
                 request.Source,
                 ConsumedMaterialLotsFingerprint(request.ConsumedMaterialLots)),
             cancellationToken);
@@ -177,7 +189,33 @@ public sealed class RecordProductionReportCommandHandler(
                     x.EnvironmentId == request.EnvironmentId &&
                     x.ReportNo == allocation.Code,
                 cancellationToken);
-            return new ProductionReportCommandResult(existing.Id, existing.ReportNo);
+            var existingSerialNumbers = await dbContext.ProductionReportSerialNumbers
+                .AsNoTracking()
+                .Where(x =>
+                    x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    x.ReportNo == existing.ReportNo)
+                .OrderBy(x => x.SequenceNo)
+                .Select(x => x.SerialNumber)
+                .ToArrayAsync(cancellationToken);
+            return new ProductionReportCommandResult(existing.Id, existing.ReportNo, existingSerialNumbers);
+        }
+
+        var normalizedSerialNumbers = serialAssignment.SerialNumbers;
+        if (normalizedSerialNumbers.Count > 0)
+        {
+            var conflictingSerialNumber = await dbContext.ProductionReportSerialNumbers
+                .AsNoTracking()
+                .Where(x =>
+                    x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    normalizedSerialNumbers.Contains(x.SerialNumber))
+                .Select(x => x.SerialNumber)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (conflictingSerialNumber is not null)
+            {
+                throw new KnownException($"生产序列号已被报工占用，SerialNumber = {conflictingSerialNumber}");
+            }
         }
 
         var workOrder = await dbContext.WorkOrders.SingleOrDefaultAsync(
@@ -296,7 +334,7 @@ public sealed class RecordProductionReportCommandHandler(
             request.ScrapReasonCode,
             request.DefectRecordNo,
             producedLotNo,
-            request.SerialNo,
+            null,
             oeeProjection,
             request.Source,
             consumedMaterialLots.Count,
@@ -407,11 +445,7 @@ public sealed class RecordProductionReportCommandHandler(
         }
 
         dbContext.ProductionReports.Add(report);
-        if (report.SerialNo is not null)
-        {
-            dbContext.ProductionReportSerialNumbers.AddRange(
-                ProductionReportSerialNumber.CreateForReport(report, [report.SerialNo]));
-        }
+        dbContext.ProductionReportSerialNumbers.AddRange(serialAssignment.CreateFacts(report));
 
         if (request.CompletesOperation)
         {
@@ -455,13 +489,13 @@ public sealed class RecordProductionReportCommandHandler(
                 request.OperationTaskId,
                 report.ReportNo,
                 report.ProducedLotNo!,
-                report.SerialNo,
+                null,
                 request.GoodQuantity,
                 request.ReportedAtUtc));
         }
 
         await Task.CompletedTask;
-        return new ProductionReportCommandResult(report.Id, report.ReportNo);
+        return new ProductionReportCommandResult(report.Id, report.ReportNo, serialAssignment.SerialNumbers);
     }
 
     private static string ConsumedMaterialLotsFingerprint(IReadOnlyCollection<ConsumedMaterialLotInput>? lots)
@@ -472,6 +506,9 @@ public sealed class RecordProductionReportCommandHandler(
                 .Select(x => $"{x.MaterialId.Trim().ToUpperInvariant()}|{x.MaterialLotId.Trim().ToUpperInvariant()}|{x.ConsumedQuantity:0.######}|{x.MaterialIssueRequestNo.Trim().ToUpperInvariant()}")
                 .Order(StringComparer.Ordinal));
     }
+
+    private static string SerialNumbersFingerprint(IReadOnlyList<string> serialNumbers) =>
+        string.Concat(serialNumbers.Select(x => $"{x.Length}:{x}"));
 }
 
 public sealed record ReverseProductionReportCommand(

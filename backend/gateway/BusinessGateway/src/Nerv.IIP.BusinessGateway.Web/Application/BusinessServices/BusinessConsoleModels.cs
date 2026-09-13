@@ -4772,7 +4772,8 @@ public sealed record BusinessConsoleRecordProductionReportRequest(
     string? ScrapReasonCode = null,
     string? DefectRecordNo = null,
     string? ProducedLotNo = null,
-    string? SerialNo = null);
+    string SerialTrackingPolicy = "none",
+    IReadOnlyCollection<string>? SerialNumbers = null);
 
 public sealed record BusinessConsoleConsumedMaterialLotInput(
     string MaterialId,
@@ -4783,6 +4784,7 @@ public sealed record BusinessConsoleConsumedMaterialLotInput(
 public sealed record BusinessConsoleRecordProductionReportResponse(
     string ProductionReportId,
     string ReportNo,
+    IReadOnlyCollection<string> SerialNumbers,
     BusinessConsoleOperationReceipt? OperationReceipt = null);
 
 public sealed record BusinessConsoleMesContextRequest(
@@ -5308,7 +5310,8 @@ public sealed record BusinessConsoleMesProductionReportDetail(
     [property: Description("对应工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
     decimal? OperationActualMachineHours = null,
     [property: Description("提交本条报工的操作人引用；升级前的历史报工为 null。")]
-    string? ReportedBy = null);
+    string? ReportedBy = null,
+    IReadOnlyCollection<string>? SerialNumbers = null);
 
 public sealed record BusinessConsoleMesConsumedMaterialLot(
     string MaterialId,
@@ -5363,7 +5366,8 @@ public sealed record BusinessConsoleMesProductionReportRow(
     [property: Description("对应工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
     decimal? OperationActualMachineHours = null,
     [property: Description("提交本条报工的操作人引用；升级前的历史报工为 null。")]
-    string? ReportedBy = null);
+    string? ReportedBy = null,
+    IReadOnlyCollection<string>? SerialNumbers = null);
 
 public sealed record BusinessConsoleMesRecordDefectRequest(
     string OrganizationId,

@@ -6,6 +6,8 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Web.Application.Queries.Production;
+using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Npgsql;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
@@ -157,6 +159,17 @@ public sealed class ProductionReportSerialNumberPostgresTests
                 .Select(x => new { x.SequenceNo, x.SerialNumber })
                 .ToArrayAsync();
             Assert.Equal([(1, "SN-B"), (2, "SN-A")], reportASerials.Select(x => (x.SequenceNo, x.SerialNumber)));
+
+            var detail = await new GetProductionReportQueryHandler(read).Handle(
+                new GetProductionReportQuery("org-001", "env-dev", "PR-A"),
+                CancellationToken.None);
+            Assert.Equal(["SN-B", "SN-A"], detail.Report.SerialNumbers);
+
+            var trace = await new GetBatchTraceabilityQueryHandler(read).Handle(
+                new GetBatchTraceabilityQuery("org-001", "env-dev", "SN-A"),
+                CancellationToken.None);
+            Assert.Contains(trace.Nodes, x => x.NodeId == "PR-A" && x.NodeType == MesTraceabilityNodeType.ProductionReport);
+            Assert.Contains(trace.Edges, x => x.FromNodeId == "PR-A" && x.ToNodeId == "SN-A" && x.RelationType == "produced-serial");
         }
 
         await using (var duplicate = CreateDbContext(options))

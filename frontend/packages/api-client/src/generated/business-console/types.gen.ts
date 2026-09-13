@@ -4504,6 +4504,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
      * 提交本条报工的操作人引用；升级前的历史报工为 null。
      */
     reportedBy?: string | null;
+    serialNumbers?: Array<string> | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListWithoutStatusRequest = {
@@ -4599,6 +4600,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
      * 提交本条报工的操作人引用；升级前的历史报工为 null。
      */
     reportedBy?: string | null;
+    serialNumbers?: Array<string> | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConsumedMaterialLot = {
@@ -4627,6 +4629,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRecordProduction
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordProductionReportResponse = {
     productionReportId?: string;
     reportNo?: string;
+    serialNumbers?: Array<string>;
     operationReceipt?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOperationReceipt | null;
 };
 
@@ -4647,7 +4650,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     scrapReasonCode?: string | null;
     defectRecordNo?: string | null;
     producedLotNo?: string | null;
-    serialNo?: string | null;
+    serialTrackingPolicy?: string;
+    serialNumbers?: Array<string> | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConsumedMaterialLotInput = {
