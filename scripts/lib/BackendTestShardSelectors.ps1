@@ -331,19 +331,36 @@ function Get-BackendTestShardSelectorTrxResults {
         读取顺序按**完整路径序数排序**固定（`Get-BackendTestShardUniqueSorted` 的默认 Ordinal 比较器），
         所以同一份输入连续跑两次得到的证据集合逐字相同，不随 locale、不随写入顺序变化。
 
-        三处 fail-closed，各自带一条独立的诊断，都在
+        **四支** fail-closed，各自带一条独立的诊断，都在
         scripts/tests/backend-test-shards.Tests.ps1「#3283」一节里有可执行的对照：
 
           1. 结果目录不存在 —— `dotnet test` 连 `--results-directory` 都没写出来。
           2. 目录里一份 TRX 都没有。
-          3. **合并后一条 `UnitTestResult` 都没有** —— 这是本票真正要堵的那一支。TRX 文件存在、
+          3. 某一份 TRX 读不成一份 XML 文档 —— 包含**零字节 `.trx`**：`Get-Content -Raw` 对空文件返回
+             `$null`，`[xml] $null` **不抛**，于是崩点会跑到后面的 `SelectNodes` 上变成
+             `You cannot call a method on a null-valued expression.`。因此这里显式判空，让这一支也落在
+             同一条诊断里，而不是让注释声称的覆盖面宽于实际（#3283 复审点名）。
+          4. **合并后一条 `UnitTestResult` 都没有** —— 这是本票真正要堵的那一支。TRX 文件存在、
              `[xml]` 解析得动、甚至可能带一个空的 `<Results/>`，但没有任何一条执行结果。零结果
              绝不允许悄悄流进下游断言当作「没有不通过的用例」。
 
-        ⚠️ 覆盖边界，声明多少就只断言多少：本函数只保证「目录下所有 TRX 的所有 `UnitTestResult` 都在
-        返回值里」与「零证据必红」。**它不判断这些结果是不是该 selector 的** —— 身份对账是
-        Assert-BackendTestShardSelectorExecution 的职责（`DiscoveredTests` 才是期望集的来源，那一侧
-        由 Assert-BackendTestShardSelectorDiscovery 先行 fail-closed）。聚合只负责把对账的输入补全。
+        ⚠️ 覆盖边界，声明多少就只断言多少。本函数只保证「目录下所有 TRX 的所有 `UnitTestResult` 都在
+        返回值里」与「零证据必红」。三件**它不管**的事，各自说明归谁管：
+
+          * **期望集本身对不对** —— 下游拿来对账的 `DiscoveredTests` 是**同一次运行自己产出的**自洽
+            基线（`--list-tests` 的结果），不是外部冻结基线。因此这条链路证得到「每个被发现的用例都跑
+            过了」，证**不到**「该跑的用例一个没少」：discovery 少发现一条，执行侧也会跟着少一条，两边
+            一致地错。真正的冻结基线在 scripts/test-evidence-policy.json 的 `testIdentities` /
+            `expectedRuntimeTestCount` 上，由 shard 治理门禁与各服务的 *PostgresProfileIdentityTests
+            承担，不在本函数的覆盖面内。
+
+          * **结果属不属于该 selector** —— 归 Assert-BackendTestShardSelectorExecution（`DiscoveredTests`
+            才是期望集的来源，那一侧由 Assert-BackendTestShardSelectorDiscovery 先行 fail-closed）。
+          * **结果属不属于本轮** —— 归**调用点**。本函数收到什么目录就读什么目录，跨轮遗留的 TRX 在它
+            眼里与本轮产物无法区分；`verify-backend-real-postgres-tests.ps1` 因此在每次 `dotnet test`
+            前清空该 selector 的结果目录。⚠️ 这是「契约的适用性在调用点不在函数体」的一个实例：函数级
+            「零证据必红」成立，但只要调用点递进来的是一个跨轮累积的目录，那条守卫在生产路径上就基本
+            不可达（#3283 复审 B3）。不要把它读成「本函数保证了本轮性」。
 
         用 `SelectNodes("//*[local-name()='UnitTestResult']")` 而不是 `.TestRun.Results.UnitTestResult`：
         前者对「缺 `<Results>`」返回空集合而不是抛属性缺失，命名空间也不必硬编码 —— 与
@@ -374,6 +391,12 @@ function Get-BackendTestShardSelectorTrxResults {
         $document = $null
         try {
             $document = [xml] (Get-Content -LiteralPath $trxPath -Raw)
+            if ($null -eq $document -or $null -eq $document.DocumentElement) {
+                # 零字节 / 只有空白的 .trx：`[xml] $null` 不抛，不在这里判空的话崩点会漂到下面的
+                # SelectNodes 上，报成一条与 TRX 无关的 `You cannot call a method on a null-valued
+                # expression.`。判空让它落回本分支自己的诊断。
+                throw 'the document is empty.'
+            }
         }
         catch {
             # 解析失败不能降级成「这一份没有结果」而继续聚合：那会把一份损坏的证据算成零贡献，

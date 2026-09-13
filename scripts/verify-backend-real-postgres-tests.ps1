@@ -81,16 +81,31 @@ foreach ($shard in $ownedShards) {
 
         $selectorSlug = ($selector -replace '[^A-Za-z0-9._-]', '_')
         $selectorDirectory = Join-Path $resultsRoot $selectorSlug
+        # #3283：结果目录必须是 **run-scoped** 的。`artifacts/real-postgres-tests/**` 没有任何一处会清理
+        # （全仓只有 .gitignore 忽略它），而下面读证据的口径是「目录下全部 TRX 的合并」——两件事撞在一起，
+        # 上一轮留下的 Passed TRX 就会被这一轮当成自己的执行证据，于是「本轮一个用例都没跑」也能放行。
+        #
+        # ⚠️ 这一条不是聚合带来的新风险的全部，而是**聚合拿掉了一个偶然的保护**：改之前按 mtime 取最新
+        # 那一份，虽然选哪一份不确定，但「最新」天然属于本轮（本轮必写至少一份 TRX）。换成聚合后本轮性
+        # 不再是副产品，必须显式声明。失败方向也因此被摆正：清空之后「本轮没有执行证据」会红，而不是
+        # 悄悄复用上一轮的绿。scripts/tests/backend-test-shards.Tests.ps1 用一份预置的旧 TRX 端到端钉住。
+        if (Test-Path -LiteralPath $selectorDirectory) {
+            Remove-Item -LiteralPath $selectorDirectory -Recurse -Force
+        }
         New-Item -ItemType Directory -Force -Path $selectorDirectory | Out-Null
         Invoke-DotNetOutput -Name "backend-real-postgres-execution-$($shard.id)" -WorkingDirectory $repositoryRoot -TimeoutSeconds $TimeoutSeconds -Arguments @(
             'test', [string] $shard.solutionFilter, '--configuration', 'Release', '--filter', "FullyQualifiedName~$selector",
             '--logger', "trx;LogFilePrefix=$selectorSlug", '--results-directory', $selectorDirectory
         ) | Out-Null
-        # #3283：证据是**目录下全部 TRX 的合并结果**，不是其中按 mtime 最新的那一份。
+        # #3283：证据是**上面这个 run-scoped 目录下全部 TRX 的合并结果**，不是其中按 mtime 最新的那一份。
         # `dotnet test <slnf>` 给 slnf 里每个项目各写一份 TRX，绝大多数是 0 结果空壳；挑哪一份取决于
-        # 文件系统写入先后，两次运行会停在不同的 selector 上。归因与 fail-closed 的三个分支写在
-        # Get-BackendTestShardSelectorTrxResults 的函数注释里，这里不复述。调用方在类型上不再持有
-        # 「某一份 TRX」这个中间物，按 mtime 挑选的形状在这一层已无从表达。
+        # 文件系统写入先后，两次运行会停在不同的 selector 上。归因与四支 fail-closed 写在
+        # scripts/lib/BackendTestShardSelectors.ps1 里聚合读取函数的注释里，这里不复述。
+        #
+        # ⚠️ 这一行的正确性**不靠本注释、也不靠任何源码文本断言**守住：把它改回 pre-PR 的
+        # 「mtime 取单份 + [xml] + .TestRun.Results.UnitTestResult」会让 backend-test-shards.Tests.ps1
+        # 里那两条用 dotnet shim 端到端跑本脚本的用例转红（#3283 复审 B1：只比对源码子串的断言会被
+        # 同文件的一句注释缴械，因此已删除）。
         $results = @(Get-BackendTestShardSelectorTrxResults -Selector $selector -ResultsDirectory $selectorDirectory)
         Assert-BackendTestShardSelectorExecution -Selector $selector -DiscoveredTests $discovered -TrxResults $results
     }
