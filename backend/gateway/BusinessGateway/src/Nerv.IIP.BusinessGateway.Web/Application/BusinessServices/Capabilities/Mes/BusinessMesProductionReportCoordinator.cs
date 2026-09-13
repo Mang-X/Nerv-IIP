@@ -37,15 +37,11 @@ public sealed class BusinessMesProductionReportCoordinator(
         string actor,
         CancellationToken cancellationToken)
     {
-        var reportIntentFingerprint = string.IsNullOrWhiteSpace(request.LabelTemplateId)
-            ? null
-            : CreateReportIntentFingerprint(request);
-        var existingBatch = reportIntentFingerprint is null
-            ? null
-            : await FindExistingBatchAsync(
-                internalBearerToken,
-                request,
-                cancellationToken);
+        var reportIntentFingerprint = CreateReportIntentFingerprint(request);
+        var existingBatch = await FindExistingBatchAsync(
+            internalBearerToken,
+            request,
+            cancellationToken);
         if (existingBatch is not null)
         {
             return await RecordSerialReportAsync(
@@ -53,7 +49,7 @@ public sealed class BusinessMesProductionReportCoordinator(
                 request,
                 actor,
                 existingBatch,
-                reportIntentFingerprint!,
+                reportIntentFingerprint,
                 cancellationToken);
         }
 
@@ -128,7 +124,7 @@ public sealed class BusinessMesProductionReportCoordinator(
                 request.IdempotencyKey,
                 "{}",
                 quantity,
-                reportIntentFingerprint!),
+                reportIntentFingerprint),
             cancellationToken);
         var batchRequest = new BusinessConsoleBarcodePrintBatchRequest(
             request.OrganizationId,
@@ -144,7 +140,7 @@ public sealed class BusinessMesProductionReportCoordinator(
             request,
             actor,
             reserved,
-            reportIntentFingerprint!,
+            reportIntentFingerprint,
             cancellationToken);
     }
 
@@ -337,7 +333,7 @@ public sealed class BusinessMesProductionReportCoordinator(
             request.ScrapReasonCode,
             request.DefectRecordNo,
             request.ProducedLotNo,
-            request.LabelTemplateId!);
+            request.LabelTemplateId);
         var canonicalJson = JsonSerializer.SerializeToUtf8Bytes(intent);
         return "sha256:" + Convert.ToHexString(SHA256.HashData(canonicalJson)).ToLowerInvariant();
     }
@@ -377,7 +373,7 @@ public sealed class BusinessMesProductionReportCoordinator(
         string? ScrapReasonCode,
         string? DefectRecordNo,
         string? ProducedLotNo,
-        string LabelTemplateId);
+        string? LabelTemplateId);
 
     private sealed record ReportIntentConsumedMaterialLot(
         string MaterialId,

@@ -1898,7 +1898,7 @@ public sealed class RecordBusinessConsoleMesProductionReportEndpoint(
         string bearerToken,
         CancellationToken cancellationToken)
     {
-        await workScopeAuthorizer.EnsureOperationTaskAccessAsync(
+        var operationTask = await workScopeAuthorizer.EnsureOperationTaskAccessAsync(
             AuthorizationResult,
             request.OrganizationId,
             request.EnvironmentId,
@@ -1907,6 +1907,12 @@ public sealed class RecordBusinessConsoleMesProductionReportEndpoint(
             request.ScopeId,
             request.OperationTaskId,
             cancellationToken);
+        if (!string.Equals(operationTask.WorkOrderId, request.WorkOrderId, StringComparison.Ordinal))
+        {
+            throw new BusinessServiceProxyException(
+                System.Net.HttpStatusCode.Forbidden,
+                "work-scope-not-authorized");
+        }
         return await coordinator.RecordAsync(
             tokenProvider.BearerToken,
             request,

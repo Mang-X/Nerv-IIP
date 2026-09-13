@@ -51,6 +51,21 @@ public sealed class BusinessBarcodeLabelLifecycleClientTests
     }
 
     [Fact]
+    public async Task Detail_reads_the_report_intent_fingerprint_from_the_downstream_v2_response()
+    {
+        var handler = new RecordingResponseHandler("""{"success":true,"data":{"printBatch":{"printBatchId":"batch-001","labelTemplateId":"template-001","sourceDocumentType":"work-order","sourceDocumentId":"WO-001","idempotencyKey":"intent-001","reportIntentKey":"intent-001","reportIntentFingerprint":"  opaque:Report-Intent/A  ","requestedQuantity":1,"status":"reserved","printerId":null,"printJobId":null,"failureReason":null,"productionReportId":null,"productionReportNo":null,"items":[]}},"message":"","code":0}""");
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://barcode-label.test") };
+        var client = new HttpBusinessBarcodeLabelClient(httpClient);
+
+        var response = await client.GetPrintBatchAsync(
+            "internal-token",
+            new BusinessConsoleBarcodePrintBatchRequest("org-001", "env-dev", "batch-001"),
+            CancellationToken.None);
+
+        Assert.Equal("  opaque:Report-Intent/A  ", response.PrintBatch.ReportIntentFingerprint);
+    }
+
+    [Fact]
     public async Task Create_forwards_the_optional_report_intent_fingerprint_unchanged()
     {
         var handler = new RecordingResponseHandler("""{"success":true,"data":{"printBatchId":"batch-001"},"message":"","code":0}""");
