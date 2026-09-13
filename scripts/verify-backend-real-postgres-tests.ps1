@@ -89,8 +89,20 @@ foreach ($shard in $ownedShards) {
         # 那一份，虽然选哪一份不确定，但「最新」天然属于本轮（本轮必写至少一份 TRX）。换成聚合后本轮性
         # 不再是副产品，必须显式声明。失败方向也因此被摆正：清空之后「本轮没有执行证据」会红，而不是
         # 悄悄复用上一轮的绿。scripts/tests/backend-test-shards.Tests.ps1 用一份预置的旧 TRX 端到端钉住。
-        if (Test-Path -LiteralPath $selectorDirectory) {
-            Remove-Item -LiteralPath $selectorDirectory -Recurse -Force
+        #
+        # ⚠️ 这条删除动作是本次新增的 blast radius，所以先把它钉在 $resultsRoot 之内再删。
+        # $selectorSlug 的字符类 `[^A-Za-z0-9._-]` **保留 `.`**，于是 `.` 与 `..` 会原样通过，
+        # `Join-Path $resultsRoot '..'` 解析出来就是 artifacts/ 本身。今天不可达——这样的 selector
+        # 还得匹配上 test-evidence-policy.json 某条 rule 的 identity，没有真实 FQN 长那样——
+        # 所以这条守卫**没有配套用例**（不可达的分支喂不进去），它声明的只是「删除范围有上界」，
+        # 不声明「有人会那么写」。改之前这里没有删除动作、blast radius 为零，这是补回那个零。
+        $resolvedSelectorDirectory = [IO.Path]::GetFullPath($selectorDirectory)
+        $resolvedResultsRoot = [IO.Path]::GetFullPath($resultsRoot + [IO.Path]::DirectorySeparatorChar)
+        if (-not $resolvedSelectorDirectory.StartsWith($resolvedResultsRoot, [StringComparison]::Ordinal)) {
+            throw "Real PostgreSQL selector '$selector' resolves to '$resolvedSelectorDirectory', which escapes the results root '$resolvedResultsRoot'; refusing to clear it."
+        }
+        if (Test-Path -LiteralPath $resolvedSelectorDirectory) {
+            Remove-Item -LiteralPath $resolvedSelectorDirectory -Recurse -Force
         }
         New-Item -ItemType Directory -Force -Path $selectorDirectory | Out-Null
         Invoke-DotNetOutput -Name "backend-real-postgres-execution-$($shard.id)" -WorkingDirectory $repositoryRoot -TimeoutSeconds $TimeoutSeconds -Arguments @(

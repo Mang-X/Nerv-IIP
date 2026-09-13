@@ -1077,10 +1077,12 @@ Set-Content -LiteralPath $aggregateShellEmptyResultsPath -NoNewline -Value @'
 # 夹具自检：把「聚合才成立」写成断言，而不是写成注释里的一句话。逐份数 UnitTestResult——序数首尾两份
 # 必须为 0，且没有任何单独一份同时带齐两条身份。任何一条不成立，下面那些「聚合」断言就退化成「不按
 # mtime 选」，而退化是静默的。
+# ⚠️ 这里**没有**排序：顺序由下面的 $aggregateOrdinalNames 用序数比较器给出，首/末元素都取自它。
+# 原来多写了一个 `Sort-Object -Property @{ Expression = { $_ } }`，既多余又是 culture collation，
+# 被 scripts/tests/ordinal-comparison-layers.Tests.ps1 判红（#3283 复审 N-B1）。
 $aggregatePerFileCounts = @(
     Get-ChildItem -LiteralPath $aggregateTrxDirectory -Filter '*.trx' -File |
         ForEach-Object { [string] $_.FullName } |
-        Sort-Object -Property @{ Expression = { $_ } } |
         ForEach-Object {
             $document = [xml] (Get-Content -LiteralPath $_ -Raw)
             [pscustomobject]@{ Name = [System.IO.Path]::GetFileName($_); Count = @($document.SelectNodes("//*[local-name()='UnitTestResult']")).Count }
@@ -1111,6 +1113,8 @@ function Set-AggregateTrxWriteTimes {
 }
 
 function Get-AggregateTrxNewestName {
+    # 这里的 `Sort-Object` 排的是 DateTime，不是标识符，所以不属于 ordinal-comparison-layers 管的那一类；
+    # 而且「按 mtime 排出最新那份」正是被测对象本身，换成序数 helper 就把用例改没了。
     return [string] (Get-ChildItem -LiteralPath $aggregateTrxDirectory -Filter '*.trx' -File |
         Sort-Object LastWriteTimeUtc -Descending |
         Select-Object -First 1).Name
@@ -1228,8 +1232,25 @@ Assert-Contract (-not $aggregateMissingDirectoryText.Contains('Cannot find path'
 # 做法：把 `dotnet` 换成一个 PATH 上的 shim，真正**运行生产脚本本体**。真库 lane 是 opt-in、不进 CI，
 # 所以这是它唯一可能拿到的自动化行为覆盖。shim 只做两件事：`--list-tests` 打印冻结身份；执行调用把
 # 一个夹具目录里的 TRX 复制进 `--results-directory`，并按序数文件名递增设置 mtime（于是**最新那份是
-# 空壳**）。选择器取 test-evidence-policy.json 里 requiredLane=postgres 的真实 rule 身份，因为脚本会
-# 用 `$PSScriptRoot` 硬编码地加载那份 policy，不接受替身。
+# 空壳**）。
+#
+# 「shim 被绕过」在构造上不可能表现为绿：manifest 里的 `solutionFilter` 是一个**故意不存在**的路径
+# `backend/shim-does-not-need-to-exist.slnf`，真 `dotnet` 碰它必以 MSB1009 失败。所以这不需要一句
+# 「shim 一定会生效」的注释来保证（本机变异实测：不把 shim 放上 PATH ⇒ 红）。
+#
+# ⚠️ **与 test-evidence-policy.json 的耦合**：选择器取的是真实规则 `testing-postgres-lifecycle` 的两条
+# 冻结身份（该规则 `expectedRuntimeTestCount: 2`）。必须用真身份，因为本脚本用 `$PSScriptRoot` 硬编码
+# 加载那份 policy、不接受替身。代价写在这里给排障的人看：**重命名那两个测试会让下面两条契约用例以
+# discovery 报错的形式转红**，那不是 shim 坏了，是身份漂了——同步改 policy 与这里的两个常量即可。
+#
+# ⚠️ **覆盖边界：shim 不是真 `dotnet`。** 它验证的是「本脚本如何解释产物」，不验证 `dotnet test` 的行为。
+# 三条**未建模、也未实测**的差距，逐条列出而不是含糊带过：
+#   1. 真 `dotnet test <slnf>` 在「多数项目零匹配」时的退出码语义；
+#   2. 真 `dotnet test` 是否会往 `--results-directory` 的**子目录**写 TRX —— 也就是说聚合读取用的
+#      `-Recurse` 那一面**至今没有任何用例覆盖**；
+#   3. 真 TRX 带 `<TestDefinitions>` / `<UnitTest id>` / `testId`，shim 的**不带**。当前读法只用
+#      `testName` + `outcome`，所以覆盖是完整的；但同仓 FullChainTestLane.ps1 / PostgresTestLane.ps1
+#      走的是 `testId → TestMethod` 映射，**若将来本函数改成那种读法，这套夹具会太薄而假绿**。
 $realPostgresVerifyPath = Join-Path $repoRoot 'scripts/verify-backend-real-postgres-tests.ps1'
 $shimSelector = 'Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests'
 $shimIdentityOne = "$shimSelector.Initializer_failure_drops_database_and_redacts_diagnostics"
@@ -1293,9 +1314,15 @@ $target = $argumentList[$resultsIndex + 1]
 New-Item -ItemType Directory -Path $target -Force | Out-Null
 $stamp = [datetime]::new(2026, 1, 1, 0, 0, 0, [DateTimeKind]::Utc)
 $offset = 0
-foreach ($source in @(Get-ChildItem -LiteralPath $env:NERV_IIP_SHIM_TRX_SOURCE -Filter '*.trx' -File | Sort-Object -Property Name)) {
-    $copied = Join-Path $target $source.Name
-    Copy-Item -LiteralPath $source.FullName -Destination $copied -Force
+# 序数排序，不是 `Sort-Object -Property Name`。这一行住在 here-string 里，
+# ordinal-comparison-layers 的扫描面看不见它——#3283 复审点名的正是这个形状：审核按「发现位置」
+# 点名、门禁按「扫描面」判定，两者不是同一集合，只改被扫到的那一处等于没改同族问题。
+# 这里不能复用仓库 helper：shim 在一个裸 pwsh 进程里跑，没有 dot-source 任何库。
+$sourceNames = [string[]] @(Get-ChildItem -LiteralPath $env:NERV_IIP_SHIM_TRX_SOURCE -Filter '*.trx' -File | ForEach-Object { [string] $_.Name })
+[Array]::Sort($sourceNames, [StringComparer]::Ordinal)
+foreach ($sourceName in $sourceNames) {
+    $copied = Join-Path $target $sourceName
+    Copy-Item -LiteralPath (Join-Path $env:NERV_IIP_SHIM_TRX_SOURCE $sourceName) -Destination $copied -Force
     # 递增 mtime：序数最后那份（空壳）成为「最新」，于是任何按 mtime 取单份的读法都拿不到结果。
     (Get-Item -LiteralPath $copied).LastWriteTimeUtc = $stamp.AddMinutes($offset)
     $offset++
