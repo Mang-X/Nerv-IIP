@@ -1,4 +1,6 @@
 using System.Net;
+using System.Security.Cryptography;
+using System.Text.Json;
 
 namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
@@ -35,7 +37,10 @@ public sealed class BusinessMesProductionReportCoordinator(
         string actor,
         CancellationToken cancellationToken)
     {
-        var existingBatch = string.IsNullOrWhiteSpace(request.LabelTemplateId)
+        var reportIntentFingerprint = string.IsNullOrWhiteSpace(request.LabelTemplateId)
+            ? null
+            : CreateReportIntentFingerprint(request);
+        var existingBatch = reportIntentFingerprint is null
             ? null
             : await FindExistingBatchAsync(
                 internalBearerToken,
@@ -48,6 +53,7 @@ public sealed class BusinessMesProductionReportCoordinator(
                 request,
                 actor,
                 existingBatch,
+                reportIntentFingerprint!,
                 cancellationToken);
         }
 
@@ -121,7 +127,8 @@ public sealed class BusinessMesProductionReportCoordinator(
                 request.WorkOrderId,
                 request.IdempotencyKey,
                 "{}",
-                quantity),
+                quantity,
+                reportIntentFingerprint!),
             cancellationToken);
         var batchRequest = new BusinessConsoleBarcodePrintBatchRequest(
             request.OrganizationId,
@@ -137,6 +144,7 @@ public sealed class BusinessMesProductionReportCoordinator(
             request,
             actor,
             reserved,
+            reportIntentFingerprint!,
             cancellationToken);
     }
 
@@ -145,10 +153,11 @@ public sealed class BusinessMesProductionReportCoordinator(
         BusinessConsoleRecordProductionReportRequest request,
         string actor,
         BusinessConsoleBarcodePrintBatchDetail reserved,
+        string reportIntentFingerprint,
         CancellationToken cancellationToken)
     {
         var quantity = ProductionSerialQuantity(request.GoodQuantity);
-        var serials = ValidateReservedBatch(reserved, request, quantity);
+        var serials = ValidateReservedBatch(reserved, request, quantity, reportIntentFingerprint);
         var batchRequest = new BusinessConsoleBarcodePrintBatchRequest(
             request.OrganizationId,
             request.EnvironmentId,
@@ -263,7 +272,8 @@ public sealed class BusinessMesProductionReportCoordinator(
     private static IReadOnlyCollection<string> ValidateReservedBatch(
         BusinessConsoleBarcodePrintBatchDetail batch,
         BusinessConsoleRecordProductionReportRequest request,
-        int quantity)
+        int quantity,
+        string reportIntentFingerprint)
     {
         if (!string.Equals(batch.SourceDocumentType, WorkOrderSource, StringComparison.Ordinal) ||
             !string.Equals(batch.SourceDocumentId, request.WorkOrderId, StringComparison.Ordinal) ||
@@ -272,7 +282,8 @@ public sealed class BusinessMesProductionReportCoordinator(
             throw InvalidResponse();
         }
         if (!string.Equals(batch.LabelTemplateId, request.LabelTemplateId, StringComparison.Ordinal) ||
-            batch.RequestedQuantity != quantity)
+            batch.RequestedQuantity != quantity ||
+            !string.Equals(batch.ReportIntentFingerprint, reportIntentFingerprint, StringComparison.Ordinal))
         {
             throw IdempotencyConflict();
         }
@@ -301,6 +312,36 @@ public sealed class BusinessMesProductionReportCoordinator(
         return decimal.ToInt32(goodQuantity);
     }
 
+    private static string CreateReportIntentFingerprint(BusinessConsoleRecordProductionReportRequest request)
+    {
+        var consumedMaterialLots = (request.ConsumedMaterialLots ?? [])
+            .Select(x => new ReportIntentConsumedMaterialLot(
+                x.MaterialId,
+                x.MaterialLotId,
+                x.ConsumedQuantity,
+                x.MaterialIssueRequestNo))
+            .OrderBy(x => x.MaterialId, StringComparer.Ordinal)
+            .ThenBy(x => x.MaterialLotId, StringComparer.Ordinal)
+            .ThenBy(x => x.ConsumedQuantity)
+            .ThenBy(x => x.MaterialIssueRequestNo, StringComparer.Ordinal)
+            .ToArray();
+        var intent = new ReportIntent(
+            request.WorkOrderId,
+            request.OperationTaskId,
+            request.GoodQuantity,
+            request.ScrapQuantity,
+            request.ReworkQuantity,
+            request.CompletesOperation,
+            request.ReportedAtUtc,
+            consumedMaterialLots,
+            request.ScrapReasonCode,
+            request.DefectRecordNo,
+            request.ProducedLotNo,
+            request.LabelTemplateId!);
+        var canonicalJson = JsonSerializer.SerializeToUtf8Bytes(intent);
+        return "sha256:" + Convert.ToHexString(SHA256.HashData(canonicalJson)).ToLowerInvariant();
+    }
+
     private static BusinessConsoleRecordProductionReportRequest AuthoritativeRequest(
         BusinessConsoleRecordProductionReportRequest request,
         string policy,
@@ -323,4 +364,24 @@ public sealed class BusinessMesProductionReportCoordinator(
 
     private static BusinessServiceProxyException InvalidResponse() =>
         BusinessServiceProxyException.FromSafeDownstreamMessage(HttpStatusCode.BadGateway, "downstream-invalid-response");
+
+    private sealed record ReportIntent(
+        string WorkOrderId,
+        string OperationTaskId,
+        decimal GoodQuantity,
+        decimal ScrapQuantity,
+        decimal ReworkQuantity,
+        bool CompletesOperation,
+        DateTimeOffset ReportedAtUtc,
+        IReadOnlyCollection<ReportIntentConsumedMaterialLot> ConsumedMaterialLots,
+        string? ScrapReasonCode,
+        string? DefectRecordNo,
+        string? ProducedLotNo,
+        string LabelTemplateId);
+
+    private sealed record ReportIntentConsumedMaterialLot(
+        string MaterialId,
+        string MaterialLotId,
+        decimal ConsumedQuantity,
+        string MaterialIssueRequestNo);
 }
