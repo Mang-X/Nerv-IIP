@@ -45,6 +45,8 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
 
     public DbSet<ProductionReport> ProductionReports => Set<ProductionReport>();
 
+    public DbSet<ProductionReportSerialNumber> ProductionReportSerialNumbers => Set<ProductionReportSerialNumber>();
+
     public DbSet<ProductionReportLaborAllocation> ProductionReportLaborAllocations => Set<ProductionReportLaborAllocation>();
 
     public DbSet<TelemetryProductionReportCandidate> TelemetryProductionReportCandidates => Set<TelemetryProductionReportCandidate>();

@@ -189,6 +189,14 @@ Quality 数量巡检链路依次引入 `AddPeriodicInspectionQuantityWatermark`�
 2. 中止时索引未创建、数据未改动、迁移历史未写入，旧版本服务可继续运行；这不是执行 `Down` 的授权。`Down` 只删除索引。
 3. 索引创建后，旧版本 MES（只按 `IdempotencyKey` 去重）仍可运行；新版本消费者在同一事务内先赢得两项身份再登记停机与重排，重放死信不会形成第二条停机事实。
 
+### 6.5 BusinessMES 报工单件序列号 migration
+
+`AddMesProductionReportSerialNumbers` 新建 `mes.production_report_serial_numbers`，并将正向报工的非空旧 `production_reports.serial_no` 在 trim 后迁为 `sequence_no=1`。冲销行只通过 `reversed_report_no` 追溯原报工，不重复占用序列号。发布前仍须执行第 2 节的备份、版本冻结与失败停止条件：
+
+1. migration 若发现同一 `organization_id/environment_id` 下两笔正向报工具有相同的 trim 后序列号，会以 SQLSTATE `23000` fail-closed；消息正文按 `OrganizationId / EnvironmentId / SerialNumber / ReportNos` 列出冲突组，且事务回滚，不建表、不改旧报工、不写 migration history。
+2. 不得通过改大小写、补空白、自动加后缀或静默丢弃任一报工来让 migration 通过。运维须逐组核对 BarcodeLabel/生产记录，显式裁决真实归属并走经批准的数据修正或补救 migration，再重跑本 migration。
+3. migration 成功后，旧单值字段继续承担现有 HTTP 兼容契约；新表是后续多序列号报工切片的持久化基础。本 migration 不安装长期双写开关，也不把冲销复制成第二份序列事实。
+
 ## 7. Seed 契约
 
 Seed 是显式步骤，不混入普通 Web 启动。每个 seed 至少声明 `seedName`、`seedVersion`、`ownerService`、幂等规则、输入来源、重复执行结果和敏感信息处理。初始管理员密码、客户端密钥、Connector 凭据不得写入日志。

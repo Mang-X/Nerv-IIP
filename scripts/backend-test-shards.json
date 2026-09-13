@@ -147,6 +147,7 @@
         "Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedHandlerPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedOutboxPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.ProductionReportOeeDimensionSnapshotPostgresTests",
+        "Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.RushWorkOrderHttpPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.TelemetryProductionReportCandidatePostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.WorkOrderCapitalizationConcurrencyPostgresTests",
