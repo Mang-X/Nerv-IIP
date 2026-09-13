@@ -45,6 +45,18 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                 DECLARE
                     duplicate_rows text;
                 BEGIN
+                    -- 与 .NET string.Trim() 对齐：移除 Unicode White_Space 集合中的首尾字符，
+                    -- 不让 tab、NBSP 等历史值绕过空值过滤或 scoped 唯一预检。
+                    WITH normalized_reports AS (
+                        SELECT report.organization_id,
+                               report.environment_id,
+                               report.report_no,
+                               btrim(
+                                   report.serial_no,
+                                   U&'\0009\000A\000B\000C\000D\0020\0085\00A0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200A\2028\2029\202F\205F\3000') COLLATE "C" AS serial_number
+                        FROM mes.production_reports AS report
+                        WHERE report.reversed_report_no IS NULL
+                    )
                     SELECT string_agg(
                                format('%s / %s / %s / %s',
                                       duplicate.organization_id,
@@ -59,14 +71,13 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                     FROM (
                         SELECT report.organization_id COLLATE "C" AS organization_id,
                                report.environment_id COLLATE "C" AS environment_id,
-                               btrim(report.serial_no) COLLATE "C" AS serial_number,
+                               report.serial_number,
                                string_agg(report.report_no, ', ' ORDER BY report.report_no COLLATE "C") AS report_nos
-                        FROM mes.production_reports AS report
-                        WHERE report.reversed_report_no IS NULL
-                          AND NULLIF(btrim(report.serial_no), '') IS NOT NULL
+                        FROM normalized_reports AS report
+                        WHERE NULLIF(report.serial_number, '') IS NOT NULL
                         GROUP BY report.organization_id COLLATE "C",
                                  report.environment_id COLLATE "C",
-                                 btrim(report.serial_no) COLLATE "C"
+                                 report.serial_number
                         HAVING count(*) > 1
                     ) AS duplicate;
 
@@ -78,6 +89,17 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                 END
                 $$;
 
+                WITH normalized_reports AS (
+                    SELECT report.id,
+                           report.organization_id,
+                           report.environment_id,
+                           report.report_no,
+                           btrim(
+                               report.serial_no,
+                               U&'\0009\000A\000B\000C\000D\0020\0085\00A0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200A\2028\2029\202F\205F\3000') AS serial_number
+                    FROM mes.production_reports AS report
+                    WHERE report.reversed_report_no IS NULL
+                )
                 INSERT INTO mes.production_report_serial_numbers
                     (id, organization_id, environment_id, report_no, sequence_no, serial_number)
                 SELECT report.id,
@@ -85,10 +107,9 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                        report.environment_id,
                        report.report_no,
                        1,
-                       btrim(report.serial_no)
-                FROM mes.production_reports AS report
-                WHERE report.reversed_report_no IS NULL
-                  AND NULLIF(btrim(report.serial_no), '') IS NOT NULL;
+                       report.serial_number
+                FROM normalized_reports AS report
+                WHERE NULLIF(report.serial_number, '') IS NOT NULL;
                 """);
 
             migrationBuilder.CreateIndex(

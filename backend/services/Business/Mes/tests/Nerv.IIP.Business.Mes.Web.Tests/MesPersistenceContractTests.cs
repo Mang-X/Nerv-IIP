@@ -3431,7 +3431,8 @@ public sealed class MesPersistenceContractTests
                 "report-rev-001",
                 [new ConsumedMaterialLotInput("MAT-OIL", "LOT-OIL-REV", 3m, "MIR-REV-001")],
                 ReworkQuantity: 2m,
-                ProducedLotNo: "LOT-FG-REV"),
+                ProducedLotNo: "LOT-FG-REV",
+                SerialNo: "  SN-REV-001  "),
             CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
@@ -3478,6 +3479,10 @@ public sealed class MesPersistenceContractTests
         Assert.Equal(-1m, reversalReport.ScrapQuantity);
         Assert.Equal(-2m, reversalReport.ReworkQuantity);
         Assert.Equal(reportResult.ReportNo, reversal.OriginalReportNo);
+
+        var serial = Assert.Single(await dbContext.ProductionReportSerialNumbers.ToArrayAsync());
+        Assert.Equal(reportResult.ReportNo, serial.ReportNo);
+        Assert.Equal("SN-REV-001", serial.SerialNumber);
 
         var netConsumed = await dbContext.ProductionReportMaterialConsumptions
             .Where(x => x.MaterialLotId == "LOT-OIL-REV")

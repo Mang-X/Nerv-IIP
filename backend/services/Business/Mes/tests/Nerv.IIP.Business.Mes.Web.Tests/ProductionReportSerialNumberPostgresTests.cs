@@ -39,9 +39,9 @@ public sealed class ProductionReportSerialNumberPostgresTests
             "operator-1"));
         await db.SaveChangesAsync();
         await db.Database.ExecuteSqlRawAsync("""
-            UPDATE mes.production_reports SET serial_no = '  SN-LEGACY  ' WHERE report_no = 'PR-LEGACY';
+            UPDATE mes.production_reports SET serial_no = E'\tSN-LEGACY\t' WHERE report_no = 'PR-LEGACY';
             UPDATE mes.production_reports SET serial_no = ' SN-LEGACY ' WHERE report_no = 'PR-LEGACY-REV';
-            UPDATE mes.production_reports SET serial_no = '   ' WHERE report_no = 'PR-BLANK';
+            UPDATE mes.production_reports SET serial_no = E'\t\r\n' WHERE report_no = 'PR-BLANK';
             """);
 
         await migrator.MigrateAsync(targetMigration);
@@ -50,7 +50,7 @@ public sealed class ProductionReportSerialNumberPostgresTests
         await migrator.MigrateAsync(PreviousMigration);
         Assert.False(await TableExistsAsync(db));
         Assert.Equal(3, await db.ProductionReports.CountAsync());
-        Assert.Equal("  SN-LEGACY  ", await db.ProductionReports
+        Assert.Equal("\tSN-LEGACY\t", await db.ProductionReports
             .Where(x => x.ReportNo == "PR-LEGACY")
             .Select(x => x.SerialNo)
             .SingleAsync());
@@ -76,7 +76,7 @@ public sealed class ProductionReportSerialNumberPostgresTests
         _ = await SeedReportAsync(db, "org-001", "env-dev", "PR-DUP-B", "SN-DUP");
         await db.SaveChangesAsync();
         await db.Database.ExecuteSqlRawAsync(
-            "UPDATE mes.production_reports SET serial_no = '  SN-DUP  ' WHERE report_no = 'PR-DUP-B'");
+            "UPDATE mes.production_reports SET serial_no = E'\\tSN-DUP\\t' WHERE report_no = 'PR-DUP-B'");
 
         var failure = await Assert.ThrowsAsync<PostgresException>(() => migrator.MigrateAsync(targetMigration));
 
@@ -104,19 +104,49 @@ public sealed class ProductionReportSerialNumberPostgresTests
             _ = await SeedReportAsync(setup, "org-001", "env-other", "PR-C", null);
             _ = await SeedReportAsync(setup, "org-other", "env-dev", "PR-D", null);
             _ = await SeedReportAsync(setup, "org-001", "env-dev", "PR-DUP", null);
+            _ = await SeedReportAsync(setup, "org-001", "env-dev", "PR-CONSTRAINT", null);
             setup.ProductionReportSerialNumbers.AddRange(
                 ProductionReportSerialNumber.CreateForReport(
-                    "org-001", "env-dev", "PR-A", ["SN-B", "SN-A"]));
+                    CreateReport("org-001", "env-dev", "PR-A", null), ["SN-B", "SN-A"]));
             setup.ProductionReportSerialNumbers.Add(
                 ProductionReportSerialNumber.CreateForReport(
-                    "org-001", "env-dev", "PR-B", ["sn-b"])[0]);
+                    CreateReport("org-001", "env-dev", "PR-B", null), ["sn-b"])[0]);
             setup.ProductionReportSerialNumbers.Add(
                 ProductionReportSerialNumber.CreateForReport(
-                    "org-001", "env-other", "PR-C", ["SN-B"])[0]);
+                    CreateReport("org-001", "env-other", "PR-C", null), ["SN-B"])[0]);
             setup.ProductionReportSerialNumbers.Add(
                 ProductionReportSerialNumber.CreateForReport(
-                    "org-other", "env-dev", "PR-D", ["SN-B"])[0]);
+                    CreateReport("org-other", "env-dev", "PR-D", null), ["SN-B"])[0]);
             await setup.SaveChangesAsync();
+        }
+
+        await using (var nonPositiveSequence = CreateDbContext(options))
+        {
+            var failure = await Assert.ThrowsAsync<PostgresException>(() =>
+                nonPositiveSequence.Database.ExecuteSqlInterpolatedAsync($"""
+                    INSERT INTO mes.production_report_serial_numbers
+                        (id, organization_id, environment_id, report_no, sequence_no, serial_number)
+                    VALUES ({Guid.CreateVersion7()}, {"org-001"}, {"env-dev"}, {"PR-CONSTRAINT"}, {0}, {"SN-ZERO"});
+                    """));
+            Assert.Equal(PostgresErrorCodes.CheckViolation, failure.SqlState);
+            Assert.Equal("ck_production_report_serial_numbers_sequence_positive", failure.ConstraintName);
+        }
+
+        await using (var duplicateSequence = CreateDbContext(options))
+        {
+            duplicateSequence.ProductionReportSerialNumbers.AddRange(
+                ProductionReportSerialNumber.CreateForReport(
+                    CreateReport("org-001", "env-dev", "PR-CONSTRAINT", null), ["SN-ONE"]));
+            await duplicateSequence.SaveChangesAsync();
+
+            var failure = await Assert.ThrowsAsync<PostgresException>(() =>
+                duplicateSequence.Database.ExecuteSqlInterpolatedAsync($"""
+                    INSERT INTO mes.production_report_serial_numbers
+                        (id, organization_id, environment_id, report_no, sequence_no, serial_number)
+                    VALUES ({Guid.CreateVersion7()}, {"org-001"}, {"env-dev"}, {"PR-CONSTRAINT"}, {1}, {"SN-TWO"});
+                    """));
+            Assert.Equal(PostgresErrorCodes.UniqueViolation, failure.SqlState);
+            Assert.Equal("ux_production_report_serial_numbers_scope_report_sequence", failure.ConstraintName);
         }
 
         await using (var read = CreateDbContext(options))
@@ -133,7 +163,7 @@ public sealed class ProductionReportSerialNumberPostgresTests
         {
             duplicate.ProductionReportSerialNumbers.Add(
                 ProductionReportSerialNumber.CreateForReport(
-                    "org-001", "env-dev", "PR-DUP", ["SN-B"])[0]);
+                    CreateReport("org-001", "env-dev", "PR-DUP", null), ["SN-B"])[0]);
             var failure = await Assert.ThrowsAsync<DbUpdateException>(() => duplicate.SaveChangesAsync());
             var postgres = Assert.IsType<PostgresException>(failure.InnerException);
             Assert.Equal(PostgresErrorCodes.UniqueViolation, postgres.SqlState);
@@ -144,7 +174,7 @@ public sealed class ProductionReportSerialNumberPostgresTests
         {
             orphan.ProductionReportSerialNumbers.Add(
                 ProductionReportSerialNumber.CreateForReport(
-                    "org-001", "env-dev", "PR-MISSING", ["SN-ORPHAN"])[0]);
+                    CreateReport("org-001", "env-dev", "PR-MISSING", null), ["SN-ORPHAN"])[0]);
             var failure = await Assert.ThrowsAsync<DbUpdateException>(() => orphan.SaveChangesAsync());
             var postgres = Assert.IsType<PostgresException>(failure.InnerException);
             Assert.Equal(PostgresErrorCodes.ForeignKeyViolation, postgres.SqlState);
@@ -162,13 +192,11 @@ public sealed class ProductionReportSerialNumberPostgresTests
         string reportNo,
         string? serialNo)
     {
-        var workOrderId = $"WO-{reportNo}";
-        var operationTaskId = $"OP-{reportNo}";
         var now = DateTimeOffset.Parse("2026-08-30T09:00:00Z");
         db.WorkOrders.Add(WorkOrder.Create(
             organizationId,
             environmentId,
-            workOrderId,
+            $"WO-{reportNo}",
             "SKU-001",
             "PV-001",
             10m,
@@ -177,8 +205,8 @@ public sealed class ProductionReportSerialNumberPostgresTests
         db.OperationTasks.Add(OperationTask.Create(
             organizationId,
             environmentId,
-            workOrderId,
-            operationTaskId,
+            $"WO-{reportNo}",
+            $"OP-{reportNo}",
             OperationTaskLifecycleStatus.InProgress,
             10,
             "WC-001",
@@ -188,21 +216,28 @@ public sealed class ProductionReportSerialNumberPostgresTests
             now,
             null,
             "SKU-001"));
-        var report = ProductionReport.Record(
-            organizationId,
-            environmentId,
-            reportNo,
-            workOrderId,
-            operationTaskId,
-            1m,
-            0m,
-            false,
-            now.AddMinutes(20),
-            serialNo: serialNo);
+        var report = CreateReport(organizationId, environmentId, reportNo, serialNo);
         db.ProductionReports.Add(report);
         await db.SaveChangesAsync();
         return report;
     }
+
+    private static ProductionReport CreateReport(
+        string organizationId,
+        string environmentId,
+        string reportNo,
+        string? serialNo) =>
+        ProductionReport.Record(
+            organizationId,
+            environmentId,
+            reportNo,
+            $"WO-{reportNo}",
+            $"OP-{reportNo}",
+            1m,
+            0m,
+            false,
+            DateTimeOffset.Parse("2026-08-30T09:20:00Z"),
+            serialNo: serialNo);
 
     private static async Task AssertLegacyBackfillAsync(ApplicationDbContext db)
     {

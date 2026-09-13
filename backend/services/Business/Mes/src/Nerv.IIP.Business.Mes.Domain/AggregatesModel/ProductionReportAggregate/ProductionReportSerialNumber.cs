@@ -35,15 +35,16 @@ public sealed class ProductionReportSerialNumber : Entity<ProductionReportSerial
     public string SerialNumber { get; private set; } = string.Empty;
 
     public static IReadOnlyList<ProductionReportSerialNumber> CreateForReport(
-        string organizationId,
-        string environmentId,
-        string reportNo,
+        ProductionReport report,
         IReadOnlyList<string> serialNumbers)
     {
+        ArgumentNullException.ThrowIfNull(report);
         ArgumentNullException.ThrowIfNull(serialNumbers);
-        var normalizedOrganizationId = DomainGuard.Required(organizationId, nameof(organizationId));
-        var normalizedEnvironmentId = DomainGuard.Required(environmentId, nameof(environmentId));
-        var normalizedReportNo = DomainGuard.Required(reportNo, nameof(reportNo));
+        if (report.IsReversal)
+        {
+            throw new InvalidOperationException("Reversal production reports cannot own serial assignments.");
+        }
+
         var normalizedSerialNumbers = new HashSet<string>(StringComparer.Ordinal);
         var result = new List<ProductionReportSerialNumber>(serialNumbers.Count);
 
@@ -63,9 +64,9 @@ public sealed class ProductionReportSerialNumber : Entity<ProductionReportSerial
             }
 
             result.Add(new ProductionReportSerialNumber(
-                normalizedOrganizationId,
-                normalizedEnvironmentId,
-                normalizedReportNo,
+                report.OrganizationId,
+                report.EnvironmentId,
+                report.ReportNo,
                 index + 1,
                 serialNumber));
         }

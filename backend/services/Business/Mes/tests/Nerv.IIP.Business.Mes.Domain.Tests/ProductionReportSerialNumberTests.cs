@@ -8,9 +8,7 @@ public sealed class ProductionReportSerialNumberTests
     public void CreateForReport_preserves_barcode_order_and_normalizes_boundaries()
     {
         var serialNumbers = ProductionReportSerialNumber.CreateForReport(
-            "  org-001  ",
-            "  env-dev  ",
-            "  PR-001  ",
+            CreateReport("  org-001  ", "  env-dev  ", "  PR-001  "),
             ["  SN-B  ", "SN-A"]);
 
         Assert.Collection(
@@ -34,9 +32,7 @@ public sealed class ProductionReportSerialNumberTests
     public void CreateForReport_rejects_a_duplicate_after_trimming()
     {
         var failure = Assert.Throws<ArgumentException>(() => ProductionReportSerialNumber.CreateForReport(
-            "org-001",
-            "env-dev",
-            "PR-001",
+            CreateReport(),
             ["SN-001", "  SN-001  "]));
 
         Assert.Equal("serialNumbers", failure.ParamName);
@@ -46,9 +42,7 @@ public sealed class ProductionReportSerialNumberTests
     public void CreateForReport_compares_serial_numbers_with_ordinal_case_sensitivity()
     {
         var serialNumbers = ProductionReportSerialNumber.CreateForReport(
-            "org-001",
-            "env-dev",
-            "PR-001",
+            CreateReport(),
             ["SN-001", "sn-001"]);
 
         Assert.Equal(["SN-001", "sn-001"], serialNumbers.Select(x => x.SerialNumber));
@@ -58,14 +52,49 @@ public sealed class ProductionReportSerialNumberTests
     public void CreateForReport_rejects_blank_or_overlong_serial_numbers()
     {
         Assert.Throws<ArgumentException>(() => ProductionReportSerialNumber.CreateForReport(
-            "org-001",
-            "env-dev",
-            "PR-001",
+            CreateReport(),
             [" "]));
         Assert.Throws<ArgumentOutOfRangeException>(() => ProductionReportSerialNumber.CreateForReport(
+            CreateReport(),
+            [new string('S', ProductionReportSerialNumber.SerialNumberMaxLength + 1)]));
+    }
+
+    [Fact]
+    public void CreateForReport_rejects_a_reversal_owner()
+    {
+        var original = ProductionReport.Record(
             "org-001",
             "env-dev",
             "PR-001",
-            [new string('S', ProductionReportSerialNumber.SerialNumberMaxLength + 1)]));
+            "WO-001",
+            "OP-001",
+            1m,
+            0m,
+            false,
+            DateTimeOffset.Parse("2026-08-30T09:00:00Z"));
+        var reversal = ProductionReport.Reverse(
+            original,
+            "PR-002",
+            DateTimeOffset.Parse("2026-08-30T09:30:00Z"),
+            "wrong report",
+            "operator-1");
+
+        Assert.Throws<InvalidOperationException>(() =>
+            ProductionReportSerialNumber.CreateForReport(reversal, ["SN-001"]));
     }
+
+    private static ProductionReport CreateReport(
+        string organizationId = "org-001",
+        string environmentId = "env-dev",
+        string reportNo = "PR-001") =>
+        ProductionReport.Record(
+            organizationId,
+            environmentId,
+            reportNo,
+            "WO-001",
+            "OP-001",
+            1m,
+            0m,
+            false,
+            DateTimeOffset.Parse("2026-08-30T09:00:00Z"));
 }

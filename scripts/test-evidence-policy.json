@@ -1359,7 +1359,7 @@
     },
     {
       "id": "mes-production-report-serial",
-      "sourceId": "mes-production-report-serial",
+      "sourceId": "mes-production-candidate",
       "classification": "environment-gated",
       "testPattern": "^Nerv\\.IIP\\.Business\\.Mes\\.Web\\.Tests\\.ProductionReportSerialNumberPostgresTests\\..+$",
       "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run real PostgreSQL MES candidate proof\\.$",
