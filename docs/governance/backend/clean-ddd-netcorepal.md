@@ -56,7 +56,7 @@ Application 默认作为 Web 内部应用层目录，不因“Clean Architecture
 3. Query 不改变业务状态；读取模型应显式表达过滤、分页、scope 和稳定排序。
 4. FastEndpoints 路由、鉴权和 metadata 必须在同一 endpoint 的声明方式中保持一致；一旦切换到 `Configure()`，不要把路由与鉴权拆散到第二处。
 5. HTTP 响应沿用仓库统一 `ResponseData<T>` / `.AsResponseData()` 等当前契约基线；强类型 ID 可直接作为请求/响应契约时不要无意义解包再包装。
-6. 新增或修改业务服务公开 HTTP endpoint 时，必须按当前 facade coverage 治理声明 `exposed` / `deferred` / `internal`，并同步对应机器伴随物；M2-I 完成前从 `docs/architecture/api-contract-and-codegen.md` 与 `facade-coverage-matrix.*` 路由。
+6. 新增或修改业务服务公开 HTTP endpoint 时，必须按 [`../api/facade-coverage.md`](../api/facade-coverage.md) 的当前 facade coverage 治理声明 `exposed` / `deferred` / `internal`，并同步 [`../../reference/api/facade-coverage-matrix.json`](../../reference/api/facade-coverage-matrix.json) 等对应机器伴随物；API/OpenAPI/codegen 规则见 [`../api/contracts-and-codegen.md`](../api/contracts-and-codegen.md)。
 7. `KnownException` 的用户可见性与 Gateway 传输遵循 [`../errors/user-visibility.md`](../errors/user-visibility.md)。
 
 ## 事务、领域事件与集成事件

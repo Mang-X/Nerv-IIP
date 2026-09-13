@@ -55,8 +55,9 @@ import {
 import { BUSINESS_DOMAIN_PERMISSIONS, BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 
 /**
- * Business Console navigation model (T-shaped). Source of truth = the capability
- * catalog + current visible scope in docs/architecture/frontend-navigation-map.md.
+ * Business Console navigation model (T-shaped). Current product IA lives in
+ * docs/product/navigation.md; route/page/permission/facade producer navigation lives in
+ * docs/reference/frontend/navigation-map.md. This file is the executable route/menu producer.
  *
  * Only route-ready domains/pages are listed; new large domains must clear the menu
  * upgrade gate before being added here. `requiredPermissions` mirrors the
