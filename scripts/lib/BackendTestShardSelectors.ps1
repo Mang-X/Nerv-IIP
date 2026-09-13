@@ -1,7 +1,7 @@
 # Script-Governance:
 #   Category: library
 #   SideEffects:
-#     - Reads the shard manifest objects and TRX documents its callers hand it
+#     - Reads the shard manifest objects its callers hand it, and the TRX documents under a results directory they name
 #   Writes:
 #     - None
 #   Cleanup:
@@ -307,6 +307,113 @@ function Assert-BackendTestShardSelectorDiscovery {
     }
 
     return $matchedTests
+}
+
+function Get-BackendTestShardSelectorTrxResults {
+    <#
+        一个 selector 的**全部**执行证据：读结果目录下每一份 TRX，合并出 `UnitTestResult` 集合。
+
+        #3283：这里原本是调用方的两行——`Get-ChildItem … | ` 按 `LastWriteTimeUtc` 倒序
+        `| Select-Object -First 1`，再 `[xml]…TestRun.Results.UnitTestResult`。两处都错：
+
+          * **按 mtime 取单份不是身份判据，也不是聚合判据。** 每个 selector 跑的是 `$shard.solutionFilter`
+            （slnf），`dotnet test <slnf>` 给 slnf 里**每个项目各写一份 TRX**（本仓四个 slnf 的项目数
+            12 / 6 / 11 / 37），其中绝大多数是「这个项目没有命中过滤器」的 0 结果空壳。于是「哪一份被
+            选中」取决于文件系统写入完成的先后 —— #3283 观测到同一份代码的两次运行分别停在第 3 个和
+            第 4 个 selector，看起来像随机环境故障，实际是证据选取口径本身不确定。
+          * **空壳 TRX 没有 `<Results>` 节点**，`$trxXml.TestRun.Results` 在 `Set-StrictMode -Version Latest`
+            下抛 `The property 'Results' cannot be found on this object.` —— 一条与被测对象完全无关的
+            报错，把「验证脚本自己坏了」伪装成「真库测试失败了」。
+
+        修法是聚合而不是换一个更聪明的挑选规则：挑选规则再聪明也仍然是挑选，仍然要回答「为什么这一份
+        就是权威的」。聚合不需要回答那个问题 —— 目录里每一份 TRX 的每一条结果都进入对账集合。
+
+        读取顺序按**完整路径序数排序**固定（`Get-BackendTestShardUniqueSorted` 的默认 Ordinal 比较器），
+        所以同一份输入连续跑两次得到的证据集合逐字相同，不随 locale、不随写入顺序变化。
+
+        **四支** fail-closed，各自带一条独立的诊断，都在
+        scripts/tests/backend-test-shards.Tests.ps1「#3283」一节里有可执行的对照：
+
+          1. 结果目录不存在 —— `dotnet test` 连 `--results-directory` 都没写出来。
+          2. 目录里一份 TRX 都没有。
+          3. 某一份 TRX 读不成一份 XML 文档 —— 包含**零字节 `.trx`**：`Get-Content -Raw` 对空文件返回
+             `$null`，`[xml] $null` **不抛**，于是崩点会跑到后面的 `SelectNodes` 上变成
+             `You cannot call a method on a null-valued expression.`。因此这里显式判空，让这一支也落在
+             同一条诊断里，而不是让注释声称的覆盖面宽于实际（#3283 复审点名）。
+          4. **合并后一条 `UnitTestResult` 都没有** —— 这是本票真正要堵的那一支。TRX 文件存在、
+             `[xml]` 解析得动、甚至可能带一个空的 `<Results/>`，但没有任何一条执行结果。零结果
+             绝不允许悄悄流进下游断言当作「没有不通过的用例」。
+
+        ⚠️ 覆盖边界，声明多少就只断言多少。本函数只保证「目录下所有 TRX 的所有 `UnitTestResult` 都在
+        返回值里」与「零证据必红」。三件**它不管**的事，各自说明归谁管：
+
+          * **期望集本身对不对** —— 下游拿来对账的 `DiscoveredTests` 是**同一次运行自己产出的**自洽
+            基线（`--list-tests` 的结果），不是外部冻结基线。因此这条链路证得到「每个被发现的用例都跑
+            过了」，证**不到**「该跑的用例一个没少」：discovery 少发现一条，执行侧也会跟着少一条，两边
+            一致地错。真正的冻结基线在 scripts/test-evidence-policy.json 的 `testIdentities` /
+            `expectedRuntimeTestCount` 上，由 shard 治理门禁与各服务的 *PostgresProfileIdentityTests
+            承担，不在本函数的覆盖面内。
+
+          * **结果属不属于该 selector** —— 归 Assert-BackendTestShardSelectorExecution（`DiscoveredTests`
+            才是期望集的来源，那一侧由 Assert-BackendTestShardSelectorDiscovery 先行 fail-closed）。
+          * **结果属不属于本轮** —— 归**调用点**。本函数收到什么目录就读什么目录，跨轮遗留的 TRX 在它
+            眼里与本轮产物无法区分；`verify-backend-real-postgres-tests.ps1` 因此在每次 `dotnet test`
+            前清空该 selector 的结果目录。⚠️ 这是「契约的适用性在调用点不在函数体」的一个实例：函数级
+            「零证据必红」成立，但只要调用点递进来的是一个跨轮累积的目录，那条守卫在生产路径上就基本
+            不可达（#3283 复审 B3）。不要把它读成「本函数保证了本轮性」。
+
+        用 `SelectNodes("//*[local-name()='UnitTestResult']")` 而不是 `.TestRun.Results.UnitTestResult`：
+        前者对「缺 `<Results>`」返回空集合而不是抛属性缺失，命名空间也不必硬编码 —— 与
+        scripts/lib/FullChainTestLane.ps1 里同族的读法一致。
+    #>
+    param(
+        [Parameter(Mandatory)] [string] $Selector,
+        [Parameter(Mandatory)] [string] $ResultsDirectory
+    )
+
+    if (-not (Test-Path -LiteralPath $ResultsDirectory -PathType Container)) {
+        throw "Real PostgreSQL selector '$Selector' found no executed test evidence: results directory '$ResultsDirectory' does not exist."
+    }
+
+    # `@(...)` 不是装饰：Get-BackendTestShardUniqueSorted 的返回值会被 PowerShell 解包，零个元素时
+    # 得到 $null，紧接着的 `.Count` 在 Set-StrictMode -Version Latest 下抛
+    # `The property 'Count' cannot be found on this object.` —— 又一条把「目录里没有 TRX」伪装成
+    # 「验证脚本自己坏了」的路径。本机实测过：去掉这对括号，空目录那条用例立刻以该异常转红。
+    $trxPaths = @(Get-BackendTestShardUniqueSorted -Values @(
+        Get-ChildItem -LiteralPath $ResultsDirectory -Filter '*.trx' -File -Recurse | ForEach-Object { [string] $_.FullName }
+    ))
+    if ($trxPaths.Count -eq 0) {
+        throw "Real PostgreSQL selector '$Selector' found no executed test evidence: '$ResultsDirectory' contains no TRX file."
+    }
+
+    $results = [System.Collections.Generic.List[object]]::new()
+    foreach ($trxPath in $trxPaths) {
+        $document = $null
+        try {
+            $document = [xml] (Get-Content -LiteralPath $trxPath -Raw)
+            if ($null -eq $document -or $null -eq $document.DocumentElement) {
+                # 零字节 / 只有空白的 .trx：`[xml] $null` 不抛，不在这里判空的话崩点会漂到下面的
+                # SelectNodes 上，报成一条与 TRX 无关的 `You cannot call a method on a null-valued
+                # expression.`。判空让它落回本分支自己的诊断。
+                throw 'the document is empty.'
+            }
+        }
+        catch {
+            # 解析失败不能降级成「这一份没有结果」而继续聚合：那会把一份损坏的证据算成零贡献，
+            # 恰好是本票要堵的「零结果被当成没有失败」的同一个失效方向。
+            throw "Real PostgreSQL selector '$Selector' TRX evidence '$trxPath' is not parseable XML: $($_.Exception.Message)"
+        }
+
+        foreach ($node in @($document.SelectNodes("//*[local-name()='UnitTestResult']"))) {
+            $results.Add($node)
+        }
+    }
+
+    if ($results.Count -eq 0) {
+        throw "Real PostgreSQL selector '$Selector' found no executed test evidence: aggregated $($trxPaths.Count) TRX file(s) under '$ResultsDirectory' and none carries a single UnitTestResult."
+    }
+
+    return @($results)
 }
 
 function Assert-BackendTestShardSelectorExecution {

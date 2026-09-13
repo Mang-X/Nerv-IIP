@@ -102,6 +102,12 @@ try {
             $discovered = @($discovery.Stdout -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $expectedIdentitySet.Contains([string]$_) })
             $memberSummary.discovered = $discovered.Count
             if ($discovered.Count -ne @($member.expectedTestIdentities).Count) { throw "PostgreSQL lane member '$($member.id)' discovery expected $(@($member.expectedTestIdentities).Count) frozen tests but found $($discovered.Count)." }
+            # #3283：结果目录 run-scoped。本 lane 的 TRX 判定是 `if ($trxFiles.Count -ne 1) { throw }`，
+            # 与真库 lane 的聚合口径相反，但**同一个根因**：目录只建不清 ⇒ 本机连跑两轮第二轮会得到
+            # `observed 2` 的假红，而假红与「复用上一轮证据」的假绿是同一件事的两面。
+            if (Test-Path -LiteralPath $memberResultsDirectory) {
+                Remove-Item -LiteralPath $memberResultsDirectory -Recurse -Force
+            }
             [IO.Directory]::CreateDirectory($memberResultsDirectory) | Out-Null
             Invoke-DotNetOutput -Name "postgres-lane-$($member.id)-execution" -WorkingDirectory $repoRoot -TimeoutSeconds $TimeoutSeconds -Arguments @('test', [string]$member.project, '--configuration', 'Release', '--no-restore', '--filter', [string]$member.filter, '--logger', "trx;LogFilePrefix=postgres-$($member.id)", '--results-directory', $memberResultsDirectory) | Out-Null
             $trxResult = Get-NervPostgresTrxResult -ResultsDirectory $memberResultsDirectory -ExpectedTestIdentities @($member.expectedTestIdentities) -AllowInvalid
