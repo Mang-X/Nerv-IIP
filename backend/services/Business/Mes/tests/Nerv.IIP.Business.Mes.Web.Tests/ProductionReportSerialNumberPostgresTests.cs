@@ -2,10 +2,15 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.Coding;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
+using Nerv.IIP.Business.Mes.Web.Application.Errors;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Npgsql;
@@ -90,6 +95,96 @@ public sealed class ProductionReportSerialNumberPostgresTests
         Assert.DoesNotContain(
             await db.Database.GetAppliedMigrationsAsync(),
             migration => migration.EndsWith(TargetMigrationSuffix, StringComparison.Ordinal));
+    }
+
+    [MesRealPostgresFact]
+    public Task Legacy_v1_receipt_without_serial_replays_the_existing_report_through_the_new_handler_on_postgres() =>
+        VerifyLegacyV1ReceiptReplayAsync(null, 1, ProductionSerialTrackingPolicies.None);
+
+    [MesRealPostgresFact]
+    public Task Legacy_v1_receipt_with_single_serial_replays_the_existing_report_through_the_new_handler_on_postgres() =>
+        VerifyLegacyV1ReceiptReplayAsync("  SN-LEGACY  ", 4, " none ");
+
+    private static async Task VerifyLegacyV1ReceiptReplayAsync(
+        string? serialNo,
+        int goodQuantity,
+        string serialTrackingPolicy)
+    {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        var options = MesPostgresLaneDatabase.CreateOptions();
+        var reportNo = serialNo is null ? "PR-UPGRADE-NONE" : "PR-UPGRADE-SERIAL";
+        var idempotencyKey = serialNo is null ? "report-upgrade-none" : "report-upgrade-serial";
+        var producedLotNo = serialNo is null ? "LOT-UPGRADE-NONE" : "LOT-UPGRADE-SERIAL";
+        var reportedAtUtc = DateTimeOffset.Parse("2026-08-30T09:20:00Z");
+        var request = new RecordProductionReportCommand(
+            "org-001",
+            "env-dev",
+            $"WO-{reportNo}",
+            $"OP-{reportNo}",
+            goodQuantity,
+            0m,
+            false,
+            reportedAtUtc,
+            idempotencyKey,
+            ProducedLotNo: producedLotNo,
+            SerialNo: serialNo,
+            SerialTrackingPolicy: serialTrackingPolicy);
+
+        await using (var seed = CreateDbContext(options))
+        {
+            MesPostgresLaneDatabase.AssertUsesGovernedDatabase(seed);
+            await seed.Database.MigrateAsync();
+            var report = await SeedReportAsync(
+                seed,
+                "org-001",
+                "env-dev",
+                reportNo,
+                serialNo,
+                goodQuantity,
+                producedLotNo);
+            if (serialNo is not null)
+            {
+                seed.ProductionReportSerialNumbers.Add(
+                    ProductionReportSerialNumber.CreateForReport(report, [serialNo])[0]);
+            }
+
+            seed.CodeIdempotencyKeys.Add(new CodeIdempotencyKey(
+                request.OrganizationId,
+                request.EnvironmentId,
+                "production-report",
+                request.IdempotencyKey,
+                report.ReportNo,
+                LegacyV1Fingerprint(request),
+                reportedAtUtc));
+            await seed.SaveChangesAsync();
+        }
+
+        var services = new ServiceCollection();
+        services.AddSingleton<IMediator>(new NoopMediator());
+        services.AddMesPostgreSqlPersistence(MesPostgresLaneDatabase.ConnectionString);
+        services.AddScoped<MesCodingService>();
+        await using var provider = services.BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new RecordProductionReportCommandHandler(
+            db,
+            TestProductionReportOeeDimensionSnapshotProvider.Instance,
+            TestMesFirstArticleGate.Allowing,
+            scope.ServiceProvider.GetRequiredService<MesCodingService>());
+
+        var replay = await handler.Handle(request, CancellationToken.None);
+
+        Assert.Equal(reportNo, replay.ReportNo);
+        Assert.Equal(serialNo is null ? [] : [serialNo.Trim()], replay.SerialNumbers);
+        Assert.Equal(1, await db.ProductionReports.CountAsync());
+        Assert.Equal(1, await db.CodeIdempotencyKeys.CountAsync());
+        Assert.Equal(serialNo is null ? 0 : 1, await db.ProductionReportSerialNumbers.CountAsync());
+
+        var changedSerial = request with { SerialNo = "SN-CHANGED" };
+        await Assert.ThrowsAsync<MesIdempotencyConflictException>(() =>
+            handler.Handle(changedSerial, CancellationToken.None));
+        Assert.Equal(1, await db.ProductionReports.CountAsync());
+        Assert.Equal(1, await db.CodeIdempotencyKeys.CountAsync());
     }
 
     [MesRealPostgresFact]
@@ -204,7 +299,9 @@ public sealed class ProductionReportSerialNumberPostgresTests
         string organizationId,
         string environmentId,
         string reportNo,
-        string? serialNo)
+        string? serialNo,
+        decimal goodQuantity = 1m,
+        string? producedLotNo = null)
     {
         var now = DateTimeOffset.Parse("2026-08-30T09:00:00Z");
         db.WorkOrders.Add(WorkOrder.Create(
@@ -230,7 +327,7 @@ public sealed class ProductionReportSerialNumberPostgresTests
             now,
             null,
             "SKU-001"));
-        var report = CreateReport(organizationId, environmentId, reportNo, serialNo);
+        var report = CreateReport(organizationId, environmentId, reportNo, serialNo, goodQuantity, producedLotNo);
         db.ProductionReports.Add(report);
         await db.SaveChangesAsync();
         return report;
@@ -240,18 +337,37 @@ public sealed class ProductionReportSerialNumberPostgresTests
         string organizationId,
         string environmentId,
         string reportNo,
-        string? serialNo) =>
+        string? serialNo,
+        decimal goodQuantity = 1m,
+        string? producedLotNo = null) =>
         ProductionReport.Record(
             organizationId,
             environmentId,
             reportNo,
             $"WO-{reportNo}",
             $"OP-{reportNo}",
-            1m,
+            goodQuantity,
             0m,
             false,
             DateTimeOffset.Parse("2026-08-30T09:20:00Z"),
+            producedLotNo: producedLotNo,
             serialNo: serialNo);
+
+    private static string LegacyV1Fingerprint(RecordProductionReportCommand request) =>
+        MesCodingService.Fingerprint(
+            request.WorkOrderId,
+            request.OperationTaskId,
+            request.GoodQuantity,
+            request.ScrapQuantity,
+            request.ReworkQuantity,
+            request.CompletesOperation,
+            request.ReportedAtUtc,
+            request.ScrapReasonCode,
+            request.DefectRecordNo,
+            request.ProducedLotNo,
+            request.SerialNo,
+            request.Source,
+            string.Empty);
 
     private static async Task AssertLegacyBackfillAsync(ApplicationDbContext db)
     {

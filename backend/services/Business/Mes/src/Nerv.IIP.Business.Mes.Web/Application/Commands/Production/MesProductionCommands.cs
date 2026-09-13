@@ -170,21 +170,7 @@ public sealed class RecordProductionReportCommandHandler(
             request.EnvironmentId, "production-report",
             null,
             request.PersistsCallerIntentReceipt ? request.IdempotencyKey : null,
-            MesCodingService.Fingerprint(
-                request.WorkOrderId,
-                request.OperationTaskId,
-                request.GoodQuantity,
-                request.ScrapQuantity,
-                request.ReworkQuantity,
-                request.CompletesOperation,
-                request.ReportedAtUtc,
-                request.ScrapReasonCode,
-                request.DefectRecordNo,
-                request.ProducedLotNo,
-                serialAssignment.SerialTrackingPolicy,
-                SerialNumbersFingerprint(serialAssignment.SerialNumbers),
-                request.Source,
-                ConsumedMaterialLotsFingerprint(request.ConsumedMaterialLots)),
+            ProductionReportFingerprint(request, serialAssignment),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -509,6 +495,43 @@ public sealed class RecordProductionReportCommandHandler(
             (lots ?? [])
                 .Select(x => $"{x.MaterialId.Trim().ToUpperInvariant()}|{x.MaterialLotId.Trim().ToUpperInvariant()}|{x.ConsumedQuantity:0.######}|{x.MaterialIssueRequestNo.Trim().ToUpperInvariant()}")
                 .Order(StringComparer.Ordinal));
+    }
+
+    private static string ProductionReportFingerprint(
+        RecordProductionReportCommand request,
+        ProductionReportSerialNumberAssignment serialAssignment)
+    {
+        List<object?> parts =
+        [
+            request.WorkOrderId,
+            request.OperationTaskId,
+            request.GoodQuantity,
+            request.ScrapQuantity,
+            request.ReworkQuantity,
+            request.CompletesOperation,
+            request.ReportedAtUtc,
+            request.ScrapReasonCode,
+            request.DefectRecordNo,
+            request.ProducedLotNo,
+        ];
+
+        if (request.SerialNumbers is null &&
+            string.Equals(
+                request.SerialTrackingPolicy.Trim(),
+                ProductionSerialTrackingPolicies.None,
+                StringComparison.Ordinal))
+        {
+            parts.Add(request.SerialNo);
+        }
+        else
+        {
+            parts.Add(serialAssignment.SerialTrackingPolicy);
+            parts.Add(SerialNumbersFingerprint(serialAssignment.SerialNumbers));
+        }
+
+        parts.Add(request.Source);
+        parts.Add(ConsumedMaterialLotsFingerprint(request.ConsumedMaterialLots));
+        return MesCodingService.Fingerprint(parts.ToArray());
     }
 
     private static string SerialNumbersFingerprint(IReadOnlyList<string> serialNumbers) =>
