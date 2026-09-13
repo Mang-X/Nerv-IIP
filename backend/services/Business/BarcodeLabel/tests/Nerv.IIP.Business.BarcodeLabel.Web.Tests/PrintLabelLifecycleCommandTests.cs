@@ -249,7 +249,7 @@ public sealed class PrintLabelLifecycleCommandTests
     {
         var rule = ActiveRule();
         var template = ActiveTemplate();
-        var batch = LabelPrintBatch.Create(
+        var batch = LabelPrintBatch.ReconstituteHistorical(
             "org-001",
             "env-dev",
             rule,

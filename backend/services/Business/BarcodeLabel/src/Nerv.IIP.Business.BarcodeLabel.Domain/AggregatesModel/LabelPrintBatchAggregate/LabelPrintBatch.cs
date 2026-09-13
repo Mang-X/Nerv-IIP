@@ -49,8 +49,7 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
         string sourceDocumentId,
         string idempotencyKey,
         string labelValuesJson,
-        int requestedQuantity,
-        IReadOnlyList<string>? allocatedSerialNumbers)
+        int requestedQuantity)
     {
         Id = new LabelPrintBatchId(Guid.CreateVersion7());
         OrganizationId = BarcodeLabelText.Required(organizationId, nameof(organizationId));
@@ -79,24 +78,6 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
             : requestedQuantity;
         Status = Pending;
         CreatedAtUtc = DateTimeOffset.UtcNow;
-
-        var labelValues = LabelValueInputs.Parse(labelValuesJson);
-        var serialNumbers = allocatedSerialNumbers is null
-            ? null
-            : NormalizeAllocatedSerialNumbers(allocatedSerialNumbers, requestedQuantity);
-        for (var sequence = 1; sequence <= requestedQuantity; sequence++)
-        {
-            var item = serialNumbers is null
-                ? CreateLegacyItem(rule, labelValues, sequence)
-                : CreateAllocatedItem(rule, labelValues, sequence, serialNumbers[sequence - 1]);
-            Items.Add(item);
-            if (!string.IsNullOrWhiteSpace(item.SerialNumber))
-            {
-                EpcisEvents.Add(EpcisEvent.Commissioning(OrganizationId, EnvironmentId, item, SourceDocumentType, SourceDocumentId));
-            }
-        }
-
-        this.AddDomainEvent(new LabelPrintBatchCreatedDomainEvent(this));
     }
 
     public string OrganizationId { get; private set; } = string.Empty;
@@ -122,7 +103,7 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
     public List<LabelPrintItem> Items { get; private set; } = [];
     public List<EpcisEvent> EpcisEvents { get; private set; } = [];
 
-    public static LabelPrintBatch Create(
+    internal static LabelPrintBatch ReconstituteHistorical(
         string organizationId,
         string environmentId,
         BarcodeRule rule,
@@ -135,7 +116,20 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
         int requestedQuantity)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
-        return new LabelPrintBatch(organizationId, environmentId, rule, labelTemplateId, snapshot, sourceDocumentType, sourceDocumentId, idempotencyKey, labelValuesJson, requestedQuantity, null);
+        var batch = new LabelPrintBatch(
+            organizationId,
+            environmentId,
+            rule,
+            labelTemplateId,
+            snapshot,
+            sourceDocumentType,
+            sourceDocumentId,
+            idempotencyKey,
+            labelValuesJson,
+            requestedQuantity);
+        batch.AddHistoricalItems(rule, LabelValueInputs.Parse(labelValuesJson));
+        batch.CompleteCreation();
+        return batch;
     }
 
     public static LabelPrintBatch CreateWithAllocatedSerialNumbers(
@@ -153,7 +147,7 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(allocatedSerialNumbers);
-        return new LabelPrintBatch(
+        var batch = new LabelPrintBatch(
             organizationId,
             environmentId,
             rule,
@@ -163,8 +157,13 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
             sourceDocumentId,
             idempotencyKey,
             labelValuesJson,
-            requestedQuantity,
-            allocatedSerialNumbers);
+            requestedQuantity);
+        batch.AddAllocatedItems(
+            rule,
+            LabelValueInputs.Parse(labelValuesJson),
+            NormalizeAllocatedSerialNumbers(allocatedSerialNumbers, requestedQuantity));
+        batch.CompleteCreation();
+        return batch;
     }
 
     internal static LabelPrintBatch CreateLegacyWithoutReplaySnapshot(
@@ -178,7 +177,20 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
         string labelValuesJson,
         int requestedQuantity)
     {
-        return new LabelPrintBatch(organizationId, environmentId, rule, labelTemplateId, null, sourceDocumentType, sourceDocumentId, idempotencyKey, labelValuesJson, requestedQuantity, null);
+        var batch = new LabelPrintBatch(
+            organizationId,
+            environmentId,
+            rule,
+            labelTemplateId,
+            null,
+            sourceDocumentType,
+            sourceDocumentId,
+            idempotencyKey,
+            labelValuesJson,
+            requestedQuantity);
+        batch.AddHistoricalItems(rule, LabelValueInputs.Parse(labelValuesJson));
+        batch.CompleteCreation();
+        return batch;
     }
 
     public bool HasCompleteReplaySnapshot =>
@@ -460,16 +472,54 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
             ? LabelPrintItem.CreateSerialized(
                 OrganizationId,
                 EnvironmentId,
+                rule.Id,
                 sequence,
                 rule.GenerateGs1Value(SourceDocumentType, labelValues.RequireLotNo(), labelValues.RequireSerialPrefix(), sequence),
                 null)
             : LabelPrintItem.Create(
                 OrganizationId,
                 EnvironmentId,
+                rule.Id,
                 sequence,
                 rule.GenerateValue(SourceDocumentType, SourceDocumentId, sequence),
                 null);
     }
+
+    private void AddHistoricalItems(BarcodeRule rule, LabelValueInputs labelValues)
+    {
+        for (var sequence = 1; sequence <= RequestedQuantity; sequence++)
+        {
+            AddItem(CreateLegacyItem(rule, labelValues, sequence));
+        }
+    }
+
+    private void AddAllocatedItems(
+        BarcodeRule rule,
+        LabelValueInputs labelValues,
+        IReadOnlyList<string> serialNumbers)
+    {
+        for (var sequence = 1; sequence <= RequestedQuantity; sequence++)
+        {
+            AddItem(CreateAllocatedItem(rule, labelValues, sequence, serialNumbers[sequence - 1]));
+        }
+    }
+
+    private void AddItem(LabelPrintItem item)
+    {
+        Items.Add(item);
+        if (!string.IsNullOrWhiteSpace(item.SerialNumber))
+        {
+            EpcisEvents.Add(EpcisEvent.Commissioning(
+                OrganizationId,
+                EnvironmentId,
+                item,
+                SourceDocumentType,
+                SourceDocumentId));
+        }
+    }
+
+    private void CompleteCreation() =>
+        this.AddDomainEvent(new LabelPrintBatchCreatedDomainEvent(this));
 
     private LabelPrintItem CreateAllocatedItem(
         BarcodeRule rule,
@@ -481,12 +531,14 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
             ? LabelPrintItem.CreateSerialized(
                 OrganizationId,
                 EnvironmentId,
+                rule.Id,
                 sequence,
                 rule.GenerateGs1Value(SourceDocumentType, labelValues.RequireLotNo(), serialNumber),
                 null)
             : LabelPrintItem.CreateSerializedPlain(
                 OrganizationId,
                 EnvironmentId,
+                rule.Id,
                 sequence,
                 rule.GenerateSerializedValue(SourceDocumentType, serialNumber),
                 serialNumber,
@@ -534,6 +586,7 @@ public sealed class LabelPrintItem : Entity<LabelPrintItemId>
     private LabelPrintItem(
         string organizationId,
         string environmentId,
+        BarcodeRuleId barcodeRuleId,
         int sequenceNo,
         string labelValue,
         string? fileId,
@@ -545,6 +598,7 @@ public sealed class LabelPrintItem : Entity<LabelPrintItemId>
         Id = new LabelPrintItemId(Guid.CreateVersion7());
         OrganizationId = BarcodeLabelText.Required(organizationId, nameof(organizationId));
         EnvironmentId = BarcodeLabelText.Required(environmentId, nameof(environmentId));
+        BarcodeRuleId = barcodeRuleId ?? throw new ArgumentNullException(nameof(barcodeRuleId));
         SequenceNo = sequenceNo;
         LabelValue = BarcodeLabelText.Required(labelValue, nameof(labelValue));
         FileId = BarcodeLabelText.Optional(fileId);
@@ -559,6 +613,7 @@ public sealed class LabelPrintItem : Entity<LabelPrintItemId>
     public LabelPrintBatchId LabelPrintBatchId { get; private set; } = null!;
     public string OrganizationId { get; private set; } = string.Empty;
     public string EnvironmentId { get; private set; } = string.Empty;
+    public BarcodeRuleId BarcodeRuleId { get; private set; } = null!;
     public int SequenceNo { get; private set; }
     public string LabelValue { get; private set; } = string.Empty;
     public string? FileId { get; private set; }
@@ -575,32 +630,35 @@ public sealed class LabelPrintItem : Entity<LabelPrintItemId>
     internal static LabelPrintItem Create(
         string organizationId,
         string environmentId,
+        BarcodeRuleId barcodeRuleId,
         int sequenceNo,
         string labelValue,
         string? fileId)
     {
-        return new LabelPrintItem(organizationId, environmentId, sequenceNo, labelValue, fileId, null, null, null, null);
+        return new LabelPrintItem(organizationId, environmentId, barcodeRuleId, sequenceNo, labelValue, fileId, null, null, null, null);
     }
 
     internal static LabelPrintItem CreateSerialized(
         string organizationId,
         string environmentId,
+        BarcodeRuleId barcodeRuleId,
         int sequenceNo,
         Gs1BarcodeValue value,
         string? fileId)
     {
-        return new LabelPrintItem(organizationId, environmentId, sequenceNo, value.ToAiString(), fileId, value.Gtin, value.LotNo, value.SerialNumber, value.EpcUri);
+        return new LabelPrintItem(organizationId, environmentId, barcodeRuleId, sequenceNo, value.ToAiString(), fileId, value.Gtin, value.LotNo, value.SerialNumber, value.EpcUri);
     }
 
     internal static LabelPrintItem CreateSerializedPlain(
         string organizationId,
         string environmentId,
+        BarcodeRuleId barcodeRuleId,
         int sequenceNo,
         string labelValue,
         string serialNumber,
         string? fileId)
     {
-        return new LabelPrintItem(organizationId, environmentId, sequenceNo, labelValue, fileId, null, null, serialNumber, null);
+        return new LabelPrintItem(organizationId, environmentId, barcodeRuleId, sequenceNo, labelValue, fileId, null, null, serialNumber, null);
     }
 
     internal void MarkPrinted()

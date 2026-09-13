@@ -405,7 +405,7 @@ public sealed class CreateLabelPrintBatchCommandTests
         {
             AllocationCount++;
             var values = Enumerable.Range(0, quantity)
-                .Select(_ => LabelSerialNumber.Format(barcodeRuleId, ++currentValue, serialNumberLength))
+                .Select(_ => LabelSerialNumber.Format(++currentValue, serialNumberLength))
                 .ToArray();
             return Task.FromResult<IReadOnlyList<string>>(values);
         }

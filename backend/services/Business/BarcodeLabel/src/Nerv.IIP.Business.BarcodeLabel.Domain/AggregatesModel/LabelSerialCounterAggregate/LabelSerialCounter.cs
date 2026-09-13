@@ -1,5 +1,3 @@
-using System.Buffers.Binary;
-using System.Security.Cryptography;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelSerialCounterAggregate;
@@ -20,12 +18,10 @@ public sealed class LabelSerialCounter : Entity<LabelSerialCounterId>, IAggregat
 
 public static class LabelSerialNumber
 {
-    private const int RuleTokenWidth = 9;
     private const string Digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
-    public static string Format(BarcodeRuleId barcodeRuleId, long value, int width)
+    public static string Format(long value, int width)
     {
-        ArgumentNullException.ThrowIfNull(barcodeRuleId);
         if (width < 2)
         {
             throw new ArgumentOutOfRangeException(nameof(width), "Allocated serial width must be at least two characters.");
@@ -36,12 +32,7 @@ public static class LabelSerialNumber
             throw new ArgumentOutOfRangeException(nameof(value), "Serial allocation value must be positive.");
         }
 
-        var ruleTokenWidth = Math.Min(RuleTokenWidth, width / 2);
-        var counterWidth = width - ruleTokenWidth;
-        Span<byte> digest = stackalloc byte[32];
-        SHA256.HashData(barcodeRuleId.Id.ToByteArray(), digest);
-        var ruleTokenValue = BinaryPrimitives.ReadUInt64BigEndian(digest) % Pow62(ruleTokenWidth);
-        return $"{FormatBase62(ruleTokenValue, ruleTokenWidth)}{FormatBase62((ulong)value, counterWidth)}";
+        return FormatBase62((ulong)value, width);
     }
 
     private static string FormatBase62(ulong value, int width)

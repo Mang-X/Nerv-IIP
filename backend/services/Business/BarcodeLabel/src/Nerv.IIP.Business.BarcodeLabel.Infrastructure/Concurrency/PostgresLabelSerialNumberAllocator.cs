@@ -48,7 +48,7 @@ internal sealed class PostgresLabelSerialNumberAllocator(ApplicationDbContext db
         var end = Convert.ToInt64(result, System.Globalization.CultureInfo.InvariantCulture);
         var start = checked(end - quantity + 1);
         return Enumerable.Range(0, quantity)
-            .Select(offset => LabelSerialNumber.Format(barcodeRuleId, checked(start + offset), serialNumberLength))
+            .Select(offset => LabelSerialNumber.Format(checked(start + offset), serialNumberLength))
             .ToArray();
     }
 

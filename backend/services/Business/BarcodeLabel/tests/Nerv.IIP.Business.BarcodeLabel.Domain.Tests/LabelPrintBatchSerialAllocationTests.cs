@@ -9,18 +9,13 @@ namespace Nerv.IIP.Business.BarcodeLabel.Domain.Tests;
 public sealed class LabelPrintBatchSerialAllocationTests
 {
     [Fact]
-    public void Serial_formatter_uses_the_rule_namespace_and_requested_width()
+    public void Serial_formatter_uses_the_requested_width_and_monotonic_value()
     {
-        var firstRule = new BarcodeRuleId(Guid.Parse("00000000-0000-0000-0000-000000000001"));
-        var secondRule = new BarcodeRuleId(Guid.Parse("00000000-0000-0000-0000-000000000002"));
-
-        var first = LabelSerialNumber.Format(firstRule, 1, 11);
-        var next = LabelSerialNumber.Format(firstRule, 2, 11);
-        var otherRule = LabelSerialNumber.Format(secondRule, 1, 11);
+        var first = LabelSerialNumber.Format(1, 11);
+        var next = LabelSerialNumber.Format(2, 11);
 
         Assert.Equal(11, first.Length);
         Assert.True(StringComparer.Ordinal.Compare(first, next) < 0);
-        Assert.NotEqual(first, otherRule);
     }
 
     [Fact]

@@ -269,6 +269,11 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                         .HasColumnName("id")
                         .HasComment("Label print item id.");
 
+                    b.Property<Guid>("BarcodeRuleId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("barcode_rule_id")
+                        .HasComment("Barcode rule id copied from the owning print batch for rule-scoped serial uniqueness.");
+
                     b.Property<DateTimeOffset?>("ConsumedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("consumed_at_utc")
@@ -367,7 +372,7 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
 
                     b.HasIndex("Gtin", "LotNo", "SerialNumber");
 
-                    b.HasIndex("OrganizationId", "EnvironmentId", "SerialNumber")
+                    b.HasIndex("OrganizationId", "EnvironmentId", "BarcodeRuleId", "SerialNumber")
                         .IsUnique()
                         .HasDatabaseName("UX_label_print_items_serial_number")
                         .HasFilter("serial_number IS NOT NULL");
@@ -410,6 +415,8 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                         .HasComment("Organization tenant id that owns the serial allocation scope.");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("BarcodeRuleId");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "BarcodeRuleId")
                         .IsUnique()
@@ -1233,6 +1240,15 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                         .WithMany("Items")
                         .HasForeignKey("LabelPrintBatchId")
                         .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelSerialCounterAggregate.LabelSerialCounter", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate.BarcodeRule", null)
+                        .WithMany()
+                        .HasForeignKey("BarcodeRuleId")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 

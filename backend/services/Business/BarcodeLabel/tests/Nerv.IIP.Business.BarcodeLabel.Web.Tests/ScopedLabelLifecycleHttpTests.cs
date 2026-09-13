@@ -331,7 +331,7 @@ public sealed class ScopedLabelLifecycleHttpTests
             "file-template-001",
             VariableSchemaJson,
             "active");
-        var batch = LabelPrintBatch.Create(
+        var batch = LabelPrintBatch.ReconstituteHistorical(
             organizationId,
             environmentId,
             rule,
