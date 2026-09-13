@@ -63462,6 +63462,12 @@
           "requestedQuantity": {
             "type": "integer",
             "format": "int32"
+          },
+          "reportIntentFingerprint": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 0,
+            "nullable": true
           }
         }
       },
@@ -63571,6 +63577,9 @@
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodePrintBatchDetail": {
         "type": "object",
         "additionalProperties": false,
+        "required": [
+          "reportIntentFingerprint"
+        ],
         "properties": {
           "printBatchId": {
             "type": "string"
@@ -63589,6 +63598,11 @@
           },
           "reportIntentKey": {
             "type": "string"
+          },
+          "reportIntentFingerprint": {
+            "type": "string",
+            "minLength": 1,
+            "nullable": true
           },
           "requestedQuantity": {
             "type": "integer",

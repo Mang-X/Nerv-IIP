@@ -8213,6 +8213,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     idempotencyKey?: string;
     labelValuesJson?: string;
     requestedQuantity?: number;
+    reportIntentFingerprint?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodePrintBatchListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -8254,6 +8255,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleB
     sourceDocumentId?: string;
     idempotencyKey?: string;
     reportIntentKey?: string;
+    reportIntentFingerprint: string | null;
     requestedQuantity?: number;
     status?: string;
     printerId?: string | null;

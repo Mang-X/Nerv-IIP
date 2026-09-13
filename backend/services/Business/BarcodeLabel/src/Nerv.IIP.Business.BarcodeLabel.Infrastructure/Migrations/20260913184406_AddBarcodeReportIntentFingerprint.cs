@@ -14,9 +14,10 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                 name: "report_intent_fingerprint",
                 schema: "barcode",
                 table: "label_print_batches",
-                type: "text",
+                type: "character varying(256)",
+                maxLength: 256,
                 nullable: true,
-                comment: "Opaque canonical MES report-intent fingerprint supplied by the authorized caller; null only for rows created before fingerprint persistence.");
+                comment: "Optional opaque canonical report-intent fingerprint supplied by the authorized caller; null denotes a general non-MES label intent.");
         }
 
         /// <inheritdoc />

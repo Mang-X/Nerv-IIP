@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json.Serialization;
 using MediatR;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -160,9 +161,9 @@ public sealed class BarcodeLabelEndpointContractTests
     }
 
     [Fact]
-    public void Create_validator_rejects_a_blank_report_intent_fingerprint()
+    public void Create_validator_accepts_an_omitted_report_intent_fingerprint_and_rejects_invalid_values()
     {
-        var result = new CreateLabelPrintBatchCommandValidator().Validate(new CreateLabelPrintBatchCommand(
+        var command = new CreateLabelPrintBatchCommand(
             "org-001",
             "env-dev",
             new(Guid.CreateVersion7()),
@@ -171,13 +172,20 @@ public sealed class BarcodeLabelEndpointContractTests
             "report-001",
             "idem-print-001",
             "{}",
-            1)
-        {
-            ReportIntentFingerprint = " ",
-        });
+            1);
+        var validator = new CreateLabelPrintBatchCommandValidator();
 
-        Assert.False(result.IsValid);
-        Assert.Contains(result.Errors, x => SameProperty(
+        Assert.True(validator.Validate(command).IsValid);
+
+        var blank = validator.Validate(command with { ReportIntentFingerprint = " " });
+        Assert.False(blank.IsValid);
+        Assert.Contains(blank.Errors, x => SameProperty(
+            x.PropertyName,
+            nameof(CreateLabelPrintBatchCommand.ReportIntentFingerprint)));
+
+        var overlong = validator.Validate(command with { ReportIntentFingerprint = new string('f', 257) });
+        Assert.False(overlong.IsValid);
+        Assert.Contains(overlong.Errors, x => SameProperty(
             x.PropertyName,
             nameof(CreateLabelPrintBatchCommand.ReportIntentFingerprint)));
     }
@@ -190,8 +198,10 @@ public sealed class BarcodeLabelEndpointContractTests
 
         Assert.NotNull(createProperty);
         Assert.Equal(typeof(string), createProperty.PropertyType);
+        Assert.Empty(createProperty.GetCustomAttributes(typeof(JsonRequiredAttribute), inherit: true));
         Assert.NotNull(detailProperty);
         Assert.Equal(typeof(string), detailProperty.PropertyType);
+        Assert.Single(detailProperty.GetCustomAttributes(typeof(JsonRequiredAttribute), inherit: true));
     }
 
     [Fact]

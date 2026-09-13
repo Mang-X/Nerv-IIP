@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using FastEndpoints;
+using NJsonSchema.Annotations;
 using Nerv.IIP.Contracts.Coding;
 using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.Iam;
@@ -4352,7 +4353,8 @@ public sealed record BusinessConsoleCreateBarcodePrintBatchRequest(
     string SourceDocumentId,
     string IdempotencyKey,
     string LabelValuesJson,
-    int RequestedQuantity);
+    int RequestedQuantity,
+    [property: MaxLength(256)] string? ReportIntentFingerprint = null);
 
 public sealed record BusinessConsoleCreateBarcodePrintBatchResponse(string PrintBatchId);
 
@@ -4394,6 +4396,7 @@ public sealed record BusinessConsoleBarcodePrintBatchDetail(
     string SourceDocumentId,
     string IdempotencyKey,
     string ReportIntentKey,
+    [property: Required, JsonRequired, JsonSchemaExtensionData("nullable", true)] string? ReportIntentFingerprint,
     int RequestedQuantity,
     string Status,
     string? PrinterId,

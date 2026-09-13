@@ -650,6 +650,15 @@ public sealed partial class BarcodeLabelPostgresProfileTests
                 WHERE id = '00000000-0000-0000-0000-000000000511'
                 """).SingleOrDefaultAsync();
             Assert.Null(historicalFingerprint);
+            Assert.Equal(
+                256,
+                await historicalDb.Database.SqlQueryRaw<int>("""
+                    SELECT character_maximum_length::integer AS "Value"
+                    FROM information_schema.columns
+                    WHERE table_schema = 'barcode'
+                      AND table_name = 'label_print_batches'
+                      AND column_name = 'report_intent_fingerprint'
+                    """).SingleAsync());
             Assert.Equal(1, await historicalDb.LabelPrintBatches.CountAsync());
         }
 
@@ -685,6 +694,18 @@ public sealed partial class BarcodeLabelPostgresProfileTests
             createdBatchId = await commandScope.ServiceProvider.GetRequiredService<ISender>().Send(command);
         }
 
+        var generalCommand = command with
+        {
+            SourceDocumentId = "WO-GENERAL-LABEL",
+            IdempotencyKey = "new-general-label-intent",
+            ReportIntentFingerprint = null,
+        };
+        LabelPrintBatchId generalBatchId;
+        await using (var commandScope = provider.CreateAsyncScope())
+        {
+            generalBatchId = await commandScope.ServiceProvider.GetRequiredService<ISender>().Send(generalCommand);
+        }
+
         await using var verificationDb = CreatePostgresDbContext(LaneConnectionString);
         Assert.Equal(
             command.ReportIntentFingerprint,
@@ -699,8 +720,19 @@ public sealed partial class BarcodeLabelPostgresProfileTests
                 "env-fingerprint-migration"),
             CancellationToken.None);
         Assert.Equal(command.ReportIntentFingerprint, scopedDetail.ReportIntentFingerprint);
-        Assert.Equal(2, await verificationDb.LabelPrintBatches.CountAsync());
-        Assert.Equal(1, await verificationDb.LabelPrintItems.CountAsync());
+        var generalDetail = await new GetScopedLabelPrintBatchQueryHandler(verificationDb).Handle(
+            new GetScopedLabelPrintBatchQuery(
+                generalBatchId,
+                "org-fingerprint-migration",
+                "env-fingerprint-migration"),
+            CancellationToken.None);
+        Assert.Null(generalDetail.ReportIntentFingerprint);
+        Assert.Null(await verificationDb.LabelPrintBatches
+            .Where(batch => batch.Id == generalBatchId)
+            .Select(batch => batch.ReportIntentFingerprint)
+            .SingleAsync());
+        Assert.Equal(3, await verificationDb.LabelPrintBatches.CountAsync());
+        Assert.Equal(2, await verificationDb.LabelPrintItems.CountAsync());
     }
 
     [RealPostgresFact]

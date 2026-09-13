@@ -217,9 +217,10 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                         .HasComment("Nullable deterministic renderer contract version; null only for legacy rows.");
 
                     b.Property<string>("ReportIntentFingerprint")
-                        .HasColumnType("text")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
                         .HasColumnName("report_intent_fingerprint")
-                        .HasComment("Opaque canonical MES report-intent fingerprint supplied by the authorized caller; null only for rows created before fingerprint persistence.");
+                        .HasComment("Optional opaque canonical report-intent fingerprint supplied by the authorized caller; null denotes a general non-MES label intent.");
 
                     b.Property<int>("RequestedQuantity")
                         .HasColumnType("integer")

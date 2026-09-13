@@ -6735,7 +6735,32 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpStatusCode.OK, scan.StatusCode);
         Assert.Equal("internal-test-token", barcode.LastInternalToken);
         Assert.Equal("WO-001", barcode.LastPrintBatchRequest?.SourceDocumentId);
+        var fingerprintProperty = typeof(BusinessConsoleCreateBarcodePrintBatchRequest)
+            .GetProperty("ReportIntentFingerprint");
+        Assert.NotNull(fingerprintProperty);
+        Assert.Null(fingerprintProperty.GetValue(barcode.LastPrintBatchRequest));
         Assert.Equal("BC-001", barcode.LastScanRequest?.ScannedValue);
+
+        var fingerprintPrint = await client.PostAsJsonAsync(
+            "/api/business-console/v1/barcode/print-batches?organizationId=org-001&environmentId=env-dev",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                barcodeRuleId = "018f4b87-9a0c-7a6b-9a3a-5fd5825c2df8",
+                labelTemplateId = "018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9",
+                sourceDocumentType = "work-order",
+                sourceDocumentId = "WO-002",
+                idempotencyKey = "print-002",
+                labelValuesJson = "{}",
+                requestedQuantity = 1,
+                reportIntentFingerprint = "  opaque:Report-Intent/A  ",
+            });
+
+        Assert.Equal(HttpStatusCode.OK, fingerprintPrint.StatusCode);
+        Assert.Equal(
+            "  opaque:Report-Intent/A  ",
+            fingerprintProperty.GetValue(barcode.LastPrintBatchRequest));
 
         var rule = await client.PostAsJsonAsync("/api/business-console/v1/barcode/rules?organizationId=org-001&environmentId=env-dev", new
         {
@@ -6778,6 +6803,7 @@ public sealed class BusinessGatewayProxyTests
         using var document = JsonDocument.Parse(payload);
         var detail = document.RootElement.GetProperty("data").GetProperty("printBatch");
         Assert.Equal("print-001", detail.GetProperty("reportIntentKey").GetString());
+        Assert.Equal("opaque:report-intent-a", detail.GetProperty("reportIntentFingerprint").GetString());
         Assert.Equal("printer-01", detail.GetProperty("printerId").GetString());
         Assert.Equal("job-001", detail.GetProperty("printJobId").GetString());
         Assert.Equal("打印结果未知。", detail.GetProperty("failureReason").GetString());
@@ -17748,6 +17774,7 @@ internal sealed class RecordingBarcodeLabelClient : IBusinessBarcodeLabelClient,
                 "WO-001",
                 "print-001",
                 "print-001",
+                "opaque:report-intent-a",
                 1,
                 "delivery-unknown",
                 "printer-01",

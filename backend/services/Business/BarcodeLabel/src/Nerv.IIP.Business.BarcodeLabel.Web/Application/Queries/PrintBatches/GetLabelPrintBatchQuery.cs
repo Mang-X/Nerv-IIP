@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
+using NJsonSchema.Annotations;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
 
@@ -65,7 +68,7 @@ public sealed record ScopedLabelPrintBatchDetail(
     string SourceDocumentId,
     string IdempotencyKey,
     string ReportIntentKey,
-    string? ReportIntentFingerprint,
+    [property: Required, JsonRequired, JsonSchemaExtensionData("nullable", true)] string? ReportIntentFingerprint,
     int RequestedQuantity,
     string Status,
     string? PrinterId,
