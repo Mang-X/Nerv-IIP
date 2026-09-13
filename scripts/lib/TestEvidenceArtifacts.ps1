@@ -94,7 +94,7 @@ function New-NervTestEvidenceSummary {
     #
     # TryParse, not `[int]`: the cast mishandled three shapes a hand-edited JSON file can hold, each in
     # a different way. Which shapes, and why no NumberStyles/culture argument is needed, are in
-    # docs/architecture/test-evidence-governance.md ("Run identity versus per-job environment").
+    # docs/reports/audits/test-evidence-governance-evolution-2026-08.md ("Run identity versus per-job environment").
     elseif (-not (Test-NervHasProperty -Object $Baseline -Name 'schemaVersion') -or
         -not [int]::TryParse([string]$Baseline.schemaVersion, [ref]$baselineSchemaVersion) -or
         $baselineSchemaVersion -notin @(1, 2)) {
@@ -118,7 +118,7 @@ function New-NervTestEvidenceSummary {
     # Known residual, report-only: a baseline holding one row for an assembly while the current run
     # splits that assembly across two lanes compares both current rows against the whole previous
     # measurement, so both deltas overstate the change. Recorded rather than silently tolerated in
-    # docs/architecture/test-evidence-governance.md, "One known report-only artefact".
+    # docs/reports/audits/test-evidence-governance-evolution-2026-08.md, "One known report-only artefact".
     $deltas = @($assemblies | ForEach-Object {
         $current = $_
         $compatible = $null -eq $baselineUnavailableReason

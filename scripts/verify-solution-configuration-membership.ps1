@@ -36,7 +36,7 @@
     The evidence for all of that — the leaked projects, the CI run ids showing the bin/Debug lines
     before and after, why fixing form 1 by hand is what makes form 2 reachable, and how PR-C's
     review reproduced form 2 with a two-project fixture — is written down ONCE, in
-    docs/architecture/backend-ci-build-strategy.md ("PR-C 实际落地的改动"). Read it there rather
+    docs/reports/audits/backend-ci-build-strategy-man-669.md ("PR-C 实际落地的改动"). Read it there rather
     than here: the same argument repeated in four files is an argument that will disagree with
     itself the first time any of it changes.
 
@@ -52,7 +52,7 @@
     There is deliberately no allowlist. A registered exception would be a project knowingly built
     under the wrong configuration, which is not a debt anyone can carry. If a future change
     genuinely needs one, the exemption path is to edit this script (with its contract test) and go
-    through script governance; see docs/architecture/script-automation-governance.md.
+    through script governance; see docs/governance/script-automation.md.
 #>
 
 [CmdletBinding()]
@@ -61,7 +61,7 @@ param(
     # checked — a new solution must not be able to join the repo unchecked. Supplied explicitly only
     # by the contract test, which points the script at throwaway fixture solutions.
     # The backend and Connector Host solutions stay separate by design (see
-    # docs/architecture/repo-layout.md, 放置规则 5); this check reads both and never merges them.
+    # docs/architecture/overview/repo-layout.md, 放置规则 5); this check reads both and never merges them.
     [string[]] $SolutionPath = @(),
 
     [string] $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -90,7 +90,7 @@ function Get-NormalizedFullPath {
 # CI is unaffected either way — a fresh checkout has no worktrees — so this is a local-developer
 # fix, and the gate's meaning must not change with it: everything git tracks is still discovered,
 # including a third solution nobody registered anywhere. The measurements and the weighing of the
-# two candidate fixes are in docs/architecture/backend-ci-build-strategy.md ("走查收尾" 第 4 条);
+# two candidate fixes are in docs/reports/audits/backend-ci-build-strategy-man-669.md ("走查收尾" 第 4 条);
 # they are machine- and moment-specific (how many working copies that checkout happened to have),
 # so they are deliberately not repeated here. (MAN-669 PR-C follow-up, issue #1496.)
 function Select-GitIgnoredPath {
@@ -396,7 +396,7 @@ foreach ($relativeSolution in $solutionPaths) {
 # Findings are written to stdout and the script exits nonzero, the same shape as
 # scripts/check-script-governance.ps1 — deliberately not `throw`, and callers must therefore check
 # the exit code rather than share a `run:` block with another script. Why: see
-# docs/architecture/backend-ci-build-strategy.md ("走查收尾" 第 3 条).
+# docs/reports/audits/backend-ci-build-strategy-man-669.md ("走查收尾" 第 3 条).
 if ($errors.Count -gt 0) {
     Write-Host 'Solution configuration membership failed:'
     foreach ($failure in $errors) {

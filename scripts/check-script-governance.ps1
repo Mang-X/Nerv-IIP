@@ -21,8 +21,8 @@ $ErrorActionPreference = 'Stop'
 
 $allowedCategories = @('check', 'verify', 'generate', 'release-install', 'library')
 
-# Scan boundary (#1509 ruling; the narrative and its rationale live in
-# docs/architecture/script-automation-governance.md, "scripts/lib 的治理扫描边界").
+# Scan boundary: current rules live in docs/governance/script-automation.md;
+# the #1509 rationale is in docs/reports/audits/script-automation-governance-evolution-2026-08.md.
 #
 # This used to exclude `scripts/lib/*` wholesale, which meant ForbiddenCommand, DynamicInvocation,
 # ForbiddenProcessStart and even ParseError were simply not enforced on the shared libraries — the
@@ -168,7 +168,7 @@ function Test-IsExempted {
 # The names a library is allowed to invoke with `&`: variables the file itself proves are script
 # blocks, either as a `[scriptblock]`-typed parameter or as a variable assigned a `{ ... }` literal.
 # That is exactly the injected-action seam this repository builds testable libraries out of (see
-# docs/architecture/script-automation-governance.md), and it is provable from the AST — unlike `& $someString`, which is the
+# docs/governance/script-automation.md), and it is provable from the AST — unlike `& $someString`, which is the
 # arbitrary-command hole ForbiddenCommand cannot see. PowerShell variable names are case-insensitive,
 # so the set is too.
 #
