@@ -319,6 +319,14 @@
       "method": "GET",
       "route": "/api/business/v1/barcodes/print-batches/{printBatchId}",
       "operationId": "getBusinessBarcodePrintBatch",
+      "classification": "internal",
+      "rationale": "The legacy unscoped detail remains for rolling compatibility with trusted service callers; BusinessGateway exposes only the scoped v2 detail."
+    },
+    {
+      "service": "BarcodeLabel",
+      "method": "GET",
+      "route": "/api/business/v2/barcodes/print-batches/{printBatchId}",
+      "operationId": "getScopedBusinessBarcodePrintBatch",
       "classification": "exposed",
       "gateways": [
         "business"
