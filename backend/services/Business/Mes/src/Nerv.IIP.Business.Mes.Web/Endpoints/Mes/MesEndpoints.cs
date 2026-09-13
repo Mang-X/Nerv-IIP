@@ -119,12 +119,15 @@ public sealed record RecordProductionReportRequest(
     string? DefectRecordNo = null,
     string? ProducedLotNo = null,
     string? SerialNo = null,
+    string SerialTrackingPolicy = ProductionSerialTrackingPolicies.None,
+    IReadOnlyCollection<string>? SerialNumbers = null,
     // 由 BusinessGateway 从已认证 principal 注入的报工操作人；调用方载荷不自带身份。
     string? ReportedBy = null);
 
 public sealed record RecordProductionReportResponse(
     global::Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.ProductionReportId ProductionReportId,
-    string ReportNo);
+    string ReportNo,
+    IReadOnlyCollection<string> SerialNumbers);
 
 public sealed record ReverseProductionReportRequest(
     string OrganizationId,
@@ -1437,9 +1440,11 @@ public sealed class RecordProductionReportEndpoint(ISender sender)
             req.DefectRecordNo,
             req.ProducedLotNo,
             req.SerialNo,
+            req.SerialTrackingPolicy,
+            req.SerialNumbers,
             ReportedBy: req.ReportedBy);
         var result = await sender.Send(command, ct);
-        await Send.OkAsync(new RecordProductionReportResponse(result.Id, result.ReportNo), ct);
+        await Send.OkAsync(new RecordProductionReportResponse(result.Id, result.ReportNo, result.SerialNumbers), ct);
     }
 }
 
@@ -1542,7 +1547,7 @@ public sealed class PromoteTelemetryProductionReportCandidateEndpoint(ISender se
     {
         var result = await sender.Send(new PromoteTelemetryProductionReportCandidateCommand(req.OrganizationId, req.EnvironmentId, req.CandidateId,
             req.WorkOrderId, req.OperationTaskId, req.Actor, req.ConfirmedAtUtc ?? timeProvider.GetUtcNow()), ct);
-        await Send.OkAsync(new(result.Id, result.ReportNo), ct);
+        await Send.OkAsync(new(result.Id, result.ReportNo, result.SerialNumbers), ct);
     }
 }
 
