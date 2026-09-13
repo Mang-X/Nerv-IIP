@@ -6780,10 +6780,12 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("print-001", detail.GetProperty("reportIntentKey").GetString());
         Assert.Equal("printer-01", detail.GetProperty("printerId").GetString());
         Assert.Equal("job-001", detail.GetProperty("printJobId").GetString());
+        Assert.Equal("打印结果未知。", detail.GetProperty("failureReason").GetString());
         Assert.Equal("report-id-001", detail.GetProperty("productionReportId").GetString());
         Assert.Equal("PR-001", detail.GetProperty("productionReportNo").GetString());
         var item = detail.GetProperty("items")[0];
-        Assert.Equal("created", item.GetProperty("status").GetString());
+        Assert.Equal("voided", item.GetProperty("status").GetString());
+        Assert.Equal("标签破损。", item.GetProperty("voidReason").GetString());
         Assert.Equal("00000000001", item.GetProperty("serialNumber").GetString());
         Assert.Equal("LOT-A", item.GetProperty("lotNo").GetString());
         Assert.Equal("09506000134352", item.GetProperty("gtin").GetString());
@@ -17747,18 +17749,18 @@ internal sealed class RecordingBarcodeLabelClient : IBusinessBarcodeLabelClient,
                 "print-001",
                 "print-001",
                 1,
-                "sent-to-printer",
+                "delivery-unknown",
                 "printer-01",
                 "job-001",
-                null,
+                "打印结果未知。",
                 "report-id-001",
                 "PR-001",
                 [new BusinessConsoleBarcodePrintItemDetail(
                     1,
                     "(01)09506000134352(10)LOT-A\u001D(21)00000000001",
                     null,
-                    "created",
-                    null,
+                    "voided",
+                    "标签破损。",
                     "00000000001",
                     "LOT-A",
                     "09506000134352",

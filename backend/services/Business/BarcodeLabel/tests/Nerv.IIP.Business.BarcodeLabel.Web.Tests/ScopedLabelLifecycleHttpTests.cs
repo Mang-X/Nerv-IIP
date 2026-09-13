@@ -71,8 +71,12 @@ public sealed class ScopedLabelLifecycleHttpTests
         });
     }
 
-    [Fact]
-    public async Task Scoped_v2_detail_hides_a_batch_owned_by_another_scope()
+    [Theory]
+    [InlineData("org-other", "env-owner")]
+    [InlineData("org-owner", "env-other")]
+    public async Task Scoped_v2_detail_hides_a_batch_owned_by_another_scope(
+        string organizationId,
+        string environmentId)
     {
         await using var factory = CreateFactory(new RecordingPrinter(LabelPrinterDispatchResult.Sent("unused")));
         var batch = await SeedReservedBatchAsync(factory, "org-owner", "env-owner", "report-intent-owned");
@@ -80,7 +84,7 @@ public sealed class ScopedLabelLifecycleHttpTests
 
         using var response = await client.GetAsync(
             $"/api/business/v2/barcodes/print-batches/{WireId(batch.Id)}" +
-            "?organizationId=org-other&environmentId=env-owner");
+            $"?organizationId={organizationId}&environmentId={environmentId}");
         var body = await response.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -88,6 +92,33 @@ public sealed class ScopedLabelLifecycleHttpTests
         Assert.False(result.RootElement.GetProperty("success").GetBoolean(), body);
         Assert.DoesNotContain(WireId(batch.Id), body, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("report-intent-owned", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Scoped_v2_detail_returns_non_empty_failure_and_void_reasons()
+    {
+        await using var factory = CreateFactory(new RecordingPrinter(LabelPrinterDispatchResult.Sent("unused")));
+        var batch = await SeedGs1BatchAsync(
+            factory,
+            "org-001",
+            "env-dev",
+            "report-intent-failed",
+            failedAndVoided: true);
+        using var client = CreateAuthenticatedClient(factory);
+
+        using var response = await client.GetAsync(
+            $"/api/business/v2/barcodes/print-batches/{WireId(batch.Id)}" +
+            "?organizationId=org-001&environmentId=env-dev");
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var result = JsonDocument.Parse(body);
+        var detail = result.RootElement.GetProperty("data").GetProperty("printBatch");
+        Assert.Equal("failed", detail.GetProperty("status").GetString());
+        Assert.Equal("打印机离线。", detail.GetProperty("failureReason").GetString());
+        var item = detail.GetProperty("items")[0];
+        Assert.Equal("voided", item.GetProperty("status").GetString());
+        Assert.Equal("标签破损。", item.GetProperty("voidReason").GetString());
     }
 
     [Theory]
@@ -587,7 +618,8 @@ public sealed class ScopedLabelLifecycleHttpTests
         WebApplicationFactory<Program> factory,
         string organizationId,
         string environmentId,
-        string reportIntentKey)
+        string reportIntentKey,
+        bool failedAndVoided = false)
     {
         await using var scope = factory.Services.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -628,7 +660,15 @@ public sealed class ScopedLabelLifecycleHttpTests
             2,
             ["00000000001", "00000000002"]);
         batch.Activate("report-id-001", "PR-001");
-        batch.RecordSentToPrinter("printer-01", "job-001");
+        if (failedAndVoided)
+        {
+            batch.VoidItem(1, "标签破损。");
+            batch.RecordPrintFailed("printer-01", "打印机离线。");
+        }
+        else
+        {
+            batch.RecordSentToPrinter("printer-01", "job-001");
+        }
         dbContext.AddRange(rule, template, batch);
         await dbContext.SaveChangesAsync();
         return batch;
