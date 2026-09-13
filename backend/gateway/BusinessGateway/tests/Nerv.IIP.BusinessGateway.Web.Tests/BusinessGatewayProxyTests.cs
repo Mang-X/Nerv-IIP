@@ -4314,6 +4314,7 @@ public sealed class BusinessGatewayProxyTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(0, barcode.CreatePrintBatchCallCount);
+        Assert.Null(barcode.LastPrintBatchListRequest);
         Assert.NotNull(mes.LastRecordProductionReportRequest);
         Assert.Equal(policy, mes.LastRecordProductionReportRequest.SerialTrackingPolicy);
         Assert.Null(mes.LastRecordProductionReportRequest.SerialNo);
@@ -4485,24 +4486,35 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
-    public async Task Same_report_intent_recovers_a_mes_unknown_response_without_allocating_new_serials()
+    public async Task Same_report_intent_recovers_the_committed_mes_report_after_master_data_changes()
     {
         var auth = AllowedOrganizationScope(BusinessGatewayPermissions.MesReportingWrite);
-        var mes = new RecordingMesClient();
-        mes.RecordProductionReportFailures.Enqueue(
-            BusinessServiceProxyException.FromSafeDownstreamMessage(
+        var mes = new RecordingMesClient
+        {
+            CommittedProductionReportBeforeResponseFailure = new BusinessConsoleRecordProductionReportResponse(
+                "report-committed-001",
+                "PR-COMMITTED-001",
+                ["SN-001"]),
+            ProductionReportResponseFailureAfterCommit = BusinessServiceProxyException.FromSafeDownstreamMessage(
                 HttpStatusCode.BadGateway,
-                "downstream-request-failed"));
+                "downstream-request-failed"),
+        };
         var masterData = new RecordingMasterDataClient
         {
             ResourceDetailResponse = new BusinessConsoleMasterDataResourceDetail(
                 "sku", "SKU-001", "Demo SKU", true, "v1", "org-001", "env-dev",
                 SerialTrackingPolicy: "on-production", DefaultBarcodeRuleCode: "FG"),
         };
-        var barcode = new RecordingBarcodeLabelClient();
+        var barcode = new RecordingBarcodeLabelClient
+        {
+            PrintBatchListResponse = new BusinessConsoleBarcodePrintBatchListResponse([], 0),
+        };
         barcode.PrintBatchResponses.Enqueue(ProductionPrintBatch("reserved"));
-        barcode.PrintBatchResponses.Enqueue(ProductionPrintBatch("ready-to-print", "report-001", "PR-001"));
-        barcode.PrintBatchResponses.Enqueue(ProductionPrintBatch("ready-to-print", "report-001", "PR-001"));
+        barcode.PrintBatchResponses.Enqueue(ProductionPrintBatch("reserved"));
+        barcode.PrintBatchResponses.Enqueue(ProductionPrintBatch(
+            "ready-to-print",
+            "report-committed-001",
+            "PR-COMMITTED-001"));
         await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMesClient>();
@@ -4517,18 +4529,37 @@ public sealed class BusinessGatewayProxyTests
         var request = ProductionReportBody(labelTemplateId: "template-001");
 
         var first = await client.PostAsJsonAsync("/api/business-console/v1/mes/production-reports", request);
+
+        masterData.ResourceDetailResponse = new BusinessConsoleMasterDataResourceDetail(
+            "sku", "SKU-001", "Demo SKU", false, "v2", "org-001", "env-dev",
+            SerialTrackingPolicy: "none",
+            DefaultBarcodeRuleCode: "FG-CHANGED");
+        barcode.PrintBatchListResponse = new BusinessConsoleBarcodePrintBatchListResponse(
+            [new BusinessConsoleBarcodePrintBatchItem(
+                "print-batch-001",
+                "template-001",
+                "work-order",
+                "WO-001",
+                "report-serial-001",
+                1,
+                "reserved",
+                DateTimeOffset.Parse("2026-07-29T08:00:00Z"))],
+            1);
         var replay = await client.PostAsJsonAsync("/api/business-console/v1/mes/production-reports", request);
 
         Assert.Equal(HttpStatusCode.BadGateway, first.StatusCode);
         Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
         using var replayDocument = JsonDocument.Parse(await replay.Content.ReadAsStringAsync());
         var replayData = replayDocument.RootElement.GetProperty("data");
-        Assert.Equal("report-001", replayData.GetProperty("productionReportId").GetString());
+        Assert.Equal("report-committed-001", replayData.GetProperty("productionReportId").GetString());
+        Assert.Equal("PR-COMMITTED-001", replayData.GetProperty("reportNo").GetString());
         Assert.Equal("print-batch-001", replayData.GetProperty("printBatchId").GetString());
         Assert.Equal("[\"SN-001\"]", replayData.GetProperty("serialNumbers").GetRawText());
-        Assert.Equal(2, barcode.CreatePrintBatchCallCount);
-        Assert.All(barcode.PrintBatchRequests, x => Assert.Equal("report-serial-001", x.IdempotencyKey));
+        Assert.Equal(1, barcode.CreatePrintBatchCallCount);
+        Assert.Equal("report-serial-001", Assert.Single(barcode.PrintBatchRequests).IdempotencyKey);
+        Assert.Single(masterData.DetailRequests);
         Assert.Equal(2, mes.RecordProductionReportCallCount);
+        Assert.Equal(1, mes.CommittedProductionReportCount);
         Assert.All(mes.RecordProductionReportRequests, x => Assert.Equal(["SN-001"], x.SerialNumbers));
         Assert.Equal(1, barcode.ActivatePrintBatchCallCount);
     }
@@ -18221,6 +18252,8 @@ internal sealed class RecordingBarcodeLabelClient : IBusinessBarcodeLabelClient,
 
     public Queue<BusinessConsoleBarcodePrintBatchResponse> PrintBatchResponses { get; } = new();
 
+    public BusinessConsoleBarcodePrintBatchListResponse? PrintBatchListResponse { get; set; }
+
     public BusinessConsoleActivateBarcodePrintBatchRequest? LastActivateRequest { get; private set; }
 
     public BusinessServiceProxyException? ActivationFailure { get; init; }
@@ -18388,7 +18421,7 @@ internal sealed class RecordingBarcodeLabelClient : IBusinessBarcodeLabelClient,
     {
         LastInternalToken = internalBearerToken;
         LastPrintBatchListRequest = request;
-        return Task.FromResult(new BusinessConsoleBarcodePrintBatchListResponse(
+        return Task.FromResult(PrintBatchListResponse ?? new BusinessConsoleBarcodePrintBatchListResponse(
         [
             new BusinessConsoleBarcodePrintBatchItem("print-batch-001", "template-001", "work-order", request.SourceDocumentId ?? "WO-001", "print-001", 1, "completed", DateTimeOffset.Parse("2026-06-03T01:00:00Z", CultureInfo.InvariantCulture)),
         ], 1));
@@ -19482,7 +19515,9 @@ internal sealed class RecordingMesClient : IBusinessMesClient
     public string? LastRecordProductionReportActor { get; private set; }
     public BusinessConsoleRecordProductionReportRequest? LastRecordProductionReportRequest { get; private set; }
     public BusinessServiceProxyException? RecordProductionReportFailure { get; init; }
-    public Queue<BusinessServiceProxyException> RecordProductionReportFailures { get; } = new();
+    public BusinessConsoleRecordProductionReportResponse? CommittedProductionReportBeforeResponseFailure { get; init; }
+    public BusinessServiceProxyException? ProductionReportResponseFailureAfterCommit { get; init; }
+    public int CommittedProductionReportCount { get; private set; }
     public List<BusinessConsoleRecordProductionReportRequest> RecordProductionReportRequests { get; } = [];
     public int RecordDefectCallCount { get; private set; }
     public int RecordDowntimeCallCount { get; private set; }
@@ -20185,9 +20220,16 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         LastRecordProductionReportActor = actor;
         LastRecordProductionReportRequest = request;
         RecordProductionReportRequests.Add(request);
-        if (RecordProductionReportFailures.TryDequeue(out var failure))
+        if (CommittedProductionReportBeforeResponseFailure is not null)
         {
-            throw failure;
+            if (CommittedProductionReportCount == 0)
+            {
+                CommittedProductionReportCount++;
+                throw ProductionReportResponseFailureAfterCommit
+                    ?? throw new InvalidOperationException("The committed-response failure must be configured.");
+            }
+
+            return Task.FromResult(CommittedProductionReportBeforeResponseFailure);
         }
         if (RecordProductionReportFailure is not null)
         {
