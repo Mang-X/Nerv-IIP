@@ -5,6 +5,62 @@ namespace Nerv.IIP.Business.Mes.Domain.Tests;
 public sealed class ProductionReportSerialNumberTests
 {
     [Fact]
+    public void Assignment_for_on_production_normalizes_order_and_matches_integer_good_quantity()
+    {
+        var assignment = ProductionReportSerialNumberAssignment.Create(
+            "on-production",
+            2m,
+            ["  SN-B  ", "SN-A"]);
+
+        Assert.Equal(["SN-B", "SN-A"], assignment.SerialNumbers);
+        Assert.Empty(ProductionReportSerialNumberAssignment.Create("on-production", 0m, []).SerialNumbers);
+        Assert.Empty(ProductionReportSerialNumberAssignment.Create("on-receipt", 1.5m, []).SerialNumbers);
+    }
+
+    [Fact]
+    public void Assignment_maps_the_legacy_single_serial_wire_without_silently_losing_it()
+    {
+        var assignment = ProductionReportSerialNumberAssignment.Create(
+            ProductionSerialTrackingPolicies.None,
+            4m,
+            null,
+            "  SN-LEGACY-001  ");
+
+        Assert.Equal(ProductionSerialTrackingPolicies.OnProduction, assignment.SerialTrackingPolicy);
+        Assert.Equal(["SN-LEGACY-001"], assignment.SerialNumbers);
+    }
+
+    [Theory]
+    [InlineData("on-production", 1.5, "SN-001")]
+    [InlineData("on-production", 2, "SN-001")]
+    [InlineData("on-production", 1, " ")]
+    [InlineData("on-production", 2, "SN-001| SN-001 ")]
+    [InlineData("none", 1, "SN-001")]
+    [InlineData("on-receipt", 1, "SN-001")]
+    [InlineData("on-shipment", 1, "SN-001")]
+    [InlineData("optional", 1, "SN-001")]
+    public void Assignment_rejects_inputs_that_violate_the_frozen_policy(
+        string policy,
+        decimal goodQuantity,
+        string serializedInputs)
+    {
+        var serialNumbers = serializedInputs.Split('|');
+
+        Assert.Throws<InvalidOperationException>(() =>
+            ProductionReportSerialNumberAssignment.Create(policy, goodQuantity, serialNumbers));
+    }
+
+    [Fact]
+    public void Assignment_rejects_mixing_legacy_and_collection_wires()
+    {
+        Assert.Throws<InvalidOperationException>(() => ProductionReportSerialNumberAssignment.Create(
+            ProductionSerialTrackingPolicies.OnProduction,
+            1m,
+            ["SN-001"],
+            "SN-001"));
+    }
+
+    [Fact]
     public void CreateForReport_preserves_barcode_order_and_normalizes_boundaries()
     {
         var serialNumbers = ProductionReportSerialNumber.CreateForReport(
