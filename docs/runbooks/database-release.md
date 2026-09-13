@@ -197,6 +197,15 @@ Quality 数量巡检链路依次引入 `AddPeriodicInspectionQuantityWatermark`�
 2. 不得通过改大小写、补空白、自动加后缀或静默丢弃任一报工来让 migration 通过。运维须逐组核对 BarcodeLabel/生产记录，显式裁决真实归属并走经批准的数据修正或补救 migration，再重跑本 migration。
 3. migration 成功后，旧单值字段继续承担现有 HTTP 兼容契约；新表是后续多序列号报工切片的持久化基础。本 migration 不安装长期双写开关，也不把冲销复制成第二份序列事实。
 
+### 6.6 BarcodeLabel 打印单件序列号 migration
+
+`AddBarcodeSerialAllocation` 为 `barcode.label_print_items` 回填批次的组织/环境归属，安装 scope 内非空 `serial_number` 唯一索引，并新增持久号段计数器。发布前仍须执行第 2 节的备份、版本冻结与失败停止条件：
+
+1. migration 若发现同一 `organization_id/environment_id` 内存在重复历史序列，会以 SQLSTATE `23000` fail-closed；消息正文逐组列出 `organization / environment / serial_number: item_id@label_print_batch_id`。事务回滚后原行、序列值及 migration history 均保持不变。
+2. 不得自动删除、覆盖、重新编号或给重复值添加后缀。运维须逐项核对实际标签和来源批次，记录真实归属裁决，并通过经批准的数据修正或补救 migration 前滚，再重跑本 migration。
+3. migration 成功后，新批次的普通与 GS1 单件序列均由 BarcodeLabel 号段分配器产生；调用方 `LabelValuesJson` 只承载模板变量及 GS1 lot，不再是序列号来源。已存在且无冲突的历史序列保持原值，历史空值保持为空。
+4. 开始分配新序列后不执行本 migration 的 `Down`：降级会删除号段水位和数据库唯一约束。发布失败时停止新版本服务并优先使用补救 migration 前滚；需要恢复时走第 6 节的批准恢复点。
+
 ## 7. Seed 契约
 
 Seed 是显式步骤，不混入普通 Web 启动。每个 seed 至少声明 `seedName`、`seedVersion`、`ownerService`、幂等规则、输入来源、重复执行结果和敏感信息处理。初始管理员密码、客户端密钥、Connector 凭据不得写入日志。

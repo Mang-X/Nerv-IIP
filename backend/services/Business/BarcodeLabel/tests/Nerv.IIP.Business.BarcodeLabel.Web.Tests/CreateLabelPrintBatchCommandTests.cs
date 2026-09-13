@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelSerialCounterAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.Printing;
 using Nerv.IIP.Business.BarcodeLabel.Infrastructure;
 using Nerv.IIP.Business.BarcodeLabel.Infrastructure.Concurrency;
@@ -78,7 +79,7 @@ public sealed class CreateLabelPrintBatchCommandTests
         var assetPort = ValidAssetPort();
 
         await Assert.ThrowsAsync<KnownException>(() =>
-            new CreateLabelPrintBatchCommandHandler(dbContext, assetPort, NoopTemplateAssetRetirementFence.Instance)
+            CreateHandler(dbContext, assetPort)
                 .Handle(NewCommand(rule.Id, template.Id), CancellationToken.None));
 
         Assert.Empty(assetPort.Requests);
@@ -109,7 +110,7 @@ public sealed class CreateLabelPrintBatchCommandTests
         var assetPort = ValidAssetPort();
 
         await Assert.ThrowsAsync<KnownException>(() =>
-            new CreateLabelPrintBatchCommandHandler(dbContext, assetPort, NoopTemplateAssetRetirementFence.Instance)
+            CreateHandler(dbContext, assetPort)
                 .Handle(NewCommand(rule.Id, template.Id), CancellationToken.None));
 
         Assert.Empty(assetPort.Requests);
@@ -137,7 +138,7 @@ public sealed class CreateLabelPrintBatchCommandTests
         var assetPort = ValidAssetPort();
 
         await Assert.ThrowsAsync<KnownException>(() =>
-            new CreateLabelPrintBatchCommandHandler(dbContext, assetPort, NoopTemplateAssetRetirementFence.Instance)
+            CreateHandler(dbContext, assetPort)
                 .Handle(
                     NewCommand(
                         rule.Id,
@@ -158,7 +159,7 @@ public sealed class CreateLabelPrintBatchCommandTests
         dbContext.AddRange(rule, template);
         await dbContext.SaveChangesAsync();
         var assetPort = ValidAssetPort();
-        var handler = new CreateLabelPrintBatchCommandHandler(dbContext, assetPort, NoopTemplateAssetRetirementFence.Instance);
+        var handler = CreateHandler(dbContext, assetPort);
 
         var batchId = await handler.Handle(NewCommand(rule.Id, template.Id), CancellationToken.None);
         await dbContext.SaveChangesAsync();
@@ -202,14 +203,14 @@ public sealed class CreateLabelPrintBatchCommandTests
             new VerifiedLabelTemplateAsset(reference.FileId, AssetSha256, templateJson));
 
         await Assert.ThrowsAsync<KnownException>(() =>
-            new CreateLabelPrintBatchCommandHandler(dbContext, assetPort, NoopTemplateAssetRetirementFence.Instance)
+            CreateHandler(dbContext, assetPort)
                 .Handle(NewCommand(rule.Id, template.Id, labelValuesJson), CancellationToken.None));
 
         Assert.Empty(dbContext.LabelPrintBatches);
     }
 
     [Fact]
-    public async Task Same_idempotency_key_rejects_a_changed_verified_asset_snapshot()
+    public async Task Same_idempotency_key_and_payload_reuses_the_allocated_serials_without_reloading_the_asset()
     {
         await using var dbContext = CreateDbContext();
         var rule = ActiveRule();
@@ -219,15 +220,48 @@ public sealed class CreateLabelPrintBatchCommandTests
         var currentSha256 = AssetSha256;
         var assetPort = new RecordingAssetPort(reference =>
             new VerifiedLabelTemplateAsset(reference.FileId, currentSha256, TemplateJson));
-        var handler = new CreateLabelPrintBatchCommandHandler(dbContext, assetPort, NoopTemplateAssetRetirementFence.Instance);
+        var allocator = new SequentialSerialNumberAllocator();
+        var handler = CreateHandler(dbContext, assetPort, allocator);
 
-        _ = await handler.Handle(NewCommand(rule.Id, template.Id), CancellationToken.None);
+        var firstBatchId = await handler.Handle(NewCommand(rule.Id, template.Id), CancellationToken.None);
         await dbContext.SaveChangesAsync();
+        var firstSerialNumbers = await dbContext.LabelPrintItems
+            .OrderBy(item => item.SequenceNo)
+            .Select(item => item.SerialNumber)
+            .ToArrayAsync();
         currentSha256 = $"sha256:{new string('b', 64)}";
 
-        await Assert.ThrowsAsync<KnownException>(() =>
-            handler.Handle(NewCommand(rule.Id, template.Id), CancellationToken.None));
+        var replayBatchId = await handler.Handle(NewCommand(rule.Id, template.Id), CancellationToken.None);
+        var replayedSerialNumbers = await dbContext.LabelPrintItems
+            .OrderBy(item => item.SequenceNo)
+            .Select(item => item.SerialNumber)
+            .ToArrayAsync();
+
+        Assert.Equal(firstBatchId, replayBatchId);
+        Assert.Equal(firstSerialNumbers, replayedSerialNumbers);
         Assert.Single(dbContext.LabelPrintBatches);
+        Assert.Single(assetPort.Requests);
+        Assert.Equal(1, allocator.AllocationCount);
+    }
+
+    [Fact]
+    public async Task Same_idempotency_key_rejects_a_changed_request_before_allocating_again()
+    {
+        await using var dbContext = CreateDbContext();
+        var rule = ActiveRule();
+        var template = ActiveTemplate();
+        dbContext.AddRange(rule, template);
+        await dbContext.SaveChangesAsync();
+        var allocator = new SequentialSerialNumberAllocator();
+        var handler = CreateHandler(dbContext, ValidAssetPort(), allocator);
+        _ = await handler.Handle(NewCommand(rule.Id, template.Id), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var changed = NewCommand(rule.Id, template.Id) with { RequestedQuantity = 2 };
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(changed, CancellationToken.None));
+
+        Assert.Equal("打印批次幂等键与已有记录不一致，请检查提交内容。", exception.Message);
+        Assert.Equal(1, allocator.AllocationCount);
     }
 
     [Fact]
@@ -308,6 +342,17 @@ public sealed class CreateLabelPrintBatchCommandTests
     private static RecordingAssetPort ValidAssetPort() =>
         new(reference => new VerifiedLabelTemplateAsset(reference.FileId, AssetSha256, TemplateJson));
 
+    private static CreateLabelPrintBatchCommandHandler CreateHandler(
+        ApplicationDbContext dbContext,
+        ILabelTemplateAssetPort assetPort,
+        ILabelSerialNumberAllocator? allocator = null) =>
+        new(
+            dbContext,
+            assetPort,
+            NoopTemplateAssetRetirementFence.Instance,
+            NoopLabelPrintBatchReservationFence.Instance,
+            allocator ?? new SequentialSerialNumberAllocator());
+
     private sealed class RecordingAssetPort(
         Func<LabelTemplateAssetReference, VerifiedLabelTemplateAsset> responseFactory) : ILabelTemplateAssetPort
     {
@@ -331,6 +376,39 @@ public sealed class CreateLabelPrintBatchCommandTests
             string environmentId,
             string fileId,
             CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class NoopLabelPrintBatchReservationFence : ILabelPrintBatchReservationFence
+    {
+        public static readonly NoopLabelPrintBatchReservationFence Instance = new();
+
+        public Task AcquireAsync(
+            string organizationId,
+            string environmentId,
+            string idempotencyKey,
+            CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class SequentialSerialNumberAllocator : ILabelSerialNumberAllocator
+    {
+        private long currentValue;
+
+        public int AllocationCount { get; private set; }
+
+        public Task<IReadOnlyList<string>> AllocateAsync(
+            string organizationId,
+            string environmentId,
+            BarcodeRuleId barcodeRuleId,
+            int serialNumberLength,
+            int quantity,
+            CancellationToken cancellationToken)
+        {
+            AllocationCount++;
+            var values = Enumerable.Range(0, quantity)
+                .Select(_ => LabelSerialNumber.Format(barcodeRuleId, ++currentValue, serialNumberLength))
+                .ToArray();
+            return Task.FromResult<IReadOnlyList<string>>(values);
+        }
     }
 
     private sealed class NoopMediator : IMediator

@@ -64,12 +64,14 @@ public sealed class LabelPrintItemEntityTypeConfiguration : IEntityTypeConfigura
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Label print item id.");
         builder.Property(x => x.LabelPrintBatchId).HasColumnName("label_print_batch_id").IsRequired().HasComment("Owning label print batch id.");
+        builder.Property(x => x.OrganizationId).HasColumnName("organization_id").IsRequired().HasMaxLength(100).HasComment("Organization tenant id copied from the owning print batch for scoped serial uniqueness.");
+        builder.Property(x => x.EnvironmentId).HasColumnName("environment_id").IsRequired().HasMaxLength(100).HasComment("Environment id copied from the owning print batch for scoped serial uniqueness.");
         builder.Property(x => x.SequenceNo).HasColumnName("sequence_no").IsRequired().HasComment("Generated label sequence number within the print batch.");
         builder.Property(x => x.LabelValue).HasColumnName("label_value").IsRequired().HasMaxLength(200).HasComment("Generated deterministic barcode or label value.");
         builder.Property(x => x.FileId).HasColumnName("file_id").HasMaxLength(150).HasComment("Optional FileStorage file id for rendered label output.");
         builder.Property(x => x.Gtin).HasColumnName("gtin").HasMaxLength(14).HasComment("Parsed or generated GS1 GTIN including check digit for serialized labels.");
         builder.Property(x => x.LotNo).HasColumnName("lot_no").HasMaxLength(100).HasComment("Batch or lot number encoded in the generated GS1 label.");
-        builder.Property(x => x.SerialNumber).HasColumnName("serial_number").HasMaxLength(150).HasComment("Serialized unit identifier encoded in the generated GS1 label.");
+        builder.Property(x => x.SerialNumber).HasColumnName("serial_number").HasMaxLength(150).HasComment("Server-allocated serialized unit identifier encoded in a plain or GS1 label; null only for legacy non-serialized rows.");
         builder.Property(x => x.EpcUri).HasColumnName("epc_uri").HasMaxLength(300).HasComment("EPC URI derived from GTIN and serial number for EPCIS traceability.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasMaxLength(30).HasComment("Label lifecycle status: created, printed, reprinted, voided or consumed.");
         builder.Property(x => x.VoidReason).HasColumnName("void_reason").HasMaxLength(500).HasComment("Reason captured when the label is voided.");
@@ -79,5 +81,9 @@ public sealed class LabelPrintItemEntityTypeConfiguration : IEntityTypeConfigura
         builder.HasIndex(x => new { x.LabelPrintBatchId, x.SequenceNo }).IsUnique();
         builder.HasIndex(x => x.LabelValue);
         builder.HasIndex(x => new { x.Gtin, x.LotNo, x.SerialNumber });
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SerialNumber })
+            .IsUnique()
+            .HasFilter("serial_number IS NOT NULL")
+            .HasDatabaseName("UX_label_print_items_serial_number");
     }
 }

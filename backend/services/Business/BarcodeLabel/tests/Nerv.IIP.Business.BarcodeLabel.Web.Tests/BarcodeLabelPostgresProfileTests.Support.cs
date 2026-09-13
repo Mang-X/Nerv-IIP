@@ -10,6 +10,7 @@ using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.BarcodeLabel.Domain;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelSerialCounterAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.ScanRecordAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.TraceabilityAggregate;
@@ -87,6 +88,8 @@ public sealed partial class BarcodeLabelPostgresProfileTests
         });
         services.AddUnitOfWork<ApplicationDbContext>();
         services.AddScoped<ITemplateAssetRetirementFence, PostgresTemplateAssetRetirementFence>();
+        services.AddScoped<ILabelPrintBatchReservationFence, PostgresLabelPrintBatchReservationFence>();
+        services.AddScoped<ILabelSerialNumberAllocator, PostgresLabelSerialNumberAllocator>();
         services.AddSingleton<ILabelTemplateAssetPort>(new FixedTemplateAssetPort());
         services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
         services.AddSingleton<LabelPrintBatchCreatedIntegrationEventConverter>();
@@ -428,6 +431,59 @@ public sealed partial class BarcodeLabelPostgresProfileTests
                 PollInterval: TimeSpan.FromMilliseconds(50),
                 SensitiveValues: [LaneConnectionString]));
     }
+
+    private static async Task<(int Waiters, bool CompetingTaskCompleted)> WaitForBlockedWaiterOrCompletionAsync(
+        int holderProcessId,
+        Task competingTask,
+        string description)
+    {
+        return await Eventually.WaitAsync(
+            condition: $"PostgreSQL lock waiter or early completion for {description}",
+            observe: async cancellationToken =>
+            {
+                await using var connection = new NpgsqlConnection(LaneConnectionString);
+                await connection.OpenAsync(cancellationToken);
+                await using var command = connection.CreateCommand();
+                command.CommandText = """
+                    SELECT count(*)
+                    FROM pg_stat_activity AS waiter
+                    WHERE @holder_pid = ANY(pg_blocking_pids(waiter.pid))
+                    """;
+                command.Parameters.AddWithValue("holder_pid", holderProcessId);
+                var waiters = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
+                return (Waiters: waiters, CompetingTaskCompleted: competingTask.IsCompleted);
+            },
+            isSatisfied: observation => observation.Waiters > 0 || observation.CompetingTaskCompleted,
+            describe: observation =>
+                $"blockedWaiters={observation.Waiters}; competingTaskCompleted={observation.CompetingTaskCompleted}",
+            options: new EventuallyOptions(
+                Timeout: TimeSpan.FromSeconds(15),
+                PollInterval: TimeSpan.FromMilliseconds(50),
+                SensitiveValues: [LaneConnectionString]));
+    }
+
+    private static LabelPrintBatch AllocatedBatch(
+        BarcodeRule rule,
+        string idempotencyKey,
+        string sourceDocumentId,
+        string serialNumber) =>
+        LabelPrintBatch.CreateWithAllocatedSerialNumbers(
+            rule.OrganizationId,
+            rule.EnvironmentId,
+            rule,
+            new LabelTemplateId(Guid.CreateVersion7()),
+            new LabelPrintBatchSnapshot(
+                "file-template-serial",
+                $"sha256:{new string('a', 64)}",
+                """{"version":1,"variables":[]}""",
+                rule.BarcodeType,
+                "zpl-v1"),
+            "work-order",
+            sourceDocumentId,
+            idempotencyKey,
+            "{}",
+            1,
+            [serialNumber]);
 
     private sealed class RetirementSaveBarrier : SaveChangesInterceptor
     {
