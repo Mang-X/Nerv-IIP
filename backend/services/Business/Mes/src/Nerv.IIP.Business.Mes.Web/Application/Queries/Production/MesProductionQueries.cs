@@ -52,7 +52,8 @@ public sealed record ProductionReportFact(
     // 当前工序完成后冻结的累计实绩，不是本条报工的工时分摊。工序未完成或冲销后重新打开时为 null。
     [property: JsonIgnore] MesActualHours? OperationActualHours = null,
     // 提交本条报工的操作人（经认证 principal）。升级前的历史报工与未确认的遥测报工为 null。
-    string? ReportedBy = null)
+    string? ReportedBy = null,
+    IReadOnlyCollection<string>? SerialNumbers = null)
 {
     [Description("工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
     public decimal? OperationActualLaborHours => OperationActualHours?.LaborHours;
@@ -151,7 +152,14 @@ internal static class ProductionReportFactProjection
                     task.LaborTimeTicks / (decimal)TimeSpan.TicksPerHour,
                     task.MachineTimeTicks / (decimal)TimeSpan.TicksPerHour))
                 .FirstOrDefault(),
-            x.ReportedBy));
+            x.ReportedBy,
+            dbContext.ProductionReportSerialNumbers
+                .Where(serial => serial.OrganizationId == x.OrganizationId
+                    && serial.EnvironmentId == x.EnvironmentId
+                    && serial.ReportNo == x.ReportNo)
+                .OrderBy(serial => serial.SequenceNo)
+                .Select(serial => serial.SerialNumber)
+                .ToArray()));
 }
 
 public sealed class GetProductionReportQueryHandler(ApplicationDbContext dbContext)
