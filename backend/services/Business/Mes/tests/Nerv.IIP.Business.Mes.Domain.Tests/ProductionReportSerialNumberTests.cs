@@ -22,7 +22,7 @@ public sealed class ProductionReportSerialNumberTests
     {
         var assignment = ProductionReportSerialNumberAssignment.Create(
             ProductionSerialTrackingPolicies.None,
-            1m,
+            4m,
             null,
             "  SN-LEGACY-001  ");
 

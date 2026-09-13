@@ -50,8 +50,9 @@ public sealed class ProductionReportSerialNumberAssignment
                     "Legacy serialNo cannot be combined with a non-default serialTrackingPolicy or serialNumbers.");
             }
 
-            policy = ProductionSerialTrackingPolicies.OnProduction;
-            inputs = [legacySerialNumber];
+            return new ProductionReportSerialNumberAssignment(
+                ProductionSerialTrackingPolicies.OnProduction,
+                Normalize([legacySerialNumber]));
         }
 
         if (policy != ProductionSerialTrackingPolicies.OnProduction)
@@ -69,15 +70,7 @@ public sealed class ProductionReportSerialNumberAssignment
             throw new InvalidOperationException("Good quantity must be an integer when serial tracking policy is on-production.");
         }
 
-        IReadOnlyList<string> normalized;
-        try
-        {
-            normalized = ProductionReportSerialNumber.Normalize(inputs.ToArray());
-        }
-        catch (ArgumentException exception)
-        {
-            throw new InvalidOperationException(exception.Message, exception);
-        }
+        var normalized = Normalize(inputs);
 
         if (normalized.Count != goodQuantity)
         {
@@ -86,6 +79,18 @@ public sealed class ProductionReportSerialNumberAssignment
         }
 
         return new ProductionReportSerialNumberAssignment(policy, normalized);
+    }
+
+    private static IReadOnlyList<string> Normalize(IReadOnlyCollection<string> inputs)
+    {
+        try
+        {
+            return ProductionReportSerialNumber.Normalize(inputs.ToArray());
+        }
+        catch (ArgumentException exception)
+        {
+            throw new InvalidOperationException(exception.Message, exception);
+        }
     }
 
     public IReadOnlyList<ProductionReportSerialNumber> CreateFacts(ProductionReport report)

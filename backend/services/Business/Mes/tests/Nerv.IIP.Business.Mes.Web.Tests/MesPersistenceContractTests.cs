@@ -3566,7 +3566,7 @@ public sealed class MesPersistenceContractTests
                 "env-dev",
                 "WO-SERIAL-001",
                 "OP-SERIAL-10",
-                1m,
+                4m,
                 0m,
                 false,
                 now.AddMinutes(40),
@@ -3660,8 +3660,7 @@ public sealed class MesPersistenceContractTests
                 [new ConsumedMaterialLotInput("MAT-OIL", "LOT-OIL-REV", 3m, "MIR-REV-001")],
                 ReworkQuantity: 2m,
                 ProducedLotNo: "LOT-FG-REV",
-                SerialTrackingPolicy: ProductionSerialTrackingPolicies.OnProduction,
-                SerialNumbers: ["  SN-REV-001  ", "SN-REV-002", "SN-REV-003", "SN-REV-004"]),
+                SerialNo: "  SN-REV-001  "),
             CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
@@ -3709,9 +3708,9 @@ public sealed class MesPersistenceContractTests
         Assert.Equal(-2m, reversalReport.ReworkQuantity);
         Assert.Equal(reportResult.ReportNo, reversal.OriginalReportNo);
 
-        var serials = await dbContext.ProductionReportSerialNumbers.OrderBy(x => x.SequenceNo).ToArrayAsync();
-        Assert.All(serials, serial => Assert.Equal(reportResult.ReportNo, serial.ReportNo));
-        Assert.Equal(["SN-REV-001", "SN-REV-002", "SN-REV-003", "SN-REV-004"], serials.Select(x => x.SerialNumber));
+        var serial = Assert.Single(await dbContext.ProductionReportSerialNumbers.ToArrayAsync());
+        Assert.Equal(reportResult.ReportNo, serial.ReportNo);
+        Assert.Equal("SN-REV-001", serial.SerialNumber);
 
         var netConsumed = await dbContext.ProductionReportMaterialConsumptions
             .Where(x => x.MaterialLotId == "LOT-OIL-REV")
