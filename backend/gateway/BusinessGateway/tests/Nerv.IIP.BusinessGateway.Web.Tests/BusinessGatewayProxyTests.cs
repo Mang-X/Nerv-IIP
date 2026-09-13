@@ -4486,6 +4486,47 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Activation_conflict_is_propagated_after_the_mes_report_succeeds()
+    {
+        var auth = AllowedOrganizationScope(BusinessGatewayPermissions.MesReportingWrite);
+        var mes = new RecordingMesClient();
+        var masterData = new RecordingMasterDataClient
+        {
+            ResourceDetailResponse = new BusinessConsoleMasterDataResourceDetail(
+                "sku", "SKU-001", "Demo SKU", true, "v1", "org-001", "env-dev",
+                SerialTrackingPolicy: "on-production", DefaultBarcodeRuleCode: "FG"),
+        };
+        var barcode = new RecordingBarcodeLabelClient
+        {
+            PrintBatchResponse = ProductionPrintBatch("reserved"),
+            ActivationFailure = BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.Conflict,
+                "idempotency-conflict"),
+        };
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IBusinessBarcodeLabelClient>();
+            services.AddSingleton<IBusinessBarcodeLabelClient>(barcode);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/production-reports",
+            ProductionReportBody(labelTemplateId: "template-001"));
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("idempotency-conflict", document.RootElement.GetProperty("message").GetString());
+        Assert.Equal(1, mes.RecordProductionReportCallCount);
+        Assert.Equal(1, barcode.GetPrintBatchCallCount);
+    }
+
+    [Fact]
     public async Task Same_report_intent_recovers_the_committed_mes_report_after_master_data_changes()
     {
         var auth = AllowedOrganizationScope(BusinessGatewayPermissions.MesReportingWrite);
@@ -4561,7 +4602,52 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(2, mes.RecordProductionReportCallCount);
         Assert.Equal(1, mes.CommittedProductionReportCount);
         Assert.All(mes.RecordProductionReportRequests, x => Assert.Equal(["SN-001"], x.SerialNumbers));
+        Assert.All(mes.RecordProductionReportRequests, x => Assert.Equal("report-serial-001", x.IdempotencyKey));
         Assert.Equal(1, barcode.ActivatePrintBatchCallCount);
+    }
+
+    [Fact]
+    public async Task Same_report_intent_with_a_different_template_conflicts_before_mes_replay()
+    {
+        var auth = AllowedOrganizationScope(BusinessGatewayPermissions.MesReportingWrite);
+        var mes = new RecordingMesClient();
+        var masterData = new RecordingMasterDataClient();
+        var barcode = new RecordingBarcodeLabelClient
+        {
+            PrintBatchResponse = ProductionPrintBatch("reserved"),
+            PrintBatchListResponse = new BusinessConsoleBarcodePrintBatchListResponse(
+                [new BusinessConsoleBarcodePrintBatchItem(
+                    "print-batch-001",
+                    "template-001",
+                    "work-order",
+                    "WO-001",
+                    "report-serial-001",
+                    1,
+                    "reserved",
+                    DateTimeOffset.Parse("2026-07-29T08:00:00Z"))],
+                1),
+        };
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IBusinessBarcodeLabelClient>();
+            services.AddSingleton<IBusinessBarcodeLabelClient>(barcode);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/production-reports",
+            ProductionReportBody(labelTemplateId: "template-002"));
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("idempotency-conflict", document.RootElement.GetProperty("message").GetString());
+        Assert.Equal(0, mes.RecordProductionReportCallCount);
+        Assert.Empty(masterData.DetailRequests);
     }
 
     [Fact]

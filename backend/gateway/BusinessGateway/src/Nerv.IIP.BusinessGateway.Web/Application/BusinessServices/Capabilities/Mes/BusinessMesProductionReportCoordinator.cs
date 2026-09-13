@@ -242,7 +242,7 @@ public sealed class BusinessMesProductionReportCoordinator(
                         report.ReportNo)),
                 cancellationToken);
         }
-        catch (BusinessServiceProxyException)
+        catch (BusinessServiceProxyException exception) when (MayHaveUnknownOutcome(exception))
         {
             // 激活响应未知时只读回同一批次；不重建批次、不派工，也不把已成功的 MES 报工伪装成失败。
         }
@@ -254,7 +254,7 @@ public sealed class BusinessMesProductionReportCoordinator(
                 batchRequest,
                 cancellationToken)).PrintBatch;
         }
-        catch (BusinessServiceProxyException)
+        catch (BusinessServiceProxyException exception) when (MayHaveUnknownOutcome(exception))
         {
             return reserved;
         }
@@ -267,10 +267,14 @@ public sealed class BusinessMesProductionReportCoordinator(
     {
         if (!string.Equals(batch.SourceDocumentType, WorkOrderSource, StringComparison.Ordinal) ||
             !string.Equals(batch.SourceDocumentId, request.WorkOrderId, StringComparison.Ordinal) ||
-            !string.Equals(batch.ReportIntentKey, request.IdempotencyKey, StringComparison.Ordinal) ||
-            batch.RequestedQuantity != quantity)
+            !string.Equals(batch.ReportIntentKey, request.IdempotencyKey, StringComparison.Ordinal))
         {
             throw InvalidResponse();
+        }
+        if (!string.Equals(batch.LabelTemplateId, request.LabelTemplateId, StringComparison.Ordinal) ||
+            batch.RequestedQuantity != quantity)
+        {
+            throw IdempotencyConflict();
         }
 
         var serials = batch.Items
@@ -310,6 +314,12 @@ public sealed class BusinessMesProductionReportCoordinator(
 
     private static BusinessServiceProxyException InvalidRequest(string code) =>
         BusinessServiceProxyException.FromSafeDownstreamMessage(HttpStatusCode.BadRequest, code);
+
+    private static bool MayHaveUnknownOutcome(BusinessServiceProxyException exception) =>
+        (int)exception.StatusCode >= 500;
+
+    private static BusinessServiceProxyException IdempotencyConflict() =>
+        BusinessServiceProxyException.FromSafeDownstreamMessage(HttpStatusCode.Conflict, "idempotency-conflict");
 
     private static BusinessServiceProxyException InvalidResponse() =>
         BusinessServiceProxyException.FromSafeDownstreamMessage(HttpStatusCode.BadGateway, "downstream-invalid-response");
