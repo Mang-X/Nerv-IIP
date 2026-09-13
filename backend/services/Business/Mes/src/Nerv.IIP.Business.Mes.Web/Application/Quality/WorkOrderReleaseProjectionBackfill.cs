@@ -277,7 +277,35 @@ internal sealed class BackfillWorkOrderReleaseProjectionCommandHandler(
                             .Select(x => new ReleasedOperationPayload(
                                 x.OperationTaskIdValue,
                                 x.OperationSequence,
-                                x.WorkCenterId))
+                                x.WorkCenterId,
+                                // PreReleaseGoodQuantity 在**这条通道上有意留 null**（#3129），不是漏填。
+                                // 本事件的消费分支是 ReleaseFactAuthority.ReconstructedLowerBound，
+                                // 它在 ApplyRelease 之后无条件调用 SkipPeriodicWindowsAccruedBefore(OccurredAtUtc)，
+                                // 把到「回填执行那一刻」为止的全部累计产量与流逝时间一律记为已生成（#3000 既有取舍）。
+                                // 而那条分支**根本不读本字段**：对本载荷字段的**生产消费侧读取点全仓恰 1 处**
+                                // （Quality 的 PeriodicInspectionIntegrationEventHandlers，在
+                                // `authority == ReleaseFactAuthority.Authoritative` 块内），本通道到不了它。
+                                //
+                                // **作用域限定，别读成「全仓唯一」**：测试侧另有 7 处读同一个载荷字段
+                                // （Mes.Web.Tests 的 MesWorkOrderIntegrationEventTests /
+                                // WorkOrderReleaseFactTimePostgresTests / CreatedWorkOrderReleaseBackfill{,Postgres}Tests），
+                                // 它们钉的都是**另外两条**生产者路径（下达命令、#3119 补下达），不是本通道。
+                                // 另外 `git grep PreReleaseGoodQuantity` 还会命中同名但**不是本字段**的东西
+                                // （两条查询里匿名投影的属性名、域事件上的
+                                // PreReleaseGoodQuantityByOperationTaskId 字典），按名字数会数错。
+                                //
+                                // 因此「填与不填**运行时行为**逐字相同」才是成立的说法，依据是上面那条结构性事实，
+                                // **不是**「下达前产量是那个集合的子集」：子集只在领域意义上成立，
+                                // 实现出来的两个数（Quality 本地水位 vs MES 自有事实）在报工事件滞后时可反向。
+                                // 为它多做一次按工序的 Sum 是纯粹的往返开销。
+                                //
+                                // **这个 null 没有任何断言钉着，如实写清**（实测，不是推断）：把本处改成
+                                // `PreReleaseGoodQuantity: 0m` 后 Mes.Web.Tests 1151/3/1154、
+                                // Quality.Web.Tests 447/2/449 **全绿、零转红**——上面那 7 处断言一条都覆盖不到本通道。
+                                // 所以本处是一个**无门禁的取舍**，不是被测试保护的事实。
+                                // **失效方向**：若哪天有人把那处无条件跳过改窄或删掉，本处就必须同时改成真填，
+                                // 否则 #3129 的裁定会在这条通道上静默失效，而且**不会有任何用例为此报红**。
+                                PreReleaseGoodQuantity: null))
                             .ToArray())));
                 published++;
                 operationsPublished += released.Length;

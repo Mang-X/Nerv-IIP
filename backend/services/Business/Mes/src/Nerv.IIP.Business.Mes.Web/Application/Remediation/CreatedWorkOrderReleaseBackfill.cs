@@ -32,7 +32,7 @@ public sealed record CreatedWorkOrderReleaseBackfillReport(
 /// <para><b>为什么不复用 <c>ReleaseWorkOrderCommand</c>。</b>那条路径要过设备、质量、齐套三道 readiness
 /// （实测：对零缺口的探针工单调 <c>/release</c> 仍回 <c>equipment.downtime</c>）。
 /// 而这些拒因恰恰就是这批工单当初没被下达的原因——用它补救等于**必然拒掉要救的人**。
-/// 本命令走 <see cref="WorkOrder.MarkReleased(IReadOnlyCollection{OperationTask}, WorkOrderReleaseFactTime)"/>，
+/// 本命令走 <see cref="WorkOrder.MarkReleased(IReadOnlyCollection{OperationTask}, WorkOrderReleaseFactTime, IReadOnlyDictionary{string, decimal})"/>，
 /// 与直投路径共用同一个聚合方法与同一份发布事实时刻口径，只是不过 readiness。</para>
 ///
 /// <para><b>选谁：<c>created</c> ∧ 至少一道工序已经有执行事实。</b>
@@ -187,19 +187,26 @@ internal sealed class BackfillCreatedWorkOrderReleaseCommandHandler(ApplicationD
                 .AsNoTracking()
                 .Where(x => workOrderIds.Contains(x.WorkOrderId))
                 .ToArrayAsync(cancellationToken);
-            var earliestReports = await dbContext.ProductionReports
+            // 分组键从 (org, env, workOrderId) 换成 (org, env, workOrderId, operationTaskId)（#3129）：
+            // 本端点是 created 存量工单的一次性补下达，**这些工单正是「先有产量后补下达」那一批**，
+            // 是本票裁定最需要生效的路径；补下达同样走 MarkReleased → 直投转换器 → Quality 的
+            // Authoritative 分支，若不带工序级既有产量，补下达会把每道工序下达前的全部产量补开成巡检任务。
+            // 工单级下界仍由每道工序的最早报工再取 Min 得到，与换键前逐字等值。
+            // 「既有」与冲销口径同 MesWorkbenchCommands 的下达命令，两处必须保持一致。
+            var reportFacts = await dbContext.ProductionReports
                 .AsNoTracking()
                 .Where(x => workOrderIds.Contains(x.WorkOrderId))
-                .GroupBy(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderId })
+                .GroupBy(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderId, x.OperationTaskId })
                 .Select(group => new
                 {
                     group.Key,
                     EarliestReportedAtUtc = group.Min(x => x.ReportedAtUtc),
+                    PreReleaseGoodQuantity = group.Sum(x => x.ReversedReportNo == null ? x.GoodQuantity : 0m),
                 })
                 .ToArrayAsync(cancellationToken);
-            var earliestReportByWorkOrder = earliestReports.ToDictionary(
-                x => (x.Key.OrganizationId, x.Key.EnvironmentId, x.Key.WorkOrderId),
-                x => x.EarliestReportedAtUtc);
+            var reportFactsByWorkOrder = reportFacts
+                .GroupBy(x => (x.Key.OrganizationId, x.Key.EnvironmentId, x.Key.WorkOrderId))
+                .ToDictionary(group => group.Key, group => group.ToArray());
 
             foreach (var workOrder in page)
             {
@@ -224,11 +231,13 @@ internal sealed class BackfillCreatedWorkOrderReleaseCommandHandler(ApplicationD
                     .Where(x => x.ExistingEndUtc.HasValue)
                     .Select(x => (DateTimeOffset?)x.ExistingEndUtc!.Value)
                     .Min();
-                var earliestReportedAtUtc = earliestReportByWorkOrder.TryGetValue(
+                reportFactsByWorkOrder.TryGetValue(
                     (workOrder.OrganizationId, workOrder.EnvironmentId, workOrder.WorkOrderIdValue),
-                    out var reportedAtUtc)
-                    ? reportedAtUtc
-                    : (DateTimeOffset?)null;
+                    out var workOrderReportFacts);
+                workOrderReportFacts ??= [];
+                var earliestReportedAtUtc = workOrderReportFacts.Length == 0
+                    ? (DateTimeOffset?)null
+                    : workOrderReportFacts.Min(x => x.EarliestReportedAtUtc);
                 var earliestExistingActivityAtUtc = earliestReportedAtUtc is { } report
                     ? (earliestOperationEndUtc is { } end && end < report ? end : report)
                     : earliestOperationEndUtc;
@@ -237,7 +246,11 @@ internal sealed class BackfillCreatedWorkOrderReleaseCommandHandler(ApplicationD
                     tasks,
                     WorkOrderReleaseFactTime.NotLaterThan(
                         tasks.Min(x => x.CreatedAtUtc),
-                        earliestExistingActivityAtUtc));
+                        earliestExistingActivityAtUtc),
+                    workOrderReportFacts.ToDictionary(
+                        x => x.Key.OperationTaskId,
+                        x => x.PreReleaseGoodQuantity,
+                        StringComparer.Ordinal));
                 released++;
                 operationsReleased += tasks.Length;
                 executingRemediated += tasks.Count(x => IsExecutingNow(x.Status));
