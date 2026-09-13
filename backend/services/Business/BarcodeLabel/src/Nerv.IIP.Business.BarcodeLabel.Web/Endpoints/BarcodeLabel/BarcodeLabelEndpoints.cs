@@ -1,4 +1,6 @@
+using System.ComponentModel.DataAnnotations;
 using System.Diagnostics.CodeAnalysis;
+using System.Text.Json.Serialization;
 using FastEndpoints;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
@@ -93,7 +95,8 @@ public sealed record CreateLabelPrintBatchRequest(
     string SourceDocumentId,
     string IdempotencyKey,
     string LabelValuesJson,
-    int RequestedQuantity);
+    int RequestedQuantity,
+    [property: JsonRequired, Required] string ReportIntentFingerprint);
 
 public sealed record CreateLabelPrintBatchResponse(LabelPrintBatchId PrintBatchId);
 
@@ -292,7 +295,10 @@ public sealed class CreateLabelPrintBatchEndpoint(ISender sender)
             req.SourceDocumentId,
             req.IdempotencyKey,
             req.LabelValuesJson,
-            req.RequestedQuantity), ct);
+            req.RequestedQuantity)
+        {
+            ReportIntentFingerprint = req.ReportIntentFingerprint,
+        }, ct);
         await Send.OkAsync(new CreateLabelPrintBatchResponse(id).AsResponseData(), cancellation: ct);
     }
 }

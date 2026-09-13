@@ -49,6 +49,7 @@ public sealed class ScopedLabelLifecycleHttpTests
         Assert.True(result.RootElement.GetProperty("success").GetBoolean(), body);
         var detail = result.RootElement.GetProperty("data").GetProperty("printBatch");
         Assert.Equal("report-intent-detail", detail.GetProperty("reportIntentKey").GetString());
+        Assert.Equal("opaque:report-intent-a", detail.GetProperty("reportIntentFingerprint").GetString());
         Assert.Equal("sent-to-printer", detail.GetProperty("status").GetString());
         Assert.Equal("printer-01", detail.GetProperty("printerId").GetString());
         Assert.Equal("job-001", detail.GetProperty("printJobId").GetString());
@@ -92,6 +93,7 @@ public sealed class ScopedLabelLifecycleHttpTests
         Assert.False(result.RootElement.GetProperty("success").GetBoolean(), body);
         Assert.DoesNotContain(WireId(batch.Id), body, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("report-intent-owned", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("opaque:report-intent-a", body, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -160,6 +162,7 @@ public sealed class ScopedLabelLifecycleHttpTests
         Assert.True(result.RootElement.GetProperty("success").GetBoolean(), body);
         var detail = result.RootElement.GetProperty("data").GetProperty("printBatch");
         Assert.False(detail.TryGetProperty("reportIntentKey", out _));
+        Assert.False(detail.TryGetProperty("reportIntentFingerprint", out _));
         Assert.False(detail.TryGetProperty("productionReportId", out _));
         Assert.False(detail.TryGetProperty("productionReportNo", out _));
         var item = detail.GetProperty("items")[0];
@@ -552,6 +555,7 @@ public sealed class ScopedLabelLifecycleHttpTests
             "wms.inbound",
             "ASN-001",
             reportIntentKey,
+            "opaque:report-intent-a",
             """{"skuCode":"SKU-FG-1000"}""",
             1,
             ["00000000001"]);
@@ -656,6 +660,7 @@ public sealed class ScopedLabelLifecycleHttpTests
             "wms.inbound",
             "ASN-001",
             reportIntentKey,
+            "opaque:report-intent-a",
             """{"lotNo":"LOT-A"}""",
             2,
             ["00000000001", "00000000002"]);

@@ -121,6 +121,24 @@ public sealed class BarcodeLabelOpenApiTests
             var parameter = Assert.Single(parameters, item => item.GetProperty("name").GetString() == parameterName);
             Assert.True(parameter.GetProperty("required").GetBoolean());
         }
+
+        var schemas = document.RootElement.GetProperty("components").GetProperty("schemas");
+        var createRequest = Assert.Single(
+            schemas.EnumerateObject(),
+            schema => schema.Name.EndsWith("CreateLabelPrintBatchRequest", StringComparison.Ordinal));
+        Assert.True(
+            createRequest.Value.GetProperty("properties").TryGetProperty("reportIntentFingerprint", out _),
+            createRequest.Value.GetRawText());
+        Assert.Contains(
+            "reportIntentFingerprint",
+            createRequest.Value.GetProperty("required").EnumerateArray().Select(item => item.GetString()));
+
+        var scopedDetail = Assert.Single(
+            schemas.EnumerateObject(),
+            schema => schema.Name.EndsWith("ScopedLabelPrintBatchDetail", StringComparison.Ordinal));
+        Assert.True(
+            scopedDetail.Value.GetProperty("properties").TryGetProperty("reportIntentFingerprint", out _),
+            scopedDetail.Value.GetRawText());
     }
 
     private static void AssertScopedLifecycleOperation(

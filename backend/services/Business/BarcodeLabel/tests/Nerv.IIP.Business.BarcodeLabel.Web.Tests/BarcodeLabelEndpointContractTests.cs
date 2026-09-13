@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Auth;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.PrintBatches;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.Scans;
+using Nerv.IIP.Business.BarcodeLabel.Web.Application.Queries.PrintBatches;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Queries.Resolutions;
 using Nerv.IIP.Business.BarcodeLabel.Web.Endpoints.BarcodeLabel;
 using Nerv.IIP.ServiceAuth;
@@ -156,6 +157,41 @@ public sealed class BarcodeLabelEndpointContractTests
 
         Assert.False(result.IsValid);
         Assert.Contains(result.Errors, x => SameProperty(x.PropertyName, nameof(CreateLabelPrintBatchCommand.IdempotencyKey)));
+    }
+
+    [Fact]
+    public void Create_validator_rejects_a_blank_report_intent_fingerprint()
+    {
+        var result = new CreateLabelPrintBatchCommandValidator().Validate(new CreateLabelPrintBatchCommand(
+            "org-001",
+            "env-dev",
+            new(Guid.CreateVersion7()),
+            new(Guid.CreateVersion7()),
+            "mes.production-report",
+            "report-001",
+            "idem-print-001",
+            "{}",
+            1)
+        {
+            ReportIntentFingerprint = " ",
+        });
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, x => SameProperty(
+            x.PropertyName,
+            nameof(CreateLabelPrintBatchCommand.ReportIntentFingerprint)));
+    }
+
+    [Fact]
+    public void Create_and_scoped_v2_contracts_expose_the_report_intent_fingerprint()
+    {
+        var createProperty = typeof(CreateLabelPrintBatchRequest).GetProperty("ReportIntentFingerprint");
+        var detailProperty = typeof(ScopedLabelPrintBatchDetail).GetProperty("ReportIntentFingerprint");
+
+        Assert.NotNull(createProperty);
+        Assert.Equal(typeof(string), createProperty.PropertyType);
+        Assert.NotNull(detailProperty);
+        Assert.Equal(typeof(string), detailProperty.PropertyType);
     }
 
     [Fact]

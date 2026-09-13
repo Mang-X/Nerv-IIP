@@ -50,6 +50,7 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
         string sourceDocumentType,
         string sourceDocumentId,
         string idempotencyKey,
+        string? reportIntentFingerprint,
         string labelValuesJson,
         int requestedQuantity)
     {
@@ -74,6 +75,7 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
         SourceDocumentType = BarcodeLabelText.Required(sourceDocumentType, nameof(sourceDocumentType)).ToLowerInvariant();
         SourceDocumentId = BarcodeLabelText.Required(sourceDocumentId, nameof(sourceDocumentId));
         IdempotencyKey = BarcodeLabelText.Required(idempotencyKey, nameof(idempotencyKey));
+        ReportIntentFingerprint = reportIntentFingerprint;
         LabelValuesJson = BarcodeLabelText.Required(labelValuesJson, nameof(labelValuesJson));
         RequestedQuantity = requestedQuantity <= 0
             ? throw new ArgumentOutOfRangeException(nameof(requestedQuantity), "Requested quantity must be positive.")
@@ -94,6 +96,7 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
     public string SourceDocumentType { get; private set; } = string.Empty;
     public string SourceDocumentId { get; private set; } = string.Empty;
     public string IdempotencyKey { get; private set; } = string.Empty;
+    public string? ReportIntentFingerprint { get; private set; }
     public string LabelValuesJson { get; private set; } = string.Empty;
     public int RequestedQuantity { get; private set; }
     public string Status { get; private set; } = string.Empty;
@@ -129,6 +132,7 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
             sourceDocumentType,
             sourceDocumentId,
             idempotencyKey,
+            null,
             labelValuesJson,
             requestedQuantity);
         batch.AddHistoricalItems(rule, LabelValueInputs.Parse(labelValuesJson));
@@ -146,12 +150,18 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
         string sourceDocumentType,
         string sourceDocumentId,
         string idempotencyKey,
+        string reportIntentFingerprint,
         string labelValuesJson,
         int requestedQuantity,
         IReadOnlyList<string> allocatedSerialNumbers)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(allocatedSerialNumbers);
+        if (string.IsNullOrWhiteSpace(reportIntentFingerprint))
+        {
+            throw new ArgumentException("Report intent fingerprint is required.", nameof(reportIntentFingerprint));
+        }
+
         var batch = new LabelPrintBatch(
             organizationId,
             environmentId,
@@ -161,6 +171,7 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
             sourceDocumentType,
             sourceDocumentId,
             idempotencyKey,
+            reportIntentFingerprint,
             labelValuesJson,
             requestedQuantity);
         batch.AddAllocatedItems(
@@ -192,6 +203,7 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
             sourceDocumentType,
             sourceDocumentId,
             idempotencyKey,
+            null,
             labelValuesJson,
             requestedQuantity);
         batch.AddHistoricalItems(rule, LabelValueInputs.Parse(labelValuesJson));
@@ -319,6 +331,7 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
             && SourceDocumentType == other.SourceDocumentType
             && SourceDocumentId == other.SourceDocumentId
             && IdempotencyKey == other.IdempotencyKey
+            && ReportIntentFingerprint == other.ReportIntentFingerprint
             && LabelValuesJson == other.LabelValuesJson
             && RequestedQuantity == other.RequestedQuantity;
     }
@@ -337,6 +350,7 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
         string sourceDocumentType,
         string sourceDocumentId,
         string idempotencyKey,
+        string reportIntentFingerprint,
         string labelValuesJson,
         int requestedQuantity)
     {
@@ -345,6 +359,7 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
             && SourceDocumentType == BarcodeLabelText.Required(sourceDocumentType, nameof(sourceDocumentType)).ToLowerInvariant()
             && SourceDocumentId == BarcodeLabelText.Required(sourceDocumentId, nameof(sourceDocumentId))
             && IdempotencyKey == BarcodeLabelText.Required(idempotencyKey, nameof(idempotencyKey))
+            && ReportIntentFingerprint == reportIntentFingerprint
             && LabelValuesJson == BarcodeLabelText.Required(labelValuesJson, nameof(labelValuesJson))
             && RequestedQuantity == requestedQuantity;
     }
