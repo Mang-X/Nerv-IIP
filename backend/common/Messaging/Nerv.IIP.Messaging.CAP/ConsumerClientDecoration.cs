@@ -14,8 +14,11 @@ namespace Nerv.IIP.Messaging.CAP;
 ///
 /// <para><b>#3352 起，<see cref="DecoratedConsumerClient.ListeningAsync"/> 不再是纯转发</b>：它把 inner 的
 /// 永久阻塞挪到专用线程上。<b>#3249 起它还把 CAP 的最终停止信号并进交给 inner 的 token</b>
-/// （见 <see cref="ConsumerListeningStopSignal"/>）。<b>其余每一个成员仍然逐字转发 inner</b>，没有任何自身行为；
-/// 另两处有自身行为的代码都在 <b>DI 组装期</b>——<see cref="AddServices"/> 的 fail closed 与停止信号的注册。</para>
+/// （见 <see cref="ConsumerListeningStopSignal"/>）。<b>#3222 起 <see cref="DecoratedConsumerClient.SubscribeAsync"/>
+/// 也不再是纯转发</b>：它把 inner 抛出的 Redis 连接/超时异常接进 CAP 既有的恢复分支
+/// （见 <see cref="RedisSubscriptionRecovery"/>）。<b>除这两个成员外，其余成员仍然逐字转发 inner</b>，
+/// 没有任何自身行为；另两处有自身行为的代码都在 <b>DI 组装期</b>——<see cref="AddServices"/> 的 fail closed
+/// 与停止信号的注册。</para>
 ///
 /// <para>Registration mechanics: the transport package registers <see cref="IConsumerClientFactory"/> from its own
 /// <see cref="ICapOptionsExtension.AddServices"/>, and <c>AddCap</c> runs the extensions in registration order.
@@ -101,7 +104,13 @@ internal sealed class DecoratedConsumerClient(IConsumerClient inner, Cancellatio
     public Task<ICollection<string>> FetchTopicsAsync(IEnumerable<string> topicNames) =>
         inner.FetchTopicsAsync(topicNames);
 
-    public Task SubscribeAsync(IEnumerable<string> topics) => inner.SubscribeAsync(topics);
+    /// <summary>
+    /// #3222：<b>本成员不再是纯转发</b>。它把 inner 抛出的 Redis 连接/超时异常接进 CAP 既有的恢复分支；
+    /// 缺陷机制、为什么只包这一个成员、以及失效方向全部写在 <see cref="RedisSubscriptionRecovery"/>。
+    /// 转换之外的一切（包括所有其它异常类型与取消）原样上抛。
+    /// </summary>
+    public Task SubscribeAsync(IEnumerable<string> topics) =>
+        RedisSubscriptionRecovery.SubscribeAsync(inner, topics);
 
     /// <summary>
     /// #3352：把 inner 的<b>永久阻塞</b>挪到专用线程，让它不再常驻占用一条线程池 worker。

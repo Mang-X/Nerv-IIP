@@ -121,6 +121,24 @@
         "Nerv.IIP.Business.Mes.Web.Tests.MesAssetUnavailableRedisCapTransportTests.Redis_cap_poison_exhaustion_persists_and_replays_the_original_v2_identity_without_duplicate_effects",
         "Nerv.IIP.Business.Mes.Web.Tests.MesAssetUnavailableRedisCapTransportTests.Redis_cap_rejects_mismatched_v2_envelopes_into_persistent_dead_letters_with_original_json"
       ]
+    },
+    {
+      "id": "messaging-cap-subscribe-recovery-redis-cap",
+      "service": "Messaging",
+      "tier": "core",
+      "status": "active",
+      "project": "backend/tests/Nerv.IIP.Messaging.CAP.Tests/Nerv.IIP.Messaging.CAP.Tests.csproj",
+      "filter": "FullyQualifiedName=Nerv.IIP.Messaging.CAP.Tests.RedisSubscriptionRecoveryRedisCapTests.Redis_cap_connection_failure_at_subscribe_recovers_through_the_existing_transport_check_without_losing_or_duplicating_work|FullyQualifiedName=Nerv.IIP.Messaging.CAP.Tests.RedisSubscriptionRecoveryRedisCapTests.Redis_cap_timeout_at_subscribe_never_reports_a_subscription_and_recovers_through_the_existing_transport_check",
+      "databasePrefix": "nerv_iip_messaging_cap",
+      "capVersionPrefix": "n3222msg",
+      "diagnosticSchemas": [
+        "cap_issue3222_connection",
+        "cap_issue3222_timeout"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Messaging.CAP.Tests.RedisSubscriptionRecoveryRedisCapTests.Redis_cap_connection_failure_at_subscribe_recovers_through_the_existing_transport_check_without_losing_or_duplicating_work",
+        "Nerv.IIP.Messaging.CAP.Tests.RedisSubscriptionRecoveryRedisCapTests.Redis_cap_timeout_at_subscribe_never_reports_a_subscription_and_recovers_through_the_existing_transport_check"
+      ]
     }
   ]
 }

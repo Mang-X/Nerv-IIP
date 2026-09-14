@@ -354,6 +354,12 @@
       "sourcePath": "backend/services/Notification/tests/Nerv.IIP.Notification.Web.Tests/NotificationEnvelopeFieldBudgetPostgresTests.cs",
       "sourceOrdinal": 1,
       "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL envelope-field budget dead-letter proof\\.\";$"
+    },
+    {
+      "id": "messaging-cap-subscribe-recovery-postgres-redis",
+      "sourcePath": "backend/tests/Nerv.IIP.Messaging.CAP.Tests/RedisSubscriptionRecoveryRedisCapTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES and NERV_IIP_TEST_REDIS to run the real PostgreSQL \\+ Redis CAP subscribe-recovery proof\\.\";$"
     }
   ],
   "rules": [
@@ -1715,6 +1721,26 @@
       "testIdentities": [
         "Nerv.IIP.Notification.Web.Tests.NotificationEnvelopeFieldBudgetPostgresTests.Oversized_envelope_field_dead_letters_and_stays_replayable_on_postgres",
         "Nerv.IIP.Notification.Web.Tests.NotificationEnvelopeFieldBudgetPostgresTests.Without_the_gate_an_oversized_key_raises_22001_on_postgres"
+      ],
+      "expectedRuntimeTestCount": 2
+    },
+    {
+      "id": "messaging-cap-subscribe-recovery-postgres-redis",
+      "sourceId": "messaging-cap-subscribe-recovery-postgres-redis",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Messaging\\.CAP\\.Tests\\.RedisSubscriptionRecoveryRedisCapTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES and NERV_IIP_TEST_REDIS to run the real PostgreSQL \\+ Redis CAP subscribe-recovery proof\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "redis-cap",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Messaging.CAP.Tests.RedisSubscriptionRecoveryRedisCapTests.Redis_cap_connection_failure_at_subscribe_recovers_through_the_existing_transport_check_without_losing_or_duplicating_work",
+        "Nerv.IIP.Messaging.CAP.Tests.RedisSubscriptionRecoveryRedisCapTests.Redis_cap_timeout_at_subscribe_never_reports_a_subscription_and_recovers_through_the_existing_transport_check"
       ],
       "expectedRuntimeTestCount": 2
     }
