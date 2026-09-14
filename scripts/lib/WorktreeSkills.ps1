@@ -1,11 +1,15 @@
 # Script-Governance:
 #   Category: library
 #   SideEffects:
+#     - Runs the caller-injected skill install action in the main worktree
+#     - Mirrors the main worktree's installed payload into .agents/skills when a worktree has none
+#     - Recursively deletes and recreates .agents/skills/<name> for every directory under skills/
 #     - Creates the agent link layer (.claude/skills/**) for a caller-provided worktree root
 #   Writes:
+#     - .agents/skills/**
 #     - .claude/skills/**
 #   Cleanup:
-#     - None required; entries are bounded by the payload directory that drives them
+#     - None required; both layers are bounded by the skills/ sources and payload entries that drive them
 #   Requires:
 #     - PowerShell 7
 
@@ -37,10 +41,34 @@ function Get-NervSkillPayloadNames {
     return @(Get-ChildItem -LiteralPath $payloadRoot -Force -Directory | ForEach-Object { $_.Name })
 }
 
+function Get-NervRepoSkillNames {
+    <#
+        .SYNOPSIS
+        Names of the skills whose source is tracked in this repository under skills/.
+    #>
+    param([Parameter(Mandatory)] [string] $RepoRoot)
+
+    $sourceRoot = Join-Path $RepoRoot $script:NervRepoSkillsRelative
+    if (-not (Test-Path -LiteralPath $sourceRoot)) { return @() }
+
+    return @(Get-ChildItem -LiteralPath $sourceRoot -Force -Directory | ForEach-Object { $_.Name })
+}
+
 function Test-NervSkillsPayloadPresent {
     <#
         .SYNOPSIS
-        True when a worktree holds at least one installed skill payload.
+        True when a worktree holds at least one installed payload that skills-lock.json owns.
+
+        .DESCRIPTION
+        This is the gate for the lock-driven install and mirror, so it must only count the
+        payload those two produce. Repo-tracked skills land in the same directory
+        unconditionally (Sync-NervRepoSkillPayload), so counting them would make the gate
+        report "installed" the moment the repo publishes its own skills — after which a main
+        worktree whose install failed once would never install or mirror again, and every
+        third-party skill in skills-lock.json would stay silently missing.
+
+        Failure direction if skills-lock.json ever held nothing but repo-tracked skills: the
+        gate stays false and the install re-runs each session — noisy, not silently missing.
     #>
     param([Parameter(Mandatory)] [string] $RepoRoot)
 
@@ -49,7 +77,11 @@ function Test-NervSkillsPayloadPresent {
     # forever after.
     $payloadRoot = Join-Path $RepoRoot $script:NervAgentSkillsRelative
     if (-not (Test-Path -LiteralPath $payloadRoot)) { return $false }
-    return @(Get-ChildItem -LiteralPath $payloadRoot -Force).Count -gt 0
+
+    $repoOwned = [System.Collections.Generic.HashSet[string]]::new(
+        [string[]] @(Get-NervRepoSkillNames -RepoRoot $RepoRoot), [StringComparer]::Ordinal)
+    return @(Get-ChildItem -LiteralPath $payloadRoot -Force |
+            Where-Object { -not $repoOwned.Contains($_.Name) }).Count -gt 0
 }
 
 function New-NervSkillLinkLayer {
@@ -105,10 +137,80 @@ function Sync-NervRepoSkillPayload {
     $payloadRoot = Join-Path $RepoRoot $script:NervAgentSkillsRelative
     New-Item -ItemType Directory -Path $payloadRoot -Force | Out-Null
 
-    foreach ($source in Get-ChildItem -LiteralPath $sourceRoot -Force -Directory) {
-        $target = Join-Path $payloadRoot $source.Name
+    foreach ($name in Get-NervRepoSkillNames -RepoRoot $RepoRoot) {
+        $source = Join-Path $sourceRoot $name
+        $target = Join-Path $payloadRoot $name
         # 先删后拷：Copy-Item -Force 只覆盖同名文件，源里已删除的文件会永远留在安装层。
         if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
-        Copy-Item -LiteralPath $source.FullName -Destination $target -Recurse -Force
+        Copy-Item -LiteralPath $source -Destination $target -Recurse -Force
     }
+}
+
+function Initialize-NervWorktreeSkills {
+    <#
+        .SYNOPSIS
+        Brings one worktree's agent skills to their required state.
+
+        .DESCRIPTION
+        Three steps in a fixed order, and the order is the contract:
+
+        1. The lock-driven payload (skills-lock.json, third-party) is installed in the main
+           worktree and mirrored into this one — but only while this worktree has none, because
+           that install costs minutes and the payload is identical across worktrees.
+        2. Every repo-tracked skill is republished from skills/ **unconditionally**. Step 1 stops
+           at "a payload exists", so without this an edit to skills/ never reaches an
+           already-seeded worktree and the agent keeps loading the pre-edit text with nothing
+           failing. Running it inside step 1's else branch reintroduces exactly that drift.
+        3. The link layer is rebuilt last, so a skill first published by step 2 is reachable.
+           Rebuilding before step 2 leaves a newly added skill with no agent entry.
+
+        MainRoot is the main worktree that owns the install; pass an empty string when it cannot
+        be resolved. InstallAction receives the main worktree root and runs the skills CLI there;
+        it is injected so the contract test can drive this whole flow without the network.
+    #>
+    param(
+        [Parameter(Mandatory)] [string] $RepoRoot,
+        [string] $MainRoot,
+        [Parameter(Mandatory)] [scriptblock] $InstallAction
+    )
+
+    if ([string]::IsNullOrWhiteSpace($MainRoot)) {
+        Write-Host '[setup] skills: skipped (main worktree root unknown)'
+    }
+    elseif (Test-NervSkillsPayloadPresent -RepoRoot $RepoRoot) {
+        Write-Host '[setup] skills present - skipping'
+    }
+    else {
+        if (-not (Test-NervSkillsPayloadPresent -RepoRoot $MainRoot)) {
+            # Only ever install in the main worktree, so every future worktree copies from it.
+            Write-Host '[setup] skills: npx skills experimental_install (main worktree)'
+            try {
+                & $InstallAction $MainRoot | Out-Null
+            }
+            catch {
+                Write-Warning "[setup] skills install failed: $($_.Exception.Message)"
+            }
+        }
+
+        if (Test-NervSkillsPayloadPresent -RepoRoot $MainRoot) {
+            Write-Host '[setup] skills: mirroring .agents/skills from the main worktree'
+            try {
+                $mainPayload = Join-Path $MainRoot $script:NervAgentSkillsRelative
+                $targetPayload = Join-Path $RepoRoot $script:NervAgentSkillsRelative
+                New-Item -ItemType Directory -Path $targetPayload -Force | Out-Null
+                foreach ($skill in Get-ChildItem -LiteralPath $mainPayload -Force) {
+                    Copy-Item -LiteralPath $skill.FullName -Destination (Join-Path $targetPayload $skill.Name) -Recurse -Force
+                }
+            }
+            catch {
+                Write-Warning "[setup] skills mirror failed: $($_.Exception.Message)"
+            }
+        }
+        else {
+            Write-Host '[setup] skills: unavailable in the main worktree - skipping'
+        }
+    }
+
+    Sync-NervRepoSkillPayload -RepoRoot $RepoRoot
+    New-NervSkillLinkLayer -RepoRoot $RepoRoot
 }

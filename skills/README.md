@@ -122,7 +122,12 @@ npx skills experimental_install    # 把 payload 落到 .agents/skills/
 本身不产出任何 agent 链接。同一个 hook 先把 `skills/` 的每个技能重新发布进 payload：
 安装与镜像都以「payload 已存在」为终点，源改动否则到不了已播种的工作树。契约由
 [`scripts/tests/worktree-skill-links.Tests.ps1`](../scripts/tests/worktree-skill-links.Tests.ps1)
-守护：agent 读到的必须是 `skills/` 的当前正文，无源的第三方 payload 不受影响，链接集合必须
-等于 payload 目录集合，链接目标必须是相对路径，重建必须幂等。
+守护：symlink 链接层读到的必须是 `skills/` 的当前正文，源里删掉的文件必须从 payload 消失，
+无源的第三方 payload 不受影响（发布仓库自有技能也不得让 `experimental_install` 与镜像那道门
+失效），链接集合必须等于 payload 目录集合，链接目标必须是相对路径，重建必须幂等。
 
-两层都在 `.gitignore` 里，`skills-lock.json` 才是事实源。
+⚠️ 无符号链接能力的平台（未开开发者模式的 Windows）上，`.claude/skills/<name>` 是一次性实体
+拷贝，重建时原样保留——payload 刷新了，那份拷贝不会跟着刷新。这条漂移只在该平台上存活。
+
+两层都在 `.gitignore` 里；第三方技能的事实源是 `skills-lock.json`，项目专属技能的事实源是
+`skills/`（`sourceType: local`，payload 每次由 hook 按源重发布）。

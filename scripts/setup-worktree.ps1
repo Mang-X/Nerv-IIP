@@ -2,7 +2,7 @@
 #   Category: release-install
 #   SideEffects:
 #     - Mirrors the main worktree's installed agent skills into a fresh worktree (idempotent)
-#     - Republishes repo-tracked skills (skills/**) into the installed agent skill payload
+#     - Republishes repo-tracked skills (skills/**) into the installed agent skill payload, deleting payload files the source no longer has
 #     - Installs skills in the MAIN worktree via the skills CLI only when they are missing there
 #     - Restores frontend pnpm dependencies for a freshly created worktree (idempotent)
 #     - Optionally restores backend/.NET solutions when NERV_SETUP_BACKEND=1
@@ -59,7 +59,7 @@ function Get-MainWorktreeRoot([string] $worktreeRoot) {
   return (Split-Path -Parent $commonGitDir)
 }
 
-$mainRoot = $null
+$mainRoot = ''
 try {
   $mainRoot = Get-MainWorktreeRoot -worktreeRoot $root
 }
@@ -67,47 +67,10 @@ catch {
   Write-Warning "[setup] could not resolve the main worktree root: $($_.Exception.Message)"
 }
 
-if ($null -eq $mainRoot) {
-  Write-SetupStep 'skills: skipped (main worktree root unknown)'
+Initialize-NervWorktreeSkills -RepoRoot $root -MainRoot $mainRoot -InstallAction {
+  param([string] $mainWorktreeRoot)
+  Invoke-NativeCommandWithTimeout -Command 'npx' -Arguments @('skills', 'experimental_install') -WorkingDirectory $mainWorktreeRoot -TimeoutSeconds 900 -Name 'worktree-skills-install'
 }
-elseif (Test-NervSkillsPayloadPresent -RepoRoot $root) {
-  Write-SetupStep 'skills present - skipping'
-}
-else {
-  $mainSkills = Join-Path $mainRoot '.agents/skills'
-  if (-not (Test-NervSkillsPayloadPresent -RepoRoot $mainRoot)) {
-    # Only ever install in the main worktree, so every future worktree copies from it.
-    Write-SetupStep 'skills: npx skills experimental_install (main worktree)'
-    try {
-      Invoke-NativeCommandWithTimeout -Command 'npx' -Arguments @('skills', 'experimental_install') -WorkingDirectory $mainRoot -TimeoutSeconds 900 -Name 'worktree-skills-install' | Out-Null
-    }
-    catch {
-      Write-Warning "[setup] skills install failed: $($_.Exception.Message)"
-    }
-  }
-
-  if (Test-NervSkillsPayloadPresent -RepoRoot $mainRoot) {
-    Write-SetupStep "skills: mirroring .agents/skills from the main worktree"
-    try {
-      $targetSkills = Join-Path $root '.agents/skills'
-      New-Item -ItemType Directory -Path $targetSkills -Force | Out-Null
-      foreach ($skill in Get-ChildItem -LiteralPath $mainSkills -Force) {
-        Copy-Item -LiteralPath $skill.FullName -Destination (Join-Path $targetSkills $skill.Name) -Recurse -Force
-      }
-    }
-    catch {
-      Write-Warning "[setup] skills mirror failed: $($_.Exception.Message)"
-    }
-  }
-  else {
-    Write-SetupStep 'skills: unavailable in the main worktree - skipping'
-  }
-}
-
-# 安装与镜像都以「payload 已存在」为终点，因此 skills/ 的改动到不了已播种的工作树。
-# 项目技能的源在仓库里，重新发布是本地拷贝，直接每次覆盖，取消这条漂移的存在条件。
-Sync-NervRepoSkillPayload -RepoRoot $root
-New-NervSkillLinkLayer -RepoRoot $root
 
 # --- Frontend dependencies (needed for typecheck / test / build / preview) ---
 if (-not (Test-Path (Join-Path $root 'frontend/node_modules'))) {
