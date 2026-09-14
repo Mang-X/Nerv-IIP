@@ -1,4 +1,5 @@
 import { RequestTimeoutError } from '@/api/request-timeout'
+import { clearPendingBusinessIntent } from '@nerv-iip/business-core'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, ref } from 'vue'
@@ -362,11 +363,15 @@ describe('PDA MES production reporting page', () => {
   })
 
   beforeEach(() => {
+    for (const entry of JSON.parse(
+      sessionStorage.getItem('nerv-iip.pending-business-intents.v1') ?? '[]',
+    ))
+      clearPendingBusinessIntent(entry)
     sessionStorage.clear()
     serialRequired.value = false
     serialValid.value = true
     serialTemplateId.value = ''
-    recordReport.mockClear()
+    recordReport.mockReset()
     recordReport.mockResolvedValue(successfulReceipt)
     confirmReport.mockClear()
     confirmReport.mockImplementation(async (input) => ({ ...input }))
@@ -553,7 +558,7 @@ describe('PDA MES production reporting page', () => {
     },
   )
 
-  it('does not resurrect persisted preparation after runtime context invalidation', async () => {
+  it('hides preparation in another context and restores it only after returning to its context', async () => {
     route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-1' }
     recordReport.mockResolvedValueOnce({
       success: true,
@@ -568,14 +573,26 @@ describe('PDA MES production reporting page', () => {
     document.body.querySelector<HTMLButtonElement>('[data-testid="submit-report"]')!.click()
     await flushPromises()
     expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
+    const originalContext = { ...reportContextRef.value }
     contextGenerationRef.value += 1
-    reportContextRef.value = { ...reportContextRef.value, generation: contextGenerationRef.value }
+    reportContextRef.value = {
+      ...reportContextRef.value,
+      scopeId: 'other-scope',
+      generation: contextGenerationRef.value,
+    }
     await flushPromises()
     expect(wrapper.find('[data-result]').exists()).toBe(false)
     const reentered = mount(ReportPage)
     await flushPromises()
     expect(reentered.find('[data-result]').exists()).toBe(false)
     expect(recordReport).toHaveBeenCalledTimes(1)
+    contextGenerationRef.value += 1
+    reportContextRef.value = { ...originalContext, generation: contextGenerationRef.value }
+    await flushPromises()
+    expect(reentered.find('[data-result][data-status="success"]').exists()).toBe(true)
+    await reentered.get('[data-testid="retry-label-preparation"]').trigger('click')
+    await flushPromises()
+    expect(recordReport.mock.calls[1][0]).toEqual(recordReport.mock.calls[0][0])
   })
 
   it('starts on the select-work-order step listing work orders', () => {
@@ -921,12 +938,9 @@ describe('PDA MES production reporting page', () => {
     expect(document.body.querySelector('[data-testid="good-quantity"]')).not.toBeNull()
   })
 
-  it('旧提交迟到不能覆盖或清除新 pair 的提交状态', async () => {
+  it('旧提交等待时新 pair 被占用阻断，迟到响应不能释放该占用', async () => {
     const firstRequest = deferred<ReportEnvelope>()
-    const secondRequest = deferred<ReportEnvelope>()
-    recordReport
-      .mockImplementationOnce(() => firstRequest.promise)
-      .mockImplementationOnce(() => secondRequest.promise)
+    recordReport.mockImplementationOnce(() => firstRequest.promise)
 
     route.query = {
       workOrderId: 'WO-2026-0001',
@@ -958,7 +972,8 @@ describe('PDA MES production reporting page', () => {
     await flushPromises()
     document.body.querySelector<HTMLButtonElement>('[data-testid="submit-report"]')!.click()
     await flushPromises()
-    expect(recordReport).toHaveBeenCalledTimes(2)
+    expect(recordReport).toHaveBeenCalledTimes(1)
+    expect(document.body.querySelector('[data-testid="occupied-report"]')).not.toBeNull()
 
     firstRequest.resolve(successfulReceipt)
     await flushPromises()
@@ -967,14 +982,18 @@ describe('PDA MES production reporting page', () => {
       document.body.querySelector<HTMLButtonElement>('[data-testid="submit-report"]')!.disabled,
     ).toBe(true)
 
-    secondRequest.resolve(successfulReceipt)
+    document.body.querySelector<HTMLButtonElement>('[data-testid="return-to-preparation"]')!.click()
     await flushPromises()
+    expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="retry-report"]').trigger('click')
+    await flushPromises()
+    expect(recordReport).toHaveBeenCalledTimes(2)
+    expect(recordReport.mock.calls[1][0]).toEqual(recordReport.mock.calls[0][0])
     expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('WO-2026-0002 · OP-3')
-    expect(wrapper.text()).not.toContain('WO-2026-0001 · OP-1')
+    expect(wrapper.text()).toContain('WO-2026-0001 · OP-1')
   })
 
-  it('A pending → B → A 重新绑定同一 intent，不得铸新 key 或重复写，A 成功可恢复', async () => {
+  it('A pending → B → A 保留原意图，迟到成功不自动确认，显式重试仍同 key', async () => {
     const firstRequest = deferred<ReportEnvelope>()
     recordReport.mockImplementationOnce(() => firstRequest.promise)
     route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-1' }
@@ -995,10 +1014,11 @@ describe('PDA MES production reporting page', () => {
     await flushPromises()
 
     expect(recordReport).toHaveBeenCalledTimes(1)
-    expect(
-      document.body.querySelector<HTMLButtonElement>('[data-testid="submit-report"]')!.disabled,
-    ).toBe(true)
+    expect(document.body.querySelector('[data-testid="submit-report"]')).toBeNull()
     firstRequest.resolve(successfulReceipt)
+    await flushPromises()
+    expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="retry-report"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('RPT-DEFAULT')
@@ -1199,9 +1219,7 @@ describe('PDA MES production reporting page', () => {
     pendingReceipt.resolve(successfulReceipt)
     await flushPromises()
 
-    expect(confirmReport).toHaveBeenCalledWith(
-      expect.objectContaining({ context: expect.objectContaining({ principalId: 'principal-1' }) }),
-    )
+    expect(confirmReport).not.toHaveBeenCalled()
     expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('报工成功')
     wrapper.unmount()
@@ -1213,7 +1231,7 @@ describe('PDA MES production reporting page', () => {
     ['environment', { environmentId: 'env-prod' }],
     ['reporting scope', { scopeKind: 'work-center', scopeId: 'WC-B' }],
   ])(
-    'GET pending 时 %s A→B→A 会永久失效旧 generation/attempt',
+    'GET pending 时 %s A→B→A 失效旧 attempt，但保留凭据供当前 context 重新核验',
     async (_dimension, changedContext) => {
       const pendingConfirmation = deferred<{
         reportNo: string
@@ -1251,10 +1269,11 @@ describe('PDA MES production reporting page', () => {
       expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(false)
       expect(wrapper.text()).not.toContain('报工成功')
 
-      document.body.querySelector<HTMLButtonElement>('[data-testid="submit-report"]')!.click()
+      await wrapper.get('[data-testid="retry-report"]').trigger('click')
       await flushPromises()
-      expect(recordReport).toHaveBeenCalledTimes(2)
-      expect(recordReport.mock.calls[1][0].idempotencyKey).not.toBe(oldIdempotencyKey)
+      expect(recordReport).toHaveBeenCalledTimes(1)
+      expect(recordReport.mock.calls[0][0].idempotencyKey).toBe(oldIdempotencyKey)
+      expect(confirmReport).toHaveBeenCalledTimes(2)
       expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
       wrapper.unmount()
     },

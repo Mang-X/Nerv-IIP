@@ -5,8 +5,14 @@ import type {
   BusinessConsoleMesOperationTaskRow,
   BusinessConsoleRecordProductionReportResponse,
 } from '@nerv-iip/api-client'
-import type { ReportCtx } from '@nerv-iip/business-core'
-import { computed, reactive, watch, type ComputedRef, type Ref } from 'vue'
+import {
+  acquirePendingBusinessIntent,
+  peekPendingBusinessIntent,
+  type PendingBusinessIntentScope,
+  type ReportCtx,
+} from '@nerv-iip/business-core'
+import { computed, reactive, ref, watch, type ComputedRef, type Ref } from 'vue'
+import { mesReportIntentScope } from './mesReportIntent'
 
 export type MesReportResult = {
   status: 'success' | 'error'
@@ -17,12 +23,14 @@ export type MesReportResult = {
 }
 
 interface ReportIntent {
+  owner: string
+  reference: PendingBusinessIntentScope
   attempt: symbol
   workOrderId: string
   operationTaskId: string
   intentKey: string
   context: MesReportExecutionContext
-  payload: Omit<RecordReportInput, 'workOrderId' | 'operationTaskId' | 'idempotencyKey'>
+  payload?: Omit<RecordReportInput, 'workOrderId' | 'operationTaskId' | 'idempotencyKey'>
   status: 'pending' | 'success' | 'error'
   receipt:
     | (BusinessConsoleRecordProductionReportResponse & {
@@ -33,24 +41,27 @@ interface ReportIntent {
   result: MesReportResult | null
 }
 
-// One local recovery slot, not a queue: the shared write intent remains the owner of
-// the wire payload/key/time. This snapshot only restores its confirmed PDA result.
-const PREPARATION_STORAGE_KEY = 'nerv-iip.pda-mes-report-preparation.v1'
-type StoredPreparation = Omit<ReportIntent, 'attempt' | 'status'>
-
-function readPreparation(): StoredPreparation | undefined {
+// One occupied slot per execution scope. No wire payload/key/time is copied here.
+type StoredPreparation = Pick<
+  ReportIntent,
+  'owner' | 'reference' | 'workOrderId' | 'operationTaskId' | 'receipt' | 'result'
+>
+const slotRevision = ref(0)
+const inFlight = new Set<string>()
+function storageKey(context: MesReportExecutionContext) {
+  return `nerv-iip.pda-mes-report-slot.v1:${encodeURIComponent(reportContextKey({ ...context, generation: 0 }))}`
+}
+function readPreparation(context: MesReportExecutionContext): StoredPreparation | undefined {
   try {
-    const saved = JSON.parse(sessionStorage.getItem(PREPARATION_STORAGE_KEY) ?? 'null')
+    const saved = JSON.parse(sessionStorage.getItem(storageKey(context)) ?? 'null')
     if (
-      saved?.result?.status === 'success' &&
-      saved.result.receipt?.printingPreparationPending === true &&
+      typeof saved?.owner === 'string' &&
       typeof saved.workOrderId === 'string' &&
       typeof saved.operationTaskId === 'string' &&
-      typeof saved.intentKey === 'string' &&
-      saved.context &&
-      saved.payload &&
-      typeof saved.receipt?.reportNo === 'string' &&
-      typeof saved.receipt?.productionReportId === 'string'
+      saved.reference?.principalId === context.principalId &&
+      saved.reference?.organizationId === context.organizationId &&
+      saved.reference?.environmentId === context.environmentId &&
+      typeof saved.reference?.payloadFingerprint === 'string'
     )
       return saved
   } catch {
@@ -58,30 +69,54 @@ function readPreparation(): StoredPreparation | undefined {
   }
 }
 
-function savePreparation(intent: ReportIntent) {
-  try {
-    if (intent.result?.status === 'success' && intent.result.receipt?.printingPreparationPending) {
-      const { attempt: _attempt, status: _status, ...saved } = intent
-      sessionStorage.setItem(PREPARATION_STORAGE_KEY, JSON.stringify(saved))
-    } else if (readPreparation()?.intentKey === intent.intentKey) {
-      sessionStorage.removeItem(PREPARATION_STORAGE_KEY)
-    }
-  } catch {
-    // The current page still retains its confirmed result when storage is unavailable.
-  }
+function savePreparation(intent: ReportIntent, claim = false) {
+  const existing = readPreparation(intent.context)
+  if (existing ? existing.owner !== intent.owner : !claim) return false
+  const { owner, reference, workOrderId, operationTaskId, receipt, result } = intent
+  sessionStorage.setItem(
+    storageKey(intent.context),
+    JSON.stringify({ owner, reference, workOrderId, operationTaskId, receipt, result }),
+  )
+  slotRevision.value += 1
+  return true
 }
-
-function forgetPreparation(intentKey: string) {
-  try {
-    if (readPreparation()?.intentKey === intentKey)
-      sessionStorage.removeItem(PREPARATION_STORAGE_KEY)
-  } catch {
-    // Storage availability does not change runtime context invalidation.
-  }
+function releasePreparation(intent: ReportIntent) {
+  if (readPreparation(intent.context)?.owner !== intent.owner) return
+  sessionStorage.removeItem(storageKey(intent.context))
+  slotRevision.value += 1
+}
+function frozenInput(saved: StoredPreparation): RecordReportInput | undefined {
+  const pending = peekPendingBusinessIntent(saved.reference)
+  const snapshot = pending?.payloadSnapshot as
+    | (RecordReportInput & {
+        organizationId: string
+        environmentId: string
+        scopeKind: string
+        scopeId: string
+        reportedAtUtc: string
+      })
+    | undefined
+  if (
+    !pending ||
+    !snapshot ||
+    snapshot.workOrderId !== saved.workOrderId ||
+    snapshot.operationTaskId !== saved.operationTaskId
+  )
+    return
+  const {
+    organizationId: _org,
+    environmentId: _env,
+    scopeKind: _kind,
+    scopeId: _scope,
+    reportedAtUtc: _time,
+    ...input
+  } = snapshot
+  return { ...input, idempotencyKey: pending.idempotencyKey }
 }
 
 interface MesReportSubmissionOptions {
   pair: ComputedRef<{ workOrderId: string; operationTaskId: string } | null>
+  recoveryPair: ComputedRef<{ workOrderId: string; operationTaskId: string } | null>
   selectedTask: ComputedRef<BusinessConsoleMesOperationTaskRow | null>
   context: ComputedRef<MesReportExecutionContext | undefined>
   contextGeneration: Ref<number>
@@ -103,6 +138,7 @@ interface MesReportSubmissionOptions {
   recordReport: (
     input: RecordReportInput,
     isCurrent?: () => boolean,
+    recovering?: boolean,
   ) => Promise<{
     success?: boolean
     message?: string | null
@@ -130,50 +166,81 @@ function reportContextKey(context: MesReportExecutionContext | undefined) {
   ].join('\u0000')
 }
 
-function sameStoredContext(current: MesReportExecutionContext, saved: MesReportExecutionContext) {
-  // Generation is a runtime invalidation counter, not a cross-reload identity.
-  return (
-    reportContextKey({ ...current, generation: 0 }) ===
-    reportContextKey({ ...saved, generation: 0 })
-  )
-}
-
 export function useMesReportSubmission(options: MesReportSubmissionOptions) {
   const intents = reactive(new Map<string, ReportIntent>())
   const pairKey = computed(() => {
     const contextKey = reportContextKey(options.context.value)
-    const pair = options.pair.value
+    const pair = options.recoveryPair.value
     return pair && contextKey
       ? `${contextKey}\u0000${pair.workOrderId}\u0000${pair.operationTaskId}`
       : ''
   })
   const currentIntent = computed(() => (pairKey.value ? intents.get(pairKey.value) : undefined))
   const result = computed(() => currentIntent.value?.result ?? null)
-  const submitting = computed(() => currentIntent.value?.status === 'pending')
+  const submitting = computed(() => {
+    slotRevision.value
+    return !!currentIntent.value && inFlight.has(currentIntent.value.owner)
+  })
+  const occupied = computed(() => {
+    slotRevision.value
+    return options.context.value ? readPreparation(options.context.value) : undefined
+  })
+  const conflictingPreparation = computed(() => {
+    const saved = occupied.value
+    const pair = options.recoveryPair.value
+    return saved &&
+      (saved.workOrderId !== pair?.workOrderId || saved.operationTaskId !== pair?.operationTaskId)
+      ? saved
+      : undefined
+  })
 
   watch(
-    [pairKey, options.selectedTask, options.reportScopeReady],
+    pairKey,
+    (_current, previous) => {
+      const intent = intents.get(previous)
+      if (!intent || !inFlight.has(intent.owner)) return
+      intent.attempt = Symbol('mes-report-route-invalidated')
+      intents.delete(previous)
+    },
+    { flush: 'sync' },
+  )
+
+  watch(
+    [pairKey, options.selectedTask, options.reportScopeReady, slotRevision],
     () => {
       const context = options.context.value
-      const pair = options.pair.value
+      const pair = options.recoveryPair.value
       const task = options.selectedTask.value
       if (!context || !pair || !task || !options.reportScopeReady.value || currentIntent.value)
         return
-      const saved = readPreparation()
+      const saved = readPreparation(context)
       if (
         !saved ||
-        !sameStoredContext(context, saved.context) ||
         saved.workOrderId !== pair.workOrderId ||
         saved.operationTaskId !== pair.operationTaskId ||
         task.workOrderId !== pair.workOrderId ||
         task.operationTaskId !== pair.operationTaskId
       )
         return
+      const input = frozenInput(saved)
+      const {
+        workOrderId: _workOrder,
+        operationTaskId: _operation,
+        idempotencyKey: intentKey,
+        ...payload
+      } = input ?? {}
       intents.set(pairKey.value, {
         ...saved,
+        intentKey: intentKey ?? '',
+        payload: input ? payload : undefined,
         context: { ...context },
         attempt: Symbol('mes-report-preparation-restored'),
-        status: 'success',
+        status: saved.result?.status ?? 'error',
+        result: saved.result ?? {
+          status: 'error',
+          title: '报工结果待核实',
+          description: '请沿用原报工核验结果，勿重复录入产量。',
+        },
       })
     },
     { immediate: true },
@@ -185,7 +252,6 @@ export function useMesReportSubmission(options: MesReportSubmissionOptions) {
       for (const [key, intent] of intents) {
         if (intent.context.generation === generation) continue
         intent.attempt = Symbol('mes-report-context-invalidated')
-        forgetPreparation(intent.intentKey)
         intents.delete(key)
       }
     },
@@ -207,7 +273,7 @@ export function useMesReportSubmission(options: MesReportSubmissionOptions) {
     if (options.scanGuarded.value || !options.reportScopeReady.value) return
     const executionContext = options.context.value
     if (!executionContext) return
-    const identity = options.pair.value
+    const identity = options.recoveryPair.value
     const task = options.selectedTask.value
     const workOrderId = identity?.workOrderId
     const operationTaskId = identity?.operationTaskId
@@ -223,14 +289,18 @@ export function useMesReportSubmission(options: MesReportSubmissionOptions) {
     }
     const key = `${reportContextKey(executionContext)}\u0000${workOrderId}\u0000${operationTaskId}`
     let intent = intents.get(key)
+    const slot = readPreparation(executionContext)
+    if (slot && (slot.workOrderId !== workOrderId || slot.operationTaskId !== operationTaskId))
+      return
     const confirmedResult = intent?.result?.status === 'success' ? intent.result : null
     if (
-      intent?.status === 'pending' ||
+      (intent && inFlight.has(intent.owner)) ||
       (intent?.status === 'success' && !intent.result?.receipt?.printingPreparationPending)
     )
       return
     if (!intent) {
       if (
+        !options.pair.value ||
         !options.quantityValid.value ||
         !options.serialValid.value ||
         options.invalidMaterialLots.value ||
@@ -239,6 +309,8 @@ export function useMesReportSubmission(options: MesReportSubmissionOptions) {
         return
       }
       intent = {
+        owner: makeIdempotencyKey(),
+        reference: {} as PendingBusinessIntentScope,
         attempt: Symbol('mes-report-attempt'),
         workOrderId,
         operationTaskId,
@@ -260,6 +332,22 @@ export function useMesReportSubmission(options: MesReportSubmissionOptions) {
         receipt: null,
         result: null,
       }
+      const input = {
+        workOrderId,
+        operationTaskId,
+        ...intent.payload!,
+        idempotencyKey: intent.intentKey,
+      }
+      intent.reference = mesReportIntentScope(executionContext, input)
+      const pending = acquirePendingBusinessIntent(intent.reference, () => intent!.intentKey, {
+        ...input,
+        organizationId: executionContext.organizationId,
+        environmentId: executionContext.environmentId,
+        reportedAtUtc: new Date().toISOString(),
+        scopeKind: executionContext.scopeKind,
+        scopeId: executionContext.scopeId,
+      })
+      intent.intentKey = pending.idempotencyKey
       intents.set(key, intent)
       intent = intents.get(key)!
     } else {
@@ -269,18 +357,16 @@ export function useMesReportSubmission(options: MesReportSubmissionOptions) {
     }
     options.flowContext.quantityEntered = true
     const attempt = intent.attempt
+    const isCurrent = () => pairKey.value === key && intent.attempt === attempt
     try {
+      if (!savePreparation(intent, !slot)) return
+      inFlight.add(intent.owner)
+      slotRevision.value += 1
       if (!intent.receipt || intent.receipt.printingPreparationPending) {
-        const receiptEnvelope = await options.recordReport(
-          {
-            workOrderId,
-            operationTaskId,
-            ...intent.payload,
-            idempotencyKey: intent.intentKey,
-          },
-          () => pairKey.value === key && intent.attempt === attempt,
-        )
-        if (intent.attempt !== attempt) return
+        const input = frozenInput(intent)
+        if (!input) throw new Error('原报工请求凭据不可用，请联系现场负责人核验，勿重新录入产量。')
+        const receiptEnvelope = await options.recordReport(input, isCurrent, !!slot)
+        if (!isCurrent()) return
         if (!receiptEnvelope?.success) {
           throw new Error(receiptEnvelope?.message?.trim() || '报工回执无效，请重试。')
         }
@@ -290,6 +376,7 @@ export function useMesReportSubmission(options: MesReportSubmissionOptions) {
           throw new Error('报工回执缺少真实报工单号或回执 ID，已阻止成功确认。')
         }
         intent.receipt = { ...receiptEnvelope.data, reportNo, productionReportId }
+        savePreparation(intent)
       }
       const { reportNo, productionReportId } = intent.receipt
       await options.confirmReport({
@@ -299,13 +386,13 @@ export function useMesReportSubmission(options: MesReportSubmissionOptions) {
         operationTaskId,
         context: intent.context,
       })
-      if (intent.attempt !== attempt) return
+      if (!isCurrent()) return
       const description = [
         `${workOrderId} · ${operationTaskId}`,
         `报工单号 ${reportNo}`,
         `回执 ID ${productionReportId}`,
       ]
-      if (intent.payload.completesOperation) description.push('本工序已标记完工')
+      if (intent.payload?.completesOperation) description.push('本工序已标记完工')
       intent.status = 'success'
       intent.result = {
         status: 'success',
@@ -313,9 +400,10 @@ export function useMesReportSubmission(options: MesReportSubmissionOptions) {
         description: description.join('；'),
         receipt: intent.receipt,
       }
-      savePreparation(intent)
+      if (intent.receipt.printingPreparationPending) savePreparation(intent)
+      else releasePreparation(intent)
     } catch (error) {
-      if (intent.attempt !== attempt) return
+      if (!isCurrent()) return
       if (confirmedResult) {
         intent.status = 'success'
         intent.result = {
@@ -333,8 +421,12 @@ export function useMesReportSubmission(options: MesReportSubmissionOptions) {
         description: describeRequestError(error, '请检查网络后重试。').message,
         receipt: intent.receipt ?? undefined,
       }
+      savePreparation(intent)
+    } finally {
+      inFlight.delete(intent.owner)
+      slotRevision.value += 1
     }
   }
 
-  return { currentIntent, result, submitting, deleteCurrentIntent, submit }
+  return { currentIntent, result, submitting, conflictingPreparation, deleteCurrentIntent, submit }
 }

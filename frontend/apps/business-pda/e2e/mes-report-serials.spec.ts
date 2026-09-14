@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import {
+  mesOperationTasks,
+  mesWorkOrders,
   productionReportReceipt,
   routeBusinessConsoleApi,
   routeConsoleApi,
@@ -86,6 +88,164 @@ function receipt(body: Record<string, unknown>, status = 'sent-to-printer', pend
     },
   }
 }
+
+test('完工报工刷新后只恢复原标签准备，不重新开放新报工', async ({ page }) => {
+  const writes: Record<string, unknown>[] = []
+  await page.route('**/mes/work-orders/WO-1?**', (route) => {
+    if (!writes.length) return routeBusinessConsoleApi(route)
+    return route.fulfill({
+      json: {
+        success: true,
+        data: {
+          ...mesWorkOrders[0],
+          readinessStatus: 'ready',
+          blockingReasons: [],
+          operationTasks: [{ ...mesOperationTasks[0], status: 'Completed', allowedActions: [] }],
+        },
+      },
+    })
+  })
+  await page.route(/\/mes\/(?:reportable-operation-tasks|operation-tasks)(?:\?|$)/, (route) => {
+    if (!writes.length) return routeBusinessConsoleApi(route)
+    const items = route.request().url().includes('/reportable-operation-tasks')
+      ? []
+      : [{ ...mesOperationTasks[0], status: 'Completed', allowedActions: [] }]
+    return route.fulfill({ json: { success: true, data: { items, total: items.length } } })
+  })
+  // Reporting operators need no additional operations.read permission to recover a report.
+  await page.route('**/mes/operation-tasks?**', (route) =>
+    route.fulfill({ status: 403, json: { success: false, message: '没有工序执行读取权限' } }),
+  )
+  await page.route('**/mes/production-reports', (route) => {
+    const body = route.request().postDataJSON()
+    writes.push(body)
+    return route.fulfill({
+      json: receipt(
+        body,
+        writes.length === 1 ? 'reserved' : 'sent-to-printer',
+        writes.length === 1,
+      ),
+    })
+  })
+  await page.goto('/mes/report?workOrderId=WO-1&operationTaskId=OP-1')
+  await enterGood(page, '2')
+  await selectTemplate(page)
+  await page.getByTestId('completes-operation').check()
+  await page.getByTestId('submit-report').tap()
+  await expect(page.getByRole('heading', { name: '报工成功' })).toBeVisible()
+  await page.reload()
+  await expect(page.getByTestId('retry-label-preparation')).toBeVisible()
+  await page.getByTestId('retry-label-preparation').tap()
+  await expect(page.getByText('已发送至打印机，请到现场核对出纸。')).toBeVisible()
+  expect(writes).toHaveLength(2)
+  expect(writes[1]).toEqual(writes[0])
+  expect(writes[0].completesOperation).toBe(true)
+  await page.reload()
+  await expect(
+    page.getByText('工序任务 OP-1 当前不可报工，服务端未开放 report 动作。'),
+  ).toBeVisible()
+  await expect(page.getByTestId('submit-report')).toHaveCount(0)
+})
+
+test('独立工单 A 占用时 B 可查看但零提交，只有 A 收敛后 B 才开始新意图', async ({ page }) => {
+  const tasks = [
+    mesOperationTasks[0],
+    {
+      ...mesOperationTasks[0],
+      workOrderId: 'WO-INDEPENDENT',
+      operationTaskId: 'OP-NEW',
+      operationSequence: 10,
+    },
+  ]
+  const orders = [mesWorkOrders[0], { ...mesWorkOrders[0], workOrderId: 'WO-INDEPENDENT' }]
+  const writes: Record<string, unknown>[] = []
+  await page.route(/\/mes\/work-orders(?:\?|$)/, (route) =>
+    route.fulfill({ json: { success: true, data: { items: orders, total: 2 } } }),
+  )
+  await page.route(/\/mes\/work-orders\/(?:WO-1|WO-INDEPENDENT)(?:\?|$)/, (route) => {
+    const id = new URL(route.request().url()).pathname.split('/').at(-1)
+    return route.fulfill({
+      json: {
+        success: true,
+        data: {
+          ...orders.find((order) => order.workOrderId === id),
+          readinessStatus: 'ready',
+          blockingReasons: [],
+          operationTasks: tasks.filter((task) => task.workOrderId === id),
+        },
+      },
+    })
+  })
+  await page.route(/\/mes\/(?:reportable-operation-tasks|operation-tasks)(?:\?|$)/, (route) => {
+    const query = new URL(route.request().url()).searchParams
+    const items = tasks.filter(
+      (task) =>
+        (!query.get('operationTaskId') || task.operationTaskId === query.get('operationTaskId')) &&
+        (!query.get('workOrderId') || task.workOrderId === query.get('workOrderId')),
+    )
+    return route.fulfill({ json: { success: true, data: { items, total: items.length } } })
+  })
+  await page.route('**/mes/production-reports', (route) => {
+    const body = route.request().postDataJSON()
+    writes.push(body)
+    const response = receipt(
+      body,
+      writes.length === 1 ? 'reserved' : 'sent-to-printer',
+      writes.length === 1,
+    )
+    if (body.workOrderId === 'WO-INDEPENDENT') {
+      response.data.productionReportId = 'report-b'
+      response.data.reportNo = 'RPT-B'
+      response.data.operationReceipt = productionReportReceipt(
+        'report-b',
+        String(body.idempotencyKey),
+      )
+    }
+    return route.fulfill({ json: response })
+  })
+  await page.route('**/mes/production-reports/RPT-B?**', (route) =>
+    route.fulfill({
+      json: {
+        success: true,
+        data: {
+          report: {
+            reportNo: 'RPT-B',
+            productionReportId: 'report-b',
+            workOrderId: 'WO-INDEPENDENT',
+            operationTaskId: 'OP-NEW',
+          },
+        },
+      },
+    }),
+  )
+  await page.goto('/mes/report?workOrderId=WO-1&operationTaskId=OP-1')
+  await enterGood(page, '2')
+  await selectTemplate(page)
+  await page.getByTestId('submit-report').tap()
+  await expect(page.getByTestId('retry-label-preparation')).toBeVisible()
+  await page.goto('/mes/report?workOrderId=WO-INDEPENDENT&operationTaskId=OP-NEW')
+  await enterGood(page, '2')
+  await selectTemplate(page)
+  await expect(page.getByTestId('occupied-report')).toBeVisible()
+  await expect(page.getByTestId('submit-report')).toBeDisabled()
+  expect(writes).toHaveLength(1)
+  await page.reload()
+  await expect(page.getByTestId('return-to-preparation')).toBeVisible()
+  await page.getByTestId('return-to-preparation').tap()
+  await expect(page.getByRole('heading', { name: '报工成功' })).toBeVisible()
+  await page.getByTestId('retry-label-preparation').tap()
+  await expect(page.getByTestId('continue-report')).toBeEnabled()
+  expect(writes).toHaveLength(2)
+  expect(writes[1]).toEqual(writes[0])
+  await page.goto('/mes/report?workOrderId=WO-INDEPENDENT&operationTaskId=OP-NEW')
+  await enterGood(page, '2')
+  await selectTemplate(page)
+  await page.getByTestId('submit-report').tap()
+  await expect(page.getByRole('heading', { name: '报工成功' })).toBeVisible()
+  expect(writes).toHaveLength(3)
+  expect(writes[2].workOrderId).toBe('WO-INDEPENDENT')
+  expect(writes[2].idempotencyKey).not.toBe(writes[0].idempotencyKey)
+})
 
 test('单手录入、模板选择和全部序列号；运输成功不等于出纸', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 })

@@ -11,6 +11,7 @@ import {
   createBusinessConsoleSopFileDownloadGrantMutationOptions,
   getBusinessConsoleMesCurrentOperationSopsQueryOptions,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
+  getBusinessConsoleMesWorkOrderDetail,
   listBusinessConsoleMesMaterialIssueRequests,
   listBusinessConsoleMesLineSideInventoryBalancesQueryOptions,
   listBusinessConsoleMesOperationTasks,
@@ -109,6 +110,7 @@ vi.mock('@nerv-iip/api-client', () => ({
   getBusinessConsoleMesWorkOrderDetailQueryOptions: mockQueryOptions(
     'getBusinessConsoleMesWorkOrderDetail',
   ),
+  getBusinessConsoleMesWorkOrderDetail: vi.fn(),
   getBusinessConsoleMesWorkOrderDetailQueryKey: vi.fn(({ path, query }) => [
     {
       _id: 'getBusinessConsoleMesWorkOrderDetail',
@@ -368,6 +370,29 @@ describe('pda useBusinessMes composables', () => {
       environmentId: 'env-dev',
     }
     authState.sessionId = 'session-001'
+    vi.mocked(getBusinessConsoleMesWorkOrderDetail)
+      .mockReset()
+      .mockImplementation(async ({ path }: { path: { workOrderId: string } }) => {
+        const previous = coladaState.mutateById.get('recordBusinessConsoleMesProductionReport')
+          ?.mock.lastCall?.[0].body
+        return {
+          data: {
+            success: true,
+            data: {
+              workOrderId: path.workOrderId,
+              operationTasks: [
+                {
+                  workOrderId: path.workOrderId,
+                  operationTaskId:
+                    previous?.operationTaskId ?? path.workOrderId.replace(/^wo-/, 'ot-'),
+                  status: previous?.completesOperation ? 'Completed' : 'InProgress',
+                  allowedActions: previous?.completesOperation ? [] : ['report'],
+                },
+              ],
+            },
+          },
+        } as never
+      })
     vi.mocked(listBusinessConsoleMesOperationTasks)
       .mockReset()
       .mockImplementation(
@@ -2165,6 +2190,32 @@ describe('pda useBusinessMes composables', () => {
     }
     await recordReport(input)
     await recordReport({ ...input, idempotencyKey: 'labels-retry' })
+    expect(mutate.mock.calls[1][0].body).toEqual(mutate.mock.calls[0][0].body)
+  })
+
+  it('does not release the frozen wire intent when a dispatched report response arrives after navigation', async () => {
+    const { recordReport } = useMesProductionReports()
+    const mutate = coladaState.mutateById.get('recordBusinessConsoleMesProductionReport')!
+    const response = deferred<{ success: boolean; data: { printingPreparationPending: boolean } }>()
+    mutate.mockReturnValueOnce(response.promise)
+    const input = {
+      workOrderId: 'wo-late-response',
+      operationTaskId: 'ot-late-response',
+      goodQuantity: 2,
+      scrapQuantity: 0,
+      completesOperation: false,
+      labelTemplateId: 'tpl-1',
+      idempotencyKey: 'original-late-key',
+    }
+    let current = true
+    const request = recordReport(input, () => current)
+    const outcome = expect(request).rejects.toMatchObject({ indeterminate: true })
+    await vi.waitFor(() => expect(mutate).toHaveBeenCalledTimes(1))
+    current = false
+    response.resolve({ success: true, data: { printingPreparationPending: false } })
+    await outcome
+    current = true
+    await recordReport({ ...input, idempotencyKey: 'must-not-replace-key' }, () => current)
     expect(mutate.mock.calls[1][0].body).toEqual(mutate.mock.calls[0][0].body)
   })
 

@@ -124,6 +124,7 @@ const {
   selectedTask,
   visibleOperationTasks,
   pair,
+  recoveryPair,
   routeIssue,
   chooseWorkOrder: bindWorkOrder,
   chooseTask: bindTask,
@@ -262,30 +263,40 @@ const quantityValid = computed(
     goodQuantity.value + scrapQuantity.value + reworkQuantity.value > 0,
 )
 
-const { currentIntent, result, submitting, deleteCurrentIntent, submit } = useMesReportSubmission({
-  pair,
-  selectedTask,
-  context: reportContext,
-  contextGeneration,
-  flowContext: ctx,
-  scanGuarded,
-  reportScopeReady,
-  quantityValid,
-  serialValid,
-  labelTemplateId,
-  serialRequired,
-  invalidMaterialLots,
-  invalidScrapReasonCode,
-  goodQuantity,
-  scrapQuantity,
-  reworkQuantity,
-  scrapReasonCode,
-  consumedMaterialLots,
-  completesOperation,
-  recordReport,
-  confirmReport,
-  recoverLifecycleAction: (error) => lifecycleRecovery.handle(error),
-})
+const { currentIntent, result, submitting, conflictingPreparation, deleteCurrentIntent, submit } =
+  useMesReportSubmission({
+    pair,
+    recoveryPair,
+    selectedTask,
+    context: reportContext,
+    contextGeneration,
+    flowContext: ctx,
+    scanGuarded,
+    reportScopeReady,
+    quantityValid,
+    serialValid,
+    labelTemplateId,
+    serialRequired,
+    invalidMaterialLots,
+    invalidScrapReasonCode,
+    goodQuantity,
+    scrapQuantity,
+    reworkQuantity,
+    scrapReasonCode,
+    consumedMaterialLots,
+    completesOperation,
+    recordReport,
+    confirmReport,
+    recoverLifecycleAction: (error) => lifecycleRecovery.handle(error),
+  })
+
+function returnToPreparation() {
+  const saved = conflictingPreparation.value
+  if (!saved) return
+  void router.replace({
+    query: { workOrderId: saved.workOrderId, operationTaskId: saved.operationTaskId },
+  })
+}
 
 // 录数量面板：选中工序后打开
 const sheetOpen = computed({
@@ -499,6 +510,16 @@ async function onScanAccepted(value: MesScanAccepted) {
       </div>
     </template>
 
+    <div
+      v-if="conflictingPreparation && !sheetOpen"
+      role="alert"
+      class="m-4 space-y-2 rounded-lg border border-border bg-card p-3 text-sm"
+    >
+      <p>上一笔报工尚未核验或标签准备尚未完成，请先处理原报工，再提交新产量。</p>
+      <NvMobileButton data-testid="return-to-preparation" block @click="returnToPreparation"
+        >返回原报工处理</NvMobileButton
+      >
+    </div>
     <!-- 报工结果反馈 -->
     <NvMobileResult
       v-if="result"
@@ -929,10 +950,22 @@ async function onScanAccepted(value: MesScanAccepted) {
           {{ scrapReasonValidationMessage }}
         </p>
 
+        <div
+          v-if="conflictingPreparation"
+          data-testid="occupied-report"
+          role="alert"
+          class="space-y-2 rounded-lg border border-border bg-card p-3 text-sm"
+        >
+          <p>上一笔报工尚未核验或标签准备尚未完成，请先处理原报工，再提交新产量。</p>
+          <NvMobileButton data-testid="return-to-preparation" block @click="returnToPreparation"
+            >返回原报工处理</NvMobileButton
+          >
+        </div>
         <button
           type="button"
           data-testid="submit-report"
           :disabled="
+            !!conflictingPreparation ||
             !quantityValid ||
             !serialValid ||
             invalidMaterialLots ||
