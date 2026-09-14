@@ -12135,6 +12135,30 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Mes_formal_client_accepts_explicit_null_exact_recovery_fingerprint()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            reportIntentFingerprint = (string?)null,
+            productionReportId = new { id = "019f855b-5cb0-7550-a509-d2ee7b021689" },
+            reportNo = "PRPT-INTENT-001",
+            serialNumbers = Array.Empty<string>(),
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var client = new HttpBusinessMesClient(httpClient);
+
+        var recovered = await client.GetProductionReportByIdempotencyKeyAsync(
+            "internal-token-001",
+            new BusinessMesProductionReportIntentLookupRequest("org-001", "env-dev", "intent-001"),
+            CancellationToken.None);
+
+        Assert.Null(recovered.ReportIntentFingerprint);
+        Assert.Equal("019f855b-5cb0-7550-a509-d2ee7b021689", recovered.ProductionReportId);
+        Assert.Equal("PRPT-INTENT-001", recovered.ReportNo);
+        Assert.Empty(recovered.SerialNumbers);
+    }
+
+    [Fact]
     public async Task Mes_http_client_preserves_the_legacy_single_serial_wire()
     {
         var handler = new RecordingHandler(_ => JsonResponse(

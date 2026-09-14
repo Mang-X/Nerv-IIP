@@ -77,6 +77,17 @@ public sealed class ProductionReportSerialNumberPostgresTests
 
         await using var assertionScope = factory.Services.CreateAsyncScope();
         var db = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        // 同 scope/key 的其它编码规则是合法 decoy；恢复读面必须固定 production-report ruleKey。
+        db.CodeIdempotencyKeys.Add(new CodeIdempotencyKey(
+            "org-001",
+            "env-dev",
+            "work-order",
+            command.IdempotencyKey,
+            "WO-DECOY",
+            "decoy-fingerprint",
+            DateTimeOffset.Parse("2026-09-14T08:01:00Z")));
+        await db.SaveChangesAsync();
+        await ReinsertIntentSerialsOutOfSequenceAsync(db, first.ReportNo);
         var receipt = await new GetProductionReportByIdempotencyKeyQueryHandler(db).Handle(
             new GetProductionReportByIdempotencyKeyQuery("org-001", "env-dev", "  intent-roundtrip-001  "),
             CancellationToken.None);
@@ -117,16 +128,26 @@ public sealed class ProductionReportSerialNumberPostgresTests
         };
         _ = await assertionScope.ServiceProvider.GetRequiredService<ISender>()
             .Send(nullCommand, CancellationToken.None);
+        var nullReceipt = await new GetProductionReportByIdempotencyKeyQueryHandler(db).Handle(
+            new GetProductionReportByIdempotencyKeyQuery("org-001", "env-dev", nullCommand.IdempotencyKey),
+            CancellationToken.None);
+        Assert.Null(nullReceipt.ReportIntentFingerprint);
         await Assert.ThrowsAsync<MesIdempotencyConflictException>(() =>
             assertionScope.ServiceProvider.GetRequiredService<ISender>().Send(
                 nullCommand with { ReportIntentFingerprint = "opaque:late" },
                 CancellationToken.None));
+        var nullReceiptAfterConflict = await new GetProductionReportByIdempotencyKeyQueryHandler(db).Handle(
+            new GetProductionReportByIdempotencyKeyQuery("org-001", "env-dev", nullCommand.IdempotencyKey),
+            CancellationToken.None);
+        Assert.Null(nullReceiptAfterConflict.ReportIntentFingerprint);
     }
 
     [MesRealPostgresFact]
     public async Task PostgreSQL_concurrent_same_and_different_fingerprints_commit_one_atomic_intent_receipt()
     {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
         await VerifyConcurrentIntentAsync(sameFingerprint: true);
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
         await VerifyConcurrentIntentAsync(sameFingerprint: false);
     }
 
@@ -430,7 +451,6 @@ public sealed class ProductionReportSerialNumberPostgresTests
 
     private static async Task VerifyConcurrentIntentAsync(bool sameFingerprint)
     {
-        await MesPostgresLaneDatabase.ResetSchemaAsync();
         var gate = new IntentReceiptSaveGate();
         await using var factory = CreateIntentFactory(gate);
         var suffix = sameFingerprint ? "SAME" : "DIFF";
@@ -576,6 +596,35 @@ public sealed class ProductionReportSerialNumberPostgresTests
             FOR EACH ROW EXECUTE FUNCTION mes.reject_intent_test_serial();
             """;
         await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task ReinsertIntentSerialsOutOfSequenceAsync(
+        ApplicationDbContext db,
+        string reportNo)
+    {
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            DELETE FROM mes.production_report_serial_numbers
+            WHERE organization_id = {"org-001"}
+              AND environment_id = {"env-dev"}
+              AND report_no = {reportNo}
+            """);
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO mes.production_report_serial_numbers
+                (id, organization_id, environment_id, report_no, sequence_no, serial_number)
+            VALUES ({Guid.Parse("019c9ce7-cd01-7b70-bbf0-8fc56d360002")}, {"org-001"}, {"env-dev"}, {reportNo}, {2}, {"SN-A"})
+            """);
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO mes.production_report_serial_numbers
+                (id, organization_id, environment_id, report_no, sequence_no, serial_number)
+            VALUES ({Guid.Parse("019c9ce7-cd01-7b70-bbf0-8fc56d360001")}, {"org-001"}, {"env-dev"}, {reportNo}, {1}, {"SN-B"})
+            """);
+        // 固定为 heap scan 后物理顺序是 2、1；只有生产查询自己的 ORDER BY 才能返回 1、2。
+        await db.Database.OpenConnectionAsync();
+        await db.Database.ExecuteSqlRawAsync("""
+            SET enable_indexscan = off;
+            SET enable_indexonlyscan = off;
+            SET enable_bitmapscan = off;
+            """);
     }
 
     private static async Task AssertIntentFingerprintColumnAsync(ApplicationDbContext db)
