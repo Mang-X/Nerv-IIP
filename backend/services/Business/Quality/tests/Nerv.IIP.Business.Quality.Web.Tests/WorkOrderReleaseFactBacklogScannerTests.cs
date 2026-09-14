@@ -32,7 +32,7 @@ public sealed class WorkOrderReleaseFactBacklogScannerTests
         await using var services = BuildServices(probe, registry, $"disabled-{Guid.CreateVersion7():N}");
         var clock = new TimerRegistrationObservingTimeProvider(WorkOrderReleaseFactBacklogFixture.ScanAtUtc);
         var scanner = new WorkOrderReleaseFactBacklogScanner(
-            services.GetRequiredService<IServiceScopeFactory>(),
+            ScopeScanObservingScopeFactory.Around(services, probe),
             Configuration(enabled: false),
             NullLogger<WorkOrderReleaseFactBacklogScanner>.Instance,
             clock);
@@ -63,7 +63,7 @@ public sealed class WorkOrderReleaseFactBacklogScannerTests
         await using var services = BuildServices(probe, registry, databaseName);
         var clock = new TimerRegistrationObservingTimeProvider(WorkOrderReleaseFactBacklogFixture.ScanAtUtc);
         var scanner = new WorkOrderReleaseFactBacklogScanner(
-            services.GetRequiredService<IServiceScopeFactory>(),
+            ScopeScanObservingScopeFactory.Around(services, probe),
             Configuration(enabled: true),
             NullLogger<WorkOrderReleaseFactBacklogScanner>.Instance,
             clock);
@@ -104,7 +104,7 @@ public sealed class WorkOrderReleaseFactBacklogScannerTests
         await using var services = BuildServices(probe, registry, $"no-scope-{Guid.CreateVersion7():N}");
         var clock = new TimerRegistrationObservingTimeProvider(WorkOrderReleaseFactBacklogFixture.ScanAtUtc);
         var scanner = new WorkOrderReleaseFactBacklogScanner(
-            services.GetRequiredService<IServiceScopeFactory>(),
+            ScopeScanObservingScopeFactory.Around(services, probe),
             new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>
                 {
@@ -139,7 +139,7 @@ public sealed class WorkOrderReleaseFactBacklogScannerTests
         await using var services = BuildServices(probe, registry, databaseName);
         var clock = new TimerRegistrationObservingTimeProvider(WorkOrderReleaseFactBacklogFixture.ScanAtUtc);
         var scanner = new WorkOrderReleaseFactBacklogScanner(
-            services.GetRequiredService<IServiceScopeFactory>(),
+            ScopeScanObservingScopeFactory.Around(services, probe),
             Configuration(enabled: true, staleAfter: "00:00:00"),
             NullLogger<WorkOrderReleaseFactBacklogScanner>.Instance,
             clock);
@@ -225,7 +225,7 @@ public sealed class WorkOrderReleaseFactBacklogScannerTests
         var clock = new TimerRegistrationObservingTimeProvider(WorkOrderReleaseFactBacklogFixture.ScanAtUtc);
         // 50 × 600s = 500 分钟 > 2 小时：该行仍在 CAP 的自愈窗口内。
         var scanner = new WorkOrderReleaseFactBacklogScanner(
-            services.GetRequiredService<IServiceScopeFactory>(),
+            ScopeScanObservingScopeFactory.Around(services, probe),
             ConfigurationWithoutStaleAfter(capRetryIntervalSeconds: "600"),
             NullLogger<WorkOrderReleaseFactBacklogScanner>.Instance,
             clock);
@@ -233,7 +233,7 @@ public sealed class WorkOrderReleaseFactBacklogScannerTests
         await scanner.StartAsync(CancellationToken.None);
         await clock.WaitForFirstTimerAsync();
         await WaitForScopeScansAsync(probe, 1);
-        var raisedFloor = await WaitForPublishedSamplesAsync(registry);
+        var raisedFloor = await WorkOrderReleaseFactBacklogFixture.ScrapeAsync(registry);
         await scanner.StopAsync(CancellationToken.None);
 
         Assert.Equal(
@@ -247,7 +247,7 @@ public sealed class WorkOrderReleaseFactBacklogScannerTests
         await using var baselineServices = BuildServices(baselineProbe, baselineRegistry, databaseName);
         var baselineClock = new TimerRegistrationObservingTimeProvider(WorkOrderReleaseFactBacklogFixture.ScanAtUtc);
         var baselineScanner = new WorkOrderReleaseFactBacklogScanner(
-            baselineServices.GetRequiredService<IServiceScopeFactory>(),
+            ScopeScanObservingScopeFactory.Around(baselineServices, baselineProbe),
             ConfigurationWithoutStaleAfter(capRetryIntervalSeconds: null),
             NullLogger<WorkOrderReleaseFactBacklogScanner>.Instance,
             baselineClock);
@@ -255,7 +255,7 @@ public sealed class WorkOrderReleaseFactBacklogScannerTests
         await baselineScanner.StartAsync(CancellationToken.None);
         await baselineClock.WaitForFirstTimerAsync();
         await WaitForScopeScansAsync(baselineProbe, 1);
-        var baselineFloor = await WaitForPublishedSamplesAsync(baselineRegistry);
+        var baselineFloor = await WorkOrderReleaseFactBacklogFixture.ScrapeAsync(baselineRegistry);
         await baselineScanner.StopAsync(CancellationToken.None);
 
         Assert.Equal(
@@ -314,25 +314,64 @@ public sealed class WorkOrderReleaseFactBacklogScannerTests
             .BuildServiceProvider();
 
     /// <summary>
-    /// 「scope 已被扫过」与「读数已经写进导出面」不是同一件事：巡检先解析出 DbContext，之后才
-    /// <c>Set</c> 两个 Gauge。按前者取样会在两者之间取到空导出面，用例随机红。
+    /// 「scope 已被解析出 DbContext」与「该 scope 的读数已经写进导出面」不是同一件事：巡检先解析
+    /// DbContext，跑完查询之后才 <c>Set</c> 两个 Gauge。按前者取样落在这个窗口里，按 label 取值的
+    /// 断言就抛 <see cref="KeyNotFoundException"/>。
     /// </summary>
-    private static async Task<IReadOnlyDictionary<string, double>> WaitForPublishedSamplesAsync(CollectorRegistry registry) =>
-        await Eventually.WaitAsync(
-            "the release fact backlog scanner to publish both gauges on the exposition endpoint",
-            async _ => await WorkOrderReleaseFactBacklogFixture.ScrapeAsync(registry),
-            samples => samples.ContainsKey(
-                WorkOrderReleaseFactBacklogFixture.Sample(WorkOrderReleaseFactBacklogFixture.BacklogOperationsMetric)),
-            samples => $"published samples={samples.Count}",
-            new EventuallyOptions(TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(10), []));
+    /// <remarks>
+    /// <para>
+    /// 在 merge-base 上隔离取样 n=20 的形态分布：<strong>18/20</strong> 是第二个 scope 的**两个族都
+    /// 还没发布**（本注释原本描述的形态）；<strong>1/20</strong> 是 <c>oldest_age{…env-prod}</c> 在
+    /// 而 <c>operations{…env-prod}</c> 缺——导出按族依次快照，取样本身不是原子操作，所以会读到
+    /// **残缺**导出面；余下 1/20 恰好赶上两族都已发布。⚠️ 后一种只占约 5%，⛔ 不要把它当主因去查。
+    /// </para>
+    /// <para>
+    /// 因此这里等的是巡检**自己发布的边沿**，而不是墙钟轮询一个更早的计数器。被顶掉的旧写法有两层
+    /// 病：等待信号本身早于发布（<c>probe.DbContextResolutions</c>），以及「已发布」那个谓词只查
+    /// **默认 label 组**，对配了第二个 scope 的用例零保护——两层都放行了同一个竞速。
+    /// </para>
+    /// </remarks>
+    private static Task WaitForScopeScansAsync(ScopeResolutionProbe probe, int expected) =>
+        probe.ScopeScansCompleted.WaitForAsync(expected);
 
-    private static async Task WaitForScopeScansAsync(ScopeResolutionProbe probe, int expected) =>
-        await Eventually.WaitAsync(
-            "the release fact backlog scanner to finish the expected number of scope scans",
-            _ => ValueTask.FromResult(probe.DbContextResolutions),
-            observed => observed >= expected,
-            observed => $"scope scans={observed}; expected>={expected}",
-            new EventuallyOptions(TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(10), []));
+    /// <summary>
+    /// 把「巡检完成了第 N 个 scope 的扫描」包装成可等待的边沿：装饰 <see cref="IServiceScopeFactory"/>，
+    /// 在每个 per-scope DI scope 被释放的那一刻发布。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 释放点是从外部能观测到的、**绝不早于**该 scope 两次 <c>Set</c> 的位置：
+    /// <c>WorkOrderReleaseFactBacklogScanner.TryScanAllScopesAsync</c> 用 <c>using var serviceScope</c>
+    /// 把「解析 DbContext → <c>RefreshAsync</c>（内含两次 <c>Set</c>）→ 记日志」整段括在里面，正常出口
+    /// 与异常出口都在其后释放。相对地，<see cref="ScopeResolutionProbe.RecordDbContextResolution"/>
+    /// 括住的只是那一段的**开头**。
+    /// </para>
+    /// <para>
+    /// ⚠️ 措辞是「绝不早于」而不是「严格晚于」，因为这两件事在**异常**路径上会脱钩：扫描抛异常时
+    /// <c>TryScanAllScopesAsync</c> 的 <c>catch</c> 把它吞掉记日志，scope 照样释放、边沿照样发，但那一轮
+    /// **没有 <c>Set</c>**。此时用例仍然红，只是失败形态从「超时 + 边沿诊断」退化成取键的
+    /// <see cref="KeyNotFoundException"/>——鉴别力不丢，可读性降级。
+    /// </para>
+    /// </remarks>
+    private sealed class ScopeScanObservingScopeFactory(IServiceScopeFactory inner, ScopeResolutionProbe probe)
+        : IServiceScopeFactory
+    {
+        internal static IServiceScopeFactory Around(IServiceProvider services, ScopeResolutionProbe probe) =>
+            new ScopeScanObservingScopeFactory(services.GetRequiredService<IServiceScopeFactory>(), probe);
+
+        public IServiceScope CreateScope() => new ObservedScope(inner.CreateScope(), probe);
+
+        private sealed class ObservedScope(IServiceScope inner, ScopeResolutionProbe probe) : IServiceScope
+        {
+            public IServiceProvider ServiceProvider => inner.ServiceProvider;
+
+            public void Dispose()
+            {
+                inner.Dispose();
+                probe.RecordScopeScanCompleted();
+            }
+        }
+    }
 
     private sealed class ScopeResolutionProbe
     {
@@ -343,8 +382,14 @@ public sealed class WorkOrderReleaseFactBacklogScannerTests
 
         public int MetricsResolutions => Volatile.Read(ref metricsResolutions);
 
+        /// <summary>「巡检已完成第 N 个 scope 的扫描」的边沿。</summary>
+        public CountingEdgeSignal ScopeScansCompleted { get; } =
+            new("the scanner to finish a release fact backlog scope scan");
+
         public void RecordDbContextResolution() => Interlocked.Increment(ref dbContextResolutions);
 
         public void RecordMetricsResolution() => Interlocked.Increment(ref metricsResolutions);
+
+        public void RecordScopeScanCompleted() => ScopeScansCompleted.Record();
     }
 }
