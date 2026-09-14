@@ -12,6 +12,7 @@ import {
 import { computed, ref } from 'vue'
 import { useErpWorkOrderCostVariance } from '@/composables/useBusinessErp'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { inlineErrorMessage } from '@/utils/notify'
 import { costAmount, costHours, efficiencyDirection, laborReason } from '../costVariance'
 import { machineReason } from '../machineOverhead'
 
@@ -145,7 +146,9 @@ function resize(pageSize: number) {
         :total-items="order?.totalOperations ?? 0"
         :loading="costs.workOrderPending.value"
         :error="Boolean(costs.workOrderError.value)"
-        error-message="工单成本读取失败，请重试。"
+        :error-message="
+          inlineErrorMessage(costs.workOrderError.value, '工单成本读取失败，请重试。')
+        "
         :searchable="false"
         :column-settings="false"
         :awaiting-scope="!costs.ready.value || !costs.workOrder.id"

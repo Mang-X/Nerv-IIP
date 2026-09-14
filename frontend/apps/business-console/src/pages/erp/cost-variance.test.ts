@@ -223,4 +223,13 @@ describe('工单成本差异', () => {
     await flushPromises()
     expect(wrapper.text()).not.toContain('CNY 600.00')
   })
+  it('财务权限撤销后保留服务端的权限原因', async () => {
+    data.workOrderError.value = Object.assign(new Error('当前账号无权读取工单成本'), {
+      status: 403,
+    })
+    const wrapper = render()
+    await flushPromises()
+    expect(wrapper.text()).toContain('当前账号无权读取工单成本')
+    expect(wrapper.text()).not.toContain('工单成本读取失败，请重试。')
+  })
 })
