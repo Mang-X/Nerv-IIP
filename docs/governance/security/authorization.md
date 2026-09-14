@@ -66,6 +66,8 @@
 | `mobile.*` | 移动设备、部署与诊断治理；不得表达 WMS/MES/Quality/Maintenance 等业务动作 |
 | `business.*` | 业务域读写、管理与执行权限 |
 
+`files.*` 冻结的是平台通用文件能力的命名边界，不排他：业务域自有的文件字节面按 [ADR 0030](../../adr/0030-business-gateway-purpose-scoped-file-transfer.md) 由 `business.*` 的域权限承担，不得据本表反推业务附件必须改用 `files.*`。
+
 新增资源或 action 时优先复用现有语义（如 `read`、`manage`、`create`、`write`、`run`）；只有真实授权边界不同才新增权限码，不能为页面按钮或单个客户端制造同义权限。
 
 参考数据词表是否拥有独立读权限码，按 [ADR 0029](../../adr/0029-reference-data-vocabulary-read-permission.md) 决策 2 的三条件裁定，命名与换绑形态见其决策 4/5；未触发不做预防性拆分。
