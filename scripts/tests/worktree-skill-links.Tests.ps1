@@ -250,6 +250,30 @@ try {
         throw 'A mirrored third-party payload must be reachable through the link layer.'
     }
 
+    # 镜像只搬 skills-lock.json 拥有的那部分。主树的 payload 里也有仓库自有技能——它每次会话
+    # 都被重新发布进去——但把它们一并拷过来在**同名**时会被本树的发布覆盖掉，零差异，所以
+    # 上面那些夹具鉴别不出这条。有差异的是**只有主树那条分支才有源**的技能：本树的 skills/ 里
+    # 没有它，发布步骤根本不会遍历到它，于是它会作为一份**在本树没有任何源**的 payload 留下来
+    # 被 agent 加载。这也是「谁归 lock、谁归仓库」这条划分必须由门与镜像同一份表达的原因。
+    $mirrorTarget = New-Fixture -PayloadNames @()
+    $fixtures.Add($mirrorTarget)
+    New-SourceSkill -Root $mirrorTarget -Name 'alpha' -Body 'name: alpha here'
+
+    $mirrorMain = New-Fixture -PayloadNames @('vendor', 'alpha', 'legacy')
+    $fixtures.Add($mirrorMain)
+    # 主树对 alpha 与 legacy 都有源；alpha 与本树同名，legacy 只有主树有。
+    New-SourceSkill -Root $mirrorMain -Name 'alpha' -Body 'name: alpha main'
+    New-SourceSkill -Root $mirrorMain -Name 'legacy' -Body 'name: legacy main'
+
+    Initialize-NervWorktreeSkills -RepoRoot $mirrorTarget -MainRoot $mirrorMain -InstallAction $recordOnlyInstall
+
+    if (Test-Path -LiteralPath (Join-Path $mirrorTarget '.agents/skills/legacy')) {
+        throw 'The mirror must carry only the payload skills-lock.json owns; a skill that is repo-tracked in the main worktree has no source in this worktree and nothing would ever refresh or remove it.'
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $mirrorTarget '.agents/skills/vendor/SKILL.md'))) {
+        throw 'Filtering repo-tracked skills out of the mirror must still carry the lock-owned payload.'
+    }
+
     # 接线：库对、测试绿，不代表调用点还在。按 AST 断言 setup-worktree.ps1 真的调用了本库的
     # 入口，而不是文本匹配——注释掉的调用不产生 CommandAst，因而会被这条杀掉。条件与顺序由上面
     # 的控制流用例承重，这里只管调用点是否还在。

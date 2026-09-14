@@ -54,34 +54,55 @@ function Get-NervRepoSkillNames {
     return @(Get-ChildItem -LiteralPath $sourceRoot -Force -Directory | ForEach-Object { $_.Name })
 }
 
+function Get-NervLockOwnedPayloadNames {
+    <#
+        .SYNOPSIS
+        Names of the installed payload entries that skills-lock.json owns — everything under
+        .agents/skills that is not republished from this worktree's own skills/.
+
+        .DESCRIPTION
+        The single place the "repo-tracked vs lock-owned" split is expressed. The gate that
+        decides whether to install/mirror and the mirror that carries the payload must move
+        the same set: if the gate counts an entry, the mirror has to carry it, and an entry the
+        gate does not count must not be carried either.
+
+        Not filtered to directories: a stray file under .agents/skills has always counted as
+        installed payload for the gate, and the mirror has always carried it. Narrowing that
+        here would change both at once for no stated reason.
+    #>
+    param([Parameter(Mandatory)] [string] $RepoRoot)
+
+    $payloadRoot = Join-Path $RepoRoot $script:NervAgentSkillsRelative
+    if (-not (Test-Path -LiteralPath $payloadRoot)) { return @() }
+
+    $repoOwned = [System.Collections.Generic.HashSet[string]]::new(
+        [string[]] @(Get-NervRepoSkillNames -RepoRoot $RepoRoot), [StringComparer]::Ordinal)
+    return @(Get-ChildItem -LiteralPath $payloadRoot -Force |
+            Where-Object { -not $repoOwned.Contains($_.Name) } | ForEach-Object { $_.Name })
+}
+
 function Test-NervSkillsPayloadPresent {
     <#
         .SYNOPSIS
         True when a worktree holds at least one installed payload that skills-lock.json owns.
 
         .DESCRIPTION
-        This is the gate for the lock-driven install and mirror, so it must only count the
-        payload those two produce. Repo-tracked skills land in the same directory
-        unconditionally (Sync-NervRepoSkillPayload), so counting them would make the gate
-        report "installed" the moment the repo publishes its own skills — after which a main
-        worktree whose install failed once would never install or mirror again, and every
-        third-party skill in skills-lock.json would stay silently missing.
+        This is the gate for the lock-driven install and mirror, so it counts exactly what
+        those two move. Repo-tracked skills land in the same directory unconditionally
+        (Sync-NervRepoSkillPayload), so counting them would make the gate report "installed"
+        the moment the repo publishes its own skills — after which a main worktree whose
+        install failed once would never install or mirror again, and every third-party skill
+        in skills-lock.json would stay silently missing.
+
+        Guard on content, not existence: a mirror that fails midway leaves an empty
+        .agents/skills behind, and an existence check would treat that as "installed" forever.
 
         Failure direction if skills-lock.json ever held nothing but repo-tracked skills: the
         gate stays false and the install re-runs each session — noisy, not silently missing.
     #>
     param([Parameter(Mandatory)] [string] $RepoRoot)
 
-    # Guard on content, not existence: a mirror that fails midway leaves an empty
-    # .agents/skills behind, and an existence check would treat that as "installed"
-    # forever after.
-    $payloadRoot = Join-Path $RepoRoot $script:NervAgentSkillsRelative
-    if (-not (Test-Path -LiteralPath $payloadRoot)) { return $false }
-
-    $repoOwned = [System.Collections.Generic.HashSet[string]]::new(
-        [string[]] @(Get-NervRepoSkillNames -RepoRoot $RepoRoot), [StringComparer]::Ordinal)
-    return @(Get-ChildItem -LiteralPath $payloadRoot -Force |
-            Where-Object { -not $repoOwned.Contains($_.Name) }).Count -gt 0
+    return @(Get-NervLockOwnedPayloadNames -RepoRoot $RepoRoot).Count -gt 0
 }
 
 function New-NervSkillLinkLayer {
@@ -198,8 +219,13 @@ function Initialize-NervWorktreeSkills {
                 $mainPayload = Join-Path $MainRoot $script:NervAgentSkillsRelative
                 $targetPayload = Join-Path $RepoRoot $script:NervAgentSkillsRelative
                 New-Item -ItemType Directory -Path $targetPayload -Force | Out-Null
-                foreach ($skill in Get-ChildItem -LiteralPath $mainPayload -Force) {
-                    Copy-Item -LiteralPath $skill.FullName -Destination (Join-Path $targetPayload $skill.Name) -Recurse -Force
+                # Carry exactly what the gate counted: the payload skills-lock.json owns, read
+                # against the main worktree's own skills/. Repo-tracked skills are republished
+                # from this worktree's source in step 2, so mirroring main's copy of them would
+                # either be overwritten (same name) or linger with no source here (name only
+                # main has).
+                foreach ($name in Get-NervLockOwnedPayloadNames -RepoRoot $MainRoot) {
+                    Copy-Item -LiteralPath (Join-Path $mainPayload $name) -Destination (Join-Path $targetPayload $name) -Recurse -Force
                 }
             }
             catch {
