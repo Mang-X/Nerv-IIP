@@ -18,6 +18,14 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
     protected virtual bool IsRegisteredLegacySemanticCode(string? code) =>
         code is not null && RegisteredSharedLegacySemanticCodes.Contains(code);
 
+    /// <summary>
+    /// 下游错误载体是否为裸 <c>{code,message}</c>（不套平台 ResponseData envelope）。
+    /// 默认 <c>false</c>：只认 <c>success:false</c> envelope。FileStorage 直接 <c>WriteAsJsonAsync</c>
+    /// 写出 <c>FileStorageError</c>，不选入的话非 400 响应的 code 与 message 会双双落空。
+    /// 这里只描述**载体形状**，不承载任何下游领域规则。
+    /// </summary>
+    protected virtual bool AcceptsBareDownstreamErrorPayload => false;
+
     protected async Task<TResponse> SendAsync<TResponse>(
         string internalBearerToken,
         HttpMethod method,
@@ -108,10 +116,46 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
             request.Content = JsonContent.Create(body, options: jsonOptions ?? JsonOptions);
         }
 
-        HttpResponseMessage response;
+        var response = await SendRawAsync(request, HttpCompletionOption.ResponseContentRead, cancellationToken);
+
+        if (response.IsSuccessStatusCode)
+        {
+            return response;
+        }
+
+        using (response)
+        {
+            if (response.StatusCode == HttpStatusCode.BadRequest)
+            {
+                var downstreamMessage = await ReadDownstreamEnvelopeMessageAsync(
+                    response,
+                    cancellationToken);
+                throw BusinessServiceProxyException.FromDownstreamBusinessMessage(downstreamMessage);
+            }
+
+            var envelope = await ReadDownstreamErrorEnvelopeAsync(response, cancellationToken);
+            throw BusinessServiceProxyException.FromDownstreamError(
+                response.StatusCode,
+                envelope.SemanticCode,
+                envelope.Message,
+                envelope.ErrorData,
+                envelope.AllowMessageAsSemanticCode);
+        }
+    }
+
+    /// <summary>
+    /// 唯一一份下游传输故障映射：JSON 面（<see cref="SendAsync{TResponse}"/>）与字节代理面共用。
+    /// 字节面需要 <see cref="HttpCompletionOption.ResponseHeadersRead"/> 才能流式转发，
+    /// 因此这里暴露 completionOption；异常口径不允许在 capability client 里另抄一份。
+    /// </summary>
+    protected async Task<HttpResponseMessage> SendRawAsync(
+        HttpRequestMessage request,
+        HttpCompletionOption completionOption,
+        CancellationToken cancellationToken)
+    {
         try
         {
-            response = await httpClient.SendAsync(request, cancellationToken);
+            return await httpClient.SendAsync(request, completionOption, cancellationToken);
         }
         catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
@@ -139,6 +183,10 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
             // 与 downstream-unavailable 分开一条码，是因为**这一格的事实不同**：熔断打开时请求
             // 根本没有发往下游，本次写入必然未发生；而 HttpRequestException 是已发出后连接失败，
             // 结果不确定。两者若共用一条码，前端就说不出「本次请求未发出」这句可行动的话。
+            //
+            // 本方法是 JSON 面与字节面共用的唯一一份传输故障映射（#3096 从 SendRequestAsync
+            // 提取），因此 #3385 在 SendRequestAsync 内联块上新增的这一格在此处承接后，
+            // 同时覆盖 streaming-safe 档的字节面。
             throw BusinessServiceProxyException.FromSafeDownstreamMessage(
                 HttpStatusCode.ServiceUnavailable,
                 "downstream-circuit-open",
@@ -150,30 +198,6 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
                 HttpStatusCode.ServiceUnavailable,
                 "downstream-unavailable",
                 ex);
-        }
-
-        if (response.IsSuccessStatusCode)
-        {
-            return response;
-        }
-
-        using (response)
-        {
-            if (response.StatusCode == HttpStatusCode.BadRequest)
-            {
-                var downstreamMessage = await ReadDownstreamEnvelopeMessageAsync(
-                    response,
-                    cancellationToken);
-                throw BusinessServiceProxyException.FromDownstreamBusinessMessage(downstreamMessage);
-            }
-
-            var envelope = await ReadDownstreamErrorEnvelopeAsync(response, cancellationToken);
-            throw BusinessServiceProxyException.FromDownstreamError(
-                response.StatusCode,
-                envelope.SemanticCode,
-                envelope.Message,
-                envelope.ErrorData,
-                envelope.AllowMessageAsSemanticCode);
         }
     }
 
@@ -274,11 +298,16 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
         JsonElement root,
         HttpStatusCode statusCode)
     {
-        if (root.ValueKind != JsonValueKind.Object ||
-            !root.TryGetProperty("success", out var success) ||
-            success.ValueKind != JsonValueKind.False)
+        if (root.ValueKind != JsonValueKind.Object)
         {
             return DownstreamErrorEnvelope.Invalid;
+        }
+
+        if (!root.TryGetProperty("success", out var success) || success.ValueKind != JsonValueKind.False)
+        {
+            return AcceptsBareDownstreamErrorPayload
+                ? ParseBareDownstreamErrorPayload(root)
+                : DownstreamErrorEnvelope.Invalid;
         }
 
         var message = root.TryGetProperty("message", out var messageValue) &&
@@ -319,6 +348,19 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
         }
 
         return DownstreamErrorEnvelope.Invalid;
+    }
+
+    private DownstreamErrorEnvelope ParseBareDownstreamErrorPayload(JsonElement root)
+    {
+        var code = root.TryGetProperty("code", out var codeValue) && codeValue.ValueKind == JsonValueKind.String
+            ? codeValue.GetString()
+            : null;
+        var message = root.TryGetProperty("message", out var messageValue) && messageValue.ValueKind == JsonValueKind.String
+            ? messageValue.GetString()
+            : null;
+        return code is null && message is null
+            ? DownstreamErrorEnvelope.Invalid
+            : new(code, message, [], AllowMessageAsSemanticCode: IsRegisteredLegacySemanticCode(message));
     }
 
     private static IReadOnlyCollection<JsonElement> ReadDownstreamErrorData(JsonElement root)
