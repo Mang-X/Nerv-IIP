@@ -11,6 +11,7 @@ export {
   SHIFT_HANDOVER_ISSUE_SEVERITY_LABELS,
   SHIFT_HANDOVER_STATUS_LABELS,
   SHIFT_HANDOVER_UNFINISHED_WORK_ORDER_STATUS_OPTIONS,
+  shiftHandoverUnfinishedWorkOrderStatusLabel,
   shiftHandoverIssueCategoryLabel,
   shiftHandoverIssueSeverityLabel,
   shiftHandoverStatusLabel,

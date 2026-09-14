@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describeRequestError } from './request-timeout'
 import { setUnauthorizedHandler } from './unauthorized'
 import {
   isShiftHandoverPhotoContentType,
@@ -224,26 +225,42 @@ describe('sendShiftHandoverAttachmentBytes', () => {
     ).rejects.toThrow('超过本张照片大小')
   })
 
+  /**
+   * 断言落在**操作工真正看到的那句**上。
+   *
+   * 上传面唯一的消费者 `ShiftHandoverPhotoCapture` 过 `describeRequestError`，后者对
+   * 401 / 403 / ≥500 会用自己的 actionable 文案盖掉传入文案。先前这里断言的是原始 error
+   * 的 message —— 其中 401/403/500 三档屏上根本不会出现，**断言绿着却断在一个不上屏的
+   * 字符串上**，那是一条空防线。
+   */
   it.each([
-    [401, '登录已失效，请重新登录后再传照片。'],
-    [403, '当前账号没有上传交接班照片的权限，请联系班组长或管理员开通。'],
+    // 这四档 describeRequestError 认可并原样透传 → 定制文案真的上屏
     [404, '上传会话已失效或已过期，请重新拍照。'],
     [409, '上传进度与服务端不一致，请重新拍照上传。'],
     [413, '照片超出交接班附件大小上限，请重拍或压缩后再传。'],
     [415, '照片格式不被接受，交接班附件只支持 JPG / PNG。'],
-    [500, '上传照片失败：服务暂时不可用，请稍后重试。'],
-    [418, '上传照片失败，请检查网络后重试。'],
-  ])('turns a PATCH %i into actionable Chinese copy', async (status, copy) => {
+    // 这三档由 describeRequestError 接管 → 断言它的文案，不是我们的
+    [401, '登录已失效，请重新登录'],
+    [403, '当前账号无此操作权限，请联系班组长或管理员'],
+    [500, '服务暂时不可用，请稍后重试'],
+  ])('shows the operator the right copy for %i', async (status, onScreen) => {
     const { doFetch } = scriptedFetch([
       fakeResponse(204, { 'Upload-Offset': '0' }),
       fakeResponse(status),
     ])
 
-    await expect(
-      sendShiftHandoverAttachmentBytes(target, new Blob([new Uint8Array(2)]), scope, {
-        fetch: doFetch,
-      }),
-    ).rejects.toThrow(copy)
+    const thrown = await sendShiftHandoverAttachmentBytes(
+      target,
+      new Blob([new Uint8Array(2)]),
+      scope,
+      { fetch: doFetch },
+    ).then(
+      () => new Error('expected the transfer to fail'),
+      (error: unknown) => error,
+    )
+
+    // 组件就是这样把 error 变成屏上文案的（ShiftHandoverPhotoCapture.vue）。
+    expect(describeRequestError(thrown, '照片上传失败，请重试。').message).toContain(onScreen)
   })
 
   it('surfaces a failed HEAD without ever dispatching the PATCH', async () => {
@@ -298,8 +315,9 @@ describe('byte-face failure handling', () => {
         () => new Error('expected the transfer to fail'),
         (error: Error) => error,
       )
-      expect(failure.message).not.toMatch(/HTTP\s*\d{3}/i)
-      expect(failure.message).not.toContain(String(status))
+      const onScreen = describeRequestError(failure, '照片上传失败，请重试。').message
+      expect(onScreen).not.toMatch(/HTTP\s*\d{3}/i)
+      expect(onScreen).not.toContain(String(status))
     }
   })
 
@@ -330,11 +348,17 @@ describe('byte-face failure handling', () => {
       fakeResponse(401),
     ])
 
-    await expect(
-      sendShiftHandoverAttachmentBytes(target, new Blob([new Uint8Array(2)]), scope, {
-        fetch: doFetch,
-      }),
-    ).rejects.toThrow('登录已失效')
+    const thrown = await sendShiftHandoverAttachmentBytes(
+      target,
+      new Blob([new Uint8Array(2)]),
+      scope,
+      { fetch: doFetch },
+    ).then(
+      () => new Error('expected the transfer to fail'),
+      (error: unknown) => error,
+    )
+    // 文案由 describeRequestError 接管（401 那一档它自己盖掉）；这里要的是**兜底被触发**。
+    expect(describeRequestError(thrown, '照片上传失败，请重试。').message).toContain('登录已失效')
     expect(onUnauthorized).toHaveBeenCalledTimes(1)
   })
 
@@ -347,7 +371,7 @@ describe('byte-face failure handling', () => {
       sendShiftHandoverAttachmentBytes(target, new Blob([new Uint8Array(2)]), scope, {
         fetch: doFetch,
       }),
-    ).rejects.toThrow('登录已失效')
+    ).rejects.toThrow()
     expect(onUnauthorized).toHaveBeenCalledTimes(1)
   })
 

@@ -6,6 +6,7 @@ import {
   SHIFT_HANDOVER_ISSUE_CATEGORY_CODES,
   SHIFT_HANDOVER_ISSUE_SEVERITY_CODES,
   SHIFT_HANDOVER_UNFINISHED_WORK_ORDER_STATUS_OPTIONS,
+  shiftHandoverUnfinishedWorkOrderStatusLabel,
   shiftHandoverIssueCategoryLabel,
   shiftHandoverIssueSeverityLabel,
   shiftHandoverStatusLabel,
@@ -163,30 +164,34 @@ describe('shiftHandoverIssueCategoryLabel / shiftHandoverIssueSeverityLabel', ()
 })
 
 describe('SHIFT_HANDOVER_UNFINISHED_WORK_ORDER_STATUS_OPTIONS', () => {
-  it('is a WRITE-face value domain, not the read-face display table', () => {
-    // 读面表是历史拼写的并集，拿它当选择器数据源会把两个缺陷带上屏；写面单独定义。
+  it('is a WRITE-face value domain spelled the way the contract spells it', () => {
+    // 读面表是历史拼写的并集；写面单独定义，且码取契约/域常量的**值**（小写），不是常量名。
     const codes = SHIFT_HANDOVER_UNFINISHED_WORK_ORDER_STATUS_OPTIONS.map((o) => o.code)
-    expect(codes).toEqual(['Planned', 'Released', 'Started', 'OnHold'])
+    expect(codes).toEqual(['created', 'released', 'started', 'hold'])
   })
 
   it('excludes the terminal statuses — 已完成/已关闭的工单不是未完工单', () => {
-    // 域判据：ShiftHandoverUnfinishedWorkOrder 要求 completedQuantity < plannedQuantity。
-    const codes = SHIFT_HANDOVER_UNFINISHED_WORK_ORDER_STATUS_OPTIONS.map((o) => o.code)
-    for (const terminal of ['Completed', 'Closed', 'Cancelled', 'Scrapped']) {
+    const codes: readonly string[] = SHIFT_HANDOVER_UNFINISHED_WORK_ORDER_STATUS_OPTIONS.map(
+      (o) => o.code,
+    )
+    for (const terminal of ['completed', 'closed', 'cancelled', 'scrapped']) {
       expect(codes).not.toContain(terminal)
     }
   })
 
   it('never offers two options that read the same on screen', () => {
-    // 读面表里 InProgress 与 Started 都显示「生产中」，并排出来操作工无法区分。
     const labels = SHIFT_HANDOVER_UNFINISHED_WORK_ORDER_STATUS_OPTIONS.map((o) => o.label)
     expect(new Set(labels).size).toBe(labels.length)
   })
 
-  it('round-trips: every write code resolves back through the read-face label', () => {
-    // 写进去的码必须能被详情页显示出来，否则交接单上会出现「未知状态」。
+  it('resolves every write code through its own label function', () => {
     for (const option of SHIFT_HANDOVER_UNFINISHED_WORK_ORDER_STATUS_OPTIONS) {
-      expect(workOrderStatusLabel(option.code)).toBe(option.label)
+      expect(shiftHandoverUnfinishedWorkOrderStatusLabel(option.code)).toBe(option.label)
     }
+  })
+
+  it('falls back to Chinese instead of echoing an unknown code', () => {
+    expect(shiftHandoverUnfinishedWorkOrderStatusLabel('Planned')).toBe('未知状态')
+    expect(shiftHandoverUnfinishedWorkOrderStatusLabel(undefined)).toBe('未知状态')
   })
 })

@@ -32,7 +32,7 @@ const detail = ref<Record<string, unknown> | undefined>({
   acceptedAtUtc: null,
   wipItems: [{ workOrderId: 'WO-1', operationTaskId: null, quantity: 5 }],
   unfinishedWorkOrders: [
-    { workOrderId: 'WO-2', plannedQuantity: 10, completedQuantity: 4, workOrderStatus: 'Released' },
+    { workOrderId: 'WO-2', plannedQuantity: 10, completedQuantity: 4, workOrderStatus: 'released' },
   ],
   openIssues: [
     {
@@ -119,8 +119,8 @@ describe('PDA 接班确认页', () => {
   it('renders the three detail sections and the attachment list in Chinese', () => {
     const wrapper = mount(DetailPage)
     expect(wrapper.get('[data-testid="detail-wip"]').text()).toContain('按工单登记')
-    expect(wrapper.get('[data-testid="detail-unfinished"]').text()).toContain('已下达')
-    expect(wrapper.get('[data-testid="detail-unfinished"]').text()).not.toContain('Released')
+    expect(wrapper.get('[data-testid="detail-unfinished"]').text()).toContain('已释放')
+    expect(wrapper.get('[data-testid="detail-unfinished"]').text()).not.toContain('released')
     const issues = wrapper.get('[data-testid="detail-issues"]').text()
     expect(issues).toContain('设备')
     expect(issues).toContain('高')

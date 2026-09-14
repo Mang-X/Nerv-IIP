@@ -149,9 +149,22 @@ async function submit() {
  *
  * 逐项列出而不是靠「下次 computed 会重算收敛回来」：漏掉任何一项都会让新一单带着上一单的
  * 残留（最坏的是 `idempotencyKey` 没换，服务端按它去重，第二单会被当成第一单的重放直接吞掉）。
- * 这个列表就是本页全部可变输入，`FORM_INPUT_RESET` 用例逐项核它。
+ *
+ * 本页共 12 个 `ref`，这里重置其中 11 个，分两类：
+ *
+ * - **9 项有用例钉住**（8 个表单输入 + 幂等键轮换）：漏任一项都会让新一单带上残留，
+ *   `resets every form input when starting another handover` 与两格变异（漏 `submitted`、
+ *   漏换幂等键）分别证明其鉴别力。
+ * - **2 项是防御性的、没有用例钉**（`shiftPickerOpen` / `teamPickerOpen`）：`startAnother`
+ *   只在提交成功页可达，而那时表单已被结果页替换、选择器不可能还开着，所以这两项的重置
+ *   **不存在可达的失败路径**。写它们是为了让「重置=清空本页可变状态」这句话不留例外；
+ *   但**不为它们写断言**——一条永远不会红的断言比没有断言更坏，它会让后来人以为这里有防线。
+ *
+ * **唯一不重置的是 `submitting`**——它是 `submit()` 自己的在途闸，由 `submit()` 独占读写；
+ * 从这里强行置回 false 会在请求在途时放开第二次提交。
  */
 function startAnother() {
+  // 表单输入 8 项
   shiftId.value = ''
   teamId.value = ''
   wipItems.value = []
@@ -160,6 +173,9 @@ function startAnother() {
   attachments.value = []
   reviewed.value = false
   submitted.value = false
+  // 选择器开合 2 项
+  shiftPickerOpen.value = false
+  teamPickerOpen.value = false
   // 新的一次交班意图 = 新的幂等键。
   idempotencyKey.value = makeIdempotencyKey()
   write.reset()

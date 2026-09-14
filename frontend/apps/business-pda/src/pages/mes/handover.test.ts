@@ -158,7 +158,9 @@ describe('PDA 交班录入页', () => {
     await nextTick()
     const noScope = wrapper.get('[data-testid="handover-blocker"]').text()
     seen.push(noScope)
-    expect(noScope).toContain('重新登录')
+    // 不变量②对第三条成因同样成立：说清做不了什么（无法交班）+ 下一步（重新登录）。
+    expect(noScope).toContain('无法交班')
+    expect(noScope).toContain('请重新登录后重试')
 
     // 1) 三条互不相同 —— 合并任意两条，班组长就不知道该开通哪一项。
     expect(new Set(seen).size).toBe(3)

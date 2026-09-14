@@ -154,21 +154,48 @@ export function shiftHandoverIssueSeverityLabel(severity?: string | null): strin
 /**
  * 未完工单状态的**写面值域** —— 与读面展示表 `WORK_ORDER_STATUS_LABELS` 是两件事。
  *
- * 读面表回答「拿到这个码怎么显示」，所以它是历史拼写的并集，里面既有 `InProgress` 又有
+ * 读面表回答「拿到这个码怎么显示」，所以它是历史拼写的并集：里面既有 `InProgress` 又有
  * `Started`（两者都显示「生产中」），也含 `Completed` / `Closed`。把它当选择器数据源有两个
  * 后果：屏上并排两条无法区分的「生产中」；以及允许把一张**未完工单**标成「已完成/已关闭」
- * ——那与「未完工单」的定义（`completedQuantity < plannedQuantity`）自相矛盾。
+ * ——那与该实体的定义（`completedQuantity < plannedQuantity`）自相矛盾。
  *
- * 所以写面单独定义：
- * - 只留仍在流转的状态，终态（completed / closed / cancelled / scrapped / split / merged）一律排除；
- * - 「生产中」只保留 `Started` 一个码——MES 域常量是 `WorkOrder.StartedStatus`，它是更贴近域的拼写。
+ * ## 码的拼写取自契约，不是常量名
+ *
+ * 权威有两处且一致，**都是小写**：
+ * - 契约：`ListBusinessConsoleMesWorkOrdersData['query']['status']`（api-client 生成物）；
+ * - 域常量：`WorkOrder.cs` 的 `CreatedStatus="created"` / `ReleasedStatus="released"` /
+ *   `StartedStatus="started"` / `HoldStatus="hold"`。
+ *
+ * 先前这里写的是 `Planned` / `Released` / `Started` / `OnHold`——把**常量名**当成了值。
+ * `Planned` 与 `OnHold` 在系统里**根本不存在**，写进交接单后 PC 读面
+ * （`business-console` 的 `useMesReferenceLabels.statusLabel`，解不出即原样回吐）会把
+ * 英文码直接显示给用户。本 PR 是这一列唯一的生产者，所以那是本 PR 引入的缺陷。
+ *
+ * ## 只留流转中的状态
+ *
+ * 终态（completed / closed / cancelled / scrapped / split / merged）一律排除。
+ *
+ * ## 文案与 PC 读面对齐
+ *
+ * 同一张交接单在 PDA 与 PC 上必须读作同一个词，所以这里直接采用 PC 读面对这四个码的说法，
+ * 而不是套用 `WORK_ORDER_STATUS_LABELS`（它对 `Released` 说「已下达」，与 PC 的「已释放」不一致）。
+ * 跨界期望由 `mesLabels.test.ts` 钉住 + r4 真栈在 PC 屏上实看。
  */
 export const SHIFT_HANDOVER_UNFINISHED_WORK_ORDER_STATUS_OPTIONS = [
-  { code: 'Planned', label: '已计划' },
-  { code: 'Released', label: '已下达' },
-  { code: 'Started', label: '生产中' },
-  { code: 'OnHold', label: '已挂起' },
+  { code: 'created', label: '已创建' },
+  { code: 'released', label: '已释放' },
+  { code: 'started', label: '已开工' },
+  { code: 'hold', label: '挂起' },
 ] as const
+
+/** 交接单未完工单状态的显示名；只认写面值域，解不出不回吐英文码。 */
+export function shiftHandoverUnfinishedWorkOrderStatusLabel(status?: string | null): string {
+  const code = (status ?? '').trim().toLowerCase()
+  return (
+    SHIFT_HANDOVER_UNFINISHED_WORK_ORDER_STATUS_OPTIONS.find((o) => o.code === code)?.label ??
+    UNKNOWN_STATUS_LABEL
+  )
+}
 
 function normalizeHandoverCode(value?: string | null): string {
   return (value ?? '').trim().toLowerCase()

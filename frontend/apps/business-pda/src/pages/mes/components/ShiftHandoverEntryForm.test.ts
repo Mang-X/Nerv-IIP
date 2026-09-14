@@ -153,7 +153,7 @@ describe('ShiftHandoverEntryForm — 未完工单', () => {
 
   it('rejects completed >= planned — 那不是未完工单（域方法原话）', async () => {
     const ctx = mountForm()
-    await fill(ctx, { workOrderId: 'WO-1', planned: '10', completed: '10', status: 'Released' })
+    await fill(ctx, { workOrderId: 'WO-1', planned: '10', completed: '10', status: 'released' })
     await ctx.wrapper.get('[data-testid="add-unfinished"]').trigger('click')
 
     expect(ctx.unfinishedWorkOrders.value).toHaveLength(0)
@@ -164,7 +164,7 @@ describe('ShiftHandoverEntryForm — 未完工单', () => {
 
   it('rejects a non-positive planned quantity (域守卫：计划数量必须为正数)', async () => {
     const ctx = mountForm()
-    await fill(ctx, { workOrderId: 'WO-1', planned: '0', completed: '0', status: 'Released' })
+    await fill(ctx, { workOrderId: 'WO-1', planned: '0', completed: '0', status: 'released' })
     await ctx.wrapper.get('[data-testid="add-unfinished"]').trigger('click')
 
     expect(ctx.unfinishedWorkOrders.value).toHaveLength(0)
@@ -186,7 +186,7 @@ describe('ShiftHandoverEntryForm — 未完工单', () => {
 
   it('adds a valid unfinished work order and renders it with the Chinese status', async () => {
     const ctx = mountForm()
-    await fill(ctx, { workOrderId: 'WO-1', planned: '10', completed: '3', status: 'Released' })
+    await fill(ctx, { workOrderId: 'WO-1', planned: '10', completed: '3', status: 'released' })
     await ctx.wrapper.get('[data-testid="add-unfinished"]').trigger('click')
 
     expect(ctx.unfinishedWorkOrders.value).toEqual([
@@ -194,12 +194,12 @@ describe('ShiftHandoverEntryForm — 未完工单', () => {
         workOrderId: 'WO-1',
         plannedQuantity: 10,
         completedQuantity: 3,
-        workOrderStatus: 'Released',
+        workOrderStatus: 'released',
       },
     ])
     const rows = ctx.wrapper.get('[data-testid="unfinished-rows"]').text()
-    expect(rows).toContain('已下达')
-    expect(rows).not.toContain('Released')
+    expect(rows).toContain('已释放')
+    expect(rows).not.toContain('released')
   })
 })
 
@@ -229,7 +229,7 @@ describe('ShiftHandoverEntryForm — 未完工单状态值域', () => {
     for (const terminal of ['已完成', '已关闭', '已取消', '已报废']) {
       expect(labels).not.toContain(terminal)
     }
-    for (const terminal of ['Completed', 'Closed', 'Cancelled', 'Scrapped']) {
+    for (const terminal of ['completed', 'closed', 'cancelled', 'scrapped']) {
       expect(codes).not.toContain(terminal)
     }
   })
@@ -239,12 +239,12 @@ describe('ShiftHandoverEntryForm — 未完工单状态值域', () => {
     await ctx.wrapper.findAll('[data-testid="unfinished-section"] input')[0].setValue('WO-1')
     await ctx.enterQuantity(ctx.wrapper, 'unfinished-planned-cell', '10')
     await ctx.enterQuantity(ctx.wrapper, 'unfinished-completed-cell', '3')
-    await ctx.pickWorkOrderStatus(ctx.wrapper, 'Started')
+    await ctx.pickWorkOrderStatus(ctx.wrapper, 'started')
     await ctx.wrapper.get('[data-testid="add-unfinished"]').trigger('click')
 
-    expect(ctx.unfinishedWorkOrders.value[0].workOrderStatus).toBe('Started')
+    expect(ctx.unfinishedWorkOrders.value[0].workOrderStatus).toBe('started')
     // 写进去的码必须显示得出来，否则交接单上会出现「未知状态」。
-    expect(ctx.wrapper.get('[data-testid="unfinished-rows"]').text()).toContain('生产中')
+    expect(ctx.wrapper.get('[data-testid="unfinished-rows"]').text()).toContain('已开工')
     expect(ctx.wrapper.get('[data-testid="unfinished-rows"]').text()).not.toContain('未知状态')
   })
 })

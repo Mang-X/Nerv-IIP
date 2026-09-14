@@ -9,7 +9,7 @@
 import {
   shiftHandoverIssueCategoryLabel,
   shiftHandoverIssueSeverityLabel,
-  workOrderStatusLabel,
+  shiftHandoverUnfinishedWorkOrderStatusLabel,
 } from '@nerv-iip/business-core'
 import { NvMobileButton, NvMobileTag } from '@nerv-iip/ui-mobile'
 import {
@@ -71,8 +71,8 @@ function severityTone(value?: string | null) {
         >
           <p class="text-sm font-medium text-foreground">{{ item.workOrderId }}</p>
           <p class="text-xs text-muted-foreground">
-            {{ workOrderStatusLabel(item.workOrderStatus) }} · 完成 {{ item.completedQuantity }} /
-            计划 {{ item.plannedQuantity }}
+            {{ shiftHandoverUnfinishedWorkOrderStatusLabel(item.workOrderStatus) }} · 完成
+            {{ item.completedQuantity }} / 计划 {{ item.plannedQuantity }}
           </p>
         </li>
       </ul>

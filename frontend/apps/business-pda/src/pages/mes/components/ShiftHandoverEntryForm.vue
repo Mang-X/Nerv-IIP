@@ -20,7 +20,7 @@ import {
   SHIFT_HANDOVER_UNFINISHED_WORK_ORDER_STATUS_OPTIONS,
   shiftHandoverIssueCategoryLabel,
   shiftHandoverIssueSeverityLabel,
-  workOrderStatusLabel,
+  shiftHandoverUnfinishedWorkOrderStatusLabel,
 } from '@nerv-iip/business-core'
 import {
   NvMobileButton,
@@ -304,8 +304,8 @@ function removeOpenIssue(index: number) {
         >
           <p class="text-sm font-medium text-foreground">{{ item.workOrderId }}</p>
           <p class="text-xs text-muted-foreground">
-            {{ workOrderStatusLabel(item.workOrderStatus) }} · 完成 {{ item.completedQuantity }} /
-            计划 {{ item.plannedQuantity }}
+            {{ shiftHandoverUnfinishedWorkOrderStatusLabel(item.workOrderStatus) }} · 完成
+            {{ item.completedQuantity }} / 计划 {{ item.plannedQuantity }}
           </p>
           <NvMobileButton
             variant="text"
@@ -351,7 +351,7 @@ function removeOpenIssue(index: number) {
           <span class="text-muted-foreground">工单状态</span>
           <span class="font-medium text-foreground">{{
             unfinishedDraft.workOrderStatus
-              ? workOrderStatusLabel(unfinishedDraft.workOrderStatus)
+              ? shiftHandoverUnfinishedWorkOrderStatusLabel(unfinishedDraft.workOrderStatus)
               : '点击选择'
           }}</span>
         </button>

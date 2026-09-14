@@ -160,15 +160,23 @@ function transferFailure(action: string, status: number): Error {
   return error
 }
 
+/**
+ * 只定制**真的会上屏**的那几条。
+ *
+ * 唯一的消费者是 `ShiftHandoverPhotoCapture`，它过 `describeRequestError`；后者对
+ * **401 / 403 / ≥500** 一律用自己的 `actionableHttpMessage` 盖掉传入文案（那三档的服务端
+ * 文案对操作工没有可执行价值，是那边刻意的分层）。所以在这里为这三档写定制文案是死代码：
+ * 写了也到不了屏幕，却会让「有断言、绿着、断的却是用户看不到的字符串」这种空防线成立。
+ *
+ * 404 / 409 / 413 / 415 则相反——`describeRequestError` 认可操作工友好的中文并优先透传，
+ * 这四条是真的会上屏的，必须定制：通用文案说不清「重新拍照」还是「换格式」。
+ */
 function transferFailureMessage(action: string, status: number): string {
-  if (status === 401) return '登录已失效，请重新登录后再传照片。'
-  if (status === 403) return '当前账号没有上传交接班照片的权限，请联系班组长或管理员开通。'
   if (status === 404) return '上传会话已失效或已过期，请重新拍照。'
   if (status === 409) return '上传进度与服务端不一致，请重新拍照上传。'
   if (status === 413) return '照片超出交接班附件大小上限，请重拍或压缩后再传。'
   if (status === 415) return '照片格式不被接受，交接班附件只支持 JPG / PNG。'
-  if (status >= 500) return `${action}失败：服务暂时不可用，请稍后重试。`
-  return `${action}失败，请检查网络后重试。`
+  return `${action}失败，请稍后重试。`
 }
 
 /** 401 走应用唯一的失效会话兜底（清会话 + 跳登录），不在这条支路上另起一套。 */
