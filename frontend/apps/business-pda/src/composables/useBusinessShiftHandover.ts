@@ -127,16 +127,95 @@ export function resolveDirectoryLabel(
   return labels.get(code) ?? code
 }
 
-/** 交班人/接班人显示名：解析不出用户目录时不回显用户 id（那是工程标识符）。 */
-export function outgoingUserLabel(row: { outgoingUserName?: string | null }): string {
-  return row.outgoingUserName?.trim() || '未记录'
+/**
+ * 交接人显示名。
+ *
+ * **判据是身份 id 在不在，不是姓名在不在。**
+ *
+ * 这两件事在交接班里后果完全不同：`未记录` 断言的是「这张单子上没有这个人」——问责链断了；
+ * `姓名未知` 断言的是「人记在案，只是员工目录解不出名字」——问责链是完整的。用同一个词
+ * 会让一张「已接班」的单子同屏写着「接班未记录」，那是与数据相反的读数（网关始终按认证
+ * principal 注入 `incomingUserId`，所以「已接班且 id 有值」是常态而不是异常）。
+ *
+ * 姓名解不出时仍然**不回显用户 id**：那是 IAM 主体标识符，不是工号，上屏对一线没有指认价值。
+ */
+export type ShiftHandoverPartyState = 'named' | 'name-unresolved' | 'absent' | 'pending'
+
+export function outgoingPartyState(row: {
+  outgoingUserId?: string | null
+  outgoingUserName?: string | null
+}): ShiftHandoverPartyState {
+  if (row.outgoingUserName?.trim()) return 'named'
+  return row.outgoingUserId?.trim() ? 'name-unresolved' : 'absent'
+}
+
+export function incomingPartyState(row: {
+  incomingUserId?: string | null
+  incomingUserName?: string | null
+  acceptedAtUtc?: string | null
+}): ShiftHandoverPartyState {
+  if (row.incomingUserName?.trim()) return 'named'
+  if (row.incomingUserId?.trim()) return 'name-unresolved'
+  // 还没人接班 ≠ 接了班但身份没落下来；前者是正常中间态，后者才是问责缺口。
+  return row.acceptedAtUtc?.trim() ? 'absent' : 'pending'
+}
+
+const PARTY_STATE_LABELS: Record<ShiftHandoverPartyState, string> = {
+  named: '',
+  'name-unresolved': '姓名未知',
+  absent: '未记录',
+  pending: '待接班',
+}
+
+export function outgoingUserLabel(row: {
+  outgoingUserId?: string | null
+  outgoingUserName?: string | null
+}): string {
+  const state = outgoingPartyState(row)
+  return state === 'named' ? row.outgoingUserName!.trim() : PARTY_STATE_LABELS[state]
 }
 
 export function incomingUserLabel(row: {
+  incomingUserId?: string | null
   incomingUserName?: string | null
   acceptedAtUtc?: string | null
 }): string {
-  return row.incomingUserName?.trim() || (row.acceptedAtUtc ? '未记录' : '待接班')
+  const state = incomingPartyState(row)
+  return state === 'named' ? row.incomingUserName!.trim() : PARTY_STATE_LABELS[state]
+}
+
+/**
+ * 交接单列表/详情上的时点。
+ *
+ * 解不出就回空串让调用方**不渲染**，不编一个假时间上屏；PDA 各页的既有做法同样是
+ * `toLocaleString('zh-CN')` + NaN 守卫（见 `maintenanceWorkOrderPresentation`）。
+ * 列表用紧凑式（月日时分）是因为 375px 宽装不下带年份的全式；详情页给全式。
+ *
+ * 时区钉死 `Asia/Shanghai`（与本 app 的 `ListScopeMeta` 同一口径）：交接班读的是厂区班次时点，
+ * 跟着宿主时区漂会让同一张单在不同设备上显示成不同班次；同时这也让读数与 CI（UTC）一致，
+ * 不会出现「本机绿、CI 红」的时区假红。
+ */
+const HANDOVER_DISPLAY_TIME_ZONE = 'Asia/Shanghai'
+
+export function formatHandoverTimestamp(value?: string | null, compact = false): string {
+  const raw = (value ?? '').trim()
+  if (!raw) return ''
+  const parsed = new Date(raw)
+  if (Number.isNaN(parsed.getTime())) return ''
+  return compact
+    ? parsed.toLocaleString('zh-CN', {
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+        timeZone: HANDOVER_DISPLAY_TIME_ZONE,
+      })
+    : parsed.toLocaleString('zh-CN', {
+        dateStyle: 'short',
+        timeStyle: 'short',
+        timeZone: HANDOVER_DISPLAY_TIME_ZONE,
+      })
 }
 
 export function formatAttachmentSize(sizeBytes?: number | null): string {

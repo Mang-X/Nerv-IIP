@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest'
 import {
   assertHandoverAccepted,
   formatAttachmentSize,
+  formatHandoverTimestamp,
+  incomingPartyState,
   incomingUserLabel,
   isSystemIdentifier,
+  outgoingPartyState,
   outgoingUserLabel,
   resolveDirectoryLabel,
   toDirectoryOptions,
@@ -61,21 +64,101 @@ describe('isSystemIdentifier / toDirectoryOptions', () => {
 })
 
 describe('outgoingUserLabel / incomingUserLabel', () => {
-  it('never echoes a raw user id when the directory could not resolve a name', () => {
-    expect(outgoingUserLabel({ outgoingUserName: null })).toBe('未记录')
-    expect(outgoingUserLabel({ outgoingUserName: '  ' })).toBe('未记录')
-    expect(outgoingUserLabel({ outgoingUserName: '张三' })).toBe('张三')
+  it('shows the resolved display name when the worker directory answered', () => {
+    expect(outgoingUserLabel({ outgoingUserId: 'user-a', outgoingUserName: '张三' })).toBe('张三')
+    expect(
+      incomingUserLabel({
+        incomingUserId: 'user-b',
+        incomingUserName: '李四',
+        acceptedAtUtc: '2026-09-14T01:00:00Z',
+      }),
+    ).toBe('李四')
   })
 
-  it('tells 待接班 apart from 已接班但解析不出名字', () => {
-    // 两种都没有 incomingUserName，但成因完全不同：一个还没人接，一个接了解析不出。
-    expect(incomingUserLabel({ incomingUserName: null, acceptedAtUtc: null })).toBe('待接班')
+  /**
+   * 判据是**身份 id 在不在**，不是姓名在不在。
+   *
+   * 网关始终按认证 principal 注入 id，所以「已接班 + id 有值 + 姓名解不出」是常态；
+   * 把它说成「未记录」等于在一张标着「已接班」的单子上断言「没有接班人」——与数据相反。
+   * 把实现改回按 name 判据时，本格必红。
+   */
+  it('says 姓名未知 — NOT 未记录 — when the id is on record but the name is not resolvable', () => {
+    expect(outgoingUserLabel({ outgoingUserId: 'user-admin', outgoingUserName: null })).toBe(
+      '姓名未知',
+    )
     expect(
-      incomingUserLabel({ incomingUserName: null, acceptedAtUtc: '2026-09-14T01:00:00Z' }),
+      incomingUserLabel({
+        incomingUserId: 'user-admin',
+        incomingUserName: null,
+        acceptedAtUtc: '2026-09-14T01:00:00Z',
+      }),
+    ).toBe('姓名未知')
+  })
+
+  it('keeps 未记录 for the genuinely missing identity (问责链真的断了)', () => {
+    expect(outgoingUserLabel({ outgoingUserId: null, outgoingUserName: null })).toBe('未记录')
+    expect(outgoingUserLabel({ outgoingUserId: '   ', outgoingUserName: '  ' })).toBe('未记录')
+    expect(
+      incomingUserLabel({
+        incomingUserId: null,
+        incomingUserName: null,
+        acceptedAtUtc: '2026-09-14T01:00:00Z',
+      }),
     ).toBe('未记录')
+  })
+
+  it('keeps 待接班 apart from both — 还没人接 ≠ 接了班但身份缺失', () => {
     expect(
-      incomingUserLabel({ incomingUserName: '李四', acceptedAtUtc: '2026-09-14T01:00:00Z' }),
-    ).toBe('李四')
+      incomingUserLabel({ incomingUserId: null, incomingUserName: null, acceptedAtUtc: null }),
+    ).toBe('待接班')
+  })
+
+  it('never puts the IAM principal id on screen in any state', () => {
+    const labels = [
+      outgoingUserLabel({ outgoingUserId: 'user-admin', outgoingUserName: null }),
+      incomingUserLabel({
+        incomingUserId: 'user-admin',
+        incomingUserName: null,
+        acceptedAtUtc: '2026-09-14T01:00:00Z',
+      }),
+      incomingUserLabel({ incomingUserId: null, incomingUserName: null, acceptedAtUtc: null }),
+    ]
+    for (const label of labels) expect(label).not.toContain('user-admin')
+  })
+
+  it('exposes the four states so callers branch instead of re-deriving the rule', () => {
+    expect(outgoingPartyState({ outgoingUserId: 'u', outgoingUserName: '张三' })).toBe('named')
+    expect(outgoingPartyState({ outgoingUserId: 'u', outgoingUserName: null })).toBe(
+      'name-unresolved',
+    )
+    expect(outgoingPartyState({ outgoingUserId: null, outgoingUserName: null })).toBe('absent')
+    expect(
+      incomingPartyState({ incomingUserId: null, incomingUserName: null, acceptedAtUtc: null }),
+    ).toBe('pending')
+  })
+})
+
+describe('formatHandoverTimestamp', () => {
+  it('renders a full date-time for the detail face and a compact one for the 375px list', () => {
+    // 期望值按钉死的 Asia/Shanghai 写；宿主时区变了本格也不该变（CI 跑在 UTC）。
+    const value = '2026-09-14T13:53:47.529528+00:00'
+    expect(formatHandoverTimestamp(value)).toBe('2026/9/14 21:53')
+    expect(formatHandoverTimestamp(value, true)).toBe('09/14 21:53')
+  })
+
+  it('does not follow the host timezone (读数必须与设备/CI 时区无关)', () => {
+    const value = '2026-09-14T16:30:00.000Z'
+    // 同一时刻在 UTC 是 16:30、在 Asia/Shanghai 是次日 00:30；钉住后者。
+    expect(formatHandoverTimestamp(value, true)).toBe('09/15 00:30')
+    expect(formatHandoverTimestamp(value)).toBe('2026/9/15 00:30')
+  })
+
+  it('returns an empty string instead of inventing a time when it cannot parse', () => {
+    // 调用方据此不渲染；印一个 Invalid Date 或假时间比不印更糟。
+    expect(formatHandoverTimestamp(undefined)).toBe('')
+    expect(formatHandoverTimestamp(null)).toBe('')
+    expect(formatHandoverTimestamp('   ')).toBe('')
+    expect(formatHandoverTimestamp('not-a-date')).toBe('')
   })
 })
 

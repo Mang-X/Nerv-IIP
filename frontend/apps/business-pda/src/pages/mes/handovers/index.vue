@@ -17,6 +17,7 @@ import { useRouter } from 'vue-router'
 import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import RetryableListError from '@/components/RetryableListError.vue'
 import {
+  formatHandoverTimestamp,
   HANDOVER_OPEN_STATUS_FILTER,
   incomingUserLabel,
   outgoingUserLabel,
@@ -75,17 +76,38 @@ const showEmpty = computed(
     handovers.value.length === 0,
 )
 
-function rowSubtitle(row: ShiftHandoverRow) {
-  return `交班 ${outgoingUserLabel(row)} · 接班 ${incomingUserLabel(row)}`
+/**
+ * 行标题用交接单号。
+ *
+ * 同一班组同一班次一天内会交多次班，用班组名当标题时列表上两行**在屏上完全无法区分**
+ * ——操作工点进去之前不知道哪张是哪张。单号是这批数据里唯一天然互异的业务字段，
+ * 也与 PDA 其它列表（工单号当标题）一致。班组/班次降到副标题。
+ */
+function rowTitle(row: ShiftHandoverRow) {
+  return row.handoverId?.trim() || '无单号'
 }
 
-function rowTitle(row: ShiftHandoverRow) {
+function rowSubtitle(row: ShiftHandoverRow) {
   // 班组名优先用交班时点的快照（teamName），目录改名不会改写历史交接单上的称呼。
-  return row.teamName?.trim() || resolveTeamLabel(row.teamId)
+  const team = row.teamName?.trim() || resolveTeamLabel(row.teamId)
+  return `${team} · ${resolveShiftLabel(row.shiftId)}`
+}
+
+function rowParties(row: ShiftHandoverRow) {
+  return `交班 ${outgoingUserLabel(row)} · 接班 ${incomingUserLabel(row)}`
 }
 
 function rowCounts(row: ShiftHandoverRow) {
   return `在制 ${row.wipItemCount ?? 0} · 未完工单 ${row.unfinishedWorkOrderCount ?? 0} · 遗留 ${row.openIssueDetailCount ?? 0}`
+}
+
+function isAccepted(row: ShiftHandoverRow) {
+  return (row.handoverStatus ?? '').toLowerCase() === 'accepted'
+}
+
+/** 与状态配对的那个时点：待接班看交班时间，已接班看接班时间。解不出就不渲染。 */
+function rowTimestamp(row: ShiftHandoverRow) {
+  return formatHandoverTimestamp(isAccepted(row) ? row.acceptedAtUtc : row.createdAtUtc, true)
 }
 
 function openDetail(row: ShiftHandoverRow) {
@@ -165,17 +187,20 @@ function openDetail(row: ShiftHandoverRow) {
           @select="openDetail(row)"
         >
           <template #meta>
-            <p class="truncate text-xs text-muted-foreground">
-              班次 {{ resolveShiftLabel(row.shiftId) }} · {{ rowCounts(row) }}
-            </p>
+            <p class="truncate text-xs text-muted-foreground">{{ rowParties(row) }}</p>
+            <p class="truncate text-xs text-muted-foreground">{{ rowCounts(row) }}</p>
           </template>
           <template #trailing>
-            <NvMobileTag
-              size="sm"
-              :variant="(row.handoverStatus ?? '').toLowerCase() === 'open' ? 'warning' : 'success'"
-            >
-              {{ shiftHandoverStatusLabel(row.handoverStatus) }}
-            </NvMobileTag>
+            <div class="flex shrink-0 flex-col items-end gap-1">
+              <NvMobileTag size="sm" :variant="isAccepted(row) ? 'success' : 'warning'">
+                {{ shiftHandoverStatusLabel(row.handoverStatus) }}
+              </NvMobileTag>
+              <span
+                v-if="rowTimestamp(row)"
+                class="text-[11px] tabular-nums text-muted-foreground"
+                >{{ rowTimestamp(row) }}</span
+              >
+            </div>
           </template>
         </NvListRow>
       </div>

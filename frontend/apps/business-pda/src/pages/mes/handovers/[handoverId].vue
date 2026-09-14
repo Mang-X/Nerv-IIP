@@ -23,6 +23,7 @@ import { useRoute, useRouter } from 'vue-router'
 import RetryableListError from '@/components/RetryableListError.vue'
 import { useNonIdempotentWriteResult } from '@/composables/useNonIdempotentWriteResult'
 import {
+  formatHandoverTimestamp,
   incomingUserLabel,
   outgoingUserLabel,
   useMesShiftHandoverDetail,
@@ -57,6 +58,9 @@ const blocker = computed(() => {
   if (!detail.canRead.value) return '当前账号没有交接班读取权限（business.mes.handovers.read）。'
   return ''
 })
+
+const createdAtText = computed(() => formatHandoverTimestamp(detail.detail.value?.createdAtUtc))
+const acceptedAtText = computed(() => formatHandoverTimestamp(detail.detail.value?.acceptedAtUtc))
 
 const isOpenHandover = computed(
   () => (detail.detail.value?.handoverStatus ?? '').toLowerCase() === 'open',
@@ -168,20 +172,25 @@ function backToList() {
       >
         <div class="flex items-center gap-2">
           <h2 class="min-w-0 flex-1 truncate text-base font-semibold text-foreground">
-            {{
-              detail.detail.value.teamName?.trim() || resolveTeamLabel(detail.detail.value.teamId)
-            }}
+            {{ detail.detail.value.handoverId?.trim() || '无单号' }}
           </h2>
           <NvMobileTag size="sm" :variant="isOpenHandover ? 'warning' : 'success'">{{
             shiftHandoverStatusLabel(detail.detail.value.handoverStatus)
           }}</NvMobileTag>
         </div>
-        <p class="mt-1 text-sm text-muted-foreground">
-          班次 {{ resolveShiftLabel(detail.detail.value.shiftId) }}
+        <p class="mt-1 truncate text-sm text-muted-foreground">
+          {{ detail.detail.value.teamName?.trim() || resolveTeamLabel(detail.detail.value.teamId) }}
+          · {{ resolveShiftLabel(detail.detail.value.shiftId) }}
         </p>
         <p class="text-sm text-muted-foreground">
           交班 {{ outgoingUserLabel(detail.detail.value) }} · 接班
           {{ incomingUserLabel(detail.detail.value) }}
+        </p>
+        <p v-if="createdAtText" class="text-xs text-muted-foreground">
+          交班时间 {{ createdAtText }}
+        </p>
+        <p v-if="acceptedAtText" class="text-xs text-muted-foreground">
+          接班时间 {{ acceptedAtText }}
         </p>
       </section>
 

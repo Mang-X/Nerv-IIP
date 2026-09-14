@@ -18,7 +18,10 @@ const detail = ref<Record<string, unknown> | undefined>({
   teamId: 'TEAM-A',
   teamName: '甲班组',
   handoverStatus: 'Open',
+  createdAtUtc: '2026-09-14T13:53:47.000Z',
+  outgoingUserId: 'user-zhang',
   outgoingUserName: '张三',
+  incomingUserId: null,
   incomingUserName: null,
   acceptedAtUtc: null,
   wipItems: [{ workOrderId: 'WO-1', operationTaskId: null, quantity: 5 }],
@@ -122,8 +125,36 @@ describe('PDA 接班确认页', () => {
 
   it('shows the shift display name instead of the raw master-data code', () => {
     const wrapper = mount(DetailPage)
-    expect(wrapper.get('[data-testid="handover-summary"]').text()).toContain('班次 早班')
-    expect(wrapper.get('[data-testid="handover-summary"]').text()).not.toContain('班次 EARLY')
+    expect(wrapper.get('[data-testid="handover-summary"]').text()).toContain('早班')
+    expect(wrapper.get('[data-testid="handover-summary"]').text()).not.toContain('EARLY')
+  })
+
+  it('headlines the handover number and prints the timestamps', () => {
+    const wrapper = mount(DetailPage)
+    const summary = wrapper.get('[data-testid="handover-summary"]').text()
+    expect(summary).toContain('HO-1')
+    expect(summary).toContain('交班时间 2026/9/14 21:53')
+    // 还没接班 → 不印一个空的「接班时间」行。
+    expect(summary).not.toContain('接班时间')
+  })
+
+  it('never writes 接班 未记录 when the incoming id IS on record (A 类缺陷的详情侧防线)', () => {
+    detail.value = {
+      ...OPEN_DETAIL,
+      handoverStatus: 'Accepted',
+      acceptedAtUtc: '2026-09-14T14:20:00.000Z',
+      outgoingUserId: 'user-admin',
+      outgoingUserName: null,
+      incomingUserId: 'user-admin',
+      incomingUserName: null,
+    }
+    const wrapper = mount(DetailPage)
+    const summary = wrapper.get('[data-testid="handover-summary"]').text()
+    expect(summary).toContain('已接班')
+    expect(summary).toContain('交班 姓名未知 · 接班 姓名未知')
+    expect(summary).not.toContain('未记录')
+    expect(summary).not.toContain('user-admin')
+    expect(summary).toContain('接班时间 2026/9/14 22:20')
   })
 
   it('says 交班时点没有登记 only when the detail really loaded', async () => {
