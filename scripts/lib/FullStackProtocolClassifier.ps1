@@ -146,12 +146,11 @@ function Read-NervFullStackClassifierJsonRecord {
 
     $proof = Open-NervFullStackVerifiedPathHandle -TrustedPath $trustedTarget -Access Read
     try {
-        if (-not [string]::Equals([string] $proof.Status, 'Verified', [StringComparison]::Ordinal) -or
-            $null -eq $proof.Handle -or $proof.Handle.IsClosed -or $proof.Handle.IsInvalid) {
-            throw 'classifier:opened-object-identity-required'
-        }
-
-        $rawBytes = Read-NervFullStackOpenedRecordBytes -Handle $proof.Handle
+        # 宿主没有 opened-object identity provider，与「证据拿到了但没验过」是两回事；
+        # 分叉写在 Read-NervFullStackProofRecordBytes 里，本处只负责如实转述它的结论。
+        $rawBytes = Read-NervFullStackProofRecordBytes `
+            -Proof $proof `
+            -RequirementTag 'classifier:opened-object-identity-required'
         try {
             $json = [System.Text.UTF8Encoding]::new($false, $true).GetString($rawBytes)
             $record = ConvertFrom-Json -InputObject $json -NoEnumerate -ErrorAction Stop
@@ -171,12 +170,18 @@ function Read-NervFullStackClassifierJsonRecord {
             CanonicalPath = [string] $trustedTarget.CanonicalPath
             RawBytes = [byte[]] $rawBytes.Clone()
             Record = $record
-            Identity = [pscustomobject][ordered]@{
-                Provider = [string] $proof.Provider
-                Key = [string] $proof.Identity.Key
-                Device = $proof.Identity.Device
-                Inode = $proof.Identity.Inode
-                Kind = [string] $proof.Identity.Kind
+            IdentityProven = [bool] $proof.IdentityProven
+            Identity = if ($proof.IdentityProven) {
+                [pscustomobject][ordered]@{
+                    Provider = [string] $proof.Provider
+                    Key = [string] $proof.Identity.Key
+                    Device = $proof.Identity.Device
+                    Inode = $proof.Identity.Inode
+                    Kind = [string] $proof.Identity.Kind
+                }
+            }
+            else {
+                $null
             }
         }
     }
@@ -417,6 +422,14 @@ function Get-NervFullStackProtocolGenerationObservation {
     $warnings = [System.Collections.Generic.List[string]]::new()
     $generation = 'v0'
     $state = $null
+
+    # 身份未获证明的读必须可见：⛔ 不许悄悄降级。它不改变 generation（那是记录的事实），
+    # 只如实说明本次读没有 device/inode 绑定（宿主没有 opened-object identity provider）。
+    foreach ($snapshot in @($readback.AuthoritySnapshot, $readback.ManifestSnapshot)) {
+        if ($null -ne $snapshot -and -not $snapshot.IdentityProven) {
+            $warnings.Add("classifier:unproven-record-identity '$($snapshot.CandidatePath)'")
+        }
+    }
 
     if ($readback.ManifestExists -and $null -eq $readback.ManifestSnapshot) {
         $generation = 'invalid'

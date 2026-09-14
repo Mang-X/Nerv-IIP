@@ -277,7 +277,7 @@ foreach ($commandName in @(
     'Join-Path',
     'Open-NervFullStackVerifiedPathHandle',
     'Read-NervFullStackClassifierJsonRecord',
-    'Read-NervFullStackOpenedRecordBytes',
+    'Read-NervFullStackProofRecordBytes',
     'Read-NervFullStackVerifiedRecord',
     'Set-StrictMode',
     'Test-NervFullStackClassifierActivationMarker',
@@ -860,6 +860,16 @@ function Assert-A5PublicationPair([object] $Publication, [string] $Root, [string
     Assert-True (-not [bool] $manifest.runtimeStartAttempted -and @($manifest.runtimeIdentities).Count -eq 0) 'Initial publication must not imply runtime startup.'
 }
 
+# ⚠️ 以下运行时面依赖 macOS opened-object identity provider（libSystem 的 open/fstat/flock）。
+# 非 macOS 宿主上 Open-NervFullStackLeaseHandle 按既有契约抛 `path:identity-unavailable`，
+# 那是该能力**声明过的平台边界**，不是被测记录或本测试的缺陷（#3405）。本文件末段
+# （`verified-session-cas-and-leases`）里的 `if ($IsMacOS)` 已经是同一写法，⛔ 别按行号找它，
+# 行号会随编辑漂移。⛔ 这里刻意**不重排块内缩进**：范围内含 `@'…'@` here-string，其闭合定界符
+# 必须停在行首，重排会改坏子进程命令；`if` 在 PowerShell 里也不另开作用域。
+if (-not $IsMacOS) {
+    Write-Host "  SKIP $member 的运行时面：本宿主没有 opened-object identity provider（open/fstat/flock，目前仅 macOS 有实现），因此未执行 authority 发布、租约与崩溃边界断言。本段的静态源码契约不受影响，已在上方执行。"
+}
+else {
 $a5Roots = [System.Collections.Generic.List[string]]::new()
 try {
     $publicationRoot = New-A5FixtureRoot -Name 'publication'
@@ -1320,6 +1330,7 @@ finally {
         }
     }
 }
+}
 
 Write-Host "Full-stack v2 protocol tests passed: $member"
 
@@ -1389,6 +1400,16 @@ function Start-A3FixtureProcess([string] $Command, [string[]] $Arguments, [strin
         -LogDirectory (Join-Path $FixtureRoot "$name-logs")
 }
 
+# ⚠️ 以下运行时面依赖 macOS opened-object identity provider（libSystem 的 open/fstat/flock）。
+# 非 macOS 宿主上 Open-NervFullStackLeaseHandle 按既有契约抛 `path:identity-unavailable`，
+# 那是该能力**声明过的平台边界**，不是被测记录或本测试的缺陷（#3405）。本文件末段
+# （`verified-session-cas-and-leases`）里的 `if ($IsMacOS)` 已经是同一写法，⛔ 别按行号找它，
+# 行号会随编辑漂移。⛔ 这里刻意**不重排块内缩进**：范围内含 `@'…'@` here-string，其闭合定界符
+# 必须停在行首，重排会改坏子进程命令；`if` 在 PowerShell 里也不另开作用域。
+if (-not $IsMacOS) {
+    Write-Host "  SKIP $member 的运行时面：本宿主没有 opened-object identity provider（open/fstat/flock，目前仅 macOS 有实现），因此未执行已验证记录的 CAS、租约与并发写入者断言。本段的静态源码契约不受影响，已在上方执行。"
+}
+else {
 $a3Root = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-fullstack-a3-$([Guid]::NewGuid().ToString('N'))"
 $a3StateRoot = Join-Path $a3Root 'state'
 $a3SessionId = 'nerv-cafe-123456'
@@ -1727,6 +1748,7 @@ finally {
     if ([System.IO.Directory]::Exists($a3Root)) {
         [System.IO.Directory]::Delete($a3Root, $true)
     }
+}
 }
 
 Write-Host "Full-stack v2 protocol tests passed: $member"
