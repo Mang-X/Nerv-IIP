@@ -126,8 +126,13 @@ npx skills experimental_install    # 把 payload 落到 .agents/skills/
 无源的第三方 payload 不受影响（发布仓库自有技能也不得让 `experimental_install` 与镜像那道门
 失效），链接集合必须等于 payload 目录集合，链接目标必须是相对路径，重建必须幂等。
 
-⚠️ 无符号链接能力的平台（未开开发者模式的 Windows）上，`.claude/skills/<name>` 是一次性实体
-拷贝，重建时原样保留——payload 刷新了，那份拷贝不会跟着刷新。这条漂移只在该平台上存活。
+⚠️ 覆盖边界：链接层重建对**已存在的条目一律跳过**，与它是不是符号链接无关。因此只要
+`.claude/skills/<name>` 已经是实体目录，payload 刷新后那份拷贝就不会跟着刷新。落成实体目录
+有两条路径，其中 ① **不限平台**，因此这条漂移整体不限平台：① 上面
+`npx skills add ./skills/<name>` 留下的那一份（删除只是口头建议、无自动化）；
+② 无符号链接能力的平台（未开开发者模式的 Windows）上的回退拷贝。
+`worktree-skill-links.Tests.ps1` 断言的是这条漂移的**当前行为**（已存在的实体条目保留自己的
+正文），不是把它挡掉。
 
 两层都在 `.gitignore` 里；第三方技能的事实源是 `skills-lock.json`，项目专属技能的事实源是
 `skills/`（`sourceType: local`，payload 每次由 hook 按源重发布）。

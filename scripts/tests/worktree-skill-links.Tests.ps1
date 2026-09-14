@@ -211,7 +211,7 @@ try {
         throw "Republishing repo-tracked skills must leave a payload without a tracked source untouched, got '$thirdParty'."
     }
     if (@($installTargets).Count -ne 0) {
-        throw "A worktree that already holds the third-party payload must not pay for a reinstall; install ran for: $(@($installTargets) -join ', ')."
+        throw "A worktree that already holds the third-party payload must not re-run the lock-driven install; it ran for: $(@($installTargets) -join ', ')."
     }
 
     # 安装/镜像门只看 skills-lock.json 拥有的那部分 payload。仓库自有技能无条件写进同一个目录，
