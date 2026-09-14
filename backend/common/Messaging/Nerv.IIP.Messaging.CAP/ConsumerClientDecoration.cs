@@ -1,4 +1,5 @@
 using DotNetCore.CAP;
+using DotNetCore.CAP.Internal;
 using DotNetCore.CAP.Messages;
 using DotNetCore.CAP.Transport;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,8 +13,9 @@ namespace Nerv.IIP.Messaging.CAP;
 /// 一并关闭，不再是本骨架的下游。
 ///
 /// <para><b>#3352 起，<see cref="DecoratedConsumerClient.ListeningAsync"/> 不再是纯转发</b>：它把 inner 的
-/// 永久阻塞挪到专用线程上。<b>其余每一个成员仍然逐字转发 inner</b>，没有任何自身行为；另一处有自身行为的代码
-/// 在 <b>DI 组装期</b>——<see cref="AddServices"/> 的 fail closed。</para>
+/// 永久阻塞挪到专用线程上。<b>#3249 起它还把 CAP 的最终停止信号并进交给 inner 的 token</b>
+/// （见 <see cref="ConsumerListeningStopSignal"/>）。<b>其余每一个成员仍然逐字转发 inner</b>，没有任何自身行为；
+/// 另两处有自身行为的代码都在 <b>DI 组装期</b>——<see cref="AddServices"/> 的 fail closed 与停止信号的注册。</para>
 ///
 /// <para>Registration mechanics: the transport package registers <see cref="IConsumerClientFactory"/> from its own
 /// <see cref="ICapOptionsExtension.AddServices"/>, and <c>AddCap</c> runs the extensions in registration order.
@@ -41,6 +43,17 @@ internal sealed class ConsumerClientDecorationExtension : ICapOptionsExtension
         services.AddSingleton(provider => new TransportConsumerClientFactory(
             (IConsumerClientFactory)ActivatorUtilities.CreateInstance(provider, transportDescriptor.ImplementationType)));
 
+        // #3249：最终停止信号。注册成 IProcessingServer 让它拿到 Bootstrapper 的 stoppingToken 与停机 Dispose()
+        // ——正是本该抵达 ConsumerRegister 的那一次停止。边沿选取与缺陷机制见 ConsumerListeningStopSignal。
+        // ⚠️ 只在这个 extension 里注册，而这个 extension 只挂在 Redis transport 上（见
+        // CapMessagingConfiguration.UseConfiguredTransport）。RabbitMQ / InMemory 宿主没有 client 装饰层，
+        // 也就接不住这个信号；给它们加装饰层不在 #3249 射程内。NonRedisTransports_HaveNoStopSignal 钉住这条边界。
+        // 写成两条注册：DecoratedConsumerClientFactory 仍以 ImplementationType 形态注册（见下），
+        // ActivatorUtilities 按具体类型重建它时要能解析到同一个单例。
+        services.AddSingleton<ConsumerListeningStopSignal>();
+        services.AddSingleton<IProcessingServer>(
+            provider => provider.GetRequiredService<ConsumerListeningStopSignal>());
+
         // Registered with a concrete implementation type (not a factory delegate) so that the resulting descriptor
         // keeps the shape callers already rely on: capture the single IConsumerClientFactory descriptor and rebuild
         // it through ActivatorUtilities.CreateInstance(provider, descriptor.ImplementationType).
@@ -54,15 +67,20 @@ internal sealed class TransportConsumerClientFactory(IConsumerClientFactory inne
     public IConsumerClientFactory Inner { get; } = inner;
 }
 
-internal sealed class DecoratedConsumerClientFactory(TransportConsumerClientFactory transport) : IConsumerClientFactory
+internal sealed class DecoratedConsumerClientFactory(
+    TransportConsumerClientFactory transport,
+    ConsumerListeningStopSignal stopSignal) : IConsumerClientFactory
 {
     internal IConsumerClientFactory Inner => transport.Inner;
 
     public async Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent) =>
-        new DecoratedConsumerClient(await transport.Inner.CreateAsync(groupName, groupConcurrent));
+        new DecoratedConsumerClient(
+            await transport.Inner.CreateAsync(groupName, groupConcurrent),
+            stopSignal.Token);
 }
 
-internal sealed class DecoratedConsumerClient(IConsumerClient inner) : IConsumerClient
+internal sealed class DecoratedConsumerClient(IConsumerClient inner, CancellationToken stopSignal = default)
+    : IConsumerClient
 {
     internal IConsumerClient Inner => inner;
 
@@ -117,7 +135,36 @@ internal sealed class DecoratedConsumerClient(IConsumerClient inner) : IConsumer
     /// <c>DenyChildAttach</c> 防止 inner 内部起的任务把专用线程的生命周期拖长。
     /// </para>
     /// </summary>
-    public Task ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
+    public Task ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        if (!stopSignal.CanBeCanceled)
+        {
+            return ListenOnDedicatedThread(timeout, cancellationToken);
+        }
+
+        return ListenUntilStoppedAsync(timeout, cancellationToken);
+    }
+
+    /// <summary>
+    /// #3249：把 CAP 的<b>最终停止</b>信号并进 listener 的 token。
+    ///
+    /// <para><c>cancellationToken</c> 是 <c>ConsumerRegister</c> 当前那一代 <c>_cts</c> 的 token；正常恢复之后
+    /// 那是一个<b>裸</b> CTS，宿主停机既取消不到它、也无法经 <c>ConsumerRegister.Dispose()</c> 取消（早退）。
+    /// 缺陷机制与「为什么只能补在这一层」见 <see cref="ConsumerListeningStopSignal"/>。</para>
+    ///
+    /// <para>⚠️ <b>只并到 <c>ListeningAsync</c> 一个成员上</b>。<c>CommitAsync</c>（ACK）等成员一律不碰：
+    /// 把停止信号接到 ACK 上会让「停止前 ACK 已完成」这类断言变成夹具自造的因果。</para>
+    ///
+    /// <para><c>stopSignal</c> 不可取消时（直接构造的装饰器，如单元测试）走原路径，行为与 #3352 逐字相同——
+    /// 对一个 <c>CanBeCanceled == false</c> 的 token 建 linked CTS 只是纯开销。</para>
+    /// </summary>
+    private async Task ListenUntilStoppedAsync(TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, stopSignal);
+        await ListenOnDedicatedThread(timeout, linked.Token).ConfigureAwait(false);
+    }
+
+    private Task ListenOnDedicatedThread(TimeSpan timeout, CancellationToken cancellationToken) =>
         Task.Factory.StartNew(
             () => inner.ListeningAsync(timeout, cancellationToken),
             cancellationToken,
