@@ -32,9 +32,20 @@ void _writeCodesMustExistInTheContract
  * PC 读面（`business-console/src/composables/mes/useMesReferenceLabels.ts` 的 `statusLabel`）
  * 对这四个码的说法。
  *
- * 这是**钉住的跨界期望**，不是自动交叉验证：console 在另一个 app 里，包/应用边界不允许
- * 从这里 import 它的词表（那只会变成第四份副本）。钉住的作用是让漂移变成一条指着
- * console 文件的红用例，而不是悄悄两屏不一致；另一端由 r4 真栈在 PC 屏上实看。
+ * ## 这是**单向**的 pin，覆盖边界如下（实测，不是推断）
+ *
+ * | 谁漂移 | 会不会红 |
+ * | --- | --- |
+ * | 本仓写面 label（`SHIFT_HANDOVER_UNFINISHED_WORK_ORDER_STATUS_OPTIONS`） | 四个码都红，红在本文件 |
+ * | console 的 `started` 文案 | 红，但红在 console 自己的 `handoversPage.test.ts` |
+ * | console 的 `created` / `released` / `hold` 文案 | **两侧都绿——抓不到** |
+ *
+ * 实测读数：把 console 的 `started: 已开工→生产中` ⇒ console 1 failed / 2471 passed；
+ * 把 `released: 已释放→已下达` ⇒ console 2472 全绿 **且** PDA 1343 全绿。
+ *
+ * 所以别把下面这张表读成「四个码都双面钉住了」——它只挡得住**我方**漂移；console 侧四个码里
+ * 只有 `started` 有独立防线。console 在另一个 app 里，从这里 import 它的词表只会变成第四份副本，
+ * 这条缝不在本票内补。r4 真栈在 PC 屏上逐码实看过一次，那是一次性证据、不是持续防线。
  */
 const CONSOLE_READ_FACE_LABELS: Readonly<Record<string, string>> = {
   created: '已创建',

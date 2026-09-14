@@ -179,7 +179,20 @@ export function shiftHandoverIssueSeverityLabel(severity?: string | null): strin
  *
  * 同一张交接单在 PDA 与 PC 上必须读作同一个词，所以这里直接采用 PC 读面对这四个码的说法，
  * 而不是套用 `WORK_ORDER_STATUS_LABELS`（它对 `Released` 说「已下达」，与 PC 的「已释放」不一致）。
- * 跨界期望由 `mesLabels.test.ts` 钉住 + r4 真栈在 PC 屏上实看。
+ *
+ * ## 这条跨界期望被钉到什么程度（覆盖边界，别当成四个码都钉住了）
+ *
+ * 钉在 `apps/business-pda/src/composables/shiftHandoverWorkOrderStatus.contract.test.ts`
+ * （**不是**本文件的 `mesLabels.test.ts`——那边四格都是写面自证）。它是**单向**的：
+ *
+ * - **改这里的 label → 红**（四个码都红）：契约测试比对本表与它钉的 PC 文案副本。
+ * - **改 console 的词表 → 只有 `started` 会红**，红在 console 自己的
+ *   `pages/mes/handoversPage.test.ts`「点开交接单按 id 取详情…」那格；
+ *   `created` / `released` / `hold` 改了**两侧都绿**（实测：console 2472 全绿 + PDA 1343 全绿）。
+ *
+ * 也就是说四个码里只有 `started` 是双面红，其余三个只挡得住我方漂移。console 在另一个 app 里，
+ * 从这里 import 它的词表只会变成第四份副本，所以这条缝**不在本票内补**——写明它，
+ * 好过让后来人以为四个码都有防线。
  */
 export const SHIFT_HANDOVER_UNFINISHED_WORK_ORDER_STATUS_OPTIONS = [
   { code: 'created', label: '已创建' },

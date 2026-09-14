@@ -243,6 +243,8 @@ describe('sendShiftHandoverAttachmentBytes', () => {
     [401, '登录已失效，请重新登录'],
     [403, '当前账号无此操作权限，请联系班组长或管理员'],
     [500, '服务暂时不可用，请稍后重试'],
+    // 默认分支：4xx 里没被定制的状态，describeRequestError 认可中文并透传 ⇒ 真的上屏。
+    [418, '上传照片失败，请稍后重试。'],
   ])('shows the operator the right copy for %i', async (status, onScreen) => {
     const { doFetch } = scriptedFetch([
       fakeResponse(204, { 'Upload-Offset': '0' }),
