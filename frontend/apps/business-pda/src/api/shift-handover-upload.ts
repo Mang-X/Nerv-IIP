@@ -32,6 +32,7 @@
  * （AGENTS 硬性规则 3 的意图）。这里不新开一套时限。
  */
 import { createTimeoutFetch, resolveRequestTimeoutMs } from './request-timeout'
+import { notifyUnauthorized } from './unauthorized'
 
 /** tus 协议版本；FileStorage 只接受这一个值（`PatchTusUploadEndpoint.TusVersion`）。 */
 export const TUS_RESUMABLE_VERSION = '1.0.0'
@@ -142,14 +143,38 @@ function sessionHeaders(target: ShiftHandoverTusTarget): Record<string, string> 
   return Object.fromEntries(entries)
 }
 
+/**
+ * 把字节面的 HTTP 状态翻成一线能照着做的中文。
+ *
+ * **状态码不进 message**：界面无工程语言（`docs/product/mobile-pda/design.md` UX 关），
+ * 操作工要的是「稍后重试」而不是 `HTTP 503`。状态仍然挂在 error 的 `status` 上供诊断与
+ * `describeRequestError` 分类，只是不上屏。
+ */
 function transferFailure(action: string, status: number): Error {
-  if (status === 401) return new Error('登录已失效，请重新登录后再传照片。')
-  if (status === 403) return new Error('当前账号没有交接班附件上传权限。')
-  if (status === 404) return new Error('上传会话已失效或已过期，请重新拍照。')
-  if (status === 409) return new Error('上传进度与服务端不一致，请重新拍照上传。')
-  if (status === 413) return new Error('照片超出交接班附件大小上限，请重拍或压缩后再传。')
-  if (status === 415) return new Error('照片格式不被接受，交接班附件只支持 JPG / PNG。')
-  return new Error(`${action}失败（HTTP ${status}），请重试。`)
+  const error = new Error(transferFailureMessage(action, status))
+  Object.defineProperty(error, 'status', {
+    configurable: true,
+    enumerable: false,
+    value: status,
+  })
+  return error
+}
+
+function transferFailureMessage(action: string, status: number): string {
+  if (status === 401) return '登录已失效，请重新登录后再传照片。'
+  if (status === 403) return '当前账号没有上传交接班照片的权限，请联系班组长或管理员开通。'
+  if (status === 404) return '上传会话已失效或已过期，请重新拍照。'
+  if (status === 409) return '上传进度与服务端不一致，请重新拍照上传。'
+  if (status === 413) return '照片超出交接班附件大小上限，请重拍或压缩后再传。'
+  if (status === 415) return '照片格式不被接受，交接班附件只支持 JPG / PNG。'
+  if (status >= 500) return `${action}失败：服务暂时不可用，请稍后重试。`
+  return `${action}失败，请检查网络后重试。`
+}
+
+/** 401 走应用唯一的失效会话兜底（清会话 + 跳登录），不在这条支路上另起一套。 */
+function reportTransferFailure(action: string, status: number): Error {
+  if (status === 401) notifyUnauthorized()
+  return transferFailure(action, status)
 }
 
 /**
@@ -180,7 +205,7 @@ export async function sendShiftHandoverAttachmentBytes(
     method: 'HEAD',
     headers: { ...baseHeaders, 'Tus-Resumable': TUS_RESUMABLE_VERSION },
   })
-  if (!head.ok) throw transferFailure('读取上传进度', head.status)
+  if (!head.ok) throw reportTransferFailure('读取上传进度', head.status)
 
   // 读不到 offset 时按「新建会话 = 0」起传。这不是「复查通过」，只是起点假设：
   // 起点若真的不是 0，FileStorage 会以 409 顶回来（PatchTusUploadEndpoint 比对 currentOffset），
@@ -201,7 +226,7 @@ export async function sendShiftHandoverAttachmentBytes(
     },
     body: payload,
   })
-  if (!patch.ok) throw transferFailure('上传照片', patch.status)
+  if (!patch.ok) throw reportTransferFailure('上传照片', patch.status)
 
   // 复查 offset：优先读 PATCH 自己的响应头，读不到再补一次 HEAD。
   let confirmedOffset = readUploadOffset(patch)

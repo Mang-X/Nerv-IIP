@@ -42,6 +42,12 @@ import {
   SHIFT_HANDOVER_PHOTO_MAX_BYTES,
 } from '@/api/shift-handover-upload'
 import {
+  isSystemIdentifier,
+  resolveDirectoryLabel,
+  toDirectoryOptions,
+  type DirectoryOption,
+} from '@nerv-iip/business-core'
+import {
   useListFreshness,
   useListResponseState,
   useScopeBoundListResponse,
@@ -74,58 +80,15 @@ export type ShiftHandoverUnfinishedWorkOrder = BusinessConsoleMesShiftHandoverUn
 export type ShiftHandoverOpenIssue = BusinessConsoleMesShiftHandoverOpenIssue
 export type ShiftHandoverAttachment = BusinessConsoleMesShiftHandoverAttachment
 
-export interface ShiftHandoverDirectoryOption {
-  value: string
-  label: string
-}
-
 /**
- * 主数据码看起来像 GUID 时不上屏也不可选。
+ * 主数据目录选项的判据（含「GUID 不上屏」那条）住在
+ * `@nerv-iip/business-core` 的 `masterdata/directoryOptions`。
  *
- * 与 console 侧 `pages/mes/handovers.vue` 同一判据：交接单的 `shiftId` / `teamId` 是
- * MasterData 公共 id（EARLY / TEAM-WB-MC-A 这种），GUID 形状的行是工程标识符，
- * 让操作工在 PDA 上选一个 GUID 是没有意义的。
+ * console 的交接班页有**逐字相同**的一份，同一条 GUID 正则在仓库里已经是第三份。搬进共享包
+ * 不需要改动 console（那份继续按原样跑），这里只做转出，不再各自维护一条正则。
  */
-const SYSTEM_ID_PATTERN =
-  /^[{(]?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}[)}]?$/i
-
-export function isSystemIdentifier(value?: string | null): boolean {
-  return SYSTEM_ID_PATTERN.test((value ?? '').trim())
-}
-
-export function toDirectoryOptions(
-  resources: readonly BusinessConsoleResourceItem[],
-): ShiftHandoverDirectoryOption[] {
-  return resources
-    .map((resource) => {
-      const value = resource.code?.trim()
-      if (!value || resource.active === false || isSystemIdentifier(value)) return undefined
-      const displayName = resource.displayName?.trim()
-      const label = displayName && !isSystemIdentifier(displayName) ? displayName : value
-      return { value, label }
-    })
-    .filter((option): option is ShiftHandoverDirectoryOption => Boolean(option))
-    .sort((a, b) => a.label.localeCompare(b.label, 'zh-Hans-CN'))
-}
-
-/**
- * 主数据码 → 中文显示名。
- *
- * 三条判据各有不同成因，不能合并：
- * - 空值 → 回落文案（「未排班」/「未指派班组」），不是「解析失败」；
- * - GUID 形状 → 回落文案，工程标识符任何情况下都不上屏；
- * - 目录里查不到 → **原样回显业务码**（DAY / TEAM-ASSY-A 这类码在车间本身可读），
- *   把它也吞成「未排班」会把「查不到名字」谎报成「没排班」。
- */
-export function resolveDirectoryLabel(
-  value: string | null | undefined,
-  labels: ReadonlyMap<string, string>,
-  fallback: string,
-): string {
-  const code = (value ?? '').trim()
-  if (!code || isSystemIdentifier(code)) return fallback
-  return labels.get(code) ?? code
-}
+export { isSystemIdentifier, resolveDirectoryLabel, toDirectoryOptions }
+export type ShiftHandoverDirectoryOption = DirectoryOption
 
 /**
  * 交接人显示名。

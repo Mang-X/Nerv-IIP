@@ -2,6 +2,12 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, ref } from 'vue'
 
+/**
+ * 界面无工程语言（`docs/product/mobile-pda/design.md` 的 UX 关）：权限码 / HTTP 状态码
+ * 一律不上屏。用渲染结果判定，不扫源码。
+ */
+const ENGINEERING_LANGUAGE = /business\.[a-z0-9.-]+|HTTP\s*\d{3}/i
+
 const push = vi.fn(async () => {})
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push }),
@@ -138,6 +144,7 @@ describe('PDA 接班列表页', () => {
 
   it('renders each handover with Chinese status and never leaks the raw status code', () => {
     const wrapper = mount(HandoversPage)
+    expect(wrapper.text()).not.toMatch(ENGINEERING_LANGUAGE)
     const text = wrapper.get('[data-testid="handover-rows"]').text()
     expect(text).toContain('甲班组')
     // 标题是交接单号：同班组一天交多次班时，它是这批数据里唯一天然互异的业务字段。
@@ -222,13 +229,15 @@ describe('PDA 接班列表页', () => {
     expect(filters.status).toBe('accepted')
   })
 
-  it('names the missing read permission instead of showing an empty list', () => {
+  it('explains the missing capability in actionable Chinese, without a permission code', () => {
     canRead.value = false
     rows.value = []
     const wrapper = mount(HandoversPage)
-    expect(wrapper.get('[data-testid="handovers-blocker"]').text()).toContain(
-      'business.mes.handovers.read',
-    )
+    const blocker = wrapper.get('[data-testid="handovers-blocker"]').text()
+    expect(blocker).toContain('不能查看交接班记录')
+    expect(blocker).toContain('请联系班组长或管理员开通')
+    expect(blocker).not.toMatch(ENGINEERING_LANGUAGE)
+    expect(wrapper.text()).not.toMatch(ENGINEERING_LANGUAGE)
     rows.value = [
       {
         handoverId: 'HO-1',

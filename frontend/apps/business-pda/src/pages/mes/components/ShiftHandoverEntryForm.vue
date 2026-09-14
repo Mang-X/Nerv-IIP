@@ -17,10 +17,10 @@
 import {
   SHIFT_HANDOVER_ISSUE_CATEGORY_CODES,
   SHIFT_HANDOVER_ISSUE_SEVERITY_CODES,
+  SHIFT_HANDOVER_UNFINISHED_WORK_ORDER_STATUS_OPTIONS,
   shiftHandoverIssueCategoryLabel,
   shiftHandoverIssueSeverityLabel,
   workOrderStatusLabel,
-  WORK_ORDER_STATUS_LABELS,
 } from '@nerv-iip/business-core'
 import {
   NvMobileButton,
@@ -95,11 +95,17 @@ function openKeyboard(field: QuantityField) {
   keyboard.show = true
 }
 
-// --- 工单状态 Picker（用既有中文状态表，避免自由文本写进快照）---
+/**
+ * 工单状态 Picker 用**写面值域**，不是读面展示表。
+ *
+ * 读面 `WORK_ORDER_STATUS_LABELS` 是历史拼写的并集：`InProgress` 和 `Started` 都显示
+ * 「生产中」，屏上会并排出现两条无法区分的选项；它还含 `Completed` / `Closed`，
+ * 而「未完工单」的定义里就排除了终态。两件事都不是显示问题，是值域问题。
+ */
 const statusOptions = computed<PickerOption[]>(() =>
-  Object.keys(WORK_ORDER_STATUS_LABELS).map((code) => ({
-    label: workOrderStatusLabel(code),
-    value: code,
+  SHIFT_HANDOVER_UNFINISHED_WORK_ORDER_STATUS_OPTIONS.map((option) => ({
+    label: option.label,
+    value: option.code,
   })),
 )
 const statusPickerOpen = ref(false)

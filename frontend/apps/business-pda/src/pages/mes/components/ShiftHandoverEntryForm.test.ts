@@ -203,6 +203,52 @@ describe('ShiftHandoverEntryForm — 未完工单', () => {
   })
 })
 
+describe('ShiftHandoverEntryForm — 未完工单状态值域', () => {
+  function statusOptions(ctx: ReturnType<typeof mountForm>) {
+    return ctx.wrapper.findComponent(NvPicker).props('options') as Array<{
+      label: string
+      value: string
+    }>
+  }
+
+  it('never offers two options that read the same on screen', async () => {
+    // 读面展示表里 InProgress 与 Started 都显示「生产中」；拿它当选择器数据源，屏上会并排
+    // 出现两条操作工无法区分的选项。写面值域必须自己保证 label 互异。
+    const ctx = mountForm()
+    const labels = statusOptions(ctx).map((o) => o.label)
+    expect(labels.length).toBeGreaterThan(0)
+    expect(new Set(labels).size).toBe(labels.length)
+  })
+
+  it('does not let an 未完工单 be labelled 已完成 / 已关闭', async () => {
+    // 「未完工单」的定义（completedQuantity < plannedQuantity）里就排除了终态；
+    // 选项集合含终态，集合本身自相矛盾。
+    const ctx = mountForm()
+    const labels = statusOptions(ctx).map((o) => o.label)
+    const codes = statusOptions(ctx).map((o) => o.value)
+    for (const terminal of ['已完成', '已关闭', '已取消', '已报废']) {
+      expect(labels).not.toContain(terminal)
+    }
+    for (const terminal of ['Completed', 'Closed', 'Cancelled', 'Scrapped']) {
+      expect(codes).not.toContain(terminal)
+    }
+  })
+
+  it('writes a code the detail face can read back', async () => {
+    const ctx = mountForm()
+    await ctx.wrapper.findAll('[data-testid="unfinished-section"] input')[0].setValue('WO-1')
+    await ctx.enterQuantity(ctx.wrapper, 'unfinished-planned-cell', '10')
+    await ctx.enterQuantity(ctx.wrapper, 'unfinished-completed-cell', '3')
+    await ctx.pickWorkOrderStatus(ctx.wrapper, 'Started')
+    await ctx.wrapper.get('[data-testid="add-unfinished"]').trigger('click')
+
+    expect(ctx.unfinishedWorkOrders.value[0].workOrderStatus).toBe('Started')
+    // 写进去的码必须显示得出来，否则交接单上会出现「未知状态」。
+    expect(ctx.wrapper.get('[data-testid="unfinished-rows"]').text()).toContain('生产中')
+    expect(ctx.wrapper.get('[data-testid="unfinished-rows"]').text()).not.toContain('未知状态')
+  })
+})
+
 describe('ShiftHandoverEntryForm — 遗留问题', () => {
   it('requires category, severity and description in that order', async () => {
     const ctx = mountForm()

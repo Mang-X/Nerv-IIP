@@ -141,9 +141,34 @@ export const SHIFT_HANDOVER_ISSUE_SEVERITY_LABELS: Record<string, string> = {
 /** 写面可提交的严重度码（与域枚举同名，写面收字符串）。 */
 export const SHIFT_HANDOVER_ISSUE_SEVERITY_CODES = ['Low', 'Medium', 'High'] as const
 
+/**
+ * 解不出时用 `未知级别`，与本模块 `alarmSeverityLabel` 的既有口径一致。
+ *
+ * console 侧那份副本用的是 `未定级`、本文件早先写的是 `未分级`——**两个都是离群值**，
+ * 同一 business-core 里已经有一个严重度回落文案在用 `未知级别`。副本收拢（#3470）以这份为准。
+ */
 export function shiftHandoverIssueSeverityLabel(severity?: string | null): string {
-  return SHIFT_HANDOVER_ISSUE_SEVERITY_LABELS[normalizeHandoverCode(severity)] ?? '未分级'
+  return SHIFT_HANDOVER_ISSUE_SEVERITY_LABELS[normalizeHandoverCode(severity)] ?? '未知级别'
 }
+
+/**
+ * 未完工单状态的**写面值域** —— 与读面展示表 `WORK_ORDER_STATUS_LABELS` 是两件事。
+ *
+ * 读面表回答「拿到这个码怎么显示」，所以它是历史拼写的并集，里面既有 `InProgress` 又有
+ * `Started`（两者都显示「生产中」），也含 `Completed` / `Closed`。把它当选择器数据源有两个
+ * 后果：屏上并排两条无法区分的「生产中」；以及允许把一张**未完工单**标成「已完成/已关闭」
+ * ——那与「未完工单」的定义（`completedQuantity < plannedQuantity`）自相矛盾。
+ *
+ * 所以写面单独定义：
+ * - 只留仍在流转的状态，终态（completed / closed / cancelled / scrapped / split / merged）一律排除；
+ * - 「生产中」只保留 `Started` 一个码——MES 域常量是 `WorkOrder.StartedStatus`，它是更贴近域的拼写。
+ */
+export const SHIFT_HANDOVER_UNFINISHED_WORK_ORDER_STATUS_OPTIONS = [
+  { code: 'Planned', label: '已计划' },
+  { code: 'Released', label: '已下达' },
+  { code: 'Started', label: '生产中' },
+  { code: 'OnHold', label: '已挂起' },
+] as const
 
 function normalizeHandoverCode(value?: string | null): string {
   return (value ?? '').trim().toLowerCase()

@@ -3,6 +3,12 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, ref } from 'vue'
 
+/**
+ * 界面无工程语言（`docs/product/mobile-pda/design.md` 的 UX 关）：权限码 / HTTP 状态码
+ * 一律不上屏。用渲染结果判定，不扫源码。
+ */
+const ENGINEERING_LANGUAGE = /business\.[a-z0-9.-]+|HTTP\s*\d{3}/i
+
 const push = vi.fn(async () => {})
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push }),
@@ -206,12 +212,23 @@ describe('PDA 接班确认页', () => {
     expect(acceptHandover).not.toHaveBeenCalled()
   })
 
-  it('blocks a reader without handovers.manage and names the permission', () => {
+  it('tells 只能查看 apart from 不能查看, both without a permission code', () => {
+    // 两种阻断后果不同：一个能看不能接，一个连看都不行。合并成「无权限」就分不出该开通哪项。
     canManage.value = false
-    const wrapper = mount(DetailPage)
-    expect(wrapper.get('[data-testid="accept-blocker"]').text()).toContain(
-      'business.mes.handovers.manage',
-    )
+    const readOnly = mount(DetailPage)
+    const acceptBlocked = readOnly.get('[data-testid="accept-blocker"]').text()
+    expect(acceptBlocked).toContain('只能查看交接单')
+    expect(acceptBlocked).toContain('没有接班权限')
+    expect(acceptBlocked).toContain('请联系班组长或管理员开通')
+    expect(readOnly.text()).not.toMatch(ENGINEERING_LANGUAGE)
+
+    canManage.value = true
+    canRead.value = false
+    const readBlocked = mount(DetailPage)
+    const cannotRead = readBlocked.get('[data-testid="detail-blocker"]').text()
+    expect(cannotRead).toContain('不能查看交接班记录')
+    expect(cannotRead).not.toBe(acceptBlocked)
+    expect(readBlocked.text()).not.toMatch(ENGINEERING_LANGUAGE)
   })
 
   it('keeps the failure reason on the PAGE (弹框按确认即关，原因写框里走不到)', async () => {
@@ -249,11 +266,8 @@ describe('PDA 接班确认页', () => {
     expect(wrapper.get('[data-testid="detail-attachment-error"]').text()).toContain('照片打开失败')
   })
 
-  it('names the missing read permission when the account cannot read handovers', () => {
-    canRead.value = false
+  it('keeps the loaded detail page free of engineering language', () => {
     const wrapper = mount(DetailPage)
-    expect(wrapper.get('[data-testid="detail-blocker"]').text()).toContain(
-      'business.mes.handovers.read',
-    )
+    expect(wrapper.text()).not.toMatch(ENGINEERING_LANGUAGE)
   })
 })

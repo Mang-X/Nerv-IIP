@@ -11,6 +11,12 @@ afterAll(() => {
   Element.prototype.scrollTo = originalScrollTo
 })
 
+/**
+ * 界面无工程语言（`docs/product/mobile-pda/design.md` 的 UX 关）：权限码 / HTTP 状态码
+ * 一律不上屏。用渲染结果判定，不扫源码——扫源码的护栏换个写法就绕过去了。
+ */
+const ENGINEERING_LANGUAGE = /business\.[a-z0-9.-]+|HTTP\s*\d{3}/i
+
 const push = vi.fn(async () => {})
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push }),
@@ -121,19 +127,54 @@ describe('PDA 交班录入页', () => {
     expect(wrapper.text()).toContain('第 2/3 步')
   })
 
-  it('names the missing permission instead of saying just 无权限', async () => {
+  /**
+   * 阻断提示要证的不变量有三条，都不是「屏上出现某个权限码」：
+   *   1. 三种成因**彼此可区分** —— 班组长得知道该去开通哪一项；
+   *   2. 每条都说清**做不了什么 + 下一步找谁**，是可执行的中文；
+   *   3. **不含工程语言** —— 权限码/HTTP 码不上屏（design.md UX 关）。
+   * 先前这里断言的是「屏上出现 business.mes.handovers.manage」，那把一个 UX 缺陷固化成了契约：
+   * 去修界面，门禁反而会红。
+   */
+  it('tells the three blocker causes apart without leaking engineering language', async () => {
+    const seen: string[] = []
+
     canManage.value = false
     const wrapper = mountPage()
-    expect(wrapper.get('[data-testid="handover-blocker"]').text()).toContain(
-      'business.mes.handovers.manage',
-    )
+    const noManage = wrapper.get('[data-testid="handover-blocker"]').text()
+    seen.push(noManage)
+    expect(noManage).toContain('交班权限')
+    expect(noManage).toContain('请联系班组长或管理员开通')
 
     canManage.value = true
     directoryEnabled.value = false
     await nextTick()
-    expect(wrapper.get('[data-testid="handover-blocker"]').text()).toContain(
-      'business.masterdata.resources.read',
-    )
+    const noDirectory = wrapper.get('[data-testid="handover-blocker"]').text()
+    seen.push(noDirectory)
+    expect(noDirectory).toContain('班次与班组')
+    expect(noDirectory).toContain('请联系班组长或管理员开通')
+
+    directoryEnabled.value = true
+    hasScope.value = false
+    await nextTick()
+    const noScope = wrapper.get('[data-testid="handover-blocker"]').text()
+    seen.push(noScope)
+    expect(noScope).toContain('重新登录')
+
+    // 1) 三条互不相同 —— 合并任意两条，班组长就不知道该开通哪一项。
+    expect(new Set(seen).size).toBe(3)
+    // 3) 一条都不许带工程语言。
+    for (const text of seen) expect(text).not.toMatch(ENGINEERING_LANGUAGE)
+  })
+
+  it('keeps the whole 交班 page free of permission codes and HTTP status codes', async () => {
+    canManage.value = false
+    const blocked = mountPage()
+    expect(blocked.text()).not.toMatch(ENGINEERING_LANGUAGE)
+
+    canManage.value = true
+    await nextTick()
+    const normal = mountPage()
+    expect(normal.text()).not.toMatch(ENGINEERING_LANGUAGE)
   })
 
   it('submits an EMPTY handover — 空明细在写面是合法的', async () => {
@@ -229,6 +270,62 @@ describe('PDA 交班录入页', () => {
     expect(payload.attachments).toEqual([
       { fileId: 'file-1', fileName: 'photo.jpg', contentType: 'image/jpeg', sizeBytes: 1024 },
     ])
+  })
+
+  /**
+   * FORM_INPUT_RESET：「再交一班」必须把本页**全部**可变输入清干净。
+   *
+   * 漏掉任何一项，新一单就带着上一单的残留；最坏的是幂等键没换——服务端按它去重，
+   * 第二单会被当成第一单的重放直接吞掉，操作工以为交了、实际没有。
+   * 这一格逐项核，不靠「下次 computed 会重算收敛回来」。
+   */
+  // 这一格**不 stub**：要证明连子组件里录进去的明细也被清掉了。
+  it('resets every form input when starting another handover', async () => {
+    const wrapper = mount(HandoverPage)
+    await pickShiftAndTeam(wrapper)
+
+    await wrapper.get('[data-testid="wip-section"] input').setValue('WO-RESIDUE')
+    await wrapper.get('[data-testid="wip-quantity-cell"]').trigger('click')
+    wrapper.findComponent({ name: 'NumberKeyboard' }).vm.$emit('update:modelValue', '9')
+    await nextTick()
+    await wrapper.get('[data-testid="add-wip"]').trigger('click')
+    await nextTick()
+    await wrapper.get('[data-testid="confirm-details"]').trigger('click')
+    await wrapper.get('[data-testid="submit-handover"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="start-another"]').trigger('click')
+    await nextTick()
+
+    // 回到第 1 步（班次/班组/明细确认都被清掉），且不再停在成功页。
+    expect(wrapper.text()).toContain('第 1/3 步')
+    expect(wrapper.text()).not.toContain('交班已提交')
+    expect(wrapper.findComponent(ShiftHandoverEntryForm).exists()).toBe(false)
+
+    // 再交一单：载荷里不能有上一单的任何残留。
+    await pickShiftAndTeam(wrapper)
+    await wrapper.get('[data-testid="confirm-details"]').trigger('click')
+    await wrapper.get('[data-testid="submit-handover"]').trigger('click')
+    await flushPromises()
+
+    const second = createHandover.mock.calls[1][0] as Record<string, unknown>
+    expect(second.wipItems).toEqual([])
+    expect(second.unfinishedWorkOrders).toEqual([])
+    expect(second.openIssues).toEqual([])
+    expect(second.attachments).toEqual([])
+    const first = createHandover.mock.calls[0][0] as { idempotencyKey: string }
+    expect((second as { idempotencyKey: string }).idempotencyKey).not.toBe(first.idempotencyKey)
+  })
+
+  it('derives the step from inputs only — reading progress first must not change it', async () => {
+    // 流程上下文是派生值。先前它在 computed 里回写 ctx，谁先被求值会影响另一个读到什么；
+    // 这一格固定「先读 progress 再读 currentStep」这个顺序，纯派生下两者必须一致。
+    const wrapper = mountPage()
+    expect(wrapper.text()).toContain('第 1/3 步')
+    await pickShiftAndTeam(wrapper)
+    await nextTick()
+    expect(wrapper.text()).toContain('第 2/3 步')
+    expect(wrapper.findComponent(ShiftHandoverEntryForm).exists()).toBe(true)
   })
 
   it('routes an indeterminate failure to 核实 instead of a blind resubmit', async () => {

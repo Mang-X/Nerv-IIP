@@ -128,11 +128,12 @@ describe('ShiftHandoverPhotoCapture', () => {
       vi.fn(async () => ATTACHMENT),
       {
         disabled: true,
-        disabledReason: '当前账号没有交接班管理权限（business.mes.handovers.manage）。',
+        disabledReason: '当前账号没有交班权限，不能提交交接单。请联系班组长或管理员开通。',
       },
     )
 
-    expect(wrapper.text()).toContain('当前账号没有交接班管理权限')
+    expect(wrapper.text()).toContain('当前账号没有交班权限')
+    expect(wrapper.text()).not.toMatch(/business\.[a-z0-9.-]+|HTTP\s*\d{3}/i)
   })
 
   it('removes exactly the attachment the operator tapped', async () => {

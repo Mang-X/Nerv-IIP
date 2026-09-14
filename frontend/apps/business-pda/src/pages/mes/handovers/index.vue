@@ -63,7 +63,7 @@ const activeTab = computed<string>({
 
 const blocker = computed(() => {
   if (!hasScope.value) return '缺少组织或环境范围，未发起查询。请重新登录后重试。'
-  if (!canRead.value) return '当前账号没有交接班读取权限（business.mes.handovers.read）。'
+  if (!canRead.value) return '当前账号不能查看交接班记录。请联系班组长或管理员开通。'
   return ''
 })
 

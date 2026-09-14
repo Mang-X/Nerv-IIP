@@ -15,7 +15,7 @@ import {
   NvPicker,
   type PickerOption,
 } from '@nerv-iip/ui-mobile'
-import { computed, reactive, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import RetryableListError from '@/components/RetryableListError.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
@@ -49,19 +49,13 @@ const unfinishedWorkOrders = ref<ShiftHandoverUnfinishedWorkOrder[]>([])
 const openIssues = ref<ShiftHandoverOpenIssue[]>([])
 const attachments = ref<ShiftHandoverAttachment[]>([])
 const reviewed = ref(false)
+const submitted = ref(false)
 
 const shiftPickerOpen = ref(false)
 const teamPickerOpen = ref(false)
 
 // 幂等键：一次交班意图只生成一次，重试沿用同一把键（服务端 CodeAllocator 按它去重）。
 const idempotencyKey = ref(makeIdempotencyKey())
-
-const ctx = reactive<ShiftHandoverCtx>({
-  shiftId: undefined,
-  teamId: undefined,
-  reviewed: false,
-  submitted: false,
-})
 
 const shiftOptions = computed<PickerOption[]>(() =>
   directory.shiftOptions.value.map((option) => ({ label: option.label, value: option.value })),
@@ -76,23 +70,36 @@ const selectedTeam = computed(() =>
   directory.teamOptions.value.find((option) => option.value === teamId.value),
 )
 
-const currentStep = computed(() => {
-  ctx.shiftId = shiftId.value || undefined
-  ctx.teamId = teamId.value || undefined
-  ctx.reviewed = reviewed.value
-  return shiftHandoverFlow.currentStep(ctx).id
-})
-const progress = computed(() => shiftHandoverFlow.progress(ctx))
+/**
+ * 流程上下文是**派生值**，不是另一份要维护的状态。
+ *
+ * 先前 `currentStep` 在 computed 里回写 `ctx` 的三个字段——computed 有副作用，而且
+ * `progress` 读到的 `ctx` 是否最新取决于「`currentStep` 有没有先被求值」这种求值顺序巧合。
+ * 现在 ctx 整个由输入算出来，两个派生值读同一个纯对象，重置路径也就只剩「重置输入」一条。
+ */
+const ctx = computed<ShiftHandoverCtx>(() => ({
+  shiftId: shiftId.value || undefined,
+  teamId: teamId.value || undefined,
+  reviewed: reviewed.value,
+  submitted: submitted.value,
+}))
+
+const currentStep = computed(() => shiftHandoverFlow.currentStep(ctx.value).id)
+const progress = computed(() => shiftHandoverFlow.progress(ctx.value))
 
 /**
- * 开工阻断原因。交班需要两个权限，缺哪个说哪个——只说「无权限」会让班组长不知道去要哪一个。
+ * 开工阻断原因。
+ *
+ * 三条成因后果不同，必须**彼此可区分**：让班组长知道该去开通哪一项能力。但区分靠的是
+ * 说清「做不了什么」，不是把权限码搬上屏——界面无工程语言
+ * （`docs/product/mobile-pda/design.md` UX 关）。
  */
 const blocker = computed(() => {
   if (!submission.hasScope.value) return '缺少组织或环境范围，无法交班。请重新登录后重试。'
   if (!submission.canManage.value)
-    return '当前账号没有交接班管理权限（business.mes.handovers.manage）。'
+    return '当前账号没有交班权限，不能提交交接单。请联系班组长或管理员开通。'
   if (!directory.enabled.value)
-    return '当前账号没有主数据读取权限（business.masterdata.resources.read），无法选择班次与班组。'
+    return '当前账号读不到班次与班组资料，交班前必须先选班次班组。请联系班组长或管理员开通。'
   return ''
 })
 
@@ -134,9 +141,16 @@ async function submit() {
     }),
   )
   submitting.value = false
-  ctx.submitted = ok
+  submitted.value = ok
 }
 
+/**
+ * 「再交一班」= 回到一张空白单子。
+ *
+ * 逐项列出而不是靠「下次 computed 会重算收敛回来」：漏掉任何一项都会让新一单带着上一单的
+ * 残留（最坏的是 `idempotencyKey` 没换，服务端按它去重，第二单会被当成第一单的重放直接吞掉）。
+ * 这个列表就是本页全部可变输入，`FORM_INPUT_RESET` 用例逐项核它。
+ */
 function startAnother() {
   shiftId.value = ''
   teamId.value = ''
@@ -145,7 +159,7 @@ function startAnother() {
   openIssues.value = []
   attachments.value = []
   reviewed.value = false
-  ctx.submitted = false
+  submitted.value = false
   // 新的一次交班意图 = 新的幂等键。
   idempotencyKey.value = makeIdempotencyKey()
   write.reset()

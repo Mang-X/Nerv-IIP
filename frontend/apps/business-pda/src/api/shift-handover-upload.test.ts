@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { setUnauthorizedHandler } from './unauthorized'
 import {
   isShiftHandoverPhotoContentType,
   readUploadOffset,
@@ -225,12 +226,13 @@ describe('sendShiftHandoverAttachmentBytes', () => {
 
   it.each([
     [401, '登录已失效，请重新登录后再传照片。'],
-    [403, '当前账号没有交接班附件上传权限。'],
+    [403, '当前账号没有上传交接班照片的权限，请联系班组长或管理员开通。'],
     [404, '上传会话已失效或已过期，请重新拍照。'],
     [409, '上传进度与服务端不一致，请重新拍照上传。'],
     [413, '照片超出交接班附件大小上限，请重拍或压缩后再传。'],
     [415, '照片格式不被接受，交接班附件只支持 JPG / PNG。'],
-    [500, '上传照片失败（HTTP 500），请重试。'],
+    [500, '上传照片失败：服务暂时不可用，请稍后重试。'],
+    [418, '上传照片失败，请检查网络后重试。'],
   ])('turns a PATCH %i into actionable Chinese copy', async (status, copy) => {
     const { doFetch } = scriptedFetch([
       fakeResponse(204, { 'Upload-Offset': '0' }),
@@ -274,5 +276,93 @@ describe('sendShiftHandoverAttachmentBytes', () => {
     ).rejects.toThrow('缺少组织或环境范围')
 
     expect(calls).toHaveLength(0)
+  })
+})
+
+describe('byte-face failure handling', () => {
+  afterEach(() => setUnauthorizedHandler(undefined))
+
+  it('never puts an HTTP status code on screen', async () => {
+    // 界面无工程语言：操作工要的是「稍后重试」，不是 `HTTP 503`。
+    for (const status of [418, 500, 502, 503]) {
+      const { doFetch } = scriptedFetch([
+        fakeResponse(204, { 'Upload-Offset': '0' }),
+        fakeResponse(status),
+      ])
+      const failure = await sendShiftHandoverAttachmentBytes(
+        target,
+        new Blob([new Uint8Array(2)]),
+        scope,
+        { fetch: doFetch },
+      ).then(
+        () => new Error('expected the transfer to fail'),
+        (error: Error) => error,
+      )
+      expect(failure.message).not.toMatch(/HTTP\s*\d{3}/i)
+      expect(failure.message).not.toContain(String(status))
+    }
+  })
+
+  it('still carries the status on the error object for diagnosis', async () => {
+    const { doFetch } = scriptedFetch([
+      fakeResponse(204, { 'Upload-Offset': '0' }),
+      fakeResponse(503),
+    ])
+    const failure = await sendShiftHandoverAttachmentBytes(
+      target,
+      new Blob([new Uint8Array(2)]),
+      scope,
+      { fetch: doFetch },
+    ).then(
+      () => ({}) as { status?: number },
+      (error: unknown) => error as { status?: number },
+    )
+    expect(failure.status).toBe(503)
+  })
+
+  it('routes a 401 to the application-wide expired-session handler', async () => {
+    // 手搓字节面不经 api-client 的响应拦截器；401 必须接回同一套兜底（清会话 + 跳登录），
+    // 否则用户卡在已失效的会话里反复重试。
+    const onUnauthorized = vi.fn()
+    setUnauthorizedHandler(onUnauthorized)
+    const { doFetch } = scriptedFetch([
+      fakeResponse(204, { 'Upload-Offset': '0' }),
+      fakeResponse(401),
+    ])
+
+    await expect(
+      sendShiftHandoverAttachmentBytes(target, new Blob([new Uint8Array(2)]), scope, {
+        fetch: doFetch,
+      }),
+    ).rejects.toThrow('登录已失效')
+    expect(onUnauthorized).toHaveBeenCalledTimes(1)
+  })
+
+  it('routes a 401 on the HEAD probe too, not just on PATCH', async () => {
+    const onUnauthorized = vi.fn()
+    setUnauthorizedHandler(onUnauthorized)
+    const { doFetch } = scriptedFetch([fakeResponse(401)])
+
+    await expect(
+      sendShiftHandoverAttachmentBytes(target, new Blob([new Uint8Array(2)]), scope, {
+        fetch: doFetch,
+      }),
+    ).rejects.toThrow('登录已失效')
+    expect(onUnauthorized).toHaveBeenCalledTimes(1)
+  })
+
+  it('does NOT fire the expired-session handler for other failures', async () => {
+    const onUnauthorized = vi.fn()
+    setUnauthorizedHandler(onUnauthorized)
+    for (const status of [403, 404, 409, 500]) {
+      const { doFetch } = scriptedFetch([
+        fakeResponse(204, { 'Upload-Offset': '0' }),
+        fakeResponse(status),
+      ])
+      await sendShiftHandoverAttachmentBytes(target, new Blob([new Uint8Array(2)]), scope, {
+        fetch: doFetch,
+      }).catch(() => undefined)
+    }
+    expect(onUnauthorized).not.toHaveBeenCalled()
   })
 })

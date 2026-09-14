@@ -55,7 +55,7 @@ const confirmOpen = ref(false)
 
 const blocker = computed(() => {
   if (!detail.hasScope.value) return '缺少组织或环境范围，未发起查询。请重新登录后重试。'
-  if (!detail.canRead.value) return '当前账号没有交接班读取权限（business.mes.handovers.read）。'
+  if (!detail.canRead.value) return '当前账号不能查看交接班记录。请联系班组长或管理员开通。'
   return ''
 })
 
@@ -71,7 +71,7 @@ const acceptBlocker = computed(() => {
   if (blocker.value) return blocker.value
   if (!detail.detail.value) return '交接单详情尚未加载完成。'
   if (!detail.canManage.value)
-    return '当前账号没有交接班管理权限（business.mes.handovers.manage），只能查看。'
+    return '当前账号只能查看交接单，没有接班权限。请联系班组长或管理员开通。'
   if (!isOpenHandover.value) return '这张交接单已被接班，无需重复确认。'
   return ''
 })
