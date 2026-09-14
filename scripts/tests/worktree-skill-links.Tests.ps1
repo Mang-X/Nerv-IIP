@@ -268,10 +268,10 @@ try {
     Initialize-NervWorktreeSkills -RepoRoot $mirrorTarget -MainRoot $mirrorMain -InstallAction $recordOnlyInstall
 
     if (Test-Path -LiteralPath (Join-Path $mirrorTarget '.agents/skills/legacy')) {
-        throw 'The mirror must carry only the payload skills-lock.json owns; a skill that is repo-tracked in the main worktree has no source in this worktree and nothing would ever refresh or remove it.'
+        throw 'The mirror must carry only what this worktree cannot provide itself; a skill that is repo-tracked in the main worktree has no source in this worktree and nothing would ever refresh or remove it.'
     }
     if (-not (Test-Path -LiteralPath (Join-Path $mirrorTarget '.agents/skills/vendor/SKILL.md'))) {
-        throw 'Filtering repo-tracked skills out of the mirror must still carry the lock-owned payload.'
+        throw 'Filtering repo-tracked skills out of the mirror must still carry the payload only the main worktree can supply.'
     }
 
     # 接线：库对、测试绿，不代表调用点还在。按 AST 断言 setup-worktree.ps1 真的调用了本库的
