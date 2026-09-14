@@ -3,6 +3,11 @@ import {
   materialIssueStatusLabel,
   operationTaskStatusLabel,
   receiptStatusLabel,
+  SHIFT_HANDOVER_ISSUE_CATEGORY_CODES,
+  SHIFT_HANDOVER_ISSUE_SEVERITY_CODES,
+  shiftHandoverIssueCategoryLabel,
+  shiftHandoverIssueSeverityLabel,
+  shiftHandoverStatusLabel,
   workOrderStatusLabel,
   workOrderSubtitle,
   workOrderTitle,
@@ -101,5 +106,55 @@ describe('workOrderTitle / workOrderSubtitle', () => {
     )
     expect(workOrderSubtitle({ status: 'Planned' })).toBe('已计划')
     expect(workOrderSubtitle({ status: 'Released', quantity: 0 })).toBe('已下达 · 计划 0')
+  })
+})
+
+describe('shiftHandoverStatusLabel', () => {
+  it('maps the two MES ShiftHandover statuses to 交接语境 Chinese', () => {
+    // 域权威是 ShiftHandover.OpenStatus / AcceptedStatus；open 在交接语境是「待接班」。
+    expect(shiftHandoverStatusLabel('Open')).toBe('待接班')
+    expect(shiftHandoverStatusLabel('Accepted')).toBe('已接班')
+  })
+
+  it('is case-insensitive because the read face echoes the enum name verbatim', () => {
+    expect(shiftHandoverStatusLabel('open')).toBe('待接班')
+    expect(shiftHandoverStatusLabel('ACCEPTED')).toBe('已接班')
+  })
+
+  it('never leaks an unknown raw status code to the shop floor', () => {
+    expect(shiftHandoverStatusLabel('Cancelled')).toBe('未知状态')
+    expect(shiftHandoverStatusLabel('')).toBe('未知状态')
+    expect(shiftHandoverStatusLabel(undefined)).toBe('未知状态')
+    expect(shiftHandoverStatusLabel(null)).toBe('未知状态')
+  })
+})
+
+describe('shiftHandoverIssueCategoryLabel / shiftHandoverIssueSeverityLabel', () => {
+  it('maps the closed domain vocabularies to Chinese', () => {
+    expect(shiftHandoverIssueCategoryLabel('Equipment')).toBe('设备')
+    expect(shiftHandoverIssueCategoryLabel('Quality')).toBe('质量')
+    expect(shiftHandoverIssueSeverityLabel('Low')).toBe('低')
+    expect(shiftHandoverIssueSeverityLabel('Medium')).toBe('中')
+    expect(shiftHandoverIssueSeverityLabel('High')).toBe('高')
+  })
+
+  it('falls back without echoing the raw code', () => {
+    expect(shiftHandoverIssueCategoryLabel('Safety')).toBe('未分类')
+    expect(shiftHandoverIssueCategoryLabel(null)).toBe('未分类')
+    expect(shiftHandoverIssueSeverityLabel('Critical')).toBe('未分级')
+    expect(shiftHandoverIssueSeverityLabel(undefined)).toBe('未分级')
+  })
+
+  it('keeps the write-face codes spelled exactly as the MES enum names', () => {
+    // ShiftHandoverVocabulary.ParseCategory/ParseSeverity 用 Enum.TryParse + IsDefined，
+    // 提交小写也能过，但按枚举名原样提交才与域枚举成员一一对应，避免下次改判据时静默失配。
+    expect([...SHIFT_HANDOVER_ISSUE_CATEGORY_CODES]).toEqual(['Equipment', 'Quality'])
+    expect([...SHIFT_HANDOVER_ISSUE_SEVERITY_CODES]).toEqual(['Low', 'Medium', 'High'])
+    for (const code of SHIFT_HANDOVER_ISSUE_CATEGORY_CODES) {
+      expect(shiftHandoverIssueCategoryLabel(code)).not.toBe('未分类')
+    }
+    for (const code of SHIFT_HANDOVER_ISSUE_SEVERITY_CODES) {
+      expect(shiftHandoverIssueSeverityLabel(code)).not.toBe('未分级')
+    }
   })
 })

@@ -99,3 +99,52 @@ export function workOrderSubtitle(wo: WorkOrderLabelRow): string {
   if (wo.quantity !== undefined && wo.quantity !== null) parts.push(`计划 ${wo.quantity}`)
   return parts.join(' · ')
 }
+
+/**
+ * 班次交接单状态可读标签。
+ *
+ * 取值权威是 MES 域 `ShiftHandover.OpenStatus` / `AcceptedStatus`（`Open` / `Accepted`），
+ * 读面按枚举名回显字符串。`open` 在交接语境是「待接班」而不是通用的「待处理」。
+ */
+export const SHIFT_HANDOVER_STATUS_LABELS: Record<string, string> = {
+  open: '待接班',
+  accepted: '已接班',
+}
+
+export function shiftHandoverStatusLabel(status?: string | null): string {
+  return SHIFT_HANDOVER_STATUS_LABELS[normalizeHandoverCode(status)] ?? UNKNOWN_STATUS_LABEL
+}
+
+/**
+ * 遗留问题来源域。取值权威是 MES 域枚举 `ShiftHandoverIssueCategory`（Equipment / Quality）；
+ * 写面按 `ShiftHandoverVocabulary.ParseCategory` 大小写不敏感解析，因此这里按小写归一后查表。
+ */
+export const SHIFT_HANDOVER_ISSUE_CATEGORY_LABELS: Record<string, string> = {
+  equipment: '设备',
+  quality: '质量',
+}
+
+/** 写面可提交的类别码（与域枚举同名，写面收字符串）。 */
+export const SHIFT_HANDOVER_ISSUE_CATEGORY_CODES = ['Equipment', 'Quality'] as const
+
+export function shiftHandoverIssueCategoryLabel(category?: string | null): string {
+  return SHIFT_HANDOVER_ISSUE_CATEGORY_LABELS[normalizeHandoverCode(category)] ?? '未分类'
+}
+
+/** 遗留问题严重度。取值权威是 MES 域枚举 `ShiftHandoverIssueSeverity`（Low / Medium / High）。 */
+export const SHIFT_HANDOVER_ISSUE_SEVERITY_LABELS: Record<string, string> = {
+  low: '低',
+  medium: '中',
+  high: '高',
+}
+
+/** 写面可提交的严重度码（与域枚举同名，写面收字符串）。 */
+export const SHIFT_HANDOVER_ISSUE_SEVERITY_CODES = ['Low', 'Medium', 'High'] as const
+
+export function shiftHandoverIssueSeverityLabel(severity?: string | null): string {
+  return SHIFT_HANDOVER_ISSUE_SEVERITY_LABELS[normalizeHandoverCode(severity)] ?? '未分级'
+}
+
+function normalizeHandoverCode(value?: string | null): string {
+  return (value ?? '').trim().toLowerCase()
+}

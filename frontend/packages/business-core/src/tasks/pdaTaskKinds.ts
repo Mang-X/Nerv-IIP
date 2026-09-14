@@ -25,6 +25,20 @@ export const PDA_TASK_KINDS: PdaTaskKind[] = [
     routeReady: true,
   },
   {
+    id: 'mes.handover',
+    label: '交班',
+    group: 'mes',
+    route: '/mes/handover',
+    routeReady: true,
+  },
+  {
+    id: 'mes.handover-accept',
+    label: '接班',
+    group: 'mes',
+    route: '/mes/handovers',
+    routeReady: true,
+  },
+  {
     id: 'equipment.repair',
     label: '报修',
     group: 'equipment',
