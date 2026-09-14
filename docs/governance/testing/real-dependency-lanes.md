@@ -37,6 +37,15 @@ heavy lane 在 shard manifest 里接管一个测试项目后，该项目即被�
 
 覆盖边界：本节由 `scripts/verify-backend-test-shards.ps1` 的 `inventory-source` 阶段静态承担，鉴别力读数在 `scripts/tests/backend-test-shards.Tests.ps1` 的类级排除变异格里；它只管 fast shard 的类级排除这一张面，不替代上一节由 lane owner 承担的项目级闭合。
 
+⚠️ 该静态判据**不是闭合**，只挡得住「同类里混着裸 `[Fact]`/`[Theory]`」这一族的复发。下列三条绕法**已实测成立**（各自带 CONTROL GREEN 与哨兵 RED 的探针，读数为假绿），逐条写在这里是为了不让后来人把它当成完备护栏——本仓判例是「护栏自称完备比有洞更坏」，它让人停止怀疑、把洞制度性固化：
+
+- **用例继承自基类**：判据只枚举类**直接声明**的成员，基类里声明的用例不计入分母 ⇒ 假绿。（当前 `excludedTestClasses` 的 55 个类里只有 3 个带基类——`PeriodicInspection*` 三个类继承 `PeriodicInspectionPostgresTestHarness`，而该基类声明 0 条用例，所以当前计数不偏低。这是当下实测事实，不是不变量。）
+- **`using` 别名**：`using Probe = Xunit.FactAttribute;` 之后写 `[Probe]`，属性名既不在继承闭包里、也不以 Fact/Theory 结尾 ⇒ 假绿。判据不做别名解析。
+- **派生属性声明在扫描面之外**：继承闭包只从 `*.Tests` 项目目录里的源码建边。声明在非 `*.Tests` 项目（例如 `backend/common/Testing/Nerv.IIP.Testing.Xunit/`——共享 `*FactAttribute` 的自然归宿，今天恰好为空）的派生属性，闭包看不见 ⇒ 假绿，除非它的名字恰好以 Fact/Theory 结尾被后缀兜底救回。
+
+对照读数：`partial` 类第二个文件里的裸 `[Fact]` **不构成**绕法（实测 RED），因为每个文件各自解析、两半都归到同一个 selector。
+
+⇒ 一行 `using` 别名或一个基类即可绕过本判据。要把上面三条堵掉需要别名解析、基类展开和跨项目的属性来源扫描，属于另一张扫描面，不在本节承诺范围内。
 
 ## 选择与触发
 

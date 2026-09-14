@@ -479,15 +479,22 @@ function Get-NervCSharpTestAttributeNames {
         `$SourceTexts` 里实际写着的基类列表给出，递归展开到不动点。
 
         ⚠️ 失效方向（两个，方向相反，都要写明）：
-        - **假绿**：派生属性声明在 `$SourceTexts` 覆盖不到的地方（今天所有 48 个都声明在被扫描的
-          测试项目目录内，`grep -rlE 'class [A-Za-z0-9_]*(Fact|Theory)Attribute[[:space:]]*:'` 可复核），
-          闭包就看不见它。调用方因此**并集**一条后缀判据（名字以 Fact/Theory 结尾），后缀判据单独
-          用是白名单的另一种写法，和闭包并起来则只会变宽、不会变窄。
+        - **假绿**：派生属性声明在 `$SourceTexts` 覆盖不到的地方，闭包就看不见它。调用方因此**并集**
+          一条后缀判据（名字以 Fact/Theory 结尾）；后缀判据单独用是白名单的另一种写法，和闭包并起来
+          则只会变宽、不会变窄。
+          ⚠️ 这条兜底**今天就在承重**，不是理论余量：调用方传进来的 `$SourceTexts` 只有 `$backendRoot`
+          下 `*.Tests.csproj` 所在目录的源码，闭包从这张面只解得出 **45** 个派生属性；另外 3 个
+          （`DockerCliFactAttribute` / `OpcUaSimulatorFactAttribute` / `UnixHostProcessFactAttribute`）
+          声明在 `connector-hosts/`，在扫描面之外，闭包够不到，**全靠后缀兜底救回**。
+          ⇒ 两条路同时够不到的情形是：一个**不以 Fact/Theory 结尾**的派生属性声明在 `$backendRoot`
+          之外。那一格是假绿，边界已写进
+          docs/governance/testing/real-dependency-lanes.md「类级排除的覆盖闭合」的覆盖边界段。
         - **假红**：基类按**短名**匹配，所以任何恰好叫 `FooFactAttribute` 而与 xUnit 无关的类型会被
           并进来。后果是它的方法被要求登记，是一条看得见、改得掉的红，不是静默放行。
 
         基类列表用原始源码文本（而非 structural text）匹配也只会往"更宽"错：注释掉的声明被算进来
-        会多一个属性名，不会少一个。
+        会多一个属性名，不会少一个。别名（`using Probe = Xunit.FactAttribute;`）不解析，同样记在上面
+        那份覆盖边界里。
     #>
     param(
         [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $SourceTexts
