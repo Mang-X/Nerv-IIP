@@ -143,13 +143,6 @@ $script:NervScriptTestOutOfBandRegistry = @(
         Reason = '它有必填参数 -CountersPath，且自述 Requires 为 Linux、prlimit、timeout、redis-cli 与 dotnet-counters；这些只在 Redis/CAP lane 的服务容器里成立，不属于 Script Governance 的无依赖执行面。'
     },
     [pscustomobject]@{
-        Name = 'fullstack-process-runtime.Tests.ps1'
-        Kind = 'quarantine'
-        Parent = $null
-        Tracking = '#3404'
-        Reason = 'Linux 上既有缺陷，#3300 的发现式 runner 首次把它接上 CI 时才被看见，非本 PR 引入（该文件与 scripts/lib/FullStackProcessRuntime.ps1 最后改动于 2026-08-22/23，此前零 job 选中）：真实子进程 fixture 上 Get-NervFullStackProcessIdentityState 把本次测试自己启动的 root 判成 Mismatched 而非 Active。macOS 本机绿、Linux CI 红。解除条件：#3404 修复后删掉本条登记。'
-    },
-    [pscustomobject]@{
         Name = 'fullstack-session-state-v2.Tests.ps1'
         Kind = 'quarantine'
         Parent = $null
