@@ -22,6 +22,22 @@ heavy lane 在 shard manifest 里接管一个测试项目后，该项目即被�
 
 覆盖边界：本节的闭合由各 lane owner 自行实现，当前只有 `full-chain` 一个 lane 接管整个项目并落地了该闭合；不存在跨 lane 的通用静态护栏（登记式簿记拿不出鉴别力证据，刻意不造）。新增接管项目的 heavy lane 时，本节要求由该 lane 的 owner 脚本与其契约测试自行承担。
 
+## 类级排除的覆盖闭合
+
+上一节说的是「lane 接管整个项目」；本节说的是**另一张面**：fast shard 在 shard manifest 里用**类级** selector（`excludedTestClasses`）把一个类整体过滤掉。这两张面的失效方向不同，上一节的结论不覆盖本节。
+
+类级排除的射程是整个类：runner 发出 `FullyQualifiedName!~<类>.`，类里每一条用例都被移出快分片。因此一条类级排除只有在**该类直接声明的每一条用例**都能解析到一条 environment-gated real-dependency 证据身份时才算有据。只凭「类里有某一条用例被登记」放行，等于把同类其余裸 `[Fact]`/`[Theory]` 一起送进「谁都不跑」：它们不在任何 fast shard 的过滤结果里，不在任何 heavy lane 的 filter 里，**也不产生 skipped 记录**——TRX 里根本没有这一行，所以 skip/quarantine/zero-execution 那套基于执行记录的检查在构造上也看不见它们。
+
+由此派生两条：
+
+- 混合类（既有 env-gated 真实依赖用例、又有普通用例）不得整类排除，必须逐条用方法级 selector 交给 heavy lane。
+- 一条类级 selector 必须能在后端测试源码里解析到至少一个声明了用例的类。解析不到时它的分母为零，「每条都有据」会空洞成立；这种 selector 按红处理，而不是按通过处理。
+
+用例识别按 `FactAttribute`/`TheoryAttribute` 的**继承闭包**判定，不按属性名字列举：自定义派生属性还会继续增加，按名单判定的失效方向是假绿。识别也不得依赖 `async` 这类关键字窗口——表达式体写法（`public Task X() => ...`）不带 `async`。嵌套类里的用例不归属外层 selector：VSTest 把它拼作 `Outer+Inner.Method`，类级过滤器同样匹配不到它。
+
+覆盖边界：本节由 `scripts/verify-backend-test-shards.ps1` 的 `inventory-source` 阶段静态承担，鉴别力读数在 `scripts/tests/backend-test-shards.Tests.ps1` 的类级排除变异格里；它只管 fast shard 的类级排除这一张面，不替代上一节由 lane owner 承担的项目级闭合。
+
+
 ## 选择与触发
 
 - PR 使用影响计划选择受影响的 lane/policy/scenario；影响计划失败、缺失或无法可靠判定时保守选择。
