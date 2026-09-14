@@ -407,12 +407,23 @@ public sealed class NcrReworkCostClosurePostgresRedisAcceptanceTests
         Assert.Equal(JsonValueKind.Null, printBatch.GetProperty("printerId").ValueKind);
         Assert.Equal(JsonValueKind.Null, printBatch.GetProperty("printJobId").ValueKind);
         Assert.Equal(JsonValueKind.Null, printBatch.GetProperty("failureReason").ValueKind);
-        var producedSerials = report.GetProperty("serialNumbers").EnumerateArray()
+        var reportedSerialValues = report.GetProperty("serialNumbers").EnumerateArray()
             .Select(item => item.GetString())
-            .OfType<string>()
             .ToArray();
-        Assert.Equal(decimal.ToInt32(ReworkQuantity), producedSerials.Length);
+        Assert.Equal(decimal.ToInt32(ReworkQuantity), reportedSerialValues.Length);
+        Assert.All(reportedSerialValues, serial => Assert.False(string.IsNullOrWhiteSpace(serial)));
+        var producedSerials = reportedSerialValues.Select(serial => serial!).ToArray();
         Assert.Equal(producedSerials.Length, producedSerials.Distinct(StringComparer.Ordinal).Count());
+        var assignedSerialValues = printBatch.GetProperty("items").EnumerateArray()
+            .Select(item => item.GetProperty("serialNumber").GetString())
+            .ToArray();
+        Assert.Equal(decimal.ToInt32(ReworkQuantity), assignedSerialValues.Length);
+        Assert.All(assignedSerialValues, serial => Assert.False(string.IsNullOrWhiteSpace(serial)));
+        var assignedSerials = assignedSerialValues.Select(serial => serial!).ToArray();
+        Assert.Equal(assignedSerials.Length, assignedSerials.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(
+            assignedSerials.OrderBy(serial => serial, StringComparer.Ordinal),
+            producedSerials.OrderBy(serial => serial, StringComparer.Ordinal));
 
         var costAndTrace = await Eventually.WaitAsync(
             condition: "ERP independently reads one 120 CNY rework labor cost and MES exposes exact rework lineage",
