@@ -117,7 +117,7 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
       : null
   })
 
-  const pair = computed(() => {
+  const recoveryPair = computed(() => {
     const workOrderId = selectedWorkOrder.value?.workOrderId
     const task = selectedTask.value
     const operationTaskId = task?.operationTaskId
@@ -125,12 +125,26 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
       !workOrderId ||
       !operationTaskId ||
       task?.workOrderId !== workOrderId ||
+      options.workOrderDetailPending.value ||
+      options.workOrderDetailError.value ||
+      !hasCompleteReworkAuthority(task) ||
+      !hasSameMesWorkOrderAuthority(selectedWorkOrder.value!, task)
+    )
+      return null
+    return { workOrderId, operationTaskId }
+  })
+  const pair = computed(() => {
+    const identity = recoveryPair.value
+    const task = selectedTask.value
+    if (
+      !identity ||
+      !task ||
       !options.reportableTasksReady.value ||
       !canReport(task, selectedWorkOrder.value, reportableTaskKeys.value)
     ) {
       return null
     }
-    return { workOrderId, operationTaskId }
+    return identity
   })
 
   const routeIssue = computed(() => {
@@ -235,6 +249,7 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
     selectedTask,
     visibleOperationTasks,
     pair,
+    recoveryPair,
     routeIssue,
     chooseWorkOrder,
     chooseTask,
