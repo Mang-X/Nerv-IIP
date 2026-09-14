@@ -777,6 +777,30 @@
     {
       "service": "Erp",
       "method": "GET",
+      "route": "/api/business/v1/erp/finance/work-center-machine-overhead-rates",
+      "operationId": "listErpWorkCenterMachineOverheadRates",
+      "classification": "deferred",
+      "followUp": "#1957：机器制造费用率的 Gateway 与 UI 另行交付；#2679 仅交付 ERP HTTP 契约。"
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/finance/work-center-machine-overhead-rates",
+      "operationId": "configureErpWorkCenterMachineOverheadRate",
+      "classification": "deferred",
+      "followUp": "#1957：机器制造费用率的 Gateway 与 UI 另行交付；#2679 仅交付 ERP HTTP 契约。"
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
+      "route": "/api/business/v1/erp/finance/work-center-machine-overhead-rates/current",
+      "operationId": "getCurrentErpWorkCenterMachineOverheadRate",
+      "classification": "deferred",
+      "followUp": "#1957：机器制造费用率的 Gateway 与 UI 另行交付；#2679 仅交付 ERP HTTP 契约。"
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
       "route": "/api/business/v1/erp/finance/work-center-cost-rates",
       "operationId": "listErpWorkCenterCostRates",
       "classification": "exposed",
