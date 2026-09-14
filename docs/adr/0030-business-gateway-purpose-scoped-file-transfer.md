@@ -11,7 +11,7 @@
 
 推翻的直接原因是两条已生效的约束把业务面挤到了 0023 没有覆盖的位置：
 
-1. [`docs/architecture/api-contract-and-codegen.md`](../architecture/api-contract-and-codegen.md) 规定业务控制台前端只消费 BusinessGateway 暴露的 `/api/business-console/v1/**`，不得直连 FileStorage 服务 URL；PlatformGateway 的 `/api/console/v1/**` 是平台控制台门面，不是业务控制台的消费面。
+1. [`docs/governance/api/contracts-and-codegen.md`](../governance/api/contracts-and-codegen.md) 规定业务控制台前端不得直连 FileStorage 等下游服务 URL，对应的运行时边界（Business Console 只直接消费 BusinessGateway 的 `/api/business-console/v1/**`）见 [`docs/architecture/integration/api-contracts.md`](../architecture/integration/api-contracts.md)；PlatformGateway 的 `/api/console/v1/**` 是平台控制台门面，不是业务控制台的消费面。
 2. 业务面的授权口径由业务域权限码承担。交接班附件的读写归 `business.mes.handovers.read` / `business.mes.handovers.manage`，而 PlatformGateway 的文件门面统一走平台级 `files.*` 权限。让业务控制台走 platform 面，等于要求一线交接班用户额外持有平台文件权限。
 
 0023 写作时业务面尚无字节需求，因此「只由 PlatformGateway 暴露」在当时是完备的；#3085 引入第一个业务侧字节通路后不再成立。
