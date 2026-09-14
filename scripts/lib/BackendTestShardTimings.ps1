@@ -12,12 +12,10 @@
 #     - PowerShell 7
 #     - GitHub CLI only for a refresh; every read path degrades to report-only without it
 #
-# Header note: scripts/check-script-governance.ps1 skips scripts/lib/* in its default sweep, so this
-# block is not what makes the gate pass. It is here because this is the highest-side-effect library
-# in the directory — it starts a child process and writes files — and its governance-adjacent peers
-# (TestEvidence.ps1, CiWorkflowBudgets.ps1) carry the same block. Running the checker with an
-# explicit -Path on this file therefore reports only MissingHelper, which every library here shares:
-# a library is dot-sourced *by* an entry point that has already loaded ScriptAutomation.ps1.
+# 本库按 library scope 接受 Script Governance 扫描，不能借 scripts/lib 路径豁免治理。
+# 分类、副作用与 helper 约束见 docs/governance/script-automation.md；精确扫描行为以
+# scripts/check-script-governance.ps1 及对应测试为准。调用方先加载 ScriptAutomation.ps1，
+# 本库只通过既有 helper 执行原生命令，不单独拥有长期进程。
 #
 # Backend test shard timing cache (#1507).
 #
@@ -51,8 +49,9 @@
 #   * Policy stays governed and keeps its hard gates (`unregistered-skip`, `illegal-quarantine`,
 #     `zero-execution`), keyed on test full name / source path — dimensions a re-shard cannot move.
 #
-# Narrative: docs/architecture/test-evidence-governance.md ("Timing data is a cache, not a governed
-# asset"). Entry points: scripts/update-backend-test-shard-timings.ps1 (refresh the cache) and
+# 当前 timing/policy 边界见 docs/governance/testing/evidence.md；形成过程见
+# docs/reports/audits/test-evidence-governance-evolution-2026-08.md。
+# Entry points: scripts/update-backend-test-shard-timings.ps1 (refresh the cache) and
 # scripts/report-backend-test-shard-balance.ps1 (report-only balance).
 
 . (Join-Path $PSScriptRoot 'OrdinalString.ps1')
@@ -63,7 +62,7 @@ Set-Variable -Name NervShardTimingStatistic -Value 'median' -Scope Script -Force
 
 # Why five runs: hosted-runner variance on the *same* commit is tens of percent and moves which
 # shard tops the list (measured across runs 31114441118 / 31115903098 / 31116998822 — see
-# docs/architecture/test-evidence-governance.md, "What the step budgets are"). One run is therefore
+# docs/reports/audits/test-evidence-governance-evolution-2026-08.md, "What the step budgets are"). One run is therefore
 # not a measurement, it is a sample. Five independent samples let the median survive a single
 # noisy-neighbour or mid-rollout runner image without needing outlier rules, and at the repository's
 # `main` push rate five runs is normally well inside the 14-day artifact retention, so the window is
@@ -551,7 +550,7 @@ function Get-NervShardTimingObservationsFromEvidenceDirectory {
                 # `-ceq`/`-cne` still consult the collation table, which folds away ignorable
                 # characters, so a status of "succee<U+00AD>ded" compares *equal* to 'succeeded' and
                 # a failed bundle's diagnostics would be admitted as measurements. Same rule as the
-                # rest of the repository (docs/architecture/script-automation-governance.md).
+                # rest of the repository (docs/governance/script-automation.md).
                 if ($null -ne $status -and -not [string]::Equals([string] $status, 'succeeded', [StringComparison]::Ordinal)) { continue }
                 $rows = @(Get-NervShardTimingRowsFromEvidenceSummary -Summary $summary)
             }

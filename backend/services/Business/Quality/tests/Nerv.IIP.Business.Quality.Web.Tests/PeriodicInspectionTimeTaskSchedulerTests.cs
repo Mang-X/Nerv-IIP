@@ -72,12 +72,7 @@ public sealed class PeriodicInspectionTimeTaskSchedulerTests
             clock);
 
         await scheduler.StartAsync(CancellationToken.None);
-        await Eventually.WaitAsync(
-            "periodic inspection scheduler dispatches two scoped candidate commands",
-            _ => ValueTask.FromResult(capture.CommandDispatches.Count),
-            count => count >= 2,
-            count => $"commands={count}; expected>=2",
-            new EventuallyOptions(TimeSpan.FromSeconds(2), TimeSpan.FromMilliseconds(10), []));
+        await capture.CommandsDispatched.WaitForAsync(2);
         await scheduler.StopAsync(CancellationToken.None);
 
         var queryScopeId = Assert.Single(capture.QueryDispatches).ScopeId;
@@ -191,13 +186,96 @@ public sealed class PeriodicInspectionTimeTaskSchedulerTests
         })
         .Build();
 
-    private static ValueTask<int> WaitForCommandCountAsync(CapturingSender sender, int expected) =>
-        Eventually.WaitAsync(
-            $"periodic inspection scheduler dispatches {expected} commands",
-            _ => ValueTask.FromResult(sender.Commands.Count),
-            count => count >= expected,
-            count => $"commands={count}; expected>={expected}",
-            new EventuallyOptions(TimeSpan.FromSeconds(2), TimeSpan.FromMilliseconds(10), []));
+    private static Task WaitForCommandCountAsync(CapturingSender sender, int expected) =>
+        sender.CommandsDispatched.WaitForAsync(expected);
+
+    /// <summary>
+    /// Turns "the scheduler has dispatched its N-th command" into an awaitable edge, published by the
+    /// stub sender at the moment it records the dispatch.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The dispatches these tests wait for are produced by the <em>first, immediate</em>
+    /// <c>TryGenerateAllScopesAsync</c> pass, which <see cref="PeriodicInspectionTimeTaskScheduler"/> runs
+    /// before it ever awaits its <c>PeriodicTimer</c>. That pass is therefore not a time fact at all — it is
+    /// "the background task's continuation has run" — and it is the one thing the injected
+    /// <see cref="FakeTimeProvider"/> cannot model.
+    /// </para>
+    /// <para>
+    /// Polling for it with <see cref="Eventually.WaitAsync"/> made the verdict depend on how many times the
+    /// poll loop's own continuations were rescheduled inside a real-time budget: the first observation always
+    /// sees zero commands, so passing required at least one further poll cycle to be serviced before the
+    /// budget elapsed. On a saturated runner those continuations are exactly what starves, which is what
+    /// #3323 recorded on CI (2 observations inside a 2 s / 10 ms window). Handing that window the fake clock
+    /// instead does not help and is not available here: nothing may advance this clock while the wait is in
+    /// flight, and delegating that advance to someone else would couple the poll cadence to the subject's
+    /// own tick semantics, because the very same clock drives its <c>PeriodicTimer</c>.
+    /// </para>
+    /// <para>
+    /// An edge needs one continuation rather than a serviced poll cadence, so a healthy run never consults a
+    /// clock at all. <see cref="BoundedSignal"/> still bounds the wait in wall clock, for the single job a
+    /// budget has left here: turning a lost edge into a diagnosis instead of a parked run.
+    /// </para>
+    /// </remarks>
+    private sealed class DispatchCountSignal(string subject)
+    {
+        private readonly Lock gate = new();
+        private readonly List<(int ExpectedCount, TaskCompletionSource Reached)> waiters = [];
+        private int dispatched;
+
+        public int Dispatched => Volatile.Read(ref dispatched);
+
+        public void Record()
+        {
+            var reached = Interlocked.Increment(ref dispatched);
+            List<TaskCompletionSource>? released = null;
+            lock (gate)
+            {
+                for (var index = waiters.Count - 1; index >= 0; index--)
+                {
+                    if (waiters[index].ExpectedCount > reached)
+                    {
+                        continue;
+                    }
+
+                    (released ??= []).Add(waiters[index].Reached);
+                    waiters.RemoveAt(index);
+                }
+            }
+
+            foreach (var waiter in released ?? [])
+            {
+                waiter.TrySetResult();
+            }
+        }
+
+        /// <remarks>
+        /// The already-reached check and the registration share <see cref="gate"/> with the release scan, so a
+        /// dispatch that lands between them cannot be missed: it either finds the waiter registered or has
+        /// already incremented the counter the check reads.
+        /// </remarks>
+        public Task WaitForAsync(int expectedCount)
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(expectedCount, 1);
+
+            TaskCompletionSource reached;
+            lock (gate)
+            {
+                if (Volatile.Read(ref dispatched) >= expectedCount)
+                {
+                    return Task.CompletedTask;
+                }
+
+                reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                waiters.Add((expectedCount, reached));
+            }
+
+            return BoundedSignal.ObserveAsync(
+                reached.Task,
+                $"the scheduler to dispatch {subject} #{expectedCount}",
+                () => $"dispatched={Dispatched}; expected>={expectedCount}");
+        }
+    }
 
     private sealed class CapturingSender(
         int candidateCount = 1,
@@ -208,6 +286,9 @@ public sealed class PeriodicInspectionTimeTaskSchedulerTests
         public List<object> Requests { get; } = [];
         public List<ListDuePeriodicInspectionTimeContextsQuery> Queries { get; } = [];
         public List<GeneratePeriodicInspectionTimeTaskForContextCommand> Commands { get; } = [];
+
+        /// <summary>Edge for "the scheduler has dispatched the N-th generation command".</summary>
+        public DispatchCountSignal CommandsDispatched { get; } = new("periodic inspection generation command");
 
         public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
         {
@@ -229,6 +310,7 @@ public sealed class PeriodicInspectionTimeTaskSchedulerTests
             Commands.Add(command);
             commandCount++;
             afterCommandCaptured?.Invoke(commandCount);
+            CommandsDispatched.Record();
             if (failFirstCandidate && commandCount == 1)
             {
                 throw new InvalidOperationException("poison candidate");
@@ -256,6 +338,9 @@ public sealed class PeriodicInspectionTimeTaskSchedulerTests
     {
         public ConcurrentQueue<ScopeDispatch> QueryDispatches { get; } = new();
         public ConcurrentQueue<ScopeDispatch> CommandDispatches { get; } = new();
+
+        /// <summary>Edge for "the scheduler has dispatched the N-th scoped candidate command".</summary>
+        public DispatchCountSignal CommandsDispatched { get; } = new("scoped periodic inspection candidate command");
     }
 
     private sealed record ScopeDispatch(Guid ScopeId, object Request);
@@ -280,6 +365,7 @@ public sealed class PeriodicInspectionTimeTaskSchedulerTests
 
             Assert.IsType<GeneratePeriodicInspectionTimeTaskForContextCommand>(request);
             capture.CommandDispatches.Enqueue(new ScopeDispatch(scopeId, request));
+            capture.CommandsDispatched.Record();
             return Task.FromResult((TResponse)(object)1);
         }
 

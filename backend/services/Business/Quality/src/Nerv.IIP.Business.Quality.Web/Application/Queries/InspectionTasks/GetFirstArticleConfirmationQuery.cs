@@ -103,7 +103,8 @@ public sealed class GetFirstArticleConfirmationQueryHandler(ApplicationDbContext
     /// <summary>
     /// 复检新建 attempt N 记录且不回写任务，因此结论沿谱系链取。链只按
     /// <c>ReinspectionOfInspectionRecordId</c> 走（每条记录最多一个直接后继，由唯一索引保证），
-    /// 不按来源身份重查——来源身份表达不了工序，重查会串到同工单另一道工序的记录上。
+    /// 不按来源身份重查：来源身份自 #3319 起确实表达得了工序，但按它重查要自己排 attempt 序，
+    /// 而谱系链本来就是那个序，重查只会多一份等价谓词。
     /// </summary>
     private async Task<InspectionAttempt> ResolveLatestAttemptAsync(
         InspectionRecordId inspectionRecordId,

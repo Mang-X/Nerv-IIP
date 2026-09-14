@@ -140,6 +140,7 @@ public sealed class BusinessConsoleRegisterToolingAssetRequestValidator : Valida
         RuleFor(request => request.WorkCenterCodes).NotEmpty();
         RuleFor(request => request.SkuCodes).NotEmpty();
         RuleFor(request => request.MaintenanceLifeCount).GreaterThan(0).When(request => request.MaintenanceLifeCount.HasValue);
+        RuleFor(request => request.IdempotencyKey).MaximumLength(150);
     }
 }
 
@@ -152,6 +153,7 @@ public sealed class BusinessConsoleChangeToolingStatusRequestValidator : Validat
         RuleFor(request => request.Code).NotEmpty();
         RuleFor(request => request.Status).IsInEnum();
         RuleFor(request => request.Reason).NotEmpty();
+        RuleFor(request => request.IdempotencyKey).MaximumLength(200);
     }
 }
 
@@ -163,5 +165,6 @@ public sealed class BusinessConsoleRecordToolingUsageRequestValidator : Validato
         RuleFor(request => request.EnvironmentId).NotEmpty().MaximumLength(64);
         RuleFor(request => request.Code).NotEmpty();
         RuleFor(request => request.Count).GreaterThan(0);
+        RuleFor(request => request.IdempotencyKey).MaximumLength(200);
     }
 }

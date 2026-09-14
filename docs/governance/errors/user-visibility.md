@@ -83,6 +83,32 @@ Gateway 必须读取结构化 error code / message（或明确兼容的上游错
 
 UI 可以进一步把稳定 code 映射成更友好文案，但不能靠前端映射覆盖服务端未公开或不安全的信息。
 
+### 稳定码必须在前端词表登记（跨语言单向包含）
+
+后端发布的每个稳定码都必须在对应的前端展示词表里登记。两侧由
+`scripts/verify-stable-code-frontend-vocabulary.ps1` 在 CI 强制，方向是**单向包含（后端 ⊆ 前端）**：
+前端为已下线的历史码保留展示是合法的，要求相等会误报。两条通道的 producer 与 consumer 都不同，
+分别比对：
+
+| 通道 | 后端 producer | 前端 consumer | 未登记的后果 |
+| --- | --- | --- | --- |
+| 错误信封 `message` 位 | `public const string SafeCode` / `StableErrorCode` 成员，以及 `*StableWireCodes` 注册表类的 `public const string` | `STABLE_ERROR_MESSAGES` | message 位**就是裸码**、不含中文，英文码直接上屏 |
+| MES readiness 阻断原因（`CODE: 中文`） | `MesReadinessReasonCodes` | `MES_READINESS_REASON_DISPLAYS` | 中文事实仍显示，但 `describeMesReadinessReason` 走兜底，码拿不到标签与下一步，且 `RELEASE_IGNORED_TASK_BLOCKERS.has(code)` 为 false，**静默阻断下达** |
+
+**登记行为是「在 producer 类里声明一个 `public const string`」**，不是「写出一个长得像码的字面量」。
+这条区分是实测的，而且两个方向都不依赖计数：形状口径**看不见 `WORK_ORDER_NOT_RELEASED`**
+（它写成 `WorkOrderNotReleased + ": …"`，从不整串出现在一个字面量里），声明口径**看不见
+`MATERIAL_REQUIREMENT_SOURCE_UNAVAILABLE` 这类只存在于 throw 点字面量、从未声明的码**，
+两个口径互不包含。此处刻意不写命中条数：那个数会随着码被收进注册表而变，写死就会过期而不报红；
+要复量请自己跑并注明 head：
+`git grep -rhoE '"[A-Z][A-Z0-9_]{2,}: [^"]*"' -- 'backend/**/src/**/*.cs'`。以裸字面量写在产出点的码不在检查器扫描面内，也就不受这条契约保护——
+`WORK_ORDER_NOT_FOUND` 就是这样与 `WORK_ORDER_NOT_RELEASED` 相隔一行却长期无人看守的（#3155）。
+把这段残余也关上需要枚举「一个码的所有写法」，#3214 / #3176 三轮实测该形态不收敛，故不做。
+
+后端把码 pin 成逐字断言（如 `Stable_wire_code_literal_is_pinned`）**不能替代**这条契约：
+pin 保证码不被悄悄改名，不保证前端认得它。#3333 / PR #3359 的变异格实测过这个差别——
+改后端码字面量后**后端红 1、前端三包全绿**。
+
 ## 与权限、范围和生命周期的关系
 
 - 403/权限拒绝的公开语义由授权层拥有；错误治理不能为了“让用户看到”而放宽权限。

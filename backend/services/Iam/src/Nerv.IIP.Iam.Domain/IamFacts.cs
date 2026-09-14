@@ -162,6 +162,7 @@ public static class NervIipSeedPermissions
         "business.planning.mrp.run",
         "business.planning.suggestions.manage",
         "business.barcodes.templates.manage",
+        "business.barcodes.template-assets.retire",
         "business.barcodes.print",
         "business.barcodes.scans.write",
         "business.approvals.read",

@@ -516,6 +516,12 @@
           "StackExchange.Redis": "[2.9.32, )"
         }
       },
+      "nerv.iip.contracts.barcodelabel": {
+        "type": "Project",
+        "dependencies": {
+          "Nerv.IIP.Contracts.IntegrationEvents": "[1.0.0, )"
+        }
+      },
       "nerv.iip.contracts.coding": {
         "type": "Project"
       },

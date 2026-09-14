@@ -10,6 +10,7 @@ using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.BarcodeLabel.Domain;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelSerialCounterAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.ScanRecordAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.TraceabilityAggregate;
@@ -65,10 +66,16 @@ public sealed partial class BarcodeLabelPostgresProfileTests
         return services.BuildServiceProvider();
     }
 
-    private static ServiceProvider CreateRetirementCommandProvider(SaveChangesInterceptor? interceptor = null)
+    private static ServiceProvider CreateRetirementCommandProvider(
+        SaveChangesInterceptor? interceptor = null,
+        TimeProvider? clock = null,
+        ILabelTemplateAssetPort? templateAssetPort = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddSingleton(clock ?? TimeProvider.System);
+        services.AddSingleton(Prometheus.Metrics.NewCustomRegistry());
+        services.AddSingleton<TemplateAssetRetirementMetrics>();
         services.AddMediatR(configuration => configuration
             .RegisterServicesFromAssembly(typeof(CreateTemplateAssetRetirementDecisionCommand).Assembly)
             .AddUnitOfWorkBehaviors());
@@ -84,7 +91,9 @@ public sealed partial class BarcodeLabelPostgresProfileTests
         });
         services.AddUnitOfWork<ApplicationDbContext>();
         services.AddScoped<ITemplateAssetRetirementFence, PostgresTemplateAssetRetirementFence>();
-        services.AddSingleton<ILabelTemplateAssetPort>(new FixedTemplateAssetPort());
+        services.AddScoped<ILabelPrintBatchReservationFence, PostgresLabelPrintBatchReservationFence>();
+        services.AddScoped<ILabelSerialNumberAllocator, PostgresLabelSerialNumberAllocator>();
+        services.AddSingleton(templateAssetPort ?? new FixedTemplateAssetPort());
         services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
         services.AddSingleton<LabelPrintBatchCreatedIntegrationEventConverter>();
         return services.BuildServiceProvider();
@@ -107,7 +116,7 @@ public sealed partial class BarcodeLabelPostgresProfileTests
             var template = LabelTemplate.Create(
                 "org-retirement", "env-retirement", "TPL-RETIREMENT", "Retirement template",
                 "file-retirement-001", """{"version":1,"variables":[]}""", "inactive");
-            var batch = LabelPrintBatch.Create(
+            var batch = LabelPrintBatch.ReconstituteHistorical(
                 "org-retirement",
                 "env-retirement",
                 rule,
@@ -209,7 +218,7 @@ public sealed partial class BarcodeLabelPostgresProfileTests
                     ? LabelPrintBatch.CreateLegacyWithoutReplaySnapshot(
                         "org-retirement", "env-retirement", rule, template.Id,
                         "work-order", "WO-LEGACY", "batch-legacy-empty", "{}", 1)
-                    : LabelPrintBatch.Create(
+                    : LabelPrintBatch.ReconstituteHistorical(
                         ruleScope,
                         "env-retirement",
                         rule,
@@ -426,6 +435,60 @@ public sealed partial class BarcodeLabelPostgresProfileTests
                 SensitiveValues: [LaneConnectionString]));
     }
 
+    private static async Task<(int Waiters, bool CompetingTaskCompleted)> WaitForBlockedWaiterOrCompletionAsync(
+        int holderProcessId,
+        Task competingTask,
+        string description)
+    {
+        return await Eventually.WaitAsync(
+            condition: $"PostgreSQL lock waiter or early completion for {description}",
+            observe: async cancellationToken =>
+            {
+                await using var connection = new NpgsqlConnection(LaneConnectionString);
+                await connection.OpenAsync(cancellationToken);
+                await using var command = connection.CreateCommand();
+                command.CommandText = """
+                    SELECT count(*)
+                    FROM pg_stat_activity AS waiter
+                    WHERE @holder_pid = ANY(pg_blocking_pids(waiter.pid))
+                    """;
+                command.Parameters.AddWithValue("holder_pid", holderProcessId);
+                var waiters = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
+                return (Waiters: waiters, CompetingTaskCompleted: competingTask.IsCompleted);
+            },
+            isSatisfied: observation => observation.Waiters > 0 || observation.CompetingTaskCompleted,
+            describe: observation =>
+                $"blockedWaiters={observation.Waiters}; competingTaskCompleted={observation.CompetingTaskCompleted}",
+            options: new EventuallyOptions(
+                Timeout: TimeSpan.FromSeconds(15),
+                PollInterval: TimeSpan.FromMilliseconds(50),
+                SensitiveValues: [LaneConnectionString]));
+    }
+
+    private static LabelPrintBatch AllocatedBatch(
+        BarcodeRule rule,
+        string idempotencyKey,
+        string sourceDocumentId,
+        string serialNumber) =>
+        LabelPrintBatch.CreateWithAllocatedSerialNumbers(
+            rule.OrganizationId,
+            rule.EnvironmentId,
+            rule,
+            new LabelTemplateId(Guid.CreateVersion7()),
+            new LabelPrintBatchSnapshot(
+                "file-template-serial",
+                $"sha256:{new string('a', 64)}",
+                """{"version":1,"variables":[]}""",
+                rule.BarcodeType,
+                "zpl-v1"),
+            "work-order",
+            sourceDocumentId,
+            idempotencyKey,
+            "opaque:report-intent-a",
+            "{}",
+            1,
+            [serialNumber]);
+
     private sealed class RetirementSaveBarrier : SaveChangesInterceptor
     {
         private readonly TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -503,7 +566,7 @@ public sealed partial class BarcodeLabelPostgresProfileTests
         var template = LabelTemplate.Create(
             "org-001", "env-dev", "FG_BOX", "Finished goods box", "file-template-001",
             """{"version":1,"variables":[{"name":"skuCode","type":"string","required":true,"maxLength":80}]}""", "active");
-        var batch = LabelPrintBatch.Create(
+        var batch = LabelPrintBatch.ReconstituteHistorical(
             "org-001",
             "env-dev",
             rule,
@@ -538,6 +601,33 @@ public sealed partial class BarcodeLabelPostgresProfileTests
                 reference.FileId,
                 $"sha256:{new string('a', 64)}",
                 """{"format":"nerv-iip.label-template","version":1,"media":{"dpi":203,"widthDots":812,"heightDots":406},"fields":[{"kind":"text","x":40,"y":30,"fontHeight":30,"fontWidth":30,"variable":"skuCode"},{"kind":"barcode","x":40,"y":90,"moduleWidth":2,"height":100,"variable":"label.value"}]}"""));
+    }
+
+    private sealed class BlockingTemplateAssetPort : ILabelTemplateAssetPort
+    {
+        private readonly TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource released = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int requestCount;
+
+        public int RequestCount => Volatile.Read(ref requestCount);
+
+        public Task WaitUntilEnteredAsync(CancellationToken cancellationToken) =>
+            entered.Task.WaitAsync(cancellationToken);
+
+        public void Release() => released.TrySetResult();
+
+        public async Task<VerifiedLabelTemplateAsset> GetVerifiedAsync(
+            LabelTemplateAssetReference reference,
+            CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref requestCount);
+            entered.TrySetResult();
+            await released.Task.WaitAsync(cancellationToken);
+            return new VerifiedLabelTemplateAsset(
+                reference.FileId,
+                $"sha256:{new string('a', 64)}",
+                """{"format":"nerv-iip.label-template","version":1,"media":{"dpi":203,"widthDots":812,"heightDots":406},"fields":[{"kind":"text","x":40,"y":30,"fontHeight":30,"fontWidth":30,"variable":"skuCode"},{"kind":"barcode","x":40,"y":90,"moduleWidth":2,"height":100,"variable":"label.value"}]}""");
+        }
     }
 
     private sealed class NoopIntegrationEventPublisher : IIntegrationEventPublisher

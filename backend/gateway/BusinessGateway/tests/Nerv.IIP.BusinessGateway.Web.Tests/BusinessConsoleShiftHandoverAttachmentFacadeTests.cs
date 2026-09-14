@@ -783,8 +783,10 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
         var json = factory.Services.GetRequiredService<IBusinessFileStorageClient>();
         var transfer = factory.Services.GetRequiredService<IBusinessFileTransferClient>();
 
-        // 熔断前每发都是 503，熔断后是 Polly 的 BrokenCircuitException（该异常未被网关映射，
-        // 属既有面缺陷、已交回登记）。本用例的鉴别点是**是否触达下游**，不钉异常类型。
+        // 熔断前每发都是 503 downstream-unavailable；熔断打开后是 503 downstream-circuit-open
+        // （#3385 已把 BrokenCircuitException 映射进基类传输故障段，先前「该异常未被网关映射」
+        // 的登记已随 main 合入而作废）。两段状态码相同、只有语义码不同，因此本用例的鉴别点
+        // 仍是**是否触达下游**，不钉异常类型也不钉状态码。
         for (var i = 0; i < 20; i++)
         {
             await CallAndSwallowAsync(() => json.CreateSopFileDownloadGrantAsync(

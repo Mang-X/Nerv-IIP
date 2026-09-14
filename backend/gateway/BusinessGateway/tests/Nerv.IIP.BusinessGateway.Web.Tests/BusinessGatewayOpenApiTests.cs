@@ -861,6 +861,33 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches", "post", "createBusinessConsoleBarcodePrintBatch");
         AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches", "get", "listBusinessConsoleBarcodePrintBatches");
         AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}", "get", "getBusinessConsoleBarcodePrintBatch");
+        AssertSchemaProperties(
+            document,
+            "BusinessConsoleCreateBarcodePrintBatchRequest",
+            "reportIntentFingerprint");
+        var createPrintBatchSchema = FindSchemaBySuffix(document, "BusinessConsoleCreateBarcodePrintBatchRequest");
+        Assert.Equal(
+            256,
+            createPrintBatchSchema.GetProperty("properties")
+                .GetProperty("reportIntentFingerprint")
+                .GetProperty("maxLength")
+                .GetInt32());
+        Assert.Equal(
+            1,
+            createPrintBatchSchema.GetProperty("properties")
+                .GetProperty("reportIntentFingerprint")
+                .GetProperty("minLength")
+                .GetInt32());
+        if (createPrintBatchSchema.TryGetProperty("required", out var createPrintBatchRequired))
+        {
+            Assert.DoesNotContain(
+                "reportIntentFingerprint",
+                createPrintBatchRequired.EnumerateArray().Select(value => value.GetString()));
+        }
+        AssertRequiredNullableSchemaProperties(
+            document,
+            "BusinessConsoleBarcodePrintBatchDetail",
+            "reportIntentFingerprint");
         AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}/dispatch", "post", "dispatchBusinessConsoleBarcodePrintBatch");
         AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/reprint", "post", "reprintBusinessConsoleBarcodeLabel");
         AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/void", "post", "voidBusinessConsoleBarcodeLabel");
@@ -1421,9 +1448,19 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/mes/schedules/run", "post", "runBusinessConsoleMesSchedule");
         AssertOperationId(paths, "/api/business-console/v1/mes/schedules", "get", "listBusinessConsoleMesScheduleResults");
         AssertOperationId(paths, "/api/business-console/v1/mes/production-reports", "post", "recordBusinessConsoleMesProductionReport");
-        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/production-reports", "post", "idempotencyKey", 150);
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/production-reports", "post", "idempotencyKey", 128);
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/production-reports", "post", "scopeKind", 50);
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/production-reports", "post", "scopeId", 200);
+        AssertOptionalBodyProperty(document, paths, "/api/business-console/v1/mes/production-reports", "post", "labelTemplateId");
+        AssertSchemaProperties(
+            document,
+            "BusinessConsoleRecordProductionReportResponse",
+            "productionReportId",
+            "reportNo",
+            "serialNumbers",
+            "printBatchId",
+            "printStatus",
+            "printingPreparationPending");
         AssertOperationId(paths, "/api/business-console/v1/mes/defects", "post", "recordBusinessConsoleMesDefect");
         AssertSchemaProperties(
             document,

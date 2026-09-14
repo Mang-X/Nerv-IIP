@@ -11,6 +11,7 @@ import {
   createBusinessConsoleSopFileDownloadGrantMutationOptions,
   getBusinessConsoleMesCurrentOperationSopsQueryOptions,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
+  getBusinessConsoleMesWorkOrderDetail,
   listBusinessConsoleMesMaterialIssueRequests,
   listBusinessConsoleMesLineSideInventoryBalancesQueryOptions,
   listBusinessConsoleMesOperationTasks,
@@ -20,7 +21,7 @@ import {
   recordBusinessConsoleMesProductionReportMutationOptions,
   startBusinessConsoleMesOperationTaskMutationOptions,
 } from '@nerv-iip/api-client'
-import { acquirePendingBusinessIntent } from '@nerv-iip/business-core'
+import { acquirePendingBusinessIntent, clearPendingBusinessIntent } from '@nerv-iip/business-core'
 
 import {
   MES_WORK_SCOPE_UNAVAILABLE_MESSAGE,
@@ -109,6 +110,7 @@ vi.mock('@nerv-iip/api-client', () => ({
   getBusinessConsoleMesWorkOrderDetailQueryOptions: mockQueryOptions(
     'getBusinessConsoleMesWorkOrderDetail',
   ),
+  getBusinessConsoleMesWorkOrderDetail: vi.fn(),
   getBusinessConsoleMesWorkOrderDetailQueryKey: vi.fn(({ path, query }) => [
     {
       _id: 'getBusinessConsoleMesWorkOrderDetail',
@@ -294,6 +296,10 @@ describe('pda useBusinessMes composables', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    for (const intent of JSON.parse(
+      sessionStorage.getItem('nerv-iip.pending-business-intents.v1') ?? '[]',
+    ))
+      clearPendingBusinessIntent(intent)
     sessionStorage.clear()
     receiptState.confirm.mockImplementation(async (value) => value)
     lineSideInventoryFetch.mockReset().mockResolvedValue({
@@ -368,6 +374,29 @@ describe('pda useBusinessMes composables', () => {
       environmentId: 'env-dev',
     }
     authState.sessionId = 'session-001'
+    vi.mocked(getBusinessConsoleMesWorkOrderDetail)
+      .mockReset()
+      .mockImplementation(async ({ path }: { path: { workOrderId: string } }) => {
+        const previous = coladaState.mutateById.get('recordBusinessConsoleMesProductionReport')
+          ?.mock.lastCall?.[0].body
+        return {
+          data: {
+            success: true,
+            data: {
+              workOrderId: path.workOrderId,
+              operationTasks: [
+                {
+                  workOrderId: path.workOrderId,
+                  operationTaskId:
+                    previous?.operationTaskId ?? path.workOrderId.replace(/^wo-/, 'ot-'),
+                  status: previous?.completesOperation ? 'Completed' : 'InProgress',
+                  allowedActions: previous?.completesOperation ? [] : ['report'],
+                },
+              ],
+            },
+          },
+        } as never
+      })
     vi.mocked(listBusinessConsoleMesOperationTasks)
       .mockReset()
       .mockImplementation(
@@ -1995,14 +2024,14 @@ describe('pda useBusinessMes composables', () => {
     expect(payload.body.idempotencyKey).toBe('op-issue-1')
   })
 
-  it('forwards the caller-supplied key when confirming a line-side material receipt', async () => {
+  // #3328：线边收料的 idempotencyKey 已从网关公开契约摘掉（MES 侧从不消费它），
+  // 所以这里不再断言「把调用方给的键转发下去」，改为断言请求体只带该端点真正消费的字段、
+  // 且**不含**幂等键——有人把它加回来会红。重放安全的权威落在 MES 侧
+  // MaterialIssueRequest.ConfirmLineSideReceipt 的「过账尚未回执」守卫（MesWriteReplaySafetyTests）。
+  it('confirms a line-side material receipt without an idempotency key in the body', async () => {
     const { confirmLineSideReceipt } = useMesMaterialIssue()
 
-    await confirmLineSideReceipt(
-      'req-2',
-      { receivedQuantity: 4, idempotencyKey: 'op-confirm-1' },
-      { workOrderId: 'wo-2' },
-    )
+    await confirmLineSideReceipt('req-2', { receivedQuantity: 4 }, { workOrderId: 'wo-2' })
 
     expect(confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions).toHaveBeenCalled()
     expect(listBusinessConsoleMesMaterialIssueRequests).toHaveBeenCalledWith({
@@ -2017,8 +2046,8 @@ describe('pda useBusinessMes composables', () => {
     )
     const payload = mutateAsync!.mock.calls[0][0]
     expect(payload.path).toEqual({ requestId: 'req-2' })
-    expect(payload.body).toMatchObject({ receivedQuantity: 4 })
-    expect(payload.body.idempotencyKey).toBe('op-confirm-1')
+    expect(payload.body).toEqual({ receivedQuantity: 4 })
+    expect(payload.body).not.toHaveProperty('idempotencyKey')
   })
 
   it('replays a return with the same key after the authoritative list shows zero returnable quantity', async () => {
@@ -2149,6 +2178,186 @@ describe('pda useBusinessMes composables', () => {
     expect(mutateAsync.mock.calls[0][0].body.idempotencyKey).toBe('report-key-1')
     expect(mutateAsync.mock.calls[1][0].body.idempotencyKey).toBe('report-key-2')
   })
+
+  it('keeps the frozen reporting time and template while successful label preparation is pending', async () => {
+    const { recordReport } = useMesProductionReports()
+    const mutate = coladaState.mutateById.get('recordBusinessConsoleMesProductionReport')!
+    mutate.mockResolvedValueOnce({ success: true, data: { printingPreparationPending: true } })
+    const input = {
+      workOrderId: 'wo-label-pending',
+      operationTaskId: 'ot-label-pending',
+      goodQuantity: 2,
+      scrapQuantity: 0,
+      completesOperation: false,
+      labelTemplateId: 'tpl-1',
+      idempotencyKey: 'labels-original',
+    }
+    await recordReport(input)
+    await recordReport({ ...input, idempotencyKey: 'labels-retry' })
+    expect(mutate.mock.calls[1][0].body).toEqual(mutate.mock.calls[0][0].body)
+  })
+
+  it('marks an initial preflight failure as not accepted and permits a corrected new intent', async () => {
+    const { recordReport } = useMesProductionReports()
+    const mutate = coladaState.mutateById.get('recordBusinessConsoleMesProductionReport')!
+    vi.mocked(listBusinessConsoleMesReportableOperationTasks).mockRejectedValueOnce(
+      new TypeError('preflight unavailable'),
+    )
+    const input = {
+      workOrderId: 'wo-preflight-rejected',
+      operationTaskId: 'ot-preflight-rejected',
+      goodQuantity: 2,
+      scrapQuantity: 0,
+      completesOperation: false,
+      idempotencyKey: 'not-dispatched',
+    }
+    await expect(recordReport(input)).rejects.toMatchObject({ reportNotAccepted: true })
+    expect(mutate).not.toHaveBeenCalled()
+    await recordReport({ ...input, idempotencyKey: 'corrected-new-key' })
+    expect(mutate.mock.calls[0][0].body.idempotencyKey).toBe('corrected-new-key')
+  })
+
+  it.each(['unknown', 'accepted'])(
+    'retains the %s original wire intent when its retry receives 400',
+    async (state) => {
+      const { recordReport } = useMesProductionReports()
+      const mutate = coladaState.mutateById.get('recordBusinessConsoleMesProductionReport')!
+      if (state === 'unknown') mutate.mockRejectedValueOnce(new TypeError('response lost'))
+      else
+        mutate.mockResolvedValueOnce({ success: true, data: { printingPreparationPending: true } })
+      mutate.mockRejectedValueOnce({ status: 400, message: '标签模板已停用' })
+      const input = {
+        workOrderId: `wo-retain-${state}`,
+        operationTaskId: `ot-retain-${state}`,
+        goodQuantity: 2,
+        scrapQuantity: 0,
+        completesOperation: false,
+        idempotencyKey: 'original-possibly-accepted',
+      }
+      if (state === 'unknown') await expect(recordReport(input)).rejects.toThrow('response lost')
+      else await recordReport(input)
+      await expect(recordReport(input)).rejects.toMatchObject({ status: 400 })
+      await recordReport({ ...input, idempotencyKey: 'must-not-replace-original' })
+      expect(mutate.mock.calls[2][0].body).toEqual(mutate.mock.calls[0][0].body)
+    },
+  )
+
+  it('does not release the frozen wire intent when a dispatched report response arrives after navigation', async () => {
+    const { recordReport } = useMesProductionReports()
+    const mutate = coladaState.mutateById.get('recordBusinessConsoleMesProductionReport')!
+    const response = deferred<{ success: boolean; data: { printingPreparationPending: boolean } }>()
+    mutate.mockReturnValueOnce(response.promise)
+    const input = {
+      workOrderId: 'wo-late-response',
+      operationTaskId: 'ot-late-response',
+      goodQuantity: 2,
+      scrapQuantity: 0,
+      completesOperation: false,
+      labelTemplateId: 'tpl-1',
+      idempotencyKey: 'original-late-key',
+    }
+    let current = true
+    const request = recordReport(input, () => current)
+    const outcome = expect(request).rejects.toMatchObject({ indeterminate: true })
+    await vi.waitFor(() => expect(mutate).toHaveBeenCalledTimes(1))
+    current = false
+    response.resolve({ success: true, data: { printingPreparationPending: false } })
+    await outcome
+    current = true
+    await recordReport({ ...input, idempotencyKey: 'must-not-replace-key' }, () => current)
+    expect(mutate.mock.calls[1][0].body).toEqual(mutate.mock.calls[0][0].body)
+  })
+
+  it.each(['principalId', 'organizationId', 'environmentId'])(
+    'blocks a report if %s changes during task preflight',
+    async (field) => {
+      const { recordReport } = useMesProductionReports()
+      const pending =
+        deferred<Awaited<ReturnType<typeof listBusinessConsoleMesReportableOperationTasks>>>()
+      vi.mocked(listBusinessConsoleMesReportableOperationTasks).mockReturnValueOnce(
+        pending.promise as never,
+      )
+      const mutation = recordReport({
+        workOrderId: 'wo-context-switch',
+        operationTaskId: 'ot-context-switch',
+        goodQuantity: 1,
+        scrapQuantity: 0,
+        completesOperation: false,
+        idempotencyKey: `context-${field}`,
+      })
+      const outcome = expect(mutation).rejects.toThrow('作业身份或范围已变化')
+      reactiveAuthState.principal = { ...reactiveAuthState.principal, [field]: 'changed' }
+      await nextTick()
+      pending.resolve({
+        data: {
+          success: true,
+          data: {
+            items: [
+              {
+                workOrderId: 'wo-context-switch',
+                operationTaskId: 'ot-context-switch',
+                allowedActions: ['report'],
+                status: 'InProgress',
+              },
+            ],
+            total: 1,
+          },
+        },
+      } as never)
+      await outcome
+      expect(
+        coladaState.mutateById.get('recordBusinessConsoleMesProductionReport'),
+      ).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each(['scope', 'pair'])(
+    'blocks a report when the %s changes during task preflight',
+    async (change) => {
+      const { recordReport } = useMesProductionReports()
+      const pending = deferred<never>()
+      vi.mocked(listBusinessConsoleMesReportableOperationTasks).mockReturnValueOnce(pending.promise)
+      let samePair = true
+      const mutation = recordReport(
+        {
+          workOrderId: 'wo-scope-switch',
+          operationTaskId: 'ot-scope-switch',
+          goodQuantity: 1,
+          scrapQuantity: 0,
+          completesOperation: false,
+          idempotencyKey: `context-${change}`,
+        },
+        () => samePair,
+      )
+      const outcome = expect(mutation).rejects.toThrow('作业身份或范围已变化')
+      if (change === 'pair') samePair = false
+      else
+        coladaState.queryDataRefById.get(
+          'getBusinessConsolePrincipalWorkContext:business.mes.reporting.write',
+        )!.value = { success: true, data: { selectedScope: { kind: 'work-center', id: 'WC-B' } } }
+      await nextTick()
+      pending.resolve({
+        data: {
+          success: true,
+          data: {
+            items: [
+              {
+                workOrderId: 'wo-scope-switch',
+                operationTaskId: 'ot-scope-switch',
+                allowedActions: ['report'],
+                status: 'InProgress',
+              },
+            ],
+            total: 1,
+          },
+        },
+      } as never)
+      await outcome
+      expect(
+        coladaState.mutateById.get('recordBusinessConsoleMesProductionReport'),
+      ).not.toHaveBeenCalled()
+    },
+  )
 
   it('restores all required report fields when a pending intent has no payload snapshot', async () => {
     const input = {

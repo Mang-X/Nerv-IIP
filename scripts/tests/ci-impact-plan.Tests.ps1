@@ -305,10 +305,20 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
     $scriptGovernanceSteps = @($scriptGovernanceProperty.Value.steps)
     $scriptGovernanceStepTimeouts = @($scriptGovernanceSteps | ForEach-Object { [int]$_.'timeout-minutes' })
     $scriptGovernanceStepBudgetMinutes = ($scriptGovernanceStepTimeouts | Measure-Object -Sum).Sum
-    $fiveMinuteStepCount = @($scriptGovernanceStepTimeouts | Where-Object { $_ -eq 5 }).Count
+    # #3300：这里原本写死「checkout 之外全是 5m」，于是任何一个非 5m 的 step 都会让这条注释契约
+    # 无法被如实满足，反过来把 step 预算钉成一个值。改成按预算分组生成期望文本：形态不再被假设，
+    # 注释仍必须与实际 step 预算逐项相符。既有全 5m 的形态生成的字符串与改动前逐字相同。
+    # SortedDictionary[int, int] 而不是 Group-Object/Sort-Object：分组键是分钟数，必须按数值升序，
+    # 而那两个 cmdlet 的键比较是 culture collation（scripts/tests/ordinal-comparison-layers.Tests.ps1）。
+    $scriptGovernanceTailMinuteCounts = [Collections.Generic.SortedDictionary[int, int]]::new()
+    foreach ($tailTimeout in @($scriptGovernanceStepTimeouts | Select-Object -Skip 1)) {
+        $tailMinutes = [int]$tailTimeout
+        if ($scriptGovernanceTailMinuteCounts.ContainsKey($tailMinutes)) { $scriptGovernanceTailMinuteCounts[$tailMinutes] += 1 }
+        else { $scriptGovernanceTailMinuteCounts[$tailMinutes] = 1 }
+    }
     $workflowSource = [IO.File]::ReadAllText($Path)
     $expectedBudgetHeadline = "step 预算合计 $($scriptGovernanceStepBudgetMinutes)m（$($scriptGovernanceSteps.Count) 个 step：3m checkout"
-    $expectedBudgetContinuation = "+ $fiveMinuteStepCount × 5m；"
+    $expectedBudgetContinuation = "+ $(@($scriptGovernanceTailMinuteCounts.GetEnumerator() | ForEach-Object { "$($_.Value) × $($_.Key)m" }) -join ' + ')；"
     $contractSteps = @($scriptGovernanceSteps | Where-Object {
             [string]::Equals([string]$_.name, 'Test acceptance scenario matrix contract', [StringComparison]::Ordinal)
         })
@@ -339,7 +349,8 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
         [int]$equivalenceContractStep.'timeout-minutes' -eq 5 -and
         $null -eq $equivalenceContractStep.PSObject.Properties['if']) 'The equivalence fixture contract must run as one unconditional five-minute pwsh step.'
 
-    Assert-Contract ($scriptGovernanceStepTimeouts.Count -eq $scriptGovernanceSteps.Count -and $scriptGovernanceStepTimeouts[0] -eq 3 -and $fiveMinuteStepCount -eq ($scriptGovernanceSteps.Count - 1)) 'Script Governance budget comment contract expects one three-minute checkout and all remaining steps to have five-minute timeouts.'
+    Assert-Contract ($scriptGovernanceStepTimeouts.Count -eq $scriptGovernanceSteps.Count -and $scriptGovernanceStepTimeouts[0] -eq 3 -and @($scriptGovernanceStepTimeouts | Where-Object { $_ -le 0 }).Count -eq 0) 'Script Governance budget comment contract expects one three-minute checkout and a positive explicit timeout on every step.'
+    Assert-Contract ((@($scriptGovernanceTailMinuteCounts.GetEnumerator() | ForEach-Object { $_.Key * $_.Value }) | Measure-Object -Sum).Sum + 3 -eq $scriptGovernanceStepBudgetMinutes) 'The Script Governance budget breakdown must add up to the declared step budget sum.'
     Assert-Contract ($workflowSource.Contains($expectedBudgetHeadline, [StringComparison]::Ordinal) -and $workflowSource.Contains($expectedBudgetContinuation, [StringComparison]::Ordinal)) "Script Governance budget comment must match its actual $($scriptGovernanceSteps.Count)-step/$($scriptGovernanceStepBudgetMinutes)m structure."
     Assert-Contract (-not $workflowSource.Contains('实际为 103m', [StringComparison]::Ordinal)) 'Script Governance budget comment must not retain the obsolete 103m historical sentence.'
 
@@ -602,6 +613,86 @@ function Assert-ImpactCase {
     foreach ($selectedFlag in @($plan.PSObject.Properties | Where-Object { $_.Value -is [bool] -and $_.Value })) {
         Assert-Contract ($null -ne $plan.reasons.PSObject.Properties[$selectedFlag.Name]) "Case '$Name' selected '$($selectedFlag.Name)' without an audit reason."
         Assert-Contract (@($plan.reasons.PSObject.Properties[$selectedFlag.Name].Value).Count -gt 0) "Case '$Name' selected '$($selectedFlag.Name)' with an empty audit reason."
+    }
+}
+
+function Assert-FullChainProjectReferenceCoverage {
+    # #3338：把「FullChain lane 的依赖边」从**手抄**改成**从 .csproj 派生**看守。
+    #
+    # 背景：CiImpactPlan.ps1 的路径分发是一串手写 if 分支，每条各自硬编码一组 flag，
+    # 没有任何从项目引用关系派生的机制。于是 `backend/gateway/BusinessGateway/` 那条漏了
+    # full_chain（#3330 / PR #3337 实例），而 Wms / Mes / Maintenance 三个被 FullChain 直接
+    # 引用的业务服务同样没被 salesOrderDemand 那个集合覆盖。逐条补名单每轮必复发
+    # （本仓同形状已栽三次：#3003 / #3135 / #3300）。
+    #
+    # 本契约不消灭名单，而是**让名单的完备性由一条不会过期的派生断言看守**：
+    # 引用关系的唯一权威是 Nerv.IIP.Business.FullChain.Tests.csproj 的 ProjectReference，
+    # 新增一条引用而忘了更新 CiImpactPlan 的集合/分支，这里立刻红。
+    #
+    # **本契约不保证什么（别读成完备）**：
+    #
+    # (a) 它只覆盖 .csproj 里的**编译期** ProjectReference。FullChain 的运行时依赖面比这更大
+    #     （seed 路径、跨服务事件转换器/处理器等由 Test-FullChainSeedPath /
+    #     Test-CrossServiceIntegrationEventPath 另行覆盖），那些不在本契约射程内。
+    #
+    # (b) **它只看守一个方向**：「csproj 里有这条引用 ⇒ CiImpactPlan 必须选中 full_chain」。
+    #     **反向不看守** —— csproj 里删掉一条引用、而上面那个名单里还留着该服务，本契约**不会红**。
+    #     这个方向是**刻意选的、也是安全的**：残留名单只会让 full_chain lane **过度选中**
+    #     （多跑一次重 lane），不会让它**漏选**；而漏选才是 #3338 要修的那类缺陷
+    #     （改了网关却不跑 FullChain，缺陷带着绿灯进 main）。⛔ 别把本契约读成双向完备。
+    #
+    # (c) ⚠️ **一个「绿得理由不对」的已知边界（登记，未在 #3338 修）**：下面业务服务那一面用的是
+    #     **合成探针路径**。今天 5 个被引用服务全都在 CiImpactPlan 的 $knownBusinessServiceNames 里，
+    #     所以没有假过。但**将来若 FullChain 引用了一个尚未登记进那份名单的业务服务**，探针路径会命中
+    #     CiImpactPlan 的 `-not $knownBusinessServiceNameSet.Contains(...)` 分支走 Select-AllImpacts
+    #     **全量点亮**，于是本契约照样通过 —— **CI 行为仍然正确**（全选是保守的），
+    #     **但本契约那一刻是因为错误的理由变绿的**，它并没有证明「名单覆盖了该服务」。
+    #     **可辨识特征（实测读数，#3338）**：已登记服务的探针点亮 7 个 flag、full_chain 的 reason 前缀是
+    #     `changed:`；未登记服务点亮 20 个 flag、reason 前缀是 `unclassified-business-service:`。
+    #     后来人若要收掉这一格，就从这个前缀入手。
+    $projectPath = Join-Path $repoRoot 'backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj'
+    Assert-Contract (Test-Path -LiteralPath $projectPath) 'FullChain test project must exist for the dependency-edge contract.'
+
+    [xml] $projectXml = Get-Content -LiteralPath $projectPath -Raw
+    $referenceRoot = Split-Path -Parent $projectPath
+    $referencedPaths = [Collections.Generic.List[string]]::new()
+    foreach ($node in $projectXml.SelectNodes('//ProjectReference')) {
+        $include = [string]$node.GetAttribute('Include')
+        if ([string]::IsNullOrWhiteSpace($include)) { continue }
+        $resolved = [IO.Path]::GetFullPath((Join-Path $referenceRoot ($include -replace '\\', [IO.Path]::DirectorySeparatorChar)))
+        $relative = $resolved.Substring($repoRoot.Length).TrimStart([char]'/', [char]'\') -replace '\\', '/'
+        [void]$referencedPaths.Add($relative)
+    }
+
+    # 正向判据：解析必须真的产出东西。没有这一条，解析一旦失败（改名/改结构）会让下面
+    # 每一条 foreach 断言退化成「空集即真」而全绿——那是本仓成文教训里最典型的假绿形态。
+    Assert-Contract ($referencedPaths.Count -gt 0) 'FullChain dependency-edge contract parsed zero ProjectReference entries; the contract would be vacuously true.'
+
+    $businessServiceNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $nonBusinessReferences = [Collections.Generic.List[string]]::new()
+    foreach ($relative in $referencedPaths) {
+        $match = [regex]::Match($relative, '^backend/services/Business/([^/]+)/')
+        if ($match.Success) { [void]$businessServiceNames.Add($match.Groups[1].Value) }
+        else { [void]$nonBusinessReferences.Add($relative) }
+    }
+
+    # 同上：两个分支各自也不许是空集。
+    Assert-Contract ($businessServiceNames.Count -gt 0) 'FullChain dependency-edge contract resolved zero referenced business services.'
+    Assert-Contract ($nonBusinessReferences.Count -gt 0) 'FullChain dependency-edge contract resolved zero non-business references.'
+
+    # ① 业务服务这一面：被 FullChain 引用的每个服务，改它必须选中 full_chain。
+    #    用该服务 .csproj 之外的真实路径不可得时，这里直接对服务名断言覆盖关系——
+    #    判定发生在 CiImpactPlan 的集合里，因此断言集合包含关系比造夹具更直接、也无夹具选取偏差。
+    foreach ($serviceName in $businessServiceNames) {
+        $servicePath = "backend/services/Business/$serviceName/src/probe/FullChainDependencyEdgeProbe.cs"
+        $plan = Get-NervCiImpactPlan -ChangedPaths @($servicePath)
+        Assert-Contract ([bool]$plan.full_chain) "FullChain references business service '$serviceName', so changing it must select the full_chain lane (path: $servicePath)."
+    }
+
+    # ② 非业务服务这一面（网关 / common/*）：直接用被引用项目的 .csproj 路径作夹具。
+    foreach ($relative in $nonBusinessReferences) {
+        $plan = Get-NervCiImpactPlan -ChangedPaths @($relative)
+        Assert-Contract ([bool]$plan.full_chain) "FullChain references '$relative', so changing it must select the full_chain lane."
     }
 }
 
@@ -963,6 +1054,7 @@ Assert-ImpactCase -Name 'openapi-generation-script' -Paths @('scripts/export-gat
 Assert-PostgresLaneOwningPathsRoute
 Assert-RedisCapLaneOwningPathsRoute
 Assert-FullChainLaneOwningPathsRoute
+Assert-FullChainProjectReferenceCoverage
 Assert-AcceptanceScenarioMatrixOwningPathsRoute
 Assert-AcceptanceScenarioMatrixRuntimeOwningPathsRoute
 Assert-AcceptanceScenarioMatrixRuntimePathMutationsDoNotAliasOwners
@@ -1005,20 +1097,27 @@ Assert-ImpactCase -Name 'world-history-seed-platform-service' -Paths @('backend/
     backend = $true; redis_cap = $false; full_chain = $true
 }
 
+# ⚠️ #3338：下面这几条反例的夹具服务从 Mes 换成 Quality，**换的是夹具、不是期望值**。
+# 原因：#3338 起 Mes / Wms / Maintenance / Erp / DemandPlanning 因**被 FullChain 直接 ProjectReference**
+# 而无条件选中 full_chain，用 Mes 当夹具会让这几条反例的 full_chain 维度恒为 true、**失去鉴别力**
+# （本仓判例：结构变更会静默抽掉上一票断言的前提，而断言还在跑、还在绿）。
+# Quality 同样是已登记业务服务，但**不**被 FullChain 引用、也不在 sales-order-demand 集合里，
+# 因此 full_chain 对它仍是干净的指示器，这几条反例要钉的「按目录段整段比对、不做前缀包含」
+# 与「相邻 Application 子目录不扩面」原样成立。⛔ 别把夹具换回 Mes。
 # NERV-1711 反例：同前缀但不同目录不得触发，钉住「按目录段整段比对」而不是前缀包含。
-Assert-ImpactCase -Name 'integration-event-converters-prefix-collision' -Paths @('backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/IntegrationEventConvertersLegacy/LegacyShim.cs') -Flags @{
+Assert-ImpactCase -Name 'integration-event-converters-prefix-collision' -Paths @('backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/IntegrationEventConvertersLegacy/LegacyShim.cs') -Flags @{
     backend = $true; postgresql = $true; redis_cap = $false; full_chain = $false
-} -Services @('mes')
+} -Services @('quality')
 
-Assert-ImpactCase -Name 'seed-prefix-collision' -Paths @('backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/SeedlingCatalog/SeedlingCatalogQuery.cs') -Flags @{
+Assert-ImpactCase -Name 'seed-prefix-collision' -Paths @('backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/SeedlingCatalog/SeedlingCatalogQuery.cs') -Flags @{
     backend = $true; postgresql = $true; redis_cap = $false; full_chain = $false
-} -Services @('mes')
+} -Services @('quality')
 
 # NERV-1711 反例：同一服务的相邻 Application 子目录仍然只是普通后端改动，
 # 钉住新规则没有退化成「任何 backend/services 路径都跑重 lane」。
-Assert-ImpactCase -Name 'sibling-application-directory-stays-narrow' -Paths @('backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/WorkOrderQuery.cs') -Flags @{
+Assert-ImpactCase -Name 'sibling-application-directory-stays-narrow' -Paths @('backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Queries/WorkOrderQuery.cs') -Flags @{
     backend = $true; postgresql = $true; redis_cap = $false; full_chain = $false
-} -Services @('mes')
+} -Services @('quality')
 
 # NERV-1711 反例：测试工程里的同名目录不在 backend/services/ 之下，
 # 钉住新规则带着服务前缀限定（处理器的 redis_cap 仍由既有 messaging 规则给出）。
@@ -1030,9 +1129,9 @@ Assert-ImpactCase -Name 'test-project-integration-event-handlers-not-a-service' 
     backend = $true; redis_cap = $true; full_chain = $false
 }
 
-Assert-ImpactCase -Name 'capitalized-is-not-cap' -Paths @('backend/services/Business/Mes/src/CapitalizedUnitCost.cs') -Flags @{
+Assert-ImpactCase -Name 'capitalized-is-not-cap' -Paths @('backend/services/Business/Quality/src/CapitalizedUnitCost.cs') -Flags @{
     backend = $true; postgresql = $true; redis_cap = $false; full_chain = $false
-} -Services @('mes')
+} -Services @('quality')
 
 Assert-ImpactCase -Name 'capacity-is-not-cap' -Paths @('backend/services/Business/Scheduling/src/FiniteCapacityScheduler.cs') -Flags @{
     backend = $true; postgresql = $true; redis_cap = $false; full_chain = $false
@@ -1401,12 +1500,12 @@ try {
 
 '@
     $workflowWithoutAcceptanceRuntimeContract = $workflow.Replace($acceptanceRuntimeContractStep, '').Replace(
-        'step 预算合计 173m（35 个 step：3m checkout',
-        'step 预算合计 168m（34 个 step：3m checkout').Replace(
-        '+ 34 × 5m；',
-        '+ 33 × 5m；')
+        'step 预算合计 208m（40 个 step：3m checkout',
+        'step 预算合计 203m（39 个 step：3m checkout').Replace(
+        '+ 38 × 5m + 1 × 15m；',
+        '+ 37 × 5m + 1 × 15m；')
     Assert-Contract (-not [string]::Equals($workflowWithoutAcceptanceRuntimeContract, $workflow, [StringComparison]::Ordinal)) 'Acceptance runtime workflow mutation must remove the canonical pure fixture contract step.'
-    Assert-Contract ($workflowWithoutAcceptanceRuntimeContract.Contains('step 预算合计 168m（34 个 step：3m checkout', [StringComparison]::Ordinal) -and $workflowWithoutAcceptanceRuntimeContract.Contains('+ 33 × 5m；', [StringComparison]::Ordinal)) 'Acceptance runtime workflow mutation must keep its budget comment truthful at 34 steps and 168m.'
+    Assert-Contract ($workflowWithoutAcceptanceRuntimeContract.Contains('step 预算合计 203m（39 个 step：3m checkout', [StringComparison]::Ordinal) -and $workflowWithoutAcceptanceRuntimeContract.Contains('+ 37 × 5m + 1 × 15m；', [StringComparison]::Ordinal)) 'Acceptance runtime workflow mutation must keep its budget comment truthful at 39 steps and 203m.'
     $workflowWithoutAcceptanceRuntimeContractPath = Join-Path $workflowMutationRoot 'script-governance-drops-acceptance-runtime-contract.yml'
     [IO.File]::WriteAllText($workflowWithoutAcceptanceRuntimeContractPath, $workflowWithoutAcceptanceRuntimeContract, [Text.UTF8Encoding]::new($false))
     $runtimeWorkflowContractFailure = $null
@@ -1423,10 +1522,10 @@ try {
 
 '@
     $workflowWithoutAcceptanceEquivalenceContract = $workflow.Replace($acceptanceEquivalenceContractStep, '').Replace(
-        'step 预算合计 173m（35 个 step：3m checkout',
-        'step 预算合计 168m（34 个 step：3m checkout').Replace(
-        '+ 34 × 5m；',
-        '+ 33 × 5m；')
+        'step 预算合计 208m（40 个 step：3m checkout',
+        'step 预算合计 203m（39 个 step：3m checkout').Replace(
+        '+ 38 × 5m + 1 × 15m；',
+        '+ 37 × 5m + 1 × 15m；')
     $workflowWithoutAcceptanceEquivalenceContractPath = Join-Path $workflowMutationRoot 'script-governance-drops-acceptance-equivalence-contract.yml'
     [IO.File]::WriteAllText($workflowWithoutAcceptanceEquivalenceContractPath, $workflowWithoutAcceptanceEquivalenceContract, [Text.UTF8Encoding]::new($false))
     $equivalenceWorkflowContractFailure = $null
@@ -1434,16 +1533,16 @@ try {
     Assert-Contract ($null -ne $equivalenceWorkflowContractFailure) 'Removing the equivalence Script Governance fixture step must fail the workflow contract.'
 
     $workflowWithIncorrectBudgetComment = $workflow.Replace(
-        'step 预算合计 173m（35 个 step：3m checkout',
-        'step 预算合计 168m（34 个 step：3m checkout').Replace(
-        '+ 34 × 5m；',
-        '+ 33 × 5m；')
-    Assert-Contract (-not [string]::Equals($workflowWithIncorrectBudgetComment, $workflow, [StringComparison]::Ordinal)) 'Script Governance budget-comment mutation must alter the canonical 35-step/173m comment.'
+        'step 预算合计 208m（40 个 step：3m checkout',
+        'step 预算合计 203m（39 个 step：3m checkout').Replace(
+        '+ 38 × 5m + 1 × 15m；',
+        '+ 37 × 5m + 1 × 15m；')
+    Assert-Contract (-not [string]::Equals($workflowWithIncorrectBudgetComment, $workflow, [StringComparison]::Ordinal)) 'Script Governance budget-comment mutation must alter the canonical 40-step/208m comment.'
     $workflowWithIncorrectBudgetCommentPath = Join-Path $workflowMutationRoot 'script-governance-uses-incorrect-budget-comment.yml'
     [IO.File]::WriteAllText($workflowWithIncorrectBudgetCommentPath, $workflowWithIncorrectBudgetComment, [Text.UTF8Encoding]::new($false))
     $budgetCommentContractFailure = $null
     try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithIncorrectBudgetCommentPath } catch { $budgetCommentContractFailure = $_ }
-    $expectedBudgetCommentDiagnostic = 'Script Governance budget comment must match its actual 35-step/173m structure.'
+    $expectedBudgetCommentDiagnostic = 'Script Governance budget comment must match its actual 40-step/208m structure.'
     $observedBudgetCommentDiagnostic = if ($null -eq $budgetCommentContractFailure) { '<none>' } else { [string]$budgetCommentContractFailure.Exception.Message }
     Assert-Contract ([string]::Equals($observedBudgetCommentDiagnostic, $expectedBudgetCommentDiagnostic, [StringComparison]::Ordinal)) "An incorrect Script Governance budget comment must fail with the exact budget diagnostic. Observed: $observedBudgetCommentDiagnostic"
 

@@ -38,7 +38,7 @@ public sealed class BusinessGatewayIdempotencySafetyTests
     }
 
     // #3287 ①：非法字符拒的是入参形状，不是「同一个键被用在了别的意图上」，所以是 400。
-    // 夹具只触犯字符规则一条：两个取值都在 150 字符以内，不会先撞长度上界。
+    // 夹具只触犯字符规则一条：两个取值都远在全局钳以内，不会先撞长度上界。
     [Theory]
     [InlineData("contains space")]
     [InlineData("包含中文")]
@@ -58,13 +58,18 @@ public sealed class BusinessGatewayIdempotencySafetyTests
 
     // #3287 ①：超长拒的是入参超长，不是键冲突。夹具全部使用 IsAllowed 允许的字符，
     // 因此只触犯长度一条规则——否则相邻的字符守卫会把长度分支的变异一起兜住。
+    //
+    // 长度按全局钳**派生**而不是手抄（#3327 把钳从 150 抬到 512 时，手抄的 151 会静默失去鉴别力：
+    // 它不再超长，用例从「证明超长被拒」退化成「证明合法键被拒」并直接红）。
+    // 两格分别是「刚好越界一格」与「远超」，覆盖边界与非边界两种输入。
     [Theory]
-    [InlineData(151)]
+    [InlineData(1)]
     [InlineData(512)]
-    public void Over_length_key_fails_closed_with_a_stable_400(int length)
+    public void Over_length_key_fails_closed_with_a_stable_400(int lengthOverClamp)
     {
         var context = new DefaultHttpContext();
-        context.Request.Headers["Idempotency-Key"] = new string('a', length);
+        context.Request.Headers["Idempotency-Key"] =
+            new string('a', BusinessGatewayIdempotencyKey.MaximumKeyLength + lengthOverClamp);
 
         var exception = Assert.Throws<BusinessServiceProxyException>(() =>
             BusinessGatewayIdempotencyKey.Resolve(
@@ -75,11 +80,12 @@ public sealed class BusinessGatewayIdempotencySafetyTests
         Assert.Equal("idempotency-key-too-long", exception.Message);
     }
 
-    // 长度上界本身不动（#3287 第一步零值域变化）：150 字符仍然必须被接受并原样解析。
+    // 上界上的那一格必须被接受并原样解析（键长恰等于全局钳）。
+    // 同样按钳派生：手抄 150 在 #3327 抬钳后仍会绿，但它测的就不再是「上界那一格」了。
     [Fact]
     public void Key_at_the_maximum_length_is_still_accepted()
     {
-        var key = new string('a', 150);
+        var key = new string('a', BusinessGatewayIdempotencyKey.MaximumKeyLength);
         var context = new DefaultHttpContext();
         context.Request.Headers["Idempotency-Key"] = key;
 

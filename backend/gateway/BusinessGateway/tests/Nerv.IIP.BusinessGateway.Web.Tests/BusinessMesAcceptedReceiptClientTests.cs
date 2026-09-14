@@ -32,7 +32,7 @@ public sealed class BusinessMesAcceptedReceiptClientTests
             client => client.ReleaseWorkOrderAsync(
                 "token",
                 "WO-20260731-001",
-                new BusinessConsoleMesReleaseWorkOrderRequest("WO-20260731-001", "org", "env", false, "idem-release"),
+                new BusinessConsoleMesReleaseWorkOrderRequest("WO-20260731-001", "org", "env", false),
                 CancellationToken.None));
 
     [Fact]
@@ -184,7 +184,7 @@ public sealed class BusinessMesAcceptedReceiptClientTests
                 "token",
                 "DTE-000007",
                 new BusinessConsoleMesRecoverDowntimeEventRequest(
-                    "DTE-000007", "org", "env", new DateTimeOffset(2026, 7, 31, 9, 0, 0, TimeSpan.Zero), "idem-recover"),
+                    "DTE-000007", "org", "env", new DateTimeOffset(2026, 7, 31, 9, 0, 0, TimeSpan.Zero)),
                 CancellationToken.None));
 
     [Fact]
@@ -206,7 +206,7 @@ public sealed class BusinessMesAcceptedReceiptClientTests
             client => client.AcceptShiftHandoverAsync(
                 "token",
                 "SH-000012",
-                new BusinessConsoleMesAcceptShiftHandoverForwardRequest("org", "env", "idem-accept", "user-admin", "李四"),
+                new BusinessConsoleMesAcceptShiftHandoverForwardRequest("org", "env", "user-admin", "李四"),
                 CancellationToken.None));
 
     [Fact]

@@ -72,6 +72,13 @@ else
     builder.Services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
 }
 builder.Services.AddNotificationPersistence(builder.Configuration, persistence.PostgreSqlConnectionStringName);
+// 摘要上界从 EF 模型现读并取全部承载列的最小值；全仓只有这一处派生，调用方不出现列宽字面量。
+builder.Services.AddSingleton(serviceProvider =>
+{
+    using var modelScope = serviceProvider.CreateScope();
+    return NotificationSummaryBudget.FromModel(
+        modelScope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Model);
+});
 builder.Services.Configure<NotificationDeliveryOptions>(
     builder.Configuration.GetSection("Notification:Delivery"));
 builder.Services.Configure<NotificationDeadLetterAlertOptions>(

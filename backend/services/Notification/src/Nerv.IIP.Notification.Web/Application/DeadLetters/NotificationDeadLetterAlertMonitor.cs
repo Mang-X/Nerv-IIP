@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Notification.Web.Application.Commands.Notifications;
+using Nerv.IIP.Notification.Web.Application.Notifications;
 
 namespace Nerv.IIP.Notification.Web.Application.DeadLetters;
 
@@ -28,6 +29,7 @@ public sealed class NotificationDeadLetterAlertMonitor(
     IIntegrationEventDeadLetterStore deadLetterStore,
     IMediator mediator,
     IOptions<NotificationDeadLetterAlertOptions> options,
+    NotificationSummaryBudget summaryBudget,
     ILogger<NotificationDeadLetterAlertMonitor> logger)
 {
     public async Task<NotificationDeadLetterAlertResult> CheckOnceAsync(
@@ -43,21 +45,23 @@ public sealed class NotificationDeadLetterAlertMonitor(
 
         var windowStart = TruncateToWindow(now, currentOptions.DedupeWindow);
         var dedupeKey = $"notification-dlq-backlog:{currentOptions.OrganizationId}:{currentOptions.EnvironmentId}:{currentOptions.Threshold}:{windowStart:yyyyMMddHHmm}";
+        var request = new SubmitNotificationIntentRequest(
+            SourceService: "notification",
+            SourceEventType: "notification.DeadLetterBacklogThresholdExceeded",
+            SourceEventId: dedupeKey,
+            IntentType: NotificationContractConstants.IntentTypeTask,
+            Severity: NotificationContractConstants.SeverityCritical,
+            DedupeKey: dedupeKey,
+            Resource: new NotificationResourceRef("notification-dead-letter-backlog", "notification-dlq", null),
+            Title: "Notification DLQ backlog threshold exceeded",
+            Summary: $"Notification DLQ actionable backlog is {metrics.ActionableCount}, threshold is {currentOptions.Threshold}. Pending={metrics.PendingCount}, Failed={metrics.FailedCount}.",
+            SuggestedRecipientRefs: currentOptions.RecipientRefs.Where(IsNonEmpty).Select(x => x.Trim()).Distinct(StringComparer.Ordinal).ToArray());
         var response = await mediator.Send(
             new SubmitNotificationIntentCommand(
                 currentOptions.OrganizationId!,
                 currentOptions.EnvironmentId!,
-                new SubmitNotificationIntentRequest(
-                    SourceService: "notification",
-                    SourceEventType: "notification.DeadLetterBacklogThresholdExceeded",
-                    SourceEventId: dedupeKey,
-                    IntentType: NotificationContractConstants.IntentTypeTask,
-                    Severity: NotificationContractConstants.SeverityCritical,
-                    DedupeKey: dedupeKey,
-                    Resource: new NotificationResourceRef("notification-dead-letter-backlog", "notification-dlq", null),
-                    Title: "Notification DLQ backlog threshold exceeded",
-                    Summary: $"Notification DLQ actionable backlog is {metrics.ActionableCount}, threshold is {currentOptions.Threshold}. Pending={metrics.PendingCount}, Failed={metrics.FailedCount}.",
-                    SuggestedRecipientRefs: currentOptions.RecipientRefs.Where(IsNonEmpty).Select(x => x.Trim()).Distinct(StringComparer.Ordinal).ToArray()),
+                request,
+                NotificationSummary.Render(request.Summary, summaryBudget),
                 now),
             cancellationToken);
 

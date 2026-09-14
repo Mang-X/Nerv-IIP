@@ -5,6 +5,7 @@ using NetCorePal.Extensions.Repository.EntityFrameworkCore;
 using Nerv.IIP.Business.BarcodeLabel.Domain;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelSerialCounterAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.ScanRecordAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.TraceabilityAggregate;
@@ -91,7 +92,10 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
 
     public DbSet<LabelPrintItem> LabelPrintItems => Set<LabelPrintItem>();
 
+    public DbSet<LabelSerialCounter> LabelSerialCounters => Set<LabelSerialCounter>();
+
     public DbSet<TemplateAssetRetirementDecision> TemplateAssetRetirementDecisions => Set<TemplateAssetRetirementDecision>();
+    public DbSet<TemplateAssetRetirementReplayFence> TemplateAssetRetirementReplayFences => Set<TemplateAssetRetirementReplayFence>();
 
     public DbSet<ScanRecord> ScanRecords => Set<ScanRecord>();
 

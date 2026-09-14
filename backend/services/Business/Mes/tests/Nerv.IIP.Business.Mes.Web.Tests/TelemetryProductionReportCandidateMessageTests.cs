@@ -88,7 +88,7 @@ public sealed class TelemetryProductionReportCandidateMessageTests
         public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
         {
             Command = Assert.IsType<RecordProductionReportCommand>(request);
-            return Task.FromResult((TResponse)(object)new ProductionReportCommandResult(new ProductionReportId(Guid.CreateVersion7()), "PRPT-TELEMETRY-001"));
+            return Task.FromResult((TResponse)(object)new ProductionReportCommandResult(new ProductionReportId(Guid.CreateVersion7()), "PRPT-TELEMETRY-001", []));
         }
 
         public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default) where TRequest : IRequest => throw new NotSupportedException();

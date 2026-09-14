@@ -248,9 +248,16 @@ public static class FirstArticleInspection
     public const decimal SampleQuantity = 1m;
 
     /// <summary>
-    /// 首件检验记录的来源单据身份。<c>InspectionRecord</c> 没有来源行字段，其唯一键
-    /// <c>ux_inspection_records_source_attempt</c> 也不含工序，所以首件必须把工序编进来源单据身份里；
-    /// 否则同一工单同一 SKU 的两道工序会共用一条检验记录——后判定的那道工序会静默复用前一道的结论。
+    /// 首件检验记录的来源单据身份。
+    ///
+    /// <para><b>它已不再是工序维度的承载者。</b>#3319 给 <c>InspectionRecord</c> 加了
+    /// <c>source_document_line_id</c> 并把它放进 <c>ux_inspection_records_source_attempt</c>，
+    /// 首件的工序身份现在与其它来源一样由来源行那一列承担（首件任务的来源行就是工序任务 id）。
+    /// 这串复合身份因此是**冗余**的：拆掉它，同一工单两道工序也不会再共用一条检验记录。</para>
+    ///
+    /// <para>本次仍保留它，是因为拆掉它会改写已落库并已随集成事件发布出去的首件来源身份
+    /// （NCR 原样复制、MES 保留上下文按它定位），那是 #2989 的标的，不在 #3319 的射程内。
+    /// 换言之：保留原因是存量兼容，不是唯一键还需要它。</para>
     /// </summary>
     public static string SourceDocumentId(string workOrderId, string operationId) =>
         $"{workOrderId}:{operationId}";

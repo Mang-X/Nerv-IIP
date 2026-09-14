@@ -156,9 +156,15 @@ public sealed class MesQualityHoldSourceDocumentIdLengthContractTests
         var overBound = validator.Validate(
             ForceReleaseCommand(new string('a', MesQualityHoldSourceDocumentIdPolicy.ColumnMaxLength + 1)));
         Assert.False(overBound.IsValid, "超出承载列宽那一位必须拒绝。");
+        // PropertyName 用 OrdinalIgnoreCase 比对：app.UseFastEndpoints(...) 启动时会把
+        // ValidatorOptions.Global.PropertyNameResolver 换成 camelCase 解析器且不还原，同程序集里只要有
+        // 用例先启动过 host，这里拿到的就是 camelCase 名（#3342）。容忍的只有这一维进程级大小写差异——
+        // 成员名写成别的成员或不存在的名字照样红（#3342 的变异矩阵为此各跑了一格）。
+        // 这几条规则用的是 FluentValidation 默认文案，文案里嵌的正是同一个受解析器影响的展示名，
+        // 所以这里不能像 #3342 其余位点那样改断 ErrorMessage。
         Assert.Contains(
             overBound.Errors,
-            error => string.Equals(error.PropertyName, nameof(ForceReleaseQualityHoldCommand.SourceDocumentId), StringComparison.Ordinal));
+            error => string.Equals(error.PropertyName, nameof(ForceReleaseQualityHoldCommand.SourceDocumentId), StringComparison.OrdinalIgnoreCase));
 
         // 改前上界在新列宽下会把合法的首件/周期检来源身份拒在门外——这条读数说明缺陷不是假想的。
         Assert.True(
@@ -187,9 +193,15 @@ public sealed class MesQualityHoldSourceDocumentIdLengthContractTests
             "豁免面列宽那一位必须放行。");
         var overBound = validator.Validate(ConvertPlanCommand(new string('p', exemptedWidth + 1)));
         Assert.False(overBound.IsValid, "豁免面不得被放宽到受管面的列宽。");
+        // PropertyName 用 OrdinalIgnoreCase 比对：app.UseFastEndpoints(...) 启动时会把
+        // ValidatorOptions.Global.PropertyNameResolver 换成 camelCase 解析器且不还原，同程序集里只要有
+        // 用例先启动过 host，这里拿到的就是 camelCase 名（#3342）。容忍的只有这一维进程级大小写差异——
+        // 成员名写成别的成员或不存在的名字照样红（#3342 的变异矩阵为此各跑了一格）。
+        // 这几条规则用的是 FluentValidation 默认文案，文案里嵌的正是同一个受解析器影响的展示名，
+        // 所以这里不能像 #3342 其余位点那样改断 ErrorMessage。
         Assert.Contains(
             overBound.Errors,
-            error => string.Equals(error.PropertyName, nameof(ConvertPlanToWorkOrderCommand.SourceDocumentId), StringComparison.Ordinal));
+            error => string.Equals(error.PropertyName, nameof(ConvertPlanToWorkOrderCommand.SourceDocumentId), StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>

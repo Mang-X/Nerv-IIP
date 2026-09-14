@@ -7,6 +7,7 @@ using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Notification.Infrastructure;
 using Nerv.IIP.Notification.Web.Application.Commands.Notifications;
+using Nerv.IIP.Notification.Web.Application.Notifications;
 using NetCorePal.Extensions.DistributedTransactions;
 using NetCorePal.Extensions.Primitives;
 
@@ -18,7 +19,8 @@ public sealed class SpcAlertRaisedIntegrationEventHandlerForNotification(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
     IConfiguration configuration,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    NotificationSummaryBudget summaryBudget)
     : IIntegrationEventHandler<SpcAlertRaisedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "notification.quality-spc-alert-raised";
@@ -76,9 +78,9 @@ public sealed class SpcAlertRaisedIntegrationEventHandlerForNotification(
             return;
         }
 
-        var ruleSummary = payload.RuleCodes.Count == 0
-            ? "SPC rule violation"
-            : string.Join(", ", payload.RuleCodes);
+        // 同质枚举集合（规则码）：先截项、后由 Render 整体夹紧。
+        // 截字符会产出不存在的规则码，收件人拿它去查会查不到或查错；截项只丢「有多少」并由计数提示补回。
+        var ruleSummary = NotificationSummaryList.Describe(payload.RuleCodes, "SPC rule violation");
         var request = new SubmitNotificationIntentRequest(
             SourceService: integrationEvent.SourceService,
             SourceEventType: integrationEvent.EventType,
@@ -93,7 +95,7 @@ public sealed class SpcAlertRaisedIntegrationEventHandlerForNotification(
                 : $"{payload.Summary} Rules: {ruleSummary}.",
             SuggestedRecipientRefs: GetRecipientRefs(configuration));
 
-        await sender.Send(new SubmitNotificationIntentCommand(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, request, timeProvider.GetUtcNow()), cancellationToken);
+        await sender.Send(new SubmitNotificationIntentCommand(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, request, NotificationSummary.Render(request.Summary, summaryBudget), timeProvider.GetUtcNow()), cancellationToken);
     }
 
     private static string NormalizeSeverity(string severity)

@@ -30,7 +30,7 @@ public sealed class PromoteTelemetryProductionReportCandidateCommandHandler(Appl
         {
             var productionReportId = new ProductionReportId(Guid.Parse(candidate.ProductionReportId));
             var existing = await dbContext.ProductionReports.SingleAsync(x => x.Id == productionReportId, cancellationToken);
-            return new ProductionReportCommandResult(existing.Id, existing.ReportNo);
+            return new ProductionReportCommandResult(existing.Id, existing.ReportNo, []);
         }
 
         // RecordProductionReportCommand owns its transaction. If candidate confirmation is interrupted,

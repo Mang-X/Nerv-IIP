@@ -119,4 +119,4 @@ Nerv-IIP/
 - 长期决策及理由：[`docs/adr/`](docs/adr/)。
 - 历史时点记录：[`docs/status/archive/`](docs/status/archive/)；历史快照不构成当前实现或交付裁决。
 
-旧路径 [`docs/architecture/implementation-readiness.md`](docs/architecture/implementation-readiness.md) 仅保留兼容导航，不再承载项目状态或全局事实。
+已退役状态入口的历史从 [`docs/status/archive/README.md`](docs/status/archive/README.md) 与 Git 追溯；当前状态只使用上方现态入口。

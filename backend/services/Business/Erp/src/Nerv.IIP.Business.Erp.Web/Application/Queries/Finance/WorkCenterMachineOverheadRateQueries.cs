@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkCenterMachineOverheadRateAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountingPeriodAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 
@@ -42,7 +43,7 @@ public sealed record ListWorkCenterMachineOverheadRatesResponse(
 public sealed record WorkCenterMachineOverheadRateListItem(
     string WorkCenterMachineOverheadRateId,
     string AccountingPeriodCode,
-    string Applicability,
+    MachineOverheadApplicability Applicability,
     decimal FixedOverheadBudget,
     decimal VariableOverheadBudget,
     decimal NormalCapacityMachineHours,
@@ -81,7 +82,7 @@ public sealed class ListWorkCenterMachineOverheadRatesQueryHandler(ApplicationDb
             .Select(x => new WorkCenterMachineOverheadRateListItem(
                 x.Id.ToString(),
                 x.AccountingPeriodCode,
-                x.Applicability.ToString(),
+                x.Applicability,
                 x.FixedOverheadBudget,
                 x.VariableOverheadBudget,
                 x.NormalCapacityMachineHours,

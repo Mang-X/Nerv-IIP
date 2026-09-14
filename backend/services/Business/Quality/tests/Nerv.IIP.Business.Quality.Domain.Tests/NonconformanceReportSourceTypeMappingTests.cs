@@ -146,6 +146,7 @@ public sealed class NonconformanceReportSourceTypeMappingTests
             inspectionSourceType,
             QualityInspectionSourceServices.Maintenance,
             "SRC-001",
+            sourceDocumentLineId: null,
             "SKU-RM-1000",
             4m,
             "LOT-001",

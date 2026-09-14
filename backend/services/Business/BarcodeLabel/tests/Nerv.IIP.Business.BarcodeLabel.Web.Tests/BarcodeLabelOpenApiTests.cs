@@ -68,6 +68,12 @@ public sealed class BarcodeLabelOpenApiTests
         using var document = JsonDocument.Parse(await client.GetStringAsync("/swagger/v1/swagger.json"));
         AssertScopedLifecycleOperation(
             document.RootElement,
+            "/api/business/internal/v1/barcodes/print-batches/{printBatchId}/activate",
+            "activateBusinessBarcodePrintBatch",
+            ["printBatchId"],
+            ["productionReportId", "productionReportNo"]);
+        AssertScopedLifecycleOperation(
+            document.RootElement,
             "/api/business/internal/v1/barcodes/print-batches/{printBatchId}/dispatch",
             "dispatchScopedBusinessBarcodePrintBatch",
             ["printBatchId"],
@@ -84,6 +90,84 @@ public sealed class BarcodeLabelOpenApiTests
             "voidScopedBusinessBarcodeLabel",
             ["printBatchId", "sequenceNo"],
             ["printBatchId", "sequenceNo", "reason"]);
+    }
+
+    [Fact]
+    public async Task OpenApi_document_exposes_scoped_v2_print_batch_detail()
+    {
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Testing");
+                builder.ConfigureAppConfiguration((_, configuration) =>
+                    configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["ConnectionStrings:PostgreSQL"] = "Host=unused;Database=nerv_iip_barcode_scoped_detail_openapi;Username=nerv;Password=nerv",
+                        ["InternalService:BearerToken"] = "barcode-label-scoped-detail-openapi-test-token",
+                    }));
+            });
+        using var client = factory.CreateClient();
+
+        using var document = JsonDocument.Parse(await client.GetStringAsync("/swagger/v1/swagger.json"));
+        var operation = document.RootElement
+            .GetProperty("paths")
+            .GetProperty("/api/business/v2/barcodes/print-batches/{printBatchId}")
+            .GetProperty("get");
+
+        Assert.Equal("getScopedBusinessBarcodePrintBatch", operation.GetProperty("operationId").GetString());
+        var parameters = operation.GetProperty("parameters").EnumerateArray().ToArray();
+        foreach (var parameterName in new[] { "printBatchId", "organizationId", "environmentId" })
+        {
+            var parameter = Assert.Single(parameters, item => item.GetProperty("name").GetString() == parameterName);
+            Assert.True(parameter.GetProperty("required").GetBoolean());
+        }
+
+        var schemas = document.RootElement.GetProperty("components").GetProperty("schemas");
+        var createRequest = Assert.Single(
+            schemas.EnumerateObject(),
+            schema => schema.Name.EndsWith("CreateLabelPrintBatchRequest", StringComparison.Ordinal));
+        Assert.True(
+            createRequest.Value.GetProperty("properties").TryGetProperty("reportIntentFingerprint", out var createFingerprint),
+            createRequest.Value.GetRawText());
+        Assert.Equal(1, createFingerprint.GetProperty("minLength").GetInt32());
+        Assert.Equal(256, createFingerprint.GetProperty("maxLength").GetInt32());
+        if (createRequest.Value.TryGetProperty("required", out var createRequired))
+        {
+            Assert.DoesNotContain(
+                "reportIntentFingerprint",
+                createRequired.EnumerateArray().Select(item => item.GetString()));
+        }
+
+        var scopedDetail = Assert.Single(
+            schemas.EnumerateObject(),
+            schema => schema.Name.EndsWith("ScopedLabelPrintBatchDetail", StringComparison.Ordinal));
+        Assert.True(
+            scopedDetail.Value.GetProperty("properties").TryGetProperty("reportIntentFingerprint", out var scopedFingerprint),
+            scopedDetail.Value.GetRawText());
+        Assert.True(
+            scopedFingerprint.TryGetProperty("nullable", out var nullable) && nullable.GetBoolean(),
+            scopedFingerprint.GetRawText());
+        Assert.Contains(
+            "reportIntentFingerprint",
+            scopedDetail.Value.GetProperty("required").EnumerateArray().Select(item => item.GetString()));
+
+        var byIdempotencyKey = document.RootElement
+            .GetProperty("paths")
+            .GetProperty("/api/business/v2/barcodes/print-batches/by-idempotency-key")
+            .GetProperty("get");
+        Assert.Equal(
+            "getScopedBusinessBarcodePrintBatchByIdempotencyKey",
+            byIdempotencyKey.GetProperty("operationId").GetString());
+        var byKeyParameters = byIdempotencyKey.GetProperty("parameters").EnumerateArray().ToArray();
+        Assert.Equal(
+            new string?[] { "organizationId", "environmentId", "idempotencyKey" },
+            byKeyParameters.Select(parameter => parameter.GetProperty("name").GetString()).ToArray());
+        Assert.All(byKeyParameters, parameter => Assert.True(parameter.GetProperty("required").GetBoolean()));
+
+        var legacyPaths = document.RootElement.GetProperty("paths");
+        Assert.False(legacyPaths.TryGetProperty(
+            "/api/business/v1/barcodes/print-batches/by-idempotency-key",
+            out _));
     }
 
     private static void AssertScopedLifecycleOperation(

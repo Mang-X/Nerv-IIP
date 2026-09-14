@@ -158,7 +158,8 @@ internal static class PeriodicInspectionReleaseProjection
                             continue;
                         }
 
-                        // 重建值先与既有权威事实对齐：不一致时以权威事实为准，被顶掉的属性留痕。
+                        // 重建值先与既有权威事实对齐：工序号与工作中心不一致时以权威事实为准、被顶掉的属性留痕；
+                        // SKU 自 #3286 起不在对齐范围内，不一致直接落到下面 ApplyRelease 的冲突语义。
                         var facts = authority == ReleaseFactAuthority.ReconstructedLowerBound
                             ? operation.ResolveReconstructedReleaseFacts(
                                 payload.SkuCode,
@@ -170,9 +171,11 @@ internal static class PeriodicInspectionReleaseProjection
                                 operationPayload.WorkCenterId.Trim(),
                                 []);
 
-                        // 巡检档按**校正后**的 SKU 与工作中心筛。档是按载荷 SKU 查出来的，
-                        // 因此让位到别的 SKU 时这里筛不出档、该工序不建周期运行上下文——
-                        // 拿载荷 SKU 的档去配一条声明着另一个 SKU 的上下文才是真错。
+                        // 巡检档按**校正后**的工作中心筛：让位到别的工作中心时，
+                        // 拿载荷工作中心的档去配一条声明着另一个工作中心的上下文才是真错。
+                        // SKU 那一半自 #3286 起**恒真**——两条分支的 facts.SkuCode 都等于载荷 SKU，
+                        // 而 plans 本就是按载荷 SKU 查出来的。留着它是为了让这行跟着 facts 走而不是跟着载荷走，
+                        // **它现在没有鉴别力**，别把它当 SKU 面的防线读。
                         var snapshots = plans
                             .Where(plan => plan.SkuCode == facts.SkuCode && plan.WorkCenterId == facts.WorkCenterId)
                             .OrderBy(plan => plan.PlanCode, StringComparer.Ordinal)
@@ -189,22 +192,44 @@ internal static class PeriodicInspectionReleaseProjection
                                 payload.ReleasedAtUtc.UtcDateTime,
                                 snapshots);
 
-                            // **本分支不做「跳过下达前已累计窗口」——该行为已拆出 #3129，本票不实现。**
-                            // owner 裁定「下达之前已产出的数量不补开巡检任务」曾在本票内落地过一版，
-                            // 后按归因回退：判断所需的事实（哪些产量发生在**下达动作**之前、且按**工序**分辨）
-                            // 只存在于 MES 侧，`mes.WorkOrderReleased` 只带一个**工单级** ReleasedAtUtc，
-                            // Quality 只能推断，于是在「多工序」与「发布先于报工到达」两种形态下失效。
-                            // **落点错了，不是判别式写窄了**——详见 #3129。当前行为与 main 一致。
+                            // owner 裁定「下达之前已产出的数量不补开巡检任务」在本分支生效（#3129）。
+                            // 依据**只能**是 MES 随发布事实带来的工序级事实，不是本地推断：
+                            // #3117 曾在这里落过一版用本地报工集合算的判别式，它配了双向探针、
+                            // 两个方向都被钉住，随后仍被证明整体落点错误——在「多工序」与
+                            // 「发布事件先于报工事件到达」两种形态下堵一次漏一次。
+                            // **一处守卫可以在自己的位置上被完整钉住，同时整体处在错误的位置上。**
+                            // 现在判断所需的事实由生产者在下达那一刻算好随载荷发来，这里只负责应用它。
                             //
-                            // **与回填分支形状不同不是「忘了对齐」，别顺手补上跳过：**
+                            // **null 是一个明确的、已知的不生效面，不是「安全默认值」：**
+                            // 本次发布之前入队、此刻仍在在途队列或 DLQ 里的旧 mes.WorkOrderReleased 不带该字段，
+                            // 它们照**老行为**处理——不跳过，下达前的产量仍会被补开成巡检任务，
+                            // 与本次改动之前的 main 逐字相同，不引入相对 main 的回归。
+                            // 那批消息被消费干净、DLQ 同批旧消息被重投或清理之后，该不生效面自然消失，
+                            // 不需要后续代码改动来收口。完整论证见
+                            // ReleasedOperationPayload.PreReleaseGoodQuantity 的注释。
+                            //
+                            // **与回填分支形状不同不是「忘了对齐」，别把那边的无条件跳过复制过来：**
                             // 回填分支的 SkipPeriodicWindowsAccruedBefore 锚在 integrationEvent.OccurredAtUtc
-                            // （= GetUtcNow()），即无条件把到「现在」为止的累计记为已生成，这是 #3000 的既有取舍；
-                            // 直投分支没有一个等价的锚可用（发布事实时刻是被夹紧过的工单级标量）。
-                            // 这是**锚点差异**，把回填那种无条件跳过复制过来会打掉一类合法输入——
+                            // （= GetUtcNow()），把到「现在」为止的累计**全部**记为已生成，这是 #3000 的既有取舍；
+                            // 本分支跳过的是 MES 点名的「下达动作之前那一部分」，锚点与口径都不同：
+                            // 回填那半按 Quality **本地**水位在回填时刻取，本分支按 MES 在下达动作那一刻的
+                            // **自有事实**取。**两个数没有恒定的大小关系**（报工滞后时本分支可以更大，
+                            // 实测见 WorkOrderReleaseProjectionBackfillConsumerTests
+                            // .Live_release_may_carry_more_pre_release_quantity_than_the_backfill_had_already_skipped），
+                            // 因此域侧那一步只进不退。
+                            // 复制过来会打掉一类合法输入——
                             // `PeriodicInspectionIntegrationEventTests.Report_before_release_backfills_quantity_windows_from_the_frozen_context`
-                            // 钉的就是那类：报工时刻晚于发布时刻，产量是下达之后真实累积的，窗口本就该开。
+                            // 钉的就是那类：报工时刻晚于发布时刻，产量是下达之后真实累积的，窗口本就该开
+                            // （该场景下 MES 算出的 PreReleaseGoodQuantity 恰为 0，本行因此不跳过）。
                             // **改这一处之前先确认该用例仍绿。**
                             //
+                            // 只动数量一维：时间型巡检开不开与「下达前后」没有业务关系，见
+                            // PeriodicInspectionOperation.SkipQuantityWindowsAccruedBeforeRelease 的注释。
+                            if (operationPayload.PreReleaseGoodQuantity is { } preReleaseGoodQuantity)
+                            {
+                                operation.SkipQuantityWindowsAccruedBeforeRelease(preReleaseGoodQuantity);
+                            }
+
                             PeriodicInspectionQuantityTaskGeneration.AddDueTasks(
                                 dbContext,
                                 operation.RuntimeContexts,

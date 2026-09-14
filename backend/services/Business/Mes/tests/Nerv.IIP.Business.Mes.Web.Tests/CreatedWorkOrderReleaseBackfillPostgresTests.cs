@@ -11,8 +11,11 @@ using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using Nerv.IIP.Business.Mes.Domain;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Domain.DomainEvents;
+using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Mes.Web.Application.Remediation;
 using Nerv.IIP.Contracts.Mes;
 
@@ -173,6 +176,43 @@ public sealed class CreatedWorkOrderReleaseBackfillPostgresTests
 
     private const string InternalToken = "test-internal-token-3119";
 
+    /// <summary>
+    /// #3129：补下达载荷的工序级「下达前既有净良品量」由**真实 provider** 分组求和。
+    ///
+    /// <para>这条查询的分组键是四元组 <c>(org, env, workOrderId, operationTaskId)</c>、
+    /// 求和是 <c>SUM(CASE WHEN reversed_report_no IS NULL THEN good_quantity ELSE 0 END)</c>。
+    /// EF Core InMemory 不翻译，分错组或翻不出条件求和都会被客户端求值兜住照绿；
+    /// 只有真实 PostgreSQL 能证明它翻得出来、且翻对了组。</para>
+    /// </summary>
+    [MesRealPostgresFact(Timeout = 60_000)]
+    public async Task Backfilled_release_carries_each_operations_pre_release_good_quantity_on_postgres()
+    {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await using var dbContext = new ApplicationDbContext(MesPostgresLaneDatabase.CreateOptions(), new NoopMediator());
+        MesPostgresLaneDatabase.AssertUsesGovernedDatabase(dbContext);
+        await dbContext.Database.MigrateAsync();
+
+        AddWorkOrder(dbContext, "WO-PG-3129-QTY", OperationTaskLifecycleStatus.InProgress, additionalOperationSequences: [20]);
+        // 两道工序的产量有意不相等（250 / 100）：相等时「按工序分组」与「把工单总量发给每道工序」
+        // 给出同一组读数，这一格就没有鉴别力。
+        AddReport(dbContext, "WO-PG-3129-QTY", 10, "RPT-PG-3129-10-A", 150m, Now.AddDays(-3));
+        AddReport(dbContext, "WO-PG-3129-QTY", 10, "RPT-PG-3129-10-B", 100m, Now.AddDays(-2));
+        AddReport(dbContext, "WO-PG-3129-QTY", 20, "RPT-PG-3129-20-A", 100m, Now.AddDays(-1));
+        AddWorkOrder(dbContext, "WO-PG-3129-OTHER", OperationTaskLifecycleStatus.InProgress);
+        AddReport(dbContext, "WO-PG-3129-OTHER", 10, "RPT-PG-3129-OTHER", 999m, Now.AddDays(-1));
+        await dbContext.SaveChangesAsync();
+
+        await Backfill(dbContext);
+
+        var workOrder = dbContext.WorkOrders.Local.Single(x => x.WorkOrderIdValue == "WO-PG-3129-QTY");
+        var integrationEvent = new WorkOrderReleasedIntegrationEventConverter().Convert(
+            Assert.IsType<WorkOrderReleasedDomainEvent>(
+                Assert.Single(workOrder.GetDomainEvents(), x => x is WorkOrderReleasedDomainEvent)));
+        Assert.Equal(
+            [("OP-WO-PG-3129-QTY-10", 250m), ("OP-WO-PG-3129-QTY-20", 100m)],
+            integrationEvent.Payload.Operations.Select(x => (x.OperationId, x.PreReleaseGoodQuantity)));
+    }
+
     private static WebApplicationFactory<Program> CreateFactory()
     {
         var settings = new Dictionary<string, string?>
@@ -249,7 +289,8 @@ public sealed class CreatedWorkOrderReleaseBackfillPostgresTests
         ApplicationDbContext dbContext,
         string workOrderId,
         OperationTaskLifecycleStatus operationStatus,
-        bool release = false)
+        bool release = false,
+        IReadOnlyCollection<int>? additionalOperationSequences = null)
     {
         var workOrder = WorkOrder.Create(
             Organization, Environment, workOrderId, "SKU-FG-1000", "PV-FG-1000",
@@ -261,11 +302,25 @@ public sealed class CreatedWorkOrderReleaseBackfillPostgresTests
 
         workOrder.ClearDomainEvents();
         dbContext.WorkOrders.Add(workOrder);
-        dbContext.OperationTasks.Add(OperationTask.Create(
-            Organization, Environment, workOrderId, $"OP-{workOrderId}-10",
-            operationStatus, 10, "WC-010", [],
-            Now.AddDays(-2), TimeSpan.FromHours(1), null, null, "SKU-FG-1000", "EA", 1000m));
+        foreach (var sequence in new[] { 10 }.Concat(additionalOperationSequences ?? []))
+        {
+            dbContext.OperationTasks.Add(OperationTask.Create(
+                Organization, Environment, workOrderId, $"OP-{workOrderId}-{sequence}",
+                operationStatus, sequence, $"WC-{sequence:D3}", [],
+                Now.AddDays(-2), TimeSpan.FromHours(1), null, null, "SKU-FG-1000", "EA", 1000m));
+        }
     }
+
+    private static void AddReport(
+        ApplicationDbContext dbContext,
+        string workOrderId,
+        int operationSequence,
+        string reportNo,
+        decimal goodQuantity,
+        DateTimeOffset reportedAtUtc) =>
+        dbContext.ProductionReports.Add(ProductionReport.Record(
+            Organization, Environment, reportNo, workOrderId, $"OP-{workOrderId}-{operationSequence}",
+            goodQuantity: goodQuantity, scrapQuantity: 0m, completesOperation: false, reportedAtUtc: reportedAtUtc));
 
     private sealed class NoopMediator : IMediator
     {

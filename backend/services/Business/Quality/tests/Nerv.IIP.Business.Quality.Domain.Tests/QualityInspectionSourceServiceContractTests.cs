@@ -87,6 +87,7 @@ public sealed class QualityInspectionSourceServiceContractTests
             QualityInspectionSourceTypes.Operation,
             sourceService,
             "WO-001",
+            sourceDocumentLineId: null,
             "SKU-RM-1000",
             10m,
             null,

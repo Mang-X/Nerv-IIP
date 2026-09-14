@@ -622,6 +622,12 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnName("source_document_id")
                         .HasComment("Source document or operation public id, or the composite first-article source identity '{workOrderId}:{operationTaskId}' produced by FirstArticleInspection.SourceDocumentId.");
 
+                    b.Property<string>("SourceDocumentLineId")
+                        .HasMaxLength(250)
+                        .HasColumnType("character varying(250)")
+                        .HasColumnName("source_document_line_id")
+                        .HasComment("Optional source document line, operation task id or stable periodic-operation window identity copied from the inspection task; null for directly recorded inspections without a source line.");
+
                     b.Property<string>("SourceQualityStatus")
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)")
@@ -640,7 +646,7 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)")
                         .HasColumnName("source_type")
-                        .HasComment("Inspection source type: receiving, operation, final, maintenance or customer-return.");
+                        .HasComment("Inspection source type; value domain is QualityInspectionSourceTypes.");
 
                     b.Property<string>("UomCode")
                         .HasMaxLength(50)
@@ -668,9 +674,11 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "SourceType", "Result");
 
-                    b.HasIndex("OrganizationId", "EnvironmentId", "SourceType", "SourceService", "SourceDocumentId", "SkuCode", "AttemptNumber")
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SourceType", "SourceService", "SourceDocumentId", "SourceDocumentLineId", "SkuCode", "AttemptNumber")
                         .IsUnique()
                         .HasDatabaseName("ux_inspection_records_source_attempt");
+
+                    NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("OrganizationId", "EnvironmentId", "SourceType", "SourceService", "SourceDocumentId", "SourceDocumentLineId", "SkuCode", "AttemptNumber"), false);
 
                     b.ToTable("inspection_records", "quality", t =>
                         {
@@ -882,10 +890,10 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
 
                     b.Property<string>("TriggerIdempotencyKey")
                         .IsRequired()
-                        .HasMaxLength(300)
-                        .HasColumnType("character varying(300)")
+                        .HasMaxLength(474)
+                        .HasColumnType("character varying(474)")
                         .HasColumnName("trigger_idempotency_key")
-                        .HasComment("Idempotency key derived from the source event and source line.");
+                        .HasComment("Idempotency key derived from the source event and source line; upper bound governed by InspectionTaskTriggerKey.MaxLength.");
 
                     b.Property<string>("UomCode")
                         .IsRequired()

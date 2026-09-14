@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using FastEndpoints;
+using NJsonSchema.Annotations;
 using Nerv.IIP.Contracts.Coding;
 using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.Iam;
@@ -4386,7 +4387,8 @@ public sealed record BusinessConsoleCreateBarcodePrintBatchRequest(
     string SourceDocumentId,
     string IdempotencyKey,
     string LabelValuesJson,
-    int RequestedQuantity);
+    int RequestedQuantity,
+    [property: MinLength(1), MaxLength(256), JsonSchemaExtensionData("minLength", 1)] string? ReportIntentFingerprint = null);
 
 public sealed record BusinessConsoleCreateBarcodePrintBatchResponse(string PrintBatchId);
 
@@ -4427,14 +4429,27 @@ public sealed record BusinessConsoleBarcodePrintBatchDetail(
     string SourceDocumentType,
     string SourceDocumentId,
     string IdempotencyKey,
+    string ReportIntentKey,
+    [property: Required, JsonRequired, JsonSchemaExtensionData("nullable", true)] string? ReportIntentFingerprint,
     int RequestedQuantity,
     string Status,
+    string? PrinterId,
+    string? PrintJobId,
+    string? FailureReason,
+    string? ProductionReportId,
+    string? ProductionReportNo,
     IReadOnlyCollection<BusinessConsoleBarcodePrintItemDetail> Items);
 
 public sealed record BusinessConsoleBarcodePrintItemDetail(
     int SequenceNo,
     string LabelValue,
-    string? FileId);
+    string? FileId,
+    string Status,
+    string? VoidReason,
+    string? SerialNumber,
+    string? LotNo,
+    string? Gtin,
+    string? EpcUri);
 
 public sealed record BusinessConsoleRecordBarcodeScanRequest(
     string OrganizationId,
@@ -4806,7 +4821,10 @@ public sealed record BusinessConsoleRecordProductionReportRequest(
     string? ScrapReasonCode = null,
     string? DefectRecordNo = null,
     string? ProducedLotNo = null,
-    string? SerialNo = null);
+    string? SerialNo = null,
+    string SerialTrackingPolicy = "none",
+    IReadOnlyCollection<string>? SerialNumbers = null,
+    string? LabelTemplateId = null);
 
 public sealed record BusinessConsoleConsumedMaterialLotInput(
     string MaterialId,
@@ -4817,7 +4835,11 @@ public sealed record BusinessConsoleConsumedMaterialLotInput(
 public sealed record BusinessConsoleRecordProductionReportResponse(
     string ProductionReportId,
     string ReportNo,
-    BusinessConsoleOperationReceipt? OperationReceipt = null);
+    IReadOnlyCollection<string> SerialNumbers,
+    BusinessConsoleOperationReceipt? OperationReceipt = null,
+    string? PrintBatchId = null,
+    string? PrintStatus = null,
+    bool PrintingPreparationPending = false);
 
 public sealed record BusinessConsoleMesContextRequest(
     string OrganizationId,
@@ -4961,7 +4983,6 @@ public sealed record BusinessConsoleMesReleaseWorkOrderRequest(
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
     bool ConfirmWarnings,
-    string IdempotencyKey,
     [property: QueryParam] string? ScopeKind = null,
     [property: QueryParam] string? ScopeId = null);
 
@@ -5148,8 +5169,7 @@ public sealed record BusinessConsoleMesConfirmLineSideReceiptRequest(
     [property: QueryParam] string EnvironmentId,
     string? MaterialLotId,
     decimal? ReceivedQuantity,
-    IReadOnlyCollection<string>? EvidenceFileIds,
-    string IdempotencyKey);
+    IReadOnlyCollection<string>? EvidenceFileIds);
 
 public sealed record BusinessConsoleMesReturnLineSideMaterialRequest(
     [property: RouteParam] string RequestId,
@@ -5198,7 +5218,6 @@ public sealed record BusinessConsoleMesAssignDispatchTaskForwardRequest(
     string? AssignedUserName,
     string? DeviceAssetId,
     string? ShiftId,
-    string IdempotencyKey,
     string? TeamId = null,
     string? TeamName = null,
     IReadOnlyCollection<BusinessConsoleMesDispatchParticipantForwardInput>? Participants = null);
@@ -5210,7 +5229,6 @@ public sealed record BusinessConsoleMesAssignDispatchTaskRequest(
     string? AssignedUserId,
     string? DeviceAssetId,
     string? ShiftId,
-    string IdempotencyKey,
     IReadOnlyCollection<BusinessConsoleMesDispatchParticipantRequest>? Participants = null);
 
 public sealed record BusinessConsoleMesClaimOperationTaskRequest(
@@ -5346,7 +5364,8 @@ public sealed record BusinessConsoleMesProductionReportDetail(
     [property: Description("对应工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
     decimal? OperationActualMachineHours = null,
     [property: Description("提交本条报工的操作人引用；升级前的历史报工为 null。")]
-    string? ReportedBy = null);
+    string? ReportedBy = null,
+    IReadOnlyCollection<string>? SerialNumbers = null);
 
 public sealed record BusinessConsoleMesConsumedMaterialLot(
     string MaterialId,
@@ -5401,7 +5420,8 @@ public sealed record BusinessConsoleMesProductionReportRow(
     [property: Description("对应工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
     decimal? OperationActualMachineHours = null,
     [property: Description("提交本条报工的操作人引用；升级前的历史报工为 null。")]
-    string? ReportedBy = null);
+    string? ReportedBy = null,
+    IReadOnlyCollection<string>? SerialNumbers = null);
 
 public sealed record BusinessConsoleMesRecordDefectRequest(
     string OrganizationId,
@@ -5640,8 +5660,7 @@ public sealed record BusinessConsoleMesRecoverDowntimeEventRequest(
     [property: RouteParam] string DowntimeEventId,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
-    DateTimeOffset RecoveredAtUtc,
-    string IdempotencyKey);
+    DateTimeOffset RecoveredAtUtc);
 
 /// <summary>历史规则排程结果列表请求（「规则排程」页的历史读面）。</summary>
 public sealed record BusinessConsoleMesScheduleResultListRequest(
@@ -5781,8 +5800,7 @@ public sealed record BusinessConsoleMesCreateShiftHandoverForwardRequest(
 public sealed record BusinessConsoleMesAcceptShiftHandoverRequest(
     [property: RouteParam] string HandoverId,
     [property: QueryParam] string OrganizationId,
-    [property: QueryParam] string EnvironmentId,
-    string IdempotencyKey);
+    [property: QueryParam] string EnvironmentId);
 
 /// <summary>
 /// 转发给 MES 的接班载荷：接班人身份同样由 Gateway 从认证 principal 注入。
@@ -5790,7 +5808,6 @@ public sealed record BusinessConsoleMesAcceptShiftHandoverRequest(
 public sealed record BusinessConsoleMesAcceptShiftHandoverForwardRequest(
     string OrganizationId,
     string EnvironmentId,
-    string IdempotencyKey,
     string? IncomingUserId,
     string? IncomingUserName);
 

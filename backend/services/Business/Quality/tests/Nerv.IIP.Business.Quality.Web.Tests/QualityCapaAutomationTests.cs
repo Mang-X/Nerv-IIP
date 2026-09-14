@@ -262,6 +262,7 @@ public sealed class QualityCapaAutomationTests
             "receiving",
             "purchase-receipt",
             sourceDocumentId,
+            sourceDocumentLineId: null,
             "SKU-RM-1000",
             10m,
             null,

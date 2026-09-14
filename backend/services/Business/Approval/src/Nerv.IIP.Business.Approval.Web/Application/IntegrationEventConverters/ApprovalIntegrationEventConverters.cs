@@ -1,6 +1,7 @@
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalChainAggregate;
 using Nerv.IIP.Business.Approval.Domain.DomainEvents;
 using Nerv.IIP.Contracts.Approval;
+using Nerv.IIP.Contracts.IntegrationEvents;
 
 namespace Nerv.IIP.Business.Approval.Web.Application.IntegrationEventConverters;
 
@@ -222,5 +223,6 @@ internal static class EventIds
 {
     public static string New() => $"evt-{Guid.CreateVersion7():N}";
 
-    public static string Idempotency(params string[] parts) => $"business-approval:{string.Join(':', parts)}";
+    public static string Idempotency(params string[] parts) =>
+        IntegrationEventIdempotencyKey.ComposeServiceScoped("business-approval:", parts);
 }

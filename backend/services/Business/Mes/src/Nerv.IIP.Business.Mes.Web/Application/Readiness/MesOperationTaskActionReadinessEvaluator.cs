@@ -179,12 +179,12 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
         if (previousOperations.Length > 0)
         {
             blockReasons.Add(
-                $"PREVIOUS_OPERATION_INCOMPLETE: 前序工序尚未完成（{string.Join('、', previousOperations)}）");
+                $"{MesReadinessReasonCodes.PreviousOperationIncomplete}: 前序工序尚未完成（{string.Join('、', previousOperations)}）");
         }
 
         if (!workOrders.TryGetValue(task.WorkOrderId, out var workOrder))
         {
-            blockReasons.Add("WORK_ORDER_NOT_FOUND: 未找到所属生产工单");
+            blockReasons.Add($"{MesReadinessReasonCodes.WorkOrderNotFound}: 未找到所属生产工单");
         }
         else
         {
@@ -203,7 +203,7 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
             // 因此它同样拦得住授权跳站——两个开工入口共用这一处判断，不各写一份。
             if (string.Equals(workOrder.Status, WorkOrder.CreatedStatus, StringComparison.Ordinal))
             {
-                blockReasons.Add(MesReadinessReasonCodes.WorkOrderNotReleasedReason);
+                blockReasons.Add(MesReadinessReasonTexts.WorkOrderNotReleasedReason);
             }
 
             if (string.IsNullOrWhiteSpace(workOrder.ProductionVersionId))

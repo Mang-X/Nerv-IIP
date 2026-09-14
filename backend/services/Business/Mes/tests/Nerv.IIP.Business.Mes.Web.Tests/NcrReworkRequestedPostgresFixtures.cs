@@ -87,7 +87,8 @@ internal static class NcrReworkRequestedPostgresFixtures
         };
         sourceWorkOrder.MarkReleased(
             sourceOperations,
-            WorkOrderReleaseFactTime.NotLaterThan(DateTimeOffset.Parse("2026-08-29T07:20:00Z"), null));
+            WorkOrderReleaseFactTime.NotLaterThan(DateTimeOffset.Parse("2026-08-29T07:20:00Z"), null),
+            new Dictionary<string, decimal>());
         db.WorkOrders.Add(sourceWorkOrder);
         db.OperationTasks.AddRange(sourceOperations);
         db.DefectRecords.Add(DefectRecord.Create(

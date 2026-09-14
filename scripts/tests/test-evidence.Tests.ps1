@@ -1486,11 +1486,23 @@ $liveAssignments = Get-NervSourceSkipAssignments -RepoRoot $repoRoot
 # #2966 注册 MES 停机事件 v2 契约拒收/poison 重放的真实 PostgreSQL + Redis/CAP proof，增至 49。
 # #2968 注册 Maintenance v2 工单入口的目录精确命中/双发同事务/v1 零漂移真实 PostgreSQL proof，增至 50。
 # NERV-2121 注册采购收货路径互斥 Acceptance PostgreSQL proof，source 从 51 增至 52。
-Assert-Equal 52 $liveAssignments.Count '已批准的 source skip 清单变更必须显式分类。'
+# #3305 注册 WCS 回调宽度 proof（failure_message 改无界后，物理列类型与越界 failure_code 的 22001
+# 只有真库分得开，InMemory provider 对两者都无感），增至 53。
+# #3360 注册信封字段长度闸的真库 proof（超界键在真 PostgreSQL 上是 22001 逃逸成 poison 还是落成
+# 可重放死信，只有真库分得开）。⭐ 这一条**不是新增了一次跳过，而是让一次一直存在的跳过第一次变得可见**：
+# 那两条用例原先是裸 [Fact] 加方法体内 return，无库时被**计为通过**，既不产生 Skip 也就不触发本清单；
+# 修掉假通过后登记义务才浮出来。增至 54。
+# #3222 注册「真实 Redis 订阅连接/超时异常接入既有恢复路径」的 PostgreSQL + Redis/CAP proof
+# （真 SubscribeAsync 的 RedisConnectionException / RedisTimeoutException 只有真 Redis 分得开），增至 55。
+Assert-Equal 55 $liveAssignments.Count '已批准的 source skip 清单变更必须显式分类。'
 Assert-True (($liveAssignments | Where-Object sourcePath -like '*SimulatedConnectorHostProcessTests.cs').sourceText.Contains('Windows runs the platform-specific executable resolution contract only', [StringComparison]::Ordinal)) 'Quote-aware scanner must retain semicolons inside a C# string literal.'
 $livePolicy = Import-NervTestEvidencePolicy -Path (Join-Path $repoRoot 'scripts/test-evidence-policy.json')
 $liveViolations = Test-NervTestEvidencePolicy -Policy $livePolicy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)
-Assert-Equal 0 @($liveViolations).Count 'The committed live skip policy must be valid.'
+# #3424：失败消息必须把违例逐条摊开。原先只说「must be valid」，而这条断言恰好是
+# 「只加了 testIdentities、忘了同步 expectedRuntimeTestCount」唯一会报的地方 —— 违例对象里
+# 那句 'Rule must freeze a non-empty unique test identity set and exact expectedRuntimeTestCount.'
+# 已经说清了要改两个字段，却被聚合计数吃掉了，于是本机红了也看不出该动哪一行。
+Assert-Equal 0 @($liveViolations).Count ("The committed live skip policy must be valid; violations: " + (@($liveViolations | ForEach-Object { "$($_.code)/$($_.id): $($_.message)" }) -join ' | '))
 $industrialTelemetryPostgresRules = @($livePolicy.rules | Where-Object { [string]::Equals([string]$_.id, 'industrialtelemetry-postgres', [StringComparison]::Ordinal) })
 Assert-Equal 1 $industrialTelemetryPostgresRules.Count 'The IndustrialTelemetry PostgreSQL proofs must have one evidence policy rule.'
 Assert-Equal 17 @($industrialTelemetryPostgresRules[0].testIdentities).Count 'The IndustrialTelemetry PostgreSQL policy rule must freeze its seventeen governed identities.'
@@ -1534,7 +1546,11 @@ Assert-Equal 2 @($demandPlanningRedisRules[0].testIdentities).Count 'The Redis/C
 $mesMaterialSubstituteIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.MesMaterialSubstituteSnapshotPostgresTests.Substitute_snapshot_migration_and_cross_scope_readback_hold_on_postgres'
 $mesProductionCandidateRules = @($livePolicy.rules | Where-Object { [string]::Equals([string]$_.id, 'mes-production-candidate', [StringComparison]::Ordinal) })
 Assert-Equal 1 $mesProductionCandidateRules.Count 'The MES production candidate PostgreSQL proofs must have one evidence policy rule.'
-Assert-Equal 52 @($mesProductionCandidateRules[0].testIdentities).Count 'The MES production candidate policy rule must freeze its fifty-two governed PostgreSQL identities.'
+Assert-Equal 55 @($mesProductionCandidateRules[0].testIdentities).Count 'The MES production candidate policy rule must freeze its fifty-five governed PostgreSQL identities.'
+# #3129 把 52 抬到 55：下达命令与 #3119 补下达两条路径各自把报工按 (工单, 工序) 分组并用
+# SUM(CASE WHEN reversed_report_no IS NULL ...) 排除冲销行，分组键与条件求和都必须由真实 provider 翻译；
+# 第三条钉「一条报工都没有的工序落 0 而不是 null」。三条都是 env-gated skip，
+# 不登记时 collect-test-evidence 会报 'Runtime skip matched 0 applicable rules'（本票在 CI 上先红过一次）。
 $downtimeReasonCodeMigrationIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.DowntimeReasonCodeMigrationPostgresTests.Legacy_reasons_migrate_once_across_all_scopes_and_repeat_stably_on_postgres'
 Assert-True (@($mesProductionCandidateRules[0].testIdentities | Where-Object { [string]::Equals([string]$_, $downtimeReasonCodeMigrationIdentity, [StringComparison]::Ordinal) }).Count -eq 1) 'The MES production candidate policy rule must own the downtime-reason migration identity exactly once.'
 Assert-True ($downtimeReasonCodeMigrationIdentity -cmatch [string]$mesProductionCandidateRules[0].testPattern) 'The MES production candidate policy pattern must match the downtime-reason migration identity.'
@@ -2368,7 +2384,7 @@ $schemalessSummary = New-NervTestEvidenceSummary -Records $compatibleRecords -Ru
 Assert-Equal 'unsupported-baseline-schema-version' $schemalessSummary.baseline.unavailableReason 'A baseline with no schemaVersion at all must fail closed, not compare.'
 
 # Non-integer `schemaVersion` shapes a hand-edited baseline can hold. Why the guard uses TryParse is in
-# docs/architecture/test-evidence-governance.md; what matters *here* is which rows are load-bearing:
+# docs/reports/audits/test-evidence-governance-evolution-2026-08.md; what matters *here* is which rows are load-bearing:
 #   guards  — `non-numeric-text`, `array-value`, `fractional`, `boolean-true` each go red if the
 #             TryParse is reverted to `[int]`. Deleting one silently removes a regression guard.
 #   coverage — `json-null` (and the schemaless case above) reject identically under both spellings, so
@@ -3320,105 +3336,6 @@ finally {
 }
 Assert-True (-not (Test-Path $ciFixtureRoot)) 'CI budget fixtures must be cleaned up.'
 
-$governanceDocPath = Join-Path $repoRoot 'docs/architecture/test-evidence-governance.md'
-Assert-True (Test-Path $governanceDocPath) 'Test evidence governance document is missing.'
-$governanceDoc = Get-Content $governanceDocPath -Raw
-foreach ($requiredText in @(
-    'optional', 'environment-gated', 'quarantined',
-    'unregistered-skip', 'illegal-quarantine', 'zero-execution',
-    'backend-shard-1', 'MAN-669', 'recovered-after-rerun', 'report-only',
-    'continue-on-error', 'Nerv-IIP Platform CI/Test Governance', 'MAN-663',
-    'selectedLaneResults', 'incompatible-granularity-or-duration-metric', 'single-lane collector',
-    '2000-01-01T00:00:00Z', 'Actions job log',
-    'pwsh scripts/generate-test-evidence-baseline.ps1 -EvidenceRoot artifacts/test-evidence -OutputPath scripts/test-evidence-baseline.json',
-    'raw TRX', '30819675007', '91706113150', '9dafb512c992b240222c8d9b5ada43e4bfc8ac3d',
-    # #1507. The operator contract has to keep saying which of the two things it governs, or the
-    # boundary decays back into "one file, two purposes" the next time someone adds a gate.
-    'Timing data is a cache, not a governed asset',
-    'assembly-not-in-baseline', 'ambiguous-assembly-in-baseline', 'no-compatible-assembly',
-    'timing-assembly-missing', 'timing-source-unavailable',
-    'scripts/update-backend-test-shard-timings.ps1', 'scripts/report-backend-test-shard-balance.ps1',
-    'There are no longer any mandatory refresh triggers'
-)) {
-    Assert-True ($governanceDoc.Contains($requiredText)) "Governance document is missing '$requiredText'."
-}
-foreach ($registeredScriptPath in @(
-    'update-backend-test-shard-timings.ps1', 'report-backend-test-shard-balance.ps1', 'scripts/lib/BackendTestShardTimings.ps1'
-)) {
-    Assert-True ((Get-Content (Join-Path $repoRoot 'docs/architecture/script-automation-governance.md') -Raw).Contains($registeredScriptPath)) "Script governance registry is missing '$registeredScriptPath'."
-}
-$scriptGovernanceDoc = Get-Content (Join-Path $repoRoot 'docs/architecture/script-automation-governance.md') -Raw
-foreach ($registeredPath in @(
-    'collect-test-evidence.ps1',
-    'generate-test-evidence-baseline.ps1',
-    'scripts/lib/TestEvidence.ps1',
-    'scripts/lib/TestEvidencePolicy.ps1',
-    'scripts/lib/TestEvidencePrivacy.ps1',
-    'scripts/lib/TestEvidenceParsing.ps1',
-    'scripts/lib/TestEvidenceArtifacts.ps1',
-    'scripts/lib/TestEvidenceProvenance.ps1',
-    'scripts/lib/TestEvidenceBaseline.ps1',
-    'scripts/tests/test-evidence.Tests.ps1'
-)) {
-    Assert-True ($scriptGovernanceDoc.Contains($registeredPath)) "Script governance registry is missing '$registeredPath'."
-}
-Assert-True ($scriptGovernanceDoc.Contains(
-    '| `scripts/lib/TestEvidencePolicy.ps1` | `check` library | 已受治理 |',
-    [StringComparison]::Ordinal)) `
-    'Script governance registry must retain the TestEvidencePolicy.ps1 migration row.'
-Assert-True ($scriptGovernanceDoc.Contains(
-    '| `scripts/lib/TestEvidencePrivacy.ps1` | `check` library | 已受治理 |',
-    [StringComparison]::Ordinal)) `
-    'Script governance registry must retain the TestEvidencePrivacy.ps1 migration row.'
-Assert-True ($scriptGovernanceDoc.Contains(
-    '| `scripts/lib/TestEvidenceParsing.ps1` | `check` library | 已受治理 |',
-    [StringComparison]::Ordinal)) `
-    'Script governance registry must retain the TestEvidenceParsing.ps1 migration row.'
-Assert-True ($scriptGovernanceDoc.Contains(
-    '| `scripts/lib/TestEvidenceArtifacts.ps1` | `check` library | 已受治理 |',
-    [StringComparison]::Ordinal)) `
-    'Script governance registry must retain the TestEvidenceArtifacts.ps1 migration row.'
-Assert-True ($scriptGovernanceDoc.Contains(
-    '| `scripts/lib/TestEvidenceBaseline.ps1` | `check` library | 已受治理 |',
-    [StringComparison]::Ordinal)) `
-    'Script governance registry must retain the TestEvidenceBaseline.ps1 migration row.'
-Assert-True ($scriptGovernanceDoc.Contains(
-    '| `scripts/lib/TestEvidenceProvenance.ps1` | `check` library | 已受治理 |',
-    [StringComparison]::Ordinal)) `
-    'Script governance registry must retain the TestEvidenceProvenance.ps1 migration row.'
-Assert-True ($scriptGovernanceDoc.Contains('### 八份收口声明', [StringComparison]::Ordinal)) `
-    'Script governance must count all eight executable ordinal closure declarations.'
-Assert-True ($scriptGovernanceDoc.Contains('**八份声明的强度上界怎么读**', [StringComparison]::Ordinal)) `
-    'Script governance must keep the closeout declaration count aligned in its strength-bound heading.'
-Assert-True ($scriptGovernanceDoc.Contains(
-    '| `scripts/lib/TestEvidence.ps1` | 全文件按上述扫描面**零发现**，**零豁免**。 | `scripts/tests/test-evidence.Tests.ps1` |',
-    [StringComparison]::Ordinal)) `
-    'Script governance must document the zero-finding, zero-exemption facade ordinal declaration.'
-Assert-True ($scriptGovernanceDoc.Contains(
-    '| `scripts/lib/TestEvidencePolicy.ps1` | 全文件按上述扫描面**零发现**，**零豁免**。 | `scripts/tests/test-evidence.Tests.ps1` |',
-    [StringComparison]::Ordinal)) `
-    'Script governance must document the zero-finding, zero-exemption Policy ordinal declaration.'
-Assert-True ($scriptGovernanceDoc.Contains(
-    '| `scripts/lib/TestEvidencePrivacy.ps1` | 全文件按上述扫描面**零发现**，**零豁免**。 | `scripts/tests/test-evidence.Tests.ps1` |',
-    [StringComparison]::Ordinal)) `
-    'Script governance must document the zero-finding, zero-exemption Privacy ordinal declaration.'
-Assert-True ($scriptGovernanceDoc.Contains(
-    '| `scripts/lib/TestEvidenceParsing.ps1` | 全文件按上述扫描面**零发现**，**零豁免**。 | `scripts/tests/test-evidence.Tests.ps1` |',
-    [StringComparison]::Ordinal)) `
-    'Script governance must document the zero-finding, zero-exemption Parsing ordinal declaration.'
-Assert-True ($scriptGovernanceDoc.Contains(
-    '| `scripts/lib/TestEvidenceArtifacts.ps1` | 全文件按上述扫描面**零发现**，具名豁免 **1 条**：`New-NervTestEvidenceSummary` 里 `Group-Object { Get-NervRetainedSkipReason $_ }`',
-    [StringComparison]::Ordinal)) `
-    'Script governance must document the single exact Artifacts ordinal exception.'
-Assert-True ($scriptGovernanceDoc.Contains(
-    '| `scripts/lib/TestEvidenceBaseline.ps1` | 全文件按上述扫描面**零发现**，**零豁免**。 | `scripts/tests/test-evidence.Tests.ps1` |',
-    [StringComparison]::Ordinal)) `
-    'Script governance must document the zero-finding, zero-exemption Baseline ordinal declaration.'
-Assert-True ($scriptGovernanceDoc.Contains(
-    '| `scripts/lib/TestEvidenceProvenance.ps1` | 全文件按上述扫描面**零发现**，**零豁免**。 | `scripts/tests/test-evidence.Tests.ps1` |',
-    [StringComparison]::Ordinal)) `
-    'Script governance must document the zero-finding, zero-exemption Provenance ordinal declaration.'
-
 # ---------------------------------------------------------------------------------------------
 # Get-NervOrdinalRankedTop decides the *content and order* of summary.json's slowestAssemblies and
 # slowestTests, which are retained artifacts. Until #1509 round 4 it had no behavioural coverage at
@@ -3578,7 +3495,7 @@ foreach ($exceptionKey in @($artifactsEvidenceSweep.ExceptionHits.Keys)) {
 # Discrimination for the scan face itself. Without this the sweep passing means only "no findings",
 # which is equally true of a scanner that reports nothing. Each covered axis gets a source that must
 # be reported; each documented blind spot gets a source that must *not* be, which is what stops the
-# blind-spot list in docs/architecture/script-automation-governance.md from being aspirational.
+# blind-spot list in scripts/lib/OrdinalComparisonContract.ps1 from being aspirational.
 $sweepProbeRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-ordinal-sweep-probe-{0}" -f [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $sweepProbeRoot -Force | Out-Null
 try {

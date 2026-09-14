@@ -34,12 +34,15 @@ public sealed class LabelPrintBatchEntityTypeConfiguration : IEntityTypeConfigur
         builder.Property(x => x.SourceDocumentType).HasColumnName("source_document_type").IsRequired().HasMaxLength(100).HasComment("Source workflow or document type requesting label printing.");
         builder.Property(x => x.SourceDocumentId).HasColumnName("source_document_id").IsRequired().HasMaxLength(150).HasComment("Source business document public id.");
         builder.Property(x => x.IdempotencyKey).HasColumnName("idempotency_key").IsRequired().HasMaxLength(128).HasComment("Client supplied idempotency key for print batch creation.");
+        builder.Property(x => x.ReportIntentFingerprint).HasColumnName("report_intent_fingerprint").HasMaxLength(LabelPrintBatch.ReportIntentFingerprintMaxLength).HasComment("Optional opaque canonical report-intent fingerprint supplied by the authorized caller; null denotes a general non-MES label intent.");
         builder.Property(x => x.LabelValuesJson).HasColumnName("label_values_json").IsRequired().HasColumnType("text").HasComment("Label variable values JSON captured for repeatable printing.");
         builder.Property(x => x.RequestedQuantity).HasColumnName("requested_quantity").IsRequired().HasComment("Requested number of labels generated for the batch.");
-        builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasMaxLength(30).HasComment("Truthful print batch lifecycle status: pending, sent-to-printer, printed or failed.");
+        builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasMaxLength(30).HasComment("Truthful print batch lifecycle status: reserved, ready-to-print, sent-to-printer, delivery-unknown, printed or failed.");
         builder.Property(x => x.PrinterId).HasColumnName("printer_id").HasMaxLength(100).HasComment("Configured printer identity selected for the transport attempt.");
         builder.Property(x => x.PrintJobId).HasColumnName("print_job_id").HasMaxLength(150).HasComment("Printer or transport job identifier for the latest attempt.");
         builder.Property(x => x.FailureReason).HasColumnName("failure_reason").HasMaxLength(500).HasComment("Latest printer transport or device failure reason.");
+        builder.Property(x => x.ProductionReportId).HasColumnName("production_report_id").HasMaxLength(150).HasComment("MES production report id that activated this reserved print batch.");
+        builder.Property(x => x.ProductionReportNo).HasColumnName("production_report_no").HasMaxLength(150).HasComment("MES production report number that activated this reserved print batch.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC time when the print batch was created.");
         builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc").HasComment("UTC time when the print batch finished generation.");
         builder.HasMany(x => x.Items)
@@ -64,12 +67,14 @@ public sealed class LabelPrintItemEntityTypeConfiguration : IEntityTypeConfigura
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Label print item id.");
         builder.Property(x => x.LabelPrintBatchId).HasColumnName("label_print_batch_id").IsRequired().HasComment("Owning label print batch id.");
+        builder.Property(x => x.OrganizationId).HasColumnName("organization_id").IsRequired().HasMaxLength(100).HasComment("Organization tenant id copied from the owning print batch for scoped serial uniqueness.");
+        builder.Property(x => x.EnvironmentId).HasColumnName("environment_id").IsRequired().HasMaxLength(100).HasComment("Environment id copied from the owning print batch for scoped serial uniqueness.");
         builder.Property(x => x.SequenceNo).HasColumnName("sequence_no").IsRequired().HasComment("Generated label sequence number within the print batch.");
         builder.Property(x => x.LabelValue).HasColumnName("label_value").IsRequired().HasMaxLength(200).HasComment("Generated deterministic barcode or label value.");
         builder.Property(x => x.FileId).HasColumnName("file_id").HasMaxLength(150).HasComment("Optional FileStorage file id for rendered label output.");
         builder.Property(x => x.Gtin).HasColumnName("gtin").HasMaxLength(14).HasComment("Parsed or generated GS1 GTIN including check digit for serialized labels.");
         builder.Property(x => x.LotNo).HasColumnName("lot_no").HasMaxLength(100).HasComment("Batch or lot number encoded in the generated GS1 label.");
-        builder.Property(x => x.SerialNumber).HasColumnName("serial_number").HasMaxLength(150).HasComment("Serialized unit identifier encoded in the generated GS1 label.");
+        builder.Property(x => x.SerialNumber).HasColumnName("serial_number").HasMaxLength(150).HasComment("Server-allocated serialized unit identifier encoded in a plain or GS1 label; null only for legacy non-serialized rows.");
         builder.Property(x => x.EpcUri).HasColumnName("epc_uri").HasMaxLength(300).HasComment("EPC URI derived from GTIN and serial number for EPCIS traceability.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasMaxLength(30).HasComment("Label lifecycle status: created, printed, reprinted, voided or consumed.");
         builder.Property(x => x.VoidReason).HasColumnName("void_reason").HasMaxLength(500).HasComment("Reason captured when the label is voided.");
@@ -79,5 +84,9 @@ public sealed class LabelPrintItemEntityTypeConfiguration : IEntityTypeConfigura
         builder.HasIndex(x => new { x.LabelPrintBatchId, x.SequenceNo }).IsUnique();
         builder.HasIndex(x => x.LabelValue);
         builder.HasIndex(x => new { x.Gtin, x.LotNo, x.SerialNumber });
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SerialNumber })
+            .IsUnique()
+            .HasFilter("serial_number IS NOT NULL")
+            .HasDatabaseName("UX_label_print_items_serial_number");
     }
 }

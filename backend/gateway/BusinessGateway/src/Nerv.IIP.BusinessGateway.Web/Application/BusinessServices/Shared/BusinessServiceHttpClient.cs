@@ -173,6 +173,25 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
                 "downstream-timeout",
                 ex);
         }
+        catch (Polly.CircuitBreaker.BrokenCircuitException ex)
+        {
+            // 网关 resilience 管道熔断打开（#3272）：这是**预期内的保护动作**，不是未知故障。
+            // 未映射时它逃逸出 UseKnownExceptionHandler 的已知异常面，呈现为 500/「未知错误」，
+            // 于是用户看到「系统坏了」而不是「稍后再试」，运维看到 500 而不是熔断信号。
+            // 与相邻两条同一处理形态（FromSafeDownstreamMessage + 稳定 kebab 码）。
+            //
+            // 与 downstream-unavailable 分开一条码，是因为**这一格的事实不同**：熔断打开时请求
+            // 根本没有发往下游，本次写入必然未发生；而 HttpRequestException 是已发出后连接失败，
+            // 结果不确定。两者若共用一条码，前端就说不出「本次请求未发出」这句可行动的话。
+            //
+            // 本方法是 JSON 面与字节面共用的唯一一份传输故障映射（#3096 从 SendRequestAsync
+            // 提取），因此 #3385 在 SendRequestAsync 内联块上新增的这一格在此处承接后，
+            // 同时覆盖 streaming-safe 档的字节面。
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.ServiceUnavailable,
+                "downstream-circuit-open",
+                ex);
+        }
         catch (HttpRequestException ex)
         {
             throw BusinessServiceProxyException.FromSafeDownstreamMessage(

@@ -525,6 +525,10 @@ public sealed class SchedulingInputChangeEventHandlerTests
     /// <summary>
     /// 周期检（#3191）：来源单据身份是 <c>{operationId}:periodic-*:{contextId}:{seq}</c> 复合行号，
     /// 拿它本身去匹配计划指派永远命中不到。生产者把工序身份结构化发布出来之后才能落到那道工序。
+    ///
+    /// <para>这一格造的是**改前形状**（复合行号 + 工单号为空）。#3319 之后 Quality 的周期检结论会同时
+    /// 带上工单号，但「只给工序、不给工单」这条消费分支并未消失：存量事件与在途重投仍是这个形状，
+    /// 排程侧必须继续按工序落到那道工序，而不是整张工单。</para>
     /// </summary>
     [Fact]
     public async Task Quality_inspection_event_for_periodic_operation_source_publishes_only_affected_operation()

@@ -48,6 +48,16 @@ vi.mock('@/composables/useMesPickerCatalog', () => ({
 }))
 
 const workOrders = vi.hoisted(() => ({ items: [] as Array<Record<string, unknown>> }))
+vi.mock('@/composables/mes/useProductionReportSerialOptions', () => ({
+  useProductionReportSerialOptions: () => ({
+    serialPolicy: ref('none'),
+    labelTemplates: ref([]),
+    serialOptionsReady: ref(true),
+    serialOptionsPending: ref(false),
+    refreshSerialOptions: vi.fn(),
+  }),
+}))
+
 vi.mock('@/composables/useBusinessMes', () => ({
   makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
   // #1288 工具栏作业范围选择入口（MesWorkScopeSelect）
@@ -64,6 +74,8 @@ vi.mock('@/composables/useBusinessMes', () => ({
   }),
   useMesProductionReporting: () => ({
     recordProductionReport: vi.fn(),
+    restoreProductionReport: vi.fn(),
+    readProductionPrintStatus: vi.fn(),
     recordProductionReportError: ref(undefined),
     recordProductionReportPending: ref(false),
   }),

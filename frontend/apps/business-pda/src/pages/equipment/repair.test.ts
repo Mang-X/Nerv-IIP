@@ -204,6 +204,21 @@ beforeEach(() => {
   workOrdersRefreshing.value = false
 })
 
+/**
+ * 按 generated client 失败时交给页面的形态包装一个网关响应体：
+ * `client.gen.ts` 把响应文本 `JSON.parse` 后直接 throw，
+ * `configureApiClient` 的 error 拦截器再把原始 `Response` 以**非枚举**属性挂上去。
+ */
+function asThrownByGeneratedClient(rawBody: string): unknown {
+  const error = JSON.parse(rawBody) as Record<string, unknown>
+  Object.defineProperty(error, 'response', {
+    configurable: true,
+    enumerable: false,
+    value: { status: 400 },
+  })
+  return error
+}
+
 describe('PDA equipment repair page', () => {
   it('把分页器的真实刷新生命周期绑定给任务列表壳', async () => {
     const wrapper = mount(RepairPage)
@@ -967,5 +982,60 @@ describe('PDA equipment repair page', () => {
         idempotencyKey: expect.any(String),
       }),
     )
+  })
+  // #3333：把字符串追到屏幕（PDA 侧那一格）。
+  //
+  // 喂进去的是**网关校验失败实际写出的整个响应体**（逐字节取自后端
+  // `BusinessGatewayValidationFailureEnvelopeTests` 覆盖的同一条通道的实跑输出），
+  // 按 generated client 失败时的形态构造（`JSON.parse` 后的响应体被直接 throw，
+  // error 拦截器再把原始 `Response` 以非枚举属性挂上去）。
+  // 断言落在**渲染出来的 DOM 文本**上——这是操作工真正看到的那一块。
+  it.each([
+    [
+      '新形状（稳定码信封）',
+      '{"success":false,"message":"request-payload-invalid","code":400,"errorData":' +
+        '[{"name":"idempotencyKey","reason":"\'idempotency Key\' 必须小于或等于128个字符。您输入了129个字符。"}]}',
+      '提交的内容有误，请检查后重新提交；仍失败请联系管理员。',
+      'request-payload-invalid',
+    ],
+  ])('网关校验失败的 %s 在 PDA 屏上是中文', async (_label, rawBody, expectedCopy, wireCode) => {
+    createWorkOrder.mockRejectedValueOnce(asThrownByGeneratedClient(rawBody))
+    route.query = { deviceAssetId: 'DEV-3333' }
+    const wrapper = mount(RepairPage)
+    await selectPriority(wrapper, '高')
+    await selectReason(wrapper, '液压泄漏')
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
+    const shown = wrapper.text()
+    expect(shown).toContain(expectedCopy)
+    // 裸稳定码不得上屏（#3308 判例：400 在 actionableHttpMessage 里没有本地文案，
+    // 回落链 `actionableMessage ?? serverMessage ?? fallback` 会把 wire 值直接甩给操作工）。
+    expect(shown).not.toContain(wireCode)
+    // errorData 里的半英文字段级句子同样不得上屏。
+    expect(shown).not.toContain('idempotency Key')
+    // 确定性失败 ⇒ 给重试，不给「核实」——本条不得顺带改掉这个判定。
+    expect(wrapper.find('[data-testid="retry"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="verify-list"]').exists()).toBe(false)
+  })
+
+  // 对照：被修掉的旧形状。PDA 这一侧票面那句「用户看到英文常量」是**成立**的
+  // （与 PC 不同，PC 那条链会退化成通用兜底，见 notify.test.ts 里的同名对照格）。
+  it('对照：旧的 FastEndpoints 默认形状把英文常量送上 PDA 屏', async () => {
+    createWorkOrder.mockRejectedValueOnce(
+      asThrownByGeneratedClient(
+        '{"statusCode":400,"message":"One or more errors occurred!","errors":' +
+          '{"idempotencyKey":["\'idempotency Key\' 必须小于或等于128个字符。"]}}',
+      ),
+    )
+    route.query = { deviceAssetId: 'DEV-3333' }
+    const wrapper = mount(RepairPage)
+    await selectPriority(wrapper, '高')
+    await selectReason(wrapper, '液压泄漏')
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('One or more errors occurred!')
   })
 })

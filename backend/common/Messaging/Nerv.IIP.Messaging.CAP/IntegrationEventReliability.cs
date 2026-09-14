@@ -66,6 +66,12 @@ public sealed class IntegrationEventEnvelopeValidator
     public const string UnexpectedEventTypeFailureCode = "unexpected-event-type";
     public const string UnsupportedVersionFailureCode = "unsupported-version";
 
+    /// <summary>
+    /// 信封字段超过 <see cref="IntegrationEventEnvelopeFieldBudget"/> 时的失败码（#3360）。
+    /// 走这条码的事件**落死信、可重放**，而不是在 inbox 落库时抛 22001 逃逸成 poison。
+    /// </summary>
+    public const string OversizedEnvelopeFieldFailureCode = "oversized-envelope-field";
+
     public IntegrationEventEnvelopeValidationResult Validate<TIntegrationEvent>(
         TIntegrationEvent integrationEvent,
         IntegrationEventConsumerOptions options)
@@ -95,6 +101,23 @@ public sealed class IntegrationEventEnvelopeValidator
                     MissingEnvelopeFieldFailureCode,
                     $"Integration event envelope field '{fieldName}' is required.");
             }
+        }
+
+        // 长度闸单独一轮：先把「字段缺失」判完，再判「字段超界」，
+        // 这样同一条事件同时缺一个字段又超另一个字段时，诊断恒定报缺失（更靠前的因）。
+        foreach (var (fieldName, value) in GetRequiredStringFields(integrationEvent))
+        {
+            if (value is null ||
+                !IntegrationEventEnvelopeFieldBudget.ByFieldName.TryGetValue(fieldName, out var maxLength) ||
+                value.Length <= maxLength)
+            {
+                continue;
+            }
+
+            return IntegrationEventEnvelopeValidationResult.Invalid(
+                OversizedEnvelopeFieldFailureCode,
+                $"Integration event envelope field '{fieldName}' is {value.Length} characters, "
+                + $"which exceeds the platform inbox column budget of {maxLength}.");
         }
 
         if (integrationEvent.OccurredAtUtc == default)

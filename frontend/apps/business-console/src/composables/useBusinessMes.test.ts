@@ -1164,6 +1164,61 @@ describe('business MES composables', () => {
     expect(recordBusinessConsoleMesProductionReport).toHaveBeenCalledTimes(2)
   })
 
+  it('保留打印准备待收敛的完整报工载荷，新实例恢复后只重放原模板和原时间', async () => {
+    vi.mocked(recordBusinessConsoleMesProductionReport).mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          productionReportId: 'report-serial',
+          reportNo: 'PRPT-SERIAL',
+          serialNumbers: ['SN-H-101'],
+          printBatchId: 'LPB-014',
+          printStatus: 'reserved',
+          printingPreparationPending: true,
+        },
+      },
+      response: { status: 200 },
+    } as never)
+    const body = {
+      workOrderId: 'wo-serial',
+      operationTaskId: 'op-serial',
+      goodQuantity: 1,
+      scrapQuantity: 0,
+      completesOperation: false,
+      reportedAtUtc: '2026-09-14T01:00:00Z',
+      labelTemplateId: 'template-housing',
+      idempotencyKey: 'report-serial-intent',
+    }
+    const first = useMesProductionReporting()
+    await first.recordProductionReport(body)
+    const restored = useMesProductionReporting()
+    expect(restored.restoreProductionReport('wo-serial', 'op-serial')).toMatchObject(body)
+    vi.mocked(recordBusinessConsoleMesProductionReport).mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          reportNo: 'PRPT-SERIAL',
+          productionReportId: 'report-serial',
+          serialNumbers: ['SN-H-101'],
+          printBatchId: 'LPB-014',
+          printStatus: 'ready-to-print',
+          printingPreparationPending: false,
+        },
+      },
+      response: { status: 200 },
+    } as never)
+    await restored.recordProductionReport({
+      ...body,
+      goodQuantity: 9,
+      labelTemplateId: 'another-template',
+      idempotencyKey: 'new-key',
+    })
+    expect(
+      vi.mocked(recordBusinessConsoleMesProductionReport).mock.calls.at(-1)?.[0]?.body,
+    ).toMatchObject(body)
+    expect(restored.restoreProductionReport('wo-serial', 'op-serial')).toBeUndefined()
+  })
+
   it('reads overview, foundation readiness, operation tasks, and WIP rows', () => {
     coladaState.queryDataById.set('getBusinessConsoleMesOverview', {
       success: true,
@@ -2028,7 +2083,6 @@ describe('business MES composables', () => {
       organizationId: 'org-001',
       environmentId: 'env-dev',
       confirmWarnings: true,
-      idempotencyKey: 'release-key',
     })
 
     const mutation = vi
@@ -2109,7 +2163,6 @@ describe('business MES composables', () => {
         organizationId: 'org-001',
         environmentId: 'env-dev',
         confirmWarnings: true,
-        idempotencyKey: 'release-key',
       }),
     ).rejects.toThrow('齐套快照缺失')
 

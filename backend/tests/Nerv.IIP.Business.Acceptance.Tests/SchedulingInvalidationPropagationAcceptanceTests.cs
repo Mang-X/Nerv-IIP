@@ -111,7 +111,8 @@ public sealed class SchedulingInvalidationPropagationAcceptanceTests
             {
                 ["Scheduling:InvalidationNotification:RecipientRefs:0"] = "role:scheduler",
             }).Build(),
-            new FixedTimeProvider(FixedNow));
+            new FixedTimeProvider(FixedNow),
+            NotificationSummaryBudget.FromModel(notificationDb.Model));
 
         await notificationHandler.HandleAsync(invalidatedEvent, CancellationToken.None);
         await notificationHandler.HandleAsync(invalidatedEvent, CancellationToken.None);

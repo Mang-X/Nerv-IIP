@@ -394,6 +394,7 @@ public sealed class BusinessConsoleCreateSkuRequestValidator : Validator<Busines
         RuleFor(x => x.ShelfLifePolicyCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.StorageConditionCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.DefaultBarcodeRuleCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
 }
 

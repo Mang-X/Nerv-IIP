@@ -1,13 +1,13 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Ops.Infrastructure;
 using Nerv.IIP.Ops.Infrastructure.Repositories;
 using Nerv.IIP.Ops.Web.Application.Commands;
 using Nerv.IIP.Ops.Web.Application.Queries;
+using Nerv.IIP.Testing.EntityFramework;
 
 namespace Nerv.IIP.Ops.Web.Tests;
 
@@ -55,24 +55,4 @@ public sealed class ListAuditRecordsQueryPersistenceTests
     private static CreateOperationTaskRequest CreateRestartRequest(string idempotencyKey) =>
         new(Org, Env, "docker-container-local-demo-001", "lifecycle.restart", idempotencyKey,
             "local-admin", "manual smoke restart", $"corr-{idempotencyKey}", new Dictionary<string, string>());
-
-    // SQLite provider 无法翻译 DateTimeOffset 的排序（仓库已知坑：EF 测试 provider 翻译差异），
-    // 测试专用 ModelCustomizer 把所有 DateTimeOffset 列统一转成 long（值均为 UTC，ToBinary 排序与时间序一致）。
-    private sealed class SqliteDateTimeOffsetModelCustomizer(ModelCustomizerDependencies dependencies)
-        : RelationalModelCustomizer(dependencies)
-    {
-        private static readonly DateTimeOffsetToBinaryConverter Converter = new();
-
-        public override void Customize(ModelBuilder modelBuilder, DbContext context)
-        {
-            base.Customize(modelBuilder, context);
-            foreach (var property in modelBuilder.Model.GetEntityTypes().SelectMany(entity => entity.GetProperties()))
-            {
-                if (property.ClrType == typeof(DateTimeOffset) || property.ClrType == typeof(DateTimeOffset?))
-                {
-                    property.SetValueConverter(Converter);
-                }
-            }
-        }
-    }
 }

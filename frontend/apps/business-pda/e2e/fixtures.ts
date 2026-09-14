@@ -50,6 +50,7 @@ export const principal = {
     'business.maintenance.work-orders.read',
     'business.maintenance.plans.read',
     'business.masterdata.resources.read',
+    'business.barcodes.read',
     'business.barcodes.scans.write',
   ],
   roleIds: [],
@@ -600,6 +601,21 @@ export async function routeBusinessConsoleApi(route: Route) {
   const { pathname } = requestUrl
   const method = route.request().method()
   const isPost = method === 'POST'
+
+  const reportSku = pathname.match(
+    /^\/api\/business-console\/v1\/master-data\/resources\/sku\/([^/]+)$/,
+  )
+  if (method === 'GET' && reportSku) {
+    return fulfillJson(
+      route,
+      envelope({
+        resourceType: 'sku',
+        code: decodeURIComponent(reportSku[1]),
+        active: true,
+        serialTrackingPolicy: 'none',
+      }),
+    )
+  }
 
   if (isPost && pathname === '/api/business-console/v1/barcode/resolve') {
     return fulfillJson(

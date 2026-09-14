@@ -1,13 +1,14 @@
+using System.Globalization;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
+using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Contracts.Quality;
 using NetCorePal.Extensions.DistributedTransactions;
-using System.Globalization;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 
@@ -742,7 +743,13 @@ public sealed class WorkOrderReleasedIntegrationEventConverter
                     .Select(x => new ReleasedOperationPayload(
                         x.OperationTaskId,
                         x.OperationSequence,
-                        x.WorkCenterId))
+                        x.WorkCenterId,
+                        // 取不到键 = 那道工序一条报工都没有 = 0，**不是**「没查」（#3129）：
+                        // 字典由调用方对该工单全部报工行按工序 GroupBy 构造，空分组天然缺席。
+                        // 这条路径永远不发 null——null 在契约上专留给本次发布之前入队的旧消息，
+                        // 语义与取值依据见 ReleasedOperationPayload.PreReleaseGoodQuantity 的注释。
+                        domainEvent.PreReleaseGoodQuantityByOperationTaskId
+                            .GetValueOrDefault(x.OperationTaskId, 0m)))
                     .ToArray()));
     }
 }
@@ -922,7 +929,9 @@ public sealed class WorkOrderCancelledIntegrationEventConverter
 internal static class EventIds
 {
     public static string Idempotency(params string?[] parts) =>
-        $"mes:{string.Join(':', parts.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!.Trim()))}";
+        IntegrationEventIdempotencyKey.Compose(
+            "mes:",
+            parts.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!.Trim()).ToArray<string?>());
 
     public static void ThrowIfUnsupportedUom(string uomCode, string sourceDocumentId)
     {

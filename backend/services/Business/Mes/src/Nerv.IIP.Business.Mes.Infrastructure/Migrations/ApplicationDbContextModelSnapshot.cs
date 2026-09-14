@@ -1625,6 +1625,12 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("produced_lot_no")
                         .HasComment("Optional produced finished-goods lot number for genealogy.");
 
+                    b.Property<string>("ReportIntentFingerprint")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("report_intent_fingerprint")
+                        .HasComment("Optional opaque caller intent fingerprint used to recover the exact production report receipt.");
+
                     b.Property<string>("ReportNo")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -1966,6 +1972,66 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.ProductionReportSerialNumber", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Production report serial fact id.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment scope.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant scope.");
+
+                    b.Property<string>("ReportNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("report_no")
+                        .HasComment("Forward MES production report number owning the serial assignment.");
+
+                    b.Property<int>("SequenceNo")
+                        .HasColumnType("integer")
+                        .HasColumnName("sequence_no")
+                        .HasComment("One-based BarcodeLabel allocation order within the production report.");
+
+                    b.Property<string>("SerialNumber")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("serial_number")
+                        .HasComment("Trimmed unit serial number compared with ordinal case-sensitive semantics.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SerialNumber")
+                        .IsUnique()
+                        .HasDatabaseName("ux_production_report_serial_numbers_scope_serial");
+
+                    NpgsqlIndexBuilderExtensions.UseCollation(b.HasIndex("OrganizationId", "EnvironmentId", "SerialNumber"), new[] { "C", "C", "C" });
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "ReportNo", "SequenceNo")
+                        .IsUnique()
+                        .HasDatabaseName("ux_production_report_serial_numbers_scope_report_sequence");
+
+                    b.ToTable("production_report_serial_numbers", "mes", t =>
+                        {
+                            t.HasComment("Immutable MES unit serial facts assigned to forward production reports.");
+
+                            t.HasCheckConstraint("ck_production_report_serial_numbers_sequence_positive", "sequence_no > 0");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.TelemetryProductionReportCandidate", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2188,10 +2254,10 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasComment("MES defect record number allocated by the service numbering counter.");
 
                     b.Property<string>("DispositionReferenceId")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
                         .HasColumnName("disposition_reference_id")
-                        .HasComment("Downstream disposition reference such as rework work order, scrap movement or return document.");
+                        .HasComment("Downstream disposition reference copied verbatim from the Quality NCR: rework work order id, scrap movement id or supplier return document id. Width tracks the Quality producer columns nonconformance_reports.{rework_work_order_id, scrap_movement_id, return_document_id} (150) — see #3318.");
 
                     b.Property<string>("DispositionType")
                         .HasMaxLength(100)
@@ -4193,6 +4259,17 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_report_material_consumptions_reports");
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.ProductionReportSerialNumber", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.ProductionReport", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId", "EnvironmentId", "ReportNo")
+                        .HasPrincipalKey("OrganizationId", "EnvironmentId", "ReportNo")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_production_report_serial_numbers_reports");
                 });
 
             modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.TelemetryProductionReportCandidateTransition", b =>

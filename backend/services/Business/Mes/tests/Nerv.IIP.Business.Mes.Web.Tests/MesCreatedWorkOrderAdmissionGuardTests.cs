@@ -37,7 +37,7 @@ public sealed class MesCreatedWorkOrderAdmissionGuardTests
         var readiness = await new MesOperationTaskActionReadinessEvaluator(dbContext)
             .EvaluateAsync(task, Now, CancellationToken.None);
 
-        Assert.Equal([MesReadinessReasonCodes.WorkOrderNotReleasedReason], readiness.BlockReasons);
+        Assert.Equal([MesReadinessReasonTexts.WorkOrderNotReleasedReason], readiness.BlockReasons);
         Assert.Empty(readiness.AllowedActions);
     }
 
@@ -102,7 +102,7 @@ public sealed class MesCreatedWorkOrderAdmissionGuardTests
         // 改成 else-if 时第一条会被第二条吃掉，本断言即红。
         Assert.Equal(
             [
-                MesReadinessReasonCodes.WorkOrderNotReleasedReason,
+                MesReadinessReasonTexts.WorkOrderNotReleasedReason,
                 $"{MesReadinessReasonCodes.QualityPlanMissing}: 工单缺少已发布生产版本或检验方案",
                 MaterialReadinessGuards.MissingRequirementSnapshotReason,
             ],

@@ -6,6 +6,7 @@ using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Notification.Infrastructure;
 using Nerv.IIP.Notification.Web.Application.Commands.Notifications;
+using Nerv.IIP.Notification.Web.Application.Notifications;
 using NetCorePal.Extensions.DistributedTransactions;
 using NetCorePal.Extensions.Primitives;
 
@@ -17,7 +18,8 @@ public sealed class WorkOrderEngineeringChangeImpactDetectedIntegrationEventHand
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
     IConfiguration configuration,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    NotificationSummaryBudget summaryBudget)
     : IIntegrationEventHandler<WorkOrderEngineeringChangeImpactDetectedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "notification.mes-engineering-change-work-order-impact";
@@ -97,7 +99,7 @@ public sealed class WorkOrderEngineeringChangeImpactDetectedIntegrationEventHand
             Summary: $"Work order {workOrderId} is affected by {changeNumber}; archived production version {archivedProductionVersionId}, {successor}, status {impactStatus}.",
             SuggestedRecipientRefs: recipientRefs);
 
-        await sender.Send(new SubmitNotificationIntentCommand(organizationId, environmentId, request, timeProvider.GetUtcNow()), cancellationToken);
+        await sender.Send(new SubmitNotificationIntentCommand(organizationId, environmentId, request, NotificationSummary.Render(request.Summary, summaryBudget), timeProvider.GetUtcNow()), cancellationToken);
     }
 
     private static string Required(string? value, string message)

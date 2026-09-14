@@ -327,7 +327,6 @@ async function retryMergeReadback() {
 }
 
 type ReleaseIntent = {
-  idempotencyKey: string
   workOrderId: string
   workOrderLabel: string
 }
@@ -380,7 +379,6 @@ async function openReleaseDialog(order: Row) {
     const blocker = releaseBlocker(latest)
     if (blocker) throw new Error(blocker)
     releaseIntent.value = {
-      idempotencyKey: newMesIdempotencyKey(`release-work-order-${order.workOrderId}`),
       workOrderId: order.workOrderId,
       workOrderLabel: order.workOrderNo || order.workOrderId,
     }
@@ -411,7 +409,6 @@ async function submitReleaseWorkOrder() {
       organizationId: filters.organizationId.trim(),
       environmentId: filters.environmentId.trim(),
       confirmWarnings: true,
-      idempotencyKey: intent.idempotencyKey,
     })
     if (response?.data?.accepted !== true) {
       throw new Error('工单下达结果未确认，请刷新列表核实后再重试。')

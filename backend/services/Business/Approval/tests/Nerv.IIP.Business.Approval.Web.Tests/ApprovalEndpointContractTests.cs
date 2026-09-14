@@ -530,7 +530,12 @@ public sealed class ApprovalEndpointContractTests
         var result = new CreateOrUpdateApprovalTemplateCommandValidator().Validate(command);
 
         Assert.False(result.IsValid);
-        Assert.Contains(result.Errors, x => x.PropertyName.Contains(nameof(ApprovalTemplateStepInput.ConditionExpression), StringComparison.Ordinal));
+        // 断 ErrorMessage 而不是 PropertyName：后者由 ValidatorOptions.Global.PropertyNameResolver 决定，
+        // app.UseFastEndpoints(...) 启动时会把它换成 camelCase 并且不还原，于是断言随同程序集内的执行顺序
+        // 时红时绿（#3342）。这条规则用 WithMessage 钉死了文案、模板不含 {PropertyName} 占位符，故不受解析器影响。
+        Assert.Contains(
+            result.Errors,
+            x => x.ErrorMessage == "步骤条件只能留空，或写成 documentType=<值> / sourceService=<值>。");
     }
 
     [Fact]

@@ -1,6 +1,8 @@
 using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
+using NJsonSchema.Annotations;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
@@ -52,7 +54,8 @@ public sealed record ProductionReportFact(
     // 当前工序完成后冻结的累计实绩，不是本条报工的工时分摊。工序未完成或冲销后重新打开时为 null。
     [property: JsonIgnore] MesActualHours? OperationActualHours = null,
     // 提交本条报工的操作人（经认证 principal）。升级前的历史报工与未确认的遥测报工为 null。
-    string? ReportedBy = null)
+    string? ReportedBy = null,
+    IReadOnlyCollection<string>? SerialNumbers = null)
 {
     [Description("工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
     public decimal? OperationActualLaborHours => OperationActualHours?.LaborHours;
@@ -65,6 +68,17 @@ public sealed record GetProductionReportQuery(
     string OrganizationId,
     string EnvironmentId,
     string ReportNo) : IQuery<GetProductionReportResponse>;
+
+public sealed record GetProductionReportByIdempotencyKeyQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string IdempotencyKey) : IQuery<ProductionReportIntentReceiptResponse>;
+
+public sealed record ProductionReportIntentReceiptResponse(
+    [property: Required, JsonRequired, JsonSchemaExtensionData("nullable", true)] string? ReportIntentFingerprint,
+    ProductionReportId ProductionReportId,
+    string ReportNo,
+    IReadOnlyCollection<string> SerialNumbers);
 
 public sealed record GetProductionReportResponse(
     ProductionReportFact Report,
@@ -151,7 +165,14 @@ internal static class ProductionReportFactProjection
                     task.LaborTimeTicks / (decimal)TimeSpan.TicksPerHour,
                     task.MachineTimeTicks / (decimal)TimeSpan.TicksPerHour))
                 .FirstOrDefault(),
-            x.ReportedBy));
+            x.ReportedBy,
+            dbContext.ProductionReportSerialNumbers
+                .Where(serial => serial.OrganizationId == x.OrganizationId
+                    && serial.EnvironmentId == x.EnvironmentId
+                    && serial.ReportNo == x.ReportNo)
+                .OrderBy(serial => serial.SequenceNo)
+                .Select(serial => serial.SerialNumber)
+                .ToArray()));
 }
 
 public sealed class GetProductionReportQueryHandler(ApplicationDbContext dbContext)
@@ -190,6 +211,57 @@ public sealed class GetProductionReportQueryHandler(ApplicationDbContext dbConte
             .ToArrayAsync(cancellationToken);
 
         return new GetProductionReportResponse(report, consumedMaterialLots, laborAllocations);
+    }
+}
+
+public sealed class GetProductionReportByIdempotencyKeyQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<GetProductionReportByIdempotencyKeyQuery, ProductionReportIntentReceiptResponse>
+{
+    private const string ProductionReportRuleKey = "production-report";
+
+    public async Task<ProductionReportIntentReceiptResponse> Handle(
+        GetProductionReportByIdempotencyKeyQuery request,
+        CancellationToken cancellationToken)
+    {
+        var reportNo = await dbContext.CodeIdempotencyKeys
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.RuleKey == ProductionReportRuleKey
+                && x.IdempotencyKey == request.IdempotencyKey.Trim())
+            .Select(x => x.Code)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (reportNo is null)
+        {
+            throw new KnownException("未找到生产报工。");
+        }
+
+        var report = await dbContext.ProductionReports
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.ReportNo == reportNo)
+            .Select(x => new { x.Id, x.ReportNo, x.ReportIntentFingerprint })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (report is null)
+        {
+            throw new KnownException("未找到生产报工。");
+        }
+
+        var serialNumbers = await dbContext.ProductionReportSerialNumbers
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.ReportNo == report.ReportNo)
+            .OrderBy(x => x.SequenceNo)
+            .Select(x => x.SerialNumber)
+            .ToArrayAsync(cancellationToken);
+
+        return new ProductionReportIntentReceiptResponse(
+            report.ReportIntentFingerprint,
+            report.Id,
+            report.ReportNo,
+            serialNumbers);
     }
 }
 

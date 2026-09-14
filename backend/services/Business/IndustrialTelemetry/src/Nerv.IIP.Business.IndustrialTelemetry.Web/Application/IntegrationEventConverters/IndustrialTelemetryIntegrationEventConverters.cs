@@ -1,6 +1,7 @@
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.DomainEvents;
 using Nerv.IIP.Contracts.IndustrialTelemetry;
 using NetCorePal.Extensions.DistributedTransactions;
+using Nerv.IIP.Contracts.IntegrationEvents;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Application.IntegrationEventConverters;
 
@@ -21,7 +22,13 @@ public sealed class DeviceStateChangedIntegrationEventConverter
             snapshot.OrganizationId,
             snapshot.EnvironmentId,
             "system:industrial-telemetry",
-            $"industrialTelemetry:device-state:{snapshot.OrganizationId}:{snapshot.EnvironmentId}:{snapshot.DeviceAssetId}:{snapshot.SourceSequence}:{snapshot.Id.Id:D}",
+            IntegrationEventIdempotencyKey.Compose(
+                "industrialTelemetry:device-state:",
+                snapshot.OrganizationId,
+                snapshot.EnvironmentId,
+                snapshot.DeviceAssetId,
+                snapshot.SourceSequence,
+                snapshot.Id.Id.ToString("D")),
             new DeviceStateChangedPayload(
                 snapshot.Id.Id.ToString("D"),
                 snapshot.DeviceAssetId,
@@ -47,7 +54,14 @@ public sealed class AlarmRaisedIntegrationEventConverter
             alarm.OrganizationId,
             alarm.EnvironmentId,
             "system:industrial-telemetry",
-            $"industrialTelemetry:alarm-raised:{alarm.OrganizationId}:{alarm.EnvironmentId}:{alarm.DeviceAssetId}:{alarm.AlarmCode}:{alarm.ExternalAlarmId}:{alarm.Id.Id:D}",
+            IntegrationEventIdempotencyKey.Compose(
+                "industrialTelemetry:alarm-raised:",
+                alarm.OrganizationId,
+                alarm.EnvironmentId,
+                alarm.DeviceAssetId,
+                alarm.AlarmCode,
+                alarm.ExternalAlarmId,
+                alarm.Id.Id.ToString("D")),
             new AlarmRaisedPayload(
                 alarm.Id.Id.ToString("D"),
                 alarm.DeviceAssetId,
@@ -80,7 +94,14 @@ public sealed class AlarmClearedIntegrationEventConverter
             alarm.OrganizationId,
             alarm.EnvironmentId,
             "system:industrial-telemetry",
-            $"industrialTelemetry:alarm-cleared:{alarm.OrganizationId}:{alarm.EnvironmentId}:{alarm.DeviceAssetId}:{alarm.AlarmCode}:{alarm.ExternalAlarmId}:{alarm.Id.Id:D}",
+            IntegrationEventIdempotencyKey.Compose(
+                "industrialTelemetry:alarm-cleared:",
+                alarm.OrganizationId,
+                alarm.EnvironmentId,
+                alarm.DeviceAssetId,
+                alarm.AlarmCode,
+                alarm.ExternalAlarmId,
+                alarm.Id.Id.ToString("D")),
             new AlarmClearedPayload(
                 alarm.Id.Id.ToString("D"),
                 alarm.DeviceAssetId,
@@ -109,7 +130,14 @@ public sealed class AlarmEscalatedIntegrationEventConverter
             alarm.OrganizationId,
             alarm.EnvironmentId,
             "system:industrial-telemetry",
-            $"industrialTelemetry:alarm-escalated:{alarm.OrganizationId}:{alarm.EnvironmentId}:{alarm.DeviceAssetId}:{alarm.AlarmCode}:{alarm.ExternalAlarmId}:{alarm.Id.Id:D}",
+            IntegrationEventIdempotencyKey.Compose(
+                "industrialTelemetry:alarm-escalated:",
+                alarm.OrganizationId,
+                alarm.EnvironmentId,
+                alarm.DeviceAssetId,
+                alarm.AlarmCode,
+                alarm.ExternalAlarmId,
+                alarm.Id.Id.ToString("D")),
             new AlarmEscalatedPayload(
                 alarm.Id.Id.ToString("D"),
                 alarm.DeviceAssetId,
@@ -144,7 +172,15 @@ public sealed class TelemetryProductionCountDeltaIntegrationEventConverter
             summary.OrganizationId,
             summary.EnvironmentId,
             "system:industrial-telemetry",
-            $"industrialTelemetry:production-count:{summary.OrganizationId}:{summary.EnvironmentId}:{summary.DeviceAssetId}:{summary.TagKey}:{sourceSystem}:{sourceConnector}:{sourceSequence}",
+            IntegrationEventIdempotencyKey.Compose(
+                "industrialTelemetry:production-count:",
+                summary.OrganizationId,
+                summary.EnvironmentId,
+                summary.DeviceAssetId,
+                summary.TagKey,
+                sourceSystem,
+                sourceConnector,
+                sourceSequence),
             new TelemetryProductionCountDeltaPayload(
                 summary.DeviceAssetId,
                 summary.TagKey,

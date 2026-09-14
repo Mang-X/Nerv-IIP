@@ -2,8 +2,8 @@ using MediatR;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Testing.EntityFramework;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -27,26 +27,6 @@ internal static class MesSqliteTestDatabase
             .ReplaceService<IModelCustomizer, SqliteDateTimeOffsetModelCustomizer>()
             .Options;
         return new ApplicationDbContext(options, NoopMediator.Instance);
-    }
-
-    // SQLite provider 无法翻译 DateTimeOffset 的排序/比较（仓库已知坑：EF 测试 provider 翻译差异），
-    // 测试专用 ModelCustomizer 把所有 DateTimeOffset 列统一转成 long（值均为 UTC，ToBinary 排序与时间序一致）。
-    private sealed class SqliteDateTimeOffsetModelCustomizer(ModelCustomizerDependencies dependencies)
-        : RelationalModelCustomizer(dependencies)
-    {
-        private static readonly DateTimeOffsetToBinaryConverter Converter = new();
-
-        public override void Customize(ModelBuilder modelBuilder, DbContext context)
-        {
-            base.Customize(modelBuilder, context);
-            foreach (var property in modelBuilder.Model.GetEntityTypes().SelectMany(entity => entity.GetProperties()))
-            {
-                if (property.ClrType == typeof(DateTimeOffset) || property.ClrType == typeof(DateTimeOffset?))
-                {
-                    property.SetValueConverter(Converter);
-                }
-            }
-        }
     }
 
     private sealed class NoopMediator : IMediator

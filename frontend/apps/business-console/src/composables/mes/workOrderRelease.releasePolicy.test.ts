@@ -16,10 +16,14 @@ import { RELEASE_IGNORED_TASK_BLOCKERS, mesWorkOrderReleaseBlocker } from './wor
  *    ② 才是防复发的那条：它把「**词表里的**新增码默认阻断下达」这个静默默认改成红。
  *
  * **②的值域边界，别读强了**：它闭合的是 `MES_READINESS_REASON_DISPLAYS`，
- * **不是**「后端产出的所有阻断码」。后端新增码若从未登记进词表，
- * 会走 `describeMesReadinessReason` 兜底、不在豁免集里、**仍然静默阻断下达且本文件零红**。
- * 现存反例：同一个 evaluator 产出的 `WORK_ORDER_NOT_FOUND` 就不在词表里。
- * 跨语言码表契约属跟进票。
+ * **不是**「后端产出的所有阻断码」——本文件读不到后端。
+ *
+ * 那一段由 #3155 补上，接法是**串联**而不是取代：
+ * `scripts/verify-stable-code-frontend-vocabulary.ps1` 钉「后端 `MesReadinessReasonCodes`
+ * 的每个 public const ⊆ 本词表」，本文件的 ② 钉「本词表的每个码 ⊆ 已归类」，
+ * 两条合起来才得到「后端新增阻断码必须被显式归类」。**删掉任一条，这个结论就不再成立**，
+ * 而另一条仍然全绿——所以两边都不是冗余，别按「看着像重复」合并。
+ * 原先写在这里的现存反例 `WORK_ORDER_NOT_FOUND` 已随 #3155 登记进词表并在下表归类。
  */
 
 /** 后端 `MesReadinessReasonCodes.WorkOrderNotReleasedReason` 的逐字形态。 */
@@ -51,6 +55,8 @@ const RELEASE_IMPACT_BY_CODE: Readonly<Record<string, boolean>> = {
   SOURCE_SERVICE_UNAVAILABLE: true,
   // #3119：补救动作就是下达本身，绝不能阻断下达。
   WORK_ORDER_NOT_RELEASED: false,
+  // #3155：工序找不到所属工单是数据完整性问题，下达无从谈起，故阻断。
+  WORK_ORDER_NOT_FOUND: true,
 }
 
 describe('工单下达的工序阻断码归类', () => {

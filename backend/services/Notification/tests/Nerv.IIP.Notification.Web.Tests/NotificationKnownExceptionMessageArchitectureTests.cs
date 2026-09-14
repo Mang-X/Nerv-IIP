@@ -16,6 +16,7 @@ public sealed class NotificationKnownExceptionMessageArchitectureTests
         Target($"{DomainRoot}/AggregatesModel/NotificationIntentAggregate/NotificationIntent.cs", "NotificationIntent", "Required", 1, "同步意图字段公开校验"),
         Target($"{DomainRoot}/AggregatesModel/NotificationIntentAggregate/NotificationIntent.cs", "NotificationIntent", "RequiredIntentType", 1, "同步意图类型公开校验"),
         Target($"{DomainRoot}/AggregatesModel/NotificationIntentAggregate/NotificationIntent.cs", "NotificationIntent", "RequiredSeverity", 1, "同步意图严重级别公开校验"),
+        Target($"{WebRoot}/Application/Notifications/NotificationSummary.cs", "NotificationSummary", "FromSubmitted", 1, "同步意图提交摘要长度公开校验"),
         Target($"{WebRoot}/Application/Commands/Notifications/MarkNotificationMessageReadCommand.cs", "MarkNotificationMessageReadCommandHandler", "Handle", 1, "同步单条消息已读公开命令"),
         Target($"{WebRoot}/Application/Commands/Notifications/MarkNotificationMessageReadCommand.cs", "MarkNotificationMessageReadCommandHandler", "ParseMessageId", 1, "同步消息标识公开校验"),
         Target($"{WebRoot}/Application/Commands/Notifications/MarkNotificationMessagesReadCommand.cs", "MarkNotificationMessagesReadCommandHandler", "Handle", 1, "同步批量消息已读公开命令"),
@@ -144,9 +145,9 @@ public sealed class NotificationKnownExceptionMessageArchitectureTests
         var discovered = NotificationUserMessageSourceAnalyzer.Discover(documents);
         var actual = discovered.ToDictionary(site => site.Key, site => site.DirectKnownExceptionCount, StringComparer.Ordinal);
 
-        Assert.Equal(15, TargetSites.Sum(site => site.DirectKnownExceptionCount));
+        Assert.Equal(16, TargetSites.Sum(site => site.DirectKnownExceptionCount));
         Assert.Equal(30, ExcludedSites.Sum(site => site.DirectKnownExceptionCount));
-        Assert.Equal(45, expected.Values.Sum());
+        Assert.Equal(46, expected.Values.Sum());
         var missing = expected.Keys.Except(actual.Keys, StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
         var extra = actual.Keys.Except(expected.Keys, StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
         Assert.True(
