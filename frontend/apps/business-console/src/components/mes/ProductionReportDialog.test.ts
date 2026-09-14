@@ -15,6 +15,7 @@ const spies = vi.hoisted(() => ({
   ),
   makeIdempotencyKey: vi.fn(),
   readProductionQuantitySnapshot: vi.fn(),
+  readProductionPrintStatus: vi.fn(),
   notifySuccess: vi.fn(),
   notifyError: vi.fn(),
   notifyOperationFailure: vi.fn(),
@@ -23,6 +24,23 @@ const scopeState = vi.hoisted(() => ({
   message: '',
   pending: false,
   ready: true,
+}))
+const serialState = vi.hoisted(() => ({ policy: 'none', pending: false }))
+vi.mock('@/composables/mes/useProductionReportSerialOptions', () => ({
+  useProductionReportSerialOptions: () => ({
+    serialPolicy: ref(serialState.policy),
+    serialOptionsPending: ref(serialState.pending),
+    serialOptionsReady: ref(true),
+    labelTemplates: ref([
+      {
+        templateId: 'template-housing',
+        templateName: '壳体单件标签',
+        templateCode: 'HOUSING',
+        status: 'active',
+      },
+    ]),
+    refreshSerialOptions: vi.fn(),
+  }),
 }))
 const materialState = vi.hoisted(() => ({
   permission: true,
@@ -56,7 +74,9 @@ vi.mock('@/composables/useBusinessMes', () => ({
     reportScopePending: ref(scopeState.pending),
     reportScopeReady: ref(scopeState.ready),
     readProductionQuantitySnapshot: spies.readProductionQuantitySnapshot,
+    readProductionPrintStatus: spies.readProductionPrintStatus,
     refreshProductionReportState: vi.fn(async () => undefined),
+    restoreProductionReport: vi.fn(),
   }),
   useMesProductionMaterialLots: () => ({
     materialsReadPermission: ref(materialState.permission),
@@ -102,7 +122,7 @@ const stubs = {
     props: ['modelValue'],
     emits: ['update:modelValue'],
     template:
-      '<input :value="modelValue" v-bind="$attrs" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+      '<input :value="modelValue" v-bind="$attrs" @input="$emit(\'update:modelValue\', $event.target.type === \'number\' && $event.target.value !== \'\' ? Number($event.target.value) : $event.target.value)" />',
   },
   Spinner: true,
 }
@@ -165,6 +185,8 @@ describe('ProductionReportDialog — 带出式录入', () => {
     scopeState.message = ''
     scopeState.pending = false
     scopeState.ready = true
+    serialState.policy = 'none'
+    serialState.pending = false
     materialState.permission = true
     materialState.pending = false
     materialState.rows = []
@@ -187,6 +209,171 @@ describe('ProductionReportDialog — 带出式录入', () => {
     expect(carried.findAll('input')).toHaveLength(0)
     expect(wrapper.find('#report-work-order').exists()).toBe(false)
     expect(wrapper.find('#report-operation-task').exists()).toBe(false)
+  })
+
+  // DomainInvariant / PublicContract: #2889 最终裁决、#2893、#2894。
+  it('生产时追踪随良品数量显示待分配数量，非整数点提交标红且不发送报工', async () => {
+    serialState.policy = 'on-production'
+    const wrapper = mountDialog()
+    await wrapper.get('#report-good').setValue('3')
+    expect(wrapper.text()).toContain('待分配 3 个序列号')
+    await wrapper.get('#report-good').setValue('1.5')
+    expect(wrapper.get('#report-good').attributes('data-invalid')).toBeUndefined()
+    expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeUndefined()
+    await wrapper.get('form').trigger('submit')
+    expect(wrapper.get('#report-good').attributes('data-invalid')).toBe('')
+    expect(wrapper.text()).toContain('非负整数')
+    expect(spies.recordProductionReport).not.toHaveBeenCalled()
+  })
+
+  it('提交期间切换报工对象时，旧响应不覆盖或关闭新对象', async () => {
+    let finish!: (response: never) => void
+    spies.recordProductionReport.mockImplementationOnce((_body, options) => {
+      options?.onCommandAttempt?.()
+      return new Promise((resolve) => {
+        finish = resolve
+      })
+    })
+    const wrapper = mountDialog()
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    await wrapper.setProps({
+      context: { ...context, operationTaskId: 'operation-other', operationTaskNo: 'OP-OTHER' },
+    })
+    finish({
+      data: { reportNo: 'OLD-REPORT', printBatchId: 'old-batch', serialNumbers: ['OLD-SERIAL'] },
+    } as never)
+    await flushPromises()
+    expect(wrapper.text()).toContain('OP-OTHER')
+    expect(wrapper.text()).not.toContain('OLD-REPORT')
+    expect(wrapper.emitted('reported')).toBeUndefined()
+    expect(wrapper.emitted('update:open')).toBeUndefined()
+  })
+
+  it('必需的模板未选时不发送报工，选择后仅提交模板标识并显示全部序列号凭据', async () => {
+    serialState.policy = 'on-production'
+    spies.recordProductionReport.mockResolvedValueOnce({
+      data: {
+        reportNo: 'PRPT-2026-0001',
+        serialNumbers: ['SN-H-101', 'SN-H-102'],
+        printBatchId: 'LPB-2026-014',
+        printStatus: 'sent-to-printer',
+      },
+    } as never)
+    const wrapper = mountDialog()
+    await wrapper.get('#report-good').setValue('2')
+    await wrapper.get('form').trigger('submit')
+    expect(spies.recordProductionReport).not.toHaveBeenCalled()
+    await wrapper.get('#report-label-template').setValue('template-housing')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(spies.recordProductionReport.mock.calls[0]?.[0]).toMatchObject({
+      labelTemplateId: 'template-housing',
+      goodQuantity: 2,
+    })
+    expect(spies.recordProductionReport.mock.calls[0]?.[0]).not.toHaveProperty(
+      'serialTrackingPolicy',
+    )
+    expect(wrapper.text()).toContain('PRPT-2026-0001')
+    expect(wrapper.text()).toContain('LPB-2026-014')
+    expect(wrapper.text()).toContain('已发送至打印机')
+    expect(wrapper.text()).not.toContain('已打印')
+    expect(
+      wrapper.findAll('a').map((link) => ({ href: link.attributes('href'), text: link.text() })),
+    ).toEqual([
+      { href: '/mes/traceability?mode=batch&serialNo=SN-H-101', text: 'SN-H-101' },
+      { href: '/mes/traceability?mode=batch&serialNo=SN-H-102', text: 'SN-H-102' },
+    ])
+    expect(wrapper.emitted('update:open')).toBeUndefined()
+  })
+
+  it('生产时追踪的零良品报工不要求模板且不提交模板标识', async () => {
+    serialState.policy = 'on-production'
+    const wrapper = mountDialog()
+    await wrapper.get('#report-good').setValue('0')
+    await wrapper.get('#report-rework').setValue('1')
+    expect(wrapper.text()).toContain('待分配 0 个序列号')
+    expect(wrapper.find('#report-label-template').exists()).toBe(false)
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(spies.recordProductionReport.mock.calls[0]?.[0]).toMatchObject({
+      goodQuantity: 0,
+      reworkQuantity: 1,
+    })
+    expect(spies.recordProductionReport.mock.calls[0]?.[0]).not.toHaveProperty('labelTemplateId')
+  })
+
+  it.each(['', '-1', '2147483648'])(
+    '生产时追踪拒绝非法合格数量 %s，不把空值解释为零',
+    async (quantity) => {
+      serialState.policy = 'on-production'
+      const wrapper = mountDialog()
+      await wrapper.get('#report-good').setValue(quantity)
+      await wrapper.get('#report-rework').setValue('1')
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+      expect(spies.recordProductionReport).not.toHaveBeenCalled()
+      expect(wrapper.text()).toContain('非负整数')
+    },
+  )
+
+  it.each(['none', 'on-receipt', 'on-shipment'])(
+    '%s 不提供标签控件并允许小数良品',
+    async (policy) => {
+      serialState.policy = policy
+      const wrapper = mountDialog()
+      await wrapper.get('#report-good').setValue('1.5')
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+      expect(wrapper.find('#report-label-template').exists()).toBe(false)
+      expect(spies.recordProductionReport.mock.calls[0]?.[0]).toMatchObject({ goodQuantity: 1.5 })
+    },
+  )
+
+  it('报工已接受但打印准备待收敛时保留结果和冻结模板，用原载荷重试', async () => {
+    serialState.policy = 'on-production'
+    spies.recordProductionReport.mockResolvedValueOnce({
+      data: {
+        reportNo: 'PRPT-2026-0001',
+        serialNumbers: ['SN-H-101'],
+        printBatchId: 'LPB-2026-014',
+        printStatus: 'reserved',
+        printingPreparationPending: true,
+      },
+    } as never)
+    const wrapper = mountDialog()
+    await wrapper.get('#report-label-template').setValue('template-housing')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(wrapper.text()).toContain('PRPT-2026-0001')
+    expect(wrapper.text()).toContain('打印准备待完成')
+    const first = spies.recordProductionReport.mock.calls[0]?.[0]
+    await wrapper.get('button[data-testid="retry-print-preparation"]').trigger('click')
+    await flushPromises()
+    expect(spies.recordProductionReport.mock.calls[1]?.[0]).toEqual(first)
+  })
+
+  it('从同一打印批次刷新运输失败事实，通知人工处理且不重新报工', async () => {
+    serialState.policy = 'on-production'
+    spies.recordProductionReport.mockResolvedValueOnce({
+      data: {
+        reportNo: 'PRPT-2026-0001',
+        serialNumbers: ['SN-H-101'],
+        printBatchId: 'LPB-2026-014',
+        printStatus: 'ready-to-print',
+      },
+    } as never)
+    spies.readProductionPrintStatus.mockResolvedValueOnce('failed')
+    const wrapper = mountDialog()
+    await wrapper.get('#report-label-template').setValue('template-housing')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    await wrapper.get('button[data-testid="refresh-print-status"]').trigger('click')
+    await flushPromises()
+    expect(spies.readProductionPrintStatus).toHaveBeenCalledWith('LPB-2026-014')
+    expect(wrapper.text()).toContain('标签发送失败')
+    expect(spies.notifyError).toHaveBeenCalledWith(expect.stringContaining('打印管理员'))
+    expect(spies.recordProductionReport).toHaveBeenCalledTimes(1)
   })
 
   it('录入项包含合格数量、不合格数量、返修数量与完成状态，且没有说明书文案', () => {
@@ -258,6 +445,7 @@ describe('ProductionReportDialog — 带出式录入', () => {
     expect(body.completesOperation).toBe(true)
     expect(typeof body.reportedAtUtc).toBe('string')
     expect(spies.notifySuccess).toHaveBeenCalledOnce()
+    await flushPromises()
     expect(wrapper.emitted('update:open')?.at(-1)).toEqual([false])
     expect(wrapper.emitted('reported')).toHaveLength(1)
   })

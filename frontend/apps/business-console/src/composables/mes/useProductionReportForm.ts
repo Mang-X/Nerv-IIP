@@ -1,4 +1,5 @@
-import { statusActionGate } from '@nerv-iip/business-core'
+import { shouldRetainPendingBusinessIntent, statusActionGate } from '@nerv-iip/business-core'
+import type { BusinessConsoleRecordProductionReportResponse } from '@nerv-iip/api-client'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 
 import {
@@ -13,6 +14,7 @@ import {
   recoverLifecycleAction,
 } from '@/composables/lifecycleAction'
 import { notifyError, notifyOperationFailure, notifySuccess } from '@/utils/notify'
+import { useProductionReportSerialOptions } from './useProductionReportSerialOptions'
 
 /**
  * 报工上下文：**只能**由工单列表行 / 工序任务行带出，弹窗自身不提供任何挑选入口。
@@ -43,7 +45,7 @@ function toOptionalNumber(value: string) {
  *
  * - **报工时间**不作为录入项：一线报的是「刚做完这一批」，提交时取当前时间。需要补录历史时间是班组长/计划
  *   岗的纠错场景，走冲销 + 重报，不在一线录入面上开口子。
- * - 结果一律 toast，弹窗内不留常驻成功/错误条（feedback-and-notifications）。
+ * - 操作反馈使用 toast；有标签的报工保留可追溯业务回执。
  * - 校验点提交才标红；未通过不发请求。
  */
 export function useProductionReportForm(
@@ -59,7 +61,10 @@ export function useProductionReportForm(
     reportScopePending,
     reportScopeReady,
     refreshProductionReportState,
+    restoreProductionReport,
+    readProductionPrintStatus,
   } = useMesProductionReporting()
+  const serialOptions = useProductionReportSerialOptions(context)
   const {
     materialsReadPermission,
     materialLotsPending,
@@ -88,6 +93,7 @@ export function useProductionReportForm(
     scrapQuantity: '0',
     reworkQuantity: '0',
     scrapReasonCode: '',
+    labelTemplateId: '',
     completesOperation: canCompleteOperation.value,
     idempotencyKey: makeIdempotencyKey('production-report'),
   })
@@ -103,6 +109,28 @@ export function useProductionReportForm(
   const intentAttempted = ref(false)
   const intentLocked = ref(false)
   const frozenPayload = shallowRef<MesProductionReportInput>()
+  const reportResult = shallowRef<BusinessConsoleRecordProductionReportResponse>()
+  const printStatusPending = shallowRef(false)
+  async function refreshPrintStatus() {
+    const current = reportResult.value
+    if (!current?.printBatchId || printStatusPending.value) return
+    printStatusPending.value = true
+    try {
+      const printStatus = await readProductionPrintStatus(current.printBatchId)
+      if (reportResult.value !== current) return
+      reportResult.value = { ...current, printStatus }
+      if (printStatus === 'failed')
+        notifyError('标签发送失败，请联系打印管理员检查原批次，不要重新报工。')
+    } catch (error) {
+      notifyOperationFailure(
+        '打印进度读取失败',
+        error,
+        '请稍后刷新打印进度；无权限时请联系管理员。',
+      )
+    } finally {
+      printStatusPending.value = false
+    }
+  }
   const quantitySnapshot = shallowRef<{
     key: string
     plannedQuantity: number
@@ -122,6 +150,7 @@ export function useProductionReportForm(
     intentAttempted.value = false
     intentLocked.value = false
     frozenPayload.value = undefined
+    reportResult.value = undefined
     materialSelections.clear()
     quantityValidationMessage.value = ''
     overproductionConfirmationRequired.value = false
@@ -130,6 +159,7 @@ export function useProductionReportForm(
     form.scrapQuantity = '0'
     form.reworkQuantity = '0'
     form.scrapReasonCode = ''
+    form.labelTemplateId = ''
     form.completesOperation = canCompleteOperation.value
     form.idempotencyKey = makeIdempotencyKey('production-report')
     showErrors.value = false
@@ -138,7 +168,7 @@ export function useProductionReportForm(
 
   watch(
     () =>
-      `${form.goodQuantity}\u0000${form.scrapQuantity}\u0000${form.reworkQuantity}\u0000${form.scrapReasonCode}\u0000${form.completesOperation}\u0000${JSON.stringify([...materialSelections])}`,
+      `${form.goodQuantity}\u0000${form.scrapQuantity}\u0000${form.reworkQuantity}\u0000${form.scrapReasonCode}\u0000${form.completesOperation}\u0000${form.labelTemplateId}\u0000${JSON.stringify([...materialSelections])}`,
     () => {
       quantityValidationMessage.value = ''
       overproductionConfirmationRequired.value = false
@@ -170,18 +200,58 @@ export function useProductionReportForm(
   watch(
     () => {
       const ctx = context()
-      return ctx ? `${ctx.workOrderId}|${ctx.operationTaskId}|${ctx.operationStatus ?? ''}` : ''
+      return ctx ? `${ctx.workOrderId}|${ctx.operationTaskId}` : ''
     },
     () => {
       quantitySnapshot.value = undefined
       resetForm()
+      const ctx = context()
+      const restored = ctx && restoreProductionReport(ctx.workOrderId, ctx.operationTaskId)
+      if (restored) {
+        frozenPayload.value = restored
+        intentAttempted.value = true
+        intentLocked.value = true
+        form.goodQuantity = String(restored.goodQuantity ?? 0)
+        form.scrapQuantity = String(restored.scrapQuantity ?? 0)
+        form.reworkQuantity = String(restored.reworkQuantity ?? 0)
+        form.scrapReasonCode = restored.scrapReasonCode ?? ''
+        form.labelTemplateId = restored.labelTemplateId ?? ''
+        form.completesOperation = restored.completesOperation ?? false
+        form.idempotencyKey = restored.idempotencyKey ?? ''
+      }
     },
+    { immediate: true },
   )
 
   const goodQuantity = computed(() => toOptionalNumber(form.goodQuantity))
   const scrapQuantity = computed(() => toOptionalNumber(form.scrapQuantity))
   const reworkQuantity = computed(() => toOptionalNumber(form.reworkQuantity))
   const scrapReasonCode = computed(() => form.scrapReasonCode.trim())
+  const productionSerialsRequired = computed(
+    () => serialOptions.serialPolicy.value === 'on-production',
+  )
+  const serialQuantityInvalid = computed(
+    () =>
+      productionSerialsRequired.value &&
+      (!String(form.goodQuantity).trim() ||
+        goodQuantity.value === undefined ||
+        !Number.isInteger(goodQuantity.value) ||
+        goodQuantity.value < 0 ||
+        goodQuantity.value > 2147483647),
+  )
+  const pendingSerialCount = computed(() =>
+    serialQuantityInvalid.value ? undefined : goodQuantity.value,
+  )
+  const labelTemplateRequired = computed(
+    () => productionSerialsRequired.value && (goodQuantity.value ?? 0) > 0,
+  )
+  const invalidLabelTemplate = computed(
+    () =>
+      labelTemplateRequired.value &&
+      !serialOptions.labelTemplates.value.some(
+        (template) => template.templateId === form.labelTemplateId,
+      ),
+  )
   const consumedMaterialLots = computed(() =>
     availableMaterialLots.value.flatMap((row) => {
       const selection = materialSelections.get(row.requestId)
@@ -251,7 +321,7 @@ export function useProductionReportForm(
     const totalPositive =
       good !== undefined && scrap !== undefined && rework !== undefined && good + scrap + rework > 0
     return {
-      goodQuantity: good === undefined || good < 0 || !totalPositive,
+      goodQuantity: good === undefined || good < 0 || !totalPositive || serialQuantityInvalid.value,
       scrapQuantity: scrap === undefined || scrap < 0 || !totalPositive,
       reworkQuantity: reworkQuantity.value === undefined || reworkQuantity.value < 0,
     }
@@ -261,6 +331,8 @@ export function useProductionReportForm(
     const ctx = context()
     if (!ctx?.workOrderId?.trim() || !ctx.operationTaskId?.trim()) return false
     if (!reportScopeReady.value) return false
+    if (intentLocked.value && frozenPayload.value) return true
+    if (!serialOptions.serialOptionsReady.value) return false
     if (
       form.completesOperation &&
       !statusActionGate({
@@ -276,7 +348,8 @@ export function useProductionReportForm(
       !invalid.value.scrapQuantity &&
       !invalid.value.reworkQuantity &&
       !invalidMaterialLots.value &&
-      !invalidScrapReasonCode.value
+      !invalidScrapReasonCode.value &&
+      !invalidLabelTemplate.value
     )
   })
 
@@ -305,12 +378,14 @@ export function useProductionReportForm(
   }
 
   async function submit(): Promise<boolean> {
+    if (recordProductionReportPending.value || quantitySnapshotPending.value) return false
     showErrors.value = true
     const ctx = context()
     if (!ctx || !canSubmit.value) {
       if (!reportScopeReady.value) notifyError(reportScopeMessage.value)
       return false
     }
+    if (intentLocked.value && frozenPayload.value) return sendReport(frozenPayload.value, ctx)
     let snapshot
     try {
       snapshot = await ensureQuantitySnapshot(ctx)
@@ -358,22 +433,39 @@ export function useProductionReportForm(
         completesOperation: form.completesOperation,
         reportedAtUtc: new Date().toISOString(),
         idempotencyKey: form.idempotencyKey,
+        ...(labelTemplateRequired.value ? { labelTemplateId: form.labelTemplateId } : {}),
       } satisfies MesProductionReportInput)
     frozenPayload.value = body
+    return sendReport(body, ctx)
+  }
+
+  async function sendReport(body: MesProductionReportInput, ctx: ProductionReportContext) {
     try {
       const response = await recordProductionReport(body, {
         onCommandAttempt: () => {
           intentAttempted.value = true
         },
       })
+      if (frozenPayload.value !== body) return false
       const reportNo = response?.data?.reportNo ?? response?.data?.productionReportId
+      reportResult.value = response?.data ?? undefined
+      if (reportResult.value?.printingPreparationPending) {
+        intentLocked.value = true
+        notifyError('报工已接受，打印准备待完成。请按原内容重试，不要重新报工。')
+        return false
+      }
       notifySuccess(
         `已报工${reportNo ? ` ${reportNo}` : ''} · ${ctx.operationTaskNo ?? ctx.operationTaskId}`,
       )
-      resetForm()
+      if (reportResult.value?.printStatus === 'failed') {
+        notifyError('报工已接受，标签发送失败。请联系打印管理员检查原批次，不要重新报工。')
+      }
+      intentLocked.value = false
+      if (!reportResult.value?.printBatchId) resetForm()
       options.onReported?.()
       return true
     } catch (error) {
+      if (frozenPayload.value !== body) return false
       if (
         await recoverLifecycleAction(error, {
           reset: () => {
@@ -386,7 +478,9 @@ export function useProductionReportForm(
       ) {
         return false
       }
-      intentLocked.value = intentAttempted.value && isIndeterminateLifecycleWriteError(error)
+      intentLocked.value =
+        intentAttempted.value &&
+        (shouldRetainPendingBusinessIntent(error) || isIndeterminateLifecycleWriteError(error))
       notifyOperationFailure(
         '报工提交失败',
         recordProductionReportError.value ?? error,
@@ -397,6 +491,15 @@ export function useProductionReportForm(
   }
 
   return {
+    ...serialOptions,
+    productionSerialsRequired,
+    pendingSerialCount,
+    serialQuantityInvalid,
+    invalidLabelTemplate,
+    labelTemplateRequired,
+    reportResult,
+    printStatusPending,
+    refreshPrintStatus,
     form,
     invalid,
     showErrors,
