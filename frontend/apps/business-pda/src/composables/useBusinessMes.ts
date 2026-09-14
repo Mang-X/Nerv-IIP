@@ -65,6 +65,7 @@ import {
   lastPageForTotal,
   parseWorkScopeKey,
   peekPendingBusinessIntent,
+  shouldRetainPendingBusinessIntent,
   reduceServerPagination,
   serverPaginationIdentity,
   statusActionGate,
@@ -1689,8 +1690,21 @@ export function useMesProductionReports(workOrderId?: Readonly<Ref<string>>) {
       }
       return report
     },
-    recordReport: async (input: RecordReportInput) => {
+    recordReport: async (input: RecordReportInput, isCurrent?: () => boolean) => {
       const selectedScope = reportScope.requireSelectedScope()
+      const executionContext = reportContext.value
+      const assertCurrent = () => {
+        const current = reportContext.value
+        if (
+          !executionContext ||
+          !current ||
+          !hasSameReportExecutionContext(current, executionContext) ||
+          isCurrent?.() === false
+        ) {
+          throw new Error('作业身份或范围已变化，请重新选择工单与工序后报工。')
+        }
+      }
+      assertCurrent()
       const { idempotencyKey: suppliedKey, ...payload } = input
       const scope = {
         principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
@@ -1735,6 +1749,7 @@ export function useMesProductionReports(workOrderId?: Readonly<Ref<string>>) {
         const samePair =
           authoritative?.workOrderId === workOrderId &&
           authoritative?.operationTaskId === operationTaskId
+        assertCurrent()
         const reportAllowed = authoritative?.allowedActions?.some(
           (action) => action.trim().toLowerCase() === 'report',
         )
@@ -1759,8 +1774,8 @@ export function useMesProductionReports(workOrderId?: Readonly<Ref<string>>) {
         pending.payloadSnapshot !== undefined
           ? (pending.payloadSnapshot as BusinessConsoleRecordProductionReportRequest)
           : currentPayload
-      return completePendingBusinessIntent(scope, async () =>
-        confirmBusinessConsoleOperation(
+      try {
+        const result = await confirmBusinessConsoleOperation(
           await recordMutation.mutateAsync({
             body: {
               ...frozenPayload,
@@ -1772,8 +1787,13 @@ export function useMesProductionReports(workOrderId?: Readonly<Ref<string>>) {
             expectedIdempotencyKey: pending.idempotencyKey,
             expectedResourceIdSelector: (envelope) => envelope.data?.productionReportId,
           },
-        ),
-      )
+        )
+        if (!result?.data?.printingPreparationPending) clearPendingBusinessIntent(scope)
+        return result
+      } catch (error) {
+        if (!shouldRetainPendingBusinessIntent(error)) clearPendingBusinessIntent(scope)
+        throw error
+      }
     },
   }
 }

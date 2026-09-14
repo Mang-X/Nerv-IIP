@@ -19,6 +19,7 @@ import {
   NvMobileButton,
   NvMobileInput,
   NvMobileToast,
+  NvNumberKeyboard,
 } from '@nerv-iip/ui-mobile'
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -33,6 +34,9 @@ import RetryableListError from '@/components/RetryableListError.vue'
 import MesWorkScopeFilter from '@/components/mes/MesWorkScopeFilter.vue'
 import ProductionReportMaterialLots from '@/components/mes/ProductionReportMaterialLots.vue'
 import ProductionReportScrapReasonField from '@/components/mes/ProductionReportScrapReasonField.vue'
+import ProductionReportSerialResult from '@/components/mes/ProductionReportSerialResult.vue'
+import ProductionReportSerialFields from '@/components/mes/ProductionReportSerialFields.vue'
+import { useProductionReportSerials } from '@/composables/mes/useProductionReportSerials'
 import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
 import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import { useProductionReportMaterials } from '@/composables/mes/useProductionReportMaterials'
@@ -195,6 +199,28 @@ const progress = computed(() => productionReportFlow.progress(ctx))
 
 // --- 数量录入 ---
 const goodQuantity = ref(0)
+const serials = useProductionReportSerials(
+  pair,
+  computed(() => selectedWorkOrder.value?.skuId ?? ''),
+  reportContext,
+  goodQuantity,
+)
+const {
+  required: serialRequired,
+  templateId: labelTemplateId,
+  valid: serialValid,
+  pendingCount: serialPendingCount,
+  pending: serialPending,
+  message: serialMessage,
+  templates: serialTemplates,
+} = serials
+const goodKeyboardOpen = ref(false)
+const goodKeyboardValue = computed({
+  get: () => (goodQuantity.value === 0 ? '' : String(goodQuantity.value)),
+  set: (value: string) => {
+    goodQuantity.value = Number(value)
+  },
+})
 const scrapQuantity = ref(0)
 const reworkQuantity = ref(0)
 const completesOperation = ref(false)
@@ -227,6 +253,9 @@ const {
 
 const quantityValid = computed(
   () =>
+    Number.isFinite(goodQuantity.value) &&
+    Number.isFinite(scrapQuantity.value) &&
+    Number.isFinite(reworkQuantity.value) &&
     goodQuantity.value >= 0 &&
     scrapQuantity.value >= 0 &&
     reworkQuantity.value >= 0 &&
@@ -242,6 +271,9 @@ const { currentIntent, result, submitting, deleteCurrentIntent, submit } = useMe
   scanGuarded,
   reportScopeReady,
   quantityValid,
+  serialValid,
+  labelTemplateId,
+  serialRequired,
   invalidMaterialLots,
   invalidScrapReasonCode,
   goodQuantity,
@@ -474,6 +506,20 @@ async function onScanAccepted(value: MesScanAccepted) {
       :description="result.description"
     >
       <template #actions>
+        <ProductionReportSerialResult
+          v-if="result.receipt"
+          :receipt="result.receipt"
+          :context="reportContext"
+        />
+        <NvMobileButton
+          v-if="result.receipt?.printingPreparationPending"
+          data-testid="retry-label-preparation"
+          size="lg"
+          block
+          :disabled="submitting || !reportScopeReady || scanGuarded"
+          @click="submit"
+          >重试标签准备</NvMobileButton
+        >
         <button
           v-if="result.status === 'success'"
           type="button"
@@ -769,10 +815,30 @@ async function onScanAccepted(value: MesScanAccepted) {
             data-testid="good-quantity"
             type="number"
             inputmode="numeric"
+            :readonly="serialRequired"
+            :disabled="submitting"
+            @click="serialRequired && (goodKeyboardOpen = true)"
             min="0"
             class="min-h-touch w-full rounded-lg border border-border bg-card px-3 text-base outline-none focus:border-primary"
           />
         </label>
+
+        <NvNumberKeyboard
+          v-model="goodKeyboardValue"
+          v-model:show="goodKeyboardOpen"
+          title="良品数"
+          extra-key=""
+        />
+        <ProductionReportSerialFields
+          v-model="labelTemplateId"
+          :required="serialRequired"
+          :pending-count="serialPendingCount"
+          :pending="serialPending"
+          :message="serialMessage"
+          :templates="serialTemplates"
+          :disabled="submitting || scanGuarded"
+          @refresh="serials.refresh"
+        />
 
         <label class="block space-y-1">
           <span class="text-sm font-medium text-foreground">次品数</span>
@@ -858,6 +924,7 @@ async function onScanAccepted(value: MesScanAccepted) {
           data-testid="submit-report"
           :disabled="
             !quantityValid ||
+            !serialValid ||
             invalidMaterialLots ||
             invalidScrapReasonCode ||
             submitting ||

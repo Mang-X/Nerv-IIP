@@ -2150,6 +2150,115 @@ describe('pda useBusinessMes composables', () => {
     expect(mutateAsync.mock.calls[1][0].body.idempotencyKey).toBe('report-key-2')
   })
 
+  it('keeps the frozen reporting time and template while successful label preparation is pending', async () => {
+    const { recordReport } = useMesProductionReports()
+    const mutate = coladaState.mutateById.get('recordBusinessConsoleMesProductionReport')!
+    mutate.mockResolvedValueOnce({ success: true, data: { printingPreparationPending: true } })
+    const input = {
+      workOrderId: 'wo-label-pending',
+      operationTaskId: 'ot-label-pending',
+      goodQuantity: 2,
+      scrapQuantity: 0,
+      completesOperation: false,
+      labelTemplateId: 'tpl-1',
+      idempotencyKey: 'labels-original',
+    }
+    await recordReport(input)
+    await recordReport({ ...input, idempotencyKey: 'labels-retry' })
+    expect(mutate.mock.calls[1][0].body).toEqual(mutate.mock.calls[0][0].body)
+  })
+
+  it.each(['principalId', 'organizationId', 'environmentId'])(
+    'blocks a report if %s changes during task preflight',
+    async (field) => {
+      const { recordReport } = useMesProductionReports()
+      const pending =
+        deferred<Awaited<ReturnType<typeof listBusinessConsoleMesReportableOperationTasks>>>()
+      vi.mocked(listBusinessConsoleMesReportableOperationTasks).mockReturnValueOnce(
+        pending.promise as never,
+      )
+      const mutation = recordReport({
+        workOrderId: 'wo-context-switch',
+        operationTaskId: 'ot-context-switch',
+        goodQuantity: 1,
+        scrapQuantity: 0,
+        completesOperation: false,
+        idempotencyKey: `context-${field}`,
+      })
+      const outcome = expect(mutation).rejects.toThrow('作业身份或范围已变化')
+      reactiveAuthState.principal = { ...reactiveAuthState.principal, [field]: 'changed' }
+      await nextTick()
+      pending.resolve({
+        data: {
+          success: true,
+          data: {
+            items: [
+              {
+                workOrderId: 'wo-context-switch',
+                operationTaskId: 'ot-context-switch',
+                allowedActions: ['report'],
+                status: 'InProgress',
+              },
+            ],
+            total: 1,
+          },
+        },
+      } as never)
+      await outcome
+      expect(
+        coladaState.mutateById.get('recordBusinessConsoleMesProductionReport'),
+      ).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each(['scope', 'pair'])(
+    'blocks a report when the %s changes during task preflight',
+    async (change) => {
+      const { recordReport } = useMesProductionReports()
+      const pending = deferred<never>()
+      vi.mocked(listBusinessConsoleMesReportableOperationTasks).mockReturnValueOnce(pending.promise)
+      let samePair = true
+      const mutation = recordReport(
+        {
+          workOrderId: 'wo-scope-switch',
+          operationTaskId: 'ot-scope-switch',
+          goodQuantity: 1,
+          scrapQuantity: 0,
+          completesOperation: false,
+          idempotencyKey: `context-${change}`,
+        },
+        () => samePair,
+      )
+      const outcome = expect(mutation).rejects.toThrow('作业身份或范围已变化')
+      if (change === 'pair') samePair = false
+      else
+        coladaState.queryDataRefById.get(
+          'getBusinessConsolePrincipalWorkContext:business.mes.reporting.write',
+        )!.value = { success: true, data: { selectedScope: { kind: 'work-center', id: 'WC-B' } } }
+      await nextTick()
+      pending.resolve({
+        data: {
+          success: true,
+          data: {
+            items: [
+              {
+                workOrderId: 'wo-scope-switch',
+                operationTaskId: 'ot-scope-switch',
+                allowedActions: ['report'],
+                status: 'InProgress',
+              },
+            ],
+            total: 1,
+          },
+        },
+      } as never)
+      await outcome
+      expect(
+        coladaState.mutateById.get('recordBusinessConsoleMesProductionReport'),
+      ).not.toHaveBeenCalled()
+    },
+  )
+
   it('restores all required report fields when a pending intent has no payload snapshot', async () => {
     const input = {
       workOrderId: 'wo-report-missing-snapshot',

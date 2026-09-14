@@ -22,7 +22,14 @@ vi.mock('vue-router', () => ({
 type ReportEnvelope = {
   success: boolean
   message?: string
-  data?: { productionReportId?: string; reportNo?: string } | null
+  data?: {
+    productionReportId?: string
+    reportNo?: string
+    serialNumbers?: string[]
+    printBatchId?: string
+    printStatus?: string
+    printingPreparationPending?: boolean
+  } | null
 }
 const successfulReceipt: ReportEnvelope = {
   success: true,
@@ -296,6 +303,22 @@ vi.mock('@/composables/useBusinessMes', () => ({
 
 import ReportPage from './report.vue'
 
+const serialRequired = ref(false)
+const serialValid = ref(true)
+const serialTemplateId = ref('')
+vi.mock('@/composables/mes/useProductionReportSerials', () => ({
+  useProductionReportSerials: () => ({
+    required: serialRequired,
+    valid: serialValid,
+    templateId: serialTemplateId,
+    pending: ref(false),
+    message: ref(''),
+    templates: ref([{ templateId: 'tpl-1', templateName: '成品标签', status: 'active' }]),
+    pendingCount: ref(2),
+    refresh: vi.fn(),
+  }),
+}))
+
 async function selectWorkOrder(wrapper: ReturnType<typeof mount>, index = 0) {
   const rows = wrapper.findAll('[data-row]')
   await rows[index].trigger('click')
@@ -313,7 +336,35 @@ function deferred<T>() {
 }
 
 describe('PDA MES production reporting page', () => {
+  it('shows every allocated serial and transport status without claiming paper output', async () => {
+    route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-1' }
+    recordReport.mockResolvedValue({
+      success: true,
+      data: {
+        ...successfulReceipt.data,
+        serialNumbers: ['SN-001', 'SN-002'],
+        printBatchId: 'batch-1',
+        printStatus: 'sent-to-printer',
+      },
+    })
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    await flushPromises()
+    const input = document.body.querySelector<HTMLInputElement>('[data-testid="good-quantity"]')!
+    input.value = '2'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    document.body.querySelector<HTMLButtonElement>('[data-testid="submit-report"]')!.click()
+    await flushPromises()
+    expect(wrapper.text()).toContain('SN-001')
+    expect(wrapper.text()).toContain('SN-002')
+    expect(wrapper.text()).toContain('已发送至打印机')
+    expect(wrapper.text()).not.toContain('已打印')
+  })
+
   beforeEach(() => {
+    serialRequired.value = false
+    serialValid.value = true
+    serialTemplateId.value = ''
     recordReport.mockClear()
     recordReport.mockResolvedValue(successfulReceipt)
     confirmReport.mockClear()
@@ -387,6 +438,36 @@ describe('PDA MES production reporting page', () => {
     workOrderFilters.workOrderId = undefined
     taskFilters.workOrderId = undefined
     route.query = {}
+  })
+
+  it('keeps a successful report and retries pending label preparation with the same frozen template', async () => {
+    serialRequired.value = true
+    serialTemplateId.value = 'tpl-1'
+    route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-1' }
+    recordReport.mockResolvedValueOnce({
+      success: true,
+      data: {
+        ...successfulReceipt.data,
+        serialNumbers: ['SN-001'],
+        printBatchId: 'batch-1',
+        printStatus: 'reserved',
+        printingPreparationPending: true,
+      },
+    })
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    await flushPromises()
+    const input = document.body.querySelector<HTMLInputElement>('[data-testid="good-quantity"]')!
+    input.value = '1'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    document.body.querySelector<HTMLButtonElement>('[data-testid="submit-report"]')!.click()
+    await flushPromises()
+    expect(wrapper.text()).toContain('报工成功')
+    expect(recordReport.mock.calls[0][0].labelTemplateId).toBe('tpl-1')
+    serialTemplateId.value = 'tpl-2'
+    await wrapper.get('[data-testid="retry-label-preparation"]').trigger('click')
+    await flushPromises()
+    expect(recordReport.mock.calls[1][0]).toEqual(recordReport.mock.calls[0][0])
   })
 
   it('starts on the select-work-order step listing work orders', () => {

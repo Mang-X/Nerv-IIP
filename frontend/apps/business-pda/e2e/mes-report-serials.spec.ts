@@ -1,0 +1,172 @@
+import { expect, test, type Page } from '@playwright/test'
+import {
+  productionReportReceipt,
+  routeBusinessConsoleApi,
+  routeConsoleApi,
+  seedStoredSession,
+} from './fixtures'
+
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/console/v1/**', routeConsoleApi)
+  await page.route('**/api/business-console/v1/**', routeBusinessConsoleApi)
+  await seedStoredSession(page)
+  await page.route('**/master-data/resources/sku/**', (route) =>
+    route.fulfill({
+      json: {
+        success: true,
+        data: {
+          resourceType: 'sku',
+          code: 'SKU-1',
+          active: true,
+          serialTrackingPolicy: 'on-production',
+          defaultBarcodeRuleCode: 'UNIT',
+        },
+      },
+    }),
+  )
+  await page.route('**/barcode/templates?**', (route) =>
+    route.fulfill({
+      json: {
+        success: true,
+        data: {
+          templates: [
+            {
+              templateId: 'tpl-1',
+              templateCode: 'FINISHED',
+              templateName: '成品标签',
+              status: 'active',
+            },
+          ],
+          total: 1,
+        },
+      },
+    }),
+  )
+  await page.route('**/mes/production-reports/RPT-SERIAL?**', (route) =>
+    route.fulfill({
+      json: {
+        success: true,
+        data: {
+          report: {
+            productionReportId: 'report-serial',
+            reportNo: 'RPT-SERIAL',
+            workOrderId: 'WO-1',
+            operationTaskId: 'OP-1',
+          },
+        },
+      },
+    }),
+  )
+})
+
+async function enterGood(page: Page, quantity: string) {
+  await page.getByTestId('good-quantity').tap()
+  const keyboard = page.locator('[data-slot="number-keyboard"]')
+  for (const digit of quantity)
+    await keyboard.getByRole('button', { name: digit, exact: true }).tap()
+  await keyboard.getByRole('button', { name: '完成', exact: true }).tap()
+}
+async function selectTemplate(page: Page) {
+  await page.getByRole('button', { name: '选择标签模板', exact: true }).tap()
+  await page.getByText('成品标签 · FINISHED', { exact: true }).tap()
+  // NvPicker confirms its current selection explicitly.
+  await page.getByRole('button', { name: '确定', exact: true }).tap()
+}
+function receipt(body: Record<string, unknown>, status = 'sent-to-printer', pending = false) {
+  return {
+    success: true,
+    data: {
+      productionReportId: 'report-serial',
+      reportNo: 'RPT-SERIAL',
+      serialNumbers: ['SN-0001', 'SN-0002'],
+      printBatchId: 'batch-serial',
+      printStatus: status,
+      printingPreparationPending: pending,
+      operationReceipt: productionReportReceipt('report-serial', String(body.idempotencyKey)),
+    },
+  }
+}
+
+test('单手录入、模板选择和全部序列号；运输成功不等于出纸', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  const writes: Record<string, unknown>[] = []
+  await page.route('**/mes/production-reports', (route) => {
+    const body = route.request().postDataJSON()
+    writes.push(body)
+    return route.fulfill({ json: receipt(body) })
+  })
+  await page.goto('/mes/report?workOrderId=WO-1&operationTaskId=OP-1')
+  await expect(page.getByText('待分配序列号：0 个')).toBeVisible()
+  await expect(page.getByTestId('good-quantity')).toHaveAttribute('readonly', '')
+  await enterGood(page, '2')
+  await expect(page.getByText('待分配序列号：2 个')).toBeVisible()
+  await expect(page.getByTestId('submit-report')).toBeDisabled()
+  expect(writes).toHaveLength(0)
+  const templateButton = await page
+    .getByRole('button', { name: '选择标签模板', exact: true })
+    .boundingBox()
+  expect(templateButton!.height).toBeGreaterThanOrEqual(44)
+  await selectTemplate(page)
+  await page.getByTestId('submit-report').tap()
+  await expect(page.getByRole('heading', { name: '报工成功' })).toBeVisible()
+  await expect(page.getByRole('list', { name: '本次全部序列号' }).getByRole('listitem')).toHaveText(
+    ['SN-0001', 'SN-0002'],
+  )
+  await expect(page.getByText('已发送至打印机，请到现场核对出纸。')).toBeVisible()
+  await expect(page.locator('body')).not.toContainText('已打印')
+  expect(writes[0]).toMatchObject({
+    goodQuantity: 2,
+    labelTemplateId: 'tpl-1',
+    workOrderId: 'WO-1',
+    operationTaskId: 'OP-1',
+  })
+  expect(writes[0]).not.toHaveProperty('serialNumbers')
+  expect(writes[0]).not.toHaveProperty('serialTrackingPolicy')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  const button = await page.getByTestId('continue-report').boundingBox()
+  expect(button!.height).toBeGreaterThanOrEqual(44)
+})
+
+test('响应丢失和标签准备重试冻结同一键、时间、模板与数量', async ({ page }) => {
+  const writes: Record<string, unknown>[] = []
+  await page.route('**/mes/production-reports', (route) => {
+    const body = route.request().postDataJSON()
+    writes.push(body)
+    if (writes.length === 1) return route.abort('failed')
+    return route.fulfill({
+      json: receipt(body, writes.length === 2 ? 'reserved' : 'failed', writes.length === 2),
+    })
+  })
+  await page.goto('/mes/report?workOrderId=WO-1&operationTaskId=OP-1')
+  await expect(page.getByText('待分配序列号：0 个')).toBeVisible()
+  await enterGood(page, '2')
+  await selectTemplate(page)
+  await page.getByTestId('submit-report').tap()
+  await expect(page.getByTestId('retry-report')).toBeVisible()
+  await page.getByTestId('retry-report').tap()
+  await expect(page.getByRole('heading', { name: '报工成功' })).toBeVisible()
+  await page.getByTestId('retry-label-preparation').tap()
+  await expect(
+    page.getByText('打印发送失败，请联系现场打印负责人处理本批标签，勿重复报工。'),
+  ).toBeVisible()
+  expect(writes).toHaveLength(3)
+  expect(writes[1]).toEqual(writes[0])
+  expect(writes[2]).toEqual(writes[0])
+})
+
+test('模板不可用与权限失败给出可执行反馈并阻断报工', async ({ page }) => {
+  await page.route('**/barcode/templates?**', (route) =>
+    route.fulfill({ status: 403, json: { success: false, message: 'permission-denied' } }),
+  )
+  await page.goto('/mes/report?workOrderId=WO-1&operationTaskId=OP-1')
+  await expect(page.getByText('待分配序列号：0 个')).toBeVisible()
+  await enterGood(page, '2')
+  await expect(page.getByRole('button', { name: '重新核对产品与模板' })).toBeVisible()
+  await expect(page.getByTestId('submit-report')).toBeDisabled()
+  await page.route('**/barcode/templates?**', (route) =>
+    route.fulfill({ json: { success: true, data: { templates: [], total: 0 } } }),
+  )
+  await page.getByRole('button', { name: '重新核对产品与模板' }).tap()
+  await expect(page.getByText('没有可用标签模板，请联系标签管理员启用模板后重试。')).toBeVisible()
+  await expect(page.getByTestId('submit-report')).toBeDisabled()
+})

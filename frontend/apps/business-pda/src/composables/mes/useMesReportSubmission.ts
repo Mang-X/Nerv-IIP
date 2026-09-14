@@ -1,7 +1,10 @@
 import { describeRequestError } from '@/api/request-timeout'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import type { MesReportExecutionContext, RecordReportInput } from '@/composables/useBusinessMes'
-import type { BusinessConsoleMesOperationTaskRow } from '@nerv-iip/api-client'
+import type {
+  BusinessConsoleMesOperationTaskRow,
+  BusinessConsoleRecordProductionReportResponse,
+} from '@nerv-iip/api-client'
 import type { ReportCtx } from '@nerv-iip/business-core'
 import { computed, reactive, watch, type ComputedRef, type Ref } from 'vue'
 
@@ -9,6 +12,7 @@ export type MesReportResult = {
   status: 'success' | 'error'
   title: string
   description?: string
+  receipt?: BusinessConsoleRecordProductionReportResponse
 }
 
 interface ReportIntent {
@@ -19,7 +23,12 @@ interface ReportIntent {
   context: MesReportExecutionContext
   payload: Omit<RecordReportInput, 'workOrderId' | 'operationTaskId' | 'idempotencyKey'>
   status: 'pending' | 'success' | 'error'
-  receipt: { reportNo: string; productionReportId: string } | null
+  receipt:
+    | (BusinessConsoleRecordProductionReportResponse & {
+        reportNo: string
+        productionReportId: string
+      })
+    | null
   result: MesReportResult | null
 }
 
@@ -32,6 +41,9 @@ interface MesReportSubmissionOptions {
   scanGuarded: Ref<boolean>
   reportScopeReady: ComputedRef<boolean>
   quantityValid: ComputedRef<boolean>
+  serialValid: ComputedRef<boolean>
+  serialRequired: ComputedRef<boolean>
+  labelTemplateId: Ref<string>
   invalidMaterialLots: ComputedRef<boolean>
   invalidScrapReasonCode: ComputedRef<boolean>
   goodQuantity: Ref<number>
@@ -40,10 +52,13 @@ interface MesReportSubmissionOptions {
   scrapReasonCode: Ref<string>
   consumedMaterialLots: ComputedRef<RecordReportInput['consumedMaterialLots']>
   completesOperation: Ref<boolean>
-  recordReport: (input: RecordReportInput) => Promise<{
+  recordReport: (
+    input: RecordReportInput,
+    isCurrent?: () => boolean,
+  ) => Promise<{
     success?: boolean
     message?: string | null
-    data?: { reportNo?: string | null; productionReportId?: string | null } | null
+    data?: BusinessConsoleRecordProductionReportResponse | null
   }>
   confirmReport: (input: {
     reportNo: string
@@ -123,10 +138,15 @@ export function useMesReportSubmission(options: MesReportSubmissionOptions) {
     }
     const key = `${reportContextKey(executionContext)}\u0000${workOrderId}\u0000${operationTaskId}`
     let intent = intents.get(key)
-    if (intent?.status === 'pending' || intent?.status === 'success') return
+    if (
+      intent?.status === 'pending' ||
+      (intent?.status === 'success' && !intent.receipt?.printingPreparationPending)
+    )
+      return
     if (!intent) {
       if (
         !options.quantityValid.value ||
+        !options.serialValid.value ||
         options.invalidMaterialLots.value ||
         options.invalidScrapReasonCode.value
       ) {
@@ -146,6 +166,9 @@ export function useMesReportSubmission(options: MesReportSubmissionOptions) {
             options.scrapQuantity.value > 0 ? options.scrapReasonCode.value.trim() : undefined,
           consumedMaterialLots: options.consumedMaterialLots.value,
           completesOperation: options.completesOperation.value,
+          ...(options.serialRequired.value && options.goodQuantity.value > 0
+            ? { labelTemplateId: options.labelTemplateId.value }
+            : {}),
         },
         status: 'pending',
         receipt: null,
@@ -161,13 +184,16 @@ export function useMesReportSubmission(options: MesReportSubmissionOptions) {
     options.flowContext.quantityEntered = true
     const attempt = intent.attempt
     try {
-      if (!intent.receipt) {
-        const receiptEnvelope = await options.recordReport({
-          workOrderId,
-          operationTaskId,
-          ...intent.payload,
-          idempotencyKey: intent.intentKey,
-        })
+      if (!intent.receipt || intent.receipt.printingPreparationPending) {
+        const receiptEnvelope = await options.recordReport(
+          {
+            workOrderId,
+            operationTaskId,
+            ...intent.payload,
+            idempotencyKey: intent.intentKey,
+          },
+          () => pairKey.value === key && intent.attempt === attempt,
+        )
         if (intent.attempt !== attempt) return
         if (!receiptEnvelope?.success) {
           throw new Error(receiptEnvelope?.message?.trim() || '报工回执无效，请重试。')
@@ -177,7 +203,7 @@ export function useMesReportSubmission(options: MesReportSubmissionOptions) {
         if (!reportNo || !productionReportId) {
           throw new Error('报工回执缺少真实报工单号或回执 ID，已阻止成功确认。')
         }
-        intent.receipt = { reportNo, productionReportId }
+        intent.receipt = { ...receiptEnvelope.data, reportNo, productionReportId }
       }
       const { reportNo, productionReportId } = intent.receipt
       await options.confirmReport({
@@ -199,6 +225,7 @@ export function useMesReportSubmission(options: MesReportSubmissionOptions) {
         status: 'success',
         title: '报工成功',
         description: description.join('；'),
+        receipt: intent.receipt,
       }
     } catch (error) {
       if (intent.attempt !== attempt) return
@@ -206,8 +233,9 @@ export function useMesReportSubmission(options: MesReportSubmissionOptions) {
       intent.status = 'error'
       intent.result = {
         status: 'error',
-        title: '报工失败',
+        title: intent.receipt ? '报工已受理，待核验' : '报工结果待核实',
         description: describeRequestError(error, '请检查网络后重试。').message,
+        receipt: intent.receipt ?? undefined,
       }
     }
   }
