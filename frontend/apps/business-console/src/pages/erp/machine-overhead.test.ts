@@ -153,6 +153,12 @@ describe('机器制造费用财务读面', () => {
     await flushPromises()
     expect(wrapper.text()).toContain(expected)
     expect(wrapper.text()).toContain('实际池 − 已分配额')
+    const monthlyRow = wrapper.findAll('section')[1].findAll('tbody tr')[0]
+    expect(monthlyRow.text()).toContain('WC-CNC-01')
+    const actualPool = monthlyRow.findAll('td')[2]
+    expect(actualPool.text()).toContain('固定 CNY 12,000.00')
+    expect(actualPool.text()).toContain('变动 CNY 3,600.00')
+    expect(actualPool.text()).toContain('合计 CNY 15,600.00')
   })
 
   it('明确零仍是可用金额和工时', async () => {
@@ -166,8 +172,16 @@ describe('机器制造费用财务读面', () => {
     }
     const wrapper = render()
     await flushPromises()
-    expect(wrapper.text()).toContain('0 小时')
-    expect(wrapper.text()).toContain('CNY 0.00')
+    const orderSection = wrapper.findAll('section')[0]
+    for (const [label, value] of [
+      ['机器实绩工时', '0 小时'],
+      ['固定预定分配', 'CNY 0.00'],
+      ['变动预定分配', 'CNY 0.00'],
+      ['预定分配合计', 'CNY 0.00'],
+    ]) {
+      const metricLabel = orderSection.findAll('p').find((element) => element.text() === label)
+      expect(metricLabel?.element.parentElement?.textContent).toContain(value)
+    }
     expect(wrapper.find('[role="status"]').text()).toContain('可用')
   })
 
