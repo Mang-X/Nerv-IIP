@@ -57,6 +57,48 @@ public sealed class ListeningThreadOffloadTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => listening.WaitAsync(Bounded));
     }
 
+    /// <summary>
+    /// ⭐ <b>#3249 把 <see cref="DecoratedConsumerClient.ListeningAsync"/> 拆成了两条分支，而<u>生产走的是另一条</u>。</b>
+    ///
+    /// <para>本文件其余五条用例全部用单参 <c>new DecoratedConsumerClient(inner)</c> 构造 ⇒ <c>stopSignal</c> 不可取消
+    /// ⇒ 全走短路那条。Redis 宿主拿到的 client 由 <c>DecoratedConsumerClientFactory</c> 带着<b>可取消</b>的停止信号
+    /// 构造 ⇒ 走 <c>ListenUntilStoppedAsync</c> 那条。</para>
+    ///
+    /// <para>⚠️ <b>这是第三种失效形态：断言还在跑、还在绿，但它要证的事已经不覆盖生产路径了。</b>
+    /// #3249 之前只有一条分支，那五条覆盖的就是生产；#3249 之后不是了，而<b>没有任何装置会为此报红</b>
+    /// ——断言本身没坏。#3352 的专用线程契约是 #3236 连接池方向<b>唯一落地</b>的手段，
+    /// 被它挡住的是 sync-over-async 把线程池吃干那一族，所以这个缺口必须在同一票补上。</para>
+    ///
+    /// <para>本用例断的是<b>同一套</b>线程契约，只是把 client 换成带停止信号构造的那种。
+    /// ⚠️ 仍然走 <see cref="StartListeningAsync"/> 的有界等待，理由见本文件开头 —— 去掉包装的变异会让
+    /// <c>ListeningAsync</c> <b>永不返回</b>，直接 await 会把用例挂死而不是判红。</para>
+    /// </summary>
+    [Fact]
+    public async Task Listening_blocks_on_a_dedicated_thread_on_the_stop_signal_branch_too()
+    {
+        var inner = new BlockingConsumerClient();
+        using var stopSignal = new CancellationTokenSource();
+        var client = new DecoratedConsumerClient(inner, stopSignal.Token);
+        using var cancellation = new CancellationTokenSource();
+
+        var (callerWasPoolThread, listening) = await StartListeningAsync(client, cancellation.Token);
+
+        // 前提断言：与本文件其余用例同一条，没有它下面那句「inner 不在池线程」就没有鉴别力。
+        Assert.True(callerWasPoolThread, "用例必须从线程池线程发起，否则本组断言不成立。");
+
+        await inner.Entered.Task.WaitAsync(Bounded);
+
+        Assert.False(inner.EnteredOnThreadPoolThread);
+        Assert.NotEqual(inner.ExecutingThreadId, Environment.CurrentManagedThreadId);
+        Assert.False(listening.IsCompleted);
+
+        // 停止信号这一路也必须真的把 inner 停下来，并且让阻塞调用返回（专用线程才能被释放）。
+        await stopSignal.CancelAsync();
+
+        await inner.Exited.Task.WaitAsync(Bounded);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => listening.WaitAsync(Bounded));
+    }
+
     /// <summary>验收 3：取消后装饰器返回的 Task 以 <see cref="OperationCanceledException"/> 结束。</summary>
     [Fact]
     public async Task Cancellation_surfaces_as_operation_canceled_on_the_returned_task()

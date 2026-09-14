@@ -82,7 +82,10 @@ public sealed class ConsumerClientDecorationTests
     public async Task Factory_WrapsEveryCreatedClientSoDownstreamWorkHasAMountPoint()
     {
         var inner = new RecordingConsumerClient();
-        var factory = new DecoratedConsumerClientFactory(new TransportConsumerClientFactory(new StubFactory(inner)));
+        // #3249 起工厂还要把最终停止信号传给它创建的 client；本用例断的仍是「每个 client 都被包住」。
+        var factory = new DecoratedConsumerClientFactory(
+            new TransportConsumerClientFactory(new StubFactory(inner)),
+            new ConsumerListeningStopSignal());
 
         var created = await factory.CreateAsync("group-a", 3);
 
