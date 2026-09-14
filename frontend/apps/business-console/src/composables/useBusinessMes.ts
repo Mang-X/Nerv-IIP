@@ -29,6 +29,7 @@ import {
   getBusinessConsoleMesProductionReportQueryOptions,
   getBusinessConsoleMesWipSummaryQueryOptions,
   getBusinessConsoleMesWipSummary,
+  getBusinessConsoleBarcodePrintBatch,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
   getBusinessConsoleMesWorkOrderTransformationQueryOptions,
   getBusinessConsoleMesWorkOrderTraceabilityQueryOptions,
@@ -135,6 +136,8 @@ import {
 } from '@nerv-iip/api-client'
 import {
   acquirePendingBusinessIntent,
+  clearPendingBusinessIntent,
+  shouldRetainPendingBusinessIntent,
   completePendingBusinessIntent,
   createServerPaginationState,
   formatWorkScopeKey,
@@ -860,6 +863,33 @@ export function useMesProductionReporting() {
   const issuedReportCompleteIntents = new Set<string>()
   const recordProductionReportPending = shallowRef(false)
   const recordProductionReportError = shallowRef<unknown>()
+  // 一道工序只有一个待确认的报工槽位；未知结果后重新进入时先恢复完整载荷。
+  const productionReportIntentScope = (workOrderId: string, operationTaskId: string) => ({
+    principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
+    organizationId: context.organizationId,
+    environmentId: context.environmentId,
+    operationType: 'mes.production-report.record',
+    payloadFingerprint: JSON.stringify({ workOrderId, operationTaskId }),
+  })
+  function restoreProductionReport(workOrderId: string, operationTaskId: string) {
+    const pending = peekPendingBusinessIntent(
+      productionReportIntentScope(workOrderId, operationTaskId),
+    )
+    if (!pending) return undefined
+    return requirePendingPayloadSnapshot<BusinessConsoleRecordProductionReportRequest>(
+      pending.payloadSnapshot,
+      '生产报工',
+    )
+  }
+  async function readProductionPrintStatus(printBatchId: string) {
+    const response = await getBusinessConsoleBarcodePrintBatch({
+      path: { printBatchId },
+      query: { ...context },
+      throwOnError: true,
+    })
+    if (!response.data?.success) throw response.data
+    return response.data.data?.printBatch?.status
+  }
   const refreshProductionReportQueries = () =>
     invalidateMesQueries(queryCache, [
       'getBusinessConsoleMesOverview',
@@ -918,18 +948,11 @@ export function useMesProductionReporting() {
         scopeKind: selectedScope.kind,
         scopeId: selectedScope.id,
       } satisfies BusinessConsoleRecordProductionReportRequest
-      const {
-        idempotencyKey: suppliedKey,
-        reportedAtUtc: _reportedAtUtc,
-        ...fingerprintBody
-      } = submittedBody
-      const intentScope = {
-        principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
-        organizationId: context.organizationId,
-        environmentId: context.environmentId,
-        operationType: 'mes.production-report.record',
-        payloadFingerprint: JSON.stringify(fingerprintBody),
-      }
+      const suppliedKey = submittedBody.idempotencyKey
+      const intentScope = productionReportIntentScope(
+        submittedBody.workOrderId ?? '',
+        submittedBody.operationTaskId ?? '',
+      )
       const restored = peekPendingBusinessIntent(intentScope)
       const pending = acquirePendingBusinessIntent(
         intentScope,
@@ -969,7 +992,7 @@ export function useMesProductionReporting() {
           throwOnError: false,
         })
       }
-      const result = await completePendingBusinessIntent(intentScope, async () => {
+      const coordinate = async () => {
         const envelope = stableBody.completesOperation
           ? await executeLifecycleAction({
               readLatest: () =>
@@ -998,7 +1021,16 @@ export function useMesProductionReporting() {
           expectedResourceIdSelector: (candidate) => candidate.data?.productionReportId,
         })
         return envelope
-      })
+      }
+      let result
+      try {
+        result = await coordinate()
+        // 报工回执只确认 MES；标签激活尚未收敛时保留同一报工意图供恢复。
+        if (!result.data?.printingPreparationPending) clearPendingBusinessIntent(intentScope)
+      } catch (error) {
+        if (!shouldRetainPendingBusinessIntent(error)) clearPendingBusinessIntent(intentScope)
+        throw error
+      }
       await refreshProductionReportQueries()
       return result
     } catch (error) {
@@ -1010,6 +1042,8 @@ export function useMesProductionReporting() {
   }
 
   return {
+    restoreProductionReport,
+    readProductionPrintStatus,
     recordProductionReport: recordProductionReportAction,
     recordProductionReportError,
     recordProductionReportPending,

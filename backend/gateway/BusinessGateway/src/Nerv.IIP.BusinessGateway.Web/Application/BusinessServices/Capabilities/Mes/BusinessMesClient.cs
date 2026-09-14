@@ -270,7 +270,7 @@ public interface IBusinessMesClient
         string? reportIntentFingerprint,
         CancellationToken cancellationToken) => throw new NotSupportedException();
 
-    Task<BusinessMesProductionReportIntentReceipt> GetProductionReportByIdempotencyKeyAsync(
+    Task<BusinessMesProductionReportIntentReceipt?> GetProductionReportByIdempotencyKeyAsync(
         string internalBearerToken,
         BusinessMesProductionReportIntentLookupRequest request,
         CancellationToken cancellationToken) => throw new NotSupportedException();
@@ -1050,20 +1050,31 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
                     request.IdempotencyKey));
     }
 
-    public async Task<BusinessMesProductionReportIntentReceipt> GetProductionReportByIdempotencyKeyAsync(
+    public async Task<BusinessMesProductionReportIntentReceipt?> GetProductionReportByIdempotencyKeyAsync(
         string internalBearerToken,
         BusinessMesProductionReportIntentLookupRequest request,
         CancellationToken cancellationToken)
     {
-        var response = await SendAsync<DownstreamProductionReportIntentReceipt>(
-            internalBearerToken,
-            HttpMethod.Get,
-            "/api/business/v1/mes/production-reports/by-idempotency-key?" + Query(
-                ("organizationId", request.OrganizationId),
-                ("environmentId", request.EnvironmentId),
-                ("idempotencyKey", request.IdempotencyKey)),
-            null,
-            cancellationToken);
+        DownstreamProductionReportIntentReceipt response;
+        try
+        {
+            response = await SendAsync<DownstreamProductionReportIntentReceipt>(
+                internalBearerToken,
+                HttpMethod.Get,
+                "/api/business/v1/mes/production-reports/by-idempotency-key?" + Query(
+                    ("organizationId", request.OrganizationId),
+                    ("environmentId", request.EnvironmentId),
+                    ("idempotencyKey", request.IdempotencyKey)),
+                null,
+                cancellationToken);
+        }
+        catch (BusinessServiceProxyException exception) when (
+            exception.StatusCode == HttpStatusCode.BadRequest &&
+            string.Equals(exception.Message, "未找到生产报工。", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
         if (response.ProductionReportId is null ||
             response.ProductionReportId.Id == Guid.Empty ||
             string.IsNullOrWhiteSpace(response.ReportNo) ||

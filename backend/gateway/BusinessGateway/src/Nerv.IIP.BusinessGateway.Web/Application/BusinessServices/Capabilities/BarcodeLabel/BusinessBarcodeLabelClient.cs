@@ -1,3 +1,4 @@
+using System.Net;
 using Nerv.IIP.Contracts.BarcodeLabel;
 
 namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
@@ -45,9 +46,14 @@ public interface IBusinessBarcodeLabelClient
         BusinessConsoleBarcodePrintBatchRequest request,
         CancellationToken cancellationToken);
 
-    Task<BusinessConsoleBarcodePrintBatchResponse> GetPrintBatchByIdempotencyKeyAsync(
+    Task<BusinessConsoleBarcodePrintBatchResponse?> GetPrintBatchByIdempotencyKeyAsync(
         string internalBearerToken,
         BusinessConsoleBarcodePrintBatchByIdempotencyKeyRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleBarcodePrintLifecycleResponse> ActivatePrintBatchAsync(
+        string internalBearerToken,
+        BusinessConsoleActivateBarcodePrintBatchRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleBarcodePrintBatchListResponse> ListPrintBatchesAsync(
@@ -175,18 +181,42 @@ public sealed class HttpBusinessBarcodeLabelClient(HttpClient httpClient)
             null,
             cancellationToken);
 
-    public Task<BusinessConsoleBarcodePrintBatchResponse> GetPrintBatchByIdempotencyKeyAsync(
+    public async Task<BusinessConsoleBarcodePrintBatchResponse?> GetPrintBatchByIdempotencyKeyAsync(
         string internalBearerToken,
         BusinessConsoleBarcodePrintBatchByIdempotencyKeyRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await SendAsync<BusinessConsoleBarcodePrintBatchResponse>(
+                internalBearerToken,
+                HttpMethod.Get,
+                "/api/business/v2/barcodes/print-batches/by-idempotency-key?" + Query(
+                    ("organizationId", request.OrganizationId),
+                    ("environmentId", request.EnvironmentId),
+                    ("idempotencyKey", request.IdempotencyKey)),
+                null,
+                cancellationToken);
+        }
+        catch (BusinessServiceProxyException exception) when (
+            exception.StatusCode == HttpStatusCode.BadRequest &&
+            string.Equals(exception.Message, "未找到打印批次。", StringComparison.Ordinal))
+        {
+            return null;
+        }
+    }
+
+    public Task<BusinessConsoleBarcodePrintLifecycleResponse> ActivatePrintBatchAsync(
+        string internalBearerToken,
+        BusinessConsoleActivateBarcodePrintBatchRequest request,
         CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleBarcodePrintBatchResponse>(
+        SendAsync<BusinessConsoleBarcodePrintLifecycleResponse>(
             internalBearerToken,
-            HttpMethod.Get,
-            "/api/business/v2/barcodes/print-batches/by-idempotency-key?" + Query(
+            HttpMethod.Post,
+            $"/api/business/internal/v1/barcodes/print-batches/{Uri.EscapeDataString(request.PrintBatchId)}/activate?" + Query(
                 ("organizationId", request.OrganizationId),
-                ("environmentId", request.EnvironmentId),
-                ("idempotencyKey", request.IdempotencyKey)),
-            null,
+                ("environmentId", request.EnvironmentId)),
+            request.Body,
             cancellationToken);
 
     public Task<BusinessConsoleBarcodePrintBatchListResponse> ListPrintBatchesAsync(

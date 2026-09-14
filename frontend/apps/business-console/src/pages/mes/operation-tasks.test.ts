@@ -97,6 +97,16 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
     filters: reactive({}),
   }),
 }))
+vi.mock('@/composables/mes/useProductionReportSerialOptions', () => ({
+  useProductionReportSerialOptions: () => ({
+    serialPolicy: ref('none'),
+    labelTemplates: ref([]),
+    serialOptionsReady: ref(true),
+    serialOptionsPending: ref(false),
+    refreshSerialOptions: vi.fn(),
+  }),
+}))
+
 vi.mock('@/composables/useBusinessMes', async () => {
   state.filters = reactive({ organizationId: 'org-001', environmentId: 'env-dev' })
   return {
@@ -115,6 +125,8 @@ vi.mock('@/composables/useBusinessMes', async () => {
     }),
     useMesProductionReporting: () => ({
       recordProductionReport: vi.fn(),
+      restoreProductionReport: vi.fn(),
+      readProductionPrintStatus: vi.fn(),
       recordProductionReportError: shallowRef(undefined),
       recordProductionReportPending: shallowRef(false),
       reportScopeMessage: computed(() => ''),
