@@ -141,13 +141,6 @@ $script:NervScriptTestOutOfBandRegistry = @(
         Tracking = $null
         Requirement = 'dotnet-counters'
         Reason = '它有必填参数 -CountersPath，且自述 Requires 为 Linux、prlimit、timeout、redis-cli 与 dotnet-counters；这些只在 Redis/CAP lane 的服务容器里成立，不属于 Script Governance 的无依赖执行面。'
-    },
-    [pscustomobject]@{
-        Name = 'fullstack-session-state-v2.Tests.ps1'
-        Kind = 'quarantine'
-        Parent = $null
-        Tracking = '#3405'
-        Reason = 'Linux 上既有缺陷，#3300 的发现式 runner 首次把它接上 CI 时才被看见，非本 PR 引入（该文件最后改动于 2026-08-22，此前零 job 选中）：canonical legacy manifest 在 Linux 上没有被分类为 v0。macOS 本机绿、Linux CI 红。解除条件：#3405 修复后删掉本条登记。'
     }
 )
 
