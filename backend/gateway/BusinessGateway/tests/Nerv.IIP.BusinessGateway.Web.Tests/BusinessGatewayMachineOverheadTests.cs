@@ -74,6 +74,89 @@ public sealed class BusinessGatewayMachineOverheadTests
         Assert.Equal("event-002", body["machineOverheadOperations"]![1]!["sourceEventId"]!.GetValue<string>());
     }
 
+    // PublicContract: #2278 requires the ERP labor/capitalization facts and lineage unchanged.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Work_order_facade_preserves_every_labor_variance_and_lineage_fact(bool unavailable)
+    {
+        var payload = JsonSerializer.SerializeToNode(WorkOrderPayload())!;
+        var expected = JsonNode.Parse("""
+            {
+              "currencyCode": "CNY",
+              "laborCostBasis": "actualOperation",
+              "laborVarianceStatus": "available",
+              "unavailableReason": null,
+              "actualLaborHours": 2.5,
+              "actualLaborCost": 125,
+              "standardLaborHours": 2,
+              "standardLaborCost": 100,
+              "laborEfficiencyVarianceHours": 0.5,
+              "laborEfficiencyVarianceAmount": 25,
+              "laborEfficiencyVarianceDirection": "unfavorable",
+              "laborRateVarianceStatus": "notApplicable",
+              "laborRateVarianceReason": "actual_payroll_rate_not_modeled",
+              "materialCost": 300,
+              "totalAccumulatedCost": 425,
+              "capitalizedCost": 425,
+              "capitalizationVarianceAmount": 0,
+              "pageNumber": 2,
+              "pageSize": 25,
+              "totalOperations": 26,
+              "operations": [{
+                "operationTaskId": "OP-LABOR", "workCenterId": "WC-LABOR",
+                "settlementRevision": 3, "status": "available", "unavailableReason": null,
+                "actualLaborTicks": 90000000000, "actualLaborHours": 2.5, "actualLaborCost": 125,
+                "standardLaborHours": 2, "standardLaborCost": 100,
+                "laborEfficiencyVarianceHours": 0.5, "laborEfficiencyVarianceAmount": 25,
+                "laborEfficiencyVarianceDirection": "unfavorable", "currencyCode": "CNY",
+                "workCenterCostRateId": "rate-labor-001", "rateRevision": 7, "hourlyRate": 50,
+                "rateBasis": "operation_completed_at", "rateBasisAtUtc": "2026-08-31T08:00:00+00:00",
+                "coveredReports": [
+                  { "reportNo": "REPORT-001", "goodQuantity": 24, "scrapQuantity": 2,
+                    "reworkQuantity": 1, "uomCode": "PCS", "theoreticalRatePerHour": 12,
+                    "reportedAtUtc": "2026-08-31T07:00:00+00:00", "isReversal": false, "reversedReportNo": null },
+                  { "reportNo": "REV-001", "goodQuantity": -24, "scrapQuantity": -2,
+                    "reworkQuantity": -1, "uomCode": "PCS", "theoreticalRatePerHour": 12,
+                    "reportedAtUtc": "2026-08-31T07:30:00+00:00", "isReversal": true, "reversedReportNo": "REPORT-001" }
+                ]
+              }]
+            }
+            """)!.AsObject();
+        if (unavailable)
+        {
+            expected["laborVarianceStatus"] = "unavailable";
+            expected["unavailableReason"] = "missing_output_basis";
+            var operation = expected["operations"]![0]!.AsObject();
+            operation["status"] = "unavailable";
+            operation["unavailableReason"] = "missing_output_basis";
+            foreach (var field in new[] { "standardLaborHours", "standardLaborCost",
+                "laborEfficiencyVarianceHours", "laborEfficiencyVarianceAmount", "laborEfficiencyVarianceDirection" })
+            {
+                expected[field] = null;
+                operation[field] = null;
+            }
+        }
+        foreach (var field in expected)
+            payload["data"]![field.Key] = field.Value?.DeepClone();
+        var handler = new RecordingHandler(_ => JsonResponse(payload));
+        await using var lease = Lease(FakeBusinessGatewayAuthorizationClient.Allowed(), handler);
+        using var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/erp/finance/work-order-costs/WO%2001?organizationId=org-001&environmentId=env-dev&pageNumber=2&pageSize=25");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var actual = JsonNode.Parse(await response.Content.ReadAsStringAsync())!["data"]!.AsObject();
+        foreach (var field in expected)
+        {
+            Assert.True(actual.ContainsKey(field.Key), $"Missing {field.Key}");
+            Assert.True(JsonNode.DeepEquals(field.Value, actual[field.Key]),
+                $"ERP fact changed: {field.Key}; expected {field.Value}, actual {actual[field.Key]}");
+        }
+    }
+
     [Fact]
     public async Task Period_facade_preserves_actual_applied_and_period_variance_fields()
     {

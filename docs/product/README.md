@@ -11,6 +11,7 @@
 | 条码标签 | [`barcode/design.md`](barcode/design.md) |
 | 产品工程 | [`product-engineering/design.md`](product-engineering/design.md) |
 | MES | [`mes/design.md`](mes/design.md) |
+| ERP 财务成本 | [`erp/design.md`](erp/design.md) |
 | 库存与 WMS | [`inventory/design.md`](inventory/design.md) |
 | 设备维护 | [`maintenance/design.md`](maintenance/design.md) |
 | 排产工作台 | [`scheduling/design.md`](scheduling/design.md) |
