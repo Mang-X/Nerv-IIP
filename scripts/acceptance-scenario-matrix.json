@@ -315,11 +315,11 @@
     {
       "id": "ncr-rework-cost-closure",
       "v1Alias": "ncr-rework-cost-closure",
-      "services": ["MasterData", "ProductEngineering", "Inventory", "Approval", "Quality", "MES", "ERP"],
+      "services": ["MasterData", "ProductEngineering", "Inventory", "Approval", "Quality", "MES", "ERP", "FileStorage", "BarcodeLabel"],
       "ownerIssue": "#2813",
       "status": "active",
       "tier": "core",
-      "contracts": ["Nerv.IIP.Contracts.Quality", "Nerv.IIP.Contracts.Mes", "Nerv.IIP.Contracts.Erp"],
+      "contracts": ["Nerv.IIP.Contracts.Quality", "Nerv.IIP.Contracts.Mes", "Nerv.IIP.Contracts.Erp", "Nerv.IIP.Contracts.FileStorage"],
       "entrypoint": {
         "kind": "script",
         "path": "scripts/verify-ncr-rework-cost-closure.ps1"
@@ -337,7 +337,7 @@
       },
       "impact": {
         "paths": ["backend/tests/Nerv.IIP.Business.FullChain.Tests/**", "scripts/verify-ncr-rework-cost-closure.ps1", "docs/product/mes/**"],
-        "owners": ["Quality", "MES", "ERP"]
+        "owners": ["Quality", "MES", "ERP", "MasterData", "BarcodeLabel", "FileStorage"]
       },
       "runPolicy": {
         "pullRequest": "impact",
@@ -355,7 +355,7 @@
         "safetyMarginSeconds": 300
       },
       "diagnosticProtocol": {
-        "schemas": ["approval", "erp", "inventory", "master_data", "mes", "product_engineering", "quality"],
+        "schemas": ["approval", "barcode", "erp", "filestorage", "inventory", "master_data", "mes", "product_engineering", "quality"],
         "captureBeforeCleanup": true,
         "redactSecrets": true
       },

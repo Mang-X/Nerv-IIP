@@ -7,6 +7,7 @@ using System.Net.Http.Json;
 using System.Reflection;
 using System.Security.Claims;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using BusinessGateway::Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using BusinessGateway::Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
@@ -39,6 +40,10 @@ public sealed class NcrReworkCostClosurePostgresRedisAcceptanceTests
     private const decimal PlannedQuantity = 10m;
     private const decimal ReworkQuantity = 2m;
     private const decimal ExpectedReworkLaborCost = 120m;
+    private const string BarcodeRuleCode = "code128";
+    private const string LabelTemplateCode = "TPL-MAN2813-REWORK";
+    private const string LabelVariableSchema = """{"version":1,"variables":[]}""";
+    private const string LabelTemplateDocument = """{"format":"nerv-iip.label-template","version":1,"media":{"dpi":203,"widthDots":812,"heightDots":406},"fields":[{"kind":"barcode","x":40,"y":90,"moduleWidth":2,"height":100,"variable":"label.value"}]}""";
 
     [RealNcrReworkFullChainFact]
     public async Task Public_ncr_rework_closes_one_traceable_work_order_and_independent_erp_cost()
@@ -49,6 +54,43 @@ public sealed class NcrReworkCostClosurePostgresRedisAcceptanceTests
         using var productEngineering = InternalClient(endpoints.ProductEngineering, endpoints.InternalToken);
         using var inventory = InternalClient(endpoints.Inventory, endpoints.InternalToken);
         using var erp = InternalClient(endpoints.Erp, endpoints.InternalToken);
+        using var masterData = InternalClient(endpoints.MasterData, endpoints.InternalToken);
+        using var barcodeLabel = InternalClient(endpoints.BarcodeLabel, endpoints.InternalToken);
+        using var fileStorage = InternalClient(endpoints.FileStorage, endpoints.InternalToken);
+
+        await PatchDataAsync(masterData, $"/api/business/v1/master-data/resources/sku/{SkuCode}", new
+        {
+            organizationId = OrganizationId,
+            environmentId = EnvironmentId,
+            resourceType = "sku",
+            code = SkuCode,
+            serialTrackingPolicy = "on-production",
+            defaultBarcodeRuleCode = BarcodeRuleCode,
+        });
+        await PostDataAsync(barcodeLabel, "/api/business/v1/barcodes/rules", new
+        {
+            organizationId = OrganizationId,
+            environmentId = EnvironmentId,
+            ruleCode = BarcodeRuleCode,
+            barcodeType = "code128",
+            prefix = "M2813",
+            length = 40,
+            checksumRule = "none",
+            allowedSourceDocumentTypes = new[] { "work-order" },
+            status = "active",
+        });
+        var templateFileId = await UploadLabelTemplateAsync(fileStorage);
+        var labelTemplate = await PostDataAsync(barcodeLabel, "/api/business/v1/barcodes/templates", new
+        {
+            organizationId = OrganizationId,
+            environmentId = EnvironmentId,
+            templateCode = LabelTemplateCode,
+            templateName = "MAN-2813 rework output serial",
+            templateFileId,
+            variableSchemaJson = LabelVariableSchema,
+            status = "active",
+        });
+        var labelTemplateId = StrongId(labelTemplate.GetProperty("templateId"));
 
         var productionVersion = await GetDataAsync(productEngineering, HttpMethod.Get,
             $"/api/business/v1/engineering/production-versions/resolve?organizationId={OrganizationId}" +
@@ -301,7 +343,7 @@ public sealed class NcrReworkCostClosurePostgresRedisAcceptanceTests
                 scopeKind = "organization",
                 scopeId = OrganizationId,
             });
-        var report = await PostDataAsync(browser, "/api/business-console/v1/mes/production-reports", new
+        var reportRequest = new
         {
             organizationId = OrganizationId,
             environmentId = EnvironmentId,
@@ -315,10 +357,62 @@ public sealed class NcrReworkCostClosurePostgresRedisAcceptanceTests
             scopeKind = "organization",
             scopeId = OrganizationId,
             producedLotNo = "LOT-MAN2813-REWORK-OUTPUT",
-            serialNo = "SN-MAN2813-REWORK-OUTPUT",
-        });
+            labelTemplateId,
+        };
+        using (var missingLabel = await browser.PostAsJsonAsync(
+                   "/api/business-console/v1/mes/production-reports",
+                   new
+                   {
+                       reportRequest.organizationId,
+                       reportRequest.environmentId,
+                       reportRequest.workOrderId,
+                       reportRequest.operationTaskId,
+                       reportRequest.goodQuantity,
+                       reportRequest.scrapQuantity,
+                       reportRequest.completesOperation,
+                       reportRequest.reportedAtUtc,
+                       idempotencyKey = "man2813-rework-report-missing-label",
+                       reportRequest.scopeKind,
+                       reportRequest.scopeId,
+                       reportRequest.producedLotNo,
+                   }))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, missingLabel.StatusCode);
+            Assert.Contains(
+                BusinessMesProductionReportStableWireCodes.LabelTemplateRequired,
+                await missingLabel.Content.ReadAsStringAsync(),
+                StringComparison.Ordinal);
+        }
+        using (var wrongLabel = await browser.PostAsJsonAsync(
+                   "/api/business-console/v1/mes/production-reports",
+                   reportRequest with
+                   {
+                       idempotencyKey = "man2813-rework-report-wrong-label",
+                       labelTemplateId = Guid.CreateVersion7().ToString(),
+                   }))
+        {
+            Assert.False(wrongLabel.IsSuccessStatusCode);
+        }
+        var report = await PostDataAsync(browser, "/api/business-console/v1/mes/production-reports", reportRequest);
         var reportNo = report.GetProperty("reportNo").GetString();
         Assert.False(string.IsNullOrWhiteSpace(reportNo));
+        var printBatchId = report.GetProperty("printBatchId").GetString();
+        Assert.False(string.IsNullOrWhiteSpace(printBatchId));
+        var printBatch = (await GetDataAsync(
+            barcodeLabel,
+            HttpMethod.Get,
+            $"/api/business/v2/barcodes/print-batches/{printBatchId}?organizationId={OrganizationId}&environmentId={EnvironmentId}"))
+            .GetProperty("printBatch");
+        Assert.Equal("ready-to-print", printBatch.GetProperty("status").GetString());
+        Assert.Equal(JsonValueKind.Null, printBatch.GetProperty("printerId").ValueKind);
+        Assert.Equal(JsonValueKind.Null, printBatch.GetProperty("printJobId").ValueKind);
+        Assert.Equal(JsonValueKind.Null, printBatch.GetProperty("failureReason").ValueKind);
+        var producedSerials = report.GetProperty("serialNumbers").EnumerateArray()
+            .Select(item => item.GetString())
+            .OfType<string>()
+            .ToArray();
+        Assert.Equal(decimal.ToInt32(ReworkQuantity), producedSerials.Length);
+        Assert.Equal(producedSerials.Length, producedSerials.Distinct(StringComparer.Ordinal).Count());
 
         var costAndTrace = await Eventually.WaitAsync(
             condition: "ERP independently reads one 120 CNY rework labor cost and MES exposes exact rework lineage",
@@ -340,7 +434,7 @@ public sealed class NcrReworkCostClosurePostgresRedisAcceptanceTests
                 state.OtherScopeCost.GetProperty("total").GetInt32() == 0 &&
                 HasEdge(state.Trace, ncrId, reworkWorkOrderId!, "created-rework-work-order") &&
                 HasEdge(state.Trace, reportNo!, "LOT-MAN2813-REWORK-OUTPUT", "produced-lot") &&
-                HasEdge(state.Trace, reportNo!, "SN-MAN2813-REWORK-OUTPUT", "produced-serial"),
+                producedSerials.All(serial => HasEdge(state.Trace, reportNo!, serial, "produced-serial")),
             describe: state => JsonSerializer.Serialize(new
             {
                 reworkTotal = state.ReworkCost.GetProperty("total").GetInt32(),
@@ -364,7 +458,7 @@ public sealed class NcrReworkCostClosurePostgresRedisAcceptanceTests
         Assert.True(HasEdge(costAndTrace.Trace, sourceLotNode.GetProperty("nodeId").GetString()!, ncrId, "identified-in-ncr"));
         Assert.True(HasEdge(costAndTrace.Trace, sourceSerialNode.GetProperty("nodeId").GetString()!, ncrId, "identified-in-ncr"));
         Assert.True(HasNode(costAndTrace.Trace, "LOT-MAN2813-REWORK-OUTPUT", "ProducedLot", "Produced"));
-        Assert.True(HasNode(costAndTrace.Trace, "SN-MAN2813-REWORK-OUTPUT", "Serial", "Produced"));
+        Assert.All(producedSerials, serial => Assert.True(HasNode(costAndTrace.Trace, serial, "Serial", "Produced")));
 
         await PostDataAsync(browser,
             $"/api/business-console/v1/mes/production-reports/{reportNo}/reverse" +
@@ -392,9 +486,10 @@ public sealed class NcrReworkCostClosurePostgresRedisAcceptanceTests
                 state.Cost.GetProperty("total").GetInt32() == 1 &&
                 state.Cost.GetProperty("reworkCostTotal").GetDecimal() == 0m &&
                 !HasEdge(state.Trace, reportNo!, "LOT-MAN2813-REWORK-OUTPUT", "produced-lot") &&
-                !HasEdge(state.Trace, reportNo!, "SN-MAN2813-REWORK-OUTPUT", "produced-serial") &&
                 !HasNode(state.Trace, "LOT-MAN2813-REWORK-OUTPUT", "ProducedLot", "Produced") &&
-                !HasNode(state.Trace, "SN-MAN2813-REWORK-OUTPUT", "Serial", "Produced") &&
+                producedSerials.All(serial =>
+                    !HasEdge(state.Trace, reportNo!, serial, "produced-serial") &&
+                    !HasNode(state.Trace, serial, "Serial", "Produced")) &&
                 HasNode(state.Trace, SourceWorkOrderId, "WorkOrder", "Source") &&
                 HasNode(state.Trace, ncrId, "NonconformanceReport", "ReworkRequested") &&
                 HasNode(state.Trace, reworkWorkOrderId!, "WorkOrder") &&
@@ -439,13 +534,14 @@ public sealed class NcrReworkCostClosurePostgresRedisAcceptanceTests
             builder.UseSetting("Quality:BaseUrl", endpoints.Quality.ToString());
             builder.UseSetting("Mes:BaseUrl", endpoints.Mes.ToString());
             builder.UseSetting("Erp:BaseUrl", endpoints.Erp.ToString());
+            builder.UseSetting("BarcodeLabel:BaseUrl", endpoints.BarcodeLabel.ToString());
             builder.UseSetting("InternalService:BearerToken", endpoints.InternalToken);
             builder.ConfigureTestServices(services =>
             {
                 services.RemoveAll<IBusinessGatewayAuthorizationClient>();
                 services.AddSingleton<IBusinessGatewayAuthorizationClient>(new AllowedAuthorizationClient());
                 services.RemoveAll<IBusinessMasterDataClient>();
-                services.AddSingleton(MasterDataProxy.Create());
+                services.AddSingleton(MasterDataProxy.Create(endpoints.MasterData));
                 services.RemoveAll<IInternalServiceTokenProvider>();
                 services.AddSingleton<IInternalServiceTokenProvider>(
                     new StaticInternalServiceTokenProvider(endpoints.InternalToken));
@@ -467,6 +563,72 @@ public sealed class NcrReworkCostClosurePostgresRedisAcceptanceTests
     {
         using var response = await client.PostAsJsonAsync(path, body, cancellationToken);
         return await DataAsync(response, cancellationToken);
+    }
+
+    private static async Task<JsonElement> PatchDataAsync(HttpClient client, string path, object body,
+        CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Patch, path)
+        {
+            Content = JsonContent.Create(body),
+        };
+        using var response = await client.SendAsync(request, cancellationToken);
+        return await DataAsync(response, cancellationToken);
+    }
+
+    private static async Task<string> UploadLabelTemplateAsync(HttpClient fileStorage)
+    {
+        var bytes = Encoding.UTF8.GetBytes(LabelTemplateDocument);
+        var checksum = $"sha256:{Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant()}";
+        using var createdResponse = await fileStorage.PostAsJsonAsync("/api/files/v1/upload-sessions", new
+        {
+            organizationId = OrganizationId,
+            environmentId = EnvironmentId,
+            owner = new
+            {
+                ownerService = "business-barcode-label",
+                ownerType = "label-template",
+                ownerId = LabelTemplateCode,
+            },
+            filePurpose = "barcode-label-template",
+            fileName = "man2813-rework-label.json",
+            contentType = "application/vnd.nerv-iip.label-template+json",
+            expectedSizeBytes = bytes.LongLength,
+            checksum,
+        });
+        createdResponse.EnsureSuccessStatusCode();
+        var created = await createdResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var uploadSessionId = created.GetProperty("uploadSessionId").GetString();
+        var fileId = created.GetProperty("fileId").GetString();
+        var uploadUrl = created.GetProperty("upload").GetProperty("url").GetString();
+        Assert.False(string.IsNullOrWhiteSpace(uploadSessionId));
+        Assert.False(string.IsNullOrWhiteSpace(fileId));
+        Assert.False(string.IsNullOrWhiteSpace(uploadUrl));
+
+        using var upload = new HttpRequestMessage(HttpMethod.Patch, uploadUrl)
+        {
+            Content = new ByteArrayContent(bytes),
+        };
+        upload.Headers.TryAddWithoutValidation("Tus-Resumable", "1.0.0");
+        upload.Headers.TryAddWithoutValidation("Upload-Offset", "0");
+        upload.Content.Headers.ContentType = new MediaTypeHeaderValue("application/offset+octet-stream");
+        using var uploadResponse = await fileStorage.SendAsync(upload);
+        uploadResponse.EnsureSuccessStatusCode();
+
+        using var completedResponse = await fileStorage.PostAsJsonAsync(
+            $"/api/files/v1/upload-sessions/{uploadSessionId}/complete",
+            new
+            {
+                organizationId = OrganizationId,
+                environmentId = EnvironmentId,
+                filePurpose = "barcode-label-template",
+                checksum,
+                sizeBytes = bytes.LongLength,
+            });
+        completedResponse.EnsureSuccessStatusCode();
+        var completed = await completedResponse.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(fileId, completed.GetProperty("fileId").GetString());
+        return fileId!;
     }
 
     private static async Task<JsonElement> GetDataAsync(HttpClient client, string path,
@@ -531,6 +693,8 @@ public sealed class NcrReworkCostClosurePostgresRedisAcceptanceTests
         Uri Quality,
         Uri Mes,
         Uri Erp,
+        Uri BarcodeLabel,
+        Uri FileStorage,
         string InternalToken)
     {
         public static ScenarioEndpoints FromEnvironment() => new(
@@ -541,6 +705,8 @@ public sealed class NcrReworkCostClosurePostgresRedisAcceptanceTests
             RequiredUri("NERV_IIP_TEST_QUALITY_URL"),
             RequiredUri("NERV_IIP_TEST_MES_URL"),
             RequiredUri("NERV_IIP_TEST_ERP_URL"),
+            RequiredUri("NERV_IIP_TEST_BARCODE_LABEL_URL"),
+            RequiredUri("NERV_IIP_TEST_FILE_STORAGE_URL"),
             Required("NERV_IIP_TEST_INTERNAL_TOKEN"));
 
         private static Uri RequiredUri(string name) => new(Required(name), UriKind.Absolute);
@@ -584,17 +750,32 @@ public sealed class NcrReworkCostClosurePostgresRedisAcceptanceTests
         }
     }
 
-    private class MasterDataProxy : DispatchProxy
+    private class MasterDataProxy : DispatchProxy, IDisposable
     {
-        public static IBusinessMasterDataClient Create() =>
-            DispatchProxy.Create<IBusinessMasterDataClient, MasterDataProxy>();
+        private IBusinessMasterDataClient? inner;
+        private HttpClient? innerHttpClient;
+
+        public static IBusinessMasterDataClient Create(Uri baseAddress)
+        {
+            var proxy = DispatchProxy.Create<IBusinessMasterDataClient, MasterDataProxy>();
+            var implementation = (MasterDataProxy)(object)proxy;
+            implementation.innerHttpClient = new HttpClient
+            {
+                BaseAddress = baseAddress,
+                Timeout = TimeSpan.FromSeconds(30),
+            };
+            implementation.inner = new HttpBusinessMasterDataClient(implementation.innerHttpClient);
+            return proxy;
+        }
+
+        public void Dispose() => innerHttpClient?.Dispose();
 
         protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
         {
             ArgumentNullException.ThrowIfNull(targetMethod);
             if (targetMethod.Name != nameof(IBusinessMasterDataClient.GetPrincipalWorkContextAsync))
             {
-                throw new NotSupportedException($"MAN-2813 Gateway did not expect MasterData call '{targetMethod.Name}'.");
+                return targetMethod.Invoke(inner!, args);
             }
 
             var request = Assert.IsType<BusinessMasterDataPrincipalWorkContextRequest>(args![1]);
@@ -676,6 +857,8 @@ internal sealed class RealNcrReworkFullChainFactAttribute : FactAttribute
         "NERV_IIP_TEST_QUALITY_URL",
         "NERV_IIP_TEST_MES_URL",
         "NERV_IIP_TEST_ERP_URL",
+        "NERV_IIP_TEST_BARCODE_LABEL_URL",
+        "NERV_IIP_TEST_FILE_STORAGE_URL",
         "NERV_IIP_TEST_INTERNAL_TOKEN",
     ];
 
@@ -686,7 +869,7 @@ internal sealed class RealNcrReworkFullChainFactAttribute : FactAttribute
             .ToArray();
         if (missing.Length > 0)
         {
-            Skip = "Set the MAN-2813 PostgreSQL, Redis, seven service URLs, and internal token variables to run the public NCR rework cost closure probe.";
+            Skip = "Set the MAN-2813 PostgreSQL, Redis, nine service URLs, and internal token variables to run the public NCR rework cost closure probe.";
         }
     }
 }

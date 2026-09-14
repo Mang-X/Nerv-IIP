@@ -1,9 +1,10 @@
 # Script-Governance:
 #   Category: verify
 #   SideEffects:
-#     - Builds and starts seven real business-service Web processes on reserved loopback ports
+#     - Builds and starts nine real business-service Web processes on reserved loopback ports
 #     - Creates and drops one randomly named PostgreSQL database
 #     - Uses the caller-provided Redis instance for real CAP delivery
+#     - Creates one invocation-scoped FileStorage tus root under the results directory
 #   Writes:
 #     - Service/test bin and obj outputs
 #     - artifacts/script-logs/**
@@ -12,7 +13,8 @@
 #     - Stops only this invocation's managed processes
 #     - Drops only this invocation's exact random database
 #     - Removes only this invocation's unique Redis topic namespace and verifies a foreign sentinel survives
-#     - Verifies zero managed process, database, and Redis residue
+#     - Removes only this invocation's exact FileStorage tus root
+#     - Verifies zero managed process, database, Redis, and FileStorage tus residue
 #   Requires:
 #     - PowerShell 7, .NET SDK 10, Docker, redis-cli, PostgreSQL and Redis lane variables
 
@@ -152,6 +154,7 @@ $remainingProcesses = [Collections.Generic.List[string]]::new()
 $remainingDatabase = 0
 $remainingRedisKeys = 0
 $remainingForeignRedisSentinel = 0
+$remainingFileStorageRoot = 0
 
 $serviceSpecs = [ordered]@{
     masterData = 'backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Nerv.IIP.Business.MasterData.Web.csproj'
@@ -161,6 +164,8 @@ $serviceSpecs = [ordered]@{
     erp = 'backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Nerv.IIP.Business.Erp.Web.csproj'
     quality = 'backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Nerv.IIP.Business.Quality.Web.csproj'
     mes = 'backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Nerv.IIP.Business.Mes.Web.csproj'
+    fileStorage = 'backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Nerv.IIP.FileStorage.Web.csproj'
+    barcodeLabel = 'backend/services/Business/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Nerv.IIP.Business.BarcodeLabel.Web.csproj'
 }
 $owners = [ordered]@{}
 foreach ($name in $serviceSpecs.Keys) { $owners[$name] = New-Man2813PortOwner -Name $name }
@@ -170,6 +175,7 @@ $testIdentity = 'Nerv.IIP.Business.FullChain.Tests.NcrReworkCostClosurePostgresR
 $resultsDirectory = if ([string]::IsNullOrWhiteSpace($env:NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY)) {
     Join-Path $root 'artifacts/acceptance/man2813'
 } else { [IO.Path]::GetFullPath($env:NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY) }
+$fileStorageRoot = Join-Path $resultsDirectory "tus-$([Guid]::NewGuid().ToString('N'))"
 $resultFile = if ([string]::IsNullOrWhiteSpace($env:NERV_IIP_FULL_CHAIN_RESULT_FILE)) {
     'ncr-rework-cost-closure.trx'
 } else { $env:NERV_IIP_FULL_CHAIN_RESULT_FILE }
@@ -234,10 +240,22 @@ try {
             Inventory__SiteCode = 'production'
             Erp__BaseUrl = $urls.erp
             Quality__BaseUrl = $urls.quality
+            FileStorage__BaseUrl = $urls.fileStorage
         }
         if ([string]::Equals($name, 'masterData', [StringComparison]::Ordinal) -or
             [string]::Equals($name, 'productEngineering', [StringComparison]::Ordinal)) {
             $specific.LeaderDemo__Seed__Enabled = 'true'
+        }
+        if ([string]::Equals($name, 'fileStorage', [StringComparison]::Ordinal)) {
+            $specific.FileStorage__UploadProvider = 'tus'
+            $specific.FileStorage__Tus__RootPath = $fileStorageRoot
+        }
+        if ([string]::Equals($name, 'barcodeLabel', [StringComparison]::Ordinal)) {
+            $testingSettings = Get-Content -LiteralPath (Join-Path $projectDirectory 'appsettings.Testing.json') -Raw | ConvertFrom-Json
+            $specific.LabelPrinter__Mode = [string]$testingSettings.LabelPrinter.Mode
+            $specific.TemplateAssetRetirementProof__Issuer = [string]$testingSettings.TemplateAssetRetirementProof.Issuer
+            $specific.TemplateAssetRetirementProof__Audience = [string]$testingSettings.TemplateAssetRetirementProof.Audience
+            $specific.TemplateAssetRetirementProof__SecretBase64 = [string]$testingSettings.TemplateAssetRetirementProof.SecretBase64
         }
         Start-Man2813Service -Owner $owners[$name] -Dll $dll -WorkingDirectory $projectDirectory -Environment ($commonEnvironment + $specific)
         if ([string]::Equals($name, 'mes', [StringComparison]::Ordinal)) {
@@ -258,6 +276,8 @@ try {
         NERV_IIP_TEST_QUALITY_URL = $urls.quality
         NERV_IIP_TEST_MES_URL = $urls.mes
         NERV_IIP_TEST_ERP_URL = $urls.erp
+        NERV_IIP_TEST_BARCODE_LABEL_URL = $urls.barcodeLabel
+        NERV_IIP_TEST_FILE_STORAGE_URL = $urls.fileStorage
         NERV_IIP_TEST_INTERNAL_TOKEN = $internalToken
     } -ScriptBlock {
         Invoke-DotNet -Arguments @(
@@ -297,6 +317,14 @@ finally {
         if ($null -ne $owner.ProcessId -and $null -ne (Get-Process -Id $owner.ProcessId -ErrorAction SilentlyContinue)) {
             $remainingProcesses.Add("$name`:$($owner.ProcessId)")
         }
+    }
+    if (Test-Path -LiteralPath $fileStorageRoot) {
+        try { Remove-Item -LiteralPath $fileStorageRoot -Recurse -Force }
+        catch { $cleanupErrors.Add("FileStorage tus root cleanup: $($_.Exception.Message)") }
+    }
+    if (Test-Path -LiteralPath $fileStorageRoot) {
+        $remainingFileStorageRoot = 1
+        $cleanupErrors.Add("FileStorage tus root remains: $fileStorageRoot")
     }
     if ($remainingProcesses.Count -gt 0) { $cleanupErrors.Add("managed processes remain: $($remainingProcesses -join ', ')") }
     if ($databaseCreated) {
@@ -354,6 +382,7 @@ finally {
                 exactDatabaseRemaining = $remainingDatabase
                 ownedRedisKeyRemaining = $remainingRedisKeys
                 ownedComposeServiceRemaining = 0
+                ownedFileStorageRootRemaining = $remainingFileStorageRoot
                 foreignRedisSentinelPreserved = $foreignRedisSentinelPreserved
                 foreignRedisSentinelRemaining = $remainingForeignRedisSentinel
                 errors = @($cleanupErrors | ForEach-Object { Protect-ScriptAutomationText -Text $_ })
