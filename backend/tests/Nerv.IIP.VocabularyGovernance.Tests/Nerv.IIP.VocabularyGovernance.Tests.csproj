@@ -16,8 +16,114 @@
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
 
+  <!--
+    #3292 · 强类型 Id 内部成员查询树门禁（StronglyTypedIdQueryTranslationGovernanceTests）需要在
+    本项目内对 backend 全部非测试项目做 Roslyn 编译，metadata 引用取本项目自己的
+    TRUSTED_PLATFORM_ASSEMBLIES —— 因此本项目必须持有「backend 全部非测试项目 PackageReference 的并集」。
+
+    该清单是**机械可复算**的，复算命令（当前读数 56 个，与下方逐条一致）：
+
+      git ls-files 'backend/**/*.csproj' | grep -v '/tests/' \
+        | xargs grep -ho 'PackageReference Include="[^"]*"' \
+        | sed -E 's/.*"(.*)"/\1/' | sort -u
+
+    ⚠️ 关于这份清单的护栏强度，必须按实测说，⛔ 不要写成「漏了哪个包就报红」：
+    删掉一条直接 PackageReference **并不会**把该程序集移出本项目的 TPA（传递依赖照样带进来），
+    复审实测删 Npgsql.EntityFrameworkCore.PostgreSQL 或 NetCorePal.Extensions.Domain.Abstractions
+    之后门禁 10/10 仍绿 —— 因为扫描面根本没缩。
+    unresolved 断言（Scanner_resolves_every_strongly_typed_id_inner_member_across_backend）
+    真正兜住的是「类型/生成成员真的解析不出来」那一类：删掉全部 56 个包 ⇒ 红 8/10、unresolved=1454；
+    源生成器清单残缺 ⇒ 红 22 条（本 PR 实施中真发生过一次，见下方 Target 注释）。
+    完整的缺口登记见 StronglyTypedIdQueryTranslationGovernanceTests 的类注释。
+
+   ：这些包的 analyzer/源生成器**不参与本测试项目自身的编译**
+    （避免 FastEndpoints / netcorepal 的生成器往测试程序集里塞代码）；
+    扫描器需要的源生成器由下方 ExportSourceGeneratorsForScanner 目标单独导出后在运行期加载。
+  -->
+  <ItemGroup>
+    <PackageReference Include="DotNetCore.CAP" />
+    <PackageReference Include="DotNetCore.CAP.Dashboard" />
+    <PackageReference Include="DotNetCore.CAP.PostgreSql" />
+    <PackageReference Include="DotNetCore.CAP.RabbitMQ" />
+    <PackageReference Include="DotNetCore.CAP.RedisStreams" />
+    <PackageReference Include="FastEndpoints" />
+    <PackageReference Include="FastEndpoints.Swagger" />
+    <PackageReference Include="FastEndpoints.Swagger.Swashbuckle" />
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="FluentValidation.AspNetCore" />
+    <PackageReference Include="Hangfire.AspNetCore" />
+    <PackageReference Include="Hangfire.Redis.StackExchange" />
+    <PackageReference Include="MediatR" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <PackageReference Include="Microsoft.AspNetCore.DataProtection.StackExchangeRedis" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+    <PackageReference Include="Microsoft.VisualStudio.Azure.Containers.Tools.Targets" PrivateAssets="all" />
+    <PackageReference Include="Minio" />
+    <PackageReference Include="NetCorePal.Context.AspNetCore" />
+    <PackageReference Include="NetCorePal.Context.CAP" />
+    <PackageReference Include="NetCorePal.Context.Shared" />
+    <PackageReference Include="NetCorePal.Extensions.AspNetCore" />
+    <PackageReference Include="NetCorePal.Extensions.CodeAnalysis" />
+    <PackageReference Include="NetCorePal.Extensions.DistributedLocks.Abstractions" />
+    <PackageReference Include="NetCorePal.Extensions.DistributedTransactions.CAP.PostgreSQL" />
+    <PackageReference Include="NetCorePal.Extensions.Domain.Abstractions" />
+    <PackageReference Include="NetCorePal.Extensions.MicrosoftServiceDiscovery" />
+    <PackageReference Include="NetCorePal.Extensions.MultiEnv" />
+    <PackageReference Include="NetCorePal.Extensions.NewtonsoftJson" />
+    <PackageReference Include="NetCorePal.Extensions.Primitives" />
+    <PackageReference Include="NetCorePal.Extensions.Repository.EntityFrameworkCore" />
+    <PackageReference Include="NetCorePal.Extensions.Repository.EntityFrameworkCore.Snowflake" />
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" />
+    <PackageReference Include="Savorboard.CAP.InMemoryMessageQueue" />
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="Serilog.Enrichers.ClientInfo" />
+    <PackageReference Include="Serilog.Sinks.File" />
+    <PackageReference Include="Serilog.Sinks.OpenTelemetry" />
+    <PackageReference Include="StackExchange.Redis" />
+    <PackageReference Include="Swashbuckle.AspNetCore" />
+    <PackageReference Include="prometheus-net.AspNetCore" />
+    <PackageReference Include="prometheus-net.AspNetCore.HealthChecks" />
+    <PackageReference Include="xunit.assert" />
+    <PackageReference Include="xunit.extensibility.core" />
+  </ItemGroup>
+
   <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
+
+  <!--
+    把本项目解析到的全部 analyzer 程序集路径写进输出目录，供 StronglyTypedIdQueryScanner
+    在运行期用 AnalyzerFileReference 加载其中的源生成器。
+    @(Analyzer) 由 ResolvePackageAssets 产出，含版本与 NuGet 缓存位置，因此测试代码里
+    没有任何硬编码路径/版本。清单为空或生成器加载失败一律 fail-closed（见 SourceGeneratorCatalog）。
+  -->
+  <!--
+    ⚠️ 挂点只能是 ResolveReferences：`BeforeTargets="Build"` 会在 `Build` 目标之前触发，
+    那时 ResolvePackageAssets 还没跑完，@(Analyzer) 只有 SDK 自带的两个，写出来的清单是残的
+    （实测过：清单从 25 行变 2 行，netcorepal 源生成器全丢）。
+    ⭐ 那次残缺没有静默通过——Scanner_resolves_every_strongly_typed_id_inner_member_across_backend
+    的 unresolved 断言当场报红。下面的 Error 把同一件事再往前挪到构建期。
+  -->
+  <Target Name="ExportSourceGeneratorsForScanner" AfterTargets="ResolveReferences">
+    <Error Condition="'@(Analyzer)' == ''"
+           Text="解析不到任何 analyzer 资产，扫描器将拿不到 netcorepal 源生成器（强类型 Id 的 Id 成员是生成的）。" />
+    <MakeDir Directories="$(OutDir)" />
+    <WriteLinesToFile File="$(OutDir)nerv-source-generators.txt"
+                      Lines="@(Analyzer)"
+                      Overwrite="true"
+                      WriteOnlyWhenDifferent="true" />
+  </Target>
 
 </Project>
