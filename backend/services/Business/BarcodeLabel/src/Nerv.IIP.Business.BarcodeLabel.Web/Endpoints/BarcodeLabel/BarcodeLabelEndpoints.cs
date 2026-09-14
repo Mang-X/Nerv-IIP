@@ -1,4 +1,6 @@
+using System.ComponentModel.DataAnnotations;
 using System.Diagnostics.CodeAnalysis;
+using System.Text.Json.Serialization;
 using FastEndpoints;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
@@ -93,7 +95,8 @@ public sealed record CreateLabelPrintBatchRequest(
     string SourceDocumentId,
     string IdempotencyKey,
     string LabelValuesJson,
-    int RequestedQuantity);
+    int RequestedQuantity,
+    [property: MinLength(1), MaxLength(LabelPrintBatch.ReportIntentFingerprintMaxLength)] string? ReportIntentFingerprint = null);
 
 public sealed record CreateLabelPrintBatchResponse(LabelPrintBatchId PrintBatchId);
 
@@ -149,6 +152,18 @@ public sealed record ListLabelPrintBatchesResponse(IReadOnlyCollection<LabelPrin
 public sealed record GetLabelPrintBatchRequest(LabelPrintBatchId PrintBatchId);
 
 public sealed record GetLabelPrintBatchResponse(LabelPrintBatchDetail PrintBatch);
+
+public sealed record GetScopedLabelPrintBatchRequest(
+    LabelPrintBatchId PrintBatchId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
+
+public sealed record GetScopedLabelPrintBatchResponse(ScopedLabelPrintBatchDetail PrintBatch);
+
+public sealed record GetScopedLabelPrintBatchByIdempotencyKeyRequest(
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    [property: QueryParam] string IdempotencyKey);
 
 public sealed record RecordScanRequest(
     string OrganizationId,
@@ -285,7 +300,10 @@ public sealed class CreateLabelPrintBatchEndpoint(ISender sender)
             req.SourceDocumentId,
             req.IdempotencyKey,
             req.LabelValuesJson,
-            req.RequestedQuantity), ct);
+            req.RequestedQuantity)
+        {
+            ReportIntentFingerprint = req.ReportIntentFingerprint,
+        }, ct);
         await Send.OkAsync(new CreateLabelPrintBatchResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -302,6 +320,42 @@ public sealed class GetLabelPrintBatchEndpoint(ISender sender)
     {
         var batch = await sender.Send(new GetLabelPrintBatchQuery(req.PrintBatchId), ct);
         await Send.OkAsync(new GetLabelPrintBatchResponse(batch).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class GetScopedLabelPrintBatchEndpoint(ISender sender)
+    : BarcodeLabelEndpoint<GetScopedLabelPrintBatchRequest, ResponseData<GetScopedLabelPrintBatchResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureBarcodeLabelContract(BarcodeLabelEndpointContracts.Get<GetScopedLabelPrintBatchEndpoint>());
+    }
+
+    public override async Task HandleAsync(GetScopedLabelPrintBatchRequest req, CancellationToken ct)
+    {
+        var batch = await sender.Send(new GetScopedLabelPrintBatchQuery(
+            req.PrintBatchId,
+            req.OrganizationId,
+            req.EnvironmentId), ct);
+        await Send.OkAsync(new GetScopedLabelPrintBatchResponse(batch).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class GetScopedLabelPrintBatchByIdempotencyKeyEndpoint(ISender sender)
+    : BarcodeLabelEndpoint<GetScopedLabelPrintBatchByIdempotencyKeyRequest, ResponseData<GetScopedLabelPrintBatchResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureBarcodeLabelContract(BarcodeLabelEndpointContracts.Get<GetScopedLabelPrintBatchByIdempotencyKeyEndpoint>());
+    }
+
+    public override async Task HandleAsync(GetScopedLabelPrintBatchByIdempotencyKeyRequest req, CancellationToken ct)
+    {
+        var batch = await sender.Send(new GetScopedLabelPrintBatchByIdempotencyKeyQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.IdempotencyKey), ct);
+        await Send.OkAsync(new GetScopedLabelPrintBatchResponse(batch).AsResponseData(), cancellation: ct);
     }
 }
 
@@ -522,6 +576,8 @@ public static class BarcodeLabelEndpointContracts
         new(typeof(ScopedVoidLabelEndpoint), "POST", "/api/business/internal/v1/barcodes/print-batches/{printBatchId}/items/{sequenceNo}/void", BarcodeLabelPermissionCodes.Print, InternalServiceAuthorizationPolicy.Name, "voidScopedBusinessBarcodeLabel"),
         new(typeof(ListLabelPrintBatchesEndpoint), "GET", "/api/business/v1/barcodes/print-batches", BarcodeLabelPermissionCodes.Print, InternalServiceAuthorizationPolicy.Name, "listBusinessBarcodePrintBatches"),
         new(typeof(GetLabelPrintBatchEndpoint), "GET", "/api/business/v1/barcodes/print-batches/{printBatchId}", BarcodeLabelPermissionCodes.Print, InternalServiceAuthorizationPolicy.Name, "getBusinessBarcodePrintBatch"),
+        new(typeof(GetScopedLabelPrintBatchEndpoint), "GET", "/api/business/v2/barcodes/print-batches/{printBatchId}", BarcodeLabelPermissionCodes.Print, InternalServiceAuthorizationPolicy.Name, "getScopedBusinessBarcodePrintBatch"),
+        new(typeof(GetScopedLabelPrintBatchByIdempotencyKeyEndpoint), "GET", "/api/business/v2/barcodes/print-batches/by-idempotency-key", BarcodeLabelPermissionCodes.Print, InternalServiceAuthorizationPolicy.Name, "getScopedBusinessBarcodePrintBatchByIdempotencyKey"),
         new(typeof(RecordScanEndpoint), "POST", "/api/business/v1/barcodes/scans", BarcodeLabelPermissionCodes.ScansWrite, InternalServiceAuthorizationPolicy.Name, "recordBusinessBarcodeScan"),
         new(typeof(ListScansEndpoint), "GET", "/api/business/v1/barcodes/scans", BarcodeLabelPermissionCodes.ScansWrite, InternalServiceAuthorizationPolicy.Name, "listBusinessBarcodeScans"),
         new(typeof(ResolveBarcodeEndpoint), "POST", "/api/business/v1/barcodes/resolve", BarcodeLabelPermissionCodes.ScansWrite, InternalServiceAuthorizationPolicy.Name, "resolveBusinessBarcode"),

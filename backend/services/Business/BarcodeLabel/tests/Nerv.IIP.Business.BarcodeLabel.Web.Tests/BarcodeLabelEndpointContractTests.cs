@@ -1,11 +1,13 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json.Serialization;
 using MediatR;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Auth;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.PrintBatches;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.Scans;
+using Nerv.IIP.Business.BarcodeLabel.Web.Application.Queries.PrintBatches;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Queries.Resolutions;
 using Nerv.IIP.Business.BarcodeLabel.Web.Endpoints.BarcodeLabel;
 using Nerv.IIP.ServiceAuth;
@@ -19,7 +21,7 @@ public sealed class BarcodeLabelEndpointContractTests
     {
         var contracts = BarcodeLabelEndpointContracts.All.ToArray();
 
-        Assert.Equal(19, contracts.Length);
+        Assert.Equal(21, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/barcodes/rules"
             && x.PermissionCode == BarcodeLabelPermissionCodes.TemplatesManage
@@ -87,6 +89,16 @@ public sealed class BarcodeLabelEndpointContractTests
             && x.PermissionCode == BarcodeLabelPermissionCodes.Print
             && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
             && x.OperationId == "getBusinessBarcodePrintBatch");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v2/barcodes/print-batches/{printBatchId}"
+            && x.PermissionCode == BarcodeLabelPermissionCodes.Print
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "getScopedBusinessBarcodePrintBatch");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v2/barcodes/print-batches/by-idempotency-key"
+            && x.PermissionCode == BarcodeLabelPermissionCodes.Print
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "getScopedBusinessBarcodePrintBatchByIdempotencyKey");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/barcodes/scans"
             && x.PermissionCode == BarcodeLabelPermissionCodes.ScansWrite
@@ -119,6 +131,8 @@ public sealed class BarcodeLabelEndpointContractTests
     [InlineData(typeof(ScopedVoidLabelEndpoint))]
     [InlineData(typeof(ListLabelPrintBatchesEndpoint))]
     [InlineData(typeof(GetLabelPrintBatchEndpoint))]
+    [InlineData(typeof(GetScopedLabelPrintBatchEndpoint))]
+    [InlineData(typeof(GetScopedLabelPrintBatchByIdempotencyKeyEndpoint))]
     [InlineData(typeof(RecordScanEndpoint))]
     [InlineData(typeof(ListScansEndpoint))]
     [InlineData(typeof(ResolveBarcodeEndpoint))]
@@ -150,6 +164,72 @@ public sealed class BarcodeLabelEndpointContractTests
 
         Assert.False(result.IsValid);
         Assert.Contains(result.Errors, x => SameProperty(x.PropertyName, nameof(CreateLabelPrintBatchCommand.IdempotencyKey)));
+    }
+
+    [Fact]
+    public void Create_validator_accepts_an_omitted_report_intent_fingerprint_and_rejects_invalid_values()
+    {
+        var command = new CreateLabelPrintBatchCommand(
+            "org-001",
+            "env-dev",
+            new(Guid.CreateVersion7()),
+            new(Guid.CreateVersion7()),
+            "mes.production-report",
+            "report-001",
+            "idem-print-001",
+            "{}",
+            1);
+        var validator = new CreateLabelPrintBatchCommandValidator();
+
+        Assert.True(validator.Validate(command).IsValid);
+
+        var blank = validator.Validate(command with { ReportIntentFingerprint = " " });
+        Assert.False(blank.IsValid);
+        Assert.Contains(blank.Errors, x => SameProperty(
+            x.PropertyName,
+            nameof(CreateLabelPrintBatchCommand.ReportIntentFingerprint)));
+
+        var overlong = validator.Validate(command with { ReportIntentFingerprint = new string('f', 257) });
+        Assert.False(overlong.IsValid);
+        Assert.Contains(overlong.Errors, x => SameProperty(
+            x.PropertyName,
+            nameof(CreateLabelPrintBatchCommand.ReportIntentFingerprint)));
+    }
+
+    [Fact]
+    public void Create_and_scoped_v2_contracts_expose_the_report_intent_fingerprint()
+    {
+        var createProperty = typeof(CreateLabelPrintBatchRequest).GetProperty("ReportIntentFingerprint");
+        var detailProperty = typeof(ScopedLabelPrintBatchDetail).GetProperty("ReportIntentFingerprint");
+
+        Assert.NotNull(createProperty);
+        Assert.Equal(typeof(string), createProperty.PropertyType);
+        Assert.Empty(createProperty.GetCustomAttributes(typeof(JsonRequiredAttribute), inherit: true));
+        Assert.NotNull(detailProperty);
+        Assert.Equal(typeof(string), detailProperty.PropertyType);
+        Assert.Single(detailProperty.GetCustomAttributes(typeof(JsonRequiredAttribute), inherit: true));
+    }
+
+    [Fact]
+    public void Scoped_idempotency_key_query_validator_requires_a_bounded_key_and_tenant_scope()
+    {
+        var validator = new GetScopedLabelPrintBatchByIdempotencyKeyQueryValidator();
+        var valid = new GetScopedLabelPrintBatchByIdempotencyKeyQuery(
+            "org-001",
+            "env-dev",
+            "report-intent:Case/A");
+
+        Assert.True(validator.Validate(valid).IsValid);
+
+        var invalidResults = new[]
+        {
+            validator.Validate(valid with { OrganizationId = "" }),
+            validator.Validate(valid with { EnvironmentId = "" }),
+            validator.Validate(valid with { IdempotencyKey = "" }),
+            validator.Validate(valid with { IdempotencyKey = new string('k', 129) }),
+        };
+
+        Assert.All(invalidResults, result => Assert.False(result.IsValid));
     }
 
     [Fact]
@@ -269,6 +349,30 @@ public sealed class BarcodeLabelEndpointContractTests
             result = "accepted",
             rejectionReason = (string?)null,
         });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("wrong-token")]
+    public async Task Scoped_idempotency_key_detail_rejects_missing_or_invalid_internal_authorization(string? token)
+    {
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("environment", "Testing");
+                builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+            });
+        using var client = factory.CreateClient();
+        if (token is not null)
+        {
+            client.DefaultRequestHeaders.Authorization = new("Bearer", token);
+        }
+
+        using var response = await client.GetAsync(
+            "/api/business/v2/barcodes/print-batches/by-idempotency-key" +
+            "?organizationId=org-001&environmentId=env-dev&idempotencyKey=report-intent-001");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }

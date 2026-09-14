@@ -1,6 +1,8 @@
 using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
+using NJsonSchema.Annotations;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
@@ -66,6 +68,17 @@ public sealed record GetProductionReportQuery(
     string OrganizationId,
     string EnvironmentId,
     string ReportNo) : IQuery<GetProductionReportResponse>;
+
+public sealed record GetProductionReportByIdempotencyKeyQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string IdempotencyKey) : IQuery<ProductionReportIntentReceiptResponse>;
+
+public sealed record ProductionReportIntentReceiptResponse(
+    [property: Required, JsonRequired, JsonSchemaExtensionData("nullable", true)] string? ReportIntentFingerprint,
+    ProductionReportId ProductionReportId,
+    string ReportNo,
+    IReadOnlyCollection<string> SerialNumbers);
 
 public sealed record GetProductionReportResponse(
     ProductionReportFact Report,
@@ -198,6 +211,57 @@ public sealed class GetProductionReportQueryHandler(ApplicationDbContext dbConte
             .ToArrayAsync(cancellationToken);
 
         return new GetProductionReportResponse(report, consumedMaterialLots, laborAllocations);
+    }
+}
+
+public sealed class GetProductionReportByIdempotencyKeyQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<GetProductionReportByIdempotencyKeyQuery, ProductionReportIntentReceiptResponse>
+{
+    private const string ProductionReportRuleKey = "production-report";
+
+    public async Task<ProductionReportIntentReceiptResponse> Handle(
+        GetProductionReportByIdempotencyKeyQuery request,
+        CancellationToken cancellationToken)
+    {
+        var reportNo = await dbContext.CodeIdempotencyKeys
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.RuleKey == ProductionReportRuleKey
+                && x.IdempotencyKey == request.IdempotencyKey.Trim())
+            .Select(x => x.Code)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (reportNo is null)
+        {
+            throw new KnownException("未找到生产报工。");
+        }
+
+        var report = await dbContext.ProductionReports
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.ReportNo == reportNo)
+            .Select(x => new { x.Id, x.ReportNo, x.ReportIntentFingerprint })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (report is null)
+        {
+            throw new KnownException("未找到生产报工。");
+        }
+
+        var serialNumbers = await dbContext.ProductionReportSerialNumbers
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.ReportNo == report.ReportNo)
+            .OrderBy(x => x.SequenceNo)
+            .Select(x => x.SerialNumber)
+            .ToArrayAsync(cancellationToken);
+
+        return new ProductionReportIntentReceiptResponse(
+            report.ReportIntentFingerprint,
+            report.Id,
+            report.ReportNo,
+            serialNumbers);
     }
 }
 

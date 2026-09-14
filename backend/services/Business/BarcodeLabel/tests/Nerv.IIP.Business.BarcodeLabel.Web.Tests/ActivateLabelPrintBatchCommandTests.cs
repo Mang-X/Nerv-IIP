@@ -65,6 +65,7 @@ public sealed class ActivateLabelPrintBatchCommandTests
             "wms.inbound",
             "ASN-001",
             "report-intent-001",
+            "opaque:report-intent-a",
             "{}",
             1,
             ["00000000001"]);

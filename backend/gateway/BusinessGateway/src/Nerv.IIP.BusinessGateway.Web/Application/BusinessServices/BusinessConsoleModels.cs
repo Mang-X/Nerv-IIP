@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using FastEndpoints;
+using NJsonSchema.Annotations;
 using Nerv.IIP.Contracts.Coding;
 using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.Iam;
@@ -4352,7 +4353,8 @@ public sealed record BusinessConsoleCreateBarcodePrintBatchRequest(
     string SourceDocumentId,
     string IdempotencyKey,
     string LabelValuesJson,
-    int RequestedQuantity);
+    int RequestedQuantity,
+    [property: MinLength(1), MaxLength(256), JsonSchemaExtensionData("minLength", 1)] string? ReportIntentFingerprint = null);
 
 public sealed record BusinessConsoleCreateBarcodePrintBatchResponse(string PrintBatchId);
 
@@ -4393,14 +4395,27 @@ public sealed record BusinessConsoleBarcodePrintBatchDetail(
     string SourceDocumentType,
     string SourceDocumentId,
     string IdempotencyKey,
+    string ReportIntentKey,
+    [property: Required, JsonRequired, JsonSchemaExtensionData("nullable", true)] string? ReportIntentFingerprint,
     int RequestedQuantity,
     string Status,
+    string? PrinterId,
+    string? PrintJobId,
+    string? FailureReason,
+    string? ProductionReportId,
+    string? ProductionReportNo,
     IReadOnlyCollection<BusinessConsoleBarcodePrintItemDetail> Items);
 
 public sealed record BusinessConsoleBarcodePrintItemDetail(
     int SequenceNo,
     string LabelValue,
-    string? FileId);
+    string? FileId,
+    string Status,
+    string? VoidReason,
+    string? SerialNumber,
+    string? LotNo,
+    string? Gtin,
+    string? EpcUri);
 
 public sealed record BusinessConsoleRecordBarcodeScanRequest(
     string OrganizationId,

@@ -30,19 +30,19 @@
 | 服务 | 总数 | exposed | deferred | internal |
 | --- | ---: | ---: | ---: | ---: |
 | Approval | 16 | 11 | 4 | 1 |
-| BarcodeLabel | 19 | 15 | 1 | 3 |
+| BarcodeLabel | 21 | 15 | 2 | 4 |
 | DemandPlanning | 16 | 16 | 0 | 0 |
 | Erp | 59 | 45 | 13 | 1 |
 | IndustrialTelemetry | 28 | 25 | 1 | 2 |
 | Inventory | 19 | 13 | 1 | 5 |
 | Maintenance | 27 | 21 | 4 | 2 |
 | MasterData | 50 | 45 | 1 | 4 |
-| Mes | 67 | 64 | 2 | 1 |
+| Mes | 68 | 64 | 2 | 2 |
 | ProductEngineering | 39 | 38 | 0 | 1 |
 | Quality | 43 | 30 | 12 | 1 |
 | Scheduling | 15 | 13 | 1 | 1 |
 | Wms | 49 | 37 | 7 | 5 |
-| **Total** | **447** | **373** | **47** | **27** |
+| **Total** | **450** | **373** | **48** | **29** |
 
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 

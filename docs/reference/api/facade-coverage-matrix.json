@@ -319,6 +319,14 @@
       "method": "GET",
       "route": "/api/business/v1/barcodes/print-batches/{printBatchId}",
       "operationId": "getBusinessBarcodePrintBatch",
+      "classification": "internal",
+      "rationale": "The legacy unscoped detail remains for rolling compatibility with trusted service callers; BusinessGateway exposes only the scoped v2 detail."
+    },
+    {
+      "service": "BarcodeLabel",
+      "method": "GET",
+      "route": "/api/business/v2/barcodes/print-batches/{printBatchId}",
+      "operationId": "getScopedBusinessBarcodePrintBatch",
       "classification": "exposed",
       "gateways": [
         "business"
@@ -326,6 +334,14 @@
       "gatewayOperationIds": [
         "getBusinessConsoleBarcodePrintBatch"
       ]
+    },
+    {
+      "service": "BarcodeLabel",
+      "method": "GET",
+      "route": "/api/business/v2/barcodes/print-batches/by-idempotency-key",
+      "operationId": "getScopedBusinessBarcodePrintBatchByIdempotencyKey",
+      "classification": "deferred",
+      "followUp": "#2893 将在 BusinessGateway 报工协调器内消费该 scoped 精确读能力，不建立 1:1 Console facade。"
     },
     {
       "service": "BarcodeLabel",
@@ -3285,6 +3301,14 @@
         "queryBusinessConsoleMesProductionStatistics"
       ],
       "note": "exposed：BusinessGateway 只执行 business.mes.reporting.read 授权、组织/环境连续性与契约代理；时间窗、维度、过滤、分页、数量、比率和降级事实由 MES producer 原样提供。"
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/production-reports/by-idempotency-key",
+      "operationId": "getBusinessMesProductionReportByIdempotencyKey",
+      "classification": "internal",
+      "rationale": "Gateway 报工意图协调内部恢复 seam；仅由受信服务按 organizationId、environmentId、idempotencyKey 精确读取，不作为 BusinessGateway facade 对外暴露。"
     },
     {
       "service": "Mes",

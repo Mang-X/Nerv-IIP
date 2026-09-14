@@ -377,6 +377,9 @@ public sealed class BusinessConsoleCreateBarcodePrintBatchRequestValidator
         // 鉴权与幂等键归一化都已前移到 DTO 校验之前
         // （AuthorizedBusinessProxyEndpoint.OnBeforeValidateAsync），端点级规则命中不再改写鉴权结论。
         RuleFor(x => x.IdempotencyKey).MaximumLength(128);
+        RuleFor(x => x.ReportIntentFingerprint)
+            .Must(value => value is null || !string.IsNullOrWhiteSpace(value))
+            .MaximumLength(256);
     }
 }
 

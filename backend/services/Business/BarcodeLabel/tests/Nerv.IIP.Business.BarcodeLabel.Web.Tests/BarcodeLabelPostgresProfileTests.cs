@@ -32,6 +32,7 @@ using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.TemplateAssetRetir
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.LabelTemplates;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.PrintBatches;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Business.BarcodeLabel.Web.Application.Queries.PrintBatches;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Queries.Resolutions;
 using Nerv.IIP.Testing;
 using Npgsql;
@@ -104,6 +105,7 @@ public sealed partial class BarcodeLabelPostgresProfileTests
     [RealPostgresFact]
     public async Task Concurrent_same_intent_creates_one_batch_and_allocates_once_on_postgres()
     {
+        await AssertConcurrentDifferentReportIntentFingerprintsConflictAsync();
         await ResetAndMigrateSchemaAsync();
         var assetPort = new BlockingTemplateAssetPort();
         await using var provider = CreateRetirementCommandProvider(templateAssetPort: assetPort);
@@ -125,7 +127,10 @@ public sealed partial class BarcodeLabelPostgresProfileTests
 
         var command = new CreateLabelPrintBatchCommand(
             "org-intent", "env-intent", ruleId, templateId, "work-order", "WO-INTENT",
-            "same-intent", """{"skuCode":"SKU-FG-1000"}""", 2);
+            "same-intent", """{"skuCode":"SKU-FG-1000"}""", 2)
+        {
+            ReportIntentFingerprint = "opaque:report-intent-a",
+        };
         using var callerCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         await using var firstScope = provider.CreateAsyncScope();
         var firstDb = firstScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -158,6 +163,85 @@ public sealed partial class BarcodeLabelPostgresProfileTests
 
         await using var verificationDb = CreatePostgresDbContext(LaneConnectionString);
         Assert.Equal(1, await verificationDb.LabelPrintBatches.CountAsync());
+        Assert.Equal(2, await verificationDb.LabelPrintItems.CountAsync());
+        Assert.Equal(2, await verificationDb.LabelSerialCounters.Select(counter => counter.CurrentValue).SingleAsync());
+        Assert.Equal(
+            "opaque:report-intent-a",
+            await verificationDb.LabelPrintBatches.Select(batch => batch.ReportIntentFingerprint).SingleAsync());
+    }
+
+    private static async Task AssertConcurrentDifferentReportIntentFingerprintsConflictAsync()
+    {
+        await ResetAndMigrateSchemaAsync();
+        var assetPort = new BlockingTemplateAssetPort();
+        await using var provider = CreateRetirementCommandProvider(templateAssetPort: assetPort);
+        BarcodeRuleId ruleId;
+        LabelTemplateId templateId;
+        await using (var setupScope = provider.CreateAsyncScope())
+        {
+            var setupDb = setupScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var rule = BarcodeRule.Create(
+                "org-fingerprint", "env-fingerprint", "FINGERPRINT", "code128", "F", 40, "none", ["work-order"], "active");
+            var template = LabelTemplate.Create(
+                "org-fingerprint", "env-fingerprint", "TPL-FINGERPRINT", "Fingerprint template", "file-fingerprint",
+                """{"version":1,"variables":[{"name":"skuCode","type":"string","required":true,"maxLength":80}]}""", "active");
+            setupDb.AddRange(rule, template);
+            await setupDb.SaveChangesAsync();
+            ruleId = rule.Id;
+            templateId = template.Id;
+        }
+
+        var firstCommand = new CreateLabelPrintBatchCommand(
+            "org-fingerprint", "env-fingerprint", ruleId, templateId, "work-order", "WO-FINGERPRINT",
+            "same-fingerprint-key", """{"skuCode":"SKU-FG-1000"}""", 2)
+        {
+            ReportIntentFingerprint = "opaque:report-intent-first",
+        };
+        var competingCommand = firstCommand with
+        {
+            ReportIntentFingerprint = "opaque:report-intent-competing",
+        };
+        using var callerCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        await using var firstScope = provider.CreateAsyncScope();
+        var firstDb = firstScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var firstTask = firstScope.ServiceProvider.GetRequiredService<ISender>()
+            .Send(firstCommand, callerCancellation.Token);
+        await assetPort.WaitUntilEnteredAsync(callerCancellation.Token);
+        var holderProcessId = ((NpgsqlConnection)firstDb.Database.GetDbConnection()).ProcessID;
+
+        await using var secondScope = provider.CreateAsyncScope();
+        var competingTask = CaptureFailureAsync(async () =>
+            _ = await secondScope.ServiceProvider.GetRequiredService<ISender>()
+                .Send(competingCommand, callerCancellation.Token));
+        try
+        {
+            await WaitForAdvisoryWaitersAsync(holderProcessId, 1, "different report fingerprint reservation fence");
+            Assert.False(competingTask.IsCompleted);
+        }
+        finally
+        {
+            assetPort.Release();
+        }
+
+        var outcome = await TestTimeout.RunAsync(
+            "different report fingerprint commands finish after the first reservation commits",
+            async cancellationToken =>
+            {
+                var firstBatchId = await firstTask.WaitAsync(cancellationToken);
+                var competingFailure = await competingTask.WaitAsync(cancellationToken);
+                return (firstBatchId, competingFailure);
+            },
+            TimeSpan.FromSeconds(15),
+            callerCancellation.Token,
+            sensitiveValues: [LaneConnectionString]);
+        var conflict = Assert.IsType<KnownException>(outcome.competingFailure);
+        Assert.Equal("打印批次幂等键与已有记录不一致，请检查提交内容。", conflict.Message);
+        Assert.Equal(1, assetPort.RequestCount);
+
+        await using var verificationDb = CreatePostgresDbContext(LaneConnectionString);
+        var persisted = await verificationDb.LabelPrintBatches.SingleAsync();
+        Assert.Equal(outcome.firstBatchId, persisted.Id);
+        Assert.Equal(firstCommand.ReportIntentFingerprint, persisted.ReportIntentFingerprint);
         Assert.Equal(2, await verificationDb.LabelPrintItems.CountAsync());
         Assert.Equal(2, await verificationDb.LabelSerialCounters.Select(counter => counter.CurrentValue).SingleAsync());
     }
@@ -209,7 +293,10 @@ public sealed partial class BarcodeLabelPostgresProfileTests
                     "ASN-SHORT",
                     "short-serial-intent",
                     """{"skuCode":"SKU-FG-1000"}""",
-                    1));
+                    1)
+                {
+                    ReportIntentFingerprint = "opaque:short-serial-intent",
+                });
         }
 
         await using var verificationDb = CreatePostgresDbContext(LaneConnectionString);
@@ -289,7 +376,10 @@ public sealed partial class BarcodeLabelPostgresProfileTests
                     $"WO-{identity.Organization}-{identity.Environment}",
                     $"intent-{identity.Organization}-{identity.Environment}",
                     labelValuesJson,
-                    1)));
+                    1)
+                {
+                    ReportIntentFingerprint = $"opaque:{identity.Organization}:{identity.Environment}",
+                }));
         }
 
         await using var verificationDb = CreatePostgresDbContext(LaneConnectionString);
@@ -356,7 +446,10 @@ public sealed partial class BarcodeLabelPostgresProfileTests
                 new CreateLabelPrintBatchCommand(
                     "org-gs1-rules", "env-gs1-rules", firstRuleId, firstTemplateId,
                     "work-order", "WO-GS1-A", "intent-gs1-a",
-                    """{"skuCode":"SKU-FG-1000","lotNo":"LOT-A"}""", 1));
+                    """{"skuCode":"SKU-FG-1000","lotNo":"LOT-A"}""", 1)
+                {
+                    ReportIntentFingerprint = "opaque:gs1-a",
+                });
         }
 
         LabelPrintBatchId secondBatchId;
@@ -366,7 +459,10 @@ public sealed partial class BarcodeLabelPostgresProfileTests
                 new CreateLabelPrintBatchCommand(
                     "org-gs1-rules", "env-gs1-rules", secondRuleId, secondTemplateId,
                     "work-order", "WO-GS1-B", "intent-gs1-b",
-                    """{"skuCode":"SKU-FG-1000","lotNo":"LOT-B"}""", 1));
+                    """{"skuCode":"SKU-FG-1000","lotNo":"LOT-B"}""", 1)
+                {
+                    ReportIntentFingerprint = "opaque:gs1-b",
+                });
         }
 
         await using var verificationDb = CreatePostgresDbContext(LaneConnectionString);
@@ -470,6 +566,7 @@ public sealed partial class BarcodeLabelPostgresProfileTests
     [RealPostgresFact]
     public async Task Mes_activation_migration_preserves_historical_batch_items_and_makes_pending_printable_on_postgres()
     {
+        await AssertReportIntentFingerprintMigrationAsync();
         await ResetBarcodeLabelSchemaAsync();
         await using (var setupDb = CreatePostgresDbContext(LaneConnectionString))
         {
@@ -519,6 +616,123 @@ public sealed partial class BarcodeLabelPostgresProfileTests
             WHERE id = '00000000-0000-0000-0000-000000000411'
             """).SingleOrDefaultAsync();
         Assert.Null(mesColumns);
+    }
+
+    private static async Task AssertReportIntentFingerprintMigrationAsync()
+    {
+        await ResetBarcodeLabelSchemaAsync();
+        await using (var setupDb = CreatePostgresDbContext(LaneConnectionString))
+        {
+            await setupDb.GetService<IMigrator>().MigrateAsync("20260913144054_AddBarcodeMesActivation");
+            await setupDb.Database.ExecuteSqlRawAsync("""
+                INSERT INTO barcode.label_print_batches (
+                    id, organization_id, environment_id, barcode_rule_id, label_template_id,
+                    source_document_type, source_document_id, idempotency_key, label_values_json,
+                    requested_quantity, status, created_at_utc)
+                VALUES
+                    ('00000000-0000-0000-0000-000000000511', 'org-fingerprint-migration', 'env-fingerprint-migration',
+                     '00000000-0000-0000-0000-000000000521', '00000000-0000-0000-0000-000000000531',
+                     'legacy', 'LEGACY-FINGERPRINT', 'legacy-fingerprint', '{{}}', 1,
+                     'ready-to-print', '2026-09-14T00:00:00Z');
+                """);
+        }
+
+        await using (var upgradeDb = CreatePostgresDbContext(LaneConnectionString))
+        {
+            await upgradeDb.Database.MigrateAsync();
+        }
+
+        await using (var historicalDb = CreatePostgresDbContext(LaneConnectionString))
+        {
+            var historicalFingerprint = await historicalDb.Database.SqlQueryRaw<string>("""
+                SELECT report_intent_fingerprint AS "Value"
+                FROM barcode.label_print_batches
+                WHERE id = '00000000-0000-0000-0000-000000000511'
+                """).SingleOrDefaultAsync();
+            Assert.Null(historicalFingerprint);
+            Assert.Equal(
+                256,
+                await historicalDb.Database.SqlQueryRaw<int>("""
+                    SELECT character_maximum_length::integer AS "Value"
+                    FROM information_schema.columns
+                    WHERE table_schema = 'barcode'
+                      AND table_name = 'label_print_batches'
+                      AND column_name = 'report_intent_fingerprint'
+                    """).SingleAsync());
+            Assert.Equal(1, await historicalDb.LabelPrintBatches.CountAsync());
+        }
+
+        await using var provider = CreateRetirementCommandProvider();
+        BarcodeRuleId ruleId;
+        LabelTemplateId templateId;
+        await using (var setupScope = provider.CreateAsyncScope())
+        {
+            var setupDb = setupScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var rule = BarcodeRule.Create(
+                "org-fingerprint-migration", "env-fingerprint-migration", "FINGERPRINT-MIGRATION",
+                "code128", "F", 40, "none", ["work-order"], "active");
+            var template = LabelTemplate.Create(
+                "org-fingerprint-migration", "env-fingerprint-migration", "TPL-FINGERPRINT-MIGRATION",
+                "Fingerprint migration template", "file-fingerprint-migration",
+                """{"version":1,"variables":[{"name":"skuCode","type":"string","required":true,"maxLength":80}]}""", "active");
+            setupDb.AddRange(rule, template);
+            await setupDb.SaveChangesAsync();
+            ruleId = rule.Id;
+            templateId = template.Id;
+        }
+
+        var command = new CreateLabelPrintBatchCommand(
+            "org-fingerprint-migration", "env-fingerprint-migration", ruleId, templateId,
+            "work-order", "WO-FINGERPRINT-MIGRATION", "new-fingerprint",
+            """{"skuCode":"SKU-FG-1000"}""", 1)
+        {
+            ReportIntentFingerprint = "  opaque:Fingerprint/Migration  ",
+        };
+        LabelPrintBatchId createdBatchId;
+        await using (var commandScope = provider.CreateAsyncScope())
+        {
+            createdBatchId = await commandScope.ServiceProvider.GetRequiredService<ISender>().Send(command);
+        }
+
+        var generalCommand = command with
+        {
+            SourceDocumentId = "WO-GENERAL-LABEL",
+            IdempotencyKey = "new-general-label-intent",
+            ReportIntentFingerprint = null,
+        };
+        LabelPrintBatchId generalBatchId;
+        await using (var commandScope = provider.CreateAsyncScope())
+        {
+            generalBatchId = await commandScope.ServiceProvider.GetRequiredService<ISender>().Send(generalCommand);
+        }
+
+        await using var verificationDb = CreatePostgresDbContext(LaneConnectionString);
+        Assert.Equal(
+            command.ReportIntentFingerprint,
+            await verificationDb.LabelPrintBatches
+                .Where(batch => batch.IdempotencyKey == "new-fingerprint")
+                .Select(batch => batch.ReportIntentFingerprint)
+                .SingleAsync());
+        var scopedDetail = await new GetScopedLabelPrintBatchQueryHandler(verificationDb).Handle(
+            new GetScopedLabelPrintBatchQuery(
+                createdBatchId,
+                "org-fingerprint-migration",
+                "env-fingerprint-migration"),
+            CancellationToken.None);
+        Assert.Equal(command.ReportIntentFingerprint, scopedDetail.ReportIntentFingerprint);
+        var generalDetail = await new GetScopedLabelPrintBatchQueryHandler(verificationDb).Handle(
+            new GetScopedLabelPrintBatchQuery(
+                generalBatchId,
+                "org-fingerprint-migration",
+                "env-fingerprint-migration"),
+            CancellationToken.None);
+        Assert.Null(generalDetail.ReportIntentFingerprint);
+        Assert.Null(await verificationDb.LabelPrintBatches
+            .Where(batch => batch.Id == generalBatchId)
+            .Select(batch => batch.ReportIntentFingerprint)
+            .SingleAsync());
+        Assert.Equal(3, await verificationDb.LabelPrintBatches.CountAsync());
+        Assert.Equal(2, await verificationDb.LabelPrintItems.CountAsync());
     }
 
     [RealPostgresFact]
@@ -613,7 +827,10 @@ public sealed partial class BarcodeLabelPostgresProfileTests
             batchId = await commandScope.ServiceProvider.GetRequiredService<ISender>().Send(
                 new CreateLabelPrintBatchCommand(
                     "org-case-order", "env-case-order", ruleId, templateId, "legacy", "LEGACY-NEXT",
-                    "legacy-next", """{"skuCode":"SKU-GS1-CASE","lotNo":"LOT-CASE"}""", 1));
+                    "legacy-next", """{"skuCode":"SKU-GS1-CASE","lotNo":"LOT-CASE"}""", 1)
+                {
+                    ReportIntentFingerprint = "opaque:legacy-next",
+                });
         }
 
         await using var verificationDb = CreatePostgresDbContext(LaneConnectionString);
@@ -741,7 +958,10 @@ public sealed partial class BarcodeLabelPostgresProfileTests
             batchId = await commandScope.ServiceProvider.GetRequiredService<ISender>().Send(
                 new CreateLabelPrintBatchCommand(
                     "org-history", "env-history", ruleId, templateId, "legacy", "LEGACY-C",
-                    "legacy-c", """{"skuCode":"SKU-HISTORY"}""", 1));
+                    "legacy-c", """{"skuCode":"SKU-HISTORY"}""", 1)
+                {
+                    ReportIntentFingerprint = "opaque:legacy-c",
+                });
         }
 
         await using var resultDb = CreatePostgresDbContext(LaneConnectionString);
@@ -1328,7 +1548,10 @@ public sealed partial class BarcodeLabelPostgresProfileTests
                     "WO-RETIRED-ASSET",
                     "batch-retired-asset",
                     "{}",
-                    1)));
+                    1)
+                {
+                    ReportIntentFingerprint = "opaque:retired-asset",
+                }));
             Assert.Equal("模板资产已经退役，不能冻结到新打印批次。", exception.Message);
         }
 
@@ -1893,7 +2116,10 @@ public sealed partial class BarcodeLabelPostgresProfileTests
         var batchTask = CaptureFailureAsync(async () =>
             _ = await batchScope.ServiceProvider.GetRequiredService<ISender>().Send(new CreateLabelPrintBatchCommand(
                 "org-retirement", "env-retirement", ruleId, templateId, "work-order", "WO-CONCURRENT",
-                "batch-concurrent-retirement", """{"skuCode":"SKU-FG-1000"}""", 1)));
+                "batch-concurrent-retirement", """{"skuCode":"SKU-FG-1000"}""", 1)
+            {
+                ReportIntentFingerprint = "opaque:concurrent-retirement",
+            }));
 
         await WaitForAdvisoryWaitersAsync(holderProcessId, 1, "new batch read-to-fence edge");
         Assert.False(batchTask.IsCompleted);

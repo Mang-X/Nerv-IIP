@@ -6256,8 +6256,10 @@ public sealed class BusinessGatewayProxyTests
 
     private static Dictionary<string, object?> ReceiptRoutePayload() => new()
     {
-        ["organizationId"] = "org-001", ["environmentId"] = "env-dev",
-        ["purchaseReceiptNo"] = "RCV-route", ["purchaseOrderNo"] = "PO-route",
+        ["organizationId"] = "org-001",
+        ["environmentId"] = "env-dev",
+        ["purchaseReceiptNo"] = "RCV-route",
+        ["purchaseOrderNo"] = "PO-route",
         ["lines"] = new[] { new { purchaseOrderLineNo = "1", receivedQuantity = 10m, qualityStatus = "unrestricted" } },
     };
 
@@ -6735,7 +6737,32 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpStatusCode.OK, scan.StatusCode);
         Assert.Equal("internal-test-token", barcode.LastInternalToken);
         Assert.Equal("WO-001", barcode.LastPrintBatchRequest?.SourceDocumentId);
+        var fingerprintProperty = typeof(BusinessConsoleCreateBarcodePrintBatchRequest)
+            .GetProperty("ReportIntentFingerprint");
+        Assert.NotNull(fingerprintProperty);
+        Assert.Null(fingerprintProperty.GetValue(barcode.LastPrintBatchRequest));
         Assert.Equal("BC-001", barcode.LastScanRequest?.ScannedValue);
+
+        var fingerprintPrint = await client.PostAsJsonAsync(
+            "/api/business-console/v1/barcode/print-batches?organizationId=org-001&environmentId=env-dev",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                barcodeRuleId = "018f4b87-9a0c-7a6b-9a3a-5fd5825c2df8",
+                labelTemplateId = "018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9",
+                sourceDocumentType = "work-order",
+                sourceDocumentId = "WO-002",
+                idempotencyKey = "print-002",
+                labelValuesJson = "{}",
+                requestedQuantity = 1,
+                reportIntentFingerprint = "  opaque:Report-Intent/A  ",
+            });
+
+        Assert.Equal(HttpStatusCode.OK, fingerprintPrint.StatusCode);
+        Assert.Equal(
+            "  opaque:Report-Intent/A  ",
+            fingerprintProperty.GetValue(barcode.LastPrintBatchRequest));
 
         var rule = await client.PostAsJsonAsync("/api/business-console/v1/barcode/rules?organizationId=org-001&environmentId=env-dev", new
         {
@@ -6753,6 +6780,46 @@ public sealed class BusinessGatewayProxyTests
 
         Assert.Equal(HttpStatusCode.OK, rule.StatusCode);
         Assert.Equal(7, barcode.LastRuleRequest?.Gs1CompanyPrefixLength);
+    }
+
+    [Fact]
+    public async Task Barcode_print_batch_detail_preserves_serial_mes_and_transport_facts()
+    {
+        var barcode = new RecordingBarcodeLabelClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessBarcodeLabelClient>();
+            services.AddSingleton<IBusinessBarcodeLabelClient>(barcode);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/barcode/print-batches/print-batch-001" +
+            "?organizationId=org-001&environmentId=env-dev");
+        var payload = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(payload);
+        var detail = document.RootElement.GetProperty("data").GetProperty("printBatch");
+        Assert.Equal("print-001", detail.GetProperty("reportIntentKey").GetString());
+        Assert.Equal("opaque:report-intent-a", detail.GetProperty("reportIntentFingerprint").GetString());
+        Assert.Equal("printer-01", detail.GetProperty("printerId").GetString());
+        Assert.Equal("job-001", detail.GetProperty("printJobId").GetString());
+        Assert.Equal("打印结果未知。", detail.GetProperty("failureReason").GetString());
+        Assert.Equal("report-id-001", detail.GetProperty("productionReportId").GetString());
+        Assert.Equal("PR-001", detail.GetProperty("productionReportNo").GetString());
+        var item = detail.GetProperty("items")[0];
+        Assert.Equal("voided", item.GetProperty("status").GetString());
+        Assert.Equal("标签破损。", item.GetProperty("voidReason").GetString());
+        Assert.Equal("00000000001", item.GetProperty("serialNumber").GetString());
+        Assert.Equal("LOT-A", item.GetProperty("lotNo").GetString());
+        Assert.Equal("09506000134352", item.GetProperty("gtin").GetString());
+        Assert.Equal(
+            "urn:epc:id:sgtin:0950600.013435.00000000001",
+            item.GetProperty("epcUri").GetString());
     }
 
     [Fact]
@@ -11988,6 +12055,107 @@ public sealed class BusinessGatewayProxyTests
         // 报工人由 Gateway 从已认证 principal 注入，公开请求 DTO 不带身份字段，也不透传前端作用域选择。
         Assert.Equal("user-operator", requestBody.RootElement.GetProperty("reportedBy").GetString());
         Assert.False(requestBody.RootElement.TryGetProperty("scopeKind", out _));
+    }
+
+    [Fact]
+    public void Mes_formal_client_exposes_internal_report_intent_post_and_exact_recovery_seams()
+    {
+        Assert.Contains(typeof(IBusinessMesClient).GetMethods(), method =>
+            method.Name == "RecordProductionReportAsync"
+            && method.GetParameters().Any(parameter => parameter.Name == "reportIntentFingerprint"));
+        Assert.Contains(typeof(IBusinessMesClient).GetMethods(), method =>
+            method.Name == "GetProductionReportByIdempotencyKeyAsync");
+    }
+
+    [Fact]
+    public async Task Mes_formal_client_preserves_opaque_intent_fingerprint_on_post_and_exact_recovery()
+    {
+        const string productionReportId = "019f855b-5cb0-7550-a509-d2ee7b021689";
+        const string fingerprint = "  opaque:v1:sha256:ABC==  ";
+        var handler = new RecordingHandler(request => request.Method == HttpMethod.Post
+            ? JsonResponse(HttpStatusCode.OK, new
+            {
+                productionReportId = new { id = productionReportId },
+                reportNo = "PRPT-INTENT-001",
+                serialNumbers = new[] { "SN-B", "SN-A" },
+            })
+            : JsonResponse(HttpStatusCode.OK, new
+            {
+                reportIntentFingerprint = fingerprint,
+                productionReportId = new { id = productionReportId },
+                reportNo = "PRPT-INTENT-001",
+                serialNumbers = new[] { "SN-B", "SN-A" },
+            }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var client = new HttpBusinessMesClient(httpClient);
+
+        _ = await client.RecordProductionReportAsync(
+            "internal-token-001",
+            ProductionReportRequest(),
+            "user-operator",
+            fingerprint,
+            CancellationToken.None);
+        var recovered = await client.GetProductionReportByIdempotencyKeyAsync(
+            "internal-token-001",
+            new BusinessMesProductionReportIntentLookupRequest("org-001", "env-dev", "intent/key 001"),
+            CancellationToken.None);
+
+        Assert.Equal(fingerprint, recovered.ReportIntentFingerprint);
+        Assert.Equal(productionReportId, recovered.ProductionReportId);
+        Assert.Equal("PRPT-INTENT-001", recovered.ReportNo);
+        Assert.Equal(["SN-B", "SN-A"], recovered.SerialNumbers);
+        Assert.Equal(2, handler.Requests.Count);
+        using var posted = JsonDocument.Parse(handler.RequestBodies[0]!);
+        Assert.Equal(fingerprint, posted.RootElement.GetProperty("reportIntentFingerprint").GetString());
+        Assert.Equal(
+            "/api/business/v1/mes/production-reports/by-idempotency-key?organizationId=org-001&environmentId=env-dev&idempotencyKey=intent%2Fkey%20001",
+            handler.Requests[1].RequestUri!.PathAndQuery);
+    }
+
+    [Fact]
+    public async Task Mes_formal_client_rejects_exact_recovery_without_nullable_fingerprint_field()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            productionReportId = new { id = "019f855b-5cb0-7550-a509-d2ee7b021689" },
+            reportNo = "PRPT-INTENT-001",
+            serialNumbers = Array.Empty<string>(),
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var client = new HttpBusinessMesClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.GetProductionReportByIdempotencyKeyAsync(
+                "internal-token-001",
+                new BusinessMesProductionReportIntentLookupRequest("org-001", "env-dev", "intent-001"),
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
+    }
+
+    [Fact]
+    public async Task Mes_formal_client_accepts_explicit_null_exact_recovery_fingerprint()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            reportIntentFingerprint = (string?)null,
+            productionReportId = new { id = "019f855b-5cb0-7550-a509-d2ee7b021689" },
+            reportNo = "PRPT-INTENT-001",
+            serialNumbers = Array.Empty<string>(),
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var client = new HttpBusinessMesClient(httpClient);
+
+        var recovered = await client.GetProductionReportByIdempotencyKeyAsync(
+            "internal-token-001",
+            new BusinessMesProductionReportIntentLookupRequest("org-001", "env-dev", "intent-001"),
+            CancellationToken.None);
+
+        Assert.Null(recovered.ReportIntentFingerprint);
+        Assert.Equal("019f855b-5cb0-7550-a509-d2ee7b021689", recovered.ProductionReportId);
+        Assert.Equal("PRPT-INTENT-001", recovered.ReportNo);
+        Assert.Empty(recovered.SerialNumbers);
     }
 
     [Fact]
@@ -17622,6 +17790,8 @@ internal sealed class RecordingBarcodeLabelClient : IBusinessBarcodeLabelClient,
 
     public BusinessConsoleBarcodePrintBatchListRequest? LastPrintBatchListRequest { get; private set; }
 
+    public BusinessConsoleBarcodePrintBatchByIdempotencyKeyRequest? LastPrintBatchByIdempotencyKeyRequest { get; private set; }
+
     public BusinessConsoleRecordBarcodeScanRequest? LastScanRequest { get; private set; }
 
     public BusinessConsoleBarcodeScanListRequest? LastScanListRequest { get; private set; }
@@ -17708,9 +17878,41 @@ internal sealed class RecordingBarcodeLabelClient : IBusinessBarcodeLabelClient,
                 "work-order",
                 "WO-001",
                 "print-001",
+                "print-001",
+                "opaque:report-intent-a",
                 1,
-                "created",
-                [])));
+                "delivery-unknown",
+                "printer-01",
+                "job-001",
+                "打印结果未知。",
+                "report-id-001",
+                "PR-001",
+                [new BusinessConsoleBarcodePrintItemDetail(
+                    1,
+                    "(01)09506000134352(10)LOT-A\u001D(21)00000000001",
+                    null,
+                    "voided",
+                    "标签破损。",
+                    "00000000001",
+                    "LOT-A",
+                    "09506000134352",
+                    "urn:epc:id:sgtin:0950600.013435.00000000001")])));
+    }
+
+    public Task<BusinessConsoleBarcodePrintBatchResponse> GetPrintBatchByIdempotencyKeyAsync(
+        string internalBearerToken,
+        BusinessConsoleBarcodePrintBatchByIdempotencyKeyRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastPrintBatchByIdempotencyKeyRequest = request;
+        return GetPrintBatchAsync(
+            internalBearerToken,
+            new BusinessConsoleBarcodePrintBatchRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                "print-batch-001"),
+            cancellationToken);
     }
 
     public Task<BusinessConsoleBarcodePrintBatchListResponse> ListPrintBatchesAsync(

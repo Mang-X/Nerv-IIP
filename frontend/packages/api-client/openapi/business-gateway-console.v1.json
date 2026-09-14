@@ -63462,6 +63462,12 @@
           "requestedQuantity": {
             "type": "integer",
             "format": "int32"
+          },
+          "reportIntentFingerprint": {
+            "type": "string",
+            "maxLength": 256,
+            "nullable": true,
+            "minLength": 1
           }
         }
       },
@@ -63571,6 +63577,9 @@
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodePrintBatchDetail": {
         "type": "object",
         "additionalProperties": false,
+        "required": [
+          "reportIntentFingerprint"
+        ],
         "properties": {
           "printBatchId": {
             "type": "string"
@@ -63587,12 +63596,40 @@
           "idempotencyKey": {
             "type": "string"
           },
+          "reportIntentKey": {
+            "type": "string"
+          },
+          "reportIntentFingerprint": {
+            "type": "string",
+            "minLength": 1,
+            "nullable": true
+          },
           "requestedQuantity": {
             "type": "integer",
             "format": "int32"
           },
           "status": {
             "type": "string"
+          },
+          "printerId": {
+            "type": "string",
+            "nullable": true
+          },
+          "printJobId": {
+            "type": "string",
+            "nullable": true
+          },
+          "failureReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "productionReportId": {
+            "type": "string",
+            "nullable": true
+          },
+          "productionReportNo": {
+            "type": "string",
+            "nullable": true
           },
           "items": {
             "type": "array",
@@ -63614,6 +63651,29 @@
             "type": "string"
           },
           "fileId": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string"
+          },
+          "voidReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "serialNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "lotNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "gtin": {
+            "type": "string",
+            "nullable": true
+          },
+          "epcUri": {
             "type": "string",
             "nullable": true
           }
