@@ -48,10 +48,14 @@ namespace Nerv.IIP.Messaging.CAP.Tests;
 /// </list>
 ///
 /// <para>⚠️ <b>上面四条的适用范围是走 <see cref="CapProbeHost"/> 的那组真宿主用例</b>。那组里由用例发出的取消
-/// 只有两处，都与被观察对象隔开、且在断言之后或之外：① <c>TransportCheckProcessor</c> 自己那次 30 秒
-/// <c>WaitAsync</c> 用的 <see cref="ProcessingContext"/> token（恢复完成<b>之后</b>才取消）；
-/// ② <see cref="ProbeConsumerClientFactory.ReleaseEverything"/> 的收尾兜底（只在
-/// <see cref="CapProbeHost.DisposeAsync"/> 里、所有断言跑完之后）。</para>
+/// <b>共三处</b>，都与被观察对象隔开、且都不承重：
+/// ① <see cref="CapProbeHost.TickTransportCheckAsync"/> 里 <c>TransportCheckProcessor</c> 自己那次 30 秒
+/// <c>WaitAsync</c> 用的 <see cref="ProcessingContext"/> token——恢复完成<b>之后</b>才取消；
+/// ② <see cref="CapProbeHost.TickTransportCheckAfterStopAsync"/> 的 <c>finally</c> 里同型的那一次——
+/// 断言全部在它之后，且那一轮 <c>ReStartAsync</c> 在上游 <c>Pulse()</c> 就抛、根本走不到建 client；
+/// ③ <see cref="ProbeConsumerClientFactory.ReleaseEverything"/> 的收尾兜底——只在
+/// <see cref="CapProbeHost.DisposeAsync"/> 里、所有断言跑完之后。
+/// （先前这段写的是「两处」，漏了 ②；量词按字面不成立，已更正。）</para>
 ///
 /// <para>本文件另有两条<b>直接构造装饰器</b>的单元用例
 /// （<see cref="Stop_signal_alone_ends_listening_even_when_the_caller_token_stays_live"/> 与
@@ -291,7 +295,7 @@ public sealed class ConsumerRecoveryFinalStopTests
         using var callerToken = new CancellationTokenSource();
         var client = new DecoratedConsumerClient(inner, stop.Token);
 
-        var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(20), callerToken.Token);
+        var listening = await StartListeningOffCallerThreadAsync(client, callerToken.Token);
         await inner.ListeningEntered.Task.WaitAsync(Bounded);
         Assert.False(listening.IsCompleted);
 
@@ -313,7 +317,7 @@ public sealed class ConsumerRecoveryFinalStopTests
         using var callerToken = new CancellationTokenSource();
         var client = new DecoratedConsumerClient(inner, stop.Token);
 
-        var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(20), callerToken.Token);
+        var listening = await StartListeningOffCallerThreadAsync(client, callerToken.Token);
         await inner.ListeningEntered.Task.WaitAsync(Bounded);
 
         await callerToken.CancelAsync();
@@ -321,6 +325,36 @@ public sealed class ConsumerRecoveryFinalStopTests
         await inner.ListeningExited.Task.WaitAsync(Bounded);
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => listening.WaitAsync(Bounded));
         Assert.False(stop.IsCancellationRequested);
+    }
+
+    /// <summary>
+    /// 从<b>另一条</b>线程发起 <c>ListeningAsync</c> 并有界地取回它返回的 Task。
+    ///
+    /// <para>⚠️ <b>不要在用例线程上直接 <c>client.ListeningAsync(...)</c>。</b>
+    /// <see cref="ProbeConsumerClient.ListeningAsync"/> 复刻的是上游那种<b>同步阻塞、永不正常返回</b>的形态；
+    /// 一旦有人把装饰器的专用线程卸载改掉，直接调用会<b>整个挂死</b>而不是判红——本席位实测过这一格，
+    /// 整个 suite 挂了 9 分钟，在 CI 上表现为 job 超时并带走 <c>if:always</c> 的证据。
+    /// <c>ListeningThreadOffloadTests</c> 文件开头写明的就是这条，这里照同一姿势办。</para>
+    /// </summary>
+    private static async Task<Task> StartListeningOffCallerThreadAsync(
+        DecoratedConsumerClient client,
+        CancellationToken cancellationToken)
+    {
+        var returned = new TaskCompletionSource<Task>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        ThreadPool.QueueUserWorkItem(_ =>
+        {
+            try
+            {
+                returned.TrySetResult(client.ListeningAsync(TimeSpan.FromMilliseconds(20), cancellationToken));
+            }
+            catch (Exception exception)
+            {
+                returned.TrySetException(exception);
+            }
+        });
+
+        return await returned.Task.WaitAsync(Bounded);
     }
 
     /// <summary>
