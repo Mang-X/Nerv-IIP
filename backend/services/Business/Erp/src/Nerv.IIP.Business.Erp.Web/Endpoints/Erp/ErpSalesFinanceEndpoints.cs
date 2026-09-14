@@ -573,6 +573,9 @@ public static class ErpFinanceEndpointContracts
 {
     public static readonly IReadOnlyCollection<ErpEndpointContract> All =
     [
+        new(typeof(ConfigureWorkCenterMachineOverheadRateEndpoint), "POST", "/api/business/v1/erp/finance/work-center-machine-overhead-rates", ErpPermissionCodes.FinanceManage, MachineOverheadInternalCallerAuthorization.ManagePolicyName, "configureErpWorkCenterMachineOverheadRate"),
+        new(typeof(ListWorkCenterMachineOverheadRatesEndpoint), "GET", "/api/business/v1/erp/finance/work-center-machine-overhead-rates", ErpPermissionCodes.FinanceRead, MachineOverheadInternalCallerAuthorization.ReadPolicyName, "listErpWorkCenterMachineOverheadRates"),
+        new(typeof(GetCurrentWorkCenterMachineOverheadRateEndpoint), "GET", "/api/business/v1/erp/finance/work-center-machine-overhead-rates/current", ErpPermissionCodes.FinanceRead, MachineOverheadInternalCallerAuthorization.ReadPolicyName, "getCurrentErpWorkCenterMachineOverheadRate"),
         new(typeof(ConfigureWorkCenterCostRateEndpoint), "POST", "/api/business/v1/erp/finance/work-center-cost-rates", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "configureErpWorkCenterCostRate"),
         new(typeof(ListWorkCenterCostRatesEndpoint), "GET", "/api/business/v1/erp/finance/work-center-cost-rates", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "listErpWorkCenterCostRates"),
         new(typeof(ListWorkOrderCostsEndpoint), "GET", "/api/business/v1/erp/finance/work-order-costs", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "listErpWorkOrderCosts"),
