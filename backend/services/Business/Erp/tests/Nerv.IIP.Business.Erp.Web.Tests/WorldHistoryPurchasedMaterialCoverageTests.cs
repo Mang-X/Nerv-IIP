@@ -41,11 +41,34 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 /// </list>
 /// </para>
 /// <para>
-/// <b>已知洞（本票不修）</b>：副本圈的扫描面排除了 <c>tests</c> 路径段
-/// （<c>VocabularyDriftGovernanceTests</c> 的 <c>LoadScannedDocuments</c>），所以本文件这两份**同名测试副本
-/// 在结构上进不了副本圈**。实测：把其中一份的 <c>RequiredPurchasedSkuCodes</c> 删掉一项并把
-/// <c>RequiredPurchasedSkuCount</c> 同步减 1，两侧测试与副本圈门禁**全绿** ⇒ 期望集合可以单侧静默缩水。
-/// 挡这个洞需要给期望集合补跨副本 digest，属另一张票；在那之前，改本文件的清单必须人工同步另一份。
+/// <b>已知洞（2026-09-14 裁定不修，不是无人认领）</b>：副本圈的扫描面排除了 <c>tests</c> 路径段
+/// （<c>VocabularyDriftGovernanceTests</c> 的 <c>LoadScannedDocuments</c>），所以本文件这两份同名测试
+/// <b>在结构上进不了副本圈</b>。实测：把其中一份的 <c>RequiredPurchasedSkuCodes</c> 删掉一项并把
+/// <c>RequiredPurchasedSkuCount</c> 同步减 1，两侧测试与副本圈门禁<b>全绿</b> ⇒ 期望清单可单侧静默缩水。
+/// </para>
+/// <para>
+/// <b>为什么不补</b>：世界种子正在拆除，owner 已裁定禁止为种子数据新建任何长期契约——
+/// 跨副本 digest、锚、对账待办、漂移门禁都在此列，建了也会随种子一并作废。
+/// #3401 据此关闭，<b>不存在跟进票</b>，不要再去找。在种子拆除前，改本文件的清单必须人工同步另一份。
+/// </para>
+/// <para>
+/// <b>但本文件不可删</b>（#3401 实测）：把采购侧 6 份规格同改成不供 <c>PK-LBL-03</c>——
+/// 复刻 #3138 的缺陷形态，六份同改故副本圈不因漂移报红——Inventory 与 Erp 各红 2 条，而
+/// ProductEngineering.Web.Tests（0 / 215 / 1 / 216）与 VocabularyGovernance.Tests（0 / 25 / 0 / 25）<b>全绿</b>。
+/// 同批次的哨兵格（改 ProductEngineering 自己的 <c>WorldBibleSpec.LabelSkuCode</c>）让它红 2 条，
+/// 所以上面那个全绿是<b>结构性盲区</b>而非护栏失效：<c>WorldBibleBomMaterialCoverageTests</c>
+/// 只在 <c>WorldBibleSpec</c> 内部闭环（BOM 算出的集合对自己的字面量），对采购侧没有任何访问路径——
+/// 全仓引用 <c>PurchaseCategories</c> 的测试文件只有本文件这两份。删掉它们，下列三项覆盖全仓归零：
+/// <list type="number">
+/// <item>BOM 要求 ⊆ 采购品类表可供（#3138 本体）；</item>
+/// <item>采购品类内部约束：物料码跨品类互斥、每个品类的物料与供应商非空、品类数与权重数相等；</item>
+/// <item>全量历史真的抽到并收货过每个 SKU——品类内按 SKU 均匀抽样，「登记了」不等于「抽到过」。</item>
+/// </list>
+/// </para>
+/// <para>
+/// <b>措辞订正</b>：这两份<b>同名但不是彼此的副本</b>。Inventory 这份打 <c>WorldHistoryProcurementSpec</c>，
+/// Erp 那份打 <c>WorldHistoryErpSpec</c> 与 <c>WorldHistorySeedService</c>，合计钉住 3 个不同的生产类型。
+/// 按文件同名判冗余会误判（#3401 的初始方向正是这样错的）。
 /// </para>
 /// </summary>
 public sealed class WorldHistoryPurchasedMaterialCoverageTests(ITestOutputHelper output)
