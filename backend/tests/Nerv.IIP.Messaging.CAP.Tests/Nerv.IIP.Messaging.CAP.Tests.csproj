@@ -6,6 +6,11 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <!-- #3222：真 Redis 回归要一个**真**的 CAP 存储端（真 outbox / 真 cap.received），
+         否则「故障期间发布的消息恢复后不丢」只会证明夹具自洽。这两个包只在本测试项目使用，
+         版本由 backend/Directory.Packages.props 统一钉住，不新增版本来源。 -->
+    <PackageReference Include="DotNetCore.CAP.PostgreSql" />
+    <PackageReference Include="Npgsql" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
     <PackageReference Include="Microsoft.Extensions.Configuration" />
