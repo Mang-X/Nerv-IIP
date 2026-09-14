@@ -358,11 +358,18 @@ public sealed class JournalVoucherEntityTypeConfiguration : IEntityTypeConfigura
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Journal voucher aggregate id.");
         PurchaseRequisitionEntityTypeConfiguration.AddTenantColumns(builder);
         builder.Property(x => x.VoucherNo).HasColumnName("voucher_no").IsRequired().HasMaxLength(100).HasComment("Voucher number.");
+        // #3278 / S2：来源单据身份从凭证号搬到独立两列。两列都可空——存量行不回填
+        // （owner 2026-09-14 裁定演示库数据可重造），非空会让迁移自身在存量库上失败。
+        // 新写入的行一律非空，那条保证由 JournalVoucher.Post 的不可省略参数承担，不由列约束承担。
+        builder.Property(x => x.SourceType).HasColumnName("source_type").HasMaxLength(32).HasComment("Source document type code from JournalVoucherSourceType; NULL only on rows written before the source columns existed.");
+        builder.Property(x => x.SourceNo).HasColumnName("source_no").HasMaxLength(150).HasComment("Source document number whose meaning is decided by source_type; NULL only on rows written before the source columns existed.");
         builder.Property(x => x.PostingDate).HasColumnName("posting_date").IsRequired().HasComment("Voucher posting date.");
         builder.Property(x => x.PostedAtUtc).HasColumnName("posted_at_utc").IsRequired().HasComment("UTC posting time.");
         builder.HasMany(x => x.Lines).WithOne().HasForeignKey("JournalVoucherId").OnDelete(DeleteBehavior.Cascade);
         builder.Navigation(x => x.Lines).UsePropertyAccessMode(PropertyAccessMode.Field);
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.VoucherNo }).IsUnique();
+        // 非唯一：S2 只建来源列的检索索引。幂等键搬家与唯一索引属 #3278 / S5，本票不做。
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceType, x.SourceNo });
     }
 }
 

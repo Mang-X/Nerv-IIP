@@ -1,0 +1,214 @@
+using System.Reflection;
+using MediatR;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Nerv.IIP.Business.Erp.Domain;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
+using Nerv.IIP.Business.Erp.Infrastructure;
+
+namespace Nerv.IIP.Business.Erp.Web.Tests;
+
+/// <summary>
+/// GitHub #3278 / S2：<c>journal_vouchers</c> 的来源单据两列（<c>source_type</c> + <c>source_no</c>）。
+///
+/// 本票的承重风险**不是**「列建得对不对」，而是「17 个建凭证位点漏填一处，
+/// 该行来源列恒空而所有门禁照绿」（S2 不建唯一索引也不建非空约束，没有任何约束会因此变红）。
+/// 因此防漏是**结构性**的，不是断言性的：<see cref="JournalVoucher.Post"/> 是唯一构造入口
+/// （构造函数私有），而它的来源两参数**没有默认值** ⇒ 漏填在编译期就是 CS7036。
+///
+/// 这个类只负责看住那个结构不被悄悄拆掉，以及列的形状：
+/// <list type="number">
+/// <item><see cref="Every_public_factory_of_a_journal_voucher_demands_the_source_document"/>：
+///   加一个带默认值的 <c>Post</c> 重载就会让编译期保证失效——这条反射断言看住这个方向；</item>
+/// <item><see cref="Source_columns_are_nullable_and_wide_enough_for_every_production_source_id"/>：
+///   两列必须**可空**（非空会让迁移自身在存量库上失败），且宽到装得下生产侧最宽的来源标识；</item>
+/// <item><see cref="Post_rejects_a_blank_source_no"/>：占位空串也不算填了；</item>
+/// <item><see cref="All_enumerates_every_declared_source_type_and_codes_stay_distinct"/>：
+///   码表是**手工登记表**，类型里声明却不登记编译期不拦，靠这条反射对撞看住。</item>
+/// </list>
+///
+/// <b>值域边界（声明放弃了什么）</b>：
+/// 1. 本类**不**证明「所有落库的凭证都经过 <see cref="JournalVoucher.Post"/>」。
+///    绕开 EF 的原生 SQL 写入（<c>ExecuteSql</c> / <c>FromSql</c>）不在扫描面内；
+///    S2 落地时实测 Erp 生产代码对这两者零命中，日后新增会让这个保证**静默**失效。
+/// 2. 列宽读的是 **EF 模型**而不是迁移脚本；模型/迁移漂移由「空迁移探针」负责，不由本类负责。
+/// 3. 「真表上这两列真的可空、真的读得回来」由 <c>ErpCostAccountingPostgresAcceptanceTests</c>
+///    的真 Postgres 用例负责——EF InMemory 既看不见列宽也看不见可空性。
+/// </summary>
+public sealed class JournalVoucherSourceContractTests
+{
+    /// <summary>
+    /// 结构性防漏的**看门断言**：任何能造出 <see cref="JournalVoucher"/> 的公开入口都必须
+    /// 要求来源两参数，且**不得带默认值**。带了默认值，「漏填」就从编译错误退化成静默空值。
+    /// </summary>
+    [Fact]
+    public void Every_public_factory_of_a_journal_voucher_demands_the_source_document()
+    {
+        Assert.Empty(typeof(JournalVoucher).GetConstructors(BindingFlags.Public | BindingFlags.Instance));
+
+        var factories = typeof(JournalVoucher)
+            .GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Where(x => x.ReturnType == typeof(JournalVoucher))
+            .ToList();
+
+        Assert.NotEmpty(factories);
+        foreach (var factory in factories)
+        {
+            var parameters = factory.GetParameters();
+            var sourceType = Assert.Single(parameters, x => x.ParameterType == typeof(JournalVoucherSourceType));
+            var sourceNo = Assert.Single(parameters, x => x.Name == "sourceNo");
+
+            Assert.False(sourceType.IsOptional, $"{factory.Name} 的 {sourceType.Name} 带了默认值，漏填不再是编译错误。");
+            Assert.False(sourceNo.IsOptional, $"{factory.Name} 的 {sourceNo.Name} 带了默认值，漏填不再是编译错误。");
+            Assert.Equal(typeof(string), sourceNo.ParameterType);
+        }
+    }
+
+    /// <summary>
+    /// 两列**必须可空**：owner 2026-09-14 裁定不回填存量行，非空约束会让本迁移自身在存量库上失败。
+    /// 列宽必须 ≥ 生产侧最宽的来源标识——最宽的一支是工单成本迟到调整的 <c>sourceId</c>
+    /// （<c>machine-{OperationTaskId}-r{SettlementRevision}-void</c>，见
+    /// <c>ErpVoucherNoLengthContractTests</c> 里那条复审更正过的读数），不是上游单号列宽 100。
+    /// </summary>
+    [Fact]
+    public void Source_columns_are_nullable_and_wide_enough_for_every_production_source_id()
+    {
+        using var dbContext = CreateModelOnlyDbContext();
+        var entity = dbContext.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(JournalVoucher))!;
+        var sourceType = entity.FindProperty(nameof(JournalVoucher.SourceType))!;
+        var sourceNo = entity.FindProperty(nameof(JournalVoucher.SourceNo))!;
+
+        Assert.Equal("source_type", sourceType.GetColumnName());
+        Assert.Equal("source_no", sourceNo.GetColumnName());
+        Assert.True(sourceType.IsNullable, "source_type 必须可空，否则迁移在存量库上直接失败。");
+        Assert.True(sourceNo.IsNullable, "source_no 必须可空，否则迁移在存量库上直接失败。");
+
+        var longestCode = JournalVoucherSourceType.All.Max(x => x.Code.Length);
+        Assert.True(
+            sourceType.GetMaxLength() >= longestCode,
+            $"source_type 列宽 {sourceType.GetMaxLength()} 装不下最长码值 {longestCode}。");
+        Assert.True(
+            sourceNo.GetMaxLength() >= ErpVoucherNoLengthContractTests.WidestAdjustmentSourceIdWidth,
+            $"source_no 列宽 {sourceNo.GetMaxLength()} 装不下最宽来源标识 {ErpVoucherNoLengthContractTests.WidestAdjustmentSourceIdWidth}。");
+        Assert.True(
+            sourceNo.GetMaxLength() >= entity.FindProperty(nameof(JournalVoucher.VoucherNo))!.GetMaxLength(),
+            "手工凭证把凭证号写进 source_no，故 source_no 不得窄于 voucher_no。");
+    }
+
+    /// <summary>S2 只建**非唯一**索引；唯一索引属 S5，这里把「现在不是唯一」当断言写死。</summary>
+    [Fact]
+    public void The_source_document_index_exists_and_is_not_unique_yet()
+    {
+        using var dbContext = CreateModelOnlyDbContext();
+        var entity = dbContext.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(JournalVoucher))!;
+
+        var index = Assert.Single(
+            entity.GetIndexes(),
+            x => x.Properties.Select(p => p.Name).SequenceEqual(
+                [nameof(JournalVoucher.OrganizationId), nameof(JournalVoucher.EnvironmentId), nameof(JournalVoucher.SourceType), nameof(JournalVoucher.SourceNo)]));
+
+        Assert.False(index.IsUnique, "来源列唯一索引属 #3278 / S5，S2 不建。");
+    }
+
+    /// <summary>占位空串不算填了：空白由构造期拒绝，而不是落成一行空值。</summary>
+    [Fact]
+    public void Post_rejects_a_blank_source_no()
+    {
+        foreach (var blank in new[] { string.Empty, "   " })
+        {
+            Assert.Throws<ArgumentException>(() => JournalVoucher.Post(
+                "org-001",
+                "env-dev",
+                "JV-BLANK-001",
+                new DateOnly(2026, 9, 14),
+                [
+                    new JournalVoucherLineDraft("1401", 10m, 0m, "debit"),
+                    new JournalVoucherLineDraft("2202", 0m, 10m, "credit"),
+                ],
+                JournalVoucherSourceType.Manual,
+                blank));
+        }
+
+        Assert.Throws<ArgumentNullException>(() => JournalVoucher.Post(
+            "org-001",
+            "env-dev",
+            "JV-BLANK-002",
+            new DateOnly(2026, 9, 14),
+            [
+                new JournalVoucherLineDraft("1401", 10m, 0m, "debit"),
+                new JournalVoucherLineDraft("2202", 0m, 10m, "credit"),
+            ],
+            null!,
+            "JV-BLANK-002"));
+    }
+
+    /// <summary>
+    /// 码表是手工登记表：在类型里声明一个静态实例却不追加到 <see cref="JournalVoucherSourceType.All"/>，
+    /// 编译期不会拦。这条反射对撞把那个方向补住，并顺带钉住码值互异（码值会落库）。
+    /// </summary>
+    [Fact]
+    public void All_enumerates_every_declared_source_type_and_codes_stay_distinct()
+    {
+        var declared = typeof(JournalVoucherSourceType)
+            .GetProperties(BindingFlags.Public | BindingFlags.Static)
+            .Where(x => x.PropertyType == typeof(JournalVoucherSourceType))
+            .Select(x => (JournalVoucherSourceType)x.GetValue(null)!)
+            .ToList();
+
+        Assert.Equal(declared.Count, JournalVoucherSourceType.All.Count);
+        Assert.Equal(
+            declared.Select(x => x.Code).Order(StringComparer.Ordinal),
+            JournalVoucherSourceType.All.Select(x => x.Code).Order(StringComparer.Ordinal));
+        Assert.Equal(
+            JournalVoucherSourceType.All.Count,
+            JournalVoucherSourceType.All.Select(x => x.Code).Distinct(StringComparer.Ordinal).Count());
+    }
+
+    /// <summary>
+    /// owner 在 #3278 §A2 点名的设计地雷：直接应付（<c>ForAccountPayable</c>）与发票 GR/IR 清账
+    /// （<c>ForSupplierInvoiceGrIrClearing</c>）今天产出**同一个**凭证号 <c>JV-AP-{应付单号}</c>。
+    /// S2 按「真正驱动这张凭证的单据」取来源值，于是两条路径的 <c>(类型, 单号)</c> 天然不同。
+    /// 这条把它当断言写死，免得 S5 建唯一索引时才发现两条路径互相挡住。
+    /// </summary>
+    [Fact]
+    public void The_two_account_payable_paths_carry_distinct_source_documents()
+    {
+        Assert.NotEqual(
+            JournalVoucherSourceType.AccountPayable.Code,
+            JournalVoucherSourceType.SupplierInvoice.Code);
+    }
+
+    private static ApplicationDbContext CreateModelOnlyDbContext()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql(
+                "Host=localhost;Database=nerv_iip_journal_voucher_source_contract;Username=nerv;Password=nerv",
+                npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", ErpFacts.Schema))
+            .Options;
+        return new ApplicationDbContext(options, new SourceContractNoopMediator());
+    }
+
+    private sealed class SourceContractNoopMediator : IMediator
+    {
+        public Task Publish(object notification, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task Publish<TNotification>(TNotification notification, CancellationToken cancellationToken = default)
+            where TNotification : INotification => Task.CompletedTask;
+
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException("This test mediator only supports publish.");
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+            where TRequest : IRequest => throw new NotSupportedException("This test mediator only supports publish.");
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException("This test mediator only supports publish.");
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException("This test mediator only supports publish.");
+
+        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException("This test mediator only supports publish.");
+    }
+}

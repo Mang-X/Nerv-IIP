@@ -16,6 +16,7 @@ using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Erp.Web.Application.Queries.Finance;
+using Nerv.IIP.Business.Erp.Web.Application.Seed;
 using Nerv.IIP.Business.Erp.Web.Application.Validation;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Mes;
@@ -182,7 +183,145 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
             [
                 new JournalVoucherLineDraft("1406-FINISHED-GOODS", 10m, 0m, "debit leg"),
                 new JournalVoucherLineDraft("1405-WIP", 0m, 10m, "credit leg"),
-            ]);
+            ],
+            JournalVoucherSourceType.Manual,
+            voucherNo);
+
+    /// <summary>
+    /// #3278 / S2：来源两列在**真表**上的形状与往返。
+    ///
+    /// 这一格证明三件 EF InMemory 证不了的事：
+    /// ① 迁移 <c>Up()</c> 真的把两列加成**可空**——用一条 NULL 存量行直接插进去验，
+    ///    而不是读 <c>information_schema</c> 的 <c>is_nullable</c> 自证；
+    /// ② 写进去的值原样读得回来（往返，不是只看 SQL 没报错）；
+    /// ③ 迁移 <c>Down()</c> 真的跑得动并真的把两列去掉——本仓判例：
+    ///    <c>Down()</c> 写错时**不会有任何红**，除非真跑一次。
+    /// </summary>
+    [ErpCostPostgresFact(Timeout = 120_000)]
+    public async Task PostgreSQL_source_document_columns_round_trip_and_survive_up_down_up()
+    {
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        var options = ErpPostgresLaneDatabase.CreateOptions();
+        const string sourceColumnMigration = "20260914134346_AddJournalVoucherSourceDocumentColumns";
+        const string previousMigration = "20260909031821_FreezePurchaseReceiptUnitPrice";
+        var postingDate = new DateOnly(2026, 9, 14);
+
+        await using var db = new ApplicationDbContext(options, new NoopMediator());
+        ErpPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
+        await db.Database.MigrateAsync();
+        await db.Database.OpenConnectionAsync();
+        var quotedSchema = new NpgsqlCommandBuilder().QuoteIdentifier(ErpFacts.Schema);
+
+        db.GLAccounts.AddRange(
+            GLAccount.Create(VoucherOrganizationId, VoucherEnvironmentId, "1405-WIP", "Work in process", GLAccountType.Asset),
+            GLAccount.Create(VoucherOrganizationId, VoucherEnvironmentId, "1406-FINISHED-GOODS", "Finished goods inventory", GLAccountType.Asset));
+        db.JournalVouchers.Add(JournalVoucher.Post(
+            VoucherOrganizationId,
+            VoucherEnvironmentId,
+            "JV-SRC-0001",
+            postingDate,
+            [
+                new JournalVoucherLineDraft("1406-FINISHED-GOODS", 10m, 0m, "debit leg"),
+                new JournalVoucherLineDraft("1405-WIP", 0m, 10m, "credit leg"),
+            ],
+            JournalVoucherSourceType.PaymentExecution,
+            "APPAY-0001"));
+        await db.SaveChangesAsync();
+
+        // ① 往返：写进去的两列原样读得回来。
+        db.ChangeTracker.Clear();
+        var persisted = await db.JournalVouchers.SingleAsync(x => x.VoucherNo == "JV-SRC-0001");
+        Assert.Equal("APPAY", persisted.SourceType);
+        Assert.Equal("APPAY-0001", persisted.SourceNo);
+
+        // ② 可空：一条来源列为 NULL 的存量形态行必须插得进去。列若被建成 NOT NULL，这里就是 23502。
+        await using (var legacy = new NpgsqlCommand($"""
+            INSERT INTO {quotedSchema}.journal_vouchers
+                (id, organization_id, environment_id, voucher_no, posting_date, posted_at_utc, source_type, source_no)
+            VALUES
+                (@id, @org, @env, 'JV-LEGACY-0001', @postingDate, @postedAt, NULL, NULL)
+            """, (NpgsqlConnection)db.Database.GetDbConnection()))
+        {
+            legacy.Parameters.AddWithValue("id", Guid.CreateVersion7());
+            legacy.Parameters.AddWithValue("org", VoucherOrganizationId);
+            legacy.Parameters.AddWithValue("env", VoucherEnvironmentId);
+            legacy.Parameters.AddWithValue("postingDate", postingDate);
+            legacy.Parameters.AddWithValue("postedAt", DateTime.UtcNow);
+            await legacy.ExecuteNonQueryAsync();
+        }
+
+        db.ChangeTracker.Clear();
+        var legacyRow = await db.JournalVouchers.SingleAsync(x => x.VoucherNo == "JV-LEGACY-0001");
+        Assert.Null(legacyRow.SourceType);
+        Assert.Null(legacyRow.SourceNo);
+
+        // ③ Down() 真跑：回落到上一版后两列必须消失，再 Up() 必须回来。
+        var migrator = db.GetService<IMigrator>();
+        await migrator.MigrateAsync(previousMigration);
+        Assert.Equal([], await JournalVoucherSourceColumnsAsync(db, quotedSchema));
+
+        await migrator.MigrateAsync(sourceColumnMigration);
+        Assert.Equal(["source_no", "source_type"], await JournalVoucherSourceColumnsAsync(db, quotedSchema));
+    }
+
+    /// <summary>
+    /// #3278 / S2：17 个建凭证位点里有 2 处在 <c>WorldHistorySeedService</c>。
+    /// 这一格在真库上跑一次 seed，然后断言 <c>journal_vouchers</c> **整表**没有来源列空值——
+    /// 漏填那 2 处中的任意一处，这里的空值计数就不为 0。
+    ///
+    /// <b>值域边界</b>：本格覆盖的是 seed 的 2 处，不是全部 17 处。
+    /// 「17 处一个不漏」由 <c>JournalVoucher.Post</c> 的不可省略参数在**编译期**保证
+    /// （见 <c>JournalVoucherSourceContractTests</c>），不由本格保证。
+    /// </summary>
+    [ErpCostPostgresFact(Timeout = 180_000)]
+    public async Task PostgreSQL_world_history_seed_leaves_no_voucher_without_a_source_document()
+    {
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        var options = ErpPostgresLaneDatabase.CreateOptions();
+        await using var db = new ApplicationDbContext(options, new NoopMediator());
+        ErpPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
+        await db.Database.MigrateAsync();
+
+        await new WorldHistorySeedService(db).SeedAsync("org-001", "env-dev", new DateOnly(2026, 7, 26), 0.02d);
+
+        await db.Database.OpenConnectionAsync();
+        var quotedSchema = new NpgsqlCommandBuilder().QuoteIdentifier(ErpFacts.Schema);
+        await using var counts = new NpgsqlCommand($"""
+            SELECT count(*) AS total,
+                   count(*) FILTER (WHERE source_type IS NULL OR source_no IS NULL) AS missing,
+                   count(DISTINCT source_type) AS distinct_types
+            FROM {quotedSchema}.journal_vouchers
+            """, (NpgsqlConnection)db.Database.GetDbConnection());
+        await using var reader = await counts.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        var total = reader.GetInt64(0);
+        var missing = reader.GetInt64(1);
+        var distinctTypes = reader.GetInt64(2);
+
+        Assert.True(total > 0, "seed 没有写出任何凭证，这一格就没有量到东西。");
+        Assert.Equal(0L, missing);
+        // 收入凭证与收款凭证必须落成两个不同的来源类型；两处都填成同一个占位串时这里就是 1。
+        Assert.Equal(2L, distinctTypes);
+    }
+
+    private static async Task<IReadOnlyList<string>> JournalVoucherSourceColumnsAsync(ApplicationDbContext db, string quotedSchema)
+    {
+        await using var command = new NpgsqlCommand("""
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = @schema AND table_name = 'journal_vouchers' AND column_name IN ('source_type', 'source_no')
+            ORDER BY column_name
+            """, (NpgsqlConnection)db.Database.GetDbConnection());
+        command.Parameters.AddWithValue("schema", quotedSchema.Trim('"'));
+        var columns = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            columns.Add(reader.GetString(0));
+        }
+
+        return columns;
+    }
 
     [ErpCostPostgresFact(Timeout = 30_000)]
     public async Task PostgreSQL_rework_origin_arriving_after_cost_events_stays_isolated_and_queryable()
@@ -1208,7 +1347,8 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
             GLAccount.Create("org-pg", "env-pg", "1405-WIP", "Work in process", GLAccountType.Asset),
             GLAccount.Create("org-pg", "env-pg", "1406-FINISHED-GOODS", "Finished goods", GLAccountType.Asset));
         db.JournalVouchers.Add(JournalVoucher.Post("org-pg", "env-pg", "JV-PG-001", new DateOnly(2026, 7, 11),
-            [new JournalVoucherLineDraft("1406-FINISHED-GOODS", 160m, 0m, "capitalization"), new JournalVoucherLineDraft("1405-WIP", 0m, 160m, "clear WIP")]));
+            [new JournalVoucherLineDraft("1406-FINISHED-GOODS", 160m, 0m, "capitalization"), new JournalVoucherLineDraft("1405-WIP", 0m, 160m, "clear WIP")],
+            JournalVoucherSourceType.WorkOrderCapitalization, "MOVE-PG-FG"));
         var cost = WorkOrderCost.Open("org-pg", "env-pg", "WO-PG-001", "FG-PG-001");
         cost.RecordLabor("RPT-PG-001", "WC-PG", 2m, 50m, "CNY", false, DateTimeOffset.UtcNow);
         cost.RecordMaterial("MOVE-PG-RM", "RPT-PG-001", "RM-PG", 3m, 20m, DateTimeOffset.UtcNow);
