@@ -1085,10 +1085,12 @@
         "Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_calendar_event_handler_changes_the_generated_plan_query_state_once",
         "Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_records_generated_calendar_invalidation_without_matching_released_or_other_calendar_plans",
         "Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_records_invalidation_for_a_generated_plan_matched_by_resource",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_release_gate_blocks_quality_blocked_and_allows_quality_released",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_translates_the_work_order_or_operation_scope_for_quality_inspection_results",
         "Nerv.IIP.Business.Scheduling.Web.Tests.ScheduleReleaseGovernancePostgresProfileTests.Concurrent_releases_converge_to_one_active_plan_with_monotonic_revisions",
         "Nerv.IIP.Business.Scheduling.Web.Tests.ScheduleReleaseGovernancePostgresProfileTests.Migration_normalizes_historical_duplicate_releases_with_exact_timestamp_tie"
       ],
-      "expectedRuntimeTestCount": 15
+      "expectedRuntimeTestCount": 17
     },
     {
       "id": "scheduling-postgres-redis",
@@ -1386,11 +1388,15 @@
       "expiresOn": null,
       "exitCondition": null,
       "testIdentities": [
+        "Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.Intent_fingerprint_migration_is_nullable_varchar_256_and_survives_down_up",
         "Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.Migration_backfills_only_forward_nonblank_legacy_serials_and_survives_down_up",
         "Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.Migration_fails_closed_when_forward_legacy_reports_share_a_trimmed_scoped_serial",
-        "Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.PostgreSQL_persists_ordered_serials_and_enforces_ordinal_scoped_uniqueness_and_report_fk"
+        "Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.PostgreSQL_concurrent_same_and_different_fingerprints_commit_one_atomic_intent_receipt",
+        "Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.PostgreSQL_intent_receipt_round_trips_exact_value_and_keeps_nullable_crossings_conflicting",
+        "Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.PostgreSQL_persists_ordered_serials_and_enforces_ordinal_scoped_uniqueness_and_report_fk",
+        "Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.PostgreSQL_serial_failure_rolls_back_report_idempotency_receipt_and_serials_together"
       ],
-      "expectedRuntimeTestCount": 3
+      "expectedRuntimeTestCount": 7
     },
     {
       "id": "mes-production-candidate",
