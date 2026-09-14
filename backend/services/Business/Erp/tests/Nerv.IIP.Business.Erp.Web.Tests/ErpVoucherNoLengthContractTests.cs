@@ -69,7 +69,7 @@ public sealed class ErpVoucherNoLengthContractTests
     /// </summary>
     private const string WidestAdjustmentSourceIdShape = "machine-{OperationTaskId}-r{SettlementRevision}-void";
 
-    private const int WidestAdjustmentSourceIdWidth = 134;
+    internal const int WidestAdjustmentSourceIdWidth = 134;
 
     [Fact]
     public void Voucher_no_column_width_matches_the_policy_constant()
