@@ -1,4 +1,6 @@
 import {
+  getBusinessConsoleErpWorkOrderCostVarianceQueryOptions,
+  listBusinessConsoleErpWorkCenterMachineOverheadReconciliationsQueryOptions,
   approveBusinessConsoleErpQuotationMutationOptions,
   createBusinessConsoleErpSalesOrderMutationOptions,
   createBusinessConsoleErpQuotationMutationOptions,
@@ -61,6 +63,53 @@ import { computed, reactive } from 'vue'
 import { hasBusinessContext, refetchWithBusinessContext } from './businessContextBinding'
 
 const DEFAULT_TAKE = 10
+
+export function useErpMachineOverhead() {
+  const context = useBusinessContextStore()
+  const workOrder = reactive({ id: '', page: 1, pageSize: 10 })
+  const monthly = reactive({ period: '', workCenterId: '', page: 1, pageSize: 10 })
+  const ready = computed(() => hasBusinessContext(context))
+  const workOrderQuery = useQuery(() => ({
+    ...getBusinessConsoleErpWorkOrderCostVarianceQueryOptions({
+      path: { workOrderId: workOrder.id },
+      query: {
+        organizationId: context.organizationId,
+        environmentId: context.environmentId,
+        pageNumber: workOrder.page,
+        pageSize: workOrder.pageSize,
+      },
+    }),
+    enabled: ready.value && Boolean(workOrder.id),
+  }))
+  const monthlyQuery = useQuery(() => ({
+    ...listBusinessConsoleErpWorkCenterMachineOverheadReconciliationsQueryOptions({
+      query: {
+        organizationId: context.organizationId,
+        environmentId: context.environmentId,
+        accountingPeriodCode: monthly.period,
+        workCenterId: monthly.workCenterId || undefined,
+        pageNumber: monthly.page,
+        pageSize: monthly.pageSize,
+      },
+    }),
+    enabled: ready.value && Boolean(monthly.period),
+  }))
+  return {
+    ready,
+    workOrder,
+    monthly,
+    workOrderData: computed(() =>
+      ready.value ? unwrapData(workOrderQuery.data.value) : undefined,
+    ),
+    monthlyData: computed(() => (ready.value ? unwrapData(monthlyQuery.data.value) : undefined)),
+    workOrderPending: workOrderQuery.isLoading,
+    monthlyPending: monthlyQuery.isLoading,
+    workOrderError: workOrderQuery.error,
+    monthlyError: monthlyQuery.error,
+    refreshWorkOrder: () => refetchWithBusinessContext(context, workOrderQuery),
+    refreshMonthly: () => refetchWithBusinessContext(context, monthlyQuery),
+  }
+}
 
 export interface BusinessErpListFilters {
   status?: string

@@ -137,6 +137,7 @@ describe('business console ERP navigation', () => {
       '/erp/finance/ar-ap',
       '/erp/finance/vouchers',
       '/erp/finance/cost-candidates',
+      '/erp/finance/machine-overhead',
     ])
   })
 
@@ -172,6 +173,7 @@ describe('business console ERP navigation', () => {
       '/erp/finance/ar-ap',
       '/erp/finance/vouchers',
       '/erp/finance/cost-candidates',
+      '/erp/finance/machine-overhead',
     ]) {
       expect(byPath.get(path)).toEqual([P.erpFinanceRead])
     }

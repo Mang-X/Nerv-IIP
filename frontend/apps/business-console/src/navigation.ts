@@ -456,6 +456,12 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           to: { path: '/erp/finance/cost-candidates' },
           requiredPermissions: [P.erpFinanceRead],
         },
+        {
+          title: '机器制造费用',
+          icon: LayersIcon,
+          to: { path: '/erp/finance/machine-overhead' },
+          requiredPermissions: [P.erpFinanceRead],
+        },
       ],
     },
   ],
