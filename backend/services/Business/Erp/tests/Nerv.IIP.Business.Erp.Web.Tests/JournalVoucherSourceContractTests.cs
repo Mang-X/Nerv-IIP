@@ -31,10 +31,18 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 /// <b>值域边界（声明放弃了什么）</b>：
 /// 1. 本类**不**证明「所有落库的凭证都经过 <see cref="JournalVoucher.Post"/>」。
 ///    绕开 EF 的原生 SQL 写入（<c>ExecuteSql</c> / <c>FromSql</c>）不在扫描面内；
-///    S2 落地时实测 Erp 生产代码对这两者零命中，日后新增会让这个保证**静默**失效。
+///    S2 落地时对 <c>backend/services/Business/Erp/src</c> 实测**代码命中 0**（同名字样另有 1 处，
+///    是 <c>JournalVoucher</c> 里自述该次扫描的注释——护栏自指，别当旁路读）。
+///    日后新增生产侧原生 SQL 写入会让这个保证**静默**失效。
 /// 2. 列宽读的是 **EF 模型**而不是迁移脚本；模型/迁移漂移由「空迁移探针」负责，不由本类负责。
 /// 3. 「真表上这两列真的可空、真的读得回来」由 <c>ErpCostAccountingPostgresAcceptanceTests</c>
 ///    的真 Postgres 用例负责——EF InMemory 既看不见列宽也看不见可空性。
+/// 4. ⭐ **本类完全不管「填对」**。编译期闭合只保证每个位点**填了**；把所有位点的 <c>sourceNo</c>
+///    一律填成同一个常量，本类全绿（复审实测）。逐族钉住实际取值的是
+///    <c>JournalVoucherSourceValueTests</c>。
+/// 5. <see cref="JournalVoucher.Post"/> 是唯一**新建**入口，不是唯一写入口：EF 物化走私有无参
+///    构造函数，绕开这两个参数——本 PR 那条真库用例里读回来源列为 <see langword="null"/> 的存量行
+///    就是证据。
 /// </summary>
 public sealed class JournalVoucherSourceContractTests
 {
@@ -163,20 +171,6 @@ public sealed class JournalVoucherSourceContractTests
         Assert.Equal(
             JournalVoucherSourceType.All.Count,
             JournalVoucherSourceType.All.Select(x => x.Code).Distinct(StringComparer.Ordinal).Count());
-    }
-
-    /// <summary>
-    /// owner 在 #3278 §A2 点名的设计地雷：直接应付（<c>ForAccountPayable</c>）与发票 GR/IR 清账
-    /// （<c>ForSupplierInvoiceGrIrClearing</c>）今天产出**同一个**凭证号 <c>JV-AP-{应付单号}</c>。
-    /// S2 按「真正驱动这张凭证的单据」取来源值，于是两条路径的 <c>(类型, 单号)</c> 天然不同。
-    /// 这条把它当断言写死，免得 S5 建唯一索引时才发现两条路径互相挡住。
-    /// </summary>
-    [Fact]
-    public void The_two_account_payable_paths_carry_distinct_source_documents()
-    {
-        Assert.NotEqual(
-            JournalVoucherSourceType.AccountPayable.Code,
-            JournalVoucherSourceType.SupplierInvoice.Code);
     }
 
     private static ApplicationDbContext CreateModelOnlyDbContext()
