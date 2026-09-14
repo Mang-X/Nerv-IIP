@@ -33,6 +33,53 @@ interface ReportIntent {
   result: MesReportResult | null
 }
 
+// One local recovery slot, not a queue: the shared write intent remains the owner of
+// the wire payload/key/time. This snapshot only restores its confirmed PDA result.
+const PREPARATION_STORAGE_KEY = 'nerv-iip.pda-mes-report-preparation.v1'
+type StoredPreparation = Omit<ReportIntent, 'attempt' | 'status'>
+
+function readPreparation(): StoredPreparation | undefined {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(PREPARATION_STORAGE_KEY) ?? 'null')
+    if (
+      saved?.result?.status === 'success' &&
+      saved.result.receipt?.printingPreparationPending === true &&
+      typeof saved.workOrderId === 'string' &&
+      typeof saved.operationTaskId === 'string' &&
+      typeof saved.intentKey === 'string' &&
+      saved.context &&
+      saved.payload &&
+      typeof saved.receipt?.reportNo === 'string' &&
+      typeof saved.receipt?.productionReportId === 'string'
+    )
+      return saved
+  } catch {
+    // Unavailable/corrupt browser session data must not authorize a write.
+  }
+}
+
+function savePreparation(intent: ReportIntent) {
+  try {
+    if (intent.result?.status === 'success' && intent.result.receipt?.printingPreparationPending) {
+      const { attempt: _attempt, status: _status, ...saved } = intent
+      sessionStorage.setItem(PREPARATION_STORAGE_KEY, JSON.stringify(saved))
+    } else if (readPreparation()?.intentKey === intent.intentKey) {
+      sessionStorage.removeItem(PREPARATION_STORAGE_KEY)
+    }
+  } catch {
+    // The current page still retains its confirmed result when storage is unavailable.
+  }
+}
+
+function forgetPreparation(intentKey: string) {
+  try {
+    if (readPreparation()?.intentKey === intentKey)
+      sessionStorage.removeItem(PREPARATION_STORAGE_KEY)
+  } catch {
+    // Storage availability does not change runtime context invalidation.
+  }
+}
+
 interface MesReportSubmissionOptions {
   pair: ComputedRef<{ workOrderId: string; operationTaskId: string } | null>
   selectedTask: ComputedRef<BusinessConsoleMesOperationTaskRow | null>
@@ -83,6 +130,14 @@ function reportContextKey(context: MesReportExecutionContext | undefined) {
   ].join('\u0000')
 }
 
+function sameStoredContext(current: MesReportExecutionContext, saved: MesReportExecutionContext) {
+  // Generation is a runtime invalidation counter, not a cross-reload identity.
+  return (
+    reportContextKey({ ...current, generation: 0 }) ===
+    reportContextKey({ ...saved, generation: 0 })
+  )
+}
+
 export function useMesReportSubmission(options: MesReportSubmissionOptions) {
   const intents = reactive(new Map<string, ReportIntent>())
   const pairKey = computed(() => {
@@ -97,11 +152,40 @@ export function useMesReportSubmission(options: MesReportSubmissionOptions) {
   const submitting = computed(() => currentIntent.value?.status === 'pending')
 
   watch(
+    [pairKey, options.selectedTask, options.reportScopeReady],
+    () => {
+      const context = options.context.value
+      const pair = options.pair.value
+      const task = options.selectedTask.value
+      if (!context || !pair || !task || !options.reportScopeReady.value || currentIntent.value)
+        return
+      const saved = readPreparation()
+      if (
+        !saved ||
+        !sameStoredContext(context, saved.context) ||
+        saved.workOrderId !== pair.workOrderId ||
+        saved.operationTaskId !== pair.operationTaskId ||
+        task.workOrderId !== pair.workOrderId ||
+        task.operationTaskId !== pair.operationTaskId
+      )
+        return
+      intents.set(pairKey.value, {
+        ...saved,
+        context: { ...context },
+        attempt: Symbol('mes-report-preparation-restored'),
+        status: 'success',
+      })
+    },
+    { immediate: true },
+  )
+
+  watch(
     options.contextGeneration,
     (generation) => {
       for (const [key, intent] of intents) {
         if (intent.context.generation === generation) continue
         intent.attempt = Symbol('mes-report-context-invalidated')
+        forgetPreparation(intent.intentKey)
         intents.delete(key)
       }
     },
@@ -229,6 +313,7 @@ export function useMesReportSubmission(options: MesReportSubmissionOptions) {
         description: description.join('；'),
         receipt: intent.receipt,
       }
+      savePreparation(intent)
     } catch (error) {
       if (intent.attempt !== attempt) return
       if (confirmedResult) {
@@ -237,6 +322,7 @@ export function useMesReportSubmission(options: MesReportSubmissionOptions) {
           ...confirmedResult,
           preparationError: describeRequestError(error, '标签准备暂未完成，请稍后重试。').message,
         }
+        savePreparation(intent)
         return
       }
       if (await options.recoverLifecycleAction(error)) return

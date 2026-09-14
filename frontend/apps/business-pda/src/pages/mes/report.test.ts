@@ -362,6 +362,7 @@ describe('PDA MES production reporting page', () => {
   })
 
   beforeEach(() => {
+    sessionStorage.clear()
     serialRequired.value = false
     serialValid.value = true
     serialTemplateId.value = ''
@@ -524,6 +525,57 @@ describe('PDA MES production reporting page', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="label-preparation-error"]').exists()).toBe(false)
     expect(recordReport.mock.calls[2][0]).toEqual(recordReport.mock.calls[0][0])
+  })
+
+  it.each(['principalId', 'organizationId', 'environmentId', 'scopeId'] as const)(
+    'does not restore pending preparation for a different %s',
+    async (field) => {
+      route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-1' }
+      recordReport.mockResolvedValueOnce({
+        success: true,
+        data: { ...successfulReceipt.data, printingPreparationPending: true },
+      })
+      const first = mount(ReportPage, { attachTo: document.body })
+      await flushPromises()
+      const input = document.body.querySelector<HTMLInputElement>('[data-testid="good-quantity"]')!
+      input.value = '1'
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      await flushPromises()
+      document.body.querySelector<HTMLButtonElement>('[data-testid="submit-report"]')!.click()
+      await flushPromises()
+      expect(first.find('[data-result][data-status="success"]').exists()).toBe(true)
+      reportContextRef.value = { ...reportContextRef.value, [field]: 'other-context' }
+      const other = mount(ReportPage)
+      await flushPromises()
+      expect(other.find('[data-result]').exists()).toBe(false)
+      expect(other.find('[data-testid="retry-label-preparation"]').exists()).toBe(false)
+      expect(recordReport).toHaveBeenCalledTimes(1)
+    },
+  )
+
+  it('does not resurrect persisted preparation after runtime context invalidation', async () => {
+    route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-1' }
+    recordReport.mockResolvedValueOnce({
+      success: true,
+      data: { ...successfulReceipt.data, printingPreparationPending: true },
+    })
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    await flushPromises()
+    const input = document.body.querySelector<HTMLInputElement>('[data-testid="good-quantity"]')!
+    input.value = '1'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    document.body.querySelector<HTMLButtonElement>('[data-testid="submit-report"]')!.click()
+    await flushPromises()
+    expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
+    contextGenerationRef.value += 1
+    reportContextRef.value = { ...reportContextRef.value, generation: contextGenerationRef.value }
+    await flushPromises()
+    expect(wrapper.find('[data-result]').exists()).toBe(false)
+    const reentered = mount(ReportPage)
+    await flushPromises()
+    expect(reentered.find('[data-result]').exists()).toBe(false)
+    expect(recordReport).toHaveBeenCalledTimes(1)
   })
 
   it('starts on the select-work-order step listing work orders', () => {

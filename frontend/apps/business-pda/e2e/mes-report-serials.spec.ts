@@ -215,6 +215,20 @@ test('标签准备收敛前不开始新报工，失败仍保留成功，收敛�
   await page.getByTestId('submit-report').tap()
   await expect(page.getByRole('heading', { name: '报工成功' })).toBeVisible()
   await expect(page.getByTestId('continue-report')).toBeDisabled()
+  await page.reload()
+  await expect(page.getByRole('heading', { name: '报工成功' })).toBeVisible()
+  await expect(page.getByTestId('good-quantity')).toHaveCount(0)
+  await expect(page.getByTestId('continue-report')).toBeDisabled()
+  expect(writes).toHaveLength(1)
+  await page.goto('/mes/report?workOrderId=WO-2&operationTaskId=OP-3')
+  await expect(
+    page.getByText('工序任务 OP-3 当前不可报工，服务端未开放 report 动作。'),
+  ).toBeVisible()
+  await expect(page.getByRole('heading', { name: '报工成功' })).toHaveCount(0)
+  await expect(page.getByTestId('retry-label-preparation')).toHaveCount(0)
+  await page.goto('/mes/report?workOrderId=WO-1&operationTaskId=OP-1')
+  await expect(page.getByRole('heading', { name: '报工成功' })).toBeVisible()
+  expect(writes).toHaveLength(1)
   await page.getByTestId('retry-label-preparation').tap()
   await expect(page.getByTestId('label-preparation-error')).toBeVisible()
   await expect(page.getByRole('heading', { name: '报工成功' })).toBeVisible()
@@ -222,6 +236,11 @@ test('标签准备收敛前不开始新报工，失败仍保留成功，收敛�
   await expect(page.getByRole('list', { name: '本次全部序列号' }).getByRole('listitem')).toHaveText(
     ['SN-0001', 'SN-0002'],
   )
+  await page.goto('/tasks')
+  await page.goto('/mes/report?workOrderId=WO-1&operationTaskId=OP-1')
+  await expect(page.getByRole('heading', { name: '报工成功' })).toBeVisible()
+  await expect(page.getByTestId('continue-report')).toBeDisabled()
+  expect(writes).toHaveLength(2)
   await page.getByTestId('retry-label-preparation').tap()
   await expect(page.getByTestId('continue-report')).toBeEnabled()
   expect(writes).toHaveLength(3)
@@ -246,4 +265,8 @@ test('标签准备收敛前不开始新报工，失败仍保留成功，收敛�
     goodQuantity: 2,
     labelTemplateId: 'tpl-1',
   })
+  await page.reload()
+  await expect(page.getByTestId('good-quantity')).toBeVisible()
+  await expect(page.getByTestId('retry-label-preparation')).toHaveCount(0)
+  expect(writes).toHaveLength(4)
 })
