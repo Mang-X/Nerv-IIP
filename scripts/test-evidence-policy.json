@@ -1388,11 +1388,15 @@
       "expiresOn": null,
       "exitCondition": null,
       "testIdentities": [
+        "Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.Intent_fingerprint_migration_is_nullable_varchar_256_and_survives_down_up",
         "Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.Migration_backfills_only_forward_nonblank_legacy_serials_and_survives_down_up",
         "Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.Migration_fails_closed_when_forward_legacy_reports_share_a_trimmed_scoped_serial",
-        "Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.PostgreSQL_persists_ordered_serials_and_enforces_ordinal_scoped_uniqueness_and_report_fk"
+        "Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.PostgreSQL_concurrent_same_and_different_fingerprints_commit_one_atomic_intent_receipt",
+        "Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.PostgreSQL_intent_receipt_round_trips_exact_value_and_keeps_nullable_crossings_conflicting",
+        "Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.PostgreSQL_persists_ordered_serials_and_enforces_ordinal_scoped_uniqueness_and_report_fk",
+        "Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.PostgreSQL_serial_failure_rolls_back_report_idempotency_receipt_and_serials_together"
       ],
-      "expectedRuntimeTestCount": 3
+      "expectedRuntimeTestCount": 7
     },
     {
       "id": "mes-production-candidate",
