@@ -105,6 +105,14 @@ function queryMonth() {
   costs.monthly.page = 1
   void costs.refreshMonthly()
 }
+function resizeOrder(pageSize: number) {
+  costs.workOrder.pageSize = pageSize
+  costs.workOrder.page = 1
+}
+function resizeMonth(pageSize: number) {
+  costs.monthly.pageSize = pageSize
+  costs.monthly.page = 1
+}
 </script>
 
 <template>
@@ -159,10 +167,7 @@ function queryMonth() {
         :empty-message="order ? '没有有效机器结算明细。' : '尚未取得工单费用。'"
         @retry="costs.refreshWorkOrder"
         @update:page="costs.workOrder.page = $event"
-        @update:page-size="
-          costs.workOrder.pageSize = $event
-          costs.workOrder.page = 1
-        "
+        @update:page-size="resizeOrder"
       >
         <template #cell-status="{ row }">
           <span>{{ machineStatusLabels[row.status] }}</span>
@@ -263,10 +268,7 @@ function queryMonth() {
         empty-message="没有月度对账记录。"
         @retry="costs.refreshMonthly"
         @update:page="costs.monthly.page = $event"
-        @update:page-size="
-          costs.monthly.pageSize = $event
-          costs.monthly.page = 1
-        "
+        @update:page-size="resizeMonth"
       >
         <template #cell-reconciliationStatus="{ row }">
           <p>{{ machineStatusLabels[row.reconciliationStatus] }}</p>
