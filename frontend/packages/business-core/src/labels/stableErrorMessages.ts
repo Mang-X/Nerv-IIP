@@ -69,6 +69,12 @@ export const STABLE_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   // `actionableHttpMessage(503)` 的本地指引，`serverMessage` 只是它的回落项——那条链里
   // 这条码不上屏（也因此 PDA 不会甩裸码）。这条登记服务的是 PC 侧的 `friendlyErrorMessage`。
   'downstream-circuit-open': '服务暂时不可用，本次请求未发出；请稍后重试。',
+  'production-serial-policy-invalid':
+    '当前物料的序列号策略不可用于生产报工，请联系管理员检查物料配置。',
+  'production-label-template-required': '该物料按生产环节生成序列号，请选择标签模板后重试。',
+  'production-label-rule-unavailable':
+    '未找到可用于该物料的有效条码规则，请联系管理员检查物料配置。',
+  'production-label-quantity-invalid': '按生产环节生成序列号时，良品数量必须为正整数。',
 }
 
 export function stableErrorMessage(value: unknown): string {

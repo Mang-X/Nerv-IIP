@@ -4403,6 +4403,8 @@ public sealed class BusinessGatewayProxyTests
             "/api/business-console/v1/mes/production-reports/PR-COMMITTED-001?organizationId=org-001&environmentId=env-dev",
             receipt.GetProperty("readbackPath").GetString());
         Assert.Equal(2, barcode.GetPrintBatchByIdempotencyKeyCallCount);
+        Assert.Null(barcode.LastPrintBatchListRequest);
+        Assert.Equal(0, barcode.GetPrintBatchCallCount);
         Assert.Equal(0, barcode.CreatePrintBatchCallCount);
         Assert.Equal(0, barcode.ActivatePrintBatchCallCount);
         Assert.Equal(2, mes.GetProductionReportByIdempotencyKeyCallCount);
@@ -4477,6 +4479,8 @@ public sealed class BusinessGatewayProxyTests
         using var document = JsonDocument.Parse(await replay.Content.ReadAsStringAsync());
         Assert.Equal("idempotency-conflict", document.RootElement.GetProperty("message").GetString());
         Assert.Equal(2, barcode.GetPrintBatchByIdempotencyKeyCallCount);
+        Assert.Null(barcode.LastPrintBatchListRequest);
+        Assert.Equal(0, barcode.GetPrintBatchCallCount);
         Assert.Equal(0, barcode.CreatePrintBatchCallCount);
         Assert.Equal(0, barcode.ActivatePrintBatchCallCount);
         Assert.Equal(2, mes.GetProductionReportByIdempotencyKeyCallCount);

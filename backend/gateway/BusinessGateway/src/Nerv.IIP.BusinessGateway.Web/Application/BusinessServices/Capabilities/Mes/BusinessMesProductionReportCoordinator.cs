@@ -13,6 +13,14 @@ public interface IBusinessMesProductionReportCoordinator
         CancellationToken cancellationToken);
 }
 
+public static class BusinessMesProductionReportStableWireCodes
+{
+    public const string SerialPolicyInvalid = "production-serial-policy-invalid";
+    public const string LabelTemplateRequired = "production-label-template-required";
+    public const string LabelRuleUnavailable = "production-label-rule-unavailable";
+    public const string LabelQuantityInvalid = "production-label-quantity-invalid";
+}
+
 public sealed class BusinessMesProductionReportCoordinator(
     IBusinessMesClient mes,
     IBusinessMasterDataClient masterData,
@@ -92,7 +100,7 @@ public sealed class BusinessMesProductionReportCoordinator(
         var policy = sku.SerialTrackingPolicy;
         if (!sku.Active || string.IsNullOrWhiteSpace(policy) || !SupportedPolicies.Contains(policy))
         {
-            throw InvalidRequest("production-serial-policy-invalid");
+            throw InvalidRequest(BusinessMesProductionReportStableWireCodes.SerialPolicyInvalid);
         }
 
         if (!string.Equals(policy, OnProductionPolicy, StringComparison.Ordinal) || request.GoodQuantity == 0)
@@ -108,11 +116,11 @@ public sealed class BusinessMesProductionReportCoordinator(
         var quantity = ProductionSerialQuantity(request.GoodQuantity);
         if (string.IsNullOrWhiteSpace(request.LabelTemplateId))
         {
-            throw InvalidRequest("production-label-template-required");
+            throw InvalidRequest(BusinessMesProductionReportStableWireCodes.LabelTemplateRequired);
         }
         if (string.IsNullOrWhiteSpace(sku.DefaultBarcodeRuleCode))
         {
-            throw InvalidRequest("production-label-rule-unavailable");
+            throw InvalidRequest(BusinessMesProductionReportStableWireCodes.LabelRuleUnavailable);
         }
 
         var rules = await barcodeLabel.ListRulesAsync(
@@ -132,7 +140,7 @@ public sealed class BusinessMesProductionReportCoordinator(
             .ToArray();
         if (matchingRules.Length != 1)
         {
-            throw InvalidRequest("production-label-rule-unavailable");
+            throw InvalidRequest(BusinessMesProductionReportStableWireCodes.LabelRuleUnavailable);
         }
 
         var created = await barcodeLabel.CreatePrintBatchAsync(
@@ -289,7 +297,7 @@ public sealed class BusinessMesProductionReportCoordinator(
     {
         if (goodQuantity <= 0 || goodQuantity != decimal.Truncate(goodQuantity) || goodQuantity > int.MaxValue)
         {
-            throw InvalidRequest("production-label-quantity-invalid");
+            throw InvalidRequest(BusinessMesProductionReportStableWireCodes.LabelQuantityInvalid);
         }
 
         return decimal.ToInt32(goodQuantity);
