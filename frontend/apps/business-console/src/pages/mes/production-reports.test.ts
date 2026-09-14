@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import type { BusinessConsoleMesProductionReportRow } from '@nerv-iip/api-client'
 import { createPinia } from 'pinia'
+import { shallowRef } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from '@/stores/auth'
 import ProductionReportsPage from './production-reports.vue'
@@ -148,6 +149,16 @@ vi.mock('@/composables/mes/useMesDisplayNames', () => ({
 const routerState = vi.hoisted(() => ({ push: vi.fn() }))
 vi.mock('vue-router', () => ({ useRouter: () => routerState }))
 
+vi.mock('@/composables/mes/useProductionReportSerialOptions', () => ({
+  useProductionReportSerialOptions: () => ({
+    serialPolicy: shallowRef('none'),
+    labelTemplates: shallowRef([]),
+    serialOptionsReady: shallowRef(true),
+    serialOptionsPending: shallowRef(false),
+    refreshSerialOptions: vi.fn(),
+  }),
+}))
+
 vi.mock('@/composables/useBusinessMes', async () => {
   const { reactive, shallowRef, computed } = await import('vue')
   mesState.filters = reactive({
@@ -165,6 +176,8 @@ vi.mock('@/composables/useBusinessMes', async () => {
     makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
     useMesProductionReporting: () => ({
       recordProductionReport: vi.fn(),
+      restoreProductionReport: vi.fn(),
+      readProductionPrintStatus: vi.fn(),
       recordProductionReportError: shallowRef(undefined),
       recordProductionReportPending: shallowRef(false),
       reportScopeMessage: shallowRef(''),
