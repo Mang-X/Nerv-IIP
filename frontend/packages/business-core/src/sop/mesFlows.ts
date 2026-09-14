@@ -35,3 +35,25 @@ export const finishedGoodsReceiptFlow = defineStepFlow<ReceiptCtx>({
     { id: 'create', done: (c) => Boolean(c.created) },
   ],
 })
+
+export interface ShiftHandoverCtx {
+  shiftId?: string
+  teamId?: string
+  /**
+   * 操作工显式确认过三类明细与附件。
+   *
+   * 不能拿「有没有明细」当完成判据：空在制清点 / 空未完工单 / 空遗留问题都是合法交班
+   * （写面三个数组都可空），那样第 2 步会变成永不可完成的死步。
+   */
+  reviewed?: boolean
+  submitted?: boolean
+}
+
+export const shiftHandoverFlow = defineStepFlow<ShiftHandoverCtx>({
+  id: 'mes.handover',
+  steps: [
+    { id: 'selectShiftTeam', done: (c) => Boolean(c.shiftId && c.teamId) },
+    { id: 'recordDetails', done: (c) => Boolean(c.reviewed) },
+    { id: 'submit', done: (c) => Boolean(c.submitted) },
+  ],
+})
