@@ -108,6 +108,25 @@ export function toDirectoryOptions(
     .sort((a, b) => a.label.localeCompare(b.label, 'zh-Hans-CN'))
 }
 
+/**
+ * 主数据码 → 中文显示名。
+ *
+ * 三条判据各有不同成因，不能合并：
+ * - 空值 → 回落文案（「未排班」/「未指派班组」），不是「解析失败」；
+ * - GUID 形状 → 回落文案，工程标识符任何情况下都不上屏；
+ * - 目录里查不到 → **原样回显业务码**（DAY / TEAM-ASSY-A 这类码在车间本身可读），
+ *   把它也吞成「未排班」会把「查不到名字」谎报成「没排班」。
+ */
+export function resolveDirectoryLabel(
+  value: string | null | undefined,
+  labels: ReadonlyMap<string, string>,
+  fallback: string,
+): string {
+  const code = (value ?? '').trim()
+  if (!code || isSystemIdentifier(code)) return fallback
+  return labels.get(code) ?? code
+}
+
 /** 交班人/接班人显示名：解析不出用户目录时不回显用户 id（那是工程标识符）。 */
 export function outgoingUserLabel(row: { outgoingUserName?: string | null }): string {
   return row.outgoingUserName?.trim() || '未记录'
@@ -560,4 +579,29 @@ export function useShiftHandoverAttachmentViewer() {
   }
 
   return { openingFileId, error, openAttachment }
+}
+
+/**
+ * 接班读面的班次/班组中文名。
+ *
+ * 目录读取需要 `business.masterdata.resources.read`，而接班只要求
+ * `business.mes.handovers.read`——两者不是同一条权限，所以目录不可用时必须优雅退化成
+ * 原样回显业务码，而不是让整页因为少一条权限而显示不出班次。
+ */
+export function useShiftHandoverDirectoryLabels() {
+  const directory = useShiftHandoverDirectory()
+  const shiftLabels = computed(
+    () => new Map(directory.shiftOptions.value.map((option) => [option.value, option.label])),
+  )
+  const teamLabels = computed(
+    () => new Map(directory.teamOptions.value.map((option) => [option.value, option.label])),
+  )
+
+  return {
+    directoryEnabled: directory.enabled,
+    resolveShiftLabel: (value?: string | null) =>
+      resolveDirectoryLabel(value, shiftLabels.value, '未排班'),
+    resolveTeamLabel: (value?: string | null) =>
+      resolveDirectoryLabel(value, teamLabels.value, '未指派班组'),
+  }
 }

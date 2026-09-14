@@ -65,6 +65,13 @@ vi.mock('@/composables/useBusinessShiftHandover', async (importOriginal) => {
       refresh,
       acceptHandover,
     }),
+    useShiftHandoverDirectoryLabels: () => ({
+      directoryEnabled: ref(true),
+      resolveShiftLabel: (value?: string | null) =>
+        ({ EARLY: '早班' })[(value ?? '').trim()] ?? (value?.trim() || '未排班'),
+      resolveTeamLabel: (value?: string | null) =>
+        ({ 'TEAM-A': '甲班组' })[(value ?? '').trim()] ?? (value?.trim() || '未指派班组'),
+    }),
     useShiftHandoverAttachmentViewer: () => ({
       openingFileId: ref(''),
       error: viewerError,
@@ -111,6 +118,12 @@ describe('PDA 接班确认页', () => {
     expect(issues).not.toContain('Equipment')
     expect(wrapper.get('[data-testid="detail-attachments"]').text()).toContain('photo.jpg')
     expect(wrapper.get('[data-testid="detail-attachments"]').text()).toContain('2.0 KB')
+  })
+
+  it('shows the shift display name instead of the raw master-data code', () => {
+    const wrapper = mount(DetailPage)
+    expect(wrapper.get('[data-testid="handover-summary"]').text()).toContain('班次 早班')
+    expect(wrapper.get('[data-testid="handover-summary"]').text()).not.toContain('班次 EARLY')
   })
 
   it('says 交班时点没有登记 only when the detail really loaded', async () => {

@@ -14,7 +14,7 @@ const hasScope = ref(true)
 const rows = ref([
   {
     handoverId: 'HO-1',
-    shiftId: 'EARLY',
+    shiftId: 'DAY',
     teamId: 'TEAM-A',
     teamName: '甲班组',
     handoverStatus: 'Open',
@@ -64,6 +64,13 @@ vi.mock('@/composables/useBusinessShiftHandover', async (importOriginal) => {
       hasFailedResponse,
       refresh,
     }),
+    useShiftHandoverDirectoryLabels: () => ({
+      directoryEnabled: ref(true),
+      resolveShiftLabel: (value?: string | null) =>
+        ({ DAY: '早班', NIGHT: '晚班' })[(value ?? '').trim()] ?? (value?.trim() || '未排班'),
+      resolveTeamLabel: (value?: string | null) =>
+        ({ 'TEAM-A': '甲班组' })[(value ?? '').trim()] ?? (value?.trim() || '未指派班组'),
+    }),
   }
 })
 
@@ -101,6 +108,15 @@ describe('PDA 接班列表页', () => {
     expect(text).toContain('交班 未记录 · 接班 李四')
   })
 
+  it('shows the shift/team directory display names, not the raw master-data codes', () => {
+    const wrapper = mount(HandoversPage)
+    const text = wrapper.get('[data-testid="handover-rows"]').text()
+    expect(text).toContain('班次 早班')
+    expect(text).not.toContain('班次 DAY')
+    // 第二行的 teamName 是 null，班组名回落到目录解析；目录里没有 TEAM-B 就原样回显业务码。
+    expect(text).toContain('TEAM-B')
+  })
+
   it('shows the per-handover detail counts the operator needs before tapping in', () => {
     const wrapper = mount(HandoversPage)
     expect(wrapper.get('[data-testid="handover-rows"]').text()).toContain(
@@ -134,7 +150,7 @@ describe('PDA 接班列表页', () => {
     rows.value = [
       {
         handoverId: 'HO-1',
-        shiftId: 'EARLY',
+        shiftId: 'DAY',
         teamId: 'TEAM-A',
         teamName: '甲班组',
         handoverStatus: 'Open',

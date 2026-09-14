@@ -27,6 +27,7 @@ import {
   outgoingUserLabel,
   useMesShiftHandoverDetail,
   useShiftHandoverAttachmentViewer,
+  useShiftHandoverDirectoryLabels,
 } from '@/composables/useBusinessShiftHandover'
 import ShiftHandoverDetailSections from '../components/ShiftHandoverDetailSections.vue'
 
@@ -47,6 +48,7 @@ const handoverId = computed(() => {
 
 const detail = useMesShiftHandoverDetail(handoverId)
 const viewer = useShiftHandoverAttachmentViewer()
+const { resolveShiftLabel, resolveTeamLabel } = useShiftHandoverDirectoryLabels()
 
 const confirmOpen = ref(false)
 
@@ -166,14 +168,16 @@ function backToList() {
       >
         <div class="flex items-center gap-2">
           <h2 class="min-w-0 flex-1 truncate text-base font-semibold text-foreground">
-            {{ detail.detail.value.teamName?.trim() || detail.detail.value.teamId || '未指派班组' }}
+            {{
+              detail.detail.value.teamName?.trim() || resolveTeamLabel(detail.detail.value.teamId)
+            }}
           </h2>
           <NvMobileTag size="sm" :variant="isOpenHandover ? 'warning' : 'success'">{{
             shiftHandoverStatusLabel(detail.detail.value.handoverStatus)
           }}</NvMobileTag>
         </div>
         <p class="mt-1 text-sm text-muted-foreground">
-          班次 {{ detail.detail.value.shiftId || '未排班' }}
+          班次 {{ resolveShiftLabel(detail.detail.value.shiftId) }}
         </p>
         <p class="text-sm text-muted-foreground">
           交班 {{ outgoingUserLabel(detail.detail.value) }} · 接班

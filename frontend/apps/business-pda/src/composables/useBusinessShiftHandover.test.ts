@@ -5,6 +5,7 @@ import {
   incomingUserLabel,
   isSystemIdentifier,
   outgoingUserLabel,
+  resolveDirectoryLabel,
   toDirectoryOptions,
   toHandoverPhotoFileName,
 } from './useBusinessShiftHandover'
@@ -149,5 +150,36 @@ describe('assertHandoverAccepted', () => {
   it('names the failed action in the copy', () => {
     expect(() => assertHandoverAccepted({}, '接班')).toThrow('接班未返回有效回执')
     expect(() => assertHandoverAccepted({}, '交班提交')).toThrow('交班提交未返回有效回执')
+  })
+})
+
+describe('resolveDirectoryLabel', () => {
+  const labels = new Map([
+    ['DAY', '早班'],
+    ['TEAM-ASSY-A', '装配一线早班组'],
+  ])
+
+  it('maps a known code to its Chinese display name', () => {
+    expect(resolveDirectoryLabel('DAY', labels, '未排班')).toBe('早班')
+    expect(resolveDirectoryLabel('  DAY  ', labels, '未排班')).toBe('早班')
+  })
+
+  it('echoes an unresolved BUSINESS code instead of claiming 未排班', () => {
+    // 「目录里查不到」和「没排班」是两件事；吞成回落文案会把前者谎报成后者。
+    expect(resolveDirectoryLabel('NIGHT', labels, '未排班')).toBe('NIGHT')
+    expect(resolveDirectoryLabel('TEAM-B', labels, '未指派班组')).toBe('TEAM-B')
+  })
+
+  it('falls back for blank values', () => {
+    expect(resolveDirectoryLabel('', labels, '未排班')).toBe('未排班')
+    expect(resolveDirectoryLabel('   ', labels, '未排班')).toBe('未排班')
+    expect(resolveDirectoryLabel(null, labels, '未排班')).toBe('未排班')
+    expect(resolveDirectoryLabel(undefined, labels, '未排班')).toBe('未排班')
+  })
+
+  it('never puts a GUID-shaped engineering identifier on screen', () => {
+    expect(resolveDirectoryLabel('a3f1c2d4-1111-2222-3333-444455556666', labels, '未排班')).toBe(
+      '未排班',
+    )
   })
 })

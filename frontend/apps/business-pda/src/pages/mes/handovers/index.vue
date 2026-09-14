@@ -21,6 +21,7 @@ import {
   incomingUserLabel,
   outgoingUserLabel,
   useMesShiftHandovers,
+  useShiftHandoverDirectoryLabels,
   type ShiftHandoverRow,
 } from '@/composables/useBusinessShiftHandover'
 
@@ -46,6 +47,7 @@ const {
   hasFailedResponse,
   refresh,
 } = useMesShiftHandovers()
+const { resolveShiftLabel, resolveTeamLabel } = useShiftHandoverDirectoryLabels()
 
 const tabs: MobileTabItem[] = [
   { value: HANDOVER_OPEN_STATUS_FILTER, label: '待接班' },
@@ -75,6 +77,11 @@ const showEmpty = computed(
 
 function rowSubtitle(row: ShiftHandoverRow) {
   return `交班 ${outgoingUserLabel(row)} · 接班 ${incomingUserLabel(row)}`
+}
+
+function rowTitle(row: ShiftHandoverRow) {
+  // 班组名优先用交班时点的快照（teamName），目录改名不会改写历史交接单上的称呼。
+  return row.teamName?.trim() || resolveTeamLabel(row.teamId)
 }
 
 function rowCounts(row: ShiftHandoverRow) {
@@ -153,13 +160,13 @@ function openDetail(row: ShiftHandoverRow) {
         <NvListRow
           v-for="row in handovers"
           :key="row.handoverId"
-          :title="row.teamName?.trim() || row.teamId || '未指派班组'"
+          :title="rowTitle(row)"
           :subtitle="rowSubtitle(row)"
           @select="openDetail(row)"
         >
           <template #meta>
             <p class="truncate text-xs text-muted-foreground">
-              班次 {{ row.shiftId || '未排班' }} · {{ rowCounts(row) }}
+              班次 {{ resolveShiftLabel(row.shiftId) }} · {{ rowCounts(row) }}
             </p>
           </template>
           <template #trailing>

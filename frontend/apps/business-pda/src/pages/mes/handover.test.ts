@@ -59,6 +59,20 @@ vi.mock('@/composables/useBusinessShiftHandover', async (importOriginal) => {
 
 const { NvPicker } = await import('@nerv-iip/ui-mobile')
 const HandoverPage = (await import('./handover.vue')).default
+const ShiftHandoverEntryForm = (await import('./components/ShiftHandoverEntryForm.vue')).default
+const ShiftHandoverPhotoCapture = (await import('./components/ShiftHandoverPhotoCapture.vue'))
+  .default
+
+/**
+ * 页面用例默认把两个私有子组件 stub 掉：它们各自有专门的组件用例
+ * （ShiftHandoverEntryForm.test.ts / ShiftHandoverPhotoCapture.test.ts），页面这一层只需要断言
+ * 「哪一步该渲染哪个子组件、提交时带了什么载荷」。真实组合由本文件末尾那个不 stub 的集成用例承担。
+ */
+function mountPage() {
+  return mount(HandoverPage, {
+    global: { stubs: { ShiftHandoverEntryForm: true, ShiftHandoverPhotoCapture: true } },
+  })
+}
 
 async function pickShiftAndTeam(wrapper: ReturnType<typeof mount>) {
   await wrapper.get('[data-testid="shift-cell"]').trigger('click')
@@ -88,26 +102,28 @@ describe('PDA 交班录入页', () => {
   })
 
   it('starts at step 1 and hides the detail editor until shift AND team are chosen', async () => {
-    const wrapper = mount(HandoverPage)
+    const wrapper = mountPage()
     expect(wrapper.text()).toContain('第 1/3 步')
-    expect(wrapper.find('[data-testid="wip-section"]').exists()).toBe(false)
+    expect(wrapper.findComponent(ShiftHandoverEntryForm).exists()).toBe(false)
+    expect(wrapper.findComponent(ShiftHandoverPhotoCapture).exists()).toBe(false)
 
     await wrapper.get('[data-testid="shift-cell"]').trigger('click')
     wrapper.findAllComponents(NvPicker)[0].vm.$emit('update:modelValue', 'EARLY')
     await nextTick()
     // 只选了班次还不够（域构造器 shiftId 和 teamId 都是必填）。
-    expect(wrapper.find('[data-testid="wip-section"]').exists()).toBe(false)
+    expect(wrapper.findComponent(ShiftHandoverEntryForm).exists()).toBe(false)
 
     await wrapper.get('[data-testid="team-cell"]').trigger('click')
     wrapper.findAllComponents(NvPicker)[1].vm.$emit('update:modelValue', 'TEAM-A')
     await nextTick()
-    expect(wrapper.find('[data-testid="wip-section"]').exists()).toBe(true)
+    expect(wrapper.findComponent(ShiftHandoverEntryForm).exists()).toBe(true)
+    expect(wrapper.findComponent(ShiftHandoverPhotoCapture).exists()).toBe(true)
     expect(wrapper.text()).toContain('第 2/3 步')
   })
 
   it('names the missing permission instead of saying just 无权限', async () => {
     canManage.value = false
-    const wrapper = mount(HandoverPage)
+    const wrapper = mountPage()
     expect(wrapper.get('[data-testid="handover-blocker"]').text()).toContain(
       'business.mes.handovers.manage',
     )
@@ -121,7 +137,7 @@ describe('PDA 交班录入页', () => {
   })
 
   it('submits an EMPTY handover — 空明细在写面是合法的', async () => {
-    const wrapper = mount(HandoverPage)
+    const wrapper = mountPage()
     await pickShiftAndTeam(wrapper)
     await wrapper.get('[data-testid="confirm-details"]').trigger('click')
 
@@ -144,7 +160,7 @@ describe('PDA 交班录入页', () => {
   })
 
   it('never puts an outgoing user id into the request body (网关按 principal 注入)', async () => {
-    const wrapper = mount(HandoverPage)
+    const wrapper = mountPage()
     await pickShiftAndTeam(wrapper)
     await wrapper.get('[data-testid="confirm-details"]').trigger('click')
     await wrapper.get('[data-testid="submit-handover"]').trigger('click')
@@ -158,7 +174,7 @@ describe('PDA 交班录入页', () => {
 
   it('reuses the SAME idempotency key across a retry and rotates it for the next handover', async () => {
     createHandover.mockRejectedValueOnce(Object.assign(new Error('boom'), { status: 503 }))
-    const wrapper = mount(HandoverPage)
+    const wrapper = mountPage()
     await pickShiftAndTeam(wrapper)
     await wrapper.get('[data-testid="confirm-details"]').trigger('click')
     await wrapper.get('[data-testid="submit-handover"]').trigger('click')
@@ -184,6 +200,7 @@ describe('PDA 交班录入页', () => {
     expect(nextKey).not.toBe(firstKey)
   })
 
+  // 这一格**不 stub**：它要证明页面与两个私有子组件的真实组合能把明细和照片带进请求体。
   it('carries the entered details and uploaded photo into the create payload', async () => {
     const wrapper = mount(HandoverPage)
     await pickShiftAndTeam(wrapper)
@@ -216,7 +233,7 @@ describe('PDA 交班录入页', () => {
 
   it('routes an indeterminate failure to 核实 instead of a blind resubmit', async () => {
     createHandover.mockRejectedValueOnce(Object.assign(new Error('gateway down'), { status: 502 }))
-    const wrapper = mount(HandoverPage)
+    const wrapper = mountPage()
     await pickShiftAndTeam(wrapper)
     await wrapper.get('[data-testid="confirm-details"]').trigger('click')
     await wrapper.get('[data-testid="submit-handover"]').trigger('click')
@@ -230,7 +247,7 @@ describe('PDA 交班录入页', () => {
   it('shows the directory error with a retry instead of an empty shift picker', async () => {
     directoryError.value = new Error('目录服务异常')
     shiftOptions.value = []
-    const wrapper = mount(HandoverPage)
+    const wrapper = mountPage()
     await flushPromises()
 
     expect(wrapper.find('[data-testid="handover-directory-error"]').exists()).toBe(true)
@@ -240,7 +257,7 @@ describe('PDA 交班录入页', () => {
 
   it('explains an empty shift catalogue rather than leaving a dead picker', () => {
     shiftOptions.value = []
-    const wrapper = mount(HandoverPage)
+    const wrapper = mountPage()
     expect(wrapper.get('[data-testid="no-shift-options"]').text()).toContain('没有可选班次')
   })
 })
