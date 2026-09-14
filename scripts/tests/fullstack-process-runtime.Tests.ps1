@@ -151,6 +151,41 @@ Assert-OrdinalEqual `
     'Unknown' `
     'An incomplete inventory must yield Unknown.'
 
+# The declared precision is the budget for the disagreement between two derivations of the same
+# start time, so the verdict must depend on the difference alone. A grid-flooring comparison fails
+# exactly here: these two readings are 1 ms apart yet sit on opposite sides of a one-second grid
+# boundary, which is the normal case on Linux because the provider's own readings land on the grid.
+$gridPrecision = [TimeSpan]::TicksPerSecond
+$gridRecord = New-TestProcessRecord `
+    -ProcessId 41011 `
+    -ParentPid 1 `
+    -StartTimeUtc '2026-08-23T00:00:00.0000000Z' `
+    -Name 'fixture-grid' `
+    -PrecisionTicks $gridPrecision
+$gridInventory = New-TestInventory -Records @($gridRecord)
+Assert-OrdinalEqual `
+    (Get-NervFullStackProcessIdentityState `
+        -Identity ([pscustomobject]@{ pid = 41011; processStartTimeUtc = '2026-08-22T23:59:59.9990000Z' }) `
+        -InventorySnapshot $gridInventory) `
+    'Active' `
+    'A sub-precision difference across a precision-grid boundary must stay Active.'
+Assert-OrdinalEqual `
+    (Get-NervFullStackProcessIdentityState `
+        -Identity ([pscustomobject]@{ pid = 41011; processStartTimeUtc = '2026-08-23T00:00:01.0010000Z' }) `
+        -InventorySnapshot $gridInventory) `
+    'Mismatched' `
+    'A difference beyond the declared precision must be Mismatched.'
+Assert-True `
+    (Test-NervFullStackProcessExactExclusion `
+        -Record $gridRecord `
+        -ExcludedIdentities @([pscustomobject]@{ pid = 41011; processStartTimeUtc = '2026-08-22T23:59:59.9990000Z' })) `
+    'An exclusion within the declared precision must hold across a precision-grid boundary.'
+Assert-True `
+    (-not (Test-NervFullStackProcessExactExclusion `
+        -Record $gridRecord `
+        -ExcludedIdentities @([pscustomobject]@{ pid = 41011; processStartTimeUtc = '2026-08-23T00:00:01.0010000Z' }))) `
+    'An exclusion beyond the declared precision must not hold.'
+
 $script:NervFullStackProcessRuntimeInventoryAction = $null
 $script:NervFullStackProcessRuntimeStopAction = $null
 try {
@@ -397,6 +432,46 @@ Assert-True (-not ([string]::Join(' ', @($faultedDrain.diagnostics))).Contains('
 $notApplicableDrain = Wait-NervFullStackProcessOutputDrain -StreamHandles @() -Timeout ([timespan]::FromMilliseconds(20))
 Assert-True (-not $notApplicableDrain.complete) 'No readable stream must not fabricate a green drain.'
 Assert-OrdinalEqual $notApplicableDrain.disposition 'NotApplicable' 'No readable stream must be explicit not-applicable.'
+
+# The current process is the one identity this suite can mint and observe without any inference:
+# the platform inventory and `System.Diagnostics.Process.StartTime` must agree about it. They only
+# do so if the provider's start times live in the same time domain the identity producers record in
+# (`scripts/lib/FullStackSessionState.ps1` mints identities from `$process.StartTime`).
+$selfInventory = Get-NervFullStackProcessInventory
+Assert-True $selfInventory.complete 'The current platform inventory must be complete for the running process.'
+$selfIdentity = [pscustomobject]@{
+    pid = $PID
+    processStartTimeUtc = (Get-Process -Id $PID).StartTime.ToUniversalTime().ToString('O')
+}
+Assert-OrdinalEqual `
+    (Get-NervFullStackProcessIdentityState -Identity $selfIdentity -InventorySnapshot $selfInventory) `
+    'Active' `
+    'The running process own PID/start-time must be Active in the platform inventory.'
+
+# Linux is the only provider that has to *reconstruct* a wall-clock origin: /proc only stores clock
+# ticks since boot. A declared precision is a budget for reading noise, so it must not be spent on a
+# systematically shifted origin — with the wrong origin family the verdict stays inside the budget
+# while the acceptance window slides off the truth, which is how a foreign process becomes Active.
+# The other providers read an absolute timestamp and have no origin to reconstruct, so this bound is
+# only assertable here.
+if ($IsLinux) {
+    $selfRecord = @($selfInventory.records | Where-Object { [int] $_.pid -eq $PID })
+    Assert-True ($selfRecord.Count -eq 1) 'The Linux inventory must carry exactly one record for the running process.'
+    $selfRecordStart = [DateTimeOffset]::ParseExact(
+        [string] $selfRecord[0].processStartTimeUtc,
+        'O',
+        [Globalization.CultureInfo]::InvariantCulture,
+        [Globalization.DateTimeStyles]::RoundtripKind).UtcDateTime
+    $selfIdentityStart = [DateTimeOffset]::ParseExact(
+        [string] $selfIdentity.processStartTimeUtc,
+        'O',
+        [Globalization.CultureInfo]::InvariantCulture,
+        [Globalization.DateTimeStyles]::RoundtripKind).UtcDateTime
+    $selfOriginSkewMs = [Math]::Abs(($selfRecordStart - $selfIdentityStart).TotalMilliseconds)
+    Assert-True ($selfOriginSkewMs -lt 100) (
+        'The Linux inventory origin must stay centred on the identity domain. Skew was ' +
+        "$selfOriginSkewMs ms.")
+}
 
 # Real primitive fixture. It is test-owned and bounded; it does not represent an E2-activated platform checkpoint.
 $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-fullstack-process-runtime-$([Guid]::NewGuid().ToString('N'))"
