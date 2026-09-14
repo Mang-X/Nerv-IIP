@@ -448,15 +448,31 @@ Assert-OrdinalEqual `
     'Active' `
     'The running process own PID/start-time must be Active in the platform inventory.'
 
+$selfRecord = @($selfInventory.records | Where-Object { [int] $_.pid -eq $PID })
+Assert-True ($selfRecord.Count -eq 1) 'The platform inventory must carry exactly one record for the running process.'
+
+# The declared precision is the width of the identity acceptance window, so it is a governed value in
+# its own right and has to be pinned where the provider declares it. Every other assertion in this
+# file compares against a precision carried by its own fixture record, which by construction cannot
+# see the provider's declaration: with only those, the declared width could be widened to a day and
+# nothing would go red. The value is one second on both POSIX providers because macOS can only read
+# `ps -o lstart`, which prints whole seconds; Linux does not need that width for its own reading but
+# is held to the same declared class rather than a narrower one it cannot honour across processes.
+$expectedPrecisionTicks = if ($IsWindows) { 10L } else { [TimeSpan]::TicksPerSecond }
+Assert-OrdinalEqual `
+    ([long] $selfRecord[0].processStartTimePrecisionTicks) `
+    $expectedPrecisionTicks `
+    'The platform provider must declare its governed identity-match precision.'
+
 # Linux is the only provider that has to *reconstruct* a wall-clock origin: /proc only stores clock
 # ticks since boot. A declared precision is a budget for reading noise, so it must not be spent on a
 # systematically shifted origin — with the wrong origin family the verdict stays inside the budget
 # while the acceptance window slides off the truth, which is how a foreign process becomes Active.
 # The other providers read an absolute timestamp and have no origin to reconstruct, so this bound is
-# only assertable here.
+# only assertable here. It is also machine-dependent: the origin offset a wrong origin family
+# produces is the fractional part of the boot instant, so on a machine whose offset falls under the
+# bound below this assertion cannot see it (#3404 PR review measured 49.90 ms on one container).
 if ($IsLinux) {
-    $selfRecord = @($selfInventory.records | Where-Object { [int] $_.pid -eq $PID })
-    Assert-True ($selfRecord.Count -eq 1) 'The Linux inventory must carry exactly one record for the running process.'
     $selfRecordStart = [DateTimeOffset]::ParseExact(
         [string] $selfRecord[0].processStartTimeUtc,
         'O',
