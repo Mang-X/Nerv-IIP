@@ -86,6 +86,7 @@ const {
   invalidLabelTemplate,
   labelTemplateRequired,
   labelTemplates,
+  labelTemplatesStatus,
   serialOptionsPending,
   serialOptionsReady,
   refreshSerialOptions,
@@ -97,7 +98,9 @@ const {
   onReported: () => emit('reported'),
   onStateChanged: () => emit('update:open', false),
 })
-const editingLocked = computed(() => intentLocked.value || recordProductionReportPending.value)
+const editingLocked = computed(
+  () => intentLocked.value || recordProductionReportPending.value || quantitySnapshotPending.value,
+)
 watch(
   () => props.open,
   (open) => {
@@ -248,9 +251,10 @@ async function onSubmit() {
             <select
               id="report-label-template"
               v-model="form.labelTemplateId"
-              class="min-h-10 w-full rounded-md border bg-background px-3 text-sm"
+              class="min-h-10 w-full rounded-md border bg-background px-3 text-sm data-[invalid]:border-destructive"
               :disabled="editingLocked"
               :data-invalid="showErrors && invalidLabelTemplate ? '' : undefined"
+              :aria-invalid="showErrors && invalidLabelTemplate ? true : undefined"
             >
               <option value="">请选择标签模板</option>
               <option
@@ -271,10 +275,20 @@ async function onSubmit() {
           </NvField>
         </section>
         <div
-          v-if="!serialOptionsReady && !intentLocked"
+          v-if="
+            !intentLocked &&
+            (!serialOptionsReady ||
+              (labelTemplateRequired && ['loading', 'failed'].includes(labelTemplatesStatus)))
+          "
           class="flex items-center justify-between gap-2 text-sm text-muted-foreground"
         >
-          <span>{{ serialOptionsPending ? '正在读取报工标签设置…' : '报工标签设置尚未就绪' }}</span>
+          <span>{{
+            serialOptionsPending
+              ? '正在读取报工标签设置…'
+              : labelTemplatesStatus === 'failed'
+                ? '标签模板读取失败，请重新加载。'
+                : '报工标签设置尚未就绪'
+          }}</span>
           <NvButton
             type="button"
             variant="outline"

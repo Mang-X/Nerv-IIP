@@ -16,6 +16,7 @@ const spies = vi.hoisted(() => ({
   makeIdempotencyKey: vi.fn(),
   readProductionQuantitySnapshot: vi.fn(),
   readProductionPrintStatus: vi.fn(),
+  refreshSerialOptions: vi.fn(),
   notifySuccess: vi.fn(),
   notifyError: vi.fn(),
   notifyOperationFailure: vi.fn(),
@@ -25,12 +26,13 @@ const scopeState = vi.hoisted(() => ({
   pending: false,
   ready: true,
 }))
-const serialState = vi.hoisted(() => ({ policy: 'none', pending: false }))
+const serialState = vi.hoisted(() => ({ policy: 'none', pending: false, templatesStatus: 'ready' }))
 vi.mock('@/composables/mes/useProductionReportSerialOptions', () => ({
   useProductionReportSerialOptions: () => ({
     serialPolicy: ref(serialState.policy),
     serialOptionsPending: ref(serialState.pending),
     serialOptionsReady: ref(true),
+    labelTemplatesStatus: ref(serialState.templatesStatus),
     labelTemplates: ref([
       {
         templateId: 'template-housing',
@@ -39,7 +41,7 @@ vi.mock('@/composables/mes/useProductionReportSerialOptions', () => ({
         status: 'active',
       },
     ]),
-    refreshSerialOptions: vi.fn(),
+    refreshSerialOptions: spies.refreshSerialOptions,
   }),
 }))
 const materialState = vi.hoisted(() => ({
@@ -187,6 +189,8 @@ describe('ProductionReportDialog — 带出式录入', () => {
     scopeState.ready = true
     serialState.policy = 'none'
     serialState.pending = false
+    serialState.templatesStatus = 'ready'
+    spies.refreshSerialOptions.mockClear()
     materialState.permission = true
     materialState.pending = false
     materialState.rows = []
@@ -250,6 +254,45 @@ describe('ProductionReportDialog — 带出式录入', () => {
     expect(wrapper.emitted('update:open')).toBeUndefined()
   })
 
+  it.each(['fraction', 'missing-template'])(
+    '累计数量读取等待期间的 %s 编辑不能绕过报工校验',
+    async (edit) => {
+      serialState.policy = 'on-production'
+      let resolveSnapshot!: (value: {
+        plannedQuantity: number
+        reportedGoodQuantity: number
+      }) => void
+      spies.readProductionQuantitySnapshot.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveSnapshot = resolve
+          }),
+      )
+      const wrapper = mountDialog()
+      await wrapper.get('#report-label-template').setValue('template-housing')
+      await wrapper.get('form').trigger('submit')
+      const quantityLocked = wrapper.get<HTMLInputElement>('#report-good').element.disabled
+      const templateLocked =
+        wrapper.get<HTMLSelectElement>('#report-label-template').element.disabled
+      // 编辑锁阻止用户操作；显式模拟外部 model 更新，另证异步返回后的重校验。
+      if (edit === 'fraction') {
+        const quantity = wrapper.get<HTMLInputElement>('#report-good').element
+        quantity.value = '1.5'
+        quantity.dispatchEvent(new Event('input', { bubbles: true }))
+      } else {
+        const template = wrapper.get<HTMLSelectElement>('#report-label-template').element
+        template.value = ''
+        template.dispatchEvent(new Event('change', { bubbles: true }))
+      }
+      resolveSnapshot({ plannedQuantity: 200, reportedGoodQuantity: 0 })
+      await flushPromises()
+      expect(spies.recordProductionReport).not.toHaveBeenCalled()
+      expect(quantityLocked).toBe(true)
+      expect(templateLocked).toBe(true)
+      expect(wrapper.text()).toContain(edit === 'fraction' ? '非负整数' : '请选择可用标签模板')
+    },
+  )
+
   it('必需的模板未选时不发送报工，选择后仅提交模板标识并显示全部序列号凭据', async () => {
     serialState.policy = 'on-production'
     spies.recordProductionReport.mockResolvedValueOnce({
@@ -301,6 +344,17 @@ describe('ProductionReportDialog — 带出式录入', () => {
       reworkQuantity: 1,
     })
     expect(spies.recordProductionReport.mock.calls[0]?.[0]).not.toHaveProperty('labelTemplateId')
+  })
+
+  it('策略已就绪但模板目录失败时，可在当前报工窗口重新加载', async () => {
+    serialState.policy = 'on-production'
+    serialState.templatesStatus = 'failed'
+    const wrapper = mountDialog()
+    const reload = wrapper.findAll('button').find((button) => button.text() === '重新加载')
+    expect(reload?.exists()).toBe(true)
+    await reload!.trigger('click')
+    expect(spies.refreshSerialOptions).toHaveBeenCalledTimes(1)
+    expect(spies.recordProductionReport).not.toHaveBeenCalled()
   })
 
   it.each(['', '-1', '2147483648'])(

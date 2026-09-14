@@ -18,6 +18,7 @@ export function useProductionReportSerialOptions(context: () => ProductionReport
   const serialPolicy = shallowRef<string>()
   const serialOptionsPending = shallowRef(false)
   const labelTemplates = shallowRef<BusinessConsoleBarcodeTemplateItem[]>([])
+  const labelTemplatesStatus = shallowRef<'idle' | 'loading' | 'ready' | 'failed'>('idle')
   const serialOptionsReady = shallowRef(false)
   let generation = 0
 
@@ -25,6 +26,7 @@ export function useProductionReportSerialOptions(context: () => ProductionReport
     const currentGeneration = ++generation
     serialPolicy.value = undefined
     labelTemplates.value = []
+    labelTemplatesStatus.value = 'idle'
     serialOptionsReady.value = false
     serialOptionsPending.value = false
     const current = context()
@@ -60,6 +62,7 @@ export function useProductionReportSerialOptions(context: () => ProductionReport
       serialOptionsReady.value = true
       const templates: BusinessConsoleBarcodeTemplateItem[] = []
       if (policy === 'on-production') {
+        labelTemplatesStatus.value = 'loading'
         let skip = 0
         let total = 0
         do {
@@ -79,10 +82,13 @@ export function useProductionReportSerialOptions(context: () => ProductionReport
       if (generation !== currentGeneration) return
       serialPolicy.value = policy
       labelTemplates.value = templates
+      if (policy === 'on-production') labelTemplatesStatus.value = 'ready'
       serialOptionsReady.value = true
     } catch (error) {
-      if (generation === currentGeneration)
+      if (generation === currentGeneration) {
+        if (labelTemplatesStatus.value === 'loading') labelTemplatesStatus.value = 'failed'
         notifyError(error, '报工标签设置读取失败，请重新加载；无权限时请联系管理员。')
+      }
     } finally {
       if (generation === currentGeneration) serialOptionsPending.value = false
     }
@@ -104,6 +110,7 @@ export function useProductionReportSerialOptions(context: () => ProductionReport
   return {
     serialPolicy,
     labelTemplates,
+    labelTemplatesStatus,
     serialOptionsReady,
     serialOptionsPending: computed(() => serialOptionsPending.value || scope.scopePending.value),
     refreshSerialOptions,

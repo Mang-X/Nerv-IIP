@@ -395,6 +395,14 @@ export function useProductionReportForm(
       notifyError(message)
       return false
     }
+    // 等待累计量后再次校验当前输入，防止外部更新绕过等待期间的编辑锁。
+    const currentContext = context()
+    if (
+      currentContext?.workOrderId !== ctx.workOrderId ||
+      currentContext?.operationTaskId !== ctx.operationTaskId ||
+      !canSubmit.value
+    )
+      return false
     const currentGoodQuantity = goodQuantity.value ?? 0
     const cumulativeGoodQuantity = snapshot.reportedGoodQuantity + currentGoodQuantity
     const hardMaximumGoodQuantity = snapshot.plannedQuantity * 1.2

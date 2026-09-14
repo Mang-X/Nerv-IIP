@@ -43,6 +43,7 @@ test('序列号报工校验、未知结果刷新恢复、准备重试与只读�
   const forbidden: string[] = []
   const traceReads: string[] = []
   let statusReads = 0
+  let templateReads = 0
   await page.addInitScript((value) => {
     localStorage.setItem('nerv-iip.business-console.auth', JSON.stringify(value))
   }, session)
@@ -74,7 +75,9 @@ test('序列号报工校验、未知结果刷新恢复、准备重试与只读�
       return json({ skuId: 'SKU-HOUSING', plannedQuantity: 200 })
     if (path.endsWith('/master-data/resources/sku/SKU-HOUSING'))
       return json({ active: true, serialTrackingPolicy: 'on-production' })
-    if (path.endsWith('/barcode/templates'))
+    if (path.endsWith('/barcode/templates')) {
+      templateReads++
+      if (templateReads === 1) return route.abort('failed')
       return json({
         templates: [
           {
@@ -86,6 +89,7 @@ test('序列号报工校验、未知结果刷新恢复、准备重试与只读�
         ],
         total: 1,
       })
+    }
     if (path.endsWith('/mes/production-reports') && route.request().method() === 'POST') {
       const body = route.request().postDataJSON()
       writes.push(body)
@@ -129,6 +133,18 @@ test('序列号报工校验、未知结果刷新恢复、准备重试与只读�
   await page.goto('/mes/operation-tasks')
   await page.getByRole('button', { name: '报工', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '报工', exact: true })
+  await expect(dialog.getByText('标签模板读取失败，请重新加载。')).toBeVisible()
+  await page.screenshot({
+    path: testInfo.outputPath('template-directory-failed.png'),
+    fullPage: true,
+  })
+  await dialog.getByRole('button', { name: '重新加载', exact: true }).click()
+  await expect(dialog.getByLabel('标签模板')).toContainText('壳体单件标签')
+  expect(templateReads).toBe(2)
+  const template = dialog.getByLabel('标签模板')
+  const normalBorder = await template.evaluate(
+    (element) => getComputedStyle(element).borderTopColor,
+  )
   const good = dialog.getByRole('spinbutton', { name: '合格数量 *', exact: true })
   await good.fill('1.5')
   await dialog.getByRole('button', { name: '提交报工', exact: true }).click()
@@ -138,10 +154,23 @@ test('序列号报工校验、未知结果刷新恢复、准备重试与只读�
   expect(writes).toHaveLength(0)
   await good.fill('2')
   await expect(dialog.getByText('待分配 2 个序列号')).toBeVisible()
-  await dialog.getByLabel('标签模板').selectOption('tpl-housing')
+  await dialog.getByRole('button', { name: '提交报工', exact: true }).click()
+  const templateError = dialog.getByRole('alert').filter({ hasText: '请选择可用标签模板' })
+  await expect(templateError).toBeVisible()
+  const errorColor = await templateError.evaluate((element) => getComputedStyle(element).color)
+  await expect(template).toHaveCSS('border-top-color', errorColor)
+  await page.screenshot({
+    path: testInfo.outputPath('template-required-border.png'),
+    fullPage: true,
+  })
+  expect(writes).toHaveLength(0)
+  await template.selectOption('tpl-housing')
+  await expect(template).toHaveCSS('border-top-color', normalBorder)
   await dialog.getByRole('checkbox', { name: '本工序已完成' }).uncheck()
   await dialog.getByRole('button', { name: '提交报工', exact: true }).click()
   await expect(good).toBeDisabled()
+  await expect(dialog.getByText('提交结果未知，当前内容已锁定；仅可按原内容重试。')).toBeVisible()
+  expect(writes).toHaveLength(1)
   await page.reload()
   await page.getByRole('button', { name: '报工', exact: true }).click()
   await expect(good).toHaveValue('2')

@@ -52,6 +52,28 @@ describe('报工标签权威选项（#2889 PublicContract）', () => {
     expect(result.serialPolicy.value).toBe('on-production')
     expect(result.serialOptionsReady.value).toBe(true)
     expect(result.labelTemplates.value).toEqual([])
+    expect(result.labelTemplatesStatus?.value).toBe('failed')
+    vi.mocked(listBusinessConsoleBarcodeTemplates).mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          templates: [
+            {
+              templateId: 'template-housing',
+              templateName: '壳体标签',
+              templateCode: 'HOUSING',
+              status: 'active',
+            },
+          ],
+          total: 1,
+        },
+      },
+    } as never)
+    await result.refreshSerialOptions()
+    expect(result.labelTemplatesStatus.value).toBe('ready')
+    expect(result.labelTemplates.value.map((template) => template.templateId)).toEqual([
+      'template-housing',
+    ])
     scope.stop()
   })
 
