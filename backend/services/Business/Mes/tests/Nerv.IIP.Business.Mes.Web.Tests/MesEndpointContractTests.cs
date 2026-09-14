@@ -305,6 +305,18 @@ public sealed class MesEndpointContractTests
     }
 
     [Fact]
+    public void Production_report_intent_recovery_contract_is_exposed_without_expanding_the_public_report_shape()
+    {
+        Assert.NotNull(typeof(RecordProductionReportRequest).GetProperty("ReportIntentFingerprint"));
+        Assert.NotNull(typeof(RecordProductionReportCommand).GetProperty("ReportIntentFingerprint"));
+        Assert.Contains(MesEndpointContracts.All, contract =>
+            contract.HttpMethod == "GET"
+            && contract.Route == "/api/business/v1/mes/production-reports/by-idempotency-key"
+            && contract.PermissionCode == MesPermissionCodes.ReportingRead
+            && contract.OperationId == "getBusinessMesProductionReportByIdempotencyKey");
+    }
+
+    [Fact]
     public async Task Lifecycle_conflict_endpoint_returns_409_with_safe_code()
     {
         await using var factory = new WebApplicationFactory<Program>()
@@ -962,7 +974,7 @@ public sealed class MesEndpointContractTests
     [Fact]
     public void MesEndpointContracts_ExposeRescheduleAndRushOrderRoutes()
     {
-        Assert.Equal(67, MesEndpointContracts.All.Count);
+        Assert.Equal(68, MesEndpointContracts.All.Count);
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/foundation-readiness/{areaCode}"
