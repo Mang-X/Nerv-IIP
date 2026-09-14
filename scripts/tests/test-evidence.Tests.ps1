@@ -1500,7 +1500,7 @@ $liveViolations = Test-NervTestEvidencePolicy -Policy $livePolicy -RepoRoot $rep
 # 「只加了 testIdentities、忘了同步 expectedRuntimeTestCount」唯一会报的地方 —— 违例对象里
 # 那句 'Rule must freeze a non-empty unique test identity set and exact expectedRuntimeTestCount.'
 # 已经说清了要改两个字段，却被聚合计数吃掉了，于是本机红了也看不出该动哪一行。
-Assert-Equal 0 @($liveViolations).Count ("The committed live skip policy must be valid; violations: " + (@($liveViolations | ForEach-Object { "$($_.code)/$($_.id): $($_.message)" }) -join ' | ') + '.')
+Assert-Equal 0 @($liveViolations).Count ("The committed live skip policy must be valid; violations: " + (@($liveViolations | ForEach-Object { "$($_.code)/$($_.id): $($_.message)" }) -join ' | '))
 $industrialTelemetryPostgresRules = @($livePolicy.rules | Where-Object { [string]::Equals([string]$_.id, 'industrialtelemetry-postgres', [StringComparison]::Ordinal) })
 Assert-Equal 1 $industrialTelemetryPostgresRules.Count 'The IndustrialTelemetry PostgreSQL proofs must have one evidence policy rule.'
 Assert-Equal 17 @($industrialTelemetryPostgresRules[0].testIdentities).Count 'The IndustrialTelemetry PostgreSQL policy rule must freeze its seventeen governed identities.'
