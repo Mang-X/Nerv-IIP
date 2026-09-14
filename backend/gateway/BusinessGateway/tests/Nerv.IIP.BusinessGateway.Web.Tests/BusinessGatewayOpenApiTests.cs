@@ -1437,9 +1437,19 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/mes/schedules/run", "post", "runBusinessConsoleMesSchedule");
         AssertOperationId(paths, "/api/business-console/v1/mes/schedules", "get", "listBusinessConsoleMesScheduleResults");
         AssertOperationId(paths, "/api/business-console/v1/mes/production-reports", "post", "recordBusinessConsoleMesProductionReport");
-        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/production-reports", "post", "idempotencyKey", 150);
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/production-reports", "post", "idempotencyKey", 128);
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/production-reports", "post", "scopeKind", 50);
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/production-reports", "post", "scopeId", 200);
+        AssertOptionalBodyProperty(document, paths, "/api/business-console/v1/mes/production-reports", "post", "labelTemplateId");
+        AssertSchemaProperties(
+            document,
+            "BusinessConsoleRecordProductionReportResponse",
+            "productionReportId",
+            "reportNo",
+            "serialNumbers",
+            "printBatchId",
+            "printStatus",
+            "printingPreparationPending");
         AssertOperationId(paths, "/api/business-console/v1/mes/defects", "post", "recordBusinessConsoleMesDefect");
         AssertSchemaProperties(
             document,

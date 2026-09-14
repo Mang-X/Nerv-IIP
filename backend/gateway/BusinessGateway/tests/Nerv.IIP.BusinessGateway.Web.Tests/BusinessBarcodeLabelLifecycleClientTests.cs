@@ -22,6 +22,7 @@ public sealed class BusinessBarcodeLabelLifecycleClientTests
                 "intent:Case/A"),
             CancellationToken.None);
 
+        Assert.NotNull(response);
         Assert.Equal("batch-001", response.PrintBatch.PrintBatchId);
         Assert.Equal("opaque:fingerprint-a", response.PrintBatch.ReportIntentFingerprint);
         Assert.Equal(HttpMethod.Get, handler.LastRequest!.Method);
@@ -29,6 +30,25 @@ public sealed class BusinessBarcodeLabelLifecycleClientTests
             "/api/business/v2/barcodes/print-batches/by-idempotency-key?organizationId=org-001&environmentId=env-dev&idempotencyKey=intent%3ACase%2FA",
             handler.LastRequest.RequestUri!.PathAndQuery);
         Assert.Equal("internal-token", handler.LastRequest.Headers.Authorization!.Parameter);
+    }
+
+    [Fact]
+    public async Task Detail_by_idempotency_key_returns_no_batch_for_the_scoped_not_found_result()
+    {
+        var handler = new RecordingResponseHandler(
+            """{"success":false,"data":null,"message":"未找到打印批次。","code":0}""");
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://barcode-label.test") };
+        var client = new HttpBusinessBarcodeLabelClient(httpClient);
+
+        var response = await client.GetPrintBatchByIdempotencyKeyAsync(
+            "internal-token",
+            new BusinessConsoleBarcodePrintBatchByIdempotencyKeyRequest(
+                "org-001",
+                "env-dev",
+                "intent-unknown"),
+            CancellationToken.None);
+
+        Assert.Null(response);
     }
 
     [Fact]
@@ -48,6 +68,21 @@ public sealed class BusinessBarcodeLabelLifecycleClientTests
             "/api/business/v2/barcodes/print-batches/batch-001?organizationId=org-001&environmentId=env-dev",
             handler.LastRequest.RequestUri!.PathAndQuery);
         Assert.Equal("internal-token", handler.LastRequest.Headers.Authorization!.Parameter);
+    }
+
+    [Fact]
+    public async Task Detail_reads_the_report_intent_fingerprint_from_the_downstream_v2_response()
+    {
+        var handler = new RecordingResponseHandler("""{"success":true,"data":{"printBatch":{"printBatchId":"batch-001","labelTemplateId":"template-001","sourceDocumentType":"work-order","sourceDocumentId":"WO-001","idempotencyKey":"intent-001","reportIntentKey":"intent-001","reportIntentFingerprint":"  opaque:Report-Intent/A  ","requestedQuantity":1,"status":"reserved","printerId":null,"printJobId":null,"failureReason":null,"productionReportId":null,"productionReportNo":null,"items":[]}},"message":"","code":0}""");
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://barcode-label.test") };
+        var client = new HttpBusinessBarcodeLabelClient(httpClient);
+
+        var response = await client.GetPrintBatchAsync(
+            "internal-token",
+            new BusinessConsoleBarcodePrintBatchRequest("org-001", "env-dev", "batch-001"),
+            CancellationToken.None);
+
+        Assert.Equal("  opaque:Report-Intent/A  ", response.PrintBatch.ReportIntentFingerprint);
     }
 
     [Fact]
@@ -78,6 +113,34 @@ public sealed class BusinessBarcodeLabelLifecycleClientTests
         Assert.Equal(
             "  opaque:Report-Intent/A  ",
             body.RootElement.GetProperty("reportIntentFingerprint").GetString());
+    }
+
+    [Fact]
+    public async Task Activate_uses_scoped_internal_route_and_mes_report_identity()
+    {
+        var handler = new RecordingResponseHandler("""{"success":true,"data":{"printBatchId":"batch-001"},"message":"","code":0}""");
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://barcode-label.test") };
+        var client = new HttpBusinessBarcodeLabelClient(httpClient);
+
+        var response = await client.ActivatePrintBatchAsync(
+            "internal-token",
+            new BusinessConsoleActivateBarcodePrintBatchRequest(
+                "batch-001",
+                "org-001",
+                "env-dev",
+                new BusinessConsoleActivateBarcodePrintBatchBody("report-001", "PR-001")),
+            CancellationToken.None);
+
+        Assert.Equal("batch-001", response.PrintBatchId);
+        Assert.Equal(HttpMethod.Post, handler.LastRequest!.Method);
+        Assert.Equal(
+            "/api/business/internal/v1/barcodes/print-batches/batch-001/activate?organizationId=org-001&environmentId=env-dev",
+            handler.LastRequest.RequestUri!.PathAndQuery);
+        Assert.Equal("internal-token", handler.LastRequest.Headers.Authorization!.Parameter);
+        using var body = JsonDocument.Parse(handler.LastRequestBody);
+        Assert.Equal(2, body.RootElement.EnumerateObject().Count());
+        Assert.Equal("report-001", body.RootElement.GetProperty("productionReportId").GetString());
+        Assert.Equal("PR-001", body.RootElement.GetProperty("productionReportNo").GetString());
     }
 
     [Fact]

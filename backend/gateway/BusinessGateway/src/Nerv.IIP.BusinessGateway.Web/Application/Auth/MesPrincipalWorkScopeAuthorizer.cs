@@ -44,7 +44,7 @@ public sealed class MesPrincipalWorkScopeAuthorizer(
         }
     }
 
-    public async Task EnsureOperationTaskAccessAsync(
+    public async Task<BusinessConsoleMesOperationTaskRow> EnsureOperationTaskAccessAsync(
         BusinessGatewayAuthorizationResult? authorization,
         string organizationId,
         string environmentId,
@@ -73,10 +73,14 @@ public sealed class MesPrincipalWorkScopeAuthorizer(
                 WorkCenterIds: Join(scope.WorkCenterIds),
                 OperationTaskId: operationTaskId),
             cancellationToken);
-        if (!response.Items.Any(x => string.Equals(x.OperationTaskId, operationTaskId, StringComparison.Ordinal)))
+        var operationTask = response.Items.FirstOrDefault(x =>
+            string.Equals(x.OperationTaskId, operationTaskId, StringComparison.Ordinal));
+        if (operationTask is null)
         {
             throw Forbidden();
         }
+
+        return operationTask;
     }
 
     public async Task EnsureWorkCenterAccessAsync(

@@ -30,6 +30,16 @@ describe('stableErrorMessage', () => {
     ['ROUTING_SNAPSHOT_MISSING', '工单缺少已发布生产版本的工艺路线快照，请先维护并发布生产版本。'],
     // #3272：网关熔断打开（BrokenCircuitException → 503）。
     ['downstream-circuit-open', '服务暂时不可用，本次请求未发出；请稍后重试。'],
+    [
+      'production-serial-policy-invalid',
+      '当前物料的序列号策略不可用于生产报工，请联系管理员检查物料配置。',
+    ],
+    ['production-label-template-required', '该物料按生产环节生成序列号，请选择标签模板后重试。'],
+    [
+      'production-label-rule-unavailable',
+      '未找到可用于该物料的有效条码规则，请联系管理员检查物料配置。',
+    ],
+    ['production-label-quantity-invalid', '按生产环节生成序列号时，良品数量必须为正整数。'],
   ])('maps the exact stable wire value %s to actionable Chinese', (wireValue, message) => {
     expect(stableErrorMessage(wireValue)).toBe(message)
   })

@@ -4789,7 +4789,8 @@ public sealed record BusinessConsoleRecordProductionReportRequest(
     string? ProducedLotNo = null,
     string? SerialNo = null,
     string SerialTrackingPolicy = "none",
-    IReadOnlyCollection<string>? SerialNumbers = null);
+    IReadOnlyCollection<string>? SerialNumbers = null,
+    string? LabelTemplateId = null);
 
 public sealed record BusinessConsoleConsumedMaterialLotInput(
     string MaterialId,
@@ -4801,7 +4802,10 @@ public sealed record BusinessConsoleRecordProductionReportResponse(
     string ProductionReportId,
     string ReportNo,
     IReadOnlyCollection<string> SerialNumbers,
-    BusinessConsoleOperationReceipt? OperationReceipt = null);
+    BusinessConsoleOperationReceipt? OperationReceipt = null,
+    string? PrintBatchId = null,
+    string? PrintStatus = null,
+    bool PrintingPreparationPending = false);
 
 public sealed record BusinessConsoleMesContextRequest(
     string OrganizationId,
