@@ -3305,6 +3305,14 @@
     {
       "service": "Mes",
       "method": "GET",
+      "route": "/api/business/v1/mes/production-reports/by-idempotency-key",
+      "operationId": "getBusinessMesProductionReportByIdempotencyKey",
+      "classification": "internal",
+      "rationale": "Gateway 报工意图协调内部恢复 seam；仅由受信服务按 organizationId、environmentId、idempotencyKey 精确读取，不作为 BusinessGateway facade 对外暴露。"
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
       "route": "/api/business/v1/mes/production-reports/{reportNo}",
       "operationId": "getBusinessMesProductionReport",
       "classification": "exposed",

@@ -70,6 +70,7 @@ public sealed class MesPermissionCodeSecondSourceTests
             ["recordBusinessMesProductionReport"] = "business.mes.reporting.write", // POST /api/business/v1/mes/production-reports
             ["listBusinessMesProductionReports"] = "business.mes.reporting.read", // GET /api/business/v1/mes/production-reports
             ["queryBusinessMesProductionStatistics"] = "business.mes.reporting.read", // GET /api/business/v1/mes/production-statistics
+            ["getBusinessMesProductionReportByIdempotencyKey"] = "business.mes.reporting.read", // GET /api/business/v1/mes/production-reports/by-idempotency-key
             ["getBusinessMesProductionReport"] = "business.mes.reporting.read", // GET /api/business/v1/mes/production-reports/{reportNo}
             ["reverseBusinessMesProductionReport"] = "business.mes.reporting.write", // POST /api/business/v1/mes/production-reports/{reportNo}/reverse
             ["listBusinessMesTelemetryProductionReportCandidates"] = "business.mes.reporting.read", // GET /api/business/v1/mes/telemetry-production-report-candidates

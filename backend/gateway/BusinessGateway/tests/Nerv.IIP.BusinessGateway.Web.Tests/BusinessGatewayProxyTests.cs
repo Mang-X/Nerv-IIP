@@ -6256,8 +6256,10 @@ public sealed class BusinessGatewayProxyTests
 
     private static Dictionary<string, object?> ReceiptRoutePayload() => new()
     {
-        ["organizationId"] = "org-001", ["environmentId"] = "env-dev",
-        ["purchaseReceiptNo"] = "RCV-route", ["purchaseOrderNo"] = "PO-route",
+        ["organizationId"] = "org-001",
+        ["environmentId"] = "env-dev",
+        ["purchaseReceiptNo"] = "RCV-route",
+        ["purchaseOrderNo"] = "PO-route",
         ["lines"] = new[] { new { purchaseOrderLineNo = "1", receivedQuantity = 10m, qualityStatus = "unrestricted" } },
     };
 
@@ -12053,6 +12055,83 @@ public sealed class BusinessGatewayProxyTests
         // 报工人由 Gateway 从已认证 principal 注入，公开请求 DTO 不带身份字段，也不透传前端作用域选择。
         Assert.Equal("user-operator", requestBody.RootElement.GetProperty("reportedBy").GetString());
         Assert.False(requestBody.RootElement.TryGetProperty("scopeKind", out _));
+    }
+
+    [Fact]
+    public void Mes_formal_client_exposes_internal_report_intent_post_and_exact_recovery_seams()
+    {
+        Assert.Contains(typeof(IBusinessMesClient).GetMethods(), method =>
+            method.Name == "RecordProductionReportAsync"
+            && method.GetParameters().Any(parameter => parameter.Name == "reportIntentFingerprint"));
+        Assert.Contains(typeof(IBusinessMesClient).GetMethods(), method =>
+            method.Name == "GetProductionReportByIdempotencyKeyAsync");
+    }
+
+    [Fact]
+    public async Task Mes_formal_client_preserves_opaque_intent_fingerprint_on_post_and_exact_recovery()
+    {
+        const string productionReportId = "019f855b-5cb0-7550-a509-d2ee7b021689";
+        const string fingerprint = "  opaque:v1:sha256:ABC==  ";
+        var handler = new RecordingHandler(request => request.Method == HttpMethod.Post
+            ? JsonResponse(HttpStatusCode.OK, new
+            {
+                productionReportId = new { id = productionReportId },
+                reportNo = "PRPT-INTENT-001",
+                serialNumbers = new[] { "SN-B", "SN-A" },
+            })
+            : JsonResponse(HttpStatusCode.OK, new
+            {
+                reportIntentFingerprint = fingerprint,
+                productionReportId = new { id = productionReportId },
+                reportNo = "PRPT-INTENT-001",
+                serialNumbers = new[] { "SN-B", "SN-A" },
+            }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var client = new HttpBusinessMesClient(httpClient);
+
+        _ = await client.RecordProductionReportAsync(
+            "internal-token-001",
+            ProductionReportRequest(),
+            "user-operator",
+            fingerprint,
+            CancellationToken.None);
+        var recovered = await client.GetProductionReportByIdempotencyKeyAsync(
+            "internal-token-001",
+            new BusinessMesProductionReportIntentLookupRequest("org-001", "env-dev", "intent/key 001"),
+            CancellationToken.None);
+
+        Assert.Equal(fingerprint, recovered.ReportIntentFingerprint);
+        Assert.Equal(productionReportId, recovered.ProductionReportId);
+        Assert.Equal("PRPT-INTENT-001", recovered.ReportNo);
+        Assert.Equal(["SN-B", "SN-A"], recovered.SerialNumbers);
+        Assert.Equal(2, handler.Requests.Count);
+        using var posted = JsonDocument.Parse(handler.RequestBodies[0]!);
+        Assert.Equal(fingerprint, posted.RootElement.GetProperty("reportIntentFingerprint").GetString());
+        Assert.Equal(
+            "/api/business/v1/mes/production-reports/by-idempotency-key?organizationId=org-001&environmentId=env-dev&idempotencyKey=intent%2Fkey%20001",
+            handler.Requests[1].RequestUri!.PathAndQuery);
+    }
+
+    [Fact]
+    public async Task Mes_formal_client_rejects_exact_recovery_without_nullable_fingerprint_field()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            productionReportId = new { id = "019f855b-5cb0-7550-a509-d2ee7b021689" },
+            reportNo = "PRPT-INTENT-001",
+            serialNumbers = Array.Empty<string>(),
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var client = new HttpBusinessMesClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.GetProductionReportByIdempotencyKeyAsync(
+                "internal-token-001",
+                new BusinessMesProductionReportIntentLookupRequest("org-001", "env-dev", "intent-001"),
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
     }
 
     [Fact]

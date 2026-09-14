@@ -53,7 +53,8 @@ public sealed record RecordProductionReportCommand(
     IReadOnlyCollection<string>? SerialNumbers = null,
     string Source = "manual",
     // 操作人由前线 HTTP 边界从已认证 principal 注入，不由业务载荷携带。
-    string? ReportedBy = null) : ICommand<ProductionReportCommandResult>, IOperationTaskConcurrencyRetryCommand
+    string? ReportedBy = null,
+    string? ReportIntentFingerprint = null) : ICommand<ProductionReportCommandResult>, IOperationTaskConcurrencyRetryCommand
 {
     internal bool PersistsCallerIntentReceipt { get; private init; } = true;
 
@@ -138,6 +139,10 @@ public sealed class RecordProductionReportCommandValidator : AbstractValidator<R
             .WithMessage("Production report source must be manual or telemetry.");
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
         RuleFor(x => x.ReportedBy).MaximumLength(ProductionReport.ReportedByMaxLength);
+        RuleFor(x => x.ReportIntentFingerprint)
+            .Must(value => value is null || !string.IsNullOrWhiteSpace(value))
+            .WithMessage("Report intent fingerprint must be nonblank when provided.")
+            .MaximumLength(ProductionReport.ReportIntentFingerprintMaxLength);
         RuleForEach(x => x.ConsumedMaterialLots).ChildRules(lot =>
         {
             lot.RuleFor(x => x.MaterialId).NotEmpty().MaximumLength(100);
@@ -329,7 +334,8 @@ public sealed class RecordProductionReportCommandHandler(
             request.Source,
             consumedMaterialLots.Count,
             request.ReportedBy,
-            oeeDimensionSnapshot);
+            oeeDimensionSnapshot,
+            request.ReportIntentFingerprint);
 
         var duplicateLot = consumedMaterialLots
             .GroupBy(x => $"{x.MaterialId.ToUpperInvariant()}|{x.MaterialLotId.ToUpperInvariant()}", StringComparer.Ordinal)
@@ -530,6 +536,11 @@ public sealed class RecordProductionReportCommandHandler(
         }
 
         parts.Add(request.Source);
+        if (request.ReportIntentFingerprint is not null)
+        {
+            parts.Add($"report-intent-fingerprint:value:{request.ReportIntentFingerprint}");
+        }
+
         parts.Add(ConsumedMaterialLotsFingerprint(request.ConsumedMaterialLots));
         return MesCodingService.Fingerprint(parts.ToArray());
     }

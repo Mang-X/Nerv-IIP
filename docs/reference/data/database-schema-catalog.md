@@ -985,6 +985,10 @@ MAN-631/#1168 迁移 `20260731210404_AddMaintenanceKeywordSearchIndexes` 启用 
 | AI Integration              | `ai` 或 `ai_integration` | 仅规划         | 否          | 否        | 否                | 模型/提供方配置、工具授权、调用审计、配额周期、提示词/版本归档、审批挂点和敏感信息边界。                                                                                                                                                                                                                                          |
 | Observability indexes       | `observability`          | 仅有基线        | 否          | 否        | 否                | 见 `docs/architecture/observability-baseline.md`；建表前补 LogChunk、LogEntryIndex、归档任务、保留策略和 Gateway 查询边界。                                                                                                                                                                                                            |
 
+### MES 报工意图恢复列
+
+`mes.production_reports.report_intent_fingerprint` 是可空 `varchar(256)` 不透明调用方意图指纹。提供时必须非空白并原样保存；升级前与未提供该值的报工保持 `NULL`。它不建立索引，也不保存原始 payload。恢复读面复用 `mes.code_idempotency_keys` 的 `organization_id + environment_id + rule_key=production-report + idempotency_key` 唯一映射，其中 `code` 精确关联同 scope 的 `production_reports.report_no`；报工、幂等 receipt 与有序序列号仍由同一 MES UnitOfWork 原子提交。
+
 ## 下一轮治理强化建议
 
 1. 生成或维护简版 ER 图，以 AppHub/Ops/IAM 当前目录和数据库注释为输入。

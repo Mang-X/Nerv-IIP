@@ -10,6 +10,7 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
     public const string TelemetrySource = "telemetry";
     public const int ReversedByMaxLength = 100;
     public const int ReportedByMaxLength = 100;
+    public const int ReportIntentFingerprintMaxLength = 256;
 
     private ProductionReport()
     {
@@ -34,6 +35,7 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
         string? reversalReason,
         string? reversedBy,
         string? reportedBy,
+        string? reportIntentFingerprint,
         ProductionReportOeeProjection? oeeProjection,
         ProductionReportOeeDimensionSnapshot? oeeDimensionSnapshot,
         string source,
@@ -62,6 +64,15 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
         ReversalReason = string.IsNullOrWhiteSpace(reversalReason) ? null : reversalReason.Trim();
         ReversedBy = string.IsNullOrWhiteSpace(reversedBy) ? null : reversedBy.Trim();
         ReportedBy = string.IsNullOrWhiteSpace(reportedBy) ? null : reportedBy.Trim();
+        if (reportIntentFingerprint is not null &&
+            (string.IsNullOrWhiteSpace(reportIntentFingerprint) || reportIntentFingerprint.Length > ReportIntentFingerprintMaxLength))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(reportIntentFingerprint),
+                $"Report intent fingerprint must be nonblank and no longer than {ReportIntentFingerprintMaxLength} characters when provided.");
+        }
+
+        ReportIntentFingerprint = reportIntentFingerprint;
         OeeWorkCenterId = NormalizeOptional(oeeDimensionSnapshot?.WorkCenterId ?? oeeProjection?.WorkCenterId);
         OeeDeviceAssetId = NormalizeOptional(oeeDimensionSnapshot?.DeviceAssetId ?? oeeProjection?.DeviceAssetId);
         OeeUomCode = string.IsNullOrWhiteSpace(oeeProjection?.UomCode) ? null : oeeProjection.UomCode.Trim();
@@ -103,6 +114,7 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
     /// 升级前的历史报工同样为 <c>null</c>；这两条是仅有的可空来源。
     /// </summary>
     public string? ReportedBy { get; private set; }
+    public string? ReportIntentFingerprint { get; private set; }
     public string? OeeWorkCenterId { get; private set; }
     public string? OeeDeviceAssetId { get; private set; }
     public string? OeeUomCode { get; private set; }
@@ -173,7 +185,8 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
         string source = ManualSource,
         int materialMovementCount = 0,
         string? reportedBy = null,
-        ProductionReportOeeDimensionSnapshot? oeeDimensionSnapshot = null)
+        ProductionReportOeeDimensionSnapshot? oeeDimensionSnapshot = null,
+        string? reportIntentFingerprint = null)
     {
         DomainGuard.NonNegative(goodQuantity, nameof(goodQuantity));
         DomainGuard.NonNegative(scrapQuantity, nameof(scrapQuantity));
@@ -202,6 +215,7 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
             null,
             null,
             reportedBy,
+            reportIntentFingerprint,
             oeeProjection,
             oeeDimensionSnapshot,
             source,
@@ -250,6 +264,7 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
             normalizedActorRef,
             // 冲销行也是一条报工事实，提交它的人就是执行冲销的操作人。
             normalizedActorRef,
+            null,
             originalOeeProjection,
             original.GetOeeDimensionSnapshot(),
             original.Source,

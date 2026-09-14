@@ -1,8 +1,13 @@
 using MediatR;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Coding;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
@@ -13,6 +18,8 @@ using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Errors;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
+using Nerv.IIP.Business.Mes.Web.Application.Quality;
+using Nerv.IIP.Testing;
 using Npgsql;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
@@ -22,6 +29,134 @@ public sealed class ProductionReportSerialNumberPostgresTests
 {
     private const string PreviousMigration = "20260910084403_WidenMesDefectDispositionReferenceIdForQualityProducerWidth";
     private const string TargetMigrationSuffix = "_AddMesProductionReportSerialNumbers";
+    private const string IntentMigrationSuffix = "_AddMesProductionReportIntentFingerprint";
+
+    [MesRealPostgresFact]
+    public async Task Intent_fingerprint_migration_is_nullable_varchar_256_and_survives_down_up()
+    {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        var options = MesPostgresLaneDatabase.CreateOptions();
+        await using var db = CreateDbContext(options);
+        MesPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
+        var migrator = db.GetService<IMigrator>();
+        var previousMigration = Assert.Single(
+            db.Database.GetMigrations(),
+            migration => migration.EndsWith(TargetMigrationSuffix, StringComparison.Ordinal));
+        var targetMigration = Assert.Single(
+            db.Database.GetMigrations(),
+            migration => migration.EndsWith(IntentMigrationSuffix, StringComparison.Ordinal));
+
+        await migrator.MigrateAsync(previousMigration);
+        Assert.False(await ColumnExistsAsync(db, "report_intent_fingerprint"));
+
+        await migrator.MigrateAsync(targetMigration);
+        await AssertIntentFingerprintColumnAsync(db);
+
+        await migrator.MigrateAsync(previousMigration);
+        Assert.False(await ColumnExistsAsync(db, "report_intent_fingerprint"));
+
+        await migrator.MigrateAsync(targetMigration);
+        await AssertIntentFingerprintColumnAsync(db);
+    }
+
+    [MesRealPostgresFact]
+    public async Task PostgreSQL_intent_receipt_round_trips_exact_value_and_keeps_nullable_crossings_conflicting()
+    {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await using var factory = CreateIntentFactory(new IntentReceiptSaveGate());
+        await StartMigrateAndSeedIntentScopeAsync(factory, "WO-INTENT", "OP-INTENT");
+
+        const string fingerprint = "  opaque:v1:sha256:ABC==  ";
+        var command = IntentCommand("intent-roundtrip-001", fingerprint, "WO-INTENT", "OP-INTENT");
+        ProductionReportCommandResult first;
+        await using (var commandScope = factory.Services.CreateAsyncScope())
+        {
+            first = await commandScope.ServiceProvider.GetRequiredService<ISender>()
+                .Send(command, CancellationToken.None);
+        }
+
+        await using var assertionScope = factory.Services.CreateAsyncScope();
+        var db = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var receipt = await new GetProductionReportByIdempotencyKeyQueryHandler(db).Handle(
+            new GetProductionReportByIdempotencyKeyQuery("org-001", "env-dev", "  intent-roundtrip-001  "),
+            CancellationToken.None);
+        Assert.Equal(fingerprint, receipt.ReportIntentFingerprint);
+        Assert.Equal(first.Id, receipt.ProductionReportId);
+        Assert.Equal(first.ReportNo, receipt.ReportNo);
+        Assert.Equal(["SN-B", "SN-A"], receipt.SerialNumbers);
+
+        foreach (var request in new[]
+                 {
+                     new GetProductionReportByIdempotencyKeyQuery("org-other", "env-dev", command.IdempotencyKey),
+                     new GetProductionReportByIdempotencyKeyQuery("org-001", "env-other", command.IdempotencyKey),
+                     new GetProductionReportByIdempotencyKeyQuery("org-001", "env-dev", "intent-missing"),
+                 })
+        {
+            var hidden = await Assert.ThrowsAsync<KnownException>(() =>
+                new GetProductionReportByIdempotencyKeyQueryHandler(db).Handle(request, CancellationToken.None));
+            Assert.Equal("未找到生产报工。", hidden.Message);
+        }
+
+        var replay = await assertionScope.ServiceProvider.GetRequiredService<ISender>()
+            .Send(command, CancellationToken.None);
+        Assert.Equal(first.Id, replay.Id);
+
+        await Assert.ThrowsAsync<MesIdempotencyConflictException>(() =>
+            assertionScope.ServiceProvider.GetRequiredService<ISender>().Send(
+                command with { ReportIntentFingerprint = "opaque:different" },
+                CancellationToken.None));
+        await Assert.ThrowsAsync<MesIdempotencyConflictException>(() =>
+            assertionScope.ServiceProvider.GetRequiredService<ISender>().Send(
+                command with { ReportIntentFingerprint = null },
+                CancellationToken.None));
+
+        var nullCommand = IntentCommand("intent-null-001", null, "WO-INTENT", "OP-INTENT") with
+        {
+            GoodQuantity = 2m,
+            SerialNumbers = ["SN-C", "SN-D"],
+        };
+        _ = await assertionScope.ServiceProvider.GetRequiredService<ISender>()
+            .Send(nullCommand, CancellationToken.None);
+        await Assert.ThrowsAsync<MesIdempotencyConflictException>(() =>
+            assertionScope.ServiceProvider.GetRequiredService<ISender>().Send(
+                nullCommand with { ReportIntentFingerprint = "opaque:late" },
+                CancellationToken.None));
+    }
+
+    [MesRealPostgresFact]
+    public async Task PostgreSQL_concurrent_same_and_different_fingerprints_commit_one_atomic_intent_receipt()
+    {
+        await VerifyConcurrentIntentAsync(sameFingerprint: true);
+        await VerifyConcurrentIntentAsync(sameFingerprint: false);
+    }
+
+    [MesRealPostgresFact]
+    public async Task PostgreSQL_serial_failure_rolls_back_report_idempotency_receipt_and_serials_together()
+    {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await using var factory = CreateIntentFactory(new IntentReceiptSaveGate());
+        await StartMigrateAndSeedIntentScopeAsync(factory, "WO-ATOMIC", "OP-ATOMIC");
+        await InstallSerialFailureTriggerAsync();
+
+        await using (var commandScope = factory.Services.CreateAsyncScope())
+        {
+            await Assert.ThrowsAnyAsync<Exception>(() => commandScope.ServiceProvider.GetRequiredService<ISender>().Send(
+                IntentCommand("intent-atomic-001", "opaque:atomic", "WO-ATOMIC", "OP-ATOMIC"),
+                CancellationToken.None));
+        }
+
+        await using var assertionScope = factory.Services.CreateAsyncScope();
+        var db = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Equal(0, await db.ProductionReports.CountAsync());
+        Assert.Equal(0, await db.ProductionReportSerialNumbers.CountAsync());
+        Assert.Equal(0, await db.CodeIdempotencyKeys.CountAsync(x =>
+            x.RuleKey == "production-report" && x.IdempotencyKey == "intent-atomic-001"));
+        var missing = await Assert.ThrowsAsync<KnownException>(() =>
+            new GetProductionReportByIdempotencyKeyQueryHandler(db).Handle(
+                new GetProductionReportByIdempotencyKeyQuery("org-001", "env-dev", "intent-atomic-001"),
+                CancellationToken.None));
+        Assert.Equal("未找到生产报工。", missing.Message);
+    }
 
     [MesRealPostgresFact]
     public async Task Migration_backfills_only_forward_nonblank_legacy_serials_and_survives_down_up()
@@ -35,6 +170,7 @@ public sealed class ProductionReportSerialNumberPostgresTests
             db.Database.GetMigrations(),
             migration => migration.EndsWith(TargetMigrationSuffix, StringComparison.Ordinal));
         await migrator.MigrateAsync(PreviousMigration);
+        await AddCurrentModelCompatibilityColumnAsync(db);
 
         var original = await SeedReportAsync(db, "org-001", "env-dev", "PR-LEGACY", "SN-LEGACY");
         _ = await SeedReportAsync(db, "org-001", "env-dev", "PR-BLANK", null);
@@ -78,6 +214,7 @@ public sealed class ProductionReportSerialNumberPostgresTests
             db.Database.GetMigrations(),
             migration => migration.EndsWith(TargetMigrationSuffix, StringComparison.Ordinal));
         await migrator.MigrateAsync(PreviousMigration);
+        await AddCurrentModelCompatibilityColumnAsync(db);
 
         _ = await SeedReportAsync(db, "org-001", "env-dev", "PR-DUP-A", "SN-DUP");
         _ = await SeedReportAsync(db, "org-001", "env-dev", "PR-DUP-B", "SN-DUP");
@@ -291,8 +428,230 @@ public sealed class ProductionReportSerialNumberPostgresTests
         }
     }
 
+    private static async Task VerifyConcurrentIntentAsync(bool sameFingerprint)
+    {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        var gate = new IntentReceiptSaveGate();
+        await using var factory = CreateIntentFactory(gate);
+        var suffix = sameFingerprint ? "SAME" : "DIFF";
+        await StartMigrateAndSeedIntentScopeAsync(factory, $"WO-{suffix}", $"OP-{suffix}");
+        var first = IntentCommand($"intent-concurrent-{suffix}", "opaque:first", $"WO-{suffix}", $"OP-{suffix}");
+        var second = sameFingerprint ? first : first with { ReportIntentFingerprint = "opaque:second" };
+
+        await using var firstScope = factory.Services.CreateAsyncScope();
+        await using var secondScope = factory.Services.CreateAsyncScope();
+        gate.Enable();
+        IntentOutcome[] outcomes;
+        try
+        {
+            outcomes = await Task.WhenAll(
+                CaptureIntentAsync(firstScope.ServiceProvider.GetRequiredService<ISender>(), first),
+                CaptureIntentAsync(secondScope.ServiceProvider.GetRequiredService<ISender>(), second));
+        }
+        finally
+        {
+            gate.Release();
+        }
+
+        if (sameFingerprint)
+        {
+            Assert.All(outcomes, outcome => Assert.Null(outcome.Exception));
+            Assert.Equal(outcomes[0].Result!.Id, outcomes[1].Result!.Id);
+        }
+        else
+        {
+            Assert.Single(outcomes, outcome => outcome.Result is not null);
+            Assert.IsType<MesIdempotencyConflictException>(
+                Assert.Single(outcomes, outcome => outcome.Exception is not null).Exception);
+        }
+
+        await using var assertionScope = factory.Services.CreateAsyncScope();
+        var db = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Equal(1, await db.ProductionReports.CountAsync());
+        Assert.Equal(1, await db.CodeIdempotencyKeys.CountAsync(x =>
+            x.RuleKey == "production-report" && x.IdempotencyKey == first.IdempotencyKey));
+        Assert.Equal(2, await db.ProductionReportSerialNumbers.CountAsync());
+    }
+
+    private static async Task<IntentOutcome> CaptureIntentAsync(ISender sender, RecordProductionReportCommand command)
+    {
+        try
+        {
+            return new(await sender.Send(command, CancellationToken.None), null);
+        }
+        catch (Exception exception)
+        {
+            return new(null, exception);
+        }
+    }
+
+    private static RecordProductionReportCommand IntentCommand(
+        string idempotencyKey,
+        string? fingerprint,
+        string workOrderId,
+        string operationTaskId) =>
+        new(
+            "org-001",
+            "env-dev",
+            workOrderId,
+            operationTaskId,
+            2m,
+            0m,
+            false,
+            DateTimeOffset.Parse("2026-09-14T08:00:00Z"),
+            idempotencyKey,
+            SerialTrackingPolicy: ProductionSerialTrackingPolicies.OnProduction,
+            SerialNumbers: ["SN-B", "SN-A"],
+            ReportIntentFingerprint: fingerprint);
+
+    private static WebApplicationFactory<Program> CreateIntentFactory(IntentReceiptSaveGate gate) =>
+        new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Development");
+            var settings = new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:PostgreSQL"] = MesPostgresLaneDatabase.ConnectionString,
+                ["Messaging:Provider"] = "InMemory",
+                ["Cap:Version"] = "i3433-intent",
+                ["InternalService:BearerToken"] = "test-internal-token",
+            };
+            foreach (var (key, value) in settings)
+            {
+                builder.UseSetting(key, value);
+            }
+
+            builder.ConfigureAppConfiguration((_, configuration) =>
+                configuration.AddInMemoryCollection(settings));
+            builder.ConfigureServices(services =>
+            {
+                services.AddScoped<IMesFirstArticleGate>(_ => TestMesFirstArticleGate.Allowing);
+                services.AddScoped<IProductionReportOeeDimensionSnapshotProvider>(
+                    _ => TestProductionReportOeeDimensionSnapshotProvider.Instance);
+                services.AddSingleton(gate);
+                services.AddDbContext<ApplicationDbContext>((serviceProvider, options) =>
+                    options.AddInterceptors(serviceProvider.GetRequiredService<IntentReceiptSaveGate>()));
+            });
+        });
+
+    private static async Task StartMigrateAndSeedIntentScopeAsync(
+        WebApplicationFactory<Program> factory,
+        string workOrderId,
+        string operationTaskId)
+    {
+        using var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        MesPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
+        await db.Database.MigrateAsync();
+        var due = DateTimeOffset.Parse("2026-09-15T08:00:00Z");
+        var workOrder = WorkOrder.Create(
+            "org-001", "env-dev", workOrderId, "SKU-001", "PV-001", 20m, 10, due);
+        workOrder.MarkReleased();
+        workOrder.ClearDomainEvents();
+        var task = OperationTask.Queue(
+            "org-001", "env-dev", workOrderId, operationTaskId, 10, "WC-001", [],
+            due.AddHours(-2), TimeSpan.FromHours(1), "SKU-001");
+        task.Assign("operator-001", null, null, due.AddHours(-2));
+        task.Start(due.AddHours(-1));
+        db.WorkOrders.Add(workOrder);
+        db.OperationTasks.Add(task);
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task InstallSerialFailureTriggerAsync()
+    {
+        await using var connection = new NpgsqlConnection(MesPostgresLaneDatabase.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            CREATE OR REPLACE FUNCTION mes.reject_intent_test_serial()
+            RETURNS trigger AS $$
+            BEGIN
+                RAISE EXCEPTION 'injected production-report serial failure';
+            END;
+            $$ LANGUAGE plpgsql;
+            CREATE TRIGGER reject_intent_test_serial
+            BEFORE INSERT ON mes.production_report_serial_numbers
+            FOR EACH ROW EXECUTE FUNCTION mes.reject_intent_test_serial();
+            """;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task AssertIntentFingerprintColumnAsync(ApplicationDbContext db)
+    {
+        var column = await db.Database.SqlQueryRaw<IntentColumnFact>("""
+            SELECT data_type AS "DataType", character_maximum_length AS "MaximumLength", is_nullable AS "IsNullable"
+            FROM information_schema.columns
+            WHERE table_schema = 'mes'
+              AND table_name = 'production_reports'
+              AND column_name = 'report_intent_fingerprint'
+            """).SingleAsync();
+        Assert.Equal("character varying", column.DataType);
+        Assert.Equal(ProductionReport.ReportIntentFingerprintMaxLength, column.MaximumLength);
+        Assert.Equal("YES", column.IsNullable);
+    }
+
+    private static Task AddCurrentModelCompatibilityColumnAsync(ApplicationDbContext db) =>
+        db.Database.ExecuteSqlRawAsync("""
+            ALTER TABLE mes.production_reports
+            ADD COLUMN report_intent_fingerprint character varying(256) NULL
+            """);
+
+    private static async Task<bool> ColumnExistsAsync(ApplicationDbContext db, string columnName) =>
+        await db.Database.SqlQuery<bool>($"""
+            SELECT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'mes'
+                  AND table_name = 'production_reports'
+                  AND column_name = {columnName}) AS "Value"
+            """).SingleAsync();
+
     private static ApplicationDbContext CreateDbContext(DbContextOptions<ApplicationDbContext> options) =>
         new(options, new NoopMediator());
+
+    private sealed record IntentOutcome(ProductionReportCommandResult? Result, Exception? Exception);
+
+    private sealed record IntentColumnFact(string DataType, int MaximumLength, string IsNullable);
+
+    private sealed class IntentReceiptSaveGate : SaveChangesInterceptor
+    {
+        private readonly TaskCompletionSource<bool> bothSavesArrived =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int arrivalCount;
+        private int enabled;
+
+        public void Enable() => Volatile.Write(ref enabled, 1);
+
+        public void Release() => bothSavesArrived.TrySetResult(true);
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (Volatile.Read(ref enabled) == 0 ||
+                eventData.Context is null ||
+                !eventData.Context.ChangeTracker.Entries<CodeIdempotencyKey>()
+                    .Any(entry => entry.State == EntityState.Added && entry.Entity.RuleKey == "production-report"))
+            {
+                return result;
+            }
+
+            var arrival = Interlocked.Increment(ref arrivalCount);
+            if (arrival <= 2)
+            {
+                if (arrival == 2)
+                {
+                    bothSavesArrived.TrySetResult(true);
+                }
+
+                await bothSavesArrived.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
+            }
+
+            return result;
+        }
+    }
 
     private static async Task<ProductionReport> SeedReportAsync(
         ApplicationDbContext db,

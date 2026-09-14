@@ -122,7 +122,13 @@ public sealed record RecordProductionReportRequest(
     string SerialTrackingPolicy = ProductionSerialTrackingPolicies.None,
     IReadOnlyCollection<string>? SerialNumbers = null,
     // 由 BusinessGateway 从已认证 principal 注入的报工操作人；调用方载荷不自带身份。
-    string? ReportedBy = null);
+    string? ReportedBy = null,
+    string? ReportIntentFingerprint = null);
+
+public sealed record GetProductionReportByIdempotencyKeyRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string IdempotencyKey);
 
 public sealed record RecordProductionReportResponse(
     global::Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.ProductionReportId ProductionReportId,
@@ -420,8 +426,25 @@ public sealed class OperationTaskActionRequestValidator : Validator<OperationTas
 
 public sealed class RecordProductionReportRequestValidator : Validator<RecordProductionReportRequest>
 {
-    public RecordProductionReportRequestValidator() =>
+    public RecordProductionReportRequestValidator()
+    {
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.ReportIntentFingerprint)
+            .Must(value => value is null || !string.IsNullOrWhiteSpace(value))
+            .WithMessage("Report intent fingerprint must be nonblank when provided.")
+            .MaximumLength(ProductionReport.ReportIntentFingerprintMaxLength);
+    }
+}
+
+public sealed class GetProductionReportByIdempotencyKeyRequestValidator
+    : Validator<GetProductionReportByIdempotencyKeyRequest>
+{
+    public GetProductionReportByIdempotencyKeyRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+    }
 }
 
 public sealed record RecordDefectRequest(
@@ -1442,10 +1465,24 @@ public sealed class RecordProductionReportEndpoint(ISender sender)
             req.SerialNo,
             req.SerialTrackingPolicy,
             req.SerialNumbers,
-            ReportedBy: req.ReportedBy);
+            ReportedBy: req.ReportedBy,
+            ReportIntentFingerprint: req.ReportIntentFingerprint);
         var result = await sender.Send(command, ct);
         await Send.OkAsync(new RecordProductionReportResponse(result.Id, result.ReportNo, result.SerialNumbers), ct);
     }
+}
+
+public sealed class GetProductionReportByIdempotencyKeyEndpoint(ISender sender)
+    : MesEndpoint<GetProductionReportByIdempotencyKeyRequest, ProductionReportIntentReceiptResponse>
+{
+    public override void Configure() =>
+        ConfigureMesContract(MesEndpointContracts.Get<GetProductionReportByIdempotencyKeyEndpoint>());
+
+    public override async Task HandleAsync(GetProductionReportByIdempotencyKeyRequest req, CancellationToken ct) =>
+        await Send.OkAsync(await sender.Send(new GetProductionReportByIdempotencyKeyQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.IdempotencyKey), ct), ct);
 }
 
 public sealed class ListProductionReportsEndpoint(ISender sender)
@@ -1988,6 +2025,7 @@ public static class MesEndpointContracts
         new(typeof(RecordProductionReportEndpoint), "POST", "/api/business/v1/mes/production-reports", MesPermissionCodes.ReportingWrite, "recordBusinessMesProductionReport"),
         new(typeof(ListProductionReportsEndpoint), "GET", "/api/business/v1/mes/production-reports", MesPermissionCodes.ReportingRead, "listBusinessMesProductionReports"),
         new(typeof(QueryProductionStatisticsEndpoint), "GET", "/api/business/v1/mes/production-statistics", MesPermissionCodes.ReportingRead, "queryBusinessMesProductionStatistics"),
+        new(typeof(GetProductionReportByIdempotencyKeyEndpoint), "GET", "/api/business/v1/mes/production-reports/by-idempotency-key", MesPermissionCodes.ReportingRead, "getBusinessMesProductionReportByIdempotencyKey"),
         new(typeof(GetProductionReportEndpoint), "GET", "/api/business/v1/mes/production-reports/{reportNo}", MesPermissionCodes.ReportingRead, "getBusinessMesProductionReport"),
         new(typeof(ReverseProductionReportEndpoint), "POST", "/api/business/v1/mes/production-reports/{reportNo}/reverse", MesPermissionCodes.ReportingWrite, "reverseBusinessMesProductionReport"),
         new(typeof(ListTelemetryProductionReportCandidatesEndpoint), "GET", "/api/business/v1/mes/telemetry-production-report-candidates", MesPermissionCodes.ReportingRead, "listBusinessMesTelemetryProductionReportCandidates"),
