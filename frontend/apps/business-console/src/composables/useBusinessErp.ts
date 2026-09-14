@@ -64,10 +64,9 @@ import { hasBusinessContext, refetchWithBusinessContext } from './businessContex
 
 const DEFAULT_TAKE = 10
 
-export function useErpMachineOverhead() {
+export function useErpWorkOrderCostVariance() {
   const context = useBusinessContextStore()
   const workOrder = reactive({ id: '', page: 1, pageSize: 10 })
-  const monthly = reactive({ period: '', workCenterId: '', page: 1, pageSize: 10 })
   const ready = computed(() => hasBusinessContext(context))
   const workOrderQuery = useQuery(() => ({
     ...getBusinessConsoleErpWorkOrderCostVarianceQueryOptions({
@@ -81,6 +80,23 @@ export function useErpMachineOverhead() {
     }),
     enabled: ready.value && Boolean(workOrder.id),
   }))
+  return {
+    ready,
+    workOrder,
+    workOrderData: computed(() =>
+      ready.value ? unwrapData(workOrderQuery.data.value) : undefined,
+    ),
+    workOrderPending: workOrderQuery.isLoading,
+    workOrderError: workOrderQuery.error,
+    refreshWorkOrder: () => refetchWithBusinessContext(context, workOrderQuery),
+  }
+}
+
+export function useErpMachineOverhead() {
+  const context = useBusinessContextStore()
+  const order = useErpWorkOrderCostVariance()
+  const { ready } = order
+  const monthly = reactive({ period: '', workCenterId: '', page: 1, pageSize: 10 })
   const monthlyQuery = useQuery(() => ({
     ...listBusinessConsoleErpWorkCenterMachineOverheadReconciliationsQueryOptions({
       query: {
@@ -95,18 +111,11 @@ export function useErpMachineOverhead() {
     enabled: ready.value && Boolean(monthly.period),
   }))
   return {
-    ready,
-    workOrder,
+    ...order,
     monthly,
-    workOrderData: computed(() =>
-      ready.value ? unwrapData(workOrderQuery.data.value) : undefined,
-    ),
     monthlyData: computed(() => (ready.value ? unwrapData(monthlyQuery.data.value) : undefined)),
-    workOrderPending: workOrderQuery.isLoading,
     monthlyPending: monthlyQuery.isLoading,
-    workOrderError: workOrderQuery.error,
     monthlyError: monthlyQuery.error,
-    refreshWorkOrder: () => refetchWithBusinessContext(context, workOrderQuery),
     refreshMonthly: () => refetchWithBusinessContext(context, monthlyQuery),
   }
 }

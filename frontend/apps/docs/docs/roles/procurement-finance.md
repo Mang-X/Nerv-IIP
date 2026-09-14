@@ -25,6 +25,8 @@
 
 ## 从哪里学
 
+- 操作指南：[核对工单成本差异](/how-to/check-work-order-cost)。
+
 - 操作指南：[核对机器制造费用](/how-to/check-machine-overhead)。
 - 概念解释：[机器预定分配与月度差异](/explanation/machine-overhead)。
 

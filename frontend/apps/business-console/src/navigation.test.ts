@@ -138,6 +138,7 @@ describe('business console ERP navigation', () => {
       '/erp/finance/vouchers',
       '/erp/finance/cost-candidates',
       '/erp/finance/machine-overhead',
+      '/erp/finance/cost-variance',
     ])
   })
 
