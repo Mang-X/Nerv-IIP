@@ -105,6 +105,43 @@ function Assert-MethodScopedFilter([object]$Member) {
     if (-not $selectedIdentities.SetEquals($frozen)) { throw "Member '$($Member.id)' filter must select exactly its frozen identity set." }
 }
 
+# #3424 反向闭合的**唯一**推导入口：manifest 冻结的每一条身份，必须被 test-evidence-policy.json 里
+# 恰好一条规则的 testIdentities 收走。写成函数而不是就地展开，是为了让下面的哨兵格与 CONTROL 格
+# 跑的是**同一段**推导；两处各自手抄一遍等式的话，断言的就是它自己的算术，不是本门禁的算术。
+#
+# 返回的每一项都带上「被几条规则收走」，因为 0 与 ≥2 是两种不同的错：前者是漏登记（#3129 那格），
+# 后者会让收证阶段的 `matchedRules.Count -ne 1` 同样判红，但原因完全不同。
+function Get-NervUnregisteredManifestIdentity {
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $ManifestMembers,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $PolicyRules
+    )
+    # Ordinal（#1509 同族）：身份是标识符，必须按写下来的样子比。
+    # ⚠️ 理由只写实测站得住的那半句（复审 M-X3 纠正）：PowerShell 的 -eq/-ceq 对 U+00AD 实测都返回
+    # True（culture-aware，`c` 前缀只关掉大小写不敏感），所以**用 -ceq 判身份相等是错的**；
+    # 但 [Dictionary[string,int]]::new() 的**默认**比较器走 EqualityComparer<string>.Default，
+    # 实测对 U+00AD 返回 False —— 它本来就是序数的。⛔ 不要写成"默认比较器也会折叠"，那是假的。
+    # 这里显式传 Ordinal 是为了让比较口径**写在脸上**、与本仓其余身份比较点逐字一致，
+    # 不是因为默认值有缺陷。
+    $ownerCounts = [Collections.Generic.Dictionary[string, int]]::new([StringComparer]::Ordinal)
+    foreach ($policyRule in @($PolicyRules)) {
+        foreach ($policyIdentity in @($policyRule.testIdentities)) {
+            $identityText = [string]$policyIdentity
+            if ($ownerCounts.ContainsKey($identityText)) { $ownerCounts[$identityText] = [int]$ownerCounts[$identityText] + 1 }
+            else { $ownerCounts[$identityText] = 1 }
+        }
+    }
+    return @(
+        foreach ($manifestMember in @($ManifestMembers)) {
+            foreach ($manifestIdentity in @($manifestMember.expectedTestIdentities)) {
+                $identityText = [string]$manifestIdentity
+                $ownerCount = if ($ownerCounts.ContainsKey($identityText)) { [int]$ownerCounts[$identityText] } else { 0 }
+                if ($ownerCount -ne 1) { "$identityText (owned by $ownerCount evidence-policy rules)" }
+            }
+        }
+    )
+}
+
 function Assert-LaneOwnedDatabase([string]$SourcePath, [string]$InnerDatabaseFactory) {
     $source = [IO.File]::ReadAllText($SourcePath)
     if ($source.Contains($InnerDatabaseFactory, [StringComparison]::Ordinal)) {
@@ -871,6 +908,71 @@ try {
         }
     )
     Assert-Contract ($mutatedUncovered.Count -eq 1 -and [string]::Equals($mutatedUncovered[0], $mutatedIdentity, [StringComparison]::Ordinal)) 'Dropping a governed identity must be reported by the closure contract.'
+
+    # #3424 反向闭合。上面那条只管一个方向——「政策里的身份有没有落到 lane」。反方向没有任何本机
+    # 门禁，而反方向正是 #3129 栽的那一格：三条新 PostgreSQL 用例进了 manifest（本机 lane 门禁逼着
+    # 必须进），漏了 scripts/test-evidence-policy.json，本机全绿，直到 CI 收证阶段
+    # （scripts/collect-test-evidence.ps1:102）才报 `Runtime skip matched 0 applicable rules`。
+    # 这里不新建机制，只是把那条**已经存在的** fail-closed 判据挪到本机能跑的位置。
+    #
+    # ⚠️ CI 也**不一定**报得出来，别把「CI 会兜住」当理由。因果要写准（复审纠正，别读成 matcher 造成排除）：
+    #   1. 造成排除的是 backend-test-shards.json 里**人手写的** excludedTestClasses 条目；
+    #      run-backend-test-shard.ps1:63 把它拼成 `FullyQualifiedName!~<Class>.`，整个类不进这一轮执行。
+    #   2. Get-BackendTestShardPolicyIdentityMatches 的作用只是**让那条人写的排除保持合法**——
+    #      verify-backend-test-shards.ps1:962 判 `$covering.Count -eq 0`，同类里只要还有**一条**身份
+    #      在政策里，这条类级排除就算有据，不会被判红。
+    #   3. 于是漏登记的那条根本不产生 skipped 记录，TestEvidencePolicy.ps1:259 的 `matchedRules.Count -ne 1`
+    #      永远不会对它触发。
+    # 本契约落地时实测到 RecordSchedulePlanInvalidationsPostgresProfileTests 的两条身份就是这样在 main 上
+    # 长期漏网的（本 PR 一并补登记）。
+    #
+    # ⚠️ 覆盖边界，声明多少就只断言多少：本契约只覆盖**已进入 manifest 的** PostgreSQL 身份。
+    # 既不进 manifest 也不进政策的新用例不在覆盖面内；connector / performance-baseline 那几族
+    # env-gated skip 根本没有 manifest，完全在覆盖面之外。⛔ 不要读成「登记遗漏已经全关掉了」。
+    $unregisteredManifestIdentities = @(Get-NervUnregisteredManifestIdentity -ManifestMembers @($manifestDocument.members) -PolicyRules @($policyDocument.rules))
+    Assert-Contract ($unregisteredManifestIdentities.Count -eq 0) ("Every PostgreSQL lane manifest identity must be frozen by exactly one scripts/test-evidence-policy.json rule; an unowned runtime skip otherwise fails only at CI evidence collection. Registering one takes TWO fields on the same rule: add it to that rule's testIdentities AND raise the same rule's expectedRuntimeTestCount to match. Unregistered: " + ($unregisteredManifestIdentities -join ', '))
+    # 哨兵格：把一条 manifest 身份从政策里摘掉，反向闭合必须点名它、且只点名它。这一格验的是
+    # **鉴别力**——没有它，全绿有可能只是因为推导根本没跑起来。
+    $reverseMutatedIdentity = 'Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_release_gate_blocks_quality_blocked_and_allows_quality_released'
+    Assert-Contract ($manifestIdentities.Contains($reverseMutatedIdentity)) 'The reverse-closure mutation fixture must start from a manifest identity.'
+    $reverseMutatedRules = @(
+        foreach ($policyRule in @($policyDocument.rules)) {
+            [pscustomobject]@{
+                id = [string]$policyRule.id
+                testIdentities = @(@($policyRule.testIdentities) | Where-Object { -not [string]::Equals([string]$_, $reverseMutatedIdentity, [StringComparison]::Ordinal) })
+            }
+        }
+    )
+    $reverseMutatedUnregistered = @(Get-NervUnregisteredManifestIdentity -ManifestMembers @($manifestDocument.members) -PolicyRules $reverseMutatedRules)
+    Assert-Contract ($reverseMutatedUnregistered.Count -eq 1 -and ([string]$reverseMutatedUnregistered[0]).StartsWith($reverseMutatedIdentity, [StringComparison]::Ordinal)) 'Dropping a manifest identity from the evidence policy must be reported by the reverse-closure contract naming exactly that identity.'
+    # CONTROL（无害变异，验的是**跑法**不是鉴别力）：往政策里加一条 manifest 根本没冻结的身份，
+    # 反向闭合必须仍为零 —— 那个方向归上面的正向闭合管。⛔ 这一格恒绿不构成「守住了」，
+    # 它只证明本判据没有把「政策动了」误判成「登记漏了」。
+    $reverseControlRules = @(@($policyDocument.rules) + [pscustomobject]@{
+        id = 'reverse-closure-control'
+        testIdentities = @('Nerv.IIP.Contract.Control.ReverseClosureControlTests.Identity_that_no_manifest_member_freezes')
+    })
+    Assert-Contract (@(Get-NervUnregisteredManifestIdentity -ManifestMembers @($manifestDocument.members) -PolicyRules $reverseControlRules).Count -eq 0) 'A policy identity that no manifest member freezes must not be reported by the reverse-closure contract; that direction belongs to the forward closure.'
+    # 第二格哨兵：`owner >= 2` 也必须被点名。⭐ 少了这一格，把上面的 `-ne 1` 改成 `-lt 1`
+    # （只抓 0、放过 ≥2）是一个**存活变异**——复审的 M-X1 实测 EXIT=0。而函数注释白纸黑字写着
+    # 「0 与 ≥2 是两种不同的错」，于是断言声称覆盖两种、实际只钉住一种：
+    # 「护栏自称完备比有洞更坏」的标准形状。
+    #
+    # ⚠️ 且 `≥2` **不是不可达分支**（复审 M-X2 实测）：政策 schema 的身份唯一性只在**单条规则内**
+    # 校验（TestEvidencePolicy.ps1:143-144 的 $uniqueIdentities 是按 rule 算的），
+    # **跨规则重复零门禁**。而收证侧 Get-NervTestEvidenceViolations 判的是 `matchedRules.Count -ne 1`
+    # —— 一条身份被两条规则收走同样会在 CI 上判红，只是原因与漏登记完全相反。
+    $duplicateOwnedIdentity = 'Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_release_gate_blocks_quality_blocked_and_allows_quality_released'
+    Assert-Contract ($manifestIdentities.Contains($duplicateOwnedIdentity)) 'The duplicate-owner mutation fixture must start from a manifest identity.'
+    $duplicateOwnerRules = @(@($policyDocument.rules) + [pscustomobject]@{
+        id = 'reverse-closure-duplicate-owner'
+        testIdentities = @($duplicateOwnedIdentity)
+    })
+    $duplicateOwnerReported = @(Get-NervUnregisteredManifestIdentity -ManifestMembers @($manifestDocument.members) -PolicyRules $duplicateOwnerRules)
+    Assert-Contract ($duplicateOwnerReported.Count -eq 1 -and ([string]$duplicateOwnerReported[0]).StartsWith($duplicateOwnedIdentity, [StringComparison]::Ordinal)) 'A manifest identity frozen by two evidence-policy rules must be reported by the reverse-closure contract; the runtime matcher rejects it the same way it rejects an unowned skip.'
+    # 读数也要钉住，不只钉住"红了"：诊断必须说出**被几条**规则收走，否则 0 与 2 在失败消息里
+    # 长得一模一样，修的人会照着"漏登记"的方向去补一条，把 2 变成 3。
+    Assert-Contract (([string]$duplicateOwnerReported[0]).Contains('(owned by 2 evidence-policy rules)', [StringComparison]::Ordinal)) 'The duplicate-owner diagnostic must name the owner count so it cannot be mistaken for a missing registration.'
     # deferred 登记必须写明理由，且不得被 runner 选中执行。
     foreach ($deferredMember in @($manifestDocument.members | Where-Object { [string]::Equals([string]$_.status, 'deferred', [StringComparison]::Ordinal) })) {
         Assert-Contract (-not [string]::IsNullOrWhiteSpace([string]$deferredMember.deferredReason)) "Deferred member '$($deferredMember.id)' must record why it cannot join the lane."
