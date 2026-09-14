@@ -281,7 +281,7 @@
       "id": "fullchain-ncr-rework-cost",
       "sourcePath": "backend/tests/Nerv.IIP.Business.FullChain.Tests/NcrReworkCostClosurePostgresRedisAcceptanceTests.cs",
       "sourceOrdinal": 1,
-      "sourceReasonPattern": "^Skip = \"Set the MAN-2813 PostgreSQL, Redis, seven service URLs, and internal token variables to run the public NCR rework cost closure probe\\.\";$"
+      "sourceReasonPattern": "^Skip = \"Set the MAN-2813 PostgreSQL, Redis, nine service URLs, and internal token variables to run the public NCR rework cost closure probe\\.\";$"
     },
     {
       "id": "fullchain-erp-wms",
@@ -592,7 +592,7 @@
       "sourceId": "fullchain-ncr-rework-cost",
       "classification": "environment-gated",
       "testPattern": "^Nerv\\.IIP\\.Business\\.FullChain\\.Tests\\.NcrReworkCostClosurePostgresRedisAcceptanceTests\\..+$",
-      "reasonPattern": "^Set the MAN-2813 PostgreSQL, Redis, seven service URLs, and internal token variables to run the public NCR rework cost closure probe\\.$",
+      "reasonPattern": "^Set the MAN-2813 PostgreSQL, Redis, nine service URLs, and internal token variables to run the public NCR rework cost closure probe\\.$",
       "allowedLanes": [
         "backend"
       ],

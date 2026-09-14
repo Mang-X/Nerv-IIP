@@ -391,7 +391,7 @@ function Assert-NervFullChainMemberEvidence {
         }
         elseif ([string]::Equals([string]$Member.id, 'ncr-rework-cost-closure', [StringComparison]::Ordinal)) {
             if (-not (Test-NervFullChainEvidenceProperty -Object $evidence -Name 'cleanup')) { throw "FullChain member '$($Member.id)' cleanup evidence is missing required 'cleanup' object." }
-            foreach ($name in @('managedProcessRemaining', 'exactDatabaseRemaining', 'ownedRedisKeyRemaining', 'ownedComposeServiceRemaining', 'foreignRedisSentinelRemaining')) {
+            foreach ($name in @('managedProcessRemaining', 'exactDatabaseRemaining', 'ownedRedisKeyRemaining', 'ownedComposeServiceRemaining', 'ownedFileStorageRootRemaining', 'foreignRedisSentinelRemaining')) {
                 Assert-NervFullChainZeroReadback -Object $evidence.cleanup -Name $name -MemberId ([string]$Member.id)
             }
             if (-not (Test-NervFullChainEvidenceProperty -Object $evidence.cleanup -Name 'foreignRedisSentinelPreserved') -or

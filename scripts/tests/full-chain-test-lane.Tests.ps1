@@ -1200,6 +1200,7 @@ try {
             exactDatabaseRemaining = 0
             ownedRedisKeyRemaining = 0
             ownedComposeServiceRemaining = 0
+            ownedFileStorageRootRemaining = 0
             foreignRedisSentinelPreserved = $true
             foreignRedisSentinelRemaining = 0
             errors = @()
@@ -1211,7 +1212,7 @@ try {
         [string]::Equals([string]$verifiedNcrEvidence.cleanup, 'passed', [StringComparison]::Ordinal) -and
         [string]::Equals([string]$verifiedNcrEvidence.diagnosticEvidence, 'entrypoint-evidence-verified', [StringComparison]::Ordinal)
     ) 'Zero NCR process, database, compose-service, and error readbacks must satisfy cleanup evidence.'
-    foreach ($readbackName in @('managedProcessRemaining', 'exactDatabaseRemaining', 'ownedRedisKeyRemaining', 'ownedComposeServiceRemaining', 'foreignRedisSentinelRemaining')) {
+    foreach ($readbackName in @('managedProcessRemaining', 'exactDatabaseRemaining', 'ownedRedisKeyRemaining', 'ownedComposeServiceRemaining', 'ownedFileStorageRootRemaining', 'foreignRedisSentinelRemaining')) {
         $ncrCleanupMutation = ($ncrCleanupFixture | ConvertTo-Json -Depth 10 | ConvertFrom-Json -Depth 10)
         $ncrCleanupMutation.cleanup.$readbackName = 1
         [IO.File]::WriteAllText($memberEvidencePath, (($ncrCleanupMutation | ConvertTo-Json -Depth 10) + "`n"), [Text.UTF8Encoding]::new($false))

@@ -109,10 +109,9 @@ $discoveryTimeoutSeconds = 600
 $fullstackEntrypointTimeoutSeconds = 1200
 $scriptEntrypointTimeoutSeconds = 900
 $dotnetEntrypointTimeoutSeconds = 600
-# #3135：residual 覆盖跑（本项目里不属于任何冻结成员的全部用例）。实测 16 条 ≈ 1m30s（7 条
-# Docker 生命周期 1m15s + 1 条公开 HTTP 链路 11s + 8 条纯进程内 0.6s），900s 预留留足 CI 余量。
-# 预算算术：4800（5 个成员）+ 900（residual）+ 300 cleanup + 300 guard = 6300s < 7200s（
-# `Run governed FullChain scenarios` 的 120 分钟 step 预算），因此不新增 step、不动 tier A 不变量。
+# #3135：residual 覆盖跑执行项目发现全集减去 manifest 冻结成员后的动态差集；用例数量不在这里冻结。
+# residual 与每个 manifest 成员都在执行前按已耗时、各自 timeout、cleanup reserve 和 guard reserve
+# 对 workflow step 的剩余预算做 admission，因此 manifest 增删不依赖一份手算总数，也不改变 tier A 预算。
 $residualTimeoutSeconds = 900
 $cleanupTimeoutSeconds = 300
 $timeoutGuardSeconds = 300
