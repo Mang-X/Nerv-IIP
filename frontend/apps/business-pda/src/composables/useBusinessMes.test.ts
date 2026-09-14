@@ -21,7 +21,7 @@ import {
   recordBusinessConsoleMesProductionReportMutationOptions,
   startBusinessConsoleMesOperationTaskMutationOptions,
 } from '@nerv-iip/api-client'
-import { acquirePendingBusinessIntent } from '@nerv-iip/business-core'
+import { acquirePendingBusinessIntent, clearPendingBusinessIntent } from '@nerv-iip/business-core'
 
 import {
   MES_WORK_SCOPE_UNAVAILABLE_MESSAGE,
@@ -296,6 +296,10 @@ describe('pda useBusinessMes composables', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    for (const intent of JSON.parse(
+      sessionStorage.getItem('nerv-iip.pending-business-intents.v1') ?? '[]',
+    ))
+      clearPendingBusinessIntent(intent)
     sessionStorage.clear()
     receiptState.confirm.mockImplementation(async (value) => value)
     lineSideInventoryFetch.mockReset().mockResolvedValue({
@@ -2192,6 +2196,51 @@ describe('pda useBusinessMes composables', () => {
     await recordReport({ ...input, idempotencyKey: 'labels-retry' })
     expect(mutate.mock.calls[1][0].body).toEqual(mutate.mock.calls[0][0].body)
   })
+
+  it('marks an initial preflight failure as not accepted and permits a corrected new intent', async () => {
+    const { recordReport } = useMesProductionReports()
+    const mutate = coladaState.mutateById.get('recordBusinessConsoleMesProductionReport')!
+    vi.mocked(listBusinessConsoleMesReportableOperationTasks).mockRejectedValueOnce(
+      new TypeError('preflight unavailable'),
+    )
+    const input = {
+      workOrderId: 'wo-preflight-rejected',
+      operationTaskId: 'ot-preflight-rejected',
+      goodQuantity: 2,
+      scrapQuantity: 0,
+      completesOperation: false,
+      idempotencyKey: 'not-dispatched',
+    }
+    await expect(recordReport(input)).rejects.toMatchObject({ reportNotAccepted: true })
+    expect(mutate).not.toHaveBeenCalled()
+    await recordReport({ ...input, idempotencyKey: 'corrected-new-key' })
+    expect(mutate.mock.calls[0][0].body.idempotencyKey).toBe('corrected-new-key')
+  })
+
+  it.each(['unknown', 'accepted'])(
+    'retains the %s original wire intent when its retry receives 400',
+    async (state) => {
+      const { recordReport } = useMesProductionReports()
+      const mutate = coladaState.mutateById.get('recordBusinessConsoleMesProductionReport')!
+      if (state === 'unknown') mutate.mockRejectedValueOnce(new TypeError('response lost'))
+      else
+        mutate.mockResolvedValueOnce({ success: true, data: { printingPreparationPending: true } })
+      mutate.mockRejectedValueOnce({ status: 400, message: '标签模板已停用' })
+      const input = {
+        workOrderId: `wo-retain-${state}`,
+        operationTaskId: `ot-retain-${state}`,
+        goodQuantity: 2,
+        scrapQuantity: 0,
+        completesOperation: false,
+        idempotencyKey: 'original-possibly-accepted',
+      }
+      if (state === 'unknown') await expect(recordReport(input)).rejects.toThrow('response lost')
+      else await recordReport(input)
+      await expect(recordReport(input)).rejects.toMatchObject({ status: 400 })
+      await recordReport({ ...input, idempotencyKey: 'must-not-replace-original' })
+      expect(mutate.mock.calls[2][0].body).toEqual(mutate.mock.calls[0][0].body)
+    },
+  )
 
   it('does not release the frozen wire intent when a dispatched report response arrives after navigation', async () => {
     const { recordReport } = useMesProductionReports()

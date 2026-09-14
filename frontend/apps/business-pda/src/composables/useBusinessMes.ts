@@ -1780,7 +1780,13 @@ export function useMesProductionReports(workOrderId?: Readonly<Ref<string>>) {
           throw new Error('当前工序不可报工，服务端未开放 report 动作。')
         }
       } catch (error) {
-        if (!isReplay) clearPendingBusinessIntent(scope)
+        if (!isReplay) {
+          assertCurrent()
+          clearPendingBusinessIntent(scope)
+          throw Object.assign(error instanceof Object ? error : new Error(String(error)), {
+            reportNotAccepted: true,
+          })
+        }
         throw error
       }
       const frozenPayload =
@@ -1810,7 +1816,13 @@ export function useMesProductionReports(workOrderId?: Readonly<Ref<string>>) {
         if (!result?.data?.printingPreparationPending) clearPendingBusinessIntent(scope)
         return result
       } catch (error) {
-        if (!shouldRetainPendingBusinessIntent(error)) clearPendingBusinessIntent(scope)
+        if (!isReplay && !shouldRetainPendingBusinessIntent(error)) {
+          assertCurrent()
+          clearPendingBusinessIntent(scope)
+          throw Object.assign(error instanceof Object ? error : new Error(String(error)), {
+            reportNotAccepted: true,
+          })
+        }
         throw error
       }
     },

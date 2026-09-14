@@ -36,6 +36,7 @@ import ProductionReportMaterialLots from '@/components/mes/ProductionReportMater
 import ProductionReportScrapReasonField from '@/components/mes/ProductionReportScrapReasonField.vue'
 import ProductionReportSerialResult from '@/components/mes/ProductionReportSerialResult.vue'
 import ProductionReportSerialFields from '@/components/mes/ProductionReportSerialFields.vue'
+import ProductionReportOccupiedNotice from '@/components/mes/ProductionReportOccupiedNotice.vue'
 import { useProductionReportSerials } from '@/composables/mes/useProductionReportSerials'
 import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
 import ListScopeMeta from '@/components/ListScopeMeta.vue'
@@ -510,16 +511,11 @@ async function onScanAccepted(value: MesScanAccepted) {
       </div>
     </template>
 
-    <div
+    <ProductionReportOccupiedNotice
       v-if="conflictingPreparation && !sheetOpen"
-      role="alert"
-      class="m-4 space-y-2 rounded-lg border border-border bg-card p-3 text-sm"
-    >
-      <p>上一笔报工尚未核验或标签准备尚未完成，请先处理原报工，再提交新产量。</p>
-      <NvMobileButton data-testid="return-to-preparation" block @click="returnToPreparation"
-        >返回原报工处理</NvMobileButton
-      >
-    </div>
+      class="m-4"
+      @return="returnToPreparation"
+    />
     <!-- 报工结果反馈 -->
     <NvMobileResult
       v-if="result"
@@ -565,9 +561,9 @@ async function onScanAccepted(value: MesScanAccepted) {
           type="button"
           data-testid="retry-report"
           class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground"
-          @click="submit"
+          @click="result.notAccepted ? deleteCurrentIntent() : submit()"
         >
-          重试
+          {{ result.notAccepted ? '修改后重新报工' : '重试' }}
         </button>
         <button
           type="button"
@@ -950,17 +946,11 @@ async function onScanAccepted(value: MesScanAccepted) {
           {{ scrapReasonValidationMessage }}
         </p>
 
-        <div
+        <ProductionReportOccupiedNotice
           v-if="conflictingPreparation"
           data-testid="occupied-report"
-          role="alert"
-          class="space-y-2 rounded-lg border border-border bg-card p-3 text-sm"
-        >
-          <p>上一笔报工尚未核验或标签准备尚未完成，请先处理原报工，再提交新产量。</p>
-          <NvMobileButton data-testid="return-to-preparation" block @click="returnToPreparation"
-            >返回原报工处理</NvMobileButton
-          >
-        </div>
+          @return="returnToPreparation"
+        />
         <button
           type="button"
           data-testid="submit-report"

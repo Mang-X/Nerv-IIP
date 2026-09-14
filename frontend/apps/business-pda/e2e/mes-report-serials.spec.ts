@@ -147,7 +147,7 @@ test('完工报工刷新后只恢复原标签准备，不重新开放新报工',
   await expect(page.getByTestId('submit-report')).toHaveCount(0)
 })
 
-test('独立工单 A 占用时 B 可查看但零提交，只有 A 收敛后 B 才开始新意图', async ({ page }) => {
+async function independentOrders(page: Page) {
   const tasks = [
     mesOperationTasks[0],
     {
@@ -158,7 +158,6 @@ test('独立工单 A 占用时 B 可查看但零提交，只有 A 收敛后 B �
     },
   ]
   const orders = [mesWorkOrders[0], { ...mesWorkOrders[0], workOrderId: 'WO-INDEPENDENT' }]
-  const writes: Record<string, unknown>[] = []
   await page.route(/\/mes\/work-orders(?:\?|$)/, (route) =>
     route.fulfill({ json: { success: true, data: { items: orders, total: 2 } } }),
   )
@@ -185,6 +184,82 @@ test('独立工单 A 占用时 B 可查看但零提交，只有 A 收敛后 B �
     )
     return route.fulfill({ json: { success: true, data: { items, total: items.length } } })
   })
+}
+
+for (const reload of [false, true]) {
+  test(`首次确定 400 释放占用，${reload ? '刷新后' : '当页纠正后'} A/B 可重新报工`, async ({
+    page,
+  }) => {
+    await independentOrders(page)
+    const writes: Record<string, unknown>[] = []
+    await page.route('**/mes/production-reports', (route) => {
+      const body = route.request().postDataJSON()
+      writes.push(body)
+      if (writes.length === 1)
+        return route.fulfill({
+          status: 400,
+          json: { success: false, message: '标签模板已停用，请选择可用模板。' },
+        })
+      const response = receipt(body)
+      if (body.workOrderId === 'WO-INDEPENDENT') {
+        response.data.productionReportId = 'report-b'
+        response.data.reportNo = 'RPT-B'
+        response.data.operationReceipt = productionReportReceipt(
+          'report-b',
+          String(body.idempotencyKey),
+        )
+      }
+      return route.fulfill({ json: response })
+    })
+    await page.route('**/mes/production-reports/RPT-B?**', (route) =>
+      route.fulfill({
+        json: {
+          success: true,
+          data: {
+            report: {
+              reportNo: 'RPT-B',
+              productionReportId: 'report-b',
+              workOrderId: 'WO-INDEPENDENT',
+              operationTaskId: 'OP-NEW',
+            },
+          },
+        },
+      }),
+    )
+    await page.goto('/mes/report?workOrderId=WO-1&operationTaskId=OP-1')
+    await enterGood(page, '2')
+    await selectTemplate(page)
+    await page.getByTestId('submit-report').tap()
+    await expect(page.getByText('标签模板已停用，请选择可用模板。', { exact: true })).toBeVisible()
+    expect(writes).toHaveLength(1)
+    if (reload) await page.reload()
+    else await page.getByRole('button', { name: '修改后重新报工', exact: true }).tap()
+    await expect(page.getByTestId('good-quantity')).toBeVisible()
+    expect(writes).toHaveLength(1)
+    await page.goto('/mes/report?workOrderId=WO-INDEPENDENT&operationTaskId=OP-NEW')
+    await enterGood(page, '2')
+    await selectTemplate(page)
+    await expect(page.getByTestId('occupied-report')).toHaveCount(0)
+    await expect(page.getByTestId('submit-report')).toBeEnabled()
+    await page.getByTestId('submit-report').tap()
+    await expect(page.getByRole('heading', { name: '报工成功' })).toBeVisible()
+    expect(writes).toHaveLength(2)
+    expect(writes[1].workOrderId).toBe('WO-INDEPENDENT')
+    expect(writes[1].idempotencyKey).not.toBe(writes[0].idempotencyKey)
+    await page.goto('/mes/report?workOrderId=WO-1&operationTaskId=OP-1')
+    await enterGood(page, '2')
+    await selectTemplate(page)
+    await page.getByTestId('submit-report').tap()
+    await expect(page.getByRole('heading', { name: '报工成功' })).toBeVisible()
+    expect(writes).toHaveLength(3)
+    expect(writes[2].workOrderId).toBe('WO-1')
+    expect(writes[2].idempotencyKey).not.toBe(writes[0].idempotencyKey)
+  })
+}
+
+test('独立工单 A 占用时 B 可查看但零提交，只有 A 收敛后 B 才开始新意图', async ({ page }) => {
+  await independentOrders(page)
+  const writes: Record<string, unknown>[] = []
   await page.route('**/mes/production-reports', (route) => {
     const body = route.request().postDataJSON()
     writes.push(body)

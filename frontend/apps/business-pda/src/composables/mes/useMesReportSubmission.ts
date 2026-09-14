@@ -16,6 +16,7 @@ import { mesReportIntentScope } from './mesReportIntent'
 
 export type MesReportResult = {
   status: 'success' | 'error'
+  notAccepted?: boolean
   title: string
   description?: string
   preparationError?: string
@@ -413,15 +414,24 @@ export function useMesReportSubmission(options: MesReportSubmissionOptions) {
         savePreparation(intent)
         return
       }
+      const notAccepted =
+        !intent.receipt && (error as { reportNotAccepted?: boolean })?.reportNotAccepted === true
+      if (notAccepted) releasePreparation(intent)
       if (await options.recoverLifecycleAction(error)) return
+      if (!isCurrent()) return
       intent.status = 'error'
       intent.result = {
         status: 'error',
-        title: intent.receipt ? '报工已受理，待核验' : '报工结果待核实',
+        notAccepted,
+        title: notAccepted
+          ? '报工未提交'
+          : intent.receipt
+            ? '报工已受理，待核验'
+            : '报工结果待核实',
         description: describeRequestError(error, '请检查网络后重试。').message,
         receipt: intent.receipt ?? undefined,
       }
-      savePreparation(intent)
+      if (!notAccepted) savePreparation(intent)
     } finally {
       inFlight.delete(intent.owner)
       slotRevision.value += 1
