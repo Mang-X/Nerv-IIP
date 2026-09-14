@@ -47,10 +47,17 @@ namespace Nerv.IIP.Messaging.CAP.Tests;
 /// 夹具不会主动置位它们。</description></item>
 /// </list>
 ///
-/// <para>⚠️ 全组只有两处由用例发出的取消，都与被观察对象隔开，且都在断言之后或之外：
-/// ① <c>TransportCheckProcessor</c> 自己那次 30 秒 <c>WaitAsync</c> 用的 <see cref="ProcessingContext"/> token
-/// （恢复完成<b>之后</b>才取消）；② <see cref="ProbeConsumerClientFactory.ReleaseEverything"/> 的收尾兜底
-/// （只在 <see cref="CapProbeHost.DisposeAsync"/> 里、所有断言跑完之后）。</para>
+/// <para>⚠️ <b>上面四条的适用范围是走 <see cref="CapProbeHost"/> 的那组真宿主用例</b>。那组里由用例发出的取消
+/// 只有两处，都与被观察对象隔开、且在断言之后或之外：① <c>TransportCheckProcessor</c> 自己那次 30 秒
+/// <c>WaitAsync</c> 用的 <see cref="ProcessingContext"/> token（恢复完成<b>之后</b>才取消）；
+/// ② <see cref="ProbeConsumerClientFactory.ReleaseEverything"/> 的收尾兜底（只在
+/// <see cref="CapProbeHost.DisposeAsync"/> 里、所有断言跑完之后）。</para>
+///
+/// <para>本文件另有两条<b>直接构造装饰器</b>的单元用例
+/// （<see cref="Stop_signal_alone_ends_listening_even_when_the_caller_token_stays_live"/> 与
+/// <see cref="Caller_token_still_ends_listening_when_a_stop_signal_is_present"/>），它们<b>确实</b>由用例取消 token
+/// ——但那两条的被测命题就是「这次取消传不传得到 inner」，取消是<b>自变量</b>而不是伪因果；
+/// 它们也完全不经过 <c>ConsumerRegister</c> / <c>Bootstrapper</c>。</para>
 /// </summary>
 public sealed class ConsumerRecoveryFinalStopTests
 {
