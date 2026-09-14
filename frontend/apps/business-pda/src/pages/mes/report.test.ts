@@ -470,6 +470,62 @@ describe('PDA MES production reporting page', () => {
     expect(recordReport.mock.calls[1][0]).toEqual(recordReport.mock.calls[0][0])
   })
 
+  it('keeps confirmed reporting successful while label preparation retry is pending or fails', async () => {
+    serialRequired.value = true
+    serialTemplateId.value = 'tpl-1'
+    route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-1' }
+    recordReport.mockResolvedValueOnce({
+      success: true,
+      data: {
+        ...successfulReceipt.data,
+        serialNumbers: ['SN-001'],
+        printBatchId: 'batch-1',
+        printStatus: 'reserved',
+        printingPreparationPending: true,
+      },
+    })
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    await flushPromises()
+    const input = document.body.querySelector<HTMLInputElement>('[data-testid="good-quantity"]')!
+    input.value = '1'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    document.body.querySelector<HTMLButtonElement>('[data-testid="submit-report"]')!.click()
+    await flushPromises()
+    expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
+    let rejectRetry!: (error: Error) => void
+    recordReport.mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          rejectRetry = reject
+        }),
+    )
+    await wrapper.get('[data-testid="retry-label-preparation"]').trigger('click')
+    expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
+    rejectRetry(new Error('标签准备服务暂不可用，请稍后重试。'))
+    await flushPromises()
+    expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('报工成功')
+    expect(wrapper.text()).toContain('SN-001')
+    expect(wrapper.text()).toContain('RPT-DEFAULT')
+    expect(wrapper.text()).not.toContain('报工已受理，待核验')
+    expect(wrapper.get('[data-testid="label-preparation-error"]').text()).toContain(
+      '标签准备服务暂不可用',
+    )
+    expect(recordReport.mock.calls[1][0]).toEqual(recordReport.mock.calls[0][0])
+    confirmReport.mockRejectedValueOnce(new Error('标签准备结果核对暂不可用，请重试。'))
+    await wrapper.get('[data-testid="retry-label-preparation"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="label-preparation-error"]').text()).toContain(
+      '标签准备结果核对暂不可用',
+    )
+    await wrapper.get('[data-testid="retry-label-preparation"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="label-preparation-error"]').exists()).toBe(false)
+    expect(recordReport.mock.calls[2][0]).toEqual(recordReport.mock.calls[0][0])
+  })
+
   it('starts on the select-work-order step listing work orders', () => {
     const wrapper = mount(ReportPage)
     // ScanBar 可见用于扫工单

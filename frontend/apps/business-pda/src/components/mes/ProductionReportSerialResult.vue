@@ -64,7 +64,7 @@ async function refreshStatus() {
 }
 const printMessage = computed(() => {
   if (props.receipt.printingPreparationPending)
-    return '报工已成功，标签准备尚未完成。请重试准备，系统会沿用本次报工和号码。'
+    return '报工已成功，标签准备尚未完成。请重试准备，系统会沿用本次报工和号码；准备完成后方可继续新报工。'
   if (status.value === 'sent-to-printer') return '已发送至打印机，请到现场核对出纸。'
   if (status.value === 'failed')
     return '打印发送失败，请联系现场打印负责人处理本批标签，勿重复报工。'

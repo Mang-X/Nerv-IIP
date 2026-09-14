@@ -439,6 +439,7 @@ const lifecycleRecovery = useLifecycleActionRecovery({
 })
 
 function continueReport() {
+  if (submitting.value || result.value?.receipt?.printingPreparationPending) return
   deleteCurrentIntent()
   backToWorkOrders()
 }
@@ -520,11 +521,20 @@ async function onScanAccepted(value: MesScanAccepted) {
           @click="submit"
           >重试标签准备</NvMobileButton
         >
+        <p
+          v-if="result.preparationError"
+          data-testid="label-preparation-error"
+          role="alert"
+          class="text-sm text-destructive"
+        >
+          标签准备未完成：{{ result.preparationError }} 本次报工已成功，请沿用原报工重试准备。
+        </p>
         <button
           v-if="result.status === 'success'"
           type="button"
           data-testid="continue-report"
-          class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground"
+          :disabled="submitting || result.receipt?.printingPreparationPending"
+          class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground disabled:opacity-60"
           @click="continueReport"
         >
           继续报工

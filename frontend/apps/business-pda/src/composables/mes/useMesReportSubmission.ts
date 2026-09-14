@@ -12,6 +12,7 @@ export type MesReportResult = {
   status: 'success' | 'error'
   title: string
   description?: string
+  preparationError?: string
   receipt?: BusinessConsoleRecordProductionReportResponse
 }
 
@@ -108,7 +109,7 @@ export function useMesReportSubmission(options: MesReportSubmissionOptions) {
   )
 
   watch(
-    () => currentIntent.value?.status,
+    () => currentIntent.value?.result?.status,
     (status) => {
       options.flowContext.recorded = status === 'success'
     },
@@ -138,9 +139,10 @@ export function useMesReportSubmission(options: MesReportSubmissionOptions) {
     }
     const key = `${reportContextKey(executionContext)}\u0000${workOrderId}\u0000${operationTaskId}`
     let intent = intents.get(key)
+    const confirmedResult = intent?.result?.status === 'success' ? intent.result : null
     if (
       intent?.status === 'pending' ||
-      (intent?.status === 'success' && !intent.receipt?.printingPreparationPending)
+      (intent?.status === 'success' && !intent.result?.receipt?.printingPreparationPending)
     )
       return
     if (!intent) {
@@ -179,7 +181,7 @@ export function useMesReportSubmission(options: MesReportSubmissionOptions) {
     } else {
       intent.attempt = Symbol('mes-report-retry')
       intent.status = 'pending'
-      intent.result = null
+      intent.result = confirmedResult ? { ...confirmedResult, preparationError: undefined } : null
     }
     options.flowContext.quantityEntered = true
     const attempt = intent.attempt
@@ -229,6 +231,14 @@ export function useMesReportSubmission(options: MesReportSubmissionOptions) {
       }
     } catch (error) {
       if (intent.attempt !== attempt) return
+      if (confirmedResult) {
+        intent.status = 'success'
+        intent.result = {
+          ...confirmedResult,
+          preparationError: describeRequestError(error, '标签准备暂未完成，请稍后重试。').message,
+        }
+        return
+      }
       if (await options.recoverLifecycleAction(error)) return
       intent.status = 'error'
       intent.result = {

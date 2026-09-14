@@ -170,3 +170,80 @@ test('模板不可用与权限失败给出可执行反馈并阻断报工', async
   await expect(page.getByText('没有可用标签模板，请联系标签管理员启用模板后重试。')).toBeVisible()
   await expect(page.getByTestId('submit-report')).toBeDisabled()
 })
+
+test('标签准备收敛前不开始新报工，失败仍保留成功，收敛后同产量使用新意图', async ({ page }) => {
+  const writes: Record<string, unknown>[] = []
+  await page.route('**/mes/production-reports', (route) => {
+    const body = route.request().postDataJSON()
+    writes.push(body)
+    if (writes.length === 2) return route.abort('failed')
+    const response = receipt(
+      body,
+      writes.length === 1 ? 'reserved' : 'sent-to-printer',
+      writes.length === 1,
+    )
+    if (writes.length === 4) {
+      response.data.productionReportId = 'report-next'
+      response.data.reportNo = 'RPT-NEXT'
+      response.data.serialNumbers = ['SN-0003', 'SN-0004']
+      response.data.operationReceipt = productionReportReceipt(
+        'report-next',
+        String(body.idempotencyKey),
+      )
+    }
+    return route.fulfill({ json: response })
+  })
+  await page.route('**/mes/production-reports/RPT-NEXT?**', (route) =>
+    route.fulfill({
+      json: {
+        success: true,
+        data: {
+          report: {
+            productionReportId: 'report-next',
+            reportNo: 'RPT-NEXT',
+            workOrderId: 'WO-1',
+            operationTaskId: 'OP-1',
+          },
+        },
+      },
+    }),
+  )
+  await page.goto('/mes/report?workOrderId=WO-1&operationTaskId=OP-1')
+  await expect(page.getByText('待分配序列号：0 个')).toBeVisible()
+  await enterGood(page, '2')
+  await selectTemplate(page)
+  await page.getByTestId('submit-report').tap()
+  await expect(page.getByRole('heading', { name: '报工成功' })).toBeVisible()
+  await expect(page.getByTestId('continue-report')).toBeDisabled()
+  await page.getByTestId('retry-label-preparation').tap()
+  await expect(page.getByTestId('label-preparation-error')).toBeVisible()
+  await expect(page.getByRole('heading', { name: '报工成功' })).toBeVisible()
+  await expect(page.getByTestId('continue-report')).toBeDisabled()
+  await expect(page.getByRole('list', { name: '本次全部序列号' }).getByRole('listitem')).toHaveText(
+    ['SN-0001', 'SN-0002'],
+  )
+  await page.getByTestId('retry-label-preparation').tap()
+  await expect(page.getByTestId('continue-report')).toBeEnabled()
+  expect(writes).toHaveLength(3)
+  expect(writes[1]).toEqual(writes[0])
+  expect(writes[2]).toEqual(writes[0])
+  await page.getByTestId('continue-report').tap()
+  await page.getByRole('button', { name: /^WO-1 已下达/ }).tap()
+  await page.getByRole('button', { name: /WO-1 · 工序 10/ }).tap()
+  await expect(page.getByText('待分配序列号：0 个')).toBeVisible()
+  await enterGood(page, '2')
+  await selectTemplate(page)
+  await page.getByTestId('submit-report').tap()
+  await expect(page.getByRole('heading', { name: '报工成功' })).toBeVisible()
+  await expect(page.getByRole('list', { name: '本次全部序列号' }).getByRole('listitem')).toHaveText(
+    ['SN-0003', 'SN-0004'],
+  )
+  expect(writes).toHaveLength(4)
+  expect(writes[3].idempotencyKey).not.toBe(writes[0].idempotencyKey)
+  expect(writes[3]).toMatchObject({
+    workOrderId: 'WO-1',
+    operationTaskId: 'OP-1',
+    goodQuantity: 2,
+    labelTemplateId: 'tpl-1',
+  })
+})
