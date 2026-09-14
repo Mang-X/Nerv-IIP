@@ -4,7 +4,7 @@
 #     - Creates a temporary backend inventory mirror with mutation projects
 #     - Creates a temporary C# Docker-lookalike fixture inside an existing backend test project
 #   Writes:
-#     - OS temporary directory: backend inventory, workflow, manifest, policy, shard TRX, aggregated selector TRX and timing-cache fixtures (temporarily)
+#     - OS temporary directory: backend inventory, workflow, manifest, policy, shard TRX, aggregated selector TRX, class-exclusion coverage and timing-cache fixtures (temporarily)
 #     - OS temporary directory: a PATH dotnet shim, its launcher, manifest and TRX fixtures for the real-PostgreSQL verifier (temporarily)
 #     - artifacts/real-postgres-tests/Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests/** shim TRX evidence (temporarily)
 #     - backend/tests/Nerv.IIP.Testing.Tests/TemporaryDockerLookalikes-*.cs (temporarily)
@@ -196,6 +196,7 @@ function Invoke-InventorySourceMutation {
             -ProjectOwners $ManifestPolicy.ProjectOwners `
             -AmbiguousProjectOwners $ManifestPolicy.AmbiguousProjectOwners `
             -ExcludedClassSelectorsByFastShard $ManifestPolicy.ExcludedClassSelectorsByFastShard `
+            -RealDependencyRules @($ManifestPolicy.RealDependencyRules) `
             -HeavyLaneIdSet $ManifestPolicy.HeavyLaneIdSet
     }
 }
@@ -903,6 +904,33 @@ $demandPlanningOwnedMethods = @(
 Assert-Contract (-not $businessCoreBExcludedClasses.Contains($demandPlanningClass)) 'The mixed DemandPlanning consumer class must not be excluded wholesale; its four ordinary facts belong to the fast shard.'
 Assert-Contract (@($demandPlanningOwnedMethods | Where-Object { -not $businessCoreBExcludedTests.Contains($_) }).Count -eq 0) 'The three PostgreSQL and two Redis/CAP DemandPlanning methods must be handed to their heavy lanes individually.'
 Assert-Contract ([string]::Equals([string](((Get-NervStringsSorted -Values @($businessCoreBShard.excludedTestLanes) -Comparer ([StringComparer]::Ordinal)) -join '|')), 'real-postgres|redis-cap', [StringComparison]::Ordinal)) 'Business Core B exclusions must derive exactly the PostgreSQL and Redis/CAP heavy owners.'
+
+# #3444：三个**混合类**从类级排除收窄到方法级。它们各自只有一条 env-gated 真库用例被 MAN-661 登记，
+# 其余 21 条是裸 [Fact]/[Theory]；类级排除把这 21 条一起从 fast shard 里过滤掉，而它们不在任何
+# heavy lane 的 filter 里，也不留 skipped 记录。选择器**总数不变**（3 条类级换 3 条方法级），
+# 所以上面那条 87 的断言不动——这三条断言钉的是形状，不是数量。
+$classExclusionNarrowedToMethod = @{
+    'business-gateway' = @(
+        @{ Class = 'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceIntegrationEventHandlerTests'
+           Method = 'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceIntegrationEventHandlerTests.Device_disabled_consumer_durably_blocks_pm_generation_on_postgres' }
+    )
+    'business-core-a' = @(
+        @{ Class = 'Nerv.IIP.Business.Quality.Web.Tests.QualityCalibrationRecordQueryTests'
+           Method = 'Nerv.IIP.Business.Quality.Web.Tests.QualityCalibrationRecordQueryTests.Calibration_records_are_filtered_ordered_and_scoped_on_postgres' },
+        @{ Class = 'Nerv.IIP.Business.Quality.Web.Tests.QualitySpcAnalysisTests'
+           Method = 'Nerv.IIP.Business.Quality.Web.Tests.QualitySpcAnalysisTests.Postgres_spc_point_projection_materializes_latest_points_without_client_translation' }
+    )
+}
+foreach ($narrowedShardId in @($classExclusionNarrowedToMethod.Keys)) {
+    $narrowedShard = @($fastShards | Where-Object { [string]::Equals([string]($_.id), [string]($narrowedShardId), [StringComparison]::Ordinal) })
+    Assert-Contract ($narrowedShard.Count -eq 1) "Fast shard '$narrowedShardId' must be defined exactly once."
+    $narrowedClasses = [Collections.Generic.HashSet[string]]::new([string[]]@($narrowedShard[0].excludedTestClasses), [StringComparer]::Ordinal)
+    $narrowedMethods = [Collections.Generic.HashSet[string]]::new([string[]]@($narrowedShard[0].excludedTests), [StringComparer]::Ordinal)
+    foreach ($narrowedEntry in @($classExclusionNarrowedToMethod[$narrowedShardId])) {
+        Assert-Contract (-not $narrowedClasses.Contains([string] $narrowedEntry.Class)) "The mixed class '$($narrowedEntry.Class)' must not be excluded wholesale; its bare [Fact]/[Theory] cases belong to the fast shard."
+        Assert-Contract ($narrowedMethods.Contains([string] $narrowedEntry.Method)) "The environment-gated case '$($narrowedEntry.Method)' must be handed to its heavy lane as a method selector."
+    }
+}
 Assert-Contract (Test-Path -LiteralPath $diagnosticsPath) 'Timeout diagnostics must use a separately testable helper, not a production command bypass.'
 Assert-Contract (Test-Path -LiteralPath $selectorAssertionsPath) 'Real PostgreSQL selector discovery and execution checks must be separately testable.'
 . $diagnosticsPath
@@ -3129,13 +3157,228 @@ finally {
 }
 Assert-Contract (-not (Test-Path -LiteralPath $timingFixtureRoot)) 'The shard timing fixtures must be cleaned up.'
 
+# ---------------------------------------------------------------------------------------------
+# #3444：类级排除的整类覆盖判据。
+#
+# 被测不变量：`excludedTestClasses` 里的一个类级 selector，只有在**该类直接声明的每一条用例**都能
+# 解析到一条 MAN-661 environment-gated real-dependency 身份时才算有据。改之前判据是
+# `$covering.Count -eq 0`——同类里只要有一条身份被登记，整条类级排除就算有据，同类其余裸
+# `[Fact]`/`[Theory]` 于是被 runner 的 `FullyQualifiedName!~<类>.` 一起过滤掉：不在任何 fast shard
+# 里跑、不在任何 heavy lane 的 filter 里、**也不产生 skipped 记录**，所以 TRX 侧的 zero-execution
+# 检查在构造上也看不见它们。
+#
+# 夹具是一份**临时 backend inventory 镜像**加一份手写的 rule 集，不是仓库真数据：真数据今天恰好
+# 全绿，用它做分母会让下面每一格都失去鉴别力（"全绿有两种成因"）。每一格只改夹具源码的一处。
+# ---------------------------------------------------------------------------------------------
+$classExclusionInventoryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-class-exclusion-{0}" -f [Guid]::NewGuid().ToString('N'))
+$classExclusionProjectDirectory = Join-Path $classExclusionInventoryRoot 'tests/Nerv.IIP.TemporaryClassExclusion.Tests'
+$classExclusionProjectPath = Join-Path $classExclusionProjectDirectory 'Nerv.IIP.TemporaryClassExclusion.Tests.csproj'
+$classExclusionSourcePath = Join-Path $classExclusionProjectDirectory 'ProbeTests.cs'
+$classExclusionRelativeProject = 'backend/tests/Nerv.IIP.TemporaryClassExclusion.Tests/Nerv.IIP.TemporaryClassExclusion.Tests.csproj'
+$classExclusionSelector = 'Nerv.IIP.TemporaryClassExclusion.Tests.ProbeTests'
+$classExclusionShardId = 'probe-fast-shard'
+$classExclusionRegisteredIdentity = "$classExclusionSelector.Registered_real_dependency_case"
+
+Assert-Contract ([IO.Path]::GetRelativePath($repoRoot, $classExclusionInventoryRoot).StartsWith('..', [StringComparison]::Ordinal)) 'The class-exclusion coverage fixture must live outside the tracked repository tree.'
+
+# 这条 rule 是**分子**。它刻意只登记一条身份，正是缺陷成立所需要的形状：类里有一条登记过的
+# env-gated 用例，于是旧判据认为整条类级排除有据。
+$classExclusionRules = @(
+    [pscustomobject]@{
+        id = 'probe-real-dependency'
+        sourceId = 'probe-real-dependency'
+        classification = 'environment-gated'
+        requiredLane = 'postgres'
+        testIdentities = @($classExclusionRegisteredIdentity)
+    }
+)
+$classExclusionManifestPolicy = [pscustomobject]@{
+    ProjectOwners = @{ $classExclusionRelativeProject = $classExclusionShardId }
+    AmbiguousProjectOwners = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    ExcludedClassSelectorsByFastShard = @{ $classExclusionShardId = [System.Collections.Generic.HashSet[string]]::new([string[]]@($classExclusionSelector), [StringComparer]::Ordinal) }
+    RealDependencyRules = $classExclusionRules
+    # The stage's -HeavyLaneIdSet is Mandatory and rejects an empty collection; the probe lane id is
+    # never reached here because the fixture declares no Docker CLI primitive.
+    HeavyLaneIdSet = [System.Collections.Generic.HashSet[string]]::new([string[]]@('probe-heavy-lane'), [StringComparer]::Ordinal)
+}
+
+# `ProbeRealDependencyMarker` 名字**不以 Fact/Theory 结尾**，所以只有继承闭包能认出它是用例属性；
+# 调用方那条后缀兜底判据对它零作用。下面 'derived-attribute-method-is-a-test-case' 那格因此测的是
+# 闭包本身，不是名字。
+function Set-ClassExclusionFixture {
+    param(
+        [Parameter(Mandatory)] [string] $ClassBody,
+        [string] $ClassName = 'ProbeTests',
+        [string] $TrailingDeclarations = ''
+    )
+
+    $fixtureText = @"
+namespace Nerv.IIP.TemporaryClassExclusion.Tests;
+
+public sealed class ProbeRealDependencyMarker : FactAttribute
+{
+}
+
+public sealed class $ClassName
+{
+$ClassBody
+}
+$TrailingDeclarations
+"@
+    Set-Content -LiteralPath $classExclusionSourcePath -Value $fixtureText -Encoding utf8
+}
+
+$classExclusionRegisteredMember = @'
+    [ProbeRealDependencyMarker]
+    public void Registered_real_dependency_case()
+    {
+    }
+
+    // A member with no test attribute at all, and one carrying a non-test attribute: neither may be
+    // demanded of the policy, or every excluded class would need its helpers registered.
+    public void Helper_without_any_attribute()
+    {
+    }
+
+    [Obsolete("not a test")]
+    public void Helper_with_a_non_test_attribute()
+    {
+    }
+'@
+
+try {
+    New-Item -ItemType Directory -Path $classExclusionProjectDirectory -Force | Out-Null
+    Set-Content -LiteralPath $classExclusionProjectPath -Value '<Project Sdk="Microsoft.NET.Sdk"></Project>' -Encoding utf8
+
+    # ---- CONTROL：无害变异。只验跑法——夹具形状合法时装置必须放行，否则后面每一格的红都可能
+    # 只是「夹具本身就红」的投影，而不是被测变异造成的。
+    Set-ClassExclusionFixture -ClassBody $classExclusionRegisteredMember
+    $classExclusionControl = Invoke-InventorySourceMutation -RunLedger $runLedger -MutationName 'class-exclusion-control-fully-registered-class' -MappingKind 'baseline' -ManifestPolicy $classExclusionManifestPolicy -MutationBackendInventoryRoot $classExclusionInventoryRoot
+    Assert-Contract $classExclusionControl.Passed "CONTROL: a class-level exclusion whose every declared test case is registered must pass; observed: $($classExclusionControl.Message)"
+
+    # ---- 哨兵：已知应该变的读数。把类改名后 selector 一个类都对不上，装置必须报出**另一句**
+    # （dead selector），而不是沉默通过。这一格证明「写文件这个动作真的生效、且真的被读进去了」，
+    # 与下面几格的「判据有没有鉴别力」是两回事。
+    Set-ClassExclusionFixture -ClassBody $classExclusionRegisteredMember -ClassName 'ProbeTestsRenamedAway'
+    $classExclusionSentinel = Invoke-InventorySourceMutation -RunLedger $runLedger -MutationName 'class-exclusion-sentinel-selector-resolves-to-nothing' -ManifestPolicy $classExclusionManifestPolicy -MutationBackendInventoryRoot $classExclusionInventoryRoot
+    Assert-Contract (-not $classExclusionSentinel.Passed) 'SENTINEL: a class selector that no source declares must fail; a vacuous denominator must not pass silently.'
+    Assert-Contract ($classExclusionSentinel.Message.Contains("excludes class '$classExclusionSelector', but no backend test source declares that class with any test method", [StringComparison]::Ordinal)) "SENTINEL: the dead-selector finding must name the unresolved selector; observed: $($classExclusionSentinel.Message)"
+
+    # ---- 变异 1：同形状缺口本身。类里多一条**裸 [Fact]** 且不登记。
+    Set-ClassExclusionFixture -ClassBody @"
+$classExclusionRegisteredMember
+
+    [Fact]
+    public void Unregistered_bare_fact()
+    {
+    }
+"@
+    $classExclusionBareFact = Invoke-InventorySourceMutation -RunLedger $runLedger -MutationName 'class-exclusion-unregistered-bare-fact' -ManifestPolicy $classExclusionManifestPolicy -MutationBackendInventoryRoot $classExclusionInventoryRoot
+    Assert-Contract (-not $classExclusionBareFact.Passed) 'An unregistered bare [Fact] inside a class-level exclusion must fail: it runs on zero jobs and leaves no skipped record.'
+    Assert-Contract ($classExclusionBareFact.Message.Contains("excludes the whole class '$classExclusionSelector', but 'Unregistered_bare_fact' is not registered", [StringComparison]::Ordinal)) "The whole-class finding must name the unregistered method; observed: $($classExclusionBareFact.Message)"
+    Assert-Contract (-not $classExclusionBareFact.Message.Contains('Registered_real_dependency_case', [StringComparison]::Ordinal)) 'The registered sibling must not be reported; the judgement is per method, not per class.'
+    Assert-Contract (-not $classExclusionBareFact.Message.Contains('Helper_without_any_attribute', [StringComparison]::Ordinal)) 'A member without a test attribute must not be demanded of the policy.'
+    Assert-Contract (-not $classExclusionBareFact.Message.Contains('Helper_with_a_non_test_attribute', [StringComparison]::Ordinal)) 'A member carrying only a non-test attribute must not be demanded of the policy.'
+
+    # ---- 变异 2：裸 [Theory]。#3444 报出的 21 条里有 2 条是 Theory，属性族不能只覆盖 Fact。
+    Set-ClassExclusionFixture -ClassBody @"
+$classExclusionRegisteredMember
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void Unregistered_bare_theory(int probe)
+    {
+    }
+"@
+    $classExclusionBareTheory = Invoke-InventorySourceMutation -RunLedger $runLedger -MutationName 'class-exclusion-unregistered-bare-theory' -ManifestPolicy $classExclusionManifestPolicy -MutationBackendInventoryRoot $classExclusionInventoryRoot
+    Assert-Contract (-not $classExclusionBareTheory.Passed) 'An unregistered bare [Theory] inside a class-level exclusion must fail the same way a [Fact] does.'
+    Assert-Contract ($classExclusionBareTheory.Message.Contains("but 'Unregistered_bare_theory' is not registered", [StringComparison]::Ordinal)) "The whole-class finding must name the unregistered theory; observed: $($classExclusionBareTheory.Message)"
+
+    # ---- 变异 3：**表达式体**且没有 `async`。#3444 记录过，按 `public async Task` 这类固定字符窗口
+    # grep 会系统性漏掉这一支；这一格把"不按关键字窗口扫"钉成可执行断言。
+    Set-ClassExclusionFixture -ClassBody @"
+$classExclusionRegisteredMember
+
+    [Fact]
+    public Task Unregistered_expression_bodied_fact() => Task.CompletedTask;
+"@
+    $classExclusionExpressionBodied = Invoke-InventorySourceMutation -RunLedger $runLedger -MutationName 'class-exclusion-unregistered-expression-bodied-fact' -ManifestPolicy $classExclusionManifestPolicy -MutationBackendInventoryRoot $classExclusionInventoryRoot
+    Assert-Contract (-not $classExclusionExpressionBodied.Passed) 'An expression-bodied [Fact] carries no `async` keyword and must still be found.'
+    Assert-Contract ($classExclusionExpressionBodied.Message.Contains("but 'Unregistered_expression_bodied_fact' is not registered", [StringComparison]::Ordinal)) "The whole-class finding must name the expression-bodied method; observed: $($classExclusionExpressionBodied.Message)"
+
+    # ---- 变异 4：自定义派生属性，**名字不以 Fact/Theory 结尾**。只有继承闭包能认出它；这一格是
+    # 闭包的鉴别力读数，换成按名字列举的白名单就会假绿。
+    Set-ClassExclusionFixture -ClassBody @"
+$classExclusionRegisteredMember
+
+    [ProbeRealDependencyMarker]
+    public void Unregistered_derived_attribute_case()
+    {
+    }
+"@
+    $classExclusionDerivedAttribute = Invoke-InventorySourceMutation -RunLedger $runLedger -MutationName 'class-exclusion-unregistered-derived-attribute-case' -ManifestPolicy $classExclusionManifestPolicy -MutationBackendInventoryRoot $classExclusionInventoryRoot
+    Assert-Contract (-not $classExclusionDerivedAttribute.Passed) 'A method carrying a custom attribute that derives from FactAttribute is a test case even though its name ends in neither Fact nor Theory.'
+    Assert-Contract ($classExclusionDerivedAttribute.Message.Contains("but 'Unregistered_derived_attribute_case' is not registered", [StringComparison]::Ordinal)) "The whole-class finding must name the derived-attribute method; observed: $($classExclusionDerivedAttribute.Message)"
+
+    # ---- 鉴别力对照 1：注释掉的 [Fact]。扫描读的是 structural text（注释与字符串体已抹平），
+    # 注释里的用例不是用例；这一格防止判据退化成「源码里出现过 [Fact] 就算」。
+    Set-ClassExclusionFixture -ClassBody @"
+$classExclusionRegisteredMember
+
+    // [Fact]
+    // public void Commented_out_bare_fact()
+    // {
+    // }
+
+    /* [Fact] public void Block_commented_bare_fact() { } */
+"@
+    $classExclusionCommented = Invoke-InventorySourceMutation -RunLedger $runLedger -MutationName 'class-exclusion-commented-out-fact-is-not-a-case' -ManifestPolicy $classExclusionManifestPolicy -MutationBackendInventoryRoot $classExclusionInventoryRoot
+    Assert-Contract $classExclusionCommented.Passed "A commented-out [Fact] must not be counted as a declared test case; observed: $($classExclusionCommented.Message)"
+
+    # ---- 鉴别力对照 2：**兄弟类**里的裸 [Fact]。类级 selector 用尾点锚定，兄弟类不在它的射程里，
+    # 要求登记就成了假红。
+    Set-ClassExclusionFixture -ClassBody $classExclusionRegisteredMember -TrailingDeclarations @'
+
+public sealed class ProbeTestsSibling
+{
+    [Fact]
+    public void Sibling_bare_fact_stays_in_the_fast_shard()
+    {
+    }
+}
+'@
+    $classExclusionSibling = Invoke-InventorySourceMutation -RunLedger $runLedger -MutationName 'class-exclusion-sibling-class-is-out-of-range' -ManifestPolicy $classExclusionManifestPolicy -MutationBackendInventoryRoot $classExclusionInventoryRoot
+    Assert-Contract $classExclusionSibling.Passed "A bare [Fact] in a sibling class the selector does not cover must not be reported; observed: $($classExclusionSibling.Message)"
+
+    # ---- 鉴别力对照 3：**嵌套类**里的裸 [Fact]。VSTest 把它拼成 `Outer+Inner.Method`，runner 的
+    # `FullyQualifiedName!~Outer.` 同样匹配不到，所以它本来就没被排除，要求登记也是假红。
+    Set-ClassExclusionFixture -ClassBody @"
+$classExclusionRegisteredMember
+
+    public sealed class NestedProbeTests
+    {
+        [Fact]
+        public void Nested_bare_fact_is_addressed_as_outer_plus_inner()
+        {
+        }
+    }
+"@
+    $classExclusionNested = Invoke-InventorySourceMutation -RunLedger $runLedger -MutationName 'class-exclusion-nested-class-is-out-of-range' -ManifestPolicy $classExclusionManifestPolicy -MutationBackendInventoryRoot $classExclusionInventoryRoot
+    Assert-Contract $classExclusionNested.Passed "A bare [Fact] declared in a nested class is not removed by the outer class selector and must not be reported; observed: $($classExclusionNested.Message)"
+}
+finally {
+    Remove-Item -LiteralPath $classExclusionInventoryRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+Assert-Contract (-not (Test-Path -LiteralPath $classExclusionInventoryRoot)) 'The class-exclusion coverage fixture must be cleaned up.'
+
 Assert-Contract ($runLedger.CompleteValidatorInvocationCount -eq 4) "The contract suite must retain exactly four complete validator process contracts; observed $($runLedger.CompleteValidatorInvocationCount)."
 $mappingNames = @($runLedger.StageExecutionMappings | ForEach-Object { [string] $_.Name })
-Assert-Contract ($mappingNames.Count -eq 56) "The contract suite must retain exactly 56 stage execution mappings; observed $($mappingNames.Count)."
+Assert-Contract ($mappingNames.Count -eq 65) "The contract suite must retain exactly 65 stage execution mappings; observed $($mappingNames.Count)."
 Assert-Contract ((Get-NervStringsSorted -Values $mappingNames -Comparer ([StringComparer]::Ordinal) -Unique).Count -eq $mappingNames.Count) 'Every direct stage execution must have one unique mapping identity.'
 $expectedStageExecutionCounts = [System.Collections.Generic.Dictionary[string, int]]::new([StringComparer]::Ordinal)
 $expectedStageExecutionCounts.Add('manifest-policy', 18)
-$expectedStageExecutionCounts.Add('inventory-source', 13)
+$expectedStageExecutionCounts.Add('inventory-source', 22)
 $expectedStageExecutionCounts.Add('solution-membership', 10)
 $expectedStageExecutionCounts.Add('workflow-wiring', 15)
 foreach ($stageId in $stageIds) {
@@ -3149,9 +3392,9 @@ foreach ($mapping in @(Get-NervItemsSortedByString -Items @($runLedger.StageExec
 $actualMutationCount = @($runLedger.StageExecutionMappings | Where-Object { [string]::Equals([string] $_.Kind, 'mutation', [StringComparison]::Ordinal) }).Count
 $prerequisiteCount = @($runLedger.StageExecutionMappings | Where-Object { [string]::Equals([string] $_.Kind, 'prerequisite', [StringComparison]::Ordinal) }).Count
 $baselineCount = @($runLedger.StageExecutionMappings | Where-Object { [string]::Equals([string] $_.Kind, 'baseline', [StringComparison]::Ordinal) }).Count
-Assert-Contract ($actualMutationCount -eq 41) "The contract suite must retain exactly 41 input mutation mappings; observed $actualMutationCount."
+Assert-Contract ($actualMutationCount -eq 49) "The contract suite must retain exactly 49 input mutation mappings; observed $actualMutationCount."
 Assert-Contract ($prerequisiteCount -eq 13) "The contract suite must retain exactly 13 stage prerequisite mappings; observed $prerequisiteCount."
-Assert-Contract ($baselineCount -eq 2) "The contract suite must retain exactly 2 baseline mappings; observed $baselineCount."
+Assert-Contract ($baselineCount -eq 3) "The contract suite must retain exactly 3 baseline mappings; observed $baselineCount."
 Write-Host "  [execution-counts] input mutations: $actualMutationCount; stage prerequisites: $prerequisiteCount; baselines: $baselineCount; complete validator processes: $($runLedger.CompleteValidatorInvocationCount); rejected routing controls: 2"
 
 Write-Host 'Backend test shard manifest contract tests passed.'
