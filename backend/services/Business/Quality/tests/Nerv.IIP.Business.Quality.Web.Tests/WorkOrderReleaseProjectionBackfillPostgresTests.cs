@@ -56,10 +56,17 @@ public sealed class WorkOrderReleaseProjectionBackfillPostgresTests : PeriodicIn
             await setup.SaveChangesAsync();
         }
 
-        // 本 PR 两个注释迁移确实应用到了物理列上（迁移只改注释，除此之外无可观察产物）。
-        Assert.Contains("composite by source", await ReadColumnCommentAsync("periodic_inspection_operations", "sku_code"));
+        // 注释迁移确实应用到了物理列上（comment-only 迁移除注释取值外无任何可观察产物，
+        // 只断言「迁移跑过了」会让删掉迁移体照样绿，因此这里回读注释的**字符串取值**）。
+        // SKU 两列钉 #3286 收缩后的**单一来源**措辞，并钉住收缩前的「复合」措辞已退役；
+        // release 时间两列**仍是**复合来源（#3286 没碰它），两族因此分开钉、不会一起假绿。
+        var operationSkuComment = await ReadColumnCommentAsync("periodic_inspection_operations", "sku_code");
+        Assert.Contains("rejected per operation instead of yielding to it", operationSkuComment);
+        Assert.DoesNotContain("composite", operationSkuComment);
+        var runtimeSkuComment = await ReadColumnCommentAsync("periodic_inspection_runtime_contexts", "sku_code");
+        Assert.Contains("never the staged completion_sku_code", runtimeSkuComment);
+        Assert.DoesNotContain("composite", runtimeSkuComment);
         Assert.Contains("composite by source", await ReadColumnCommentAsync("periodic_inspection_operations", "released_at_utc"));
-        Assert.Contains("composite meaning", await ReadColumnCommentAsync("periodic_inspection_runtime_contexts", "sku_code"));
         Assert.Contains("composite meaning", await ReadColumnCommentAsync("periodic_inspection_runtime_contexts", "released_at_utc"));
 
         // OP-001：报工先到（首次活动锚点落在 2026-08-24），补投后不得追认历史时间窗口。
