@@ -4327,6 +4327,166 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Theory]
+    [InlineData("none", null)]
+    [InlineData("none", "template-001")]
+    [InlineData("on-receipt", null)]
+    [InlineData("on-receipt", "template-001")]
+    [InlineData("on-shipment", null)]
+    [InlineData("on-shipment", "template-001")]
+    public async Task Same_non_production_report_intent_recovers_committed_mes_receipt_before_current_policy_routing(
+        string initialPolicy,
+        string? labelTemplateId)
+    {
+        var auth = AllowedOrganizationScope(BusinessGatewayPermissions.MesReportingWrite);
+        var mes = new RecordingMesClient
+        {
+            CommittedProductionReportBeforeResponseFailure = new BusinessConsoleRecordProductionReportResponse(
+                "report-committed-001",
+                "PR-COMMITTED-001",
+                []),
+            ProductionReportResponseFailureAfterCommit = BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-request-failed"),
+        };
+        var masterData = new RecordingMasterDataClient
+        {
+            ResourceDetailResponse = new BusinessConsoleMasterDataResourceDetail(
+                "sku", "SKU-001", "Demo SKU", true, "v1", "org-001", "env-dev",
+                SerialTrackingPolicy: initialPolicy),
+        };
+        var barcode = new RecordingBarcodeLabelClient
+        {
+            PrintBatchListResponse = new BusinessConsoleBarcodePrintBatchListResponse([], 0),
+        };
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IBusinessBarcodeLabelClient>();
+            services.AddSingleton<IBusinessBarcodeLabelClient>(barcode);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        var request = ProductionReportBody(labelTemplateId: labelTemplateId) with
+        {
+            ProducedLotNo = "LOT-ORIGINAL",
+        };
+
+        var first = await client.PostAsJsonAsync("/api/business-console/v1/mes/production-reports", request);
+
+        masterData.ResourceDetailResponse = new BusinessConsoleMasterDataResourceDetail(
+            "sku", "SKU-001", "Demo SKU", true, "v2", "org-001", "env-dev",
+            SerialTrackingPolicy: "on-production", DefaultBarcodeRuleCode: "FG");
+        var replay = await client.PostAsJsonAsync("/api/business-console/v1/mes/production-reports", request);
+
+        Assert.Equal(HttpStatusCode.BadGateway, first.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
+        using var replayDocument = JsonDocument.Parse(await replay.Content.ReadAsStringAsync());
+        var replayData = replayDocument.RootElement.GetProperty("data");
+        Assert.Equal("report-committed-001", replayData.GetProperty("productionReportId").GetString());
+        Assert.Equal("PR-COMMITTED-001", replayData.GetProperty("reportNo").GetString());
+        Assert.Equal("[]", replayData.GetProperty("serialNumbers").GetRawText());
+        Assert.Equal(JsonValueKind.Null, replayData.GetProperty("printBatchId").ValueKind);
+        var receipt = replayData.GetProperty("operationReceipt");
+        Assert.Equal("mes.production-report.record", receipt.GetProperty("operationType").GetString());
+        Assert.Equal("mes", receipt.GetProperty("authority").GetString());
+        Assert.Equal("production-report", receipt.GetProperty("resourceType").GetString());
+        Assert.Equal("report-committed-001", receipt.GetProperty("resourceId").GetString());
+        Assert.Equal("accepted", receipt.GetProperty("outcome").GetString());
+        Assert.False(receipt.GetProperty("stateConfirmed").GetBoolean());
+        Assert.True(receipt.GetProperty("readbackRequired").GetBoolean());
+        Assert.Equal("report-serial-001", receipt.GetProperty("idempotencyKey").GetString());
+        Assert.Equal("GET", receipt.GetProperty("readbackMethod").GetString());
+        Assert.Equal(
+            "/api/business-console/v1/mes/production-reports/PR-COMMITTED-001?organizationId=org-001&environmentId=env-dev",
+            receipt.GetProperty("readbackPath").GetString());
+        Assert.Equal(2, barcode.GetPrintBatchByIdempotencyKeyCallCount);
+        Assert.Equal(0, barcode.CreatePrintBatchCallCount);
+        Assert.Equal(0, barcode.ActivatePrintBatchCallCount);
+        Assert.Equal(2, mes.GetProductionReportByIdempotencyKeyCallCount);
+        Assert.Equal(1, mes.RecordProductionReportCallCount);
+        Assert.Equal(1, mes.WorkOrderDetailCallCount);
+        Assert.Single(masterData.DetailRequests);
+        Assert.False(string.IsNullOrWhiteSpace(mes.LastRecordProductionReportIntentFingerprint));
+        Assert.Equal(
+            mes.LastRecordProductionReportIntentFingerprint,
+            mes.PersistedProductionReportIntentReceipt?.ReportIntentFingerprint);
+    }
+
+    [Theory]
+    [InlineData("none", null)]
+    [InlineData("none", "template-001")]
+    [InlineData("on-receipt", null)]
+    [InlineData("on-receipt", "template-001")]
+    [InlineData("on-shipment", null)]
+    [InlineData("on-shipment", "template-001")]
+    public async Task Changed_non_production_report_intent_conflicts_from_committed_mes_receipt_before_current_policy_routing(
+        string initialPolicy,
+        string? labelTemplateId)
+    {
+        var auth = AllowedOrganizationScope(BusinessGatewayPermissions.MesReportingWrite);
+        var mes = new RecordingMesClient
+        {
+            CommittedProductionReportBeforeResponseFailure = new BusinessConsoleRecordProductionReportResponse(
+                "report-committed-001",
+                "PR-COMMITTED-001",
+                []),
+            ProductionReportResponseFailureAfterCommit = BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-request-failed"),
+        };
+        var masterData = new RecordingMasterDataClient
+        {
+            ResourceDetailResponse = new BusinessConsoleMasterDataResourceDetail(
+                "sku", "SKU-001", "Demo SKU", true, "v1", "org-001", "env-dev",
+                SerialTrackingPolicy: initialPolicy),
+        };
+        var barcode = new RecordingBarcodeLabelClient
+        {
+            PrintBatchListResponse = new BusinessConsoleBarcodePrintBatchListResponse([], 0),
+        };
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IBusinessBarcodeLabelClient>();
+            services.AddSingleton<IBusinessBarcodeLabelClient>(barcode);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        var request = ProductionReportBody(labelTemplateId: labelTemplateId) with
+        {
+            ProducedLotNo = "LOT-ORIGINAL",
+        };
+
+        var first = await client.PostAsJsonAsync("/api/business-console/v1/mes/production-reports", request);
+
+        masterData.ResourceDetailResponse = new BusinessConsoleMasterDataResourceDetail(
+            "sku", "SKU-001", "Demo SKU", true, "v2", "org-001", "env-dev",
+            SerialTrackingPolicy: "on-production", DefaultBarcodeRuleCode: "FG");
+        var replay = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/production-reports",
+            request with { ProducedLotNo = "LOT-CHANGED" });
+
+        Assert.Equal(HttpStatusCode.BadGateway, first.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, replay.StatusCode);
+        using var document = JsonDocument.Parse(await replay.Content.ReadAsStringAsync());
+        Assert.Equal("idempotency-conflict", document.RootElement.GetProperty("message").GetString());
+        Assert.Equal(2, barcode.GetPrintBatchByIdempotencyKeyCallCount);
+        Assert.Equal(0, barcode.CreatePrintBatchCallCount);
+        Assert.Equal(0, barcode.ActivatePrintBatchCallCount);
+        Assert.Equal(2, mes.GetProductionReportByIdempotencyKeyCallCount);
+        Assert.Equal(1, mes.RecordProductionReportCallCount);
+        Assert.Equal(1, mes.WorkOrderDetailCallCount);
+        Assert.Single(masterData.DetailRequests);
+        Assert.False(string.IsNullOrWhiteSpace(mes.LastRecordProductionReportIntentFingerprint));
+    }
+
+    [Theory]
     [InlineData("optional")]
     [InlineData("future-policy")]
     public async Task Mes_production_report_rejects_non_authoritative_serial_policy_values(string policy)
@@ -13092,6 +13252,7 @@ public sealed class BusinessGatewayProxyTests
             new BusinessMesProductionReportIntentLookupRequest("org-001", "env-dev", "intent/key 001"),
             CancellationToken.None);
 
+        Assert.NotNull(recovered);
         Assert.Equal(fingerprint, recovered.ReportIntentFingerprint);
         Assert.Equal(productionReportId, recovered.ProductionReportId);
         Assert.Equal("PRPT-INTENT-001", recovered.ReportNo);
@@ -13144,10 +13305,55 @@ public sealed class BusinessGatewayProxyTests
             new BusinessMesProductionReportIntentLookupRequest("org-001", "env-dev", "intent-001"),
             CancellationToken.None);
 
+        Assert.NotNull(recovered);
         Assert.Null(recovered.ReportIntentFingerprint);
         Assert.Equal("019f855b-5cb0-7550-a509-d2ee7b021689", recovered.ProductionReportId);
         Assert.Equal("PRPT-INTENT-001", recovered.ReportNo);
         Assert.Empty(recovered.SerialNumbers);
+    }
+
+    [Fact]
+    public async Task Mes_formal_client_returns_no_receipt_for_the_exact_scoped_not_found_result()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.BadRequest, new
+        {
+            success = false,
+            data = (object?)null,
+            message = "未找到生产报工。",
+            code = 0,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var client = new HttpBusinessMesClient(httpClient);
+
+        var recovered = await client.GetProductionReportByIdempotencyKeyAsync(
+            "internal-token-001",
+            new BusinessMesProductionReportIntentLookupRequest("org-001", "env-dev", "intent-001"),
+            CancellationToken.None);
+
+        Assert.Null(recovered);
+    }
+
+    [Fact]
+    public async Task Mes_formal_client_preserves_other_exact_recovery_errors()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.BadRequest, new
+        {
+            success = false,
+            data = (object?)null,
+            message = "production-report-read-rejected",
+            code = 0,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var client = new HttpBusinessMesClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.GetProductionReportByIdempotencyKeyAsync(
+                "internal-token-001",
+                new BusinessMesProductionReportIntentLookupRequest("org-001", "env-dev", "intent-001"),
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadRequest, exception.StatusCode);
+        Assert.Equal("production-report-read-rejected", exception.Message);
     }
 
     [Fact]
@@ -20072,9 +20278,13 @@ internal sealed class RecordingMesClient : IBusinessMesClient
     public int ReleaseWorkOrderCallCount { get; private set; }
     public int StartOperationCallCount { get; private set; }
     public int RecordProductionReportCallCount { get; private set; }
+    public int GetProductionReportByIdempotencyKeyCallCount { get; private set; }
 
     public string? LastRecordProductionReportActor { get; private set; }
     public BusinessConsoleRecordProductionReportRequest? LastRecordProductionReportRequest { get; private set; }
+    public string? LastRecordProductionReportIntentFingerprint { get; private set; }
+    public BusinessMesProductionReportIntentLookupRequest? LastProductionReportIntentLookupRequest { get; private set; }
+    public BusinessMesProductionReportIntentReceipt? PersistedProductionReportIntentReceipt { get; private set; }
     public BusinessServiceProxyException? RecordProductionReportFailure { get; init; }
     public Queue<BusinessServiceProxyException> RecordProductionReportFailuresBeforeCommit { get; } = new();
     public BusinessConsoleRecordProductionReportResponse? CommittedProductionReportBeforeResponseFailure { get; init; }
@@ -20775,12 +20985,26 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         string internalBearerToken,
         BusinessConsoleRecordProductionReportRequest request,
         string actor,
+        CancellationToken cancellationToken) =>
+        RecordProductionReportAsync(
+            internalBearerToken,
+            request,
+            actor,
+            reportIntentFingerprint: null,
+            cancellationToken);
+
+    public Task<BusinessConsoleRecordProductionReportResponse> RecordProductionReportAsync(
+        string internalBearerToken,
+        BusinessConsoleRecordProductionReportRequest request,
+        string actor,
+        string? reportIntentFingerprint,
         CancellationToken cancellationToken)
     {
         RecordProductionReportCallCount++;
         LastInternalToken = internalBearerToken;
         LastRecordProductionReportActor = actor;
         LastRecordProductionReportRequest = request;
+        LastRecordProductionReportIntentFingerprint = reportIntentFingerprint;
         RecordProductionReportRequests.Add(request);
         if (RecordProductionReportFailuresBeforeCommit.TryDequeue(out var failureBeforeCommit))
         {
@@ -20791,6 +21015,11 @@ internal sealed class RecordingMesClient : IBusinessMesClient
             if (CommittedProductionReportCount == 0)
             {
                 CommittedProductionReportCount++;
+                PersistedProductionReportIntentReceipt = new BusinessMesProductionReportIntentReceipt(
+                    reportIntentFingerprint,
+                    CommittedProductionReportBeforeResponseFailure.ProductionReportId,
+                    CommittedProductionReportBeforeResponseFailure.ReportNo,
+                    CommittedProductionReportBeforeResponseFailure.SerialNumbers);
                 throw ProductionReportResponseFailureAfterCommit
                     ?? throw new InvalidOperationException("The committed-response failure must be configured.");
             }
@@ -20805,6 +21034,17 @@ internal sealed class RecordingMesClient : IBusinessMesClient
             "report-001",
             "PR-001",
             request.SerialNumbers ?? []));
+    }
+
+    public Task<BusinessMesProductionReportIntentReceipt?> GetProductionReportByIdempotencyKeyAsync(
+        string internalBearerToken,
+        BusinessMesProductionReportIntentLookupRequest request,
+        CancellationToken cancellationToken)
+    {
+        GetProductionReportByIdempotencyKeyCallCount++;
+        LastInternalToken = internalBearerToken;
+        LastProductionReportIntentLookupRequest = request;
+        return Task.FromResult(PersistedProductionReportIntentReceipt);
     }
 
     public Task<BusinessConsoleAcceptedResponse> RecordDefectAsync(

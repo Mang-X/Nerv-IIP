@@ -55,6 +55,26 @@ public sealed class BusinessMesProductionReportCoordinator(
                 cancellationToken);
         }
 
+        var existingReport = await mes.GetProductionReportByIdempotencyKeyAsync(
+            internalBearerToken,
+            new BusinessMesProductionReportIntentLookupRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.IdempotencyKey),
+            cancellationToken);
+        if (existingReport is not null)
+        {
+            if (!string.Equals(
+                    existingReport.ReportIntentFingerprint,
+                    reportIntentFingerprint,
+                    StringComparison.Ordinal))
+            {
+                throw IdempotencyConflict();
+            }
+
+            return RecoveredMesReport(request, existingReport);
+        }
+
         var context = new BusinessConsoleMesContextRequest(request.OrganizationId, request.EnvironmentId);
         var workOrder = await mes.GetWorkOrderDetailAsync(
             internalBearerToken,
@@ -81,6 +101,7 @@ public sealed class BusinessMesProductionReportCoordinator(
                 internalBearerToken,
                 AuthoritativeRequest(request, policy, []),
                 actor,
+                reportIntentFingerprint,
                 cancellationToken);
         }
 
@@ -164,6 +185,7 @@ public sealed class BusinessMesProductionReportCoordinator(
             internalBearerToken,
             AuthoritativeRequest(request, OnProductionPolicy, serials),
             actor,
+            reportIntentFingerprint,
             cancellationToken);
 
         var latest = await ActivateAndReadAsync(
@@ -313,6 +335,21 @@ public sealed class BusinessMesProductionReportCoordinator(
             SerialTrackingPolicy = policy,
             SerialNumbers = serials,
         };
+
+    private static BusinessConsoleRecordProductionReportResponse RecoveredMesReport(
+        BusinessConsoleRecordProductionReportRequest request,
+        BusinessMesProductionReportIntentReceipt report) =>
+        new(
+            report.ProductionReportId,
+            report.ReportNo,
+            report.SerialNumbers,
+            BusinessConsoleOperationReceipts.Accepted(
+                "mes.production-report.record",
+                "mes",
+                "production-report",
+                report.ProductionReportId,
+                $"/api/business-console/v1/mes/production-reports/{Uri.EscapeDataString(report.ReportNo)}?organizationId={Uri.EscapeDataString(request.OrganizationId)}&environmentId={Uri.EscapeDataString(request.EnvironmentId)}",
+                request.IdempotencyKey));
 
     private static BusinessServiceProxyException InvalidRequest(string code) =>
         BusinessServiceProxyException.FromSafeDownstreamMessage(HttpStatusCode.BadRequest, code);
