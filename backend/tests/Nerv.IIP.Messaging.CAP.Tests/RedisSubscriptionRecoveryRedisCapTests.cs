@@ -283,6 +283,19 @@ public sealed class RedisSubscriptionRecoveryRedisCapTests
                 ? $"nerv-local-3222-{Guid.NewGuid():N}-{topicSuffix}"
                 : laneNamespace + topicSuffix;
 
+            // ⚠️ <b>如实登记一处与其余 lane 成员不一致的约定</b>：另外 7 个 redis-cap 成员都把
+            // NERV_IIP_TEST_CAP_VERSION 读进 CapOptions.Version，本成员**不读**，把 Version 写成
+            // topicSuffix（见 CapHost.StartAsync 的 capVersion 入参）。
+            //
+            // 为什么这样仍然正确：本成员的隔离由另外两条承担——① lane runner 每次尝试建一个专属数据库
+            // （databasePrefix + DatabaseSuffix），CAP 的 published/received 落在该库里；② 每次尝试一个专属
+            // Redis 命名空间（NERV_IIP_TEST_CAP_TOPIC_PREFIX），而 Redis Streams 的消费组住在 stream 键**内部**，
+            // 键名已带命名空间 ⇒ 跨 run/跨尝试不可能撞。Version 在本成员里只用来把**同一次运行中的两条用例**
+            // 分开（i3222conn / i3222time），那正是 topicSuffix 已经在做的事。
+            //
+            // 为什么不为了对齐而改：本票明令不改行为；把 Version 换成 lane 提供的那个值会让两条用例共用同一个
+            // 消费组名，反而需要另找一维把它们分开。⇒ 这里只登记差异，不动行为。
+
             var effects = new EffectStore(postgres, schema);
             await effects.ResetAsync();
 
@@ -336,6 +349,15 @@ public sealed class RedisSubscriptionRecoveryRedisCapTests
                     client => Assert.True(client.ListeningExited, previous.Observer.Dump()));
             });
             await previous.DisposeAsync();
+            // ⭐ 传输层那一半。上一条断言只到 **client 对象层**：`Disposed` 来自 DecoratedConsumerClient 的
+            // `await using`，而上游 RedisConsumerClient.DisposeAsync 是 `ValueTask.CompletedTask` **空实现**
+            // ——它一个 socket 都不关。真正持有 multiplexer 的是 Redis transport 注册的单例
+            // `RedisConnectionPool`（IDisposable），它随 `ServiceProvider.DisposeAsync()` 释放。
+            // 这里直接数转发器自己的在活连接表：旧宿主的容器释放后，经过它的 TCP 连接必须全部落到 0。
+            // ⚠️ 必须在 SetFault 之前断言 —— SetFault 会强制关掉所有在活连接，放在它之后这条会恒真。
+            // 此刻表里不可能有别人的连接：host2 还没起，核查连接直连真实端点不经过转发器。
+            await WaitAsync("旧宿主的容器释放后，经过故障转发器的 TCP 连接全部关闭", () =>
+                Assert.Equal(0, proxy.LiveConnections));
 
             proxy.SetFault(fault);
             host = await CapHost.StartAsync(
@@ -846,8 +868,12 @@ public sealed class RedisSubscriptionRecoveryRedisCapTests
 
         public async ValueTask DisposeAsync()
         {
-            Disposed = true;
+            // 先 await 再置位：置在前面的话 `Disposed` 只证明「进过 DisposeAsync」，
+            // 连 inner 返回都不证明。置在后面它至少是「inner.DisposeAsync() 已正常返回」。
+            // ⚠️ 它**仍然**只到 client 对象层——上游那个方法是 ValueTask.CompletedTask 空实现，
+            // 传输层由 RedisFaultProxy.LiveConnections 那条断言承担。
             await inner.DisposeAsync().ConfigureAwait(false);
+            Disposed = true;
         }
 
         public override string ToString() =>
@@ -908,6 +934,16 @@ public sealed class RedisSubscriptionRecoveryRedisCapTests
         public int BlackHoledConnections => Volatile.Read(ref blackHoled);
 
         public int ResetConnections => Volatile.Read(ref resets);
+
+        /// <summary>
+        /// 当前经过本转发器、<b>两端 socket 都还没关</b>的连接条数（每条连接在表里占两项：客户端侧与服务端侧，
+        /// 由 <see cref="HandleAsync"/> 的 <c>finally</c> 一并摘除）。
+        ///
+        /// <para>⭐ 这是本文件里唯一能看到<b>传输层</b>的读数：client 对象层的 <c>Disposed</c> 证明不了 TCP 连接
+        /// 被释放——上游 <c>RedisConsumerClient.DisposeAsync</c> 是 <c>ValueTask.CompletedTask</c> <b>空实现</b>，
+        /// 真正持有 multiplexer 的是 <c>RedisConnectionPool</c>（单例，随容器释放）。</para>
+        /// </summary>
+        public int LiveConnections => live.Count;
 
         public static Task<RedisFaultProxy> StartAsync(string redisEndpoint, FaultKind fault) =>
             StartCoreAsync(redisEndpoint, fault);

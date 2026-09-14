@@ -42,11 +42,14 @@ public sealed class RedisSubscriptionRecoveryTests
     /// （<c>BUSYGROUP</c> / <c>ERR no such key</c> 正是这一类，见上游 <c>RedisErrorExtensions.cs</c>）。
     /// 转换它等于把配置/用法错误伪装成掉线，每 30 秒重启一次且永不收敛。</description></item>
     /// <item><description><see cref="RedisCommandException"/>：客户端侧用法错误，同理。</description></item>
-    /// <item><description><see cref="TimeoutException"/>：<see cref="RedisTimeoutException"/> 的<b>基类</b>。
-    /// ⭐ 这一格钉住的是「catch 写的是派生类不是基类」——把 catch 放宽成 <c>TimeoutException</c>
-    /// 会连非 Redis 的超时一起吞掉。</description></item>
-    /// <item><description><see cref="RedisException"/>：上面两个 Redis 类型的<b>共同基类</b>。
-    /// ⭐ 同理钉住「catch 没有放宽成 <c>RedisException</c>」。</description></item>
+    /// <item><description>⭐ <b>两个基类格各守一支 catch，不是同一件事说两遍。</b>
+    /// <see cref="RedisConnectionException"/> 与 <see cref="RedisTimeoutException"/> <b>没有公共基类</b>：
+    /// 前者派生自 <see cref="RedisException"/>，后者派生自 <see cref="TimeoutException"/>
+    /// （⚠️ 先前这里写的「<c>RedisException</c> 是二者的共同基类」是<b>错的</b>，已更正）。
+    /// ⇒ <see cref="RedisException"/> 这一格钉住「连接那支 catch 没有放宽成 <c>RedisException</c>」，
+    /// <see cref="TimeoutException"/> 那一格钉住「超时那支 catch 没有放宽成 <c>TimeoutException</c>」，
+    /// 两格各自只对一支有鉴别力。放宽任一支都会把非目标异常（另一个 Redis 客户端错误族 / 非 Redis 的超时）
+    /// 一起吞成「掉线」。</description></item>
     /// <item><description><see cref="OperationCanceledException"/> / <see cref="TaskCanceledException"/>：
     /// 取消必须原样上抛，交给上游 <c>ConsumerRegister.ExecuteAsync</c> 的第一支 catch。</description></item>
     /// <item><description><see cref="InvalidOperationException"/>：泛化的「其它异常」对照。</description></item>
