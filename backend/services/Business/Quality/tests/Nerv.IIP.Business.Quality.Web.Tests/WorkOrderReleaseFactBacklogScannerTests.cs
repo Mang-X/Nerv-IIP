@@ -315,14 +315,21 @@ public sealed class WorkOrderReleaseFactBacklogScannerTests
 
     /// <summary>
     /// 「scope 已被解析出 DbContext」与「该 scope 的读数已经写进导出面」不是同一件事：巡检先解析
-    /// DbContext，跑完查询之后才 <c>Set</c> 两个 Gauge。按前者取样会取到**残缺**导出面——实测到的
-    /// 不是空集，而是同一个 scope 的两个族一有一无（导出按族依次快照，取样本身不是原子操作），
-    /// 于是按 label 取值的断言抛 <see cref="KeyNotFoundException"/>。
+    /// DbContext，跑完查询之后才 <c>Set</c> 两个 Gauge。按前者取样落在这个窗口里，按 label 取值的
+    /// 断言就抛 <see cref="KeyNotFoundException"/>。
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// 在 merge-base 上隔离取样 n=20 的形态分布：<strong>18/20</strong> 是第二个 scope 的**两个族都
+    /// 还没发布**（本注释原本描述的形态）；<strong>1/20</strong> 是 <c>oldest_age{…env-prod}</c> 在
+    /// 而 <c>operations{…env-prod}</c> 缺——导出按族依次快照，取样本身不是原子操作，所以会读到
+    /// **残缺**导出面；余下 1/20 恰好赶上两族都已发布。⚠️ 后一种只占约 5%，⛔ 不要把它当主因去查。
+    /// </para>
+    /// <para>
     /// 因此这里等的是巡检**自己发布的边沿**，而不是墙钟轮询一个更早的计数器。被顶掉的旧写法有两层
     /// 病：等待信号本身早于发布（<c>probe.DbContextResolutions</c>），以及「已发布」那个谓词只查
     /// **默认 label 组**，对配了第二个 scope 的用例零保护——两层都放行了同一个竞速。
+    /// </para>
     /// </remarks>
     private static Task WaitForScopeScansAsync(ScopeResolutionProbe probe, int expected) =>
         probe.ScopeScansCompleted.WaitForAsync(expected);
@@ -332,11 +339,19 @@ public sealed class WorkOrderReleaseFactBacklogScannerTests
     /// 在每个 per-scope DI scope 被释放的那一刻发布。
     /// </summary>
     /// <remarks>
-    /// 释放点是从外部能观测到的、**严格晚于该 scope 两次 <c>Set</c>** 的位置：
+    /// <para>
+    /// 释放点是从外部能观测到的、**绝不早于**该 scope 两次 <c>Set</c> 的位置：
     /// <c>WorkOrderReleaseFactBacklogScanner.TryScanAllScopesAsync</c> 用 <c>using var serviceScope</c>
     /// 把「解析 DbContext → <c>RefreshAsync</c>（内含两次 <c>Set</c>）→ 记日志」整段括在里面，正常出口
     /// 与异常出口都在其后释放。相对地，<see cref="ScopeResolutionProbe.RecordDbContextResolution"/>
     /// 括住的只是那一段的**开头**。
+    /// </para>
+    /// <para>
+    /// ⚠️ 措辞是「绝不早于」而不是「严格晚于」，因为这两件事在**异常**路径上会脱钩：扫描抛异常时
+    /// <c>TryScanAllScopesAsync</c> 的 <c>catch</c> 把它吞掉记日志，scope 照样释放、边沿照样发，但那一轮
+    /// **没有 <c>Set</c>**。此时用例仍然红，只是失败形态从「超时 + 边沿诊断」退化成取键的
+    /// <see cref="KeyNotFoundException"/>——鉴别力不丢，可读性降级。
+    /// </para>
     /// </remarks>
     private sealed class ScopeScanObservingScopeFactory(IServiceScopeFactory inner, ScopeResolutionProbe probe)
         : IServiceScopeFactory
@@ -358,84 +373,6 @@ public sealed class WorkOrderReleaseFactBacklogScannerTests
         }
     }
 
-    /// <summary>
-    /// 「巡检已完成第 N 个 scope 的扫描」这一边沿，由完成的那一刻发布。
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// 用 <see cref="Eventually.WaitAsync"/> 墙钟轮询它，会让判决取决于「轮询循环自己的续体在真实时间
-    /// 预算内被服务了几次」：第一次观测必然不满足，通过就要求预算耗尽前至少再服务一轮。跑满的 runner
-    /// 上饿死的正是这些续体——#3323 在 CI 上记下的就是这个形态。把假时钟交给这个窗口既没用也不可用：
-    /// 等待在飞时谁都不许推进这口时钟，而它同时驱动着被测对象的 <c>PeriodicTimer</c>。
-    /// </para>
-    /// <para>
-    /// 边沿只需要一次续体，健康的一跑根本不看时钟。<see cref="BoundedSignal"/> 仍用真实时钟兜底，只为
-    /// 预算在这里还值得做的那一件事：把丢失的边沿变成诊断，而不是挂住整跑。
-    /// </para>
-    /// <para>
-    /// 与 <c>PeriodicInspectionTimeTaskSchedulerTests.DispatchCountSignal</c>（#3323 / PR #3390）同形。
-    /// 把两处收拢成一个共享原语要改到本票射程外的测试文件，本票不做。
-    /// </para>
-    /// </remarks>
-    private sealed class ScopeScanCountSignal(string subject)
-    {
-        private readonly Lock gate = new();
-        private readonly List<(int ExpectedCount, TaskCompletionSource Reached)> waiters = [];
-        private int completed;
-
-        public int Completed => Volatile.Read(ref completed);
-
-        public void Record()
-        {
-            var reached = Interlocked.Increment(ref completed);
-            List<TaskCompletionSource>? released = null;
-            lock (gate)
-            {
-                for (var index = waiters.Count - 1; index >= 0; index--)
-                {
-                    if (waiters[index].ExpectedCount > reached)
-                    {
-                        continue;
-                    }
-
-                    (released ??= []).Add(waiters[index].Reached);
-                    waiters.RemoveAt(index);
-                }
-            }
-
-            foreach (var waiter in released ?? [])
-            {
-                waiter.TrySetResult();
-            }
-        }
-
-        /// <remarks>
-        /// 「已经到数」的检查与登记共用 <see cref="gate"/>（释放扫描也走它），所以卡在两者之间的那一次
-        /// 完成不会被漏掉：它要么看见 waiter 已登记，要么早已把检查读的那个计数加上去了。
-        /// </remarks>
-        public Task WaitForAsync(int expectedCount)
-        {
-            ArgumentOutOfRangeException.ThrowIfLessThan(expectedCount, 1);
-
-            TaskCompletionSource reached;
-            lock (gate)
-            {
-                if (Volatile.Read(ref completed) >= expectedCount)
-                {
-                    return Task.CompletedTask;
-                }
-
-                reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                waiters.Add((expectedCount, reached));
-            }
-
-            return BoundedSignal.ObserveAsync(
-                reached.Task,
-                $"the scanner to finish {subject} #{expectedCount}",
-                () => $"dispatched={Completed}; expected>={expectedCount}");
-        }
-    }
-
     private sealed class ScopeResolutionProbe
     {
         private int dbContextResolutions;
@@ -446,7 +383,8 @@ public sealed class WorkOrderReleaseFactBacklogScannerTests
         public int MetricsResolutions => Volatile.Read(ref metricsResolutions);
 
         /// <summary>「巡检已完成第 N 个 scope 的扫描」的边沿。</summary>
-        public ScopeScanCountSignal ScopeScansCompleted { get; } = new("release fact backlog scope scan");
+        public CountingEdgeSignal ScopeScansCompleted { get; } =
+            new("the scanner to finish a release fact backlog scope scan");
 
         public void RecordDbContextResolution() => Interlocked.Increment(ref dbContextResolutions);
 
