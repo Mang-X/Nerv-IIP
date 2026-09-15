@@ -491,8 +491,13 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
 
         // ── 位点 ①：GR/IR 计提消费者（PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual）
         await ErpFinanceSourceDocumentFixtures.SeedPurchaseReceiptAsync(db, "RCV-S5-DEDUP", "SUP-001", org, env);
+        // ⭐ #3278 / S6：序列段取 99xxxx。S6 之后本用例里的建单命令**自己**会向同一条
+        // `journal-voucher` 规则取号（`JV-{当天}-000001` 起数），预置号若也写 000001 就会撞
+        // `(org, env, voucher_no)` 唯一索引——那是夹具冲突，不是被测行为。
+        // 99xxxx 在**当天**按序列避开（计数器从 1 起数，跑不到 99 万），在**别的日期**按日期段避开，
+        // 两个方向都不依赖「今天是哪天」⇒ 不是定时炸弹。形状仍是 S6 的短号形状。
         db.JournalVouchers.Add(SourceKeyedVoucher(
-            "JV-20260915-000001", JournalVoucherSourceType.GoodsReceiptIrAccrual, "RCV-S5-DEDUP", postingDate, org, env));
+            "JV-20260915-990001", JournalVoucherSourceType.GoodsReceiptIrAccrual, "RCV-S5-DEDUP", postingDate, org, env));
         await db.SaveChangesAsync();
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
         await new PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual(db, deadLetters).HandleAsync(
@@ -502,7 +507,7 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         await new PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual(db, deadLetters).HandleAsync(
             GoodsReceiptRecordedEvent("evt-s5-grir-2", "RCV-S5-DEDUP", org, env), CancellationToken.None);
         await db.SaveChangesAsync();
-        await AssertSingleVoucherForSourceAsync(db, JournalVoucherSourceType.GoodsReceiptIrAccrual, "RCV-S5-DEDUP", "JV-20260915-000001");
+        await AssertSingleVoucherForSourceAsync(db, JournalVoucherSourceType.GoodsReceiptIrAccrual, "RCV-S5-DEDUP", "JV-20260915-990001");
         Assert.Empty(await deadLetters.ListAsync(null, null, CancellationToken.None));
 
         // ── 位点 ②：RegisterAccountPayablePayment（批准即执行，分配器重放路径）
@@ -515,12 +520,18 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         await new RegisterAccountPayablePaymentCommandHandler(db, coding).Handle(registerPayment, CancellationToken.None);
         await db.SaveChangesAsync();
         var paymentExecutionNo = (await db.PaymentExecutions.AsNoTracking().SingleAsync(x => x.SupplierCode == "SUP-001")).PaymentExecutionNo;
-        // 把凭证号改成 S6 的短号形状：来源身份不动，只把「凭证号 == 付款执行单号」这条巧合拆掉。
-        await RenameVoucherNoAsync(db, paymentExecutionNo, "JV-20260915-000002");
+        // ⭐ #3278 / S6 抽掉了这里原本手工制造的前提：改前凭证号**就是**付款执行单号，
+        // 所以 S5 要先把凭证号手工改名，才能检验查重谓词认的是来源不是凭证号（那个夹具方法已随本次改动删除）。
+        // S6 之后生产代码自己取分配器短号，那条巧合不复存在 —— 改名也执行不下去
+        //（库里已经没有以付款执行单号为凭证号的行，那条改名的行数断言必红）。
+        // 于是这里改成**断言这条分离由生产行为提供**：谁把 S6 的取号改回复用付款执行单号，本条立刻红。
         db.ChangeTracker.Clear();
+        var registeredPaymentVoucherNo = (await db.JournalVouchers.AsNoTracking().SingleAsync(x =>
+            x.SourceType == JournalVoucherSourceType.PaymentExecution.Code && x.SourceNo == paymentExecutionNo)).VoucherNo;
+        Assert.NotEqual(paymentExecutionNo, registeredPaymentVoucherNo);
         await new RegisterAccountPayablePaymentCommandHandler(db, coding).Handle(registerPayment, CancellationToken.None);
         await db.SaveChangesAsync();
-        await AssertSingleVoucherForSourceAsync(db, JournalVoucherSourceType.PaymentExecution, paymentExecutionNo, "JV-20260915-000002");
+        await AssertSingleVoucherForSourceAsync(db, JournalVoucherSourceType.PaymentExecution, paymentExecutionNo, registeredPaymentVoucherNo);
 
         // ── 位点 ③：ExecutePaymentExecution（先批准后执行）
         await ErpFinanceSourceDocumentFixtures.SeedSupplierInvoiceAsync(db, "INV-S5-EXEC", "SUP-002", org, env);
@@ -533,12 +544,12 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
             CancellationToken.None);
         await db.SaveChangesAsync();
         db.JournalVouchers.Add(SourceKeyedVoucher(
-            "JV-20260915-000003", JournalVoucherSourceType.PaymentExecution, approvedNo, postingDate, org, env));
+            "JV-20260915-990003", JournalVoucherSourceType.PaymentExecution, approvedNo, postingDate, org, env));
         await db.SaveChangesAsync();
-        await new ExecutePaymentExecutionCommandHandler(db).Handle(
+        await new ExecutePaymentExecutionCommandHandler(db, coding).Handle(
             new ExecutePaymentExecutionCommand(org, env, approvedNo, "u-finance"), CancellationToken.None);
         await db.SaveChangesAsync();
-        await AssertSingleVoucherForSourceAsync(db, JournalVoucherSourceType.PaymentExecution, approvedNo, "JV-20260915-000003");
+        await AssertSingleVoucherForSourceAsync(db, JournalVoucherSourceType.PaymentExecution, approvedNo, "JV-20260915-990003");
 
         // ── 位点 ④：RegisterAccountReceivableCollection（登记即匹配，分配器重放路径）
         await ErpFinanceSourceDocumentFixtures.SeedDeliveryOrderAsync(db, "DO-S5-COLLECT", "CUS-001", org, env);
@@ -550,11 +561,14 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         await new RegisterAccountReceivableCollectionCommandHandler(db, coding).Handle(registerCollection, CancellationToken.None);
         await db.SaveChangesAsync();
         var collectionReceiptNo = (await db.CashReceipts.AsNoTracking().SingleAsync()).CashReceiptNo;
-        await RenameVoucherNoAsync(db, collectionReceiptNo, "JV-20260915-000004");
+        // 理由同位点 ②：S6 之后「凭证号 == 收款单号」这条巧合由生产代码拆掉，不再手工改名。
         db.ChangeTracker.Clear();
+        var registeredCollectionVoucherNo = (await db.JournalVouchers.AsNoTracking().SingleAsync(x =>
+            x.SourceType == JournalVoucherSourceType.CashReceipt.Code && x.SourceNo == collectionReceiptNo)).VoucherNo;
+        Assert.NotEqual(collectionReceiptNo, registeredCollectionVoucherNo);
         await new RegisterAccountReceivableCollectionCommandHandler(db, coding).Handle(registerCollection, CancellationToken.None);
         await db.SaveChangesAsync();
-        await AssertSingleVoucherForSourceAsync(db, JournalVoucherSourceType.CashReceipt, collectionReceiptNo, "JV-20260915-000004");
+        await AssertSingleVoucherForSourceAsync(db, JournalVoucherSourceType.CashReceipt, collectionReceiptNo, registeredCollectionVoucherNo);
 
         // ── 位点 ⑤：MatchCashReceipt（先登记后匹配）
         await ErpFinanceSourceDocumentFixtures.SeedDeliveryOrderAsync(db, "DO-S5-MATCH", "CUS-002", org, env);
@@ -567,12 +581,12 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
             CancellationToken.None);
         await db.SaveChangesAsync();
         db.JournalVouchers.Add(SourceKeyedVoucher(
-            "JV-20260915-000005", JournalVoucherSourceType.CashReceipt, registeredReceiptNo, postingDate, org, env));
+            "JV-20260915-990005", JournalVoucherSourceType.CashReceipt, registeredReceiptNo, postingDate, org, env));
         await db.SaveChangesAsync();
-        await new MatchCashReceiptCommandHandler(db).Handle(
+        await new MatchCashReceiptCommandHandler(db, coding).Handle(
             new MatchCashReceiptCommand(org, env, registeredReceiptNo), CancellationToken.None);
         await db.SaveChangesAsync();
-        await AssertSingleVoucherForSourceAsync(db, JournalVoucherSourceType.CashReceipt, registeredReceiptNo, "JV-20260915-000005");
+        await AssertSingleVoucherForSourceAsync(db, JournalVoucherSourceType.CashReceipt, registeredReceiptNo, "JV-20260915-990005");
 
         // ⭐ 哨兵格：五格若因为「整表压根没多出任何凭证」而全绿（例如夹具根本没走到生产路径），
         // 这里就读不到那些**本来就该新增**的凭证。夹具建了 2 张应付 + 2 张应收，各自在建单时写一张凭证
@@ -793,18 +807,6 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
             .Select(x => x.VoucherNo)
             .ToListAsync();
         Assert.Equal([expectedVoucherNo], matches);
-    }
-
-    private static async Task RenameVoucherNoAsync(ApplicationDbContext db, string currentVoucherNo, string newVoucherNo)
-    {
-        await db.Database.OpenConnectionAsync();
-        var quotedSchema = new NpgsqlCommandBuilder().QuoteIdentifier(ErpFacts.Schema);
-        await using var command = new NpgsqlCommand(
-            $"UPDATE {quotedSchema}.journal_vouchers SET voucher_no = @newVoucherNo WHERE voucher_no = @currentVoucherNo",
-            (NpgsqlConnection)db.Database.GetDbConnection());
-        command.Parameters.AddWithValue("newVoucherNo", newVoucherNo);
-        command.Parameters.AddWithValue("currentVoucherNo", currentVoucherNo);
-        Assert.Equal(1, await command.ExecuteNonQueryAsync());
     }
 
     private static PurchaseReceiptRecordedIntegrationEvent GoodsReceiptRecordedEvent(
