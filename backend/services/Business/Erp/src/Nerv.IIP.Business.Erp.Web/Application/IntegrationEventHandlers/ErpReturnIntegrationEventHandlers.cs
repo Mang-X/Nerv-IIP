@@ -284,7 +284,7 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPur
         }
 
         // #3278 / S7：凭证号改分配器短号。分配键取 (PRTN, 退货单号)，
-        // 与 S5 那条 partial unique index 同粒度；⧐ 不取 integrationEvent.IdempotencyKey（即上面
+        // 与 S5 那条 partial unique index 同粒度；不取 integrationEvent.IdempotencyKey（即上面
         // :247 给退货单号用的那把键）——那把键的粒度是「一个事件一张退货单」，
         // 不是「一张退货单一张凭证」。
         var voucherAllocation = await ConsumerJournalVoucherNumber.TryAllocateAsync(
@@ -298,7 +298,7 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPur
         {
             // gate-and-skip：与本 handler 外层 catch 同形——先丢掉本次所有未提交变更
             // （含 inbox 行、退货单/借项通知单号分配、应付减额），再写死信。
-            // 死信库自己 SaveChanges，所以 Clear 必须在 AddAsync 之前。ⴛ 不能 throw（#877）。
+            // 死信库自己 SaveChanges，所以 Clear 必须在 AddAsync 之前。不能 throw（#877）。
             dbContext.ChangeTracker.Clear();
             await DeadLetterAsync(
                 integrationEvent,
@@ -480,7 +480,7 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForSettleSales
             rma.MarkCreditIssued(allocation.Code);
             var creditNote = CreditNote.Issue(rma, allocation.Code);
             // #3278 / S7：凭证号改分配器短号。分配键取 (CN, 红字通知单号)。
-            // ⴛ 注意这里有两次分配且走不同规则：上面 allocation 是 credit-note 规则（红字通知单号），
+            // 注意这里有两次分配且走不同规则：上面 allocation 是 credit-note 规则（红字通知单号），
             // 这里是 journal-voucher 规则（凭证号），两个码不再相等——改前凭证号是 JV-CN-{红字号}。
             var voucherAllocation = await ConsumerJournalVoucherNumber.TryAllocateAsync(
                 codingService,
@@ -491,7 +491,7 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForSettleSales
                 cancellationToken);
             if (voucherAllocation.Code is null)
             {
-                // gate-and-skip：与本方法外层 catch 同形（先 Clear 再写死信）。ⴛ 不能 throw（#877）。
+                // gate-and-skip：与本方法外层 catch 同形（先 Clear 再写死信）。不能 throw（#877）。
                 dbContext.ChangeTracker.Clear();
                 await DeadLetterAsync(
                     integrationEvent,

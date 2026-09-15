@@ -51,7 +51,7 @@ internal readonly record struct JournalVoucherNumberAllocation(string? Code, str
 /// <c>Application/Commands/JournalVoucherNoAllocation.cs</c> 建了命令侧的同职责取号入口。
 /// 两者**不是同一个类型也不在同一个文件**（无 add/add 冲突），但确实是一件事两套实现。
 /// ⭐ <b>本入口多出来的那一件事是失败形态</b>：S6 的 <c>AllocateAsync</c> 返回 <c>Task&lt;string&gt;</c>、
-/// ⴛ 不捕获任何异常——命令处理器里那是对的（异常返回给调用方），
+/// 不捕获任何异常——命令处理器里那是对的（异常返回给调用方），
 /// 但 CAP 消费者里它会逃逸成 poison message（#877 仍 OPEN）。
 /// 合并顺序定下来后，本类可以退化成「调 S6 的 <c>AllocateAsync</c> + 一层 try/catch」的薄包装。
 /// </para>
@@ -81,7 +81,7 @@ internal readonly record struct JournalVoucherNumberAllocation(string? Code, str
 /// 所以选摘要式**不是为了修一个今天可达的溢出**，而是为了让上界与来源单号长度解耦：
 /// 否则 <c>OperationTaskId</c> 列宽一动、或 <c>source_no</c> 列宽一动，这 9 字符余量就静默没了。
 /// ⭐ 代价是排障时读不出那一行对应哪张来源单据（只看得出族）。
-/// ⴛ 本票**没有**做「合得下用袸拼 / 合不下退摘要」那种两形态回落（S6 做的是那种）——
+/// 本票**没有**做「合得下用袸拼 / 合不下退摘要」那种两形态回落（S6 做的是那种）——
 /// 两形态意味着多一条只在顶格输入下才走的分支，而那条分支今天在消费侧**不可达**。
 /// </para>
 /// <para>

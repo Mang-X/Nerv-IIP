@@ -240,7 +240,7 @@ public sealed class ProductionReportRecordedIntegrationEventHandlerForAccumulate
 
     /// <summary>
     /// #3278 / S7：迟到调整凭证号没分配下来时的 gate-and-skip。
-    /// ⴛ 不能 throw：CAP 消费者里的业务异常会逃逸成 poison message（#877 仍 OPEN）。
+    /// 不能 throw：CAP 消费者里的业务异常会逃逸成 poison message（#877 仍 OPEN）。
     /// 先 Clear 再写死信：本次所有未提交变更（含 inbox 行、成本累计）一并丢弃，
     /// 而死信库自己 SaveChanges，所以只有死信行落库。
     /// </summary>
@@ -371,7 +371,7 @@ internal static class CostVariancePosting
     /// <see langword="false"/> = **凭证号没分配到**，本方法没改任何状态，调用方必须 gate-and-skip。
     /// </returns>
     /// <remarks>
-    /// ⧐ #3278 / S7：凭证号从 <c>ErpVoucherNoPolicy.Compose(WorkOrderCostAdjustment, workOrderId, sourceId)</c>
+    /// #3278 / S7：凭证号从 <c>ErpVoucherNoPolicy.Compose(WorkOrderCostAdjustment, workOrderId, sourceId)</c>
     /// 改成分配器短号。本方法是静态辅助、被 5 个生产调用点共用，手里没有事件信封，
     /// 所以分配器的幂等键取 <c>(WOCADJ, sourceId)</c>——正好就是 S5 给本族定的唯一键，
     /// 也正好就在参数里，不需要改 5 个调用点的取值。

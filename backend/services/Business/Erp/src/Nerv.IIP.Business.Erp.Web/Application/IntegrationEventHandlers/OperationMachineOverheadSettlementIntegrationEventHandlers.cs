@@ -548,8 +548,8 @@ public sealed class OperationMachineOverheadSettlementOrchestrator(
     /// <summary>
     /// 工单已完全资本化时补一张迟到调整凭证。
     ///
-    /// ⧐ #3278 / S7：凭证号改分配器短号后多了一条「号没分配到」的失败形态。
-    /// ⴛ 不能 throw（CAP 消费者里会逃逸成 poison message，#877 仍 OPEN）：
+    /// #3278 / S7：凭证号改分配器短号后多了一条「号没分配到」的失败形态。
+    /// 不能 throw（CAP 消费者里会逃逸成 poison message，#877 仍 OPEN）：
     /// 先 <c>ChangeTracker.Clear()</c> 丢掉本次所有未提交变更（含 inbox 行与结算行），再写死信。
     /// 本方法是各处理流程的**最后一句**，所以失败不需要向上传控制流。
     /// </summary>
