@@ -111,18 +111,67 @@ public sealed class ConsumerJournalVoucherNumberKeyContractTests
     }
 
     /// <summary>
-    /// 指纹取的就是键里那个摘要 ⇒「同键不同指纹」在本入口结构上不可达，
-    /// 也就没有一条只会在重投时炸的 <c>KnownException</c> 路径。
+    /// 摘要的**输入成分**由冻结黄金向量钉死：hex 由外部独立实现（Python <c>hashlib</c>）算出后硬编码，
+    /// ⛔ 不是先用 <see cref="ConsumerJournalVoucherNumber.Digest"/> 求值再用同一个 <c>Digest</c> 复算。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// ⭐ <b>这一条打的轴是「摘要输入里有什么」，与本类其余各条（形状 / 长度 / 互异）都不同轴。</b>
+    /// 复审实测：本 PR 首轮那 17 格变异**没有一格**打在这条轴上——往
+    /// <see cref="ConsumerJournalVoucherNumber.CanonicalKey"/> 里掺一个
+    /// <c>DateTime.UtcNow:yyyyMMdd</c>，<c>Erp.Web.Tests</c> + 真 PostgreSQL **零红**、
+    /// <c>FullChain</c> + 真 PostgreSQL **零红**，全格存活。
+    /// </para>
+    /// <para>
+    /// ⚠️ <b>为什么「键必须与时间无关」是承重的</b>：<c>journal-voucher</c> 走
+    /// <c>StandardCodeRules.Document</c>，段里含 <c>DateOf("yyyyMMdd")</c> + <c>SequenceOf(6, ResetPeriod.Day)</c>。
+    /// CAP 在 23:59 投递、次日 00:01 重投时，键若带任何时间成分就会被当成**新键**重新分号。
+    /// 后果分级：位点 ① 只是白烧一个号（它前面还有来源两列查重早退）；
+    /// ②③④⑤ 会拿着新号去写第二张凭证 ⇒ 撞 S5 那条来源唯一索引 ⇒
+    /// <c>DbUpdateException</c> 从调用方 UoW 抛出、在 <see cref="ConsumerJournalVoucherNumber.TryAllocateAsync"/>
+    /// 的 <c>try</c> 之外 ⇒ 逃逸成 poison message（#877）。
+    /// </para>
+    /// <para>
+    /// <b>失效方向</b>：黄金向量只钉住这 5 组输入对应的输出。换掉哈希算法、改规范串分隔符、
+    /// 改长度前缀写法都会红；但**新增**一个族而不补向量，本条不会红
+    /// （族的枚举完备性由 <see cref="Keys_are_distinct_across_every_registered_source_type"/>
+    /// 与 <c>JournalVoucherSourceContractTests</c> 的反射对撞承担，不由本条承担）。
+    /// </para>
+    /// </remarks>
+    [Theory]
+    // 生成方式（可复算）：canonical = $"{code.Length}\u001F{code}\u001F{no.Length}\u001F{no}"，
+    // 再取 SHA-256 的大写十六进制。以下 hex 由 Python hashlib 独立算出。
+    [InlineData("GRIR", "RCV-AXIS-0001", "781974319F5A8BC52F765C30F174B2A630D00291345518DB0875EC13317A207E")]
+    [InlineData("PRTN", "PRTN-AXIS-0001", "AF8CDE74F0AA275221EB58AAC78E33DC34356679E268CF63291D0557FF015D2A")]
+    [InlineData("CN", "CN-AXIS-0001", "C0580D6CC0EB5129A22B7E89CF3FB4D9912E93BC298E4BF34BA3CF5722662CB0")]
+    [InlineData("WOC", "MOVE-AXIS-0001", "91AB3163C4268995966ED1AFAA86A1C49CA2B232B80B34EBCF5860DD968401BF")]
+    [InlineData("WOCADJ", "RPT-AXIS-0001", "56A0D3832F7556678501F57953B4CC44817DB0C14B01D8D18F5432921898DC9F")]
+    public void Digest_input_is_frozen_by_golden_vectors(string sourceTypeCode, string sourceNo, string expectedDigest)
+    {
+        var sourceType = Assert.Single(JournalVoucherSourceType.All, x => x.Code == sourceTypeCode);
+
+        Assert.Equal(expectedDigest, ConsumerJournalVoucherNumber.Digest(sourceType, sourceNo));
+        Assert.Equal(
+            $"{ConsumerJournalVoucherNumber.KeyPrefix}{sourceTypeCode}:{expectedDigest}",
+            ConsumerJournalVoucherNumber.IdempotencyKeyOf(sourceType, sourceNo));
+    }
+
+    /// <summary>
+    /// 同一来源在**两个不同时刻**取到的键逐字节相同——这是上面那条轴的行为侧对照：
+    /// 黄金向量钉的是「输入是哪几段」，这一条钉的是「输入里没有随调用时刻变化的东西」。
+    /// ⛔ 不用假时钟：本方法根本不接受 <c>TimeProvider</c>，掺进来的任何时间源都是真实时钟，
+    /// 用例只要跨一次真实时间推进后重算即可。
     /// </summary>
     [Fact]
-    public void Fingerprint_is_a_function_of_the_key()
+    public async Task Idempotency_key_does_not_change_between_two_moments_in_time()
     {
-        foreach (var sourceType in JournalVoucherSourceType.All)
-        {
-            var digest = ConsumerJournalVoucherNumber.Digest(sourceType, "SRC-0001");
-            Assert.EndsWith(digest, ConsumerJournalVoucherNumber.IdempotencyKeyOf(sourceType, "SRC-0001"), StringComparison.Ordinal);
-            Assert.Equal(ConsumerJournalVoucherNumber.DigestLength, digest.Length);
-        }
+        var first = ConsumerJournalVoucherNumber.IdempotencyKeyOf(
+            JournalVoucherSourceType.PurchaseReturn, "PRTN-AXIS-0001");
+        await Task.Delay(TimeSpan.FromMilliseconds(30), CancellationToken.None);
+        var second = ConsumerJournalVoucherNumber.IdempotencyKeyOf(
+            JournalVoucherSourceType.PurchaseReturn, "PRTN-AXIS-0001");
+
+        Assert.Equal(first, second);
     }
 
     private static int MaxLengthOf<TEntity>(string propertyName)

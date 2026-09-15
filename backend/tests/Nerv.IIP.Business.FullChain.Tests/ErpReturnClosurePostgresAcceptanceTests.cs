@@ -87,7 +87,12 @@ public sealed class ErpReturnClosurePostgresAcceptanceTests
             // 无参 new ErpCodingService() 的计数器挂在实例上，各给一个新实例时两边都从
             // JV-yyyyMMdd-000001 起号，在真库上直接撞
             // IX_journal_vouchers_organization_id_environment_id_voucher_no（23505）。
-            // 改短号前两边的凭证号分别派生自退货单号与红字号，天然不撞，所以这是本票新增的约束。
+            // 改短号前两边的凭证号分别派生自退货单号与红字号，天然不撞。
+            //
+            // ⚠️ 这条约束**只对夹具成立，不是生产约束**：生产装配里 <c>ErpCodingService</c> 由 DI 解析，
+            // 走的是 (ApplicationDbContext, IServiceScopeFactory) 那个构造 = **落库**分配器，
+            // 计数器在 code_counters 表里，多少个实例共用同一库都不会重号。
+            // 只有用例里无参 new ErpCodingService() 那个**进程内**分配器才按实例分桶。
             var erpCoding = new ErpCodingService();
             var purchaseReturnHandler = new WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReturn(erpDb, erpDeadLetters, erpCoding);
             await purchaseReturnHandler.HandleAsync(purchaseReturnEvent, CancellationToken.None);

@@ -86,7 +86,7 @@ public sealed class PurchaseReceiptAccountPayableConsumerTests
 
         var vouchers = await dbContext.JournalVouchers.OrderBy(x => x.SourceNo).ToListAsync(CancellationToken.None);
         Assert.Empty(dbContext.AccountPayables);
-        // #3278 / S7：原写法铉的是派生串 ["JV-GRIR-RCV-AP-101", "JV-GRIR-RCV-AP-102"]，
+        // #3278 / S7：原写法钉的是派生串 ["JV-GRIR-RCV-AP-101", "JV-GRIR-RCV-AP-102"]，
         // 它同时承担了两件事：「两张凭证各属各的收货单」与「凭证号长成那个形状」。
         // 改短号后后一件不再成立，前一件改由来源两列承担；
         // 另加一条「两个号互异」——否则分配器两次都返回同一个号也会静默全绿（InMemory 看不见唯一索引）。
