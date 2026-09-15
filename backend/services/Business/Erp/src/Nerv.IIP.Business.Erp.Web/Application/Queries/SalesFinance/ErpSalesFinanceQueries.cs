@@ -659,7 +659,10 @@ public sealed class ListJournalVouchersQueryHandler(ApplicationDbContext dbConte
             // 谓词形状取自本文件 AccountPayable(:398) / AccountReceivable(:491) / CostCandidate(:572)，
             // 但**与它们并非同形**，已知两处差别：
             // ① null 卫：JournalVoucher.SourceType / SourceNo 可空（S2 裁定不回填存量行），三处兄弟的来源列都不可空。
-            //    裸 .Contains 在本项目（GenerateDocumentationFile + TreatWarningsAsErrors）下直接是 CS8602（实测两支都报错）。
+            //    裸 .Contains 直接是 CS8602：成因是 Nullable=enable（本 csproj:5 与 backend/Directory.Build.props:4）
+            //    + TreatWarningsAsErrors=true（backend/Directory.Build.props:6），实测两支都报错。
+            //    ⚠️ 与 GenerateDocumentationFile 无关——那条属性管的是别的警告（给 positional record 只写部分
+            //    <param> 会触发的 CS1573），别把两者的成因串在一起。
             //    语义：两列为 null 的存量行按「匹配不到」处理，这是预期而非缺陷。
             //    ⚠️ null 卫只在编译期承重：换成 SourceType!.Contains(...) 后 Postgres 侧 NULL LIKE → NULL 照样被过滤，
             //    EF InMemory 也不抛 NRE，故该变异在测试层存活（等价变异，非覆盖缺口）。
