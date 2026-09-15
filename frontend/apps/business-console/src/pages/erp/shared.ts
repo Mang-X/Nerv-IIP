@@ -55,6 +55,45 @@ export function unwrapRef<T>(value: T | ComputedRef<T>): T {
   return typeof value === 'object' && value !== null && 'value' in value ? value.value : value
 }
 
+/* ────────────────────────── 表格行 key ────────────────────────── */
+
+/**
+ * 给 `NvDataTable` 的 `:row-key` 用：优先取服务端稳定 id，缺 id 时退到**行对象自身的引用身份**。
+ *
+ * 为什么需要它（#3278 S4 实测，不是风格问题）：凭证页原来写
+ * `(r) => r.voucherNo ?? '凭证'`。凭证号既可以为空、也可以重复，于是同一页里多行会落到
+ * **同一个 key**。Vue 的 keyed diff 只有在「顺序未变」的快路径上才碰巧无害；一旦整批换行
+ * （服务端翻页、关键字过滤、刷新后顺序变化）就进入乱序分支，实测结果是
+ * **一页 3 行渲染成 4 行**：多出来的那行重复显示了另一张凭证的金额，并伴随
+ * `[Vue warn]: Duplicate keys found during update`。在财务页上这是把不存在的凭证摆到账上。
+ *
+ * 为什么兜底不退回业务编号：那等于把刚修掉的重复 key 原样请回来——业务编号可空、可重复，
+ * 正是缺陷来源本身。
+ *
+ * 为什么兜底不用下标：`NvDataTable` 的 `rowKey` 契约只传行对象、不传下标；而且下标在翻页
+ * 与过滤后会指向另一行，key 就不再代表「同一行」，等于换一种方式说谎。
+ *
+ * 所以缺 id 时按行对象的引用身份发一个进程内唯一的代理 key：同一个对象永远拿到同一个 key
+ * （重渲染稳定），两个不同对象在构造上不可能拿到相同 key（`WeakMap` 按引用存、计数器只增）。
+ *
+ * **失效方向（明确写出来，别当它完备）**：一次 refetch 会产生新的行对象，于是这些**缺 id 的行**
+ * 拿到新的代理 key，Vue 会整行重建——代价是丢掉该行的 DOM 自有状态与过渡，仅限于服务端
+ * 没有给出 id 的行，且**不会**退化回重复 key。行对象若被复用于两张不同的表，两张表会共用
+ * 同一个代理 key；这没有问题，因为 key 只要求在**同一张表内**互异。
+ */
+const surrogateRowKeys = new WeakMap<object, string>()
+let surrogateRowKeySeq = 0
+
+export function stableRowKey(row: { id?: string | null }): string {
+  if (row.id) return row.id
+  const existing = surrogateRowKeys.get(row)
+  if (existing !== undefined) return existing
+  surrogateRowKeySeq += 1
+  const surrogate = `nv-row-${surrogateRowKeySeq}`
+  surrogateRowKeys.set(row, surrogate)
+  return surrogate
+}
+
 /* ────────────────────────── ERP 读面六档状态 ────────────────────────── */
 
 /**
