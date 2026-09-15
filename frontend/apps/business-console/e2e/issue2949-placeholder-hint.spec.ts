@@ -237,25 +237,19 @@ test('#2949 半栏栅格 hint 迁移后真实排版核验', async ({ page }, tes
   await capture(page, outDir, '05-engineering-documents', { container: dialog })
   await page.keyboard.press('Escape')
 
-  // 6/7. EBOM / MBOM 修订号
+  // 6/7. EBOM / MBOM 修订号：只取截图与 hint 可见性，**不量 placeholder**。
   //
-  // ⚠️ 这两处量到的是**禁用支**，不是本 PR 改动的那一支。
-  // `blankForm()` 把 parentItemCode / skuCode 置空，控件 `:disabled`，placeholder 三元
-  // 恒落在「请先选父项物料」/「请先选产出物料」——而迁移动的是另一支「填写新修订号」。
-  // 实测确认过：把迁移支改回原文「填写新修订号，如 A、B、001」，这里读数一字不变（98/205、
-  // 98/327）照绿。**所以这两格对本 PR 的改动零鉴别力**，别把它读成「修订号 placeholder 已被量过」。
-  //
-  // 不在这里补「先选父项再量」：那要给读面造物料数据，而迁移支的回归防线已经有了——
-  // 同一改动会被 `src/placeholder-hint.contract.test.ts` 的 16 字写法判据拦红并点名到
-  // ebom.vue:418 / mbom.vue:517（实测）。这两格留着的价值只是截图取证与 hint 可见性。
-  for (const [name, route, selector] of [
-    ['06-ebom', '/engineering/ebom', '#ebom-rev'],
-    ['07-mbom', '/engineering/mbom', '#mbom-rev'],
+  // 弹窗一打开父项/产出物料为空、控件 `:disabled`，placeholder 三元恒落在「请先选…」那一支，
+  // 而本 PR 迁移的是另一支「填写新修订号」——量这里等于量一个我没改的字符串（实测：把迁移支
+  // 改回原文，读数一字不变照绿）。这种断言看着有覆盖、其实没有，删掉比留着注解它更干净。
+  // 迁移支的回归由 `src/placeholder-hint.contract.test.ts` 承接，但只到 **16 字写法**这一层。
+  for (const [name, route] of [
+    ['06-ebom', '/engineering/ebom'],
+    ['07-mbom', '/engineering/mbom'],
   ] as const) {
     await page.goto(route, { waitUntil: 'domcontentloaded' })
     await page.getByRole('button', { name: '发布新版本' }).click()
     await capture(page, outDir, name, {
-      input: selector,
       hint: '例如 A、B、001。',
       container: dialog,
     })
