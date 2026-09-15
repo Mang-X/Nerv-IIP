@@ -192,6 +192,7 @@ export function describeTelemetryOeeDegradation(reason: string) {
 
 export function useBusinessTelemetryOeeAggregates(
   initialFilters: Partial<TelemetryOeeAggregateFilters> = {},
+  shouldLoad: () => boolean = () => true,
 ) {
   const businessContext = useBusinessContextStore()
   const defaultWindow = defaultWindowFilters()
@@ -212,6 +213,7 @@ export function useBusinessTelemetryOeeAggregates(
   const queryEnabled = computed(
     () =>
       hasBusinessContext(businessContext) &&
+      shouldLoad() &&
       filters.windowStartUtc.trim().length > 0 &&
       filters.windowEndUtc.trim().length > 0,
   )

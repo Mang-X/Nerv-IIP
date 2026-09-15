@@ -2279,8 +2279,9 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.Equal("SPARE-001", maintenance.LastCompleteWorkOrderRequest.GetProperty("spareParts")[0].GetProperty("skuCode").GetString());
     }
 
-    [Fact]
-    public async Task Alarm_sourced_repair_resolves_code_and_public_id_to_the_same_device_before_create()
+    [Theory]
+    [MemberData(nameof(AlarmRepairApiVersions))]
+    public async Task Alarm_sourced_repair_resolves_code_and_public_id_to_the_same_device_before_create(string version)
     {
         const string alarmId = "019f2000-0000-7000-8000-0000000000ab";
         var maintenance = new RecordingMaintenanceFacadeClient();
@@ -2310,10 +2311,12 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         var response = await PostAlarmRepairAsync(
             client,
             deviceId.ToUpperInvariant(),
-            alarmId.ToUpperInvariant());
+            alarmId.ToUpperInvariant(),
+            version);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(1, maintenance.CreateWorkOrderCallCount);
+        Assert.Equal(version, maintenance.LastCreateWorkOrderVersion);
         Assert.Equal(new BusinessConsoleTelemetryAlarmListRequest(
             "org-001", "env-dev", null, null, 0, 2, AlarmEventId: alarmId), telemetry.LastAlarmListRequest);
         Assert.Equal(alarmId, maintenance.LastCreateWorkOrderRequest.GetProperty("sourceAlarmId").GetString());
@@ -2322,8 +2325,9 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.Contains(masterData.DetailRequests, x => x.Code == "DEV-PRESS-01");
     }
 
-    [Fact]
-    public async Task Alarm_sourced_repair_rejects_a_different_device_before_create()
+    [Theory]
+    [MemberData(nameof(AlarmRepairApiVersions))]
+    public async Task Alarm_sourced_repair_rejects_a_different_device_before_create(string version)
     {
         var maintenance = new RecordingMaintenanceFacadeClient();
         var telemetry = new RecordingIndustrialTelemetryClient
@@ -2340,27 +2344,41 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
 
-        var response = await PostAlarmRepairAsync(client, "DEV-REQUEST-B");
+        var response = await PostAlarmRepairAsync(client, "DEV-REQUEST-B", version: version);
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         Assert.Equal(0, maintenance.CreateWorkOrderCallCount);
     }
 
-    public static TheoryData<string, BusinessConsoleTelemetryAlarmEventListResponse> InvalidAlarmFacts => new()
+    public static TheoryData<string, BusinessConsoleTelemetryAlarmEventListResponse, string> InvalidAlarmFacts
     {
-        { "not found", new BusinessConsoleTelemetryAlarmEventListResponse([], 0) },
-        { "wrong scope", AlarmResponse(Alarm("alarm-001", "DEV-A", organizationId: "org-other")) },
-        { "multiple", new BusinessConsoleTelemetryAlarmEventListResponse([
-            Alarm("alarm-001", "DEV-A"),
-            Alarm("alarm-001", "DEV-B"),
-        ], 2) },
-    };
+        get
+        {
+            var data = new TheoryData<string, BusinessConsoleTelemetryAlarmEventListResponse, string>();
+            foreach (var version in new[] { "v1", "v2" })
+            {
+                data.Add("not found", new BusinessConsoleTelemetryAlarmEventListResponse([], 0), version);
+                data.Add("wrong scope", AlarmResponse(Alarm("alarm-001", "DEV-A", organizationId: "org-other")), version);
+                data.Add("multiple", new BusinessConsoleTelemetryAlarmEventListResponse([
+                    Alarm("alarm-001", "DEV-A"),
+                    Alarm("alarm-001", "DEV-B"),
+                ], 2), version);
+                // #2969 复审 D：单页只回一条但 Total 声明还有更多 —— 唯一能让 `alarms.Total == 1`
+                // 这个合取项承重的形状（Count==1 && Total!=1）。缺它时删掉该判断仍全绿。
+                data.Add("single item with ambiguous total",
+                    new BusinessConsoleTelemetryAlarmEventListResponse([Alarm("alarm-001", "DEV-A")], 2), version);
+            }
+
+            return data;
+        }
+    }
 
     [Theory]
     [MemberData(nameof(InvalidAlarmFacts))]
     public async Task Alarm_sourced_repair_rejects_missing_wrong_scope_or_multiple_alarm_facts(
         string _,
-        BusinessConsoleTelemetryAlarmEventListResponse alarmResponse)
+        BusinessConsoleTelemetryAlarmEventListResponse alarmResponse,
+        string version)
     {
         var maintenance = new RecordingMaintenanceFacadeClient();
         var telemetry = new RecordingIndustrialTelemetryClient { AlarmListResponse = alarmResponse };
@@ -2369,7 +2387,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
 
-        var response = await PostAlarmRepairAsync(client, "DEV-A");
+        var response = await PostAlarmRepairAsync(client, "DEV-A", version: version);
 
         Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
         Assert.Equal(0, maintenance.CreateWorkOrderCallCount);
@@ -2943,11 +2961,16 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             request.EnvironmentId,
             DeviceAssetId: deviceAssetId);
 
+    // #2969：v1 与 v2 创建代理共用同一份 source alarm/设备一致性校验，因此同一组事实必须在两条
+    // 路由上给出同一结果。version 参数让每条断言同时覆盖两个版本。
+    public static TheoryData<string> AlarmRepairApiVersions => new() { "v1", "v2" };
+
     private static async Task<HttpResponseMessage> PostAlarmRepairAsync(
         HttpClient client,
         string deviceAssetId,
-        string sourceAlarmId = "alarm-001") =>
-        await client.PostAsJsonAsync("/api/business-console/v1/maintenance/work-orders", new
+        string sourceAlarmId = "alarm-001",
+        string version = "v1") =>
+        await client.PostAsJsonAsync($"/api/business-console/{version}/maintenance/work-orders", new
         {
             organizationId = "org-001",
             environmentId = "env-dev",
@@ -3162,15 +3185,33 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
 
     public int TransitionCallCount { get; private set; }
 
+    public string? LastCreateWorkOrderVersion { get; private set; }
+
+    public BusinessConsoleCreateMaintenanceWorkOrderV2Request? LastCreateWorkOrderV2Request { get; private set; }
+
     public Task<BusinessConsoleCreateMaintenanceWorkOrderResponse> CreateWorkOrderAsync(
         string internalBearerToken,
         BusinessConsoleCreateMaintenanceWorkOrderRequest request,
         CancellationToken cancellationToken)
     {
         CreateWorkOrderCallCount++;
+        LastCreateWorkOrderVersion = "v1";
         LastInternalToken = internalBearerToken;
         LastCreateWorkOrderRequest = JsonSerializer.SerializeToElement(request, JsonOptions);
         return Task.FromResult(new BusinessConsoleCreateMaintenanceWorkOrderResponse("wo-maint-created"));
+    }
+
+    public Task<BusinessConsoleCreateMaintenanceWorkOrderV2Response> CreateWorkOrderV2Async(
+        string internalBearerToken,
+        BusinessConsoleCreateMaintenanceWorkOrderV2Request request,
+        CancellationToken cancellationToken)
+    {
+        CreateWorkOrderCallCount++;
+        LastCreateWorkOrderVersion = "v2";
+        LastInternalToken = internalBearerToken;
+        LastCreateWorkOrderV2Request = request;
+        LastCreateWorkOrderRequest = JsonSerializer.SerializeToElement(request, JsonOptions);
+        return Task.FromResult(new BusinessConsoleCreateMaintenanceWorkOrderV2Response("wo-maint-created-v2"));
     }
 
     public Task<BusinessConsoleCompleteMaintenanceWorkOrderResponse> CompleteWorkOrderAsync(

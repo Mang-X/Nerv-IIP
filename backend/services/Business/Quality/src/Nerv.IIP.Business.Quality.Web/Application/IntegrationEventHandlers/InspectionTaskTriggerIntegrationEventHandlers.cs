@@ -115,7 +115,7 @@ public sealed class ErpPurchaseReceiptRecordedIntegrationEventHandlerForCreateIn
                 integrationEvent.OrganizationId,
                 integrationEvent.EnvironmentId,
                 sourceType: QualityInspectionSourceTypes.Receiving,
-                sourceService: "erp",
+                sourceService: QualityInspectionSourceServices.Erp,
                 sourceDocumentId: payload.PurchaseReceiptNo,
                 sourceDocumentLineId: line.LineReference,
                 skuCode: line.SkuCode,
@@ -168,8 +168,8 @@ public sealed class MesOperationCompletedIntegrationEventHandlerForCreateInspect
             dbContext,
             integrationEvent.OrganizationId,
             integrationEvent.EnvironmentId,
-            sourceType: "operation",
-            sourceService: "mes",
+            sourceType: QualityInspectionSourceTypes.Operation,
+            sourceService: QualityInspectionSourceServices.Mes,
             sourceDocumentId: payload.WorkOrderId,
             sourceDocumentLineId: payload.OperationTaskId,
             skuCode: payload.SkuCode,
@@ -215,8 +215,8 @@ public sealed class MesFinishedGoodsReceiptRequestedIntegrationEventHandlerForCr
             dbContext,
             integrationEvent.OrganizationId,
             integrationEvent.EnvironmentId,
-            sourceType: "final",
-            sourceService: "mes",
+            sourceType: QualityInspectionSourceTypes.Final,
+            sourceService: QualityInspectionSourceServices.Mes,
             sourceDocumentId: payload.RequestNo,
             sourceDocumentLineId: payload.WorkOrderId,
             skuCode: payload.SkuCode,
@@ -239,21 +239,52 @@ public sealed class MesFinishedGoodsReceiptRequestedIntegrationEventHandlerForCr
 public static class FirstArticleInspection
 {
     /// <summary>首件任务与首件检验档的来源环节，等于 <c>InspectionPlan.Category</c>。</summary>
-    public const string SourceType = "first-article";
+    public const string SourceType = QualityInspectionSourceTypes.FirstArticle;
 
     /// <summary>首件任务的来源服务：触发事实来自 MES 报工。</summary>
-    public const string SourceService = "mes";
+    public const string SourceService = QualityInspectionSourceServices.Mes;
 
     /// <summary>首件取样数量固定为 1 个报工单位，不随本次报工良品数变动。</summary>
     public const decimal SampleQuantity = 1m;
 
     /// <summary>
-    /// 首件检验记录的来源单据身份。<c>InspectionRecord</c> 没有来源行字段，其唯一键
-    /// <c>ux_inspection_records_source_attempt</c> 也不含工序，所以首件必须把工序编进来源单据身份里；
-    /// 否则同一工单同一 SKU 的两道工序会共用一条检验记录——后判定的那道工序会静默复用前一道的结论。
+    /// 首件检验记录的来源单据身份。
+    ///
+    /// <para><b>它已不再是工序维度的承载者。</b>#3319 给 <c>InspectionRecord</c> 加了
+    /// <c>source_document_line_id</c> 并把它放进 <c>ux_inspection_records_source_attempt</c>，
+    /// 首件的工序身份现在与其它来源一样由来源行那一列承担（首件任务的来源行就是工序任务 id）。
+    /// 这串复合身份因此是**冗余**的：拆掉它，同一工单两道工序也不会再共用一条检验记录。</para>
+    ///
+    /// <para>本次仍保留它，是因为拆掉它会改写已落库并已随集成事件发布出去的首件来源身份
+    /// （NCR 原样复制、MES 保留上下文按它定位），那是 #2989 的标的，不在 #3319 的射程内。
+    /// 换言之：保留原因是存量兼容，不是唯一键还需要它。</para>
     /// </summary>
     public static string SourceDocumentId(string workOrderId, string operationId) =>
         $"{workOrderId}:{operationId}";
+
+    /// <summary>
+    /// <see cref="SourceDocumentId"/> 的逆函数，与编码点同住一处（#3191）。下游服务不得自行按
+    /// <c>:</c> 切这串复合身份——那等于把 Quality 的内部编码约定复制一份到别的服务里。
+    /// </summary>
+    public static bool TryParseSourceDocumentId(string? sourceDocumentId, out string workOrderId, out string operationId)
+    {
+        workOrderId = string.Empty;
+        operationId = string.Empty;
+        if (string.IsNullOrWhiteSpace(sourceDocumentId))
+        {
+            return false;
+        }
+
+        var segments = sourceDocumentId.Split(':');
+        if (segments.Length != 2 || segments[0].Length == 0 || segments[1].Length == 0)
+        {
+            return false;
+        }
+
+        workOrderId = segments[0];
+        operationId = segments[1];
+        return true;
+    }
 
     /// <summary>
     /// 按「工单 + 工序」构成，不用事件 <c>IdempotencyKey</c>，因此同一工序多次换型、多次报工只开一张任务；

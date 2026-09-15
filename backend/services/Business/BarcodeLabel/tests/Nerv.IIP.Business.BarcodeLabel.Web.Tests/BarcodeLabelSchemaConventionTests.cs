@@ -7,9 +7,11 @@ using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.BarcodeLabel.Domain;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelSerialCounterAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.ScanRecordAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.TraceabilityAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.TemplateAssetRetirementDecisionAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Infrastructure;
 using Nerv.IIP.Testing.EntityFramework;
 
@@ -27,8 +29,11 @@ public sealed class BarcodeLabelSchemaConventionTests
             typeof(LabelTemplate),
             typeof(LabelPrintBatch),
             typeof(LabelPrintItem),
+            typeof(LabelSerialCounter),
             typeof(ScanRecord),
             typeof(EpcisEvent),
+            typeof(TemplateAssetRetirementDecision),
+            typeof(TemplateAssetRetirementReplayFence),
         };
         var failures = new List<string>();
 

@@ -30,6 +30,12 @@ export const MES_READINESS_REASON_DISPLAYS: Readonly<
     label: '齐套快照缺失',
     nextStep: '确认工单已绑定生产版本，重新下达以生成齐套需求快照',
   },
+  WORK_ORDER_NOT_RELEASED: {
+    code: 'WORK_ORDER_NOT_RELEASED',
+    category: '其他门禁',
+    label: '工单未下达',
+    nextStep: '先在工单列表下达该工单，再开工或报工',
+  },
   PREVIOUS_OPERATION_INCOMPLETE: {
     code: 'PREVIOUS_OPERATION_INCOMPLETE',
     category: '前序工序',
@@ -113,6 +119,17 @@ export const MES_READINESS_REASON_DISPLAYS: Readonly<
     category: '设备',
     label: '设备来源不可用',
     nextStep: '稍后重试或联系管理员检查设备来源服务',
+  },
+  // #3155：后端 `MesReadinessReasonCodes.WorkOrderNotFound`。它与 WORK_ORDER_NOT_RELEASED
+  // 出自同一个 evaluator、相隔一行，却因为写成裸字面量而长期不在本表里——未登记的码走
+  // `describeMesReadinessReason` 兜底、不在 `RELEASE_IGNORED_TASK_BLOCKERS` 里，
+  // 于是静默阻断下达且全仓零红。现在后端注册表与本表由
+  // `scripts/verify-stable-code-frontend-vocabulary.ps1` 单向包含（后端 ⊆ 本表）钉住。
+  WORK_ORDER_NOT_FOUND: {
+    code: 'WORK_ORDER_NOT_FOUND',
+    category: '其他门禁',
+    label: '工单不存在',
+    nextStep: '刷新后核对该工序所属工单，仍然缺失请联系管理员检查数据',
   },
   SOURCE_SERVICE_UNAVAILABLE: {
     code: 'SOURCE_SERVICE_UNAVAILABLE',

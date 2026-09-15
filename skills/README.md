@@ -17,8 +17,9 @@ harness 不可见、或永远不会更新。
 判据：**这条流程换到另一个仓库还成立吗？** 成立就不属于 `skills/`——通用技能放全局层，
 放这里会把项目仓库变成通用技能的仓库。
 
-`skills update` 对本地来源不可用：项目专属技能改动后，重跑
-`npx skills add ./skills/<name>` 刷新 `skills-lock.json` 里的 `computedHash`。
+项目专属技能的 payload 由 [`scripts/setup-worktree.ps1`](../scripts/setup-worktree.ps1)（SessionStart hook）
+每次按 `skills/` 重新发布，改完源不需要手工重装。`skills update` 对本地来源不可用；只在需要
+刷新 `skills-lock.json` 的 `computedHash` 时重跑 `npx skills add ./skills/<name>`。
 
 `~/.claude/skills/` 不是可选层：它只有 Claude Code 能读，`skills` CLI 也管不了它，
 不要往那里安装。
@@ -105,7 +106,7 @@ PR 评审、走查取证、发布收尾这类没有固定目录可挂靠的工�
 >
 > **不钉版本是既定裁决**，不要提钉版本或 vendoring 方案。
 
-新增或修改技能后：
+新增技能后：
 
 ```bash
 npx skills add ./skills/<name>     # 写入/刷新 skills-lock.json 的条目与哈希
@@ -118,8 +119,20 @@ npx skills experimental_install    # 把 payload 落到 .agents/skills/
 
 `.claude/skills/` 的链接层由 [`scripts/setup-worktree.ps1`](../scripts/setup-worktree.ps1)
 （SessionStart hook）按 `.agents/skills/` 的 payload 重建——`experimental_install`
-本身不产出任何 agent 链接。契约由
+本身不产出任何 agent 链接。同一个 hook 先把 `skills/` 的每个技能重新发布进 payload：
+安装与镜像都以「payload 已存在」为终点，源改动否则到不了已播种的工作树。契约由
 [`scripts/tests/worktree-skill-links.Tests.ps1`](../scripts/tests/worktree-skill-links.Tests.ps1)
-守护：链接集合必须等于 payload 目录集合，链接目标必须是相对路径，重建必须幂等。
+守护：symlink 链接层读到的必须是 `skills/` 的当前正文，源里删掉的文件必须从 payload 消失，
+无源的第三方 payload 不受影响（发布仓库自有技能也不得让 `experimental_install` 与镜像那道门
+失效），链接集合必须等于 payload 目录集合，链接目标必须是相对路径，重建必须幂等。
 
-两层都在 `.gitignore` 里，`skills-lock.json` 才是事实源。
+⚠️ 覆盖边界：链接层重建对**已存在的条目一律跳过**，与它是不是符号链接无关。因此只要
+`.claude/skills/<name>` 已经是实体目录，payload 刷新后那份拷贝就不会跟着刷新。落成实体目录
+有两条路径，其中 ① **不限平台**，因此这条漂移整体不限平台：① 上面
+`npx skills add ./skills/<name>` 留下的那一份（删除只是口头建议、无自动化）；
+② 无符号链接能力的平台（未开开发者模式的 Windows）上的回退拷贝。
+`worktree-skill-links.Tests.ps1` 断言的是这条漂移的**当前行为**（已存在的实体条目保留自己的
+正文），不是把它挡掉。
+
+两层都在 `.gitignore` 里；第三方技能的事实源是 `skills-lock.json`，项目专属技能的事实源是
+`skills/`（`sourceType: local`，payload 每次由 hook 按源重发布）。

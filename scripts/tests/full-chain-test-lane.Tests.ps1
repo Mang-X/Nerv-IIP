@@ -26,6 +26,56 @@ function Assert-Contract([bool]$Condition, [string]$Message) {
     if (-not $Condition) { throw $Message }
 }
 
+function Assert-FullChainScriptLiveOutputContract {
+    param([string] $Source)
+
+    # Governance / Regression: #3166 requires every script-kind member to opt in,
+    # independent of its identity or position. Execute the production action.
+    $ast = [Management.Automation.Language.Parser]::ParseInput($Source, [ref]$null, [ref]$null)
+    $assignment = $ast.Find({ param($node)
+        $node -is [Management.Automation.Language.AssignmentStatementAst] -and
+        [string]::Equals($node.Left.Extent.Text, '$memberAction', [StringComparison]::Ordinal)
+    }, $true)
+    $action = $assignment.Right.Expression.ScriptBlock.GetScriptBlock()
+    $calls = [Collections.Generic.List[object]]::new()
+    function Invoke-NativeCommandWithTimeout {
+        param($Command, $Arguments, $WorkingDirectory, $TimeoutSeconds, $Name, [switch] $LiveOutput)
+        $calls.Add([pscustomobject]@{ Command = $Command; Arguments = $Arguments; Timeout = $TimeoutSeconds; Name = $Name; Live = $LiveOutput.IsPresent })
+    }
+    function Invoke-PwshScript {
+        param($ScriptPath, $Arguments, $WorkingDirectory, $TimeoutSeconds, $Name)
+        $calls.Add([pscustomobject]@{ Command = 'pwsh'; Arguments = $Arguments; Timeout = $TimeoutSeconds; Name = $Name; Live = $false })
+    }
+    function Get-NervRuntimeMemorySnapshot { param($Phase) return @{} }
+    function Write-NervFullChainSummarySnapshot { }
+    $summary = @{ readiness = @{ postgres = 'passed'; redis = 'passed' } }
+    $canonicalResultEnabled = $false
+    $scriptEntrypointTimeoutSeconds = 900
+    foreach ($ids in @(
+        @('new-script-a', 'ncr-rework-cost-closure', 'new-script-b'),
+        @('new-script-b', 'new-script-a'),
+        @('ncr-rework-cost-closure', 'new-script-b', 'new-script-a')
+    )) {
+        for ($memberIndex = 0; $memberIndex -lt $ids.Count; $memberIndex++) {
+            $id = $ids[$memberIndex]
+            $member = @{ id = $id; dependencies = @{ redis = $true }; entrypoint = @{ kind = 'script'; path = "scripts/$id.ps1" } }
+            $entrypointKind = $member.entrypoint.kind
+            $memberResultsDirectory = Join-Path $fixtureRoot "live-$id"
+            $resultFile = "full-chain-$id.trx"
+            $memberSummary = @{ memory = @{} }
+            $before = $calls.Count
+            & $action $id
+            Assert-Contract ($calls.Count -eq $before + 1) "Script '$id' must invoke exactly one managed command."
+            $call = $calls[$before]
+            Assert-Contract $call.Live "Script '$id' at index $memberIndex must enable LiveOutput."
+            Assert-Contract ($call.Timeout -eq 900) "Script '$id' must preserve its entrypoint budget."
+            Assert-Contract ([string]::Equals($call.Command, 'pwsh', [StringComparison]::Ordinal) -and
+                [string]::Equals($call.Name, "full-chain-$id-entrypoint", [StringComparison]::Ordinal) -and
+                [string]::Equals(($call.Arguments -join '|'), (@('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $repoRoot $member.entrypoint.path)) -join '|'), [StringComparison]::Ordinal)) "Script '$id' must preserve its managed invocation."
+        }
+    }
+}
+
 function Assert-FullChainDeadlineAdmissionContract {
     param(
         [Parameter(Mandatory)] [scriptblock] $Admission,
@@ -606,6 +656,17 @@ try {
         [Environment]::SetEnvironmentVariable('COMPOSE_PROJECT_NAME', $savedComposeProject)
     }
     $runnerContent = [IO.File]::ReadAllText($runnerPath)
+    Assert-FullChainScriptLiveOutputContract -Source $runnerContent
+    foreach ($liveMutation in @(
+        @{ Name = 'disabled'; Replacement = '-LiveOutput:$false' },
+        @{ Name = 'NCR-only'; Replacement = '-LiveOutput:([string]::Equals($admittedMemberId, ''ncr-rework-cost-closure'', [StringComparison]::Ordinal))' },
+        @{ Name = 'first-index-only'; Replacement = '-LiveOutput:($memberIndex -eq 0)' }
+    )) {
+        $liveFailure = $null
+        try { Assert-FullChainScriptLiveOutputContract -Source $runnerContent.Replace('-LiveOutput', $liveMutation.Replacement) }
+        catch { $liveFailure = $_ }
+        Assert-Contract ($null -ne $liveFailure -and $liveFailure.Exception.Message.Contains('must enable LiveOutput', [StringComparison]::Ordinal)) "LiveOutput mutation '$($liveMutation.Name)' must fail the opt-in behavior."
+    }
     foreach ($requiredFragment in @(
         'Import-NervFullChainTestLaneManifest',
         'Get-NervFullChainTrxResult',
@@ -797,6 +858,328 @@ try {
     try { Assert-NervFullChainMemberEvidence -Member $manifest.members[3] -MemberResultsDirectory $memberEvidenceRoot -RepositoryRoot $repoRoot | Out-Null }
     catch { $missingReadbackRejected = $_.Exception.Message.Contains("missing required 'remaining'", [StringComparison]::Ordinal) }
     Assert-Contract $missingReadbackRejected 'Deleting a required cleanup readback field must fail the member evidence contract.'
+
+    # === #3135 residual 覆盖闭合 =================================================================
+    # 见 scripts/run-full-chain-test-lane.ps1 里的同名段落：lane 的选取口径从「白名单精确 filter」
+    # 翻转为「默认全跑 + 无排除注册表」。以下三组断言分别钉住：解析不依赖 locale、`[Theory]` 参数
+    # 截断、以及「residual 取全部 members 的差集而非 -MemberId 选中子集」。
+
+    $fullChainRootNamespace = 'Nerv.IIP.Business.FullChain.Tests'
+    $listTestsBodyLines = @(
+        "    $fullChainRootNamespace.AlphaTests.First_case",
+        "    $fullChainRootNamespace.AlphaTests.Second_case",
+        "    $fullChainRootNamespace.BetaTests.Nested_case"
+    )
+    # VSTest 的这行表头随 CLI UI 语言变化：CI 是英文，装了中文语言包的开发机是中文。
+    # 拿它当解析锚点就是「本机绿 CI 红」的经典形状（本仓 timestamptz 那条同族），因此这里用
+    # 两种 locale 的真实表头各喂一遍，断言解析结果**逐字相同**。
+    $englishDiscovery = @(
+        '  Determining projects to restore...',
+        "  $fullChainRootNamespace -> /repo/bin/Release/net10.0/$fullChainRootNamespace.dll",
+        'Test run for /repo/bin/Release/net10.0/Nerv.IIP.Business.FullChain.Tests.dll (.NETCoreApp,Version=v10.0)',
+        'The following Tests are available:'
+    ) + $listTestsBodyLines
+    $chineseDiscovery = @(
+        '  正在确定要还原的项目...',
+        "  $fullChainRootNamespace -> /repo/bin/Release/net10.0/$fullChainRootNamespace.dll",
+        '/repo/bin/Release/net10.0/Nerv.IIP.Business.FullChain.Tests.dll (.NETCoreApp,Version=v10.0)的测试运行',
+        '以下测试可用:'
+    ) + $listTestsBodyLines
+    # #3285：夹具从「行数组」改成 `-join "`r`n"` 的**原始 stdout**，因为函数现在收 stdout、自己切行。
+    # 解析口径（不锚表头、整行完全匹配、`[Theory]` 截断）一个字没动，下面这些断言逐字保留。
+    $englishIdentities = @(Get-NervFullChainDiscoveredTestIdentities -DiscoveryOutput ($englishDiscovery -join "`r`n") -RootNamespace $fullChainRootNamespace)
+    $chineseIdentities = @(Get-NervFullChainDiscoveredTestIdentities -DiscoveryOutput ($chineseDiscovery -join "`r`n") -RootNamespace $fullChainRootNamespace)
+    $expectedIdentities = @(
+        "$fullChainRootNamespace.AlphaTests.First_case",
+        "$fullChainRootNamespace.AlphaTests.Second_case",
+        "$fullChainRootNamespace.BetaTests.Nested_case"
+    )
+    Assert-Contract ([string]::Equals(($englishIdentities -join "`n"), ($expectedIdentities -join "`n"), [StringComparison]::Ordinal)) 'FullChain discovery must parse the English --list-tests output into the exact identity set.'
+    Assert-Contract ([string]::Equals(($englishIdentities -join "`n"), ($chineseIdentities -join "`n"), [StringComparison]::Ordinal)) 'FullChain discovery parsing must not depend on the localized --list-tests header.'
+
+    # 表头整行缺失也必须得到同一结果：证明解析确实没有把表头当锚点，而不是「碰巧两种表头都不匹配」。
+    $headerlessIdentities = @(Get-NervFullChainDiscoveredTestIdentities -DiscoveryOutput ($listTestsBodyLines -join "`n") -RootNamespace $fullChainRootNamespace)
+    Assert-Contract ([string]::Equals(($headerlessIdentities -join "`n"), ($expectedIdentities -join "`n"), [StringComparison]::Ordinal)) 'FullChain discovery must yield the same identities when no header line is present at all.'
+
+    # MSBuild 的构建输出行以被测程序集名开头；只要解析退化成「前缀匹配」就会把它当成一条用例，
+    # 拼进 filter 后整个 residual 跑法作废。这两条断言的鉴别力由「把整行完全匹配放松成前缀匹配」
+    # 这个变异实测过。
+    Assert-Contract (@($englishIdentities | Where-Object { $_.Contains(' -> ', [StringComparison]::Ordinal) }).Count -eq 0) 'FullChain discovery must reject MSBuild build output lines.'
+    $buildOnlyIdentities = @(Get-NervFullChainDiscoveredTestIdentities -DiscoveryOutput "  $fullChainRootNamespace -> /repo/x.dll" -RootNamespace $fullChainRootNamespace)
+    Assert-Contract ($buildOnlyIdentities.Count -eq 0) 'A build output line alone must produce no FullChain identity.'
+
+    # `[Theory]` 按参数逐行列出；不截断就会得到跑不起来的 filter，且同一方法被重复计数。
+    $theoryDiscovery = @(
+        "    $fullChainRootNamespace.ThetaTests.Theory_case(value: 1)",
+        "    $fullChainRootNamespace.ThetaTests.Theory_case(value: 2)",
+        "    $fullChainRootNamespace.ThetaTests.Theory_case(value: `"a -> b`")"
+    )
+    $theoryIdentities = @(Get-NervFullChainDiscoveredTestIdentities -DiscoveryOutput ($theoryDiscovery -join "`n") -RootNamespace $fullChainRootNamespace)
+    Assert-Contract ($theoryIdentities.Count -eq 1 -and [string]::Equals($theoryIdentities[0], "$fullChainRootNamespace.ThetaTests.Theory_case", [StringComparison]::Ordinal)) 'FullChain discovery must truncate [Theory] arguments to one method-level identity.'
+
+    # 只有一段（没有类型名）不是用例身份；别的程序集的用例也不属于本项目。
+    $foreignIdentities = @(Get-NervFullChainDiscoveredTestIdentities -DiscoveryOutput (@(
+        "    $fullChainRootNamespace.OnlyOneSegment",
+        '    Nerv.IIP.Business.Acceptance.Tests.OtherTests.Other_case'
+    ) -join "`n") -RootNamespace $fullChainRootNamespace)
+    Assert-Contract ($foreignIdentities.Count -eq 0) 'FullChain discovery must ignore non-identity and foreign-assembly lines.'
+
+    # === #3285 参数边界：调用方在类型上拿不到「行」 ==============================================
+    # 缺陷与修法的完整归因写在 scripts/lib/FullChainTestLane.ps1 的函数注释里，这里不复述。要点一条：
+    # Get-NervFullChainDiscoveredTestIdentities 收的是 --list-tests 的**原始 stdout**，切行在函数内部。
+    # 下面这条喂真实形状的原始捕获：表头前后空行、纯空白行、以及 dotnet test 必然带的尾随换行，
+    # 都不得让解析崩在绑定或匹配上。夹具用 CRLF 书写只是为了贴近真实捕获，**不**声称它检验了 CRLF：
+    # 本机实测把内部切法从 `-split "`r?`n"` 改成 `-split "`n"` 整脚本仍全绿（紧随其后的 `.Trim()`
+    # 把 `\r` 吃掉了），CRLF 在这套夹具里鉴别力为 0。这里如实记下，免得被读成一条被检验的独立危害。
+    $rawDiscoveryCapture = "`r`n" + ((@(
+        "  $fullChainRootNamespace -> /repo/bin/Release/net10.0/$fullChainRootNamespace.dll",
+        'Test run for /repo/bin/Release/net10.0/Nerv.IIP.Business.FullChain.Tests.dll (.NETCoreApp,Version=v10.0)',
+        'VSTest version 17.0.0 (x64)',
+        '',
+        'The following Tests are available:',
+        '   ',
+        "    $fullChainRootNamespace.AlphaTests.First_case",
+        "    $fullChainRootNamespace.AlphaTests.Second_case",
+        "    $fullChainRootNamespace.BetaTests.Nested_case",
+        '   ',
+        ''
+    )) -join "`r`n")
+    $rawCaptureFailure = ''
+    $rawCaptureIdentities = @()
+    try { $rawCaptureIdentities = @(Get-NervFullChainDiscoveredTestIdentities -DiscoveryOutput $rawDiscoveryCapture -RootNamespace $fullChainRootNamespace) }
+    catch { $rawCaptureFailure = $_.Exception.Message }
+    Assert-Contract ([string]::Equals($rawCaptureFailure, '', [StringComparison]::Ordinal)) "Raw --list-tests stdout carrying blank, whitespace-only and trailing lines must not break FullChain discovery; observed: $rawCaptureFailure"
+    Assert-Contract ([string]::Equals(($rawCaptureIdentities -join "`n"), ($expectedIdentities -join "`n"), [StringComparison]::Ordinal)) 'A raw --list-tests capture must yield exactly the same identity set as the pre-split fixtures.'
+
+    # 真实触发面比「正文里的空行」更窄也更硬：`dotnet test` 的 stdout 以换行结尾，切行**必然**多出一个
+    # 尾随空元素。这条喂一份没有任何正文空行、只有尾随换行的最窄样本，确保结论不是只对更宽的形状成立。
+    $trailingNewlineOnlyCapture = "以下测试可用:`n    $fullChainRootNamespace.AlphaTests.First_case`n"
+    $trailingNewlineOnlyFailure = ''
+    $trailingNewlineOnlyIdentities = @()
+    try { $trailingNewlineOnlyIdentities = @(Get-NervFullChainDiscoveredTestIdentities -DiscoveryOutput $trailingNewlineOnlyCapture -RootNamespace $fullChainRootNamespace) }
+    catch { $trailingNewlineOnlyFailure = $_.Exception.Message }
+    Assert-Contract ([string]::Equals($trailingNewlineOnlyFailure, '', [StringComparison]::Ordinal)) "The trailing newline every dotnet test capture ends with must not break FullChain discovery; observed: $trailingNewlineOnlyFailure"
+    Assert-Contract ($trailingNewlineOnlyIdentities.Count -eq 1) "A trailing-newline-only capture must still yield exactly one identity; got $($trailingNewlineOnlyIdentities.Count)."
+
+    # 承重格（#3285 的结构性主张）：参数收 [string] 而不是 [string[]]，所以「调用方自己按行切、把带空
+    # 元素的行数组递进来」这个缺陷形状在**参数类型上**就不可表达——PowerShell 拒绝把多元素数组转成
+    # String，绑定当场失败。这条断言取代任何「看调用方源码有没有写某个过滤字符串」的文本护栏，后者对
+    # 续行、splatting 假红，对「注释里留串、调用点复原」假绿（#3214 同族教训）。
+    # 边界按实测写，不按推测写：本机对**真函数**逐个 arity 量过，`@()`、1 元素、2 元素三种数组
+    # **全部**在绑定处被拒（命名参数绑定不做 collection→scalar 解包；`[string]@('a','b')` 在表达式
+    # 上下文会 join，但绑定器不走那条路）。也就是说没有「单元素数组会被解包成字符串」这个缝——
+    # 保护比「只挡 ≥2 元素」更强。把参数退回 `[string[]]`、或放松成 `[object]`，这条断言都必红。
+    $preSplitLineArrayFailure = ''
+    try {
+        Get-NervFullChainDiscoveredTestIdentities -DiscoveryOutput @(
+            "    $fullChainRootNamespace.AlphaTests.First_case",
+            ''
+        ) -RootNamespace $fullChainRootNamespace | Out-Null
+    }
+    catch { $preSplitLineArrayFailure = $_.Exception.Message }
+    Assert-Contract ($preSplitLineArrayFailure.Contains("Cannot process argument transformation on parameter 'DiscoveryOutput'", [StringComparison]::Ordinal)) "A pre-split line array must be rejected at the FullChain discovery parameter boundary, which is what makes the #3285 defect shape unrepresentable rather than merely unwritten; observed: $preSplitLineArrayFailure"
+
+    # `[AllowEmptyString()]` 是刻意放行，理由写在 scripts/lib/FullChainTestLane.ps1 的函数注释里：
+    # 空 stdout 与 $null 都是合法的可观测状态，把它们也做成**绑定失败**就是 #3285 这个病换个位置
+    # 复发——调用者拿到的仍是一句读不懂的绑定错误，仍然在任何域判断之前中断。正确行为是绑定成功、
+    # 返回 0 条身份，再由 Assert-NervFullChainDiscoveryClosure 的 missingClaims 分支抛出域错误。
+    # 下面两条断言把该行为钉住：删掉 [AllowEmptyString()] 时**两条都红**。
+    # $null 这条仍然单列，是因为它钉的是**行为**（null 产出 0 条身份）而不是某个属性：实测 `[string]`
+    # 参数上 $null 在校验前就被转成 ''，所以承担它的其实也是 [AllowEmptyString()]。
+    $emptyOutputFailure = ''
+    $emptyOutputIdentities = @()
+    try { $emptyOutputIdentities = @(Get-NervFullChainDiscoveredTestIdentities -DiscoveryOutput '' -RootNamespace $fullChainRootNamespace) }
+    catch { $emptyOutputFailure = $_.Exception.Message }
+    Assert-Contract ([string]::Equals($emptyOutputFailure, '', [StringComparison]::Ordinal) -and $emptyOutputIdentities.Count -eq 0) "Empty --list-tests stdout is a legitimate observable state and must bind and yield zero identities rather than fail at the parameter boundary, which would relocate the #3285 defect instead of removing it; observed: $emptyOutputFailure"
+
+    $nullOutputFailure = ''
+    $nullOutputIdentities = @()
+    try { $nullOutputIdentities = @(Get-NervFullChainDiscoveredTestIdentities -DiscoveryOutput $null -RootNamespace $fullChainRootNamespace) }
+    catch { $nullOutputFailure = $_.Exception.Message }
+    Assert-Contract ([string]::Equals($nullOutputFailure, '', [StringComparison]::Ordinal) -and $nullOutputIdentities.Count -eq 0) "A null discovery capture must bind and yield zero identities for the same reason an empty one does; the downstream closure assertion is what must report it, not the parameter binder; observed: $nullOutputFailure"
+
+    # 空发现集必须在**下游**被说清楚：这是上面两条「刻意放行」成立的前提——放行不等于放过。
+    $emptyDiscoveryClosureRejected = $false
+    try { Assert-NervFullChainDiscoveryClosure -DiscoveredIdentities @() -ClaimedIdentities @("$fullChainRootNamespace.AlphaTests.First_case") -ResidualIdentities @() }
+    catch { $emptyDiscoveryClosureRejected = $_.Exception.Message.Contains('discovery did not report', [StringComparison]::Ordinal) }
+    Assert-Contract $emptyDiscoveryClosureRejected 'An empty discovery set must fail closed at the closure assertion with a domain error naming the unreported frozen identities.'
+
+    # 哨兵：同一个函数在同一轮里对「合法原始 stdout」必须仍然给出 3 条身份。承重格红而这条绿，
+    # 才能区分「护栏有鉴别力」与「整段崩了/变异根本没生效」。
+    Assert-Contract (@(Get-NervFullChainDiscoveredTestIdentities -DiscoveryOutput ($listTestsBodyLines -join "`n") -RootNamespace $fullChainRootNamespace).Count -eq 3) 'Sentinel: a well-formed raw capture must still yield the three fixture identities.'
+
+    # residual = 发现全集 − 冻结成员集。
+    $residualFixture = @(Get-NervFullChainResidualTestIdentities -DiscoveredIdentities $expectedIdentities -ClaimedIdentities @("$fullChainRootNamespace.AlphaTests.First_case"))
+    Assert-Contract ([string]::Equals(($residualFixture -join "`n"), (@("$fullChainRootNamespace.AlphaTests.Second_case", "$fullChainRootNamespace.BetaTests.Nested_case") -join "`n"), [StringComparison]::Ordinal)) 'FullChain residual must be the ordinal set difference between discovery and frozen members.'
+    Assert-Contract (@(Get-NervFullChainResidualTestIdentities -DiscoveredIdentities $expectedIdentities -ClaimedIdentities $expectedIdentities).Count -eq 0) 'Claiming every discovered identity must leave an empty FullChain residual.'
+
+    # 发现集 = 成员集 ∪ residual 集，两个方向都要红。
+    $staleClaimRejected = $false
+    try { Assert-NervFullChainDiscoveryClosure -DiscoveredIdentities $expectedIdentities -ClaimedIdentities @("$fullChainRootNamespace.DeletedTests.Gone") -ResidualIdentities $expectedIdentities }
+    catch { $staleClaimRejected = $_.Exception.Message.Contains('discovery did not report', [StringComparison]::Ordinal) }
+    Assert-Contract $staleClaimRejected 'A frozen FullChain identity that discovery no longer reports must fail closed.'
+    $unaccountedRejected = $false
+    try { Assert-NervFullChainDiscoveryClosure -DiscoveredIdentities $expectedIdentities -ClaimedIdentities @("$fullChainRootNamespace.AlphaTests.First_case") -ResidualIdentities @("$fullChainRootNamespace.AlphaTests.Second_case") }
+    catch { $unaccountedRejected = $_.Exception.Message.Contains('no member and no residual run accounts for', [StringComparison]::Ordinal) }
+    Assert-Contract $unaccountedRejected 'A discovered FullChain test that neither a member nor the residual run accounts for must fail closed.'
+
+    # 本项目当前的真实身份必须与 manifest 冻结的 5 条相容：冻结身份是发现集的子集。
+    $realDiscoveryFixture = @(@($manifest.members | ForEach-Object { "    $([string]$_.expectedTestIdentities[0])" }) + $listTestsBodyLines)
+    $realDiscovered = @(Get-NervFullChainDiscoveredTestIdentities -DiscoveryOutput ($realDiscoveryFixture -join "`r`n") -RootNamespace $fullChainRootNamespace)
+    $realClaimed = @($manifest.members | ForEach-Object { [string]$_.expectedTestIdentities[0] })
+    $realResidual = @(Get-NervFullChainResidualTestIdentities -DiscoveredIdentities $realDiscovered -ClaimedIdentities $realClaimed)
+    Assert-NervFullChainDiscoveryClosure -DiscoveredIdentities $realDiscovered -ClaimedIdentities $realClaimed -ResidualIdentities $realResidual
+    Assert-Contract ($realResidual.Count -eq $listTestsBodyLines.Count) 'The real frozen FullChain identities must all be claimed, leaving only the injected fixture tests as residual.'
+
+    # --- residual TRX 判定 ------------------------------------------------------------------------
+    # 本机变异实证（#3135）：直接复用成员那套逐字身份比较，会在项目里新增一个 `[Theory]` 时误红
+    # （TRX 是逐参数用例的、residual 是方法级集合）。因此 residual 走独立判定：身份归一到方法级比
+    # 集合，但**每一条参数化用例**都必须通过。
+    function New-FullChainResidualTrx {
+        param([Parameter(Mandatory)] [string] $Path, [Parameter(Mandatory)] [object[]] $Cases)
+
+        $definitions = [Collections.Generic.List[string]]::new()
+        $results = [Collections.Generic.List[string]]::new()
+        for ($index = 0; $index -lt $Cases.Count; $index++) {
+            $case = $Cases[$index]
+            $raw = [string]$case.Identity
+            $separatorIndex = $raw.LastIndexOf('.', [StringComparison]::Ordinal)
+            $class = $raw.Substring(0, $separatorIndex)
+            $method = $raw.Substring($separatorIndex + 1)
+            $id = "residual-$index"
+            $definitions.Add("<UnitTest id=`"$id`"><TestMethod className=`"$class`" name=`"$method`" /></UnitTest>")
+            $results.Add("<UnitTestResult testId=`"$id`" testName=`"$method`" outcome=`"$([string]$case.Outcome)`" />")
+        }
+        $trx = "<?xml version=`"1.0`"?><TestRun xmlns=`"http://microsoft.com/schemas/VisualStudio/TeamTest/2010`"><Results>$($results -join '')</Results><TestDefinitions>$($definitions -join '')</TestDefinitions></TestRun>"
+        [IO.File]::WriteAllText($Path, $trx, [Text.UTF8Encoding]::new($false))
+    }
+
+    $residualTrxRoot = Join-Path $fixtureRoot 'residual-trx'
+    [IO.Directory]::CreateDirectory($residualTrxRoot) | Out-Null
+    $residualTrxPath = Join-Path $residualTrxRoot 'residual.trx'
+    $residualExpected = @("$fullChainRootNamespace.AlphaTests.First_case", "$fullChainRootNamespace.ThetaTests.Theory_case")
+    New-FullChainResidualTrx -Path $residualTrxPath -Cases @(
+        [pscustomobject]@{ Identity = "$fullChainRootNamespace.AlphaTests.First_case"; Outcome = 'Passed' },
+        [pscustomobject]@{ Identity = "$fullChainRootNamespace.ThetaTests.Theory_case(value: 1)"; Outcome = 'Passed' },
+        [pscustomobject]@{ Identity = "$fullChainRootNamespace.ThetaTests.Theory_case(value: 2)"; Outcome = 'Passed' }
+    )
+    $residualTrxResult = Get-NervFullChainResidualTrxResult -ResultsDirectory $residualTrxRoot -ExpectedTestIdentities $residualExpected
+    Assert-Contract ($residualTrxResult.methods -eq 2 -and $residualTrxResult.total -eq 3 -and $residualTrxResult.passed -eq 3 -and $residualTrxResult.failed -eq 0 -and $residualTrxResult.skipped -eq 0) 'A [Theory] must collapse to one residual method identity while every case still counts as executed.'
+
+    New-FullChainResidualTrx -Path $residualTrxPath -Cases @(
+        [pscustomobject]@{ Identity = "$fullChainRootNamespace.AlphaTests.First_case"; Outcome = 'Passed' },
+        [pscustomobject]@{ Identity = "$fullChainRootNamespace.ThetaTests.Theory_case(value: 1)"; Outcome = 'Passed' },
+        [pscustomobject]@{ Identity = "$fullChainRootNamespace.ThetaTests.Theory_case(value: 2)"; Outcome = 'Failed' }
+    )
+    $residualCaseFailureRejected = $false
+    try { Get-NervFullChainResidualTrxResult -ResultsDirectory $residualTrxRoot -ExpectedTestIdentities $residualExpected | Out-Null }
+    catch { $residualCaseFailureRejected = $_.Exception.Message.Contains('Theory_case(value: 2)', [StringComparison]::Ordinal) }
+    Assert-Contract $residualCaseFailureRejected 'One failing [Theory] case must fail residual coverage and name the failing case.'
+
+    New-FullChainResidualTrx -Path $residualTrxPath -Cases @(
+        [pscustomobject]@{ Identity = "$fullChainRootNamespace.AlphaTests.First_case"; Outcome = 'Passed' },
+        [pscustomobject]@{ Identity = "$fullChainRootNamespace.ThetaTests.Theory_case(value: 1)"; Outcome = 'NotExecuted' },
+        [pscustomobject]@{ Identity = "$fullChainRootNamespace.ThetaTests.Theory_case(value: 2)"; Outcome = 'Passed' }
+    )
+    $residualSkipRejected = $false
+    try { Get-NervFullChainResidualTrxResult -ResultsDirectory $residualTrxRoot -ExpectedTestIdentities $residualExpected | Out-Null }
+    catch { $residualSkipRejected = $_.Exception.Message.Contains('0 failed and 0 skipped', [StringComparison]::Ordinal) }
+    Assert-Contract $residualSkipRejected 'A silently skipped residual case must fail closed rather than count as coverage.'
+
+    # 「跑了但跑的不是发现到的那一组」必须红：否则 filter 拼错会退化成静默少跑。
+    New-FullChainResidualTrx -Path $residualTrxPath -Cases @(
+        [pscustomobject]@{ Identity = "$fullChainRootNamespace.AlphaTests.First_case"; Outcome = 'Passed' }
+    )
+    $residualDriftRejected = $false
+    try { Get-NervFullChainResidualTrxResult -ResultsDirectory $residualTrxRoot -ExpectedTestIdentities $residualExpected | Out-Null }
+    catch { $residualDriftRejected = $_.Exception.Message.Contains('executed a different identity set', [StringComparison]::Ordinal) }
+    Assert-Contract $residualDriftRejected 'Residual coverage must fail when it executes fewer identities than discovery reported.'
+
+    # --- runner 接线：residual 的 claimed 必须取全部 members ---------------------------------------
+    # 这是反直觉的一条：本地 `-MemberId one-member` 只跑一个成员时，另外 4 个重依赖成员**不该**落进
+    # residual 被无依赖重跑。后人很容易「顺手修正」成 $selectedMembers，那个错不会红、只会让人困惑，
+    # 所以在这里钉死，并配一条把它改回 $selectedMembers 的变异对照。
+    $runnerSourcePath = Join-Path $repoRoot 'scripts/run-full-chain-test-lane.ps1'
+    $runnerSourceText = [IO.File]::ReadAllText($runnerSourcePath)
+    function Assert-FullChainResidualClaimSource {
+        param([Parameter(Mandatory)] [string] $SourceText, [Parameter(Mandatory)] [string] $Context)
+
+        $parseErrors = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseInput($SourceText, [ref]$null, [ref]$parseErrors)
+        if ($parseErrors.Count -gt 0) { throw "$Context runner source does not parse." }
+        $assignments = @($ast.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+            $node.Left.Extent.Text.Contains('$claimedIdentities', [StringComparison]::Ordinal)
+        }, $true))
+        if ($assignments.Count -ne 1) { throw "$Context must assign `$claimedIdentities exactly once; observed $($assignments.Count)." }
+        $rightText = $assignments[0].Right.Extent.Text
+        if (-not $rightText.Contains('$manifest.members', [StringComparison]::Ordinal)) {
+            throw "$Context must derive FullChain residual claims from every manifest member."
+        }
+        if ($rightText.Contains('$selectedMembers', [StringComparison]::Ordinal)) {
+            throw "$Context must not derive FullChain residual claims from the -MemberId selection."
+        }
+    }
+    Assert-FullChainResidualClaimSource -SourceText $runnerSourceText -Context 'FullChain runner'
+    $claimMutations = @(
+        [pscustomobject]@{ Name = 'selected-members'; From = '$claimedIdentities = @($manifest.members'; To = '$claimedIdentities = @($selectedMembers' }
+    )
+    foreach ($claimMutation in $claimMutations) {
+        Assert-Contract ($runnerSourceText.IndexOf($claimMutation.From, [StringComparison]::Ordinal) -ge 0) "FullChain residual claim mutation '$($claimMutation.Name)' anchor must exist."
+        $mutatedRunner = $runnerSourceText.Replace($claimMutation.From, $claimMutation.To)
+        Assert-Contract (-not [string]::Equals($mutatedRunner, $runnerSourceText, [StringComparison]::Ordinal)) "FullChain residual claim mutation '$($claimMutation.Name)' must change the runner."
+        $claimMutationRejected = $false
+        try { Assert-FullChainResidualClaimSource -SourceText $mutatedRunner -Context 'FullChain runner mutation' }
+        catch { $claimMutationRejected = $true }
+        Assert-Contract $claimMutationRejected "FullChain residual claim mutation '$($claimMutation.Name)' must be rejected."
+    }
+
+    # residual 的执行、记账与失败语义必须真的写在 runner 里；删掉任何一条都不会让成员断言变红。
+    #
+    # 这里刻意走 AST 而不是文本 IndexOf：本票实测过，`# ` 注释掉整行时文本锚点仍然命中（那一行
+    # 还在文件里，只是不再执行），两个变异 R1/R2 因此存活。AST 只看真正会被求值的命令与赋值，
+    # 注释掉即消失。
+    $runnerAst = [System.Management.Automation.Language.Parser]::ParseInput($runnerSourceText, [ref]$null, [ref]$null)
+    function Get-RunnerCommandNames {
+        param([Parameter(Mandatory)] $Ast)
+        return @($Ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true) |
+            ForEach-Object { [string]$_.GetCommandName() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    }
+    $runnerCommandNames = @(Get-RunnerCommandNames -Ast $runnerAst)
+    foreach ($requiredCommand in @('Get-NervFullChainDiscoveredTestIdentities', 'Get-NervFullChainResidualTestIdentities', 'Assert-NervFullChainDiscoveryClosure', 'Get-NervFullChainResidualTrxResult')) {
+        Assert-Contract (@($runnerCommandNames | Where-Object { [string]::Equals($_, $requiredCommand, [StringComparison]::Ordinal) }).Count -ge 1) "The FullChain runner must actually invoke '$requiredCommand', not merely mention it."
+    }
+    $residualDotnetCommands = @($runnerAst.FindAll({
+        param($node)
+        $node -is [System.Management.Automation.Language.CommandAst] -and
+        [string]::Equals([string]$node.GetCommandName(), 'Invoke-DotNetOutput', [StringComparison]::Ordinal) -and
+        $node.Extent.Text.Contains('full-chain-residual-coverage', [StringComparison]::Ordinal)
+    }, $true))
+    Assert-Contract ($residualDotnetCommands.Count -eq 1) 'The FullChain runner must execute residual coverage through exactly one governed dotnet invocation.'
+    $residualTotalAssignments = @($runnerAst.FindAll({
+        param($node)
+        $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+        $node.Left.Extent.Text.Contains('$summary.discovered', [StringComparison]::Ordinal) -and
+        $node.Right.Extent.Text.Contains('$summary.residual.discovered', [StringComparison]::Ordinal)
+    }, $true))
+    Assert-Contract ($residualTotalAssignments.Count -eq 1) 'The FullChain runner must fold residual coverage into the lane-level discovered count so CI logs report tests actually run, not names registered.'
+    # 断言必须落在 **条件子树** 上：本票实测过，只看整个 if 的 extent 时，把条件改成 `$false`
+    # 仍然绿——因为 body 里的失败消息本身就含那两个字符串。这是「相邻同型守卫兜住变异」的同族。
+    $residualOutcomeGuards = @($runnerAst.FindAll({
+        param($node)
+        $node -is [System.Management.Automation.Language.IfStatementAst] -and
+        @($node.Clauses | Where-Object {
+            $_.Item1.Extent.Text.Contains('$summary.residual.outcome', [StringComparison]::Ordinal) -and
+            $_.Item1.Extent.Text.Contains('$firstFailure', [StringComparison]::Ordinal)
+        }).Count -ge 1 -and
+        $node.Extent.Text.Contains('$firstFailure =', [StringComparison]::Ordinal)
+    }, $true))
+    Assert-Contract ($residualOutcomeGuards.Count -eq 1) 'The FullChain runner must turn a non-passed residual outcome into a lane failure, and the guard must be evaluated rather than short-circuited.'
+    # 排除注册表是本票刻意不造的逃生口：空注册表拿不出鉴别力证据，而有逃生口就会被用来重新造暗测试。
+    foreach ($forbidden in @('excludedTests', 'excludedTestClasses', 'residualExclusions')) {
+        Assert-Contract ($runnerSourceText.IndexOf($forbidden, [StringComparison]::Ordinal) -lt 0) "The FullChain runner must not grow an exclusion registry ('$forbidden')."
+    }
 
     $summaries = @($manifest.members | ForEach-Object {
         [pscustomobject]@{ memberId = $_.id; outcome = 'passed'; cleanup = 'passed'; expected = 1; discovered = 1; passed = 1; failed = 0; skipped = 0; dependencyEvidence = 'passed'; diagnosticEvidence = 'fixture-verified' }

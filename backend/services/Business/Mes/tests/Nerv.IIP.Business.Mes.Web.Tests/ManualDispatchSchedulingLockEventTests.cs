@@ -268,7 +268,8 @@ public sealed class ManualDispatchSchedulingLockEventTests
 
     private static OperationTask NewTask() =>
         OperationTask.Queue("org-1", "env-1", "WO-1", "OP-1", 10,
-            "WC-1", [], At(0), TimeSpan.FromHours(1));
+            "WC-1", [], At(0), TimeSpan.FromHours(1),
+            "SKU-001");
 
     private static DateTimeOffset At(int hour) =>
         new(2026, 7, 14, 8 + hour, 0, 0, TimeSpan.Zero);

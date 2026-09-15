@@ -10,7 +10,7 @@ import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { labelFor, RULE_SCHEDULE_REASON_LABELS } from '@/data/businessLabels'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
-import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -49,10 +49,13 @@ const {
   scheduleHistory,
   scheduleHistoryTotal,
   scheduleHistoryPending,
+  scheduleHistoryError,
+  refreshScheduleHistory,
   runSchedule,
   runScheduleError,
   runSchedulePending,
 } = useMesSchedules()
+const scheduleHistoryErrorMessage = computed(() => inlineErrorMessage(scheduleHistoryError.value))
 const businessContext = useBusinessContextStore()
 // 排程结果里的工作中心是编码（后端 WorkCenterUnavailability.WorkCenterId 即编码口径），
 // 名称在主数据里，前端 join；工单 / 工序两列后端只回内部标识，暂无编码或名称可用。
@@ -267,6 +270,9 @@ function isNonEmpty(value: string) {
       :rows="scheduleHistory"
       :row-key="historyRowKey"
       :loading="scheduleHistoryPending"
+      :error="scheduleHistoryError"
+      :error-message="scheduleHistoryErrorMessage"
+      @retry="refreshScheduleHistory"
       :searchable="false"
       :column-settings="false"
       empty-message="尚无历史排程运行记录。点击右上角「运行规则排程」后，本次结果会记入历史。"
@@ -293,6 +299,9 @@ function isNonEmpty(value: string) {
       :rows="pagedAssignments"
       :row-key="rowKey"
       :loading="runSchedulePending"
+      :error="scheduleHistoryError"
+      :error-message="scheduleHistoryErrorMessage"
+      @retry="refreshScheduleHistory"
       :searchable="false"
       :column-settings="false"
       empty-message="该次排程没有工序分配。在上方历史列表中选择另一次运行，或点击右上角重新运行规则排程。"

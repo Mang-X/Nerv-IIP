@@ -16,6 +16,22 @@ function ConvertTo-NervCiImpactServiceId {
 }
 
 function Get-NervCiImpactPlan {
+    <#
+        #3285 扫描时点名、复核后**判定不改**，把理由写在这里，免得后来人以为这里已经安全：
+
+        本参数是「`Mandatory [string[]]` 公开参数今天收着一段被切好的进程 stdout」这个形状的位点之一
+        （`scripts/get-ci-impact-plan.ps1` 的 Diff 参数集把 `git diff --name-only` 的 stdout 切行后
+        递进来）。同面直连一跳的另一处是 `Get-NervStringsSorted -Values`（带 `AllowEmptyString`，由类型免疫）；
+        隔一跳的还有 `Get-NervDockerInspectObjects -Identifiers`（`FullStackSessionRuntime.ps1:1651`，
+        `[AllowEmptyCollection()] [string[]]`、**没有** `AllowEmptyString` 因而不免疫，今天不炸只因
+        生产者 `Get-NervDockerListedValues` 在 `FullStackSessionRuntime.ps1:1645` 内部就过滤掉了空白行）。若该调用点的 `IsNullOrWhiteSpace` 过滤被去掉，`git diff` 输出的尾随换行同样会产生空
+        元素、同样在绑定处报 `because it is an empty string` ——**它不靠类型，靠调用方过滤**。
+
+        不照 #3279/#3285 改成收原始 stdout 的原因是本参数的契约不是「某个进程的输出」：Paths 参数集
+        直接从命令行收路径列表，测试也从 13 个调用点递字面路径数组。把它改成 `[string] $DiffOutput`
+        等于把一个通用的「路径集合」入参钉死到 `git diff` 这一个生产者上，反而更窄更错。这里能收紧的
+        只有「空元素非法」这一条，而 `Mandatory [string[]]` 本来就已经在表达它。
+    #>
     param(
         [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $ChangedPaths
     )
@@ -43,6 +59,15 @@ function Get-NervCiImpactPlan {
     foreach ($knownBusinessServiceName in $knownBusinessServiceNames) { [void]$knownBusinessServiceNameSet.Add($knownBusinessServiceName) }
     $salesOrderDemandBusinessServiceNameSet = [Collections.Generic.HashSet[string]]::new(
         [string[]]@('Erp', 'DemandPlanning', 'MasterData'),
+        [StringComparer]::Ordinal)
+    # #3338：被 Nerv.IIP.Business.FullChain.Tests 直接 ProjectReference 的业务服务。
+    # 与上面那个集合**语义不同、不可合并**：上面是「sales-order-demand 这个场景需要谁」，
+    # 这里是「FullChain 测试程序集在编译期就引用了谁」——引用了就意味着改它可能让 FullChain 变红。
+    # ⚠️ 这仍是一份名单，但它的**完备性**由 scripts/tests/ci-impact-plan.Tests.ps1 的
+    # Assert-FullChainProjectReferenceCoverage 从 .csproj 的 ProjectReference **派生**出来看守：
+    # 新增一条 ProjectReference 而忘了更新本集合，那条契约立刻红。别手工往这里加而不跑那条契约。
+    $fullChainReferencedBusinessServiceNameSet = [Collections.Generic.HashSet[string]]::new(
+        [string[]]@('Erp', 'DemandPlanning', 'Maintenance', 'Mes', 'Wms'),
         [StringComparer]::Ordinal)
     $acceptanceScenarioMatrixOwningPathSet = [Collections.Generic.HashSet[string]]::new(
         [string[]]@(
@@ -199,6 +224,30 @@ function Get-NervCiImpactPlan {
             continue
         }
 
+        # #3145: a restore manifest is the hash ledger that scripts/verify-restore-lock-contract.ps1
+        # reads, and the checker runs in the 'Script Governance' job, whose `if` is
+        # `scripts != false || backend != false`. Left to the generic 'docs/' rule below, a PR that
+        # edits only a manifest routes to 'docs' alone, the job is skipped, and the one gate that
+        # reads the file never runs on the change it exists to catch — the shape this repository has
+        # already been caught by in #3003, #3135 and #3140. It routes to 'docs' as well because it is
+        # still a Reference document. 'backend' is deliberately not selected: the checker reads files
+        # only, and pulling in the 45-minute backend shards would buy nothing.
+        #
+        # #3157: this was a single hardcoded path when only BusinessGateway had a manifest, and the
+        # comment above already named the #3003/#3135/#3140 shape while the rule underneath it was a
+        # whitelist of one — so adding PlatformGateway's manifest would have routed to 'docs' alone
+        # and reproduced the very defect the comment warns about. The rule is now DERIVED from the
+        # same 'docs/reference/api/*-restore.manifest.json' pattern the checker discovers manifests
+        # by, so the routing set and the checked set cannot drift apart: a manifest that the checker
+        # picks up is a manifest this router selects 'scripts' for, by construction rather than by
+        # someone remembering to edit two files. Widening the whitelist from one entry to two would
+        # have left the same trap armed for the third manifest.
+        if ($path.StartsWith('docs/reference/api/', [StringComparison]::Ordinal) -and
+            $path.EndsWith('-restore.manifest.json', [StringComparison]::Ordinal)) {
+            foreach ($flag in @('docs', 'scripts')) { Select-Impact -Name $flag -Reason $reason }
+            continue
+        }
+
         # Agent-harness configuration only reaches local agent runtimes: the skill payload
         # directories these install into are gitignored, and no CI job reads them. They
         # route to 'docs' like the AGENTS.md guidance they sit beside. 'skills/' is the
@@ -330,7 +379,8 @@ function Get-NervCiImpactPlan {
                 continue
             }
             Select-BusinessServices -Services @((ConvertTo-NervCiImpactServiceId -Name $serviceName)) -Reason $reason
-            if ($salesOrderDemandBusinessServiceNameSet.Contains($serviceName)) {
+            if ($salesOrderDemandBusinessServiceNameSet.Contains($serviceName) -or
+                $fullChainReferencedBusinessServiceNameSet.Contains($serviceName)) {
                 Select-Impact -Name 'full_chain' -Reason $reason
             }
             if ((Test-MessagingImpactPath -Path $path) -or (Test-CrossServiceIntegrationEventPath -Path $path)) {
@@ -341,7 +391,11 @@ function Get-NervCiImpactPlan {
         }
 
         if ($path.StartsWith('backend/gateway/BusinessGateway/', [StringComparison]::Ordinal)) {
-            foreach ($flag in @('backend', 'business_gateway', 'openapi_codegen', 'frontend', 'frontend_packages')) { Select-Impact -Name $flag -Reason $reason }
+            # #3338：FullChain.Tests 直接 ProjectReference 了 BusinessGateway.Web，
+            # MaintenancePublicHttpLifecycleAcceptanceTests 用 WebApplicationFactory<GatewayProgram>
+            # 真发 HTTP 打网关位点 —— 这条依赖边此前漏了，改网关不触发 FullChain lane（#3330 / PR #3337 实例：
+            # 改的是 AuthorizedBusinessProxyEndpoint 的执行序、影响所有代理端点，而那一轮该面零读数）。
+            foreach ($flag in @('backend', 'business_gateway', 'openapi_codegen', 'frontend', 'frontend_packages', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
             continue
         }
         if ($path.StartsWith('backend/gateway/PlatformGateway/', [StringComparison]::Ordinal)) {

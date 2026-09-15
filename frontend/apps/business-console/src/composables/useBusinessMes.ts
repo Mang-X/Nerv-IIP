@@ -29,6 +29,7 @@ import {
   getBusinessConsoleMesProductionReportQueryOptions,
   getBusinessConsoleMesWipSummaryQueryOptions,
   getBusinessConsoleMesWipSummary,
+  getBusinessConsoleBarcodePrintBatch,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
   getBusinessConsoleMesWorkOrderTransformationQueryOptions,
   getBusinessConsoleMesWorkOrderTraceabilityQueryOptions,
@@ -135,6 +136,8 @@ import {
 } from '@nerv-iip/api-client'
 import {
   acquirePendingBusinessIntent,
+  clearPendingBusinessIntent,
+  shouldRetainPendingBusinessIntent,
   completePendingBusinessIntent,
   createServerPaginationState,
   formatWorkScopeKey,
@@ -860,6 +863,33 @@ export function useMesProductionReporting() {
   const issuedReportCompleteIntents = new Set<string>()
   const recordProductionReportPending = shallowRef(false)
   const recordProductionReportError = shallowRef<unknown>()
+  // 一道工序只有一个待确认的报工槽位；未知结果后重新进入时先恢复完整载荷。
+  const productionReportIntentScope = (workOrderId: string, operationTaskId: string) => ({
+    principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
+    organizationId: context.organizationId,
+    environmentId: context.environmentId,
+    operationType: 'mes.production-report.record',
+    payloadFingerprint: JSON.stringify({ workOrderId, operationTaskId }),
+  })
+  function restoreProductionReport(workOrderId: string, operationTaskId: string) {
+    const pending = peekPendingBusinessIntent(
+      productionReportIntentScope(workOrderId, operationTaskId),
+    )
+    if (!pending) return undefined
+    return requirePendingPayloadSnapshot<BusinessConsoleRecordProductionReportRequest>(
+      pending.payloadSnapshot,
+      '生产报工',
+    )
+  }
+  async function readProductionPrintStatus(printBatchId: string) {
+    const response = await getBusinessConsoleBarcodePrintBatch({
+      path: { printBatchId },
+      query: { ...context },
+      throwOnError: true,
+    })
+    if (!response.data?.success) throw response.data
+    return response.data.data?.printBatch?.status
+  }
   const refreshProductionReportQueries = () =>
     invalidateMesQueries(queryCache, [
       'getBusinessConsoleMesOverview',
@@ -918,18 +948,11 @@ export function useMesProductionReporting() {
         scopeKind: selectedScope.kind,
         scopeId: selectedScope.id,
       } satisfies BusinessConsoleRecordProductionReportRequest
-      const {
-        idempotencyKey: suppliedKey,
-        reportedAtUtc: _reportedAtUtc,
-        ...fingerprintBody
-      } = submittedBody
-      const intentScope = {
-        principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
-        organizationId: context.organizationId,
-        environmentId: context.environmentId,
-        operationType: 'mes.production-report.record',
-        payloadFingerprint: JSON.stringify(fingerprintBody),
-      }
+      const suppliedKey = submittedBody.idempotencyKey
+      const intentScope = productionReportIntentScope(
+        submittedBody.workOrderId ?? '',
+        submittedBody.operationTaskId ?? '',
+      )
       const restored = peekPendingBusinessIntent(intentScope)
       const pending = acquirePendingBusinessIntent(
         intentScope,
@@ -969,7 +992,7 @@ export function useMesProductionReporting() {
           throwOnError: false,
         })
       }
-      const result = await completePendingBusinessIntent(intentScope, async () => {
+      const coordinate = async () => {
         const envelope = stableBody.completesOperation
           ? await executeLifecycleAction({
               readLatest: () =>
@@ -998,7 +1021,16 @@ export function useMesProductionReporting() {
           expectedResourceIdSelector: (candidate) => candidate.data?.productionReportId,
         })
         return envelope
-      })
+      }
+      let result
+      try {
+        result = await coordinate()
+        // 报工回执只确认 MES；标签激活尚未收敛时保留同一报工意图供恢复。
+        if (!result.data?.printingPreparationPending) clearPendingBusinessIntent(intentScope)
+      } catch (error) {
+        if (!shouldRetainPendingBusinessIntent(error)) clearPendingBusinessIntent(intentScope)
+        throw error
+      }
       await refreshProductionReportQueries()
       return result
     } catch (error) {
@@ -1010,6 +1042,8 @@ export function useMesProductionReporting() {
   }
 
   return {
+    restoreProductionReport,
+    readProductionPrintStatus,
     recordProductionReport: recordProductionReportAction,
     recordProductionReportError,
     recordProductionReportPending,
@@ -1144,7 +1178,6 @@ export function useMesWorkOrders(options: UseMesWorkOrdersOptions = {}) {
         organizationId: string
         environmentId: string
         confirmWarnings: boolean
-        idempotencyKey: string
       },
     ) => {
       const selectedReadScope = workOrderReadScope.requireSelectedScope()
@@ -2412,7 +2445,6 @@ export function useMesDispatchTasks() {
         assignedUserId?: string
         deviceAssetId?: string
         shiftId?: string
-        idempotencyKey: string
       },
     ) =>
       assignMutation.mutateAsync({
@@ -2435,17 +2467,18 @@ export function useMesDispatchTasks() {
   }
 }
 
-export function useMesWipSummary() {
+export function useMesWipSummary(shouldLoad: () => boolean = () => true) {
   const filters = defaultFilters()
 
-  const wipQuery = useQuery(() =>
-    withBusinessContextEnabled(
+  const wipQuery = useQuery(() => {
+    const options = withBusinessContextEnabled(
       getBusinessConsoleMesWipSummaryQueryOptions({
         query: toListQuery(filters),
       }),
       filters,
-    ),
-  )
+    )
+    return { ...options, enabled: options.enabled && shouldLoad() }
+  })
 
   return {
     filters,
@@ -3106,7 +3139,6 @@ export function useMesDowntimeEvents() {
         organizationId: string
         environmentId: string
         recoveredAtUtc: string
-        idempotencyKey: string
       },
     ) =>
       recoverMutation.mutateAsync({
@@ -3170,14 +3202,15 @@ export function useMesShiftHandovers() {
     ),
     handoverDetailError: detailQuery.error,
     handoverDetailPending: detailQuery.isLoading,
+    // #3328：接班的网关请求体已经空了（原来只有一个下游从不消费的 idempotencyKey），
+    // 组织/环境仍走 query，所以这里不再传 body。
     acceptShiftHandover: (
       handoverId: string,
-      body: { organizationId: string; environmentId: string; idempotencyKey: string },
+      context: { organizationId: string; environmentId: string },
     ) =>
       acceptMutation.mutateAsync({
         path: { handoverId },
-        query: { organizationId: body.organizationId, environmentId: body.environmentId },
-        body,
+        query: { organizationId: context.organizationId, environmentId: context.environmentId },
       }),
     createShiftHandover: (body: BusinessConsoleMesCreateShiftHandoverRequest) =>
       createMutation.mutateAsync({ body }),

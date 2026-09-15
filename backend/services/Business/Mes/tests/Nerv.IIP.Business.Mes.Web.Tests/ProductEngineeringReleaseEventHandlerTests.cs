@@ -122,7 +122,8 @@ public sealed class ProductEngineeringReleaseEventHandlerTests
                 DateTimeOffset.Parse("2026-07-06T08:00:00Z"),
                 TimeSpan.FromHours(1),
                 null,
-                null));
+                null,
+                "SKU-001"));
             dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
                 "org-001",
                 "env-dev",
@@ -549,7 +550,8 @@ public sealed class ProductEngineeringReleaseEventHandlerTests
                 "WC-10",
                 [],
                 DateTimeOffset.Parse("2026-07-06T08:00:00Z"),
-                TimeSpan.FromMinutes(30)));
+                TimeSpan.FromMinutes(30),
+                "SKU-001"));
             dbContext.EngineeringChangeWorkOrderImpacts.Add(MesEngineeringChangeWorkOrderImpact.BlockedForManualConfirmation(
                 "org-001",
                 "env-dev",

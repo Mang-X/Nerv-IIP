@@ -68,13 +68,20 @@ public sealed class MesWorkOrderIntegrationEventTests
             "EA");
         var tasks = workOrder.Release(
             new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero),
+            WorkOrderReleaseFactTime.NotLaterThan(new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero), null),
             [
                 new RoutingStepSnapshot("OP-020", 20, "WC-020", [], TimeSpan.FromMinutes(30)),
                 new RoutingStepSnapshot("OP-010", 10, "WC-010", [], TimeSpan.FromMinutes(60))
             ]);
 
+        // 发布时刻远早于「现在」：转换器一旦回落 UtcNow，下面两条断言都红。
+        var releasedAtUtc = new DateTimeOffset(2026, 5, 20, 6, 30, 0, TimeSpan.Zero);
         var integrationEvent = new WorkOrderReleasedIntegrationEventConverter()
-            .Convert(new WorkOrderReleasedDomainEvent(workOrder, tasks));
+            .Convert(new WorkOrderReleasedDomainEvent(
+                workOrder,
+                tasks,
+                WorkOrderReleaseFactTime.NotLaterThan(releasedAtUtc, null),
+                new Dictionary<string, decimal>()));
 
         Assert.Equal(MesIntegrationEventTypes.WorkOrderReleased, integrationEvent.EventType);
         Assert.Equal(MesIntegrationEventSources.BusinessMes, integrationEvent.SourceService);
@@ -86,6 +93,68 @@ public sealed class MesWorkOrderIntegrationEventTests
         Assert.Equal("SKU-001", integrationEvent.Payload.SkuCode);
         Assert.Equal(10, integrationEvent.Payload.PlannedQuantity);
         Assert.Equal(["OP-010", "OP-020"], integrationEvent.Payload.Operations.Select(x => x.OperationId));
+        Assert.Equal(releasedAtUtc, integrationEvent.Payload.ReleasedAtUtc);
+        Assert.Equal(releasedAtUtc, integrationEvent.OccurredAtUtc);
+    }
+
+    /// <summary>
+    /// #3129：转换器把域事件里按工序的「下达前既有净良品量」原样落进载荷；
+    /// 字典里没有的工序落 <c>0</c>，**不是** <c>null</c>——null 在契约上专留给
+    /// 本次发布之前入队的旧消息（见 <c>ReleasedOperationPayload.PreReleaseGoodQuantity</c>）。
+    /// </summary>
+    [Fact]
+    public void Work_order_released_converter_carries_per_operation_pre_release_good_quantity()
+    {
+        var workOrder = WorkOrder.Create(
+            "org-001", "env-dev", "WO-001", "SKU-001", "PV-001", 10, 1,
+            new DateTimeOffset(2026, 6, 2, 8, 0, 0, TimeSpan.Zero), "EA");
+        var tasks = workOrder.Release(
+            new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero),
+            WorkOrderReleaseFactTime.NotLaterThan(new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero), null),
+            [
+                new RoutingStepSnapshot("OP-010", 10, "WC-010", [], TimeSpan.FromMinutes(60)),
+                new RoutingStepSnapshot("OP-020", 20, "WC-020", [], TimeSpan.FromMinutes(30))
+            ]);
+
+        var integrationEvent = new WorkOrderReleasedIntegrationEventConverter()
+            .Convert(new WorkOrderReleasedDomainEvent(
+                workOrder,
+                tasks,
+                WorkOrderReleaseFactTime.NotLaterThan(new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero), null),
+                new Dictionary<string, decimal>(StringComparer.Ordinal) { ["OP-020"] = 250m }));
+
+        Assert.Equal(
+            [("OP-010", 0m), ("OP-020", 250m)],
+            integrationEvent.Payload.Operations.Select(x => (x.OperationId, x.PreReleaseGoodQuantity)));
+    }
+
+    /// <summary>
+    /// #3129：<c>Release</c> 当场建出全新工序任务，那些 OperationTaskId 在此刻之前不存在、
+    /// 不可能已有报工，故每道工序恒为 <c>0</c>。这条用例钉的是「恒 0」这个结论本身，
+    /// 它是该重载**自身**的性质（工序由方法体创建），不是调用方的性质。
+    /// </summary>
+    [Fact]
+    public void Release_of_a_freshly_routed_work_order_carries_zero_pre_release_quantity_for_every_operation()
+    {
+        var workOrder = WorkOrder.Create(
+            "org-001", "env-dev", "WO-001", "SKU-001", "PV-001", 10, 1,
+            new DateTimeOffset(2026, 6, 2, 8, 0, 0, TimeSpan.Zero), "EA");
+        var tasks = workOrder.Release(
+            new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero),
+            WorkOrderReleaseFactTime.NotLaterThan(new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero), null),
+            [
+                new RoutingStepSnapshot("OP-010", 10, "WC-010", [], TimeSpan.FromMinutes(60)),
+                new RoutingStepSnapshot("OP-020", 20, "WC-020", [], TimeSpan.FromMinutes(30))
+            ]);
+
+        var domainEvent = Assert.IsType<WorkOrderReleasedDomainEvent>(
+            Assert.Single(workOrder.GetDomainEvents(), x => x is WorkOrderReleasedDomainEvent));
+        Assert.Empty(domainEvent.PreReleaseGoodQuantityByOperationTaskId);
+        var integrationEvent = new WorkOrderReleasedIntegrationEventConverter().Convert(domainEvent);
+        Assert.Equal(
+            [0m, 0m],
+            integrationEvent.Payload.Operations.Select(x => x.PreReleaseGoodQuantity));
+        Assert.Equal(tasks.Count, integrationEvent.Payload.Operations.Count);
     }
 
     [Fact]

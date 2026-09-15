@@ -243,6 +243,10 @@ public sealed class QualityInspectionTaskWorkflowTests
         Assert.Empty(await dbContext.NonconformanceReports.ToArrayAsync());
 
         // 事后到达同来源单的待检任务，从任务提交命中既有记录。
+        // 任务这里**刻意不带来源行**：链身份自 #3319 起含来源行，而常规录入路径（上面那条命令）
+        // 没有来源行可给，它建出的记录属于「整张收货单」那条链。本用例要证的是命中既有记录时会补开
+        // 并回链 NCR，因此任务必须在同一条链上。「行级任务不再命中无来源行的既有记录」这条行为变化
+        // 由 InspectionRecordSourceLineIdentityTests 单独声明并看守。
         var task = InspectionTask.CreatePending(
             "org-001",
             "env-dev",
@@ -250,7 +254,7 @@ public sealed class QualityInspectionTaskWorkflowTests
             "receiving",
             "wms",
             "IN-950",
-            "LINE-001",
+            null,
             "SKU-RM-2100",
             10m,
             "kg",
@@ -907,7 +911,8 @@ public sealed class QualityInspectionTaskWorkflowTests
         Assert.Equal(plan.Id, task.InspectionPlanId);
         Assert.Equal("first-article", task.SourceType);
         Assert.Equal("mes", task.SourceService);
-        // 检验记录的唯一键不含工序，所以首件的来源单据身份必须把工序编进来。
+        // 首件的来源单据身份仍是 {工单}:{工序} 复合串（保留原因见 FirstArticleInspection.SourceDocumentId：
+        // 存量兼容，#2989 的标的）；工序维度自 #3319 起由来源行那一列承担，不再靠这串复合。
         Assert.Equal("WO-001:OP-10", task.SourceDocumentId);
         Assert.Equal("OP-10", task.SourceDocumentLineId);
         Assert.Equal("SKU-FG-1000", task.SkuCode);

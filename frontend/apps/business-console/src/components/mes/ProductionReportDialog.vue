@@ -15,7 +15,9 @@ import {
   Spinner,
 } from '@nerv-iip/ui'
 import { ClipboardCheckIcon } from '@lucide/vue'
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
+import ProductionReportResult from './ProductionReportResult.vue'
+import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import {
@@ -31,7 +33,7 @@ import {
  * - 不提供任何工单/工序的挑选控件，`context` 为空即不可提交；
  * - 带出的字段走 CarriedContextSummary 只读展示，不做 readonly 输入框；
  * - 录入项包含合格数量、不合格数量、返修数量、耗料批次与是否完成本工序；
- * - 零说明文案，结果一律 toast。
+ * - 操作反馈使用 toast；标签报工保留单据、序列号与发送状态回执。
  */
 const props = defineProps<{
   open: boolean
@@ -52,7 +54,6 @@ const {
   form,
   invalid,
   showErrors,
-  canSubmit,
   canCompleteOperation,
   intentLocked,
   recordProductionReportPending,
@@ -79,10 +80,33 @@ const {
   setMaterialSelected,
   setMaterialQuantity,
   submit,
+  productionSerialsRequired,
+  pendingSerialCount,
+  serialQuantityInvalid,
+  invalidLabelTemplate,
+  labelTemplateRequired,
+  labelTemplates,
+  labelTemplatesStatus,
+  serialOptionsPending,
+  serialOptionsReady,
+  refreshSerialOptions,
+  reportResult,
+  printStatusPending,
+  refreshPrintStatus,
+  resetForm,
 } = useProductionReportForm(() => props.context, {
   onReported: () => emit('reported'),
   onStateChanged: () => emit('update:open', false),
 })
+const editingLocked = computed(
+  () => intentLocked.value || recordProductionReportPending.value || quantitySnapshotPending.value,
+)
+watch(
+  () => props.open,
+  (open) => {
+    if (open && reportResult.value && !reportResult.value.printingPreparationPending) resetForm()
+  },
+)
 
 const operationLabel = computed(() => {
   const ctx = props.context
@@ -121,13 +145,13 @@ const contextItems = computed(() => {
 
 async function onSubmit() {
   const ok = await submit()
-  if (ok) openModel.value = false
+  if (ok && !reportResult.value?.printBatchId) openModel.value = false
 }
 </script>
 
 <template>
   <NvDialog v-model:open="openModel">
-    <NvDialogContent class="sm:max-w-lg">
+    <NvDialogContent class="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
       <NvDialogHeader>
         <NvDialogTitle>报工</NvDialogTitle>
         <!-- 报工对象已在下方只读区完整呈现；此处仅供读屏播报，不在界面上再写一遍说明。 -->
@@ -136,7 +160,20 @@ async function onSubmit() {
         </NvDialogDescription>
       </NvDialogHeader>
 
-      <form v-if="context" class="grid content-start gap-4" @submit.prevent="onSubmit">
+      <ProductionReportResult
+        v-if="reportResult?.printBatchId"
+        :result="reportResult"
+        :pending="recordProductionReportPending || printStatusPending"
+        @retry="onSubmit"
+        @refresh="refreshPrintStatus"
+        @close="openModel = false"
+      />
+      <form
+        v-else-if="context"
+        novalidate
+        class="grid content-start gap-4"
+        @submit.prevent="onSubmit"
+      >
         <CarriedContextSummary label="报工对象" :items="contextItems" />
 
         <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
@@ -152,7 +189,7 @@ async function onSubmit() {
               step="any"
               type="number"
               autofocus
-              :disabled="intentLocked || !reportScopeReady"
+              :disabled="editingLocked || !reportScopeReady"
               :data-invalid="showErrors && invalid.goodQuantity ? '' : undefined"
             />
           </NvField>
@@ -165,7 +202,7 @@ async function onSubmit() {
               min="0"
               step="any"
               type="number"
-              :disabled="intentLocked || !reportScopeReady"
+              :disabled="editingLocked || !reportScopeReady"
               :data-invalid="showErrors && invalid.scrapQuantity ? '' : undefined"
             />
           </NvField>
@@ -178,7 +215,7 @@ async function onSubmit() {
               min="0"
               step="any"
               type="number"
-              :disabled="intentLocked || !reportScopeReady"
+              :disabled="editingLocked || !reportScopeReady"
               :data-invalid="showErrors && invalid.reworkQuantity ? '' : undefined"
             />
           </NvField>
@@ -190,10 +227,76 @@ async function onSubmit() {
             <NvCheckbox
               id="report-complete"
               v-model="form.completesOperation"
-              :disabled="!canCompleteOperation || intentLocked || !reportScopeReady"
+              :disabled="!canCompleteOperation || editingLocked || !reportScopeReady"
             />
           </NvField>
         </NvFieldGroup>
+
+        <section v-if="productionSerialsRequired" class="grid gap-3">
+          <FormSectionTitle>单件标签</FormSectionTitle>
+          <p v-if="pendingSerialCount !== undefined" class="text-sm">
+            待分配 {{ pendingSerialCount }} 个序列号
+          </p>
+          <p
+            v-if="showErrors && serialQuantityInvalid"
+            class="text-sm text-destructive"
+            role="alert"
+          >
+            合格数量必须为非负整数，且不超过 2,147,483,647。
+          </p>
+          <NvField v-if="labelTemplateRequired">
+            <NvFieldLabel for="report-label-template"
+              >标签模板 <span class="text-destructive">*</span></NvFieldLabel
+            >
+            <select
+              id="report-label-template"
+              v-model="form.labelTemplateId"
+              class="min-h-10 w-full rounded-md border bg-background px-3 text-sm data-[invalid]:border-destructive"
+              :disabled="editingLocked"
+              :data-invalid="showErrors && invalidLabelTemplate ? '' : undefined"
+              :aria-invalid="showErrors && invalidLabelTemplate ? true : undefined"
+            >
+              <option value="">请选择标签模板</option>
+              <option
+                v-for="template in labelTemplates"
+                :key="template.templateId"
+                :value="template.templateId"
+              >
+                {{ template.templateName }} · {{ template.templateCode }}
+              </option>
+            </select>
+            <p
+              v-if="showErrors && invalidLabelTemplate"
+              class="text-sm text-destructive"
+              role="alert"
+            >
+              请选择可用标签模板；没有可用模板时请联系标签管理员维护。
+            </p>
+          </NvField>
+        </section>
+        <div
+          v-if="
+            !intentLocked &&
+            (!serialOptionsReady ||
+              (labelTemplateRequired && ['loading', 'failed'].includes(labelTemplatesStatus)))
+          "
+          class="flex items-center justify-between gap-2 text-sm text-muted-foreground"
+        >
+          <span>{{
+            serialOptionsPending
+              ? '正在读取报工标签设置…'
+              : labelTemplatesStatus === 'failed'
+                ? '标签模板读取失败，请重新加载。'
+                : '报工标签设置尚未就绪'
+          }}</span>
+          <NvButton
+            type="button"
+            variant="outline"
+            :disabled="serialOptionsPending"
+            @click="refreshSerialOptions"
+            >重新加载</NvButton
+          >
+        </div>
 
         <section
           v-if="Number(form.scrapQuantity) > 0"
@@ -207,7 +310,7 @@ async function onSubmit() {
             <NvButton
               type="button"
               variant="ghost"
-              :disabled="scrapReasonCodesPending || intentLocked"
+              :disabled="scrapReasonCodesPending || editingLocked"
               @click="refreshScrapReasonCodes"
             >
               刷新
@@ -221,7 +324,7 @@ async function onSubmit() {
               !qualityInspectionRecordsReadPermission ||
               scrapReasonCodesPending ||
               !!scrapReasonCodesError ||
-              intentLocked ||
+              editingLocked ||
               !reportScopeReady
             "
             :data-invalid="showErrors && scrapReasonValidationMessage ? '' : undefined"
@@ -262,7 +365,7 @@ async function onSubmit() {
             <NvButton
               type="button"
               variant="ghost"
-              :disabled="materialLotsPending || intentLocked"
+              :disabled="materialLotsPending || editingLocked"
               @click="refreshMaterialLots"
             >
               刷新
@@ -282,7 +385,7 @@ async function onSubmit() {
               <NvCheckbox
                 :id="`report-material-${row.requestId}`"
                 :model-value="materialSelected(row.requestId)"
-                :disabled="intentLocked || !reportScopeReady"
+                :disabled="editingLocked || !reportScopeReady"
                 @update:model-value="setMaterialSelected(row.requestId, $event)"
               />
               <span>
@@ -301,7 +404,7 @@ async function onSubmit() {
               step="any"
               type="number"
               placeholder="耗用数量"
-              :disabled="!materialSelected(row.requestId) || intentLocked || !reportScopeReady"
+              :disabled="!materialSelected(row.requestId) || editingLocked || !reportScopeReady"
               @update:model-value="setMaterialQuantity(row.requestId, $event)"
             />
           </div>
@@ -346,7 +449,8 @@ async function onSubmit() {
           <NvButton
             type="submit"
             :disabled="
-              !canSubmit ||
+              !reportScopeReady ||
+              (!serialOptionsReady && !intentLocked) ||
               recordProductionReportPending ||
               reportScopePending ||
               quantitySnapshotPending

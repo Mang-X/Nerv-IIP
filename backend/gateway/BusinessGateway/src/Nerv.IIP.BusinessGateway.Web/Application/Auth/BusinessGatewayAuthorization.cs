@@ -147,6 +147,7 @@ public static class BusinessGatewayPermissions
     public const string ApprovalsRead = "business.approvals.read";
     public const string ApprovalsManage = "business.approvals.manage";
     public const string BarcodeTemplatesManage = "business.barcodes.templates.manage";
+    public const string BarcodeTemplateAssetsRetire = "business.barcodes.template-assets.retire";
     public const string BarcodePrint = "business.barcodes.print";
     public const string BarcodeScansWrite = "business.barcodes.scans.write";
     public const string NotificationMessagesRead = "notifications.messages.read";

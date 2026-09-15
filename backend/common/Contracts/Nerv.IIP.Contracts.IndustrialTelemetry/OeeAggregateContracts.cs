@@ -131,4 +131,5 @@ public sealed record OeeAggregateBucket(
     string? OutputUomCode,
     decimal? ExpectedOutputQuantity,
     bool IsDegraded,
-    IReadOnlyCollection<OeeAggregateDegradedReason> DegradedReasons);
+    IReadOnlyCollection<OeeAggregateDegradedReason> DegradedReasons,
+    decimal ChangeoverLossMinutes = 0m);

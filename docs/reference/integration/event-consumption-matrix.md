@@ -51,7 +51,7 @@ Reference 与源码冲突时，以当前代码/契约/测试为准并修正本�
 | Inventory | `StockMovementPostingFailedIntegrationEvent` | Inventory | WMS | `consumed-internally` |
 | Inventory | `StockCountVarianceConfirmedIntegrationEvent` | Inventory | 当前无必须改变平台状态的活动消费者 | `producer-only-until-feature` |
 | Inventory | `StockAvailabilityChangedIntegrationEvent` | Inventory | Scheduling | `consumed-internally` |
-| Maintenance | V1 `AssetUnavailableIntegrationEvent`；V2 `AssetUnavailableV2IntegrationEvent` | V1 Maintenance；V2 当前无活动 producer | V1 MES、Scheduling；V2 当前无活动 consumer | V1 `consumed-internally`；V2 `needs-business-consumer` |
+| Maintenance | V1 `AssetUnavailableIntegrationEvent`；V2 `AssetUnavailableV2IntegrationEvent` | V1 Maintenance（v1 自由文本入口只发 V1；v2 原因码入口双发 V1 companion + V2）；V2 Maintenance（`POST /api/business/v2/maintenance/work-orders`，#2964 C/D 阶段） | V1 MES、Scheduling；V2 MES、Scheduling 均精确订阅 canonical topic，并按共享 `idempotencyKey` 折叠双发 | V1/V2 `consumed-internally` |
 | Maintenance | `AssetRestoredIntegrationEvent` | Maintenance | MES、Scheduling | `consumed-internally` |
 | MasterData | `SkuChangedIntegrationEvent` | MasterData | 当前下游主要使用 API/快照；无活动状态消费者 | `producer-only-until-feature` |
 | MasterData | `SkuDisabledIntegrationEvent` | MasterData | MES | `consumed-internally` |
@@ -81,11 +81,12 @@ Reference 与源码冲突时，以当前代码/契约/测试为准并修正本�
 | Quality | `InspectionResultIntegrationEvent`（passed/conditional/rejected） | Quality | Inventory、MES、Scheduling；RMA 场景下 ERP 处理相应财务结果 | `consumed-internally` |
 | Quality | `InspectionTaskOverdueIntegrationEvent` | Quality | Notification | `consumed-internally` |
 | Quality | `MeasuringDeviceCalibrationDueIntegrationEvent` | Quality | Notification | `consumed-internally` |
-| MES | `WorkOrderReleasedIntegrationEvent` | MES | Scheduling、Quality | `consumed-internally` |
+| MES | `WorkOrderReleasedIntegrationEvent` | MES | Scheduling、Quality | `consumed-internally`。信封 `occurredAtUtc` 与 payload `releasedAtUtc` 同取**发布动作给出的发布事实时刻**（按该工单**既有活动**取下界——最早报工与最早工序完工中更早者，#3117），不再取转换那一刻的 `UtcNow`。按 ADR 0011 §5 这是把原先违反「`occurredAtUtc` 必须是领域事实发生时间」的取值修回合规，属修正而非 §4 意义上的语义变更，**不提升 `eventVersion`**；Scheduling 只读 `Payload.WorkOrderId`/`SkuCode`，不校验也不消费任一时刻。payload `operations[]` 自 #3129 起多带一个**可空可选**字段 `preReleaseGoodQuantity`：下达动作那一刻该工序已经存在的净良品量（非冲销报工行的 `goodQuantity` 之和）。按 ADR 0011 §4「同一 `eventType` 下新增可选字段不提升版本」，**不提升 `eventVersion`**。**消费关系不变**（消费方仍是 Scheduling 与 Quality）：Scheduling 只读上述两个字段、对新增字段无感；Quality 的直投消费分支用它落实「下达之前已产出的数量不补开周期巡检任务」这条裁定。**已知不生效面**：本次发布之前入队、仍在在途队列或 DLQ 里的旧消息不带该字段，Quality 对 `null` 按改动前的老行为处理（不跳过），与彼时 main 逐字相同、不进死信；该面随那批旧消息被消费干净而消失 |
+| MES | `WorkOrderReleaseProjectionBackfilledIntegrationEvent` | MES（运维触发的一次性内部端点，非领域事件转换） | 仅 Quality：把存量在制工单的发布事实补进工序巡检投影，只补空缺不覆盖既有行。Scheduling **不**订阅——它对发布事件的处理是让全部已生成排程计划失效，不能被回填放大。本通道复用 `WorkOrderReleasedPayload`，其 #3129 新增字段 `preReleaseGoodQuantity` 在这里**有意恒为 `null`**：该事件的消费分支（`ReleaseFactAuthority.ReconstructedLowerBound`）**根本不读这个字段**——全仓对 `PreReleaseGoodQuantity` 的唯一读取点在 `Authoritative` 分支内，该分支在补上发布事实后无条件跳过到回填执行时刻为止的全部累计产量与流逝时间（#3000 既有取舍）。填与不填行为逐字相同，依据是这条**结构性**事实，**不是**「下达前产量是其子集」——那个子集关系只在领域意义上成立，实现出来的两个数（Quality 本地水位 vs MES 自有事实）在报工事件滞后时可反向 | `consumed-internally` |
 | MES | `ReworkWorkOrderCreatedIntegrationEvent` | MES | Quality：按 organization/environment/NCR 来源事实绑定系统返工工单回执；ERP：在既有 `WorkOrderCost` 上登记 NCR 与来源工单归因 | `consumed-internally` |
 | MES | `WorkOrderCompletedIntegrationEvent` | MES | ERP | `consumed-internally` |
 | MES | `WorkOrderClosedIntegrationEvent` | MES | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
-| MES | `MesOperationTaskCompletedIntegrationEvent` | MES | Quality | `consumed-internally` |
+| MES | `MesOperationTaskCompletedIntegrationEvent` | MES | Quality | `consumed-internally`。payload `skuCode` 取 `OperationTask.SkuCode`，而该列按持久化契约是**从工单抄来的产出 SKU**；此前有三条建工序路径不传 SKU、令其回落成工单号，Quality 的工序巡检一致性守卫按 SKU 比对 `WorkOrderReleased` 与本事件，凡这三条路径建出的工序**先发布后完工必进死信**（#3112）。修源后同一道工序两个事件的 `skuCode` 恒相等，该死信在新数据上归零。**消费关系与分类不变**（消费方仍只有 Quality）：变的是同一条消费路径上「必然失败」变为「正常处理」，按 `docs/governance/integration/event-consumption.md` 的 dead-letter 语义触发器在此登记。存量数据的订正与 Quality 侧校正层的收缩归 #3286 |
 | MES | V1 `MesOperationActualTimeSettledIntegrationEvent`；V2 `MesOperationActualTimeSettledV2IntegrationEvent` | MES | ERP：V1 归集实际人工；V2 归集机器制造费用 | `consumed-internally`（V1/V2） |
 | MES | V1 `MesOperationActualTimeSettlementVoidedIntegrationEvent`；V2 `MesOperationActualTimeSettlementVoidedV2IntegrationEvent` | MES | ERP：V1 精确冲销实际人工；V2 精确冲销机器制造费用 | `consumed-internally`（V1/V2） |
 | MES | `MesOperationTaskManuallyDispatchedIntegrationEvent` | MES | Scheduling | `consumed-internally` |

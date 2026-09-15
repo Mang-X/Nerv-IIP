@@ -358,11 +358,36 @@ public sealed class JournalVoucherEntityTypeConfiguration : IEntityTypeConfigura
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Journal voucher aggregate id.");
         PurchaseRequisitionEntityTypeConfiguration.AddTenantColumns(builder);
         builder.Property(x => x.VoucherNo).HasColumnName("voucher_no").IsRequired().HasMaxLength(100).HasComment("Voucher number.");
+        // #3278 / S2：来源单据身份从凭证号搬到独立两列。两列都可空——存量行不回填
+        // （owner 2026-09-14 裁定演示库数据可重造），非空会让迁移自身在存量库上失败。
+        // 新写入的行一律非空，那条保证由 JournalVoucher.Post 的不可省略参数承担，不由列约束承担。
+        builder.Property(x => x.SourceType).HasColumnName("source_type").HasMaxLength(32).HasComment("Source document type code from JournalVoucherSourceType; NULL only on rows written before the source columns existed.");
+        builder.Property(x => x.SourceNo).HasColumnName("source_no").HasMaxLength(150).HasComment("Source document number whose meaning is decided by source_type; NULL only on rows written before the source columns existed.");
         builder.Property(x => x.PostingDate).HasColumnName("posting_date").IsRequired().HasComment("Voucher posting date.");
         builder.Property(x => x.PostedAtUtc).HasColumnName("posted_at_utc").IsRequired().HasComment("UTC posting time.");
         builder.HasMany(x => x.Lines).WithOne().HasForeignKey("JournalVoucherId").OnDelete(DeleteBehavior.Cascade);
         builder.Navigation(x => x.Lines).UsePropertyAccessMode(PropertyAccessMode.Field);
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.VoucherNo }).IsUnique();
+        // #3278 / S5：来源两列承接幂等语义，索引由 S2 的非唯一改为**唯一**。
+        //
+        // **partial**（owner 2026-09-14 A2 裁定的措辞）：过滤条件只排除来源列为 NULL 的存量行。
+        // 这条过滤在 PostgreSQL 上并非多余的形式主义——虽然标准唯一索引本就把 NULL 之间判为互异
+        // （`NULL = NULL` 为 unknown），但那是**默认 NULLS DISTINCT 的行为**，一条
+        // `CREATE UNIQUE INDEX ... NULLS NOT DISTINCT` 或日后把列改成 NOT NULL 都会静默改掉它。
+        // 写成显式 filter 后，「存量 NULL 行不参与唯一性」是索引定义里读得出来的事实，不是 provider 默认值。
+        //
+        // **失效方向**：过滤只看 NULL，不看值。若日后有位点把来源列填成同一个占位常量
+        // （例如空串或 "UNKNOWN"），这些行会互相挡住而不是被放行——那是**假红**不是假绿，
+        // 会在写入端立刻暴露成 23505，不会静默漏掉重复记账。
+        //
+        // ⭐ 真正危险的方向是**在这条谓词后面追加豁免**（例如 `AND source_type <> 'APPAY'`）：
+        // 那会让整个族静默退出幂等约束。所以这串被两侧**全等**钉住，不是子串匹配——
+        // `JournalVoucherSourceContractTests`（钉这里写的原串）与
+        // `ErpCostAccountingPostgresAcceptanceTests.ExpectedSourceIndexPredicate`
+        // （钉 PostgreSQL 归一化后的 `pg_get_expr` 全形）。
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceType, x.SourceNo })
+            .IsUnique()
+            .HasFilter("source_type IS NOT NULL AND source_no IS NOT NULL");
     }
 }
 

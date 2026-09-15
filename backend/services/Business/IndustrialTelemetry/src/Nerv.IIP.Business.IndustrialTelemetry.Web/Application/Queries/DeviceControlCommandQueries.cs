@@ -186,22 +186,32 @@ public sealed record ListDeviceControlCommandsQuery(
     DateTimeOffset? FromUtc,
     DateTimeOffset? ToUtc,
     int Skip = 0,
-    int Take = 100) : IQuery<PagedListResponse<DeviceControlCommandListItem>>;
+    int Take = OffsetPage.DefaultTake) : IQuery<PagedListResponse<DeviceControlCommandListItem>>;
+
+public sealed class ListDeviceControlCommandsQueryValidator : AbstractValidator<ListDeviceControlCommandsQuery>
+{
+    public ListDeviceControlCommandsQueryValidator()
+    {
+        this.AddTenantRules(query => query.OrganizationId, query => query.EnvironmentId);
+    }
+}
 
 public sealed class ListDeviceControlCommandsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListDeviceControlCommandsQuery, PagedListResponse<DeviceControlCommandListItem>>
 {
     public async Task<PagedListResponse<DeviceControlCommandListItem>> Handle(ListDeviceControlCommandsQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
         var normalizedDevice = IndustrialTelemetryText.Optional(request.DeviceAssetId);
-        var normalizedStatus = IndustrialTelemetryText.Optional(request.Status)?.ToLowerInvariant();
+        var normalizedStatus = SearchTerm.From(request.Status).Value;
         var fromUnixMilliseconds = request.FromUtc?.ToUnixTimeMilliseconds();
         var toUnixMilliseconds = request.ToUtc?.ToUnixTimeMilliseconds();
 
         var query = dbContext.DeviceControlCommands
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId)
-            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == tenant.OrganizationId)
+            .Where(x => x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => normalizedDevice == null || x.DeviceAssetId == normalizedDevice)
             .Where(x => normalizedStatus == null || x.Status.ToLower() == normalizedStatus)
             .Where(x => fromUnixMilliseconds == null || x.RequestedAtUnixTimeMilliseconds >= fromUnixMilliseconds)
@@ -211,8 +221,8 @@ public sealed class ListDeviceControlCommandsQueryHandler(ApplicationDbContext d
         var items = await query
             .OrderByDescending(x => x.RequestedAtUnixTimeMilliseconds)
             .ThenByDescending(x => x.OperationTaskId)
-            .Skip(request.Skip)
-            .Take(request.Take)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new DeviceControlCommandListItem(
                 x.OperationTaskId,
                 x.OperationTaskId,

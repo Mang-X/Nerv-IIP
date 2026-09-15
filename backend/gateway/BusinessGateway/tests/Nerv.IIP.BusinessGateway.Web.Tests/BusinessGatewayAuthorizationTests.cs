@@ -331,6 +331,9 @@ public sealed class BusinessGatewayAuthorizationTests
         Assert.Equal(0, auth.CallCount);
     }
 
+    // #3330 后这条仍然成立，但成立的**理由**换了：鉴权已前移到 DTO 校验之前，
+    // 只是该端点的作用域访问器（request.Problem.OrganizationId）在 problem 缺失时解不出作用域，
+    // 于是 AuthorizedBusinessProxyEndpoint 把鉴权推迟给 DTO 校验先答。
     [Fact]
     public async Task Business_console_scheduling_endpoint_rejects_missing_problem_before_permission_check()
     {
@@ -346,7 +349,7 @@ public sealed class BusinessGatewayAuthorizationTests
     }
 
     [Fact]
-    public async Task Business_console_routing_release_rejects_blank_operation_code_before_permission_check()
+    public async Task Business_console_routing_release_rejects_blank_operation_code_after_permission_check()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         await using var lease = LeaseHost(auth);
@@ -375,11 +378,13 @@ public sealed class BusinessGatewayAuthorizationTests
         });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Equal(0, auth.CallCount);
+        // #3330：鉴权已前移到 DTO 校验之前（AuthorizedBusinessProxyEndpoint.OnBeforeValidateAsync），
+        // 所以载荷不合法的请求也会先付一次鉴权往返；此处鉴权放行、随后由端点级规则拒成 400。
+        Assert.Equal(1, auth.CallCount);
     }
 
     [Fact]
-    public async Task Business_console_alarm_rule_endpoint_rejects_invalid_comparison_operator_before_permission_check()
+    public async Task Business_console_alarm_rule_endpoint_rejects_invalid_comparison_operator_after_permission_check()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         await using var lease = LeaseHost(auth);
@@ -402,13 +407,15 @@ public sealed class BusinessGatewayAuthorizationTests
         });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Equal(0, auth.CallCount);
+        // #3330：鉴权已前移到 DTO 校验之前（AuthorizedBusinessProxyEndpoint.OnBeforeValidateAsync），
+        // 所以载荷不合法的请求也会先付一次鉴权往返；此处鉴权放行、随后由端点级规则拒成 400。
+        Assert.Equal(1, auth.CallCount);
     }
 
     [Theory]
     [InlineData("POST", "/api/business-console/v1/quality/reason-codes", "low", "rework")]
     [InlineData("PUT", "/api/business-console/v1/quality/reason-codes/QR-SCRATCH", "major", "use-as-is")]
-    public async Task Business_console_quality_reason_endpoint_rejects_invalid_catalog_values_before_permission_check(
+    public async Task Business_console_quality_reason_endpoint_rejects_invalid_catalog_values_after_permission_check(
         string method,
         string path,
         string severity,
@@ -435,7 +442,9 @@ public sealed class BusinessGatewayAuthorizationTests
         var response = await client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Equal(0, auth.CallCount);
+        // #3330：鉴权已前移到 DTO 校验之前（AuthorizedBusinessProxyEndpoint.OnBeforeValidateAsync），
+        // 所以载荷不合法的请求也会先付一次鉴权往返；此处鉴权放行、随后由端点级规则拒成 400。
+        Assert.Equal(1, auth.CallCount);
     }
 
     [Theory]
@@ -641,10 +650,19 @@ public sealed class BusinessGatewayAuthorizationTests
             horizonStart = "2026-05-25",
             horizonEnd = "2026-06-30",
         },
-        "/api/business-console/v1/files/file-sop-v2/download-grants" => new
+        "/api/business-console/v1/files/file-sop-v2/download-grants"
+            or "/api/business-console/v1/files/shift-handover-attachments/upload-sessions/ups-handover-1/complete" => new
         {
             organizationId = "org-001",
             environmentId = "env-dev",
+        },
+        "/api/business-console/v1/files/shift-handover-attachments/upload-sessions" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            fileName = "handover.jpg",
+            contentType = "image/jpeg",
+            expectedSizeBytes = 2048,
         },
         "/api/business-console/v1/scheduling/plans/preview" or "/api/business-console/v1/scheduling/plans" => new
         {
@@ -1107,6 +1125,17 @@ public sealed class BusinessGatewayAuthorizationTests
             assetUnavailableReason = "bearing temperature high",
             idempotencyKey = "maintenance-create-authz",
         },
+        "/api/business-console/v2/maintenance/work-orders" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "DEV-PRESS-01",
+            priority = "high",
+            sourceAlarmId = "alarm-001",
+            openedBy = "operator-001",
+            assetUnavailableReasonCode = "bearing-overheat",
+            idempotencyKey = "maintenance-create-v2-authz",
+        },
         "/api/business-console/v1/maintenance/work-orders/wo-maint-001/complete" => new
         {
             organizationId = "org-001",
@@ -1294,6 +1323,12 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/production-versions/resolve", BusinessGatewayPermissions.EngineeringProductionVersionsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/files/file-sop-v2/download-grants", BusinessGatewayPermissions.EngineeringDocumentsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/files/download-grants/grant-sop-v2/content", BusinessGatewayPermissions.EngineeringDocumentsRead);
+        // #3085：交接班附件面与 SOP 面共用 FileStorage 但不共用权限口径。写面归 handovers.manage，
+        // 读面归 handovers.read，两侧都不落到 engineering.documents.read 上。
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/files/shift-handover-attachments/upload-sessions", BusinessGatewayPermissions.MesHandoversManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/files/shift-handover-attachments/upload-sessions/ups-handover-1/complete", BusinessGatewayPermissions.MesHandoversManage);
+        routes.Add(HttpMethod.Patch, "/api/business-console/v1/files/shift-handover-attachments/tus/ups-handover-1", BusinessGatewayPermissions.MesHandoversManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/files/shift-handover-attachments/file-handover-1/content", BusinessGatewayPermissions.MesHandoversRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/demands", BusinessGatewayPermissions.PlanningDemandsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/demands", BusinessGatewayPermissions.PlanningDemandsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/forecasts", BusinessGatewayPermissions.PlanningDemandsRead);
@@ -1346,6 +1381,7 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/runtime-availability?windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z&deviceAssetIds=DEV-OIL-01", BusinessGatewayPermissions.IiotTelemetryRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/work-orders", BusinessGatewayPermissions.MaintenanceWorkOrdersRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/maintenance/work-orders", BusinessGatewayPermissions.MaintenanceWorkOrdersManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v2/maintenance/work-orders", BusinessGatewayPermissions.MaintenanceWorkOrdersManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/work-orders/wo-maint-001", BusinessGatewayPermissions.MaintenanceWorkOrdersRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/maintenance/work-orders/wo-maint-001/complete", BusinessGatewayPermissions.MaintenanceWorkOrdersManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/plans", BusinessGatewayPermissions.MaintenancePlansRead);

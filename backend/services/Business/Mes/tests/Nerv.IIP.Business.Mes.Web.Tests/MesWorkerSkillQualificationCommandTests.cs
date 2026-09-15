@@ -279,7 +279,8 @@ public sealed class MesWorkerSkillQualificationCommandTests
         string? requiredSkillCode) =>
         OperationTask.Queue(
             "org-001", "env-dev", workOrderId, operationTaskId, sequence, $"WC-{sequence}", [],
-            Now.AddHours(-1), TimeSpan.FromHours(1), requiredSkillCode: requiredSkillCode);
+            Now.AddHours(-1), TimeSpan.FromHours(1),
+            "SKU-001", requiredSkillCode: requiredSkillCode);
 
     private sealed class RejectingGate : IMesWorkerSkillQualificationGate
     {

@@ -3,6 +3,7 @@ using FluentValidation;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
+using Nerv.IIP.BusinessGateway.Web.Endpoints.Validation;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Barcode;
@@ -324,12 +325,10 @@ public sealed class BusinessConsoleBarcodeRuleListRequestValidator : Validator<B
 {
     public BusinessConsoleBarcodeRuleListRequestValidator()
     {
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        this.Tenant(x => x.OrganizationId, x => x.EnvironmentId);
         RuleFor(x => x.Status).MaximumLength(30);
-        RuleFor(x => x.Keyword).MaximumLength(100);
-        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
-        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+        this.OptionalKeyword(x => x.Keyword);
+        this.OffsetPagination(x => x.Skip, x => x.Take, 1, 500);
     }
 }
 
@@ -337,11 +336,9 @@ public sealed class BusinessConsoleBarcodeTemplateListRequestValidator : Validat
 {
     public BusinessConsoleBarcodeTemplateListRequestValidator()
     {
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        this.Tenant(x => x.OrganizationId, x => x.EnvironmentId);
         RuleFor(x => x.Status).MaximumLength(30);
-        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
-        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+        this.OffsetPagination(x => x.Skip, x => x.Take, 1, 500);
     }
 }
 
@@ -349,13 +346,11 @@ public sealed class BusinessConsoleBarcodePrintBatchListRequestValidator : Valid
 {
     public BusinessConsoleBarcodePrintBatchListRequestValidator()
     {
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        this.Tenant(x => x.OrganizationId, x => x.EnvironmentId);
         RuleFor(x => x.SourceDocumentType).MaximumLength(100);
         RuleFor(x => x.SourceDocumentId).MaximumLength(150);
         RuleFor(x => x.Status).MaximumLength(30);
-        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
-        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+        this.OffsetPagination(x => x.Skip, x => x.Take, 1, 500);
     }
 }
 
@@ -363,14 +358,41 @@ public sealed class BusinessConsoleBarcodeScanListRequestValidator : Validator<B
 {
     public BusinessConsoleBarcodeScanListRequestValidator()
     {
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        this.Tenant(x => x.OrganizationId, x => x.EnvironmentId);
         RuleFor(x => x.DeviceCode).MaximumLength(100);
         RuleFor(x => x.ScannedValue).MaximumLength(200);
         RuleFor(x => x.SourceWorkflow).MaximumLength(100);
         RuleFor(x => x.SourceDocumentId).MaximumLength(150);
-        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
-        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+        this.OffsetPagination(x => x.Skip, x => x.Take, 1, 500);
+    }
+}
+
+public sealed class BusinessConsoleCreateBarcodePrintBatchRequestValidator
+    : Validator<BusinessConsoleCreateBarcodePrintBatchRequest>
+{
+    public BusinessConsoleCreateBarcodePrintBatchRequestValidator()
+    {
+        // 只补长度上界，**不加 NotEmpty**：加必填是值域决定，归 #3287 的子票，不在这里顺手做。
+        // 原先写在这里的理由（「补上必填会把未授权调用方的 403 变成 400」）已由 #3330 消除：
+        // 鉴权与幂等键归一化都已前移到 DTO 校验之前
+        // （AuthorizedBusinessProxyEndpoint.OnBeforeValidateAsync），端点级规则命中不再改写鉴权结论。
+        RuleFor(x => x.IdempotencyKey).MaximumLength(128);
+        RuleFor(x => x.ReportIntentFingerprint)
+            .Must(value => value is null || !string.IsNullOrWhiteSpace(value))
+            .MaximumLength(256);
+    }
+}
+
+public sealed class BusinessConsoleRecordBarcodeScanRequestValidator
+    : Validator<BusinessConsoleRecordBarcodeScanRequest>
+{
+    public BusinessConsoleRecordBarcodeScanRequestValidator()
+    {
+        // 只补长度上界，**不加 NotEmpty**：加必填是值域决定，归 #3287 的子票，不在这里顺手做。
+        // 原先写在这里的理由（「补上必填会把未授权调用方的 403 变成 400」）已由 #3330 消除：
+        // 鉴权与幂等键归一化都已前移到 DTO 校验之前
+        // （AuthorizedBusinessProxyEndpoint.OnBeforeValidateAsync），端点级规则命中不再改写鉴权结论。
+        RuleFor(x => x.IdempotencyKey).MaximumLength(128);
     }
 }
 
@@ -379,8 +401,7 @@ public sealed class BusinessConsoleDispatchBarcodePrintBatchRequestValidator : V
     public BusinessConsoleDispatchBarcodePrintBatchRequestValidator()
     {
         RuleFor(x => x.PrintBatchId).NotEmpty().MaximumLength(150);
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        this.Tenant(x => x.OrganizationId, x => x.EnvironmentId);
         RuleFor(x => x.Body).NotNull();
         RuleFor(x => x.Body.PrinterId).NotEmpty().MaximumLength(100).When(x => x.Body is not null);
     }
@@ -392,8 +413,7 @@ public sealed class BusinessConsoleReprintBarcodeLabelRequestValidator : Validat
     {
         RuleFor(x => x.PrintBatchId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.SequenceNo).GreaterThan(0);
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        this.Tenant(x => x.OrganizationId, x => x.EnvironmentId);
         RuleFor(x => x.Body).NotNull();
         RuleFor(x => x.Body.PrinterId).NotEmpty().MaximumLength(100).When(x => x.Body is not null);
     }
@@ -405,8 +425,7 @@ public sealed class BusinessConsoleVoidBarcodeLabelRequestValidator : Validator<
     {
         RuleFor(x => x.PrintBatchId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.SequenceNo).GreaterThan(0);
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        this.Tenant(x => x.OrganizationId, x => x.EnvironmentId);
         RuleFor(x => x.Body).NotNull();
         RuleFor(x => x.Body.Reason).NotEmpty().MaximumLength(500).When(x => x.Body is not null);
     }

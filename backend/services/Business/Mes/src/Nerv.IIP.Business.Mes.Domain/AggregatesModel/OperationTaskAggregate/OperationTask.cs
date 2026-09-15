@@ -33,7 +33,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         TimeSpan duration,
         DateTimeOffset? existingStartUtc,
         DateTimeOffset? existingEndUtc,
-        string? skuCode,
+        string skuCode,
         string? uomCode,
         decimal plannedQuantity,
         bool requiresQualityInspection,
@@ -54,7 +54,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             : throw new ArgumentOutOfRangeException(nameof(duration), "Duration must be positive.");
         ExistingStartUtc = existingStartUtc;
         ExistingEndUtc = existingEndUtc;
-        SkuCode = NormalizeOptional(skuCode) ?? workOrderId;
+        SkuCode = DomainGuard.Required(skuCode, nameof(skuCode));
         UomCode = NormalizeOptional(uomCode) ?? "pcs";
         PlannedQuantity = plannedQuantity > 0m ? plannedQuantity : 1m;
         RequiresQualityInspection = requiresQualityInspection;
@@ -147,7 +147,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         IReadOnlyCollection<string> alternativeWorkCenterIds,
         DateTimeOffset earliestStartUtc,
         TimeSpan duration,
-        string? skuCode = null,
+        string skuCode,
         string? uomCode = null,
         decimal plannedQuantity = 0m,
         bool requiresQualityInspection = false,
@@ -188,7 +188,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         TimeSpan duration,
         DateTimeOffset? existingStartUtc,
         DateTimeOffset? existingEndUtc,
-        string? skuCode = null,
+        string skuCode,
         string? uomCode = null,
         decimal plannedQuantity = 0m,
         bool requiresQualityInspection = false,

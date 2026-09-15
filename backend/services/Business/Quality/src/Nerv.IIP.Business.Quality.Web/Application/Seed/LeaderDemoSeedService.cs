@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
+using Nerv.IIP.Contracts.Quality;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.Seed;
 
@@ -15,7 +16,7 @@ public sealed class LeaderDemoSeedService(ApplicationDbContext dbContext)
         if (plan is null)
         {
             plan = InspectionPlan.Create(
-                organizationId, environmentId, PlanCode, "operation", "SKU-DEMO-001", null, "WC-CNC-DEMO", null, null);
+                organizationId, environmentId, PlanCode, QualityInspectionSourceTypes.Operation, "SKU-DEMO-001", null, "WC-CNC-DEMO", null, null);
             plan.AddCharacteristic(
                 "diameter", "活塞杆外径", "caliper", "major", true, "each",
                 InspectionCharacteristicTypes.Variable, 50m, 49.5m, 50.5m, "mm", null);
@@ -25,7 +26,7 @@ public sealed class LeaderDemoSeedService(ApplicationDbContext dbContext)
         else
         {
             var characteristic = plan.Characteristics.SingleOrDefault();
-            if (plan.Status != "active" || plan.Category != "operation" || plan.SkuCode != "SKU-DEMO-001" || plan.WorkCenterId != "WC-CNC-DEMO" ||
+            if (plan.Status != "active" || plan.Category != QualityInspectionSourceTypes.Operation || plan.SkuCode != "SKU-DEMO-001" || plan.WorkCenterId != "WC-CNC-DEMO" ||
                 characteristic is null || characteristic.CharacteristicCode != "diameter" || characteristic.CharacteristicType != InspectionCharacteristicTypes.Variable ||
                 characteristic.NominalValue != 50m || characteristic.LowerSpecLimit != 49.5m || characteristic.UpperSpecLimit != 50.5m)
             {

@@ -4,7 +4,9 @@
 #     - Creates a temporary backend inventory mirror with mutation projects
 #     - Creates a temporary C# Docker-lookalike fixture inside an existing backend test project
 #   Writes:
-#     - OS temporary directory: backend inventory, workflow, manifest, policy, shard TRX and timing-cache fixtures (temporarily)
+#     - OS temporary directory: backend inventory, workflow, manifest, policy, shard TRX, aggregated selector TRX, class-exclusion coverage and timing-cache fixtures (temporarily)
+#     - OS temporary directory: a PATH dotnet shim, its launcher, manifest and TRX fixtures for the real-PostgreSQL verifier (temporarily)
+#     - artifacts/real-postgres-tests/Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests/** shim TRX evidence (temporarily)
 #     - backend/tests/Nerv.IIP.Testing.Tests/TemporaryDockerLookalikes-*.cs (temporarily)
 #     - artifacts/backend-test-shards-collision-*.cs selector-collision fixture (temporarily)
 #     - artifacts/shard-fixture-*.slnf rearranged solution filters (temporarily)
@@ -36,6 +38,8 @@ $temporarySolutionMemberPath = Join-Path $temporarySolutionMemberDirectory 'Nerv
 $temporaryWorkflowPath = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-{0}.yml" -f [Guid]::NewGuid().ToString('N'))
 $timeoutResultsDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-timeout-{0}" -f [Guid]::NewGuid().ToString('N'))
 $executionTrxDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-execution-{0}" -f [Guid]::NewGuid().ToString('N'))
+$aggregateTrxDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-aggregate-trx-{0}" -f [Guid]::NewGuid().ToString('N'))
+$shimRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-dotnet-shim-{0}" -f [Guid]::NewGuid().ToString('N'))
 $temporaryPolicyPath = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-policy-{0}.json" -f [Guid]::NewGuid().ToString('N'))
 $temporaryManifestPath = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-manifest-{0}.json" -f [Guid]::NewGuid().ToString('N'))
 # The validator resolves policy sourcePath against the repository root, so the collision fixture
@@ -76,7 +80,7 @@ Assert-Contract (-not (Test-Path -LiteralPath (Join-Path $repoRoot 'backend/comm
 # these assertions match whole sentences instead of the short fragments a thrown (and therefore
 # width-wrapped) message forced — this file used to also scrape the command log to reassemble that
 # text, and both workarounds are gone. Why the shape matters:
-# docs/architecture/backend-ci-build-strategy.md ("走查收尾" 第 3 条).
+# docs/reports/audits/backend-ci-build-strategy-man-669.md ("走查收尾" 第 3 条).
 #
 # Whitespace is collapsed so that where the script chose to break lines is not part of the
 # contract. The assertions are about content, not layout.
@@ -192,6 +196,7 @@ function Invoke-InventorySourceMutation {
             -ProjectOwners $ManifestPolicy.ProjectOwners `
             -AmbiguousProjectOwners $ManifestPolicy.AmbiguousProjectOwners `
             -ExcludedClassSelectorsByFastShard $ManifestPolicy.ExcludedClassSelectorsByFastShard `
+            -RealDependencyRules @($ManifestPolicy.RealDependencyRules) `
             -HeavyLaneIdSet $ManifestPolicy.HeavyLaneIdSet
     }
 }
@@ -853,8 +858,19 @@ $excludedSelectors = @(
 # 验收类整类进入 real-postgres lane 后为 73；#2072 将单一 Periodic Inspection provider
 # fixture 按三项业务职责拆分，原 1 个选择器替换为 3 个，因此总数为 75；#2855 的 MES
 # 生产统计真库类整类进入 real-postgres lane 后为 76；#3010 的 MES 返工 UoW/outbox
-# 真库类整类进入 real-postgres lane 后，当前总数为 77。
-Assert-Contract ($excludedSelectors.Count -eq 77) 'Every currently excluded real-dependency test selector must be explicitly classified.'
+# 真库类整类进入 real-postgres lane 后为 77；#2967 的 Scheduling AssetUnavailable inbox 真库类
+# （双身份 claim 并发、迁移前滚与索引列变异证明）整类进入 real-postgres lane 后为 78；#1962 的
+# MES 换型记录与 IndustrialTelemetry 换型损失各增加 1 条真实 PostgreSQL selector，当前总数为 80。
+# NERV-2117 的 MES 货权快照 PostgreSQL 类新增 1 个 selector，总数为 81。
+# NERV-2121 的采购收货路径互斥 Acceptance PostgreSQL 类新增 1 个 selector，总数为 82。
+# #3228 的 WMS 退供单号列宽边界证明在既有混合类里新增 1 条方法级 selector，总数为 83。
+# #3315 的 Quality→MES 保留上下文来源身份列宽证明整类只含真实 PostgreSQL 用例，
+# 整类交给 real-postgres lane，总数为 84。
+# #3318 的 Quality→MES 处置引用身份列宽证明同样整类只含真实 PostgreSQL 用例，总数为 85。
+# #3319 的检验记录来源行唯一键证明（新唯一键把同工单两道工序分开、迁移对存量行的 NULL 语义）
+# 整类只含真实 PostgreSQL 用例，整类交给 real-postgres lane，总数为 86。
+# #2890 的报工单件序列号类同样只含真实 PostgreSQL 迁移与约束证明，总数为 87。
+Assert-Contract ($excludedSelectors.Count -eq 87) '所有已排除的真实依赖测试选择器必须显式分类。'
 Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]('Nerv.IIP.Business.Erp.Web.Tests.OperationLaborSettlementRedisCapTransportTests'))) 'The ERP operation-labor Redis/CAP class must be excluded from the fast shard and owned by the Redis/CAP lane.'
 foreach ($selector in @('Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresConcurrencyTests', 'Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresContinuationTests', 'Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresMigrationTests')) {
     Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]$selector)) "The Quality periodic-inspection PostgreSQL class '$selector' must be excluded from the fast shard and owned by the real PostgreSQL lane."
@@ -888,6 +904,33 @@ $demandPlanningOwnedMethods = @(
 Assert-Contract (-not $businessCoreBExcludedClasses.Contains($demandPlanningClass)) 'The mixed DemandPlanning consumer class must not be excluded wholesale; its four ordinary facts belong to the fast shard.'
 Assert-Contract (@($demandPlanningOwnedMethods | Where-Object { -not $businessCoreBExcludedTests.Contains($_) }).Count -eq 0) 'The three PostgreSQL and two Redis/CAP DemandPlanning methods must be handed to their heavy lanes individually.'
 Assert-Contract ([string]::Equals([string](((Get-NervStringsSorted -Values @($businessCoreBShard.excludedTestLanes) -Comparer ([StringComparer]::Ordinal)) -join '|')), 'real-postgres|redis-cap', [StringComparison]::Ordinal)) 'Business Core B exclusions must derive exactly the PostgreSQL and Redis/CAP heavy owners.'
+
+# #3444：三个**混合类**从类级排除收窄到方法级。它们各自只有一条 env-gated 真库用例被 MAN-661 登记，
+# 其余 21 条是裸 [Fact]/[Theory]；类级排除把这 21 条一起从 fast shard 里过滤掉，而它们不在任何
+# heavy lane 的 filter 里，也不留 skipped 记录。选择器**总数不变**（3 条类级换 3 条方法级），
+# 所以上面那条 87 的断言不动——这三条断言钉的是形状，不是数量。
+$classExclusionNarrowedToMethod = @{
+    'business-gateway' = @(
+        @{ Class = 'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceIntegrationEventHandlerTests'
+           Method = 'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceIntegrationEventHandlerTests.Device_disabled_consumer_durably_blocks_pm_generation_on_postgres' }
+    )
+    'business-core-a' = @(
+        @{ Class = 'Nerv.IIP.Business.Quality.Web.Tests.QualityCalibrationRecordQueryTests'
+           Method = 'Nerv.IIP.Business.Quality.Web.Tests.QualityCalibrationRecordQueryTests.Calibration_records_are_filtered_ordered_and_scoped_on_postgres' },
+        @{ Class = 'Nerv.IIP.Business.Quality.Web.Tests.QualitySpcAnalysisTests'
+           Method = 'Nerv.IIP.Business.Quality.Web.Tests.QualitySpcAnalysisTests.Postgres_spc_point_projection_materializes_latest_points_without_client_translation' }
+    )
+}
+foreach ($narrowedShardId in @($classExclusionNarrowedToMethod.Keys)) {
+    $narrowedShard = @($fastShards | Where-Object { [string]::Equals([string]($_.id), [string]($narrowedShardId), [StringComparison]::Ordinal) })
+    Assert-Contract ($narrowedShard.Count -eq 1) "Fast shard '$narrowedShardId' must be defined exactly once."
+    $narrowedClasses = [Collections.Generic.HashSet[string]]::new([string[]]@($narrowedShard[0].excludedTestClasses), [StringComparer]::Ordinal)
+    $narrowedMethods = [Collections.Generic.HashSet[string]]::new([string[]]@($narrowedShard[0].excludedTests), [StringComparer]::Ordinal)
+    foreach ($narrowedEntry in @($classExclusionNarrowedToMethod[$narrowedShardId])) {
+        Assert-Contract (-not $narrowedClasses.Contains([string] $narrowedEntry.Class)) "The mixed class '$($narrowedEntry.Class)' must not be excluded wholesale; its bare [Fact]/[Theory] cases belong to the fast shard."
+        Assert-Contract ($narrowedMethods.Contains([string] $narrowedEntry.Method)) "The environment-gated case '$($narrowedEntry.Method)' must be handed to its heavy lane as a method selector."
+    }
+}
 Assert-Contract (Test-Path -LiteralPath $diagnosticsPath) 'Timeout diagnostics must use a separately testable helper, not a production command bypass.'
 Assert-Contract (Test-Path -LiteralPath $selectorAssertionsPath) 'Real PostgreSQL selector discovery and execution checks must be separately testable.'
 . $diagnosticsPath
@@ -911,9 +954,23 @@ catch {
 }
 Assert-Contract ($runnerBypassText.Contains("A parameter cannot be found that matches parameter name 'TestCommand'", [StringComparison]::Ordinal)) 'The production fast-shard runner must reject a command replacement parameter before test execution.'
 
+# #2870 — the 1800s default is CI's budget, not a ceiling. A local runner sharing CPU with other
+# worktrees legitimately needs more, so a budget above the default must reach shard resolution
+# (and fail there on the unknown id) instead of dying at parameter binding.
+$runnerBudgetText = ''
+try {
+    Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-File', $runnerPath, '-ShardId', 'not-a-shard', '-ResultsDirectory', $timeoutResultsDirectory, '-TrxFilePrefix', 'budget-contract', '-TimeoutSeconds', '1801') -WorkingDirectory $repoRoot -Name 'backend-test-shard-timeout-budget-contract' | Out-Null
+    throw 'The fast-shard runner must not run an unknown shard.'
+}
+catch {
+    $runnerBudgetText = $_.Exception.Message
+}
+Assert-Contract (-not $runnerBudgetText.Contains("Cannot validate argument on parameter 'TimeoutSeconds'", [StringComparison]::Ordinal)) 'The fast-shard runner must accept a timeout budget above its 1800s default (#2870).'
+Assert-Contract ($runnerBudgetText.Contains("Backend test shard 'not-a-shard' must be defined exactly once", [StringComparison]::Ordinal)) 'A timeout budget above the default must reach shard resolution unchanged.'
+
 $staleSelectorText = ''
 try {
-    Assert-BackendTestShardSelectorDiscovery -Selector 'Nerv.IIP.Tests.StaleSelector' -MethodSelector $true -DiscoveredTests @()
+    Assert-BackendTestShardSelectorDiscovery -Selector 'Nerv.IIP.Tests.StaleSelector' -MethodSelector $true -DiscoveryOutput ''
 }
 catch {
     $staleSelectorText = $_.Exception.Message
@@ -921,12 +978,72 @@ catch {
 Assert-Contract ($staleSelectorText.Contains("Real PostgreSQL selector 'Nerv.IIP.Tests.StaleSelector' discovery must match exactly one test", [StringComparison]::Ordinal)) 'A stale real PostgreSQL selector must fail discovery before execution.'
 
 $classSelector = 'Nerv.IIP.Tests.ClassSelector'
-$classDiscovery = @(Assert-BackendTestShardSelectorDiscovery -Selector $classSelector -MethodSelector $false -DiscoveredTests @("$classSelector.CaseOne", "$classSelector.CaseTwo"))
+$classDiscovery = @(Assert-BackendTestShardSelectorDiscovery -Selector $classSelector -MethodSelector $false -DiscoveryOutput "$classSelector.CaseOne`n$classSelector.CaseTwo")
 Assert-Contract ($classDiscovery.Count -eq 2) 'A class-scoped real PostgreSQL selector must retain every discovered test.'
 Assert-BackendTestShardSelectorExecution -Selector $classSelector -DiscoveredTests $classDiscovery -TrxResults @(
     [pscustomobject]@{ testName = "$classSelector.CaseOne"; outcome = 'Passed' },
     [pscustomobject]@{ testName = "$classSelector.CaseTwo"; outcome = 'Passed' }
 )
+
+# --- #3279 --------------------------------------------------------------------------------------
+# 缺陷与修法的完整归因写在 scripts/lib/BackendTestShardSelectors.ps1 的函数注释里，这里不复述。
+# 要点只有一条：Assert-BackendTestShardSelectorDiscovery 收的是 --list-tests 的**原始 stdout**，
+# 切行发生在函数内部，调用方在类型上拿不到「行」这个中间物。下面两条喂真实形状的原始输出：
+# 表头前后空行、纯空白行、CRLF、以及 dotnet test 必然带的尾随换行，都不得让断言崩在绑定或匹配上。
+$listTestsSampleIdentity = 'Nerv.IIP.Inventory.Tests.InventoryDirectoryPostgresTests'
+$listTestsSample = "`r`n" + ((@(
+    'Test run for /w/bin/Release/net10.0/Nerv.IIP.Inventory.Tests.dll (.NETCoreApp,Version=v10.0)',
+    'VSTest version 17.0.0 (x64)',
+    '',
+    'The following Tests are available:',
+    '',
+    "    $listTestsSampleIdentity.ListsDirectory",
+    "    $listTestsSampleIdentity.FiltersDirectory",
+    '   ',
+    ''
+)) -join "`r`n")
+$listTestsDiscovery = ''
+$listTestsMatched = @()
+try {
+    $listTestsMatched = @(Assert-BackendTestShardSelectorDiscovery -Selector $listTestsSampleIdentity -MethodSelector $false -DiscoveryOutput $listTestsSample)
+}
+catch {
+    $listTestsDiscovery = $_.Exception.Message
+}
+Assert-Contract ([string]::Equals($listTestsDiscovery, '', [StringComparison]::Ordinal)) "Raw --list-tests output carrying blank, whitespace-only and trailing lines must not break selector discovery; observed: $listTestsDiscovery"
+Assert-Contract ($listTestsMatched.Count -eq 2) "A class selector must match exactly the two indented identities in a raw --list-tests capture; matched $($listTestsMatched.Count)."
+Assert-Contract ([string]::Equals(($listTestsMatched -join '|'), "$listTestsSampleIdentity.ListsDirectory|$listTestsSampleIdentity.FiltersDirectory", [StringComparison]::Ordinal)) 'Discovered identities must be returned without the leading indentation dotnet test writes.'
+
+# 真实触发面比「正文里的空行」更窄也更硬：`dotnet test` 的 stdout 以换行结尾，切行**必然**多出一个
+# 尾随空元素——本机对真实 Erp selector 抓的 148 行 --list-tests 输出，按行切得到 149 个元素、其中 1 个
+# 空元素，全部来自这一条尾随换行。也就是说旧写法从来就过不了第一个 selector。这条用例喂一份没有任何
+# 正文空行、只有尾随换行的最窄样本，确保护栏不是只挡「正文空行」这个更宽的形状。
+$trailingNewlineOnlySample = "以下测试可用:`n    $listTestsSampleIdentity.ListsDirectory`n"
+$trailingNewlineOnlyDiscovery = ''
+$trailingNewlineOnlyMatched = @()
+try {
+    $trailingNewlineOnlyMatched = @(Assert-BackendTestShardSelectorDiscovery -Selector $listTestsSampleIdentity -MethodSelector $true -DiscoveryOutput $trailingNewlineOnlySample)
+}
+catch {
+    $trailingNewlineOnlyDiscovery = $_.Exception.Message
+}
+Assert-Contract ([string]::Equals($trailingNewlineOnlyDiscovery, '', [StringComparison]::Ordinal)) "The trailing newline every dotnet test capture ends with must not break a method selector; observed: $trailingNewlineOnlyDiscovery"
+Assert-Contract ($trailingNewlineOnlyMatched.Count -eq 1) "A method selector must match exactly one identity despite the trailing newline; matched $($trailingNewlineOnlyMatched.Count)."
+
+# 参数收的是 [string] 而不是 [string[]]，所以「调用方自己按行切、把带空元素的行数组递进来」这个
+# 缺陷形状在**参数类型上**就不可表达：PowerShell 拒绝把多元素数组转成 String，绑定当场失败。
+# 这条断言钉的就是这个结构性性质——它取代了任何「看调用方源码有没有写某个字符串」的文本护栏，
+# 后者对续行、splatting 一律假红，对「注释里留串、调用点复原」又是假绿（#3214 同族教训）。
+# 边界说清楚：单元素数组仍会被 PowerShell 解包成字符串，但缺陷形状（身份行 + 空元素）元素数必然 ≥2，
+# 所以落不进那个缝里。
+$lineArrayText = ''
+try {
+    Assert-BackendTestShardSelectorDiscovery -Selector $listTestsSampleIdentity -MethodSelector $false -DiscoveryOutput @("$listTestsSampleIdentity.ListsDirectory", '') | Out-Null
+}
+catch {
+    $lineArrayText = $_.Exception.Message
+}
+Assert-Contract ($lineArrayText.Contains("Cannot process argument transformation on parameter 'DiscoveryOutput'", [StringComparison]::Ordinal)) "A pre-split line array must be rejected at the parameter boundary, which is what makes the #3279 defect shape unrepresentable rather than merely unwritten; observed: $lineArrayText"
 
 $notExecutedSelectorText = ''
 try {
@@ -937,6 +1054,449 @@ catch {
 }
 Assert-Contract ($notExecutedSelectorText.Contains("Real PostgreSQL selector 'Nerv.IIP.Tests.DiscoveredSelector' must execute every discovered test as Passed", [StringComparison]::Ordinal)) 'A discovered real PostgreSQL selector without TRX execution must fail closed.'
 
+# --- #3283 -------------------------------------------------------------------------------------
+# 一个 selector 的执行证据是**本轮结果目录下全部 TRX 的合并结果**，不是其中按 mtime 最新的那一份。
+# 归因写在 scripts/lib/BackendTestShardSelectors.ps1 的 Get-BackendTestShardSelectorTrxResults
+# 函数注释里，这里只放可执行的对照。
+#
+# 夹具形状照 `dotnet test <slnf>` 的真实产物做，并且**刻意让「只读其中一份」的任何策略都不成立**：
+# 四份 TRX，序数**第一**份与**最后**一份都是 0 结果空壳（一份完全没有 `<Results>` 节点，一份带空的
+# `<Results/>`），两条真实结果**拆在中间两份**里。⚠️ 这一点是 #3283 复审 B2 点名的：上一版把两条结果
+# 放在同一份、且那一份恰好序数排第一，于是「只读序数第一份」照样全绿——那一节实际只证明了「不按
+# mtime 选」，没有证明「合并全部」。下面的夹具自检断言把这个性质钉死，避免改名或加文件时静默漂回去。
+$aggregateSelector = 'Nerv.IIP.Tests.AggregateSelector'
+$aggregateDiscovered = @("$aggregateSelector.CaseOne", "$aggregateSelector.CaseTwo")
+$aggregateShellNoResultsPath = Join-Path $aggregateTrxDirectory '01-shell-without-results-node.trx'
+$aggregateRealOnePath = Join-Path $aggregateTrxDirectory '02-real-case-one.trx'
+$aggregateRealTwoPath = Join-Path $aggregateTrxDirectory '03-real-case-two.trx'
+$aggregateShellEmptyResultsPath = Join-Path $aggregateTrxDirectory '04-shell-with-empty-results.trx'
+New-Item -ItemType Directory -Path $aggregateTrxDirectory -Force | Out-Null
+Set-Content -LiteralPath $aggregateShellNoResultsPath -NoNewline -Value @'
+<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="00000000-0000-0000-0000-000000000014" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <TestDefinitions />
+  <ResultSummary outcome="Completed" />
+</TestRun>
+'@
+Set-Content -LiteralPath $aggregateRealOnePath -NoNewline -Value @'
+<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="00000000-0000-0000-0000-000000000011" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Results>
+    <UnitTestResult testId="00000000-0000-0000-0000-000000000012" testName="Nerv.IIP.Tests.AggregateSelector.CaseOne" outcome="Passed" />
+  </Results>
+</TestRun>
+'@
+Set-Content -LiteralPath $aggregateRealTwoPath -NoNewline -Value @'
+<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="00000000-0000-0000-0000-000000000013" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Results>
+    <UnitTestResult testId="00000000-0000-0000-0000-000000000016" testName="Nerv.IIP.Tests.AggregateSelector.CaseTwo" outcome="Passed" />
+  </Results>
+</TestRun>
+'@
+Set-Content -LiteralPath $aggregateShellEmptyResultsPath -NoNewline -Value @'
+<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="00000000-0000-0000-0000-000000000015" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Results />
+  <ResultSummary outcome="Completed" />
+</TestRun>
+'@
+
+# 夹具自检：把「聚合才成立」写成断言，而不是写成注释里的一句话。逐份数 UnitTestResult——序数首尾两份
+# 必须为 0，且没有任何单独一份同时带齐两条身份。任何一条不成立，下面那些「聚合」断言就退化成「不按
+# mtime 选」，而退化是静默的。
+# ⚠️ 这里**没有**排序：顺序由下面的 $aggregateOrdinalNames 用序数比较器给出，首/末元素都取自它。
+# 原来多写了一个 `Sort-Object -Property @{ Expression = { $_ } }`，既多余又是 culture collation，
+# 被 scripts/tests/ordinal-comparison-layers.Tests.ps1 判红（#3283 复审 N-B1）。
+$aggregatePerFileCounts = @(
+    Get-ChildItem -LiteralPath $aggregateTrxDirectory -Filter '*.trx' -File |
+        ForEach-Object { [string] $_.FullName } |
+        ForEach-Object {
+            $document = [xml] (Get-Content -LiteralPath $_ -Raw)
+            [pscustomobject]@{ Name = [System.IO.Path]::GetFileName($_); Count = @($document.SelectNodes("//*[local-name()='UnitTestResult']")).Count }
+        }
+)
+$aggregateOrdinalNames = Get-BackendTestShardUniqueSorted -Values @($aggregatePerFileCounts | ForEach-Object { [string] $_.Name })
+Assert-Contract ($aggregatePerFileCounts.Count -eq 4) "The aggregation fixture must hold four TRX files; observed $($aggregatePerFileCounts.Count)."
+$aggregateFirstFileCount = @($aggregatePerFileCounts | Where-Object { [string]::Equals([string] $_.Name, $aggregateOrdinalNames[0], [StringComparison]::Ordinal) })[0].Count
+$aggregateLastFileCount = @($aggregatePerFileCounts | Where-Object { [string]::Equals([string] $_.Name, $aggregateOrdinalNames[$aggregateOrdinalNames.Count - 1], [StringComparison]::Ordinal) })[0].Count
+Assert-Contract ($aggregateFirstFileCount -eq 0) "The ordinally first TRX must carry no result, otherwise 'read only the first file' would satisfy the aggregation assertions; $($aggregateOrdinalNames[0]) carried $aggregateFirstFileCount."
+Assert-Contract ($aggregateLastFileCount -eq 0) "The ordinally last TRX must carry no result, otherwise 'read only the last file' would satisfy the aggregation assertions; $($aggregateOrdinalNames[$aggregateOrdinalNames.Count - 1]) carried $aggregateLastFileCount."
+Assert-Contract (@($aggregatePerFileCounts | Where-Object { $_.Count -ge $aggregateDiscovered.Count }).Count -eq 0) 'No single TRX may carry every discovered identity; if one does, reading one file is enough and the aggregation claim is untested.'
+Assert-Contract ((@($aggregatePerFileCounts | ForEach-Object { [int] $_.Count }) | Measure-Object -Sum).Sum -eq $aggregateDiscovered.Count) 'The fixture must spread exactly the discovered identities across more than one TRX.'
+
+# mtime 是这里的自变量，所以显式写死而不是靠文件写入顺序——否则这几条断言的鉴别力就变成了
+# 「本机文件系统碰巧按什么顺序落盘」，正是本票要消除的那个不确定性。
+function Set-AggregateTrxWriteTimes {
+    param([Parameter(Mandatory)] [string] $NewestPath)
+
+    $stamp = [datetime]::new(2026, 1, 1, 0, 0, 0, [DateTimeKind]::Utc)
+    $offset = 0
+    foreach ($path in @($aggregateShellNoResultsPath, $aggregateRealOnePath, $aggregateRealTwoPath, $aggregateShellEmptyResultsPath)) {
+        if ([string]::Equals($path, $NewestPath, [StringComparison]::Ordinal)) { continue }
+        (Get-Item -LiteralPath $path).LastWriteTimeUtc = $stamp.AddMinutes($offset)
+        $offset++
+    }
+    (Get-Item -LiteralPath $NewestPath).LastWriteTimeUtc = $stamp.AddMinutes(60)
+}
+
+function Get-AggregateTrxNewestName {
+    # 这里的 `Sort-Object` 排的是 DateTime，不是标识符，所以不属于 ordinal-comparison-layers 管的那一类；
+    # 而且「按 mtime 排出最新那份」正是被测对象本身，换成序数 helper 就把用例改没了。
+    return [string] (Get-ChildItem -LiteralPath $aggregateTrxDirectory -Filter '*.trx' -File |
+        Sort-Object LastWriteTimeUtc -Descending |
+        Select-Object -First 1).Name
+}
+
+# StrictMode 在这里是被测条件之一，不是背景设置：#3283 的可见症状就是 StrictMode 下的属性缺失异常。
+# 用 `& { Set-StrictMode … }` 在**进程内**开一个更严格的子作用域，而不是起 `pwsh -File` 子进程——
+# 后者不重定向 stdin，StrictMode 报错会表现为挂住到超时而不是打印真因。
+function Invoke-AggregateTrxReadUnderStrictMode {
+    return & {
+        Set-StrictMode -Version Latest
+        @(Get-BackendTestShardSelectorTrxResults -Selector $aggregateSelector -ResultsDirectory $aggregateTrxDirectory)
+    }
+}
+
+# 第一跑：最新那份是**没有 `<Results>` 节点**的空壳。
+Set-AggregateTrxWriteTimes -NewestPath $aggregateShellNoResultsPath
+Assert-Contract ([string]::Equals((Get-AggregateTrxNewestName), '01-shell-without-results-node.trx', [StringComparison]::Ordinal)) "The fixture must actually put an empty-shell TRX at the newest mtime, otherwise the aggregation cell has no discrimination; newest was $(Get-AggregateTrxNewestName)."
+$aggregateFirstRunText = ''
+$aggregateFirstRun = @()
+try {
+    $aggregateFirstRun = @(Invoke-AggregateTrxReadUnderStrictMode)
+}
+catch {
+    $aggregateFirstRunText = $_.Exception.Message
+}
+Assert-Contract ([string]::Equals($aggregateFirstRunText, '', [StringComparison]::Ordinal)) "A results directory whose newest TRX has no <Results> node must not throw under Set-StrictMode -Version Latest; observed: $aggregateFirstRunText"
+Assert-Contract ($aggregateFirstRun.Count -eq 2) "Aggregation must return every UnitTestResult in the directory, not the ones in a single file picked by mtime; returned $($aggregateFirstRun.Count)."
+Assert-BackendTestShardSelectorExecution -Selector $aggregateSelector -DiscoveredTests $aggregateDiscovered -TrxResults $aggregateFirstRun
+
+# 第二跑：同一份输入，只把**空的 `<Results/>`** 那一份改成最新。mtime 顺序变了，证据集合必须逐字不变。
+# 这一条兑现 #3283 评论里追加的验收：同一输入连续两跑选中的证据集合相同。按 mtime 取单份时两跑会
+# 分别得到「属性缺失异常」和「零结果」两种不同结局——那正是它看起来像随机环境故障的原因。
+Set-AggregateTrxWriteTimes -NewestPath $aggregateShellEmptyResultsPath
+Assert-Contract ([string]::Equals((Get-AggregateTrxNewestName), '04-shell-with-empty-results.trx', [StringComparison]::Ordinal)) "The second run must actually see a different newest TRX; newest was $(Get-AggregateTrxNewestName)."
+$aggregateSecondRun = @(Invoke-AggregateTrxReadUnderStrictMode)
+$aggregateFirstIdentities = (@($aggregateFirstRun | ForEach-Object { [string] $_.testName }) -join '|')
+$aggregateSecondIdentities = (@($aggregateSecondRun | ForEach-Object { [string] $_.testName }) -join '|')
+Assert-Contract ([string]::Equals($aggregateFirstIdentities, "$aggregateSelector.CaseOne|$aggregateSelector.CaseTwo", [StringComparison]::Ordinal)) "Aggregated evidence must carry both executed identities in a deterministic ordinal order; observed: $aggregateFirstIdentities"
+Assert-Contract ([string]::Equals($aggregateFirstIdentities, $aggregateSecondIdentities, [StringComparison]::Ordinal)) "The same input must yield the same evidence set on two consecutive reads regardless of which TRX carries the newest mtime; run1=$aggregateFirstIdentities run2=$aggregateSecondIdentities"
+Assert-BackendTestShardSelectorExecution -Selector $aggregateSelector -DiscoveredTests $aggregateDiscovered -TrxResults $aggregateSecondRun
+
+# 零证据必须 fail-closed，而且理由要说得出来：目录里有 TRX、`[xml]` 也解析得动，但合并后一条
+# UnitTestResult 都没有。这一支不依赖下游的身份对账 —— 下游的期望集来自 discovery，讲的是
+# 「哪些用例没跑」；这里讲的是「这次运行根本没有任何执行证据」，两句话不是一回事。
+Remove-Item -LiteralPath $aggregateRealOnePath -Force
+Remove-Item -LiteralPath $aggregateRealTwoPath -Force
+$aggregateZeroEvidenceText = ''
+try {
+    Invoke-AggregateTrxReadUnderStrictMode | Out-Null
+}
+catch {
+    $aggregateZeroEvidenceText = $_.Exception.Message
+}
+Assert-Contract ($aggregateZeroEvidenceText.Contains("Real PostgreSQL selector '$aggregateSelector' found no executed test evidence", [StringComparison]::Ordinal)) "A directory holding only empty-shell TRX files must fail closed instead of asserting over zero results; observed: $aggregateZeroEvidenceText"
+Assert-Contract ($aggregateZeroEvidenceText.Contains('none carries a single UnitTestResult', [StringComparison]::Ordinal)) "The zero-evidence failure must name why it failed, not just that it failed; observed: $aggregateZeroEvidenceText"
+
+# 一份解析不动的 TRX 不能被降级成「这一份贡献零条结果」继续聚合——那是同一个失效方向。
+Set-Content -LiteralPath $aggregateRealOnePath -NoNewline -Value '<TestRun><Results>'
+$aggregateUnparseableText = ''
+try {
+    Invoke-AggregateTrxReadUnderStrictMode | Out-Null
+}
+catch {
+    $aggregateUnparseableText = $_.Exception.Message
+}
+Assert-Contract ($aggregateUnparseableText.Contains('is not parseable XML', [StringComparison]::Ordinal)) "A corrupt TRX must fail closed rather than contribute zero results to the aggregate; observed: $aggregateUnparseableText"
+
+# 零字节 `.trx` 是同一支的边角：`Get-Content -Raw` 返回 $null、`[xml] $null` **不抛**，不显式判空的话
+# 崩点会漂到 SelectNodes 上，报成一条与 TRX 无关的 `You cannot call a method on a null-valued
+# expression.`——即「函数注释声称有独立诊断」宽于实际（#3283 复审点名）。
+Set-Content -LiteralPath $aggregateRealOnePath -NoNewline -Value ''
+$aggregateEmptyFileText = ''
+try {
+    Invoke-AggregateTrxReadUnderStrictMode | Out-Null
+}
+catch {
+    $aggregateEmptyFileText = $_.Exception.Message
+}
+Assert-Contract ($aggregateEmptyFileText.Contains('is not parseable XML: the document is empty.', [StringComparison]::Ordinal)) "A zero-byte TRX must fail closed through the parse diagnostic, not through a null-reference further down; observed: $aggregateEmptyFileText"
+Assert-Contract (-not $aggregateEmptyFileText.Contains('null-valued expression', [StringComparison]::Ordinal)) "The zero-byte TRX diagnostic must not surface as a null-reference; observed: $aggregateEmptyFileText"
+
+Get-ChildItem -LiteralPath $aggregateTrxDirectory -Filter '*.trx' -File | Remove-Item -Force
+$aggregateNoTrxText = ''
+try {
+    Invoke-AggregateTrxReadUnderStrictMode | Out-Null
+}
+catch {
+    $aggregateNoTrxText = $_.Exception.Message
+}
+Assert-Contract ($aggregateNoTrxText.Contains('contains no TRX file', [StringComparison]::Ordinal)) "An empty results directory must fail closed with its own diagnostic; observed: $aggregateNoTrxText"
+
+# ⚠️ 这条断言的锚点是 #3283 复审点名改过的：原来锚 `does not exist`，而删掉守卫后裸
+# `Get-ChildItem` 抛的 ItemNotFoundException 消息恰好是
+# `Cannot find path '<path>' because it does not exist.` —— 断言自己那句话里点名要排除的异常
+# 正好满足它的锚，于是「整段删掉守卫」照样全绿。现在锚住本守卫**专有**的前半句，并显式排除裸异常。
+Remove-Item -LiteralPath $aggregateTrxDirectory -Recurse -Force
+$aggregateMissingDirectoryText = ''
+try {
+    Invoke-AggregateTrxReadUnderStrictMode | Out-Null
+}
+catch {
+    $aggregateMissingDirectoryText = $_.Exception.Message
+}
+Assert-Contract ($aggregateMissingDirectoryText.Contains("found no executed test evidence: results directory", [StringComparison]::Ordinal)) "A missing results directory must fail closed through this library's own diagnostic; observed: $aggregateMissingDirectoryText"
+Assert-Contract (-not $aggregateMissingDirectoryText.Contains('Cannot find path', [StringComparison]::Ordinal)) "The missing-directory failure must not be a bare Get-ChildItem ItemNotFoundException; observed: $aggregateMissingDirectoryText"
+
+# --- #3283 B1 / B3：生产调用点的**行为**覆盖 -----------------------------------------------------
+# 上面全部是库函数的单元对照。它们一条也不约束 `scripts/verify-backend-real-postgres-tests.ps1`
+# 那一行怎么读证据——#3283 复审 B1 实测：把调用点整段改回 pre-PR 写法，全套契约测试 EXIT=0 全绿，
+# 唯一的绑定是一条 `$source.Contains('Get-BackendTestShardSelectorTrxResults')` 子串断言，而**同文件的
+# 一句中文注释自己就满足它**（配对变异：改回调用点 + 保留注释 ⇒ 绿；改回调用点 + 抹掉注释 ⇒ 红）。
+# 那条断言已删除，换成下面两条端到端用例。
+#
+# 做法：把 `dotnet` 换成一个 PATH 上的 shim，真正**运行生产脚本本体**。真库 lane 是 opt-in、不进 CI，
+# 所以这是它唯一可能拿到的自动化行为覆盖。shim 只做两件事：`--list-tests` 打印冻结身份；执行调用把
+# 一个夹具目录里的 TRX 复制进 `--results-directory`，并按序数文件名递增设置 mtime（于是**最新那份是
+# 空壳**）。
+#
+# 「shim 被绕过」在构造上不可能表现为绿：manifest 里的 `solutionFilter` 是一个**故意不存在**的路径
+# `backend/shim-does-not-need-to-exist.slnf`，真 `dotnet` 碰它必以 MSB1009 失败。所以这不需要一句
+# 「shim 一定会生效」的注释来保证（本机变异实测：不把 shim 放上 PATH ⇒ 红）。
+#
+# ⚠️ **与 test-evidence-policy.json 的耦合**：选择器取的是真实规则 `testing-postgres-lifecycle` 的两条
+# 冻结身份（该规则 `expectedRuntimeTestCount: 2`）。必须用真身份，因为本脚本用 `$PSScriptRoot` 硬编码
+# 加载那份 policy、不接受替身。代价写在这里给排障的人看：**重命名那两个测试会让下面两条契约用例以
+# discovery 报错的形式转红**，那不是 shim 坏了，是身份漂了——同步改 policy 与这里的两个常量即可。
+#
+# ⚠️ **覆盖边界：shim 不是真 `dotnet`。** 它验证的是「本脚本如何解释产物」，不验证 `dotnet test` 的行为。
+# 三条**未建模、也未实测**的差距，逐条列出而不是含糊带过：
+#   1. 真 `dotnet test <slnf>` 在「多数项目零匹配」时的退出码语义；
+#   2. 真 `dotnet test` 是否会往 `--results-directory` 的**子目录**写 TRX —— 也就是说聚合读取用的
+#      `-Recurse` 那一面**至今没有任何用例覆盖**；
+#   3. 真 TRX 带 `<TestDefinitions>` / `<UnitTest id>` / `testId`，shim 的**不带**。当前读法只用
+#      `testName` + `outcome`，所以覆盖是完整的；但同仓 FullChainTestLane.ps1 / PostgresTestLane.ps1
+#      走的是 `testId → TestMethod` 映射，**若将来本函数改成那种读法，这套夹具会太薄而假绿**。
+$realPostgresVerifyPath = Join-Path $repoRoot 'scripts/verify-backend-real-postgres-tests.ps1'
+$shimSelector = 'Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests'
+$shimIdentityOne = "$shimSelector.Initializer_failure_drops_database_and_redacts_diagnostics"
+$shimIdentityTwo = "$shimSelector.Parallel_databases_are_isolated_initialized_and_removed"
+$shimSelectorResultsDirectory = Join-Path $repoRoot (Join-Path 'artifacts/real-postgres-tests' $shimSelector)
+$shimBinDirectory = Join-Path $shimRoot 'bin'
+$shimLogicPath = Join-Path $shimRoot 'dotnet-shim.ps1'
+$shimLauncherPath = Join-Path $shimRoot 'launch-real-postgres-verify.ps1'
+$shimManifestPath = Join-Path $shimRoot 'shim-backend-test-shards.json'
+$shimExecutedTrxDirectory = Join-Path $shimRoot 'executed-trx'
+$shimShellOnlyTrxDirectory = Join-Path $shimRoot 'shell-only-trx'
+foreach ($shimDirectory in @($shimRoot, $shimBinDirectory, $shimExecutedTrxDirectory, $shimShellOnlyTrxDirectory)) {
+    New-Item -ItemType Directory -Path $shimDirectory -Force | Out-Null
+}
+
+function New-ShimTrxFile {
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $Identities,
+        [Parameter(Mandatory)] [bool] $IncludeResultsNode
+    )
+
+    $body = if (-not $IncludeResultsNode) {
+        '  <TestDefinitions />'
+    }
+    else {
+        $rows = @($Identities | ForEach-Object { "    <UnitTestResult testName=`"$_`" outcome=`"Passed`" />" })
+        if ($rows.Count -eq 0) { '  <Results />' } else { "  <Results>`n$($rows -join "`n")`n  </Results>" }
+    }
+    Set-Content -LiteralPath $Path -NoNewline -Value "<?xml version=`"1.0`" encoding=`"utf-8`"?>`n<TestRun xmlns=`"http://microsoft.com/schemas/VisualStudio/TeamTest/2010`">`n$body`n  <ResultSummary outcome=`"Completed`" />`n</TestRun>`n"
+}
+
+# 本轮真实产物：四份，序数首尾都是空壳，两条身份拆在中间两份里（与上面单元夹具同一个性质）。
+New-ShimTrxFile -Path (Join-Path $shimExecutedTrxDirectory '01-shell-without-results-node.trx') -Identities @() -IncludeResultsNode $false
+New-ShimTrxFile -Path (Join-Path $shimExecutedTrxDirectory '02-real-alpha.trx') -Identities @($shimIdentityOne) -IncludeResultsNode $true
+New-ShimTrxFile -Path (Join-Path $shimExecutedTrxDirectory '03-real-beta.trx') -Identities @($shimIdentityTwo) -IncludeResultsNode $true
+New-ShimTrxFile -Path (Join-Path $shimExecutedTrxDirectory '04-shell-with-empty-results.trx') -Identities @() -IncludeResultsNode $true
+# 「本轮一条都没跑」的产物：只有空壳。
+New-ShimTrxFile -Path (Join-Path $shimShellOnlyTrxDirectory '01-shell-without-results-node.trx') -Identities @() -IncludeResultsNode $false
+New-ShimTrxFile -Path (Join-Path $shimShellOnlyTrxDirectory '02-shell-with-empty-results.trx') -Identities @() -IncludeResultsNode $true
+
+Set-Content -LiteralPath $shimLogicPath -NoNewline -Value @'
+$argumentList = @($args | ForEach-Object { [string] $_ })
+$isDiscovery = @($argumentList | Where-Object { [string]::Equals($_, '--list-tests', [StringComparison]::Ordinal) }).Count -gt 0
+if ($isDiscovery) {
+    Write-Output 'The following Tests are available:'
+    foreach ($identity in @(($env:NERV_IIP_SHIM_DISCOVERY -split ';') | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
+        Write-Output "    $identity"
+    }
+    exit 0
+}
+$resultsIndex = -1
+for ($index = 0; $index -lt $argumentList.Count; $index++) {
+    if ([string]::Equals($argumentList[$index], '--results-directory', [StringComparison]::Ordinal)) { $resultsIndex = $index; break }
+}
+if ($resultsIndex -lt 0 -or ($resultsIndex + 1) -ge $argumentList.Count) {
+    Write-Error 'dotnet shim: the execution invocation must carry --results-directory.'
+    exit 2
+}
+$target = $argumentList[$resultsIndex + 1]
+New-Item -ItemType Directory -Path $target -Force | Out-Null
+$stamp = [datetime]::new(2026, 1, 1, 0, 0, 0, [DateTimeKind]::Utc)
+$offset = 0
+# 序数排序，不是 `Sort-Object -Property Name`。这一行住在 here-string 里，
+# ordinal-comparison-layers 的扫描面看不见它——#3283 复审点名的正是这个形状：审核按「发现位置」
+# 点名、门禁按「扫描面」判定，两者不是同一集合，只改被扫到的那一处等于没改同族问题。
+# 这里不能复用仓库 helper：shim 在一个裸 pwsh 进程里跑，没有 dot-source 任何库。
+$sourceNames = [string[]] @(Get-ChildItem -LiteralPath $env:NERV_IIP_SHIM_TRX_SOURCE -Filter '*.trx' -File | ForEach-Object { [string] $_.Name })
+[Array]::Sort($sourceNames, [StringComparer]::Ordinal)
+foreach ($sourceName in $sourceNames) {
+    $copied = Join-Path $target $sourceName
+    Copy-Item -LiteralPath (Join-Path $env:NERV_IIP_SHIM_TRX_SOURCE $sourceName) -Destination $copied -Force
+    # 递增 mtime：序数最后那份（空壳）成为「最新」，于是任何按 mtime 取单份的读法都拿不到结果。
+    (Get-Item -LiteralPath $copied).LastWriteTimeUtc = $stamp.AddMinutes($offset)
+    $offset++
+}
+exit 0
+'@
+
+# shim 的平台包装：CI 与本机都是 POSIX，但 Windows 上不静默跳过——那会变成一个「按平台自动摘掉覆盖」
+# 的白名单洞。两边都落一个转发器，逻辑只有 dotnet-shim.ps1 一份。
+$shimExecutablePath = if ($IsWindows) { Join-Path $shimBinDirectory 'dotnet.cmd' } else { Join-Path $shimBinDirectory 'dotnet' }
+if ($IsWindows) {
+    Set-Content -LiteralPath $shimExecutablePath -NoNewline -Value "@echo off`r`npwsh -NoProfile -File `"$shimLogicPath`" %*`r`n"
+}
+else {
+    Set-Content -LiteralPath $shimExecutablePath -NoNewline -Value "#!/bin/sh`nexec pwsh -NoProfile -File `"$shimLogicPath`" `"`$@`"`n"
+    $chmod = Invoke-NativeCommandOutput -Command '/bin/chmod' -Arguments @('+x', $shimExecutablePath) -WorkingDirectory $repoRoot -Name 'real-postgres-shim-chmod'
+    Assert-Contract ($chmod.ExitCode -eq 0) "The dotnet shim must be executable; chmod exited $($chmod.ExitCode)."
+}
+
+Set-Content -LiteralPath $shimLauncherPath -NoNewline -Value @'
+param(
+    [Parameter(Mandatory)] [string] $ShimBinDirectory,
+    [Parameter(Mandatory)] [string] $VerifyPath,
+    [Parameter(Mandatory)] [string] $ManifestPath,
+    [Parameter(Mandatory)] [string] $DiscoveryIdentities,
+    [Parameter(Mandatory)] [string] $TrxSource,
+    [Parameter(Mandatory)] [string] $OutcomePath
+)
+
+# PATH 在**本进程**里改，而不是靠 ProcessStartInfo 的环境字典：子进程的可执行文件解析用的是启动者的
+# PATH，改在这一层才一定生效（本机实测过两种写法）。
+$env:PATH = $ShimBinDirectory + [IO.Path]::PathSeparator + $env:PATH
+$env:NERV_IIP_TEST_POSTGRES = 'Host=127.0.0.1;Port=1;Database=shim;Username=shim;Password=shim'
+$env:NERV_IIP_SHIM_DISCOVERY = $DiscoveryIdentities
+$env:NERV_IIP_SHIM_TRX_SOURCE = $TrxSource
+
+# 读数写进**文件**再由调用方读，不从子进程的 stderr 文本里捞。pwsh 的 ConciseView 会把错误记录按
+# 控制台宽度折行并加上 `| ` 前缀，于是 `found no executed test evidence` 会被拆成
+# `found no` + 换行 + `      | executed test evidence` —— 断言 `.Contains()` 当场假红（本机实测过一次，
+# 本仓「throw 报错被格式化器折行截断致断言假红」同族）。文件里存**压平成一行**的原文，不经过格式化器。
+$exitCode = 0
+$message = ''
+$captured = ''
+try {
+    $captured = ((& $VerifyPath -ManifestPath $ManifestPath *>&1 | Out-String) -replace '\s+', ' ').Trim()
+}
+catch {
+    $exitCode = 1
+    $message = (([string] $_.Exception.Message) -replace '\s+', ' ').Trim()
+}
+Set-Content -LiteralPath $OutcomePath -NoNewline -Value "EXIT=$exitCode`nMESSAGE=$message`nSTDOUT=$captured`n"
+exit $exitCode
+'@
+
+Set-Content -LiteralPath $shimManifestPath -NoNewline -Value @"
+{
+  "schemaVersion": 1,
+  "solution": "Nerv.IIP.sln",
+  "fastShards": [
+    {
+      "id": "real-postgres-shim",
+      "evidenceLane": "backend",
+      "jobName": "Backend Tests - Shim",
+      "solutionFilter": "backend/shim-does-not-need-to-exist.slnf",
+      "projects": [],
+      "excludedTestClasses": ["$shimSelector"],
+      "excludedTestLanes": ["real-postgres"],
+      "excludedTests": []
+    }
+  ],
+  "heavyLanes": [
+    {
+      "id": "real-postgres",
+      "policyLane": "postgres",
+      "owner": "opt-in real PostgreSQL verification",
+      "ownerScript": "scripts/verify-backend-real-postgres-tests.ps1",
+      "projects": []
+    }
+  ]
+}
+"@
+
+# 每次调用给两个**独立**读数：子进程退出码（由 Invoke-NativeCommandOutput 抛不抛体现）与 launcher
+# 自己写出的 outcome 文件。两者对不上就说明取证方式有问题，而不是挑一个信。
+function Invoke-RealPostgresVerifyWithShim {
+    param([Parameter(Mandatory)] [string] $TrxSource)
+
+    $outcomePath = Join-Path $shimRoot ("outcome-{0}.txt" -f [Guid]::NewGuid().ToString('N'))
+    $threw = $false
+    try {
+        Invoke-NativeCommandOutput -Command 'pwsh' -WorkingDirectory $repoRoot -TimeoutSeconds 180 -Name 'real-postgres-verify-shim' -Arguments @(
+            '-NoProfile', '-File', $shimLauncherPath,
+            '-ShimBinDirectory', $shimBinDirectory,
+            '-VerifyPath', $realPostgresVerifyPath,
+            '-ManifestPath', $shimManifestPath,
+            '-DiscoveryIdentities', "$shimIdentityOne;$shimIdentityTwo",
+            '-TrxSource', $TrxSource,
+            '-OutcomePath', $outcomePath
+        ) | Out-Null
+    }
+    catch {
+        $threw = $true
+    }
+
+    if (-not (Test-Path -LiteralPath $outcomePath)) {
+        throw "The shim launcher wrote no outcome file; the child process never reached its own reporting. Threw=$threw"
+    }
+    $lines = @(Get-Content -LiteralPath $outcomePath)
+    $field = {
+        param($prefix)
+        $matched = @($lines | Where-Object { $_.StartsWith($prefix, [StringComparison]::Ordinal) })
+        if ($matched.Count -eq 0) { return '' }
+        return [string] ($matched[0].Substring($prefix.Length))
+    }
+    $reported = [int] (& $field 'EXIT=')
+    if (($reported -ne 0) -ne $threw) {
+        throw "The two readings disagree: outcome file says EXIT=$reported while the process wrapper threw=$threw. Trust neither until the capture is fixed."
+    }
+    return [pscustomobject]@{
+        ExitCode = $reported
+        Message = [string] (& $field 'MESSAGE=')
+        Stdout = [string] (& $field 'STDOUT=')
+    }
+}
+
+# 端到端 ①：本轮写出四份 TRX，两条身份拆在中间两份里，最新那份是空壳。生产脚本必须验收通过。
+# 这一条同时钉住 B1（调用点真的走聚合读法）与 B2（真的是合并而不是挑一份）：调用点改回 mtime 取单份、
+# 或改成只读序数第一/最后一份，都拿不齐两条身份。
+Remove-Item -LiteralPath $shimSelectorResultsDirectory -Recurse -Force -ErrorAction SilentlyContinue
+$shimHappy = Invoke-RealPostgresVerifyWithShim -TrxSource $shimExecutedTrxDirectory
+Assert-Contract ($shimHappy.ExitCode -eq 0) "The production real-PostgreSQL verifier must accept evidence split across several TRX files whose newest member is an empty shell; it exited $($shimHappy.ExitCode) with: $($shimHappy.Message)"
+Assert-Contract ($shimHappy.Stdout.Contains('Verified 1 of 1 real PostgreSQL test selectors', [StringComparison]::Ordinal)) "The verifier must report the selector as verified; stdout was: $($shimHappy.Stdout)"
+$shimAggregatedNames = Get-BackendTestShardUniqueSorted -Values @(Get-ChildItem -LiteralPath $shimSelectorResultsDirectory -Filter '*.trx' -File | ForEach-Object { [string] $_.Name })
+Assert-Contract ($shimAggregatedNames.Count -eq 4) "The shim run must leave all four TRX files behind for the verifier to aggregate; observed $($shimAggregatedNames.Count): $($shimAggregatedNames -join ', ')."
+
+# 端到端 ②：run scoping。预置一份**上一轮**的、两条身份都 Passed 的 TRX，本轮 shim 只写空壳。
+# 目录若不清空，聚合会把上一轮的 Passed 当成本轮证据 ⇒ 脚本 EXIT=0 放行（复审 B3 实测的正是这一支，
+# 而 pre-PR 的 mtime 取法反倒因为「最新必属本轮」偶然躲开了它）。清空之后必须以零证据转红。
+New-ShimTrxFile -Path (Join-Path $shimSelectorResultsDirectory 'stale-previous-run.trx') -Identities @($shimIdentityOne, $shimIdentityTwo) -IncludeResultsNode $true
+(Get-Item -LiteralPath (Join-Path $shimSelectorResultsDirectory 'stale-previous-run.trx')).LastWriteTimeUtc = [datetime]::new(2025, 1, 1, 0, 0, 0, [DateTimeKind]::Utc)
+$shimStale = Invoke-RealPostgresVerifyWithShim -TrxSource $shimShellOnlyTrxDirectory
+$shimStaleText = $shimStale.Message
+Assert-Contract ($shimStale.ExitCode -ne 0) "A run that executed nothing must fail closed instead of inheriting the previous run's TRX from an unscoped results directory; it exited 0 with stdout: $($shimStale.Stdout)"
+Assert-Contract ($shimStaleText.Contains('found no executed test evidence', [StringComparison]::Ordinal)) "The stale-evidence failure must be the zero-evidence diagnostic, not some other error; observed: $shimStaleText"
+Assert-Contract (-not $shimStaleText.Contains('stale-previous-run', [StringComparison]::Ordinal)) "The previous run's TRX must have been removed before this run's dotnet test, not merely out-ranked; observed: $shimStaleText"
+Assert-Contract (@(Get-ChildItem -LiteralPath $shimSelectorResultsDirectory -Filter 'stale-previous-run.trx' -File).Count -eq 0) 'The verifier must clear the selector results directory before executing, so a previous run cannot contribute evidence.'
 $runnerSource = Get-Content -LiteralPath $runnerPath -Raw
 Assert-Contract (-not $runnerSource.Contains('No test matches the given testcase filter', [StringComparison]::Ordinal)) 'The zero-execution guard must not depend on localized dotnet console text.'
 Assert-Contract ($runnerSource.Contains('Assert-BackendTestShardProjectExecution', [StringComparison]::Ordinal)) 'The fast shard runner must prove classified-project execution from the TRX the MAN-661 collector consumes.'
@@ -1653,6 +2213,9 @@ finally {
     Remove-Item -LiteralPath $temporaryWorkflowPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $timeoutResultsDirectory -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $executionTrxDirectory -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $aggregateTrxDirectory -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $shimRoot -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Join-Path $repoRoot 'artifacts/real-postgres-tests/Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests') -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $temporaryPolicyPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $temporaryManifestPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $temporaryCollisionSourcePath -Force -ErrorAction SilentlyContinue
@@ -1793,7 +2356,7 @@ try {
     # this contract then turned into a red Backend Test Shard Governance job until a human
     # regenerated and re-committed the snapshot. That is the exact human refresh ceremony #1507
     # deleted, re-imposed by a test, over a warning whose own text says "This is report-only".
-    # docs/architecture/test-evidence-governance.md states the same rule in prose: coverage gaps are
+    # docs/governance/testing/evidence.md states the same rule in prose: coverage gaps are
     # report-only warnings, and the committed snapshot is never required to be complete.
     #
     # The gap count is printed instead of asserted, so a human reading the job log can see the
@@ -2001,7 +2564,7 @@ try {
     # allowed to estimate over. Asserting zero gaps here is the deleted red gate wearing another
     # costume: it would turn "someone added a test project" into a red Backend Test Shard Governance
     # job until a human regenerated and re-committed the snapshot, which is the #1507 ceremony. The
-    # same rule is stated in prose in docs/architecture/test-evidence-governance.md.
+    # same rule is stated in prose in docs/governance/testing/evidence.md.
     #
     # So the gap count is printed for a human reading the job log, and only key stability is asserted.
     $keyResolutionByLayout = [ordered]@{}
@@ -2143,7 +2706,7 @@ try {
     #     which is what makes the split a faithful inverse. This is what catches a key that returns a
     #     constant, an empty string, drops a segment, or splices in an extra field such as
     #     `requiredLane` — the last of which is why the "carries no lane" claim in
-    #     docs/architecture/test-evidence-governance.md is now enforced rather than merely written.
+    #     docs/reports/audits/test-evidence-governance-evolution-2026-08.md is now enforced rather than merely written.
     $structuralKeyChecks = 0
     foreach ($shard in @($manifest.fastShards)) {
         foreach ($selector in @(Get-BackendTestShardExcludedSelectors -Shard $shard)) {
@@ -2531,7 +3094,7 @@ try {
     # ("a selected real-dependency lane executed nothing") meaningful while leaving a re-shard unable
     # to change a verdict. Asserted rather than described: every rule must decide identically for a
     # logical lane and for every shard spelling of it.
-    # Narrative: docs/architecture/test-evidence-governance.md, "Timing data is a cache, not a
+    # Narrative: docs/reports/audits/test-evidence-governance-evolution-2026-08.md, "Timing data is a cache, not a
     # governed asset" (lane as applicability condition versus identity key).
     $logicalLanesUnderTest = @('backend', 'connector-host', 'postgres', 'full-chain', 'performance', 'redis-cap')
     $laneSuffixCases = 0
@@ -2594,13 +3157,228 @@ finally {
 }
 Assert-Contract (-not (Test-Path -LiteralPath $timingFixtureRoot)) 'The shard timing fixtures must be cleaned up.'
 
+# ---------------------------------------------------------------------------------------------
+# #3444：类级排除的整类覆盖判据。
+#
+# 被测不变量：`excludedTestClasses` 里的一个类级 selector，只有在**该类直接声明的每一条用例**都能
+# 解析到一条 MAN-661 environment-gated real-dependency 身份时才算有据。改之前判据是
+# `$covering.Count -eq 0`——同类里只要有一条身份被登记，整条类级排除就算有据，同类其余裸
+# `[Fact]`/`[Theory]` 于是被 runner 的 `FullyQualifiedName!~<类>.` 一起过滤掉：不在任何 fast shard
+# 里跑、不在任何 heavy lane 的 filter 里、**也不产生 skipped 记录**，所以 TRX 侧的 zero-execution
+# 检查在构造上也看不见它们。
+#
+# 夹具是一份**临时 backend inventory 镜像**加一份手写的 rule 集，不是仓库真数据：真数据今天恰好
+# 全绿，用它做分母会让下面每一格都失去鉴别力（"全绿有两种成因"）。每一格只改夹具源码的一处。
+# ---------------------------------------------------------------------------------------------
+$classExclusionInventoryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-class-exclusion-{0}" -f [Guid]::NewGuid().ToString('N'))
+$classExclusionProjectDirectory = Join-Path $classExclusionInventoryRoot 'tests/Nerv.IIP.TemporaryClassExclusion.Tests'
+$classExclusionProjectPath = Join-Path $classExclusionProjectDirectory 'Nerv.IIP.TemporaryClassExclusion.Tests.csproj'
+$classExclusionSourcePath = Join-Path $classExclusionProjectDirectory 'ProbeTests.cs'
+$classExclusionRelativeProject = 'backend/tests/Nerv.IIP.TemporaryClassExclusion.Tests/Nerv.IIP.TemporaryClassExclusion.Tests.csproj'
+$classExclusionSelector = 'Nerv.IIP.TemporaryClassExclusion.Tests.ProbeTests'
+$classExclusionShardId = 'probe-fast-shard'
+$classExclusionRegisteredIdentity = "$classExclusionSelector.Registered_real_dependency_case"
+
+Assert-Contract ([IO.Path]::GetRelativePath($repoRoot, $classExclusionInventoryRoot).StartsWith('..', [StringComparison]::Ordinal)) 'The class-exclusion coverage fixture must live outside the tracked repository tree.'
+
+# 这条 rule 是**分子**。它刻意只登记一条身份，正是缺陷成立所需要的形状：类里有一条登记过的
+# env-gated 用例，于是旧判据认为整条类级排除有据。
+$classExclusionRules = @(
+    [pscustomobject]@{
+        id = 'probe-real-dependency'
+        sourceId = 'probe-real-dependency'
+        classification = 'environment-gated'
+        requiredLane = 'postgres'
+        testIdentities = @($classExclusionRegisteredIdentity)
+    }
+)
+$classExclusionManifestPolicy = [pscustomobject]@{
+    ProjectOwners = @{ $classExclusionRelativeProject = $classExclusionShardId }
+    AmbiguousProjectOwners = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    ExcludedClassSelectorsByFastShard = @{ $classExclusionShardId = [System.Collections.Generic.HashSet[string]]::new([string[]]@($classExclusionSelector), [StringComparer]::Ordinal) }
+    RealDependencyRules = $classExclusionRules
+    # The stage's -HeavyLaneIdSet is Mandatory and rejects an empty collection; the probe lane id is
+    # never reached here because the fixture declares no Docker CLI primitive.
+    HeavyLaneIdSet = [System.Collections.Generic.HashSet[string]]::new([string[]]@('probe-heavy-lane'), [StringComparer]::Ordinal)
+}
+
+# `ProbeRealDependencyMarker` 名字**不以 Fact/Theory 结尾**，所以只有继承闭包能认出它是用例属性；
+# 调用方那条后缀兜底判据对它零作用。下面 'derived-attribute-method-is-a-test-case' 那格因此测的是
+# 闭包本身，不是名字。
+function Set-ClassExclusionFixture {
+    param(
+        [Parameter(Mandatory)] [string] $ClassBody,
+        [string] $ClassName = 'ProbeTests',
+        [string] $TrailingDeclarations = ''
+    )
+
+    $fixtureText = @"
+namespace Nerv.IIP.TemporaryClassExclusion.Tests;
+
+public sealed class ProbeRealDependencyMarker : FactAttribute
+{
+}
+
+public sealed class $ClassName
+{
+$ClassBody
+}
+$TrailingDeclarations
+"@
+    Set-Content -LiteralPath $classExclusionSourcePath -Value $fixtureText -Encoding utf8
+}
+
+$classExclusionRegisteredMember = @'
+    [ProbeRealDependencyMarker]
+    public void Registered_real_dependency_case()
+    {
+    }
+
+    // A member with no test attribute at all, and one carrying a non-test attribute: neither may be
+    // demanded of the policy, or every excluded class would need its helpers registered.
+    public void Helper_without_any_attribute()
+    {
+    }
+
+    [Obsolete("not a test")]
+    public void Helper_with_a_non_test_attribute()
+    {
+    }
+'@
+
+try {
+    New-Item -ItemType Directory -Path $classExclusionProjectDirectory -Force | Out-Null
+    Set-Content -LiteralPath $classExclusionProjectPath -Value '<Project Sdk="Microsoft.NET.Sdk"></Project>' -Encoding utf8
+
+    # ---- CONTROL：无害变异。只验跑法——夹具形状合法时装置必须放行，否则后面每一格的红都可能
+    # 只是「夹具本身就红」的投影，而不是被测变异造成的。
+    Set-ClassExclusionFixture -ClassBody $classExclusionRegisteredMember
+    $classExclusionControl = Invoke-InventorySourceMutation -RunLedger $runLedger -MutationName 'class-exclusion-control-fully-registered-class' -MappingKind 'baseline' -ManifestPolicy $classExclusionManifestPolicy -MutationBackendInventoryRoot $classExclusionInventoryRoot
+    Assert-Contract $classExclusionControl.Passed "CONTROL: a class-level exclusion whose every declared test case is registered must pass; observed: $($classExclusionControl.Message)"
+
+    # ---- 哨兵：已知应该变的读数。把类改名后 selector 一个类都对不上，装置必须报出**另一句**
+    # （dead selector），而不是沉默通过。这一格证明「写文件这个动作真的生效、且真的被读进去了」，
+    # 与下面几格的「判据有没有鉴别力」是两回事。
+    Set-ClassExclusionFixture -ClassBody $classExclusionRegisteredMember -ClassName 'ProbeTestsRenamedAway'
+    $classExclusionSentinel = Invoke-InventorySourceMutation -RunLedger $runLedger -MutationName 'class-exclusion-sentinel-selector-resolves-to-nothing' -ManifestPolicy $classExclusionManifestPolicy -MutationBackendInventoryRoot $classExclusionInventoryRoot
+    Assert-Contract (-not $classExclusionSentinel.Passed) 'SENTINEL: a class selector that no source declares must fail; a vacuous denominator must not pass silently.'
+    Assert-Contract ($classExclusionSentinel.Message.Contains("excludes class '$classExclusionSelector', but no backend test source declares that class with any test method", [StringComparison]::Ordinal)) "SENTINEL: the dead-selector finding must name the unresolved selector; observed: $($classExclusionSentinel.Message)"
+
+    # ---- 变异 1：同形状缺口本身。类里多一条**裸 [Fact]** 且不登记。
+    Set-ClassExclusionFixture -ClassBody @"
+$classExclusionRegisteredMember
+
+    [Fact]
+    public void Unregistered_bare_fact()
+    {
+    }
+"@
+    $classExclusionBareFact = Invoke-InventorySourceMutation -RunLedger $runLedger -MutationName 'class-exclusion-unregistered-bare-fact' -ManifestPolicy $classExclusionManifestPolicy -MutationBackendInventoryRoot $classExclusionInventoryRoot
+    Assert-Contract (-not $classExclusionBareFact.Passed) 'An unregistered bare [Fact] inside a class-level exclusion must fail: it runs on zero jobs and leaves no skipped record.'
+    Assert-Contract ($classExclusionBareFact.Message.Contains("excludes the whole class '$classExclusionSelector', but 'Unregistered_bare_fact' is not registered", [StringComparison]::Ordinal)) "The whole-class finding must name the unregistered method; observed: $($classExclusionBareFact.Message)"
+    Assert-Contract (-not $classExclusionBareFact.Message.Contains('Registered_real_dependency_case', [StringComparison]::Ordinal)) 'The registered sibling must not be reported; the judgement is per method, not per class.'
+    Assert-Contract (-not $classExclusionBareFact.Message.Contains('Helper_without_any_attribute', [StringComparison]::Ordinal)) 'A member without a test attribute must not be demanded of the policy.'
+    Assert-Contract (-not $classExclusionBareFact.Message.Contains('Helper_with_a_non_test_attribute', [StringComparison]::Ordinal)) 'A member carrying only a non-test attribute must not be demanded of the policy.'
+
+    # ---- 变异 2：裸 [Theory]。#3444 报出的 21 条里有 2 条是 Theory，属性族不能只覆盖 Fact。
+    Set-ClassExclusionFixture -ClassBody @"
+$classExclusionRegisteredMember
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void Unregistered_bare_theory(int probe)
+    {
+    }
+"@
+    $classExclusionBareTheory = Invoke-InventorySourceMutation -RunLedger $runLedger -MutationName 'class-exclusion-unregistered-bare-theory' -ManifestPolicy $classExclusionManifestPolicy -MutationBackendInventoryRoot $classExclusionInventoryRoot
+    Assert-Contract (-not $classExclusionBareTheory.Passed) 'An unregistered bare [Theory] inside a class-level exclusion must fail the same way a [Fact] does.'
+    Assert-Contract ($classExclusionBareTheory.Message.Contains("but 'Unregistered_bare_theory' is not registered", [StringComparison]::Ordinal)) "The whole-class finding must name the unregistered theory; observed: $($classExclusionBareTheory.Message)"
+
+    # ---- 变异 3：**表达式体**且没有 `async`。#3444 记录过，按 `public async Task` 这类固定字符窗口
+    # grep 会系统性漏掉这一支；这一格把"不按关键字窗口扫"钉成可执行断言。
+    Set-ClassExclusionFixture -ClassBody @"
+$classExclusionRegisteredMember
+
+    [Fact]
+    public Task Unregistered_expression_bodied_fact() => Task.CompletedTask;
+"@
+    $classExclusionExpressionBodied = Invoke-InventorySourceMutation -RunLedger $runLedger -MutationName 'class-exclusion-unregistered-expression-bodied-fact' -ManifestPolicy $classExclusionManifestPolicy -MutationBackendInventoryRoot $classExclusionInventoryRoot
+    Assert-Contract (-not $classExclusionExpressionBodied.Passed) 'An expression-bodied [Fact] carries no `async` keyword and must still be found.'
+    Assert-Contract ($classExclusionExpressionBodied.Message.Contains("but 'Unregistered_expression_bodied_fact' is not registered", [StringComparison]::Ordinal)) "The whole-class finding must name the expression-bodied method; observed: $($classExclusionExpressionBodied.Message)"
+
+    # ---- 变异 4：自定义派生属性，**名字不以 Fact/Theory 结尾**。只有继承闭包能认出它；这一格是
+    # 闭包的鉴别力读数，换成按名字列举的白名单就会假绿。
+    Set-ClassExclusionFixture -ClassBody @"
+$classExclusionRegisteredMember
+
+    [ProbeRealDependencyMarker]
+    public void Unregistered_derived_attribute_case()
+    {
+    }
+"@
+    $classExclusionDerivedAttribute = Invoke-InventorySourceMutation -RunLedger $runLedger -MutationName 'class-exclusion-unregistered-derived-attribute-case' -ManifestPolicy $classExclusionManifestPolicy -MutationBackendInventoryRoot $classExclusionInventoryRoot
+    Assert-Contract (-not $classExclusionDerivedAttribute.Passed) 'A method carrying a custom attribute that derives from FactAttribute is a test case even though its name ends in neither Fact nor Theory.'
+    Assert-Contract ($classExclusionDerivedAttribute.Message.Contains("but 'Unregistered_derived_attribute_case' is not registered", [StringComparison]::Ordinal)) "The whole-class finding must name the derived-attribute method; observed: $($classExclusionDerivedAttribute.Message)"
+
+    # ---- 鉴别力对照 1：注释掉的 [Fact]。扫描读的是 structural text（注释与字符串体已抹平），
+    # 注释里的用例不是用例；这一格防止判据退化成「源码里出现过 [Fact] 就算」。
+    Set-ClassExclusionFixture -ClassBody @"
+$classExclusionRegisteredMember
+
+    // [Fact]
+    // public void Commented_out_bare_fact()
+    // {
+    // }
+
+    /* [Fact] public void Block_commented_bare_fact() { } */
+"@
+    $classExclusionCommented = Invoke-InventorySourceMutation -RunLedger $runLedger -MutationName 'class-exclusion-commented-out-fact-is-not-a-case' -ManifestPolicy $classExclusionManifestPolicy -MutationBackendInventoryRoot $classExclusionInventoryRoot
+    Assert-Contract $classExclusionCommented.Passed "A commented-out [Fact] must not be counted as a declared test case; observed: $($classExclusionCommented.Message)"
+
+    # ---- 鉴别力对照 2：**兄弟类**里的裸 [Fact]。类级 selector 用尾点锚定，兄弟类不在它的射程里，
+    # 要求登记就成了假红。
+    Set-ClassExclusionFixture -ClassBody $classExclusionRegisteredMember -TrailingDeclarations @'
+
+public sealed class ProbeTestsSibling
+{
+    [Fact]
+    public void Sibling_bare_fact_stays_in_the_fast_shard()
+    {
+    }
+}
+'@
+    $classExclusionSibling = Invoke-InventorySourceMutation -RunLedger $runLedger -MutationName 'class-exclusion-sibling-class-is-out-of-range' -ManifestPolicy $classExclusionManifestPolicy -MutationBackendInventoryRoot $classExclusionInventoryRoot
+    Assert-Contract $classExclusionSibling.Passed "A bare [Fact] in a sibling class the selector does not cover must not be reported; observed: $($classExclusionSibling.Message)"
+
+    # ---- 鉴别力对照 3：**嵌套类**里的裸 [Fact]。VSTest 把它拼成 `Outer+Inner.Method`，runner 的
+    # `FullyQualifiedName!~Outer.` 同样匹配不到，所以它本来就没被排除，要求登记也是假红。
+    Set-ClassExclusionFixture -ClassBody @"
+$classExclusionRegisteredMember
+
+    public sealed class NestedProbeTests
+    {
+        [Fact]
+        public void Nested_bare_fact_is_addressed_as_outer_plus_inner()
+        {
+        }
+    }
+"@
+    $classExclusionNested = Invoke-InventorySourceMutation -RunLedger $runLedger -MutationName 'class-exclusion-nested-class-is-out-of-range' -ManifestPolicy $classExclusionManifestPolicy -MutationBackendInventoryRoot $classExclusionInventoryRoot
+    Assert-Contract $classExclusionNested.Passed "A bare [Fact] declared in a nested class is not removed by the outer class selector and must not be reported; observed: $($classExclusionNested.Message)"
+}
+finally {
+    Remove-Item -LiteralPath $classExclusionInventoryRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+Assert-Contract (-not (Test-Path -LiteralPath $classExclusionInventoryRoot)) 'The class-exclusion coverage fixture must be cleaned up.'
+
 Assert-Contract ($runLedger.CompleteValidatorInvocationCount -eq 4) "The contract suite must retain exactly four complete validator process contracts; observed $($runLedger.CompleteValidatorInvocationCount)."
 $mappingNames = @($runLedger.StageExecutionMappings | ForEach-Object { [string] $_.Name })
-Assert-Contract ($mappingNames.Count -eq 56) "The contract suite must retain exactly 56 stage execution mappings; observed $($mappingNames.Count)."
+Assert-Contract ($mappingNames.Count -eq 65) "The contract suite must retain exactly 65 stage execution mappings; observed $($mappingNames.Count)."
 Assert-Contract ((Get-NervStringsSorted -Values $mappingNames -Comparer ([StringComparer]::Ordinal) -Unique).Count -eq $mappingNames.Count) 'Every direct stage execution must have one unique mapping identity.'
 $expectedStageExecutionCounts = [System.Collections.Generic.Dictionary[string, int]]::new([StringComparer]::Ordinal)
 $expectedStageExecutionCounts.Add('manifest-policy', 18)
-$expectedStageExecutionCounts.Add('inventory-source', 13)
+$expectedStageExecutionCounts.Add('inventory-source', 22)
 $expectedStageExecutionCounts.Add('solution-membership', 10)
 $expectedStageExecutionCounts.Add('workflow-wiring', 15)
 foreach ($stageId in $stageIds) {
@@ -2614,9 +3392,9 @@ foreach ($mapping in @(Get-NervItemsSortedByString -Items @($runLedger.StageExec
 $actualMutationCount = @($runLedger.StageExecutionMappings | Where-Object { [string]::Equals([string] $_.Kind, 'mutation', [StringComparison]::Ordinal) }).Count
 $prerequisiteCount = @($runLedger.StageExecutionMappings | Where-Object { [string]::Equals([string] $_.Kind, 'prerequisite', [StringComparison]::Ordinal) }).Count
 $baselineCount = @($runLedger.StageExecutionMappings | Where-Object { [string]::Equals([string] $_.Kind, 'baseline', [StringComparison]::Ordinal) }).Count
-Assert-Contract ($actualMutationCount -eq 41) "The contract suite must retain exactly 41 input mutation mappings; observed $actualMutationCount."
+Assert-Contract ($actualMutationCount -eq 49) "The contract suite must retain exactly 49 input mutation mappings; observed $actualMutationCount."
 Assert-Contract ($prerequisiteCount -eq 13) "The contract suite must retain exactly 13 stage prerequisite mappings; observed $prerequisiteCount."
-Assert-Contract ($baselineCount -eq 2) "The contract suite must retain exactly 2 baseline mappings; observed $baselineCount."
+Assert-Contract ($baselineCount -eq 3) "The contract suite must retain exactly 3 baseline mappings; observed $baselineCount."
 Write-Host "  [execution-counts] input mutations: $actualMutationCount; stage prerequisites: $prerequisiteCount; baselines: $baselineCount; complete validator processes: $($runLedger.CompleteValidatorInvocationCount); rejected routing controls: 2"
 
 Write-Host 'Backend test shard manifest contract tests passed.'

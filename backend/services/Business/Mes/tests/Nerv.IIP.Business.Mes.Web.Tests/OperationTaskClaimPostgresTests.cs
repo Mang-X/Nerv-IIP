@@ -125,7 +125,8 @@ public sealed class OperationTaskClaimPostgresTests
             ClaimedAtUtc,
             TimeSpan.FromHours(1),
             null,
-            null));
+            null,
+            "SKU-001"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
     }
 

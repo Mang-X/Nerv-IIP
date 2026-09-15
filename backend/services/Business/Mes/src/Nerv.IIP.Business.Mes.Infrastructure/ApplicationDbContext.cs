@@ -3,6 +3,7 @@ using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.Mes.Domain;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ChangeoverRecordAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.EngineeringChangeAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
@@ -24,6 +25,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
 {
     private const string ProductionReportReversalUniqueIndexName = "ux_production_reports_scope_reversed_report_no";
     private const string QualityHoldTransitionIdempotencyIndexName = "ux_quality_hold_transitions_scope_idempotency_kind";
+    private const string ProcessedIntegrationEventInstanceIndexName = "ux_processed_integration_events_consumer_event_id";
 
     public DbSet<WorkOrder> WorkOrders => Set<WorkOrder>();
 
@@ -42,6 +44,8 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<OperationTaskStartAuthorization> OperationTaskStartAuthorizations => Set<OperationTaskStartAuthorization>();
 
     public DbSet<ProductionReport> ProductionReports => Set<ProductionReport>();
+
+    public DbSet<ProductionReportSerialNumber> ProductionReportSerialNumbers => Set<ProductionReportSerialNumber>();
 
     public DbSet<ProductionReportLaborAllocation> ProductionReportLaborAllocations => Set<ProductionReportLaborAllocation>();
 
@@ -64,6 +68,8 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<ScheduleResult> ScheduleResults => Set<ScheduleResult>();
 
     public DbSet<WorkCenterUnavailability> WorkCenterUnavailabilities => Set<WorkCenterUnavailability>();
+
+    public DbSet<ChangeoverRecord> ChangeoverRecords => Set<ChangeoverRecord>();
 
     public DbSet<DeviceAssetWorkCenterMapping> DeviceAssetWorkCenterMappings => Set<DeviceAssetWorkCenterMapping>();
 
@@ -91,6 +97,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
         base.OnModelCreating(modelBuilder);
         modelBuilder.HasDefaultSchema(MesFacts.Schema);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
+        modelBuilder.ConfigureCodingEntities();
         modelBuilder.ConfigureIntegrationEventDeadLetters();
         ConfigureCapStorage(modelBuilder);
     }
@@ -112,6 +119,11 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
                 this,
                 token => base.SaveChangesAsync(acceptAllChangesOnSuccess, token),
                 cancellationToken);
+        }
+        catch (DbUpdateException exception) when (IsDuplicateProcessedIntegrationEventInstance(exception))
+        {
+            ChangeTracker.Clear();
+            return 0;
         }
         catch (DbUpdateException exception) when (IsDuplicateQualityHoldTransition(exception))
         {
@@ -189,11 +201,25 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
                 this,
                 () => base.SaveChanges(acceptAllChangesOnSuccess));
         }
+        catch (DbUpdateException exception) when (IsDuplicateProcessedIntegrationEventInstance(exception))
+        {
+            ChangeTracker.Clear();
+            return 0;
+        }
         catch (DbUpdateException exception) when (IsDuplicateProductionReportReversal(exception))
         {
             ChangeTracker.Clear();
             throw DuplicateProductionReportReversal(exception);
         }
+    }
+
+    private bool IsDuplicateProcessedIntegrationEventInstance(DbUpdateException exception)
+    {
+        return ChangeTracker.Entries<ProcessedIntegrationEvent>().Any(entry => entry.State == EntityState.Added) &&
+            ProcessedIntegrationEventInbox.IsUniqueConflict(
+                exception,
+                this,
+                ProcessedIntegrationEventInstanceIndexName);
     }
 
     private void EnsureOperationTaskStartAuthorizationsAreAppendOnly()

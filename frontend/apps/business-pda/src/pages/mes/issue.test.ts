@@ -449,7 +449,9 @@ describe('PDA MES material issue page', () => {
     wrapper.unmount()
   })
 
-  it('confirms line-side receipt with a page-supplied idempotencyKey and shows success', async () => {
+  // #3328：线边收料的 idempotencyKey 已从网关公开契约摘掉（MES 侧从不消费它）。
+  // 本条改断言请求体只带该端点真正消费的字段、且不含幂等键。
+  it('confirms line-side receipt without an idempotency key and shows success', async () => {
     const wrapper = mount(IssuePage, { attachTo: document.body })
 
     // 行内线边接收动作（第一条申请）
@@ -472,14 +474,17 @@ describe('PDA MES material issue page', () => {
     const [requestId, body] = confirmLineSideReceipt.mock.calls[0]
     expect(requestId).toBe('REQ-1')
     expect(body.receivedQuantity).toBe(100)
-    // idempotencyKey 现由页面提供（稳定逐操作键）
-    expect(body.idempotencyKey).toBeTruthy()
+    expect(body).not.toHaveProperty('idempotencyKey')
 
     expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
-  it('reuses the SAME idempotencyKey on receive retry; a new receive mints a different key', async () => {
+  // #3328：原来这里断言「重试复用同键、新一轮铸新键」。键摘掉之后，重试仍然必须发出
+  // **与首次逐字相同**的请求（没有任何随尝试次数变化的字段）——这是本条今天能证的那句。
+  // 重放安全的权威落在 MES 侧 MaterialIssueRequest.ConfirmLineSideReceipt 的
+  // 「过账尚未回执」守卫（MesWriteReplaySafetyTests）。
+  it('replays an identical receive request on retry', async () => {
     const wrapper = mount(IssuePage, { attachTo: document.body })
 
     async function fillReceive(testid: string) {
@@ -505,12 +510,10 @@ describe('PDA MES material issue page', () => {
     await flushPromises()
 
     expect(confirmLineSideReceipt).toHaveBeenCalledTimes(2)
-    const firstKey = confirmLineSideReceipt.mock.calls[0][1].idempotencyKey
-    const retryKey = confirmLineSideReceipt.mock.calls[1][1].idempotencyKey
-    expect(firstKey).toBeTruthy()
-    expect(retryKey).toBe(firstKey)
+    expect(confirmLineSideReceipt.mock.calls[1]).toEqual(confirmLineSideReceipt.mock.calls[0])
+    expect(confirmLineSideReceipt.mock.calls[0][1]).not.toHaveProperty('idempotencyKey')
 
-    // 成功后回到起点，发起对另一条申请的新一轮接收 → 新键
+    // 成功后回到起点，对同一条申请再发起一轮接收：仍然是同一份请求体。
     await wrapper
       .findAll('button')
       .find((b) => b.text() === '继续')!
@@ -519,9 +522,7 @@ describe('PDA MES material issue page', () => {
     await fillReceive('receive-REQ-1')
 
     expect(confirmLineSideReceipt).toHaveBeenCalledTimes(3)
-    const newKey = confirmLineSideReceipt.mock.calls[2][1].idempotencyKey
-    expect(newKey).toBeTruthy()
-    expect(newKey).not.toBe(firstKey)
+    expect(confirmLineSideReceipt.mock.calls[2]).toEqual(confirmLineSideReceipt.mock.calls[0])
     wrapper.unmount()
   })
 

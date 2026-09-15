@@ -97,7 +97,8 @@ public sealed class MesMaterialScanGatewaySeamTests
         db.WorkOrders.Add(workOrder);
         db.OperationTasks.Add(OperationTask.Create(
             "org-001", "env-dev", "WO-001", "OP-10", OperationTaskLifecycleStatus.Queued,
-            10, "WC-01", [], Now, TimeSpan.FromHours(1), null, null));
+            10, "WC-01", [], Now, TimeSpan.FromHours(1), null, null,
+            "SKU-001"));
         db.MaterialRequirements.Add(MaterialRequirement.Capture(
             "org-001", "env-dev", "WO-001", "OP-10", "MAT-PRIMARY", null,
             5m, 5m, 0m, "product-engineering", "snap-001", Now, ["MAT-SUB"]));

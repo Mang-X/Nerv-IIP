@@ -55,17 +55,15 @@ public sealed record ListInspectionPlansQuery(
     string? Status,
     string? Keyword = null,
     int Skip = 0,
-    int Take = 100) : IQuery<ListInspectionPlansResponse>;
+    int Take = OffsetPage.DefaultTake) : IQuery<ListInspectionPlansResponse>;
 
 public sealed class ListInspectionPlansQueryValidator : AbstractValidator<ListInspectionPlansQuery>
 {
     public ListInspectionPlansQueryValidator()
     {
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.Keyword).MaximumLength(200);
-        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
-        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+        this.AddTenantRules(x => x.OrganizationId, x => x.EnvironmentId);
+        this.AddSearchTermRule(x => x.Keyword);
+        this.AddOffsetPageRules(x => x.Skip, x => x.Take);
     }
 }
 
@@ -74,10 +72,13 @@ public sealed class ListInspectionPlansQueryHandler(ApplicationDbContext dbConte
 {
     public async Task<ListInspectionPlansResponse> Handle(ListInspectionPlansQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var search = SearchTerm.From(request.Keyword);
         var query = dbContext.InspectionPlans
             .AsNoTracking()
             .Include(x => x.Characteristics)
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
 
         if (!string.IsNullOrWhiteSpace(request.Category))
         {
@@ -104,9 +105,8 @@ public sealed class ListInspectionPlansQueryHandler(ApplicationDbContext dbConte
             query = query.Where(x => x.Status == request.Status);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        if (search.Value is { } keyword)
         {
-            var keyword = request.Keyword.Trim().ToLower();
             var hasKeywordId = Guid.TryParse(keyword, out var keywordGuid);
             var keywordId = hasKeywordId ? new InspectionPlanId(keywordGuid) : null;
             query = query.Where(x =>
@@ -117,8 +117,8 @@ public sealed class ListInspectionPlansQueryHandler(ApplicationDbContext dbConte
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.CreatedAtUtc)
-            .Skip(request.Skip)
-            .Take(Math.Clamp(request.Take, 1, 500))
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new InspectionPlanResponse(
                 x.Id,
                 x.OrganizationId,

@@ -14,12 +14,18 @@
 #     - PostgreSQL psql client
 #     - NERV_IIP_TEST_POSTGRES targeting a PostgreSQL administration database
 
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName = 'SelectedMembers')]
 param(
-    [Parameter(Mandatory)] [string[]] $MemberId,
+    [Parameter(Mandatory, ParameterSetName = 'SelectedMembers')] [string[]] $MemberId,
+    [Parameter(Mandatory, ParameterSetName = 'AllActiveMembers')] [switch] $AllActiveMembers,
     [Parameter(Mandatory)] [string] $DatabaseSuffix,
     [Parameter(Mandatory)] [string] $ResultsDirectory,
     [Parameter(Mandatory)] [string] $SummaryPath,
+    # Budget for each member's `dotnet test` discovery/execution invocation. Exceeding it fails as a
+    # timeout, not as a test failure; raise it for a local run whose CPU is shared with other
+    # worktrees (#2870 / #3295). Bounds are owned by Invoke-NativeCommandOutput; 1800 is a default,
+    # not a ceiling, so no ValidateRange is repeated here.
+    [int] $TimeoutSeconds = 1800,
     [string] $ManifestPath = (Join-Path $PSScriptRoot 'postgres-test-lane.json')
 )
 
@@ -28,15 +34,22 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'lib/PostgresTestLane.ps1')
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-if ($MemberId.Count -eq 0) { throw 'At least one PostgreSQL lane member is required.' }
 if ($DatabaseSuffix -cnotmatch '^[a-z0-9_]{1,20}$') { throw 'DatabaseSuffix must contain 1-20 PostgreSQL-safe lowercase characters.' }
-$memberIdSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
-$selectedMembers = @(
-    foreach ($selectedMemberId in $MemberId) {
-        if ([string]::IsNullOrWhiteSpace($selectedMemberId) -or -not $memberIdSet.Add($selectedMemberId)) { throw "PostgreSQL lane member ids must be non-empty and unique; observed '$selectedMemberId'." }
-        Import-NervPostgresTestLaneMember -ManifestPath $ManifestPath -MemberId $selectedMemberId -RepositoryRoot $repoRoot
-    }
-)
+if ([string]::Equals($PSCmdlet.ParameterSetName, 'AllActiveMembers', [StringComparison]::Ordinal)) {
+    $selectedMembers = @(Import-NervPostgresTestLaneMembers -ManifestPath $ManifestPath -RepositoryRoot $repoRoot)
+    [string[]]$selectedMemberIds = @($selectedMembers | ForEach-Object { [string]$_.id })
+}
+else {
+    if ($MemberId.Count -eq 0) { throw 'At least one PostgreSQL lane member is required.' }
+    $memberIdSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $selectedMembers = @(
+        foreach ($selectedMemberId in $MemberId) {
+            if ([string]::IsNullOrWhiteSpace($selectedMemberId) -or -not $memberIdSet.Add($selectedMemberId)) { throw "PostgreSQL lane member ids must be non-empty and unique; observed '$selectedMemberId'." }
+            Import-NervPostgresTestLaneMember -ManifestPath $ManifestPath -MemberId $selectedMemberId -RepositoryRoot $repoRoot
+        }
+    )
+    [string[]]$selectedMemberIds = @($MemberId)
+}
 $adminConnection = [Environment]::GetEnvironmentVariable('NERV_IIP_TEST_POSTGRES')
 if ([string]::IsNullOrWhiteSpace($adminConnection)) { throw 'Set NERV_IIP_TEST_POSTGRES before PostgreSQL lane discovery.' }
 
@@ -58,7 +71,7 @@ foreach ($entry in $parsed.environment.GetEnumerator()) {
     $savedPg[$entry.Value] = [Environment]::GetEnvironmentVariable($entry.Value)
     [Environment]::SetEnvironmentVariable($entry.Value, [string]$parsed.values[$entry.Key])
 }
-$summary = [ordered]@{ schemaVersion = 2; lane = 'postgres'; selectedMemberIds = @($MemberId); readiness = 'not-run'; postgresVersion = ''; expected = 0; discovered = 0; passed = 0; failed = 0; skipped = 0; cleanup = 'not-run'; members = @() }
+$summary = [ordered]@{ schemaVersion = 2; lane = 'postgres'; selectedMemberIds = @($selectedMemberIds); readiness = 'not-run'; postgresVersion = ''; expected = 0; discovered = 0; passed = 0; failed = 0; skipped = 0; cleanup = 'not-run'; members = @() }
 $memberSummaries = [Collections.Generic.List[object]]::new()
 $failure = $null
 $savedTestPostgres = [Environment]::GetEnvironmentVariable('NERV_IIP_TEST_POSTGRES')
@@ -78,13 +91,25 @@ try {
             $databaseCreated = $true
             $targetConnection = "Host=$($parsed.values.host);Port=$($parsed.values.port);Database=$databaseName;Username=$($parsed.values.username);Password=$($parsed.values.password)"
             [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_POSTGRES', $targetConnection)
-            $discovery = Invoke-DotNetOutput -Name "postgres-lane-$($member.id)-discovery" -WorkingDirectory $repoRoot -TimeoutSeconds 1800 -Arguments @('test', [string]$member.project, '--configuration', 'Release', '--list-tests', '--filter', [string]$member.filter)
+            $discovery = Invoke-DotNetOutput -Name "postgres-lane-$($member.id)-discovery" -WorkingDirectory $repoRoot -TimeoutSeconds $TimeoutSeconds -Arguments @('test', [string]$member.project, '--configuration', 'Release', '--list-tests', '--filter', [string]$member.filter)
             $expectedIdentitySet = [Collections.Generic.HashSet[string]]::new([string[]]@($member.expectedTestIdentities), [StringComparer]::Ordinal)
+            # #3285：这一行**没有**过滤空白元素，`dotnet test` 的 stdout 以换行结尾 ⇒ 切行必然多出一个
+            # 尾随空元素。它今天不炸，靠的是紧跟着这层按冻结身份集合 `Contains` 的过滤把空串滤掉，
+            # 而 $discovered 之后也只喂给本脚本自己的计数比较、不再递进任何 `[string[]]` 公开参数。
+            # 说清楚性质：这是**巧合，不是守卫**——身份过滤一旦放松（例如改成前缀匹配或整段挪走），
+            # 空元素就会重新流到下游。此处不改，是因为这里根本没有可收口的参数边界；真正的结构性
+            # 收口在 scripts/lib/FullChainTestLane.ps1 / BackendTestShardSelectors.ps1 的函数入参上。
             $discovered = @($discovery.Stdout -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $expectedIdentitySet.Contains([string]$_) })
             $memberSummary.discovered = $discovered.Count
             if ($discovered.Count -ne @($member.expectedTestIdentities).Count) { throw "PostgreSQL lane member '$($member.id)' discovery expected $(@($member.expectedTestIdentities).Count) frozen tests but found $($discovered.Count)." }
+            # #3283：结果目录 run-scoped。本 lane 的 TRX 判定是 `if ($trxFiles.Count -ne 1) { throw }`，
+            # 与真库 lane 的聚合口径相反，但**同一个根因**：目录只建不清 ⇒ 本机连跑两轮第二轮会得到
+            # `observed 2` 的假红，而假红与「复用上一轮证据」的假绿是同一件事的两面。
+            if (Test-Path -LiteralPath $memberResultsDirectory) {
+                Remove-Item -LiteralPath $memberResultsDirectory -Recurse -Force
+            }
             [IO.Directory]::CreateDirectory($memberResultsDirectory) | Out-Null
-            Invoke-DotNetOutput -Name "postgres-lane-$($member.id)-execution" -WorkingDirectory $repoRoot -TimeoutSeconds 1800 -Arguments @('test', [string]$member.project, '--configuration', 'Release', '--no-restore', '--filter', [string]$member.filter, '--logger', "trx;LogFilePrefix=postgres-$($member.id)", '--results-directory', $memberResultsDirectory) | Out-Null
+            Invoke-DotNetOutput -Name "postgres-lane-$($member.id)-execution" -WorkingDirectory $repoRoot -TimeoutSeconds $TimeoutSeconds -Arguments @('test', [string]$member.project, '--configuration', 'Release', '--no-restore', '--filter', [string]$member.filter, '--logger', "trx;LogFilePrefix=postgres-$($member.id)", '--results-directory', $memberResultsDirectory) | Out-Null
             $trxResult = Get-NervPostgresTrxResult -ResultsDirectory $memberResultsDirectory -ExpectedTestIdentities @($member.expectedTestIdentities) -AllowInvalid
             $memberSummary.passed = $trxResult.passed
             $memberSummary.failed = $trxResult.failed
@@ -163,17 +188,17 @@ finally {
         $summary.failed += [int]$memberSummary.failed
         $summary.skipped += [int]$memberSummary.skipped
     }
-    if ($memberSummaries.Count -ne $MemberId.Count) {
+    if ($memberSummaries.Count -ne $selectedMemberIds.Count) {
         $summary.cleanup = 'incomplete'
-        if ($null -eq $failure) { $failure = [InvalidOperationException]::new("PostgreSQL lane selected $($MemberId.Count) members but summarized $($memberSummaries.Count).") }
+        if ($null -eq $failure) { $failure = [InvalidOperationException]::new("PostgreSQL lane selected $($selectedMemberIds.Count) members but summarized $($memberSummaries.Count).") }
     }
     elseif (@($memberSummaries | Where-Object { -not [string]::Equals([string]$_.cleanup, 'passed', [StringComparison]::Ordinal) }).Count -gt 0) { $summary.cleanup = 'failed' }
     else { $summary.cleanup = 'passed' }
-    try { Assert-NervPostgresTestLaneSummary -SelectedMemberIds @($MemberId) -MemberSummaries @($memberSummaries) }
+    try { Assert-NervPostgresTestLaneSummary -SelectedMemberIds @($selectedMemberIds) -MemberSummaries @($memberSummaries) }
     catch { if ($null -eq $failure) { $failure = $_ } }
     $summaryDirectory = Split-Path -Parent $SummaryPath
     if (-not [string]::IsNullOrWhiteSpace($summaryDirectory)) { [IO.Directory]::CreateDirectory($summaryDirectory) | Out-Null }
     [IO.File]::WriteAllText($SummaryPath, (($summary | ConvertTo-Json -Depth 10) + "`n"), [Text.UTF8Encoding]::new($false))
 }
 if ($null -ne $failure) { throw $failure }
-Write-Host "PostgreSQL lane members '$($MemberId -join ',')' passed: discovered=$($summary.discovered) passed=$($summary.passed) skipped=$($summary.skipped) cleanup=$($summary.cleanup)."
+Write-Host "PostgreSQL lane members '$($selectedMemberIds -join ',')' passed: discovered=$($summary.discovered) passed=$($summary.passed) skipped=$($summary.skipped) cleanup=$($summary.cleanup)."

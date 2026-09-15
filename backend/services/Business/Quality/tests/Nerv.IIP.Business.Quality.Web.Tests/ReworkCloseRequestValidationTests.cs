@@ -27,7 +27,12 @@ public sealed class ReworkCloseRequestValidationTests
 #pragma warning restore CS0618
 
         Assert.False(forged.IsValid);
-        Assert.Contains(forged.Errors, x => x.PropertyName == "ReworkWorkOrderId");
+        // 断 ErrorMessage 而不是 PropertyName：后者由 ValidatorOptions.Global.PropertyNameResolver 决定，
+        // app.UseFastEndpoints(...) 启动时会把它换成 camelCase 并且不还原，于是断言随同程序集内的执行顺序
+        // 时红时绿（#3342）。这条规则用 WithMessage 钉死了文案、模板不含 {PropertyName} 占位符，故不受解析器影响。
+        Assert.Contains(
+            forged.Errors,
+            x => x.ErrorMessage == "ReworkWorkOrderId is bound only from the MES rework-work-order-created receipt.");
         Assert.True(omitted.IsValid);
     }
 }

@@ -18,6 +18,7 @@ public sealed class OperationReceiptOpenApiDocumentProcessor : IDocumentProcesso
         "shelveBusinessConsoleEquipmentAlarm",
         "unshelveBusinessConsoleEquipmentAlarm",
         "createBusinessConsoleMaintenanceWorkOrder",
+        "createBusinessConsoleMaintenanceWorkOrderV2",
         "completeBusinessConsoleMaintenanceWorkOrder",
         "createBusinessConsoleQualityInspectionRecordFromTask",
         "startBusinessConsoleMesOperationTask",

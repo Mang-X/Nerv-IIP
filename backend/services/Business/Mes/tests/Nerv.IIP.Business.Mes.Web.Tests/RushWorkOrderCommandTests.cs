@@ -62,7 +62,7 @@ public sealed class RushWorkOrderCommandTests
         var store = new InMemoryMesPlanningStore();
         var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
         store.AddWorkOrder(new PlannedWorkOrder("org-001", "env-dev", "WO-NORMAL", "SKU-N", null, 1m, 10, now.AddDays(1)));
-        store.AddOperationTask(new PlannedOperationTask("WO-NORMAL", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2)));
+        store.AddOperationTask(new PlannedOperationTask("WO-NORMAL", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2), "SKU-001"));
 
         var handler = new CreateRushWorkOrderCommandHandler(store, new RuleScheduler());
 

@@ -13,18 +13,25 @@ public sealed record MaterialTransferAllocation
         string sourceSiteCode,
         string sourceLocationCode,
         string? sourceLotNo,
-        decimal quantity)
+        decimal quantity,
+        string ownerType = "production",
+        string? ownerId = null)
     {
         SourceSiteCode = DomainGuard.Required(sourceSiteCode, nameof(sourceSiteCode));
         SourceLocationCode = DomainGuard.Required(sourceLocationCode, nameof(sourceLocationCode));
         SourceLotNo = string.IsNullOrWhiteSpace(sourceLotNo) ? null : sourceLotNo.Trim();
         Quantity = DomainGuard.Positive(quantity, nameof(quantity));
+        OwnerType = DomainGuard.Required(ownerType, nameof(ownerType));
+        OwnerId = ownerId;
     }
 
     public string SourceSiteCode { get; }
     public string SourceLocationCode { get; }
     public string? SourceLotNo { get; }
     public decimal Quantity { get; }
+    // 缺少字段的旧 JSON 与既有调用继续表示 production/null。
+    public string OwnerType { get; }
+    public string? OwnerId { get; }
 }
 
 /// <summary>

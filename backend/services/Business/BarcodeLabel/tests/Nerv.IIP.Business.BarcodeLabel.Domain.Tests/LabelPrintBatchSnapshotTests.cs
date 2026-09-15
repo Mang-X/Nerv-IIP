@@ -122,7 +122,7 @@ public sealed class LabelPrintBatchSnapshotTests
         BarcodeRule rule,
         LabelTemplateId templateId,
         LabelPrintBatchSnapshot snapshot) =>
-        LabelPrintBatch.Create(
+        LabelPrintBatch.ReconstituteHistorical(
             "org-001",
             "env-dev",
             rule,

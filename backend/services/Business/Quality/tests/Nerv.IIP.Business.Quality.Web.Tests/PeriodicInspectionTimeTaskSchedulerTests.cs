@@ -72,12 +72,7 @@ public sealed class PeriodicInspectionTimeTaskSchedulerTests
             clock);
 
         await scheduler.StartAsync(CancellationToken.None);
-        await Eventually.WaitAsync(
-            "periodic inspection scheduler dispatches two scoped candidate commands",
-            _ => ValueTask.FromResult(capture.CommandDispatches.Count),
-            count => count >= 2,
-            count => $"commands={count}; expected>=2",
-            new EventuallyOptions(TimeSpan.FromSeconds(2), TimeSpan.FromMilliseconds(10), []));
+        await capture.CommandsDispatched.WaitForAsync(2);
         await scheduler.StopAsync(CancellationToken.None);
 
         var queryScopeId = Assert.Single(capture.QueryDispatches).ScopeId;
@@ -191,13 +186,8 @@ public sealed class PeriodicInspectionTimeTaskSchedulerTests
         })
         .Build();
 
-    private static ValueTask<int> WaitForCommandCountAsync(CapturingSender sender, int expected) =>
-        Eventually.WaitAsync(
-            $"periodic inspection scheduler dispatches {expected} commands",
-            _ => ValueTask.FromResult(sender.Commands.Count),
-            count => count >= expected,
-            count => $"commands={count}; expected>={expected}",
-            new EventuallyOptions(TimeSpan.FromSeconds(2), TimeSpan.FromMilliseconds(10), []));
+    private static Task WaitForCommandCountAsync(CapturingSender sender, int expected) =>
+        sender.CommandsDispatched.WaitForAsync(expected);
 
     private sealed class CapturingSender(
         int candidateCount = 1,
@@ -208,6 +198,10 @@ public sealed class PeriodicInspectionTimeTaskSchedulerTests
         public List<object> Requests { get; } = [];
         public List<ListDuePeriodicInspectionTimeContextsQuery> Queries { get; } = [];
         public List<GeneratePeriodicInspectionTimeTaskForContextCommand> Commands { get; } = [];
+
+        /// <summary>Edge for "the scheduler has dispatched the N-th generation command".</summary>
+        public CountingEdgeSignal CommandsDispatched { get; } =
+            new("the scheduler to dispatch a periodic inspection generation command");
 
         public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
         {
@@ -229,6 +223,7 @@ public sealed class PeriodicInspectionTimeTaskSchedulerTests
             Commands.Add(command);
             commandCount++;
             afterCommandCaptured?.Invoke(commandCount);
+            CommandsDispatched.Record();
             if (failFirstCandidate && commandCount == 1)
             {
                 throw new InvalidOperationException("poison candidate");
@@ -256,6 +251,10 @@ public sealed class PeriodicInspectionTimeTaskSchedulerTests
     {
         public ConcurrentQueue<ScopeDispatch> QueryDispatches { get; } = new();
         public ConcurrentQueue<ScopeDispatch> CommandDispatches { get; } = new();
+
+        /// <summary>Edge for "the scheduler has dispatched the N-th scoped candidate command".</summary>
+        public CountingEdgeSignal CommandsDispatched { get; } =
+            new("the scheduler to dispatch a scoped periodic inspection candidate command");
     }
 
     private sealed record ScopeDispatch(Guid ScopeId, object Request);
@@ -280,6 +279,7 @@ public sealed class PeriodicInspectionTimeTaskSchedulerTests
 
             Assert.IsType<GeneratePeriodicInspectionTimeTaskForContextCommand>(request);
             capture.CommandDispatches.Enqueue(new ScopeDispatch(scopeId, request));
+            capture.CommandsDispatched.Record();
             return Task.FromResult((TResponse)(object)1);
         }
 

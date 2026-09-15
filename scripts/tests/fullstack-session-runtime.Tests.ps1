@@ -3,8 +3,10 @@
 #   SideEffects:
 #     - Validates full-stack Docker ownership predicates against synthetic inspect data
 #     - Starts and stops one detached local PowerShell lifecycle probe
+#     - Runs short-lived PowerShell probes through the FullStack startup environment
 #   Writes:
 #     - Temporary detached-process stdout and stderr logs
+#     - Temporary proof startup stdout and stderr logs
 #   Cleanup:
 #     - Stops the exact lifecycle-probe process and removes its temporary directory
 #   Requires:
@@ -432,6 +434,18 @@ Assert-True (-not $appHostText.Substring($notificationStart, $notificationEnd - 
 Assert-True ($appHostText.Contains('.WithEnvironment("Iam__Seed__DemoWorkerPassword", iamSeedDemoWorkerPassword)', [StringComparison]::Ordinal)) 'AppHost must bridge the controlled FullStack demo-worker seed to IAM without changing IAM permissions or membership.'
 
 $secretEnvironment = New-NervFullStackSecretEnvironment -SessionId $sessionId
+# #3160 PublicContract：FullStack 为模板资产退役签发独立、会话自有的 proof 配置。
+$proofIssuerName = 'Parameters__template-asset-retirement-proof-issuer'
+$proofAudienceName = 'Parameters__template-asset-retirement-proof-audience'
+$proofSecretName = 'Parameters__template-asset-retirement-proof-secret-base64'
+Assert-True ([string]::Equals($secretEnvironment.Environment[$proofIssuerName], 'nerv-fullstack-template-asset-retirement', [StringComparison]::Ordinal)) 'FullStack proof issuer must be fixed for the profile.'
+Assert-True ([string]::Equals($secretEnvironment.Environment[$proofAudienceName], 'nerv-barcodelabel-template-asset-retirement', [StringComparison]::Ordinal)) 'FullStack proof audience must be purpose-specific and fixed.'
+Assert-True ([Convert]::FromBase64String($secretEnvironment.Environment[$proofSecretName]).Length -ge 32) 'FullStack proof key must decode to at least 32 bytes.'
+Assert-True (-not [string]::Equals($secretEnvironment.Environment[$proofSecretName], $secretEnvironment.Environment['Parameters__internal-service-bearer-token'], [StringComparison]::Ordinal)) 'Proof signing must not reuse the internal bearer.'
+$otherProofSession = New-NervFullStackSecretEnvironment -SessionId 'nerv-abcd-654321'
+Assert-True (-not [string]::Equals($secretEnvironment.Environment[$proofSecretName], $otherProofSession.Environment[$proofSecretName], [StringComparison]::Ordinal)) 'Different sessions must not reuse a proof key.'
+$otherProofSession.Environment.Clear()
+$otherProofSession = $null
 foreach ($requiredName in @(
     'Parameters__iam-jwt-signing-key-id',
     'Parameters__iam-jwt-private-key-pem',
@@ -2353,6 +2367,102 @@ try {
 finally {
     [Environment]::SetEnvironmentVariable('NERV_IIP_SESSION_ID', $ambientSessionId, 'Process')
     Remove-Item -LiteralPath $stopStateRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# #3160 Regression/PublicContract：执行真实启动函数和短命子进程；仅替换外部宿主、资源与 manifest IO。
+& {
+    . (Join-Path $repoRoot 'scripts/fullstack-session.ps1') -Action help 6>$null
+    $probeRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-proof-start-$([guid]::NewGuid().ToString('N'))"
+    $probeState = @{ Manifest = $null; Failed = $false; Canary = 'synthetic-proof-canary-3160'; Calls = 0 }
+    $realProducer = ${function:New-NervFullStackSecretEnvironment}
+    function New-NervFullStackSecretEnvironment {
+        param($SessionId, [switch] $IncludeDemoWorkerPassword)
+        $result = & $realProducer -SessionId $SessionId -IncludeDemoWorkerPassword:$IncludeDemoWorkerPassword
+        if ($probeState.Failed) { $result.Environment[$proofSecretName] = $probeState.Canary }
+        return $result
+    }
+    function Claim-NervStaleFullStackSessions { param($TimeoutSeconds) }
+    function Invoke-WithNervFullStackSessionLock {
+        param($TimeoutSeconds, [scriptblock] $ScriptBlock)
+        if ($null -eq $probeState.Manifest) {
+            $probeState.Manifest = New-NervFullStackManifest -SessionId 'nerv-abcd-316000' -WorktreeRoot $repoRoot `
+                -AppHostProject (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj') -ArtifactPath $probeRoot
+            return $probeState.Manifest
+        }
+        & $ScriptBlock
+    }
+    function Update-NervFullStackManifest {
+        param($SessionId, $AllowedStates, [switch] $ReturnUnchangedOnStateMismatch, [scriptblock] $UpdateAction)
+        $probeState.Manifest = & $UpdateAction $probeState.Manifest
+        return $probeState.Manifest
+    }
+    function Read-NervFullStackManifest { param($SessionId) return $probeState.Manifest }
+    function Write-NervFullStackManifest { param($Manifest) }
+    function Get-NervAspireStartIdentity {
+        param($StartObject)
+        return @{ AppHostPid = $PID; CliPid = $PID; AppHostId = 'synthetic'; AppHostPath = 'synthetic'; LogFile = 'synthetic' }
+    }
+    function Wait-NervAspireResource { param($AppHostProject, $ResourceName, $WorkingDirectory) }
+    function Get-NervFullStackContainerRecords { param($OwnedSessionId, $Environment) }
+    function Get-NervFullStackDcpNetworkIds { param($SessionId, $ContainerRecords, $WorkingDirectory, $Environment) }
+    function Get-NervAspireDescribeObjectWithEndpoints { param($AppHostProject, $WorkingDirectory) return $null }
+    function Start-NervFullStackGuardian { param($Manifest, $Mode, $CoordinatorPid, $CoordinatorStartTimeUtc) return @{ Pid = $PID; ProcessStartTimeUtc = 'synthetic' } }
+    function Stop-NervFullStackSession { param($SessionId, $Environment) return @{ Complete = $true } }
+    function Invoke-AspireOutput {
+        param($Arguments, $WorkingDirectory, $TimeoutSeconds, $Name, $Environment, $SensitiveValues)
+        $probeState.Calls++
+        $probe = @'
+$issuer = [Environment]::GetEnvironmentVariable('Parameters__template-asset-retirement-proof-issuer')
+$audience = [Environment]::GetEnvironmentVariable('Parameters__template-asset-retirement-proof-audience')
+$key = [Environment]::GetEnvironmentVariable('Parameters__template-asset-retirement-proof-secret-base64')
+if (-not [string]::Equals($issuer, 'nerv-fullstack-template-asset-retirement', [StringComparison]::Ordinal)) { exit 41 }
+if (-not [string]::Equals($audience, 'nerv-barcodelabel-template-asset-retirement', [StringComparison]::Ordinal)) { exit 42 }
+if ([string]::Equals($key, 'synthetic-proof-canary-3160', [StringComparison]::Ordinal)) {
+    [Console]::Out.WriteLine("out=$key")
+    [Console]::Error.WriteLine("err=$key")
+    exit 43
+}
+if ([Convert]::FromBase64String($key).Length -lt 32) { exit 44 }
+[Console]::Out.WriteLine('{"proofInputsValid":true}')
+'@
+        Invoke-NativeCommandOutput -Command (Get-Process -Id $PID).Path -Arguments @('-NoProfile', '-NonInteractive', '-Command', $probe) `
+            -WorkingDirectory $WorkingDirectory -TimeoutSeconds 10 -Name 'proof-start-probe' `
+            -Environment $Environment -SensitiveValues $SensitiveValues -LogDirectory $probeRoot -PersistOutput
+    }
+    try {
+        # 三种父环境状态由同一真实入口在成功和异常路径分别恢复。
+        [IO.Directory]::CreateDirectory($probeRoot) | Out-Null
+        Invoke-WithScopedEnvironment -Variables @{
+            $proofIssuerName = 'parent-issuer'; $proofAudienceName = ''; $proofSecretName = $null
+        } -ScriptBlock {
+            foreach ($fail in @($false, $true)) {
+                $probeState.Manifest = $null
+                $probeState.Failed = $fail
+                $caught = $null
+                try { Start-NervFullStackSession -PassThru | Out-Null } catch { $caught = $_ }
+                if (-not $fail -and $null -ne $caught) { throw $caught }
+                Assert-True (($null -ne $caught) -eq $fail) 'Proof startup must preserve success and controlled child failure.'
+                Assert-True ([string]::Equals([Environment]::GetEnvironmentVariable($proofIssuerName), 'parent-issuer', [StringComparison]::Ordinal)) 'Startup must restore the parent issuer.'
+                Assert-True ((Test-Path -LiteralPath "Env:$proofAudienceName") -and [string]::Equals([Environment]::GetEnvironmentVariable($proofAudienceName), '', [StringComparison]::Ordinal)) 'Startup must restore an explicitly empty parent audience.'
+                Assert-True (-not (Test-Path -LiteralPath "Env:$proofSecretName")) 'Startup must restore an absent parent key.'
+                if ($fail) {
+                    Assert-True (-not $caught.Exception.Message.Contains($probeState.Canary, [StringComparison]::Ordinal)) 'Startup exception must redact the proof canary.'
+                    Assert-True ($caught.Exception.Message.Contains('<redacted>', [StringComparison]::Ordinal)) 'Startup failure must carry redaction evidence.'
+                    Assert-True (-not ($probeState.Manifest | ConvertTo-Json -Depth 20).Contains($probeState.Canary, [StringComparison]::Ordinal)) 'Failure manifest must not retain the proof canary.'
+                    foreach ($logName in @('stdout.log', 'stderr.log')) {
+                        $logText = Get-Content -LiteralPath (Join-Path $probeRoot $logName) -Raw
+                        Assert-True ($logText.Contains('<redacted>', [StringComparison]::Ordinal) -and -not $logText.Contains($probeState.Canary, [StringComparison]::Ordinal)) 'Both retained child streams must redact the proof canary.'
+                    }
+                }
+            }
+        }
+        Assert-True ($probeState.Calls -eq 2) 'Both success and failure must execute the real child boundary once.'
+        Invoke-WithScopedEnvironment -Variables @{ $proofSecretName = $probeState.Canary } -ScriptBlock {
+            $protected = Protect-NervFullStackDiagnosticText -Text "inspection failed for $($probeState.Canary)" -SensitiveValues @(Get-NervFullStackGuardianSensitiveValues)
+            Assert-True ($protected.Contains('<redacted>', [StringComparison]::Ordinal) -and -not $protected.Contains($probeState.Canary, [StringComparison]::Ordinal)) 'Guardian diagnostics must protect the inherited proof key.'
+        }
+    }
+    finally { Remove-Item -LiteralPath $probeRoot -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
 Write-Host 'Full-stack session runtime tests passed.'

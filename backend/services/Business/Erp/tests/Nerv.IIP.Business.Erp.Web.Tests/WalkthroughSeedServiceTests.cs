@@ -10,6 +10,28 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 public sealed class WalkthroughSeedServiceTests
 {
     [Fact]
+    public async Task Seed_provides_quotes_for_all_purchased_finished_materials_and_rod_raw_material()
+    {
+        await using var db = CreateDbContext();
+        await new WalkthroughSeedService(db).SeedAsync("org-001", "env-dev");
+
+        // NERV-2113：FG 的 11 项外购需求，以及混合场景的活塞杆原料。
+        string[] requiredSkus =
+        [
+            "SF-ROD-01", "SF-TUB-01", "SF-VLV-01", "RM-SPR-05", "RM-SEL-01",
+            "RM-OIL-01", "RM-ACC-01", "RM-ACC-04", "RM-ACC-07", "PK-BOX-01",
+            "PK-LBL-03", "RM-BAR-01",
+        ];
+        var quotes = await db.SupplierQuotations.Include(x => x.Lines).ToArrayAsync();
+        foreach (var sku in requiredSkus)
+        {
+            var line = Assert.Single(quotes.SelectMany(x => x.Lines), x => x.SkuCode == sku);
+            Assert.True(line.UnitPrice > 0);
+            Assert.Equal(sku == "RM-BAR-01" ? "kg" : sku == "RM-OIL-01" ? "l" : "pcs", line.UomCode);
+        }
+    }
+
+    [Fact]
     public async Task Seed_creates_only_auditable_price_sources_and_is_idempotent()
     {
         await using var db = CreateDbContext();
@@ -21,8 +43,8 @@ public sealed class WalkthroughSeedServiceTests
         var salesQuote = Assert.Single(await db.Quotations.Include(x => x.Lines).ToArrayAsync());
         Assert.Equal(QuotationStatus.Approved, salesQuote.Status);
         Assert.Equal(WalkthroughSeedSpec.SalesUnitPrice, Assert.Single(salesQuote.Lines).UnitPrice);
-        Assert.Single(await db.RequestForQuotations.ToArrayAsync());
-        Assert.Equal(5, await db.SupplierQuotations.CountAsync());
+        Assert.Equal(2, await db.RequestForQuotations.CountAsync());
+        Assert.Equal(13, await db.SupplierQuotations.CountAsync());
         Assert.Empty(await db.PurchaseOrders.ToArrayAsync());
         Assert.Empty(await db.SalesOrders.ToArrayAsync());
         Assert.Empty(await db.PurchaseReceipts.ToArrayAsync());

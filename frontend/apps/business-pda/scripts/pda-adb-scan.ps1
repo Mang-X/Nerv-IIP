@@ -18,7 +18,7 @@
 
 # PDA L3（Android 模拟器 + APK）设施：adb 扫码注入。
 # 方案：frontend/DESIGN/roadmaps/2026-07-15-pda-device-sim-detection-plan.md §5 / §2 保真等级；
-# 文档：docs/architecture/mobile-pda-testing-and-smoke.md「L3 Android 模拟器 + APK」节。
+# 当前操作口径：docs/runbooks/testing/mobile-pda.md 的 Android 模拟器 / APK 部分。
 #
 # 保真定位（方案 §2）：adb shell input 是 **Android 输入栈注入**——字符流经 IME/焦点系统
 # 进入当前焦点视图，比浏览器 page.keyboard（DOM 近似）更接近真机，但**不是 HID 硬件等价**：
@@ -49,7 +49,7 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..' '..' '..' '..')).Path
 
 $resolvedSdk = Resolve-PdaAndroidHome
 if ([string]::IsNullOrWhiteSpace($resolvedSdk)) {
-    Write-Diagnostic -Level 'ERROR' -Message '缺少 Android SDK：ANDROID_HOME/ANDROID_SDK_ROOT 与当前平台约定位置均无 platform-tools/adb。安装口径见 docs/architecture/mobile-pda-deployment.md。'
+    Write-Diagnostic -Level 'ERROR' -Message '缺少 Android SDK：ANDROID_HOME/ANDROID_SDK_ROOT 与当前平台约定位置均无 platform-tools/adb。安装口径见 docs/runbooks/mobile-pda-deployment.md。'
     exit 1
 }
 $env:ANDROID_HOME = $resolvedSdk

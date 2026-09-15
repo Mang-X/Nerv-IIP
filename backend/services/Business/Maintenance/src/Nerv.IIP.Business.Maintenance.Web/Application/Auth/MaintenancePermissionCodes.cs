@@ -1,10 +1,12 @@
+using Nerv.IIP.Contracts.Iam;
+
 namespace Nerv.IIP.Business.Maintenance.Web.Application.Auth;
 
 public static class MaintenancePermissionCodes
 {
-    public const string WorkOrdersRead = "business.maintenance.work-orders.read";
-    public const string WorkOrdersManage = "business.maintenance.work-orders.manage";
-    public const string PlansRead = "business.maintenance.plans.read";
-    public const string PlansManage = "business.maintenance.plans.manage";
-    public const string DowntimeReasonsRead = "business.maintenance.downtime-reasons.read";
+    public const string WorkOrdersRead = NervIipPermissionCodes.MaintenanceWorkOrdersRead;
+    public const string WorkOrdersManage = NervIipPermissionCodes.MaintenanceWorkOrdersManage;
+    public const string PlansRead = NervIipPermissionCodes.MaintenancePlansRead;
+    public const string PlansManage = NervIipPermissionCodes.MaintenancePlansManage;
+    public const string DowntimeReasonsRead = NervIipPermissionCodes.MaintenanceDowntimeReasonsRead;
 }

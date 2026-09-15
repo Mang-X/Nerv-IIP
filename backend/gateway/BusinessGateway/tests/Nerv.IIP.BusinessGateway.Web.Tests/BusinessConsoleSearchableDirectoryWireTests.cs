@@ -173,6 +173,110 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         Assert.Null(downstream.RequestUri);
     }
 
+    // #3125：无范围维度的目录（SupportedScopeKinds 为空集）上，只持受限范围授权的主体也必须读到词表。
+    // 受影响的是同一类目录，不是单条登记：material / priority / defect-code / scrap-reason /
+    // downtime-reason / maintenance-reason。这里在 maintenance 与 quality 两个权威源上各取一条，
+    // 证明放行是「类的行为」而不是对 downtime-reason 的单例修补。
+    [Theory]
+    [InlineData("downtime-reason", "self", "user-emp-010")]
+    [InlineData("downtime-reason", "site", "SITE-001")]
+    [InlineData("defect-code", "self", "user-emp-010")]
+    public async Task Restricted_grant_reads_directories_without_a_scope_dimension(
+        string directoryType,
+        string scopeKind,
+        string scopeId)
+    {
+        var permissionCode = directoryType == "downtime-reason"
+            ? BusinessGatewayPermissions.MaintenanceDowntimeReasonsRead
+            : BusinessGatewayPermissions.QualityInspectionRecordsRead;
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+        [
+            new AuthorizationScopeGrant("membership", "user-emp-010:org-001:env-dev", scopeKind, scopeId, [permissionCode]),
+        ]);
+        var targetHandler = new JsonHandler(directoryType == "downtime-reason"
+            ? "{\"items\":[{\"downtimeReasonId\":{\"id\":\"01900000-0000-7000-8000-000000000001\"},\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"reasonCode\":\"BREAKDOWN\",\"description\":\"Breakdown\",\"reasonCategory\":\"unplanned\",\"lossCategory\":\"availability\"}],\"skip\":0,\"take\":20,\"total\":1}"
+            : "{\"items\":[{\"reasonCode\":\"SCRATCH\",\"reasonName\":\"Scratch\",\"groupName\":\"appearance\",\"severity\":\"minor\",\"defaultDisposition\":null,\"enabled\":true,\"snapshotVersion\":\"v1\"}],\"total\":1}");
+        await using var lease = LeaseHost(
+            auth,
+            new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}"),
+            quality: directoryType == "defect-code"
+                ? new HttpBusinessQualityClient(new HttpClient(targetHandler) { BaseAddress = new Uri("http://quality.local") })
+                : null,
+            maintenance: directoryType == "downtime-reason"
+                ? new HttpBusinessMaintenanceClient(new HttpClient(targetHandler) { BaseAddress = new Uri("http://maintenance.local") })
+                : null);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            $"/api/business-console/v1/directories/{directoryType}?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(permissionCode, auth.LastRequirement!.PermissionCode);
+        // 无范围维度的目录不会把 grant 的范围伪装成过滤条件转发给权威源。
+        Assert.NotNull(targetHandler.RequestUri);
+        Assert.DoesNotContain(scopeId, targetHandler.RequestUri!.Query, StringComparison.Ordinal);
+    }
+
+    // 放宽只覆盖「范围维度」这一条；租户边界仍然承重：范围落在别的组织上的 grant 依旧不可表示。
+    [Fact]
+    public async Task Cross_organization_grant_still_fails_closed_on_directories_without_a_scope_dimension()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+        [
+            Grant("organization", "org-999", BusinessGatewayPermissions.MaintenanceDowntimeReasonsRead),
+        ]);
+        var maintenanceHandler = new JsonHandler("{\"items\":[],\"skip\":0,\"take\":20,\"total\":0}");
+        await using var lease = LeaseHost(
+            auth,
+            new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}"),
+            maintenance: new HttpBusinessMaintenanceClient(
+                new HttpClient(maintenanceHandler) { BaseAddress = new Uri("http://maintenance.local") }));
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/directories/downtime-reason?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(1, auth.CallCount);
+        Assert.Null(maintenanceHandler.RequestUri);
+    }
+
+    // 无范围维度不等于「接受并忽略范围」：显式范围仍在授权前 400，不会静默返回全量。
+    [Fact]
+    public async Task Explicit_scope_on_a_directory_without_a_scope_dimension_still_fails_before_authorization()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+        [
+            new AuthorizationScopeGrant(
+                "membership",
+                "user-emp-010:org-001:env-dev",
+                "self",
+                "user-emp-010",
+                [BusinessGatewayPermissions.MaintenanceDowntimeReasonsRead]),
+        ]);
+        var maintenanceHandler = new JsonHandler("{\"items\":[],\"skip\":0,\"take\":20,\"total\":0}");
+        await using var lease = LeaseHost(
+            auth,
+            new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}"),
+            maintenance: new HttpBusinessMaintenanceClient(
+                new HttpClient(maintenanceHandler) { BaseAddress = new Uri("http://maintenance.local") }));
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/directories/downtime-reason?organizationId=org-001&environmentId=env-dev&scopeKind=self&scopeId=user-emp-010");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains(
+            "directory-scope-unsupported",
+            await response.Content.ReadAsStringAsync(),
+            StringComparison.Ordinal);
+        Assert.Equal(0, auth.CallCount);
+        Assert.Null(maintenanceHandler.RequestUri);
+    }
+
     [Fact]
     public async Task Explicit_organization_grant_is_required_when_scope_is_omitted()
     {

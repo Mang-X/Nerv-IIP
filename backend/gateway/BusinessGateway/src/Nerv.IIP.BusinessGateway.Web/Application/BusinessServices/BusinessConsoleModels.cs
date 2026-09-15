@@ -3,7 +3,9 @@ using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using FastEndpoints;
+using NJsonSchema.Annotations;
 using Nerv.IIP.Contracts.Coding;
+using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.Contracts.Scheduling;
 
@@ -2280,6 +2282,40 @@ public sealed record BusinessConsoleSopFileContentResponse(
     long? ContentLength,
     byte[] Content);
 
+/// <summary>
+/// 交接班附件上传会话请求。用途、owner 与上传协议不收请求体：BusinessGateway 固定
+/// <c>shift-handover-photo</c> 用途与 <c>business-mes / shift-handover-attachment / {principalId}</c> owner，
+/// 使 <c>business.mes.handovers.manage</c> 只能开出交接班照片会话，不能借这条门面上传别的用途。
+/// </summary>
+public sealed record BusinessConsoleCreateShiftHandoverAttachmentUploadSessionRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string FileName,
+    string ContentType,
+    long ExpectedSizeBytes,
+    string? Checksum = null);
+
+/// <summary>
+/// 交接班附件上传会话。<c>UploadProtocol</c> 按 ADR 0023 只有 <c>tus</c> 一个取值：
+/// FileStorage 未按 tus 运行时本门面失败关闭，不返回无字节入口的占位指令。
+/// <c>UploadUrl</c> 已改写为 BusinessGateway 受控 tus 路径，调用方拿不到 FileStorage 内部 URL。
+/// </summary>
+public sealed record BusinessConsoleShiftHandoverAttachmentUploadSessionResponse(
+    string UploadSessionId,
+    string FileId,
+    string UploadProtocol,
+    DateTimeOffset ExpiresAtUtc,
+    string UploadUrl,
+    IReadOnlyDictionary<string, string> UploadHeaders);
+
+/// <summary>交接班附件上传 complete 请求；组织/环境与用途由门面按会话固定值补齐。</summary>
+public sealed record BusinessConsoleCompleteShiftHandoverAttachmentUploadRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Checksum = null,
+    long? SizeBytes = null);
+
+
 public sealed record BusinessConsoleListEngineeringBomsRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -2833,6 +2869,13 @@ public sealed record BusinessConsolePlanningContextRequest(
     string OrganizationId,
     string EnvironmentId);
 
+public sealed record BusinessConsoleDemandSourceListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Keyword = null,
+    int Skip = 0,
+    int Take = 100);
+
 public sealed record BusinessConsoleMpsListRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -3281,6 +3324,167 @@ public sealed record BusinessConsoleErpWorkCenterCostRateItem(
     bool IsEffectiveAtUtc,
     bool IsCurrentEffectiveRevision);
 
+public sealed record BusinessConsoleGetErpWorkOrderCostVarianceRequest(
+    string WorkOrderId,
+    string OrganizationId,
+    string EnvironmentId,
+    int PageNumber = 1,
+    int PageSize = 50);
+
+public sealed record BusinessConsoleListErpMachineOverheadReconciliationsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string AccountingPeriodCode,
+    string? WorkCenterId = null,
+    int PageNumber = 1,
+    int PageSize = 50);
+
+[JsonConverter(typeof(BusinessConsoleMachineOverheadReadStatusJsonConverter))]
+public enum BusinessConsoleMachineOverheadReadStatus
+{
+    Available,
+    NotApplicable,
+    Unavailable,
+}
+
+public sealed class BusinessConsoleMachineOverheadReadStatusJsonConverter()
+    : JsonStringEnumConverter<BusinessConsoleMachineOverheadReadStatus>(JsonNamingPolicy.CamelCase, allowIntegerValues: false);
+
+public sealed record BusinessConsoleErpWorkOrderCostVarianceResponse(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkOrderId,
+    string? CurrencyCode,
+    string LaborCostBasis,
+    string LaborVarianceStatus,
+    string? UnavailableReason,
+    decimal? ActualLaborHours,
+    decimal? ActualLaborCost,
+    decimal? StandardLaborHours,
+    decimal? StandardLaborCost,
+    decimal? LaborEfficiencyVarianceHours,
+    decimal? LaborEfficiencyVarianceAmount,
+    string? LaborEfficiencyVarianceDirection,
+    string LaborRateVarianceStatus,
+    string LaborRateVarianceReason,
+    decimal? MaterialCost,
+    decimal? TotalAccumulatedCost,
+    decimal? CapitalizedCost,
+    decimal? CapitalizationVarianceAmount,
+    [property: Required, JsonRequired] decimal? ActualMachineHours,
+    [property: Required, JsonRequired] BusinessConsoleMachineOverheadReadStatus MachineCostStatus,
+    [property: Required, JsonRequired] string? MachineCostUnavailableReason,
+    [property: Required, JsonRequired] string? MachineCurrencyCode,
+    int PageNumber,
+    int PageSize,
+    int TotalOperations,
+    IReadOnlyCollection<BusinessConsoleErpOperationLaborVarianceItem> Operations,
+    [property: Required, JsonRequired] decimal? AppliedFixedMachineOverhead,
+    [property: Required, JsonRequired] decimal? AppliedVariableMachineOverhead,
+    [property: Required, JsonRequired] decimal? AppliedMachineOverheadTotal,
+    [property: Required, JsonRequired] int MachineOverheadPageNumber,
+    [property: Required, JsonRequired] int MachineOverheadPageSize,
+    [property: Required, JsonRequired] int TotalMachineOverheadOperations,
+    [property: Required, JsonRequired] IReadOnlyCollection<BusinessConsoleErpOperationMachineOverheadItem> MachineOverheadOperations);
+
+public sealed record BusinessConsoleErpOperationMachineOverheadItem(
+    [property: Required, JsonRequired] string OperationTaskId,
+    [property: Required, JsonRequired] string WorkCenterId,
+    [property: Required, JsonRequired] string SettlementId,
+    [property: Required, JsonRequired] long SettlementRevision,
+    [property: Required, JsonRequired] BusinessConsoleMachineOverheadReadStatus Status,
+    [property: Required, JsonRequired] string? UnavailableReason,
+    [property: Required, JsonRequired] decimal? ActualMachineHours,
+    [property: Required, JsonRequired] decimal? AppliedFixedMachineOverhead,
+    [property: Required, JsonRequired] decimal? AppliedVariableMachineOverhead,
+    [property: Required, JsonRequired] decimal? AppliedMachineOverheadTotal,
+    [property: Required, JsonRequired] string AccountingPeriodCode,
+    [property: Required, JsonRequired] string CurrencyCode,
+    string? DeviceAssetId,
+    string? MachineTimeBasisCode,
+    [property: Required, JsonRequired] string WorkCenterMachineOverheadRateId,
+    [property: Required, JsonRequired] int RateRevision,
+    [property: Required, JsonRequired] DateTimeOffset CompletedAtUtc,
+    [property: Required, JsonRequired] string SourceEventId);
+
+public sealed record BusinessConsoleErpOperationLaborVarianceItem(
+    string OperationTaskId,
+    string WorkCenterId,
+    long SettlementRevision,
+    string Status,
+    string? UnavailableReason,
+    long ActualLaborTicks,
+    decimal ActualLaborHours,
+    decimal ActualLaborCost,
+    decimal? StandardLaborHours,
+    decimal? StandardLaborCost,
+    decimal? LaborEfficiencyVarianceHours,
+    decimal? LaborEfficiencyVarianceAmount,
+    string? LaborEfficiencyVarianceDirection,
+    string CurrencyCode,
+    string WorkCenterCostRateId,
+    int RateRevision,
+    decimal HourlyRate,
+    string RateBasis,
+    DateTimeOffset RateBasisAtUtc,
+    IReadOnlyCollection<BusinessConsoleErpCoveredLaborReportItem> CoveredReports);
+
+public sealed record BusinessConsoleErpCoveredLaborReportItem(
+    string ReportNo,
+    decimal GoodQuantity,
+    decimal ScrapQuantity,
+    decimal ReworkQuantity,
+    string UomCode,
+    decimal? TheoreticalRatePerHour,
+    DateTimeOffset ReportedAtUtc,
+    bool IsReversal,
+    string? ReversedReportNo);
+
+public sealed record BusinessConsoleErpMachineOverheadReconciliationListResponse(
+    string OrganizationId,
+    string EnvironmentId,
+    string AccountingPeriodCode,
+    string? WorkCenterId,
+    [property: Required, JsonRequired] int PageNumber,
+    [property: Required, JsonRequired] int PageSize,
+    [property: Required, JsonRequired] int TotalCount,
+    [property: Required, JsonRequired] IReadOnlyCollection<BusinessConsoleErpMachineOverheadReconciliationItem> Items,
+    [property: Required, JsonRequired] string? AccountingPeriodStatus,
+    [property: Required, JsonRequired] BusinessConsoleMachineOverheadReadStatus ReconciliationStatus,
+    [property: Required, JsonRequired] string? ReconciliationUnavailableReason);
+
+public sealed record BusinessConsoleErpMachineOverheadReconciliationItem(
+    [property: Required, JsonRequired] string Id,
+    [property: Required, JsonRequired] string WorkCenterId,
+    [property: Required, JsonRequired] string AccountingPeriodCode,
+    [property: Required, JsonRequired] int Revision,
+    [property: Required, JsonRequired] int RateRevision,
+    [property: Required, JsonRequired] string CurrencyCode,
+    [property: Required, JsonRequired] decimal ActualFixedOverheadAmount,
+    [property: Required, JsonRequired] decimal ActualVariableOverheadAmount,
+    [property: Required, JsonRequired] decimal ActualTotalOverheadAmount,
+    [property: Required, JsonRequired] long AppliedMachineTicks,
+    [property: Required, JsonRequired] decimal AppliedMachineHours,
+    [property: Required, JsonRequired] decimal AppliedFixedAmount,
+    [property: Required, JsonRequired] decimal AppliedVariableAmount,
+    [property: Required, JsonRequired] decimal AppliedTotalAmount,
+    [property: Required, JsonRequired] decimal AppliedRoundingDifferenceAmount,
+    [property: Required, JsonRequired] decimal UnderOverAppliedFixedAmount,
+    [property: Required, JsonRequired] decimal UnderOverAppliedVariableAmount,
+    [property: Required, JsonRequired] decimal UnderOverAppliedTotalAmount,
+    [property: Required, JsonRequired] decimal UnallocatedFixedOverheadAmount,
+    [property: Required, JsonRequired] decimal OverAppliedFixedOverheadAmount,
+    [property: Required, JsonRequired] long AbnormalDowntimeTicks,
+    [property: Required, JsonRequired] decimal AbnormalDowntimeHours,
+    [property: Required, JsonRequired] string AbnormalDowntimeDisposition,
+    [property: Required, JsonRequired] bool IsReadyForClose,
+    [property: Required, JsonRequired] BusinessConsoleMachineOverheadReadStatus ReconciliationStatus,
+    [property: Required, JsonRequired] string? UnavailableReason,
+    [property: Required, JsonRequired] string RecordedBy,
+    [property: Required, JsonRequired] string SourceReference,
+    [property: Required, JsonRequired] string Reason,
+    [property: Required, JsonRequired] DateTimeOffset RecordedAtUtc);
+
 public sealed record BusinessConsoleErpSourceDocumentRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -3397,7 +3601,9 @@ public sealed record BusinessConsoleRecordErpPurchaseReceiptRequest(
     string? PurchaseReceiptNo,
     string PurchaseOrderNo,
     IReadOnlyCollection<BusinessConsoleErpPurchaseReceiptLine> Lines,
-    string? IdempotencyKey = null);
+    string? IdempotencyKey = null,
+    [property: JsonConverter(typeof(PurchaseReceiptInventoryPostingRouteJsonConverter))]
+    PurchaseReceiptInventoryPostingRoute InventoryPostingRoute = PurchaseReceiptInventoryPostingRoute.Direct);
 
 public sealed record BusinessConsoleErpPurchaseReceiptLine(
     string PurchaseOrderLineNo,
@@ -3702,6 +3908,8 @@ public sealed record BusinessConsoleErpJournalVoucherListResponse(
     int Total);
 
 public sealed record BusinessConsoleErpJournalVoucherItem(
+    // #3278 / S3：透传 Erp 读面 JournalVoucherListItem.Id（聚合根 Guid 的字符串形式），供前端做稳定 row-key。
+    string Id,
     string VoucherNo,
     DateOnly PostingDate,
     string Status,
@@ -4181,7 +4389,8 @@ public sealed record BusinessConsoleCreateBarcodePrintBatchRequest(
     string SourceDocumentId,
     string IdempotencyKey,
     string LabelValuesJson,
-    int RequestedQuantity);
+    int RequestedQuantity,
+    [property: MinLength(1), MaxLength(256), JsonSchemaExtensionData("minLength", 1)] string? ReportIntentFingerprint = null);
 
 public sealed record BusinessConsoleCreateBarcodePrintBatchResponse(string PrintBatchId);
 
@@ -4222,14 +4431,27 @@ public sealed record BusinessConsoleBarcodePrintBatchDetail(
     string SourceDocumentType,
     string SourceDocumentId,
     string IdempotencyKey,
+    string ReportIntentKey,
+    [property: Required, JsonRequired, JsonSchemaExtensionData("nullable", true)] string? ReportIntentFingerprint,
     int RequestedQuantity,
     string Status,
+    string? PrinterId,
+    string? PrintJobId,
+    string? FailureReason,
+    string? ProductionReportId,
+    string? ProductionReportNo,
     IReadOnlyCollection<BusinessConsoleBarcodePrintItemDetail> Items);
 
 public sealed record BusinessConsoleBarcodePrintItemDetail(
     int SequenceNo,
     string LabelValue,
-    string? FileId);
+    string? FileId,
+    string Status,
+    string? VoidReason,
+    string? SerialNumber,
+    string? LotNo,
+    string? Gtin,
+    string? EpcUri);
 
 public sealed record BusinessConsoleRecordBarcodeScanRequest(
     string OrganizationId,
@@ -4601,7 +4823,10 @@ public sealed record BusinessConsoleRecordProductionReportRequest(
     string? ScrapReasonCode = null,
     string? DefectRecordNo = null,
     string? ProducedLotNo = null,
-    string? SerialNo = null);
+    string? SerialNo = null,
+    string SerialTrackingPolicy = "none",
+    IReadOnlyCollection<string>? SerialNumbers = null,
+    string? LabelTemplateId = null);
 
 public sealed record BusinessConsoleConsumedMaterialLotInput(
     string MaterialId,
@@ -4612,7 +4837,11 @@ public sealed record BusinessConsoleConsumedMaterialLotInput(
 public sealed record BusinessConsoleRecordProductionReportResponse(
     string ProductionReportId,
     string ReportNo,
-    BusinessConsoleOperationReceipt? OperationReceipt = null);
+    IReadOnlyCollection<string> SerialNumbers,
+    BusinessConsoleOperationReceipt? OperationReceipt = null,
+    string? PrintBatchId = null,
+    string? PrintStatus = null,
+    bool PrintingPreparationPending = false);
 
 public sealed record BusinessConsoleMesContextRequest(
     string OrganizationId,
@@ -4756,7 +4985,6 @@ public sealed record BusinessConsoleMesReleaseWorkOrderRequest(
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
     bool ConfirmWarnings,
-    string IdempotencyKey,
     [property: QueryParam] string? ScopeKind = null,
     [property: QueryParam] string? ScopeId = null);
 
@@ -4943,8 +5171,7 @@ public sealed record BusinessConsoleMesConfirmLineSideReceiptRequest(
     [property: QueryParam] string EnvironmentId,
     string? MaterialLotId,
     decimal? ReceivedQuantity,
-    IReadOnlyCollection<string>? EvidenceFileIds,
-    string IdempotencyKey);
+    IReadOnlyCollection<string>? EvidenceFileIds);
 
 public sealed record BusinessConsoleMesReturnLineSideMaterialRequest(
     [property: RouteParam] string RequestId,
@@ -4993,7 +5220,6 @@ public sealed record BusinessConsoleMesAssignDispatchTaskForwardRequest(
     string? AssignedUserName,
     string? DeviceAssetId,
     string? ShiftId,
-    string IdempotencyKey,
     string? TeamId = null,
     string? TeamName = null,
     IReadOnlyCollection<BusinessConsoleMesDispatchParticipantForwardInput>? Participants = null);
@@ -5005,7 +5231,6 @@ public sealed record BusinessConsoleMesAssignDispatchTaskRequest(
     string? AssignedUserId,
     string? DeviceAssetId,
     string? ShiftId,
-    string IdempotencyKey,
     IReadOnlyCollection<BusinessConsoleMesDispatchParticipantRequest>? Participants = null);
 
 public sealed record BusinessConsoleMesClaimOperationTaskRequest(
@@ -5141,7 +5366,8 @@ public sealed record BusinessConsoleMesProductionReportDetail(
     [property: Description("对应工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
     decimal? OperationActualMachineHours = null,
     [property: Description("提交本条报工的操作人引用；升级前的历史报工为 null。")]
-    string? ReportedBy = null);
+    string? ReportedBy = null,
+    IReadOnlyCollection<string>? SerialNumbers = null);
 
 public sealed record BusinessConsoleMesConsumedMaterialLot(
     string MaterialId,
@@ -5196,7 +5422,8 @@ public sealed record BusinessConsoleMesProductionReportRow(
     [property: Description("对应工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
     decimal? OperationActualMachineHours = null,
     [property: Description("提交本条报工的操作人引用；升级前的历史报工为 null。")]
-    string? ReportedBy = null);
+    string? ReportedBy = null,
+    IReadOnlyCollection<string>? SerialNumbers = null);
 
 public sealed record BusinessConsoleMesRecordDefectRequest(
     string OrganizationId,
@@ -5435,8 +5662,7 @@ public sealed record BusinessConsoleMesRecoverDowntimeEventRequest(
     [property: RouteParam] string DowntimeEventId,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
-    DateTimeOffset RecoveredAtUtc,
-    string IdempotencyKey);
+    DateTimeOffset RecoveredAtUtc);
 
 /// <summary>历史规则排程结果列表请求（「规则排程」页的历史读面）。</summary>
 public sealed record BusinessConsoleMesScheduleResultListRequest(
@@ -5497,12 +5723,13 @@ public sealed record BusinessConsoleMesShiftHandoverUnfinishedWorkOrder(
 /// 随交班一并提交的 FileStorage 附件引用；文件名、内容类型与大小是交班时点快照。
 /// <c>FileId</c> 是 FileStorage 文件 id，字节本身按 <c>shift-handover-photo</c> 用途存在 FileStorage，不落在 MES。
 ///
-/// 取回通路目前两端都还没有：BusinessGateway 没有任何上传面（business-console 契约的 files 组只有
-/// <c>/files/{fileId}/download-grants</c> 与 <c>/files/download-grants/{downloadGrantId}/content</c> 两条），
-/// 而其中的下载授权端点 <c>POST /api/business-console/v1/files/{fileId}/download-grants</c> 门在
-/// <c>business.engineering.documents.read</c>（ResourceType <c>engineering-sop-file</c>），交接班读者持
-/// <c>business.mes.handovers.read</c> 换不出下载地址。因此本记录当前只是契约与生成物，
-/// 生产上还走不通；补齐这两个门面见 #3085，它是 #2784 的开工前置条件，不在 #2782 范围内。
+/// 两端通路见 <c>/api/business-console/v1/files/shift-handover-attachments/**</c>（#3085）：
+/// 上传走 <c>business.mes.handovers.manage</c> 的 tus 会话 + <c>HEAD</c>/<c>PATCH</c> + complete，
+/// complete 直接返回本记录；下载走 <c>business.mes.handovers.read</c> 的
+/// <c>GET .../{fileId}/content</c> 单跳，网关在取字节前复核目标文件用途必须是
+/// <c>shift-handover-photo</c>，且不把 FileStorage 的 download grant id 交给调用方。
+/// SOP 那条 <c>/files/{fileId}/download-grants</c> 仍只认 <c>business.engineering.documents.read</c>，
+/// 交接班读者不经由它取字节。
 /// </summary>
 public sealed record BusinessConsoleMesShiftHandoverAttachment(
     string FileId,
@@ -5575,8 +5802,7 @@ public sealed record BusinessConsoleMesCreateShiftHandoverForwardRequest(
 public sealed record BusinessConsoleMesAcceptShiftHandoverRequest(
     [property: RouteParam] string HandoverId,
     [property: QueryParam] string OrganizationId,
-    [property: QueryParam] string EnvironmentId,
-    string IdempotencyKey);
+    [property: QueryParam] string EnvironmentId);
 
 /// <summary>
 /// 转发给 MES 的接班载荷：接班人身份同样由 Gateway 从认证 principal 注入。
@@ -5584,7 +5810,6 @@ public sealed record BusinessConsoleMesAcceptShiftHandoverRequest(
 public sealed record BusinessConsoleMesAcceptShiftHandoverForwardRequest(
     string OrganizationId,
     string EnvironmentId,
-    string IdempotencyKey,
     string? IncomingUserId,
     string? IncomingUserName);
 

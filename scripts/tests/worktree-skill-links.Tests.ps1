@@ -37,14 +37,27 @@ function Get-LinkLayerSnapshot([string] $Root) {
     return Get-NervStringsSorted -Values @($lines) -Comparer ([System.StringComparer]::Ordinal)
 }
 
+function New-SkillDirectory([string] $Parent, [string] $Name, [string] $Body) {
+    $dir = Join-Path $Parent $Name
+    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $dir 'SKILL.md') -Value $Body -NoNewline
+}
+
+function New-PayloadSkill([string] $Root, [string] $Name, [string] $Body = '') {
+    $text = if ([string]::IsNullOrEmpty($Body)) { "name: $Name" } else { $Body }
+    New-SkillDirectory -Parent (Join-Path $Root '.agents/skills') -Name $Name -Body $text
+}
+
+function New-SourceSkill([string] $Root, [string] $Name, [string] $Body) {
+    New-SkillDirectory -Parent (Join-Path $Root 'skills') -Name $Name -Body $Body
+}
+
 function New-Fixture([string[]] $PayloadNames, [string[]] $StrayFiles = @()) {
     $root = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-skill-links-" + [guid]::NewGuid().ToString('N'))
     $payloadRoot = Join-Path $root '.agents/skills'
     New-Item -ItemType Directory -Path $payloadRoot -Force | Out-Null
     foreach ($name in $PayloadNames) {
-        $dir = Join-Path $payloadRoot $name
-        New-Item -ItemType Directory -Path $dir -Force | Out-Null
-        Set-Content -LiteralPath (Join-Path $dir 'SKILL.md') -Value "name: $name" -NoNewline
+        New-PayloadSkill -Root $root -Name $name
     }
     foreach ($file in $StrayFiles) {
         Set-Content -LiteralPath (Join-Path $payloadRoot $file) -Value 'stray' -NoNewline
@@ -151,8 +164,119 @@ try {
         throw 'Test-NervSkillsPayloadPresent must report false when .agents/skills is absent.'
     }
 
-    # 接线：库对、测试绿，不代表调用点还在。按 AST 断言 setup-worktree.ps1 真的调用了本库，
-    # 而不是文本匹配——注释掉的调用不产生 CommandAst，因而会被这条杀掉。
+    # 源→安装层的发布契约。不单独调用 Sync-NervRepoSkillPayload：**在什么条件下、以什么顺序**
+    # 发布本身就是契约——在「payload 已存在」的 else 分支里发布就是这两票的原缺陷，先重建链接层
+    # 再发布则让源里新增的技能拿不到 agent 入口。只有走 Initialize-NervWorktreeSkills 的真实控制
+    # 流才检验得到这两条，直接调库函数对两者都无鉴别力。
+    $installTargets = [System.Collections.Generic.List[string]]::new()
+    $recordOnlyInstall = { param([string] $target) $installTargets.Add($target) }
+
+    # 已播种的工作树：thirdparty 只有 payload、没有 skills/ 源；alpha 两边都有但 payload 正文
+    # 已过期；newskill 是源里新增、payload 里还没有的技能。
+    $seeded = New-Fixture -PayloadNames @('alpha', 'thirdparty')
+    $fixtures.Add($seeded)
+    New-SourceSkill -Root $seeded -Name 'alpha' -Body 'name: alpha edited'
+    New-SourceSkill -Root $seeded -Name 'newskill' -Body 'name: newskill'
+    # 源里已删除的文件必须一并消失，否则安装层会累积出源里没有的判据。
+    Set-Content -LiteralPath (Join-Path $seeded '.agents/skills/alpha/OBSOLETE.md') -Value 'stale' -NoNewline
+
+    $seededMain = New-Fixture -PayloadNames @('thirdparty')
+    $fixtures.Add($seededMain)
+
+    Initialize-NervWorktreeSkills -RepoRoot $seeded -MainRoot $seededMain -InstallAction $recordOnlyInstall
+
+    $published = Get-Content -LiteralPath (Join-Path $seeded '.claude/skills/alpha/SKILL.md') -Raw
+    if (-not [string]::Equals($published, 'name: alpha edited', [StringComparison]::Ordinal)) {
+        throw "An already-seeded worktree must reach the agent as its tracked source, got '$published'."
+    }
+    $newSkillPath = Join-Path $seeded '.claude/skills/newskill/SKILL.md'
+    if (-not (Test-Path -LiteralPath $newSkillPath)) {
+        throw 'A skill first published from the tracked source must be reachable through the link layer.'
+    }
+    $newSkill = Get-Content -LiteralPath $newSkillPath -Raw
+    if (-not [string]::Equals($newSkill, 'name: newskill', [StringComparison]::Ordinal)) {
+        throw "A newly published skill resolved through the link layer to unexpected content: '$newSkill'."
+    }
+    if (Test-Path -LiteralPath (Join-Path $seeded '.agents/skills/alpha/OBSOLETE.md')) {
+        throw 'Republishing must drop payload files that no longer exist in the tracked source.'
+    }
+
+    # 只发布仓库里有源的技能：第三方 payload 归 skills-lock.json，删掉它们会让 agent 静默少一批技能。
+    $thirdPartyPath = Join-Path $seeded '.agents/skills/thirdparty/SKILL.md'
+    if (-not (Test-Path -LiteralPath $thirdPartyPath)) {
+        throw 'Republishing repo-tracked skills must not delete a payload without a tracked source.'
+    }
+    $thirdParty = Get-Content -LiteralPath $thirdPartyPath -Raw
+    if (-not [string]::Equals($thirdParty, 'name: thirdparty', [StringComparison]::Ordinal)) {
+        throw "Republishing repo-tracked skills must leave a payload without a tracked source untouched, got '$thirdParty'."
+    }
+    if (@($installTargets).Count -ne 0) {
+        throw "A worktree that already holds the third-party payload must not re-run the lock-driven install; it ran for: $(@($installTargets) -join ', ')."
+    }
+
+    # 安装/镜像门只看 skills-lock.json 拥有的那部分 payload。仓库自有技能无条件写进同一个目录，
+    # 把它们算进门里，主树首次安装失败后这道门就永远判 present——安装与镜像都不再触发，
+    # skills-lock.json 里的第三方技能静默缺失且无任何红。
+    $fresh = New-Fixture -PayloadNames @()
+    $fixtures.Add($fresh)
+    New-SourceSkill -Root $fresh -Name 'alpha' -Body 'name: alpha'
+    $freshMain = New-Fixture -PayloadNames @()
+    $fixtures.Add($freshMain)
+
+    # 第一次会话：主树的安装跑了但什么也没产出（本机 npx 失败只 Write-Warning，不中止）。
+    Initialize-NervWorktreeSkills -RepoRoot $fresh -MainRoot $freshMain -InstallAction $recordOnlyInstall
+    if (@($installTargets).Count -ne 1) {
+        throw "A worktree without any third-party payload must attempt the main-worktree install exactly once, got $(@($installTargets).Count)."
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $fresh '.agents/skills/alpha/SKILL.md'))) {
+        throw 'Repo-tracked skills must be published even when the third-party install produced nothing.'
+    }
+    if (Test-NervSkillsPayloadPresent -RepoRoot $fresh) {
+        throw 'Publishing repo-tracked skills must not satisfy the gate that guards the skills-lock.json install and mirror.'
+    }
+
+    # 第二次会话：安装这次成功了，第三方 payload 必须真的落到这棵树上。
+    $seedingInstall = {
+        param([string] $target)
+        $installTargets.Add($target)
+        New-PayloadSkill -Root $target -Name 'vendor'
+    }
+    Initialize-NervWorktreeSkills -RepoRoot $fresh -MainRoot $freshMain -InstallAction $seedingInstall
+    $vendorPath = Join-Path $fresh '.agents/skills/vendor/SKILL.md'
+    if (-not (Test-Path -LiteralPath $vendorPath)) {
+        throw 'A worktree holding only repo-tracked skills must still receive the third-party payload on a later session.'
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $fresh '.claude/skills/vendor/SKILL.md'))) {
+        throw 'A mirrored third-party payload must be reachable through the link layer.'
+    }
+
+    # 镜像只搬 skills-lock.json 拥有的那部分。主树的 payload 里也有仓库自有技能——它每次会话
+    # 都被重新发布进去——但把它们一并拷过来在**同名**时会被本树的发布覆盖掉，零差异，所以
+    # 上面那些夹具鉴别不出这条。有差异的是**只有主树那条分支才有源**的技能：本树的 skills/ 里
+    # 没有它，发布步骤根本不会遍历到它，于是它会作为一份**在本树没有任何源**的 payload 留下来
+    # 被 agent 加载。这也是「谁归 lock、谁归仓库」这条划分必须由门与镜像同一份表达的原因。
+    $mirrorTarget = New-Fixture -PayloadNames @()
+    $fixtures.Add($mirrorTarget)
+    New-SourceSkill -Root $mirrorTarget -Name 'alpha' -Body 'name: alpha here'
+
+    $mirrorMain = New-Fixture -PayloadNames @('vendor', 'alpha', 'legacy')
+    $fixtures.Add($mirrorMain)
+    # 主树对 alpha 与 legacy 都有源；alpha 与本树同名，legacy 只有主树有。
+    New-SourceSkill -Root $mirrorMain -Name 'alpha' -Body 'name: alpha main'
+    New-SourceSkill -Root $mirrorMain -Name 'legacy' -Body 'name: legacy main'
+
+    Initialize-NervWorktreeSkills -RepoRoot $mirrorTarget -MainRoot $mirrorMain -InstallAction $recordOnlyInstall
+
+    if (Test-Path -LiteralPath (Join-Path $mirrorTarget '.agents/skills/legacy')) {
+        throw 'The mirror must carry only what this worktree cannot provide itself; a skill that is repo-tracked in the main worktree has no source in this worktree and nothing would ever refresh or remove it.'
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $mirrorTarget '.agents/skills/vendor/SKILL.md'))) {
+        throw 'Filtering repo-tracked skills out of the mirror must still carry the payload only the main worktree can supply.'
+    }
+
+    # 接线：库对、测试绿，不代表调用点还在。按 AST 断言 setup-worktree.ps1 真的调用了本库的
+    # 入口，而不是文本匹配——注释掉的调用不产生 CommandAst，因而会被这条杀掉。条件与顺序由上面
+    # 的控制流用例承重，这里只管调用点是否还在。
     $setupPath = Join-Path $repoRoot 'scripts/setup-worktree.ps1'
     $parseErrors = $null
     $setupAst = [System.Management.Automation.Language.Parser]::ParseFile($setupPath, [ref] $null, [ref] $parseErrors)
@@ -170,9 +294,9 @@ try {
         $commandName = $node.GetCommandName()
         if ($null -ne $commandName) { [void]$invokedNames.Add($commandName) }
     }
-    foreach ($required in @('New-NervSkillLinkLayer', 'Test-NervSkillsPayloadPresent')) {
+    foreach ($required in @('Initialize-NervWorktreeSkills')) {
         if (-not $invokedNames.Contains($required)) {
-            throw "scripts/setup-worktree.ps1 must invoke '$required'; the link layer is otherwise never built for a real worktree."
+            throw "scripts/setup-worktree.ps1 must invoke '$required'; skills are otherwise never brought up for a real worktree."
         }
     }
 

@@ -48,7 +48,7 @@ public sealed class CreateStockCountTaskCommandValidator : AbstractValidator<Cre
     {
         RuleFor(x => x.OrganizationId).RequiredInventoryCode(100);
         RuleFor(x => x.EnvironmentId).RequiredInventoryCode(100);
-        RuleFor(x => x.CountTaskCode).RequiredInventoryCode(100);
+        RuleFor(x => x.CountTaskCode).RequiredInventoryCode(CreateStockCountTaskIdempotency.CountTaskCodeMaxLength);
         RuleFor(x => x.SkuCode).RequiredInventoryCode(100);
         RuleFor(x => x.UomCode).RequiredInventoryCode(50);
         RuleFor(x => x.SiteCode).RequiredInventoryCode(100);
@@ -248,10 +248,16 @@ public sealed class CreateStockCountTaskUniqueConflictBehavior<TRequest, TRespon
 
 internal static class CreateStockCountTaskIdempotency
 {
+    /// <summary>未显式给幂等键时，用盘点单号派生的键前缀。</summary>
+    internal const string CountCodePrefix = "count-code:";
+
+    /// <summary>盘点单号上界。它与 <see cref="CountCodePrefix"/> 的和必须留在幂等键列宽内（#3176 S6）。</summary>
+    internal const int CountTaskCodeMaxLength = 100;
+
     public static string Resolve(CreateStockCountTaskCommand request)
     {
         return string.IsNullOrWhiteSpace(request.IdempotencyKey)
-            ? $"count-code:{request.CountTaskCode.Trim()}"
+            ? CountCodePrefix + request.CountTaskCode.Trim()
             : request.IdempotencyKey.Trim();
     }
 }

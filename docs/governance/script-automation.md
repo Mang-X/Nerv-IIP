@@ -82,6 +82,51 @@
 
 PowerShell variable binding 的完整 AST 判定、已知静态残余和 mutation matrix 由 `scripts/lib/ScriptVariableBinding.ps1`、checker 与 `scripts/tests/script-governance-scan-boundary.Tests.ps1` 生产。Governance 不复制逐轮审计出来的 binding 拼写清单；改变机器覆盖面时必须同步机器契约与对应测试。
 
+## `scripts/tests` 的 CI 选取闭合
+
+`scripts/tests/*.Tests.ps1` 被哪个 job 执行，是**算出来的补集**，不是手写名单：
+
+```
+发现式 runner 选中 = glob(scripts/tests/*.Tests.ps1) − 工作流 run: 体点名 − 显式出界登记
+```
+
+规则：
+
+1. 新增契约测试的默认归宿是「被发现式 runner 执行」。忘记登记的后果是**被跑**，不是静默不跑；因此不存在「写在那里、绿着、从未执行过」的默认状态。
+2. 「被工作流点名」由 `.github/workflows/**` 每个 step 的 `run` 体推导，口径必须覆盖多行 `run: |` 块；只出现在注释里不算选中。
+3. 要让某个文件不被 runner 执行，必须写进出界登记。种类是**闭集**，三者互不可替代，字段要求各不相同，因此填错种类一定撞上另一种的必填/禁填：
+
+   | 种类 | 含义 | 必填 | 禁填 |
+   | --- | --- | --- | --- |
+   | `nested` | 由另一个**已被 CI 选中**的测试嵌套执行 | `Parent`（其源码须真的引用该子测试） | `Tracking`、`Requirement` |
+   | `excluded` | 该执行面**永久**跑不起来（真实外部依赖或必填参数） | `Requirement`（须出现在目标文件自己的 `Requires:` header 里） | `Tracking`、`Parent` |
+   | `quarantine` | 应当跑、当前红、修它不属于本票，**有期限** | `Tracking`（`#<issue>`） | `Requirement`、`Parent` |
+
+   出界不等于无需覆盖。`quarantine` 的解除方式是**删掉那一行登记**，该文件立即回到 runner 选中集合，不需要改 runner 源码。
+4. 登记面自身必须可证伪：目标文件不存在、理由为空、种类不在闭集内、重复登记、嵌套条目的父测试不在 CI 上或其源码并未引用该子测试、登记项同时又被工作流点名、quarantine 无票号或票号形态不对、excluded 未给 Requirement 或 Requirement 不在目标文件声明的 `Requires:` 里——任一情形都 fail closed。
+5. 扫描面塌掉（工作流目录缺失、零个工作流文件、零个测试文件、推导出的点名集合为空）必须报错，不得被读成「没有遗漏」。
+
+### ⚠️ 覆盖边界：声明多少就只断言多少
+
+门禁校验的是**种类闭集、字段必填/禁填矩阵、目标存在性、父子引用真实性、票号形态、Requirement 的出处**。以下各项**明确不在覆盖面内**，不要读成已被机器守住：
+
+| 缺口 | 为什么不关 |
+| --- | --- |
+| 一条**干净的无票 `excluded`** 可以静默摘掉任意测试 | `Requirement` 是子串匹配，且 61 个测试里 59 个在自己的 `Requires:` 里声明了 `PowerShell 7`，`Requires:` 段内容本身也无门禁。该校验只把豁免理由从自由散文压成一条**具名、可被逐字反驳**的引用，不是一道拦阻门。「该依赖是否真的不满足」属于人工复审 |
+| **issue 是否存在 / 是否已关闭** | 需联网查 GitHub，该 job 无 token，也不应为一条注释性字段引入网络依赖与非确定性。解除由跟踪票自身的验收条目驱动 |
+| **嵌套**块注释 `<# 外 <# 内 #> 名字 #>` | 非贪婪匹配停在第一个 `#>`，`名字 #>` 作为正文残留而被记成选中（实测确认）。正确处理嵌套要一个带嵌套计数的扫描器，还得同时处理 here-string 与引号内的 `<#` —— #3176 / PR #3214 判定永不收敛的那条路。可抵赖性也低：嵌套块注释在 diff 里不像无辜写法 |
+| **不可判定的非执行提及**：`if: false` 的 step 点名；在 PR 上从不触发的工作流（如 nightly，`on:` 只有 schedule + dispatch）里点名；`: ./x`、引号字符串里的名字、here-doc 体内的名字、`false && ./x` | 要判它们就得同时实现 GitHub 表达式求值、事件触发模型和一个 shell 语义分析器，同属永不收敛那条路。与已关掉的注释形态的关键区别是**在 diff 里一眼就是错的、不可抵赖** |
+| 改 runner 自己的 CI step、或在 runner 里插 `exit 0` | 自指缴械面：任何护栏都能被改护栏本身缴械 |
+| 伪造父测试并在其源码加一行引用 | 要挡住就得证明父测试真的执行了子测试，成本远超收益 |
+
+**已关的是 run 体内 `#` 系注释的四种形态**：整行 `#`、**行尾 `#`**、`<# … #>` 单行、`<# … #>` 多行（嵌套除外，见上表）。读 `run` 时先去块注释、再逐行截掉 `#` 之后的部分。⚠️ 措辞要准：**不是**「run 体内的注释都关掉了」。
+
+关这四种而不关上表其余项的判据是**可抵赖性**：整行注释在 diff 里是新增一行，行尾注释只是**修改一行**，`<# … #>` 在 `shell: pwsh` 的 step 里本就是合法写法 —— 三者都能伪装成无辜注释；上表其余写法在 diff 里一眼就是错的。过滤对当前仓库**行为中性**（加过滤前后成员清单逐字相同），且失败方向安全：截断只会**减少**命中 ⇒ 文件落回 runner ⇒ 被跑。
+
+`quarantine` 与 [`testing/evidence.md`](testing/evidence.md) 的 `illegal-quarantine` 是**两套不同的隔离**：那一页管的是测试运行时的隔离元数据（含「已到期」必须 fail-closed），本页管的是**文件是否被选进执行面**。本页的 `quarantine` **没有期限字段、结构上不会到期**，靠的是跟踪票自身的验收条目销账；要把「到期」也机器化，得先决定期限从哪来（票状态需联网、硬编码日期会腐烂），那是另一张票的事。
+
+精确实现与失败诊断由 `scripts/lib/ScriptTestSelection.ps1`、`scripts/run-script-contract-tests.ps1` 与 `scripts/tests/script-test-selection.Tests.ps1` 生产；本页不维护逐文件名单、数量或出界条目表。
+
 ## 标识符比较
 
 脚本中表示身份或治理契约的名称、路径、SHA、lane、status、code、key、namespace 等字符串必须使用明确的 ordinal 语义，不能依赖 PowerShell/.NET 默认 culture-aware 比较或排序。

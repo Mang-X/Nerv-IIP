@@ -96,6 +96,41 @@ public sealed class SchedulingPlanReleasedHandlerTests
         Assert.Equal("mes.schedulePlanReleased.invalidOperationIdentity", deadLetter.FailureCode);
     }
 
+    /// <summary>
+    /// #3112：工序不存在时 handler 会补建一条。补建的工序必须带**工单真实 SKU**——
+    /// 这里以前不传 SKU，<c>OperationTask</c> 于是把 <c>SkuCode</c> 回落成工单号，
+    /// 该 junk 值随完工事件出境，与 <c>WorkOrderReleased.SkuCode</c>（走 <c>WorkOrder.SkuId</c>）不同源，
+    /// 被 Quality 的一致性守卫整封进死信。
+    /// </summary>
+    [Fact]
+    public async Task SchedulePlanReleasedHandler_BackfilledOperationTaskCarriesTheWorkOrderSku()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.WorkOrders.Add(WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-APS-001",
+            "FG-APS",
+            "PV-001",
+            1m,
+            10,
+            DateTimeOffset.Parse("2026-06-02T16:00:00Z"),
+            "PCS",
+            null));
+        await dbContext.SaveChangesAsync();
+        // 刻意不预置 OP-10：走 task is null 的补建分支。
+        var handler = CreateReleasedHandler(dbContext, new InMemoryIntegrationEventDeadLetterStore());
+
+        await handler.HandleAsync(CreateReleasedEvent(), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var task = await dbContext.OperationTasks.SingleAsync(x => x.OperationTaskIdValue == "OP-10");
+        Assert.Equal("FG-APS", task.SkuCode);
+        // 回落时这里会是 "WO-APS-001"。断言写成"不等于工单号"是为了让回落本身不可通过，
+        // 而不是只钉一个恰好正确的字面量。
+        Assert.NotEqual(task.WorkOrderId, task.SkuCode);
+    }
+
     [Fact]
     public async Task SchedulePlanReleasedHandler_UpsertsAndAssignsMesOperationTasks()
     {
@@ -120,7 +155,8 @@ public sealed class SchedulingPlanReleasedHandlerTests
             "WC-OLD",
             [],
             DateTimeOffset.Parse("2026-06-01T08:00:00Z"),
-            TimeSpan.FromMinutes(30)));
+            TimeSpan.FromMinutes(30),
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
         var handler = CreateReleasedHandler(
             dbContext,
@@ -171,7 +207,8 @@ public sealed class SchedulingPlanReleasedHandlerTests
             DateTimeOffset.Parse("2026-06-01T08:00:00Z"),
             TimeSpan.FromMinutes(30),
             DateTimeOffset.Parse("2026-06-01T08:05:00Z"),
-            null);
+            null,
+            "SKU-001");
         task.Assign(
             "operator-001",
             "DEV-OLD-01",
@@ -232,7 +269,8 @@ public sealed class SchedulingPlanReleasedHandlerTests
             DateTimeOffset.Parse("2026-06-01T08:00:00Z"),
             TimeSpan.FromMinutes(30),
             DateTimeOffset.Parse("2026-06-01T08:05:00Z"),
-            null);
+            null,
+            "SKU-001");
         activeTask.Assign(
             "operator-001",
             "DEV-OLD-01",
@@ -248,7 +286,8 @@ public sealed class SchedulingPlanReleasedHandlerTests
             "WC-PACK-OLD",
             [],
             DateTimeOffset.Parse("2026-06-01T14:00:00Z"),
-            TimeSpan.FromMinutes(45)));
+            TimeSpan.FromMinutes(45),
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
         var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
         var handler = CreateReleasedHandler(
@@ -329,7 +368,8 @@ public sealed class SchedulingPlanReleasedHandlerTests
                 DateTimeOffset.Parse("2026-06-01T08:00:00Z"),
                 TimeSpan.FromMinutes(30),
                 DateTimeOffset.Parse("2026-06-01T08:05:00Z"),
-                null));
+                null,
+                "SKU-001"));
             await dbContext.SaveChangesAsync();
         }
 
@@ -400,7 +440,8 @@ public sealed class SchedulingPlanReleasedHandlerTests
                 DateTimeOffset.Parse("2026-06-01T08:00:00Z"),
                 TimeSpan.FromMinutes(30),
                 DateTimeOffset.Parse("2026-06-01T08:05:00Z"),
-                null));
+                null,
+                "SKU-001"));
             dbContext.OperationTasks.Add(OperationTask.Create(
                 "org-001",
                 "env-dev",
@@ -413,7 +454,8 @@ public sealed class SchedulingPlanReleasedHandlerTests
                 DateTimeOffset.Parse("2026-06-01T14:00:00Z"),
                 TimeSpan.FromMinutes(45),
                 DateTimeOffset.Parse("2026-06-01T14:05:00Z"),
-                null));
+                null,
+                "SKU-001"));
             await dbContext.SaveChangesAsync();
         }
 
@@ -543,7 +585,8 @@ public sealed class SchedulingPlanReleasedHandlerTests
                 "WC-OIL",
                 [],
                 DateTimeOffset.Parse("2026-06-01T12:00:00Z"),
-                TimeSpan.FromMinutes(90)));
+                TimeSpan.FromMinutes(90),
+                "SKU-001"));
             await dbContext.SaveChangesAsync();
         }
 
@@ -592,7 +635,8 @@ public sealed class SchedulingPlanReleasedHandlerTests
                 "WC-OIL",
                 [],
                 DateTimeOffset.Parse("2026-06-01T12:00:00Z"),
-                TimeSpan.FromMinutes(90));
+                TimeSpan.FromMinutes(90),
+                "SKU-001");
             task.MarkScheduleInvalidated("equipmentUnavailable");
             dbContext.OperationTasks.Add(task);
             await dbContext.SaveChangesAsync();
@@ -643,7 +687,8 @@ public sealed class SchedulingPlanReleasedHandlerTests
                 "WC-OIL",
                 [],
                 DateTimeOffset.Parse("2026-06-01T12:00:00Z"),
-                TimeSpan.FromMinutes(90));
+                TimeSpan.FromMinutes(90),
+                "SKU-001");
             task.Start(DateTimeOffset.Parse("2026-06-01T12:05:00Z"));
             if (status == OperationTaskLifecycleStatus.Paused)
             {
@@ -679,10 +724,12 @@ public sealed class SchedulingPlanReleasedHandlerTests
         dbContext.OperationTasks.Add(OperationTask.Create(
             "org-001", "env-dev", "WO-APS-001", "OP-10", OperationTaskLifecycleStatus.Completed,
             10, "WC-DONE", [], DateTimeOffset.Parse("2026-06-01T08:00:00Z"), TimeSpan.FromMinutes(30),
-            DateTimeOffset.Parse("2026-06-01T08:00:00Z"), DateTimeOffset.Parse("2026-06-01T08:30:00Z")));
+            DateTimeOffset.Parse("2026-06-01T08:00:00Z"), DateTimeOffset.Parse("2026-06-01T08:30:00Z"),
+            "SKU-001"));
         dbContext.OperationTasks.Add(OperationTask.Queue(
             "org-001", "env-dev", "WO-APS-001", "OP-20", 20, "WC-OLD", [],
-            DateTimeOffset.Parse("2026-06-01T09:00:00Z"), TimeSpan.FromMinutes(30)));
+            DateTimeOffset.Parse("2026-06-01T09:00:00Z"), TimeSpan.FromMinutes(30),
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
         var handler = CreateReleasedHandler(dbContext, deadLetters);
@@ -709,14 +756,16 @@ public sealed class SchedulingPlanReleasedHandlerTests
             DateTimeOffset.Parse("2026-06-02T16:00:00Z"), "PCS", null));
         var omittedLegacy = OperationTask.Queue(
             "org-001", "env-dev", "WO-APS-001", "OP-10", 10, "WC-OLD", [],
-            DateTimeOffset.Parse("2026-06-01T08:00:00Z"), TimeSpan.FromMinutes(30));
+            DateTimeOffset.Parse("2026-06-01T08:00:00Z"), TimeSpan.FromMinutes(30),
+            "SKU-001");
         omittedLegacy.ApplyScheduleAssignment(
             "WC-LEGACY", "DEV-LEGACY", DateTimeOffset.Parse("2026-06-01T08:00:00Z"),
             DateTimeOffset.Parse("2026-06-01T08:30:00Z"), DateTimeOffset.Parse("2026-06-01T07:00:00Z"));
         dbContext.OperationTasks.Add(omittedLegacy);
         dbContext.OperationTasks.Add(OperationTask.Queue(
             "org-001", "env-dev", "WO-APS-001", "OP-20", 20, "WC-OLD", [],
-            DateTimeOffset.Parse("2026-06-01T09:00:00Z"), TimeSpan.FromMinutes(30)));
+            DateTimeOffset.Parse("2026-06-01T09:00:00Z"), TimeSpan.FromMinutes(30),
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
 
         await CreateReleasedHandler(

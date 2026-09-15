@@ -31,7 +31,7 @@ const keyword2 = ref('')
 
 ## 基础用法
 
-`v-model` 绑定关键词，回车触发 `@search`。
+`v-model` 绑定关键词，回车触发 `@search`；关键词被清空（点清除按钮或退格删到空）也会补发一次 `@search`，携带空串。
 
 ```vue
 <NvSearchBar v-model="keyword" placeholder="搜索工单 / 物料 / 设备" />
@@ -39,7 +39,7 @@ const keyword2 = ref('')
 
 ## 可取消
 
-传 `cancelable`，聚焦时滑入「取消」按钮，点击触发 `@cancel`。
+传 `cancelable`，聚焦时滑入「取消」按钮，点击触发 `@cancel`。取消的语义是「退出搜索」而不是「空关键词检索」，它清空绑定值但**不**发 `@search`，收起还是重查由使用方在 `@cancel` 里自己决定。
 
 ```vue
 <NvSearchBar
@@ -59,9 +59,9 @@ const keyword2 = ref('')
 | `placeholder` | 占位文本           | `string`  | `'搜索'` |
 | `cancelable`  | 聚焦时显示取消按钮 | `boolean` | `false`  |
 
-| 事件     | 说明         | 回调参数          |
-| -------- | ------------ | ----------------- |
-| `search` | 回车确认搜索 | `(value: string)` |
-| `cancel` | 点击取消     | —                 |
+| 事件     | 说明                                     | 回调参数          |
+| -------- | ---------------------------------------- | ----------------- |
+| `search` | 回车确认搜索；关键词被清空时补发一次空串 | `(value: string)` |
+| `cancel` | 点击取消（不发 `search`）                | —                 |
 
 </MobileDoc>

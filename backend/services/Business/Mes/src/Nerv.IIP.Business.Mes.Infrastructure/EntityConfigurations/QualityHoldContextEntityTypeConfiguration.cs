@@ -16,7 +16,7 @@ public sealed class QualityHoldContextEntityTypeConfiguration : IEntityTypeConfi
         builder.Property(x => x.WorkOrderId).HasColumnName("work_order_id").IsRequired().HasMaxLength(100).HasComment("MES work order id affected by the inspection result.");
         builder.Property(x => x.OperationTaskId).HasColumnName("operation_task_id").HasMaxLength(100).HasComment("Optional MES operation task id affected by the inspection result.");
         builder.Property(x => x.SourceService).HasColumnName("source_service").IsRequired().HasMaxLength(100).HasComment("Source service referenced by the Quality inspection record.");
-        builder.Property(x => x.SourceDocumentId).HasColumnName("source_document_id").IsRequired().HasMaxLength(100).HasComment("Source document id referenced by the Quality inspection record.");
+        builder.Property(x => x.SourceDocumentId).HasColumnName("source_document_id").IsRequired().HasMaxLength(250).HasComment("Source document identity copied verbatim from the Quality inspection record; width matches the Quality producer column because first-article and periodic inspections carry a composite identity, not a bare MES work order or operation task id.");
         builder.Property(x => x.InspectionRecordId).HasColumnName("inspection_record_id").IsRequired().HasMaxLength(100).HasComment("Quality inspection record id that last updated this hold context.");
         builder.Property(x => x.InspectionPlanId).HasColumnName("inspection_plan_id").HasMaxLength(100).HasComment("Optional Quality inspection plan id used for the inspection result.");
         builder.Property(x => x.Result).HasColumnName("result").IsRequired().HasMaxLength(50).HasComment("Latest Quality inspection result for the MES execution context.");

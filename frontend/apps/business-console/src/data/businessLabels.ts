@@ -75,11 +75,6 @@ export const APPROVAL_DECISION_LABELS: Readonly<Record<string, string>> = {
  * unrestricted / quality / restricted / blocked——写入时 Normalize，读面回的必是其一。
  * 别名（qualified/available → unrestricted，inspection/quality-inspection → quality，
  * conditional-release → restricted，rejected → blocked）一并登记，供直接展示别名的场合兜底。
- *
- * `quarantine` 是**质量域**的说法：`InspectionRecord.StockReleaseDimension.SourceQualityStatus`
- * 存的就是它（`Quality/.../Seed/WorldHistorySeedService.cs:32`），表示「已进质量冻结库位、等判定」。
- * 质量域这条路径不走 Inventory 的 Normalize，所以它不在上面那四个规范值里，但确实会上屏。
- * 两个域对同一语义用了不同码值，属跨域词汇不一致，已登记为后端缺口——在它统一之前这里必须收着。
  */
 export const QUALITY_STATUS_LABELS: Readonly<Record<string, string>> = {
   unrestricted: '非限制使用',
@@ -92,8 +87,6 @@ export const QUALITY_STATUS_LABELS: Readonly<Record<string, string>> = {
   'conditional-release': '条件放行',
   blocked: '冻结',
   rejected: '已拒收',
-  // 质量域专有（见上方说明）；译「隔离」而非「检验隔离」，避免与 quality=待检 混淆。
-  quarantine: '隔离',
 }
 
 /**

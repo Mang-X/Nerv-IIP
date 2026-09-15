@@ -12,10 +12,12 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Time.Testing;
 using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.FileStorage.Infrastructure;
+using Nerv.IIP.FileStorage.Infrastructure.Records;
 using Nerv.IIP.FileStorage.Web.Application.Files;
 using Nerv.IIP.FileStorage.Web.Application.Files.Tus;
 using Nerv.IIP.FileStorage.Web.Application.Files.UploadProviders;
 using Nerv.IIP.ServiceAuth;
+using FileStorageFileStatus = Nerv.IIP.FileStorage.Domain.FileStorageFileStatus;
 
 namespace Nerv.IIP.FileStorage.Web.Tests;
 
@@ -41,20 +43,57 @@ public sealed class FileStorageTusProviderTests
     [Fact]
     public async Task CreateUploadSession_WithTusConfiguration_ReturnsTusUploadInstructions()
     {
-        await using var factory = CreateFactoryWithTusProvider();
+        var rootPath = CreateTempDirectory();
+        try
+        {
+            await using var factory = CreateFactoryWithTusProvider(rootPath);
+            var client = CreateInternalServiceClient(factory);
+
+            var response = await client.PostAsJsonAsync("/api/files/v1/upload-sessions", CreateUploadRequest());
+
+            response.EnsureSuccessStatusCode();
+            var created = await response.Content.ReadFromJsonAsync<CreateUploadSessionResponse>();
+            Assert.NotNull(created);
+            Assert.Equal("tus", created.Provider);
+            Assert.Equal("tus", created.UploadMode);
+            Assert.Equal($"/api/files/v1/tus/{created.UploadSessionId}", created.Upload.Url);
+            Assert.Equal("tus", created.Upload.Headers["x-nerv-upload-mode"]);
+            Assert.DoesNotContain(created.Upload.Headers, header => header.Key.Contains("object", StringComparison.OrdinalIgnoreCase));
+            AssertObjectKeyIsNotExposed(created);
+        }
+        finally
+        {
+            DeleteTempDirectory(rootPath);
+        }
+    }
+
+    /// <summary>
+    /// server-proxy 部署没有本地字节面：生产注册的提交存储报告“最终存储动作从未开始”，complete 返回 503 且会话回到 open。
+    /// 这是 provider 切换对既有 server-proxy 部署“行为不变”的唯一行为承担。
+    /// </summary>
+    [Fact]
+    public async Task CompleteUploadSession_ServerProxyOnProductionCommitStorage_ReturnsServiceUnavailableAndReopensSession()
+    {
+        await using var factory = new FileStorageWebApplicationFactory();
         var client = CreateInternalServiceClient(factory);
+        var createResponse = await client.PostAsJsonAsync("/api/files/v1/upload-sessions", CreateUploadRequest());
+        createResponse.EnsureSuccessStatusCode();
+        var created = (await createResponse.Content.ReadFromJsonAsync<CreateUploadSessionResponse>())!;
+        Assert.Equal("server-proxy", created.Provider);
 
-        var response = await client.PostAsJsonAsync("/api/files/v1/upload-sessions", CreateUploadRequest());
+        var completeResponse = await client.PostAsJsonAsync(
+            $"/api/files/v1/upload-sessions/{created.UploadSessionId}/complete",
+            new CompleteUploadSessionRequest("org-001", "prod", "application-package", "sha256:test", 4096));
 
-        response.EnsureSuccessStatusCode();
-        var created = await response.Content.ReadFromJsonAsync<CreateUploadSessionResponse>();
-        Assert.NotNull(created);
-        Assert.Equal("tus", created.Provider);
-        Assert.Equal("tus", created.UploadMode);
-        Assert.Equal($"/api/files/v1/tus/{created.UploadSessionId}", created.Upload.Url);
-        Assert.Equal("tus", created.Upload.Headers["x-nerv-upload-mode"]);
-        Assert.DoesNotContain(created.Upload.Headers, header => header.Key.Contains("object", StringComparison.OrdinalIgnoreCase));
-        AssertObjectKeyIsNotExposed(created);
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, (int)completeResponse.StatusCode);
+        Assert.Contains("最终存储提交暂不可用", await completeResponse.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        using var scope = factory.Services.CreateScope();
+        var session = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().UploadSessions
+            .SingleAsync(x => x.UploadSessionId == created.UploadSessionId);
+        // 承重的是下面这条状态断言，不是上面的 503：删掉 TryGet 分支后会走 NRE → RetryableUnavailable，
+        // 状态码仍是 503，只有「会话回到 open」能把那个变异杀掉。改这条前先想清楚防线还剩什么。
+        Assert.Equal(UploadSessionState.Open, session.State);
+        Assert.Null(session.CommitId);
     }
 
     [Fact]
@@ -350,6 +389,50 @@ public sealed class FileStorageTusProviderTests
         }
     }
 
+    /// <summary>
+    /// 这条用例不替换任何 <see cref="IUploadCommitStorage"/>：它跑在 Program.cs 的生产注册上，
+    /// 断言的 checksum 只有真的读过本地 tus 盘上的字节才算得出来。
+    /// </summary>
+    [Fact]
+    public async Task CompleteUploadSession_OnProductionCommitStorageRegistration_PersistsStoredFileFromLocalTusBytes()
+    {
+        var rootPath = CreateTempDirectory();
+        try
+        {
+            await using var factory = CreateFactoryWithTusProvider(rootPath);
+            var client = CreateInternalServiceClient(factory);
+            var uploadedBytes = Encoding.UTF8.GetBytes("production-assembly");
+            var expectedChecksum =
+                $"sha256:{Convert.ToHexString(SHA256.HashData(uploadedBytes)).ToLowerInvariant()}";
+            var created = await CreateTusUploadSessionAsync(
+                client,
+                expectedSizeBytes: uploadedBytes.Length,
+                request: CreateTextAttachmentRequest());
+            await PatchTusBytesAsync(client, created.Upload.Url, offset: 0, uploadedBytes);
+
+            var completeResponse = await client.PostAsJsonAsync(
+                $"/api/files/v1/upload-sessions/{created.UploadSessionId}/complete",
+                new CompleteUploadSessionRequest("org-001", "prod", "attachment", null, uploadedBytes.Length));
+
+            Assert.Equal(StatusCodes.Status200OK, (int)completeResponse.StatusCode);
+            using var scope = factory.Services.CreateScope();
+            Assert.IsType<LocalTusUploadCommitStorage>(
+                scope.ServiceProvider.GetRequiredService<IUploadCommitStorage>());
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var stored = await dbContext.StoredFiles.SingleAsync(x => x.FileId == created.FileId);
+            Assert.Equal(uploadedBytes.Length, stored.SizeBytes);
+            Assert.Equal(expectedChecksum, stored.Checksum);
+            Assert.Equal(FileStorageFileStatus.Available, stored.Status);
+            var session = await dbContext.UploadSessions.SingleAsync(
+                x => x.UploadSessionId == created.UploadSessionId);
+            Assert.Equal(UploadSessionState.Completed, session.State);
+        }
+        finally
+        {
+            DeleteTempDirectory(rootPath);
+        }
+    }
+
     [Fact]
     public async Task TusUploadEndpoint_CompleteBeforeExpectedSize_ReturnsBadRequest()
     {
@@ -498,14 +581,6 @@ public sealed class FileStorageTusProviderTests
                 {
                     builder.ConfigureServices(services => services.AddSingleton(clock));
                 }
-
-                builder.ConfigureServices(services =>
-                {
-                    services.RemoveAll<IUploadCommitStorage>();
-                    services.AddSingleton<IUploadCommitStorage>(provider =>
-                        new VerifiedTusTestCommitStorage(
-                            provider.GetRequiredService<ILocalTusFileStoreAccessor>()));
-                });
             });
     }
 
@@ -618,34 +693,6 @@ public sealed class FileStorageTusProviderTests
     private static Task<HttpResponseMessage> SendTusHeadAsync(HttpClient client, string url)
     {
         return client.SendAsync(new HttpRequestMessage(HttpMethod.Head, url));
-    }
-
-    private sealed class VerifiedTusTestCommitStorage(ILocalTusFileStoreAccessor accessor) : IUploadCommitStorage
-    {
-        public async Task<UploadCommitStorageResult> CommitAsync(
-            UploadCommitIntent intent,
-            CancellationToken cancellationToken)
-        {
-            if (!accessor.TryGet(out var store) || !store.Exists(intent.UploadSessionId))
-            {
-                return UploadCommitStorageResult.RetryableUnavailable();
-            }
-
-            var size = store.GetOffset(intent.UploadSessionId);
-            if (size != intent.ExpectedSizeBytes)
-            {
-                return new UploadCommitStorageResult(
-                    false,
-                    size,
-                    null,
-                    StatusCodes.Status400BadRequest,
-                    "final-size-mismatch",
-                    "已验证的存储大小与上传会话不匹配。");
-            }
-
-            var checksum = await store.ComputeSha256HexAsync(intent.UploadSessionId, cancellationToken);
-            return UploadCommitStorageResult.Verified(size, $"sha256:{checksum}");
-        }
     }
 
     private static long GetUploadOffset(HttpResponseMessage response)

@@ -295,7 +295,8 @@ public sealed class OperationActualTimeSettlementPostgresTests
             setup.OperationTasks.Add(OperationTask.Create(
                 "org-002", "env-dev", "WO-002", "OP-002",
                 OperationTaskLifecycleStatus.InProgress, 10, "WC-002", [], At(0),
-                TimeSpan.FromHours(1), At(0), null));
+                TimeSpan.FromHours(1), At(0), null,
+                "SKU-001"));
             setup.ProductionReports.Add(ProductionReport.Record(
                 "org-002", "env-dev", "PR-OTHER", "WO-002", "OP-002",
                 1m, 0m, false, At(30)));
@@ -304,7 +305,8 @@ public sealed class OperationActualTimeSettlementPostgresTests
             setup.OperationTasks.Add(OperationTask.Create(
                 "org-001", "env-dev", "WO-003", "OP-003",
                 OperationTaskLifecycleStatus.InProgress, 10, "WC-003", [], At(0),
-                TimeSpan.FromHours(1), At(0), null));
+                TimeSpan.FromHours(1), At(0), null,
+                "SKU-001"));
             setup.ProductionReports.Add(ProductionReport.Record(
                 "org-001", "env-dev", "PR-OTHER-TASK", "WO-003", "OP-003",
                 1m, 0m, false, At(30)));
@@ -316,7 +318,8 @@ public sealed class OperationActualTimeSettlementPostgresTests
             var environmentTask = OperationTask.Create(
                 "org-001", "env-other", "WO-001", "OP-001",
                 OperationTaskLifecycleStatus.InProgress, 10, "WC-001", [], At(0),
-                TimeSpan.FromHours(1), At(0), null);
+                TimeSpan.FromHours(1), At(0), null,
+                "SKU-001");
             setup.OperationTasks.Add(environmentTask);
             setup.ProductionReports.Add(ProductionReport.Record(
                 "org-001", "env-other", "PR-ENV-OTHER", "WO-001", "OP-001",
@@ -501,16 +504,24 @@ public sealed class OperationActualTimeSettlementPostgresTests
         await dbContext.SaveChangesAsync();
     }
 
-    private static WorkOrder CreateWorkOrder() =>
-        WorkOrder.Create(
+    private static WorkOrder CreateWorkOrder()
+    {
+        var workOrder = WorkOrder.Create(
             "org-001", "env-dev", "WO-001", "SKU-001", "PV-001", 10m, 1,
             At(480));
+        // #3119：未下达的工单不受理报工，报工类夹具因此必须先补记发布（生产上这一步由下达完成）。
+        // 清掉发布留下的领域事件：本组用例断言的是结算出站消息，夹具自己造的事件不该混进去。
+        workOrder.MarkReleased();
+        workOrder.ClearDomainEvents();
+        return workOrder;
+    }
 
     private static OperationTask CreateRunningTask()
     {
         var task = OperationTask.Queue(
             "org-001", "env-dev", "WO-001", "OP-001",
-            10, "WC-001", [], At(0), TimeSpan.FromHours(1));
+            10, "WC-001", [], At(0), TimeSpan.FromHours(1),
+            "SKU-001");
         task.Assign("operator-001", "DEVICE-001", "SHIFT-1", At(-5));
         task.Start(At(0));
         return task;

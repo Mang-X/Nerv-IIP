@@ -1,6 +1,7 @@
 using Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationInstanceAggregate;
 using Nerv.IIP.Contracts.AppHubQueries;
 using NetCorePal.Extensions.DistributedTransactions;
+using Nerv.IIP.Contracts.IntegrationEvents;
 
 namespace Nerv.IIP.AppHub.Web.Application.IntegrationEventConverters;
 
@@ -11,7 +12,13 @@ public sealed class ConnectorHostUnreachableIntegrationEventConverter
     {
         var timeoutSeconds = Math.Max(0, (int)domainEvent.HeartbeatTimeout.TotalSeconds);
         var eventId = $"evt-{Guid.CreateVersion7():N}";
-        var idempotencyKey = $"apphub:connector-host-unreachable:{domainEvent.OrganizationId}:{domainEvent.EnvironmentId}:{domainEvent.ConnectorHostId}:{domainEvent.InstanceKey}:{domainEvent.DetectedAtUtc:O}";
+        var idempotencyKey = IntegrationEventIdempotencyKey.Compose(
+            "apphub:connector-host-unreachable:",
+            domainEvent.OrganizationId,
+            domainEvent.EnvironmentId,
+            domainEvent.ConnectorHostId,
+            domainEvent.InstanceKey,
+            domainEvent.DetectedAtUtc.ToString("O"));
         return new ConnectorHostUnreachableIntegrationEvent(
             eventId,
             AppHubIntegrationEventTypes.ConnectorHostUnreachable,
@@ -39,7 +46,13 @@ public sealed class ConnectorHostRestoredIntegrationEventConverter
     public ConnectorHostRestoredIntegrationEvent Convert(ConnectorHostRestoredDomainEvent domainEvent)
     {
         var eventId = $"evt-{Guid.CreateVersion7():N}";
-        var idempotencyKey = $"apphub:connector-host-restored:{domainEvent.OrganizationId}:{domainEvent.EnvironmentId}:{domainEvent.ConnectorHostId}:{domainEvent.InstanceKey}:{domainEvent.RestoredAtUtc:O}";
+        var idempotencyKey = IntegrationEventIdempotencyKey.Compose(
+            "apphub:connector-host-restored:",
+            domainEvent.OrganizationId,
+            domainEvent.EnvironmentId,
+            domainEvent.ConnectorHostId,
+            domainEvent.InstanceKey,
+            domainEvent.RestoredAtUtc.ToString("O"));
         return new ConnectorHostRestoredIntegrationEvent(
             eventId,
             AppHubIntegrationEventTypes.ConnectorHostRestored,

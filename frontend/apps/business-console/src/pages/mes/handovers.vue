@@ -395,8 +395,9 @@ async function submitCreate() {
 const acceptDialogOpen = ref(false)
 const acceptTarget = ref<HandoverRow | null>(null)
 const acceptPendingId = ref<string | null>(null)
-const acceptIdempotencyKeys = new Map<string, string>()
 // accept 当前没有服务端 replay 回执；网络结果不确定时锁住该行，避免再次触发状态机。
+// #3328：接班请求体已经空了（原来只有一个 MES 从不消费的 idempotencyKey），
+// 重放安全由 ShiftHandover.Accept 首句的幂等早退承担。
 const acceptOutcomeUnknownIds = reactive(new Set<string>())
 
 function isOpenHandover(row: HandoverRow) {
@@ -426,9 +427,6 @@ function openAcceptDialog(row: HandoverRow) {
   if (!handoverId) return
 
   acceptTarget.value = row
-  if (!acceptIdempotencyKeys.has(handoverId)) {
-    acceptIdempotencyKeys.set(handoverId, makeIdempotencyKey('mes-handover-accept'))
-  }
   acceptDialogOpen.value = true
 }
 
@@ -445,20 +443,15 @@ async function submitAccept() {
   const handoverId = target?.handoverId?.trim()
   if (!target || !handoverId || !canAcceptRow(target)) return
 
-  const idempotencyKey = acceptIdempotencyKeys.get(handoverId)
-  if (!idempotencyKey) return
-
   acceptPendingId.value = handoverId
   try {
     const response = await acceptShiftHandover(handoverId, {
       organizationId: filters.organizationId,
       environmentId: filters.environmentId,
-      idempotencyKey,
     })
     const outcome = readReceiptOutcome(response, '接班')
     acceptDialogOpen.value = false
     acceptTarget.value = null
-    acceptIdempotencyKeys.delete(handoverId)
     acceptOutcomeUnknownIds.delete(handoverId)
     notifySuccess(receiptMessage('accept', outcome))
     await refreshAfterWrite()
@@ -475,7 +468,6 @@ async function submitAccept() {
     if (refreshed && refreshedTarget && !isOpenHandover(refreshedTarget)) {
       acceptDialogOpen.value = false
       acceptTarget.value = null
-      acceptIdempotencyKeys.delete(handoverId)
       acceptOutcomeUnknownIds.delete(handoverId)
       notifySuccess('接班已受理，列表已确认。')
     } else {

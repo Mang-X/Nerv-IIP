@@ -1,5 +1,6 @@
 using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
@@ -77,14 +78,15 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAcc
             return;
         }
 
-        var order = await dbContext.PurchaseOrders
+        var hasLegacyLines = receipt.Lines.Any(x => x.UnitPrice is null);
+        var order = hasLegacyLines ? await dbContext.PurchaseOrders
             .Include(x => x.Lines)
             .SingleOrDefaultAsync(x =>
                 x.OrganizationId == receipt.OrganizationId
                 && x.EnvironmentId == receipt.EnvironmentId
                 && x.PurchaseOrderNo == receipt.PurchaseOrderNo,
-                cancellationToken);
-        if (order is null)
+                cancellationToken) : null;
+        if (hasLegacyLines && order is null)
         {
             await DeadLetterAsync(
                 integrationEvent,
@@ -131,10 +133,16 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAcc
         }
 
         var voucherNo = FinanceVoucherFactory.GoodsReceiptIrAccrualVoucherNo(receipt.PurchaseReceiptNo);
+        // #3278 / S5：查重键从凭证号搬到来源两列。这两个值必须与
+        // FinanceVoucherFactory.ForGoodsReceiptIrAccrual 落库时盖的来源身份**同源**，
+        // 否则查重与写入各认各的键，重放会静默再记一张。
+        var sourceType = JournalVoucherSourceType.GoodsReceiptIrAccrual.Code;
+        var sourceNo = receipt.PurchaseReceiptNo;
         if (await dbContext.JournalVouchers.AnyAsync(x =>
             x.OrganizationId == receipt.OrganizationId
             && x.EnvironmentId == receipt.EnvironmentId
-            && x.VoucherNo == voucherNo,
+            && x.SourceType == sourceType
+            && x.SourceNo == sourceNo,
             cancellationToken))
         {
             return;
@@ -148,7 +156,7 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAcc
 
     private static ReceiptAccrualDecision TryCalculateReceiptAmount(
         PurchaseReceipt receipt,
-        PurchaseOrder order,
+        PurchaseOrder? order,
         out decimal amount,
         out string failureCode,
         out string failureMessage)
@@ -156,7 +164,7 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAcc
         amount = 0m;
         failureCode = string.Empty;
         failureMessage = string.Empty;
-        var orderLines = order.Lines.ToDictionary(x => x.LineNo, StringComparer.Ordinal);
+        var orderLines = order?.Lines.ToDictionary(x => x.LineNo, StringComparer.Ordinal);
         foreach (var receiptLine in receipt.Lines)
         {
             if (!IsPayableQuality(receiptLine.QualityStatus))
@@ -166,7 +174,14 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAcc
                 return ReceiptAccrualDecision.Failed;
             }
 
-            if (!orderLines.TryGetValue(receiptLine.PurchaseOrderLineNo, out var orderLine))
+            if (receiptLine.UnitPrice is { } frozenUnitPrice)
+            {
+                amount += receiptLine.ReceivedQuantity * frozenUnitPrice;
+                continue;
+            }
+
+            // 只有迁移前未冻结单价的旧行才沿用 PO 定价；调用方已保证旧记录订单存在。
+            if (!orderLines!.TryGetValue(receiptLine.PurchaseOrderLineNo, out var orderLine))
             {
                 failureCode = "missing-source-facts";
                 failureMessage = $"Purchase order line '{receiptLine.PurchaseOrderLineNo}' was not found for receipt '{receipt.PurchaseReceiptNo}'.";

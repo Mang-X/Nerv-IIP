@@ -55,8 +55,9 @@ import {
 import { BUSINESS_DOMAIN_PERMISSIONS, BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 
 /**
- * Business Console navigation model (T-shaped). Source of truth = the capability
- * catalog + current visible scope in docs/architecture/frontend-navigation-map.md.
+ * Business Console navigation model (T-shaped). Current product IA lives in
+ * docs/product/navigation.md; route/page/permission/facade producer navigation lives in
+ * docs/reference/frontend/navigation-map.md. This file is the executable route/menu producer.
  *
  * Only route-ready domains/pages are listed; new large domains must clear the menu
  * upgrade gate before being added here. `requiredPermissions` mirrors the
@@ -455,6 +456,18 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           to: { path: '/erp/finance/cost-candidates' },
           requiredPermissions: [P.erpFinanceRead],
         },
+        {
+          title: '机器制造费用',
+          icon: LayersIcon,
+          to: { path: '/erp/finance/machine-overhead' },
+          requiredPermissions: [P.erpFinanceRead],
+        },
+        {
+          title: '工单成本差异',
+          icon: LayersIcon,
+          to: { path: '/erp/finance/cost-variance' },
+          requiredPermissions: [P.erpFinanceRead],
+        },
       ],
     },
   ],
@@ -518,6 +531,12 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           title: '报工记录',
           icon: ClipboardCheckIcon,
           to: { path: '/mes/production-reports' },
+          requiredPermissions: [P.mesReportingRead],
+        },
+        {
+          title: '生产日报',
+          icon: TrendingUpIcon,
+          to: { path: '/mes/reports' },
           requiredPermissions: [P.mesReportingRead],
         },
         {

@@ -51,7 +51,7 @@ public sealed class WmsAssignedResourceCompletionTests
         dbContext.InboundOrders.AddRange(crossSite, otherOperator);
         await dbContext.SaveChangesAsync();
 
-        var handler = new CompleteInboundOrderCommandHandler(dbContext);
+        var handler = new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture());
         await Assert.ThrowsAsync<WmsAuthorizationException>(() =>
             handler.Handle(
                 CompleteInbound(
@@ -204,7 +204,7 @@ public sealed class WmsAssignedResourceCompletionTests
         };
 
         await Assert.ThrowsAsync<WmsUnprocessableException>(() =>
-            new CompleteInboundOrderCommandHandler(dbContext).Handle(
+            new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
                 command,
                 CancellationToken.None));
 
@@ -269,7 +269,7 @@ public sealed class WmsAssignedResourceCompletionTests
             "self",
             AssignedOperator,
             "inbound-replay");
-        var handler = new CompleteInboundOrderCommandHandler(dbContext);
+        var handler = new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture());
 
         var first = await handler.Handle(command, CancellationToken.None);
         await dbContext.SaveChangesAsync();
@@ -295,7 +295,7 @@ public sealed class WmsAssignedResourceCompletionTests
             "self",
             AssignedOperator,
             "inbound-reauth");
-        var handler = new CompleteInboundOrderCommandHandler(dbContext);
+        var handler = new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture());
         await handler.Handle(command, CancellationToken.None);
         await dbContext.SaveChangesAsync();
         membership.Deactivate(DateTime.UtcNow);
@@ -322,7 +322,7 @@ public sealed class WmsAssignedResourceCompletionTests
         dbContext.CountExecutions.Add(count);
         await dbContext.SaveChangesAsync();
 
-        await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+        await new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
             CompleteInbound(
                 inbound,
                 "user-site-supervisor",
@@ -356,7 +356,7 @@ public sealed class WmsAssignedResourceCompletionTests
         dbContext.InboundOrders.Add(crossSite);
         await dbContext.SaveChangesAsync();
         var denied = await Assert.ThrowsAsync<WmsAuthorizationException>(() =>
-            new CompleteInboundOrderCommandHandler(dbContext).Handle(
+            new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
                 CompleteInbound(
                     crossSite,
                     "user-site-supervisor",

@@ -7,6 +7,12 @@ namespace Nerv.IIP.Contracts.Mes;
 public static class MesIntegrationEventTypes
 {
     public const string WorkOrderReleased = "mes.WorkOrderReleased";
+
+    /// <summary>
+    /// 工单发布投影回填（#3000）：与 <see cref="WorkOrderReleased"/> 是同一份发布事实、同一份载荷，
+    /// 但走独立事件类型与独立 topic，只投给 Quality 的回填消费组。
+    /// </summary>
+    public const string WorkOrderReleaseProjectionBackfilled = "mes.WorkOrderReleaseProjectionBackfilled";
     public const string WorkOrderCompleted = "mes.WorkOrderCompleted";
     public const string WorkOrderClosed = "mes.WorkOrderClosed";
     public const string ReworkWorkOrderCreated = "mes.ReworkWorkOrderCreated";
@@ -131,10 +137,77 @@ public sealed record WorkOrderReleasedPayload(
     DateTimeOffset ReleasedAtUtc,
     IReadOnlyCollection<ReleasedOperationPayload> Operations);
 
+/// <param name="OperationId">工序任务标识。</param>
+/// <param name="OperationSequence">工序号。</param>
+/// <param name="WorkCenterId">工作中心标识。</param>
+/// <param name="PreReleaseGoodQuantity">
+/// 本道工序在**下达动作发生的那一刻**就已经存在的净良品量（口径：该工序全部非冲销报工行的
+/// <c>GoodQuantity</c> 之和，与 Quality 侧 <c>PeriodicInspectionRuntimeContext.QuantityHighWater</c>
+/// 逐字同一个口径）。工单在 <c>created</c> 状态就能开工、报工（#3113），下达因此可能发生在已有产量之后；
+/// owner 已裁定「**下达之前已产出的数量不补开巡检任务**」，而做这个判断需要
+/// 「哪些产量在下达动作之前就已存在、且**按工序分辨**」——这个事实只有 MES 在下达那一刻掌握。
+/// 载荷里那个工单级 <see cref="WorkOrderReleasedPayload.ReleasedAtUtc"/> 承担不了它：
+/// 它是一个被夹到「不晚于最早既有活动」的**标量**，既分不出工序，也不告诉消费侧「当时已经有多少」。
+/// 消费侧照它推断，在「多工序」与「发布事件先于报工事件到达」两种形态下必然失效（#3129）。
+///
+/// <para><b>为什么是数量、而不是「最早活动时刻」。</b>owner 的裁定只落在**数量**这一维：
+/// 时间型巡检该不该开与「下达前后」没有业务关系（它由 <c>FirstActivityAtUtc</c> 起算、
+/// 由定时任务生成，与本字段两条独立的路）。只带数量，是为了不把一条数量维的裁定外溢到时间维；
+/// 需要时间维时请另立字段与另一条裁定，**不要把本字段当通用的「下达前活动事实」读**。</para>
+///
+/// <para><b>为什么可空、null 意味着什么（本票的设计决定，不是兼容细节）。</b>
+/// 按 ADR 0011 §4「同一 <c>eventType</c> 下新增可选字段不提升版本」，本字段是**可空可选**的，
+/// 因此 <c>eventVersion</c> 不升。代价必须写明：
+/// <list type="number">
+/// <item><b>哪些消息会是 null。</b>① 本次发布上线**之前**由旧生产者序列化、此刻仍躺在
+/// 消息中间件在途队列或死信（DLQ）里、上线后才被消费或重投的 <c>mes.WorkOrderReleased</c>；
+/// ② <c>mes.WorkOrderReleaseProjectionBackfilled</c>（#3000 存量回填）——它的消费分支
+/// 无条件跳过到 <c>OccurredAtUtc</c> 为止的全部累计，本字段在那条分支上没有作用，故生产者不填（见
+/// <c>WorkOrderReleaseProjectionBackfill</c> 构造点的说明）。
+/// **上线后由 MES 直投路径新发出的发布事实一律带值**（没有既有产量时带 <c>0</c>，不是 null）。</item>
+/// <item><b>null 时的行为。</b>消费侧按**本字段出现之前的老行为**处理：不跳过任何已累计的产量窗口，
+/// 即把下达前的产量也补开成巡检任务。这正是 #3129 要修的那个行为——
+/// 也就是说 <b>null 是一个明确的、已知的不生效面，不是「安全默认值」</b>。</item>
+/// <item><b>为什么可接受。</b>null 时的行为与本次改动之前的 main **逐字相同**，
+/// 不引入任何相对 main 的回归；多开出的巡检任务是可人工关闭的待办，不是数据损坏、不进死信。
+/// 相对的，若把本字段做成必填，全部在途与 DLQ 中的旧消息会在反序列化时落到 <c>default</c>（<c>0</c>）
+/// 或整封失败——前者是**静默**按「下达前零产量」处理、后者直接丢事实，两者都比多开几张任务坏。</item>
+/// <item><b>这个不生效面什么时候消失。</b>当「本次发布之前入队的 <c>mes.WorkOrderReleased</c>」
+/// 被消费干净、且 DLQ 中同批旧消息被重投或清理之后即自然消失；它不随时间无限存在，
+/// 也**不需要**后续代码改动来收口。等 DLQ 清空后若要把它彻底关掉，做法是把本字段改成必填并升
+/// <c>eventVersion</c>——那是一次独立的决定，本票不做。</item>
+/// </list>
+/// </para>
+/// </param>
 public sealed record ReleasedOperationPayload(
     string OperationId,
     int OperationSequence,
-    string WorkCenterId);
+    string WorkCenterId,
+    decimal? PreReleaseGoodQuantity = null);
+
+/// <summary>
+/// 存量在制工单的发布事实补投（#3000）。载荷与 <see cref="WorkOrderReleasedIntegrationEvent"/> 完全相同，
+/// 但**不能**复用发布事件的 topic 重放：
+/// 1) Scheduling 的发布事件消费者会让全部已生成排程计划失效，重放会把这一副作用扩到每一张在制工单；
+/// 2) Quality 的发布事件消费组对已同步过的工单会拿重建的发布时刻与库里那一个比对，判为冲突事实进死信。
+/// 因此补投是独立通道，接收方按「只补空缺、不覆盖既有发布事实」处理。
+/// </summary>
+public sealed record WorkOrderReleaseProjectionBackfilledIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    WorkOrderReleasedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record WorkOrderCompletedIntegrationEvent(
     string EventId,

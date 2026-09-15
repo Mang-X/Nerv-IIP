@@ -141,7 +141,8 @@ public sealed class MesWmsMaterialIssueChainAcceptanceTests
         mesDb.WorkOrders.Add(workOrder);
         var operationTask = OperationTask.Create(
             "org-001", "env-dev", "WO-1324", "OP-10", OperationTaskLifecycleStatus.Queued, 10, "WC-10", [], now,
-            TimeSpan.FromMinutes(30), null, null);
+            TimeSpan.FromMinutes(30), null, null,
+            "SKU-001");
         operationTask.Start(now);
         mesDb.OperationTasks.Add(operationTask);
         mesDb.MaterialRequirements.Add(MaterialRequirement.Capture(

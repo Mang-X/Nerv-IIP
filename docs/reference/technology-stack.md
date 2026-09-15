@@ -37,7 +37,7 @@
 
 ## Mobile PDA
 
-PDA 容器/插件边界仍以当前 Capacitor 配置和 [`../architecture/mobile-pda-capacitor-architecture.md`](../architecture/mobile-pda-capacitor-architecture.md) 为准。
+PDA 容器/插件边界仍以当前 Capacitor 配置和 [`../architecture/mobile/capacitor.md`](../architecture/mobile/capacitor.md) 为准。
 
 | 技术 | 用途 / 边界 | 官方文档 | 上游仓库 |
 | --- | --- | --- | --- |

@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, type Component } from 'vue'
 
 import CapacityPage from './capacity.vue'
+import DispatchPage from './dispatch.vue'
+import OverviewPage from './index.vue'
 import DowntimePage from './downtime.vue'
 import FoundationPage from './foundation.vue'
 import HandoversPage from './handovers.vue'
@@ -14,6 +16,7 @@ import PlansPage from './plans.vue'
 import ProductionReportsPage from './production-reports.vue'
 import QualityPage from './quality.vue'
 import ReceiptsPage from './receipts.vue'
+import SchedulesPage from './schedules.vue'
 import TraceabilityPage from './traceability.vue'
 import WipPage from './wip.vue'
 import WorkOrderDetailPage from './work-orders/[workOrderId].vue'
@@ -33,6 +36,8 @@ const readFailure = vi.hoisted(() => new Error('mes-read-face-unavailable'))
 // 一个 hook 供多张表时（工单详情）列出全部错误字段，逐表各自落错误态。
 const overrides = vi.hoisted(() => ({
   useMesCapacityImpacts: ['capacityImpactsError'],
+  useMesDispatchTasks: ['dispatchTasksError'],
+  useMesOverview: ['overviewError'],
   useMesDowntimeEvents: ['downtimeEventsError'],
   useMesFinishedGoodsReceipts: ['receiptRequestsError'],
   useMesFoundationReadiness: ['readinessError'],
@@ -41,6 +46,7 @@ const overrides = vi.hoisted(() => ({
   useMesProductionPlans: ['productionPlansError'],
   useMesProductionReports: ['productionReportsError'],
   useMesRelatedQualityItems: ['qualityItemsError'],
+  useMesSchedules: ['scheduleHistoryError'],
   useMesShiftHandovers: ['handoversError'],
   useMesTraceability: ['traceabilityError'],
   useMesWipSummary: ['wipError'],
@@ -50,12 +56,15 @@ const overrides = vi.hoisted(() => ({
 
 /**
  * 错误态「重新加载」按钮的 handler：按钮无论有没有绑 `@retry` 都恒渲染，只断言按钮在场
- * 抓不到「控件在、行为不在」。这里把本 PR 新接的 4 张表的 refresh 换成间谍，点按钮验行为。
+ * 抓不到「控件在、行为不在」。这里把待验证的 refresh 换成间谍，点按钮验行为。
  */
 const retryHandlers = vi.hoisted(
   () =>
     ({
       useMesFoundationReadiness: ['refreshReadiness'],
+      useMesSchedules: ['refreshScheduleHistory'],
+      useMesDispatchTasks: ['refreshDispatchTasks'],
+      useMesOverview: ['refreshOverview'],
       useMesWorkOrderDetail: [
         'refreshDetail',
         'refreshMaterialReadiness',
@@ -81,6 +90,7 @@ vi.mock('@/composables/useBusinessMes', async (importOriginal) => {
     patched[hook] = (...args: unknown[]) => ({
       ...original(...args),
       ...Object.fromEntries(errorKeys.map((key) => [key, computed(() => readFailure)])),
+      ...(hook === 'useMesOverview' ? { overviewState: computed(() => 'error') } : {}),
       ...Object.fromEntries(refreshKeys.map((key) => [key, retrySpies[key]])),
     })
   }
@@ -182,6 +192,11 @@ const pages: Array<{
     absentText: ['暂无追溯数据'],
   },
   {
+    name: '规则排程',
+    page: SchedulesPage,
+    absentText: ['尚无历史排程运行记录', '该次排程没有工序分配'],
+  },
+  {
     name: '在制跟踪',
     page: WipPage,
     absentText: ['暂无在制数据'],
@@ -213,6 +228,28 @@ describe('MES 列表页读面失败时落到表格错误态（#2854）', () => {
     vi.unstubAllGlobals()
   })
 
+  // #2708：默认分组没有行时也必须有错误面板；切换平铺不能丢失重试行为。
+  for (const { name, page, flat, refresh } of [
+    { name: '派工分组', page: DispatchPage, flat: false, refresh: 'refreshDispatchTasks' },
+    { name: '派工平铺', page: DispatchPage, flat: true, refresh: 'refreshDispatchTasks' },
+    { name: '生产总览', page: OverviewPage, flat: false, refresh: 'refreshOverview' },
+  ]) {
+    it(`${name}：失败面板承接错误与重试，不呈现业务空态`, async () => {
+      const wrapper = await mountPage(page)
+      if (flat) await wrapper.get('[aria-label="平铺列表"]').trigger('click')
+      expect(wrapper.text()).toContain('数据加载失败')
+      expect(wrapper.text()).not.toContain(readFailure.message)
+      expect(wrapper.text()).not.toContain('暂无工序')
+      expect(wrapper.text()).not.toContain('本次读取的范围内没有阻塞记录')
+      const retries = wrapper.findAll('button').filter((button) => button.text() === '重新加载')
+      expect(retries).toHaveLength(1)
+      retrySpies[refresh].mockClear()
+      await retries[0].trigger('click')
+      expect(retrySpies[refresh]).toHaveBeenCalledTimes(1)
+      wrapper.unmount()
+    })
+  }
+
   for (const { name, page, absentText } of pages) {
     it(`${name}：显示错误态与重试入口，不显示空态或「未发起」文案`, async () => {
       const wrapper = await mountPage(page)
@@ -229,7 +266,21 @@ describe('MES 列表页读面失败时落到表格错误态（#2854）', () => {
     })
   }
 
-  // 本 PR 新接的 4 张表：按钮点得动才算接上（`@retry` 丢了按钮照样渲染）。
+  // 两张表共用刷新入口，逐按钮清空间谍，避免一个有效绑定掩盖另一个缺失绑定。
+  it('规则排程：两张表各自重试历史读取（#3065）', async () => {
+    const wrapper = await mountPage(SchedulesPage)
+    const retryButtons = wrapper
+      .findAll('button')
+      .filter((button) => button.text().includes('重新加载'))
+    expect(retryButtons).toHaveLength(2)
+    for (const button of retryButtons) {
+      retrySpies.refreshScheduleHistory.mockClear()
+      await button.trigger('click')
+      await flushPromises()
+      expect(retrySpies.refreshScheduleHistory).toHaveBeenCalledTimes(1)
+    }
+  })
+
   const retryPages: Array<{ name: string; page: Component; handlers: string[] }> = [
     {
       name: '生产准备检查',

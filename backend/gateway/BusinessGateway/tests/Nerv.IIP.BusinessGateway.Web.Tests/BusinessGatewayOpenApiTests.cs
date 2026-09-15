@@ -315,6 +315,17 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/engineering/sops/current", "get", "getBusinessConsoleCurrentEngineeringSopDocuments");
         AssertOperationId(paths, "/api/business-console/v1/files/{fileId}/download-grants", "post", "createBusinessConsoleSopFileDownloadGrant");
         AssertOperationId(paths, "/api/business-console/v1/files/download-grants/{downloadGrantId}/content", "get", "downloadBusinessConsoleSopFileContent");
+        // #3085 交接班附件门面：上传三段（会话 / tus HEAD+PATCH / complete）与下载两段都必须进契约，
+        // 否则 business-console 与 PDA 侧没有可消费的 generated operation。
+        AssertOperationId(paths, "/api/business-console/v1/files/shift-handover-attachments/upload-sessions", "post", "createBusinessConsoleShiftHandoverAttachmentUploadSession");
+        AssertOperationId(paths, "/api/business-console/v1/files/shift-handover-attachments/upload-sessions/{uploadSessionId}/complete", "post", "completeBusinessConsoleShiftHandoverAttachmentUpload");
+        AssertOperationId(paths, "/api/business-console/v1/files/shift-handover-attachments/tus/{uploadSessionId}", "head", "getBusinessConsoleShiftHandoverAttachmentTusOffset");
+        AssertOperationId(paths, "/api/business-console/v1/files/shift-handover-attachments/tus/{uploadSessionId}", "patch", "patchBusinessConsoleShiftHandoverAttachmentTusUpload");
+        // 下载面只有一条字节路由、以 fileId 为入参：grant id 不出网关（#3096 审核 A1）。
+        AssertOperationId(paths, "/api/business-console/v1/files/shift-handover-attachments/{fileId}/content", "get", "downloadBusinessConsoleShiftHandoverAttachmentContent");
+        Assert.DoesNotContain(
+            paths.EnumerateObject().Select(path => path.Name),
+            name => name.StartsWith("/api/business-console/v1/files/shift-handover-attachments/download-grants", StringComparison.Ordinal));
         AssertOperationId(paths, "/api/business-console/v1/engineering/items", "post", "createBusinessConsoleEngineeringItemRevision");
         AssertOperationId(paths, "/api/business-console/v1/engineering/engineering-boms", "get", "listBusinessConsoleEngineeringBoms");
         AssertOperationId(paths, "/api/business-console/v1/engineering/engineering-boms/explosion", "get", "getBusinessConsoleEngineeringBomExplosion");
@@ -347,6 +358,15 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/planning/mps/{mpsId}/review", "post", "reviewBusinessConsolePlanningMpsBucket");
         AssertOperationId(paths, "/api/business-console/v1/planning/mps/{mpsId}/release", "post", "releaseBusinessConsolePlanningMpsBucket");
         AssertOperationId(paths, "/api/business-console/v1/planning/demands", "get", "listBusinessConsolePlanningDemands");
+        AssertQueryParameters(
+            paths,
+            "/api/business-console/v1/planning/demands",
+            "get",
+            "organizationId",
+            "environmentId",
+            "keyword",
+            "skip",
+            "take");
         AssertOperationId(paths, "/api/business-console/v1/planning/demands", "post", "createOrUpdateBusinessConsolePlanningDemand");
         AssertOperationId(paths, "/api/business-console/v1/planning/demands/{demandSourceId}/cancel", "post", "cancelBusinessConsolePlanningDemand");
         AssertOperationId(paths, "/api/business-console/v1/planning/forecasts", "get", "listBusinessConsolePlanningForecasts");
@@ -525,6 +545,8 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/maintenance/work-orders", "get", "listBusinessConsoleMaintenanceWorkOrders");
         AssertOperationId(paths, "/api/business-console/v1/maintenance/work-orders", "post", "createBusinessConsoleMaintenanceWorkOrder");
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/maintenance/work-orders", "post", "idempotencyKey", 150);
+        AssertOperationId(paths, "/api/business-console/v2/maintenance/work-orders", "post", "createBusinessConsoleMaintenanceWorkOrderV2");
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v2/maintenance/work-orders", "post", "idempotencyKey", 150);
         AssertOperationId(paths, "/api/business-console/v1/maintenance/work-orders/{workOrderId}", "get", "getBusinessConsoleMaintenanceWorkOrder");
         AssertOperationId(paths, "/api/business-console/v1/maintenance/work-orders/{workOrderId}/complete", "post", "completeBusinessConsoleMaintenanceWorkOrder");
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/maintenance/work-orders/{workOrderId}/complete", "post", "idempotencyKey", 150);
@@ -558,6 +580,14 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/erp/procurement/supplier-quotations", "get", "listBusinessConsoleErpSupplierQuotations");
         AssertOperationId(paths, "/api/business-console/v1/erp/procurement/purchase-orders", "post", "createBusinessConsoleErpPurchaseOrder");
         AssertOperationId(paths, "/api/business-console/v1/erp/procurement/purchase-receipts", "post", "recordBusinessConsoleErpPurchaseReceipt");
+        // NERV-2122 PublicContract：可选路径只公开 ERP 认可的两个字符串值。
+        var receiptSchemas = document.RootElement.GetProperty("components").GetProperty("schemas");
+        var receiptSchema = receiptSchemas.EnumerateObject().Single(x => x.Name.EndsWith("BusinessConsoleRecordErpPurchaseReceiptRequest", StringComparison.Ordinal)).Value;
+        var postingRoute = receiptSchema.GetProperty("properties").GetProperty("inventoryPostingRoute");
+        var routeSchema = receiptSchemas.GetProperty(postingRoute.GetProperty("$ref").GetString()!.Split('/')[^1]);
+        Assert.Equal("string", routeSchema.GetProperty("type").GetString());
+        Assert.Equal(new[] { "direct", "wms" }, routeSchema.GetProperty("enum").EnumerateArray().Select(x => x.GetString()));
+        Assert.DoesNotContain(receiptSchema.GetProperty("required").EnumerateArray(), x => x.GetString() == "inventoryPostingRoute");
         // #1345：ERP RecordPurchaseReceiptCommand 的 qualityStatus 为必填，网关契约必须同样声明必填，
         // 否则 PC 收货结构性 400；字段存在但非必填同样会让前端漏填。
         AssertSchemaProperties(
@@ -597,6 +627,97 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/cost-candidates", "get", "listBusinessConsoleErpCostCandidates");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/work-center-cost-rates", "post", "configureBusinessConsoleErpWorkCenterCostRate");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/work-center-cost-rates", "get", "listBusinessConsoleErpWorkCenterCostRates");
+        AssertOperationId(paths, "/api/business-console/v1/erp/finance/work-order-costs/{workOrderId}", "get", "getBusinessConsoleErpWorkOrderCostVariance");
+        AssertOperationId(paths, "/api/business-console/v1/erp/finance/work-center-machine-overhead-reconciliations", "get", "listBusinessConsoleErpWorkCenterMachineOverheadReconciliations");
+        AssertQueryParameters(
+            paths,
+            "/api/business-console/v1/erp/finance/work-order-costs/{workOrderId}",
+            "get",
+            "organizationId",
+            "environmentId",
+            "pageNumber",
+            "pageSize");
+        AssertRequiredPathParameter(
+            paths,
+            "/api/business-console/v1/erp/finance/work-order-costs/{workOrderId}",
+            "get",
+            "workOrderId",
+            "string");
+        AssertQueryParameters(
+            paths,
+            "/api/business-console/v1/erp/finance/work-center-machine-overhead-reconciliations",
+            "get",
+            "organizationId",
+            "environmentId",
+            "accountingPeriodCode",
+            "workCenterId",
+            "pageNumber",
+            "pageSize");
+        AssertStringEnumProperty(
+            document,
+            "BusinessConsoleErpWorkOrderCostVarianceResponse",
+            "machineCostStatus",
+            "available",
+            "notApplicable",
+            "unavailable");
+        AssertStringEnumProperty(
+            document,
+            "BusinessConsoleErpMachineOverheadReconciliationItem",
+            "reconciliationStatus",
+            "available",
+            "notApplicable",
+            "unavailable");
+        AssertStringEnumProperty(document, "BusinessConsoleErpMachineOverheadReconciliationListResponse",
+            "accountingPeriodStatus", "open", "closed", null!);
+        AssertStringEnumProperty(document, "BusinessConsoleErpMachineOverheadReconciliationItem",
+            "abnormalDowntimeDisposition", "None", "Pending", "PeriodExpense");
+        AssertRequiredNullableSchemaProperties(document, "BusinessConsoleErpMachineOverheadReconciliationListResponse",
+            "accountingPeriodStatus", "reconciliationUnavailableReason");
+        AssertRequiredSchemaProperties(
+            document,
+            "BusinessConsoleErpWorkOrderCostVarianceResponse",
+            "actualMachineHours",
+            "machineCostStatus",
+            "machineCostUnavailableReason",
+            "machineCurrencyCode",
+            "appliedFixedMachineOverhead",
+            "appliedVariableMachineOverhead",
+            "appliedMachineOverheadTotal",
+            "machineOverheadPageNumber",
+            "machineOverheadPageSize",
+            "totalMachineOverheadOperations",
+            "machineOverheadOperations");
+        AssertRequiredNullableSchemaProperties(
+            document,
+            "BusinessConsoleErpWorkOrderCostVarianceResponse",
+            "actualMachineHours",
+            "machineCostUnavailableReason",
+            "machineCurrencyCode",
+            "appliedFixedMachineOverhead",
+            "appliedVariableMachineOverhead",
+            "appliedMachineOverheadTotal");
+        AssertRequiredNullableSchemaProperties(
+            document,
+            "BusinessConsoleErpOperationMachineOverheadItem",
+            "unavailableReason",
+            "actualMachineHours",
+            "appliedFixedMachineOverhead",
+            "appliedVariableMachineOverhead",
+            "appliedMachineOverheadTotal");
+        AssertRequiredSchemaProperties(
+            document,
+            "BusinessConsoleErpMachineOverheadReconciliationItem",
+            "actualFixedOverheadAmount",
+            "actualVariableOverheadAmount",
+            "actualTotalOverheadAmount",
+            "appliedFixedAmount",
+            "appliedVariableAmount",
+            "appliedTotalAmount",
+            "underOverAppliedFixedAmount",
+            "underOverAppliedVariableAmount",
+            "underOverAppliedTotalAmount",
+            "reconciliationStatus",
+            "unavailableReason");
         AssertRequiredBodyProperty(
             document,
             paths,
@@ -740,6 +861,33 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches", "post", "createBusinessConsoleBarcodePrintBatch");
         AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches", "get", "listBusinessConsoleBarcodePrintBatches");
         AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}", "get", "getBusinessConsoleBarcodePrintBatch");
+        AssertSchemaProperties(
+            document,
+            "BusinessConsoleCreateBarcodePrintBatchRequest",
+            "reportIntentFingerprint");
+        var createPrintBatchSchema = FindSchemaBySuffix(document, "BusinessConsoleCreateBarcodePrintBatchRequest");
+        Assert.Equal(
+            256,
+            createPrintBatchSchema.GetProperty("properties")
+                .GetProperty("reportIntentFingerprint")
+                .GetProperty("maxLength")
+                .GetInt32());
+        Assert.Equal(
+            1,
+            createPrintBatchSchema.GetProperty("properties")
+                .GetProperty("reportIntentFingerprint")
+                .GetProperty("minLength")
+                .GetInt32());
+        if (createPrintBatchSchema.TryGetProperty("required", out var createPrintBatchRequired))
+        {
+            Assert.DoesNotContain(
+                "reportIntentFingerprint",
+                createPrintBatchRequired.EnumerateArray().Select(value => value.GetString()));
+        }
+        AssertRequiredNullableSchemaProperties(
+            document,
+            "BusinessConsoleBarcodePrintBatchDetail",
+            "reportIntentFingerprint");
         AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}/dispatch", "post", "dispatchBusinessConsoleBarcodePrintBatch");
         AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/reprint", "post", "reprintBusinessConsoleBarcodeLabel");
         AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/void", "post", "voidBusinessConsoleBarcodeLabel");
@@ -1300,9 +1448,19 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/mes/schedules/run", "post", "runBusinessConsoleMesSchedule");
         AssertOperationId(paths, "/api/business-console/v1/mes/schedules", "get", "listBusinessConsoleMesScheduleResults");
         AssertOperationId(paths, "/api/business-console/v1/mes/production-reports", "post", "recordBusinessConsoleMesProductionReport");
-        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/production-reports", "post", "idempotencyKey", 150);
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/production-reports", "post", "idempotencyKey", 128);
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/production-reports", "post", "scopeKind", 50);
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/production-reports", "post", "scopeId", 200);
+        AssertOptionalBodyProperty(document, paths, "/api/business-console/v1/mes/production-reports", "post", "labelTemplateId");
+        AssertSchemaProperties(
+            document,
+            "BusinessConsoleRecordProductionReportResponse",
+            "productionReportId",
+            "reportNo",
+            "serialNumbers",
+            "printBatchId",
+            "printStatus",
+            "printingPreparationPending");
         AssertOperationId(paths, "/api/business-console/v1/mes/defects", "post", "recordBusinessConsoleMesDefect");
         AssertSchemaProperties(
             document,
@@ -1691,6 +1849,47 @@ public sealed class BusinessGatewayOpenApiTests
             [.. schema.Enumeration.Select(value => Assert.IsType<string>(value))]);
         Assert.Empty(schema.EnumerationNames);
     }
+
+    // Contract: #2969 / spec #2964。v1 与 v2 创建工单必须是两份彼此独立的 wire 契约：
+    // v2 只有目录码字段，v1 只有自由文本字段，两者的 request schema 不得复用同一个组件。
+    [Fact]
+    public async Task Maintenance_work_order_create_v1_and_v2_expose_independent_request_contracts()
+    {
+        var json = await BusinessGatewayTestHost.GetOpenApiDocumentAsync();
+        using var document = JsonDocument.Parse(json);
+        var paths = document.RootElement.GetProperty("paths");
+
+        var v1Schema = RequestBodySchemaName(paths, "/api/business-console/v1/maintenance/work-orders", "post");
+        var v2Schema = RequestBodySchemaName(paths, "/api/business-console/v2/maintenance/work-orders", "post");
+        Assert.NotEqual(v1Schema, v2Schema);
+
+        var schemas = document.RootElement.GetProperty("components").GetProperty("schemas");
+        var v1Properties = schemas.GetProperty(v1Schema).GetProperty("properties");
+        var v2Properties = schemas.GetProperty(v2Schema).GetProperty("properties");
+
+        Assert.True(v1Properties.TryGetProperty("assetUnavailableReason", out var v1Reason));
+        Assert.Equal(200, v1Reason.GetProperty("maxLength").GetInt32());
+        Assert.False(v1Properties.TryGetProperty("assetUnavailableReasonCode", out _));
+
+        Assert.True(v2Properties.TryGetProperty("assetUnavailableReasonCode", out var v2ReasonCode));
+        Assert.Equal(100, v2ReasonCode.GetProperty("maxLength").GetInt32());
+        Assert.Equal(1, v2ReasonCode.GetProperty("minLength").GetInt32());
+        Assert.False(v2Properties.TryGetProperty("assetUnavailableReason", out _));
+
+        var v2Required = schemas.GetProperty(v2Schema).GetProperty("required")
+            .EnumerateArray().Select(x => x.GetString()).ToArray();
+        Assert.Contains("organizationId", v2Required);
+        Assert.Contains("environmentId", v2Required);
+        Assert.Contains("deviceAssetId", v2Required);
+        Assert.Contains("priority", v2Required);
+        Assert.Contains("idempotencyKey", v2Required);
+        Assert.DoesNotContain("assetUnavailableReasonCode", v2Required);
+    }
+
+    private static string RequestBodySchemaName(JsonElement paths, string path, string method) =>
+        paths.GetProperty(path).GetProperty(method).GetProperty("requestBody").GetProperty("content")
+            .GetProperty("application/json").GetProperty("schema").GetProperty("$ref").GetString()!
+            .Split('/')[^1];
 
     private static void AssertOperationId(JsonElement paths, string path, string method, string operationId)
     {
@@ -2275,6 +2474,7 @@ public sealed class BusinessGatewayOpenApiTests
             "shelveBusinessConsoleEquipmentAlarm",
             "unshelveBusinessConsoleEquipmentAlarm",
             "createBusinessConsoleMaintenanceWorkOrder",
+            "createBusinessConsoleMaintenanceWorkOrderV2",
             "completeBusinessConsoleMaintenanceWorkOrder",
             "createBusinessConsoleQualityInspectionRecordFromTask",
             "startBusinessConsoleMesOperationTask",
@@ -2413,6 +2613,27 @@ public sealed class BusinessGatewayOpenApiTests
         foreach (var propertyName in propertyNames)
         {
             AssertRequiredSchemaProperty(document, schemaNameSuffix, propertyName);
+        }
+    }
+
+    private static void AssertRequiredNullableSchemaProperties(
+        JsonDocument document,
+        string schemaNameSuffix,
+        params string[] propertyNames)
+    {
+        var schema = FindSchemaBySuffix(document, schemaNameSuffix);
+        var required = schema.GetProperty("required")
+            .EnumerateArray()
+            .Select(value => value.GetString())
+            .ToHashSet(StringComparer.Ordinal);
+        var properties = schema.GetProperty("properties");
+
+        foreach (var propertyName in propertyNames)
+        {
+            Assert.Contains(propertyName, required);
+            Assert.True(
+                properties.GetProperty(propertyName).GetProperty("nullable").GetBoolean(),
+                $"{schemaNameSuffix}.{propertyName} must remain nullable while being required.");
         }
     }
 

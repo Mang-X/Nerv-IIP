@@ -12,6 +12,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReturnAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
+using Nerv.IIP.Business.Erp.Web.Application.Validation;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 
@@ -359,11 +360,18 @@ public sealed class RegisterAccountPayablePaymentCommandHandler(ApplicationDbCon
             request.IdempotencyKey,
             ErpCodingService.Fingerprint(request.PayableNo, request.Amount, request.PaymentDate, request.CashAccountCode, request.PaymentCurrencyCode, request.PaymentExchangeRate, request.Allocations?.Select(x => $"{x.PayableNo}:{x.Amount}")),
             cancellationToken);
+        // #3278 / S5：查重键从凭证号搬到来源两列。
+        // `allocation.Code` 在这条路径上同时被写成 PaymentExecution.PaymentExecutionNo 和
+        // JournalVoucher.VoucherNo（见本方法末尾），但这里取的是**付款执行单号**这一身份：
+        // S6 把凭证号换成分配器短号后，来源列不跟着变，这条查重也就不会跟着失效。
+        var paymentExecutionSourceType = JournalVoucherSourceType.PaymentExecution.Code;
+        var paymentExecutionSourceNo = allocation.Code;
         if (allocation.IsIdempotentReplay
             && await dbContext.JournalVouchers.AnyAsync(
                 x => x.OrganizationId == request.OrganizationId
                     && x.EnvironmentId == request.EnvironmentId
-                    && x.VoucherNo == allocation.Code,
+                    && x.SourceType == paymentExecutionSourceType
+                    && x.SourceNo == paymentExecutionSourceNo,
                 cancellationToken))
         {
             return;
@@ -403,6 +411,7 @@ public sealed class RegisterAccountPayablePaymentCommandHandler(ApplicationDbCon
         dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForPayablePayment(
             voucherAllocations,
             allocation.Code,
+            paymentExecution.PaymentExecutionNo,
             request.Amount,
             paymentCurrencyCode,
             request.PaymentExchangeRate,
@@ -529,14 +538,21 @@ public sealed class ExecutePaymentExecutionCommandHandler(ApplicationDbContext d
         }
 
         paymentExecution.Execute(request.ExecutedBy);
+        // #3278 / S5：查重键从凭证号搬到来源两列。本位点与 RegisterAccountPayablePayment 是
+        // **同一张付款凭证的两条入口**（批准即执行 / 先批准后执行），两边必须认同一个来源身份，
+        // 否则换号后这两条入口会各记一张。
+        var paymentExecutionSourceType = JournalVoucherSourceType.PaymentExecution.Code;
+        var paymentExecutionSourceNo = paymentExecution.PaymentExecutionNo;
         if (!await dbContext.JournalVouchers.AnyAsync(
             x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
-                && x.VoucherNo == paymentExecution.PaymentExecutionNo,
+                && x.SourceType == paymentExecutionSourceType
+                && x.SourceNo == paymentExecutionSourceNo,
             cancellationToken))
         {
             dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForPayablePayment(
                 voucherAllocations,
+                paymentExecution.PaymentExecutionNo,
                 paymentExecution.PaymentExecutionNo,
                 paymentExecution.Amount,
                 paymentExecution.CurrencyCode,
@@ -592,11 +608,17 @@ public sealed class RegisterAccountReceivableCollectionCommandHandler(Applicatio
             request.IdempotencyKey,
             ErpCodingService.Fingerprint(request.ReceivableNo, request.Amount, request.CollectionDate, request.CashAccountCode),
             cancellationToken);
+        // #3278 / S5：查重键从凭证号搬到来源两列。
+        // `allocation.Code` 在这条路径上同时被写成 CashReceipt.CashReceiptNo 和 JournalVoucher.VoucherNo；
+        // 这里取的是**收款单号**这一身份，理由同 RegisterAccountPayablePayment。
+        var cashReceiptSourceType = JournalVoucherSourceType.CashReceipt.Code;
+        var cashReceiptSourceNo = allocation.Code;
         if (allocation.IsIdempotentReplay
             && await dbContext.JournalVouchers.AnyAsync(
                 x => x.OrganizationId == request.OrganizationId
                     && x.EnvironmentId == request.EnvironmentId
-                    && x.VoucherNo == allocation.Code,
+                    && x.SourceType == cashReceiptSourceType
+                    && x.SourceNo == cashReceiptSourceNo,
                 cancellationToken))
         {
             return;
@@ -622,7 +644,7 @@ public sealed class RegisterAccountReceivableCollectionCommandHandler(Applicatio
             [new CashReceiptAllocationDraft(receivable.ReceivableNo, request.Amount)]);
         cashReceipt.Match();
         dbContext.CashReceipts.Add(cashReceipt);
-        dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForReceivableCollection(receivable, allocation.Code, request.Amount, request.CollectionDate, request.CashAccountCode));
+        dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForReceivableCollection(receivable, allocation.Code, cashReceipt.CashReceiptNo, request.Amount, request.CollectionDate, request.CashAccountCode));
     }
 }
 
@@ -726,14 +748,20 @@ public sealed class MatchCashReceiptCommandHandler(ApplicationDbContext dbContex
 
         receivable.RegisterCollection(allocation.Amount);
         cashReceipt.Match();
+        // #3278 / S5：查重键从凭证号搬到来源两列。本位点与 RegisterAccountReceivableCollection 是
+        // 同一张收款凭证的两条入口（登记即匹配 / 先登记后匹配），理由同付款那一对。
+        var cashReceiptSourceType = JournalVoucherSourceType.CashReceipt.Code;
+        var cashReceiptSourceNo = cashReceipt.CashReceiptNo;
         if (!await dbContext.JournalVouchers.AnyAsync(
             x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
-                && x.VoucherNo == cashReceipt.CashReceiptNo,
+                && x.SourceType == cashReceiptSourceType
+                && x.SourceNo == cashReceiptSourceNo,
             cancellationToken))
         {
             dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForReceivableCollection(
                 receivable,
+                cashReceipt.CashReceiptNo,
                 cashReceipt.CashReceiptNo,
                 allocation.Amount,
                 cashReceipt.ReceiptDate,
@@ -760,7 +788,7 @@ public sealed class PostJournalVoucherCommandValidator : AbstractValidator<PostJ
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
-        RuleFor(x => x.VoucherNo).MaximumLength(100);
+        RuleFor(x => x.VoucherNo).MaximumLength(ErpVoucherNoPolicy.ColumnMaxLength);
         RuleFor(x => x.PostingDate).NotEqual(default(DateOnly));
         RuleFor(x => x.Lines).NotEmpty().Must(x => x.Count >= 2).WithMessage("At least two voucher lines are required.");
         RuleForEach(x => x.Lines).ChildRules(line =>
@@ -797,6 +825,10 @@ public sealed class PostJournalVoucherCommandHandler(ApplicationDbContext dbCont
         var allocation = await _codingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "journal-voucher", request.VoucherNo, request.IdempotencyKey, ErpCodingService.Fingerprint(request.PostingDate, request.Lines.Select(x => $"{x.AccountCode}:{x.DebitAmount}:{x.CreditAmount}:{x.Memo}:{x.CurrencyCode}:{x.ExchangeRate}:{x.LocalDebitAmount}:{x.LocalCreditAmount}")), cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
+            // #3278 / S5 **刻意不改**这一处：手工凭证的来源单号就是凭证号自身
+            // （`JournalVoucherSourceType.Manual`，见本方法下面的 Post 调用），
+            // 所以 `VoucherNo == allocation.Code` 与 `(MANUAL, allocation.Code)` 在本路径上是同一个谓词。
+            // 这也是母票「显式不做」里点名的唯一一处按凭证号定位的 A 族位点。
             return (await dbContext.JournalVouchers.SingleAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.VoucherNo == allocation.Code, cancellationToken)).Id;
         }
 
@@ -805,7 +837,10 @@ public sealed class PostJournalVoucherCommandHandler(ApplicationDbContext dbCont
             request.EnvironmentId,
             allocation.Code,
             request.PostingDate,
-            request.Lines.Select(x => new JournalVoucherLineDraft(x.AccountCode, x.DebitAmount, x.CreditAmount, x.Memo, x.CurrencyCode, x.ExchangeRate, x.LocalDebitAmount, x.LocalCreditAmount)));
+            request.Lines.Select(x => new JournalVoucherLineDraft(x.AccountCode, x.DebitAmount, x.CreditAmount, x.Memo, x.CurrencyCode, x.ExchangeRate, x.LocalDebitAmount, x.LocalCreditAmount)),
+            // 手工凭证没有上游单据，来源单号取凭证号自身（见 JournalVoucherSourceType.Manual）。
+            JournalVoucherSourceType.Manual,
+            allocation.Code);
         dbContext.JournalVouchers.Add(voucher);
         return voucher.Id;
     }
@@ -889,7 +924,7 @@ public static class FinanceVoucherFactory
 
     public static string GoodsReceiptIrAccrualVoucherNo(string purchaseReceiptNo)
     {
-        return $"JV-GRIR-{purchaseReceiptNo}";
+        return ErpVoucherNoPolicy.Compose(VoucherFamily.GoodsReceiptIrAccrual, purchaseReceiptNo);
     }
 
     public static JournalVoucher ForGoodsReceiptIrAccrual(PurchaseReceipt receipt, decimal amount, string voucherNo)
@@ -902,7 +937,9 @@ public static class FinanceVoucherFactory
             [
                 LocalDebit(InventoryAccountCode, amount, receipt.CurrencyCode, receipt.ExchangeRate, $"Goods receipt {receipt.PurchaseReceiptNo}"),
                 LocalCredit(GoodsReceiptInvoiceReceiptAccountCode, amount, receipt.CurrencyCode, receipt.ExchangeRate, $"GR/IR accrual {receipt.PurchaseReceiptNo}"),
-            ]);
+            ],
+            JournalVoucherSourceType.GoodsReceiptIrAccrual,
+            receipt.PurchaseReceiptNo);
     }
 
     public static JournalVoucher ForPurchaseReturn(PurchaseReturn purchaseReturn, string voucherNo, DateOnly postingDate)
@@ -919,7 +956,14 @@ public static class FinanceVoucherFactory
         }
 
         lines.Add(LocalCredit(InventoryAccountCode, purchaseReturn.TotalAmount, purchaseReturn.CurrencyCode, purchaseReturn.ExchangeRate, $"Supplier return {purchaseReturn.PurchaseReturnNo}"));
-        return JournalVoucher.Post(purchaseReturn.OrganizationId, purchaseReturn.EnvironmentId, voucherNo, postingDate, lines);
+        return JournalVoucher.Post(
+            purchaseReturn.OrganizationId,
+            purchaseReturn.EnvironmentId,
+            voucherNo,
+            postingDate,
+            lines,
+            JournalVoucherSourceType.PurchaseReturn,
+            purchaseReturn.PurchaseReturnNo);
     }
 
     public static JournalVoucher ForCreditNote(CreditNote creditNote, DateOnly postingDate)
@@ -927,12 +971,14 @@ public static class FinanceVoucherFactory
         return JournalVoucher.Post(
             creditNote.OrganizationId,
             creditNote.EnvironmentId,
-            $"JV-CN-{creditNote.CreditNoteNo}",
+            ErpVoucherNoPolicy.Compose(VoucherFamily.CreditNote, creditNote.CreditNoteNo),
             postingDate,
             [
                 LocalDebit(SalesReturnsAccountCode, creditNote.Amount, creditNote.CurrencyCode, creditNote.ExchangeRate, $"Credit note {creditNote.CreditNoteNo}"),
                 LocalCredit(AccountsReceivableAccountCode, creditNote.Amount, creditNote.CurrencyCode, creditNote.ExchangeRate, $"Settle AR {creditNote.AccountReceivableNo}"),
-            ]);
+            ],
+            JournalVoucherSourceType.CreditNote,
+            creditNote.CreditNoteNo);
     }
 
     public static JournalVoucher ForSupplierInvoiceGrIrClearing(SupplierInvoice invoice, AccountPayable payable, decimal grIrExchangeRate)
@@ -962,9 +1008,13 @@ public static class FinanceVoucherFactory
         return JournalVoucher.Post(
             invoice.OrganizationId,
             invoice.EnvironmentId,
-            $"JV-AP-{payable.PayableNo}",
+            ErpVoucherNoPolicy.Compose(VoucherFamily.AccountPayable, payable.PayableNo),
             invoice.InvoiceDate,
-            lines);
+            lines,
+            // 凭证号与 ForAccountPayable 撞号（#3278 §A2 的设计地雷），但来源不同：
+            // 这张凭证的驱动单据是供应商发票，不是应付单。来源列按驱动单据取值，故两条路径不相撞。
+            JournalVoucherSourceType.SupplierInvoice,
+            invoice.InvoiceNo);
     }
 
     public static JournalVoucher ForAccountPayable(AccountPayable payable)
@@ -972,12 +1022,14 @@ public static class FinanceVoucherFactory
         return JournalVoucher.Post(
             payable.OrganizationId,
             payable.EnvironmentId,
-            $"JV-AP-{payable.PayableNo}",
+            ErpVoucherNoPolicy.Compose(VoucherFamily.AccountPayable, payable.PayableNo),
             payable.InvoiceDate,
             [
                 LocalDebit(DirectPayableExpenseAccountCode, payable.Amount, payable.CurrencyCode, payable.ExchangeRate, $"Direct AP expense {payable.SourceDocumentNo}"),
                 LocalCredit(AccountsPayableAccountCode, payable.Amount, payable.CurrencyCode, payable.ExchangeRate, $"AP {payable.PayableNo}"),
-            ]);
+            ],
+            JournalVoucherSourceType.AccountPayable,
+            payable.PayableNo);
     }
 
     public static JournalVoucher ForAccountReceivable(AccountReceivable receivable)
@@ -985,12 +1037,14 @@ public static class FinanceVoucherFactory
         return JournalVoucher.Post(
             receivable.OrganizationId,
             receivable.EnvironmentId,
-            $"JV-AR-{receivable.ReceivableNo}",
+            ErpVoucherNoPolicy.Compose(VoucherFamily.AccountReceivable, receivable.ReceivableNo),
             receivable.InvoiceDate,
             [
                 LocalDebit(AccountsReceivableAccountCode, receivable.Amount, receivable.CurrencyCode, receivable.ExchangeRate, $"AR {receivable.ReceivableNo}"),
                 LocalCredit(SalesReturnsAccountCode, receivable.Amount, receivable.CurrencyCode, receivable.ExchangeRate, $"AR source {receivable.SourceDocumentNo}"),
-            ]);
+            ],
+            JournalVoucherSourceType.AccountReceivable,
+            receivable.ReceivableNo);
     }
 
     public static JournalVoucher ForCostCandidate(CostCandidate candidate)
@@ -998,19 +1052,22 @@ public static class FinanceVoucherFactory
         return JournalVoucher.Post(
             candidate.OrganizationId,
             candidate.EnvironmentId,
-            $"JV-COST-{candidate.CandidateNo}",
+            ErpVoucherNoPolicy.Compose(VoucherFamily.CostCandidate, candidate.CandidateNo),
             DateOnly.FromDateTime(candidate.CreatedAtUtc),
             [
                 LocalDebit("5001", candidate.Amount, candidate.CurrencyCode, candidate.ExchangeRate, $"Cost candidate {candidate.SourceDocumentNo}"),
                 LocalCredit("1401", candidate.Amount, candidate.CurrencyCode, candidate.ExchangeRate, $"Cost source {candidate.SourceType}"),
-            ]);
+            ],
+            JournalVoucherSourceType.CostCandidate,
+            candidate.CandidateNo);
     }
 
-    public static JournalVoucher ForPayablePayment(AccountPayable payable, string voucherNo, decimal amount, DateOnly paymentDate, string cashAccountCode)
+    public static JournalVoucher ForPayablePayment(AccountPayable payable, string voucherNo, string paymentExecutionNo, decimal amount, DateOnly paymentDate, string cashAccountCode)
     {
         return ForPayablePayment(
             [new PayablePaymentVoucherAllocation(payable, amount)],
             voucherNo,
+            paymentExecutionNo,
             amount,
             payable.CurrencyCode,
             payable.ExchangeRate,
@@ -1018,9 +1075,15 @@ public static class FinanceVoucherFactory
             cashAccountCode);
     }
 
+    /// <remarks>
+    /// <paramref name="paymentExecutionNo"/> 与 <paramref name="voucherNo"/> 今天取值相同（凭证号就是付款执行单号），
+    /// 但**语义不同**，所以分成两个参数由调用方各自给：#3278 / S6 会把凭证号换成分配器短号，
+    /// 届时来源列不能跟着一起变。合成一个参数会让那次改动静默改掉来源身份。
+    /// </remarks>
     public static JournalVoucher ForPayablePayment(
         IReadOnlyCollection<PayablePaymentVoucherAllocation> allocations,
         string voucherNo,
+        string paymentExecutionNo,
         decimal paymentAmount,
         string paymentCurrencyCode,
         decimal paymentExchangeRate,
@@ -1111,10 +1174,16 @@ public static class FinanceVoucherFactory
             allocations.First().Payable.EnvironmentId,
             voucherNo,
             paymentDate,
-            lines);
+            lines,
+            JournalVoucherSourceType.PaymentExecution,
+            paymentExecutionNo);
     }
 
-    public static JournalVoucher ForReceivableCollection(AccountReceivable receivable, string voucherNo, decimal amount, DateOnly collectionDate, string cashAccountCode)
+    /// <remarks>
+    /// <paramref name="cashReceiptNo"/> 与 <paramref name="voucherNo"/> 今天取值相同，语义不同；
+    /// 拆成两个参数的理由同 <see cref="ForPayablePayment(IReadOnlyCollection{PayablePaymentVoucherAllocation}, string, string, decimal, string, decimal, DateOnly, string)"/>。
+    /// </remarks>
+    public static JournalVoucher ForReceivableCollection(AccountReceivable receivable, string voucherNo, string cashReceiptNo, decimal amount, DateOnly collectionDate, string cashAccountCode)
     {
         return JournalVoucher.Post(
             receivable.OrganizationId,
@@ -1124,7 +1193,9 @@ public static class FinanceVoucherFactory
             [
                 LocalDebit(cashAccountCode, amount, receivable.CurrencyCode, receivable.ExchangeRate, $"Cash collection for {receivable.ReceivableNo}"),
                 LocalCredit("1122", amount, receivable.CurrencyCode, receivable.ExchangeRate, $"Collect AR {receivable.ReceivableNo}"),
-            ]);
+            ],
+            JournalVoucherSourceType.CashReceipt,
+            cashReceiptNo);
     }
 
     private static JournalVoucherLineDraft LocalDebit(string accountCode, decimal amount, string currencyCode, decimal exchangeRate, string memo)

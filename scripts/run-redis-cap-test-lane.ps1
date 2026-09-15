@@ -23,6 +23,11 @@ param(
     [Parameter(Mandatory)] [string] $DatabaseSuffix,
     [Parameter(Mandatory)] [string] $ResultsDirectory,
     [Parameter(Mandatory)] [string] $SummaryPath,
+    # Budget for each member's `dotnet test` discovery/execution invocation. Exceeding it fails as a
+    # timeout, not as a test failure; raise it for a local run whose CPU is shared with other
+    # worktrees (#2870 / #3295). Bounds are owned by Invoke-NativeCommandOutput; 1800 is a default,
+    # not a ceiling, so no ValidateRange is repeated here.
+    [int] $TimeoutSeconds = 1800,
     [string] $ManifestPath = (Join-Path $PSScriptRoot 'redis-cap-test-lane.json')
 )
 
@@ -175,13 +180,25 @@ try {
             [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_CAP_VERSION', $capVersion)
             [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_CAP_TOPIC_PREFIX', $redisNamespace)
             [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_DATABASE_LIFECYCLE', 'external')
-            $discovery = Invoke-DotNetOutput -Name "redis-cap-lane-$($member.id)-discovery" -WorkingDirectory $repoRoot -TimeoutSeconds 1800 -Arguments @('test', [string]$member.project, '--configuration', 'Release', '--list-tests', '--filter', [string]$member.filter)
+            $discovery = Invoke-DotNetOutput -Name "redis-cap-lane-$($member.id)-discovery" -WorkingDirectory $repoRoot -TimeoutSeconds $TimeoutSeconds -Arguments @('test', [string]$member.project, '--configuration', 'Release', '--list-tests', '--filter', [string]$member.filter)
             $expectedIdentitySet = [Collections.Generic.HashSet[string]]::new([string[]]@($member.expectedTestIdentities), [StringComparer]::Ordinal)
+            # #3285：这一行**没有**过滤空白元素，`dotnet test` 的 stdout 以换行结尾 ⇒ 切行必然多出一个
+            # 尾随空元素。它今天不炸，靠的是紧跟着这层按冻结身份集合 `Contains` 的过滤把空串滤掉，
+            # 而 $discovered 之后也只喂给本脚本自己的计数比较、不再递进任何 `[string[]]` 公开参数。
+            # 说清楚性质：这是**巧合，不是守卫**——身份过滤一旦放松（例如改成前缀匹配或整段挪走），
+            # 空元素就会重新流到下游。此处不改，是因为这里根本没有可收口的参数边界；真正的结构性
+            # 收口在 scripts/lib/FullChainTestLane.ps1 / BackendTestShardSelectors.ps1 的函数入参上。
             $discovered = @($discovery.Stdout -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $expectedIdentitySet.Contains([string]$_) })
             $memberSummary.discovered = $discovered.Count
             if ($discovered.Count -ne @($member.expectedTestIdentities).Count) { throw "Redis/CAP lane member '$($member.id)' discovery expected $(@($member.expectedTestIdentities).Count) frozen tests but found $($discovered.Count)." }
+            # #3283：结果目录 run-scoped。本 lane 的 TRX 判定是 `if ($trxFiles.Count -ne 1) { throw }`，
+            # 与真库 lane 的聚合口径相反，但**同一个根因**：目录只建不清 ⇒ 本机连跑两轮第二轮会得到
+            # `observed 2` 的假红，而假红与「复用上一轮证据」的假绿是同一件事的两面。
+            if (Test-Path -LiteralPath $memberResultsDirectory) {
+                Remove-Item -LiteralPath $memberResultsDirectory -Recurse -Force
+            }
             [IO.Directory]::CreateDirectory($memberResultsDirectory) | Out-Null
-            Invoke-DotNetOutput -Name "redis-cap-lane-$($member.id)-execution" -WorkingDirectory $repoRoot -TimeoutSeconds 1800 -Arguments @('test', [string]$member.project, '--configuration', 'Release', '--no-restore', '--filter', [string]$member.filter, '--logger', "trx;LogFilePrefix=redis-cap-$($member.id)", '--results-directory', $memberResultsDirectory) | Out-Null
+            Invoke-DotNetOutput -Name "redis-cap-lane-$($member.id)-execution" -WorkingDirectory $repoRoot -TimeoutSeconds $TimeoutSeconds -Arguments @('test', [string]$member.project, '--configuration', 'Release', '--no-restore', '--filter', [string]$member.filter, '--logger', "trx;LogFilePrefix=redis-cap-$($member.id)", '--results-directory', $memberResultsDirectory) | Out-Null
             $trxResult = Get-NervRedisCapTrxResult -ResultsDirectory $memberResultsDirectory -ExpectedTestIdentities @($member.expectedTestIdentities) -AllowInvalid
             $memberSummary.passed = $trxResult.passed
             $memberSummary.failed = $trxResult.failed

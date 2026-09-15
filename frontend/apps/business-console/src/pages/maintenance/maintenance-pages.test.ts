@@ -16,6 +16,8 @@ const state = vi.hoisted(() => ({
   plans: [] as Array<Record<string, unknown>>,
   remainingByPlanId: {} as Record<string, { status: string; hours?: number }>,
   remainingPending: false,
+  maintenanceFilters: { organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100 },
+  directory: { state: 'ok', message: '' },
   createWorkOrder: vi.fn(async (_body: Record<string, unknown>) => ({})),
   completeWorkOrder: vi.fn(async (_id: string, _body: Record<string, unknown>) => ({})),
   recordInspection: vi.fn(async (_body: Record<string, unknown>) => ({})),
@@ -53,7 +55,7 @@ vi.mock('vue-router', async (importOriginal) => {
 
 vi.mock('@/composables/useBusinessMaintenance', () => ({
   useMaintenanceWorkOrders: () => ({
-    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100 }),
+    filters: state.maintenanceFilters,
     workOrders: computed(() => state.workOrders),
     workOrdersError: shallowRef(),
     workOrdersPending: shallowRef(false),
@@ -93,6 +95,19 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
     generateDue: state.generateDue,
     generateDuePending: shallowRef(false),
     generateDueError: shallowRef(),
+  }),
+}))
+
+vi.mock('@/composables/useMaintenanceDowntimeReasonDirectory', () => ({
+  useMaintenanceDowntimeReasonDirectory: () => ({
+    keyword: shallowRef(''),
+    options: computed(() =>
+      state.directory.state === 'ok' ? [{ value: 'Line-A.Spindle', label: '主轴检修' }] : [],
+    ),
+    state: computed(() => state.directory.state),
+    message: computed(() => state.directory.message),
+    total: computed(() => 1),
+    refresh: vi.fn(),
   }),
 }))
 
@@ -211,6 +226,13 @@ function mountOptions() {
 }
 
 beforeEach(() => {
+  state.maintenanceFilters = reactive({
+    organizationId: 'org-001',
+    environmentId: 'env-dev',
+    skip: 0,
+    take: 100,
+  })
+  state.directory = reactive({ state: 'ok', message: '' })
   document.body.innerHTML = ''
   state.createWorkOrder.mockClear()
   state.completeWorkOrder.mockClear()
@@ -298,30 +320,76 @@ describe('maintenance work orders page', () => {
     expect(document.body.querySelector('#mwo-est-labor')).not.toBeNull()
   })
 
-  it('registers device unavailability when the operator enters an occupancy reason', async () => {
+  it('submits the selected authority code unchanged without the v1 field', async () => {
     mount(WorkOrdersPage, mountOptions())
     await flushPromises()
-
+    await new DOMWrapper(document.body.querySelector('#mwo-unavailability-mode')!).trigger('click')
+    const register = [...document.body.querySelectorAll('[role="option"]')].find(
+      (element) =>
+        element.textContent?.includes('登记设备不可用') && !element.textContent?.includes('不登记'),
+    )!
+    await new DOMWrapper(register).trigger('click')
     const reasonInput = document.body.querySelector<HTMLInputElement>(
       '#mwo-asset-unavailable-reason',
     )
     expect(reasonInput).not.toBeNull()
-    if (!reasonInput) return
-
-    reasonInput.value = '主轴异常，维修期间暂停排产'
-    reasonInput.dispatchEvent(new Event('input', { bubbles: true }))
+    reasonInput!.value = 'Line-A.Spindle'
+    reasonInput!.dispatchEvent(new Event('input', { bubbles: true }))
     await flushPromises()
 
-    const form = reasonInput.closest('form')!
+    const form = reasonInput!.closest('form')!
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await flushPromises()
 
     expect(state.createWorkOrder).toHaveBeenCalledTimes(1)
     expect(state.createWorkOrder.mock.calls[0][0]).toMatchObject({
       deviceAssetId: 'DEV-PRESS-01',
-      assetUnavailableReason: '主轴异常，维修期间暂停排产',
+      assetUnavailableReasonCode: 'Line-A.Spindle',
     })
+    expect(state.createWorkOrder.mock.calls[0][0]).not.toHaveProperty('assetUnavailableReason')
   })
+
+  it.each(['scope', 'failed'])(
+    'does not silently submit null after a %s change',
+    async (change) => {
+      mount(WorkOrdersPage, mountOptions())
+      await flushPromises()
+      await new DOMWrapper(document.body.querySelector('#mwo-unavailability-mode')!).trigger(
+        'click',
+      )
+      await new DOMWrapper(
+        [...document.body.querySelectorAll('[role="option"]')].find(
+          (element) => element.textContent?.trim() === '登记设备不可用',
+        )!,
+      ).trigger('click')
+      const input = new DOMWrapper(
+        document.body.querySelector<HTMLInputElement>('#mwo-asset-unavailable-reason')!,
+      )
+      await input.setValue('Line-A.Spindle')
+      if (change === 'scope') state.maintenanceFilters.environmentId = 'env-other'
+      else Object.assign(state.directory, { state: 'failed', message: '停机原因读取失败，请重试' })
+      await flushPromises()
+      if (change === 'scope') expect(input.element.value).toBe('')
+      else expect(input.element.value).toBe('Line-A.Spindle')
+      const form = new DOMWrapper(input.element.closest('form')!)
+      await form.trigger('submit')
+      await flushPromises()
+      expect(state.createWorkOrder).not.toHaveBeenCalled()
+      await new DOMWrapper(document.body.querySelector('#mwo-unavailability-mode')!).trigger(
+        'click',
+      )
+      await new DOMWrapper(
+        [...document.body.querySelectorAll('[role="option"]')].find(
+          (element) => element.textContent?.trim() === '不登记设备不可用',
+        )!,
+      ).trigger('click')
+      await form.trigger('submit')
+      await flushPromises()
+      expect(state.createWorkOrder).toHaveBeenCalledWith(
+        expect.objectContaining({ assetUnavailableReasonCode: null }),
+      )
+    },
+  )
 
   // 回归：number 输入框经 v-model 可能回传 number；预估工时校验若对 number 调用
   // .trim() 会抛异常，令 submitCreate 静默失败、不发请求（真机走查发现）。
@@ -351,6 +419,7 @@ describe('maintenance work orders page', () => {
     expect(body.estimatedLaborMinutes).toBe(45)
     // 开单人默认解析为当前用户显示名（验证「默认当前用户」）。
     expect(body.openedBy).toBe('admin')
+    expect(body.assetUnavailableReasonCode).toBeNull()
   })
 
   // 审核：备件成本人工覆盖为负/非法时必须拦截，不得发出负成本或静默丢字段。

@@ -26,7 +26,7 @@ Business Console 列表页的规范原型——**所有** stage-B 列表/工作�
   **排序/过滤后的总量**（分页前）或服务端 total。
 - 跨域导航用链接 / `NvRowActions` 菜单项，不加额外菜单层级。
 
-### 文案与元数据（来自 frontend-navigation-map.md）
+### 文案与元数据（产品 IA：`docs/product/navigation.md`；工程规则：`docs/governance/frontend/navigation.md`）
 
 - 可见文案是业务中文。**禁**开发/平台词：organization/environment/context、
   `operationId`、`sourceSystem`、demo/seed/mock/样例。

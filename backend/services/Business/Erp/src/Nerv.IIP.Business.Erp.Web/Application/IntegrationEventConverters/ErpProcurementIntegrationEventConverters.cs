@@ -125,7 +125,8 @@ public sealed class PurchaseReceiptInventoryMovementRequestedIntegrationEventCon
                 "company",
                 null,
                 line.ReceivedQuantity,
-                occurredAtUtc));
+                occurredAtUtc,
+                UnitCost: line.UnitPrice * receipt.ExchangeRate));
     }
 
 }

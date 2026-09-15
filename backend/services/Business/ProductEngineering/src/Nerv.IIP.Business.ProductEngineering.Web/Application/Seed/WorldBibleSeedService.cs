@@ -33,6 +33,7 @@ public sealed class WorldBibleSeedService(ApplicationDbContext dbContext)
         CancellationToken cancellationToken = default)
     {
         await SeedProductsAsync(organizationId, environmentId, [WalkthroughSeedSpec.Product], cancellationToken);
+        await new WalkthroughRodSeedService(dbContext).SeedAsync(organizationId, environmentId, cancellationToken);
     }
 
     private async Task SeedProductsAsync(

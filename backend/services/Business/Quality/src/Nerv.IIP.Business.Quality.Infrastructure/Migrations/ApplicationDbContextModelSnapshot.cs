@@ -622,6 +622,12 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnName("source_document_id")
                         .HasComment("Source document or operation public id, or the composite first-article source identity '{workOrderId}:{operationTaskId}' produced by FirstArticleInspection.SourceDocumentId.");
 
+                    b.Property<string>("SourceDocumentLineId")
+                        .HasMaxLength(250)
+                        .HasColumnType("character varying(250)")
+                        .HasColumnName("source_document_line_id")
+                        .HasComment("Optional source document line, operation task id or stable periodic-operation window identity copied from the inspection task; null for directly recorded inspections without a source line.");
+
                     b.Property<string>("SourceQualityStatus")
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)")
@@ -640,7 +646,7 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)")
                         .HasColumnName("source_type")
-                        .HasComment("Inspection source type: receiving, operation, final, maintenance or customer-return.");
+                        .HasComment("Inspection source type; value domain is QualityInspectionSourceTypes.");
 
                     b.Property<string>("UomCode")
                         .HasMaxLength(50)
@@ -668,9 +674,11 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "SourceType", "Result");
 
-                    b.HasIndex("OrganizationId", "EnvironmentId", "SourceType", "SourceService", "SourceDocumentId", "SkuCode", "AttemptNumber")
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SourceType", "SourceService", "SourceDocumentId", "SourceDocumentLineId", "SkuCode", "AttemptNumber")
                         .IsUnique()
                         .HasDatabaseName("ux_inspection_records_source_attempt");
+
+                    NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("OrganizationId", "EnvironmentId", "SourceType", "SourceService", "SourceDocumentId", "SourceDocumentLineId", "SkuCode", "AttemptNumber"), false);
 
                     b.ToTable("inspection_records", "quality", t =>
                         {
@@ -882,10 +890,10 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
 
                     b.Property<string>("TriggerIdempotencyKey")
                         .IsRequired()
-                        .HasMaxLength(300)
-                        .HasColumnType("character varying(300)")
+                        .HasMaxLength(474)
+                        .HasColumnType("character varying(474)")
                         .HasColumnName("trigger_idempotency_key")
-                        .HasComment("Idempotency key derived from the source event and source line.");
+                        .HasComment("Idempotency key derived from the source event and source line; upper bound governed by InspectionTaskTriggerKey.MaxLength.");
 
                     b.Property<string>("UomCode")
                         .IsRequired()
@@ -1467,13 +1475,13 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                     b.Property<DateTime?>("ReleasedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("released_at_utc")
-                        .HasComment("UTC time when MES released the work order; null while source facts are staged out of order.");
+                        .HasComment("UTC work-order release time, composite by source: the MES release event time for directly delivered facts, or a reconstructed lower bound (earliest operation creation or earliest production report of the work order) for legacy work orders backfilled by the release-projection backfill. Null while source facts are staged out of order.");
 
                     b.Property<string>("SkuCode")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("sku_code")
-                        .HasComment("SKU snapshot from the work-order release event; null until release arrives.");
+                        .HasComment("SKU snapshot from the work-order release facts, single-sourced: the release event SKU for directly delivered facts, and for legacy work orders the same work-order SKU reconstructed by the release-projection backfill. An operation whose staged completion_sku_code disagrees is rejected per operation instead of yielding to it. Null until release facts arrive.");
 
                     b.Property<string>("WorkCenterId")
                         .HasMaxLength(150)
@@ -1691,14 +1699,14 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                     b.Property<DateTime>("ReleasedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("released_at_utc")
-                        .HasComment("UTC work-order release time.");
+                        .HasComment("UTC work-order release time frozen from the release snapshot; carries the same composite meaning as periodic_inspection_operations.released_at_utc - event time for directly delivered facts, reconstructed lower bound for backfilled legacy work orders.");
 
                     b.Property<string>("SkuCode")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("sku_code")
-                        .HasComment("SKU snapshot from the release event.");
+                        .HasComment("SKU snapshot frozen from the release facts; single-sourced like periodic_inspection_operations.sku_code - always the work-order release SKU, delivered directly or reconstructed by the backfill, and never the staged completion_sku_code.");
 
                     b.Property<string>("Status")
                         .IsRequired()

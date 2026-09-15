@@ -95,7 +95,7 @@ Nerv-IIP/
   artifacts/        可复现的本地或 CI 诊断产物
 ```
 
-具体放置规则与依赖边界见 [仓库布局](docs/architecture/repo-layout.md)。
+具体放置规则与依赖边界见 [仓库布局](docs/architecture/overview/repo-layout.md)。
 
 ## 文档入口
 
@@ -106,7 +106,7 @@ Nerv-IIP/
 - [当前 Reference 入口](docs/reference/README.md)：Schema、码表、矩阵、术语与技术资料的人工查询索引。
 - [ADR 导航](docs/adr/README.md)：长期决策、选择理由及其后继关系。
 - [产品定位](PRODUCT.md) 与 [设计原则](DESIGN.md)。
-- [上下文地图](docs/architecture/context-map.md)、[仓库布局](docs/architecture/repo-layout.md) 与 [API 契约及代码生成](docs/architecture/api-contract-and-codegen.md)。
+- [上下文地图](docs/architecture/overview/context-map.md)、[仓库布局](docs/architecture/overview/repo-layout.md) 与 [API 契约及代码生成](docs/architecture/integration/api-contracts.md)。
 
 ## 权威来源
 
@@ -119,4 +119,4 @@ Nerv-IIP/
 - 长期决策及理由：[`docs/adr/`](docs/adr/)。
 - 历史时点记录：[`docs/status/archive/`](docs/status/archive/)；历史快照不构成当前实现或交付裁决。
 
-旧路径 [`docs/architecture/implementation-readiness.md`](docs/architecture/implementation-readiness.md) 仅保留兼容导航，不再承载项目状态或全局事实。
+已退役状态入口的历史从 [`docs/status/archive/README.md`](docs/status/archive/README.md) 与 Git 追溯；当前状态只使用上方现态入口。

@@ -1,15 +1,17 @@
+using Nerv.IIP.Contracts.Iam;
+
 namespace Nerv.IIP.Business.DemandPlanning.Web.Application.Auth;
 
 public static class DemandPlanningPermissionCodes
 {
-    public const string DemandsRead = "business.planning.demands.read";
-    public const string DemandsManage = "business.planning.demands.manage";
-    public const string MpsRead = "business.planning.mps.read";
-    public const string MpsManage = "business.planning.mps.manage";
-    public const string MpsRelease = "business.planning.mps.release";
-    public const string MrpRead = "business.planning.mrp.read";
-    public const string MrpRun = "business.planning.mrp.run";
-    public const string SuggestionsManage = "business.planning.suggestions.manage";
+    public const string DemandsRead = NervIipPermissionCodes.PlanningDemandsRead;
+    public const string DemandsManage = NervIipPermissionCodes.PlanningDemandsManage;
+    public const string MpsRead = NervIipPermissionCodes.PlanningMpsRead;
+    public const string MpsManage = NervIipPermissionCodes.PlanningMpsManage;
+    public const string MpsRelease = NervIipPermissionCodes.PlanningMpsRelease;
+    public const string MrpRead = NervIipPermissionCodes.PlanningMrpRead;
+    public const string MrpRun = NervIipPermissionCodes.PlanningMrpRun;
+    public const string SuggestionsManage = NervIipPermissionCodes.PlanningSuggestionsManage;
 
     public static readonly IReadOnlyCollection<string> All =
     [

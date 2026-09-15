@@ -597,6 +597,184 @@ public sealed class PeriodicInspectionIntegrationEventTests
         Assert.Empty(await deadLetters.ListAsync(null, null, CancellationToken.None));
     }
 
+    // ===== #3129 行为探针（常驻）=====
+    // 两条探针钉的是同一个根因的两个投影：owner 裁定「下达之前已产出的数量不补开巡检任务」，
+    // 而做这个判断所需的事实——**哪些产量在下达动作之前就已存在、且按工序分辨**——只存在于 MES 侧。
+    // 载荷补上该事实之前，两条探针在 main 上分别读到 4 与 2（本票基线读数），目标都是 0。
+    // 探针①是「空间」面（多工序被压成一个工单级标量），探针②是「时间」面（发布先于报工到达）。
+
+    [Fact]
+    public async Task Release_opens_no_quantity_window_for_any_operation_that_had_already_produced_before_the_release_action()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.InspectionPlans.Add(NewPeriodicPlan());
+        await dbContext.SaveChangesAsync();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var coordinator = new PeriodicInspectionOperationScopeCoordinator(dbContext);
+        var reportHandler = new ProductionReportRecordedIntegrationEventHandlerForTrackPeriodicInspection(
+            dbContext, coordinator, deadLetters);
+
+        await reportHandler.HandleAsync(
+            ReportOf("RPT-OP10", "OP-10", "2026-08-02T00:00:00Z", 250m),
+            CancellationToken.None);
+        await reportHandler.HandleAsync(
+            ReportOf("RPT-OP20", "OP-20", "2026-08-03T00:00:00Z", 250m),
+            CancellationToken.None);
+
+        await new WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicInspectionContexts(
+            dbContext, coordinator, deadLetters).HandleAsync(
+                ReleasedAt(
+                    "2026-08-02T00:00:00Z",
+                    // 载荷里这两个 250 就是 MES 在下达那一刻按工序算出来的既有净良品量。
+                    // 它们不是本用例编出来的数：MES 侧同场景的产出由
+                    // `WorkOrderReleaseFactTimePostgresTests
+                    //  .Release_carries_each_operations_pre_release_good_quantity_on_postgres`
+                    // 独立钉住——那条用例在真实 PostgreSQL 上跑 ReleaseWorkOrderCommandHandler，
+                    // 用同样「两道工序各 250」的报工，断言载荷里落出的就是 [250, 250]。
+                    new ReleasedOperationPayload("OP-10", 10, "WC-001", 250m),
+                    new ReleasedOperationPayload("OP-20", 20, "WC-001", 250m)),
+                CancellationToken.None);
+
+        Assert.Empty(await dbContext.InspectionTasks.ToListAsync());
+        var contexts = await dbContext.PeriodicInspectionRuntimeContexts
+            .OrderBy(x => x.OperationId)
+            .ToArrayAsync();
+        Assert.Equal([2L, 2L], contexts.Select(x => x.LastGeneratedQuantityWindowSequence));
+        Assert.Empty(await deadLetters.ListAsync(null, null, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Release_arriving_before_the_report_opens_no_quantity_window_for_production_that_preceded_the_release_action()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.InspectionPlans.Add(NewPeriodicPlan());
+        await dbContext.SaveChangesAsync();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var coordinator = new PeriodicInspectionOperationScopeCoordinator(dbContext);
+
+        await new WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicInspectionContexts(
+            dbContext, coordinator, deadLetters).HandleAsync(
+                ReleasedAt("2026-08-02T00:00:00Z", new ReleasedOperationPayload("OP-001", 10, "WC-001", 250m)),
+                CancellationToken.None);
+        await new ProductionReportRecordedIntegrationEventHandlerForTrackPeriodicInspection(
+            dbContext, coordinator, deadLetters).HandleAsync(
+                ReportOf("RPT-001", "OP-001", "2026-08-02T00:00:00Z", 250m),
+                CancellationToken.None);
+
+        Assert.Empty(await dbContext.InspectionTasks.ToListAsync());
+        var context = await dbContext.PeriodicInspectionRuntimeContexts.SingleAsync();
+        Assert.Equal(250m, context.QuantityHighWater);
+        Assert.Equal(2, context.LastGeneratedQuantityWindowSequence);
+        Assert.Empty(await deadLetters.ListAsync(null, null, CancellationToken.None));
+    }
+
+    /// <summary>
+    /// 阳性对照的「带值」形态：MES 查过、答案是 0（下达动作发生时这道工序一条报工都没有），
+    /// 窗口照常开。它与 <c>Report_before_release_backfills_quantity_windows_from_the_frozen_context</c>
+    /// 是同一个场景的两种载荷——后者不带该字段（旧消息），本条带 <c>0</c>（上线后的新消息）。
+    ///
+    /// <para><b>鉴别力按实测写，别读强了。</b>上一版这里写的是「少了这一条，判别式退化成无条件跳过不会红」，
+    /// **该主张未被证实、且实测为假**：把消费侧改成「字段在场就无条件 <c>SkipPeriodicWindowsAccruedBefore</c>」
+    /// （即保留判空、丢掉数值）这份变异，本用例与探针
+    /// <c>Release_arriving_before_the_report_opens_no_quantity_window_…</c> **一起红（2 红）**。
+    /// 本用例因此**不是**该变异的唯一鉴别力；它的独立价值在于把「MES 查过、答案是 0」这条语义钉在
+    /// **报工晚于下达动作**这一形态上——探针②的形态恰好相反（产量早于下达动作），两者覆盖的是不同方向。</para>
+    /// </summary>
+    [Fact]
+    public async Task Release_carrying_an_explicit_zero_pre_release_quantity_still_opens_the_accrued_windows()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.InspectionPlans.Add(NewPeriodicPlan());
+        await dbContext.SaveChangesAsync();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var coordinator = new PeriodicInspectionOperationScopeCoordinator(dbContext);
+
+        await new ProductionReportRecordedIntegrationEventHandlerForTrackPeriodicInspection(
+            dbContext, coordinator, deadLetters).HandleAsync(
+                ReportOf("RPT-001", "OP-001", "2026-08-24T01:30:00Z", 200m),
+                CancellationToken.None);
+        await new WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicInspectionContexts(
+            dbContext, coordinator, deadLetters).HandleAsync(
+                ReleasedAt("2026-08-24T01:00:00Z", new ReleasedOperationPayload("OP-001", 10, "WC-001", 0m)),
+                CancellationToken.None);
+
+        var tasks = await dbContext.InspectionTasks.OrderBy(x => x.Quantity).ToArrayAsync();
+        Assert.Equal([100m, 200m], tasks.Select(x => x.Quantity));
+        Assert.Equal(2, (await dbContext.PeriodicInspectionRuntimeContexts.SingleAsync()).LastGeneratedQuantityWindowSequence);
+    }
+
+    /// <summary>
+    /// <b>把「null 时的行为」当断言写，而不是只写在注释里。</b>
+    /// 本次发布之前入队、此刻仍在在途队列或 DLQ 里的旧 <c>mes.WorkOrderReleased</c> 不带该字段；
+    /// 它们照**老行为**处理——不跳过，下达前的产量仍被补开成巡检任务，
+    /// 与本次改动之前的 main 逐字相同（探针①在 main 上的读数就是这个 4）。
+    /// 这是一个**已知的、明确的不生效面**，不是安全默认值；
+    /// 它随那批旧消息被消费干净而消失，完整论证见 <c>ReleasedOperationPayload.PreReleaseGoodQuantity</c>。
+    ///
+    /// <para>这条用例同时是承重格的「另一半」：若有人把消费侧的 <c>is { }</c> 判空改成
+    /// <c>?? 0</c> 之类的静默回落，本条不会变——但把 null 当成「跳过全部」处理的写法会打红它。</para>
+    /// </summary>
+    [Fact]
+    public async Task Release_without_the_pre_release_quantity_field_keeps_the_pre_3129_behaviour()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.InspectionPlans.Add(NewPeriodicPlan());
+        await dbContext.SaveChangesAsync();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var coordinator = new PeriodicInspectionOperationScopeCoordinator(dbContext);
+        var reportHandler = new ProductionReportRecordedIntegrationEventHandlerForTrackPeriodicInspection(
+            dbContext, coordinator, deadLetters);
+
+        await reportHandler.HandleAsync(
+            ReportOf("RPT-OP10", "OP-10", "2026-08-02T00:00:00Z", 250m),
+            CancellationToken.None);
+        await reportHandler.HandleAsync(
+            ReportOf("RPT-OP20", "OP-20", "2026-08-03T00:00:00Z", 250m),
+            CancellationToken.None);
+
+        await new WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicInspectionContexts(
+            dbContext, coordinator, deadLetters).HandleAsync(
+                ReleasedAt(
+                    "2026-08-02T00:00:00Z",
+                    new ReleasedOperationPayload("OP-10", 10, "WC-001"),
+                    new ReleasedOperationPayload("OP-20", 20, "WC-001")),
+                CancellationToken.None);
+
+        Assert.Equal(4, await dbContext.InspectionTasks.CountAsync());
+        Assert.Empty(await deadLetters.ListAsync(null, null, CancellationToken.None));
+    }
+
+    private static ProductionReportRecordedIntegrationEvent ReportOf(
+        string reportNo,
+        string operationId,
+        string reportedAtUtc,
+        decimal goodQuantity)
+    {
+        var template = ProductionReport(reportNo, operationId: operationId, reportedAtUtc: reportedAtUtc);
+        return template with { Payload = template.Payload with { GoodQuantity = goodQuantity } };
+    }
+
+    private static WorkOrderReleasedIntegrationEvent ReleasedAt(
+        string releasedAtUtc,
+        params ReleasedOperationPayload[] operations) => new(
+        "evt-release-WO-001",
+        MesIntegrationEventTypes.WorkOrderReleased,
+        MesIntegrationEventVersions.V1,
+        DateTimeOffset.Parse(releasedAtUtc),
+        MesIntegrationEventSources.BusinessMes,
+        "corr-release-WO-001",
+        "WO-001",
+        "org-001",
+        "env-dev",
+        "system:mes",
+        "mes:work-order-released:org-001:env-dev:WO-001",
+        new WorkOrderReleasedPayload(
+            "WO-001",
+            "SKU-FG-1000",
+            1000m,
+            DateTimeOffset.Parse(releasedAtUtc),
+            operations));
+
     private static ApplicationDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()

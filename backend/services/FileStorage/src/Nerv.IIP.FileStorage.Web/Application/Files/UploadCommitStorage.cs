@@ -53,11 +53,3 @@ public interface IUploadCommitStorage
         UploadCommitIntent intent,
         CancellationToken cancellationToken);
 }
-
-public sealed class UnavailableUploadCommitStorage : IUploadCommitStorage
-{
-    public Task<UploadCommitStorageResult> CommitAsync(
-        UploadCommitIntent intent,
-        CancellationToken cancellationToken) =>
-        Task.FromResult(UploadCommitStorageResult.ProvenNoFinalActionStarted());
-}

@@ -195,11 +195,29 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                         .HasColumnName("printer_id")
                         .HasComment("Configured printer identity selected for the transport attempt.");
 
+                    b.Property<string>("ProductionReportId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("production_report_id")
+                        .HasComment("MES production report id that activated this reserved print batch.");
+
+                    b.Property<string>("ProductionReportNo")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("production_report_no")
+                        .HasComment("MES production report number that activated this reserved print batch.");
+
                     b.Property<string>("RendererContractVersion")
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)")
                         .HasColumnName("renderer_contract_version")
                         .HasComment("Nullable deterministic renderer contract version; null only for legacy rows.");
+
+                    b.Property<string>("ReportIntentFingerprint")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("report_intent_fingerprint")
+                        .HasComment("Optional opaque canonical report-intent fingerprint supplied by the authorized caller; null denotes a general non-MES label intent.");
 
                     b.Property<int>("RequestedQuantity")
                         .HasColumnType("integer")
@@ -225,7 +243,7 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)")
                         .HasColumnName("status")
-                        .HasComment("Truthful print batch lifecycle status: pending, sent-to-printer, printed or failed.");
+                        .HasComment("Truthful print batch lifecycle status: reserved, ready-to-print, sent-to-printer, delivery-unknown, printed or failed.");
 
                     b.Property<string>("TemplateAssetSha256")
                         .HasMaxLength(71)
@@ -255,7 +273,7 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                         {
                             t.HasComment("Label print batch facts and idempotency records.");
 
-                            t.HasCheckConstraint("ck_label_print_batches_replay_snapshot_complete", "(template_file_id_snapshot IS NULL AND template_asset_sha256 IS NULL AND variable_schema_json_snapshot IS NULL AND barcode_type_snapshot IS NULL AND renderer_contract_version IS NULL) OR (template_file_id_snapshot IS NOT NULL AND template_asset_sha256 IS NOT NULL AND variable_schema_json_snapshot IS NOT NULL AND barcode_type_snapshot IS NOT NULL AND renderer_contract_version IS NOT NULL)");
+                            t.HasCheckConstraint("ck_label_print_batches_replay_snapshot_complete", "(template_file_id_snapshot IS NULL AND template_asset_sha256 IS NULL AND variable_schema_json_snapshot IS NULL AND barcode_type_snapshot IS NULL AND renderer_contract_version IS NULL) OR (template_file_id_snapshot IS NOT NULL AND trim(template_file_id_snapshot, ' \t\n\u000b\u000c\r\u0085             \u2028\u2029  　') <> '' AND template_asset_sha256 IS NOT NULL AND trim(template_asset_sha256, ' \t\n\u000b\u000c\r\u0085             \u2028\u2029  　') <> '' AND variable_schema_json_snapshot IS NOT NULL AND trim(variable_schema_json_snapshot, ' \t\n\u000b\u000c\r\u0085             \u2028\u2029  　') <> '' AND barcode_type_snapshot IS NOT NULL AND trim(barcode_type_snapshot, ' \t\n\u000b\u000c\r\u0085             \u2028\u2029  　') <> '' AND renderer_contract_version IS NOT NULL AND trim(renderer_contract_version, ' \t\n\u000b\u000c\r\u0085             \u2028\u2029  　') <> '')");
                         });
                 });
 
@@ -275,6 +293,13 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at_utc")
                         .HasComment("UTC time when the print item was generated.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id copied from the owning print batch for scoped serial uniqueness.");
 
                     b.Property<string>("EpcUri")
                         .HasMaxLength(300)
@@ -312,6 +337,13 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                         .HasColumnName("lot_no")
                         .HasComment("Batch or lot number encoded in the generated GS1 label.");
 
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id copied from the owning print batch for scoped serial uniqueness.");
+
                     b.Property<int>("SequenceNo")
                         .HasColumnType("integer")
                         .HasColumnName("sequence_no")
@@ -321,7 +353,7 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                         .HasMaxLength(150)
                         .HasColumnType("character varying(150)")
                         .HasColumnName("serial_number")
-                        .HasComment("Serialized unit identifier encoded in the generated GS1 label.");
+                        .HasComment("Server-allocated serialized unit identifier encoded in a plain or GS1 label; null only for legacy non-serialized rows.");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -350,9 +382,57 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
 
                     b.HasIndex("Gtin", "LotNo", "SerialNumber");
 
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SerialNumber")
+                        .IsUnique()
+                        .HasDatabaseName("UX_label_print_items_serial_number")
+                        .HasFilter("serial_number IS NOT NULL");
+
                     b.ToTable("label_print_items", "barcode", t =>
                         {
                             t.HasComment("Generated label print item facts for a print batch.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelSerialCounterAggregate.LabelSerialCounter", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Label serial counter aggregate id.");
+
+                    b.Property<long>("CurrentValue")
+                        .HasColumnType("bigint")
+                        .HasColumnName("current_value")
+                        .HasComment("Highest monotonically allocated counter value in the collision partition.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id for the serial allocation scope.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id that owns the serial allocation scope.");
+
+                    b.Property<int>("SerialNumberLength")
+                        .HasColumnType("integer")
+                        .HasColumnName("serial_number_length")
+                        .HasComment("Fixed Base62 serial text width that defines an exact collision partition.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SerialNumberLength")
+                        .IsUnique()
+                        .HasDatabaseName("UX_label_serial_counters_scope");
+
+                    b.ToTable("label_serial_counters", "barcode", t =>
+                        {
+                            t.HasComment("Persistent serial allocation counters partitioned by organization, environment, and exact serial text width.");
                         });
                 });
 
@@ -381,6 +461,11 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("organization_id")
                         .HasComment("Organization tenant id that owns the template.");
+
+                    b.Property<Guid?>("RetiredCurrentFileByDecisionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("retired_current_file_by_decision_id")
+                        .HasComment("Retirement decision that preserves this historical pointer while prohibiting reuse.");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -640,6 +725,251 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                     b.ToTable("scan_records", "barcode", t =>
                         {
                             t.HasComment("Append-only barcode scan facts captured from devices and workflows.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.TemplateAssetRetirementDecisionAggregate.TemplateAssetRetirementDecision", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Retirement decision id.");
+
+                    b.Property<long?>("ClientWindowSeconds")
+                        .HasColumnType("bigint")
+                        .HasColumnName("client_window_seconds")
+                        .HasComment("Requested client replay horizon in seconds, frozen on first send.");
+
+                    b.Property<DateTimeOffset?>("CompletedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at_utc")
+                        .HasComment("UTC local terminal completion time, absent for pending or unknown outcomes.");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("correlation_id")
+                        .HasComment("Safe upstream audit correlation id.");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC time when the decision was created.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id that owns the decision.");
+
+                    b.Property<Guid?>("ExecutionLeaseId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("execution_lease_id")
+                        .HasComment("Current durable execution lease identity.");
+
+                    b.Property<long?>("ExecutorLeaseSeconds")
+                        .HasColumnType("bigint")
+                        .HasColumnName("executor_lease_seconds")
+                        .HasComment("Retirement lease duration in seconds, frozen on first send.");
+
+                    b.Property<long?>("ExecutorMaxBackoffSeconds")
+                        .HasColumnType("bigint")
+                        .HasColumnName("executor_max_backoff_seconds")
+                        .HasComment("Retirement retry backoff in seconds, frozen on first send.");
+
+                    b.Property<DateTimeOffset?>("FirstSentAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("first_sent_at_utc")
+                        .HasComment("UTC first outbound attempt, frozen before signing.");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("idempotency_key")
+                        .HasComment("Caller supplied idempotency key for decision creation.");
+
+                    b.Property<Guid>("LabelTemplateId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("label_template_id")
+                        .HasComment("BarcodeLabel template that owns the FileStorage asset.");
+
+                    b.Property<DateTimeOffset?>("NextAttemptAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("next_attempt_at_utc")
+                        .HasComment("UTC lease expiry or earliest retry time.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id that owns the decision.");
+
+                    b.Property<string>("Permission")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("permission")
+                        .HasComment("Permission proven when the decision was created.");
+
+                    b.Property<DateTimeOffset?>("QuotaReleasedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("quota_released_at_utc")
+                        .HasComment("UTC quota release time reported by FileStorage, absent for unknown outcomes.");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("reason")
+                        .HasComment("Final-user supplied retirement reason.");
+
+                    b.Property<DateTimeOffset?>("RecoveryUntilUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("recovery_until_utc")
+                        .HasComment("UTC permanent unknown boundary, seven days after first send.");
+
+                    b.Property<string>("ReferenceResult")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("reference_result")
+                        .HasComment("Frozen BarcodeLabel reference evaluation result.");
+
+                    b.Property<long?>("ReplayHorizonSeconds")
+                        .HasColumnType("bigint")
+                        .HasColumnName("replay_horizon_seconds")
+                        .HasComment("Frozen replay horizon in seconds returned by FileStorage.");
+
+                    b.Property<long?>("ReplayPolicyVersion")
+                        .HasColumnType("bigint")
+                        .HasColumnName("replay_policy_version")
+                        .HasComment("Replay policy version frozen on first send.");
+
+                    b.Property<DateTimeOffset?>("ReplayUntilUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("replay_until_utc")
+                        .HasComment("Frozen UTC replay deadline, local completion plus the agreed horizon.");
+
+                    b.Property<string>("RequesterSubject")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("requester_subject")
+                        .HasComment("Authenticated final-user subject captured for audit.");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("status")
+                        .HasComment("Retirement decision execution status.");
+
+                    b.Property<string>("TemplateAssetSha256")
+                        .IsRequired()
+                        .HasMaxLength(71)
+                        .HasColumnType("character varying(71)")
+                        .HasColumnName("template_asset_sha256")
+                        .HasComment("Frozen canonical SHA-256 asset digest.");
+
+                    b.Property<string>("TemplateCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("template_code")
+                        .HasComment("Frozen FileStorage owner id for the template asset.");
+
+                    b.Property<string>("TemplateFileId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("template_file_id")
+                        .HasComment("FileStorage file id permanently fenced from new BarcodeLabel use.");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc")
+                        .HasComment("UTC time when the decision was last changed.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LabelTemplateId");
+
+                    b.HasIndex("Status", "NextAttemptAtUtc");
+
+                    b.HasIndex("Status", "RecoveryUntilUtc");
+
+                    b.HasIndex("Status", "ReplayUntilUtc");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("UX_template_asset_retirement_decisions_idempotency");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "TemplateFileId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_template_asset_retirement_decisions_file");
+
+                    b.ToTable("template_asset_retirement_decisions", "barcode", t =>
+                        {
+                            t.HasComment("BarcodeLabel-owned decisions that permanently fence template assets from new use.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.TemplateAssetRetirementDecisionAggregate.TemplateAssetRetirementReplayFence", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Original retirement decision identity, not a new generated identity.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment owning the retired asset.");
+
+                    b.Property<string>("IdempotencyKeyDigest")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("idempotency_key_digest")
+                        .HasComment("SHA-256 uppercase hex digest of the UTF-8 caller key; no original caller text.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization owning the retired asset.");
+
+                    b.Property<DateTimeOffset>("ReplayUntilUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("replay_until_utc")
+                        .HasComment("Frozen UTC boundary for replay-window-expired.");
+
+                    b.Property<string>("TemplateFileId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("template_file_id")
+                        .HasComment("File identity permanently prohibited from reuse.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "IdempotencyKeyDigest")
+                        .IsUnique();
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "TemplateFileId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_template_asset_retirement_replay_fences_organization_id_en~1");
+
+                    b.ToTable("template_asset_retirement_replay_fences", "barcode", t =>
+                        {
+                            t.HasComment("Permanent minimal retirement facts; no requester, reason, proof or object content.");
                         });
                 });
 

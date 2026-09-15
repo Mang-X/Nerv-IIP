@@ -92,6 +92,18 @@ public static class BusinessConsoleSearchableDirectoryPolicy
             return null;
         }
 
+        // 无范围维度的目录（SupportedScopeKinds 为空集）：权威源查询里没有任何范围参数，
+        // 目录内容是组织级参考数据，不存在按范围切分、可被越权读到的行。此时把 grant 收窄成
+        // 过滤条件是空操作，「所有 grant 必须可表示」退化为「除组织级授权外一律拒」，
+        // 会把只持 self/site 等受限范围的主体整体挡在词表之外（#3125）。
+        // 仍然只在没有显式请求范围时放行；带显式范围一律 fail closed，绝不静默忽略它。
+        if (definition.SupportedScopeKinds.Count == 0)
+        {
+            return string.IsNullOrWhiteSpace(requestedScopeKind)
+                ? new BusinessConsoleSearchableDirectoryScope(null, null)
+                : null;
+        }
+
         var organizationWide = grants.Any(grant =>
             grant.OrganizationWide
             && string.Equals(grant.ScopeKind.Trim(), "organization", StringComparison.OrdinalIgnoreCase)
@@ -141,9 +153,20 @@ public static class BusinessConsoleSearchableDirectoryPolicy
 
         var scopeKind = grant.ScopeKind.Trim().ToLowerInvariant();
         var scopeId = grant.ScopeId.Trim();
-        return grant.OrganizationWide
-            ? scopeKind == "organization" && string.Equals(scopeId, organizationId, StringComparison.Ordinal)
-            : definition.SupportedScopeKinds.Contains(scopeKind);
+        if (grant.OrganizationWide)
+        {
+            return scopeKind == "organization" && string.Equals(scopeId, organizationId, StringComparison.Ordinal);
+        }
+
+        // 无范围维度的目录上，受限范围本身不可能表达成过滤条件，也没有需要表达的东西；
+        // 唯一仍然承重的范围约束是租户边界——落在别的组织上的 grant 依旧不可表示。
+        if (definition.SupportedScopeKinds.Count == 0)
+        {
+            return scopeKind != "organization"
+                || string.Equals(scopeId, organizationId, StringComparison.Ordinal);
+        }
+
+        return definition.SupportedScopeKinds.Contains(scopeKind);
     }
 
     private static BusinessConsoleSearchableDirectoryDefinition Define(

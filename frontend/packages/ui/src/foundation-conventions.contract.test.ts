@@ -122,7 +122,6 @@ describe('状态词表', () => {
     'accepted',
     'unrestricted',
     'restricted',
-    'quarantine',
     'scrapped',
     'hold',
     'quality',

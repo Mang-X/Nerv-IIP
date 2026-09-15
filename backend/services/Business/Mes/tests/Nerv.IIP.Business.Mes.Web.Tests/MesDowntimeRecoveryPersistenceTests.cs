@@ -1,12 +1,8 @@
-using MediatR;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate;
-using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
+using static Nerv.IIP.Business.Mes.Web.Tests.MesSqliteTestDatabase;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -15,7 +11,7 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 /// x.Id.Id.ToString() 之类不可翻译谓词跑成假绿），因此全部用 SQLite 实跑。
 /// #1947：停机读面（列表行投影 + 按原因聚合）改由 <see cref="MesDowntimeReadFacePostgresTests"/>
 /// 在真实 PostgreSQL 上证明——按原因聚合把时长差值下推成 <c>date_part('epoch', ...)</c>，
-/// SQLite 连同本文件的 DateTimeOffset→long 值转换器都翻译不了，留在这里只会变成翻译不了的假红。
+/// SQLite 连同 <see cref="MesSqliteTestDatabase"/> 的 DateTimeOffset→long 值转换器都翻译不了，留在这里只会变成翻译不了的假红。
 /// </summary>
 public sealed class MesDowntimeRecoveryPersistenceTests
 {
@@ -114,75 +110,5 @@ public sealed class MesDowntimeRecoveryPersistenceTests
         var blockingAfter = await ReadinessReasonCodes.GetEquipmentBlockingIssuesAsync(
             dbContext, Org, Env, "WC-03", null, effectiveAt, CancellationToken.None);
         Assert.Empty(blockingAfter);
-    }
-
-    private static async Task<SqliteConnection> CreateOpenSqliteConnectionAsync()
-    {
-        var connection = new SqliteConnection("Filename=:memory:");
-        await connection.OpenAsync();
-        return connection;
-    }
-
-    private static ApplicationDbContext CreateSqliteDbContext(SqliteConnection connection)
-    {
-        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseSqlite(connection)
-            .ReplaceService<IModelCustomizer, SqliteDateTimeOffsetModelCustomizer>()
-            .Options;
-        return new ApplicationDbContext(options, new NoopRecoveryMediator());
-    }
-
-    // SQLite provider 无法翻译 DateTimeOffset 的排序/比较（仓库已知坑：EF 测试 provider 翻译差异），
-    // 测试专用 ModelCustomizer 把所有 DateTimeOffset 列统一转成 long（值均为 UTC，ToBinary 排序与时间序一致）。
-    private sealed class SqliteDateTimeOffsetModelCustomizer(ModelCustomizerDependencies dependencies)
-        : RelationalModelCustomizer(dependencies)
-    {
-        private static readonly DateTimeOffsetToBinaryConverter Converter = new();
-
-        public override void Customize(ModelBuilder modelBuilder, DbContext context)
-        {
-            base.Customize(modelBuilder, context);
-            foreach (var property in modelBuilder.Model.GetEntityTypes().SelectMany(entity => entity.GetProperties()))
-            {
-                if (property.ClrType == typeof(DateTimeOffset) || property.ClrType == typeof(DateTimeOffset?))
-                {
-                    property.SetValueConverter(Converter);
-                }
-            }
-        }
-    }
-
-    private sealed class NoopRecoveryMediator : IMediator
-    {
-        public Task Publish(object notification, CancellationToken cancellationToken = default) => Task.CompletedTask;
-
-        public Task Publish<TNotification>(TNotification notification, CancellationToken cancellationToken = default)
-            where TNotification : INotification => Task.CompletedTask;
-
-        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException("Noop mediator cannot send requests.");
-        }
-
-        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
-            where TRequest : IRequest
-        {
-            throw new NotSupportedException("Noop mediator cannot send requests.");
-        }
-
-        public Task<object?> Send(object request, CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException("Noop mediator cannot send requests.");
-        }
-
-        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException("Noop mediator cannot create streams.");
-        }
-
-        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException("Noop mediator cannot create streams.");
-        }
     }
 }

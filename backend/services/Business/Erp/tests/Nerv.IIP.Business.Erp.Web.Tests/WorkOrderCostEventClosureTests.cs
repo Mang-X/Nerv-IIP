@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using Nerv.IIP.Business.Erp.Domain.DomainEvents;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
@@ -217,7 +218,13 @@ public sealed class WorkOrderCostEventClosureTests
             var cost = await assertReceiptDb.WorkOrderCosts.SingleAsync();
             Assert.Equal(100m, cost.CapitalizedCost);
             Assert.Equal(100m, cost.WipClearedCost);
-            Assert.Single(await assertReceiptDb.JournalVouchers.ToListAsync());
+            // #3278 / S2：WOC 族是 12 个来源类型里唯一只有走完这条消费链路才拿得到的一格
+            // （资本化凭证在集成事件消费者里内联构造，没有可直接对撞的工厂）。
+            // 来源取**触发这次资本化的库存移动号**，不是工单号——这条把取值钉住，
+            // 其余 11 族在 JournalVoucherSourceValueTests。
+            var capitalizationVoucher = Assert.Single(await assertReceiptDb.JournalVouchers.ToListAsync());
+            Assert.Equal(JournalVoucherSourceType.WorkOrderCapitalization.Code, capitalizationVoucher.SourceType);
+            Assert.Equal("MOVE-FG-001", capitalizationVoucher.SourceNo);
         }
     }
 

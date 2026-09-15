@@ -15,9 +15,9 @@
 #
 # This is a cache refresher, not a baseline generator. The file it writes lives under the gitignored
 # `artifacts/` tree, is never committed, carries no hash and gates nothing; a stale or missing cache
-# only makes the shard-balance report estimate more rows. Why timing is a cache and policy is a
-# governed asset: scripts/lib/BackendTestShardTimings.ps1 and
-# docs/architecture/test-evidence-governance.md ("Timing data is a cache, not a governed asset").
+# only makes the shard-balance report estimate more rows.
+# 当前 timing/policy 边界见 docs/governance/testing/evidence.md；
+# 缓存刷新与降级行为以 scripts/lib/BackendTestShardTimings.ps1 及对应测试为准。
 #
 # It exits 0 when the refresh cannot happen. A missing GitHub CLI, missing token, offline runner or
 # expired artifacts are all normal conditions for a cache, and turning any of them into a nonzero

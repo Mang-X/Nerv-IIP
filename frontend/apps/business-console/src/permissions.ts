@@ -67,6 +67,7 @@ export const BUSINESS_PERMISSION_CODES = {
   maintenancePlansRead: 'business.maintenance.plans.read',
   maintenancePlansManage: 'business.maintenance.plans.manage',
   barcodeTemplatesManage: 'business.barcodes.templates.manage',
+  barcodeTemplateAssetsRetire: 'business.barcodes.template-assets.retire',
   approvalsRead: 'business.approvals.read',
   approvalsManage: 'business.approvals.manage',
   notificationMessagesRead: 'notifications.messages.read',

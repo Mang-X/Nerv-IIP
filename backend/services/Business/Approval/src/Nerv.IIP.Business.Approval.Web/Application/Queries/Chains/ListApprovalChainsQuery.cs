@@ -38,15 +38,13 @@ public sealed class ListApprovalChainsQueryValidator : AbstractValidator<ListApp
 {
     public ListApprovalChainsQueryValidator()
     {
-        RuleFor(x => x.OrganizationId).RequiredApprovalCode(100);
-        RuleFor(x => x.EnvironmentId).RequiredApprovalCode(100);
+        this.AddRequiredTenantRules(x => x.OrganizationId, x => x.EnvironmentId);
         RuleFor(x => x.Status).MaximumLength(50);
         RuleFor(x => x.StartedBy).MaximumLength(150);
         RuleFor(x => x.SourceService).MaximumLength(100);
         RuleFor(x => x.DocumentType).MaximumLength(100);
         RuleFor(x => x.DocumentId).MaximumLength(150);
-        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
-        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+        this.AddOffsetPageRules(x => x.Skip, x => x.Take);
     }
 }
 

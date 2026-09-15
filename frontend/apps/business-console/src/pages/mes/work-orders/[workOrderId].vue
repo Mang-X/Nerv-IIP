@@ -402,7 +402,6 @@ const receiveForm = reactive({
   requestId: '',
   quantity: '',
   materialLotId: '',
-  idempotencyKey: '',
 })
 const returnOpen = ref(false)
 const returnForm = reactive({ requestId: '', quantity: '', idempotencyKey: '' })
@@ -495,7 +494,6 @@ function openReceiveDialog(row: MaterialIssueRow) {
   receiveForm.requestId = row.requestId ?? ''
   receiveForm.quantity = ''
   receiveForm.materialLotId = row.materialLotId ?? ''
-  receiveForm.idempotencyKey = makeIdempotencyKey(`receipt-${row.requestId ?? 'request'}`)
   receiveOpen.value = true
 }
 
@@ -538,7 +536,6 @@ async function submitReceipt() {
     await confirmLineSideReceipt(receiveForm.requestId, {
       receivedQuantity,
       materialLotId: receiveForm.materialLotId.trim() || undefined,
-      idempotencyKey: receiveForm.idempotencyKey,
     })
     receiveOpen.value = false
     notifySuccess('已确认线边收料。')

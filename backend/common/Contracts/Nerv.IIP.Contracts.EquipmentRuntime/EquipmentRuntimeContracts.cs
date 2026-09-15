@@ -29,7 +29,8 @@ public enum EquipmentRuntimeDeviceStateCategory
     LoadingNonProductive = 1,
     PlannedDown = 2,
     Unavailable = 3,
-    Unknown = 4
+    Unknown = 4,
+    Changeover = 5
 }
 
 public static class EquipmentRuntimeDeviceStates
@@ -42,6 +43,7 @@ public static class EquipmentRuntimeDeviceStates
     public const string PlannedDown = "planned-down";
     public const string Stopped = "stopped";
     public const string Faulted = "faulted";
+    public const string Changeover = "changeover";
 
     private static readonly IReadOnlyDictionary<string, EquipmentRuntimeDeviceStateCategory> Categories =
         new Dictionary<string, EquipmentRuntimeDeviceStateCategory>(StringComparer.OrdinalIgnoreCase)
@@ -66,6 +68,11 @@ public static class EquipmentRuntimeDeviceStates
             ["就绪"] = EquipmentRuntimeDeviceStateCategory.LoadingNonProductive,
             ["空闲"] = EquipmentRuntimeDeviceStateCategory.LoadingNonProductive,
             ["待机"] = EquipmentRuntimeDeviceStateCategory.LoadingNonProductive,
+
+            [Changeover] = EquipmentRuntimeDeviceStateCategory.Changeover,
+            ["setup"] = EquipmentRuntimeDeviceStateCategory.Changeover,
+            ["换型"] = EquipmentRuntimeDeviceStateCategory.Changeover,
+            ["换模"] = EquipmentRuntimeDeviceStateCategory.Changeover,
 
             [PlannedDown] = EquipmentRuntimeDeviceStateCategory.PlannedDown,
             ["planned-stop"] = EquipmentRuntimeDeviceStateCategory.PlannedDown,
@@ -113,9 +120,16 @@ public static class EquipmentRuntimeDeviceStates
         return Classify(state) == EquipmentRuntimeDeviceStateCategory.PlannedDown;
     }
 
+    public static bool IsChangeoverState(string? state)
+    {
+        return Classify(state) == EquipmentRuntimeDeviceStateCategory.Changeover;
+    }
+
     public static bool IsRuntimeAvailable(string? state)
     {
-        return Classify(state) is EquipmentRuntimeDeviceStateCategory.Productive or EquipmentRuntimeDeviceStateCategory.LoadingNonProductive;
+        return Classify(state) is EquipmentRuntimeDeviceStateCategory.Productive
+            or EquipmentRuntimeDeviceStateCategory.LoadingNonProductive
+            or EquipmentRuntimeDeviceStateCategory.Changeover;
     }
 
     private static string? Normalize(string? state)

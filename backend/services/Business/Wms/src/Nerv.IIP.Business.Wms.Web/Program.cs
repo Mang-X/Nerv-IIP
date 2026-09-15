@@ -45,6 +45,11 @@ try
     {
         client.BaseAddress = inventoryBaseAddress;
     }).UseHttpClientMetrics();
+    var erpBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Erp:BaseUrl", "http://localhost:5118");
+    builder.Services.AddHttpClient<IWmsPurchaseReceiptPostingRouteClient, HttpWmsPurchaseReceiptPostingRouteClient>(client =>
+    {
+        client.BaseAddress = erpBaseAddress;
+    }).UseHttpClientMetrics();
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
     builder.Services.AddControllers().AddNetCorePalSystemTextJson();
     builder.Services

@@ -10,13 +10,19 @@
 | --- | --- |
 | 决策记录 / ADR 生命周期 | [`decisions/records.md`](decisions/records.md) |
 | 人工文档与协作语言 | [`docs/language.md`](docs/language.md) |
+| API / OpenAPI / codegen | [`api/contracts-and-codegen.md`](api/contracts-and-codegen.md) |
+| BusinessGateway client API surface | [`api/business-gateway-surface.md`](api/business-gateway-surface.md) |
+| Facade coverage 分类 | [`api/facade-coverage.md`](api/facade-coverage.md) |
 | 后端 CleanDDD / NetCorePal | [`backend/clean-ddd-netcorepal.md`](backend/clean-ddd-netcorepal.md) |
+| CI / 构建 / 交付 | [`delivery/README.md`](delivery/README.md) |
+| 前端导航 | [`frontend/navigation.md`](frontend/navigation.md) |
 | 前端设计系统 | [`frontend/design-system.md`](frontend/design-system.md) |
 | 授权、主体与 scope | [`security/authorization.md`](security/authorization.md) |
 | KnownException 用户可见性 | [`errors/user-visibility.md`](errors/user-visibility.md) |
 | 数据库 Schema | [`data/database-schema.md`](data/database-schema.md) |
 | 持久化启动与真实 PostgreSQL 测试生命周期 | [`data/persistence-startup.md`](data/persistence-startup.md) |
 | ReferenceData / CodeSet | [`data/reference-data.md`](data/reference-data.md) |
+| BusinessMasterData 所有权变更审批与审计 | [`data/master-data-ownership.md`](data/master-data-ownership.md) |
 | 集成事件消费分类 | [`integration/event-consumption.md`](integration/event-consumption.md) |
 | 脚本与自动化 | [`script-automation.md`](script-automation.md) |
 | 测试有效性、确定性、证据、真实依赖与 PDA | [`testing/README.md`](testing/README.md) |
@@ -28,4 +34,4 @@
 3. 规则变化若属于长期取舍，先按 [`decisions/records.md`](decisions/records.md) 判断是否需要 ADR；不能用直接改 Governance 绕过长期决策记录。
 4. 调查、事故、整改批次和历史计数进入 `docs/reports/` 或 Git 历史；完成后的 Report 冻结，不反向成为现态规则。
 5. 不因为迁移 Governance 就新增永久 registry、自然语言 scanner、mutation fixture 或独立 CI step。既有机器契约只做必要路径重定向，不改变其规则语义。
-6. `docs/architecture/*` 的 M2 兼容页只导航；不能把 Governance 正文再长回旧路径。
+6. M4 后旧 `docs/architecture/*` 平铺兼容页已退出；Governance 当前链接必须直达 canonical owner，不把规则正文或转发页长回旧 Architecture 路径。

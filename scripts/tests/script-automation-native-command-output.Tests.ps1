@@ -143,6 +143,18 @@ function Invoke-NormalScenario {
     }
     Assert-Probe ([string]::Equals($zeroBudget.Exception.GetType().Name, 'ParameterBindingValidationException', [StringComparison]::Ordinal)) 'A zero millisecond budget must be rejected at the public boundary.'
 
+    # #2870 moved the sole home of the seconds upper bound into the parameter attribute. Without it
+    # this input starts the process and only then dies inside WaitForExit on the Int32 overflow.
+    $overflowSecondsBudget = Get-ProbeFailure {
+        Invoke-NativeCommandOutput `
+            -Command $quickCommand `
+            -Arguments $quickArguments `
+            -WorkingDirectory $ScenarioRoot `
+            -TimeoutSeconds 2147484 `
+            -Name 'native-output-overflow-seconds-budget'
+    }
+    Assert-Probe ([string]::Equals($overflowSecondsBudget.Exception.GetType().Name, 'ParameterBindingValidationException', [StringComparison]::Ordinal)) 'A seconds budget whose millisecond value overflows Int32 must be rejected at the public boundary.'
+
     $largeOutputCommand = @"
 `$stdout = 'o' * 131072 + 'tail'
 `$stderr = 'e' * 131072 + 'errtail'
@@ -671,6 +683,19 @@ try {
     if ([OperatingSystem]::IsWindows()) { return $null }
     if ($ExitCode -le 128 -or $ExitCode -gt 192) { return $null }
     return $null
+'@
+            ExpectedOccurrences = 1
+        },
+        [pscustomobject]@{
+            Name = 'delete-seconds-budget-upper-bound'
+            Scenario = 'normal'
+            Anchor = @'
+        # Upper bound: this budget is multiplied by 1000 into the [int] milliseconds WaitForExit takes.
+        [ValidateRange(1, 2147483)]
+        [int] $TimeoutSeconds = 60,
+'@
+            Replacement = @'
+        [int] $TimeoutSeconds = 60,
 '@
             ExpectedOccurrences = 1
         },

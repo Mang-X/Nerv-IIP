@@ -1,3 +1,4 @@
+import { mesReportIntentScope } from './mes/mesReportIntent'
 import {
   claimBusinessConsoleMesOperationTaskMutationOptions,
   completeBusinessConsoleMesOperationTaskMutationOptions,
@@ -9,6 +10,7 @@ import {
   createBusinessConsoleSopFileDownloadGrantMutationOptions,
   getBusinessConsolePrincipalWorkContextQueryOptions,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
+  getBusinessConsoleMesWorkOrderDetail,
   getBusinessConsoleMesWorkOrderDetailQueryKey,
   getBusinessConsoleMesProductionReport,
   getBusinessConsoleMesCurrentOperationSopsQueryOptions,
@@ -65,6 +67,7 @@ import {
   lastPageForTotal,
   parseWorkScopeKey,
   peekPendingBusinessIntent,
+  shouldRetainPendingBusinessIntent,
   reduceServerPagination,
   serverPaginationIdentity,
   statusActionGate,
@@ -1689,21 +1692,28 @@ export function useMesProductionReports(workOrderId?: Readonly<Ref<string>>) {
       }
       return report
     },
-    recordReport: async (input: RecordReportInput) => {
+    recordReport: async (
+      input: RecordReportInput,
+      isCurrent?: () => boolean,
+      recovering?: boolean,
+    ) => {
       const selectedScope = reportScope.requireSelectedScope()
-      const { idempotencyKey: suppliedKey, ...payload } = input
-      const scope = {
-        principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
-        operationType: 'mes.production-report.record',
-        payloadFingerprint: JSON.stringify({
-          ...payload,
-          scopeKind: selectedScope.kind,
-          scopeId: selectedScope.id,
-        }),
+      const executionContext = reportContext.value
+      const assertCurrent = () => {
+        const current = reportContext.value
+        if (
+          !executionContext ||
+          !current ||
+          !hasSameReportExecutionContext(current, executionContext) ||
+          isCurrent?.() === false
+        ) {
+          throw new Error('作业身份或范围已变化，请重新选择工单与工序后报工。')
+        }
       }
-      const isReplay = Boolean(peekPendingBusinessIntent(scope))
+      assertCurrent()
+      const suppliedKey = input.idempotencyKey
+      const scope = mesReportIntentScope(executionContext!, input)
+      const isReplay = recovering ?? Boolean(peekPendingBusinessIntent(scope))
       const currentPayload = {
         ...input,
         organizationId: filters.organizationId,
@@ -1723,18 +1733,36 @@ export function useMesProductionReports(workOrderId?: Readonly<Ref<string>>) {
       try {
         const workOrderId = input.workOrderId?.trim()
         const operationTaskId = input.operationTaskId?.trim()
-        const authoritative = operationTaskId
-          ? await readExactOperationTask(
-              filters,
-              operationTaskId,
-              selectedScope,
-              workOrderId,
-              'reportable',
-            )
-          : undefined
+        let authoritative: BusinessConsoleMesOperationTaskRow | undefined
+        if (isReplay && workOrderId) {
+          const { data } = await getBusinessConsoleMesWorkOrderDetail({
+            path: { workOrderId },
+            query: {
+              ...scopeQuery(filters),
+              scopeKind: selectedScope.kind,
+              scopeId: selectedScope.id,
+            },
+            throwOnError: true,
+          })
+          if (!data?.success || data.data?.workOrderId !== workOrderId) {
+            throw new Error('原报工的工单工序核验失败，请重试核验。')
+          }
+          authoritative = data.data.operationTasks?.find(
+            (task) => task.workOrderId === workOrderId && task.operationTaskId === operationTaskId,
+          )
+        } else if (operationTaskId) {
+          authoritative = await readExactOperationTask(
+            filters,
+            operationTaskId,
+            selectedScope,
+            workOrderId,
+            'reportable',
+          )
+        }
         const samePair =
           authoritative?.workOrderId === workOrderId &&
           authoritative?.operationTaskId === operationTaskId
+        assertCurrent()
         const reportAllowed = authoritative?.allowedActions?.some(
           (action) => action.trim().toLowerCase() === 'report',
         )
@@ -1748,19 +1776,25 @@ export function useMesProductionReports(workOrderId?: Readonly<Ref<string>>) {
             },
           })
         }
-        if (!isReplay && (!samePair || !reportAllowed)) {
+        if (!samePair || (!isReplay && !reportAllowed)) {
           throw new Error('当前工序不可报工，服务端未开放 report 动作。')
         }
       } catch (error) {
-        if (!isReplay) clearPendingBusinessIntent(scope)
+        if (!isReplay) {
+          assertCurrent()
+          clearPendingBusinessIntent(scope)
+          throw Object.assign(error instanceof Object ? error : new Error(String(error)), {
+            reportNotAccepted: true,
+          })
+        }
         throw error
       }
       const frozenPayload =
         pending.payloadSnapshot !== undefined
           ? (pending.payloadSnapshot as BusinessConsoleRecordProductionReportRequest)
           : currentPayload
-      return completePendingBusinessIntent(scope, async () =>
-        confirmBusinessConsoleOperation(
+      try {
+        const result = await confirmBusinessConsoleOperation(
           await recordMutation.mutateAsync({
             body: {
               ...frozenPayload,
@@ -1772,8 +1806,25 @@ export function useMesProductionReports(workOrderId?: Readonly<Ref<string>>) {
             expectedIdempotencyKey: pending.idempotencyKey,
             expectedResourceIdSelector: (envelope) => envelope.data?.productionReportId,
           },
-        ),
-      )
+        )
+        try {
+          assertCurrent()
+        } catch (error) {
+          // A dispatched write may have committed; a stale response cannot release its intent.
+          throw Object.assign(error as Error, { indeterminate: true })
+        }
+        if (!result?.data?.printingPreparationPending) clearPendingBusinessIntent(scope)
+        return result
+      } catch (error) {
+        if (!isReplay && !shouldRetainPendingBusinessIntent(error)) {
+          assertCurrent()
+          clearPendingBusinessIntent(scope)
+          throw Object.assign(error instanceof Object ? error : new Error(String(error)), {
+            reportNotAccepted: true,
+          })
+        }
+        throw error
+      }
     },
   }
 }

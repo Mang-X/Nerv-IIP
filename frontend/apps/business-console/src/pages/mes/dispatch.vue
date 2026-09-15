@@ -376,10 +376,8 @@ function formatDateTime(value?: string | null) {
       </template>
     </NvToolbar>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
-
     <!-- 分组视图：一张工单一块，组内按工序顺序排；组头写清本页规模与待办。 -->
-    <template v-if="viewMode === 'grouped'">
+    <template v-if="viewMode === 'grouped' && !dispatchTasksError">
       <div v-if="groups.length" class="grid gap-3">
         <NvGroupPanel
           v-for="group in groups"
@@ -514,6 +512,9 @@ function formatDateTime(value?: string | null) {
       :rows="dispatchTasks"
       row-key="operationTaskId"
       :loading="dispatchTasksPending"
+      :error="dispatchTasksError"
+      :error-message="errorMessage"
+      @retry="refreshDispatchTasks"
       :searchable="false"
       :column-settings="false"
       :empty-message="

@@ -1,0 +1,818 @@
+using System.Reflection;
+using MediatR;
+using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionTaskAggregate;
+using Nerv.IIP.Business.Quality.Infrastructure;
+using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionTasks;
+using Nerv.IIP.Contracts.Mes;
+using Nerv.IIP.Contracts.Quality;
+using Nerv.IIP.Messaging.CAP;
+
+namespace Nerv.IIP.Business.Quality.Web.Tests;
+
+/// <summary>
+/// 存量在制工单的发布投影回填（#3000）。这批工序读首件确认恒回 <c>not-synchronized</c>、被 #2780 门禁持续拒，
+/// 且不靠报工自愈；回填补上发布事实后该状态才消失。回填可重复执行是本票的核心不变量。
+/// </summary>
+public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
+{
+    private static readonly DateTimeOffset ReleasedAtUtc = DateTimeOffset.Parse("2026-08-01T00:00:00Z");
+
+    [Fact]
+    public async Task Backfill_lifts_the_operation_out_of_not_synchronized()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.InspectionPlans.Add(FirstArticlePlan());
+        await dbContext.SaveChangesAsync();
+        Assert.Equal(
+            QualityFirstArticleConfirmationStatuses.NotSynchronized,
+            (await ConfirmAsync(dbContext)).Status);
+
+        await HandleBackfillAsync(dbContext, Backfill());
+
+        var confirmation = await ConfirmAsync(dbContext);
+        Assert.Equal(QualityFirstArticleConfirmationStatuses.NotOpened, confirmation.Status);
+        var operation = await dbContext.PeriodicInspectionOperations.SingleAsync();
+        Assert.Equal("SKU-FG-1000", operation.SkuCode);
+        Assert.Equal("WC-MIX", operation.WorkCenterId);
+        Assert.Equal(10, operation.OperationSequence);
+        Assert.Equal(ReleasedAtUtc.UtcDateTime, operation.ReleasedAtUtc);
+    }
+
+    [Fact]
+    public async Task Rerunning_the_backfill_changes_no_projection_row_and_opens_no_first_article_task()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.InspectionPlans.Add(FirstArticlePlan());
+        dbContext.InspectionPlans.Add(PeriodicPlan());
+        await dbContext.SaveChangesAsync();
+
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        await HandleBackfillAsync(dbContext, Backfill(), deadLetters);
+        var firstRun = await SnapshotAsync(dbContext);
+
+        // 第二次补投带的是新 EventId、且发布时刻被重建得不一样——inbox 挡不住它，
+        // 挡住它的是「已有发布事实的工序不覆盖」。
+        await HandleBackfillAsync(
+            dbContext,
+            Backfill(eventId: "evt-backfill-second", releasedAtUtc: ReleasedAtUtc.AddHours(3)),
+            deadLetters);
+        var secondRun = await SnapshotAsync(dbContext);
+
+        Assert.Equal(firstRun, secondRun);
+        // 不跳过已有发布事实时，第二次补投会被判为冲突事实进死信：投影确实没变，但工单被当成坏数据。
+        Assert.Empty(await deadLetters.ListAsync(null, null, CancellationToken.None));
+        Assert.Empty(await dbContext.InspectionTasks
+            .Where(x => x.SourceType == FirstArticleInspection.SourceType)
+            .ToArrayAsync());
+    }
+
+    [Fact]
+    public async Task Backfill_never_overwrites_release_facts_that_already_arrived_from_the_live_event()
+    {
+        await using var dbContext = CreateDbContext();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        await new WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicInspectionContexts(
+            dbContext,
+            new PeriodicInspectionOperationScopeCoordinator(dbContext),
+            deadLetters).HandleAsync(LiveRelease(), CancellationToken.None);
+
+        await HandleBackfillAsync(
+            dbContext,
+            Backfill(releasedAtUtc: ReleasedAtUtc.AddDays(-30)),
+            deadLetters);
+
+        var operation = await dbContext.PeriodicInspectionOperations.SingleAsync();
+        Assert.Equal(ReleasedAtUtc.UtcDateTime, operation.ReleasedAtUtc);
+        // 冲突的发布事实本该进死信；回填因为根本不碰已有行，所以既不覆盖也不产生死信。
+        Assert.Empty(await deadLetters.ListAsync(null, null, CancellationToken.None));
+    }
+
+    /// <summary>
+    /// 回填补的是发布事实，不是巡检历史：补投之前已经流走的产量不追认周期巡检窗口，
+    /// 否则一次回填就为历史产量成批开出已过期任务；积压超过 <c>MaximumSupportedPendingQuantityWindows</c> 时
+    /// <c>TakeDueQuantityWindows</c> 还会抛出，整张工单进死信、回填对它失效。
+    /// 「不追认」不等于「不生成」——补投之后新报的量照常按间隔开出。
+    /// </summary>
+    [Fact]
+    public async Task Backfill_does_not_open_periodic_tasks_for_quantity_produced_before_it_ran()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.InspectionPlans.Add(PeriodicPlan());
+        await dbContext.SaveChangesAsync();
+        await HandleReportAsync(dbContext, ProductionReport());
+
+        await HandleBackfillAsync(dbContext, Backfill());
+
+        var operation = await dbContext.PeriodicInspectionOperations
+            .Include(x => x.RuntimeContexts)
+            .SingleAsync();
+        var runtimeContext = Assert.Single(operation.RuntimeContexts);
+        Assert.Equal(250m, runtimeContext.QuantityHighWater);
+        Assert.Equal("EA", runtimeContext.UomCode);
+        // 250 件 / 间隔 100 = 2 扇历史窗口，全部记为已生成，一张任务都不开。
+        Assert.Equal(2, runtimeContext.LastGeneratedQuantityWindowSequence);
+        Assert.Empty(await dbContext.InspectionTasks.ToArrayAsync());
+
+        // 补投之后再报 100 件：高水位 350、目标 3，只开出第 3 扇窗口这一张。
+        await HandleReportAsync(dbContext, ProductionReport(reportNo: "RPT-002", goodQuantity: 100m));
+
+        var task = Assert.Single(await dbContext.InspectionTasks.ToArrayAsync());
+        Assert.EndsWith(":3", task.SourceDocumentLineId, StringComparison.Ordinal);
+        Assert.Equal(300m, task.Quantity);
+    }
+
+    /// <summary>
+    /// 时间间隔侧同理：回填时刻之前流逝的时间窗口一并记为已生成，时间调度器不会追认补开。
+    /// </summary>
+    [Fact]
+    public async Task Backfill_does_not_open_periodic_tasks_for_time_elapsed_before_it_ran()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.InspectionPlans.Add(TimeIntervalPlan());
+        await dbContext.SaveChangesAsync();
+        await HandleReportAsync(dbContext, ProductionReport());
+
+        await HandleBackfillAsync(dbContext, Backfill());
+
+        var operation = await dbContext.PeriodicInspectionOperations
+            .Include(x => x.RuntimeContexts)
+            .SingleAsync();
+        var runtimeContext = Assert.Single(operation.RuntimeContexts);
+        // 首次活动 2026-08-02T00:00Z、间隔 2 小时、补投时刻 2026-09-01T00:00Z → 360 扇窗口已流走。
+        Assert.Equal(360, runtimeContext.LastGeneratedTimeWindowSequence);
+        Assert.Equal(
+            DateTime.Parse("2026-08-02T00:00:00Z").ToUniversalTime(),
+            runtimeContext.TimeScheduleAnchorAtUtc);
+        Assert.Equal(
+            DateTime.Parse("2026-09-01T02:00:00Z").ToUniversalTime(),
+            runtimeContext.NextTimeWindowAtUtc);
+        Assert.Empty(runtimeContext.TakeDueTimeWindows(
+            DateTime.Parse("2026-09-01T00:00:00Z").ToUniversalTime(),
+            maxWindows: 256));
+    }
+
+    /// <summary>
+    /// #3286 的收缩落点：某道工序已有完工事实，且它的 <c>CompletionSkuCode</c> 与工单 SkuId 不等。
+    /// 该差异**不再由 Quality 投影层顶成权威值**——工序 SKU 按 MES 模型就是工单 SKU 的副本
+    /// （工序级 SKU 在该模型里不可表达），#3112 又已删掉「未传 SKU 回落成工单号」那条来源，
+    /// 于是不一致只可能来自建工序那一刻抄错。抄错是上游缺陷，顶成权威值会把它变成看不见的既成事实。
+    /// 该工序因此照 <c>ApplyRelease</c> 的冲突语义被拒，留下**待处理**（<c>Pending</c>）痕迹，
+    /// 而不是「已按权威事实处置」（<c>Ignored</c>）那种痕迹。
+    ///
+    /// <para>被拒的粒度仍是**工序**：同工单其余工序照常补投，读首件确认不得是 <c>not-synchronized</c>。</para>
+    ///
+    /// <para><b>本用例是「按属性收缩」那一格的隔离变异靶</b>：把 <c>sku-code</c> 那条 substitution 加回
+    /// <c>ResolveReconstructedReleaseFacts</c>（并把返回值的 SKU 改回 <c>CompletionSkuCode</c>），
+    /// OP-10 改走让位路径——<c>SkuCode</c> 变成 <c>WO-001</c>、痕迹变成
+    /// <c>backfill-release-fact-substituted</c>/<c>Ignored</c>、确认状态不再是 <c>not-synchronized</c>——
+    /// 本用例必红。</para>
+    /// </summary>
+    [Fact]
+    public async Task Backfill_rejects_the_operation_whose_completion_sku_disagrees_instead_of_yielding_to_it()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.InspectionPlans.Add(FirstArticlePlan());
+        dbContext.InspectionPlans.Add(PeriodicPlan());
+        await dbContext.SaveChangesAsync();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        // OP-10 先完工，完工事实带的是工单号形状的 junk SKU（#3112 之前由回落产生，之后只能由传错产生）。
+        await HandleCompletionAsync(dbContext, OperationCompleted("OP-10", skuCode: "WO-001"), deadLetters);
+
+        await HandleBackfillAsync(dbContext, Backfill(operationIds: ["OP-10", "OP-20"]), deadLetters);
+
+        // 不让位：这道工序没拿到发布事实，投影里的 SKU 也没被改写成 WO-001。
+        var rejected = await dbContext.PeriodicInspectionOperations
+            .Include(x => x.RuntimeContexts)
+            .SingleAsync(x => x.OperationId == "OP-10");
+        Assert.Null(rejected.ReleasedAtUtc);
+        Assert.Null(rejected.SkuCode);
+        Assert.Empty(rejected.RuntimeContexts);
+        Assert.Equal(
+            QualityFirstArticleConfirmationStatuses.NotSynchronized,
+            (await ConfirmAsync(dbContext, "OP-10")).Status);
+
+        // 正对照：同工单的 OP-20 照常补投并建出周期运行上下文，证明档在本夹具里确实取得到，
+        // 「OP-10 没建上下文」不是因为根本没档。
+        var applied = await dbContext.PeriodicInspectionOperations
+            .Include(x => x.RuntimeContexts)
+            .SingleAsync(x => x.OperationId == "OP-20");
+        Assert.Equal(ReleasedAtUtc.UtcDateTime, applied.ReleasedAtUtc);
+        Assert.Equal("SKU-FG-1000", applied.SkuCode);
+        Assert.Single(applied.RuntimeContexts);
+        Assert.NotEqual(
+            QualityFirstArticleConfirmationStatuses.NotSynchronized,
+            (await ConfirmAsync(dbContext, "OP-20")).Status);
+
+        // 差异不静默，且落的是**待处理**队列：上游缺陷要有人去改，不是「已处置」。
+        var notice = Assert.Single(await deadLetters.ListAsync(null, null, CancellationToken.None));
+        Assert.Equal("backfill-operation-rejected", notice.FailureCode);
+        Assert.Equal(IntegrationEventDeadLetterStatus.Pending, notice.Status);
+        Assert.Contains("OP-10", notice.FailureMessage, StringComparison.Ordinal);
+
+        // 再跑一次：被拒工序仍不落发布事实，也不开出首件检验任务。
+        await HandleBackfillAsync(
+            dbContext,
+            Backfill(eventId: "evt-backfill-second", operationIds: ["OP-10", "OP-20"]),
+            deadLetters);
+
+        Assert.Null((await dbContext.PeriodicInspectionOperations
+            .SingleAsync(x => x.OperationId == "OP-10")).ReleasedAtUtc);
+        Assert.Empty(await dbContext.InspectionTasks
+            .Where(x => x.SourceType == FirstArticleInspection.SourceType)
+            .ToArrayAsync());
+    }
+
+    /// <summary>
+    /// 工序号那条 substitution 的独立承重格（#3286 验收：SKU 收缩之后另外两条仍要有鉴别力）。
+    /// 载荷把 OP-10 记成工序号 10，权威完工事实说它是 20 → 让位取 20 并留痕。
+    ///
+    /// <para><b>本用例之前该格零承重</b>：本文件的夹具从未构造过「工序号不等」的输入
+    /// （<c>OperationCompleted</c> 与 <c>Backfill</c> 都写死 10），删掉 <c>operation-sequence</c>
+    /// 那条 substitution 一个用例都不红。写进投影的值取的是权威值、与该条 substitution 无关，
+    /// 因此本用例的承重点是**留痕**那一面。</para>
+    /// </summary>
+    [Fact]
+    public async Task Backfill_yields_the_operation_sequence_to_the_authoritative_completion_and_leaves_a_trace()
+    {
+        await using var dbContext = CreateDbContext();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        await HandleCompletionAsync(
+            dbContext,
+            OperationCompleted("OP-10", skuCode: "SKU-FG-1000", operationSequence: 20),
+            deadLetters);
+
+        await HandleBackfillAsync(dbContext, Backfill(), deadLetters);
+
+        var operation = await dbContext.PeriodicInspectionOperations.SingleAsync();
+        Assert.Equal(20, operation.OperationSequence);
+        Assert.Equal(ReleasedAtUtc.UtcDateTime, operation.ReleasedAtUtc);
+        var notice = Assert.Single(await deadLetters.ListAsync(null, null, CancellationToken.None));
+        Assert.Equal("backfill-release-fact-substituted", notice.FailureCode);
+        Assert.Contains(
+            "operation-sequence reconstructed='10' authoritative='20'",
+            notice.FailureMessage,
+            StringComparison.Ordinal);
+        Assert.Equal(IntegrationEventDeadLetterStatus.Ignored, notice.Status);
+    }
+
+    /// <summary>
+    /// B2 单独承重：内存档筛的**工作中心**半边，与已闭合的 SKU 半边是同一行、同一族。
+    /// 载荷把 OP-30 记在 <c>WC-MIX</c>，权威完工事实说它在 <c>WC-ALT</c>，
+    /// 于是 <c>facts.WorkCenterId</c> 让位成 <c>WC-ALT</c>；此时只有 <c>WC-ALT</c> 那张周期档配得上它。
+    /// 删掉 <c>plan.WorkCenterId == facts.WorkCenterId</c>，<c>WC-MIX</c> 的档会一并挂上去——
+    /// 把**另一个工作中心**的巡检档挂到本工序，与 SKU 半边判为「真错」的情形完全同型。
+    ///
+    /// 两张档的量间隔取不同值（100 / 250），因此断言判的是「配上了哪一张」而不只是「配上了几张」。
+    /// OP-40 是正对照：它本来就在 <c>WC-ALT</c>、不让位，证明 <c>WC-ALT</c> 那张档在本夹具里确实取得到，
+    /// 否则「只配上一张」可能只是因为根本没档。
+    /// </summary>
+    [Fact]
+    public async Task Backfill_does_not_borrow_a_periodic_plan_from_another_work_center()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.InspectionPlans.Add(PeriodicPlan());
+        dbContext.InspectionPlans.Add(PeriodicPlan("PLAN-PERIODIC-ALT", "WC-ALT", quantityInterval: 250m));
+        await dbContext.SaveChangesAsync();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        // 同 SKU、只有工作中心与载荷不符：走让位而不是拒绝。
+        await HandleCompletionAsync(
+            dbContext,
+            OperationCompleted("OP-30", skuCode: "SKU-FG-1000", workCenterId: "WC-ALT"),
+            deadLetters);
+
+        await HandleBackfillAsync(
+            dbContext,
+            Backfill(operations:
+            [
+                new ReleasedOperationPayload("OP-30", 10, "WC-MIX"),
+                new ReleasedOperationPayload("OP-40", 20, "WC-ALT"),
+            ]),
+            deadLetters);
+
+        var yielded = await dbContext.PeriodicInspectionOperations
+            .Include(x => x.RuntimeContexts)
+            .SingleAsync(x => x.OperationId == "OP-30");
+        Assert.Equal("WC-ALT", yielded.WorkCenterId);
+        var yieldedContext = Assert.Single(yielded.RuntimeContexts);
+        Assert.Equal(250m, yieldedContext.QuantityInterval);
+        Assert.Equal("WC-ALT", yieldedContext.WorkCenterId);
+
+        var untouched = await dbContext.PeriodicInspectionOperations
+            .Include(x => x.RuntimeContexts)
+            .SingleAsync(x => x.OperationId == "OP-40");
+        var untouchedContext = Assert.Single(untouched.RuntimeContexts);
+        Assert.Equal(250m, untouchedContext.QuantityInterval);
+
+        // 让位不静默：工作中心那一项要留得下痕。
+        var notice = Assert.Single(await deadLetters.ListAsync(null, null, CancellationToken.None));
+        Assert.Equal("backfill-release-fact-substituted", notice.FailureCode);
+        Assert.Contains("work-center-id", notice.FailureMessage, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// R-a 单独承重：失败粒度是工序，不是整封事件。这里让 OP-10 因「报工工作中心与发布事实冲突」
+    /// 被 <c>ApplyRelease</c> 拒掉（不是让位能救的那一类），断言 OP-20 照常拿到发布事实，
+    /// 且 OP-10 的失败有留痕。
+    /// </summary>
+    [Fact]
+    public async Task One_operation_rejected_does_not_deny_the_rest_of_the_work_order()
+    {
+        await using var dbContext = CreateDbContext();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        // 被拒的那道工序必须**排在后面**：ValidateReleasedOperations 按 OperationId 重排，
+        // 拿 OP-10 当被拒工序时它恒排第一，前面没有任何已应用的改动可供丢失，
+        // 「留痕不清变更跟踪」这条不变量就没有会失败的输入。这里让 OP-30 被拒、OP-20 先成功。
+        await HandleReportAsync(
+            dbContext,
+            ProductionReport(operationId: "OP-30", workCenterId: "WC-OTHER"));
+
+        await HandleBackfillAsync(dbContext, Backfill(operationIds: ["OP-20", "OP-30"]), deadLetters);
+
+        var rejected = await dbContext.PeriodicInspectionOperations.SingleAsync(x => x.OperationId == "OP-30");
+        Assert.Null(rejected.ReleasedAtUtc);
+        var applied = await dbContext.PeriodicInspectionOperations.SingleAsync(x => x.OperationId == "OP-20");
+        Assert.Equal(ReleasedAtUtc.UtcDateTime, applied.ReleasedAtUtc);
+        Assert.Equal(
+            QualityFirstArticleConfirmationStatuses.NotSynchronized,
+            (await ConfirmAsync(dbContext, "OP-30")).Status);
+        Assert.NotEqual(
+            QualityFirstArticleConfirmationStatuses.NotSynchronized,
+            (await ConfirmAsync(dbContext, "OP-20")).Status);
+        // 幂等登记也在「已应用改动」之列：清变更跟踪会把它一起丢掉，重跑就不再是 no-op。
+        Assert.Single(await dbContext.ProcessedIntegrationEvents
+            .Where(x => x.ConsumerName
+                == WorkOrderReleaseProjectionBackfilledIntegrationEventHandlerForCreatePeriodicInspectionContexts.ConsumerName)
+            .ToArrayAsync());
+
+        var notice = Assert.Single(await deadLetters.ListAsync(null, null, CancellationToken.None));
+        Assert.Equal("backfill-operation-rejected", notice.FailureCode);
+        Assert.Equal(IntegrationEventDeadLetterStatus.Pending, notice.Status);
+        Assert.Contains("OP-30", notice.FailureMessage, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// #3117 的验收落点：MES 直投的发布时刻按既有活动（报工或工序完工）取下界，最紧的一格就是「发布时刻恰等于最早报工」。
+    /// Quality 的守卫拒的是「报工**早于**发布」，等号必须放行——否则下界取到位了投影仍然进死信，
+    /// 那张工单继续 <c>not-synchronized</c>、被 #2780 门禁永久拒。
+    /// 对照是同一文件里的 <c>Live_release_with_conflicting_facts_still_dead_letters</c>：
+    /// 发布晚于既有事实时该守卫照样拒。
+    /// </summary>
+    [Fact]
+    public async Task Live_release_lands_when_its_time_equals_the_earliest_known_report()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.InspectionPlans.Add(FirstArticlePlan());
+        await dbContext.SaveChangesAsync();
+        // 先报工、后下达：这条报工的时刻就是 MES 侧算出的发布时刻下界。
+        await HandleReportAsync(dbContext, ProductionReport());
+        var earliestReportedAtUtc = DateTimeOffset.Parse("2026-08-02T00:00:00Z");
+
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        await HandleLiveReleaseAsync(
+            dbContext,
+            LiveRelease(releasedAtUtc: earliestReportedAtUtc),
+            deadLetters);
+
+        Assert.Empty(await deadLetters.ListAsync(null, null, CancellationToken.None));
+        var operation = await dbContext.PeriodicInspectionOperations.SingleAsync();
+        Assert.Equal(earliestReportedAtUtc.UtcDateTime, operation.ReleasedAtUtc);
+        Assert.NotEqual(
+            QualityFirstArticleConfirmationStatuses.NotSynchronized,
+            (await ConfirmAsync(dbContext)).Status);
+    }
+
+    /// <summary>
+    /// **「完工先于下达、零报工」这条新输入类的 Quality 侧端到端读数**（复审 N3，两轮点名）。
+    ///
+    /// <para>MES 侧由 `WorkOrderReleaseFactTimeTests.Release_after_an_operation_already_completed_…`
+    /// 钉住「发布事实时刻被压到最早工序完工」这个**产出值**；但该值到达 Quality 之后能不能落库、
+    /// 会不会被完工守卫判冲突进死信，此前只有分服务的解析式推断、**没有端到端读数**。本用例补上这一格。</para>
+    ///
+    /// <para><b>生产调用链</b>（按本票采纳的结构性约束给链，不给聚合序列）：
+    /// 工序动作 `complete`（`ChangeOperationTaskStateCommandHandler`，`pendingProductionReportNos` 传 `[]`、
+    /// 时刻取 `req.ChangedAtUtc`，**不产生任何报工行**）→ `mes.OperationTaskCompleted` → Quality 先落完工事实；
+    /// 随后 `POST …/release` → `ReleaseWorkOrderCommandHandler`（按最早既有活动取下界，此处即最早工序完工）
+    /// → `mes.WorkOrderReleased` → 本处 `Authoritative` 分支。</para>
+    ///
+    /// <para>守卫是 `PeriodicInspectionOperation` 的
+    /// 「`CompletedAtUtc &lt; releasedAtUtc` ⇒ 冲突」那条；发布时刻恰等于完工时刻时**必须放行**，
+    /// 否则 MES 侧把下界取到位了、投影仍然进死信。</para>
+    /// </summary>
+    [Fact]
+    public async Task Live_release_lands_when_its_time_equals_the_only_completion_and_nothing_was_reported()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.InspectionPlans.Add(FirstArticlePlan());
+        await dbContext.SaveChangesAsync();
+
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        // 先到的是完工事实，且**一条报工都没有**——这正是 MES 侧新纳入下界的那一类输入。
+        await HandleCompletionAsync(dbContext, OperationCompleted("OP-10", skuCode: "SKU-FG-1000"), deadLetters);
+        var completedAtUtc = DateTimeOffset.Parse("2026-08-20T00:00:00Z");
+
+        await HandleLiveReleaseAsync(dbContext, LiveRelease(releasedAtUtc: completedAtUtc), deadLetters);
+
+        Assert.Empty(await deadLetters.ListAsync(null, null, CancellationToken.None));
+        var operation = await dbContext.PeriodicInspectionOperations.SingleAsync();
+        // 前提自检：确实是「零报工」那条输入类，否则本用例测的是报工下界那一面。
+        Assert.Empty(operation.ProductionReports);
+        Assert.Equal(completedAtUtc.UtcDateTime, operation.CompletedAtUtc);
+        Assert.Equal(completedAtUtc.UtcDateTime, operation.ReleasedAtUtc);
+    }
+
+    /// <summary>
+    /// 直投侧不得跟着回填一起「跳过已有发布事实」：同一工序收到第二份**内容不同**的发布事实
+    /// 是真实异常，必须判为冲突进死信。本 PR 把该判断做成了按调用点取值的参数，
+    /// 因此直投那一半也要有断言承重，否则参数被翻反不会红。
+    /// </summary>
+    [Fact]
+    public async Task Live_release_with_conflicting_facts_still_dead_letters()
+    {
+        await using var dbContext = CreateDbContext();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        await HandleLiveReleaseAsync(dbContext, LiveRelease(), deadLetters);
+
+        // 新 EventId（inbox 挡不住），发布时刻不同（内容冲突）。
+        await HandleLiveReleaseAsync(
+            dbContext,
+            LiveRelease(eventId: "evt-release-WO-001-second", releasedAtUtc: ReleasedAtUtc.AddHours(5)),
+            deadLetters);
+
+        var deadLetter = Assert.Single(await deadLetters.ListAsync(null, null, CancellationToken.None));
+        Assert.Equal(
+            WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicInspectionContexts.ConsumerName,
+            deadLetter.ConsumerName);
+        var operation = await dbContext.PeriodicInspectionOperations.SingleAsync();
+        Assert.Equal(ReleasedAtUtc.UtcDateTime, operation.ReleasedAtUtc);
+    }
+
+    /// <summary>
+    /// 「独立 topic + 独立消费组」是本 PR 隔离主张的承重结构：回填消费组必须与直投消费组不同，
+    /// 且回填的 CAP 订阅与消费者注册都必须指向回填事件。没有断言时这三处被改成直投的值不会红。
+    /// </summary>
+    [Fact]
+    public void Backfill_consumer_is_registered_on_its_own_topic_and_group()
+    {
+        var backfill = typeof(WorkOrderReleaseProjectionBackfilledIntegrationEventHandlerForCreatePeriodicInspectionContexts);
+        var live = typeof(WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicInspectionContexts);
+
+        Assert.NotEqual(
+            WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicInspectionContexts.ConsumerName,
+            WorkOrderReleaseProjectionBackfilledIntegrationEventHandlerForCreatePeriodicInspectionContexts.ConsumerName);
+
+        var backfillTopic = nameof(WorkOrderReleaseProjectionBackfilledIntegrationEvent);
+        Assert.Equal(backfillTopic, ReadCapSubscribeTopic(backfill));
+        Assert.Equal(
+            WorkOrderReleaseProjectionBackfilledIntegrationEventHandlerForCreatePeriodicInspectionContexts.ConsumerName,
+            ReadCapSubscribeGroup(backfill));
+        Assert.Equal(backfillTopic, ReadIntegrationEventConsumerEventName(backfill));
+        Assert.Equal(
+            WorkOrderReleaseProjectionBackfilledIntegrationEventHandlerForCreatePeriodicInspectionContexts.ConsumerName,
+            ReadIntegrationEventConsumerName(backfill));
+
+        // 直投侧同时钉住，避免「两边都被改成同一个值」这种改法悄悄通过。
+        Assert.Equal(nameof(WorkOrderReleasedIntegrationEvent), ReadCapSubscribeTopic(live));
+        Assert.Equal(
+            WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicInspectionContexts.ConsumerName,
+            ReadCapSubscribeGroup(live));
+    }
+
+    private static string ReadCapSubscribeTopic(Type handler) =>
+        ReadCapSubscribeProperty(handler, "Name");
+
+    private static string ReadCapSubscribeGroup(Type handler) =>
+        ReadCapSubscribeProperty(handler, "Group");
+
+    private static string ReadCapSubscribeProperty(Type handler, string propertyName)
+    {
+        var attribute = handler
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .SelectMany(method => method.GetCustomAttributes())
+            .Single(x => string.Equals(x.GetType().Name, "CapSubscribeAttribute", StringComparison.Ordinal));
+        return (string)attribute.GetType().GetProperty(propertyName)!.GetValue(attribute)!;
+    }
+
+    private static string ReadIntegrationEventConsumerEventName(Type handler) =>
+        ReadIntegrationEventConsumerField(handler, 0);
+
+    private static string ReadIntegrationEventConsumerName(Type handler) =>
+        ReadIntegrationEventConsumerField(handler, 1);
+
+    private static string ReadIntegrationEventConsumerField(Type handler, int index)
+    {
+        var attribute = handler
+            .GetCustomAttributesData()
+            .Single(x => string.Equals(
+                x.AttributeType.Name,
+                "IntegrationEventConsumerAttribute",
+                StringComparison.Ordinal));
+        return (string)attribute.ConstructorArguments[index].Value!;
+    }
+
+    /// <summary>
+    /// <b>#3129 × #3000 两条通道交错：下达前产量跳过不得把已生成序号往回拨。</b>
+    ///
+    /// <para><b>这条路径是可达的，不是纵深防御。</b>两条通道各有一次「跳过」，锚点与口径都不同：
+    /// #3000 回填分支按 <c>OccurredAtUtc</c> 把到回填执行那一刻为止的累计记为已生成，用的是 Quality 的
+    /// **本地** <c>QuantityHighWater</c>；#3129 直投分支跳过 MES 点名的「下达动作之前那一部分」，
+    /// 用的是 MES 在下达动作那一刻的**自有事实**。
+    /// <b>不要写成「后者恒是前者的真子集」</b>——领域意义上是，实现出来的两个数不是，
+    /// 反例见同一文件的
+    /// <c>Live_release_may_carry_more_pre_release_quantity_than_the_backfill_had_already_skipped</c>。
+    /// 本用例取的是**更小**那个方向（存在性，不是全称）。
+    /// （上一版这里把这句话的出处写成「事件消费矩阵 <c>:84</c>」，实际它在
+    /// <c>WorkOrderReleaseProjectionBackfilledIntegrationEvent</c> 那一行、不在
+    /// <c>WorkOrderReleasedIntegrationEvent</c> 那一行；两处的措辞现已一并改正。
+    /// 交叉引用一律按**行标识**给，不再给行号——行号会随文档增删静默漂移，而那份矩阵是人工承重、无门禁。）</para>
+    ///
+    /// <para><b>交错为什么走得通</b>（逐条，不是推断）：两个消费者是**不同消费组**，
+    /// <c>ProcessedIntegrationEvent</c> inbox 互相独立，第二封照常进 handler；
+    /// 「已有发布事实的工序只跳过不覆盖」那条 <c>continue</c> 只管 <c>ReconstructedLowerBound</c> 分支，
+    /// 拦不住 <c>Authoritative</c>；两条通道的 <c>ReleasedAtUtc</c> 过同一个
+    /// <c>WorkOrderReleaseFactTime.NotLaterThan</c> 取到同值，<c>ApplyRelease</c> 因事实逐字相同**提前 return
+    /// 不抛**、随后照常执行跳过。生产上的触发形态是「直投发布事实进过 DLQ、在 #3000 回填跑完之后才被重投」。</para>
+    ///
+    /// <para><b>读数</b>：本实现（带 <c>Math.Max</c>）终任务 <b>0</b>；把
+    /// <c>PeriodicInspectionRuntimeContext.SkipQuantityWindowsAccruedBeforeRelease</c> 里的
+    /// <c>Math.Max</c> 换成直接赋值 ⇒ 已生成序号被从 5 拨回 2，随后 <c>AddDueTasks</c>
+    /// 按本地水位 500 重开 3/4/5 三张**重复**任务、死信仍为 0（静默重复，不是可见失败）。</para>
+    /// </summary>
+    [Fact]
+    public async Task Backfill_then_live_release_does_not_reopen_quantity_windows_the_backfill_already_skipped()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.InspectionPlans.Add(PeriodicPlan());
+        await dbContext.SaveChangesAsync();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+
+        // 下达动作发生在两条报工之间：MES 在那一刻只看得到 250，故直投载荷带 250。
+        await HandleReportAsync(dbContext, ProductionReport(reportNo: "RPT-001", goodQuantity: 250m));
+        await HandleReportAsync(dbContext, ProductionReport(
+            reportNo: "RPT-002", goodQuantity: 250m, reportedAtUtc: "2026-08-05T00:00:00Z"));
+
+        // #3000 回填先到（直投那封还在 DLQ 里），把到「现在」为止的 500 件全部记为已生成。
+        await HandleBackfillAsync(dbContext, Backfill(), deadLetters);
+        Assert.Empty(await dbContext.InspectionTasks.ToArrayAsync());
+        Assert.Equal(5, (await dbContext.PeriodicInspectionRuntimeContexts.SingleAsync())
+            .LastGeneratedQuantityWindowSequence);
+
+        // 直投那封随后被重投：事实逐字相同、不判冲突，但它带的 250 比回填已跳过的 500 小。
+        await HandleLiveReleaseAsync(
+            dbContext,
+            LiveRelease(preReleaseGoodQuantity: 250m),
+            deadLetters);
+
+        Assert.Empty(await dbContext.InspectionTasks.ToArrayAsync());
+        var context = await dbContext.PeriodicInspectionRuntimeContexts.SingleAsync();
+        Assert.Equal(500m, context.QuantityHighWater);
+        Assert.Equal(5, context.LastGeneratedQuantityWindowSequence);
+        Assert.Empty(await deadLetters.ListAsync(null, null, CancellationToken.None));
+    }
+
+    /// <summary>
+    /// <b>「#3129 跳过的一定比 #3000 跳过的少」是假的</b>——本用例就是那个反例，
+    /// 它同时是 <c>Math.Max</c> 为什么必须写成 <c>Math.Max</c> 而不是「取后到的那个」的理由。
+    ///
+    /// <para><b>领域意义上</b>「下达动作之前产出」⊆「回填执行时刻之前产出」是真的；
+    /// 但**实现出来的两个数**不是：#3000 那一半用的是 Quality 的**本地** <c>QuantityHighWater</c>，
+    /// 而 #3129 用的是 MES 在下达动作那一刻的**自有事实**。报工事件滞后时（⭐ 正是本票要治的
+    /// 「到达顺序」形态）本地水位小于 MES 的事实，两个数就**反向**了。
+    /// 承重的是后一个（实现出来的两个数），不是前一个。</para>
+    ///
+    /// <para>本用例：Quality 只收到 500 件的报工（回填因此跳到序号 5），而 MES 在下达动作那一刻
+    /// 已经记到 750 件（第三条报工事件还在路上）⇒ 直投那一封把已生成序号推到 <b>7</b>，**比 5 大**。
+    /// 「往前推」不开新任务：按本地水位算的目标 <c>floor(500/100)=5</c> 已不大于 7。</para>
+    /// </summary>
+    [Fact]
+    public async Task Live_release_may_carry_more_pre_release_quantity_than_the_backfill_had_already_skipped()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.InspectionPlans.Add(PeriodicPlan());
+        await dbContext.SaveChangesAsync();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+
+        await HandleReportAsync(dbContext, ProductionReport(reportNo: "RPT-001", goodQuantity: 250m));
+        await HandleReportAsync(dbContext, ProductionReport(
+            reportNo: "RPT-002", goodQuantity: 250m, reportedAtUtc: "2026-08-05T00:00:00Z"));
+        await HandleBackfillAsync(dbContext, Backfill(), deadLetters);
+        Assert.Equal(5, (await dbContext.PeriodicInspectionRuntimeContexts.SingleAsync())
+            .LastGeneratedQuantityWindowSequence);
+
+        // 第三条报工事件还没到 Quality，但 MES 在下达动作那一刻已经数到 750。
+        await HandleLiveReleaseAsync(dbContext, LiveRelease(preReleaseGoodQuantity: 750m), deadLetters);
+
+        var context = await dbContext.PeriodicInspectionRuntimeContexts.SingleAsync();
+        Assert.Equal(500m, context.QuantityHighWater);
+        Assert.Equal(7, context.LastGeneratedQuantityWindowSequence);
+        Assert.Empty(await dbContext.InspectionTasks.ToArrayAsync());
+        Assert.Empty(await deadLetters.ListAsync(null, null, CancellationToken.None));
+    }
+
+    private static async Task HandleReportAsync(
+        ApplicationDbContext dbContext,
+        ProductionReportRecordedIntegrationEvent integrationEvent) =>
+        await new ProductionReportRecordedIntegrationEventHandlerForTrackPeriodicInspection(
+            dbContext,
+            new PeriodicInspectionOperationScopeCoordinator(dbContext),
+            new InMemoryIntegrationEventDeadLetterStore()).HandleAsync(integrationEvent, CancellationToken.None);
+
+    private static async Task HandleLiveReleaseAsync(
+        ApplicationDbContext dbContext,
+        WorkOrderReleasedIntegrationEvent integrationEvent,
+        InMemoryIntegrationEventDeadLetterStore deadLetters) =>
+        await new WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicInspectionContexts(
+            dbContext,
+            new PeriodicInspectionOperationScopeCoordinator(dbContext),
+            deadLetters).HandleAsync(integrationEvent, CancellationToken.None);
+
+    private static async Task HandleBackfillAsync(
+        ApplicationDbContext dbContext,
+        WorkOrderReleaseProjectionBackfilledIntegrationEvent integrationEvent,
+        InMemoryIntegrationEventDeadLetterStore? deadLetters = null) =>
+        await new WorkOrderReleaseProjectionBackfilledIntegrationEventHandlerForCreatePeriodicInspectionContexts(
+            dbContext,
+            new PeriodicInspectionOperationScopeCoordinator(dbContext),
+            deadLetters ?? new InMemoryIntegrationEventDeadLetterStore())
+            .HandleAsync(integrationEvent, CancellationToken.None);
+
+    private static Task<FirstArticleConfirmationResponse> ConfirmAsync(
+        ApplicationDbContext dbContext,
+        string operationId = "OP-10") =>
+        new GetFirstArticleConfirmationQueryHandler(dbContext).Handle(
+            new GetFirstArticleConfirmationQuery("org-001", "env-dev", "WO-001", operationId),
+            CancellationToken.None);
+
+    private static async Task HandleCompletionAsync(
+        ApplicationDbContext dbContext,
+        MesOperationTaskCompletedIntegrationEvent integrationEvent,
+        InMemoryIntegrationEventDeadLetterStore deadLetters) =>
+        await new MesOperationTaskCompletedIntegrationEventHandlerForClosePeriodicInspection(
+            dbContext,
+            new PeriodicInspectionOperationScopeCoordinator(dbContext),
+            deadLetters).HandleAsync(integrationEvent, CancellationToken.None);
+
+    private static MesOperationTaskCompletedIntegrationEvent OperationCompleted(
+        string operationId,
+        string skuCode,
+        string workCenterId = "WC-MIX",
+        int operationSequence = 10) => new(
+        $"evt-complete-{operationId}",
+        MesIntegrationEventTypes.OperationTaskCompleted,
+        MesIntegrationEventVersions.V1,
+        DateTimeOffset.Parse("2026-08-20T00:00:00Z"),
+        MesIntegrationEventSources.BusinessMes,
+        $"corr-complete-{operationId}",
+        "WO-001",
+        "org-001",
+        "env-dev",
+        "system:mes",
+        $"mes:operation-completed:org-001:env-dev:WO-001:{operationId}",
+        new OperationTaskCompletedPayload(
+            "WO-001", operationId, skuCode, operationSequence, workCenterId, 1000m, "EA", false,
+            DateTimeOffset.Parse("2026-08-20T00:00:00Z")));
+
+    private static async Task<string[]> SnapshotAsync(ApplicationDbContext dbContext) =>
+        await dbContext.PeriodicInspectionOperations
+            .AsNoTracking()
+            .OrderBy(x => x.WorkOrderId)
+            .ThenBy(x => x.OperationId)
+            .Select(x => x.WorkOrderId + "|" + x.OperationId + "|" + x.SkuCode + "|" + x.OperationSequence
+                + "|" + x.WorkCenterId + "|" + x.ReleasedAtUtc)
+            .ToArrayAsync();
+
+    private static WorkOrderReleaseProjectionBackfilledIntegrationEvent Backfill(
+        string eventId = "evt-backfill-first",
+        DateTimeOffset? releasedAtUtc = null,
+        IReadOnlyCollection<string>? operationIds = null,
+        IReadOnlyCollection<ReleasedOperationPayload>? operations = null) => new(
+        eventId,
+        MesIntegrationEventTypes.WorkOrderReleaseProjectionBackfilled,
+        MesIntegrationEventVersions.V1,
+        DateTimeOffset.Parse("2026-09-01T00:00:00Z"),
+        MesIntegrationEventSources.BusinessMes,
+        "mes:work-order-release-projection-backfill:org-001:env-dev:WO-001",
+        "WO-001",
+        "org-001",
+        "env-dev",
+        "system:mes",
+        "mes:work-order-release-projection-backfill:org-001:env-dev:WO-001",
+        new WorkOrderReleasedPayload(
+            "WO-001",
+            "SKU-FG-1000",
+            1000m,
+            releasedAtUtc ?? ReleasedAtUtc,
+            operations?.ToArray()
+                ?? (operationIds ?? ["OP-10"])
+                    .Select(operationId => new ReleasedOperationPayload(operationId, 10, "WC-MIX"))
+                    .ToArray()));
+
+    private static WorkOrderReleasedIntegrationEvent LiveRelease(
+        string eventId = "evt-release-WO-001",
+        DateTimeOffset? releasedAtUtc = null,
+        decimal? preReleaseGoodQuantity = null) => new(
+        eventId,
+        MesIntegrationEventTypes.WorkOrderReleased,
+        MesIntegrationEventVersions.V1,
+        ReleasedAtUtc,
+        MesIntegrationEventSources.BusinessMes,
+        "mes:work-order-released:org-001:env-dev:WO-001",
+        "WO-001",
+        "org-001",
+        "env-dev",
+        "system:mes",
+        "mes:work-order-released:org-001:env-dev:WO-001",
+        new WorkOrderReleasedPayload(
+            "WO-001",
+            "SKU-FG-1000",
+            1000m,
+            releasedAtUtc ?? ReleasedAtUtc,
+            [new ReleasedOperationPayload("OP-10", 10, "WC-MIX", preReleaseGoodQuantity)]));
+
+    private static ProductionReportRecordedIntegrationEvent ProductionReport(
+        string reportNo = "RPT-001",
+        decimal goodQuantity = 250m,
+        string workCenterId = "WC-MIX",
+        string operationId = "OP-10",
+        string reportedAtUtc = "2026-08-02T00:00:00Z") => new(
+        $"evt-report-{reportNo}",
+        MesIntegrationEventTypes.ProductionReportRecorded,
+        MesIntegrationEventVersions.V1,
+        DateTimeOffset.Parse(reportedAtUtc),
+        MesIntegrationEventSources.BusinessMes,
+        $"corr-report-{reportNo}",
+        "WO-001",
+        "org-001",
+        "env-dev",
+        "system:mes",
+        $"mes:production-report-recorded:org-001:env-dev:{reportNo}",
+        new ProductionReportRecordedPayload(
+            reportNo, "WO-001", operationId, workCenterId, null, goodQuantity, 0m, 0m, "EA", null,
+            DateTimeOffset.Parse(reportedAtUtc), false));
+
+    private static InspectionPlan FirstArticlePlan()
+    {
+        var plan = InspectionPlan.Create(
+            "org-001", "env-dev", "PLAN-FA-1000", "first-article", "SKU-FG-1000", null, "WC-MIX", null, null);
+        plan.AddCharacteristic("appearance", "Appearance", "visual", "major", required: true, "100%");
+        plan.Activate();
+        return plan;
+    }
+
+    private static InspectionPlan PeriodicPlan(
+        string planCode = "PLAN-PERIODIC-1000",
+        string workCenterId = "WC-MIX",
+        decimal quantityInterval = 100m)
+    {
+        var plan = InspectionPlan.Create(
+            "org-001", "env-dev", planCode, "operation", "SKU-FG-1000", null, workCenterId, null, "mes-operation",
+            quantityInterval: quantityInterval);
+        plan.AddCharacteristic("appearance", "Appearance", "visual", "major", required: true, "100%");
+        plan.Activate();
+        return plan;
+    }
+
+    private static InspectionPlan TimeIntervalPlan()
+    {
+        var plan = InspectionPlan.Create(
+            "org-001", "env-dev", "PLAN-TIME-1000", "operation", "SKU-FG-1000", null, "WC-MIX", null, "mes-operation",
+            timeIntervalHours: 2m);
+        plan.AddCharacteristic("appearance", "Appearance", "visual", "major", required: true, "100%");
+        plan.Activate();
+        return plan;
+    }
+
+    private static ApplicationDbContext CreateDbContext()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase($"quality-release-projection-backfill-{Guid.CreateVersion7():N}")
+            .Options;
+        return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private sealed class NoopMediator : IMediator
+    {
+        public Task Publish(object notification, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task Publish<TNotification>(TNotification notification, CancellationToken cancellationToken = default)
+            where TNotification : INotification => Task.CompletedTask;
+
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+            where TRequest : IRequest => throw new NotSupportedException();
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+            IStreamRequest<TResponse> request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+}

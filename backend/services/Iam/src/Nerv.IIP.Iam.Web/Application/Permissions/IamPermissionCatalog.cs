@@ -82,6 +82,7 @@ public static class IamPermissionCatalog
         [NervIipPermissionCodes.PlanningMrpRun] = "Run MPS and MRP calculations.",
         [NervIipPermissionCodes.PlanningSuggestionsManage] = "Accept, reject or close planning suggestions.",
         [NervIipPermissionCodes.BarcodeTemplatesManage] = "Manage barcode rules and label templates.",
+        [NervIipPermissionCodes.BarcodeTemplateAssetsRetire] = "Retire label template assets.",
         [NervIipPermissionCodes.BarcodePrint] = "Generate and print labels.",
         [NervIipPermissionCodes.BarcodeScansWrite] = "Write barcode scan records.",
         [NervIipPermissionCodes.ApprovalsRead] = "Read business approval templates, chains and tasks.",

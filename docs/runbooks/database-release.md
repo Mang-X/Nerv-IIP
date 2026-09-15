@@ -172,6 +172,51 @@ Quality 数量巡检链路依次引入 `AddPeriodicInspectionQuantityWatermark`�
 3. 确需恢复备份时，记录 `releaseId`、目标数据库、批准恢复点、执行人、开始时间、结束时间和结果；恢复后重新核对 migration history 与工装业务/审计事实。
 4. CI 或本地一次性 PostgreSQL profile 只验证 runner 自有数据库中的 migration、事务、并发与隔离行为，不构成客户生产迁移、备份或恢复演练，也不能据此宣称 BusinessMasterData 已具备完整客户 migrator。
 
+### 6.3 BusinessScheduling 事件实例身份 migration
+
+`20260831142730_AddSchedulingProcessedEventInstanceIdentity` 在 `scheduling.processed_integration_events` 既有的 `(ConsumerName, IdempotencyKey)` 唯一索引之外新增 `(ConsumerName, EventId)` 唯一索引，用于 AssetUnavailable v1/v2 双投时按事件实例与业务事实分别去重（#2967）。旧模型允许同一 `ConsumerName/EventId` 出现多行，而既有唯一索引保证这些行的 `IdempotencyKey` 必然互不相同，即同一事件下曾产生过多个业务键。migration 对这种历史形状 fail-closed，不做任何自动清理；执行前仍须满足第 2 节的备份、版本冻结与失败停止条件：
+
+1. 历史库若存在同 `ConsumerName/EventId` 的多行，migration 以 `integrity_constraint_violation` 中止，错误消息列出每组冲突的 `ConsumerName/EventId` 与各 `IdempotencyKey@ProcessedAtUtc`（放在消息正文而非 `DETAIL`，因为 Npgsql 默认脱敏 `DETAIL`）。migration 在事务内执行，中止后不删除任何行、不创建索引、不写入 migration history。
+2. 不得为了让 migration 通过而手工删除任一冲突行：删除后该业务键的 inbox 痕迹消失，事件重投会再次产生 schedule invalidation。运维须按冲突清单逐组核对来源事件，确认哪一行对应真实业务事实并记录裁决，再以补救 migration 或经批准的数据修正前滚，随后重跑本 migration。
+3. 开始写入双身份 inbox 事实后，不执行本 migration 的 `Down`：降级只删除 `(ConsumerName, EventId)` 索引，旧版本消费者会退回仅按业务键去重，v2 重投可能被记为第二次失效；使用补救 migration 前滚修复。
+4. CI 与本地一次性 PostgreSQL profile 只在 runner 自有数据库上验证两种历史形状（无歧义历史前滚且安装精确索引、歧义形状中止且错误消息含冲突行），不构成客户生产迁移、备份或恢复演练。
+
+### 6.4 BusinessMES 停机事件收件箱 migration
+
+`AddMesProcessedEventInstanceIdentity` 为 `mes.processed_integration_events` 补回 `(ConsumerName, EventId)` 唯一索引，让 Maintenance AssetUnavailable 的 v1/v2 跨版本双投同时受事件实例身份与 `IdempotencyKey` 业务身份约束。该索引曾被 `UseIdempotencyKeyForProcessedIntegrationEvents` 移除，因此既有库里可能存在同 consumer、同 `EventId` 的多行历史。同一条历史 migration 在移除它的同时建立了 `(ConsumerName, IdempotencyKey)` 唯一索引，所以这些多行的 `IdempotencyKey` 必然两两不同：MES 不存在「同 `EventId` 且同 `IdempotencyKey`」的真重复分支，也就没有可自动清理的行。migration 按以下策略处理，不做静默清理：
+
+1. 同 consumer、同 `EventId` 但 `IdempotencyKey` 不同的行是语义歧义：migration **fail-closed 中止**（PostgreSQL `RAISE EXCEPTION`，SQLSTATE `23000`），错误信息逐行列出 `ConsumerName / EventId / IdempotencyKey / ProcessedAtUtc`，由运维按发布说明显式裁决（确认为同一事实的重复登记后保留一行，或确认为不同事实后重赋 `EventId`）再重跑 migration；migration 不会替运维选择保留哪一行。
+2. 中止时索引未创建、数据未改动、迁移历史未写入，旧版本服务可继续运行；这不是执行 `Down` 的授权。`Down` 只删除索引。
+3. 索引创建后，旧版本 MES（只按 `IdempotencyKey` 去重）仍可运行；新版本消费者在同一事务内先赢得两项身份再登记停机与重排，重放死信不会形成第二条停机事实。
+
+### 6.5 BusinessMES 报工单件序列号 migration
+
+`AddMesProductionReportSerialNumbers` 新建 `mes.production_report_serial_numbers`，并将正向报工的非空旧 `production_reports.serial_no` 在 trim 后迁为 `sequence_no=1`。冲销行只通过 `reversed_report_no` 追溯原报工，不重复占用序列号。发布前仍须执行第 2 节的备份、版本冻结与失败停止条件：
+
+1. migration 若发现同一 `organization_id/environment_id` 下两笔正向报工具有相同的 trim 后序列号，会以 SQLSTATE `23000` fail-closed；消息正文按 `OrganizationId / EnvironmentId / SerialNumber / ReportNos` 列出冲突组，且事务回滚，不建表、不改旧报工、不写 migration history。
+2. 不得通过改大小写、补空白、自动加后缀或静默丢弃任一报工来让 migration 通过。运维须逐组核对 BarcodeLabel/生产记录，显式裁决真实归属并走经批准的数据修正或补救 migration，再重跑本 migration。
+3. migration 成功后，旧单值字段继续承担现有 HTTP 兼容契约；新表是后续多序列号报工切片的持久化基础。本 migration 不安装长期双写开关，也不把冲销复制成第二份序列事实。
+
+### 6.6 BarcodeLabel 打印单件序列号 migration
+
+`AddBarcodeSerialAllocation` 为 `barcode.label_print_items` 回填批次的组织/环境归属，安装该 scope 内非空 `serial_number` 唯一索引，并新增按有效序列宽度隔离精确文本碰撞域的持久号段计数器。发布前仍须执行第 2 节的备份、版本冻结与失败停止条件：
+
+1. migration 若发现同一 `organization_id/environment_id` 内存在重复历史序列，会以 SQLSTATE `23000` fail-closed；消息正文逐组列出 `organization / environment / serial_number: item_id@label_print_batch_id`。事务回滚后原行、序列值及 migration history 均保持不变。
+2. migration 按当前固定宽度 Base62 正 `Int64` 生成域分类历史非空序列：可达值按 `(organization_id, environment_id, serial_number_length)` 的最大值初始化水位；非 Base62、全零、宽度不在 2–20 或数学值超出当前生成域的值与新生成空间可证明不相交，逐字保留且不推进水位。解析或算术失败必须中止，不得跳过或降级。
+3. 任一碰撞分区的历史最大可达值若已占用该宽度在当前生成器中的容量终点，migration 以 SQLSTATE `23000` fail-closed，并列出 `organization / environment / width / serial_number`；不得把必然失败延迟到升级后的第一个创建请求。
+4. 不得自动删除、覆盖、重新编号或给冲突值添加后缀。运维须逐项核对实际标签和来源批次，记录真实归属裁决，并通过经批准的数据修正或补救 migration 前滚，再重跑本 migration。
+5. migration 成功后，新批次的普通与 GS1 单件序列均由 BarcodeLabel 号段分配器产生；同 org/env、同有效宽度的不同规则共享原子水位，不同宽度互不消耗容量，`label_print_items` 仍保持 org/env 内最终序列文本全局唯一。调用方 `LabelValuesJson` 只承载模板变量及 GS1 lot，不再是序列号来源。已存在且无冲突的历史序列保持原值，历史空值保持为空。
+6. 开始分配新序列后不执行本 migration 的 `Down`：降级会删除号段水位和数据库唯一约束。发布失败时停止新版本服务并优先使用补救 migration 前滚；需要恢复时走第 6 节的批准恢复点。
+
+### 6.7 BarcodeLabel MES 激活生命周期 migration
+
+`AddBarcodeMesActivation` 为 `barcode.label_print_batches` 新增可空的 `production_report_id` 与 `production_report_no`，并把历史 `pending` 批次改为 `ready-to-print`。发布前仍须执行第 2 节的备份、版本冻结与失败停止条件：
+
+1. 升级期间暂停旧版本 BarcodeLabel 写入，先应用 migration，再启动只创建 `reserved` 新批次的新版本；不得让旧版本在 migration 后继续创建 `pending`。
+2. backfill 只改历史批次状态，不重建或重编号批次和打印项，不改变 `label_print_items.serial_number`，也不为历史批次伪造 MES 关联。
+3. 发布后抽查历史批次仍可 dispatch，新建 `reserved` 批次在 MES 关联前被 dispatch gate 拒绝；同一生产上报关联重放成功，不同关联不得覆盖。
+4. 开始创建 `reserved` 或写入 MES 关联后不执行本 migration 的 `Down`：旧版本无法表达激活门且会把未关联批次误当作可打印。发布失败时停止新版本服务并优先前滚补救；需要恢复时走第 6 节的批准恢复点。
+
 ## 7. Seed 契约
 
 Seed 是显式步骤，不混入普通 Web 启动。每个 seed 至少声明 `seedName`、`seedVersion`、`ownerService`、幂等规则、输入来源、重复执行结果和敏感信息处理。初始管理员密码、客户端密钥、Connector 凭据不得写入日志。

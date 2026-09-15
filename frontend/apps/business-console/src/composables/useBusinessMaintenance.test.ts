@@ -46,8 +46,8 @@ vi.mock('@nerv-iip/api-client', () => ({
     key: [{ _id: 'createBusinessConsoleMaintenanceSparePart' }],
     mutation: vi.fn(),
   })),
-  createBusinessConsoleMaintenanceWorkOrderMutationOptions: vi.fn(() => ({
-    key: [{ _id: 'createBusinessConsoleMaintenanceWorkOrder' }],
+  createBusinessConsoleMaintenanceWorkOrderV2MutationOptions: vi.fn(() => ({
+    key: [{ _id: 'createBusinessConsoleMaintenanceWorkOrderV2' }],
     mutation: vi.fn(),
   })),
   generateDueBusinessConsoleMaintenanceWorkOrdersMutationOptions: vi.fn(() => ({
@@ -285,7 +285,7 @@ describe('business maintenance composables', () => {
     await workOrders.createWorkOrder({ ...intent, idempotencyKey: 'maintenance-key-2' })
 
     const calls = coladaState.mutationCallsById.get(
-      'createBusinessConsoleMaintenanceWorkOrder',
+      'createBusinessConsoleMaintenanceWorkOrderV2',
     ) as Array<{ body: { idempotencyKey?: string } }>
     expect(calls.map((call) => call.body.idempotencyKey)).toEqual([
       'maintenance-key-1',
@@ -310,10 +310,48 @@ describe('business maintenance composables', () => {
     await workOrders.createWorkOrder(body)
 
     const calls = coladaState.mutationCallsById.get(
-      'createBusinessConsoleMaintenanceWorkOrder',
+      'createBusinessConsoleMaintenanceWorkOrderV2',
     ) as Array<{ body: { idempotencyKey?: string } }>
     expect(calls[0]?.body.idempotencyKey).toMatch(/^maintenance-create-/)
     expect(calls[1]?.body.idempotencyKey).not.toBe(calls[0]?.body.idempotencyKey)
+  })
+
+  it('keeps a v2 reason intent key on retry and changes it for a different reason', async () => {
+    const workOrders = useMaintenanceWorkOrders()
+    const body = {
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      deviceAssetId: 'DEV-1',
+      priority: 'high',
+      openedBy: 'operator-1',
+      assetUnavailableReasonCode: 'Line-A.Spindle',
+    }
+    coladaState.mutationFailuresById.set('createBusinessConsoleMaintenanceWorkOrderV2', [
+      Object.assign(new Error('network failure'), { name: 'RequestTimeoutError' }),
+    ])
+    await expect(workOrders.createWorkOrder(body)).rejects.toThrow('network failure')
+    await workOrders.createWorkOrder(body)
+    await workOrders.createWorkOrder({ ...body, assetUnavailableReasonCode: 'Line-A.Hydraulic' })
+    await workOrders.createWorkOrder({ ...body, assetUnavailableReasonCode: null })
+    const calls = coladaState.mutationCallsById.get(
+      'createBusinessConsoleMaintenanceWorkOrderV2',
+    ) as Array<{ body: Record<string, unknown> }>
+    expect(calls[0]!.body.idempotencyKey).toBe(calls[1]!.body.idempotencyKey)
+    expect(calls[2]!.body.idempotencyKey).not.toBe(calls[1]!.body.idempotencyKey)
+    expect(calls.map((call) => call.body.assetUnavailableReasonCode)).toEqual([
+      'Line-A.Spindle',
+      'Line-A.Spindle',
+      'Line-A.Hydraulic',
+      null,
+    ])
+    expect(calls[0]!.body).not.toHaveProperty('assetUnavailableReason')
+    expect(coladaState.confirmOperation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        expectedOperationType: 'maintenance.work-order.create',
+        expectedIdempotencyKey: calls[1]!.body.idempotencyKey,
+      }),
+    )
   })
 
   it('exposes an unsuccessful work-order envelope as a business-response failure', () => {

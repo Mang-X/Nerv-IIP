@@ -74,8 +74,8 @@ public sealed class FacadeCoverageMatrixTests
         Assert.True(
             missing.Length == 0,
             "These live business-service HTTP endpoints are not classified in " +
-            "docs/architecture/facade-coverage-matrix.json. Every endpoint must declare a " +
-            "consumption face (exposed / deferred / internal) — see facade-coverage-matrix.md:\n" +
+            "docs/reference/api/facade-coverage-matrix.json. Every endpoint must declare a " +
+            "consumption face (exposed / deferred / internal) — see docs/governance/api/facade-coverage.md:\n" +
             string.Join('\n', missing.Select(k => $"  {k.Service} {k.Method} {k.Route}")));
     }
 
@@ -186,7 +186,7 @@ public sealed class FacadeCoverageMatrixTests
             "(the #784 failure mode: endpoint claims exposed but no facade shipped):\n" + string.Join('\n', problems));
     }
 
-    // Contract: PublicContract + Regression. Authority: Issue #2223, review 5037021432, and facade-coverage-matrix.md DoD.
+    // Contract: PublicContract + Regression. Authority: Issue #2223, review 5037021432, and docs/governance/api/facade-coverage.md DoD.
     // Removing the frozen-candidate, Gateway-fidelity, optional-compatibility, or candidate-pool calculation declaration makes this gate fail.
     [Fact]
     public void Mes_material_readiness_declares_the_substitute_candidate_response_contract()
@@ -280,7 +280,7 @@ public sealed class FacadeCoverageMatrixTests
 
         Assert.True(
             problems.Count == 0,
-            "facade-coverage-matrix.md summary table is out of date with the JSON registry " +
+            "docs/governance/api/facade-coverage.md summary table is out of date with the JSON registry " +
             "(regenerate the FACADE-COVERAGE-SUMMARY block):\n" + string.Join('\n', problems));
     }
 

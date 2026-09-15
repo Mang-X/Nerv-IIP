@@ -559,6 +559,21 @@ describe('business telemetry composables', () => {
     ).toBe(true)
   })
 
+  it('keeps the OEE aggregate request disabled when the consuming feature lacks permission', () => {
+    useBusinessTelemetryOeeAggregates(
+      {
+        dimension: 'workCenter',
+        windowStartUtc: '2026-08-01T00:00:00.000Z',
+        windowEndUtc: '2026-08-08T00:00:00.000Z',
+      },
+      () => false,
+    )
+
+    expect(
+      coladaState.queryOptionsById.get('queryBusinessConsoleTelemetryOeeAggregates')?.enabled,
+    ).toBe(false)
+  })
+
   it('reads every stable-client page for the complete day trend independently of table paging', async () => {
     aggregateState.impl = async ({ query }) => {
       const skip = Number(query.skip)

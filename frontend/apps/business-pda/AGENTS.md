@@ -29,7 +29,7 @@ pnpm -C frontend --filter @nerv-iip/business-pda cap:sync   # 构建 + 同步 Ca
 长期证明边界：`docs/governance/testing/mobile-pda.md`；
 当前 spec/producer 导航：`docs/reference/testing/mobile-pda-inventory.md`；
 自动化、模拟器与真机 smoke：`docs/runbooks/testing/mobile-pda.md`；
-Capacitor 架构：`docs/architecture/mobile-pda-capacitor-architecture.md`；
+Capacitor 架构：`docs/architecture/mobile/capacitor.md`；
 打包部署：`docs/runbooks/mobile-pda-deployment.md`。
 
 ## 硬性规则

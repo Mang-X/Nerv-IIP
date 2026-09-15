@@ -407,7 +407,13 @@ public sealed class WcsTaskEntityTypeConfiguration : IEntityTypeConfiguration<Wc
         builder.Property(x => x.AttemptCount).HasColumnName("attempt_count").IsRequired().HasComment("Dispatch attempt count.");
         builder.Property(x => x.CompletionPayloadJson).HasColumnName("completion_payload_json").HasComment("Completion callback payload JSON.");
         builder.Property(x => x.FailureCode).HasColumnName("failure_code").HasMaxLength(100).HasComment("WCS failure diagnostic code.");
-        builder.Property(x => x.FailureMessage).HasColumnName("failure_message").HasMaxLength(1000).HasComment("WCS failure diagnostic message.");
+        // Unbounded on purpose (#3305): this is the raw diagnostic text an external WCS posts back on
+        // the failure callback. Producer: the external WCS via FailWcsTaskCommand. Consumers: this
+        // service's read models and the wms.WcsTaskFailed / WcsTaskRetryExhausted / WcsTaskCancelled
+        // integration events (payload field DiagnosticMessage). Compatibility: consumers must fit the
+        // value into their own columns themselves - Notification renders a bounded summary from it and
+        // truncates on its own side; the full text stays here so operators can drill down.
+        builder.Property(x => x.FailureMessage).HasColumnName("failure_message").HasComment("WCS failure diagnostic message; unbounded raw text from the external WCS.");
         builder.Property(x => x.DispatchedAtUtc).HasColumnName("dispatched_at_utc").IsRequired().HasComment("UTC dispatch time.");
         builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc").HasComment("UTC completion time.");
         builder.Property(x => x.FailedAtUtc).HasColumnName("failed_at_utc").HasComment("UTC failure time.");

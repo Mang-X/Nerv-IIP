@@ -38,28 +38,36 @@ public sealed class MesRoutingSnapshotTests
         dbContext.OperationTasks.AddRange(
             OperationTask.Queue(
                 "org-001", "env-dev", "WO-2095", "OP-020", 20, "WC-PACK", [], releasedAtUtc,
-                TimeSpan.FromMinutes(15)),
+                TimeSpan.FromMinutes(15),
+                "SKU-001"),
             OperationTask.Queue(
                 "org-001", "env-dev", "WO-2095", "OP-010", 10, "WC-MIX", [], releasedAtUtc,
-                TimeSpan.FromMinutes(45)),
+                TimeSpan.FromMinutes(45),
+                "SKU-001"),
             OperationTask.Queue(
                 "org-001", "env-dev", "WO-2095", "OP-015-B", 15, "WC-TIE-B", [], releasedAtUtc,
-                TimeSpan.FromMinutes(20)),
+                TimeSpan.FromMinutes(20),
+                "SKU-001"),
             OperationTask.Queue(
                 "org-001", "env-dev", "WO-2095", "OP-015-A", 15, "WC-TIE-A", [], releasedAtUtc,
-                TimeSpan.FromMinutes(20)),
+                TimeSpan.FromMinutes(20),
+                "SKU-001"),
             OperationTask.Queue(
                 "org-001", "env-dev", "WO-2095", "OP-005", 30, "WC-FINISH", [], releasedAtUtc,
-                TimeSpan.FromMinutes(10)),
+                TimeSpan.FromMinutes(10),
+                "SKU-001"),
             OperationTask.Queue(
                 "org-other", "env-dev", "WO-2095", "OP-OTHER-ORG", 5, "WC-OTHER", [], releasedAtUtc,
-                TimeSpan.FromMinutes(10)),
+                TimeSpan.FromMinutes(10),
+                "SKU-001"),
             OperationTask.Queue(
                 "org-001", "env-other", "WO-2095", "OP-OTHER-ENV", 5, "WC-OTHER", [], releasedAtUtc,
-                TimeSpan.FromMinutes(10)),
+                TimeSpan.FromMinutes(10),
+                "SKU-001"),
             OperationTask.Queue(
                 "org-001", "env-dev", "WO-OTHER", "OP-OTHER-WO", 5, "WC-OTHER", [], releasedAtUtc,
-                TimeSpan.FromMinutes(10)));
+                TimeSpan.FromMinutes(10),
+                "SKU-001"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var response = await new ReleaseWorkOrderCommandHandler(

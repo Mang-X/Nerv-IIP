@@ -126,13 +126,23 @@ public sealed class ToolingAssetDirectoryQueryTests
         AssertFailure(result, nameof(ListToolingAssetsQuery.Take), "take 必须在 1 至 500 之间。");
     }
 
+    /// <summary>
+    /// 按 <c>ErrorMessage</c> 定位失败项，不按 <c>ValidationFailure.PropertyName</c>：后者由
+    /// <c>ValidatorOptions.Global.PropertyNameResolver</c> 决定，而 <c>app.UseFastEndpoints(...)</c>
+    /// 启动时会把它换成 camelCase 解析器并且不还原，于是断言会随同程序集内的执行顺序时红时绿（#3342）。
+    /// 这里的六句文案都由 <c>WithMessage</c> 钉死、模板不含 <c>{PropertyName}</c> 占位符，因此不受解析器影响；
+    /// 六句两两不同，配合调用方的 <c>Assert.Equal(6, result.Errors.Count)</c>，仍是每条规则一一对应。
+    /// </summary>
     private static void AssertFailure(
         FluentValidation.Results.ValidationResult result,
         string propertyName,
         string errorMessage)
     {
-        var failure = Assert.Single(result.Errors, failure => failure.PropertyName == propertyName);
-        Assert.Equal(errorMessage, failure.ErrorMessage);
+        var failure = Assert.Single(result.Errors, failure => failure.ErrorMessage == errorMessage);
+
+        // 「这条文案挂在哪个字段上」这一维照样钉住，只是忽略大小写：解析器换成 camelCase 后
+        // 名字只差首字母大小写，成员名写错仍然红。
+        Assert.Equal(propertyName, failure.PropertyName, ignoreCase: true);
     }
 
     private static ServiceProvider CreateProvider()

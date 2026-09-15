@@ -335,7 +335,8 @@ public sealed class MesProductionStatisticsPostgresTests
             reportedAtUtc.AddHours(-1),
             TimeSpan.FromHours(8),
             reportedAtUtc.AddHours(-1),
-            null));
+            null,
+            "SKU-001"));
         var report = ProductionReport.Record(
             organizationId,
             environmentId,

@@ -4,6 +4,15 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 
 namespace Nerv.IIP.Business.Wms.Web.Tests;
 
+internal sealed class WmsReceiptRouteFixture(
+    Nerv.IIP.Contracts.Erp.PurchaseReceiptInventoryPostingRoute? route = Nerv.IIP.Contracts.Erp.PurchaseReceiptInventoryPostingRoute.Wms)
+    : Nerv.IIP.Business.Wms.Web.Application.Inventory.IWmsPurchaseReceiptPostingRouteClient
+{
+    public Task<Nerv.IIP.Contracts.Erp.PurchaseReceiptInventoryPostingRoute?> GetAsync(
+        string organizationId, string environmentId, string receiptNo, CancellationToken cancellationToken) =>
+        Task.FromResult(route);
+}
+
 internal sealed class NoopMediator : IMediator
 {
     public Task Publish(object notification, CancellationToken cancellationToken = default) => Task.CompletedTask;

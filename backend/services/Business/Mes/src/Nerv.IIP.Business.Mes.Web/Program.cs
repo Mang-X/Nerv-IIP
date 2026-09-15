@@ -57,7 +57,7 @@ builder.Services.AddScoped<OperationActualTimeSettledV1IntegrationEventConverter
 builder.Services.AddScoped<OperationActualTimeSettledIntegrationEventConverter>();
 builder.Services.AddScoped<OperationActualTimeSettlementVoidedV1IntegrationEventConverter>();
 builder.Services.AddScoped<OperationActualTimeSettlementVoidedIntegrationEventConverter>();
-builder.Services.AddScoped<IMesActualTimeOutboxPublisher, CapMesActualTimeOutboxPublisher>();
+builder.Services.AddScoped<IMesIntegrationEventOutboxPublisher, CapMesIntegrationEventOutboxPublisher>();
 builder.Services.AddSingleton(new MesActualTimeTopicOptions(builder.Environment.EnvironmentName));
 var productEngineeringBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "ProductEngineering:BaseUrl", "http://localhost:5108");
 var inventoryBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Inventory:BaseUrl", "http://localhost:5109");
@@ -200,7 +200,6 @@ builder.Services.AddSingleton<RuleScheduler>();
 builder.Services.AddScoped<MesCodingService>();
 builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
 builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
 builder.Services.AddMesCapIntegrationEvents(builder.Configuration, builder.Environment.EnvironmentName, isTesting);
 builder.Services.AddSingleton(new MesRescheduleOptions
 {

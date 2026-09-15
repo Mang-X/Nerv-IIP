@@ -210,6 +210,102 @@ foreach ($invalidOrdinalSetCase in @(
         'Default, culture, unknown, or reassigned set receivers must remain findings.'
 }
 
+# #3312: the ordinal-HashSet exemption has to be reachable from the *top-level script scope*, not
+# only from inside a function.
+#
+# No case in this file before #3312 ever probed this exemption from the top level. That is why the
+# gap survived: `Test-NervOrdinalContractDirectFunctionAssignment` returned false outright when there
+# was no enclosing function, so the exemption was structurally unreachable in flat scripts, and flat
+# scripts are exactly what every file under scripts/tests/ is. The exemption read as complete and had
+# never once applied there.
+#
+# That claim is constructive, not a count of how the probes happen to be written: running the *base*
+# version of this file against the *base* (unfixed) library is green, so the pre-existing suite had
+# zero discrimination against the defect. Running the base file against the fixed library is green
+# too — which is the other half: the block below is the entire discrimination this change adds.
+#
+# The parity is asserted by *construction*, not by two hand-maintained copies: the function-scoped
+# probe is the top-level probe wrapped verbatim. Keeping two literal sources would let them drift
+# into testing two different things while still looking like a scope comparison.
+$topLevelOrdinalSetProbe = '$names = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal); $null = $names.Contains(''Name'')'
+$topLevelOrdinalSetFindings = @(Get-LayerProbeFindings -Source $topLevelOrdinalSetProbe)
+$functionOrdinalSetFindings = @(Get-LayerProbeFindings -Source "function Test-ScopeParitySet { $topLevelOrdinalSetProbe }")
+Assert-Layer ($topLevelOrdinalSetFindings.Count -eq $functionOrdinalSetFindings.Count) `
+    ('The same ordinal HashSet proof must survive moving scopes: top-level reported ' +
+        "$($topLevelOrdinalSetFindings.Count) and function scope reported $($functionOrdinalSetFindings.Count).")
+Assert-Layer ($topLevelOrdinalSetFindings.Count -eq 0) `
+    'An ordinal HashSet[string] receiver proven in the top-level script scope must be accepted.'
+
+# Positive control for the two assertions above. They are both "the set is empty", which a probe
+# helper that silently returned nothing would also satisfy — an empty-set assertion has no
+# discrimination on its own. This one states a non-zero count from the same helper on a top-level
+# source of the same shape, so a scanner that had stopped reaching top-level nodes fails here.
+$topLevelDefaultSetFindings = @(Get-LayerProbeFindings -Source '$names = [Collections.Generic.HashSet[string]]::new(); $null = $names.Contains(''Name'')')
+Assert-Layer (@($topLevelDefaultSetFindings | Where-Object { $_.StartsWith('[ambiguous-method-with-string-literal]', [StringComparison]::Ordinal) }).Count -eq 1) `
+    'A default-comparer HashSet receiver in the top-level script scope must still be reported.'
+
+# Widening "same scope" to include the top-level scope must not become "top level is always exempt".
+# Each case below is genuinely cross-scope or cross-block and has to stay reported.
+foreach ($topLevelCrossScopeCase in @(
+    [pscustomobject]@{
+        Name = 'assigned-inside-a-function-used-at-top-level'
+        Source = 'function New-OrdinalSet { $names = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal); return $names }' + [Environment]::NewLine + '$null = $names.Contains(''Name'')'
+    },
+    [pscustomobject]@{
+        Name = 'assigned-at-top-level-used-inside-a-function'
+        Source = '$names = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)' + [Environment]::NewLine + 'function Test-CrossScopeSet { $null = $names.Contains(''Name'') }'
+    },
+    [pscustomobject]@{
+        Name = 'assigned-in-a-conditional-block-at-top-level'
+        Source = 'if ($condition) { $names = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal) }' + [Environment]::NewLine + '$null = $names.Contains(''Name'')'
+    }
+)) {
+    $crossScopeFindings = @(Get-LayerProbeFindings -Source $topLevelCrossScopeCase.Source)
+    Assert-Layer (@($crossScopeFindings | Where-Object { $_.StartsWith('[ambiguous-method-with-string-literal]', [StringComparison]::Ordinal) }).Count -eq 1) `
+        "A receiver reaching the call site from another scope or block must stay reported: $($topLevelCrossScopeCase.Name)."
+}
+
+# Registered, deliberately NOT fixed by #3312, so that nobody reads the block above as "the whole
+# family is reachable now". Enumeration dimension: an exemption can only be structurally unreachable
+# in a flat script if something on its path treats "no enclosing FunctionDefinitionAst" as a failure.
+# There are exactly two ways this file obtains that scope — the `Get-NervOrdinalContractEnclosingFunction`
+# helper and one inline parent walk — and every rejection built on either is a `$null -eq $scope`
+# test, so the dimension is closed by grepping those. Three such rejections remain:
+#
+#   * Test-NervOrdinalContractTypedNonStringLocal      — powers the identity-operand exemption
+#   * Test-NervOrdinalContractTypedParameter           — powers the [string]/[char]/[int] parameter
+#                                                        exemptions (a flat script may declare a
+#                                                        param() block, so this one is reachable in
+#                                                        principle and still rejected in fact)
+#   * Test-NervOrdinalContractOrdinalLocalArgument     — carries its OWN second rejection, so fixing
+#                                                        Test-NervOrdinalContractDirectFunctionAssignment
+#                                                        did not make it reachable
+#
+# The third one has a control-flow proof that needs no fixture: it does call the function this change
+# fixed, but only at OrdinalComparisonContract.ps1:1048, and its own walk to a FunctionDefinitionAst
+# (:1035) plus its own `$null -eq $scope -> return $false` (:1036) run first. Top level never reaches
+# :1048, so the fix cannot have made it reachable.
+#
+# The behavioural readings backing all three are reproducible, and the fixture matters — a probe that
+# does not actually reach the exemption reports 0 in both scopes and proves nothing either way. The
+# one that reaches the third exemption is:
+#
+#     $comparison = [StringComparison]::Ordinal
+#     $null = $value.StartsWith('prefix', $comparison)
+#
+# Top level reports 1 and the same two lines wrapped in a function report 0; calling
+# `Test-NervOrdinalContractOrdinalLocalArgument` directly on that invocation returns False at top
+# level and True inside a function, which is what attributes the difference to this exemption rather
+# than to some other rule.
+#
+# They are left alone because #3312 is a single-point fix, not a rewrite of the scope model — each
+# needs its own decision about what "same scope" means for that proof.
+#
+# Boundary, stated rather than implied: the closure argument above is only about *this* mechanism.
+# An exemption could be unreachable in flat scripts for some unrelated reason, and the probes here
+# cover the four exemption families a fixture could be written for — they are not a proof that no
+# other exemption behaves differently across scopes.
+
 Assert-Layer (@(Get-LayerProbeFindings -Source 'function Test-ArrayIndex { return [Array]::IndexOf($values, $needle) }').Count -eq 0) `
     '[Array]::IndexOf is a collection lookup and must not be treated as a string method.'
 $stringIndexFindings = @(Get-LayerProbeFindings -Source 'function Test-StringIndex { return $value.IndexOf($needle) }')

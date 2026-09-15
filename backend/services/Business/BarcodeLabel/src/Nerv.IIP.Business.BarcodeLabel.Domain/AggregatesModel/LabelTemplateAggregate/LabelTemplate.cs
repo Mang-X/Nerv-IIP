@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.BarcodeLabel.Domain;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.TemplateAssetRetirementDecisionAggregate;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
 
@@ -7,8 +8,9 @@ public partial record LabelTemplateId : IGuidStronglyTypedId;
 public sealed class LabelTemplate : Entity<LabelTemplateId>, IAggregateRoot
 {
     public const string ActiveStatus = "active";
+    public const string InactiveStatus = "inactive";
 
-    private static readonly HashSet<string> SupportedStatuses = [ActiveStatus, "inactive"];
+    private static readonly HashSet<string> SupportedStatuses = [ActiveStatus, InactiveStatus];
 
     private LabelTemplate()
     {
@@ -42,6 +44,7 @@ public sealed class LabelTemplate : Entity<LabelTemplateId>, IAggregateRoot
     public string TemplateFileId { get; private set; } = string.Empty;
     public string VariableSchemaJson { get; private set; } = string.Empty;
     public string Status { get; private set; } = string.Empty;
+    public TemplateAssetRetirementDecisionId? RetiredCurrentFileByDecisionId { get; private set; }
     public DateTimeOffset CreatedAtUtc { get; private set; }
     public DateTimeOffset UpdatedAtUtc { get; private set; }
 
@@ -63,6 +66,23 @@ public sealed class LabelTemplate : Entity<LabelTemplateId>, IAggregateRoot
         TemplateFileId = CleanFileId(templateFileId);
         VariableSchemaJson = BarcodeLabelText.Required(variableSchemaJson, nameof(variableSchemaJson));
         Status = BarcodeLabelText.Supported(status, SupportedStatuses, nameof(status));
+        RetiredCurrentFileByDecisionId = null;
+        UpdatedAtUtc = DateTimeOffset.UtcNow;
+    }
+
+    public void FreezeCurrentFileForRetirement(
+        string templateFileId,
+        TemplateAssetRetirementDecisionId decisionId)
+    {
+        ArgumentNullException.ThrowIfNull(decisionId);
+        if (Status != InactiveStatus
+            || !string.Equals(TemplateFileId, BarcodeLabelText.Required(templateFileId, nameof(templateFileId)), StringComparison.Ordinal)
+            || RetiredCurrentFileByDecisionId is not null)
+        {
+            throw new InvalidOperationException("Current template file cannot be frozen for retirement.");
+        }
+
+        RetiredCurrentFileByDecisionId = decisionId;
         UpdatedAtUtc = DateTimeOffset.UtcNow;
     }
 

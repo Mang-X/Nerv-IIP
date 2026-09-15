@@ -123,7 +123,9 @@ public sealed class InventoryTransferBalanceTests
         await using var dbContext = CreateContext();
         var handler = new PostStockMovementCommandHandler(dbContext);
         await SeedSourceStockAsync(handler, dbContext, 10m);
-        var prefix = new string('k', PostStockMovementCommandHandler.TransferBaseIdempotencyKeyMaxLength - 4);
+        // 后缀长度取自 handler 自己，不手抄魔数（#3176 S-G：这正是本票要消灭的那类 - 4）。
+        var prefix = new string('k', PostStockMovementCommandHandler.TransferBaseIdempotencyKeyMaxLength
+            - PostStockMovementCommandHandler.TransferOutLegSuffix.Length);
 
         await handler.Handle(
             TransferCommand($"{prefix}aaaa", quantity: -1m, transferInLocationCode: TargetLocation, transferInQuantity: 1m),

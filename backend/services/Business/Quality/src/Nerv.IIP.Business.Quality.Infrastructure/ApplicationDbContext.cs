@@ -47,6 +47,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
         base.OnModelCreating(modelBuilder);
         modelBuilder.HasDefaultSchema(QualityFacts.Schema);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
+        modelBuilder.ConfigureCodingEntities();
         modelBuilder.ConfigureIntegrationEventDeadLetters();
         ConfigureCapStorage(modelBuilder);
     }
