@@ -1127,7 +1127,7 @@ internal static class MaintenanceAvailabilityWindowCalculator
         // Accept/StartWork 继续修；把它算进释放会让在途停机少扣。
         //
         // 这里分两段投影不是啰嗦：释放时刻必须以单个 COALESCE 下推到服务端参与区间比较。
-        // 合并成一段、或把下面两条 Where 提到 Select 之前写成 `x.CompletedAtUtc ?? x.CancelledAtUtc`，
+        // 合并成一段、或把下面那条 Where 提到 Select 之前写成 `x.CompletedAtUtc ?? x.CancelledAtUtc`，
         // 会让这个判据在查询里出现两次，改一处漏一处。
         var workOrders = await dbContext.MaintenanceWorkOrders
             .Where(x => x.OrganizationId == contract.OrganizationId)
