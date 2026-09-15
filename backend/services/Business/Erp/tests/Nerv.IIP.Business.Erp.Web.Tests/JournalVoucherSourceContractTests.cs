@@ -104,9 +104,20 @@ public sealed class JournalVoucherSourceContractTests
             "手工凭证把凭证号写进 source_no，故 source_no 不得窄于 voucher_no。");
     }
 
-    /// <summary>S2 只建**非唯一**索引；唯一索引属 S5，这里把「现在不是唯一」当断言写死。</summary>
+    /// <summary>
+    /// #3278 / S5 **改写**了这条断言的方向。
+    ///
+    /// S2 版本断言的是「现在**还不是**唯一索引」，用意是把 S5 未落地这件事写死，防止有人提前建。
+    /// S5 落地后那个前提不存在了——它要证的事已经变了，不是「它碍事」。
+    /// 换成断言唯一 + partial filter：filter 那一半是 A1「不回填存量」的承重条件，
+    /// 少了它存量 NULL 行会被这条索引约束（PostgreSQL 默认 NULLS DISTINCT 今天恰好也放行，
+    /// 但那是 provider 默认值不是本仓的声明，所以要当断言写）。
+    ///
+    /// <b>值域边界</b>：本格读的是 EF 模型，不是数据库。索引在真库上到底建成什么样、
+    /// <c>Down()</c> 回不回得干净，由 <c>ErpCostAccountingPostgresAcceptanceTests</c> 里那两格读 <c>pg_index</c> 证。
+    /// </summary>
     [Fact]
-    public void The_source_document_index_exists_and_is_not_unique_yet()
+    public void The_source_document_index_is_unique_and_excludes_legacy_null_rows()
     {
         using var dbContext = CreateModelOnlyDbContext();
         var entity = dbContext.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(JournalVoucher))!;
@@ -116,7 +127,18 @@ public sealed class JournalVoucherSourceContractTests
             x => x.Properties.Select(p => p.Name).SequenceEqual(
                 [nameof(JournalVoucher.OrganizationId), nameof(JournalVoucher.EnvironmentId), nameof(JournalVoucher.SourceType), nameof(JournalVoucher.SourceNo)]));
 
-        Assert.False(index.IsUnique, "来源列唯一索引属 #3278 / S5，S2 不建。");
+        Assert.True(index.IsUnique, "来源两列的索引必须唯一，它承接的是原先由 voucher_no 承担的幂等语义。");
+        var filter = index.GetFilter();
+        Assert.NotNull(filter);
+        Assert.Contains("source_type IS NOT NULL", filter, StringComparison.Ordinal);
+        Assert.Contains("source_no IS NOT NULL", filter, StringComparison.Ordinal);
+
+        // voucher_no 那条唯一索引本票不动：凭证号改短号是 S6/S7，它还在承重。
+        var voucherNoIndex = Assert.Single(
+            entity.GetIndexes(),
+            x => x.Properties.Select(p => p.Name).SequenceEqual(
+                [nameof(JournalVoucher.OrganizationId), nameof(JournalVoucher.EnvironmentId), nameof(JournalVoucher.VoucherNo)]));
+        Assert.True(voucherNoIndex.IsUnique);
     }
 
     /// <summary>占位空串不算填了：空白由构造期拒绝，而不是落成一行空值。</summary>

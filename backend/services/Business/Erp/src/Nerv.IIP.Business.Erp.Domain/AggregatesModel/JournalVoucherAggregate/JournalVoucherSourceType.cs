@@ -68,7 +68,17 @@ public sealed class JournalVoucherSourceType
     /// <summary>工单成本资本化。来源单号取触发这次资本化的库存移动号。</summary>
     public static JournalVoucherSourceType WorkOrderCapitalization { get; } = new("WOC");
 
-    /// <summary>工单成本迟到调整。来源单号取触发这次调整的来源标识（报工单号 / 移动号 / 工序任务修订串）。</summary>
+    /// <summary>
+    /// 工单成本迟到调整。来源单号取触发这次调整的来源标识（报工单号 / 移动号 / 工序任务修订串）。
+    ///
+    /// ⭐ #3278 / S5 在这一族上**收窄**了唯一性：今天的凭证号是
+    /// <c>JV-WOCADJ-{workOrderId}-{sourceId}</c>，而唯一键是 <c>(WOCADJ, sourceId)</c>，**少了工单号一段**。
+    /// 收窄之所以取不到值，是因为 7 处生产侧取值全部来自「在 (org, env) 内唯一、且只归属一个工单」的单据标识
+    /// （扫描面、逐项枚举与失效方向写在
+    /// <c>ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_work_order_cost_adjustment_key_drops_the_work_order_segment</c>）。
+    /// ⚠️ **新增** <c>CostVariancePosting.PostLateAdjustmentAsync</c> 调用点时必须重做那次测量：
+    /// 传一个「工单内才唯一」的标识会让这条收窄变成真的塌号，且没有任何门禁会为此转红。
+    /// </summary>
     public static JournalVoucherSourceType WorkOrderCostAdjustment { get; } = new("WOCADJ");
 
     /// <summary>

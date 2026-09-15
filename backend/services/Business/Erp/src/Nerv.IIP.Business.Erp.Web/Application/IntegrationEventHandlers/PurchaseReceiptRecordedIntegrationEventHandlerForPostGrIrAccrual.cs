@@ -1,5 +1,6 @@
 using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
@@ -132,10 +133,16 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAcc
         }
 
         var voucherNo = FinanceVoucherFactory.GoodsReceiptIrAccrualVoucherNo(receipt.PurchaseReceiptNo);
+        // #3278 / S5：查重键从凭证号搬到来源两列。这两个值必须与
+        // FinanceVoucherFactory.ForGoodsReceiptIrAccrual 落库时盖的来源身份**同源**，
+        // 否则查重与写入各认各的键，重放会静默再记一张。
+        var sourceType = JournalVoucherSourceType.GoodsReceiptIrAccrual.Code;
+        var sourceNo = receipt.PurchaseReceiptNo;
         if (await dbContext.JournalVouchers.AnyAsync(x =>
             x.OrganizationId == receipt.OrganizationId
             && x.EnvironmentId == receipt.EnvironmentId
-            && x.VoucherNo == voucherNo,
+            && x.SourceType == sourceType
+            && x.SourceNo == sourceNo,
             cancellationToken))
         {
             return;
