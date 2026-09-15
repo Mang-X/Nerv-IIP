@@ -1084,7 +1084,19 @@ public sealed class RecordSupplierInvoiceCommandHandler(ApplicationDbContext dbC
             "MATCHED",
             request.ExchangeRate);
         dbContext.AccountPayables.Add(payable);
-        dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForSupplierInvoiceGrIrClearing(invoice, payable, receipt.ExchangeRate));
+        // #3278 / S6：凭证号改取 journal-voucher 规则短号，不再派生自应付单号。
+        // 来源身份仍是**供应商发票**（不是应付单），取号幂等键也用它。
+        dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForSupplierInvoiceGrIrClearing(
+            invoice,
+            payable,
+            receipt.ExchangeRate,
+            await JournalVoucherNoAllocation.AllocateAsync(
+                _codingService,
+                request.OrganizationId,
+                request.EnvironmentId,
+                JournalVoucherSourceType.SupplierInvoice,
+                invoice.InvoiceNo,
+                cancellationToken)));
         return invoice.Id;
     }
 }
@@ -1204,7 +1216,19 @@ public sealed class ReleaseSupplierInvoicePaymentHoldCommandHandler(ApplicationD
             "MATCHED",
             invoice.ExchangeRate);
         dbContext.AccountPayables.Add(payable);
-        dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForSupplierInvoiceGrIrClearing(invoice, payable, receipt.ExchangeRate));
+        // #3278 / S6：凭证号改取 journal-voucher 规则短号，不再派生自应付单号。
+        // 来源身份仍是**供应商发票**（不是应付单），取号幂等键也用它。
+        dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForSupplierInvoiceGrIrClearing(
+            invoice,
+            payable,
+            receipt.ExchangeRate,
+            await JournalVoucherNoAllocation.AllocateAsync(
+                _codingService,
+                request.OrganizationId,
+                request.EnvironmentId,
+                JournalVoucherSourceType.SupplierInvoice,
+                invoice.InvoiceNo,
+                cancellationToken)));
         return invoice.Id;
     }
 }

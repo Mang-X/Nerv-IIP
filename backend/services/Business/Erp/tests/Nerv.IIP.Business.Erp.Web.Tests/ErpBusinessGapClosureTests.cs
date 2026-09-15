@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.DeliveryOrderAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.CashReceiptAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PaymentExecutionAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
@@ -771,7 +772,15 @@ public sealed class ErpBusinessGapClosureTests
         Assert.Equal(CashReceiptStatus.Registered, dbContext.CashReceipts.Single().Status);
         Assert.Equal(100m, dbContext.AccountPayables.Single().OpenAmount);
         Assert.Equal(80m, dbContext.AccountReceivables.Single().OpenAmount);
-        Assert.DoesNotContain(dbContext.JournalVouchers, x => x.VoucherNo == paymentExecutionNo || x.VoucherNo == cashReceiptNo);
+        // ⭐ #3278 / S6：改前这里按「凭证号 == 上游单号」找凭证，而凭证号换成分配器短号后
+        // 那个等式**恒假** ⇒ 本条会静默变成恒真、零鉴别力（删掉被测的两处建凭证位点也照绿）。
+        // 改按来源两列定位——那才是「这张凭证记没记」在 S5 之后的真判据。
+        Assert.DoesNotContain(
+            dbContext.JournalVouchers,
+            x => x.SourceType == JournalVoucherSourceType.PaymentExecution.Code && x.SourceNo == paymentExecutionNo);
+        Assert.DoesNotContain(
+            dbContext.JournalVouchers,
+            x => x.SourceType == JournalVoucherSourceType.CashReceipt.Code && x.SourceNo == cashReceiptNo);
 
         await new ExecutePaymentExecutionCommandHandler(dbContext).Handle(
             new ExecutePaymentExecutionCommand("org-001", "env-dev", paymentExecutionNo, "u-finance"),
@@ -785,8 +794,20 @@ public sealed class ErpBusinessGapClosureTests
         Assert.Equal(CashReceiptStatus.Matched, dbContext.CashReceipts.Single().Status);
         Assert.Equal(60m, dbContext.AccountPayables.Single().OpenAmount);
         Assert.Equal(45m, dbContext.AccountReceivables.Single().OpenAmount);
-        Assert.Contains(dbContext.JournalVouchers, x => x.VoucherNo == paymentExecutionNo);
-        Assert.Contains(dbContext.JournalVouchers, x => x.VoucherNo == cashReceiptNo);
+        // 同上：定位改按来源两列。这两条在改号后会**转红**（不是静默），但要证的事
+        //（执行/匹配这一步才真正记账）只有按来源列写才还成立。
+        var executedVoucher = Assert.Single(
+            dbContext.JournalVouchers.Where(x =>
+                x.SourceType == JournalVoucherSourceType.PaymentExecution.Code && x.SourceNo == paymentExecutionNo));
+        var matchedVoucher = Assert.Single(
+            dbContext.JournalVouchers.Where(x =>
+                x.SourceType == JournalVoucherSourceType.CashReceipt.Code && x.SourceNo == cashReceiptNo));
+        // 凭证号已不再等于上游单号：这条把「换号确实发生了」钉住，
+        // 否则把 S6 的取号改回复用上游单号，上面两条仍然全绿。
+        Assert.NotEqual(paymentExecutionNo, executedVoucher.VoucherNo);
+        Assert.NotEqual(cashReceiptNo, matchedVoucher.VoucherNo);
+        Assert.StartsWith("JV-", executedVoucher.VoucherNo, StringComparison.Ordinal);
+        Assert.StartsWith("JV-", matchedVoucher.VoucherNo, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -811,7 +832,9 @@ public sealed class ErpBusinessGapClosureTests
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var voucher = dbContext.JournalVouchers.Single(x => x.VoucherNo == cashReceiptNo);
+        // #3278 / S6：改号后按凭证号取不到这张凭证（会红，不是静默），改按来源两列定位。
+        var voucher = dbContext.JournalVouchers.Single(x =>
+            x.SourceType == JournalVoucherSourceType.CashReceipt.Code && x.SourceNo == cashReceiptNo);
         Assert.Contains(voucher.Lines, x => x.AccountCode == "BANK-USD" && x.CurrencyCode == "USD" && x.ExchangeRate == 7.1m && x.LocalDebitAmount == 248.5m);
         Assert.Contains(voucher.Lines, x => x.AccountCode == "1122" && x.CurrencyCode == "USD" && x.ExchangeRate == 7.1m && x.LocalCreditAmount == 248.5m);
         Assert.Equal(248.5m, dbContext.AccountReceivables.Single().LocalCollectedAmount);
