@@ -27,19 +27,27 @@ namespace Nerv.IIP.Business.Erp.Web.Application.Commands;
 /// 键长恒为 <see cref="KeyPrefix"/>(3) + 类型码 + 1 + <see cref="DigestLength"/>(64)，
 /// **与来源单号长度无关**，因此没有「合得下 / 合不下」两种形态，也就没有回落分支。
 /// <list type="number">
-/// <item><b>上界</b>：<c>code_idempotency_keys.idempotency_key</c> 列宽 150，而
+/// <item><b>列允许的上界</b>：<c>code_idempotency_keys.idempotency_key</c> 列宽 150，而
 ///   <c>journal_vouchers.source_no</c> 列宽 150、<c>source_type</c> 列宽 32 ⇒ 可读拼法
-///   <c>"{类型}:{单号}"</c> 的**列允许**上界是 32+1+150 = 183 &gt; 150，顶格落库即 PostgreSQL <c>22001</c>。
+///   <c>"{类型}:{单号}"</c> 的上界是 32+1+150 = 183 &gt; 150，顶格落库即 PostgreSQL <c>22001</c>。
 ///   摘要式上界 3+32+1+64 = 100，与单号长度解耦。</item>
-/// <item>⚠️ <b>别把 183 读成「今天的输入会溢出」</b>：命令侧 9 个调用点传的来源单号都受各自上游列宽
-///   （100）约束，实测真上界 108、余量 42，**今天没有任何一条生产路径越界**。
-///   选摘要式不是为了修一个今天可达的溢出，而是为了让上界与单号长度解耦——
-///   <c>source_no</c> 列宽一动或某个上游单号列一加宽，那 42 字符余量就静默没了。</item>
+/// <item>⭐ <b>消费侧（S7）有一条今天就可达的越界，这是统一用摘要的第一理由</b>：
+///   <c>WorkOrderCapitalization</c> 族的来源单号取上游 WMS 的 <c>InventoryMovementId</c>，
+///   而那一列是 <c>HasMaxLength(150)</c>（实读 <c>WmsEntityTypeConfigurations.cs:471</c> 与
+///   WMS 的 <c>ApplicationDbContextModelSnapshot</c>）⇒ 可读拼法 <c>WOC</c>(3)+<c>:</c>(1)+150 = <b>154 &gt; 150</b>。
+///   ⚠️ 而它的失败形态**接不住**：<c>EfCoreCodeStore.AddIdempotencyRecord</c> 只做 <c>DbSet.Add</c>、
+///   不 SaveChanges，所以 <c>22001</c> 是在**调用方 UoW** 里抛的，落在消费者 gate 的 try 块之外
+///   ⇒ 逃逸成 poison message（#877 仍 OPEN）。</item>
+/// <item>⚠️ ⛔ <b>但别把那条越界读成「命令侧也会溢出」</b>——两侧理由不同，必须分开看。
+///   本入口 9 个调用点传的来源单号都受各自上游列宽（100）约束，实测真上界 <b>108 / 150、余量 42</b>，
+///   <b>今天没有任何一条生产路径越界</b>。命令侧选摘要式是为了与消费侧统一，
+///   顺带让上界与单号长度解耦（<c>source_no</c> 列宽一动、或某个上游单号列一加宽，那 42 字符余量就静默没了）。</item>
 /// <item>⭐ <b>为什么不做「合得下用可读拼串 / 合不下退摘要」的两形态回落</b>（本席位第一版是那么写的）：
 ///   两形态的全部价值在可读性，而可读性只在「今天」成立——任一上游列一加宽，该族就**静默**翻到摘要形态，
 ///   于是同一张表里同族的行一半可读一半不可读，比统一不可读更难排障。
 ///   实测也证明那条回落分支在命令侧**零个生产路径到达**。</item>
 /// </list>
+/// ⭐ 代价如实登记：排障时这一行读不出对应哪张来源单据，只看得出族。
 /// </para>
 /// <para>
 /// ⭐ <b>与 #3278 / S7 的 <c>ConsumerJournalVoucherNumber</c> 逐字一致</b>（前缀、分隔、
