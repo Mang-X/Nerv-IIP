@@ -136,10 +136,24 @@ npx skills experimental_install    # 把 payload 落到 .agents/skills/
 
 ⚠️ 另一条已知边界：发布步骤只遍历本树 `skills/` 下的目录，所以 `.agents/skills/<name>` 里
 **本树没有源**的那种 payload（例如在另一条分支上存在、在本分支已删除的技能）既不会被刷新、
-也不会被删除，而它经链接层对 agent 可见。发现时手工 `rm -rf .agents/skills/<name>` 即可，
-下次 SessionStart 会按当前分支重建。**不做自动清理是既定裁决**（#3466）：判「某条 payload
-是不是第三方的」必须真正解析 `skills-lock.json`，而全仓目前没有任何代码读它的内容，
-成本与该状态今天的发生率不匹配；不要提自动清理方案。
+也不会被删除，而它经链接层对 agent 可见。
+
+处置要**两层都删**：
+
+```bash
+rm -rf .agents/skills/<name> .claude/skills/<name>
+```
+
+只删 payload 那一层不够。链接层重建只对 payload 里**还在**的名字做「不存在才建」、从不删除
+条目（就是上一条边界说的那个跳过），所以名字一旦从 payload 消失，循环再也不会访问它，
+`.claude/skills/<name>` 会留成一条**指向已删 payload 的符号链接**：实测它仍列得出、
+`Get-Item` 拿得到 `LinkType=SymbolicLink`，但读不到里面的 `SKILL.md`。两层都删之后不必再做
+别的 —— 本树**有源**的技能下次 SessionStart 会照常重新发布。
+
+**不做自动清理是既定裁决**（#3466）：判「某条 payload 是不是第三方的」必须真正解析
+`skills-lock.json`，而全仓目前没有任何代码读它的内容，成本与该状态今天的发生率不匹配；
+不要提自动清理方案。**推翻条件**：一旦仓库里出现读取 `skills-lock.json` 内容的代码，
+这条裁决就要重评。
 
 两层都在 `.gitignore` 里；第三方技能的事实源是 `skills-lock.json`，项目专属技能的事实源是
 `skills/`（`sourceType: local`，payload 每次由 hook 按源重发布）。

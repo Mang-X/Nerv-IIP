@@ -75,10 +75,8 @@ function Get-NervNonRepoPayloadNames {
         subtracts. "Lock-owned" would therefore name the complement of what it returns.
 
         What counts as a payload entry is not decided here: it is Get-NervSkillPayloadNames'
-        one rule (skill directories only), so the link layer and this gate cannot disagree about
-        it. That matters because a stray file used to be counted, and macOS writes .DS_Store into
-        any directory Finder has visited — one such file was enough to make the gate report
-        "installed" and stop the install and mirror from ever firing again (#3465).
+        one rule, so the link layer and this gate cannot disagree about it. Why that rule is
+        "directories only" is written there (#3465).
     #>
     param([Parameter(Mandatory)] [string] $RepoRoot)
 
