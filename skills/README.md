@@ -134,5 +134,12 @@ npx skills experimental_install    # 把 payload 落到 .agents/skills/
 `worktree-skill-links.Tests.ps1` 断言的是这条漂移的**当前行为**（已存在的实体条目保留自己的
 正文），不是把它挡掉。
 
+⚠️ 另一条已知边界：发布步骤只遍历本树 `skills/` 下的目录，所以 `.agents/skills/<name>` 里
+**本树没有源**的那种 payload（例如在另一条分支上存在、在本分支已删除的技能）既不会被刷新、
+也不会被删除，而它经链接层对 agent 可见。发现时手工 `rm -rf .agents/skills/<name>` 即可，
+下次 SessionStart 会按当前分支重建。**不做自动清理是既定裁决**（#3466）：判「某条 payload
+是不是第三方的」必须真正解析 `skills-lock.json`，而全仓目前没有任何代码读它的内容，
+成本与该状态今天的发生率不匹配；不要提自动清理方案。
+
 两层都在 `.gitignore` 里；第三方技能的事实源是 `skills-lock.json`，项目专属技能的事实源是
 `skills/`（`sourceType: local`，payload 每次由 hook 按源重发布）。

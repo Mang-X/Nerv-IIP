@@ -36,8 +36,11 @@ function Get-NervSkillPayloadNames {
     $payloadRoot = Join-Path $RepoRoot $script:NervAgentSkillsRelative
     if (-not (Test-Path -LiteralPath $payloadRoot)) { return @() }
 
-    # Directories only: a stray file under .agents/skills is not a skill, and linking it
-    # would publish a broken entry to every agent runtime.
+    # Directories only, and this is the single decision point for what counts as an installed
+    # payload entry: both the agent link layer and, through Get-NervNonRepoPayloadNames, the
+    # install/mirror gate read it. A stray file under .agents/skills is not a skill — linking it
+    # would publish a broken entry to every agent runtime, and counting it would make the gate
+    # report "installed" (#3465).
     return @(Get-ChildItem -LiteralPath $payloadRoot -Force -Directory | ForEach-Object { $_.Name })
 }
 
@@ -71,23 +74,18 @@ function Get-NervNonRepoPayloadNames {
         present — implementation checked), and those two are exactly what this function
         subtracts. "Lock-owned" would therefore name the complement of what it returns.
 
-        Not filtered to directories, and that is a known gap rather than a neutral choice: a
-        stray file such as .DS_Store is returned as a payload name and flips the gate to True,
-        which is the very "gate reports present, install and mirror never fire again" failure
-        Test-NervSkillsPayloadPresent below says it exists to prevent (reproduced: repo-owned
-        payload only => gate False; add .DS_Store => gate True). The behaviour is identical on
-        this PR's base and is not what this change is about, so it is tracked separately rather
-        than fixed here.
+        What counts as a payload entry is not decided here: it is Get-NervSkillPayloadNames'
+        one rule (skill directories only), so the link layer and this gate cannot disagree about
+        it. That matters because a stray file used to be counted, and macOS writes .DS_Store into
+        any directory Finder has visited — one such file was enough to make the gate report
+        "installed" and stop the install and mirror from ever firing again (#3465).
     #>
     param([Parameter(Mandatory)] [string] $RepoRoot)
 
-    $payloadRoot = Join-Path $RepoRoot $script:NervAgentSkillsRelative
-    if (-not (Test-Path -LiteralPath $payloadRoot)) { return @() }
-
     $repoOwned = [System.Collections.Generic.HashSet[string]]::new(
         [string[]] @(Get-NervRepoSkillNames -RepoRoot $RepoRoot), [StringComparer]::Ordinal)
-    return @(Get-ChildItem -LiteralPath $payloadRoot -Force |
-            Where-Object { -not $repoOwned.Contains($_.Name) } | ForEach-Object { $_.Name })
+    return @(Get-NervSkillPayloadNames -RepoRoot $RepoRoot |
+            Where-Object { -not $repoOwned.Contains($_) })
 }
 
 function Test-NervSkillsPayloadPresent {
