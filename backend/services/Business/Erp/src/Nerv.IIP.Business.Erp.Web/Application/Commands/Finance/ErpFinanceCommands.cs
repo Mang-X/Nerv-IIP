@@ -360,11 +360,18 @@ public sealed class RegisterAccountPayablePaymentCommandHandler(ApplicationDbCon
             request.IdempotencyKey,
             ErpCodingService.Fingerprint(request.PayableNo, request.Amount, request.PaymentDate, request.CashAccountCode, request.PaymentCurrencyCode, request.PaymentExchangeRate, request.Allocations?.Select(x => $"{x.PayableNo}:{x.Amount}")),
             cancellationToken);
+        // #3278 / S5：查重键从凭证号搬到来源两列。
+        // `allocation.Code` 在这条路径上同时被写成 PaymentExecution.PaymentExecutionNo 和
+        // JournalVoucher.VoucherNo（见本方法末尾），但这里取的是**付款执行单号**这一身份：
+        // S6 把凭证号换成分配器短号后，来源列不跟着变，这条查重也就不会跟着失效。
+        var paymentExecutionSourceType = JournalVoucherSourceType.PaymentExecution.Code;
+        var paymentExecutionSourceNo = allocation.Code;
         if (allocation.IsIdempotentReplay
             && await dbContext.JournalVouchers.AnyAsync(
                 x => x.OrganizationId == request.OrganizationId
                     && x.EnvironmentId == request.EnvironmentId
-                    && x.VoucherNo == allocation.Code,
+                    && x.SourceType == paymentExecutionSourceType
+                    && x.SourceNo == paymentExecutionSourceNo,
                 cancellationToken))
         {
             return;
@@ -531,10 +538,16 @@ public sealed class ExecutePaymentExecutionCommandHandler(ApplicationDbContext d
         }
 
         paymentExecution.Execute(request.ExecutedBy);
+        // #3278 / S5：查重键从凭证号搬到来源两列。本位点与 RegisterAccountPayablePayment 是
+        // **同一张付款凭证的两条入口**（批准即执行 / 先批准后执行），两边必须认同一个来源身份，
+        // 否则换号后这两条入口会各记一张。
+        var paymentExecutionSourceType = JournalVoucherSourceType.PaymentExecution.Code;
+        var paymentExecutionSourceNo = paymentExecution.PaymentExecutionNo;
         if (!await dbContext.JournalVouchers.AnyAsync(
             x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
-                && x.VoucherNo == paymentExecution.PaymentExecutionNo,
+                && x.SourceType == paymentExecutionSourceType
+                && x.SourceNo == paymentExecutionSourceNo,
             cancellationToken))
         {
             dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForPayablePayment(
@@ -595,11 +608,17 @@ public sealed class RegisterAccountReceivableCollectionCommandHandler(Applicatio
             request.IdempotencyKey,
             ErpCodingService.Fingerprint(request.ReceivableNo, request.Amount, request.CollectionDate, request.CashAccountCode),
             cancellationToken);
+        // #3278 / S5：查重键从凭证号搬到来源两列。
+        // `allocation.Code` 在这条路径上同时被写成 CashReceipt.CashReceiptNo 和 JournalVoucher.VoucherNo；
+        // 这里取的是**收款单号**这一身份，理由同 RegisterAccountPayablePayment。
+        var cashReceiptSourceType = JournalVoucherSourceType.CashReceipt.Code;
+        var cashReceiptSourceNo = allocation.Code;
         if (allocation.IsIdempotentReplay
             && await dbContext.JournalVouchers.AnyAsync(
                 x => x.OrganizationId == request.OrganizationId
                     && x.EnvironmentId == request.EnvironmentId
-                    && x.VoucherNo == allocation.Code,
+                    && x.SourceType == cashReceiptSourceType
+                    && x.SourceNo == cashReceiptSourceNo,
                 cancellationToken))
         {
             return;
@@ -729,10 +748,15 @@ public sealed class MatchCashReceiptCommandHandler(ApplicationDbContext dbContex
 
         receivable.RegisterCollection(allocation.Amount);
         cashReceipt.Match();
+        // #3278 / S5：查重键从凭证号搬到来源两列。本位点与 RegisterAccountReceivableCollection 是
+        // 同一张收款凭证的两条入口（登记即匹配 / 先登记后匹配），理由同付款那一对。
+        var cashReceiptSourceType = JournalVoucherSourceType.CashReceipt.Code;
+        var cashReceiptSourceNo = cashReceipt.CashReceiptNo;
         if (!await dbContext.JournalVouchers.AnyAsync(
             x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
-                && x.VoucherNo == cashReceipt.CashReceiptNo,
+                && x.SourceType == cashReceiptSourceType
+                && x.SourceNo == cashReceiptSourceNo,
             cancellationToken))
         {
             dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForReceivableCollection(
@@ -801,6 +825,10 @@ public sealed class PostJournalVoucherCommandHandler(ApplicationDbContext dbCont
         var allocation = await _codingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "journal-voucher", request.VoucherNo, request.IdempotencyKey, ErpCodingService.Fingerprint(request.PostingDate, request.Lines.Select(x => $"{x.AccountCode}:{x.DebitAmount}:{x.CreditAmount}:{x.Memo}:{x.CurrencyCode}:{x.ExchangeRate}:{x.LocalDebitAmount}:{x.LocalCreditAmount}")), cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
+            // #3278 / S5 **刻意不改**这一处：手工凭证的来源单号就是凭证号自身
+            // （`JournalVoucherSourceType.Manual`，见本方法下面的 Post 调用），
+            // 所以 `VoucherNo == allocation.Code` 与 `(MANUAL, allocation.Code)` 在本路径上是同一个谓词。
+            // 这也是母票「显式不做」里点名的唯一一处按凭证号定位的 A 族位点。
             return (await dbContext.JournalVouchers.SingleAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.VoucherNo == allocation.Code, cancellationToken)).Id;
         }
 

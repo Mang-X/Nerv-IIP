@@ -41,6 +41,15 @@ public sealed class JournalVoucherSourceType
     /// ⭐ 这里**刻意**不与 <see cref="AccountPayable"/> 共用类型：两条路径今天产出同一个凭证号
     /// <c>JV-AP-{应付单号}</c>（#3278 §A2 点名的设计地雷）。来源列按「真正驱动这张凭证的单据」取值，
     /// 直接应付的驱动单据是应付单，发票清账的驱动单据是供应商发票，于是 <c>(类型, 单号)</c> 天然不相撞。
+    ///
+    /// ⭐ <b>#3278 / S5 换键后本族强度不变（零收窄零放宽），承重理由是</b>：
+    /// 两个盖章点 <c>ErpProcurementCommands.cs:1087</c> 与 <c>:1207</c> 走的是**同一个工厂**
+    /// <c>FinanceVoucherFactory.ForSupplierInvoiceGrIrClearing</c>，凭证号同样由
+    /// <c>ErpFinanceCommands.cs:1011</c> 的 <c>Compose(AccountPayable, payable.PayableNo)</c> 产出，
+    /// 而两处都为**当前这张发票**新建一张应付单（<c>AccountPayable.Create(..., invoice.InvoiceNo, ...)</c>）
+    /// ⇒ 发票号与应付单号在这两条路径上一一对应，新旧两把键**等强**。
+    /// ⚠️ <c>ErpProcurementCommands.cs:1136</c> 的 <c>existingPayableForInvoice</c> 早退守卫确实存在，
+    /// 但它挡的是「同一张发票被放行两次」，⛔ 不是这里键强度不变的理由。
     /// </summary>
     public static JournalVoucherSourceType SupplierInvoice { get; } = new("SUPPINV");
 
@@ -65,10 +74,41 @@ public sealed class JournalVoucherSourceType
     /// <summary>客户红字通知单。来源单号取红字通知单号。</summary>
     public static JournalVoucherSourceType CreditNote { get; } = new("CN");
 
-    /// <summary>工单成本资本化。来源单号取触发这次资本化的库存移动号。</summary>
+    /// <summary>
+    /// 工单成本资本化。来源单号取触发这次资本化的库存移动号。
+    ///
+    /// ⭐ #3278 / S5：本族与 <see cref="WorkOrderCostAdjustment"/> 是**同一种收窄**——
+    /// 今天的凭证号是 <c>JV-WOC-{workOrderId}-{movementId}</c>，唯一键是 <c>(WOC, movementId)</c>，
+    /// 同样**少了工单号一段**。结论仍成立：<c>InventoryMovementId</c> 是 Inventory 侧的全局移动标识，
+    /// 一次移动只对应一个成品入库事件、也只归属一个工单，所以收窄取不到值。
+    /// ⛔ 但别把它读成「本族没有收窄」。
+    /// </summary>
     public static JournalVoucherSourceType WorkOrderCapitalization { get; } = new("WOC");
 
-    /// <summary>工单成本迟到调整。来源单号取触发这次调整的来源标识（报工单号 / 移动号 / 工序任务修订串）。</summary>
+    /// <summary>
+    /// 工单成本迟到调整。来源单号取触发这次调整的来源标识（报工单号 / 移动号 / 工序任务修订串）。
+    ///
+    /// ⭐ #3278 / S5 在这一族上**收窄**了唯一性：今天的凭证号是
+    /// <c>JV-WOCADJ-{workOrderId}-{sourceId}</c>，而唯一键是 <c>(WOCADJ, sourceId)</c>，**少了工单号一段**。
+    /// 收窄之所以取不到值，是因为 7 处生产侧取值全部来自「在 (org, env) 内唯一、且只归属一个工单」的单据标识
+    /// （扫描面、逐项枚举与失效方向写在
+    /// <c>ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_work_order_cost_adjustment_key_drops_the_work_order_segment</c>）。
+    ///
+    /// ⭐ <b>工序任务那四项的承重依据在生产者侧、不在 Erp 侧</b>：
+    /// MES <c>OperationTaskEntityTypeConfiguration.cs:77-78</c> 的
+    /// <c>ak_operation_tasks_scope_task = HasAlternateKey(OrganizationId, EnvironmentId, OperationTaskIdValue)</c>
+    /// **不含 <c>WorkOrderId</c>** —— 这是数据库层的物理唯一约束。
+    /// （Erp 侧 <c>GetOrCreateStateAsync(org, env, OperationTaskId)</c> 不带工单号只证明「Erp 把它当键用」，
+    /// 是弱一档的推断，别拿它当承重理由。）
+    ///
+    /// ⚠️ <b>两条已登记的残余，都不会有门禁为它们转红</b>：
+    /// ① **新增** <c>CostVariancePosting.PostLateAdjustmentAsync</c> 调用点时必须重做那次测量——
+    ///    传一个「工单内才唯一」的标识会让这条收窄变成真的塌号；
+    /// ② 7 个表达式共用同一个 <c>source_type = WOCADJ</c>，但来自**三个互不相干的命名空间**
+    ///    （<c>RPT-*</c> 报工号 / GUID 库存移动号 / <c>{taskId}-r{n}</c> 工序任务修订串）。
+    ///    **每个命名空间内部**的唯一性各有硬约束，⛔ 但**跨命名空间的互斥没有任何东西保证**——
+    ///    今天只靠三种串的形状天然不重叠。任何一侧改号规则都可能让它们撞上。
+    /// </summary>
     public static JournalVoucherSourceType WorkOrderCostAdjustment { get; } = new("WOCADJ");
 
     /// <summary>
