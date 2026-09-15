@@ -40,8 +40,8 @@ namespace Nerv.IIP.Business.Acceptance.Tests;
 /// 这三条都是**「某一侧偏离唯一出处」**，断言的两侧一侧是单一常量、另一侧是该服务**真实的 EF 模型**
 /// （migration 正是从这个模型生成的），不是两份手抄值互比。</para>
 ///
-/// <para><b>本测试项目是本仓唯一能写这句话的地方</b>：它的 csproj 有 16 条 <c>ProjectReference</c>
-/// （13 个业务服务 + BusinessGateway + Notification + AppHub，实读），
+/// <para><b>本测试项目是本仓唯一能写这句话的地方</b>：它的 csproj 有 17 条 <c>ProjectReference</c>
+/// （13 个业务服务 + BusinessGateway + Notification + AppHub + Ops，实读 @ #3382 / PR #3479），
 /// 因而能在同一个进程里读到 7 个服务各自的 EF 模型。单服务的测试项目做不到——
 /// PR #3303 的 <c>ErpCodingIdempotencyKeyLengthContractTests</c> 只能证明 Erp 那一份没被改，
 /// 另外 6 份任意一份漂移它一格都不会红，那正是本票承接的面。</para>
@@ -71,12 +71,20 @@ namespace Nerv.IIP.Business.Acceptance.Tests;
 /// <item>闭集的成立机制是**本测试项目的引用拓扑**，不是包归属。某个新服务如果没有被
 /// <c>Nerv.IIP.Business.Acceptance.Tests.csproj</c> 引用，它就不在遍历面上——
 /// 失效方向是**假绿**。
-/// 今天在引用表里的是 **13 个业务服务 + BusinessGateway + Notification + AppHub**（16 条 <c>ProjectReference</c>，实读）。
-/// <b>明确不在遍历面上的 DbContext 宿主有三个：<c>Iam</c> / <c>FileStorage</c> / <c>Ops</c></b>——
+/// 今天在引用表里的是 **13 个业务服务 + BusinessGateway + Notification + AppHub + Ops**
+/// （17 条 <c>ProjectReference</c>，实读 @ #3382 / PR #3479）。
+/// ⚠️ <b><c>Ops</c> 自 PR #3479 起已进入遍历面</b>（该 PR 为 converter 登记完备性断言加了
+/// <c>Nerv.IIP.Ops.Web</c> 的 <c>ProjectReference</c>）：<c>Nerv.IIP.Ops.Infrastructure.dll</c>
+/// 现在**出现在**本测试项目的输出目录里，
+/// <see cref="DiscoverContextTypesOwningTheSharedEntity"/> 遍历到的非抽象 <see cref="DbContext"/>
+/// 由 **15 个变成 16 个**（新增 <c>Nerv.IIP.Ops.Infrastructure.ApplicationDbContext</c>）。
+/// ⭐ 受管服务数**两侧仍是 7**，本类行为零变化——因为 <c>Ops</c> 不持有
+/// <c>DbSet&lt;CodeIdempotencyKey&gt;</c>（csproj 面对 <c>Nerv.IIP.Coding</c> 零命中，实读）。
+/// <b>明确不在遍历面上的 DbContext 宿主还有两个：<c>Iam</c> / <c>FileStorage</c></b>——
 /// 本测试项目只引用它们的 <c>Contracts.*</c> 与 <c>Sdk.*</c>，不引用其 <c>*.Infrastructure</c>
-/// （实读：这三个 <c>*.Infrastructure.dll</c> 都不出现在本测试项目的输出目录里，而受管的 7 个都在）。
-/// 今天它们**都不引用 <c>Nerv.IIP.Coding</c>**（csproj 面零命中）所以没有实际漏网，
-/// 但**别把这句读成「全仓都在面上」**：这三个若开始持有本共享实体，本类不会红，失效方向是**假绿**，
+/// （实读：这两个 <c>*.Infrastructure.dll</c> 都不出现在本测试项目的输出目录里，而受管的 7 个都在）。
+/// 今天这两个也**都不引用 <c>Nerv.IIP.Coding</c>**（csproj 面零命中）所以没有实际漏网，
+/// 但**别把这句读成「全仓都在面上」**：这两个若开始持有本共享实体，本类不会红，失效方向是**假绿**，
 /// 届时要把它们的 Web 项目加进本测试项目的引用表。</item>
 /// <item>读的是 **EF 模型**而不是 migration 脚本文本。模型与迁移单边漂移不由本类抓。</item>
 /// <item>本类只管这一个共享实体的这一列。全仓其它 <c>idempotency_key</c> 列

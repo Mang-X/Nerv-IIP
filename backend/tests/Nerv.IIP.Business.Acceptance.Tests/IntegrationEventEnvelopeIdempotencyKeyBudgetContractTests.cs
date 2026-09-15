@@ -77,7 +77,15 @@ namespace Nerv.IIP.Business.Acceptance.Tests;
 ///
 /// <para><b>本类不证明什么（值域边界，别读成完备）</b>：</para>
 /// <list type="number">
-/// <item><b>不证明登记表穷举了所有承载该键的列。</b>新增一个消费侧写入点不会让本类报红。</item>
+/// <item><b>不证明登记表穷举了所有承载该键的列。</b>新增一个消费侧写入点不会让本类报红。
+/// ⚠️ 这条**不是理论风险，是已实证**：#3382 拆解席位实读出本表漏了
+/// <c>mes.quality_hold_transitions.idempotency_key</c> 与
+/// <c>mes.telemetry_production_report_candidates.source_idempotency_key</c> 两条（两条都是 512，
+/// 因此当时**不是现网缺陷**，但它证明「手写表会漏」）。#3382 已把这两条补进
+/// <see cref="PlatformCarrierColumns"/>，⛔ **但补登记不等于本表从此穷举** ——
+/// 「某列是否承载信封键」不是类型可判定的性质（值从哪来只能人工回读写入点），
+/// ⇒ 本表**无法**用 <see cref="IntegrationEventConverterRegistryCompletenessContractTests"/>
+/// 那种反射完备性断言关掉，原因与去向写在那个类的 <c>&lt;remarks&gt;</c> 里。</item>
 /// <item><b>故意不登记</b> <c>integration_event_dead_letters.idempotency_key</c>(500)：
 /// 写入端走 <c>TruncateOptional</c> **截断**，截断列不构成上界，登记它等于登记一个假权威。</item>
 /// <item><b>故意不登记</b> <c>inspection_tasks.trigger_idempotency_key</c>(474)，
@@ -125,7 +133,10 @@ public sealed class IntegrationEventEnvelopeIdempotencyKeyBudgetContractTests
 {
     private const string ProcessedIntegrationEventsTable = "processed_integration_events";
     private const string NotificationIntentsTable = "notification_intents";
+    private const string QualityHoldTransitionsTable = "quality_hold_transitions";
+    private const string TelemetryProductionReportCandidatesTable = "telemetry_production_report_candidates";
     private const string IdempotencyKeyPropertyName = "IdempotencyKey";
+    private const string SourceIdempotencyKeyPropertyName = "SourceIdempotencyKey";
     private const string DedupeKeyPropertyName = "DedupeKey";
 
     /// <summary>
@@ -144,6 +155,13 @@ public sealed class IntegrationEventEnvelopeIdempotencyKeyBudgetContractTests
         new("Maintenance", ModelOnly<MaintenanceDbContext>(), ProcessedIntegrationEventsTable, IdempotencyKeyPropertyName),
         new("Erp", ModelOnly<ErpDbContext>(), ProcessedIntegrationEventsTable, IdempotencyKeyPropertyName),
         new("Notification", ModelOnly<NotificationDbContext>(), NotificationIntentsTable, DedupeKeyPropertyName),
+
+        // #3382 D4：下面两条是 #3382 拆解席位实读出来、**本表此前漏登记**的承载列。
+        // 它们不是 inbox 表，但写入端落库的就是**信封键本身**（逐点实读，见上面 <remarks>），
+        // 因此与 inbox 那一族在「谁给信封键定上界」这件事上同类。
+        // 两条今天都是 512 ⇒ 补登记**不移动** Budget，不是修现网缺陷，是把手写表的一处已实证缺口填上。
+        new("Mes", ModelOnly<MesDbContext>(), QualityHoldTransitionsTable, IdempotencyKeyPropertyName),
+        new("Mes", ModelOnly<MesDbContext>(), TelemetryProductionReportCandidatesTable, SourceIdempotencyKeyPropertyName),
     ];
 
     [Fact]
@@ -230,6 +248,15 @@ public sealed class IntegrationEventEnvelopeIdempotencyKeyBudgetContractTests
         }
     }
 
+    /// <summary>
+    /// <see cref="ConvertedProducerKeys"/> 里每条读数**真跑过**的那个 converter 的运行时类型。
+    /// 供 <see cref="IntegrationEventConverterRegistryCompletenessContractTests"/> 做登记完备性对撞。
+    /// ⚠️ 本方法会把九条读数全跑一遍（九次 EF 模型构建），这是刻意的：
+    /// 「登记了哪个 converter」必须由**跑过的那条路径**回答，不是另立一张手抄名单。
+    /// </summary>
+    internal static IReadOnlyList<Type> ConvertedProducerConverterTypes() =>
+        [.. ConvertedProducerKeys().Values.Select(factory => factory().ConverterType)];
+
     public static TheoryData<string> ConvertedProducerNames()
     {
         var data = new TheoryData<string>();
@@ -288,11 +315,13 @@ public sealed class IntegrationEventEnvelopeIdempotencyKeyBudgetContractTests
             widest[4],
             widest[5]);
 
-        var integrationEvent = new TelemetryProductionCountDeltaIntegrationEventConverter()
+        var converter = new TelemetryProductionCountDeltaIntegrationEventConverter();
+        var integrationEvent = converter
             .Convert(new TelemetryProductionCountDeltaDomainEvent(summary, 1m, "posted", HasActiveAlarm: false));
 
         const string prefix = "industrialTelemetry:production-count:";
         return new ProducerKeyReading(
+            converter.GetType(),
             prefix,
             integrationEvent.IdempotencyKey,
             PlainLength(prefix, widest[0], widest[1], widest[2], widest[3], widest[4], widest[5], widest[6]));
@@ -319,11 +348,13 @@ public sealed class IntegrationEventEnvelopeIdempotencyKeyBudgetContractTests
             "{}",
             widest[3]);
 
-        var integrationEvent = new WcsTaskRetryExhaustedIntegrationEventConverter()
+        var converter = new WcsTaskRetryExhaustedIntegrationEventConverter();
+        var integrationEvent = converter
             .Convert(new WmsDomainEvents.WcsTaskRetryExhaustedDomainEvent(task));
 
         const string prefix = "wms:wcs-retry-exhausted:";
         return new ProducerKeyReading(
+            converter.GetType(),
             prefix,
             integrationEvent.IdempotencyKey,
             PlainLength(prefix, widest[0], widest[1], widest[2], widest[3], widest[4]));
@@ -341,7 +372,8 @@ public sealed class IntegrationEventEnvelopeIdempotencyKeyBudgetContractTests
             "InstanceKey");
 
         var detectedAtUtc = DateTimeOffset.Parse("2026-09-11T08:00:00Z");
-        var integrationEvent = new ConnectorHostUnreachableIntegrationEventConverter().Convert(
+        var converter = new ConnectorHostUnreachableIntegrationEventConverter();
+        var integrationEvent = converter.Convert(
             new ConnectorHostUnreachableDomainEvent(
                 widest[0],
                 widest[1],
@@ -353,6 +385,7 @@ public sealed class IntegrationEventEnvelopeIdempotencyKeyBudgetContractTests
 
         const string prefix = "apphub:connector-host-unreachable:";
         return new ProducerKeyReading(
+            converter.GetType(),
             prefix,
             integrationEvent.IdempotencyKey,
             PlainLength(prefix, widest[0], widest[1], widest[2], widest[3], detectedAtUtc.ToString("O")));
@@ -390,11 +423,13 @@ public sealed class IntegrationEventEnvelopeIdempotencyKeyBudgetContractTests
             1m);
         AssignStockMovementId(movement);
 
-        var integrationEvent = new StockMovementPostedIntegrationEventConverter(new StubInventoryContextAccessor())
+        var converter = new StockMovementPostedIntegrationEventConverter(new StubInventoryContextAccessor());
+        var integrationEvent = converter
             .Convert(new InventoryDomainEvents.StockMovementPostedDomainEvent(movement));
 
         const string prefix = "inventory:stock-movement-posted:";
         return new ProducerKeyReading(
+            converter.GetType(),
             prefix,
             integrationEvent.IdempotencyKey,
             PlainLength(prefix, widest[0], widest[1], widest[2], widest[3], widest[4]));
@@ -462,7 +497,13 @@ public sealed class IntegrationEventEnvelopeIdempotencyKeyBudgetContractTests
         setter.Invoke(movement, [new StockMovementId(Guid.CreateVersion7())]);
     }
 
-    private sealed record ProducerKeyReading(string Prefix, string ComposedKey, int PlainConcatenationLength);
+    /// <summary>
+    /// <paramref name="ConverterType"/> 取自**真跑过 <c>Convert</c> 的那个实例**的
+    /// <c>GetType()</c>，不是另抄一份 <c>typeof(...)</c>——
+    /// 这样登记表里的 converter 身份与本条读数走的代码路径在构造上同一，无从漂移
+    /// （<see cref="IntegrationEventConverterRegistryCompletenessContractTests"/> 依赖这条性质）。
+    /// </summary>
+    private sealed record ProducerKeyReading(Type ConverterType, string Prefix, string ComposedKey, int PlainConcatenationLength);
 
     /// <summary>
     /// 按**物理表名**而不是实体 CLR 类型名解析，因为九个服务各自有一份同名实体类型；
@@ -536,11 +577,13 @@ public sealed class IntegrationEventEnvelopeIdempotencyKeyBudgetContractTests
             decisionWidest[3]);
         var step = chain.Steps.Single(x => x.StepNo == 1);
 
-        var integrationEvent = new ApprovalStepResolvedIntegrationEventConverter()
+        var converter = new ApprovalStepResolvedIntegrationEventConverter();
+        var integrationEvent = converter
             .Convert(new ApprovalDomainEvents.ApprovalStepResolvedDomainEvent(chain, step, decision));
 
         const string prefix = "business-approval:step-resolved:";
         return new ProducerKeyReading(
+            converter.GetType(),
             prefix,
             integrationEvent.IdempotencyKey,
             PlainLength(
@@ -583,13 +626,15 @@ public sealed class IntegrationEventEnvelopeIdempotencyKeyBudgetContractTests
             "SITE-001",
             "WH-01");
 
-        var integrationEvent = new ProductionMaterialConsumedIntegrationEventConverter()
+        var converter = new ProductionMaterialConsumedIntegrationEventConverter();
+        var integrationEvent = converter
             .Convert(new MesDomainEvents.ProductionMaterialConsumedDomainEvent(consumption));
 
         // Mes 那条 EventIds.Idempotency 会先滤掉空白段再交给 Compose，段数是动态的，
         // 因此它用的是 Compose("mes:", ...) 而不是 ComposeServiceScoped——回落前缀只有服务段。
         const string prefix = "mes:";
         return new ProducerKeyReading(
+            converter.GetType(),
             prefix,
             integrationEvent.IdempotencyKey,
             PlainLength(prefix, "production-consumption", widest[0], widest[1], widest[2], widest[3], widest[4], widest[5]));
@@ -622,11 +667,13 @@ public sealed class IntegrationEventEnvelopeIdempotencyKeyBudgetContractTests
             EngineeringVersionStatus.Published,
             EngineeringVersionStatus.Published);
 
-        var integrationEvent = new ProductionVersionCreatedIntegrationEventConverter(new StubProductEngineeringContextAccessor())
+        var converter = new ProductionVersionCreatedIntegrationEventConverter(new StubProductEngineeringContextAccessor());
+        var integrationEvent = converter
             .Convert(new ProductEngineeringDomainEvents.ProductionVersionCreatedDomainEvent(version));
 
         const string prefix = "product-engineering:production-version-created:";
         return new ProducerKeyReading(
+            converter.GetType(),
             prefix,
             integrationEvent.IdempotencyKey,
             PlainLength(prefix, widest[0], widest[1], widest[2], widest[3], widest[4]));
@@ -664,11 +711,13 @@ public sealed class IntegrationEventEnvelopeIdempotencyKeyBudgetContractTests
             null,
             []);
 
-        var integrationEvent = new InspectionConditionalReleasedIntegrationEventConverter(new StubQualityContextAccessor())
+        var converter = new InspectionConditionalReleasedIntegrationEventConverter(new StubQualityContextAccessor());
+        var integrationEvent = converter
             .Convert(new QualityDomainEvents.InspectionConditionalReleasedDomainEvent(record));
 
         const string prefix = "quality:inspection-conditional-release:";
         return new ProducerKeyReading(
+            converter.GetType(),
             prefix,
             integrationEvent.IdempotencyKey,
             PlainLength(prefix, widest[0], widest[1], widestSourceService, widest[2], record.Id.ToString()));
@@ -709,13 +758,15 @@ public sealed class IntegrationEventEnvelopeIdempotencyKeyBudgetContractTests
             SchedulePlanLifecycleStatus.Released,
             []);
 
-        var integrationEvent = new SchedulePlanInvalidatedIntegrationEventConverter(
-                TimeProvider.System,
-                new StubSchedulingContextAccessor())
+        var converter = new SchedulePlanInvalidatedIntegrationEventConverter(
+            TimeProvider.System,
+            new StubSchedulingContextAccessor());
+        var integrationEvent = converter
             .Convert(new SchedulingDomainEvents.SchedulePlanInvalidatedDomainEvent(invalidation, snapshot));
 
         const string prefix = "scheduling:schedule-plan-invalidated:";
         return new ProducerKeyReading(
+            converter.GetType(),
             prefix,
             integrationEvent.IdempotencyKey,
             PlainLength(prefix, widest[0], widest[1], widest[2], widest[3]));
