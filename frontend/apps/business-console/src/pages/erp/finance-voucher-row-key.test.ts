@@ -162,7 +162,9 @@ describe.each([
     const before = wrapper.findAll('tbody tr').map((row) => row.element)
     expect(before).toHaveLength(PAGE_1.length)
 
-    // 同样的三张凭证、同样的 id，但每个都是新对象（深拷贝，行内 lines 也重建）。
+    // 同样的三张凭证、同样的 id，但每个都是新对象。`{ ...row }` 是**浅展开**——
+    // 本夹具的字段全是原始值（无嵌套对象/数组），所以这里与深拷贝等价；
+    // 要点只是「行对象的引用变了」，这正是 refetch 的语义。
     hoisted.rows!.value = PAGE_1.map((row) => ({ ...row }))
     await flushPromises()
     const after = wrapper.findAll('tbody tr').map((row) => row.element)
