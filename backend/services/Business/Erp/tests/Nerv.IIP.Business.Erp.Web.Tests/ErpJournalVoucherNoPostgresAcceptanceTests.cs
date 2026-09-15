@@ -89,7 +89,11 @@ public sealed class ErpJournalVoucherNoPostgresAcceptanceTests
         // ⭐ 两条付款入口必须认**同一把来源键**。
         // ⚠️ 只在这里对 Register 那条入口做一次回放比对是**不够的**——变异实测（MUT-M4）证明：
         // 把 ExecutePaymentExecution 那一处的取号键改成 `{付款执行单号}-EXEC`，
-        // 只比 Register 这条的矩阵**全绿存活**（那条入口今天被状态守卫/来源守卫挡住，走不到取号）。
+        // 只比 Register 这条的矩阵**全绿存活**。
+        // ⛔ 存活的成因是**覆盖缺口，不是分支不可达**：该分支在改前的夹具里由 3 个用例到达
+        //（探针实证：JournalVoucherNoAllocationTests / ErpBusinessGapClosureTests / 本类），
+        // 只是「形状 + 互异 + NotEqual(来源单号)」这三条在 `{单号}-EXEC` 下**全部照样成立**。
+        // ⛔ 别把它读成「那条入口走不到取号」——「不可达」是最容易被当成免检理由的措辞。
         // 所以下面单独跑一遍「先批准后执行」，再拿**规范键**去回放它实际用的号。
         Assert.Equal(
             paymentVoucherNo,

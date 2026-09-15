@@ -862,6 +862,17 @@ public sealed class PostJournalVoucherCommandValidator : AbstractValidator<PostJ
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.VoucherNo).MaximumLength(ErpVoucherNoPolicy.ColumnMaxLength);
+        // ⭐ #3278 / S6：保留 `jv:` 前缀。本票之前，`journal-voucher` 这条规则只有本命令一个消费者，
+        // 它的 IdempotencyKey 由端点直通请求体、这里一条规则都没有；本票把另外 9 个位点也接到同一条规则上，
+        // 于是客户端键与派生键落进 code_idempotency_keys 的**同一个**唯一索引
+        // (org, env, rule_key, idempotency_key)。客户端一旦写出与某条派生键相同的串，
+        // 对应的来源单据就**永远建不出凭证**（ToReplay 指纹不符 ⇒ KnownException）。
+        // 保留前缀让两类键的值域不相交——这是把一条本票新引入的耦合关死，
+        // ⛔ 不是给这个字段补长度校验（那条 22001 属 #3288 族，本票不收）。
+        RuleFor(x => x.IdempotencyKey)
+            .Must(idempotencyKey => idempotencyKey is null
+                || !idempotencyKey.StartsWith(JournalVoucherNoAllocation.KeyPrefix, StringComparison.Ordinal))
+            .WithMessage($"幂等键不能以『{JournalVoucherNoAllocation.KeyPrefix}』开头，该前缀由系统派生凭证号保留。");
         RuleFor(x => x.PostingDate).NotEqual(default(DateOnly));
         RuleFor(x => x.Lines).NotEmpty().Must(x => x.Count >= 2).WithMessage("At least two voucher lines are required.");
         RuleForEach(x => x.Lines).ChildRules(line =>

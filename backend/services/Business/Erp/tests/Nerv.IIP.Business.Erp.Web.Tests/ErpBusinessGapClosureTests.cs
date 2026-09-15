@@ -11,6 +11,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Domain.DomainEvents;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Approval;
+using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Sales;
@@ -750,20 +751,24 @@ public sealed class ErpBusinessGapClosureTests
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        // ⭐ #3278 / S6：六个 handler 共用**同一个**分配器实例。无参 `new ErpCodingService()` 是进程内分配器，
+        // 每个 handler 各有一份计数器，本用例里的两张凭证会各自从 JV-{当天}-000001 起数而拿到**同一个号**——
+        // 生产不可能（(org, env, voucher_no) 唯一索引会拒），但 EF InMemory 看不见唯一索引 ⇒ 假绿。
+        var coding = new ErpCodingService();
         await ErpFinanceSourceDocumentFixtures.SeedSupplierInvoiceAsync(dbContext, "INV-2STAGE-001", "SUP-001");
-        await new CreateAccountPayableCommandHandler(dbContext).Handle(
+        await new CreateAccountPayableCommandHandler(dbContext, coding).Handle(
             new CreateAccountPayableCommand("org-001", "env-dev", "AP-2STAGE-001", "INV-2STAGE-001", "SUP-001", 100m, "CNY", new DateOnly(2026, 6, 1), new DateOnly(2026, 7, 1), "NET30"),
             CancellationToken.None);
         await ErpFinanceSourceDocumentFixtures.SeedDeliveryOrderAsync(dbContext, "DO-2STAGE-001", "CUS-001");
-        await new CreateAccountReceivableCommandHandler(dbContext).Handle(
+        await new CreateAccountReceivableCommandHandler(dbContext, coding).Handle(
             new CreateAccountReceivableCommand("org-001", "env-dev", "AR-2STAGE-001", "DO-2STAGE-001", "CUS-001", 80m, "CNY", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 15), "NET14"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var paymentExecutionNo = await new ApprovePaymentExecutionCommandHandler(dbContext).Handle(
+        var paymentExecutionNo = await new ApprovePaymentExecutionCommandHandler(dbContext, coding).Handle(
             new ApprovePaymentExecutionCommand("org-001", "env-dev", "AP-2STAGE-001", 40m, new DateOnly(2026, 6, 20), "BANK-001", "idem-ap-approve-715"),
             CancellationToken.None);
-        var cashReceiptNo = await new RegisterCashReceiptCommandHandler(dbContext).Handle(
+        var cashReceiptNo = await new RegisterCashReceiptCommandHandler(dbContext, coding).Handle(
             new RegisterCashReceiptCommand("org-001", "env-dev", "AR-2STAGE-001", 35m, new DateOnly(2026, 6, 20), "BANK-001", "idem-ar-register-715"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -782,10 +787,10 @@ public sealed class ErpBusinessGapClosureTests
             dbContext.JournalVouchers,
             x => x.SourceType == JournalVoucherSourceType.CashReceipt.Code && x.SourceNo == cashReceiptNo);
 
-        await new ExecutePaymentExecutionCommandHandler(dbContext).Handle(
+        await new ExecutePaymentExecutionCommandHandler(dbContext, coding).Handle(
             new ExecutePaymentExecutionCommand("org-001", "env-dev", paymentExecutionNo, "u-finance"),
             CancellationToken.None);
-        await new MatchCashReceiptCommandHandler(dbContext).Handle(
+        await new MatchCashReceiptCommandHandler(dbContext, coding).Handle(
             new MatchCashReceiptCommand("org-001", "env-dev", cashReceiptNo),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);

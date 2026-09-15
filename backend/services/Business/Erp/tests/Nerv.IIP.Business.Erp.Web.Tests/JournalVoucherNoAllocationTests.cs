@@ -35,6 +35,12 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 /// 「同一来源重复触发只记一张」依赖 S5 那条 partial unique index，EF InMemory 看不见它，
 /// 那条读数在 <see cref="ErpJournalVoucherNoPostgresAcceptanceTests"/> 里跑真 Postgres。
 /// </para>
+///
+/// <para>
+/// ⭐ 另外两条轴也在本类：**跨席位键文法冻结**（与 S7 的 <c>ConsumerJournalVoucherNumber</c> 逐字一致，
+/// 差一个字节就会在合并后撞 23505 / <c>ToReplay</c> 的 <c>KnownException</c>）与
+/// **客户端可写键与派生键值域不相交**（本 PR 把 9 个位点接到 <c>journal-voucher</c> 规则上时新引入的耦合）。
+/// </para>
 /// </summary>
 public sealed class JournalVoucherNoAllocationTests
 {
@@ -45,113 +51,184 @@ public sealed class JournalVoucherNoAllocationTests
     private static readonly Regex AllocatedVoucherNoShape = new(@"^JV-[0-9]{8}-[0-9]{6}$", RegexOptions.CultureInvariant);
 
     /// <summary>
-    /// 取号幂等键**两种形态都**塞得进 <c>code_idempotency_keys.idempotency_key</c>。
+    /// 取号幂等键塞得进 <c>code_idempotency_keys.idempotency_key</c>，且**键长与来源单号长度无关**。
     ///
-    /// <para>⭐ 这条实测推翻了「原样式够用」这个直觉：<c>journal_vouchers.source_no</c> 列宽与
-    /// <c>idempotency_key</c> 列宽**同为 150**，原样式还要再加类型码与分隔符 ⇒ 顶格来源单号
-    /// 必然越界（实测最坏 158 &gt; 150）。越界不在入口被拒，而在 <c>SaveChangesAsync</c>
-    /// 换来 PostgreSQL <c>22001</c>。所以构造入口必须有非截断的摘要式回落。</para>
+    /// <para>⭐ 前提读数（被算出来的，不是形式主义）：<c>journal_vouchers.source_no</c> 列宽与
+    /// <c>idempotency_key</c> 列宽**同为 150**，<c>source_type</c> 列宽 32 ⇒ 可读拼法
+    /// <c>"{类型}:{单号}"</c> 的**列允许**上界是 183 &gt; 150，顶格落库即 PostgreSQL <c>22001</c>（#3229 同形）。
+    /// 三个列宽都从**真实 EF 模型**读出来对撞，⛔ 不手抄。</para>
     ///
-    /// <para>两个上界都**算出来**而不是手抄：类型码取 <see cref="JournalVoucherSourceType.All"/>
-    /// 这个闭集里最长的一个，来源单号取**真实 EF 模型**上的列宽。</para>
+    /// <para>⛔ <b>这条不能换成「键长 &lt;= 150」</b>：那条在单号只有一位时也成立，
+    /// 鉴别不了「摘要式」与「可读拼串」——所以必须同时钉住「短单号与顶格单号的键**等长**」。</para>
     ///
-    /// <para><b>失效方向</b>：加宽 <c>source_no</c>、追加更长的类型码、或改窄
-    /// <c>idempotency_key</c>，都会让本条重新计算——顶格那一格因此永远落在摘要式上，仍然合规。
-    /// ⛔ 本条看不见的方向：调用方传进来一个**比 <c>source_no</c> 列宽还长**的串
-    /// （即它根本不是那一列的值）——那种输入下摘要式仍然定长合规，但那张凭证本身也落不了库。</para>
+    /// <para><b>失效方向</b>：加宽 <c>source_no</c> 不会让本条红（键长与它无关，这正是摘要式的目的）；
+    /// 会让本条红的是**加宽 <c>source_type</c> 列 / 追加更长的类型码 / 改窄 <c>idempotency_key</c>**。
+    /// ⛔ 本条看不见的方向：调用方传进来一个比 <c>source_no</c> 列宽还长的串——
+    /// 那种输入下键仍定长合规，但那张凭证本身也落不了库。</para>
     /// </summary>
     [Fact]
     public async Task Allocation_idempotency_key_stays_within_the_code_idempotency_column()
     {
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
-        var sourceNoMaxLength = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Model
-            .FindEntityType(typeof(JournalVoucher))!
-            .GetProperty(nameof(JournalVoucher.SourceNo))
-            .GetMaxLength();
-        Assert.NotNull(sourceNoMaxLength);
+        var model = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Model;
+        var voucher = model.FindEntityType(typeof(JournalVoucher))!;
+        var sourceNoWidth = voucher.GetProperty(nameof(JournalVoucher.SourceNo)).GetMaxLength()!.Value;
+        var sourceTypeWidth = voucher.GetProperty(nameof(JournalVoucher.SourceType)).GetMaxLength()!.Value;
+        var keyWidth = model.FindEntityType(typeof(CodeIdempotencyKey))!
+            .GetProperty(nameof(CodeIdempotencyKey.IdempotencyKey)).GetMaxLength()!.Value;
 
-        var longestCode = JournalVoucherSourceType.All.MaxBy(x => x.Code.Length)!;
-        var saturatedSourceNo = new string('N', sourceNoMaxLength.Value);
-
-        // ① 顶格输入：原样式会越界 ⇒ 构造入口必须已经退到摘要式，且摘要式合得下。
-        var rawWorstCase = longestCode.Code.Length + JournalVoucherNoAllocation.SourceKeySeparator.Length + sourceNoMaxLength.Value;
+        // 前提：可读拼法确实越界——否则「摘要式塞得下」这条就没有承重对象。
         Assert.True(
-            rawWorstCase > JournalVoucherNoAllocation.KeyMaxLength,
-            $"原样式最坏长度 {rawWorstCase} 没有超出列宽 {JournalVoucherNoAllocation.KeyMaxLength}——" +
-            "那说明本条已不再量到摘要式回落，请重新确认这条回落还有没有存在理由。");
-        var saturatedKey = JournalVoucherNoAllocation.AllocationIdempotencyKey(longestCode, saturatedSourceNo);
-        Assert.Equal(
-            JournalVoucherNoAllocation.DigestAllocationIdempotencyKey(longestCode, saturatedSourceNo),
-            saturatedKey);
-        Assert.True(saturatedKey.Length <= JournalVoucherNoAllocation.KeyMaxLength, $"摘要式键长 {saturatedKey.Length} 超出列宽。");
+            sourceTypeWidth + 1 + sourceNoWidth > keyWidth,
+            $"可读拼法上界 {sourceTypeWidth + 1 + sourceNoWidth} 没有超出列宽 {keyWidth}，本条已不再有承重对象。");
 
-        // ② 逐族枚举：两种形态的最坏长度都必须合得下（摘要式定长，原样式取该族的分界点）。
+        var saturatedSourceNo = new string('N', sourceNoWidth);
         foreach (var sourceType in JournalVoucherSourceType.All)
         {
-            var longestRawSourceNo = new string('N', JournalVoucherNoAllocation.KeyMaxLength - sourceType.Code.Length - JournalVoucherNoAllocation.SourceKeySeparator.Length);
-            var rawKey = JournalVoucherNoAllocation.AllocationIdempotencyKey(sourceType, longestRawSourceNo);
-            Assert.Equal(JournalVoucherNoAllocation.KeyMaxLength, rawKey.Length);
-            Assert.StartsWith(sourceType.Code + JournalVoucherNoAllocation.SourceKeySeparator, rawKey, StringComparison.Ordinal);
+            var shortKey = JournalVoucherNoAllocation.AllocationIdempotencyKey(sourceType, "X");
+            var saturatedKey = JournalVoucherNoAllocation.AllocationIdempotencyKey(sourceType, saturatedSourceNo);
 
-            // 再长一个字符就翻到摘要式，且长度骤降到定长——⛔ 不是截断。
-            var overflowKey = JournalVoucherNoAllocation.AllocationIdempotencyKey(sourceType, longestRawSourceNo + "N");
-            Assert.Equal(sourceType.Code.Length + JournalVoucherNoAllocation.DigestMarker.Length + JournalVoucherNoAllocation.DigestLength, overflowKey.Length);
-            Assert.True(overflowKey.Length <= JournalVoucherNoAllocation.KeyMaxLength);
+            // 键长与单号长度无关（这一条才鉴别得了摘要式 vs 可读拼串）。
+            Assert.Equal(shortKey.Length, saturatedKey.Length);
+            Assert.NotEqual(shortKey, saturatedKey);
+            Assert.Equal(
+                JournalVoucherNoAllocation.KeyPrefix.Length + sourceType.Code.Length + 1 + JournalVoucherNoAllocation.DigestLength,
+                shortKey.Length);
+            Assert.True(saturatedKey.Length <= keyWidth, $"族『{sourceType.Code}』的键长 {saturatedKey.Length} 超出列宽 {keyWidth}。");
         }
+
+        // 类型上界：族码顶格（列宽 32）时也塞得下。与上面的逐族枚举不同轴——
+        // 逐族跑的是**今天登记的**码值，这一格跑的是**列允许的**最宽码值。
+        Assert.True(
+            JournalVoucherNoAllocation.KeyPrefix.Length + sourceTypeWidth + 1 + JournalVoucherNoAllocation.DigestLength <= keyWidth);
     }
 
     /// <summary>
-    /// 两种形态的值域不相交，且各自内部不塌号。⛔ 不截断：越界输入换来定长摘要，不是被砍掉尾巴。
-    /// </summary>
-    [Fact]
-    public void Raw_and_digest_allocation_keys_occupy_disjoint_value_ranges()
-    {
-        var overflowSourceNo = new string('N', JournalVoucherNoAllocation.KeyMaxLength);
-        foreach (var sourceType in JournalVoucherSourceType.All)
-        {
-            // 类型码既不含 ':' 也不含 '~' ⇒ 类型码后那一位唯一地区分两种形态。
-            Assert.DoesNotContain(JournalVoucherNoAllocation.SourceKeySeparator, sourceType.Code, StringComparison.Ordinal);
-            Assert.DoesNotContain(JournalVoucherNoAllocation.DigestMarker, sourceType.Code, StringComparison.Ordinal);
-
-            var raw = JournalVoucherNoAllocation.AllocationIdempotencyKey(sourceType, "SRC-0001");
-            var digest = JournalVoucherNoAllocation.AllocationIdempotencyKey(sourceType, overflowSourceNo);
-            Assert.Equal(JournalVoucherNoAllocation.SourceKeySeparator, raw.Substring(sourceType.Code.Length, 1));
-            Assert.Equal(JournalVoucherNoAllocation.DigestMarker, digest.Substring(sourceType.Code.Length, 1));
-            Assert.NotEqual(raw, digest);
-        }
-
-        // 摘要输入带长度前缀 ⇒ 不同的段划分拼不出同一个输入。
-        Assert.NotEqual(
-            JournalVoucherNoAllocation.CanonicalKey(JournalVoucherSourceType.AccountPayable, "X"),
-            JournalVoucherNoAllocation.CanonicalKey(JournalVoucherSourceType.SupplierInvoice, "X"));
-        Assert.NotEqual(
-            JournalVoucherNoAllocation.DigestAllocationIdempotencyKey(JournalVoucherSourceType.AccountPayable, overflowSourceNo),
-            JournalVoucherNoAllocation.DigestAllocationIdempotencyKey(JournalVoucherSourceType.AccountPayable, overflowSourceNo + "N"));
-    }
-
-    /// <summary>
-    /// 幂等键 <c>{类型码}:{来源单号}</c> 在闭集上是单射：类型码里不含分隔符，
-    /// 所以「第一个 <c>:</c>」唯一地划出类型边界，<c>(类型, 单号)</c> 两两不同则键两两不同。
+    /// ⭐ 冻结跨席位键文法：本入口与 #3278 / S7 的 <c>ConsumerJournalVoucherNumber</c>
+    /// 写的是**同一条 <c>journal-voucher</c> 规则、同一张 <c>code_idempotency_keys</c> 表**，
+    /// 键形状或指纹算法差一个字节就会在合并后撞 23505 或 <c>ToReplay</c> 的 <c>KnownException</c>。
     ///
-    /// <para><b>这条钉的是机制不是样本</b>：只举几个具体键互不相等的例子挡不住「某天给类型码里加一个冒号」。
-    /// 另一半（类型码互异）由 <c>JournalVoucherSourceContractTests</c> 承担，本条不重复。</para>
+    /// <para><b>为什么钉字面量而不是「两边各读一遍源码」</b>：合并前两侧不在同一棵树上，编译期引用不到；
+    /// 「两个人读同一段」不是交叉验证。这里的期望值由**第三方实现**（Python <c>hashlib</c>）独立算出后冻结，
+    /// S7 侧钉同一组值 ⇒ 任一侧单边改文法即红。</para>
+    ///
+    /// <para><b>失效方向</b>：⛔ 本条只钉「本侧的串长什么样」，**不**证明 S7 那边也钉了同一组值——
+    /// 那要靠合并前把两个文件放进同一棵树里比对（已写进 PR 正文）。</para>
     /// </summary>
     [Fact]
-    public void Source_type_codes_carry_no_separator_so_the_allocation_key_stays_injective()
+    public void Allocation_key_matches_the_frozen_cross_seat_grammar()
+    {
+        Assert.Equal("jv:", JournalVoucherNoAllocation.KeyPrefix);
+        Assert.Equal(64, JournalVoucherNoAllocation.DigestLength);
+        Assert.Equal(
+            "jv:AP:0B02CCEED7C552C8A0D028E14562E0991239C28D30734FB6532562C77519721A",
+            JournalVoucherNoAllocation.AllocationIdempotencyKey(JournalVoucherSourceType.AccountPayable, "AP-0001"));
+        Assert.Equal(
+            "jv:SUPPINV:2EED5404A45D3B0ADE26A4528F1FBF8B4CC20649C3E828B99B067D5D981EC389",
+            JournalVoucherNoAllocation.AllocationIdempotencyKey(JournalVoucherSourceType.SupplierInvoice, "INV-0001"));
+        Assert.Equal(
+            "jv:APPAY:3B3488557A0701FEF28C655D43AEE4AE3F180E097470D6854578562508B85DC4",
+            JournalVoucherNoAllocation.AllocationIdempotencyKey(JournalVoucherSourceType.PaymentExecution, "APPAY-0001"));
+
+        // 指纹取的就是键尾那个摘要 ⇒「同键不同指纹」在本入口结构上不可达。
+        foreach (var sourceType in JournalVoucherSourceType.All)
+        {
+            var digest = JournalVoucherNoAllocation.Digest(sourceType, "SRC-0001");
+            Assert.Equal(JournalVoucherNoAllocation.DigestLength, digest.Length);
+            Assert.EndsWith(digest, JournalVoucherNoAllocation.AllocationIdempotencyKey(sourceType, "SRC-0001"), StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>
+    /// 键在 <c>(类型, 单号)</c> 上是单射——**钉的是机制，不是样本**。
+    ///
+    /// <para>摘要输入是带长度前缀、以 U+001F 分隔的规范串，所以「段划分不同但拼起来一样」的两组输入
+    /// 不会塌成同一个键。下面那一对在**裸拼**下逐字节相同（<c>"WOC"+"ADJ-1"</c> 与 <c>"WOCADJ"+"-1"</c>），
+    /// 是这条机制的最不利样本。</para>
+    ///
+    /// <para>另一半是类型码里不含分隔符——只举几个具体键互不相等的例子挡不住
+    /// 「某天给类型码里加一个冒号」。类型码互异那一半由 <c>JournalVoucherSourceContractTests</c> 承担，本条不重复。</para>
+    /// </summary>
+    [Fact]
+    public void Segment_split_does_not_collapse_two_different_sources_onto_one_key()
     {
         Assert.NotEmpty(JournalVoucherSourceType.All);
         foreach (var sourceType in JournalVoucherSourceType.All)
         {
             Assert.False(string.IsNullOrWhiteSpace(sourceType.Code));
-            Assert.DoesNotContain(JournalVoucherNoAllocation.SourceKeySeparator, sourceType.Code, StringComparison.Ordinal);
+            Assert.DoesNotContain(":", sourceType.Code, StringComparison.Ordinal);
         }
 
-        // 分隔符出现在**来源单号**一侧不会造成歧义（类型边界由第一个分隔符决定）；
-        // 这一对是那条推论的最不利样本。
+        // 裸拼下这两组完全相同；规范串下必须分开。
+        Assert.Equal(
+            JournalVoucherSourceType.WorkOrderCapitalization.Code + "ADJ-1",
+            JournalVoucherSourceType.WorkOrderCostAdjustment.Code + "-1");
         Assert.NotEqual(
-            JournalVoucherNoAllocation.AllocationIdempotencyKey(JournalVoucherSourceType.AccountPayable, "X:Y"),
-            JournalVoucherNoAllocation.AllocationIdempotencyKey(JournalVoucherSourceType.AccountPayable, "X:Y:Z"));
+            JournalVoucherNoAllocation.CanonicalKey(JournalVoucherSourceType.WorkOrderCapitalization, "ADJ-1"),
+            JournalVoucherNoAllocation.CanonicalKey(JournalVoucherSourceType.WorkOrderCostAdjustment, "-1"));
+        Assert.NotEqual(
+            JournalVoucherNoAllocation.AllocationIdempotencyKey(JournalVoucherSourceType.WorkOrderCapitalization, "ADJ-1"),
+            JournalVoucherNoAllocation.AllocationIdempotencyKey(JournalVoucherSourceType.WorkOrderCostAdjustment, "-1"));
+
+        // 全部已登记族 × 两个单号 ⇒ 键两两互异。少了这条，「键里只写摘要、丢掉类型段」会全绿。
+        var keys = JournalVoucherSourceType.All
+            .SelectMany(sourceType => new[] { "SRC-0001", "SRC-0002" }
+                .Select(sourceNo => JournalVoucherNoAllocation.AllocationIdempotencyKey(sourceType, sourceNo)))
+            .ToArray();
+        Assert.Equal(JournalVoucherSourceType.All.Count * 2, keys.Length);
+        Assert.Equal(keys.Length, keys.Distinct(StringComparer.Ordinal).Count());
+    }
+
+    /// <summary>
+    /// ⭐ 客户端可写的幂等键与派生键**不可能相等**。
+    ///
+    /// <para><b>这条守的是本 PR 新引入的一条耦合</b>：<c>journal-voucher</c> 规则改前只有
+    /// <c>PostJournalVoucherCommand</c> 一个消费者，它的 <c>IdempotencyKey</c> 由端点直通请求体；
+    /// 本 PR 把另外 9 个位点也接到同一条规则上，两类键于是落进
+    /// <c>(org, env, rule_key, idempotency_key)</c> 同一个唯一索引。
+    /// 客户端若写得出某条派生键，对应来源单据就**永远建不出凭证**
+    /// （<c>ToReplay</c> 指纹不符 ⇒ <c>KnownException</c>）。</para>
+    ///
+    /// <para><b>值域不相交靠两件事同时成立</b>：① 派生键一律以
+    /// <see cref="JournalVoucherNoAllocation.KeyPrefix"/> 开头；② 校验器拒收以该前缀开头的客户端键。
+    /// ⭐ <b>失效方向</b>：改掉前缀、或删掉校验器那条规则，两类键就重新可能相等——本条两个方向都测。</para>
+    ///
+    /// <para>⛔ 本条**不**声称「客户端猜不出 SHA-256」：<c>{类型}:{单号}</c> 这种人最自然的写法
+    /// 在改文法之前**恰好就是**派生键（复审实测可触发）；挡住它的是保留前缀这条硬规则，
+    /// ⛔ 不是「摘要难猜」。</para>
+    /// </summary>
+    [Fact]
+    public void Client_supplied_idempotency_keys_cannot_collide_with_derived_keys()
+    {
+        var validator = new PostJournalVoucherCommandValidator();
+        JournalVoucherCommandLine[] lines =
+        [
+            new("1401", 10m, 0m, "d"),
+            new("2202", 0m, 10m, "c"),
+        ];
+        PostJournalVoucherCommand Command(string? idempotencyKey) =>
+            new(Org, Env, null, new DateOnly(2026, 6, 25), lines, idempotencyKey);
+
+        // ① 每一条派生键都被校验器拒收 ⇒ 客户端送不进来。
+        foreach (var sourceType in JournalVoucherSourceType.All)
+        {
+            var derivedKey = JournalVoucherNoAllocation.AllocationIdempotencyKey(sourceType, "SRC-POISON-001");
+            Assert.StartsWith(JournalVoucherNoAllocation.KeyPrefix, derivedKey, StringComparison.Ordinal);
+            var result = validator.Validate(Command(derivedKey));
+            Assert.False(result.IsValid, $"族『{sourceType.Code}』的派生键被校验器放行了，客户端可以据此毒死该来源单据。");
+            Assert.Contains(result.Errors, x => x.PropertyName == nameof(PostJournalVoucherCommand.IdempotencyKey));
+        }
+
+        // ② 前缀本身就被拒 ⇒「把派生键前缀删掉」时 ① 不会靠摘要形状侥幸继续绿。
+        Assert.False(validator.Validate(Command(JournalVoucherNoAllocation.KeyPrefix)).IsValid);
+        Assert.False(validator.Validate(Command(JournalVoucherNoAllocation.KeyPrefix + "anything")).IsValid);
+
+        // ③ 正常键与 null 不受影响（这条挡的是「一刀切拒收」那种过度修复）。
+        Assert.True(validator.Validate(Command(null)).IsValid);
+        Assert.True(validator.Validate(Command("idem-manual-001")).IsValid);
+        // 改文法之前**恰好就是**派生键的那种人类自然写法，现在是合法的客户端键。
+        Assert.True(validator.Validate(Command("AP:AP-POISON-001")).IsValid);
     }
 
     /// <summary>
@@ -300,7 +377,7 @@ public sealed class JournalVoucherNoAllocationTests
             observed.Add((site.Site, voucher.VoucherNo));
         }
 
-        // ⭐ 付款凭证的现金行摘要：改前写的是 voucherNo，而那时 voucherNo 恰等于付款执行单号。
+        // 付款凭证的现金行摘要：改前写的是 voucherNo，而那时 voucherNo 恰等于付款执行单号。
         // 换号后若仍回抄 voucherNo，摘要会退化成凭证号自指（对账时零信息量）——
         // 变异实测（MUT-M7）证明：不写这一条，把摘要改回 voucherNo 会**全绿存活**。
         foreach (var paymentExecutionNo in new[] { registeredPaymentExecutionNo, approvedPaymentExecutionNo })
