@@ -239,7 +239,7 @@ public sealed class OpsConnectorCredentialValidationTests
         // The production validator deliberately duplicates Nerv.IIP.Testing's classifier because a
         // shipped assembly cannot reference a test assembly. Every row below pins the two mirrors to
         // the same verdict, so a change on either side that is not carried across fails here rather
-        // than drifting silently (docs/architecture/backend-test-determinism.md, "网络结果与预算").
+        // than drifting silently (docs/governance/testing/determinism.md, "Cancellation 与网络失败").
         {
             new HttpRequestException(
                 HttpRequestError.ConnectionError,

@@ -33,7 +33,7 @@ public sealed record RefusedPostgresBudgets(TimeSpan ConnectBudget, TimeSpan Req
     /// anyway so that a regression making the host reachable is bounded by a real dependency's normal
     /// jitter rather than inheriting the small number picked for a loopback RST. Keeping it above the
     /// connect budget is the point: collapsing the two would reproduce exactly the single fuzzy
-    /// duration that docs/architecture/backend-test-determinism.md ("网络结果与预算") forbids.</para>
+    /// duration that docs/governance/testing/determinism.md ("Cancellation 与网络失败") forbids.</para>
     /// </summary>
     public static RefusedPostgresBudgets RefusedLoopback { get; } =
         new(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(10));
@@ -67,7 +67,7 @@ public static class RefusedPostgres
     /// <summary>
     /// Both budgets are required rather than defaulted. A default would let every call site inherit
     /// one number and quietly reproduce the "single fuzzy duration standing in for connect, DNS and
-    /// response budgets" that docs/architecture/backend-test-determinism.md ("网络结果与预算")
+    /// response budgets" that docs/governance/testing/determinism.md ("Cancellation 与网络失败")
     /// forbids — which is exactly what happens when an optional parameter exists and nobody passes it.
     /// </summary>
     /// <param name="connectBudget">
