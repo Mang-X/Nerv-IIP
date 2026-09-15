@@ -379,6 +379,12 @@ public sealed class JournalVoucherEntityTypeConfiguration : IEntityTypeConfigura
         // **失效方向**：过滤只看 NULL，不看值。若日后有位点把来源列填成同一个占位常量
         // （例如空串或 "UNKNOWN"），这些行会互相挡住而不是被放行——那是**假红**不是假绿，
         // 会在写入端立刻暴露成 23505，不会静默漏掉重复记账。
+        //
+        // ⭐ 真正危险的方向是**在这条谓词后面追加豁免**（例如 `AND source_type <> 'APPAY'`）：
+        // 那会让整个族静默退出幂等约束。所以这串被两侧**全等**钉住，不是子串匹配——
+        // `JournalVoucherSourceContractTests`（钉这里写的原串）与
+        // `ErpCostAccountingPostgresAcceptanceTests.ExpectedSourceIndexPredicate`
+        // （钉 PostgreSQL 归一化后的 `pg_get_expr` 全形）。
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceType, x.SourceNo })
             .IsUnique()
             .HasFilter("source_type IS NOT NULL AND source_no IS NOT NULL");

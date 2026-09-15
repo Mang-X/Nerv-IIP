@@ -109,12 +109,21 @@ public sealed class JournalVoucherSourceContractTests
     ///
     /// S2 版本断言的是「现在**还不是**唯一索引」，用意是把 S5 未落地这件事写死，防止有人提前建。
     /// S5 落地后那个前提不存在了——它要证的事已经变了，不是「它碍事」。
-    /// 换成断言唯一 + partial filter：filter 那一半是 A1「不回填存量」的承重条件，
-    /// 少了它存量 NULL 行会被这条索引约束（PostgreSQL 默认 NULLS DISTINCT 今天恰好也放行，
-    /// 但那是 provider 默认值不是本仓的声明，所以要当断言写）。
+    /// 换成断言唯一 + partial filter。
+    ///
+    /// ⚠️ <b>filter 今天的行为效果是零</b>：存量 NULL 行本来就由 PostgreSQL 默认的
+    /// <c>NULLS DISTINCT</c> 放行，去掉 filter 它们照样落得进去（已实测）。写它、并把它当断言钉住，
+    /// 是因为那条放行来自 <b>provider 默认值</b>而不是本仓的声明——一条
+    /// <c>NULLS NOT DISTINCT</c> 或把列改成 <c>NOT NULL</c> 都会静默改掉它。
+    ///
+    /// ⭐ <b>钉的是谓词全形，不是子串</b>（#3278 / S5 复审返修）。此前写成
+    /// <c>Assert.Contains("source_type IS NOT NULL")</c> 时，把 filter 改成
+    /// <c>"… AND source_type &lt;&gt; 'APPAY'"</c>（让整个付款执行族退出幂等约束）
+    /// 能穿过全部 30 格断言——子串判据只看「提到了这两列」，看不见后面追加的豁免。
     ///
     /// <b>值域边界</b>：本格读的是 EF 模型，不是数据库。索引在真库上到底建成什么样、
-    /// <c>Down()</c> 回不回得干净，由 <c>ErpCostAccountingPostgresAcceptanceTests</c> 里那两格读 <c>pg_index</c> 证。
+    /// <c>Down()</c> 回不回得干净，由 <c>ErpCostAccountingPostgresAcceptanceTests</c> 里那两格读 <c>pg_index</c> 证——
+    /// 那两格钉的是 PostgreSQL 归一化后的 <c>pg_get_expr</c> 全形，与本格钉的原串是两种表示，各自独立。
     /// </summary>
     [Fact]
     public void The_source_document_index_is_unique_and_excludes_legacy_null_rows()
@@ -128,10 +137,8 @@ public sealed class JournalVoucherSourceContractTests
                 [nameof(JournalVoucher.OrganizationId), nameof(JournalVoucher.EnvironmentId), nameof(JournalVoucher.SourceType), nameof(JournalVoucher.SourceNo)]));
 
         Assert.True(index.IsUnique, "来源两列的索引必须唯一，它承接的是原先由 voucher_no 承担的幂等语义。");
-        var filter = index.GetFilter();
-        Assert.NotNull(filter);
-        Assert.Contains("source_type IS NOT NULL", filter, StringComparison.Ordinal);
-        Assert.Contains("source_no IS NOT NULL", filter, StringComparison.Ordinal);
+        // ⭐ 全等，不是 Contains：子串判据放行「在后面追加一条豁免 conjunct」这类变异。
+        Assert.Equal("source_type IS NOT NULL AND source_no IS NOT NULL", index.GetFilter(), StringComparer.Ordinal);
 
         // voucher_no 那条唯一索引本票不动：凭证号改短号是 S6/S7，它还在承重。
         var voucherNoIndex = Assert.Single(

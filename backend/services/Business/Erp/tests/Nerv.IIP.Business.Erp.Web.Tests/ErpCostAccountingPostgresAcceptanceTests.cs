@@ -433,10 +433,9 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
             await using var reader = await command.ExecuteReaderAsync();
             Assert.True(await reader.ReadAsync(), "来源两列上没有任何索引。");
             Assert.True(reader.GetBoolean(0), "来源两列的索引不是唯一索引。");
-            Assert.False(await reader.IsDBNullAsync(1), "来源两列的唯一索引没有 partial 过滤，存量 NULL 行会被它约束。");
-            var predicate = reader.GetString(1);
-            Assert.Contains("source_type", predicate, StringComparison.Ordinal);
-            Assert.Contains("source_no", predicate, StringComparison.Ordinal);
+            Assert.False(await reader.IsDBNullAsync(1), "来源两列的唯一索引没有 partial 过滤。");
+            // ⭐ 全等，不是 Contains：子串判据放行「在后面追加一条豁免 conjunct」这类变异。
+            Assert.Equal(ExpectedSourceIndexPredicate, reader.GetString(1), StringComparer.Ordinal);
             Assert.False(await reader.ReadAsync(), "来源两列上出现了不止一条索引。");
         }
     }
@@ -619,7 +618,7 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         // ① Up() 之后：唯一 + partial。
         var afterUp = await JournalVoucherSourceIndexShapeAsync(db);
         Assert.True(afterUp.IsUnique);
-        Assert.NotNull(afterUp.Predicate);
+        Assert.Equal(ExpectedSourceIndexPredicate, afterUp.Predicate, StringComparer.Ordinal);
 
         // ② Down()：回落到 S2 那一版，索引必须还在、且必须不再唯一也不再带过滤。
         var migrator = db.GetService<IMigrator>();
@@ -646,13 +645,25 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         await migrator.MigrateAsync(uniqueIndexMigration);
         var afterSecondUp = await JournalVoucherSourceIndexShapeAsync(db);
         Assert.True(afterSecondUp.IsUnique);
-        Assert.NotNull(afterSecondUp.Predicate);
+        Assert.Equal(ExpectedSourceIndexPredicate, afterSecondUp.Predicate, StringComparer.Ordinal);
     }
 
     /// <summary>
     /// 读 <c>pg_index</c> 而不是读 EF 模型——EF 模型是被测方自己的说法，回滚后它根本不会变。
     /// 断言「来源两列上有且只有一条索引」，否则 Down() 漏删时这里会读到第一条而不报错。
     /// </summary>
+    /// <summary>
+    /// #3278 / S5 来源两列唯一索引的 partial 谓词，**PostgreSQL 归一化后的全形**
+    /// （<c>pg_get_expr(indpred, indrelid)</c> 的原样输出，不是 EF 配置里写的那串）。
+    ///
+    /// ⭐ <b>为什么钉全形而不是钉子串</b>（复审返修）：此前两处都写成
+    /// <c>Assert.Contains("source_type")</c>。实测把四处 filter 定义同步改成
+    /// <c>"… AND source_type &lt;&gt; 'APPAY'"</c>——一条让整个付款执行族退出幂等约束的索引——
+    /// **30 格全部存活**，而 <c>pg_index</c> 读出的谓词确实已变、两行重复 APPAY 也确实
+    /// <c>INSERT 0 2</c> 落了库。子串判据只证明「谓词提到了这两列」，证不了「谓词没别的东西」。
+    /// </summary>
+    private const string ExpectedSourceIndexPredicate = "((source_type IS NOT NULL) AND (source_no IS NOT NULL))";
+
     private static async Task<(bool IsUnique, string? Predicate)> JournalVoucherSourceIndexShapeAsync(ApplicationDbContext db)
     {
         await db.Database.OpenConnectionAsync();
@@ -687,17 +698,25 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
     /// <c>sourceId</c> 的生产侧取值共 7 处，全部来自「在 (org, env) 内唯一、且只归属一个工单」的单据标识——
     /// <c>ProductionReport.ReportNo</c>、<c>PendingMaterialCost.MovementId</c>、
     /// <c>StockMovementPostedPayload.InventoryMovementId</c>，以及工序结算的
-    /// <c>{OperationTaskId}-r{rev}</c> / <c>…-void</c> / <c>machine-…</c> 四种串
-    /// （<c>OperationTaskId</c> 本身就被当成 (org, env) 内唯一键用：
-    /// <c>OperationLaborSettlementState</c> 只按它取状态，不带工单号）。
+    /// <c>{OperationTaskId}-r{rev}</c> / <c>…-void</c> / <c>machine-…</c> 四种串。
+    /// ⭐ 工序任务那四项的承重依据在**生产者侧的物理约束**：MES
+    /// <c>OperationTaskEntityTypeConfiguration.cs:77-78</c> 的
+    /// <c>ak_operation_tasks_scope_task = HasAlternateKey(OrganizationId, EnvironmentId, OperationTaskIdValue)</c>
+    /// **不含 <c>WorkOrderId</c>**。（Erp 侧 <c>GetOrCreateStateAsync(org, env, OperationTaskId)</c>
+    /// 不带工单号只证明「Erp 把它当键用」，弱一档，⛔ 不作承重理由。）
     /// ⇒ 同一个 <c>sourceId</c> 不可能落在两个工单上，收窄在今天取不到值。
     ///
     /// <b>扫描面</b>：<c>git grep -n "PostLateAdjustmentAsync" -- backend</c> 去掉 <c>obj/</c> 与 <c>tests/</c>，
     /// 得 5 个调用点（其中 2 个是 <c>PostLateAdjustmentIfCapitalizedAsync</c> 包装，各自又有 2 个调用点）
     /// ⇒ 7 个 <c>sourceId</c> 表达式。
-    /// <b>失效方向</b>：日后**新增**一个传「工单内才唯一」标识（例如裸工序号、裸行号）的调用点，
-    /// 这条收窄就会在生产上变成真的塌号，而本格**不会**因此转红——它断言的是收窄存在，不是收窄安全。
-    /// 那个方向只能靠新增调用点时重做这次测量。
+    ///
+    /// <b>两条失效方向，都不会让本格转红</b>——本格断言的是**收窄存在**，不是收窄安全：
+    /// ① 日后**新增**一个传「工单内才唯一」标识（裸工序号、裸行号）的调用点，收窄会变成真的塌号；
+    /// ② ⭐ 这 7 个表达式共用同一个 <c>source_type = WOCADJ</c>，却来自**三个互不相干的命名空间**
+    ///    （<c>RPT-*</c> 报工号 / GUID 库存移动号 / <c>{taskId}-r{n}</c> 修订串）。
+    ///    每个命名空间**内部**的唯一性各有硬约束，⛔ 但**跨命名空间的互斥没有任何东西保证**，
+    ///    今天只靠三种串的形状天然不重叠。
+    /// 两条都只能靠改动时重做这次测量。
     /// </summary>
     [ErpCostPostgresFact(Timeout = 120_000)]
     public async Task PostgreSQL_work_order_cost_adjustment_key_drops_the_work_order_segment()
