@@ -244,13 +244,13 @@ public sealed class OperationMachineOverheadSettlementHandlerTests
         ApplicationDbContext db,
         InMemoryIntegrationEventDeadLetterStore deadLetters)
         => new(db, db, TestWorkOrderCostMutationLock.Instance,
-            new OperationMachineOverheadSettlementOrchestrator(db, deadLetters, new PostgreSqlErpAdvisoryLockAllocator(db)));
+            new OperationMachineOverheadSettlementOrchestrator(db, deadLetters, new PostgreSqlErpAdvisoryLockAllocator(db), ErpTestCoding.For(db)));
 
     private static MesOperationActualTimeSettlementVoidedV2IntegrationEventHandlerForReverseMachineOverhead VoidConsumer(
         ApplicationDbContext db,
         InMemoryIntegrationEventDeadLetterStore deadLetters)
         => new(db, db, TestWorkOrderCostMutationLock.Instance,
-            new OperationMachineOverheadSettlementOrchestrator(db, deadLetters, new PostgreSqlErpAdvisoryLockAllocator(db)));
+            new OperationMachineOverheadSettlementOrchestrator(db, deadLetters, new PostgreSqlErpAdvisoryLockAllocator(db), ErpTestCoding.For(db)));
 
     private static void AddPeriodAndRate(
         ApplicationDbContext db,

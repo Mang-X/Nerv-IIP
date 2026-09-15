@@ -38,6 +38,17 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
     /// #3229：<c>voucher_no</c> 列宽 100，而改前所有派生凭证号都是「前缀 + 100 宽上游单号（+ 上游 id）」。
     /// 这条用例在**同一张真表**上先复现改前形状的 22001，再证明新构造入口的顶格产出真能落库。
     /// EF InMemory 看不见列宽也看不见唯一索引，所以这两个读数只有在真 Postgres 上才成立。
+    ///
+    /// ⚠️ <b>#3278 / S7 登记：本用例的一部分前提已被抽掉，但它仍在跑、仍是绿的</b>。
+    /// 本用例喂的「顶格输入」是从**生产调用点**枚举出来的；
+    /// S7 把消费侧 5 个建凭证位点改成分配器短号后，
+    /// <c>WorkOrderCapitalization</c> / <c>WorkOrderCostAdjustment</c> / <c>GoodsReceiptIrAccrual</c> /
+    /// <c>PurchaseReturn</c> / <c>CreditNote</c> 五个族已经**没有任何生产调用点**在走
+    /// <c>ErpVoucherNoPolicy.Compose</c>，下面那些以它们为族的输入不再是生产输入。
+    /// 仍有生产调用点的只剩 <c>AccountPayable</c> / <c>AccountReceivable</c> / <c>CostCandidate</c>（归 S6）。
+    /// 本票**不删**这些断言（退役属 S8），只登记。同形登记见
+    /// <c>ErpVoucherNoLengthContractTests</c> 的 <c>Saturated_production_inputs_stay_within_the_column_width</c>——
+    /// 那一类是 S7 与 S6 的共用面，本票不碰。
     /// </summary>
     [ErpCostPostgresFact(Timeout = 60_000)]
     public async Task PostgreSQL_saturated_derived_voucher_numbers_persist_where_the_pre_change_shape_overflows()
@@ -495,11 +506,11 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
             "JV-20260915-000001", JournalVoucherSourceType.GoodsReceiptIrAccrual, "RCV-S5-DEDUP", postingDate, org, env));
         await db.SaveChangesAsync();
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
-        await new PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual(db, deadLetters).HandleAsync(
+        await new PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual(db, deadLetters, ErpTestCoding.For(db)).HandleAsync(
             GoodsReceiptRecordedEvent("evt-s5-grir-1", "RCV-S5-DEDUP", org, env), CancellationToken.None);
         await db.SaveChangesAsync();
         // 换一个 EventId 再投一次：同一个 EventId 会被消费者 inbox 短路，走不到查重那一行。
-        await new PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual(db, deadLetters).HandleAsync(
+        await new PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual(db, deadLetters, ErpTestCoding.For(db)).HandleAsync(
             GoodsReceiptRecordedEvent("evt-s5-grir-2", "RCV-S5-DEDUP", org, env), CancellationToken.None);
         await db.SaveChangesAsync();
         await AssertSingleVoucherForSourceAsync(db, JournalVoucherSourceType.GoodsReceiptIrAccrual, "RCV-S5-DEDUP", "JV-20260915-000001");
@@ -756,30 +767,145 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         await db.SaveChangesAsync();
 
         // ① 同一工单、两个不同来源标识 ⇒ 两张凭证。
-        await CostVariancePosting.PostLateAdjustmentAsync(db, first, -10m, "MOV-S5-0001", occurredAtUtc, CancellationToken.None);
-        await CostVariancePosting.PostLateAdjustmentAsync(db, first, -20m, "MOV-S5-0002", occurredAtUtc, CancellationToken.None);
+        await CostVariancePosting.PostLateAdjustmentAsync(db, ErpTestCoding.For(db), first, -10m, "MOV-S5-0001", occurredAtUtc, CancellationToken.None);
+        await CostVariancePosting.PostLateAdjustmentAsync(db, ErpTestCoding.For(db), first, -20m, "MOV-S5-0002", occurredAtUtc, CancellationToken.None);
         await db.SaveChangesAsync();
         Assert.Equal(2, await db.JournalVouchers.CountAsync(x => x.SourceType == JournalVoucherSourceType.WorkOrderCostAdjustment.Code));
 
-        // ② 不同工单、同一来源标识 ⇒ 23505。凭证号 JV-WOCADJ-{WO-S5-B}-MOV-S5-0001 与已有那张**不同**，
-        //    所以撞的只可能是来源索引——这正是「少了 workOrderId 一段」的可观测后果。
-        await CostVariancePosting.PostLateAdjustmentAsync(db, second, -30m, "MOV-S5-0001", occurredAtUtc, CancellationToken.None);
+        // ② 不同工单、同一来源标识 ⇒ 23505。
+        //
+        // ⚠️ #3278 / S7 改了这一步的机理，而不是结论。S5 当时的推论是
+        // 「凭证号 JV-WOCADJ-{WO-S5-B}-MOV-S5-0001 与已有那张不同，所以撞的只可能是来源索引」——
+        // S7 把凭证号改成分配器短号后这条前提失效：分配器的幂等键就是 (source_type, source_no)，
+        // 所以同一个 MOV-S5-0001 拿回的是**同一个凭证号**，两条唯一索引都会被犯。
+        // ⭐ 这是变强不是变弱（多一道防线），但它把「究竟哪条索引在承重」变成了 PostgreSQL 的检查顺序。
+        // 因此拆成两格：②a 钉住 S7 新结果（同来源 ⇒ 同号），
+        //          ②b 绕开分配器、手给一个全新凭证号，把 S5 要证的「收窄在来源索引上」单独量出来。
+        var existingAdjustmentNo = await db.JournalVouchers
+            .Where(x => x.SourceType == JournalVoucherSourceType.WorkOrderCostAdjustment.Code && x.SourceNo == "MOV-S5-0001")
+            .Select(x => x.VoucherNo)
+            .SingleAsync();
+
+        // ②a：同一来源标识在另一个工单上再记一次 ⇒ 分配器回放同一个号 ⇒ 23505。
+        await CostVariancePosting.PostLateAdjustmentAsync(db, ErpTestCoding.For(db), second, -30m, "MOV-S5-0001", occurredAtUtc, CancellationToken.None);
+        Assert.Equal(
+            existingAdjustmentNo,
+            db.ChangeTracker.Entries<JournalVoucher>().Single(x => x.State == EntityState.Added).Entity.VoucherNo);
         var error = await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
         var postgres = Assert.IsType<PostgresException>(error.InnerException);
         Assert.Equal(PostgresErrorCodes.UniqueViolation, postgres.SqlState);
-        Assert.Contains("source_type", postgres.ConstraintName, StringComparison.Ordinal);
-        Assert.DoesNotContain("voucher_no", postgres.ConstraintName, StringComparison.Ordinal);
+        db.ChangeTracker.Clear();
+
+        // ②b：绕开分配器直接建一张「新凭证号 + 旧来源标识 + 另一个工单」的凭证。
+        //     凭证号唯一索引这次撞不上，所以报出来的只能是来源索引——
+        //     这就是「(WOCADJ, sourceId) 少了 workOrderId 一段」的直接读数。
+        db.JournalVouchers.Add(SourceKeyedVoucher(
+            "JV-20260915-090001",
+            JournalVoucherSourceType.WorkOrderCostAdjustment,
+            "MOV-S5-0001",
+            DateOnly.FromDateTime(occurredAtUtc.UtcDateTime)));
+        var sourceError = await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+        var sourcePostgres = Assert.IsType<PostgresException>(sourceError.InnerException);
+        Assert.Equal(PostgresErrorCodes.UniqueViolation, sourcePostgres.SqlState);
+        Assert.Contains("source_type", sourcePostgres.ConstraintName, StringComparison.Ordinal);
+        Assert.DoesNotContain("voucher_no", sourcePostgres.ConstraintName, StringComparison.Ordinal);
     }
 
-    private static ServiceProvider CreateErpPersistenceProvider()
+    /// <summary>
+    /// #3278 / S7：工单成本资本化凭证（位点 ④）的凭证号来自分配器，且在**真库 + CAP 重投**下只记一张。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 三件 EF InMemory 证不了的事：
+    /// ① 分配器走的是 <c>EfCoreCodeStore</c>，幂等键与计数器**真落库**（<c>code_idempotency_keys</c> /
+    ///    <c>code_counters</c>），所以「同一来源再要一次号拿回同一个码」是跨 DbContext 实例成立的；
+    /// ② <c>(organization_id, environment_id, voucher_no)</c> 与来源两列两条唯一索引都真的在，
+    ///    重投若真写出第二张凭证会 23505 而不是静默多一行；
+    /// ③ 分配器产出的 18 字符短号真的落得进 <c>voucher_no</c>。
+    /// </para>
+    /// <para>
+    /// <b>重投形态</b>：用**同一个 EventId** 再投一次——这才是 CAP 重投的形状。
+    /// ⚠️ 本位点（<c>StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost</c> 的资本化分支）
+    /// ⛔ 没有来源两列的查重早退，挡住重投的是 <c>ErpProcessedIntegrationEventInbox</c>；
+    /// 换一个 EventId 再投会走到写入并撞唯一索引，那是**换了一件事**，不是本格要量的。
+    /// </para>
+    /// </remarks>
+    [ErpCostPostgresFact(Timeout = 120_000)]
+    public async Task PostgreSQL_capitalization_voucher_number_comes_from_the_allocator_and_survives_cap_redelivery()
+    {
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        const string workOrderId = "WO-S7-PG";
+        const string movementId = "MOVE-S7-PG";
+        var postedAtUtc = DateTimeOffset.Parse("2026-09-15T05:00:00Z");
+
+        // 本格走 CostingIntegrationEventUnitOfWork.SaveEntitiesAsync 会**派发领域事件**（其他真库用例只调
+        // SaveChangesAsync，不派发），而凭证发布的 converter handler 链上挂着一排发布侧依赖。
+        // 本格量的是凭证号与重投，不是外发链路，所以把 mediator 换成 no-op——
+        // 与本类其余直接构造 ApplicationDbContext 的用例同一个口径。
+        await using var provider = CreateErpPersistenceProvider(
+            services => services.AddSingleton<IMediator>(new NoopMediator()));
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var coding = scope.ServiceProvider.GetRequiredService<ErpCodingService>();
+        ErpPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
+        await db.Database.MigrateAsync();
+
+        var cost = WorkOrderCost.Open(VoucherOrganizationId, VoucherEnvironmentId, workOrderId, "FG-S7");
+        cost.RecordLabor("RPT-S7-PG", "WC-S7", 1m, 80m, "CNY", false, postedAtUtc.AddHours(-1));
+        cost.Complete(4m, 1, 0, postedAtUtc.AddMinutes(-30));
+        db.WorkOrderCosts.Add(cost);
+        await db.SaveChangesAsync();
+
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var movement = new StockMovementPostedIntegrationEvent(
+            "evt-s7-pg-capitalization", InventoryIntegrationEventTypes.StockMovementPosted, 1, postedAtUtc,
+            InventoryIntegrationEventSources.BusinessInventory, workOrderId, workOrderId,
+            VoucherOrganizationId, VoucherEnvironmentId, "inventory", "idem-s7-pg-capitalization",
+            new StockMovementPostedPayload(
+                movementId, "inbound", InventoryIntegrationEventSources.BusinessMes, "FGR-S7-PG", workOrderId,
+                $"mes:finished-goods-receipt:{movementId}", "FG-S7", "ea", "production", "fg-store", null, null,
+                "unrestricted", "organization", VoucherOrganizationId, 4m, postedAtUtc, 20m, 80m));
+        var handler = new StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost(db, deadLetters, db, coding);
+
+        await handler.HandleAsync(movement, CancellationToken.None);
+        // CAP 重投：同一个 EventId 原样再来一次。
+        await handler.HandleAsync(movement, CancellationToken.None);
+
+        db.ChangeTracker.Clear();
+        var voucher = Assert.Single(await db.JournalVouchers.AsNoTracking()
+            .Where(x => x.SourceType == JournalVoucherSourceType.WorkOrderCapitalization.Code && x.SourceNo == movementId)
+            .ToListAsync());
+        Assert.Matches(@"^JV-\d{8}-\d{6}$", voucher.VoucherNo);
+        Assert.NotEqual($"JV-WOC-{workOrderId}-{movementId}", voucher.VoucherNo);
+        Assert.Empty(await deadLetters.ListAsync(null, null, CancellationToken.None));
+
+        // 幂等键真落了库，且再要一次号拿回同一个码——这条只有 store-backed 分配器才成立。
+        var idempotencyKey = ConsumerJournalVoucherNumber.IdempotencyKeyOf(
+            JournalVoucherSourceType.WorkOrderCapitalization, movementId);
+        var record = Assert.Single(await db.CodeIdempotencyKeys.AsNoTracking()
+            .Where(x => x.RuleKey == ConsumerJournalVoucherNumber.RuleKey && x.IdempotencyKey == idempotencyKey)
+            .ToListAsync());
+        Assert.Equal(voucher.VoucherNo, record.Code);
+
+        using var replayScope = provider.CreateScope();
+        var replayCoding = replayScope.ServiceProvider.GetRequiredService<ErpCodingService>();
+        var replay = await ConsumerJournalVoucherNumber.TryAllocateAsync(
+            replayCoding, VoucherOrganizationId, VoucherEnvironmentId,
+            JournalVoucherSourceType.WorkOrderCapitalization, movementId, CancellationToken.None);
+        Assert.Equal(voucher.VoucherNo, replay.Code);
+    }
+
+    private static ServiceProvider CreateErpPersistenceProvider(Action<IServiceCollection>? configure = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(PostJournalVoucherCommand).Assembly));
         services.AddErpPostgreSqlPersistence(ErpPostgresLaneDatabase.ConnectionString);
         services.AddScoped<ErpCodingService>();
+        configure?.Invoke(services);
         return services.BuildServiceProvider();
     }
+
 
     private static async Task AssertSingleVoucherForSourceAsync(
         ApplicationDbContext db,
@@ -889,7 +1015,7 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         await using (var reportDb = new ApplicationDbContext(options, new NoopMediator()))
         {
             await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(
-                    reportDb, deadLetters, reportDb, new PostgreSqlWorkOrderCostMutationLock(reportDb))
+                    reportDb, deadLetters, reportDb, new PostgreSqlWorkOrderCostMutationLock(reportDb), ErpTestCoding.For(reportDb))
                 .HandleAsync(report, CancellationToken.None);
         }
 
@@ -1501,15 +1627,15 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
                 MesMachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1));
 
         var reportTask = new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(
-                reportDb, deadLetters, reportDb, new PostgreSqlWorkOrderCostMutationLock(reportDb))
+                reportDb, deadLetters, reportDb, new PostgreSqlWorkOrderCostMutationLock(reportDb), ErpTestCoding.For(reportDb))
             .HandleAsync(report, CancellationToken.None);
         var settlementTask = new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(
                 settlementDb, settlementDb, new PostgreSqlWorkOrderCostMutationLock(settlementDb),
-                new OperationLaborSettlementOrchestrator(settlementDb, deadLetters))
+                new OperationLaborSettlementOrchestrator(settlementDb, deadLetters, ErpTestCoding.For(settlementDb)))
             .HandleAsync(settled, CancellationToken.None);
         var machineTask = new MesOperationActualTimeSettledV2IntegrationEventHandlerForAccumulateMachineOverhead(
                 machineDb, machineDb, new PostgreSqlWorkOrderCostMutationLock(machineDb),
-                new OperationMachineOverheadSettlementOrchestrator(machineDb, deadLetters, new PostgreSqlErpAdvisoryLockAllocator(machineDb)))
+                new OperationMachineOverheadSettlementOrchestrator(machineDb, deadLetters, new PostgreSqlErpAdvisoryLockAllocator(machineDb), ErpTestCoding.For(machineDb)))
             .HandleAsync(machineSettled, CancellationToken.None);
         await WaitForAdvisoryLockWaitersAsync(connectionString, applicationName, expectedCount: 3);
         Assert.False(reportTask.IsCompleted);
@@ -1926,7 +2052,7 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
                 2 * TimeSpan.TicksPerHour, 2 * TimeSpan.TicksPerHour, ["RPT-ROLLBACK"]));
         var handler = new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(
             db, failingUnitOfWork, new PostgreSqlWorkOrderCostMutationLock(db),
-            new OperationLaborSettlementOrchestrator(db, deadLetters));
+            new OperationLaborSettlementOrchestrator(db, deadLetters, ErpTestCoding.For(db)));
 
         await Assert.ThrowsAsync<InjectedSaveFailureException>(
             () => handler.HandleAsync(settled, CancellationToken.None));
@@ -1968,7 +2094,7 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
                 90 * TimeSpan.TicksPerMinute, 90 * TimeSpan.TicksPerMinute, ["RPT-CAP"]));
         await new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(
                 db, db, new PostgreSqlWorkOrderCostMutationLock(db),
-                new OperationLaborSettlementOrchestrator(db, deadLetters))
+                new OperationLaborSettlementOrchestrator(db, deadLetters, ErpTestCoding.For(db)))
             .HandleAsync(settled, CancellationToken.None);
 
         var mixedCost = WorkOrderCost.Open("org-cap", "env-cap", "WO-MIXED", "FG-MIXED");
@@ -1989,7 +2115,7 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         };
         await new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(
                 db, db, new PostgreSqlWorkOrderCostMutationLock(db),
-                new OperationLaborSettlementOrchestrator(db, deadLetters))
+                new OperationLaborSettlementOrchestrator(db, deadLetters, ErpTestCoding.For(db)))
             .HandleAsync(mixedSettlement, CancellationToken.None);
 
         var readyButUnposted = WorkOrderCost.Open("org-cap", "env-cap", "WO-READY", "FG-READY");
@@ -2011,11 +2137,11 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         };
         await new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(
                 db, db, new PostgreSqlWorkOrderCostMutationLock(db),
-                new OperationLaborSettlementOrchestrator(db, deadLetters))
+                new OperationLaborSettlementOrchestrator(db, deadLetters, ErpTestCoding.For(db)))
             .HandleAsync(prePostingSettlement, CancellationToken.None);
         await new MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost(
                 db, db, new PostgreSqlWorkOrderCostMutationLock(db),
-                new OperationLaborSettlementOrchestrator(db, deadLetters))
+                new OperationLaborSettlementOrchestrator(db, deadLetters, ErpTestCoding.For(db)))
             .HandleAsync(new MesOperationActualTimeSettlementVoidedIntegrationEvent(
                 "evt-ready-void", MesIntegrationEventTypes.OperationActualTimeSettlementVoided, 1,
                 DateTimeOffset.Parse("2026-08-31T16:05:00Z"), MesIntegrationEventSources.BusinessMes,
@@ -2092,7 +2218,7 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         db.WorkOrderCosts.Add(cost);
         await db.SaveChangesAsync();
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
-        var receiptConsumer = new StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost(db, deadLetters, db);
+        var receiptConsumer = new StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost(db, deadLetters, db, ErpTestCoding.For(db));
         await receiptConsumer.HandleAsync(PartialReceipt("evt-pg-partial", "MOVE-PG-PARTIAL", "FGR-PG-PARTIAL"), CancellationToken.None);
 
         var settled = new MesOperationActualTimeSettledIntegrationEvent(
@@ -2106,11 +2232,11 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
                 90 * TimeSpan.TicksPerMinute, 90 * TimeSpan.TicksPerMinute, ["RPT-PARTIAL"]));
         await new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(
                 db, db, new PostgreSqlWorkOrderCostMutationLock(db),
-                new OperationLaborSettlementOrchestrator(db, deadLetters))
+                new OperationLaborSettlementOrchestrator(db, deadLetters, ErpTestCoding.For(db)))
             .HandleAsync(settled, CancellationToken.None);
         await new MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost(
                 db, db, new PostgreSqlWorkOrderCostMutationLock(db),
-                new OperationLaborSettlementOrchestrator(db, deadLetters))
+                new OperationLaborSettlementOrchestrator(db, deadLetters, ErpTestCoding.For(db)))
             .HandleAsync(new MesOperationActualTimeSettlementVoidedIntegrationEvent(
                 "evt-pg-partial-void", MesIntegrationEventTypes.OperationActualTimeSettlementVoided, 1,
                 DateTimeOffset.Parse("2026-08-31T16:05:00Z"), MesIntegrationEventSources.BusinessMes,
@@ -2247,7 +2373,7 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
             db,
             db,
             new PostgreSqlWorkOrderCostMutationLock(db),
-            new OperationMachineOverheadSettlementOrchestrator(db, deadLetters, new PostgreSqlErpAdvisoryLockAllocator(db)));
+            new OperationMachineOverheadSettlementOrchestrator(db, deadLetters, new PostgreSqlErpAdvisoryLockAllocator(db), ErpTestCoding.For(db)));
 
     private static MesOperationActualTimeSettlementVoidedV2IntegrationEventHandlerForReverseMachineOverhead MachineVoidConsumer(
         ApplicationDbContext db,
@@ -2256,7 +2382,7 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
             db,
             db,
             new PostgreSqlWorkOrderCostMutationLock(db),
-            new OperationMachineOverheadSettlementOrchestrator(db, deadLetters, new PostgreSqlErpAdvisoryLockAllocator(db)));
+            new OperationMachineOverheadSettlementOrchestrator(db, deadLetters, new PostgreSqlErpAdvisoryLockAllocator(db), ErpTestCoding.For(db)));
 
     private static MesOperationActualTimeSettledV2IntegrationEvent MachineSettled(
         string eventId,
