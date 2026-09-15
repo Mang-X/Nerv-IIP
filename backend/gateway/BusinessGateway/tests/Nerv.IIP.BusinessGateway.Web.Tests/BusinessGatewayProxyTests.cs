@@ -7657,6 +7657,11 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(new BusinessConsoleErpListRequest("org-001", "env-dev", "Draft", "SKU-FG", 3, 13), erp.LastQuotationListRequest);
         Assert.Equal(new BusinessConsoleErpListRequest("org-001", "env-dev", "released", "DO-001", 4, 14), erp.LastDeliveryOrderListRequest);
         Assert.Equal(new BusinessConsoleErpListRequest("org-001", "env-dev", "posted", "6001", 5, 15), erp.LastJournalVoucherListRequest);
+        using var voucherDocument = JsonDocument.Parse(await vouchers.Content.ReadAsStringAsync());
+        // #3278 / S3：凭证列表项的稳定 id 必须原样透传到 Console 契约（前端 row-key 的值域来源在 S4 切换）。
+        Assert.Equal(
+            "9f1c7d6e-1111-4222-8333-444455556666",
+            voucherDocument.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("id").GetString());
         Assert.Equal(HttpStatusCode.OK, supplierQuotations.StatusCode);
         Assert.Equal(
             new BusinessConsoleErpSupplierQuotationListRequest("org-001", "env-dev", "RFQ-2026-0001", "SUP-WB-BAR-01", "RM-BAR", 6, 16),
@@ -18823,6 +18828,7 @@ internal sealed class RecordingErpClient : IBusinessErpClient
         return Task.FromResult(new BusinessConsoleErpJournalVoucherListResponse(
             [
                 new BusinessConsoleErpJournalVoucherItem(
+                    "9f1c7d6e-1111-4222-8333-444455556666",
                     "JV-001",
                     DateOnly.Parse("2026-06-01"),
                     "posted",

@@ -3908,6 +3908,8 @@ public sealed record BusinessConsoleErpJournalVoucherListResponse(
     int Total);
 
 public sealed record BusinessConsoleErpJournalVoucherItem(
+    // #3278 / S3：透传 Erp 读面 JournalVoucherListItem.Id（聚合根 Guid 的字符串形式），供前端做稳定 row-key。
+    string Id,
     string VoucherNo,
     DateOnly PostingDate,
     string Status,

@@ -612,6 +612,12 @@ public sealed class ListJournalVouchersQueryValidator : AbstractValidator<ListJo
 public sealed record ListJournalVouchersResponse(IReadOnlyCollection<JournalVoucherListItem> Items, int Total);
 
 public sealed record JournalVoucherListItem(
+    // #3278 / S3 新增：聚合根 JournalVoucherId 的字符串形式，列表行的稳定标识。
+    // 形状照抄本服务既有 canonical WorkCenterMachineOverheadReconciliationItem.Id：
+    // 读面用 string 承载强类型 Id，不把 JournalVoucherId 本身放进公开契约。
+    // ⚠️ 这不是凭证号：VoucherNo 由 ErpCodingService 分配、面向用户；
+    // Id 只做前端 row-key 等技术用途（前端换用它属 #3278 / S4，本票只负责吐出来）。
+    string Id,
     string VoucherNo,
     DateOnly PostingDate,
     string Status,
@@ -649,8 +655,27 @@ public sealed class ListJournalVouchersQueryHandler(ApplicationDbContext dbConte
 
         if (keyword != null)
         {
+            // #3278 / S3：并入 S2 新增的来源两列，使「按上游单号搜凭证」可用。
+            // 谓词形状取自本文件 AccountPayable(:398) / AccountReceivable(:491) / CostCandidate(:572)，
+            // 但**与它们并非同形**，已知两处差别：
+            // ① null 卫：JournalVoucher.SourceType / SourceNo 可空（S2 裁定不回填存量行），三处兄弟的来源列都不可空。
+            //    裸 .Contains 直接是 CS8602：成因是 Nullable=enable（本 csproj:5 与 backend/Directory.Build.props:4）
+            //    + TreatWarningsAsErrors=true（backend/Directory.Build.props:6），实测两支都报错。
+            //    ⚠️ 与 GenerateDocumentationFile 无关——那条属性管的是别的警告（给 positional record 只写部分
+            //    <param> 会触发的 CS1573），别把两者的成因串在一起。
+            //    语义：两列为 null 的存量行按「匹配不到」处理，这是预期而非缺陷。
+            //    ⚠️ null 卫只在编译期承重：换成 SourceType!.Contains(...) 后 Postgres 侧 NULL LIKE → NULL 照样被过滤，
+            //    EF InMemory 也不抛 NRE，故该变异在测试层存活（等价变异，非覆盖缺口）。
+            // ② **只检索不投影**：三处兄弟把自己检索的每一列都放进了各自的 ListItem
+            //    （AccountPayableListItem.SourceDocumentNo / AccountReceivableListItem.SourceDocumentNo /
+            //    CostCandidateListItem.SourceType + SourceDocumentNo），而 JournalVoucherListItem 不含这两列。
+            //    ⚠️ 后果：用户按 SUPPINV 搜出来的行，屏幕上看不到任何命中理由。展示来源列不在 S3 射程内（属母票 #3278）。
+            // ⚠️ 已知边界：SourceType 存的是 2–7 字符内部码（AP / WOC / WOCADJ / SUPPINV …）且从不上屏，
+            //    并入自由文本检索会过匹配——搜 WOC 同时命中 WOC 与 WOCADJ 两族。这是当前有意接受的行为，不加白名单。
             query = query.Where(x =>
                 x.VoucherNo.Contains(keyword)
+                || (x.SourceType != null && x.SourceType.Contains(keyword))
+                || (x.SourceNo != null && x.SourceNo.Contains(keyword))
                 || x.Lines.Any(line =>
                     line.AccountCode.Contains(keyword)
                     || line.Memo.Contains(keyword)));
@@ -662,6 +687,7 @@ public sealed class ListJournalVouchersQueryHandler(ApplicationDbContext dbConte
             .Skip(page.Skip)
             .Take(page.Take)
             .Select(x => new JournalVoucherListItem(
+                x.Id.ToString(),
                 x.VoucherNo,
                 x.PostingDate,
                 "posted",
