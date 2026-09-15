@@ -1,4 +1,6 @@
 using NetCorePal.Extensions.Primitives;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace Nerv.IIP.Business.ProductEngineering.Web.Tests;
 
@@ -11,16 +13,6 @@ public sealed class ProductEngineeringKnownExceptionMessageArchitectureTests
             "GetMasterDataWorkCenterUsageQueryHandler",
             "Handle",
             "internal work-center usage is outside this query layer"),
-        new(
-            "backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Queries/ProductEngineeringReleaseQueries.cs",
-            "GetEngineeringChangeQueryHandler",
-            "Handle",
-            "Engineering Change is outside this query layer"),
-        new(
-            "backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Queries/ProductEngineeringImpactQueries.cs",
-            "GetEngineeringChangeImpactPreviewQueryHandler",
-            "Handle",
-            "Engineering Change is outside this query layer"),
     ];
 
     public static TheoryData<string, string> EnglishUserMessageSources => new()
@@ -76,6 +68,17 @@ public sealed class ProductEngineeringKnownExceptionMessageArchitectureTests
     {
         const string source =
             "using NetCorePal.Extensions.Primitives; class Probe { KnownException Create(string code) => new($\"一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十{code}\"); }";
+
+        var violations = AnalyzeProbe(source);
+
+        Assert.Equal(["Probe.cs:1: 用户消息估算长度不能超过 60 个字符。"], violations);
+    }
+
+    [Fact]
+    public void Guid_D_interpolation_uses_its_explicit_36_character_shape()
+    {
+        const string source =
+            "using NetCorePal.Extensions.Primitives; using System; class Probe { KnownException Create() => new($\"一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十一二三四五{Guid.NewGuid():D}\"); }";
 
         var violations = AnalyzeProbe(source);
 
@@ -181,6 +184,30 @@ public sealed class ProductEngineeringKnownExceptionMessageArchitectureTests
             "ProductEngineering exposed query messages must be static, contain Chinese, and be at most 60 estimated characters. Offenders:"
             + Environment.NewLine
             + string.Join(Environment.NewLine, violations));
+
+        var targetQuerySites = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "GetEngineeringChangeQueryHandler.Handle",
+            "GetEngineeringChangeImpactPreviewQueryHandler.Handle",
+        };
+        var directSites = documents
+            .SelectMany(document => CSharpSyntaxTree.ParseText(document.Text, path: document.Path)
+                .GetRoot()
+                .DescendantNodes()
+                .OfType<ObjectCreationExpressionSyntax>()
+                .Where(creation => creation.Type.ToString() == "KnownException")
+                .Select(creation =>
+                {
+                    var method = creation.Ancestors().OfType<MethodDeclarationSyntax>().First();
+                    var type = method.Ancestors().OfType<TypeDeclarationSyntax>().First();
+                    return $"{type.Identifier.ValueText}.{method.Identifier.ValueText}";
+                })
+                .Where(targetQuerySites.Contains))
+            .ToArray();
+        Assert.Equal(2, directSites.Length);
+        Assert.Equal(
+            ["GetEngineeringChangeImpactPreviewQueryHandler.Handle", "GetEngineeringChangeQueryHandler.Handle"],
+            directSites.OrderBy(site => site, StringComparer.Ordinal).ToArray());
     }
 
     private static IReadOnlyList<string> AnalyzeProbe(string source) =>
