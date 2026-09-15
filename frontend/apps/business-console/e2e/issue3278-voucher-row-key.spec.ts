@@ -24,6 +24,13 @@ import { requireBrowserEvidenceOutputDir } from '../playwright.config'
  * 渲染层，后端契约本 PR 没动。浏览器、Vue、NvDataTable、分页交互全部是真的，只有 HTTP 响应
  * 是桩。沿用 `e2e/issue2386-machine-overhead.spec.ts` 的免登录 + `/api/` 全打桩姿势。
  *
+ * ── ⚠️ 这个文件不是回归护栏 ──
+ * 它**不在任何 CI job 上跑**：`ci.yml:2116` 是全仓唯一一处 playwright 调用，按文件名只点名
+ * `e2e/issue1974-tooling-visual.spec.ts`，并被 `scripts/tests/ci-impact-plan.Tests.ps1:253` 钉成契约；
+ * 27 个 e2e spec 里只有那 1 个进 CI。所以本 PR 的**回归保护实际由 vitest 承担**
+ * （`src/pages/erp/finance-voucher-row-key.test.ts`），这个 spec 只是可复现的走查配方。
+ * 这是仓库现状，不是本 PR 引入的。
+ *
  * ── 覆盖边界 ──
  * 只覆盖 `/erp/finance/vouchers`。`/erp/finance` 的「最近凭证」表没有分页、刷新必经加载态，
  * 浏览器层当前**造不出**同样的换行时机；那一页的 row-key 契约由
@@ -52,7 +59,13 @@ const session = {
   expiresAtUtc: '2099-01-01T00:00:00Z',
 }
 
-/** 一张凭证；`voucherNo` 传 null 表示服务端没给出凭证号（读面允许为空）。 */
+/**
+ * 一张凭证；`voucherNo` 传 null 表示服务端没给出凭证号。
+ *
+ * ⚠️ 这是**当前后端契约产不出**的输入（域侧 `ErpText.Required` 拒空、`voucher_no` 列 NOT NULL、
+ * `(org, env, voucher_no)` 无 filter 唯一索引）。刻意选它，是因为本用例要钉的是**渲染层不变式**：
+ * 「row-key 撞了会怎样」。真实可达路径见文件头与 `shared.ts` 里 `stableRowKey` 的注释。
+ */
 function voucher(id: string, voucherNo: string | null, amount: number, day: number) {
   return {
     id,

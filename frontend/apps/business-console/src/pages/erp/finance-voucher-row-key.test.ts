@@ -9,11 +9,15 @@ import { stableRowKey } from './shared'
 /**
  * #3278 S4：凭证表的 `row-key` 必须钉在稳定 id 上，凭证号只负责显示。
  *
- * 这不是换个字段的风格改动。原写法 `(r) => r.voucherNo ?? '凭证'` 在**多行缺凭证号**时
- * 让整页落到同一个 key；Vue 的 keyed diff 一旦离开「顺序未变」的快路径（服务端翻页、
- * 关键字过滤、刷新后顺序变化），就会多渲染出并不存在的行。下面第一组用例直接把这个
- * 形态钉死：翻页后**行数与逐格内容**必须与数据一致，且不得出现
+ * 这不是换个字段的风格改动。原写法 `(r) => r.voucherNo ?? '凭证'` 一旦同页出现两行 key 相同，
+ * Vue 的 keyed diff 离开「顺序未变」的快路径后就会多渲染出并不存在的行。下面第一组用例直接把
+ * 这个形态钉死：整批换行后**行数与逐格内容**必须与数据一致，且不得出现
  * `[Vue warn]: Duplicate keys found during update`。
+ *
+ * ⚠️ 本文件的夹具（`voucherNo` 为空 / 撞号）是**当前后端契约产不出**的输入——域侧
+ * `ErpText.Required` 拒空、`voucher_no` 列 NOT NULL、`(org, env, voucher_no)` 上有无 filter 的
+ * 唯一索引。这不影响用例有效：它们证的是**渲染层不变式**，不是「后端今天会这么回」。
+ * 真实可达路径（网关↔Erp 版本偏斜、S6/S8 改写编号形状）见 `shared.ts` 里 `stableRowKey` 的注释。
  */
 
 const hoisted = vi.hoisted(() => ({ rows: null as { value: Record<string, unknown>[] } | null }))
@@ -69,7 +73,7 @@ const stubs = {
   RouterLink: { template: '<a><slot /></a>' },
 }
 
-/** 一张凭证；`voucherNo` 传 undefined 表示服务端没给出凭证号。 */
+/** 一张凭证；`voucherNo` 传 undefined 表示服务端没给出凭证号（见文件头：当前契约产不出）。 */
 function voucher(id: string, voucherNo: string | undefined, amount: number) {
   return {
     id,
@@ -142,6 +146,33 @@ describe.each([
     expect(duplicateKeyWarnings).toEqual([])
 
     warnSpy.mockRestore()
+  })
+
+  it('同一批逻辑行以全新对象重新到达时，<tr> DOM 节点必须被复用（证明 key 真的钉在服务端 id 上）', async () => {
+    // 这条是**行为层**守着「row-key 钉的是稳定 id」这个票面目标本身。
+    // 上面两条只要求 key 两两互异——把 id 那一支整个删掉、一律发代理 key 也满足，
+    // 所以它们对「有没有用 id」零鉴别力。
+    //
+    // refetch 语义：同一批凭证重新到达时是**全新的对象**（JSON 反序列化产物），
+    // 只有 key 取自服务端 id 才认得出「还是这几行」，从而原地 patch、复用 DOM 节点；
+    // 一旦回落到按对象引用发的代理 key，新对象 = 新 key = 整行卸载重挂。
+    hoisted.rows!.value = PAGE_1
+    const wrapper = mount(Page, { global: { stubs } })
+    await flushPromises()
+    const before = wrapper.findAll('tbody tr').map((row) => row.element)
+    expect(before).toHaveLength(PAGE_1.length)
+
+    // 同样的三张凭证、同样的 id，但每个都是新对象（深拷贝，行内 lines 也重建）。
+    hoisted.rows!.value = PAGE_1.map((row) => ({ ...row }))
+    await flushPromises()
+    const after = wrapper.findAll('tbody tr').map((row) => row.element)
+
+    expect(after).toHaveLength(before.length)
+    // ⚠️ 必须逐元素比**身份**（`===`）。对数组整体用 toEqual 是**结构**比较，
+    // 整行重建出来的新节点结构相同，会判相等——那样这条断言就是假绿。
+    for (const [index, element] of after.entries()) {
+      expect(element === before[index]).toBe(true)
+    }
   })
 
   it('页面交给表格的 row-key 对缺号 / 撞号的行仍然两两互异', async () => {
