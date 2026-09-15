@@ -295,7 +295,7 @@ public sealed class ErpReturnIntegrationHandlerTests
         // #3278 / S7：原写法是 Assert.Empty(… VoucherNo.StartsWith("JV-CN-"))——反向断言。
         // 凭证号改成分配器短号后全仓再也不会出现 JV-CN- 开头的行，那条断言**恒真**、零鉴别力。
         // 改成按来源类型筛：本用例里确实存在凭证（上面 CreateAccountReceivableCommandHandler 建应收时记了一张 AR 凭证），
-        // 所以过滤条件是承重的——下一行把那张对照行显式铉住，把这条断言从「表里没行」改回「没有 CN 那张」。
+        // 所以过滤条件是承重的——下一行把那张对照行显式钉住，把这条断言从「表里没行」改回「没有 CN 那张」。
         Assert.Empty(await dbContext.JournalVouchers
             .Where(x => x.SourceType == JournalVoucherSourceType.CreditNote.Code)
             .ToListAsync());

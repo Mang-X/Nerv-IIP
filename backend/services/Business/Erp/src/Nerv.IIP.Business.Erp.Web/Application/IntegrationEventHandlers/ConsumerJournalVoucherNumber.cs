@@ -101,6 +101,10 @@ internal readonly record struct JournalVoucherNumberAllocation(string? Code, str
 /// 与 <see cref="KnownException"/>（规则停用、以及被篡改的幂等键行造成的指纹冲突）收成 <c>Code == null</c>，
 /// 让调用方走 gate-and-skip —— CAP 消费者里抛业务异常会逃逸成 poison message（#877 仍 OPEN）。
 /// ⛔ <b>不</b>捕获 <see cref="OperationCanceledException"/>：取消不是业务失败，必须原样冒泡。
+/// ⚠️ <b>另一条不在 catch filter 里的异常</b>：<c>StandardCodeRules.Get</c> 对未登记的规则键抛
+/// <see cref="KeyNotFoundException"/>，它**不在**上面那两类里 ⇒ <see cref="RuleKey"/> 写错会逃逸成 poison。
+/// 没有把它收进来：那是一个 <c>const</c>，写错在 happy path 第一条用例就全红（实测：
+/// 把 <see cref="RuleKey"/> 改成 <c>"purchase-order"</c> 后面板红 8），把它当业务失败吸掉反而会把配置错误变成静默死信。
 /// ⚠️ 失效方向：调用方拿到 <c>Code == null</c> 后若仍继续建凭证，编译期不会拦——
 /// 兜住这个方向的是各调用点的用例，不是本类型。
 /// </para>

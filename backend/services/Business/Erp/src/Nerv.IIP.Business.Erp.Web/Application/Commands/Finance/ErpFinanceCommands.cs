@@ -964,7 +964,7 @@ public static class FinanceVoucherFactory
     /// <summary>
     /// 客户红字通知单凭证。
     ///
-    /// ⧐ #3278 / S7：<paramref name="voucherNo"/> 从无到有。改前本方法内联
+    /// #3278 / S7：<paramref name="voucherNo"/> 从无到有。改前本方法内联
     /// <c>ErpVoucherNoPolicy.Compose(VoucherFamily.CreditNote, …)</c> 自己拼号；现在凭证号由唯一调用方
     /// <c>QualityInspectionResultIntegrationEventHandlerForSettleSalesReturnCredit</c> 从分配器取后传入，
     /// 与同类的 <see cref="ForPurchaseReturn"/> / <see cref="ForGoodsReceiptIrAccrual"/> 形状对齐。

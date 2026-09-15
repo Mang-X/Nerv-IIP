@@ -46,9 +46,9 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
     /// <c>PurchaseReturn</c> / <c>CreditNote</c> 五个族已经**没有任何生产调用点**在走
     /// <c>ErpVoucherNoPolicy.Compose</c>，下面那些以它们为族的输入不再是生产输入。
     /// 仍有生产调用点的只剩 <c>AccountPayable</c> / <c>AccountReceivable</c> / <c>CostCandidate</c>（归 S6）。
-    /// ⴛ 本票**不删**这些断言（退役属 S8），只登记。同形登记见
+    /// 本票**不删**这些断言（退役属 S8），只登记。同形登记见
     /// <c>ErpVoucherNoLengthContractTests</c> 的 <c>Saturated_production_inputs_stay_within_the_column_width</c>——
-    /// 那一类是 S7 与 S6 的共用面，本票ⴛ 不碰。
+    /// 那一类是 S7 与 S6 的共用面，本票不碰。
     /// </summary>
     [ErpCostPostgresFact(Timeout = 60_000)]
     public async Task PostgreSQL_saturated_derived_voucher_numbers_persist_where_the_pre_change_shape_overflows()
@@ -779,7 +779,7 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         // S7 把凭证号改成分配器短号后这条前提失效：分配器的幂等键就是 (source_type, source_no)，
         // 所以同一个 MOV-S5-0001 拿回的是**同一个凭证号**，两条唯一索引都会被犯。
         // ⭐ 这是变强不是变弱（多一道防线），但它把「究竟哪条索引在承重」变成了 PostgreSQL 的检查顺序。
-        // 因此拆成两格：②a 铉住 S7 新结果（同来源 ⇒ 同号），
+        // 因此拆成两格：②a 钉住 S7 新结果（同来源 ⇒ 同号），
         //          ②b 绕开分配器、手给一个全新凭证号，把 S5 要证的「收窄在来源索引上」单独量出来。
         var existingAdjustmentNo = await db.JournalVouchers
             .Where(x => x.SourceType == JournalVoucherSourceType.WorkOrderCostAdjustment.Code && x.SourceNo == "MOV-S5-0001")

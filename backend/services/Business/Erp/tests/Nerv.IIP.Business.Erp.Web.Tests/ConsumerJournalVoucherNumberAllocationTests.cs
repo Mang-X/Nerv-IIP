@@ -3,6 +3,12 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.InMemory;
 using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountPayableAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountReceivableAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesReturnAuthorizationAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
+using Nerv.IIP.Contracts.Quality;
+using Nerv.IIP.Contracts.Wms;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.GLAccountAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
@@ -239,6 +245,146 @@ public sealed class ConsumerJournalVoucherNumberAllocationTests
     }
 
     /// <summary>
+    /// ⭐ 位点 ②（采购退货凭证）的 gate-and-skip，并**钉住 <c>ChangeTracker.Clear()</c> 在写死信之前**。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// ⚠️ <b>顺序是承重的，不是风格</b>：生产装配的 <c>PersistentIntegrationEventDeadLetterStore.AddAsync</c>
+    /// **自己调 <c>dbContext.SaveChangesAsync()</c>**（<c>IntegrationEventDeadLetterPersistence.cs:15</c>）。
+    /// 若 <c>Clear</c> 挪到写死信之后，那一次 <c>SaveChanges</c> 会把本次**全部未提交变更**
+    /// （退货单、借项通知单、inbox 行、应付减额）连同死信一起提交——恰好是这个 gate 要防的半截状态。
+    /// 所以本用例⛔ 不用 <c>InMemoryIntegrationEventDeadLetterStore</c>（它不碰 DbContext，看不出顺序），
+    /// 而用一个**会 SaveChanges 的**死信桩复刻生产行为。
+    /// </para>
+    /// <para>
+    /// <b>为什么要跑两遍</b>：退货单号由分配器在 handler 内部产出，用例事先不知道它，
+    /// 也就无法预先投毒 <c>(PRTN, 退货单号)</c>。于是第一遍在一个**干净库**上正常跑完拿到号，
+    /// 第二遍在另一个**同样干净**的库上用同一套夹具 + 投毒重跑——两个分配器都从空计数器起步，
+    /// 产出的退货单号相同。⚠️ 若两遍之间跨了 UTC 零点，第二遍的投毒键会对不上，
+    /// 用例会**响亮失败**（断言 0 张凭证时看到 1 张），⛔ 不会静默变绿。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task Purchase_return_gate_clears_before_dead_lettering_so_nothing_half_commits()
+    {
+        string purchaseReturnNo;
+        await using (var learnProvider = CreateProvider())
+        {
+            using var learnScope = learnProvider.CreateScope();
+            var learnDb = learnScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var learnCoding = learnScope.ServiceProvider.GetRequiredService<ErpCodingService>();
+            await SeedSupplierReturnAsync(learnDb);
+            await new WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReturn(
+                    learnDb, new InMemoryIntegrationEventDeadLetterStore(), learnCoding)
+                .HandleAsync(SupplierReturnEvent("evt-s7-prtn-learn"), CancellationToken.None);
+            await learnDb.SaveChangesAsync(CancellationToken.None);
+            purchaseReturnNo = (await learnDb.PurchaseReturns.SingleAsync()).PurchaseReturnNo;
+        }
+
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var coding = scope.ServiceProvider.GetRequiredService<ErpCodingService>();
+        await SeedSupplierReturnAsync(dbContext);
+        await PoisonAllocationAsync(dbContext, JournalVoucherSourceType.PurchaseReturn, purchaseReturnNo);
+        // ⭐ 直接用**生产那个**死信库实现（它自己 SaveChanges），不自建桁——
+        // 自建桁就把「死信会不会顺手提交别人的变更」这件事变成了桁的行为。
+        var deadLetters = new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(dbContext);
+
+        await new WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReturn(dbContext, deadLetters, coding)
+            .HandleAsync(SupplierReturnEvent("evt-s7-prtn-gate"), CancellationToken.None);
+
+        // 死信桩已经 SaveChanges 过一次；这里再 Clear 后重读，读的是**库里**的事实。
+        dbContext.ChangeTracker.Clear();
+        Assert.Empty(await dbContext.PurchaseReturns.ToListAsync());
+        Assert.Empty(await dbContext.DebitNotes.ToListAsync());
+        Assert.Empty(await dbContext.JournalVouchers.ToListAsync());
+        Assert.Empty(await dbContext.ProcessedIntegrationEvents.ToListAsync());
+        Assert.Equal(0m, (await dbContext.AccountPayables.SingleAsync()).DebitNoteAmount);
+        var deadLetter = Assert.Single(await dbContext.Set<IntegrationEventDeadLetter>().ToListAsync());
+        Assert.Equal(ConsumerJournalVoucherNumber.AllocationFailureCode, deadLetter.FailureCode);
+    }
+
+    /// <summary>
+    /// ⭐ 位点 ③（红字通知单凭证）的 gate-and-skip：拿不到号时不建红字单、不动应收、不留已处理记录。
+    /// 跑两遍的理由同上（红字通知单号也是 handler 内部分配的）。
+    /// </summary>
+    [Fact]
+    public async Task Credit_note_gate_skips_without_issuing_the_credit_or_moving_the_receivable()
+    {
+        string creditNoteNo;
+        await using (var learnProvider = CreateProvider())
+        {
+            using var learnScope = learnProvider.CreateScope();
+            var learnDb = learnScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var learnCoding = learnScope.ServiceProvider.GetRequiredService<ErpCodingService>();
+            await SeedRmaAsync(learnDb, learnCoding);
+            await new QualityInspectionResultIntegrationEventHandlerForSettleSalesReturnCredit(
+                    learnDb, new InMemoryIntegrationEventDeadLetterStore(), learnCoding)
+                .HandleAsync(RmaPassedEvent("evt-s7-cn-learn"), CancellationToken.None);
+            await learnDb.SaveChangesAsync(CancellationToken.None);
+            creditNoteNo = (await learnDb.CreditNotes.SingleAsync()).CreditNoteNo;
+        }
+
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var coding = scope.ServiceProvider.GetRequiredService<ErpCodingService>();
+        await SeedRmaAsync(dbContext, coding);
+        await PoisonAllocationAsync(dbContext, JournalVoucherSourceType.CreditNote, creditNoteNo);
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+
+        await new QualityInspectionResultIntegrationEventHandlerForSettleSalesReturnCredit(dbContext, deadLetters, coding)
+            .HandleAsync(RmaPassedEvent("evt-s7-cn-gate"), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Empty(await dbContext.CreditNotes.ToListAsync());
+        Assert.Empty(await dbContext.JournalVouchers.ToListAsync());
+        Assert.Empty(await dbContext.ProcessedIntegrationEvents.ToListAsync());
+        var receivable = await dbContext.AccountReceivables.SingleAsync();
+        Assert.Equal(0m, receivable.CreditNoteAmount);
+        Assert.Null((await dbContext.SalesReturnAuthorizations.SingleAsync()).CreditNoteNo);
+        var deadLetter = Assert.Single(await deadLetters.ListAsync(
+            QualityInspectionResultIntegrationEventHandlerForSettleSalesReturnCredit.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+        Assert.Equal(ConsumerJournalVoucherNumber.AllocationFailureCode, deadLetter.FailureCode);
+    }
+
+    /// <summary>
+    /// ⭐ 位点 ④（工单资本化凭证）的 gate-and-skip：拿不到号时不建凭证、不留已处理记录、
+    /// 也不把 WIP 清理额写进聚合。本位点的来源单号是 payload 里的移动号，用例直接指定，无需跑两遍。
+    /// </summary>
+    [Fact]
+    public async Task Work_order_capitalization_gate_skips_without_posting_or_clearing_wip()
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var coding = scope.ServiceProvider.GetRequiredService<ErpCodingService>();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var cost = WorkOrderCost.Open(OrganizationId, EnvironmentId, "WO-S7-008", "FG-S7");
+        cost.RecordLabor("RPT-S7-008", "WC-S7", 1m, 80m, "CNY", false, DateTimeOffset.Parse("2026-09-15T00:00:00Z"));
+        cost.Complete(4m, 1, 0, DateTimeOffset.Parse("2026-09-15T01:00:00Z"));
+        dbContext.WorkOrderCosts.Add(cost);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await PoisonAllocationAsync(dbContext, JournalVoucherSourceType.WorkOrderCapitalization, "MOVE-S7-008");
+
+        await new StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost(dbContext, deadLetters, dbContext, coding)
+            .HandleAsync(FinishedGoodsReceipt("MOVE-S7-008", "WO-S7-008"), CancellationToken.None);
+
+        dbContext.ChangeTracker.Clear();
+        Assert.Empty(await dbContext.JournalVouchers.ToListAsync());
+        Assert.Empty(await dbContext.ProcessedIntegrationEvents.ToListAsync());
+        Assert.Equal(0m, (await dbContext.WorkOrderCosts.SingleAsync()).WipClearedCost);
+        var deadLetter = Assert.Single(await deadLetters.ListAsync(
+            StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+        Assert.Equal(ConsumerJournalVoucherNumber.AllocationFailureCode, deadLetter.FailureCode);
+    }
+
+    /// <summary>
     /// 本类自建装配而不用 <c>ErpTestProvider.CreateInMemoryProvider</c>：
     /// 位点 ④ 走 <c>CostingIntegrationEventUnitOfWork</c> 会开事务，InMemory provider 默认把
     /// <c>TransactionIgnoredWarning</c> 升成异常。⛔ 不改共用的 <c>ErpTestProvider</c>（那会放宽别人的用例）。
@@ -249,7 +395,7 @@ public sealed class ConsumerJournalVoucherNumberAllocationTests
     {
         var services = new ServiceCollection();
         var databaseName = $"erp-s7-consumer-voucher-no-{Guid.CreateVersion7():N}";
-        // ⴛ 不注册真 MediatR handler：本类只看凭证号与死信，
+        // 不注册真 MediatR handler：本类只看凭证号与死信，
         // 而资本化路径会发领域事件，其 handler 要的依赖不在本装配里。
         services.AddSingleton<IMediator, AllocationNoopMediator>();
         services.AddDbContext<ApplicationDbContext>(options => options
@@ -303,6 +449,70 @@ public sealed class ConsumerJournalVoucherNumberAllocationTests
                 $"mes:finished-goods-receipt:{movementId}", "FG-S7", "ea", "production", "fg-store", null, null,
                 "unrestricted", "organization", OrganizationId, 4m, postedAtUtc, 20m, 80m));
     }
+
+    /// <summary>
+    /// 供应商退货夹具：一张已开票的采购收货，足以让消费者走到建凭证那一步。
+    /// 形状照抄 <c>ErpReturnIntegrationHandlerTests.Completed_supplier_return_…</c>，
+    /// 只把单号换成本类专用前缀，避免与那边的用例共用任何标识。
+    /// </summary>
+    private static async Task SeedSupplierReturnAsync(ApplicationDbContext dbContext)
+    {
+        var order = PurchaseOrder.Create(
+            OrganizationId, EnvironmentId, "PO-S7-PRTN", "SUP-001", "SITE-01", "CNY",
+            [new PurchaseOrderLineDraft("LINE-001", "SKU-S7-001", "EA", 2m, 100m, new DateOnly(2026, 9, 1))]);
+        order.MarkApprovalRequested("approval-s7-prtn");
+        order.ReleaseAfterApproval("approval-s7-prtn");
+        var receipt = PurchaseReceipt.Record(
+            order,
+            "GR-S7-PRTN",
+            [new PurchaseReceiptLineDraft("LINE-001", 1m, "quality", "LOC-QA", null)],
+            1m);
+        var invoice = SupplierInvoice.Match(
+            order, receipt, "SI-S7-PRTN",
+            new DateOnly(2026, 9, 11), new DateOnly(2026, 10, 11), "CNY", 0m, 20m,
+            [new SupplierInvoiceLineDraft("LINE-001", "LINE-001", 1m, 110m)]);
+        var payable = AccountPayable.Create(
+            OrganizationId, EnvironmentId, "AP-S7-PRTN", "SI-S7-PRTN", "SUP-001", 110m, "CNY");
+        dbContext.PurchaseOrders.Add(order);
+        dbContext.PurchaseReceipts.Add(receipt);
+        dbContext.SupplierInvoices.Add(invoice);
+        dbContext.AccountPayables.Add(payable);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+    }
+
+    private static WmsIntegrationEvent SupplierReturnEvent(string eventId)
+        => new(
+            eventId, WmsIntegrationEventTypes.OutboundOrderCompleted, WmsIntegrationEventVersions.V1,
+            DateTimeOffset.Parse("2026-09-15T06:00:00Z"), WmsIntegrationEventSources.BusinessWms,
+            "corr-s7-prtn", "cause-s7-prtn", OrganizationId, EnvironmentId, "system:wms", "idem-s7-prtn",
+            new WmsIntegrationPayload(
+                "RTS-S7-PRTN", "LINE-001", "SKU-S7-001", "EA", "SITE-01", "LOC-QA", 1m, "Completed", null, null,
+                [new WmsIntegrationPayloadLine("LINE-001", "SKU-S7-001", "EA", "SITE-01", "LOC-QA", 1m, "Completed")],
+                WmsSourceDocumentTypes.PurchaseReceiptReturn, "GR-S7-PRTN"));
+
+    /// <summary>RMA 夹具：一张已入库待检的销售退货授权 + 对应应收。</summary>
+    private static async Task SeedRmaAsync(ApplicationDbContext dbContext, ErpCodingService codingService)
+    {
+        var receivable = AccountReceivable.Create(
+            OrganizationId, EnvironmentId, "AR-S7-CN", "DO-S7-CN", "CUST-001", 200m, "CNY");
+        var rma = SalesReturnAuthorization.Authorize(
+            OrganizationId, EnvironmentId, "RMA-S7-CN", "SO-S7-CN", "AR-S7-CN", "CUST-001", "SITE-01", "CNY", 1m,
+            [new SalesReturnAuthorizationLineDraft("LINE-001", "SKU-S7-001", "EA", 1m, 100m, "LOC-RETURN", null)]);
+        rma.MarkWarehouseReceived("IN-S7-CN");
+        dbContext.AccountReceivables.Add(receivable);
+        dbContext.SalesReturnAuthorizations.Add(rma);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        _ = codingService;
+    }
+
+    private static InspectionResultIntegrationEvent RmaPassedEvent(string eventId)
+        => new(
+            eventId, QualityIntegrationEventTypes.InspectionPassed, QualityIntegrationEventVersions.V1,
+            DateTimeOffset.Parse("2026-09-15T07:00:00Z"), QualityIntegrationEventSources.BusinessQuality,
+            "corr-s7-cn", "cause-s7-cn", OrganizationId, EnvironmentId, "system:quality", "idem-s7-cn",
+            new InspectionResultPayload(
+                "QI-S7-CN", "PLAN-S7-CN", QualityInspectionSourceTypes.Receiving, QualityInspectionSourceTypes.Wms,
+                "IN-S7-CN", "SKU-S7-001", 1m, "passed", null, [], DateTimeOffset.Parse("2026-09-15T07:00:00Z")));
 
     private static async Task<PurchaseReceiptRecordedIntegrationEvent> SeedReceiptAsync(
         ApplicationDbContext dbContext,
