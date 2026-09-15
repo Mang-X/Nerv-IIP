@@ -61999,6 +61999,9 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "id": {
+            "type": "string"
+          },
           "voucherNo": {
             "type": "string"
           },

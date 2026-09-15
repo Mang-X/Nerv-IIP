@@ -612,6 +612,12 @@ public sealed class ListJournalVouchersQueryValidator : AbstractValidator<ListJo
 public sealed record ListJournalVouchersResponse(IReadOnlyCollection<JournalVoucherListItem> Items, int Total);
 
 public sealed record JournalVoucherListItem(
+    // #3278 / S3 新增：聚合根 JournalVoucherId 的字符串形式，列表行的稳定标识。
+    // 形状照抄本服务既有 canonical WorkCenterMachineOverheadReconciliationItem.Id：
+    // 读面用 string 承载强类型 Id，不把 JournalVoucherId 本身放进公开契约。
+    // ⚠️ 这不是凭证号：VoucherNo 由 ErpCodingService 分配、面向用户；
+    // Id 只做前端 row-key 等技术用途（前端换用它属 #3278 / S4，本票只负责吐出来）。
+    string Id,
     string VoucherNo,
     DateOnly PostingDate,
     string Status,
@@ -649,8 +655,17 @@ public sealed class ListJournalVouchersQueryHandler(ApplicationDbContext dbConte
 
         if (keyword != null)
         {
+            // #3278 / S3：并入 S2 新增的来源两列，使「按上游单号搜凭证」可用。
+            // 形状照本文件 AccountPayable(:398) / AccountReceivable(:491) / CostCandidate(:572) 三处兄弟写法，
+            // ⚠️ 差别只在 null 卫：JournalVoucher.SourceType / SourceNo 可空（S2 裁定不回填存量行），
+            // 裸 .Contains 在 TreatWarningsAsErrors 下直接是 CS8602（实测：去掉 != null 两支都报错）。
+            // 语义：两列为 null 的存量行按「匹配不到」处理，这是预期而非缺陷。
+            // ⚠️ null 卫只在编译期承重：换成 SourceType!.Contains(...) 后 Postgres 侧 NULL LIKE → NULL 照样被过滤，
+            // EF InMemory 也不抛 NRE，故该变异在测试层存活（等价变异，已在 #3278/S3 PR 正文登记）。
             query = query.Where(x =>
                 x.VoucherNo.Contains(keyword)
+                || (x.SourceType != null && x.SourceType.Contains(keyword))
+                || (x.SourceNo != null && x.SourceNo.Contains(keyword))
                 || x.Lines.Any(line =>
                     line.AccountCode.Contains(keyword)
                     || line.Memo.Contains(keyword)));
@@ -662,6 +677,7 @@ public sealed class ListJournalVouchersQueryHandler(ApplicationDbContext dbConte
             .Skip(page.Skip)
             .Take(page.Take)
             .Select(x => new JournalVoucherListItem(
+                x.Id.ToString(),
                 x.VoucherNo,
                 x.PostingDate,
                 "posted",

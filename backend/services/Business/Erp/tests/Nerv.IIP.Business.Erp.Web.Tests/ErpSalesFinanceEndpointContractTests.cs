@@ -1,3 +1,4 @@
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Web.Application.Auth;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Sales;
@@ -216,6 +217,78 @@ public sealed class ErpSalesFinanceEndpointContractTests
         Assert.Equal("posted", item.Status);
         Assert.Equal(250m, item.TotalDebitAmount);
         Assert.Equal(250m, item.TotalCreditAmount);
+
+        // #3278 / S3：列表项的稳定 id 必须是聚合根自己的 Id，不是凭证号、不是常量、不是空串。
+        var persisted = await dbContext.JournalVouchers
+            .AsNoTracking()
+            .SingleAsync(x => x.VoucherNo == "JV-002", CancellationToken.None);
+        Assert.Equal(persisted.Id.ToString(), item.Id);
+        Assert.NotEqual(item.VoucherNo, item.Id);
+        // 值域必须是裸 Guid 文本（不是 "JournalVoucherId { ... }" 这类 record ToString 形状，也不是空串）。
+        Assert.True(Guid.TryParse(item.Id, out var parsedId) && parsedId != Guid.Empty, item.Id);
+    }
+
+    /// <summary>
+    /// #3278 / S3：S2 落库的 <c>SourceType</c> / <c>SourceNo</c> 必须并进凭证列表的 keyword 检索，
+    /// 否则「拿上游单号找凭证」在 UI 上永远查不到。
+    ///
+    /// ⚠️ 这里刻意**不**用 <c>FinanceVoucherFactory</c> 造数：那些工厂产出的凭证号形如
+    /// <c>JV-AP-{应付单号}</c>，上游单号本身就是凭证号的子串，<c>VoucherNo.Contains</c> 一条就能命中，
+    /// 于是撤掉来源列检索也照样绿（等价输入，零鉴别力）。本用例直接用
+    /// <see cref="JournalVoucher.Post"/> 让来源单号与凭证号**不互为子串**。
+    ///
+    /// <b>覆盖边界</b>：只钉住 <c>SourceType</c> / <c>SourceNo</c> 这两列。
+    /// 日后若再加第三个来源列而不改查询，这条用例不会红——这是已知的失效方向。
+    /// </summary>
+    [Fact]
+    public async Task List_journal_vouchers_query_matches_upstream_source_type_and_source_no()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var postingDate = new DateOnly(2026, 6, 1);
+        JournalVoucherLineDraft[] BalancedLines(string memo) =>
+        [
+            new JournalVoucherLineDraft("1401", 100m, 0m, memo),
+            new JournalVoucherLineDraft("2202", 0m, 100m, memo),
+        ];
+
+        // 凭证号与来源单号互不为子串：命中只可能来自 SourceNo 这一支。
+        dbContext.JournalVouchers.Add(JournalVoucher.Post(
+            "org-001", "env-dev", "JV-7001", postingDate, BalancedLines("ap"), JournalVoucherSourceType.AccountPayable, "UPSTREAM-7788"));
+        dbContext.JournalVouchers.Add(JournalVoucher.Post(
+            "org-001", "env-dev", "JV-7002", postingDate, BalancedLines("inv"), JournalVoucherSourceType.SupplierInvoice, "INV-9900"));
+        var legacy = JournalVoucher.Post(
+            "org-001", "env-dev", "JV-7003", postingDate, BalancedLines("legacy"), JournalVoucherSourceType.Manual, "JV-7003");
+        dbContext.JournalVouchers.Add(legacy);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        // 存量行：S2 裁定不回填，两列读回来是 null。查询必须能安全跨过它，而不是抛 NRE 或整行消失。
+        dbContext.Entry(legacy).Property(nameof(JournalVoucher.SourceType)).CurrentValue = null;
+        dbContext.Entry(legacy).Property(nameof(JournalVoucher.SourceNo)).CurrentValue = null;
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var probe = await dbContext.JournalVouchers.AsNoTracking().SingleAsync(x => x.VoucherNo == "JV-7003", CancellationToken.None);
+        Assert.Null(probe.SourceType);
+        Assert.Null(probe.SourceNo);
+
+        var bySourceNo = await new ListJournalVouchersQueryHandler(dbContext).Handle(
+            new ListJournalVouchersQuery("org-001", "env-dev", "posted", "UPSTREAM-7788", 0, 100),
+            CancellationToken.None);
+        var bySourceType = await new ListJournalVouchersQueryHandler(dbContext).Handle(
+            new ListJournalVouchersQuery("org-001", "env-dev", "posted", "SUPPINV", 0, 100),
+            CancellationToken.None);
+        var legacyByVoucherNo = await new ListJournalVouchersQueryHandler(dbContext).Handle(
+            new ListJournalVouchersQuery("org-001", "env-dev", "posted", "JV-7003", 0, 100),
+            CancellationToken.None);
+
+        Assert.Equal(1, bySourceNo.Total);
+        Assert.Equal("JV-7001", Assert.Single(bySourceNo.Items).VoucherNo);
+        Assert.Equal(1, bySourceType.Total);
+        Assert.Equal("JV-7002", Assert.Single(bySourceType.Items).VoucherNo);
+
+        // 两列为 null 的存量行：来源维度匹配不到（预期），但仍能按凭证号被查到。
+        Assert.Equal("JV-7003", Assert.Single(legacyByVoucherNo.Items).VoucherNo);
     }
 
     [Fact]

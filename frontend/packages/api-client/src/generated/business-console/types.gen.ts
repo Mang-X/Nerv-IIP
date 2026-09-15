@@ -7729,6 +7729,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpJournalVoucherItem = {
+    id?: string;
     voucherNo?: string;
     postingDate?: string;
     status?: string;
