@@ -649,21 +649,34 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
     }
 
     /// <summary>
-    /// 读 <c>pg_index</c> 而不是读 EF 模型——EF 模型是被测方自己的说法，回滚后它根本不会变。
-    /// 断言「来源两列上有且只有一条索引」，否则 Down() 漏删时这里会读到第一条而不报错。
-    /// </summary>
-    /// <summary>
-    /// #3278 / S5 来源两列唯一索引的 partial 谓词，**PostgreSQL 归一化后的全形**
-    /// （<c>pg_get_expr(indpred, indrelid)</c> 的原样输出，不是 EF 配置里写的那串）。
+    /// #3278 / S5 来源两列唯一索引的 partial 谓词，**PostgreSQL deparse 之后的全形**。
     ///
     /// ⭐ <b>为什么钉全形而不是钉子串</b>（复审返修）：此前两处都写成
     /// <c>Assert.Contains("source_type")</c>。实测把四处 filter 定义同步改成
     /// <c>"… AND source_type &lt;&gt; 'APPAY'"</c>——一条让整个付款执行族退出幂等约束的索引——
     /// **30 格全部存活**，而 <c>pg_index</c> 读出的谓词确实已变、两行重复 APPAY 也确实
     /// <c>INSERT 0 2</c> 落了库。子串判据只证明「谓词提到了这两列」，证不了「谓词没别的东西」。
+    ///
+    /// ⚠️ <b>这个常量钉的是 PostgreSQL <c>ruleutils</c> 的 deparse 输出，⛔ 不是我们写进迁移的原文。</b>
+    /// 同一条变异串在两侧读出的 Actual 并不相同，可见 deparse 确实在改写：
+    /// <list type="bullet">
+    /// <item>EF 模型侧（<c>JournalVoucherSourceContractTests</c>）：<c>… AND source_type &lt;&gt; 'APPAY'</c>——原样；</item>
+    /// <item>真库侧（本常量）：<c>… AND ((source_type)::text &lt;&gt; 'APPAY'::text)</c>——PG 补了外层括号**和 <c>::text</c> 显式转换</item>
+    /// </list>
+    /// ⇒ 两串字面不同是**归一化的真实产物**，不是哪一侧被将就了；两侧各钉各的表示，别互相抄。
+    ///
+    /// <b>失效方向</b>：判据从 <c>Contains</c> 换成**全等**之后，「PG 怎么 deparse」就从无所谓变成了承重的。
+    /// 日后 PostgreSQL 大版本若改括号 / 空格 / 转换的写法，这条全等会变成**环境相关的假红**。
+    /// ⭐ 但这个方向是 <b>fail-closed</b>——它会在跑的时候大声炸，⛔ 不会静默放过一条被加了豁免的索引；
+    /// 且 lane 已把镜像钉死在 <c>postgres:18</c>。⇒ **接受这个方向**，⛔ 不加容错、⛔ 不做归一化后比较
+    /// （做了就等于把「谓词没别的东西」这条判据又还回给模糊匹配）。
     /// </summary>
     private const string ExpectedSourceIndexPredicate = "((source_type IS NOT NULL) AND (source_no IS NOT NULL))";
 
+    /// <summary>
+    /// 读 <c>pg_index</c> 而不是读 EF 模型——EF 模型是被测方自己的说法，回滚后它根本不会变。
+    /// 断言「来源两列上有且只有一条索引」，否则 Down() 漏删时这里会读到第一条而不报错。
+    /// </summary>
     private static async Task<(bool IsUnique, string? Predicate)> JournalVoucherSourceIndexShapeAsync(ApplicationDbContext db)
     {
         await db.Database.OpenConnectionAsync();
