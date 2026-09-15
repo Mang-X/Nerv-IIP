@@ -1120,31 +1120,32 @@ internal static class MaintenanceAvailabilityWindowCalculator
             throw new KnownException("deviceAssetIds is required in P0 maintenance availability.");
         }
 
-        // 占用窗口是 [AssetUnavailableFromUtc, 释放时刻]，与查询窗口求交才进读面。
-        // 「释放时刻」是唯一判据，由三个释放来源派生：完工（CompletedAtUtc）、取消（CancelledAtUtc，
-        // 与完工一样会发 AssetRestoredDomainEvent）、报警清除（AlarmClearedAtUtc，报警单的占用随报警消失）。
-        // 三者皆无即尚未释放（null），右边界取查询窗口末端。
-        // 绝不按状态枚举列举：曾经的 `Status == Open || CompletedAtUtc != null` 把在途五态
-        // （Accepted/InProgress/Paused/WaitingForParts/Cancelled）整段从读面上抹掉，
-        // 连带让降级口径的设备运行工时（窗口时长 − 不可用时长）把正在维修的小时数算成运行。
-        // 先投影出释放时刻再过滤，让这个判据在整个查询里只写一次。
+        // 占用窗口 [AssetUnavailableFromUtc, 释放时刻] 与查询窗口求交才进读面。
+        // 「释放时刻」取聚合发 AssetRestoredDomainEvent 的那两个位点：完工（CompletedAtUtc）与
+        // 取消（CancelledAtUtc）。两者皆无即尚未释放，右边界取查询窗口末端。报警清除不算释放 ——
+        // MarkAlarmCleared 既不清 AssetUnavailable 也不发 AssetRestoredDomainEvent，清警后工单仍可
+        // Accept/StartWork 继续修；把它算进释放会让在途停机少扣。
+        //
+        // 这里分两段投影不是啰嗦：释放时刻必须以单个 COALESCE 下推到服务端参与区间比较。
+        // 合并成一段、或把下面两条 Where 提到 Select 之前写成 `x.CompletedAtUtc ?? x.CancelledAtUtc`，
+        // 会让这个判据在查询里出现两次，改一处漏一处。
         var workOrders = await dbContext.MaintenanceWorkOrders
             .Where(x => x.OrganizationId == contract.OrganizationId)
             .Where(x => x.EnvironmentId == contract.EnvironmentId)
             .Where(x => deviceAssetIds.Contains(x.DeviceAssetId))
             .Where(x => x.AssetUnavailable)
             .Where(x => x.AssetUnavailableFromUtc != null)
+            .Where(x => x.AssetUnavailableFromUtc < contract.WindowEndUtc)
             .Select(x => new
             {
                 x.Id,
                 x.DeviceAssetId,
                 x.SourceAlarmId,
                 x.AssetUnavailableFromUtc,
-                ReleasedAtUtc = x.CompletedAtUtc ?? x.CancelledAtUtc ?? x.AlarmClearedAtUtc,
+                ReleasedAtUtc = x.CompletedAtUtc ?? x.CancelledAtUtc,
                 x.SourcePlanCode,
                 x.SourceReferenceId,
             })
-            .Where(x => x.AssetUnavailableFromUtc < contract.WindowEndUtc)
             .Where(x => x.ReleasedAtUtc == null || x.ReleasedAtUtc > contract.WindowStartUtc)
             .OrderBy(x => x.AssetUnavailableFromUtc)
             .Select(x => new MaintenanceWorkOrderAvailabilityProjection(

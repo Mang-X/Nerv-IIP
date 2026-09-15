@@ -324,7 +324,7 @@ public sealed class MaintenanceIntegrationEventHandlerTests
     }
 
     [Fact]
-    public async Task Stable_rule_alarm_events_open_one_work_order_and_clear_runtime_window()
+    public async Task Stable_rule_alarm_events_open_one_work_order_and_keep_the_asset_occupied_until_it_is_released()
     {
         await using var dbContext = CreateDbContext();
         var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
@@ -355,9 +355,11 @@ public sealed class MaintenanceIntegrationEventHandlerTests
                 ["DEV-CNC-01"],
                 null)),
             CancellationToken.None);
+        // 报警清除不是资产释放：MarkAlarmCleared 既不清 AssetUnavailable 也不发 AssetRestoredDomainEvent，
+        // 工单此刻仍是 Open、仍待人去修。占用因此一路顶到查询窗口末端，而不是在清警时刻收口（#2944）。
         var activeAlarm = Assert.Single(availability.Items, x => x.ReasonCode == EquipmentRuntimeReasonCodes.ActiveAlarm);
         Assert.Equal(raisedAtUtc, activeAlarm.StartUtc);
-        Assert.Equal(clearedAtUtc, activeAlarm.EndUtc);
+        Assert.Equal(raisedAtUtc.AddHours(4), activeAlarm.EndUtc);
 
         var runtime = await new MaintenanceUnavailableWindowRuntimeHoursProvider(sender).CalculateFallbackAsync(
             "org-001",
@@ -366,7 +368,7 @@ public sealed class MaintenanceIntegrationEventHandlerTests
             raisedAtUtc,
             raisedAtUtc.AddHours(4),
             CancellationToken.None);
-        Assert.Equal(3m, runtime.RuntimeHours);
+        Assert.Equal(0m, runtime.RuntimeHours);
         Assert.Equal(AssetRuntimeSources.Fallback, runtime.RuntimeSource);
     }
 

@@ -8,8 +8,8 @@ namespace Nerv.IIP.Business.Maintenance.Web.Tests;
 
 /// <summary>
 /// 设备可用性窗口读面表达的是**历史占用记录**：占用窗口 <c>[AssetUnavailableFromUtc, 释放时刻]</c>
-/// 与查询窗口求交。「释放时刻」是唯一判据，由完工（<c>CompletedAtUtc</c>）、取消（<c>CancelledAtUtc</c>）
-/// 与报警清除（<c>AlarmClearedAtUtc</c>）派生；三者皆无即尚未释放。
+/// 与查询窗口求交。「释放时刻」只取聚合发 <c>AssetRestoredDomainEvent</c> 的那两个位点 ——
+/// 完工（<c>CompletedAtUtc</c>）与取消（<c>CancelledAtUtc</c>）；两者皆无即尚未释放。
 ///
 /// 回归背景：谓词曾写成 <c>Status == Open || CompletedAtUtc != null</c>，
 /// 把 <c>MaintenanceWorkOrderStatus</c> 九态里的五态（Accepted / InProgress / Paused /
@@ -17,46 +17,21 @@ namespace Nerv.IIP.Business.Maintenance.Web.Tests;
 /// <c>MaintenanceUnavailableWindowRuntimeHoursProvider</c> 的降级来源，
 /// 「设备运行工时 = 窗口时长 − 不可用时长」会把正在维修的小时数算成运行。
 ///
-/// 这里按**状态全集**参数化，而不是按被点名的状态列举：
-/// <see cref="ReleaseExpectations"/> 缺任何一个枚举值，<see cref="Every_work_order_status_is_classified"/> 即红。
+/// 这里按**状态全集**参数化，而不是按被点名的状态列举：用例直接枚举
+/// <c>Enum.GetValues&lt;MaintenanceWorkOrderStatus&gt;()</c>，新增枚举值走不到
+/// <see cref="CreateUnavailableWorkOrderAt"/> 的到达路径就抛，即红。
 /// </summary>
 public sealed class MaintenanceAvailabilityReleaseWindowTests
 {
-    /// <summary>
-    /// 每个工单状态在可用窗口读面上的预期：是否已释放（决定窗口右边界取释放时刻还是查询窗口末端）。
-    /// 新增枚举值必须在此归类，否则完备性用例红。
-    /// </summary>
-    private static readonly IReadOnlyDictionary<MaintenanceWorkOrderStatus, bool> ReleaseExpectations =
-        new Dictionary<MaintenanceWorkOrderStatus, bool>
-        {
-            [MaintenanceWorkOrderStatus.Open] = false,
-            [MaintenanceWorkOrderStatus.Accepted] = false,
-            [MaintenanceWorkOrderStatus.InProgress] = false,
-            [MaintenanceWorkOrderStatus.Paused] = false,
-            [MaintenanceWorkOrderStatus.WaitingForParts] = false,
-            [MaintenanceWorkOrderStatus.Completed] = true,
-            [MaintenanceWorkOrderStatus.Verified] = true,
-            [MaintenanceWorkOrderStatus.Closed] = true,
-            [MaintenanceWorkOrderStatus.Cancelled] = true,
-        };
-
     public static TheoryData<MaintenanceWorkOrderStatus> AllStatuses()
     {
         var data = new TheoryData<MaintenanceWorkOrderStatus>();
-        foreach (var status in ReleaseExpectations.Keys)
+        foreach (var status in Enum.GetValues<MaintenanceWorkOrderStatus>())
         {
             data.Add(status);
         }
 
         return data;
-    }
-
-    [Fact]
-    public void Every_work_order_status_is_classified()
-    {
-        Assert.Equal(
-            Enum.GetValues<MaintenanceWorkOrderStatus>().OrderBy(x => x).ToArray(),
-            ReleaseExpectations.Keys.OrderBy(x => x).ToArray());
     }
 
     [Theory]
@@ -79,26 +54,28 @@ public sealed class MaintenanceAvailabilityReleaseWindowTests
         Assert.Equal(EquipmentRuntimeAvailabilityStatus.Unavailable, window.AvailabilityStatus);
         Assert.Equal(unavailableFromUtc, window.StartUtc);
 
+        // 期望值取聚合自身的释放时刻，不再另建一张「状态→是否已释放」的表：
+        // 那张表本身就是生产代码明令不可用的「按状态枚举列举」口径。
         var releasedAtUtc = workOrder.CompletedAtUtc ?? workOrder.CancelledAtUtc;
-        if (ReleaseExpectations[status])
+        if (releasedAtUtc is null)
         {
-            Assert.NotNull(releasedAtUtc);
-            Assert.Equal(releasedAtUtc!.Value, window.EndUtc);
-            Assert.True(window.EndUtc < windowEndUtc, "已释放的工单窗口右边界必须落在释放时刻，而不是查询窗口末端。");
+            Assert.Equal(windowEndUtc, window.EndUtc);
         }
         else
         {
-            Assert.Null(releasedAtUtc);
-            Assert.Equal(windowEndUtc, window.EndUtc);
+            Assert.Equal(releasedAtUtc.Value, window.EndUtc);
+            Assert.True(window.EndUtc < windowEndUtc, "已释放的工单窗口右边界必须落在释放时刻，而不是查询窗口末端。");
         }
     }
 
     /// <summary>
-    /// 报警清除是释放来源之一（报警单的占用随报警消失），但工单完工后右边界必须取完工时刻 ——
-    /// 两个来源同时存在时先后次序不能倒过来，否则窗口会在设备还没修完时提前收口。
+    /// 报警清除**不是**资产释放：<c>MarkAlarmCleared</c> 既不清 <c>AssetUnavailable</c>，
+    /// 也不发 <c>AssetRestoredDomainEvent</c>（全聚合只有完工与取消两个发射点）。
+    /// 清警后工单仍可 <c>Accept</c> / <c>StartWork</c> 继续修 —— 此时领域仍算资产不可用，
+    /// 读面若当它已释放就会少扣这段在途停机，正是本票要消除的高估方向。
     /// </summary>
     [Fact]
-    public async Task Completion_wins_over_alarm_clear_when_both_release_sources_exist()
+    public async Task Clearing_the_alarm_does_not_release_an_in_flight_work_order()
     {
         var now = DateTimeOffset.UtcNow;
         var windowStartUtc = now.AddHours(-3);
@@ -110,7 +87,8 @@ public sealed class MaintenanceAvailabilityReleaseWindowTests
             "org-001", "env-dev", "DEV-CNC-01", sourceAlarmId: "WH-DEV-CNC-01-spindle:0001", priority: "high");
         workOrder.MarkAssetUnavailable(unavailableFromUtc, "alarm downtime");
         workOrder.MarkAlarmCleared(now.AddHours(-1));
-        FinishWorkOrder(workOrder);
+        workOrder.Accept("tech-001");
+        workOrder.StartWork();
         dbContext.MaintenanceWorkOrders.Add(workOrder);
         await dbContext.SaveChangesAsync();
 
@@ -118,8 +96,12 @@ public sealed class MaintenanceAvailabilityReleaseWindowTests
 
         var window = Assert.Single(response.Items);
         Assert.Equal(unavailableFromUtc, window.StartUtc);
-        Assert.Equal(workOrder.CompletedAtUtc, window.EndUtc);
-        Assert.True(window.EndUtc > now.AddHours(-1), "完工时刻晚于报警清除时刻，右边界不得回落到报警清除。");
+        Assert.Equal(windowEndUtc, window.EndUtc);
+
+        // 运行工时链是同一份数据的下游：占用一路顶到窗口末端，5 小时必须全额扣减。
+        var runtime = await new MaintenanceUnavailableWindowRuntimeHoursProvider(new AvailabilityQuerySender(dbContext))
+            .CalculateFallbackAsync("org-001", "env-dev", "DEV-CNC-01", windowStartUtc, windowEndUtc, CancellationToken.None);
+        Assert.Equal(1m, Math.Round(runtime.RuntimeHours, 6));
     }
 
     /// <summary>
