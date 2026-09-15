@@ -282,10 +282,27 @@ public sealed class ErpSalesFinanceEndpointContractTests
             new ListJournalVouchersQuery("org-001", "env-dev", "posted", "JV-7003", 0, 100),
             CancellationToken.None);
 
+        // ⭐「关键字框支持**部分**匹配」是这个功能的用途本身，必须单独钉。
+        // 上面三个关键字都是**整值**，在这组输入上 Contains / == / StartsWith / EndsWith 四种匹配方式完全等价
+        // （复审换轴实测：把两支 Contains 换成任一种，全 502 条用例零失败）。
+        // 下面两个关键字取**严格中缀**（两端都截断），把这三种退化写法一并挡掉。
+        var partialSourceNo = await new ListJournalVouchersQueryHandler(dbContext).Handle(
+            new ListJournalVouchersQuery("org-001", "env-dev", "posted", "STREAM-77", 0, 100),
+            CancellationToken.None);
+        var partialSourceType = await new ListJournalVouchersQueryHandler(dbContext).Handle(
+            new ListJournalVouchersQuery("org-001", "env-dev", "posted", "PPIN", 0, 100),
+            CancellationToken.None);
+
         Assert.Equal(1, bySourceNo.Total);
         Assert.Equal("JV-7001", Assert.Single(bySourceNo.Items).VoucherNo);
         Assert.Equal(1, bySourceType.Total);
         Assert.Equal("JV-7002", Assert.Single(bySourceType.Items).VoucherNo);
+
+        // "STREAM-77" 是 "UPSTREAM-7788" 的严格中缀；"PPIN" 是 "SUPPINV" 的严格中缀。
+        Assert.Equal(1, partialSourceNo.Total);
+        Assert.Equal("JV-7001", Assert.Single(partialSourceNo.Items).VoucherNo);
+        Assert.Equal(1, partialSourceType.Total);
+        Assert.Equal("JV-7002", Assert.Single(partialSourceType.Items).VoucherNo);
 
         // 两列为 null 的存量行：来源维度匹配不到（预期），但仍能按凭证号被查到。
         Assert.Equal("JV-7003", Assert.Single(legacyByVoucherNo.Items).VoucherNo);

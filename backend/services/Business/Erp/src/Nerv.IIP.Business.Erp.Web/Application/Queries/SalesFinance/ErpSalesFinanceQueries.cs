@@ -656,12 +656,19 @@ public sealed class ListJournalVouchersQueryHandler(ApplicationDbContext dbConte
         if (keyword != null)
         {
             // #3278 / S3：并入 S2 新增的来源两列，使「按上游单号搜凭证」可用。
-            // 形状照本文件 AccountPayable(:398) / AccountReceivable(:491) / CostCandidate(:572) 三处兄弟写法，
-            // ⚠️ 差别只在 null 卫：JournalVoucher.SourceType / SourceNo 可空（S2 裁定不回填存量行），
-            // 裸 .Contains 在 TreatWarningsAsErrors 下直接是 CS8602（实测：去掉 != null 两支都报错）。
-            // 语义：两列为 null 的存量行按「匹配不到」处理，这是预期而非缺陷。
-            // ⚠️ null 卫只在编译期承重：换成 SourceType!.Contains(...) 后 Postgres 侧 NULL LIKE → NULL 照样被过滤，
-            // EF InMemory 也不抛 NRE，故该变异在测试层存活（等价变异，已在 #3278/S3 PR 正文登记）。
+            // 谓词形状取自本文件 AccountPayable(:398) / AccountReceivable(:491) / CostCandidate(:572)，
+            // 但**与它们并非同形**，已知两处差别：
+            // ① null 卫：JournalVoucher.SourceType / SourceNo 可空（S2 裁定不回填存量行），三处兄弟的来源列都不可空。
+            //    裸 .Contains 在本项目（GenerateDocumentationFile + TreatWarningsAsErrors）下直接是 CS8602（实测两支都报错）。
+            //    语义：两列为 null 的存量行按「匹配不到」处理，这是预期而非缺陷。
+            //    ⚠️ null 卫只在编译期承重：换成 SourceType!.Contains(...) 后 Postgres 侧 NULL LIKE → NULL 照样被过滤，
+            //    EF InMemory 也不抛 NRE，故该变异在测试层存活（等价变异，非覆盖缺口）。
+            // ② **只检索不投影**：三处兄弟把自己检索的每一列都放进了各自的 ListItem
+            //    （AccountPayableListItem.SourceDocumentNo / AccountReceivableListItem.SourceDocumentNo /
+            //    CostCandidateListItem.SourceType + SourceDocumentNo），而 JournalVoucherListItem 不含这两列。
+            //    ⚠️ 后果：用户按 SUPPINV 搜出来的行，屏幕上看不到任何命中理由。展示来源列不在 S3 射程内（属母票 #3278）。
+            // ⚠️ 已知边界：SourceType 存的是 2–7 字符内部码（AP / WOC / WOCADJ / SUPPINV …）且从不上屏，
+            //    并入自由文本检索会过匹配——搜 WOC 同时命中 WOC 与 WOCADJ 两族。这是当前有意接受的行为，不加白名单。
             query = query.Where(x =>
                 x.VoucherNo.Contains(keyword)
                 || (x.SourceType != null && x.SourceType.Contains(keyword))
