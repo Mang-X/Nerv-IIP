@@ -806,7 +806,7 @@ function Assert-AcceptanceScenarioMatrixRuntimePathMutationsDoNotAliasOwners {
 Assert-Contract (Test-Path -LiteralPath $libraryPath -PathType Leaf) 'The CI impact-plan library is missing.'
 . $libraryPath
 
-Assert-ImpactCase -Name 'pure-docs' -Paths @('README.md', 'docs/architecture/context-map.md') -Flags @{
+Assert-ImpactCase -Name 'pure-docs' -Paths @('README.md', 'docs/architecture/overview/context-map.md') -Flags @{
     docs = $true; backend = $false; frontend = $false; scripts = $false; connector_hosts = $false; postgresql = $false; full_chain = $false
 }
 

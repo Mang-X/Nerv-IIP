@@ -1,5 +1,5 @@
 {
-  "description": "Authoritative machine-readable facade-coverage registry for MAN-475/#841. One row per business-service external HTTP endpoint, classified by Gateway exposure. The Nerv.IIP.FacadeCoverage.Tests gate reflects the live *EndpointContracts.All registries of every business service and fails CI if any live endpoint is missing here (unregistered) or if a row here no longer maps to a live endpoint (stale). See docs/architecture/facade-coverage-matrix.md for the governance narrative.",
+  "description": "Authoritative machine-readable facade-coverage registry for MAN-475/#841. One row per business-service external HTTP endpoint, classified by Gateway exposure. The Nerv.IIP.FacadeCoverage.Tests gate reflects the live *EndpointContracts.All registries of every business service and fails CI if any live endpoint is missing here (unregistered) or if a row here no longer maps to a live endpoint (stale). See docs/governance/api/facade-coverage.md for the governance rules.",
   "generatedFrom": [
     "backend/services/Business/*/**/Endpoints/**/*EndpointContracts.All",
     "frontend/packages/api-client/openapi/business-gateway-console.v1.json",
