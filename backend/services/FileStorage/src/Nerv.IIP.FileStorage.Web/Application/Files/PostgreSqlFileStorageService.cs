@@ -679,10 +679,14 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
 
     public async Task<LocalTusUploadSession?> GetTusUploadSessionAsync(
         string uploadSessionId,
+        string organizationId,
+        string environmentId,
         CancellationToken cancellationToken)
     {
         return await dbContext.UploadSessions
             .Where(x => x.UploadSessionId == uploadSessionId
+                && x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
                 && x.Provider == TusUploadProvider.Name
                 && x.State == UploadSessionState.Open
                 && !x.LegacyCompleted)
