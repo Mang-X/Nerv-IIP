@@ -27,12 +27,6 @@ public sealed class GetTusUploadOffsetEndpoint(
         var organizationId = HttpContext.Request.Headers[FileStorageTransferHeaders.OrganizationId].ToString();
         var environmentId = HttpContext.Request.Headers[FileStorageTransferHeaders.EnvironmentId].ToString();
 
-        if (string.IsNullOrWhiteSpace(organizationId) || string.IsNullOrWhiteSpace(environmentId))
-        {
-            await Send.NotFoundAsync(ct);
-            return;
-        }
-
         if (!storeAccessor.TryGet(out var store)
             || await GetTusUploadSessionAsync(files, uploadSessionId, organizationId, environmentId, ct) is not { } session)
         {
@@ -109,12 +103,6 @@ public sealed class PatchTusUploadEndpoint(
         var uploadSessionId = Route<string>("uploadSessionId")!;
         var organizationId = HttpContext.Request.Headers[FileStorageTransferHeaders.OrganizationId].ToString();
         var environmentId = HttpContext.Request.Headers[FileStorageTransferHeaders.EnvironmentId].ToString();
-
-        if (string.IsNullOrWhiteSpace(organizationId) || string.IsNullOrWhiteSpace(environmentId))
-        {
-            await Send.NotFoundAsync(ct);
-            return;
-        }
 
         if (!storeAccessor.TryGet(out var store)
             || await GetTusUploadOffsetEndpoint.GetTusUploadSessionAsync(files, uploadSessionId, organizationId, environmentId, ct) is not { } session)

@@ -14,6 +14,4 @@ public sealed record LocalTusUploadSession(
     string UploadSessionId,
     long ExpectedSizeBytes,
     string? Checksum,
-    DateTimeOffset ExpiresAtUtc,
-    string OrganizationId,
-    string EnvironmentId);
+    DateTimeOffset ExpiresAtUtc);

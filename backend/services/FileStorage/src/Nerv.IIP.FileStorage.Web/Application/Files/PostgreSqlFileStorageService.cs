@@ -694,9 +694,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
                 x.UploadSessionId,
                 x.ExpectedSizeBytes,
                 x.Checksum,
-                x.ExpiresAtUtc,
-                x.OrganizationId,
-                x.EnvironmentId))
+                x.ExpiresAtUtc))
             .SingleOrDefaultAsync(cancellationToken);
     }
 
