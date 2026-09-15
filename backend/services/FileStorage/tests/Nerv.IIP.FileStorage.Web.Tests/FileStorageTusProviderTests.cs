@@ -138,6 +138,7 @@ public sealed class FileStorageTusProviderTests
             patchRequest.Headers.Add("Tus-Resumable", "1.0.0");
             patchRequest.Headers.Add("Upload-Offset", "0");
             patchRequest.Content.Headers.ContentType = new("application/offset+octet-stream");
+            AddDefaultTransferHeaders(patchRequest);
 
             var patchResponse = await client.SendAsync(patchRequest);
 
@@ -167,6 +168,7 @@ public sealed class FileStorageTusProviderTests
             };
             patchRequest.Headers.Add("Upload-Offset", "0");
             patchRequest.Content.Headers.ContentType = new("application/offset+octet-stream");
+            AddDefaultTransferHeaders(patchRequest);
 
             var response = await client.SendAsync(patchRequest);
 
@@ -194,6 +196,7 @@ public sealed class FileStorageTusProviderTests
             patchRequest.Headers.Add("Tus-Resumable", "1.0.0");
             patchRequest.Headers.Add("Upload-Offset", "0");
             patchRequest.Content.Headers.ContentType = new("application/octet-stream");
+            AddDefaultTransferHeaders(patchRequest);
 
             var response = await client.SendAsync(patchRequest);
 
@@ -541,6 +544,100 @@ public sealed class FileStorageTusProviderTests
     }
 
     [Fact]
+    public async Task TusUploadEndpoint_CrossOrganizationAccess_ReturnsNotFound()
+    {
+        var rootPath = CreateTempDirectory();
+        try
+        {
+            await using var factory = CreateFactoryWithTusProvider(rootPath);
+            var client = CreateInternalServiceClient(factory);
+            var created = await CreateTusUploadSessionAsync(client);
+            await PatchTusBytesAsync(client, created.Upload.Url, offset: 0, Encoding.UTF8.GetBytes("hello"));
+
+            // Attempt to access with different organization
+            using var crossOrgHeadRequest = new HttpRequestMessage(HttpMethod.Head, created.Upload.Url);
+            crossOrgHeadRequest.Headers.Add(FileStorageTransferHeaders.OrganizationId, "org-different");
+            crossOrgHeadRequest.Headers.Add(FileStorageTransferHeaders.EnvironmentId, "prod");
+            var crossOrgHeadResponse = await client.SendAsync(crossOrgHeadRequest);
+
+            Assert.Equal(StatusCodes.Status404NotFound, (int)crossOrgHeadResponse.StatusCode);
+
+            // Attempt to patch with different environment
+            using var crossEnvPatchRequest = new HttpRequestMessage(HttpMethod.Patch, created.Upload.Url)
+            {
+                Content = new ByteArrayContent(Encoding.UTF8.GetBytes("world"))
+            };
+            crossEnvPatchRequest.Headers.Add("Tus-Resumable", "1.0.0");
+            crossEnvPatchRequest.Headers.Add("Upload-Offset", "5");
+            crossEnvPatchRequest.Content.Headers.ContentType = new("application/offset+octet-stream");
+            crossEnvPatchRequest.Headers.Add(FileStorageTransferHeaders.OrganizationId, "org-001");
+            crossEnvPatchRequest.Headers.Add(FileStorageTransferHeaders.EnvironmentId, "staging");
+            var crossEnvPatchResponse = await client.SendAsync(crossEnvPatchRequest);
+
+            Assert.Equal(StatusCodes.Status404NotFound, (int)crossEnvPatchResponse.StatusCode);
+
+            // Verify original session is still accessible with correct headers
+            var validHeadResponse = await SendTusHeadAsync(client, created.Upload.Url);
+            Assert.True(validHeadResponse.IsSuccessStatusCode);
+            Assert.Equal(5, GetUploadOffset(validHeadResponse));
+        }
+        finally
+        {
+            DeleteTempDirectory(rootPath);
+        }
+    }
+
+    [Fact]
+    public async Task TusUploadEndpoint_MissingOrganizationHeader_ReturnsNotFound()
+    {
+        var rootPath = CreateTempDirectory();
+        try
+        {
+            await using var factory = CreateFactoryWithTusProvider(rootPath);
+            var client = CreateInternalServiceClient(factory);
+            var created = await CreateTusUploadSessionAsync(client);
+
+            using var headRequest = new HttpRequestMessage(HttpMethod.Head, created.Upload.Url);
+            headRequest.Headers.Add(FileStorageTransferHeaders.EnvironmentId, "prod");
+            var headResponse = await client.SendAsync(headRequest);
+
+            Assert.Equal(StatusCodes.Status404NotFound, (int)headResponse.StatusCode);
+        }
+        finally
+        {
+            DeleteTempDirectory(rootPath);
+        }
+    }
+
+    [Fact]
+    public async Task TusUploadEndpoint_MissingEnvironmentHeader_ReturnsNotFound()
+    {
+        var rootPath = CreateTempDirectory();
+        try
+        {
+            await using var factory = CreateFactoryWithTusProvider(rootPath);
+            var client = CreateInternalServiceClient(factory);
+            var created = await CreateTusUploadSessionAsync(client);
+
+            using var patchRequest = new HttpRequestMessage(HttpMethod.Patch, created.Upload.Url)
+            {
+                Content = new ByteArrayContent(Encoding.UTF8.GetBytes("hello"))
+            };
+            patchRequest.Headers.Add("Tus-Resumable", "1.0.0");
+            patchRequest.Headers.Add("Upload-Offset", "0");
+            patchRequest.Headers.Add(FileStorageTransferHeaders.OrganizationId, "org-001");
+            patchRequest.Content.Headers.ContentType = new("application/offset+octet-stream");
+            var patchResponse = await client.SendAsync(patchRequest);
+
+            Assert.Equal(StatusCodes.Status404NotFound, (int)patchResponse.StatusCode);
+        }
+        finally
+        {
+            DeleteTempDirectory(rootPath);
+        }
+    }
+
+    [Fact]
     public async Task PostgreSqlCreateUploadSession_WithTusProvider_PersistsTusProvider()
     {
         await using var dbContext = CreateDbContext();
@@ -667,7 +764,14 @@ public sealed class FileStorageTusProviderTests
         request.Headers.Add("Tus-Resumable", "1.0.0");
         request.Headers.Add("Upload-Offset", offset.ToString(System.Globalization.CultureInfo.InvariantCulture));
         request.Content.Headers.ContentType = new("application/offset+octet-stream");
+        AddDefaultTransferHeaders(request);
         return request;
+    }
+
+    private static void AddDefaultTransferHeaders(HttpRequestMessage request)
+    {
+        request.Headers.TryAddWithoutValidation(FileStorageTransferHeaders.OrganizationId, "org-001");
+        request.Headers.TryAddWithoutValidation(FileStorageTransferHeaders.EnvironmentId, "prod");
     }
 
     private static void AddTransferHeaders(HttpRequestMessage request, IReadOnlyDictionary<string, string> headers)
@@ -692,7 +796,9 @@ public sealed class FileStorageTusProviderTests
 
     private static Task<HttpResponseMessage> SendTusHeadAsync(HttpClient client, string url)
     {
-        return client.SendAsync(new HttpRequestMessage(HttpMethod.Head, url));
+        var request = new HttpRequestMessage(HttpMethod.Head, url);
+        AddDefaultTransferHeaders(request);
+        return client.SendAsync(request);
     }
 
     private static long GetUploadOffset(HttpResponseMessage response)
