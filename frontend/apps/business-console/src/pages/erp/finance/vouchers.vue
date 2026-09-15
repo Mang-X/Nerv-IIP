@@ -27,7 +27,7 @@ import {
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
-import { UNAVAILABLE_TEXT, erpReadState, formatAmount, formatDate } from '../shared'
+import { UNAVAILABLE_TEXT, erpReadState, formatAmount, formatDate, stableRowKey } from '../shared'
 
 definePage({
   meta: {
@@ -226,7 +226,7 @@ async function submit() {
       :total-items="vouchers.total.value"
       :columns="columns"
       :rows="vouchers.items.value"
-      :row-key="(r: BusinessConsoleErpJournalVoucherItem) => r.voucherNo ?? '凭证'"
+      :row-key="stableRowKey"
       :loading="vouchers.pending.value"
       :searchable="false"
       :column-settings="false"
