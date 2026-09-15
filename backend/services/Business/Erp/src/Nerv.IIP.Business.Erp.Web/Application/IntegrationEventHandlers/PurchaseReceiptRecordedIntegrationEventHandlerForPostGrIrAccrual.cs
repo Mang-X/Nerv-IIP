@@ -5,6 +5,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Infrastructure.IntegrationEvents;
+using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Contracts.Erp;
@@ -17,7 +18,8 @@ namespace Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Erp.PurchaseReceiptRecordedIntegrationEvent", ConsumerName)]
 public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual(
     ApplicationDbContext dbContext,
-    IIntegrationEventDeadLetterStore deadLetterStore)
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    ErpCodingService codingService)
     : IIntegrationEventHandler<PurchaseReceiptRecordedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-erp.purchase-receipt-ap-accrual";
@@ -127,12 +129,6 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAcc
             return;
         }
 
-        if (!await ErpProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
-        {
-            return;
-        }
-
-        var voucherNo = FinanceVoucherFactory.GoodsReceiptIrAccrualVoucherNo(receipt.PurchaseReceiptNo);
         // #3278 / S5：查重键从凭证号搬到来源两列。这两个值必须与
         // FinanceVoucherFactory.ForGoodsReceiptIrAccrual 落库时盖的来源身份**同源**，
         // 否则查重与写入各认各的键，重放会静默再记一张。
@@ -148,10 +144,38 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAcc
             return;
         }
 
+        // #3278 / S7：凭证号改分配器短号。
+        // ⭐ 顺序故意改成「查重 → 分配 → 记 inbox → 建凭证」：
+        // 本 handler 的其余死信路径全部在 inbox 之前，新增的分配失败路径也跟着放在前面，
+        // 分配失败时本次不写 inbox，重投仍可重试。
+        // 行为差：同一来源已有凭证的重投事件现在不再进 inbox（之前会）——
+        // 两者结果相同（不再记第二张），只是少了一行已处理记录。
+        var voucherAllocation = await ConsumerJournalVoucherNumber.TryAllocateAsync(
+            codingService,
+            receipt.OrganizationId,
+            receipt.EnvironmentId,
+            JournalVoucherSourceType.GoodsReceiptIrAccrual,
+            receipt.PurchaseReceiptNo,
+            cancellationToken);
+        if (voucherAllocation.Code is null)
+        {
+            await DeadLetterAsync(
+                integrationEvent,
+                ConsumerJournalVoucherNumber.AllocationFailureCode,
+                voucherAllocation.FailureMessage,
+                cancellationToken);
+            return;
+        }
+
+        if (!await ErpProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
+        {
+            return;
+        }
+
         dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForGoodsReceiptIrAccrual(
             receipt,
             amount,
-            voucherNo));
+            voucherAllocation.Code));
     }
 
     private static ReceiptAccrualDecision TryCalculateReceiptAmount(

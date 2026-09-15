@@ -5,6 +5,7 @@ using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
+using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Messaging.CAP;
@@ -55,13 +56,16 @@ public sealed partial class OperationLaborSettlementOrchestrator
 {
     private readonly ApplicationDbContext dbContext;
     private readonly IIntegrationEventDeadLetterStore deadLetterStore;
+    private readonly ErpCodingService codingService;
 
     public OperationLaborSettlementOrchestrator(
         ApplicationDbContext dbContext,
-        IIntegrationEventDeadLetterStore deadLetterStore)
+        IIntegrationEventDeadLetterStore deadLetterStore,
+        ErpCodingService codingService)
     {
         this.dbContext = dbContext;
         this.deadLetterStore = deadLetterStore;
+        this.codingService = codingService;
     }
 
     public async Task ProcessSettlementAsync(
@@ -205,6 +209,8 @@ public sealed partial class OperationLaborSettlementOrchestrator
             payload.CompletedAtUtc);
         cost.RecordActualLabor(settlement);
         await PostLateAdjustmentIfCapitalizedAsync(
+            MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost.ConsumerName,
+            integrationEvent,
             cost,
             priorTotal,
             $"{payload.OperationTaskId}-r{payload.SettlementRevision}",
@@ -325,21 +331,43 @@ public sealed partial class OperationLaborSettlementOrchestrator
                     && x.WorkOrderId == workOrderId,
                 cancellationToken);
 
+    /// <summary>
+    /// 工单已完全资本化时补一张迟到调整凭证。
+    ///
+    /// ⧐ #3278 / S7：凭证号改分配器短号后多了一条「号没分配到」的失败形态。
+    /// ⴛ 不能 throw（CAP 消费者里会逃逸成 poison message，#877 仍 OPEN）：
+    /// 先 <c>ChangeTracker.Clear()</c> 丢掉本次所有未提交变更（含 inbox 行与结算行），再写死信。
+    /// 本方法是各处理流程的**最后一句**，所以失败不需要向上传控制流。
+    /// </summary>
     private async Task PostLateAdjustmentIfCapitalizedAsync(
+        string consumerName,
+        IIntegrationEventEnvelope integrationEvent,
         WorkOrderCost cost,
         decimal priorTotal,
         string postingIdentity,
         DateTimeOffset postedAtUtc,
         CancellationToken cancellationToken)
     {
-        if (cost.IsFullyCapitalized)
-            await CostVariancePosting.PostLateAdjustmentAsync(
+        if (!cost.IsFullyCapitalized)
+            return;
+        if (await CostVariancePosting.PostLateAdjustmentAsync(
                 dbContext,
+                codingService,
                 cost,
                 cost.TotalAccumulatedCost - priorTotal,
                 postingIdentity,
                 postedAtUtc,
-                cancellationToken);
+                cancellationToken))
+            return;
+
+        dbContext.ChangeTracker.Clear();
+        await deadLetterStore.AddAsync(
+            IntegrationEventDeadLetterMessage.Create(
+                consumerName,
+                integrationEvent,
+                ConsumerJournalVoucherNumber.AllocationFailureCode,
+                $"Journal voucher number could not be allocated for late cost adjustment '{postingIdentity}'."),
+            cancellationToken);
     }
 
     internal static string ComputePayloadHash(
@@ -605,6 +633,8 @@ public sealed partial class OperationLaborSettlementOrchestrator
         }
 
         await PostLateAdjustmentIfCapitalizedAsync(
+            MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost.ConsumerName,
+            integrationEvent,
             cost,
             priorTotal,
             $"{payload.OperationTaskId}-r{payload.SettlementRevision}-void",

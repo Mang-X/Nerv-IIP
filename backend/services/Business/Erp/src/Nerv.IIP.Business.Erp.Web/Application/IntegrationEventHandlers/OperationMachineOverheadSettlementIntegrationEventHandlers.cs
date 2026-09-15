@@ -7,6 +7,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountingPeriodAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkCenterMachineOverheadRateAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
+using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Queries.Finance;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Mes;
@@ -95,7 +96,8 @@ public sealed class MesOperationActualTimeSettlementVoidedV2IntegrationEventHand
 public sealed class OperationMachineOverheadSettlementOrchestrator(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    IErpAdvisoryLockAllocator periodLock)
+    IErpAdvisoryLockAllocator periodLock,
+    ErpCodingService codingService)
 {
     public async Task ProcessSettlementAsync(
         MesOperationActualTimeSettledV2IntegrationEvent integrationEvent,
@@ -193,6 +195,8 @@ public sealed class OperationMachineOverheadSettlementOrchestrator(
         }
         cost.RecordMachineOverhead(settlement);
         await PostLateAdjustmentIfCapitalizedAsync(
+            MesOperationActualTimeSettledV2IntegrationEventHandlerForAccumulateMachineOverhead.ConsumerName,
+            integrationEvent,
             cost,
             priorTotal,
             $"machine-{payload.OperationTaskId}-r{payload.SettlementRevision}",
@@ -345,6 +349,8 @@ public sealed class OperationMachineOverheadSettlementOrchestrator(
             }
         }
         await PostLateAdjustmentIfCapitalizedAsync(
+            MesOperationActualTimeSettlementVoidedV2IntegrationEventHandlerForReverseMachineOverhead.ConsumerName,
+            integrationEvent,
             cost,
             priorTotal,
             $"machine-{payload.OperationTaskId}-r{payload.SettlementRevision}-void",
@@ -539,21 +545,43 @@ public sealed class OperationMachineOverheadSettlementOrchestrator(
         string currencyCode)
         => amount == 0m || cost is null || cost.TryFreezeMachineOverheadCurrency(currencyCode);
 
+    /// <summary>
+    /// 工单已完全资本化时补一张迟到调整凭证。
+    ///
+    /// ⧐ #3278 / S7：凭证号改分配器短号后多了一条「号没分配到」的失败形态。
+    /// ⴛ 不能 throw（CAP 消费者里会逃逸成 poison message，#877 仍 OPEN）：
+    /// 先 <c>ChangeTracker.Clear()</c> 丢掉本次所有未提交变更（含 inbox 行与结算行），再写死信。
+    /// 本方法是各处理流程的**最后一句**，所以失败不需要向上传控制流。
+    /// </summary>
     private async Task PostLateAdjustmentIfCapitalizedAsync(
+        string consumerName,
+        IIntegrationEventEnvelope integrationEvent,
         WorkOrderCost cost,
         decimal priorTotal,
         string postingIdentity,
         DateTimeOffset postedAtUtc,
         CancellationToken cancellationToken)
     {
-        if (cost.IsFullyCapitalized)
-            await CostVariancePosting.PostLateAdjustmentAsync(
+        if (!cost.IsFullyCapitalized)
+            return;
+        if (await CostVariancePosting.PostLateAdjustmentAsync(
                 dbContext,
+                codingService,
                 cost,
                 cost.TotalAccumulatedCost - priorTotal,
                 postingIdentity,
                 postedAtUtc,
-                cancellationToken);
+                cancellationToken))
+            return;
+
+        dbContext.ChangeTracker.Clear();
+        await deadLetterStore.AddAsync(
+            IntegrationEventDeadLetterMessage.Create(
+                consumerName,
+                integrationEvent,
+                ConsumerJournalVoucherNumber.AllocationFailureCode,
+                $"Journal voucher number could not be allocated for late cost adjustment '{postingIdentity}'."),
+            cancellationToken);
     }
 
     private Task AddUnavailableDeadLetterAsync(

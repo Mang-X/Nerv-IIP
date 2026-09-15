@@ -1002,11 +1002,6 @@ public static class FinanceVoucherFactory
     public const string RealizedExchangeGainAccountCode = "6604";
     public const string OnAccountPrepaymentAccountCode = "1123";
 
-    public static string GoodsReceiptIrAccrualVoucherNo(string purchaseReceiptNo)
-    {
-        return ErpVoucherNoPolicy.Compose(VoucherFamily.GoodsReceiptIrAccrual, purchaseReceiptNo);
-    }
-
     public static JournalVoucher ForGoodsReceiptIrAccrual(PurchaseReceipt receipt, decimal amount, string voucherNo)
     {
         return JournalVoucher.Post(
@@ -1046,12 +1041,22 @@ public static class FinanceVoucherFactory
             purchaseReturn.PurchaseReturnNo);
     }
 
-    public static JournalVoucher ForCreditNote(CreditNote creditNote, DateOnly postingDate)
+    /// <summary>
+    /// 客户红字通知单凭证。
+    ///
+    /// ⧐ #3278 / S7：<paramref name="voucherNo"/> 从无到有。改前本方法内联
+    /// <c>ErpVoucherNoPolicy.Compose(VoucherFamily.CreditNote, …)</c> 自己拼号；现在凭证号由唯一调用方
+    /// <c>QualityInspectionResultIntegrationEventHandlerForSettleSalesReturnCredit</c> 从分配器取后传入，
+    /// 与同类的 <see cref="ForPurchaseReturn"/> / <see cref="ForGoodsReceiptIrAccrual"/> 形状对齐。
+    /// ⚠️ 本方法今天只有那一个调用方（扫描面：全仓 <c>ForCreditNote</c>），
+    /// 所以参数化没有给命令侧留下旧形状回落。
+    /// </summary>
+    public static JournalVoucher ForCreditNote(CreditNote creditNote, DateOnly postingDate, string voucherNo)
     {
         return JournalVoucher.Post(
             creditNote.OrganizationId,
             creditNote.EnvironmentId,
-            ErpVoucherNoPolicy.Compose(VoucherFamily.CreditNote, creditNote.CreditNoteNo),
+            voucherNo,
             postingDate,
             [
                 LocalDebit(SalesReturnsAccountCode, creditNote.Amount, creditNote.CurrencyCode, creditNote.ExchangeRate, $"Credit note {creditNote.CreditNoteNo}"),

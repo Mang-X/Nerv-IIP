@@ -116,7 +116,7 @@ public sealed class JournalVoucherSourceValueTests
             ("ARCOL", FinanceVoucherFactory.ForReceivableCollection(receivable, "JV-COL-0001", "ARCOL-0001", 100m, PostingDate, "1002"), "ARCOL", "ARCOL-0001"),
             ("GRIR", FinanceVoucherFactory.ForGoodsReceiptIrAccrual(receipt, 100m, "JV-GRIR-RCV-0001"), "GRIR", "RCV-0001"),
             ("PRTN", FinanceVoucherFactory.ForPurchaseReturn(purchaseReturn, "JV-PRTN-PRTN-0001", PostingDate), "PRTN", "PRTN-0001"),
-            ("CN", FinanceVoucherFactory.ForCreditNote(creditNote, PostingDate), "CN", "CN-0001"),
+            ("CN", FinanceVoucherFactory.ForCreditNote(creditNote, PostingDate, "JV-20260914-000009"), "CN", "CN-0001"),
         };
 
         Assert.Equal(9, expectations.Length);
@@ -157,13 +157,14 @@ public sealed class JournalVoucherSourceValueTests
         db.WorkOrderCosts.Add(cost);
         await db.SaveChangesAsync();
 
-        await CostVariancePosting.PostLateAdjustmentAsync(
+        Assert.True(await CostVariancePosting.PostLateAdjustmentAsync(
             db,
+            ErpTestCoding.For(db),
             cost,
             -60m,
             "machine-OPT-0001-r7-void",
             DateTimeOffset.Parse("2026-09-14T00:00:00Z"),
-            CancellationToken.None);
+            CancellationToken.None));
         await db.SaveChangesAsync();
 
         var voucher = await db.JournalVouchers.SingleAsync();

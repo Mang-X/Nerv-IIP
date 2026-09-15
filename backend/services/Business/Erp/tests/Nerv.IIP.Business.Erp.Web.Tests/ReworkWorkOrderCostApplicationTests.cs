@@ -183,7 +183,7 @@ public sealed class ReworkWorkOrderCostApplicationTests
                 "RM-001", "kg", "production", "line-side", "LOT-RM-001", null,
                 "unrestricted", "organization", "org-001", -3m,
                 completedAtUtc.AddMinutes(-20), 20m, -60m));
-        await new StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost(db, deadLetters, db)
+        await new StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost(db, deadLetters, db, ErpTestCoding.For(db))
             .HandleAsync(material, CancellationToken.None);
 
         var actualTime = new MesOperationActualTimeSettledV2IntegrationEvent(
@@ -203,7 +203,7 @@ public sealed class ReworkWorkOrderCostApplicationTests
             new OperationMachineOverheadSettlementOrchestrator(
                 db,
                 deadLetters,
-                new PostgreSqlErpAdvisoryLockAllocator(db)));
+                new PostgreSqlErpAdvisoryLockAllocator(db), ErpTestCoding.For(db)));
         await machineHandler.HandleAsync(actualTime, CancellationToken.None);
         await machineHandler.HandleAsync(actualTime, CancellationToken.None);
 
@@ -217,7 +217,7 @@ public sealed class ReworkWorkOrderCostApplicationTests
                 2m, 0m, 0m, "ea", 1m, completedAtUtc.AddMinutes(-15), false,
                 MaterialMovementCount: 1));
         var reportHandler = new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(
-            db, deadLetters, db, TestWorkOrderCostMutationLock.Instance);
+            db, deadLetters, db, TestWorkOrderCostMutationLock.Instance, ErpTestCoding.For(db));
         await reportHandler.HandleAsync(report, CancellationToken.None);
         await reportHandler.HandleAsync(report, CancellationToken.None);
 
@@ -282,7 +282,7 @@ public sealed class ReworkWorkOrderCostApplicationTests
             new OperationMachineOverheadSettlementOrchestrator(
                 db,
                 deadLetters,
-                new PostgreSqlErpAdvisoryLockAllocator(db)));
+                new PostgreSqlErpAdvisoryLockAllocator(db), ErpTestCoding.For(db)));
         await machineVoidHandler.HandleAsync(actualTimeVoid, CancellationToken.None);
         await machineVoidHandler.HandleAsync(actualTimeVoid, CancellationToken.None);
 
