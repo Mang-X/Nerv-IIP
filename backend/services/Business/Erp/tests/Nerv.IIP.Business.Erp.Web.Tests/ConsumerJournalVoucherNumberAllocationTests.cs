@@ -287,14 +287,19 @@ public sealed class ConsumerJournalVoucherNumberAllocationTests
         var coding = scope.ServiceProvider.GetRequiredService<ErpCodingService>();
         await SeedSupplierReturnAsync(dbContext);
         await PoisonAllocationAsync(dbContext, JournalVoucherSourceType.PurchaseReturn, purchaseReturnNo);
-        // ⭐ 直接用**生产那个**死信库实现（它自己 SaveChanges），不自建桁——
-        // 自建桁就把「死信会不会顺手提交别人的变更」这件事变成了桁的行为。
+        // ⭐ 直接用**生产那个**死信库实现（它自己 SaveChanges），不自建桩——
+        // 自建桩就把「死信会不会顺手提交别人的变更」这件事变成了桩的行为。
         var deadLetters = new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(dbContext);
 
         await new WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReturn(dbContext, deadLetters, coding)
             .HandleAsync(SupplierReturnEvent("evt-s7-prtn-gate"), CancellationToken.None);
 
-        // 死信桩已经 SaveChanges 过一次；这里再 Clear 后重读，读的是**库里**的事实。
+        // ⭐ 必须**先 SaveChanges 再读**，⛔ 不能只 Clear。
+        // 若只 Clear：一旦投毒键没对上（例如两遍之间跨了 UTC 零点，退货单号不同），
+        // handler 会正常跑完但没人提交，未提交的变更被 Clear 丢掉 ⇒ 下面前 5 条断言**全部空转绿**，
+        // 只剩最后那条 Assert.Single(死信) 红——用例退化成单点。
+        // 加上这次 SaveChanges 后，「没对上」会让第一条 Assert.Empty(PurchaseReturns) 立刻红。
+        await dbContext.SaveChangesAsync(CancellationToken.None);
         dbContext.ChangeTracker.Clear();
         Assert.Empty(await dbContext.PurchaseReturns.ToListAsync());
         Assert.Empty(await dbContext.DebitNotes.ToListAsync());

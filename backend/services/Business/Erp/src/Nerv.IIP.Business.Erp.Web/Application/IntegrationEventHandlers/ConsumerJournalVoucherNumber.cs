@@ -56,33 +56,53 @@ internal readonly record struct JournalVoucherNumberAllocation(string? Code, str
 /// 合并顺序定下来后，本类可以退化成「调 S6 的 <c>AllocateAsync</c> + 一层 try/catch」的薄包装。
 /// </para>
 /// <para>
-/// ⭐ <b>键是定长摘要，不是可读串——这一条是承重的，不是风格</b>。
-/// <c>code_idempotency_keys.idempotency_key</c> 列宽 <see cref="CodeIdempotencyKey.IdempotencyKeyMaxLength"/> = 150，
-/// 而 <c>journal_vouchers.source_no</c> 列宽 150、<c>source_type</c> 列宽 32。
-/// 直接拼 <c>"{类型}:{单号}"</c> 的上界是 32+1+150 = <b>183 &gt; 150</b>，顶格来源单号落库即 PostgreSQL <c>22001</c>——
-/// 正是 #3229 那条「前缀一加必然越界」缺陷的同形复发（本席位第一版就是这么写的，是被这条上界算出来才改掉的）。
-/// 改成 <c>jv:{类型}:{SHA-256 十六进制}</c> 后上界是 3+32+1+64 = <b>100</b>，
-/// **与来源单号长度无关**，没有「合得下 / 合不下」两种形态，也就没有回落分支。
+/// ⭐ <b>键是定长摘要，不是可读串——承重理由是「越界的失败形态本 gate 接不住」</b>。
+///
+/// <c>code_idempotency_keys.idempotency_key</c> 列宽
+/// <see cref="CodeIdempotencyKey.IdempotencyKeyMaxLength"/> = 150。
+/// 如果键写成可读的 <c>"{类型码}:{来源单号}"</c>，越界**不会在取号这一步炸**：
+/// <list type="number">
+/// <item><c>CodeIdempotencyKey</c> 的构造函数**不校长度**（<c>CodeEntities.cs</c>，逐字段直赋）；</item>
+/// <item><c>CodeAllocator.AllocateAsync</c> 只调 <c>_store.AddIdempotencyRecord(...)</c>，
+///   而 <c>EfCoreCodeStore.AddIdempotencyRecord</c> **只做 <c>DbSet.Add</c>、不 <c>SaveChanges</c>**
+///   （<c>EfCoreCodeStore.cs:67-70</c>）；</item>
+/// <item>于是 PostgreSQL <c>22001</c> 要等到**调用方那次 <c>SaveEntitiesAsync</c>** 才抛，
+///   那已经在 <see cref="TryAllocateAsync"/> 的 <c>try</c> 块**之外**。</item>
+/// </list>
+/// ⇒ 裸拼式一旦越界，本类的 gate-and-skip **接不住**，异常会逃逸出消费者成为 poison message——
+/// 而那正是本类存在要消灭的那一种失败形态。摘要式让这条路径**结构上不存在**：
+/// <c>jv:{类型码}:{SHA-256 十六进制}</c> 的上界是 3+32+1+64 = <b>100</b>（类型码按列宽 32 顶格算），
+/// 与来源单号长度无关，没有「合得下 / 合不下」两种形态，也就没有回落分支。
 /// 这条上界由 <c>ConsumerJournalVoucherNumberKeyContractTests</c> 从
 /// <see cref="JournalVoucherSourceType.All"/> 闭集 + EF 模型读出的两个列宽对撞，不靠人手抄。
 /// </para>
 /// <para>
-/// ⚠️ <b>别把上面那个 183 读成「今天的输入会溢出」</b>。183 是**列允许的**最坏情形
-/// （<c>source_type</c> 顶格 32 + <c>source_no</c> 顶格 150）。本票 5 个位点的**实测**上界是：
+/// ⚠️ <b>⛔ 别把上面那条读成「今天的输入会溢出」——今天 5 个位点全部合得下裸拼式</b>。
+/// 逐位点的来源单号上界，以及它**是哪一档事实**：
 /// <list type="bullet">
-/// <item>① <c>GRIR</c> ← <c>PurchaseReceiptNo</c>（列宽 100）⇒ 袸拼 4+1+100 = <b>105</b>；</item>
-/// <item>② <c>PRTN</c> ← <c>PurchaseReturnNo</c>（列宽 100）⇒ <b>105</b>；</item>
-/// <item>③ <c>CN</c> ← <c>CreditNoteNo</c>（列宽 100）⇒ <b>103</b>；</item>
-/// <item>④ <c>WOC</c> ← <c>InventoryMovementId</c>（发布侧 GUID 文本 36，全仓无 <c>HasMaxLength</c>）⇒ <b>40</b>；</item>
+/// <item>① <c>GRIR</c> ← <c>PurchaseReceiptNo</c>：Erp 侧 <c>HasMaxLength(100)</c>，
+///   **列宽约束**（最硬）⇒ 裸拼 4+1+100 = <b>105</b>；</item>
+/// <item>② <c>PRTN</c> ← <c>PurchaseReturnNo</c>：同上 ⇒ <b>105</b>；</item>
+/// <item>③ <c>CN</c> ← <c>CreditNoteNo</c>：同上 ⇒ <b>103</b>；</item>
+/// <item>④ <c>WOC</c> ← <c>payload.InventoryMovementId</c>：**类型级事实**（次硬）——
+///   全仓唯一发布方 <c>InventoryIntegrationEventConverters.cs:15-30</c> 写的是
+///   <c>movementId.ToString()</c>，而 <c>StockMovementId</c> 是 <c>IGuidStronglyTypedId</c>
+///   ⇒ 恒 36 字符 ⇒ 裸拼 3+1+36 = <b>40</b>。
+///   ⚠️ 它**不是列宽约束**：Erp 侧对这个 payload 字段没有任何长度校验，
+///   消费侧也没有入站校验器（<c>IntegrationEventEnvelopeValidator</c> 只查信封字段非空，
+///   不查 payload 字段长度）。⛔ 也别去引 WMS 的
+///   <c>inventory_movement_id HasMaxLength(150)</c> 当上界——那是 WMS **自己消费侧存副本**的列，
+///   在本链路的**下游**，对 ERP 收到的 payload 零约束；</item>
 /// <item>⑤ <c>WOCADJ</c> ← 7 种表达式，最宽 <c>machine-{OperationTaskId:100}-r{long:19}-void</c> = 134
-///   （读数出处：<c>ErpVoucherNoLengthContractTests.WidestAdjustmentSourceIdWidth</c>）⇒ 6+1+134 = <b>141</b>。</item>
+///   （读数出处：<c>ErpVoucherNoLengthContractTests.WidestAdjustmentSourceIdWidth</c>）
+///   ⇒ 裸拼 6+1+134 = <b>141</b>，只剩 9 字符余量；同样先经 payload、无入站校验。</item>
 /// </list>
-/// ⇒ **今天五个位点全部合得下袸拼式**，最窄那格（⑤）剩 9 字符余量。
-/// 所以选摘要式**不是为了修一个今天可达的溢出**，而是为了让上界与来源单号长度解耦：
-/// 否则 <c>OperationTaskId</c> 列宽一动、或 <c>source_no</c> 列宽一动，这 9 字符余量就静默没了。
-/// ⭐ 代价是排障时读不出那一行对应哪张来源单据（只看得出族）。
-/// 本票**没有**做「合得下用袸拼 / 合不下退摘要」那种两形态回落（S6 做的是那种）——
-/// 两形态意味着多一条只在顶格输入下才走的分支，而那条分支今天在消费侧**不可达**。
+/// ⇒ 摘要式的价值**不在**「修一个今天可达的溢出」（没有这样的溢出），
+/// 而在上面那条 A3：⑤ 那 9 字符余量一旦被 <c>OperationTaskId</c> 列宽或 <c>source_no</c> 列宽的变动吃掉，
+/// 失败形态就是**本 gate 接不住的那一种**，而不是一条会红的断言。
+/// ⭐ 代价登记：排障时读不出那一行对应哪张来源单据（只看得出族）。
+/// ⛔ 本票**没有**做「合得下用裸拼 / 合不下退摘要」那种两形态回落——
+/// 两形态意味着多一条只在顶格输入下才走的分支，而那条分支今天在消费侧不可达。
 /// </para>
 /// <para>
 /// ⚠️ <b>分段歧义</b>：摘要输入是**带长度前缀、以 U+001F 分隔**的规范串，

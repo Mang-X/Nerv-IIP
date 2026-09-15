@@ -132,10 +132,18 @@ public sealed class ConsumerJournalVoucherNumberKeyContractTests
     /// 的 <c>try</c> 之外 ⇒ 逃逸成 poison message（#877）。
     /// </para>
     /// <para>
+    /// <b>时间无关性由本条承担</b>：⛔ 本类**没有**再写一条「隔一小段时间重算仍相同」的断言——
+    /// <see cref="ConsumerJournalVoucherNumber.IdempotencyKeyOf"/> 不接受时钟，用例里能制造的时间差
+    /// （几十毫秒）跨不过 <c>yyyyMMdd</c>，那条断言在 M1-TIME 变异下**不会红** = 看起来在防、实际不防。
+    /// 真正钉住这一维的就是上面这五个冻结向量（M1-TIME 实测红 5）。
+    ///
     /// <b>失效方向</b>：黄金向量只钉住这 5 组输入对应的输出。换掉哈希算法、改规范串分隔符、
-    /// 改长度前缀写法都会红；但**新增**一个族而不补向量，本条不会红
-    /// （族的枚举完备性由 <see cref="Keys_are_distinct_across_every_registered_source_type"/>
-    /// 与 <c>JournalVoucherSourceContractTests</c> 的反射对撞承担，不由本条承担）。
+    /// 改长度前缀写法、改前缀串都会红。
+    /// ⚠️ 本注释曾写「新增一个族而不补向量不会红」——**实测说少了**：
+    /// 向 <see cref="JournalVoucherSourceType.All"/> 加一个新族后面板**红 1**，
+    /// 红在 <see cref="Idempotency_key_fits_the_column_for_every_registered_source_type_at_a_saturated_source_no"/>
+    /// 里那条闭集计数（<c>Expected: 12 / Actual: 13</c>）。
+    /// ⇒ 新增族会被逼着走一遍本类，不会静默滑过。
     /// </para>
     /// </remarks>
     [Theory]
@@ -151,27 +159,12 @@ public sealed class ConsumerJournalVoucherNumberKeyContractTests
         var sourceType = Assert.Single(JournalVoucherSourceType.All, x => x.Code == sourceTypeCode);
 
         Assert.Equal(expectedDigest, ConsumerJournalVoucherNumber.Digest(sourceType, sourceNo));
+        // 前缀写**字面量** "jv:"，⛔ 不引用 ConsumerJournalVoucherNumber.KeyPrefix——
+        // 引用常量时改常量会让两侧同时移动（自指），实测：把 KeyPrefix 改成 "zz:" 时本条不红。
+        // 而前缀正是 S6/S7 两侧统一文法所依赖的那一维，它必须被外部锚钉住。
         Assert.Equal(
-            $"{ConsumerJournalVoucherNumber.KeyPrefix}{sourceTypeCode}:{expectedDigest}",
+            $"jv:{sourceTypeCode}:{expectedDigest}",
             ConsumerJournalVoucherNumber.IdempotencyKeyOf(sourceType, sourceNo));
-    }
-
-    /// <summary>
-    /// 同一来源在**两个不同时刻**取到的键逐字节相同——这是上面那条轴的行为侧对照：
-    /// 黄金向量钉的是「输入是哪几段」，这一条钉的是「输入里没有随调用时刻变化的东西」。
-    /// ⛔ 不用假时钟：本方法根本不接受 <c>TimeProvider</c>，掺进来的任何时间源都是真实时钟，
-    /// 用例只要跨一次真实时间推进后重算即可。
-    /// </summary>
-    [Fact]
-    public async Task Idempotency_key_does_not_change_between_two_moments_in_time()
-    {
-        var first = ConsumerJournalVoucherNumber.IdempotencyKeyOf(
-            JournalVoucherSourceType.PurchaseReturn, "PRTN-AXIS-0001");
-        await Task.Delay(TimeSpan.FromMilliseconds(30), CancellationToken.None);
-        var second = ConsumerJournalVoucherNumber.IdempotencyKeyOf(
-            JournalVoucherSourceType.PurchaseReturn, "PRTN-AXIS-0001");
-
-        Assert.Equal(first, second);
     }
 
     private static int MaxLengthOf<TEntity>(string propertyName)
