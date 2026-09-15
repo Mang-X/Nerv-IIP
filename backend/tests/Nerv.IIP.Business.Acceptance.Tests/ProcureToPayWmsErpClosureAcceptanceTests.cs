@@ -76,7 +76,7 @@ public sealed class ProcureToPayWmsErpClosureAcceptanceTests
         Assert.Empty(erpDb.AccountPayables);
         Assert.Empty(erpDb.JournalVouchers);
 
-        var grIrHandler = new PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual(erpDb, deadLetters);
+        var grIrHandler = new PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual(erpDb, deadLetters, new ErpCodingService());
         var receiptEvent = new PurchaseReceiptRecordedIntegrationEventConverter()
             .Convert(new PurchaseReceiptRecordedDomainEvent(receipt));
         await grIrHandler.HandleAsync(receiptEvent, CancellationToken.None);

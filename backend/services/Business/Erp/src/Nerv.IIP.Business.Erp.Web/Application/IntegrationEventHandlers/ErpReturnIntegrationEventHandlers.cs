@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountPayableAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.CreditNoteAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.DebitNoteAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReturnAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesReturnAuthorizationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
@@ -282,11 +283,36 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPur
                 receipt.ExchangeRate));
         }
 
+        // #3278 / S7：凭证号改分配器短号。分配键取 (PRTN, 退货单号)，
+        // 与 S5 那条 partial unique index 同粒度；⧐ 不取 integrationEvent.IdempotencyKey（即上面
+        // :247 给退货单号用的那把键）——那把键的粒度是「一个事件一张退货单」，
+        // 不是「一张退货单一张凭证」。
+        var voucherAllocation = await ConsumerJournalVoucherNumber.TryAllocateAsync(
+            codingService,
+            receipt.OrganizationId,
+            receipt.EnvironmentId,
+            JournalVoucherSourceType.PurchaseReturn,
+            purchaseReturn.PurchaseReturnNo,
+            cancellationToken);
+        if (voucherAllocation.Code is null)
+        {
+            // gate-and-skip：与本 handler 外层 catch 同形——先丢掉本次所有未提交变更
+            // （含 inbox 行、退货单/借项通知单号分配、应付减额），再写死信。
+            // 死信库自己 SaveChanges，所以 Clear 必须在 AddAsync 之前。ⴛ 不能 throw（#877）。
+            dbContext.ChangeTracker.Clear();
+            await DeadLetterAsync(
+                integrationEvent,
+                ConsumerJournalVoucherNumber.AllocationFailureCode,
+                voucherAllocation.FailureMessage,
+                cancellationToken);
+            return;
+        }
+
         dbContext.PurchaseReturns.Add(purchaseReturn);
         dbContext.DebitNotes.AddRange(debitNotes);
         dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForPurchaseReturn(
             purchaseReturn,
-            ErpVoucherNoPolicy.Compose(VoucherFamily.PurchaseReturn, purchaseReturn.PurchaseReturnNo),
+            voucherAllocation.Code,
             DateOnly.FromDateTime(integrationEvent.OccurredAtUtc.UtcDateTime)));
     }
 
@@ -453,11 +479,34 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForSettleSales
                 cancellationToken);
             rma.MarkCreditIssued(allocation.Code);
             var creditNote = CreditNote.Issue(rma, allocation.Code);
+            // #3278 / S7：凭证号改分配器短号。分配键取 (CN, 红字通知单号)。
+            // ⴛ 注意这里有两次分配且走不同规则：上面 allocation 是 credit-note 规则（红字通知单号），
+            // 这里是 journal-voucher 规则（凭证号），两个码不再相等——改前凭证号是 JV-CN-{红字号}。
+            var voucherAllocation = await ConsumerJournalVoucherNumber.TryAllocateAsync(
+                codingService,
+                rma.OrganizationId,
+                rma.EnvironmentId,
+                JournalVoucherSourceType.CreditNote,
+                creditNote.CreditNoteNo,
+                cancellationToken);
+            if (voucherAllocation.Code is null)
+            {
+                // gate-and-skip：与本方法外层 catch 同形（先 Clear 再写死信）。ⴛ 不能 throw（#877）。
+                dbContext.ChangeTracker.Clear();
+                await DeadLetterAsync(
+                    integrationEvent,
+                    ConsumerJournalVoucherNumber.AllocationFailureCode,
+                    voucherAllocation.FailureMessage,
+                    cancellationToken);
+                return;
+            }
+
             receivable.ApplyCreditNote(creditNote.Amount);
             dbContext.CreditNotes.Add(creditNote);
             dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForCreditNote(
                 creditNote,
-                DateOnly.FromDateTime(integrationEvent.OccurredAtUtc.UtcDateTime)));
+                DateOnly.FromDateTime(integrationEvent.OccurredAtUtc.UtcDateTime),
+                voucherAllocation.Code));
         }
         catch (Exception exception) when (exception is KnownException or ArgumentException or ArgumentOutOfRangeException or InvalidOperationException)
         {

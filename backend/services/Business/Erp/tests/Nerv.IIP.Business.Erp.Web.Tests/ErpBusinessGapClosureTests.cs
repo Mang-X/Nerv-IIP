@@ -198,7 +198,7 @@ public sealed class ErpBusinessGapClosureTests
             .Convert(new PurchaseReceiptRecordedDomainEvent(receipt));
         await new PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual(
             dbContext,
-            new InMemoryIntegrationEventDeadLetterStore())
+            new InMemoryIntegrationEventDeadLetterStore(), ErpTestCoding.For(dbContext))
             .HandleAsync(receiptEvent, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -268,7 +268,7 @@ public sealed class ErpBusinessGapClosureTests
         var receipt = dbContext.PurchaseReceipts.Single(x => x.PurchaseReceiptNo == "RCV-FX-001");
         await new PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual(
             dbContext,
-            new InMemoryIntegrationEventDeadLetterStore())
+            new InMemoryIntegrationEventDeadLetterStore(), ErpTestCoding.For(dbContext))
             .HandleAsync(new PurchaseReceiptRecordedIntegrationEventConverter().Convert(new PurchaseReceiptRecordedDomainEvent(receipt)), CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -339,7 +339,7 @@ public sealed class ErpBusinessGapClosureTests
         var receipt = dbContext.PurchaseReceipts.Single(x => x.PurchaseReceiptNo == "RCV-GRIR-VAR");
         await new PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual(
             dbContext,
-            new InMemoryIntegrationEventDeadLetterStore())
+            new InMemoryIntegrationEventDeadLetterStore(), ErpTestCoding.For(dbContext))
             .HandleAsync(new PurchaseReceiptRecordedIntegrationEventConverter().Convert(new PurchaseReceiptRecordedDomainEvent(receipt)), CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
