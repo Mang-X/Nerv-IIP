@@ -42,8 +42,9 @@ MES 页面交付以运行基础就绪为门禁，而不以路由是否存在为�
 
 ## 导航模型
 
-规范的 Console 和 Business Console 导航图现位于
-`docs/architecture/frontend-navigation-map.md`。本节范围限于
+Console 与 Business Console 的产品 IA 与角色导航见
+`docs/product/navigation.md`，当前导航图的生产者索引见
+`docs/reference/frontend/navigation-map.md`。本节范围限于
 MES PC 运行基础重置，并描述围绕生产执行的角色导向分组；
 它不覆盖架构文档中的全局能力目录、角色导航
 规则或路由就绪升级规则。
