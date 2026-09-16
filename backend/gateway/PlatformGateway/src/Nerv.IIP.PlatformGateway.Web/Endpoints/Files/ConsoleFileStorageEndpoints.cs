@@ -225,33 +225,20 @@ public sealed class GetConsoleTusUploadOffsetEndpoint(
         Options(x => x.WithTags("Console Files"));
     }
 
-    public override Task HandleAsync(CancellationToken ct)
-    {
-        var organizationId = HttpContext.Request.Headers["X-Organization-Id"].ToString();
-        var environmentId = HttpContext.Request.Headers["X-Environment-Id"].ToString();
-        if (string.IsNullOrWhiteSpace(organizationId) || string.IsNullOrWhiteSpace(environmentId))
-        {
-            return ResponseDataEndpointResults.WriteErrorAsync(
-                HttpContext,
-                StatusCodes.Status400BadRequest,
-                "X-Organization-Id and X-Environment-Id headers are required.",
-                ct);
-        }
-
-        return AuthorizedProxyEndpointExecutor.ExecuteAsync(
+    public override Task HandleAsync(CancellationToken ct) =>
+        AuthorizedProxyEndpointExecutor.ExecuteAsync(
             HttpContext,
             iam,
             auth,
             GatewayPermissions.FilesUpload,
-            async (_, cancellationToken) =>
+            async (context, cancellationToken) =>
                 await files.ProxyTusHeadAsync(
                     Route<string>("uploadSessionId")!,
-                    organizationId,
-                    environmentId,
+                    context.Principal.OrganizationId,
+                    context.Principal.EnvironmentId,
                     HttpContext.Response,
                     cancellationToken),
             ct);
-    }
 }
 
 [Tags("Console Files")]
@@ -264,34 +251,21 @@ public sealed class PatchConsoleTusUploadEndpoint(
     IGatewayFileStorageClient files)
     : EndpointWithoutRequest
 {
-    public override Task HandleAsync(CancellationToken ct)
-    {
-        var organizationId = HttpContext.Request.Headers["X-Organization-Id"].ToString();
-        var environmentId = HttpContext.Request.Headers["X-Environment-Id"].ToString();
-        if (string.IsNullOrWhiteSpace(organizationId) || string.IsNullOrWhiteSpace(environmentId))
-        {
-            return ResponseDataEndpointResults.WriteErrorAsync(
-                HttpContext,
-                StatusCodes.Status400BadRequest,
-                "X-Organization-Id and X-Environment-Id headers are required.",
-                ct);
-        }
-
-        return AuthorizedProxyEndpointExecutor.ExecuteAsync(
+    public override Task HandleAsync(CancellationToken ct) =>
+        AuthorizedProxyEndpointExecutor.ExecuteAsync(
             HttpContext,
             iam,
             auth,
             GatewayPermissions.FilesUpload,
-            async (_, cancellationToken) =>
+            async (context, cancellationToken) =>
                 await files.ProxyTusPatchAsync(
                     Route<string>("uploadSessionId")!,
-                    organizationId,
-                    environmentId,
+                    context.Principal.OrganizationId,
+                    context.Principal.EnvironmentId,
                     HttpContext.Request,
                     HttpContext.Response,
                     cancellationToken),
             ct);
-    }
 }
 
 [Tags("Console Files")]

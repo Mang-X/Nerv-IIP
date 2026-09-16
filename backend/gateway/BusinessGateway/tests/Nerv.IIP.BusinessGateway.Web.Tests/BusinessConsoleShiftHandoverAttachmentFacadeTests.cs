@@ -483,6 +483,17 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
         // HEAD 与 PATCH 必须落到各自那条腿上，不能共用一个按可空性分派的方法。
         Assert.Equal(method == "HEAD" ? "ups-handover-1" : null, transfer.LastTusHeadUploadSessionId);
         Assert.Equal(method == "PATCH" ? "ups-handover-1" : null, transfer.LastTusPatchUploadSessionId);
+        // 组织和环境必须正确转发
+        if (method == "HEAD")
+        {
+            Assert.Equal("org-001", transfer.LastTusHeadOrganizationId);
+            Assert.Equal("env-dev", transfer.LastTusHeadEnvironmentId);
+        }
+        else
+        {
+            Assert.Equal("org-001", transfer.LastTusPatchOrganizationId);
+            Assert.Equal("env-dev", transfer.LastTusPatchEnvironmentId);
+        }
     }
 
     [Fact]

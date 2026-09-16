@@ -238,13 +238,12 @@ public sealed class GatewayConsoleFileStorageTests
     }
 
     [Fact]
-    public async Task Get_tus_offset_proxies_to_file_storage_and_requires_upload_permission()
+    public async Task Get_tus_offset_proxies_and_requires_upload_permission()
     {
         var files = new FakeGatewayFileStorageClient();
         var auth = FakeGatewayAuthorizationClient.Allowed();
         await using var factory = CreateFactory(files, auth);
         using var request = AuthorizedRequest(HttpMethod.Head, "/api/console/v1/files/tus/upload-session-001");
-        AddTenantHeaders(request);
 
         var response = await factory.CreateClient().SendAsync(request);
 
@@ -258,13 +257,12 @@ public sealed class GatewayConsoleFileStorageTests
     }
 
     [Fact]
-    public async Task Patch_tus_upload_proxies_bytes_and_requires_upload_permission()
+    public async Task Patch_tus_upload_proxies_and_requires_upload_permission()
     {
         var files = new FakeGatewayFileStorageClient();
         var auth = FakeGatewayAuthorizationClient.Allowed();
         await using var factory = CreateFactory(files, auth);
         using var request = AuthorizedRequest(HttpMethod.Patch, "/api/console/v1/files/tus/upload-session-001");
-        AddTenantHeaders(request);
         request.Content = new ByteArrayContent([1, 2, 3]);
         request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/offset+octet-stream");
         request.Headers.Add("Tus-Resumable", "1.0.0");
