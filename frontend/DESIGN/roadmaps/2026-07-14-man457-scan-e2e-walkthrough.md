@@ -1,9 +1,10 @@
 # MAN-457 #811 扫码 → 执行 → NCR 互链 浏览器端 e2e 走查记录
 
-> 证据口径声明：本走查按 `docs/governance/testing/mobile-pda.md`「分层证明范围」一节的分层口径，属
-> **浏览器端 e2e**（Playwright `input.fill()+Enter` 为键盘楔入**近似**）。该文档明确：硬件扫码枪
-> 键盘楔入的真实时序 / 焦点常驻 / 失焦回抢 **不在 e2e 覆盖范围内**，属「真机手动冒烟清单」
-> 第 2 条，须**发版前在目标 PDA（APK）+ 实体扫码枪上人工勾验**。本记录不替代该冒烟项。
+> 证据口径声明：本走查按 `docs/governance/testing/mobile-pda.md`「分层证明范围」的分层口径，属
+> **浏览器端 e2e**（Playwright `input.fill()+Enter` 为键盘楔入**近似**）；硬件扫码枪键盘楔入的
+> 真实时序 / 焦点常驻 / 失焦回抢**不在 mock Playwright 可证明范围内**（该表「不能据此证明」列：
+> 实体扫码枪/相机/IME），属**发版前在目标 PDA（APK）+ 实体扫码枪上的物理设备 smoke**，见
+> `docs/runbooks/testing/mobile-pda.md`「物理设备 smoke」。本记录不替代该冒烟项。
 
 ## 环境
 
