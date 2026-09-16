@@ -1494,7 +1494,12 @@ $liveAssignments = Get-NervSourceSkipAssignments -RepoRoot $repoRoot
 # 修掉假通过后登记义务才浮出来。增至 54。
 # #3222 注册「真实 Redis 订阅连接/超时异常接入既有恢复路径」的 PostgreSQL + Redis/CAP proof
 # （真 SubscribeAsync 的 RedisConnectionException / RedisTimeoutException 只有真 Redis 分得开），增至 55。
-Assert-Equal 55 $liveAssignments.Count '已批准的 source skip 清单变更必须显式分类。'
+# #3278 / S6 注册凭证号取号的真库 proof：换分配器短号后「同一来源单据重复触发只记一张、
+# 且重放拿回同一个号」同时依赖取号回放与 (org, env, source_type, source_no) 的 partial unique index，
+# 而 EF InMemory **看不见唯一索引**、重复行只会多一条不会报错 ⇒ 只有真库分得开。
+# ⭐ 这一条**刻意不蹭** erp-cost-accounting 的 skip 理由（那句写着 cost-accounting，而本类测的是取号），
+# 蹭理由等于把一条假理由固化进证据记录；本仓 canonical 是一类一属性一规则。增至 56。
+Assert-Equal 56 $liveAssignments.Count '已批准的 source skip 清单变更必须显式分类。'
 Assert-True (($liveAssignments | Where-Object sourcePath -like '*SimulatedConnectorHostProcessTests.cs').sourceText.Contains('Windows runs the platform-specific executable resolution contract only', [StringComparison]::Ordinal)) 'Quote-aware scanner must retain semicolons inside a C# string literal.'
 $livePolicy = Import-NervTestEvidencePolicy -Path (Join-Path $repoRoot 'scripts/test-evidence-policy.json')
 $liveViolations = Test-NervTestEvidencePolicy -Policy $livePolicy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)
