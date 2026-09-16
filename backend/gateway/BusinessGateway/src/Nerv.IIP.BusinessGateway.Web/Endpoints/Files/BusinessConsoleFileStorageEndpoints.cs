@@ -294,9 +294,11 @@ public sealed class GetBusinessConsoleShiftHandoverAttachmentTusOffsetEndpoint(
             BusinessGatewayPermissions.MesHandoversManage,
             "mes-shift-handover-attachment-upload",
             Route<string>("uploadSessionId")!,
-            (_, _, cancellationToken) => files.ProxyShiftHandoverAttachmentTusHeadAsync(
+            (organizationId, environmentId, cancellationToken) => files.ProxyShiftHandoverAttachmentTusHeadAsync(
                 tokenProvider.BearerToken,
                 Route<string>("uploadSessionId")!,
+                organizationId,
+                environmentId,
                 HttpContext.Response,
                 cancellationToken),
             ct);
@@ -319,9 +321,11 @@ public sealed class PatchBusinessConsoleShiftHandoverAttachmentTusUploadEndpoint
             BusinessGatewayPermissions.MesHandoversManage,
             "mes-shift-handover-attachment-upload",
             Route<string>("uploadSessionId")!,
-            (_, _, cancellationToken) => files.ProxyShiftHandoverAttachmentTusPatchAsync(
+            (organizationId, environmentId, cancellationToken) => files.ProxyShiftHandoverAttachmentTusPatchAsync(
                 tokenProvider.BearerToken,
                 Route<string>("uploadSessionId")!,
+                organizationId,
+                environmentId,
                 HttpContext.Request,
                 HttpContext.Response,
                 cancellationToken),

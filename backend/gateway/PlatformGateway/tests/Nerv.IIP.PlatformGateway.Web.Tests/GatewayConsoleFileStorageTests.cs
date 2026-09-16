@@ -200,7 +200,64 @@ public sealed class GatewayConsoleFileStorageTests
     }
 
     [Fact]
-    public async Task Patch_tus_upload_proxies_bytes_and_requires_upload_permission()
+    public async Task File_storage_http_client_tus_head_forwards_organization_and_environment_headers()
+    {
+        var handler = new RecordingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.NoContent));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://files.local") };
+        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"));
+        var httpContext = new DefaultHttpContext();
+
+        await files.ProxyTusHeadAsync("upload-session-001", "org-001", "env-dev", httpContext.Response, CancellationToken.None);
+
+        var request = Assert.Single(handler.Requests);
+        Assert.Equal(HttpMethod.Head, request.Method);
+        Assert.Equal("/api/files/v1/tus/upload-session-001", request.RequestUri!.AbsolutePath);
+        Assert.Equal("org-001", request.Headers["X-Organization-Id"]);
+        Assert.Equal("env-dev", request.Headers["X-Environment-Id"]);
+        Assert.Equal("Bearer internal-test-token", request.Authorization!.ToString());
+    }
+
+    [Fact]
+    public async Task File_storage_http_client_tus_patch_forwards_organization_and_environment_headers()
+    {
+        var handler = new RecordingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.NoContent));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://files.local") };
+        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"));
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Method = "PATCH";
+        httpContext.Request.Body = new MemoryStream([1, 2, 3]);
+
+        await files.ProxyTusPatchAsync("upload-session-001", "org-001", "env-dev", httpContext.Request, httpContext.Response, CancellationToken.None);
+
+        var request = Assert.Single(handler.Requests);
+        Assert.Equal(HttpMethod.Patch, request.Method);
+        Assert.Equal("/api/files/v1/tus/upload-session-001", request.RequestUri!.AbsolutePath);
+        Assert.Equal("org-001", request.Headers["X-Organization-Id"]);
+        Assert.Equal("env-dev", request.Headers["X-Environment-Id"]);
+        Assert.Equal("Bearer internal-test-token", request.Authorization!.ToString());
+    }
+
+    [Fact]
+    public async Task Get_tus_offset_proxies_and_requires_upload_permission()
+    {
+        var files = new FakeGatewayFileStorageClient();
+        var auth = FakeGatewayAuthorizationClient.Allowed();
+        await using var factory = CreateFactory(files, auth);
+        using var request = AuthorizedRequest(HttpMethod.Head, "/api/console/v1/files/tus/upload-session-001");
+
+        var response = await factory.CreateClient().SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Equal("1.0.0", response.Headers.GetValues("Tus-Resumable").Single());
+        Assert.Equal("0", response.Headers.GetValues("Upload-Offset").Single());
+        Assert.Equal("upload-session-001", files.LastTusHeadUploadSessionId);
+        Assert.Equal("org-001", files.LastTusHeadOrganizationId);
+        Assert.Equal("env-dev", files.LastTusHeadEnvironmentId);
+        Assert.Equal(GatewayPermissions.FilesUpload, auth.LastRequirement!.PermissionCode);
+    }
+
+    [Fact]
+    public async Task Patch_tus_upload_proxies_and_requires_upload_permission()
     {
         var files = new FakeGatewayFileStorageClient();
         var auth = FakeGatewayAuthorizationClient.Allowed();
@@ -216,6 +273,8 @@ public sealed class GatewayConsoleFileStorageTests
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         Assert.Equal("3", response.Headers.GetValues("Upload-Offset").Single());
         Assert.Equal("upload-session-001", files.LastTusPatchUploadSessionId);
+        Assert.Equal("org-001", files.LastTusPatchOrganizationId);
+        Assert.Equal("env-dev", files.LastTusPatchEnvironmentId);
         Assert.Equal(GatewayPermissions.FilesUpload, auth.LastRequirement!.PermissionCode);
     }
 
@@ -494,7 +553,11 @@ public sealed class GatewayConsoleFileStorageTests
         public FileStorageUsageRequest? LastUsageRequest { get; private set; }
         public string? LastDownloadGrantFileId { get; private set; }
         public string? LastTusHeadUploadSessionId { get; private set; }
+        public string? LastTusHeadOrganizationId { get; private set; }
+        public string? LastTusHeadEnvironmentId { get; private set; }
         public string? LastTusPatchUploadSessionId { get; private set; }
+        public string? LastTusPatchOrganizationId { get; private set; }
+        public string? LastTusPatchEnvironmentId { get; private set; }
         public string? LastDownloadContentGrantId { get; private set; }
         public string? LastDownloadContentOrganizationId { get; private set; }
         public string? LastDownloadContentEnvironmentId { get; private set; }
@@ -566,25 +629,33 @@ public sealed class GatewayConsoleFileStorageTests
 
         public Task ProxyTusHeadAsync(
             string uploadSessionId,
+            string organizationId,
+            string environmentId,
             HttpResponse response,
             CancellationToken cancellationToken)
         {
             ThrowIfConfigured();
             LastTusHeadUploadSessionId = uploadSessionId;
+            LastTusHeadOrganizationId = organizationId;
+            LastTusHeadEnvironmentId = environmentId;
             response.Headers["Tus-Resumable"] = "1.0.0";
             response.Headers["Upload-Offset"] = "0";
-            response.StatusCode = StatusCodes.Status200OK;
+            response.StatusCode = StatusCodes.Status204NoContent;
             return Task.CompletedTask;
         }
 
         public Task ProxyTusPatchAsync(
             string uploadSessionId,
+            string organizationId,
+            string environmentId,
             HttpRequest request,
             HttpResponse response,
             CancellationToken cancellationToken)
         {
             ThrowIfConfigured();
             LastTusPatchUploadSessionId = uploadSessionId;
+            LastTusPatchOrganizationId = organizationId;
+            LastTusPatchEnvironmentId = environmentId;
             response.Headers["Tus-Resumable"] = "1.0.0";
             response.Headers["Upload-Offset"] = "3";
             response.StatusCode = StatusCodes.Status204NoContent;

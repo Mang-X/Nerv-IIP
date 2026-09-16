@@ -231,8 +231,13 @@ public sealed class GetConsoleTusUploadOffsetEndpoint(
             iam,
             auth,
             GatewayPermissions.FilesUpload,
-            async (_, cancellationToken) =>
-                await files.ProxyTusHeadAsync(Route<string>("uploadSessionId")!, HttpContext.Response, cancellationToken),
+            async (context, cancellationToken) =>
+                await files.ProxyTusHeadAsync(
+                    Route<string>("uploadSessionId")!,
+                    context.Principal.OrganizationId,
+                    context.Principal.EnvironmentId,
+                    HttpContext.Response,
+                    cancellationToken),
             ct);
 }
 
@@ -252,9 +257,11 @@ public sealed class PatchConsoleTusUploadEndpoint(
             iam,
             auth,
             GatewayPermissions.FilesUpload,
-            async (_, cancellationToken) =>
+            async (context, cancellationToken) =>
                 await files.ProxyTusPatchAsync(
                     Route<string>("uploadSessionId")!,
+                    context.Principal.OrganizationId,
+                    context.Principal.EnvironmentId,
                     HttpContext.Request,
                     HttpContext.Response,
                     cancellationToken),
