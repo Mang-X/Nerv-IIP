@@ -716,7 +716,10 @@ try {
     $erpMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'erp-postgres-profile' -RepositoryRoot $repoRoot
     # #3278 / S5 把这个数从 24 抬到 28：来源两列的唯一索引、5 个查重位点的端到端重放、
     # 迁移 Up/Down 真跑、WOCADJ 收窄方向，各一条真库身份。
-    Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 28) 'The ERP member must freeze exactly its twenty-eight PostgreSQL identities.'
+    # #3278 / S6 再抬到 29：凭证号改分配器短号后，「同一来源单据重复触发只记一张、
+    # 且重放拿回同一个号」只能在真库上量（EF InMemory 看不见 (org, env, source_type, source_no)
+    # 那条 partial unique index），故新增 ErpJournalVoucherNoPostgresAcceptanceTests 一条真库身份。
+    Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 29) 'The ERP member must freeze exactly its twenty-nine PostgreSQL identities.'
     Assert-Contract ([string]::Equals([string]$erpMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) 'ERP keeps runner-owned databases for failure diagnostics.'
     $acceptanceMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'acceptance-postgres-profile' -RepositoryRoot $repoRoot
     Assert-Contract (@($acceptanceMember.expectedTestIdentities).Count -eq 16) '跨服务验收成员必须冻结十六条 PostgreSQL 测试身份。'
