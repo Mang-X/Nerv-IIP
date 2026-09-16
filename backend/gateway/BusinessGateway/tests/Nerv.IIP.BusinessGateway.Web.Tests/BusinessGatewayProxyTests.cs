@@ -17541,18 +17541,30 @@ internal sealed class RecordingBusinessFileTransferClient : IBusinessFileTransfe
 
     public string? LastTusHeadUploadSessionId { get; private set; }
 
+    public string? LastTusHeadOrganizationId { get; private set; }
+
+    public string? LastTusHeadEnvironmentId { get; private set; }
+
     public string? LastTusPatchUploadSessionId { get; private set; }
+
+    public string? LastTusPatchOrganizationId { get; private set; }
+
+    public string? LastTusPatchEnvironmentId { get; private set; }
 
     public ShiftHandoverAttachmentDownloadTicket? LastAttachmentTicket { get; private set; }
 
     public Task ProxyShiftHandoverAttachmentTusHeadAsync(
         string internalBearerToken,
         string uploadSessionId,
+        string organizationId,
+        string environmentId,
         HttpResponse targetResponse,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
         LastTusHeadUploadSessionId = uploadSessionId;
+        LastTusHeadOrganizationId = organizationId;
+        LastTusHeadEnvironmentId = environmentId;
         targetResponse.StatusCode = StatusCodes.Status204NoContent;
         targetResponse.Headers["Upload-Offset"] = "1024";
         return Task.CompletedTask;
@@ -17561,12 +17573,16 @@ internal sealed class RecordingBusinessFileTransferClient : IBusinessFileTransfe
     public Task ProxyShiftHandoverAttachmentTusPatchAsync(
         string internalBearerToken,
         string uploadSessionId,
+        string organizationId,
+        string environmentId,
         HttpRequest sourceRequest,
         HttpResponse targetResponse,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
         LastTusPatchUploadSessionId = uploadSessionId;
+        LastTusPatchOrganizationId = organizationId;
+        LastTusPatchEnvironmentId = environmentId;
         targetResponse.StatusCode = StatusCodes.Status204NoContent;
         targetResponse.Headers["Upload-Offset"] = "2048";
         return Task.CompletedTask;

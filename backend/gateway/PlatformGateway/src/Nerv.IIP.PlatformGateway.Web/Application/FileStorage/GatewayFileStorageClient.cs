@@ -38,11 +38,15 @@ public interface IGatewayFileStorageClient
 
     Task ProxyTusHeadAsync(
         string uploadSessionId,
+        string organizationId,
+        string environmentId,
         HttpResponse response,
         CancellationToken cancellationToken);
 
     Task ProxyTusPatchAsync(
         string uploadSessionId,
+        string organizationId,
+        string environmentId,
         HttpRequest request,
         HttpResponse response,
         CancellationToken cancellationToken);
@@ -146,6 +150,8 @@ public sealed class HttpGatewayFileStorageClient(
 
     public Task ProxyTusHeadAsync(
         string uploadSessionId,
+        string organizationId,
+        string environmentId,
         HttpResponse response,
         CancellationToken cancellationToken) =>
         ProxyRawAsync(
@@ -153,10 +159,17 @@ public sealed class HttpGatewayFileStorageClient(
             $"/api/files/v1/tus/{Uri.EscapeDataString(uploadSessionId)}",
             null,
             response,
-            cancellationToken);
+            cancellationToken,
+            new Dictionary<string, string>
+            {
+                ["X-Organization-Id"] = organizationId,
+                ["X-Environment-Id"] = environmentId
+            });
 
     public Task ProxyTusPatchAsync(
         string uploadSessionId,
+        string organizationId,
+        string environmentId,
         HttpRequest request,
         HttpResponse response,
         CancellationToken cancellationToken) =>
@@ -165,7 +178,12 @@ public sealed class HttpGatewayFileStorageClient(
             $"/api/files/v1/tus/{Uri.EscapeDataString(uploadSessionId)}",
             request,
             response,
-            cancellationToken);
+            cancellationToken,
+            new Dictionary<string, string>
+            {
+                ["X-Organization-Id"] = organizationId,
+                ["X-Environment-Id"] = environmentId
+            });
 
     public Task ProxyDownloadGrantContentAsync(
         string downloadGrantId,

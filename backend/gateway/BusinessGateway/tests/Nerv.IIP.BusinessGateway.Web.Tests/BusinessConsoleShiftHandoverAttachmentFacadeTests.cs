@@ -253,7 +253,7 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
         var httpContext = ResponseContext();
 
         await client.ProxyShiftHandoverAttachmentTusHeadAsync(
-            "internal-test-token", "ups-handover-1", httpContext.Response, CancellationToken.None);
+            "internal-test-token", "ups-handover-1", "org-001", "env-dev", httpContext.Response, CancellationToken.None);
 
         var sent = handler.Requests[0];
         Assert.Equal(HttpMethod.Head, sent.Method);
@@ -261,6 +261,29 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
         Assert.Null(handler.Bodies[0]);
         Assert.Equal(StatusCodes.Status204NoContent, httpContext.Response.StatusCode);
         Assert.Equal("512", httpContext.Response.Headers["Upload-Offset"]);
+    }
+
+    // #3501：tus HEAD 必须转发 org/env 头，否则 FileStorage 的会话归属校验必 400。
+    [Fact]
+    public async Task Tus_head_forwards_organization_and_environment_headers()
+    {
+        var handler = new StubHandler(request =>
+        {
+            Assert.Equal("org-001", request.Headers.GetValues("X-Organization-Id").Single());
+            Assert.Equal("env-dev", request.Headers.GetValues("X-Environment-Id").Single());
+            var response = new HttpResponseMessage(HttpStatusCode.NoContent);
+            response.Headers.TryAddWithoutValidation("Tus-Resumable", "1.0.0");
+            response.Headers.TryAddWithoutValidation("Upload-Offset", "512");
+            response.Content = new ByteArrayContent([]);
+            return response;
+        });
+        var client = CreateTransferClient(handler);
+        var httpContext = ResponseContext();
+
+        await client.ProxyShiftHandoverAttachmentTusHeadAsync(
+            "internal-test-token", "ups-handover-1", "org-001", "env-dev", httpContext.Response, CancellationToken.None);
+
+        Assert.Single(handler.Requests);
     }
 
     /// <summary>
@@ -287,7 +310,7 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
         var httpContext = ResponseContext();
 
         await client.ProxyShiftHandoverAttachmentTusHeadAsync(
-            "internal-test-token", "ups-handover-1", httpContext.Response, CancellationToken.None);
+            "internal-test-token", "ups-handover-1", "org-001", "env-dev", httpContext.Response, CancellationToken.None);
 
         Assert.False(
             httpContext.Response.Headers.ContainsKey("X-Downstream-Hop"),
@@ -322,11 +345,38 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
         httpContext.Request.Headers["Upload-Checksum"] = "sha256 abc";
 
         await client.ProxyShiftHandoverAttachmentTusPatchAsync(
-            "internal-test-token", "ups-handover-1", httpContext.Request, httpContext.Response, CancellationToken.None);
+            "internal-test-token", "ups-handover-1", "org-001", "env-dev", httpContext.Request, httpContext.Response, CancellationToken.None);
 
         Assert.Equal("chunk", handler.Bodies[0]);
         Assert.Equal(StatusCodes.Status204NoContent, httpContext.Response.StatusCode);
         Assert.Equal("1024", httpContext.Response.Headers["Upload-Offset"]);
+    }
+
+    // #3501：tus PATCH 必须转发 org/env 头，否则 FileStorage 的会话归属校验必 400。
+    [Fact]
+    public async Task Tus_patch_forwards_organization_and_environment_headers()
+    {
+        var handler = new StubHandler(request =>
+        {
+            Assert.Equal("org-001", request.Headers.GetValues("X-Organization-Id").Single());
+            Assert.Equal("env-dev", request.Headers.GetValues("X-Environment-Id").Single());
+            var response = new HttpResponseMessage(HttpStatusCode.NoContent);
+            response.Headers.TryAddWithoutValidation("Upload-Offset", "1024");
+            response.Content = new ByteArrayContent([]);
+            return response;
+        });
+        var client = CreateTransferClient(handler);
+        var httpContext = ResponseContext();
+        httpContext.Request.Method = "PATCH";
+        httpContext.Request.ContentType = "application/offset+octet-stream";
+        httpContext.Request.Body = new MemoryStream("chunk"u8.ToArray());
+        httpContext.Request.Headers["Tus-Resumable"] = "1.0.0";
+        httpContext.Request.Headers["Upload-Offset"] = "512";
+
+        await client.ProxyShiftHandoverAttachmentTusPatchAsync(
+            "internal-test-token", "ups-handover-1", "org-001", "env-dev", httpContext.Request, httpContext.Response, CancellationToken.None);
+
+        Assert.Single(handler.Requests);
     }
 
     // 真栈实测出来的输入：business-gateway 拿不到 FileStorage 地址时连接直接失败。
@@ -343,7 +393,7 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
 
         var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
             client.ProxyShiftHandoverAttachmentTusHeadAsync(
-                "internal-test-token", "ups-handover-1", httpContext.Response, CancellationToken.None));
+                "internal-test-token", "ups-handover-1", "org-001", "env-dev", httpContext.Response, CancellationToken.None));
 
         Assert.Equal(HttpStatusCode.ServiceUnavailable, exception.StatusCode);
         Assert.Equal(failure == "transport" ? "downstream-unavailable" : "downstream-timeout", exception.Message);
@@ -713,7 +763,7 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
                 new BusinessConsoleCreateSopFileDownloadGrantRequest("org-001", "env-dev"),
                 CancellationToken.None));
         var byteCall = transfer.ProxyShiftHandoverAttachmentTusHeadAsync(
-            "internal-test-token", "ups-handover-1", httpContext.Response, CancellationToken.None);
+            "internal-test-token", "ups-handover-1", "org-001", "env-dev", httpContext.Response, CancellationToken.None);
 
         // JSON 面由它自己的 NonIdempotentSafe 管线在 10 秒处切断。
         var jsonFailure = await jsonCall;
@@ -754,7 +804,7 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
         {
             var context = ResponseContext();
             await CallAndSwallowAsync(() => transfer.ProxyShiftHandoverAttachmentTusHeadAsync(
-                "internal-test-token", "ups-handover-1", context.Response, CancellationToken.None));
+                "internal-test-token", "ups-handover-1", "org-001", "env-dev", context.Response, CancellationToken.None));
         }
 
         var reachedBefore = counter.TransferCalls;
@@ -762,7 +812,7 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
 
         var afterBreak = ResponseContext();
         await CallAndSwallowAsync(() => transfer.ProxyShiftHandoverAttachmentTusHeadAsync(
-            "internal-test-token", "ups-handover-1", afterBreak.Response, CancellationToken.None));
+            "internal-test-token", "ups-handover-1", "org-001", "env-dev", afterBreak.Response, CancellationToken.None));
 
         Assert.Equal(reachedBefore, counter.TransferCalls);
     }
@@ -799,7 +849,7 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
         var jsonCallsBefore = counter.JsonCalls;
         var httpContext = ResponseContext();
         await transfer.ProxyShiftHandoverAttachmentTusHeadAsync(
-            "internal-test-token", "ups-handover-1", httpContext.Response, CancellationToken.None);
+            "internal-test-token", "ups-handover-1", "org-001", "env-dev", httpContext.Response, CancellationToken.None);
 
         // 字节面这一发必须真的打到下游。
         Assert.True(counter.TransferCalls > 0, "字节面没有到达下游，说明它仍挂在 JSON 面的熔断器上");
