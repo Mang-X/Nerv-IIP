@@ -638,6 +638,36 @@ public sealed class FileStorageTusProviderTests
     }
 
     [Fact]
+    public async Task TusUploadEndpoint_CaseSensitiveOrganizationAndEnvironment_RejectsUppercase()
+    {
+        var rootPath = CreateTempDirectory();
+        try
+        {
+            await using var factory = CreateFactoryWithTusProvider(rootPath);
+            var client = CreateInternalServiceClient(factory);
+            var created = await CreateTusUploadSessionAsync(client);
+            await PatchTusBytesAsync(client, created.Upload.Url, offset: 0, Encoding.UTF8.GetBytes("hello"));
+
+            // Attempt to access with uppercase organization and environment
+            using var caseInsensitiveHeadRequest = new HttpRequestMessage(HttpMethod.Head, created.Upload.Url);
+            caseInsensitiveHeadRequest.Headers.Add(FileStorageTransferHeaders.OrganizationId, "ORG-001");
+            caseInsensitiveHeadRequest.Headers.Add(FileStorageTransferHeaders.EnvironmentId, "PROD");
+            var caseInsensitiveHeadResponse = await client.SendAsync(caseInsensitiveHeadRequest);
+
+            Assert.Equal(StatusCodes.Status404NotFound, (int)caseInsensitiveHeadResponse.StatusCode);
+
+            // Verify original session is still accessible with correct case
+            var validHeadResponse = await SendTusHeadAsync(client, created.Upload.Url);
+            Assert.True(validHeadResponse.IsSuccessStatusCode);
+            Assert.Equal(5, GetUploadOffset(validHeadResponse));
+        }
+        finally
+        {
+            DeleteTempDirectory(rootPath);
+        }
+    }
+
+    [Fact]
     public async Task PostgreSqlCreateUploadSession_WithTusProvider_PersistsTusProvider()
     {
         await using var dbContext = CreateDbContext();
