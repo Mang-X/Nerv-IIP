@@ -34,10 +34,14 @@ function Get-NervSkillDirectoryNames {
 
         .DESCRIPTION
         The single decision point for "what counts as one skill". A skill is a directory, and
-        both roots this library walks hold non-skill entries at their top level today:
+        both roots this library walks can hold non-skill entries at their top level:
 
-          - skills/README.md is tracked documentation, not a skill;
-          - .agents/skills/.DS_Store appears whenever Finder has visited that directory.
+          - skills/README.md is tracked documentation, not a skill — present today;
+          - .agents/skills/.DS_Store appears whenever Finder has visited that directory —
+            latent, not present today (192 worktrees scanned, zero non-directory entries).
+
+        The rule is shared because the reason to exclude those entries is the same on both
+        roots, not because both roots are dirty today.
 
         Reading either as a skill fails concretely, and differently on each side — which is why
         this is one rule about what a skill is rather than two rules that happen to agree:
@@ -48,6 +52,12 @@ function Get-NervSkillDirectoryNames {
 
         A missing root is not an error: a worktree legitimately has no payload before its first
         install, and a repository need not ship skills/ at all.
+
+        Failure direction of the rule itself: a skill shipped as a single file (skills/foo.md)
+        would be dropped silently, with no gate going red. None exists — the skills CLI publishes
+        directories — but if that ever changes, the fix is to give Get-NervRepoSkillNames its own
+        enumeration back, not to add a mode switch here; the two one-line wrappers are what keeps
+        that escape hatch open.
     #>
     param([Parameter(Mandatory)] [string] $Root)
 
