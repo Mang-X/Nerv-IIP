@@ -625,7 +625,6 @@ else
     var barcodeLabelPrinterDpi = builder.AddParameter("barcode-label-printer-dpi");
     var barcodeLabelPrinterCapabilities = builder.AddParameter("barcode-label-printer-capabilities");
     businessBarcodeLabel = businessBarcodeLabel
-        .WithEnvironment("LabelPrinter__Mode", "zpl-tcp")
         .WithEnvironment("LabelPrinter__Printers__0__Id", barcodeLabelPrinterId)
         .WithEnvironment("LabelPrinter__Printers__0__Host", barcodeLabelPrinterHost)
         .WithEnvironment("LabelPrinter__Printers__0__Port", barcodeLabelPrinterPort)
