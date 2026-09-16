@@ -96,19 +96,6 @@ namespace Nerv.IIP.Business.Erp.Web.Application.Commands;
 /// 的**冻结字面量**钉住，⛔ 不靠两边各读一遍源码。合并后应收敛成一个入口（S8 或后续票）。
 /// </para>
 /// <para>
-/// ⚠️ <b>与客户端可写幂等键的耦合（本 PR 新引入，必须一起看）</b>。
-/// <c>journal-voucher</c> 这条规则改前只有一个消费者 <c>PostJournalVoucherCommand</c>，
-/// 它的 <c>IdempotencyKey</c> 由 <c>ErpSalesFinanceEndpoints</c> **直通请求体**。
-/// 本 PR 把另外 9 个位点也接到同一条规则上 ⇒ 两类键落进
-/// <c>(org, env, rule_key, idempotency_key)</c> **同一个唯一索引**。
-/// 客户端若能写出与某条派生键相同的串，就能让对应的来源单据**永远建不出凭证**
-/// （<c>ToReplay</c> 指纹不符 ⇒ <c>KnownException</c>）。
-/// ⭐ 挡住这个方向的是 <see cref="KeyPrefix"/> 这个**保留前缀**：
-/// <c>PostJournalVoucherCommandValidator</c> 拒收以它开头的客户端键，于是两类键的值域不相交。
-/// <b>失效方向</b>：改掉本类的前缀、或删掉校验器那条规则，两类键就重新可能相等——
-/// 这两个方向都由 <c>Client_supplied_idempotency_keys_cannot_collide_with_derived_keys</c> 看住。
-/// </para>
-/// <para>
 /// <b>本类型不覆盖的面</b>：seed（<c>WorldHistorySeedService</c>）的两处凭证按 #3278「显式不做」
 /// 仍直接写 <c>JV-2026-S{n}</c> / <c>JV-2026-C{n}</c>（世界种子要 backdate 且必须可复算，
 /// 而 <c>Document</c> 规则含 <c>yyyyMMdd</c> + 按日重置序列）。
