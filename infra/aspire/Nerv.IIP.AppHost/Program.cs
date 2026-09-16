@@ -624,6 +624,7 @@ else
     var barcodeLabelPrinterWriteTimeout = builder.AddParameter("barcode-label-printer-write-timeout-seconds");
     var barcodeLabelPrinterDpi = builder.AddParameter("barcode-label-printer-dpi");
     var barcodeLabelPrinterCapabilities = builder.AddParameter("barcode-label-printer-capabilities");
+    // #3509 哨兵探针：只动 infra/，不破坏任何被逐字钉住的内容（取完销毁）。
     businessBarcodeLabel = businessBarcodeLabel
         .WithEnvironment("LabelPrinter__Mode", "zpl-tcp")
         .WithEnvironment("LabelPrinter__Printers__0__Id", barcodeLabelPrinterId)
