@@ -26,28 +26,61 @@ namespace Nerv.IIP.Business.Erp.Web.Application.Commands;
 /// ⭐ <b>键是定长摘要 <c>jv:{类型码}:{SHA-256 十六进制}</c>，不是可读拼串</b>。
 /// 键长恒为 <see cref="KeyPrefix"/>(3) + 类型码 + 1 + <see cref="DigestLength"/>(64)，
 /// **与来源单号长度无关**，因此没有「合得下 / 合不下」两种形态，也就没有回落分支。
-/// <list type="number">
-/// <item><b>列允许的上界</b>：<c>code_idempotency_keys.idempotency_key</c> 列宽 150，而
-///   <c>journal_vouchers.source_no</c> 列宽 150、<c>source_type</c> 列宽 32 ⇒ 可读拼法
-///   <c>"{类型}:{单号}"</c> 的上界是 32+1+150 = 183 &gt; 150，顶格落库即 PostgreSQL <c>22001</c>。
-///   摘要式上界 3+32+1+64 = 100，与单号长度解耦。</item>
-/// <item>⭐ <b>消费侧（S7）有一条今天就可达的越界，这是统一用摘要的第一理由</b>：
-///   <c>WorkOrderCapitalization</c> 族的来源单号取上游 WMS 的 <c>InventoryMovementId</c>，
-///   而那一列是 <c>HasMaxLength(150)</c>（实读 <c>WmsEntityTypeConfigurations.cs:471</c> 与
-///   WMS 的 <c>ApplicationDbContextModelSnapshot</c>）⇒ 可读拼法 <c>WOC</c>(3)+<c>:</c>(1)+150 = <b>154 &gt; 150</b>。
-///   ⚠️ 而它的失败形态**接不住**：<c>EfCoreCodeStore.AddIdempotencyRecord</c> 只做 <c>DbSet.Add</c>、
-///   不 SaveChanges，所以 <c>22001</c> 是在**调用方 UoW** 里抛的，落在消费者 gate 的 try 块之外
-///   ⇒ 逃逸成 poison message（#877 仍 OPEN）。</item>
-/// <item>⚠️ ⛔ <b>但别把那条越界读成「命令侧也会溢出」</b>——两侧理由不同，必须分开看。
-///   本入口 9 个调用点传的来源单号都受各自上游列宽（100）约束，实测真上界 <b>108 / 150、余量 42</b>，
-///   <b>今天没有任何一条生产路径越界</b>。命令侧选摘要式是为了与消费侧统一，
-///   顺带让上界与单号长度解耦（<c>source_no</c> 列宽一动、或某个上游单号列一加宽，那 42 字符余量就静默没了）。</item>
-/// <item>⭐ <b>为什么不做「合得下用可读拼串 / 合不下退摘要」的两形态回落</b>（本席位第一版是那么写的）：
-///   两形态的全部价值在可读性，而可读性只在「今天」成立——任一上游列一加宽，该族就**静默**翻到摘要形态，
-///   于是同一张表里同族的行一半可读一半不可读，比统一不可读更难排障。
-///   实测也证明那条回落分支在命令侧**零个生产路径到达**。</item>
+/// </para>
+/// <para>
+/// ⚠️ <b>承重理由只有一条，⛔ 不是「修一个今天可达的溢出」</b>——今天**两侧都不越界**：
+/// <list type="bullet">
+/// <item>命令侧（本入口）9 个调用点传的来源单号受各自上游列宽约束
+///   （<c>ErpVoucherNoLengthContractTests.UpstreamNoColumnWidth</c> = 100）⇒ 可读拼法上界
+///   <b>108 / 150、余量 42</b>；</item>
+/// <item>消费侧 <c>WorkOrderCapitalization</c> 族的来源单号是发布侧
+///   <c>InventoryIntegrationEventConverters</c> 的 <c>movementId.ToString()</c>，
+///   <c>StockMovementId</c> 是强类型 GUID ⇒ 恒 36
+///   （<c>ErpVoucherNoLengthContractTests.InventoryMovementIdWidth</c> = 36）⇒ 上界 <b>40</b>。</item>
 /// </list>
+/// 真正承重的是**失败形态**这条三步链：<c>EfCoreCodeStore.AddIdempotencyRecord</c> 只做
+/// <c>DbSet.Add</c>、**不 SaveChanges**（<c>EfCoreCodeStore.cs:67</c>）＋ <c>CodeIdempotencyKey</c>
+/// 构造**不校长度** ⇒ 键溢出的 <c>22001</c> 在**调用方 UoW** 才抛、落在消费者 gate 的 <c>try</c> **之外**
+/// ⇒ 逃逸成 poison message（#877 仍 OPEN）。定长键把这条链的入口整个去掉。
+/// 第二条（两侧共有）：一条规则两种文法会让同族的行一半可读一半不可读——任一上游列一加宽，
+/// 该族就**静默**翻到摘要形态，比统一不可读更难排障。
 /// ⭐ 代价如实登记：排障时这一行读不出对应哪张来源单据，只看得出族。
+/// </para>
+/// <para>
+/// ⛔⭐ <b>上界常量一律引 <c>ErpVoucherNoLengthContractTests</c>，不要自己从别处推</b>。
+/// 这张票上「把一个紧的上界配一条不属于该链路的宽列」已经**复发三次**，全部是我写的：
+/// <list type="number">
+/// <item><b>158</b> = 闭集码长 7 × <c>journal_vouchers.source_no</c> 列宽 150
+///   —— <c>source_no</c> 是**本表自己**的列，不约束调用方传进来的值；</item>
+/// <item><b>183</b> = <c>source_type</c> 列宽 32 × <c>source_no</c> 150
+///   —— 类型码是私有构造的闭集，12 个码最长 <c>SUPPINV</c> = 7，**没有生产者写得出 32 字符类型码**；</item>
+/// <item><b>154</b> = <c>WOC</c> 3 × <c>WmsEntityTypeConfigurations.cs:471</c> 的 150
+///   —— 那是 **WMS 自己存 Inventory 回传值的下游副本列**，对 ERP 收到的 payload 零约束。</item>
+/// </list>
+/// 三次的共同形状：**列宽只约束「谁写这一列」，不约束「谁把值传过来」**；
+/// 要算某条链路的上界，得追到**发布侧**的取值。正确读数早就写在
+/// <c>ErpVoucherNoLengthContractTests.cs</c> 里（连同一句「别再照抄旧数」），那个文件是这些常量的权威来源。
+/// </para>
+/// <para>
+/// ⚠️ <b>与客户端可写幂等键的关系（⛔ 别读成「值域不相交」）</b>。
+/// <c>journal-voucher</c> 这条规则改前只有一个消费者 <c>PostJournalVoucherCommand</c>，
+/// 它的 <c>IdempotencyKey</c> 由 <c>ErpSalesFinanceEndpoints</c> 直通请求体；本入口把另外 9 个位点
+/// 也接到同一条规则上，于是客户端可写的幂等键与本入口的派生键落在同一个
+/// <c>(org, env, rule_key, idempotency_key)</c> 命名空间里，
+/// ⛔ <b>两类键的值域并不是不相交的</b>——新文法只保证它们**不会自然相撞**：
+/// 派生键是 <c>jv:{类型码}:{规范串的 SHA-256 大写十六进制}</c>，客户端要撞上必须主动算出正确的摘要，
+/// ⛔ 不是随手写得出的串（改文法之前 <c>{类型}:{单号}</c> 恰好就是派生键，复审实测可触发，
+/// 那才是必须换文法的理由）。
+/// <b>失效方向</b>：
+/// ① 真撞上不会静默——<c>CodeAllocator.ToReplay</c> 吃「同键不同指纹」抛
+/// <see cref="NetCorePal.Extensions.Primitives.KnownException"/>，对应来源单据建不出凭证，
+/// 是响亮失败不是坏账；
+/// ② 有意投毒在**任何**规则的客户端键上都做得到（<c>account-payable</c> 等同理），
+/// ⛔ 不是本入口的安全边界；
+/// ③ 若日后要把它变成**真正**的不相交，判据必须跑在 <c>CodeAllocator.Normalize</c>
+/// （<c>value.Trim()</c>）**之后**——只在 FluentValidation 里比前缀会被前导空白
+/// （空格 / 制表符 / 换行 / U+00A0，复审实测四种）绕过，而且会误伤
+/// <c>jv:2026-09-16-001</c> 这类自然键。本入口**没有**加那条规则。
 /// </para>
 /// <para>
 /// ⭐ <b>与 #3278 / S7 的 <c>ConsumerJournalVoucherNumber</c> 逐字一致</b>（前缀、分隔、
@@ -89,8 +122,9 @@ internal static class JournalVoucherNoAllocation
     public const string RuleKey = "journal-voucher";
 
     /// <summary>
-    /// 派生幂等键的保留前缀。⭐ 与 S7 的 <c>ConsumerJournalVoucherNumber.KeyPrefix</c> 同值，
-    /// 并且是 <c>PostJournalVoucherCommandValidator</c> 拒收客户端键的判据——改它要同时改那三处。
+    /// 派生幂等键的前缀。⭐ 与 S7 的 <c>ConsumerJournalVoucherNumber.KeyPrefix</c> 同值——
+    /// 改它就是改跨席位文法，必须两侧同改并重跑冻结字面量那条用例。
+    /// ⛔ 它**不是**任何校验器的判据（见上面「与客户端可写幂等键的关系」）。
     /// </summary>
     public const string KeyPrefix = "jv:";
 
@@ -128,9 +162,10 @@ internal static class JournalVoucherNoAllocation
             // ⛔ 不接受调用方给定码：凭证号的值域从此只由规则产生。
             requestedCode: null,
             AllocationIdempotencyKey(sourceType, sourceNo),
-            // 指纹取的就是键里那个摘要：同键必同指纹 ⇒「同键不同指纹」那条
-            // KnownException 路径在本入口结构上不可达（只有外部直接篡改
-            // code_idempotency_keys 行、或客户端写出同形键才够得到，后者由保留前缀挡住）。
+            // 指纹取的就是键里那个摘要：同键必同指纹 ⇒「同键不同指纹」那条 KnownException
+            // 在**本入口自己的调用之间**不可达。⚠️ 它并非全局不可达：外部直接篡改
+            // code_idempotency_keys 行、或客户端用同一把串走 PostJournalVoucherCommand
+            // 都够得到（见上面「与客户端可写幂等键的关系」）。
             Digest(sourceType, sourceNo),
             cancellationToken);
         return allocation.Code;

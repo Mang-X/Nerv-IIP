@@ -862,17 +862,13 @@ public sealed class PostJournalVoucherCommandValidator : AbstractValidator<PostJ
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.VoucherNo).MaximumLength(ErpVoucherNoPolicy.ColumnMaxLength);
-        // ⭐ #3278 / S6：保留 `jv:` 前缀。本票之前，`journal-voucher` 这条规则只有本命令一个消费者，
-        // 它的 IdempotencyKey 由端点直通请求体、这里一条规则都没有；本票把另外 9 个位点也接到同一条规则上，
-        // 于是客户端键与派生键落进 code_idempotency_keys 的**同一个**唯一索引
-        // (org, env, rule_key, idempotency_key)。客户端一旦写出与某条派生键相同的串，
-        // 对应的来源单据就**永远建不出凭证**（ToReplay 指纹不符 ⇒ KnownException）。
-        // 保留前缀让两类键的值域不相交——这是把一条本票新引入的耦合关死，
-        // ⛔ 不是给这个字段补长度校验（那条 22001 属 #3288 族，本票不收）。
-        RuleFor(x => x.IdempotencyKey)
-            .Must(idempotencyKey => idempotencyKey is null
-                || !idempotencyKey.StartsWith(JournalVoucherNoAllocation.KeyPrefix, StringComparison.Ordinal))
-            .WithMessage($"幂等键不能以『{JournalVoucherNoAllocation.KeyPrefix}』开头，该前缀由系统派生凭证号保留。");
+        // #3278 / S6：本命令的 IdempotencyKey 与本服务的派生凭证号取号键落在同一个
+        // (org, env, rule_key, idempotency_key) 命名空间里。⛔ 这里**刻意不加**「保留 jv: 前缀」那类规则：
+        // 复审实测它挡不住——CodeAllocator.Normalize 就是 value.Trim()（CodeAllocator.cs:359-362），
+        // 跑在 FluentValidation **之后**，前导空格 / 制表符 / 换行 / U+00A0 四种输入都能绕过；
+        // 而它反过来会误伤 `jv:2026-09-16-001` 这种自然键。
+        // 两类键为什么今天不会自然相撞、以及那条判据将来要放在哪里，写在
+        // JournalVoucherNoAllocation 的 remarks 里（⛔ 那里也没写成「不可能相等」）。
         RuleFor(x => x.PostingDate).NotEqual(default(DateOnly));
         RuleFor(x => x.Lines).NotEmpty().Must(x => x.Count >= 2).WithMessage("At least two voucher lines are required.");
         RuleForEach(x => x.Lines).ChildRules(line =>

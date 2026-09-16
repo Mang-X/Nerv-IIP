@@ -37,9 +37,13 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 /// </para>
 ///
 /// <para>
-/// ⭐ 另外两条轴也在本类：**跨席位键文法冻结**（与 S7 的 <c>ConsumerJournalVoucherNumber</c> 逐字一致，
-/// 差一个字节就会在合并后撞 23505 / <c>ToReplay</c> 的 <c>KnownException</c>）与
-/// **客户端可写键与派生键值域不相交**（本 PR 把 9 个位点接到 <c>journal-voucher</c> 规则上时新引入的耦合）。
+/// ⭐ 本类还有一条轴：**跨席位键文法冻结**（与 S7 的 <c>ConsumerJournalVoucherNumber</c> 逐字一致，
+/// 差一个字节就会在合并后撞 23505 / <c>ToReplay</c> 的 <c>KnownException</c>）。
+/// ⛔ <b>本类不再断言「客户端可写键与派生键值域不相交」</b>——那条曾经写在这里，
+/// 但复审实测它是假的（前导空白可绕过 FluentValidation 里的前缀判据，因为
+/// <c>CodeAllocator.Normalize</c> 的 <c>Trim()</c> 跑在校验之后）。
+/// 现在的表述是「不会自然相撞」，连同三条失效方向写在
+/// <see cref="JournalVoucherNoAllocation"/> 的 remarks 里。
 /// </para>
 /// </summary>
 public sealed class JournalVoucherNoAllocationTests
@@ -78,11 +82,12 @@ public sealed class JournalVoucherNoAllocationTests
         var keyWidth = model.FindEntityType(typeof(CodeIdempotencyKey))!
             .GetProperty(nameof(CodeIdempotencyKey.IdempotencyKey)).GetMaxLength()!.Value;
 
-        // 前提：可读拼法确实越界——否则「摘要式塞得下」这条就没有承重对象。
-        Assert.True(
-            sourceTypeWidth + 1 + sourceNoWidth > keyWidth,
-            $"可读拼法上界 {sourceTypeWidth + 1 + sourceNoWidth} 没有超出列宽 {keyWidth}，本条已不再有承重对象。");
-
+        // ⚠️ ⛔ 这里**刻意不写**「可读拼法 32+1+150=183 必越界」那种前提：
+        // source_type 是私有构造的闭集（12 个码最长 SUPPINV = 7），**没有生产者写得出 32 字符类型码**；
+        // source_no 是本表自己的列，也不约束调用方传进来的值。
+        // 「列宽 × 列宽」算出来的上界不属于任何一条真实链路——这张票上同形失真已复发三次（158/183/154）。
+        // 摘要式的承重理由是**失败形态**（22001 在调用方 UoW 才抛、消费者 gate 接不住 ⇒ poison message），
+        // 不是「今天会溢出」。本条只量「键长与单号长度无关、且塞得进列」这两件可观测的事。
         var saturatedSourceNo = new string('N', sourceNoWidth);
         foreach (var sourceType in JournalVoucherSourceType.All)
         {
@@ -98,8 +103,9 @@ public sealed class JournalVoucherNoAllocationTests
             Assert.True(saturatedKey.Length <= keyWidth, $"族『{sourceType.Code}』的键长 {saturatedKey.Length} 超出列宽 {keyWidth}。");
         }
 
-        // 类型上界：族码顶格（列宽 32）时也塞得下。与上面的逐族枚举不同轴——
-        // 逐族跑的是**今天登记的**码值，这一格跑的是**列允许的**最宽码值。
+        // 余量格：族码即使顶到 source_type 的列宽（32）也塞得下。
+        // ⛔ 别把这一格读成「有生产者会写出 32 字符类型码」——闭集不允许；
+        // 它量的只是「本文法对该列宽仍有余量」，是一条**宽松**的健壮性读数。
         Assert.True(
             JournalVoucherNoAllocation.KeyPrefix.Length + sourceTypeWidth + 1 + JournalVoucherNoAllocation.DigestLength <= keyWidth);
     }
@@ -149,6 +155,15 @@ public sealed class JournalVoucherNoAllocationTests
     ///
     /// <para>另一半是类型码里不含分隔符——只举几个具体键互不相等的例子挡不住
     /// 「某天给类型码里加一个冒号」。类型码互异那一半由 <c>JournalVoucherSourceContractTests</c> 承担，本条不重复。</para>
+    ///
+    /// <para>⭐ <b>鉴别力边界（如实登记，⛔ 别把本条读成「规范串构造被钉住了」）</b>：
+    /// 本条打的是「键**单射**」这个**结果**，而这个结果被键里的**明文类型码**（<c>jv:{Code}:</c>）兜住 ⇒
+    /// 对**规范串内部怎么构造**几乎零鉴别力。复审变异实测：把规范串的单侧中缀 <c>:</c> 改成 <c>-</c>、
+    /// 或把规范串里的类型段整个丢掉，本条**都不红**，红的只有
+    /// <see cref="Allocation_key_matches_the_frozen_cross_seat_grammar"/> 那条冻结字面量。
+    /// ⇒ <b>跨席位文法一致性在本类里是单点承重</b>：那条冻结用例一旦被删或被改成自指复算
+    /// （用 <c>Digest</c> 求值再用 <c>Digest</c> 复算），规范串就没有任何东西看着了。
+    /// ⛔ 不为此补假断言——两侧同树逐字节比对才是那条不变量的真证据，它在 PR 正文里，不在用例里。</para>
     /// </summary>
     [Fact]
     public void Segment_split_does_not_collapse_two_different_sources_onto_one_key()
@@ -178,57 +193,6 @@ public sealed class JournalVoucherNoAllocationTests
             .ToArray();
         Assert.Equal(JournalVoucherSourceType.All.Count * 2, keys.Length);
         Assert.Equal(keys.Length, keys.Distinct(StringComparer.Ordinal).Count());
-    }
-
-    /// <summary>
-    /// ⭐ 客户端可写的幂等键与派生键**不可能相等**。
-    ///
-    /// <para><b>这条守的是本 PR 新引入的一条耦合</b>：<c>journal-voucher</c> 规则改前只有
-    /// <c>PostJournalVoucherCommand</c> 一个消费者，它的 <c>IdempotencyKey</c> 由端点直通请求体；
-    /// 本 PR 把另外 9 个位点也接到同一条规则上，两类键于是落进
-    /// <c>(org, env, rule_key, idempotency_key)</c> 同一个唯一索引。
-    /// 客户端若写得出某条派生键，对应来源单据就**永远建不出凭证**
-    /// （<c>ToReplay</c> 指纹不符 ⇒ <c>KnownException</c>）。</para>
-    ///
-    /// <para><b>值域不相交靠两件事同时成立</b>：① 派生键一律以
-    /// <see cref="JournalVoucherNoAllocation.KeyPrefix"/> 开头；② 校验器拒收以该前缀开头的客户端键。
-    /// ⭐ <b>失效方向</b>：改掉前缀、或删掉校验器那条规则，两类键就重新可能相等——本条两个方向都测。</para>
-    ///
-    /// <para>⛔ 本条**不**声称「客户端猜不出 SHA-256」：<c>{类型}:{单号}</c> 这种人最自然的写法
-    /// 在改文法之前**恰好就是**派生键（复审实测可触发）；挡住它的是保留前缀这条硬规则，
-    /// ⛔ 不是「摘要难猜」。</para>
-    /// </summary>
-    [Fact]
-    public void Client_supplied_idempotency_keys_cannot_collide_with_derived_keys()
-    {
-        var validator = new PostJournalVoucherCommandValidator();
-        JournalVoucherCommandLine[] lines =
-        [
-            new("1401", 10m, 0m, "d"),
-            new("2202", 0m, 10m, "c"),
-        ];
-        PostJournalVoucherCommand Command(string? idempotencyKey) =>
-            new(Org, Env, null, new DateOnly(2026, 6, 25), lines, idempotencyKey);
-
-        // ① 每一条派生键都被校验器拒收 ⇒ 客户端送不进来。
-        foreach (var sourceType in JournalVoucherSourceType.All)
-        {
-            var derivedKey = JournalVoucherNoAllocation.AllocationIdempotencyKey(sourceType, "SRC-POISON-001");
-            Assert.StartsWith(JournalVoucherNoAllocation.KeyPrefix, derivedKey, StringComparison.Ordinal);
-            var result = validator.Validate(Command(derivedKey));
-            Assert.False(result.IsValid, $"族『{sourceType.Code}』的派生键被校验器放行了，客户端可以据此毒死该来源单据。");
-            Assert.Contains(result.Errors, x => x.PropertyName == nameof(PostJournalVoucherCommand.IdempotencyKey));
-        }
-
-        // ② 前缀本身就被拒 ⇒「把派生键前缀删掉」时 ① 不会靠摘要形状侥幸继续绿。
-        Assert.False(validator.Validate(Command(JournalVoucherNoAllocation.KeyPrefix)).IsValid);
-        Assert.False(validator.Validate(Command(JournalVoucherNoAllocation.KeyPrefix + "anything")).IsValid);
-
-        // ③ 正常键与 null 不受影响（这条挡的是「一刀切拒收」那种过度修复）。
-        Assert.True(validator.Validate(Command(null)).IsValid);
-        Assert.True(validator.Validate(Command("idem-manual-001")).IsValid);
-        // 改文法之前**恰好就是**派生键的那种人类自然写法，现在是合法的客户端键。
-        Assert.True(validator.Validate(Command("AP:AP-POISON-001")).IsValid);
     }
 
     /// <summary>
