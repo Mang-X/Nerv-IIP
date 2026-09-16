@@ -484,6 +484,7 @@
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_dedup_sites_key_on_the_source_document_even_when_the_voucher_number_differs",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_source_unique_index_migration_up_and_down_run_for_real",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_work_order_cost_adjustment_key_drops_the_work_order_segment",
+        "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_capitalization_voucher_number_comes_from_the_allocator_and_survives_cap_redelivery",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpJournalVoucherNoPostgresAcceptanceTests.PostgreSQL_repeated_commands_for_the_same_source_document_record_one_voucher_each"
       ]
     },

@@ -719,7 +719,12 @@ try {
     # #3278 / S6 再抬到 29：凭证号改分配器短号后，「同一来源单据重复触发只记一张、
     # 且重放拿回同一个号」只能在真库上量（EF InMemory 看不见 (org, env, source_type, source_no)
     # 那条 partial unique index），故新增 ErpJournalVoucherNoPostgresAcceptanceTests 一条真库身份。
-    Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 29) 'The ERP member must freeze exactly its twenty-nine PostgreSQL identities.'
+    # #3278 / S7 抬到 30：消费侧工单资本化凭证（位点 ④）换短号后，
+    # 「CAP 重投下只记一张 + 幂等键真落库 + 再取一次号拿回同一个」三件事同时依赖
+    # 分配器的 EfCoreCodeStore 落库与两条唯一索引，EF InMemory 两样都看不见；
+    # 该用例写在已有的 ErpCostAccountingPostgresAcceptanceTests 里（工单资本化属成本核算），
+    # 所以是老类加一条身份，不新增 Fact 属性也不新增策略规则。
+    Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 30) 'The ERP member must freeze exactly its thirty PostgreSQL identities.'
     Assert-Contract ([string]::Equals([string]$erpMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) 'ERP keeps runner-owned databases for failure diagnostics.'
     $acceptanceMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'acceptance-postgres-profile' -RepositoryRoot $repoRoot
     Assert-Contract (@($acceptanceMember.expectedTestIdentities).Count -eq 16) '跨服务验收成员必须冻结十六条 PostgreSQL 测试身份。'
