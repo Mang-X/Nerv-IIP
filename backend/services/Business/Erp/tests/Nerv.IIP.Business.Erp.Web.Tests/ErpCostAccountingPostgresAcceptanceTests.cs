@@ -562,8 +562,10 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
     /// <summary>
     /// #3278 / S5 ④：<c>WOCADJ</c> 族在唯一键下的**收窄方向**，按 owner A2 的「这一格必须先量」落成可执行事实。
     ///
-    /// 今天的凭证号是 <c>JV-WOCADJ-{workOrderId}-{sourceId}</c>，换键后是 <c>(WOCADJ, sourceId)</c>——
-    /// **少了 <c>workOrderId</c> 一段**。所以两条读数方向相反，必须各钉一格：
+    /// 换键前的凭证号是 <c>JV-WOCADJ-{workOrderId}-{sourceId}</c>，换键后是 <c>(WOCADJ, sourceId)</c>——
+    /// **少了 <c>workOrderId</c> 一段**（⚠️ #3278 / S7 之后凭证号已是分配器短号，
+    /// 那个派生形状只是本条收窄方向的参照系，⛔ 不是今天的凭证号；本条断言的对象是唯一键，不是凭证号）。
+    /// 所以两条读数方向相反，必须各钉一格：
     /// <list type="number">
     /// <item>同一工单、不同来源标识 ⇒ 两张凭证都落得进去（没有把正常业务挡住）；</item>
     /// <item>不同工单、**同一**来源标识 ⇒ 23505。这是**收窄**，是刻意的，不是缺陷。</item>

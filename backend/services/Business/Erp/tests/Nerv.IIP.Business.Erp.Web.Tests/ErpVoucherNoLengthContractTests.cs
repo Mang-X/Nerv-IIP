@@ -42,8 +42,18 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 /// </summary>
 public sealed class ErpVoucherNoLengthContractTests
 {
-    /// <summary>ERP 侧承载上游业务单号的列宽，全部是 100（工单号 / 报工单号 / 移动号 / 工序任务号 / 各类单据号）。</summary>
-    internal const int UpstreamNoColumnWidth = 100;
+    /// <summary>
+    /// ERP 侧承载上游业务单号的列宽，全部是 100（工单号 / 报工单号 / 移动号 / 工序任务号 / 各类单据号）。
+    ///
+    /// ⛔ <b>这是手抄数，本类没有把它钉到任何真实列宽上</b>（#3278 / S8 如实登记）。
+    /// 它在 <see cref="WidestAdjustmentSourceId"/> 里只负责把 134 那个形状拼出来；
+    /// 而 134 本身由 <see cref="Widest_production_source_identifier_matches_the_shape_it_is_derived_from"/>
+    /// 对撞看住，⛔ 100 没有。
+    /// <b>失效方向</b>：最宽那一支的承重列是**生产者侧** MES 的 <c>operation_task_id</c>（列宽 100），
+    /// 把它加宽到 200 时本仓零红（S8 实测），而真实最宽 sourceId 会变成 234、撞 <c>source_no</c> 的 150。
+    /// 补不上的结构性原因：本测试程序集**零 MES 项目引用**，Erp 侧同名列是下游副本列、对入站 payload 零约束。
+    /// </summary>
+    private const int UpstreamNoColumnWidth = 100;
 
     /// <summary>
     /// <c>CostVariancePosting.PostLateAdjustmentAsync</c> 的 <c>sourceId</c> 在生产侧的**最宽**取值形状。
