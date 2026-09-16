@@ -27,16 +27,30 @@ public sealed class CreateConsoleFileUploadSessionEndpoint(
     IGatewayIamAuthClient iam,
     IGatewayAuthorizationClient auth,
     IGatewayFileStorageClient files)
-    : AuthorizedProxyEndpoint<CreateUploadSessionRequest, CreateUploadSessionResponse>(
-        iam,
-        auth,
-        GatewayPermissions.FilesUpload)
+    : Endpoint<CreateUploadSessionRequest, ResponseData<CreateUploadSessionResponse>>
 {
-    protected override Task<CreateUploadSessionResponse> ForwardAsync(
-        string bearerToken,
-        CreateUploadSessionRequest request,
-        CancellationToken cancellationToken) =>
-        files.CreateUploadSessionAsync(request, cancellationToken);
+    public override Task HandleAsync(CreateUploadSessionRequest req, CancellationToken ct) =>
+        AuthorizedProxyEndpointExecutor.ExecuteAsync(
+            HttpContext,
+            iam,
+            auth,
+            GatewayPermissions.FilesUpload,
+            async (context, cancellationToken) =>
+            {
+                // 用 principal 的 org/env 覆盖 request body 中的值，确保建会话与后续 tus 操作使用同一作用域
+                var normalizedRequest = req with
+                {
+                    OrganizationId = context.Principal.OrganizationId,
+                    EnvironmentId = context.Principal.EnvironmentId
+                };
+                var response = await files.CreateUploadSessionAsync(normalizedRequest, cancellationToken);
+                await ResponseDataEndpointResults.WriteDataAsync(
+                    HttpContext,
+                    StatusCodes.Status200OK,
+                    response,
+                    cancellationToken);
+            },
+            ct);
 }
 
 [Tags("Console Files")]
@@ -47,16 +61,33 @@ public sealed class CompleteConsoleFileUploadSessionEndpoint(
     IGatewayIamAuthClient iam,
     IGatewayAuthorizationClient auth,
     IGatewayFileStorageClient files)
-    : AuthorizedProxyEndpoint<CompleteUploadSessionRequest, FileMetadataResponse>(
-        iam,
-        auth,
-        GatewayPermissions.FilesUpload)
+    : Endpoint<CompleteUploadSessionRequest, ResponseData<FileMetadataResponse>>
 {
-    protected override Task<FileMetadataResponse> ForwardAsync(
-        string bearerToken,
-        CompleteUploadSessionRequest request,
-        CancellationToken cancellationToken) =>
-        files.CompleteUploadSessionAsync(Route<string>("uploadSessionId")!, request, cancellationToken);
+    public override Task HandleAsync(CompleteUploadSessionRequest req, CancellationToken ct) =>
+        AuthorizedProxyEndpointExecutor.ExecuteAsync(
+            HttpContext,
+            iam,
+            auth,
+            GatewayPermissions.FilesUpload,
+            async (context, cancellationToken) =>
+            {
+                // 用 principal 的 org/env 覆盖 request body 中的值，确保一致性
+                var normalizedRequest = req with
+                {
+                    OrganizationId = context.Principal.OrganizationId,
+                    EnvironmentId = context.Principal.EnvironmentId
+                };
+                var response = await files.CompleteUploadSessionAsync(
+                    Route<string>("uploadSessionId")!,
+                    normalizedRequest,
+                    cancellationToken);
+                await ResponseDataEndpointResults.WriteDataAsync(
+                    HttpContext,
+                    StatusCodes.Status200OK,
+                    response,
+                    cancellationToken);
+            },
+            ct);
 }
 
 [Tags("Console Files")]
