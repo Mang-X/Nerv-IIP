@@ -47,10 +47,11 @@ public sealed class JournalVoucherSourceValueTests
     /// <summary>
     /// 九个命令侧工厂各自盖上**驱动这张凭证的那张单据**，而不是凭证号、也不是同一个占位串。
     ///
-    /// ⭐ 其中 <c>AP</c> 与 <c>SUPPINV</c> 是 owner 在 #3278 §A2 点名的设计地雷：
+    /// ⭐ 其中 <c>AP</c> 与 <c>SUPPINV</c> 是 owner 在 #3278 §A2 点名的设计地雷：改前
     /// <c>ForAccountPayable</c> 与 <c>ForSupplierInvoiceGrIrClearing</c> 产出**同一个**凭证号
-    /// <c>JV-AP-{应付单号}</c>。这里断言两者的 <c>(SourceType, SourceNo)</c> 各自取自己的驱动单据，
-    /// 所以 S5 建唯一键时这两条路径不会互相挡住。
+    /// <c>JV-AP-{应付单号}</c>。**S6 已把凭证号改成调用方从分配器取的短号，那个「天然撞号」的前提不复存在**；
+    /// 本用例末尾那段因此改为**人为喂同一个号**来保留最不利输入。这里断言两者的
+    /// <c>(SourceType, SourceNo)</c> 各自取自己的驱动单据，所以 S5 那条唯一键不会把两条路径互相挡住。
     /// **这条断言必须对着工厂的实际返回值，不能只比两个码常量不等**——那样把地雷装回去也不会红。
     /// </summary>
     [Fact]
@@ -107,15 +108,15 @@ public sealed class JournalVoucherSourceValueTests
 
         var expectations = new (string Family, JournalVoucher Voucher, string Type, string No)[]
         {
-            ("AP", FinanceVoucherFactory.ForAccountPayable(payable), "AP", "AP-0001"),
-            ("SUPPINV", FinanceVoucherFactory.ForSupplierInvoiceGrIrClearing(invoice, payable, 1m), "SUPPINV", "INV-0001"),
-            ("AR", FinanceVoucherFactory.ForAccountReceivable(receivable), "AR", "AR-0001"),
-            ("COST", FinanceVoucherFactory.ForCostCandidate(candidate), "COST", "COST-0001"),
+            ("AP", FinanceVoucherFactory.ForAccountPayable(payable, "JV-20260914-000001"), "AP", "AP-0001"),
+            ("SUPPINV", FinanceVoucherFactory.ForSupplierInvoiceGrIrClearing(invoice, payable, 1m, "JV-20260914-000002"), "SUPPINV", "INV-0001"),
+            ("AR", FinanceVoucherFactory.ForAccountReceivable(receivable, "JV-20260914-000003"), "AR", "AR-0001"),
+            ("COST", FinanceVoucherFactory.ForCostCandidate(candidate, "JV-20260914-000004"), "COST", "COST-0001"),
             ("APPAY", FinanceVoucherFactory.ForPayablePayment([new PayablePaymentVoucherAllocation(payable, 100m)], "JV-PAY-0001", "APPAY-0001", 100m, "CNY", 1m, PostingDate, "1002"), "APPAY", "APPAY-0001"),
             ("ARCOL", FinanceVoucherFactory.ForReceivableCollection(receivable, "JV-COL-0001", "ARCOL-0001", 100m, PostingDate, "1002"), "ARCOL", "ARCOL-0001"),
             ("GRIR", FinanceVoucherFactory.ForGoodsReceiptIrAccrual(receipt, 100m, "JV-GRIR-RCV-0001"), "GRIR", "RCV-0001"),
             ("PRTN", FinanceVoucherFactory.ForPurchaseReturn(purchaseReturn, "JV-PRTN-PRTN-0001", PostingDate), "PRTN", "PRTN-0001"),
-            ("CN", FinanceVoucherFactory.ForCreditNote(creditNote, PostingDate), "CN", "CN-0001"),
+            ("CN", FinanceVoucherFactory.ForCreditNote(creditNote, PostingDate, "JV-20260914-000009"), "CN", "CN-0001"),
         };
 
         Assert.Equal(9, expectations.Length);
@@ -126,10 +127,17 @@ public sealed class JournalVoucherSourceValueTests
                 (expectation.Family, expectation.Voucher.SourceType, expectation.Voucher.SourceNo));
         }
 
-        // 两条 JV-AP-{应付单号} 同号路径：凭证号相同，来源单据必须不同——否则 S5 的唯一键会把它们互相挡住。
-        var directPayable = FinanceVoucherFactory.ForAccountPayable(payable);
-        var invoiceClearing = FinanceVoucherFactory.ForSupplierInvoiceGrIrClearing(invoice, payable, 1m);
-        Assert.Equal(directPayable.VoucherNo, invoiceClearing.VoucherNo);
+        // ⭐ #3278 / S6 抽掉了这条断言原来的前提：两条路径改前**天然**产出同一个 JV-AP-{应付单号}，
+        // 现在凭证号由调用方从分配器取，工厂自己不再拼号 ⇒「天然撞号」这件事已经不存在。
+        // 但它要防的东西没变——来源身份必须互异，否则 S5 那条 (org, env, source_type, source_no)
+        // 唯一键会把两条业务路径互相挡住。于是这里**刻意给两个工厂喂同一个凭证号**：
+        // 这是最不利输入，谁要是把来源取值改回从凭证号派生，本条立刻红；
+        // 喂两个不同号反而会让那种退化被号本身的差异掩盖。
+        const string collidingVoucherNo = "JV-20260914-000099";
+        var directPayable = FinanceVoucherFactory.ForAccountPayable(payable, collidingVoucherNo);
+        var invoiceClearing = FinanceVoucherFactory.ForSupplierInvoiceGrIrClearing(invoice, payable, 1m, collidingVoucherNo);
+        Assert.Equal(collidingVoucherNo, directPayable.VoucherNo);
+        Assert.Equal(collidingVoucherNo, invoiceClearing.VoucherNo);
         Assert.NotEqual(
             (directPayable.SourceType, directPayable.SourceNo),
             (invoiceClearing.SourceType, invoiceClearing.SourceNo));
@@ -149,13 +157,14 @@ public sealed class JournalVoucherSourceValueTests
         db.WorkOrderCosts.Add(cost);
         await db.SaveChangesAsync();
 
-        await CostVariancePosting.PostLateAdjustmentAsync(
+        Assert.True(await CostVariancePosting.PostLateAdjustmentAsync(
             db,
+            ErpTestCoding.For(db),
             cost,
             -60m,
             "machine-OPT-0001-r7-void",
             DateTimeOffset.Parse("2026-09-14T00:00:00Z"),
-            CancellationToken.None);
+            CancellationToken.None));
         await db.SaveChangesAsync();
 
         var voucher = await db.JournalVouchers.SingleAsync();

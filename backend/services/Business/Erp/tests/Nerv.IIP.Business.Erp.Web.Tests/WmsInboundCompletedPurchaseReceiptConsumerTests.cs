@@ -45,7 +45,7 @@ public sealed class WmsInboundCompletedPurchaseReceiptConsumerTests
 
         var receiptEvent = new PurchaseReceiptRecordedIntegrationEventConverter()
             .Convert(new PurchaseReceiptRecordedDomainEvent(receipt));
-        var grIrHandler = new PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual(dbContext, deadLetters);
+        var grIrHandler = new PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual(dbContext, deadLetters, ErpTestCoding.For(dbContext));
         await grIrHandler.HandleAsync(receiptEvent, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await grIrHandler.HandleAsync(receiptEvent, CancellationToken.None);

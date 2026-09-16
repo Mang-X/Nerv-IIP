@@ -15,12 +15,12 @@ public sealed partial class OperationLaborSettlementHandlerTests
         await db.SaveChangesAsync();
         var report = Report("evt-report-reversal-source", "RPT-REVERSAL-SOURCE", AugustCompletedAtUtc.AddMinutes(-10));
         var reportConsumer = new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(
-            db, deadLetters, db, TestWorkOrderCostMutationLock.Instance);
+            db, deadLetters, db, TestWorkOrderCostMutationLock.Instance, ErpTestCoding.For(db));
         await reportConsumer.HandleAsync(report, CancellationToken.None);
         var cost = await db.WorkOrderCosts.Include(x => x.Details).SingleAsync();
         cost.Complete(10m, 1, 0, AugustCompletedAtUtc);
         await db.SaveChangesAsync();
-        var receiptConsumer = new StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost(db, deadLetters, db);
+        var receiptConsumer = new StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost(db, deadLetters, db, ErpTestCoding.For(db));
         await receiptConsumer.HandleAsync(
             FinishedGoodsReceipt("evt-fg-reversal-partial", "MOVE-FG-REVERSAL-PARTIAL", "FGR-REVERSAL-PARTIAL", 5m),
             CancellationToken.None);
@@ -71,7 +71,7 @@ public sealed partial class OperationLaborSettlementHandlerTests
         db.WorkCenterCostRates.Add(Rate(
             7, 80m, DateTimeOffset.Parse("2026-08-01T00:00:00Z"), null));
         await db.SaveChangesAsync();
-        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db, TestWorkOrderCostMutationLock.Instance)
+        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(db, deadLetters, db, TestWorkOrderCostMutationLock.Instance, ErpTestCoding.For(db))
             .HandleAsync(Report("evt-report-001", "RPT-001", AugustCompletedAtUtc.AddMinutes(-10)), CancellationToken.None);
         var cost = await db.WorkOrderCosts.Include(x => x.Details).SingleAsync();
         cost.Complete(10m, 1, 0, AugustCompletedAtUtc);
@@ -79,7 +79,7 @@ public sealed partial class OperationLaborSettlementHandlerTests
         cost.RecordWipClearance(160m);
         await db.SaveChangesAsync();
 
-        await new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(db, db, TestWorkOrderCostMutationLock.Instance, new OperationLaborSettlementOrchestrator(db, deadLetters))
+        await new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(db, db, TestWorkOrderCostMutationLock.Instance, new OperationLaborSettlementOrchestrator(db, deadLetters, ErpTestCoding.For(db)))
             .HandleAsync(
                 Settled("evt-settled-r1", 1, AugustCompletedAtUtc,
                     90 * TimeSpan.TicksPerMinute, ["RPT-001"]),
@@ -106,13 +106,13 @@ public sealed partial class OperationLaborSettlementHandlerTests
         db.WorkCenterCostRates.Add(Rate(7, 80m, DateTimeOffset.Parse("2026-08-01T00:00:00Z"), null));
         await db.SaveChangesAsync();
         await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(
-                db, deadLetters, db, TestWorkOrderCostMutationLock.Instance)
+                db, deadLetters, db, TestWorkOrderCostMutationLock.Instance, ErpTestCoding.For(db))
             .HandleAsync(Report("evt-report-partial", "RPT-PARTIAL", AugustCompletedAtUtc.AddMinutes(-10)), CancellationToken.None);
         var cost = await db.WorkOrderCosts.Include(x => x.Details).SingleAsync();
         cost.Complete(10m, 1, 0, AugustCompletedAtUtc);
         Assert.False(cost.IsFullyCapitalized);
         await db.SaveChangesAsync();
-        var receiptConsumer = new StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost(db, deadLetters, db);
+        var receiptConsumer = new StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost(db, deadLetters, db, ErpTestCoding.For(db));
         await receiptConsumer.HandleAsync(FinishedGoodsReceipt("evt-fg-partial", "MOVE-FG-PARTIAL", "FGR-PARTIAL", 5m), CancellationToken.None);
         cost = await db.WorkOrderCosts.Include(x => x.Details).SingleAsync();
         Assert.False(cost.IsFullyCapitalized);
@@ -120,12 +120,12 @@ public sealed partial class OperationLaborSettlementHandlerTests
         var settled = Settled("evt-settle-partial", 1, AugustCompletedAtUtc, 90 * TimeSpan.TicksPerMinute, ["RPT-PARTIAL"]);
         await new MesOperationActualTimeSettledIntegrationEventHandlerForAccumulateLaborCost(
                 db, db, TestWorkOrderCostMutationLock.Instance,
-                new OperationLaborSettlementOrchestrator(db, deadLetters))
+                new OperationLaborSettlementOrchestrator(db, deadLetters, ErpTestCoding.For(db)))
             .HandleAsync(settled, CancellationToken.None);
         if (voidAfterSettlement)
             await new MesOperationActualTimeSettlementVoidedIntegrationEventHandlerForReverseLaborCost(
                     db, db, TestWorkOrderCostMutationLock.Instance,
-                    new OperationLaborSettlementOrchestrator(db, deadLetters))
+                    new OperationLaborSettlementOrchestrator(db, deadLetters, ErpTestCoding.For(db)))
                 .HandleAsync(Voided("evt-void-partial", settled, AugustCompletedAtUtc.AddMinutes(4)), CancellationToken.None);
 
         var vouchersBeforeFinalReceipt = await db.JournalVouchers.Include(x => x.Lines).ToListAsync();

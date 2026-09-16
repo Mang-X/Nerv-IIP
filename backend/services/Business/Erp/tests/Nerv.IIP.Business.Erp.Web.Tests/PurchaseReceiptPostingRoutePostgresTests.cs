@@ -108,7 +108,7 @@ public sealed class PurchaseReceiptPostingRoutePostgresTests
             {
                 var db = finance.ServiceProvider.GetRequiredService<ApplicationDbContext>();
                 var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
-                var consumer = new PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual(db, deadLetters);
+                var consumer = new PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual(db, deadLetters, ErpTestCoding.For(db));
                 await consumer.HandleAsync(recorded, CancellationToken.None);
                 await db.SaveChangesAsync();
                 await consumer.HandleAsync(recorded, CancellationToken.None);
@@ -192,7 +192,7 @@ public sealed class PurchaseReceiptPostingRoutePostgresTests
         Assert.Equal(1, await readDb.PurchaseReceipts.CountAsync());
         var recorded = new PurchaseReceiptRecordedIntegrationEventConverter().Convert(new PurchaseReceiptRecordedDomainEvent(receipt));
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
-        var consumer = new PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual(readDb, deadLetters);
+        var consumer = new PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual(readDb, deadLetters, ErpTestCoding.For(readDb));
         await consumer.HandleAsync(recorded, CancellationToken.None);
         await readDb.SaveChangesAsync();
         await consumer.HandleAsync(recorded, CancellationToken.None);

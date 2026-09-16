@@ -189,7 +189,17 @@ public sealed class CreateAccountPayableCommandHandler(ApplicationDbContext dbCo
 
         var payable = AccountPayable.Create(request.OrganizationId, request.EnvironmentId, allocation.Code, request.SourceDocumentNo, authoritativeSupplierCode, request.Amount, request.CurrencyCode, request.InvoiceDate, request.DueDate, request.PaymentTermCode, request.ExchangeRate);
         dbContext.AccountPayables.Add(payable);
-        dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForAccountPayable(payable));
+        // #3278 / S6：凭证号改取 journal-voucher 规则短号；来源身份仍是应付单，
+        // 取号幂等键也用它，故重放拿回同一个号。
+        dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForAccountPayable(
+            payable,
+            await JournalVoucherNoAllocation.AllocateAsync(
+                _codingService,
+                request.OrganizationId,
+                request.EnvironmentId,
+                JournalVoucherSourceType.AccountPayable,
+                payable.PayableNo,
+                cancellationToken)));
         return payable.Id;
     }
 }
@@ -252,7 +262,16 @@ public sealed class CreateAccountReceivableCommandHandler(ApplicationDbContext d
 
         var receivable = AccountReceivable.Create(request.OrganizationId, request.EnvironmentId, allocation.Code, request.SourceDocumentNo, authoritativeCustomerCode, request.Amount, request.CurrencyCode, request.InvoiceDate, request.DueDate, request.PaymentTermCode, request.ExchangeRate);
         dbContext.AccountReceivables.Add(receivable);
-        dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForAccountReceivable(receivable));
+        // #3278 / S6：同 CreateAccountPayable，凭证号改取短号，来源身份仍是应收单。
+        dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForAccountReceivable(
+            receivable,
+            await JournalVoucherNoAllocation.AllocateAsync(
+                _codingService,
+                request.OrganizationId,
+                request.EnvironmentId,
+                JournalVoucherSourceType.AccountReceivable,
+                receivable.ReceivableNo,
+                cancellationToken)));
         return receivable.Id;
     }
 }
@@ -295,7 +314,16 @@ public sealed class CreateCostCandidateCommandHandler(ApplicationDbContext dbCon
 
         var candidate = CostCandidate.Create(request.OrganizationId, request.EnvironmentId, allocation.Code, request.SourceType, request.SourceDocumentNo, request.Amount, request.CurrencyCode, request.ExchangeRate);
         dbContext.CostCandidates.Add(candidate);
-        dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForCostCandidate(candidate));
+        // #3278 / S6：同上，凭证号改取短号，来源身份仍是成本待定档。
+        dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForCostCandidate(
+            candidate,
+            await JournalVoucherNoAllocation.AllocateAsync(
+                _codingService,
+                request.OrganizationId,
+                request.EnvironmentId,
+                JournalVoucherSourceType.CostCandidate,
+                candidate.CandidateNo,
+                cancellationToken)));
         return candidate.Id;
     }
 }
@@ -408,9 +436,18 @@ public sealed class RegisterAccountPayablePaymentCommandHandler(ApplicationDbCon
             allocationLines.Select(x => new PaymentExecutionAllocationDraft(x.PayableNo, x.Amount)).ToArray());
         paymentExecution.Execute("system:business-erp");
         dbContext.PaymentExecutions.Add(paymentExecution);
+        // #3278 / S6：凭证号改取 journal-voucher 规则短号，**不再**复用付款执行单号。
+        // 取号幂等键用的是本方法上面那条查重谓词的同一对来源值（APPAY, 付款执行单号），
+        // 于是与 ExecutePaymentExecution 那条入口天然认同一个号。
         dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForPayablePayment(
             voucherAllocations,
-            allocation.Code,
+            await JournalVoucherNoAllocation.AllocateAsync(
+                _codingService,
+                request.OrganizationId,
+                request.EnvironmentId,
+                JournalVoucherSourceType.PaymentExecution,
+                paymentExecutionSourceNo,
+                cancellationToken),
             paymentExecution.PaymentExecutionNo,
             request.Amount,
             paymentCurrencyCode,
@@ -491,9 +528,12 @@ public sealed record ExecutePaymentExecutionCommand(
     string PaymentExecutionNo,
     string ExecutedBy = "system:business-erp") : ICommand;
 
-public sealed class ExecutePaymentExecutionCommandHandler(ApplicationDbContext dbContext)
+public sealed class ExecutePaymentExecutionCommandHandler(ApplicationDbContext dbContext, ErpCodingService? codingService = null)
     : ICommandHandler<ExecutePaymentExecutionCommand>
 {
+    // #3278 / S6：本 handler 改前不取号（凭证号直接复用付款执行单号），换短号后需要分配器。
+    private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
+
     public async Task Handle(ExecutePaymentExecutionCommand request, CancellationToken cancellationToken)
     {
         var paymentExecution = await dbContext.PaymentExecutions
@@ -550,9 +590,18 @@ public sealed class ExecutePaymentExecutionCommandHandler(ApplicationDbContext d
                 && x.SourceNo == paymentExecutionSourceNo,
             cancellationToken))
         {
+            // #3278 / S6：凭证号改取短号。这条入口与 RegisterAccountPayablePayment 用**同一对**
+            // 来源值取号 ⇒ 同一张付款执行无论走哪条入口都拿回同一个凭证号，
+            // 而「只记一张」由上面那条来源列谓词 + S5 的 partial unique index 承担。
             dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForPayablePayment(
                 voucherAllocations,
-                paymentExecution.PaymentExecutionNo,
+                await JournalVoucherNoAllocation.AllocateAsync(
+                    _codingService,
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    JournalVoucherSourceType.PaymentExecution,
+                    paymentExecutionSourceNo,
+                    cancellationToken),
                 paymentExecution.PaymentExecutionNo,
                 paymentExecution.Amount,
                 paymentExecution.CurrencyCode,
@@ -644,7 +693,20 @@ public sealed class RegisterAccountReceivableCollectionCommandHandler(Applicatio
             [new CashReceiptAllocationDraft(receivable.ReceivableNo, request.Amount)]);
         cashReceipt.Match();
         dbContext.CashReceipts.Add(cashReceipt);
-        dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForReceivableCollection(receivable, allocation.Code, cashReceipt.CashReceiptNo, request.Amount, request.CollectionDate, request.CashAccountCode));
+        // #3278 / S6：凭证号改取短号，**不再**复用收款单号；取号键同本方法上面那条查重谓词。
+        dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForReceivableCollection(
+            receivable,
+            await JournalVoucherNoAllocation.AllocateAsync(
+                _codingService,
+                request.OrganizationId,
+                request.EnvironmentId,
+                JournalVoucherSourceType.CashReceipt,
+                cashReceiptSourceNo,
+                cancellationToken),
+            cashReceipt.CashReceiptNo,
+            request.Amount,
+            request.CollectionDate,
+            request.CashAccountCode));
     }
 }
 
@@ -708,9 +770,12 @@ public sealed record MatchCashReceiptCommand(
     string EnvironmentId,
     string CashReceiptNo) : ICommand;
 
-public sealed class MatchCashReceiptCommandHandler(ApplicationDbContext dbContext)
+public sealed class MatchCashReceiptCommandHandler(ApplicationDbContext dbContext, ErpCodingService? codingService = null)
     : ICommandHandler<MatchCashReceiptCommand>
 {
+    // #3278 / S6：本 handler 改前不取号（凭证号直接复用收款单号），换短号后需要分配器。
+    private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
+
     public async Task Handle(MatchCashReceiptCommand request, CancellationToken cancellationToken)
     {
         var cashReceipt = await dbContext.CashReceipts
@@ -759,9 +824,17 @@ public sealed class MatchCashReceiptCommandHandler(ApplicationDbContext dbContex
                 && x.SourceNo == cashReceiptSourceNo,
             cancellationToken))
         {
+            // #3278 / S6：凭证号改取短号。与 RegisterAccountReceivableCollection 用同一对来源值取号，
+            // 理由同付款那一对。
             dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForReceivableCollection(
                 receivable,
-                cashReceipt.CashReceiptNo,
+                await JournalVoucherNoAllocation.AllocateAsync(
+                    _codingService,
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    JournalVoucherSourceType.CashReceipt,
+                    cashReceiptSourceNo,
+                    cancellationToken),
                 cashReceipt.CashReceiptNo,
                 allocation.Amount,
                 cashReceipt.ReceiptDate,
@@ -789,6 +862,13 @@ public sealed class PostJournalVoucherCommandValidator : AbstractValidator<PostJ
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.VoucherNo).MaximumLength(ErpVoucherNoPolicy.ColumnMaxLength);
+        // #3278 / S6：本命令的 IdempotencyKey 与本服务的派生凭证号取号键落在同一个
+        // (org, env, rule_key, idempotency_key) 命名空间里。⛔ 这里**刻意不加**「保留 jv: 前缀」那类规则：
+        // 复审实测它挡不住——CodeAllocator.Normalize 就是 value.Trim()（CodeAllocator.cs:359-362），
+        // 跑在 FluentValidation **之后**，前导空格 / 制表符 / 换行 / U+00A0 四种输入都能绕过；
+        // 而它反过来会误伤 `jv:2026-09-16-001` 这种自然键。
+        // 两类键为什么今天不会自然相撞、以及那条判据将来要放在哪里，写在
+        // JournalVoucherNoAllocation 的 remarks 里（⛔ 那里也没写成「不可能相等」）。
         RuleFor(x => x.PostingDate).NotEqual(default(DateOnly));
         RuleFor(x => x.Lines).NotEmpty().Must(x => x.Count >= 2).WithMessage("At least two voucher lines are required.");
         RuleForEach(x => x.Lines).ChildRules(line =>
@@ -922,11 +1002,6 @@ public static class FinanceVoucherFactory
     public const string RealizedExchangeGainAccountCode = "6604";
     public const string OnAccountPrepaymentAccountCode = "1123";
 
-    public static string GoodsReceiptIrAccrualVoucherNo(string purchaseReceiptNo)
-    {
-        return ErpVoucherNoPolicy.Compose(VoucherFamily.GoodsReceiptIrAccrual, purchaseReceiptNo);
-    }
-
     public static JournalVoucher ForGoodsReceiptIrAccrual(PurchaseReceipt receipt, decimal amount, string voucherNo)
     {
         return JournalVoucher.Post(
@@ -966,12 +1041,22 @@ public static class FinanceVoucherFactory
             purchaseReturn.PurchaseReturnNo);
     }
 
-    public static JournalVoucher ForCreditNote(CreditNote creditNote, DateOnly postingDate)
+    /// <summary>
+    /// 客户红字通知单凭证。
+    ///
+    /// #3278 / S7：<paramref name="voucherNo"/> 从无到有。改前本方法内联
+    /// <c>ErpVoucherNoPolicy.Compose(VoucherFamily.CreditNote, …)</c> 自己拼号；现在凭证号由唯一调用方
+    /// <c>QualityInspectionResultIntegrationEventHandlerForSettleSalesReturnCredit</c> 从分配器取后传入，
+    /// 与同类的 <see cref="ForPurchaseReturn"/> / <see cref="ForGoodsReceiptIrAccrual"/> 形状对齐。
+    /// ⚠️ 本方法今天只有那一个调用方（扫描面：全仓 <c>ForCreditNote</c>），
+    /// 所以参数化没有给命令侧留下旧形状回落。
+    /// </summary>
+    public static JournalVoucher ForCreditNote(CreditNote creditNote, DateOnly postingDate, string voucherNo)
     {
         return JournalVoucher.Post(
             creditNote.OrganizationId,
             creditNote.EnvironmentId,
-            ErpVoucherNoPolicy.Compose(VoucherFamily.CreditNote, creditNote.CreditNoteNo),
+            voucherNo,
             postingDate,
             [
                 LocalDebit(SalesReturnsAccountCode, creditNote.Amount, creditNote.CurrencyCode, creditNote.ExchangeRate, $"Credit note {creditNote.CreditNoteNo}"),
@@ -981,7 +1066,14 @@ public static class FinanceVoucherFactory
             creditNote.CreditNoteNo);
     }
 
-    public static JournalVoucher ForSupplierInvoiceGrIrClearing(SupplierInvoice invoice, AccountPayable payable, decimal grIrExchangeRate)
+    /// <remarks>
+    /// #3278 / S6：<paramref name="voucherNo"/> 由调用方从 <see cref="JournalVoucherNoAllocation"/> 取，
+    /// **不再**由本方法 <c>Compose(AccountPayable, payable.PayableNo)</c> 派生。
+    /// 改前它与 <see cref="ForAccountPayable"/> 产出同一个 <c>JV-AP-{应付单号}</c>（#3278 §A2 的设计地雷）；
+    /// 改后两条路径各取一个短号，而来源列仍按各自的驱动单据取值
+    /// （本方法是供应商发票，<see cref="ForAccountPayable"/> 是应付单）。
+    /// </remarks>
+    public static JournalVoucher ForSupplierInvoiceGrIrClearing(SupplierInvoice invoice, AccountPayable payable, decimal grIrExchangeRate, string voucherNo)
     {
         if (grIrExchangeRate <= 0)
         {
@@ -1008,21 +1100,25 @@ public static class FinanceVoucherFactory
         return JournalVoucher.Post(
             invoice.OrganizationId,
             invoice.EnvironmentId,
-            ErpVoucherNoPolicy.Compose(VoucherFamily.AccountPayable, payable.PayableNo),
+            voucherNo,
             invoice.InvoiceDate,
             lines,
-            // 凭证号与 ForAccountPayable 撞号（#3278 §A2 的设计地雷），但来源不同：
-            // 这张凭证的驱动单据是供应商发票，不是应付单。来源列按驱动单据取值，故两条路径不相撞。
+            // 来源列按**驱动这张凭证的单据**取值：这里是供应商发票，不是应付单。
+            // 改号前两条路径还会撞出同一个凭证号（#3278 §A2），S2 靠这一对来源值把它们分开；
+            // S6 换短号后凭证号也不再相撞，但来源取值的理由不变——⛔ 别因为撞号没了就把它合并到 AP 族。
             JournalVoucherSourceType.SupplierInvoice,
             invoice.InvoiceNo);
     }
 
-    public static JournalVoucher ForAccountPayable(AccountPayable payable)
+    /// <remarks>
+    /// #3278 / S6：<paramref name="voucherNo"/> 由调用方从 <see cref="JournalVoucherNoAllocation"/> 取。
+    /// </remarks>
+    public static JournalVoucher ForAccountPayable(AccountPayable payable, string voucherNo)
     {
         return JournalVoucher.Post(
             payable.OrganizationId,
             payable.EnvironmentId,
-            ErpVoucherNoPolicy.Compose(VoucherFamily.AccountPayable, payable.PayableNo),
+            voucherNo,
             payable.InvoiceDate,
             [
                 LocalDebit(DirectPayableExpenseAccountCode, payable.Amount, payable.CurrencyCode, payable.ExchangeRate, $"Direct AP expense {payable.SourceDocumentNo}"),
@@ -1032,12 +1128,15 @@ public static class FinanceVoucherFactory
             payable.PayableNo);
     }
 
-    public static JournalVoucher ForAccountReceivable(AccountReceivable receivable)
+    /// <remarks>
+    /// #3278 / S6：<paramref name="voucherNo"/> 由调用方从 <see cref="JournalVoucherNoAllocation"/> 取。
+    /// </remarks>
+    public static JournalVoucher ForAccountReceivable(AccountReceivable receivable, string voucherNo)
     {
         return JournalVoucher.Post(
             receivable.OrganizationId,
             receivable.EnvironmentId,
-            ErpVoucherNoPolicy.Compose(VoucherFamily.AccountReceivable, receivable.ReceivableNo),
+            voucherNo,
             receivable.InvoiceDate,
             [
                 LocalDebit(AccountsReceivableAccountCode, receivable.Amount, receivable.CurrencyCode, receivable.ExchangeRate, $"AR {receivable.ReceivableNo}"),
@@ -1047,12 +1146,15 @@ public static class FinanceVoucherFactory
             receivable.ReceivableNo);
     }
 
-    public static JournalVoucher ForCostCandidate(CostCandidate candidate)
+    /// <remarks>
+    /// #3278 / S6：<paramref name="voucherNo"/> 由调用方从 <see cref="JournalVoucherNoAllocation"/> 取。
+    /// </remarks>
+    public static JournalVoucher ForCostCandidate(CostCandidate candidate, string voucherNo)
     {
         return JournalVoucher.Post(
             candidate.OrganizationId,
             candidate.EnvironmentId,
-            ErpVoucherNoPolicy.Compose(VoucherFamily.CostCandidate, candidate.CandidateNo),
+            voucherNo,
             DateOnly.FromDateTime(candidate.CreatedAtUtc),
             [
                 LocalDebit("5001", candidate.Amount, candidate.CurrencyCode, candidate.ExchangeRate, $"Cost candidate {candidate.SourceDocumentNo}"),
@@ -1076,9 +1178,10 @@ public static class FinanceVoucherFactory
     }
 
     /// <remarks>
-    /// <paramref name="paymentExecutionNo"/> 与 <paramref name="voucherNo"/> 今天取值相同（凭证号就是付款执行单号），
-    /// 但**语义不同**，所以分成两个参数由调用方各自给：#3278 / S6 会把凭证号换成分配器短号，
-    /// 届时来源列不能跟着一起变。合成一个参数会让那次改动静默改掉来源身份。
+    /// <paramref name="paymentExecutionNo"/> 与 <paramref name="voucherNo"/> **取值已不再相同**：
+    /// #3278 / S6 落地后凭证号是 <c>journal-voucher</c> 规则的分配器短号
+    /// （见 <see cref="JournalVoucherNoAllocation"/>），来源单号仍是付款执行单号。
+    /// 两个参数分开正是为了让那次改动不会静默改掉来源身份——⛔ 别再把它们合并回一个参数。
     /// </remarks>
     public static JournalVoucher ForPayablePayment(
         IReadOnlyCollection<PayablePaymentVoucherAllocation> allocations,
@@ -1163,7 +1266,11 @@ public static class FinanceVoucherFactory
             cashAccountCode,
             0m,
             paymentAmount,
-            $"Cash payment {voucherNo}",
+            // #3278 / S6：改前这里写的是 voucherNo，而那时 voucherNo 取值恰等于付款执行单号，
+            // 所以摘要读起来是「付了哪一笔」。换短号后再回抄 voucherNo 会让摘要变成凭证号自指
+            // （「Cash payment JV-20260915-000001」对账时没有任何信息量），故改取付款执行单号——
+            // 这是把摘要原本要表达的东西写回来，⛔ 不是换了一个意思。
+            $"Cash payment {paymentExecutionNo}",
             normalizedPaymentCurrencyCode,
             paymentExchangeRate,
             null,
@@ -1180,7 +1287,7 @@ public static class FinanceVoucherFactory
     }
 
     /// <remarks>
-    /// <paramref name="cashReceiptNo"/> 与 <paramref name="voucherNo"/> 今天取值相同，语义不同；
+    /// <paramref name="cashReceiptNo"/> 与 <paramref name="voucherNo"/> **取值已不再相同**（#3278 / S6），语义本就不同；
     /// 拆成两个参数的理由同 <see cref="ForPayablePayment(IReadOnlyCollection{PayablePaymentVoucherAllocation}, string, string, decimal, string, decimal, DateOnly, string)"/>。
     /// </remarks>
     public static JournalVoucher ForReceivableCollection(AccountReceivable receivable, string voucherNo, string cashReceiptNo, decimal amount, DateOnly collectionDate, string cashAccountCode)

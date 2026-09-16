@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
@@ -83,9 +84,20 @@ public sealed class PurchaseReceiptAccountPayableConsumerTests
         await handler.HandleAsync(await BuildReceiptRecordedEventAsync(dbContext, "RCV-AP-102"), CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var vouchers = await dbContext.JournalVouchers.OrderBy(x => x.VoucherNo).ToListAsync(CancellationToken.None);
+        var vouchers = await dbContext.JournalVouchers.OrderBy(x => x.SourceNo).ToListAsync(CancellationToken.None);
         Assert.Empty(dbContext.AccountPayables);
-        Assert.Equal(["JV-GRIR-RCV-AP-101", "JV-GRIR-RCV-AP-102"], vouchers.Select(x => x.VoucherNo).ToArray());
+        // #3278 / S7：原写法钉的是派生串 ["JV-GRIR-RCV-AP-101", "JV-GRIR-RCV-AP-102"]，
+        // 它同时承担了两件事：「两张凭证各属各的收货单」与「凭证号长成那个形状」。
+        // 改短号后后一件不再成立，前一件改由来源两列承担；
+        // 另加一条「两个号互异」——否则分配器两次都返回同一个号也会静默全绿（InMemory 看不见唯一索引）。
+        Assert.Equal(
+            [
+                (JournalVoucherSourceType.GoodsReceiptIrAccrual.Code, "RCV-AP-101"),
+                (JournalVoucherSourceType.GoodsReceiptIrAccrual.Code, "RCV-AP-102"),
+            ],
+            vouchers.Select(x => (x.SourceType, x.SourceNo)).ToArray());
+        Assert.All(vouchers, x => AllocatedVoucherNo.AssertShape(x.VoucherNo));
+        Assert.Equal(2, vouchers.Select(x => x.VoucherNo).Distinct(StringComparer.Ordinal).Count());
         Assert.Equal(2, dbContext.JournalVouchers.Count());
         Assert.Empty(await deadLetters.ListAsync(
             PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual.ConsumerName,
@@ -213,7 +225,7 @@ public sealed class PurchaseReceiptAccountPayableConsumerTests
     {
         return new PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual(
             dbContext,
-            deadLetters);
+            deadLetters, ErpTestCoding.For(dbContext));
     }
 
     private static decimal AccountBalance(Infrastructure.ApplicationDbContext dbContext, string accountCode)
