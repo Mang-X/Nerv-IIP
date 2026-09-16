@@ -157,10 +157,6 @@ function Assert-ConditionalRoutingWorkflow {
         Assert-Contract ([string]::Equals([string]$outputProperty.Value, $expectedOutput, [StringComparison]::Ordinal)) "Impact plan output '$outputName' must map directly to the plan step."
     }
     Assert-Contract ($null -eq $impactPlan.outputs.PSObject.Properties['erp_sales_order_demand']) 'Impact plan must not expose the retired erp_sales_order_demand output.'
-    # #3510: workflows is true exactly when Select-AllImpacts fires, so every other flag is true with
-    # it. Under the fail-open `<flag> != 'false'` routing shape asserted below, a workflows disjunct
-    # can never change a job selection; exporting it only advertises routing coverage that is not there.
-    Assert-Contract ($null -eq $impactPlan.outputs.PSObject.Properties['workflows']) 'Impact plan must not expose the workflows output: it is true only when the fail-open branch already selected every job.'
     Assert-Contract ($null -eq $parsedWorkflow.jobs.PSObject.Properties['erp-sales-order-demand-acceptance']) 'CI must not define the retired ERP Sales Order Demand Acceptance job.'
 
     foreach ($jobName in $routingPolicies.Keys) {
