@@ -133,7 +133,15 @@ jobs:
       scripts: ${{ steps.plan.outputs.scripts }}
       docs: ${{ steps.plan.outputs.docs }}
       connector_hosts: ${{ steps.plan.outputs.connector_hosts }}
-      workflows: ${{ steps.plan.outputs.workflows }}
+      # `workflows` 不导出为 job output（#3510）。它不是「改了 workflow 文件」的标志：
+      # '.github/workflows/**' 命中 scripts/lib/CiImpactPlan.ps1 的 fail-open 分支 Select-AllImpacts，
+      # 而 scripts/lib/CiImpactPlan.ps1 自身等 rule-self-change 路径也走同一分支，所以
+      # workflows=true 当且仅当 fail-open 触发，此时全部标志一并为真。
+      # 本仓库受 scripts/tests/ci-impact-plan.Tests.ps1 约束的路由策略只有一种形状：
+      # `<flag> != 'false'` 的 fail-open 析取式。在该形状下 `outputs.workflows != 'false'` 恒被
+      # 同时为真的 scripts/backend/... 覆盖，加进任何 job 的 `if` 都不可能改变它的选中结果。
+      # 导出一个不可能承重的标志，会让后来人以为这个面已经被路由覆盖——本仓「登记了但跑在零个
+      # job 上」的成因之一。该信号仍保留在 impact-plan.json 与 step summary 中作为观测读数。
       infra: ${{ steps.plan.outputs.infra }}
       backend_contracts: ${{ steps.plan.outputs.backend_contracts }}
       backend_testing: ${{ steps.plan.outputs.backend_testing }}
@@ -2264,10 +2272,17 @@ jobs:
     # infra/compose 的三个部署输入文件，发现式 runner 选中的 dev-entrypoint / fullstack-session-runtime /
     # fullstack-worker-boundary 也读 Program.cs。选中维度按「改了哪类文件」算，断言维度按「谁读了这个文件」
     # 成立；`infra` 之前零消费，于是只动 infra/ 的 PR 会把这些断言跳过（PR #3484 实见 skipping）。
+    # `docs`（#3510）：同一形状的第二格。本 job 的 scripts/verify-adr-format.ps1 在 CI 用默认参数运行，
+    # 扫描的是 docs/adr/ 的 ADR 身份与索引覆盖，外加整个仓库的 Markdown 本地链接目标
+    # （MarkdownRoot 回落到仓库根）；scripts/tests/verify-adr-format-lifecycle.Tests.ps1:285 对同一对
+    # 真实目标再断言一次。而 impact-plan 对 'docs/' 前缀与任意 '.md' 后缀只点亮 docs：只改一个
+    # README.md 得到 docs=true / scripts=false / backend=false / infra=false，本 job 因此被跳过——
+    # 跳过的正是这两道门禁存在的理由那一类变更。这里用 docs 标志本身而不是再开一张「哪些文档被门禁
+    # 读」的白名单：docs 的选中路径集与该门禁的输入路径集同形，而白名单会漏掉后来者（#3145/#3157）。
     # 这一项必须与 ci-summary 的 script_governance_selected 同步改：ci-summary 用同一个表达式断言
     # 「选中即必须 success、未选中即必须 skipped」，两边不一致会让本 job 跑绿反而使 CI 红。
     if: >-
-      ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false' || needs.impact-plan.outputs.infra != 'false') }}
+      ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false' || needs.impact-plan.outputs.infra != 'false' || needs.impact-plan.outputs.docs != 'false') }}
     steps:
       - name: Checkout
         timeout-minutes: 3
@@ -2562,7 +2577,7 @@ jobs:
           full_chain_result="${{ needs.business-full-chain-acceptance.result }}"
           backend_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false' }}"
           connector_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.connector_hosts != 'false' }}"
-          script_governance_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false' || needs.impact-plan.outputs.infra != 'false' }}"
+          script_governance_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false' || needs.impact-plan.outputs.infra != 'false' || needs.impact-plan.outputs.docs != 'false' }}"
           openapi_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false' }}"
           postgres_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.postgresql != 'false' }}"
           redis_cap_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.redis_cap != 'false' }}"
