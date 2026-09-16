@@ -4,6 +4,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.GLAccountAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
+using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Erp.Web.Application.Validation;
 using Nerv.IIP.Contracts.IntegrationEvents;
@@ -107,7 +108,8 @@ public sealed class ProductionReportRecordedIntegrationEventHandlerForAccumulate
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
     ITransactionUnitOfWork unitOfWork,
-    IWorkOrderCostMutationLock mutationLock)
+    IWorkOrderCostMutationLock mutationLock,
+    ErpCodingService codingService)
     : IIntegrationEventHandler<ProductionReportRecordedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-erp.production-report-labor-cost";
@@ -215,17 +217,45 @@ public sealed class ProductionReportRecordedIntegrationEventHandlerForAccumulate
         }
         else
             cost.RecordUncostedReport(integrationEvent.Payload.ReportNo, integrationEvent.Payload.IsReversal, integrationEvent.Payload.ReportedAtUtc);
-        if (cost.IsFullyCapitalized && integrationEvent.Payload.IsReversal)
-            await CostVariancePosting.PostLateAdjustmentAsync(dbContext, cost, cost.TotalAccumulatedCost - priorTotal, integrationEvent.Payload.ReportNo, integrationEvent.Payload.ReportedAtUtc, cancellationToken);
+        if (cost.IsFullyCapitalized && integrationEvent.Payload.IsReversal
+            && !await CostVariancePosting.PostLateAdjustmentAsync(dbContext, codingService, cost, cost.TotalAccumulatedCost - priorTotal, integrationEvent.Payload.ReportNo, integrationEvent.Payload.ReportedAtUtc, cancellationToken))
+        {
+            await SkipOnVoucherNumberFailureAsync(integrationEvent, cancellationToken);
+            return;
+        }
         var pending = await dbContext.PendingMaterialCosts.Where(x => x.OrganizationId == integrationEvent.OrganizationId && x.EnvironmentId == integrationEvent.EnvironmentId && x.ReportNo == integrationEvent.Payload.ReportNo).ToListAsync(cancellationToken);
         foreach (var item in pending)
         {
             var priorPendingTotal = cost.TotalAccumulatedCost;
             cost.RecordMaterial(item.MovementId, item.ReportNo, item.SkuCode, item.SignedQuantity, item.UnitCost, item.PostedAtUtc);
-            if (cost.CapitalizationPublished && item.SignedQuantity < 0m)
-                await CostVariancePosting.PostLateAdjustmentAsync(dbContext, cost, cost.TotalAccumulatedCost - priorPendingTotal, item.MovementId, item.PostedAtUtc, cancellationToken);
+            if (cost.CapitalizationPublished && item.SignedQuantity < 0m
+                && !await CostVariancePosting.PostLateAdjustmentAsync(dbContext, codingService, cost, cost.TotalAccumulatedCost - priorPendingTotal, item.MovementId, item.PostedAtUtc, cancellationToken))
+            {
+                await SkipOnVoucherNumberFailureAsync(integrationEvent, cancellationToken);
+                return;
+            }
             dbContext.PendingMaterialCosts.Remove(item);
         }
+    }
+
+    /// <summary>
+    /// #3278 / S7：迟到调整凭证号没分配下来时的 gate-and-skip。
+    /// 不能 throw：CAP 消费者里的业务异常会逃逸成 poison message（#877 仍 OPEN）。
+    /// 先 Clear 再写死信：本次所有未提交变更（含 inbox 行、成本累计）一并丢弃，
+    /// 而死信库自己 SaveChanges，所以只有死信行落库。
+    /// </summary>
+    private async Task SkipOnVoucherNumberFailureAsync(
+        ProductionReportRecordedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken)
+    {
+        dbContext.ChangeTracker.Clear();
+        await deadLetterStore.AddAsync(
+            IntegrationEventDeadLetterMessage.Create(
+                ConsumerName,
+                integrationEvent,
+                ConsumerJournalVoucherNumber.AllocationFailureCode,
+                "Journal voucher number could not be allocated for the late cost adjustment."),
+            cancellationToken);
     }
 }
 
@@ -233,7 +263,8 @@ public sealed class ProductionReportRecordedIntegrationEventHandlerForAccumulate
 public sealed class StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    ITransactionUnitOfWork unitOfWork)
+    ITransactionUnitOfWork unitOfWork,
+    ErpCodingService codingService)
     : IIntegrationEventHandler<StockMovementPostedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-erp.production-material-cost";
@@ -280,8 +311,24 @@ public sealed class StockMovementPostedIntegrationEventHandlerForAccumulateMater
             };
             if (variance > 0m) lines.Add(new("5101-PRODUCTION-VARIANCE", variance, 0m, $"Uncapitalized variance {completedCost.WorkOrderId}"));
             else if (variance < 0m) lines.Add(new("5101-PRODUCTION-VARIANCE", 0m, -variance, $"Over-capitalized variance {completedCost.WorkOrderId}"));
+            // #3278 / S7：凭证号改分配器短号，分配键取 (WOC, 库存移动号)。
+            // 先分配再改聚合状态：拿不到号时 RecordWipClearance 还没发生，
+            // Clear 之后本次零落库，而不是「清了 WIP 却没凭证」。
+            var capitalizationVoucher = await ConsumerJournalVoucherNumber.TryAllocateAsync(
+                codingService,
+                integrationEvent.OrganizationId,
+                integrationEvent.EnvironmentId,
+                JournalVoucherSourceType.WorkOrderCapitalization,
+                payload.InventoryMovementId,
+                cancellationToken);
+            if (capitalizationVoucher.Code is null)
+            {
+                dbContext.ChangeTracker.Clear();
+                await deadLetterStore.AddAsync(IntegrationEventDeadLetterMessage.Create(ConsumerName, integrationEvent, ConsumerJournalVoucherNumber.AllocationFailureCode, capitalizationVoucher.FailureMessage), cancellationToken);
+                return;
+            }
             completedCost.RecordWipClearance(wipClearance);
-            dbContext.JournalVouchers.Add(JournalVoucher.Post(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, ErpVoucherNoPolicy.Compose(VoucherFamily.WorkOrderCapitalization, completedCost.WorkOrderId, payload.InventoryMovementId), DateOnly.FromDateTime(payload.PostedAtUtc.UtcDateTime), lines, JournalVoucherSourceType.WorkOrderCapitalization, payload.InventoryMovementId));
+            dbContext.JournalVouchers.Add(JournalVoucher.Post(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, capitalizationVoucher.Code, DateOnly.FromDateTime(payload.PostedAtUtc.UtcDateTime), lines, JournalVoucherSourceType.WorkOrderCapitalization, payload.InventoryMovementId));
             await CostingIntegrationEventUnitOfWork.SaveEntitiesAsync(dbContext, unitOfWork, cancellationToken);
             return;
         }
@@ -295,8 +342,13 @@ public sealed class StockMovementPostedIntegrationEventHandlerForAccumulateMater
         }
         var priorMaterialTotal = cost.TotalAccumulatedCost;
         cost.RecordMaterial(payload.InventoryMovementId, payload.SourceDocumentId, payload.SkuCode, signedCostQuantity, unitCost.Value, payload.PostedAtUtc);
-        if (cost.CapitalizationPublished && signedCostQuantity < 0m)
-            await CostVariancePosting.PostLateAdjustmentAsync(dbContext, cost, cost.TotalAccumulatedCost - priorMaterialTotal, payload.InventoryMovementId, payload.PostedAtUtc, cancellationToken);
+        if (cost.CapitalizationPublished && signedCostQuantity < 0m
+            && !await CostVariancePosting.PostLateAdjustmentAsync(dbContext, codingService, cost, cost.TotalAccumulatedCost - priorMaterialTotal, payload.InventoryMovementId, payload.PostedAtUtc, cancellationToken))
+        {
+            dbContext.ChangeTracker.Clear();
+            await deadLetterStore.AddAsync(IntegrationEventDeadLetterMessage.Create(ConsumerName, integrationEvent, ConsumerJournalVoucherNumber.AllocationFailureCode, "Journal voucher number could not be allocated for the late cost adjustment."), cancellationToken);
+            return;
+        }
         await CostingIntegrationEventUnitOfWork.SaveEntitiesAsync(dbContext, unitOfWork, cancellationToken);
     }
 
@@ -311,9 +363,36 @@ public sealed class StockMovementPostedIntegrationEventHandlerForAccumulateMater
 
 internal static class CostVariancePosting
 {
-    public static async Task PostLateAdjustmentAsync(ApplicationDbContext dbContext, WorkOrderCost cost, decimal costDelta, string sourceId, DateTimeOffset occurredAtUtc, CancellationToken cancellationToken)
+    /// <summary>
+    /// 记一张工单成本迟到调整凭证（<c>WOCADJ</c> 族）。
+    /// </summary>
+    /// <returns>
+    /// <see langword="true"/> = 已完成（记了凭证，或 <paramref name="costDelta"/> 为 0 的空转）；
+    /// <see langword="false"/> = **凭证号没分配到**，本方法没改任何状态，调用方必须 gate-and-skip。
+    /// </returns>
+    /// <remarks>
+    /// #3278 / S7：凭证号从 <c>ErpVoucherNoPolicy.Compose(WorkOrderCostAdjustment, workOrderId, sourceId)</c>
+    /// 改成分配器短号。本方法是静态辅助、被 5 个生产调用点共用，手里没有事件信封，
+    /// 所以分配器的幂等键取 <c>(WOCADJ, sourceId)</c>——正好就是 S5 给本族定的唯一键，
+    /// 也正好就在参数里，不需要改 5 个调用点的取值。
+    /// ⚠️ 这条承接的强度不超过 S5：<c>JournalVoucherSourceType.WorkOrderCostAdjustment</c> 的注释已登记
+    /// 「<c>(WOCADJ, sourceId)</c> 比旧凭证号少了 <c>workOrderId</c> 一段」是「今天成立」而非不变量；
+    /// 本票不改变那个论证，只是让凭证号与它同粒度。
+    ///
+    /// **分配放在最前面**（两条早退之后、任何写入之前）：拿不到号时本方法零副作用，
+    /// 不会出现「补建了科目 / 清了 WIP 却没凭证」的半截状态。
+    /// </remarks>
+    public static async Task<bool> PostLateAdjustmentAsync(ApplicationDbContext dbContext, ErpCodingService codingService, WorkOrderCost cost, decimal costDelta, string sourceId, DateTimeOffset occurredAtUtc, CancellationToken cancellationToken)
     {
-        if (costDelta == 0m) return;
+        if (costDelta == 0m) return true;
+        var voucherAllocation = await ConsumerJournalVoucherNumber.TryAllocateAsync(
+            codingService,
+            cost.OrganizationId,
+            cost.EnvironmentId,
+            JournalVoucherSourceType.WorkOrderCostAdjustment,
+            sourceId,
+            cancellationToken);
+        if (voucherAllocation.Code is null) return false;
         var required = new[]
         {
             ("1405-WIP", "Work in process", GLAccountType.Asset),
@@ -329,7 +408,8 @@ internal static class CostVariancePosting
             : new[] { new JournalVoucherLineDraft("5101-PRODUCTION-VARIANCE", amount, 0m, $"Unfavorable variance {sourceId}"), new JournalVoucherLineDraft("1405-WIP", 0m, amount, $"Late cost input {sourceId}") };
         if (cost.IsFullyCapitalized)
             cost.RecordWipClearance(costDelta);
-        dbContext.JournalVouchers.Add(JournalVoucher.Post(cost.OrganizationId, cost.EnvironmentId, ErpVoucherNoPolicy.Compose(VoucherFamily.WorkOrderCostAdjustment, cost.WorkOrderId, sourceId), DateOnly.FromDateTime(occurredAtUtc.UtcDateTime), lines, JournalVoucherSourceType.WorkOrderCostAdjustment, sourceId));
+        dbContext.JournalVouchers.Add(JournalVoucher.Post(cost.OrganizationId, cost.EnvironmentId, voucherAllocation.Code, DateOnly.FromDateTime(occurredAtUtc.UtcDateTime), lines, JournalVoucherSourceType.WorkOrderCostAdjustment, sourceId));
+        return true;
     }
 }
 
