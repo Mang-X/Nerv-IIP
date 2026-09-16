@@ -2259,8 +2259,15 @@ jobs:
     timeout-minutes: 35
     runs-on: ubuntu-latest
     needs: impact-plan
+    # `infra`（#3509）：本 job 的输入不止 scripts/ 与 backend/。这里跑的契约测试直接读 infra/ 下的文件
+    # 并对其内容逐字断言——scripts/tests/production-deployment-inputs.Tests.ps1 读 AppHost Program.cs 与
+    # infra/compose 的三个部署输入文件，发现式 runner 选中的 dev-entrypoint / fullstack-session-runtime /
+    # fullstack-worker-boundary 也读 Program.cs。选中维度按「改了哪类文件」算，断言维度按「谁读了这个文件」
+    # 成立；`infra` 之前零消费，于是只动 infra/ 的 PR 会把这些断言跳过（PR #3484 实见 skipping）。
+    # 这一项必须与 ci-summary 的 script_governance_selected 同步改：ci-summary 用同一个表达式断言
+    # 「选中即必须 success、未选中即必须 skipped」，两边不一致会让本 job 跑绿反而使 CI 红。
     if: >-
-      ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false') }}
+      ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false' || needs.impact-plan.outputs.infra != 'false') }}
     steps:
       - name: Checkout
         timeout-minutes: 3
@@ -2555,7 +2562,7 @@ jobs:
           full_chain_result="${{ needs.business-full-chain-acceptance.result }}"
           backend_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false' }}"
           connector_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.connector_hosts != 'false' }}"
-          script_governance_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false' }}"
+          script_governance_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false' || needs.impact-plan.outputs.infra != 'false' }}"
           openapi_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false' }}"
           postgres_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.postgresql != 'false' }}"
           redis_cap_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.redis_cap != 'false' }}"
