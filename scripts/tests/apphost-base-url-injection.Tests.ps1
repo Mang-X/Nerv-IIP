@@ -99,6 +99,20 @@ function Get-ThrownMessage {
     }
 }
 
+function New-FixtureSource {
+    <#
+        合成一份 C# 夹具：前缀写在行首（C# 的预处理指令必须是行首第一个非空白 token，
+        把它塞进一行式夹具里得到的是无效 C#，那样测的就不是扫描器而是夹具了），
+        被扫描的调用单独占一行。
+    #>
+    param(
+        [Parameter(Mandatory)] [AllowEmptyString()] [string] $Prefix,
+        [Parameter(Mandatory)] [string] $Body
+    )
+
+    return @('class C', '{', '    void M()', '    {', $Prefix, "        $Body", '    }', '}') -join "`n"
+}
+
 function New-ExemptionRegistry {
     param(
         [Parameter(Mandatory)] [string] $Name,
@@ -135,7 +149,9 @@ try {
 
     # ── B/C. 逐条删除与逐条改值 ────────────────────────────────────────────────────────────────
     $violatingPairs = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
-    foreach ($violation in $baseline.Violations) { [void] $violatingPairs.Add("$($violation.ConsumerResource)/$($violation.Key)") }
+    foreach ($violation in $baseline.Violations) {
+        [void] $violatingPairs.Add((Get-NervStringCompositeKey -Components @($violation.ConsumerResource, $violation.Key)))
+    }
 
     $injectionByPair = @{}
     foreach ($injection in $baseline.Injections) { $injectionByPair["$($injection.Resource)/$($injection.EnvironmentName)"] = $injection }
@@ -146,7 +162,8 @@ try {
     $deleteCells = 0
     $valueCells = 0
     foreach ($requirement in $baseline.Requirements) {
-        if ($violatingPairs.Contains("$($requirement.ConsumerResource)/$($requirement.Key)")) { continue }
+        $requirementPair = Get-NervStringCompositeKey -Components @($requirement.ConsumerResource, $requirement.Key)
+        if ($violatingPairs.Contains($requirementPair)) { continue }
         $injection = $injectionByPair["$($requirement.ConsumerResource)/$($requirement.EnvironmentName)"]
         $lineIndex = $injection.Line - 1
         $lineText = $originalLines[$lineIndex]
@@ -192,7 +209,10 @@ try {
     Assert-Contract ($valueCells -eq $deleteCells) 'The value sweep must cover exactly the cells the deletion sweep covered.'
 
     # 「注的是别的资源的端点」与「注的是个字面量」是两种不同的错，两种都必须红。
-    $firstSatisfied = @($baseline.Requirements | Where-Object { -not $violatingPairs.Contains("$($_.ConsumerResource)/$($_.Key)") })[0]
+    $firstSatisfied = @($baseline.Requirements | Where-Object {
+        $candidatePair = Get-NervStringCompositeKey -Components @($_.ConsumerResource, $_.Key)
+        -not $violatingPairs.Contains($candidatePair)
+    })[0]
     $foreignProvider = @($baseline.Resources | Where-Object { -not [string]::Equals($_.Resource, $firstSatisfied.ProviderResource, [StringComparison]::Ordinal) -and -not [string]::Equals($_.Resource, $firstSatisfied.ConsumerResource, [StringComparison]::Ordinal) })[0]
     $foreignInjection = $injectionByPair["$($firstSatisfied.ConsumerResource)/$($firstSatisfied.EnvironmentName)"]
     $foreignLines = [Collections.Generic.List[string]]::new($originalLines)
@@ -255,7 +275,7 @@ try {
 
         $duplicatePath = New-ExemptionRegistry -Name 'duplicate' -Entry @($liveEntry, $liveEntry.Clone())
         $duplicateMessage = Get-ThrownMessage -Action { Get-NervAppHostBaseUrlInjectionReport -RepositoryRoot $repoRoot -AppHostProgramText $originalText -Cache $cache -ExemptionPath $duplicatePath }
-        Assert-Contract ($null -ne $duplicateMessage -and $duplicateMessage.Contains('more than once')) `
+        Assert-Contract ($null -ne $duplicateMessage -and $duplicateMessage.Contains('more than once', [StringComparison]::Ordinal)) `
             "A pair registered twice must be rejected; got: $duplicateMessage"
     }
 
@@ -273,18 +293,44 @@ try {
 
     # 每一种前置写法都会让「按引号配对」的朴素扫描器从这里开始整段错位，之后真正的调用就读不到了。
     # 失效方向是静默变绿（需求凭空消失），所以逐种钉住。
+    # 实现面：每一种前置写法都会让「按引号配对」的朴素扫描器从这里开始整段错位，之后真正的调用
+    # 就读不到了。失效方向是静默变绿（需求凭空消失），所以逐种钉住。
     $prefixCases = @(
-        @{ Name = 'verbatim string with doubled quotes'; Prefix = 'var v = @"a ""b"" c";' }
-        @{ Name = 'raw string literal'; Prefix = 'var r = """{"op":"move"}""";' }
         @{ Name = 'interpolated hole containing a quote'; Prefix = 'var i = $"{ d["key"] } tail";' }
-        @{ Name = 'char literal holding a quote'; Prefix = "var c = '`"';" }
+        @{ Name = 'char literal holding a comma'; Prefix = "var c = ',';" }
         @{ Name = 'comment marker inside a url literal'; Prefix = 'var u = "http://localhost:5118";' }
+        # #3124 点名的那一类：预处理指令行里的撇号。指令行整行按非代码置空，所以它到不了
+        # 字符字面量分支。前一版实现里它会开一个 char literal 一路吞到文件尾，需求集静默归零。
+        @{ Name = "preprocessor directive containing an apostrophe"; Prefix = "#region Don't touch`n#endregion" }
+        @{ Name = 'pragma with an apostrophe in a trailing comment'; Prefix = "#pragma warning disable S1118 // don't ask" }
     )
     foreach ($case in $prefixCases) {
-        $source = "class C { void M() { $($case.Prefix) var a = $callTemplate } }"
+        $source = New-FixtureSource -Prefix $case.Prefix -Body "var a = $callTemplate"
         $found = @(Get-NervBaseUrlResolveCallSites -SourceText $source -SourcePath "fixture/prefix.cs")
         Assert-Contract ($found.Count -eq 1 -and [string]::Equals($found[0].Key, 'Erp:BaseUrl', [StringComparison]::Ordinal)) `
             "A real Resolve call following a $($case.Name) must still be enumerated; found $($found.Count)."
+    }
+
+    # 拒绝面。这三种形态本扫描器不实现，遇到必须 throw —— 不是「少认一种写法」而是「不猜」。
+    # 前一版实现了 raw 与 verbatim，并在这两处各复现了一个 #3124 已裁决的静默归零缺陷：
+    # `@""""` 被先数引号读成 raw，吞掉文件其余部分，需求集归零而门禁照绿。
+    $refusedCases = @(
+        @{ Name = 'verbatim string containing one escaped quote'; Prefix = 'var q = @"""";'; Expect = 'does not implement verbatim strings' }
+        @{ Name = 'raw string literal'; Prefix = 'var r = """{"op":"move"}""";'; Expect = 'does not implement raw strings' }
+        @{ Name = 'conditional compilation directive'; Prefix = "#if DEBUG`n#endif"; Expect = 'does not model which branch is live' }
+    )
+    foreach ($case in $refusedCases) {
+        $source = New-FixtureSource -Prefix $case.Prefix -Body "var a = $callTemplate"
+        $message = Get-ThrownMessage -Action { Get-NervBaseUrlResolveCallSites -SourceText $source -SourcePath 'fixture/refused.cs' }
+        Assert-Contract ($null -ne $message -and $message.Contains($case.Expect, [StringComparison]::Ordinal)) `
+            "A $($case.Name) must be refused out loud rather than silently shifting the scan out of phase; got: $message"
+        # 同一份夹具去掉那条真实调用后**仍然** throw：证明这一格红的原因是拒绝面本身，
+        # 不是「恰好没找到调用」。
+        $emptyMessage = Get-ThrownMessage -Action {
+            Get-NervBaseUrlResolveCallSites -SourceText (New-FixtureSource -Prefix $case.Prefix -Body 'var x = InternalServiceBaseAddress;') -SourcePath 'fixture/refused-empty.cs'
+        }
+        Assert-Contract ($null -ne $emptyMessage -and $emptyMessage.Contains($case.Expect, [StringComparison]::Ordinal)) `
+            "The refusal for $($case.Name) must come from the scanner, not from anything about the call it happens to precede; got: $emptyMessage"
     }
 
     $failClosedConsumer = @(
@@ -299,62 +345,79 @@ try {
             "A $($case.Name) must stop the scan rather than silently drop the requirement; got: $message"
     }
 
-    # ── G. AppHost 侧 fail-closed ──────────────────────────────────────────────────────────────
-    # 这一段用**合成的 AppHost 源码**跑真实报告，顺带证明门禁不是钉死在那一个文件上的。
-    # 合成文本只声明 PlatformGateway 与 Ops 的消费方真正需要的提供方资源；少声明一个就会撞上
-    # 「没有资源提供这个前缀」那条 fail-closed。
-    $syntheticResources = @(
-        'var apphub = builder.AddProject<Projects.Nerv_IIP_AppHub_Web>("apphub").WithHttpEndpoint(port: 5101, name: "http");'
-        'var iam = builder.AddProject<Projects.Nerv_IIP_Iam_Web>("iam").WithHttpEndpoint(port: 5102, name: "http");'
-        'var notification = builder.AddProject<Projects.Nerv_IIP_Notification_Web>("notification").WithHttpEndpoint(port: 5106, name: "http");'
-        'var fileStorage = builder.AddProject<Projects.Nerv_IIP_FileStorage_Web>("file-storage").WithHttpEndpoint(port: 5104, name: "http");'
-        'var ops = builder.AddProject<Projects.Nerv_IIP_Ops_Web>("ops").WithHttpEndpoint(port: 5103, name: "http")'
-        '    .WithEnvironment("Iam__BaseUrl", iam.GetEndpoint("http"));'
-        'var gateway = builder.AddProject<Projects.Nerv_IIP_PlatformGateway_Web>("gateway").WithHttpEndpoint(port: 5100, name: "http")'
-        '    .WithEnvironment("AppHub__BaseUrl", apphub.GetEndpoint("http"))'
-        '    .WithEnvironment("Iam__BaseUrl", iam.GetEndpoint("http"))'
-        '    .WithEnvironment("Ops__BaseUrl", ops.GetEndpoint("http"))'
-        '    .WithEnvironment("Notification__BaseUrl", notification.GetEndpoint("http"))'
-        '    .WithEnvironment("FileStorage__BaseUrl", fileStorage.GetEndpoint("http"));'
-    )
-    $syntheticText = $syntheticResources -join "`n"
-    $syntheticReport = Get-NervAppHostBaseUrlInjectionReport -RepositoryRoot $repoRoot -AppHostProgramText $syntheticText -Cache $cache `
-        -ExemptionPath (New-ExemptionRegistry -Name 'synthetic-empty' -Entry @())
-    Assert-Contract ($syntheticReport.UnexemptedViolations.Count -eq 0) `
-        "A synthetic AppHost that injects everything its hosted services resolve must be clean; got: $(@($syntheticReport.UnexemptedViolations | ForEach-Object { "$($_.ConsumerResource)/$($_.Key)" }) -join ', ')"
-    Assert-Contract ($syntheticReport.Requirements.Count -eq 6) `
-        "The synthetic AppHost hosts Ops and PlatformGateway, whose consumer code resolves 6 base addresses; the checker enumerated $($syntheticReport.Requirements.Count)."
-
-    $syntheticFailures = @(
-        @{
-            Name = 'a provider resource the AppHost never declares'
-            Text = ($syntheticResources | Where-Object { -not $_.Contains('"apphub"') }) -join "`n"
-            Expect = "no AppHost project resource provides the 'AppHub' prefix"
-        }
+    # ── G. AppHost 侧 fail-closed（对真实 Program.cs 做变异，不用合成夹具） ─────────────────────
+    # 合成 AppHost 会把断言钉死在真实消费方代码上：gateway 或 ops 任何时候新增一处 Resolve，
+    # 合成夹具就少声明一个提供方而假红，并要求回来改夹具。这里改成变异真实文件。
+    $sampleInjection = $baseline.Injections[0]
+    $appHostMutations = @(
         @{
             Name = 'the same key injected twice on one resource'
-            Text = $syntheticText.Replace('    .WithEnvironment("FileStorage__BaseUrl", fileStorage.GetEndpoint("http"));', "    .WithEnvironment(`"FileStorage__BaseUrl`", fileStorage.GetEndpoint(`"http`"))`n    .WithEnvironment(`"FileStorage__BaseUrl`", fileStorage.GetEndpoint(`"http`"));")
+            Lines = { param($lines) $copy = [Collections.Generic.List[string]]::new($lines); $copy.Insert($sampleInjection.Line, $lines[$sampleInjection.Line - 1]); $copy }
             Expect = 'twice'
         }
         @{
-            Name = 'an injection attributed to no declared resource'
-            Text = "$syntheticText`nvar stray = something.WithEnvironment(`"Iam__BaseUrl`", iam.GetEndpoint(`"http`"));"
+            Name = 'an injection attributed to a variable that is no declared resource'
+            Lines = { param($lines) $copy = [Collections.Generic.List[string]]::new($lines); $copy.Insert($lines.Count - 1, "stray = stray`n    .WithEnvironment(`"$($sampleInjection.EnvironmentName)`", $($baseline.Resources[0].Variable).GetEndpoint(`"http`"));"); $copy }
             Expect = 'which is not a project resource'
         }
         @{
             Name = 'AddProject not bound to a var'
-            Text = "$syntheticText`nbuilder.AddProject<Projects.Nerv_IIP_ConnectorHost_Host>(`"connector-host`");"
+            Lines = { param($lines) $copy = [Collections.Generic.List[string]]::new($lines); $copy.Insert($lines.Count - 1, 'builder.AddProject<Projects.Nerv_IIP_ConnectorHost_Host>("connector-host-clone");'); $copy }
             Expect = 'is not bound to a'
         }
-    )
-    foreach ($case in $syntheticFailures) {
-        $message = Get-ThrownMessage -Action {
-            Get-NervAppHostBaseUrlInjectionReport -RepositoryRoot $repoRoot -AppHostProgramText $case.Text -Cache $cache `
-                -ExemptionPath (Join-Path $fixtureRoot 'synthetic-empty.json')
+        @{
+            # ⛔ 审核第 1 轮在这一格上实测旧版 EXIT=0：左值与接收者不同的那一版能编译，而注入会
+            # 落到接收者上，左值那个资源一条也拿不到 —— 正是 #3313 的失败形态。
+            Name = 'the assignment target and the chain receiver naming different resources'
+            Lines = {
+                param($lines)
+                $copy = [Collections.Generic.List[string]]::new($lines)
+                $other = @($baseline.Resources | Where-Object { -not [string]::Equals($_.Resource, $sampleInjection.Resource, [StringComparison]::Ordinal) })[0]
+                $target = @($baseline.Resources | Where-Object { [string]::Equals($_.Resource, $sampleInjection.Resource, [StringComparison]::Ordinal) })[0]
+                $copy.Insert($lines.Count - 1, "$($target.Variable) = $($other.Variable)`n    .WithEnvironment(`"$($sampleInjection.EnvironmentName)`", $($baseline.Resources[0].Variable).GetEndpoint(`"http`"));")
+                $copy
+            }
+            Expect = 'but the WithEnvironment chain that injects'
         }
-        Assert-Contract ($null -ne $message -and $message.Contains($case.Expect)) `
+        @{
+            # 回调式 WithEnvironment 读不出字面量键，但它在运行时**后写覆盖**基址。
+            # 旧版对这一格 continue（GREEN）。
+            Name = 'a callback-form WithEnvironment that mentions a base-url key'
+            Lines = {
+                param($lines)
+                $copy = [Collections.Generic.List[string]]::new($lines)
+                $copy[$sampleInjection.Line - 1] = "    .WithEnvironment(ctx => ctx.EnvironmentVariables[`"$($sampleInjection.EnvironmentName)`"] = `"http://wrong-sentinel:1`")"
+                $copy
+            }
+            Expect = 'in a form this library cannot read'
+        }
+        @{
+            Name = 'a hosted project type with no .csproj'
+            Lines = { param($lines) @($lines | ForEach-Object { $_.Replace('Projects.Nerv_IIP_Ops_Web', 'Projects.Nerv_IIP_Ops_Absent_Web') }) }
+            Expect = 'for which no .csproj exists'
+        }
+    )
+    foreach ($case in $appHostMutations) {
+        $mutatedText = (& $case.Lines $originalLines) -join "`n"
+        Assert-Contract (-not [string]::Equals($mutatedText, $originalText, [StringComparison]::Ordinal)) `
+            "Mutation sentinel: '$($case.Name)' must change the AppHost text."
+        $message = Get-ThrownMessage -Action { Get-NervAppHostBaseUrlInjectionReport -RepositoryRoot $repoRoot -AppHostProgramText $mutatedText -Cache $cache }
+        Assert-Contract ($null -ne $message -and $message.Contains($case.Expect, [StringComparison]::Ordinal)) `
             "$($case.Name) must stop the checker rather than be dropped; got: $message"
     }
+
+    # 「没有资源提供这个键前缀」需要一个消费方要了、AppHost 没声明的前缀。它是唯一必须用合成
+    # AppHost 的一格，所以断言只吃「拒绝的理由」，不吃前缀名 —— 消费方代码改了也不会假红。
+    $soleConsumer = @($baseline.Requirements)[0]
+    $soleResource = @($baseline.Resources | Where-Object { [string]::Equals($_.Resource, $soleConsumer.ConsumerResource, [StringComparison]::Ordinal) })[0]
+    $soleProjectType = $soleResource.ProjectTypeName
+    $lonelyText = "var $($soleResource.Variable) = builder.AddProject<Projects.$soleProjectType>(`"$($soleResource.Resource)`").WithHttpEndpoint(port: 5100, name: `"http`");"
+    $lonelyMessage = Get-ThrownMessage -Action {
+        Get-NervAppHostBaseUrlInjectionReport -RepositoryRoot $repoRoot -AppHostProgramText $lonelyText -Cache $cache
+    }
+    Assert-Contract ($null -ne $lonelyMessage -and $lonelyMessage.Contains('no AppHost project resource provides the', [StringComparison]::Ordinal)) `
+        "An AppHost that hosts a consumer without declaring the resource it resolves must be refused; got: $lonelyMessage"
+
 }
 finally {
     if (Test-Path -LiteralPath $fixtureRoot) { Remove-Item -LiteralPath $fixtureRoot -Recurse -Force }

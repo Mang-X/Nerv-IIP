@@ -12,6 +12,9 @@
 
 Set-StrictMode -Version Latest
 
+# 复合键、排序与分组一律走仓库既有的序数助手，不在本库自造第二套键编码或排序口径。
+. (Join-Path $PSScriptRoot 'OrdinalString.ps1')
+
 <#
 #3511 —— 「消费方要的下游基址，AppHost 必须真的注入，且注入的必须是本会话那个端点」。
 
@@ -53,8 +56,9 @@ Set-StrictMode -Version Latest
 ## 失效方向
 
 凡是「读不懂」一律 throw（= 门禁红），不是跳过：调用的第三个实参不是字面量、键不是 `X:BaseUrl`
-形态、消费方项目不在任何托管项目闭包里、提供方项目找不到或不唯一、注入语句归属不到已知资源变量、
-`using static` 形式的非限定调用——全部 throw。新写法的默认归宿是「被拦下来问」，不是「被放过」。
+形态、提供方项目找不到或不唯一、注入语句归属不到已知资源变量、**赋值左值与链接收者指向不同资源**、
+提到 `__BaseUrl` 却读不出字面量键的 `WithEnvironment` 形态、`using static` 形式的非限定调用、
+以及扫描器没实现的 C# 字面量/条件编译形态——全部 throw。新写法的默认归宿是「被拦下来问」。
 
 ## 覆盖边界（声明多少就只断言多少）
 
@@ -65,8 +69,10 @@ Set-StrictMode -Version Latest
     「删注入还是补消费方」，属 #3512。
   * 不校验 `.WithReference(x)` 是否成对出现。服务发现名与显式基址是两条路（#1317），本库守的是
     显式基址这条；把 `WithReference` 也拉进来会把「等待/依赖拓扑」这件事混进同一条断言里。
-  * C# 扫描器实现了行注释、块注释、普通/逐字/原始字符串、字符字面量与插值洞。**嵌套在插值洞里的
-    原始字符串**（`$"{ $"""…""" }"`）不在实现面内；这个形态在扫描面上当前零出现。
+  * C# 扫描面的契约是「实现 + 拒绝」，不是「实现 C# 词法」。实现哪几种、拒绝哪几种，以及各自在
+    扫描面上的实测出现次数，逐行列在 `Get-NervCSharpScanSurface` 的头部表里——那张表是本库唯一
+    有权声明覆盖面的地方，**不要在别处复述它**。走 Roslyn 是更好的终局（#3124 已就同类问题裁决过），
+    但它要把这条门禁挪出 pwsh 进程、牵出承载 shard 的 CI 选中问题，属另票。
 #>
 
 $script:NervAppHostProgramRelativePath = 'infra/aspire/Nerv.IIP.AppHost/Program.cs'
@@ -74,28 +80,64 @@ $script:NervAppHostBaseUrlExemptionRelativePath = 'scripts/apphost-base-url-inje
 $script:NervAppHostBaseUrlTrackingPattern = '^#[1-9][0-9]*$'
 $script:NervAppHostEndpointName = 'http'
 
+# C# 的条件编译指令闭集。它们决定哪一段代码参与编译，本扫描器不建模这件事，因此遇到即 throw；
+# 其余指令（`#region` / `#pragma` / `#line` / `#nullable` / …）整行不是代码，一律置空，不需要认名字。
+$script:NervCSharpRefusedDirectives = @('if', 'elif', 'else', 'endif', 'define', 'undef')
+
+# 违例种类闭集。登记表的 kind 必须落在这里，否则一个拼错的种类会静默豁免不掉任何东西。
+$script:NervAppHostBaseUrlViolationKinds = @('missing', 'wrong-value')
+
 #region C# 扫描面
 
 function Get-NervCSharpScanSurface {
     <#
         把一份 C# 源码拆成两个等长的视图：
 
-          Code   —— 注释位换成空白，字符串字面量原样保留。用来**读内容**（键名、值表达式）。
+          Code   —— 注释位与预处理指令位换成空白，字符串字面量原样保留。用来**读内容**（键名、值表达式）。
           Masked —— 在 Code 之上再把字符串/字符字面量的内容换成 'x'。用来**判结构**
                     （`;` 语句边界、括号深度、赋值号），因为字面量里出现的 `;` `(` `=` 不是结构。
 
         两个视图与原文逐字符对齐（换行一律保留），所以在 Masked 上找到的偏移可以直接切 Code，
         也可以直接换算行号。
+
+        ## 本函数的契约是「实现 + 拒绝」，不是「实现 C# 词法」
+
+        #3124 已经就同一问题裁决过：手搓 C# 词法器在本仓不收敛，改用 Roslyn。本函数**不试图**成为
+        那一版的 PowerShell 复刻。它只实现扫描面上真实出现的形态，对没实现的形态**当场 throw**：
+
+        | 形态 | 处置 | 扫描面实测出现次数 |
+        |---|---|---|
+        | `//` 行注释、`/* */` 块注释 | 实现（置空） | 有 / 0 |
+        | 普通字符串 `"…"`（含 `\` 转义与 `$"…"` 插值洞） | 实现 | 有 / 21 |
+        | 字符字面量 `'x'` | 实现 | 6（全是 `','` 与 `';'`） |
+        | 非条件编译的预处理指令（`#region` / `#pragma` / …） | 实现：整行当非代码置空 | 42 |
+        | 原始字符串 `"""…"""` | **throw** | 0 |
+        | 逐字字符串 `@"…"` | **throw** | 0 |
+        | 条件编译指令 `#if` / `#elif` / `#else` / `#endif` / `#define` / `#undef` | **throw** | 0 |
+
+        为什么线画在这里，而不是「再实现一种形态」：后者的失效方向是**静默归零**——一个没认对的
+        字面量把扫描相位带偏，整份文件的需求集塌成 0，而门禁照样宣称全部通过。throw 的失效方向是红。
+        本 PR 的前一版实现过 raw 与 verbatim，并在这两处各复现了一个 #3124 已点名的静默归零缺陷
+        （`@""""` 被先数引号读成 raw、吞掉文件其余部分）。**实现一种形态的代价是它必须正确；拒绝它没有这个代价。**
+
+        预处理指令为什么是「置空」而不是 throw：面上实测 42 处 `#region` / `#pragma`，一律 throw 就是
+        假红。指令行整行不是代码，置空既不需要认识任何指令名，也顺带关掉了 `#region Don't touch` 里
+        那个撇号被读成字符字面量起点、一路吞到文件尾的通路。**条件编译是例外**——它决定哪一段代码
+        是活的，本函数不建模这件事，所以拒绝而不是猜。
+
+        扫描面（托管项目闭包内提及 InternalServiceBaseAddress 的 .cs，加 AppHost Program.cs）是
+        17 个文件，上表的次数即在该面上实测；它不是对全仓的断言。
     #>
     param([Parameter(Mandatory)] [AllowEmptyString()] [string] $Text)
 
+    $quote = [char]'"'
     $length = $Text.Length
     $code = [char[]]::new($length)
     $masked = [char[]]::new($length)
 
-    # 上下文栈：栈顶要么是代码上下文（可能是一个插值洞），要么是一个字符串上下文。
+    # 上下文栈：栈顶要么是代码上下文（可能是一个插值洞），要么是一个普通字符串上下文。
     $contexts = [Collections.Generic.Stack[hashtable]]::new()
-    $contexts.Push(@{ Kind = 'code'; IsHole = $false; BraceDepth = 0 })
+    $contexts.Push(@{ Kind = 'code'; IsHole = $false; BraceDepth = 0; Interpolated = $false })
 
     $index = 0
     while ($index -lt $length) {
@@ -104,7 +146,7 @@ function Get-NervCSharpScanSurface {
         $next = if ($index + 1 -lt $length) { $Text[$index + 1] } else { [char]0 }
 
         if ([string]::Equals([string] $context['Kind'], 'code', [StringComparison]::Ordinal)) {
-            if ($current -eq '/' -and $next -eq '/') {
+            if ($current -eq [char]'/' -and $next -eq [char]'/') {
                 while ($index -lt $length -and $Text[$index] -ne "`n") {
                     $code[$index] = ' '
                     $masked[$index] = ' '
@@ -113,10 +155,10 @@ function Get-NervCSharpScanSurface {
                 continue
             }
 
-            if ($current -eq '/' -and $next -eq '*') {
+            if ($current -eq [char]'/' -and $next -eq [char]'*') {
                 $terminated = $false
                 while ($index -lt $length) {
-                    if ($Text[$index] -eq '*' -and $index + 1 -lt $length -and $Text[$index + 1] -eq '/') {
+                    if ($Text[$index] -eq [char]'*' -and $index + 1 -lt $length -and $Text[$index + 1] -eq [char]'/') {
                         $code[$index] = ' '; $masked[$index] = ' '; $index++
                         $code[$index] = ' '; $masked[$index] = ' '; $index++
                         $terminated = $true
@@ -131,12 +173,26 @@ function Get-NervCSharpScanSurface {
                 continue
             }
 
-            if ($current -eq "'") {
+            if ($current -eq [char]'#' -and (Test-NervCSharpLineStart -Text $Text -Index $index)) {
+                $directive = [regex]::Match($Text.Substring($index, [Math]::Min(32, $length - $index)), '^#\s*(?<name>[A-Za-z]+)')
+                $name = if ($directive.Success) { $directive.Groups['name'].Value } else { '' }
+                if ($script:NervCSharpRefusedDirectives -contains $name) {
+                    throw "Conditional compilation directive '#$name' at line $(Get-NervCSharpLineNumber -Text $Text -Index $index): this scanner does not model which branch is live and refuses to guess. See the coverage table in Get-NervCSharpScanSurface."
+                }
+                while ($index -lt $length -and $Text[$index] -ne "`n") {
+                    $code[$index] = ' '
+                    $masked[$index] = ' '
+                    $index++
+                }
+                continue
+            }
+
+            if ($current -eq [char]"'") {
                 $code[$index] = $current
                 $masked[$index] = $current
                 $index++
-                while ($index -lt $length -and $Text[$index] -ne "'") {
-                    if ($Text[$index] -eq '\') {
+                while ($index -lt $length -and $Text[$index] -ne [char]"'") {
+                    if ($Text[$index] -eq [char]'\') {
                         $code[$index] = $Text[$index]; $masked[$index] = 'x'; $index++
                         if ($index -ge $length) { break }
                     }
@@ -152,25 +208,32 @@ function Get-NervCSharpScanSurface {
                 continue
             }
 
-            $opener = Get-NervCSharpStringOpener -Text $Text -Index $index
-            if ($null -ne $opener) {
-                for ($offset = $index; $offset -lt $opener.BodyStart; $offset++) {
-                    $code[$offset] = $Text[$offset]
-                    $masked[$offset] = $Text[$offset]
+            # 拒绝面。两条都在**进入**字面量之前拦下，所以扫描相位永远不会被没实现的形态带偏。
+            if ($current -eq [char]'@') {
+                $probe = $index + 1
+                while ($probe -lt $length -and $Text[$probe] -eq [char]'$') { $probe++ }
+                if ($probe -lt $length -and $Text[$probe] -eq $quote) {
+                    throw "Verbatim string literal at line $(Get-NervCSharpLineNumber -Text $Text -Index $index): this scanner does not implement verbatim strings and refuses to guess. See the coverage table in Get-NervCSharpScanSurface."
                 }
-                $index = $opener.BodyStart
-                $contexts.Push(@{
-                    Kind = 'string'
-                    Style = $opener.Style
-                    Interpolated = $opener.Interpolated
-                    QuoteRun = $opener.QuoteRun
-                })
+            }
+
+            if ($current -eq $quote) {
+                $run = 0
+                while ($index + $run -lt $length -and $Text[$index + $run] -eq $quote) { $run++ }
+                if ($run -ge 3) {
+                    throw "Raw string literal at line $(Get-NervCSharpLineNumber -Text $Text -Index $index): this scanner does not implement raw strings and refuses to guess. See the coverage table in Get-NervCSharpScanSurface."
+                }
+                $code[$index] = $current
+                $masked[$index] = $current
+                $interpolated = $index -gt 0 -and $Text[$index - 1] -eq [char]'$'
+                $index++
+                $contexts.Push(@{ Kind = 'string'; Interpolated = $interpolated })
                 continue
             }
 
             if ($context['IsHole']) {
-                if ($current -eq '{') { $context['BraceDepth'] = [int] $context['BraceDepth'] + 1 }
-                elseif ($current -eq '}') {
+                if ($current -eq [char]'{') { $context['BraceDepth'] = [int] $context['BraceDepth'] + 1 }
+                elseif ($current -eq [char]'}') {
                     if ([int] $context['BraceDepth'] -eq 0) {
                         $code[$index] = $current
                         $masked[$index] = $current
@@ -188,32 +251,8 @@ function Get-NervCSharpScanSurface {
             continue
         }
 
-        # 字符串上下文。
-        $style = [string] $context['Style']
-        if ([string]::Equals($style, 'raw', [StringComparison]::Ordinal)) {
-            $run = 0
-            while ($index + $run -lt $length -and $Text[$index + $run] -eq '"') { $run++ }
-            if ($run -ge [int] $context['QuoteRun']) {
-                for ($offset = 0; $offset -lt $run; $offset++) {
-                    $code[$index] = $Text[$index]
-                    $masked[$index] = $Text[$index]
-                    $index++
-                }
-                [void] $contexts.Pop()
-                continue
-            }
-            $code[$index] = $current
-            $masked[$index] = if ($current -eq "`n" -or $current -eq "`r") { $current } else { 'x' }
-            $index++
-            continue
-        }
-
-        if ($current -eq '"') {
-            if ([string]::Equals($style, 'verbatim', [StringComparison]::Ordinal) -and $next -eq '"') {
-                $code[$index] = $current; $masked[$index] = 'x'; $index++
-                $code[$index] = $Text[$index]; $masked[$index] = 'x'; $index++
-                continue
-            }
+        # 普通字符串上下文。逐字与原始字符串在代码上下文就已经 throw，这里不会遇到。
+        if ($current -eq $quote) {
             $code[$index] = $current
             $masked[$index] = $current
             $index++
@@ -221,7 +260,7 @@ function Get-NervCSharpScanSurface {
             continue
         }
 
-        if ($current -eq '\' -and [string]::Equals($style, 'regular', [StringComparison]::Ordinal)) {
+        if ($current -eq [char]'\') {
             $code[$index] = $current; $masked[$index] = 'x'; $index++
             if ($index -lt $length) {
                 $code[$index] = $Text[$index]
@@ -231,8 +270,8 @@ function Get-NervCSharpScanSurface {
             continue
         }
 
-        if ($context['Interpolated'] -and $current -eq '{') {
-            if ($next -eq '{') {
+        if ($context['Interpolated'] -and $current -eq [char]'{') {
+            if ($next -eq [char]'{') {
                 $code[$index] = $current; $masked[$index] = 'x'; $index++
                 $code[$index] = $Text[$index]; $masked[$index] = 'x'; $index++
                 continue
@@ -240,7 +279,7 @@ function Get-NervCSharpScanSurface {
             $code[$index] = $current
             $masked[$index] = $current
             $index++
-            $contexts.Push(@{ Kind = 'code'; IsHole = $true; BraceDepth = 0 })
+            $contexts.Push(@{ Kind = 'code'; IsHole = $true; BraceDepth = 0; Interpolated = $false })
             continue
         }
 
@@ -255,37 +294,19 @@ function Get-NervCSharpScanSurface {
     }
 }
 
-function Get-NervCSharpStringOpener {
-    <#
-        位于 $Index 的字符是否开启一个字符串字面量。识别 `"`、`@"`、`$"`、`$@"`、`@$"` 与
-        `"""`（含 `$"""`）。返回正文起点、风格与是否插值；不是字符串开头则返回 $null。
-    #>
+function Test-NervCSharpLineStart {
+    <# 从 $Index 往回到上一个换行为止是否只有空白——即 `#` 是否处在预处理指令的位置。 #>
     param(
         [Parameter(Mandatory)] [string] $Text,
         [Parameter(Mandatory)] [int] $Index
     )
 
-    $cursor = $Index
-    $length = $Text.Length
-    $interpolated = $false
-    $verbatim = $false
-    while ($cursor -lt $length -and ($Text[$cursor] -eq '$' -or $Text[$cursor] -eq '@')) {
-        if ($Text[$cursor] -eq '$') { $interpolated = $true } else { $verbatim = $true }
-        $cursor++
+    $probe = $Index - 1
+    while ($probe -ge 0 -and $Text[$probe] -ne "`n") {
+        if (-not [char]::IsWhiteSpace($Text[$probe])) { return $false }
+        $probe--
     }
-    if ($cursor -ge $length -or $Text[$cursor] -ne '"') { return $null }
-
-    $run = 0
-    while ($cursor + $run -lt $length -and $Text[$cursor + $run] -eq '"') { $run++ }
-
-    $style = if ($run -ge 3) { 'raw' } elseif ($verbatim) { 'verbatim' } else { 'regular' }
-    $quoteRun = if ($run -ge 3) { $run } else { 1 }
-    return [pscustomobject]@{
-        Style = $style
-        Interpolated = $interpolated
-        QuoteRun = $quoteRun
-        BodyStart = $cursor + $quoteRun
-    }
+    return $true
 }
 
 function Get-NervCSharpArgumentSpan {
@@ -334,10 +355,10 @@ function Get-NervCSharpLineNumber {
     # 用 native IndexOf 逐行跳，不要逐字符扫：本函数在一次报告里被调用上百次，
     # 逐字符版本在 PowerShell 里足以主导整条门禁的耗时。
     $line = 1
-    $position = $Text.IndexOf("`n", 0)
+    $position = $Text.IndexOf("`n", 0, [StringComparison]::Ordinal)
     while ($position -ge 0 -and $position -lt $Index) {
         $line++
-        $position = $Text.IndexOf("`n", $position + 1)
+        $position = $Text.IndexOf("`n", $position + 1, [StringComparison]::Ordinal)
     }
     return $line
 }
@@ -355,7 +376,7 @@ function Get-NervCSharpStringLiteralValue {
         return $null
     }
     $body = $trimmed.Substring(1, $trimmed.Length - 2)
-    if ($body.Contains('"') -or $body.Contains('\')) { return $null }
+    if ($body.Contains('"', [StringComparison]::Ordinal) -or $body.Contains('\', [StringComparison]::Ordinal)) { return $null }
     return $body
 }
 
@@ -378,7 +399,7 @@ function Get-NervAppHostProjectResources {
     $resources = [Collections.Generic.List[object]]::new()
     $pattern = [regex] 'builder\s*\.\s*AddProject\s*<\s*Projects\s*\.\s*(?<type>[A-Za-z_][A-Za-z0-9_]*)\s*>\s*\(\s*"(?<resource>[^"]+)"'
     foreach ($match in $pattern.Matches($surface.Code)) {
-        $statementStart = $surface.Masked.LastIndexOf(';', $match.Index)
+        $statementStart = $surface.Masked.LastIndexOf(';', $match.Index, [StringComparison]::Ordinal)
         $prefix = $surface.Code.Substring($statementStart + 1, $match.Index - $statementStart - 1)
         $variableMatch = [regex]::Match($prefix, 'var\s+(?<name>[A-Za-z_][A-Za-z0-9_]*)\s*=')
         if (-not $variableMatch.Success) {
@@ -393,7 +414,8 @@ function Get-NervAppHostProjectResources {
     }
 
     if ($resources.Count -eq 0) { throw 'The AppHost source declares no project resource; the scan surface has collapsed.' }
-    $duplicateVariables = @($resources | Group-Object -Property Variable | Where-Object { $_.Count -gt 1 })
+    $duplicateVariables = @(Get-NervStringGroups -Items @($resources) -KeySelector { param($row) [string] $row.Variable } -Comparer ([StringComparer]::Ordinal) |
+        Where-Object { $_.Count -gt 1 })
     if ($duplicateVariables.Count -gt 0) {
         throw "AppHost project resources reuse variable name(s): $(@($duplicateVariables | ForEach-Object Name) -join ', ')."
     }
@@ -410,7 +432,9 @@ function Get-NervProjectFileIndex {
     $index = @{}
     foreach ($file in [IO.Directory]::EnumerateFiles($RepositoryRoot, '*.csproj', [IO.SearchOption]::AllDirectories)) {
         $normalized = $file.Replace('\', '/')
-        if ($normalized.Contains('/obj/') -or $normalized.Contains('/bin/') -or $normalized.Contains('/node_modules/')) { continue }
+        if ($normalized.Contains('/obj/', [StringComparison]::Ordinal) -or
+            $normalized.Contains('/bin/', [StringComparison]::Ordinal) -or
+            $normalized.Contains('/node_modules/', [StringComparison]::Ordinal)) { continue }
         $typeName = [IO.Path]::GetFileNameWithoutExtension($file).Replace('.', '_').Replace('-', '_')
         if ($index.ContainsKey($typeName)) {
             throw "Two project files map to the Aspire project type name '$typeName': '$($index[$typeName])' and '$file'."
@@ -466,7 +490,7 @@ function Get-NervProviderServiceName {
     if ($remainder.StartsWith('Business.', [StringComparison]::Ordinal)) {
         $remainder = $remainder.Substring('Business.'.Length)
     }
-    if ($remainder.Contains('.')) {
+    if ($remainder.Contains('.', [StringComparison]::Ordinal)) {
         throw "Hosted project '$ProjectName' does not reduce to a single base-url key prefix (got '$remainder')."
     }
     return $remainder
@@ -523,14 +547,55 @@ function Get-NervBaseUrlResolveCallSites {
 
 #region AppHost 注入
 
+function Get-NervAppHostChainReceiverResource {
+    <#
+        一条 `<左值> = <接收者>.…WithEnvironment(…)` 链里，`.WithEnvironment` 实际作用在哪个资源上。
+
+        两种接收者形态：链头自己就是 `builder.AddProject<Projects.X>("r")`（`var r = …` 声明式），
+        或链头是一个标识符（`x = x.…` 回填式）。两者都读不出来时 throw —— 猜一个接收者，就是把
+        「注入落在哪个资源上」这件事交给一条启发式，而它正是本库要守的东西。
+    #>
+    param(
+        [Parameter(Mandatory)] [psobject] $Surface,
+        [Parameter(Mandatory)] [int] $Start,
+        [Parameter(Mandatory)] [int] $End,
+        [Parameter(Mandatory)] [hashtable] $ResourceByVariable,
+        [Parameter(Mandatory)] [int] $Line,
+        [Parameter(Mandatory)] [string] $EnvironmentName
+    )
+
+    $receiverCode = $Surface.Code.Substring($Start, $End - $Start)
+    $addProject = [regex]::Match($receiverCode, 'AddProject\s*<\s*Projects\s*\.\s*[A-Za-z_][A-Za-z0-9_]*\s*>\s*\(\s*"(?<resource>[^"]+)"')
+    if ($addProject.Success) { return $addProject.Groups['resource'].Value }
+
+    $identifier = [regex]::Match($Surface.Masked.Substring($Start, $End - $Start).TrimStart(), '^(?<name>[A-Za-z_][A-Za-z0-9_]*)')
+    if ($identifier.Success -and $ResourceByVariable.ContainsKey($identifier.Groups['name'].Value)) {
+        return $ResourceByVariable[$identifier.Groups['name'].Value]
+    }
+
+    throw "AppHost line $Line injects '$EnvironmentName' on a chain whose receiver this library cannot resolve to a declared project resource: $(($receiverCode -replace '\s+', ' ').Trim())"
+}
+
 function Get-NervAppHostBaseUrlInjections {
     <#
         按语句归属解析 `.WithEnvironment("X__BaseUrl", <expr>)`。
 
-        归属规则：一条语句（以顶层 `;` 为界）里，第一个 `.WithEnvironment` 之前最后一个赋值目标就是
+        归属规则：一条语句（以顶层 `;` 为界）里，第一个 `.WithEnvironment` 之前最后一个赋值目标是
         这条链作用的资源变量。`var x = builder.AddProject…`、`x = x.WithEnvironment(…)`、
         以及写在 `if (…) { x = x … ; }` 里的回填，三种形态都落在这条规则下。
-        归属不到已知资源变量的注入 ⇒ throw，不静默丢弃。
+
+        ⚠️ **赋值左值不等于接收者**，两者不同的那一版**能编译**（都是
+        `IResourceBuilder<ProjectResource>`）。`a = b.WithEnvironment("B__BaseUrl", …)` 在运行时把环境
+        变量注到 **b** 上，`a` 一条也拿不到 —— 这正是 #3313 的失败形态，而只看左值的归属会判它绿。
+        所以这里不止读左值：**同时读出接收者，二者指向的资源不一致即 throw**。
+
+        为什么是 throw 而不是「改按接收者归属」：左值与接收者不一致时，除了注入落在别的资源上，
+        那条语句还把左值变量重新绑到了另一个 builder，后续所有对该变量的回填都会跟着搬家。
+        这是一个需要人看的错误，不是一个本库有权替人选边的歧义。**本库在这一格上的职责是不猜。**
+
+        归属不到已知资源变量的注入、以及提到 `__BaseUrl` 却读不出字面量键的 `WithEnvironment`
+        调用形态（例如回调式 `ctx => ctx.EnvironmentVariables[…] = …`，它在运行时后写覆盖）
+        ⇒ 一律 throw，不静默丢弃。
     #>
     param(
         [Parameter(Mandatory)] [string] $AppHostProgramText,
@@ -546,26 +611,48 @@ function Get-NervAppHostBaseUrlInjections {
     $pattern = [regex] '\.\s*WithEnvironment\s*\('
     foreach ($match in $pattern.Matches($surface.Masked)) {
         $span = Get-NervCSharpArgumentSpan -Code $surface.Code -Masked $surface.Masked -OpenParenIndex ($match.Index + $match.Length - 1)
-        if ($span.Arguments.Count -ne 2) { continue }
-        $name = Get-NervCSharpStringLiteralValue -Argument $span.Arguments[0]
-        if ($null -eq $name) { continue }
-        $nameMatch = [regex]::Match($name, '^(?<service>[A-Za-z][A-Za-z0-9]*)__BaseUrl$')
-        if (-not $nameMatch.Success) { continue }
-
         $line = Get-NervCSharpLineNumber -Text $AppHostProgramText -Index $match.Index
-        $statementStart = $surface.Masked.LastIndexOf(';', $match.Index)
+        $name = if ($span.Arguments.Count -eq 2) { Get-NervCSharpStringLiteralValue -Argument $span.Arguments[0] } else { $null }
+        $nameMatch = if ($null -eq $name) { $null } else { [regex]::Match($name, '^(?<service>[A-Za-z][A-Za-z0-9]*)__BaseUrl$') }
+        if ($null -eq $nameMatch -or -not $nameMatch.Success) {
+            # 读不出字面量键的调用绝大多数与基址无关（`Persistence__Provider`、helper 里的
+            # `WithEnvironment($name, $value)`），跳过它们是对的。但如果这条调用的原文里出现了
+            # `__BaseUrl`，跳过就等于把一条**能在运行时后写覆盖基址**的语句放过去 —— 实测
+            # `.WithEnvironment(ctx => ctx.EnvironmentVariables["X__BaseUrl"] = "http://wrong-sentinel:1")`
+            # 在旧版本上是 GREEN。所以这一格按「读不懂就红」处置，而不是按「读不懂就跳过」。
+            $callText = $surface.Code.Substring($match.Index, $span.CloseParenIndex - $match.Index + 1)
+            if ($callText.Contains('__BaseUrl', [StringComparison]::Ordinal)) {
+                throw "AppHost line $line has a WithEnvironment call that mentions a '__BaseUrl' key in a form this library cannot read: $(($callText -replace '\s+', ' ').Trim())"
+            }
+            continue
+        }
+
+        $statementStart = $surface.Masked.LastIndexOf(';', $match.Index, [StringComparison]::Ordinal)
         $statementPrefix = $surface.Masked.Substring($statementStart + 1, $match.Index - $statementStart - 1)
         $assignments = [regex]::Matches($statementPrefix, '(?<name>[A-Za-z_][A-Za-z0-9_]*)\s*=(?![=>])')
         if ($assignments.Count -eq 0) {
             throw "AppHost line $line injects '$name' in a statement with no assignment target; this library attributes injections by the assigned resource variable."
         }
-        $targetVariable = $assignments[$assignments.Count - 1].Groups['name'].Value
+        $lastAssignment = $assignments[$assignments.Count - 1]
+        $targetVariable = $lastAssignment.Groups['name'].Value
         if (-not $resourceByVariable.ContainsKey($targetVariable)) {
             throw "AppHost line $line injects '$name' onto '$targetVariable', which is not a project resource declared by builder.AddProject."
         }
 
+        $receiverStart = $statementStart + 1 + $lastAssignment.Index + $lastAssignment.Length
+        $receiverResource = Get-NervAppHostChainReceiverResource `
+            -Surface $surface `
+            -Start $receiverStart `
+            -End $match.Index `
+            -ResourceByVariable $resourceByVariable `
+            -Line $line `
+            -EnvironmentName $name
+        if (-not [string]::Equals($receiverResource, $resourceByVariable[$targetVariable], [StringComparison]::Ordinal)) {
+            throw "AppHost line $line assigns to '$targetVariable' (resource '$($resourceByVariable[$targetVariable])') but the WithEnvironment chain that injects '$name' runs on resource '$receiverResource'. At run time the variable is rebound and '$name' lands on '$receiverResource', so '$($resourceByVariable[$targetVariable])' gets nothing — the #3313 failure shape. This library refuses to pick a side."
+        }
+
         $injections.Add([pscustomobject]@{
-            Resource = $resourceByVariable[$targetVariable]
+            Resource = $receiverResource
             ProviderService = $nameMatch.Groups['service'].Value
             EnvironmentName = $name
             ValueExpression = ($span.Arguments[1] -replace '\s+', ' ').Trim()
@@ -576,6 +663,15 @@ function Get-NervAppHostBaseUrlInjections {
 }
 
 #endregion
+
+function Get-NervRequirementsSorted {
+    <# 需求按 (消费方资源, 键) 序数排序。报告与门禁输出共用同一口径，不各排一次。 #>
+    param([Parameter(Mandatory)] [AllowEmptyCollection()] [AllowNull()] [object[]] $Requirements)
+
+    return @(Get-NervItemsSortedByString -Items @($Requirements) `
+        -KeySelector { param($row) Get-NervStringCompositeKey -Components @($row.ConsumerResource, $row.Key) } `
+        -Comparer ([StringComparer]::Ordinal))
+}
 
 function Get-NervAppHostBaseUrlInjectionReport {
     <#
@@ -659,9 +755,9 @@ function Get-NervAppHostBaseUrlInjectionReport {
         $callSites = [Collections.Generic.List[object]]::new()
         foreach ($file in [IO.Directory]::EnumerateFiles($projectDirectory, '*.cs', [IO.SearchOption]::AllDirectories)) {
             $normalized = $file.Replace('\', '/')
-            if ($normalized.Contains('/obj/') -or $normalized.Contains('/bin/')) { continue }
+            if ($normalized.Contains('/obj/', [StringComparison]::Ordinal) -or $normalized.Contains('/bin/', [StringComparison]::Ordinal)) { continue }
             $sourceText = [IO.File]::ReadAllText($file)
-            if (-not $sourceText.Contains('InternalServiceBaseAddress')) { continue }
+            if (-not $sourceText.Contains('InternalServiceBaseAddress', [StringComparison]::Ordinal)) { continue }
             foreach ($callSite in (Get-NervBaseUrlResolveCallSites -SourceText $sourceText -SourcePath $normalized.Substring($resolvedRoot.Length).TrimStart('/'))) {
                 $callSites.Add($callSite)
             }
@@ -683,7 +779,8 @@ function Get-NervAppHostBaseUrlInjectionReport {
                     # 而且这不是跨服务调用，遇到时当场 throw 好过悄悄算成一条永远无法满足的需求。
                     throw "Resource '$($resource.Resource)' resolves its own base address key '$($callSite.Key)' at $($callSite.SourcePath):$($callSite.Line)."
                 }
-                if (-not $seen.Add("$($resource.Resource)`u{241F}$($callSite.Key)")) { continue }
+                $requirementKey = Get-NervStringCompositeKey -Components @($resource.Resource, $callSite.Key)
+                if (-not $seen.Add($requirementKey)) { continue }
                 $requirements.Add([pscustomobject]@{
                     ConsumerResource = $resource.Resource
                     Key = $callSite.Key
@@ -700,7 +797,7 @@ function Get-NervAppHostBaseUrlInjectionReport {
     $injections = Get-NervAppHostBaseUrlInjections -AppHostProgramText $AppHostProgramText -Surface $appHostSurface
     $injectionByPair = @{}
     foreach ($injection in $injections) {
-        $pairKey = "$($injection.Resource)`u{241F}$($injection.EnvironmentName)"
+        $pairKey = Get-NervStringCompositeKey -Components @($injection.Resource, $injection.EnvironmentName)
         if ($injectionByPair.ContainsKey($pairKey)) {
             # 同一资源上同一个键注入两次时 Aspire 取后者。只看后者会让前者的值无人校验，
             # 而「两条里有一条是错的」正是合并事故的常见形态，所以这里不挑一条，直接红。
@@ -710,8 +807,8 @@ function Get-NervAppHostBaseUrlInjectionReport {
     }
 
     $violations = [Collections.Generic.List[object]]::new()
-    foreach ($requirement in ($requirements | Sort-Object -Property ConsumerResource, Key)) {
-        $pairKey = "$($requirement.ConsumerResource)`u{241F}$($requirement.EnvironmentName)"
+    foreach ($requirement in (Get-NervRequirementsSorted -Requirements $requirements)) {
+        $pairKey = Get-NervStringCompositeKey -Components @($requirement.ConsumerResource, $requirement.EnvironmentName)
         if (-not $injectionByPair.ContainsKey($pairKey)) {
             $violations.Add([pscustomobject]@{
                 Kind = 'missing'
@@ -734,28 +831,38 @@ function Get-NervAppHostBaseUrlInjectionReport {
     }
 
     $requiredPairs = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
-    foreach ($requirement in $requirements) { [void] $requiredPairs.Add("$($requirement.ConsumerResource)`u{241F}$($requirement.EnvironmentName)") }
-    $unconsumedInjections = @($injections | Where-Object { -not $requiredPairs.Contains("$($_.Resource)`u{241F}$($_.EnvironmentName)") } | Sort-Object -Property Resource, EnvironmentName)
+    foreach ($requirement in $requirements) {
+        [void] $requiredPairs.Add((Get-NervStringCompositeKey -Components @($requirement.ConsumerResource, $requirement.EnvironmentName)))
+    }
+    $unconsumedInjections = @(Get-NervItemsSortedByString -Items @($injections | Where-Object {
+        $injectionKey = Get-NervStringCompositeKey -Components @($_.Resource, $_.EnvironmentName)
+        -not $requiredPairs.Contains($injectionKey)
+    }) -KeySelector { param($row) Get-NervStringCompositeKey -Components @($row.Resource, $row.EnvironmentName) } -Comparer ([StringComparer]::Ordinal))
 
     $exemptions = Read-NervAppHostBaseUrlExemption -Path $ExemptionPath
     $matchedExemptionKeys = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     $unexempted = [Collections.Generic.List[object]]::new()
     foreach ($violation in $violations) {
-        $violationKey = "$($violation.ConsumerResource)`u{241F}$($violation.Key)"
-        $exemption = @($exemptions | Where-Object { [string]::Equals("$($_.ConsumerResource)`u{241F}$($_.Key)", $violationKey, [StringComparison]::Ordinal) })
+        $violationKey = Get-NervStringCompositeKey -Components @($violation.ConsumerResource, $violation.Key)
+        $exemption = @($exemptions | Where-Object {
+            [string]::Equals((Get-NervStringCompositeKey -Components @($_.ConsumerResource, $_.Key)), $violationKey, [StringComparison]::Ordinal)
+        })
         if ($exemption.Count -eq 1 -and [string]::Equals([string] $exemption[0].Kind, $violation.Kind, [StringComparison]::Ordinal)) {
             [void] $matchedExemptionKeys.Add($violationKey)
             continue
         }
         $unexempted.Add($violation)
     }
-    $staleExemptions = @($exemptions | Where-Object { -not $matchedExemptionKeys.Contains("$($_.ConsumerResource)`u{241F}$($_.Key)") })
+    $staleExemptions = @($exemptions | Where-Object {
+        $exemptionKey = Get-NervStringCompositeKey -Components @($_.ConsumerResource, $_.Key)
+        -not $matchedExemptionKeys.Contains($exemptionKey)
+    })
 
     return [pscustomobject]@{
         AppHostProgramPath = $AppHostProgramPath
         ExemptionPath = $ExemptionPath
         Resources = $resources
-        Requirements = @($requirements | Sort-Object -Property ConsumerResource, Key)
+        Requirements = @(Get-NervRequirementsSorted -Requirements $requirements)
         Injections = $injections
         Violations = @($violations)
         UnexemptedViolations = @($unexempted)
@@ -799,7 +906,7 @@ function Read-NervAppHostBaseUrlExemption {
         if (-not [regex]::IsMatch([string] $entry.tracking, $script:NervAppHostBaseUrlTrackingPattern)) {
             throw "Exemption registry '$Path' has tracking '$($entry.tracking)', which is not of the form '#<issue>'."
         }
-        if (@('missing', 'wrong-value') -notcontains [string] $entry.kind) {
+        if (-not (Get-NervStringSet -Values $script:NervAppHostBaseUrlViolationKinds -Comparer ([StringComparer]::Ordinal)).Contains([string] $entry.kind)) {
             throw "Exemption registry '$Path' has unknown kind '$($entry.kind)'."
         }
         if (-not $seen.Add("$($entry.consumerResource)`u{241F}$($entry.key)")) {

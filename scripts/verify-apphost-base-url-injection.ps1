@@ -70,7 +70,10 @@ Write-Host "  base address requirements enumerated from consumer code: $($report
 Write-Host "  base address injections parsed from the AppHost source: $($report.Injections.Count)"
 Write-Host "  violations: $($report.Violations.Count) (exempted $($report.Violations.Count - $report.UnexemptedViolations.Count))"
 
-foreach ($exemption in ($report.Exemptions | Sort-Object -Property ConsumerResource, Key)) {
+$sortedExemptions = @(Get-NervItemsSortedByString -Items @($report.Exemptions) `
+    -KeySelector { param($row) Get-NervStringCompositeKey -Components @($row.ConsumerResource, $row.Key) } `
+    -Comparer ([StringComparer]::Ordinal))
+foreach ($exemption in $sortedExemptions) {
     Write-Host "    exempted [$($exemption.Kind)] $($exemption.ConsumerResource) <- $($exemption.Key) (tracking $($exemption.Tracking)) — $($exemption.Reason)"
 }
 
