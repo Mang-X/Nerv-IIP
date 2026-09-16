@@ -3,7 +3,7 @@
  *
  * 背景：这三者是仓管填得最多、也最容易填错的字段，但后端目前**没有任何列表读面**——
  * 库位只有 `POST /api/inventory/v1/locations`（创建，网关都没代理），批次与序列号则完全没有
- * 独立目录端点。缺口已登记（见 `docs/architecture/inventory-module-product-design.md`）。
+ * 独立目录端点。缺口已登记（见 `docs/product/inventory/design.md` §4.2/§4.3）。
  *
  * 在后端补齐之前，这里不去凭空造目录，而是把**系统里已经真实存在的编码**收集起来：
  * 上架/拣货任务的起讫库位、盘点执行的库位、出库单行的库位/批次/序列号。
