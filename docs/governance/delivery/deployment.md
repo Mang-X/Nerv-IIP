@@ -14,7 +14,7 @@
 1. AppHost、生成的 Compose、安装包和整合脚本必须消费同一配置语义。精确配置键和参数以 AppHost、服务配置、`nerv.ps1 help` 与安装脚本帮助为准。
 2. 非 Development 环境所需的内部认证材料、IAM secret、Connector scope、消息 provider、CORS、数据库连接和服务 BaseUrl 必须显式提供；服务或脚本的 fail-fast 守卫不得被文档或交付包装绕过。
 3. secret、token、pepper、密码、连接串和客户私有配置不得写入仓库、Compose 明文模板、命令回显或公开日志。诊断只记录是否已配置、fingerprint 或经批准的脱敏信息。
-4. 服务间地址继续使用服务当前声明的配置键；不得在 PoC、Compose、安装包或 Production profile 静默 fallback 到 localhost。
+4. 服务间地址继续使用服务当前声明的配置键；不得在 PoC、Compose、安装包或 Production profile 静默 fallback 到 localhost。该规则的 AppHost 侧由 `scripts/verify-apphost-base-url-injection.ps1` 在 `Script Governance` job 强制：需求集从托管项目 ProjectReference 闭包里的 `InternalServiceBaseAddress.Resolve*` 调用枚举（不是人工名单），每条需求都必须有对应的 `X__BaseUrl` 注入，且值必须是提供方资源的 `GetEndpoint("http")`——只校验「注没注」挡不住「注了但指向另一套栈」（#3313）。尚未补齐的注入逐条登记在 `scripts/apphost-base-url-injection-exemptions.json`，每条必须挂跟踪票；登记一旦不再匹配真实违例即判红，登记面因此只能随销账缩短。
 5. 非 Development 的消息 provider、持久化与 seed/AutoMigrate 行为必须遵循服务启动守卫和 AppHost 环境门控；不能为了“部署能起来”把 Development 默认带入 Production 产物。
 
 ## 发布与数据规则
