@@ -140,7 +140,23 @@ try {
         "The repository must have no unexempted base-url violation; found: $(@($baseline.UnexemptedViolations | ForEach-Object { "$($_.ConsumerResource)/$($_.Key)" }) -join ', ')"
     Assert-Contract ($baseline.StaleExemptions.Count -eq 0) `
         "Every registered exemption must still match a live violation; stale: $(@($baseline.StaleExemptions | ForEach-Object { "$($_.ConsumerResource)/$($_.Key)" }) -join ', ')"
-    Assert-Contract ($baseline.Requirements.Count -gt 0) 'The requirement set must not be empty.'
+    # ⛔ 枚举面塌陷的下界。本票那条承重主张是「需求集从消费方代码枚举、是个闭集」；这一行是唯一
+    # 断言它**没有静默塌缩**的地方。
+    #
+    # 为什么是下界（-ge）而不是等值（-eq）：等值那一版曾经存在过（旧 `Requirements.Count -eq 6`），
+    # 它确实抓得住塌陷，但 gateway/ops 任何新增一处 Resolve 都会让它假红。上一轮我用「删掉」修那个
+    # 假红，**把唯一能抓塌陷的那一格一起搬走了** —— 本仓已记录的形态：修某条存活变异时把鉴别力
+    # 搬到别处。下界同时满足两边：塌陷必红，增长永不假红。
+    #
+    # 这条断言挡住的是什么，实测过而不是推断：在消费方文件循环里插一行排除规则（模拟日后有人给
+    # 扫描面加一条 glob），需求 54 → 5，而门禁 EXIT=0、照常打印「Every one of the 5 … is injected」，
+    # 本文件 315 → 70 条断言**全过** —— 补这条下界之前，没有任何一格红。
+    #
+    # 调低这个数字是一个需要理由的动作：只有某个宿主**真的**不再 Resolve 某个下游时它才该下降，
+    # 那时改这一行是一条显眼的 diff，而不是一次静默塌缩。
+    $requirementFloor = 54
+    Assert-Contract ($baseline.Requirements.Count -ge $requirementFloor) `
+        "The requirement set enumerated from consumer code must not silently collapse: expected at least $requirementFloor, got $($baseline.Requirements.Count). If a host genuinely stopped resolving a downstream, lower this floor in the same commit and name which one."
     Assert-Contract ($baseline.Injections.Count -gt 0) 'The injection set must not be empty.'
 
     # CONTROL：与下面每个变异格走同一条通路，只是不变异。它验跑法，不验鉴别力。
@@ -298,6 +314,9 @@ try {
     $prefixCases = @(
         @{ Name = 'interpolated hole containing a quote'; Prefix = 'var i = $"{ d["key"] } tail";' }
         @{ Name = 'char literal holding a comma'; Prefix = "var c = ',';" }
+        # `'"'` 比 `','` 有判别力：把字符字面量分支简化成「跳 3 个字符」的变异能被它杀掉、
+        # 被 `','` 放过（跳 3 个字符恰好也落在 `','` 的收尾引号上）。两格并存，不是二选一。
+        @{ Name = 'char literal holding a double quote'; Prefix = "var c = '`"';" }
         @{ Name = 'comment marker inside a url literal'; Prefix = 'var u = "http://localhost:5118";' }
         # #3124 点名的那一类：预处理指令行里的撇号。指令行整行按非代码置空，所以它到不了
         # 字符字面量分支。前一版实现里它会开一个 char literal 一路吞到文件尾，需求集静默归零。
@@ -317,7 +336,10 @@ try {
     $refusedCases = @(
         @{ Name = 'verbatim string containing one escaped quote'; Prefix = 'var q = @"""";'; Expect = 'does not implement verbatim strings' }
         @{ Name = 'raw string literal'; Prefix = 'var r = """{"op":"move"}""";'; Expect = 'does not implement raw strings' }
-        @{ Name = 'conditional compilation directive'; Prefix = "#if DEBUG`n#endif"; Expect = 'does not model which branch is live' }
+        @{ Name = 'conditional compilation directive'; Prefix = "#if DEBUG`n#endif"; Expect = 'only skips directives that cannot change which code is live' }
+        # 放行名单的失效方向证据：名单外的指令必须 throw。拒绝名单那一版在这里是**绿**
+        # （`#fooif` 走置空分支、静默继续扫描），那正是把名单反过来写的理由。
+        @{ Name = 'a preprocessor directive outside the skippable allow-list'; Prefix = '#fooif SOMETHING'; Expect = "Preprocessor directive '#fooif'" }
     )
     foreach ($case in $refusedCases) {
         $source = New-FixtureSource -Prefix $case.Prefix -Body "var a = $callTemplate"

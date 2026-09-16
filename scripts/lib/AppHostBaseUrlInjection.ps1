@@ -80,9 +80,12 @@ $script:NervAppHostBaseUrlExemptionRelativePath = 'scripts/apphost-base-url-inje
 $script:NervAppHostBaseUrlTrackingPattern = '^#[1-9][0-9]*$'
 $script:NervAppHostEndpointName = 'http'
 
-# C# 的条件编译指令闭集。它们决定哪一段代码参与编译，本扫描器不建模这件事，因此遇到即 throw；
-# 其余指令（`#region` / `#pragma` / `#line` / `#nullable` / …）整行不是代码，一律置空，不需要认名字。
-$script:NervCSharpRefusedDirectives = @('if', 'elif', 'else', 'endif', 'define', 'undef')
+# 可以整行置空的预处理指令。它们都**不能改变哪一段代码是活的**，因此跳过不影响扫描结论。
+#
+# 写成**放行名单**而不是拒绝名单，因为两者失效方向相反：拒绝名单漏一个（`#fooif`）会走置空分支、
+# 静默继续扫描 —— 失效方向是绿；放行名单漏一个直接 throw —— 失效方向是红，与本库「读不懂一律
+# throw」的姿势一致。这张名单不承重：它只决定「置空还是 throw」，不决定任何一条需求。
+$script:NervCSharpSkippableDirectives = @('region', 'endregion', 'pragma', 'line', 'nullable', 'error', 'warning')
 
 # 违例种类闭集。登记表的 kind 必须落在这里，否则一个拼错的种类会静默豁免不掉任何东西。
 $script:NervAppHostBaseUrlViolationKinds = @('missing', 'wrong-value')
@@ -110,20 +113,22 @@ function Get-NervCSharpScanSurface {
         | `//` 行注释、`/* */` 块注释 | 实现（置空） | 有 / 0 |
         | 普通字符串 `"…"`（含 `\` 转义与 `$"…"` 插值洞） | 实现 | 有 / 21 |
         | 字符字面量 `'x'` | 实现 | 6（全是 `','` 与 `';'`） |
-        | 非条件编译的预处理指令（`#region` / `#pragma` / …） | 实现：整行当非代码置空 | 42 |
+        | 放行名单内的预处理指令（`#region` / `#pragma` / `#line` / `#nullable` / `#error` / `#warning`） | 实现：整行当非代码置空 | 42 |
         | 原始字符串 `"""…"""` | **throw** | 0 |
         | 逐字字符串 `@"…"` | **throw** | 0 |
-        | 条件编译指令 `#if` / `#elif` / `#else` / `#endif` / `#define` / `#undef` | **throw** | 0 |
+        | 其余一切预处理指令（含条件编译 `#if` / `#endif` / `#define` / …） | **throw** | 0 |
 
         为什么线画在这里，而不是「再实现一种形态」：后者的失效方向是**静默归零**——一个没认对的
         字面量把扫描相位带偏，整份文件的需求集塌成 0，而门禁照样宣称全部通过。throw 的失效方向是红。
         本 PR 的前一版实现过 raw 与 verbatim，并在这两处各复现了一个 #3124 已点名的静默归零缺陷
         （`@""""` 被先数引号读成 raw、吞掉文件其余部分）。**实现一种形态的代价是它必须正确；拒绝它没有这个代价。**
 
-        预处理指令为什么是「置空」而不是 throw：面上实测 42 处 `#region` / `#pragma`，一律 throw 就是
-        假红。指令行整行不是代码，置空既不需要认识任何指令名，也顺带关掉了 `#region Don't touch` 里
-        那个撇号被读成字符字面量起点、一路吞到文件尾的通路。**条件编译是例外**——它决定哪一段代码
-        是活的，本函数不建模这件事，所以拒绝而不是猜。
+        预处理指令为什么不是一律 throw：面上实测 42 处 `#region` / `#pragma`，一律 throw 是假红，
+        那不是 fail-closed 是坏掉。指令行整行不是代码，置空顺带关掉了 `#region Don't touch` 里那个
+        撇号被读成字符字面量起点、一路吞到文件尾的通路（撇号根本到不了字符字面量分支）。
+        但判据写成**放行名单**而不是拒绝名单：放行名单漏一个的失效方向是红，拒绝名单漏一个是绿
+        （`#fooif` 会静默走置空分支）。条件编译指令因此自动落在拒绝面上——它决定哪一段代码是活的，
+        本函数不建模这件事。
 
         扫描面（托管项目闭包内提及 InternalServiceBaseAddress 的 .cs，加 AppHost Program.cs）是
         17 个文件，上表的次数即在该面上实测；它不是对全仓的断言。
@@ -176,8 +181,8 @@ function Get-NervCSharpScanSurface {
             if ($current -eq [char]'#' -and (Test-NervCSharpLineStart -Text $Text -Index $index)) {
                 $directive = [regex]::Match($Text.Substring($index, [Math]::Min(32, $length - $index)), '^#\s*(?<name>[A-Za-z]+)')
                 $name = if ($directive.Success) { $directive.Groups['name'].Value } else { '' }
-                if ($script:NervCSharpRefusedDirectives -contains $name) {
-                    throw "Conditional compilation directive '#$name' at line $(Get-NervCSharpLineNumber -Text $Text -Index $index): this scanner does not model which branch is live and refuses to guess. See the coverage table in Get-NervCSharpScanSurface."
+                if (-not (Get-NervStringSet -Values $script:NervCSharpSkippableDirectives -Comparer ([StringComparer]::Ordinal)).Contains($name)) {
+                    throw "Preprocessor directive '#$name' at line $(Get-NervCSharpLineNumber -Text $Text -Index $index): this scanner only skips directives that cannot change which code is live, and refuses to guess for the rest. See the coverage table in Get-NervCSharpScanSurface."
                 }
                 while ($index -lt $length -and $Text[$index] -ne "`n") {
                     $code[$index] = ' '
