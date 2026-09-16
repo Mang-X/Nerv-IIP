@@ -423,11 +423,8 @@ async function confirmArchive() {
                   <NvFieldLabel for="op-control"
                     >控制键 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvInput
-                    id="op-control"
-                    v-model="form.controlKey"
-                    placeholder="例如：INHOUSE / INHOUSE-QC"
-                  />
+                  <NvInput id="op-control" v-model="form.controlKey" />
+                  <NvFieldDescription>例如：INHOUSE / INHOUSE-QC。</NvFieldDescription>
                 </NvField>
               </NvFieldGroup>
 

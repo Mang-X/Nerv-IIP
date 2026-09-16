@@ -21,12 +21,16 @@ public interface IBusinessFileTransferClient
     Task ProxyShiftHandoverAttachmentTusHeadAsync(
         string internalBearerToken,
         string uploadSessionId,
+        string organizationId,
+        string environmentId,
         HttpResponse targetResponse,
         CancellationToken cancellationToken);
 
     Task ProxyShiftHandoverAttachmentTusPatchAsync(
         string internalBearerToken,
         string uploadSessionId,
+        string organizationId,
+        string environmentId,
         HttpRequest sourceRequest,
         HttpResponse targetResponse,
         CancellationToken cancellationToken);
@@ -70,6 +74,8 @@ public sealed class HttpBusinessFileTransferClient(HttpClient httpClient)
     public Task ProxyShiftHandoverAttachmentTusHeadAsync(
         string internalBearerToken,
         string uploadSessionId,
+        string organizationId,
+        string environmentId,
         HttpResponse targetResponse,
         CancellationToken cancellationToken) =>
         ProxyRawAsync(
@@ -78,12 +84,18 @@ public sealed class HttpBusinessFileTransferClient(HttpClient httpClient)
             internalBearerToken,
             sourceRequest: null,
             targetResponse,
-            additionalHeaders: null,
+            new Dictionary<string, string>
+            {
+                ["X-Organization-Id"] = organizationId,
+                ["X-Environment-Id"] = environmentId
+            },
             cancellationToken);
 
     public Task ProxyShiftHandoverAttachmentTusPatchAsync(
         string internalBearerToken,
         string uploadSessionId,
+        string organizationId,
+        string environmentId,
         HttpRequest sourceRequest,
         HttpResponse targetResponse,
         CancellationToken cancellationToken) =>
@@ -93,7 +105,11 @@ public sealed class HttpBusinessFileTransferClient(HttpClient httpClient)
             internalBearerToken,
             sourceRequest,
             targetResponse,
-            additionalHeaders: null,
+            new Dictionary<string, string>
+            {
+                ["X-Organization-Id"] = organizationId,
+                ["X-Environment-Id"] = environmentId
+            },
             cancellationToken);
 
     public Task StreamShiftHandoverAttachmentContentAsync(

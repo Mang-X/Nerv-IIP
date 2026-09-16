@@ -17,7 +17,7 @@ import { ArrowRightIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { inlineErrorMessage } from '@/utils/notify'
-import { UNAVAILABLE_TEXT, erpReadState, formatAmount, formatDate } from '../shared'
+import { UNAVAILABLE_TEXT, erpReadState, formatAmount, formatDate, stableRowKey } from '../shared'
 
 definePage({
   meta: {
@@ -248,7 +248,7 @@ function refreshAll() {
       <NvDataTable
         :columns="voucherColumns"
         :rows="recentVouchers"
-        :row-key="(r: BusinessConsoleErpJournalVoucherItem) => r.voucherNo ?? '凭证'"
+        :row-key="stableRowKey"
         :loading="vouchers.pending.value"
         :searchable="false"
         :column-settings="false"

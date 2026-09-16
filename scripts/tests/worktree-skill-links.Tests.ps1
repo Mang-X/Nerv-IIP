@@ -164,6 +164,17 @@ try {
         throw 'Test-NervSkillsPayloadPresent must report false when .agents/skills is absent.'
     }
 
+    # 散落文件不是技能，不得让安装/镜像门判为 present。这道门判 present 的后果是
+    # 「skills present - skipping」此后恒定：安装与镜像永不再触发，skills-lock.json 里的
+    # 第三方技能静默缺失且无任何红。而 macOS 会往任何被 Finder 浏览过的目录写 .DS_Store，
+    # `.agents/skills` 又是 gitignored 的本地目录、不受任何仓库门禁看管。
+    $strayRoot = New-Fixture -PayloadNames @('nerv-pr-review') -StrayFiles @('.DS_Store')
+    $fixtures.Add($strayRoot)
+    New-SourceSkill -Root $strayRoot -Name 'nerv-pr-review' -Body 'name: nerv-pr-review'
+    if (Test-NervSkillsPayloadPresent -RepoRoot $strayRoot) {
+        throw 'A stray file under .agents/skills must not make the install/mirror gate report an installed payload; only skill directories count.'
+    }
+
     # 源→安装层的发布契约。不单独调用 Sync-NervRepoSkillPayload：**在什么条件下、以什么顺序**
     # 发布本身就是契约——在「payload 已存在」的 else 分支里发布就是这两票的原缺陷，先重建链接层
     # 再发布则让源里新增的技能拿不到 agent 入口。只有走 Initialize-NervWorktreeSkills 的真实控制
