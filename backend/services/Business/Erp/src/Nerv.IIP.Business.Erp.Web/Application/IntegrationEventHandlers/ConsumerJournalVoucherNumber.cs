@@ -22,6 +22,7 @@ internal readonly record struct JournalVoucherNumberAllocation(string? Code, str
 /// <remarks>
 /// <para>
 /// <b>改前</b>：消费侧 5 个建凭证位点的凭证号都由 <c>ErpVoucherNoPolicy.Compose</c> 从上游单号派生
+/// （⚠️ 该入口已随 #3278 / S8 一并删除，此处只是叙述改前形状，⛔ 别去源码里找它）
 /// （<c>JV-GRIR-{收货单号}</c> / <c>JV-PRTN-{退货单号}</c> / <c>JV-CN-{红字号}</c> /
 /// <c>JV-WOC-{工单号}-{移动号}</c> / <c>JV-WOCADJ-{工单号}-{来源号}</c>）。
 /// <b>改后</b>：一律走 <c>CodeAllocator</c> 的 <c>journal-voucher</c> 规则，得 <c>JV-yyyyMMdd-NNNNNN</c>（定长 18）。

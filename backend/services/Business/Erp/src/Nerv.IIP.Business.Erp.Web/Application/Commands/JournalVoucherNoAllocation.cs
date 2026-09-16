@@ -35,8 +35,8 @@ namespace Nerv.IIP.Business.Erp.Web.Application.Commands;
 ///   <b>108 / 150、余量 42</b>；</item>
 /// <item>消费侧 <c>WorkOrderCapitalization</c> 族的来源单号是发布侧
 ///   <c>InventoryIntegrationEventConverters</c> 的 <c>movementId.ToString()</c>，
-///   <c>StockMovementId</c> 是强类型 GUID ⇒ 恒 36
-///   （<c>ErpVoucherNoLengthContractTests.InventoryMovementIdWidth</c> = 36）⇒ 上界 <b>40</b>。</item>
+///   <c>StockMovementId</c> 是 <c>IGuidStronglyTypedId</c> ⇒ GUID 文本恒 36（**类型级事实**，
+///   ⛔ 不是列宽约束）⇒ 上界 <b>40</b>。</item>
 /// </list>
 /// 真正承重的是**失败形态**这条三步链：<c>EfCoreCodeStore.AddIdempotencyRecord</c> 只做
 /// <c>DbSet.Add</c>、**不 SaveChanges**（<c>EfCoreCodeStore.cs:67</c>）＋ <c>CodeIdempotencyKey</c>
@@ -58,8 +58,28 @@ namespace Nerv.IIP.Business.Erp.Web.Application.Commands;
 ///   —— 那是 **WMS 自己存 Inventory 回传值的下游副本列**，对 ERP 收到的 payload 零约束。</item>
 /// </list>
 /// 三次的共同形状：**列宽只约束「谁写这一列」，不约束「谁把值传过来」**；
-/// 要算某条链路的上界，得追到**发布侧**的取值。正确读数早就写在
-/// <c>ErpVoucherNoLengthContractTests.cs</c> 里（连同一句「别再照抄旧数」），那个文件是这些常量的权威来源。
+/// 要算某条链路的上界，得追到**发布侧**的取值。读数写在
+/// <c>ErpVoucherNoLengthContractTests</c>（<c>UpstreamNoColumnWidth</c> = 100、
+/// <c>WidestAdjustmentSourceIdWidth</c> = 134）。
+/// ⚠️ <b>两个数的钉住程度不一样，⛔ 别当成同一档事实</b>：
+/// <list type="bullet">
+/// <item><b>134 有活断言</b>——<c>Widest_production_source_identifier_matches_the_shape_it_is_derived_from</c>
+///   把它与形状实例化后的实际长度对撞（形状少一段即红），且被
+///   <c>JournalVoucherSourceContractTests</c> 当作 <c>source_no</c> 列宽的下界引用。</item>
+/// <item>⛔ <b>100 是手抄数，当前没有任何断言把它钉到真实列宽上</b>。它要对应的是**生产者侧**
+///   MES <c>OperationTaskEntityTypeConfiguration</c> 的 <c>operation_task_id</c> 列宽；
+///   #3278 / S8 实测：把那一列改成 200、Erp 侧常量一个字节不动 ⇒ <b>Erp 全量用例零红</b>
+///   （而真实最宽 sourceId 会变成 <c>machine-{200}-r{19}-void</c> = 234，撞 <c>source_no</c> 的 150
+///   ⇒ 顶格 <c>22001</c>）。
+///   ⭐ <b>失效方向就是这条</b>：上游把 <c>operation_task_id</c> 加宽时，本仓没有任何东西会转红。</item>
+/// </list>
+/// ⭐ <b>为什么 S8 没把 100 也钉住</b>：承重列在 <b>MES</b>，而
+/// <c>Nerv.IIP.Business.Erp.Web.Tests</c> **零 MES 项目引用**（实读 csproj）。
+/// 在 Erp 侧能读到的 <c>operation_task_id</c> 只有 <c>ErpCostAccountingEntityTypeConfigurations</c>
+/// 那 4 处——那是 <b>Erp 自己存 MES 回传值的下游副本列</b>，⛔ 对 Erp 收到的 payload 零约束，
+/// 拿它当锚正是上面 158/183/154 那三次的同一形状（会造出一条「看起来钉住了其实没有」的断言，
+/// 比明说没钉住更坏）。要真正钉住只能落在同时引用两服务的跨服务测试项目里，超出 S8 范围。
+/// ⛔ 别再从别的表的列宽反推。
 /// </para>
 /// <para>
 /// ⚠️ <b>与客户端可写幂等键的关系（⛔ 别读成「值域不相交」）</b>。
@@ -93,7 +113,11 @@ namespace Nerv.IIP.Business.Erp.Web.Application.Commands;
 /// ⇒ <b>两侧必须在合并前统一</b>，⛔ 不能一方先合到有数据的环境。
 /// 本类型与 S7 那个类是两个文件两份实现（合并前无法互相引用）；
 /// 「逐字一致」这件事由 <c>JournalVoucherNoAllocationTests.Allocation_key_matches_the_frozen_cross_seat_grammar</c>
-/// 的**冻结字面量**钉住，⛔ 不靠两边各读一遍源码。合并后应收敛成一个入口（S8 或后续票）。
+/// 与 <c>ConsumerJournalVoucherNumberAllocationTests</c> 两侧各自的**冻结字面量**钉住，
+/// ⛔ 不靠两边各读一遍源码。
+/// ⚠️ <b>收敛成一个入口仍未做</b>：S6/S7 已合并，但 #3278 / S8 的范围是
+/// <c>ErpVoucherNoPolicy</c> 退役，⛔ 没碰键文法任何字节，两份实现照旧并存。
+/// 谁来做这件事要另行立票；在那之前，改任一侧都必须两侧同改并重跑两边的冻结字面量用例。
 /// </para>
 /// <para>
 /// <b>本类型不覆盖的面</b>：seed（<c>WorldHistorySeedService</c>）的两处凭证按 #3278「显式不做」

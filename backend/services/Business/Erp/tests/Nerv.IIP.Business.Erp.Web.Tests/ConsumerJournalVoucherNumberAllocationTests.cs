@@ -35,7 +35,12 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 /// <para>
 /// <b>本类打的轴</b>：⛔ 不是「有没有调分配器」（那一格用 <c>Assert.Contains</c> 之类的存在性判据也会绿），
 /// 而是「**产出的是什么**」——逐个位点把落库凭证号与改前那个派生串直接对撞（<c>Assert.NotEqual</c>），
-/// 再钉分配器形状。把 <c>TryAllocateAsync</c> 换回 <c>ErpVoucherNoPolicy.Compose</c> 时这两条都红。
+/// 再钉分配器形状。
+/// ⚠️ <b>#3278 / S8 登记：这条「怎么变异」的说明已被结构变更改写</b>。改前写的是
+/// 「把 <c>TryAllocateAsync</c> 换回 <c>ErpVoucherNoPolicy.Compose</c> 时这两条都红」，
+/// 而 S8 删掉了那个入口 ⇒ <b>那一格变异今天写不出来了</b>。
+/// 断言本身的鉴别力**没有变**：对撞的右边是硬编码的改前派生串字面量，不引用任何被删的类型；
+/// 今天等价的变异是把取号换成手写 <c>$"JV-GRIR-{收货单号}"</c> 之类的裸拼，两条照样红。
 /// </para>
 /// <para>
 /// <b>失败路径怎么造出来</b>：<c>ConsumerJournalVoucherNumber</c> 的指纹是幂等键的函数，

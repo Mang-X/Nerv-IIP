@@ -19,10 +19,12 @@ namespace Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 /// 不是这个列表本身。
 /// </para>
 /// <para>
-/// <b>与 <c>VoucherFamily</c>（<c>ErpVoucherNoPolicy.cs</c>）的关系</b>：两张表**故意不共用**。
-/// <c>VoucherFamily</c> 是「派生凭证号怎么拼」的词表，按 #3278 的 S6/S7/S8 它会随凭证号改短号一起退役；
-/// 本表是「这张凭证的来源单据是什么」的词表，凭证号退役后它仍然承载来源身份。
-/// 共用会让 S8 删掉 <c>ErpVoucherNoPolicy</c> 时把来源码表一起带走。
+/// <b>为什么当初没有与 <c>VoucherFamily</c> 共用一张表</b>（#3278 / S8 已兑现）：
+/// <c>VoucherFamily</c> 是「派生凭证号怎么拼」的词表，随 S6/S7 把凭证号改成分配器短号后失去调用点，
+/// 已在 S8 连同 <c>ErpVoucherNoPolicy</c> 一起删除；本表是「这张凭证的来源单据是什么」的词表，
+/// 它承载的是 S5 那条 <c>(source_type, source_no)</c> 唯一索引的键，与凭证号无关。
+/// ⇒ 当初若共用，S8 那次删除会把来源码表一起带走。⭐ 这两张表的**生存期本就不同**，
+/// 今天它们看起来相似不是合并的理由。
 /// </para>
 /// </remarks>
 public sealed class JournalVoucherSourceType
@@ -38,17 +40,25 @@ public sealed class JournalVoucherSourceType
     /// <summary>
     /// 供应商发票 GR/IR 清账（发票匹配 / 放开付款冻结两条命令）。来源单号取**发票号**。
     ///
-    /// ⭐ 这里**刻意**不与 <see cref="AccountPayable"/> 共用类型：两条路径今天产出同一个凭证号
-    /// <c>JV-AP-{应付单号}</c>（#3278 §A2 点名的设计地雷）。来源列按「真正驱动这张凭证的单据」取值，
-    /// 直接应付的驱动单据是应付单，发票清账的驱动单据是供应商发票，于是 <c>(类型, 单号)</c> 天然不相撞。
+    /// ⭐ 这里**刻意**不与 <see cref="AccountPayable"/> 共用类型。
+    /// <b>改前</b>两条路径产出同一个凭证号 <c>JV-AP-{应付单号}</c>（#3278 §A2 点名的设计地雷）。
+    /// ⚠️ <b>#3278 / S6（PR #3495）之后那个「同号」前提已不存在</b>：两侧各自从
+    /// <c>JournalVoucherNoAllocation</c> 取一个分配器短号。
     ///
-    /// ⭐ <b>#3278 / S5 换键后本族强度不变（零收窄零放宽），承重理由是</b>：
-    /// 两个盖章点 <c>ErpProcurementCommands.cs:1087</c> 与 <c>:1207</c> 走的是**同一个工厂**
-    /// <c>FinanceVoucherFactory.ForSupplierInvoiceGrIrClearing</c>，凭证号同样由
-    /// <c>ErpFinanceCommands.cs:1011</c> 的 <c>Compose(AccountPayable, payable.PayableNo)</c> 产出，
-    /// 而两处都为**当前这张发票**新建一张应付单（<c>AccountPayable.Create(..., invoice.InvoiceNo, ...)</c>）
-    /// ⇒ 发票号与应付单号在这两条路径上一一对应，新旧两把键**等强**。
-    /// ⚠️ <c>ErpProcurementCommands.cs:1136</c> 的 <c>existingPayableForInvoice</c> 早退守卫确实存在，
+    /// ⛔ <b>但「不再同号」不是合并这两个类型的理由</b>，恰恰相反——凭证号从 S6 起只是账面显示值，
+    /// 「这张凭证是否已记」完全由 S5 那条
+    /// <c>(organization_id, environment_id, source_type, source_no)</c> partial unique index 判定。
+    /// 来源列的取值口径是「**真正驱动这张凭证的单据**」：直接应付的驱动单据是应付单，
+    /// 发票清账的驱动单据是供应商发票。把两个类型合并会让这两条业务路径落进同一把键，
+    /// **互相挡住对方建凭证**，即直接改掉那条唯一索引的语义。
+    ///
+    /// ⭐ <b>#3278 / S5 换键时本族强度不变（零收窄零放宽），当时的承重理由是</b>：
+    /// 两个盖章点 <c>ErpProcurementCommands.cs:1089</c> 与 <c>:1221</c> 走的是**同一个工厂**
+    /// <c>FinanceVoucherFactory.ForSupplierInvoiceGrIrClearing</c>，**改前**凭证号由该工厂内联的派生构造
+    /// 从 <c>payable.PayableNo</c> 拼出（⚠️ 那个派生入口已随 S8 删除，⛔ 别去源码里找它），
+    /// 而两处都为**当前这张发票**新建一张应付单（<c>AccountPayable.Create(..., invoice.InvoiceNo, ...)</c>，
+    /// 实读 <c>:1074</c> 与 <c>:1206</c>）⇒ 发票号与应付单号在这两条路径上一一对应，新旧两把键**等强**。
+    /// ⚠️ <c>ErpProcurementCommands.cs:1148</c> 的 <c>existingPayableForInvoice</c> 早退守卫确实存在，
     /// 但它挡的是「同一张发票被放行两次」，⛔ 不是这里键强度不变的理由。
     /// </summary>
     public static JournalVoucherSourceType SupplierInvoice { get; } = new("SUPPINV");
@@ -78,8 +88,9 @@ public sealed class JournalVoucherSourceType
     /// 工单成本资本化。来源单号取触发这次资本化的库存移动号。
     ///
     /// ⭐ #3278 / S5：本族与 <see cref="WorkOrderCostAdjustment"/> 是**同一种收窄**——
-    /// 今天的凭证号是 <c>JV-WOC-{workOrderId}-{movementId}</c>，唯一键是 <c>(WOC, movementId)</c>，
-    /// 同样**少了工单号一段**。结论仍成立：<c>InventoryMovementId</c> 是 Inventory 侧的全局移动标识，
+    /// 换键前的凭证号是 <c>JV-WOC-{workOrderId}-{movementId}</c>，唯一键是 <c>(WOC, movementId)</c>，
+    /// 同样**少了工单号一段**（⚠️ S7 之后凭证号已是分配器短号，那个派生形状只是收窄方向的参照系，
+    /// ⛔ 不是今天的凭证号）。结论仍成立：<c>InventoryMovementId</c> 是 Inventory 侧的全局移动标识，
     /// 一次移动只对应一个成品入库事件、也只归属一个工单，所以收窄取不到值。
     /// ⛔ 但别把它读成「本族没有收窄」。
     /// </summary>
@@ -88,8 +99,9 @@ public sealed class JournalVoucherSourceType
     /// <summary>
     /// 工单成本迟到调整。来源单号取触发这次调整的来源标识（报工单号 / 移动号 / 工序任务修订串）。
     ///
-    /// ⭐ #3278 / S5 在这一族上**收窄**了唯一性：今天的凭证号是
-    /// <c>JV-WOCADJ-{workOrderId}-{sourceId}</c>，而唯一键是 <c>(WOCADJ, sourceId)</c>，**少了工单号一段**。
+    /// ⭐ #3278 / S5 在这一族上**收窄**了唯一性：换键前的凭证号是
+    /// <c>JV-WOCADJ-{workOrderId}-{sourceId}</c>，而唯一键是 <c>(WOCADJ, sourceId)</c>，**少了工单号一段**
+    /// （⚠️ S7 之后凭证号已是分配器短号，那个派生形状只是收窄方向的参照系，⛔ 不是今天的凭证号）。
     /// 收窄之所以取不到值，是因为 7 处生产侧取值全部来自「在 (org, env) 内唯一、且只归属一个工单」的单据标识
     /// （扫描面、逐项枚举与失效方向写在
     /// <c>ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_work_order_cost_adjustment_key_drops_the_work_order_segment</c>）。
