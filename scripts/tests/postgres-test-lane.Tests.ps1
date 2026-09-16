@@ -719,7 +719,7 @@ try {
     Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 28) 'The ERP member must freeze exactly its twenty-eight PostgreSQL identities.'
     Assert-Contract ([string]::Equals([string]$erpMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) 'ERP keeps runner-owned databases for failure diagnostics.'
     $acceptanceMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'acceptance-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($acceptanceMember.expectedTestIdentities).Count -eq 15) '跨服务验收成员必须冻结十五条 PostgreSQL 测试身份。'
+    Assert-Contract (@($acceptanceMember.expectedTestIdentities).Count -eq 16) '跨服务验收成员必须冻结十六条 PostgreSQL 测试身份。'
     Assert-Contract ([string]::Equals((@($acceptanceMember.diagnosticSchemas) -join ','), 'erp,industrial_telemetry,inventory,maintenance,mes,wms', [StringComparison]::Ordinal)) '跨服务验收成员必须声明所有被迁移的 schema。'
     Assert-Contract ([string]::Equals([string]$acceptanceMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) '跨服务验收成员使用 runner-owned 数据库，保持最终状态可诊断。'
     Assert-MethodScopedFilter -Member $acceptanceMember
@@ -727,6 +727,7 @@ try {
             'backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/BusinessPartnerChangedPostgresAcceptanceTests.cs',
             'backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/ErpCostAccountingPostgresAcceptanceTests.cs',
             'backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/WorkCenterMachineOverheadRatePostgresAcceptanceTests.cs',
+            'backend/tests/Nerv.IIP.Business.Acceptance.Tests/MaintenanceAvailabilityWindowPostgresAcceptanceTests.cs',
             'backend/tests/Nerv.IIP.Business.Acceptance.Tests/RuntimeHoursMaintenancePostgresAcceptanceTests.cs',
             'backend/tests/Nerv.IIP.Business.Acceptance.Tests/WmsInventoryRpcIdempotencyAcceptanceTests.cs',
             'backend/tests/Nerv.IIP.Business.Acceptance.Tests/QualityInspectionInventoryStockGateAcceptanceTests.cs',
@@ -754,6 +755,10 @@ try {
     $mesDispositionReferenceSource = [IO.File]::ReadAllText((Join-Path $repoRoot 'backend/tests/Nerv.IIP.Business.Acceptance.Tests/MesDefectDispositionReferenceAcceptanceTests.cs'))
     Assert-Contract (-not $mesDispositionReferenceSource.Contains('EnsureCreatedAsync(', [StringComparison]::Ordinal)) 'Lane members must migrate rather than EnsureCreated, which silently skips schema creation on an existing member database.'
     Assert-Contract ($mesDispositionReferenceSource.Contains('MigrateAsync(', [StringComparison]::Ordinal)) 'The Quality-to-MES disposition reference member must create its schema through migrations.'
+    # #2944：维护可用窗口求交谓词的用例同样跑在共享成员库上，同样只能靠迁移建表。
+    $availabilityWindowSource = [IO.File]::ReadAllText((Join-Path $repoRoot 'backend/tests/Nerv.IIP.Business.Acceptance.Tests/MaintenanceAvailabilityWindowPostgresAcceptanceTests.cs'))
+    Assert-Contract (-not $availabilityWindowSource.Contains('EnsureCreatedAsync(', [StringComparison]::Ordinal)) 'Lane members must migrate rather than EnsureCreated, which silently skips schema creation on an existing member database.'
+    Assert-Contract ($availabilityWindowSource.Contains('MigrateAsync(', [StringComparison]::Ordinal)) 'The maintenance availability-window member must create its schema through migrations.'
 
     # 逐成员、逐冻结身份地把"先重置再迁移"和"重置用 CASCADE"变成门禁，而不是靠每个作者自觉。
     $resetDeclaringSources = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
