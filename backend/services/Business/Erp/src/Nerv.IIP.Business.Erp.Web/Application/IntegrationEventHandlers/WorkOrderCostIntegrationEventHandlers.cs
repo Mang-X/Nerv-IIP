@@ -372,7 +372,7 @@ internal static class CostVariancePosting
     /// </returns>
     /// <remarks>
     /// #3278 / S7：凭证号从 <c>ErpVoucherNoPolicy.Compose(WorkOrderCostAdjustment, workOrderId, sourceId)</c>
-    /// 改成分配器短号。本方法是静态辅助、被 5 个生产调用点共用，手里没有事件信封，
+    /// 改成分配器短号（⚠️ 那个派生入口已随 S8 删除，此处只是叙述改前形状）。本方法是静态辅助、被 5 个生产调用点共用，手里没有事件信封，
     /// 所以分配器的幂等键取 <c>(WOCADJ, sourceId)</c>——正好就是 S5 给本族定的唯一键，
     /// 也正好就在参数里，不需要改 5 个调用点的取值。
     /// ⚠️ 这条承接的强度不超过 S5：<c>JournalVoucherSourceType.WorkOrderCostAdjustment</c> 的注释已登记

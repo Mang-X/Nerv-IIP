@@ -724,7 +724,14 @@ try {
     # 分配器的 EfCoreCodeStore 落库与两条唯一索引，EF InMemory 两样都看不见；
     # 该用例写在已有的 ErpCostAccountingPostgresAcceptanceTests 里（工单资本化属成本核算），
     # 所以是老类加一条身份，不新增 Fact 属性也不新增策略规则。
-    Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 30) 'The ERP member must freeze exactly its thirty PostgreSQL identities.'
+    # #3278 / S8 降回 28：ErpVoucherNoPolicy.Compose 退役后，绑在它身上的两条真库身份
+    # （PostgreSQL_saturated_derived_voucher_numbers_persist_where_the_pre_change_shape_overflows /
+    # PostgreSQL_distinct_sources_never_collapse_onto_one_voucher_number）要证的对象已不存在：
+    # 前者证「派生串顶格会 22001 而兜底产出落得进去」，后者证「不同来源的派生串不塌成同号」。
+    # 生产侧已无任何派生凭证号，两条一并删除；voucher_no 那条唯一索引改由
+    # ErpJournalVoucherNoPostgresAcceptanceTests 与 PostgreSQL_dedup_sites_key_on_the_source_document_*
+    # 在来源键那一面承担。⛔ 这是「要证的事没了」，不是「测试碍事」。
+    Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 28) 'The ERP member must freeze exactly its twenty-eight PostgreSQL identities.'
     Assert-Contract ([string]::Equals([string]$erpMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) 'ERP keeps runner-owned databases for failure diagnostics.'
     $acceptanceMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'acceptance-postgres-profile' -RepositoryRoot $repoRoot
     Assert-Contract (@($acceptanceMember.expectedTestIdentities).Count -eq 16) '跨服务验收成员必须冻结十六条 PostgreSQL 测试身份。'

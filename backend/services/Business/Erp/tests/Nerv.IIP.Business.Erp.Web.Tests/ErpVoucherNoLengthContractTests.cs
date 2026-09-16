@@ -1,4 +1,3 @@
-using System.Reflection;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -6,66 +5,68 @@ using Microsoft.EntityFrameworkCore.Metadata;
 using Nerv.IIP.Business.Erp.Domain;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
+using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.Validation;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
 
 /// <summary>
-/// GitHub #3229：派生凭证号的有效上界是「<c>voucher_no</c> 列宽 − 前缀 − 分隔符 − 其余段」，不是上游单号的列宽。
+/// 凭证号相关的两个**宽度事实**，从 EF 模型与生产侧取值形状读出来对撞。
 ///
-/// 这个类钉住四件事：
-/// - <see cref="Voucher_no_column_width_matches_the_policy_constant"/>：列宽从 **EF 模型**
-///   （<c>IDesignTimeModel</c>）读，不读代码里的常量 → 单边改 <c>HasMaxLength</c> 即红；
-/// - 顶格面：拿真实构造入口跑**从生产调用点枚举出来的**顶格输入，
-///   把它实际产出的长度与从 EF 模型读到的列宽直接对撞；
-/// - 撞号面：原样式/摘要式两个值域不相交、不同段划分不塌成同号；
-/// - 摘要实现：用**冻结黄金向量**（外部独立实现算出的 hex 串硬编码在断言里）钉住，
-///   **不是**「先用 <c>Digest</c> 求值再用同一个 <c>Digest</c> 复算」那种自指断言。
+/// <b>#3278 / S8 退役登记（⛔ 别把这个类读成还在守 #3229）</b>。本类改前有 13 条用例，
+/// 其中 12 条钉的是 <c>ErpVoucherNoPolicy.Compose</c> 的派生构造：族名字符集、闭集登记表对撞、
+/// 顶格输入不越列宽、原样式/摘要式值域不相交、摘要黄金向量、分段歧义、构造幂等。
+/// S6（PR #3495）与 S7（PR #3496）把全部 15 个生产建凭证位点改成分配器短号后，
+/// 派生构造在生产侧调用点归零，S8 删除了 <c>Compose</c> / <c>Digest</c> / <c>CanonicalKey</c> /
+/// <c>VoucherFamily</c>，那 12 条断言**要证的对象已不存在**，随之退役。
+/// 每条断言的真不变量由谁承担，逐条写在 PR #3278 / S8 的正文里。
 ///
-/// **值域边界（声明放弃了什么，别读成完备）**：
-/// 1. 列宽读的是 **EF 模型**而不是迁移脚本，模型/迁移漂移不由本类负责。
-/// 2. **本类不证明「所有凭证号都走 <see cref="ErpVoucherNoPolicy.Compose"/>」**——那需要源码扫描，
-///    #3176 / PR #3214 的实证是这类扫描不收敛，故本票不做；#3231 另已实测「换成不可拼接的包装类型」
-///    只关得掉 <c>+</c>，插值 / <c>Concat</c> / <c>Format</c> / <c>ToString()</c> 关不掉。
-///    绕开 <c>Compose</c> 直接 <c>$"JV-…"</c> 仍然编译得过。
-/// 3. **唯一索引下真的插得进/插不进**由真 Postgres 用例负责（见
-///    <c>ErpCostAccountingPostgresAcceptanceTests</c>），EF InMemory 既看不见列宽也看不见唯一索引，
-///    本类的绿**不能**读成「落库不会 22001」。
+/// 剩下的两条各自仍有活的承重方：
+/// <list type="number">
+/// <item><see cref="Voucher_no_column_width_matches_the_policy_constant"/>：
+///   <c>ErpVoucherNoPolicy.ColumnMaxLength</c> 仍在 <c>PostJournalVoucherCommandValidator</c>
+///   （<c>ErpFinanceCommands.cs</c> 的 <c>RuleFor(x =&gt; x.VoucherNo).MaximumLength(...)</c>）承重，
+///   这条把它与 EF 模型里的 <c>voucher_no</c> 列宽绑死 ⇒ 任一单边改动即红；</item>
+/// <item><see cref="Widest_production_source_identifier_matches_the_shape_it_is_derived_from"/>：
+///   <see cref="WidestAdjustmentSourceIdWidth"/> 是 <c>journal_vouchers.source_no</c> 列宽的下界依据，
+///   被 <c>JournalVoucherSourceContractTests.Source_columns_are_nullable_and_wide_enough_for_every_production_source_id</c>
+///   当作活断言引用。这条保证那个数不是手抄的，而是从下面那个形状算出来的。</item>
+/// </list>
+///
+/// <b>值域边界（声明放弃了什么，⛔ 别读成完备）</b>：
+/// 1. 列宽读的是 <b>EF 模型</b>而不是迁移脚本，模型/迁移漂移不由本类负责。
+/// 2. 本类**不**证明「所有凭证号都合法」或「所有凭证号都来自分配器」——
+///    分配器短号的形状由 <c>JournalVoucherNoAllocationTests</c> /
+///    <c>ConsumerJournalVoucherNumberAllocationTests</c> 钉，落库那一层由真 Postgres 用例钉。
+/// 3. EF InMemory 既看不见列宽也看不见唯一索引，本类的绿**不能**读成「落库不会 22001」。
 /// </summary>
 public sealed class ErpVoucherNoLengthContractTests
 {
     /// <summary>ERP 侧承载上游业务单号的列宽，全部是 100（工单号 / 报工单号 / 移动号 / 工序任务号 / 各类单据号）。</summary>
-    private const int UpstreamNoColumnWidth = 100;
+    internal const int UpstreamNoColumnWidth = 100;
 
     /// <summary>
-    /// <c>InventoryMovementId</c> 全仓**没有** <c>HasMaxLength</c>；发布侧是
-    /// <c>InventoryIntegrationEventConverters.cs</c> 的 <c>movementId.ToString()</c>，即 GUID 文本 36 字符。
-    /// </summary>
-    private const int InventoryMovementIdWidth = 36;
-
-    /// <summary>
-    /// <c>CostVariancePosting.PostLateAdjustmentAsync</c> 的 <c>sourceId</c> 在生产侧的**最宽**取值。
+    /// <c>CostVariancePosting.PostLateAdjustmentAsync</c> 的 <c>sourceId</c> 在生产侧的**最宽**取值形状。
     ///
-    /// **这是本 PR 复审更正过的读数，别再照抄旧数**：该方法有 **5 个调用点**（不是 3 个），
+    /// **这是复审更正过的读数，别再照抄旧数**：该方法有 **5 个调用点**（不是 3 个），
     /// 覆盖 **7 种** <c>sourceId</c> 形状——
     /// <list type="bullet">
-    /// <item><c>WorkOrderCostIntegrationEventHandlers.cs:219</c> → <c>payload.ReportNo</c>（列宽 100）；</item>
-    /// <item>同文件 <c>:226</c> → <c>item.MovementId</c>（列宽 100）；</item>
-    /// <item>同文件 <c>:299</c> → <c>payload.InventoryMovementId</c>（GUID 36）；</item>
-    /// <item><c>OperationLaborSettlementIntegrationEventHandlers.cs:207</c> → <c>{OperationTaskId}-r{rev}</c>；</item>
-    /// <item>同文件 <c>:607</c> → <c>{OperationTaskId}-r{rev}-void</c>；</item>
-    /// <item><c>OperationMachineOverheadSettlementIntegrationEventHandlers.cs:195</c> → <c>machine-{OperationTaskId}-r{rev}</c>；</item>
-    /// <item>同文件 <c>:347</c> → <c>machine-{OperationTaskId}-r{rev}-void</c>。</item>
+    /// <item><c>WorkOrderCostIntegrationEventHandlers.cs</c> → <c>payload.ReportNo</c>（列宽 100）；</item>
+    /// <item>同文件 → <c>item.MovementId</c>（列宽 100）；</item>
+    /// <item>同文件 → <c>payload.InventoryMovementId</c>（<c>StockMovementId</c> 是
+    ///   <c>IGuidStronglyTypedId</c> ⇒ GUID 文本恒 36）；</item>
+    /// <item><c>OperationLaborSettlementIntegrationEventHandlers.cs</c> → <c>{OperationTaskId}-r{rev}</c>；</item>
+    /// <item>同文件 → <c>{OperationTaskId}-r{rev}-void</c>；</item>
+    /// <item><c>OperationMachineOverheadSettlementIntegrationEventHandlers.cs</c> → <c>machine-{OperationTaskId}-r{rev}</c>；</item>
+    /// <item>同文件 → <c>machine-{OperationTaskId}-r{rev}-void</c>。</item>
     /// </list>
     /// <c>OperationTaskId</c> 列宽 100，<c>SettlementRevision</c> 是**单调递增的非负** <c>long</c>
-    /// 修订号（十进制最多 19 位；若取到负值则含负号 20 位，宽度 135、上界 247——本条按非负值域算），
+    /// 修订号（十进制最多 19 位；若取到负值则含负号 20 位，宽度 135——本条按非负值域算），
     /// 故最宽形状 <c>machine-{100}-r{19}-void</c> = 8+100+2+19+5 = <b>134</b>。
-    /// 于是改前 <c>JV-WOC-ADJ-{workOrderId}-{sourceId}</c> 的类型上界是 11+100+1+134 = <b>246</b>，
-    /// **不是**票面估的 148，也不是本 PR 首轮写的 212（首轮只枚举了前 3 个调用点）。
     ///
-    /// 这个数取决于 <c>long</c> 的十进制位数，所以**重点不是它等于几**，而是：
-    /// 原样式的长度**没有任何低于列宽的自然上界**，因此上界只能由 <see cref="ErpVoucherNoPolicy.Compose"/>
-    /// 从列宽兜底，不能由任何人估算。
+    /// ⚠️ <b>这个数今天约束的是 <c>journal_vouchers.source_no</c> 的列宽，⛔ 不再是凭证号</b>：
+    /// S5（PR #3480）把「这张凭证是否已记」的判据搬到 <c>(source_type, source_no)</c> 并建了
+    /// partial unique index，上面那 7 种 <c>sourceId</c> 是写进 <c>source_no</c> 的值。
     /// </summary>
     private const string WidestAdjustmentSourceIdShape = "machine-{OperationTaskId}-r{SettlementRevision}-void";
 
@@ -82,301 +83,80 @@ public sealed class ErpVoucherNoLengthContractTests
         Assert.Equal(ErpVoucherNoPolicy.ColumnMaxLength, property.GetMaxLength());
     }
 
-    /// <summary>改口径前的构造式在顶格输入下确实超出列宽——这条读数说明缺陷不是假想的。</summary>
-    [Fact]
-    public void Pre_change_shapes_overflow_the_column_at_saturated_upstream_identifiers()
-    {
-        var columnWidth = ColumnWidthFromModel();
-        var workOrderId = new string('W', UpstreamNoColumnWidth);
-        var movementId = new string('M', InventoryMovementIdWidth);
-        var widestSourceId = WidestAdjustmentSourceId();
-        var payableNo = new string('P', UpstreamNoColumnWidth);
-
-        Assert.Equal(WidestAdjustmentSourceIdWidth, widestSourceId.Length);
-        Assert.Equal(144, $"JV-WOC-{workOrderId}-{movementId}".Length);
-        Assert.Equal(246, $"JV-WOC-ADJ-{workOrderId}-{widestSourceId}".Length);
-        Assert.Equal(106, $"JV-AP-{payableNo}".Length);
-        Assert.True($"JV-WOC-{workOrderId}-{movementId}".Length > columnWidth);
-        Assert.True($"JV-WOC-ADJ-{workOrderId}-{widestSourceId}".Length > columnWidth);
-        Assert.True($"JV-AP-{payableNo}".Length > columnWidth);
-    }
-
     /// <summary>
-    /// 族从 <see cref="VoucherFamily.All"/> 枚举，断言「族名字符集」与「摘要式仍塞得进列宽」——
-    /// 改闭集类型前这两条靠运行期 <c>AssertFamily</c> 守，现在由类型 + 本条共同承担。
+    /// <see cref="WidestAdjustmentSourceIdWidth"/> 必须等于
+    /// <see cref="WidestAdjustmentSourceIdShape"/> 在类型上界下实例化出来的实际长度。
     ///
-    /// **<see cref="VoucherFamily.All"/> 本身是手工登记表**：类型里声明一个族却不追加进 <c>All</c>，
-    /// 编译期没有任何机制会拦（实测：这么干时本条与
-    /// <see cref="Saturated_production_inputs_stay_within_the_column_width"/> 都是绿的，
-    /// 那个族哪怕族名含 <c>-</c> 也能一路进生产）。补住这个方向的是
-    /// <see cref="All_enumerates_every_declared_family_and_names_stay_distinct"/>，别把本条读成完备。
+    /// 为什么需要这条：那个数是 <c>source_no</c> 列宽的下界依据，被另一个类当活断言引用。
+    /// 没有这条，134 就是一个手抄的数——而「把一个紧的上界配一条不属于该链路的宽列」
+    /// 在这张票上已经复发过三次（158 / 183 / 154，全部是从**别的表的列宽**推出来的）。
+    /// <c>long.MaxValue</c> 的十进制位数变了、或那个形状多一段，这条就红。
     /// </summary>
-    [Theory]
-    [MemberData(nameof(AllFamilies))]
-    public void Every_family_keeps_the_family_boundary_unambiguous_and_fits_the_column(VoucherFamily family)
+    [Fact]
+    public void Widest_production_source_identifier_matches_the_shape_it_is_derived_from()
     {
-        var columnWidth = ColumnWidthFromModel();
-
-        Assert.All(
-            family.Name,
-            character => Assert.True(
-                character is (>= 'A' and <= 'Z') or (>= '0' and <= '9'),
-                $"族名 {family.Name} 含非 [A-Z0-9] 字符 '{character}'，族名边界不再唯一。"));
-        Assert.DoesNotContain(ErpVoucherNoPolicy.RawSeparator, family.Name, StringComparison.Ordinal);
-        Assert.DoesNotContain(ErpVoucherNoPolicy.DigestMarker, family.Name, StringComparison.Ordinal);
-        Assert.True(
-            ErpVoucherNoPolicy.GlobalPrefix.Length
-                + family.Name.Length
-                + ErpVoucherNoPolicy.DigestMarker.Length
-                + ErpVoucherNoPolicy.DigestLength
-                <= columnWidth,
-            $"族 {family.Name} 的摘要式凭证号超出列宽 {columnWidth}。");
+        Assert.Equal(WidestAdjustmentSourceIdWidth, WidestAdjustmentSourceId().Length);
+        Assert.StartsWith("machine-", WidestAdjustmentSourceId(), StringComparison.Ordinal);
+        Assert.EndsWith("-void", WidestAdjustmentSourceId(), StringComparison.Ordinal);
+        Assert.Contains("machine-", WidestAdjustmentSourceIdShape, StringComparison.Ordinal);
+        Assert.EndsWith("-void", WidestAdjustmentSourceIdShape, StringComparison.Ordinal);
     }
 
     /// <summary>
-    /// 每个族在**它自己最宽的生产输入**下都必须塞得进从 EF 模型读到的列宽。
-    /// 输入宽度取自各族真实来源列宽，不是随便挑的数。
-    /// </summary>
-    [Theory]
-    [MemberData(nameof(SaturatedProductionInputs))]
-    public void Saturated_production_inputs_stay_within_the_column_width(VoucherFamily family, string[] segments)
-    {
-        var columnWidth = ColumnWidthFromModel();
-
-        var voucherNo = ErpVoucherNoPolicy.Compose(family, segments);
-
-        Assert.True(
-            voucherNo.Length <= columnWidth,
-            $"族 {family.Name} 的顶格凭证号长度 {voucherNo.Length} 超出列宽 {columnWidth}。");
-    }
-
-    /// <summary>合得下时必须与改前逐字节相同，否则存量行和「按号查重」会集体失配。</summary>
-    [Fact]
-    public void Short_inputs_keep_the_pre_change_voucher_numbers_byte_for_byte()
-    {
-        Assert.Equal("JV-WOC-WO-0001-MOVE-0001", ErpVoucherNoPolicy.Compose(VoucherFamily.WorkOrderCapitalization, "WO-0001", "MOVE-0001"));
-        Assert.Equal("JV-GRIR-GR-0001", ErpVoucherNoPolicy.Compose(VoucherFamily.GoodsReceiptIrAccrual, "GR-0001"));
-        Assert.Equal("JV-PRTN-PRTN-0001", ErpVoucherNoPolicy.Compose(VoucherFamily.PurchaseReturn, "PRTN-0001"));
-        Assert.Equal("JV-CN-CN-0001", ErpVoucherNoPolicy.Compose(VoucherFamily.CreditNote, "CN-0001"));
-        Assert.Equal("JV-AP-AP-0001", ErpVoucherNoPolicy.Compose(VoucherFamily.AccountPayable, "AP-0001"));
-        Assert.Equal("JV-AR-AR-0001", ErpVoucherNoPolicy.Compose(VoucherFamily.AccountReceivable, "AR-0001"));
-        Assert.Equal("JV-COST-COST-0001", ErpVoucherNoPolicy.Compose(VoucherFamily.CostCandidate, "COST-0001"));
-    }
-
-    /// <summary>
-    /// 唯一**不**逐字节兼容的族：调整族由 <c>JV-WOC-ADJ-</c> 改成 <c>JV-WOCADJ-</c>。
-    /// 这条把「值域已变」当断言写死，免得它被读成兼容。改前形状与资本化族前缀相互包含，
-    /// 那才是它必须改名的原因。
-    /// </summary>
-    [Fact]
-    public void The_adjustment_family_deliberately_changed_its_value_range()
-    {
-        var current = ErpVoucherNoPolicy.Compose(VoucherFamily.WorkOrderCostAdjustment, "WO-0001", "RPT-0001");
-
-        Assert.Equal("JV-WOCADJ-WO-0001-RPT-0001", current);
-        Assert.NotEqual("JV-WOC-ADJ-WO-0001-RPT-0001", current);
-        Assert.NotEqual(
-            ErpVoucherNoPolicy.Compose(VoucherFamily.WorkOrderCapitalization, "ADJ-WO-0001", "RPT-0001"),
-            current);
-    }
-
-    /// <summary>
-    /// 恰好等于列宽的输入仍走原样式，多一位换摘要式。
-    /// **摘要式那一侧用冻结黄金向量断言**（hex 由本仓之外的独立实现算出并硬编码），
-    /// 不用 <c>Digest(...)</c> 复算——否则改 <c>Digest</c> 两侧同步变，等号恒成立。
-    /// </summary>
-    [Fact]
-    public void The_boundary_between_raw_and_digest_sits_exactly_at_the_column_width()
-    {
-        var prefixLength = ErpVoucherNoPolicy.GlobalPrefix.Length
-            + VoucherFamily.AccountPayable.Name.Length
-            + ErpVoucherNoPolicy.RawSeparator.Length;
-        var exactFit = new string('N', ErpVoucherNoPolicy.ColumnMaxLength - prefixLength);
-        var oneOver = exactFit + "N";
-
-        var fitted = ErpVoucherNoPolicy.Compose(VoucherFamily.AccountPayable, exactFit);
-        var overflowed = ErpVoucherNoPolicy.Compose(VoucherFamily.AccountPayable, oneOver);
-
-        Assert.Equal(ErpVoucherNoPolicy.ColumnMaxLength, fitted.Length);
-        Assert.Equal($"JV-AP-{exactFit}", fitted);
-        Assert.Equal(GoldenApOneOverColumnWidth, overflowed);
-        Assert.True(overflowed.Length < ErpVoucherNoPolicy.ColumnMaxLength);
-    }
-
-    /// <summary>
-    /// 摘要实现的**冻结黄金向量**：期望值是外部独立实现按
-    /// 「<c>JV-{FAMILY}~UPPERHEX(SHA256(规范串))</c>、规范串 = 各段以 U+001F 分隔并各自前置十进制长度」
-    /// 算出后硬编码进来的。改 <c>Digest</c>、<c>CanonicalKey</c>、分隔符、族名任何一处都会红。
-    /// </summary>
-    [Fact]
-    public void Digest_shape_matches_frozen_golden_vectors()
-    {
-        Assert.Equal(
-            GoldenApOneOverColumnWidth,
-            ErpVoucherNoPolicy.Compose(VoucherFamily.AccountPayable, new string('N', 95)));
-        Assert.Equal(
-            "JV-WOC~8F32B13C55520993706A9240AAD2CD11F28B7A9B8D5618E2AC72CA8ACAEB7657",
-            ErpVoucherNoPolicy.Compose(
-                VoucherFamily.WorkOrderCapitalization,
-                new string('W', UpstreamNoColumnWidth),
-                "11111111-2222-4333-8444-555555555555"));
-        Assert.Equal(
-            "JV-WOCADJ~DAF72AA2B99AED8CE17F44AA1606D978C9FD53D9D134D5594410D15B761DFB61",
-            ErpVoucherNoPolicy.Compose(
-                VoucherFamily.WorkOrderCostAdjustment,
-                new string('W', UpstreamNoColumnWidth),
-                new string('S', UpstreamNoColumnWidth)));
-        Assert.Equal(
-            "JV-WOCADJ~C82CB824FD3474EFC81F2E9FAEC876DE7DB610C08C17243F828EBFFB52AD1305",
-            ErpVoucherNoPolicy.Compose(
-                VoucherFamily.WorkOrderCostAdjustment,
-                new string('W', UpstreamNoColumnWidth),
-                WidestAdjustmentSourceId()));
-    }
-
-    /// <summary>两种形态在族名后那一位分别是 <c>-</c> 与 <c>~</c>，值域不相交。</summary>
-    [Fact]
-    public void Raw_and_digest_shapes_occupy_disjoint_value_ranges()
-    {
-        var raw = ErpVoucherNoPolicy.Compose(VoucherFamily.AccountPayable, "AP-0001");
-        var digest = ErpVoucherNoPolicy.Compose(VoucherFamily.AccountPayable, new string('N', ErpVoucherNoPolicy.ColumnMaxLength));
-
-        Assert.StartsWith("JV-AP" + ErpVoucherNoPolicy.RawSeparator, raw, StringComparison.Ordinal);
-        Assert.StartsWith("JV-AP" + ErpVoucherNoPolicy.DigestMarker, digest, StringComparison.Ordinal);
-        Assert.NotEqual(raw, digest);
-    }
-
-    /// <summary>摘要输入带长度前缀且以 U+001F 分隔，故不同的段划分不会拼成同一个输入。</summary>
-    [Fact]
-    public void Digest_inputs_keep_different_segment_splits_distinct()
-    {
-        var head = new string('X', 60);
-        var tail = new string('Y', 60);
-
-        var left = ErpVoucherNoPolicy.Compose(VoucherFamily.WorkOrderCapitalization, head + "-" + tail, "Z");
-        var right = ErpVoucherNoPolicy.Compose(VoucherFamily.WorkOrderCapitalization, head, tail + "-Z");
-
-        Assert.NotEqual(left, right);
-        Assert.StartsWith("JV-WOC" + ErpVoucherNoPolicy.DigestMarker, left, StringComparison.Ordinal);
-        Assert.StartsWith("JV-WOC" + ErpVoucherNoPolicy.DigestMarker, right, StringComparison.Ordinal);
-    }
-
-    /// <summary>同一来源必须稳定地得到同一个凭证号，否则重放会记出第二张凭证。</summary>
-    [Fact]
-    public void The_same_source_always_composes_to_the_same_voucher_number()
-    {
-        var workOrderId = new string('W', UpstreamNoColumnWidth);
-        var movementId = Guid.NewGuid().ToString();
-
-        Assert.Equal(
-            ErpVoucherNoPolicy.Compose(VoucherFamily.WorkOrderCapitalization, workOrderId, movementId),
-            ErpVoucherNoPolicy.Compose(VoucherFamily.WorkOrderCapitalization, workOrderId, movementId));
-    }
-
-    /// <summary>段缺失属编译期程序员错误，抛 <see cref="ArgumentException"/> 而不是业务异常。</summary>
-    [Fact]
-    public void Missing_segments_are_programmer_errors()
-    {
-        Assert.Throws<ArgumentException>(() => ErpVoucherNoPolicy.Compose(VoucherFamily.AccountPayable));
-        Assert.Throws<ArgumentException>(() => ErpVoucherNoPolicy.Compose(VoucherFamily.AccountPayable, " "));
-    }
-
-    /// <summary>
-    /// <see cref="VoucherFamily.All"/> 与**类型里实际声明的族**对撞，并断言族名两两互异。
+    /// <b>调用方给号的那条入口真的按列宽拒绝</b>——上界取自 <b>EF 模型</b>，⛔ 不取
+    /// <c>ErpVoucherNoPolicy.ColumnMaxLength</c>：取常量会让「校验器改成手抄一个别的数」这一格恒绿。
     ///
-    /// 为什么需要这条：<c>All</c> 的键是「有没有人手工把它加进列表」，不是「类型里存在几个族」。
-    /// 只靠从 <c>All</c> 枚举的用例，一个**声明了但没登记**的族（哪怕族名含
-    /// <see cref="ErpVoucherNoPolicy.RawSeparator"/>，正是调整族改名要消灭的形状）可以一路进生产而全绿。
-    /// 族名互异同理：改名撞车此前只被一份手抄的逐族断言**偶然**抓到。
+    /// ⭐ <b>#3278 / S8 新增，补的是一格实测出来的存活变异</b>。S8 的判断是
+    /// 「<c>ErpVoucherNoPolicy</c> 退化保留而不是删除，因为 <c>ColumnMaxLength</c> 仍在
+    /// <c>PostJournalVoucherCommandValidator</c> 承重」。变异实测（把那条
+    /// <c>RuleFor(x =&gt; x.VoucherNo).MaximumLength(...)</c> 整条删掉）改前 <b>全绿存活</b>
+    /// ⇒ 那个「仍在承重」的判断当时没有任何断言背书，常量随时可能静默变成死代码。
+    /// 这条把承重关系本身写成断言。
     ///
-    /// **值域边界**：反射面是 <see cref="VoucherFamily"/> 上的 <c>static</c> 属性与字段（按引用去重，
-    /// 因为自动属性的 backing field 与属性是同一个实例）。
-    /// 用别的方式（例如静态方法返回值）造出来的族不在这个面上——那种写法当前不存在，
-    /// 但**本条不覆盖它**，别读成「任何新族都逃不掉」。
+    /// <b>边界口径</b>：恰好等于列宽必须**通过**，多一位必须**被拒**——只测被拒会被
+    /// 「上界收得过紧」的实现蒙混过去。⛔ 本条不证明「落库不会 22001」：
+    /// 绕开命令直接写 EF 或原生 SQL 都够不着校验器。
     /// </summary>
     [Fact]
-    public void All_enumerates_every_declared_family_and_names_stay_distinct()
+    public void The_caller_supplied_voucher_no_is_rejected_beyond_the_column_width()
     {
-        var declared = DeclaredFamilies();
-
-        Assert.NotEmpty(declared);
-        Assert.Equal(declared.Length, VoucherFamily.All.Count);
-        Assert.Equal(
-            declared.Select(family => family.Name).Order(StringComparer.Ordinal),
-            VoucherFamily.All.Select(family => family.Name).Order(StringComparer.Ordinal));
-        Assert.Equal(
-            VoucherFamily.All.Count,
-            VoucherFamily.All.Select(family => family.Name).Distinct(StringComparer.Ordinal).Count());
-    }
-
-    private static VoucherFamily[] DeclaredFamilies()
-    {
-        const BindingFlags Flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
-        var fromProperties = typeof(VoucherFamily)
-            .GetProperties(Flags)
-            .Where(property => property.PropertyType == typeof(VoucherFamily))
-            .Select(property => (VoucherFamily)property.GetValue(null)!);
-        var fromFields = typeof(VoucherFamily)
-            .GetFields(Flags)
-            .Where(field => field.FieldType == typeof(VoucherFamily))
-            .Select(field => (VoucherFamily)field.GetValue(null)!);
-        // 自动属性的编译器生成 backing field 与属性持有**同一个实例**，按引用去重即可，
-        // 不必按 CompilerGenerated 特性做形状判断。
-        return fromProperties.Concat(fromFields).Distinct(ReferenceEqualityComparer.Instance).Cast<VoucherFamily>().ToArray();
-    }
-
-    public static TheoryData<VoucherFamily> AllFamilies()
-    {
-        var data = new TheoryData<VoucherFamily>();
-        foreach (var family in VoucherFamily.All)
+        int columnWidth;
+        using (var dbContext = CreateModelOnlyDbContext())
         {
-            data.Add(family);
+            columnWidth = dbContext.GetService<IDesignTimeModel>().Model
+                .FindEntityType(typeof(JournalVoucher))!
+                .FindProperty(nameof(JournalVoucher.VoucherNo))!
+                .GetMaxLength()!.Value;
         }
 
-        return data;
+        var validator = new PostJournalVoucherCommandValidator();
+
+        Assert.True(
+            validator.Validate(BalancedCommand(new string('N', columnWidth))).IsValid,
+            $"恰好等于列宽 {columnWidth} 的凭证号必须通过，否则上界收得比列宽还紧。");
+        Assert.False(
+            validator.Validate(BalancedCommand(new string('N', columnWidth + 1))).IsValid,
+            $"比列宽 {columnWidth} 多一位的凭证号必须被拒。");
     }
 
-    public static TheoryData<VoucherFamily, string[]> SaturatedProductionInputs()
-    {
-        var upstreamNo = new string('N', UpstreamNoColumnWidth);
-        var data = new TheoryData<VoucherFamily, string[]>
-        {
-            // 成品入库资本化：工单号（列宽 100）+ 库存移动 id（GUID 36）。
-            { VoucherFamily.WorkOrderCapitalization, [new string('W', UpstreamNoColumnWidth), new string('M', InventoryMovementIdWidth)] },
-            // 迟到调整：工单号（列宽 100）+ 5 个调用点里最宽的 sourceId 形状。
-            { VoucherFamily.WorkOrderCostAdjustment, [new string('W', UpstreamNoColumnWidth), WidestAdjustmentSourceId()] },
-            { VoucherFamily.GoodsReceiptIrAccrual, [upstreamNo] },
-            { VoucherFamily.PurchaseReturn, [upstreamNo] },
-            { VoucherFamily.CreditNote, [upstreamNo] },
-            { VoucherFamily.AccountPayable, [upstreamNo] },
-            { VoucherFamily.AccountReceivable, [upstreamNo] },
-            { VoucherFamily.CostCandidate, [upstreamNo] },
-        };
-        return data;
-    }
-
-    private const string GoldenApOneOverColumnWidth =
-        "JV-AP~BD2C658EB8F4BD251805C6B5271D05D744AF2A6F1FF1B844D6748F6BA043A449";
+    private static PostJournalVoucherCommand BalancedCommand(string voucherNo)
+        => new(
+            "org-001",
+            "env-dev",
+            voucherNo,
+            new DateOnly(2026, 6, 1),
+            [
+                new JournalVoucherCommandLine("1401", 10m, 0m, "debit leg"),
+                new JournalVoucherCommandLine("2202", 0m, 10m, "credit leg"),
+            ]);
 
     /// <summary><see cref="WidestAdjustmentSourceIdShape"/> 在类型上界下的实例：8+100+2+19+5 = 134。</summary>
     private static string WidestAdjustmentSourceId()
-    {
-        Assert.Contains("machine-", WidestAdjustmentSourceIdShape, StringComparison.Ordinal);
-        return "machine-"
+        => "machine-"
             + new string('T', UpstreamNoColumnWidth)
             + "-r"
             + long.MaxValue.ToString(System.Globalization.CultureInfo.InvariantCulture)
             + "-void";
-    }
-
-    private static int ColumnWidthFromModel()
-    {
-        using var dbContext = CreateModelOnlyDbContext();
-        return dbContext.GetService<IDesignTimeModel>().Model
-            .FindEntityType(typeof(JournalVoucher))!
-            .FindProperty(nameof(JournalVoucher.VoucherNo))!
-            .GetMaxLength()!.Value;
-    }
 
     private static ApplicationDbContext CreateModelOnlyDbContext()
     {

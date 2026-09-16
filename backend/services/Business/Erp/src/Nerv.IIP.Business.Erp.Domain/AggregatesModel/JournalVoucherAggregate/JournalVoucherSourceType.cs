@@ -19,10 +19,12 @@ namespace Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 /// 不是这个列表本身。
 /// </para>
 /// <para>
-/// <b>与 <c>VoucherFamily</c>（<c>ErpVoucherNoPolicy.cs</c>）的关系</b>：两张表**故意不共用**。
-/// <c>VoucherFamily</c> 是「派生凭证号怎么拼」的词表，按 #3278 的 S6/S7/S8 它会随凭证号改短号一起退役；
-/// 本表是「这张凭证的来源单据是什么」的词表，凭证号退役后它仍然承载来源身份。
-/// 共用会让 S8 删掉 <c>ErpVoucherNoPolicy</c> 时把来源码表一起带走。
+/// <b>为什么当初没有与 <c>VoucherFamily</c> 共用一张表</b>（#3278 / S8 已兑现）：
+/// <c>VoucherFamily</c> 是「派生凭证号怎么拼」的词表，随 S6/S7 把凭证号改成分配器短号后失去调用点，
+/// 已在 S8 连同 <c>ErpVoucherNoPolicy</c> 一起删除；本表是「这张凭证的来源单据是什么」的词表，
+/// 它承载的是 S5 那条 <c>(source_type, source_no)</c> 唯一索引的键，与凭证号无关。
+/// ⇒ 当初若共用，S8 那次删除会把来源码表一起带走。⭐ 这两张表的**生存期本就不同**，
+/// 今天它们看起来相似不是合并的理由。
 /// </para>
 /// </remarks>
 public sealed class JournalVoucherSourceType
