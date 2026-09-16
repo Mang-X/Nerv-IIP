@@ -348,9 +348,9 @@ public sealed class InventoryReservationExpirationTests
         // single PeriodicTimer, so the total is exactly 1. It sits after StopAsync — and outside the
         // try/finally, so a failing assertion above still surfaces as itself — because
         // StopAsync(CancellationToken.None) waits for the loop to actually exit, which is what makes the count
-        // complete. Why an executable assertion rather than a comment, why this position rather than before the
-        // shutdown, and what it does and does not pin is docs/governance/testing/determinism.md, §假时钟推进屏障;
-        // the measurement behind it is recorded once in git
+        // complete. The rule behind this barrier is docs/governance/testing/determinism.md, §假时钟推进屏障; why
+        // an executable assertion rather than a comment, why this position rather than before the shutdown, and
+        // what it does and does not pin are recorded once in git
         // 6e8747a8f93a6398c45c8eb2f2a33ad3a7b64019:docs/architecture/backend-test-determinism.md, §MAN-808.
         Assert.Equal(1, timeProvider.TimersCreated);
     }
