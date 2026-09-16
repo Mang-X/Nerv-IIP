@@ -9,7 +9,8 @@
 #     - .agents/skills/**
 #     - .claude/skills/**
 #   Cleanup:
-#     - None required; both layers are bounded by the skills/ sources and payload entries that drive them
+#     - None required: this library owns no temporary resources; both layers it writes are long-lived state
+#     - A payload entry whose tracked source is gone is not reclaimed here; manual disposition is in skills/README.md (#3466)
 #   Requires:
 #     - PowerShell 7
 
@@ -26,6 +27,44 @@ $script:NervAgentSkillsRelative = '.agents/skills'
 $script:NervClaudeSkillsRelative = '.claude/skills'
 $script:NervRepoSkillsRelative = 'skills'
 
+function Get-NervSkillDirectoryNames {
+    <#
+        .SYNOPSIS
+        Names of the skill directories directly under one skill root.
+
+        .DESCRIPTION
+        The single decision point for "what counts as one skill". A skill is a directory, and
+        both roots this library walks can hold non-skill entries at their top level:
+
+          - skills/README.md is tracked documentation, not a skill — present today;
+          - .agents/skills/.DS_Store appears whenever Finder has visited that directory —
+            latent, not present today (192 worktrees scanned, zero non-directory entries).
+
+        The rule is shared because the reason to exclude those entries is the same on both
+        roots, not because both roots are dirty today.
+
+        Reading either as a skill fails concretely, and differently on each side — which is why
+        this is one rule about what a skill is rather than two rules that happen to agree:
+        on the source side Sync-NervRepoSkillPayload would publish README.md into the payload as
+        if it were a skill; on the payload side the link layer would expose a broken entry to
+        every agent runtime and the install/mirror gate would report "installed" and never fire
+        again (#3465).
+
+        A missing root is not an error: a worktree legitimately has no payload before its first
+        install, and a repository need not ship skills/ at all.
+
+        Failure direction of the rule itself: a skill shipped as a single file (skills/foo.md)
+        would be dropped silently, with no gate going red. None exists — the skills CLI publishes
+        directories — but if that ever changes, the fix is to give Get-NervRepoSkillNames its own
+        enumeration back, not to add a mode switch here; the two one-line wrappers are what keeps
+        that escape hatch open.
+    #>
+    param([Parameter(Mandatory)] [string] $Root)
+
+    if (-not (Test-Path -LiteralPath $Root)) { return @() }
+    return @(Get-ChildItem -LiteralPath $Root -Force -Directory | ForEach-Object { $_.Name })
+}
+
 function Get-NervSkillPayloadNames {
     <#
         .SYNOPSIS
@@ -33,15 +72,7 @@ function Get-NervSkillPayloadNames {
     #>
     param([Parameter(Mandatory)] [string] $RepoRoot)
 
-    $payloadRoot = Join-Path $RepoRoot $script:NervAgentSkillsRelative
-    if (-not (Test-Path -LiteralPath $payloadRoot)) { return @() }
-
-    # Directories only, and this is the single decision point for what counts as an installed
-    # payload entry: both the agent link layer and, through Get-NervNonRepoPayloadNames, the
-    # install/mirror gate read it. A stray file under .agents/skills is not a skill — linking it
-    # would publish a broken entry to every agent runtime, and counting it would make the gate
-    # report "installed" (#3465).
-    return @(Get-ChildItem -LiteralPath $payloadRoot -Force -Directory | ForEach-Object { $_.Name })
+    return @(Get-NervSkillDirectoryNames -Root (Join-Path $RepoRoot $script:NervAgentSkillsRelative))
 }
 
 function Get-NervRepoSkillNames {
@@ -51,10 +82,7 @@ function Get-NervRepoSkillNames {
     #>
     param([Parameter(Mandatory)] [string] $RepoRoot)
 
-    $sourceRoot = Join-Path $RepoRoot $script:NervRepoSkillsRelative
-    if (-not (Test-Path -LiteralPath $sourceRoot)) { return @() }
-
-    return @(Get-ChildItem -LiteralPath $sourceRoot -Force -Directory | ForEach-Object { $_.Name })
+    return @(Get-NervSkillDirectoryNames -Root (Join-Path $RepoRoot $script:NervRepoSkillsRelative))
 }
 
 function Get-NervNonRepoPayloadNames {
@@ -74,7 +102,7 @@ function Get-NervNonRepoPayloadNames {
         present — implementation checked), and those two are exactly what this function
         subtracts. "Lock-owned" would therefore name the complement of what it returns.
 
-        What counts as a payload entry is not decided here: it is Get-NervSkillPayloadNames'
+        What counts as a payload entry is not decided here: it is Get-NervSkillDirectoryNames'
         one rule, so the link layer and this gate cannot disagree about it. Why that rule is
         "directories only" is written there (#3465).
     #>
