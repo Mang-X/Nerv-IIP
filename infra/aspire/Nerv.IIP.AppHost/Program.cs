@@ -880,6 +880,9 @@ var gateway = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Pro
     .WithEnvironment("Ops__BaseUrl", ops.GetEndpoint("http"))
     .WithEnvironment("Notification__BaseUrl", notification.GetEndpoint("http"))
     .WithEnvironment("ProductEngineering__BaseUrl", businessProductEngineering.GetEndpoint("http"))
+    // PlatformGateway 的控制台文件面缺这行，客户端回落到固定端口 5104：ephemeral 会话上打不到本会话的
+    // file-storage，落到端口 5104 上碰巧存在的另一套栈时会拿到 401（该栈的内部令牌是另一个随机值）。
+    .WithEnvironment("FileStorage__BaseUrl", fileStorage.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(apphub)
     .WithReference(iam)

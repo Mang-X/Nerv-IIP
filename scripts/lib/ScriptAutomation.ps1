@@ -1903,7 +1903,7 @@ function Assert-FacadeTypesGenExport {
         AND the operation is re-exported from the stable barrel. Use this in the
         focused verify script of any issue that declares an endpoint `exposed`, so a
         silently-dropped facade type or barrel export fails the focused gate — not
-        only the full contract test. See docs/architecture/facade-coverage-matrix.md.
+        only the full contract test. See docs/governance/api/facade-coverage.md.
     #>
     [CmdletBinding()]
     param(
@@ -1952,7 +1952,7 @@ function Assert-FacadeTypesGenExport {
     }
 
     if ($missing.Count -gt 0) {
-        throw ("Facade-coverage export assertion failed (docs/architecture/facade-coverage-matrix.md):`n  - " + ($missing -join "`n  - "))
+        throw ("Facade-coverage export assertion failed (docs/governance/api/facade-coverage.md):`n  - " + ($missing -join "`n  - "))
     }
 
     Write-Diagnostic "Facade-coverage export assertion passed: $($TypeName.Count) type(s) in $Surface types.gen.ts, $($ExportName.Count) export(s) in $Surface.ts."

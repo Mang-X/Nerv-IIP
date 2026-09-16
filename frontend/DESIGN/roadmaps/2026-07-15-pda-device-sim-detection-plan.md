@@ -3,8 +3,9 @@
 > 状态：提案 v2（待 owner 裁决分期）。日期：2026-07-15。
 > v2 修订：经 codex（gpt-5.6-sol，reasoning effort=high）对抗式评审（裁决「需修订后落地」），
 > 全部 P0 意见经本地代码核实属实并已吸收，见 §10。
-> 事实依据：`docs/architecture/mobile-pda-testing-and-smoke.md`（现行分层口径，注意其 spec 计数已漂移）、
-> `docs/architecture/mobile-pda-deployment.md`（APK 再生与网关基址）、
+> 事实依据：`docs/governance/testing/mobile-pda.md`（分层口径）、
+> `docs/reference/testing/mobile-pda-inventory.md`（producer 导航，不维护 spec 计数）、
+> `docs/runbooks/mobile-pda-deployment.md`（APK 再生与网关基址）、
 > `frontend/packages/ui-mobile/src/components/scan-bar/ScanBar.vue`（键盘楔入焦点契约）、
 > `frontend/apps/business-pda/vite.config.ts`（双网关代理拓扑）、
 > `frontend/apps/business-pda/playwright.config.ts` + `e2e/`（现有全 mock e2e）、
@@ -83,7 +84,7 @@ L2 依赖本地完整栈，**不进 CI 门禁**（与 `*PostgresProfileTests` �
 - `workers: 1`（或按独立 org/env 分片后再放开）；独立 trace/report 输出。数据隔离现状如实：
   M1 未落地 `runId` 命名空间——live 写路径消耗共享 seed 的 pending 检验任务（提交后翻
   completed，不清理），重复运行需重新 seed；`runId` 数据命名空间隔离与 cleanup 归 M2
-  （与 `docs/architecture/mobile-pda-testing-and-smoke.md` 声明同口径）。
+  （与 git `6e8747a8f:docs/architecture/mobile-pda-testing-and-smoke.md` 当时的声明同口径）。
 - 显式命令运行（`pnpm e2e:live`），不进 CI；设备仿真沿用 Pixel 5 + 390×844 + touch。
 
 ### 4.1 扫码枪信号仿真器 `simulateScanGun()`

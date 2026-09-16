@@ -312,7 +312,8 @@ public sealed class InventoryReservationExpirationTests
             // the tick is lost permanently. The registration itself is the observable edge, and unlike
             // "which statement comes first in ExecuteAsync" it stays true however the worker is rewritten.
             // Measured once by hand (the experiment is not in the tree; it is also recorded in
-            // docs/architecture/backend-test-determinism.md): widening the registration window with a 1.5 s
+            // git 6e8747a8f93a6398c45c8eb2f2a33ad3a7b64019:docs/architecture/backend-test-determinism.md,
+            // §MAN-808): widening the registration window with a 1.5 s
             // delay in the worker between the first pass and the PeriodicTimer construction fails this test
             // with the metric barrier alone — with the exact CI message, openQuantity=1 after 2 s — and
             // passes it with the barrier below. The first Advance above needs no barrier at all: it happens
@@ -347,9 +348,10 @@ public sealed class InventoryReservationExpirationTests
         // single PeriodicTimer, so the total is exactly 1. It sits after StopAsync — and outside the
         // try/finally, so a failing assertion above still surfaces as itself — because
         // StopAsync(CancellationToken.None) waits for the loop to actually exit, which is what makes the count
-        // complete. Why an executable assertion rather than a comment, why this position rather than before the
-        // shutdown, what it does and does not pin, and the measurement behind it are recorded once in
-        // docs/architecture/backend-test-determinism.md, §MAN-808.
+        // complete. The rule behind this barrier is docs/governance/testing/determinism.md, §假时钟推进屏障; why
+        // an executable assertion rather than a comment, why this position rather than before the shutdown, and
+        // what it does and does not pin are recorded once in git
+        // 6e8747a8f93a6398c45c8eb2f2a33ad3a7b64019:docs/architecture/backend-test-determinism.md, §MAN-808.
         Assert.Equal(1, timeProvider.TimersCreated);
     }
 
