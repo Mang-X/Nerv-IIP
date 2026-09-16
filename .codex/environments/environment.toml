@@ -11,9 +11,12 @@ common_git_dir="$(git -C "$worktree_root" rev-parse --path-format=absolute --git
 main_root="$(dirname "$common_git_dir")"
 
 # 判内容而非存在性：`mkdir -p` 和中途失败的镜像都会留下一个空的 .agents/skills，
-# 存在性判定会把它当成「已安装」——此后既不再安装，紧接着的 cp 也搬不出任何东西，
+# 存在性判定会把它当成「已安装」——此后既不再安装、紧接着的 cp 也搬不出任何东西，
 # 该 worktree 一条技能都没有且无一步报错（#3486）。
-# stderr 丢弃的是「目录不存在」这一正常起点；真出别的错时 find 无输出 => 判未安装 => 重装一次（吵，不是静默缺失）。
+# find 必须内联在 [ ] 内：提成 `x="$(find ...)"` 会把 find 对不存在目录的退出码 1 写进 $?，
+# 在 set -eu 下当场中止整个 setup（实测 EXIT=1）；2>/dev/null 只是降噪，判定与它无关。
+# 口径边界：这里数任意目录、仓库自带技能也算，故「主树只跑过 PS 侧钩子、npx 从未成功」
+# 仍判已安装 —— 与 PS 侧 Test-NervSkillsPayloadPresent 的减法不同口径（#3513）。
 if [ -z "$(find "$main_root/.agents/skills" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)" ]; then
   (
     cd "$main_root"
