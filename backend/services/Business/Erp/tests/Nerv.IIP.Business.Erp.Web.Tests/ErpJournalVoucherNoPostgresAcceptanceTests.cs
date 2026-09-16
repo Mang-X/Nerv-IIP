@@ -41,7 +41,7 @@ public sealed class ErpJournalVoucherNoPostgresAcceptanceTests
     /// （号没有被多烧一个）。最后再直接往同一来源插第二张（凭证号刻意取另一个号）⇒ 必须撞
     /// <b>来源索引</b>而不是 <c>voucher_no</c> 索引——这证明换号之后承重的是来源两列。
     /// </summary>
-    [ErpCostPostgresFact(Timeout = 180_000)]
+    [ErpJournalVoucherNoPostgresFact(Timeout = 180_000)]
     public async Task PostgreSQL_repeated_commands_for_the_same_source_document_record_one_voucher_each()
     {
         await ErpPostgresLaneDatabase.ResetSchemaAsync();
@@ -223,5 +223,27 @@ public sealed class ErpJournalVoucherNoPostgresAcceptanceTests
         services.AddErpPostgreSqlPersistence(ErpPostgresLaneDatabase.ConnectionString);
         services.AddScoped<ErpCodingService>();
         return services.BuildServiceProvider();
+    }
+}
+
+/// <summary>
+/// 本类专用的真库门控。⭐ #3278 / S6 复审：改前本类复用
+/// <c>ErpCostPostgresFactAttribute</c>，于是它的 skip 理由写着「cost-accounting acceptance test」——
+/// 而本类测的是**凭证号取号**，不是成本核算。测试证据策略按 skip 理由登记，
+/// 蹭别人的理由等于把一条假理由固化进证据记录（本仓判例：测试把错误固化成契约）。
+/// 本仓 canonical 就是「一个真库测试类配一个自己的 Fact 属性 + 一条自己的策略规则」
+/// （<c>BusinessPartnerPostgresFactAttribute</c> / <c>PurchaseReceiptPostgresFactAttribute</c> /
+/// <c>WorldHistoryPostgresFactAttribute</c> / <c>ErpScaleSeedRealPostgresFactAttribute</c> 逐一对应），
+/// 故本类也自带一个。
+/// </summary>
+[AttributeUsage(AttributeTargets.Method)]
+public sealed class ErpJournalVoucherNoPostgresFactAttribute : FactAttribute
+{
+    public ErpJournalVoucherNoPostgresFactAttribute()
+    {
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")))
+        {
+            Skip = "Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL ERP journal voucher number allocation acceptance test.";
+        }
     }
 }
