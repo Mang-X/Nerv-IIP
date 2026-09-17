@@ -513,32 +513,42 @@ public sealed class GatewayConsoleFileStorageTests
         // Verify that both ownerId and uploaderId parameters are correctly transmitted
         // to downstream, proving they filter the same owner_id column (expand phase equivalence).
         var files = new FakeGatewayFileStorageClient();
-        using var factory = CreateFactory(files);
+        var auth = FakeGatewayAuthorizationClient.Allowed();
+        using var factory = CreateFactory(files, auth);
         using var client = factory.CreateClient();
 
         // Request with uploaderId (legacy parameter)
-        var uploadByIdResponse = await client.GetAsync(
-            "/api/console/v1/files?uploaderId=user-123");
-        Assert.Equal(HttpStatusCode.OK, uploadByIdResponse.StatusCode);
-        Assert.NotNull(files.LastListRequest);
-        Assert.Equal("user-123", files.LastListRequest.UploaderId);
-        Assert.Null(files.LastListRequest.OwnerId);
+        using (var request = AuthorizedRequest(HttpMethod.Get, "/api/console/v1/files?uploaderId=user-123"))
+        {
+            AddTenantHeaders(request);
+            var uploadByIdResponse = await client.SendAsync(request);
+            Assert.Equal(HttpStatusCode.OK, uploadByIdResponse.StatusCode);
+            Assert.NotNull(files.LastListRequest);
+            Assert.Equal("user-123", files.LastListRequest.UploaderId);
+            Assert.Null(files.LastListRequest.OwnerId);
+        }
 
         // Request with ownerId (new parameter)
-        var ownByIdResponse = await client.GetAsync(
-            "/api/console/v1/files?ownerId=user-123");
-        Assert.Equal(HttpStatusCode.OK, ownByIdResponse.StatusCode);
-        Assert.NotNull(files.LastListRequest);
-        Assert.Null(files.LastListRequest.UploaderId);
-        Assert.Equal("user-123", files.LastListRequest.OwnerId);
+        using (var request = AuthorizedRequest(HttpMethod.Get, "/api/console/v1/files?ownerId=user-123"))
+        {
+            AddTenantHeaders(request);
+            var ownByIdResponse = await client.SendAsync(request);
+            Assert.Equal(HttpStatusCode.OK, ownByIdResponse.StatusCode);
+            Assert.NotNull(files.LastListRequest);
+            Assert.Null(files.LastListRequest.UploaderId);
+            Assert.Equal("user-123", files.LastListRequest.OwnerId);
+        }
 
         // Request with both parameters (ownerId takes precedence in service layer)
-        var bothResponse = await client.GetAsync(
-            "/api/console/v1/files?uploaderId=user-old&ownerId=user-new");
-        Assert.Equal(HttpStatusCode.OK, bothResponse.StatusCode);
-        Assert.NotNull(files.LastListRequest);
-        Assert.Equal("user-old", files.LastListRequest.UploaderId);
-        Assert.Equal("user-new", files.LastListRequest.OwnerId);
+        using (var request = AuthorizedRequest(HttpMethod.Get, "/api/console/v1/files?uploaderId=user-old&ownerId=user-new"))
+        {
+            AddTenantHeaders(request);
+            var bothResponse = await client.SendAsync(request);
+            Assert.Equal(HttpStatusCode.OK, bothResponse.StatusCode);
+            Assert.NotNull(files.LastListRequest);
+            Assert.Equal("user-old", files.LastListRequest.UploaderId);
+            Assert.Equal("user-new", files.LastListRequest.OwnerId);
+        }
     }
 
     private static WebApplicationFactory<Program> CreateFactory(
