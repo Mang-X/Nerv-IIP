@@ -497,6 +497,11 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             query = query.Where(file => file.OwnerId == request.UploaderId);
         }
 
+        if (!string.IsNullOrWhiteSpace(request.OwnerId))
+        {
+            query = query.Where(file => file.OwnerId == request.OwnerId);
+        }
+
         if (request.CreatedFromUtc is not null)
         {
             query = query.Where(file => file.CreatedAtUtc >= request.CreatedFromUtc.Value);
