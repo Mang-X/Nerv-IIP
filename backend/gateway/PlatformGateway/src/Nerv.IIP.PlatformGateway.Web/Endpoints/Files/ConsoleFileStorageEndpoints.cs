@@ -234,7 +234,7 @@ public sealed class CreateConsoleFileDownloadGrantEndpoint(
         GatewayPermissions.FilesDownloadGrantsCreate)
 {
     protected override Task<DownloadGrantResponse> ForwardAsync(
-        string bearerToken,
+        AuthorizedProxyRequestContext context,
         CreateDownloadGrantRequest request,
         CancellationToken cancellationToken) =>
         files.CreateDownloadGrantAsync(Route<string>("fileId")!, request, cancellationToken);
