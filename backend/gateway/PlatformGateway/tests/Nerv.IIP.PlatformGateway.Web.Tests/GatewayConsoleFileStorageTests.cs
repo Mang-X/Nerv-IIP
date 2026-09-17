@@ -81,6 +81,27 @@ public sealed class GatewayConsoleFileStorageTests
     }
 
     [Fact]
+    public async Task Complete_upload_session_overrides_body_org_env_with_principal_values()
+    {
+        var files = new FakeGatewayFileStorageClient();
+        var auth = FakeGatewayAuthorizationClient.Allowed();
+        await using var factory = CreateFactory(files, auth);
+        using var request = AuthorizedRequest(HttpMethod.Post, "/api/console/v1/files/upload-sessions/upload-session-001/complete");
+        // 发送的 body 中 org/env 与 principal（来自 token）不一致
+        request.Content = JsonContent.Create(new CompleteUploadSessionRequest("ORG-001", "PROD", "notification-attachment"));
+
+        var response = await factory.CreateClient().SendAsync(request);
+
+        response.EnsureSuccessStatusCode();
+        var body = await ReadResponseDataAsync<FileMetadataResponse>(response);
+        Assert.Equal("file-001", body.FileId);
+        // 验证转发给 FileStorage 的 org/env 是 principal 的值（小写），而非 body 中的值（大写）
+        Assert.NotNull(files.LastCompleteRequest);
+        Assert.Equal("org-001", files.LastCompleteRequest.OrganizationId);
+        Assert.Equal("env-dev", files.LastCompleteRequest.EnvironmentId);
+    }
+
+    [Fact]
     public async Task Get_file_metadata_forwards_file_id_and_requires_read_permission()
     {
         var files = new FakeGatewayFileStorageClient();
@@ -577,6 +598,7 @@ public sealed class GatewayConsoleFileStorageTests
     {
         public CreateUploadSessionRequest? LastCreateRequest { get; private set; }
         public string? LastCompleteUploadSessionId { get; private set; }
+        public CompleteUploadSessionRequest? LastCompleteRequest { get; private set; }
         public string? LastMetadataFileId { get; private set; }
         public ListFilesRequest? LastListRequest { get; private set; }
         public FileStorageUsageRequest? LastUsageRequest { get; private set; }
@@ -614,6 +636,7 @@ public sealed class GatewayConsoleFileStorageTests
         {
             ThrowIfConfigured();
             LastCompleteUploadSessionId = uploadSessionId;
+            LastCompleteRequest = request;
             return Task.FromResult(FileMetadata());
         }
 
