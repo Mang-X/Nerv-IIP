@@ -268,8 +268,8 @@ public sealed class CreateSkuCommandHandler : ICommandHandler<CreateSkuCommand, 
 /// 「独立目录与 legacy CodeSet」降级为 legacy。此前后端只认 CodeSet，而界面下拉给的是实体编码，
 /// 两个值空间不相交，新建物料表单提交必 400。
 ///
-/// legacy 兼容**只给更新路径**（<c>allowLegacyFallback</c>）：文档要求「完全切换前
-/// 不得破坏 SKU <c>category</c> 对 CodeSet 的兼容读取」，而这条理由只覆盖「编辑一条老物料不该被
+/// legacy 兼容**只给更新路径**（<c>allowLegacyFallback</c>）：<c>6b4847a4e^:docs/architecture/master-data-dictionary-rules.md</c>
+/// §1 曾规定「完全切换前不得破坏 SKU <c>category</c> 对 CodeSet 的兼容读取」，而这条理由只覆盖「编辑一条老物料不该被
 /// 它自己的历史分类挡住」。**新建一律只认实体**，否则新数据会持续流入待退役的值空间。
 /// 旧码迁移与 CodeSet 正式退役另行处理。
 ///
