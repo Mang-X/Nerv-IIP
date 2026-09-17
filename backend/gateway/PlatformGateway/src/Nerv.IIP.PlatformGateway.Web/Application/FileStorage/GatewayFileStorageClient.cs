@@ -404,6 +404,7 @@ public sealed class HttpGatewayFileStorageClient(
         Add(values, "environmentId", request.EnvironmentId);
         Add(values, "filePurpose", request.FilePurpose);
         Add(values, "uploaderId", request.UploaderId);
+        Add(values, "ownerId", request.OwnerId);
         Add(values, "createdFromUtc", request.CreatedFromUtc?.ToString("O"));
         Add(values, "createdToUtc", request.CreatedToUtc?.ToString("O"));
         Add(values, "status", request.Status);

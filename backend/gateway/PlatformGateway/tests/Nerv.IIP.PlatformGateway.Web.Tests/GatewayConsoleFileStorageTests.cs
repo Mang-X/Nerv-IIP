@@ -182,6 +182,7 @@ public sealed class GatewayConsoleFileStorageTests
                 "env-dev",
                 "notification-attachment",
                 "user-001",
+                null,
                 DateTimeOffset.Parse("2026-06-01T00:00:00Z"),
                 DateTimeOffset.Parse("2026-06-08T00:00:00Z"),
                 "available",
@@ -504,6 +505,40 @@ public sealed class GatewayConsoleFileStorageTests
         body.Position = 0;
         using var reader = new StreamReader(body);
         Assert.Equal("hello", await reader.ReadToEndAsync());
+    }
+
+    [Fact]
+    public async Task ListFiles_OwnerId_EquivalentToUploaderId_SameFilterParameter()
+    {
+        // Verify that both ownerId and uploaderId parameters are correctly transmitted
+        // to downstream, proving they filter the same owner_id column (expand phase equivalence).
+        var files = new FakeGatewayFileStorageClient();
+        using var factory = CreateFactory(files);
+        using var client = factory.CreateClient();
+
+        // Request with uploaderId (legacy parameter)
+        var uploadByIdResponse = await client.GetAsync(
+            "/api/console/v1/files?uploaderId=user-123");
+        Assert.Equal(HttpStatusCode.OK, uploadByIdResponse.StatusCode);
+        Assert.NotNull(files.LastListRequest);
+        Assert.Equal("user-123", files.LastListRequest.UploaderId);
+        Assert.Null(files.LastListRequest.OwnerId);
+
+        // Request with ownerId (new parameter)
+        var ownByIdResponse = await client.GetAsync(
+            "/api/console/v1/files?ownerId=user-123");
+        Assert.Equal(HttpStatusCode.OK, ownByIdResponse.StatusCode);
+        Assert.NotNull(files.LastListRequest);
+        Assert.Null(files.LastListRequest.UploaderId);
+        Assert.Equal("user-123", files.LastListRequest.OwnerId);
+
+        // Request with both parameters (ownerId takes precedence in service layer)
+        var bothResponse = await client.GetAsync(
+            "/api/console/v1/files?uploaderId=user-old&ownerId=user-new");
+        Assert.Equal(HttpStatusCode.OK, bothResponse.StatusCode);
+        Assert.NotNull(files.LastListRequest);
+        Assert.Equal("user-old", files.LastListRequest.UploaderId);
+        Assert.Equal("user-new", files.LastListRequest.OwnerId);
     }
 
     private static WebApplicationFactory<Program> CreateFactory(

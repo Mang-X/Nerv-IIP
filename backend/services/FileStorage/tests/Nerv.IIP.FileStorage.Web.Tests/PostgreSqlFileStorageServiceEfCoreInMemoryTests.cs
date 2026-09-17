@@ -862,6 +862,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
                 "prod",
                 "notification-attachment",
                 "user-001",
+                null,
                 now.AddHours(-3),
                 now,
                 "available",
@@ -903,7 +904,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
         var service = FileStorageServiceTestFactory.Create(dbContext, configuration: FileStorageTestConfiguration.Default);
 
         var result = await service.ListFilesAsync(
-            new ListFilesRequest("org-001", "prod", null, null, null, null, null, Skip: 0, Take: 500),
+            new ListFilesRequest("org-001", "prod", null, null, null, null, null, null, Skip: 0, Take: 500),
             CancellationToken.None);
 
         Assert.Equal(StatusCodes.Status200OK, result.StatusCode);

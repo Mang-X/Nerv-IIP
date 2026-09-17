@@ -492,9 +492,15 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             query = query.Where(file => file.FilePurpose == request.FilePurpose);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.UploaderId))
+        // Prefer OwnerId over UploaderId for filtering owner_id column.
+        // Both parameters filter the same column to maintain equivalence during migration.
+        var ownerIdFilter = !string.IsNullOrWhiteSpace(request.OwnerId)
+            ? request.OwnerId
+            : request.UploaderId;
+
+        if (!string.IsNullOrWhiteSpace(ownerIdFilter))
         {
-            query = query.Where(file => file.OwnerId == request.UploaderId);
+            query = query.Where(file => file.OwnerId == ownerIdFilter);
         }
 
         if (request.CreatedFromUtc is not null)
