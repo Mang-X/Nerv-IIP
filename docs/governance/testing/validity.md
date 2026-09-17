@@ -21,7 +21,7 @@
 | --- | --- | --- | --- | --- |
 | `DomainInvariant` | 领域对象在所有实现中都必须成立的业务不变量、状态机或计算边界。 | 已批准的 ADR/spec、领域规则文档、Issue 验收条件、法律或行业规则，以及经业务 owner 明确裁决并落盘的规则。 | ADR 规定已关闭会计期间拒绝新凭证；测试构造关闭期间并断言命令失败。 | 读取当前 handler 返回的错误码，把该值抄入测试，再称其为领域规则。 |
 | `PublicContract` | 对外可观察且受兼容性治理的 HTTP、事件、SDK、CLI 或文件格式契约。 | 受治理的 OpenAPI、公共 Contracts 源码、ADR、版本化协议/标准和明确的兼容性政策。 | 从公开 OpenAPI 的 required 字段推导请求缺字段必须被拒绝。 | 根据当前内部 DTO 的偶然 JSON 形状更新公开 snapshot，而无公开契约变更依据。 |
-| `ReferenceData` | 受控码表、目录、标准向量或跨生产者/消费者共享的确定性业务数据。 | 仓库权威目录文档、批准的主数据标准、外部正式标准，或经 owner 审核并独立落盘的规范向量。 | 以 `master-data-dictionary-rules.md` 的标准码值验证 seed 和 API。 | 先运行当前 seed，再把生成出来的全部码值作为“标准码表”固定。 |
+| `ReferenceData` | 受控码表、目录、标准向量或跨生产者/消费者共享的确定性业务数据。 | 仓库权威目录文档、批准的主数据标准、外部正式标准，或经 owner 审核并独立落盘的规范向量。 | 以 `docs/reference/master-data/dictionary.md` §2「CodeSet 目录」的标准码值验证 seed 和 API。 | 先运行当前 seed，再把生成出来的全部码值作为“标准码表”固定。 |
 | `ProviderBehavior` | 某个真实 provider、协议或运行时特有的翻译、约束、事务、并发、持久化和故障行为。 | provider 官方契约、仓库批准的 provider/profile 设计、migration/schema 约束，以及已确认的 provider 缺陷或兼容案例；目标 provider 的真实运行负责证明实现，不负责定义预期。 | 在 PostgreSQL 上并发提交冲突写入，验证唯一约束和事务结果。 | 用 EF Core InMemory 通过的 LINQ 测试宣称 PostgreSQL SQL 翻译、唯一索引或隔离级别正确。 |
 | `Regression` | 已被确认的缺陷、事故或边界条件的最小可复现防线。 | Issue/事故记录中的错误行为与期望行为、修复前失败样本、生产兼容案例，或能在旧缺陷实现上复现的最小 fixture。 | 保留修复前导致重复过账的事件序列，并证明旧实现失败、新实现收敛一次。 | 只保存修复后的输出；测试从未在旧实现或等价错误变异上失败。 |
 | `Governance` | 约束仓库结构、依赖方向、清单闭合、生成入口或证据流程的机器可检查规则。 | `AGENTS.md`、架构治理文档、ADR、机读 manifest/schema 及其明确的失败关闭规则。 | 变异 fixture 删除必填 lane 身份后，治理检查器必须非零退出。 | 测试只搜索注释中的关键词，命中即宣称实际行为受约束。 |
