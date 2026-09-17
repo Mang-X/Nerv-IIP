@@ -19,6 +19,19 @@ public sealed record ConsoleListFilesRequest(
 
 public sealed record ConsoleFileStorageUsageRequest(string? FilePurpose);
 
+public sealed record ConsoleCreateUploadSessionRequest(
+    OwnerReference Owner,
+    string FilePurpose,
+    string FileName,
+    string ContentType,
+    long ExpectedSizeBytes,
+    string? Checksum);
+
+public sealed record ConsoleCompleteUploadSessionRequest(
+    string FilePurpose,
+    string? Checksum = null,
+    long? SizeBytes = null);
+
 [Tags("Console Files")]
 [HttpPost("/api/console/v1/files/upload-sessions")]
 [GatewayOperationId("createConsoleFileUploadSession")]
@@ -27,9 +40,9 @@ public sealed class CreateConsoleFileUploadSessionEndpoint(
     IGatewayIamAuthClient iam,
     IGatewayAuthorizationClient auth,
     IGatewayFileStorageClient files)
-    : Endpoint<CreateUploadSessionRequest, ResponseData<CreateUploadSessionResponse>>
+    : Endpoint<ConsoleCreateUploadSessionRequest, ResponseData<CreateUploadSessionResponse>>
 {
-    public override Task HandleAsync(CreateUploadSessionRequest req, CancellationToken ct) =>
+    public override Task HandleAsync(ConsoleCreateUploadSessionRequest req, CancellationToken ct) =>
         AuthorizedProxyEndpointExecutor.ExecuteAsync(
             HttpContext,
             iam,
@@ -37,13 +50,17 @@ public sealed class CreateConsoleFileUploadSessionEndpoint(
             GatewayPermissions.FilesUpload,
             async (context, cancellationToken) =>
             {
-                // 用 principal 的 org/env 覆盖 request body 中的值，确保建会话与后续 tus 操作使用同一作用域
-                var normalizedRequest = req with
-                {
-                    OrganizationId = context.Principal.OrganizationId,
-                    EnvironmentId = context.Principal.EnvironmentId
-                };
-                var response = await files.CreateUploadSessionAsync(normalizedRequest, cancellationToken);
+                // 将本地 request 映射到共享 Contracts，添加 principal 的 org/env
+                var contractRequest = new CreateUploadSessionRequest(
+                    context.Principal.OrganizationId,
+                    context.Principal.EnvironmentId,
+                    req.Owner,
+                    req.FilePurpose,
+                    req.FileName,
+                    req.ContentType,
+                    req.ExpectedSizeBytes,
+                    req.Checksum);
+                var response = await files.CreateUploadSessionAsync(contractRequest, cancellationToken);
                 await ResponseDataEndpointResults.WriteDataAsync(
                     HttpContext,
                     StatusCodes.Status200OK,
@@ -61,9 +78,9 @@ public sealed class CompleteConsoleFileUploadSessionEndpoint(
     IGatewayIamAuthClient iam,
     IGatewayAuthorizationClient auth,
     IGatewayFileStorageClient files)
-    : Endpoint<CompleteUploadSessionRequest, ResponseData<FileMetadataResponse>>
+    : Endpoint<ConsoleCompleteUploadSessionRequest, ResponseData<FileMetadataResponse>>
 {
-    public override Task HandleAsync(CompleteUploadSessionRequest req, CancellationToken ct) =>
+    public override Task HandleAsync(ConsoleCompleteUploadSessionRequest req, CancellationToken ct) =>
         AuthorizedProxyEndpointExecutor.ExecuteAsync(
             HttpContext,
             iam,
@@ -71,15 +88,16 @@ public sealed class CompleteConsoleFileUploadSessionEndpoint(
             GatewayPermissions.FilesUpload,
             async (context, cancellationToken) =>
             {
-                // 用 principal 的 org/env 覆盖 request body 中的值，确保一致性
-                var normalizedRequest = req with
-                {
-                    OrganizationId = context.Principal.OrganizationId,
-                    EnvironmentId = context.Principal.EnvironmentId
-                };
+                // 将本地 request 映射到共享 Contracts，添加 principal 的 org/env
+                var contractRequest = new CompleteUploadSessionRequest(
+                    context.Principal.OrganizationId,
+                    context.Principal.EnvironmentId,
+                    req.FilePurpose,
+                    req.Checksum,
+                    req.SizeBytes);
                 var response = await files.CompleteUploadSessionAsync(
                     Route<string>("uploadSessionId")!,
-                    normalizedRequest,
+                    contractRequest,
                     cancellationToken);
                 await ResponseDataEndpointResults.WriteDataAsync(
                     HttpContext,
