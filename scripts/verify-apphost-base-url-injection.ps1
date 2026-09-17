@@ -27,7 +27,7 @@
     护栏对它零鉴别力，PR #3484 已经实测过一次：删掉当时新增的那条注入，既有的
     verify-aspire-apphost-environment-artifacts.ps1 仍然 EXIT=0。
 
-    当前 main 上的违例由 scripts/apphost-base-url-injection-exemptions.json 承接，销账在 #3512。
+    #3512 销账后 main 上零违例，scripts/apphost-base-url-injection-exemptions.json 的登记表是空的。
     登记表只能随销账缩短：一条登记不再匹配任何真实违例就变成 stale，本脚本照样红。
 
 .PARAMETER RepositoryRoot
@@ -77,9 +77,10 @@ foreach ($exemption in $sortedExemptions) {
     Write-Host "    exempted [$($exemption.Kind)] $($exemption.ConsumerResource) <- $($exemption.Key) (tracking $($exemption.Tracking)) — $($exemption.Reason)"
 }
 
-# 信息项，不参与判定：AppHost 注了但没有任何消费方 Resolve 的键。逐条判「删注入还是补消费方」
-# 属 #3512，本门禁不替它做决定，也不假装覆盖了它。
-Write-Host "  injections with no consumer (informational only, not asserted; #3512 disposes of these): $($report.UnconsumedInjections.Count)"
+# 信息项，不参与判定：AppHost 注了但没有任何消费方 Resolve 的键。本门禁不替它做决定，也不假装
+# 覆盖了它。#3512 已逐条判过一轮：剩下这些是**消费方不走 InternalServiceBaseAddress.Resolve\* 而直读
+# 配置**的真实依赖（各自在 AppHost 源码里有注释点名消费者），删掉它们本门禁照绿、运行时才炸。
+Write-Host "  injections with no consumer (informational only, not asserted): $($report.UnconsumedInjections.Count)"
 foreach ($injection in $report.UnconsumedInjections) {
     Write-Host "    unconsumed $($injection.Resource) <- $($injection.EnvironmentName) (AppHost line $($injection.Line))"
 }
