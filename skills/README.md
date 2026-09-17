@@ -151,8 +151,17 @@ rm -rf .agents/skills/<name> .claude/skills/<name>
 别的 —— 本树**有源**的技能下次 SessionStart 会照常重新发布。
 
 同一道门还有一个相邻情形：payload **不全**时（例如安装中途失败，41 条只落了几条），门只要
-看见**一条**非仓库自有的 payload 就判「已安装」，不会回头补齐缺的那些。处置同样是手工删 ——
-把 `.agents/skills` 与 `.claude/skills` 两层整个删掉，下次 SessionStart 会重装并重建。
+看见**一条**非仓库自有的 payload 就判「已安装」，不会回头补齐缺的那些。这一条的处置必须落在
+**主 worktree**：
+
+```bash
+rm -rf <主 worktree>/.agents/skills <主 worktree>/.claude/skills
+```
+
+`npx skills experimental_install` **只在主 worktree 跑**，而这种残缺本来就出在主树上；在 linked
+工作树里删两层**补不回缺的那些** —— 主树的门仍判「已安装」，install 不触发，只是把主树那同一份
+残缺重新镜像过来（实测如此）。主树补齐后，各 linked 工作树下次 SessionStart 会自动镜像到完整
+payload，不必逐棵处理。
 
 **不做自动清理是既定裁决**（#3466）：判「某条 payload 是不是第三方的」必须真正解析
 `skills-lock.json`，而全仓目前没有任何代码读它的内容，成本与该状态今天的发生率不匹配；
