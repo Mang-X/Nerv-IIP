@@ -539,7 +539,7 @@ public sealed class GatewayConsoleFileStorageTests
             Assert.Equal("user-123", files.LastListRequest.OwnerId);
         }
 
-        // Request with both parameters (ownerId takes precedence in service layer)
+        // Request with both parameters (service layer applies independent filters for each)
         using (var request = AuthorizedRequest(HttpMethod.Get, "/api/console/v1/files?uploaderId=user-old&ownerId=user-new"))
         {
             AddTenantHeaders(request);
