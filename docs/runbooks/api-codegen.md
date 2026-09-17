@@ -83,5 +83,3 @@ BusinessGateway client surface 的规范化/恢复操作必须同时读取：
 - **机器间 description 漂移**：确认 Gateway Swagger 配置仍关闭 external NuGet XML documentation，且导出脚本按当前规则使用 `NUGET_XMLDOC_MODE=skip`；不要通过删除本机缓存文件或改变 `NUGET_PACKAGES` 规避。
 - **生成目录残留**：使用仓库现有生成/清理链路，不新增临时脚本或手工删除后提交不完整结果。
 - **门禁失败**：按失败 lane 的当前 producer/测试定位。只报告真实执行结果，不把 docs-only、局部测试或合法 skip 外推为完整 CI 证据。
-
-历史第三阶段总验收脚本 `scripts/verify-third-slice-console.ps1` 已退役，不应重新作为当前 API/codegen 验证入口。
