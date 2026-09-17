@@ -66,7 +66,8 @@ Set-StrictMode -Version Latest
     因此 AppHost 自己能编译、能跑出正确 compose，不在本库的断言面内——那是
     `scripts/verify-aspire-apphost-environment-artifacts.ps1` 的面。
   * **多注入**（AppHost 注了但没有消费方 Resolve 它）不构成违例，只做信息输出：处置它需要逐条判断
-    「删注入还是补消费方」，属 #3512。
+    「删注入还是补消费方」。#3512 判过一轮后剩下的两条，都是消费方直读 Configuration["X:BaseUrl"]
+    而不经 InternalServiceBaseAddress.Resolve\*，本库的需求集枚举不到——这条盲区另票跟踪。
   * 不校验 `.WithReference(x)` 是否成对出现。服务发现名与显式基址是两条路（#1317），本库守的是
     显式基址这条；把 `WithReference` 也拉进来会把「等待/依赖拓扑」这件事混进同一条断言里。
   * C# 扫描面的契约是「实现 + 拒绝」，不是「实现 C# 词法」。实现哪几种、拒绝哪几种，以及各自在

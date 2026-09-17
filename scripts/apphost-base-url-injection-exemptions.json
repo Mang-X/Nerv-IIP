@@ -1,12 +1,4 @@
 {
   "$schema-note": "Registry consumed by scripts/verify-apphost-base-url-injection.ps1. Each entry exempts exactly one (consumerResource, key) pair of exactly one violation kind, must name a tracking issue, and must match a violation that really exists right now — a registration that stops matching turns the gate red instead of rotting in place. See scripts/lib/AppHostBaseUrlInjection.ps1 for what this list is and is not allowed to do.",
-  "exemptions": [
-    {
-      "consumerResource": "business-mes",
-      "key": "Approval:BaseUrl",
-      "kind": "missing",
-      "tracking": "#3512",
-      "reason": "Mes 的 Web 宿主 Resolve 了 Approval:BaseUrl，AppHost 的 business-mes 资源块从未注入 Approval__BaseUrl。补这条注入属 #3512（销账票），本条登记随它删除。"
-    }
-  ]
+  "exemptions": []
 }

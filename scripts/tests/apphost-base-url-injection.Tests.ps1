@@ -243,10 +243,21 @@ try {
         "Injecting '$($firstSatisfied.EnvironmentName)' as another resource's endpoint ('$($foreignProvider.Resource)') must be a wrong-value violation."
 
     # ── E. 豁免登记表纪律 ──────────────────────────────────────────────────────────────────────
-    $liveViolation = if ($baseline.Violations.Count -gt 0) { $baseline.Violations[0] } else { $null }
+    # #3512 已销账，main 上不再有真实违例，登记表是空的。这些格原先拿 $baseline.Violations[0] 当输入，
+    # 于是清空登记表就把它们饿死了——上一版在这里写死「只能跟着一起退役」。改用**合成违例**：删掉一条
+    # 已满足需求的注入行，喂给这些格。登记表纪律（能豁免 / 清空即显形 / stale 转红 / kind 不串 /
+    # 格式拒绝 / 重复拒绝）是登记表自己的性质，与 main 当下有没有欠账无关，没有理由随欠账一起退役。
+    # 退役会把这套纪律的鉴别力全部搬走，而下一次有人往空表里加条目时就没有任何一格拦得住。
+    $syntheticInjection = $injectionByPair["$($firstSatisfied.ConsumerResource)/$($firstSatisfied.EnvironmentName)"]
+    $syntheticLines = [Collections.Generic.List[string]]::new($originalLines)
+    $syntheticLines.RemoveAt($syntheticInjection.Line - 1)
+    $syntheticText = $syntheticLines -join "`n"
+    $syntheticReport = Get-NervAppHostBaseUrlInjectionReport -RepositoryRoot $repoRoot -AppHostProgramText $syntheticText -Cache $cache
+    Assert-Contract ($syntheticReport.UnexemptedViolations.Count -eq 1) `
+        "The exemption-discipline cells run against a synthetic violation made by deleting AppHost line $($syntheticInjection.Line); that deletion must produce exactly one violation, got $($syntheticReport.UnexemptedViolations.Count)."
+    $liveViolation = if ($syntheticReport.UnexemptedViolations.Count -gt 0) { $syntheticReport.UnexemptedViolations[0] } else { $null }
     if ($null -eq $liveViolation) {
-        # 登记表清空后（#3512 销账）这一格失去输入。它只能跟着一起退役，不能悄悄不跑。
-        Assert-Contract $false 'The exemption-discipline cells need a live violation to register; once the registry is empty they must be retired together with it, not silently skipped.'
+        Assert-Contract $false 'The exemption-discipline cells need a violation to register against; the synthetic one failed to materialise, so they must not silently skip.'
     }
     else {
         $liveEntry = @{
@@ -257,18 +268,18 @@ try {
             reason = 'fixture'
         }
 
-        $exemptedReport = Get-NervAppHostBaseUrlInjectionReport -RepositoryRoot $repoRoot -AppHostProgramText $originalText -Cache $cache `
+        $exemptedReport = Get-NervAppHostBaseUrlInjectionReport -RepositoryRoot $repoRoot -AppHostProgramText $syntheticText -Cache $cache `
             -ExemptionPath (New-ExemptionRegistry -Name 'valid' -Entry @($liveEntry))
         Assert-Contract ($exemptedReport.UnexemptedViolations.Count -eq 0) 'A well-formed registration must exempt exactly the violation it names.'
 
-        $emptyReport = Get-NervAppHostBaseUrlInjectionReport -RepositoryRoot $repoRoot -AppHostProgramText $originalText -Cache $cache `
+        $emptyReport = Get-NervAppHostBaseUrlInjectionReport -RepositoryRoot $repoRoot -AppHostProgramText $syntheticText -Cache $cache `
             -ExemptionPath (New-ExemptionRegistry -Name 'empty' -Entry @())
-        Assert-Contract ($emptyReport.UnexemptedViolations.Count -eq $baseline.Violations.Count) `
+        Assert-Contract ($emptyReport.UnexemptedViolations.Count -eq $syntheticReport.UnexemptedViolations.Count) `
             'Removing the registry entries must surface every live violation; the registry is what keeps main green, not the checker being blind.'
 
         $staleEntry = $liveEntry.Clone()
         $staleEntry['key'] = 'NoSuchService:BaseUrl'
-        $staleReport = Get-NervAppHostBaseUrlInjectionReport -RepositoryRoot $repoRoot -AppHostProgramText $originalText -Cache $cache `
+        $staleReport = Get-NervAppHostBaseUrlInjectionReport -RepositoryRoot $repoRoot -AppHostProgramText $syntheticText -Cache $cache `
             -ExemptionPath (New-ExemptionRegistry -Name 'stale' -Entry @($staleEntry))
         Assert-Contract ($staleReport.StaleExemptions.Count -eq 1) `
             'A registration that matches no live violation must be reported as stale; that is the only thing that keeps the registry shrinking as #3512 lands.'
@@ -277,7 +288,7 @@ try {
 
         $crossKindEntry = $liveEntry.Clone()
         $crossKindEntry['kind'] = if ([string]::Equals($liveViolation.Kind, 'missing', [StringComparison]::Ordinal)) { 'wrong-value' } else { 'missing' }
-        $crossKindReport = Get-NervAppHostBaseUrlInjectionReport -RepositoryRoot $repoRoot -AppHostProgramText $originalText -Cache $cache `
+        $crossKindReport = Get-NervAppHostBaseUrlInjectionReport -RepositoryRoot $repoRoot -AppHostProgramText $syntheticText -Cache $cache `
             -ExemptionPath (New-ExemptionRegistry -Name 'cross-kind' -Entry @($crossKindEntry))
         Assert-Contract ($crossKindReport.UnexemptedViolations.Count -eq 1) `
             'An exemption registered for one violation kind must not cover the other kind on the same pair.'
@@ -289,13 +300,13 @@ try {
         )
         foreach ($case in $malformed) {
             $path = New-ExemptionRegistry -Name $case.Name -Entry @($case.Entry)
-            $message = Get-ThrownMessage -Action { Get-NervAppHostBaseUrlInjectionReport -RepositoryRoot $repoRoot -AppHostProgramText $originalText -Cache $cache -ExemptionPath $path }
+            $message = Get-ThrownMessage -Action { Get-NervAppHostBaseUrlInjectionReport -RepositoryRoot $repoRoot -AppHostProgramText $syntheticText -Cache $cache -ExemptionPath $path }
             Assert-Contract ($null -ne $message -and $message.Contains($case.Expect)) `
                 "A '$($case.Name)' registration must be rejected with a message naming the defect; got: $message"
         }
 
         $duplicatePath = New-ExemptionRegistry -Name 'duplicate' -Entry @($liveEntry, $liveEntry.Clone())
-        $duplicateMessage = Get-ThrownMessage -Action { Get-NervAppHostBaseUrlInjectionReport -RepositoryRoot $repoRoot -AppHostProgramText $originalText -Cache $cache -ExemptionPath $duplicatePath }
+        $duplicateMessage = Get-ThrownMessage -Action { Get-NervAppHostBaseUrlInjectionReport -RepositoryRoot $repoRoot -AppHostProgramText $syntheticText -Cache $cache -ExemptionPath $duplicatePath }
         Assert-Contract ($null -ne $duplicateMessage -and $duplicateMessage.Contains('more than once', [StringComparison]::Ordinal)) `
             "A pair registered twice must be rejected; got: $duplicateMessage"
     }
