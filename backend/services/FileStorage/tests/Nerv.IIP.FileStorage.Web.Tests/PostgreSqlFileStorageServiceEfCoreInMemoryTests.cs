@@ -197,6 +197,27 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
         Assert.Single(await dbContext.UploadSessions.ToListAsync());
     }
 
+    [Theory]
+    [InlineData("other-service", "shift-handover-attachment")]
+    [InlineData("business-mes", "other-owner")]
+    [InlineData("Business-Mes", "shift-handover-attachment")]
+    public async Task CreateShiftHandoverPhotoUpload_WrongOwner_IsRejected(
+        string ownerService,
+        string ownerType)
+    {
+        await using var dbContext = CreateEfCoreInMemoryDbContext();
+        var service = FileStorageServiceTestFactory.Create(dbContext, configuration: FileStorageTestConfiguration.Default);
+        var request = CreateShiftHandoverPhotoUploadRequest();
+
+        var result = await service.CreateUploadSessionAsync(
+            request with { Owner = request.Owner with { OwnerService = ownerService, OwnerType = ownerType } },
+            CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status400BadRequest, result.StatusCode);
+        Assert.Equal("File owner is not allowed for purpose 'shift-handover-photo'.", result.Error?.Message);
+        Assert.Empty(await dbContext.UploadSessions.ToListAsync());
+    }
+
     [Fact]
     public async Task CreateBarcodeLabelTemplateUpload_AboveSixtyFourKiB_IsRejected()
     {
@@ -1551,7 +1572,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
         return new CreateUploadSessionRequest(
             "org-001",
             "prod",
-            new OwnerReference("business-mes", "shift-handover", "SH-0001"),
+            new OwnerReference("business-mes", "shift-handover-attachment", "SH-0001"),
             "shift-handover-photo",
             "handover.jpg",
             "image/jpeg",
