@@ -1347,6 +1347,125 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
     }
 
     [Fact]
+    public async Task ListFiles_OwnerId_EquivalentToUploaderId_SameOwnerIdValue()
+    {
+        // Verify ownerId and uploaderId parameters return identical results
+        // when both contain the same owner_id value.
+        await using var dbContext = CreateEfCoreInMemoryDbContext();
+        var service = FileStorageServiceTestFactory.Create(dbContext, configuration: FileStorageTestConfiguration.Default);
+        var now = DateTimeOffset.UtcNow;
+
+        // Setup: Add multiple files with different owners
+        dbContext.StoredFiles.AddRange(
+            StoredFileRecord.Create(
+                "file-001",
+                "org-001",
+                "prod",
+                "service-a",
+                "order",
+                "order-001",  // owner_id = "order-001"
+                "attachment",
+                "doc1.pdf",
+                "application/pdf",
+                1024,
+                "sha256:test1",
+                "org-001/file-001",
+                "available",
+                now.AddHours(-1),
+                now),
+            StoredFileRecord.Create(
+                "file-002",
+                "org-001",
+                "prod",
+                "service-b",
+                "inventory",
+                "inv-002",  // owner_id = "inv-002"
+                "attachment",
+                "doc2.pdf",
+                "application/pdf",
+                2048,
+                "sha256:test2",
+                "org-001/file-002",
+                "available",
+                now.AddHours(-1),
+                now),
+            StoredFileRecord.Create(
+                "file-003",
+                "org-001",
+                "prod",
+                "service-a",
+                "order",
+                "order-001",  // owner_id = "order-001" (same as file-001)
+                "notification",
+                "note.txt",
+                "text/plain",
+                512,
+                "sha256:test3",
+                "org-001/file-003",
+                "available",
+                now.AddHours(-1),
+                now));
+        await dbContext.SaveChangesAsync();
+
+        // Query using uploaderId parameter
+        var uploadByIdResult = await service.ListFilesAsync(
+            new ListFilesRequest(
+                "org-001",
+                "prod",
+                null,  // filePurpose
+                "order-001",  // uploaderId
+                null,  // ownerId
+                null,  // createdFromUtc
+                null,  // createdToUtc
+                null,  // status
+                null,  // skip
+                null),  // take
+            CancellationToken.None);
+
+        // Query using ownerId parameter
+        var ownByIdResult = await service.ListFilesAsync(
+            new ListFilesRequest(
+                "org-001",
+                "prod",
+                null,  // filePurpose
+                null,  // uploaderId
+                "order-001",  // ownerId
+                null,  // createdFromUtc
+                null,  // createdToUtc
+                null,  // status
+                null,  // skip
+                null),  // take
+            CancellationToken.None);
+
+        // Both queries should return identical results
+        Assert.Equal(StatusCodes.Status200OK, uploadByIdResult.StatusCode);
+        Assert.Equal(StatusCodes.Status200OK, ownByIdResult.StatusCode);
+        Assert.NotNull(uploadByIdResult.Value);
+        Assert.NotNull(ownByIdResult.Value);
+
+        // Both should return 2 files (file-001 and file-003 have owner_id = "order-001")
+        Assert.Equal(2, uploadByIdResult.Value.Total);
+        Assert.Equal(2, ownByIdResult.Value.Total);
+        Assert.Equal(2, uploadByIdResult.Value.Items.Count);
+        Assert.Equal(2, ownByIdResult.Value.Items.Count);
+
+        // Verify exact same file IDs in same order
+        var uploadIds = uploadByIdResult.Value.Items.Select(f => f.FileId).OrderBy(id => id).ToList();
+        var ownIds = ownByIdResult.Value.Items.Select(f => f.FileId).OrderBy(id => id).ToList();
+        Assert.Equal(uploadIds, ownIds);
+
+        // Verify each file has the correct owner_id
+        foreach (var file in uploadByIdResult.Value.Items)
+        {
+            Assert.Equal("order-001", file.Owner.OwnerId);
+        }
+        foreach (var file in ownByIdResult.Value.Items)
+        {
+            Assert.Equal("order-001", file.Owner.OwnerId);
+        }
+    }
+
+    [Fact]
     public async Task CreateDownloadGrant_InsertsDownloadGrantRecord()
     {
         await using var dbContext = CreateEfCoreInMemoryDbContext();
