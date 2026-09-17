@@ -78,8 +78,12 @@ foreach ($exemption in $sortedExemptions) {
 }
 
 # 信息项，不参与判定：AppHost 注了但没有任何消费方 Resolve 的键。本门禁不替它做决定，也不假装
-# 覆盖了它。#3512 已逐条判过一轮：剩下这些是**消费方不走 InternalServiceBaseAddress.Resolve\* 而直读
-# 配置**的真实依赖（各自在 AppHost 源码里有注释点名消费者），删掉它们本门禁照绿、运行时才炸。
+# 覆盖了它。#3512 判过其中两条——business-scheduling <- FileStorage__BaseUrl 与
+# gateway <- VictoriaLogs__BaseUrl：消费方直读 Configuration["X:BaseUrl"] 而不走
+# InternalServiceBaseAddress.Resolve\*，所以本库枚举不到（盲区见 #3536），各自在 AppHost 源码里
+# 有注释点名消费者，删掉它们本门禁照绿、运行时才炸。
+# ⚠️ 这句只覆盖那两条具名项，不覆盖下面这个循环打印出的每一行：本门禁不校验键名拼写，
+# 一个拼错的键（如 Erpp__BaseUrl）同样会以「无消费方」的形态出现在这里，那是待查项不是已判项。
 Write-Host "  injections with no consumer (informational only, not asserted): $($report.UnconsumedInjections.Count)"
 foreach ($injection in $report.UnconsumedInjections) {
     Write-Host "    unconsumed $($injection.Resource) <- $($injection.EnvironmentName) (AppHost line $($injection.Line))"
