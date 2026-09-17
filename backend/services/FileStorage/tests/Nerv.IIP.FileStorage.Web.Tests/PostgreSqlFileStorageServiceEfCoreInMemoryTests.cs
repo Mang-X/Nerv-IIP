@@ -1466,6 +1466,73 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
     }
 
     [Fact]
+    public async Task ListFiles_ConflictingOwnerIdAndUploaderId_ReturnsEmptySet()
+    {
+        // Verify owner裁定：当 uploaderId 和 ownerId 同时提供且取值不同时，
+        // 两条独立 .Where 条件矛盾，应返回空集。
+        await using var dbContext = CreateEfCoreInMemoryDbContext();
+        var service = FileStorageServiceTestFactory.Create(dbContext, configuration: FileStorageTestConfiguration.Default);
+        var now = DateTimeOffset.UtcNow;
+
+        // Reuse夹具：file-001/file-003 owner_id="order-001"，file-002 owner_id="inv-002"
+        dbContext.StoredFiles.AddRange(
+            StoredFileRecord.Create(
+                "file-001",
+                "org-001",
+                "prod",
+                "service-a",
+                "order",
+                "order-001",
+                "attachment",
+                "doc1.pdf",
+                "application/pdf",
+                1024,
+                "sha256:test1",
+                "org-001/file-001",
+                "available",
+                now.AddHours(-1),
+                now),
+            StoredFileRecord.Create(
+                "file-002",
+                "org-001",
+                "prod",
+                "service-b",
+                "inventory",
+                "inv-002",
+                "attachment",
+                "doc2.pdf",
+                "application/pdf",
+                2048,
+                "sha256:test2",
+                "org-001/file-002",
+                "available",
+                now.AddHours(-1),
+                now));
+        await dbContext.SaveChangesAsync();
+
+        // 查询：uploaderId=order-001, ownerId=inv-002（取值不同）
+        var conflicting = await service.ListFilesAsync(
+            new ListFilesRequest(
+                "org-001",
+                "prod",
+                null,           // filePurpose
+                "order-001",    // uploaderId
+                "inv-002",      // ownerId —— 与 uploaderId 取值不同
+                null,           // createdFromUtc
+                null,           // createdToUtc
+                null,           // status
+                null,           // skip
+                null),          // take
+            CancellationToken.None);
+
+        // owner裁定：两条独立 .Where 条件矛盾 ⇒ 返回空集
+        Assert.Equal(StatusCodes.Status200OK, conflicting.StatusCode);
+        Assert.NotNull(conflicting.Value);
+        Assert.Equal(0, conflicting.Value.Total);              // total 也必须是 0
+        Assert.Empty(conflicting.Value.Items);
+    }
+
+    [Fact]
     public async Task CreateDownloadGrant_InsertsDownloadGrantRecord()
     {
         await using var dbContext = CreateEfCoreInMemoryDbContext();
