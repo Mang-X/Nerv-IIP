@@ -1694,6 +1694,7 @@ export type ListConsoleFilesData = {
     query?: {
         filePurpose?: string | null;
         uploaderId?: string | null;
+        ownerId?: string | null;
         createdFromUtc?: string | null;
         createdToUtc?: string | null;
         status?: string | null;

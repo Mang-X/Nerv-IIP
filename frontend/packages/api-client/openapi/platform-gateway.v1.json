@@ -1738,6 +1738,14 @@
             }
           },
           {
+            "name": "ownerId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
             "name": "createdFromUtc",
             "in": "query",
             "schema": {
