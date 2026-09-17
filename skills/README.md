@@ -160,8 +160,7 @@ rm -rf <主 worktree>/.agents/skills <主 worktree>/.claude/skills
 
 `npx skills experimental_install` **只在主 worktree 跑**，而这种残缺本来就出在主树上；在 linked
 工作树里删两层**补不回缺的那些** —— 主树的门仍判「已安装」，install 不触发，只是把主树那同一份
-残缺重新镜像过来（实测如此）。主树补齐后，各 linked 工作树下次 SessionStart 会自动镜像到完整
-payload，不必逐棵处理。
+残缺重新镜像过来（实测如此）。
 
 **不做自动清理是既定裁决**（#3466）：判「某条 payload 是不是第三方的」必须真正解析
 `skills-lock.json`，而全仓目前没有任何代码读它的内容，成本与该状态今天的发生率不匹配；
