@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { DialogTitle } from 'reka-ui'
 import { nextTick, ref, watch } from 'vue'
 import BottomSheet from '../bottom-sheet/BottomSheet.vue'
 import MobileButton from '../button/MobileButton.vue'
@@ -41,7 +42,9 @@ watch(open, (isOpen) => {
       props.options.findIndex((o) => o.value === model.value),
     )
     draftIndex.value = i
-    scroller.value?.scrollTo({ top: i * ITEM })
+    // jsdom / 老 WebView 没有 Element.prototype.scrollTo；瞬时定位改赋值 scrollTop
+    // （与 PullRefresh.vue restoreScrollTop 同写法），原本也没有 behavior: 'smooth'。
+    if (scroller.value) scroller.value.scrollTop = i * ITEM
   })
 })
 </script>
@@ -53,7 +56,9 @@ watch(open, (isOpen) => {
         <MobileButton variant="text" size="md" class="text-muted-foreground" @click="open = false">
           取消
         </MobileButton>
-        <span class="text-[15px] font-medium">{{ title }}</span>
+        <!-- reka 要求 DialogContent 内必须有 DialogTitle；此处标题本来就可见，
+             直接由它承担对话框可访问名，无需 VisuallyHidden。 -->
+        <DialogTitle class="text-[15px] font-medium">{{ title }}</DialogTitle>
         <MobileButton variant="text" size="md" @click="confirm">确定</MobileButton>
       </div>
 
