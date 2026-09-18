@@ -104,14 +104,25 @@ namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 /// <b>扫描面是字面量</b>，有人把前缀抽成别处常量再拼就扫不到，别把它读成穷举。</item>
 /// <item>不证明 HTTP 调用方造不出撞车的键。手工报工的 <c>IdempotencyKey</c> 由调用方给，
 /// 调用方本来就能送 <c>telemetry:</c> 开头的任意串 —— 这是改动前就有的性质，本类型未引入也未消除。</item>
-/// <item><b>⭐ 上面那条扫描面按「谁解析前缀」取，它抓不到「谁按精确相等读这把键」。</b>
+/// <item><b>⭐ 上面那条扫描面按「谁解析前缀」取，它在构造上看不见「谁按精确相等读这把键」。</b>
 /// 换个判定维度重扫后确有一处：<c>GetProductionReportByIdempotencyKeyQueryHandler</c>
-/// （<c>MesProductionQueries.cs:217-233</c>）用 <c>==</c> 读 <c>code_idempotency_keys</c>，
-/// 且**是有接线的**——<c>GET /api/business/v1/mes/production-reports/by-idempotency-key</c>
-/// （<c>MesEndpoints.cs:2028</c>，权限 <c>MesPermissionCodes.ReportingRead</c>）。
-/// 它<b>不在 BusinessGateway 的暴露面上，生成 api-client 与前端零消费方</b>（实读）。
-/// 影响：改动前，拿得到候选行 <c>SourceIdempotencyKey</c> 的人可以拼出 <c>telemetry:{源键}</c>
-/// 查到这张回执；改动后要先自己算 SHA-256。没有已接线的消费方因此坏掉，登记不阻断。</item>
+/// （<c>MesProductionQueries.cs:217-233</c>）用 <c>==</c> 读 <c>code_idempotency_keys</c>。
+/// <b>它是完整接线的</b>（别写成「没接线」，也别写成「不在网关暴露面」——两种说法实读都不成立）：
+/// 服务侧路由 <c>GET /api/business/v1/mes/production-reports/by-idempotency-key</c>
+/// （<c>MesEndpoints.cs:2028</c>，权限 <c>MesPermissionCodes.ReportingRead</c>）；
+/// BusinessGateway 侧有客户端 <c>BusinessMesClient.cs:1064</c>、有生产调用方
+/// <c>BusinessMesProductionReportCoordinator.cs:66</c>，还有 proxy 测试
+/// <c>BusinessGatewayProxyTests.cs:13273</c>。
+/// <para><b>⭐ 真正的不阻断理由是命名空间分离，不是「没人用」</b>：那个调用方传的是
+/// <c>request.IdempotencyKey</c>（<c>:71</c>）—— **HTTP 调用方自己提供的键**，
+/// 走的是人工 / API 驱动的序列号报工流；该协调器全文**零** <c>telemetry</c> 引用（实读）。
+/// 与本类型产出的遥测派生键命名空间分离 ⇒ <b>本改动可证不影响它</b>。
+/// 生成 api-client 与前端对这条路由零消费方（实读）。</para>
+/// <para>剩下的影响只在人工排障面：改动前，拿得到候选行 <c>SourceIdempotencyKey</c> 的人
+/// 可以拼出 <c>telemetry:{源键}</c> 查到这张回执；改动后要先自己算 SHA-256。</para>
+/// <para><b>⚠️ 失效方向（本条真正要留给后来人的东西）</b>：字面量前缀扫描
+/// （<c>StartsWith("telemetry</c>）**在构造上看不见**「按精确相等读这把键」的消费方
+/// —— 换判定维度就换扫描面。</para></item>
 /// <item>不管辖那两道 150 本身。它们是受治理的值，本类型只保证自己的产出装得进去。</item>
 /// </list>
 /// </remarks>
