@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.PlatformGateway.Web.Application.Auth;
 using Nerv.IIP.PlatformGateway.Web.Application.FileStorage;
+using Nerv.IIP.PlatformGateway.Web.Endpoints.Files;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.PlatformGateway.Web.Tests;
@@ -34,6 +35,33 @@ public sealed class GatewayConsoleFileStorageTests
     }
 
     [Fact]
+    public async Task Create_upload_session_maps_console_request_to_contract_with_principal_org_env()
+    {
+        var files = new FakeGatewayFileStorageClient();
+        var auth = FakeGatewayAuthorizationClient.Allowed();
+        await using var factory = CreateFactory(files, auth);
+        using var request = AuthorizedRequest(HttpMethod.Post, "/api/console/v1/files/upload-sessions");
+        // 端点接收本地 console request（不含 org/env），映射到共享 contract 时添加 principal org/env
+        request.Content = JsonContent.Create(new ConsoleCreateUploadSessionRequest(
+            new OwnerReference("notification", "message", "msg-001"),
+            "notification-attachment",
+            "example.csv",
+            "text/csv",
+            42,
+            null));
+
+        var response = await factory.CreateClient().SendAsync(request);
+
+        response.EnsureSuccessStatusCode();
+        var body = await ReadResponseDataAsync<CreateUploadSessionResponse>(response);
+        Assert.Equal("upload-session-001", body.UploadSessionId);
+        // 验证转发给 FileStorage 的 contract request 正确填充了 principal org/env
+        Assert.Equal("org-001", files.LastCreateRequest!.OrganizationId);
+        Assert.Equal("env-dev", files.LastCreateRequest.EnvironmentId);
+        Assert.Equal("example.csv", files.LastCreateRequest.FileName);
+    }
+
+    [Fact]
     public async Task Complete_upload_session_forwards_session_id_and_requires_upload_permission()
     {
         var files = new FakeGatewayFileStorageClient();
@@ -49,6 +77,27 @@ public sealed class GatewayConsoleFileStorageTests
         Assert.Equal("file-001", body.FileId);
         Assert.Equal("upload-session-001", files.LastCompleteUploadSessionId);
         Assert.Equal(GatewayPermissions.FilesUpload, auth.LastRequirement!.PermissionCode);
+    }
+
+    [Fact]
+    public async Task Complete_upload_session_maps_console_request_to_contract_with_principal_org_env()
+    {
+        var files = new FakeGatewayFileStorageClient();
+        var auth = FakeGatewayAuthorizationClient.Allowed();
+        await using var factory = CreateFactory(files, auth);
+        using var request = AuthorizedRequest(HttpMethod.Post, "/api/console/v1/files/upload-sessions/upload-session-001/complete");
+        // 端点接收本地 console request（不含 org/env），映射到共享 contract 时添加 principal org/env
+        request.Content = JsonContent.Create(new ConsoleCompleteUploadSessionRequest("notification-attachment"));
+
+        var response = await factory.CreateClient().SendAsync(request);
+
+        response.EnsureSuccessStatusCode();
+        var body = await ReadResponseDataAsync<FileMetadataResponse>(response);
+        Assert.Equal("file-001", body.FileId);
+        // 验证转发给 FileStorage 的 contract request 正确填充了 principal org/env
+        Assert.NotNull(files.LastCompleteRequest);
+        Assert.Equal("org-001", files.LastCompleteRequest.OrganizationId);
+        Assert.Equal("env-dev", files.LastCompleteRequest.EnvironmentId);
     }
 
     [Fact]
@@ -593,6 +642,7 @@ public sealed class GatewayConsoleFileStorageTests
     {
         public CreateUploadSessionRequest? LastCreateRequest { get; private set; }
         public string? LastCompleteUploadSessionId { get; private set; }
+        public CompleteUploadSessionRequest? LastCompleteRequest { get; private set; }
         public string? LastMetadataFileId { get; private set; }
         public ListFilesRequest? LastListRequest { get; private set; }
         public FileStorageUsageRequest? LastUsageRequest { get; private set; }
@@ -630,6 +680,7 @@ public sealed class GatewayConsoleFileStorageTests
         {
             ThrowIfConfigured();
             LastCompleteUploadSessionId = uploadSessionId;
+            LastCompleteRequest = request;
             return Task.FromResult(FileMetadata());
         }
 

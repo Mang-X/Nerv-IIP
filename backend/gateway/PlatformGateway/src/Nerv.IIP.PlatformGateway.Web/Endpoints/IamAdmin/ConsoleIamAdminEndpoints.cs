@@ -21,10 +21,10 @@ public sealed class ListConsoleIamUsersEndpoint(
         GatewayPermissions.IamUsersRead)
 {
     protected override Task<PagedListResponse<ConsoleIamUserResponse>> ForwardAsync(
-        string bearerToken,
+        AuthorizedProxyRequestContext context,
         ConsoleIamListRequest request,
         CancellationToken cancellationToken) =>
-        admin.ListUsersAsync(bearerToken, request, cancellationToken);
+        admin.ListUsersAsync(context.BearerToken, request, cancellationToken);
 }
 
 [Tags("Console IAM")]
@@ -62,10 +62,10 @@ public sealed class UpdateConsoleIamUserEndpoint(
         GatewayPermissions.IamUsersManage)
 {
     protected override Task<ConsoleIamUserResponse> ForwardAsync(
-        string bearerToken,
+        AuthorizedProxyRequestContext context,
         ConsoleUpdateIamUserRequest request,
         CancellationToken cancellationToken) =>
-        admin.UpdateUserAsync(bearerToken, Route<string>("userId")!, request, cancellationToken);
+        admin.UpdateUserAsync(context.BearerToken, Route<string>("userId")!, request, cancellationToken);
 }
 
 [Tags("Console IAM")]
@@ -140,10 +140,10 @@ public sealed class ListConsoleIamRolesEndpoint(
         GatewayPermissions.IamRolesRead)
 {
     protected override Task<PagedListResponse<ConsoleIamRoleResponse>> ForwardAsync(
-        string bearerToken,
+        AuthorizedProxyRequestContext context,
         ConsoleIamListRequest request,
         CancellationToken cancellationToken) =>
-        admin.ListRolesAsync(bearerToken, request, cancellationToken);
+        admin.ListRolesAsync(context.BearerToken, request, cancellationToken);
 }
 
 [Tags("Console IAM")]
@@ -181,10 +181,10 @@ public sealed class UpdateConsoleIamRolePermissionsEndpoint(
         GatewayPermissions.IamRolesManage)
 {
     protected override Task<ConsoleIamRoleResponse> ForwardAsync(
-        string bearerToken,
+        AuthorizedProxyRequestContext context,
         ConsoleUpdateIamRolePermissionsRequest request,
         CancellationToken cancellationToken) =>
-        admin.UpdateRolePermissionsAsync(bearerToken, Route<string>("roleId")!, request, cancellationToken);
+        admin.UpdateRolePermissionsAsync(context.BearerToken, Route<string>("roleId")!, request, cancellationToken);
 }
 
 [Tags("Console IAM")]
@@ -220,10 +220,10 @@ public sealed class ListConsoleIamSessionsEndpoint(
         GatewayPermissions.IamSessionsRead)
 {
     protected override Task<PagedListResponse<ConsoleIamSessionResponse>> ForwardAsync(
-        string bearerToken,
+        AuthorizedProxyRequestContext context,
         ConsoleIamListRequest request,
         CancellationToken cancellationToken) =>
-        admin.ListSessionsAsync(bearerToken, request, cancellationToken);
+        admin.ListSessionsAsync(context.BearerToken, request, cancellationToken);
 }
 
 [Tags("Console IAM")]
