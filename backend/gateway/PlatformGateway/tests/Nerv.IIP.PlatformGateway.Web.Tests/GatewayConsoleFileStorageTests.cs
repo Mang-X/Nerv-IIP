@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.PlatformGateway.Web.Application.Auth;
 using Nerv.IIP.PlatformGateway.Web.Application.FileStorage;
+using Nerv.IIP.PlatformGateway.Web.Endpoints.Files;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.PlatformGateway.Web.Tests;
@@ -34,16 +35,14 @@ public sealed class GatewayConsoleFileStorageTests
     }
 
     [Fact]
-    public async Task Create_upload_session_overrides_body_org_env_with_principal_values()
+    public async Task Create_upload_session_maps_console_request_to_contract_with_principal_org_env()
     {
         var files = new FakeGatewayFileStorageClient();
         var auth = FakeGatewayAuthorizationClient.Allowed();
         await using var factory = CreateFactory(files, auth);
         using var request = AuthorizedRequest(HttpMethod.Post, "/api/console/v1/files/upload-sessions");
-        // 发送的 body 中 org/env 与 principal（来自 token）不一致
-        request.Content = JsonContent.Create(new CreateUploadSessionRequest(
-            "ORG-001",  // body 中是大写
-            "PROD",     // body 中是大写
+        // 端点接收本地 console request（不含 org/env），映射到共享 contract 时添加 principal org/env
+        request.Content = JsonContent.Create(new ConsoleCreateUploadSessionRequest(
             new OwnerReference("notification", "message", "msg-001"),
             "notification-attachment",
             "example.csv",
@@ -56,7 +55,7 @@ public sealed class GatewayConsoleFileStorageTests
         response.EnsureSuccessStatusCode();
         var body = await ReadResponseDataAsync<CreateUploadSessionResponse>(response);
         Assert.Equal("upload-session-001", body.UploadSessionId);
-        // 验证转发给 FileStorage 的 org/env 是 principal 的值（小写），而非 body 中的值（大写）
+        // 验证转发给 FileStorage 的 contract request 正确填充了 principal org/env
         Assert.Equal("org-001", files.LastCreateRequest!.OrganizationId);
         Assert.Equal("env-dev", files.LastCreateRequest.EnvironmentId);
         Assert.Equal("example.csv", files.LastCreateRequest.FileName);
