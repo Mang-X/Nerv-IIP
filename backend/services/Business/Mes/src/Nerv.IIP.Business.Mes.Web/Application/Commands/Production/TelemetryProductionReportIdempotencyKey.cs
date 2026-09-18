@@ -53,9 +53,24 @@ namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 /// （即长度 ≤ 150 那一半，例如上面 114 那组）在本改动后**查不到了**。
 /// 若同一条来源事实在改动前已记过报工、改动后又被重放，
 /// <c>CodeAllocator</c> 会按新键判成首次分配、**再记一条报工**。
-/// 这条只在「改动前后跨越同一条来源事实的重放」时成立；由 CAP inbox
-/// （<c>MesProcessedIntegrationEventInbox</c>，按 eventId 或信封键精确相等）与候选表
-/// <c>confirmed</c> 状态短路两道先挡，命令幂等键是第三道。</item>
+/// 这条只在「改动前后跨越同一条来源事实的重放」时成立。
+/// <b>两侧的缓解强度不一样，别合起来说</b>：
+/// <list type="bullet">
+/// <item><b>消费侧成立</b>：<c>MesProcessedIntegrationEventInbox</c> 的行与
+/// <c>code_idempotency_keys</c> 的行在**同一次 SaveChanges、同一个事务**里落库，
+/// 构造不出「有幂等键行、无 inbox 行」的状态 ⇒ inbox 按 eventId 或信封键精确相等原子挡住重投。</item>
+/// <item><b>⭐ 晋升侧不成立</b>：<c>PromoteTelemetryProductionReportCandidateCommandHandler</c>
+/// 的短路条件是 <c>Status == ConfirmedStatus &amp;&amp; ProductionReportId is not null</c>，
+/// 它<b>只挡已确认的候选</b>。而这把幂等键在那个 handler 里存在的**唯一理由**
+/// （见该 handler 自己的注释：<i>"RecordProductionReportCommand owns its transaction.
+/// If candidate confirmation is interrupted, replay returns the same report through the stable
+/// telemetry idempotency key before closing the candidate."</i>）正是兜住
+/// 「内层命令已提交、候选 <c>Confirm</c> 未提交」这一类 —— 而那一类恰恰
+/// <c>Status != Confirmed</c>，**短路进不去**。⇒ 在这一侧，幂等键是唯一一道，本改动把它换了形态。</item>
+/// </list>
+/// <b>为什么仍不改代码去挡</b>：owner 已裁定演示库可重造，且仓库内没有部署流水线 ⇒
+/// 不存在跨部署的存量键；要触发还得再叠加一次恰好卡在两次提交之间的中断。
+/// 这条只登记、不加防御（按本仓「不为极边界问题加护栏」的判据）。</item>
 /// </list></para>
 ///
 /// <para><b>为什么不是「源键里省掉几段」</b>（更简单的候选，实测不成立）：
@@ -72,9 +87,11 @@ namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 /// 源信封键是本链路里唯一「一条事实一个值」的标识（CAP inbox 也正是按它判重投）。</para>
 ///
 /// <para><b>确定性</b>：SHA-256 是纯函数，输入只有源信封键 —— 没有时钟、没有 GUID、没有 salt、没有进程状态。
-/// 同一条来源事实跨 CAP 重投求两次键必然逐字节相同。用例里用**外部独立算出**的黄金向量钉住
-/// （<c>printf ... | openssl dgst -sha256 -binary | basenc --base64url</c>），
-/// 不是「先用本实现求值再用本实现复算」的自指断言。</para>
+/// 同一条来源事实跨 CAP 重投求两次键必然逐字节相同。用例里用**外部独立算出**的黄金向量钉住，
+/// 不是「先用本实现求值再用本实现复算」的自指断言。
+/// 复算命令的**逐字正确写法**见 <c>TelemetryProductionReportIdempotencyKeyTests</c> 那两条
+/// （两条都已实跑过）。⚠️ 不要用 <c>basenc --base64url</c>：它在 macOS 上根本不存在，
+/// 而 GNU 版输出**带填充**（44 字符、末尾 <c>=</c>），与本实现的 43 字符不符。</para>
 ///
 /// <para><b>本类型不证明什么</b>：</para>
 /// <list type="number">
@@ -87,6 +104,14 @@ namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 /// <b>扫描面是字面量</b>，有人把前缀抽成别处常量再拼就扫不到，别把它读成穷举。</item>
 /// <item>不证明 HTTP 调用方造不出撞车的键。手工报工的 <c>IdempotencyKey</c> 由调用方给，
 /// 调用方本来就能送 <c>telemetry:</c> 开头的任意串 —— 这是改动前就有的性质，本类型未引入也未消除。</item>
+/// <item><b>⭐ 上面那条扫描面按「谁解析前缀」取，它抓不到「谁按精确相等读这把键」。</b>
+/// 换个判定维度重扫后确有一处：<c>GetProductionReportByIdempotencyKeyQueryHandler</c>
+/// （<c>MesProductionQueries.cs:217-233</c>）用 <c>==</c> 读 <c>code_idempotency_keys</c>，
+/// 且**是有接线的**——<c>GET /api/business/v1/mes/production-reports/by-idempotency-key</c>
+/// （<c>MesEndpoints.cs:2028</c>，权限 <c>MesPermissionCodes.ReportingRead</c>）。
+/// 它<b>不在 BusinessGateway 的暴露面上，生成 api-client 与前端零消费方</b>（实读）。
+/// 影响：改动前，拿得到候选行 <c>SourceIdempotencyKey</c> 的人可以拼出 <c>telemetry:{源键}</c>
+/// 查到这张回执；改动后要先自己算 SHA-256。没有已接线的消费方因此坏掉，登记不阻断。</item>
 /// <item>不管辖那两道 150 本身。它们是受治理的值，本类型只保证自己的产出装得进去。</item>
 /// </list>
 /// </remarks>
@@ -112,10 +137,23 @@ public static class TelemetryProductionReportIdempotencyKey
 
     /// <summary>
     /// 由源信封幂等键派生报工幂等键。
-    /// <para><b>总函数，不抛</b>：调用点在 CAP 消费者里，任何新增的抛出路径都会变成毒消息。
-    /// 空值在到达这里之前已被上游排除（消费侧 <c>MesProcessedIntegrationEventInbox.TryRecordAsync</c>
-    /// 对信封键做 <c>ThrowIfNullOrWhiteSpace</c>；晋升侧 <c>source_idempotency_key</c> 是必填列），
-    /// 本方法对空串也只是照常求摘要。</para>
+    /// <para><b>⚠️ 本方法对 <c>null</c> 会抛</b>，这是本改动**新增**的一条抛出路径
+    /// （改前 <c>$"telemetry:{null}"</c> 得到 <c>"telemetry:"</c>，不抛）。**别写成「总函数」**。
+    /// 穷举实跑过的其余输入一律不抛：空串 / 全空白 / 孤立代理对 / <c>NUL</c> / 1MB 长串
+    /// 都照常求摘要（<c>Encoding.UTF8</c> 对非法代理对走替换回退）。</para>
+    /// <para><b>它仍然不会在 CAP 消费者里变成毒消息，理由是 <c>null</c> 在两个调用点都不可达</b>
+    /// —— 理由点名到位点，别只写「上游会挡」：
+    /// <list type="bullet">
+    /// <item><b>消费侧</b>：<c>IntegrationEventConsumerGuard.HandleAsync</c> 在进
+    /// <c>HandleValidEventAsync</c> **之前**跑 <c>IntegrationEventEnvelopeValidator</c>
+    /// （<c>IntegrationEventReliability.cs:193</c>），其 <c>GetRequiredStringFields</c> 含
+    /// <c>IdempotencyKey</c>（同文件 <c>:171</c>），null/空白一律 dead-letter 后 <c>return</c>
+    /// （<c>:196-203</c>），根本到不了调用点。
+    /// ⚠️ <b>失效方向</b>：谁要是把这个消费者从 Guard 里摘出去直接订阅，这道闸就没了，必须同步补。</item>
+    /// <item><b>晋升侧</b>：<c>TelemetryProductionReportCandidate.SourceIdempotencyKey</c> 是非空
+    /// <c>string</c>，构造时过 <c>DomainGuard.Required</c>（该聚合 <c>:46</c>），且列是
+    /// <c>IsRequired()</c>。</item>
+    /// </list></para>
     /// </summary>
     public static string From(string sourceIdempotencyKey)
     {

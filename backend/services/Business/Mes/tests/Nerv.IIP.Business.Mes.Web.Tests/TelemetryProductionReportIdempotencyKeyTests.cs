@@ -120,7 +120,10 @@ public sealed class TelemetryProductionReportIdempotencyKeyTests
         Assert.Equal(ProductionReport.TelemetrySource, report.Source);
         Assert.Equal(TelemetryProductionReportCandidate.ConfirmedStatus, candidate.Status);
 
+        // 值断言而不是只断长度：只断长度的话，「改喂 eventId / 候选行主键」这类
+        // 「有界且确定但身份错」的改法在本用例里会存活（实测过）。
         var observedKey = Assert.Single(sender.ObservedIdempotencyKeys);
+        Assert.Equal(TelemetryProductionReportIdempotencyKey.From(SeedShapedSourceKey), observedKey);
         Assert.True(
             observedKey.Length <= CodeIdempotencyKey.IdempotencyKeyMaxLength,
             $"派生键长度 {observedKey.Length} 超过 {CodeIdempotencyKey.IdempotencyKeyMaxLength}：{observedKey}");
@@ -154,7 +157,9 @@ public sealed class TelemetryProductionReportIdempotencyKeyTests
 
         // 消费侧的第二道保证：inbox 行与报工在同一个 DbContext 上提交，重投被 inbox 挡住而不是再记一条。
         Assert.Single(await verification.ProcessedIntegrationEvents.ToArrayAsync());
+        // 值断言而不是只断长度，理由同晋升侧那条。
         var observedKey = Assert.Single(sender.ObservedIdempotencyKeys);
+        Assert.Equal(TelemetryProductionReportIdempotencyKey.From(SeedShapedSourceKey), observedKey);
         Assert.True(
             observedKey.Length <= CodeIdempotencyKey.IdempotencyKeyMaxLength,
             $"派生键长度 {observedKey.Length} 超过 {CodeIdempotencyKey.IdempotencyKeyMaxLength}：{observedKey}");
@@ -196,6 +201,11 @@ public sealed class TelemetryProductionReportIdempotencyKeyTests
     /// <para>它钉住的性质：派生只依赖源信封键这一个输入。任何掺进时钟 / GUID / salt / 进程状态的改法，
     /// 这三格都会红 —— 本仓有过 <c>CanonicalKey</c> 掺 <c>UtcNow</c> 而整格变异全存活的判例，
     /// 那种自指断言在这里不成立。</para>
+    /// <para><b>⭐ 本条是「编码形态」这条轴的唯一承重件，不得当冗余删掉。</b>
+    /// 实测：把摘要编码换成大小写折叠（产出仍是 53 字符、仍以
+    /// <see cref="TelemetryProductionReportIdempotencyKey.Prefix"/> 开头、仍确定、
+    /// 「末字符不同不折叠」与「两个调用点同键」也都仍然成立）时，本类里**只有这三格转红**。
+    /// 删掉它，编码形态就没有任何机器判据了。</para>
     /// </summary>
     [Theory]
     [InlineData(
@@ -219,7 +229,6 @@ public sealed class TelemetryProductionReportIdempotencyKeyTests
         var first = TelemetryProductionReportIdempotencyKey.From(SeedShapedSourceKey);
         var again = TelemetryProductionReportIdempotencyKey.From(SeedShapedSourceKey);
         Assert.Equal(first, again);
-        Assert.Equal(first, string.Concat(first));
 
         // 只差最后一个字符的两条来源事实必须落到不同的键（截断式修法会在这里折叠）。
         Assert.NotEqual(first, TelemetryProductionReportIdempotencyKey.From(SeedShapedSourceKey[..^1] + "1"));
@@ -227,13 +236,18 @@ public sealed class TelemetryProductionReportIdempotencyKeyTests
     }
 
     /// <summary>
-    /// 上界与输入长度无关：源端七个身份段全部取到各自列宽上界（合计 900）时仍然定长 53。
+    /// 上界与输入长度无关：源键取到它自己的上界、以及任意长输入时，派生键都定长 53。
     /// </summary>
     /// <remarks>
-    /// 列宽读自 <c>telemetry_summaries</c>（source 侧真权威）：
+    /// <para><c>saturated</c> 的入参是源端七段各自的列宽上界（读自 <c>telemetry_summaries</c>：
     /// organization_id 100 / environment_id 100 / device_asset_id 150 / tag_key 150 /
-    /// source_sequence 150 / source_system 100 / source_connector 150。
-    /// 这里的 10000 不是上界，是「远超任何列宽的任意长输入」——本方向要证的正是上界与输入长度无关。
+    /// source_sequence 150 / source_system 100 / source_connector 150，合计 900）。
+    /// <b>⚠️ 但它产出的字符串不是 900+，而是 80</b>：37 + 900 + 6 = 943 早超
+    /// <c>IntegrationEventIdempotencyKey.Budget</c>(512)，<c>Compose</c> 自己先回落成
+    /// <c>{37 字前缀}{43 字摘要}</c>。这一行下面有断言钉住，别把注释读成「这里喂了 900 字符」。</para>
+    /// <para>这里的 10000 不是上界，是「远超任何列宽的任意长输入」——本方向要证的正是上界与输入长度无关。</para>
+    /// <para><b>本方法的四格 Theory（extra=0/1/100/10000）是等价输入</b>：被测输出对这四个取值取常量，
+    /// 同红同绿，鉴别力只有一份。数变异红数时别把它们当四条独立性质。</para>
     /// </remarks>
     [Theory]
     [InlineData(0)]
@@ -251,6 +265,12 @@ public sealed class TelemetryProductionReportIdempotencyKeyTests
             new string('y', 100),
             new string('c', 150),
             new string('q', 150));
+        // 注释里那个 80 由这一行钉住：Compose 在 512 处已经自己回落了，入参的 900 到不了这里。
+        Assert.Equal(
+            "industrialTelemetry:production-count:".Length + TelemetryProductionReportIdempotencyKey.DigestLength,
+            saturated.Length);
+        Assert.Equal(80, saturated.Length);
+
         foreach (var sourceKey in new[] { saturated, new string('x', extra), SeedShapedSourceKey })
         {
             var derived = TelemetryProductionReportIdempotencyKey.From(sourceKey);
