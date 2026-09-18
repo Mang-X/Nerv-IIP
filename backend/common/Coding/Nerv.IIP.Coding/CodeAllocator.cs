@@ -53,7 +53,6 @@ public sealed class CodeAllocator(
         }
 
         var normalizedRequestedCode = Normalize(request.RequestedCode);
-        EnsureRequestedCodeFitsTheAllocatorColumn(request, normalizedRequestedCode);
         var normalizedIdempotencyKey = Normalize(request.IdempotencyKey);
         if (_store is null)
         {
@@ -66,6 +65,7 @@ public sealed class CodeAllocator(
             return replay;
         }
 
+        EnsureRequestedCodeFitsTheAllocatorColumn(request, normalizedRequestedCode);
         var code = normalizedRequestedCode ?? await NextCodeAsync(request, cancellationToken);
         if (normalizedIdempotencyKey is not null)
         {
@@ -205,6 +205,7 @@ public sealed class CodeAllocator(
             }
         }
 
+        EnsureRequestedCodeFitsTheAllocatorColumn(request, normalizedRequestedCode);
         var code = normalizedRequestedCode ?? NextCodeAsync(request, CancellationToken.None).GetAwaiter().GetResult();
         lock (_lock)
         {
@@ -356,7 +357,18 @@ public sealed class CodeAllocator(
     /// <para><b>为什么校验放在这里而不是放到各服务的校验器里</b>：<c>RequestedCode</c> 的取值点实读有 50 个
     /// （分布在 7 个业务服务，其中 19 个连 <c>MaximumLength</c> 都没有，spike 见 #3454）。
     /// 逐个补规则是白名单选取，新调用点加进来时会静默漏掉（本仓判例 #3003 / #3135 / #3300）。
-    /// 装不下自己这一列是**分配器自己的不变量**，收在这一处对 50 个取值点一次性成立。</para>
+    /// 装不下自己这一列是**分配器自己的不变量**，收在这两处对 50 个取值点一次性成立。</para>
+    ///
+    /// <para><b>⭐ 调用位置有语义：本方法必须落在 replay 命中**之后**、<c>var code = ...</c> **之前**</b>
+    /// （<c>AllocateAsync</c> 的 store 分支与 <c>AllocateInMemory</c> 的内存分支各一处）。
+    /// replay 的含义是「这个幂等键我已经分配过，把原来那个码还给我」——那条路径上
+    /// <c>RequestedCode</c> **根本不会被消费**（<c>normalizedRequestedCode ?? …</c> 这一步到不了），
+    /// 为一个用不到的值拒绝 replay 是错的。守卫要落在**值被消费的地方**，不是方法入口。
+    /// ⚠️ 这是实测结论不是推断：把本调用挪到入口（<c>Normalize</c> 之后、replay 之前），
+    /// 「复用幂等键 + 指纹相同 + 超界 <c>RequestedCode</c>」这类请求会从
+    /// 「返回已存短码、<c>IsIdempotentReplay = true</c>」变成抛异常——那是一条**真实行为回归**。
+    /// 看守这条位置的是 <c>CodeAllocatorTests.AllocateAsync_replays_an_existing_code_even_when_the_requested_code_is_oversized</c>
+    /// 与它的内存分支同族用例；挪回入口会让这两条转红。</para>
     ///
     /// <para><b>抛什么、谁接得住</b>：抛 <see cref="KnownException"/>，与本类既有的业务拒绝
     /// （规则停用、必填字段缺失、幂等键冲突）同型，经各服务统一异常管线转成公开业务错误。
@@ -368,8 +380,14 @@ public sealed class CodeAllocator(
     /// <see cref="KnownException"/>，但它传的 <c>DownstreamDocumentId</c> 在 DemandPlanning 侧同时受
     /// <c>AcceptPlanningSuggestionCommandValidator</c> 的 <c>MaximumLength(128)</c> 与
     /// <c>planning_suggestions.accepted_downstream_document_id</c> 的 128 列宽约束，
-    /// ⇒ 本守卫在那条路径上**不可达**。⚠️ 失效方向：那两个 128 里任意一个被放宽，
-    /// 该消费者就会把本异常逃逸成 poison message（#877 仍 OPEN）。</para>
+    /// ⇒ 本守卫在那条路径上**不可达**。⭐ 两条约束里**起决定作用的是列宽那一条**：
+    /// 该消费者收到的 <c>DownstreamDocumentId</c> 取自集成事件载荷，而载荷里那个值来自
+    /// <c>suggestion.AcceptedDownstreamDocumentId</c>（<c>DemandPlanningIntegrationEventConverters.cs</c>）——
+    /// **先存进 128 的列、再随同一事务出箱发布**。⇒ 存不进去就发不出来，
+    /// 即便校验器那条 <c>MaximumLength(128)</c> 被绕开或放宽，超界值仍到不了这里。
+    /// ⚠️ 失效方向因此收窄成一条：**只有放宽 <c>accepted_downstream_document_id</c> 的列宽**，
+    /// 该消费者才会把本异常逃逸成 poison message（#877 仍 OPEN）；
+    /// ⛔ 只放宽校验器不构成这条失效方向。</para>
     ///
     /// <para><b>只管装得下，不管形状</b>：长度合法但不符合规则形状的码（例如 SKU 码写成 <c>!!!</c>）照样放行。
     /// 这是 #3454 有意留的边界，不是漏掉的一条。</para>

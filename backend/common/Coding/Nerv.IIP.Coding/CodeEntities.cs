@@ -87,7 +87,7 @@ public sealed class CodeIdempotencyKey
     ///
     /// <para><b>失效方向</b>：① 改本常量会同时移动 EF 配置与分配器守卫，
     /// 两侧同步移动的断言恒绿——钉住「128 这个数字本身」的是
-    /// <c>CodeAllocatorRequestedCodeWidthContractTests.Introducing_the_guard_did_not_change_the_column_width</c>
+    /// <c>CodeIdempotencyKeyCrossServiceWidthContractTests.Introducing_the_allocator_guard_did_not_change_the_code_column_width</c>
     /// 以及各服务 <c>ApplicationDbContextModelSnapshot</c>（改常量会让 7 份 snapshot 与模型不符，
     /// 由 <c>PostgreSQL Provider Tests</c> 的 <c>MigrateAsync</c> 抛 <c>PendingModelChangesWarning</c> 显形；
     /// 本仓没有 pending-model-changes 门禁，见 #3347）。

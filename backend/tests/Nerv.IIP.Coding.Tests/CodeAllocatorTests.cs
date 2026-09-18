@@ -290,6 +290,60 @@ public sealed class CodeAllocatorTests
     }
 
     /// <summary>
+    /// ⭐ <b>守卫相对 replay 的位置</b>（#3454 复审打出的轴）。
+    ///
+    /// <para>replay 的含义是「这个幂等键我已经分配过，把原来那个码还给我」——那条路径上
+    /// <c>RequestedCode</c> <b>根本不会被消费</b>（<c>normalizedRequestedCode ?? …</c> 到不了）。
+    /// 为一个用不到的值拒绝 replay 是**行为回归**，不是「更严格」。</para>
+    ///
+    /// <para>本条造的正是那个输入：同一幂等键、同一指纹、第二次带一个**超界**的 <c>RequestedCode</c>。
+    /// 必须返回第一次分配的短码且 <c>IsIdempotentReplay = true</c>，⛔ 不得抛。</para>
+    ///
+    /// <para>⚠️ <b>这条轴现有断言抓不到</b>：把守卫挪到方法入口（<c>Normalize</c> 之后、replay 之前），
+    /// 其余 73 条全绿、只有本条与它的内存分支同族用例转红。⇒ 删掉本条 = 那条位置无人看守。</para>
+    ///
+    /// <para>合同分类：<c>DomainInvariant</c>（幂等重放必须还原既有分配，与本次入参无关）
+    /// + <c>Regression</c>（#3454 复审实测的红绿反转样本）。</para>
+    /// </summary>
+    [Fact]
+    public async Task AllocateAsync_replays_an_existing_code_even_when_the_requested_code_is_oversized()
+    {
+        var store = new InMemoryCodeStore();
+        var allocator = new CodeAllocator(store, new FrozenTimeProvider(new DateTimeOffset(2026, 6, 12, 1, 0, 0, TimeSpan.Zero)));
+        var first = new CodeAllocationRequest("org", "env", SkuRule(), null, RequestedCode: null, "idem-replay-oversized", "payload-a", "sku");
+        var original = await allocator.AllocateAsync(first, CancellationToken.None);
+        Assert.Equal("SKU-20260612-000001", original.Code);
+
+        var oversized = new string('X', CodeIdempotencyKey.CodeMaxLength + 1);
+        var replayRequest = first with { RequestedCode = oversized };
+
+        var replay = await allocator.AllocateAsync(replayRequest, CancellationToken.None);
+
+        Assert.Equal(original.Code, replay.Code);
+        Assert.True(replay.IsIdempotentReplay);
+        Assert.Equal(1, store.AddAttempts);
+        Assert.Equal(1, store.ReserveAttempts);
+    }
+
+    /// <summary>
+    /// 同一条轴的内存分支（<c>AllocateInMemory</c>）。两条分支各有一处 <c>var code = …</c>，
+    /// 守卫要在**各自**的 replay 命中之后；只挪其中一处会让本条或上一条单独红。
+    /// </summary>
+    [Fact]
+    public async Task AllocateAsync_replays_an_existing_code_even_when_the_requested_code_is_oversized_on_the_in_memory_path()
+    {
+        var allocator = new CodeAllocator(timeProvider: new FrozenTimeProvider(new DateTimeOffset(2026, 6, 12, 1, 0, 0, TimeSpan.Zero)));
+        var first = new CodeAllocationRequest("org", "env", SkuRule(), null, RequestedCode: null, "idem-replay-oversized-mem", "payload-a", "sku");
+        var original = await allocator.AllocateAsync(first, CancellationToken.None);
+
+        var oversized = new string('X', CodeIdempotencyKey.CodeMaxLength + 1);
+        var replay = await allocator.AllocateAsync(first with { RequestedCode = oversized }, CancellationToken.None);
+
+        Assert.Equal(original.Code, replay.Code);
+        Assert.True(replay.IsIdempotentReplay);
+    }
+
+    /// <summary>
     /// 边界另一侧：恰好等于列宽的码必须原样通过并被登记。
     /// ⛔ 没有这一条，把守卫写成 <c>&gt;=</c>（或干脆拒掉一切 <c>RequestedCode</c>）也会全绿。
     /// </summary>
