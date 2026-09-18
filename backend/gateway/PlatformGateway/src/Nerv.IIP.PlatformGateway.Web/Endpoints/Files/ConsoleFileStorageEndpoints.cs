@@ -20,6 +20,19 @@ public sealed record ConsoleListFilesRequest(
 
 public sealed record ConsoleFileStorageUsageRequest(string? FilePurpose);
 
+public sealed record ConsoleCreateUploadSessionRequest(
+    OwnerReference Owner,
+    string FilePurpose,
+    string FileName,
+    string ContentType,
+    long ExpectedSizeBytes,
+    string? Checksum);
+
+public sealed record ConsoleCompleteUploadSessionRequest(
+    string FilePurpose,
+    string? Checksum = null,
+    long? SizeBytes = null);
+
 [Tags("Console Files")]
 [HttpPost("/api/console/v1/files/upload-sessions")]
 [GatewayOperationId("createConsoleFileUploadSession")]
@@ -28,16 +41,28 @@ public sealed class CreateConsoleFileUploadSessionEndpoint(
     IGatewayIamAuthClient iam,
     IGatewayAuthorizationClient auth,
     IGatewayFileStorageClient files)
-    : AuthorizedProxyEndpoint<CreateUploadSessionRequest, CreateUploadSessionResponse>(
+    : AuthorizedProxyEndpoint<ConsoleCreateUploadSessionRequest, CreateUploadSessionResponse>(
         iam,
         auth,
         GatewayPermissions.FilesUpload)
 {
     protected override Task<CreateUploadSessionResponse> ForwardAsync(
-        string bearerToken,
-        CreateUploadSessionRequest request,
-        CancellationToken cancellationToken) =>
-        files.CreateUploadSessionAsync(request, cancellationToken);
+        AuthorizedProxyRequestContext context,
+        ConsoleCreateUploadSessionRequest request,
+        CancellationToken cancellationToken)
+    {
+        // 将本地 request 映射到共享 Contracts，添加 principal 的 org/env
+        var contractRequest = new CreateUploadSessionRequest(
+            context.Principal.OrganizationId,
+            context.Principal.EnvironmentId,
+            request.Owner,
+            request.FilePurpose,
+            request.FileName,
+            request.ContentType,
+            request.ExpectedSizeBytes,
+            request.Checksum);
+        return files.CreateUploadSessionAsync(contractRequest, cancellationToken);
+    }
 }
 
 [Tags("Console Files")]
@@ -48,16 +73,28 @@ public sealed class CompleteConsoleFileUploadSessionEndpoint(
     IGatewayIamAuthClient iam,
     IGatewayAuthorizationClient auth,
     IGatewayFileStorageClient files)
-    : AuthorizedProxyEndpoint<CompleteUploadSessionRequest, FileMetadataResponse>(
+    : AuthorizedProxyEndpoint<ConsoleCompleteUploadSessionRequest, FileMetadataResponse>(
         iam,
         auth,
         GatewayPermissions.FilesUpload)
 {
     protected override Task<FileMetadataResponse> ForwardAsync(
-        string bearerToken,
-        CompleteUploadSessionRequest request,
-        CancellationToken cancellationToken) =>
-        files.CompleteUploadSessionAsync(Route<string>("uploadSessionId")!, request, cancellationToken);
+        AuthorizedProxyRequestContext context,
+        ConsoleCompleteUploadSessionRequest request,
+        CancellationToken cancellationToken)
+    {
+        // 将本地 request 映射到共享 Contracts，添加 principal 的 org/env
+        var contractRequest = new CompleteUploadSessionRequest(
+            context.Principal.OrganizationId,
+            context.Principal.EnvironmentId,
+            request.FilePurpose,
+            request.Checksum,
+            request.SizeBytes);
+        return files.CompleteUploadSessionAsync(
+            Route<string>("uploadSessionId")!,
+            contractRequest,
+            cancellationToken);
+    }
 }
 
 [Tags("Console Files")]
@@ -205,7 +242,7 @@ public sealed class CreateConsoleFileDownloadGrantEndpoint(
         GatewayPermissions.FilesDownloadGrantsCreate)
 {
     protected override Task<DownloadGrantResponse> ForwardAsync(
-        string bearerToken,
+        AuthorizedProxyRequestContext context,
         CreateDownloadGrantRequest request,
         CancellationToken cancellationToken) =>
         files.CreateDownloadGrantAsync(Route<string>("fileId")!, request, cancellationToken);

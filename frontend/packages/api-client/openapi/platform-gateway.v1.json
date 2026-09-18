@@ -1621,12 +1621,12 @@
         ],
         "operationId": "createConsoleFileUploadSession",
         "requestBody": {
-          "x-name": "CreateUploadSessionRequest",
+          "x-name": "ConsoleCreateUploadSessionRequest",
           "description": "",
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/NervIIPContractsFileStorageCreateUploadSessionRequest"
+                "$ref": "#/components/schemas/NervIIPPlatformGatewayWebEndpointsFilesConsoleCreateUploadSessionRequest"
               }
             }
           },
@@ -1676,12 +1676,12 @@
           }
         ],
         "requestBody": {
-          "x-name": "CompleteUploadSessionRequest",
+          "x-name": "ConsoleCompleteUploadSessionRequest",
           "description": "",
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/NervIIPContractsFileStorageCompleteUploadSessionRequest"
+                "$ref": "#/components/schemas/NervIIPPlatformGatewayWebEndpointsFilesConsoleCompleteUploadSessionRequest"
               }
             }
           },
@@ -4106,16 +4106,10 @@
           }
         }
       },
-      "NervIIPContractsFileStorageCreateUploadSessionRequest": {
+      "NervIIPPlatformGatewayWebEndpointsFilesConsoleCreateUploadSessionRequest": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "organizationId": {
-            "type": "string"
-          },
-          "environmentId": {
-            "type": "string"
-          },
           "owner": {
             "$ref": "#/components/schemas/NervIIPContractsFileStorageOwnerReference"
           },
@@ -4220,16 +4214,10 @@
           }
         }
       },
-      "NervIIPContractsFileStorageCompleteUploadSessionRequest": {
+      "NervIIPPlatformGatewayWebEndpointsFilesConsoleCompleteUploadSessionRequest": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "organizationId": {
-            "type": "string"
-          },
-          "environmentId": {
-            "type": "string"
-          },
           "filePurpose": {
             "type": "string"
           },

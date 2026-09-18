@@ -21,7 +21,7 @@ public abstract class AuthorizedProxyEndpoint<TRequest, TResponse>(
             permissionCode,
             async (context, cancellationToken) =>
             {
-                var response = await ForwardAsync(context.BearerToken, req, cancellationToken);
+                var response = await ForwardAsync(context, req, cancellationToken);
                 await ResponseDataEndpointResults.WriteDataAsync(
                     HttpContext,
                     StatusCodes.Status200OK,
@@ -31,7 +31,7 @@ public abstract class AuthorizedProxyEndpoint<TRequest, TResponse>(
             ct);
 
     protected abstract Task<TResponse> ForwardAsync(
-        string bearerToken,
+        AuthorizedProxyRequestContext context,
         TRequest request,
         CancellationToken cancellationToken);
 }
