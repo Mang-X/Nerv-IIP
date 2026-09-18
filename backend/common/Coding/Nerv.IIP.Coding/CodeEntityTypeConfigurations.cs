@@ -79,7 +79,7 @@ public static class CodingModelBuilderExtensions
         builder.Property(x => x.EnvironmentId).HasColumnName("environment_id").IsRequired().HasMaxLength(100).HasComment("Environment scope for the idempotency key.");
         builder.Property(x => x.RuleKey).HasColumnName("rule_key").IsRequired().HasMaxLength(100).HasComment("Code rule key governed by the idempotency key.");
         builder.Property(x => x.IdempotencyKey).HasColumnName("idempotency_key").IsRequired().HasMaxLength(CodeIdempotencyKey.IdempotencyKeyMaxLength).HasComment("Client supplied stable idempotency key for ordinary create requests.");
-        builder.Property(x => x.Code).HasColumnName("code").IsRequired().HasMaxLength(128).HasComment("Allocated business code returned for this idempotency key.");
+        builder.Property(x => x.Code).HasColumnName("code").IsRequired().HasMaxLength(CodeIdempotencyKey.CodeMaxLength).HasComment("Allocated business code returned for this idempotency key.");
         // 已知边界，未立案（#3307 实读登记）：payload_fingerprint 与 idempotency_key 一样是**原样落库**——
         // CodeAllocator.Fingerprint 是 string.Join('|', ...)，**不是摘要**。因此 1000 是对**原始拼接结果**
         // 的真上界（不像存定长摘要的列那样对原始输入零约束），而该结果的长度由**请求字段总长**决定：
