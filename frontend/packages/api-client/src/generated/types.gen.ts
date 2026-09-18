@@ -563,9 +563,7 @@ export type NervIipContractsFileStorageTransferInstructions = {
     };
 };
 
-export type NervIipContractsFileStorageCreateUploadSessionRequest = {
-    organizationId?: string;
-    environmentId?: string;
+export type NervIipPlatformGatewayWebEndpointsFilesConsoleCreateUploadSessionRequest = {
     owner?: NervIipContractsFileStorageOwnerReference;
     filePurpose?: string;
     fileName?: string;
@@ -599,9 +597,7 @@ export type NervIipContractsFileStorageFileMetadataResponse = {
     completedAtUtc?: string;
 };
 
-export type NervIipContractsFileStorageCompleteUploadSessionRequest = {
-    organizationId?: string;
-    environmentId?: string;
+export type NervIipPlatformGatewayWebEndpointsFilesConsoleCompleteUploadSessionRequest = {
     filePurpose?: string;
     checksum?: string | null;
     sizeBytes?: number | null;
@@ -1633,7 +1629,7 @@ export type GetBuildInfoEndpointResponses = {
 export type GetBuildInfoEndpointResponse = GetBuildInfoEndpointResponses[keyof GetBuildInfoEndpointResponses];
 
 export type CreateConsoleFileUploadSessionData = {
-    body: NervIipContractsFileStorageCreateUploadSessionRequest;
+    body: NervIipPlatformGatewayWebEndpointsFilesConsoleCreateUploadSessionRequest;
     path?: never;
     query?: never;
     url: '/api/console/v1/files/upload-sessions';
@@ -1660,7 +1656,7 @@ export type CreateConsoleFileUploadSessionResponses = {
 export type CreateConsoleFileUploadSessionResponse = CreateConsoleFileUploadSessionResponses[keyof CreateConsoleFileUploadSessionResponses];
 
 export type CompleteConsoleFileUploadSessionData = {
-    body: NervIipContractsFileStorageCompleteUploadSessionRequest;
+    body: NervIipPlatformGatewayWebEndpointsFilesConsoleCompleteUploadSessionRequest;
     path: {
         uploadSessionId: string;
     };
