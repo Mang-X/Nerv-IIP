@@ -10,7 +10,6 @@ BusinessMasterData 是业务平台的主数据服务，负责 SKU、单位、业
 .\nerv.ps1 bootstrap
 .\nerv.ps1 dev
 .\nerv.ps1 ports
-pwsh scripts/verify-business-master-data-realignment.ps1
 ```
 
 服务已纳入 `backend/Nerv.IIP.sln`、Aspire AppHost、`masterdata` schema catalog、IAM seed 和业务平台验证脚本。需要本地依赖时，由根 `.\nerv.ps1 dev -InfraOnly` 或 AppHost 管理 PostgreSQL/Redis/RabbitMQ/MinIO 等资源。

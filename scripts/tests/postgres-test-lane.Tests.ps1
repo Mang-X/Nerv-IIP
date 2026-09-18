@@ -716,6 +716,21 @@ try {
     $erpMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'erp-postgres-profile' -RepositoryRoot $repoRoot
     # #3278 / S5 把这个数从 24 抬到 28：来源两列的唯一索引、5 个查重位点的端到端重放、
     # 迁移 Up/Down 真跑、WOCADJ 收窄方向，各一条真库身份。
+    # #3278 / S6 再抬到 29：凭证号改分配器短号后，「同一来源单据重复触发只记一张、
+    # 且重放拿回同一个号」只能在真库上量（EF InMemory 看不见 (org, env, source_type, source_no)
+    # 那条 partial unique index），故新增 ErpJournalVoucherNoPostgresAcceptanceTests 一条真库身份。
+    # #3278 / S7 抬到 30：消费侧工单资本化凭证（位点 ④）换短号后，
+    # 「CAP 重投下只记一张 + 幂等键真落库 + 再取一次号拿回同一个」三件事同时依赖
+    # 分配器的 EfCoreCodeStore 落库与两条唯一索引，EF InMemory 两样都看不见；
+    # 该用例写在已有的 ErpCostAccountingPostgresAcceptanceTests 里（工单资本化属成本核算），
+    # 所以是老类加一条身份，不新增 Fact 属性也不新增策略规则。
+    # #3278 / S8 降回 28：ErpVoucherNoPolicy.Compose 退役后，绑在它身上的两条真库身份
+    # （PostgreSQL_saturated_derived_voucher_numbers_persist_where_the_pre_change_shape_overflows /
+    # PostgreSQL_distinct_sources_never_collapse_onto_one_voucher_number）要证的对象已不存在：
+    # 前者证「派生串顶格会 22001 而兜底产出落得进去」，后者证「不同来源的派生串不塌成同号」。
+    # 生产侧已无任何派生凭证号，两条一并删除；voucher_no 那条唯一索引改由
+    # ErpJournalVoucherNoPostgresAcceptanceTests 与 PostgreSQL_dedup_sites_key_on_the_source_document_*
+    # 在来源键那一面承担。⛔ 这是「要证的事没了」，不是「测试碍事」。
     Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 28) 'The ERP member must freeze exactly its twenty-eight PostgreSQL identities.'
     Assert-Contract ([string]::Equals([string]$erpMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) 'ERP keeps runner-owned databases for failure diagnostics.'
     $acceptanceMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'acceptance-postgres-profile' -RepositoryRoot $repoRoot

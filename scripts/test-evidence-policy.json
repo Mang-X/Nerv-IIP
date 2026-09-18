@@ -104,6 +104,12 @@
       "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL ERP cost-accounting acceptance test\\.\";$"
     },
     {
+      "id": "erp-journal-voucher-no",
+      "sourcePath": "backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/ErpJournalVoucherNoPostgresAcceptanceTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL ERP journal voucher number allocation acceptance test\\.\";$"
+    },
+    {
       "id": "erp-purchase-receipt-route",
       "sourcePath": "backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/PurchaseReceiptPostingRoutePostgresTests.cs",
       "sourceOrdinal": 1,
@@ -1570,11 +1576,11 @@
       "expiresOn": null,
       "exitCondition": null,
       "testIdentities": [
+        "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_capitalization_voucher_number_comes_from_the_allocator_and_survives_cap_redelivery",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_capitalized_settlement_reads_back_balanced_voucher_and_unique_lineage_indexes",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_closed_period_stays_replayable_then_reopen_posts_machine_overhead_exactly_once",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_concurrent_report_and_actual_settlement_leave_only_actual_labor_active",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_dedup_sites_key_on_the_source_document_even_when_the_voucher_number_differs",
-        "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_distinct_sources_never_collapse_onto_one_voucher_number",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_fault_after_save_rolls_back_settlement_inbox_lineage_and_cost",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_machine_overhead_reads_translate_and_isolate_work_order_period_and_scope",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_migration_backfills_legacy_rate_and_enforces_revision_indexes",
@@ -1584,7 +1590,6 @@
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_priced_labor_then_zero_not_applicable_machine_settle_and_void_do_not_freeze_machine_currency",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_rejects_duplicate_settlement_void_and_covered_report_without_half_commit",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_rework_origin_arriving_after_cost_events_stays_isolated_and_queryable",
-        "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_saturated_derived_voucher_numbers_persist_where_the_pre_change_shape_overflows",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_second_concurrent_rate_command_blocks_then_observes_committed_revision",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_source_document_columns_round_trip_and_survive_up_down_up",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_source_document_unique_index_blocks_a_second_row_for_the_same_source",
@@ -1596,7 +1601,26 @@
         "Nerv.IIP.Business.Erp.Web.Tests.WorkCenterMachineOverheadRatePostgresAcceptanceTests.Http_configuration_and_audit_preserve_scope_revision_and_derived_rates_on_postgres",
         "Nerv.IIP.Business.Erp.Web.Tests.WorkCenterMachineOverheadRatePostgresAcceptanceTests.Migration_persists_monthly_rate_and_enforces_scope_period_revision_on_postgres"
       ],
-      "expectedRuntimeTestCount": 25
+      "expectedRuntimeTestCount": 24
+    },
+    {
+      "id": "erp-journal-voucher-no",
+      "sourceId": "erp-journal-voucher-no",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Erp\\.Web\\.Tests\\.ErpJournalVoucherNoPostgresAcceptanceTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL ERP journal voucher number allocation acceptance test\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Erp.Web.Tests.ErpJournalVoucherNoPostgresAcceptanceTests.PostgreSQL_repeated_commands_for_the_same_source_document_record_one_voucher_each"
+      ],
+      "expectedRuntimeTestCount": 1
     },
     {
       "id": "erp-purchase-receipt-route",

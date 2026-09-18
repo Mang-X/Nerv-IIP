@@ -197,6 +197,27 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
         Assert.Single(await dbContext.UploadSessions.ToListAsync());
     }
 
+    [Theory]
+    [InlineData("other-service", "shift-handover-attachment")]
+    [InlineData("business-mes", "other-owner")]
+    [InlineData("Business-Mes", "shift-handover-attachment")]
+    public async Task CreateShiftHandoverPhotoUpload_WrongOwner_IsRejected(
+        string ownerService,
+        string ownerType)
+    {
+        await using var dbContext = CreateEfCoreInMemoryDbContext();
+        var service = FileStorageServiceTestFactory.Create(dbContext, configuration: FileStorageTestConfiguration.Default);
+        var request = CreateShiftHandoverPhotoUploadRequest();
+
+        var result = await service.CreateUploadSessionAsync(
+            request with { Owner = request.Owner with { OwnerService = ownerService, OwnerType = ownerType } },
+            CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status400BadRequest, result.StatusCode);
+        Assert.Equal("File owner is not allowed for purpose 'shift-handover-photo'.", result.Error?.Message);
+        Assert.Empty(await dbContext.UploadSessions.ToListAsync());
+    }
+
     [Fact]
     public async Task CreateBarcodeLabelTemplateUpload_AboveSixtyFourKiB_IsRejected()
     {
@@ -862,6 +883,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
                 "prod",
                 "notification-attachment",
                 "user-001",
+                null,
                 now.AddHours(-3),
                 now,
                 "available",
@@ -903,7 +925,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
         var service = FileStorageServiceTestFactory.Create(dbContext, configuration: FileStorageTestConfiguration.Default);
 
         var result = await service.ListFilesAsync(
-            new ListFilesRequest("org-001", "prod", null, null, null, null, null, Skip: 0, Take: 500),
+            new ListFilesRequest("org-001", "prod", null, null, null, null, null, null, Skip: 0, Take: 500),
             CancellationToken.None);
 
         Assert.Equal(StatusCodes.Status200OK, result.StatusCode);
@@ -1346,6 +1368,192 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
     }
 
     [Fact]
+    public async Task ListFiles_OwnerId_EquivalentToUploaderId_SameOwnerIdValue()
+    {
+        // Verify ownerId and uploaderId parameters return identical results
+        // when both contain the same owner_id value.
+        await using var dbContext = CreateEfCoreInMemoryDbContext();
+        var service = FileStorageServiceTestFactory.Create(dbContext, configuration: FileStorageTestConfiguration.Default);
+        var now = DateTimeOffset.UtcNow;
+
+        // Setup: Add multiple files with different owners
+        dbContext.StoredFiles.AddRange(
+            StoredFileRecord.Create(
+                "file-001",
+                "org-001",
+                "prod",
+                "service-a",
+                "order",
+                "order-001",  // owner_id = "order-001"
+                "attachment",
+                "doc1.pdf",
+                "application/pdf",
+                1024,
+                "sha256:test1",
+                "org-001/file-001",
+                "available",
+                now.AddHours(-1),
+                now),
+            StoredFileRecord.Create(
+                "file-002",
+                "org-001",
+                "prod",
+                "service-b",
+                "inventory",
+                "inv-002",  // owner_id = "inv-002"
+                "attachment",
+                "doc2.pdf",
+                "application/pdf",
+                2048,
+                "sha256:test2",
+                "org-001/file-002",
+                "available",
+                now.AddHours(-1),
+                now),
+            StoredFileRecord.Create(
+                "file-003",
+                "org-001",
+                "prod",
+                "service-a",
+                "order",
+                "order-001",  // owner_id = "order-001" (same as file-001)
+                "notification",
+                "note.txt",
+                "text/plain",
+                512,
+                "sha256:test3",
+                "org-001/file-003",
+                "available",
+                now.AddHours(-1),
+                now));
+        await dbContext.SaveChangesAsync();
+
+        // Query using uploaderId parameter
+        var uploadByIdResult = await service.ListFilesAsync(
+            new ListFilesRequest(
+                "org-001",
+                "prod",
+                null,  // filePurpose
+                "order-001",  // uploaderId
+                null,  // ownerId
+                null,  // createdFromUtc
+                null,  // createdToUtc
+                null,  // status
+                null,  // skip
+                null),  // take
+            CancellationToken.None);
+
+        // Query using ownerId parameter
+        var ownByIdResult = await service.ListFilesAsync(
+            new ListFilesRequest(
+                "org-001",
+                "prod",
+                null,  // filePurpose
+                null,  // uploaderId
+                "order-001",  // ownerId
+                null,  // createdFromUtc
+                null,  // createdToUtc
+                null,  // status
+                null,  // skip
+                null),  // take
+            CancellationToken.None);
+
+        // Both queries should return identical results
+        Assert.Equal(StatusCodes.Status200OK, uploadByIdResult.StatusCode);
+        Assert.Equal(StatusCodes.Status200OK, ownByIdResult.StatusCode);
+        Assert.NotNull(uploadByIdResult.Value);
+        Assert.NotNull(ownByIdResult.Value);
+
+        // Both should return 2 files (file-001 and file-003 have owner_id = "order-001")
+        Assert.Equal(2, uploadByIdResult.Value.Total);
+        Assert.Equal(2, ownByIdResult.Value.Total);
+        Assert.Equal(2, uploadByIdResult.Value.Items.Count);
+        Assert.Equal(2, ownByIdResult.Value.Items.Count);
+
+        // Verify exact same file IDs in same order
+        var uploadIds = uploadByIdResult.Value.Items.Select(f => f.FileId).OrderBy(id => id).ToList();
+        var ownIds = ownByIdResult.Value.Items.Select(f => f.FileId).OrderBy(id => id).ToList();
+        Assert.Equal(uploadIds, ownIds);
+
+        // Verify each file has the correct owner_id
+        foreach (var file in uploadByIdResult.Value.Items)
+        {
+            Assert.Equal("order-001", file.Owner.OwnerId);
+        }
+        foreach (var file in ownByIdResult.Value.Items)
+        {
+            Assert.Equal("order-001", file.Owner.OwnerId);
+        }
+    }
+
+    [Fact]
+    public async Task ListFiles_ConflictingOwnerIdAndUploaderId_ReturnsEmptySet()
+    {
+        // Verify owner裁定：当 uploaderId 和 ownerId 同时提供且取值不同时，
+        // 两条独立 .Where 条件矛盾，应返回空集。
+        await using var dbContext = CreateEfCoreInMemoryDbContext();
+        var service = FileStorageServiceTestFactory.Create(dbContext, configuration: FileStorageTestConfiguration.Default);
+        var now = DateTimeOffset.UtcNow;
+
+        // Reuse夹具：file-001/file-003 owner_id="order-001"，file-002 owner_id="inv-002"
+        dbContext.StoredFiles.AddRange(
+            StoredFileRecord.Create(
+                "file-001",
+                "org-001",
+                "prod",
+                "service-a",
+                "order",
+                "order-001",
+                "attachment",
+                "doc1.pdf",
+                "application/pdf",
+                1024,
+                "sha256:test1",
+                "org-001/file-001",
+                "available",
+                now.AddHours(-1),
+                now),
+            StoredFileRecord.Create(
+                "file-002",
+                "org-001",
+                "prod",
+                "service-b",
+                "inventory",
+                "inv-002",
+                "attachment",
+                "doc2.pdf",
+                "application/pdf",
+                2048,
+                "sha256:test2",
+                "org-001/file-002",
+                "available",
+                now.AddHours(-1),
+                now));
+        await dbContext.SaveChangesAsync();
+
+        // 查询：uploaderId=order-001, ownerId=inv-002（取值不同）
+        var conflicting = await service.ListFilesAsync(
+            new ListFilesRequest(
+                "org-001",
+                "prod",
+                null,           // filePurpose
+                "order-001",    // uploaderId
+                "inv-002",      // ownerId —— 与 uploaderId 取值不同
+                null,           // createdFromUtc
+                null,           // createdToUtc
+                null,           // status
+                null,           // skip
+                null),          // take
+            CancellationToken.None);
+
+        // owner裁定：两条独立 .Where 条件矛盾 ⇒ 返回空集
+        Assert.Equal(StatusCodes.Status200OK, conflicting.StatusCode);
+        Assert.NotNull(conflicting.Value);
+        Assert.Equal(0, conflicting.Value.Total);              // total 也必须是 0
+        Assert.Empty(conflicting.Value.Items);
+    }
+
+    [Fact]
     public async Task CreateDownloadGrant_InsertsDownloadGrantRecord()
     {
         await using var dbContext = CreateEfCoreInMemoryDbContext();
@@ -1551,7 +1759,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
         return new CreateUploadSessionRequest(
             "org-001",
             "prod",
-            new OwnerReference("business-mes", "shift-handover", "SH-0001"),
+            new OwnerReference("business-mes", "shift-handover-attachment", "SH-0001"),
             "shift-handover-photo",
             "handover.jpg",
             "image/jpeg",

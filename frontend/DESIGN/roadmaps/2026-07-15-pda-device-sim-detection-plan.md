@@ -22,8 +22,8 @@ PDA 域「真机」的既定口径（MAN-457 owner 裁决）= **目标 PDA 硬�
 1. **L0 jsdom 单元/组件测试** —— 快，但测不到布局/焦点/导航。
 2. **L1 Playwright e2e（全 mock）** —— `page.route` mock 网关、`seedStoredSession` 注入会话，
    移动视口 390×844，无需后端。实际规模为 **5 个 spec / 25 个用例**（app-flow、ui-mobile、
-   wms、mes、equipment）；`mobile-pda-testing-and-smoke.md` 仍写「2 spec / 9 用例」，
-   该文档需随本方案 M1 一并更新。
+   wms、mes、equipment）；旧 `mobile-pda-testing-and-smoke.md` 曾写「2 spec / 9 用例」，
+   该文档已拆分，当前 `docs/reference/testing/mobile-pda-inventory.md`（producer 导航，不维护 spec 计数）不再需要同步这个数字。
 3. **L4 真机手动冒烟清单** —— 需要实体 PDA + APK + 扫码枪，长期无法执行。
 
 **断层在 L1 与 L4 之间**：既没有「真实后端 + 高保真设备仿真」的可重复层，也没有
@@ -225,7 +225,7 @@ PR body 固定声明格式：`走查层级：L2（真实栈仿真）｜证据：
   组件契约测试 + gallery `:active` 失败样本修复 + 消费页 `active` 全扫。
 - **M1b（live harness 骨架）**：`playwright.live.config.ts` + `simulateScanGun`（仅以 `Enter` 键结束）+
   真实登录 + quality 链路 1 条**只读** live spec + `pda-live-walkthrough.ps1` +
-  更新 `mobile-pda-testing-and-smoke.md`（含 5 spec/25 用例基线纠偏）。
+  核对 `docs/reference/testing/mobile-pda-inventory.md`（producer 导航，不维护 spec 计数，无需另行纠偏）。
 - **M1c（写路径）**：1 条真实写路径 live spec：提交 + 幂等语义捕获（本链路无显式幂等键，
   同请求重放断言返回同一实体 id）+ 后端状态回读。
 - **M2**：网络仿真拆分 spec（offline / 慢网 / 整体挂起 / headers-后-body-stall，短超时注入

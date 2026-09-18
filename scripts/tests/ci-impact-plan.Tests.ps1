@@ -146,11 +146,11 @@ function Assert-ConditionalRoutingWorkflow {
         'openapi-client-drift' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false') }}"
         'postgres-provider-tests' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.postgresql != 'false') }}"
         'redis-cap-transport-tests' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.redis_cap != 'false') }}"
-        'script-governance' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false') }}"
+        'script-governance' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false' || needs.impact-plan.outputs.infra != 'false' || needs.impact-plan.outputs.docs != 'false') }}"
     }
 
     $impactPlan = $parsedWorkflow.jobs.PSObject.Properties['impact-plan'].Value
-    foreach ($outputName in @('scripts', 'backend', 'connector_hosts', 'openapi_codegen', 'postgresql', 'redis_cap', 'full_chain')) {
+    foreach ($outputName in @('scripts', 'backend', 'connector_hosts', 'openapi_codegen', 'postgresql', 'redis_cap', 'full_chain', 'infra', 'docs')) {
         $outputProperty = $impactPlan.outputs.PSObject.Properties[$outputName]
         Assert-Contract ($null -ne $outputProperty) "Impact plan must declare routed output '$outputName'."
         $expectedOutput = '${{ steps.plan.outputs.' + $outputName + ' }}'

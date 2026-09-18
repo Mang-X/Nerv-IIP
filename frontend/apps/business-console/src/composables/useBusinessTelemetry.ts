@@ -681,7 +681,8 @@ async function mapWithConcurrency<T, R>(
  * pool + generation/AbortController lifecycle) that the declarative `useQuery` model cannot express, so it
  * calls the generated read function directly — the same on-demand raw-sdk pattern already used by other
  * composables (e.g. useBusinessMes material-issue/finished-goods reads, useCodeRules preview). Declarative
- * list/detail reads elsewhere still go through Pinia Colada per frontend-structure.md.
+ * list/detail reads elsewhere still go through Pinia Colada per
+ * docs/architecture/frontend/workspace-structure.md ("路由、页面与状态边界").
  */
 export function useMaintenancePlanRuntimeRemaining(plans: Ref<RuntimeRemainingPlan[]>) {
   const businessContext = useBusinessContextStore()

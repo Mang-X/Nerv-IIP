@@ -667,14 +667,19 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
-// Inventory 盘点调整审批链（HttpStockCountApprovalClient）与 ProductEngineering 工程审批校验
-// （HttpEngineeringApprovalVerifier）都通过 HTTP 访问 Approval；Approval 声明晚于二者，
+// Inventory 盘点调整审批链（HttpStockCountApprovalClient）、ProductEngineering 工程审批校验
+// （HttpEngineeringApprovalVerifier）与 Mes 工序开工审批（HttpMesOperationTaskStartApprovalClient）
+// 都通过 HTTP 访问 Approval；Approval 声明晚于三者，
 // 只能在此回填端点环境变量，否则 ephemeral 会话回退固定端口 5114 必打错端口。
 businessInventory = businessInventory
     .WithEnvironment("Approval__BaseUrl", businessApproval.GetEndpoint("http"))
     .WithReference(businessApproval)
     .WaitFor(businessApproval);
 businessProductEngineering = businessProductEngineering
+    .WithEnvironment("Approval__BaseUrl", businessApproval.GetEndpoint("http"))
+    .WithReference(businessApproval)
+    .WaitFor(businessApproval);
+businessMes = businessMes
     .WithEnvironment("Approval__BaseUrl", businessApproval.GetEndpoint("http"))
     .WithReference(businessApproval)
     .WaitFor(businessApproval);
@@ -841,6 +846,11 @@ var businessScheduling = WithNervIipTelemetry(WithAppHostEnvironment(builder.Add
     .WithEnvironment("Mes__BaseUrl", businessMes.GetEndpoint("http"))
     .WithEnvironment("IndustrialTelemetry__BaseUrl", businessIndustrialTelemetry.GetEndpoint("http"))
     .WithEnvironment("Maintenance__BaseUrl", businessMaintenance.GetEndpoint("http"))
+    // 订单紧急度留存归档（HttpOrderUrgencyArchiveStore）把归档体 POST 给 FileStorage。它直接读
+    // Configuration["FileStorage:BaseUrl"] 设 HttpClient.BaseAddress（Scheduling.Web/Program.cs:114），
+    // 未走 InternalServiceBaseAddress.Resolve*，因此基址门禁的需求集枚举不到它——删掉这行门禁照绿
+    // （实测：UnexemptedViolations 仍为 0），而 OrderUrgencyArchiveClient.cs:55 会在运行时抛
+    // 「FileStorage:BaseUrl is required for urgency retention.」。
     .WithEnvironment("FileStorage__BaseUrl", fileStorage.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     // 排产工作台的 L1 背景历史引擎（排程方案 / 资源负荷 / 冲突 / 订单紧急度）。
@@ -879,7 +889,6 @@ var gateway = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Pro
     .WithEnvironment("Security__Cors__AllowedOrigins", gatewayCorsAllowedOrigins)
     .WithEnvironment("Ops__BaseUrl", ops.GetEndpoint("http"))
     .WithEnvironment("Notification__BaseUrl", notification.GetEndpoint("http"))
-    .WithEnvironment("ProductEngineering__BaseUrl", businessProductEngineering.GetEndpoint("http"))
     // PlatformGateway 的控制台文件面缺这行，客户端回落到固定端口 5104：ephemeral 会话上打不到本会话的
     // file-storage，落到端口 5104 上碰巧存在的另一套栈时会拿到 401（该栈的内部令牌是另一个随机值）。
     .WithEnvironment("FileStorage__BaseUrl", fileStorage.GetEndpoint("http"))
@@ -922,6 +931,11 @@ var gateway = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Pro
     .WaitFor(businessErp)
     .WaitFor(businessScheduling)
     .WaitFor(redis);
+// 控制台日志查询面（ConsoleLogEndpoints）经 AddVictoriaLogsClient 读 VictoriaLogsOptions.FromConfiguration，
+// 后者直接读 Configuration["VictoriaLogs:BaseUrl"]（NervIipObservability.cs:359），未走
+// InternalServiceBaseAddress.Resolve*，因此基址门禁的需求集枚举不到它——删掉这行门禁照绿（实测：
+// UnexemptedViolations 仍为 0）。缺这行时该方回落到内置的 http://victoria-logs:9428，那是容器网络里的
+// 名字，而 gateway 是 AddProject 的宿主进程，拿不到本会话 victoria-logs 容器实际映射出的端口。
 if (victoriaLogs is not null)
 {
     gateway = gateway

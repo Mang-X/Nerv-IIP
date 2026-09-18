@@ -11,6 +11,7 @@ namespace Nerv.IIP.PlatformGateway.Web.Endpoints.Files;
 public sealed record ConsoleListFilesRequest(
     string? FilePurpose,
     string? UploaderId,
+    string? OwnerId,
     DateTimeOffset? CreatedFromUtc,
     DateTimeOffset? CreatedToUtc,
     string? Status,
@@ -139,6 +140,7 @@ public sealed class ListConsoleFilesEndpoint(
                     environmentId,
                     req.FilePurpose,
                     req.UploaderId,
+                    req.OwnerId,
                     req.CreatedFromUtc,
                     req.CreatedToUtc,
                     req.Status,
