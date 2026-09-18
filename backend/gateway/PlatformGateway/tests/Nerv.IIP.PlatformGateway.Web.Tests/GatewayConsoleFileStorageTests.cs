@@ -81,21 +81,21 @@ public sealed class GatewayConsoleFileStorageTests
     }
 
     [Fact]
-    public async Task Complete_upload_session_overrides_body_org_env_with_principal_values()
+    public async Task Complete_upload_session_maps_console_request_to_contract_with_principal_org_env()
     {
         var files = new FakeGatewayFileStorageClient();
         var auth = FakeGatewayAuthorizationClient.Allowed();
         await using var factory = CreateFactory(files, auth);
         using var request = AuthorizedRequest(HttpMethod.Post, "/api/console/v1/files/upload-sessions/upload-session-001/complete");
-        // 发送的 body 中 org/env 与 principal（来自 token）不一致
-        request.Content = JsonContent.Create(new CompleteUploadSessionRequest("ORG-001", "PROD", "notification-attachment"));
+        // 端点接收本地 console request（不含 org/env），映射到共享 contract 时添加 principal org/env
+        request.Content = JsonContent.Create(new ConsoleCompleteUploadSessionRequest("notification-attachment"));
 
         var response = await factory.CreateClient().SendAsync(request);
 
         response.EnsureSuccessStatusCode();
         var body = await ReadResponseDataAsync<FileMetadataResponse>(response);
         Assert.Equal("file-001", body.FileId);
-        // 验证转发给 FileStorage 的 org/env 是 principal 的值（小写），而非 body 中的值（大写）
+        // 验证转发给 FileStorage 的 contract request 正确填充了 principal org/env
         Assert.NotNull(files.LastCompleteRequest);
         Assert.Equal("org-001", files.LastCompleteRequest.OrganizationId);
         Assert.Equal("env-dev", files.LastCompleteRequest.EnvironmentId);
