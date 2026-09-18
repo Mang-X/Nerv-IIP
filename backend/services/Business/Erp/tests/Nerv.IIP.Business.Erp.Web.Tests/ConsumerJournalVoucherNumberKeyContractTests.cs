@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore.Metadata;
 using Nerv.IIP.Business.Erp.Domain;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
+using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Coding;
 
@@ -19,6 +20,12 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 /// 而 <c>journal_vouchers.source_no</c> 列宽 150、<c>source_type</c> 列宽 32。
 /// 「<c>{类型}:{单号}</c>」这种可读拼法的上界是 183 &gt; 150，顶格来源单号落库就是 PostgreSQL <c>22001</c>——
 /// 与 #3229 同形。本类把上界从**两侧 EF 模型**读出来对撞，任一侧单边加宽/收窄即红。
+/// </para>
+/// <para>
+/// ⭐ <b>本类是键文法冻结向量的唯一住所</b>（#3278 收口后）：S6/S7 曾各自实现一份键派生并各冻一套向量，
+/// 派生已收拢到 <see cref="JournalVoucherNoAllocation"/> 一份，本类的
+/// <see cref="Digest_input_is_frozen_by_golden_vectors"/> 是保留下来的那套外部锚。
+/// ⛔ 本类的类名仍叫 Consumer 是因为其余各条打的是消费侧上界，键文法那一条打的是那份**共用**派生。
 /// </para>
 /// <para>
 /// <b>本类不证明什么</b>：⛔ 不证明「所有凭证号都走分配器」（那需要源码扫描，owner 已在 #3231 裁定不再建）；
@@ -49,13 +56,13 @@ public sealed class ConsumerJournalVoucherNumberKeyContractTests
             Assert.True(
                 key.Length <= keyWidth,
                 $"Source type '{sourceType.Code}' produced a {key.Length}-char idempotency key; column holds {keyWidth}.");
-            Assert.StartsWith(ConsumerJournalVoucherNumber.KeyPrefix + sourceType.Code + ":", key, StringComparison.Ordinal);
+            Assert.StartsWith(JournalVoucherNoAllocation.KeyPrefix + sourceType.Code + ":", key, StringComparison.Ordinal);
         }
 
         // 类型上界：族码顶格（列宽 32）时也塞得下。这一格与上面的逐族枚举不同轴——
         // 逐族跑的是**今天登记的**码值，这一格跑的是**列允许的**最宽码值。
         Assert.True(
-            ConsumerJournalVoucherNumber.KeyPrefix.Length + sourceTypeWidth + 1 + ConsumerJournalVoucherNumber.DigestLength <= keyWidth);
+            JournalVoucherNoAllocation.KeyPrefix.Length + sourceTypeWidth + 1 + JournalVoucherNoAllocation.DigestLength <= keyWidth);
     }
 
     /// <summary>
@@ -72,7 +79,7 @@ public sealed class ConsumerJournalVoucherNumberKeyContractTests
         Assert.Equal(shortKey.Length, longKey.Length);
         Assert.NotEqual(shortKey, longKey);
         Assert.Equal(
-            ConsumerJournalVoucherNumber.KeyPrefix.Length + sourceType.Code.Length + 1 + ConsumerJournalVoucherNumber.DigestLength,
+            JournalVoucherNoAllocation.KeyPrefix.Length + sourceType.Code.Length + 1 + JournalVoucherNoAllocation.DigestLength,
             shortKey.Length);
     }
 
@@ -83,8 +90,8 @@ public sealed class ConsumerJournalVoucherNumberKeyContractTests
     public void Segment_split_does_not_collapse_two_different_sources_onto_one_key()
     {
         // 裸拼 "{类型码}{单号}" 时这两组完全相同："WOC"+"ADJ-1" 与 "WOCADJ"+"-1"。
-        var left = ConsumerJournalVoucherNumber.CanonicalKey(JournalVoucherSourceType.WorkOrderCapitalization, "ADJ-1");
-        var right = ConsumerJournalVoucherNumber.CanonicalKey(JournalVoucherSourceType.WorkOrderCostAdjustment, "-1");
+        var left = JournalVoucherNoAllocation.CanonicalKey(JournalVoucherSourceType.WorkOrderCapitalization, "ADJ-1");
+        var right = JournalVoucherNoAllocation.CanonicalKey(JournalVoucherSourceType.WorkOrderCostAdjustment, "-1");
         Assert.Equal(
             JournalVoucherSourceType.WorkOrderCapitalization.Code + "ADJ-1",
             JournalVoucherSourceType.WorkOrderCostAdjustment.Code + "-1");
@@ -112,13 +119,13 @@ public sealed class ConsumerJournalVoucherNumberKeyContractTests
 
     /// <summary>
     /// 摘要的**输入成分**由冻结黄金向量钉死：hex 由外部独立实现（Python <c>hashlib</c>）算出后硬编码，
-    /// ⛔ 不是先用 <see cref="ConsumerJournalVoucherNumber.Digest"/> 求值再用同一个 <c>Digest</c> 复算。
+    /// ⛔ 不是先用 <see cref="JournalVoucherNoAllocation.Digest"/> 求值再用同一个 <c>Digest</c> 复算。
     /// </summary>
     /// <remarks>
     /// <para>
     /// ⭐ <b>这一条打的轴是「摘要输入里有什么」，与本类其余各条（形状 / 长度 / 互异）都不同轴。</b>
     /// 复审实测：本 PR 首轮那 17 格变异**没有一格**打在这条轴上——往
-    /// <see cref="ConsumerJournalVoucherNumber.CanonicalKey"/> 里掺一个
+    /// <see cref="JournalVoucherNoAllocation.CanonicalKey"/> 里掺一个
     /// <c>DateTime.UtcNow:yyyyMMdd</c>，<c>Erp.Web.Tests</c> + 真 PostgreSQL **零红**、
     /// <c>FullChain</c> + 真 PostgreSQL **零红**，全格存活。
     /// </para>
@@ -158,10 +165,10 @@ public sealed class ConsumerJournalVoucherNumberKeyContractTests
     {
         var sourceType = Assert.Single(JournalVoucherSourceType.All, x => x.Code == sourceTypeCode);
 
-        Assert.Equal(expectedDigest, ConsumerJournalVoucherNumber.Digest(sourceType, sourceNo));
-        // 前缀写**字面量** "jv:"，⛔ 不引用 ConsumerJournalVoucherNumber.KeyPrefix——
-        // 引用常量时改常量会让两侧同时移动（自指），实测：把 KeyPrefix 改成 "zz:" 时本条不红。
-        // 而前缀正是 S6/S7 两侧统一文法所依赖的那一维，它必须被外部锚钉住。
+        Assert.Equal(expectedDigest, JournalVoucherNoAllocation.Digest(sourceType, sourceNo));
+        // 前缀写**字面量** "jv:"，⛔ 不引用 JournalVoucherNoAllocation.KeyPrefix——
+        // 引用常量时改常量会让期望值与被测值同时移动（自指），实测：把 KeyPrefix 改成 "zz:" 时本条不红。
+        // 前缀是键文法的一维，必须被**外部锚**钉住，⛔ 不能由被测源码自己提供期望值。
         Assert.Equal(
             $"jv:{sourceTypeCode}:{expectedDigest}",
             ConsumerJournalVoucherNumber.IdempotencyKeyOf(sourceType, sourceNo));

@@ -37,9 +37,13 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 /// </para>
 ///
 /// <para>
-/// ⭐ 本类还有一条轴：**跨席位键文法冻结**（与 S7 的 <c>ConsumerJournalVoucherNumber</c> 逐字一致，
-/// 差一个字节就会在合并后撞 23505 / <c>ToReplay</c> 的 <c>KnownException</c>）。
-/// ⛔ <b>本类不再断言「客户端可写键与派生键值域不相交」</b>——那条曾经写在这里，
+/// ⛔ <b>本类不再有「跨席位键文法冻结」那条轴</b>（#3278 收口）：S6/S7 曾各自实现一份键派生，
+/// 那条轴要防的是**两份副本漂移**。派生已收拢成 <see cref="JournalVoucherNoAllocation"/> 一份，
+/// 漂移在结构上不可能发生 ⇒ 不变量本身消失，不是被降级。键文法本身（前缀 / 长度前缀 / U+001F /
+/// SHA-256 / 大写十六进制）现由 <c>ConsumerJournalVoucherNumberKeyContractTests</c>
+/// <c>.Digest_input_is_frozen_by_golden_vectors</c> 的外部冻结向量单点承担。
+///
+/// ⛔ <b>本类也不断言「客户端可写键与派生键值域不相交」</b>——那条曾经写在这里，
 /// 但复审实测它是假的（前导空白可绕过 FluentValidation 里的前缀判据，因为
 /// <c>CodeAllocator.Normalize</c> 的 <c>Trim()</c> 跑在校验之后）。
 /// 现在的表述是「不会自然相撞」，连同三条失效方向写在
@@ -111,42 +115,6 @@ public sealed class JournalVoucherNoAllocationTests
     }
 
     /// <summary>
-    /// ⭐ 冻结跨席位键文法：本入口与 #3278 / S7 的 <c>ConsumerJournalVoucherNumber</c>
-    /// 写的是**同一条 <c>journal-voucher</c> 规则、同一张 <c>code_idempotency_keys</c> 表**，
-    /// 键形状或指纹算法差一个字节就会在合并后撞 23505 或 <c>ToReplay</c> 的 <c>KnownException</c>。
-    ///
-    /// <para><b>为什么钉字面量而不是「两边各读一遍源码」</b>：合并前两侧不在同一棵树上，编译期引用不到；
-    /// 「两个人读同一段」不是交叉验证。这里的期望值由**第三方实现**（Python <c>hashlib</c>）独立算出后冻结，
-    /// S7 侧钉同一组值 ⇒ 任一侧单边改文法即红。</para>
-    ///
-    /// <para><b>失效方向</b>：⛔ 本条只钉「本侧的串长什么样」，**不**证明 S7 那边也钉了同一组值——
-    /// 那要靠合并前把两个文件放进同一棵树里比对（已写进 PR 正文）。</para>
-    /// </summary>
-    [Fact]
-    public void Allocation_key_matches_the_frozen_cross_seat_grammar()
-    {
-        Assert.Equal("jv:", JournalVoucherNoAllocation.KeyPrefix);
-        Assert.Equal(64, JournalVoucherNoAllocation.DigestLength);
-        Assert.Equal(
-            "jv:AP:0B02CCEED7C552C8A0D028E14562E0991239C28D30734FB6532562C77519721A",
-            JournalVoucherNoAllocation.AllocationIdempotencyKey(JournalVoucherSourceType.AccountPayable, "AP-0001"));
-        Assert.Equal(
-            "jv:SUPPINV:2EED5404A45D3B0ADE26A4528F1FBF8B4CC20649C3E828B99B067D5D981EC389",
-            JournalVoucherNoAllocation.AllocationIdempotencyKey(JournalVoucherSourceType.SupplierInvoice, "INV-0001"));
-        Assert.Equal(
-            "jv:APPAY:3B3488557A0701FEF28C655D43AEE4AE3F180E097470D6854578562508B85DC4",
-            JournalVoucherNoAllocation.AllocationIdempotencyKey(JournalVoucherSourceType.PaymentExecution, "APPAY-0001"));
-
-        // 指纹取的就是键尾那个摘要 ⇒「同键不同指纹」在本入口结构上不可达。
-        foreach (var sourceType in JournalVoucherSourceType.All)
-        {
-            var digest = JournalVoucherNoAllocation.Digest(sourceType, "SRC-0001");
-            Assert.Equal(JournalVoucherNoAllocation.DigestLength, digest.Length);
-            Assert.EndsWith(digest, JournalVoucherNoAllocation.AllocationIdempotencyKey(sourceType, "SRC-0001"), StringComparison.Ordinal);
-        }
-    }
-
-    /// <summary>
     /// 键在 <c>(类型, 单号)</c> 上是单射——**钉的是机制，不是样本**。
     ///
     /// <para>摘要输入是带长度前缀、以 U+001F 分隔的规范串，所以「段划分不同但拼起来一样」的两组输入
@@ -158,13 +126,14 @@ public sealed class JournalVoucherNoAllocationTests
     ///
     /// <para>⭐ <b>鉴别力边界（如实登记，⛔ 别把本条读成「规范串构造被钉住了」）</b>：
     /// 本条打的是「键**单射**」这个**结果**，而这个结果被键里的**明文类型码**（<c>jv:{Code}:</c>）兜住 ⇒
-    /// 对**规范串内部怎么构造**几乎零鉴别力。**本席位隔离变异实测**（全量 508 条，判红数「错误消息」条数）：
-    /// 把规范串里「类型段与单号段之间」那一个分隔符从 U+001F 改成 <c>-</c> ⇒ 红 1；
-    /// 把规范串里的类型段整个丢掉 ⇒ 红 1。**两格里本条都不红**，红的都只有
-    /// <see cref="Allocation_key_matches_the_frozen_cross_seat_grammar"/> 那条冻结字面量。
-    /// ⇒ <b>跨席位文法一致性在本类里是单点承重</b>：那条冻结用例一旦被删或被改成自指复算
+    /// 对**规范串内部怎么构造**几乎零鉴别力。**隔离变异实测**（判红数「错误消息」条数）：
+    /// 把规范串里「类型段与单号段之间」那一个分隔符从 U+001F 改成 <c>-</c>、
+    /// 或把规范串里的类型段整个丢掉，**本条都不红**。
+    /// ⇒ <b>规范串构造在本程序集里是单点承重</b>，承重方是
+    /// <c>ConsumerJournalVoucherNumberKeyContractTests.Digest_input_is_frozen_by_golden_vectors</c>
+    /// 那 5 组由 Python <c>hashlib</c> 外部算出的冻结向量。那条一旦被删、或被改成自指复算
     /// （用 <c>Digest</c> 求值再用 <c>Digest</c> 复算），规范串就没有任何东西看着了。
-    /// ⛔ 不为此补假断言——两侧同树逐字节比对才是那条不变量的真证据，它在 PR 正文里，不在用例里。</para>
+    /// ⛔ 不在本类补第二套向量——重复冻结正是 #3278 收口删掉的那类装置。</para>
     /// </summary>
     [Fact]
     public void Segment_split_does_not_collapse_two_different_sources_onto_one_key()

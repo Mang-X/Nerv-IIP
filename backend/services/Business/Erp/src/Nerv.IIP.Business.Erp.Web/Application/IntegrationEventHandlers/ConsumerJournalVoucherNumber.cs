@@ -1,6 +1,3 @@
-using System.Globalization;
-using System.Security.Cryptography;
-using System.Text;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Coding;
@@ -48,13 +45,12 @@ internal readonly record struct JournalVoucherNumberAllocation(string? Code, str
 /// 但 <c>(WOCADJ, sourceId)</c> 就在它的参数里。
 /// </para>
 /// <para>
-/// ⚠️ <b>与 S6（PR #3495）的重叠，已登记</b>：S6 在
-/// <c>Application/Commands/JournalVoucherNoAllocation.cs</c> 建了命令侧的同职责取号入口。
-/// 两者**不是同一个类型也不在同一个文件**（无 add/add 冲突），但确实是一件事两套实现。
-/// ⭐ <b>本入口多出来的那一件事是失败形态</b>：S6 的 <c>AllocateAsync</c> 返回 <c>Task&lt;string&gt;</c>、
-/// 不捕获任何异常——命令处理器里那是对的（异常返回给调用方），
-/// 但 CAP 消费者里它会逃逸成 poison message（#877 仍 OPEN）。
-/// 合并顺序定下来后，本类可以退化成「调 S6 的 <c>AllocateAsync</c> + 一层 try/catch」的薄包装。
+/// ⭐ <b>本类是 <see cref="JournalVoucherNoAllocation"/> 的薄包装，⛔ 不自带键派生</b>。
+/// 键、指纹、规范串一律取那一份（<c>AllocationIdempotencyKey</c> / <c>Digest</c>）。
+/// <b>本入口多出来的、也是唯一多出来的那一件事是失败形态</b>：
+/// <c>JournalVoucherNoAllocation.AllocateAsync</c> 返回 <c>Task&lt;string&gt;</c>、不捕获任何异常——
+/// 命令处理器里那是对的（异常返回给调用方），但 CAP 消费者里它会逃逸成
+/// poison message（#877 仍 OPEN）。本类把它收成 gate-and-skip。
 /// </para>
 /// <para>
 /// ⭐ <b>键是定长摘要，不是可读串——承重理由是「越界的失败形态本 gate 接不住」</b>。
@@ -138,50 +134,18 @@ internal static class ConsumerJournalVoucherNumber
     /// <summary>死信失败码：凭证号没分配下来，本次不建凭证。</summary>
     public const string AllocationFailureCode = "voucher-number-allocation-failed";
 
-    /// <summary>幂等键的固定前缀。</summary>
-    public const string KeyPrefix = "jv:";
-
-    /// <summary>SHA-256 转大写十六进制后的固定长度。</summary>
-    public const int DigestLength = 64;
-
-    /// <summary>规范串里的段分隔符，取 ASCII 单元分隔符（US, U+001F）。</summary>
-    private const char CanonicalSeparator = '';
-
     /// <summary>
     /// 分配器幂等键：<c>jv:{来源类型码}:{SHA-256}</c>。
     /// 与 S5 的 partial unique index 同粒度 <c>(source_type, source_no)</c>——
     /// org/env 不必写进串里，分配器自己按 org/env/ruleKey 分桶。
+    ///
+    /// ⛔ <b>本方法不自己派生键</b>，只转调
+    /// <see cref="JournalVoucherNoAllocation.AllocationIdempotencyKey"/>。
+    /// 前缀、规范串（长度前缀 + U+001F 分隔）、摘要算法与摘要长度全部只在那一份里，
+    /// 本文件**不留第二套常量**——⇒ 两侧漂移在结构上不可能发生。
     /// </summary>
     public static string IdempotencyKeyOf(JournalVoucherSourceType sourceType, string sourceNo)
-    {
-        ArgumentNullException.ThrowIfNull(sourceType);
-        ArgumentException.ThrowIfNullOrWhiteSpace(sourceNo);
-        return string.Concat(KeyPrefix, sourceType.Code, ":", Digest(sourceType, sourceNo));
-    }
-
-    /// <summary>
-    /// 摘要输入的规范串：两段各自前置十进制长度、以 U+001F 分隔，
-    /// 故不同的段划分不可能拼出同一个输入。
-    /// </summary>
-    public static string CanonicalKey(JournalVoucherSourceType sourceType, string sourceNo)
-    {
-        ArgumentNullException.ThrowIfNull(sourceType);
-        ArgumentNullException.ThrowIfNull(sourceNo);
-        return new StringBuilder()
-            .Append(sourceType.Code.Length.ToString(CultureInfo.InvariantCulture))
-            .Append(CanonicalSeparator)
-            .Append(sourceType.Code)
-            .Append(CanonicalSeparator)
-            .Append(sourceNo.Length.ToString(CultureInfo.InvariantCulture))
-            .Append(CanonicalSeparator)
-            .Append(sourceNo)
-            .ToString();
-    }
-
-    public static string Digest(JournalVoucherSourceType sourceType, string sourceNo)
-    {
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(CanonicalKey(sourceType, sourceNo))));
-    }
+        => JournalVoucherNoAllocation.AllocationIdempotencyKey(sourceType, sourceNo);
 
     public static async Task<JournalVoucherNumberAllocation> TryAllocateAsync(
         ErpCodingService codingService,
@@ -202,7 +166,7 @@ internal static class ConsumerJournalVoucherNumber
                 requestedCode: null,
                 IdempotencyKeyOf(sourceType, sourceNo),
                 // 指纹取同一个摘要：同键必同指纹，指纹冲突分支在本入口不可达。
-                Digest(sourceType, sourceNo),
+                JournalVoucherNoAllocation.Digest(sourceType, sourceNo),
                 cancellationToken);
             return new JournalVoucherNumberAllocation(allocation.Code, string.Empty);
         }
