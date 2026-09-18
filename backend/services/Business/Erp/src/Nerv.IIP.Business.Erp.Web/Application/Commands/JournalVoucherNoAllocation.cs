@@ -103,28 +103,20 @@ namespace Nerv.IIP.Business.Erp.Web.Application.Commands;
 /// <c>jv:2026-09-16-001</c> 这类自然键。本入口**没有**加那条规则。
 /// </para>
 /// <para>
-/// ⭐ <b>与 #3278 / S7 的 <c>ConsumerJournalVoucherNumber</c> 逐字一致</b>（前缀、分隔、
-/// 规范串、摘要算法、大写十六进制、以及「指纹 = 键里那个摘要」这一条全部相同）。
-/// ⚠️ <b>这不是风格统一，是时序约束</b>：两侧写的是**同一条 <c>journal-voucher</c> 规则、
-/// 同一张 <c>code_idempotency_keys</c> 表**。键形状或指纹算法但凡差一个字节，先落地的那一方
-/// 会在表里留下另一套键；后落地方对同一来源单据算出不同的键 ⇒ 重新取一个号 ⇒ 撞
-/// <c>(org, env, source_type, source_no)</c> 的 23505；若键相同而指纹不同，则撞
-/// <c>CodeAllocator.ToReplay</c> 的 <see cref="NetCorePal.Extensions.Primitives.KnownException"/>。
-/// ⇒ <b>两侧必须在合并前统一</b>，⛔ 不能一方先合到有数据的环境。
-/// 本类型与 S7 那个类是两个文件两份实现（合并前无法互相引用）；
-/// 「逐字一致」这件事由 <c>JournalVoucherNoAllocationTests.Allocation_key_matches_the_frozen_cross_seat_grammar</c>
-/// 与 <c>ConsumerJournalVoucherNumberAllocationTests</c> 两侧各自的**冻结字面量**钉住，
-/// ⛔ 不靠两边各读一遍源码。
-/// ⚠️ <b>收敛成一个入口仍未做</b>：S6/S7 已合并，但 #3278 / S8 的范围是
-/// <c>ErpVoucherNoPolicy</c> 退役，⛔ 没碰键文法任何字节，两份实现照旧并存。
-/// 谁来做这件事要另行立票；在那之前，改任一侧都必须两侧同改并重跑两边的冻结字面量用例。
+/// ⭐ <b>全仓唯一的一份键派生</b>：命令侧 9 个位点直接调 <see cref="AllocateAsync"/>；
+/// 集成事件消费侧 5 个位点经 <c>ConsumerJournalVoucherNumber.TryAllocateAsync</c>
+/// （gate-and-skip 包装）落到**本类型这同一套** <see cref="CanonicalKey"/> / <see cref="Digest"/>。
+/// 两侧写的是同一条 <c>journal-voucher</c> 规则、同一张 <c>code_idempotency_keys</c> 表，
+/// 因此「两套键文法」这件事在结构上不可能再发生。
+/// 文法本身（前缀、分隔、长度前缀、SHA-256、大写十六进制）由
+/// <c>ConsumerJournalVoucherNumberKeyContractTests.Digest_input_is_frozen_by_golden_vectors</c>
+/// 的**外部独立算出的冻结向量**（Python <c>hashlib</c>）钉住，⛔ 不靠源码互读。
 /// </para>
 /// <para>
 /// <b>本类型不覆盖的面</b>：seed（<c>WorldHistorySeedService</c>）的两处凭证按 #3278「显式不做」
 /// 仍直接写 <c>JV-2026-S{n}</c> / <c>JV-2026-C{n}</c>（世界种子要 backdate 且必须可复算，
 /// 而 <c>Document</c> 规则含 <c>yyyyMMdd</c> + 按日重置序列）。
 /// ⇒ 落地后凭证号**并存三种格式**：分配器短号、存量派生号、种子号。
-/// 集成事件消费侧的 5 个建凭证位点属 S7，不在本类型的当前调用面上。
 /// </para>
 /// </remarks>
 internal static class JournalVoucherNoAllocation
@@ -133,8 +125,7 @@ internal static class JournalVoucherNoAllocation
     public const string RuleKey = "journal-voucher";
 
     /// <summary>
-    /// 派生幂等键的前缀。⭐ 与 S7 的 <c>ConsumerJournalVoucherNumber.KeyPrefix</c> 同值——
-    /// 改它就是改跨席位文法，必须两侧同改并重跑冻结字面量那条用例。
+    /// 派生幂等键的前缀。
     /// ⛔ 它**不是**任何校验器的判据（见上面「与客户端可写幂等键的关系」）。
     /// </summary>
     public const string KeyPrefix = "jv:";
@@ -151,8 +142,9 @@ internal static class JournalVoucherNoAllocation
     /// </summary>
     /// <remarks>
     /// ⛔ 本方法**不捕获异常**：命令处理器里异常要返回给调用方。
-    /// S7 那个消费侧入口额外包了一层 gate-and-skip，因为 CAP 消费者里抛业务异常会逃逸成
-    /// poison message（#877 仍 OPEN）；那一层**不属于**本入口的职责。
+    /// 消费侧入口 <c>ConsumerJournalVoucherNumber.TryAllocateAsync</c> 在本方法之外另包一层
+    /// gate-and-skip，因为 CAP 消费者里抛业务异常会逃逸成 poison message（#877 仍 OPEN）；
+    /// 那一层**不属于**本入口的职责 —— ⭐ 它也正是消费侧与本入口之间**仅存的真实差异**。
     /// </remarks>
     public static async Task<string> AllocateAsync(
         ErpCodingService codingService,
