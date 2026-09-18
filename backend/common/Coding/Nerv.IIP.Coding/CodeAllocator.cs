@@ -53,6 +53,7 @@ public sealed class CodeAllocator(
         }
 
         var normalizedRequestedCode = Normalize(request.RequestedCode);
+        EnsureRequestedCodeFitsTheAllocatorColumn(request, normalizedRequestedCode);
         var normalizedIdempotencyKey = Normalize(request.IdempotencyKey);
         if (_store is null)
         {
@@ -344,6 +345,48 @@ public sealed class CodeAllocator(
     {
         var sum = SHA256.HashData(Encoding.UTF8.GetBytes(value)).Sum(b => b);
         return sum % mod;
+    }
+
+    /// <summary>
+    /// GitHub #3454：调用方给的 <c>RequestedCode</c> 被本类**原样采用**（唯一加工是 <see cref="Normalize"/> 的
+    /// <c>Trim()</c>），再写进 <c>code_idempotency_keys.code</c>。改前这里没有任何长度判断，
+    /// 超过列宽的码一路走到 <c>SaveChangesAsync</c> 才换来 PostgreSQL <c>22001</c>——
+    /// 到了用户那儿是 500，而不是「码太长」这种能自己改的校验提示。
+    ///
+    /// <para><b>为什么校验放在这里而不是放到各服务的校验器里</b>：<c>RequestedCode</c> 的取值点实读有 50 个
+    /// （分布在 7 个业务服务，其中 19 个连 <c>MaximumLength</c> 都没有，spike 见 #3454）。
+    /// 逐个补规则是白名单选取，新调用点加进来时会静默漏掉（本仓判例 #3003 / #3135 / #3300）。
+    /// 装不下自己这一列是**分配器自己的不变量**，收在这一处对 50 个取值点一次性成立。</para>
+    ///
+    /// <para><b>抛什么、谁接得住</b>：抛 <see cref="KnownException"/>，与本类既有的业务拒绝
+    /// （规则停用、必填字段缺失、幂等键冲突）同型，经各服务统一异常管线转成公开业务错误。
+    /// 集成事件消费侧实读三类：<c>ConsumerJournalVoucherNumber.TryAllocateAsync</c> 的 catch filter 是
+    /// <c>CodeConcurrencyException or KnownException</c>（收得住，且那 5 个位点本来就传 <c>RequestedCode: null</c>）；
+    /// <c>WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt</c> 的 filter 是
+    /// <c>KnownException or ArgumentException or InvalidOperationException</c>（收得住，转死信）；
+    /// <c>PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMesWorkOrder</c> 的 filter **不含**
+    /// <see cref="KnownException"/>，但它传的 <c>DownstreamDocumentId</c> 在 DemandPlanning 侧同时受
+    /// <c>AcceptPlanningSuggestionCommandValidator</c> 的 <c>MaximumLength(128)</c> 与
+    /// <c>planning_suggestions.accepted_downstream_document_id</c> 的 128 列宽约束，
+    /// ⇒ 本守卫在那条路径上**不可达**。⚠️ 失效方向：那两个 128 里任意一个被放宽，
+    /// 该消费者就会把本异常逃逸成 poison message（#877 仍 OPEN）。</para>
+    ///
+    /// <para><b>只管装得下，不管形状</b>：长度合法但不符合规则形状的码（例如 SKU 码写成 <c>!!!</c>）照样放行。
+    /// 这是 #3454 有意留的边界，不是漏掉的一条。</para>
+    /// </summary>
+    private static void EnsureRequestedCodeFitsTheAllocatorColumn(
+        CodeAllocationRequest request,
+        string? normalizedRequestedCode)
+    {
+        if (normalizedRequestedCode is null || normalizedRequestedCode.Length <= CodeIdempotencyKey.CodeMaxLength)
+        {
+            return;
+        }
+
+        // ⛔ 不回显 requestedCode 本身：它是调用方可控的任意长字符串，回显等于把攻击者的载荷原样送回错误信封。
+        throw new KnownException(
+            $"Requested code for rule '{request.Rule.RuleKey}' is {normalizedRequestedCode.Length} characters, "
+            + $"which exceeds the {CodeIdempotencyKey.CodeMaxLength} character limit for allocated codes.");
     }
 
     private static KnownException IdempotencyConflict(string idempotencyKey, string conflictResourceLabel)

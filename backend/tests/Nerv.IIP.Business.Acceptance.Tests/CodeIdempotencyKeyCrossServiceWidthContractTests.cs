@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Reflection;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -10,7 +11,9 @@ using Nerv.IIP.Business.MasterData.Domain;
 using Nerv.IIP.Business.Mes.Domain;
 using Nerv.IIP.Business.ProductEngineering.Domain;
 using Nerv.IIP.Business.Quality.Domain;
+using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Coding;
+using Nerv.IIP.Contracts.Coding;
 using DemandPlanningDbContext = Nerv.IIP.Business.DemandPlanning.Infrastructure.ApplicationDbContext;
 using ErpDbContext = Nerv.IIP.Business.Erp.Infrastructure.ApplicationDbContext;
 using MaintenanceDbContext = Nerv.IIP.Business.Maintenance.Infrastructure.ApplicationDbContext;
@@ -87,15 +90,34 @@ namespace Nerv.IIP.Business.Acceptance.Tests;
 /// 但**别把这句读成「全仓都在面上」**：这两个若开始持有本共享实体，本类不会红，失效方向是**假绿**，
 /// 届时要把它们的 Web 项目加进本测试项目的引用表。</item>
 /// <item>读的是 **EF 模型**而不是 migration 脚本文本。模型与迁移单边漂移不由本类抓。</item>
-/// <item>本类只管这一个共享实体的这一列。全仓其它 <c>idempotency_key</c> 列
+/// <item>本类只管这一个共享实体的两列：<c>idempotency_key</c>（#3307）与 <c>code</c>（#3454）。
+/// 全仓其它 <c>idempotency_key</c> 列
 /// （BarcodeLabel / Inventory / Wms 的 128、消费者收件箱的 512、死信箱的 500 等）
 /// 与本实体不同族、不同所有者，**不在射程内**。</item>
+/// <item>⭐ <c>code</c> 那一列的断言证明的是「<see cref="CodeAllocator"/> 的拒收阈值 = 它自己那一列的真实宽度」，
+/// ⛔ <b>不</b>证明「分配出来的码一定存得进调用方自己的业务码列」——那些列由各服务拥有、宽度更窄
+/// （实读：50 / 64 / 100 / 128 都有），<c>CodeAllocator</c> 在结构上看不见它们。
+/// 逐个调用点的有效上界是两者的最小值；本类只看守其中分配器自己那一半。</item>
 /// </list></para>
 /// </summary>
 public sealed class CodeIdempotencyKeyCrossServiceWidthContractTests
 {
     private const string Table = "code_idempotency_keys";
     private const string Column = "idempotency_key";
+
+    /// <summary>#3454：分配器把 <c>RequestedCode</c> 原样写进的那一列。</summary>
+    private const string CodeColumn = "code";
+
+    /// <summary>
+    /// #3454 改前 <c>CodeEntityTypeConfigurations.cs</c> 里 <c>code</c> 列写死的字面量。
+    /// 本 PR 只是把它提成 <see cref="CodeIdempotencyKey.CodeMaxLength"/> 供分配器复用，**零 schema 变化**。
+    ///
+    /// <para>⭐ 这条是本类里 <c>code</c> 那一族**唯一不会随常量一起移动**的断言。
+    /// 其余几条两侧都从 <see cref="CodeIdempotencyKey.CodeMaxLength"/> 派生，
+    /// 改常量会让它们同步移动而恒绿（那是「唯一出处」的定义）；
+    /// 把「128 这个数字」钉住的只有本条 + 7 份 <c>ApplicationDbContextModelSnapshot</c>。</para>
+    /// </summary>
+    private const int PreChangeCodeColumnWidth = 128;
 
     /// <summary>改前 7 份副本各自手抄的列宽。7/7 实读一致——缺陷是「可以漂移」，不是「已经漂了」。</summary>
     private const int PreChangeDuplicatedWidth = 150;
@@ -201,6 +223,118 @@ public sealed class CodeIdempotencyKeyCrossServiceWidthContractTests
     {
         Assert.Equal(PreChangeDuplicatedWidth, CodeIdempotencyKey.IdempotencyKeyMaxLength);
     }
+
+    /// <summary>
+    /// #3454：每个受管服务**真实 EF 模型**里的 <c>code</c> 列宽必须等于
+    /// <see cref="CodeIdempotencyKey.CodeMaxLength"/>——那正是 <see cref="CodeAllocator"/> 用来拒收
+    /// 过长 <c>RequestedCode</c> 的那个数。
+    ///
+    /// <para>断言的两侧不是两份手抄值：一侧是单一常量，另一侧是该服务真实 EF 模型里那一列的
+    /// <c>GetMaxLength()</c>（migration 就是从这个模型生成的）。某个服务忘调
+    /// <see cref="CodingModelBuilderExtensions.ConfigureCodingEntities"/> 或另写一份本地配置盖掉它时，
+    /// 该服务的读数会偏离，而**分配器的守卫不会跟着变** ⇒ 守卫在那个服务上就不再等于真实列宽。</para>
+    ///
+    /// <para>合同分类：<c>ProviderBehavior</c>（权威来源 = 各服务 migration 里
+    /// <c>code_idempotency_keys.code</c> 的物理类型 <c>character varying(128)</c>）+ <c>Regression</c>（#3454）。</para>
+    /// </summary>
+    [Fact]
+    public void Every_governed_service_carries_the_single_source_code_column_width()
+    {
+        var readings = new List<(string Service, string? Table, int? Width)>();
+        foreach (var (service, factory) in GovernedServices())
+        {
+            using var dbContext = factory();
+            var entityType = dbContext.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(CodeIdempotencyKey));
+            Assert.True(
+                entityType is not null,
+                $"{service} 的 EF 模型里没有 {nameof(CodeIdempotencyKey)}；该服务声明了 DbSet 却没把共享实体接进模型。");
+
+            var property = entityType!.GetProperties().SingleOrDefault(
+                candidate => string.Equals(candidate.GetColumnName(), CodeColumn, StringComparison.Ordinal));
+            Assert.True(
+                property is not null,
+                $"{service} 的 {nameof(CodeIdempotencyKey)} 上没有 {CodeColumn} 列；"
+                + $"多半是没调 {nameof(CodingModelBuilderExtensions.ConfigureCodingEntities)}，实体退回了 EF 约定。");
+
+            readings.Add((service, entityType.GetTableName(), property!.GetMaxLength()));
+        }
+
+        Assert.Equal(GovernedServiceCount, readings.Count);
+        Assert.All(
+            readings,
+            reading =>
+            {
+                Assert.Equal(Table, reading.Table);
+                Assert.Equal(CodeIdempotencyKey.CodeMaxLength, reading.Width);
+            });
+    }
+
+    /// <summary>
+    /// ⭐ #3454 的核心断言：<b>分配器的拒收阈值不是手写的，它就是那一列的真实宽度</b>。
+    ///
+    /// <para>上界**从 7 个服务真实 EF 模型里读出来**（而不是从常量抄），再拿这个读数去驱动
+    /// <see cref="CodeAllocator"/>：恰好等宽的 <c>RequestedCode</c> 必须原样通过，
+    /// 宽一个字符的必须在触库之前抛 <see cref="KnownException"/>。</para>
+    ///
+    /// <para>它挡住的是本仓栽过五次的那个形状——「把一个不属于该链路的上界配进算式」。
+    /// 把 <c>CodeAllocator</c> 里的阈值改成别的任何数（例如照抄 Erp 业务列的 100、
+    /// 或照抄 <see cref="CodeIdempotencyKey.IdempotencyKeyMaxLength"/> 的 150），
+    /// 模型读数不动、本条立刻红，而只断言「有没有抛异常」的用例看不出差别。</para>
+    ///
+    /// <para>⛔ 本条**不**证明业务侧那些更窄的码列（50 / 64 / 100）也放得下，见类注释的值域边界。</para>
+    /// </summary>
+    [Fact]
+    public async Task Allocator_rejects_requested_codes_that_its_own_governed_column_cannot_store()
+    {
+        var widths = new List<int>();
+        foreach (var (service, factory) in GovernedServices())
+        {
+            using var dbContext = factory();
+            var property = dbContext.GetService<IDesignTimeModel>().Model
+                .FindEntityType(typeof(CodeIdempotencyKey))!
+                .GetProperties()
+                .Single(candidate => string.Equals(candidate.GetColumnName(), CodeColumn, StringComparison.Ordinal));
+            var width = property.GetMaxLength();
+            Assert.True(width is not null, $"{service} 的 {CodeColumn} 列没有上界，分配器就没有可对齐的物理阈值。");
+            widths.Add(width!.Value);
+        }
+
+        var governedWidth = Assert.Single(widths.Distinct());
+        var allocator = new CodeAllocator();
+        var atBound = new string('X', governedWidth);
+        var overBound = new string('X', governedWidth + 1);
+
+        var accepted = await allocator.AllocateAsync(RequestFor(atBound), CancellationToken.None);
+        Assert.Equal(atBound, accepted.Code);
+
+        var rejected = await Assert.ThrowsAsync<KnownException>(
+            () => allocator.AllocateAsync(RequestFor(overBound), CancellationToken.None));
+        Assert.Contains(
+            governedWidth.ToString(CultureInfo.InvariantCulture),
+            rejected.Message,
+            StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// #3454 把 <c>code</c> 列宽从字面量提成常量供分配器复用，**不改 schema**。
+    /// 本条钉的是迁移兼容，不是「128 这个数字合理」。
+    /// </summary>
+    [Fact]
+    public void Introducing_the_allocator_guard_did_not_change_the_code_column_width()
+    {
+        Assert.Equal(PreChangeCodeColumnWidth, CodeIdempotencyKey.CodeMaxLength);
+    }
+
+    private static CodeAllocationRequest RequestFor(string requestedCode) =>
+        new(
+            "org",
+            "env",
+            StandardCodeRules.Get("sku"),
+            Fields: null,
+            requestedCode,
+            IdempotencyKey: null,
+            PayloadFingerprint: "payload",
+            ConflictResourceLabel: "sku");
 
     private static DbContextOptions<TContext> Options<TContext>(string schema)
         where TContext : DbContext =>
