@@ -94,7 +94,7 @@ public sealed class PeriodicInspectionTimeTaskSchedulerTests
             clock);
 
         await scheduler.StartAsync(CancellationToken.None);
-        await scheduler.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(2));
+        await scheduler.ExecuteTask!;
 
         Assert.Empty(sender.Requests);
     }
@@ -166,7 +166,7 @@ public sealed class PeriodicInspectionTimeTaskSchedulerTests
             new FakeTimeProvider());
 
         await scheduler.StartAsync(CancellationToken.None);
-        await scheduler.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(2));
+        await scheduler.ExecuteTask!;
 
         Assert.Empty(sender.Requests);
     }
