@@ -113,7 +113,9 @@ public sealed class TelemetryProductionCountDeltaIntegrationEventHandlerForAutom
             0m,
             CompletesOperation: false,
             payload.BucketEndUtc,
-            IdempotencyKey: $"telemetry:{integrationEvent.IdempotencyKey}",
+            // 有界派生（#3477）：源信封键最坏 512，裸拼进这道 150 的墙必炸，
+            // 而这里在 CAP 消费者内、抛出即毒消息。两个调用点共用同一构造，同一条来源事实两侧同键。
+            IdempotencyKey: Commands.Production.TelemetryProductionReportIdempotencyKey.From(integrationEvent.IdempotencyKey),
             Source: ProductionReport.TelemetrySource), cancellationToken);
     }
 
