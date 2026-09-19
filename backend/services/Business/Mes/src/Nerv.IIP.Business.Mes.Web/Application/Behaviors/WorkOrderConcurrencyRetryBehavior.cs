@@ -7,15 +7,16 @@ using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Behaviors;
 
-public interface IWorkOrderTransformationConcurrencyCommand;
+public interface IWorkOrderConcurrencyRetryCommand;
+
+public interface IWorkOrderTransformationConcurrencyCommand : IWorkOrderConcurrencyRetryCommand;
 
 /// <summary>
-/// Converts races on the PR-A work-order version token and transformation idempotency
-/// unique key into deterministic application behavior. A unique-key race is retried so
-/// the losing request can observe and replay the committed transformation; a stale source
-/// version is retried once the same way and becomes a 409 when the state remains contested.
+/// Retries declared work-order writes from fresh tracked state after a version conflict.
+/// Transformation commands additionally recover their existing idempotency unique-key races.
+/// Each attempt reruns the complete unit of work; persistent contention becomes a safe 409.
 /// </summary>
-public sealed class WorkOrderTransformationConcurrencyBehavior<TRequest, TResponse>(
+public sealed class WorkOrderConcurrencyRetryBehavior<TRequest, TResponse>(
     ApplicationDbContext dbContext)
     : IPipelineBehavior<TRequest, TResponse>
     where TRequest : IBaseCommand
@@ -34,16 +35,16 @@ public sealed class WorkOrderTransformationConcurrencyBehavior<TRequest, TRespon
                 return await next(cancellationToken);
             }
             catch (DbUpdateConcurrencyException exception)
-                when (IsSupportedCommand(request) && IsWorkOrderRevisionConflict(exception) && attempt < MaxAttempts)
+                when (request is IWorkOrderConcurrencyRetryCommand && IsWorkOrderRevisionConflict(exception) && attempt < MaxAttempts)
             {
                 dbContext.ChangeTracker.Clear();
             }
             catch (DbUpdateConcurrencyException exception)
-                when (IsSupportedCommand(request) && IsWorkOrderRevisionConflict(exception))
+                when (request is IWorkOrderConcurrencyRetryCommand && IsWorkOrderRevisionConflict(exception))
             {
                 dbContext.ChangeTracker.Clear();
                 throw new MesLifecycleConflictException(
-                    "work-order-transformation",
+                    request is IWorkOrderTransformationConcurrencyCommand ? "work-order-transformation" : "work-order-write",
                     "concurrent-update");
             }
             catch (DbUpdateException exception)

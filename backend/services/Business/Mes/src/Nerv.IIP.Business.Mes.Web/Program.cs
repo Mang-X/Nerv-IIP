@@ -169,7 +169,7 @@ builder.Services.AddMediatR(configuration => configuration
     .AddKnownExceptionValidationBehavior()
     .AddOpenBehavior(typeof(ManualDispatchConcurrencyRetryBehavior<,>))
     .AddOpenBehavior(typeof(ReturnLineSideMaterialConcurrencyRetryBehavior<,>))
-    .AddOpenBehavior(typeof(WorkOrderTransformationConcurrencyBehavior<,>))
+    .AddOpenBehavior(typeof(WorkOrderConcurrencyRetryBehavior<,>))
     .AddUnitOfWorkBehaviors());
 builder.Services.AddScoped<
     NetCorePal.Extensions.Primitives.ICommandLock<ChangeOperationTaskStateCommand>,

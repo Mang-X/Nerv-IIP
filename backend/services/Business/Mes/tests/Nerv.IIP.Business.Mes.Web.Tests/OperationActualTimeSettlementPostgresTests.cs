@@ -5,14 +5,18 @@ using MediatR;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
+using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Business.Mes.Web.Application.Quality;
 using Nerv.IIP.Contracts.Mes;
 using Npgsql;
@@ -22,6 +26,114 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 [Collection(MesPostgresLaneDatabase.CollectionName)]
 public sealed class OperationActualTimeSettlementPostgresTests
 {
+    // Regression / ProviderBehavior: #3469. The interceptor controls the committed
+    // capitalization edge after reversal has read its old work-order version.
+    [MesRealPostgresFact]
+    public async Task Reversal_reloads_capitalization_without_duplicate_void_on_postgres()
+    {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        var race = new ReversalCapitalizationRace();
+        await using var factory = CreateFactory(race);
+        await MigrateAndInitializeCapAsync(factory);
+        await SeedRunningTaskAsync(factory);
+        string reportNo;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var setup = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var material = MaterialIssueRequest.Create("org-001", "env-dev", "MIR-3469", "WO-001",
+                "OP-001", "MAT-3469", "PCS", 6m, At(1));
+            material.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, At(5), 6m, "INPUT-3469");
+            material.ClearDomainEvents();
+            setup.MaterialIssueRequests.Add(material);
+            await setup.SaveChangesAsync();
+            reportNo = (await scope.ServiceProvider.GetRequiredService<ISender>().Send(
+                new RecordProductionReportCommand("org-001", "env-dev", "WO-001", "OP-001",
+                    8m, 2m, true, At(60), "3469-completion",
+                    [new ConsumedMaterialLotInput("MAT-3469", "INPUT-3469", 6m, "MIR-3469")]))).ReportNo;
+        }
+
+        race.Capitalize = async token =>
+        {
+            using var scope = factory.Services.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<WorkOrderCostCapitalizedIntegrationEventHandler>()
+                .HandleAsync(new WorkOrderCostCapitalizedIntegrationEvent(
+                    "evt-3469", ErpIntegrationEventTypes.WorkOrderCostCapitalized,
+                    ErpIntegrationEventVersions.V1, At(65), ErpIntegrationEventSources.BusinessErp,
+                    "WO-001", "WO-001", "org-001", "env-dev", "system:erp", "3469-cost",
+                    new WorkOrderCostCapitalizedPayload("WO-001", "SKU-001", 8m, 0m, 200m, 200m, 25m, At(65))), token);
+            using var readScope = factory.Services.CreateScope();
+            var order = await readScope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
+                .WorkOrders.AsNoTracking().SingleAsync(token);
+            Assert.Equal(race.StaleVersion + 1, order.Version);
+            Assert.Equal(25m, order.CapitalizedUnitCost);
+        };
+
+        var command = new ReverseProductionReportCommand("org-001", "env-dev", reportNo,
+            "更正完工报工", At(70), "user:operator-001", "3469-reversal");
+        ReverseProductionReportCommandResult reversal;
+        using (var scope = factory.Services.CreateScope())
+            reversal = await scope.ServiceProvider.GetRequiredService<ISender>().Send(command);
+        using (var scope = factory.Services.CreateScope())
+            Assert.Equal(reversal, await scope.ServiceProvider.GetRequiredService<ISender>().Send(command));
+
+        Assert.Equal(1, race.Conflicts);
+        Assert.Equal(2, race.ReversalSaves);
+        using var assertionScope = factory.Services.CreateScope();
+        var db = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var workOrder = await db.WorkOrders.AsNoTracking().SingleAsync();
+        Assert.Equal(25m, workOrder.CapitalizedUnitCost);
+        Assert.Equal(race.StaleVersion + 2, workOrder.Version);
+        Assert.Equal(0m, workOrder.CompletedQuantity);
+        Assert.Equal(0m, workOrder.ScrapQuantity);
+        Assert.Equal(WorkOrder.StartedStatus, workOrder.Status);
+        Assert.Equal(2, await db.ProductionReports.CountAsync());
+        Assert.Single(await db.ProductionReports.ToArrayAsync(), x => x.IsReversal);
+        Assert.Empty(await db.OutputLotGenealogies.ToArrayAsync());
+        var consumptions = await db.ProductionReportMaterialConsumptions.AsNoTracking().ToArrayAsync();
+        Assert.Equal(2, consumptions.Length);
+        Assert.Equal(6m, Assert.Single(consumptions, x => x.ReportNo == reportNo).ConsumedQuantity);
+        Assert.Equal(-6m, Assert.Single(consumptions, x => x.ReportNo == reversal.ReportNo).ConsumedQuantity);
+        Assert.Equal(At(70), (await db.OperationActualTimeSettlements.SingleAsync()).VoidedAtUtc);
+        Assert.Equal(OperationTaskLifecycleStatus.InProgress, (await db.OperationTasks.SingleAsync()).Status);
+        Assert.Single(await db.ProcessedIntegrationEvents.Where(x =>
+            x.ConsumerName == WorkOrderCostCapitalizedIntegrationEventHandler.ConsumerName).ToArrayAsync());
+        Assert.Equal(3, (await ReadCapOutboxContentAsync()).Count(content =>
+            content.Contains("mes.OperationActualTimeSettlementVoided", StringComparison.Ordinal)));
+    }
+
+    private sealed class ReversalCapitalizationRace : SaveChangesInterceptor
+    {
+        public Func<CancellationToken, Task>? Capitalize { get; set; }
+        public long StaleVersion { get; private set; }
+        public int Conflicts { get; private set; }
+        public int ReversalSaves { get; private set; }
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData, InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            var db = eventData.Context!;
+            if (!db.ChangeTracker.Entries<ProductionReport>().Any(x =>
+                    x.State == EntityState.Added && x.Entity.IsReversal)) return result;
+            ReversalSaves++;
+            if (ReversalSaves == 1)
+            {
+                StaleVersion = db.ChangeTracker.Entries<WorkOrder>().Single()
+                    .Property(x => x.Version).OriginalValue;
+                await Capitalize!(cancellationToken);
+            }
+            return result;
+        }
+
+        public override ValueTask<InterceptionResult> ThrowingConcurrencyExceptionAsync(
+            ConcurrencyExceptionEventData eventData, InterceptionResult result,
+            CancellationToken cancellationToken = default)
+        {
+            Assert.All(eventData.Entries, entry => Assert.IsType<WorkOrder>(entry.Entity));
+            Conflicts++;
+            return ValueTask.FromResult(result);
+        }
+    }
     private const string SettledV1Topic = "nerv-iip.development.business-mes.mes.operation-actual-time-settled.v1";
     private const string SettledV2Topic = "nerv-iip.development.business-mes.mes.operation-actual-time-settled.v2";
     private const string VoidedV1Topic = "nerv-iip.development.business-mes.mes.operation-actual-time-settlement-voided.v1";
@@ -459,7 +571,7 @@ public sealed class OperationActualTimeSettlementPostgresTests
         }
     }
 
-    private static WebApplicationFactory<Program> CreateFactory()
+    private static WebApplicationFactory<Program> CreateFactory(SaveChangesInterceptor? interceptor = null)
     {
         var settings = new Dictionary<string, string?>
         {
@@ -481,7 +593,11 @@ public sealed class OperationActualTimeSettlementPostgresTests
             // 本用例的被测对象是工时结算与出站消息。报工路径每次都会同步问 Quality 首件进度（#2780），
             // 本 lane 里没有 Quality 在跑，因此在测试宿主里把门禁换成放行实现。
             builder.ConfigureServices(services =>
-                services.AddScoped<IMesFirstArticleGate>(_ => TestMesFirstArticleGate.Allowing));
+            {
+                services.AddScoped<IMesFirstArticleGate>(_ => TestMesFirstArticleGate.Allowing);
+                if (interceptor is not null)
+                    services.AddDbContext<ApplicationDbContext>((_, options) => options.AddInterceptors(interceptor));
+            });
         });
     }
 

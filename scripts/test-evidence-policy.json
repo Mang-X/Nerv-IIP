@@ -1458,6 +1458,7 @@
         "Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedOutboxPostgresTests.Rework_receipt_outbox_failure_rolls_back_business_facts_inbox_numbering_and_route",
         "Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedOutboxPostgresTests.Rework_request_commits_business_facts_inbox_and_created_receipt_outbox_together",
         "Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Completion_reversal_commits_reopen_state_and_void_outbox_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Reversal_reloads_capitalization_without_duplicate_void_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Completion_state_and_settlement_outbox_are_committed_together_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Concurrent_completion_rejects_the_stale_settlement_revision_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Settlement_lineage_rejects_a_report_from_another_scope_or_task_on_postgres",

@@ -15783,6 +15783,16 @@
           "x-position": 1
         },
         "responses": {
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
           "200": {
             "description": "Success",
             "content": {
