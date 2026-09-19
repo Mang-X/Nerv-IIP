@@ -39,6 +39,7 @@ import {
   NvToolbar,
   Spinner,
 } from '@nerv-iip/ui'
+import { incomingUserLabel, outgoingUserLabel } from '@nerv-iip/business-core'
 import { computed, reactive, ref, watch } from 'vue'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import { makeIdempotencyKey, useMesShiftHandovers } from '@/composables/useBusinessMes'
@@ -204,17 +205,11 @@ const columns: NvDataTableColumn<HandoverRow>[] = [
   { key: 'actions', header: '操作', align: 'end', width: 'w-24' },
 ]
 
-// 交接人显示名由网关按员工目录解析后回显；目录解不出时读面只剩用户 id，那是工程标识符、
-// 不能上屏，所以退回「未记录」。接班人在未接班时本来就没有，说法要和「解析不出」区分开。
-function outgoingUserLabel(row: { outgoingUserName?: string | null }) {
-  return row.outgoingUserName?.trim() || '未记录'
-}
-function incomingUserLabel(row: {
-  incomingUserName?: string | null
-  acceptedAtUtc?: string | null
-}) {
-  return row.incomingUserName?.trim() || (row.acceptedAtUtc ? '未记录' : '待接班')
-}
+// 交接人显示名（四态：姓名 / 姓名未知 / 未记录 / 待接班）来自 `@nerv-iip/business-core`。
+// **判据是身份 id 在不在，不是姓名在不在**：目录解不出名字时读面仍有 `outgoing/incomingUserId`，
+// 那说明人记在案（问责链完整），只是名字显示不出来——写「未记录」会在一张「已接班」的单子上
+// 断言「没有这个人」，与数据相反（#3475）。用户 id 是 IAM 主体标识符，四态里都不上屏。
+// PDA 侧读的是同一份判据和同一组文案，两屏不再各说各话。
 
 const detailOpen = ref(false)
 // 抽屉正文只认详情读面，不用列表行垫底：详情取数失败时 `handoverDetail` 为空而列表行还在，

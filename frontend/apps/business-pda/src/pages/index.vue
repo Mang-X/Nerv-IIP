@@ -25,6 +25,7 @@ import {
   usePdaIdentity,
   usePendingInspectionSummary,
   useWarehouseSummary,
+  type WarehouseSummaryEntryState,
 } from '@/composables/useWorkbenchHome'
 import {
   NvAppShellMobile,
@@ -61,6 +62,34 @@ const identitySubtitle = computed(() => {
   const worker = identity.worker.value
   const parts = [worker?.jobTitle, worker?.teams?.[0]?.teamName].filter(Boolean)
   return parts.join(' · ')
+})
+
+/**
+ * 仓储计数取不到时格子里写什么。**绝不回落成 `0`**：`0` 断言的是「一件都没有」，
+ * 而这几种情形断言的是「这个人/这一刻看不到数」，现场据此导出的行动完全不同（#3474）。
+ */
+const WAREHOUSE_STATE_TEXT: Record<WarehouseSummaryEntryState, string> = {
+  counted: '',
+  loading: '…',
+  denied: '无范围',
+  failed: '取数失败',
+}
+
+/**
+ * 板块级说明。全被拒时说清「不是 0」；只有部分格被拒时不能把整块说死，否则又会
+ * 谎报另一个方向（真读到的那几格是真的）。
+ */
+const warehouseScopeNote = computed(() => {
+  if (warehouse.scopeDenied.value) {
+    return '当前账号没有仓储数据范围，看不到任何仓储单据——这不是「0 件」。请联系管理员分配仓库范围。'
+  }
+  if (warehouse.hasDeniedEntry.value) {
+    return '标「无范围」的项目未授予当前账号的仓储数据范围，其计数不可知，不是 0。'
+  }
+  if (warehouse.hasFailedEntry.value) {
+    return '标「取数失败」的项目本次没读到，计数不可知，不是 0。下拉或稍后重试。'
+  }
+  return ''
 })
 
 const INSPECTION_PREVIEW = 3
@@ -176,16 +205,30 @@ function openRoute(route: string) {
       <!-- 仓储任务（有 WMS 读权限的仓储角色可见） -->
       <section v-if="warehouse.enabled.value" data-testid="home-warehouse">
         <h2 class="mb-2 text-sm font-medium text-muted-foreground">仓储任务</h2>
+        <p
+          v-if="warehouseScopeNote"
+          class="mb-2 rounded-xl border border-dashed border-border bg-card px-3 py-2 text-xs text-muted-foreground"
+          data-testid="home-warehouse-scope-note"
+        >
+          {{ warehouseScopeNote }}
+        </p>
         <div class="grid grid-cols-4 gap-2">
           <button
             v-for="entry in warehouse.entries.value"
             :key="entry.key"
             type="button"
             class="flex min-h-touch flex-col items-center justify-center gap-0.5 rounded-xl border border-border bg-card py-3 active:bg-accent"
+            :data-testid="`home-warehouse-${entry.key}`"
+            :data-state="entry.state"
             @click="openRoute(entry.route)"
           >
-            <span class="text-lg font-semibold tabular-nums text-foreground">{{
-              entry.count
+            <span
+              v-if="entry.state === 'counted'"
+              class="text-lg font-semibold tabular-nums text-foreground"
+              >{{ entry.count }}</span
+            >
+            <span v-else class="text-xs font-medium text-muted-foreground">{{
+              WAREHOUSE_STATE_TEXT[entry.state]
             }}</span>
             <span class="text-xs text-muted-foreground">{{ entry.label }}</span>
           </button>
