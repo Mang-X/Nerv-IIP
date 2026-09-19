@@ -1543,7 +1543,8 @@ public sealed class GetProductionReportEndpoint(ISender sender)
 public sealed class ReverseProductionReportEndpoint(ISender sender, TimeProvider timeProvider)
     : MesEndpoint<ReverseProductionReportRequest, ReverseProductionReportResponse>
 {
-    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<ReverseProductionReportEndpoint>());
+    public override void Configure() => ConfigureMesContract(
+        MesEndpointContracts.Get<ReverseProductionReportEndpoint>(), StatusCodes.Status409Conflict);
 
     public override async Task HandleAsync(ReverseProductionReportRequest req, CancellationToken ct)
     {

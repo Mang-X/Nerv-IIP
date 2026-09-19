@@ -556,7 +556,7 @@ public sealed record ReverseProductionReportCommand(
     string Reason,
     DateTimeOffset ReversedAtUtc,
     string ActorRef,
-    string? IdempotencyKey = null) : ICommand<ReverseProductionReportCommandResult>, IOperationTaskConcurrencyRetryCommand;
+    string? IdempotencyKey = null) : ICommand<ReverseProductionReportCommandResult>, IOperationTaskConcurrencyRetryCommand, IWorkOrderConcurrencyRetryCommand;
 
 public sealed class ReverseProductionReportCommandValidator : AbstractValidator<ReverseProductionReportCommand>
 {
