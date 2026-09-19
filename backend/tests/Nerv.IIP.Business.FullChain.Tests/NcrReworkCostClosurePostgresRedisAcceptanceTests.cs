@@ -585,6 +585,8 @@ public sealed class NcrReworkCostClosurePostgresRedisAcceptanceTests
         };
         upload.Headers.TryAddWithoutValidation("Tus-Resumable", "1.0.0");
         upload.Headers.TryAddWithoutValidation("Upload-Offset", "0");
+        upload.Headers.TryAddWithoutValidation("X-Organization-Id", OrganizationId);
+        upload.Headers.TryAddWithoutValidation("X-Environment-Id", EnvironmentId);
         upload.Content.Headers.ContentType = new MediaTypeHeaderValue("application/offset+octet-stream");
         using var uploadResponse = await fileStorage.SendAsync(upload);
         uploadResponse.EnsureSuccessStatusCode();
