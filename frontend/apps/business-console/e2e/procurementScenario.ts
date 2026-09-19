@@ -108,7 +108,12 @@ export async function runProcurement(options: ProcurementOptions) {
       headers: { authorization: token },
     })
     calls.push({ method, path: endpoint, status: response.status(), body })
-    if (!response.ok()) throw new Error(`Public ${method} ${endpoint} HTTP ${response.status()}`)
+    if (!response.ok()) {
+      const error = (await response.json()) as { code?: string; message?: string }
+      throw new Error(
+        `Public ${method} ${endpoint} HTTP ${response.status()} code=${error.code} message=${error.message}`,
+      )
+    }
     return ((await response.json()) as { data: T }).data
   }
   const list = async <T>(endpoint: string, extra: Row = {}): Promise<T[]> => {
