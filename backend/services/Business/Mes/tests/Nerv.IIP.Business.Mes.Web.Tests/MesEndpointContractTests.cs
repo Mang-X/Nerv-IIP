@@ -316,8 +316,10 @@ public sealed class MesEndpointContractTests
             && contract.OperationId == "getBusinessMesProductionReportByIdempotencyKey");
     }
 
-    [Fact]
-    public async Task Lifecycle_conflict_endpoint_returns_409_with_safe_code()
+    [Theory]
+    [InlineData("/api/business/v1/mes/operation-tasks/OP-STATE/pause", "/api/business/v1/mes/operation-tasks/{operationTaskId}/pause")]
+    [InlineData("/api/business/v1/mes/production-reports/PR-001/reverse", "/api/business/v1/mes/production-reports/{reportNo}/reverse")]
+    public async Task Lifecycle_conflict_endpoint_returns_409_with_safe_code(string route, string template)
     {
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
@@ -334,12 +336,15 @@ public sealed class MesEndpointContractTests
         client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
 
         var response = await client.PostAsJsonAsync(
-            "/api/business/v1/mes/operation-tasks/OP-STATE/pause",
+            route,
             new
             {
                 organizationId = "org-001",
                 environmentId = "env-dev",
                 changedAtUtc = "2026-07-27T10:00:00Z",
+                reversedAtUtc = "2026-07-27T10:00:00Z",
+                reason = "更正报工",
+                actorRef = "operator-001",
                 idempotencyKey = "pause-lifecycle-conflict",
             });
 
@@ -348,6 +353,9 @@ public sealed class MesEndpointContractTests
         Assert.Contains("\"success\":false", body, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("\"message\":\"lifecycle-conflict\"", body, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Queued", body, StringComparison.OrdinalIgnoreCase);
+        using var openApi = JsonDocument.Parse(await client.GetStringAsync("/swagger/v1/swagger.json"));
+        Assert.True(openApi.RootElement.GetProperty("paths").GetProperty(template)
+            .GetProperty("post").GetProperty("responses").TryGetProperty("409", out _));
     }
 
     [Fact]
