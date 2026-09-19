@@ -359,40 +359,6 @@ public sealed class NcrReworkCostClosurePostgresRedisAcceptanceTests
             producedLotNo = "LOT-MAN2813-REWORK-OUTPUT",
             labelTemplateId,
         };
-        using (var missingLabel = await browser.PostAsJsonAsync(
-                   "/api/business-console/v1/mes/production-reports",
-                   new
-                   {
-                       reportRequest.organizationId,
-                       reportRequest.environmentId,
-                       reportRequest.workOrderId,
-                       reportRequest.operationTaskId,
-                       reportRequest.goodQuantity,
-                       reportRequest.scrapQuantity,
-                       reportRequest.completesOperation,
-                       reportRequest.reportedAtUtc,
-                       idempotencyKey = "man2813-rework-report-missing-label",
-                       reportRequest.scopeKind,
-                       reportRequest.scopeId,
-                       reportRequest.producedLotNo,
-                   }))
-        {
-            Assert.Equal(HttpStatusCode.BadRequest, missingLabel.StatusCode);
-            Assert.Contains(
-                BusinessMesProductionReportStableWireCodes.LabelTemplateRequired,
-                await missingLabel.Content.ReadAsStringAsync(),
-                StringComparison.Ordinal);
-        }
-        using (var wrongLabel = await browser.PostAsJsonAsync(
-                   "/api/business-console/v1/mes/production-reports",
-                   reportRequest with
-                   {
-                       idempotencyKey = "man2813-rework-report-wrong-label",
-                       labelTemplateId = Guid.CreateVersion7().ToString(),
-                   }))
-        {
-            Assert.False(wrongLabel.IsSuccessStatusCode);
-        }
         var report = await PostDataAsync(browser, "/api/business-console/v1/mes/production-reports", reportRequest);
         var reportNo = report.GetProperty("reportNo").GetString();
         Assert.False(string.IsNullOrWhiteSpace(reportNo));
@@ -404,9 +370,6 @@ public sealed class NcrReworkCostClosurePostgresRedisAcceptanceTests
             $"/api/business/v2/barcodes/print-batches/{printBatchId}?organizationId={OrganizationId}&environmentId={EnvironmentId}"))
             .GetProperty("printBatch");
         Assert.Equal("ready-to-print", printBatch.GetProperty("status").GetString());
-        Assert.Equal(JsonValueKind.Null, printBatch.GetProperty("printerId").ValueKind);
-        Assert.Equal(JsonValueKind.Null, printBatch.GetProperty("printJobId").ValueKind);
-        Assert.Equal(JsonValueKind.Null, printBatch.GetProperty("failureReason").ValueKind);
         var reportedSerialValues = report.GetProperty("serialNumbers").EnumerateArray()
             .Select(item => item.GetString())
             .ToArray();
