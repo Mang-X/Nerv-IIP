@@ -22,7 +22,11 @@ import {
 } from '../src/issue1851MbomInventoryBaseline'
 
 export type Row = Record<string, unknown>
-export type PublicCall = <T>(method: 'GET' | 'POST', endpoint: string, body?: Row) => Promise<T>
+export type PublicCall = <T>(
+  method: 'GET' | 'POST' | 'PATCH',
+  endpoint: string,
+  body?: Row,
+) => Promise<T>
 export type ProcurementSupplyOrder = {
   requirement: MbomMaterialLineFact
   quantity: number
@@ -100,7 +104,11 @@ export async function runProcurement(options: ProcurementOptions) {
     }
     return url.pathname + url.search
   }
-  const call = async <T>(method: 'GET' | 'POST', endpoint: string, body?: Row): Promise<T> => {
+  const call: PublicCall = async <T>(
+    method: 'GET' | 'POST' | 'PATCH',
+    endpoint: string,
+    body?: Row,
+  ): Promise<T> => {
     await options.beforeCall?.()
     const response = await page.request.fetch(new URL(endpoint, baseURL).toString(), {
       method,
@@ -109,7 +117,7 @@ export async function runProcurement(options: ProcurementOptions) {
     })
     calls.push({ method, path: endpoint, status: response.status(), body })
     if (!response.ok()) {
-      const error = (await response.json()) as { code?: string; message?: string }
+      const error = (await response.json()) as { code?: number | string; message?: string }
       throw new Error(
         `Public ${method} ${endpoint} HTTP ${response.status()} code=${error.code} message=${error.message}`,
       )

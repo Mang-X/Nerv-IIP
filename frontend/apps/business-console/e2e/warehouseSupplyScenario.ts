@@ -49,7 +49,7 @@ export async function runWarehouseSupply(
   // BusinessGateway 默认每个 IP 每 60 秒最多 300 次；本批逐项读回以低于该速率执行，429 仍失败。
   const pace = () => delay(250)
   const workerCall: PublicCall = async <T>(
-    method: 'GET' | 'POST',
+    method: 'GET' | 'POST' | 'PATCH',
     endpoint: string,
     body?: Row,
   ) => {

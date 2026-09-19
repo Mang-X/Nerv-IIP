@@ -39,6 +39,24 @@ test('NERV-2115 隔离外购与活塞杆自制供给满足同一冻结需求', a
       const rodQuantity = calculateRequiredQuantity(rod, 1)
       let receiptNo: string | undefined
       if (scenario === 'mixed') {
+        const rodSkuPath = `/api/business-console/v1/master-data/resources/sku/${rod.skuCode}`
+        const rodSku = await call<Api.BusinessConsoleMasterDataResourceDetail>(
+          'GET',
+          query(rodSkuPath),
+        )
+        report.rodSkuBeforePreparation = rodSku
+        // 本场景不赋序；将旧 seed 的同义码值配置为公开码表值，不放宽报工校验。
+        expect(['not-serialized', 'none']).toContain(rodSku.serialTrackingPolicy)
+        await call('PATCH', rodSkuPath, {
+          ...scope,
+          serialTrackingPolicy: 'none',
+        } satisfies Api.BusinessConsoleUpdateMasterDataResourceRequest)
+        const preparedSku = await call<Api.BusinessConsoleMasterDataResourceDetail>(
+          'GET',
+          query(rodSkuPath),
+        )
+        expect(preparedSku).toMatchObject({ active: true, serialTrackingPolicy: 'none' })
+        report.rodSkuAfterPreparation = preparedSku
         expect(orders.filter((order) => order.requirement.skuCode === rod.skuCode)).toHaveLength(0)
         const raw = orders.filter((order) => order.requirement.skuCode === 'RM-BAR-01')
         expect(raw).toHaveLength(1)
