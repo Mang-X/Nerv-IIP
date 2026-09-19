@@ -54,7 +54,7 @@ public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
 
     private static readonly ShiftSeed[] Shifts =
     [
-        new("DAY", "早班", new TimeOnly(8, 0), new TimeOnly(20, 0), 720),
+        new("DAY", "白班", new TimeOnly(8, 0), new TimeOnly(20, 0), 720),
         new("NIGHT", "晚班", new TimeOnly(20, 0), new TimeOnly(8, 0), 720)
     ];
 
