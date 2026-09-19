@@ -266,7 +266,6 @@ test('NERV-2115 隔离外购与活塞杆自制供给满足同一冻结需求', a
             query(`${mes}/dispatch-tasks/${task.operationTaskId}/assign`, workScope),
             {
               deviceAssetId: device.deviceAssetId,
-              idempotencyKey: `n2115-dispatch-${index}`,
             } satisfies Api.BusinessConsoleMesAssignDispatchTaskRequest,
           )
           const assigned = (await detail()).operationTasks!.find(
