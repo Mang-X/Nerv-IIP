@@ -34,6 +34,7 @@ using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
@@ -320,7 +321,8 @@ public sealed class PurchaseReceiptPostingRoutePostgresAcceptanceTests
         erpDb.WorkOrderCosts.Add(cost);
         await erpDb.SaveChangesAsync();
         var costConsumer = new StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost(
-            erpDb, new InMemoryIntegrationEventDeadLetterStore(), erpDb);
+            erpDb, new InMemoryIntegrationEventDeadLetterStore(), erpDb,
+            erpScope.ServiceProvider.GetRequiredService<ErpCodingService>());
         await costConsumer.HandleAsync(posted, CancellationToken.None);
         await costConsumer.HandleAsync(posted, CancellationToken.None);
         erpDb.ChangeTracker.Clear();
