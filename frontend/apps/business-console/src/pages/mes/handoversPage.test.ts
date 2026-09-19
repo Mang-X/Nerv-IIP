@@ -186,7 +186,7 @@ const stubs = {
       <section>
         <p v-if="!rows || rows.length === 0">{{ emptyMessage }}</p>
         <div v-for="(row, index) in rows" :key="index" @click="$emit('row-click', row)">
-          <span v-for="column in columns" :key="column.key">
+          <span v-for="column in columns" :key="column.key" :data-col="column.key">
             <slot :name="'cell-' + column.key" :row="row">{{
               column.accessor ? column.accessor(row) : (row[column.key] ?? '')
             }}</slot>
@@ -273,6 +273,14 @@ function acceptedResponse() {
  * 和「班组」两格互换，`toContain` 仍然全过（第 2 轮 B3 的 P9 实测）。所以断言必须
  * 按 `<dt>` 定位到它自己的 `<dd>`。
  */
+/**
+ * 按**列 key** 取单元格文本。用整行文本做断言时，把「交班人」「接班人」两列的 accessor
+ * 对调仍然全绿——两个值都还在同一行里，只是位置反了（同类型相邻列写反不报编译错）。
+ */
+function readRowCell(wrapper: ReturnType<typeof mountPage>, columnKey: string) {
+  return wrapper.get(`[data-testid="handovers-table"] > div [data-col="${columnKey}"]`).text()
+}
+
 function readDetailSummary(wrapper: ReturnType<typeof mountPage>) {
   const cells = wrapper.get('[data-testid="handover-detail"]').findAll('dl > div')
   return Object.fromEntries(cells.map((cell) => [cell.get('dt').text(), cell.get('dd').text()]))
@@ -570,6 +578,9 @@ describe('MES handovers read-face guard', () => {
     // 只读数据行：整页文本里「待接班」还兼作状态筛选器的选项文案，拿整页做互斥断言
     // 会被那一处恒真命中，等于这组互斥条件根本没跑。
     const rowText = wrapper.get('[data-testid="handovers-table"] > div').text()
+    expect(readRowCell(wrapper, 'incomingUserName')).toBe(expected)
+    // 交班人一列在这三行里始终是解得出名字的「李海生」；两列 accessor 对调时本条必红。
+    expect(readRowCell(wrapper, 'outgoingUserName')).toBe('李海生')
     expect(rowText).toContain(expected)
     for (const other of ['周敏', '姓名未知', '未记录', '待接班'].filter((w) => w !== expected)) {
       expect(rowText).not.toContain(other)
@@ -704,7 +715,7 @@ describe('MES handovers read-face guard', () => {
     state.detail.outgoingUserName = null
     const wrapper = mountPage()
 
-    expect(wrapper.text()).toContain('姓名未知')
+    expect(readRowCell(wrapper, 'outgoingUserName')).toBe('姓名未知')
     expect(wrapper.text()).not.toContain('未记录')
     expect(wrapper.text()).not.toMatch(TECHNICAL_USER_PATTERN)
 
@@ -715,6 +726,8 @@ describe('MES handovers read-face guard', () => {
     expect(detailText).toContain('姓名未知')
     expect(detailText).not.toContain('未记录')
     expect(detailText).not.toMatch(TECHNICAL_USER_PATTERN)
+    // 逐格精确值：`toContain` 对「姓名未知」加后缀那类文案漂移没有鉴别力（子串仍命中）。
+    expect(readDetailSummary(wrapper)['交班人']).toBe('姓名未知')
   })
 
   // 与上一条互斥的另一半：id 也没有时仍然必须说「未记录」。缺了这条，把四态压成
@@ -726,7 +739,7 @@ describe('MES handovers read-face guard', () => {
     state.detail.outgoingUserName = null
     const wrapper = mountPage()
 
-    expect(wrapper.text()).toContain('未记录')
+    expect(readRowCell(wrapper, 'outgoingUserName')).toBe('未记录')
     expect(wrapper.text()).not.toContain('姓名未知')
 
     await wrapper.get('[data-testid="handovers-table"] > div').trigger('click')
@@ -735,6 +748,7 @@ describe('MES handovers read-face guard', () => {
     const detailText = wrapper.get('[data-testid="handover-detail"]').text()
     expect(detailText).toContain('未记录')
     expect(detailText).not.toContain('姓名未知')
+    expect(readDetailSummary(wrapper)['交班人']).toBe('未记录')
   })
 
   // 第 1 轮 B1：详情取数失败时，抽屉此前会照常渲染抬头 + 三张 rows=[] 的表，屏上出现
