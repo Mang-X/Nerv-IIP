@@ -202,6 +202,12 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
     /// <summary>线边入库腿是否已回执，语义同 <see cref="PendingIssueLegPosted"/>。</summary>
     public bool PendingReceiptLegPosted { get; private set; }
 
+    /// <summary>本次收料按全部来源实际出库价值发起入库；旧在途缺省为原双腿协议。</summary>
+    public bool ReceiptUsesActualIssueValue { get; private set; }
+
+    /// <summary>本次尝试已发入库意图，与 outbox 在同一事务提交。</summary>
+    public bool PendingReceiptIntentSent { get; private set; }
+
     /// <summary>发料来源站点（库存实际持仓站点），由应用层从领料来源/库存查询解析后落库。</summary>
     public string? SourceSiteCode { get; private set; }
 
@@ -289,6 +295,14 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         DateTimeOffset receivedAtUtc,
         decimal? receivedQuantity = null,
         string? materialLotId = null)
+        => ConfirmLineSideReceipt(locations, receivedAtUtc, receivedQuantity, materialLotId, useActualIssueValue: true);
+
+    private void ConfirmLineSideReceipt(
+        MaterialTransferLocations locations,
+        DateTimeOffset receivedAtUtc,
+        decimal? receivedQuantity,
+        string? materialLotId,
+        bool useActualIssueValue)
     {
         ArgumentNullException.ThrowIfNull(locations);
         if (Status == ReservationExpiredStatus)
@@ -363,7 +377,10 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         {
             PendingIssueLegPosted = false;
             PendingReceiptLegPosted = false;
+            ReceiptUsesActualIssueValue = useActualIssueValue;
         }
+
+        PendingReceiptIntentSent = false;
 
         PendingPostingToken = BuildTransferToken(quantity);
         ReceivedAtUtc = receivedAtUtc;
@@ -387,10 +404,7 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
             }
         }
 
-        if (!PendingReceiptLegPosted)
-        {
-            AddDomainEvent(new MaterialLineSideReceiptConfirmedDomainEvent(this, quantity));
-        }
+        RequestLineSideInboundWhenReady();
     }
 
     /// <summary>
@@ -403,7 +417,7 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         decimal? receivedQuantity = null,
         string? materialLotId = null)
     {
-        ConfirmLineSideReceipt(locations, receivedAtUtc, receivedQuantity, materialLotId);
+        ConfirmLineSideReceipt(locations, receivedAtUtc, receivedQuantity, materialLotId, useActualIssueValue: false);
         var postingToken = PendingPostingToken!;
         foreach (var allocationIndex in Enumerable.Range(0, PendingIssueLegCount))
         {
@@ -450,6 +464,10 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
             SourceAllocationsJson = JsonSerializer.Serialize(allocations);
             PendingIssueLegPostedIndexesJson = JsonSerializer.Serialize(postedIndexes.Order());
             PendingIssueLegPosted = postedIndexes.Count >= Math.Max(1, PendingIssueLegCount);
+            if (ReceiptUsesActualIssueValue)
+            {
+                RequestLineSideInboundWhenReady();
+            }
         }
         else
         {
@@ -469,10 +487,31 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         PendingIssueLegCount = 0;
         PendingIssueLegPostedIndexesJson = "[]";
         PendingReceiptLegPosted = false;
+        PendingReceiptIntentSent = false;
         Status = ReceivedQuantity >= RequestedQuantity ? ReceivedStatus : PartiallyReceivedStatus;
         InventoryPostingFailureCode = null;
         InventoryPostingFailureMessage = null;
         InventoryPostingFailedAtUtc = null;
+    }
+
+    private void RequestLineSideInboundWhenReady()
+    {
+        if (PendingReceiptLegPosted || PendingReceiptIntentSent ||
+            (ReceiptUsesActualIssueValue && !PendingIssueLegPosted))
+        {
+            return;
+        }
+
+        decimal? unitCost = null;
+        if (ReceiptUsesActualIssueValue)
+        {
+            var amount = GetSourceAllocations().Sum(x => x.MovementAmount
+                ?? throw new InvalidOperationException("来源出库回执缺少实际金额，无法发起线边入库。"));
+            unitCost = -amount / PendingReceiptQuantity;
+        }
+
+        PendingReceiptIntentSent = true;
+        AddDomainEvent(new MaterialLineSideReceiptConfirmedDomainEvent(this, PendingReceiptQuantity, unitCost));
     }
 
     /// <summary>

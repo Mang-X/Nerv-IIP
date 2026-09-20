@@ -79,6 +79,8 @@
 
 `material_issue_requests` 的线边收料过账状态还包括 `pending_issue_leg_count`、`pending_issue_leg_posted_indexes_json` 和 `source_allocations_json`：前两列保证跨库位出库明细全部收到 Inventory 回执后才完成收料，后一列持久化实际来源站点/库位/批次/数量分配，避免异步重试丢失多库位明细。MES 的 `material_lot_id` 是线边追溯批次；来源批次由 Inventory availability 的明细返回，不能用工单批号过滤库存。
 
+`receipt_uses_actual_issue_value` 冻结本次收料协议：新收料先等全部来源出库成功，再按 `source_allocations_json` 中确认的出库金额合计除以收料数量传入既有入库 `UnitCost`。历史行缺省 `false`，旧在途及已有成功腿的旧重试沿原双腿协议结束，不推断尚未回执的旧入库尚未发送。`pending_receipt_intent_sent` 与入库 outbox 同事务落库，防止重复回执再发意图；它和来源已回执序号作为乐观并发条件，冲突由既有消息重投处理。两腿完成前不增加已收数量；新协议入库失败重试只重发入库。已完成记录不重算，不扫描或修补历史库存价值。新增协议开始写入后须前滚修复，不能回退为不能识别该协议的旧应用。
+
 `material_issue_requests` 以 `is_supplementary` 和可空 `original_material_issue_request_no` 表达补料语义；历史迁移行默认为普通领料且无来源。来源通过同一组织/环境、工单和物料的复合自引用外键持久化，检查约束禁止普通领料带来源、补料缺少来源和直接自引用；`ix_material_issue_requests_scope_original_request` 支撑按来源业务号查询，来源存在性、补料链路和创建入口校验由 MES 应用读写子项负责。
 
 已知差距：

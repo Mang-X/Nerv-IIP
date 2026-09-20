@@ -25,8 +25,9 @@ public sealed class MesIntegrationEventTests
         issue.ConfirmLineSideReceipt(new MaterialTransferLocations("SITE-001", "WH-01", "SITE-001", "LINE-01",
             [new MaterialTransferAllocation("SITE-001", "WH-01", "LOT-01", 4m, ownerType)]), now, 4m, "LOT-01");
         var outbound = new MaterialIssueRequestedIntegrationEventConverter().Convert(issue.GetDomainEvents().OfType<MaterialIssueRequestedDomainEvent>().Single());
+        issue.MarkInventoryPosted(issue.PendingPostingToken!, MaterialTransferLeg.WarehouseIssue, now, 0, 8m, -32m);
         var inbound = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(issue.GetDomainEvents().OfType<MaterialLineSideReceiptConfirmedDomainEvent>().Single());
-        issue.MarkInventoryPosted(issue.PendingPostingToken!, MaterialTransferLeg.WarehouseIssue, now);
+        Assert.Equal(8m, inbound.Payload.UnitCost);
         issue.MarkInventoryPosted(issue.PendingPostingToken!, MaterialTransferLeg.LineSideReceipt, now);
         var consumption = ProductionReportMaterialConsumption.Record("org-001", "env-dev", "PR-01", "WO-01", "OP-01", "MAT-01", "LOT-01", "KG", 1m, "MIR-OWNER", "SITE-001", "LINE-01", ownerType);
         var consumed = new ProductionMaterialConsumedIntegrationEventConverter().Convert(new ProductionMaterialConsumedDomainEvent(consumption));

@@ -578,10 +578,10 @@ try {
     # (工单, 工序) 分组、并用 SUM(CASE WHEN reversed_report_no IS NULL ...) 排除冲销行——
     # 分组键与条件求和都必须由真实 provider 翻译，InMemory 上分错组也会被客户端求值兜住照绿；
     # 第三条钉「一条报工都没有的工序落 0 而不是 null」），共 71 条；
-    # 再加 #3469 的一次合法资本化与冲销交错、重载及副作用单效证明，共 72 条。
+    # 加上 #3646 的线边收料 HTTP、实际价值与 outbox 原子提交证明，共 73 条。
     # CAP 的原生存储表落在独立 cap schema，业务表与 EF 侧 cap_* 表落在 mes schema，两者都必须声明才能在失败时留下完整诊断。
     $mesMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'mes-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($mesMember.expectedTestIdentities).Count -eq 72) 'The MES member must freeze exactly its seventy-two governed PostgreSQL identities.'
+    Assert-Contract (@($mesMember.expectedTestIdentities).Count -eq 73) 'The MES member must freeze exactly its seventy-three governed PostgreSQL identities.'
     $mesCollaborationIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.MesCollaborationPostgresTests.Reportable_scope_matches_a_registered_participant_on_postgres'
     $mesClaimIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.OperationTaskClaimPostgresTests.Concurrent_claims_persist_one_owner_participant_and_receipt_and_reject_the_loser_on_postgres'
     Assert-Contract (@($mesMember.expectedTestIdentities | Where-Object { [string]::Equals([string]$_, $mesCollaborationIdentity, [StringComparison]::Ordinal) }).Count -eq 1) 'The MES member must freeze the participant-only reportable-scope PostgreSQL identity exactly once.'

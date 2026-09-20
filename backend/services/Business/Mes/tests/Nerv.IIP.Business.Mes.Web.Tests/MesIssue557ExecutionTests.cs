@@ -30,7 +30,7 @@ public sealed class MesIssue557ExecutionTests
         var issue = MaterialIssueRequest.Create("org-001", "env-dev", "MIR-RETRY", "WO-01", "OP-01", "MAT-01", "KG", 4m, now);
         issue.ConfirmLineSideReceipt(new MaterialTransferLocations("SITE-001", "WH-01", "SITE-001", "LINE-01",
             [new MaterialTransferAllocation("SITE-001", "WH-01", "LOT-01", 4m, ownerType)]), now, 4m, "LOT-01");
-        issue.MarkInventoryPosted(issue.PendingPostingToken!, MaterialTransferLeg.WarehouseIssue, now);
+        issue.MarkInventoryPosted(issue.PendingPostingToken!, MaterialTransferLeg.WarehouseIssue, now, 0, 8m, -32m);
         issue.MarkInventoryPostingFailed("FAILED", "入库失败", now, issue.PendingPostingToken);
         issue.ClearDomainEvents();
         db.MaterialIssueRequests.Add(issue);
