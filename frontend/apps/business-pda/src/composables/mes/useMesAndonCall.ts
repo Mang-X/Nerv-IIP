@@ -107,14 +107,17 @@ export function useMesAndonCall(context: Readonly<Ref<AndonOperationContext | nu
       receipt.value = result
       intent.reset()
     } catch (error) {
+      const previouslyUnconfirmed = intent.locked.value
       const info = intent.recordFailure(
         requestGeneration === generation
           ? error
           : new BusinessOperationUnconfirmedError('呼叫上下文已变化'),
         '呼叫失败，请重试。',
       )
+      // 本次未发送或被拒绝，不能证明此前超时的呼叫尚未创建。
+      intent.locked.value ||= previouslyUnconfirmed
       if (requestGeneration === generation) {
-        errorMessage.value = info.indeterminate
+        errorMessage.value = intent.locked.value
           ? `${info.message}。结果待核实，请重试原呼叫，勿重复发起。`
           : info.message
       }

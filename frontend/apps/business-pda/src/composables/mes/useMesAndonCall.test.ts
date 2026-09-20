@@ -2,7 +2,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { defineComponent, h, shallowRef } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { BusinessConsoleMesAndonCategory } from '@nerv-iip/api-client'
-import { RequestTimeoutError } from '@/api/request-timeout'
+import { OfflineError, RequestTimeoutError } from '@/api/request-timeout'
 import { useMesAndonCall, type AndonOperationContext } from './useMesAndonCall'
 
 const sdk = vi.hoisted(() => ({ raise: vi.fn() }))
@@ -94,6 +94,34 @@ describe('PDA Andon intent — Issue #3654', () => {
     model.selectCategory('equipment')
     await model.submit()
     expect(sdk.raise.mock.calls[1][0].body).toEqual(sdk.raise.mock.calls[0][0].body)
+    expect(model.receipt.value?.id).toBe('andon-1')
+    expect(model.unresolved.value).toBe(false)
+  })
+
+  it.each([
+    { name: 'offline precheck', error: new OfflineError() },
+    { name: 'authorization rejection', error: { status: 403 } },
+  ])('keeps the original unknown call locked after a retry fails with $name', async ({ error }) => {
+    sdk.raise
+      .mockRejectedValueOnce(new RequestTimeoutError())
+      .mockRejectedValueOnce(error)
+      .mockResolvedValueOnce({ data: { success: true, data: call } })
+    const { model } = setup()
+    model.selectCategory('quality')
+    await model.submit()
+    await model.submit()
+    expect(model.unresolved.value).toBe(true)
+    expect(model.receipt.value).toBeNull()
+    expect(model.message.value).toContain('结果待核实')
+    model.selectCategory('equipment')
+    model.reset()
+    expect(model.category.value).toBe('quality')
+    await model.submit()
+    expect(sdk.raise.mock.calls.map(([request]) => request.body)).toEqual([
+      sdk.raise.mock.calls[0][0].body,
+      sdk.raise.mock.calls[0][0].body,
+      sdk.raise.mock.calls[0][0].body,
+    ])
     expect(model.receipt.value?.id).toBe('andon-1')
     expect(model.unresolved.value).toBe(false)
   })
