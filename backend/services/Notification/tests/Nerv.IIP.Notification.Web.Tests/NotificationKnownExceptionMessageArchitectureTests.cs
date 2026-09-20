@@ -54,6 +54,8 @@ public sealed class NotificationKnownExceptionMessageArchitectureTests
         Excluded($"{WebRoot}/Application/IntegrationEventHandlers/OpsOperationNotificationIntegrationEventHandlers.cs", "OpsNotificationConsumer", "Required", 1, "IntegrationEventHandlers 异步消费链路"),
         Excluded($"{WebRoot}/Application/IntegrationEventHandlers/MesEngineeringChangeIntegrationEventHandlersForNotification.cs", "WorkOrderEngineeringChangeImpactDetectedIntegrationEventHandlerForNotification", "HandleValidEventAsync", 1, "IntegrationEventHandlers 异步消费链路"),
         Excluded($"{WebRoot}/Application/IntegrationEventHandlers/MesEngineeringChangeIntegrationEventHandlersForNotification.cs", "WorkOrderEngineeringChangeImpactDetectedIntegrationEventHandlerForNotification", "Required", 1, "IntegrationEventHandlers 异步消费链路"),
+        Excluded($"{WebRoot}/Application/IntegrationEventHandlers/MesAndonIntegrationEventHandlerForNotification.cs", "AndonCallEscalatedIntegrationEventHandlerForNotification", "HandleValidEventAsync", 1, "IntegrationEventHandlers 异步消费链路"),
+        Excluded($"{WebRoot}/Application/IntegrationEventHandlers/MesAndonIntegrationEventHandlerForNotification.cs", "AndonCallEscalatedIntegrationEventHandlerForNotification", "Required", 1, "IntegrationEventHandlers 异步消费链路"),
         Excluded($"{WebRoot}/Application/IntegrationEventHandlers/IndustrialTelemetryAlarmIntegrationEventHandlersForNotification.cs", "AlarmRaisedIntegrationEventHandlerForNotification", "HandleValidEventAsync", 1, "IntegrationEventHandlers 异步消费链路"),
         Excluded($"{WebRoot}/Application/IntegrationEventHandlers/IndustrialTelemetryAlarmIntegrationEventHandlersForNotification.cs", "AlarmClearedIntegrationEventHandlerForNotification", "HandleValidEventAsync", 1, "IntegrationEventHandlers 异步消费链路"),
         Excluded($"{WebRoot}/Application/IntegrationEventHandlers/IndustrialTelemetryAlarmIntegrationEventHandlersForNotification.cs", "AlarmEscalatedIntegrationEventHandlerForNotification", "HandleValidEventAsync", 2, "IntegrationEventHandlers 异步消费链路"),
@@ -146,8 +148,8 @@ public sealed class NotificationKnownExceptionMessageArchitectureTests
         var actual = discovered.ToDictionary(site => site.Key, site => site.DirectKnownExceptionCount, StringComparer.Ordinal);
 
         Assert.Equal(16, TargetSites.Sum(site => site.DirectKnownExceptionCount));
-        Assert.Equal(30, ExcludedSites.Sum(site => site.DirectKnownExceptionCount));
-        Assert.Equal(46, expected.Values.Sum());
+        Assert.Equal(32, ExcludedSites.Sum(site => site.DirectKnownExceptionCount));
+        Assert.Equal(48, expected.Values.Sum());
         var missing = expected.Keys.Except(actual.Keys, StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
         var extra = actual.Keys.Except(expected.Keys, StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
         Assert.True(
