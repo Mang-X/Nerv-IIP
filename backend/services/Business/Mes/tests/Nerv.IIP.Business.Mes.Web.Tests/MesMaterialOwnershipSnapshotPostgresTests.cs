@@ -29,7 +29,7 @@ public sealed class MesMaterialOwnershipSnapshotPostgresTests
         {
             MesPostgresLaneDatabase.AssertUsesGovernedDatabase(setup);
             await setup.GetService<IMigrator>().MigrateAsync("20260905025040_AddMesChangeoverRecords");
-            await AddCurrentProductionReportModelCompatibilityAsync(setup);
+            await AddCurrentModelCompatibilityAsync(setup);
             setup.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-01", "FG-01", "PV-01", 4m, 1, Now));
             setup.OperationTasks.Add(OperationTask.Create("org-001", "env-dev", "WO-01", "OP-01",
                 OperationTaskLifecycleStatus.InProgress, 10, "WC-01", [], Now, TimeSpan.FromHours(1), null, null,
@@ -50,7 +50,7 @@ public sealed class MesMaterialOwnershipSnapshotPostgresTests
                 VALUES ('11111111-1111-4111-8111-111111111111', 'org-001', 'env-dev', 'PR-OLD', 'WO-01', 'OP-01',
                         'MAT-01', 'LOT-01', 'KG', 1, 'MIR-OLD', 'SITE-001', 'LINE-01')
                 """);
-            await RemoveCurrentProductionReportModelCompatibilityAsync(setup);
+            await RemoveCurrentModelCompatibilityAsync(setup);
             await setup.Database.MigrateAsync();
         }
 
@@ -99,16 +99,22 @@ public sealed class MesMaterialOwnershipSnapshotPostgresTests
         Assert.Equal("company", Assert.Single(returned.MaterialIssueRequest.GetSourceAllocations()).OwnerType);
     }
 
-    private static Task AddCurrentProductionReportModelCompatibilityAsync(ApplicationDbContext context) =>
+    private static Task AddCurrentModelCompatibilityAsync(ApplicationDbContext context) =>
         context.Database.ExecuteSqlRawAsync("""
             ALTER TABLE mes.production_reports
-            ADD COLUMN report_intent_fingerprint character varying(256) NULL
+            ADD COLUMN report_intent_fingerprint character varying(256) NULL;
+            ALTER TABLE mes.material_issue_requests
+            ADD COLUMN pending_receipt_intent_sent boolean NOT NULL DEFAULT FALSE,
+            ADD COLUMN receipt_uses_actual_issue_value boolean NOT NULL DEFAULT FALSE
             """);
 
-    private static Task RemoveCurrentProductionReportModelCompatibilityAsync(ApplicationDbContext context) =>
+    private static Task RemoveCurrentModelCompatibilityAsync(ApplicationDbContext context) =>
         context.Database.ExecuteSqlRawAsync("""
             ALTER TABLE mes.production_reports
-            DROP COLUMN report_intent_fingerprint
+            DROP COLUMN report_intent_fingerprint;
+            ALTER TABLE mes.material_issue_requests
+            DROP COLUMN pending_receipt_intent_sent,
+            DROP COLUMN receipt_uses_actual_issue_value
             """);
 
     private static MaterialIssueRequest CreateIssue(string requestNo, MaterialTransferAllocation allocation)
