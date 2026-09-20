@@ -18,7 +18,7 @@ const sessionKey = computed(() => JSON.stringify([auth?.sessionId, auth?.princip
   <AndonBoard v-if="session" :key="sessionKey" :session="session" />
   <p v-else class="andon-unavailable" role="status">
     {{
-      IS_REAL_DATA ? '未授权 · 请登录具有真实组织环境的账号' : '未接入真实安灯数据 · 当前为演示模式'
+      IS_REAL_DATA ? '未授权 · 请登录具有真实组织环境的账号' : '当前环境暂无可用安灯数据'
     }}
   </p>
 </template>
