@@ -302,6 +302,13 @@ Schema 演进说明（发布、降级与恢复操作统一见 [`../../runbooks/d
 44. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260905025040_AddMesChangeoverRecords.cs`
 45. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260905025040_AddMesChangeoverRecords.Designer.cs`
 46. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260913024501_AddMesProductionReportSerialNumbers.cs`
+47. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260920013517_AddMesAndonCalls.cs`
+
+安灯异常呼叫：`mes.andon_calls` 由 MES 拥有，物理映射见 `AndonCallEntityTypeConfiguration`，领域规则见 `AndonCall`。Guid v7 强类型 `id` 标识呼叫；`organization_id + environment_id + raise_intent_key` 唯一索引保证同一创建意图只产生一条事实，关闭后仍保留该键。`category` 取 `MaterialShortage`（缺料）、`Equipment`（设备）、`Quality`（质量）、`Process`（工艺）；`work_order_id`、`operation_task_id`、`work_center_id` 与 `caller_id` 在发起时冻结，不建立跨 Schema 外键。
+
+呼叫按 `Open → Claimed → Closed` 推进。`responder_id`、`claim_intent_key`、`first_responded_at_utc` 仅在首次认领确认；仅认领人可关闭，`close_intent_key` 与 `closed_at_utc` 保存关闭意图和首次关闭时间。同键同操作者的认领/关闭重放保持原事实，同键不同操作者或另一意图不得覆盖。响应时长由首次认领 UTC 减 `raised_at_utc` 得到，未认领时为空。框架 `row_version` 保护认领、关闭和升级的并发写入。
+
+升级与生命周期独立：仅 `Open` 且达到显式配置时限的呼叫可写入一次 `escalated_at_utc` 和 `escalation_recipient_id`；不设业务默认时限或接收人，不改变原状态及来源，认领后不再升级。scope/category/status/escalated/time 索引供后续未认领扫描使用。此表只保存事实，不调度扫描、不发送通知、不创建其它业务单据；本增量 migration 仅新增该表，既有事实不回填，`Down` 会删除呼叫事实，应仅用于一次性验证库。
 
 机器计价事实补充：`operation_tasks.machine_time_execution_device_asset_id` 冻结当前执行窗口开始时的单台设备，`machine_time_evidence_unavailable` 在开工时无设备或执行中设备新增、清空、切换后保持失败关闭；重开会开启新窗口。`operation_actual_time_settlements` 以 `device_asset_id`、`machine_time_status`、nullable `billable_machine_ticks` 和 `machine_time_basis_code` 冻结 V2 机器工时事实。`Available` 必须同时具备设备、非负 ticks（允许真实零值）和 `single-device-active-minus-explicit-pause-v1`；`NotApplicable`/`Unavailable` 不得携带这些值，由 `ck_operation_actual_time_settlements_machine_fact` 在 PostgreSQL 强制。迁移将既有结算标为 `Unavailable` 且不伪造零工时；作废复用原快照，重开后的再次完工产生新 revision。
 

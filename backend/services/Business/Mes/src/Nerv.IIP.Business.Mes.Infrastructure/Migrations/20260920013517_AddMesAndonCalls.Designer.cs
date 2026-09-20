@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260920013517_AddMesAndonCalls")]
+    partial class AddMesAndonCalls
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -615,7 +618,6 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasComment("Whether the warehouse outbound leg of the in-flight line-side receipt has been posted by Inventory.");
 
                     b.Property<string>("PendingIssueLegPostedIndexesJson")
-                        .IsConcurrencyToken()
                         .IsRequired()
                         .ValueGeneratedOnAdd()
                         .HasColumnType("text")
@@ -628,14 +630,6 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnType("character varying(300)")
                         .HasColumnName("pending_posting_token")
                         .HasComment("Normalized cross-leg idempotency token of the in-flight line-side receipt posting; null when nothing is in flight.");
-
-                    b.Property<bool>("PendingReceiptIntentSent")
-                        .IsConcurrencyToken()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false)
-                        .HasColumnName("pending_receipt_intent_sent")
-                        .HasComment("Whether the current receipt attempt has emitted its inbound intent in the same transaction as the outbox.");
 
                     b.Property<bool>("PendingReceiptLegPosted")
                         .ValueGeneratedOnAdd()
@@ -658,13 +652,6 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasDefaultValue(0)
                         .HasColumnName("receipt_attempt")
                         .HasComment("Monotonic line-side receipt attempt number stamped into the Inventory idempotency key so a failed attempt never blocks the retry.");
-
-                    b.Property<bool>("ReceiptUsesActualIssueValue")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false)
-                        .HasColumnName("receipt_uses_actual_issue_value")
-                        .HasComment("Whether this receipt waits for all actual warehouse issue values before requesting inbound; false preserves legacy in-flight transfers.");
 
                     b.Property<DateTimeOffset?>("ReceivedAtUtc")
                         .HasColumnType("timestamp with time zone")

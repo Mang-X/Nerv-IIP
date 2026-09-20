@@ -291,6 +291,22 @@
       ]
     },
     {
+      "id": "mes-andon-postgres",
+      "service": "Mes",
+      "tier": "core",
+      "status": "active",
+      "databaseOwnership": "runner",
+      "project": "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/Nerv.IIP.Business.Mes.Web.Tests.csproj",
+      "filter": "FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests",
+      "databasePrefix": "nerv_iip_mes_andon",
+      "diagnosticSchemas": ["mes"],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Migration_persists_complete_facts_and_replay_keeps_original_times_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Raise_intent_is_unique_within_scope_and_does_not_cross_tenants_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Stale_concurrent_claims_commit_exactly_one_responder_on_postgres"
+      ]
+    },
+    {
       "id": "mes-changeover-postgres",
       "service": "Mes",
       "tier": "core",
