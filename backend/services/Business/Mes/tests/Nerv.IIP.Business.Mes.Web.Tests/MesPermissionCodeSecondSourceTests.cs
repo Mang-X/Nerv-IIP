@@ -28,6 +28,11 @@ public sealed class MesPermissionCodeSecondSourceTests
     {
         var expected = new Dictionary<string, string>(StringComparer.Ordinal)
         {
+            ["raiseBusinessMesAndonCall"] = "business.mes.operations.manage",
+            ["claimBusinessMesAndonCall"] = "business.mes.operations.manage",
+            ["closeBusinessMesAndonCall"] = "business.mes.operations.manage",
+            ["getBusinessMesAndonCall"] = "business.mes.operations.read",
+            ["listBusinessMesAndonCalls"] = "business.mes.operations.read",
             ["getBusinessMesFoundationReadinessArea"] = "business.mes.foundation.read", // GET /api/business/v1/mes/foundation-readiness/{areaCode}
             ["getBusinessMesOverview"] = "business.mes.overview.read", // GET /api/business/v1/mes/overview
             ["listBusinessMesProductionPlans"] = "business.mes.plans.read", // GET /api/business/v1/mes/production-plans
