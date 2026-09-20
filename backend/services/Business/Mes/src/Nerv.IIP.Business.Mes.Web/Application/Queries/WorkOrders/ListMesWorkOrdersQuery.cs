@@ -48,6 +48,10 @@ public sealed record MesWorkOrderExecutionFact(
     string? SourceNcrId = null,
     string? SourceNcrCode = null);
 
+/// <summary>
+/// MES 工单列表公开的工序执行事实。<paramref name="OperationTaskId"/> 是 MES 持久化工序身份，
+/// Scheduling 等跨服务消费者必须原样沿用；<paramref name="OperationSequence"/> 只表达同一工单内的路线顺序。
+/// </summary>
 public sealed record MesOperationTaskExecutionFact(
     string OperationTaskId,
     string Status,

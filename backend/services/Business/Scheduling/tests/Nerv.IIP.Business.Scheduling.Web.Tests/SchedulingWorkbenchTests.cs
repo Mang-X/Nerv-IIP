@@ -99,9 +99,108 @@ public sealed class SchedulingWorkbenchTests
         Assert.Equal(SchedulingWorkbenchLimits.MaxOrderCount, result.Count);
         Assert.Equal(
             SchedulingWorkbenchLimits.MaxOrderCount,
-            result.Select(x => x.OrderId).Distinct(StringComparer.Ordinal).Count());
-        Assert.Equal("ROUTE-001:A", result.First().RoutingVersionId);
-        Assert.True(result.First().IsRush);
+            result.Select(x => x.Order.OrderId).Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal("ROUTE-001:A", result.First().Order.RoutingVersionId);
+        Assert.True(result.First().Order.IsRush);
+    }
+
+    [Fact]
+    public async Task Source_provider_preserves_mes_operation_identity_through_problem_assembly()
+    {
+        var start = new DateTimeOffset(2026, 9, 20, 8, 0, 0, TimeSpan.Zero);
+        var routing = new SchedulingProblemRoutingSnapshot(
+            "ROUTE-001",
+            "A",
+            "SKU-001",
+            [
+                new SchedulingProblemRoutingOperationSnapshot(
+                    Sequence: 10,
+                    WorkCenterCode: "WC-001",
+                    OperationCode: "cutting",
+                    OperationName: "Cutting",
+                    SetupMinutes: 0,
+                    RunMinutes: 30,
+                    TeardownMinutes: 0),
+                new SchedulingProblemRoutingOperationSnapshot(
+                    Sequence: 20,
+                    WorkCenterCode: "WC-001",
+                    OperationCode: "polishing",
+                    OperationName: "Polishing",
+                    SetupMinutes: 0,
+                    RunMinutes: 20,
+                    TeardownMinutes: 0),
+            ]);
+        var productEngineering = new StubProductEngineeringClient(routing);
+        var handler = new StubHandler(_ => Json(new
+        {
+            items = new[]
+            {
+                new
+                {
+                    workOrderId = "WO-001",
+                    skuId = "SKU-001",
+                    skuCode = "SKU-001",
+                    productionVersionId = "pv-001",
+                    quantity = 1,
+                    priority = 10,
+                    dueUtc = start.AddHours(8),
+                    status = "released",
+                    workOrderNo = "MO-001",
+                    operationTasks = new[]
+                    {
+                        new
+                        {
+                            operationTaskId = "MES-TASK-020",
+                            operationSequence = 20,
+                            earliestStartUtc = start,
+                        },
+                        new
+                        {
+                            operationTaskId = "MES-TASK-010",
+                            operationSequence = 10,
+                            earliestStartUtc = start,
+                        },
+                    },
+                },
+            },
+            total = 1,
+        }));
+        var provider = new HttpSchedulingWorkbenchSourceProvider(
+            new HttpClient(handler) { BaseAddress = new Uri("http://mes") },
+            productEngineering);
+        var sourceOrders = await provider.ResolveOrdersAsync(
+            "org-001",
+            "env-dev",
+            start,
+            [new("WO-001", 10, false)],
+            CancellationToken.None);
+        var producer = new SchedulingProblemProducer(productEngineering, new StubMasterDataClient(start));
+
+        var problem = await producer.AssembleWorkbenchAsync(
+            new AssembleSchedulingWorkbenchProblemRequest(
+                ProblemId: "problem-mes-identity",
+                OrganizationId: "org-001",
+                EnvironmentId: "env-dev",
+                HorizonStartUtc: start,
+                HorizonEndUtc: start.AddHours(8),
+                Orders: sourceOrders),
+            CancellationToken.None);
+
+        var operations = Assert.Single(problem.Orders).Operations.OrderBy(x => x.OperationSequence).ToArray();
+        Assert.Collection(
+            operations,
+            operation =>
+            {
+                Assert.Equal("MES-TASK-010", operation.OperationId);
+                Assert.Equal(10, operation.OperationSequence);
+                Assert.Empty(operation.PredecessorOperationIds);
+            },
+            operation =>
+            {
+                Assert.Equal("MES-TASK-020", operation.OperationId);
+                Assert.Equal(20, operation.OperationSequence);
+                Assert.Equal(["MES-TASK-010"], operation.PredecessorOperationIds);
+            });
     }
 
     [Fact]
@@ -185,7 +284,7 @@ public sealed class SchedulingWorkbenchTests
             "org-001", "env-dev", start, [new("WO-501", 10, false)], CancellationToken.None);
 
         Assert.Equal(2, requests);
-        Assert.Equal("WO-501", Assert.Single(result).OrderId);
+        Assert.Equal("WO-501", Assert.Single(result).Order.OrderId);
     }
 
     /// <summary>
@@ -210,7 +309,7 @@ public sealed class SchedulingWorkbenchTests
         var result = await provider.ResolveOrdersAsync(
             "org-001", "env-dev", start, [new("WO-001", 10, false)], CancellationToken.None);
 
-        Assert.Equal("WO-001", Assert.Single(result).OrderId);
+        Assert.Equal("WO-001", Assert.Single(result).Order.OrderId);
         var query = Assert.Single(queries);
         Assert.Contains("statuses=created%2Creleased%2Cstarted%2Chold", query, StringComparison.Ordinal);
     }
@@ -398,13 +497,15 @@ public sealed class SchedulingWorkbenchTests
             .Count());
     }
 
-    private sealed class StubProductEngineeringClient : ISchedulingProblemProductEngineeringClient
+    private sealed class StubProductEngineeringClient(SchedulingProblemRoutingSnapshot? routing = null)
+        : ISchedulingProblemProductEngineeringClient
     {
         public Task<SchedulingProblemRoutingSnapshot> GetRoutingAsync(
             string organizationId,
             string environmentId,
             string routingVersionId,
-            CancellationToken cancellationToken) => throw new NotSupportedException();
+            CancellationToken cancellationToken) => Task.FromResult(
+                routing ?? throw new NotSupportedException());
 
         public Task<SchedulingProblemProductionVersionSnapshot> GetProductionVersionRoutingAsync(
             string organizationId,
@@ -412,6 +513,39 @@ public sealed class SchedulingWorkbenchTests
             string productionVersionId,
             CancellationToken cancellationToken) => Task.FromResult(
                 new SchedulingProblemProductionVersionSnapshot(productionVersionId, "SKU-001", "ROUTE-001:A"));
+    }
+
+    private sealed class StubMasterDataClient(DateTimeOffset start) : ISchedulingProblemMasterDataClient
+    {
+        public Task<SchedulingProblemWorkCenterSnapshot> GetWorkCenterAsync(
+            string organizationId,
+            string environmentId,
+            string workCenterCode,
+            CancellationToken cancellationToken) => Task.FromResult(
+                new SchedulingProblemWorkCenterSnapshot(workCenterCode, "CAL-001", 1, ["cutting"]));
+
+        public Task<SchedulingProblemCalendarSnapshot> GetCalendarAsync(
+            string organizationId,
+            string environmentId,
+            string calendarCode,
+            DateTimeOffset horizonStartUtc,
+            DateTimeOffset horizonEndUtc,
+            CancellationToken cancellationToken) => Task.FromResult(
+                new SchedulingProblemCalendarSnapshot(
+                    calendarCode,
+                    [new SchedulingProblemShiftWindowSnapshot(start, start.AddHours(8), "day-shift")]));
+
+        public Task<IReadOnlyCollection<SchedulingProblemDeviceAssetSnapshot>> ListDeviceAssetsAsync(
+            string organizationId,
+            string environmentId,
+            string workCenterCode,
+            CancellationToken cancellationToken) => Task.FromResult<IReadOnlyCollection<SchedulingProblemDeviceAssetSnapshot>>([]);
+
+        public Task<IReadOnlyCollection<SchedulingProblemToolingFactSnapshot>> ResolveToolingFactsAsync(
+            string organizationId,
+            string environmentId,
+            IReadOnlyCollection<SchedulingProblemToolingTransitionSnapshot> transitions,
+            CancellationToken cancellationToken) => Task.FromResult<IReadOnlyCollection<SchedulingProblemToolingFactSnapshot>>([]);
     }
 
     private static ApplicationDbContext CreateDbContext()
