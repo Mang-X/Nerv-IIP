@@ -6,6 +6,10 @@ public sealed class MesKnownExceptionMessageArchitectureTests
 
     private static readonly IReadOnlyList<MesKnownExceptionSite> ExpectedLedger =
     [
+        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/AndonCallAggregate/AndonCall.cs", "AndonCall", "Raise", 1, "安灯呼叫类别的中文领域拒绝，尚无 HTTP 公开面"),
+        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/AndonCallAggregate/AndonCall.cs", "AndonCall", "Claim", 2, "安灯认领所有权与首次时间的中文领域拒绝，尚无 HTTP 公开面"),
+        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/AndonCallAggregate/AndonCall.cs", "AndonCall", "Close", 3, "安灯关闭所有权与生命周期的中文领域拒绝，尚无 HTTP 公开面"),
+        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/AndonCallAggregate/AndonCall.cs", "AndonCall", "TryEscalate", 1, "安灯升级时限的中文领域拒绝，尚无 HTTP 公开面"),
         Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/OperationTaskAggregate/OperationTask.cs", "OperationTask", "Assign", 1, "同步公开手工派工拒绝"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/OperationTaskAggregate/OperationTask.cs", "OperationTask", "Claim", 2, "PDA 自领任务的中文业务拒绝"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/ChangeoverRecordAggregate/ChangeoverRecord.cs", "ChangeoverRecord", "Complete", 2, "换型完成时间与重复完成的中文业务拒绝"),
@@ -89,9 +93,9 @@ public sealed class MesKnownExceptionMessageArchitectureTests
         var documents = ReadMesSourceDocuments();
         var discovered = MesKnownExceptionUserMessageSourceAnalyzer.Discover(documents);
 
-        Assert.Equal(75, discovered.Count);
-        Assert.Equal(174, discovered.Sum(site => site.DirectKnownExceptionCount));
-        Assert.Equal(170, documents.Sum(document => CountOccurrences(document.Text, "new KnownException")));
+        Assert.Equal(79, discovered.Count);
+        Assert.Equal(181, discovered.Sum(site => site.DirectKnownExceptionCount));
+        Assert.Equal(177, documents.Sum(document => CountOccurrences(document.Text, "new KnownException")));
         Assert.Equal(ExpectedLedger.Count, discovered.Count);
 
         var expectedByKey = ExpectedLedger.ToDictionary(site => site.Key, StringComparer.Ordinal);
