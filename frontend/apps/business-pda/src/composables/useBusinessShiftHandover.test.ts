@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  incomingPartyState as coreIncomingPartyState,
+  incomingUserLabel as coreIncomingUserLabel,
+  outgoingPartyState as coreOutgoingPartyState,
+  outgoingUserLabel as coreOutgoingUserLabel,
+} from '@nerv-iip/business-core'
+import {
   assertHandoverAccepted,
   formatAttachmentSize,
   formatHandoverTimestamp,
@@ -10,78 +16,35 @@ import {
   toHandoverPhotoFileName,
 } from './useBusinessShiftHandover'
 
-describe('outgoingUserLabel / incomingUserLabel', () => {
-  it('shows the resolved display name when the worker directory answered', () => {
-    expect(outgoingUserLabel({ outgoingUserId: 'user-a', outgoingUserName: '张三' })).toBe('张三')
-    expect(
-      incomingUserLabel({
-        incomingUserId: 'user-b',
-        incomingUserName: '李四',
-        acceptedAtUtc: '2026-09-14T01:00:00Z',
-      }),
-    ).toBe('李四')
+/**
+ * PDA 侧只剩**冒烟**。四态判据（named / 姓名未知 / 未记录 / 待接班）自 #3644 起只住在
+ * `@nerv-iip/business-core` 的 `mes/shiftHandoverParties`，穷举也只落在那份测试里。
+ *
+ * **删掉的那几条原本要证「四态判据正确」——那件事换了住处，所以断言也跟着搬走**
+ * （搬到 `shiftHandoverParties.test.ts`，含新增的状态层四格穷举）。在这里留第二份
+ * 不增加任何鉴别力（等价输入），却会随时间静默分叉成两套说法。
+ *
+ * **留下这一条要证的真不变量是另一件事**：本模块转出的就是 business-core 那几个函数**本身**，
+ * 而不是一个同名的第二实现、也没有在转出时把符号接错。
+ *
+ * 为什么必须按**函数引用**（`toBe`）比而不是按行为比：一份行为完全正确的本地副本会让所有
+ * 「四态说法对不对」的断言照常全绿——那正是这条要防的失效方向，只有引用相等能看见它。
+ */
+describe('shift-handover party labels are re-exported, not re-implemented', () => {
+  it('re-exports the business-core implementations themselves', () => {
+    expect(outgoingUserLabel).toBe(coreOutgoingUserLabel)
+    expect(incomingUserLabel).toBe(coreIncomingUserLabel)
+    expect(outgoingPartyState).toBe(coreOutgoingPartyState)
+    expect(incomingPartyState).toBe(coreIncomingPartyState)
   })
 
-  /**
-   * 判据是**身份 id 在不在**，不是姓名在不在。
-   *
-   * 网关始终按认证 principal 注入 id，所以「已接班 + id 有值 + 姓名解不出」是常态；
-   * 把它说成「未记录」等于在一张标着「已接班」的单子上断言「没有接班人」——与数据相反。
-   * 把实现改回按 name 判据时，本格必红。
-   */
-  it('says 姓名未知 — NOT 未记录 — when the id is on record but the name is not resolvable', () => {
-    expect(outgoingUserLabel({ outgoingUserId: 'user-admin', outgoingUserName: null })).toBe(
-      '姓名未知',
-    )
-    expect(
-      incomingUserLabel({
-        incomingUserId: 'user-admin',
-        incomingUserName: null,
-        acceptedAtUtc: '2026-09-14T01:00:00Z',
-      }),
-    ).toBe('姓名未知')
-  })
-
-  it('keeps 未记录 for the genuinely missing identity (问责链真的断了)', () => {
+  // 转出时把 outgoing/incoming 接反不报编译错（同签名形状），所以单独钉一格可观察后果：
+  // 交班侧不看 `acceptedAtUtc`，接反后「未接班且无 id」会从「未记录」变成「待接班」。
+  it('keeps the outgoing and incoming exports on their own fields', () => {
     expect(outgoingUserLabel({ outgoingUserId: null, outgoingUserName: null })).toBe('未记录')
-    expect(outgoingUserLabel({ outgoingUserId: '   ', outgoingUserName: '  ' })).toBe('未记录')
-    expect(
-      incomingUserLabel({
-        incomingUserId: null,
-        incomingUserName: null,
-        acceptedAtUtc: '2026-09-14T01:00:00Z',
-      }),
-    ).toBe('未记录')
-  })
-
-  it('keeps 待接班 apart from both — 还没人接 ≠ 接了班但身份缺失', () => {
     expect(
       incomingUserLabel({ incomingUserId: null, incomingUserName: null, acceptedAtUtc: null }),
     ).toBe('待接班')
-  })
-
-  it('never puts the IAM principal id on screen in any state', () => {
-    const labels = [
-      outgoingUserLabel({ outgoingUserId: 'user-admin', outgoingUserName: null }),
-      incomingUserLabel({
-        incomingUserId: 'user-admin',
-        incomingUserName: null,
-        acceptedAtUtc: '2026-09-14T01:00:00Z',
-      }),
-      incomingUserLabel({ incomingUserId: null, incomingUserName: null, acceptedAtUtc: null }),
-    ]
-    for (const label of labels) expect(label).not.toContain('user-admin')
-  })
-
-  it('exposes the four states so callers branch instead of re-deriving the rule', () => {
-    expect(outgoingPartyState({ outgoingUserId: 'u', outgoingUserName: '张三' })).toBe('named')
-    expect(outgoingPartyState({ outgoingUserId: 'u', outgoingUserName: null })).toBe(
-      'name-unresolved',
-    )
-    expect(outgoingPartyState({ outgoingUserId: null, outgoingUserName: null })).toBe('absent')
-    expect(
-      incomingPartyState({ incomingUserId: null, incomingUserName: null, acceptedAtUtc: null }),
-    ).toBe('pending')
   })
 })
 

@@ -32,9 +32,15 @@ const worker = ref<
     }
   | undefined
 >(undefined)
-const warehouseEntries = ref<Array<{ key: string; label: string; route: string; count: number }>>(
-  [],
-)
+const warehouseEntries = ref<
+  Array<{
+    key: string
+    label: string
+    route: string
+    count: number | null
+    state: 'counted' | 'loading' | 'denied' | 'failed'
+  }>
+>([])
 const inspectionTasks = ref<
   Array<{
     inspectionTaskId?: string
@@ -82,6 +88,17 @@ vi.mock('@/composables/useWorkbenchHome', () => {
           permissions.value.has(HOME_PERMISSIONS.wmsCounts),
       ),
       entries: warehouseEntries,
+      scopeDenied: computed(
+        () =>
+          warehouseEntries.value.length > 0 &&
+          warehouseEntries.value.every((entry) => entry.state === 'denied'),
+      ),
+      hasDeniedEntry: computed(() =>
+        warehouseEntries.value.some((entry) => entry.state === 'denied'),
+      ),
+      hasFailedEntry: computed(() =>
+        warehouseEntries.value.some((entry) => entry.state === 'failed'),
+      ),
       pending: ref(false),
       lastUpdatedAt: ref('2026-07-28T10:20:30.000Z'),
     }),
@@ -171,7 +188,9 @@ describe('PDA home', () => {
 
   it('tailors the app wall and sections to the principal permissions（仓储角色不见 MES 入口）', () => {
     permissions.value = new Set(['business.wms.receipts.read', 'business.wms.shipments.read'])
-    warehouseEntries.value = [{ key: 'putaway', label: '待上架', route: '/wms/putaway', count: 4 }]
+    warehouseEntries.value = [
+      { key: 'putaway', label: '待上架', route: '/wms/putaway', count: 4, state: 'counted' },
+    ]
     const wrapper = mount(HomePage)
 
     // 仓储板块可见，「我的任务」「待检任务」按权限隐藏
@@ -187,7 +206,9 @@ describe('PDA home', () => {
 
   it('shows count work without receipt entries for a counts-read-only principal', () => {
     permissions.value = new Set(['business.wms.counts.read'])
-    warehouseEntries.value = [{ key: 'count', label: '待盘点', route: '/wms/count', count: 7 }]
+    warehouseEntries.value = [
+      { key: 'count', label: '待盘点', route: '/wms/count', count: 7, state: 'counted' },
+    ]
 
     const wrapper = mount(HomePage)
 
@@ -199,7 +220,9 @@ describe('PDA home', () => {
 
   it('does not expose count work to a receipts-read-only principal', () => {
     permissions.value = new Set(['business.wms.receipts.read'])
-    warehouseEntries.value = [{ key: 'inbound', label: '待收货', route: '/wms/inbound', count: 4 }]
+    warehouseEntries.value = [
+      { key: 'inbound', label: '待收货', route: '/wms/inbound', count: 4, state: 'counted' },
+    ]
 
     const wrapper = mount(HomePage)
 
@@ -207,6 +230,103 @@ describe('PDA home', () => {
     expect(wrapper.text()).toContain('待收货')
     expect(wrapper.text()).toContain('收货入库')
     expect(wrapper.text()).not.toContain('盘点')
+  })
+
+  /**
+   * #3474：admin 有 WMS 权限码但没有仓储数据范围，四条请求全 403。旧实现把 403 回落成
+   * `0`，四个卡片写着「待收货 0」——屏上断言「一件都没有」，而真相是「看不到任何数据」。
+   *
+   * 下面几条一律读**值格**（`home-warehouse-<key>-value`）并用 `toBe` 比**整串**，不用
+   * `toContain`：整块 tile 的文本里还有标签（「待收货」等），子串断言对文案漂移
+   * （`'无范围'` → `'无范围XX'`）零鉴别力——这正是 console 侧被抓到过一次的同一形状，
+   * 按形状而不是按位置收掉。板块说明同理，按整句 `toBe`。
+   */
+  const NOTE = '[data-testid="home-warehouse-scope-note"]'
+  const valueOf = (wrapper: ReturnType<typeof mount>, key: string) =>
+    wrapper.get(`[data-testid="home-warehouse-${key}-value"]`).text()
+
+  it('shows 无范围 — never a number — when every warehouse count is forbidden', () => {
+    permissions.value = new Set(['business.wms.receipts.read', 'business.wms.counts.read'])
+    warehouseEntries.value = [
+      { key: 'inbound', label: '待收货', route: '/wms/inbound', count: null, state: 'denied' },
+      { key: 'putaway', label: '待上架', route: '/wms/putaway', count: null, state: 'denied' },
+      { key: 'count', label: '待盘点', route: '/wms/count', count: null, state: 'denied' },
+    ]
+
+    const wrapper = mount(HomePage)
+
+    for (const key of ['inbound', 'putaway', 'count']) {
+      expect(valueOf(wrapper, key)).toBe('无范围')
+      // 「不得是假读数」这条与文案分开钉：任何数字出现在值格里都是回归。
+      expect(valueOf(wrapper, key)).not.toMatch(/\d/)
+    }
+    expect(wrapper.get(NOTE).text()).toBe(
+      '当前账号没有仓储数据范围，看不到任何仓储单据——这不是「0 件」。请联系管理员分配仓库范围。',
+    )
+  })
+
+  it('keeps a real zero rendered as 0 and shows no scope note', () => {
+    permissions.value = new Set(['business.wms.counts.read'])
+    warehouseEntries.value = [
+      { key: 'count', label: '待盘点', route: '/wms/count', count: 0, state: 'counted' },
+    ]
+
+    const wrapper = mount(HomePage)
+
+    expect(valueOf(wrapper, 'count')).toBe('0')
+    expect(wrapper.find(NOTE).exists()).toBe(false)
+  })
+
+  it('marks only the denied tile when part of the warehouse scope is granted', () => {
+    permissions.value = new Set(['business.wms.receipts.read'])
+    warehouseEntries.value = [
+      { key: 'inbound', label: '待收货', route: '/wms/inbound', count: null, state: 'denied' },
+      { key: 'putaway', label: '待上架', route: '/wms/putaway', count: 4, state: 'counted' },
+    ]
+
+    const wrapper = mount(HomePage)
+
+    expect(valueOf(wrapper, 'inbound')).toBe('无范围')
+    expect(valueOf(wrapper, 'putaway')).toBe('4')
+    // 部分被拒时不得改口成「整块都看不到」——那会把真读到的 4 也谎报掉。
+    expect(wrapper.get(NOTE).text()).toBe(
+      '标「无范围」的项目没有分配给当前账号，其数量不可知，不是 0。需要这几项请联系管理员分配仓库范围。',
+    )
+  })
+
+  it('separates a read failure from both a denied scope and a real zero', () => {
+    permissions.value = new Set(['business.wms.receipts.read'])
+    warehouseEntries.value = [
+      { key: 'inbound', label: '待收货', route: '/wms/inbound', count: null, state: 'failed' },
+    ]
+
+    const wrapper = mount(HomePage)
+
+    expect(valueOf(wrapper, 'inbound')).toBe('加载失败')
+    expect(valueOf(wrapper, 'inbound')).not.toMatch(/\d/)
+    expect(wrapper.get(NOTE).text()).toBe(
+      '标「加载失败」的项目本次没读到，数量不可知，不是 0。请下拉刷新或稍后重试。',
+    )
+  })
+
+  // 三句说明必须互不相同、且每句都给出下一步动作。缺了这条，把三个分支返回同一句、
+  // 或把动作句删成纯解释，都仍然全绿。
+  it('gives each warehouse scope note its own sentence with a next action', () => {
+    permissions.value = new Set(['business.wms.receipts.read'])
+    const notes = new Set<string>()
+    for (const entries of [
+      [{ key: 'inbound', label: '待收货', route: '/wms/inbound', count: null, state: 'denied' }],
+      [
+        { key: 'inbound', label: '待收货', route: '/wms/inbound', count: null, state: 'denied' },
+        { key: 'putaway', label: '待上架', route: '/wms/putaway', count: 4, state: 'counted' },
+      ],
+      [{ key: 'inbound', label: '待收货', route: '/wms/inbound', count: null, state: 'failed' }],
+    ] as (typeof warehouseEntries)['value'][]) {
+      warehouseEntries.value = entries
+      notes.add(mount(HomePage).get(NOTE).text())
+    }
+    expect(notes.size).toBe(3)
+    for (const note of notes) expect(note).toMatch(/请联系管理员|请下拉刷新/)
   })
 
   it('shows the inspection source and missing-scope explanation when permitted without scope', () => {
