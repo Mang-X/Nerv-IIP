@@ -147,6 +147,10 @@ public sealed class SchedulingLockCommandTests
                 ProblemId = request.ProblemId,
                 LockedAssignments = request.LockedAssignments ?? []
             });
+
+        public Task<SchedulingProblemContract> AssembleWorkbenchAsync(
+            AssembleSchedulingWorkbenchProblemRequest request,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
     private sealed class StubContextAccessor : ISchedulingIntegrationEventContextAccessor

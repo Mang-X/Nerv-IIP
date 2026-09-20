@@ -7,9 +7,15 @@ namespace Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 
 public sealed record SchedulingWorkbenchOrderSelection(string WorkOrderId, int Priority, bool IsRush);
 
+public sealed record SchedulingWorkbenchOperationSource(string OperationTaskId, int OperationSequence);
+
+public sealed record SchedulingWorkbenchProblemSourceOrder(
+    SchedulingProblemSourceOrder Order,
+    IReadOnlyCollection<SchedulingWorkbenchOperationSource> Operations);
+
 public interface ISchedulingWorkbenchSourceProvider
 {
-    Task<IReadOnlyCollection<SchedulingProblemSourceOrder>> ResolveOrdersAsync(
+    Task<IReadOnlyCollection<SchedulingWorkbenchProblemSourceOrder>> ResolveOrdersAsync(
         string organizationId,
         string environmentId,
         DateTimeOffset earliestStartFallbackUtc,
@@ -22,7 +28,7 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
     ISchedulingProblemProductEngineeringClient productEngineeringClient,
     IInternalServiceTokenProvider? internalTokenProvider = null) : ISchedulingWorkbenchSourceProvider
 {
-    public async Task<IReadOnlyCollection<SchedulingProblemSourceOrder>> ResolveOrdersAsync(
+    public async Task<IReadOnlyCollection<SchedulingWorkbenchProblemSourceOrder>> ResolveOrdersAsync(
         string organizationId,
         string environmentId,
         DateTimeOffset earliestStartFallbackUtc,
@@ -133,18 +139,22 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
                 throw new KnownException($"MES 工单 '{order.WorkOrderId}' 与生产版本 '{order.ProductionVersionId}' 不匹配，请检查配置。");
             }
 
-            return new SchedulingProblemSourceOrder(
-                order.WorkOrderId,
-                routing.SkuCode,
-                order.Quantity,
-                order.DueUtc,
-                selection.Priority,
-                selection.IsRush,
-                order.OperationTasks.Count == 0
-                    ? earliestStartFallbackUtc
-                    : order.OperationTasks.Min(x => x.EarliestStartUtc),
-                routing.RoutingVersionId,
-                BusinessReference: order.WorkOrderNo);
+            return new SchedulingWorkbenchProblemSourceOrder(
+                new SchedulingProblemSourceOrder(
+                    order.WorkOrderId,
+                    routing.SkuCode,
+                    order.Quantity,
+                    order.DueUtc,
+                    selection.Priority,
+                    selection.IsRush,
+                    order.OperationTasks.Count == 0
+                        ? earliestStartFallbackUtc
+                        : order.OperationTasks.Min(x => x.EarliestStartUtc),
+                    routing.RoutingVersionId,
+                    BusinessReference: order.WorkOrderNo),
+                order.OperationTasks
+                    .Select(x => new SchedulingWorkbenchOperationSource(x.OperationTaskId, x.OperationSequence))
+                    .ToArray());
         }).ToArray();
     }
 
@@ -253,5 +263,8 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
         IReadOnlyCollection<MesOperationTaskItem> OperationTasks,
         string? WorkOrderNo,
         string? SkuCode);
-    private sealed record MesOperationTaskItem(DateTimeOffset EarliestStartUtc);
+    private sealed record MesOperationTaskItem(
+        string OperationTaskId,
+        int OperationSequence,
+        DateTimeOffset EarliestStartUtc);
 }

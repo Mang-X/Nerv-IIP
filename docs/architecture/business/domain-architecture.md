@@ -116,7 +116,7 @@ CRM-lite 与 OMS-lite 属于 ERP Sales / WMS fulfillment 子域；多渠道拆�
 
 ### 生产执行到成本
 
-MES 拥有工单、工序和报工；Scheduling 拥有排程；Inventory 拥有库存过账；ERP Finance 消费报工、消耗和库存结果形成成本事实。
+MES 拥有工单、工序和报工；Scheduling 拥有排程；Inventory 拥有库存过账；ERP Finance 消费报工、消耗和库存结果形成成本事实。MES 持久化的 `OperationTaskId` 是工序跨服务身份，Scheduling 工作台生成排程问题时原样用作 `OperationId`；`OperationSequence` 只保留同一工单内的路线顺序，不参与另造工序 ID。
 
 ### 设备到维护到产能
 
