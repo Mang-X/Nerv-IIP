@@ -153,6 +153,7 @@ describe('work-order detail — 拒载时不反显安全假文案 (#1288)', () =
     const wrapper = mountDetail()
     expect(wrapper.findAll('[data-andon-source="true"]')).toHaveLength(1)
     expect(wrapper.get('[data-andon-source="true"]').text()).toContain('WO-1-OP-20')
+    expect(wrapper.get('[data-andon-source="true"]').text()).toContain('来源工序')
     wrapper.unmount()
   })
 

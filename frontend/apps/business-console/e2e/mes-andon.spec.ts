@@ -40,23 +40,46 @@ test('安灯服务端队列、分页、认领冲突与本人关闭，保存实�
     const url = new URL(route.request().url())
     if (url.pathname.endsWith('/auth/refresh')) return fulfill(route, envelope(session))
     if (url.pathname.endsWith('/auth/me')) return fulfill(route, envelope(principal))
+    if (url.pathname.endsWith('/me/work-context'))
+      return fulfill(
+        route,
+        envelope({
+          authorizedScopes: [
+            { kind: 'work-center', id: 'WC-A', displayName: '总装一线' },
+            { kind: 'work-center', id: 'WC-B', displayName: '总装二线' },
+          ],
+          selectedScope: url.searchParams.has('scopeId')
+            ? { kind: url.searchParams.get('scopeKind'), id: url.searchParams.get('scopeId') }
+            : null,
+        }),
+      )
     if (url.pathname.endsWith('/andon-calls/call-1/claim')) {
       expect(route.request().postDataJSON()).not.toHaveProperty('responderId')
       conflict = false
       return fulfill(route, { success: false, message: '呼叫已由其他人员认领' }, 409)
     }
     if (url.pathname.endsWith('/andon-calls/call-2/claim')) {
+      expect(route.request().postDataJSON()).toMatchObject({
+        scopeKind: 'work-center',
+        scopeId: 'WC-B',
+      })
       claimed = true
       return fulfill(
         route,
-        envelope({ id: 'call-2', status: 'claimed', responderId: principal.principalId }),
+        envelope({ id: 'call-2', status: 'claimed', responderId: `user:${principal.principalId}` }),
       )
     }
     if (url.pathname.endsWith('/andon-calls/call-2/close')) {
+      expect(route.request().postDataJSON()).toMatchObject({
+        scopeKind: 'work-center',
+        scopeId: 'WC-B',
+      })
       closed = true
       return fulfill(route, envelope({ id: 'call-2', status: 'closed' }))
     }
     if (url.pathname.endsWith('/andon-calls')) {
+      expect(url.searchParams.get('scopeKind')).toBe('work-center')
+      expect(['WC-A', 'WC-B']).toContain(url.searchParams.get('scopeId'))
       requests.push(url)
       if (readFailed) {
         readFailed = false
@@ -75,10 +98,14 @@ test('安灯服务端队列、分页、认领冲突与本人关闭，保存实�
                 : 'open',
         workOrderId: `WO-20260920-${String(i + 1).padStart(3, '0')}`,
         operationTaskId: `WO-20260920-${String(i + 1).padStart(3, '0')}-OP-20`,
-        workCenterId: 'WC-ASSEMBLY',
+        workCenterId: url.searchParams.get('scopeId'),
         raisedAtUtc: '2026-09-20T04:00:00Z',
         responderId:
-          i === 0 && !conflict ? 'responder-li' : i === 1 && claimed ? principal.principalId : null,
+          i === 0 && !conflict
+            ? 'user:responder-li'
+            : i === 1 && claimed
+              ? `user:${principal.principalId}`
+              : null,
         responseDurationSeconds: i === 0 && !conflict ? 100 : i === 1 && claimed ? 125 : null,
         escalatedAtUtc: i === 0 ? '2026-09-20T04:05:00Z' : null,
         escalationRecipientId: i === 0 ? '设备值班员' : null,
@@ -104,7 +131,16 @@ test('安灯服务端队列、分页、认领冲突与本人关闭，保存实�
   await expect(page.getByRole('link', { name: 'WO-20260920-001-OP-20', exact: true })).toBeVisible()
   await expect(page.getByText('未响应', { exact: true }).first()).toBeVisible()
   await expect(page.getByText('已升级', { exact: true })).toBeVisible()
+  await page.getByRole('combobox', { name: '作业范围' }).click()
+  await page.getByRole('option', { name: '总装二线（工作中心）', exact: true }).click()
+  await expect(page.getByText('WC-B', { exact: true }).first()).toBeVisible()
   await page.getByRole('button', { name: '下一页', exact: true }).click()
+  await expect(page.getByRole('link', { name: 'WO-20260920-011-OP-20', exact: true })).toBeVisible()
+  await expect(page).toHaveURL(/page=2/)
+  await page.getByRole('link', { name: 'WO-20260920-011-OP-20', exact: true }).click()
+  await expect(page).toHaveURL(/work-orders\/WO-20260920-011/)
+  await page.goBack()
+  await expect(page).toHaveURL(/page=2/)
   await expect(page.getByRole('link', { name: 'WO-20260920-011-OP-20', exact: true })).toBeVisible()
   await page.getByRole('combobox', { name: '呼叫分类' }).click()
   await page.getByRole('option', { name: '设备', exact: true }).click()
@@ -113,7 +149,7 @@ test('安灯服务端队列、分页、认领冲突与本人关闭，保存实�
   await page.getByRole('option', { name: '待响应与处理中', exact: true }).click()
   await page.getByRole('button', { name: '认领', exact: true }).first().click()
   await expect(page.getByText('认领失败：呼叫已由其他人员认领', { exact: true })).toBeVisible()
-  await expect(page.getByText('responder-li', { exact: true })).toBeVisible()
+  await expect(page.getByText('user:responder-li', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: '认领', exact: true }).click()
   await expect(page.getByText('125 秒', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: '关闭呼叫', exact: true })).toBeVisible()

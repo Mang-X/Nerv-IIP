@@ -13,6 +13,23 @@ vi.mock('@nerv-iip/api-client', async (original) => ({
   listBusinessConsoleMesAndonCalls: api.list,
   claimBusinessConsoleMesAndonCall: api.claim,
   closeBusinessConsoleMesAndonCall: api.close,
+  getBusinessConsolePrincipalWorkContextQueryOptions: ({
+    query,
+  }: {
+    query: Record<string, string>
+  }) => ({
+    key: ['andon-work-context', query],
+    query: async () => ({
+      success: true,
+      data: {
+        authorizedScopes: [
+          { kind: 'work-center', id: 'WC-A', displayName: '总装一线' },
+          { kind: 'work-center', id: 'WC-B', displayName: '总装二线' },
+        ],
+        selectedScope: query.scopeId ? { kind: query.scopeKind, id: query.scopeId } : null,
+      },
+    }),
+  }),
 }))
 
 const call = {
@@ -27,7 +44,7 @@ async function setup(
 ) {
   const pinia = createPinia()
   useAuthStore(pinia).$patch({
-    principal: { principalId: 'responder-1', permissionCodes: permissions },
+    principal: { principalId: 'responder-1', principalType: 'User', permissionCodes: permissions },
   })
   useBusinessContextStore(pinia).patchContext({
     organizationId: 'org-001',
@@ -46,6 +63,7 @@ async function setup(
     },
   )
   await flushPromises()
+  await flushPromises()
   return { result, wrapper }
 }
 
@@ -54,7 +72,7 @@ describe('安灯队列与当前主体动作（#3655 PublicContract / DomainInvar
     vi.clearAllMocks()
     api.list.mockResolvedValue(envelope({ items: [call], total: 31 }))
     api.claim.mockResolvedValue(
-      envelope({ ...call, status: 'claimed', responderId: 'responder-1' }),
+      envelope({ ...call, status: 'claimed', responderId: 'user:responder-1' }),
     )
     api.close.mockResolvedValue(envelope({ ...call, status: 'closed' }))
   })
@@ -80,6 +98,8 @@ describe('安灯队列与当前主体动作（#3655 PublicContract / DomainInvar
           workCenterId: 'WC-ASSEMBLY',
           skip: 20,
           take: 10,
+          scopeKind: 'work-center',
+          scopeId: 'WC-A',
         },
       }),
     )
@@ -115,6 +135,8 @@ describe('安灯队列与当前主体动作（#3655 PublicContract / DomainInvar
         organizationId: 'org-001',
         environmentId: 'env-dev',
         idempotencyKey: expect.any(String),
+        scopeKind: 'work-center',
+        scopeId: 'WC-A',
       },
       throwOnError: true,
     })
@@ -126,10 +148,13 @@ describe('安灯队列与当前主体动作（#3655 PublicContract / DomainInvar
     const { result, wrapper } = await setup()
     api.claim.mockRejectedValue({ status: 409, message: '呼叫已由其他人员认领' })
     api.list.mockResolvedValue(
-      envelope({ items: [{ ...call, status: 'claimed', responderId: 'responder-2' }], total: 1 }),
+      envelope({
+        items: [{ ...call, status: 'claimed', responderId: 'user:responder-2' }],
+        total: 1,
+      }),
     )
     await expect(result.act(call, 'claim')).rejects.toMatchObject({ status: 409 })
-    expect(result.items.value[0]?.responderId).toBe('responder-2')
+    expect(result.items.value[0]?.responderId).toBe('user:responder-2')
     wrapper.unmount()
   })
 
@@ -137,7 +162,7 @@ describe('安灯队列与当前主体动作（#3655 PublicContract / DomainInvar
     const { result, wrapper } = await setup(['business.mes.operations.read'])
     await expect(result.act(call, 'claim')).rejects.toThrow()
     await expect(
-      result.act({ ...call, status: 'claimed', responderId: 'responder-2' }, 'close'),
+      result.act({ ...call, status: 'claimed', responderId: 'user:responder-2' }, 'close'),
     ).rejects.toThrow()
     expect(api.claim).not.toHaveBeenCalled()
     expect(api.close).not.toHaveBeenCalled()
@@ -146,13 +171,35 @@ describe('安灯队列与当前主体动作（#3655 PublicContract / DomainInvar
 
   it('只有当前认领人可以关闭；业务失败不作为成功返回', async () => {
     const { result, wrapper } = await setup()
-    expect(result.canAct({ ...call, status: 'claimed', responderId: 'responder-2' }, 'close')).toBe(
-      false,
-    )
-    const mine = { ...call, status: 'claimed' as const, responderId: 'responder-1' }
+    expect(
+      result.canAct({ ...call, status: 'claimed', responderId: 'user:responder-2' }, 'close'),
+    ).toBe(false)
+    const mine = { ...call, status: 'claimed' as const, responderId: 'user:responder-1' }
     expect(result.canAct(mine, 'close')).toBe(true)
     api.close.mockResolvedValue({ data: { success: false, message: '当前呼叫不能关闭' } })
     await expect(result.act(mine, 'close')).rejects.toMatchObject({ message: '当前呼叫不能关闭' })
+    wrapper.unmount()
+  })
+
+  it('多授权范围选择后列表、认领和本人关闭都携带同一工作中心范围', async () => {
+    const { result, wrapper } = await setup()
+    result.scope.scopeSelectionValue.value = 'work-center:WC-B'
+    await flushPromises()
+    await flushPromises()
+    expect(api.list).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        query: expect.objectContaining({ scopeKind: 'work-center', scopeId: 'WC-B' }),
+      }),
+    )
+    await result.act(call, 'claim')
+    await result.act({ ...call, status: 'claimed', responderId: 'user:responder-1' }, 'close')
+    for (const command of [api.claim, api.close]) {
+      expect(command).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          body: expect.objectContaining({ scopeKind: 'work-center', scopeId: 'WC-B' }),
+        }),
+      )
+    }
     wrapper.unmount()
   })
 })

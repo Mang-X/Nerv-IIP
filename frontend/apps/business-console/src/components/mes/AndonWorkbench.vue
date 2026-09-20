@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import type { BusinessConsoleMesAndonCallResponse } from '@nerv-iip/api-client'
+import type {
+  BusinessConsoleMesAndonCallResponse,
+  ListBusinessConsoleMesAndonCallsData,
+} from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import {
   NvButton,
@@ -15,23 +18,86 @@ import {
   NvInput,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from '@lucide/vue'
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useMesAndon, type AndonAction } from '@/composables/mes/useMesAndon'
-import { usePagedList } from '@/composables/usePagedList'
+import MesWorkScopeSelect from '@/components/mes/MesWorkScopeSelect.vue'
 import { useAuthStore } from '@/stores/auth'
 import { formatDateTime } from '@/utils/format'
 import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
-const { filters, items, total, ready, error, pending, pendingAction, refresh, canAct, act } =
-  useMesAndon()
-const { page, pageSize } = usePagedList(filters, {
-  resetOn: [() => filters.queue, () => filters.category, () => filters.workCenterId],
+const categories = { materialShortage: '缺料', equipment: '设备', quality: '质量', process: '工艺' }
+const route = useRoute()
+const router = useRouter()
+function filtersFromRoute(): Partial<ListBusinessConsoleMesAndonCallsData['query']> {
+  const q = route.query
+  const take = [10, 20, 50, 100].includes(Number(q.pageSize)) ? Number(q.pageSize) : 10
+  const currentPage =
+    Number.isSafeInteger(Number(q.page)) && Number(q.page) > 0 ? Number(q.page) : 1
+  return {
+    queue: q.queue === 'unclosed' || q.queue === 'all' ? q.queue : ('awaitingResponse' as const),
+    category:
+      typeof q.category === 'string' && q.category in categories
+        ? (q.category as keyof typeof categories)
+        : undefined,
+    workCenterId:
+      typeof q.workCenterId === 'string' ? q.workCenterId.trim() || undefined : undefined,
+    skip: (currentPage - 1) * take,
+    take,
+  }
+}
+const { filters, scope, items, total, ready, error, pending, pendingAction, refresh, canAct, act } =
+  useMesAndon(filtersFromRoute())
+const page = computed({
+  get: () => filters.skip / filters.take + 1,
+  set: (value: number) => {
+    filters.skip = (value - 1) * filters.take
+  },
+})
+const pageSize = computed({
+  get: () => String(filters.take),
+  set: (value: string) => {
+    filters.take = Number(value)
+    filters.skip = 0
+  },
+})
+function changeFilters(patch: Partial<typeof filters>) {
+  Object.assign(filters, patch, { skip: 0 })
+}
+const hasFilters = computed(
+  () => filters.queue !== 'awaitingResponse' || !!filters.category || !!filters.workCenterId,
+)
+function clearFilters() {
+  changeFilters({ queue: 'awaitingResponse', category: undefined, workCenterId: undefined })
+}
+watch(
+  () => route.query,
+  () => {
+    if (route.path === '/mes/andon') Object.assign(filters, filtersFromRoute())
+  },
+)
+watch(
+  () => [filters.queue, filters.category, filters.workCenterId, filters.skip, filters.take],
+  () => {
+    if (route.path !== '/mes/andon') return
+    const query = { ...route.query }
+    for (const key of ['queue', 'category', 'workCenterId', 'page', 'pageSize']) delete query[key]
+    if (filters.queue !== 'awaitingResponse') query.queue = filters.queue
+    if (filters.category) query.category = filters.category
+    if (filters.workCenterId) query.workCenterId = filters.workCenterId
+    if (page.value !== 1) query.page = String(page.value)
+    if (filters.take !== 10) query.pageSize = String(filters.take)
+    void router.replace({ query })
+  },
+  { flush: 'post' },
+)
+watch(scope.scopeSelectionValue, (value, previous) => {
+  if (previous && value !== previous) filters.skip = 0
 })
 const auth = useAuthStore()
 const canReadSource = computed(() =>
   auth.principal?.permissionCodes?.includes('business.mes.work-orders.read'),
 )
-const categories = { materialShortage: '缺料', equipment: '设备', quality: '质量', process: '工艺' }
 const statuses = { open: '待响应', claimed: '处理中', closed: '已关闭' }
 const columns: NvDataTableColumn<BusinessConsoleMesAndonCallResponse>[] = [
   {
@@ -77,7 +143,14 @@ async function submit(row: BusinessConsoleMesAndonCallResponse, action: AndonAct
   </NvPageHeader>
   <NvToolbar :show-search="false">
     <template #filters>
-      <NvSelect v-model="filters.queue">
+      <MesWorkScopeSelect
+        class="shrink-0 whitespace-nowrap"
+        permission-code="business.mes.operations.read"
+      />
+      <NvSelect
+        :model-value="filters.queue"
+        @update:model-value="changeFilters({ queue: $event as typeof filters.queue })"
+      >
         <NvSelectTrigger aria-label="呼叫队列" class="w-48"><NvSelectValue /></NvSelectTrigger>
         <NvSelectContent>
           <NvSelectItem value="awaitingResponse">待响应</NvSelectItem>
@@ -88,7 +161,9 @@ async function submit(row: BusinessConsoleMesAndonCallResponse, action: AndonAct
       <NvSelect
         :model-value="filters.category ?? 'all'"
         @update:model-value="
-          filters.category = $event === 'all' ? undefined : ($event as keyof typeof categories)
+          changeFilters({
+            category: $event === 'all' ? undefined : ($event as keyof typeof categories),
+          })
         "
       >
         <NvSelectTrigger aria-label="呼叫分类" class="w-32"><NvSelectValue /></NvSelectTrigger>
@@ -105,7 +180,9 @@ async function submit(row: BusinessConsoleMesAndonCallResponse, action: AndonAct
         placeholder="工作中心编号"
         class="w-48"
         @change="
-          filters.workCenterId = ($event.target as HTMLInputElement).value.trim() || undefined
+          changeFilters({
+            workCenterId: ($event.target as HTMLInputElement).value.trim() || undefined,
+          })
         "
       />
     </template>
@@ -128,6 +205,20 @@ async function submit(row: BusinessConsoleMesAndonCallResponse, action: AndonAct
     @update:page-size="pageSize = String($event)"
     @retry="refresh"
   >
+    <template #empty>
+      <template v-if="!scope.scopeReady.value">
+        <p class="text-sm text-muted-foreground">{{ scope.scopeMessage.value }}</p>
+        <NvButton variant="outline" @click="refresh">重新加载</NvButton>
+      </template>
+      <template v-else-if="hasFilters">
+        <p class="text-sm text-muted-foreground">没有符合条件的安灯呼叫</p>
+        <NvButton variant="outline" @click="clearFilters">清空筛选</NvButton>
+      </template>
+      <template v-else>
+        <p class="text-sm text-muted-foreground">暂无待响应呼叫</p>
+        <NvButton variant="outline" @click="changeFilters({ queue: 'all' })">查看全部呼叫</NvButton>
+      </template>
+    </template>
     <template #cell-source="{ row }">
       <div class="grid gap-1">
         <RouterLink
