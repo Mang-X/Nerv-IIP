@@ -313,8 +313,8 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/engineering/documents", "post", "registerBusinessConsoleEngineeringDocument");
         AssertOperationId(paths, "/api/business-console/v1/engineering/sops/publish", "post", "publishBusinessConsoleEngineeringSopDocument");
         AssertOperationId(paths, "/api/business-console/v1/engineering/sops/current", "get", "getBusinessConsoleCurrentEngineeringSopDocuments");
-        AssertOperationId(paths, "/api/business-console/v1/files/{fileId}/download-grants", "post", "createBusinessConsoleSopFileDownloadGrant");
-        AssertOperationId(paths, "/api/business-console/v1/files/download-grants/{downloadGrantId}/content", "get", "downloadBusinessConsoleSopFileContent");
+        // #3314 SOP 下载面：只有一条字节路由、以 fileId 为入参；grant id 不再出现在公开契约里。
+        AssertOperationId(paths, "/api/business-console/v1/files/sop-documents/{fileId}/content", "get", "downloadBusinessConsoleSopFileContent");
         // #3085 交接班附件门面：上传三段（会话 / tus HEAD+PATCH / complete）与下载两段都必须进契约，
         // 否则 business-console 与 PDA 侧没有可消费的 generated operation。
         AssertOperationId(paths, "/api/business-console/v1/files/shift-handover-attachments/upload-sessions", "post", "createBusinessConsoleShiftHandoverAttachmentUploadSession");
@@ -323,9 +323,15 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/files/shift-handover-attachments/tus/{uploadSessionId}", "patch", "patchBusinessConsoleShiftHandoverAttachmentTusUpload");
         // 下载面只有一条字节路由、以 fileId 为入参：grant id 不出网关（#3096 审核 A1）。
         AssertOperationId(paths, "/api/business-console/v1/files/shift-handover-attachments/{fileId}/content", "get", "downloadBusinessConsoleShiftHandoverAttachmentContent");
-        Assert.DoesNotContain(
-            paths.EnumerateObject().Select(path => path.Name),
-            name => name.StartsWith("/api/business-console/v1/files/shift-handover-attachments/download-grants", StringComparison.Ordinal));
+        // #3314 结构不变量，见 AssertFileFaceExposesOnlyFileIdKeyedByteRoutes 的注释。
+        AssertFileFaceExposesOnlyFileIdKeyedByteRoutes(
+            paths,
+            "/api/business-console/v1/files/",
+            "/api/business-console/v1/files/sop-documents/{fileId}/content",
+            "/api/business-console/v1/files/shift-handover-attachments/upload-sessions",
+            "/api/business-console/v1/files/shift-handover-attachments/upload-sessions/{uploadSessionId}/complete",
+            "/api/business-console/v1/files/shift-handover-attachments/tus/{uploadSessionId}",
+            "/api/business-console/v1/files/shift-handover-attachments/{fileId}/content");
         AssertOperationId(paths, "/api/business-console/v1/engineering/items", "post", "createBusinessConsoleEngineeringItemRevision");
         AssertOperationId(paths, "/api/business-console/v1/engineering/engineering-boms", "get", "listBusinessConsoleEngineeringBoms");
         AssertOperationId(paths, "/api/business-console/v1/engineering/engineering-boms/explosion", "get", "getBusinessConsoleEngineeringBomExplosion");
@@ -2725,4 +2731,55 @@ public sealed class BusinessGatewayOpenApiTests
             });
         }
     }
+
+    /// <summary>
+    /// #3314 结构不变量的**契约面**部分。
+    ///
+    /// 承重的那根柱子已经换成类型层装置（`BusinessFileDownloadTicket` /
+    /// `FileStorageDownstreamAddress`：代理一跳的目标只能由签发响应产出，不接受任何调用方
+    /// 字符串）。本断言不再承担「兑换不可表达」——那件事由类型系统承担——只承担两件契约事实：
+    ///
+    /// 1. **入参类型（全文档）**：任何以 <c>/content</c> 结尾的路由，其路径参数必须**恰好是**
+    ///    <c>fileId</c>。扫描面是整份契约，不是某个前缀——ADR 0030 后果 7 声明的空集是「网关路由」
+    ///    整体，上一版把扫描面写成 <c>/files</c> 前缀，判据比它声称承担的不变量窄，逃逸正落在差额里。
+    /// 2. **禁止片段（全文档）**：契约里不得出现 <c>/download-grants</c>（签发面与兑换面一并覆盖）。
+    /// 3. **闭集（文件面）**：文件面的路由清单必须与钉住的集合逐字相等，新增/改名失败关闭。
+    ///
+    /// **不自称完备**：判据 3 的清单可以和被加的路由一起改。真正让缺陷本体不可表达的是类型层装置，
+    /// 本断言是它的契约面对照，不是唯一防线。
+    /// </summary>
+    private static void AssertFileFaceExposesOnlyFileIdKeyedByteRoutes(
+        JsonElement paths,
+        string filePrefix,
+        params string[] expectedFileRoutes)
+    {
+        var allRoutes = paths.EnumerateObject()
+            .Select(path => path.Name)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+
+        foreach (var route in allRoutes.Where(name => name.EndsWith("/content", StringComparison.Ordinal)))
+        {
+            var parameters = RoutePathParameters(route);
+            Assert.True(
+                parameters.Length == 1 && string.Equals(parameters[0], "fileId", StringComparison.Ordinal),
+                $"取字节路由的入参必须恰好是业务标识 {{fileId}}，不得是 FileStorage 内部标识；"
+                    + $"实际 {route} 的路径参数为 [{string.Join(", ", parameters)}]");
+        }
+
+        Assert.DoesNotContain(
+            allRoutes,
+            name => name.Contains("/download-grants", StringComparison.Ordinal));
+
+        Assert.Equal(
+            expectedFileRoutes.OrderBy(name => name, StringComparer.Ordinal).ToArray(),
+            allRoutes.Where(name => name.StartsWith(filePrefix, StringComparison.Ordinal)).ToArray());
+    }
+
+    private static string[] RoutePathParameters(string route) =>
+        route.Split('/', StringSplitOptions.RemoveEmptyEntries)
+            .Where(segment => segment.StartsWith('{') && segment.EndsWith('}'))
+            .Select(segment => segment[1..^1])
+            .ToArray();
+
 }

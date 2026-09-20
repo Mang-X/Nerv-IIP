@@ -7,7 +7,6 @@ import {
   returnBusinessConsoleMesLineSideMaterialMutationOptions,
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   createBusinessConsoleMesMaterialIssueRequestMutationOptions,
-  createBusinessConsoleSopFileDownloadGrantMutationOptions,
   getBusinessConsolePrincipalWorkContextQueryOptions,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
   getBusinessConsoleMesWorkOrderDetail,
@@ -33,8 +32,6 @@ import {
   startBusinessConsoleMesOperationTaskMutationOptions,
   type BusinessConsoleCurrentSopDocumentItem,
   type BusinessConsoleCurrentSopDocumentsEnvelope,
-  type BusinessConsoleSopFileDownloadGrantEnvelope,
-  type BusinessConsoleSopFileDownloadGrantResponse,
   type BusinessConsoleMesConfirmLineSideReceiptRequest,
   type BusinessConsoleMesReturnLineSideMaterialRequest,
   type BusinessConsoleMesCreateMaterialIssueRequest,
@@ -1364,28 +1361,6 @@ export function useMesCurrentOperationSops() {
     }),
     enabled: enabled.value,
   }))
-  const downloadGrantMutation = useMutation(
-    createBusinessConsoleSopFileDownloadGrantMutationOptions(),
-  )
-
-  async function createSopFileDownloadGrant(
-    fileId: string,
-  ): Promise<BusinessConsoleSopFileDownloadGrantResponse | null> {
-    const envelope = await downloadGrantMutation.mutateAsync({
-      path: { fileId },
-      body: {
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
-      },
-    })
-    return (
-      envelopeData<
-        BusinessConsoleSopFileDownloadGrantResponse,
-        BusinessConsoleSopFileDownloadGrantEnvelope
-      >(envelope as BusinessConsoleSopFileDownloadGrantEnvelope) ?? null
-    )
-  }
-
   return {
     filters,
     currentSops: computed<BusinessConsoleCurrentSopDocumentItem[]>(
@@ -1399,7 +1374,6 @@ export function useMesCurrentOperationSops() {
     pending: currentSopsQuery.isLoading,
     error: currentSopsQuery.error,
     refresh: currentSopsQuery.refetch,
-    createSopFileDownloadGrant,
   }
 }
 

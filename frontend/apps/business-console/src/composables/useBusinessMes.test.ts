@@ -7,7 +7,6 @@ import {
   closeBusinessConsoleMesWorkOrderMutationOptions,
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   createBusinessConsoleMesRushWorkOrderMutationOptions,
-  createBusinessConsoleSopFileDownloadGrantMutationOptions,
   getBusinessConsoleMesBatchTraceabilityQueryOptions,
   getBusinessConsoleMesCurrentOperationSopsQueryOptions,
   getBusinessConsoleMesFoundationReadinessQueryOptions,
@@ -202,19 +201,6 @@ vi.mock('@nerv-iip/api-client', () => ({
     mutation: vi.fn(async (vars) => ({
       success: true,
       data: vars.body,
-    })),
-  })),
-  createBusinessConsoleSopFileDownloadGrantMutationOptions: vi.fn(() => ({
-    mutation: vi.fn(async (vars) => ({
-      success: true,
-      data: {
-        fileId: vars.path.fileId,
-        downloadUrl: '/api/business-console/v1/files/download-grants/grant-sop/content',
-        downloadHeaders: {
-          'X-Organization-Id': vars.body.organizationId,
-          'X-Environment-Id': vars.body.environmentId,
-        },
-      },
     })),
   })),
   getBusinessConsoleMesBatchTraceabilityQueryOptions: vi.fn(() => ({
@@ -1318,22 +1304,6 @@ describe('business MES composables', () => {
       coladaState.queryFactoriesById.get('getBusinessConsoleMesCurrentOperationSops')?.(),
     ).toMatchObject({ enabled: true })
     expect(sops.currentSops.value[0]).toMatchObject({ revision: 'B', fileId: 'file-sop-b' })
-  })
-
-  it('creates SOP file download grants through the generated mutation options', async () => {
-    const sops = useMesCurrentOperationSops()
-
-    const grant = await sops.createSopFileDownloadGrant('file-sop-b')
-
-    expect(createBusinessConsoleSopFileDownloadGrantMutationOptions).toHaveBeenCalled()
-    expect(grant).toMatchObject({
-      fileId: 'file-sop-b',
-      downloadUrl: '/api/business-console/v1/files/download-grants/grant-sop/content',
-      downloadHeaders: {
-        'X-Organization-Id': 'org-001',
-        'X-Environment-Id': 'env-dev',
-      },
-    })
   })
 
   it('exposes secondary MES list totals from response envelopes', () => {

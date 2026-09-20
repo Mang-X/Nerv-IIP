@@ -194,7 +194,7 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
 
         var ticket = await jsonClient.AuthorizeShiftHandoverAttachmentDownloadAsync(
             "internal-test-token", "file-handover-1", "org-001", "env-dev", CancellationToken.None);
-        await transferClient.StreamShiftHandoverAttachmentContentAsync(
+        await transferClient.StreamFileContentAsync(
             "internal-test-token", ticket, httpContext.Response, CancellationToken.None);
 
         // grant 请求体带的是调用方上下文
@@ -399,6 +399,39 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
         Assert.Equal(failure == "transport" ? "downstream-unavailable" : "downstream-timeout", exception.Message);
     }
 
+    /// <summary>
+    /// #3314 第 1 轮审核 E3 的承担方。
+    ///
+    /// 被删掉的 `Sop_content_maps_transport_failures_instead_of_letting_them_escape` 打的是旧的
+    /// `DownloadSopFileContentAsync`。**它要证的不变量没有随结构消失**：取字节那一跳在新形状下
+    /// 依然存在（`StreamFileContentAsync`），而 `BusinessConsoleFileTransfer.ProxyAsync` 只 catch
+    /// `BusinessServiceProxyException`——传输故障若不被映射成语义码，就会逃逸成 500「未知错误」，
+    /// 调用方无从判断是下游不可用。所以在新位置重证它。
+    ///
+    /// 与上面 `Byte_paths_report_downstream_unavailability_...` 的区别：那条打的是 tus HEAD 腿，
+    /// 本条打的是**取字节腿**——两条腿走 `ProxyRawAsync` 的不同入口参数（HEAD/无 body vs GET/有 body），
+    /// 删掉任一条另一条都不会红。
+    /// </summary>
+    [Theory]
+    [InlineData("transport", "downstream-unavailable")]
+    [InlineData("timeout", "downstream-timeout")]
+    public async Task Byte_content_hop_maps_transport_failures_instead_of_letting_them_escape(
+        string failure,
+        string expectedMessage)
+    {
+        var client = CreateTransferClient(new StubHandler(_ => failure == "transport"
+            ? throw new HttpRequestException("connection refused")
+            : throw new TaskCanceledException("timed out")));
+        var httpContext = ResponseContext();
+        var ticket = TestDownloadGrants.Ticket("grant-handover-1");
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.StreamFileContentAsync("internal-test-token", ticket, httpContext.Response, CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, exception.StatusCode);
+        Assert.Equal(expectedMessage, exception.Message);
+    }
+
     // =====================================================================
     // 端点层：权限口径与门面接线
     // =====================================================================
@@ -542,7 +575,7 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
         Assert.Equal("env-dev", files.LastAuthorizedEnvironmentId);
         Assert.Equal(
             "/api/files/v1/download-grants/grant-handover-1/content",
-            transfer.LastAttachmentTicket!.DownstreamUrl);
+            transfer.LastStreamedTicket!.DownstreamUrl);
     }
 
     // 反向：SOP 下载面不因为本票而对交接班读者开门。
@@ -554,10 +587,13 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
         await using var lease = LeaseHost(auth, files);
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            "/api/business-console/v1/files/sop-documents/file-sop-v2/content");
+        request.Headers.Add("X-Organization-Id", "org-001");
+        request.Headers.Add("X-Environment-Id", "env-dev");
 
-        var response = await client.PostAsJsonAsync(
-            "/api/business-console/v1/files/file-sop-v2/download-grants",
-            new { organizationId = "org-001", environmentId = "env-dev" });
+        var response = await client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Equal(BusinessGatewayPermissions.EngineeringDocumentsRead, auth.LastRequirement!.PermissionCode);
@@ -595,7 +631,7 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
                 $"{route} 不得成为 grant id 的兑换面，实际 {(int)response.StatusCode}");
         }
 
-        Assert.Null(transfer.LastAttachmentTicket);
+        Assert.Null(transfer.LastStreamedTicket);
     }
 
     // =====================================================================
@@ -632,7 +668,7 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
     [Theory]
     [InlineData("transport", HttpStatusCode.ServiceUnavailable, "downstream-unavailable")]
     [InlineData("timeout", HttpStatusCode.ServiceUnavailable, "downstream-timeout")]
-    public async Task Sop_download_grant_maps_transport_failures_instead_of_letting_them_escape(
+    public async Task Sop_download_authorization_maps_transport_failures_instead_of_letting_them_escape(
         string failure,
         HttpStatusCode expectedStatus,
         string expectedMessage)
@@ -642,40 +678,37 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
             : throw new TaskCanceledException("timed out")));
 
         var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
-            client.CreateSopFileDownloadGrantAsync(
-                "internal-test-token",
-                "file-sop-v2",
-                new BusinessConsoleCreateSopFileDownloadGrantRequest("org-001", "env-dev"),
-                CancellationToken.None));
+            client.AuthorizeSopFileDownloadAsync(
+                "internal-test-token", "file-sop-v2", "org-001", "env-dev", CancellationToken.None));
 
         Assert.Equal(expectedStatus, exception.StatusCode);
         Assert.Equal(expectedMessage, exception.Message);
     }
 
-    [Theory]
-    [InlineData("transport", "downstream-unavailable")]
-    [InlineData("timeout", "downstream-timeout")]
-    public async Task Sop_content_maps_transport_failures_instead_of_letting_them_escape(
-        string failure,
-        string expectedMessage)
+    // #3314 的下载口径：FileStorage 的 download-grant 不看用途，SOP 门面不看就等于把
+    // business.engineering.documents.read 变成通用文件读权限。
+    [Fact]
+    public async Task Sop_download_authorization_refuses_a_file_whose_purpose_is_not_an_engineering_document()
     {
-        var client = CreateClient(new StubHandler(_ => failure == "transport"
-            ? throw new HttpRequestException("connection refused")
-            : throw new TaskCanceledException("timed out")));
+        var handler = new StubHandler(request => request.RequestUri!.AbsolutePath switch
+        {
+            "/api/files/v1/files/file-handover-1" => Json(FileMetadata("shift-handover-photo")),
+            var path => throw new InvalidOperationException($"Unexpected downstream call: {path}"),
+        });
+        var client = CreateClient(handler);
 
         var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
-            client.DownloadSopFileContentAsync(
-                "internal-test-token",
-                "grant-sop-v2",
-                new Dictionary<string, string>(),
-                CancellationToken.None));
+            client.AuthorizeSopFileDownloadAsync(
+                "internal-test-token", "file-handover-1", "org-001", "env-dev", CancellationToken.None));
 
-        Assert.Equal(HttpStatusCode.ServiceUnavailable, exception.StatusCode);
-        Assert.Equal(expectedMessage, exception.Message);
+        Assert.Equal(HttpStatusCode.NotFound, exception.StatusCode);
+        Assert.Equal("filestorage-file-not-engineering-document", exception.Message);
+        // 用途不符时不得向 FileStorage 签发 download grant。
+        Assert.Single(handler.Requests);
     }
 
     [Fact]
-    public async Task Sop_download_grant_preserves_a_bad_request_reason_from_file_storage()
+    public async Task Sop_download_authorization_preserves_a_bad_request_reason_from_file_storage()
     {
         var client = CreateClient(new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.BadRequest)
         {
@@ -683,39 +716,41 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
         }));
 
         var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
-            client.CreateSopFileDownloadGrantAsync(
-                "internal-test-token",
-                "file-sop-v2",
-                new BusinessConsoleCreateSopFileDownloadGrantRequest("org-001", "env-dev"),
-                CancellationToken.None));
+            client.AuthorizeSopFileDownloadAsync(
+                "internal-test-token", "file-sop-v2", "org-001", "env-dev", CancellationToken.None));
 
         Assert.Equal(HttpStatusCode.BadRequest, exception.StatusCode);
         Assert.Equal("文件上下文不匹配。", exception.Message);
     }
 
     [Fact]
-    public async Task Sop_download_grant_rejects_an_unproxyable_transfer_url_instead_of_echoing_it()
+    public async Task Sop_download_authorization_rejects_an_unproxyable_transfer_url_instead_of_following_it()
     {
-        var client = CreateClient(new StubHandler(_ => Json(new DownloadGrantResponse(
-            "file-sop-v2",
-            DateTimeOffset.Parse("2026-09-02T08:10:00Z"),
-            new TransferInstructions(
-                "https://filestorage.internal/api/files/v1/download-grants/grant-sop-v2/content",
-                new Dictionary<string, string>())))));
+        var handler = new StubHandler(request => request.RequestUri!.AbsolutePath switch
+        {
+            "/api/files/v1/files/file-sop-v2" => Json(FileMetadata("engineering-document", "file-sop-v2")),
+            "/api/files/v1/files/file-sop-v2/download-grants" => Json(new DownloadGrantResponse(
+                "file-sop-v2",
+                DateTimeOffset.Parse("2026-09-02T08:10:00Z"),
+                new TransferInstructions(
+                    "https://filestorage.internal/api/files/v1/download-grants/grant-sop-v2/content",
+                    new Dictionary<string, string>()))),
+            var path => throw new InvalidOperationException($"Unexpected downstream call: {path}"),
+        });
+        var client = CreateClient(handler);
 
         var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
-            client.CreateSopFileDownloadGrantAsync(
-                "internal-test-token",
-                "file-sop-v2",
-                new BusinessConsoleCreateSopFileDownloadGrantRequest("org-001", "env-dev"),
-                CancellationToken.None));
+            client.AuthorizeSopFileDownloadAsync(
+                "internal-test-token", "file-sop-v2", "org-001", "env-dev", CancellationToken.None));
 
         Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
         Assert.Equal("filestorage-transfer-url-not-proxyable", exception.Message);
+        // 拒绝必须发生在跟随之前
+        Assert.Equal(2, handler.Requests.Count);
     }
 
     [Fact]
-    public async Task Sop_download_grant_reports_an_invalid_downstream_body()
+    public async Task Sop_download_authorization_reports_an_invalid_downstream_body()
     {
         var client = CreateClient(new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
@@ -723,11 +758,8 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
         }));
 
         var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
-            client.CreateSopFileDownloadGrantAsync(
-                "internal-test-token",
-                "file-sop-v2",
-                new BusinessConsoleCreateSopFileDownloadGrantRequest("org-001", "env-dev"),
-                CancellationToken.None));
+            client.AuthorizeSopFileDownloadAsync(
+                "internal-test-token", "file-sop-v2", "org-001", "env-dev", CancellationToken.None));
 
         Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
         Assert.Equal("downstream-invalid-response", exception.Message);
@@ -768,11 +800,8 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
         var httpContext = ResponseContext();
 
         var jsonCall = Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
-            json.CreateSopFileDownloadGrantAsync(
-                "internal-test-token",
-                "file-sop-v2",
-                new BusinessConsoleCreateSopFileDownloadGrantRequest("org-001", "env-dev"),
-                CancellationToken.None));
+            json.AuthorizeSopFileDownloadAsync(
+                "internal-test-token", "file-sop-v2", "org-001", "env-dev", CancellationToken.None));
         var byteCall = transfer.ProxyShiftHandoverAttachmentTusHeadAsync(
             "internal-test-token", "ups-handover-1", "org-001", "env-dev", httpContext.Response, CancellationToken.None);
 
@@ -850,11 +879,8 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
         // 仍是**是否触达下游**，不钉异常类型也不钉状态码。
         for (var i = 0; i < 20; i++)
         {
-            await CallAndSwallowAsync(() => json.CreateSopFileDownloadGrantAsync(
-                "internal-test-token",
-                "file-sop-v2",
-                new BusinessConsoleCreateSopFileDownloadGrantRequest("org-001", "env-dev"),
-                CancellationToken.None));
+            await CallAndSwallowAsync(() => json.AuthorizeSopFileDownloadAsync(
+                "internal-test-token", "file-sop-v2", "org-001", "env-dev", CancellationToken.None));
         }
 
         var jsonCallsBefore = counter.JsonCalls;
@@ -866,11 +892,8 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
         Assert.True(counter.TransferCalls > 0, "字节面没有到达下游，说明它仍挂在 JSON 面的熔断器上");
 
         // 反向确认 JSON 面此刻确已熔断：再发一次，下游计数不再增长。
-        await CallAndSwallowAsync(() => json.CreateSopFileDownloadGrantAsync(
-            "internal-test-token",
-            "file-sop-v2",
-            new BusinessConsoleCreateSopFileDownloadGrantRequest("org-001", "env-dev"),
-            CancellationToken.None));
+        await CallAndSwallowAsync(() => json.AuthorizeSopFileDownloadAsync(
+            "internal-test-token", "file-sop-v2", "org-001", "env-dev", CancellationToken.None));
         Assert.Equal(jsonCallsBefore, counter.JsonCalls);
     }
 
