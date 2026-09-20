@@ -390,6 +390,13 @@ internal static class ShiftHandoverGuard
     ///
     /// <para>大小写按 <c>WorkOrder</c> 自己的归一口径（见其 <c>SetMaterialRequirementSnapshotStatus</c>）
     /// 先降为小写再判定，落库的始终是小写码，读面的标签表才对得上。</para>
+    ///
+    /// <para><b>候选值用「、」分隔而不是「 / 」</b>：这条消息要穿过 BusinessGateway 的
+    /// <c>BusinessServiceProxyException.IsSafeDownstreamBusinessMessage</c>，它把
+    /// <c>&lt; &gt; { } / \</c> 全部列为不安全字符，命中即把整条消息替换成 <c>downstream-request-failed</c>。
+    /// 真栈实测过：用「 / 」时后端确实拒了（HTTP 400），但操作工屏上只剩一句
+    /// <c>downstream-request-failed</c>，等于白拒。域测试断言的是异常消息、看不到这一段，
+    /// 所以下面配了一条传输面断言把这个约束钉住。</para>
     /// </summary>
     internal static string UnfinishedWorkOrderStatus(string value, string parameterName)
     {
@@ -398,7 +405,7 @@ internal static class ShiftHandoverGuard
             ? normalized
             : throw new ArgumentOutOfRangeException(
                 parameterName,
-                $"未完工单状态「{normalized}」不是工单的未完状态，仅支持 {string.Join(" / ", WorkOrder.UnfinishedStatuses)}。");
+                $"未完工单状态「{normalized}」不是工单的未完状态，仅支持 {string.Join("、", WorkOrder.UnfinishedStatuses)}。");
     }
 
     internal static string? OptionalBounded(string? value, string parameterName, int maxLength)

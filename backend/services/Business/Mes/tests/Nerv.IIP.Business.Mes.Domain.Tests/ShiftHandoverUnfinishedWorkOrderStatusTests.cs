@@ -72,6 +72,7 @@ public sealed class ShiftHandoverUnfinishedWorkOrderStatusTests
 
         Assert.Contains(status, exception.Message, StringComparison.Ordinal);
         Assert.Contains("不是工单的未完状态", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("created、released、started、hold", exception.Message, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -97,6 +98,36 @@ public sealed class ShiftHandoverUnfinishedWorkOrderStatusTests
         var handover = CreateHandoverWith("  Started  ");
 
         Assert.Equal("started", Assert.Single(handover.UnfinishedWorkOrders).WorkOrderStatus);
+    }
+
+    /// <summary>
+    /// 拒绝消息必须**能活着到达操作工的屏幕**。
+    ///
+    /// <para>上面那些断言读的是异常消息本身，它们全绿也证不到屏上对：这条消息要先被
+    /// <c>MesDomainRuleGuard.Enforce</c> 包成 <c>KnownException</c>，再经 BusinessGateway 转发，
+    /// 而网关的 <c>BusinessServiceProxyException.IsSafeDownstreamBusinessMessage</c> 会把
+    /// 含 <c>&lt; &gt; { } / \</c> 或控制字符、或超 500 字符、或首字符是空白的消息**整条**换成
+    /// <c>downstream-request-failed</c>。真栈实测：候选值原先用「 / 」分隔，后端确实返回 400，
+    /// 但客户端拿到的是 <c>downstream-request-failed</c>，拒绝理由在屏上完全消失。</para>
+    ///
+    /// <para><b>口径来源声明</b>：下面这份字符集与长度上界是**照抄**网关那个私有判据的（跨程序集，
+    /// 这里引用不到它）。它会随网关改动而漂移，不是推导得来的——这一点必须明写，
+    /// 不要把它当成「与网关同源」。</para>
+    /// </summary>
+    [Fact]
+    public void Rejection_message_survives_the_gateway_business_message_filter()
+    {
+        var exception = Assert.Throws<ArgumentOutOfRangeException>(() => CreateHandoverWith("completed"));
+        var message = exception.Message;
+
+        Assert.False(string.IsNullOrWhiteSpace(message));
+        Assert.False(char.IsWhiteSpace(message[0]));
+        Assert.True(message.Length <= 500, $"消息长度 {message.Length} 超过网关上界 500。");
+        var unsafeCharacters = message
+            .Where(character => char.IsControl(character) || character is '<' or '>' or '{' or '}' or '/' or '\\')
+            .Distinct()
+            .ToArray();
+        Assert.Equal([], unsafeCharacters);
     }
 
     private static ShiftHandover CreateHandoverWith(string workOrderStatus) =>
