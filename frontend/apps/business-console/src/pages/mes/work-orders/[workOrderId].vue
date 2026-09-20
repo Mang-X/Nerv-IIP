@@ -1156,6 +1156,20 @@ function formatStatus(value?: string | null) {
         :column-settings="false"
         @retry="refreshDetail"
       >
+        <template #cell-operationTaskId="{ row }">
+          <span
+            :data-andon-source="
+              Boolean(row.operationTaskId && route.query.operationTaskId === row.operationTaskId)
+            "
+          >
+            {{ row.operationTaskNo?.trim() || '—' }}
+            <NvStatusBadge
+              v-if="row.operationTaskId && route.query.operationTaskId === row.operationTaskId"
+              label="来源工序"
+              tone="info"
+            />
+          </span>
+        </template>
         <template #cell-status="{ row }">
           <NvStatusBadge :value="row.status" :label="statusLabel(row.status)" />
         </template>
