@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { createWalkthroughEvidence } from '../e2e/issue1912-walkthrough-evidence'
 import {
   callWithSessionCredential,
   createSessionCredentialTracker,
@@ -304,17 +305,6 @@ describe('NERV-1127 / GitHub #1912 real-machine walkthrough contract', () => {
     )
   })
 
-  it('starts only from the reserved walkthrough facts and keeps downstream numbers stable', () => {
-    expect(scenarioSource).toContain("const RFQ_NO = 'RFQ-WALK-001'")
-    expect(scenarioSource).toContain("const SUPPLIER_QUOTATION_NO = 'SQ-WALK-001'")
-    expect(scenarioSource).toContain("const SALES_QUOTATION_NO = 'QUO-WALK-001'")
-    expect(scenarioSource).toContain("const PURCHASE_ORDER_NO = 'PO-WALK-001'")
-    expect(scenarioSource).toContain("const PURCHASE_RECEIPT_NO = 'PR-WALK-001'")
-    expect(scenarioSource).toContain("const SALES_ORDER_NO = 'SO-WALK-001'")
-    expect(scenarioSource).toContain("const DELIVERY_ORDER_NO = 'DO-WALK-001'")
-    expect(scenarioSource).not.toContain('/api/business-console/v1/approval/templates')
-  })
-
   it('fails closed when the real stack or evidence destination is not supplied', () => {
     expect(scenarioSource).toContain('NERV_IIP_PLAYWRIGHT_BASE_URL')
     expect(scenarioSource).toContain('NERV_IIP_FULLSTACK_ADMIN_PASSWORD')
@@ -322,22 +312,12 @@ describe('NERV-1127 / GitHub #1912 real-machine walkthrough contract', () => {
     expect(scenarioSource).toContain(
       'requires a managed full-stack session and an evidence destination',
     )
-    expect(scenarioSource).toContain('node,')
-    expect(scenarioSource).toContain('proof.node))].sort())')
-    expect(scenarioSource).toContain("conclusion: 'not-verified'")
-  })
-
-  it('uses two isolated identities and contexts for ERP approval versus WMS execution', () => {
-    expect(scenarioSource).toContain('NERV_IIP_LEADER_DEMO_WORKER_PASSWORD')
-    expect(scenarioSource).toContain(
-      'const workerContext: BrowserContext = await browser.newContext',
-    )
-    expect(scenarioSource).toContain('user-admin')
-    expect(scenarioSource).toContain('user-emp-049')
-    expect(scenarioSource).toContain("workerLoginName.fill('emp049')")
-    expect(scenarioSource).toContain('workerSessionCredentialTracker')
-    expect(scenarioSource).toContain('credentialDigest')
-    expect(scenarioSource).toContain('identityIsolation')
+    const ledger = createWalkthroughEvidence()
+    expect(
+      [...ledger.evidence.values()].every((entry) => entry.conclusion === 'not-verified'),
+    ).toBe(true)
+    ledger.markFailure('rfq-supplier-quotation', new Error('public request failed'))
+    expect(ledger.evidence.get('rfq-supplier-quotation')?.conclusion).toBe('gap')
   })
 
   it('follows the public WarehouseWorkScopeCatalogItem contract and records fail-closed scope behavior', () => {

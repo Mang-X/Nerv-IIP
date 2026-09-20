@@ -807,6 +807,7 @@ export type FilterResponseWaitOptions = {
 export type FilterResponseWaitResult = {
   waitedForResponse: boolean
   reason: 'already-applied' | 'response-already-complete' | 'client-side-filter' | 'server-response'
+  response?: Response
 }
 
 function normalizedFilterValue(value: string): string {
@@ -985,7 +986,7 @@ export async function fillFilterAndWaitForListResponse(
     const finalActionSnapshot = await waitForActionMarkerClosed(page, actionMarker, timeoutMs)
     tracker.assert(response, finalActionSnapshot)
     rememberListResponseOwnership(page, response)
-    return { waitedForResponse: true, reason: 'server-response' }
+    return { waitedForResponse: true, reason: 'server-response', response }
   } finally {
     tracker.clearTimers()
     page.off('request', requestObserver)

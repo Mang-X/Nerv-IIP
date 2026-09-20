@@ -1,54 +1,41 @@
-import {
-  expect,
-  test,
-  type APIResponse,
-  type BrowserContext,
-  type Page,
-  type Response,
-} from '@playwright/test'
-import { createHash } from 'node:crypto'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { expect, test, type Response } from '@playwright/test'
+import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import {
-  callWithSessionCredential,
-  createSessionCredentialTracker,
-  withSessionCredentialCleanup,
-} from './session-credential-tracker'
+import { withSessionCredentialCleanup } from './session-credential-tracker'
 import {
   buildAuthorizedWorkPoolAssignment,
-  extractPublicError,
   executeWalkthroughPicking,
-  runWithActorContext,
   selectAuthorizedWorkPoolScope,
   selectAuthorizedWorkSiteScope,
   type AuthorizedWorkPoolScope,
   type AuthorizedWorkSiteScope,
 } from './issue1912-walkthrough-runtime'
+import { classifyRequestFailure } from './issue1912-walkthrough-policy'
 import {
-  classifyRequestFailure,
-  clickRefreshAndWaitForListResponse,
-  clickTabAndConfirmUnmount,
-  fillFilterAndWaitForListResponse,
-  listQueryFingerprint,
-  navigateAndWaitForInitialList,
-  RequestFailureEvidenceTracker,
-} from './issue1912-walkthrough-policy'
-import {
-  assertWmsPageProofOptions,
   buildWmsInboundSelectionQueryFacts,
   buildWmsInboundListQueryFacts,
   buildWmsOutboundSelectionQueryFacts,
   buildWmsOutboundListQueryFacts,
-  assertWmsInitialListResponse,
-  fillWmsKeywordAndConfirm,
-  proveWmsListPage,
-  withWmsInitialListResponseGuard,
-  type WmsInboundListPageProofInput,
-  type WmsOutboundListPageProofInput,
 } from './issue1912-wms-walkthrough-facts'
 import { NERV_1571_WMS_DEFAULT_PAGE_WINDOW_INPUT } from './issue1912-wms-walkthrough-authority'
 import { queryPath as canonicalQueryPath } from './issue1912-walkthrough-query'
 import { runFinishedProduction } from './issue1853-finished-production'
+import {
+  createWalkthroughEvidence,
+  REQUIRED_NODES,
+  asRecord,
+  dataOf,
+  rowsOf,
+  textOf,
+  safeText,
+  publicJson,
+  dateOnly,
+  inventoryStateFingerprint,
+  inventoryMovementFingerprint,
+  type JsonRecord,
+} from './issue1912-walkthrough-evidence'
+import { createWalkthroughSession } from './issue1912-walkthrough-session'
+import { createWalkthroughPageProofs } from './issue1912-walkthrough-pages'
 
 const baseURL = process.env.NERV_IIP_PLAYWRIGHT_BASE_URL
 const adminPassword = process.env.NERV_IIP_FULLSTACK_ADMIN_PASSWORD
@@ -65,11 +52,6 @@ const requiresManagedSession = !baseURL || !adminPassword || !workerPassword || 
 
 test.setTimeout(25 * 60 * 1000)
 test.describe.configure({ mode: 'serial' })
-
-type JsonRecord = Record<string, unknown>
-type Conclusion = 'runtime-confirmed' | 'gap' | 'not-verified'
-type AutomationMode = 'automatic' | 'manual' | 'mixed'
-type WalkthroughActor = 'erp-admin' | 'wms-worker'
 
 const RFQ_NO = 'RFQ-WALK-001'
 const SUPPLIER_QUOTATION_NO = 'SQ-WALK-001'
@@ -91,235 +73,7 @@ const LINE_SIDE_LOCATION = 'loc-line-01'
 const FINISHED_GOODS_LOCATION = 'loc-fg-01'
 const QUANTITY = 1
 
-const REQUIRED_NODES = [
-  'rfq-supplier-quotation',
-  'supplier-quotation-purchase-order',
-  'purchase-order-approval',
-  'purchase-order-receipt',
-  'receipt-inbound-inventory',
-  'sales-quotation-sales-order',
-  'sales-order-demand',
-  'demand-mrp-suggestion',
-  'mrp-suggestion-mes-work-order',
-  'mes-work-order-production',
-  'production-finished-goods-receipt',
-  'finished-goods-inventory',
-  'sales-order-delivery',
-  'delivery-wms-outbound',
-  'wms-completed-erp-delivery',
-  'erp-account-receivable',
-] as const
-
-type NodeName = (typeof REQUIRED_NODES)[number]
-
-type EvidenceEntry = {
-  node: NodeName
-  sourceObject: string
-  downstreamObject: string
-  stableKey: string
-  automationMode: AutomationMode
-  request: JsonRecord | null
-  responseOrLog: unknown
-  conclusion: Conclusion
-  demoWording: string
-  responsibilityIssue: string | null
-}
-
-type UiProof = {
-  node: NodeName
-  actor: WalkthroughActor
-  principalId: string
-  page: string
-  pageHttpStatus: number
-  listPath: string
-  listHttpStatus: number
-  listQuery: JsonRecord
-  stableKey: string
-  renderedRowText: string
-  emptyText: string
-  screenshot: string
-}
-
-type SessionCredentialTracker = ReturnType<typeof createSessionCredentialTracker>
-
-type ActorRuntime = {
-  actor: WalkthroughActor
-  loginName: string
-  expectedPrincipalId: string
-  page: Page
-  tracker: SessionCredentialTracker
-  requestFailureEvidence: RequestFailureEvidenceTracker
-  successfulListResponses: Map<string, Response>
-  lastNavigationResponse: Response | null
-  lastNavigationRoute: string | null
-  lastNavigationEpoch: number | null
-  principalId: string
-  principalType: string
-  permissionCodes: string[]
-}
-
-class PublicCallError extends Error {
-  constructor(
-    readonly method: 'GET' | 'POST',
-    readonly path: string,
-    readonly status: number,
-    readonly request: JsonRecord,
-    readonly payload: unknown,
-  ) {
-    super(`${method} ${path} returned HTTP ${status}: ${safeText(JSON.stringify(payload))}`)
-    this.name = 'PublicCallError'
-  }
-}
-
-class PollTimeoutError extends Error {
-  constructor(
-    readonly path: string,
-    readonly lastData: unknown,
-    readonly attempts: number,
-    readonly timeoutMs: number,
-  ) {
-    super(
-      `Timed out after ${attempts} attempts in ${timeoutMs}ms waiting for ${path}; last=${safeText(JSON.stringify(lastData))}`,
-    )
-    this.name = 'PollTimeoutError'
-  }
-}
-
-function asRecord(value: unknown): JsonRecord {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? (value as JsonRecord)
-    : {}
-}
-
-function dataOf(value: unknown): unknown {
-  return asRecord(value).data ?? value
-}
-
-function rowsOf(value: unknown): JsonRecord[] {
-  const data = dataOf(value)
-  if (Array.isArray(data)) return data.map(asRecord)
-  const items = asRecord(data).items
-  return Array.isArray(items) ? items.map(asRecord) : []
-}
-
-function inventoryStateFingerprint(value: unknown): JsonRecord {
-  const data = asRecord(dataOf(value))
-  const items = Array.isArray(data.items)
-    ? data.items
-        .map(asRecord)
-        .map((item) => ({
-          locationCode: textOf(item.locationCode),
-          lotNo: item.lotNo ?? null,
-          serialNo: item.serialNo ?? null,
-          qualityStatus: textOf(item.qualityStatus),
-          ownerType: textOf(item.ownerType),
-          ownerId: item.ownerId ?? null,
-          onHandQuantity: item.onHandQuantity ?? null,
-          reservedQuantity: item.reservedQuantity ?? null,
-          availableQuantity: item.availableQuantity ?? null,
-          inventoryValue: item.inventoryValue ?? null,
-        }))
-        .sort((left, right) =>
-          `${left.locationCode}/${left.lotNo ?? ''}/${left.serialNo ?? ''}`.localeCompare(
-            `${right.locationCode}/${right.lotNo ?? ''}/${right.serialNo ?? ''}`,
-          ),
-        )
-    : []
-  return {
-    onHandQuantity: data.onHandQuantity ?? null,
-    reservedQuantity: data.reservedQuantity ?? null,
-    availableQuantity: data.availableQuantity ?? null,
-    inventoryValue: data.inventoryValue ?? null,
-    items,
-  }
-}
-
-function inventoryMovementFingerprint(value: unknown): JsonRecord {
-  const data = asRecord(dataOf(value))
-  const items = rowsOf(value)
-    .map((item) => ({
-      movementId: textOf(item.movementId),
-      movementType: textOf(item.movementType),
-      sourceService: textOf(item.sourceService),
-      sourceDocumentId: textOf(item.sourceDocumentId),
-      sourceDocumentLineId: item.sourceDocumentLineId ?? null,
-      idempotencyKey: textOf(item.idempotencyKey),
-      skuCode: textOf(item.skuCode),
-      uomCode: textOf(item.uomCode),
-      siteCode: textOf(item.siteCode),
-      locationCode: textOf(item.locationCode),
-      lotNo: item.lotNo ?? null,
-      serialNo: item.serialNo ?? null,
-      quantity: item.quantity ?? null,
-    }))
-    .sort((left, right) => left.movementId.localeCompare(right.movementId))
-  return {
-    totalCount: data.totalCount ?? null,
-    inboundQuantityTotal: data.inboundQuantityTotal ?? null,
-    outboundQuantityTotal: data.outboundQuantityTotal ?? null,
-    items,
-  }
-}
-
-function textOf(value: unknown): string {
-  return value === null || value === undefined ? '' : String(value)
-}
-
-function safeText(value: unknown): string {
-  return textOf(value)
-    .replace(
-      /(["']?(?:authorization|password|(?:access|refresh|id)?[_-]?token|secret|connectionstring|jwt)["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;}]+)/gi,
-      '$1<redacted-secret>',
-    )
-    .replace(/bearer\s+[^\s"']+/gi, '<redacted-credential>')
-    .replace(/authorization/gi, '<redacted-header>')
-    .replace(/password/gi, '<redacted-field>')
-    .replace(/(?:access|refresh|id)?[_-]?token/gi, '<redacted-field>')
-    .replace(/(?:secret|connectionstring|jwt)/gi, '<redacted-field>')
-    .slice(0, 1600)
-}
-
-function credentialDigest(headers: { authorization?: string } | undefined): string {
-  const authorization = headers?.authorization?.trim()
-  return authorization ? createHash('sha256').update(authorization).digest('hex').slice(0, 16) : ''
-}
-
-function publicJson(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(publicJson)
-  if (value === null || typeof value !== 'object') {
-    return typeof value === 'string' ? safeText(value) : value
-  }
-  return Object.fromEntries(
-    Object.entries(value as JsonRecord)
-      .filter(
-        ([key]) =>
-          !/(authorization|password|(?:access|refresh|id)?[_-]?token|secret|connectionstring|jwt)/i.test(
-            key,
-          ),
-      )
-      .map(([key, item]) => [key, publicJson(item)]),
-  )
-}
-
-async function jsonOf(response: APIResponse): Promise<unknown> {
-  const contentType = response.headers()['content-type'] ?? ''
-  if (!contentType.includes('json')) return { text: safeText(await response.text()) }
-  return response.json()
-}
-
-function dateOnly(date: Date): string {
-  return date.toISOString().slice(0, 10)
-}
-
-function queryPath(path: string, query: JsonRecord): string {
-  if (!baseURL)
-    throw new Error('managed walkthrough query path requires NERV_IIP_PLAYWRIGHT_BASE_URL')
-  return canonicalQueryPath(path, query, baseURL)
-}
-
-function errorText(error: unknown): string {
-  return safeText(error instanceof Error ? error.message : error)
-}
+const queryPath = (path: string, query: JsonRecord) => canonicalQueryPath(path, query, baseURL!)
 
 test('request failure policy keeps superseded navigation aborts but records API failures', async ({
   page,
@@ -438,357 +192,43 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
   let organizationId = ''
   let environmentId = ''
   let principalId = ''
-  let principalType = ''
   let workerPrincipalId = ''
-  let workerPrincipalType = ''
-  const workerContext: BrowserContext = await browser.newContext({ baseURL: baseURL! })
-  const sessionCredentialTracker = createSessionCredentialTracker({
-    origin: new URL(baseURL!).origin,
+  const ledger = createWalkthroughEvidence()
+  const {
+    evidence,
+    record,
+    markFailure,
+    setup,
+    uiEvidence,
+    failedRequests,
+    expectedRequestCancellations,
+    expectedBusinessRejections,
+    pageErrors,
+  } = ledger
+
+  const session = await createWalkthroughSession({
     page,
-    businessPathPrefix: '/api/business-console/',
-    refreshPath: '/api/console/v1/auth/refresh',
+    browser,
+    baseURL: baseURL!,
+    setup,
+    failedRequests,
+    expectedRequestCancellations,
+    expectedBusinessRejections,
+    pageErrors,
   })
-  const workerPage = await workerContext.newPage()
-  const workerSessionCredentialTracker = createSessionCredentialTracker({
-    origin: new URL(baseURL!).origin,
-    page: workerPage,
-    businessPathPrefix: '/api/business-console/',
-    refreshPath: '/api/console/v1/auth/refresh',
-  })
-  const adminRuntime: ActorRuntime = {
-    actor: 'erp-admin',
-    loginName: 'admin',
-    expectedPrincipalId: 'user-admin',
-    page,
-    tracker: sessionCredentialTracker,
-    requestFailureEvidence: new RequestFailureEvidenceTracker(),
-    successfulListResponses: new Map(),
-    lastNavigationResponse: null,
-    lastNavigationRoute: null,
-    lastNavigationEpoch: null,
-    principalId: '',
-    principalType: '',
-    permissionCodes: [],
-  }
-  const workerRuntime: ActorRuntime = {
-    actor: 'wms-worker',
-    loginName: 'emp049',
-    expectedPrincipalId: 'user-emp-049',
-    page: workerPage,
-    tracker: workerSessionCredentialTracker,
-    requestFailureEvidence: new RequestFailureEvidenceTracker(),
-    successfulListResponses: new Map(),
-    lastNavigationResponse: null,
-    lastNavigationRoute: null,
-    lastNavigationEpoch: null,
-    principalId: '',
-    principalType: '',
-    permissionCodes: [],
-  }
-  const evidence = new Map<NodeName, EvidenceEntry>()
-  const setup: JsonRecord[] = []
-  const uiEvidence: UiProof[] = []
-  const failedRequests: JsonRecord[] = []
-  const expectedRequestCancellations: JsonRecord[] = []
-  const expectedBusinessRejections: JsonRecord[] = []
-  const pageErrors: string[] = []
-
-  for (const node of REQUIRED_NODES) {
-    evidence.set(node, {
-      node,
-      sourceObject: 'not-observed',
-      downstreamObject: 'not-observed',
-      stableKey: node,
-      automationMode: 'automatic',
-      request: null,
-      responseOrLog: { reason: 'upstream evidence was not established in this run' },
-      conclusion: 'not-verified',
-      demoWording: `${node}: this run did not establish a public runtime association.`,
-      responsibilityIssue: null,
-    })
-  }
-
-  const record = (entry: EvidenceEntry) => evidence.set(entry.node, entry)
-
-  const attachObservers = (runtime: ActorRuntime) => {
-    runtime.page.on('request', (request) => {
-      runtime.requestFailureEvidence.observeRequest(request, runtime.page.url())
-      runtime.tracker.observeRequest({ page: runtime.page, request })
-    })
-    runtime.page.on('requestfailed', (request) => {
-      runtime.requestFailureEvidence.resolveFailureEvidence(request, (cancellationEvidence) => {
-        const classified = classifyRequestFailure({
-          method: request.method(),
-          url: request.url(),
-          failure: safeText(request.failure()?.errorText ?? 'unknown request failure'),
-          resourceType: request.resourceType(),
-          isNavigationRequest: request.isNavigationRequest(),
-          cancellationEvidence,
-        })
-        const record = {
-          ...classified.record,
-          actor: runtime.actor,
-          principalId: runtime.principalId || runtime.expectedPrincipalId,
-        }
-        if (classified.expected) expectedRequestCancellations.push(record)
-        else failedRequests.push(record)
-      })
-    })
-    runtime.page.on('response', (response: Response) => {
-      const url = new URL(response.url())
-      if (url.pathname === '/api/console/v1/auth/refresh') {
-        void runtime.tracker
-          .observeRefreshResponse({ page: runtime.page, response })
-          .catch((error) => {
-            failedRequests.push({
-              kind: 'refresh-credential-capture',
-              actor: runtime.actor,
-              principalId: runtime.principalId || runtime.expectedPrincipalId,
-              path: url.pathname,
-              status: response.status(),
-              error: errorText(error),
-            })
-          })
-      }
-      if (
-        response.request().method() === 'GET' &&
-        response.status() === 200 &&
-        url.pathname.startsWith('/api/')
-      ) {
-        runtime.successfulListResponses.set(url.pathname, response)
-      }
-      if (url.pathname.startsWith('/api/') && response.status() >= 400) {
-        failedRequests.push({
-          kind: 'http-error',
-          actor: runtime.actor,
-          principalId: runtime.principalId || runtime.expectedPrincipalId,
-          method: response.request().method(),
-          path: url.pathname + url.search,
-          status: response.status(),
-        })
-      }
-    })
-    runtime.page.on('pageerror', (error) =>
-      pageErrors.push(`${runtime.actor}: ${safeText(error.message)}`),
-    )
-  }
-
-  attachObservers(adminRuntime)
-  attachObservers(workerRuntime)
-
-  type CallOptions = { expectedStatus?: number }
-
-  const invoke = async (
-    runtime: ActorRuntime,
-    method: 'GET' | 'POST',
-    path: string,
-    body?: JsonRecord,
-    options: CallOptions = {},
-  ) => {
-    const url = new URL(path, baseURL!)
-    const response = await callWithSessionCredential(runtime.tracker, (headers) =>
-      runWithActorContext(
-        {
-          actor: runtime.actor,
-          principalId: runtime.principalId || runtime.expectedPrincipalId,
-          authorization: headers.authorization ?? '',
-        },
-        ({ authorization }) =>
-          runtime.page.request.fetch(url.toString(), {
-            method,
-            data: body,
-            headers: { authorization },
-          }),
-      ),
-    )
-    const payload = await jsonOf(response)
-    const summary: JsonRecord = {
-      actor: runtime.actor,
-      principalId: runtime.principalId || runtime.expectedPrincipalId,
-      method,
-      path: url.pathname + url.search,
-      status: response.status(),
-      correlationId:
-        response.headers()['x-correlation-id'] ?? response.headers().traceparent ?? null,
-      body: body ? publicJson(body) : null,
-    }
-    if (!response.ok() && response.status() !== options.expectedStatus) {
-      throw new PublicCallError(
-        method,
-        summary.path as string,
-        response.status(),
-        summary,
-        publicJson(payload),
-      )
-    }
-    return { payload, summary, publicPayload: publicJson(payload) as JsonRecord }
-  }
-
-  const call = (method: 'GET' | 'POST', path: string, body?: JsonRecord) =>
-    invoke(adminRuntime, method, path, body)
-  const workerCall = (method: 'GET' | 'POST', path: string, body?: JsonRecord) =>
-    invoke(workerRuntime, method, path, body)
-  const workerCallExpecting = async (
-    method: 'GET' | 'POST',
-    path: string,
-    body: JsonRecord,
-    expectedError: { code: string; message: string },
-  ) => {
-    const response = await invoke(workerRuntime, method, path, body, { expectedStatus: 403 })
-    expect(response.summary.status).toBe(403)
-    const publicError = extractPublicError(response.publicPayload)
-    expect(publicError).toEqual(expectedError)
-    expectedBusinessRejections.push({
-      ...response.summary,
-      response: response.publicPayload,
-      publicError,
-    })
-    return { ...response, publicError }
-  }
-
-  const pollRowsFor = async (
-    runtime: ActorRuntime,
-    path: string,
-    query: JsonRecord,
-    predicate: (row: JsonRecord) => boolean,
-    timeoutMs = 90_000,
-  ) => {
-    const startedAt = Date.now()
-    const deadline = startedAt + timeoutMs
-    let attempts = 0
-    let lastRows: JsonRecord[] = []
-    do {
-      attempts += 1
-      const response = await invoke(runtime, 'GET', queryPath(path, query))
-      lastRows = rowsOf(response.payload)
-      const match = lastRows.find(predicate)
-      if (match)
-        return {
-          match,
-          call: response,
-          poll: { attempts, elapsedMs: Date.now() - startedAt, timeoutMs },
-        }
-      const remaining = deadline - Date.now()
-      if (remaining > 0) await runtime.page.waitForTimeout(Math.min(1000, remaining))
-    } while (Date.now() < deadline)
-    throw new PollTimeoutError(path, { items: lastRows }, attempts, timeoutMs)
-  }
-
-  const pollDataFor = async (
-    runtime: ActorRuntime,
-    path: string,
-    query: JsonRecord,
-    predicate: (data: JsonRecord) => boolean,
-    timeoutMs = 90_000,
-  ) => {
-    const startedAt = Date.now()
-    const deadline = startedAt + timeoutMs
-    let attempts = 0
-    let lastData: JsonRecord = {}
-    do {
-      attempts += 1
-      const response = await invoke(runtime, 'GET', queryPath(path, query))
-      lastData = asRecord(dataOf(response.payload))
-      if (predicate(lastData))
-        return {
-          data: lastData,
-          call: response,
-          poll: { attempts, elapsedMs: Date.now() - startedAt, timeoutMs },
-        }
-      const remaining = deadline - Date.now()
-      if (remaining > 0) await runtime.page.waitForTimeout(Math.min(1000, remaining))
-    } while (Date.now() < deadline)
-    throw new PollTimeoutError(path, lastData, attempts, timeoutMs)
-  }
-
-  const pollRows = (
-    path: string,
-    query: JsonRecord,
-    predicate: (row: JsonRecord) => boolean,
-    timeoutMs = 90_000,
-  ) => pollRowsFor(adminRuntime, path, query, predicate, timeoutMs)
-  const workerPollRows = (
-    path: string,
-    query: JsonRecord,
-    predicate: (row: JsonRecord) => boolean,
-    timeoutMs = 90_000,
-  ) => pollRowsFor(workerRuntime, path, query, predicate, timeoutMs)
-  const workerPollData = (
-    path: string,
-    query: JsonRecord,
-    predicate: (data: JsonRecord) => boolean,
-    timeoutMs = 90_000,
-  ) => pollDataFor(workerRuntime, path, query, predicate, timeoutMs)
-
-  const markFailure = (node: NodeName, error: unknown, mode: AutomationMode = 'automatic') => {
-    const current = evidence.get(node)!
-    const publicError =
-      error instanceof PublicCallError
-        ? { error: errorText(error), request: error.request, response: publicJson(error.payload) }
-        : error instanceof PollTimeoutError
-          ? {
-              error: errorText(error),
-              path: error.path,
-              attempts: error.attempts,
-              timeoutMs: error.timeoutMs,
-              lastData: publicJson(error.lastData),
-            }
-          : { error: errorText(error) }
-    record({
-      ...current,
-      automationMode: mode,
-      request: error instanceof PublicCallError ? error.request : current.request,
-      responseOrLog: publicError,
-      conclusion: 'gap',
-      demoWording: `${node}: the public runtime attempt did not converge; this is a gap, not a completed hop.`,
-      responsibilityIssue: null,
-    })
-  }
-
-  type PageProofOptions = {
-    actor?: WalkthroughActor
-    route: string
-    listPath: string
-    stableText: string
-    filterLabel?: string
-    // `client` proves the rendered table after a local filter; `server` requires an exact 200 list response.
-    filterResponseMode?: 'server' | 'client'
-    // The expected list scope is an independent walkthrough fact, not copied from the response.
-    // Server-filter proofs fail closed when this query is omitted.
-    expectedListQuery?: JsonRecord
-    tabText?: string | RegExp
-    // Reuse a settled route when a tab proof only needs refreshed data; a full reload can supersede API work.
-    reuseCurrentRoute?: boolean
-    refreshListBeforeProof?: boolean
-    selectOptions?: Array<{ label: string; option: string }>
-    emptyText: string
-    screenshotName: string
-  }
-
-  type EstablishedPage = {
-    runtime: ActorRuntime
-    targetPage: Page
-    listPath: string
-    navigation: Response
-    firstList: Response
-    firstListNavigationEpoch: number | undefined
-  }
-
-  type ListProofContext = Readonly<{
-    page: Page
-    listPath: string
-    response: Response
-    navigationEpoch: number | undefined
-  }>
-
-  type WmsPageProofOptions = Readonly<{
-    actor: 'wms-worker'
-    route: string
-    filterLabel: string
-    emptyText: string
-    screenshotName: string
-    wms: WmsInboundListPageProofInput | WmsOutboundListPageProofInput
-  }>
+  const {
+    adminRuntime,
+    workerRuntime,
+    sessionCredentialTracker,
+    workerSessionCredentialTracker,
+    workerContext,
+    call,
+    workerCall,
+    workerCallExpecting,
+    pollRows,
+    workerPollRows,
+    workerPollData,
+  } = session
 
   const erpListQuery = (query: JsonRecord = {}): JsonRecord => ({
     organizationId,
@@ -798,391 +238,20 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     ...query,
   })
 
-  const samePageRoute = (currentUrl: string, route: string): boolean => {
-    if (!currentUrl) return false
-    const current = new URL(currentUrl)
-    const expected = new URL(route, currentUrl)
-    return (
-      current.origin === expected.origin &&
-      current.pathname === expected.pathname &&
-      current.search === expected.search
-    )
-  }
-
-  const establishPage = async (options: PageProofOptions): Promise<EstablishedPage> => {
-    const runtime = options.actor === 'wms-worker' ? workerRuntime : adminRuntime
-    const targetPage = runtime.page
-    const reuseCurrentRoute = options.reuseCurrentRoute === true
-    if (reuseCurrentRoute && !samePageRoute(targetPage.url(), options.route)) {
-      throw new Error(`page ${options.route} cannot reuse the current route ${targetPage.url()}`)
-    }
-    let navigation: Response | null = null
-    let firstList: Response | null = null
-    let firstListNavigationEpoch: number | undefined
-
-    if (reuseCurrentRoute) {
-      if (
-        !runtime.lastNavigationRoute ||
-        !samePageRoute(runtime.lastNavigationRoute, options.route)
-      ) {
-        throw new Error(`page ${options.route} has no matching completed navigation to reuse`)
-      }
-      navigation = runtime.lastNavigationResponse
-      if (!navigation || navigation.status() !== 200) {
-        throw new Error(`page ${options.route} has no completed HTTP 200 navigation to reuse`)
-      }
-      firstList = runtime.successfulListResponses.get(options.listPath) ?? null
-      firstListNavigationEpoch = runtime.lastNavigationEpoch ?? undefined
-    } else {
-      const navigationAttempt = runtime.requestFailureEvidence.beginLifecycleAttempt(
-        targetPage.url(),
-      )
-      let navigationConfirmed = false
-      try {
-        const initialPage = await navigateAndWaitForInitialList(targetPage, {
-          route: options.route,
-          listPath: options.listPath,
-          timeoutMs: 120_000,
-        })
-        navigation = initialPage.navigation
-        firstList = initialPage.firstList
-        firstListNavigationEpoch = initialPage.navigationEpoch
-        runtime.lastNavigationResponse = navigation
-        runtime.lastNavigationRoute = targetPage.url()
-        runtime.lastNavigationEpoch = initialPage.navigationEpoch
-        runtime.successfulListResponses.set(options.listPath, firstList)
-        expect(navigation?.status(), `page ${options.route} must return HTTP 200`).toBe(200)
-        expect(firstList.status(), `list ${options.listPath} must return HTTP 200`).toBe(200)
-        navigationAttempt.confirm('navigation')
-        navigationConfirmed = true
-      } finally {
-        if (navigationConfirmed) navigationAttempt.complete()
-        else navigationAttempt.cancel()
-      }
-    }
-
-    if (!navigation || !firstList) {
-      throw new Error(`list ${options.listPath} has no completed HTTP 200 response to prove`)
-    }
-    return {
-      runtime,
-      targetPage,
-      listPath: options.listPath,
-      navigation,
-      firstList,
-      firstListNavigationEpoch,
-    }
-  }
-
-  const initialListProofContext = (established: EstablishedPage): ListProofContext => ({
-    page: established.targetPage,
-    listPath: established.listPath,
-    response: established.firstList,
-    navigationEpoch: established.firstListNavigationEpoch,
+  const { provePageSafely, proveWmsPageSafely } = createWalkthroughPageProofs({
+    adminRuntime,
+    workerRuntime,
+    screenshotDirectory,
+    uiEvidence,
+    markFailure,
+    baseURL: baseURL!,
   })
 
-  const refreshListProofContext = async (
-    established: EstablishedPage,
-    listPath: string,
-  ): Promise<ListProofContext> => {
-    if (listPath !== established.listPath) {
-      throw new Error(
-        `refresh proof path ${listPath} did not match established list path ${established.listPath}`,
-      )
-    }
-    // A data refresh is not a lifecycle transition: any API abort remains an unexpected failure.
-    const response = await clickRefreshAndWaitForListResponse(established.targetPage, listPath)
-    const navigationEpoch = established.runtime.lastNavigationEpoch ?? undefined
-    established.runtime.successfulListResponses.set(listPath, response)
-    return {
-      page: established.targetPage,
-      listPath,
-      response,
-      navigationEpoch,
-    }
-  }
-
-  const completePageProof = async (
-    node: NodeName,
-    options: PageProofOptions,
-    established: EstablishedPage,
-    listProof: ListProofContext,
-  ): Promise<UiProof> => {
-    const { runtime, targetPage, navigation } = established
-    if (listProof.page !== targetPage || listProof.listPath !== options.listPath) {
-      throw new Error(
-        `list proof context did not match established page/path for ${options.listPath}`,
-      )
-    }
-    if (
-      new URL(listProof.response.url()).pathname !== listProof.listPath ||
-      listProof.response.request().frame() !== targetPage.mainFrame()
-    ) {
-      throw new Error(
-        `list proof response was not emitted by the established page/path for ${options.listPath}`,
-      )
-    }
-    const firstList = listProof.response
-    const firstListNavigationEpoch = listProof.navigationEpoch
-
-    expect(navigation.status(), `page ${options.route} must return HTTP 200`).toBe(200)
-    expect(firstList.status(), `list ${options.listPath} must return HTTP 200`).toBe(200)
-
-    if (options.filterLabel) {
-      const filterResponseMode = options.filterResponseMode ?? 'server'
-      const expectedListQueryFingerprint =
-        filterResponseMode === 'server'
-          ? options.expectedListQuery === undefined
-            ? (() => {
-                throw new Error(
-                  `server filter proof for ${options.listPath} requires explicit expected list query facts`,
-                )
-              })()
-            : listQueryFingerprint(queryPath(options.listPath, options.expectedListQuery))
-          : undefined
-      await fillFilterAndWaitForListResponse(targetPage, {
-        route: targetPage.url(),
-        listPath: options.listPath,
-        filterLabel: options.filterLabel,
-        stableText: options.stableText,
-        responseMode: filterResponseMode,
-        initialListResponse: firstList,
-        initialListNavigationEpoch: firstListNavigationEpoch,
-        expectedListQueryFingerprint,
-        timeoutMs: 120_000,
-      })
-    }
-
-    if (options.tabText) {
-      await clickTabAndConfirmUnmount(targetPage, options.tabText, runtime.requestFailureEvidence)
-    }
-
-    for (const selectOption of options.selectOptions ?? []) {
-      const listResponse = targetPage.waitForResponse(
-        (response) => {
-          const url = new URL(response.url())
-          return (
-            response.request().method() === 'GET' &&
-            url.pathname === options.listPath &&
-            response.status() === 200
-          )
-        },
-        { timeout: 120_000 },
-      )
-      await targetPage.getByLabel(selectOption.label).click()
-      await targetPage.getByRole('option', { name: selectOption.option, exact: true }).click()
-      await listResponse
-    }
-
-    const row = targetPage.locator('tbody tr').filter({ hasText: options.stableText }).first()
-    await expect(row, `page ${options.route} must render a stable business row`).toBeVisible({
-      timeout: 120_000,
-    })
-    await expect(row).toContainText(options.stableText)
-    await expect(targetPage.getByText(options.emptyText, { exact: true })).toHaveCount(0)
-    const screenshot = join(screenshotDirectory, options.screenshotName)
-    await targetPage.screenshot({ path: screenshot, fullPage: true })
-    const proof: UiProof = {
-      node,
-      actor: runtime.actor,
-      principalId: runtime.principalId,
-      page: options.route,
-      pageHttpStatus: navigation.status(),
-      listPath: options.listPath,
-      listHttpStatus: firstList.status(),
-      listQuery: Object.fromEntries(new URL(firstList.url()).searchParams.entries()),
-      stableKey: options.stableText,
-      renderedRowText: safeText(await row.innerText()),
-      emptyText: options.emptyText,
-      screenshot,
-    }
-    uiEvidence.push(proof)
-    return proof
-  }
-
-  const provePage = async (node: NodeName, options: PageProofOptions): Promise<UiProof> => {
-    const established = await establishPage(options)
-    const listProof = options.refreshListBeforeProof
-      ? await refreshListProofContext(established, options.listPath)
-      : initialListProofContext(established)
-    return completePageProof(node, options, established, listProof)
-  }
-
-  const proveWmsPage = async (node: NodeName, options: WmsPageProofOptions): Promise<UiProof> => {
-    assertWmsPageProofOptions(options)
-    const listPath = options.wms.query.listPath
-    const pageOptions: PageProofOptions = {
-      actor: 'wms-worker',
-      route: options.route,
-      listPath,
-      stableText: options.wms.query.keywordQuery.keyword,
-      emptyText: options.emptyText,
-      screenshotName: options.screenshotName,
-    }
-    const guarded = await withWmsInitialListResponseGuard(
-      workerRuntime.page,
-      listPath,
-      () => establishPage(pageOptions),
-      120_000,
-      pageOptions.route,
-    )
-    const established = guarded.result
-    if (established.firstList !== guarded.firstList) {
-      throw new Error(
-        `WMS initial list response was not bound to the first response for ${listPath}`,
-      )
-    }
-    assertWmsInitialListResponse(
-      { url: guarded.firstList.url(), status: guarded.firstList.status() },
-      listPath,
-    )
-    const refreshedList = await proveWmsListPage({
-      ...options.wms,
-      page: established.targetPage,
-    })
-    const keywordList = await fillWmsKeywordAndConfirm(
-      established.targetPage,
-      options.wms.query,
-      refreshedList,
-      established.firstListNavigationEpoch,
-      options.filterLabel,
-    )
-    established.runtime.successfulListResponses.set(listPath, keywordList)
-    return completePageProof(node, pageOptions, established, {
-      page: established.targetPage,
-      listPath,
-      response: keywordList,
-      navigationEpoch: established.runtime.lastNavigationEpoch ?? undefined,
-    })
-  }
-
-  const runProofSafely = async <T>(node: NodeName, proof: () => Promise<T>): Promise<T> => {
-    try {
-      return await proof()
-    } catch (error) {
-      markFailure(node, error, 'mixed')
-      throw error
-    }
-  }
-
-  const provePageSafely = (node: NodeName, options: PageProofOptions) =>
-    runProofSafely(node, () => provePage(node, options))
-
-  const proveWmsPageSafely = (node: NodeName, options: WmsPageProofOptions) =>
-    runProofSafely(node, () => proveWmsPage(node, options))
-
   try {
-    await page.goto('/login', { waitUntil: 'domcontentloaded', timeout: 120_000 })
-    const loginName = page.getByLabel('登录名')
-    await expect(loginName).toBeVisible({ timeout: 120_000 })
-    const loginResponse = page.waitForResponse(
-      (response) => new URL(response.url()).pathname === '/api/console/v1/auth/login',
-      { timeout: 120_000 },
-    )
-    await loginName.fill('admin')
-    await page.getByLabel('密码').fill(adminPassword!)
-    await page.getByRole('button', { name: '登录' }).click()
-    const login = await loginResponse
-    expect(login.status()).toBe(200)
-    const auth = asRecord(dataOf(await login.json()))
-    const principal = asRecord(auth.principal)
-    organizationId = textOf(principal.organizationId)
-    environmentId = textOf(principal.environmentId)
-    principalType = textOf(principal.principalType).trim().toLowerCase()
-    principalId = textOf(principal.principalId).trim()
-    adminRuntime.principalId = principalId
-    adminRuntime.principalType = principalType
-    adminRuntime.permissionCodes = Array.isArray(principal.permissionCodes)
-      ? principal.permissionCodes.map(textOf).filter(Boolean)
-      : []
-    expect(organizationId).not.toBe('')
-    expect(environmentId).not.toBe('')
-    expect(principalType).toBe('user')
-    expect(principalId).toBe(adminRuntime.expectedPrincipalId)
-    expect(adminRuntime.permissionCodes).toContain('business.approvals.manage')
-
-    const businessRequest = page.waitForRequest(
-      (request) => {
-        const path = new URL(request.url()).pathname
-        return (
-          path === '/api/business-console/v1/master-data/skus' &&
-          Boolean(request.headers().authorization)
-        )
-      },
-      { timeout: 120_000 },
-    )
-    await page.goto('/master-data/skus', { waitUntil: 'domcontentloaded', timeout: 120_000 })
-    sessionCredentialTracker.observeRequest({ page, request: await businessRequest })
-    const adminHeaders = await sessionCredentialTracker.headers()
-    expect(adminHeaders).toBeDefined()
-
-    await workerPage.goto('/login', { waitUntil: 'domcontentloaded', timeout: 120_000 })
-    const workerLoginName = workerPage.getByLabel('登录名')
-    await expect(workerLoginName).toBeVisible({ timeout: 120_000 })
-    const workerLoginResponse = workerPage.waitForResponse(
-      (response) => new URL(response.url()).pathname === '/api/console/v1/auth/login',
-      { timeout: 120_000 },
-    )
-    const workerBusinessRequest = workerPage.waitForRequest(
-      (request) => {
-        const path = new URL(request.url()).pathname
-        return path.startsWith('/api/business-console/') && Boolean(request.headers().authorization)
-      },
-      { timeout: 120_000 },
-    )
-    await workerLoginName.fill('emp049')
-    await workerPage.getByLabel('密码').fill(workerPassword!)
-    await workerPage.getByRole('button', { name: '登录' }).click()
-    const workerLogin = await workerLoginResponse
-    expect(workerLogin.status()).toBe(200)
-    const workerAuth = asRecord(dataOf(await workerLogin.json()))
-    const workerPrincipal = asRecord(workerAuth.principal)
-    workerPrincipalId = textOf(workerPrincipal.principalId).trim()
-    workerPrincipalType = textOf(workerPrincipal.principalType).trim().toLowerCase()
-    workerRuntime.principalId = workerPrincipalId
-    workerRuntime.principalType = workerPrincipalType
-    workerRuntime.permissionCodes = Array.isArray(workerPrincipal.permissionCodes)
-      ? workerPrincipal.permissionCodes.map(textOf).filter(Boolean)
-      : []
-    expect(workerPrincipal.organizationId).toBe(organizationId)
-    expect(workerPrincipal.environmentId).toBe(environmentId)
-    expect(workerPrincipalType).toBe('user')
-    expect(workerPrincipalId).toBe(workerRuntime.expectedPrincipalId)
-    expect(workerRuntime.permissionCodes).toContain('business.wms.receipts.manage')
-    expect(workerRuntime.permissionCodes).toContain('business.wms.shipments.manage')
-    expect(workerRuntime.permissionCodes).toContain('business.inventory.ledger.read')
-    expect(workerRuntime.permissionCodes).not.toContain('business.approvals.manage')
-
-    workerSessionCredentialTracker.observeRequest({
-      page: workerPage,
-      request: await workerBusinessRequest,
-    })
-    const workerHeaders = await workerSessionCredentialTracker.headers()
-    expect(workerHeaders).toBeDefined()
-    const adminCredentialDigest = credentialDigest(adminHeaders)
-    const workerCredentialDigest = credentialDigest(workerHeaders)
-    expect(adminCredentialDigest).not.toBe('')
-    expect(workerCredentialDigest).not.toBe('')
-    expect(workerCredentialDigest).not.toBe(adminCredentialDigest)
-    setup.push({
-      kind: 'identityIsolation',
-      contexts: 2,
-      admin: {
-        actor: adminRuntime.actor,
-        loginName: adminRuntime.loginName,
-        principalId: adminRuntime.principalId,
-        permissionCodes: adminRuntime.permissionCodes,
-        credentialDigest: adminCredentialDigest,
-      },
-      worker: {
-        actor: workerRuntime.actor,
-        loginName: workerRuntime.loginName,
-        principalId: workerRuntime.principalId,
-        permissionCodes: workerRuntime.permissionCodes,
-        credentialDigest: workerCredentialDigest,
-      },
-      credentialsShared: false,
-    })
+    ;({ organizationId, environmentId, principalId, workerPrincipalId } = await session.login(
+      adminPassword!,
+      workerPassword!,
+    ))
 
     // The seed is intentionally read-only here. The test proves the reserved facts exist and never
     // creates or overwrites an approval template; CreatePurchaseOrderCommand starts the seeded chain.
@@ -1393,7 +462,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       {
         organizationId,
         environmentId,
-        actorType: principalType || 'user',
+        actorType: adminRuntime.principalType,
         actorRef: principalId,
         decision: 'approve',
         comment: 'NERV-1127 real-machine walkthrough approval',
@@ -2592,63 +1661,34 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     if (firstUnverified) markFailure(firstUnverified, error, 'mixed')
     throw error
   } finally {
-    const entries = REQUIRED_NODES.map((node) => evidence.get(node)!)
     try {
       await withSessionCredentialCleanup(
         () =>
-          writeFile(
-            evidencePath!,
-            JSON.stringify(
-              {
-                issue: 'GitHub #1912 / NERV-1127',
-                generatedAtUtc: generatedAtUtc.toISOString(),
-                organizationId,
-                environmentId,
-                adminPrincipalId: principalId,
-                workerPrincipalId,
-                rfqNo: RFQ_NO,
-                supplierQuotationNo: SUPPLIER_QUOTATION_NO,
-                salesQuotationNo: SALES_QUOTATION_NO,
-                purchaseOrderNo: PURCHASE_ORDER_NO,
-                purchaseReceiptNo: PURCHASE_RECEIPT_NO,
-                salesOrderNo: SALES_ORDER_NO,
-                deliveryOrderNo: DELIVERY_ORDER_NO,
-                runtimeProfileSource: runtimeProfileSource ?? 'not-supplied',
-                transport: transport ?? 'not-supplied',
-                persistence: persistence ?? 'not-supplied',
-                worldEnabled: worldEnabled ?? 'not-supplied',
-                historyEnabled: historyEnabled ?? 'not-supplied',
-                scaleOrderCount: scaleOrderCount ?? 'not-supplied',
-                assertionBoundary:
-                  'public BusinessGateway HTTP plus rendered browser pages in two isolated ERP/WMS contexts; no database reads as business assertions',
-                requestFailurePolicy:
-                  'Only ERR_ABORTED document/resource requests, plus fetch/xhr API requests observed before a confirmed navigation or a confirmed inactive/hidden tab panel whose prior slot content disappeared, are separated as expected cancellations; the evidence window closes immediately after the transition. API aborts without that evidence, including requests started after the transition or reported after completion, API HTTP errors, other navigation failures, and other resource failures remain fail-closed. Client-side planning demand filtering proves the rendered row without a second list wait, while same-route suggestion proof refreshes its completed list before confirming tab unmount.',
-                setup,
-                identityIsolation: setup.find((item) => item.kind === 'identityIsolation') ?? null,
-                expectedBusinessRejections,
-                uiEvidence,
-                failedRequests,
-                expectedRequestCancellations,
-                pageErrors,
-                entries,
-                summary: Object.fromEntries(
-                  (['runtime-confirmed', 'gap', 'not-verified'] as const).map((conclusion) => [
-                    conclusion,
-                    entries.filter((entry) => entry.conclusion === conclusion).length,
-                  ]),
-                ),
-                conclusion:
-                  entries.every((entry) => entry.conclusion === 'runtime-confirmed') &&
-                  failedRequests.length === 0 &&
-                  pageErrors.length === 0
-                    ? 'runtime-confirmed'
-                    : 'not-verified',
-              },
-              null,
-              2,
-            ),
-            'utf8',
-          ),
+          ledger.write(evidencePath!, {
+            issue: 'GitHub #1912 / NERV-1127',
+            generatedAtUtc: generatedAtUtc.toISOString(),
+            organizationId,
+            environmentId,
+            adminPrincipalId: principalId,
+            workerPrincipalId,
+            rfqNo: RFQ_NO,
+            supplierQuotationNo: SUPPLIER_QUOTATION_NO,
+            salesQuotationNo: SALES_QUOTATION_NO,
+            purchaseOrderNo: PURCHASE_ORDER_NO,
+            purchaseReceiptNo: PURCHASE_RECEIPT_NO,
+            salesOrderNo: SALES_ORDER_NO,
+            deliveryOrderNo: DELIVERY_ORDER_NO,
+            runtimeProfileSource: runtimeProfileSource ?? 'not-supplied',
+            transport: transport ?? 'not-supplied',
+            persistence: persistence ?? 'not-supplied',
+            worldEnabled: worldEnabled ?? 'not-supplied',
+            historyEnabled: historyEnabled ?? 'not-supplied',
+            scaleOrderCount: scaleOrderCount ?? 'not-supplied',
+            assertionBoundary:
+              'public BusinessGateway HTTP plus rendered browser pages in two isolated ERP/WMS contexts; no database reads as business assertions',
+            requestFailurePolicy:
+              'Only ERR_ABORTED document/resource requests, plus fetch/xhr API requests observed before a confirmed navigation or a confirmed inactive/hidden tab panel whose prior slot content disappeared, are separated as expected cancellations; the evidence window closes immediately after the transition. API aborts without that evidence, including requests started after the transition or reported after completion, API HTTP errors, other navigation failures, and other resource failures remain fail-closed. Client-side planning demand filtering proves the rendered row without a second list wait, while same-route suggestion proof refreshes its completed list before confirming tab unmount.',
+          }),
         () => {
           sessionCredentialTracker.clear()
           workerSessionCredentialTracker.clear()

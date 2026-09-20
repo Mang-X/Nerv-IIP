@@ -156,7 +156,12 @@ test.describe('walkthrough filter response boundary', () => {
       ),
       timeoutMs: 500,
     })
-    expect(result).toEqual({ waitedForResponse: true, reason: 'server-response' })
+    expect(result).toEqual({
+      waitedForResponse: true,
+      reason: 'server-response',
+      response: expect.anything(),
+    })
+    expect(new URL(result.response!.url()).searchParams.get('keyword')).toBe('SO-WALK-001')
     expect(queries).toHaveLength(2)
     expect(new URL(queries[1]).searchParams.get('environmentId')).toBe('env-live')
     expect(new URL(queries[1]).searchParams.get('take')).toBe('10')
@@ -243,7 +248,12 @@ test.describe('walkthrough filter response boundary', () => {
       timeoutMs: 2_000,
     })
 
-    expect(result).toEqual({ waitedForResponse: true, reason: 'server-response' })
+    expect(result).toEqual({
+      waitedForResponse: true,
+      reason: 'server-response',
+      response: expect.anything(),
+    })
+    expect(new URL(result.response!.url()).searchParams.get('keyword')).toBe('SO-WALK-001')
     expect(queries).toEqual(['SO-WALK-001', 'SO-WALK-001', 'SO-WALK-001'])
   })
 
@@ -282,7 +292,12 @@ test.describe('walkthrough filter response boundary', () => {
       timeoutMs: 2_000,
     })
 
-    expect(result).toEqual({ waitedForResponse: true, reason: 'server-response' })
+    expect(result).toEqual({
+      waitedForResponse: true,
+      reason: 'server-response',
+      response: expect.anything(),
+    })
+    expect(new URL(result.response!.url()).searchParams.get('keyword')).toBe('SO-WALK-001')
     expect(queries).toEqual(['OTHER-001', 'SO-WALK-001'])
   })
 
@@ -418,7 +433,12 @@ test.describe('walkthrough filter response boundary', () => {
       timeoutMs: 2_000,
     })
 
-    expect(result).toEqual({ waitedForResponse: true, reason: 'server-response' })
+    expect(result).toEqual({
+      waitedForResponse: true,
+      reason: 'server-response',
+      response: expect.anything(),
+    })
+    expect(new URL(result.response!.url()).searchParams.get('keyword')).toBe('SO-WALK-001')
     expect(changedAttempts).toBe(1)
     expect(statuses).toEqual([200, 200])
     expect(queries).toEqual(['SO-OLD-001', 'SO-WALK-001'])
@@ -549,7 +569,12 @@ test.describe('walkthrough filter response boundary', () => {
       timeoutMs: 2_000,
     })
 
-    expect(result).toEqual({ waitedForResponse: true, reason: 'server-response' })
+    expect(result).toEqual({
+      waitedForResponse: true,
+      reason: 'server-response',
+      response: expect.anything(),
+    })
+    expect(new URL(result.response!.url()).searchParams.get('keyword')).toBe('SO-WALK-001')
     expect(expectedResponseCompleted).toBe(true)
     expect(queries).toHaveLength(3)
     expect(queries.slice(1).sort()).toEqual(['OTHER-001', 'SO-WALK-001'].sort())
@@ -610,7 +635,12 @@ test.describe('walkthrough filter response boundary', () => {
       timeoutMs: 2_000,
     })
 
-    expect(result).toEqual({ waitedForResponse: true, reason: 'server-response' })
+    expect(result).toEqual({
+      waitedForResponse: true,
+      reason: 'server-response',
+      response: expect.anything(),
+    })
+    expect(new URL(result.response!.url()).searchParams.get('keyword')).toBe('SO-WALK-001')
     expect(actionResponseCompleted).toBe(true)
     expect(queries).toEqual(['SO-OLD-001', 'SO-WALK-001', 'SO-WALK-001'])
   })
@@ -673,7 +703,12 @@ test.describe('walkthrough filter response boundary', () => {
       timeoutMs: 2_000,
     })
 
-    expect(result).toEqual({ waitedForResponse: true, reason: 'server-response' })
+    expect(result).toEqual({
+      waitedForResponse: true,
+      reason: 'server-response',
+      response: expect.anything(),
+    })
+    expect(new URL(result.response!.url()).searchParams.get('keyword')).toBe('SO-WALK-001')
     expect(fillResponseCompleted).toBe(true)
     expect(queries).toEqual(['SO-OLD-001:10', 'SO-WALK-001:999', 'SO-WALK-001:10'])
   })
@@ -714,7 +749,12 @@ test.describe('walkthrough filter response boundary', () => {
       timeoutMs: 2_000,
     })
 
-    expect(result).toEqual({ waitedForResponse: true, reason: 'server-response' })
+    expect(result).toEqual({
+      waitedForResponse: true,
+      reason: 'server-response',
+      response: expect.anything(),
+    })
+    expect(new URL(result.response!.url()).searchParams.get('keyword')).toBe('SO-WALK-001')
     expect(queries).toEqual(['SO-WALK-001', 'SO-WALK-001'])
   })
 
