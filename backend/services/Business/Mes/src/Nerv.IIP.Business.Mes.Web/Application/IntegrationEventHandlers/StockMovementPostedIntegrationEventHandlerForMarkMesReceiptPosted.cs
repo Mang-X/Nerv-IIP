@@ -121,7 +121,9 @@ public sealed class StockMovementPostedIntegrationEventHandlerForMarkMesReceiptP
             transferToken,
             transferLeg,
             integrationEvent.Payload.PostedAtUtc,
-            allocationIndex);
+            allocationIndex,
+            integrationEvent.Payload.UnitCost,
+            integrationEvent.Payload.MovementAmount);
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
