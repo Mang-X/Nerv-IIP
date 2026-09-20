@@ -7,7 +7,12 @@ import { useAuthStore } from '@/stores/auth'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMesAndon } from './useMesAndon'
 
-const api = vi.hoisted(() => ({ list: vi.fn(), claim: vi.fn(), close: vi.fn() }))
+const api = vi.hoisted(() => ({
+  list: vi.fn(),
+  claim: vi.fn(),
+  close: vi.fn(),
+  workContext: vi.fn(),
+}))
 vi.mock('@nerv-iip/api-client', async (original) => ({
   ...(await original<typeof import('@nerv-iip/api-client')>()),
   listBusinessConsoleMesAndonCalls: api.list,
@@ -19,16 +24,7 @@ vi.mock('@nerv-iip/api-client', async (original) => ({
     query: Record<string, string>
   }) => ({
     key: ['andon-work-context', query],
-    query: async () => ({
-      success: true,
-      data: {
-        authorizedScopes: [
-          { kind: 'work-center', id: 'WC-A', displayName: '总装一线' },
-          { kind: 'work-center', id: 'WC-B', displayName: '总装二线' },
-        ],
-        selectedScope: query.scopeId ? { kind: query.scopeKind, id: query.scopeId } : null,
-      },
-    }),
+    query: () => api.workContext(query),
   }),
 }))
 
@@ -70,6 +66,16 @@ async function setup(
 describe('安灯队列与当前主体动作（#3655 PublicContract / DomainInvariant）', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    api.workContext.mockImplementation(async (query: Record<string, string>) => ({
+      success: true,
+      data: {
+        authorizedScopes: [
+          { kind: 'work-center', id: 'WC-A', displayName: '总装一线' },
+          { kind: 'work-center', id: 'WC-B', displayName: '总装二线' },
+        ],
+        selectedScope: query.scopeId ? { kind: query.scopeKind, id: query.scopeId } : null,
+      },
+    }))
     api.list.mockResolvedValue(envelope({ items: [call], total: 31 }))
     api.claim.mockResolvedValue(
       envelope({ ...call, status: 'claimed', responderId: 'user:responder-1' }),
@@ -197,6 +203,40 @@ describe('安灯队列与当前主体动作（#3655 PublicContract / DomainInvar
       expect(command).toHaveBeenLastCalledWith(
         expect.objectContaining({
           body: expect.objectContaining({ scopeKind: 'work-center', scopeId: 'WC-B' }),
+        }),
+      )
+    }
+    wrapper.unmount()
+  })
+
+  it('班组读取与工作中心管理分别授权同一呼叫时仍可认领和本人关闭', async () => {
+    api.workContext.mockImplementation(async (query: Record<string, string>) => {
+      const authorized =
+        query.permissionCode === 'business.mes.operations.read'
+          ? { kind: 'team', id: 'TEAM-A', displayName: '总装一班' }
+          : { kind: 'work-center', id: 'WC-A', displayName: '总装一线' }
+      return {
+        success: true,
+        data: { authorizedScopes: [authorized], selectedScope: authorized },
+      }
+    })
+    const { result, wrapper } = await setup()
+    expect(api.list).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        query: expect.objectContaining({ scopeKind: 'team', scopeId: 'TEAM-A' }),
+      }),
+    )
+    expect(result.items.value[0]?.id).toBe('andon-1')
+    expect(result.canAct(call, 'claim')).toBe(true)
+    await result.act(call, 'claim')
+    const mine = { ...call, status: 'claimed' as const, responderId: 'user:responder-1' }
+    expect(result.canAct(mine, 'close')).toBe(true)
+    await result.act(mine, 'close')
+    for (const command of [api.claim, api.close]) {
+      expect(command).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          path: { id: 'andon-1' },
+          body: expect.objectContaining({ scopeKind: 'work-center', scopeId: 'WC-A' }),
         }),
       )
     }

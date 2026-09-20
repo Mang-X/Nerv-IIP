@@ -62,8 +62,6 @@ export function useMesAndon(initial: Partial<ListBusinessConsoleMesAndonCallsDat
       auth.principal?.permissionCodes?.includes('business.mes.operations.manage') &&
       selected &&
       writable &&
-      selected.kind === writable.kind &&
-      selected.id === writable.id &&
       (action === 'claim'
         ? row.status === 'open'
         : row.status === 'claimed' && row.responderId === actorRef.value),
