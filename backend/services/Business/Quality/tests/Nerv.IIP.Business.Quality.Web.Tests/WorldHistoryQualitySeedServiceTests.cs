@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Quality.Infrastructure;
 using Nerv.IIP.Business.Quality.Web.Application.Seed;
 using Nerv.IIP.Contracts.Approval;
+using Nerv.IIP.Contracts.Inventory;
 using Xunit.Abstractions;
 
 namespace Nerv.IIP.Business.Quality.Web.Tests;
@@ -181,6 +182,49 @@ public sealed class WorldHistoryQualitySeedServiceTests(ITestOutputHelper output
         }
 
         Assert.True(comparedOutcomes > shared.Length / 2, "可比对的单据太少，缩放无关性没有被真正验证。");
+    }
+
+    /// <summary>
+    /// 种子写进检验记录库存维度的 <c>SourceQualityStatus</c>，**必须是 Inventory 公开契约里的规范取值**。
+    ///
+    /// 这条不是形状校验，是**跨域可消费性**：该字段经 <c>InspectionResultIntegrationEvent</c> 原样透传给
+    /// Inventory 的 <c>StockQualityStatus.Normalize</c>，词表外的取值会让消费者抛出非 KnownException 并
+    /// 逃逸出 CAP 消费者；而复检（<c>InspectionRecord.Reinspect</c>）会把上一条记录的该字段**原样拷贝**进
+    /// 新记录，所以一条写坏的种子数据会一直复制下去（#3186）。
+    ///
+    /// **补这条的直接原因**：#3186 复审实测，把 <c>HoldQualityStatus</c> 改回 <c>"quarantine"</c> 后，
+    /// 带真实 PostgreSQL 的 Quality 全套 **373/0 全绿**——这个根因常量此前**零防线**。
+    ///
+    /// 断言写在 Contracts 层面（<c>InventoryQualityStatuses</c>）而不是硬编码 <c>"quality"</c>：
+    /// 本测试项目按服务边界不引用 Inventory.Domain，能引的最强口径就是公开契约的规范取值集合。
+    /// </summary>
+    [Fact]
+    public async Task Seeded_stock_release_source_quality_status_stays_inside_the_inventory_contract_vocabulary()
+    {
+        await using var db = CreateDbContext();
+        await new WorldHistorySeedService(db).SeedAsync("org-001", "env-dev", AsOfDate, SmallScale);
+
+        var canonical = new[]
+        {
+            InventoryQualityStatuses.Unrestricted,
+            InventoryQualityStatuses.Quality,
+            InventoryQualityStatuses.Restricted,
+            InventoryQualityStatuses.Blocked,
+        };
+
+        var observed = await db.InspectionRecords
+            .AsNoTracking()
+            .Where(x => x.SourceQualityStatus != null)
+            .Select(x => x.SourceQualityStatus!)
+            .Distinct()
+            .ToListAsync();
+
+        // 夹具自证：若种子哪天不再写这个字段，本条会退化成空集恒真，必须先red。
+        Assert.NotEmpty(observed);
+        foreach (var status in observed)
+        {
+            Assert.Contains(status, canonical, StringComparer.Ordinal);
+        }
     }
 
     [Fact]

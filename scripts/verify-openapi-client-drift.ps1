@@ -18,6 +18,11 @@
 #     - Node.js 22.22.3
 #     - pnpm 11.22.0
 
+# M2-I split authorities for this verifier:
+# - Current architecture: docs/architecture/integration/api-contracts.md
+# - Governance: docs/governance/api/contracts-and-codegen.md
+# - Operational runbook: docs/runbooks/api-codegen.md
+
 [CmdletBinding()]
 param(
     [switch] $SkipRegenerate,

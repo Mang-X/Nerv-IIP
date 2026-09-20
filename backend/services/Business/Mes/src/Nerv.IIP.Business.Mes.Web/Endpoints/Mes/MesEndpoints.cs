@@ -3,6 +3,8 @@ using FluentValidation;
 using MediatR;
 using Nerv.IIP.Business.Mes.Web.Application.Auth;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ChangeoverRecordAggregate;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
@@ -10,6 +12,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.ProductEngineering;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Production;
+using Nerv.IIP.Business.Mes.Web.Application.Queries;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
 using Nerv.IIP.Contracts.Quality;
@@ -44,7 +47,7 @@ public sealed record ListMesWorkOrdersRequest(
     string EnvironmentId,
     string? Status,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
@@ -61,7 +64,7 @@ public sealed record ListOperationTasksRequest(
     string EnvironmentId,
     string? Status,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
@@ -77,7 +80,7 @@ public sealed record ListReportableOperationTasksRequest(
     string EnvironmentId,
     string? Status = null,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
@@ -92,7 +95,7 @@ public sealed record ListProductionPlansRequest(
     string EnvironmentId,
     string? Status,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
@@ -116,12 +119,21 @@ public sealed record RecordProductionReportRequest(
     string? DefectRecordNo = null,
     string? ProducedLotNo = null,
     string? SerialNo = null,
+    string SerialTrackingPolicy = ProductionSerialTrackingPolicies.None,
+    IReadOnlyCollection<string>? SerialNumbers = null,
     // 由 BusinessGateway 从已认证 principal 注入的报工操作人；调用方载荷不自带身份。
-    string? ReportedBy = null);
+    string? ReportedBy = null,
+    string? ReportIntentFingerprint = null);
+
+public sealed record GetProductionReportByIdempotencyKeyRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string IdempotencyKey);
 
 public sealed record RecordProductionReportResponse(
     global::Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.ProductionReportId ProductionReportId,
-    string ReportNo);
+    string ReportNo,
+    IReadOnlyCollection<string> SerialNumbers);
 
 public sealed record ReverseProductionReportRequest(
     string OrganizationId,
@@ -142,11 +154,24 @@ public sealed record ListProductionReportsRequest(
     string EnvironmentId,
     string? WorkOrderId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
     string? DeviceAssetId = null);
+
+public sealed record QueryProductionStatisticsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    ProductionStatisticsDimension Dimension,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc,
+    DateOnly? BusinessDate = null,
+    string? ShiftCode = null,
+    string? WorkCenterId = null,
+    string? SkuId = null,
+    int Skip = 0,
+    int Take = 100);
 
 public sealed record GetProductionReportRequest(
     string OrganizationId,
@@ -190,7 +215,7 @@ public sealed record ListFinishedGoodsReceiptRequestsRequest(
     string EnvironmentId,
     string? WorkOrderId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
@@ -203,7 +228,7 @@ public sealed record ListCapacityImpactsRequest(
     string EnvironmentId,
     string? DeviceAssetId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
@@ -332,7 +357,7 @@ public sealed record ListMaterialIssueRequestsRequest(
     string EnvironmentId,
     string? WorkOrderId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
@@ -373,6 +398,19 @@ public sealed record AssignDispatchTaskRequest(
     string? TeamName = null,
     IReadOnlyCollection<DispatchParticipantInput>? Participants = null);
 
+public sealed record ClaimDispatchTaskRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string OperationTaskId,
+    string AssignedUserId,
+    string AssignedUserName,
+    string? DeviceAssetId,
+    string? ShiftId,
+    DateTimeOffset? ClaimedAtUtc,
+    string IdempotencyKey,
+    string? TeamId = null,
+    string? TeamName = null);
+
 public sealed record OperationTaskActionRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -388,8 +426,25 @@ public sealed class OperationTaskActionRequestValidator : Validator<OperationTas
 
 public sealed class RecordProductionReportRequestValidator : Validator<RecordProductionReportRequest>
 {
-    public RecordProductionReportRequestValidator() =>
+    public RecordProductionReportRequestValidator()
+    {
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.ReportIntentFingerprint)
+            .Must(value => value is null || !string.IsNullOrWhiteSpace(value))
+            .WithMessage("Report intent fingerprint must be nonblank when provided.")
+            .MaximumLength(ProductionReport.ReportIntentFingerprintMaxLength);
+    }
+}
+
+public sealed class GetProductionReportByIdempotencyKeyRequestValidator
+    : Validator<GetProductionReportByIdempotencyKeyRequest>
+{
+    public GetProductionReportByIdempotencyKeyRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+    }
 }
 
 public sealed record RecordDefectRequest(
@@ -417,7 +472,7 @@ public sealed record ListRelatedQualityItemsRequest(
     string? WorkOrderId,
     string? OperationTaskId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
@@ -430,11 +485,13 @@ public sealed record ListDowntimeEventsRequest(
     string? WorkCenterId,
     string? DeviceAssetId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Keyword = null,
     string? ShiftId = null,
     string? Status = null,
-    string? ReasonCode = null);
+    string? ReasonCode = null,
+    DateTimeOffset? WindowStartUtc = null,
+    DateTimeOffset? WindowEndUtc = null);
 
 public sealed record RecordDowntimeEventRequest(
     string OrganizationId,
@@ -470,12 +527,43 @@ public sealed record RecoverDowntimeRequest(
     [property: RouteParam] string DowntimeEventId,
     DateTimeOffset? RecoveredAtUtc);
 
+public sealed record StartChangeoverRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkCenterId,
+    string DeviceAssetId,
+    string OperatorId,
+    ChangeoverToolingCheckResult? ToolingCheckResult,
+    DateTimeOffset StartedAtUtc,
+    string IdempotencyKey);
+
+public sealed class StartChangeoverRequestValidator : Validator<StartChangeoverRequest>
+{
+    public StartChangeoverRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.WorkCenterId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.OperatorId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ToolingCheckResult).NotNull().IsInEnum();
+        RuleFor(x => x.StartedAtUtc).NotEmpty();
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+    }
+}
+
+public sealed record CompleteChangeoverRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string ChangeoverRecordId,
+    DateTimeOffset? CompletedAtUtc);
+
 public sealed record ListShiftHandoversRequest(
     string OrganizationId,
     string EnvironmentId,
     string? ShiftId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Keyword = null,
     string? WorkCenterId = null,
     string? DeviceAssetId = null,
@@ -489,6 +577,11 @@ public sealed record ListScheduleResultsRequest(
     int Skip = 0,
     int Take = 20);
 
+public sealed record GetShiftHandoverRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string HandoverId);
+
 public sealed record CreateShiftHandoverRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -496,13 +589,21 @@ public sealed record CreateShiftHandoverRequest(
     string TeamId,
     DateTimeOffset? HandoverAtUtc,
     string? IdempotencyKey = null,
-    string? TeamName = null);
+    string? TeamName = null,
+    string? OutgoingUserId = null,
+    string? OutgoingUserName = null,
+    IReadOnlyCollection<ShiftHandoverWipItemInput>? WipItems = null,
+    IReadOnlyCollection<ShiftHandoverUnfinishedWorkOrderInput>? UnfinishedWorkOrders = null,
+    IReadOnlyCollection<ShiftHandoverOpenIssueInput>? OpenIssues = null,
+    IReadOnlyCollection<ShiftHandoverAttachmentInput>? Attachments = null);
 
 public sealed record AcceptShiftHandoverRequest(
     string OrganizationId,
     string EnvironmentId,
     [property: RouteParam] string HandoverId,
-    DateTimeOffset? AcceptedAtUtc);
+    DateTimeOffset? AcceptedAtUtc,
+    string? IncomingUserId = null,
+    string? IncomingUserName = null);
 
 public sealed record TraceabilityWorkOrderRequest(
     string OrganizationId,
@@ -779,11 +880,21 @@ public sealed class ReleaseWorkOrderEndpoint(ISender sender, TimeProvider timePr
 
     public override async Task HandleAsync(ReleaseWorkOrderRequest req, CancellationToken ct)
     {
+        // 这里是请求体进入系统的信任边界：req.ReleasedAtUtc 由调用方给，可能落在未来。
+        // 发布事实的时刻落在未来时，该工单工序此后的**每一条**报工都会被 Quality 的
+        // PeriodicInspectionOperation 判为「报工早于发布」抛出、整封进死信——正是 #3117 修的那个缺陷
+        // 换了个入口。发布是一件已经发生的事，故在此夹到当前时刻；仓库内部的常量与种子不跨这条边界，
+        // 不重复付这份时钟依赖（「不晚于既有活动（报工或工序完工）」那半条不变量由
+        // WorkOrderReleaseFactTime 承担）。
+        var nowUtc = timeProvider.GetUtcNow();
+        var releasedAtUtc = req.ReleasedAtUtc is { } supplied
+            ? WorkOrderReleaseFactTime.UntrustedCandidate(supplied, nowUtc)
+            : nowUtc;
         var response = await sender.Send(new ReleaseWorkOrderCommand(
             req.OrganizationId,
             req.EnvironmentId,
             req.WorkOrderId,
-            req.ReleasedAtUtc ?? timeProvider.GetUtcNow()), ct);
+            releasedAtUtc), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -1085,7 +1196,7 @@ public sealed record ListMesDispatchTasksRequest(
     string EnvironmentId,
     string? Status,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
@@ -1134,6 +1245,30 @@ public sealed class AssignDispatchTaskEndpoint(ISender sender, TimeProvider time
             req.TeamId,
             req.TeamName,
             req.Participants), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
+public sealed class ClaimDispatchTaskEndpoint(ISender sender, TimeProvider timeProvider)
+    : MesEndpoint<ClaimDispatchTaskRequest, MesAcceptedResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<ClaimDispatchTaskEndpoint>());
+
+    public override async Task HandleAsync(ClaimDispatchTaskRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ClaimDispatchTaskCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.OperationTaskId,
+            req.AssignedUserId,
+            req.AssignedUserName,
+            req.DeviceAssetId,
+            req.ShiftId,
+            req.ClaimedAtUtc ?? timeProvider.GetUtcNow(),
+            MesAuthenticatedActor.Resolve(HttpContext),
+            req.IdempotencyKey,
+            req.TeamId,
+            req.TeamName), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -1328,10 +1463,26 @@ public sealed class RecordProductionReportEndpoint(ISender sender)
             req.DefectRecordNo,
             req.ProducedLotNo,
             req.SerialNo,
-            ReportedBy: req.ReportedBy);
+            req.SerialTrackingPolicy,
+            req.SerialNumbers,
+            ReportedBy: req.ReportedBy,
+            ReportIntentFingerprint: req.ReportIntentFingerprint);
         var result = await sender.Send(command, ct);
-        await Send.OkAsync(new RecordProductionReportResponse(result.Id, result.ReportNo), ct);
+        await Send.OkAsync(new RecordProductionReportResponse(result.Id, result.ReportNo, result.SerialNumbers), ct);
     }
+}
+
+public sealed class GetProductionReportByIdempotencyKeyEndpoint(ISender sender)
+    : MesEndpoint<GetProductionReportByIdempotencyKeyRequest, ProductionReportIntentReceiptResponse>
+{
+    public override void Configure() =>
+        ConfigureMesContract(MesEndpointContracts.Get<GetProductionReportByIdempotencyKeyEndpoint>());
+
+    public override async Task HandleAsync(GetProductionReportByIdempotencyKeyRequest req, CancellationToken ct) =>
+        await Send.OkAsync(await sender.Send(new GetProductionReportByIdempotencyKeyQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.IdempotencyKey), ct), ct);
 }
 
 public sealed class ListProductionReportsEndpoint(ISender sender)
@@ -1355,6 +1506,30 @@ public sealed class ListProductionReportsEndpoint(ISender sender)
     }
 }
 
+public sealed class QueryProductionStatisticsEndpoint(ISender sender)
+    : MesEndpoint<QueryProductionStatisticsRequest, ProductionStatisticsResponse>
+{
+    public override void Configure() =>
+        ConfigureMesContract(MesEndpointContracts.Get<QueryProductionStatisticsEndpoint>());
+
+    public override async Task HandleAsync(QueryProductionStatisticsRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new QueryProductionStatisticsQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.Dimension,
+            req.WindowStartUtc,
+            req.WindowEndUtc,
+            req.BusinessDate,
+            req.ShiftCode,
+            req.WorkCenterId,
+            req.SkuId,
+            req.Skip,
+            req.Take), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
 public sealed class GetProductionReportEndpoint(ISender sender)
     : MesEndpoint<GetProductionReportRequest, GetProductionReportResponse>
 {
@@ -1368,7 +1543,8 @@ public sealed class GetProductionReportEndpoint(ISender sender)
 public sealed class ReverseProductionReportEndpoint(ISender sender, TimeProvider timeProvider)
     : MesEndpoint<ReverseProductionReportRequest, ReverseProductionReportResponse>
 {
-    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<ReverseProductionReportEndpoint>());
+    public override void Configure() => ConfigureMesContract(
+        MesEndpointContracts.Get<ReverseProductionReportEndpoint>(), StatusCodes.Status409Conflict);
 
     public override async Task HandleAsync(ReverseProductionReportRequest req, CancellationToken ct)
     {
@@ -1409,7 +1585,7 @@ public sealed class PromoteTelemetryProductionReportCandidateEndpoint(ISender se
     {
         var result = await sender.Send(new PromoteTelemetryProductionReportCandidateCommand(req.OrganizationId, req.EnvironmentId, req.CandidateId,
             req.WorkOrderId, req.OperationTaskId, req.Actor, req.ConfirmedAtUtc ?? timeProvider.GetUtcNow()), ct);
-        await Send.OkAsync(new(result.Id, result.ReportNo), ct);
+        await Send.OkAsync(new(result.Id, result.ReportNo, result.SerialNumbers), ct);
     }
 }
 
@@ -1564,7 +1740,9 @@ public sealed class ListDowntimeEventsEndpoint(ISender sender)
             req.Keyword,
             req.ShiftId,
             req.Status,
-            req.ReasonCode), ct);
+            req.ReasonCode,
+            req.WindowStartUtc,
+            req.WindowEndUtc), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -1607,6 +1785,42 @@ public sealed class ConfirmDowntimeRecoveryEndpoint(ISender sender, TimeProvider
     }
 }
 
+public sealed class StartChangeoverEndpoint(ISender sender)
+    : MesEndpoint<StartChangeoverRequest, MesAcceptedResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<StartChangeoverEndpoint>());
+
+    public override async Task HandleAsync(StartChangeoverRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new StartChangeoverCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.WorkCenterId,
+            req.DeviceAssetId,
+            req.OperatorId,
+            req.ToolingCheckResult!.Value,
+            req.StartedAtUtc,
+            req.IdempotencyKey), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
+public sealed class CompleteChangeoverEndpoint(ISender sender, TimeProvider timeProvider)
+    : MesEndpoint<CompleteChangeoverRequest, MesAcceptedResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<CompleteChangeoverEndpoint>());
+
+    public override async Task HandleAsync(CompleteChangeoverRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new CompleteChangeoverCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.ChangeoverRecordId,
+            req.CompletedAtUtc ?? timeProvider.GetUtcNow()), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
 public sealed class ListScheduleResultsEndpoint(ISender sender)
     : MesEndpoint<ListScheduleResultsRequest, MesScheduleResultListResponse>
 {
@@ -1645,6 +1859,20 @@ public sealed class ListShiftHandoversEndpoint(ISender sender)
     }
 }
 
+public sealed class GetShiftHandoverEndpoint(ISender sender)
+    : MesEndpoint<GetShiftHandoverRequest, MesShiftHandoverDetail>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<GetShiftHandoverEndpoint>());
+
+    public override async Task HandleAsync(GetShiftHandoverRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(
+            new GetShiftHandoverQuery(req.OrganizationId, req.EnvironmentId, req.HandoverId),
+            ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
 public sealed class CreateShiftHandoverEndpoint(ISender sender, TimeProvider timeProvider)
     : MesEndpoint<CreateShiftHandoverRequest, MesAcceptedResponse>
 {
@@ -1659,7 +1887,13 @@ public sealed class CreateShiftHandoverEndpoint(ISender sender, TimeProvider tim
             req.TeamId,
             req.HandoverAtUtc ?? timeProvider.GetUtcNow(),
             req.IdempotencyKey,
-            req.TeamName), ct);
+            req.TeamName,
+            req.OutgoingUserId,
+            req.OutgoingUserName,
+            req.WipItems,
+            req.UnfinishedWorkOrders,
+            req.OpenIssues,
+            req.Attachments), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -1675,7 +1909,9 @@ public sealed class AcceptShiftHandoverEndpoint(ISender sender, TimeProvider tim
             req.OrganizationId,
             req.EnvironmentId,
             req.HandoverId,
-            req.AcceptedAtUtc ?? timeProvider.GetUtcNow()), ct);
+            req.AcceptedAtUtc ?? timeProvider.GetUtcNow(),
+            req.IncomingUserId,
+            req.IncomingUserName), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -1748,6 +1984,11 @@ public static class MesEndpointContracts
 {
     public static readonly IReadOnlyCollection<MesEndpointContract> All =
     [
+        new(typeof(RaiseAndonCallEndpoint), "POST", "/api/business/v1/mes/andon-calls", MesPermissionCodes.OperationsManage, "raiseBusinessMesAndonCall"),
+        new(typeof(ClaimAndonCallEndpoint), "POST", "/api/business/v1/mes/andon-calls/{id}/claim", MesPermissionCodes.OperationsManage, "claimBusinessMesAndonCall"),
+        new(typeof(CloseAndonCallEndpoint), "POST", "/api/business/v1/mes/andon-calls/{id}/close", MesPermissionCodes.OperationsManage, "closeBusinessMesAndonCall"),
+        new(typeof(GetAndonCallEndpoint), "GET", "/api/business/v1/mes/andon-calls/{id}", MesPermissionCodes.OperationsRead, "getBusinessMesAndonCall"),
+        new(typeof(ListAndonCallsEndpoint), "GET", "/api/business/v1/mes/andon-calls", MesPermissionCodes.OperationsRead, "listBusinessMesAndonCalls"),
         new(typeof(GetFoundationReadinessAreaEndpoint), "GET", "/api/business/v1/mes/foundation-readiness/{areaCode}", MesPermissionCodes.FoundationRead, "getBusinessMesFoundationReadinessArea"),
         new(typeof(GetMesOverviewEndpoint), "GET", "/api/business/v1/mes/overview", MesPermissionCodes.OverviewRead, "getBusinessMesOverview"),
         new(typeof(ListProductionPlansEndpoint), "GET", "/api/business/v1/mes/production-plans", MesPermissionCodes.PlansRead, "listBusinessMesProductionPlans"),
@@ -1779,6 +2020,7 @@ public static class MesEndpointContracts
         new(typeof(ListDispatchTasksEndpoint), "GET", "/api/business/v1/mes/dispatch-tasks", MesPermissionCodes.DispatchRead, "listBusinessMesDispatchTasks"),
         new(typeof(AssignDispatchTaskEndpoint), "POST", "/api/business/v1/mes/dispatch-tasks/{operationTaskId}/assign", MesPermissionCodes.DispatchManage, "assignBusinessMesDispatchTask"),
         new(typeof(ListOperationTasksEndpoint), "GET", "/api/business/v1/mes/operation-tasks", MesPermissionCodes.OperationsRead, "listBusinessMesOperationTasks"),
+        new(typeof(ClaimDispatchTaskEndpoint), "POST", "/api/business/v1/mes/operation-tasks/{operationTaskId}/claim", MesPermissionCodes.OperationsManage, "claimBusinessMesOperationTask"),
         new(typeof(ListReportableOperationTasksEndpoint), "GET", "/api/business/v1/mes/reportable-operation-tasks", MesPermissionCodes.ReportingRead, "listBusinessMesReportableOperationTasks"),
         new(typeof(StartOperationTaskEndpoint), "POST", "/api/business/v1/mes/operation-tasks/{operationTaskId}/start", MesPermissionCodes.OperationsManage, "startBusinessMesOperationTask"),
         new(typeof(AuthorizeAndStartOperationTaskEndpoint), "POST", "/api/business/v1/mes/operation-tasks/{operationTaskId}/authorize-start", MesPermissionCodes.OperationsManage, "authorizeAndStartBusinessMesOperationTask"),
@@ -1788,6 +2030,8 @@ public static class MesEndpointContracts
         new(typeof(GetWipSummaryEndpoint), "GET", "/api/business/v1/mes/wip", MesPermissionCodes.OperationsRead, "getBusinessMesWipSummary"),
         new(typeof(RecordProductionReportEndpoint), "POST", "/api/business/v1/mes/production-reports", MesPermissionCodes.ReportingWrite, "recordBusinessMesProductionReport"),
         new(typeof(ListProductionReportsEndpoint), "GET", "/api/business/v1/mes/production-reports", MesPermissionCodes.ReportingRead, "listBusinessMesProductionReports"),
+        new(typeof(QueryProductionStatisticsEndpoint), "GET", "/api/business/v1/mes/production-statistics", MesPermissionCodes.ReportingRead, "queryBusinessMesProductionStatistics"),
+        new(typeof(GetProductionReportByIdempotencyKeyEndpoint), "GET", "/api/business/v1/mes/production-reports/by-idempotency-key", MesPermissionCodes.ReportingRead, "getBusinessMesProductionReportByIdempotencyKey"),
         new(typeof(GetProductionReportEndpoint), "GET", "/api/business/v1/mes/production-reports/{reportNo}", MesPermissionCodes.ReportingRead, "getBusinessMesProductionReport"),
         new(typeof(ReverseProductionReportEndpoint), "POST", "/api/business/v1/mes/production-reports/{reportNo}/reverse", MesPermissionCodes.ReportingWrite, "reverseBusinessMesProductionReport"),
         new(typeof(ListTelemetryProductionReportCandidatesEndpoint), "GET", "/api/business/v1/mes/telemetry-production-report-candidates", MesPermissionCodes.ReportingRead, "listBusinessMesTelemetryProductionReportCandidates"),
@@ -1803,7 +2047,10 @@ public static class MesEndpointContracts
         new(typeof(ListDowntimeEventsEndpoint), "GET", "/api/business/v1/mes/downtime-events", MesPermissionCodes.DowntimeRead, "listBusinessMesDowntimeEvents"),
         new(typeof(RecordDowntimeEventEndpoint), "POST", "/api/business/v1/mes/downtime-events", MesPermissionCodes.DowntimeManage, "recordBusinessMesDowntimeEvent"),
         new(typeof(ConfirmDowntimeRecoveryEndpoint), "POST", "/api/business/v1/mes/downtime-events/{downtimeEventId}/recover", MesPermissionCodes.DowntimeManage, "confirmBusinessMesDowntimeRecovery"),
+        new(typeof(StartChangeoverEndpoint), "POST", "/api/business/v1/mes/changeover-records", MesPermissionCodes.OperationsManage, "startBusinessMesChangeover"),
+        new(typeof(CompleteChangeoverEndpoint), "POST", "/api/business/v1/mes/changeover-records/{changeoverRecordId}/complete", MesPermissionCodes.OperationsManage, "completeBusinessMesChangeover"),
         new(typeof(ListShiftHandoversEndpoint), "GET", "/api/business/v1/mes/shift-handovers", MesPermissionCodes.HandoversRead, "listBusinessMesShiftHandovers"),
+        new(typeof(GetShiftHandoverEndpoint), "GET", "/api/business/v1/mes/shift-handovers/{handoverId}", MesPermissionCodes.HandoversRead, "getBusinessMesShiftHandover"),
         new(typeof(CreateShiftHandoverEndpoint), "POST", "/api/business/v1/mes/shift-handovers", MesPermissionCodes.HandoversManage, "createBusinessMesShiftHandover"),
         new(typeof(AcceptShiftHandoverEndpoint), "POST", "/api/business/v1/mes/shift-handovers/{handoverId}/accept", MesPermissionCodes.HandoversManage, "acceptBusinessMesShiftHandover"),
         new(typeof(GetWorkOrderTraceabilityEndpoint), "GET", "/api/business/v1/mes/traceability/work-orders/{workOrderId}", MesPermissionCodes.TraceabilityRead, "getBusinessMesWorkOrderTraceability"),

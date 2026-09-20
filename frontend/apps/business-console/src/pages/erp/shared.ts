@@ -1,5 +1,4 @@
 import type { ComputedRef } from 'vue'
-import { inlineErrorMessage } from '@/utils/notify'
 
 /** 取不到数时的统一占位。财务页尤其不许拿 0 顶上——「¥0.00 余额」是会被当真的。 */
 export const UNAVAILABLE_TEXT = '—'
@@ -38,10 +37,6 @@ export function formatQuantity(value?: number | null) {
   return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(value)
 }
 
-export function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
-
 export function firstQueryParam(value: unknown) {
   if (Array.isArray(value)) return value[0] ? String(value[0]) : undefined
   return value ? String(value) : undefined
@@ -58,6 +53,56 @@ export function pickerInvalidClass(invalid: boolean) {
 
 export function unwrapRef<T>(value: T | ComputedRef<T>): T {
   return typeof value === 'object' && value !== null && 'value' in value ? value.value : value
+}
+
+/* ────────────────────────── 表格行 key ────────────────────────── */
+
+/**
+ * 给 `NvDataTable` 的 `:row-key` 用：优先取服务端稳定 id，缺 id 时退到**行对象自身的引用身份**。
+ *
+ * 为什么需要它（#3278 S4）：凭证页原来写 `(r) => r.voucherNo ?? '凭证'`，把 key 钉在业务编号上。
+ * 只要同一页里出现两行 key 相同，Vue 的 keyed diff 一旦离开「顺序未变」的快路径就进入乱序分支，
+ * 实测**一页 3 行渲染成 4 行、再翻一次变 5 行**：多出来的是上一批残留的凭证行，并伴随
+ * `[Vue warn]: Duplicate keys found during update`。在财务页上这是把不存在的凭证摆到账上。
+ *
+ * ⚠️ 别把理由说过头：`voucherNo` 在生成类型里可空，但**当前后端契约不产出空值或同页重复值**——
+ * 域侧 `JournalVoucher` 用 `ErpText.Required(voucherNo, …)` 直接拒空，`voucher_no` 列 `IsRequired()`，
+ * 且 `(OrganizationId, EnvironmentId, VoucherNo)` 上有**无 filter 的唯一索引**，而列表查询的 where
+ * 恰好是 `(OrganizationId, EnvironmentId)`，与索引前两列对齐。所以今天旧写法并不会真的撞 key。
+ *
+ * 真正的失效方向有两条：
+ * ① **网关↔Erp 版本偏斜**。网关 DTO 是 `string Id, string VoucherNo`（非空引用类型）但没有
+ *    `[JsonRequired]`，反序列化走 `JsonSerializerDefaults.Web`，全仓也没有开
+ *    `RespectNullableAnnotations`——下游少给或显式给 null 时会静默绑成 `null` 再原样吐给前端。
+ *    ⭐ 注意这条路径下 **`id` 同样会是 `null`**（「网关已上 S3/S4、Erp 尚未升级」正是这个形态），
+ *    所以承重的是**兜底**，不是 id 本身。
+ * ② #3278 S6/S8 之后凭证号的生成形状与唯一性保证会被改写，今天的索引不构成长期承诺。
+ *
+ * 为什么兜底不退回业务编号：业务编号正是上面两条失效方向里一起失效的那一半，退回去等于把
+ * 重复 key 请回来。为什么兜底不用下标：`NvDataTable` 的 `rowKey` 契约只传行对象、不传下标；
+ * 且下标在翻页与过滤后会指向另一行，key 就不再代表「同一行」。
+ *
+ * 所以缺 id 时按行对象的引用身份发一个进程内唯一的代理 key：同一个对象永远拿到同一个 key
+ * （重渲染稳定），两个不同对象拿到的代理 key 必然不同（`WeakMap` 按引用存、计数器只增）。
+ *
+ * **边界，别读成「本函数保证 key 唯一」**：
+ * - 本函数**不保证**唯一性。两个不同对象只要 `id` 相同就拿到同一个 key——唯一性由服务端聚合根
+ *   主键承担，这里只负责「有 id 就忠实用它」。
+ * - 缺 id 时一次 refetch 会产生新的行对象，于是这些行拿到新的代理 key，Vue 整行重建：代价是丢掉
+ *   该行的 DOM 自有状态与过渡，仅限于服务端没给 id 的行，且**不会**退化回重复 key。
+ * - 同一个行对象若被两张表共用，两张表会共用同一个代理 key；这没有问题，key 只要求在**同一张表内**互异。
+ */
+const surrogateRowKeys = new WeakMap<object, string>()
+let surrogateRowKeySeq = 0
+
+export function stableRowKey(row: { id?: string | null }): string {
+  if (row.id) return row.id
+  const existing = surrogateRowKeys.get(row)
+  if (existing !== undefined) return existing
+  surrogateRowKeySeq += 1
+  const surrogate = `nv-row-${surrogateRowKeySeq}`
+  surrogateRowKeys.set(row, surrogate)
+  return surrogate
 }
 
 /* ────────────────────────── ERP 读面六档状态 ────────────────────────── */

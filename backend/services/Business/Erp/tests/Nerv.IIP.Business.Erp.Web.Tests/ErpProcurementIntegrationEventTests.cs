@@ -10,6 +10,25 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 
 public sealed class ErpProcurementIntegrationEventTests
 {
+    // NERV-2130：收货暂估冻结，不能随已批准的订单后续改价变化。
+    [Fact]
+    public void Receipt_inventory_cost_keeps_receipt_price_after_order_amendment()
+    {
+        var order = PurchaseOrder.Create("org-cost", "env-cost", "PO-cost", "SUP", "SITE",
+            [new PurchaseOrderLineDraft("10", "SKU", "pcs", 10m, 1.4m, new DateOnly(2026, 9, 1))]);
+        order.MarkApprovalRequested("approval");
+        order.ReleaseAfterApproval("approval");
+        var receipt = PurchaseReceipt.Record(order, "RCV-cost", [new PurchaseReceiptLineDraft("10", 8m, "unrestricted")]);
+        var change = order.RequestChange([new PurchaseOrderLineChangeDraft("10", 10m, 9m, new DateOnly(2026, 9, 1))]);
+        change.AssignApprovalChain("amendment");
+        order.ApplyApprovedChange("amendment");
+
+        var movement = new PurchaseReceiptInventoryMovementRequestedIntegrationEventConverter().Convert(
+            new PurchaseReceiptInventoryMovementRequestedDomainEvent(receipt, Assert.Single(receipt.Lines)));
+        Assert.Equal(1.4m, movement.Payload.UnitCost);
+        Assert.Equal(11.2m, movement.Payload.UnitCost * movement.Payload.Quantity);
+    }
+
     [Fact]
     public void Purchase_requisition_created_event_uses_stable_adr0011_envelope_shape()
     {

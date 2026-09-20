@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountReceivableAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
@@ -82,14 +83,33 @@ public sealed class ErpReturnClosurePostgresAcceptanceTests
 
             var purchaseReturnEvent = new OutboundOrderCompletedIntegrationEventConverter()
                 .Convert(new WmsOutboundOrderCompletedDomainEvent(supplierReturnOutbound));
-            var purchaseReturnHandler = new WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReturn(erpDb, erpDeadLetters, new ErpCodingService());
+            // ⭐ #3278 / S7：两个消费者必须共用**同一个**分配器。
+            // 无参 new ErpCodingService() 的计数器挂在实例上，各给一个新实例时两边都从
+            // JV-yyyyMMdd-000001 起号，在真库上直接撞
+            // IX_journal_vouchers_organization_id_environment_id_voucher_no（23505）。
+            // 改短号前两边的凭证号分别派生自退货单号与红字号，天然不撞。
+            //
+            // ⚠️ 这条约束**只对夹具成立，不是生产约束**：生产装配里 <c>ErpCodingService</c> 由 DI 解析，
+            // 走的是 (ApplicationDbContext, IServiceScopeFactory) 那个构造 = **落库**分配器，
+            // 计数器在 code_counters 表里，多少个实例共用同一库都不会重号。
+            // 只有用例里无参 new ErpCodingService() 那个**进程内**分配器才按实例分桶。
+            var erpCoding = new ErpCodingService();
+            var purchaseReturnHandler = new WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReturn(erpDb, erpDeadLetters, erpCoding);
             await purchaseReturnHandler.HandleAsync(purchaseReturnEvent, CancellationToken.None);
             await erpDb.SaveChangesAsync(CancellationToken.None);
             await purchaseReturnHandler.HandleAsync(purchaseReturnEvent, CancellationToken.None);
             await erpDb.SaveChangesAsync(CancellationToken.None);
 
             var purchaseReturn = Assert.Single(await erpDb.PurchaseReturns.Include(x => x.Lines).ToListAsync());
-            var purchaseVoucher = Assert.Single(await erpDb.JournalVouchers.Where(x => x.VoucherNo == $"JV-PRTN-{purchaseReturn.PurchaseReturnNo}").Include(x => x.Lines).ToListAsync());
+            // #3278 / S7：凭证号改分配器短号，不再从退货单号派生，定位改走 S5 的来源两列。
+            // ⭐ 本用例连投两次（上面 :86 / :88）且跑在真 Postgres 上，
+            // 所以 Assert.Single 同时就是 CAP 重投的重放证明：只记一张。
+            var purchaseVoucher = Assert.Single(await erpDb.JournalVouchers
+                .Where(x => x.SourceType == JournalVoucherSourceType.PurchaseReturn.Code && x.SourceNo == purchaseReturn.PurchaseReturnNo)
+                .Include(x => x.Lines)
+                .ToListAsync());
+            Assert.Matches(@"^JV-\d{8}-\d{6}$", purchaseVoucher.VoucherNo);
+            Assert.NotEqual($"JV-PRTN-{purchaseReturn.PurchaseReturnNo}", purchaseVoucher.VoucherNo);
             Assert.Equal(100m, purchaseReturn.GrIrReversalAmount);
             Assert.Equal(0m, purchaseReturn.DebitNoteAmount);
             Assert.Contains(purchaseVoucher.Lines, x => x.AccountCode == "GR-IR" && x.DebitAmount == 100m);
@@ -133,7 +153,7 @@ public sealed class ErpReturnClosurePostgresAcceptanceTests
             await inboundHandler.HandleAsync(inboundEvent, CancellationToken.None);
             await erpDb.SaveChangesAsync(CancellationToken.None);
 
-            var rmaQualityHandler = new QualityInspectionResultIntegrationEventHandlerForSettleSalesReturnCredit(erpDb, erpDeadLetters, new ErpCodingService());
+            var rmaQualityHandler = new QualityInspectionResultIntegrationEventHandlerForSettleSalesReturnCredit(erpDb, erpDeadLetters, erpCoding);
             var rmaQualityEvent = QualityEvent(
             QualityIntegrationEventTypes.InspectionPassed,
             rmaInbound.InboundOrderNo,
@@ -147,7 +167,17 @@ public sealed class ErpReturnClosurePostgresAcceptanceTests
             var persistedRma = await erpDb.SalesReturnAuthorizations.SingleAsync(x => x.RmaNo == "RMA-RETURN-PG-001");
             var creditNote = Assert.Single(await erpDb.CreditNotes.ToListAsync());
             var persistedReceivable = await erpDb.AccountReceivables.SingleAsync(x => x.ReceivableNo == "AR-RETURN-PG-001");
-            var creditVoucher = Assert.Single(await erpDb.JournalVouchers.Where(x => x.VoucherNo == $"JV-CN-{creditNote.CreditNoteNo}").Include(x => x.Lines).ToListAsync());
+            // #3278 / S7：同上。本用例也连投两次（:142 / :144）。
+            var creditVoucher = Assert.Single(await erpDb.JournalVouchers
+                .Where(x => x.SourceType == JournalVoucherSourceType.CreditNote.Code && x.SourceNo == creditNote.CreditNoteNo)
+                .Include(x => x.Lines)
+                .ToListAsync());
+            Assert.Matches(@"^JV-\d{8}-\d{6}$", creditVoucher.VoucherNo);
+            Assert.NotEqual($"JV-CN-{creditNote.CreditNoteNo}", creditVoucher.VoucherNo);
+            // 两张凭证来自两个不同消费者、各自分配：号必须互异。
+            // （真库上 (organization_id, environment_id, voucher_no) 仍是唯一索引，撞号会在写入时就炸 23505，
+            // 但这条断言把它写成用例事实，不依赖索引仍在。）
+            Assert.NotEqual(purchaseVoucher.VoucherNo, creditVoucher.VoucherNo);
             Assert.Equal(SalesReturnAuthorizationStatus.CreditIssued, persistedRma.Status);
             Assert.Equal(rmaInbound.InboundOrderNo, persistedRma.WmsInboundOrderNo);
             Assert.Equal(100m, creditNote.Amount);

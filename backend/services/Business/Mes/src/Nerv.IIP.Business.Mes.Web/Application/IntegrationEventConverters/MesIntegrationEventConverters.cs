@@ -1,13 +1,14 @@
+using System.Globalization;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
+using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Contracts.Quality;
 using NetCorePal.Extensions.DistributedTransactions;
-using System.Globalization;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 
@@ -97,7 +98,9 @@ public sealed class ProductionMaterialConsumedIntegrationEventConverter
             consumptionLocation.LocationCode,
             consumption.MaterialLotId,
             -consumption.ConsumedQuantity,
-            occurredAtUtc);
+            occurredAtUtc,
+            ownerType: consumption.OwnerType,
+            ownerId: consumption.OwnerId);
     }
 
     internal static InventoryMovementRequestedIntegrationEvent NewInventoryMovementRequested(
@@ -117,7 +120,9 @@ public sealed class ProductionMaterialConsumedIntegrationEventConverter
         decimal? unitCost = null,
         DateOnly? productionDate = null,
         DateOnly? expiryDate = null,
-        string? unitCostAuthorityReference = null)
+        string? unitCostAuthorityReference = null,
+        string ownerType = "production",
+        string? ownerId = null)
     {
         var movementType = quantity < 0 ? InventoryMovementTypes.Outbound : InventoryMovementTypes.Inbound;
         return new InventoryMovementRequestedIntegrationEvent(
@@ -145,8 +150,8 @@ public sealed class ProductionMaterialConsumedIntegrationEventConverter
                 lotNo,
                 null,
                 "Unrestricted",
-                "production",
-                null,
+                ownerType,
+                ownerId,
                 quantity,
                 requestedAtUtc,
                 UnitCost: unitCost,
@@ -558,7 +563,9 @@ public sealed class MaterialIssueRequestedIntegrationEventConverter
             sourceLocationCode,
             sourceLotNo,
             -Math.Abs(domainEvent.IssuedQuantity),
-            occurredAtUtc);
+            occurredAtUtc,
+            ownerType: allocation?.OwnerType ?? "production",
+            ownerId: allocation?.OwnerId);
     }
 }
 
@@ -589,7 +596,10 @@ public sealed class MaterialLineSideReceiptConfirmedIntegrationEventConverter
             locations.TargetLocationCode,
             request.MaterialLotId,
             Math.Abs(domainEvent.ReceivedQuantity),
-            occurredAtUtc);
+            occurredAtUtc,
+            unitCost: domainEvent.UnitCost,
+            ownerType: locations.SourceAllocations.FirstOrDefault()?.OwnerType ?? "production",
+            ownerId: locations.SourceAllocations.FirstOrDefault()?.OwnerId);
     }
 }
 
@@ -623,7 +633,9 @@ public sealed class MaterialLineSideReturnRequestedIntegrationEventConverter
             locations.TargetLocationCode,
             domainEvent.MaterialLotId,
             -Math.Abs(domainEvent.ReturnedQuantity),
-            occurredAtUtc);
+            occurredAtUtc,
+            ownerType: locations.SourceAllocations.FirstOrDefault()?.OwnerType ?? "production",
+            ownerId: locations.SourceAllocations.FirstOrDefault()?.OwnerId);
     }
 }
 
@@ -657,7 +669,9 @@ public sealed class MaterialReturnedToWarehouseIntegrationEventConverter
             locations.SourceLocationCode,
             domainEvent.MaterialLotId,
             Math.Abs(domainEvent.ReturnedQuantity),
-            occurredAtUtc);
+            occurredAtUtc,
+            ownerType: locations.SourceAllocations.FirstOrDefault()?.OwnerType ?? "production",
+            ownerId: locations.SourceAllocations.FirstOrDefault()?.OwnerId);
     }
 }
 
@@ -701,7 +715,12 @@ public sealed class WorkOrderReleasedIntegrationEventConverter
             workOrder.OrganizationId,
             workOrder.EnvironmentId,
             workOrder.WorkOrderId);
-        var occurredAtUtc = DateTimeOffset.UtcNow;
+        // 发布事实的时刻由发布动作给出（<see cref="WorkOrderReleasedDomainEvent.ReleasedAt"/>），不取 UtcNow：
+        // 工单在 created 状态就能开工报工（#3113），按转换那一刻记时刻会让「已有报工的工单事后补下达」
+        // 被 Quality 的 ApplyRelease 判为「报工早于发布」整封进死信（#3117）。
+        // 信封 OccurredAtUtc 与 payload.ReleasedAtUtc 同取该值：按 ADR 0011 §5，
+        // occurredAtUtc 必须是领域事实发生时间，原先的 UtcNow 是处理时间、本就违反 §5。
+        var occurredAtUtc = domainEvent.ReleasedAt.Value;
 
         return new WorkOrderReleasedIntegrationEvent(
             $"evt-{Guid.CreateVersion7():N}",
@@ -725,7 +744,13 @@ public sealed class WorkOrderReleasedIntegrationEventConverter
                     .Select(x => new ReleasedOperationPayload(
                         x.OperationTaskId,
                         x.OperationSequence,
-                        x.WorkCenterId))
+                        x.WorkCenterId,
+                        // 取不到键 = 那道工序一条报工都没有 = 0，**不是**「没查」（#3129）：
+                        // 字典由调用方对该工单全部报工行按工序 GroupBy 构造，空分组天然缺席。
+                        // 这条路径永远不发 null——null 在契约上专留给本次发布之前入队的旧消息，
+                        // 语义与取值依据见 ReleasedOperationPayload.PreReleaseGoodQuantity 的注释。
+                        domainEvent.PreReleaseGoodQuantityByOperationTaskId
+                            .GetValueOrDefault(x.OperationTaskId, 0m)))
                     .ToArray()));
     }
 }
@@ -905,7 +930,9 @@ public sealed class WorkOrderCancelledIntegrationEventConverter
 internal static class EventIds
 {
     public static string Idempotency(params string?[] parts) =>
-        $"mes:{string.Join(':', parts.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!.Trim()))}";
+        IntegrationEventIdempotencyKey.Compose(
+            "mes:",
+            parts.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!.Trim()).ToArray<string?>());
 
     public static void ThrowIfUnsupportedUom(string uomCode, string sourceDocumentId)
     {

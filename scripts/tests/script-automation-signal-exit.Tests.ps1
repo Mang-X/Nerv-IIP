@@ -52,6 +52,15 @@ function Get-ThrownMessage {
 try {
     [IO.Directory]::CreateDirectory($temporaryRoot) | Out-Null
 
+    # #3165: this is the existing CI entry point for ScriptAutomation native
+    # lifecycle contracts. Keep live-output independently runnable and propagate
+    # its process exit verdict; no workflow or timeout policy changes are needed.
+    Write-Host 'Running ScriptAutomation live-output lifecycle contract.'
+    $liveContract = Invoke-NativeCommandOutput -Command 'pwsh' `
+        -Arguments @('-NoProfile', '-File', (Join-Path $PSScriptRoot 'script-automation-live-output.Tests.ps1')) `
+        -WorkingDirectory $repoRoot -TimeoutSeconds 120 -Name 'script-automation-live-output-contract'
+    Write-Host $liveContract.Stdout
+
     # --- 分类本身：与平台约定一致，且不臆造名字 ---------------------------------------------------
 
     if ([OperatingSystem]::IsWindows()) {

@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 using Nerv.IIP.Business.Quality.Web.Application.Auth;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionPlans;
+using Nerv.IIP.Business.Quality.Web.Application.Queries;
 using Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Endpoints.NonconformanceReports;
 
@@ -37,7 +38,7 @@ public sealed record ListInspectionPlansRequest(
     string? Status,
     string? Keyword,
     int Skip = 0,
-    int Take = 100);
+    int Take = OffsetPage.DefaultTake);
 
 public sealed record ListInspectionPlansEndpointResponse(IReadOnlyCollection<InspectionPlanResponse> Items, int Total);
 
@@ -131,6 +132,7 @@ public static class QualityInspectionEndpointContracts
         new(typeof(InspectionRecords.GetInspectionRecordEndpoint), "GET", "/api/business/v1/quality/inspection-records/{inspectionRecordId}", BusinessPermissionCodes.QualityInspectionRecordsRead, "getBusinessQualityInspectionRecord"),
         new(typeof(InspectionTasks.ListInspectionTasksEndpoint), "GET", "/api/business/v1/quality/inspection-tasks", BusinessPermissionCodes.QualityInspectionRecordsRead, "listBusinessQualityInspectionTasks"),
         new(typeof(InspectionTasks.GetInspectionTaskEndpoint), "GET", "/api/business/v1/quality/inspection-tasks/{inspectionTaskId}", BusinessPermissionCodes.QualityInspectionRecordsRead, "getBusinessQualityInspectionTask"),
+        new(typeof(InspectionTasks.GetFirstArticleConfirmationEndpoint), "GET", "/api/business/v1/quality/first-article-confirmation", BusinessPermissionCodes.QualityInspectionRecordsRead, "getBusinessQualityFirstArticleConfirmation"),
         new(typeof(InspectionTasks.AssignInspectionTaskEndpoint), "POST", "/api/business/v1/quality/inspection-tasks/{inspectionTaskId}/assignment", BusinessPermissionCodes.QualityInspectionPlansManage, "assignBusinessQualityInspectionTask"),
         new(typeof(InspectionTasks.ClaimInspectionTaskEndpoint), "POST", "/api/business/v1/quality/inspection-tasks/{inspectionTaskId}/claim", BusinessPermissionCodes.QualityInspectionRecordsCreate, "claimBusinessQualityInspectionTask"),
         new(typeof(InspectionTasks.CreateInspectionRecordFromTaskEndpoint), "POST", "/api/business/v1/quality/inspection-tasks/{inspectionTaskId}/inspection-record", BusinessPermissionCodes.QualityInspectionRecordsCreate, "createBusinessQualityInspectionRecordFromTask"),

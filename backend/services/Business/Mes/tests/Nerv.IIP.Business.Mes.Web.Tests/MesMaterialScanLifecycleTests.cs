@@ -21,7 +21,12 @@ public sealed partial class MesMaterialScanPrevalidationTests
     [Fact]
     public async Task Convert_release_rebind_receipt_then_scan_preserves_the_released_snapshot_chain()
     {
-        await using var db = CreateDbContext();
+        // 此夹具只验证扫描应用编排；事务/outbox 由 PostgreSQL 用例承担。
+        await using var db = new Nerv.IIP.Business.Mes.Infrastructure.ApplicationDbContext(
+            new DbContextOptionsBuilder<Nerv.IIP.Business.Mes.Infrastructure.ApplicationDbContext>()
+                .UseInMemoryDatabase($"mes-material-scan-lifecycle-{Guid.CreateVersion7():N}")
+                .ConfigureWarnings(warnings => warnings.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
+                .Options, new NoopMediator());
         var snapshotProvider = new StaticMaterialSnapshotProvider(
             MesMaterialRequirementSnapshotResult.Captured(
                 "product-engineering-http:PV-001:MBOM-001",
@@ -218,9 +223,9 @@ public sealed partial class MesMaterialScanPrevalidationTests
                 "Unrestricted",
                 "production",
                 null,
-                5m,
+                leg == MaterialTransferLeg.WarehouseIssue ? -5m : 5m,
                 Now.AddMinutes(4),
-                null,
-                null));
+                8m,
+                leg == MaterialTransferLeg.WarehouseIssue ? -40m : 40m));
     }
 }

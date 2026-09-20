@@ -51,6 +51,29 @@ public sealed class WorldHistoryMaintenanceSeedServiceTests
     }
 
     [Fact]
+    public async Task Seed_adds_mes_downtime_reasons_to_the_authoritative_catalog()
+    {
+        await using var db = CreateDbContext();
+        var seed = new WorldHistorySeedService(db);
+
+        await seed.SeedAsync("org-001", "env-dev", new DateOnly(2026, 2, 4), 1.0);
+
+        var reasons = await db.DowntimeReasons
+            .Where(x => x.ReasonCode == "DT-SETUP" || x.ReasonCode == "DT-MATERIAL" || x.ReasonCode == "DT-QUALITY")
+            .OrderBy(x => x.ReasonCode)
+            .Select(x => new { x.ReasonCode, x.Description, x.ReasonCategory, x.LossCategory })
+            .ToArrayAsync();
+
+        Assert.Equal(
+            [
+                new { ReasonCode = "DT-MATERIAL", Description = "缺料待工", ReasonCategory = "process", LossCategory = "availability" },
+                new { ReasonCode = "DT-QUALITY", Description = "质量停机", ReasonCategory = "process", LossCategory = "availability" },
+                new { ReasonCode = "DT-SETUP", Description = "换型调整", ReasonCategory = "planned", LossCategory = "availability" },
+            ],
+            reasons);
+    }
+
+    [Fact]
     public async Task Seed_is_idempotent_and_validator_passes()
     {
         await using var db = CreateDbContext();

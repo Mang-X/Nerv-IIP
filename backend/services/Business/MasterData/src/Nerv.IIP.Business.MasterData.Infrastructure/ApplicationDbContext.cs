@@ -54,6 +54,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<WorkCalendar> WorkCalendars => Set<WorkCalendar>();
     public DbSet<DeviceAsset> DeviceAssets => Set<DeviceAsset>();
     public DbSet<ToolingAsset> ToolingAssets => Set<ToolingAsset>();
+    public DbSet<ToolingAuditEntry> ToolingAuditEntries => Set<ToolingAuditEntry>();
     public DbSet<ChangeoverMatrixEntry> ChangeoverMatrixEntries => Set<ChangeoverMatrixEntry>();
     public DbSet<CodeRule> CodeRules => Set<CodeRule>();
     public DbSet<CodeRuleVersion> CodeRuleVersions => Set<CodeRuleVersion>();
@@ -71,6 +72,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
         base.OnModelCreating(modelBuilder);
         modelBuilder.HasDefaultSchema(MasterDataFacts.Schema);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
+        modelBuilder.ConfigureCodingEntities();
         ConfigureCapStorage(modelBuilder);
     }
 
@@ -90,6 +92,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
 
     public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
     {
+        EnsureToolingAuditIsAppendOnly();
         try
         {
             return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
@@ -97,6 +100,21 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
         catch (DbUpdateException exception) when (IsDuplicateLifecycleOperation(exception))
         {
             return await RecoverLifecycleOperationReplayAsync(cancellationToken);
+        }
+    }
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        EnsureToolingAuditIsAppendOnly();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    private void EnsureToolingAuditIsAppendOnly()
+    {
+        if (ChangeTracker.Entries<ToolingAuditEntry>().Any(entry =>
+                entry.State is EntityState.Modified or EntityState.Deleted))
+        {
+            throw new InvalidOperationException("工装审计事实只允许追加，禁止修改或删除。");
         }
     }
 

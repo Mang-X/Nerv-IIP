@@ -89,7 +89,7 @@ function canRetry(row: ReceiptRow) {
   )
 }
 
-const listErrorMessage = computed(() => formatError(receiptRequestsError.value))
+const listErrorMessage = computed(() => inlineErrorMessage(receiptRequestsError.value))
 const hasReceiptContext = computed(
   () => isNonEmpty(receiptContext.workOrderId) && isNonEmpty(receiptContext.skuId),
 )
@@ -190,9 +190,6 @@ function firstQueryValue(value: unknown) {
   if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : ''
   return typeof value === 'string' ? value : ''
 }
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
 function isNonEmpty(value: string) {
   return value.trim().length > 0
 }
@@ -248,10 +245,6 @@ function isNonEmpty(value: string) {
       </template>
     </NvToolbar>
 
-    <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">
-      {{ listErrorMessage }}
-    </p>
-
     <NvDataTable
       manual
       :page="page"
@@ -263,9 +256,12 @@ function isNonEmpty(value: string) {
       :rows="receiptRequests"
       row-key="receiptRequestId"
       :loading="receiptRequestsPending"
+      :error="receiptRequestsError"
+      :error-message="listErrorMessage"
       empty-message="还没有完工入库登记。末道工序报完工后，在此把成品登记入库即会出现对应记录。"
       :searchable="false"
       :column-settings="false"
+      @retry="refreshReceiptRequests"
     >
       <template #cell-requestNo="{ row }">
         <span v-if="row.requestNo">{{ row.requestNo }}</span>

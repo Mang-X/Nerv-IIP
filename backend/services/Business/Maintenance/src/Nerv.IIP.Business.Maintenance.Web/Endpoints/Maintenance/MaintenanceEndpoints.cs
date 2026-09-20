@@ -78,6 +78,23 @@ public sealed record CreateMaintenanceWorkOrderResponse(
     string Status,
     DateTimeOffset ChangedAtUtc);
 
+/// <summary>
+/// v2 创建工单请求（#2964）：沿用 v1 的其它业务字段，以 nullable <see cref="AssetUnavailableReasonCode"/> 取代自由文本
+/// <c>AssetUnavailableReason</c>。null = 建单但不标记不可用；非 null 必须在请求 organization/environment 的动态
+/// <c>downtime-reason</c> 目录精确命中（请求原值，不 trim、不改大小写）。
+/// </summary>
+public sealed record CreateMaintenanceWorkOrderV2Request(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    string Priority,
+    string? SourceAlarmId,
+    string OpenedBy,
+    string? AssetUnavailableReasonCode,
+    string IdempotencyKey,
+    string? AssignedTechnicianUserId = null,
+    int? EstimatedLaborMinutes = null);
+
 public sealed record CompleteMaintenanceWorkOrderRequest(
     MaintenanceWorkOrderId WorkOrderId,
     string Result,
@@ -97,6 +114,17 @@ public sealed class CreateMaintenanceWorkOrderRequestValidator : Validator<Creat
 {
     public CreateMaintenanceWorkOrderRequestValidator() =>
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+}
+
+public sealed class CreateMaintenanceWorkOrderV2RequestValidator : Validator<CreateMaintenanceWorkOrderV2Request>
+{
+    public CreateMaintenanceWorkOrderV2RequestValidator()
+    {
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.AssetUnavailableReasonCode)
+            .Length(1, MaintenanceWorkOrder.MaxAssetUnavailableReasonCodeLength)
+            .When(x => x.AssetUnavailableReasonCode is not null);
+    }
 }
 
 public sealed class CompleteMaintenanceWorkOrderRequestValidator : Validator<CompleteMaintenanceWorkOrderRequest>
@@ -173,10 +201,10 @@ public sealed record StartMaintenanceRepairRequest(
     DateTimeOffset RepairStartedAtUtc);
 
 public sealed record ListMaintenanceWorkOrdersRequest(
-    string? OrganizationId,
-    string? EnvironmentId,
+    string OrganizationId,
+    string EnvironmentId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? DeviceAssetIds = null,
     string? Status = null,
     string? DeviceAssetId = null,
@@ -220,7 +248,7 @@ public sealed record QueryInternalMaintenanceWorkOrdersRequest(
     string OrganizationId,
     string EnvironmentId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? DeviceAssetIds = null,
     string? Status = null,
     string? DeviceAssetId = null,
@@ -254,8 +282,9 @@ public sealed class QueryInternalMaintenanceWorkOrdersRequestValidator
 
     public QueryInternalMaintenanceWorkOrdersRequestValidator()
     {
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        this.AddTenantRules(x => x.OrganizationId, x => x.EnvironmentId);
+        RuleFor(x => x.OrganizationId).MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).MaximumLength(100);
         RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
         RuleFor(x => x.Take).InclusiveBetween(1, 200);
         RuleFor(x => x.Status).MaximumLength(40);
@@ -371,7 +400,7 @@ public sealed record UpdateMaintenancePlanRequest(
 
 public sealed record UpdateMaintenancePlanResponse(MaintenancePlanId PlanId);
 
-public sealed record ListMaintenancePlansRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100, string? DeviceAssetId = null);
+public sealed record ListMaintenancePlansRequest(string OrganizationId, string EnvironmentId, int Skip = 0, int Take = OffsetPage.DefaultTake, string? DeviceAssetId = null);
 
 public sealed record GenerateDueMaintenanceWorkOrdersRequest(
     string OrganizationId,
@@ -466,10 +495,10 @@ public sealed record UpdateDowntimeReasonRequest(
 public sealed record DeleteDowntimeReasonRequest(string OrganizationId, string EnvironmentId, string ReasonCode);
 
 public sealed record ListDowntimeReasonsRequest(
-    string? OrganizationId,
-    string? EnvironmentId,
+    string OrganizationId,
+    string EnvironmentId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Keyword = null);
 
 public sealed class CreateMaintenanceWorkOrderEndpoint(ISender sender)
@@ -480,6 +509,23 @@ public sealed class CreateMaintenanceWorkOrderEndpoint(ISender sender)
     public override async Task HandleAsync(CreateMaintenanceWorkOrderRequest req, CancellationToken ct)
     {
         var result = await sender.Send(new CreateMaintenanceWorkOrderCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.Priority, req.SourceAlarmId, req.OpenedBy, req.AssetUnavailableReason, AssignedTechnicianUserId: req.AssignedTechnicianUserId, EstimatedLaborMinutes: req.EstimatedLaborMinutes, IdempotencyKey: req.IdempotencyKey), ct);
+        await Send.OkAsync(
+            new CreateMaintenanceWorkOrderResponse(
+                result.WorkOrderId,
+                result.Status.ToString(),
+                result.ChangedAtUtc).AsResponseData(),
+            cancellation: ct);
+    }
+}
+
+public sealed class CreateMaintenanceWorkOrderV2Endpoint(ISender sender)
+    : MaintenanceEndpoint<CreateMaintenanceWorkOrderV2Request, ResponseData<CreateMaintenanceWorkOrderResponse>>
+{
+    public override void Configure() => ConfigureMaintenanceContract(MaintenanceEndpointContracts.Get<CreateMaintenanceWorkOrderV2Endpoint>());
+
+    public override async Task HandleAsync(CreateMaintenanceWorkOrderV2Request req, CancellationToken ct)
+    {
+        var result = await sender.Send(new CreateMaintenanceWorkOrderV2Command(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.Priority, req.SourceAlarmId, req.OpenedBy, req.AssetUnavailableReasonCode, AssignedTechnicianUserId: req.AssignedTechnicianUserId, EstimatedLaborMinutes: req.EstimatedLaborMinutes, IdempotencyKey: req.IdempotencyKey), ct);
         await Send.OkAsync(
             new CreateMaintenanceWorkOrderResponse(
                 result.WorkOrderId,
@@ -877,6 +923,7 @@ public static class MaintenanceEndpointContracts
     public static readonly IReadOnlyCollection<MaintenanceEndpointContract> All =
     [
         new(typeof(CreateMaintenanceWorkOrderEndpoint), "POST", "/api/business/v1/maintenance/work-orders", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "createMaintenanceWorkOrder"),
+        new(typeof(CreateMaintenanceWorkOrderV2Endpoint), "POST", "/api/business/v2/maintenance/work-orders", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "createMaintenanceWorkOrderV2"),
         new(typeof(StartMaintenanceRepairEndpoint), "POST", "/api/business/v1/maintenance/work-orders/{workOrderId}/repair-started", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "startMaintenanceRepair"),
         new(typeof(CompleteMaintenanceWorkOrderEndpoint), "POST", "/api/business/v1/maintenance/work-orders/{workOrderId}/complete", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "completeMaintenanceWorkOrder"),
         new(typeof(ListMaintenanceWorkOrdersEndpoint), "GET", "/api/business/v1/maintenance/work-orders", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "listMaintenanceWorkOrders"),
@@ -897,7 +944,7 @@ public static class MaintenanceEndpointContracts
         new(typeof(ListMaintenanceSparePartsEndpoint), "GET", "/api/business/v1/maintenance/spare-parts", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "listMaintenanceSpareParts"),
         new(typeof(CreateMaintenanceSparePartEndpoint), "POST", "/api/business/v1/maintenance/spare-parts", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "createMaintenanceSparePart"),
         new(typeof(CreateDowntimeReasonEndpoint), "POST", "/api/business/v1/maintenance/downtime-reasons", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "createMaintenanceDowntimeReason"),
-        new(typeof(ListDowntimeReasonsEndpoint), "GET", "/api/business/v1/maintenance/downtime-reasons", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "listMaintenanceDowntimeReasons"),
+        new(typeof(ListDowntimeReasonsEndpoint), "GET", "/api/business/v1/maintenance/downtime-reasons", MaintenancePermissionCodes.DowntimeReasonsRead, InternalServiceAuthorizationPolicy.Name, "listMaintenanceDowntimeReasons"),
         new(typeof(UpdateDowntimeReasonEndpoint), "PUT", "/api/business/v1/maintenance/downtime-reasons/{reasonCode}", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "updateMaintenanceDowntimeReason"),
         new(typeof(DeleteDowntimeReasonEndpoint), "DELETE", "/api/business/v1/maintenance/downtime-reasons/{reasonCode}", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "deleteMaintenanceDowntimeReason"),
         new(typeof(GetMaintenanceAssetAvailabilityWindowsEndpoint), "GET", "/api/business/v1/maintenance/assets/{deviceAssetId}/availability-windows", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "getMaintenanceAssetAvailabilityWindows"),

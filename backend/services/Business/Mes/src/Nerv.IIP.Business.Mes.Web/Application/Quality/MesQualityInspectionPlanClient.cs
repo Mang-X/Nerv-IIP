@@ -4,12 +4,26 @@ using System.Net.Http.Json;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Contracts.ProductEngineering;
 using Nerv.IIP.ServiceAuth;
+using Nerv.IIP.Contracts.Quality;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Quality;
 
 public sealed class MesQualityHttpClient(HttpClient httpClient)
 {
     public HttpClient HttpClient { get; } = httpClient;
+}
+
+/// <summary>
+/// Quality 客户端的连接与请求预算，与 <c>MesInventoryHttpClient</c> 同形。
+/// #2780 把这个客户端挪进了报工写事务内且每次报工都要走一趟，默认的 100 秒
+/// <see cref="HttpClient.Timeout"/> 会让「建连成功但不回包」把一次报工的 UoW 事务挂住一分半以上。
+/// </summary>
+public sealed class MesQualityHttpClientOptions
+{
+    public const string SectionName = "Mes:QualityClient";
+
+    public TimeSpan ConnectTimeout { get; init; } = TimeSpan.FromSeconds(5);
+    public TimeSpan RequestTimeout { get; init; } = TimeSpan.FromSeconds(10);
 }
 
 public interface IMesQualityInspectionPlanReader
@@ -92,7 +106,7 @@ public sealed class MesQualityInspectionPlanClient(
                     string.Equals(x.EnvironmentId, environmentId, StringComparison.Ordinal) &&
                     string.Equals(x.Status, ProductionEngineeringContractStatuses.Active, StringComparison.OrdinalIgnoreCase) &&
                     string.Equals(x.SkuCode, skuCode, StringComparison.Ordinal) &&
-                    string.Equals(x.Category, "operation", StringComparison.Ordinal) &&
+                    string.Equals(x.Category, QualityInspectionSourceTypes.Operation, StringComparison.Ordinal) &&
                     string.Equals(x.WorkCenterId, workCenterId, StringComparison.Ordinal));
         }
     }

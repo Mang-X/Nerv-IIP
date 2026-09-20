@@ -1,3 +1,4 @@
+using System.Text.Json;
 using FluentValidation;
 using Nerv.IIP.Business.Mes.Web.Endpoints.Mes;
 
@@ -5,6 +6,25 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class PublicIdempotencyRequestValidationTests
 {
+    [Fact]
+    public void Start_changeover_rejects_a_missing_tooling_check_result()
+    {
+        var request = JsonSerializer.Deserialize<StartChangeoverRequest>("""
+            {
+              "organizationId": "org-001",
+              "environmentId": "env-dev",
+              "workCenterId": "WC-01",
+              "deviceAssetId": "DEV-01",
+              "operatorId": "operator-01",
+              "startedAtUtc": "2026-09-05T01:00:00Z",
+              "idempotencyKey": "changeover-001"
+            }
+            """, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        Assert.NotNull(request);
+        Assert.False(new StartChangeoverRequestValidator().Validate(request).IsValid);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -31,4 +51,38 @@ public sealed class PublicIdempotencyRequestValidationTests
                 ReportedAtUtc: DateTimeOffset.UnixEpoch,
                 IdempotencyKey: key!)).IsValid);
     }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Production_report_rejects_blank_intent_fingerprint_when_provided(string fingerprint)
+    {
+        var request = ValidProductionReportRequest() with { ReportIntentFingerprint = fingerprint };
+
+        Assert.False(new RecordProductionReportRequestValidator().Validate(request).IsValid);
+    }
+
+    [Fact]
+    public void Production_report_accepts_exact_opaque_intent_fingerprint_up_to_256_characters()
+    {
+        var fingerprint = $"  {new string('x', 252)}  ";
+        var request = ValidProductionReportRequest() with { ReportIntentFingerprint = fingerprint };
+
+        Assert.True(new RecordProductionReportRequestValidator().Validate(request).IsValid);
+        Assert.Equal(fingerprint, request.ReportIntentFingerprint);
+        Assert.False(new RecordProductionReportRequestValidator().Validate(
+            request with { ReportIntentFingerprint = fingerprint + "x" }).IsValid);
+    }
+
+    private static RecordProductionReportRequest ValidProductionReportRequest() =>
+        new(
+            "org-001",
+            "env-dev",
+            "WO-001",
+            "OP-10",
+            1m,
+            0m,
+            false,
+            DateTimeOffset.UnixEpoch,
+            "intent-validation-001");
 }

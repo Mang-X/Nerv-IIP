@@ -89,7 +89,7 @@ const windowSegments = computed<NvMetricSegment[]>(() => [
     tone: 'success',
   },
 ])
-const errorMessage = computed(() => formatError(availabilityError.value))
+const errorMessage = computed(() => inlineErrorMessage(availabilityError.value))
 
 const windowStartLocal = computed({
   get: () => toLocalDateTime(filters.windowStartUtc),
@@ -172,9 +172,6 @@ function formatDateTime(value?: string | null) {
   if (!value) return '无'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 </script>
 

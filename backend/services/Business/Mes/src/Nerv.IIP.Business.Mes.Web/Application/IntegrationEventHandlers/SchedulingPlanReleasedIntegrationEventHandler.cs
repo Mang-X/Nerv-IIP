@@ -167,12 +167,17 @@ public sealed class SchedulePlanReleasedIntegrationEventHandlerForDispatch(
             cancellationToken);
         if (task is null)
         {
-            var hasWorkOrder = await dbContext.WorkOrders.AnyAsync(
-                x => x.OrganizationId == integrationEvent.OrganizationId &&
+            // 原先只用 AnyAsync 判存在性；改取 SkuId 是因为补建的工序必须带工单真实 SKU（#3112）。
+            // 同一次往返、同一组谓词，不新增查询。
+            // 投影成匿名类型而不是直接投 SkuId：匿名类型为 null 当且仅当"没有这一行"，
+            // 而投标量时 null 与"行存在但值为 null"不可区分，会把两种情形混成同一条死信理由。
+            var workOrderFacts = await dbContext.WorkOrders
+                .Where(x => x.OrganizationId == integrationEvent.OrganizationId &&
                     x.EnvironmentId == integrationEvent.EnvironmentId &&
-                    x.WorkOrderIdValue == operation.WorkOrderId,
-                cancellationToken);
-            if (!hasWorkOrder)
+                    x.WorkOrderIdValue == operation.WorkOrderId)
+                .Select(x => new { x.SkuId })
+                .FirstOrDefaultAsync(cancellationToken);
+            if (workOrderFacts is null)
             {
                 return IntegrationEventDeadLetterMessage.Create(
                         ConsumerName,
@@ -191,6 +196,7 @@ public sealed class SchedulePlanReleasedIntegrationEventHandlerForDispatch(
                 [],
                 operation.StartUtc,
                 operation.EndUtc - operation.StartUtc,
+                workOrderFacts.SkuId,
                 operationCode: operation.StandardOperationCode);
             dbContext.OperationTasks.Add(task);
         }

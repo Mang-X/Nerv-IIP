@@ -14,7 +14,7 @@ public sealed class QualityHoldTransitionEntityTypeConfiguration : IEntityTypeCo
         builder.Property(x => x.OrganizationId).HasColumnName("organization_id").IsRequired().HasMaxLength(100).HasComment("Organization scope for the transition.");
         builder.Property(x => x.EnvironmentId).HasColumnName("environment_id").IsRequired().HasMaxLength(100).HasComment("Environment scope for the transition.");
         builder.Property(x => x.SourceService).HasColumnName("source_service").IsRequired().HasMaxLength(100).HasComment("Service that owns the held source document.");
-        builder.Property(x => x.SourceDocumentId).HasColumnName("source_document_id").IsRequired().HasMaxLength(100).HasComment("Stable MES source document identifier whose hold lifecycle changed.");
+        builder.Property(x => x.SourceDocumentId).HasColumnName("source_document_id").IsRequired().HasMaxLength(250).HasComment("Stable source document identity whose hold lifecycle changed; carries the Quality inspection record source identity verbatim, which for first-article and periodic inspections is a composite value rather than a bare MES id.");
         builder.Property(x => x.HoldCycleId).HasColumnName("hold_cycle_id").IsRequired().HasMaxLength(200).HasComment("Stable identifier correlating an applied hold with its release in one lifecycle cycle.");
         builder.Property(x => x.CorrelationId).HasColumnName("correlation_id").IsRequired().HasMaxLength(200).HasComment("Source command or integration-event correlation identifier for this transition.");
         builder.Property(x => x.EventKind).HasColumnName("event_kind").IsRequired().HasMaxLength(50).HasComment("Lifecycle event kind: hold-applied, inspection-released, or manual-force-released.");

@@ -5,6 +5,16 @@ export {
   operationTaskStatusLabel,
   RECEIPT_STATUS_LABELS,
   receiptStatusLabel,
+  SHIFT_HANDOVER_ISSUE_CATEGORY_CODES,
+  SHIFT_HANDOVER_ISSUE_CATEGORY_LABELS,
+  SHIFT_HANDOVER_ISSUE_SEVERITY_CODES,
+  SHIFT_HANDOVER_ISSUE_SEVERITY_LABELS,
+  SHIFT_HANDOVER_STATUS_LABELS,
+  SHIFT_HANDOVER_UNFINISHED_WORK_ORDER_STATUS_OPTIONS,
+  shiftHandoverUnfinishedWorkOrderStatusLabel,
+  shiftHandoverIssueCategoryLabel,
+  shiftHandoverIssueSeverityLabel,
+  shiftHandoverStatusLabel,
   workOrderStatusLabel,
   workOrderSubtitle,
   workOrderTitle,
@@ -20,6 +30,12 @@ export type {
   MesReadinessReasonCategory,
   MesReadinessReasonDisplay,
 } from './labels/mesReadinessReasons'
+export {
+  isSystemIdentifier,
+  resolveDirectoryLabel,
+  toDirectoryOptions,
+} from './masterdata/directoryOptions'
+export type { DirectoryOption, DirectoryOptionSource } from './masterdata/directoryOptions'
 export { defineStepFlow } from './sop/defineStepFlow'
 export type { StepFlow, StepFlowStep, StepFlowContext } from './sop/defineStepFlow'
 export { countExecutionFlow, inboundReceiveFlow, outboundReviewFlow } from './sop/wmsFlows'
@@ -30,8 +46,8 @@ export {
   outboundOrderStatusLabel,
   warehouseTaskStatusLabel,
 } from './labels/wmsLabels'
-export { finishedGoodsReceiptFlow, productionReportFlow } from './sop/mesFlows'
-export type { ReceiptCtx, ReportCtx } from './sop/mesFlows'
+export { finishedGoodsReceiptFlow, productionReportFlow, shiftHandoverFlow } from './sop/mesFlows'
+export type { ReceiptCtx, ReportCtx, ShiftHandoverCtx } from './sop/mesFlows'
 export { repairOrderFlow, inspectionFlow } from './sop/equipmentFlows'
 export type { RepairCtx, InspectCtx } from './sop/equipmentFlows'
 export { qualityInspectionTaskFlow } from './sop/qualityFlows'
@@ -152,8 +168,8 @@ export { formatWorkScopeKey, parseWorkScopeKey } from './scope/workScopeKey'
 export type { WorkScopeKeyParts } from './scope/workScopeKey'
 export { PDA_TASK_KINDS, getPdaTaskKind } from './tasks/pdaTaskKinds'
 export type { PdaTaskKind } from './tasks/pdaTaskKinds'
-export { openDownloadGrantBlob } from './files/downloadGrant'
-export type { DownloadGrantLike } from './files/downloadGrant'
+export { openSopFileContent, type BusinessScopeLike } from './files/fileContent'
+
 export { statusActionGate } from './actions/statusActionGate'
 export type {
   LifecycleActionRequest,
@@ -163,6 +179,18 @@ export type {
 } from './actions/statusActionGate'
 export { isAvailableMaterialLot } from './mes/materialLots'
 export type { AvailableMaterialLotFields, MaterialLotAvailabilityLike } from './mes/materialLots'
+export {
+  incomingPartyState,
+  incomingUserLabel,
+  outgoingPartyState,
+  outgoingUserLabel,
+  SHIFT_HANDOVER_PARTY_STATE_LABELS,
+} from './mes/shiftHandoverParties'
+export type {
+  ShiftHandoverIncomingPartyFields,
+  ShiftHandoverOutgoingPartyFields,
+  ShiftHandoverPartyState,
+} from './mes/shiftHandoverParties'
 export {
   acquirePendingBusinessIntent,
   clearPendingBusinessIntent,

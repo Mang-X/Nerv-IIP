@@ -7,7 +7,10 @@ import type {
 import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
 import { mesWorkOrderStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
-import { mesWorkOrderReleaseBlocker } from '@/composables/mes/workOrderRelease'
+import {
+  mesWorkOrderReleaseBlocker,
+  mesWorkOrderRetroactiveReleaseNotice,
+} from '@/composables/mes/workOrderRelease'
 import {
   useBusinessMasterDataResources,
   useBusinessSkus,
@@ -183,7 +186,7 @@ const rushForm = reactive({
 // 报工对象由所选工单行带出（工单 + 该工单的首道可报工序），弹窗不提供任何挑选入口。
 const reportContext = shallowRef<ProductionReportContext | null>(null)
 
-const listErrorMessage = computed(() => formatError(workOrdersError.value))
+const listErrorMessage = computed(() => inlineErrorMessage(workOrdersError.value))
 const workScopeKindLabels: Record<string, string> = {
   self: '本人',
   team: '班组',
@@ -324,7 +327,6 @@ async function retryMergeReadback() {
 }
 
 type ReleaseIntent = {
-  idempotencyKey: string
   workOrderId: string
   workOrderLabel: string
 }
@@ -349,6 +351,9 @@ const releaseValidationMessage = computed(() => {
   if (!releaseIntentOrder.value) return '工单已不在当前主体授权工单范围，请刷新后重试。'
   return releaseBlocker(releaseIntentOrder.value) ?? ''
 })
+const releaseRetroactiveNotice = computed(() =>
+  releaseIntentOrder.value ? mesWorkOrderRetroactiveReleaseNotice(releaseIntentOrder.value) : null,
+)
 const canSubmitRelease = computed(
   () =>
     releaseIntent.value !== null &&
@@ -374,7 +379,6 @@ async function openReleaseDialog(order: Row) {
     const blocker = releaseBlocker(latest)
     if (blocker) throw new Error(blocker)
     releaseIntent.value = {
-      idempotencyKey: newMesIdempotencyKey(`release-work-order-${order.workOrderId}`),
       workOrderId: order.workOrderId,
       workOrderLabel: order.workOrderNo || order.workOrderId,
     }
@@ -405,7 +409,6 @@ async function submitReleaseWorkOrder() {
       organizationId: filters.organizationId.trim(),
       environmentId: filters.environmentId.trim(),
       confirmWarnings: true,
-      idempotencyKey: intent.idempotencyKey,
     })
     if (response?.data?.accepted !== true) {
       throw new Error('工单下达结果未确认，请刷新列表核实后再重试。')
@@ -708,9 +711,6 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
       value: item.code!,
     }))
 }
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
 function isNonEmpty(value: string) {
   return value.trim().length > 0
 }
@@ -805,10 +805,6 @@ function isNonEmpty(value: string) {
       </template>
     </NvToolbar>
 
-    <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">
-      {{ listErrorMessage }}
-    </p>
-
     <NvDataTable
       manual
       :page="page"
@@ -822,11 +818,14 @@ function isNonEmpty(value: string) {
       :row-key="rowKey"
       :client-sort="false"
       :loading="workOrdersPending"
+      :error="workOrdersError"
+      :error-message="listErrorMessage"
       empty-message="当前筛选下没有工单。正常生产请先进入生产计划转工单，急单只处理临时插单。"
       :searchable="false"
       :column-settings="false"
       selectable
       v-model:selected="selectedWorkOrderIds"
+      @retry="refreshWorkOrders"
     >
       <template #bulk-actions>
         <NvButton
@@ -993,6 +992,13 @@ function isNonEmpty(value: string) {
               <dd>{{ releaseIntentOrder.operationTasks?.length ?? 0 }} 道</dd>
             </div>
           </dl>
+          <p
+            v-if="releaseRetroactiveNotice"
+            class="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-muted-foreground"
+            data-testid="release-retroactive-notice"
+          >
+            {{ releaseRetroactiveNotice }}
+          </p>
           <p
             v-if="releaseValidationMessage"
             class="text-sm text-destructive"

@@ -432,6 +432,8 @@ public sealed class BusinessGatewayPrincipalWorkContextResolverTests
             "user-001",
             "user",
             "operator",
+            "org-001",
+            "env-dev",
             dataScope,
             grants,
             [new AuthorizationRole("role-worker", "一线操作工")]);

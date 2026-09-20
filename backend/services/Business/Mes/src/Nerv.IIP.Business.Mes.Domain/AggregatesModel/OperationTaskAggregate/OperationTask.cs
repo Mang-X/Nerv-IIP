@@ -33,7 +33,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         TimeSpan duration,
         DateTimeOffset? existingStartUtc,
         DateTimeOffset? existingEndUtc,
-        string? skuCode,
+        string skuCode,
         string? uomCode,
         decimal plannedQuantity,
         bool requiresQualityInspection,
@@ -54,7 +54,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             : throw new ArgumentOutOfRangeException(nameof(duration), "Duration must be positive.");
         ExistingStartUtc = existingStartUtc;
         ExistingEndUtc = existingEndUtc;
-        SkuCode = NormalizeOptional(skuCode) ?? workOrderId;
+        SkuCode = DomainGuard.Required(skuCode, nameof(skuCode));
         UomCode = NormalizeOptional(uomCode) ?? "pcs";
         PlannedQuantity = plannedQuantity > 0m ? plannedQuantity : 1m;
         RequiresQualityInspection = requiresQualityInspection;
@@ -147,7 +147,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         IReadOnlyCollection<string> alternativeWorkCenterIds,
         DateTimeOffset earliestStartUtc,
         TimeSpan duration,
-        string? skuCode = null,
+        string skuCode,
         string? uomCode = null,
         decimal plannedQuantity = 0m,
         bool requiresQualityInspection = false,
@@ -188,7 +188,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         TimeSpan duration,
         DateTimeOffset? existingStartUtc,
         DateTimeOffset? existingEndUtc,
-        string? skuCode = null,
+        string skuCode,
         string? uomCode = null,
         decimal plannedQuantity = 0m,
         bool requiresQualityInspection = false,
@@ -448,6 +448,37 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
                 CreateManualDispatchSnapshot(normalizedDeviceAssetId!, assignedAtUtc, ManualDispatchRevision),
                 canonicalActor!));
         }
+    }
+
+    public void Claim(
+        string assignedUserId,
+        string assignedUserName,
+        string? deviceAssetId,
+        string? shiftId,
+        DateTimeOffset assignedAtUtc,
+        string actor,
+        string? teamId = null,
+        string? teamName = null)
+    {
+        if (Status != OperationTaskLifecycleStatus.Queued)
+        {
+            throw new KnownException("只有待领取的工序任务可以领取。");
+        }
+
+        if (AssignedUserId is not null)
+        {
+            throw new KnownException("该工序任务已被领取。");
+        }
+
+        Assign(
+            assignedUserId,
+            deviceAssetId,
+            shiftId,
+            assignedAtUtc,
+            actor,
+            assignedUserName,
+            teamId,
+            teamName);
     }
 
     public void Cancel(DateTimeOffset cancelledAtUtc, string actor = "system:mes")

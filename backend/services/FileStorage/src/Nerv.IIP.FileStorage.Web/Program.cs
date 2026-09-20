@@ -67,6 +67,9 @@ if (hasStorageConfiguration && !useMinio)
 }
 
 builder.Services.AddFastEndpoints();
+builder.Services.AddSingleton(TemplateAssetRetirementOptions.Load(builder.Configuration));
+builder.Services.AddSingleton<TemplateAssetRetirementProof>();
+builder.Services.AddScoped<TemplateAssetRetirementStore>();
 // Upload-session / download-grant expiry and file retention are scheduling semantics, so the clock behind
 // them is injected rather than read from DateTimeOffset.UtcNow: tests replace this registration to advance
 // past a TTL without waiting. Every path that writes or reads those columns resolves this one registration
@@ -94,9 +97,17 @@ builder.Services.AddSingleton<IVersionedObjectStore>(_ =>
     return new MinioVersionedObjectStore(client, minioComplianceArchiveBucket!);
 });
 builder.Services.AddSingleton<VersionedArchiveService>();
+builder.Services.AddSingleton<UploadSessionGateRegistry>();
+builder.Services.AddSingleton<IUploadSessionMutationGate, UploadSessionMutationGate>();
+// 提交存储读回的是本地 tus 盘上的实际字节。server-proxy 部署没有本地字节面，
+// LocalTusUploadCommitStorage 会据实报告“最终存储动作从未开始”，complete 与本次改动前一样保持 503 可重试。
+builder.Services.AddSingleton<IUploadCommitStorage, LocalTusUploadCommitStorage>();
+builder.Services.AddScoped<UploadCommitExecutionLeaseManager>();
 
 builder.Services.AddScoped<IFileStorageService, PostgreSqlFileStorageService>();
+builder.Services.AddScoped<UploadCommitRecoveryProcessor>();
 builder.Services.AddScoped<PostgreSqlFileStorageGarbageCollector>();
+builder.Services.AddHostedService<UploadCommitRecoveryHostedService>();
 builder.Services.AddHostedService<FileStorageGarbageCollectionHostedService>();
 
 builder.Services.AddFileStoragePersistence(builder.Configuration, persistence.PostgreSqlConnectionStringName);
@@ -105,6 +116,20 @@ builder.Services.AddNervIipObservability(builder.Configuration, "file-storage");
 builder.Services.AddNervIipLocalization();
 
 var app = builder.Build();
+// 读 app.Configuration 而非 builder.Configuration：测试宿主的 ConfigureAppConfiguration 要到 Build() 才生效，
+// 与上面按 IConfiguration 惰性判定 provider 的口径一致。
+var tusRootPath = app.Configuration["FileStorage:Tus:RootPath"];
+if (string.Equals(app.Configuration["FileStorage:UploadProvider"], "tus", StringComparison.OrdinalIgnoreCase)
+    && (string.IsNullOrWhiteSpace(tusRootPath) || !Path.IsPathRooted(tusRootPath)))
+{
+    // tus 盘承载已 complete 文件的字节，ADR 0024 §5 要求显式、绝对、持久的 root。这里只判前两项：
+    // 「持久」需要 storage identity / mount identity 探测，归 #1012，所以不在文案里宣称已经拒绝 temp。
+    throw new InvalidOperationException(
+        "FileStorage:UploadProvider=tus requires FileStorage:Tus:RootPath to be an explicit absolute path " +
+        $"(configured={(string.IsNullOrWhiteSpace(tusRootPath) ? "<missing>" : "<relative>")}). " +
+        "Point it at persistent storage.");
+}
+
 if (persistence.AutoMigrate)
 {
     using var scope = app.Services.CreateScope();

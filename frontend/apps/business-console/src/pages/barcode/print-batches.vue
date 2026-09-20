@@ -173,8 +173,8 @@ watch(statusFilter, (value) => {
   filters.status = value === 'all' ? undefined : value
 })
 
-const listErrorMessage = computed(() => formatError(printBatchesError.value))
-const detailErrorMessage = computed(() => formatError(printBatchDetailError.value))
+const listErrorMessage = computed(() => inlineErrorMessage(printBatchesError.value))
+const detailErrorMessage = computed(() => inlineErrorMessage(printBatchDetailError.value))
 const selectedItems = computed(() => printBatchDetail.value?.items ?? [])
 const canCreate = computed(
   () =>
@@ -293,10 +293,6 @@ function formatQuantity(value?: number | null) {
 function firstQuery(value: unknown) {
   if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : ''
   return typeof value === 'string' ? value : ''
-}
-
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 </script>
 

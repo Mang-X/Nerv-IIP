@@ -41,6 +41,7 @@ public sealed record ListFilesRequest(
     string EnvironmentId,
     string? FilePurpose,
     string? UploaderId,
+    string? OwnerId,
     DateTimeOffset? CreatedFromUtc,
     DateTimeOffset? CreatedToUtc,
     string? Status,

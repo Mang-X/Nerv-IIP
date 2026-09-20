@@ -156,7 +156,7 @@ const selectStubs = {
       '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
   NvSelectTrigger: { template: '<span><slot /></span>' },
-  SelectValue: { template: '<span />' },
+  NvSelectValue: { template: '<span />' },
   NvSelectContent: { template: '<slot />' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }

@@ -45,6 +45,9 @@ public static class WorldHistoryDeviceSpec
         new("DT-ELEC", "电气故障（驱动/传感/线路）", "breakdown", "availability"),
         new("DT-TOOL", "刀具/工装异常", "breakdown", "availability"),
         new("DT-PROC", "工艺参数异常（槽液/压力）", "process", "availability"),
+        new("DT-SETUP", "换型调整", "planned", "availability"),
+        new("DT-MATERIAL", "缺料待工", "process", "availability"),
+        new("DT-QUALITY", "质量停机", "process", "availability"),
         new("DT-PM", "计划保养", "planned", "planned"),
     ];
 

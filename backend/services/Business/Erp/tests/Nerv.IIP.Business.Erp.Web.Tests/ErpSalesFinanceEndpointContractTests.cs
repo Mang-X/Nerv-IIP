@@ -1,3 +1,4 @@
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Web.Application.Auth;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Sales;
@@ -52,7 +53,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
     {
         var contracts = ErpFinanceEndpointContracts.All.ToArray();
 
-        Assert.Equal(27, contracts.Length);
+        Assert.Equal(32, contracts.Length);
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations" && x.HttpMethod == "POST" && x.PermissionCode == ErpPermissionCodes.FinanceManage && x.AuthorizationPolicy == MachineOverheadInternalCallerAuthorization.ManagePolicyName && x.OperationId == "reconcileErpWorkCenterMachineOverhead");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.AuthorizationPolicy == MachineOverheadInternalCallerAuthorization.ReadPolicyName && x.OperationId == "listErpWorkCenterMachineOverheadReconciliations");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/payables" && x.PermissionCode == ErpPermissionCodes.FinanceManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "createErpAccountPayable");
@@ -109,7 +110,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var response = await new ListOpportunitiesQueryHandler(dbContext).Handle(
-            new ListOpportunitiesQuery("org-001", "env-dev", "open", "product", 0, 1),
+            new ListOpportunitiesQuery(" org-001 ", " env-dev ", "open", " product ", 0, 1),
             CancellationToken.None);
 
         Assert.Equal(1, response.Total);
@@ -130,7 +131,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
         await CreateQuotationAsync(dbContext, "QUO-003", "CUST-002", "SKU-FG-003", "org-other");
 
         var response = await new ListQuotationsQueryHandler(dbContext).Handle(
-            new ListQuotationsQuery("org-001", "env-dev", "Draft", "SKU-FG-002", 0, 1),
+            new ListQuotationsQuery(" org-001 ", " env-dev ", "Draft", " SKU-FG-002 ", 0, 1),
             CancellationToken.None);
 
         Assert.Equal(1, response.Total);
@@ -159,7 +160,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var response = await new ListDeliveryOrdersQueryHandler(dbContext).Handle(
-            new ListDeliveryOrdersQuery("org-001", "env-dev", "released", "CUST-002", 0, 1),
+            new ListDeliveryOrdersQuery(" org-001 ", " env-dev ", "released", " CUST-002 ", 0, 1),
             CancellationToken.None);
 
         Assert.Equal(1, response.Total);
@@ -207,7 +208,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var response = await new ListJournalVouchersQueryHandler(dbContext).Handle(
-            new ListJournalVouchersQuery("org-001", "env-dev", "posted", "6001", 0, 1),
+            new ListJournalVouchersQuery(" org-001 ", " env-dev ", "posted", " 6001 ", 0, 1),
             CancellationToken.None);
 
         Assert.Equal(1, response.Total);
@@ -216,6 +217,95 @@ public sealed class ErpSalesFinanceEndpointContractTests
         Assert.Equal("posted", item.Status);
         Assert.Equal(250m, item.TotalDebitAmount);
         Assert.Equal(250m, item.TotalCreditAmount);
+
+        // #3278 / S3：列表项的稳定 id 必须是聚合根自己的 Id，不是凭证号、不是常量、不是空串。
+        var persisted = await dbContext.JournalVouchers
+            .AsNoTracking()
+            .SingleAsync(x => x.VoucherNo == "JV-002", CancellationToken.None);
+        Assert.Equal(persisted.Id.ToString(), item.Id);
+        Assert.NotEqual(item.VoucherNo, item.Id);
+        // 值域必须是裸 Guid 文本（不是 "JournalVoucherId { ... }" 这类 record ToString 形状，也不是空串）。
+        Assert.True(Guid.TryParse(item.Id, out var parsedId) && parsedId != Guid.Empty, item.Id);
+    }
+
+    /// <summary>
+    /// #3278 / S3：S2 落库的 <c>SourceType</c> / <c>SourceNo</c> 必须并进凭证列表的 keyword 检索，
+    /// 否则「拿上游单号找凭证」在 UI 上永远查不到。
+    ///
+    /// ⚠️ 这里刻意**不**用 <c>FinanceVoucherFactory</c> 造数：那些工厂产出的凭证号形如
+    /// <c>JV-AP-{应付单号}</c>，上游单号本身就是凭证号的子串，<c>VoucherNo.Contains</c> 一条就能命中，
+    /// 于是撤掉来源列检索也照样绿（等价输入，零鉴别力）。本用例直接用
+    /// <see cref="JournalVoucher.Post"/> 让来源单号与凭证号**不互为子串**。
+    ///
+    /// <b>覆盖边界</b>：只钉住 <c>SourceType</c> / <c>SourceNo</c> 这两列。
+    /// 日后若再加第三个来源列而不改查询，这条用例不会红——这是已知的失效方向。
+    /// </summary>
+    [Fact]
+    public async Task List_journal_vouchers_query_matches_upstream_source_type_and_source_no()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var postingDate = new DateOnly(2026, 6, 1);
+        JournalVoucherLineDraft[] BalancedLines(string memo) =>
+        [
+            new JournalVoucherLineDraft("1401", 100m, 0m, memo),
+            new JournalVoucherLineDraft("2202", 0m, 100m, memo),
+        ];
+
+        // 凭证号与来源单号互不为子串：命中只可能来自 SourceNo 这一支。
+        dbContext.JournalVouchers.Add(JournalVoucher.Post(
+            "org-001", "env-dev", "JV-7001", postingDate, BalancedLines("ap"), JournalVoucherSourceType.AccountPayable, "UPSTREAM-7788"));
+        dbContext.JournalVouchers.Add(JournalVoucher.Post(
+            "org-001", "env-dev", "JV-7002", postingDate, BalancedLines("inv"), JournalVoucherSourceType.SupplierInvoice, "INV-9900"));
+        var legacy = JournalVoucher.Post(
+            "org-001", "env-dev", "JV-7003", postingDate, BalancedLines("legacy"), JournalVoucherSourceType.Manual, "JV-7003");
+        dbContext.JournalVouchers.Add(legacy);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        // 存量行：S2 裁定不回填，两列读回来是 null。查询必须能安全跨过它，而不是抛 NRE 或整行消失。
+        dbContext.Entry(legacy).Property(nameof(JournalVoucher.SourceType)).CurrentValue = null;
+        dbContext.Entry(legacy).Property(nameof(JournalVoucher.SourceNo)).CurrentValue = null;
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var probe = await dbContext.JournalVouchers.AsNoTracking().SingleAsync(x => x.VoucherNo == "JV-7003", CancellationToken.None);
+        Assert.Null(probe.SourceType);
+        Assert.Null(probe.SourceNo);
+
+        var bySourceNo = await new ListJournalVouchersQueryHandler(dbContext).Handle(
+            new ListJournalVouchersQuery("org-001", "env-dev", "posted", "UPSTREAM-7788", 0, 100),
+            CancellationToken.None);
+        var bySourceType = await new ListJournalVouchersQueryHandler(dbContext).Handle(
+            new ListJournalVouchersQuery("org-001", "env-dev", "posted", "SUPPINV", 0, 100),
+            CancellationToken.None);
+        var legacyByVoucherNo = await new ListJournalVouchersQueryHandler(dbContext).Handle(
+            new ListJournalVouchersQuery("org-001", "env-dev", "posted", "JV-7003", 0, 100),
+            CancellationToken.None);
+
+        // ⭐「关键字框支持**部分**匹配」是这个功能的用途本身，必须单独钉。
+        // 上面三个关键字都是**整值**，在这组输入上 Contains / == / StartsWith / EndsWith 四种匹配方式完全等价
+        // （复审换轴实测：把两支 Contains 换成任一种，全 502 条用例零失败）。
+        // 下面两个关键字取**严格中缀**（两端都截断），把这三种退化写法一并挡掉。
+        var partialSourceNo = await new ListJournalVouchersQueryHandler(dbContext).Handle(
+            new ListJournalVouchersQuery("org-001", "env-dev", "posted", "STREAM-77", 0, 100),
+            CancellationToken.None);
+        var partialSourceType = await new ListJournalVouchersQueryHandler(dbContext).Handle(
+            new ListJournalVouchersQuery("org-001", "env-dev", "posted", "PPIN", 0, 100),
+            CancellationToken.None);
+
+        Assert.Equal(1, bySourceNo.Total);
+        Assert.Equal("JV-7001", Assert.Single(bySourceNo.Items).VoucherNo);
+        Assert.Equal(1, bySourceType.Total);
+        Assert.Equal("JV-7002", Assert.Single(bySourceType.Items).VoucherNo);
+
+        // "STREAM-77" 是 "UPSTREAM-7788" 的严格中缀；"PPIN" 是 "SUPPINV" 的严格中缀。
+        Assert.Equal(1, partialSourceNo.Total);
+        Assert.Equal("JV-7001", Assert.Single(partialSourceNo.Items).VoucherNo);
+        Assert.Equal(1, partialSourceType.Total);
+        Assert.Equal("JV-7002", Assert.Single(partialSourceType.Items).VoucherNo);
+
+        // 两列为 null 的存量行：来源维度匹配不到（预期），但仍能按凭证号被查到。
+        Assert.Equal("JV-7003", Assert.Single(legacyByVoucherNo.Items).VoucherNo);
     }
 
     [Fact]
@@ -322,7 +412,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
         await CreateReleasedSalesOrderAsync(dbContext, "SO-003", "QUO-003", "CUS-002", "SKU-FG-003", "org-other");
 
         var response = await new ListSalesOrdersQueryHandler(dbContext).Handle(
-            new ListSalesOrdersQuery("org-001", "env-dev", "Released", "CUS-002", 0, 1),
+            new ListSalesOrdersQuery(" org-001 ", " env-dev ", "Released", " CUS-002 ", 0, 1),
             CancellationToken.None);
 
         Assert.Equal(1, response.Total);
@@ -604,13 +694,13 @@ public sealed class ErpSalesFinanceEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var payables = await new ListAccountPayablesQueryHandler(dbContext).Handle(
-            new ListAccountPayablesQuery("org-001", "env-dev", "open", "SUP-002", 0, 1),
+            new ListAccountPayablesQuery(" org-001 ", " env-dev ", "open", " SUP-002 ", 0, 1),
             CancellationToken.None);
         var receivables = await new ListAccountReceivablesQueryHandler(dbContext).Handle(
-            new ListAccountReceivablesQuery("org-001", "env-dev", "open", "CUS-001", 0, 10),
+            new ListAccountReceivablesQuery(" org-001 ", " env-dev ", "open", " CUS-001 ", 0, 10),
             CancellationToken.None);
         var costs = await new ListCostCandidatesQueryHandler(dbContext).Handle(
-            new ListCostCandidatesQuery("org-001", "env-dev", "pending", "production", 0, 10),
+            new ListCostCandidatesQuery(" org-001 ", " env-dev ", "pending", " production ", 0, 10),
             CancellationToken.None);
 
         Assert.Equal(1, payables.Total);

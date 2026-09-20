@@ -21,6 +21,7 @@ public sealed class WmsKnownExceptionMessageArchitectureTests
         Target($"{WmsWebRoot}/Application/Commands/WmsCommands.cs", "CreateInboundOrderCommandHandler", "Handle", 1),
         Target($"{WmsWebRoot}/Application/Commands/WmsCommands.cs", "CreatePutawayTaskCommandHandler", "Handle", 2),
         Target($"{WmsWebRoot}/Application/Commands/WmsCommands.cs", "CompleteInboundOrderCommandHandler", "Handle", 1),
+        Target($"{WmsWebRoot}/Application/Inventory/WmsPurchaseReceiptPostingRouteClient.cs", "HttpWmsPurchaseReceiptPostingRouteClient", "GetUnitCostsAsync", 4),
         Excluded($"{WmsWebRoot}/Application/Commands/WmsCommands.cs", "RetryInboundInventoryPostingCommandHandler", "Handle", 1, "异步/延迟库存过账，无同步公开 facade"),
         Target($"{WmsWebRoot}/Application/Commands/WmsCommands.cs", "CreatePickingTaskCommandHandler", "Handle", 3),
         Target($"{WmsWebRoot}/Application/Commands/WmsCommands.cs", "CreatePickingTaskCommandHandler", "ReserveInventoryForPickingAsync", 2),
@@ -71,7 +72,7 @@ public sealed class WmsKnownExceptionMessageArchitectureTests
 
         var expectedKeys = ExpectedSites.Select(site => site.Key).ToArray();
         Assert.Equal(expectedKeys.Length, expectedKeys.Distinct(StringComparer.Ordinal).Count());
-        Assert.Equal(31, ExpectedSites.Where(site => site.Kind == WmsKnownExceptionSiteKind.Target)
+        Assert.Equal(35, ExpectedSites.Where(site => site.Kind == WmsKnownExceptionSiteKind.Target)
             .Sum(site => site.DirectKnownExceptionCount));
         Assert.Equal(9, ExpectedSites.Where(site => site.Kind == WmsKnownExceptionSiteKind.Excluded)
             .Sum(site => site.DirectKnownExceptionCount));

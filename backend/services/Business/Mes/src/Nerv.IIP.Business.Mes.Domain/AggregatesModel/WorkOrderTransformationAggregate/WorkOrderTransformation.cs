@@ -129,14 +129,14 @@ public sealed class WorkOrderTransformation : Entity<WorkOrderTransformationId>,
         DateTimeOffset occurredAtUtc)
     {
         Id = new WorkOrderTransformationId(Guid.CreateVersion7());
-        OrganizationId = RequiredBounded(organizationId, nameof(organizationId), 100);
-        EnvironmentId = RequiredBounded(environmentId, nameof(environmentId), 100);
+        OrganizationId = DomainGuard.RequiredBounded(organizationId, nameof(organizationId), 100);
+        EnvironmentId = DomainGuard.RequiredBounded(environmentId, nameof(environmentId), 100);
         Type = type;
         Status = WorkOrderTransformationStatus.Applied;
-        IdempotencyKey = RequiredBounded(idempotencyKey, nameof(idempotencyKey), 150);
-        RequestFingerprint = RequiredBounded(requestFingerprint, nameof(requestFingerprint), 128);
-        ActorId = RequiredBounded(actorId, nameof(actorId), 200);
-        Reason = RequiredBounded(reason, nameof(reason), 500);
+        IdempotencyKey = DomainGuard.RequiredBounded(idempotencyKey, nameof(idempotencyKey), 150);
+        RequestFingerprint = DomainGuard.RequiredBounded(requestFingerprint, nameof(requestFingerprint), 128);
+        ActorId = DomainGuard.RequiredBounded(actorId, nameof(actorId), 200);
+        Reason = DomainGuard.RequiredBounded(reason, nameof(reason), 500);
         OccurredAtUtc = occurredAtUtc.ToUniversalTime();
     }
 
@@ -269,7 +269,7 @@ public sealed class WorkOrderTransformation : Entity<WorkOrderTransformationId>,
 
     public void EnsureReplayMatches(string requestFingerprint)
     {
-        var normalizedFingerprint = RequiredBounded(requestFingerprint, nameof(requestFingerprint), 128);
+        var normalizedFingerprint = DomainGuard.RequiredBounded(requestFingerprint, nameof(requestFingerprint), 128);
         if (!string.Equals(RequestFingerprint, normalizedFingerprint, StringComparison.Ordinal))
         {
             throw new InvalidOperationException("相同幂等键不能复用不同的拆分或合并请求载荷。");
@@ -291,10 +291,10 @@ public sealed class WorkOrderTransformation : Entity<WorkOrderTransformationId>,
         WorkOrderTransformationWorkOrderSnapshot snapshot,
         string role)
     {
-        RequiredBounded(snapshot.WorkOrderId, $"{role}.workOrderId", 100);
-        RequiredBounded(snapshot.SkuId, $"{role}.skuId", 100);
-        RequiredBounded(snapshot.Status, $"{role}.status", 30);
-        RequiredBounded(snapshot.UomCode ?? string.Empty, $"{role}.uomCode", 50);
+        DomainGuard.RequiredBounded(snapshot.WorkOrderId, $"{role}.workOrderId", 100);
+        DomainGuard.RequiredBounded(snapshot.SkuId, $"{role}.skuId", 100);
+        DomainGuard.RequiredBounded(snapshot.Status, $"{role}.status", 30);
+        DomainGuard.RequiredBounded(snapshot.UomCode ?? string.Empty, $"{role}.uomCode", 50);
         DomainGuard.Positive(snapshot.Quantity, $"{role}.quantity");
         if (snapshot.Version <= 0)
         {
@@ -303,7 +303,7 @@ public sealed class WorkOrderTransformation : Entity<WorkOrderTransformationId>,
 
         if (snapshot.ProductionVersionId is not null)
         {
-            RequiredBounded(snapshot.ProductionVersionId, $"{role}.productionVersionId", 100);
+            DomainGuard.RequiredBounded(snapshot.ProductionVersionId, $"{role}.productionVersionId", 100);
         }
     }
 
@@ -336,8 +336,8 @@ public sealed class WorkOrderTransformation : Entity<WorkOrderTransformationId>,
             throw new InvalidOperationException($"{operation}只能处理同 SKU 工单。");
         }
 
-        var sourceUom = RequiredBounded(source.UomCode ?? string.Empty, "source.uomCode", 50);
-        var targetUom = RequiredBounded(target.UomCode ?? string.Empty, "target.uomCode", 50);
+        var sourceUom = DomainGuard.RequiredBounded(source.UomCode ?? string.Empty, "source.uomCode", 50);
+        var targetUom = DomainGuard.RequiredBounded(target.UomCode ?? string.Empty, "target.uomCode", 50);
         if (!string.Equals(sourceUom, targetUom, StringComparison.Ordinal))
         {
             throw new InvalidOperationException($"{operation}要求所有工单使用相同 UOM。");
@@ -356,13 +356,5 @@ public sealed class WorkOrderTransformation : Entity<WorkOrderTransformationId>,
             throw new InvalidOperationException(
                 $"{operation}数量不守恒：源数量 {sourceQuantity:0.######}，目标数量 {targetQuantity:0.######}。");
         }
-    }
-
-    private static string RequiredBounded(string value, string parameterName, int maxLength)
-    {
-        var normalized = DomainGuard.Required(value, parameterName);
-        return normalized.Length <= maxLength
-            ? normalized
-            : throw new ArgumentOutOfRangeException(parameterName, $"Value cannot exceed {maxLength} characters.");
     }
 }

@@ -190,7 +190,7 @@ const versionCells = computed<NvMetricStripCell[]>(() => [
   },
 ])
 
-const listErrorMessage = computed(() => formatError(productionVersionsError.value))
+const listErrorMessage = computed(() => inlineErrorMessage(productionVersionsError.value))
 
 function formatLotRange(min?: number | null, max?: number | null) {
   if (min == null && max == null) return '不限'
@@ -421,10 +421,6 @@ async function runResolve() {
   } catch (error) {
     notifyOperationFailure('解析生产版本失败', error, '解析生产版本失败，请稍后重试。')
   }
-}
-
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 </script>
 

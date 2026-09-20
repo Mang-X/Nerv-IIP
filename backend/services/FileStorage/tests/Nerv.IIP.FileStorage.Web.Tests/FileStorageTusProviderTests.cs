@@ -8,13 +8,16 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Time.Testing;
 using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.FileStorage.Infrastructure;
+using Nerv.IIP.FileStorage.Infrastructure.Records;
 using Nerv.IIP.FileStorage.Web.Application.Files;
 using Nerv.IIP.FileStorage.Web.Application.Files.Tus;
 using Nerv.IIP.FileStorage.Web.Application.Files.UploadProviders;
 using Nerv.IIP.ServiceAuth;
+using FileStorageFileStatus = Nerv.IIP.FileStorage.Domain.FileStorageFileStatus;
 
 namespace Nerv.IIP.FileStorage.Web.Tests;
 
@@ -40,27 +43,64 @@ public sealed class FileStorageTusProviderTests
     [Fact]
     public async Task CreateUploadSession_WithTusConfiguration_ReturnsTusUploadInstructions()
     {
-        await using var factory = CreateFactoryWithTusProvider();
+        var rootPath = CreateTempDirectory();
+        try
+        {
+            await using var factory = CreateFactoryWithTusProvider(rootPath);
+            var client = CreateInternalServiceClient(factory);
+
+            var response = await client.PostAsJsonAsync("/api/files/v1/upload-sessions", CreateUploadRequest());
+
+            response.EnsureSuccessStatusCode();
+            var created = await response.Content.ReadFromJsonAsync<CreateUploadSessionResponse>();
+            Assert.NotNull(created);
+            Assert.Equal("tus", created.Provider);
+            Assert.Equal("tus", created.UploadMode);
+            Assert.Equal($"/api/files/v1/tus/{created.UploadSessionId}", created.Upload.Url);
+            Assert.Equal("tus", created.Upload.Headers["x-nerv-upload-mode"]);
+            Assert.DoesNotContain(created.Upload.Headers, header => header.Key.Contains("object", StringComparison.OrdinalIgnoreCase));
+            AssertObjectKeyIsNotExposed(created);
+        }
+        finally
+        {
+            DeleteTempDirectory(rootPath);
+        }
+    }
+
+    /// <summary>
+    /// server-proxy 部署没有本地字节面：生产注册的提交存储报告“最终存储动作从未开始”，complete 返回 503 且会话回到 open。
+    /// 这是 provider 切换对既有 server-proxy 部署“行为不变”的唯一行为承担。
+    /// </summary>
+    [Fact]
+    public async Task CompleteUploadSession_ServerProxyOnProductionCommitStorage_ReturnsServiceUnavailableAndReopensSession()
+    {
+        await using var factory = new FileStorageWebApplicationFactory();
         var client = CreateInternalServiceClient(factory);
+        var createResponse = await client.PostAsJsonAsync("/api/files/v1/upload-sessions", CreateUploadRequest());
+        createResponse.EnsureSuccessStatusCode();
+        var created = (await createResponse.Content.ReadFromJsonAsync<CreateUploadSessionResponse>())!;
+        Assert.Equal("server-proxy", created.Provider);
 
-        var response = await client.PostAsJsonAsync("/api/files/v1/upload-sessions", CreateUploadRequest());
+        var completeResponse = await client.PostAsJsonAsync(
+            $"/api/files/v1/upload-sessions/{created.UploadSessionId}/complete",
+            new CompleteUploadSessionRequest("org-001", "prod", "application-package", "sha256:test", 4096));
 
-        response.EnsureSuccessStatusCode();
-        var created = await response.Content.ReadFromJsonAsync<CreateUploadSessionResponse>();
-        Assert.NotNull(created);
-        Assert.Equal("tus", created.Provider);
-        Assert.Equal("tus", created.UploadMode);
-        Assert.Equal($"/api/files/v1/tus/{created.UploadSessionId}", created.Upload.Url);
-        Assert.Equal("tus", created.Upload.Headers["x-nerv-upload-mode"]);
-        Assert.DoesNotContain(created.Upload.Headers, header => header.Key.Contains("object", StringComparison.OrdinalIgnoreCase));
-        AssertObjectKeyIsNotExposed(created);
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, (int)completeResponse.StatusCode);
+        Assert.Contains("最终存储提交暂不可用", await completeResponse.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        using var scope = factory.Services.CreateScope();
+        var session = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().UploadSessions
+            .SingleAsync(x => x.UploadSessionId == created.UploadSessionId);
+        // 承重的是下面这条状态断言，不是上面的 503：删掉 TryGet 分支后会走 NRE → RetryableUnavailable，
+        // 状态码仍是 503，只有「会话回到 open」能把那个变异杀掉。改这条前先想清楚防线还剩什么。
+        Assert.Equal(UploadSessionState.Open, session.State);
+        Assert.Null(session.CommitId);
     }
 
     [Fact]
     public async Task CompleteUploadSession_TusStoreUnavailable_ReturnsServiceUnavailable()
     {
         await using var dbContext = CreateDbContext();
-        var service = new PostgreSqlFileStorageService(
+        var service = FileStorageServiceTestFactory.Create(
             dbContext,
             new TusUploadProvider(),
             configuration: FileStorageTestConfiguration.Default);
@@ -73,7 +113,7 @@ public sealed class FileStorageTusProviderTests
 
         Assert.Equal(StatusCodes.Status503ServiceUnavailable, result.StatusCode);
         Assert.Null(result.Value);
-        Assert.Equal("Tus upload store is unavailable.", result.Error?.Message);
+        Assert.Equal("Tus 上传存储暂不可用。", result.Error?.Message);
     }
 
     [Fact]
@@ -98,6 +138,7 @@ public sealed class FileStorageTusProviderTests
             patchRequest.Headers.Add("Tus-Resumable", "1.0.0");
             patchRequest.Headers.Add("Upload-Offset", "0");
             patchRequest.Content.Headers.ContentType = new("application/offset+octet-stream");
+            AddDefaultTransferHeaders(patchRequest);
 
             var patchResponse = await client.SendAsync(patchRequest);
 
@@ -127,6 +168,7 @@ public sealed class FileStorageTusProviderTests
             };
             patchRequest.Headers.Add("Upload-Offset", "0");
             patchRequest.Content.Headers.ContentType = new("application/offset+octet-stream");
+            AddDefaultTransferHeaders(patchRequest);
 
             var response = await client.SendAsync(patchRequest);
 
@@ -154,6 +196,7 @@ public sealed class FileStorageTusProviderTests
             patchRequest.Headers.Add("Tus-Resumable", "1.0.0");
             patchRequest.Headers.Add("Upload-Offset", "0");
             patchRequest.Content.Headers.ContentType = new("application/octet-stream");
+            AddDefaultTransferHeaders(patchRequest);
 
             var response = await client.SendAsync(patchRequest);
 
@@ -309,7 +352,7 @@ public sealed class FileStorageTusProviderTests
     }
 
     [Fact]
-    public async Task DownloadGrantContentEndpoint_AvailableFileWithTenantHeaders_ReturnsUploadedBytesOnce()
+    public async Task DownloadGrantContentEndpoint_VerifiedSeam_ReturnsUploadedBytesOnce()
     {
         var rootPath = CreateTempDirectory();
         try
@@ -334,17 +377,58 @@ public sealed class FileStorageTusProviderTests
 
             using var firstRequest = new HttpRequestMessage(HttpMethod.Get, grant.Download.Url);
             AddTransferHeaders(firstRequest, grant.Download.Headers);
-
             var first = await client.SendAsync(firstRequest);
-
             first.EnsureSuccessStatusCode();
             Assert.Equal(uploadedBytes, await first.Content.ReadAsByteArrayAsync());
 
             using var secondRequest = new HttpRequestMessage(HttpMethod.Get, grant.Download.Url);
             AddTransferHeaders(secondRequest, grant.Download.Headers);
             var second = await client.SendAsync(secondRequest);
-
             Assert.Equal(StatusCodes.Status404NotFound, (int)second.StatusCode);
+        }
+        finally
+        {
+            DeleteTempDirectory(rootPath);
+        }
+    }
+
+    /// <summary>
+    /// 这条用例不替换任何 <see cref="IUploadCommitStorage"/>：它跑在 Program.cs 的生产注册上，
+    /// 断言的 checksum 只有真的读过本地 tus 盘上的字节才算得出来。
+    /// </summary>
+    [Fact]
+    public async Task CompleteUploadSession_OnProductionCommitStorageRegistration_PersistsStoredFileFromLocalTusBytes()
+    {
+        var rootPath = CreateTempDirectory();
+        try
+        {
+            await using var factory = CreateFactoryWithTusProvider(rootPath);
+            var client = CreateInternalServiceClient(factory);
+            var uploadedBytes = Encoding.UTF8.GetBytes("production-assembly");
+            var expectedChecksum =
+                $"sha256:{Convert.ToHexString(SHA256.HashData(uploadedBytes)).ToLowerInvariant()}";
+            var created = await CreateTusUploadSessionAsync(
+                client,
+                expectedSizeBytes: uploadedBytes.Length,
+                request: CreateTextAttachmentRequest());
+            await PatchTusBytesAsync(client, created.Upload.Url, offset: 0, uploadedBytes);
+
+            var completeResponse = await client.PostAsJsonAsync(
+                $"/api/files/v1/upload-sessions/{created.UploadSessionId}/complete",
+                new CompleteUploadSessionRequest("org-001", "prod", "attachment", null, uploadedBytes.Length));
+
+            Assert.Equal(StatusCodes.Status200OK, (int)completeResponse.StatusCode);
+            using var scope = factory.Services.CreateScope();
+            Assert.IsType<LocalTusUploadCommitStorage>(
+                scope.ServiceProvider.GetRequiredService<IUploadCommitStorage>());
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var stored = await dbContext.StoredFiles.SingleAsync(x => x.FileId == created.FileId);
+            Assert.Equal(uploadedBytes.Length, stored.SizeBytes);
+            Assert.Equal(expectedChecksum, stored.Checksum);
+            Assert.Equal(FileStorageFileStatus.Available, stored.Status);
+            var session = await dbContext.UploadSessions.SingleAsync(
+                x => x.UploadSessionId == created.UploadSessionId);
+            Assert.Equal(UploadSessionState.Completed, session.State);
         }
         finally
         {
@@ -376,7 +460,7 @@ public sealed class FileStorageTusProviderTests
     }
 
     [Fact]
-    public async Task TusUploadEndpoint_CompleteWithChecksumMismatch_ReturnsBadRequest()
+    public async Task TusUploadEndpoint_VerifiedChecksumDifferentFromIntent_FailsClosed()
     {
         var rootPath = CreateTempDirectory();
         try
@@ -384,12 +468,16 @@ public sealed class FileStorageTusProviderTests
             await using var factory = CreateFactoryWithTusProvider(rootPath);
             var client = CreateInternalServiceClient(factory);
             var bytes = Encoding.UTF8.GetBytes("hello");
-            var created = await CreateTusUploadSessionAsync(client, expectedSizeBytes: bytes.Length);
+            var expectedChecksum = $"sha256:{new string('d', 64)}";
+            var created = await CreateTusUploadSessionAsync(
+                client,
+                expectedSizeBytes: bytes.Length,
+                request: CreateUploadRequest() with { Checksum = expectedChecksum });
             await PatchTusBytesAsync(client, created.Upload.Url, offset: 0, bytes);
 
             var completeResponse = await client.PostAsJsonAsync(
                 $"/api/files/v1/upload-sessions/{created.UploadSessionId}/complete",
-                new CompleteUploadSessionRequest("org-001", "prod", "application-package", "sha256:bad", bytes.Length));
+                new CompleteUploadSessionRequest("org-001", "prod", "application-package", expectedChecksum, bytes.Length));
 
             Assert.Equal(StatusCodes.Status400BadRequest, (int)completeResponse.StatusCode);
         }
@@ -400,7 +488,7 @@ public sealed class FileStorageTusProviderTests
     }
 
     [Fact]
-    public async Task DownloadGrantContentEndpoint_MissingLocalBytes_ReturnsNotFound()
+    public async Task DownloadGrantContentEndpoint_VerifiedSeamThenMissingLocalBytes_ReturnsNotFound()
     {
         var rootPath = CreateTempDirectory();
         try
@@ -428,7 +516,6 @@ public sealed class FileStorageTusProviderTests
             Assert.NotNull(grant);
 
             var downloadResponse = await client.GetAsync(grant.Download.Url);
-
             Assert.Equal(StatusCodes.Status404NotFound, (int)downloadResponse.StatusCode);
         }
         finally
@@ -457,10 +544,134 @@ public sealed class FileStorageTusProviderTests
     }
 
     [Fact]
+    public async Task TusUploadEndpoint_CrossOrganizationAccess_ReturnsNotFound()
+    {
+        var rootPath = CreateTempDirectory();
+        try
+        {
+            await using var factory = CreateFactoryWithTusProvider(rootPath);
+            var client = CreateInternalServiceClient(factory);
+            var created = await CreateTusUploadSessionAsync(client);
+            await PatchTusBytesAsync(client, created.Upload.Url, offset: 0, Encoding.UTF8.GetBytes("hello"));
+
+            // Attempt to access with different organization
+            using var crossOrgHeadRequest = new HttpRequestMessage(HttpMethod.Head, created.Upload.Url);
+            crossOrgHeadRequest.Headers.Add(FileStorageTransferHeaders.OrganizationId, "org-different");
+            crossOrgHeadRequest.Headers.Add(FileStorageTransferHeaders.EnvironmentId, "prod");
+            var crossOrgHeadResponse = await client.SendAsync(crossOrgHeadRequest);
+
+            Assert.Equal(StatusCodes.Status404NotFound, (int)crossOrgHeadResponse.StatusCode);
+
+            // Attempt to patch with different environment
+            using var crossEnvPatchRequest = new HttpRequestMessage(HttpMethod.Patch, created.Upload.Url)
+            {
+                Content = new ByteArrayContent(Encoding.UTF8.GetBytes("world"))
+            };
+            crossEnvPatchRequest.Headers.Add("Tus-Resumable", "1.0.0");
+            crossEnvPatchRequest.Headers.Add("Upload-Offset", "5");
+            crossEnvPatchRequest.Content.Headers.ContentType = new("application/offset+octet-stream");
+            crossEnvPatchRequest.Headers.Add(FileStorageTransferHeaders.OrganizationId, "org-001");
+            crossEnvPatchRequest.Headers.Add(FileStorageTransferHeaders.EnvironmentId, "staging");
+            var crossEnvPatchResponse = await client.SendAsync(crossEnvPatchRequest);
+
+            Assert.Equal(StatusCodes.Status404NotFound, (int)crossEnvPatchResponse.StatusCode);
+
+            // Verify original session is still accessible with correct headers
+            var validHeadResponse = await SendTusHeadAsync(client, created.Upload.Url);
+            Assert.True(validHeadResponse.IsSuccessStatusCode);
+            Assert.Equal(5, GetUploadOffset(validHeadResponse));
+        }
+        finally
+        {
+            DeleteTempDirectory(rootPath);
+        }
+    }
+
+    [Fact]
+    public async Task TusUploadEndpoint_MissingOrganizationHeader_ReturnsNotFound()
+    {
+        var rootPath = CreateTempDirectory();
+        try
+        {
+            await using var factory = CreateFactoryWithTusProvider(rootPath);
+            var client = CreateInternalServiceClient(factory);
+            var created = await CreateTusUploadSessionAsync(client);
+
+            using var headRequest = new HttpRequestMessage(HttpMethod.Head, created.Upload.Url);
+            headRequest.Headers.Add(FileStorageTransferHeaders.EnvironmentId, "prod");
+            var headResponse = await client.SendAsync(headRequest);
+
+            Assert.Equal(StatusCodes.Status404NotFound, (int)headResponse.StatusCode);
+        }
+        finally
+        {
+            DeleteTempDirectory(rootPath);
+        }
+    }
+
+    [Fact]
+    public async Task TusUploadEndpoint_MissingEnvironmentHeader_ReturnsNotFound()
+    {
+        var rootPath = CreateTempDirectory();
+        try
+        {
+            await using var factory = CreateFactoryWithTusProvider(rootPath);
+            var client = CreateInternalServiceClient(factory);
+            var created = await CreateTusUploadSessionAsync(client);
+
+            using var patchRequest = new HttpRequestMessage(HttpMethod.Patch, created.Upload.Url)
+            {
+                Content = new ByteArrayContent(Encoding.UTF8.GetBytes("hello"))
+            };
+            patchRequest.Headers.Add("Tus-Resumable", "1.0.0");
+            patchRequest.Headers.Add("Upload-Offset", "0");
+            patchRequest.Headers.Add(FileStorageTransferHeaders.OrganizationId, "org-001");
+            patchRequest.Content.Headers.ContentType = new("application/offset+octet-stream");
+            var patchResponse = await client.SendAsync(patchRequest);
+
+            Assert.Equal(StatusCodes.Status404NotFound, (int)patchResponse.StatusCode);
+        }
+        finally
+        {
+            DeleteTempDirectory(rootPath);
+        }
+    }
+
+    [Fact]
+    public async Task TusUploadEndpoint_CaseSensitiveOrganizationAndEnvironment_RejectsUppercase()
+    {
+        var rootPath = CreateTempDirectory();
+        try
+        {
+            await using var factory = CreateFactoryWithTusProvider(rootPath);
+            var client = CreateInternalServiceClient(factory);
+            var created = await CreateTusUploadSessionAsync(client);
+            await PatchTusBytesAsync(client, created.Upload.Url, offset: 0, Encoding.UTF8.GetBytes("hello"));
+
+            // Attempt to access with uppercase organization and environment
+            using var caseInsensitiveHeadRequest = new HttpRequestMessage(HttpMethod.Head, created.Upload.Url);
+            caseInsensitiveHeadRequest.Headers.Add(FileStorageTransferHeaders.OrganizationId, "ORG-001");
+            caseInsensitiveHeadRequest.Headers.Add(FileStorageTransferHeaders.EnvironmentId, "PROD");
+            var caseInsensitiveHeadResponse = await client.SendAsync(caseInsensitiveHeadRequest);
+
+            Assert.Equal(StatusCodes.Status404NotFound, (int)caseInsensitiveHeadResponse.StatusCode);
+
+            // Verify original session is still accessible with correct case
+            var validHeadResponse = await SendTusHeadAsync(client, created.Upload.Url);
+            Assert.True(validHeadResponse.IsSuccessStatusCode);
+            Assert.Equal(5, GetUploadOffset(validHeadResponse));
+        }
+        finally
+        {
+            DeleteTempDirectory(rootPath);
+        }
+    }
+
+    [Fact]
     public async Task PostgreSqlCreateUploadSession_WithTusProvider_PersistsTusProvider()
     {
         await using var dbContext = CreateDbContext();
-        var service = new PostgreSqlFileStorageService(
+        var service = FileStorageServiceTestFactory.Create(
             dbContext,
             new TusUploadProvider(),
             configuration: FileStorageTestConfiguration.Default);
@@ -556,7 +767,11 @@ public sealed class FileStorageTusProviderTests
     {
         var response = await client.PostAsJsonAsync(
             "/api/files/v1/upload-sessions",
-            (request ?? CreateUploadRequest()) with { ExpectedSizeBytes = expectedSizeBytes, Checksum = null });
+            (request ?? CreateUploadRequest()) with
+            {
+                ExpectedSizeBytes = expectedSizeBytes,
+                Checksum = request?.Checksum
+            });
         Assert.True(
             response.IsSuccessStatusCode,
             $"Upload session creation returned {(int)response.StatusCode}: {await response.Content.ReadAsStringAsync()}");
@@ -579,7 +794,14 @@ public sealed class FileStorageTusProviderTests
         request.Headers.Add("Tus-Resumable", "1.0.0");
         request.Headers.Add("Upload-Offset", offset.ToString(System.Globalization.CultureInfo.InvariantCulture));
         request.Content.Headers.ContentType = new("application/offset+octet-stream");
+        AddDefaultTransferHeaders(request);
         return request;
+    }
+
+    private static void AddDefaultTransferHeaders(HttpRequestMessage request)
+    {
+        request.Headers.TryAddWithoutValidation(FileStorageTransferHeaders.OrganizationId, "org-001");
+        request.Headers.TryAddWithoutValidation(FileStorageTransferHeaders.EnvironmentId, "prod");
     }
 
     private static void AddTransferHeaders(HttpRequestMessage request, IReadOnlyDictionary<string, string> headers)
@@ -604,7 +826,9 @@ public sealed class FileStorageTusProviderTests
 
     private static Task<HttpResponseMessage> SendTusHeadAsync(HttpClient client, string url)
     {
-        return client.SendAsync(new HttpRequestMessage(HttpMethod.Head, url));
+        var request = new HttpRequestMessage(HttpMethod.Head, url);
+        AddDefaultTransferHeaders(request);
+        return client.SendAsync(request);
     }
 
     private static long GetUploadOffset(HttpResponseMessage response)

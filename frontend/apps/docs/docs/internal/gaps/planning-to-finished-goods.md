@@ -11,7 +11,7 @@
 - `backend/services/Business/Mes/`
 - `backend/services/Business/Inventory/`
 - `backend/services/Business/Wms/`
-- `docs/architecture/business-platform-domain-architecture.md`
+- `docs/architecture/business/domain-architecture.md`
 
 ## 建议 Issue 标题
 

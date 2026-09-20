@@ -67,6 +67,20 @@ param(
 
     [string] $MaterialIssueLineSideLocationCode,
 
+    [string] $BarcodeLabelPrinterId,
+
+    [string] $BarcodeLabelPrinterHost,
+
+    [int] $BarcodeLabelPrinterPort,
+
+    [int] $BarcodeLabelPrinterConnectTimeoutSeconds,
+
+    [int] $BarcodeLabelPrinterWriteTimeoutSeconds,
+
+    [int] $BarcodeLabelPrinterDpi,
+
+    [string] $BarcodeLabelPrinterCapabilities,
+
     [switch] $UsePostgreSql,
 
     [switch] $AutoMigrate
@@ -143,6 +157,34 @@ if ((-not [string]::Equals([string]($EnvironmentName), [string]("Development"), 
 
     if ([string]::IsNullOrWhiteSpace($CorsAllowedOrigins)) {
         throw "-CorsAllowedOrigins is required outside Development."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($BarcodeLabelPrinterId)) {
+        throw "-BarcodeLabelPrinterId is required outside Development."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($BarcodeLabelPrinterHost)) {
+        throw "-BarcodeLabelPrinterHost is required outside Development."
+    }
+
+    if ($BarcodeLabelPrinterPort -lt 1 -or $BarcodeLabelPrinterPort -gt 65535) {
+        throw "-BarcodeLabelPrinterPort must be between 1 and 65535 outside Development."
+    }
+
+    if ($BarcodeLabelPrinterConnectTimeoutSeconds -le 0) {
+        throw "-BarcodeLabelPrinterConnectTimeoutSeconds must be positive outside Development."
+    }
+
+    if ($BarcodeLabelPrinterWriteTimeoutSeconds -le 0) {
+        throw "-BarcodeLabelPrinterWriteTimeoutSeconds must be positive outside Development."
+    }
+
+    if ($BarcodeLabelPrinterDpi -notin @(203, 300, 600)) {
+        throw "-BarcodeLabelPrinterDpi must be 203, 300, or 600 outside Development."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($BarcodeLabelPrinterCapabilities)) {
+        throw "-BarcodeLabelPrinterCapabilities is required outside Development."
     }
 }
 
@@ -244,7 +286,8 @@ if (-not [string]::IsNullOrWhiteSpace($CorsAllowedOrigins)) {
     $environment["Security__Cors__AllowedOrigins"] = $CorsAllowedOrigins
 }
 
-# 仓储站点/库位：AppHost 只在 Development 回落到主线产品位置词汇（SITE-001 + loc-*），非 Development
+# 仓储站点/库位：AppHost 只在 Development 回落（leader-demo profile 回落 SITE-001 + WH-WB-*，
+# 普通 Development 回落 SITE-001 + loc-*，#3137），非 Development
 # 必须由这里显式给出真实值，否则相关键根本不下发，MES 线边收料与 WMS 领料按各自 fail-closed
 # 路径显式失败（#2008）。键名与服务读取的配置节同名。
 if (-not [string]::IsNullOrWhiteSpace($InventorySiteCode)) {
@@ -275,6 +318,34 @@ if (-not [string]::IsNullOrWhiteSpace($MaterialIssueSourceLocationCode)) {
 
 if (-not [string]::IsNullOrWhiteSpace($MaterialIssueLineSideLocationCode)) {
     $environment["MaterialIssue__LineSideLocationCode"] = $MaterialIssueLineSideLocationCode
+}
+
+if (-not [string]::IsNullOrWhiteSpace($BarcodeLabelPrinterId)) {
+    $environment["Parameters__barcode-label-printer-id"] = $BarcodeLabelPrinterId
+}
+
+if (-not [string]::IsNullOrWhiteSpace($BarcodeLabelPrinterHost)) {
+    $environment["Parameters__barcode-label-printer-host"] = $BarcodeLabelPrinterHost
+}
+
+if ($BarcodeLabelPrinterPort -gt 0) {
+    $environment["Parameters__barcode-label-printer-port"] = $BarcodeLabelPrinterPort.ToString([Globalization.CultureInfo]::InvariantCulture)
+}
+
+if ($BarcodeLabelPrinterConnectTimeoutSeconds -gt 0) {
+    $environment["Parameters__barcode-label-printer-connect-timeout-seconds"] = $BarcodeLabelPrinterConnectTimeoutSeconds.ToString([Globalization.CultureInfo]::InvariantCulture)
+}
+
+if ($BarcodeLabelPrinterWriteTimeoutSeconds -gt 0) {
+    $environment["Parameters__barcode-label-printer-write-timeout-seconds"] = $BarcodeLabelPrinterWriteTimeoutSeconds.ToString([Globalization.CultureInfo]::InvariantCulture)
+}
+
+if ($BarcodeLabelPrinterDpi -gt 0) {
+    $environment["Parameters__barcode-label-printer-dpi"] = $BarcodeLabelPrinterDpi.ToString([Globalization.CultureInfo]::InvariantCulture)
+}
+
+if (-not [string]::IsNullOrWhiteSpace($BarcodeLabelPrinterCapabilities)) {
+    $environment["Parameters__barcode-label-printer-capabilities"] = $BarcodeLabelPrinterCapabilities
 }
 
 $appHostProject = "infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj"

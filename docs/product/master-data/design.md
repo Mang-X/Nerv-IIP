@@ -3,9 +3,9 @@
 > 状态：草案 v1（PM + 业务领域 + UI/UX 多视角讨论综合，基于代码事实）
 > 适用：`frontend/apps/business-console` 的「基础数据」域，后端 `Business/MasterData` 服务 + `BusinessGateway` master-data facade。
 > 关联文档：
-> - 字段/治理矩阵：[`business-master-data-field-matrix.md`](./business-master-data-field-matrix.md)
-> - 流程制造补充：[`business-master-data-process-manufacturing-supplement.md`](./business-master-data-process-manufacturing-supplement.md)
-> - 导航总图：[`frontend-navigation-map.md`](./frontend-navigation-map.md)
+> - 字段/治理矩阵：[字段事实归属](../../architecture/business/master-data-field-ownership.md) / [变更审批与审计](../../governance/data/master-data-ownership.md)
+> - 流程制造补充：[当前架构](../../architecture/business/master-data-process-manufacturing.md)
+> - 导航总图：[产品 IA](../navigation.md) / [route、page、permission 与 facade 生产者索引](../../reference/frontend/navigation-map.md)
 >
 > 本文是「产品业务文档」基础，后续基础数据模块重构以本文为准。
 
@@ -34,7 +34,7 @@
 - **生命周期完整**：主数据价值在「能改、能停用、能追溯版本」，不止新增。
 - **诚实暴露后端边界**：后端没有的能力/字段，前端**不伪造、不猜**，用禁用入口 + 说明占位。
 
-**进（In Scope）**：物料与产品（Sku）；工厂/产线/工作中心/设备（Site/ProductionLine/WorkCenter/DeviceAsset）；客户/供应商/承运商（BusinessPartner）；字典与受控值（ReferenceDataCode）；计量单位与换算（UnitOfMeasure/UomConversion）；组织与排班（Department/Team/Shift/WorkCalendar/PersonnelSkill）；员工主数据（Worker——工号/姓名/部门/岗位/在岗状态，是班组成员、人员技能与 MES 派工共同的人员事实源）。
+**进（In Scope）**：物料与产品（Sku）；工厂/产线/工作中心/设备（Site/ProductionLine/WorkCenter/DeviceAsset）；工装与模具（ToolingAsset，含适用工作中心/SKU、寿命、使用累计与专用状态）；客户/供应商/承运商（BusinessPartner）；字典与受控值（ReferenceDataCode）；计量单位与换算（UnitOfMeasure/UomConversion）；组织与排班（Department/Team/Shift/WorkCalendar/PersonnelSkill）；员工主数据（Worker——工号/姓名/部门/岗位/在岗状态，是班组成员、人员技能与 MES 派工共同的人员事实源）。
 
 **不进（Non-Goals）**：BOM/工艺路线/工序版本（属产品工程，`/master-data/process` 归 engineering，不动）；库存余额/库位实物（inventory/wms）；价格/合同/账期（ERP）；用户/权限（平台管理）；主数据审批工作流、数据质量评分、跨组织主数据治理（远期）。
 
@@ -87,7 +87,7 @@ SKU 持有 6 个 UoM code（基本/库存/采购/销售/制造），创建时默
 
 > **修订 v2（2026-06-10）：废弃"用平铺 Tab 切层级/塞杂物抽屉"。** 经成熟系统对标（SAP / Oracle EBS / D365 / 主流 MES）+ PM/业务/UX 三视角重审,确立**让页型匹配关系本质**:层级关系上**树**、归属关系**列表-详情挂父**、多对多用**矩阵**、二级受控值用**主从**、单主体多角色用**主体+角色叠加**。原 §3 的「工厂与产线/组织与日历用页内 Tab 切多实体」**违反 AGENTS §1.5-A.2,作废**。配套 UX 模板:`frontend/DESIGN/patterns/pages/master-data-templates.md`。
 
-### 3.1 修订后导航树（9 页 / 3 分组，侧栏带分组标签）
+### 3.1 修订后导航树（侧栏按 3 组组织）
 
 ```
 基础数据 (master-data)
@@ -95,7 +95,8 @@ SKU 持有 6 个 UoM code（基本/库存/采购/销售/制造），创建时默
 ├── 物料与产品    /master-data/skus           [Sku]            列表-重详情(分组表单)
 ├── 业务伙伴      /master-data/partners       [BusinessPartner] 单主体+多角色(对标 S/4 BP)
 ├── 工厂结构      /master-data/facilities     [Site/Workshop/Line/WorkCenter] 左树+右详情+就地建子级
-└── 设备台账      /master-data/devices        [DeviceAsset]    平表(检索维度多,工厂结构树第5层下钻出口)
+├── 设备台账      /master-data/devices        [DeviceAsset]    平表(检索维度多,工厂结构树第5层下钻出口)
+└── 工装与模具    /master-data/tooling        [ToolingAsset]   服务端分页维护台(寿命/状态/适用范围)
 【组织与排班】
 ├── 员工          /master-data/workers        [Worker 平表(工号/姓名/部门/班组/技能/在岗状态)]
 ├── 组织与班组    /master-data/organization   [Department 树 + Team 列表-详情(成员主从)]
@@ -116,6 +117,7 @@ SKU 持有 6 个 UoM code（基本/库存/采购/销售/制造），创建时默
 | 业务伙伴 | 列表 + 角色叠加 | 基本保留(删过时"按编码推断"文案) | 角色筛选/列、多选角色新建 |
 | **工厂结构** | **左树+右详情** | **大改(Tab→树)** | 选中父级「+新建子级」预填归属、面包屑、树搜索、设备下钻出口 |
 | 设备台账 | 平表 + 详情/编辑 | 已深化 | 厂区/车间/产线/工位归属，购置/保修/供应商/退役台账，父设备与关键部件清单；维修工单读面展示保修状态 |
+| **工装与模具** | **平表 + 注册 Sheet + 状态/使用动作** | **新页** | 关键字与状态走服务端筛选；注册时按名称/编码服务端搜索真实工作中心与 SKU 目录，目录超过一页仍可继续检索并登记组合；展示累计使用/寿命预警与排程资格；可用→保养、完成保养→可用、退役终态，状态原因必填；完成保养时，只有累计使用已达到保养寿命才会清零计数，页面须在确认前披露；`resources.read` 可查看，`resources.manage` 才可写 |
 | **员工** | 平表 + 新建/编辑弹窗 | **新页** | 「人」的业务权威源（IAM 只管账号）。工号由编码引擎分配（EMP-）；姓名/部门/岗位/在岗状态可维护，班组与技能只读展示（分别在「组织与班组」「人员技能」维护）；停用后不再进入派工与班组候选 |
 | **组织与班组** | 部门树 + 班组列表-详情 | **中改** | 部门树(按 parentCode 拼)、班组挂部门、**班组挂车间**（班组是车间级的，派工按「工作中心→车间→班组」找人）、成员主从 |
 | **排班与日历** | 班次设置表 + 日历月历 | **新页(从组织拆)** | 月历可视化(标工作日/节假日)；**依赖后端日历明细** |
@@ -134,7 +136,7 @@ SKU 持有 6 个 UoM code（基本/库存/采购/销售/制造），创建时默
 
 ## 4. 关键产品决策
 
-1. ~~**产品分类（category）字典化**~~ → **已改判为「分类是独立目录实体」**（#1596，口径裁决 A）：当年的方向是把分类做成受控字典 `product-category`，层级分类树列为远期 Roadmap；分类树后来已作为 **ProductCategory 独立目录**落地（带 `ParentCode` 的层级树），于是 SKU `category` 的权威值域改为**该实体**，`product-category` 字典退出 SKU 写路径、仅保留存量兼容读取。理由：分类天然是层级，扁平字典表达不了；粗粒度「性质分类」这条轴已由 `materialType` 承担，SKU 不再挂第二个分类字段。详见 `master-data-dictionary-rules.md` §1。
+1. ~~**产品分类（category）字典化**~~ → **已改判为「分类是独立目录实体」**（#1596，口径裁决 A）：当年的方向是把分类做成受控字典 `product-category`，层级分类树列为远期 Roadmap；分类树后来已作为 **ProductCategory 独立目录**落地（带 `ParentCode` 的层级树），于是 SKU `category` 的权威值域改为**该实体**，`product-category` 字典退出 SKU 写路径、仅保留存量兼容读取。理由：分类天然是层级，扁平字典表达不了；粗粒度「性质分类」这条轴已由 `materialType` 承担，SKU 不再挂第二个分类字段。详见[数据字典 Reference](../../reference/master-data/dictionary.md) §1。
 2. **`...Code` 自由文本 → 选字典**：`shelfLifePolicyCode/storageConditionCode/defaultBarcodeRuleCode` 由 `Input` 改为 `Select`，UI 只见业务词（保质期管理/存储条件/默认条码规则），取值受字典约束。
 3. **平台枚举与工厂字典**：`materialType/batchTrackingPolicy/serialTrackingPolicy/shelfLifePolicy` 带系统行为语义 → 平台预置枚举，只能启停不可改语义（前端常量即可）；`storage-condition/barcode-rule/quality-reason` 偏业务 → 平台预置常用值 + 工厂可维护。（`product-category` 已按第 1 条退出 SKU 写路径，改由产品分类目录实体承载。）
 4. **伙伴角色诚实处理**：列表不回 partnerType，**不再猜 code 子串**。Phase 1 用「角色筛选 + 角色列（含『未分配』并标注推断口径）+ 新建时显式选角色」；Phase 2 后端列表回 partnerType 后角色展示才精确。同一主体可兼多角色（客户+供应商互供），建议 `partnerType` 演进为多角色（§7.4 issue）。
@@ -145,7 +147,7 @@ SKU 持有 6 个 UoM code（基本/库存/采购/销售/制造），创建时默
 
 ## 5. 字典体系与种子数据
 
-> ⚠️ **权威规范已独立成文**:CodeSet 目录、标准码值、治理规则、字段校验映射、前后端对齐以 [`master-data-dictionary-rules.md`](./master-data-dictionary-rules.md) 为单一事实源。本节为概览,如与该文件冲突以该文件为准。
+> ⚠️ **按当前职责查阅**：CodeSet 目录、标准码值与字段映射见[数据字典 Reference](../../reference/master-data/dictionary.md)，稳定维护规则见[ReferenceData 治理](../../governance/data/reference-data.md)。本节仅为产品概览；当前可用值与写入校验以 Reference 所指向的 seed、API、领域校验器和前端消费者为准，不再以兼容导航页为事实源。
 
 ### 5.1 平台应预置的 CodeSet（受控值清单）
 

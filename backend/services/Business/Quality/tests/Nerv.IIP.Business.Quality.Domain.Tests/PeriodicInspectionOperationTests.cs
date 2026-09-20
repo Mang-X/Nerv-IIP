@@ -52,6 +52,174 @@ public sealed class PeriodicInspectionOperationTests
     }
 
     [Fact]
+    public void Quantity_window_is_not_generated_before_the_first_frozen_interval_is_reached()
+    {
+        var operation = ReleasedOperation();
+        operation.RecordProductionReport("RPT-001", "WC-001", 99.999999m, "EA", ReleasedAtUtc.AddMinutes(10), false, null);
+        var context = Assert.Single(operation.RuntimeContexts);
+
+        Assert.Empty(context.TakeDueQuantityWindows(ReleasedAtUtc.AddMinutes(10), maxWindows: 256));
+        Assert.Equal(0, context.LastGeneratedQuantityWindowSequence);
+    }
+
+    [Fact]
+    public void One_report_crossing_multiple_quantity_intervals_emits_each_cumulative_threshold()
+    {
+        var operation = ReleasedOperation();
+        operation.RecordProductionReport("RPT-001", "WC-001", 250m, "EA", ReleasedAtUtc.AddMinutes(10), false, null);
+        var context = Assert.Single(operation.RuntimeContexts);
+
+        var windows = context.TakeDueQuantityWindows(ReleasedAtUtc.AddMinutes(10), maxWindows: 256);
+
+        Assert.Collection(
+            windows,
+            window => Assert.Equal((1L, 100m), (window.Sequence, window.ThresholdQuantity)),
+            window => Assert.Equal((2L, 200m), (window.Sequence, window.ThresholdQuantity)));
+        Assert.Equal(2, context.LastGeneratedQuantityWindowSequence);
+    }
+
+    [Fact]
+    public void Quantity_window_generation_fails_closed_before_partial_work_at_the_int32_overflow_boundary()
+    {
+        var operation = ReleasedOperation(quantityInterval: 0.000001m);
+        operation.RecordProductionReport(
+            "RPT-BOUNDARY",
+            "WC-001",
+            2147.483648m,
+            "EA",
+            ReleasedAtUtc.AddMinutes(10),
+            false,
+            null);
+        var context = Assert.Single(operation.RuntimeContexts);
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            context.TakeDueQuantityWindows(ReleasedAtUtc.AddMinutes(10), maxWindows: 256));
+
+        Assert.Contains("supported pending-window limit", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(0, context.LastGeneratedQuantityWindowSequence);
+        Assert.Null(context.QuantityGenerationAnchorAtUtc);
+        Assert.Null(context.QuantityContinuationNextAttemptAtUtc);
+    }
+
+    [Fact]
+    public void Quantity_window_generation_is_bounded_at_the_maximum_numeric_18_6_high_water()
+    {
+        var operation = ReleasedOperation(quantityInterval: 0.000001m);
+        operation.RecordProductionReport(
+            "RPT-MAX-NUMERIC",
+            "WC-001",
+            999_999_999_999.999999m,
+            "EA",
+            ReleasedAtUtc.AddMinutes(10),
+            false,
+            null);
+        var context = Assert.Single(operation.RuntimeContexts);
+
+        Assert.Throws<InvalidOperationException>(() =>
+            context.TakeDueQuantityWindows(ReleasedAtUtc.AddMinutes(10), maxWindows: 256));
+        Assert.Equal(0, context.LastGeneratedQuantityWindowSequence);
+        Assert.Null(context.QuantityGenerationAnchorAtUtc);
+        Assert.Null(context.QuantityContinuationNextAttemptAtUtc);
+    }
+
+    [Fact]
+    public void Maximum_supported_quantity_backlog_drains_without_truncation_and_clears_continuation_state()
+    {
+        var operation = ReleasedOperation(quantityInterval: 1m);
+        operation.RecordProductionReport(
+            "RPT-SUPPORTED-MAX",
+            "WC-001",
+            PeriodicInspectionRuntimeContext.MaximumSupportedPendingQuantityWindows,
+            "EA",
+            ReleasedAtUtc.AddMinutes(10),
+            false,
+            null);
+        var context = Assert.Single(operation.RuntimeContexts);
+        var generated = new List<PeriodicInspectionQuantityWindow>();
+
+        while (context.QuantityGenerationAnchorAtUtc.HasValue || generated.Count == 0)
+        {
+            generated.AddRange(context.TakeDueQuantityWindows(
+                ReleasedAtUtc.AddMinutes(10),
+                maxWindows: 256,
+                ReleasedAtUtc.AddMinutes(11)));
+        }
+
+        Assert.Equal(10_000, generated.Count);
+        Assert.Equal((1L, 1m), (generated[0].Sequence, generated[0].ThresholdQuantity));
+        Assert.Equal((10_000L, 10_000m), (generated[^1].Sequence, generated[^1].ThresholdQuantity));
+        Assert.Null(context.QuantityGenerationAnchorAtUtc);
+        Assert.Null(context.QuantityContinuationNextAttemptAtUtc);
+    }
+
+    [Fact]
+    public void Completion_preserves_a_257th_pending_window_until_the_terminal_batch_commits()
+    {
+        var operation = ReleasedOperation(quantityInterval: 1m);
+        operation.RecordProductionReport(
+            "RPT-257", "WC-001", 257m, "EA", ReleasedAtUtc.AddMinutes(10), false, null);
+        var context = Assert.Single(operation.RuntimeContexts);
+
+        Assert.Equal(256, context.TakeDueQuantityWindows(ReleasedAtUtc.AddMinutes(10), maxWindows: 256).Count);
+        Assert.True(operation.Complete(
+            "SKU-FG-1000", 10, "WC-001", "EA", ReleasedAtUtc.AddMinutes(20)));
+
+        Assert.Equal("closed", context.Status);
+        Assert.NotNull(context.QuantityGenerationAnchorAtUtc);
+        Assert.NotNull(context.QuantityContinuationNextAttemptAtUtc);
+        var terminal = Assert.Single(context.TakeDueQuantityWindows(
+            ReleasedAtUtc.AddMinutes(21), maxWindows: 256));
+        Assert.Equal((257L, 257m), (terminal.Sequence, terminal.ThresholdQuantity));
+        Assert.Null(context.QuantityGenerationAnchorAtUtc);
+        Assert.Null(context.QuantityContinuationNextAttemptAtUtc);
+    }
+
+    [Fact]
+    public void Quantity_remainder_continues_from_the_persisted_window_sequence()
+    {
+        var operation = ReleasedOperation();
+        operation.RecordProductionReport("RPT-001", "WC-001", 250m, "EA", ReleasedAtUtc.AddMinutes(10), false, null);
+        var context = Assert.Single(operation.RuntimeContexts);
+        Assert.Equal(2, context.TakeDueQuantityWindows(ReleasedAtUtc.AddMinutes(10), maxWindows: 256).Count);
+
+        operation.RecordProductionReport("RPT-002", "WC-001", 49.999999m, "EA", ReleasedAtUtc.AddMinutes(20), false, null);
+        Assert.Empty(context.TakeDueQuantityWindows(ReleasedAtUtc.AddMinutes(20), maxWindows: 256));
+
+        operation.RecordProductionReport("RPT-003", "WC-001", 0.000001m, "EA", ReleasedAtUtc.AddMinutes(30), false, null);
+        var next = Assert.Single(context.TakeDueQuantityWindows(ReleasedAtUtc.AddMinutes(30), maxWindows: 256));
+
+        Assert.Equal((3L, 300m), (next.Sequence, next.ThresholdQuantity));
+    }
+
+    [Fact]
+    public void Reversal_neither_generates_nor_reclaims_quantity_windows()
+    {
+        var operation = ReleasedOperation();
+        operation.RecordProductionReport("RPT-001", "WC-001", 200m, "EA", ReleasedAtUtc.AddMinutes(10), false, null);
+        var context = Assert.Single(operation.RuntimeContexts);
+        Assert.Equal(2, context.TakeDueQuantityWindows(ReleasedAtUtc.AddMinutes(10), maxWindows: 256).Count);
+
+        operation.RecordProductionReport("RPT-REV", "WC-001", -150m, "EA", ReleasedAtUtc.AddMinutes(20), true, "RPT-001");
+
+        Assert.Empty(context.TakeDueQuantityWindows(ReleasedAtUtc.AddMinutes(20), maxWindows: 256));
+        Assert.Equal(2, context.LastGeneratedQuantityWindowSequence);
+        Assert.Equal(50m, context.CumulativeGoodQuantity);
+        Assert.Equal(200m, context.QuantityHighWater);
+    }
+
+    [Fact]
+    public void Closed_context_does_not_generate_unclaimed_quantity_windows()
+    {
+        var operation = ReleasedOperation();
+        operation.RecordProductionReport("RPT-001", "WC-001", 250m, "EA", ReleasedAtUtc.AddMinutes(10), false, null);
+        operation.Complete("SKU-FG-1000", 10, "WC-001", "EA", ReleasedAtUtc.AddHours(3));
+        var context = Assert.Single(operation.RuntimeContexts);
+
+        Assert.Empty(context.TakeDueQuantityWindows(ReleasedAtUtc.AddHours(3), maxWindows: 256));
+        Assert.Equal(0, context.LastGeneratedQuantityWindowSequence);
+    }
+
+    [Fact]
     public void Later_arriving_report_with_later_business_time_does_not_replace_first_activity()
     {
         var operation = ReleasedOperation();
@@ -246,7 +414,78 @@ public sealed class PeriodicInspectionOperationTests
             [PeriodicInspectionPlanSnapshot.From(NewPeriodicPlan())]));
     }
 
-    private static PeriodicInspectionOperation ReleasedOperation()
+    /// <summary>
+    /// #3129：「只进不退」是 <c>SkipQuantityWindowsAccruedBeforeRelease</c> **方法自身的契约**，
+    /// 本用例钉的就是这条契约——第二次跳过给出更小的值时不得把已生成序号调小，
+    /// 否则同一个序号会被第二次开出。
+    ///
+    /// <para><b>这条契约在一条可达路径上承重</b>，不是纯粹的契约洁癖：
+    /// #3000 回填通道按时刻跳过的数与本方法按数量跳过的数**没有恒定的大小关系**
+    /// （两者分别取自 Quality 本地水位与 MES 自有事实），两条通道交错投递时第二次跳过**可能**更小。
+    /// 「可能」是存在性，不是全称：反例两个方向都有，见
+    /// <c>WorkOrderReleaseProjectionBackfillConsumerTests</c> 的两条交错用例。系统层读数由
+    /// <c>WorkOrderReleaseProjectionBackfillConsumerTests
+    /// .Backfill_then_live_release_does_not_reopen_quantity_windows_the_backfill_already_skipped</c>
+    /// 给出（去掉 <c>Math.Max</c> ⇒ 重开 3 张重复任务、死信 0）。本用例是它的域层对偶，
+    /// 把同一条不变量钉在方法自身上，两条一起红。</para>
+    /// </summary>
+    [Fact]
+    public void Pre_release_skip_never_moves_the_generated_quantity_watermark_backwards()
+    {
+        var operation = ReleasedOperation();
+
+        operation.SkipQuantityWindowsAccruedBeforeRelease(500m);
+        operation.SkipQuantityWindowsAccruedBeforeRelease(250m);
+
+        Assert.Equal(5, Assert.Single(operation.RuntimeContexts).LastGeneratedQuantityWindowSequence);
+    }
+
+    /// <summary>
+    /// #3129：下达前产量除以间隔超过 <c>long.MaxValue</c> 时 fail closed，
+    /// 与 <c>TakeDueQuantityWindows</c> 的序号上界同一条口径。
+    /// 不做这次转换而继续，会把已生成序号写成一个溢出值，随后在
+    /// <c>TakeDueQuantityWindows</c> 的 <c>checked(+1)</c> 处炸在别处、说不出原因。
+    ///
+    /// <para><b>强度按实测写</b>：本用例证明的是**域方法在该输入下 fail closed**，
+    /// **不声称**生产上真能喂进这么大的数（那取决于报工数量列的精度与业务上界，本票没有核过）。
+    /// 它是纵深防御，不是本票缺陷的承重件。</para>
+    /// </summary>
+    [Fact]
+    public void Pre_release_skip_fails_closed_when_the_window_sequence_would_overflow()
+    {
+        // 商必须落在「decimal 表示得下、但超过 long.MaxValue(≈9.22e18)」这个区间里：
+        // 直接拿 decimal.MaxValue 除以一个小间隔，**除法本身**先抛 OverflowException，
+        // 那条路径根本走不到本守卫（实测）。
+        var operation = ReleasedOperation(quantityInterval: 1m);
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => operation.SkipQuantityWindowsAccruedBeforeRelease(10_000_000_000_000_000_000m));
+
+        Assert.Contains("exceeds the supported sequence limit", exception.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// #3129：本方法**只动数量一维**。时间型巡检该不该开与「下达前后」没有业务关系
+    /// （它由 <c>FirstActivityAtUtc</c> 起算、由定时任务生成），把一条数量维的裁定外溢到时间维是错的。
+    /// 少了这一条，把实现改写成复用 <c>SkipWindowsAccruedBefore</c>（数量+时间一起跳）不会被任何用例发现。
+    /// </summary>
+    [Fact]
+    public void Pre_release_skip_leaves_the_time_window_watermark_untouched()
+    {
+        var operation = ReleasedOperation();
+        operation.RecordProductionReport("RPT-001", "WC-001", 250m, "EA", ReleasedAtUtc.AddMinutes(10), false, null);
+        var context = Assert.Single(operation.RuntimeContexts);
+        var timeWatermarkBefore = context.NextTimeWindowAtUtc;
+
+        operation.SkipQuantityWindowsAccruedBeforeRelease(250m);
+
+        Assert.Equal(2, context.LastGeneratedQuantityWindowSequence);
+        Assert.Equal(0, context.LastGeneratedTimeWindowSequence);
+        Assert.Equal(timeWatermarkBefore, context.NextTimeWindowAtUtc);
+        Assert.Null(context.TimeScheduleAnchorAtUtc);
+    }
+
+    private static PeriodicInspectionOperation ReleasedOperation(decimal quantityInterval = 100m)
     {
         var operation = PeriodicInspectionOperation.CreatePending("org-001", "env-dev", "WO-001", "OP-001");
         operation.ApplyRelease(
@@ -254,11 +493,11 @@ public sealed class PeriodicInspectionOperationTests
             operationSequence: 10,
             "WC-001",
             ReleasedAtUtc,
-            [PeriodicInspectionPlanSnapshot.From(NewPeriodicPlan())]);
+            [PeriodicInspectionPlanSnapshot.From(NewPeriodicPlan(quantityInterval))]);
         return operation;
     }
 
-    private static InspectionPlan NewPeriodicPlan()
+    private static InspectionPlan NewPeriodicPlan(decimal quantityInterval = 100m)
     {
         var plan = InspectionPlan.Create(
             "org-001",
@@ -271,7 +510,7 @@ public sealed class PeriodicInspectionOperationTests
             null,
             "mes-operation",
             timeIntervalHours: 2m,
-            quantityInterval: 100m,
+            quantityInterval,
             assignedTeamId: "team-quality-001");
         plan.AddCharacteristic("appearance", "Appearance", "visual", "critical", true, "zero-defect");
         plan.Activate();

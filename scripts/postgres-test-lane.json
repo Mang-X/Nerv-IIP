@@ -37,7 +37,13 @@
         "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_device_reference_batch_uses_two_fixed_relational_reads_for_one_and_two_hundred_references",
         "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_disable_endpoint_transaction_fact_persists_audit_and_cap_outbox_with_operation_identity",
         "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_store_persists_master_data_aggregates",
-        "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_work_calendar_update_replaces_owned_details_after_reload"
+        "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_work_calendar_update_replaces_owned_details_after_reload",
+        "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTestsToolingAudit.Tooling_audit_is_scoped_and_excludes_sensitive_request_content_on_postgres",
+        "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTestsToolingAudit.Tooling_audit_migration_preserves_predecessor_data_and_installs_append_only_schema_on_postgres",
+        "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTestsToolingAudit.Tooling_commands_commit_business_and_exact_audit_facts_through_mediator_on_postgres",
+        "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTestsToolingAudit.Tooling_concurrent_usage_replay_commits_one_increment_and_one_audit_on_postgres",
+        "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTestsToolingAudit.Tooling_replays_are_idempotent_and_conflicting_payloads_preserve_first_winner_on_postgres",
+        "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTestsToolingAudit.Tooling_save_failure_rolls_back_business_and_audit_together_on_postgres"
       ]
     },
     {
@@ -81,8 +87,34 @@
         "Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_calendar_event_handler_changes_the_generated_plan_query_state_once",
         "Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_records_generated_calendar_invalidation_without_matching_released_or_other_calendar_plans",
         "Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_records_invalidation_for_a_generated_plan_matched_by_resource",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_release_gate_blocks_quality_blocked_and_allows_quality_released",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_translates_the_work_order_or_operation_scope_for_quality_inspection_results",
         "Nerv.IIP.Business.Scheduling.Web.Tests.ScheduleReleaseGovernancePostgresProfileTests.Concurrent_releases_converge_to_one_active_plan_with_monotonic_revisions",
         "Nerv.IIP.Business.Scheduling.Web.Tests.ScheduleReleaseGovernancePostgresProfileTests.Migration_normalizes_historical_duplicate_releases_with_exact_timestamp_tie"
+      ]
+    },
+    {
+      "id": "scheduling-asset-unavailable-postgres",
+      "service": "Scheduling",
+      "tier": "core",
+      "status": "active",
+      "databaseOwnership": "runner",
+      "project": "backend/services/Business/Scheduling/tests/Nerv.IIP.Business.Scheduling.Web.Tests/Nerv.IIP.Business.Scheduling.Web.Tests.csproj",
+      "filter": "FullyQualifiedName~Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests",
+      "databasePrefix": "nerv_iip_scheduling_asset_unavailable",
+      "diagnosticSchemas": [
+        "scheduling"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Concurrent_claims_with_different_event_ids_and_same_business_key_commit_one_result",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Concurrent_claims_with_same_event_id_and_different_business_keys_commit_one_result",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Event_id_unique_index_wrong_column_mutation_is_rejected",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Idempotency_key_unique_index_wrong_column_mutation_is_rejected",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Inbox_identity_lock_fails_closed_without_an_active_transaction",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Migration_fails_closed_on_historical_event_instance_with_ambiguous_business_keys",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Migration_upgrades_distinct_historical_event_instances_and_old_schema_already_forbids_same_key_duplicates",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Save_changes_absorbs_event_id_inbox_conflict_as_zero_rows",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Save_changes_absorbs_idempotency_key_inbox_conflict_as_zero_rows"
       ]
     },
     {
@@ -116,7 +148,48 @@
         "barcode"
       ],
       "expectedTestIdentities": [
-        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Postgres_unique_conflicts_are_mapped_for_scan_natural_key_and_epcis_event"
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Advisory_lock_domains_do_not_deadlock_crossed_reservation_and_template_keys_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Concurrent_mes_activation_commits_one_association_and_rejects_overwrite_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Concurrent_same_intent_creates_one_batch_and_allocates_once_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Create_handler_preserves_short_rule_capacity_after_wide_partition_advances_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Create_handlers_preserve_org_environment_scope_and_gs1_serial_authority_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Mes_activation_migration_preserves_historical_batch_items_and_makes_pending_printable_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Migration_and_formatter_share_base62_case_order_for_legacy_gs1_serials_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Migration_excludes_legacy_gs1_serial_above_current_int64_generation_space_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Migration_fails_closed_with_conflict_facts_for_duplicate_historical_serials_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Migration_fails_closed_when_historical_serial_reaches_width_capacity_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Migration_preserves_unambiguous_historical_serials_and_nulls_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Print_item_serial_is_unique_inside_organization_and_environment_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Serial_allocator_reserves_non_overlapping_ordered_ranges_concurrently_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Create_handlers_allocate_unique_gs1_serials_across_rules_in_same_scope_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_executor_recovers_lost_response_after_restart_with_frozen_inputs_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_retention_deadline_preserves_http_replay_fence_and_zero_execution_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_cleanup_preserves_pending_failed_attempt_and_permanent_unknown_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_retention_migration_preserves_historical_terminal_clock_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_executor_concurrent_delivery_and_abandoned_lease_recover_once_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_executor_deadline_unknown_wins_both_inflight_orderings_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_executor_result_before_deadline_commits_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_result_waiting_for_row_lock_samples_deadline_after_lock_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_executor_unknown_preserves_both_remote_outcome_counterexamples_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Canceled_attempt_facts_commit_outside_the_rolling_back_command_transaction",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Canceled_dispatch_preserves_the_original_cancellation_when_another_dispatch_committed_first",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Canceled_reprint_attempt_does_not_overwrite_facts_when_the_item_was_concurrently_voided",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Canceled_reprint_attempt_facts_commit_outside_the_rolling_back_command_transaction",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Conflicting_snapshot_checksum_is_unknown_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Delivery_unknown_batch_holds_template_asset_retirement_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Failed_batch_keeps_its_template_asset_reachable_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Legacy_partial_owner_and_unknown_partitions_fail_closed_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Postgres_unique_conflicts_are_mapped_for_scan_natural_key_and_epcis_event",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_and_cross_file_template_rebind_preserve_a_consistent_marker_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_and_new_batch_freeze_cannot_both_commit_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_and_template_reuse_cannot_both_commit_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_idempotency_and_unique_conflicts_are_stable_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_http_proof_rejections_leave_zero_decisions_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_http_valid_proof_commits_authenticated_decision_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_rejects_when_inactive_template_rebind_to_target_file_commits_while_waiting_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_reference_and_reuse_matrix_is_enforced_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Sent_and_printed_batches_follow_the_item_reprint_matrix_on_postgres",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Template_create_observation_fails_closed_when_same_code_appears_before_target_file_lock_on_postgres"
       ]
     },
     {
@@ -132,7 +205,14 @@
         "filestorage"
       ],
       "expectedTestIdentities": [
-        "Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Metadata_usage_and_download_grant_survive_web_host_restart"
+        "Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Database_executes_state_check_and_unique_commit_id_constraints",
+        "Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Expand_migration_keeps_legacy_completed_write_readable_by_new_protocol",
+        "Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Independent_gate_registries_claim_one_database_owner_and_create_one_file_fact",
+        "Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Metadata_usage_and_download_grant_survive_web_host_restart",
+        "Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Recovery_batch_prioritizes_never_attempted_intent_before_due_retries",
+        "Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Retirement_acceptance_replays_frozen_horizon_and_holds_content_and_legacy_gc_on_postgres",
+        "Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Retirement_concurrent_duplicate_waits_for_row_lock_and_rollback_is_atomic_on_postgres",
+        "Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Retirement_verifier_rejects_each_wire_and_resource_constraint_without_writes_on_postgres"
       ]
     },
     {
@@ -142,7 +222,7 @@
       "status": "active",
       "databaseOwnership": "runner",
       "project": "backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.csproj",
-      "filter": "FullyQualifiedName~Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryDeviceControlReadFaceTests.History_filters_by_device_status_and_time_window_on_postgres|FullyQualifiedName~Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryHistorianTests.Postgres_downsampling_executes_pending_window_antijoin_queries|FullyQualifiedName~Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryIdempotentConcurrencyTests.Concurrent_shelve_with_same_key_replays_the_loser_on_postgres|FullyQualifiedName~Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryIdempotentConcurrencyTests.Exact_ordering_migration_backfills_existing_microsecond_timestamps_on_postgres|FullyQualifiedName~Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryIdempotentConcurrencyTests.Manifest_and_activation_submicrosecond_races_keep_exact_order_on_postgres|FullyQualifiedName~Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryIdempotentConcurrencyTests.Rule_alarm_race_with_changed_alarm_code_keeps_single_active_alarm_on_postgres|FullyQualifiedName~Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeHistoricalFactPostgresTests.Concurrent_projection_keeps_one_source_report_per_scope_on_postgres|FullyQualifiedName~Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeHistoricalFactPostgresTests.Prior_schema_fact_survives_up_down_up_without_fabricated_historical_dimensions_on_postgres|FullyQualifiedName~Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeePostgresQueryTests.Oee_query_filters_production_facts_by_datetimeoffset_window_on_postgres|FullyQualifiedName~Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeAggregatePostgresTests.Six_dimensions_and_exact_filters_share_weighted_apq_and_scope_on_postgres|FullyQualifiedName~Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeAggregatePostgresTests.Scope_and_six_filter_predicates_reject_single_dimension_interference_on_postgres|FullyQualifiedName~Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeAggregatePostgresTests.Hierarchy_and_business_day_changes_do_not_duplicate_device_runtime_on_postgres|FullyQualifiedName~Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeAggregatePostgresTests.Reversal_uses_aggregation_time_and_degraded_inputs_never_fabricate_factors_on_postgres|FullyQualifiedName~Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeAggregatePostgresTests.State_budget_is_combined_and_bounded_in_executed_postgres_sql|FullyQualifiedName~Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeAggregatePostgresTests.Production_fact_budget_accepts_boundary_and_rejects_one_more_on_postgres",
+      "filter": "FullyQualifiedName~Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryDeviceControlReadFaceTests.History_filters_by_device_status_and_time_window_on_postgres|FullyQualifiedName~Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryHistorianTests.Postgres_downsampling_executes_pending_window_antijoin_queries|FullyQualifiedName~Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryIdempotentConcurrencyTests.Concurrent_shelve_with_same_key_replays_the_loser_on_postgres|FullyQualifiedName~Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryIdempotentConcurrencyTests.Exact_ordering_migration_backfills_existing_microsecond_timestamps_on_postgres|FullyQualifiedName~Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryIdempotentConcurrencyTests.Manifest_and_activation_submicrosecond_races_keep_exact_order_on_postgres|FullyQualifiedName~Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryIdempotentConcurrencyTests.Rule_alarm_race_with_changed_alarm_code_keeps_single_active_alarm_on_postgres|FullyQualifiedName~Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeHistoricalFactPostgresTests.Concurrent_projection_keeps_one_source_report_per_scope_on_postgres|FullyQualifiedName~Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeHistoricalFactPostgresTests.Prior_schema_fact_survives_up_down_up_without_fabricated_historical_dimensions_on_postgres|FullyQualifiedName~Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeePostgresQueryTests.Oee_query_filters_production_facts_by_datetimeoffset_window_on_postgres|FullyQualifiedName~Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeAggregatePostgresTests.Six_dimensions_and_exact_filters_share_weighted_apq_and_scope_on_postgres|FullyQualifiedName~Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeAggregatePostgresTests.Scope_and_six_filter_predicates_reject_single_dimension_interference_on_postgres|FullyQualifiedName~Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeAggregatePostgresTests.Hierarchy_and_business_day_changes_do_not_duplicate_device_runtime_on_postgres|FullyQualifiedName~Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeAggregatePostgresTests.Reversal_uses_aggregation_time_and_degraded_inputs_never_fabricate_factors_on_postgres|FullyQualifiedName~Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeAggregatePostgresTests.State_budget_is_combined_and_bounded_in_executed_postgres_sql|FullyQualifiedName~Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeAggregatePostgresTests.Production_fact_budget_accepts_boundary_and_rejects_one_more_on_postgres|FullyQualifiedName~Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeAggregatePostgresTests.Changeover_runtime_is_an_availability_loss_and_is_reported_separately_on_postgres",
       "databasePrefix": "nerv_iip_industrialtelemetry",
       "diagnosticSchemas": [
         "industrial_telemetry"
@@ -162,7 +242,8 @@
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeAggregatePostgresTests.Hierarchy_and_business_day_changes_do_not_duplicate_device_runtime_on_postgres",
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeAggregatePostgresTests.Reversal_uses_aggregation_time_and_degraded_inputs_never_fabricate_factors_on_postgres",
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeAggregatePostgresTests.State_budget_is_combined_and_bounded_in_executed_postgres_sql",
-        "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeAggregatePostgresTests.Production_fact_budget_accepts_boundary_and_rejects_one_more_on_postgres"
+        "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeAggregatePostgresTests.Production_fact_budget_accepts_boundary_and_rejects_one_more_on_postgres",
+        "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeAggregatePostgresTests.Changeover_runtime_is_an_availability_loss_and_is_reported_separately_on_postgres"
       ]
     },
     {
@@ -172,27 +253,100 @@
       "status": "active",
       "databaseOwnership": "runner",
       "project": "backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/Nerv.IIP.Business.Quality.Web.Tests.csproj",
-      "filter": "FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresProfileTests.Concurrent_time_generation_creates_one_window_task_and_atomically_advances_watermark_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresProfileTests.Production_mediator_uow_dispatches_one_context_command_and_commits_its_task|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresProfileTests.Postgres_migration_enforces_all_periodic_inspection_unique_and_check_constraints|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresProfileTests.Postgres_operation_scope_lock_serializes_concurrent_duplicate_source_creation|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresProfileTests.Postgres_out_of_order_reversal_duplicate_close_and_restart_converge_without_tasks|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresProfileTests.Time_watermark_migration_backfills_the_next_due_window_for_existing_active_contexts|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.QualityCalibrationRecordQueryTests.Calibration_records_are_filtered_ordered_and_scoped_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.QualityCapaRedrivePostgresProfileTests.Postgres_uow_persists_recorded_scrap_ncr_redrive_after_capa_effectiveness|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.QualityInspectionTaskPostgresProfileTests.Assignment_scope_migration_backfills_existing_task_version_to_one|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.QualityInspectionTaskPostgresProfileTests.Postgres_duplicate_retry_persists_non_conflicting_tasks_after_unique_conflict|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.QualityInspectionTaskPostgresProfileTests.Postgres_persists_assignment_claim_and_audit_receipts|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.QualityInspectionTaskPostgresProfileTests.Postgres_second_claim_is_unprocessable_and_stale_concurrent_claim_is_rejected|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.QualityReasonPostgresProfileTests.Scrap_reason_query_filters_scope_search_and_paging_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.QualityReinspectionPostgresProfileTests.Postgres_predecessor_conflict_reloads_the_committed_reinspection|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.QualitySpcAnalysisTests.Postgres_spc_point_projection_materializes_latest_points_without_client_translation",
+      "filter": "FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.InspectionRecordSourceLinePostgresTests.Migration_leaves_existing_records_without_a_source_line_and_keeps_their_dedup_group_protected|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.InspectionRecordSourceLinePostgresTests.Two_operations_of_the_same_work_order_and_sku_persist_as_independent_records_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresContinuationTests.Completion_preserves_and_commits_the_terminal_257th_quantity_window_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresConcurrencyTests.Concurrent_quantity_reports_create_each_window_once_and_atomically_advance_watermark_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresConcurrencyTests.Concurrent_same_event_id_uses_one_inbox_fact_and_resumes_a_supported_bounded_backlog_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresConcurrencyTests.Concurrent_time_generation_creates_one_window_task_and_atomically_advances_watermark_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresContinuationTests.Oversized_legal_quantity_backlog_fails_closed_without_partial_state_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresContinuationTests.Persisted_failure_deferral_exposes_the_101st_quantity_context_after_restart_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresConcurrencyTests.Production_mediator_uow_dispatches_one_context_command_and_commits_its_task|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresMigrationTests.Postgres_migration_enforces_all_periodic_inspection_unique_and_check_constraints|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresConcurrencyTests.Postgres_operation_scope_lock_serializes_concurrent_duplicate_source_creation|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresConcurrencyTests.Postgres_out_of_order_reversal_duplicate_close_and_restart_converge_without_tasks|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresMigrationTests.Quantity_continuation_fairness_migration_backfills_due_cursor_and_allows_terminal_pending_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresConcurrencyTests.Quantity_task_write_failure_rolls_back_report_watermark_and_task_before_replay_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresConcurrencyTests.Same_event_id_for_different_operations_waits_on_the_inbox_lock_and_commits_one_payload_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresMigrationTests.Time_watermark_migration_backfills_the_next_due_window_for_existing_active_contexts|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.QualityCalibrationRecordQueryTests.Calibration_records_are_filtered_ordered_and_scoped_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.QualityCapaRedrivePostgresProfileTests.Postgres_uow_persists_recorded_scrap_ncr_redrive_after_capa_effectiveness|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.QualityNcrDispositionPostgresProfileTests.Pipeline_scopes_and_persists_rework_disposition_idempotency_per_tenant|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.QualityInspectionTaskPostgresProfileTests.Assignment_scope_migration_backfills_existing_task_version_to_one|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.QualityInspectionTaskPostgresProfileTests.Periodic_tasks_complete_the_existing_PDA_command_and_SPC_projection_flow_once_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.QualityInspectionTaskPostgresProfileTests.Postgres_duplicate_retry_persists_non_conflicting_tasks_after_unique_conflict|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.QualityInspectionTaskPostgresProfileTests.Postgres_persists_assignment_claim_and_audit_receipts|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.QualityInspectionTaskPostgresProfileTests.Postgres_second_claim_is_unprocessable_and_stale_concurrent_claim_is_rejected|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.QualityReasonPostgresProfileTests.Scrap_reason_query_filters_scope_search_and_paging_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.QualityReinspectionPostgresProfileTests.Postgres_predecessor_conflict_reloads_the_committed_reinspection|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.QualitySpcAnalysisTests.Postgres_spc_point_projection_materializes_latest_points_without_client_translation|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.WorkOrderReleaseFactBacklogPostgresTests.Backlog_gauges_count_only_stuck_operations_and_return_to_zero_after_the_backfill_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Quality.Web.Tests.WorkOrderReleaseProjectionBackfillPostgresTests.Backfill_commits_the_window_baseline_and_rejects_the_disagreeing_sku_under_real_constraints_on_postgres",
       "databasePrefix": "nerv_iip_quality",
       "diagnosticSchemas": [
         "quality"
       ],
       "expectedTestIdentities": [
-        "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresProfileTests.Concurrent_time_generation_creates_one_window_task_and_atomically_advances_watermark_on_postgres",
-        "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresProfileTests.Production_mediator_uow_dispatches_one_context_command_and_commits_its_task",
-        "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresProfileTests.Postgres_migration_enforces_all_periodic_inspection_unique_and_check_constraints",
-        "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresProfileTests.Postgres_operation_scope_lock_serializes_concurrent_duplicate_source_creation",
-        "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresProfileTests.Postgres_out_of_order_reversal_duplicate_close_and_restart_converge_without_tasks",
-        "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresProfileTests.Time_watermark_migration_backfills_the_next_due_window_for_existing_active_contexts",
+        "Nerv.IIP.Business.Quality.Web.Tests.InspectionRecordSourceLinePostgresTests.Migration_leaves_existing_records_without_a_source_line_and_keeps_their_dedup_group_protected",
+        "Nerv.IIP.Business.Quality.Web.Tests.InspectionRecordSourceLinePostgresTests.Two_operations_of_the_same_work_order_and_sku_persist_as_independent_records_on_postgres",
+        "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresContinuationTests.Completion_preserves_and_commits_the_terminal_257th_quantity_window_on_postgres",
+        "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresConcurrencyTests.Concurrent_quantity_reports_create_each_window_once_and_atomically_advance_watermark_on_postgres",
+        "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresConcurrencyTests.Concurrent_same_event_id_uses_one_inbox_fact_and_resumes_a_supported_bounded_backlog_on_postgres",
+        "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresConcurrencyTests.Concurrent_time_generation_creates_one_window_task_and_atomically_advances_watermark_on_postgres",
+        "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresContinuationTests.Oversized_legal_quantity_backlog_fails_closed_without_partial_state_on_postgres",
+        "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresContinuationTests.Persisted_failure_deferral_exposes_the_101st_quantity_context_after_restart_on_postgres",
+        "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresConcurrencyTests.Production_mediator_uow_dispatches_one_context_command_and_commits_its_task",
+        "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresMigrationTests.Postgres_migration_enforces_all_periodic_inspection_unique_and_check_constraints",
+        "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresConcurrencyTests.Postgres_operation_scope_lock_serializes_concurrent_duplicate_source_creation",
+        "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresConcurrencyTests.Postgres_out_of_order_reversal_duplicate_close_and_restart_converge_without_tasks",
+        "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresMigrationTests.Quantity_continuation_fairness_migration_backfills_due_cursor_and_allows_terminal_pending_on_postgres",
+        "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresConcurrencyTests.Quantity_task_write_failure_rolls_back_report_watermark_and_task_before_replay_on_postgres",
+        "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresConcurrencyTests.Same_event_id_for_different_operations_waits_on_the_inbox_lock_and_commits_one_payload_on_postgres",
+        "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresMigrationTests.Time_watermark_migration_backfills_the_next_due_window_for_existing_active_contexts",
         "Nerv.IIP.Business.Quality.Web.Tests.QualityCalibrationRecordQueryTests.Calibration_records_are_filtered_ordered_and_scoped_on_postgres",
         "Nerv.IIP.Business.Quality.Web.Tests.QualityCapaRedrivePostgresProfileTests.Postgres_uow_persists_recorded_scrap_ncr_redrive_after_capa_effectiveness",
+        "Nerv.IIP.Business.Quality.Web.Tests.QualityNcrDispositionPostgresProfileTests.Pipeline_scopes_and_persists_rework_disposition_idempotency_per_tenant",
         "Nerv.IIP.Business.Quality.Web.Tests.QualityInspectionTaskPostgresProfileTests.Assignment_scope_migration_backfills_existing_task_version_to_one",
+        "Nerv.IIP.Business.Quality.Web.Tests.QualityInspectionTaskPostgresProfileTests.Periodic_tasks_complete_the_existing_PDA_command_and_SPC_projection_flow_once_on_postgres",
         "Nerv.IIP.Business.Quality.Web.Tests.QualityInspectionTaskPostgresProfileTests.Postgres_duplicate_retry_persists_non_conflicting_tasks_after_unique_conflict",
         "Nerv.IIP.Business.Quality.Web.Tests.QualityInspectionTaskPostgresProfileTests.Postgres_persists_assignment_claim_and_audit_receipts",
         "Nerv.IIP.Business.Quality.Web.Tests.QualityInspectionTaskPostgresProfileTests.Postgres_second_claim_is_unprocessable_and_stale_concurrent_claim_is_rejected",
         "Nerv.IIP.Business.Quality.Web.Tests.QualityReasonPostgresProfileTests.Scrap_reason_query_filters_scope_search_and_paging_on_postgres",
         "Nerv.IIP.Business.Quality.Web.Tests.QualityReinspectionPostgresProfileTests.Postgres_predecessor_conflict_reloads_the_committed_reinspection",
-        "Nerv.IIP.Business.Quality.Web.Tests.QualitySpcAnalysisTests.Postgres_spc_point_projection_materializes_latest_points_without_client_translation"
+        "Nerv.IIP.Business.Quality.Web.Tests.QualitySpcAnalysisTests.Postgres_spc_point_projection_materializes_latest_points_without_client_translation",
+        "Nerv.IIP.Business.Quality.Web.Tests.WorkOrderReleaseFactBacklogPostgresTests.Backlog_gauges_count_only_stuck_operations_and_return_to_zero_after_the_backfill_on_postgres",
+        "Nerv.IIP.Business.Quality.Web.Tests.WorkOrderReleaseProjectionBackfillPostgresTests.Backfill_commits_the_window_baseline_and_rejects_the_disagreeing_sku_under_real_constraints_on_postgres"
+      ]
+    },
+    {
+      "id": "mes-andon-postgres",
+      "service": "Mes",
+      "tier": "core",
+      "status": "active",
+      "databaseOwnership": "runner",
+      "project": "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/Nerv.IIP.Business.Mes.Web.Tests.csproj",
+      "filter": "FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests",
+      "databasePrefix": "nerv_iip_mes_andon",
+      "diagnosticSchemas": ["mes"],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Migration_persists_complete_facts_and_replay_keeps_original_times_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Raise_intent_is_unique_within_scope_and_does_not_cross_tenants_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Stale_concurrent_claims_commit_exactly_one_responder_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Service_api_preserves_four_category_lifecycles_and_intent_receipts_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Concurrent_api_intents_converge_and_claim_loser_receives_conflict_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Api_rejects_wrong_source_scope_and_actor_and_filters_queue_before_total_on_postgres"
+      ]
+    },
+    {
+      "id": "mes-changeover-postgres",
+      "service": "Mes",
+      "tier": "core",
+      "status": "active",
+      "databaseOwnership": "runner",
+      "project": "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/Nerv.IIP.Business.Mes.Web.Tests.csproj",
+      "filter": "FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesChangeoverRecordPostgresTests.Start_fields_and_completion_are_persisted_by_the_mes_migration",
+      "databasePrefix": "nerv_iip_mes_changeover",
+      "diagnosticSchemas": [
+        "mes"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Business.Mes.Web.Tests.MesChangeoverRecordPostgresTests.Start_fields_and_completion_are_persisted_by_the_mes_migration"
+      ]
+    },
+    {
+      "id": "mes-production-report-serial-postgres",
+      "service": "Mes",
+      "tier": "core",
+      "status": "active",
+      "databaseOwnership": "runner",
+      "project": "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/Nerv.IIP.Business.Mes.Web.Tests.csproj",
+      "filter": "FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.Intent_fingerprint_migration_is_nullable_varchar_256_and_survives_down_up|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.Legacy_v1_receipt_with_single_serial_replays_the_existing_report_through_the_new_handler_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.Legacy_v1_receipt_without_serial_replays_the_existing_report_through_the_new_handler_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.Migration_backfills_only_forward_nonblank_legacy_serials_and_survives_down_up|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.Migration_fails_closed_when_forward_legacy_reports_share_a_trimmed_scoped_serial|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.PostgreSQL_concurrent_same_and_different_fingerprints_commit_one_atomic_intent_receipt|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.PostgreSQL_intent_receipt_round_trips_exact_value_and_keeps_nullable_crossings_conflicting|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.PostgreSQL_persists_ordered_serials_and_enforces_ordinal_scoped_uniqueness_and_report_fk|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.PostgreSQL_serial_failure_rolls_back_report_idempotency_receipt_and_serials_together",
+      "databasePrefix": "nerv_iip_mes_serial",
+      "diagnosticSchemas": [
+        "mes"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.Intent_fingerprint_migration_is_nullable_varchar_256_and_survives_down_up",
+        "Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.Legacy_v1_receipt_with_single_serial_replays_the_existing_report_through_the_new_handler_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.Legacy_v1_receipt_without_serial_replays_the_existing_report_through_the_new_handler_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.Migration_backfills_only_forward_nonblank_legacy_serials_and_survives_down_up",
+        "Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.Migration_fails_closed_when_forward_legacy_reports_share_a_trimmed_scoped_serial",
+        "Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.PostgreSQL_concurrent_same_and_different_fingerprints_commit_one_atomic_intent_receipt",
+        "Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.PostgreSQL_intent_receipt_round_trips_exact_value_and_keeps_nullable_crossings_conflicting",
+        "Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.PostgreSQL_persists_ordered_serials_and_enforces_ordinal_scoped_uniqueness_and_report_fk",
+        "Nerv.IIP.Business.Mes.Web.Tests.ProductionReportSerialNumberPostgresTests.PostgreSQL_serial_failure_rolls_back_report_idempotency_receipt_and_serials_together"
       ]
     },
     {
@@ -202,13 +356,14 @@
       "status": "active",
       "databaseOwnership": "runner",
       "project": "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/Nerv.IIP.Business.Mes.Web.Tests.csproj",
-      "filter": "FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_blank_defect_number_early_return_persists_only_inbox|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_missing_defect_early_return_persists_only_inbox|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_persists_business_fact_and_inbox_across_scopes_and_replay|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Planning_existing_work_order_early_return_persists_only_inbox|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Production_version_created_persists_binding_and_inbox_across_scopes_and_replay|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Stock_movement_posted_mismatch_early_return_persists_only_inbox|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Stock_movement_posted_missing_material_request_early_return_persists_only_inbox|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Stock_movement_posted_no_match_early_return_persists_only_inbox|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Stock_movement_posting_failed_unknown_prefix_early_return_persists_only_inbox|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesCapSubscriptionTests.PostgreSQL_asset_restored_handler_persists_window_schedule_and_inbox_without_external_save|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesCapSubscriptionTests.PostgreSQL_cap_quality_results_persist_rejected_passed_and_conditional_hold_states|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesCapSubscriptionTests.PostgreSQL_cap_with_inmemory_messaging_delivers_asset_unavailable_event_to_mes_consumer|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesCollaborationPostgresTests.Reportable_scope_matches_a_registered_participant_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesMaterialSubstituteSnapshotPostgresTests.Substitute_snapshot_migration_and_cross_scope_readback_hold_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesSchedulePlanProvenancePostgresTests.Concurrent_revoke_then_release_is_serialized_and_cannot_resurrect_assignment|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesSchedulePlanProvenancePostgresTests.Schedule_provenance_and_DateTimeOffset_survive_release_and_revoke_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedHandlerPostgresTests.Concurrent_delivery_serializes_on_ncr_scope_and_creates_exactly_one_work_order|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedHandlerPostgresTests.Missing_or_mismatched_mes_source_facts_fail_closed|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedHandlerPostgresTests.Rework_request_creates_one_source_linked_work_order_and_persists_inbox_and_numbering|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedHandlerPostgresTests.Same_ncr_identity_is_isolated_by_organization_and_environment|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedHandlerPostgresTests.Same_ncr_with_different_payload_is_dead_lettered_instead_of_treated_as_replay|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.RushWorkOrderHttpPostgresTests.PostgreSQL_http_creation_still_dispatches_work_order_created_after_sku_gate_save|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.SkuDisabledConsumerTests.PostgreSQL_concurrent_sku_disabled_events_converge_without_retry_poisoning|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.SkuDisabledConsumerTests.PostgreSQL_consumer_persists_disabled_sku_and_changes_new_work_order_behavior|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.SkuDisabledConsumerTests.PostgreSQL_disable_commit_serializes_before_new_work_order_creation|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.TelemetryProductionReportCandidatePostgresTests.Status_scope_time_predicates_and_source_uniqueness_are_enforced_by_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.WorkOrderCapitalizationConcurrencyPostgresTests.Receipt_creation_and_capitalization_serialize_without_cap_redelivery|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationApplicationPostgresTests.MediatR_pipeline_replays_one_postgresql_idempotency_race_without_duplicate_lineage|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationApplicationPostgresTests.MediatR_pipeline_turns_a_postgresql_source_version_race_into_one_409_without_half_success|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationPostgresTests.Merge_same_sku_small_orders_persists_source_to_target_lineage_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationPostgresTests.PostgreSQL_uom_check_constraint_rejects_whitespace_lineage|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationPostgresTests.Scoped_idempotency_key_is_enforced_by_postgresql|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationPostgresTests.Split_lineage_audit_and_work_order_version_survive_postgres_scope_recreation|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationPostgresTests.Stale_work_order_version_is_rejected_by_postgresql_concurrency_token|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Completion_state_and_settlement_outbox_are_committed_together_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Completion_reversal_commits_reopen_state_and_void_outbox_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Settlement_outbox_failure_rolls_back_state_lineage_and_reports_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Void_outbox_failure_rolls_back_task_settlement_and_reversal_report_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Concurrent_completion_rejects_the_stale_settlement_revision_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Settlement_void_before_completion_is_rejected_by_named_check_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Settlement_lineage_rejects_a_report_from_another_scope_or_task_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.ProductionReportOeeDimensionSnapshotPostgresTests.Prior_schema_report_survives_up_down_up_with_nullable_snapshot_columns_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesDowntimeReadFacePostgresTests.Downtime_list_rows_keep_work_center_code_out_of_work_order_field_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesDowntimeReadFacePostgresTests.Reason_summary_settles_recovered_and_ongoing_minutes_and_ranks_by_duration_then_code|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesDowntimeReadFacePostgresTests.Reason_code_filter_narrows_rows_only_and_blank_reason_code_is_not_a_filter",
+      "filter": "FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Http_receipt_commits_one_actual_value_inbound_with_last_source_and_rolls_back_outbox_failure_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_blank_defect_number_early_return_persists_only_inbox|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_missing_defect_early_return_persists_only_inbox|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_persists_business_fact_and_inbox_across_scopes_and_replay|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Planning_existing_work_order_early_return_persists_only_inbox|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Production_version_created_persists_binding_and_inbox_across_scopes_and_replay|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Stock_movement_posted_mismatch_early_return_persists_only_inbox|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Stock_movement_posted_missing_material_request_early_return_persists_only_inbox|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Stock_movement_posted_no_match_early_return_persists_only_inbox|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Stock_movement_posting_failed_unknown_prefix_early_return_persists_only_inbox|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesCapSubscriptionTests.PostgreSQL_asset_restored_handler_persists_window_schedule_and_inbox_without_external_save|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesCapSubscriptionTests.PostgreSQL_cap_quality_results_persist_rejected_passed_and_conditional_hold_states|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesCapSubscriptionTests.PostgreSQL_cap_with_inmemory_messaging_delivers_asset_unavailable_event_to_mes_consumer|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesCollaborationPostgresTests.Reportable_scope_matches_a_registered_participant_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.OperationTaskClaimPostgresTests.Concurrent_claims_persist_one_owner_participant_and_receipt_and_reject_the_loser_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesMaterialSubstituteSnapshotPostgresTests.Substitute_snapshot_migration_and_cross_scope_readback_hold_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesSchedulePlanProvenancePostgresTests.Concurrent_revoke_then_release_is_serialized_and_cannot_resurrect_assignment|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesSchedulePlanProvenancePostgresTests.Schedule_provenance_and_DateTimeOffset_survive_release_and_revoke_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedHandlerPostgresTests.Concurrent_delivery_serializes_on_ncr_scope_and_creates_exactly_one_work_order|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedHandlerPostgresTests.Different_ncrs_in_same_scope_create_unique_operation_task_ids|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedHandlerPostgresTests.Missing_or_mismatched_mes_source_facts_fail_closed|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedHandlerPostgresTests.Rework_release_captures_material_shortage_and_blocks_start|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedHandlerPostgresTests.Rework_request_creates_one_source_linked_work_order_and_persists_inbox_and_numbering|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedHandlerPostgresTests.Same_ncr_identity_is_isolated_by_organization_and_environment|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedHandlerPostgresTests.Same_ncr_with_different_payload_is_dead_lettered_instead_of_treated_as_replay|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedOutboxPostgresTests.Existing_transaction_keeps_rework_facts_uncommitted_until_the_outer_owner_decides|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedOutboxPostgresTests.Rework_receipt_outbox_failure_rolls_back_business_facts_inbox_numbering_and_route|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedOutboxPostgresTests.Rework_request_commits_business_facts_inbox_and_created_receipt_outbox_together|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.RushWorkOrderHttpPostgresTests.PostgreSQL_http_creation_still_dispatches_work_order_created_after_sku_gate_save|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.SkuDisabledConsumerTests.PostgreSQL_concurrent_sku_disabled_events_converge_without_retry_poisoning|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.SkuDisabledConsumerTests.PostgreSQL_consumer_persists_disabled_sku_and_changes_new_work_order_behavior|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.SkuDisabledConsumerTests.PostgreSQL_disable_commit_serializes_before_new_work_order_creation|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.TelemetryProductionReportCandidatePostgresTests.Status_scope_time_predicates_and_source_uniqueness_are_enforced_by_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.WorkOrderCapitalizationConcurrencyPostgresTests.Receipt_creation_and_capitalization_serialize_without_cap_redelivery|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationApplicationPostgresTests.MediatR_pipeline_replays_one_postgresql_idempotency_race_without_duplicate_lineage|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationApplicationPostgresTests.MediatR_pipeline_turns_a_postgresql_source_version_race_into_one_409_without_half_success|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationPostgresTests.Merge_same_sku_small_orders_persists_source_to_target_lineage_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationPostgresTests.PostgreSQL_uom_check_constraint_rejects_whitespace_lineage|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationPostgresTests.Scoped_idempotency_key_is_enforced_by_postgresql|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationPostgresTests.Split_lineage_audit_and_work_order_version_survive_postgres_scope_recreation|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationPostgresTests.Stale_work_order_version_is_rejected_by_postgresql_concurrency_token|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Completion_state_and_settlement_outbox_are_committed_together_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Completion_reversal_commits_reopen_state_and_void_outbox_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Settlement_outbox_failure_rolls_back_state_lineage_and_reports_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Void_outbox_failure_rolls_back_task_settlement_and_reversal_report_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Concurrent_completion_rejects_the_stale_settlement_revision_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Settlement_void_before_completion_is_rejected_by_named_check_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Settlement_lineage_rejects_a_report_from_another_scope_or_task_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.ProductionReportOeeDimensionSnapshotPostgresTests.Prior_schema_report_survives_up_down_up_with_nullable_snapshot_columns_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.DowntimeReasonCodeMigrationPostgresTests.Legacy_reasons_migrate_once_across_all_scopes_and_repeat_stably_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesDowntimeReadFacePostgresTests.Downtime_list_rows_keep_work_center_code_out_of_work_order_field_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesDowntimeReadFacePostgresTests.Reason_summary_settles_recovered_and_ongoing_minutes_and_ranks_by_duration_then_code|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesDowntimeReadFacePostgresTests.Reason_code_filter_narrows_rows_only_and_blank_reason_code_is_not_a_filter|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesProductionStatisticsPostgresTests.Four_dimensions_filters_and_second_page_use_scoped_production_totals_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesProductionStatisticsPostgresTests.Reversal_offsets_the_original_business_bucket_and_non_positive_totals_have_no_rates|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesProductionStatisticsPostgresTests.Legacy_reports_keep_quantities_in_an_explicitly_degraded_dimension_bucket|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedHandlerPostgresTests.Rework_traceability_is_consistent_from_all_read_faces_and_keeps_audit_links_after_output_reversal_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.WorkOrderReleaseProjectionBackfillPostgresTests.Backfill_runs_inside_one_uow_transaction_and_publishes_every_gate_bound_work_order_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_v1_v2_concurrent_claims_commit_one_business_effect_across_independent_transactions|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_idempotency_unique_constraint_rejects_its_equivalent_wrong_mutation|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_event_id_unique_constraint_rejects_its_equivalent_wrong_mutation|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_same_event_id_with_different_business_keys_commits_one_business_effect_across_independent_transactions|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_true_duplicate_event_instances_are_unrepresentable_before_the_migration|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_migration_fails_closed_on_ambiguous_event_instance_history|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.WorkOrderReleaseFactTimePostgresTests.Release_of_an_already_reporting_work_order_takes_the_earliest_report_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.WorkOrderReleaseFactTimePostgresTests.Release_carries_each_operations_pre_release_good_quantity_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.WorkOrderReleaseFactTimePostgresTests.Release_of_an_operation_without_any_report_carries_zero_not_null_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.CreatedWorkOrderReleaseBackfillPostgresTests.Backfilled_release_carries_each_operations_pre_release_good_quantity_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.CreatedWorkOrderReleaseBackfillPostgresTests.Backfill_clears_the_impact_query_for_executing_created_work_orders_and_reruns_clean_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.CreatedWorkOrderReleaseBackfillPostgresTests.Backfill_publishes_the_release_fact_through_the_real_unit_of_work_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesMaterialOwnershipSnapshotPostgresTests.Legacy_and_explicit_ownership_survive_persistence_and_document_links_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.MesOperationTaskSkuSourcePostgresTests.Rush_release_and_completion_events_agree_on_the_work_order_sku_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Reversal_reloads_capitalization_without_duplicate_void_on_postgres",
       "databasePrefix": "nerv_iip_mes",
       "diagnosticSchemas": [
         "mes",
         "cap"
       ],
       "expectedTestIdentities": [
+        "Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Http_receipt_commits_one_actual_value_inbound_with_last_source_and_rolls_back_outbox_failure_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_blank_defect_number_early_return_persists_only_inbox",
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_missing_defect_early_return_persists_only_inbox",
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_persists_business_fact_and_inbox_across_scopes_and_replay",
@@ -222,14 +377,21 @@
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSubscriptionTests.PostgreSQL_cap_quality_results_persist_rejected_passed_and_conditional_hold_states",
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSubscriptionTests.PostgreSQL_cap_with_inmemory_messaging_delivers_asset_unavailable_event_to_mes_consumer",
         "Nerv.IIP.Business.Mes.Web.Tests.MesCollaborationPostgresTests.Reportable_scope_matches_a_registered_participant_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.OperationTaskClaimPostgresTests.Concurrent_claims_persist_one_owner_participant_and_receipt_and_reject_the_loser_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.MesMaterialSubstituteSnapshotPostgresTests.Substitute_snapshot_migration_and_cross_scope_readback_hold_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.MesMaterialOwnershipSnapshotPostgresTests.Legacy_and_explicit_ownership_survive_persistence_and_document_links_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.MesSchedulePlanProvenancePostgresTests.Concurrent_revoke_then_release_is_serialized_and_cannot_resurrect_assignment",
         "Nerv.IIP.Business.Mes.Web.Tests.MesSchedulePlanProvenancePostgresTests.Schedule_provenance_and_DateTimeOffset_survive_release_and_revoke_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedHandlerPostgresTests.Concurrent_delivery_serializes_on_ncr_scope_and_creates_exactly_one_work_order",
+        "Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedHandlerPostgresTests.Different_ncrs_in_same_scope_create_unique_operation_task_ids",
         "Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedHandlerPostgresTests.Missing_or_mismatched_mes_source_facts_fail_closed",
+        "Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedHandlerPostgresTests.Rework_release_captures_material_shortage_and_blocks_start",
         "Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedHandlerPostgresTests.Rework_request_creates_one_source_linked_work_order_and_persists_inbox_and_numbering",
         "Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedHandlerPostgresTests.Same_ncr_identity_is_isolated_by_organization_and_environment",
         "Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedHandlerPostgresTests.Same_ncr_with_different_payload_is_dead_lettered_instead_of_treated_as_replay",
+        "Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedOutboxPostgresTests.Existing_transaction_keeps_rework_facts_uncommitted_until_the_outer_owner_decides",
+        "Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedOutboxPostgresTests.Rework_receipt_outbox_failure_rolls_back_business_facts_inbox_numbering_and_route",
+        "Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedOutboxPostgresTests.Rework_request_commits_business_facts_inbox_and_created_receipt_outbox_together",
         "Nerv.IIP.Business.Mes.Web.Tests.RushWorkOrderHttpPostgresTests.PostgreSQL_http_creation_still_dispatches_work_order_created_after_sku_gate_save",
         "Nerv.IIP.Business.Mes.Web.Tests.SkuDisabledConsumerTests.PostgreSQL_concurrent_sku_disabled_events_converge_without_retry_poisoning",
         "Nerv.IIP.Business.Mes.Web.Tests.SkuDisabledConsumerTests.PostgreSQL_consumer_persists_disabled_sku_and_changes_new_work_order_behavior",
@@ -245,15 +407,35 @@
         "Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationPostgresTests.Stale_work_order_version_is_rejected_by_postgresql_concurrency_token",
         "Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Completion_state_and_settlement_outbox_are_committed_together_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Completion_reversal_commits_reopen_state_and_void_outbox_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Reversal_reloads_capitalization_without_duplicate_void_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Settlement_outbox_failure_rolls_back_state_lineage_and_reports_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Void_outbox_failure_rolls_back_task_settlement_and_reversal_report_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Concurrent_completion_rejects_the_stale_settlement_revision_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Settlement_void_before_completion_is_rejected_by_named_check_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Settlement_lineage_rejects_a_report_from_another_scope_or_task_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.ProductionReportOeeDimensionSnapshotPostgresTests.Prior_schema_report_survives_up_down_up_with_nullable_snapshot_columns_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.DowntimeReasonCodeMigrationPostgresTests.Legacy_reasons_migrate_once_across_all_scopes_and_repeat_stably_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.MesDowntimeReadFacePostgresTests.Downtime_list_rows_keep_work_center_code_out_of_work_order_field_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.MesDowntimeReadFacePostgresTests.Reason_summary_settles_recovered_and_ongoing_minutes_and_ranks_by_duration_then_code",
-        "Nerv.IIP.Business.Mes.Web.Tests.MesDowntimeReadFacePostgresTests.Reason_code_filter_narrows_rows_only_and_blank_reason_code_is_not_a_filter"
+        "Nerv.IIP.Business.Mes.Web.Tests.MesDowntimeReadFacePostgresTests.Reason_code_filter_narrows_rows_only_and_blank_reason_code_is_not_a_filter",
+        "Nerv.IIP.Business.Mes.Web.Tests.MesProductionStatisticsPostgresTests.Four_dimensions_filters_and_second_page_use_scoped_production_totals_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.MesProductionStatisticsPostgresTests.Reversal_offsets_the_original_business_bucket_and_non_positive_totals_have_no_rates",
+        "Nerv.IIP.Business.Mes.Web.Tests.MesProductionStatisticsPostgresTests.Legacy_reports_keep_quantities_in_an_explicitly_degraded_dimension_bucket",
+        "Nerv.IIP.Business.Mes.Web.Tests.NcrReworkRequestedHandlerPostgresTests.Rework_traceability_is_consistent_from_all_read_faces_and_keeps_audit_links_after_output_reversal_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.WorkOrderReleaseProjectionBackfillPostgresTests.Backfill_runs_inside_one_uow_transaction_and_publishes_every_gate_bound_work_order_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_v1_v2_concurrent_claims_commit_one_business_effect_across_independent_transactions",
+        "Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_idempotency_unique_constraint_rejects_its_equivalent_wrong_mutation",
+        "Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_event_id_unique_constraint_rejects_its_equivalent_wrong_mutation",
+        "Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_same_event_id_with_different_business_keys_commits_one_business_effect_across_independent_transactions",
+        "Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_true_duplicate_event_instances_are_unrepresentable_before_the_migration",
+        "Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_migration_fails_closed_on_ambiguous_event_instance_history",
+        "Nerv.IIP.Business.Mes.Web.Tests.WorkOrderReleaseFactTimePostgresTests.Release_of_an_already_reporting_work_order_takes_the_earliest_report_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.WorkOrderReleaseFactTimePostgresTests.Release_carries_each_operations_pre_release_good_quantity_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.WorkOrderReleaseFactTimePostgresTests.Release_of_an_operation_without_any_report_carries_zero_not_null_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.CreatedWorkOrderReleaseBackfillPostgresTests.Backfilled_release_carries_each_operations_pre_release_good_quantity_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.CreatedWorkOrderReleaseBackfillPostgresTests.Backfill_clears_the_impact_query_for_executing_created_work_orders_and_reruns_clean_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.CreatedWorkOrderReleaseBackfillPostgresTests.Backfill_publishes_the_release_fact_through_the_real_unit_of_work_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.MesOperationTaskSkuSourcePostgresTests.Rush_release_and_completion_events_agree_on_the_work_order_sku_on_postgres"
       ]
     },
     {
@@ -263,7 +445,7 @@
       "status": "active",
       "databaseOwnership": "test-owned",
       "project": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/Nerv.IIP.Business.Wms.Web.Tests.csproj",
-      "filter": "FullyQualifiedName~Nerv.IIP.Business.Wms.Web.Tests.WarehouseTaskActionConcurrencyPostgresTests.Concurrent_different_payload_becomes_idempotency_conflict_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Wms.Web.Tests.WarehouseTaskActionConcurrencyPostgresTests.Concurrent_same_payload_replays_the_winning_receipt_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Wms.Web.Tests.WcsDispatchConcurrencyPostgresTests.Complete_and_fail_callbacks_are_serialized_by_the_shared_warehouse_task_lock|FullyQualifiedName~Nerv.IIP.Business.Wms.Web.Tests.WcsDispatchConcurrencyPostgresTests.Concurrent_wcs_claim_inserts_keep_one_owner_and_classify_the_loser|FullyQualifiedName~Nerv.IIP.Business.Wms.Web.Tests.WmsQualityInspectionGateConsumerTests.Quality_events_persist_gate_and_putaway_outcome_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Wms.Web.Tests.WmsShortPickBackorderTests.Short_pick_chain_is_durable_and_idempotent_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Wms.Web.Tests.WmsWorkAssignmentMigrationPostgresTests.Migration_blocks_ambiguous_multi_adapter_history_before_changing_legacy_schema|FullyQualifiedName~Nerv.IIP.Business.Wms.Web.Tests.WmsWorkAssignmentMigrationPostgresTests.Migration_blocks_completed_wcs_rows_without_authoritative_full_quantity_before_changing_schema|FullyQualifiedName~Nerv.IIP.Business.Wms.Web.Tests.WmsWorkAssignmentMigrationPostgresTests.Migration_upgrades_legacy_rows_to_safe_assignment_boundary_and_keeps_seed_idempotent",
+      "filter": "FullyQualifiedName~Nerv.IIP.Business.Wms.Web.Tests.WarehouseTaskActionConcurrencyPostgresTests.Concurrent_different_payload_becomes_idempotency_conflict_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Wms.Web.Tests.WarehouseTaskActionConcurrencyPostgresTests.Concurrent_same_payload_replays_the_winning_receipt_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Wms.Web.Tests.WcsDispatchConcurrencyPostgresTests.Complete_and_fail_callbacks_are_serialized_by_the_shared_warehouse_task_lock|FullyQualifiedName~Nerv.IIP.Business.Wms.Web.Tests.WcsDispatchConcurrencyPostgresTests.Concurrent_wcs_claim_inserts_keep_one_owner_and_classify_the_loser|FullyQualifiedName~Nerv.IIP.Business.Wms.Web.Tests.WcsTaskCallbackValidatorTests.Real_postgres_rejects_an_over_long_failure_code_and_stores_an_unbounded_message|FullyQualifiedName~Nerv.IIP.Business.Wms.Web.Tests.WmsQualityInspectionGateConsumerTests.Supplier_return_numbers_stay_within_the_outbound_order_no_column_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Wms.Web.Tests.WmsQualityInspectionGateConsumerTests.Quality_events_persist_gate_and_putaway_outcome_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Wms.Web.Tests.WmsShortPickBackorderTests.Short_pick_chain_is_durable_and_idempotent_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Wms.Web.Tests.WmsWorkAssignmentMigrationPostgresTests.Migration_blocks_ambiguous_multi_adapter_history_before_changing_legacy_schema|FullyQualifiedName~Nerv.IIP.Business.Wms.Web.Tests.WmsWorkAssignmentMigrationPostgresTests.Migration_blocks_completed_wcs_rows_without_authoritative_full_quantity_before_changing_schema|FullyQualifiedName~Nerv.IIP.Business.Wms.Web.Tests.WmsWorkAssignmentMigrationPostgresTests.Migration_upgrades_legacy_rows_to_safe_assignment_boundary_and_keeps_seed_idempotent",
       "databasePrefix": "nerv_iip_wms",
       "diagnosticSchemas": [
         "wms"
@@ -273,6 +455,8 @@
         "Nerv.IIP.Business.Wms.Web.Tests.WarehouseTaskActionConcurrencyPostgresTests.Concurrent_same_payload_replays_the_winning_receipt_on_postgres",
         "Nerv.IIP.Business.Wms.Web.Tests.WcsDispatchConcurrencyPostgresTests.Complete_and_fail_callbacks_are_serialized_by_the_shared_warehouse_task_lock",
         "Nerv.IIP.Business.Wms.Web.Tests.WcsDispatchConcurrencyPostgresTests.Concurrent_wcs_claim_inserts_keep_one_owner_and_classify_the_loser",
+        "Nerv.IIP.Business.Wms.Web.Tests.WcsTaskCallbackValidatorTests.Real_postgres_rejects_an_over_long_failure_code_and_stores_an_unbounded_message",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsQualityInspectionGateConsumerTests.Supplier_return_numbers_stay_within_the_outbound_order_no_column_on_postgres",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsQualityInspectionGateConsumerTests.Quality_events_persist_gate_and_putaway_outcome_on_postgres",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsShortPickBackorderTests.Short_pick_chain_is_durable_and_idempotent_on_postgres",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsWorkAssignmentMigrationPostgresTests.Migration_blocks_ambiguous_multi_adapter_history_before_changing_legacy_schema",
@@ -287,27 +471,40 @@
       "status": "active",
       "databaseOwnership": "runner",
       "project": "backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/Nerv.IIP.Business.Erp.Web.Tests.csproj",
-      "filter": "FullyQualifiedName~Nerv.IIP.Business.Erp.Web.Tests.BusinessPartnerChangedPostgresAcceptanceTests|FullyQualifiedName~Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests|FullyQualifiedName~Nerv.IIP.Business.Erp.Web.Tests.WorkCenterMachineOverheadRatePostgresAcceptanceTests",
+      "filter": "FullyQualifiedName~Nerv.IIP.Business.Erp.Web.Tests.BusinessPartnerChangedPostgresAcceptanceTests|FullyQualifiedName~Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests|FullyQualifiedName~Nerv.IIP.Business.Erp.Web.Tests.WorkCenterMachineOverheadRatePostgresAcceptanceTests|FullyQualifiedName~Nerv.IIP.Business.Erp.Web.Tests.PurchaseReceiptPostingRoutePostgresTests|FullyQualifiedName~Nerv.IIP.Business.Erp.Web.Tests.ErpJournalVoucherNoPostgresAcceptanceTests",
       "databasePrefix": "nerv_iip_erp",
       "diagnosticSchemas": [
         "erp"
       ],
       "expectedTestIdentities": [
         "Nerv.IIP.Business.Erp.Web.Tests.BusinessPartnerChangedPostgresAcceptanceTests.PostgreSQL_consumer_persists_disabled_partner_and_changes_new_PO_SO_behavior",
+        "Nerv.IIP.Business.Erp.Web.Tests.PurchaseReceiptPostingRoutePostgresTests.Routes_persist_replay_without_events_and_keep_financial_facts_on_postgres",
+        "Nerv.IIP.Business.Erp.Web.Tests.PurchaseReceiptPostingRoutePostgresTests.Legacy_receipt_migrates_to_direct_and_old_key_replays_on_postgres",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_capitalized_settlement_reads_back_balanced_voucher_and_unique_lineage_indexes",
+        "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_source_document_columns_round_trip_and_survive_up_down_up",
+        "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_world_history_seed_leaves_no_voucher_without_a_source_document",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_closed_period_stays_replayable_then_reopen_posts_machine_overhead_exactly_once",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_concurrent_report_and_actual_settlement_leave_only_actual_labor_active",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_fault_after_save_rolls_back_settlement_inbox_lineage_and_cost",
+        "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_machine_overhead_reads_translate_and_isolate_work_order_period_and_scope",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_migration_backfills_legacy_rate_and_enforces_revision_indexes",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_migration_enforces_gl_link_and_persists_reconciled_cost",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_nonzero_machine_overhead_still_fails_closed_for_priced_labor_in_another_currency",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_partial_capitalization_settle_void_and_final_receipt_persist_balanced_vouchers",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_priced_labor_then_zero_not_applicable_machine_settle_and_void_do_not_freeze_machine_currency",
+        "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_rework_origin_arriving_after_cost_events_stays_isolated_and_queryable",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_rejects_duplicate_settlement_void_and_covered_report_without_half_commit",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_second_concurrent_rate_command_blocks_then_observes_committed_revision",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_zero_available_machine_settle_and_void_do_not_poison_later_priced_labor_currency",
         "Nerv.IIP.Business.Erp.Web.Tests.WorkCenterMachineOverheadRatePostgresAcceptanceTests.Concurrent_commands_serialize_revision_allocation_on_postgres",
-        "Nerv.IIP.Business.Erp.Web.Tests.WorkCenterMachineOverheadRatePostgresAcceptanceTests.Migration_persists_monthly_rate_and_enforces_scope_period_revision_on_postgres"
+        "Nerv.IIP.Business.Erp.Web.Tests.WorkCenterMachineOverheadRatePostgresAcceptanceTests.Http_configuration_and_audit_preserve_scope_revision_and_derived_rates_on_postgres",
+        "Nerv.IIP.Business.Erp.Web.Tests.WorkCenterMachineOverheadRatePostgresAcceptanceTests.Migration_persists_monthly_rate_and_enforces_scope_period_revision_on_postgres",
+        "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_source_document_unique_index_blocks_a_second_row_for_the_same_source",
+        "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_dedup_sites_key_on_the_source_document_even_when_the_voucher_number_differs",
+        "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_source_unique_index_migration_up_and_down_run_for_real",
+        "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_work_order_cost_adjustment_key_drops_the_work_order_segment",
+        "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_capitalization_voucher_number_comes_from_the_allocator_and_survives_cap_redelivery",
+        "Nerv.IIP.Business.Erp.Web.Tests.ErpJournalVoucherNoPostgresAcceptanceTests.PostgreSQL_repeated_commands_for_the_same_source_document_record_one_voucher_each"
       ]
     },
     {
@@ -335,15 +532,30 @@
       "status": "active",
       "databaseOwnership": "runner",
       "project": "backend/tests/Nerv.IIP.Business.Acceptance.Tests/Nerv.IIP.Business.Acceptance.Tests.csproj",
-      "filter": "FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.RuntimeHoursMaintenancePostgresAcceptanceTests.Runtime_hour_interval_generates_pm_work_order_from_industrial_telemetry_runtime_hours_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.WmsInventoryRpcIdempotencyAcceptanceTests.Postgres_count_execution_timeout_and_concurrent_retry_converges_inventory_and_wms|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.WmsInventoryRpcIdempotencyAcceptanceTests.Postgres_count_task_same_code_different_key_unique_conflict_reruns_as_domain_conflict",
+      "filter": "FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.MaintenanceAvailabilityWindowPostgresAcceptanceTests.Availability_windows_include_in_flight_and_cancelled_work_orders_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.MesDefectDispositionReferenceAcceptanceTests.Postgres_disposition_reference_at_the_quality_producer_width_is_persisted_without_escaping_the_consumer|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.MesDefectDispositionReferenceAcceptanceTests.Postgres_disposition_reference_beyond_the_column_width_is_dead_lettered_instead_of_escaping_the_consumer|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.MesDefectDispositionReferenceAcceptanceTests.Postgres_widened_column_keeps_updating_a_defect_row_written_before_the_migration|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.PurchaseReceiptPostingRoutePostgresAcceptanceTests.Public_receipt_routes_are_exclusive_and_replay_preserves_identity_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.QualityFirstArticleMesQualityHoldAcceptanceTests.Postgres_first_article_hold_context_at_the_mes_identity_upper_bound_is_persisted_without_escaping_the_consumer|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.QualityFirstArticleMesQualityHoldAcceptanceTests.Postgres_source_identity_beyond_the_column_width_is_dead_lettered_instead_of_escaping_the_consumer|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.QualityFirstArticleMesQualityHoldAcceptanceTests.Postgres_widened_column_keeps_matching_a_hold_row_written_before_the_migration|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_every_stock_bearing_inspection_source_type_still_transfers_quality_stock|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_first_article_inspection_result_at_validator_upper_bound_never_reaches_inventory_stock_commands|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_first_article_inspection_result_with_generated_codes_never_reaches_inventory_stock_commands|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_first_article_inspection_result_with_short_identity_posts_no_stock_movement|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_receiving_inspection_result_still_transfers_quality_stock|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.RuntimeHoursMaintenancePostgresAcceptanceTests.Runtime_hour_interval_generates_pm_work_order_from_industrial_telemetry_runtime_hours_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.WmsInventoryRpcIdempotencyAcceptanceTests.Postgres_count_execution_timeout_and_concurrent_retry_converges_inventory_and_wms|FullyQualifiedName~Nerv.IIP.Business.Acceptance.Tests.WmsInventoryRpcIdempotencyAcceptanceTests.Postgres_count_task_same_code_different_key_unique_conflict_reruns_as_domain_conflict",
       "databasePrefix": "nerv_iip_acceptance",
       "diagnosticSchemas": [
+        "erp",
         "industrial_telemetry",
         "inventory",
         "maintenance",
+        "mes",
         "wms"
       ],
       "expectedTestIdentities": [
+        "Nerv.IIP.Business.Acceptance.Tests.MaintenanceAvailabilityWindowPostgresAcceptanceTests.Availability_windows_include_in_flight_and_cancelled_work_orders_on_postgres",
+        "Nerv.IIP.Business.Acceptance.Tests.MesDefectDispositionReferenceAcceptanceTests.Postgres_disposition_reference_at_the_quality_producer_width_is_persisted_without_escaping_the_consumer",
+        "Nerv.IIP.Business.Acceptance.Tests.MesDefectDispositionReferenceAcceptanceTests.Postgres_disposition_reference_beyond_the_column_width_is_dead_lettered_instead_of_escaping_the_consumer",
+        "Nerv.IIP.Business.Acceptance.Tests.MesDefectDispositionReferenceAcceptanceTests.Postgres_widened_column_keeps_updating_a_defect_row_written_before_the_migration",
+        "Nerv.IIP.Business.Acceptance.Tests.PurchaseReceiptPostingRoutePostgresAcceptanceTests.Public_receipt_routes_are_exclusive_and_replay_preserves_identity_on_postgres",
+        "Nerv.IIP.Business.Acceptance.Tests.QualityFirstArticleMesQualityHoldAcceptanceTests.Postgres_first_article_hold_context_at_the_mes_identity_upper_bound_is_persisted_without_escaping_the_consumer",
+        "Nerv.IIP.Business.Acceptance.Tests.QualityFirstArticleMesQualityHoldAcceptanceTests.Postgres_source_identity_beyond_the_column_width_is_dead_lettered_instead_of_escaping_the_consumer",
+        "Nerv.IIP.Business.Acceptance.Tests.QualityFirstArticleMesQualityHoldAcceptanceTests.Postgres_widened_column_keeps_matching_a_hold_row_written_before_the_migration",
+        "Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_every_stock_bearing_inspection_source_type_still_transfers_quality_stock",
+        "Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_first_article_inspection_result_at_validator_upper_bound_never_reaches_inventory_stock_commands",
+        "Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_first_article_inspection_result_with_generated_codes_never_reaches_inventory_stock_commands",
+        "Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_first_article_inspection_result_with_short_identity_posts_no_stock_movement",
+        "Nerv.IIP.Business.Acceptance.Tests.QualityInspectionInventoryStockGateAcceptanceTests.Postgres_receiving_inspection_result_still_transfers_quality_stock",
         "Nerv.IIP.Business.Acceptance.Tests.RuntimeHoursMaintenancePostgresAcceptanceTests.Runtime_hour_interval_generates_pm_work_order_from_industrial_telemetry_runtime_hours_on_postgres",
         "Nerv.IIP.Business.Acceptance.Tests.WmsInventoryRpcIdempotencyAcceptanceTests.Postgres_count_execution_timeout_and_concurrent_retry_converges_inventory_and_wms",
         "Nerv.IIP.Business.Acceptance.Tests.WmsInventoryRpcIdempotencyAcceptanceTests.Postgres_count_task_same_code_different_key_unique_conflict_reruns_as_domain_conflict"
@@ -363,6 +575,27 @@
       ],
       "expectedTestIdentities": [
         "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceIntegrationEventHandlerTests.Device_disabled_consumer_durably_blocks_pm_generation_on_postgres"
+      ]
+    },
+    {
+      "id": "maintenance-asset-unavailable-v2-postgres",
+      "service": "Maintenance",
+      "tier": "core",
+      "status": "active",
+      "databaseOwnership": "runner",
+      "project": "backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/Nerv.IIP.Business.Maintenance.Web.Tests.csproj",
+      "filter": "FullyQualifiedName~Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests",
+      "databasePrefix": "nerv_iip_maintenance_v2",
+      "diagnosticSchemas": [
+        "maintenance"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.V1_free_text_still_publishes_only_the_v1_envelope_without_touching_the_catalog",
+        "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.V2_exact_code_commits_work_order_with_v1_companion_and_v2_canonical_outbox_rows_in_one_transaction",
+        "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.V2_near_miss_cross_scope_or_free_text_codes_are_rejected_by_the_database_predicate_with_zero_rows",
+        "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.V2_null_reason_code_commits_a_plain_work_order_without_asset_unavailable_outbox_rows",
+        "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.V2_outbox_failure_rolls_back_the_work_order_and_the_already_published_v1_companion",
+        "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.V1_companion_outbox_failure_rolls_back_the_work_order_before_the_v2_envelope_is_attempted"
       ]
     },
     {
@@ -398,6 +631,23 @@
       ],
       "expectedTestIdentities": [
         "Nerv.IIP.Business.Inventory.Web.Tests.InventoryDirectoryPostgresTests.PostgreSql_fixture_allocates_parallel_run_scoped_ports_and_cleans_each_run"
+      ]
+    },
+    {
+      "id": "notification-envelope-field-budget-postgres",
+      "service": "Notification",
+      "tier": "core",
+      "status": "active",
+      "databaseOwnership": "test-owned",
+      "project": "backend/services/Notification/tests/Nerv.IIP.Notification.Web.Tests/Nerv.IIP.Notification.Web.Tests.csproj",
+      "filter": "FullyQualifiedName~Nerv.IIP.Notification.Web.Tests.NotificationEnvelopeFieldBudgetPostgresTests",
+      "databasePrefix": "nerv_notification_envelope_budget",
+      "diagnosticSchemas": [
+        "notification"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Notification.Web.Tests.NotificationEnvelopeFieldBudgetPostgresTests.Oversized_envelope_field_dead_letters_and_stays_replayable_on_postgres",
+        "Nerv.IIP.Notification.Web.Tests.NotificationEnvelopeFieldBudgetPostgresTests.Without_the_gate_an_oversized_key_raises_22001_on_postgres"
       ]
     }
   ],

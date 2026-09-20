@@ -9,6 +9,17 @@ using Nerv.IIP.Contracts.EquipmentRuntime;
 
 namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
+public sealed record BusinessMesProductionReportIntentLookupRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string IdempotencyKey);
+
+public sealed record BusinessMesProductionReportIntentReceipt(
+    string? ReportIntentFingerprint,
+    string ProductionReportId,
+    string ReportNo,
+    IReadOnlyCollection<string> SerialNumbers);
+
 public interface IBusinessMesClient
 {
     Task<BusinessConsoleMesReadinessArea> GetFoundationReadinessAreaAsync(
@@ -174,6 +185,13 @@ public interface IBusinessMesClient
         string actor,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleAcceptedResponse> ClaimDispatchTaskAsync(
+        string internalBearerToken,
+        string operationTaskId,
+        BusinessConsoleMesClaimDispatchTaskForwardRequest request,
+        string actor,
+        CancellationToken cancellationToken) => throw new NotSupportedException();
+
     Task<BusinessConsoleMesOperationTaskListResponse> ListOperationTasksAsync(
         string internalBearerToken,
         BusinessMesOperationTaskListRequest request,
@@ -218,6 +236,11 @@ public interface IBusinessMesClient
         BusinessConsoleMesListWithoutStatusRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleMesProductionStatisticsResponse> QueryProductionStatisticsAsync(
+        string internalBearerToken,
+        BusinessConsoleMesProductionStatisticsRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleMesProductionReportDetailResponse> GetProductionReportAsync(
         string internalBearerToken,
         string reportNo,
@@ -239,6 +262,18 @@ public interface IBusinessMesClient
         BusinessConsoleRecordProductionReportRequest request,
         string actor,
         CancellationToken cancellationToken);
+
+    Task<BusinessConsoleRecordProductionReportResponse> RecordProductionReportAsync(
+        string internalBearerToken,
+        BusinessConsoleRecordProductionReportRequest request,
+        string actor,
+        string? reportIntentFingerprint,
+        CancellationToken cancellationToken) => throw new NotSupportedException();
+
+    Task<BusinessMesProductionReportIntentReceipt?> GetProductionReportByIdempotencyKeyAsync(
+        string internalBearerToken,
+        BusinessMesProductionReportIntentLookupRequest request,
+        CancellationToken cancellationToken) => throw new NotSupportedException();
 
     Task<BusinessConsoleAcceptedResponse> RecordDefectAsync(
         string internalBearerToken,
@@ -292,15 +327,21 @@ public interface IBusinessMesClient
         BusinessConsoleMesListRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleMesShiftHandoverDetail> GetShiftHandoverAsync(
+        string internalBearerToken,
+        string handoverId,
+        BusinessConsoleMesShiftHandoverDetailRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleAcceptedResponse> CreateShiftHandoverAsync(
         string internalBearerToken,
-        BusinessConsoleMesCreateShiftHandoverRequest request,
+        BusinessConsoleMesCreateShiftHandoverForwardRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleAcceptedResponse> AcceptShiftHandoverAsync(
         string internalBearerToken,
         string handoverId,
-        BusinessConsoleMesAcceptShiftHandoverRequest request,
+        BusinessConsoleMesAcceptShiftHandoverForwardRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleMesTraceabilityResponse> GetWorkOrderTraceabilityAsync(
@@ -592,13 +633,14 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             null,
             cancellationToken);
 
-    public Task<BusinessConsoleMesReverseProductionReportResponse> ReverseProductionReportAsync(
+    public async Task<BusinessConsoleMesReverseProductionReportResponse> ReverseProductionReportAsync(
         string internalBearerToken,
         string reportNo,
         BusinessConsoleMesReverseProductionReportRequest request,
         string actor,
-        CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleMesReverseProductionReportResponse>(
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamReverseProductionReportResponse>(
             internalBearerToken,
             HttpMethod.Post,
             $"/api/business/v1/mes/production-reports/{Uri.EscapeDataString(reportNo)}/reverse",
@@ -610,6 +652,22 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
                 request.ReversedAtUtc,
                 request.IdempotencyKey),
             cancellationToken);
+
+        if (response.ProductionReportId is null ||
+            response.ProductionReportId.Id == Guid.Empty ||
+            string.IsNullOrWhiteSpace(response.ReportNo) ||
+            string.IsNullOrWhiteSpace(response.OriginalReportNo))
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
+
+        return new BusinessConsoleMesReverseProductionReportResponse(
+            response.ProductionReportId.Id.ToString(),
+            response.ReportNo,
+            response.OriginalReportNo);
+    }
 
     public async Task<BusinessConsoleMesCreateReceiptResponse> RetryFinishedGoodsReceiptInventoryPostingAsync(
         string internalBearerToken,
@@ -756,6 +814,21 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             configureRequest: message =>
                 message.Headers.TryAddWithoutValidation("X-Authenticated-Actor", actor));
 
+    public Task<BusinessConsoleAcceptedResponse> ClaimDispatchTaskAsync(
+        string internalBearerToken,
+        string operationTaskId,
+        BusinessConsoleMesClaimDispatchTaskForwardRequest request,
+        string actor,
+        CancellationToken cancellationToken) =>
+        SendAcceptedAsync(
+            internalBearerToken,
+            $"/api/business/v1/mes/operation-tasks/{Uri.EscapeDataString(operationTaskId)}/claim",
+            request,
+            MesDispatchTaskDocumentType,
+            cancellationToken,
+            configureRequest: message =>
+                message.Headers.TryAddWithoutValidation("X-Authenticated-Actor", actor));
+
     public Task<BusinessConsoleMesOperationTaskListResponse> ListOperationTasksAsync(
         string internalBearerToken,
         BusinessMesOperationTaskListRequest request,
@@ -828,6 +901,37 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             null,
             cancellationToken);
 
+    public async Task<BusinessConsoleMesProductionStatisticsResponse> QueryProductionStatisticsAsync(
+        string internalBearerToken,
+        BusinessConsoleMesProductionStatisticsRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<BusinessConsoleMesProductionStatisticsResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/mes/production-statistics?" + ProductionStatisticsQuery(request),
+            null,
+            cancellationToken);
+
+        if (!string.Equals(response.OrganizationId, request.OrganizationId, StringComparison.Ordinal) ||
+            !string.Equals(response.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal) ||
+            response.Dimension != request.Dimension ||
+            response.WindowStartUtc != request.WindowStartUtc ||
+            response.WindowEndUtc != request.WindowEndUtc ||
+            response.Skip != request.Skip ||
+            response.Take != request.Take ||
+            response.Items is null ||
+            response.Items.Any(item =>
+                item.Dimension != request.Dimension || item.DegradedReasons is null))
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
+
+        return response;
+    }
+
     public Task<BusinessConsoleMesProductionReportDetailResponse> GetProductionReportAsync(
         string internalBearerToken,
         string reportNo,
@@ -876,10 +980,23 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         return result.ToBusinessConsoleResult();
     }
 
+    public Task<BusinessConsoleRecordProductionReportResponse> RecordProductionReportAsync(
+        string internalBearerToken,
+        BusinessConsoleRecordProductionReportRequest request,
+        string actor,
+        CancellationToken cancellationToken) =>
+        RecordProductionReportAsync(
+            internalBearerToken,
+            request,
+            actor,
+            reportIntentFingerprint: null,
+            cancellationToken);
+
     public async Task<BusinessConsoleRecordProductionReportResponse> RecordProductionReportAsync(
         string internalBearerToken,
         BusinessConsoleRecordProductionReportRequest request,
         string actor,
+        string? reportIntentFingerprint,
         CancellationToken cancellationToken)
     {
         var response = await SendAsync<DownstreamRecordProductionReportResponse>(
@@ -902,12 +1019,16 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
                 request.DefectRecordNo,
                 request.ProducedLotNo,
                 request.SerialNo,
-                actor),
+                request.SerialTrackingPolicy,
+                request.SerialNumbers,
+                actor,
+                reportIntentFingerprint),
             cancellationToken);
 
         if (response.ProductionReportId is null ||
             response.ProductionReportId.Id == Guid.Empty ||
-            string.IsNullOrWhiteSpace(response.ReportNo))
+            string.IsNullOrWhiteSpace(response.ReportNo) ||
+            response.SerialNumbers is null)
         {
             throw BusinessServiceProxyException.FromSafeDownstreamMessage(
                 HttpStatusCode.BadGateway,
@@ -917,6 +1038,7 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         return new BusinessConsoleRecordProductionReportResponse(
             response.ProductionReportId.Id.ToString(),
             response.ReportNo,
+            response.SerialNumbers,
             string.IsNullOrWhiteSpace(request.IdempotencyKey)
                 ? null
                 : BusinessConsoleOperationReceipts.Accepted(
@@ -926,6 +1048,48 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
                     response.ProductionReportId.Id.ToString(),
                     $"/api/business-console/v1/mes/production-reports/{Uri.EscapeDataString(response.ReportNo)}?organizationId={Uri.EscapeDataString(request.OrganizationId)}&environmentId={Uri.EscapeDataString(request.EnvironmentId)}",
                     request.IdempotencyKey));
+    }
+
+    public async Task<BusinessMesProductionReportIntentReceipt?> GetProductionReportByIdempotencyKeyAsync(
+        string internalBearerToken,
+        BusinessMesProductionReportIntentLookupRequest request,
+        CancellationToken cancellationToken)
+    {
+        DownstreamProductionReportIntentReceipt response;
+        try
+        {
+            response = await SendAsync<DownstreamProductionReportIntentReceipt>(
+                internalBearerToken,
+                HttpMethod.Get,
+                "/api/business/v1/mes/production-reports/by-idempotency-key?" + Query(
+                    ("organizationId", request.OrganizationId),
+                    ("environmentId", request.EnvironmentId),
+                    ("idempotencyKey", request.IdempotencyKey)),
+                null,
+                cancellationToken);
+        }
+        catch (BusinessServiceProxyException exception) when (
+            exception.StatusCode == HttpStatusCode.BadRequest &&
+            string.Equals(exception.Message, "未找到生产报工。", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        if (response.ProductionReportId is null ||
+            response.ProductionReportId.Id == Guid.Empty ||
+            string.IsNullOrWhiteSpace(response.ReportNo) ||
+            response.SerialNumbers is null)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
+
+        return new BusinessMesProductionReportIntentReceipt(
+            response.ReportIntentFingerprint,
+            response.ProductionReportId.Id.ToString(),
+            response.ReportNo,
+            response.SerialNumbers);
     }
 
     public Task<BusinessConsoleAcceptedResponse> RecordDefectAsync(
@@ -1082,9 +1246,22 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             null,
             cancellationToken);
 
+    public Task<BusinessConsoleMesShiftHandoverDetail> GetShiftHandoverAsync(
+        string internalBearerToken,
+        string handoverId,
+        BusinessConsoleMesShiftHandoverDetailRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesShiftHandoverDetail>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/mes/shift-handovers/{Uri.EscapeDataString(handoverId)}?" +
+            ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken);
+
     public Task<BusinessConsoleAcceptedResponse> CreateShiftHandoverAsync(
         string internalBearerToken,
-        BusinessConsoleMesCreateShiftHandoverRequest request,
+        BusinessConsoleMesCreateShiftHandoverForwardRequest request,
         CancellationToken cancellationToken) =>
         SendAcceptedAsync(
             internalBearerToken,
@@ -1096,7 +1273,7 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
     public Task<BusinessConsoleAcceptedResponse> AcceptShiftHandoverAsync(
         string internalBearerToken,
         string handoverId,
-        BusinessConsoleMesAcceptShiftHandoverRequest request,
+        BusinessConsoleMesAcceptShiftHandoverForwardRequest request,
         CancellationToken cancellationToken) =>
         SendAcceptedAsync(
             internalBearerToken,
@@ -1241,6 +1418,8 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             ("deviceAssetId", request.DeviceAssetId),
             ("workOrderId", request.WorkOrderId),
             ("reasonCode", request.ReasonCode),
+            ("windowStartUtc", request.WindowStartUtc),
+            ("windowEndUtc", request.WindowEndUtc),
             ("skip", request.Skip),
             ("take", request.Take));
 
@@ -1331,6 +1510,20 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             ("skip", request.Skip),
             ("take", request.Take));
 
+    private static string ProductionStatisticsQuery(BusinessConsoleMesProductionStatisticsRequest request) =>
+        Query(
+            ("organizationId", request.OrganizationId),
+            ("environmentId", request.EnvironmentId),
+            ("dimension", JsonNamingPolicy.CamelCase.ConvertName(request.Dimension.ToString())),
+            ("windowStartUtc", request.WindowStartUtc),
+            ("windowEndUtc", request.WindowEndUtc),
+            ("businessDate", request.BusinessDate),
+            ("shiftCode", request.ShiftCode),
+            ("workCenterId", request.WorkCenterId),
+            ("skuId", request.SkuId),
+            ("skip", request.Skip),
+            ("take", request.Take));
+
     private static string ProductionPlanListQuery(BusinessConsoleMesProductionPlanListRequest request) =>
         Query(
             ("organizationId", request.OrganizationId),
@@ -1380,9 +1573,21 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
 
     private sealed record DownstreamRecordProductionReportResponse(
         DownstreamProductionReportId? ProductionReportId,
-        string? ReportNo);
+        string? ReportNo,
+        IReadOnlyCollection<string>? SerialNumbers);
+
+    private sealed record DownstreamProductionReportIntentReceipt(
+        [property: JsonRequired] string? ReportIntentFingerprint,
+        DownstreamProductionReportId? ProductionReportId,
+        string? ReportNo,
+        IReadOnlyCollection<string>? SerialNumbers);
 
     private sealed record DownstreamProductionReportId(Guid Id);
+
+    private sealed record DownstreamReverseProductionReportResponse(
+        DownstreamProductionReportId? ProductionReportId,
+        string? ReportNo,
+        string? OriginalReportNo);
 
     private sealed record DownstreamCreateFinishedGoodsReceiptRequestResponse(
         DownstreamFinishedGoodsReceiptRequestId? FinishedGoodsReceiptRequestId,
@@ -1416,7 +1621,10 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         string? DefectRecordNo,
         string? ProducedLotNo,
         string? SerialNo,
-        string ReportedBy);
+        string SerialTrackingPolicy,
+        IReadOnlyCollection<string>? SerialNumbers,
+        string ReportedBy,
+        string? ReportIntentFingerprint);
 
     private sealed record DownstreamReverseProductionReportRequest(
         string OrganizationId,

@@ -83,7 +83,20 @@ public sealed class ListMasterProductionScheduleBucketsQueryHandler(ApplicationD
     }
 }
 
-public sealed record ListDemandSourcesQuery(string OrganizationId, string EnvironmentId) : IQuery<IReadOnlyCollection<DemandSourceResponse>>;
+public sealed record ListDemandSourcesQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Keyword = null,
+    int Skip = 0,
+    int Take = OffsetPage.DefaultTake) : IQuery<IReadOnlyCollection<DemandSourceResponse>>;
+
+public sealed class ListDemandSourcesQueryValidator : AbstractValidator<ListDemandSourcesQuery>
+{
+    public ListDemandSourcesQueryValidator()
+    {
+        this.AddTenantRules(query => query.OrganizationId, query => query.EnvironmentId);
+    }
+}
 
 public sealed record DemandSourceResponse(
     string DemandSourceId,
@@ -104,10 +117,23 @@ public sealed class ListDemandSourcesQueryHandler(ApplicationDbContext dbContext
 {
     public async Task<IReadOnlyCollection<DemandSourceResponse>> Handle(ListDemandSourcesQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = SearchTerm.From(request.Keyword).Value;
         return await dbContext.DemandSources.AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == tenant.OrganizationId)
+            .Where(x => x.EnvironmentId == tenant.EnvironmentId)
+            .Where(x => keyword == null
+                || x.SourceReference.ToLower().Contains(keyword)
+                || x.SourceLineReference.ToLower().Contains(keyword)
+                || x.CustomerCode.ToLower().Contains(keyword)
+                || x.SkuCode.ToLower().Contains(keyword)
+                || x.SiteCode.ToLower().Contains(keyword))
             .OrderBy(x => x.DueDate)
             .ThenBy(x => x.SourceReference)
+            .ThenBy(x => x.Id)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new DemandSourceResponse(
                 x.Id.ToString(),
                 x.DemandType,

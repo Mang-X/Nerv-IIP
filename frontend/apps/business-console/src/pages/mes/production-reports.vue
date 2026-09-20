@@ -112,7 +112,7 @@ const canReport = computed(() =>
 
 const quickViewWorkOrderId = ref<string | null>(null)
 
-const errorMessage = computed(() => formatError(productionReportsError.value))
+const errorMessage = computed(() => inlineErrorMessage(productionReportsError.value))
 
 type ReportRow = BusinessConsoleMesProductionReportRow
 
@@ -405,9 +405,6 @@ function formatDateTime(value?: string | null) {
 function openWorkOrder(workOrderId?: string | null) {
   if (workOrderId) quickViewWorkOrderId.value = workOrderId
 }
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
 async function promoteCandidate(candidate: {
   candidateId?: string
   workOrderId?: string | null
@@ -450,8 +447,6 @@ async function dismissCandidate(candidateId?: string) {
       </template>
     </NvPageHeader>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
-
     <!-- 跨页互链定位:点击「查看冲销单/冲销自」时若对方在别页,按其单号筛选定位;给出可清除的说明 -->
     <div
       v-if="filters.keyword"
@@ -477,9 +472,12 @@ async function dismissCandidate(candidateId?: string) {
       :rows="productionReports"
       row-key="productionReportId"
       :loading="productionReportsPending"
+      :error="productionReportsError"
+      :error-message="errorMessage"
       empty-message="还没有报工记录。报工后这里会出现对应记录，去工序执行报工。"
       :searchable="false"
       :column-settings="false"
+      @retry="refreshProductionReports"
     >
       <template #cell-reportNo="{ row }">
         <div
@@ -791,7 +789,7 @@ async function dismissCandidate(candidateId?: string) {
         </div>
       </div>
       <p v-if="candidateQueue.error.value" class="text-sm text-destructive" role="alert">
-        {{ formatError(candidateQueue.error.value) }}
+        {{ inlineErrorMessage(candidateQueue.error.value) }}
       </p>
       <div v-if="candidateQueue.candidates.value.length" class="space-y-3">
         <article

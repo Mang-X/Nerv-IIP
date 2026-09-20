@@ -18,7 +18,6 @@ import {
   createBusinessConsoleMesMaterialIssueRequestMutationOptions,
   createBusinessConsoleMesRushWorkOrderMutationOptions,
   createBusinessConsoleMesShiftHandoverMutationOptions,
-  createBusinessConsoleSopFileDownloadGrantMutationOptions,
   getBusinessConsoleMesBatchTraceabilityQueryOptions,
   getBusinessConsoleMesMaterialLotTraceabilityQueryOptions,
   getBusinessConsoleMesCurrentOperationSopsQueryOptions,
@@ -29,6 +28,7 @@ import {
   getBusinessConsoleMesProductionReportQueryOptions,
   getBusinessConsoleMesWipSummaryQueryOptions,
   getBusinessConsoleMesWipSummary,
+  getBusinessConsoleBarcodePrintBatch,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
   getBusinessConsoleMesWorkOrderTransformationQueryOptions,
   getBusinessConsoleMesWorkOrderTraceabilityQueryOptions,
@@ -54,6 +54,7 @@ import {
   listBusinessConsoleQualityScrapReasonCodesQueryOptions,
   listBusinessConsoleMesScheduleResultsQueryOptions,
   listBusinessConsoleMesShiftHandoversQueryOptions,
+  getBusinessConsoleMesShiftHandoverQueryOptions,
   pauseBusinessConsoleMesOperationTaskMutationOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
   mergeBusinessConsoleMesWorkOrdersMutationOptions,
@@ -85,8 +86,6 @@ import {
   type BusinessConsoleMesMaterialReadinessEnvelope,
   type BusinessConsoleCurrentSopDocumentItem,
   type BusinessConsoleCurrentSopDocumentsEnvelope,
-  type BusinessConsoleSopFileDownloadGrantEnvelope,
-  type BusinessConsoleSopFileDownloadGrantResponse,
   type BusinessConsoleMesOperationTaskActionRequest,
   type BusinessConsoleMesOperationTaskListEnvelope,
   type BusinessConsoleMesOperationTaskRow,
@@ -109,6 +108,8 @@ import {
   type BusinessConsoleMesQualityHoldTimelineItem,
   type BusinessConsoleMesWorkOrderQualityHoldSummary,
   type BusinessConsoleMesCreateShiftHandoverRequest,
+  type BusinessConsoleMesShiftHandoverDetail,
+  type BusinessConsoleMesShiftHandoverDetailEnvelope,
   type BusinessConsoleMesShiftHandoverListEnvelope,
   type BusinessConsoleMesShiftHandoverRow,
   type BusinessConsoleMesTraceabilityEnvelope,
@@ -132,6 +133,8 @@ import {
 } from '@nerv-iip/api-client'
 import {
   acquirePendingBusinessIntent,
+  clearPendingBusinessIntent,
+  shouldRetainPendingBusinessIntent,
   completePendingBusinessIntent,
   createServerPaginationState,
   formatWorkScopeKey,
@@ -226,6 +229,8 @@ export interface MesListFilters {
   readinessStatus?: string
   /** 停机原因码过滤（停机读面按原因筛选用）。 */
   reasonCode?: string
+  windowStartUtc?: string
+  windowEndUtc?: string
   skip: number
   take: number
 }
@@ -855,6 +860,33 @@ export function useMesProductionReporting() {
   const issuedReportCompleteIntents = new Set<string>()
   const recordProductionReportPending = shallowRef(false)
   const recordProductionReportError = shallowRef<unknown>()
+  // 一道工序只有一个待确认的报工槽位；未知结果后重新进入时先恢复完整载荷。
+  const productionReportIntentScope = (workOrderId: string, operationTaskId: string) => ({
+    principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
+    organizationId: context.organizationId,
+    environmentId: context.environmentId,
+    operationType: 'mes.production-report.record',
+    payloadFingerprint: JSON.stringify({ workOrderId, operationTaskId }),
+  })
+  function restoreProductionReport(workOrderId: string, operationTaskId: string) {
+    const pending = peekPendingBusinessIntent(
+      productionReportIntentScope(workOrderId, operationTaskId),
+    )
+    if (!pending) return undefined
+    return requirePendingPayloadSnapshot<BusinessConsoleRecordProductionReportRequest>(
+      pending.payloadSnapshot,
+      '生产报工',
+    )
+  }
+  async function readProductionPrintStatus(printBatchId: string) {
+    const response = await getBusinessConsoleBarcodePrintBatch({
+      path: { printBatchId },
+      query: { ...context },
+      throwOnError: true,
+    })
+    if (!response.data?.success) throw response.data
+    return response.data.data?.printBatch?.status
+  }
   const refreshProductionReportQueries = () =>
     invalidateMesQueries(queryCache, [
       'getBusinessConsoleMesOverview',
@@ -913,18 +945,11 @@ export function useMesProductionReporting() {
         scopeKind: selectedScope.kind,
         scopeId: selectedScope.id,
       } satisfies BusinessConsoleRecordProductionReportRequest
-      const {
-        idempotencyKey: suppliedKey,
-        reportedAtUtc: _reportedAtUtc,
-        ...fingerprintBody
-      } = submittedBody
-      const intentScope = {
-        principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
-        organizationId: context.organizationId,
-        environmentId: context.environmentId,
-        operationType: 'mes.production-report.record',
-        payloadFingerprint: JSON.stringify(fingerprintBody),
-      }
+      const suppliedKey = submittedBody.idempotencyKey
+      const intentScope = productionReportIntentScope(
+        submittedBody.workOrderId ?? '',
+        submittedBody.operationTaskId ?? '',
+      )
       const restored = peekPendingBusinessIntent(intentScope)
       const pending = acquirePendingBusinessIntent(
         intentScope,
@@ -964,7 +989,7 @@ export function useMesProductionReporting() {
           throwOnError: false,
         })
       }
-      const result = await completePendingBusinessIntent(intentScope, async () => {
+      const coordinate = async () => {
         const envelope = stableBody.completesOperation
           ? await executeLifecycleAction({
               readLatest: () =>
@@ -993,7 +1018,16 @@ export function useMesProductionReporting() {
           expectedResourceIdSelector: (candidate) => candidate.data?.productionReportId,
         })
         return envelope
-      })
+      }
+      let result
+      try {
+        result = await coordinate()
+        // 报工回执只确认 MES；标签激活尚未收敛时保留同一报工意图供恢复。
+        if (!result.data?.printingPreparationPending) clearPendingBusinessIntent(intentScope)
+      } catch (error) {
+        if (!shouldRetainPendingBusinessIntent(error)) clearPendingBusinessIntent(intentScope)
+        throw error
+      }
       await refreshProductionReportQueries()
       return result
     } catch (error) {
@@ -1005,6 +1039,8 @@ export function useMesProductionReporting() {
   }
 
   return {
+    restoreProductionReport,
+    readProductionPrintStatus,
     recordProductionReport: recordProductionReportAction,
     recordProductionReportError,
     recordProductionReportPending,
@@ -1139,7 +1175,6 @@ export function useMesWorkOrders(options: UseMesWorkOrdersOptions = {}) {
         organizationId: string
         environmentId: string
         confirmWarnings: boolean
-        idempotencyKey: string
       },
     ) => {
       const selectedReadScope = workOrderReadScope.requireSelectedScope()
@@ -2109,28 +2144,6 @@ export function useMesCurrentOperationSops() {
     }),
     enabled: enabled.value,
   }))
-  const downloadGrantMutation = useMutation(
-    createBusinessConsoleSopFileDownloadGrantMutationOptions(),
-  )
-
-  async function createSopFileDownloadGrant(
-    fileId: string,
-  ): Promise<BusinessConsoleSopFileDownloadGrantResponse | null> {
-    const envelope = await downloadGrantMutation.mutateAsync({
-      path: { fileId },
-      body: {
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
-      },
-    })
-    return (
-      unwrapData<
-        BusinessConsoleSopFileDownloadGrantResponse,
-        BusinessConsoleSopFileDownloadGrantEnvelope
-      >(envelope as BusinessConsoleSopFileDownloadGrantEnvelope) ?? null
-    )
-  }
-
   return {
     filters,
     currentSops: computed<BusinessConsoleCurrentSopDocumentItem[]>(() =>
@@ -2143,7 +2156,6 @@ export function useMesCurrentOperationSops() {
     currentSopsPending: sopsQuery.isLoading,
     currentSopsState: businessReadState(sopsQuery, () => enabled.value),
     refreshCurrentSops: () => (enabled.value ? sopsQuery.refetch() : Promise.resolve()),
-    createSopFileDownloadGrant,
   }
 }
 
@@ -2407,7 +2419,6 @@ export function useMesDispatchTasks() {
         assignedUserId?: string
         deviceAssetId?: string
         shiftId?: string
-        idempotencyKey: string
       },
     ) =>
       assignMutation.mutateAsync({
@@ -2430,17 +2441,18 @@ export function useMesDispatchTasks() {
   }
 }
 
-export function useMesWipSummary() {
+export function useMesWipSummary(shouldLoad: () => boolean = () => true) {
   const filters = defaultFilters()
 
-  const wipQuery = useQuery(() =>
-    withBusinessContextEnabled(
+  const wipQuery = useQuery(() => {
+    const options = withBusinessContextEnabled(
       getBusinessConsoleMesWipSummaryQueryOptions({
         query: toListQuery(filters),
       }),
       filters,
-    ),
-  )
+    )
+    return { ...options, enabled: options.enabled && shouldLoad() }
+  })
 
   return {
     filters,
@@ -2970,12 +2982,21 @@ export const useMesRelatedQualityItems = useMesQualityContext
 
 export function useMesDowntimeEvents() {
   const filters = defaultFilters()
+  const windowEnd = new Date()
+  const windowStart = new Date(windowEnd.getTime() - 30 * 24 * 60 * 60 * 1000)
+  filters.windowStartUtc = windowStart.toISOString()
+  filters.windowEndUtc = windowEnd.toISOString()
   const queryCache = useQueryCache()
   const downtimeWriteScope = useMesPrincipalWorkScope(filters, 'business.mes.downtime.manage')
   const downtimeQuery = useQuery(() =>
     withBusinessContextEnabled(
       listBusinessConsoleMesDowntimeEventsQueryOptions({
-        query: { ...toListQuery(filters), ...optionalQuery('reasonCode', filters.reasonCode) },
+        query: {
+          ...toListQuery(filters),
+          ...optionalQuery('reasonCode', filters.reasonCode),
+          ...optionalQuery('windowStartUtc', filters.windowStartUtc),
+          ...optionalQuery('windowEndUtc', filters.windowEndUtc),
+        },
       }),
       filters,
     ),
@@ -2991,6 +3012,14 @@ export function useMesDowntimeEvents() {
         rankingMode: 'default',
       },
     }),
+    // 只以业务上下文为前置，**不加权限前置**（#2793 裁定）：
+    // ① 权威是网关，前端 principal 的权限码只是提示；一旦它滞后于真实授权，加了前置就再也
+    //    不发请求，页面永远显示无权限且没有任何证据能纠正——403 至少是权威事实。
+    // ② 这份目录同时供只读筛选下拉使用（见上方 reasonFilterOptions 注释与
+    //    “reads the downtime-reason directory without waiting for a write scope” 用例），
+    //    按写面权限或角色抑制请求会连带削掉读面能力。
+    // ③ 少发的只是一次请求；真正的缺陷是归因，由 downtime.vue 的 recordEntryBlocker 分流
+    //    403 与其它失败来解决。反之若只加前置不加分支，会直接掉进「组织尚未配置」那句更糟的误诊。
     enabled: hasBusinessContext(filters),
   }))
   const recordMutation = useMutation({
@@ -3084,7 +3113,6 @@ export function useMesDowntimeEvents() {
         organizationId: string
         environmentId: string
         recoveredAtUtc: string
-        idempotencyKey: string
       },
     ) =>
       recoverMutation.mutateAsync({
@@ -3124,15 +3152,39 @@ export function useMesShiftHandovers() {
       ),
   })
 
+  // 列表行只带三类明细的计数，明细本身要按交接单单独取。选中哪一张由调用页写这个 ref，
+  // 清空即停止取数（详情抽屉关掉后不再持有请求）。
+  const detailHandoverId = shallowRef('')
+  const detailQuery = useQuery(() => ({
+    ...getBusinessConsoleMesShiftHandoverQueryOptions({
+      path: { handoverId: detailHandoverId.value },
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+      },
+    }),
+    enabled: hasBusinessContext(filters) && detailHandoverId.value.trim().length > 0,
+  }))
+
   return {
+    detailHandoverId,
+    handoverDetail: computed<BusinessConsoleMesShiftHandoverDetail | undefined>(() =>
+      unwrapData<
+        BusinessConsoleMesShiftHandoverDetail,
+        BusinessConsoleMesShiftHandoverDetailEnvelope
+      >(detailQuery.data.value),
+    ),
+    handoverDetailError: detailQuery.error,
+    handoverDetailPending: detailQuery.isLoading,
+    // #3328：接班的网关请求体已经空了（原来只有一个下游从不消费的 idempotencyKey），
+    // 组织/环境仍走 query，所以这里不再传 body。
     acceptShiftHandover: (
       handoverId: string,
-      body: { organizationId: string; environmentId: string; idempotencyKey: string },
+      context: { organizationId: string; environmentId: string },
     ) =>
       acceptMutation.mutateAsync({
         path: { handoverId },
-        query: { organizationId: body.organizationId, environmentId: body.environmentId },
-        body,
+        query: { organizationId: context.organizationId, environmentId: context.environmentId },
       }),
     createShiftHandover: (body: BusinessConsoleMesCreateShiftHandoverRequest) =>
       createMutation.mutateAsync({ body }),

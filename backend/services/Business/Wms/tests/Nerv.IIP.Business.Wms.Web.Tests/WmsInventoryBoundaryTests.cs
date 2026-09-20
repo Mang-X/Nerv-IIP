@@ -132,7 +132,7 @@ public sealed class WmsInventoryBoundaryTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var command = new CompleteInboundOrderCommand(inbound.Id, "complete-inbound-replay-001")
             .TrustedFor(dbContext, inbound);
-        var handler = new CompleteInboundOrderCommandHandler(dbContext);
+        var handler = new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture());
 
         var first = await handler.Handle(command, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -164,7 +164,7 @@ public sealed class WmsInventoryBoundaryTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var command = new CompleteInboundOrderCommand(inbound.Id, $"replay-{status}")
             .TrustedFor(dbContext, inbound);
-        var handler = new CompleteInboundOrderCommandHandler(dbContext);
+        var handler = new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture());
         var first = await handler.Handle(command, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         SetStatus(inbound, status);
@@ -198,7 +198,7 @@ public sealed class WmsInventoryBoundaryTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var exception = await Assert.ThrowsAsync<WmsLifecycleConflictException>(() =>
-            new CompleteInboundOrderCommandHandler(dbContext).Handle(
+            new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
                 new CompleteInboundOrderCommand(inbound.Id, $"conflict-{status}")
                     .TrustedFor(dbContext, inbound),
                 CancellationToken.None));
@@ -222,7 +222,7 @@ public sealed class WmsInventoryBoundaryTests
         dbContext.InboundOrders.Add(inbound);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         const string idempotencyKey = "cancelled-replay";
-        await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+        await new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
             new CompleteInboundOrderCommand(inbound.Id, idempotencyKey)
                 .TrustedFor(dbContext, inbound),
             CancellationToken.None);
@@ -231,7 +231,7 @@ public sealed class WmsInventoryBoundaryTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         await Assert.ThrowsAsync<WmsLifecycleConflictException>(() =>
-            new CompleteInboundOrderCommandHandler(dbContext).Handle(
+            new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
                 new CompleteInboundOrderCommand(inbound.Id, idempotencyKey)
                     .TrustedFor(dbContext, inbound),
                 CancellationToken.None));
@@ -251,7 +251,7 @@ public sealed class WmsInventoryBoundaryTests
             [new InboundOrderLineDraft("LINE-001", "SKU-RM-1000", "kg", 10m, "LINE-SIDE", "LOT-ORIGINAL", null, "qualified", "company", null)]);
         dbContext.InboundOrders.Add(inbound);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        var handler = new CompleteInboundOrderCommandHandler(dbContext);
+        var handler = new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture());
         const string idempotencyKey = "complete-inbound-replay-conflict-001";
 
         await handler.Handle(
@@ -292,7 +292,7 @@ public sealed class WmsInventoryBoundaryTests
             ]);
         dbContext.InboundOrders.Add(inbound);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        var handler = new CompleteInboundOrderCommandHandler(dbContext);
+        var handler = new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture());
         var command = new CompleteInboundOrderCommand(inbound.Id, new string('k', 128))
             .TrustedFor(dbContext, inbound);
 
@@ -332,7 +332,7 @@ public sealed class WmsInventoryBoundaryTests
             ]);
         dbContext.InboundOrders.Add(inbound);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        var handler = new CompleteInboundOrderCommandHandler(dbContext);
+        var handler = new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture());
         var command = new CompleteInboundOrderCommand(inbound.Id, "complete-inbound-order-001")
             .TrustedFor(dbContext, inbound);
 
@@ -364,7 +364,7 @@ public sealed class WmsInventoryBoundaryTests
         dbContext.InboundOrders.Add(inbound);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+        await new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
             new CompleteInboundOrderCommand(
                 inbound.Id,
                 "idem-capture-001",
@@ -475,7 +475,7 @@ public sealed class WmsInventoryBoundaryTests
         dbContext.InboundOrders.Add(inbound);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var result = await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+        var result = await new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
             new CompleteInboundOrderCommand(inbound.Id, "idem-in-001")
                 .TrustedFor(dbContext, inbound),
             CancellationToken.None);
@@ -517,7 +517,7 @@ public sealed class WmsInventoryBoundaryTests
 
         var command = new CompleteInboundOrderCommand(inbound.Id, "complete-putaway-target-001")
             .TrustedFor(dbContext, inbound);
-        var handler = new CompleteInboundOrderCommandHandler(dbContext);
+        var handler = new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture());
         var result = await handler.Handle(command, CancellationToken.None);
 
         var movementRequest = Assert.Single(dbContext.InventoryMovementRequests.Local);
@@ -562,7 +562,7 @@ public sealed class WmsInventoryBoundaryTests
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+        await new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
             new CompleteInboundOrderCommand(inbound.Id, "complete-putaway-partial-001")
                 .TrustedFor(dbContext, inbound),
             CancellationToken.None);
@@ -596,7 +596,7 @@ public sealed class WmsInventoryBoundaryTests
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+        await new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
             new CompleteInboundOrderCommand(inbound.Id, "complete-putaway-retry-001")
                 .TrustedFor(dbContext, inbound),
             CancellationToken.None);
@@ -642,7 +642,7 @@ public sealed class WmsInventoryBoundaryTests
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+        await new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
             new CompleteInboundOrderCommand(inbound.Id, "complete-putaway-retry-multi-001")
                 .TrustedFor(dbContext, inbound),
             CancellationToken.None);
@@ -702,7 +702,7 @@ public sealed class WmsInventoryBoundaryTests
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+        await new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
             new CompleteInboundOrderCommand(inbound.Id, "complete-putaway-retry-latest-001")
                 .TrustedFor(dbContext, inbound),
             CancellationToken.None);
@@ -766,7 +766,7 @@ public sealed class WmsInventoryBoundaryTests
         dbContext.InboundOrders.Add(inbound);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+        await new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
             new CompleteInboundOrderCommand(inbound.Id, "complete-retry-no-latest-failure-001")
                 .TrustedFor(dbContext, inbound),
             CancellationToken.None);
@@ -803,7 +803,7 @@ public sealed class WmsInventoryBoundaryTests
         dbContext.InboundOrders.Add(inbound);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var result = await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+        var result = await new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
             new CompleteInboundOrderCommand(inbound.Id, "idem-in-001")
                 .TrustedFor(dbContext, inbound),
             CancellationToken.None);
@@ -841,7 +841,7 @@ public sealed class WmsInventoryBoundaryTests
         dbContext.InboundOrders.Add(inbound);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var result = await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+        var result = await new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
             new CompleteInboundOrderCommand(inbound.Id, "idem-in-001")
                 .TrustedFor(dbContext, inbound),
             CancellationToken.None);
@@ -2234,7 +2234,7 @@ public sealed class WmsInventoryBoundaryTests
         await dbContext.SaveChangesAsync();
 
         await Assert.ThrowsAsync<WmsAuthorizationException>(() =>
-            new CompleteInboundOrderCommandHandler(dbContext).Handle(
+            new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
                 new CompleteInboundOrderCommand(
                     inbound.Id,
                     "tenant-a-attempt",

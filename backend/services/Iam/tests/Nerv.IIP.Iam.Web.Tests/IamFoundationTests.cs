@@ -309,6 +309,14 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
         Assert.Contains(catalog.Items, item => item.Code == "business.mes.work-orders.read"
             && item.Domain == "business"
             && item.Seeded);
+        // ADR 0029 决策 1：参考数据专用读权限码必须出现在管理读面，并提供可显示的描述
+        // （IamPermissionCatalog.Descriptions 漏收该 code 时 GetValueOrDefault 会回落成
+        // code 本身，此断言会红）。既有 Descriptions 缺口见 #2864。
+        Assert.Contains(catalog.Items, item => item.Code == "business.maintenance.downtime-reasons.read"
+            && item.Domain == "business"
+            && item.Seeded
+            && !string.IsNullOrWhiteSpace(item.Description)
+            && item.Description != item.Code);
         foreach (var permission in new[]
         {
             "business.mes.work-orders.manage",

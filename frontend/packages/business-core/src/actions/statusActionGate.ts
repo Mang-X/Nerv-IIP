@@ -249,7 +249,16 @@ function ncrGate(
   const status = normalizedStatus(facts)
   if (!isKnown(status, new Set(['open', 'disposition-in-progress', 'closed']))) return unknown()
   if (status === 'closed') return terminal()
-  if (action === 'submit-disposition') return status === 'open' ? allowed() : incompatible()
+  if (action === 'submit-disposition') {
+    if (
+      status === 'disposition-in-progress' &&
+      facts.idempotentReplay &&
+      facts.dispositionType?.trim()
+    ) {
+      return allowed()
+    }
+    return status === 'open' ? allowed() : incompatible()
+  }
   return status === 'disposition-in-progress' && Boolean(facts.dispositionType?.trim())
     ? allowed()
     : incompatible()

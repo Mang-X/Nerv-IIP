@@ -162,6 +162,9 @@ public sealed class CreateRushWorkOrderCommandHandler
             [],
             request.RequestedAtUtc,
             request.Duration,
+            // 加急工单的工序必须带工单真实 SKU：以前 PlannedOperationTask 没有 SKU 字段，
+            // 落库时 OperationTask 回落成工单号，完工事件因此与 WorkOrderReleased 不同源（#3112）。
+            request.SkuId,
             null,
             null,
             request.OrganizationId,

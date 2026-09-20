@@ -24,8 +24,11 @@ public sealed class GetTusUploadOffsetEndpoint(
     public override async Task HandleAsync(CancellationToken ct)
     {
         var uploadSessionId = Route<string>("uploadSessionId")!;
+        var organizationId = HttpContext.Request.Headers[FileStorageTransferHeaders.OrganizationId].ToString();
+        var environmentId = HttpContext.Request.Headers[FileStorageTransferHeaders.EnvironmentId].ToString();
+
         if (!storeAccessor.TryGet(out var store)
-            || await GetTusUploadSessionAsync(files, uploadSessionId, ct) is not { } session)
+            || await GetTusUploadSessionAsync(files, uploadSessionId, organizationId, environmentId, ct) is not { } session)
         {
             await Send.NotFoundAsync(ct);
             return;
@@ -68,10 +71,12 @@ public sealed class GetTusUploadOffsetEndpoint(
     internal static Task<LocalTusUploadSession?> GetTusUploadSessionAsync(
         IFileStorageService files,
         string uploadSessionId,
+        string organizationId,
+        string environmentId,
         CancellationToken cancellationToken)
     {
         return files is ILocalTusUploadSessionIndex index
-            ? index.GetTusUploadSessionAsync(uploadSessionId, cancellationToken)
+            ? index.GetTusUploadSessionAsync(uploadSessionId, organizationId, environmentId, cancellationToken)
             : Task.FromResult<LocalTusUploadSession?>(null);
     }
 
@@ -96,8 +101,11 @@ public sealed class PatchTusUploadEndpoint(
     public override async Task HandleAsync(CancellationToken ct)
     {
         var uploadSessionId = Route<string>("uploadSessionId")!;
+        var organizationId = HttpContext.Request.Headers[FileStorageTransferHeaders.OrganizationId].ToString();
+        var environmentId = HttpContext.Request.Headers[FileStorageTransferHeaders.EnvironmentId].ToString();
+
         if (!storeAccessor.TryGet(out var store)
-            || await GetTusUploadOffsetEndpoint.GetTusUploadSessionAsync(files, uploadSessionId, ct) is not { } session)
+            || await GetTusUploadOffsetEndpoint.GetTusUploadSessionAsync(files, uploadSessionId, organizationId, environmentId, ct) is not { } session)
         {
             await Send.NotFoundAsync(ct);
             return;

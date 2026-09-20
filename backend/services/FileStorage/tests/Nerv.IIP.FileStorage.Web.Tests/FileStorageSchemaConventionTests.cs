@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -39,8 +41,40 @@ public sealed class FileStorageSchemaConventionTests
         failures.AddRange(SchemaConventionAssertions.MigrationsHistoryTableIsInSchema(fixture.DbContext, "FileStorage", "filestorage"));
         failures.AddRange(AssertTablesUseFileStorageSchema(fixture.DbContext, businessEntities));
         failures.AddRange(AssertExpectedBusinessTablesExist(fixture.DbContext));
+        failures.AddRange(AssertPhysicalCommentsUseEnglish(fixture.DbContext, businessEntities));
 
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+    }
+
+    private static IReadOnlyList<string> AssertPhysicalCommentsUseEnglish(
+        ApplicationDbContext dbContext,
+        IEnumerable<Type> businessEntities)
+    {
+        var failures = new List<string>();
+        var model = dbContext.GetService<IDesignTimeModel>().Model;
+        foreach (var entityType in businessEntities
+                     .Select(type => model.FindEntityType(type))
+                     .OfType<Microsoft.EntityFrameworkCore.Metadata.IEntityType>())
+        {
+            AddFailureIfChinese(entityType.GetComment(), $"table '{entityType.GetTableName()}'", failures);
+            foreach (var property in entityType.GetProperties())
+            {
+                AddFailureIfChinese(
+                    property.GetComment(),
+                    $"column '{entityType.GetTableName()}.{property.GetColumnName()}'",
+                    failures);
+            }
+        }
+
+        return failures;
+
+        static void AddFailureIfChinese(string? comment, string target, ICollection<string> failures)
+        {
+            if (comment?.Any(character => character is >= '\u4e00' and <= '\u9fff') == true)
+            {
+                failures.Add($"FileStorage: physical database comment for {target} must use concise English.");
+            }
+        }
     }
 
     private static IReadOnlyList<string> AssertTablesUseFileStorageSchema(

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Primitives;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Domain.DomainEvents;
+using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Scheduling;
 using static Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventConverters.SchedulingIntegrationEventConverterHelpers;
 
@@ -383,5 +384,6 @@ internal static class EventIds
 {
     public static string New() => $"evt-{Guid.CreateVersion7():N}";
 
-    public static string Idempotency(params string[] parts) => $"scheduling:{string.Join(':', parts)}";
+    public static string Idempotency(params string[] parts) =>
+        IntegrationEventIdempotencyKey.ComposeServiceScoped("scheduling:", parts);
 }

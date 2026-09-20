@@ -1,3 +1,13 @@
+using System.Net.Http.Json;
+using System.Text.Json;
+using DotNetCore.CAP.Persistence;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
+using Npgsql;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
@@ -324,6 +334,153 @@ public sealed class MesCapSaveBoundaryPostgresTests
         Assert.Equal(1, await CountInboxAsync(
             assertionContext,
             StockMovementPostingFailedIntegrationEventHandlerForMarkMesRequestFailed.ConsumerName));
+    }
+
+    private static readonly DateTimeOffset At = DateTimeOffset.Parse("2026-09-20T08:00:00Z");
+
+    // #3646 / DomainInvariant + ProviderBehavior：真实 MES HTTP、迁移、跨 scope 重载与事务 outbox。
+    // 来源查询用固定分配；回执显式注入，不声称覆盖 Inventory 或 Redis 传输。
+    [PostgreSqlFact]
+    public async Task Http_receipt_commits_one_actual_value_inbound_with_last_source_and_rolls_back_outbox_failure_on_postgres()
+    {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        var settings = new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:PostgreSQL"] = MesPostgresLaneDatabase.ConnectionString,
+            ["Messaging:Provider"] = "InMemory",
+            ["Cap:Version"] = "test-lineside-3646",
+            ["InternalService:BearerToken"] = "test-internal-token",
+        };
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Development");
+            foreach (var (key, value) in settings) builder.UseSetting(key, value);
+            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(settings));
+            builder.ConfigureServices(services => services.AddScoped<IMesMaterialSupplyLocationResolver, SourceResolver>());
+        });
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-token");
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            MesPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
+            await db.Database.MigrateAsync();
+            await scope.ServiceProvider.GetRequiredService<IStorageInitializer>().InitializeAsync(CancellationToken.None);
+            db.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-3646", "FG", "PV", 3m, 1, At, "KG"));
+            db.MaterialIssueRequests.Add(MaterialIssueRequest.Create("org-001", "env-dev", "MIR-3646", "WO-3646", null, "MAT", "KG", 3m, At));
+            await db.SaveChangesAsync();
+        }
+
+        var response = await client.PostAsJsonAsync("/api/business/v1/mes/material-issue-requests/MIR-3646/line-side-receipts", new
+        {
+            organizationId = "org-001", environmentId = "env-dev", receivedAtUtc = At, receivedQuantity = 3m, materialLotId = "LINE-LOT",
+        });
+        response.EnsureSuccessStatusCode();
+        var request = await ReadRequestAsync(factory.Services);
+        Assert.True(request.ReceiptUsesActualIssueValue);
+        Assert.False(request.PendingReceiptIntentSent);
+        Assert.Equal(0m, request.ReceivedQuantity);
+        Assert.Empty(await ReadInboundAsync());
+        var token = request.PendingPostingToken!;
+        var sourceB = Posted(token, 1, -1.6m, 12m, -19.2m);
+        var sourceA = Posted(token, 0, -1.4m, 8m, -11.2m);
+        await DeliverAsync(factory.Services, sourceB);
+        Assert.Empty(await ReadInboundAsync());
+
+        await ExecuteSqlAsync("""
+            CREATE FUNCTION cap.reject_lineside_inbound() RETURNS trigger AS $$
+            BEGIN
+              IF NEW."Content" LIKE '%mes:line-side-receipt:%' THEN
+                RAISE EXCEPTION 'injected lineside outbox failure';
+              END IF;
+              RETURN NEW;
+            END; $$ LANGUAGE plpgsql;
+            CREATE TRIGGER reject_lineside_inbound BEFORE INSERT ON cap.published
+            FOR EACH ROW EXECUTE FUNCTION cap.reject_lineside_inbound();
+            """);
+        await Assert.ThrowsAnyAsync<Exception>(() => DeliverAsync(factory.Services, sourceA));
+        request = await ReadRequestAsync(factory.Services);
+        Assert.False(request.PendingReceiptIntentSent);
+        Assert.Equal("[1]", request.PendingIssueLegPostedIndexesJson);
+        Assert.Empty(await ReadInboundAsync());
+        await ExecuteSqlAsync("DROP TRIGGER reject_lineside_inbound ON cap.published; DROP FUNCTION cap.reject_lineside_inbound();");
+
+        await DeliverAsync(factory.Services, sourceA);
+        await DeliverAsync(factory.Services, sourceB with { EventId = "duplicate-B", IdempotencyKey = "duplicate-B" });
+        await DeliverAsync(factory.Services, sourceA);
+        request = await ReadRequestAsync(factory.Services);
+        Assert.True(request.PendingReceiptIntentSent);
+        Assert.True(request.PendingIssueLegPosted);
+        Assert.Equal(0m, request.ReceivedQuantity);
+        var inbound = Assert.Single(await ReadInboundAsync());
+        Assert.Equal(3m, inbound.Quantity);
+        Assert.Equal(30.4m, decimal.Round(inbound.UnitCost!.Value * inbound.Quantity, 6));
+        await DeliverAsync(factory.Services, Posted(token, null, 3m, inbound.UnitCost.Value, 30.4m));
+        request = await ReadRequestAsync(factory.Services);
+        Assert.Equal(3m, request.ReceivedQuantity);
+        Assert.Equal(MaterialIssueRequest.ReceivedStatus, request.Status);
+        Assert.Single(await ReadInboundAsync());
+    }
+
+    private static async Task<MaterialIssueRequest> ReadRequestAsync(IServiceProvider provider)
+    {
+        using var scope = provider.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().MaterialIssueRequests.AsNoTracking().SingleAsync();
+    }
+
+    private static async Task DeliverAsync(IServiceProvider provider, StockMovementPostedIntegrationEvent posted)
+    {
+        using var scope = provider.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<StockMovementPostedIntegrationEventHandlerForMarkMesReceiptPosted>()
+            .HandleAsync(posted, CancellationToken.None);
+    }
+
+    private static StockMovementPostedIntegrationEvent Posted(string token, int? index, decimal quantity, decimal unitCost, decimal amount)
+    {
+        var leg = index is null ? MaterialTransferLeg.LineSideReceipt : MaterialTransferLeg.WarehouseIssue;
+        var key = MaterialIssueRequest.BuildLegIdempotencyKey(token, leg, index);
+        return new StockMovementPostedIntegrationEvent(key, InventoryIntegrationEventTypes.StockMovementPosted,
+            InventoryIntegrationEventVersions.V1, At, InventoryIntegrationEventSources.BusinessInventory,
+            "corr-3646", "cause-3646", "org-001", "env-dev", "inventory", "posted:" + key,
+            new StockMovementPostedPayload("movement:" + key, index is null ? "inbound" : "outbound", "business-mes",
+                "MIR-3646", null, key, "MAT", "KG", "SITE", index is null ? "LINE" : "WH", null,
+                null, "Unrestricted", "production", null, quantity, At, unitCost, amount));
+    }
+
+    private static async Task<InventoryMovementRequestedPayload[]> ReadInboundAsync()
+    {
+        await using var connection = new NpgsqlConnection(MesPostgresLaneDatabase.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT \"Content\" FROM cap.published WHERE \"Content\" LIKE '%mes:line-side-receipt:%'";
+        await using var reader = await command.ExecuteReaderAsync();
+        var results = new List<InventoryMovementRequestedPayload>();
+        while (await reader.ReadAsync())
+        {
+            using var message = JsonDocument.Parse(reader.GetString(0));
+            var value = message.RootElement.GetProperty("Value");
+            var integrationEvent = JsonSerializer.Deserialize<InventoryMovementRequestedIntegrationEvent>(
+                value.ValueKind == JsonValueKind.String ? value.GetString()! : value.GetRawText(),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            results.Add(integrationEvent!.Payload);
+        }
+        return results.ToArray();
+    }
+
+    private static async Task ExecuteSqlAsync(string sql)
+    {
+        await using var connection = new NpgsqlConnection(MesPostgresLaneDatabase.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private sealed class SourceResolver : IMesMaterialSupplyLocationResolver
+    {
+        public Task<MaterialTransferLocations> ResolveAsync(MesMaterialSupplyLocationRequest request, CancellationToken cancellationToken)
+            => Task.FromResult(new MaterialTransferLocations("SITE", "WH-A", "SITE", "LINE",
+                [new("SITE", "WH-A", "A", 1.4m), new("SITE", "WH-B", "B", 1.6m)]));
     }
 
     private static async Task MigrateDatabaseAsync()

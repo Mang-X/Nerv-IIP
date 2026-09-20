@@ -18,6 +18,13 @@ namespace Nerv.IIP.Business.Quality.Web.Tests;
 public sealed class QualityInspectionTaskPostgresProfileTests
 {
     [QualityPostgresFact]
+    public async Task Periodic_tasks_complete_the_existing_PDA_command_and_SPC_projection_flow_once_on_postgres()
+    {
+        await QualityPostgresLaneDatabase.ResetSchemaAsync();
+        await PeriodicInspectionClosurePostgresScenario.RunAsync();
+    }
+
+    [QualityPostgresFact]
     public async Task Postgres_second_claim_is_unprocessable_and_stale_concurrent_claim_is_rejected()
     {
         await QualityPostgresLaneDatabase.ResetSchemaAsync();

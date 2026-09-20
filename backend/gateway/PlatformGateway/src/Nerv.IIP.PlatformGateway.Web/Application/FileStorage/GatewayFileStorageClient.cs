@@ -31,24 +31,27 @@ public interface IGatewayFileStorageClient
         FileStorageUsageRequest request,
         CancellationToken cancellationToken);
 
-    Task<DownloadGrantResponse> CreateDownloadGrantAsync(
-        string fileId,
-        CreateDownloadGrantRequest request,
-        CancellationToken cancellationToken);
-
     Task ProxyTusHeadAsync(
         string uploadSessionId,
+        string organizationId,
+        string environmentId,
         HttpResponse response,
         CancellationToken cancellationToken);
 
     Task ProxyTusPatchAsync(
         string uploadSessionId,
+        string organizationId,
+        string environmentId,
         HttpRequest request,
         HttpResponse response,
         CancellationToken cancellationToken);
 
-    Task ProxyDownloadGrantContentAsync(
-        string downloadGrantId,
+    /// <summary>
+    /// 平台控制台取文件字节的**唯一**入口：在服务端签发 download grant、校验其 URL 是可代理的
+    /// 内部路径、随即就地兑换。grant id 不出本进程（#3314）。
+    /// </summary>
+    Task StreamFileContentAsync(
+        string fileId,
         string organizationId,
         string environmentId,
         HttpResponse response,
@@ -127,55 +130,15 @@ public sealed class HttpGatewayFileStorageClient(
             "/api/files/v1/usage" + BuildUsageQuery(request),
             cancellationToken);
 
-    public async Task<DownloadGrantResponse> CreateDownloadGrantAsync(
-        string fileId,
-        CreateDownloadGrantRequest request,
-        CancellationToken cancellationToken)
-    {
-        var response = await SendForJsonAsync<DownloadGrantResponse>(
-            () => JsonContent.Create(request),
-            HttpMethod.Post,
-            $"/api/files/v1/files/{Uri.EscapeDataString(fileId)}/download-grants",
-            cancellationToken);
-
-        return response with
-        {
-            Download = RewriteTransferInstructions(response.Download)
-        };
-    }
-
     public Task ProxyTusHeadAsync(
         string uploadSessionId,
-        HttpResponse response,
-        CancellationToken cancellationToken) =>
-        ProxyRawAsync(
-            HttpMethod.Head,
-            $"/api/files/v1/tus/{Uri.EscapeDataString(uploadSessionId)}",
-            null,
-            response,
-            cancellationToken);
-
-    public Task ProxyTusPatchAsync(
-        string uploadSessionId,
-        HttpRequest request,
-        HttpResponse response,
-        CancellationToken cancellationToken) =>
-        ProxyRawAsync(
-            HttpMethod.Patch,
-            $"/api/files/v1/tus/{Uri.EscapeDataString(uploadSessionId)}",
-            request,
-            response,
-            cancellationToken);
-
-    public Task ProxyDownloadGrantContentAsync(
-        string downloadGrantId,
         string organizationId,
         string environmentId,
         HttpResponse response,
         CancellationToken cancellationToken) =>
         ProxyRawAsync(
-            HttpMethod.Get,
-            $"/api/files/v1/download-grants/{Uri.EscapeDataString(downloadGrantId)}/content",
+            HttpMethod.Head,
+            FileStorageDownstreamAddress.Tus(uploadSessionId),
             null,
             response,
             cancellationToken,
@@ -185,9 +148,64 @@ public sealed class HttpGatewayFileStorageClient(
                 ["X-Environment-Id"] = environmentId
             });
 
+    public Task ProxyTusPatchAsync(
+        string uploadSessionId,
+        string organizationId,
+        string environmentId,
+        HttpRequest request,
+        HttpResponse response,
+        CancellationToken cancellationToken) =>
+        ProxyRawAsync(
+            HttpMethod.Patch,
+            FileStorageDownstreamAddress.Tus(uploadSessionId),
+            request,
+            response,
+            cancellationToken,
+            new Dictionary<string, string>
+            {
+                ["X-Organization-Id"] = organizationId,
+                ["X-Environment-Id"] = environmentId
+            });
+
+    public async Task StreamFileContentAsync(
+        string fileId,
+        string organizationId,
+        string environmentId,
+        HttpResponse response,
+        CancellationToken cancellationToken)
+    {
+        var grant = await SendForJsonAsync<DownloadGrantResponse>(
+            () => JsonContent.Create(new CreateDownloadGrantRequest(organizationId, environmentId)),
+            HttpMethod.Post,
+            $"/api/files/v1/files/{Uri.EscapeDataString(fileId)}/download-grants",
+            cancellationToken);
+
+        // 取字节地址只能由**刚刚签发的那个 grant** 产出（见 FileStorageDownstreamAddress）：
+        // 本方法没有、也不可能有一个接受调用方标识或 URL 字符串的分支。下游 URL 的形状校验
+        // 与失败关闭都在该类型的工厂里。
+        var address = FileStorageDownstreamAddress.FromSignedGrant(grant);
+
+        // 无条件转发**下游签发时给出的**传输头，不做「为空就用网关自己拼的租户头」这类回落：
+        // 该回落生产不可达（真实 producer `PostgreSqlFileStorageService` 恒返回三个头），而一旦
+        // 真的走到，它会把下游签发的凭据头静默换成网关另拼的一套——正是本 PR 要消灭的口径漂移。
+        // 与 BusinessGateway 字节面同一动作保持一致（`BusinessFileTransferClient` 也是无条件转发）。
+        await ProxyRawAsync(
+            HttpMethod.Get,
+            address,
+            null,
+            response,
+            cancellationToken,
+            grant.Download.Headers);
+    }
+
+    /// <summary>
+    /// 代理一跳。**目标地址的类型是 <see cref="FileStorageDownstreamAddress"/> 而不是
+    /// <see cref="string"/>**——这是 #3314 第 2 轮审核 E1 的结构性替代：没有任何入口能把
+    /// 调用方给的 grant 标识（无论走 path 还是 query）变成一次下游兑换调用。
+    /// </summary>
     private async Task ProxyRawAsync(
         HttpMethod method,
-        string requestUri,
+        FileStorageDownstreamAddress address,
         HttpRequest? sourceRequest,
         HttpResponse targetResponse,
         CancellationToken cancellationToken,
@@ -195,7 +213,7 @@ public sealed class HttpGatewayFileStorageClient(
     {
         try
         {
-            using var request = new HttpRequestMessage(method, requestUri);
+            using var request = new HttpRequestMessage(method, address.Path);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalServiceToken.BearerToken);
             CopyTransferRequestHeaders(sourceRequest, request);
             CopyHeaders(headers, request);
@@ -357,12 +375,6 @@ public sealed class HttpGatewayFileStorageClient(
                 + url[ConsoleFileStorageTransferRoutes.DownstreamTusPrefix.Length..];
         }
 
-        if (url.StartsWith(ConsoleFileStorageTransferRoutes.DownstreamDownloadGrantPrefix, StringComparison.Ordinal))
-        {
-            return ConsoleFileStorageTransferRoutes.ConsoleDownloadGrantPrefix
-                + url[ConsoleFileStorageTransferRoutes.DownstreamDownloadGrantPrefix.Length..];
-        }
-
         return url;
     }
 
@@ -386,6 +398,7 @@ public sealed class HttpGatewayFileStorageClient(
         Add(values, "environmentId", request.EnvironmentId);
         Add(values, "filePurpose", request.FilePurpose);
         Add(values, "uploaderId", request.UploaderId);
+        Add(values, "ownerId", request.OwnerId);
         Add(values, "createdFromUtc", request.CreatedFromUtc?.ToString("O"));
         Add(values, "createdToUtc", request.CreatedToUtc?.ToString("O"));
         Add(values, "status", request.Status);

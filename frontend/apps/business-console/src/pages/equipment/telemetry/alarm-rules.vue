@@ -110,7 +110,7 @@ const unitPickerOptions = computed(() => {
   return [...uomOptions.value, { value: unitCode, label: unitCode, hint: '来自采集标签标注' }]
 })
 
-const errorMessage = computed(() => formatError(alarmRulesError.value))
+const errorMessage = computed(() => inlineErrorMessage(alarmRulesError.value))
 // 服务端错误走 toast；这里只留点提交后的字段级校验汇总。
 const formErrorMessage = computed(() => formError.value)
 // 编辑态：规则身份（设备 / 采集标签 / 规则编号 / 报警编号）由所选行带出，只读呈现。
@@ -262,9 +262,6 @@ function formatDateTime(value?: string | null) {
 }
 function rowKey(row: BusinessConsoleTelemetryAlarmRuleItem) {
   return row.alarmRuleId ?? `${row.deviceAssetId}-${row.ruleCode}`
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 </script>
 

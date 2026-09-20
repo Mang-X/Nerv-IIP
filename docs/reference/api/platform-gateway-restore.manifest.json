@@ -1,0 +1,132 @@
+{
+  "schema": 1,
+  "project": "backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Nerv.IIP.PlatformGateway.Web.csproj",
+  "purpose": "Restore contract snapshot for the PlatformGateway.Web ProjectReference closure. Unlike business-gateway-surface-restore.manifest.json this manifest records no canonicalization toolchain: it exists solely as the hash ledger that scripts/verify-restore-lock-contract.ps1 reads (issue #3157). Recording an SDK/reference-pack version here would assert a fact nothing verifies.",
+  "tfm": "net10.0",
+  "inputs": [
+    {
+      "path": "NuGet.config",
+      "sha256": "52c7f96825b0a216601d0e9a2744ddc7bc2cee304261e3daf8c06bf34b8134ec"
+    },
+    {
+      "path": "backend/Directory.Packages.props",
+      "sha256": "1abf26c5bc5b8122d19bf941b47b32b21e049e3a2f7cec4fe80ad9513a819d31"
+    },
+    {
+      "path": "backend/Directory.Build.props",
+      "sha256": "d1dcde1e1709c5118aa07a4fef2763210819096b1274c0ae492dc296fbce80f5"
+    },
+    {
+      "path": "backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Nerv.IIP.PlatformGateway.Web.csproj",
+      "sha256": "2b06b1152ecde4d972e21ce435fcfc836211518631c0402a9c7d30cdacd365bf"
+    },
+    {
+      "path": "backend/common/Caching/Nerv.IIP.Caching/Nerv.IIP.Caching.csproj",
+      "sha256": "d556eb052108688365d55f9e7bce102861eb328ecbbad473bcc1f568f479f075"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.AppHubQueries/Nerv.IIP.Contracts.AppHubQueries.csproj",
+      "sha256": "09aa966ffe17f047ae95d5cd148114c23dc050a3c4f3414e8f88b4817c15b70c"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.FileStorage/Nerv.IIP.Contracts.FileStorage.csproj",
+      "sha256": "2c82dae7a6492e5dc0d99b6b5a5d1c89a4702b892f71757981e46302949d6115"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.Iam/Nerv.IIP.Contracts.Iam.csproj",
+      "sha256": "11c0c110e19c9eaeaef66a0382f7a3e4ff6ab395d99ca6664e1ba378371cc47c"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.IntegrationEvents/Nerv.IIP.Contracts.IntegrationEvents.csproj",
+      "sha256": "2c82dae7a6492e5dc0d99b6b5a5d1c89a4702b892f71757981e46302949d6115"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.Notification/Nerv.IIP.Contracts.Notification.csproj",
+      "sha256": "11c0c110e19c9eaeaef66a0382f7a3e4ff6ab395d99ca6664e1ba378371cc47c"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.Ops/Nerv.IIP.Contracts.Ops.csproj",
+      "sha256": "3cbc9bbff26ad056a2514e6301286f9ae282a22f090e067479f2c6dba8bde48b"
+    },
+    {
+      "path": "backend/common/Localization/Nerv.IIP.Localization/Nerv.IIP.Localization.csproj",
+      "sha256": "c75bf9f225d126f71620e43d9ac2421d81d867152324d9f8cd64782c36f9d31c"
+    },
+    {
+      "path": "backend/common/Observability/Nerv.IIP.Observability/Nerv.IIP.Observability.csproj",
+      "sha256": "1494f095497824f5c9a041672b50c47047cee0f9afb4dd9f3a8c2450ddbefdf9"
+    },
+    {
+      "path": "backend/common/ServiceAuth/Nerv.IIP.ServiceAuth/Nerv.IIP.ServiceAuth.csproj",
+      "sha256": "063cdc199e0fb482df554a35ca7f50eabb93554db1e33e38f9f97a84feee7dcd"
+    },
+    {
+      "path": "backend/common/Web/Nerv.IIP.Web/Nerv.IIP.Web.csproj",
+      "sha256": "41f8e22f42534507bc9dc9e66bbbd9b1a782bce01ee09db24045762409f32659"
+    },
+    {
+      "path": "backend/common/Caching/Nerv.IIP.Caching/packages.lock.json",
+      "sha256": "bdef794617438a7d575db5dc5fd080a69e932a072f2f7c8a4ee4af600057e49f"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.AppHubQueries/packages.lock.json",
+      "sha256": "5a36c7a4adea509e76abe5afa166113303b9af6a73765524dac894f02236bbd6"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.FileStorage/packages.lock.json",
+      "sha256": "03eeadc5ef377c17f787ab65f41fb4c8a9c936bb7f7f4171111fdeec8a81cb46"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.Iam/packages.lock.json",
+      "sha256": "03eeadc5ef377c17f787ab65f41fb4c8a9c936bb7f7f4171111fdeec8a81cb46"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.IntegrationEvents/packages.lock.json",
+      "sha256": "03eeadc5ef377c17f787ab65f41fb4c8a9c936bb7f7f4171111fdeec8a81cb46"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.Notification/packages.lock.json",
+      "sha256": "03eeadc5ef377c17f787ab65f41fb4c8a9c936bb7f7f4171111fdeec8a81cb46"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.Ops/packages.lock.json",
+      "sha256": "5a36c7a4adea509e76abe5afa166113303b9af6a73765524dac894f02236bbd6"
+    },
+    {
+      "path": "backend/common/Localization/Nerv.IIP.Localization/packages.lock.json",
+      "sha256": "03eeadc5ef377c17f787ab65f41fb4c8a9c936bb7f7f4171111fdeec8a81cb46"
+    },
+    {
+      "path": "backend/common/Observability/Nerv.IIP.Observability/packages.lock.json",
+      "sha256": "9a11739321ad0063966818aa49fea856f2d0b59664463aeaaa7d7cbf7276b7b2"
+    },
+    {
+      "path": "backend/common/ServiceAuth/Nerv.IIP.ServiceAuth/packages.lock.json",
+      "sha256": "03eeadc5ef377c17f787ab65f41fb4c8a9c936bb7f7f4171111fdeec8a81cb46"
+    },
+    {
+      "path": "backend/common/Web/Nerv.IIP.Web/packages.lock.json",
+      "sha256": "137cf9931d3a40e2d1f79a8afa0cc58688672045cdf8154c0145d5576f2c3059"
+    },
+    {
+      "path": "backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/packages.lock.json",
+      "sha256": "40a8d3a1865755388fd643cfecd25f99220c4c67d02ae5fd0f340da811f04ee3"
+    }
+  ],
+  "lock": {
+    "paths": [
+      "backend/common/Caching/Nerv.IIP.Caching/packages.lock.json",
+      "backend/common/Contracts/Nerv.IIP.Contracts.AppHubQueries/packages.lock.json",
+      "backend/common/Contracts/Nerv.IIP.Contracts.FileStorage/packages.lock.json",
+      "backend/common/Contracts/Nerv.IIP.Contracts.Iam/packages.lock.json",
+      "backend/common/Contracts/Nerv.IIP.Contracts.IntegrationEvents/packages.lock.json",
+      "backend/common/Contracts/Nerv.IIP.Contracts.Notification/packages.lock.json",
+      "backend/common/Contracts/Nerv.IIP.Contracts.Ops/packages.lock.json",
+      "backend/common/Localization/Nerv.IIP.Localization/packages.lock.json",
+      "backend/common/Observability/Nerv.IIP.Observability/packages.lock.json",
+      "backend/common/ServiceAuth/Nerv.IIP.ServiceAuth/packages.lock.json",
+      "backend/common/Web/Nerv.IIP.Web/packages.lock.json",
+      "backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/packages.lock.json"
+    ]
+  }
+}

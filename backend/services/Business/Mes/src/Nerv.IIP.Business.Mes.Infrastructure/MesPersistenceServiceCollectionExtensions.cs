@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using NetCorePal.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Mes.Domain;
 using Nerv.IIP.Business.Mes.Infrastructure.Repositories;
+using Nerv.IIP.Messaging.CAP;
 
 namespace Nerv.IIP.Business.Mes.Infrastructure;
 
@@ -32,6 +33,7 @@ public static class MesPersistenceServiceCollectionExtensions
         });
         services.AddRepositories(typeof(ApplicationDbContext).Assembly);
         services.AddUnitOfWork<ApplicationDbContext>();
+        services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
         services.AddScoped<IWorkOrderRepository, WorkOrderRepository>();
         services.AddScoped<IOperationTaskRepository, OperationTaskRepository>();
         services.AddScoped<IProductionReportRepository, ProductionReportRepository>();
@@ -39,6 +41,7 @@ public static class MesPersistenceServiceCollectionExtensions
         services.AddScoped<IMesSkuAvailabilityScopeCoordinator, PostgreSqlMesSkuAvailabilityScopeCoordinator>();
         services.AddScoped<IMesWorkOrderCapitalizationScopeCoordinator, PostgreSqlMesWorkOrderCapitalizationScopeCoordinator>();
         services.AddScoped<IMesReworkWorkOrderScopeCoordinator, PostgreSqlMesReworkWorkOrderScopeCoordinator>();
+        services.AddScoped<IMesAssetUnavailableInboxClaimCoordinator, PostgreSqlMesAssetUnavailableInboxClaimCoordinator>();
         return services;
     }
 }

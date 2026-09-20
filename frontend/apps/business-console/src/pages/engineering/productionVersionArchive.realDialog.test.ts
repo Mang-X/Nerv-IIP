@@ -108,7 +108,6 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
 const stubs = {
   BusinessLayout: { template: '<main><slot /></main>' },
   NvDialogTrigger: { template: '<div><slot /></div>' },
-  DialogTrigger: { template: '<div><slot /></div>' },
   NvDialogContent: { template: '<div><slot /></div>' },
   NvDialogHeader: { template: '<div><slot /></div>' },
   NvDialogFooter: { template: '<div><slot /></div>' },
@@ -123,7 +122,6 @@ const stubs = {
   NvSelect: { template: '<select><slot /></select>' },
   NvSelectTrigger: { template: '<span><slot /></span>' },
   NvSelectValue: { template: '<span />' },
-  SelectValue: { template: '<span />' },
   NvSelectContent: { template: '<slot />' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }

@@ -132,7 +132,7 @@ const documentCells = computed<NvMetricStripCell[]>(() => [
   },
 ])
 
-const listErrorMessage = computed(() => formatError(documentsError.value))
+const listErrorMessage = computed(() => inlineErrorMessage(documentsError.value))
 
 const columns: NvDataTableColumn<BusinessConsoleEngineeringDocumentItem>[] = [
   { key: 'documentNumber', header: '文档号', cellClass: 'font-medium' },
@@ -324,10 +324,6 @@ async function openView(row: BusinessConsoleEngineeringDocumentItem) {
     detailPending.value = false
   }
 }
-
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
 </script>
 
 <template>
@@ -436,11 +432,8 @@ function formatError(error: unknown) {
                   <NvFieldLabel for="doc-content-type"
                     >内容类型 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvInput
-                    id="doc-content-type"
-                    v-model="form.contentType"
-                    placeholder="如 application/pdf"
-                  />
+                  <!-- 该字段以 application/pdf 预填，值本身就是格式示例，不再另起说明行。 -->
+                  <NvInput id="doc-content-type" v-model="form.contentType" />
                 </NvField>
               </NvFieldGroup>
 

@@ -30,7 +30,7 @@ public sealed class PromoteTelemetryProductionReportCandidateCommandHandler(Appl
         {
             var productionReportId = new ProductionReportId(Guid.Parse(candidate.ProductionReportId));
             var existing = await dbContext.ProductionReports.SingleAsync(x => x.Id == productionReportId, cancellationToken);
-            return new ProductionReportCommandResult(existing.Id, existing.ReportNo);
+            return new ProductionReportCommandResult(existing.Id, existing.ReportNo, []);
         }
 
         // RecordProductionReportCommand owns its transaction. If candidate confirmation is interrupted,
@@ -38,7 +38,7 @@ public sealed class PromoteTelemetryProductionReportCandidateCommandHandler(Appl
         var result = await sender.Send(new RecordProductionReportCommand(
             request.OrganizationId, request.EnvironmentId, request.WorkOrderId, request.OperationTaskId,
             candidate.GoodQuantity, 0m, false, candidate.BucketEndUtc,
-            $"telemetry:{candidate.SourceIdempotencyKey}", Source: ProductionReport.TelemetrySource,
+            TelemetryProductionReportIdempotencyKey.From(candidate.SourceIdempotencyKey), Source: ProductionReport.TelemetrySource,
             // 遥测计数没有提交人；确认晋升的操作人就是这条报工的责任人。
             ReportedBy: request.Actor), cancellationToken);
         candidate.Confirm(request.WorkOrderId, request.OperationTaskId, request.Actor, request.ConfirmedAtUtc, result.Id.ToString());

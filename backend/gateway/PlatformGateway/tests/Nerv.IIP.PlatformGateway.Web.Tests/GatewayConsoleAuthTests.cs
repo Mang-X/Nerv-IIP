@@ -150,6 +150,10 @@ public sealed class GatewayConsoleAuthTests
             new ConsoleLogoutRequest("session-001"));
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal("application/json; charset=utf-8", response.Content.Headers.ContentType?.ToString());
+        Assert.Equal(
+            "{\"success\":false,\"message\":\"Unauthorized.\",\"code\":401,\"errorData\":[]}",
+            await response.Content.ReadAsStringAsync());
         Assert.Null(iam.LastLogoutBearerToken);
         Assert.Null(iam.LastLogoutRequest);
     }

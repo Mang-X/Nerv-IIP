@@ -194,11 +194,10 @@ const rowActionStubs = {
 }
 // 对话框就地渲染（不 teleport），便于断言/填写表单内容。
 const dialogStubs = {
-  // NvDialog/NvDialogTrigger 是 reka-ui 原语再导出，组件名仍是 DialogRoot/DialogTrigger。
+  // NvDialog/NvDialogTrigger 是 reka-ui 原语的带 name 浅拷贝别名（barrel 已补 name），
+  // 组件名即 Nv 名，故 stub 键按 Nv 名写。
   NvDialog: { template: '<div><slot /></div>' },
-  DialogRoot: { template: '<div><slot /></div>' },
   NvDialogTrigger: { template: '<div><slot /></div>' },
-  DialogTrigger: { template: '<div><slot /></div>' },
   NvDialogContent: { template: '<div><slot /></div>' },
   NvDialogHeader: { template: '<div><slot /></div>' },
   NvDialogFooter: { template: '<div><slot /></div>' },
@@ -222,7 +221,7 @@ const dialogStubs = {
   NvAlertDialogCancel: { template: '<button type="button"><slot /></button>' },
 }
 // 设备类别/供应商/父设备已从自由文本改成只选控件（内部自带 reka Dialog，会撞上上面的
-// DialogRoot 桩）。桩成带同名 id 的输入位，用例继续用 `#dev-*` 表达「选中了某个候选」。
+// NvDialog 桩）。桩成带同名 id 的输入位，用例继续用 `#dev-*` 表达「选中了某个候选」。
 const pickerStubs = {
   NvEntityPicker: {
     props: ['modelValue', 'options', 'id'],
@@ -247,7 +246,6 @@ const selectStubs = {
   },
   NvSelectTrigger: { template: '<span><slot /></span>' },
   NvSelectValue: { template: '<span />' },
-  SelectValue: { template: '<span />' },
   NvSelectContent: { template: '<slot />' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }

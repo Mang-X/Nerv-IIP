@@ -9,6 +9,14 @@ internal static class DomainGuard
             : value.Trim();
     }
 
+    public static string RequiredBounded(string value, string parameterName, int maxLength)
+    {
+        var normalized = Required(value, parameterName);
+        return normalized.Length <= maxLength
+            ? normalized
+            : throw new ArgumentOutOfRangeException(parameterName, $"Value cannot exceed {maxLength} characters.");
+    }
+
     public static decimal Positive(decimal value, string parameterName)
     {
         return value > 0

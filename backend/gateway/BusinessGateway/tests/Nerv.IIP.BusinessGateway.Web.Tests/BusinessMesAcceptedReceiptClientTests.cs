@@ -32,7 +32,7 @@ public sealed class BusinessMesAcceptedReceiptClientTests
             client => client.ReleaseWorkOrderAsync(
                 "token",
                 "WO-20260731-001",
-                new BusinessConsoleMesReleaseWorkOrderRequest("WO-20260731-001", "org", "env", false, "idem-release"),
+                new BusinessConsoleMesReleaseWorkOrderRequest("WO-20260731-001", "org", "env", false),
                 CancellationToken.None));
 
     [Fact]
@@ -184,7 +184,7 @@ public sealed class BusinessMesAcceptedReceiptClientTests
                 "token",
                 "DTE-000007",
                 new BusinessConsoleMesRecoverDowntimeEventRequest(
-                    "DTE-000007", "org", "env", new DateTimeOffset(2026, 7, 31, 9, 0, 0, TimeSpan.Zero), "idem-recover"),
+                    "DTE-000007", "org", "env", new DateTimeOffset(2026, 7, 31, 9, 0, 0, TimeSpan.Zero)),
                 CancellationToken.None));
 
     [Fact]
@@ -194,7 +194,8 @@ public sealed class BusinessMesAcceptedReceiptClientTests
             "ShiftHandover",
             client => client.CreateShiftHandoverAsync(
                 "token",
-                new BusinessConsoleMesCreateShiftHandoverRequest("org", "env", "SHIFT-A", "TEAM-1", null, "idem-handover"),
+                new BusinessConsoleMesCreateShiftHandoverForwardRequest(
+                    "org", "env", "SHIFT-A", "TEAM-1", null, "idem-handover", null, "user-admin", "张三", null, null, null, null),
                 CancellationToken.None));
 
     [Fact]
@@ -205,7 +206,7 @@ public sealed class BusinessMesAcceptedReceiptClientTests
             client => client.AcceptShiftHandoverAsync(
                 "token",
                 "SH-000012",
-                new BusinessConsoleMesAcceptShiftHandoverRequest("SH-000012", "org", "env", "idem-accept"),
+                new BusinessConsoleMesAcceptShiftHandoverForwardRequest("org", "env", "user-admin", "李四"),
                 CancellationToken.None));
 
     [Fact]

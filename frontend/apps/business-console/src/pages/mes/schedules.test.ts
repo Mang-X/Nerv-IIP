@@ -188,8 +188,7 @@ const stubs = {
   NvSelectTrigger: {
     template: '<button><slot /></button>',
   },
-  // NvSelectValue resolves to the underlying reka SelectValue component name in VTU.
-  SelectValue: {
+  NvSelectValue: {
     template: '<span />',
   },
   Spinner: true,

@@ -113,12 +113,16 @@ const issueSegments = computed(() => [
 ])
 // 就绪卡的落点是「现在能不能开工、下一步做什么」，不是复述状态码。
 const readinessGuidance = computed(() => {
+  // 读失败与「还没查」是两种状态：错误条已删，卡片自己不能把失败说成未发起（#2946）。
+  if (readinessError.value)
+    return '就绪检查结果没取到，先在下方表格里重试读取，再据此判断能否开工。'
   if (!readiness.value) return '填写上方范围后点「重新检查」，按工厂、产线或工作中心核对开工条件。'
   if (blockingIssues.value.length) return '先逐条清掉阻塞项，再回到工单与派工下达生产。'
   if (warningIssues.value.length) return '警告不阻断开工，建议开工前确认一遍再放行。'
   return '各检查区域均已就绪，可以进入工单与派工下达生产。'
 })
 const readinessStatusPill = computed(() => {
+  if (readinessError.value) return { label: '结论未取得', tone: 'neutral' as const }
   if (!readiness.value) return { label: '尚未检查', tone: 'neutral' as const }
   if (blockingIssues.value.length) return { label: '不能开工', tone: 'danger' as const }
   if (warningIssues.value.length) return { label: '可开工，有提醒', tone: 'warning' as const }
@@ -247,8 +251,6 @@ const columns: NvDataTableColumn<ReadinessArea>[] = [
       </NvFieldGroup>
     </div>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
-
     <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
       <NvMetricCard
         variant="alert"
@@ -289,9 +291,12 @@ const columns: NvDataTableColumn<ReadinessArea>[] = [
       :rows="areas"
       row-key="areaCode"
       :loading="readinessPending"
+      :error="readinessError"
+      :error-message="errorMessage"
       :searchable="false"
       :column-settings="false"
       empty-message="暂无检查结果。点「重新检查」按当前范围运行就绪检查。"
+      @retry="refreshReadiness"
     >
       <template #cell-areaCode="{ row }">{{ areaLabel(row.areaCode) }}</template>
       <template #cell-status="{ row }">

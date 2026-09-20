@@ -1,8 +1,9 @@
 /**
  * 基础数据 · 前端受控值（字典 CodeSet）常量 —— Phase 1 数据源。
  *
- * 权威规范：docs/architecture/master-data-dictionary-rules.md（CodeSet 目录、码值、治理）。
- * 本文件是 Phase 1 的受控值兜底来源，码值必须与该规范 §2 一致;物料表单等下拉从这里取选项。
+ * CodeSet 目录与码值见 docs/reference/master-data/dictionary.md §2；维护规则见
+ * docs/governance/data/reference-data.md。
+ * 本文件是 Phase 1 的受控值兜底来源，码值必须与 dictionary.md §2 一致;物料表单等下拉从这里取选项。
  * Phase 2 后端字典种子对齐规范后，改由 `?codeSet=` 实时拉取，本文件降级为离线兜底。
  */
 

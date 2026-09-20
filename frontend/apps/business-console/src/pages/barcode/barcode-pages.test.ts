@@ -7,6 +7,10 @@ import TemplatesPage from './templates.vue'
 import PrintBatchesPage from './print-batches.vue'
 import ScansPage from './scans.vue'
 
+vi.mock('@/components/barcode/TemplateAssetRetirement.vue', () => ({
+  default: { template: '<span />' },
+}))
+
 const barcode = vi.hoisted(() => ({
   saveRule: vi.fn(),
   saveTemplate: vi.fn(),
@@ -278,7 +282,6 @@ const selectStubs = {
     template: '<slot />',
   },
   NvSelectValue: { template: '<span />' },
-  SelectValue: { template: '<span />' },
   NvSelectContent: { template: '<slot />' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }

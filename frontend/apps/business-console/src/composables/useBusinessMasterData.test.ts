@@ -239,7 +239,7 @@ describe('business master data composables', () => {
       },
     })
 
-    const { resources, resourcesTotal } = useBusinessMasterDataResources('uom')
+    const { filters, resources, resourcesTotal } = useBusinessMasterDataResources('uom')
 
     expect(listBusinessConsoleMasterDataResourcesQueryOptions).toHaveBeenCalledWith({
       query: {
@@ -257,6 +257,19 @@ describe('business master data composables', () => {
         code: 'EA',
       },
     ])
+
+    filters.keyword = '精加工'
+    coladaState.queryFactoriesById.get('listBusinessConsoleMasterDataResources')?.()
+    expect(listBusinessConsoleMasterDataResourcesQueryOptions).toHaveBeenLastCalledWith({
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        resourceType: 'uom',
+        keyword: '精加工',
+        skip: 0,
+        take: 100,
+      },
+    })
   })
 
   it('lists multiple master data resource groups for linked selectors', () => {

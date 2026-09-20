@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { NvDataTableColumn, NvMetricSegment } from '@nerv-iip/ui'
+import type { DateRange, NvDataTableColumn, NvMetricSegment } from '@nerv-iip/ui'
 import {
   makeIdempotencyKey,
   useMesDowntimeEvents,
@@ -18,6 +18,7 @@ import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import {
   NvButton,
   NvDataTable,
+  NvDateRangePicker,
   NvDialog,
   NvDialogContent,
   NvDialogDescription,
@@ -43,7 +44,12 @@ import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { BUSINESS_PERMISSION_CODES } from '@/permissions'
-import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
+import {
+  inlineErrorMessage,
+  isForbiddenError,
+  notifyOperationFailure,
+  notifySuccess,
+} from '@/utils/notify'
 
 definePage({
   meta: {
@@ -85,7 +91,13 @@ const {
 const { keyword } = useMesKeywordFilter(filters)
 const { statusLabel } = useMesReferenceLabels()
 const { page, pageSize } = usePagedList(filters, {
-  resetOn: [() => filters.status, () => filters.keyword, () => filters.reasonCode],
+  resetOn: [
+    () => filters.status,
+    () => filters.keyword,
+    () => filters.reasonCode,
+    () => filters.windowStartUtc,
+    () => filters.windowEndUtc,
+  ],
 })
 const statusFilter = shallowRef('all')
 const reasonFilter = shallowRef('all')
@@ -126,13 +138,61 @@ const reasonFilterOptions = computed(() => [
   { value: 'all', label: '全部原因' },
   ...downtimeReasonOptions.value.map((option) => ({ value: option.value, label: option.name })),
 ])
-const errorMessage = computed(() => formatError(downtimeEventsError.value))
+const errorMessage = computed(() => inlineErrorMessage(downtimeEventsError.value))
+// 停机原因目录读失败的**唯一归因点**：写面（登记入口 blocker）与读面（原因筛选）共用同一句话。
+// 归因分两处必然漂移——同一个 403 在两个面上会说成两种话；本页此前读面干脆什么都不说，
+// 下拉静默只剩「全部原因」，用户看不出是没权限还是真没配。
+// 网关在缺少停机原因词表读权限时回 403（ADR 0029 换绑后的权限码），生成客户端在
+// throwOnError 下把它抛成 query error；笼统说「读取失败，请刷新」会让运维一直刷新，
+// 掉到「组织尚未配置」则会让运维去配字典——两条都指错了地方。
+const downtimeReasonsMessage = computed(() => {
+  const error = downtimeReasonsError.value
+  if (!error) return ''
+  return isForbiddenError(error)
+    ? '当前角色没有停机原因词表的读取权限，请联系管理员开通'
+    : '停机原因读取失败，请刷新后重试'
+})
 watch(statusFilter, (value) => {
   filters.status = value === 'all' ? undefined : value
 })
 watch(reasonFilter, (value) => {
   filters.reasonCode = value === 'all' ? undefined : value
 })
+
+const windowRange = computed<DateRange>({
+  get: () => ({
+    start: toDateInput(filters.windowStartUtc),
+    end: toInclusiveEndDateInput(filters.windowEndUtc),
+  }),
+  set: (range) => {
+    if (range.start) filters.windowStartUtc = fromDateInput(range.start, 0)
+    if (range.end) filters.windowEndUtc = fromDateInput(range.end, 1)
+  },
+})
+
+function toDateInput(value?: string, dayOffset = 0) {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  date.setDate(date.getDate() + dayOffset)
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+  return local.toISOString().slice(0, 10)
+}
+
+function toInclusiveEndDateInput(value?: string) {
+  const date = value ? new Date(value) : null
+  const isExclusiveDayBoundary =
+    date?.getHours() === 0 &&
+    date.getMinutes() === 0 &&
+    date.getSeconds() === 0 &&
+    date.getMilliseconds() === 0
+  return toDateInput(value, isExclusiveDayBoundary ? -1 : 0)
+}
+
+function fromDateInput(value: string, dayOffset: number) {
+  const [year, month, day] = value.split('-').map(Number)
+  return new Date(year!, month! - 1, day! + dayOffset).toISOString()
+}
 
 // 停机读面只回设备编码，中文设备名在设备台账里，按编码 join 出来。
 const { resolveDevice } = useMasterDataDisplayNames({ devices: true })
@@ -277,7 +337,7 @@ const recordEntryBlocker = computed(() => {
   }
   if (operationTasksPending.value) return '正在读取可登记停机的工序'
   if (downtimeReasonsPending.value) return '正在读取停机原因'
-  if (downtimeReasonsError.value) return '停机原因读取失败，请刷新后重试'
+  if (downtimeReasonsMessage.value) return downtimeReasonsMessage.value
   if (downtimeReasonOptions.value.length === 0) return '当前组织尚未配置可用停机原因'
   if (eligibleDowntimeTargets.value.length === 0) {
     return '当前授权范围内暂无同时具备工作中心与设备上下文的工序'
@@ -449,10 +509,22 @@ async function confirmRecover() {
     await recoverDowntimeEvent(row.downtimeEventId, {
       organizationId: filters.organizationId,
       environmentId: filters.environmentId,
+      // ⚠️ 每次点击都在这里现铸时刻，所以一次重放送下去的**不是**同一份入参。
+      // 这一行**不改**：恢复时刻是现场事实，该由调用方给（#3343 裁定的口径也是「收调用方时刻」）。
       recoveredAtUtc: new Date().toISOString(),
-      // #1219 稳定幂等键：同一停机事件的恢复是同一业务意图，键不掺时间戳，
-      // 重复点击/重试由后端幂等或 KnownException 兜住。
-      idempotencyKey: `downtime-recover-${row.downtimeEventId}`,
+      // #3328：这里原来传一个稳定幂等键（#1219），但 MES 侧从来不消费它（它既不进命令也不落库），
+      // 网关也已把该字段从公开契约摘掉——摘掉是安全的，因为它本来就拦不住任何东西。
+      //
+      // 重放第二次的后果（#3343 已改掉其中一半，两句都要说）：
+      //   ① **不产生重复行** —— 一直如此；
+      //   ② 曾经**会把恢复时刻覆盖成更晚的值**（因为上面那行每次现铸、而 Close 零前置守卫）。
+      //      #3343 给 WorkCenterUnavailability.Close 补了「已有结束时刻则拒绝」的守卫之后，
+      //      第二次点击会收到 KnownException「该停机事件已恢复，不能重复恢复。」，
+      //      经下面的 catch 走 notifyOperationFailure 原样上屏（纯中文、17 字，
+      //      不命中 friendlyErrorMessage 里任何一条英文改写正则）。
+      //      钉住的用例：MesWriteReplaySafetyTests
+      //      .Closing_an_already_recovered_downtime_is_rejected_and_keeps_the_first_instant。
+      // ⇒ 这条腿现在由聚合守卫挡住第二次，**仍然不是靠幂等键**。
     })
     notifySuccess('停机已恢复，该工作中心的开工拦截已解除。')
     recoverTarget.value = null
@@ -466,9 +538,6 @@ function formatDateTime(value?: string | null) {
   if (!value) return '未指定'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 </script>
 
@@ -531,7 +600,7 @@ function formatError(error: unknown) {
         :value="downtimeHoursTotal"
         unit="小时"
         :segments="downtimeHoursSegments"
-        foot-start="未恢复的停机按当前时刻仍在累计。"
+        foot-start="未恢复停机按窗口结束或当前时刻（取较早者）累计。"
       />
     </div>
 
@@ -569,10 +638,24 @@ function formatError(error: unknown) {
             >
           </NvSelectContent>
         </NvSelect>
+        <NvDateRangePicker v-model="windowRange" placeholder="选择统计窗口" />
       </template>
     </NvToolbar>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
+    <!--
+      这一行留着不删（#2854 只删「表格数据源」那条手写错误行）：它归因的是**停机原因词表**
+      这个另一个读面（403 = 没权限看词表 / 其它 = 真读挂了），与表格数据源
+      `downtimeEventsError` 不同源——词表挂了时停机事件表照样可以有数据，表格没有状态可以
+      承担这句话。与 `operation-tasks.vue` / `work-orders/index.vue` 保留作业范围提示行同判据。
+    -->
+    <p
+      v-if="downtimeReasonsMessage"
+      class="text-sm text-destructive"
+      role="alert"
+      data-testid="downtime-reasons-message"
+    >
+      {{ downtimeReasonsMessage }}
+    </p>
 
     <NvDataTable
       manual
@@ -585,9 +668,12 @@ function formatError(error: unknown) {
       :rows="downtimeEvents"
       row-key="downtimeEventId"
       :loading="downtimeEventsPending"
+      :error="downtimeEventsError"
+      :error-message="errorMessage"
       :searchable="false"
       :column-settings="false"
       empty-message="暂无停机事件。点击上方「登记停机」记录设备异常，登记后可在这里跟进恢复与影响范围。"
+      @retry="refreshDowntimeEvents"
     >
       <template #cell-deviceAssetId="{ row }">
         <CodeWithNameCell :code="deviceCode(row)" :name="deviceName(row)" fallback="未指定" />

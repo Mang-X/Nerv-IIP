@@ -457,6 +457,18 @@ function Get-NervFullStackOpenedPathIdentity {
     }
 }
 
+function Test-NervFullStackOpenedObjectIdentityAvailable {
+    <#
+        Opened-object identity (open + fstat 的 device/inode) 目前只有 Darwin provider。
+        它是**宿主事实**，不是被观察记录的事实：调用方据此选择「按证据读」还是
+        「降级为按路径读」，⛔ 不得把它翻译成对记录本身的判定（例如 invalid）。
+    #>
+    [OutputType([bool])]
+    param()
+
+    return [bool] $IsMacOS
+}
+
 function Open-NervFullStackVerifiedPathHandle {
     [OutputType([pscustomobject])]
     param(
@@ -476,13 +488,14 @@ function Open-NervFullStackVerifiedPathHandle {
         -CandidatePath $TrustedPath.CandidatePath `
         -ExpectedKind $TrustedPath.ExpectedKind
 
-    if (-not $IsMacOS) {
+    if (-not (Test-NervFullStackOpenedObjectIdentityAvailable)) {
         return [pscustomobject][ordered]@{
             Status = 'Unknown'
             Reason = 'path:identity-unavailable'
             Provider = $null
             TrustedPath = $revalidated
             Identity = $null
+            IdentityProven = $false
             Handle = $null
         }
     }
@@ -504,6 +517,7 @@ function Open-NervFullStackVerifiedPathHandle {
             Provider = 'macOS-fstat-opened-object-v1'
             TrustedPath = $revalidated
             Identity = $identity
+            IdentityProven = $true
             Handle = $handle
         }
     }
@@ -565,7 +579,7 @@ function New-NervFullStackVerifiedSessionCapability {
 }
 
 function Assert-NervFullStackMacOSIdentityProvider {
-    if (-not $IsMacOS) {
+    if (-not (Test-NervFullStackOpenedObjectIdentityAvailable)) {
         throw 'path:identity-unavailable'
     }
 }

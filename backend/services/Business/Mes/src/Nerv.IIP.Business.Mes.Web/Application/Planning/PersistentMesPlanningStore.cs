@@ -57,7 +57,8 @@ public sealed class PersistentMesPlanningStore(ApplicationDbContext dbContext, I
             operationTask.EarliestStartUtc,
             operationTask.Duration,
             operationTask.ExistingStartUtc,
-            operationTask.ExistingEndUtc));
+            operationTask.ExistingEndUtc,
+            operationTask.SkuCode));
     }
 
     public void AddUnavailability(WorkCenterUnavailability unavailability)
@@ -140,6 +141,7 @@ public sealed class PersistentMesPlanningStore(ApplicationDbContext dbContext, I
                 x.AlternativeWorkCenterIdList,
                 x.EarliestStartUtc,
                 x.Duration,
+                x.SkuCode,
                 x.ExistingStartUtc,
                 x.ExistingEndUtc,
                 x.OrganizationId,

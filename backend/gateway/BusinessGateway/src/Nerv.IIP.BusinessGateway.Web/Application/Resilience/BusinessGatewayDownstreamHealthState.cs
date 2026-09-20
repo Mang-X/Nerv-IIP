@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 
 namespace Nerv.IIP.BusinessGateway.Web.Application.Resilience;
 
-public sealed class BusinessGatewayDownstreamHealthState
+public sealed class BusinessGatewayDownstreamHealthState(TimeProvider timeProvider)
 {
     private static readonly TimeSpan DegradedWindow = TimeSpan.FromSeconds(30);
     private readonly ConcurrentDictionary<string, BusinessGatewayDownstreamHealthEntry> _entries = new(StringComparer.Ordinal);
@@ -17,7 +17,7 @@ public sealed class BusinessGatewayDownstreamHealthState
 
     public void RecordFailure(string downstream, string reason)
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = timeProvider.GetUtcNow();
         _entries[downstream] = new BusinessGatewayDownstreamHealthEntry(
             downstream,
             "degraded",
@@ -28,7 +28,7 @@ public sealed class BusinessGatewayDownstreamHealthState
 
     public IReadOnlyCollection<BusinessGatewayDownstreamHealthEntry> Snapshot()
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = timeProvider.GetUtcNow();
         return _entries.Values
             .Select(entry => entry.DegradedUntilUtc is not null && entry.DegradedUntilUtc <= now
                 ? entry with { Status = "available", Reason = null, DegradedUntilUtc = null }

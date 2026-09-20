@@ -4,6 +4,7 @@ using FluentValidation;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
+using Nerv.IIP.BusinessGateway.Web.Endpoints.Validation;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Barcode;
@@ -256,8 +257,7 @@ public sealed class BusinessConsoleBarcodeResolveRequestValidator : Validator<Bu
 {
     public BusinessConsoleBarcodeResolveRequestValidator()
     {
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        this.Tenant(x => x.OrganizationId, x => x.EnvironmentId);
         RuleFor(x => x.ScannedValue).NotEmpty().MaximumLength(200);
         RuleFor(x => x.PageIndex).GreaterThanOrEqualTo(1);
         RuleFor(x => x.PageSize).InclusiveBetween(1, 100);

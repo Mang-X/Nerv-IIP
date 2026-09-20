@@ -37,6 +37,9 @@ public sealed class WorkOrderCostEntityTypeConfiguration : IEntityTypeConfigurat
         GLAccountEntityTypeConfiguration.AddTenant(builder);
         builder.Property(x => x.WorkOrderId).HasColumnName("work_order_id").IsRequired().HasMaxLength(100).HasComment("MES work-order public identifier.");
         builder.Property(x => x.SkuCode).HasColumnName("sku_code").IsRequired().HasMaxLength(100).HasComment("Finished-good SKU code.");
+        builder.Property(x => x.SourceNcrId).HasColumnName("source_ncr_id").HasMaxLength(100).HasComment("Quality NCR public id for a rework work-order cost; null for ordinary work orders.");
+        builder.Property(x => x.SourceNcrCode).HasColumnName("source_ncr_code").HasMaxLength(100).HasComment("Quality NCR business code retained for rework cost readback.");
+        builder.Property(x => x.SourceWorkOrderId).HasColumnName("source_work_order_id").HasMaxLength(100).HasComment("MES source work-order public id for a rework work-order cost.");
         builder.Property(x => x.LaborCurrencyCode).HasColumnName("labor_currency_code").HasMaxLength(3).IsFixedLength().HasComment("Frozen three-letter currency code shared by all priced labor on this work order; no implicit conversion is allowed.");
         builder.Property(x => x.MachineOverheadCurrencyCode).HasColumnName("machine_overhead_currency_code").HasMaxLength(3).IsFixedLength().HasComment("Frozen machine-overhead currency; it must match priced labor when both exist.");
         builder.Property(x => x.CompletedQuantity).HasColumnName("completed_quantity").HasPrecision(18, 6).HasComment("MES good quantity at completion.");
@@ -49,10 +52,12 @@ public sealed class WorkOrderCostEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.ExpectedMaterialMovementCount).HasColumnName("expected_material_movement_count").HasComment("MES completion count of expected material postings.");
         builder.Property(x => x.ReceivedMaterialMovementCount).HasColumnName("received_material_movement_count").HasComment("Actual Inventory material postings received by ERP.");
         builder.Property(x => x.CapitalizationPublished).HasColumnName("capitalization_published").HasComment("Whether the cost-ready capitalization event has been published.");
-        builder.Ignore(x => x.LaborCost); builder.Ignore(x => x.MaterialCost); builder.Ignore(x => x.MachineOverheadCost); builder.Ignore(x => x.TotalAccumulatedCost); builder.Ignore(x => x.VarianceCost);
+        builder.Ignore(x => x.IsRework); builder.Ignore(x => x.LaborCost); builder.Ignore(x => x.MaterialCost); builder.Ignore(x => x.MachineOverheadCost); builder.Ignore(x => x.TotalAccumulatedCost); builder.Ignore(x => x.VarianceCost);
         builder.HasMany(x => x.Details).WithOne().HasForeignKey("WorkOrderCostId").OnDelete(DeleteBehavior.Cascade);
         builder.Navigation(x => x.Details).UsePropertyAccessMode(PropertyAccessMode.Field);
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderId }).IsUnique();
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceNcrId });
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceWorkOrderId });
     }
 }
 
@@ -126,6 +131,36 @@ public sealed class OperationLaborSettlementEntityTypeConfiguration : IEntityTyp
             .HasDatabaseName("ux_operation_labor_settlements_business_identity");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderId })
             .HasDatabaseName("ix_operation_labor_settlements_work_order");
+    }
+}
+
+public sealed class OperationLaborReportSnapshotEntityTypeConfiguration : IEntityTypeConfiguration<OperationLaborReportSnapshot>
+{
+    public void Configure(EntityTypeBuilder<OperationLaborReportSnapshot> builder)
+    {
+        builder.ToTable("operation_labor_report_snapshots", table => table.HasComment("ERP immutable MES production-report basis used for standard labor and efficiency variance."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Operation labor report snapshot id.");
+        GLAccountEntityTypeConfiguration.AddTenant(builder);
+        builder.Property(x => x.WorkOrderId).HasColumnName("work_order_id").IsRequired().HasMaxLength(100).HasComment("MES work-order public identifier.");
+        builder.Property(x => x.OperationTaskId).HasColumnName("operation_task_id").IsRequired().HasMaxLength(100).HasComment("MES operation-task public identifier.");
+        builder.Property(x => x.WorkCenterId).HasColumnName("work_center_id").IsRequired().HasMaxLength(100).HasComment("Frozen MES work-center identifier.");
+        builder.Property(x => x.ReportNo).HasColumnName("report_no").IsRequired().HasMaxLength(100).HasComment("MES production-report business identifier.");
+        builder.Property(x => x.GoodQuantity).HasColumnName("good_quantity").HasPrecision(18, 6).HasComment("Frozen reported good quantity before reversal sign normalization.");
+        builder.Property(x => x.ScrapQuantity).HasColumnName("scrap_quantity").HasPrecision(18, 6).HasComment("Frozen reported scrap quantity; excluded from standard labor hours.");
+        builder.Property(x => x.ReworkQuantity).HasColumnName("rework_quantity").HasPrecision(18, 6).HasComment("Frozen reported rework quantity; excluded from standard labor hours.");
+        builder.Property(x => x.UomCode).HasColumnName("uom_code").IsRequired().HasMaxLength(30).HasComment("Frozen MES output unit of measure.");
+        builder.Property(x => x.TheoreticalRatePerHour).HasColumnName("theoretical_rate_per_hour").HasPrecision(18, 6).HasComment("Frozen theoretical good-output rate per labor hour.");
+        builder.Property(x => x.HasValidNumericScale).HasColumnName("has_valid_numeric_scale").HasComment("Whether all source decimal facts fit the governed six-digit scale without PostgreSQL coercion.");
+        builder.Property(x => x.ReportedAtUtc).HasColumnName("reported_at_utc").HasComment("Original MES production-report UTC timestamp.");
+        builder.Property(x => x.IsReversal).HasColumnName("is_reversal").HasComment("Whether this report reverses a prior production report.");
+        builder.Property(x => x.ReversedReportNo).HasColumnName("reversed_report_no").HasMaxLength(100).HasComment("Original MES report number for a reversal snapshot.");
+        builder.Property(x => x.SourceEventId).HasColumnName("source_event_id").IsRequired().HasMaxLength(256).HasComment("MES event id that established this immutable snapshot.");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ReportNo })
+            .IsUnique()
+            .HasDatabaseName("ux_operation_labor_report_snapshots_scope_report");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderId, x.OperationTaskId })
+            .HasDatabaseName("ix_operation_labor_report_snapshots_work_order_operation");
     }
 }
 

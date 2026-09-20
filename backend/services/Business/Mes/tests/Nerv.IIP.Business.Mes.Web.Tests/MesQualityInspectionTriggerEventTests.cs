@@ -24,7 +24,7 @@ public sealed class MesQualityInspectionTriggerEventTests
             TimeSpan.FromMinutes(30),
             DateTimeOffset.Parse("2026-07-05T07:30:00Z"),
             null,
-            skuCode: "SKU-FG-1000",
+            "SKU-FG-1000",
             uomCode: "kg",
             plannedQuantity: 12.5m,
             requiresQualityInspection: true);

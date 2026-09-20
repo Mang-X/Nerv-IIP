@@ -40,10 +40,30 @@ describe('friendlyErrorMessage', () => {
       '工单完工回执异常，请刷新后重试；仍失败请联系管理员。',
     ],
     ['idempotency-conflict', '该操作标识已用于其他内容，请刷新后重新发起。'],
+    ['idempotency-key-too-long', '操作标识过长，本次未提交；请重新发起，仍失败请联系管理员。'],
+    [
+      'idempotency-key-invalid-characters',
+      '操作标识含不支持的字符，本次未提交；请重新发起，仍失败请联系管理员。',
+    ],
     ['lifecycle-conflict', '状态已被其他操作更新'],
   ])('把稳定错误值 %s 映射为精确中文文案', (wireValue, message) => {
     expect(friendlyErrorMessage({ message: wireValue }, '原有兜底')).toBe(message)
   })
+
+  // #3287：这两条码必须**先**被稳定表短路。下面那条通用正则
+  // `/\b409\b|conflict|idempotency|intent|lifecycle|already bound/i` 是按**子串**匹配的，
+  // `idempotency-key-too-long` 会命中 `idempotency` 并回「操作意图发生冲突」——
+  // 那正是这两条错误码要消灭的误导。这一格断言的是「没有回那句」，不是「表里有条目」。
+  it.each(['idempotency-key-too-long', 'idempotency-key-invalid-characters'])(
+    '%s 不再落到通用冲突正则的「操作意图发生冲突」文案',
+    (wireValue) => {
+      const message = friendlyErrorMessage({ message: wireValue }, '原有兜底')
+      expect(message).not.toContain('冲突')
+      expect(message).not.toContain('刷新列表并核实最新状态')
+      expect(message).not.toContain(wireValue)
+      expect(message).toContain('本次未提交')
+    },
+  )
 
   it('未登记的稳定值继续使用原有兜底，不猜测文案', () => {
     expect(friendlyErrorMessage({ message: 'future-stable-error' }, '原有兜底')).toBe('原有兜底')
@@ -60,6 +80,24 @@ describe('friendlyErrorMessage', () => {
     expect(friendlyErrorMessage('504 Gateway Timeout')).toContain('刷新相关列表查看结果')
     // 不能被通用网络分支吞掉。
     expect(friendlyErrorMessage(new Error('downstream-timeout'))).not.toContain('网络异常')
+  })
+
+  // #3272：网关熔断打开（`BrokenCircuitException` → 503 + `downstream-circuit-open`）。
+  //
+  // 这一格断言的**不是**「表里有条目」，而是「正则改写不到它」——这是 #3308 栽过的那一格。
+  // 实测过的失效方向：这个串不命中 friendlyErrorMessage 里的任何一条正则
+  // （`downstream-timeout` / `\b503\b` / `service unavailable` / `timeout` 都不匹配它），
+  // 所以**不登记就会一路落到通用兜底**「操作失败，请稍后重试。」，而不是落到 502/503 那句。
+  // 因此下面既要断言拿到了这句，也要断言没有退化成兜底、没有被折进 5xx 通用句、没有裸码上屏。
+  it('熔断打开（downstream-circuit-open）→ 说出「本次请求未发出」，不被通用正则改写（#3272）', () => {
+    const message = friendlyErrorMessage({ message: 'downstream-circuit-open' }, '原有兜底')
+    expect(message).toBe('服务暂时不可用，本次请求未发出；请稍后重试。')
+    // 没有退化成兜底 —— 证明这条码确实被稳定表接住了。
+    expect(message).not.toBe('原有兜底')
+    // 没有被折进 502/503 的通用句 —— 那句说的是「结果可能尚未确认」，与熔断的事实相反。
+    expect(message).not.toContain('刷新列表核实')
+    // 没有把技术串甩给用户。
+    expect(message).not.toContain('downstream')
   })
 
   it('网络错误 → 人话', () => {
@@ -384,8 +422,15 @@ describe('WMS 拒绝原因代码（#1397 / 台账 #81）', () => {
     expect(forbidden).not.toBe('没有权限执行此操作。')
   })
 
+  // 替身码在 #3155 换过一次：原来用的是 `unprocessable`，而它其实是 WMS 中间件真会外发的
+  // 稳定码（`WmsUnprocessableException.SafeCode`），只是当时两侧没登记。#3155 把后端注册表与
+  // 前端词表焊成单向包含之后它被登记了，于是**不再是**「未登记的代码」，拿它做替身就测不到本条性质。
+  // 顺带说明为什么登记它是修复而不是回退：`unprocessable` 的语义是业务前置条件不满足，
+  // 落到 422 泛化分支拿到的「请检查填写项」根本没有填写项可查——正是本 describe 块要消灭的那类文案。
   it('未登记的代码不猜语义，落回原有分层兜底', () => {
-    expect(friendlyErrorMessage({ message: 'unprocessable' })).toContain('请检查填写项')
+    expect(
+      friendlyErrorMessage({ message: 'unprocessable-entity-for-an-unlisted-reason' }),
+    ).toContain('请检查填写项')
   })
 
   it('分层链上的三个入口都能拿到中文原因（toast 与行内同一口径）', () => {
@@ -403,5 +448,84 @@ describe('WMS 拒绝原因代码（#1397 / 台账 #81）', () => {
         outboundOrderNo: 'OB-1',
       }),
     ).toContain('出库单 OB-1')
+  })
+})
+
+// #3333：把字符串追到屏幕（PC 侧那一格）。
+//
+// 为什么这一格不写成 `friendlyErrorMessage('request-payload-invalid')`：那只证明了链路中段。
+// #3308 的判例是「治理合规 + 七格变异全绿，却在屏上甩裸英文码」——链路末端才是被修的东西。
+// 所以这里喂的是**网关实际写出的整个响应体**（下面那段 JSON 逐字节取自
+// `BusinessGatewayValidationFailureEnvelopeTests` 覆盖的同一条通道的实跑输出），
+// 走的是页面真正调用的 `notifyOperationFailure`，断言的是**toast 收到的那句话**
+// ——toast 就是 PC 侧的屏幕（反馈规范：操作结果一律 toast，不留常驻文字）。
+describe('#3333 网关校验失败的响应体在 PC 屏上是中文', () => {
+  /**
+   * 网关校验失败的**原样响应体**。generated client 在失败时 `JSON.parse` 响应文本后
+   * 直接 throw 这个对象（见 `client.gen.ts` 的 `throw jsonError ?? textError`），
+   * 所以页面 catch 到的就是它；error 拦截器再把原始 `Response` 以非枚举属性挂上去。
+   */
+  const gatewayValidationFailureBody = JSON.parse(
+    '{"success":false,"message":"request-payload-invalid","code":400,"errorData":' +
+      '[{"name":"idempotencyKey","reason":"\'idempotency Key\' 必须小于或等于128个字符。您输入了129个字符。"}]}',
+  ) as Record<string, unknown>
+
+  function asThrownByClient() {
+    const error = { ...gatewayValidationFailureBody }
+    Object.defineProperty(error, 'response', {
+      configurable: true,
+      enumerable: false,
+      value: { status: 400 },
+    })
+    return error
+  }
+
+  it('toast 上的是可操作中文，不是英文常量也不是裸稳定码', () => {
+    notifyOperationFailure('提交失败', asThrownByClient(), '提交失败，请稍后重试')
+
+    expect(toastError).toHaveBeenCalledWith(
+      '提交失败：提交的内容有误，请检查后重新提交；仍失败请联系管理员。',
+    )
+    const shown = String(toastError.mock.calls[0][0])
+    expect(shown).not.toContain('request-payload-invalid')
+    expect(shown).not.toContain('One or more errors occurred')
+    // 兜底句也不算修好：它是「什么都没取到」的信号，不是这次失败的原因。
+    expect(shown).not.toBe('提交失败，请稍后重试')
+  })
+
+  // errorData 里的逐字段原因**不上屏**。这一格是那条边界的护栏：哪天有人让
+  // `serverErrorMessage` 去读 errorData，「'idempotency Key' 必须小于或等于128个字符」
+  // 这种半英文句子就会顶掉上面那句中文。
+  it('errorData 里的字段级句子不进 toast', () => {
+    notifyOperationFailure('提交失败', asThrownByClient(), '提交失败，请稍后重试')
+
+    const shown = String(toastError.mock.calls[0][0])
+    expect(shown).not.toContain('idempotency Key')
+    expect(shown).not.toContain('128')
+  })
+
+  // 旧形状（FastEndpoints 默认）作为对照。
+  //
+  // ⚠️ 这里要如实记一笔：#3333 票面说「用户看到的是英文常量」——那句话对 PDA 成立
+  // （`actionableHttpMessage(400)` 返回 undefined，回落链 `actionableMessage ?? serverMessage`
+  // 直接把英文常量上屏，见 PDA 那一格），但**对 PC 不成立**。PC 这条链上
+  // `friendlyErrorMessage` 的所有分支都匹配不到 `One or more errors occurred!`，
+  // 也不含中文，于是返回 fallback ⇒ 屏上是调用方的**通用兜底句**。
+  // 缺陷同样成立（用户拿不到任何可操作原因），但成因和症状与票面描述不同，别沿用那句话。
+  it('对照：旧的 FastEndpoints 默认形状在 PC 上退化成通用兜底（不是英文常量）', () => {
+    notifyOperationFailure(
+      '提交失败',
+      {
+        statusCode: 400,
+        message: 'One or more errors occurred!',
+        errors: { idempotencyKey: ["'idempotency Key' 必须小于或等于128个字符。"] },
+      },
+      '提交失败，请稍后重试',
+    )
+
+    expect(toastError).toHaveBeenCalledWith('提交失败，请稍后重试')
+    const shown = String(toastError.mock.calls[0][0])
+    expect(shown).not.toContain('One or more errors occurred')
+    expect(shown).not.toContain('提交的内容有误')
   })
 })

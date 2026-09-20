@@ -43,7 +43,7 @@ public sealed class ProcureToPayWmsErpClosureAcceptanceTests
         wmsDb.InboundOrders.Add(inbound);
         await wmsDb.SaveChangesAsync(CancellationToken.None);
 
-        await new CompleteInboundOrderCommandHandler(wmsDb).Handle(
+        await new CompleteInboundOrderCommandHandler(wmsDb, new WmsTrustedCompletionAcceptanceFixture.ReceiptRoute()).Handle(
             new CompleteInboundOrderCommand(
                 inbound.Id,
                 "wms-complete:p2p:001",
@@ -76,7 +76,7 @@ public sealed class ProcureToPayWmsErpClosureAcceptanceTests
         Assert.Empty(erpDb.AccountPayables);
         Assert.Empty(erpDb.JournalVouchers);
 
-        var grIrHandler = new PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual(erpDb, deadLetters);
+        var grIrHandler = new PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual(erpDb, deadLetters, new ErpCodingService());
         var receiptEvent = new PurchaseReceiptRecordedIntegrationEventConverter()
             .Convert(new PurchaseReceiptRecordedDomainEvent(receipt));
         await grIrHandler.HandleAsync(receiptEvent, CancellationToken.None);

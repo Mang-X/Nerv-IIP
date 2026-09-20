@@ -26,7 +26,8 @@ public sealed class MesDispatchSchedulingOverrideAcceptanceTests
                 .UseInMemoryDatabase($"mes-dispatch-acceptance-{Guid.NewGuid():N}").Options,
             new NoopMediator());
         mesDb.OperationTasks.Add(OperationTask.Queue(
-            "org-1", "env-1", "WO-1", "OP-10", 10, "WC-1", [], start, TimeSpan.FromHours(1)));
+            "org-1", "env-1", "WO-1", "OP-10", 10, "WC-1", [], start, TimeSpan.FromHours(1),
+            "SKU-001"));
         await mesDb.SaveChangesAsync();
         mesDb.ChangeTracker.Clear();
         var dispatchHandler = new AssignDispatchTaskCommandHandler(mesDb);
@@ -94,7 +95,8 @@ public sealed class MesDispatchSchedulingOverrideAcceptanceTests
                 .UseInMemoryDatabase($"mes-redispatch-acceptance-{Guid.NewGuid():N}").Options,
             new NoopMediator());
         mesDb.OperationTasks.Add(OperationTask.Queue(
-            "org-1", "env-1", "WO-1", "OP-10", 10, "WC-1", [], start, TimeSpan.FromHours(1)));
+            "org-1", "env-1", "WO-1", "OP-10", 10, "WC-1", [], start, TimeSpan.FromHours(1),
+            "SKU-001"));
         await mesDb.SaveChangesAsync();
         mesDb.ChangeTracker.Clear();
         var dispatchHandler = new AssignDispatchTaskCommandHandler(mesDb);

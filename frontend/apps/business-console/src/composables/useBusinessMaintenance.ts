@@ -3,7 +3,7 @@ import {
   confirmBusinessConsoleOperation,
   createBusinessConsoleMaintenancePlanMutationOptions,
   createBusinessConsoleMaintenanceSparePartMutationOptions,
-  createBusinessConsoleMaintenanceWorkOrderMutationOptions,
+  createBusinessConsoleMaintenanceWorkOrderV2MutationOptions,
   generateDueBusinessConsoleMaintenanceWorkOrdersMutationOptions,
   getBusinessConsoleMaintenanceWorkOrderQueryOptions,
   listBusinessConsoleMaintenanceInspectionsQueryOptions,
@@ -19,7 +19,7 @@ import {
   type BusinessConsoleCompleteMaintenanceWorkOrderRequest,
   type BusinessConsoleCreateMaintenancePlanRequest,
   type BusinessConsoleCreateMaintenanceSparePartRequest,
-  type BusinessConsoleCreateMaintenanceWorkOrderRequest,
+  type BusinessConsoleCreateMaintenanceWorkOrderV2Request,
   type BusinessConsoleMaintenanceAssetReliabilityEnvelope,
   type BusinessConsoleMaintenanceAssetReliabilityResponse,
   type BusinessConsoleMaintenanceInspectionItem,
@@ -95,7 +95,7 @@ export interface MaintenanceAvailabilityFilters {
 }
 
 type MaintenanceCreateIntent = Omit<
-  BusinessConsoleCreateMaintenanceWorkOrderRequest,
+  BusinessConsoleCreateMaintenanceWorkOrderV2Request,
   'idempotencyKey'
 > & {
   idempotencyKey?: string
@@ -237,7 +237,7 @@ export function useMaintenanceWorkOrders(initialFilters: Partial<MaintenanceList
   )
 
   const createMutation = useMutation({
-    ...createBusinessConsoleMaintenanceWorkOrderMutationOptions(),
+    ...createBusinessConsoleMaintenanceWorkOrderV2MutationOptions(),
     onSuccess() {
       void refetchWithBusinessContext(filters, workOrdersQuery)
     },

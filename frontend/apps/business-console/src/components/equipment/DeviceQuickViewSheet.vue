@@ -178,7 +178,7 @@ function formatDateTime(value?: string | null) {
         <NvButton size="sm" type="button" variant="outline" as-child>
           <RouterLink :to="{ path: '/equipment/telemetry/oee', query: { deviceAssetId } }">
             <GaugeIcon aria-hidden="true" />
-            OEE 与可用性
+            OEE 趋势与横比
           </RouterLink>
         </NvButton>
       </NvSheetFooter>

@@ -2,7 +2,7 @@
 
 本文承载本地启动、Aspire、基础设施容器和部署产物的排障规则。部署拓扑由
 `docs/adr/0008-multi-target-deployment-and-aspire-apphost.md` 与
-`docs/architecture/deployment-baseline.md` 承载。
+`docs/architecture/platform/deployment.md` 承载。
 
 ## 启动与生命周期
 
@@ -48,6 +48,8 @@
    FileStorage 不支持 Development InMemory metadata；必须从 `./nerv.ps1 dev` 启动，由 AppHost 注入
    `Persistence__Provider=PostgreSQL`、`FileStorageDb` 和由上述判据决定的 `Persistence__AutoMigrate`。直接运行其 Web
    项目或设置 `Persistence:Provider=InMemory` 会在启动阶段失败，以避免磁盘 tus 字节变成无 metadata 的孤儿。
+
+   BusinessBarcodeLabel 的 Development AppHost 会显式注入 `LabelPrinter__Mode=simulated`，供无物理设备的本地开发使用；该值不是生产默认。非 Development AppHost 必须从 release-install 参数取得逻辑 printer id、host、port、连接/写入超时、DPI 与支持码制，并以 `zpl-tcp` 启动。服务会在启动阶段拒绝缺项、重复 id、非法值或非开发模拟。需要验证真实打印机时必须使用现场批准的独立环境，不要把设备地址或凭据提交到仓库，也不要把 loopback 结果描述为物理出纸证据。
 
 8. **基础设施镜像 tag 必须固定。** 持久化本地资源必须在 AppHost 中显式固定版本。当前 PostgreSQL
    为 `18`、Redis 为 `8`；不得使用 `latest` 或未固定的 Aspire provider 默认值。PostgreSQL 18+ 的

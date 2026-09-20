@@ -99,6 +99,34 @@ foreach ($expected in @(
         throw "Full-stack session must retain the explicit ordinal identity contract '$expected'."
     }
 }
+$tokens = $null
+$parseErrors = $null
+$fullStackSessionAst = [System.Management.Automation.Language.Parser]::ParseInput($fullStackSessionText, [ref] $tokens, [ref] $parseErrors)
+$startDispatch = @($fullStackSessionAst.FindAll({
+    param($node)
+    $node -is [System.Management.Automation.Language.CommandAst] -and
+        [string]::Equals($node.GetCommandName(), 'Start-NervFullStackSession', [StringComparison]::Ordinal) -and
+        $node.Parent -is [System.Management.Automation.Language.PipelineAst] -and
+        $node.Parent.Parent -is [System.Management.Automation.Language.StatementBlockAst] -and
+        $node.Parent.Parent.Parent -is [System.Management.Automation.Language.IfStatementAst]
+}, $true))
+if ($startDispatch.Count -ne 1) {
+    throw "Expected one direct full-stack start dispatch, found $($startDispatch.Count)."
+}
+$startDispatchBlock = [scriptblock]::Create($startDispatch[0].Parent.Parent.Parent.Extent.Text)
+function Start-NervFullStackSession {
+    param([switch] $EnableWmsDemoWorker)
+    $script:capturedWmsDemoWorker = [bool] $EnableWmsDemoWorker
+}
+foreach ($workerOptIn in @($true, $false)) {
+    $script:capturedWmsDemoWorker = $null
+    $Action = 'start'
+    $EnableWmsDemoWorker = $workerOptIn
+    & $startDispatchBlock
+    if ($null -eq $script:capturedWmsDemoWorker -or $script:capturedWmsDemoWorker -ne $workerOptIn) {
+        throw "Full-stack start bound EnableWmsDemoWorker=$script:capturedWmsDemoWorker; expected $workerOptIn."
+    }
+}
 if ([string]::Equals('Automated', "Automated`u{00AD}", [StringComparison]::OrdinalIgnoreCase) -or
     -not [string]::Equals('Automated', 'automated', [StringComparison]::OrdinalIgnoreCase)) {
     throw 'Full-stack mode comparer probe must reject U+00AD while accepting intended casing.'

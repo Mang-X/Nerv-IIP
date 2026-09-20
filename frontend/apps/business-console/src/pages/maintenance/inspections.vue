@@ -157,7 +157,7 @@ const characteristicOptions = computed(() => {
   return out
 })
 
-const listErrorMessage = computed(() => formatError(inspectionsError.value))
+const listErrorMessage = computed(() => inlineErrorMessage(inspectionsError.value))
 // 服务端错误走 toast；这里只留点提交后的字段级校验汇总。
 const recordErrorMessage = computed(() => recordError.value)
 
@@ -290,9 +290,6 @@ function formatDateTime(value?: string | null) {
   if (!value) return '无'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 </script>
 

@@ -14,11 +14,39 @@ using Nerv.IIP.Business.Mes.Web.Application.Behaviors;
 using Nerv.IIP.Business.Mes.Web.Application.Errors;
 using Nerv.IIP.ServiceAuth;
 using System.Net;
+using Nerv.IIP.Business.Mes.Web.Application.Quality;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class MesIssue557ExecutionTests
 {
+    [Theory]
+    [InlineData("company")]
+    [InlineData("production")]
+    public async Task Receipt_retry_reuses_settled_source_when_warehouse_stock_is_already_consumed(string ownerType)
+    {
+        await using var db = CreateDbContext($"{nameof(Receipt_retry_reuses_settled_source_when_warehouse_stock_is_already_consumed)}-{ownerType}");
+        var now = Utc("2026-09-08T00:00:00Z");
+        var issue = MaterialIssueRequest.Create("org-001", "env-dev", "MIR-RETRY", "WO-01", "OP-01", "MAT-01", "KG", 4m, now);
+        issue.ConfirmLineSideReceipt(new MaterialTransferLocations("SITE-001", "WH-01", "SITE-001", "LINE-01",
+            [new MaterialTransferAllocation("SITE-001", "WH-01", "LOT-01", 4m, ownerType)]), now, 4m, "LOT-01");
+        issue.MarkInventoryPosted(issue.PendingPostingToken!, MaterialTransferLeg.WarehouseIssue, now, 0, 8m, -32m);
+        issue.MarkInventoryPostingFailed("FAILED", "入库失败", now, issue.PendingPostingToken);
+        issue.ClearDomainEvents();
+        db.MaterialIssueRequests.Add(issue);
+        await db.SaveChangesAsync();
+
+        // 未配置查询器必然拒绝重新选源；已经成功扣账的仓库腿无需再次寻找可用量。
+        var resolver = new InventoryMesMaterialSupplyLocationResolver(new MesMaterialSupplyLocationOptions());
+        await new ConfirmLineSideMaterialReceiptCommandHandler(db, resolver).Handle(
+            new ConfirmLineSideMaterialReceiptCommand("org-001", "env-dev", issue.RequestNo, now, 4m, "LOT-01"), CancellationToken.None);
+        var receipt = Assert.IsType<Nerv.IIP.Business.Mes.Domain.DomainEvents.MaterialLineSideReceiptConfirmedDomainEvent>(Assert.Single(issue.GetDomainEvents()));
+        var movement = new Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters.MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(receipt);
+        Assert.Equal(ownerType, movement.Payload.OwnerType);
+        Assert.Equal(4m, movement.Payload.Quantity);
+        Assert.Equal(0m, issue.ReceivedQuantity);
+    }
+
     private static readonly TimeProvider AuthorizationClock = new FixedTimeProvider(Utc("2026-06-29T09:00:00Z"));
     [Fact]
     public async Task Operation_action_lock_is_scoped_to_tenant_and_operation_task()
@@ -123,7 +151,8 @@ public sealed class MesIssue557ExecutionTests
             Utc("2026-06-29T08:00:00Z"),
             TimeSpan.FromHours(4),
             null,
-            null));
+            null,
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
         var handler = new ChangeOperationTaskStateCommandHandler(dbContext);
         var command = new ChangeOperationTaskStateCommand(
@@ -163,7 +192,8 @@ public sealed class MesIssue557ExecutionTests
             Utc("2026-06-29T08:00:00Z"),
             TimeSpan.FromHours(4),
             null,
-            null));
+            null,
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
         var handler = new ChangeOperationTaskStateCommandHandler(dbContext);
 
@@ -210,7 +240,8 @@ public sealed class MesIssue557ExecutionTests
             Utc("2026-06-29T08:00:00Z"),
             TimeSpan.FromHours(4),
             null,
-            null));
+            null,
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
         var handler = new ChangeOperationTaskStateCommandHandler(dbContext);
         var first = new ChangeOperationTaskStateCommand(
@@ -479,7 +510,8 @@ public sealed class MesIssue557ExecutionTests
                 Utc("2026-06-29T08:00:00Z"),
                 TimeSpan.FromHours(1),
                 null,
-                null));
+                null,
+                "SKU-001"));
         }
         await dbContext.SaveChangesAsync();
 
@@ -517,7 +549,8 @@ public sealed class MesIssue557ExecutionTests
             Utc("2026-06-29T08:00:00Z"),
             TimeSpan.FromHours(4),
             null,
-            null));
+            null,
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
 
         var handler = new ChangeOperationTaskStateCommandHandler(dbContext);
@@ -565,7 +598,8 @@ public sealed class MesIssue557ExecutionTests
             Utc("2026-06-29T08:00:00Z"),
             TimeSpan.FromHours(4),
             null,
-            null));
+            null,
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
 
         var exception = await Assert.ThrowsAsync<MesLifecycleConflictException>(() =>
@@ -708,7 +742,8 @@ public sealed class MesIssue557ExecutionTests
             Utc("2026-06-29T08:00:00Z"),
             TimeSpan.FromHours(4),
             null,
-            null));
+            null,
+            "SKU-001"));
         dbContext.ProductionReports.Add(ProductionReport.Record(
             "org-001", "env-dev", "PR-OP-10-001", "WO-001", "OP-10",
             1m, 0m, false, Utc("2026-06-29T11:59:00Z")));
@@ -732,7 +767,7 @@ public sealed class MesIssue557ExecutionTests
         await using var dbContext = CreateDbContext(nameof(Scrap_report_requires_material_consumption_lots_to_drive_inventory_writeoff));
         SeedStartedOutputOperation(dbContext);
         await dbContext.SaveChangesAsync();
-        var handler = new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance);
+        var handler = new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance, TestMesFirstArticleGate.Allowing);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new RecordProductionReportCommand(
@@ -773,18 +808,21 @@ public sealed class MesIssue557ExecutionTests
                 "org-001", "env-dev", "WO-OVER-001", "OP-10",
                 OperationTaskLifecycleStatus.InProgress, 10, "WC-10", [],
                 Utc("2026-06-29T08:00:00Z"), TimeSpan.FromHours(1),
-                Utc("2026-06-29T08:00:00Z"), null),
+                Utc("2026-06-29T08:00:00Z"), null,
+                "SKU-001"),
             OperationTask.Create(
                 "org-001", "env-dev", "WO-OVER-001", "OP-20",
                 OperationTaskLifecycleStatus.Queued, 20, "WC-20", [],
-                Utc("2026-06-29T09:00:00Z"), TimeSpan.FromHours(1), null, null));
+                Utc("2026-06-29T09:00:00Z"), TimeSpan.FromHours(1), null, null,
+                "SKU-001"));
         dbContext.ProductionReports.Add(ProductionReport.Record(
             "org-001", "env-dev", "RPT-OVER-001", "WO-OVER-001", "OP-10",
             100m, 0m, false, Utc("2026-06-29T09:00:00Z")));
         await dbContext.SaveChangesAsync();
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
-            new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance).Handle(
+            new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance,
+            TestMesFirstArticleGate.Allowing).Handle(
                 new RecordProductionReportCommand(
                     "org-001", "env-dev", "WO-OVER-001", "OP-10",
                     GoodQuantity: 20.000001m,
@@ -806,7 +844,7 @@ public sealed class MesIssue557ExecutionTests
         await using var dbContext = CreateDbContext(nameof(Output_operation_report_auto_generates_output_lot_and_persists_genealogy_breakpoint));
         SeedStartedOutputOperation(dbContext);
         await dbContext.SaveChangesAsync();
-        var handler = new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance);
+        var handler = new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance, TestMesFirstArticleGate.Allowing);
 
         var result = await handler.Handle(
             new RecordProductionReportCommand(
@@ -837,7 +875,8 @@ public sealed class MesIssue557ExecutionTests
         await using var dbContext = CreateDbContext(nameof(Output_operation_report_rejects_duplicate_explicit_output_lot_before_database_unique_constraint));
         SeedStartedOutputOperation(dbContext);
         await dbContext.SaveChangesAsync();
-        var handler = new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance);
+        var handler = new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance,
+            TestMesFirstArticleGate.Allowing);
         await handler.Handle(
             new RecordProductionReportCommand(
                 "org-001",
@@ -1137,7 +1176,8 @@ public sealed class MesIssue557ExecutionTests
             Utc("2026-06-29T08:00:00Z"),
             TimeSpan.FromHours(1),
             null,
-            null));
+            null,
+            "SKU-001"));
         dbContext.OperationTasks.Add(OperationTask.Create(
             "org-001",
             "env-dev",
@@ -1150,7 +1190,8 @@ public sealed class MesIssue557ExecutionTests
             Utc("2026-06-29T09:00:00Z"),
             TimeSpan.FromHours(1),
             secondStatus == OperationTaskLifecycleStatus.InProgress ? Utc("2026-06-29T09:00:00Z") : null,
-            null));
+            null,
+            "SKU-001"));
     }
 
     private static void SeedStartedOutputOperation(ApplicationDbContext dbContext)
@@ -1171,7 +1212,8 @@ public sealed class MesIssue557ExecutionTests
             Utc("2026-06-29T08:00:00Z"),
             TimeSpan.FromHours(1),
             Utc("2026-06-29T08:00:00Z"),
-            null));
+            null,
+            "SKU-001"));
     }
 
     private static MaterialIssueRequest SeedReceivedMaterialIssue(ApplicationDbContext dbContext, decimal receivedQuantity)

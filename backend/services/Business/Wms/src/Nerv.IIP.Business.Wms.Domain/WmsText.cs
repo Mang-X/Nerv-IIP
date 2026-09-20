@@ -65,17 +65,27 @@ public static class WmsText
             .ToArray();
     }
 
-    public static string StableOperationalCode(string prefix, params string[] parts)
+    /// <summary>
+    /// 有界且确定性的运营单号构造：短取值原样可读，超界回落到 <c>{前缀}-{sha256}</c>，
+    /// 同样的输入永远得到同样的单号（幂等重放据此复算）。
+    /// </summary>
+    /// <param name="kind">
+    /// 单号种类。前缀与上界由 <see cref="WmsOperationalCodeKind"/> 绑成一个值，上界从该类单号的
+    /// 承载列宽派生——本方法**收不到裸 <c>int</c>**，因此「前缀与上界配错」在类型上不可表达。
+    /// </param>
+    /// <param name="parts">参与构造的取值，按顺序以 <c>-</c> 连接。</param>
+    public static string StableOperationalCode(WmsOperationalCodeKind kind, params string[] parts)
     {
-        var normalizedPrefix = Required(prefix, nameof(prefix)).ToUpperInvariant();
+        ArgumentNullException.ThrowIfNull(kind);
         var normalizedParts = parts.Select((part, index) => Required(part, $"parts[{index}]")).ToArray();
-        var candidate = $"{normalizedPrefix}-{string.Join('-', normalizedParts)}";
-        if (candidate.Length <= 100)
+        var candidate = $"{kind.Prefix}-{string.Join('-', normalizedParts)}";
+        if (candidate.Length <= kind.MaxLength)
         {
             return candidate;
         }
 
+        // 回落形态一定塞得下：WmsOperationalCodeKind 的构造函数已经拒绝了放不下它的承载列清单。
         var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(candidate))).ToLowerInvariant();
-        return $"{normalizedPrefix}-{hash}";
+        return $"{kind.Prefix}-{hash}";
     }
 }

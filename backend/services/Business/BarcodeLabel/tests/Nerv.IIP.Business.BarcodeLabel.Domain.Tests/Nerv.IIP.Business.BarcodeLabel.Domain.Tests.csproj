@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Nerv.IIP.Business.BarcodeLabel.Domain\Nerv.IIP.Business.BarcodeLabel.Domain.csproj" />
+    <ProjectReference Include="..\..\..\..\..\common\Testing\Nerv.IIP.Testing\Nerv.IIP.Testing.csproj" />
   </ItemGroup>
 
 </Project>

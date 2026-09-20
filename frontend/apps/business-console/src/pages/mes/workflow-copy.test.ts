@@ -80,6 +80,16 @@ vi.mock('@/composables/useMesPickerCatalog', () => ({
   }),
 }))
 
+vi.mock('@/composables/mes/useProductionReportSerialOptions', () => ({
+  useProductionReportSerialOptions: () => ({
+    serialPolicy: ref('none'),
+    labelTemplates: ref([]),
+    serialOptionsReady: ref(true),
+    serialOptionsPending: ref(false),
+    refreshSerialOptions: vi.fn(),
+  }),
+}))
+
 vi.mock('@/composables/useBusinessMes', () => ({
   // #1288 工具栏作业范围选择入口（MesWorkScopeSelect）
   useMesWorkScopeSelection: () => ({
@@ -95,6 +105,8 @@ vi.mock('@/composables/useBusinessMes', () => ({
   }),
   useMesProductionReporting: () => ({
     recordProductionReport: vi.fn(),
+    restoreProductionReport: vi.fn(),
+    readProductionPrintStatus: vi.fn(),
     recordProductionReportError: ref(undefined),
     recordProductionReportPending: ref(false),
     reportScopeMessage: ref(''),
@@ -390,7 +402,7 @@ const uiStubs = {
     </template></div>`,
   },
   DataTablePagination: true,
-  DialogRoot: {
+  NvDialog: {
     props: ['open'],
     template: '<div><slot /></div>',
   },
@@ -477,11 +489,11 @@ const uiStubs = {
   NvSelectTrigger: {
     template: '<button><slot /></button>',
   },
-  SelectValue: {
+  NvSelectValue: {
     props: ['placeholder'],
     template: '<span>{{ placeholder }}</span>',
   },
-  // 只选控件内部自带 reka Dialog/Popover，与本文件的 DialogRoot 桩不兼容；
+  // 只选控件内部自带 reka Dialog/Popover，与本文件的 NvDialog 桩不兼容；
   // 桩成带同名 id 的输入位，保留「选中某个候选」的语义。
   NvEntityPicker: {
     props: ['modelValue', 'options', 'id'],

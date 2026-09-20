@@ -322,7 +322,7 @@ const recordPlanModel = computed({
   },
 })
 
-const listErrorMessage = computed(() => formatError(inspectionPlansError.value))
+const listErrorMessage = computed(() => inlineErrorMessage(inspectionPlansError.value))
 const inspectedQuantity = computed(() => toOptionalNumber(recordForm.inspectedQuantity))
 const isInspectionTaskFlow = computed(() => !!firstQuery(route.query.inspectionTaskId))
 const inspectionTaskSubmissionAllowed = shallowRef(false)
@@ -804,9 +804,6 @@ function qualityItemSummary(item: BusinessConsoleQualityItem) {
 function firstQuery(value: unknown) {
   if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : ''
   return typeof value === 'string' ? value : ''
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 function isNonEmpty(value: string) {
   return value.trim().length > 0

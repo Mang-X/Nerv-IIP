@@ -1,3 +1,5 @@
+using Nerv.IIP.Contracts.Iam;
+
 namespace Nerv.IIP.Iam.Web.Application.Seed;
 
 public sealed class IamSeedOptions
@@ -24,5 +26,5 @@ public sealed class IamSeedOptions
     public string ExternalClientId { get; init; } = "external-client-demo";
     public string ExternalClientDisplayName { get; init; } = "Demo External Client";
     public string ExternalClientSecret { get; init; } = string.Empty;
-    public string[] ExternalClientPermissionCodes { get; init; } = ["ops.tasks.create"];
+    public string[] ExternalClientPermissionCodes { get; init; } = [NervIipPermissionCodes.OpsTasksCreate];
 }

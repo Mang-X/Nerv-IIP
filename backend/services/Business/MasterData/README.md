@@ -1,6 +1,6 @@
 # Nerv.IIP.Business.MasterData
 
-BusinessMasterData 是业务平台的主数据服务，负责 SKU、单位、业务伙伴、工厂资源、班组/班次、日历、设备资产和参考数据等通用业务事实。当前服务边界以仓库根 `AGENTS.md`、`docs/architecture/business-platform-domain-architecture.md`、`docs/architecture/database-schema-catalog.md`、`docs/adr/0013-business-master-data-governance.md` 以及当前代码、配置和测试为准；项目进度和跨域重点另见 `docs/status/current.md`，不得据此反向推断服务行为。
+BusinessMasterData 是业务平台的主数据服务，负责 SKU、单位、业务伙伴、工厂资源、班组/班次、日历、设备资产和参考数据等通用业务事实。当前服务边界以仓库根 `AGENTS.md`、`docs/architecture/business/domain-architecture.md`、`docs/reference/data/database-schema-catalog.md`、`docs/adr/0013-business-master-data-governance.md` 以及当前代码、配置和测试为准；项目进度和跨域重点另见 `docs/status/current.md`，不得据此反向推断服务行为。
 
 ## 当前开发入口
 
@@ -10,7 +10,6 @@ BusinessMasterData 是业务平台的主数据服务，负责 SKU、单位、业
 .\nerv.ps1 bootstrap
 .\nerv.ps1 dev
 .\nerv.ps1 ports
-pwsh scripts/verify-business-master-data-realignment.ps1
 ```
 
 服务已纳入 `backend/Nerv.IIP.sln`、Aspire AppHost、`masterdata` schema catalog、IAM seed 和业务平台验证脚本。需要本地依赖时，由根 `.\nerv.ps1 dev -InfraOnly` 或 AppHost 管理 PostgreSQL/Redis/RabbitMQ/MinIO 等资源。
@@ -25,8 +24,9 @@ pwsh scripts/verify-business-master-data-realignment.ps1
 ## 参考文档
 
 - `docs/architecture/README.md`
-- `docs/architecture/business-platform-domain-architecture.md`
-- `docs/architecture/database-schema-catalog.md`
-- `docs/architecture/api-contract-and-codegen.md`
+- `docs/architecture/business/domain-architecture.md`
+- `docs/reference/data/database-schema-catalog.md`
+- `docs/architecture/integration/api-contracts.md`
+- `docs/governance/api/contracts-and-codegen.md`
 - `docs/adr/0013-business-master-data-governance.md`
 - `docs/status/current.md`

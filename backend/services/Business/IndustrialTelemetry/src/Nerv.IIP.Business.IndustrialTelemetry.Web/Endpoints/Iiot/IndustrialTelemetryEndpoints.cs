@@ -10,6 +10,7 @@ using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Auth;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Queries;
 using Nerv.IIP.Contracts.EquipmentRuntime;
+using Nerv.IIP.Contracts.IndustrialTelemetry;
 using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.ServiceAuth;
 
@@ -188,20 +189,6 @@ public sealed record ListAlarmEventsRequest(
     AlarmEventId? AlarmEventId = null);
 public sealed record QueryDeviceTimelineRequest(string DeviceAssetId, string? OrganizationId, string? EnvironmentId, DateTimeOffset? FromUtc, DateTimeOffset? ToUtc);
 public sealed record QueryOeeRequest(string OrganizationId, string EnvironmentId, string DeviceAssetId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc);
-public sealed record QueryOeeAggregateBucketsRequest(
-    string OrganizationId,
-    string EnvironmentId,
-    OeeAggregateDimension Dimension,
-    DateTimeOffset WindowStartUtc,
-    DateTimeOffset WindowEndUtc,
-    string? DeviceAssetId,
-    string? WorkCenterId,
-    string? ShiftCode,
-    string? LineCode,
-    string? WorkshopCode,
-    DateOnly? BusinessDate,
-    int Skip = 0,
-    int Take = 100);
 public sealed record QueryRuntimeHoursRequest(string OrganizationId, string EnvironmentId, string DeviceAssetId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc);
 public sealed record GetDeviceRuntimeAvailabilityRequest(string DeviceAssetId, string OrganizationId, string EnvironmentId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc, int FreshnessMaxAgeMinutes = 60);
 public sealed record QueryRuntimeAvailabilityRequest(string OrganizationId, string EnvironmentId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc, string? DeviceAssetIds, string? WorkCenterIds, int FreshnessMaxAgeMinutes = 60);
@@ -348,7 +335,7 @@ public sealed class ListDeviceControlBindingsEndpoint(ISender sender) : Industri
 
     public override async Task HandleAsync(ListDeviceControlBindingsRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new ListDeviceControlBindingsQuery(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.IsActive, req.Skip, req.Take), ct);
+        var result = await sender.Send(new ListDeviceControlBindingsQuery(req.OrganizationId!, req.EnvironmentId!, req.DeviceAssetId, req.IsActive, req.Skip, req.Take), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
@@ -359,7 +346,7 @@ public sealed class ListTelemetryTagsEndpoint(ISender sender) : IndustrialTeleme
 
     public override async Task HandleAsync(ListTelemetryTagsRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new ListTelemetryTagsQuery(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.Skip, req.Take), ct);
+        var result = await sender.Send(new ListTelemetryTagsQuery(req.OrganizationId!, req.EnvironmentId!, req.DeviceAssetId, req.Skip, req.Take), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
@@ -408,7 +395,7 @@ public sealed class ListAlarmRulesEndpoint(ISender sender) : IndustrialTelemetry
 
     public override async Task HandleAsync(ListAlarmRulesRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new ListAlarmRulesQuery(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.IsEnabled, req.Skip, req.Take), ct);
+        var result = await sender.Send(new ListAlarmRulesQuery(req.OrganizationId!, req.EnvironmentId!, req.DeviceAssetId, req.IsEnabled, req.Skip, req.Take), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
@@ -544,8 +531,8 @@ public sealed class ListAlarmEventsEndpoint(ISender sender) : IndustrialTelemetr
     public override async Task HandleAsync(ListAlarmEventsRequest req, CancellationToken ct)
     {
         var result = await sender.Send(new ListAlarmEventsQuery(
-            req.OrganizationId,
-            req.EnvironmentId,
+            req.OrganizationId!,
+            req.EnvironmentId!,
             req.DeviceAssetId,
             req.Status,
             req.Skip,
@@ -612,15 +599,6 @@ public sealed class QueryRuntimeHoursEndpoint(ISender sender) : IndustrialTeleme
     {
         var result = await sender.Send(new QueryRuntimeHoursQuery(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.WindowStartUtc, req.WindowEndUtc), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
-    }
-}
-
-public sealed class ListTelemetryTagsRequestValidator : Validator<ListTelemetryTagsRequest>
-{
-    public ListTelemetryTagsRequestValidator()
-    {
-        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
-        RuleFor(x => x.Take).InclusiveBetween(1, 500);
     }
 }
 
@@ -693,24 +671,6 @@ public sealed class CreateDeviceControlCommandRequestValidator : Validator<Creat
     }
 }
 
-public sealed class ListAlarmRulesRequestValidator : Validator<ListAlarmRulesRequest>
-{
-    public ListAlarmRulesRequestValidator()
-    {
-        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
-        RuleFor(x => x.Take).InclusiveBetween(1, 500);
-    }
-}
-
-public sealed class ListAlarmEventsRequestValidator : Validator<ListAlarmEventsRequest>
-{
-    public ListAlarmEventsRequestValidator()
-    {
-        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
-        RuleFor(x => x.Take).InclusiveBetween(1, 500);
-    }
-}
-
 public sealed class GetDeviceControlCommandRequestValidator : Validator<GetDeviceControlCommandRequest>
 {
     public GetDeviceControlCommandRequestValidator()
@@ -725,12 +685,10 @@ public sealed class ListDeviceControlCommandsRequestValidator : Validator<ListDe
 {
     public ListDeviceControlCommandsRequestValidator()
     {
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.OrganizationId).MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).MaximumLength(100);
         RuleFor(x => x.DeviceAssetId).MaximumLength(150);
         RuleFor(x => x.Status).MaximumLength(50);
-        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
-        RuleFor(x => x.Take).InclusiveBetween(1, 500);
         RuleFor(x => x.ToUtc).GreaterThan(x => x.FromUtc).When(x => x.FromUtc is not null && x.ToUtc is not null);
     }
 }
@@ -761,11 +719,9 @@ public sealed class ListDeviceControlBindingsRequestValidator : Validator<ListDe
 {
     public ListDeviceControlBindingsRequestValidator()
     {
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.OrganizationId).MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).MaximumLength(100);
         RuleFor(x => x.DeviceAssetId).MaximumLength(150);
-        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
-        RuleFor(x => x.Take).InclusiveBetween(1, 500);
     }
 }
 

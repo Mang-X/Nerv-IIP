@@ -248,7 +248,7 @@ function fromDateInput(value: string, dayOffset: number) {
             }"
           >
             <GaugeIcon aria-hidden="true" />
-            OEE 与可用性
+            OEE 趋势与横比
           </RouterLink>
         </NvButton>
         <NvButton size="sm" type="button" variant="outline" as-child>

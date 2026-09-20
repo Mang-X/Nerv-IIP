@@ -17,6 +17,7 @@ public sealed class LabelTemplateEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.TemplateFileId).HasColumnName("template_file_id").IsRequired().HasMaxLength(150).HasComment("FileStorage file id for the template asset; object keys are not stored publicly.");
         builder.Property(x => x.VariableSchemaJson).HasColumnName("variable_schema_json").IsRequired().HasColumnType("text").HasComment("Template variable schema JSON consumed by print clients.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasMaxLength(30).HasComment("Template lifecycle status: active or inactive.");
+        builder.Property(x => x.RetiredCurrentFileByDecisionId).HasColumnName("retired_current_file_by_decision_id").HasComment("Retirement decision that preserves this historical pointer while prohibiting reuse.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC time when the template was created.");
         builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").IsRequired().HasComment("UTC time when the template was last changed.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.TemplateCode }).IsUnique();

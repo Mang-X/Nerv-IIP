@@ -563,9 +563,7 @@ export type NervIipContractsFileStorageTransferInstructions = {
     };
 };
 
-export type NervIipContractsFileStorageCreateUploadSessionRequest = {
-    organizationId?: string;
-    environmentId?: string;
+export type NervIipPlatformGatewayWebEndpointsFilesConsoleCreateUploadSessionRequest = {
     owner?: NervIipContractsFileStorageOwnerReference;
     filePurpose?: string;
     fileName?: string;
@@ -599,9 +597,7 @@ export type NervIipContractsFileStorageFileMetadataResponse = {
     completedAtUtc?: string;
 };
 
-export type NervIipContractsFileStorageCompleteUploadSessionRequest = {
-    organizationId?: string;
-    environmentId?: string;
+export type NervIipPlatformGatewayWebEndpointsFilesConsoleCompleteUploadSessionRequest = {
     filePurpose?: string;
     checksum?: string | null;
     sizeBytes?: number | null;
@@ -634,21 +630,6 @@ export type NervIipContractsFileStorageFileStorageUsageResponse = {
 
 export type NervIipPlatformGatewayWebEndpointsFilesConsoleFileStorageUsageRequest = {
     [key: string]: never;
-};
-
-export type NetCorePalExtensionsDtoResponseDataOfDownloadGrantResponse = NetCorePalExtensionsDtoResponseData & {
-    data?: NervIipContractsFileStorageDownloadGrantResponse | null;
-};
-
-export type NervIipContractsFileStorageDownloadGrantResponse = {
-    fileId?: string;
-    expiresAtUtc?: string;
-    download?: NervIipContractsFileStorageTransferInstructions;
-};
-
-export type NervIipContractsFileStorageCreateDownloadGrantRequest = {
-    organizationId?: string;
-    environmentId?: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfConsoleAuthResponse = NetCorePalExtensionsDtoResponseData & {
@@ -1633,7 +1614,7 @@ export type GetBuildInfoEndpointResponses = {
 export type GetBuildInfoEndpointResponse = GetBuildInfoEndpointResponses[keyof GetBuildInfoEndpointResponses];
 
 export type CreateConsoleFileUploadSessionData = {
-    body: NervIipContractsFileStorageCreateUploadSessionRequest;
+    body: NervIipPlatformGatewayWebEndpointsFilesConsoleCreateUploadSessionRequest;
     path?: never;
     query?: never;
     url: '/api/console/v1/files/upload-sessions';
@@ -1660,7 +1641,7 @@ export type CreateConsoleFileUploadSessionResponses = {
 export type CreateConsoleFileUploadSessionResponse = CreateConsoleFileUploadSessionResponses[keyof CreateConsoleFileUploadSessionResponses];
 
 export type CompleteConsoleFileUploadSessionData = {
-    body: NervIipContractsFileStorageCompleteUploadSessionRequest;
+    body: NervIipPlatformGatewayWebEndpointsFilesConsoleCompleteUploadSessionRequest;
     path: {
         uploadSessionId: string;
     };
@@ -1694,6 +1675,7 @@ export type ListConsoleFilesData = {
     query?: {
         filePurpose?: string | null;
         uploaderId?: string | null;
+        ownerId?: string | null;
         createdFromUtc?: string | null;
         createdToUtc?: string | null;
         status?: string | null;
@@ -1781,35 +1763,6 @@ export type GetConsoleFileMetadataResponses = {
 
 export type GetConsoleFileMetadataResponse = GetConsoleFileMetadataResponses[keyof GetConsoleFileMetadataResponses];
 
-export type CreateConsoleFileDownloadGrantData = {
-    body: NervIipContractsFileStorageCreateDownloadGrantRequest;
-    path: {
-        fileId: string;
-    };
-    query?: never;
-    url: '/api/console/v1/files/{fileId}/download-grants';
-};
-
-export type CreateConsoleFileDownloadGrantErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Forbidden
-     */
-    403: unknown;
-};
-
-export type CreateConsoleFileDownloadGrantResponses = {
-    /**
-     * Success
-     */
-    200: NetCorePalExtensionsDtoResponseDataOfDownloadGrantResponse;
-};
-
-export type CreateConsoleFileDownloadGrantResponse = CreateConsoleFileDownloadGrantResponses[keyof CreateConsoleFileDownloadGrantResponses];
-
 export type GetConsoleTusUploadOffsetData = {
     body?: never;
     path: {
@@ -1868,16 +1821,16 @@ export type PatchConsoleTusUploadResponses = {
 
 export type PatchConsoleTusUploadResponse = PatchConsoleTusUploadResponses[keyof PatchConsoleTusUploadResponses];
 
-export type DownloadConsoleFileGrantContentData = {
+export type DownloadConsoleFileContentData = {
     body?: never;
     path: {
-        downloadGrantId: string;
+        fileId: string;
     };
     query?: never;
-    url: '/api/console/v1/files/download-grants/{downloadGrantId}/content';
+    url: '/api/console/v1/files/{fileId}/content';
 };
 
-export type DownloadConsoleFileGrantContentErrors = {
+export type DownloadConsoleFileContentErrors = {
     /**
      * Unauthorized
      */
@@ -1888,14 +1841,14 @@ export type DownloadConsoleFileGrantContentErrors = {
     403: unknown;
 };
 
-export type DownloadConsoleFileGrantContentResponses = {
+export type DownloadConsoleFileContentResponses = {
     /**
-     * No Content
+     * Success
      */
-    204: void;
+    200: Blob | File;
 };
 
-export type DownloadConsoleFileGrantContentResponse = DownloadConsoleFileGrantContentResponses[keyof DownloadConsoleFileGrantContentResponses];
+export type DownloadConsoleFileContentResponse = DownloadConsoleFileContentResponses[keyof DownloadConsoleFileContentResponses];
 
 export type InvalidateGatewayCacheEndpointData = {
     body?: never;

@@ -154,6 +154,10 @@ const routerLinkStub = {
 // 对话框就地渲染（不 teleport），便于断言/填写表单内容。
 const dialogStubs = {
   NvDialog: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
+  // 这个 `DialogRoot` 键**不是** Nv 别名的残留：实测它命中的是 reka `AlertDialogRoot`
+  // 的内部实现（父链 AlertDialogRoot < NvAlertDialog < MasterDataLifecycleDialog），
+  // 即**可达**；但删掉后本文件全绿，说明**零鉴别力、没有用例依赖它**。保留只是维持现状，
+  // 别把它当防线。见 #2879 跟进项。
   DialogRoot: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
   NvDialogContent: { template: '<div><slot /></div>' },
   NvDialogHeader: { template: '<div><slot /></div>' },
@@ -172,7 +176,6 @@ const formSelectStubs = {
   },
   NvSelectTrigger: { template: '<span><slot /></span>' },
   NvSelectValue: { template: '<span />' },
-  SelectValue: { template: '<span />' },
   NvSelectContent: { template: '<slot />' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }

@@ -81,6 +81,21 @@ public sealed class DefectRecord : Entity<DefectRecordId>, IAggregateRoot
         return defect;
     }
 
+    /// <summary>
+    /// 接受 Quality 的处置结论。
+    /// </summary>
+    /// <param name="dispositionReferenceId">
+    /// 下游处置引用（返修工单号 / 报废流水号 / 退供单号），**原样落库，本方法不再归一化**。
+    ///
+    /// #3318：这一列的长度守卫在调用方（<c>NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefect</c>）
+    /// 落库**之前**判长并走死信。守卫的前提是「**量的那个字符串就是落库的那个字符串**」。
+    /// 此前调用方 Trim 一次、这里再 Trim 一次，是两处归一化：今天因为 Trim 幂等所以等价，
+    /// 但只要哪一侧的归一化将来分叉（比如再去零宽字符），守卫量的与落库的就不是同一个串了，
+    /// 而**没有任何东西会红**。因此归一化只留调用方那一处，这里原样赋值——
+    /// 于是「守卫量的 == 落库的」不再依赖任何幂等约定，而是构造上成立。
+    /// 这条「本方法不再归一化」由 <c>MesDefectDispositionReferenceIdLengthContractTests</c> 写成断言，
+    /// 谁把 Trim 加回来就会红。
+    /// </param>
     public void AcceptDisposition(
         string ncrId,
         string ncrCode,
@@ -91,7 +106,7 @@ public sealed class DefectRecord : Entity<DefectRecordId>, IAggregateRoot
         NcrId = DomainGuard.Required(ncrId, nameof(ncrId));
         NcrCode = DomainGuard.Required(ncrCode, nameof(ncrCode));
         DispositionType = DomainGuard.Required(dispositionType, nameof(dispositionType));
-        DispositionReferenceId = string.IsNullOrWhiteSpace(dispositionReferenceId) ? null : dispositionReferenceId.Trim();
+        DispositionReferenceId = dispositionReferenceId;
         Status = DispositionType.Trim().ToLowerInvariant() switch
         {
             ReworkDispositionType => ReworkPendingStatus,

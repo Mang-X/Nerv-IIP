@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountPayableAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountReceivableAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.CreditNoteAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReturnAggregate;
@@ -61,7 +62,13 @@ public sealed class ErpReturnIntegrationHandlerTests
         var rma = await dbContext.SalesReturnAuthorizations.SingleAsync(x => x.RmaNo == "RMA-CLOSE-001");
         var creditNote = Assert.Single(await dbContext.CreditNotes.ToListAsync());
         var receivable = await dbContext.AccountReceivables.SingleAsync(x => x.ReceivableNo == "AR-RMA-CLOSE-001");
-        var voucher = Assert.Single(await dbContext.JournalVouchers.Where(x => x.VoucherNo == $"JV-CN-{creditNote.CreditNoteNo}").Include(x => x.Lines).ToListAsync());
+        // #3278 / S7：凭证号不再从红字通知单号派生，定位改走 S5 的来源两列。
+        var voucher = Assert.Single(await dbContext.JournalVouchers
+            .Where(x => x.SourceType == JournalVoucherSourceType.CreditNote.Code && x.SourceNo == creditNote.CreditNoteNo)
+            .Include(x => x.Lines)
+            .ToListAsync());
+        AllocatedVoucherNo.AssertShape(voucher.VoucherNo);
+        Assert.NotEqual($"JV-CN-{creditNote.CreditNoteNo}", voucher.VoucherNo);
         Assert.Equal("IN-RMA-CLOSE-001", rma.WmsInboundOrderNo);
         Assert.Equal("passed", rma.QualityDisposition);
         Assert.Equal(100m, creditNote.Amount);
@@ -124,7 +131,13 @@ public sealed class ErpReturnIntegrationHandlerTests
         var purchaseReturn = Assert.Single(await dbContext.PurchaseReturns.Include(x => x.Lines).ToListAsync());
         var debitNote = Assert.Single(await dbContext.DebitNotes.ToListAsync());
         var persistedPayable = await dbContext.AccountPayables.SingleAsync(x => x.PayableNo == "AP-RETURN-001");
-        var voucher = Assert.Single(await dbContext.JournalVouchers.Where(x => x.VoucherNo == $"JV-PRTN-{purchaseReturn.PurchaseReturnNo}").Include(x => x.Lines).ToListAsync());
+        // #3278 / S7：同上，按来源两列定位。
+        var voucher = Assert.Single(await dbContext.JournalVouchers
+            .Where(x => x.SourceType == JournalVoucherSourceType.PurchaseReturn.Code && x.SourceNo == purchaseReturn.PurchaseReturnNo)
+            .Include(x => x.Lines)
+            .ToListAsync());
+        AllocatedVoucherNo.AssertShape(voucher.VoucherNo);
+        Assert.NotEqual($"JV-PRTN-{purchaseReturn.PurchaseReturnNo}", voucher.VoucherNo);
         Assert.Equal(0m, purchaseReturn.GrIrReversalAmount);
         Assert.Equal(110m, purchaseReturn.DebitNoteAmount);
         Assert.Equal(purchaseReturn.PurchaseReturnNo, debitNote.PurchaseReturnNo);
@@ -227,7 +240,13 @@ public sealed class ErpReturnIntegrationHandlerTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var purchaseReturn = Assert.Single(await dbContext.PurchaseReturns.Include(x => x.Lines).ToListAsync());
-        var voucher = Assert.Single(await dbContext.JournalVouchers.Where(x => x.VoucherNo == $"JV-PRTN-{purchaseReturn.PurchaseReturnNo}").Include(x => x.Lines).ToListAsync());
+        // #3278 / S7：同上，按来源两列定位。
+        var voucher = Assert.Single(await dbContext.JournalVouchers
+            .Where(x => x.SourceType == JournalVoucherSourceType.PurchaseReturn.Code && x.SourceNo == purchaseReturn.PurchaseReturnNo)
+            .Include(x => x.Lines)
+            .ToListAsync());
+        AllocatedVoucherNo.AssertShape(voucher.VoucherNo);
+        Assert.NotEqual($"JV-PRTN-{purchaseReturn.PurchaseReturnNo}", voucher.VoucherNo);
         Assert.Equal(100m, purchaseReturn.GrIrReversalAmount);
         Assert.Equal(0m, purchaseReturn.DebitNoteAmount);
         Assert.Empty(await dbContext.DebitNotes.ToListAsync());
@@ -273,7 +292,16 @@ public sealed class ErpReturnIntegrationHandlerTests
         Assert.Equal(0m, receivable.CreditNoteAmount);
         Assert.Equal(200m, receivable.OpenAmount);
         Assert.Empty(await dbContext.CreditNotes.ToListAsync());
-        Assert.Empty(await dbContext.JournalVouchers.Where(x => x.VoucherNo.StartsWith("JV-CN-", StringComparison.Ordinal)).ToListAsync());
+        // #3278 / S7：原写法是 Assert.Empty(… VoucherNo.StartsWith("JV-CN-"))——反向断言。
+        // 凭证号改成分配器短号后全仓再也不会出现 JV-CN- 开头的行，那条断言**恒真**、零鉴别力。
+        // 改成按来源类型筛：本用例里确实存在凭证（上面 CreateAccountReceivableCommandHandler 建应收时记了一张 AR 凭证），
+        // 所以过滤条件是承重的——下一行把那张对照行显式钉住，把这条断言从「表里没行」改回「没有 CN 那张」。
+        Assert.Empty(await dbContext.JournalVouchers
+            .Where(x => x.SourceType == JournalVoucherSourceType.CreditNote.Code)
+            .ToListAsync());
+        Assert.Single(await dbContext.JournalVouchers
+            .Where(x => x.SourceType == JournalVoucherSourceType.AccountReceivable.Code && x.SourceNo == "AR-RMA-REJECT-001")
+            .ToListAsync());
         Assert.Empty(await deadLetters.ListAsync(QualityInspectionResultIntegrationEventHandlerForSettleSalesReturnCredit.ConsumerName, IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
     }
 

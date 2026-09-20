@@ -13,6 +13,7 @@ public static class StandardCodeRules
         Document("material-issue-request", "领料申请", "MIR"),
         Document("defect", "不良记录", "DEF"),
         Document("downtime-event", "停机事件", "DOWNTIME"),
+        Document("changeover-record", "换型记录", "CHANGEOVER"),
         Document("shift-handover", "交接班记录", "SHO"),
         Document("opportunity", "销售商机", "OPP"),
         Document("quotation", "客户报价单", "QUO"),

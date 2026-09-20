@@ -216,7 +216,8 @@ public sealed class MesContextScanPrevalidationTests
     {
         var task = OperationTask.Queue(
             "org-001", "env-dev", "WO-001", "OP-10", 10, "WC-01", [],
-            Now.AddHours(-1), TimeSpan.FromHours(1), operationCode: "OP-CNC", requiredSkillCode: "cnc-operation");
+            Now.AddHours(-1), TimeSpan.FromHours(1),
+            "SKU-001", operationCode: "OP-CNC", requiredSkillCode: "cnc-operation");
         task.Assign("worker-001", "device-001", null, Now.AddMinutes(-30), assignedUserName: "操作员甲");
         return task;
     }

@@ -209,7 +209,7 @@ watch(
   },
 )
 
-const listErrorMessage = computed(() => formatError(countExecutionsError.value))
+const listErrorMessage = computed(() => inlineErrorMessage(countExecutionsError.value))
 // 弹窗内只留字段级校验汇总；提交失败一律 toast，不留常驻错误条。
 const createErrorMessage = computed(() => createError.value)
 const completeErrorMessage = computed(() => completeError.value)
@@ -431,10 +431,6 @@ async function submitComplete() {
       : ''
     notifyOperationFailure('完成盘点失败', error, '完成盘点失败，请稍后重试。')
   }
-}
-
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 
 function refreshAll() {

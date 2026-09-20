@@ -573,10 +573,15 @@ public static class ErpFinanceEndpointContracts
 {
     public static readonly IReadOnlyCollection<ErpEndpointContract> All =
     [
+        new(typeof(ConfigureWorkCenterMachineOverheadRateEndpoint), "POST", "/api/business/v1/erp/finance/work-center-machine-overhead-rates", ErpPermissionCodes.FinanceManage, MachineOverheadInternalCallerAuthorization.ManagePolicyName, "configureErpWorkCenterMachineOverheadRate"),
+        new(typeof(ListWorkCenterMachineOverheadRatesEndpoint), "GET", "/api/business/v1/erp/finance/work-center-machine-overhead-rates", ErpPermissionCodes.FinanceRead, MachineOverheadInternalCallerAuthorization.ReadPolicyName, "listErpWorkCenterMachineOverheadRates"),
+        new(typeof(GetCurrentWorkCenterMachineOverheadRateEndpoint), "GET", "/api/business/v1/erp/finance/work-center-machine-overhead-rates/current", ErpPermissionCodes.FinanceRead, MachineOverheadInternalCallerAuthorization.ReadPolicyName, "getCurrentErpWorkCenterMachineOverheadRate"),
         new(typeof(ConfigureWorkCenterCostRateEndpoint), "POST", "/api/business/v1/erp/finance/work-center-cost-rates", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "configureErpWorkCenterCostRate"),
         new(typeof(ListWorkCenterCostRatesEndpoint), "GET", "/api/business/v1/erp/finance/work-center-cost-rates", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "listErpWorkCenterCostRates"),
+        new(typeof(ListWorkOrderCostsEndpoint), "GET", "/api/business/v1/erp/finance/work-order-costs", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "listErpWorkOrderCosts"),
         new(typeof(ReconcileWorkCenterMachineOverheadEndpoint), "POST", "/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations", ErpPermissionCodes.FinanceManage, MachineOverheadInternalCallerAuthorization.ManagePolicyName, "reconcileErpWorkCenterMachineOverhead"),
         new(typeof(ListWorkCenterMachineOverheadReconciliationsEndpoint), "GET", "/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations", ErpPermissionCodes.FinanceRead, MachineOverheadInternalCallerAuthorization.ReadPolicyName, "listErpWorkCenterMachineOverheadReconciliations"),
+        new(typeof(GetWorkOrderCostVarianceEndpoint), "GET", "/api/business/v1/erp/finance/work-order-costs/{workOrderId}", ErpPermissionCodes.FinanceRead, MachineOverheadInternalCallerAuthorization.ReadPolicyName, "getErpWorkOrderCostVariance"),
         new(typeof(CreateAccountPayableEndpoint), "POST", "/api/business/v1/erp/finance/payables", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "createErpAccountPayable"),
         new(typeof(CreateAccountReceivableEndpoint), "POST", "/api/business/v1/erp/finance/receivables", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "createErpAccountReceivable"),
         new(typeof(CreateCostCandidateEndpoint), "POST", "/api/business/v1/erp/finance/cost-candidates", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "createErpCostCandidate"),

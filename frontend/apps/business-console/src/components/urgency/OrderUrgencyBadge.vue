@@ -141,7 +141,7 @@ async function submitPriority() {
     await refreshDetail()
     emit('refresh')
   } catch {
-    formError.value = formatError(mutationError.value) || '优先级调整失败，请稍后重试。'
+    formError.value = inlineErrorMessage(mutationError.value) || '优先级调整失败，请稍后重试。'
   }
 }
 
@@ -154,10 +154,6 @@ function toIsoOrError(value: string): string | null | typeof INVALID_EXPIRY {
   if (!trimmed) return null
   const date = new Date(trimmed)
   return Number.isNaN(date.getTime()) ? INVALID_EXPIRY : date.toISOString()
-}
-
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 
 function reasonLabel(code: string) {

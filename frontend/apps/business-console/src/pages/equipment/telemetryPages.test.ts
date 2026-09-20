@@ -57,12 +57,20 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
 })
 
 const telemetryPageMocks = vi.hoisted(() => ({
+  aggregateBuckets: [] as Array<Record<string, unknown>>,
+  aggregateError: undefined as unknown,
+  aggregateFilters: undefined as Record<string, string | number> | undefined,
+  aggregatePending: false,
+  aggregateTotal: 0,
   historyError: undefined as unknown,
   historyItems: [] as Array<Record<string, unknown>>,
   historyPending: false,
   replaceRoute: vi.fn(),
   route: undefined as unknown,
   saveAlarmRule: vi.fn(),
+  trendBuckets: [] as Array<Record<string, unknown>>,
+  trendError: undefined as unknown,
+  trendPending: false,
 }))
 
 vi.mock('@nerv-iip/ui', () => ({
@@ -82,10 +90,27 @@ vi.mock('@nerv-iip/ui', () => ({
     `,
   },
   NvDataTable: {
-    props: ['rows', 'columns'],
+    props: [
+      'rows',
+      'columns',
+      'rowKey',
+      'totalItems',
+      'loading',
+      'error',
+      'errorMessage',
+      'emptyMessage',
+    ],
     template: `
-      <div>
-        <div v-for="row in rows" :key="JSON.stringify(row)">
+      <div data-testid="data-table" :data-total="totalItems">
+        <span v-if="loading">加载中</span>
+        <span v-else-if="error">{{ errorMessage }}</span>
+        <span v-else-if="rows.length === 0">{{ emptyMessage }}</span>
+        <div
+          v-for="row in rows"
+          :key="typeof rowKey === 'function' ? rowKey(row) : row[rowKey]"
+          data-testid="data-row"
+          :data-row-key="typeof rowKey === 'function' ? rowKey(row) : row[rowKey]"
+        >
           <span v-for="col in columns" :key="col.key">
             {{ col.accessor ? col.accessor(row) : row[col.key] }}
           </span>
@@ -121,7 +146,8 @@ vi.mock('@nerv-iip/ui', () => ({
   },
   NvLineChart: {
     props: ['data', 'series'],
-    template: '<div data-testid="line-chart">{{ data.length }} {{ series[0]?.label }}</div>',
+    template:
+      '<div data-testid="line-chart">{{ data.length }} {{ series[0]?.label }}<span v-for="row in data">{{ row.time }} {{ row.oee }}/{{ row.availability }}/{{ row.performance }}/{{ row.quality }}</span></div>',
   },
   NvPageHeader: {
     props: ['title', 'count'],
@@ -264,7 +290,8 @@ vi.mock('@/composables/useEquipmentPickerCatalog', () => ({
 }))
 
 vi.mock('@/composables/useBusinessTelemetry', () => ({
-  describeTelemetryOeeDegradation: (reason: string) => reason,
+  describeTelemetryOeeDegradation: (reason: string) =>
+    reason === 'theoreticalRateMissingOrAmbiguous' ? '缺少或存在冲突的工序标准速率' : reason,
   describeTelemetryOeeLimitations: () => 'OEE = 可用率 × 性能率 × 质量率。',
   formatOeeQuantity: (value?: number) => (value === undefined ? '无数据' : `${value}`),
   formatOeeRate: (value?: number) =>
@@ -346,6 +373,44 @@ vi.mock('@/composables/useBusinessTelemetry', () => ({
     refreshOee: vi.fn(),
     runtimeAvailabilityError: shallowRef(),
   }),
+  useBusinessTelemetryOeeAggregates: (initial: Record<string, string>) => {
+    const filters = reactive({
+      dimension: 'day',
+      windowStartUtc: '2026-07-01T00:00:00.000Z',
+      windowEndUtc: '2026-07-03T00:00:00.000Z',
+      deviceAssetId: '',
+      workCenterId: '',
+      shiftCode: '',
+      lineCode: '',
+      workshopCode: '',
+      businessDate: '',
+      skip: 0,
+      take: 20,
+      ...initial,
+    })
+    telemetryPageMocks.aggregateFilters = filters
+    return {
+      aggregateBuckets: computed(() => telemetryPageMocks.aggregateBuckets),
+      aggregateError: shallowRef(telemetryPageMocks.aggregateError),
+      aggregatePending: shallowRef(telemetryPageMocks.aggregatePending),
+      aggregateResponse: computed(() => ({
+        dimension: filters.dimension,
+        buckets: telemetryPageMocks.aggregateBuckets,
+        totalCount: telemetryPageMocks.aggregateTotal,
+        skip: filters.skip,
+        take: filters.take,
+      })),
+      aggregateTotal: computed(() => telemetryPageMocks.aggregateTotal),
+      filters,
+      refreshAggregates: vi.fn(),
+    }
+  },
+  useBusinessTelemetryOeeTrend: () => ({
+    refreshTrend: vi.fn(),
+    trendBuckets: computed(() => telemetryPageMocks.trendBuckets),
+    trendError: shallowRef(telemetryPageMocks.trendError),
+    trendPending: shallowRef(telemetryPageMocks.trendPending),
+  }),
   useBusinessTelemetryTags: () => ({
     filters: { deviceAssetId: '', isEnabled: 'all', skip: 0, take: 100 },
     refreshTags: vi.fn(),
@@ -370,10 +435,27 @@ const stubs = {
   NvBadge: { template: '<span><slot /></span>' },
   NvButton: { template: '<button><slot /></button>' },
   NvDataTable: {
-    props: ['rows', 'columns'],
+    props: [
+      'rows',
+      'columns',
+      'rowKey',
+      'totalItems',
+      'loading',
+      'error',
+      'errorMessage',
+      'emptyMessage',
+    ],
     template: `
-      <div>
-        <div v-for="row in rows" :key="JSON.stringify(row)">
+      <div data-testid="data-table" :data-total="totalItems">
+        <span v-if="loading">加载中</span>
+        <span v-else-if="error">{{ errorMessage }}</span>
+        <span v-else-if="rows.length === 0">{{ emptyMessage }}</span>
+        <div
+          v-for="row in rows"
+          :key="typeof rowKey === 'function' ? rowKey(row) : row[rowKey]"
+          data-testid="data-row"
+          :data-row-key="typeof rowKey === 'function' ? rowKey(row) : row[rowKey]"
+        >
           <span v-for="col in columns" :key="col.key">
             {{ col.accessor ? col.accessor(row) : row[col.key] }}
           </span>
@@ -395,7 +477,8 @@ const stubs = {
   },
   NvLineChart: {
     props: ['data', 'series'],
-    template: '<div data-testid="line-chart">{{ data.length }} {{ series[0]?.label }}</div>',
+    template:
+      '<div data-testid="line-chart">{{ data.length }} {{ series[0]?.label }}<span v-for="row in data">{{ row.oee }}/{{ row.availability }}/{{ row.performance }}/{{ row.quality }}</span></div>',
   },
   PageHeader: {
     props: ['title', 'count'],
@@ -437,6 +520,44 @@ const stubs = {
 
 describe('equipment telemetry pages', () => {
   beforeEach(() => {
+    telemetryPageMocks.aggregateBuckets = [
+      {
+        dimension: 'day',
+        dimensionValue: 'SITE-SUZHOU',
+        siteCode: 'SITE-SUZHOU',
+        businessDate: '2026-07-01',
+        bucketStartUtc: '2026-06-30T16:00:00.000Z',
+        bucketEndUtc: '2026-07-01T16:00:00.000Z',
+        deviceCount: 4,
+        availabilityRate: 0.82,
+        performanceRate: 0.9,
+        qualityRate: 0.95,
+        oeeRate: 0.7,
+        isDegraded: false,
+        degradedReasons: [],
+      },
+      {
+        dimension: 'day',
+        dimensionValue: 'SITE-SUZHOU',
+        siteCode: 'SITE-SUZHOU',
+        businessDate: '2026-07-02',
+        bucketStartUtc: '2026-07-01T16:00:00.000Z',
+        bucketEndUtc: '2026-07-02T16:00:00.000Z',
+        deviceCount: 4,
+        availabilityRate: 0.76,
+        performanceRate: null,
+        qualityRate: 0.96,
+        oeeRate: null,
+        isDegraded: true,
+        degradedReasons: ['theoreticalRateMissingOrAmbiguous'],
+      },
+    ]
+    telemetryPageMocks.aggregateError = undefined
+    telemetryPageMocks.aggregatePending = false
+    telemetryPageMocks.aggregateTotal = telemetryPageMocks.aggregateBuckets.length
+    telemetryPageMocks.trendBuckets = [...telemetryPageMocks.aggregateBuckets]
+    telemetryPageMocks.trendError = undefined
+    telemetryPageMocks.trendPending = false
     telemetryPageMocks.historyError = undefined
     telemetryPageMocks.historyPending = false
     telemetryPageMocks.historyItems = [
@@ -626,10 +747,193 @@ describe('equipment telemetry pages', () => {
     expect(wrapper.find('[data-testid="line-chart"]').exists()).toBe(false)
   })
 
-  it('counts only unavailable runtime windows as unavailable windows', () => {
+  it('keeps missing aggregate rates out of the trend and explains the degraded bucket', () => {
     const wrapper = mount(TelemetryOeePage, { global: { stubs } })
 
-    expect(wrapper.text()).toMatch(/不可用窗口\s*1/)
+    expect(wrapper.find('[data-testid="line-chart"]').exists()).toBe(false)
+    expect(wrapper.get('[data-oee-discrete-point]').text()).toContain('离散桶 · 2026-07-01')
+    expect(wrapper.get('[data-oee-discrete-point]').text()).toContain('70%')
+    expect(wrapper.text()).toContain('1 个桶缺少率值，未画成 0%')
+    expect(wrapper.text()).toContain('缺少或存在冲突的工序标准速率')
+    expect(wrapper.text()).toContain('—')
+    expect(wrapper.text()).toContain('1 个完整率值点，1 个缺失点')
+  })
+
+  it('renders the complete 31-day trend independently from the 20-row audit page', () => {
+    const template = telemetryPageMocks.aggregateBuckets[0]!
+    telemetryPageMocks.trendBuckets = Array.from({ length: 31 }, (_, index) => {
+      const start = new Date(Date.UTC(2026, 6, index + 1))
+      const end = new Date(Date.UTC(2026, 6, index + 2))
+      return {
+        ...template,
+        businessDate: `2026-07-${String(index + 1).padStart(2, '0')}`,
+        bucketStartUtc: start.toISOString(),
+        bucketEndUtc: end.toISOString(),
+        ...(index === 20
+          ? {
+              isDegraded: true,
+              oeeRate: null,
+              performanceRate: null,
+              degradedReasons: ['theoreticalRateMissingOrAmbiguous'],
+            }
+          : {}),
+      }
+    })
+    telemetryPageMocks.aggregateBuckets = telemetryPageMocks.trendBuckets.slice(0, 20)
+    telemetryPageMocks.aggregateTotal = 31
+
+    const wrapper = mount(TelemetryOeePage, { global: { stubs } })
+
+    const charts = wrapper.findAll('[data-testid="line-chart"]')
+    const chartText = charts.map((chart) => chart.text()).join(' ')
+    expect(charts).toHaveLength(2)
+    expect(charts.map((chart) => Number(chart.text().split(' ')[0]))).toEqual([20, 10])
+    expect(chartText).toContain('7/1')
+    expect(chartText).toContain('7/31')
+    expect(chartText).toContain('SITE-SUZHOU · OEE')
+    expect(wrapper.text()).toContain('按 1 个站点分别呈现')
+    expect(wrapper.text()).toContain('完整窗口共 31 个业务日聚合桶')
+    expect(wrapper.text()).toContain('1 个桶缺少率值，未画成 0%')
+    expect(wrapper.get('[data-testid="metric-strip"]').text()).not.toContain('数据不完整')
+  })
+
+  it('renders equal business dates as independent site-owned trend groups', () => {
+    telemetryPageMocks.trendBuckets = [
+      {
+        ...telemetryPageMocks.aggregateBuckets[0],
+        dimensionValue: 'SITE-SUZHOU',
+        siteCode: 'SITE-SUZHOU',
+        businessDate: '2026-07-01',
+      },
+      {
+        ...telemetryPageMocks.aggregateBuckets[0],
+        dimensionValue: 'SITE-WUXI',
+        siteCode: 'SITE-WUXI',
+        businessDate: '2026-07-01',
+        oeeRate: 0.61,
+      },
+    ]
+    telemetryPageMocks.aggregateBuckets = [...telemetryPageMocks.trendBuckets]
+    telemetryPageMocks.aggregateTotal = 2
+
+    const wrapper = mount(TelemetryOeePage, { global: { stubs } })
+    const points = wrapper.findAll('[data-oee-discrete-point]')
+
+    expect(points).toHaveLength(2)
+    expect(wrapper.findAll('[data-oee-site]')).toHaveLength(2)
+    expect(wrapper.text()).toContain('按 2 个站点分别呈现')
+  })
+
+  it('renders equal site and business date windows as distinct precise segments', () => {
+    telemetryPageMocks.trendBuckets = [
+      {
+        ...telemetryPageMocks.aggregateBuckets[0],
+        businessDate: '2026-07-01',
+        bucketStartUtc: '2026-06-30T15:00:00.000Z',
+        bucketEndUtc: '2026-07-01T15:00:00.000Z',
+      },
+      {
+        ...telemetryPageMocks.aggregateBuckets[0],
+        businessDate: '2026-07-01',
+        bucketStartUtc: '2026-06-30T16:00:00.000Z',
+        bucketEndUtc: '2026-07-01T16:00:00.000Z',
+      },
+    ]
+    telemetryPageMocks.aggregateBuckets = [...telemetryPageMocks.trendBuckets]
+    telemetryPageMocks.aggregateTotal = 2
+
+    const wrapper = mount(TelemetryOeePage, { global: { stubs } })
+
+    expect(wrapper.findAll('[data-oee-segment]')).toHaveLength(2)
+    expect(wrapper.findAll('[data-oee-discrete-point]')).toHaveLength(2)
+    expect(wrapper.find('[data-testid="line-chart"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('2026-06-30 15:00:00 UTC – 2026-07-01 15:00:00 UTC')
+    expect(wrapper.text()).toContain('2026-06-30 16:00:00 UTC – 2026-07-01 16:00:00 UTC')
+  })
+
+  it('shows an explicit all-missing segment state', () => {
+    telemetryPageMocks.trendBuckets = telemetryPageMocks.aggregateBuckets.map((bucket) => ({
+      ...bucket,
+      oeeRate: null,
+      performanceRate: null,
+    }))
+
+    const wrapper = mount(TelemetryOeePage, { global: { stubs } })
+
+    expect(wrapper.find('[data-testid="line-chart"]').exists()).toBe(false)
+    expect(wrapper.find('[data-oee-discrete-point]').exists()).toBe(false)
+    expect(wrapper.text()).toContain(
+      '本历史窗口段没有可绘制的完整率值；全部缺失事实仍保留在下方核查表中。',
+    )
+  })
+
+  it('keeps equal shift codes in different sites and hierarchy readable with distinct row keys', () => {
+    ;(telemetryPageMocks.route as { query: Record<string, string> }).query = {
+      dimension: 'shift',
+      windowStartUtc: '2026-07-01T00:00:00.000Z',
+      windowEndUtc: '2026-07-02T00:00:00.000Z',
+    }
+    telemetryPageMocks.aggregateBuckets = [
+      {
+        ...telemetryPageMocks.aggregateBuckets[0],
+        dimension: 'shift',
+        dimensionValue: 'SHIFT-DAY',
+        siteCode: 'SITE-SUZHOU',
+        workshopCode: 'WS-MACHINING',
+        lineCode: 'LINE-CNC',
+      },
+      {
+        ...telemetryPageMocks.aggregateBuckets[0],
+        dimension: 'shift',
+        dimensionValue: 'SHIFT-DAY',
+        siteCode: 'SITE-WUXI',
+        workshopCode: 'WS-ASSEMBLY',
+        lineCode: 'LINE-FINAL',
+      },
+    ]
+    telemetryPageMocks.aggregateTotal = 2
+
+    const wrapper = mount(TelemetryOeePage, { global: { stubs } })
+    const rows = wrapper.findAll('[data-testid="data-row"]')
+
+    expect(wrapper.text()).toContain('站点 SITE-SUZHOU › 车间 WS-MACHINING › 产线 LINE-CNC')
+    expect(wrapper.text()).toContain('站点 SITE-WUXI › 车间 WS-ASSEMBLY › 产线 LINE-FINAL')
+    expect(rows).toHaveLength(2)
+    expect(rows[0]?.attributes('data-row-key')).not.toBe(rows[1]?.attributes('data-row-key'))
+    expect(wrapper.get('[data-testid="data-table"]').attributes('data-total')).toBe('2')
+  })
+
+  it('shows a deep-linked device scope and clears it when switching to an organization comparison', async () => {
+    const wrapper = mount(TelemetryOeePage, { global: { stubs } })
+
+    const deviceInput = wrapper
+      .findAll('input')
+      .find((input) => input.element.value === 'DEV-CNC-01')
+    expect(deviceInput?.exists()).toBe(true)
+    expect(wrapper.text()).toContain('当前设备范围：DEV-CNC-01')
+
+    telemetryPageMocks.aggregateFilters!.dimension = 'workCenter'
+    await nextTick()
+
+    expect(telemetryPageMocks.aggregateFilters!.deviceAssetId).toBe('')
+  })
+
+  it('renders loading, error, and empty aggregate states as distinct outcomes', () => {
+    telemetryPageMocks.aggregateBuckets = []
+    telemetryPageMocks.aggregatePending = true
+    telemetryPageMocks.trendBuckets = []
+    telemetryPageMocks.trendPending = true
+    expect(mount(TelemetryOeePage, { global: { stubs } }).text()).toContain('正在加载趋势')
+
+    telemetryPageMocks.aggregatePending = false
+    telemetryPageMocks.trendPending = false
+    telemetryPageMocks.aggregateError = new Error('403 forbidden')
+    expect(mount(TelemetryOeePage, { global: { stubs } }).text()).toContain('没有权限执行此操作。')
+
+    telemetryPageMocks.aggregateError = undefined
+    const emptyText = mount(TelemetryOeePage, { global: { stubs } }).text()
+    expect(emptyText).toContain('当前窗口没有可绘制的完整率值')
+    expect(emptyText).toContain('当前窗口和筛选范围内没有 OEE 聚合事实')
   })
 
   it('requires a numeric threshold before saving an alarm rule', async () => {

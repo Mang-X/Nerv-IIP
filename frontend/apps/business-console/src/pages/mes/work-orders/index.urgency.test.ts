@@ -48,6 +48,16 @@ vi.mock('@/composables/useMesPickerCatalog', () => ({
 }))
 
 const workOrders = vi.hoisted(() => ({ items: [] as Array<Record<string, unknown>> }))
+vi.mock('@/composables/mes/useProductionReportSerialOptions', () => ({
+  useProductionReportSerialOptions: () => ({
+    serialPolicy: ref('none'),
+    labelTemplates: ref([]),
+    serialOptionsReady: ref(true),
+    serialOptionsPending: ref(false),
+    refreshSerialOptions: vi.fn(),
+  }),
+}))
+
 vi.mock('@/composables/useBusinessMes', () => ({
   makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
   // #1288 工具栏作业范围选择入口（MesWorkScopeSelect）
@@ -64,6 +74,8 @@ vi.mock('@/composables/useBusinessMes', () => ({
   }),
   useMesProductionReporting: () => ({
     recordProductionReport: vi.fn(),
+    restoreProductionReport: vi.fn(),
+    readProductionPrintStatus: vi.fn(),
     recordProductionReportError: ref(undefined),
     recordProductionReportPending: ref(false),
   }),
@@ -167,9 +179,9 @@ function mountList() {
         NvSelectTrigger: { template: '<button><slot /></button>' },
         NvSelectContent: { template: '<div><slot /></div>' },
         NvSelectItem: { props: ['value'], template: '<div><slot /></div>' },
-        // reka's component name is `SelectValue`; `NvSelectValue` (the barrel alias)
-        // would miss test-utils stub matching and render the real reka value.
-        SelectValue: { template: '<span />' },
+        // The barrel alias carries its own `name` (#2879), so `NvSelectValue` is what
+        // test-utils matches — keying it by reka's `SelectValue` would miss.
+        NvSelectValue: { template: '<span />' },
         NvInput: { template: '<input />' },
         RouterLink: { props: ['to'], template: '<a><slot /></a>' },
       },

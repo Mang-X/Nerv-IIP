@@ -466,6 +466,7 @@ export function useBusinessMasterDataResources(
           resourceType: filters.resourceType,
           ...optionalQuery('codeSet', filters.codeSet),
           ...optionalQuery('includeDisabled', filters.includeDisabled),
+          ...optionalQuery('keyword', filters.keyword),
           skip: filters.skip,
           take: filters.take,
         },
@@ -544,7 +545,7 @@ export type MasterDataResourceType = keyof typeof RESOURCE_CREATE_OPTIONS
 
 /**
  * 单类基础数据资源的「列表 + 新建」。列表走通用 resources 端点（仅 5 字段，见
- * docs/architecture/master-data-module-product-design.md §0/§7），新建走各自 create 端点。
+ * docs/product/master-data/design.md §0/§7），新建走各自 create 端点。
  * 编辑/停用待后端 #344；本 Phase 1 只做查 + 增。
  */
 export function useMasterDataResource<TBody>(resourceType: MasterDataResourceType) {

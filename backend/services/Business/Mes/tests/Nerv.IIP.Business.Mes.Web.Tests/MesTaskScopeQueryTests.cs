@@ -12,6 +12,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.Business.Mes.Web.Endpoints.Mes;
+using Nerv.IIP.Business.Mes.Web.Application.Quality;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -333,7 +334,8 @@ public sealed class MesTaskScopeQueryTests
             now,
             TimeSpan.FromHours(1),
             null,
-            null);
+            null,
+            "SKU-001");
         var blocked = OperationTask.Create(
             "org-001",
             "env-dev",
@@ -346,7 +348,8 @@ public sealed class MesTaskScopeQueryTests
             now.AddMinutes(1),
             TimeSpan.FromHours(1),
             null,
-            null);
+            null,
+            "SKU-001");
         previous.Assign("emp011", null, null, now, teamId: "TEAM-AS");
         blocked.Assign("emp012", null, null, now, teamId: "TEAM-AS");
         dbContext.WorkOrders.Add(workOrder);
@@ -585,7 +588,7 @@ public sealed class MesTaskScopeQueryTests
         await dbContext.SaveChangesAsync();
 
         var exception = await Assert.ThrowsAsync<MesLifecycleConflictException>(() =>
-            new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance).Handle(
+            new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance, TestMesFirstArticleGate.Allowing).Handle(
                 new RecordProductionReportCommand(
                     "org-001",
                     "env-dev",
@@ -644,7 +647,8 @@ public sealed class MesTaskScopeQueryTests
             earliestStartUtc,
             TimeSpan.FromHours(1),
             null,
-            null);
+            null,
+            "SKU-001");
         task.Assign(
             assignedUserId,
             null,

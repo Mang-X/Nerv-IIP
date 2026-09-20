@@ -23,6 +23,7 @@ public sealed class ManualDispatchConcurrencyTests
 {
     [Theory]
     [InlineData(typeof(AssignDispatchTaskCommand))]
+    [InlineData(typeof(ClaimDispatchTaskCommand))]
     [InlineData(typeof(CancelWorkOrderCommand))]
     [InlineData(typeof(ChangeOperationTaskStateCommand))]
     [InlineData(typeof(RecordProductionReportCommand))]
@@ -396,7 +397,8 @@ public sealed class ManualDispatchConcurrencyTests
             At(0),
             TimeSpan.FromMinutes(30),
             null,
-            null);
+            null,
+            "SKU-001");
         if (activeDeviceAssetId is not null)
         {
             task.Assign("operator-seed", activeDeviceAssetId, "shift-a", At(1), "user:seed-001");
@@ -454,7 +456,7 @@ public sealed class ManualDispatchConcurrencyTests
         services.AddScoped<OperationActualTimeSettledIntegrationEventConverter>();
         services.AddScoped<OperationActualTimeSettlementVoidedV1IntegrationEventConverter>();
         services.AddScoped<OperationActualTimeSettlementVoidedIntegrationEventConverter>();
-        services.AddSingleton<IMesActualTimeOutboxPublisher, RecordingMesActualTimeOutboxPublisher>();
+        services.AddSingleton<IMesIntegrationEventOutboxPublisher, RecordingMesIntegrationEventOutboxPublisher>();
         services.AddSingleton(new MesActualTimeTopicOptions("Testing"));
         services.AddSingleton<RecordingIntegrationEventPublisher>();
         services.AddSingleton<IIntegrationEventPublisher>(serviceProvider =>
@@ -486,7 +488,7 @@ public sealed class ManualDispatchConcurrencyTests
         }
     }
 
-    private sealed class RecordingMesActualTimeOutboxPublisher : IMesActualTimeOutboxPublisher
+    private sealed class RecordingMesIntegrationEventOutboxPublisher : IMesIntegrationEventOutboxPublisher
     {
         public Task PublishAsync<T>(string topic, T integrationEvent) => Task.CompletedTask;
     }

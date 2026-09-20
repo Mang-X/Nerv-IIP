@@ -36,7 +36,7 @@ public interface IBusinessPlanningClient
 
     Task<BusinessConsoleDemandSourceListResponse> ListDemandSourcesAsync(
         string internalBearerToken,
-        BusinessConsolePlanningContextRequest request,
+        BusinessConsoleDemandSourceListRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleDemandSourceResponse> CreateOrUpdateDemandSourceAsync(
@@ -184,19 +184,24 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
 
     public Task<BusinessConsoleDemandSourceListResponse> ListDemandSourcesAsync(
         string internalBearerToken,
-        BusinessConsolePlanningContextRequest request,
+        BusinessConsoleDemandSourceListRequest request,
         CancellationToken cancellationToken) =>
         ListDemandSourcesCoreAsync(internalBearerToken, request, cancellationToken);
 
     private async Task<BusinessConsoleDemandSourceListResponse> ListDemandSourcesCoreAsync(
         string internalBearerToken,
-        BusinessConsolePlanningContextRequest request,
+        BusinessConsoleDemandSourceListRequest request,
         CancellationToken cancellationToken)
     {
         var items = await SendAsync<IReadOnlyCollection<BusinessConsoleDemandSourceResponse>>(
             internalBearerToken,
             HttpMethod.Get,
-            "/api/business/v1/planning/demands?" + PlanningContextQuery(request.OrganizationId, request.EnvironmentId),
+            "/api/business/v1/planning/demands?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("keyword", request.Keyword),
+                ("skip", request.Skip),
+                ("take", request.Take)),
             null,
             cancellationToken);
         return new BusinessConsoleDemandSourceListResponse(items);

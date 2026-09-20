@@ -244,8 +244,9 @@ public sealed class MaintenanceEndpointContractTests
     {
         var contracts = MaintenanceEndpointContracts.All.ToArray();
 
-        Assert.Equal(26, contracts.Length);
+        Assert.Equal(27, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/work-orders" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "createMaintenanceWorkOrder");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v2/maintenance/work-orders" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "createMaintenanceWorkOrderV2");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/work-orders/{workOrderId}/repair-started" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "startMaintenanceRepair");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/work-orders/{workOrderId}/complete" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "completeMaintenanceWorkOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/work-orders" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersRead && x.OperationId == "listMaintenanceWorkOrders");
@@ -264,7 +265,7 @@ public sealed class MaintenanceEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/spare-parts" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersRead && x.OperationId == "listMaintenanceSpareParts");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/spare-parts" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "createMaintenanceSparePart");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/downtime-reasons" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "createMaintenanceDowntimeReason");
-        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/downtime-reasons" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersRead && x.OperationId == "listMaintenanceDowntimeReasons");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/downtime-reasons" && x.PermissionCode == MaintenancePermissionCodes.DowntimeReasonsRead && x.OperationId == "listMaintenanceDowntimeReasons");
         Assert.Contains(contracts, x => x.HttpMethod == "PUT" && x.Route == "/api/business/v1/maintenance/downtime-reasons/{reasonCode}" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "updateMaintenanceDowntimeReason");
         Assert.Contains(contracts, x => x.HttpMethod == "DELETE" && x.Route == "/api/business/v1/maintenance/downtime-reasons/{reasonCode}" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "deleteMaintenanceDowntimeReason");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/assets/{deviceAssetId}/availability-windows" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersRead && x.OperationId == "getMaintenanceAssetAvailabilityWindows");

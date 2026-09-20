@@ -86,6 +86,7 @@ public sealed class MesSchedulePlanProvenancePostgresTests
                 [],
                 scheduledAt,
                 TimeSpan.FromHours(1),
+                "SKU-001",
                 requiredSkillCode: "cnc-operation");
             task.ApplyScheduleAssignment("WC-1", "DEV-1", scheduledAt, scheduledAt.AddHours(1), scheduledAt, schedulePlanId: "plan-1", scheduleReleaseRevision: 1);
             db.OperationTasks.Add(task);

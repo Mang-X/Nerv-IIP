@@ -83,6 +83,7 @@ public sealed class MesActualTimeReadContractTests
             startedAtUtc.AddDays(1));
         var operation = Assert.Single(workOrder.Release(
             startedAtUtc.AddHours(-1),
+            WorkOrderReleaseFactTime.NotLaterThan(startedAtUtc.AddHours(-1), null),
             [new RoutingStepSnapshot("OP-DETAIL", 10, "WC-DETAIL", [], TimeSpan.FromMinutes(30))]));
         operation.Start(startedAtUtc);
         operation.Complete(startedAtUtc.AddMinutes(75), []);
@@ -124,7 +125,8 @@ public sealed class MesActualTimeReadContractTests
             "WC-OTHER",
             [],
             startedAtUtc,
-            TimeSpan.FromMinutes(30));
+            TimeSpan.FromMinutes(30),
+            "SKU-001");
         otherScope.Start(startedAtUtc);
         otherScope.Complete(startedAtUtc.AddHours(2), []);
         var otherEnvironment = OperationTask.Queue(
@@ -136,7 +138,8 @@ public sealed class MesActualTimeReadContractTests
             "WC-OTHER",
             [],
             startedAtUtc,
-            TimeSpan.FromMinutes(30));
+            TimeSpan.FromMinutes(30),
+            "SKU-001");
         otherEnvironment.Start(startedAtUtc);
         otherEnvironment.Complete(startedAtUtc.AddHours(2), []);
         dbContext.OperationTasks.AddRange(completed, completedWithZero, running, otherScope, otherEnvironment);
@@ -296,7 +299,8 @@ public sealed class MesActualTimeReadContractTests
             "WC-001",
             [],
             queuedAtUtc,
-            TimeSpan.FromMinutes(30));
+            TimeSpan.FromMinutes(30),
+            "SKU-001");
 
     private static JsonElement FindSchemaWithProperty(JsonElement schemas, string propertyName) =>
         schemas.EnumerateObject()

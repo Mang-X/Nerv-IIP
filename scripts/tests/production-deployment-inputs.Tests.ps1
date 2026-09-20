@@ -85,20 +85,49 @@ Assert-StartFails -Arguments @(
     '-IamSecretsPepper', 'pepper',
     '-IamEnterpriseIdentityMfaCode', '000000'
 ) -ExpectedMarker '-IamEnterpriseIdentityMfaCode must override'
+Assert-StartFails -Arguments @(
+    '-EnvironmentName', 'Production',
+    '-MessagingProvider', 'RabbitMQ',
+    '-RedisPassword', 'redis-password',
+    '-IamJwtSigningKeyId', 'kid',
+    '-IamJwtPrivateKeyPem', 'private-key',
+    '-IamJwtJwksJson', '{"keys":[]}',
+    '-IamSecretsPepper', 'pepper',
+    '-IamEnterpriseIdentityMfaCode', '654321',
+    '-InternalServiceBearerToken', 'internal-token',
+    '-ConnectorHostSecret', 'connector-secret',
+    '-ConnectorHostId', 'connector-host',
+    '-ConnectorHostOrganizationId', 'organization',
+    '-ConnectorHostEnvironmentId', 'environment',
+    '-ConnectorIngestionTokenSigningKey', 'ingestion-key',
+    '-MinioRootUser', 'minio-user',
+    '-MinioRootPassword', 'minio-password',
+    '-CorsAllowedOrigins', 'https://console.example.test'
+) -ExpectedMarker '-BarcodeLabelPrinterId is required'
 
 foreach ($contract in @(
     @($startText, '[ValidateSet("InMemory", "RabbitMQ", "Redis")]', 'release-install must accept Redis messaging'),
     @($startText, '$environment["Parameters__redis-password"] = $RedisPassword', 'release-install must map the Redis password to the AppHost parameter'),
     @($startText, '$environment["Parameters__iam-enterprise-identity-mfa-code"] = $IamEnterpriseIdentityMfaCode', 'release-install must map the MFA override to the AppHost parameter'),
+    @($startText, '$environment["Parameters__barcode-label-printer-id"] = $BarcodeLabelPrinterId', 'release-install must map the logical printer id to the AppHost parameter'),
+    @($startText, '$environment["Parameters__barcode-label-printer-host"] = $BarcodeLabelPrinterHost', 'release-install must map the site printer host to the AppHost parameter'),
     @($appHostText, 'AddParameter("iam-enterprise-identity-mfa-code", secret: true)', 'AppHost MFA override must be a secret parameter'),
+    @($appHostText, 'AddParameter("barcode-label-printer-id")', 'AppHost production topology must expose a logical printer id parameter'),
+    @($appHostText, '.WithEnvironment("LabelPrinter__Mode", "simulated")', 'AppHost Development topology must select simulated mode explicitly'),
+    @($appHostText, '.WithEnvironment("LabelPrinter__Mode", "zpl-tcp")', 'AppHost delivery topology must select zpl-tcp mode explicitly'),
+    @($appHostText, '"LabelPrinter__Printers__0__Host"', 'AppHost delivery topology must inject the printer route host'),
     @($appHostText, 'Iam__EnterpriseIdentity__Mfa__DevelopmentCode', 'AppHost must deliver the MFA override to IAM'),
     @($dependenciesText, '--requirepass', 'legacy Redis must require authentication'),
     @($platformText, 'password=${NERV_IIP_REDIS_PASSWORD:?set NERV_IIP_REDIS_PASSWORD}', 'legacy services must authenticate to Redis'),
     @($platformText, 'Iam__Secrets__Pepper: ${NERV_IIP_IAM_SECRETS_PEPPER:?set NERV_IIP_IAM_SECRETS_PEPPER}', 'legacy IAM must receive its pepper'),
     @($platformText, 'Iam__EnterpriseIdentity__Mfa__DevelopmentCode: ${NERV_IIP_IAM_ENTERPRISE_IDENTITY_MFA_CODE:?set NERV_IIP_IAM_ENTERPRISE_IDENTITY_MFA_CODE}', 'legacy IAM must receive its MFA override'),
+    @($platformText, 'LabelPrinter__Mode: ${NERV_IIP_BARCODE_LABEL_PRINTER_MODE:?set NERV_IIP_BARCODE_LABEL_PRINTER_MODE}', 'legacy BarcodeLabel must receive an explicit printer mode'),
+    @($platformText, 'LabelPrinter__Printers__0__Host: ${NERV_IIP_BARCODE_LABEL_PRINTER_HOST:?set NERV_IIP_BARCODE_LABEL_PRINTER_HOST}', 'legacy BarcodeLabel must receive the site printer host'),
     @($environmentExampleText, 'NERV_IIP_REDIS_PASSWORD=change-me-strong-redis-password', 'production env example must declare the Redis password'),
     @($environmentExampleText, 'NERV_IIP_IAM_SECRETS_PEPPER=change-me-strong-iam-secrets-pepper', 'production env example must declare the IAM pepper'),
     @($environmentExampleText, 'NERV_IIP_IAM_ENTERPRISE_IDENTITY_MFA_CODE=change-me-non-development-mfa-code', 'production env example must declare the MFA override'),
+    @($environmentExampleText, 'NERV_IIP_BARCODE_LABEL_PRINTER_MODE=zpl-tcp', 'production env example must select zpl-tcp explicitly'),
+    @($environmentExampleText, 'NERV_IIP_BARCODE_LABEL_PRINTER_HOST=', 'production env example must expose the site printer host without committing a real address'),
     @($releaseRehearsalText, 'redis-cli -a "$NERV_IIP_REDIS_PASSWORD" --no-auth-warning ping', 'release rehearsal must read the Redis password inside the container'),
     @($ciWorkflowText, './scripts/tests/production-deployment-inputs.Tests.ps1', 'Script Governance must run the production deployment input contract tests')
 )) {

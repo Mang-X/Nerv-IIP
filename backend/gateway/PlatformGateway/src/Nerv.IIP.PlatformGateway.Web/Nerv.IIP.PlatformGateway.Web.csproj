@@ -13,6 +13,11 @@
     <ProjectReference Include="..\..\..\..\common\Localization\Nerv.IIP.Localization\Nerv.IIP.Localization.csproj" />
     <ProjectReference Include="..\..\..\..\common\Observability\Nerv.IIP.Observability\Nerv.IIP.Observability.csproj" />
     <ProjectReference Include="..\..\..\..\common\ServiceAuth\Nerv.IIP.ServiceAuth\Nerv.IIP.ServiceAuth.csproj" />
+    <ProjectReference Include="..\..\..\..\common\Web\Nerv.IIP.Web\Nerv.IIP.Web.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Nerv.IIP.Web" />
   </ItemGroup>
 
   <ItemGroup>

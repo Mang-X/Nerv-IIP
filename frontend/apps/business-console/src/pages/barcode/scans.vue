@@ -151,7 +151,7 @@ watch(workflowFilter, (value) => {
   filters.sourceWorkflow = value === 'all' ? undefined : value
 })
 
-const errorMessage = computed(() => formatError(scansError.value))
+const errorMessage = computed(() => inlineErrorMessage(scansError.value))
 const canSubmit = computed(
   () =>
     form.deviceCode.trim().length > 0 &&
@@ -255,10 +255,6 @@ function formatDateTime(value?: string | null) {
 function firstQuery(value: unknown) {
   if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : ''
   return typeof value === 'string' ? value : ''
-}
-
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 </script>
 

@@ -58,6 +58,22 @@ public sealed class WorldBiblePdaDemoAccountSeedTests
     }
 
     [Fact]
+    public void Operator_demo_role_retains_downtime_reason_vocabulary_access_after_the_rebind()
+    {
+        // ADR 0029 决策 5：换绑是权限收窄，旧码 business.maintenance.work-orders.read 的
+        // 默认角色持有者必须在同一变更内补授新码，否则是功能回退。role-pda-operator 正是
+        // MES 停机的消费方角色（唯一需要手工补授的默认角色；role-platform-admin 持全集
+        // 自动跟随，无需手工）。
+        var operatorRole = Assert.Single(
+            WorldBiblePdaDemoAccountSeedService.Roles,
+            role => role.RoleId == WorldBiblePdaDemoAccountSeedService.OperatorRoleId);
+
+        Assert.Contains(
+            "business.maintenance.downtime-reasons.read",
+            operatorRole.PermissionCodes);
+    }
+
+    [Fact]
     public void Warehouse_demo_role_grants_sku_read_without_sku_manage()
     {
         var warehouseRole = Assert.Single(

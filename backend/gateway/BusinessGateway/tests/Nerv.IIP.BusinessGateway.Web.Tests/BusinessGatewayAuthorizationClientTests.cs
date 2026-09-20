@@ -33,6 +33,8 @@ public sealed class BusinessGatewayAuthorizationClientTests
             CancellationToken.None);
 
         Assert.True(result.IsAllowed);
+        Assert.Equal("org-001", result.AuthorizedOrganizationId);
+        Assert.Equal("env-dev", result.AuthorizedEnvironmentId);
         var grant = Assert.Single(result.ScopeGrants!);
         Assert.Equal("role-worker", grant.SourceId);
         Assert.Equal("workshop", grant.ScopeKind);
@@ -215,7 +217,7 @@ public sealed class BusinessGatewayAuthorizationClientTests
             new HttpClient(handler) { BaseAddress = new Uri("http://iam.local") },
             new MemoryAppCache(),
             Options.Create(options ?? new BusinessGatewayAuthorizationOptions { AuthorizationCacheTtlSeconds = 60 }),
-            new BusinessGatewayDownstreamHealthState());
+            new BusinessGatewayDownstreamHealthState(TimeProvider.System));
 
     private static HttpResponseMessage AuthorizationResponse(HttpStatusCode statusCode, bool allowed)
     {

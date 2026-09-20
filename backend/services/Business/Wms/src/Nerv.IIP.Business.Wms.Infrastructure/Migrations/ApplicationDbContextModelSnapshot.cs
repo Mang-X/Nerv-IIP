@@ -657,6 +657,12 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnName("status")
                         .HasComment("Posting status for the Inventory request.");
 
+                    b.Property<decimal?>("UnitCost")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("unit_cost")
+                        .HasComment("Frozen receipt cost per movement UOM in base currency; null for legacy or unvalued requests.");
+
                     b.Property<string>("UomCode")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -1743,10 +1749,9 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasComment("WCS failure diagnostic code.");
 
                     b.Property<string>("FailureMessage")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)")
+                        .HasColumnType("text")
                         .HasColumnName("failure_message")
-                        .HasComment("WCS failure diagnostic message.");
+                        .HasComment("WCS failure diagnostic message; unbounded raw text from the external WCS.");
 
                     b.Property<bool>("IsTerminalFailure")
                         .ValueGeneratedOnAdd()

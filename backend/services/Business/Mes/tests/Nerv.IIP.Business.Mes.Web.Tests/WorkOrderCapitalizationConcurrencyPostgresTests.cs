@@ -39,7 +39,8 @@ public sealed class WorkOrderCapitalizationConcurrencyPostgresTests
                 completedAtUtc.AddMinutes(-10),
                 TimeSpan.FromMinutes(10),
                 completedAtUtc.AddMinutes(-10),
-                completedAtUtc));
+                completedAtUtc,
+                "SKU-001"));
             setup.ProductionReports.Add(ProductionReport.Record(
                 "org-001",
                 "env-dev",

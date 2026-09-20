@@ -4,6 +4,7 @@ using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
 using Nerv.IIP.Contracts.EquipmentRuntime;
+using Nerv.IIP.Contracts.IndustrialTelemetry;
 using Nerv.IIP.ServiceAuth;
 using System.Text.Json;
 
@@ -418,6 +419,36 @@ public sealed class QueryBusinessConsoleTelemetryOeeEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         telemetry.QueryOeeAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Telemetry")]
+[HttpGet("/api/business-console/v1/telemetry/oee/aggregates")]
+[BusinessGatewayOperationId("queryBusinessConsoleTelemetryOeeAggregates")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status400BadRequest)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status502BadGateway)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status503ServiceUnavailable)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status504GatewayTimeout)]
+public sealed class QueryBusinessConsoleTelemetryOeeAggregatesEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessOeeAggregateCapability capability)
+    : AuthorizedBusinessProxyEndpoint<QueryOeeAggregateBucketsRequest, OeeAggregateBucketsResponse>(
+        auth,
+        BusinessGatewayPermissions.IiotTelemetryRead)
+{
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
+    protected override string OrganizationId(QueryOeeAggregateBucketsRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(QueryOeeAggregateBucketsRequest request) => request.EnvironmentId;
+
+    protected override Task<OeeAggregateBucketsResponse> ForwardAsync(
+        QueryOeeAggregateBucketsRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        capability.QueryAsync(AuthorizationResult!, request, cancellationToken);
 }
 
 [Tags("Business Console Telemetry")]

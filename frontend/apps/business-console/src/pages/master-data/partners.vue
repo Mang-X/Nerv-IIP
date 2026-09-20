@@ -134,7 +134,7 @@ const sortedRows = computed(() => {
 const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
 const pagedRows = computed(() => sortedRows.value)
 
-const listErrorMessage = computed(() => formatError(partnersError.value))
+const listErrorMessage = computed(() => inlineErrorMessage(partnersError.value))
 
 const PARTNER_FORM_DEFAULTS = {
   code: '',
@@ -334,9 +334,6 @@ function syncContextFromFilters(open: boolean) {
   if (open) createShowErrors.value = false
   createForm.organizationId = filters.organizationId
   createForm.environmentId = filters.environmentId
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 function isNonEmpty(value: string) {
   return value.trim().length > 0

@@ -1,3 +1,10 @@
+using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using System.Text.Json;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,6 +25,177 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 [Collection(ErpPostgresLaneDatabase.CollectionName)]
 public sealed class WorkCenterMachineOverheadRatePostgresAcceptanceTests
 {
+    private const string RateRoute = "/api/business/v1/erp/finance/work-center-machine-overhead-rates";
+
+    // #2679 PublicContract / DomainInvariant / ProviderBehavior: production HTTP -> validation -> UoW -> PostgreSQL.
+    [ErpCostPostgresFact]
+    public async Task Http_configuration_and_audit_preserve_scope_revision_and_derived_rates_on_postgres()
+    {
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Testing");
+            builder.UseSetting("ConnectionStrings:PostgreSQL", ErpPostgresLaneDatabase.ConnectionString);
+            builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:PostgreSQL"] = ErpPostgresLaneDatabase.ConnectionString,
+                ["Persistence:AutoMigrate"] = "false",
+                ["InternalService:BearerToken"] = "test-general-token",
+                ["Erp:MachineOverheadReconciliation:ScopedCallers:Profiles:1:Name"] = "reader",
+                ["Erp:MachineOverheadReconciliation:ScopedCallers:Profiles:1:BearerToken"] = "reader-token",
+                ["Erp:MachineOverheadReconciliation:ScopedCallers:Profiles:1:Subject"] = "reader",
+                ["Erp:MachineOverheadReconciliation:ScopedCallers:Profiles:1:OrganizationId"] = "org-test",
+                ["Erp:MachineOverheadReconciliation:ScopedCallers:Profiles:1:EnvironmentId"] = "env-test",
+                ["Erp:MachineOverheadReconciliation:ScopedCallers:Profiles:1:Permissions:0"] = "business.erp.finance.read",
+            }));
+        });
+        using var client = factory.CreateClient();
+        await using (var setup = factory.Services.CreateAsyncScope())
+        {
+            var db = setup.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            ErpPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
+            await db.Database.MigrateAsync();
+            foreach (var (org, env, period) in new[]
+            {
+                ("org-test", "env-test", "2026-06"), ("other-org", "env-test", "2026-06"),
+                ("org-test", "other-env", "2026-06"), ("org-test", "env-test", "2026-07"),
+            })
+                db.AccountingPeriods.Add(AccountingPeriod.Open(org, env, period, new(2026, 6, 1), new(2026, 6, 30)));
+            foreach (var (org, env, wc, period) in new[]
+            {
+                ("other-org", "env-test", "WC-HTTP", "2026-06"),
+                ("org-test", "other-env", "WC-HTTP", "2026-06"),
+                ("org-test", "env-test", "OTHER-WC", "2026-06"),
+                ("org-test", "env-test", "WC-HTTP", "2026-07"),
+            })
+                db.WorkCenterMachineOverheadRates.Add(WorkCenterMachineOverheadRate.DefineApplicable(
+                    org, env, wc, period, 99000m, 1000m, 1000m, "CNY", 99,
+                    "system:test", "scope distractor", new(2026, 5, 1, 0, 0, 0, TimeSpan.Zero)));
+            await db.SaveChangesAsync();
+        }
+
+        var body = new Dictionary<string, object>
+        {
+            ["workCenterId"] = "WC-HTTP", ["accountingPeriodCode"] = "2026-06",
+            ["applicability"] = 0, ["fixedOverheadBudget"] = 30000m,
+            ["variableOverheadBudget"] = 10000m, ["normalCapacityMachineHours"] = 1000m,
+            ["currencyCode"] = "CNY", ["reason"] = "monthly budget",
+        };
+        var query = "?workCenterId=WC-HTTP&accountingPeriodCode=2026-06";
+        foreach (var uri in new[] { RateRoute + query, RateRoute + "/current" + query })
+        {
+            await ExpectStatus(HttpMethod.Get, uri, HttpStatusCode.Unauthorized, token: "test-general-token");
+            await ExpectStatus(HttpMethod.Get, uri, HttpStatusCode.Forbidden, organization: "other-org");
+            await ExpectStatus(HttpMethod.Get, uri, HttpStatusCode.Forbidden, environment: "other-env");
+            await ExpectStatus(HttpMethod.Get, uri, HttpStatusCode.BadRequest, organization: null);
+        }
+        await ExpectStatus(HttpMethod.Post, RateRoute, HttpStatusCode.Forbidden, token: "reader-token");
+        await ExpectStatus(HttpMethod.Post, RateRoute, HttpStatusCode.Forbidden, organization: "other-org");
+        await ExpectStatus(HttpMethod.Post, RateRoute, HttpStatusCode.Forbidden, environment: "other-env");
+        await ExpectStatus(HttpMethod.Post, RateRoute, HttpStatusCode.BadRequest, environment: null);
+
+        foreach (var injected in new[] { "fixedHourlyRate", "variableHourlyRate", "totalHourlyRate", "changedBy", "changedAtUtc" })
+        {
+            body[injected] = 999;
+            await ExpectStatus(HttpMethod.Post, RateRoute, HttpStatusCode.BadRequest);
+            body.Remove(injected);
+        }
+        var missing = await Send(HttpMethod.Get, RateRoute + "/current" + query);
+        Assert.False(missing.GetProperty("success").GetBoolean());
+        body["accountingPeriodCode"] = "missing-period";
+        Assert.False((await Send(HttpMethod.Post, RateRoute)).GetProperty("success").GetBoolean());
+        body["accountingPeriodCode"] = "2026-06";
+        Assert.True((await Send(HttpMethod.Post, RateRoute)).GetProperty("success").GetBoolean());
+        body["currencyCode"] = "USD";
+        Assert.False((await Send(HttpMethod.Post, RateRoute)).GetProperty("success").GetBoolean());
+        body["currencyCode"] = "CNY";
+        body["fixedOverheadBudget"] = 31000m;
+        body["reason"] = "revised budget";
+        Assert.True((await Send(HttpMethod.Post, RateRoute)).GetProperty("success").GetBoolean());
+
+        var audit = (await Send(HttpMethod.Get, RateRoute + query, "reader-token")).GetProperty("data");
+        Assert.Equal(2, audit.GetProperty("totalCount").GetInt32());
+        Assert.Equal(2, audit.GetProperty("currentRevision").GetInt32());
+        Assert.Equal(new[] { 2, 1 }, audit.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("revision").GetInt32()));
+        var current = (await Send(HttpMethod.Get, RateRoute + "/current" + query)).GetProperty("data");
+        Assert.Equal(2, current.GetProperty("revision").GetInt32());
+        Assert.Equal(31000m, current.GetProperty("fixedOverheadBudget").GetDecimal());
+        Assert.Equal(10000m, current.GetProperty("variableOverheadBudget").GetDecimal());
+        Assert.Equal(1000m, current.GetProperty("normalCapacityMachineHours").GetDecimal());
+        Assert.Equal(31m, current.GetProperty("fixedHourlyRate").GetDecimal());
+        Assert.Equal(10m, current.GetProperty("variableHourlyRate").GetDecimal());
+        Assert.Equal(41m, current.GetProperty("totalHourlyRate").GetDecimal());
+        Assert.Equal("CNY", current.GetProperty("currencyCode").GetString());
+        Assert.Equal("revised budget", current.GetProperty("reason").GetString());
+        Assert.Equal("internal-service:test-finance-reconciliation", current.GetProperty("changedBy").GetString());
+        Assert.NotEqual(default, current.GetProperty("changedAtUtc").GetDateTimeOffset());
+        Assert.Equal(1, (await Send(HttpMethod.Get, RateRoute + query + "&pageNumber=2&pageSize=1"))
+            .GetProperty("data").GetProperty("items")[0].GetProperty("revision").GetInt32());
+
+        body["applicability"] = 1;
+        body["fixedOverheadBudget"] = 0m;
+        body["variableOverheadBudget"] = 0m;
+        body["normalCapacityMachineHours"] = 0m;
+        Assert.True((await Send(HttpMethod.Post, RateRoute)).GetProperty("success").GetBoolean());
+        current = (await Send(HttpMethod.Get, RateRoute + "/current" + query)).GetProperty("data");
+        Assert.Equal(3, current.GetProperty("revision").GetInt32());
+        Assert.Equal(1, current.GetProperty("applicability").GetInt32());
+        Assert.Equal(0m, current.GetProperty("totalHourlyRate").GetDecimal());
+
+        using var openApi = JsonDocument.Parse(await client.GetStringAsync("/swagger/v1/swagger.json"));
+        var paths = openApi.RootElement.GetProperty("paths");
+        Assert.Equal("configureErpWorkCenterMachineOverheadRate", paths.GetProperty(RateRoute).GetProperty("post").GetProperty("operationId").GetString());
+        Assert.Equal("listErpWorkCenterMachineOverheadRates", paths.GetProperty(RateRoute).GetProperty("get").GetProperty("operationId").GetString());
+        Assert.Equal("getCurrentErpWorkCenterMachineOverheadRate", paths.GetProperty(RateRoute + "/current").GetProperty("get").GetProperty("operationId").GetString());
+        var schemas = openApi.RootElement.GetProperty("components").GetProperty("schemas");
+        var requestProperties = schemas.EnumerateObject().Single(x => x.Name.EndsWith("ConfigureWorkCenterMachineOverheadRateRequest", StringComparison.Ordinal))
+            .Value.GetProperty("properties");
+        var responseProperties = schemas.EnumerateObject().Single(x => x.Name.EndsWith("WorkCenterMachineOverheadRateListItem", StringComparison.Ordinal)
+            && x.Value.TryGetProperty("properties", out var properties) && properties.TryGetProperty("revision", out _))
+            .Value.GetProperty("properties");
+        foreach (var field in new[] { "fixedOverheadBudget", "variableOverheadBudget", "normalCapacityMachineHours", "currencyCode", "applicability", "reason" })
+        {
+            Assert.True(requestProperties.TryGetProperty(field, out _), field);
+            Assert.True(responseProperties.TryGetProperty(field, out _), field);
+        }
+        foreach (var field in new[] { "fixedHourlyRate", "variableHourlyRate", "totalHourlyRate", "revision", "changedBy", "changedAtUtc" })
+        {
+            Assert.False(requestProperties.TryGetProperty(field, out _), field);
+            Assert.True(responseProperties.TryGetProperty(field, out _), field);
+        }
+        Assert.Equal(new[] { 0, 1 }, schemas.EnumerateObject().Single(x => x.Name.EndsWith("MachineOverheadApplicability", StringComparison.Ordinal)).Value
+            .GetProperty("enum").EnumerateArray().Select(x => x.GetInt32()));
+        await using var verify = factory.Services.CreateAsyncScope();
+        var persisted = verify.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Equal(3, await persisted.WorkCenterMachineOverheadRates.CountAsync(x => x.OrganizationId == "org-test"
+            && x.EnvironmentId == "env-test" && x.WorkCenterId == "WC-HTTP" && x.AccountingPeriodCode == "2026-06"));
+        Assert.Empty(await persisted.OperationMachineOverheadSettlements.ToListAsync());
+
+        async Task<JsonElement> Send(HttpMethod method, string uri, string token = "test-erp-machine-overhead-token")
+        {
+            using var request = Request(method, uri, token, "org-test", "env-test");
+            using var response = await client.SendAsync(request);
+            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            return json.RootElement.Clone();
+        }
+        async Task ExpectStatus(HttpMethod method, string uri, HttpStatusCode status,
+            string token = "test-erp-machine-overhead-token", string? organization = "org-test", string? environment = "env-test")
+        {
+            using var request = Request(method, uri, token, organization, environment);
+            using var response = await client.SendAsync(request);
+            Assert.Equal(status, response.StatusCode);
+        }
+        HttpRequestMessage Request(HttpMethod method, string uri, string token, string? organization, string? environment)
+        {
+            var request = new HttpRequestMessage(method, uri);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            if (organization is not null) request.Headers.Add("X-Organization-Id", organization);
+            if (environment is not null) request.Headers.Add("X-Environment-Id", environment);
+            if (method == HttpMethod.Post) request.Content = JsonContent.Create(body);
+            return request;
+        }
+    }
+
     [ErpCostPostgresFact(Timeout = 30_000)]
     public async Task Concurrent_commands_serialize_revision_allocation_on_postgres()
     {
@@ -175,7 +353,7 @@ public sealed class WorkCenterMachineOverheadRatePostgresAcceptanceTests
             new ListWorkCenterMachineOverheadRatesQuery("org-pg", "env-pg", "WC-PG", "2026-06"),
             CancellationToken.None);
         Assert.Equal(1, audit.CurrentRevision);
-        Assert.Equal("Applicable", Assert.Single(audit.Items).Applicability);
+        Assert.Equal(MachineOverheadApplicability.Applicable, Assert.Single(audit.Items).Applicability);
 
         db.WorkCenterMachineOverheadRates.AddRange(
             WorkCenterMachineOverheadRate.DefineApplicable(
@@ -424,8 +602,8 @@ public sealed class WorkCenterMachineOverheadRatePostgresAcceptanceTests
         var fractional = WorkCenterMachineOverheadReconciliation.Record(
             "org-pg", "env-pg", "WC-PG", "2026-06",
             reconciliationRate.Id, reconciliationRate.Revision, "CNY",
-            1.0000005m, 2.0000005m, 1,
-            0.1000005m, 0.2000005m, 0.3000015m,
+            1.0000005m, 2.0000015m, 1,
+            0.1000005m, 0.2000015m, 0.3000035m,
             1, AbnormalDowntimeDisposition.PeriodExpense,
             2, "system:test", "ledger:fractional", "provider precision proof",
             new DateTimeOffset(2026, 6, 30, 17, 0, 0, TimeSpan.Zero));
@@ -433,8 +611,23 @@ public sealed class WorkCenterMachineOverheadRatePostgresAcceptanceTests
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
         var fractionalReadback = await db.WorkCenterMachineOverheadReconciliations.SingleAsync(x => x.Id == fractional.Id);
-        Assert.Equal(1.000001m, fractionalReadback.ActualFixedOverheadAmount);
+        Assert.Equal(1.000000m, fractionalReadback.ActualFixedOverheadAmount);
+        Assert.Equal(2.000002m, fractionalReadback.ActualVariableOverheadAmount);
         Assert.Equal(3.000002m, fractionalReadback.ActualTotalOverheadAmount);
+        Assert.Equal(0.100000m, fractionalReadback.AppliedFixedAmount);
+        Assert.Equal(0.200002m, fractionalReadback.AppliedVariableAmount);
+        Assert.Equal(0.300004m, fractionalReadback.AppliedTotalAmount);
+        Assert.Equal(0.000002m, fractionalReadback.AppliedRoundingDifferenceAmount);
+        Assert.Equal(0.900000m, fractionalReadback.UnderOverAppliedFixedAmount);
+        Assert.Equal(1.800000m, fractionalReadback.UnderOverAppliedVariableAmount);
+        Assert.Equal(2.699998m, fractionalReadback.UnderOverAppliedTotalAmount);
+        Assert.Equal(0.900000m, fractionalReadback.UnallocatedFixedOverheadAmount);
+        Assert.Equal(0m, fractionalReadback.OverAppliedFixedOverheadAmount);
+        Assert.Equal(
+            fractionalReadback.AppliedTotalAmount,
+            fractionalReadback.AppliedFixedAmount
+                + fractionalReadback.AppliedVariableAmount
+                + fractionalReadback.AppliedRoundingDifferenceAmount);
         Assert.Equal(0.000000000028m, fractionalReadback.AppliedMachineHours);
         Assert.Equal(0.000000000028m, fractionalReadback.AbnormalDowntimeHours);
 

@@ -2,6 +2,7 @@
 #   Category: verify
 #   SideEffects:
 #     - Builds and publishes two temporary Aspire Docker Compose artifacts
+#     - Validates environment-gated BarcodeLabel printer configuration and its FileStorage endpoint
 #   Writes:
 #     - A uniquely owned temporary directory under the system temporary directory
 #     - artifacts/script-logs/**
@@ -101,6 +102,55 @@ function Assert-EnvironmentArtifact {
             if ($service.Value[$profile.Key] -ne $profile.Value.Value) { throw "Service '$($service.Key)' has $($profile.Key)='$($service.Value[$profile.Key])', expected '$($profile.Value.Value)'." }
         }
     }
+
+    # #3097：tus 盘承载已 complete 文件的字节，生成产物必须给 FileStorage 一个容器内绝对路径并挂命名卷；
+    # 系统 temp 或容器可写层不是持久落点（ADR 0024 §5）。
+    $fileStorage = $Services['file-storage']
+    if (-not [string]::Equals([string] $fileStorage['FileStorage__UploadProvider'], 'tus', [StringComparison]::Ordinal)) {
+        throw "Published FileStorage must select the tus upload provider; observed '$($fileStorage['FileStorage__UploadProvider'])'."
+    }
+    $tusRootPath = [string] $fileStorage['FileStorage__Tus__RootPath']
+    if (-not $tusRootPath.StartsWith('/home/app/', [StringComparison]::Ordinal)) {
+        throw "Published FileStorage must place FileStorage__Tus__RootPath under the app-owned volume mount; observed '$tusRootPath'."
+    }
+
+    if (-not $Services.ContainsKey('business-barcode-label')) {
+        throw 'Published artifact is missing the business-barcode-label resource.'
+    }
+
+    $barcodeLabel = $Services['business-barcode-label']
+    if (-not [string]::Equals([string] $barcodeLabel['FileStorage__BaseUrl'], 'http://file-storage:${FILE_STORAGE_PORT}', [StringComparison]::Ordinal)) {
+        throw "BusinessBarcodeLabel must consume the generated FileStorage endpoint; observed '$($barcodeLabel['FileStorage__BaseUrl'])'."
+    }
+
+    if ([string]::Equals($EnvironmentName, 'Development', [StringComparison]::Ordinal)) {
+        if (-not [string]::Equals([string] $barcodeLabel['LabelPrinter__Mode'], 'simulated', [StringComparison]::Ordinal)) {
+            throw "Development BusinessBarcodeLabel must select simulated printing explicitly; observed '$($barcodeLabel['LabelPrinter__Mode'])'."
+        }
+
+        if ($barcodeLabel.ContainsKey('LabelPrinter__Printers__0__Host')) {
+            throw 'Development BusinessBarcodeLabel must not publish a real printer route.'
+        }
+    }
+    else {
+        $expectedPrinterRoute = @{
+            'LabelPrinter__Mode' = 'zpl-tcp'
+            'LabelPrinter__Printers__0__Id' = '${BARCODE_LABEL_PRINTER_ID}'
+            'LabelPrinter__Printers__0__Host' = '${BARCODE_LABEL_PRINTER_HOST}'
+            'LabelPrinter__Printers__0__Port' = '${BARCODE_LABEL_PRINTER_PORT}'
+            'LabelPrinter__Printers__0__ConnectTimeoutSeconds' = '${BARCODE_LABEL_PRINTER_CONNECT_TIMEOUT_SECONDS}'
+            'LabelPrinter__Printers__0__WriteTimeoutSeconds' = '${BARCODE_LABEL_PRINTER_WRITE_TIMEOUT_SECONDS}'
+            'LabelPrinter__Printers__0__Dpi' = '${BARCODE_LABEL_PRINTER_DPI}'
+            'LabelPrinter__Printers__0__Language' = 'zpl'
+            'LabelPrinter__Printers__0__Capabilities' = '${BARCODE_LABEL_PRINTER_CAPABILITIES}'
+            'LabelPrinter__Printers__0__Enabled' = 'true'
+        }
+        foreach ($entry in $expectedPrinterRoute.GetEnumerator()) {
+            if (-not [string]::Equals([string] $barcodeLabel[$entry.Key], [string] $entry.Value, [StringComparison]::Ordinal)) {
+                throw "Production BusinessBarcodeLabel has $($entry.Key)='$($barcodeLabel[$entry.Key])', expected '$($entry.Value)'."
+            }
+        }
+    }
 }
 
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-iip-apphost-environment-artifacts-$([Guid]::NewGuid().ToString('N'))"
@@ -125,8 +175,16 @@ try {
         $composePath = Join-Path $outputPath 'docker-compose.yaml'
         if (-not (Test-Path -LiteralPath $composePath -PathType Leaf)) { throw "Aspire publish did not produce $composePath." }
         Assert-EnvironmentArtifact -Services (Get-ComposeProjectEnvironments -ComposePath $composePath) -EnvironmentName $environmentName
+        $composeText = [IO.File]::ReadAllText($composePath)
+        if ($composeText -notmatch '(?m)^\s+- type: "volume"\s*\n\s+target: "/home/app"\s*\n\s+source: "nerv-iip-file-storage"' -and
+            $composeText -notmatch '(?m)^\s+- "nerv-iip-file-storage:/home/app"') {
+            throw 'Published FileStorage service must mount the nerv-iip-file-storage volume at /home/app.'
+        }
+        if ($composeText -notmatch '(?m)^volumes:(?:.*\n)+?\s+nerv-iip-file-storage:') {
+            throw 'Published Compose artifact must declare the nerv-iip-file-storage volume.'
+        }
     }
-    Write-Diagnostic 'Aspire Development and Production Compose artifacts preserve the environment, migration, and seed profiles.'
+    Write-Diagnostic 'Aspire Development and Production Compose artifacts preserve environment, migration, seed, BarcodeLabel printer, and FileStorage endpoint profiles.'
 }
 finally {
     if (Test-Path -LiteralPath $temporaryRoot) { Remove-Item -LiteralPath $temporaryRoot -Recurse -Force }

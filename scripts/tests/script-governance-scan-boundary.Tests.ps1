@@ -25,7 +25,7 @@ $bindingHelper = Join-Path $repoRoot 'scripts/lib/ScriptVariableBinding.ps1'
 # scan wholesale, so ForbiddenCommand / DynamicInvocation / ForbiddenProcessStart were not enforced
 # on the shared libraries at all. The ruling — libraries are scanned under a declared library scope,
 # with MissingHelper dropped and DynamicInvocation narrowed to the injected-action seam — is written
-# up in docs/architecture/script-automation-governance.md and guarded here, executably.
+# up in docs/governance/script-automation.md and guarded here, executably.
 #
 # Three guards, because a documented boundary with no test is just a comment:
 #   1. the exclusion list is asserted verbatim, so widening it is a change to a named contract;
@@ -94,7 +94,7 @@ $expectedExclusions = @('scripts/check-script-governance.ps1', 'scripts/lib/Scri
 # Ordinal, per the #1507 ruling: `-cne` is still culture-aware, so two exclusion lists differing only
 # by an ignorable character would compare equal and this contract would miss the widening.
 if (-not [string]::Equals(($declaredExclusions -join '|'), ($expectedExclusions -join '|'), [StringComparison]::Ordinal)) {
-    throw "Script governance scan boundary changed: expected [$($expectedExclusions -join ', ')], found [$($declaredExclusions -join ', ')]. Update docs/architecture/script-automation-governance.md and this contract together."
+    throw "Script governance scan boundary changed: expected [$($expectedExclusions -join ', ')], found [$($declaredExclusions -join ', ')]. Update docs/governance/script-automation.md and this contract together."
 }
 
 # Guard 2, against the real tree: every scripts/lib file except the wrapper must survive the
@@ -169,7 +169,7 @@ $dispatchedLeftTypes = @(
 )
 $expectedDispatchedLeftTypes = @('ArrayLiteralAst', 'AttributedExpressionAst', 'ParenExpressionAst', 'VariableExpressionAst')
 if (-not [string]::Equals(($dispatchedLeftTypes -join '|'), ($expectedDispatchedLeftTypes -join '|'), [StringComparison]::Ordinal)) {
-    throw "Get-SeamAssignmentTargets dispatches on [$($dispatchedLeftTypes -join ', ')]; the ruling in docs/architecture/script-automation-governance.md says [$($expectedDispatchedLeftTypes -join ', ')]. Change both together."
+    throw "Get-SeamAssignmentTargets dispatches on [$($dispatchedLeftTypes -join ', ')]; this contract expects [$($expectedDispatchedLeftTypes -join ', ')]. Review the implementation and this contract together; historical rationale: docs/reports/audits/script-automation-governance-evolution-2026-08.md."
 }
 if (-not [System.Management.Automation.Language.ConvertExpressionAst].IsSubclassOf([System.Management.Automation.Language.AttributedExpressionAst])) {
     throw 'ConvertExpressionAst is no longer an AttributedExpressionAst; `[string] $a = …` now needs its own branch in Get-SeamAssignmentTargets.'
@@ -202,7 +202,7 @@ foreach ($spelling in $leftShapeCorpus) {
 }
 $expectedLeftTypes = @('ArrayLiteralAst', 'AttributedExpressionAst', 'ConvertExpressionAst', 'IndexExpressionAst', 'MemberExpressionAst', 'ParenExpressionAst', 'VariableExpressionAst')
 if (-not [string]::Equals((@($observedLeftTypes) -join '|'), ($expectedLeftTypes -join '|'), [StringComparison]::Ordinal)) {
-    throw "AssignmentStatementAst.Left shapes measured on PowerShell $($PSVersionTable.PSVersion): [$(@($observedLeftTypes) -join ', ')]; the ruling enumerates [$($expectedLeftTypes -join ', ')]. Rule on the difference in Get-SeamAssignmentTargets and docs/architecture/script-automation-governance.md."
+    throw "AssignmentStatementAst.Left shapes measured on PowerShell $($PSVersionTable.PSVersion): [$(@($observedLeftTypes) -join ', ')]; this contract expects [$($expectedLeftTypes -join ', ')]. Rule on the difference in Get-SeamAssignmentTargets and this contract; historical rationale: docs/reports/audits/script-automation-governance-evolution-2026-08.md."
 }
 foreach ($observedLeftType in @($observedLeftTypes)) {
     $observedType = [System.Management.Automation.Language.AssignmentStatementAst].Assembly.GetType("System.Management.Automation.Language.$observedLeftType")
@@ -997,7 +997,7 @@ function Invoke-FixtureCrossScopeAction {
     $expectedBinderCollectionParameters = @(
         'Set-Variable.Exclude', 'Set-Variable.Include', 'Set-Variable.Name')
     if (-not [string]::Equals((@($binderCollectionParameters) -join '|'), ($expectedBinderCollectionParameters -join '|'), [StringComparison]::Ordinal)) {
-        throw "Binder cmdlet collection-typed parameters on PowerShell $($PSVersionTable.PSVersion): [$(@($binderCollectionParameters) -join ', ')]; the round-8 ruling in docs/architecture/script-automation-governance.md enumerates [$($expectedBinderCollectionParameters -join ', ')]. Rule on the difference: any parameter the checker reads a value from must expand array shapes."
+        throw "Binder cmdlet collection-typed parameters on PowerShell $($PSVersionTable.PSVersion): [$(@($binderCollectionParameters) -join ', ')]; this contract expects [$($expectedBinderCollectionParameters -join ', ')]. Rule on the difference: any parameter the checker reads a value from must expand array shapes. Historical rationale: docs/reports/audits/script-automation-governance-evolution-2026-08.md."
     }
     # The two halves of the ruling, stated as the measurement they rest on rather than as prose: the
     # multi-name fixtures above are only reachable because Set-Variable's -Name is plural, and the
@@ -1040,7 +1040,7 @@ function Invoke-FixtureCrossScopeAction {
     $expectedDispatchedNameArgumentTypes = @(
         'ArrayExpressionAst', 'ArrayLiteralAst', 'ParenExpressionAst', 'StringConstantExpressionAst', 'SubExpressionAst')
     if (-not [string]::Equals(($dispatchedNameArgumentTypes -join '|'), ($expectedDispatchedNameArgumentTypes -join '|'), [StringComparison]::Ordinal)) {
-        throw "Get-NervScriptVariableBinderLiteralNames dispatches on [$($dispatchedNameArgumentTypes -join ', ')]; the ruling in docs/architecture/script-automation-governance.md says [$($expectedDispatchedNameArgumentTypes -join ', ')]. Change both together."
+        throw "Get-NervScriptVariableBinderLiteralNames dispatches on [$($dispatchedNameArgumentTypes -join ', ')]; this contract expects [$($expectedDispatchedNameArgumentTypes -join ', ')]. Review the implementation and this contract together; historical rationale: docs/reports/audits/script-automation-governance-evolution-2026-08.md."
     }
     # …and the shapes really are what the parser produces for those spellings, so the dispatch set is
     # pinned to measured AST types rather than to remembered ones.
@@ -1108,7 +1108,7 @@ function Invoke-FixtureCrossScopeAction {
     )
     $expectedBinderCanonicalNames = @('Set-Variable', 'New-Variable')
     if (-not [string]::Equals(($declaredBinderCanonicalNames -join '|'), ($expectedBinderCanonicalNames -join '|'), [StringComparison]::Ordinal)) {
-        throw "Binder cmdlet set changed: expected [$($expectedBinderCanonicalNames -join ', ')], found [$($declaredBinderCanonicalNames -join ', ')]. Update docs/architecture/script-automation-governance.md and this contract together."
+        throw "Binder cmdlet set changed: expected [$($expectedBinderCanonicalNames -join ', ')], found [$($declaredBinderCanonicalNames -join ', ')]. Review scripts/lib/ScriptVariableBinding.ps1 and this contract together; rule changes also require docs/governance/script-automation.md."
     }
     $aliasDiscoveries = @(
         $bindingHelperAst.FindAll({

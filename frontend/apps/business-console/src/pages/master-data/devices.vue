@@ -311,7 +311,7 @@ const canCreateDevice = computed(
     !currencyValidationMessage.value &&
     !componentValidationMessage.value,
 )
-const listErrorMessage = computed(() => formatError(devices.error.value))
+const listErrorMessage = computed(() => inlineErrorMessage(devices.error.value))
 const currencyValidationMessage = computed(() => {
   const code = createForm.purchaseCurrencyCode.trim()
   if (!code) return ''
@@ -344,9 +344,6 @@ function rowKey(item: BusinessConsoleResourceItem) {
 }
 function isNonEmpty(value: string) {
   return value.trim().length > 0
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 function formatMoney(value?: number | null, currency?: string | null) {
   if (value == null) return '无'

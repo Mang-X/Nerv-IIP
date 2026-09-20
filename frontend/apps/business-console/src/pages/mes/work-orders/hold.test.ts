@@ -40,6 +40,16 @@ const detailState = vi.hoisted(() => ({
   workOrders: [] as Array<Record<string, unknown>>,
 }))
 
+vi.mock('@/composables/mes/useProductionReportSerialOptions', () => ({
+  useProductionReportSerialOptions: () => ({
+    serialPolicy: ref('none'),
+    labelTemplates: ref([]),
+    serialOptionsReady: ref(true),
+    serialOptionsPending: ref(false),
+    refreshSerialOptions: vi.fn(),
+  }),
+}))
+
 vi.mock('@/composables/useBusinessMes', () => ({
   makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
   // #1288 工具栏作业范围选择入口（MesWorkScopeSelect）
@@ -56,6 +66,8 @@ vi.mock('@/composables/useBusinessMes', () => ({
   }),
   useMesProductionReporting: () => ({
     recordProductionReport: vi.fn(),
+    restoreProductionReport: vi.fn(),
+    readProductionPrintStatus: vi.fn(),
     recordProductionReportError: ref(undefined),
     recordProductionReportPending: ref(false),
   }),
@@ -95,6 +107,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     filters: reactive({ organizationId: 'org', environmentId: 'dev', workOrderId: 'WO-1' }),
     finishedGoodsReceiptRequests: ref([]),
     materialIssueRequests: ref([]),
+    materialIssueRequestsError: ref(undefined),
     materialReadiness: ref({ items: [], readinessStatus: 'Ready', blockingReasons: [] }),
     materialReadinessError: ref(undefined),
     materialReadinessPending: ref(false),
@@ -351,7 +364,7 @@ describe('work-order list — quality hold lock icon', () => {
           NvSelectTrigger: { template: '<button><slot /></button>' },
           NvSelectContent: { template: '<div><slot /></div>' },
           NvSelectItem: { props: ['value'], template: '<div><slot /></div>' },
-          SelectValue: { template: '<span />' },
+          NvSelectValue: { template: '<span />' },
           NvInput: { template: '<input />' },
           RouterLink: { props: ['to'], template: '<a><slot /></a>' },
         },

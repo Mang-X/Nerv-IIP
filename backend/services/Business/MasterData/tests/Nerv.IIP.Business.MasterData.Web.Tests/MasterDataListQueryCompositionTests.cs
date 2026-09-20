@@ -66,6 +66,9 @@ public sealed class MasterDataListQueryCompositionTests
             new ListMasterDataResourcesQuery(organizationId, environmentId, "sku"));
 
         Assert.False(result.IsValid);
-        Assert.Contains(result.Errors, error => error.PropertyName is "OrganizationId" or "EnvironmentId");
+        // 断 ErrorMessage 而不是 PropertyName：后者由 ValidatorOptions.Global.PropertyNameResolver 决定，
+        // app.UseFastEndpoints(...) 启动时会把它换成 camelCase 并且不还原，于是断言随执行顺序时红时绿（#3342）。
+        // AddTenantRules 用 WithMessage 钉死了这两句文案、模板不含 {PropertyName} 占位符，故不受解析器影响。
+        Assert.Contains(result.Errors, error => error.ErrorMessage is "组织标识不能为空。" or "环境标识不能为空。");
     }
 }

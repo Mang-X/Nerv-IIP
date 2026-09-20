@@ -63,7 +63,6 @@ const stubs = {
   SelectContent: { template: '<div><slot /></div>' },
   SelectItem: { template: '<span><slot /></span>' },
   SelectTrigger: { template: '<button type="button"><slot /></button>' },
-  SelectValue: { template: '<span />' },
 }
 
 function mountSheet() {

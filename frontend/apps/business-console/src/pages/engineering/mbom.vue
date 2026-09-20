@@ -26,6 +26,7 @@ import {
   NvDialogTitle,
   NvDialogTrigger,
   NvField,
+  NvFieldDescription,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
@@ -173,7 +174,7 @@ const mbomSegments = computed(() => {
   return pagedBreakdownSegments(mbomsTotal.value, segments)
 })
 
-const listErrorMessage = computed(() => formatError(mbomsError.value))
+const listErrorMessage = computed(() => inlineErrorMessage(mbomsError.value))
 
 const columns: NvDataTableColumn<BusinessConsoleManufacturingBomItem>[] = [
   { key: 'bomCode', header: 'BOM 编号', cellClass: 'font-medium' },
@@ -402,10 +403,6 @@ async function openView(row: BusinessConsoleManufacturingBomItem) {
     detailPending.value = false
   }
 }
-
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
 function formatScrap(rate?: number | null) {
   if (rate == null) return '—'
   return `${(rate * 100).toFixed(1)}%`
@@ -522,9 +519,10 @@ function uomLabel(code?: string | null) {
                     v-model="form.revision"
                     :suggestions="takenRevisions"
                     :disabled="!form.skuCode || takenRevisionsPending"
-                    :placeholder="form.skuCode ? '填写新修订号，如 A、B、001' : '请先选产出物料'"
+                    :placeholder="form.skuCode ? '填写新修订号' : '请先选产出物料'"
                     empty-text="该物料还没有历史修订"
                   />
+                  <NvFieldDescription>例如 A、B、001。</NvFieldDescription>
                   <p v-if="revisionTaken" class="text-sm text-destructive" role="alert">
                     修订号「{{ form.revision.trim() }}」已存在，请换一个新号。
                   </p>

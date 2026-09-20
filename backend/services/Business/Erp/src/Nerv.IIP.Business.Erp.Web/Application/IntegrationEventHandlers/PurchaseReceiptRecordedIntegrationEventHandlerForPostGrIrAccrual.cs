@@ -1,9 +1,11 @@
 using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Infrastructure.IntegrationEvents;
+using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Contracts.Erp;
@@ -16,7 +18,8 @@ namespace Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Erp.PurchaseReceiptRecordedIntegrationEvent", ConsumerName)]
 public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual(
     ApplicationDbContext dbContext,
-    IIntegrationEventDeadLetterStore deadLetterStore)
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    ErpCodingService codingService)
     : IIntegrationEventHandler<PurchaseReceiptRecordedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-erp.purchase-receipt-ap-accrual";
@@ -77,14 +80,15 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAcc
             return;
         }
 
-        var order = await dbContext.PurchaseOrders
+        var hasLegacyLines = receipt.Lines.Any(x => x.UnitPrice is null);
+        var order = hasLegacyLines ? await dbContext.PurchaseOrders
             .Include(x => x.Lines)
             .SingleOrDefaultAsync(x =>
                 x.OrganizationId == receipt.OrganizationId
                 && x.EnvironmentId == receipt.EnvironmentId
                 && x.PurchaseOrderNo == receipt.PurchaseOrderNo,
-                cancellationToken);
-        if (order is null)
+                cancellationToken) : null;
+        if (hasLegacyLines && order is null)
         {
             await DeadLetterAsync(
                 integrationEvent,
@@ -125,17 +129,45 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAcc
             return;
         }
 
-        if (!await ErpProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
+        // #3278 / S5：查重键从凭证号搬到来源两列。这两个值必须与
+        // FinanceVoucherFactory.ForGoodsReceiptIrAccrual 落库时盖的来源身份**同源**，
+        // 否则查重与写入各认各的键，重放会静默再记一张。
+        var sourceType = JournalVoucherSourceType.GoodsReceiptIrAccrual.Code;
+        var sourceNo = receipt.PurchaseReceiptNo;
+        if (await dbContext.JournalVouchers.AnyAsync(x =>
+            x.OrganizationId == receipt.OrganizationId
+            && x.EnvironmentId == receipt.EnvironmentId
+            && x.SourceType == sourceType
+            && x.SourceNo == sourceNo,
+            cancellationToken))
         {
             return;
         }
 
-        var voucherNo = FinanceVoucherFactory.GoodsReceiptIrAccrualVoucherNo(receipt.PurchaseReceiptNo);
-        if (await dbContext.JournalVouchers.AnyAsync(x =>
-            x.OrganizationId == receipt.OrganizationId
-            && x.EnvironmentId == receipt.EnvironmentId
-            && x.VoucherNo == voucherNo,
-            cancellationToken))
+        // #3278 / S7：凭证号改分配器短号。
+        // ⭐ 顺序故意改成「查重 → 分配 → 记 inbox → 建凭证」：
+        // 本 handler 的其余死信路径全部在 inbox 之前，新增的分配失败路径也跟着放在前面，
+        // 分配失败时本次不写 inbox，重投仍可重试。
+        // 行为差：同一来源已有凭证的重投事件现在不再进 inbox（之前会）——
+        // 两者结果相同（不再记第二张），只是少了一行已处理记录。
+        var voucherAllocation = await ConsumerJournalVoucherNumber.TryAllocateAsync(
+            codingService,
+            receipt.OrganizationId,
+            receipt.EnvironmentId,
+            JournalVoucherSourceType.GoodsReceiptIrAccrual,
+            receipt.PurchaseReceiptNo,
+            cancellationToken);
+        if (voucherAllocation.Code is null)
+        {
+            await DeadLetterAsync(
+                integrationEvent,
+                ConsumerJournalVoucherNumber.AllocationFailureCode,
+                voucherAllocation.FailureMessage,
+                cancellationToken);
+            return;
+        }
+
+        if (!await ErpProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
         {
             return;
         }
@@ -143,12 +175,12 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAcc
         dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForGoodsReceiptIrAccrual(
             receipt,
             amount,
-            voucherNo));
+            voucherAllocation.Code));
     }
 
     private static ReceiptAccrualDecision TryCalculateReceiptAmount(
         PurchaseReceipt receipt,
-        PurchaseOrder order,
+        PurchaseOrder? order,
         out decimal amount,
         out string failureCode,
         out string failureMessage)
@@ -156,7 +188,7 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAcc
         amount = 0m;
         failureCode = string.Empty;
         failureMessage = string.Empty;
-        var orderLines = order.Lines.ToDictionary(x => x.LineNo, StringComparer.Ordinal);
+        var orderLines = order?.Lines.ToDictionary(x => x.LineNo, StringComparer.Ordinal);
         foreach (var receiptLine in receipt.Lines)
         {
             if (!IsPayableQuality(receiptLine.QualityStatus))
@@ -166,7 +198,14 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAcc
                 return ReceiptAccrualDecision.Failed;
             }
 
-            if (!orderLines.TryGetValue(receiptLine.PurchaseOrderLineNo, out var orderLine))
+            if (receiptLine.UnitPrice is { } frozenUnitPrice)
+            {
+                amount += receiptLine.ReceivedQuantity * frozenUnitPrice;
+                continue;
+            }
+
+            // 只有迁移前未冻结单价的旧行才沿用 PO 定价；调用方已保证旧记录订单存在。
+            if (!orderLines!.TryGetValue(receiptLine.PurchaseOrderLineNo, out var orderLine))
             {
                 failureCode = "missing-source-facts";
                 failureMessage = $"Purchase order line '{receiptLine.PurchaseOrderLineNo}' was not found for receipt '{receipt.PurchaseReceiptNo}'.";

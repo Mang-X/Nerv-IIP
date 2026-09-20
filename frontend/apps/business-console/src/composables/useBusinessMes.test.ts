@@ -7,7 +7,6 @@ import {
   closeBusinessConsoleMesWorkOrderMutationOptions,
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   createBusinessConsoleMesRushWorkOrderMutationOptions,
-  createBusinessConsoleSopFileDownloadGrantMutationOptions,
   getBusinessConsoleMesBatchTraceabilityQueryOptions,
   getBusinessConsoleMesCurrentOperationSopsQueryOptions,
   getBusinessConsoleMesFoundationReadinessQueryOptions,
@@ -204,19 +203,6 @@ vi.mock('@nerv-iip/api-client', () => ({
       data: vars.body,
     })),
   })),
-  createBusinessConsoleSopFileDownloadGrantMutationOptions: vi.fn(() => ({
-    mutation: vi.fn(async (vars) => ({
-      success: true,
-      data: {
-        fileId: vars.path.fileId,
-        downloadUrl: '/api/business-console/v1/files/download-grants/grant-sop/content',
-        downloadHeaders: {
-          'X-Organization-Id': vars.body.organizationId,
-          'X-Environment-Id': vars.body.environmentId,
-        },
-      },
-    })),
-  })),
   getBusinessConsoleMesBatchTraceabilityQueryOptions: vi.fn(() => ({
     key: [{ _id: 'getBusinessConsoleMesBatchTraceability' }],
     query: vi.fn(),
@@ -358,6 +344,10 @@ vi.mock('@nerv-iip/api-client', () => ({
   })),
   listBusinessConsoleMesShiftHandoversQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleMesShiftHandovers' }],
+    query: vi.fn(),
+  })),
+  getBusinessConsoleMesShiftHandoverQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'getBusinessConsoleMesShiftHandover' }],
     query: vi.fn(),
   })),
   listBusinessConsoleMesWorkOrdersQueryOptions: vi.fn(() => ({
@@ -961,6 +951,14 @@ describe('business MES composables', () => {
     ).toMatchObject({ enabled: false })
   })
 
+  it('keeps the current WIP request disabled when the consuming page lacks operations permission', () => {
+    useMesWipSummary(() => false)
+
+    expect(coladaState.queryFactoriesById.get('getBusinessConsoleMesWipSummary')?.()).toMatchObject(
+      { enabled: false },
+    )
+  })
+
   it('does not refetch MES lists when business context is empty', async () => {
     const context = useBusinessContextStore()
     context.patchContext({ organizationId: '', environmentId: '' })
@@ -1152,6 +1150,61 @@ describe('business MES composables', () => {
     expect(recordBusinessConsoleMesProductionReport).toHaveBeenCalledTimes(2)
   })
 
+  it('保留打印准备待收敛的完整报工载荷，新实例恢复后只重放原模板和原时间', async () => {
+    vi.mocked(recordBusinessConsoleMesProductionReport).mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          productionReportId: 'report-serial',
+          reportNo: 'PRPT-SERIAL',
+          serialNumbers: ['SN-H-101'],
+          printBatchId: 'LPB-014',
+          printStatus: 'reserved',
+          printingPreparationPending: true,
+        },
+      },
+      response: { status: 200 },
+    } as never)
+    const body = {
+      workOrderId: 'wo-serial',
+      operationTaskId: 'op-serial',
+      goodQuantity: 1,
+      scrapQuantity: 0,
+      completesOperation: false,
+      reportedAtUtc: '2026-09-14T01:00:00Z',
+      labelTemplateId: 'template-housing',
+      idempotencyKey: 'report-serial-intent',
+    }
+    const first = useMesProductionReporting()
+    await first.recordProductionReport(body)
+    const restored = useMesProductionReporting()
+    expect(restored.restoreProductionReport('wo-serial', 'op-serial')).toMatchObject(body)
+    vi.mocked(recordBusinessConsoleMesProductionReport).mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          reportNo: 'PRPT-SERIAL',
+          productionReportId: 'report-serial',
+          serialNumbers: ['SN-H-101'],
+          printBatchId: 'LPB-014',
+          printStatus: 'ready-to-print',
+          printingPreparationPending: false,
+        },
+      },
+      response: { status: 200 },
+    } as never)
+    await restored.recordProductionReport({
+      ...body,
+      goodQuantity: 9,
+      labelTemplateId: 'another-template',
+      idempotencyKey: 'new-key',
+    })
+    expect(
+      vi.mocked(recordBusinessConsoleMesProductionReport).mock.calls.at(-1)?.[0]?.body,
+    ).toMatchObject(body)
+    expect(restored.restoreProductionReport('wo-serial', 'op-serial')).toBeUndefined()
+  })
+
   it('reads overview, foundation readiness, operation tasks, and WIP rows', () => {
     coladaState.queryDataById.set('getBusinessConsoleMesOverview', {
       success: true,
@@ -1253,22 +1306,6 @@ describe('business MES composables', () => {
     expect(sops.currentSops.value[0]).toMatchObject({ revision: 'B', fileId: 'file-sop-b' })
   })
 
-  it('creates SOP file download grants through the generated mutation options', async () => {
-    const sops = useMesCurrentOperationSops()
-
-    const grant = await sops.createSopFileDownloadGrant('file-sop-b')
-
-    expect(createBusinessConsoleSopFileDownloadGrantMutationOptions).toHaveBeenCalled()
-    expect(grant).toMatchObject({
-      fileId: 'file-sop-b',
-      downloadUrl: '/api/business-console/v1/files/download-grants/grant-sop/content',
-      downloadHeaders: {
-        'X-Organization-Id': 'org-001',
-        'X-Environment-Id': 'env-dev',
-      },
-    })
-  })
-
   it('exposes secondary MES list totals from response envelopes', () => {
     const totals = new Map([
       ['listBusinessConsoleMesCapacityImpacts', 11],
@@ -1330,6 +1367,51 @@ describe('business MES composables', () => {
   })
 
   // #1947：停机读面要按原因显示、筛选与汇总。
+  it('defaults downtime reads to the latest 30 days and forwards an explicitly selected window', () => {
+    vi.setSystemTime('2026-08-30T08:00:00.000Z')
+    const downtime = useMesDowntimeEvents()
+    const listOptions = vi.mocked(listBusinessConsoleMesDowntimeEventsQueryOptions)
+
+    expect(listOptions).toHaveBeenLastCalledWith({
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        skip: 0,
+        take: 100,
+        windowStartUtc: '2026-07-31T08:00:00.000Z',
+        windowEndUtc: '2026-08-30T08:00:00.000Z',
+      },
+    })
+
+    downtime.filters.keyword = 'filter'
+    downtime.filters.workCenterId = 'WC-FILTER'
+    downtime.filters.shiftId = 'SHIFT-FILTER'
+    downtime.filters.deviceAssetId = 'DEV-FILTER'
+    downtime.filters.reasonCode = 'DT-MECH'
+    downtime.filters.skip = 5
+    downtime.filters.take = 25
+    downtime.filters.windowStartUtc = '2026-08-01T00:00:00.000Z'
+    downtime.filters.windowEndUtc = '2026-08-15T00:00:00.000Z'
+    coladaState.queryFactoriesById.get('listBusinessConsoleMesDowntimeEvents')!()
+
+    expect(listOptions).toHaveBeenLastCalledWith({
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        keyword: 'filter',
+        workCenterId: 'WC-FILTER',
+        shiftId: 'SHIFT-FILTER',
+        deviceAssetId: 'DEV-FILTER',
+        skip: 5,
+        take: 25,
+        reasonCode: 'DT-MECH',
+        windowStartUtc: '2026-08-01T00:00:00.000Z',
+        windowEndUtc: '2026-08-15T00:00:00.000Z',
+      },
+    })
+    vi.useRealTimers()
+  })
+
   it('forwards the selected downtime reason into the list query and leaves it out when unset', () => {
     const downtime = useMesDowntimeEvents()
     const listOptions = vi.mocked(listBusinessConsoleMesDowntimeEventsQueryOptions)
@@ -1378,6 +1460,26 @@ describe('business MES composables', () => {
 
     const downtime = useMesDowntimeEvents()
     expect(downtime.downtimeWriteScopeReady.value).toBe(false)
+
+    const directoryFactory = coladaState.queryFactoriesById.get(
+      'listBusinessConsoleSearchableDirectory',
+    )!
+    expect(directoryFactory().enabled).toBe(true)
+  })
+
+  // #2793 裁定：`enabled` 不加权限前置。前端 principal 的权限码只是提示，网关才是权威；
+  // 加了前置一旦权限码滞后就再也不发请求，页面永远显示无权限且没有证据能纠正。
+  // 少发的只是一次请求，归因交由 downtime.vue 分流 403 与其它失败来解决。
+  // 若有人给这条 query 加上 `permissionCodes.includes(...)` 之类的前置，本用例必红。
+  it('still issues the downtime-reason directory read when the principal lacks that read permission', () => {
+    reactiveAuthState.principal = {
+      ...reactiveAuthState.principal!,
+      // 刻意给一组「别的都齐、唯独没有目录读权限」的权限码：这样它能通过这条 query 的
+      // 其它所有前置（组织/环境上下文齐备），差别只在那一个码上。
+      permissionCodes: ['business.mes.downtime.read', 'business.mes.downtime.manage'],
+    }
+
+    useMesDowntimeEvents()
 
     const directoryFactory = coladaState.queryFactoriesById.get(
       'listBusinessConsoleSearchableDirectory',
@@ -1611,11 +1713,6 @@ describe('business MES composables', () => {
         id: 'listBusinessConsoleMesMaterialIssueRequests',
         options: listBusinessConsoleMesMaterialIssueRequestsQueryOptions,
         composable: useMesMaterialIssueRequests,
-      },
-      {
-        id: 'listBusinessConsoleMesDowntimeEvents',
-        options: listBusinessConsoleMesDowntimeEventsQueryOptions,
-        composable: useMesDowntimeEvents,
       },
       {
         id: 'listBusinessConsoleMesShiftHandovers',
@@ -1956,7 +2053,6 @@ describe('business MES composables', () => {
       organizationId: 'org-001',
       environmentId: 'env-dev',
       confirmWarnings: true,
-      idempotencyKey: 'release-key',
     })
 
     const mutation = vi
@@ -2037,7 +2133,6 @@ describe('business MES composables', () => {
         organizationId: 'org-001',
         environmentId: 'env-dev',
         confirmWarnings: true,
-        idempotencyKey: 'release-key',
       }),
     ).rejects.toThrow('齐套快照缺失')
 

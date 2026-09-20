@@ -8,6 +8,7 @@ using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Notification.Infrastructure;
 using Nerv.IIP.Notification.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Notification.Web.Application.Commands.Notifications;
+using Nerv.IIP.Notification.Web.Application.Notifications;
 using NetCorePal.Extensions.DistributedTransactions;
 using NetCorePal.Extensions.Primitives;
 
@@ -19,7 +20,8 @@ public sealed class ApprovalStepOverdueIntegrationEventHandlerForNotification(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
     IConfiguration configuration,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    NotificationSummaryBudget summaryBudget)
     : IIntegrationEventHandler<ApprovalStepOverdueIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "notification.approval-step-overdue";
@@ -82,7 +84,7 @@ public sealed class ApprovalStepOverdueIntegrationEventHandlerForNotification(
             Summary: $"Approval step {stepName} is overdue for {payload.DocumentReference.DocumentType} {payload.DocumentReference.DocumentId}.",
             SuggestedRecipientRefs: recipientRefs);
 
-        await sender.Send(new SubmitNotificationIntentCommand(organizationId, environmentId, request, timeProvider.GetUtcNow()), cancellationToken);
+        await sender.Send(new SubmitNotificationIntentCommand(organizationId, environmentId, request, NotificationSummary.Render(request.Summary, summaryBudget), timeProvider.GetUtcNow()), cancellationToken);
     }
 }
 
@@ -91,7 +93,8 @@ public sealed class ApprovalStepResolvedIntegrationEventHandlerForNotification(
     ISender sender,
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    NotificationSummaryBudget summaryBudget)
     : IIntegrationEventHandler<ApprovalStepResolvedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "notification.approval-step-resolved";
@@ -150,7 +153,7 @@ public sealed class ApprovalStepResolvedIntegrationEventHandlerForNotification(
             Summary: $"Approval step {payload.StepNo} was {payload.Decision} for {payload.DocumentReference.DocumentType} {payload.DocumentReference.DocumentId}.",
             SuggestedRecipientRefs: [recipientRef]);
 
-        await sender.Send(new SubmitNotificationIntentCommand(organizationId, environmentId, request, timeProvider.GetUtcNow()), cancellationToken);
+        await sender.Send(new SubmitNotificationIntentCommand(organizationId, environmentId, request, NotificationSummary.Render(request.Summary, summaryBudget), timeProvider.GetUtcNow()), cancellationToken);
     }
 }
 
@@ -159,7 +162,8 @@ public sealed class ApprovalActionRecordedIntegrationEventHandlerForNotification
     ISender sender,
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    NotificationSummaryBudget summaryBudget)
     : IIntegrationEventHandler<ApprovalActionRecordedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "notification.approval-action-recorded";
@@ -227,7 +231,7 @@ public sealed class ApprovalActionRecordedIntegrationEventHandlerForNotification
             Summary: $"Approval action {action} was recorded for {payload.DocumentReference.DocumentType} {payload.DocumentReference.DocumentId}.",
             SuggestedRecipientRefs: recipientRefs);
 
-        await sender.Send(new SubmitNotificationIntentCommand(organizationId, environmentId, request, timeProvider.GetUtcNow()), cancellationToken);
+        await sender.Send(new SubmitNotificationIntentCommand(organizationId, environmentId, request, NotificationSummary.Render(request.Summary, summaryBudget), timeProvider.GetUtcNow()), cancellationToken);
     }
 }
 
@@ -236,7 +240,8 @@ public sealed class ApprovalRejectedIntegrationEventHandlerForNotification(
     ISender sender,
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    NotificationSummaryBudget summaryBudget)
     : IIntegrationEventHandler<ApprovalCompletedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "notification.approval-rejected-initiator";
@@ -284,7 +289,7 @@ public sealed class ApprovalRejectedIntegrationEventHandlerForNotification(
             "Approval rejected",
             $"Approval was rejected for {payload.DocumentReference.DocumentType} {payload.DocumentReference.DocumentId}; the source document is editable again.",
             [initiatorRef]);
-        await sender.Send(new SubmitNotificationIntentCommand(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, request, timeProvider.GetUtcNow()), cancellationToken);
+        await sender.Send(new SubmitNotificationIntentCommand(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, request, NotificationSummary.Render(request.Summary, summaryBudget), timeProvider.GetUtcNow()), cancellationToken);
     }
 }
 

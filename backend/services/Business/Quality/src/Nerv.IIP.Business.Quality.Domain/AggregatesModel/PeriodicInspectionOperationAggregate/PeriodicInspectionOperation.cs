@@ -1,3 +1,4 @@
+using System.Globalization;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 
 namespace Nerv.IIP.Business.Quality.Domain.AggregatesModel.PeriodicInspectionOperationAggregate;
@@ -13,6 +14,29 @@ public partial record PeriodicInspectionRuntimeContextId : IGuidStronglyTypedId,
 }
 
 public sealed record PeriodicInspectionTimeWindow(long Sequence, DateTime DueAtUtc);
+
+/// <summary>
+/// 补投的重建发布事实被既有权威事实顶掉的那一个属性。
+/// </summary>
+public sealed record PeriodicInspectionReleaseFactSubstitution(
+    string Attribute,
+    string ReconstructedValue,
+    string AuthoritativeValue);
+
+/// <summary>
+/// 经权威事实校正后、真正写进投影的发布事实。<see cref="Substitutions"/> 非空表示重建值被顶掉过，
+/// 调用方须把它留痕。
+/// </summary>
+public sealed record PeriodicInspectionReleaseFacts(
+    string SkuCode,
+    int OperationSequence,
+    string WorkCenterId,
+    IReadOnlyList<PeriodicInspectionReleaseFactSubstitution> Substitutions);
+
+public sealed record PeriodicInspectionQuantityWindow(
+    long Sequence,
+    decimal ThresholdQuantity,
+    DateTime GeneratedAtUtc);
 
 public sealed class PeriodicInspectionOperation : Entity<PeriodicInspectionOperationId>, IAggregateRoot
 {
@@ -138,6 +162,161 @@ public sealed class PeriodicInspectionOperation : Entity<PeriodicInspectionOpera
                 plan);
             context.Reconcile(ProductionReports, CompletedAtUtc);
             RuntimeContexts.Add(context);
+        }
+    }
+
+    /// <summary>
+    /// 用重建的发布事实补投（#3000 回填）时，先让它与既有权威事实对齐——**只对齐工序号与工作中心两项**。
+    ///
+    /// 回填载荷里的工序号与工作中心取自 MES **当前**的工序行，而完工事实是 MES 当初
+    /// 直投过来的那一份；两者不一致时权威的是后者——重建来源本就无法权威知晓这些属性，
+    /// 不一致只说明重建精度不足，**不构成业务事实冲突**。若照 <c>ApplyRelease</c> 的直投语义把它判成
+    /// 冲突，整封补投事件会被判为无效业务事实进死信，该工单一行都补不上、继续 <c>not-synchronized</c>
+    /// 被门禁永久拒——正是 #3000 要消除的形态。
+    ///
+    /// 因此这两项以既有完工事实为准，并把被顶掉的属性交回调用方留痕（不静默）。
+    ///
+    /// <para><b>SKU 不在对齐范围内（#3286 按属性收缩）。</b>它当初被一起处理，是因为 MES 的
+    /// <c>OperationTask</c> 在未传 SKU 时把 <c>SkuCode</c> 回落成工单号，该值随完工事件进了
+    /// <c>CompletionSkuCode</c>；#3112 已删掉那条回落（<c>OperationTask</c> 构造现为
+    /// <c>SkuCode = DomainGuard.Required(skuCode, nameof(skuCode))</c>）。
+    /// <b>这不等于此后 SKU 必然一致</b>——<c>skuCode</c> 仍是 <c>string</c> 形参，把工单号当实参传进来
+    /// 照样编译、照样落库。消失的只是**回落**这一个来源；剩下的来源是**调用方传错**，而工序 SKU 按 MES 模型
+    /// 就是工单 SKU 的副本（工序级 SKU 在该模型里不可表达，<c>mes.operation_tasks.sku_code</c> 的列注释写明
+    /// copied from the MES work order），两侧取值构造后都不再改写，因此不一致只能是建工序那一刻抄错了。
+    /// 上游抄错不该由本投影层顶成权威值悄悄抹平——那会把一个上游缺陷变成看不见的既成事实。
+    /// SKU 不一致因此照 <c>ApplyRelease</c> 的冲突语义走，由调用方按**工序粒度**记成待处理留痕。</para>
+    ///
+    /// <para>工序号与工作中心留在这里，不是因为它们比 SKU 更可能不一致，而是因为本票没有对它们的判断：
+    /// 它们**当前**不可达（工序号构造后不可变，工作中心在工序完工后被 <c>ApplyScheduleAssignment</c> 拒绝改写），
+    /// 而不可达是当前实现的性质、不是恒真。连它们一起删等于替将来可达的那一天先做了决定。</para>
+    /// </summary>
+    public PeriodicInspectionReleaseFacts ResolveReconstructedReleaseFacts(
+        string skuCode,
+        int operationSequence,
+        string workCenterId)
+    {
+        var reconstructedSkuCode = Required(skuCode);
+        var reconstructedWorkCenterId = Required(workCenterId);
+        if (!CompletedAtUtc.HasValue)
+        {
+            return new PeriodicInspectionReleaseFacts(
+                reconstructedSkuCode,
+                operationSequence,
+                reconstructedWorkCenterId,
+                []);
+        }
+
+        var substitutions = new List<PeriodicInspectionReleaseFactSubstitution>();
+        if (CompletionOperationSequence != operationSequence)
+        {
+            substitutions.Add(new PeriodicInspectionReleaseFactSubstitution(
+                "operation-sequence",
+                operationSequence.ToString(CultureInfo.InvariantCulture),
+                CompletionOperationSequence!.Value.ToString(CultureInfo.InvariantCulture)));
+        }
+
+        if (CompletionWorkCenterId != reconstructedWorkCenterId)
+        {
+            substitutions.Add(new PeriodicInspectionReleaseFactSubstitution(
+                "work-center-id",
+                reconstructedWorkCenterId,
+                CompletionWorkCenterId!));
+        }
+
+        return new PeriodicInspectionReleaseFacts(
+            reconstructedSkuCode,
+            CompletionOperationSequence!.Value,
+            CompletionWorkCenterId!,
+            substitutions);
+    }
+
+    /// <summary>
+    /// 补投发布事实（#3000 回填）时，把补投之前已经累计的产量与已经流逝的时间**记为已生成**，
+    /// 不追认那段时间的周期巡检窗口。
+    ///
+    /// 直投路径上发布事实先到、报工后到，窗口是随产量逐步生成的；回填是反过来——
+    /// 发布事实补到一张已经报了很久的工序上，<c>Reconcile</c> 会把全部历史产量一次性算进
+    /// <see cref="PeriodicInspectionRuntimeContext.QuantityHighWater"/>、把最早报工算进
+    /// <c>FirstActivityAtUtc</c>。不做这一步，一次回填就会为**已经流走的**产量和时间成批开出
+    /// 已过期的巡检任务；产量积压超过
+    /// <see cref="PeriodicInspectionRuntimeContext.MaximumSupportedPendingQuantityWindows"/> 时
+    /// <c>TakeDueQuantityWindows</c> 还会抛出，整张工单被判为无效业务事实进死信、回填对它失效——
+    /// 那正是本票要消除的「永久 not-synchronized」。
+    ///
+    /// 只在**本次刚补上发布事实**的工序上调用：调用方按「已有发布事实的工序不覆盖」筛过，
+    /// 因此此刻聚合里的运行上下文恰好就是本次新建的那些。
+    /// </summary>
+    public void SkipPeriodicWindowsAccruedBefore(DateTime observedAtUtc)
+    {
+        if (observedAtUtc.Kind != DateTimeKind.Utc)
+        {
+            throw new ArgumentException("Observation time must be UTC.", nameof(observedAtUtc));
+        }
+
+        foreach (var context in RuntimeContexts)
+        {
+            context.SkipWindowsAccruedBefore(observedAtUtc);
+        }
+    }
+
+    /// <summary>
+    /// 按 MES 随发布事实带来的「下达动作那一刻本工序已经存在的净良品量」，把那部分产量对应的
+    /// 数量窗口**记为已生成**——即 owner 裁定的「下达之前已产出的数量不补开巡检任务」（#3129）。
+    ///
+    /// <para><b>与 <see cref="SkipPeriodicWindowsAccruedBefore"/> 的分工。</b>那一个按**时刻**跳过、
+    /// 且同时动数量与时间两维，是 #3000 回填通道的取舍；本方法按 **MES 给的数量**跳过、
+    /// **只动数量一维**。时间型巡检该不该开与「下达前后」没有业务关系（它由 <c>FirstActivityAtUtc</c>
+    /// 起算、由定时任务生成），把一条数量维的裁定外溢到时间维是错的，故本方法一行都不碰时间维。</para>
+    ///
+    /// <para><b>为什么不能在 Quality 侧自己算这个数量。</b>「下达之前」指的是**下达动作**之前，
+    /// 而 Quality 手上只有一个被夹到「不晚于最早既有活动」的工单级标量时刻，以及一份
+    /// **到达时刻才决定内容**的本地报工集合：发布事件先于报工事件到达时那个集合还是空的。
+    /// 这就是 #3117 那版判别式「堵一次漏一次」的原因——它落在拿不到信息的一侧。</para>
+    ///
+    /// <para><b>本方法只会把水位往前推，不会往回退</b>（<c>Math.Max</c>）——
+    /// <b>这一条在一条可达路径上承重，不是纵深防御</b>。
+    /// 「第二次跳过给出更小的值」由**两条通道交错**产生，不需要「同一封发布事实投两次」：
+    /// #3000 回填分支（<c>ReleaseFactAuthority.ReconstructedLowerBound</c>）按 <c>OccurredAtUtc</c>
+    /// 把到回填执行那一刻为止的累计记为已生成，本方法则跳过 MES 点名的「下达动作之前那一部分」。
+    ///
+    /// <b>两个数没有恒定的大小关系，别写成全称。</b>「<b>领域意义上</b>下达动作之前产出 ⊆
+    /// 回填执行时刻之前产出」是真的；但**实现出来的两个数**不是——#3000 那一半用的是 Quality 的
+    /// <b>本地</b> <see cref="PeriodicInspectionRuntimeContext.QuantityHighWater"/>，
+    /// 本方法用的是 MES 在下达动作那一刻的<b>自有事实</b>，
+    /// 报工事件滞后时（正是本票要治的「到达顺序」形态）两者可**反向**。
+    /// 两个方向都有可执行反例：<c>preRelease=250</c> 时本方法给出的更小（若无 <c>Math.Max</c> 会把
+    /// 序号从 5 拨回 2 并重开三张重复任务），<c>preRelease=750</c> 时本方法给出的更大（序号 5 → 7）。
+    /// 承重的正是「实现出来的两个数」这一层，不是领域意义那一层；
+    /// <c>Math.Max</c> 因此不能简化成「取后到的那个」。
+    /// 交错走得通的三个条件都已逐条实读：两个消费者是不同消费组、inbox 互相独立；
+    /// 「已有发布事实的工序只跳过不覆盖」那条 <c>continue</c> 只管 Reconstructed 分支；
+    /// 两条通道的 <c>ReleasedAtUtc</c> 过同一个 <c>WorkOrderReleaseFactTime.NotLaterThan</c> 取到同值，
+    /// <c>ApplyRelease</c> 因事实逐字相同提前 return 不抛、随后照常执行跳过。
+    /// 生产形态：直投发布事实进过 DLQ、在 #3000 回填跑完之后才被重投。
+    ///
+    /// <b>读数</b>：换成直接赋值后，系统层用例
+    /// <c>WorkOrderReleaseProjectionBackfillConsumerTests
+    /// .Backfill_then_live_release_does_not_reopen_quantity_windows_the_backfill_already_skipped</c>
+    /// 会红——已生成序号被从 5 拨回 2，随后按本地水位 500 **重开 3/4/5 三张重复任务、死信仍为 0**
+    /// （静默重复，不是可见失败）。域用例
+    /// <c>Pre_release_skip_never_moves_the_generated_quantity_watermark_backwards</c> 同时会红。
+    ///
+    /// <b>为什么本票第一轮判错过</b>：只穷举了「连续两次直投下达」（那条确实被
+    /// <c>WorkOrder.ThrowIfCannotRelease</c> 与 EventId inbox 去重挡死）就下了「输入不可达」的结论，
+    /// 漏掉了跨通道交错。当时 447 个用例全绿的真因是**覆盖缺口**，不是分支不可达——
+    /// 变异存活的两种成因必须先判可达性再下结论，且穷举面要覆盖**全部**写这个水位的通道。</para>
+    /// </summary>
+    public void SkipQuantityWindowsAccruedBeforeRelease(decimal preReleaseGoodQuantity)
+    {
+        if (preReleaseGoodQuantity <= 0m)
+        {
+            return;
+        }
+
+        foreach (var context in RuntimeContexts)
+        {
+            context.SkipQuantityWindowsAccruedBeforeRelease(preReleaseGoodQuantity);
         }
     }
 
@@ -372,6 +551,8 @@ public sealed class PeriodicInspectionProductionReport : Entity<PeriodicInspecti
 
 public sealed class PeriodicInspectionRuntimeContext : Entity<PeriodicInspectionRuntimeContextId>
 {
+    public const long MaximumSupportedPendingQuantityWindows = 10_000;
+
     private PeriodicInspectionRuntimeContext()
     {
     }
@@ -426,6 +607,9 @@ public sealed class PeriodicInspectionRuntimeContext : Entity<PeriodicInspection
     public string? UomCode { get; private set; }
     public decimal CumulativeGoodQuantity { get; private set; }
     public decimal QuantityHighWater { get; private set; }
+    public long LastGeneratedQuantityWindowSequence { get; private set; }
+    public DateTime? QuantityGenerationAnchorAtUtc { get; private set; }
+    public DateTime? QuantityContinuationNextAttemptAtUtc { get; private set; }
     public DateTime? TimeScheduleAnchorAtUtc { get; private set; }
     public long LastGeneratedTimeWindowSequence { get; private set; }
     public DateTime? NextTimeWindowAtUtc { get; private set; }
@@ -473,6 +657,71 @@ public sealed class PeriodicInspectionRuntimeContext : Entity<PeriodicInspection
         {
             NextTimeWindowAtUtc = TryAddTicks(FirstActivityAtUtc.Value, GetIntervalTicks());
         }
+    }
+
+    /// <summary>
+    /// 把补投之前已经累计的产量窗口与已经流逝的时间窗口记为已生成。取值口径与
+    /// <see cref="TakeDueQuantityWindows"/> / <see cref="TakeDueTimeWindows"/> 完全一致
+    /// （同一个 <c>floor(高水位 / 间隔)</c>、同一个 <c>GetIntervalTicks</c>），
+    /// 差别只是不产出窗口——因此「跳过的」与「本会开出的」是同一批，不会多跳也不会少跳。
+    /// </summary>
+    internal void SkipWindowsAccruedBefore(DateTime observedAtUtc)
+    {
+        if (QuantityInterval.HasValue)
+        {
+            LastGeneratedQuantityWindowSequence =
+                decimal.ToInt64(decimal.Floor(QuantityHighWater / QuantityInterval.Value));
+        }
+
+        if (!TimeIntervalHours.HasValue || !FirstActivityAtUtc.HasValue || !NextTimeWindowAtUtc.HasValue)
+        {
+            return;
+        }
+
+        var intervalTicks = GetIntervalTicks();
+        var elapsedTicks = (observedAtUtc - FirstActivityAtUtc.Value).Ticks;
+        if (elapsedTicks < intervalTicks)
+        {
+            return;
+        }
+
+        var accruedWindows = elapsedTicks / intervalTicks;
+        TimeScheduleAnchorAtUtc ??= FirstActivityAtUtc.Value;
+        LastGeneratedTimeWindowSequence = accruedWindows;
+        NextTimeWindowAtUtc = TryAddTicks(
+            FirstActivityAtUtc.Value,
+            checked(intervalTicks * (accruedWindows + 1)));
+    }
+
+    /// <summary>
+    /// 把「下达动作之前就已存在的产量」对应的数量窗口记为已生成（#3129）。取值口径与
+    /// <see cref="TakeDueQuantityWindows"/> / <see cref="SkipWindowsAccruedBefore"/> 的数量那一半
+    /// 完全一致（同一个 <c>floor(数量 / 间隔)</c>），差别只是被除数来自 MES 随发布事实带来的事实、
+    /// 而不是本地的 <see cref="QuantityHighWater"/>——发布事实可能先于报工事件到达，
+    /// 那一刻本地水位还是 0，用本地水位跳过等于什么都没跳（#3129 探针②）。
+    ///
+    /// <para><b>只进不退</b>：取 <c>Math.Max</c>，重复投递或与其它跳过路径叠加时不把已生成序号调小。</para>
+    /// </summary>
+    internal void SkipQuantityWindowsAccruedBeforeRelease(decimal preReleaseGoodQuantity)
+    {
+        if (!QuantityInterval.HasValue || preReleaseGoodQuantity <= 0m)
+        {
+            return;
+        }
+
+        var accruedSequenceValue = decimal.Floor(preReleaseGoodQuantity / QuantityInterval.Value);
+        if (accruedSequenceValue > long.MaxValue)
+        {
+            // 与 TakeDueQuantityWindows 同一条 fail-closed 口径：超出序号上界时宁可整封进死信，
+            // 也不做一次会溢出的转换后继续（LastGeneratedQuantityWindowSequence 一旦被写成接近
+            // long.MaxValue 的值，TakeDueQuantityWindows 里的 checked(+1) 会在别处炸，届时说不出原因）。
+            throw new InvalidOperationException(
+                $"Pre-release quantity window target {accruedSequenceValue} exceeds the supported sequence limit {long.MaxValue}.");
+        }
+
+        LastGeneratedQuantityWindowSequence = Math.Max(
+            LastGeneratedQuantityWindowSequence,
+            decimal.ToInt64(accruedSequenceValue));
     }
 
     public IReadOnlyList<PeriodicInspectionTimeWindow> TakeDueTimeWindows(DateTime nowUtc, int maxWindows)
@@ -524,6 +773,97 @@ public sealed class PeriodicInspectionRuntimeContext : Entity<PeriodicInspection
         }
 
         return windows;
+    }
+
+    public IReadOnlyList<PeriodicInspectionQuantityWindow> TakeDueQuantityWindows(
+        DateTime occurredAtUtc,
+        int maxWindows,
+        DateTime? continuationNextAttemptAtUtc = null)
+    {
+        if (occurredAtUtc.Kind != DateTimeKind.Utc)
+        {
+            throw new ArgumentException("Quantity generation trigger time must be UTC.", nameof(occurredAtUtc));
+        }
+
+        if (maxWindows <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxWindows), "Maximum windows must be positive.");
+        }
+
+        if (continuationNextAttemptAtUtc.HasValue
+            && continuationNextAttemptAtUtc.Value.Kind != DateTimeKind.Utc)
+        {
+            throw new ArgumentException(
+                "Quantity continuation next-attempt time must be UTC.",
+                nameof(continuationNextAttemptAtUtc));
+        }
+
+        if ((Status != "active" && !(Status == "closed" && QuantityGenerationAnchorAtUtc.HasValue))
+            || !QuantityInterval.HasValue
+            || UomCode is null
+            || QuantityHighWater <= 0m)
+        {
+            return [];
+        }
+
+        var targetSequenceValue = decimal.Floor(QuantityHighWater / QuantityInterval.Value);
+        var pendingSequenceValue = targetSequenceValue - LastGeneratedQuantityWindowSequence;
+        if (pendingSequenceValue > MaximumSupportedPendingQuantityWindows)
+        {
+            throw new InvalidOperationException(
+                $"Quantity backlog {pendingSequenceValue} exceeds the supported pending-window limit "
+                + $"{MaximumSupportedPendingQuantityWindows}; the source event must fail closed before partial generation.");
+        }
+
+        if (targetSequenceValue > long.MaxValue)
+        {
+            throw new InvalidOperationException(
+                $"Quantity window target {targetSequenceValue} exceeds the supported sequence limit {long.MaxValue}.");
+        }
+
+        var targetSequence = decimal.ToInt64(targetSequenceValue);
+        if (targetSequence <= LastGeneratedQuantityWindowSequence)
+        {
+            QuantityGenerationAnchorAtUtc = null;
+            QuantityContinuationNextAttemptAtUtc = null;
+            return [];
+        }
+
+        QuantityGenerationAnchorAtUtc ??= occurredAtUtc;
+        QuantityContinuationNextAttemptAtUtc = continuationNextAttemptAtUtc ?? occurredAtUtc;
+        var windows = new List<PeriodicInspectionQuantityWindow>(
+            (int)Math.Min(maxWindows, targetSequence - LastGeneratedQuantityWindowSequence));
+        for (var sequence = checked(LastGeneratedQuantityWindowSequence + 1);
+             sequence <= targetSequence && windows.Count < maxWindows;
+             sequence = checked(sequence + 1))
+        {
+            windows.Add(new PeriodicInspectionQuantityWindow(
+                sequence,
+                checked(sequence * QuantityInterval.Value),
+                QuantityGenerationAnchorAtUtc.Value));
+        }
+
+        LastGeneratedQuantityWindowSequence = windows[^1].Sequence;
+        if (LastGeneratedQuantityWindowSequence == targetSequence)
+        {
+            QuantityGenerationAnchorAtUtc = null;
+            QuantityContinuationNextAttemptAtUtc = null;
+        }
+
+        return windows;
+    }
+
+    public void DeferQuantityContinuation(DateTime nextAttemptAtUtc)
+    {
+        if (nextAttemptAtUtc.Kind != DateTimeKind.Utc)
+        {
+            throw new ArgumentException("Quantity continuation next-attempt time must be UTC.", nameof(nextAttemptAtUtc));
+        }
+
+        if (QuantityGenerationAnchorAtUtc.HasValue)
+        {
+            QuantityContinuationNextAttemptAtUtc = nextAttemptAtUtc;
+        }
     }
 
     private long GetIntervalTicks()

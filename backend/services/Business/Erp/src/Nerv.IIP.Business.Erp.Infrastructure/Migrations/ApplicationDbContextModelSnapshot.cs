@@ -1016,6 +1016,18 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnName("posting_date")
                         .HasComment("Voucher posting date.");
 
+                    b.Property<string>("SourceNo")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("source_no")
+                        .HasComment("Source document number whose meaning is decided by source_type; NULL only on rows written before the source columns existed.");
+
+                    b.Property<string>("SourceType")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("source_type")
+                        .HasComment("Source document type code from JournalVoucherSourceType; NULL only on rows written before the source columns existed.");
+
                     b.Property<string>("VoucherNo")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -1027,6 +1039,10 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "VoucherNo")
                         .IsUnique();
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SourceType", "SourceNo")
+                        .IsUnique()
+                        .HasFilter("source_type IS NOT NULL AND source_no IS NOT NULL");
 
                     b.ToTable("journal_vouchers", "erp", t =>
                         {
@@ -1896,6 +1912,15 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnName("exchange_rate")
                         .HasComment("Receipt exchange rate to local currency.");
 
+                    b.Property<string>("InventoryPostingRoute")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("Direct")
+                        .HasColumnName("inventory_posting_route")
+                        .HasComment("Immutable inventory posting owner: Direct ERP request or Wms putaway; legacy receipts remain Direct.");
+
                     b.Property<string>("OrganizationId")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -2012,6 +2037,12 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("sku_code")
                         .HasComment("MasterData SKU code copied from purchase order line for stock posting.");
+
+                    b.Property<decimal?>("UnitPrice")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("unit_price")
+                        .HasComment("Frozen purchase unit price in receipt currency; null for legacy receipts without a valuation snapshot.");
 
                     b.Property<string>("UomCode")
                         .IsRequired()
@@ -3448,6 +3479,129 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate.OperationLaborReportSnapshot", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Operation labor report snapshot id.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment boundary.");
+
+                    b.Property<decimal>("GoodQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("good_quantity")
+                        .HasComment("Frozen reported good quantity before reversal sign normalization.");
+
+                    b.Property<bool>("HasValidNumericScale")
+                        .HasColumnType("boolean")
+                        .HasColumnName("has_valid_numeric_scale")
+                        .HasComment("Whether all source decimal facts fit the governed six-digit scale without PostgreSQL coercion.");
+
+                    b.Property<bool>("IsReversal")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_reversal")
+                        .HasComment("Whether this report reverses a prior production report.");
+
+                    b.Property<string>("OperationTaskId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("operation_task_id")
+                        .HasComment("MES operation-task public identifier.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization boundary.");
+
+                    b.Property<string>("ReportNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("report_no")
+                        .HasComment("MES production-report business identifier.");
+
+                    b.Property<DateTimeOffset>("ReportedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reported_at_utc")
+                        .HasComment("Original MES production-report UTC timestamp.");
+
+                    b.Property<string>("ReversedReportNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("reversed_report_no")
+                        .HasComment("Original MES report number for a reversal snapshot.");
+
+                    b.Property<decimal>("ReworkQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("rework_quantity")
+                        .HasComment("Frozen reported rework quantity; excluded from standard labor hours.");
+
+                    b.Property<decimal>("ScrapQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("scrap_quantity")
+                        .HasComment("Frozen reported scrap quantity; excluded from standard labor hours.");
+
+                    b.Property<string>("SourceEventId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("source_event_id")
+                        .HasComment("MES event id that established this immutable snapshot.");
+
+                    b.Property<decimal?>("TheoreticalRatePerHour")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("theoretical_rate_per_hour")
+                        .HasComment("Frozen theoretical good-output rate per labor hour.");
+
+                    b.Property<string>("UomCode")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("uom_code")
+                        .HasComment("Frozen MES output unit of measure.");
+
+                    b.Property<string>("WorkCenterId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("work_center_id")
+                        .HasComment("Frozen MES work-center identifier.");
+
+                    b.Property<string>("WorkOrderId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("work_order_id")
+                        .HasComment("MES work-order public identifier.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "ReportNo")
+                        .IsUnique()
+                        .HasDatabaseName("ux_operation_labor_report_snapshots_scope_report");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "WorkOrderId", "OperationTaskId")
+                        .HasDatabaseName("ix_operation_labor_report_snapshots_work_order_operation");
+
+                    b.ToTable("operation_labor_report_snapshots", "erp", t =>
+                        {
+                            t.HasComment("ERP immutable MES production-report basis used for standard labor and efficiency variance.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate.OperationLaborSettlement", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4419,6 +4573,24 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnName("sku_code")
                         .HasComment("Finished-good SKU code.");
 
+                    b.Property<string>("SourceNcrCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("source_ncr_code")
+                        .HasComment("Quality NCR business code retained for rework cost readback.");
+
+                    b.Property<string>("SourceNcrId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("source_ncr_id")
+                        .HasComment("Quality NCR public id for a rework work-order cost; null for ordinary work orders.");
+
+                    b.Property<string>("SourceWorkOrderId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("source_work_order_id")
+                        .HasComment("MES source work-order public id for a rework work-order cost.");
+
                     b.Property<decimal>("WipClearedCost")
                         .HasPrecision(18, 6)
                         .HasColumnType("numeric(18,6)")
@@ -4433,6 +4605,10 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasComment("MES work-order public identifier.");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SourceNcrId");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SourceWorkOrderId");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "WorkOrderId")
                         .IsUnique();

@@ -407,7 +407,13 @@ public sealed class WcsTaskEntityTypeConfiguration : IEntityTypeConfiguration<Wc
         builder.Property(x => x.AttemptCount).HasColumnName("attempt_count").IsRequired().HasComment("Dispatch attempt count.");
         builder.Property(x => x.CompletionPayloadJson).HasColumnName("completion_payload_json").HasComment("Completion callback payload JSON.");
         builder.Property(x => x.FailureCode).HasColumnName("failure_code").HasMaxLength(100).HasComment("WCS failure diagnostic code.");
-        builder.Property(x => x.FailureMessage).HasColumnName("failure_message").HasMaxLength(1000).HasComment("WCS failure diagnostic message.");
+        // Unbounded on purpose (#3305): this is the raw diagnostic text an external WCS posts back on
+        // the failure callback. Producer: the external WCS via FailWcsTaskCommand. Consumers: this
+        // service's read models and the wms.WcsTaskFailed / WcsTaskRetryExhausted / WcsTaskCancelled
+        // integration events (payload field DiagnosticMessage). Compatibility: consumers must fit the
+        // value into their own columns themselves - Notification renders a bounded summary from it and
+        // truncates on its own side; the full text stays here so operators can drill down.
+        builder.Property(x => x.FailureMessage).HasColumnName("failure_message").HasComment("WCS failure diagnostic message; unbounded raw text from the external WCS.");
         builder.Property(x => x.DispatchedAtUtc).HasColumnName("dispatched_at_utc").IsRequired().HasComment("UTC dispatch time.");
         builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc").HasComment("UTC completion time.");
         builder.Property(x => x.FailedAtUtc).HasColumnName("failed_at_utc").HasComment("UTC failure time.");
@@ -461,6 +467,7 @@ public sealed class InventoryMovementRequestEntityTypeConfiguration : IEntityTyp
         builder.Property(x => x.ProductionDate).HasColumnName("production_date").HasComment("Optional production date carried to Inventory for inbound postings.");
         builder.Property(x => x.ExpiryDate).HasColumnName("expiry_date").HasComment("Optional expiry date carried to Inventory for FEFO-managed batches.");
         builder.Property(x => x.Quantity).HasColumnName("quantity").IsRequired().HasPrecision(18, 6).HasComment("Movement quantity requested from Inventory.");
+        builder.Property(x => x.UnitCost).HasColumnName("unit_cost").HasPrecision(18, 6).HasComment("Frozen receipt cost per movement UOM in base currency; null for legacy or unvalued requests.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Posting status for the Inventory request.");
         builder.Property(x => x.InventoryMovementId).HasColumnName("inventory_movement_id").HasMaxLength(150).HasComment("Public Inventory movement id returned after posting.");
         builder.Property(x => x.FailureCode).HasColumnName("failure_code").HasMaxLength(100).HasComment("Inventory posting failure code.");

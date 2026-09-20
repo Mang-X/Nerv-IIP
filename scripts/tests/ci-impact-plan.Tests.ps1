@@ -146,11 +146,11 @@ function Assert-ConditionalRoutingWorkflow {
         'openapi-client-drift' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false') }}"
         'postgres-provider-tests' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.postgresql != 'false') }}"
         'redis-cap-transport-tests' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.redis_cap != 'false') }}"
-        'script-governance' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false') }}"
+        'script-governance' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false' || needs.impact-plan.outputs.infra != 'false' || needs.impact-plan.outputs.docs != 'false') }}"
     }
 
     $impactPlan = $parsedWorkflow.jobs.PSObject.Properties['impact-plan'].Value
-    foreach ($outputName in @('scripts', 'backend', 'connector_hosts', 'openapi_codegen', 'postgresql', 'redis_cap', 'full_chain')) {
+    foreach ($outputName in @('scripts', 'backend', 'connector_hosts', 'openapi_codegen', 'postgresql', 'redis_cap', 'full_chain', 'infra', 'docs')) {
         $outputProperty = $impactPlan.outputs.PSObject.Properties[$outputName]
         Assert-Contract ($null -ne $outputProperty) "Impact plan must declare routed output '$outputName'."
         $expectedOutput = '${{ steps.plan.outputs.' + $outputName + ' }}'
@@ -202,6 +202,80 @@ function Assert-ConditionalRoutingWorkflow {
     }
 }
 
+function Assert-RedisCapActiveSelectionWorkflowContract {
+    param([Parameter(Mandatory)] [string] $Path)
+
+    $parsedWorkflow = ConvertFrom-NervCiRequiredSummaryWorkflow -Path $Path -WorkingDirectory $repoRoot
+    $redisCapJobProperty = $parsedWorkflow.jobs.PSObject.Properties['redis-cap-transport-tests']
+    Assert-Contract ($null -ne $redisCapJobProperty) 'CI must define the Redis/CAP transport job.'
+    $runnerSteps = @($redisCapJobProperty.Value.steps | Where-Object {
+            $runProperty = $_.PSObject.Properties['run']
+            $null -ne $runProperty -and ([string]$runProperty.Value).Contains('./scripts/run-redis-cap-test-lane.ps1', [StringComparison]::Ordinal)
+        })
+    Assert-Contract ($runnerSteps.Count -eq 1) 'The Redis/CAP job must invoke its governed runner exactly once.'
+    $runnerInvocation = [string]$runnerSteps[0].run
+    Assert-Contract ($runnerInvocation.Contains('-AllActiveMembers', [StringComparison]::Ordinal)) 'Hosted Redis/CAP execution must select the manifest active set.'
+    Assert-Contract (-not $runnerInvocation.Contains('-MemberId', [StringComparison]::Ordinal)) 'Hosted Redis/CAP execution must not maintain a member-id list.'
+}
+
+function Assert-BusinessConsoleBrowserValidationWorkflowContract {
+    param([Parameter(Mandatory)] [string] $Path)
+
+    $parsedWorkflow = ConvertFrom-NervCiRequiredSummaryWorkflow -Path $Path -WorkingDirectory $repoRoot
+    $frontendValidation = $parsedWorkflow.jobs.'frontend-validation-shards'
+    Assert-Contract ([int]$frontendValidation.'timeout-minutes' -eq 80) 'Frontend Validation must leave a 9-minute job margin above the 71-minute evidence-publishing step sum for implicit post steps.'
+    $businessConsoleBrowserCondition = "matrix.name == '@nerv-iip/business-console'"
+    $resolveBrowserSteps = @($frontendValidation.steps | Where-Object {
+            [string]::Equals([string]$_.name, 'Resolve Business Console browser', [StringComparison]::Ordinal)
+        })
+    Assert-Contract ($resolveBrowserSteps.Count -eq 1) 'Frontend Validation must resolve the Business Console browser exactly once.'
+    $resolveBrowserStep = $resolveBrowserSteps[0]
+    Assert-Contract ([string]::Equals([string]$resolveBrowserStep.if, $businessConsoleBrowserCondition, [StringComparison]::Ordinal)) 'Business Console browser resolution must run only for its validation matrix item.'
+    Assert-Contract ([int]$resolveBrowserStep.'timeout-minutes' -eq 3) 'Business Console browser resolution must keep a three-minute budget.'
+    Assert-Contract ([string]::Equals([string]$resolveBrowserStep.shell, 'bash --noprofile --norc -euo pipefail {0}', [StringComparison]::Ordinal)) 'Business Console browser resolution must use the governed fail-fast Bash shell.'
+    Assert-Contract (([string]$resolveBrowserStep.run).Contains('command -v google-chrome', [StringComparison]::Ordinal) -and
+        ([string]$resolveBrowserStep.run).Contains('if [ -z "$browser_path" ]; then', [StringComparison]::Ordinal) -and
+        ([string]$resolveBrowserStep.run).Contains('exit 1', [StringComparison]::Ordinal) -and
+        ([string]$resolveBrowserStep.run).Contains('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=', [StringComparison]::Ordinal) -and
+        ([string]$resolveBrowserStep.run).Contains('$GITHUB_ENV', [StringComparison]::Ordinal)) 'Business Console browser resolution must fail closed and export the runner Chrome path.'
+
+    $browserTestSteps = @($frontendValidation.steps | Where-Object {
+            [string]::Equals([string]$_.name, 'Test Business Console browser invariants', [StringComparison]::Ordinal)
+        })
+    Assert-Contract ($browserTestSteps.Count -eq 1) 'Frontend Validation must execute the Business Console browser invariants exactly once.'
+    $browserTestStep = $browserTestSteps[0]
+    $browserTestIdProperty = $browserTestStep.PSObject.Properties['id']
+    Assert-Contract ($null -ne $browserTestIdProperty -and [string]::Equals([string]$browserTestIdProperty.Value, 'business-console-browser-tests', [StringComparison]::Ordinal)) 'Business Console browser invariants must expose a stable outcome for diagnostic upload routing.'
+    Assert-Contract ([string]::Equals([string]$browserTestStep.if, $businessConsoleBrowserCondition, [StringComparison]::Ordinal)) 'Business Console browser invariants must run only for their validation matrix item.'
+    Assert-Contract ([int]$browserTestStep.'timeout-minutes' -eq 10) 'Business Console browser invariants must keep a ten-minute budget.'
+    Assert-Contract ([string]::Equals([string]$browserTestStep.env.NERV_IIP_OUT_DIR, '${{ runner.temp }}/issue-2098-tooling-browser', [StringComparison]::Ordinal)) 'Business Console browser artifacts must use the runner temporary directory.'
+    Assert-Contract (([string]$browserTestStep.run).Contains('pnpm -C frontend --filter @nerv-iip/business-console exec playwright test', [StringComparison]::Ordinal) -and
+        ([string]$browserTestStep.run).Contains('e2e/issue1974-tooling-visual.spec.ts', [StringComparison]::Ordinal) -and
+        ([string]$browserTestStep.run).Contains('--project=desktop', [StringComparison]::Ordinal)) 'Business Console browser invariants must run the governed desktop tooling specification.'
+
+    $browserUploadSteps = @($frontendValidation.steps | Where-Object {
+            [string]::Equals([string]$_.name, 'Upload Business Console browser diagnostics', [StringComparison]::Ordinal)
+        })
+    Assert-Contract ($browserUploadSteps.Count -eq 1) 'Frontend Validation must upload Business Console browser diagnostics exactly once.'
+    $browserUploadStep = $browserUploadSteps[0]
+    $browserUploadTimeoutProperty = $browserUploadStep.PSObject.Properties['timeout-minutes']
+    Assert-Contract ($null -ne $browserUploadTimeoutProperty -and [int]$browserUploadTimeoutProperty.Value -eq 5) 'Business Console browser diagnostic upload must keep a five-minute budget.'
+    Assert-Contract ([string]::Equals([string]$browserUploadStep.if, "failure() && steps.business-console-browser-tests.outcome == 'failure'", [StringComparison]::Ordinal)) 'Business Console browser diagnostics must upload only after its browser test fails.'
+    Assert-Contract ([string]::Equals([string]$browserUploadStep.uses, 'actions/upload-artifact@v4', [StringComparison]::Ordinal)) 'Business Console browser diagnostics must use the governed artifact uploader.'
+    Assert-Contract ([string]::Equals([string]$browserUploadStep.with.name, 'business-console-browser-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}', [StringComparison]::Ordinal)) 'Business Console browser diagnostics must have a run-attempt-specific artifact identity.'
+    Assert-Contract ([string]::Equals([string]$browserUploadStep.with.path, '${{ runner.temp }}/issue-2098-tooling-browser', [StringComparison]::Ordinal)) 'Business Console browser diagnostics must upload the governed temporary directory.'
+    Assert-Contract ([string]::Equals([string]$browserUploadStep.with.'if-no-files-found', 'error', [StringComparison]::Ordinal)) 'Business Console browser diagnostics must fail closed when no diagnostic files exist.'
+    Assert-Contract ([int]$browserUploadStep.with.'retention-days' -eq 7) 'Business Console browser diagnostics must retain artifacts for seven days.'
+
+    $resolveBrowserIndex = [Array]::IndexOf([object[]]$frontendValidation.steps, $resolveBrowserStep)
+    $browserTestIndex = [Array]::IndexOf([object[]]$frontendValidation.steps, $browserTestStep)
+    $browserUploadIndex = [Array]::IndexOf([object[]]$frontendValidation.steps, $browserUploadStep)
+    Assert-Contract ($resolveBrowserIndex -gt 0 -and
+        [string]::Equals([string]$frontendValidation.steps[$resolveBrowserIndex - 1].name, 'Build affected frontend app', [StringComparison]::Ordinal) -and
+        $browserTestIndex -eq ($resolveBrowserIndex + 1) -and
+        $browserUploadIndex -eq ($browserTestIndex + 1)) 'Business Console browser resolution, test, and diagnostic upload must follow the validated production build in order.'
+}
+
 function Assert-AcceptanceScenarioMatrixWorkflowContract {
     param([Parameter(Mandatory)] [string] $Path)
 
@@ -231,10 +305,20 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
     $scriptGovernanceSteps = @($scriptGovernanceProperty.Value.steps)
     $scriptGovernanceStepTimeouts = @($scriptGovernanceSteps | ForEach-Object { [int]$_.'timeout-minutes' })
     $scriptGovernanceStepBudgetMinutes = ($scriptGovernanceStepTimeouts | Measure-Object -Sum).Sum
-    $fiveMinuteStepCount = @($scriptGovernanceStepTimeouts | Where-Object { $_ -eq 5 }).Count
+    # #3300：这里原本写死「checkout 之外全是 5m」，于是任何一个非 5m 的 step 都会让这条注释契约
+    # 无法被如实满足，反过来把 step 预算钉成一个值。改成按预算分组生成期望文本：形态不再被假设，
+    # 注释仍必须与实际 step 预算逐项相符。既有全 5m 的形态生成的字符串与改动前逐字相同。
+    # SortedDictionary[int, int] 而不是 Group-Object/Sort-Object：分组键是分钟数，必须按数值升序，
+    # 而那两个 cmdlet 的键比较是 culture collation（scripts/tests/ordinal-comparison-layers.Tests.ps1）。
+    $scriptGovernanceTailMinuteCounts = [Collections.Generic.SortedDictionary[int, int]]::new()
+    foreach ($tailTimeout in @($scriptGovernanceStepTimeouts | Select-Object -Skip 1)) {
+        $tailMinutes = [int]$tailTimeout
+        if ($scriptGovernanceTailMinuteCounts.ContainsKey($tailMinutes)) { $scriptGovernanceTailMinuteCounts[$tailMinutes] += 1 }
+        else { $scriptGovernanceTailMinuteCounts[$tailMinutes] = 1 }
+    }
     $workflowSource = [IO.File]::ReadAllText($Path)
     $expectedBudgetHeadline = "step 预算合计 $($scriptGovernanceStepBudgetMinutes)m（$($scriptGovernanceSteps.Count) 个 step：3m checkout"
-    $expectedBudgetContinuation = "+ $fiveMinuteStepCount × 5m；"
+    $expectedBudgetContinuation = "+ $(@($scriptGovernanceTailMinuteCounts.GetEnumerator() | ForEach-Object { "$($_.Value) × $($_.Key)m" }) -join ' + ')；"
     $contractSteps = @($scriptGovernanceSteps | Where-Object {
             [string]::Equals([string]$_.name, 'Test acceptance scenario matrix contract', [StringComparison]::Ordinal)
         })
@@ -265,7 +349,8 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
         [int]$equivalenceContractStep.'timeout-minutes' -eq 5 -and
         $null -eq $equivalenceContractStep.PSObject.Properties['if']) 'The equivalence fixture contract must run as one unconditional five-minute pwsh step.'
 
-    Assert-Contract ($scriptGovernanceStepTimeouts.Count -eq $scriptGovernanceSteps.Count -and $scriptGovernanceStepTimeouts[0] -eq 3 -and $fiveMinuteStepCount -eq ($scriptGovernanceSteps.Count - 1)) 'Script Governance budget comment contract expects one three-minute checkout and all remaining steps to have five-minute timeouts.'
+    Assert-Contract ($scriptGovernanceStepTimeouts.Count -eq $scriptGovernanceSteps.Count -and $scriptGovernanceStepTimeouts[0] -eq 3 -and @($scriptGovernanceStepTimeouts | Where-Object { $_ -le 0 }).Count -eq 0) 'Script Governance budget comment contract expects one three-minute checkout and a positive explicit timeout on every step.'
+    Assert-Contract ((@($scriptGovernanceTailMinuteCounts.GetEnumerator() | ForEach-Object { $_.Key * $_.Value }) | Measure-Object -Sum).Sum + 3 -eq $scriptGovernanceStepBudgetMinutes) 'The Script Governance budget breakdown must add up to the declared step budget sum.'
     Assert-Contract ($workflowSource.Contains($expectedBudgetHeadline, [StringComparison]::Ordinal) -and $workflowSource.Contains($expectedBudgetContinuation, [StringComparison]::Ordinal)) "Script Governance budget comment must match its actual $($scriptGovernanceSteps.Count)-step/$($scriptGovernanceStepBudgetMinutes)m structure."
     Assert-Contract (-not $workflowSource.Contains('实际为 103m', [StringComparison]::Ordinal)) 'Script Governance budget comment must not retain the obsolete 103m historical sentence.'
 
@@ -531,6 +616,86 @@ function Assert-ImpactCase {
     }
 }
 
+function Assert-FullChainProjectReferenceCoverage {
+    # #3338：把「FullChain lane 的依赖边」从**手抄**改成**从 .csproj 派生**看守。
+    #
+    # 背景：CiImpactPlan.ps1 的路径分发是一串手写 if 分支，每条各自硬编码一组 flag，
+    # 没有任何从项目引用关系派生的机制。于是 `backend/gateway/BusinessGateway/` 那条漏了
+    # full_chain（#3330 / PR #3337 实例），而 Wms / Mes / Maintenance 三个被 FullChain 直接
+    # 引用的业务服务同样没被 salesOrderDemand 那个集合覆盖。逐条补名单每轮必复发
+    # （本仓同形状已栽三次：#3003 / #3135 / #3300）。
+    #
+    # 本契约不消灭名单，而是**让名单的完备性由一条不会过期的派生断言看守**：
+    # 引用关系的唯一权威是 Nerv.IIP.Business.FullChain.Tests.csproj 的 ProjectReference，
+    # 新增一条引用而忘了更新 CiImpactPlan 的集合/分支，这里立刻红。
+    #
+    # **本契约不保证什么（别读成完备）**：
+    #
+    # (a) 它只覆盖 .csproj 里的**编译期** ProjectReference。FullChain 的运行时依赖面比这更大
+    #     （seed 路径、跨服务事件转换器/处理器等由 Test-FullChainSeedPath /
+    #     Test-CrossServiceIntegrationEventPath 另行覆盖），那些不在本契约射程内。
+    #
+    # (b) **它只看守一个方向**：「csproj 里有这条引用 ⇒ CiImpactPlan 必须选中 full_chain」。
+    #     **反向不看守** —— csproj 里删掉一条引用、而上面那个名单里还留着该服务，本契约**不会红**。
+    #     这个方向是**刻意选的、也是安全的**：残留名单只会让 full_chain lane **过度选中**
+    #     （多跑一次重 lane），不会让它**漏选**；而漏选才是 #3338 要修的那类缺陷
+    #     （改了网关却不跑 FullChain，缺陷带着绿灯进 main）。⛔ 别把本契约读成双向完备。
+    #
+    # (c) ⚠️ **一个「绿得理由不对」的已知边界（登记，未在 #3338 修）**：下面业务服务那一面用的是
+    #     **合成探针路径**。今天 5 个被引用服务全都在 CiImpactPlan 的 $knownBusinessServiceNames 里，
+    #     所以没有假过。但**将来若 FullChain 引用了一个尚未登记进那份名单的业务服务**，探针路径会命中
+    #     CiImpactPlan 的 `-not $knownBusinessServiceNameSet.Contains(...)` 分支走 Select-AllImpacts
+    #     **全量点亮**，于是本契约照样通过 —— **CI 行为仍然正确**（全选是保守的），
+    #     **但本契约那一刻是因为错误的理由变绿的**，它并没有证明「名单覆盖了该服务」。
+    #     **可辨识特征（实测读数，#3338）**：已登记服务的探针点亮 7 个 flag、full_chain 的 reason 前缀是
+    #     `changed:`；未登记服务点亮 20 个 flag、reason 前缀是 `unclassified-business-service:`。
+    #     后来人若要收掉这一格，就从这个前缀入手。
+    $projectPath = Join-Path $repoRoot 'backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj'
+    Assert-Contract (Test-Path -LiteralPath $projectPath) 'FullChain test project must exist for the dependency-edge contract.'
+
+    [xml] $projectXml = Get-Content -LiteralPath $projectPath -Raw
+    $referenceRoot = Split-Path -Parent $projectPath
+    $referencedPaths = [Collections.Generic.List[string]]::new()
+    foreach ($node in $projectXml.SelectNodes('//ProjectReference')) {
+        $include = [string]$node.GetAttribute('Include')
+        if ([string]::IsNullOrWhiteSpace($include)) { continue }
+        $resolved = [IO.Path]::GetFullPath((Join-Path $referenceRoot ($include -replace '\\', [IO.Path]::DirectorySeparatorChar)))
+        $relative = $resolved.Substring($repoRoot.Length).TrimStart([char]'/', [char]'\') -replace '\\', '/'
+        [void]$referencedPaths.Add($relative)
+    }
+
+    # 正向判据：解析必须真的产出东西。没有这一条，解析一旦失败（改名/改结构）会让下面
+    # 每一条 foreach 断言退化成「空集即真」而全绿——那是本仓成文教训里最典型的假绿形态。
+    Assert-Contract ($referencedPaths.Count -gt 0) 'FullChain dependency-edge contract parsed zero ProjectReference entries; the contract would be vacuously true.'
+
+    $businessServiceNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $nonBusinessReferences = [Collections.Generic.List[string]]::new()
+    foreach ($relative in $referencedPaths) {
+        $match = [regex]::Match($relative, '^backend/services/Business/([^/]+)/')
+        if ($match.Success) { [void]$businessServiceNames.Add($match.Groups[1].Value) }
+        else { [void]$nonBusinessReferences.Add($relative) }
+    }
+
+    # 同上：两个分支各自也不许是空集。
+    Assert-Contract ($businessServiceNames.Count -gt 0) 'FullChain dependency-edge contract resolved zero referenced business services.'
+    Assert-Contract ($nonBusinessReferences.Count -gt 0) 'FullChain dependency-edge contract resolved zero non-business references.'
+
+    # ① 业务服务这一面：被 FullChain 引用的每个服务，改它必须选中 full_chain。
+    #    用该服务 .csproj 之外的真实路径不可得时，这里直接对服务名断言覆盖关系——
+    #    判定发生在 CiImpactPlan 的集合里，因此断言集合包含关系比造夹具更直接、也无夹具选取偏差。
+    foreach ($serviceName in $businessServiceNames) {
+        $servicePath = "backend/services/Business/$serviceName/src/probe/FullChainDependencyEdgeProbe.cs"
+        $plan = Get-NervCiImpactPlan -ChangedPaths @($servicePath)
+        Assert-Contract ([bool]$plan.full_chain) "FullChain references business service '$serviceName', so changing it must select the full_chain lane (path: $servicePath)."
+    }
+
+    # ② 非业务服务这一面（网关 / common/*）：直接用被引用项目的 .csproj 路径作夹具。
+    foreach ($relative in $nonBusinessReferences) {
+        $plan = Get-NervCiImpactPlan -ChangedPaths @($relative)
+        Assert-Contract ([bool]$plan.full_chain) "FullChain references '$relative', so changing it must select the full_chain lane."
+    }
+}
+
 function Assert-PostgresLaneOwningPathsRoute {
     foreach ($owningPath in @(
             'scripts/run-postgres-test-lane.ps1',
@@ -641,12 +806,51 @@ function Assert-AcceptanceScenarioMatrixRuntimePathMutationsDoNotAliasOwners {
 Assert-Contract (Test-Path -LiteralPath $libraryPath -PathType Leaf) 'The CI impact-plan library is missing.'
 . $libraryPath
 
-Assert-ImpactCase -Name 'pure-docs' -Paths @('README.md', 'docs/architecture/context-map.md') -Flags @{
+Assert-ImpactCase -Name 'pure-docs' -Paths @('README.md', 'docs/architecture/overview/context-map.md') -Flags @{
     docs = $true; backend = $false; frontend = $false; scripts = $false; connector_hosts = $false; postgresql = $false; full_chain = $false
 }
 
 Assert-ImpactCase -Name 'script-governance-registry' -Paths @('docs/governance/script-automation.md') -Flags @{
     docs = $true; scripts = $true; backend = $false; frontend = $false
+}
+
+# #3145: the restore manifest lives under 'docs/', and the generic 'docs/' rule would route it to
+# 'docs' alone. The only gate that reads it, scripts/verify-restore-lock-contract.ps1, runs in the
+# 'Script Governance' job, whose `if` is `scripts != false || backend != false` — so without
+# 'scripts' here, a PR that edits only the manifest skips the job entirely and the check runs on
+# zero jobs for exactly the change it exists to catch. Measured before the routing rule was added:
+# the plan for this path came back 'docs' only.
+Assert-ImpactCase -Name 'restore-lock-manifest' -Paths @('docs/reference/api/business-gateway-surface-restore.manifest.json') -Flags @{
+    docs = $true; scripts = $true; backend = $false; frontend = $false
+}
+
+# #3157: the same routing for the second manifest. Asserted separately from the case above because
+# the rule used to be an exact string match on the BusinessGateway path — one case passing proves
+# only that that one path is routed, which is precisely how a whitelist of one passes review.
+Assert-ImpactCase -Name 'restore-lock-manifest-platform-gateway' -Paths @('docs/reference/api/platform-gateway-restore.manifest.json') -Flags @{
+    docs = $true; scripts = $true; backend = $false; frontend = $false
+}
+
+# A manifest that does not exist yet must already route to 'scripts'. This is the assertion that
+# distinguishes a derived rule from a widened whitelist: it fails if anyone replaces the pattern with
+# an enumeration of the two real paths, and it is the only case here that cannot be satisfied by
+# listing today's files.
+Assert-ImpactCase -Name 'restore-lock-manifest-future' -Paths @('docs/reference/api/not-yet-created-restore.manifest.json') -Flags @{
+    docs = $true; scripts = $true; backend = $false; frontend = $false
+}
+
+# The neighbouring negative: a Reference document under the same directory that is NOT a restore
+# manifest must stay on 'docs' alone. Without it the pattern could be loosened to the whole
+# directory and every case above would still pass.
+Assert-ImpactCase -Name 'reference-api-non-manifest' -Paths @('docs/reference/api/contracts-and-codegen.md') -Flags @{
+    docs = $true; scripts = $false; backend = $false; frontend = $false
+}
+
+# The exemption table reaches the same gate through the generic 'scripts/' rule. Asserted rather
+# than assumed: it is the file that decides which forks stay silent, and if it ever moved out of
+# 'scripts/' the gate would stop being scheduled on changes to it.
+Assert-ImpactCase -Name 'restore-lock-exemption-table' -Paths @('scripts/restore-lock-drift-exemptions.json') -Flags @{
+    scripts = $true; docs = $false; backend = $false; frontend = $false
 }
 
 Assert-ImpactCase -Name 'nested-readme-docs' -Paths @('backend/services/Business/Erp/README.md', 'connector-hosts/README.md') -Flags @{
@@ -690,7 +894,7 @@ foreach ($sharedCase in @(
 }
 
 $backendCommonDirectories = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'backend/common') -Directory | ForEach-Object { $_.Name })
-Assert-Contract ($backendCommonDirectories.Count -eq 11) 'The backend common-directory observation baseline must be revised when a shared directory is added or removed.'
+Assert-Contract ($backendCommonDirectories.Count -eq 12) 'The backend common-directory observation baseline must be revised when a shared directory is added or removed.'
 foreach ($commonDirectory in $backendCommonDirectories) {
     $plan = Get-NervCiImpactPlan -ChangedPaths @("backend/common/$commonDirectory/ObservedChange.cs")
     Assert-ImpactFlag -Plan $plan -Name 'backend' -Expected $true
@@ -850,6 +1054,7 @@ Assert-ImpactCase -Name 'openapi-generation-script' -Paths @('scripts/export-gat
 Assert-PostgresLaneOwningPathsRoute
 Assert-RedisCapLaneOwningPathsRoute
 Assert-FullChainLaneOwningPathsRoute
+Assert-FullChainProjectReferenceCoverage
 Assert-AcceptanceScenarioMatrixOwningPathsRoute
 Assert-AcceptanceScenarioMatrixRuntimeOwningPathsRoute
 Assert-AcceptanceScenarioMatrixRuntimePathMutationsDoNotAliasOwners
@@ -892,20 +1097,27 @@ Assert-ImpactCase -Name 'world-history-seed-platform-service' -Paths @('backend/
     backend = $true; redis_cap = $false; full_chain = $true
 }
 
+# ⚠️ #3338：下面这几条反例的夹具服务从 Mes 换成 Quality，**换的是夹具、不是期望值**。
+# 原因：#3338 起 Mes / Wms / Maintenance / Erp / DemandPlanning 因**被 FullChain 直接 ProjectReference**
+# 而无条件选中 full_chain，用 Mes 当夹具会让这几条反例的 full_chain 维度恒为 true、**失去鉴别力**
+# （本仓判例：结构变更会静默抽掉上一票断言的前提，而断言还在跑、还在绿）。
+# Quality 同样是已登记业务服务，但**不**被 FullChain 引用、也不在 sales-order-demand 集合里，
+# 因此 full_chain 对它仍是干净的指示器，这几条反例要钉的「按目录段整段比对、不做前缀包含」
+# 与「相邻 Application 子目录不扩面」原样成立。⛔ 别把夹具换回 Mes。
 # NERV-1711 反例：同前缀但不同目录不得触发，钉住「按目录段整段比对」而不是前缀包含。
-Assert-ImpactCase -Name 'integration-event-converters-prefix-collision' -Paths @('backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/IntegrationEventConvertersLegacy/LegacyShim.cs') -Flags @{
+Assert-ImpactCase -Name 'integration-event-converters-prefix-collision' -Paths @('backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/IntegrationEventConvertersLegacy/LegacyShim.cs') -Flags @{
     backend = $true; postgresql = $true; redis_cap = $false; full_chain = $false
-} -Services @('mes')
+} -Services @('quality')
 
-Assert-ImpactCase -Name 'seed-prefix-collision' -Paths @('backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/SeedlingCatalog/SeedlingCatalogQuery.cs') -Flags @{
+Assert-ImpactCase -Name 'seed-prefix-collision' -Paths @('backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/SeedlingCatalog/SeedlingCatalogQuery.cs') -Flags @{
     backend = $true; postgresql = $true; redis_cap = $false; full_chain = $false
-} -Services @('mes')
+} -Services @('quality')
 
 # NERV-1711 反例：同一服务的相邻 Application 子目录仍然只是普通后端改动，
 # 钉住新规则没有退化成「任何 backend/services 路径都跑重 lane」。
-Assert-ImpactCase -Name 'sibling-application-directory-stays-narrow' -Paths @('backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/WorkOrderQuery.cs') -Flags @{
+Assert-ImpactCase -Name 'sibling-application-directory-stays-narrow' -Paths @('backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Queries/WorkOrderQuery.cs') -Flags @{
     backend = $true; postgresql = $true; redis_cap = $false; full_chain = $false
-} -Services @('mes')
+} -Services @('quality')
 
 # NERV-1711 反例：测试工程里的同名目录不在 backend/services/ 之下，
 # 钉住新规则带着服务前缀限定（处理器的 redis_cap 仍由既有 messaging 规则给出）。
@@ -917,9 +1129,9 @@ Assert-ImpactCase -Name 'test-project-integration-event-handlers-not-a-service' 
     backend = $true; redis_cap = $true; full_chain = $false
 }
 
-Assert-ImpactCase -Name 'capitalized-is-not-cap' -Paths @('backend/services/Business/Mes/src/CapitalizedUnitCost.cs') -Flags @{
+Assert-ImpactCase -Name 'capitalized-is-not-cap' -Paths @('backend/services/Business/Quality/src/CapitalizedUnitCost.cs') -Flags @{
     backend = $true; postgresql = $true; redis_cap = $false; full_chain = $false
-} -Services @('mes')
+} -Services @('quality')
 
 Assert-ImpactCase -Name 'capacity-is-not-cap' -Paths @('backend/services/Business/Scheduling/src/FiniteCapacityScheduler.cs') -Flags @{
     backend = $true; postgresql = $true; redis_cap = $false; full_chain = $false
@@ -1095,6 +1307,22 @@ $workflow = [IO.File]::ReadAllText($workflowPath)
 Assert-Contract ($workflow.Contains("  impact-plan:`n", [StringComparison]::Ordinal)) 'CI must define the impact-plan job.'
 Assert-Contract ($workflow.Contains('run: ./scripts/tests/ci-impact-plan.Tests.ps1', [StringComparison]::Ordinal)) 'Script Governance must run the CI impact-plan contract tests.'
 Assert-Contract ($workflow.Contains('uses: actions/upload-artifact@v4', [StringComparison]::Ordinal)) 'The impact-plan job must upload its audit artifact.'
+Assert-RedisCapActiveSelectionWorkflowContract -Path $workflowPath
+
+$redisCapMemberListMutation = $workflow.Replace('-AllActiveMembers', '-MemberId stale-hosted-member-redis-cap', [StringComparison]::Ordinal)
+Assert-Contract (-not [string]::Equals($redisCapMemberListMutation, $workflow, [StringComparison]::Ordinal)) 'The Redis/CAP hosted-member mutation must alter the canonical workflow invocation.'
+$redisCapMemberListMutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-redis-cap-selection-$([Guid]::NewGuid().ToString('N'))"
+try {
+    [IO.Directory]::CreateDirectory($redisCapMemberListMutationRoot) | Out-Null
+    $redisCapMemberListMutationPath = Join-Path $redisCapMemberListMutationRoot 'member-list.yml'
+    [IO.File]::WriteAllText($redisCapMemberListMutationPath, $redisCapMemberListMutation, [Text.UTF8Encoding]::new($false))
+    $redisCapMemberListMutationFailure = $null
+    try { Assert-RedisCapActiveSelectionWorkflowContract -Path $redisCapMemberListMutationPath } catch { $redisCapMemberListMutationFailure = $_ }
+    Assert-Contract ($null -ne $redisCapMemberListMutationFailure) 'A hosted Redis/CAP -MemberId list must fail the workflow contract.'
+}
+finally {
+    if (Test-Path -LiteralPath $redisCapMemberListMutationRoot) { Remove-Item -LiteralPath $redisCapMemberListMutationRoot -Recurse -Force }
+}
 
 $expectedDotNetJobNames = @(
     'backend-tests-business-gateway'
@@ -1151,6 +1379,7 @@ finally {
 }
 
 Assert-ConditionalRoutingWorkflow -Path $workflowPath
+Assert-BusinessConsoleBrowserValidationWorkflowContract -Path $workflowPath
 Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowPath
 
 $workflowMutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-impact-workflow-$([Guid]::NewGuid().ToString('N'))"
@@ -1271,12 +1500,12 @@ try {
 
 '@
     $workflowWithoutAcceptanceRuntimeContract = $workflow.Replace($acceptanceRuntimeContractStep, '').Replace(
-        'step 预算合计 153m（31 个 step：3m checkout',
-        'step 预算合计 148m（30 个 step：3m checkout').Replace(
-        '+ 30 × 5m；',
-        '+ 29 × 5m；')
+        'step 预算合计 208m（40 个 step：3m checkout',
+        'step 预算合计 203m（39 个 step：3m checkout').Replace(
+        '+ 38 × 5m + 1 × 15m；',
+        '+ 37 × 5m + 1 × 15m；')
     Assert-Contract (-not [string]::Equals($workflowWithoutAcceptanceRuntimeContract, $workflow, [StringComparison]::Ordinal)) 'Acceptance runtime workflow mutation must remove the canonical pure fixture contract step.'
-    Assert-Contract ($workflowWithoutAcceptanceRuntimeContract.Contains('step 预算合计 148m（30 个 step：3m checkout', [StringComparison]::Ordinal) -and $workflowWithoutAcceptanceRuntimeContract.Contains('+ 29 × 5m；', [StringComparison]::Ordinal)) 'Acceptance runtime workflow mutation must keep its budget comment truthful at 30 steps and 148m.'
+    Assert-Contract ($workflowWithoutAcceptanceRuntimeContract.Contains('step 预算合计 203m（39 个 step：3m checkout', [StringComparison]::Ordinal) -and $workflowWithoutAcceptanceRuntimeContract.Contains('+ 37 × 5m + 1 × 15m；', [StringComparison]::Ordinal)) 'Acceptance runtime workflow mutation must keep its budget comment truthful at 39 steps and 203m.'
     $workflowWithoutAcceptanceRuntimeContractPath = Join-Path $workflowMutationRoot 'script-governance-drops-acceptance-runtime-contract.yml'
     [IO.File]::WriteAllText($workflowWithoutAcceptanceRuntimeContractPath, $workflowWithoutAcceptanceRuntimeContract, [Text.UTF8Encoding]::new($false))
     $runtimeWorkflowContractFailure = $null
@@ -1293,10 +1522,10 @@ try {
 
 '@
     $workflowWithoutAcceptanceEquivalenceContract = $workflow.Replace($acceptanceEquivalenceContractStep, '').Replace(
-        'step 预算合计 153m（31 个 step：3m checkout',
-        'step 预算合计 148m（30 个 step：3m checkout').Replace(
-        '+ 30 × 5m；',
-        '+ 29 × 5m；')
+        'step 预算合计 208m（40 个 step：3m checkout',
+        'step 预算合计 203m（39 个 step：3m checkout').Replace(
+        '+ 38 × 5m + 1 × 15m；',
+        '+ 37 × 5m + 1 × 15m；')
     $workflowWithoutAcceptanceEquivalenceContractPath = Join-Path $workflowMutationRoot 'script-governance-drops-acceptance-equivalence-contract.yml'
     [IO.File]::WriteAllText($workflowWithoutAcceptanceEquivalenceContractPath, $workflowWithoutAcceptanceEquivalenceContract, [Text.UTF8Encoding]::new($false))
     $equivalenceWorkflowContractFailure = $null
@@ -1304,16 +1533,16 @@ try {
     Assert-Contract ($null -ne $equivalenceWorkflowContractFailure) 'Removing the equivalence Script Governance fixture step must fail the workflow contract.'
 
     $workflowWithIncorrectBudgetComment = $workflow.Replace(
-        'step 预算合计 153m（31 个 step：3m checkout',
-        'step 预算合计 148m（30 个 step：3m checkout').Replace(
-        '+ 30 × 5m；',
-        '+ 29 × 5m；')
-    Assert-Contract (-not [string]::Equals($workflowWithIncorrectBudgetComment, $workflow, [StringComparison]::Ordinal)) 'Script Governance budget-comment mutation must alter the canonical 31-step/153m comment.'
+        'step 预算合计 208m（40 个 step：3m checkout',
+        'step 预算合计 203m（39 个 step：3m checkout').Replace(
+        '+ 38 × 5m + 1 × 15m；',
+        '+ 37 × 5m + 1 × 15m；')
+    Assert-Contract (-not [string]::Equals($workflowWithIncorrectBudgetComment, $workflow, [StringComparison]::Ordinal)) 'Script Governance budget-comment mutation must alter the canonical 40-step/208m comment.'
     $workflowWithIncorrectBudgetCommentPath = Join-Path $workflowMutationRoot 'script-governance-uses-incorrect-budget-comment.yml'
     [IO.File]::WriteAllText($workflowWithIncorrectBudgetCommentPath, $workflowWithIncorrectBudgetComment, [Text.UTF8Encoding]::new($false))
     $budgetCommentContractFailure = $null
     try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithIncorrectBudgetCommentPath } catch { $budgetCommentContractFailure = $_ }
-    $expectedBudgetCommentDiagnostic = 'Script Governance budget comment must match its actual 31-step/153m structure.'
+    $expectedBudgetCommentDiagnostic = 'Script Governance budget comment must match its actual 40-step/208m structure.'
     $observedBudgetCommentDiagnostic = if ($null -eq $budgetCommentContractFailure) { '<none>' } else { [string]$budgetCommentContractFailure.Exception.Message }
     Assert-Contract ([string]::Equals($observedBudgetCommentDiagnostic, $expectedBudgetCommentDiagnostic, [StringComparison]::Ordinal)) "An incorrect Script Governance budget comment must fail with the exact budget diagnostic. Observed: $observedBudgetCommentDiagnostic"
 
@@ -1431,6 +1660,27 @@ try {
         $failure = $null
         try { Assert-ConditionalRoutingWorkflow -Path $mutationPath } catch { $failure = $_ }
         Assert-Contract ($null -ne $failure) "Conditional-routing mutation '$($mutation.Name)' must be rejected."
+    }
+
+    foreach ($browserMutation in @(
+            @{
+                Name = 'business-console-browser-diagnostics-not-failure-only'
+                Original = "        if: failure() && steps.business-console-browser-tests.outcome == 'failure'"
+                Replacement = '        if: always()'
+            },
+            @{
+                Name = 'business-console-browser-diagnostics-missing'
+                Original = '      - name: Upload Business Console browser diagnostics'
+                Replacement = '      - name: Browser diagnostic upload removed by mutation'
+            }
+        )) {
+        $mutated = $workflow.Replace($browserMutation.Original, $browserMutation.Replacement)
+        Assert-Contract (-not [string]::Equals($mutated, $workflow, [StringComparison]::Ordinal)) "Business Console browser mutation '$($browserMutation.Name)' must match the canonical workflow."
+        $mutationPath = Join-Path $workflowMutationRoot "$($browserMutation.Name).yml"
+        [IO.File]::WriteAllText($mutationPath, $mutated, [Text.UTF8Encoding]::new($false))
+        $failure = $null
+        try { Assert-BusinessConsoleBrowserValidationWorkflowContract -Path $mutationPath } catch { $failure = $_ }
+        Assert-Contract ($null -ne $failure) "Business Console browser mutation '$($browserMutation.Name)' must be rejected."
     }
 }
 finally {

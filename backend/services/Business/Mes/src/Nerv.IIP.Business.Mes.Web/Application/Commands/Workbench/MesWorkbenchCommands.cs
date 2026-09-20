@@ -1,6 +1,7 @@
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ChangeoverRecordAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
@@ -20,6 +21,14 @@ using DomainScheduledOperationSnapshot = Nerv.IIP.Business.Mes.Domain.Aggregates
 using DomainWorkCenterUnavailability = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability;
 using DomainDefectRecord = Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate.DefectRecord;
 using DomainShiftHandover = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandover;
+using ShiftHandoverId = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverId;
+using ShiftHandoverIssueCategory = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverIssueCategory;
+using ShiftHandoverIssueSeverity = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverIssueSeverity;
+using ShiftHandoverWipItemSnapshot = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverWipItemSnapshot;
+using ShiftHandoverUnfinishedWorkOrderSnapshot = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverUnfinishedWorkOrderSnapshot;
+using ShiftHandoverOpenIssueSnapshot = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverOpenIssueSnapshot;
+using ShiftHandoverAttachmentSnapshot = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandoverAttachmentSnapshot;
+using Nerv.IIP.Business.Mes.Web.Application.Quality;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.Business.Mes.Web.Application.Errors;
 using Nerv.IIP.Business.Mes.Web.Application.Approvals;
@@ -36,6 +45,11 @@ public sealed record MesOperationActionResponse(
     string Status,
     DateTimeOffset ChangedAtUtc);
 
+/// <summary>
+/// 下达工单。其中 <c>ReleasedAtUtc</c> 是下达时刻，
+/// **已在 HTTP 端点（<c>ReleaseWorkOrderEndpoint</c>）夹到不晚于当前时刻**——
+/// 那里是请求体进入系统的信任边界，未来值只可能从那里来，本处不再重复夹一遍。
+/// </summary>
 public sealed record ReleaseWorkOrderCommand(
     string OrganizationId,
     string EnvironmentId,
@@ -131,8 +145,74 @@ public sealed class ReleaseWorkOrderCommandHandler(
             }
         }
 
-        workOrder.MarkReleased(operationSnapshots);
-        return new MesAcceptedResponse("Accepted", request.WorkOrderId, request.ReleasedAtUtc);
+        // 工单在 created 状态就能开工、报工、乃至完工（#3113），下达因此可能发生在已有活动之后。
+        // 发给 Quality 的发布时刻必须按**最早既有活动**取下界，口径与 #3000 回填同一处实现。
+        //
+        // 分组键从「工单级」换成「工序级」（#3129）：同一次往返里多取一个 Sum，**不增加查询**。
+        // 原来这里只有一个 MinAsync，把该工单的报工压成一个工单级标量；而 owner 裁定
+        // 「下达之前已产出的数量不补开巡检任务」需要的是**按工序分辨**的既有产量——
+        // 压成标量之后 Quality 无论怎么推断都补不回来（#3129 探针①）。
+        // 工单级下界仍然要：它由每道工序的最早报工再取 Min 得到，与换键前逐字等值
+        //（Min 对分组是可结合的；工单若一条报工都没有，两种写法都给 null）。
+        //
+        // 「既有」= 下达动作发生这一刻库里已经有的报工行，**不按 ReportedAtUtc 与发布时刻比大小**：
+        // 上面那个 releasedAt 恰恰被夹到「不晚于最早既有活动」，拿它当过滤条件会把这些行全滤掉。
+        // 判据是「这一刻它已经存在」，而这条命令正运行在下达动作里。
+        //
+        // 冲销按 `ReversedReportNo == null` 判，不用 ProductionReport.IsReversal：后者是
+        // `!IsNullOrWhiteSpace(ReversedReportNo)`，EF 翻不动；构造函数把空白串归一成 null，
+        // 故对落库行两者等价。口径与 Quality 侧 QuantityHighWater（非冲销行的 GoodQuantity 之和）逐字一致。
+        var reportFactsByOperation = await dbContext.ProductionReports
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.WorkOrderId == request.WorkOrderId)
+            .GroupBy(x => x.OperationTaskId)
+            .Select(group => new
+            {
+                OperationTaskId = group.Key,
+                EarliestReportedAtUtc = group.Min(x => x.ReportedAtUtc),
+                PreReleaseGoodQuantity = group.Sum(x => x.ReversedReportNo == null ? x.GoodQuantity : 0m),
+            })
+            .ToArrayAsync(cancellationToken);
+        var earliestReportedAtUtc = reportFactsByOperation.Length == 0
+            ? (DateTimeOffset?)null
+            : reportFactsByOperation.Min(x => x.EarliestReportedAtUtc);
+        var preReleaseGoodQuantityByOperationTaskId = reportFactsByOperation.ToDictionary(
+            x => x.OperationTaskId,
+            x => x.PreReleaseGoodQuantity,
+            StringComparer.Ordinal);
+
+        // 完工这一面必须一起进下界，**不能只按报工算**：工序动作 "complete"
+        // （本文件 ChangeOperationTaskStateCommandHandler 的 "complete" 分支）把 pendingProductionReportNos
+        // 传 []，完工时刻取 request.ChangedAtUtc，**不产生任何报工行**。于是「零报工、却已有完工」可达，
+        // 只按报工取下界时这里查不到任何活动 → 发布事实取调用方时刻 → 被 Quality 的完工守卫
+        // （PeriodicInspectionOperation 的 CompletedAtUtc < releasedAtUtc）判冲突整封进死信（#3117 第三轮）。
+        // 不新增查询：operationSnapshots 已在上面读进内存，ExistingEndUtc 就是完工时刻。
+        // 关于不按状态过滤：取消也会写 ExistingEndUtc（OperationTask.Cancel）。
+        // **但取消态在生产上进不到这条下界，这里如实写清，不再声称它有用例承担：**
+        // OperationTask.Cancel 的生产调用点恰 1 处（本文件 ChangeWorkOrderStateCommandHandler 的取消分支），
+        // 它先把工单整单 Cancel、再 foreach 取消全部工序（无部分取消路径）；
+        // 而 WorkOrder.ThrowIfCannotRelease 把 CancelledStatus 与其余终态一并拒掉。
+        // 故「工单可下达 + 存在已取消工序」在系统层不可达，加不加状态过滤对可达输入是等价变异。
+        // 保留「不过滤」是因为它不依赖「哪些状态会写 ExistingEndUtc」这份枚举的完备性，方向上恒偏早、
+        // 对 Quality 那三条 throw 守卫恒安全（**只对那三条守卫，不覆盖窗口生成语义**）。
+        var earliestOperationEndUtc = operationSnapshots
+            .Where(x => x.ExistingEndUtc.HasValue)
+            .Select(x => (DateTimeOffset?)x.ExistingEndUtc!.Value)
+            .Min();
+        var earliestExistingActivityAtUtc = earliestReportedAtUtc is { } report
+            ? (earliestOperationEndUtc is { } end && end < report ? end : report)
+            : earliestOperationEndUtc;
+
+        var releasedAt = WorkOrderReleaseFactTime.NotLaterThan(request.ReleasedAtUtc, earliestExistingActivityAtUtc);
+
+        workOrder.MarkReleased(operationSnapshots, releasedAt, preReleaseGoodQuantityByOperationTaskId);
+
+        // 回执回**实际落到发布事实上的时刻**，不回 request.ReleasedAtUtc：
+        // 被既有活动下界压过或被夹到当前时刻时，调用方否则无从得知自己给的时刻已被改写。
+        return new MesAcceptedResponse("Accepted", request.WorkOrderId, releasedAt.Value);
     }
 }
 
@@ -154,7 +234,13 @@ public sealed class ForceReleaseQualityHoldCommandValidator : AbstractValidator<
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.SourceService).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.SourceDocumentId).NotEmpty().MaximumLength(100);
+        // #3315：这条上界必须跟着 quality_hold_contexts / quality_hold_transitions 的列宽走，不能手抄。
+        // 消费者能落库的来源身份（首件复合 201、周期检复合 225）都超过 100，改前它们**根本存不下**，
+        // 所以这里的 100 是自洽的；列宽加宽之后它们能存在了，若这条仍写 100，工作台手工强制放行
+        // 就会对**每一条复合来源身份**回 400 —— 「可达但手工放不掉」。
+        // 注意：同文件 ConvertPlanToWorkOrderCommandValidator 的 SourceDocumentId 是另一个面
+        //（work_orders.source_document_id，DemandPlanning 计划单溯源，宽 100），**不要**一起改。
+        RuleFor(x => x.SourceDocumentId).NotEmpty().MaximumLength(MesQualityHoldSourceDocumentIdPolicy.ColumnMaxLength);
         RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
         RuleFor(x => x.Actor).NotEmpty().MaximumLength(100);
         RuleFor(x => x.CorrelationId).NotEmpty().MaximumLength(200);
@@ -749,7 +835,16 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
                 request.RequestedAtUtc,
                 TimeSpan.FromMinutes(30),
                 null,
-                null));
+                null,
+                // 产出 SKU 取工单的 SkuId：工序级 SKU 在本模型里不可表达，
+                // 持久化契约（OperationTaskEntityTypeConfiguration）也把该列声明为"copied from the MES work order"。
+                // 下面的常规分支（无 WorkCenterId）本来就传 request.SkuId，这条捷径分支漏传会让
+                // 工序带上工单号形状的值，随完工事件与 WorkOrderReleased 的 SkuCode 不同源（#3112）。
+                // UomCode/PlannedQuantity 一并取同一个 request：这两项常规分支也传，
+                // 同一条命令的两个分支不该在"工序从工单抄哪些字段"上给出不同答案。
+                request.SkuId,
+                request.UomCode,
+                request.PlannedQuantity));
             var plan = scheduler.Schedule(
                 await GetScheduleOperationsAsync(request.OrganizationId, request.EnvironmentId, cancellationToken),
                 await GetUnavailabilitiesAsync(request.OrganizationId, request.EnvironmentId, cancellationToken));
@@ -788,7 +883,7 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
                 cancellationToken);
             if (materialCapture.IsMissing)
             {
-                throw new KnownException("MATERIAL_REQUIREMENT_SNAPSHOT_MISSING: 工单缺少齐套需求快照，无法确认物料齐套。");
+                throw new KnownException(MaterialReadinessGuards.MissingRequirementSnapshotReason);
             }
         }
 
@@ -1132,6 +1227,29 @@ public sealed class CreateMaterialIssueRequestCommandHandler(ApplicationDbContex
     private sealed record FrozenMaterialSelection(decimal RequiredQuantity, string? SubstitutedMaterialId);
 }
 
+/// <summary>按请求里的 RequestId（业务单号或 Guid 字符串）定位领料申请。</summary>
+internal static class MaterialIssueRequestLookup
+{
+    /// <summary>
+    /// x.Id 是强类型 GuidId：谓词里对它再取内部成员（x.Id.Id == guid）无法被 EF 翻译（真机 500，#3098）。
+    /// 先按业务单号命中；只有请求确实是 Guid 时才用先物化好的强类型 Id 直接比较（可翻译）。
+    /// </summary>
+    public static async Task<MaterialIssueRequest?> FindAsync(
+        IQueryable<MaterialIssueRequest> scopedQuery,
+        string requestId,
+        CancellationToken cancellationToken)
+    {
+        var materialRequest = await scopedQuery.SingleOrDefaultAsync(x => x.RequestNo == requestId, cancellationToken);
+        if (materialRequest is null && Guid.TryParse(requestId, out var requestGuid))
+        {
+            var materialRequestId = new MaterialIssueRequestId(requestGuid);
+            materialRequest = await scopedQuery.SingleOrDefaultAsync(x => x.Id == materialRequestId, cancellationToken);
+        }
+
+        return materialRequest;
+    }
+}
+
 public sealed record ConfirmLineSideMaterialReceiptCommand(
     string OrganizationId,
     string EnvironmentId,
@@ -1150,13 +1268,8 @@ public sealed class ConfirmLineSideMaterialReceiptCommandHandler(
         var scopedQuery = dbContext.MaterialIssueRequests.Where(x =>
             x.OrganizationId == request.OrganizationId &&
             x.EnvironmentId == request.EnvironmentId);
-        var materialRequest = Guid.TryParse(request.RequestId, out var requestGuid)
-            ? await scopedQuery.SingleOrDefaultAsync(x => x.Id.Id == requestGuid, cancellationToken)
-            : await scopedQuery.SingleOrDefaultAsync(x => x.RequestNo == request.RequestId, cancellationToken);
-        if (materialRequest is null)
-        {
-            throw new KnownException($"未找到领料申请，RequestId = {request.RequestId}");
-        }
+        var materialRequest = await MaterialIssueRequestLookup.FindAsync(scopedQuery, request.RequestId, cancellationToken)
+            ?? throw new KnownException($"未找到领料申请，RequestId = {request.RequestId}");
 
         if (materialRequest.Status is not MaterialIssueRequest.RequestedStatus and
             not MaterialIssueRequest.PartiallyReceivedStatus)
@@ -1170,14 +1283,18 @@ public sealed class ConfirmLineSideMaterialReceiptCommandHandler(
         // 过账位置不再由 MES 臆造，Inventory 也就不会再以 NEGATIVE_ON_HAND 全拒（#1322）。
         var postingQuantity = request.ReceivedQuantity ??
             materialRequest.RequestedQuantity - materialRequest.ReceivedQuantity;
-        var locations = await supplyLocationResolver.ResolveAsync(
+        // 成功腿已实扣时沿用冻结来源；再次查可用量会把已扣完的正常重试挡住。
+        var locations = materialRequest.PendingReceiptQuantity > 0m
+            ? materialRequest.RequireTransferLocations()
+            : await supplyLocationResolver.ResolveAsync(
             new MesMaterialSupplyLocationRequest(
                 materialRequest.OrganizationId,
                 materialRequest.EnvironmentId,
                 materialRequest.MaterialId,
                 materialRequest.UomCode,
                 request.MaterialLotId ?? materialRequest.MaterialLotId,
-                postingQuantity),
+                postingQuantity,
+                materialRequest.GetSourceAllocations().FirstOrDefault()?.OwnerType ?? "company"),
             cancellationToken);
 
         MesDomainRuleGuard.Enforce(() =>
@@ -1222,13 +1339,8 @@ public sealed class ReturnLineSideMaterialCommandLock(ApplicationDbContext dbCon
             .Where(x =>
                 x.OrganizationId == command.OrganizationId &&
                 x.EnvironmentId == command.EnvironmentId);
-        var materialRequest = Guid.TryParse(command.RequestId, out var requestGuid)
-            ? await scopedQuery.SingleOrDefaultAsync(x => x.Id.Id == requestGuid, cancellationToken)
-            : await scopedQuery.SingleOrDefaultAsync(x => x.RequestNo == command.RequestId, cancellationToken);
-        if (materialRequest is null)
-        {
-            throw new KnownException($"未找到领料申请，RequestId = {command.RequestId}");
-        }
+        var materialRequest = await MaterialIssueRequestLookup.FindAsync(scopedQuery, command.RequestId, cancellationToken)
+            ?? throw new KnownException($"未找到领料申请，RequestId = {command.RequestId}");
 
         return new CommandLockSettings(
             $"business-mes:material-issue-return:{materialRequest.OrganizationId}:{materialRequest.EnvironmentId}:{materialRequest.Id.Id:D}",
@@ -1244,13 +1356,8 @@ public sealed class ReturnLineSideMaterialCommandHandler(ApplicationDbContext db
         var scopedQuery = dbContext.MaterialIssueRequests.Where(x =>
             x.OrganizationId == request.OrganizationId &&
             x.EnvironmentId == request.EnvironmentId);
-        var materialRequest = Guid.TryParse(request.RequestId, out var requestGuid)
-            ? await scopedQuery.SingleOrDefaultAsync(x => x.Id.Id == requestGuid, cancellationToken)
-            : await scopedQuery.SingleOrDefaultAsync(x => x.RequestNo == request.RequestId, cancellationToken);
-        if (materialRequest is null)
-        {
-            throw new KnownException($"未找到领料申请，RequestId = {request.RequestId}");
-        }
+        var materialRequest = await MaterialIssueRequestLookup.FindAsync(scopedQuery, request.RequestId, cancellationToken)
+            ?? throw new KnownException($"未找到领料申请，RequestId = {request.RequestId}");
 
         try
         {
@@ -1300,6 +1407,34 @@ public sealed record AssignDispatchTaskCommand(
     string? TeamId = null,
     string? TeamName = null,
     IReadOnlyCollection<DispatchParticipantInput>? Participants = null) : ICommand<MesAcceptedResponse>, IOperationTaskConcurrencyRetryCommand;
+
+public sealed record ClaimDispatchTaskCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string OperationTaskId,
+    string AssignedUserId,
+    string AssignedUserName,
+    string? DeviceAssetId,
+    string? ShiftId,
+    DateTimeOffset AssignedAtUtc,
+    string Actor,
+    string IdempotencyKey,
+    string? TeamId = null,
+    string? TeamName = null) : ICommand<MesAcceptedResponse>, IOperationTaskConcurrencyRetryCommand;
+
+public sealed class ClaimDispatchTaskCommandValidator : AbstractValidator<ClaimDispatchTaskCommand>
+{
+    public ClaimDispatchTaskCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.OperationTaskId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.AssignedUserId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.AssignedUserName).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.Actor).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+    }
+}
 
 public sealed class AssignDispatchTaskCommandValidator : AbstractValidator<AssignDispatchTaskCommand>
 {
@@ -1404,8 +1539,7 @@ public sealed class AssignDispatchTaskCommandHandler(
             task.RequiredSkillCode,
             cancellationToken);
 
-        MesDomainRuleGuard.Enforce(() =>
-            task.Assign(
+        MesDomainRuleGuard.Enforce(() => task.Assign(
                 request.AssignedUserId,
                 request.DeviceAssetId,
                 request.ShiftId,
@@ -1440,6 +1574,103 @@ public sealed class AssignDispatchTaskCommandHandler(
         dbContext.Entry(task).Property(x => x.AssignedAtUtc).IsModified = true;
         return new MesAcceptedResponse("Accepted", request.OperationTaskId, request.AssignedAtUtc);
     }
+}
+
+public sealed class ClaimDispatchTaskCommandHandler(
+    ApplicationDbContext dbContext,
+    IMesWorkerSkillQualificationGate workerSkillQualificationGate)
+    : ICommandHandler<ClaimDispatchTaskCommand, MesAcceptedResponse>
+{
+    private const string ClaimRuleKey = "operation-task-claim";
+
+    public ClaimDispatchTaskCommandHandler(ApplicationDbContext dbContext)
+        : this(dbContext, UnconfiguredMesWorkerSkillQualificationGate.Instance)
+    {
+    }
+
+    public async Task<MesAcceptedResponse> Handle(
+        ClaimDispatchTaskCommand request,
+        CancellationToken cancellationToken)
+    {
+        var idempotencyKey = request.IdempotencyKey.Trim();
+        var operationTaskId = request.OperationTaskId.Trim();
+        var assignedUserId = request.AssignedUserId.Trim();
+        var fingerprint = FormattableString.Invariant(
+            $"{operationTaskId.Length}:{operationTaskId}{assignedUserId.Length}:{assignedUserId}");
+        var existing = dbContext.CodeIdempotencyKeys.Local.FirstOrDefault(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.RuleKey == ClaimRuleKey &&
+                x.IdempotencyKey == idempotencyKey)
+            ?? await dbContext.CodeIdempotencyKeys.AsNoTracking().SingleOrDefaultAsync(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.RuleKey == ClaimRuleKey &&
+                x.IdempotencyKey == idempotencyKey,
+                cancellationToken);
+        if (existing is not null)
+        {
+            if (!string.Equals(existing.PayloadFingerprint, fingerprint, StringComparison.Ordinal))
+            {
+                throw new MesIdempotencyConflictException();
+            }
+
+            return new MesAcceptedResponse("Accepted", request.OperationTaskId, existing.CreatedAtUtc);
+        }
+
+        var task = await dbContext.OperationTasks.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.OperationTaskIdValue == request.OperationTaskId,
+            cancellationToken)
+            ?? throw new KnownException($"未找到工序任务，OperationTaskId = {request.OperationTaskId}");
+
+        var qualityIssues = await ReadinessReasonCodes.GetActiveQualityHoldIssuesAsync(
+            dbContext, request.OrganizationId, request.EnvironmentId, task.WorkOrderId,
+            task.OperationTaskIdValue, cancellationToken);
+        if (qualityIssues.Count > 0)
+        {
+            throw new KnownException(string.Join("; ", qualityIssues.Select(x => x.Code)));
+        }
+
+        var equipmentIssues = await ReadinessReasonCodes.GetEquipmentBlockingIssuesAsync(
+            dbContext, request.OrganizationId, request.EnvironmentId, task.WorkCenterId,
+            task.WorkOrderId, request.AssignedAtUtc, cancellationToken);
+        if (equipmentIssues.Count > 0)
+        {
+            throw new KnownException(string.Join("; ", equipmentIssues.Select(x => x.Code)));
+        }
+
+        await workerSkillQualificationGate.EnsureQualifiedAsync(
+            task.OrganizationId, task.EnvironmentId, request.AssignedUserId,
+            task.RequiredSkillCode, cancellationToken);
+
+        MesDomainRuleGuard.Enforce(() => task.Claim(
+            request.AssignedUserId, request.AssignedUserName, request.DeviceAssetId,
+            request.ShiftId, request.AssignedAtUtc, request.Actor, request.TeamId, request.TeamName));
+
+        var existingParticipants = await dbContext.OperationTaskParticipants
+            .Where(x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.OperationTaskId == request.OperationTaskId)
+            .ToArrayAsync(cancellationToken);
+        dbContext.OperationTaskParticipants.RemoveRange(existingParticipants);
+        dbContext.OperationTaskParticipants.Add(OperationTaskParticipant.Register(
+            request.OrganizationId, request.EnvironmentId, request.OperationTaskId,
+            request.AssignedUserId, request.AssignedUserName, 100m));
+        dbContext.Entry(task).Property(x => x.AssignedUserId).IsModified = true;
+        dbContext.Entry(task).Property(x => x.AssignedUserName).IsModified = true;
+        dbContext.Entry(task).Property(x => x.DeviceAssetId).IsModified = true;
+        dbContext.Entry(task).Property(x => x.ShiftId).IsModified = true;
+        dbContext.Entry(task).Property(x => x.TeamId).IsModified = true;
+        dbContext.Entry(task).Property(x => x.TeamName).IsModified = true;
+        dbContext.Entry(task).Property(x => x.AssignedAtUtc).IsModified = true;
+        dbContext.CodeIdempotencyKeys.Add(new CodeIdempotencyKey(
+            request.OrganizationId, request.EnvironmentId, ClaimRuleKey, idempotencyKey,
+            request.OperationTaskId, fingerprint, request.AssignedAtUtc));
+        return new MesAcceptedResponse("Accepted", request.OperationTaskId, request.AssignedAtUtc);
+    }
+
 }
 
 public sealed record ChangeOperationTaskStateCommand(
@@ -1922,7 +2153,8 @@ public sealed class AuthorizeAndStartOperationTaskCommandHandler(
 internal static class MaterialReadinessGuards
 {
     internal const string MissingRequirementSnapshotReason =
-        "MATERIAL_REQUIREMENT_SNAPSHOT_MISSING: 工单缺少齐套需求快照，无法确认物料齐套。";
+        MesReadinessReasonCodes.MaterialRequirementSnapshotMissing +
+        ": 工单缺少齐套需求快照，无法确认物料齐套。";
 
     internal sealed record AutomaticRebindEdge(
         string WorkOrderId,
@@ -2014,7 +2246,7 @@ internal static class MaterialReadinessGuards
     public static string FormatShortageReason(string materialId, string? materialLotId, decimal shortage)
     {
         var lot = string.IsNullOrWhiteSpace(materialLotId) ? string.Empty : $"，批次 {materialLotId}";
-        return $"MATERIAL_SHORTAGE: 物料 {materialId}{lot} 缺口 {shortage:0.######}";
+        return $"{MesReadinessReasonCodes.MaterialShortage}: 物料 {materialId}{lot} 缺口 {shortage:0.######}";
     }
 
     /// <summary>
@@ -2491,6 +2723,134 @@ public sealed class ConfirmDowntimeRecoveryCommandHandler(ApplicationDbContext d
     }
 }
 
+/// <summary>交班时点的在制清点行。</summary>
+public sealed record ShiftHandoverWipItemInput(
+    string WorkOrderId,
+    string? OperationTaskId,
+    decimal Quantity);
+
+/// <summary>交班时点的未完工单进度快照。</summary>
+public sealed record ShiftHandoverUnfinishedWorkOrderInput(
+    string WorkOrderId,
+    decimal PlannedQuantity,
+    decimal CompletedQuantity,
+    string WorkOrderStatus);
+
+/// <summary>随交班一并提交的 FileStorage 附件引用；文件名、内容类型与大小是交班时点快照。</summary>
+public sealed record ShiftHandoverAttachmentInput(
+    string FileId,
+    string FileName,
+    string ContentType,
+    long SizeBytes);
+
+/// <summary>交班时点的遗留问题；<c>Category</c>/<c>Severity</c> 走字符串词表，见 <see cref="ShiftHandoverVocabulary"/>。</summary>
+public sealed record ShiftHandoverOpenIssueInput(
+    string Category,
+    string Severity,
+    string Description,
+    string? ReferenceId = null);
+
+/// <summary>
+/// 遗留问题类别与严重度的字符串词表。
+///
+/// MES 服务端没有注册 <c>JsonStringEnumConverter</c>，域枚举直接进公开契约会被序列化成整数，
+/// 因此写面与读面一律用字符串，只在域内保持闭合枚举。
+/// </summary>
+public static class ShiftHandoverVocabulary
+{
+    public static ShiftHandoverIssueCategory ParseCategory(string? value) =>
+        TryParseClosed<ShiftHandoverIssueCategory>(value, out var category)
+            ? category
+            : throw new KnownException($"未知的遗留问题类别：{value}，仅支持 Equipment 或 Quality。");
+
+    public static ShiftHandoverIssueSeverity ParseSeverity(string? value) =>
+        TryParseClosed<ShiftHandoverIssueSeverity>(value, out var severity)
+            ? severity
+            : throw new KnownException($"未知的遗留问题严重度：{value}，仅支持 Low、Medium 或 High。");
+
+    /// <summary>
+    /// 词表取自枚举本身，写面不再各自抄一份小写字面量。
+    /// <c>Enum.TryParse</c> 会把 <c>"7"</c> 这类数字串解析成未定义的枚举值，公开写面收到的又是客户端
+    /// 给的任意字符串，因此必须再过一道 <c>IsDefined</c>——这条分支是真实可达的。
+    /// </summary>
+    private static bool TryParseClosed<TEnum>(string? value, out TEnum parsed)
+        where TEnum : struct, Enum =>
+        Enum.TryParse(value?.Trim(), ignoreCase: true, out parsed) && Enum.IsDefined(parsed);
+}
+
+public sealed record StartChangeoverCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkCenterId,
+    string DeviceAssetId,
+    string OperatorId,
+    ChangeoverToolingCheckResult ToolingCheckResult,
+    DateTimeOffset StartedAtUtc,
+    string IdempotencyKey) : ICommand<MesAcceptedResponse>;
+
+public sealed class StartChangeoverCommandHandler(
+    ApplicationDbContext dbContext,
+    MesCodingService? codingService = null)
+    : ICommandHandler<StartChangeoverCommand, MesAcceptedResponse>
+{
+    private readonly MesCodingService _codingService = codingService ?? new MesCodingService();
+
+    public async Task<MesAcceptedResponse> Handle(StartChangeoverCommand request, CancellationToken cancellationToken)
+    {
+        var allocation = await _codingService.AllocateAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            "changeover-record",
+            null,
+            request.IdempotencyKey,
+            MesCodingService.Fingerprint(
+                request.WorkCenterId,
+                request.DeviceAssetId,
+                request.OperatorId,
+                request.ToolingCheckResult,
+                request.StartedAtUtc),
+            cancellationToken);
+        if (allocation.IsIdempotentReplay)
+        {
+            return new MesAcceptedResponse("Accepted", allocation.Code, request.StartedAtUtc);
+        }
+
+        var record = ChangeoverRecord.Start(
+            request.OrganizationId,
+            request.EnvironmentId,
+            allocation.Code,
+            request.WorkCenterId,
+            request.DeviceAssetId,
+            request.OperatorId,
+            request.ToolingCheckResult,
+            request.StartedAtUtc);
+        dbContext.ChangeoverRecords.Add(record);
+        return new MesAcceptedResponse("Accepted", record.ChangeoverNo, request.StartedAtUtc);
+    }
+}
+
+public sealed record CompleteChangeoverCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string ChangeoverRecordId,
+    DateTimeOffset CompletedAtUtc) : ICommand<MesAcceptedResponse>;
+
+public sealed class CompleteChangeoverCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<CompleteChangeoverCommand, MesAcceptedResponse>
+{
+    public async Task<MesAcceptedResponse> Handle(CompleteChangeoverCommand request, CancellationToken cancellationToken)
+    {
+        var record = await dbContext.ChangeoverRecords.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.ChangeoverNo == request.ChangeoverRecordId,
+            cancellationToken) ?? throw new KnownException($"未找到换型记录，ChangeoverRecordId = {request.ChangeoverRecordId}");
+
+        record.Complete(request.CompletedAtUtc);
+        return new MesAcceptedResponse("Accepted", record.ChangeoverNo, request.CompletedAtUtc);
+    }
+}
+
 public sealed record CreateShiftHandoverCommand(
     string OrganizationId,
     string EnvironmentId,
@@ -2498,7 +2858,13 @@ public sealed record CreateShiftHandoverCommand(
     string TeamId,
     DateTimeOffset HandoverAtUtc,
     string? IdempotencyKey = null,
-    string? TeamName = null) : ICommand<MesAcceptedResponse>;
+    string? TeamName = null,
+    string? OutgoingUserId = null,
+    string? OutgoingUserName = null,
+    IReadOnlyCollection<ShiftHandoverWipItemInput>? WipItems = null,
+    IReadOnlyCollection<ShiftHandoverUnfinishedWorkOrderInput>? UnfinishedWorkOrders = null,
+    IReadOnlyCollection<ShiftHandoverOpenIssueInput>? OpenIssues = null,
+    IReadOnlyCollection<ShiftHandoverAttachmentInput>? Attachments = null) : ICommand<MesAcceptedResponse>;
 
 public sealed class CreateShiftHandoverCommandHandler(ApplicationDbContext dbContext, MesCodingService? codingService = null)
     : ICommandHandler<CreateShiftHandoverCommand, MesAcceptedResponse>
@@ -2524,15 +2890,38 @@ public sealed class CreateShiftHandoverCommandHandler(ApplicationDbContext dbCon
             request.EnvironmentId,
             request.HandoverAtUtc,
             cancellationToken);
-        var handover = DomainShiftHandover.Create(
-            request.OrganizationId,
-            request.EnvironmentId,
-            allocation.Code,
-            request.ShiftId,
-            request.TeamId,
-            openIssueCount,
-            request.HandoverAtUtc,
-            request.TeamName);
+        var handover = MesDomainRuleGuard.Enforce(() =>
+            DomainShiftHandover.Create(
+                request.OrganizationId,
+                request.EnvironmentId,
+                allocation.Code,
+                request.ShiftId,
+                request.TeamId,
+                openIssueCount,
+                request.HandoverAtUtc,
+                request.TeamName,
+                request.OutgoingUserId,
+                request.OutgoingUserName,
+                [.. (request.WipItems ?? []).Select(x => new ShiftHandoverWipItemSnapshot(
+                    x.WorkOrderId,
+                    x.OperationTaskId,
+                    x.Quantity))],
+                [.. (request.UnfinishedWorkOrders ?? []).Select(x => new ShiftHandoverUnfinishedWorkOrderSnapshot(
+                    x.WorkOrderId,
+                    x.PlannedQuantity,
+                    x.CompletedQuantity,
+                    x.WorkOrderStatus))],
+                [.. (request.OpenIssues ?? []).Select(x => new ShiftHandoverOpenIssueSnapshot(
+                    ShiftHandoverVocabulary.ParseCategory(x.Category),
+                    ShiftHandoverVocabulary.ParseSeverity(x.Severity),
+                    x.Description,
+                    x.ReferenceId))],
+                [.. (request.Attachments ?? []).Select(x => new ShiftHandoverAttachmentSnapshot(
+                    x.FileId,
+                    x.FileName,
+                    x.ContentType,
+                    x.SizeBytes))]));
+
         dbContext.ShiftHandovers.Add(handover);
         return new MesAcceptedResponse("Accepted", handover.HandoverNo, request.HandoverAtUtc);
     }
@@ -2568,28 +2957,37 @@ public sealed record AcceptShiftHandoverCommand(
     string OrganizationId,
     string EnvironmentId,
     string HandoverId,
-    DateTimeOffset AcceptedAtUtc) : ICommand<MesAcceptedResponse>;
+    DateTimeOffset AcceptedAtUtc,
+    string? IncomingUserId = null,
+    string? IncomingUserName = null) : ICommand<MesAcceptedResponse>;
 
 public sealed class AcceptShiftHandoverCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<AcceptShiftHandoverCommand, MesAcceptedResponse>
 {
     public async Task<MesAcceptedResponse> Handle(AcceptShiftHandoverCommand request, CancellationToken cancellationToken)
     {
+        // x.Id 是强类型 GuidId：谓词里 x.Id.Id.ToString() 无法被 EF 翻译（真机 500）。
+        // 先按业务单号命中；只有请求确实是 Guid 时才用先物化好的强类型 Id 直接比较（可翻译）。
         var handover = await dbContext.ShiftHandovers.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
-                (x.HandoverNo == request.HandoverId || x.Id.Id.ToString() == request.HandoverId),
-            cancellationToken)
+                x.HandoverNo == request.HandoverId,
+            cancellationToken);
+        if (handover is null && Guid.TryParse(request.HandoverId, out var handoverGuid))
+        {
+            var handoverId = new ShiftHandoverId(handoverGuid);
+            handover = await dbContext.ShiftHandovers.SingleOrDefaultAsync(
+                x => x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    x.Id == handoverId,
+                cancellationToken);
+        }
+
+        handover = handover
             ?? throw new KnownException($"未找到班次交接，HandoverId = {request.HandoverId}");
 
-        try
-        {
-            handover.Accept(request.AcceptedAtUtc);
-        }
-        catch (InvalidOperationException exception)
-        {
-            throw new KnownException(exception.Message);
-        }
+        MesDomainRuleGuard.Enforce(() =>
+            handover.Accept(request.AcceptedAtUtc, request.IncomingUserId, request.IncomingUserName));
 
         return new MesAcceptedResponse("Accepted", handover.HandoverNo, handover.AcceptedAtUtc ?? request.AcceptedAtUtc);
     }

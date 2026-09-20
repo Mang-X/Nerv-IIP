@@ -86,11 +86,18 @@ public sealed class ReleaseSchedulePlanCommandHandler(
 
         // A plan whose scheduling inputs have since changed (recorded as an invalidation) is stale and
         // must be regenerated before release — releasing it would dispatch an out-of-date schedule.
+        //
+        // 例外只有 qualityReleased（#3191）：检验合格／质量阻塞解除是**约束放松**，它让原计划更可行
+        // 而不是更不可行，拿它阻断发布等于「因为好消息所以不许发布」。且检验合格是高频事实，每条
+        // 合格结论都盖一个失效戳会让计划几乎发布不出去，闸门随即被当噪声绕过——误报的闸门比没有闸门更糟。
+        // 该 reason 仍然照常落 schedule_plan_invalidations 留痕，只是不参与阻断判定。
+        // 其余 reason（含 equipmentUnavailable、materialReadinessChanged 等）行为不变。
         var isInvalidated = await dbContext.SchedulePlanInvalidations
             .AnyAsync(
                 x => x.OrganizationId == request.OrganizationId &&
                     x.EnvironmentId == request.EnvironmentId &&
-                    x.PlanId == request.PlanId,
+                    x.PlanId == request.PlanId &&
+                    x.ReasonCode != SchedulingPlanInvalidationReasons.QualityReleased,
                 cancellationToken);
         if (isInvalidated)
         {

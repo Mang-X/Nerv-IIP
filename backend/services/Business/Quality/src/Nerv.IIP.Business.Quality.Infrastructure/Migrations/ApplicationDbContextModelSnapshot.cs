@@ -617,10 +617,16 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
 
                     b.Property<string>("SourceDocumentId")
                         .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("character varying(150)")
+                        .HasMaxLength(250)
+                        .HasColumnType("character varying(250)")
                         .HasColumnName("source_document_id")
-                        .HasComment("Source document or operation public id.");
+                        .HasComment("Source document or operation public id, or the composite first-article source identity '{workOrderId}:{operationTaskId}' produced by FirstArticleInspection.SourceDocumentId.");
+
+                    b.Property<string>("SourceDocumentLineId")
+                        .HasMaxLength(250)
+                        .HasColumnType("character varying(250)")
+                        .HasColumnName("source_document_line_id")
+                        .HasComment("Optional source document line, operation task id or stable periodic-operation window identity copied from the inspection task; null for directly recorded inspections without a source line.");
 
                     b.Property<string>("SourceQualityStatus")
                         .HasMaxLength(50)
@@ -640,7 +646,7 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)")
                         .HasColumnName("source_type")
-                        .HasComment("Inspection source type: receiving, operation, final, maintenance or customer-return.");
+                        .HasComment("Inspection source type; value domain is QualityInspectionSourceTypes.");
 
                     b.Property<string>("UomCode")
                         .HasMaxLength(50)
@@ -668,9 +674,11 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "SourceType", "Result");
 
-                    b.HasIndex("OrganizationId", "EnvironmentId", "SourceType", "SourceService", "SourceDocumentId", "SkuCode", "AttemptNumber")
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SourceType", "SourceService", "SourceDocumentId", "SourceDocumentLineId", "SkuCode", "AttemptNumber")
                         .IsUnique()
                         .HasDatabaseName("ux_inspection_records_source_attempt");
+
+                    NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("OrganizationId", "EnvironmentId", "SourceType", "SourceService", "SourceDocumentId", "SourceDocumentLineId", "SkuCode", "AttemptNumber"), false);
 
                     b.ToTable("inspection_records", "quality", t =>
                         {
@@ -843,10 +851,10 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
 
                     b.Property<string>("SourceDocumentId")
                         .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("character varying(150)")
+                        .HasMaxLength(250)
+                        .HasColumnType("character varying(250)")
                         .HasColumnName("source_document_id")
-                        .HasComment("Source document public id.");
+                        .HasComment("Source document public id, or the composite first-article source identity '{workOrderId}:{operationTaskId}' produced by FirstArticleInspection.SourceDocumentId.");
 
                     b.Property<string>("SourceDocumentLineId")
                         .HasMaxLength(250)
@@ -866,7 +874,7 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)")
                         .HasColumnName("source_type")
-                        .HasComment("Task source type: receiving, operation or final.");
+                        .HasComment("Task source type: receiving, operation, final or first-article.");
 
                     b.Property<DateTimeOffset?>("StartedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -882,10 +890,10 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
 
                     b.Property<string>("TriggerIdempotencyKey")
                         .IsRequired()
-                        .HasMaxLength(300)
-                        .HasColumnType("character varying(300)")
+                        .HasMaxLength(474)
+                        .HasColumnType("character varying(474)")
                         .HasColumnName("trigger_idempotency_key")
-                        .HasComment("Idempotency key derived from the source event and source line.");
+                        .HasComment("Idempotency key derived from the source event and source line; upper bound governed by InspectionTaskTriggerKey.MaxLength.");
 
                     b.Property<string>("UomCode")
                         .IsRequired()
@@ -1350,10 +1358,10 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
 
                     b.Property<string>("SourceDocumentId")
                         .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("character varying(150)")
+                        .HasMaxLength(250)
+                        .HasColumnType("character varying(250)")
                         .HasColumnName("source_document_id")
-                        .HasComment("External source document id such as inspection plan, report or return id.");
+                        .HasComment("External source document id such as inspection plan, report or return id; NCRs opened from a first-article inspection carry that record's composite '{workOrderId}:{operationTaskId}' source identity.");
 
                     b.Property<Guid?>("SourceInspectionRecordId")
                         .HasColumnType("uuid")
@@ -1467,13 +1475,13 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                     b.Property<DateTime?>("ReleasedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("released_at_utc")
-                        .HasComment("UTC time when MES released the work order; null while source facts are staged out of order.");
+                        .HasComment("UTC work-order release time, composite by source: the MES release event time for directly delivered facts, or a reconstructed lower bound (earliest operation creation or earliest production report of the work order) for legacy work orders backfilled by the release-projection backfill. Null while source facts are staged out of order.");
 
                     b.Property<string>("SkuCode")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("sku_code")
-                        .HasComment("SKU snapshot from the work-order release event; null until release arrives.");
+                        .HasComment("SKU snapshot from the work-order release facts, single-sourced: the release event SKU for directly delivered facts, and for legacy work orders the same work-order SKU reconstructed by the release-projection backfill. An operation whose staged completion_sku_code disagrees is rejected per operation instead of yielding to it. Null until release facts arrive.");
 
                     b.Property<string>("WorkCenterId")
                         .HasMaxLength(150)
@@ -1627,6 +1635,11 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnName("inspection_plan_version")
                         .HasComment("Immutable matched inspection plan version.");
 
+                    b.Property<long>("LastGeneratedQuantityWindowSequence")
+                        .HasColumnType("bigint")
+                        .HasColumnName("last_generated_quantity_window_sequence")
+                        .HasComment("Last atomically generated cumulative quantity-window sequence; zero before generation.");
+
                     b.Property<long>("LastGeneratedTimeWindowSequence")
                         .HasColumnType("bigint")
                         .HasColumnName("last_generated_time_window_sequence")
@@ -1661,6 +1674,16 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnName("organization_id")
                         .HasComment("Organization tenant id frozen at context creation.");
 
+                    b.Property<DateTime?>("QuantityContinuationNextAttemptAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("quantity_continuation_next_attempt_at_utc")
+                        .HasComment("Persisted fair-scheduling time after which the pending quantity backlog may claim another bounded batch.");
+
+                    b.Property<DateTime?>("QuantityGenerationAnchorAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("quantity_generation_anchor_at_utc")
+                        .HasComment("UTC triggering event time retained while bounded quantity-window continuation remains pending.");
+
                     b.Property<decimal>("QuantityHighWater")
                         .HasPrecision(18, 6)
                         .HasColumnType("numeric(18,6)")
@@ -1676,14 +1699,14 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                     b.Property<DateTime>("ReleasedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("released_at_utc")
-                        .HasComment("UTC work-order release time.");
+                        .HasComment("UTC work-order release time frozen from the release snapshot; carries the same composite meaning as periodic_inspection_operations.released_at_utc - event time for directly delivered facts, reconstructed lower bound for backfilled legacy work orders.");
 
                     b.Property<string>("SkuCode")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("sku_code")
-                        .HasComment("SKU snapshot from the release event.");
+                        .HasComment("SKU snapshot frozen from the release facts; single-sourced like periodic_inspection_operations.sku_code - always the work-order release SKU, delivered directly or reconstructed by the backfill, and never the staged completion_sku_code.");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -1727,6 +1750,9 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
 
                     b.HasIndex("OperationContextId");
 
+                    b.HasIndex("QuantityContinuationNextAttemptAtUtc", "Id")
+                        .HasDatabaseName("ix_periodic_inspection_runtime_quantity_continuation_due");
+
                     b.HasIndex("OrganizationId", "EnvironmentId", "Status", "NextTimeWindowAtUtc")
                         .HasDatabaseName("ix_periodic_inspection_runtime_scope_status_next_time");
 
@@ -1743,6 +1769,10 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                             t.HasCheckConstraint("ck_periodic_inspection_runtime_high_water", "quantity_high_water >= 0");
 
                             t.HasCheckConstraint("ck_periodic_inspection_runtime_interval", "(time_interval_hours IS NOT NULL AND time_interval_hours > 0) OR (quantity_interval IS NOT NULL AND quantity_interval > 0)");
+
+                            t.HasCheckConstraint("ck_periodic_inspection_runtime_quantity_continuation", "(quantity_generation_anchor_at_utc IS NULL AND quantity_continuation_next_attempt_at_utc IS NULL) OR (quantity_generation_anchor_at_utc IS NOT NULL AND quantity_continuation_next_attempt_at_utc IS NOT NULL AND status IN ('active', 'closed') AND quantity_interval IS NOT NULL AND uom_code IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_periodic_inspection_runtime_quantity_watermark", "last_generated_quantity_window_sequence >= 0");
 
                             t.HasCheckConstraint("ck_periodic_inspection_runtime_status", "(status = 'active' AND completed_at_utc IS NULL) OR (status = 'closed' AND completed_at_utc IS NOT NULL)");
 
@@ -1951,6 +1981,73 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                     b.ToTable("spc_control_charts", "quality", t =>
                         {
                             t.HasComment("Quality SPC control chart limit locks by SKU, characteristic and work center.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Quality.Infrastructure.IntegrationEvents.ProcessedIntegrationEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Processed integration event identifier.");
+
+                    b.Property<string>("ConsumerName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("consumer_name")
+                        .HasComment("BusinessQuality integration event consumer name.");
+
+                    b.Property<string>("EventId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("event_id")
+                        .HasComment("Globally unique source event id used with consumer_name as the minimum inbox key.");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("event_type")
+                        .HasComment("Integration event type.");
+
+                    b.Property<int>("EventVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("event_version")
+                        .HasComment("Integration event contract version.");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("idempotency_key")
+                        .HasComment("Publisher business idempotency key retained for traceability.");
+
+                    b.Property<DateTimeOffset>("ProcessedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("processed_at_utc")
+                        .HasComment("UTC time when BusinessQuality accepted the event into its transactional inbox.");
+
+                    b.Property<string>("SourceService")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("source_service")
+                        .HasComment("Service that produced the integration event.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConsumerName", "EventId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_quality_processed_integration_events_consumer_event_id");
+
+                    b.HasIndex("SourceService", "EventType", "ProcessedAtUtc")
+                        .HasDatabaseName("ix_quality_processed_integration_events_source_type_processed_at");
+
+                    b.ToTable("processed_integration_events", "quality", t =>
+                        {
+                            t.HasComment("Integration events processed by BusinessQuality using the ADR 0011 event-id consumer inbox.");
                         });
                 });
 

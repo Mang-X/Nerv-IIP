@@ -31,6 +31,8 @@ public sealed class WmsTrustedRequestContextTests
             "user-emp-049",
             "user",
             "emp049",
+            "org-001",
+            "env-dev",
             scopeGrants:
             [
                 new AuthorizationScopeGrant(
@@ -83,6 +85,8 @@ public sealed class WmsTrustedRequestContextTests
             "user-emp-049",
             "user",
             "emp049",
+            "org-001",
+            "env-dev",
             scopeGrants:
             [
                 new AuthorizationScopeGrant(
@@ -120,6 +124,8 @@ public sealed class WmsTrustedRequestContextTests
             "user-emp-049",
             "user",
             "emp049",
+            "org-002",
+            "env-dev",
             scopeGrants:
             [
                 new AuthorizationScopeGrant(
@@ -150,7 +156,9 @@ public sealed class WmsTrustedRequestContextTests
         var authorization = BusinessGatewayAuthorizationResult.Allowed(
             " user-emp-049 ",
             "user",
-            "emp049");
+            "emp049",
+            "org-001",
+            "env-dev");
 
         var trusted = WmsTrustedRequestContext.FromResolvedSites(
             authorization,
@@ -212,16 +220,22 @@ public sealed class WmsTrustedRequestContextTests
             BusinessGatewayAuthorizationResult.Allowed(
                 "",
                 "user",
-                "emp049"),
+                "emp049",
+                "org-001",
+                "env-dev"),
             BusinessGatewayAuthorizationResult.Allowed(
                 "user-emp-049",
                 "user",
                 "emp049",
+                "org-001",
+                "env-dev",
                 new AuthorizationDataScope([], [], [], DenyAll: true)),
             BusinessGatewayAuthorizationResult.Allowed(
                 "user-emp-049",
                 "user",
-                "emp049"),
+                "emp049",
+                "org-001",
+                "env-dev"),
         };
 
         foreach (var authorization in candidates)

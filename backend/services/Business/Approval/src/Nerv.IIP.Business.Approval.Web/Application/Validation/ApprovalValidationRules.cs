@@ -1,3 +1,5 @@
+using System.Linq.Expressions;
+
 namespace Nerv.IIP.Business.Approval.Web.Application.Validation;
 
 public static class ApprovalValidationRules
@@ -15,5 +17,23 @@ public static class ApprovalValidationRules
             .MaximumLength(maxLength)
             .Must(value => string.IsNullOrWhiteSpace(value) || System.Text.RegularExpressions.Regex.IsMatch(value, "^[A-Za-z0-9_.:-]+$"))
             .WithMessage(CodePatternMessage);
+    }
+
+    public static void AddRequiredTenantRules<T>(
+        this AbstractValidator<T> validator,
+        Expression<Func<T, string>> organizationId,
+        Expression<Func<T, string>> environmentId)
+    {
+        validator.RuleFor(organizationId).RequiredApprovalCode(100);
+        validator.RuleFor(environmentId).RequiredApprovalCode(100);
+    }
+
+    public static void AddOffsetPageRules<T>(
+        this AbstractValidator<T> validator,
+        Expression<Func<T, int>> skip,
+        Expression<Func<T, int>> take)
+    {
+        validator.RuleFor(skip).GreaterThanOrEqualTo(0);
+        validator.RuleFor(take).InclusiveBetween(1, 500);
     }
 }

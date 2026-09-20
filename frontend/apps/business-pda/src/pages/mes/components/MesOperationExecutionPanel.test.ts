@@ -75,6 +75,46 @@ describe('MesOperationExecutionPanel', () => {
     expect(wrapper.emitted('action')).toEqual([['start']])
   })
 
+  it('marks a rework task only from authoritative type and source fields', async () => {
+    mountPanel({
+      selected: {
+        ...task,
+        workOrderType: 'rework',
+        sourceWorkOrderId: 'WO-SOURCE-001',
+        sourceNcrId: 'ncr-001',
+        sourceNcrCode: 'NCR-2026-0001',
+      },
+    })
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('返工 · MO-2026-0042 · 工序 20')
+    expect(
+      document.body.querySelector('[data-testid="operation-rework-source"]')?.textContent?.trim(),
+    ).toBe('来源 NCR NCR-2026-0001（ncr-001） · 源工单 WO-SOURCE-001')
+  })
+
+  it('fails closed when a rework task omits authoritative source fields', async () => {
+    mountPanel({
+      selected: {
+        ...task,
+        workOrderType: 'rework',
+        sourceWorkOrderId: null,
+        sourceNcrId: null,
+        sourceNcrCode: null,
+        allowedActions: ['start'],
+      },
+      canClaim: true,
+    })
+    await flushPromises()
+
+    expect(document.body.querySelector('[data-testid="operation-rework-source"]')).toBeNull()
+    expect(
+      document.body.querySelector('[data-testid="operation-rework-authority-error"]'),
+    ).not.toBeNull()
+    expect(document.body.querySelector('[data-testid="action-start"]')).toBeNull()
+    expect(document.body.querySelector('[data-testid="action-claim"]')).toBeNull()
+  })
+
   it('renders every action through the NvUI mobile button boundary', async () => {
     mountPanel()
     await flushPromises()

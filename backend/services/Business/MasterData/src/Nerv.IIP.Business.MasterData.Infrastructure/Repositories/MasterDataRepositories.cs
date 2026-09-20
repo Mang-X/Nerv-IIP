@@ -425,7 +425,9 @@ public sealed class ToolingAssetRepository(ApplicationDbContext context)
         DbContext.ToolingAssets.AnyAsync(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.Code == code, cancellationToken);
 
     public Task<ToolingAsset?> FindAsync(string organizationId, string environmentId, string code, CancellationToken cancellationToken = default) =>
-        DbContext.ToolingAssets.SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.Code == code, cancellationToken);
+        DbContext.ToolingAssets.Include(x => x.Applicability).SingleOrDefaultAsync(
+            x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.Code == code,
+            cancellationToken);
 }
 
 public interface IChangeoverMatrixEntryRepository : IRepository<ChangeoverMatrixEntry, ChangeoverMatrixEntryId>;

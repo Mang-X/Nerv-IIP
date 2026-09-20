@@ -93,7 +93,7 @@ const statusFilter = computed({
     filters.status = value === 'all' ? undefined : value
   },
 })
-const errorMessage = computed(() => formatError(qualityItemsError.value))
+const errorMessage = computed(() => inlineErrorMessage(qualityItemsError.value))
 // 上下文穿透：从工单/工序带入时显示来源并提供返回链接。
 const contextWorkOrderId = computed(() => firstQuery(route.query.workOrderId))
 const contextOperationTaskId = computed(() => firstQuery(route.query.operationTaskId))
@@ -140,10 +140,6 @@ function firstQuery(value: unknown) {
   if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : ''
   return typeof value === 'string' ? value : ''
 }
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
-
 // ── 缺陷登记：可见工序读范围 × 质量写范围 ──────────────────────────
 const canReadOperationContext = computed(() =>
   (auth.principal?.permissionCodes ?? []).includes(P.mesOperationsRead),
@@ -468,8 +464,6 @@ async function submitDefect() {
       </template>
     </NvToolbar>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
-
     <NvDataTable
       manual
       :page="page"
@@ -481,9 +475,12 @@ async function submitDefect() {
       :rows="qualityItems"
       row-key="qualityItemId"
       :loading="qualityItemsPending"
+      :error="qualityItemsError"
+      :error-message="errorMessage"
       :searchable="false"
       :column-settings="false"
       empty-message="暂无质量或不良记录。点击上方「登记缺陷」记录生产过程中的不良，登记后可在这里跟进处置与关闭。"
+      @retry="refreshQualityItems"
     >
       <template #cell-sourceDocumentId="{ row }">
         <RouterLink

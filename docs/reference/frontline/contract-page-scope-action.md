@@ -42,7 +42,7 @@
 | WMS `/wms/putaway`、`/wms/pick` | 上架/拣货任务创建、派工与 start/progress/exception/complete | 任务按当前实现的 `self` / `work-pool` / `site` 范围返回与执行；客户端不能注入授权主体 | 任务 `allowedActions/blockReasons/version`，动作 `expectedVersion + idempotencyKey` |
 | WMS `/wms/review`、`/wms/count` | 出库复核、盘点执行 | 同样由当前服务端 operator/pool/site 归属与版本事实裁决 | 父单/盘点聚合状态、版本、幂等键以及库存过账公开回读 |
 | Quality `/quality/tasks` | 检验任务列表/详情、派工、领取、提交记录 | Self 绑定当前 principal；Team 绑定授权班组；管理读面可有 Organization 视角 | 任务 `allowedActions/blockReasons/version`、当前 inspector/team assignment、提交幂等与强 ID 回执 |
-| Quality inspection record / NCR 页面 | inspection record、NCR 列表/详情与处置/复检命令 | 记录/NCR 主体为 Organization 业务事实；不因任务曾有 assignment 推导成个人范围 | Quality 聚合状态、NCR/record 强 ID、accepted receipt 与详情回读 |
+| Quality inspection record / NCR 页面 | inspection record、NCR 列表/详情与处置/复检命令 | 记录/NCR 主体为 Organization 业务事实；NCR 查看与管理权限分离，不因任务曾有 assignment 推导成个人范围 | Quality 聚合状态、NCR/record 强 ID；返工处置用稳定意图键和 accepted receipt，详情读到 MES 创建状态 `created` + 系统工单强 ID 才确认成功 |
 | Maintenance PDA/PC 工单 | 工单队列/详情和当前生命周期命令 | Self 队列必须由服务端 principal 与持久 assignment 绑定；管理表面另按当前权限/范围实现核对 | 详情 `allowedActions/blockReasons/lifecycle`（存在时）、工单版本/幂等与公开详情回读 |
 | Equipment alarms PDA/PC | 报警列表、acknowledge/shelve/unshelve | 当前报警集合主要是 Organization 范围；没有自动推导的人员责任范围 | `alarmEventId`、报警 lifecycle、命令 409/幂等语义和公开 GET 回读；无统一 `allowedActions` 时前端 fail closed |
 | 设备详情/遥测历史/可靠性 | 设备、历史、健康/可靠性查询 | Organization + 设备/时间等业务过滤，不等于人员任务 scope | 原始数据 freshness、样本/历史可用性与服务返回；空历史不能解释成“健康/无故障” |

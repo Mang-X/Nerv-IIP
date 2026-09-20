@@ -180,7 +180,7 @@ public sealed class BarcodeLabelRecordScanCommandTests
     {
         await using var dbContext = CreateDbContext();
         var rule = BarcodeRule.Create("org-001", "env-dev", "FG", "code128", "FG", 13, "none", ["wms.inbound"], "active");
-        var batch = LabelPrintBatch.Create(
+        var batch = LabelPrintBatch.CreateLegacyWithoutReplaySnapshot(
             "org-001",
             "env-dev",
             rule,

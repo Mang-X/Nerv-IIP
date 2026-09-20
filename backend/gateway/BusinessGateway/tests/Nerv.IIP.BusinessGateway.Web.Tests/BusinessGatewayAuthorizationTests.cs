@@ -15,6 +15,15 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 public sealed class BusinessGatewayAuthorizationTests
 {
     [Fact]
+    public void MaintenanceDowntimeReasonsRead_matches_adr_0029_naming()
+    {
+        // ADR 0029 决策 1/4：换绑前的 B2 阶段只落权限码本身，尚无端点消费（B3 才接线到
+        // BusinessConsoleSearchableDirectoryPolicy）。这里只钉住 IAM 与 Gateway 两处
+        // producer 字面值必须一致，命名形态必须是 business.<owner域>.<词表复数-kebab>.read。
+        Assert.Equal("business.maintenance.downtime-reasons.read", BusinessGatewayPermissions.MaintenanceDowntimeReasonsRead);
+    }
+
+    [Fact]
     public async Task Business_console_endpoint_requires_user_authentication()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
@@ -322,6 +331,9 @@ public sealed class BusinessGatewayAuthorizationTests
         Assert.Equal(0, auth.CallCount);
     }
 
+    // #3330 后这条仍然成立，但成立的**理由**换了：鉴权已前移到 DTO 校验之前，
+    // 只是该端点的作用域访问器（request.Problem.OrganizationId）在 problem 缺失时解不出作用域，
+    // 于是 AuthorizedBusinessProxyEndpoint 把鉴权推迟给 DTO 校验先答。
     [Fact]
     public async Task Business_console_scheduling_endpoint_rejects_missing_problem_before_permission_check()
     {
@@ -337,7 +349,7 @@ public sealed class BusinessGatewayAuthorizationTests
     }
 
     [Fact]
-    public async Task Business_console_routing_release_rejects_blank_operation_code_before_permission_check()
+    public async Task Business_console_routing_release_rejects_blank_operation_code_after_permission_check()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         await using var lease = LeaseHost(auth);
@@ -366,11 +378,13 @@ public sealed class BusinessGatewayAuthorizationTests
         });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Equal(0, auth.CallCount);
+        // #3330：鉴权已前移到 DTO 校验之前（AuthorizedBusinessProxyEndpoint.OnBeforeValidateAsync），
+        // 所以载荷不合法的请求也会先付一次鉴权往返；此处鉴权放行、随后由端点级规则拒成 400。
+        Assert.Equal(1, auth.CallCount);
     }
 
     [Fact]
-    public async Task Business_console_alarm_rule_endpoint_rejects_invalid_comparison_operator_before_permission_check()
+    public async Task Business_console_alarm_rule_endpoint_rejects_invalid_comparison_operator_after_permission_check()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         await using var lease = LeaseHost(auth);
@@ -393,13 +407,15 @@ public sealed class BusinessGatewayAuthorizationTests
         });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Equal(0, auth.CallCount);
+        // #3330：鉴权已前移到 DTO 校验之前（AuthorizedBusinessProxyEndpoint.OnBeforeValidateAsync），
+        // 所以载荷不合法的请求也会先付一次鉴权往返；此处鉴权放行、随后由端点级规则拒成 400。
+        Assert.Equal(1, auth.CallCount);
     }
 
     [Theory]
     [InlineData("POST", "/api/business-console/v1/quality/reason-codes", "low", "rework")]
     [InlineData("PUT", "/api/business-console/v1/quality/reason-codes/QR-SCRATCH", "major", "use-as-is")]
-    public async Task Business_console_quality_reason_endpoint_rejects_invalid_catalog_values_before_permission_check(
+    public async Task Business_console_quality_reason_endpoint_rejects_invalid_catalog_values_after_permission_check(
         string method,
         string path,
         string severity,
@@ -426,7 +442,9 @@ public sealed class BusinessGatewayAuthorizationTests
         var response = await client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Equal(0, auth.CallCount);
+        // #3330：鉴权已前移到 DTO 校验之前（AuthorizedBusinessProxyEndpoint.OnBeforeValidateAsync），
+        // 所以载荷不合法的请求也会先付一次鉴权往返；此处鉴权放行、随后由端点级规则拒成 400。
+        Assert.Equal(1, auth.CallCount);
     }
 
     [Theory]
@@ -571,6 +589,12 @@ public sealed class BusinessGatewayAuthorizationTests
             environmentId = "env-dev",
             reason = "authorization test",
         },
+        "/api/business-console/v1/quality/ncrs/ncr-001/disposition" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            dispositionType = "use-as-is",
+        },
         "/api/business-console/v1/planning/demands" => new
         {
             organizationId = "org-001",
@@ -626,10 +650,18 @@ public sealed class BusinessGatewayAuthorizationTests
             horizonStart = "2026-05-25",
             horizonEnd = "2026-06-30",
         },
-        "/api/business-console/v1/files/file-sop-v2/download-grants" => new
+        "/api/business-console/v1/files/shift-handover-attachments/upload-sessions/ups-handover-1/complete" => new
         {
             organizationId = "org-001",
             environmentId = "env-dev",
+        },
+        "/api/business-console/v1/files/shift-handover-attachments/upload-sessions" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            fileName = "handover.jpg",
+            contentType = "image/jpeg",
+            expectedSizeBytes = 2048,
         },
         "/api/business-console/v1/scheduling/plans/preview" or "/api/business-console/v1/scheduling/plans" => new
         {
@@ -1092,6 +1124,17 @@ public sealed class BusinessGatewayAuthorizationTests
             assetUnavailableReason = "bearing temperature high",
             idempotencyKey = "maintenance-create-authz",
         },
+        "/api/business-console/v2/maintenance/work-orders" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "DEV-PRESS-01",
+            priority = "high",
+            sourceAlarmId = "alarm-001",
+            openedBy = "operator-001",
+            assetUnavailableReasonCode = "bearing-overheat",
+            idempotencyKey = "maintenance-create-v2-authz",
+        },
         "/api/business-console/v1/maintenance/work-orders/wo-maint-001/complete" => new
         {
             organizationId = "org-001",
@@ -1225,6 +1268,7 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/inspection-records/inspection-001/reinspections", BusinessGatewayPermissions.QualityInspectionRecordsCreate);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/inspection-records/inspection-001/failures/ncr", BusinessGatewayPermissions.QualityNcrManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/ncrs", BusinessGatewayPermissions.QualityNcrRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/ncrs/ncr-001", BusinessGatewayPermissions.QualityNcrRead);
         // 三期读面：计量台账 / 校准记录 / SPC 控制图台账走检验记录读权限（与 reason-codes 同先例），
         // CAPA 是 NCR 的下游闭环，走 NCR 读权限。
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/measuring-devices", BusinessGatewayPermissions.QualityInspectionRecordsRead);
@@ -1276,8 +1320,14 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Put, "/api/business-console/v1/engineering/production-versions/pv-001", BusinessGatewayPermissions.EngineeringProductionVersionsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/production-versions/pv-001/archive", BusinessGatewayPermissions.EngineeringProductionVersionsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/production-versions/resolve", BusinessGatewayPermissions.EngineeringProductionVersionsRead);
-        routes.Add(HttpMethod.Post, "/api/business-console/v1/files/file-sop-v2/download-grants", BusinessGatewayPermissions.EngineeringDocumentsRead);
-        routes.Add(HttpMethod.Get, "/api/business-console/v1/files/download-grants/grant-sop-v2/content", BusinessGatewayPermissions.EngineeringDocumentsRead);
+        // #3314：SOP 下载面只剩一条以 fileId 为入参的字节路由，grant id 不再交给调用方。
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/files/sop-documents/file-sop-v2/content", BusinessGatewayPermissions.EngineeringDocumentsRead);
+        // #3085：交接班附件面与 SOP 面共用 FileStorage 但不共用权限口径。写面归 handovers.manage，
+        // 读面归 handovers.read，两侧都不落到 engineering.documents.read 上。
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/files/shift-handover-attachments/upload-sessions", BusinessGatewayPermissions.MesHandoversManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/files/shift-handover-attachments/upload-sessions/ups-handover-1/complete", BusinessGatewayPermissions.MesHandoversManage);
+        routes.Add(HttpMethod.Patch, "/api/business-console/v1/files/shift-handover-attachments/tus/ups-handover-1", BusinessGatewayPermissions.MesHandoversManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/files/shift-handover-attachments/file-handover-1/content", BusinessGatewayPermissions.MesHandoversRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/demands", BusinessGatewayPermissions.PlanningDemandsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/demands", BusinessGatewayPermissions.PlanningDemandsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/forecasts", BusinessGatewayPermissions.PlanningDemandsRead);
@@ -1326,9 +1376,11 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/alarms?deviceAssetId=DEV-OIL-01&status=raised", BusinessGatewayPermissions.IiotAlarmsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/devices/DEV-OIL-01/history?fromUtc=2026-06-01T08:00:00Z&toUtc=2026-06-01T16:00:00Z", BusinessGatewayPermissions.IiotTelemetryRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/oee?deviceAssetId=DEV-OIL-01&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z", BusinessGatewayPermissions.IiotTelemetryRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/oee/aggregates?dimension=day&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z", BusinessGatewayPermissions.IiotTelemetryRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/runtime-availability?windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z&deviceAssetIds=DEV-OIL-01", BusinessGatewayPermissions.IiotTelemetryRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/work-orders", BusinessGatewayPermissions.MaintenanceWorkOrdersRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/maintenance/work-orders", BusinessGatewayPermissions.MaintenanceWorkOrdersManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v2/maintenance/work-orders", BusinessGatewayPermissions.MaintenanceWorkOrdersManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/work-orders/wo-maint-001", BusinessGatewayPermissions.MaintenanceWorkOrdersRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/maintenance/work-orders/wo-maint-001/complete", BusinessGatewayPermissions.MaintenanceWorkOrdersManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/plans", BusinessGatewayPermissions.MaintenancePlansRead);
@@ -1474,7 +1526,8 @@ internal sealed class FakeBusinessGatewayAuthorizationClient(
     Func<BusinessGatewayPermissionRequirement, bool> isAllowed,
     AuthorizationDataScope? dataScope = null,
     IReadOnlyCollection<AuthorizationScopeGrant>? scopeGrants = null,
-    IReadOnlyCollection<AuthorizationRole>? roles = null)
+    IReadOnlyCollection<AuthorizationRole>? roles = null,
+    BusinessGatewayAuthorizationResult? allowedResult = null)
     : IBusinessGatewayAuthorizationClient
 {
     public int CallCount { get; private set; }
@@ -1492,6 +1545,11 @@ internal sealed class FakeBusinessGatewayAuthorizationClient(
         new(_ => true, dataScope, scopeGrants, roles);
 
     public static FakeBusinessGatewayAuthorizationClient Forbidden() => new(_ => false);
+
+    public static FakeBusinessGatewayAuthorizationClient AllowedWithoutPrincipal() =>
+        new(
+            _ => true,
+            allowedResult: new BusinessGatewayAuthorizationResult(true, null, "user", null, null));
 
     public static FakeBusinessGatewayAuthorizationClient AllowOnly(params string[] permissionCodes)
     {
@@ -1519,14 +1577,24 @@ internal sealed class FakeBusinessGatewayAuthorizationClient(
         LastRequirement = requirement;
         LastContinuityMode = continuityMode;
         Requirements.Add(requirement);
+
+        // 与真实 IAM `/internal/iam/v1/authorization/check` 的投影语义保持一致：
+        // 只有 requirement.IncludePrincipalContext 为真时，IAM 才回传 scope grants 与 roles；
+        // 否则 grants 为 null、roles 为空集合（DataScope 不受该开关影响）。
+        // 见 backend/services/Iam/src/Nerv.IIP.Iam.Web/Endpoints/Authorization/AuthorizationCheckEndpoint.cs。
+        var projectedScopeGrants = requirement.IncludePrincipalContext ? scopeGrants : null;
+        var projectedRoles = requirement.IncludePrincipalContext ? roles : [];
+
         return Task.FromResult(isAllowed(requirement)
-            ? BusinessGatewayAuthorizationResult.Allowed(
+            ? allowedResult ?? BusinessGatewayAuthorizationResult.Allowed(
                 "user-admin",
                 "user",
                 "admin",
+                requirement.OrganizationId,
+                requirement.EnvironmentId,
                 dataScope,
-                scopeGrants,
-                roles)
+                projectedScopeGrants,
+                projectedRoles)
             : BusinessGatewayAuthorizationResult.Forbidden("forbidden"));
     }
 }

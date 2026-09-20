@@ -30,10 +30,10 @@ public sealed class PeriodicInspectionOperationEntityTypeConfiguration
         builder.Property(x => x.EnvironmentId).HasColumnName("environment_id").IsRequired().HasMaxLength(100).HasComment("Environment id where the operation facts apply.");
         builder.Property(x => x.WorkOrderId).HasColumnName("work_order_id").IsRequired().HasMaxLength(150).HasComment("MES work order public id.");
         builder.Property(x => x.OperationId).HasColumnName("operation_id").IsRequired().HasMaxLength(150).HasComment("MES operation task public id.");
-        builder.Property(x => x.SkuCode).HasColumnName("sku_code").HasMaxLength(100).HasComment("SKU snapshot from the work-order release event; null until release arrives.");
+        builder.Property(x => x.SkuCode).HasColumnName("sku_code").HasMaxLength(100).HasComment("SKU snapshot from the work-order release facts, single-sourced: the release event SKU for directly delivered facts, and for legacy work orders the same work-order SKU reconstructed by the release-projection backfill. An operation whose staged completion_sku_code disagrees is rejected per operation instead of yielding to it. Null until release facts arrive.");
         builder.Property(x => x.OperationSequence).HasColumnName("operation_sequence").HasComment("Positive operation sequence from the work-order release event; null until release arrives.");
         builder.Property(x => x.WorkCenterId).HasColumnName("work_center_id").HasMaxLength(150).HasComment("Work center snapshot from the work-order release event; null until release arrives.");
-        builder.Property(x => x.ReleasedAtUtc).HasColumnName("released_at_utc").HasComment("UTC time when MES released the work order; null while source facts are staged out of order.");
+        builder.Property(x => x.ReleasedAtUtc).HasColumnName("released_at_utc").HasComment("UTC work-order release time, composite by source: the MES release event time for directly delivered facts, or a reconstructed lower bound (earliest operation creation or earliest production report of the work order) for legacy work orders backfilled by the release-projection backfill. Null while source facts are staged out of order.");
         builder.Property(x => x.CompletionSkuCode).HasColumnName("completion_sku_code").HasMaxLength(100).HasComment("SKU snapshot staged from an operation completion event.");
         builder.Property(x => x.CompletionOperationSequence).HasColumnName("completion_operation_sequence").HasComment("Positive operation sequence staged from an operation completion event.");
         builder.Property(x => x.CompletionWorkCenterId).HasColumnName("completion_work_center_id").HasMaxLength(150).HasComment("Work center snapshot staged from an operation completion event.");
@@ -107,6 +107,14 @@ public sealed class PeriodicInspectionRuntimeContextEntityTypeConfiguration
                     "ck_periodic_inspection_runtime_high_water",
                     "quantity_high_water >= 0");
                 table.HasCheckConstraint(
+                    "ck_periodic_inspection_runtime_quantity_watermark",
+                    "last_generated_quantity_window_sequence >= 0");
+                table.HasCheckConstraint(
+                    "ck_periodic_inspection_runtime_quantity_continuation",
+                    "(quantity_generation_anchor_at_utc IS NULL AND quantity_continuation_next_attempt_at_utc IS NULL) OR "
+                    + "(quantity_generation_anchor_at_utc IS NOT NULL AND quantity_continuation_next_attempt_at_utc IS NOT NULL "
+                    + "AND status IN ('active', 'closed') AND quantity_interval IS NOT NULL AND uom_code IS NOT NULL)");
+                table.HasCheckConstraint(
                     "ck_periodic_inspection_runtime_time_watermark",
                     "(last_generated_time_window_sequence = 0 AND time_schedule_anchor_at_utc IS NULL) OR "
                     + "(last_generated_time_window_sequence > 0 AND time_schedule_anchor_at_utc IS NOT NULL)");
@@ -118,10 +126,10 @@ public sealed class PeriodicInspectionRuntimeContextEntityTypeConfiguration
         builder.Property(x => x.EnvironmentId).HasColumnName("environment_id").IsRequired().HasMaxLength(100).HasComment("Environment id frozen at context creation.");
         builder.Property(x => x.WorkOrderId).HasColumnName("work_order_id").IsRequired().HasMaxLength(150).HasComment("MES work order public id frozen at context creation.");
         builder.Property(x => x.OperationId).HasColumnName("operation_id").IsRequired().HasMaxLength(150).HasComment("MES operation task public id frozen at context creation.");
-        builder.Property(x => x.SkuCode).HasColumnName("sku_code").IsRequired().HasMaxLength(100).HasComment("SKU snapshot from the release event.");
+        builder.Property(x => x.SkuCode).HasColumnName("sku_code").IsRequired().HasMaxLength(100).HasComment("SKU snapshot frozen from the release facts; single-sourced like periodic_inspection_operations.sku_code - always the work-order release SKU, delivered directly or reconstructed by the backfill, and never the staged completion_sku_code.");
         builder.Property(x => x.OperationSequence).HasColumnName("operation_sequence").IsRequired().HasComment("Positive MES operation sequence snapshot.");
         builder.Property(x => x.WorkCenterId).HasColumnName("work_center_id").IsRequired().HasMaxLength(150).HasComment("Work center snapshot from the release event.");
-        builder.Property(x => x.ReleasedAtUtc).HasColumnName("released_at_utc").IsRequired().HasComment("UTC work-order release time.");
+        builder.Property(x => x.ReleasedAtUtc).HasColumnName("released_at_utc").IsRequired().HasComment("UTC work-order release time frozen from the release snapshot; carries the same composite meaning as periodic_inspection_operations.released_at_utc - event time for directly delivered facts, reconstructed lower bound for backfilled legacy work orders.");
         builder.Property(x => x.InspectionPlanId).HasColumnName("inspection_plan_id").IsRequired().HasComment("Immutable matched inspection plan id.");
         builder.Property(x => x.InspectionPlanVersion).HasColumnName("inspection_plan_version").IsRequired().HasComment("Immutable matched inspection plan version.");
         builder.Property(x => x.TimeIntervalHours).HasColumnName("time_interval_hours").HasPrecision(18, 6).HasComment("Frozen periodic time interval in hours.");
@@ -132,6 +140,9 @@ public sealed class PeriodicInspectionRuntimeContextEntityTypeConfiguration
         builder.Property(x => x.UomCode).HasColumnName("uom_code").HasMaxLength(50).HasComment("Authoritative MES production report UOM; null before the first report.");
         builder.Property(x => x.CumulativeGoodQuantity).HasColumnName("cumulative_good_quantity").IsRequired().HasPrecision(18, 6).HasComment("Current signed net good quantity including reversal effects.");
         builder.Property(x => x.QuantityHighWater).HasColumnName("quantity_high_water").IsRequired().HasPrecision(18, 6).HasComment("Monotonic accepted good-quantity high water; reversal facts neither advance nor roll it back.");
+        builder.Property(x => x.LastGeneratedQuantityWindowSequence).HasColumnName("last_generated_quantity_window_sequence").IsRequired().HasComment("Last atomically generated cumulative quantity-window sequence; zero before generation.");
+        builder.Property(x => x.QuantityGenerationAnchorAtUtc).HasColumnName("quantity_generation_anchor_at_utc").HasComment("UTC triggering event time retained while bounded quantity-window continuation remains pending.");
+        builder.Property(x => x.QuantityContinuationNextAttemptAtUtc).HasColumnName("quantity_continuation_next_attempt_at_utc").HasComment("Persisted fair-scheduling time after which the pending quantity backlog may claim another bounded batch.");
         builder.Property(x => x.TimeScheduleAnchorAtUtc).HasColumnName("time_schedule_anchor_at_utc").HasComment("Frozen UTC first-production anchor after the first time window is generated.");
         builder.Property(x => x.LastGeneratedTimeWindowSequence).HasColumnName("last_generated_time_window_sequence").IsRequired().HasComment("Last atomically generated time-window sequence; zero before generation.");
         builder.Property(x => x.NextTimeWindowAtUtc).HasColumnName("next_time_window_at_utc").HasComment("Persisted UTC due time for the next ungenerated time window; null before activity or after closure.");
@@ -142,5 +153,7 @@ public sealed class PeriodicInspectionRuntimeContextEntityTypeConfiguration
             .HasDatabaseName("ux_periodic_inspection_runtime_scope_plan_operation");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Status, x.NextTimeWindowAtUtc })
             .HasDatabaseName("ix_periodic_inspection_runtime_scope_status_next_time");
+        builder.HasIndex(x => new { x.QuantityContinuationNextAttemptAtUtc, x.Id })
+            .HasDatabaseName("ix_periodic_inspection_runtime_quantity_continuation_due");
     }
 }

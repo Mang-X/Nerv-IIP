@@ -1,10 +1,12 @@
+using Nerv.IIP.Contracts.Iam;
+
 namespace Nerv.IIP.Business.BarcodeLabel.Web.Application.Auth;
 
 public static class BarcodeLabelPermissionCodes
 {
-    public const string TemplatesManage = "business.barcodes.templates.manage";
-    public const string Print = "business.barcodes.print";
-    public const string ScansWrite = "business.barcodes.scans.write";
+    public const string TemplatesManage = NervIipPermissionCodes.BarcodeTemplatesManage;
+    public const string Print = NervIipPermissionCodes.BarcodePrint;
+    public const string ScansWrite = NervIipPermissionCodes.BarcodeScansWrite;
 
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {

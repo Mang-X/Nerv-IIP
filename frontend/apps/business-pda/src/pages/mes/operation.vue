@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesOperationTaskRow } from '@nerv-iip/api-client'
-import { openDownloadGrantBlob } from '@nerv-iip/business-core'
+import { openSopFileContent } from '@nerv-iip/business-core'
 import {
   createTimeoutFetch,
   describeRequestError,
@@ -70,6 +70,7 @@ const {
   pauseTask,
   resumeTask,
   completeTask,
+  claimTask,
   actionPending,
   operationListScope,
   operationListContextIdentity,
@@ -165,7 +166,6 @@ const {
   pending: sopsPending,
   error: sopsError,
   refresh: refreshSops,
-  createSopFileDownloadGrant,
 } = useMesCurrentOperationSops()
 
 // SOP 文件下载走 PDA 全局超时 fetch —— 弱网/离线有界失败，不无限挂起（#814）。
@@ -213,9 +213,21 @@ const confirmingComplete = ref(false)
 const result = ref<ResultState | null>(null)
 const openingSopFileId = ref<string | null>(null)
 const sopFileError = ref('')
-const toast = reactive({ show: false, message: '', type: 'error' as const })
+const toast = reactive<{ show: boolean; message: string; type: 'success' | 'error' }>({
+  show: false,
+  message: '',
+  type: 'error',
+})
 
 const availableActions = computed(() => actionsFor(selected.value))
+const canClaimSelectedTask = computed(() => {
+  const task = selected.value
+  return (
+    operationListScope.value?.kind === 'work-center' &&
+    task?.status?.trim().toLowerCase() === 'queued' &&
+    !task.assignedUserId?.trim()
+  )
+})
 
 const scanActive = computed(() => selected.value === null && result.value === null)
 const scanGate = useMesScanGate()
@@ -435,9 +447,11 @@ async function openSopFile(sop: CurrentSop) {
   sopFileError.value = ''
   openingSopFileId.value = fileId
   try {
-    const grant = await createSopFileDownloadGrant(fileId)
-    if (!grant) throw new Error('无法获取SOP查看授权。')
-    await openDownloadGrantBlob(grant, { fetch: downloadFetch, timeoutMs: REQUEST_TIMEOUT_MS })
+    await openSopFileContent(
+      fileId,
+      { organizationId: sopFilters.organizationId, environmentId: sopFilters.environmentId },
+      { fetch: downloadFetch, timeoutMs: REQUEST_TIMEOUT_MS },
+    )
   } catch (error) {
     sopFileError.value = error instanceof Error ? error.message : '无法打开SOP。'
   } finally {
@@ -526,6 +540,36 @@ async function runAction(action: ActionKind) {
       taskId: id,
       context,
     }
+  }
+}
+
+async function claimSelectedTask() {
+  if (!operationScopeReady.value) {
+    toast.type = 'error'
+    toast.message = operationScopeMessage.value
+    toast.show = true
+    return
+  }
+  const task = selected.value
+  if (!task?.workOrderId || !task.operationTaskId || !canClaimSelectedTask.value) return
+  const context = captureOperationActionContext('claim', task.workOrderId, task.operationTaskId)
+  try {
+    const claimed = await claimTask(task.workOrderId, task.operationTaskId, {
+      idempotencyKey: makeIdempotencyKey(),
+      context,
+    })
+    if (!isOperationActionContextCurrent(context)) return
+    selected.value = claimed
+    await refresh()
+    closeSheet()
+    toast.type = 'success'
+    toast.message = '任务领取请求已受理'
+    toast.show = true
+  } catch (error) {
+    if (!isOperationActionContextCurrent(context)) return
+    toast.type = 'error'
+    toast.message = describeRequestError(error, '领取任务失败，请刷新后重试。').message
+    toast.show = true
   }
 }
 
@@ -675,6 +719,7 @@ async function onScanAccepted(value: MesScanAccepted) {
       :opening-sop-file-id="openingSopFileId"
       :sop-file-error="sopFileError"
       :operation-result-unknown="operationResultUnknown"
+      :can-claim="canClaimSelectedTask"
       @update:open="sheetOpen = $event"
       @action="runAction"
       @retry="retry"
@@ -683,6 +728,7 @@ async function onScanAccepted(value: MesScanAccepted) {
       @cancel-complete="confirmingComplete = false"
       @refresh-sops="() => refreshSops()"
       @open-sop="openSopFile"
+      @claim="claimSelectedTask"
     >
       <template #context-scan>
         <MesScanPrevalidation

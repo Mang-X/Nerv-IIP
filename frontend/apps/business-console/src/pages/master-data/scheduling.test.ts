@@ -102,9 +102,7 @@ const calRowActionStubs = {
 }
 const dialogStubs = {
   NvDialog: { template: '<div><slot /></div>' },
-  DialogRoot: { template: '<div><slot /></div>' },
   NvDialogTrigger: { template: '<div><slot /></div>' },
-  DialogTrigger: { template: '<div><slot /></div>' },
   NvDialogContent: { template: '<div><slot /></div>' },
   NvDialogHeader: { template: '<div><slot /></div>' },
   NvDialogFooter: { template: '<div><slot /></div>' },
@@ -128,11 +126,10 @@ const dialogStubs = {
   NvAlertDialogCancel: { template: '<button type="button"><slot /></button>' },
 }
 // 抽屉照 dialog 风格内联展开，使其内容在挂载后即可断言。
-// Sheet 已迁到 Pro：NvSheet/NvSheetTrigger/NvSheetClose 是 reka-ui 原语再导出（组件名仍是
-// DialogRoot/DialogTrigger/DialogClose），NvSheetContent 等是真 .vue 包装（含 Teleport，就地渲染）。
+// Sheet 已迁到 Pro：NvSheet/NvSheetTrigger/NvSheetClose 是 reka-ui 原语的带 name 浅拷贝别名
+// （组件名即 Nv 名，故按 Nv 名打桩），NvSheetContent 等是真 .vue 包装（含 Teleport，就地渲染）。
 const sheetStubs = {
   NvSheet: { template: '<div><slot /></div>' },
-  DialogRoot: { template: '<div><slot /></div>' },
   NvSheetContent: { template: '<div><slot /></div>' },
   NvSheetHeader: { template: '<div><slot /></div>' },
   NvSheetTitle: { template: '<h2><slot /></h2>' },
@@ -157,7 +154,6 @@ const formSelectStubs = {
   },
   NvSelectTrigger: { template: '<span><slot /></span>' },
   NvSelectValue: { template: '<span />' },
-  SelectValue: { template: '<span />' },
   NvSelectContent: { template: '<slot />' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
@@ -183,10 +179,9 @@ function findButtonsByText(wrapper: ReturnType<typeof mount>, label: string) {
 
 // 班次 / 工作日历的新建对话框（已迁到 Pro）。NvTabsContent 对未激活页签 force-mount，
 // 故在工作日历用例下「班次」页签里的 NvDialogContent 仍会挂载；其 reka Teleport 在 jsdom 卸载会崩，
-// 全部就地渲染避免崩溃（NvDialog/NvDialogTrigger 是 reka 再导出，根 DialogRoot/DialogTrigger 同样桩）。
+// 全部就地渲染避免崩溃（NvDialog/NvDialogTrigger 是 reka 原语的带 name 浅拷贝别名，按 Nv 名打桩即可）。
 const dialogContentStubs = {
   NvDialogTrigger: { template: '<div><slot /></div>' },
-  DialogTrigger: { template: '<div><slot /></div>' },
   NvDialogContent: { template: '<div><slot /></div>' },
   NvDialogHeader: { template: '<div><slot /></div>' },
   NvDialogFooter: { template: '<div><slot /></div>' },

@@ -99,7 +99,6 @@ const stubs = {
   NvSheetTitle: { template: '<h2><slot /></h2>' },
   NvSheetDescription: { template: '<p><slot /></p>' },
   NvDialogTrigger: { template: '<div><slot /></div>' },
-  DialogTrigger: { template: '<div><slot /></div>' },
   NvDialogContent: { template: '<div><slot /></div>' },
   NvDialogHeader: { template: '<div><slot /></div>' },
   NvDialogFooter: { template: '<div><slot /></div>' },
@@ -117,7 +116,6 @@ const stubs = {
   NvSelect: { template: '<select><slot /></select>' },
   NvSelectTrigger: { template: '<span><slot /></span>' },
   NvSelectValue: { template: '<span />' },
-  SelectValue: { template: '<span />' },
   NvSelectContent: { template: '<slot />' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }

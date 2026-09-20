@@ -43,6 +43,7 @@ public sealed class ProductionReportOeeDimensionSnapshotPostgresTests
         var migrator = context.GetService<IMigrator>();
         // Seed through the current model before exercising the OEE migration's own down/up boundary.
         await migrator.MigrateAsync(LatestMigration);
+        await AddCurrentProductionReportModelCompatibilityAsync(context);
 
         var reportedAtUtc = DateTimeOffset.Parse("2026-08-27T23:30:00Z");
         context.WorkOrders.Add(WorkOrder.Create(
@@ -51,7 +52,8 @@ public sealed class ProductionReportOeeDimensionSnapshotPostgresTests
         context.OperationTasks.Add(OperationTask.Create(
             "org-001", "env-dev", "WO-OEE-PG-001", "OP-OEE-PG-10",
             OperationTaskLifecycleStatus.InProgress, 10, "WC-LEGACY", [],
-            reportedAtUtc.AddHours(-1), TimeSpan.FromHours(1), reportedAtUtc.AddHours(-1), null));
+            reportedAtUtc.AddHours(-1), TimeSpan.FromHours(1), reportedAtUtc.AddHours(-1), null,
+            "SKU-001"));
         context.ProductionReports.Add(ProductionReport.Record(
             "org-001", "env-dev", "PR-TEMPLATE", "WO-OEE-PG-001", "OP-OEE-PG-10",
             2m, 1m, false, reportedAtUtc,
@@ -86,6 +88,12 @@ public sealed class ProductionReportOeeDimensionSnapshotPostgresTests
         await AssertLegacySnapshotIsNullAsync(connection);
         await AssertActualTimeSettlementSchemaStillExistsAsync(connection);
     }
+
+    private static Task AddCurrentProductionReportModelCompatibilityAsync(ApplicationDbContext context) =>
+        context.Database.ExecuteSqlRawAsync("""
+            ALTER TABLE mes.production_reports
+            ADD COLUMN report_intent_fingerprint character varying(256) NULL
+            """);
 
     private static async Task CloneLegacyReportAtPriorSchemaAsync(NpgsqlConnection connection)
     {
