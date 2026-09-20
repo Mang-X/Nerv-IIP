@@ -1,4 +1,5 @@
 import {
+  isForbiddenRequestError,
   listBusinessConsoleSearchableDirectoryQueryOptions,
   type BusinessConsoleSearchableDirectoryEnvelope,
 } from '@nerv-iip/api-client'
@@ -31,12 +32,6 @@ export type DowntimeReasonDirectoryState =
   | 'unavailable'
   | 'empty'
   | 'ok'
-
-function isForbidden(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false
-  const value = error as { status?: unknown; response?: { status?: unknown } }
-  return value.status === 403 || value.response?.status === 403
-}
 
 /**
  * PDA 维修报修的停机原因目录（Maintenance 权威 `downtime-reason` 词表）。
@@ -103,7 +98,7 @@ export function useMaintenanceDowntimeReasonDirectory() {
   const state = computed<DowntimeReasonDirectoryState>(() => {
     if (!scopeReady.value) return 'scope-pending'
     const error = directoryQuery.error.value
-    if (error) return isForbidden(error) ? 'forbidden' : 'failed'
+    if (error) return isForbiddenRequestError(error) ? 'forbidden' : 'failed'
     // 尚无任何响应 = 还在读；HTTP 200 但 `success:false` 是**读失败**，不是空目录
     // （当成空目录会把一次故障说成"组织尚未配置"，把人指去配词表）。
     if (envelope.value === undefined) return 'loading'
