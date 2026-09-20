@@ -63,15 +63,11 @@ public sealed class NotificationCapOutboxAcceptanceTests
         });
     }
 
-    [Fact]
+    [NotificationAndonCapPostgresFact]
     [Trait("Category", "cap-inmemory")]
     public async Task PostgreSQL_cap_outbox_delivers_duplicate_andon_escalation_once_to_the_explicit_recipient()
     {
-        var adminConnectionString = ReadPostgresConnectionString();
-        if (!await CanConnectPostgresAsync(adminConnectionString))
-        {
-            return;
-        }
+        var adminConnectionString = ReadAndonPostgresConnectionString();
 
         await using var database = await PostgreSqlTestDatabase.CreateAsync(
             adminConnectionString,
@@ -471,6 +467,15 @@ public sealed class NotificationCapOutboxAcceptanceTests
             ?? "Host=localhost;Port=15432;Database=nerv_iip_notification_test;Username=postgres;Password=postgres";
     }
 
+    private static string ReadAndonPostgresConnectionString()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES");
+        return string.IsNullOrWhiteSpace(connectionString)
+            ? throw new InvalidOperationException(
+                "NERV_IIP_TEST_POSTGRES is required for the MES Andon PostgreSQL + CAP proof.")
+            : connectionString;
+    }
+
     private static async Task<bool> CanConnectPostgresAsync(string connectionString)
     {
         try
@@ -516,6 +521,17 @@ public sealed class NotificationCapOutboxAcceptanceTests
         return int.TryParse(Environment.GetEnvironmentVariable(environmentVariable), out var value) && value > 0
             ? value
             : defaultValue;
+    }
+
+    internal sealed class NotificationAndonCapPostgresFactAttribute : FactAttribute
+    {
+        public NotificationAndonCapPostgresFactAttribute()
+        {
+            if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")))
+            {
+                Skip = "Set NERV_IIP_TEST_POSTGRES to run the MES Andon PostgreSQL + CAP notification proof.";
+            }
+        }
     }
 
 }

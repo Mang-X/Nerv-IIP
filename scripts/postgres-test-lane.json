@@ -639,6 +639,23 @@
       ]
     },
     {
+      "id": "notification-andon-cap-postgres",
+      "service": "Notification",
+      "tier": "core",
+      "status": "active",
+      "databaseOwnership": "test-owned",
+      "project": "backend/services/Notification/tests/Nerv.IIP.Notification.Web.Tests/Nerv.IIP.Notification.Web.Tests.csproj",
+      "filter": "FullyQualifiedName~Nerv.IIP.Notification.Web.Tests.NotificationCapOutboxAcceptanceTests.PostgreSQL_cap_outbox_delivers_duplicate_andon_escalation_once_to_the_explicit_recipient",
+      "databasePrefix": "nerv_notification_andon_cap",
+      "diagnosticSchemas": [
+        "notification",
+        "cap"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Notification.Web.Tests.NotificationCapOutboxAcceptanceTests.PostgreSQL_cap_outbox_delivers_duplicate_andon_escalation_once_to_the_explicit_recipient"
+      ]
+    },
+    {
       "id": "notification-envelope-field-budget-postgres",
       "service": "Notification",
       "tier": "core",
