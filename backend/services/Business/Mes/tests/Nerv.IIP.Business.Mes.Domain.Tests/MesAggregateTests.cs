@@ -774,14 +774,40 @@ public sealed class MesAggregateTests
             "LOT-WO");
 
         var token = request.PendingPostingToken!;
-        request.MarkInventoryPosted(token, MaterialTransferLeg.WarehouseIssue, DateTimeOffset.Parse("2026-05-23T08:31:00Z"), 0);
+        request.MarkInventoryPosted(token, MaterialTransferLeg.WarehouseIssue, DateTimeOffset.Parse("2026-05-23T08:31:00Z"), 1, 12m, -24m);
+        request.MarkInventoryPostingFailed("rejected", "来源 A 出库失败", DateTimeOffset.Parse("2026-05-23T08:31:30Z"), token);
+        request.ClearDomainEvents();
+        request.ConfirmLineSideReceipt(request.RequireTransferLocations(), DateTimeOffset.Parse("2026-05-23T08:31:40Z"), 5m, "LOT-WO");
+        var retryIssue = Assert.Single(request.GetDomainEvents().OfType<MaterialIssueRequestedDomainEvent>());
+        Assert.Equal(3m, retryIssue.IssuedQuantity);
+        Assert.Equal(12m, request.GetSourceAllocations()[1].UnitCost);
+        Assert.Equal(-24m, request.GetSourceAllocations()[1].MovementAmount);
+        // 旧尝试重复回执不能改写已保存价值，也不能增加完成来源数。
+        request.MarkInventoryPosted(token, MaterialTransferLeg.WarehouseIssue, DateTimeOffset.Parse("2026-05-23T08:31:50Z"), 1, 99m, -198m);
         request.MarkInventoryPosted(token, MaterialTransferLeg.LineSideReceipt, DateTimeOffset.Parse("2026-05-23T08:32:00Z"));
         Assert.Equal(0m, request.ReceivedQuantity);
 
-        request.MarkInventoryPosted(token, MaterialTransferLeg.WarehouseIssue, DateTimeOffset.Parse("2026-05-23T08:33:00Z"), 1);
+        request.MarkInventoryPosted(request.PendingPostingToken!, MaterialTransferLeg.WarehouseIssue, DateTimeOffset.Parse("2026-05-23T08:33:00Z"), 0, 8m, -24m);
 
         Assert.Equal(5m, request.ReceivedQuantity);
         Assert.Equal(MaterialIssueRequest.ReceivedStatus, request.Status);
+        var allocations = request.GetSourceAllocations();
+        Assert.Equal(("LOT-A", 3m, 8m, -24m), (allocations[0].SourceLotNo, allocations[0].Quantity, allocations[0].UnitCost, allocations[0].MovementAmount));
+        Assert.Equal(("LOT-B", 2m, 12m, -24m), (allocations[1].SourceLotNo, allocations[1].Quantity, allocations[1].UnitCost, allocations[1].MovementAmount));
+    }
+
+    [Fact]
+    public void MaterialIssueRequest_legacy_source_json_keeps_actual_value_unknown()
+    {
+        var request = MaterialIssueRequest.Create("org-001", "env-dev", "MIR-OLD", "WO-001", null, "MAT-001", "KG", 1.4m, DateTimeOffset.Parse("2026-09-20T08:00:00Z"));
+        typeof(MaterialIssueRequest).GetProperty(nameof(MaterialIssueRequest.SourceAllocationsJson))!.SetValue(request,
+            """[{"SourceSiteCode":"SITE-001","SourceLocationCode":"WH-001","SourceLotNo":"LOT-OLD","Quantity":1.4}]""");
+
+        var allocation = Assert.Single(request.GetSourceAllocations());
+        Assert.Equal(1.4m, allocation.Quantity);
+        Assert.Equal("production", allocation.OwnerType);
+        Assert.Null(allocation.UnitCost);
+        Assert.Null(allocation.MovementAmount);
     }
 
     [Fact]
