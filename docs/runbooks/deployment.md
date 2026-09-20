@@ -59,6 +59,35 @@ FileStorage 的 tus 目录同时承载已 complete 文件的字节，因此部�
 2. 只设 provider 不设 root path、或 root path 不是绝对路径时，服务在启动阶段拒绝并给出脱敏诊断（诊断只输出 `<missing>` / `<relative>`，不回显路径值）。[ADR 0024](../adr/0024-filestorage-storage-provider-and-local-production-semantics.md) §5 还要求该位置**持久**——系统临时目录与容器可写层不合规，但持久性当前不由启动校验判定（归 #1012），配错仍能启动，需要部署方自己保证。
 3. 更换该卷或该路径等同于更换文件存储后端：已 complete 的文件元数据仍在数据库，但字节会读不到。迁移按 [`file-storage-offline-migration.md`](file-storage-offline-migration.md) 执行，不要靠重挂空卷绕过。
 
+### MES 安灯超时升级
+
+先按 [数据库发布流程](database-release.md) 应用 MES `AddAndonEscalationPolicySnapshot` migration，再给 **MES 服务进程**注入 `Mes:AndonEscalation` 配置。生产者为 `AndonEscalationOptions` / `AndonEscalationWorker`；无策略时不启动扫描，日志明确报告 `Mes:AndonEscalation:Policies 未配置`，此时不得宣称超时升级可用。
+
+```json
+{
+  "Mes": {
+    "AndonEscalation": {
+      "ScanInterval": "00:00:30",
+      "Policies": [
+        {
+          "OrganizationId": "<组织 ID>",
+          "EnvironmentId": "<环境 ID>",
+          "Category": "Equipment",
+          "UnclaimedTimeout": "00:05:00",
+          "RecipientId": "<IAM 接收人 ID>"
+        }
+      ]
+    }
+  }
+}
+```
+
+示例时限必须替换为组织确认的业务配置。环境变量等价形式为 `Mes__AndonEscalation__Policies__0__OrganizationId` 等键。每个组织/环境/类别只能有一条策略；类别取 `MaterialShortage`、`Equipment`、`Quality`、`Process`。时限与扫描间隔必须为正，组织、环境、接收人必须完整；无效或重复策略导致启动校验失败，修正配置后再启动，不生成默认阈值或接收人。扫描间隔默认 30 秒，仅为执行频率，不是业务响应时限。
+
+策略在进程启动时加载，改动后重启 MES。尚未升级的在途呼叫使用本次扫描的策略（时限仍从原 `RaisedAtUtc` 起算）；缩短时限后已到期的呼叫可立即升级。升级时冻结接收人、实际时限和 UTC 时间，之后改配置或重启不会重写或再次发布；认领与关闭保持原首次响应事实。
+
+成功启动日志给出策略数与扫描间隔；按 MES 既有详情/队列读面的 `escalatedAtUtc`、`escalationRecipientId` 验证结果。升级事件采用 `nerv-iip.<deployment-env>.business-mes.mes.andon-call-escalated.v1`，其中部署环境来自宿主环境名的小写形式，不能用租户 `EnvironmentId` 代替。事件与升级事实经同一 UoW 写入 CAP outbox；重复投递复用其 `EventId` 和 `andon-call-escalated:{CallId}` 业务去重身份。扫描发生持久化/发布错误时保留宿主错误日志、修复依赖后重启；不要清除升级事实来强制重发。这里验证的是 MES producer，站内通知消费及送达不由升级字段证明。
+
 ## Release-install 与数据库迁移
 
 1. 平台 AppHost 的受治理启动入口位于 `scripts/install/start-nerv-iip-apphost.ps1`。执行前用 `Get-Help` 核对当前参数，并通过安全的外部渠道注入环境配置与 secret。

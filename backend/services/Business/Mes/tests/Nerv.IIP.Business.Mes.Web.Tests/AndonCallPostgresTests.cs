@@ -1,3 +1,9 @@
+using DotNetCore.CAP;
+using DotNetCore.CAP.Persistence;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Nerv.IIP.Business.Mes.Web.Application.Andon;
+using Nerv.IIP.Contracts.Mes;
 using MediatR;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -27,6 +33,272 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 [Collection(MesPostgresLaneDatabase.CollectionName)]
 public sealed class AndonCallPostgresTests
 {
+
+    [MesRealPostgresFact]
+    public async Task Configured_host_escalates_on_controlled_background_tick_on_postgres()
+    {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await using (var seed = CreateApiFactory(new FakeTimeProvider(RaisedAt)))
+        {
+            await PrepareEscalationAsync(seed);
+            await using var scope = seed.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.AndonCalls.Add(CreateCall());
+            await db.SaveChangesAsync();
+        }
+        var clock = new TimerRegistrationObservingTimeProvider(RaisedAt);
+        var settings = new Dictionary<string, string?>
+        {
+            ["Mes:AndonEscalation:Policies:0:OrganizationId"] = "org-1",
+            ["Mes:AndonEscalation:Policies:0:EnvironmentId"] = "env-1",
+            ["Mes:AndonEscalation:Policies:0:Category"] = "Equipment",
+            ["Mes:AndonEscalation:Policies:0:UnclaimedTimeout"] = "00:05:00",
+            ["Mes:AndonEscalation:Policies:0:RecipientId"] = "supervisor"
+        };
+        await using var host = CreateApiFactory(clock).WithWebHostBuilder(builder =>
+            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(settings)));
+        await InitializeCapAsync(host);
+        // 本宿主仅升级 worker 使用注入的时钟创建计时器；等待其注册后才推进业务时间。
+        await clock.WaitForFirstTimerAsync();
+        clock.Advance(TimeSpan.FromMinutes(5));
+        await Eventually.AssertAsync("后台 tick 提交升级事实与 outbox", async ct =>
+        {
+            await using var scope = host.Services.CreateAsyncScope();
+            var call = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().AndonCalls.SingleAsync(ct);
+            Assert.Equal(RaisedAt.AddMinutes(5), call.EscalatedAtUtc);
+            Assert.Single(await EscalationEventsAsync());
+        }, new(TimeSpan.FromSeconds(15), TimeSpan.FromMilliseconds(50), []));
+    }
+
+    // DomainInvariant / ProviderBehavior / PublicContract: #3652。
+    // 错误的到期比较、scope/category 路由、重启去重或脱离 UoW 的发布都会破坏这些断言。
+    [MesRealPostgresFact]
+    public async Task Escalation_uses_scoped_policy_at_deadline_and_survives_restart_once_on_postgres()
+    {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        var clock = new FakeTimeProvider(RaisedAt);
+        string callId;
+        await using (var factory = CreateApiFactory(clock))
+        {
+            await PrepareEscalationAsync(factory);
+            await using (var scope = factory.Services.CreateAsyncScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var call = CreateCall();
+                db.AndonCalls.AddRange(call, CreateCall("org-2"),
+                    AndonCall.Raise("org-1", "env-2", "raise-1", AndonCallCategory.Equipment, "WO-1", "OP-1", "WC-1", "caller", RaisedAt),
+                    AndonCall.Raise("org-1", "env-1", "quality", AndonCallCategory.Quality, "WO-1", "OP-1", "WC-1", "caller", RaisedAt));
+                await db.SaveChangesAsync();
+                callId = call.Id.ToString();
+            }
+            var options = EscalationOptions();
+            options.Policies.Add(new() { OrganizationId = "org-2", EnvironmentId = "env-1", Category = AndonCallCategory.Equipment,
+                UnclaimedTimeout = TimeSpan.FromMinutes(10), RecipientId = "org-2-supervisor" });
+            options.Policies.Add(new() { OrganizationId = "org-1", EnvironmentId = "env-1", Category = AndonCallCategory.Quality,
+                UnclaimedTimeout = TimeSpan.FromMinutes(3), RecipientId = "quality-supervisor" });
+            clock.Advance(TimeSpan.FromMinutes(3));
+            Assert.Equal(1, await Scanner(factory, clock, options).ScanAsync(CancellationToken.None));
+            clock.Advance(TimeSpan.FromMinutes(2) - TimeSpan.FromTicks(1));
+            Assert.Equal(0, await Scanner(factory, clock, options).ScanAsync(CancellationToken.None));
+            clock.Advance(TimeSpan.FromTicks(1));
+            Assert.Equal(1, await Scanner(factory, clock, options).ScanAsync(CancellationToken.None));
+            Assert.Equal(0, await Scanner(factory, clock, options).ScanAsync(CancellationToken.None));
+            using var client = ApiClient(factory, "user:caller");
+            var receipt = await client.GetFromJsonAsync<JsonElement>($"/api/business/v1/mes/andon-calls/{callId}?organizationId=org-1&environmentId=env-1");
+            Assert.Equal("supervisor", receipt.GetProperty("escalationRecipientId").GetString());
+            Assert.Equal(RaisedAt.AddMinutes(5), receipt.GetProperty("escalatedAtUtc").GetDateTimeOffset());
+            Assert.Equal(JsonValueKind.Null, receipt.GetProperty("responseDurationSeconds").ValueKind);
+        }
+        // 新宿主/DbContext + 改过的配置：已升级事实保持原策略，在途呼叫采用重启后的有效配置。
+        await using var restarted = CreateApiFactory(clock);
+        await InitializeCapAsync(restarted);
+        var replacement = EscalationOptions();
+        replacement.Policies[0].RecipientId = "replacement";
+        replacement.Policies.Add(new() { OrganizationId = "org-2", EnvironmentId = "env-1", Category = AndonCallCategory.Equipment,
+            UnclaimedTimeout = TimeSpan.FromMinutes(5), RecipientId = "org-2-new" });
+        Assert.Equal(1, await Scanner(restarted, clock, replacement).ScanAsync(CancellationToken.None));
+        await using var verification = restarted.Services.CreateAsyncScope();
+        var calls = await verification.ServiceProvider.GetRequiredService<ApplicationDbContext>().AndonCalls.AsNoTracking().ToListAsync();
+        var original = calls.Single(x => x.Id.ToString() == callId);
+        Assert.Equal(300d, original.EscalationTimeoutSeconds);
+        Assert.Equal("supervisor", original.EscalationRecipientId);
+        Assert.Null(calls.Single(x => x.EnvironmentId == "env-2").EscalatedAtUtc);
+        Assert.Equal("org-2-new", calls.Single(x => x.OrganizationId == "org-2").EscalationRecipientId);
+        var events = await EscalationEventsAsync();
+        Assert.Equal(3, events.Length);
+        var message = events.Single(x => x.Payload.CallId == callId);
+        Assert.Equal(("org-1", "env-1", "business-mes", "system:business-mes"),
+            (message.OrganizationId, message.EnvironmentId, message.SourceService, message.Actor));
+        Assert.Equal(("WO-1", "OP-1", "WC-1", "caller", "Equipment", "supervisor"),
+            (message.Payload.WorkOrderId, message.Payload.OperationTaskId, message.Payload.WorkCenterId,
+                message.Payload.CallerId, message.Payload.Category, message.Payload.RecipientId));
+        Assert.Equal(RaisedAt.AddMinutes(5), message.OccurredAtUtc);
+        Assert.Equal(300d, message.Payload.UnclaimedTimeoutSeconds);
+        Assert.Equal(3, events.Select(x => x.IdempotencyKey).Distinct().Count());
+    }
+
+    [MesRealPostgresFact]
+    public async Task Missing_policy_and_responded_calls_never_escalate_on_postgres()
+    {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        var clock = new FakeTimeProvider(RaisedAt.AddHours(1));
+        await using var factory = CreateApiFactory(clock);
+        await PrepareEscalationAsync(factory);
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.AndonCalls.Add(CreateCall());
+            await db.SaveChangesAsync();
+        }
+        Assert.Equal(0, await Scanner(factory, clock, new()).ScanAsync(CancellationToken.None));
+        foreach (var close in new[] { false, true })
+        {
+            await using var scope = factory.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var call = await db.AndonCalls.SingleAsync();
+            if (!close) call.Claim("worker", "claim", RaisedAt.AddMinutes(1));
+            else call.Close("worker", "close", RaisedAt.AddMinutes(2));
+            await db.SaveChangesAsync();
+            Assert.Equal(0, await Scanner(factory, clock, EscalationOptions()).ScanAsync(CancellationToken.None));
+        }
+        Assert.Empty(await EscalationEventsAsync());
+    }
+
+    [MesRealPostgresFact]
+    public async Task Claim_and_close_committed_during_scan_prevent_escalation_and_outbox_on_postgres()
+    {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        var clock = new FakeTimeProvider(RaisedAt.AddMinutes(5));
+        var gate = new EscalationSaveGate();
+        await using var factory = CreateApiFactory(clock, gate);
+        await PrepareEscalationAsync(factory);
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.AndonCalls.Add(CreateCall());
+            await db.SaveChangesAsync();
+        }
+        var scan = Scanner(factory, clock, EscalationOptions()).ScanAsync(CancellationToken.None);
+        await TestTimeout.RunAsync("升级读取后暂停保存", async token => await gate.Arrived.Task.WaitAsync(token), TimeSpan.FromSeconds(15));
+        try
+        {
+            await using var scope = factory.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var call = await db.AndonCalls.SingleAsync();
+            call.Claim("worker", "claim", clock.GetUtcNow());
+            await db.SaveChangesAsync();
+            call.Close("worker", "close", clock.GetUtcNow());
+            await db.SaveChangesAsync();
+        }
+        finally { gate.Release.TrySetResult(); }
+        Assert.Equal(0, await scan);
+        await using var verification = factory.Services.CreateAsyncScope();
+        var saved = await verification.ServiceProvider.GetRequiredService<ApplicationDbContext>().AndonCalls.SingleAsync();
+        Assert.Equal(AndonCallStatus.Closed, saved.Status);
+        Assert.Equal("worker", saved.ResponderId);
+        Assert.Equal(clock.GetUtcNow(), saved.FirstRespondedAtUtc);
+        Assert.Null(saved.EscalatedAtUtc);
+        Assert.Empty(await EscalationEventsAsync());
+    }
+
+    [MesRealPostgresFact]
+    public async Task Concurrent_scans_commit_one_intent_and_outbox_failure_rolls_back_on_postgres()
+    {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        var clock = new FakeTimeProvider(RaisedAt.AddMinutes(5));
+        var gate = new AndonSaveGate();
+        await using var factory = CreateApiFactory(clock, gate);
+        await PrepareEscalationAsync(factory);
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.AndonCalls.Add(CreateCall());
+            await db.SaveChangesAsync();
+        }
+        gate.Arm();
+        var results = await Task.WhenAll(Scanner(factory, clock, EscalationOptions()).ScanAsync(CancellationToken.None),
+            Scanner(factory, clock, EscalationOptions()).ScanAsync(CancellationToken.None));
+        Assert.Equal(1, results.Sum());
+        Assert.Single(await EscalationEventsAsync());
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.AndonCalls.Add(AndonCall.Raise("org-1", "env-1", "raise-2", AndonCallCategory.Equipment,
+                "WO-1", "OP-1", "WC-1", "caller", RaisedAt));
+            await db.SaveChangesAsync();
+        }
+        await using var connection = new NpgsqlConnection(MesPostgresLaneDatabase.ConnectionString);
+        await connection.OpenAsync();
+        await using var trigger = connection.CreateCommand();
+        trigger.CommandText = """
+            CREATE FUNCTION cap.reject_andon_outbox() RETURNS trigger LANGUAGE plpgsql AS $
+            BEGIN RAISE EXCEPTION 'injected andon outbox failure'; END; $;
+            CREATE TRIGGER reject_andon_outbox BEFORE INSERT ON cap.published
+            FOR EACH ROW EXECUTE FUNCTION cap.reject_andon_outbox();
+            """;
+        await trigger.ExecuteNonQueryAsync();
+        var error = await Assert.ThrowsAnyAsync<Exception>(() => Scanner(factory, clock, EscalationOptions()).ScanAsync(CancellationToken.None));
+        Assert.Contains("injected andon outbox failure", error.ToString());
+        await using var verification = factory.Services.CreateAsyncScope();
+        var saved = await verification.ServiceProvider.GetRequiredService<ApplicationDbContext>().AndonCalls.SingleAsync(x => x.RaiseIntentKey == "raise-2");
+        Assert.Null(saved.EscalatedAtUtc);
+        Assert.Null(saved.EscalationTimeoutSeconds);
+        Assert.Single(await EscalationEventsAsync());
+    }
+
+    private static AndonEscalationOptions EscalationOptions() => new()
+    {
+        Policies = [new() { OrganizationId = "org-1", EnvironmentId = "env-1", Category = AndonCallCategory.Equipment,
+            UnclaimedTimeout = TimeSpan.FromMinutes(5), RecipientId = "supervisor" }]
+    };
+
+    private static AndonEscalationScanner Scanner(WebApplicationFactory<Program> factory, TimeProvider clock, AndonEscalationOptions options) =>
+        new(factory.Services.GetRequiredService<IServiceScopeFactory>(), Options.Create(options), clock, NullLogger<AndonEscalationScanner>.Instance);
+
+    private static async Task PrepareEscalationAsync(WebApplicationFactory<Program> factory)
+    {
+        await SeedApiSourceAsync(factory);
+        await InitializeCapAsync(factory);
+    }
+
+    private static async Task InitializeCapAsync(WebApplicationFactory<Program> factory)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<IStorageInitializer>().InitializeAsync(CancellationToken.None);
+        await scope.ServiceProvider.GetRequiredService<IBootstrapper>().BootstrapAsync(CancellationToken.None);
+    }
+
+    private static async Task<AndonCallEscalatedIntegrationEvent[]> EscalationEventsAsync()
+    {
+        await using var connection = new NpgsqlConnection(MesPostgresLaneDatabase.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT \"Content\" FROM cap.published WHERE \"Name\" = 'nerv-iip.development.business-mes.mes.andon-call-escalated.v1'";
+        await using var reader = await command.ExecuteReaderAsync();
+        var events = new List<AndonCallEscalatedIntegrationEvent>();
+        while (await reader.ReadAsync())
+        {
+            using var content = JsonDocument.Parse(reader.GetString(0));
+            events.Add(content.RootElement.GetProperty("Value").Deserialize<AndonCallEscalatedIntegrationEvent>(new JsonSerializerOptions(JsonSerializerDefaults.Web))!);
+        }
+        return events.ToArray();
+    }
+
+    private sealed class EscalationSaveGate : SaveChangesInterceptor
+    {
+        public TaskCompletionSource Arrived { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData data, InterceptionResult<int> result, CancellationToken ct = default)
+        {
+            if (data.Context!.ChangeTracker.Entries<AndonCall>().Any(x => x.Entity.Status == AndonCallStatus.Open && x.Entity.EscalatedAtUtc is not null))
+            {
+                Arrived.TrySetResult();
+                await TestTimeout.RunAsync("等待认领和关闭提交", async token => await Release.Task.WaitAsync(token), TimeSpan.FromSeconds(15), ct);
+            }
+            return result;
+        }
+    }
+
     private static readonly DateTimeOffset RaisedAt = DateTimeOffset.Parse("2026-09-20T01:00:00Z");
 
     [MesRealPostgresFact]
@@ -322,7 +594,7 @@ public sealed class AndonCallPostgresTests
         return client;
     }
 
-    private static WebApplicationFactory<Program> CreateApiFactory(TimeProvider clock, AndonSaveGate? gate = null) =>
+    private static WebApplicationFactory<Program> CreateApiFactory(TimeProvider clock, SaveChangesInterceptor? gate = null) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Development");
@@ -330,7 +602,7 @@ public sealed class AndonCallPostgresTests
             {
                 ["ConnectionStrings:PostgreSQL"] = MesPostgresLaneDatabase.ConnectionString,
                 ["Messaging:Provider"] = "InMemory",
-                ["Cap:Version"] = $"test-andon-api-{Guid.CreateVersion7():N}",
+                ["Cap:Version"] = $"andon-{Guid.CreateVersion7():N}"[..20],
                 ["InternalService:BearerToken"] = "test-internal-token",
             };
             foreach (var (key, value) in settings) builder.UseSetting(key, value);

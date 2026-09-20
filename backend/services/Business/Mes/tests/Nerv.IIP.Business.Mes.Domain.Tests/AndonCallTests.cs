@@ -50,8 +50,10 @@ public sealed class AndonCallTests
     {
         var call = Create();
         Assert.False(call.TryEscalate(RaisedAt.AddMinutes(4), TimeSpan.FromMinutes(5), "supervisor"));
+        Assert.Empty(call.GetDomainEvents());
         Assert.True(call.TryEscalate(RaisedAt.AddMinutes(5), TimeSpan.FromMinutes(5), "supervisor"));
         Assert.False(call.TryEscalate(RaisedAt.AddMinutes(6), TimeSpan.FromMinutes(5), "other"));
+        Assert.Single(call.GetDomainEvents());
         Assert.Equal(AndonCallStatus.Open, call.Status);
         Assert.Null(call.ResponseDuration);
         call.Claim("worker", "claim-1", RaisedAt.AddMinutes(7));

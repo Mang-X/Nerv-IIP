@@ -26,6 +26,7 @@ public sealed class AndonCallEntityTypeConfiguration : IEntityTypeConfiguration<
         builder.Property(x => x.ClosedAtUtc).HasColumnName("closed_at_utc").HasComment("UTC instant when the responder closed the call.");
         builder.Property(x => x.EscalatedAtUtc).HasColumnName("escalated_at_utc").HasComment("Single unclaimed-timeout escalation UTC instant, independent of lifecycle.");
         builder.Property(x => x.EscalationRecipientId).HasColumnName("escalation_recipient_id").HasMaxLength(100).HasComment("Configured escalation recipient IAM principal id frozen at escalation.");
+        builder.Property(x => x.EscalationTimeoutSeconds).HasColumnName("escalation_timeout_seconds").HasComment("Unclaimed timeout in seconds selected at escalation; null for un-escalated or pre-policy-history calls.");
         builder.Property(x => x.RowVersion).HasColumnName("row_version")
             .HasConversion(x => x.VersionNumber, x => new RowVersion(x)).HasComment("Optimistic row version protecting lifecycle and escalation writes.");
         builder.Ignore(x => x.ResponseDuration);
