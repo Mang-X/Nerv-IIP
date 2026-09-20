@@ -79,6 +79,11 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("escalation_recipient_id")
                         .HasComment("Configured escalation recipient IAM principal id frozen at escalation.");
 
+                    b.Property<double?>("EscalationTimeoutSeconds")
+                        .HasColumnType("double precision")
+                        .HasColumnName("escalation_timeout_seconds")
+                        .HasComment("Unclaimed timeout in seconds selected at escalation; null for un-escalated or pre-policy-history calls.");
+
                     b.Property<DateTimeOffset?>("FirstRespondedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("first_responded_at_utc")

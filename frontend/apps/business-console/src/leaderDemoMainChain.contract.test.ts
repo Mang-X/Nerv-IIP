@@ -140,7 +140,8 @@ describe('leader demo main-chain public prerequisites', () => {
     expect(availabilityIndex).toBeGreaterThanOrEqual(0)
     expect(acceptIndex).toBeGreaterThan(availabilityIndex)
     expect(scenarioSource).toContain('skuCode: materialSku')
-    expect(scenarioSource).toContain("const materialSiteCode = 'production'")
+    expect(scenarioSource).toContain('const materialSiteCode = siteCode')
+    expect(scenarioSource).toContain('const finishedGoodsSiteCode = siteCode')
     expect(scenarioSource).toContain('siteCode: materialSiteCode')
     expect(scenarioSource).toContain('lotNo: rawMaterialLotNo')
     expect(scenarioSource).toContain("qualityStatus: 'unrestricted'")
@@ -189,7 +190,7 @@ describe('leader demo main-chain public prerequisites', () => {
     expect(standardOperation).toContain('standardRunMinutes: operationDurationMinutes')
   })
 
-  it('maps the run-scoped work center to a real device asset with fresh availability before scheduling', () => {
+  it('routes the run-scoped MES order through the workbench and updates only its original task', () => {
     const equipmentFlow = sourceBetween("let deviceAssetId = ''", "let productionReportId = ''")
     const registerIndex = equipmentFlow.indexOf(
       '/api/business-console/v1/master-data/device-assets',
@@ -213,15 +214,25 @@ describe('leader demo main-chain public prerequisites', () => {
     )
 
     const schedulingFlow = sourceBetween(
-      'let scheduleReleased = false',
+      'let operationTask: JsonRecord | null = null',
       "let productionReportId = ''",
     )
-    expect(schedulingFlow).toContain('eligibleResourceIds: [deviceAssetId]')
-    expect(schedulingFlow).toContain('primaryResourceId: deviceAssetId')
-    expect(schedulingFlow).toContain('resourceId: deviceAssetId')
-    expect(schedulingFlow).not.toContain('eligibleResourceIds: [workCenterCode]')
-    expect(schedulingFlow).not.toContain('primaryResourceId: workCenterCode')
-    expect(schedulingFlow).not.toContain('resourceId: workCenterCode')
+    expect(schedulingFlow).toContain(
+      "await call('POST', '/api/business-console/v1/scheduling/workbench/plans'",
+    )
+    expect(schedulingFlow).not.toContain(
+      "await call('POST', '/api/business-console/v1/scheduling/plans'",
+    )
+    expect(schedulingFlow).not.toContain('problem: {')
+    expect(schedulingFlow).toContain('orders: [{ workOrderId, priority: 1, isRush: true }]')
+    expect(schedulingFlow).toContain('let originalOperationTaskIds: string[] = []')
+    expect(schedulingFlow).toContain('const scheduledOperationTaskIds =')
+    expect(schedulingFlow).toContain(
+      'scheduledOperationTaskIds.length === originalOperationTaskIds.length',
+    )
+    expect(schedulingFlow).toContain('!originalOperationTaskIds.includes(operationTaskId)')
+    expect(schedulingFlow).toContain('textOf(scheduledTask?.schedulePlanId) === planId')
+    expect(schedulingFlow).toContain('Boolean(scheduledTask?.scheduledAtUtc)')
     expect(schedulingFlow).toContain(
       "markFailure('mes-work-order-schedule-plan', error, 'manual', '#1040')",
     )

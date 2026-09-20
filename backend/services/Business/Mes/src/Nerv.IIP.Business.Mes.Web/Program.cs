@@ -1,5 +1,6 @@
 ﻿using System.Reflection;
 using FastEndpoints;
+using Nerv.IIP.Business.Mes.Web.Application.Andon;
 using FastEndpoints.Swagger;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
@@ -201,6 +202,12 @@ builder.Services.AddSingleton<RuleScheduler>();
 builder.Services.AddScoped<MesCodingService>();
 builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddOptions<AndonEscalationOptions>()
+    .Bind(builder.Configuration.GetSection(AndonEscalationOptions.SectionName))
+    .Validate(options => options.IsValid(), "Mes:AndonEscalation 配置无效：扫描间隔和时限必须为正，组织/环境/类别必须唯一且完整，接收人必须显式指定。")
+    .ValidateOnStart();
+builder.Services.AddSingleton<AndonEscalationScanner>();
+builder.Services.AddHostedService<AndonEscalationWorker>();
 builder.Services.AddMesCapIntegrationEvents(builder.Configuration, builder.Environment.EnvironmentName, isTesting);
 builder.Services.AddSingleton(new MesRescheduleOptions
 {

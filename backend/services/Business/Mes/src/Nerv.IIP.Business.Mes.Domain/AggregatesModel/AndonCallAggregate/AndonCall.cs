@@ -26,6 +26,7 @@ public sealed class AndonCall : Entity<AndonCallId>, IAggregateRoot
     public DateTimeOffset? ClosedAtUtc { get; private set; }
     public DateTimeOffset? EscalatedAtUtc { get; private set; }
     public string? EscalationRecipientId { get; private set; }
+    public double? EscalationTimeoutSeconds { get; private set; }
     public RowVersion RowVersion { get; private set; } = new(0);
     public TimeSpan? ResponseDuration => FirstRespondedAtUtc - RaisedAtUtc;
 
@@ -80,6 +81,8 @@ public sealed class AndonCall : Entity<AndonCallId>, IAggregateRoot
         if (nowUtc - RaisedAtUtc < unclaimedTimeout) return false;
         EscalatedAtUtc = nowUtc.ToUniversalTime();
         EscalationRecipientId = recipientId;
+        EscalationTimeoutSeconds = unclaimedTimeout.TotalSeconds;
+        this.AddDomainEvent(new DomainEvents.AndonCallEscalatedDomainEvent(this));
         return true;
     }
 }
