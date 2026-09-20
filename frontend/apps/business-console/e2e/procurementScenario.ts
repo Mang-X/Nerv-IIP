@@ -22,7 +22,11 @@ import {
 } from '../src/issue1851MbomInventoryBaseline'
 
 export type Row = Record<string, unknown>
-export type PublicCall = <T>(method: 'GET' | 'POST', endpoint: string, body?: Row) => Promise<T>
+export type PublicCall = <T>(
+  method: 'GET' | 'POST' | 'PATCH',
+  endpoint: string,
+  body?: Row,
+) => Promise<T>
 export type ProcurementSupplyOrder = {
   requirement: MbomMaterialLineFact
   quantity: number
@@ -42,7 +46,14 @@ export type ProcurementOptions = {
   headSha: string
   sessionId: string
   includeRodRawMaterial?: boolean
+  inventoryPostingRoute?: RecordReceiptRequest['inventoryPostingRoute']
   beforeCall?: () => Promise<void>
+  afterSupply?: (context: {
+    call: PublicCall
+    query: (endpoint: string, extra?: Row) => string
+    report: Row
+    orders: ProcurementSupplyOrder[]
+  }) => Promise<void>
   afterReceipt?: (context: {
     call: PublicCall
     query: (endpoint: string, extra?: Row) => string
@@ -69,7 +80,7 @@ export async function runProcurement(options: ProcurementOptions) {
   expect(process.env.NERV_IIP_FULLSTACK_STATE_ROOT).toBeTruthy()
   expect(['purchased', 'mixed']).toContain(scenario)
   const calls: Row[] = []
-  const orders: Row[] = []
+  const orders: ProcurementSupplyOrder[] = []
   const uiPages: Row[] = []
   const report: Row = {
     issue,
@@ -93,7 +104,11 @@ export async function runProcurement(options: ProcurementOptions) {
     }
     return url.pathname + url.search
   }
-  const call = async <T>(method: 'GET' | 'POST', endpoint: string, body?: Row): Promise<T> => {
+  const call: PublicCall = async <T>(
+    method: 'GET' | 'POST' | 'PATCH',
+    endpoint: string,
+    body?: Row,
+  ): Promise<T> => {
     await options.beforeCall?.()
     const response = await page.request.fetch(new URL(endpoint, baseURL).toString(), {
       method,
@@ -101,7 +116,12 @@ export async function runProcurement(options: ProcurementOptions) {
       headers: { authorization: token },
     })
     calls.push({ method, path: endpoint, status: response.status(), body })
-    if (!response.ok()) throw new Error(`Public ${method} ${endpoint} HTTP ${response.status()}`)
+    if (!response.ok()) {
+      const error = (await response.json()) as { code?: number | string; message?: string }
+      throw new Error(
+        `Public ${method} ${endpoint} HTTP ${response.status()} code=${error.code} message=${error.message}`,
+      )
+    }
     return ((await response.json()) as { data: T }).data
   }
   const list = async <T>(endpoint: string, extra: Row = {}): Promise<T[]> => {
@@ -128,6 +148,8 @@ export async function runProcurement(options: ProcurementOptions) {
     token = `Bearer ${auth.accessToken}`
     await expect(page).toHaveURL(new URL('/', baseURL).toString())
     report.userAgent = await page.evaluate(() => navigator.userAgent)
+    // 公开写入期间卸载首页，避免后台会话刷新使捕获的 access token 失效。
+    await page.goto('about:blank')
 
     for (const [code, name] of partners) {
       await call('POST', '/api/business-console/v1/master-data/business-partners', {
@@ -277,6 +299,7 @@ export async function runProcurement(options: ProcurementOptions) {
         .toBe('released')
       const receiptRequest = {
         ...scope,
+        inventoryPostingRoute: options.inventoryPostingRoute,
         purchaseReceiptNo: `PR-${issue.replace('NERV-', 'N')}-${scenario}-${index + 1}`,
         purchaseOrderNo,
         lines: [
@@ -323,6 +346,7 @@ export async function runProcurement(options: ProcurementOptions) {
       orders.push(supplyOrder)
       await options.afterReceipt?.({ call, query, order: supplyOrder, report })
     }
+    await options.afterSupply?.({ call, query, report, orders })
     // API 操作完成后才导航，避免浏览器恢复会话导致已捕获 token 轮换。
     for (const route of ['/erp/procurement/purchase-orders', '/erp/procurement/receipts']) {
       const responsePromise = page.waitForResponse(
