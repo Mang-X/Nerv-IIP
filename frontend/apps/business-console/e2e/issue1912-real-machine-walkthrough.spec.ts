@@ -17,6 +17,7 @@ import {
 import {
   buildAuthorizedWorkPoolAssignment,
   extractPublicError,
+  executeWalkthroughPicking,
   runWithActorContext,
   selectAuthorizedWorkPoolScope,
   selectAuthorizedWorkSiteScope,
@@ -2579,6 +2580,56 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         'ERP 发货释放跨 Redis 生成 WMS 出库单，授权作业池绑定后真实出库页面以 HTTP 200 渲染 DO-WALK-001。',
       responsibilityIssue: null,
     })
+    const outboundLines = assignedOutbound.match.lines as JsonRecord[]
+    expect(outboundLines).toHaveLength(1)
+    const pickingLine = outboundLines[0]!
+    expect(pickingLine.skuCode).toBe(FINISHED_SKU)
+    expect(pickingLine.requestedQuantity).toBe(QUANTITY)
+    const pickingScopeQuery = {
+      organizationId,
+      environmentId,
+      scopeKind: shipmentScopeKind,
+      scopeId: shipmentScopeId,
+    }
+    const picking = await executeWalkthroughPicking(
+      {
+        outboundOrderId: outboundId,
+        taskNo: `PICK-${DELIVERY_ORDER_NO}`,
+        lineNo: textOf(pickingLine.lineNo),
+        fromLocationCode: textOf(pickingLine.locationCode),
+        toLocationCode: FINISHED_GOODS_LOCATION,
+        quantity: QUANTITY,
+        scopeKind: shipmentScopeKind,
+        scopeId: shipmentScopeId,
+      },
+      async (path, body) => {
+        const response = await workerCall('POST', queryPath(path, pickingScopeQuery), body)
+        setup.push({
+          kind: 'wms-picking-execution',
+          request: response.summary,
+          response: response.publicPayload,
+        })
+        return asRecord(dataOf(response.payload))
+      },
+      async (warehouseTaskId) => {
+        const task = await workerPollRows(
+          '/api/business-console/v1/wms/picking-tasks',
+          { ...pickingScopeQuery, keyword: `PICK-${DELIVERY_ORDER_NO}`, skip: 0, take: 100 },
+          (row) => textOf(row.warehouseTaskId) === warehouseTaskId,
+        )
+        expect(task.match.assignedPoolCode).toBe(shipmentPoolCode)
+        expect(task.match.assignedOperatorUserId).toBe(workerRuntime.principalId)
+        return { version: Number(task.match.version) }
+      },
+    )
+    expect(textOf(picking.status).toLowerCase()).toBe('completed')
+    expect(picking.executedQuantity).toBe(QUANTITY)
+    const pickedOutbound = await workerPollRows(
+      '/api/business-console/v1/wms/outbound-orders',
+      { ...pickingScopeQuery, keyword: DELIVERY_ORDER_NO, skip: 0, take: 100 },
+      (row) =>
+        textOf(row.outboundOrderId) === outboundId && Number(row.version) > assignedOutboundVersion,
+    )
     const completedOutbound = await workerCall(
       'POST',
       queryPath(
@@ -2591,7 +2642,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         idempotencyKey: `issue1912-complete-${DELIVERY_ORDER_NO}`,
         scopeKind: shipmentScopeKind,
         scopeId: shipmentScopeId,
-        expectedVersion: assignedOutboundVersion,
+        expectedVersion: Number(pickedOutbound.match.version),
       },
     )
     const completedDelivery = await pollRows(
@@ -2610,6 +2661,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       automationMode: 'automatic',
       request: completedOutbound.summary,
       responseOrLog: {
+        picking: publicJson(picking),
         completedOutbound: completedOutbound.publicPayload,
         delivery: publicJson(completedDelivery.match),
       },

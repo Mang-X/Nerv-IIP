@@ -1,5 +1,46 @@
 type JsonRecord = Record<string, unknown>
 
+export async function executeWalkthroughPicking(
+  input: {
+    outboundOrderId: string
+    taskNo: string
+    lineNo: string
+    fromLocationCode: string
+    toLocationCode: string
+    quantity: number
+    scopeKind: string
+    scopeId: string
+  },
+  post: (path: string, body: JsonRecord) => Promise<JsonRecord>,
+  readTask: (warehouseTaskId: string) => Promise<{ version: number }>,
+): Promise<JsonRecord> {
+  const created = await post(
+    `/api/business-console/v1/wms/outbound-orders/${encodeURIComponent(input.outboundOrderId)}/picking-tasks`,
+    {
+      taskNo: input.taskNo,
+      lineNo: input.lineNo,
+      fromLocationCode: input.fromLocationCode,
+      toLocationCode: input.toLocationCode,
+      quantity: input.quantity,
+    },
+  )
+  const taskId = String(created.warehouseTaskId)
+  const task = await readTask(taskId)
+  const taskPath = `/api/business-console/v1/wms/picking-tasks/${encodeURIComponent(taskId)}`
+  const scope = { scopeKind: input.scopeKind, scopeId: input.scopeId }
+  const started = await post(`${taskPath}/start`, {
+    ...scope,
+    idempotencyKey: `issue1912-${input.taskNo}-start`,
+    expectedVersion: task.version,
+  })
+  return post(`${taskPath}/complete`, {
+    ...scope,
+    idempotencyKey: `issue1912-${input.taskNo}-complete`,
+    expectedVersion: started.version,
+    executedQuantity: input.quantity,
+  })
+}
+
 export type WalkthroughActor = 'erp-admin' | 'wms-worker'
 
 export type WalkthroughActorContext = Readonly<{

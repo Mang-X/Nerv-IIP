@@ -10,6 +10,7 @@ import {
 import {
   buildAuthorizedWorkPoolAssignment,
   extractPublicError,
+  executeWalkthroughPicking,
   runWithActorContext,
   runWithAuthorizedScope,
   selectAuthorizedWorkPoolScope,
@@ -70,6 +71,65 @@ const requestSource = (
 })
 
 describe('NERV-1127 / GitHub #1912 real-machine walkthrough contract', () => {
+  it('completes picking using the observed task version and then the start response version', async () => {
+    const calls: Array<{ path: string; body: Record<string, unknown> }> = []
+    const input = {
+      outboundOrderId: 'outbound-1',
+      taskNo: 'PICK-WALK-001',
+      lineNo: '10',
+      fromLocationCode: 'loc-fg-01',
+      toLocationCode: 'loc-fg-01',
+      quantity: 1,
+      scopeKind: 'work-pool',
+      scopeId: 'shipping-pool',
+    }
+    const result = await executeWalkthroughPicking(
+      input,
+      async (path, body) => {
+        calls.push({ path, body })
+        if (path.endsWith('/picking-tasks')) return { warehouseTaskId: 'task-1' }
+        if (path.endsWith('/start')) return { warehouseTaskId: 'task-1', version: 8 }
+        return { warehouseTaskId: 'task-1', status: 'completed', executedQuantity: 1, version: 9 }
+      },
+      async (id) => {
+        expect(id).toBe('task-1')
+        return { version: 7 }
+      },
+    )
+    expect(calls).toEqual([
+      {
+        path: '/api/business-console/v1/wms/outbound-orders/outbound-1/picking-tasks',
+        body: {
+          taskNo: input.taskNo,
+          lineNo: '10',
+          fromLocationCode: 'loc-fg-01',
+          toLocationCode: 'loc-fg-01',
+          quantity: 1,
+        },
+      },
+      {
+        path: '/api/business-console/v1/wms/picking-tasks/task-1/start',
+        body: {
+          idempotencyKey: 'issue1912-PICK-WALK-001-start',
+          expectedVersion: 7,
+          scopeKind: 'work-pool',
+          scopeId: 'shipping-pool',
+        },
+      },
+      {
+        path: '/api/business-console/v1/wms/picking-tasks/task-1/complete',
+        body: {
+          idempotencyKey: 'issue1912-PICK-WALK-001-complete',
+          expectedVersion: 8,
+          executedQuantity: 1,
+          scopeKind: 'work-pool',
+          scopeId: 'shipping-pool',
+        },
+      },
+    ])
+    expect(result).toMatchObject({ status: 'completed', executedQuantity: 1 })
+  })
+
   it('uses the access token from a successful refresh response for the next call', async () => {
     const page = {}
     const tracker = createSessionCredentialTracker(trackerScope(page))
