@@ -72,104 +72,51 @@ internal static class BusinessConsoleFileTransfer
     }
 }
 
-[Tags("Business Console Files")]
-[HttpPost("/api/business-console/v1/files/{fileId}/download-grants")]
-[BusinessGatewayOperationId("createBusinessConsoleSopFileDownloadGrant")]
-public sealed class CreateBusinessConsoleSopFileDownloadGrantEndpoint(
-    IBusinessGatewayAuthorizationClient auth,
-    IBusinessFileStorageClient files,
-    IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCreateSopFileDownloadGrantRequest, BusinessConsoleSopFileDownloadGrantResponse>(
-        auth,
-        BusinessGatewayPermissions.EngineeringDocumentsRead)
-{
-    protected override string OrganizationId(BusinessConsoleCreateSopFileDownloadGrantRequest request) => request.OrganizationId;
-
-    protected override string EnvironmentId(BusinessConsoleCreateSopFileDownloadGrantRequest request) => request.EnvironmentId;
-
-    protected override string ResourceType(BusinessConsoleCreateSopFileDownloadGrantRequest request) => "engineering-sop-file";
-
-    protected override string? ResourceId(BusinessConsoleCreateSopFileDownloadGrantRequest request) => Route<string>("fileId");
-
-    protected override Task<BusinessConsoleSopFileDownloadGrantResponse> ForwardAsync(
-        BusinessConsoleCreateSopFileDownloadGrantRequest request,
-        string bearerToken,
-        CancellationToken cancellationToken) =>
-        files.CreateSopFileDownloadGrantAsync(tokenProvider.BearerToken, Route<string>("fileId")!, request, cancellationToken);
-}
-
-public sealed class BusinessConsoleCreateSopFileDownloadGrantRequestValidator : Validator<BusinessConsoleCreateSopFileDownloadGrantRequest>
-{
-    public BusinessConsoleCreateSopFileDownloadGrantRequestValidator()
-    {
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-    }
-}
+// ---------------------------------------------------------------------------
+// #3314 工程 SOP 文件门面。
+//
+// 下载面**只有一条**字节路由、以 fileId 为入参：download grant 在服务端签发并立即兑换，
+// 调用方拿不到 grant id。FileStorage 的 grant id 是全服务共用命名空间且兑换面不校验用途，
+// 曾经交出去的那两条 grant-content 路由被实测证实可跨权限口径互相兑换（#3314）。
+// 用途（engineering-document）由门面固定并在取字节前复核，使
+// business.engineering.documents.read 不退化成通用文件读权限（ADR 0030 决策 2 / 决策 3）。
+// ---------------------------------------------------------------------------
 
 [Tags("Business Console Files")]
-[HttpGet("/api/business-console/v1/files/download-grants/{downloadGrantId}/content")]
+[HttpGet("/api/business-console/v1/files/sop-documents/{fileId}/content")]
 [BusinessGatewayOperationId("downloadBusinessConsoleSopFileContent")]
 [Authorize(Policy = BusinessGatewayPolicies.BusinessConsoleAuthenticated)]
 [Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(byte[]), StatusCodes.Status200OK, "application/octet-stream")]
 public sealed class DownloadBusinessConsoleSopFileContentEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessFileStorageClient files,
+    IBusinessFileTransferClient transfer,
     IInternalServiceTokenProvider tokenProvider)
     : EndpointWithoutRequest
 {
-    public override async Task HandleAsync(CancellationToken ct)
-    {
-        var organizationId = BusinessConsoleFileTransfer.FirstHeaderOrQuery(
-            HttpContext, BusinessConsoleFileTransfer.OrganizationHeader, "organizationId");
-        var environmentId = BusinessConsoleFileTransfer.FirstHeaderOrQuery(
-            HttpContext, BusinessConsoleFileTransfer.EnvironmentHeader, "environmentId");
-        if (string.IsNullOrWhiteSpace(organizationId) || string.IsNullOrWhiteSpace(environmentId))
-        {
-            await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, StatusCodes.Status400BadRequest, "Download grant headers are required.", ct);
-            return;
-        }
-
-        var downloadGrantId = Route<string>("downloadGrantId")!;
-        var bearerToken = await BusinessGatewayAuthorization.RequirePermissionAsync(
+    public override Task HandleAsync(CancellationToken ct) =>
+        BusinessConsoleFileTransfer.ProxyAsync(
             HttpContext,
             auth,
-            new BusinessGatewayPermissionRequirement(
-                BusinessGatewayPermissions.EngineeringDocumentsRead,
-                organizationId,
-                environmentId,
-                "engineering-sop-download-grant",
-                downloadGrantId),
-            ct);
-        if (bearerToken is null)
-        {
-            return;
-        }
-
-        try
-        {
-            var response = await files.DownloadSopFileContentAsync(
-                tokenProvider.BearerToken,
-                downloadGrantId,
-                new Dictionary<string, string>
-                {
-                    [BusinessConsoleFileTransfer.OrganizationHeader] = organizationId,
-                    [BusinessConsoleFileTransfer.EnvironmentHeader] = environmentId,
-                },
-                ct);
-            HttpContext.Response.ContentType = response.ContentType;
-            if (response.ContentLength is not null)
+            BusinessGatewayPermissions.EngineeringDocumentsRead,
+            "engineering-sop-file",
+            Route<string>("fileId")!,
+            async (organizationId, environmentId, cancellationToken) =>
             {
-                HttpContext.Response.ContentLength = response.ContentLength.Value;
-            }
-
-            await HttpContext.Response.Body.WriteAsync(response.Content, ct);
-        }
-        catch (BusinessServiceProxyException ex)
-        {
-            await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, ex, ct);
-        }
-    }
+                // 授权（用途复核 + 签发 + URL 校验）走 JSON 面的弹性管线；只有取字节那一跳走字节面。
+                var ticket = await files.AuthorizeSopFileDownloadAsync(
+                    tokenProvider.BearerToken,
+                    Route<string>("fileId")!,
+                    organizationId,
+                    environmentId,
+                    cancellationToken);
+                await transfer.StreamFileContentAsync(
+                    tokenProvider.BearerToken,
+                    ticket,
+                    HttpContext.Response,
+                    cancellationToken);
+            },
+            ct);
 }
 
 // ---------------------------------------------------------------------------
@@ -360,7 +307,7 @@ public sealed class DownloadBusinessConsoleShiftHandoverAttachmentContentEndpoin
                     organizationId,
                     environmentId,
                     cancellationToken);
-                await transfer.StreamShiftHandoverAttachmentContentAsync(
+                await transfer.StreamFileContentAsync(
                     tokenProvider.BearerToken,
                     ticket,
                     HttpContext.Response,

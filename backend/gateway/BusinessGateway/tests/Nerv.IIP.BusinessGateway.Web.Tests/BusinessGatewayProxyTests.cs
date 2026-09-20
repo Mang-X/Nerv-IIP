@@ -6401,77 +6401,55 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
-    public async Task Sop_file_download_grant_facade_uses_file_storage_client()
+    public async Task Sop_file_content_facade_streams_bytes_through_a_server_signed_ticket()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         var files = new RecordingBusinessFileStorageClient();
+        var transfer = new RecordingBusinessFileTransferClient();
         await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessFileStorageClient>();
             services.AddSingleton<IBusinessFileStorageClient>(files);
+            services.RemoveAll<IBusinessFileTransferClient>();
+            services.AddSingleton<IBusinessFileTransferClient>(transfer);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
-
-        var response = await client.PostAsJsonAsync("/api/business-console/v1/files/file-sop-v2/download-grants", new
-        {
-            organizationId = "org-001",
-            environmentId = "env-dev",
-        });
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("internal-test-token", files.LastInternalToken);
-        Assert.Equal("file-sop-v2", files.LastFileId);
-        Assert.Equal(new BusinessConsoleCreateSopFileDownloadGrantRequest("org-001", "env-dev"), files.LastRequest);
-        Assert.Equal(BusinessGatewayPermissions.EngineeringDocumentsRead, auth.LastRequirement!.PermissionCode);
-        Assert.Equal("engineering-sop-file", auth.LastRequirement.ResourceType);
-        Assert.Equal("file-sop-v2", auth.LastRequirement.ResourceId);
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        Assert.Equal("/api/business-console/v1/files/download-grants/grant-sop-v2/content", document.RootElement.GetProperty("data").GetProperty("downloadUrl").GetString());
-    }
-
-    [Fact]
-    public async Task Sop_file_download_content_facade_streams_file_storage_content_with_grant_headers()
-    {
-        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
-        var files = new RecordingBusinessFileStorageClient();
-        await using var lease = LeaseHost(auth, services =>
-        {
-            services.RemoveAll<IBusinessFileStorageClient>();
-            services.AddSingleton<IBusinessFileStorageClient>(files);
-            services.RemoveAll<IInternalServiceTokenProvider>();
-            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
-        });
-        var client = lease.CreateClient();
-        BusinessGatewayTestHost.Authenticated(client);
-        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/business-console/v1/files/download-grants/grant-sop-v2/content");
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            "/api/business-console/v1/files/sop-documents/file-sop-v2/content");
         request.Headers.Add("X-Organization-Id", "org-001");
         request.Headers.Add("X-Environment-Id", "env-dev");
 
         var response = await client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("application/pdf", response.Content.Headers.ContentType!.MediaType);
         Assert.Equal("SOP PDF bytes", await response.Content.ReadAsStringAsync());
-        Assert.Equal("internal-test-token", files.LastContentInternalToken);
-        Assert.Equal("grant-sop-v2", files.LastDownloadGrantId);
-        Assert.Equal("org-001", files.LastDownloadHeaders["X-Organization-Id"]);
-        Assert.Equal("env-dev", files.LastDownloadHeaders["X-Environment-Id"]);
+        Assert.Equal("internal-test-token", files.LastInternalToken);
+        Assert.Equal("file-sop-v2", files.LastSopAuthorizedFileId);
+        Assert.Equal("org-001", files.LastSopAuthorizedOrganizationId);
+        Assert.Equal("env-dev", files.LastSopAuthorizedEnvironmentId);
         Assert.Equal(BusinessGatewayPermissions.EngineeringDocumentsRead, auth.LastRequirement!.PermissionCode);
-        Assert.Equal("engineering-sop-download-grant", auth.LastRequirement.ResourceType);
-        Assert.Equal("grant-sop-v2", auth.LastRequirement.ResourceId);
+        Assert.Equal("engineering-sop-file", auth.LastRequirement.ResourceType);
+        Assert.Equal("file-sop-v2", auth.LastRequirement.ResourceId);
+        // 授权在 JSON 面完成，取字节在字节面完成；接缝是这张不出进程的凭据。
+        Assert.Equal(
+            "/api/files/v1/download-grants/grant-sop-v2/content",
+            transfer.LastStreamedTicket!.DownstreamUrl);
     }
 
     [Fact]
-    public async Task Http_file_storage_client_rewrites_internal_download_content_url_to_business_gateway_route()
+    public async Task Http_file_storage_client_signs_the_sop_grant_server_side_after_rechecking_the_purpose()
     {
-        var handler = new RecordingHandler(request =>
+        var handler = new RecordingHandler(request => request.RequestUri!.AbsolutePath switch
         {
-            Assert.Equal(HttpMethod.Post, request.Method);
-            Assert.Equal("/api/files/v1/files/file-sop-v2/download-grants", request.RequestUri!.PathAndQuery);
-            return new HttpResponseMessage(HttpStatusCode.OK)
+            "/api/files/v1/files/file-sop-v2" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(SopFileMetadata("engineering-document")),
+            },
+            "/api/files/v1/files/file-sop-v2/download-grants" => new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = JsonContent.Create(new DownloadGrantResponse(
                     "file-sop-v2",
@@ -6483,23 +6461,40 @@ public sealed class BusinessGatewayProxyTests
                             ["X-Organization-Id"] = "org-001",
                             ["X-Environment-Id"] = "env-dev",
                         }))),
-            };
+            },
+            var path => throw new InvalidOperationException($"Unexpected downstream call: {path}"),
         });
         var client = new HttpBusinessFileStorageClient(new HttpClient(handler)
         {
             BaseAddress = new Uri("http://file-storage.local"),
         });
 
-        var response = await client.CreateSopFileDownloadGrantAsync(
+        var ticket = await client.AuthorizeSopFileDownloadAsync(
             "internal-test-token",
             "file-sop-v2",
-            new BusinessConsoleCreateSopFileDownloadGrantRequest("org-001", "env-dev"),
+            "org-001",
+            "env-dev",
             CancellationToken.None);
 
-        Assert.Equal("/api/business-console/v1/files/download-grants/grant-sop-v2/content", response.DownloadUrl);
-        Assert.Equal("org-001", response.DownloadHeaders["X-Organization-Id"]);
-        Assert.Equal("env-dev", response.DownloadHeaders["X-Environment-Id"]);
+        Assert.Equal("/api/files/v1/download-grants/grant-sop-v2/content", ticket.DownstreamUrl);
+        Assert.Equal("org-001", ticket.TransferHeaders["X-Organization-Id"]);
+        Assert.Equal("env-dev", ticket.TransferHeaders["X-Environment-Id"]);
     }
+
+    private static FileMetadataResponse SopFileMetadata(string purpose) =>
+        new(
+            "file-sop-v2",
+            "org-001",
+            "env-dev",
+            new OwnerReference("business-product-engineering", "sop", "sop-001"),
+            purpose,
+            "sop.pdf",
+            "application/pdf",
+            2048,
+            null,
+            "available",
+            DateTimeOffset.Parse("2026-07-07T07:00:00Z"),
+            DateTimeOffset.Parse("2026-07-07T07:01:00Z"));
 
     [Fact]
     public async Task Mes_current_operation_sops_facade_uses_product_engineering_current_sop_query()
@@ -17432,43 +17427,25 @@ internal sealed class RecordingBusinessFileStorageClient : IBusinessFileStorageC
 
     public string? LastFileId { get; private set; }
 
-    public BusinessConsoleCreateSopFileDownloadGrantRequest? LastRequest { get; private set; }
+    public string? LastSopAuthorizedFileId { get; private set; }
 
-    public string? LastContentInternalToken { get; private set; }
+    public string? LastSopAuthorizedOrganizationId { get; private set; }
 
-    public string? LastDownloadGrantId { get; private set; }
+    public string? LastSopAuthorizedEnvironmentId { get; private set; }
 
-    public IReadOnlyDictionary<string, string> LastDownloadHeaders { get; private set; } = new Dictionary<string, string>();
-
-    public Task<BusinessConsoleSopFileDownloadGrantResponse> CreateSopFileDownloadGrantAsync(
+    public Task<BusinessFileDownloadTicket> AuthorizeSopFileDownloadAsync(
         string internalBearerToken,
         string fileId,
-        BusinessConsoleCreateSopFileDownloadGrantRequest request,
+        string organizationId,
+        string environmentId,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
         LastFileId = fileId;
-        LastRequest = request;
-        return Task.FromResult(new BusinessConsoleSopFileDownloadGrantResponse(
-            fileId,
-            DateTimeOffset.Parse("2026-07-07T08:00:00Z"),
-            "/api/business-console/v1/files/download-grants/grant-sop-v2/content",
-            new Dictionary<string, string>()));
-    }
-
-    public Task<BusinessConsoleSopFileContentResponse> DownloadSopFileContentAsync(
-        string internalBearerToken,
-        string downloadGrantId,
-        IReadOnlyDictionary<string, string> downloadHeaders,
-        CancellationToken cancellationToken)
-    {
-        LastContentInternalToken = internalBearerToken;
-        LastDownloadGrantId = downloadGrantId;
-        LastDownloadHeaders = downloadHeaders;
-        return Task.FromResult(new BusinessConsoleSopFileContentResponse(
-            "application/pdf",
-            "SOP PDF bytes".Length,
-            "SOP PDF bytes"u8.ToArray()));
+        LastSopAuthorizedFileId = fileId;
+        LastSopAuthorizedOrganizationId = organizationId;
+        LastSopAuthorizedEnvironmentId = environmentId;
+        return Task.FromResult(TestDownloadGrants.Ticket("grant-sop-v2", organizationId, environmentId));
     }
 
     public string? LastUploadOwnerId { get; private set; }
@@ -17519,7 +17496,7 @@ internal sealed class RecordingBusinessFileStorageClient : IBusinessFileStorageC
 
     public string? LastAuthorizedEnvironmentId { get; private set; }
 
-    public Task<ShiftHandoverAttachmentDownloadTicket> AuthorizeShiftHandoverAttachmentDownloadAsync(
+    public Task<BusinessFileDownloadTicket> AuthorizeShiftHandoverAttachmentDownloadAsync(
         string internalBearerToken,
         string fileId,
         string organizationId,
@@ -17530,13 +17507,7 @@ internal sealed class RecordingBusinessFileStorageClient : IBusinessFileStorageC
         LastAuthorizedFileId = fileId;
         LastAuthorizedOrganizationId = organizationId;
         LastAuthorizedEnvironmentId = environmentId;
-        return Task.FromResult(new ShiftHandoverAttachmentDownloadTicket(
-            "/api/files/v1/download-grants/grant-handover-1/content",
-            new Dictionary<string, string>
-            {
-                ["X-Organization-Id"] = organizationId,
-                ["X-Environment-Id"] = environmentId,
-            }));
+        return Task.FromResult(TestDownloadGrants.Ticket("grant-handover-1", organizationId, environmentId));
     }
 }
 
@@ -17557,7 +17528,7 @@ internal sealed class RecordingBusinessFileTransferClient : IBusinessFileTransfe
 
     public string? LastTusPatchEnvironmentId { get; private set; }
 
-    public ShiftHandoverAttachmentDownloadTicket? LastAttachmentTicket { get; private set; }
+    public BusinessFileDownloadTicket? LastStreamedTicket { get; private set; }
 
     public Task ProxyShiftHandoverAttachmentTusHeadAsync(
         string internalBearerToken,
@@ -17594,16 +17565,20 @@ internal sealed class RecordingBusinessFileTransferClient : IBusinessFileTransfe
         return Task.CompletedTask;
     }
 
-    public Task StreamShiftHandoverAttachmentContentAsync(
+    public Task StreamFileContentAsync(
         string internalBearerToken,
-        ShiftHandoverAttachmentDownloadTicket ticket,
+        BusinessFileDownloadTicket ticket,
         HttpResponse targetResponse,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
-        LastAttachmentTicket = ticket;
+        LastStreamedTicket = ticket;
         targetResponse.ContentType = "application/octet-stream";
-        return targetResponse.Body.WriteAsync("handover photo bytes"u8.ToArray(), cancellationToken).AsTask();
+        // 字节内容按 ticket 指向的下游 grant 区分，便于用例断言「取到的是哪一条通路的字节」。
+        var bytes = ticket.DownstreamUrl.Contains("grant-sop-v2", StringComparison.Ordinal)
+            ? "SOP PDF bytes"u8.ToArray()
+            : "handover photo bytes"u8.ToArray();
+        return targetResponse.Body.WriteAsync(bytes, cancellationToken).AsTask();
     }
 }
 internal sealed class RecordingProductEngineeringClient : IBusinessProductEngineeringClient
@@ -21389,4 +21364,27 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleMesCapacityImpactListResponse([], 0));
     }
+}
+
+/// <summary>
+/// 测试夹具：按真实签发响应的形状造一个 ticket。#3314 第 2 轮审核 E1 的装置让
+/// <see cref="BusinessFileDownloadTicket"/> 无法由字符串直接构造，夹具也必须走同一条工厂
+/// ——这正是该装置的目的：连测试都不能凭空造出一个「指向任意下游地址」的凭据。
+/// </summary>
+internal static class TestDownloadGrants
+{
+    public static BusinessFileDownloadTicket Ticket(
+        string grantId,
+        string organizationId = "org-001",
+        string environmentId = "env-dev") =>
+        BusinessFileDownloadTicket.FromSignedGrant(new DownloadGrantResponse(
+            "file-under-test",
+            DateTimeOffset.Parse("2026-09-20T08:00:00Z"),
+            new TransferInstructions(
+                $"/api/files/v1/download-grants/{grantId}/content",
+                new Dictionary<string, string>
+                {
+                    ["X-Organization-Id"] = organizationId,
+                    ["X-Environment-Id"] = environmentId,
+                })));
 }

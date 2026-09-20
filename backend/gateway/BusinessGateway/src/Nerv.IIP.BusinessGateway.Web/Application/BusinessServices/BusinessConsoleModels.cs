@@ -2267,21 +2267,6 @@ public sealed record BusinessConsoleCurrentSopDocumentItem(
     string ContentType,
     string Status);
 
-public sealed record BusinessConsoleCreateSopFileDownloadGrantRequest(
-    string OrganizationId,
-    string EnvironmentId);
-
-public sealed record BusinessConsoleSopFileDownloadGrantResponse(
-    string FileId,
-    DateTimeOffset ExpiresAtUtc,
-    string DownloadUrl,
-    IReadOnlyDictionary<string, string> DownloadHeaders);
-
-public sealed record BusinessConsoleSopFileContentResponse(
-    string ContentType,
-    long? ContentLength,
-    byte[] Content);
-
 /// <summary>
 /// 交接班附件上传会话请求。用途、owner 与上传协议不收请求体：BusinessGateway 固定
 /// <c>shift-handover-photo</c> 用途与 <c>business-mes / shift-handover-attachment / {principalId}</c> owner，
