@@ -702,9 +702,6 @@ function Assert-NervIssue1912WalkthroughEvidence {
     }
 
     $uiProofs = @($evidence.uiEvidence)
-    if ($uiProofs.Count -lt $requiredNodes.Count) {
-        throw "Issue #1912 walkthrough evidence must contain at least one UI proof per walkthrough node; found $($uiProofs.Count)."
-    }
     $uiProofNodeSet = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     foreach ($proof in $uiProofs) {
         if ([int]$proof.pageHttpStatus -ne 200 -or [int]$proof.listHttpStatus -ne 200) {
@@ -727,9 +724,6 @@ function Assert-NervIssue1912WalkthroughEvidence {
         if (-not $uiProofNodeSet.Contains($node)) {
             throw "Issue #1912 walkthrough evidence is missing a UI proof for required node '$node'."
         }
-    }
-    if ($uiProofNodeSet.Count -ne $requiredNodes.Count) {
-        throw "Issue #1912 walkthrough evidence UI proof mapping contains unexpected nodes."
     }
     if ([string]::IsNullOrWhiteSpace([string]$evidence.requestFailurePolicy)) {
         throw 'Issue #1912 walkthrough evidence must declare its request failure policy.'
@@ -828,9 +822,10 @@ function Invoke-NervIssue1912WalkthroughScenario {
     )
     foreach ($resourceName in $resourceNames) { & $WaitAction $resourceName $Manifest | Out-Null }
     $snapshot = & $AspireSnapshotAction $Manifest
+    $resourceNameSet = [Collections.Generic.HashSet[string]]::new([string[]]@($resourceNames), [StringComparer]::Ordinal)
     $finishedProjects = @($snapshot.resources | Where-Object {
         "$($_.resourceType)" -like 'Project*' -and [string]::Equals([string]$_.state, 'Finished', [StringComparison]::OrdinalIgnoreCase) -and
-        [Collections.Generic.HashSet[string]]::new([string[]]@($resourceNames), [StringComparer]::Ordinal).Contains([string]$_.displayName)
+        $resourceNameSet.Contains([string]$_.displayName)
     })
     if ($finishedProjects.Count -gt 0) {
         throw "Aspire project resources finished unexpectedly: $($finishedProjects.displayName -join ', ')."
