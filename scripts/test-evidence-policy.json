@@ -1428,9 +1428,12 @@
       "testIdentities": [
         "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Migration_persists_complete_facts_and_replay_keeps_original_times_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Raise_intent_is_unique_within_scope_and_does_not_cross_tenants_on_postgres",
-        "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Stale_concurrent_claims_commit_exactly_one_responder_on_postgres"
+        "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Stale_concurrent_claims_commit_exactly_one_responder_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Service_api_preserves_four_category_lifecycles_and_intent_receipts_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Concurrent_api_intents_converge_and_claim_loser_receives_conflict_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Api_rejects_wrong_source_scope_and_actor_and_filters_queue_before_total_on_postgres"
       ],
-      "expectedRuntimeTestCount": 3
+      "expectedRuntimeTestCount": 6
     },
     {
       "id": "mes-production-candidate",
