@@ -45,10 +45,47 @@ public interface IBusinessFileStorageClient
 /// <summary>
 /// 已通过用途复核并签发完成的取字节凭据。**不出网关进程**：它携带 FileStorage 内部路径，
 /// 既不是公开契约类型，也不进 OpenAPI。
+///
+/// #3314 第 2 轮审核 E1 的结构性替代。前两轮的护栏写在**契约形状**上（先禁参数拼写、
+/// 再禁路径前缀与参数枚举），连续被三种形状打穿：换个参数名、把标识改走 query、把路由挂到
+/// 扫描前缀之外——每一种都让「调用方携带 grant id 并据此兑换」原样复活。按本仓判据，
+/// 连续多轮点名同类特例时应换结构性替代，而不是加第四条谓词。
+///
+/// 替代就是本类型：**构造函数私有，没有接受 URL 字符串或 grant 标识的入口**。唯一的工厂
+/// <see cref="FromSignedGrant"/> 的入参是 FileStorage 的签发响应，不是任何调用方值；而字节面的
+/// <see cref="IBusinessFileTransferClient.StreamFileContentAsync"/> 只接受本类型、不接受字符串。
+/// 于是「拿调用方传来的 grant id 去兑换」这句话在字节面上**写不出来**——无论那个标识走 path
+/// 还是 query、路由叫什么名字、挂在哪个前缀下。
+///
+/// **不自称完备**：在本文件里新增第二个工厂、或伪造一个 <c>DownloadGrantResponse</c> 再喂给
+/// <see cref="FromSignedGrant"/>，仍可绕过。区别在于暴露面从「任意一处的任意字符串」收缩成
+/// 「这一个类型上的工厂集合」——那是一次显式的、评审看得见的编辑。
 /// </summary>
-public sealed record BusinessFileDownloadTicket(
-    string DownstreamUrl,
-    IReadOnlyDictionary<string, string> TransferHeaders);
+public sealed record BusinessFileDownloadTicket
+{
+    private BusinessFileDownloadTicket(string downstreamUrl, IReadOnlyDictionary<string, string> transferHeaders)
+    {
+        DownstreamUrl = downstreamUrl;
+        TransferHeaders = transferHeaders;
+    }
+
+    public string DownstreamUrl { get; }
+
+    public IReadOnlyDictionary<string, string> TransferHeaders { get; }
+
+    /// <summary>
+    /// 由**本网关刚刚签发**的 download grant 产出取字节凭据。FileStorage 只应回内部相对路径；
+    /// 绝对 URL、协议相对 URL 与前缀不符都在这里失败关闭（ADR 0023 决策 1.3、ADR 0030 决策 1）。
+    /// </summary>
+    public static BusinessFileDownloadTicket FromSignedGrant(DownloadGrantResponse grant)
+    {
+        FileStorageRoutes.RequireProxyableDownstreamUrl(
+            grant.Download.Url,
+            FileStorageRoutes.DownstreamDownloadGrantPrefix);
+
+        return new BusinessFileDownloadTicket(grant.Download.Url, grant.Download.Headers);
+    }
+}
 
 /// <summary>
 /// FileStorage 的 JSON 面。挂在按幂等性二分的 <c>NonIdempotentSafe</c> 弹性管线上（10 秒总超时 + 熔断）；
@@ -200,11 +237,7 @@ public sealed class HttpBusinessFileStorageClient(HttpClient httpClient)
             new CreateDownloadGrantRequest(organizationId, environmentId),
             cancellationToken);
 
-        FileStorageRoutes.RequireProxyableDownstreamUrl(
-            grant.Download.Url,
-            FileStorageRoutes.DownstreamDownloadGrantPrefix);
-
-        return new BusinessFileDownloadTicket(grant.Download.Url, grant.Download.Headers);
+        return BusinessFileDownloadTicket.FromSignedGrant(grant);
     }
 }
 

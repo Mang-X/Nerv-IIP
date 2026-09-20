@@ -423,13 +423,7 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
             ? throw new HttpRequestException("connection refused")
             : throw new TaskCanceledException("timed out")));
         var httpContext = ResponseContext();
-        var ticket = new BusinessFileDownloadTicket(
-            "/api/files/v1/download-grants/grant-handover-1/content",
-            new Dictionary<string, string>
-            {
-                ["X-Organization-Id"] = "org-001",
-                ["X-Environment-Id"] = "env-dev",
-            });
+        var ticket = TestDownloadGrants.Ticket("grant-handover-1");
 
         var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
             client.StreamFileContentAsync("internal-test-token", ticket, httpContext.Response, CancellationToken.None));

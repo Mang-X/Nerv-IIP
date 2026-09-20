@@ -2733,34 +2733,32 @@ public sealed class BusinessGatewayOpenApiTests
     }
 
     /// <summary>
-    /// #3314 第 1 轮审核 E1 的承担方。
+    /// #3314 结构不变量的**契约面**部分。
     ///
-    /// 上一版判据写的是 <c>name.Contains("{downloadGrantId}") || name.EndsWith("/download-grants")</c>
-    /// ——它绑的是**路由参数的拼写**和**路径末段**，不是「以 FileStorage 内部标识为入参」这个性质。
-    /// 审核加回一条功能完整、只是改了名的兑换路由（<c>/files/tickets/{grantId}/content</c>）后
-    /// 全套断言照绿。这里换成三条按类的判据：
+    /// 承重的那根柱子已经换成类型层装置（`BusinessFileDownloadTicket` /
+    /// `FileStorageDownstreamAddress`：代理一跳的目标只能由签发响应产出，不接受任何调用方
+    /// 字符串）。本断言不再承担「兑换不可表达」——那件事由类型系统承担——只承担两件契约事实：
     ///
-    /// 1. **入参类型**：文件面上任何取字节的路由（路径以 <c>/content</c> 结尾），其路径参数必须
-    ///    **恰好是** <c>fileId</c> 一个。钉的是「对外入参是业务标识、不是 FileStorage 内部标识」，
-    ///    与那个标识被拼成 downloadGrantId / grantId / ticketId 无关。
-    /// 2. **闭集**：文件面的路由清单必须与钉住的集合逐字相等，新增/改名一律失败关闭。
-    /// 3. **禁止片段**：文件面不得出现 <c>/download-grants</c>（签发面与兑换面一并覆盖）。
+    /// 1. **入参类型（全文档）**：任何以 <c>/content</c> 结尾的路由，其路径参数必须**恰好是**
+    ///    <c>fileId</c>。扫描面是整份契约，不是某个前缀——ADR 0030 后果 7 声明的空集是「网关路由」
+    ///    整体，上一版把扫描面写成 <c>/files</c> 前缀，判据比它声称承担的不变量窄，逃逸正落在差额里。
+    /// 2. **禁止片段（全文档）**：契约里不得出现 <c>/download-grants</c>（签发面与兑换面一并覆盖）。
+    /// 3. **闭集（文件面）**：文件面的路由清单必须与钉住的集合逐字相等，新增/改名失败关闭。
     ///
-    /// **本判据不自称完备**：同时改判据 2 的清单与被加的路由仍可绕过，那是一次显式的两处编辑，
-    /// 由评审承担，不由本断言承担。
+    /// **不自称完备**：判据 3 的清单可以和被加的路由一起改。真正让缺陷本体不可表达的是类型层装置，
+    /// 本断言是它的契约面对照，不是唯一防线。
     /// </summary>
     private static void AssertFileFaceExposesOnlyFileIdKeyedByteRoutes(
         JsonElement paths,
         string filePrefix,
         params string[] expectedFileRoutes)
     {
-        var fileRoutes = paths.EnumerateObject()
+        var allRoutes = paths.EnumerateObject()
             .Select(path => path.Name)
-            .Where(name => name.StartsWith(filePrefix, StringComparison.Ordinal))
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToArray();
 
-        foreach (var route in fileRoutes.Where(name => name.EndsWith("/content", StringComparison.Ordinal)))
+        foreach (var route in allRoutes.Where(name => name.EndsWith("/content", StringComparison.Ordinal)))
         {
             var parameters = RoutePathParameters(route);
             Assert.True(
@@ -2769,13 +2767,13 @@ public sealed class BusinessGatewayOpenApiTests
                     + $"实际 {route} 的路径参数为 [{string.Join(", ", parameters)}]");
         }
 
+        Assert.DoesNotContain(
+            allRoutes,
+            name => name.Contains("/download-grants", StringComparison.Ordinal));
+
         Assert.Equal(
             expectedFileRoutes.OrderBy(name => name, StringComparer.Ordinal).ToArray(),
-            fileRoutes);
-
-        Assert.DoesNotContain(
-            fileRoutes,
-            name => name.Contains("/download-grants", StringComparison.Ordinal));
+            allRoutes.Where(name => name.StartsWith(filePrefix, StringComparison.Ordinal)).ToArray());
     }
 
     private static string[] RoutePathParameters(string route) =>

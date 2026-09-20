@@ -17445,13 +17445,7 @@ internal sealed class RecordingBusinessFileStorageClient : IBusinessFileStorageC
         LastSopAuthorizedFileId = fileId;
         LastSopAuthorizedOrganizationId = organizationId;
         LastSopAuthorizedEnvironmentId = environmentId;
-        return Task.FromResult(new BusinessFileDownloadTicket(
-            "/api/files/v1/download-grants/grant-sop-v2/content",
-            new Dictionary<string, string>
-            {
-                ["X-Organization-Id"] = organizationId,
-                ["X-Environment-Id"] = environmentId,
-            }));
+        return Task.FromResult(TestDownloadGrants.Ticket("grant-sop-v2", organizationId, environmentId));
     }
 
     public string? LastUploadOwnerId { get; private set; }
@@ -17513,13 +17507,7 @@ internal sealed class RecordingBusinessFileStorageClient : IBusinessFileStorageC
         LastAuthorizedFileId = fileId;
         LastAuthorizedOrganizationId = organizationId;
         LastAuthorizedEnvironmentId = environmentId;
-        return Task.FromResult(new BusinessFileDownloadTicket(
-            "/api/files/v1/download-grants/grant-handover-1/content",
-            new Dictionary<string, string>
-            {
-                ["X-Organization-Id"] = organizationId,
-                ["X-Environment-Id"] = environmentId,
-            }));
+        return Task.FromResult(TestDownloadGrants.Ticket("grant-handover-1", organizationId, environmentId));
     }
 }
 
@@ -21376,4 +21364,27 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleMesCapacityImpactListResponse([], 0));
     }
+}
+
+/// <summary>
+/// 测试夹具：按真实签发响应的形状造一个 ticket。#3314 第 2 轮审核 E1 的装置让
+/// <see cref="BusinessFileDownloadTicket"/> 无法由字符串直接构造，夹具也必须走同一条工厂
+/// ——这正是该装置的目的：连测试都不能凭空造出一个「指向任意下游地址」的凭据。
+/// </summary>
+internal static class TestDownloadGrants
+{
+    public static BusinessFileDownloadTicket Ticket(
+        string grantId,
+        string organizationId = "org-001",
+        string environmentId = "env-dev") =>
+        BusinessFileDownloadTicket.FromSignedGrant(new DownloadGrantResponse(
+            "file-under-test",
+            DateTimeOffset.Parse("2026-09-20T08:00:00Z"),
+            new TransferInstructions(
+                $"/api/files/v1/download-grants/{grantId}/content",
+                new Dictionary<string, string>
+                {
+                    ["X-Organization-Id"] = organizationId,
+                    ["X-Environment-Id"] = environmentId,
+                })));
 }

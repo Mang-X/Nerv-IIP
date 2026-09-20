@@ -138,7 +138,7 @@ public sealed class HttpGatewayFileStorageClient(
         CancellationToken cancellationToken) =>
         ProxyRawAsync(
             HttpMethod.Head,
-            $"/api/files/v1/tus/{Uri.EscapeDataString(uploadSessionId)}",
+            FileStorageDownstreamAddress.Tus(uploadSessionId),
             null,
             response,
             cancellationToken,
@@ -157,7 +157,7 @@ public sealed class HttpGatewayFileStorageClient(
         CancellationToken cancellationToken) =>
         ProxyRawAsync(
             HttpMethod.Patch,
-            $"/api/files/v1/tus/{Uri.EscapeDataString(uploadSessionId)}",
+            FileStorageDownstreamAddress.Tus(uploadSessionId),
             request,
             response,
             cancellationToken,
@@ -180,18 +180,10 @@ public sealed class HttpGatewayFileStorageClient(
             $"/api/files/v1/files/{Uri.EscapeDataString(fileId)}/download-grants",
             cancellationToken);
 
-        // FileStorage 只应回内部相对路径。绝对 URL、协议相对 URL 或前缀不符都意味着本网关会被
-        // 指去跟随一个外部地址，失败关闭（ADR 0023 决策 1.3、ADR 0030 决策 1）。
-        var downstreamUrl = grant.Download.Url;
-        if (!downstreamUrl.StartsWith(
-                ConsoleFileStorageTransferRoutes.DownstreamDownloadGrantPrefix,
-                StringComparison.Ordinal))
-        {
-            // 绝对 URL、协议相对 URL 与前缀不符都落在这一个判断里：前缀以 `/` 开头，所以
-            // `https://…`、`//host/…` 都不可能通过。不再另写 IsExternallyAddressedTransferUrl 析取项
-            // ——它被本判断完全蕴含，留着会让读者以为存在两条独立防线。
-            throw GatewayAuthException.BadGateway("filestorage-transfer-url-not-proxyable");
-        }
+        // 取字节地址只能由**刚刚签发的那个 grant** 产出（见 FileStorageDownstreamAddress）：
+        // 本方法没有、也不可能有一个接受调用方标识或 URL 字符串的分支。下游 URL 的形状校验
+        // 与失败关闭都在该类型的工厂里。
+        var address = FileStorageDownstreamAddress.FromSignedGrant(grant);
 
         // 无条件转发**下游签发时给出的**传输头，不做「为空就用网关自己拼的租户头」这类回落：
         // 该回落生产不可达（真实 producer `PostgreSqlFileStorageService` 恒返回三个头），而一旦
@@ -199,16 +191,21 @@ public sealed class HttpGatewayFileStorageClient(
         // 与 BusinessGateway 字节面同一动作保持一致（`BusinessFileTransferClient` 也是无条件转发）。
         await ProxyRawAsync(
             HttpMethod.Get,
-            downstreamUrl,
+            address,
             null,
             response,
             cancellationToken,
             grant.Download.Headers);
     }
 
+    /// <summary>
+    /// 代理一跳。**目标地址的类型是 <see cref="FileStorageDownstreamAddress"/> 而不是
+    /// <see cref="string"/>**——这是 #3314 第 2 轮审核 E1 的结构性替代：没有任何入口能把
+    /// 调用方给的 grant 标识（无论走 path 还是 query）变成一次下游兑换调用。
+    /// </summary>
     private async Task ProxyRawAsync(
         HttpMethod method,
-        string requestUri,
+        FileStorageDownstreamAddress address,
         HttpRequest? sourceRequest,
         HttpResponse targetResponse,
         CancellationToken cancellationToken,
@@ -216,7 +213,7 @@ public sealed class HttpGatewayFileStorageClient(
     {
         try
         {
-            using var request = new HttpRequestMessage(method, requestUri);
+            using var request = new HttpRequestMessage(method, address.Path);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalServiceToken.BearerToken);
             CopyTransferRequestHeaders(sourceRequest, request);
             CopyHeaders(headers, request);
