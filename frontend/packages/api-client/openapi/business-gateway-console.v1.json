@@ -26814,72 +26814,7 @@
         }
       }
     },
-    "/api/business-console/v1/files/{fileId}/download-grants": {
-      "post": {
-        "tags": [
-          "Business Console Files",
-          "Api"
-        ],
-        "operationId": "createBusinessConsoleSopFileDownloadGrant",
-        "parameters": [
-          {
-            "name": "fileId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "x-name": "BusinessConsoleCreateSopFileDownloadGrantRequest",
-          "description": "",
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSopFileDownloadGrantRequest"
-              }
-            }
-          },
-          "required": true,
-          "x-position": 1
-        },
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSopFileDownloadGrantResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized"
-          },
-          "403": {
-            "description": "Forbidden"
-          },
-          "400": {
-            "description": "Bad Request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JWTBearerAuth": []
-          }
-        ]
-      }
-    },
-    "/api/business-console/v1/files/download-grants/{downloadGrantId}/content": {
+    "/api/business-console/v1/files/sop-documents/{fileId}/content": {
       "get": {
         "tags": [
           "Business Console Files",
@@ -26888,7 +26823,7 @@
         "operationId": "downloadBusinessConsoleSopFileContent",
         "parameters": [
           {
-            "name": "downloadGrantId",
+            "name": "fileId",
             "in": "path",
             "required": true,
             "schema": {
@@ -58823,71 +58758,6 @@
           "reason": {
             "type": "string",
             "maxLength": 300,
-            "minLength": 0,
-            "nullable": false
-          }
-        }
-      },
-      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSopFileDownloadGrantResponse": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
-          },
-          {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "data": {
-                "nullable": true,
-                "oneOf": [
-                  {
-                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSopFileDownloadGrantResponse"
-                  }
-                ]
-              }
-            }
-          }
-        ]
-      },
-      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSopFileDownloadGrantResponse": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "fileId": {
-            "type": "string"
-          },
-          "expiresAtUtc": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "downloadUrl": {
-            "type": "string"
-          },
-          "downloadHeaders": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            }
-          }
-        }
-      },
-      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSopFileDownloadGrantRequest": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "organizationId",
-          "environmentId"
-        ],
-        "properties": {
-          "organizationId": {
-            "type": "string",
-            "maxLength": 100,
-            "minLength": 0,
-            "nullable": false
-          },
-          "environmentId": {
-            "type": "string",
-            "maxLength": 100,
             "minLength": 0,
             "nullable": false
           }

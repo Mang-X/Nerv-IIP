@@ -142,19 +142,29 @@ public abstract class AuthorizedProxyNoContentEndpoint(
 
 internal static class AuthorizedProxyEndpointExecutor
 {
-    public static async Task ExecuteAsync(
+    public static Task ExecuteAsync(
         HttpContext context,
         IGatewayIamAuthClient iam,
         IGatewayAuthorizationClient auth,
         string permissionCode,
         Func<AuthorizedProxyRequestContext, CancellationToken, Task> forward,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(context, iam, auth, [permissionCode], forward, cancellationToken);
+
+    /// <summary>要求主体同时持有全部 <paramref name="permissionCodes"/>；见 <see cref="GatewayAuthorization.RequireCurrentPrincipalPermissionsAsync"/>。</summary>
+    public static async Task ExecuteAsync(
+        HttpContext context,
+        IGatewayIamAuthClient iam,
+        IGatewayAuthorizationClient auth,
+        IReadOnlyList<string> permissionCodes,
+        Func<AuthorizedProxyRequestContext, CancellationToken, Task> forward,
         CancellationToken cancellationToken)
     {
-        var authorized = await GatewayAuthorization.RequireCurrentPrincipalPermissionAsync(
+        var authorized = await GatewayAuthorization.RequireCurrentPrincipalPermissionsAsync(
             context,
             iam,
             auth,
-            permissionCode,
+            permissionCodes,
             cancellationToken);
         if (authorized is null)
         {

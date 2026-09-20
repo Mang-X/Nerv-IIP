@@ -55,6 +55,26 @@
 
 该例外要求后端与重新生成的客户端同批升级，并由数据库迁移先对历史非 `clean` 文件 fail closed 后再删除扫描列。它**只适用于 #1604 / `scanStatus`**；FileStorage 形成受支持客户发布后，字段删除仍遵循 Governance 的一般破坏性变更/主版本规则。
 
+### Gateway download-grant 两跳路由 v1 删除（#3314）
+
+2026-09-20 已批准一个窄范围版本例外：在 PlatformGateway / BusinessGateway v1 尚未形成受支持客户发布基线、且被删的四条路由没有受支持外部消费方的前提下，#3314 允许从当前 v1 OpenAPI snapshot 与同批生成客户端直接删除下列路由，而不为它们建立 v2 或保留过渡期：
+
+| 删除的路由 | 原 operationId | 原权限口径 |
+| --- | --- | --- |
+| `POST /api/business-console/v1/files/{fileId}/download-grants` | `createBusinessConsoleSopFileDownloadGrant` | `business.engineering.documents.read` |
+| `GET /api/business-console/v1/files/download-grants/{downloadGrantId}/content` | `downloadBusinessConsoleSopFileContent` | `business.engineering.documents.read` |
+| `POST /api/console/v1/files/{fileId}/download-grants` | `createConsoleFileDownloadGrant` | `files.download-grants.create` |
+| `GET /api/console/v1/files/download-grants/{downloadGrantId}/content` | `downloadConsoleFileGrantContent` | `files.read` |
+
+**为什么不能走一般的主版本/迁移窗口程序**：这四条路由本身就是缺陷载体。它们把 FileStorage 的 download grant id 交给调用方，而该 id 是全服务共用命名空间、其兑换面既不校验用途也不记录签发门面——#3314 实测两条权限口径不同的路由可以互相兑换对方签发的 grant，三层没有一层拒绝。保留过渡期等于按窗口长度延长一个已确证的越权面。
+
+替代面按 ADR 0030 决策 3 提供，形状不同（以 `fileId` 为入参的单跳字节路由），因此不是重命名而是契约变更：
+
+- `GET /api/business-console/v1/files/sop-documents/{fileId}/content`（operationId 沿用 `downloadBusinessConsoleSopFileContent`）
+- `GET /api/console/v1/files/{fileId}/content`（`downloadConsoleFileContent`，要求 `files.download-grants.create` + `files.read` 两个码，与被删两跳合计所需一致、不收窄）
+
+该例外要求后端与重新生成的客户端同批升级（本仓前端调用方已在同一 PR 内迁移，`verify-openapi-client-drift.ps1` 为零漂移的机器判据）。它**只适用于 #3314 与上表四条路由**；两个 Gateway 形成受支持客户发布后，路由删除仍遵循 Governance 的一般破坏性变更/主版本规则。
+
 ## 历史材料边界
 
 `docs/reports/audits/**` 保存迁移前总账、历史漂移、修复批次、调查和曾经的端点渲染，目的是可追溯，不承担当前规范或机器事实。若 audit 与 Current Architecture / Governance / Runbook / Reference 或代码生产者冲突，以当前权威来源为准，并把 audit 视为当时状态快照。

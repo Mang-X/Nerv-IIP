@@ -632,21 +632,6 @@ export type NervIipPlatformGatewayWebEndpointsFilesConsoleFileStorageUsageReques
     [key: string]: never;
 };
 
-export type NetCorePalExtensionsDtoResponseDataOfDownloadGrantResponse = NetCorePalExtensionsDtoResponseData & {
-    data?: NervIipContractsFileStorageDownloadGrantResponse | null;
-};
-
-export type NervIipContractsFileStorageDownloadGrantResponse = {
-    fileId?: string;
-    expiresAtUtc?: string;
-    download?: NervIipContractsFileStorageTransferInstructions;
-};
-
-export type NervIipContractsFileStorageCreateDownloadGrantRequest = {
-    organizationId?: string;
-    environmentId?: string;
-};
-
 export type NetCorePalExtensionsDtoResponseDataOfConsoleAuthResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipPlatformGatewayWebApplicationAuthConsoleAuthResponse | null;
 };
@@ -1778,35 +1763,6 @@ export type GetConsoleFileMetadataResponses = {
 
 export type GetConsoleFileMetadataResponse = GetConsoleFileMetadataResponses[keyof GetConsoleFileMetadataResponses];
 
-export type CreateConsoleFileDownloadGrantData = {
-    body: NervIipContractsFileStorageCreateDownloadGrantRequest;
-    path: {
-        fileId: string;
-    };
-    query?: never;
-    url: '/api/console/v1/files/{fileId}/download-grants';
-};
-
-export type CreateConsoleFileDownloadGrantErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Forbidden
-     */
-    403: unknown;
-};
-
-export type CreateConsoleFileDownloadGrantResponses = {
-    /**
-     * Success
-     */
-    200: NetCorePalExtensionsDtoResponseDataOfDownloadGrantResponse;
-};
-
-export type CreateConsoleFileDownloadGrantResponse = CreateConsoleFileDownloadGrantResponses[keyof CreateConsoleFileDownloadGrantResponses];
-
 export type GetConsoleTusUploadOffsetData = {
     body?: never;
     path: {
@@ -1865,16 +1821,16 @@ export type PatchConsoleTusUploadResponses = {
 
 export type PatchConsoleTusUploadResponse = PatchConsoleTusUploadResponses[keyof PatchConsoleTusUploadResponses];
 
-export type DownloadConsoleFileGrantContentData = {
+export type DownloadConsoleFileContentData = {
     body?: never;
     path: {
-        downloadGrantId: string;
+        fileId: string;
     };
     query?: never;
-    url: '/api/console/v1/files/download-grants/{downloadGrantId}/content';
+    url: '/api/console/v1/files/{fileId}/content';
 };
 
-export type DownloadConsoleFileGrantContentErrors = {
+export type DownloadConsoleFileContentErrors = {
     /**
      * Unauthorized
      */
@@ -1885,14 +1841,14 @@ export type DownloadConsoleFileGrantContentErrors = {
     403: unknown;
 };
 
-export type DownloadConsoleFileGrantContentResponses = {
+export type DownloadConsoleFileContentResponses = {
     /**
-     * No Content
+     * Success
      */
-    204: void;
+    200: Blob | File;
 };
 
-export type DownloadConsoleFileGrantContentResponse = DownloadConsoleFileGrantContentResponses[keyof DownloadConsoleFileGrantContentResponses];
+export type DownloadConsoleFileContentResponse = DownloadConsoleFileContentResponses[keyof DownloadConsoleFileContentResponses];
 
 export type InvalidateGatewayCacheEndpointData = {
     body?: never;
