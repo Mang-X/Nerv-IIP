@@ -48,6 +48,7 @@ import {
 } from './issue1912-wms-walkthrough-facts'
 import { NERV_1571_WMS_DEFAULT_PAGE_WINDOW_INPUT } from './issue1912-wms-walkthrough-authority'
 import { queryPath as canonicalQueryPath } from './issue1912-walkthrough-query'
+import { runFinishedProduction } from './issue1853-finished-production'
 
 const baseURL = process.env.NERV_IIP_PLAYWRIGHT_BASE_URL
 const adminPassword = process.env.NERV_IIP_FULLSTACK_ADMIN_PASSWORD
@@ -712,12 +713,6 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     predicate: (row: JsonRecord) => boolean,
     timeoutMs = 90_000,
   ) => pollRowsFor(workerRuntime, path, query, predicate, timeoutMs)
-  const pollData = (
-    path: string,
-    query: JsonRecord,
-    predicate: (data: JsonRecord) => boolean,
-    timeoutMs = 90_000,
-  ) => pollDataFor(adminRuntime, path, query, predicate, timeoutMs)
   const workerPollData = (
     path: string,
     query: JsonRecord,
@@ -2110,128 +2105,12 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       responsibilityIssue: null,
     })
 
-    const mesManageContext = await call(
-      'GET',
-      queryPath('/api/business-console/v1/me/work-context', {
-        organizationId,
-        environmentId,
-        permissionCode: 'business.mes.work-orders.manage',
-      }),
-    )
-    const mesManageData = asRecord(dataOf(mesManageContext.payload))
-    const mesManageScope = asRecord(
-      mesManageData.selectedScope ??
-        (Array.isArray(mesManageData.authorizedScopes) ? mesManageData.authorizedScopes[0] : null),
-    )
-    const manageScopeKind = textOf(
-      (mesManageScope.kind ?? mesManageScope.scopeKind) || mesScopeKind,
-    )
-    const manageScopeId = textOf((mesManageScope.id ?? mesManageScope.scopeId) || mesScopeId)
-    await call(
-      'POST',
-      queryPath(
-        `/api/business-console/v1/mes/work-orders/${encodeURIComponent(workOrderId)}/release`,
-        { organizationId, environmentId, scopeKind: manageScopeKind, scopeId: manageScopeId },
-      ),
-      {
-        confirmWarnings: true,
-        idempotencyKey: `issue1912-release-${workOrderId}`,
-      },
-    )
-    let releasedDetail = await pollData(
-      `/api/business-console/v1/mes/work-orders/${encodeURIComponent(workOrderId)}`,
-      { organizationId, environmentId, scopeKind: mesScopeKind, scopeId: mesScopeId },
-      (data) => Array.isArray(data.operationTasks) && data.operationTasks.length > 0,
-    )
-    let operationTasks = (
-      Array.isArray(releasedDetail.data.operationTasks) ? releasedDetail.data.operationTasks : []
-    )
-      .map(asRecord)
-      .sort((a, b) => Number(a.operationSequence ?? 0) - Number(b.operationSequence ?? 0))
-    if (operationTasks.length === 0)
-      throw new Error(`Released work order ${workOrderNo} has no operation tasks.`)
-
-    const reportContext = await call(
-      'GET',
-      queryPath('/api/business-console/v1/me/work-context', {
-        organizationId,
-        environmentId,
-        permissionCode: 'business.mes.reporting.write',
-      }),
-    )
-    const reportContextData = asRecord(dataOf(reportContext.payload))
-    const reportScope = asRecord(
-      reportContextData.selectedScope ??
-        (Array.isArray(reportContextData.authorizedScopes)
-          ? reportContextData.authorizedScopes[0]
-          : null),
-    )
-    const reportScopeKind = textOf((reportScope.kind ?? reportScope.scopeKind) || mesScopeKind)
-    const reportScopeId = textOf((reportScope.id ?? reportScope.scopeId) || mesScopeId)
-    const reportFacts: JsonRecord[] = []
-    for (const task of operationTasks) {
-      const taskId = textOf(task.operationTaskId)
-      if (!taskId) throw new Error(`Work order ${workOrderNo} exposed an operation without an ID.`)
-      const taskStart = await call(
-        'POST',
-        queryPath(
-          `/api/business-console/v1/mes/operation-tasks/${encodeURIComponent(taskId)}/start`,
-          {
-            organizationId,
-            environmentId,
-            scopeKind: manageScopeKind,
-            scopeId: manageScopeId,
-          },
-        ),
-        {
-          reasonCode: 'manual-evidence-transition',
-          idempotencyKey: `issue1912-start-${taskId}`,
-        },
-      )
-      const reportRequest: JsonRecord = {
-        organizationId,
-        environmentId,
-        workOrderId,
-        operationTaskId: taskId,
-        goodQuantity: QUANTITY,
-        scrapQuantity: 0,
-        completesOperation: true,
-        reportedAtUtc: new Date().toISOString(),
-        idempotencyKey: `issue1912-report-${taskId}`,
-        scopeKind: reportScopeKind,
-        scopeId: reportScopeId,
-        consumedMaterialLots: [],
-        reworkQuantity: 0,
-      }
-      if (task === operationTasks[operationTasks.length - 1])
-        reportRequest.producedLotNo = PRODUCED_LOT_NO
-      const report = await call(
-        'POST',
-        '/api/business-console/v1/mes/production-reports',
-        reportRequest,
-      )
-      reportFacts.push({
-        task: publicJson(task),
-        start: taskStart.publicPayload,
-        report: report.publicPayload,
-      })
-      releasedDetail = await pollData(
-        `/api/business-console/v1/mes/work-orders/${encodeURIComponent(workOrderId)}`,
-        { organizationId, environmentId, scopeKind: mesScopeKind, scopeId: mesScopeId },
-        (data) => {
-          const currentTask = (Array.isArray(data.operationTasks) ? data.operationTasks : [])
-            .map(asRecord)
-            .find((item) => textOf(item.operationTaskId) === taskId)
-          return textOf(currentTask?.status).toLowerCase() === 'completed'
-        },
-        120_000,
-      )
-      operationTasks = (
-        Array.isArray(releasedDetail.data.operationTasks) ? releasedDetail.data.operationTasks : []
-      )
-        .map(asRecord)
-        .sort((a, b) => Number(a.operationSequence ?? 0) - Number(b.operationSequence ?? 0))
-    }
+    const finishedProduction = await runFinishedProduction({
+      browser,
+      workOrderId,
+      producedLotNo: PRODUCED_LOT_NO,
+      evidencePath: join(evidenceDirectory, 'nerv1853-finished-production.json'),
+    })
     const productionReports = await pollRows(
       '/api/business-console/v1/mes/production-reports',
       { organizationId, environmentId, keyword: workOrderNo, skip: 0, take: 100 },
@@ -2257,8 +2136,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       request: null,
       responseOrLog: {
         reports: publicJson(productionReports.match),
-        operationCount: reportFacts.length,
-        facts: reportFacts,
+        finalProduction: finishedProduction,
         ui: productionUi,
       },
       conclusion: 'runtime-confirmed',
