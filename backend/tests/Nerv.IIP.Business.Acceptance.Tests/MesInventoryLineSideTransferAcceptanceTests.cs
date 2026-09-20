@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
@@ -97,11 +98,9 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         var transferEvents = issueRequest.GetDomainEvents().ToArray();
         var issueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
             transferEvents.OfType<MaterialIssueRequestedDomainEvent>().Single());
-        var receiptEvent = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
-            transferEvents.OfType<MaterialLineSideReceiptConfirmedDomainEvent>().Single());
+        var receiptEvent = await PostSourceAndCreateReceiptAsync(inventoryDb, inventoryMovementHandler, issueRequest, issueEvent);
         issueRequest.ClearDomainEvents();
         await mesDb.SaveChangesAsync();
-        await inventoryMovementHandler.HandleAsync(issueEvent, CancellationToken.None);
         await inventoryMovementHandler.HandleAsync(receiptEvent, CancellationToken.None);
         await PostTransferLegsAsync(mesDb, issueEvent, receiptEvent);
         Assert.Equal(2m, inventoryDb.StockLedgers.Single(x => x.SiteCode == MaterialSupplyTestFixtures.SiteCode && x.LocationCode == MaterialSupplyTestFixtures.SourceLocationCode).AvailableQuantity);
@@ -149,7 +148,8 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         var receivedAtUtc = issuedAtUtc.AddMinutes(20);
         var reportedAtUtc = issuedAtUtc.AddMinutes(40);
         var cancelledAtUtc = issuedAtUtc.AddHours(1);
-        await inventoryMovementHandler.HandleAsync(CreateWarehouseSeedEvent(issuedAtUtc.AddMinutes(-10), "WO-695-CONSUME", 10m), CancellationToken.None);
+        // 已预留 6，另保留 6 可用量供下方不带 ReservationId 的出库真实过账。
+        await inventoryMovementHandler.HandleAsync(CreateWarehouseSeedEvent(issuedAtUtc.AddMinutes(-10), "WO-695-CONSUME", 12m), CancellationToken.None);
 
         var issueResult = await new CreateMaterialIssueRequestCommandHandler(mesDb).Handle(
             new CreateMaterialIssueRequestCommand(
@@ -198,8 +198,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         var transferEvents = issueRequest.GetDomainEvents().ToArray();
         var issueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
             transferEvents.OfType<MaterialIssueRequestedDomainEvent>().Single());
-        var receiptEvent = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
-            transferEvents.OfType<MaterialLineSideReceiptConfirmedDomainEvent>().Single());
+        var receiptEvent = await PostSourceAndCreateReceiptAsync(inventoryDb, inventoryMovementHandler, issueRequest, issueEvent);
         issueRequest.ClearDomainEvents();
         await mesDb.SaveChangesAsync();
 
@@ -224,7 +223,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         var consumptionEvent = new ProductionMaterialConsumedIntegrationEventConverter().Convert(
             Assert.IsType<ProductionMaterialConsumedDomainEvent>(consumption.GetDomainEvents().Single()));
         await mesDb.SaveChangesAsync();
-        foreach (var movementEvent in new[] { issueEvent, receiptEvent, consumptionEvent })
+        foreach (var movementEvent in new[] { receiptEvent, consumptionEvent })
         {
             await inventoryMovementHandler.HandleAsync(movementEvent, CancellationToken.None);
         }
@@ -354,8 +353,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         var transferEvents = issueRequest.GetDomainEvents().ToArray();
         var issueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
             transferEvents.OfType<MaterialIssueRequestedDomainEvent>().Single());
-        var receiptEvent = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
-            transferEvents.OfType<MaterialLineSideReceiptConfirmedDomainEvent>().Single());
+        var receiptEvent = await PostSourceAndCreateReceiptAsync(inventoryDb, inventoryHandler, issueRequest, issueEvent);
         issueRequest.ClearDomainEvents();
         await mesDb.SaveChangesAsync();
 
@@ -380,7 +378,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         var consumptionEvent = new ProductionMaterialConsumedIntegrationEventConverter().Convert(
             Assert.IsType<ProductionMaterialConsumedDomainEvent>(consumption.GetDomainEvents().Single()));
 
-        foreach (var movementEvent in new[] { issueEvent, receiptEvent, consumptionEvent })
+        foreach (var movementEvent in new[] { receiptEvent, consumptionEvent })
         {
             await inventoryHandler.HandleAsync(movementEvent, CancellationToken.None);
         }
@@ -446,8 +444,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         var transferEvents = issueRequest.GetDomainEvents().ToArray();
         var issueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
             transferEvents.OfType<MaterialIssueRequestedDomainEvent>().Single());
-        var receiptEvent = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
-            transferEvents.OfType<MaterialLineSideReceiptConfirmedDomainEvent>().Single());
+        var receiptEvent = await PostSourceAndCreateReceiptAsync(inventoryDb, inventoryHandler, issueRequest, issueEvent);
         issueRequest.ClearDomainEvents();
         await mesDb.SaveChangesAsync();
 
@@ -475,7 +472,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             Assert.IsType<ProductionMaterialConsumedDomainEvent>(consumption.GetDomainEvents().Single()));
         await mesDb.SaveChangesAsync();
 
-        foreach (var movementEvent in new[] { issueEvent, receiptEvent, consumptionEvent })
+        foreach (var movementEvent in new[] { receiptEvent, consumptionEvent })
         {
             await inventoryHandler.HandleAsync(movementEvent, CancellationToken.None);
         }
@@ -612,8 +609,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         var firstAttemptEvents = issueRequest.GetDomainEvents().ToArray();
         var firstIssueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
             firstAttemptEvents.OfType<MaterialIssueRequestedDomainEvent>().Single());
-        var firstReceiptEvent = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
-            firstAttemptEvents.OfType<MaterialLineSideReceiptConfirmedDomainEvent>().Single());
+        Assert.Empty(firstAttemptEvents.OfType<MaterialLineSideReceiptConfirmedDomainEvent>());
         issueRequest.ClearDomainEvents();
         await mesDb.SaveChangesAsync();
         await failedConsumer.HandleAsync(
@@ -633,15 +629,11 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         var retryEvents = issueRequest.GetDomainEvents().ToArray();
         var retryIssueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
             retryEvents.OfType<MaterialIssueRequestedDomainEvent>().Single());
-        var retryReceiptEvent = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
-            retryEvents.OfType<MaterialLineSideReceiptConfirmedDomainEvent>().Single());
+        var retryReceiptEvent = await PostSourceAndCreateReceiptAsync(inventoryDb, inventoryHandler, issueRequest, retryIssueEvent);
         issueRequest.ClearDomainEvents();
         await mesDb.SaveChangesAsync();
 
         Assert.NotEqual(firstIssueEvent.Payload.IdempotencyKey, retryIssueEvent.Payload.IdempotencyKey);
-        Assert.NotEqual(firstReceiptEvent.Payload.IdempotencyKey, retryReceiptEvent.Payload.IdempotencyKey);
-
-        await inventoryHandler.HandleAsync(retryIssueEvent, CancellationToken.None);
         await inventoryHandler.HandleAsync(retryReceiptEvent, CancellationToken.None);
         await PostTransferLegsAsync(mesDb, retryIssueEvent, retryReceiptEvent);
         // 回执重复投递（CAP 重发）不得二次记账。
@@ -693,13 +685,14 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         var issueRequest = mesDb.MaterialIssueRequests.Local.Single(x => x.RequestNo == issueResult.ReferenceId);
         issueRequest.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, DateTimeOffset.Parse("2026-06-18T08:10:00Z"), 3m, "LOT-OIL-A");
         issueRequest.ClearDomainEvents();
-        // 第二笔收料仍在途（两条腿都还没回执），随后被库存双双拒绝。
+        // 历史双腿协议的第二笔收料仍在途，两条腿都还没回执，随后被库存双双拒绝。
         issueRequest.ConfirmLineSideReceipt(MaterialSupplyTestFixtures.Locations, DateTimeOffset.Parse("2026-06-18T08:20:00Z"), 5m, "LOT-OIL-A");
+        mesDb.Entry(issueRequest).Property(x => x.ReceiptUsesActualIssueValue).CurrentValue = false;
         var transferEvents = issueRequest.GetDomainEvents().ToArray();
         var issueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
             transferEvents.OfType<MaterialIssueRequestedDomainEvent>().Single());
         var receiptEvent = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
-            transferEvents.OfType<MaterialLineSideReceiptConfirmedDomainEvent>().Single());
+            new MaterialLineSideReceiptConfirmedDomainEvent(issueRequest, 5m));
         issueRequest.ClearDomainEvents();
         await mesDb.SaveChangesAsync();
 
@@ -928,13 +921,11 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         var firstAttempt = issueRequest.GetDomainEvents().ToArray();
         var firstIssueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
             firstAttempt.OfType<MaterialIssueRequestedDomainEvent>().Single());
-        var firstReceiptEvent = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
-            firstAttempt.OfType<MaterialLineSideReceiptConfirmedDomainEvent>().Single());
+        var firstReceiptEvent = await PostSourceAndCreateReceiptAsync(inventoryDb, inventoryHandler, issueRequest, firstIssueEvent);
         issueRequest.ClearDomainEvents();
         await mesDb.SaveChangesAsync();
 
         // 出库腿真过账成功（库存已实扣 5），入库腿被拒。
-        await inventoryHandler.HandleAsync(firstIssueEvent, CancellationToken.None);
         await postedConsumer.HandleAsync(
             CreatePostedEvent(firstIssueEvent, "evt-posted-1322-partial-issue-leg"),
             CancellationToken.None);
@@ -987,6 +978,21 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             x.SiteCode == MaterialSupplyTestFixtures.SiteCode &&
             x.LocationCode == MaterialSupplyTestFixtures.LineSideLocationCode &&
             x.SkuCode == "MAT-OIL").OnHandQuantity);
+    }
+
+    private static async Task<InventoryMovementRequestedIntegrationEvent> PostSourceAndCreateReceiptAsync(
+        InventoryDbContext inventoryDb,
+        InventoryMovementRequestedIntegrationEventHandlerForPostingMovement inventoryHandler,
+        MaterialIssueRequest issueRequest,
+        InventoryMovementRequestedIntegrationEvent issueEvent)
+    {
+        Assert.Empty(issueRequest.GetDomainEvents().OfType<MaterialLineSideReceiptConfirmedDomainEvent>());
+        await inventoryHandler.HandleAsync(issueEvent, CancellationToken.None);
+        var movement = await inventoryDb.StockMovements.SingleAsync(x => x.IdempotencyKey == issueEvent.Payload.IdempotencyKey);
+        issueRequest.MarkInventoryPosted(issueRequest.PendingPostingToken!, MaterialTransferLeg.WarehouseIssue,
+            issueEvent.OccurredAtUtc.AddSeconds(1), 0, movement.UnitCost, movement.MovementAmount);
+        return new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
+            Assert.Single(issueRequest.GetDomainEvents().OfType<MaterialLineSideReceiptConfirmedDomainEvent>()));
     }
 
     /// <summary>
@@ -1206,6 +1212,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
     {
         var options = new DbContextOptionsBuilder<MesDbContext>()
             .UseInMemoryDatabase($"mes-inventory-line-side-{Guid.NewGuid():N}")
+            .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;
         return new MesDbContext(options, new NoopMediator());
     }
