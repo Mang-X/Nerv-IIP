@@ -57,19 +57,31 @@ public interface IBusinessFileStorageClient
 /// 于是「拿调用方传来的 grant id 去兑换」这句话在字节面上**写不出来**——无论那个标识走 path
 /// 还是 query、路由叫什么名字、挂在哪个前缀下。
 ///
-/// **不自称完备**：在本文件里新增第二个工厂、或伪造一个 <c>DownloadGrantResponse</c> 再喂给
-/// <see cref="FromSignedGrant"/>，仍可绕过。区别在于暴露面从「任意一处的任意字符串」收缩成
-/// 「这一个类型上的工厂集合」——那是一次显式的、评审看得见的编辑。
+/// **本装置不自称完备。残余是三类，逐类写明（#3314 第 3 轮审核 B1 实测补全）**：
+/// 1. 在本类型上新增一个接受字符串的工厂；
+/// 2. 伪造一个 <c>DownloadGrantResponse</c> 再喂给 <see cref="BusinessFileDownloadTicket.FromSignedGrant"/>；
+/// 3. **绕开被类型化的代理入口，改走同一个客户端里其它仍吃裸 <c>string</c> 的出网 helper**
+///    （如 JSON 面的 <c>SendAsync(..., string requestUri, ...)</c>：同一 HttpClient、同一内部令牌）。
+///
+/// 第 3 类是第 3 轮审核实测打出来的，上一版 docstring 只写了前两类、**边界说小了**。
+/// 三类都需要显式新写代码（一条公开路由 + 一个拼字符串的方法），属评审看得见的一次编辑；
+/// 而缺陷本体另有两条互相独立的契约断言钉住（路由名含 <c>/download-grants</c> 即红——
+/// 第 3 轮的逃逸 C 正是被它抓住的）。
 /// </summary>
 public sealed record BusinessFileDownloadTicket
 {
-    private BusinessFileDownloadTicket(string downstreamUrl, IReadOnlyDictionary<string, string> transferHeaders)
+    private BusinessFileDownloadTicket(
+        FileStorageDownstreamAddress downstreamAddress,
+        IReadOnlyDictionary<string, string> transferHeaders)
     {
-        DownstreamUrl = downstreamUrl;
+        DownstreamAddress = downstreamAddress;
         TransferHeaders = transferHeaders;
     }
 
-    public string DownstreamUrl { get; }
+    public FileStorageDownstreamAddress DownstreamAddress { get; }
+
+    /// <summary>仅供断言与诊断读取；取字节那一跳用的是 <see cref="DownstreamAddress"/>。</summary>
+    public string DownstreamUrl => DownstreamAddress.Path;
 
     public IReadOnlyDictionary<string, string> TransferHeaders { get; }
 
@@ -77,14 +89,8 @@ public sealed record BusinessFileDownloadTicket
     /// 由**本网关刚刚签发**的 download grant 产出取字节凭据。FileStorage 只应回内部相对路径；
     /// 绝对 URL、协议相对 URL 与前缀不符都在这里失败关闭（ADR 0023 决策 1.3、ADR 0030 决策 1）。
     /// </summary>
-    public static BusinessFileDownloadTicket FromSignedGrant(DownloadGrantResponse grant)
-    {
-        FileStorageRoutes.RequireProxyableDownstreamUrl(
-            grant.Download.Url,
-            FileStorageRoutes.DownstreamDownloadGrantPrefix);
-
-        return new BusinessFileDownloadTicket(grant.Download.Url, grant.Download.Headers);
-    }
+    public static BusinessFileDownloadTicket FromSignedGrant(DownloadGrantResponse grant) =>
+        new(FileStorageDownstreamAddress.FromSignedGrant(grant), grant.Download.Headers);
 }
 
 /// <summary>
@@ -238,6 +244,38 @@ public sealed class HttpBusinessFileStorageClient(HttpClient httpClient)
             cancellationToken);
 
         return BusinessFileDownloadTicket.FromSignedGrant(grant);
+    }
+}
+
+/// <summary>
+/// FileStorage 下游地址。**不是字符串**：本类型没有接受任意 URL 的构造入口，只有两个工厂
+/// ——<see cref="Tus"/> 把 uploadSessionId 嵌进固定模板，<see cref="FromSignedGrant"/> 的入参
+/// 是 FileStorage 的签发响应而不是任何调用方值。字节面的代理入口只接受本类型。
+///
+/// 与 PlatformGateway 的同名类型对称（#3314 第 3 轮审核 B1：此前只有 PG 侧类型化，BG 侧
+/// 仍吃裸字符串，那个不对称本身就是逃逸 D' 的落脚点）。残余三类见
+/// <see cref="BusinessFileDownloadTicket"/> 的说明。
+/// </summary>
+public readonly struct FileStorageDownstreamAddress
+{
+    private FileStorageDownstreamAddress(string path) => Path = path;
+
+    public string Path { get; }
+
+    public static FileStorageDownstreamAddress Tus(string uploadSessionId) =>
+        new(FileStorageRoutes.DownstreamTusPrefix + Uri.EscapeDataString(uploadSessionId));
+
+    /// <summary>
+    /// 由**本网关刚刚签发**的 download grant 产出取字节地址；下游 URL 的形状校验与失败关闭
+    /// 在这里（ADR 0023 决策 1.3、ADR 0030 决策 1）。
+    /// </summary>
+    public static FileStorageDownstreamAddress FromSignedGrant(DownloadGrantResponse grant)
+    {
+        FileStorageRoutes.RequireProxyableDownstreamUrl(
+            grant.Download.Url,
+            FileStorageRoutes.DownstreamDownloadGrantPrefix);
+
+        return new FileStorageDownstreamAddress(grant.Download.Url);
     }
 }
 

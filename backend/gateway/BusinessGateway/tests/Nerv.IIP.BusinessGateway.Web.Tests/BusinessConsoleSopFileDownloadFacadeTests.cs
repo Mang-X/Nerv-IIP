@@ -29,8 +29,12 @@ public sealed class BusinessConsoleSopFileDownloadFacadeTests
         "/api/business-console/v1/files/sop-documents/file-sop-v2/content";
 
     /// <summary>
-    /// 承接 #3314 的核心不变量：本网关不存在任何以调用方提供的 download grant id 为入参的路由，
-    /// 也不存在任何把 grant id 交给调用方的签发路由。
+    /// #3314 的**回归护栏**：本票点名的那两条历史路由不得被加回来。
+    ///
+    /// **本用例只探两个字面 URL，不承担「不存在任何以 grant id 为入参的路由」这个类级不变量**
+    /// ——那是白名单式的覆盖，换个路由名就探不到（#3314 第 3 轮审核实测过）。类级不变量由两处
+    /// 承担：契约面是 <c>BusinessGatewayOpenApiTests</c> 的三条判据（扫描面是整份文档），
+    /// 可表达性面是 <see cref="BusinessFileDownloadTicket"/>（字节面入口不接受字符串）。
     ///
     /// 会失败的具体输入：把 #3314 之前那两条路由中的任意一条加回来（
     /// <c>GET .../files/download-grants/{id}/content</c> 或 <c>POST .../files/{fileId}/download-grants</c>），

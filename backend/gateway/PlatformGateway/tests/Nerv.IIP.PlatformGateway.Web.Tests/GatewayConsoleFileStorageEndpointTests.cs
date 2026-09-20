@@ -263,8 +263,13 @@ public sealed class GatewayConsoleFileStorageEndpointTests
     }
 
     /// <summary>
-    /// #3314 的核心不变量（PlatformGateway 侧）：本网关不存在任何以调用方提供的 download grant id
-    /// 为入参的路由，也不存在任何把 grant id 交给调用方的签发路由。
+    /// #3314 的**回归护栏**：本票点名的那两条历史路由不得被加回来。
+    ///
+    /// **本用例只探两个字面 URL，不承担「不存在任何以 grant id 为入参的路由」这个类级不变量**
+    /// ——那是白名单式的覆盖，换个路由名就探不到（#3314 第 3 轮审核实测过）。类级不变量由两处承担：
+    /// 契约面是 <c>GatewayOpenApiTests</c> 的三条判据（入参必须是 fileId / 不得含 download-grants /
+    /// 文件面闭集，扫描面是整份文档），可表达性面是 <c>FileStorageDownstreamAddress</c>
+    /// （代理入口不接受字符串）。
     ///
     /// 缺陷原状：本网关的 <c>GET /api/console/v1/files/download-grants/{downloadGrantId}/content</c>
     /// （门 <c>files.read</c>）与 BusinessGateway 的同形路由（门
@@ -315,7 +320,8 @@ public sealed class GatewayConsoleFileStorageEndpointTests
 
     /// <summary>
     /// #3314 第 1 轮审核 E2 的承担方：「grant id 不出网关进程」此前**只有契约形状**被钉住，
-    /// 响应面零断言——审核把 grant URL 写进响应头，PG 117 条一条都不红。
+    /// 响应面零断言——审核把 grant URL 写进响应头，PG 一条都不红（head <c>7b025daf6</c> 上的读数，
+    /// 当时 117 条）。
     ///
     /// 旧缺陷的实际形态恰恰是**响应字段**（旧 `DownloadGrantResponse.download.url` 里带
     /// `/download-grants/{id}/content`），不是路径模板。所以这里断言的是真正交给调用方的那一面：
@@ -356,13 +362,6 @@ public sealed class GatewayConsoleFileStorageEndpointTests
         AssertNoGrantLeak(response, body, grantId);
     }
 
-    /// <summary>
-    /// #3314 实测的越权方向之二：只持 <c>business.engineering.documents.read</c> 的主体曾经能在
-    /// 本网关兑换 SOP 面签发的 grant。改造后它走不到任何 grant 入参，唯一的字节路由要
-    /// <c>files.read</c>，缺码即被**本网关的权限门**拒绝，FileStorage 一发都收不到。
-    ///
-    /// 会失败的具体输入：把本路由的权限码换成别的、或不检查授权结果就继续代理。
-    /// </summary>
     /// <summary>
     /// #3314 第 2 轮审核建议：正向用例喂的是**不带头部**的请求，它区分不了「读 principal」
     /// 与「读头部、缺失时回落到 principal」——那是等价输入。这里喂一个与 principal **冲突**的

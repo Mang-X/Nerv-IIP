@@ -29,9 +29,16 @@ internal static class ConsoleFileStorageTransferRoutes
 /// URL 字符串或一个 grant 标识来代理——无论那个标识走 path 还是 query、路由叫什么名字、
 /// 挂在哪个前缀下。
 ///
-/// **本装置不自称完备**：在本文件里新增第三个工厂、或伪造一个 <see cref="DownloadGrantResponse"/>
-/// 再喂给 <see cref="FromSignedGrant"/>，仍可绕过。区别在于暴露面从「任意一处的任意字符串」
-/// 收缩成「这一个类型上的工厂集合」——那是一次显式的、评审看得见的编辑。
+/// **本装置不自称完备。残余是三类，逐类写明（#3314 第 3 轮审核 B1 实测补全）**：
+/// 1. 在本类型上新增一个接受字符串的工厂；
+/// 2. 伪造一个 <see cref="DownloadGrantResponse"/> 再喂给 <see cref="FromSignedGrant"/>；
+/// 3. **绕开被类型化的 <c>ProxyRawAsync</c>，改走同一个客户端里其它仍吃裸 <c>string</c> 的出网
+///    helper**（<c>SendAsync(..., string requestUri, ...)</c>：同一 HttpClient、同一内部令牌）。
+///
+/// 第 3 类是第 3 轮审核实测打出来的，上一版 docstring 只写了前两类、**边界说小了**：
+/// 「暴露面收缩成这一个类型上的工厂集合」不成立。三类都需要显式新写代码（一条公开路由 +
+/// 一个拼字符串的方法），属评审看得见的一次编辑；而缺陷本体另有两条互相独立的契约断言钉住
+/// （路由名含 <c>/download-grants</c> 即红——第 3 轮的逃逸 C 正是被它抓住的）。
 /// </summary>
 internal readonly struct FileStorageDownstreamAddress
 {

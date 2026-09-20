@@ -80,7 +80,7 @@ public sealed class HttpBusinessFileTransferClient(HttpClient httpClient)
         CancellationToken cancellationToken) =>
         ProxyRawAsync(
             HttpMethod.Head,
-            TusRequestUri(uploadSessionId),
+            FileStorageDownstreamAddress.Tus(uploadSessionId),
             internalBearerToken,
             sourceRequest: null,
             targetResponse,
@@ -101,7 +101,7 @@ public sealed class HttpBusinessFileTransferClient(HttpClient httpClient)
         CancellationToken cancellationToken) =>
         ProxyRawAsync(
             HttpMethod.Patch,
-            TusRequestUri(uploadSessionId),
+            FileStorageDownstreamAddress.Tus(uploadSessionId),
             internalBearerToken,
             sourceRequest,
             targetResponse,
@@ -119,26 +119,29 @@ public sealed class HttpBusinessFileTransferClient(HttpClient httpClient)
         CancellationToken cancellationToken) =>
         ProxyRawAsync(
             HttpMethod.Get,
-            ticket.DownstreamUrl,
+            ticket.DownstreamAddress,
             internalBearerToken,
             sourceRequest: null,
             targetResponse,
             ticket.TransferHeaders,
             cancellationToken);
 
-    private static string TusRequestUri(string uploadSessionId) =>
-        $"/api/files/v1/tus/{Uri.EscapeDataString(uploadSessionId)}";
-
+    /// <summary>
+    /// 代理一跳。**目标地址的类型是 <see cref="FileStorageDownstreamAddress"/> 而不是
+    /// <see cref="string"/>**（#3314 第 3 轮审核 B1）：PlatformGateway 侧已经这样做，BG 侧此前
+    /// 仍吃裸字符串，于是「在本类里加一个公开方法，把调用方给的 grant id 拼成兑换 URL」
+    /// 连换 helper 都不用就能成立（逃逸 D')。两侧现在对称。
+    /// </summary>
     private async Task ProxyRawAsync(
         HttpMethod method,
-        string requestUri,
+        FileStorageDownstreamAddress address,
         string internalBearerToken,
         HttpRequest? sourceRequest,
         HttpResponse targetResponse,
         IReadOnlyDictionary<string, string>? additionalHeaders,
         CancellationToken cancellationToken)
     {
-        using var message = new HttpRequestMessage(method, requestUri);
+        using var message = new HttpRequestMessage(method, address.Path);
         message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalBearerToken);
         FileStorageRoutes.CopyHeaders(additionalHeaders, message);
 
