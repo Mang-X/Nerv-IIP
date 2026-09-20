@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260920013401_AddMesLineSideActualValueReceiptProtocol")]
+    [Migration("20260920031055_AddMesLineSideActualValueReceiptProtocol")]
     partial class AddMesLineSideActualValueReceiptProtocol
     {
         /// <inheritdoc />
@@ -25,6 +25,139 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
+
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.AndonCallAggregate.AndonCall", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Andon call aggregate id.");
+
+                    b.Property<string>("CallerId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("caller_id")
+                        .HasComment("IAM principal id that raised the call.");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("category")
+                        .HasComment("MaterialShortage, Equipment, Quality or Process call category.");
+
+                    b.Property<string>("ClaimIntentKey")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("claim_intent_key")
+                        .HasComment("Accepted claim intent retained for replay after closure.");
+
+                    b.Property<string>("CloseIntentKey")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("close_intent_key")
+                        .HasComment("Accepted close intent retained for replay.");
+
+                    b.Property<DateTimeOffset?>("ClosedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("closed_at_utc")
+                        .HasComment("UTC instant when the responder closed the call.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment owning the call.");
+
+                    b.Property<DateTimeOffset?>("EscalatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("escalated_at_utc")
+                        .HasComment("Single unclaimed-timeout escalation UTC instant, independent of lifecycle.");
+
+                    b.Property<string>("EscalationRecipientId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("escalation_recipient_id")
+                        .HasComment("Configured escalation recipient IAM principal id frozen at escalation.");
+
+                    b.Property<DateTimeOffset?>("FirstRespondedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("first_responded_at_utc")
+                        .HasComment("First successful claim UTC instant; null means no response yet, not zero duration.");
+
+                    b.Property<string>("OperationTaskIdValue")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("operation_task_id")
+                        .HasComment("Source MES operation task business id frozen when raised.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization owning the call.");
+
+                    b.Property<string>("RaiseIntentKey")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("raise_intent_key")
+                        .HasComment("Creation intent identity unique within organization and environment; retained after closure.");
+
+                    b.Property<DateTimeOffset>("RaisedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("raised_at_utc")
+                        .HasComment("UTC instant when the call was raised.");
+
+                    b.Property<string>("ResponderId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("responder_id")
+                        .HasComment("First claimant IAM principal id; only this person may close the call.");
+
+                    b.Property<int>("RowVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer")
+                        .HasColumnName("row_version")
+                        .HasComment("Optimistic row version protecting lifecycle and escalation writes.");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status")
+                        .HasComment("Open, Claimed or Closed lifecycle; escalation does not change it.");
+
+                    b.Property<string>("WorkCenterId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("work_center_id")
+                        .HasComment("Source work center public id frozen when raised.");
+
+                    b.Property<string>("WorkOrderId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("work_order_id")
+                        .HasComment("Source MES work order business id frozen when raised.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "RaiseIntentKey")
+                        .IsUnique();
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "Category", "Status", "EscalatedAtUtc", "RaisedAtUtc");
+
+                    b.ToTable("andon_calls", "mes", t =>
+                        {
+                            t.HasComment("MES exception calls with immutable first response and independent single escalation facts.");
+                        });
+                });
 
             modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ChangeoverRecordAggregate.ChangeoverRecord", b =>
                 {
