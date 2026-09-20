@@ -1,3 +1,5 @@
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
+
 namespace Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate;
 
 public partial record ShiftHandoverId : IGuidStronglyTypedId;
@@ -81,7 +83,7 @@ public sealed class ShiftHandoverUnfinishedWorkOrder : Entity<ShiftHandoverUnfin
             throw new InvalidOperationException("完成数量已达到计划数量的工单不是未完工单。");
         }
 
-        WorkOrderStatus = DomainGuard.RequiredBounded(workOrderStatus, nameof(workOrderStatus), 30);
+        WorkOrderStatus = ShiftHandoverGuard.UnfinishedWorkOrderStatus(workOrderStatus, nameof(workOrderStatus));
     }
 
     /// <summary>MES work-order business id carried over to the incoming team.</summary>
@@ -93,7 +95,11 @@ public sealed class ShiftHandoverUnfinishedWorkOrder : Entity<ShiftHandoverUnfin
     /// <summary>Completed quantity captured at handover time; the progress snapshot the incoming team reads.</summary>
     public decimal CompletedQuantity { get; private set; }
 
-    /// <summary>Work-order status captured at handover time.</summary>
+    /// <summary>
+    /// Work-order status captured at handover time. 取值受
+    /// <see cref="WorkOrder.UnfinishedStatuses"/> 约束——这一列叫「**未完**工单的状态」，
+    /// 终态按定义排除在外。写端点是公开契约，前端窄化约束不了调用方，所以校验落在这里。
+    /// </summary>
     public string WorkOrderStatus { get; private set; } = string.Empty;
 
     internal static ShiftHandoverUnfinishedWorkOrder Create(
@@ -376,6 +382,32 @@ public sealed class ShiftHandover : Entity<ShiftHandoverId>, IAggregateRoot
 
 internal static class ShiftHandoverGuard
 {
+    /// <summary>
+    /// 未完工单状态的值域校验。值域**不在本文件里手抄**，而是取自
+    /// <see cref="WorkOrder.UnfinishedStatuses"/>（= 工单状态全集减去终态）：
+    /// 抄一份字面量会让将来 MES 新增状态时两边静默分叉，而分叉的失效方向是静默的
+    /// ——后端不拒、PDA 显示「未知状态」、PC 按自己更宽的那张表解出中文，两屏两种读数。
+    ///
+    /// <para>大小写按 <c>WorkOrder</c> 自己的归一口径（见其 <c>SetMaterialRequirementSnapshotStatus</c>）
+    /// 先降为小写再判定，落库的始终是小写码，读面的标签表才对得上。</para>
+    ///
+    /// <para><b>候选值用「、」分隔而不是「 / 」</b>：这条消息要穿过 BusinessGateway 的
+    /// <c>BusinessServiceProxyException.IsSafeDownstreamBusinessMessage</c>，它把
+    /// <c>&lt; &gt; { } / \</c> 全部列为不安全字符，命中即把整条消息替换成 <c>downstream-request-failed</c>。
+    /// 真栈实测过：用「 / 」时后端确实拒了（HTTP 400），但操作工屏上只剩一句
+    /// <c>downstream-request-failed</c>，等于白拒。域测试断言的是异常消息、看不到这一段，
+    /// 所以下面配了一条传输面断言把这个约束钉住。</para>
+    /// </summary>
+    internal static string UnfinishedWorkOrderStatus(string value, string parameterName)
+    {
+        var normalized = DomainGuard.RequiredBounded(value, parameterName, 30).ToLowerInvariant();
+        return WorkOrder.UnfinishedStatuses.Contains(normalized)
+            ? normalized
+            : throw new ArgumentOutOfRangeException(
+                parameterName,
+                $"未完工单状态「{normalized}」不是工单的未完状态，仅支持 {string.Join("、", WorkOrder.UnfinishedStatuses)}。");
+    }
+
     internal static string? OptionalBounded(string? value, string parameterName, int maxLength)
     {
         if (string.IsNullOrWhiteSpace(value))

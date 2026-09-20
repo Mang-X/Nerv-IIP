@@ -94,6 +94,56 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
     public const string MaterialRequirementSnapshotNoRequirementsStatus = "no-requirements";
 
     /// <summary>
+    /// 工单生命周期状态的**全集**：<see cref="TerminalStatuses"/> 与 <see cref="UnfinishedStatuses"/> 都以它为底集，
+    /// 两者是它的一个划分。新增一个 <c>*Status</c> 常量必须同时登记进本数组，
+    /// 否则 <c>ShiftHandoverUnfinishedWorkOrderStatusTests.Work_order_status_sets_partition_every_declared_status_constant</c>
+    /// 的反射完备性断言会红。
+    /// 物料需求快照状态（<see cref="MaterialRequirementSnapshotCapturedStatus"/> 等）不是工单状态，不在本集合内。
+    /// </summary>
+    public static readonly ImmutableArray<string> AllStatuses =
+    [
+        CreatedStatus,
+        ReleasedStatus,
+        StartedStatus,
+        HoldStatus,
+        CompletedStatus,
+        ClosedStatus,
+        CancelledStatus,
+        ScrappedStatus,
+        SplitStatus,
+        MergedStatus,
+    ];
+
+    /// <summary>
+    /// 工单的**终态**：进入这些状态后工单的生产生命周期已经结束。
+    /// <c>ThrowIfCannotRelease()</c> 与 <see cref="Hold"/> 用的就是本集合——它们原先各自内联一串
+    /// <c>or</c> 模式匹配，改引本集合是为了让「终态是哪几个」只有一处定义。
+    ///
+    /// <para><b>它与 <see cref="NonExecutableStatuses"/> 不是同一个集合</b>：后者少一个 <c>completed</c>
+    /// （超收容差为「已达量后继续报工」留了空间），两者含义不同，不要互相替代。</para>
+    /// </summary>
+    public static readonly ImmutableArray<string> TerminalStatuses =
+    [
+        CompletedStatus,
+        ClosedStatus,
+        CancelledStatus,
+        ScrappedStatus,
+        SplitStatus,
+        MergedStatus,
+    ];
+
+    /// <summary>
+    /// 工单的**未完状态** = <see cref="AllStatuses"/> 去掉 <see cref="TerminalStatuses"/>，即 <c>created</c> /
+    /// <c>released</c> / <c>started</c> / <c>hold</c>。有意写成推导式而不是再手抄一遍四个常量：
+    /// 将来新增一个非终态，只要它进了 <see cref="AllStatuses"/> 就会自动落进本集合，不会静默漏掉。
+    ///
+    /// <para>交接班的「未完工单」一列（<c>ShiftHandoverUnfinishedWorkOrder.WorkOrderStatus</c>）用本集合做值域校验：
+    /// 那一列按定义就是「未完」工单在交班时点的状态快照，终态工单不该出现在那张清单里。</para>
+    /// </summary>
+    public static readonly ImmutableArray<string> UnfinishedStatuses =
+        [.. AllStatuses.Where(status => !TerminalStatuses.Contains(status))];
+
+    /// <summary>
     /// 报工不再受理的工单状态。<see cref="RecordProductionProgress"/> 用它判「工单是否还可执行」，
     /// #3000 的发布投影回填用**同一份**集合挑「哪些工单的工序还会再撞首件门禁」。
     ///
@@ -499,7 +549,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
             throw new InvalidOperationException("Work order has already been released.");
         }
 
-        if (Status is CompletedStatus or ClosedStatus or CancelledStatus or ScrappedStatus or SplitStatus or MergedStatus)
+        if (TerminalStatuses.Contains(Status))
         {
             throw new InvalidOperationException("Work order is already in a closed state.");
         }
@@ -520,7 +570,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
 
     public void Hold(string reason)
     {
-        if (Status is CompletedStatus or ClosedStatus or CancelledStatus or ScrappedStatus or SplitStatus or MergedStatus)
+        if (TerminalStatuses.Contains(Status))
         {
             throw new InvalidOperationException("Closed work orders cannot be held.");
         }
