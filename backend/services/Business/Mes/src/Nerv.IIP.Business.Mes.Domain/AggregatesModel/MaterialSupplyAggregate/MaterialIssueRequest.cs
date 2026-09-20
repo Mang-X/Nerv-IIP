@@ -15,7 +15,9 @@ public sealed record MaterialTransferAllocation
         string? sourceLotNo,
         decimal quantity,
         string ownerType = "production",
-        string? ownerId = null)
+        string? ownerId = null,
+        decimal? unitCost = null,
+        decimal? movementAmount = null)
     {
         SourceSiteCode = DomainGuard.Required(sourceSiteCode, nameof(sourceSiteCode));
         SourceLocationCode = DomainGuard.Required(sourceLocationCode, nameof(sourceLocationCode));
@@ -23,6 +25,8 @@ public sealed record MaterialTransferAllocation
         Quantity = DomainGuard.Positive(quantity, nameof(quantity));
         OwnerType = DomainGuard.Required(ownerType, nameof(ownerType));
         OwnerId = ownerId;
+        UnitCost = unitCost;
+        MovementAmount = movementAmount;
     }
 
     public string SourceSiteCode { get; }
@@ -32,6 +36,10 @@ public sealed record MaterialTransferAllocation
     // 缺少字段的旧 JSON 与既有调用继续表示 production/null。
     public string OwnerType { get; }
     public string? OwnerId { get; }
+    /// <summary>仓库实际出库回执的单价；旧记录或未回执时保持未知。</summary>
+    public decimal? UnitCost { get; init; }
+    /// <summary>仓库实际出库回执的带符号金额，不按当前均价重算。</summary>
+    public decimal? MovementAmount { get; init; }
 }
 
 /// <summary>
@@ -412,7 +420,9 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         string postingToken,
         MaterialTransferLeg leg,
         DateTimeOffset postedAtUtc,
-        int? allocationIndex = null)
+        int? allocationIndex = null,
+        decimal? unitCost = null,
+        decimal? movementAmount = null)
     {
         // 按「收料步」匹配而非整键匹配：失败后重试会换尝试序号，旧尝试迟到的成功回执仍然必须记账，
         // 否则那条腿会被当成没过账、重试时再扣一次库存。
@@ -430,7 +440,14 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
             }
 
             var postedIndexes = PostedIssueIndexes();
-            postedIndexes.Add(index);
+            if (!postedIndexes.Add(index))
+            {
+                return;
+            }
+
+            var allocations = GetSourceAllocations(PendingReceiptQuantity).ToArray();
+            allocations[index] = allocations[index] with { UnitCost = unitCost, MovementAmount = movementAmount };
+            SourceAllocationsJson = JsonSerializer.Serialize(allocations);
             PendingIssueLegPostedIndexesJson = JsonSerializer.Serialize(postedIndexes.Order());
             PendingIssueLegPosted = postedIndexes.Count >= Math.Max(1, PendingIssueLegCount);
         }

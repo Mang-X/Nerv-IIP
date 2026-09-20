@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Infrastructure;
@@ -14,6 +15,45 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class MesStockMovementPostedConsumerTests
 {
+    // #3645：实际出库价值来自 posted 回执，经过关系数据库重载仍属于原来源分配。
+    [Fact]
+    public async Task Warehouse_posted_value_survives_database_reload_and_duplicate_receipt()
+    {
+        await using var connection = await MesSqliteTestDatabase.CreateOpenSqliteConnectionAsync();
+        await using var dbContext = MesSqliteTestDatabase.CreateSqliteDbContext(connection);
+        await dbContext.Database.EnsureCreatedAsync();
+        var at = DateTimeOffset.Parse("2026-09-20T08:00:00Z");
+        dbContext.WorkOrders.Add(Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate.WorkOrder.Create(
+            "org-001", "env-dev", "WO-001", "SKU-001", "PV-001", 10m, 1, at, "PCS"));
+        var request = MaterialIssueRequest.Create("org-001", "env-dev", "MIR-3645", "WO-001", null, "MAT-001", "KG", 1.4m, at);
+        request.ConfirmLineSideReceipt(MaterialSupplyTestFixtures.Locations, at, 1.4m);
+        var key = MaterialIssueRequest.BuildLegIdempotencyKey(request.PendingPostingToken!, MaterialTransferLeg.WarehouseIssue, 0);
+        request.ClearDomainEvents();
+        dbContext.MaterialIssueRequests.Add(request);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+        var template = CreatePostedEvent("MIR-3645");
+        var posted = template with
+        {
+            Payload = template.Payload with
+            {
+                IdempotencyKey = key, MovementType = "outbound", SkuCode = "MAT-001", UomCode = "KG",
+                Quantity = -1.4m, UnitCost = 8m, MovementAmount = -11.2m,
+            },
+        };
+        var handler = new StockMovementPostedIntegrationEventHandlerForMarkMesReceiptPosted(dbContext, new InMemoryIntegrationEventDeadLetterStore());
+        await handler.HandleAsync(posted, CancellationToken.None);
+        await handler.HandleAsync(posted, CancellationToken.None);
+        dbContext.ChangeTracker.Clear();
+
+        var persisted = await dbContext.MaterialIssueRequests.SingleAsync();
+        using var json = System.Text.Json.JsonDocument.Parse(persisted.SourceAllocationsJson);
+        Assert.Equal(8m, json.RootElement[0].GetProperty("UnitCost").GetDecimal());
+        Assert.Equal(-11.2m, json.RootElement[0].GetProperty("MovementAmount").GetDecimal());
+        Assert.Equal(1.4m, persisted.PendingReceiptQuantity);
+        Assert.Equal(0m, persisted.ReceivedQuantity);
+    }
+
     [Fact]
     public async Task Stock_movement_posted_consumer_marks_matching_finished_goods_receipt_posted()
     {
