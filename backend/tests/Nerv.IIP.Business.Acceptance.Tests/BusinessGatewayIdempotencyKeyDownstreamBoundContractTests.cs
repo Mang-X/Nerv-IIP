@@ -875,6 +875,10 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
         [typeof(BusinessConsoleSetMasterDataResourceEnabledRequest)] = [MasterDataLifecycleOperationColumn],
 
         // ---- Mes ----
+        [typeof(BusinessConsoleMesRaiseAndonCallRequest)] =
+            [DownstreamRequest<MesEndpointRequests.RaiseAndonCallRequest>()],
+        [typeof(BusinessConsoleMesAndonCallActionRequest)] =
+            [DownstreamRequest<MesEndpointRequests.AndonCallActionRequest>()],
         [typeof(BusinessConsoleMesClaimOperationTaskRequest)] = [Command<ClaimDispatchTaskCommand>()],
         [typeof(BusinessConsoleRecordProductionReportRequest)] = [Command<RecordProductionReportCommand>()],
         [typeof(BusinessConsoleMesOperationTaskActionRequest)] = [MesCodeKeyColumn],

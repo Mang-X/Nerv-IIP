@@ -50,8 +50,8 @@ public sealed class CreateSchedulingWorkbenchPlanCommandHandler(
             request.HorizonStartUtc,
             request.Orders,
             cancellationToken);
-        var problem = await problemProducer.AssembleAsync(
-            new AssembleSchedulingProblemRequest(
+        var problem = await problemProducer.AssembleWorkbenchAsync(
+            new AssembleSchedulingWorkbenchProblemRequest(
                 $"workbench-{Guid.CreateVersion7():N}",
                 request.OrganizationId,
                 request.EnvironmentId,

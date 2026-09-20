@@ -1534,6 +1534,8 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
         seedCapabilities[Identity("Class", "HttpBusinessMesMaterialPrevalidationClient")] = "Mes";
         seedCapabilities[Identity("Interface", "IBusinessMesContextPrevalidationClient")] = "Mes";
         seedCapabilities[Identity("Class", "HttpBusinessMesContextPrevalidationClient")] = "Mes";
+        seedCapabilities[Identity("Interface", "IBusinessMesAndonClient")] = "Mes";
+        seedCapabilities[Identity("Class", "HttpBusinessMesAndonClient")] = "Mes";
 
         AddManagedType(
             seedCapabilities,
