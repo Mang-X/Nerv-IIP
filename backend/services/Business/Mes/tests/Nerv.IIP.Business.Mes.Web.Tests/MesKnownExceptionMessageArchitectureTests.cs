@@ -6,10 +6,16 @@ public sealed class MesKnownExceptionMessageArchitectureTests
 
     private static readonly IReadOnlyList<MesKnownExceptionSite> ExpectedLedger =
     [
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/AndonCallAggregate/AndonCall.cs", "AndonCall", "Raise", 1, "安灯呼叫类别的中文领域拒绝，尚无 HTTP 公开面"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/AndonCallAggregate/AndonCall.cs", "AndonCall", "Claim", 2, "安灯认领所有权与首次时间的中文领域拒绝，尚无 HTTP 公开面"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/AndonCallAggregate/AndonCall.cs", "AndonCall", "Close", 3, "安灯关闭所有权与生命周期的中文领域拒绝，尚无 HTTP 公开面"),
+        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/AndonCallAggregate/AndonCall.cs", "AndonCall", "Raise", 1, "安灯服务 API 的中文领域拒绝，Gateway facade deferred #3653"),
+        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/AndonCallAggregate/AndonCall.cs", "AndonCall", "Claim", 2, "安灯认领与首次时间的中文拒绝，Gateway facade deferred #3653"),
+        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/AndonCallAggregate/AndonCall.cs", "AndonCall", "Close", 3, "安灯关闭所有权与生命周期的中文拒绝，Gateway facade deferred #3653"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/AndonCallAggregate/AndonCall.cs", "AndonCall", "TryEscalate", 1, "安灯升级时限的中文领域拒绝，尚无 HTTP 公开面"),
+        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Andon/AndonCallCommands.cs", "RaiseAndonCallCommandHandler", "Handle", 1, "安灯重放授权范围的中文拒绝，Gateway facade deferred #3653"),
+        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Andon/AndonCallCommands.cs", "ClaimAndonCallCommandHandler", "Handle", 1, "安灯认领授权范围的中文拒绝，Gateway facade deferred #3653"),
+        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Andon/AndonCallCommands.cs", "CloseAndonCallCommandHandler", "Handle", 1, "安灯关闭授权范围的中文拒绝，Gateway facade deferred #3653"),
+        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Andon/AndonCallQueries.cs", "GetAndonCallQueryHandler", "Handle", 1, "安灯详情授权范围的中文拒绝，Gateway facade deferred #3653"),
+        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Andon/AndonCallQueries.cs", "ListAndonCallsQueryHandler", "Handle", 1, "安灯队列参数的中文拒绝，Gateway facade deferred #3653"),
+        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Andon/AndonCallQueries.cs", "AndonCallAccess", "EnsureSourceAsync", 1, "安灯来源与授权范围的中文拒绝，Gateway facade deferred #3653"),
         Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/OperationTaskAggregate/OperationTask.cs", "OperationTask", "Assign", 1, "同步公开手工派工拒绝"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/OperationTaskAggregate/OperationTask.cs", "OperationTask", "Claim", 2, "PDA 自领任务的中文业务拒绝"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/ChangeoverRecordAggregate/ChangeoverRecord.cs", "ChangeoverRecord", "Complete", 2, "换型完成时间与重复完成的中文业务拒绝"),
@@ -93,9 +99,9 @@ public sealed class MesKnownExceptionMessageArchitectureTests
         var documents = ReadMesSourceDocuments();
         var discovered = MesKnownExceptionUserMessageSourceAnalyzer.Discover(documents);
 
-        Assert.Equal(79, discovered.Count);
-        Assert.Equal(181, discovered.Sum(site => site.DirectKnownExceptionCount));
-        Assert.Equal(177, documents.Sum(document => CountOccurrences(document.Text, "new KnownException")));
+        Assert.Equal(85, discovered.Count);
+        Assert.Equal(187, discovered.Sum(site => site.DirectKnownExceptionCount));
+        Assert.Equal(183, documents.Sum(document => CountOccurrences(document.Text, "new KnownException")));
         Assert.Equal(ExpectedLedger.Count, discovered.Count);
 
         var expectedByKey = ExpectedLedger.ToDictionary(site => site.Key, StringComparer.Ordinal);
