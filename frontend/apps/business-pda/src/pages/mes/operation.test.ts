@@ -8,6 +8,11 @@ type OperationTaskFixture = Omit<BusinessConsoleMesOperationTaskRow, 'status'> &
 
 const push = vi.fn()
 const replace = vi.fn()
+const andonSdk = vi.hoisted(() => ({ raise: vi.fn() }))
+vi.mock('@nerv-iip/api-client', async (original) => ({
+  ...(await original<typeof import('@nerv-iip/api-client')>()),
+  raiseBusinessConsoleMesAndonCall: andonSdk.raise,
+}))
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
@@ -188,6 +193,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     claimTask,
     actionPending: ref(false),
     operationListScope: operationListScopeRef,
+    operationActionScope: operationListScopeRef,
     operationListContextIdentity: operationListContextIdentityRef,
     operationActionContextIdentity: operationActionContextIdentityRef,
     operationListScopeMessage: ref(''),
@@ -221,6 +227,18 @@ import OperationPage from './operation.vue'
 
 describe('PDA MES operation execution page', () => {
   beforeEach(() => {
+    andonSdk.raise.mockReset().mockImplementation(async ({ body }) => ({
+      data: {
+        success: true,
+        data: {
+          ...body,
+          id: 'andon-created-1',
+          callerId: 'principal-001',
+          status: 'open',
+          raisedAtUtc: '2026-09-20T08:00:00Z',
+        },
+      },
+    }))
     completeTask.mockReset().mockResolvedValue(undefined)
     startTask.mockReset().mockResolvedValue(undefined)
     pauseTask.mockReset().mockResolvedValue(undefined)
@@ -260,6 +278,37 @@ describe('PDA MES operation execution page', () => {
     routeState.replaceQuery?.({})
   })
 
+  it.each(['MATERIAL_SHORTAGE', 'EQUIPMENT_UNAVAILABLE', 'QUALITY_HOLD'])(
+    'allows assistance during %s without opening a production action',
+    async (reason) => {
+      operationTasksRef.value = [
+        { ...defaultTasks[0], status: 'Blocked', allowedActions: [], blockReasons: [reason] },
+      ]
+      const wrapper = mount(OperationPage, { attachTo: document.body })
+      await flushPromises()
+      await wrapper.get('[data-row]').trigger('click')
+      await flushPromises()
+      const quality = [...document.body.querySelectorAll<HTMLButtonElement>('button')].find(
+        (button) => button.textContent?.trim() === '质量呼叫',
+      )!
+      quality.click()
+      await flushPromises()
+      const submit = [...document.body.querySelectorAll<HTMLButtonElement>('button')].find(
+        (button) => button.textContent?.trim() === '发起呼叫',
+      )!
+      submit.click()
+      await flushPromises()
+      expect(document.body.textContent).toContain('andon-created-1')
+      expect(andonSdk.raise.mock.calls[0][0].body).toMatchObject({
+        workOrderId: 'WO-2026-0001',
+        operationTaskId: 'OP-1',
+        workCenterId: 'WC-A',
+        scopeId: 'WC-A',
+      })
+      expect(startTask).not.toHaveBeenCalled()
+    },
+  )
+
   it('把分页器的真实刷新生命周期绑定给任务列表壳', async () => {
     const wrapper = mount(OperationPage)
 
@@ -267,6 +316,20 @@ describe('PDA MES operation execution page', () => {
     tasksRefreshingRef.value = true
     await wrapper.vm.$nextTick()
     expect(wrapper.getComponent({ name: 'TaskListShell' }).props('refreshing')).toBe(true)
+  })
+
+  it('does not offer a call when the manage scope is not verified', async () => {
+    operationScopeReadyRef.value = false
+    operationScopeMessageRef.value = '当前账号没有呼叫权限或作业范围尚未就绪'
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    const quality = [...document.body.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent?.trim() === '质量呼叫',
+    )!
+    expect(quality.disabled).toBe(true)
+    expect(document.body.textContent).toContain('当前账号没有呼叫权限或作业范围尚未就绪')
+    expect(andonSdk.raise).not.toHaveBeenCalled()
   })
 
   function dispatchBeforeUnload() {
