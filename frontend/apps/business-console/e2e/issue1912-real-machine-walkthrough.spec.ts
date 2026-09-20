@@ -1128,6 +1128,13 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       (response) => new URL(response.url()).pathname === '/api/console/v1/auth/login',
       { timeout: 120_000 },
     )
+    const workerBusinessRequest = workerPage.waitForRequest(
+      (request) => {
+        const path = new URL(request.url()).pathname
+        return path.startsWith('/api/business-console/') && Boolean(request.headers().authorization)
+      },
+      { timeout: 120_000 },
+    )
     await workerLoginName.fill('emp049')
     await workerPage.getByLabel('密码').fill(workerPassword!)
     await workerPage.getByRole('button', { name: '登录' }).click()
@@ -1151,17 +1158,6 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     expect(workerRuntime.permissionCodes).toContain('business.inventory.ledger.read')
     expect(workerRuntime.permissionCodes).not.toContain('business.approvals.manage')
 
-    const workerBusinessRequest = workerPage.waitForRequest(
-      (request) => {
-        const path = new URL(request.url()).pathname
-        return path.startsWith('/api/business-console/') && Boolean(request.headers().authorization)
-      },
-      { timeout: 120_000 },
-    )
-    await workerPage.goto('/wms/inbound', {
-      waitUntil: 'domcontentloaded',
-      timeout: 120_000,
-    })
     workerSessionCredentialTracker.observeRequest({
       page: workerPage,
       request: await workerBusinessRequest,
