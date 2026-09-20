@@ -1,13 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { openFileContentBlob, sopFileContentTarget } from './fileContent'
+import { openSopFileContent } from './fileContent'
 
-describe('openFileContentBlob', () => {
+const SCOPE = { organizationId: 'org-001', environmentId: 'env-dev' }
+
+describe('openSopFileContent', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
 
-  it('fetches the grant URL with download headers and opens the blob URL', async () => {
+  it('fetches the single-hop fileId route with the business scope and opens the blob URL', async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,
       blob: vi.fn(async () => new Blob(['sop'])),
@@ -37,16 +39,10 @@ describe('openFileContentBlob', () => {
       }),
     })
 
-    await openFileContentBlob({
-      downloadUrl: '/api/business-console/v1/files/download-grants/grant-1/content',
-      downloadHeaders: {
-        'X-Organization-Id': 'org-001',
-        'X-Environment-Id': 'env-dev',
-      },
-    })
+    await openSopFileContent('file-sop-1', SCOPE)
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/business-console/v1/files/download-grants/grant-1/content',
+      '/api/business-console/v1/files/sop-documents/file-sop-1/content',
       expect.objectContaining({
         headers: {
           'X-Organization-Id': 'org-001',
@@ -72,10 +68,9 @@ describe('openFileContentBlob', () => {
     })
 
     await expect(
-      openFileContentBlob(
-        { downloadUrl: '/api/business-console/v1/files/download-grants/grant-1/content' },
-        { fetch: injectedFetch as unknown as typeof fetch },
-      ),
+      openSopFileContent('file-sop-1', SCOPE, {
+        fetch: injectedFetch as unknown as typeof fetch,
+      }),
     ).rejects.toThrow('网络超时')
     expect(injectedFetch).toHaveBeenCalledTimes(1)
     expect(globalFetch).not.toHaveBeenCalled()
@@ -98,36 +93,28 @@ describe('openFileContentBlob', () => {
     )
     vi.stubGlobal('fetch', fetchMock)
 
-    const pending = openFileContentBlob({ downloadUrl: '/x' }, { timeoutMs: 1_000 })
+    const pending = openSopFileContent('file-sop-1', SCOPE, { timeoutMs: 1_000 })
     const assertion = expect(pending).rejects.toThrow('网络超时')
     await vi.advanceTimersByTimeAsync(1_000)
     await assertion
     vi.useRealTimers()
   })
 
-  it('rejects grants without a download URL', async () => {
-    await expect(openFileContentBlob({ downloadUrl: ' ' })).rejects.toThrow(
-      '文件服务未返回可用的SOP查看链接。',
-    )
-  })
-})
+  // #3314：原先还有一条「grant 没带 downloadUrl 就报错」的用例。URL 现在由本函数用 fileId
+  // 本地拼出，**那个输入在新结构下不可表达**，用例随之删除（不是不变量消失，是状态消失）。
+  // 接替它的是下面这条：URL 必须是单跳 fileId 路由、fileId 必须被转义、不得含 download-grants 段。
+  it('builds an escaped single-hop fileId route that carries no grant segment', async () => {
+    const fetchMock = vi.fn(async () => ({ ok: false }))
+    vi.stubGlobal('fetch', fetchMock)
 
-describe('sopFileContentTarget', () => {
-  it('builds the single-hop fileId route and carries the business scope in headers', () => {
-    // #3314：调用方不再拿到 download grant id，字节路由以 fileId 为入参。
-    const target = sopFileContentTarget('file sop/v2', {
-      organizationId: 'org-001',
-      environmentId: 'env-dev',
-    })
+    await expect(openSopFileContent('file sop/v2', SCOPE)).rejects.toThrow('无法下载SOP文件')
 
-    expect(target.downloadUrl).toBe(
-      '/api/business-console/v1/files/sop-documents/file%20sop%2Fv2/content',
-    )
-    expect(target.downloadHeaders).toEqual({
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('/api/business-console/v1/files/sop-documents/file%20sop%2Fv2/content')
+    expect(url).not.toContain('download-grants')
+    expect(init.headers).toEqual({
       'X-Organization-Id': 'org-001',
       'X-Environment-Id': 'env-dev',
     })
-    // 结构不变量：本 URL 里不得出现 download-grants 段。
-    expect(target.downloadUrl).not.toContain('download-grants')
   })
 })

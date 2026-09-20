@@ -87,8 +87,12 @@ const captureOperationActionContext = vi.fn(
 )
 const refresh = vi.fn(async () => {})
 const refreshSops = vi.fn()
-const sopFileDownloadTarget = vi.fn((fileId: string) => ({
-  downloadUrl: `/api/business-console/v1/files/sop-documents/${fileId}/content`,
+const openSopFileContent = vi.fn(async () => {})
+// 页面现在直接从 business-core 取 openSopFileContent（#3314 删掉了 composable 里的转发包装），
+// 所以失败注入点从 composable 搬到这里。business-core 的其余导出保持真实实现。
+vi.mock('@nerv-iip/business-core', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@nerv-iip/business-core')>()),
+  openSopFileContent: (...args: unknown[]) => openSopFileContent(...(args as [])),
 }))
 
 const filters = reactive({
@@ -205,7 +209,6 @@ vi.mock('@/composables/useBusinessMes', () => ({
     pending: ref(false),
     error: sopsErrorRef,
     refresh: refreshSops,
-    sopFileDownloadTarget,
   }),
   // 作业范围选择入口自带一个独立实例（#1297）：页面挂载时必须能解析到它。
   useMesWorkScopeSelection: () => ({
@@ -243,7 +246,7 @@ describe('PDA MES operation execution page', () => {
     tasksPendingRef.value = false
     tasksSuccessfulRef.value = true
     currentSopsRef.value = []
-    sopFileDownloadTarget.mockClear()
+    openSopFileContent.mockClear()
     push.mockReset().mockResolvedValue(undefined)
     replace.mockReset().mockImplementation(async (to: { query?: Record<string, string> }) => {
       routeState.replaceQuery?.(to.query ?? {})
@@ -1400,9 +1403,7 @@ describe('PDA MES operation execution page', () => {
     currentSopsRef.value = [
       { fileId: 'F1', fileName: 'SOP-1', documentNumber: 'D1', revision: 'A', effectiveDate: null },
     ]
-    sopFileDownloadTarget.mockImplementationOnce(() => {
-      throw new Error('网络超时，请检查连接后重试')
-    })
+    openSopFileContent.mockRejectedValueOnce(new Error('网络超时，请检查连接后重试'))
     const wrapper = mount(OperationPage, { attachTo: document.body })
     await wrapper.findAll('[data-row]')[0].trigger('click')
     await flushPromises()

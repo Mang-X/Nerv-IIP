@@ -76,10 +76,7 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({ push: routerPush }),
 }))
 vi.mock('@nerv-iip/business-core', () => ({
-  openFileContentBlob: vi.fn(),
-  sopFileContentTarget: (fileId: string) => ({
-    downloadUrl: `/api/business-console/v1/files/sop-documents/${fileId}/content`,
-  }),
+  openSopFileContent: vi.fn(async () => {}),
   statusActionGate: () => ({ executable: true, legalNoop: false }),
 }))
 vi.mock('@/composables/usePagedList', () => ({
@@ -187,9 +184,6 @@ vi.mock('@/composables/useBusinessMes', async () => {
       currentSopsError: shallowRef(undefined),
       currentSopsPending: shallowRef(false),
       refreshCurrentSops: vi.fn(),
-      sopFileDownloadTarget: (fileId: string) => ({
-        downloadUrl: `/api/business-console/v1/files/sop-documents/${fileId}/content`,
-      }),
     }),
   }
 })

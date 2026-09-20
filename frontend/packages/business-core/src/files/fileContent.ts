@@ -1,37 +1,9 @@
 /**
- * 一次取字节请求的目标：URL + 随请求发出的头。
- *
- * #3314 之前这里装的是网关回给调用方的 download grant（`downloadUrl` 指向
- * `/files/download-grants/{grantId}/content`）。该形状已被移除：FileStorage 的 grant id 是
- * 全服务共用命名空间、兑换面既不看用途也不看签发门面，实测可以在权限口径不同的另一条网关
- * 路由上兑换成功。现在网关只暴露以 `fileId` 为入参的单跳字节路由，grant 在服务端签发并
- * 立即兑换，调用方拿不到 grant id（ADR 0030 决策 3）。
+ * 业务范围：网关字节面从 `X-Organization-Id` / `X-Environment-Id` 取范围，缺了直接 400。
  */
-export interface FileContentTarget {
-  downloadUrl?: string | null
-  downloadHeaders?: Record<string, string> | null
-}
-
-export const ORGANIZATION_HEADER = 'X-Organization-Id'
-export const ENVIRONMENT_HEADER = 'X-Environment-Id'
-
 export interface BusinessScopeLike {
   organizationId: string
   environmentId: string
-}
-
-/**
- * 工程 SOP 文件的字节路由。组织/环境经头部传给网关字节面
- * （`BusinessConsoleFileTransfer.ProxyAsync` 缺了直接 400）。
- */
-export function sopFileContentTarget(fileId: string, scope: BusinessScopeLike): FileContentTarget {
-  return {
-    downloadUrl: `/api/business-console/v1/files/sop-documents/${encodeURIComponent(fileId)}/content`,
-    downloadHeaders: {
-      [ORGANIZATION_HEADER]: scope.organizationId,
-      [ENVIRONMENT_HEADER]: scope.environmentId,
-    },
-  }
 }
 
 export interface OpenFileContentOptions {
@@ -53,13 +25,27 @@ export interface OpenFileContentOptions {
   timeoutMs?: number
 }
 
-export async function openFileContentBlob(
-  target: FileContentTarget,
+export const ORGANIZATION_HEADER = 'X-Organization-Id'
+export const ENVIRONMENT_HEADER = 'X-Environment-Id'
+
+/**
+ * 打开一个工程 SOP 文件的字节。
+ *
+ * #3314 之前这里收的是网关回给调用方的 download grant（`downloadUrl` 指向
+ * `/files/download-grants/{grantId}/content`），所以入参必须是「可能缺 URL」的可空形状，
+ * 并配一条运行期空值守卫。该形状已被移除：FileStorage 的 grant id 是全服务共用命名空间、
+ * 兑换面既不看用途也不看签发门面，实测可以在权限口径不同的另一条网关路由上兑换成功。
+ *
+ * 现在网关只暴露以 `fileId` 为入参的单跳字节路由，grant 在服务端签发并立即兑换
+ * （ADR 0030 决策 3）。URL 由本函数本地拼出，**结构上不可能为空**——所以可空入参、
+ * 空值守卫与两个 app 各自的转发包装都一并删掉，不留一个已经不成立的状态。
+ */
+export async function openSopFileContent(
+  fileId: string,
+  scope: BusinessScopeLike,
   options: OpenFileContentOptions = {},
 ): Promise<void> {
-  const downloadUrl = target.downloadUrl?.trim()
-  if (!downloadUrl) throw new Error('文件服务未返回可用的SOP查看链接。')
-
+  const downloadUrl = `/api/business-console/v1/files/sop-documents/${encodeURIComponent(fileId)}/content`
   const doFetch = options.fetch ?? globalThis.fetch
   const { timeoutMs } = options
 
@@ -76,7 +62,10 @@ export async function openFileContentBlob(
 
   try {
     const response = await doFetch(downloadUrl, {
-      headers: normalizeHeaders(target.downloadHeaders),
+      headers: {
+        [ORGANIZATION_HEADER]: scope.organizationId,
+        [ENVIRONMENT_HEADER]: scope.environmentId,
+      },
       ...(controller ? { signal: controller.signal } : {}),
     })
     if (!response.ok) throw new Error('无法下载SOP文件，请稍后重试。')
@@ -97,11 +86,4 @@ export async function openFileContentBlob(
   } finally {
     if (timer !== undefined) clearTimeout(timer)
   }
-}
-
-function normalizeHeaders(headers?: Record<string, string> | null): HeadersInit {
-  if (!headers) return {}
-  return Object.fromEntries(
-    Object.entries(headers).filter(([key, value]) => key.trim() && value.trim()),
-  )
 }

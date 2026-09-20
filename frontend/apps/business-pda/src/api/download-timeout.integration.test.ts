@@ -1,11 +1,11 @@
-import { openFileContentBlob } from '@nerv-iip/business-core'
+import { openSopFileContent } from '@nerv-iip/business-core'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTimeoutFetch } from './request-timeout'
 
 /**
  * End-to-end proof of the REAL composition the reviewer flagged: PDA passes
  * `createTimeoutFetch()` as the download fetch. Even though `fetch()` resolves at
- * headers, the caller→signal link must stay live so `openFileContentBlob`'s own
+ * headers, the caller→signal link must stay live so `openSopFileContent`'s own
  * ceiling can abort a body that stalls AFTER headers — otherwise `response.blob()`
  * hangs unbounded.
  */
@@ -36,8 +36,9 @@ describe('SOP download composed with the real PDA timeout fetch', () => {
       })) as unknown as typeof fetch
 
     const timeoutFetch = createTimeoutFetch({ baseFetch, isOffline: () => false })
-    const pending = openFileContentBlob(
-      { downloadUrl: '/api/business-console/v1/files/sop-documents/file-sop-1/content' },
+    const pending = openSopFileContent(
+      'file-sop-1',
+      { organizationId: 'org-001', environmentId: 'env-dev' },
       { fetch: timeoutFetch, timeoutMs: 50 },
     )
     const assertion = expect(pending).rejects.toThrow('网络超时')

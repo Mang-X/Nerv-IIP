@@ -168,11 +168,7 @@ export { formatWorkScopeKey, parseWorkScopeKey } from './scope/workScopeKey'
 export type { WorkScopeKeyParts } from './scope/workScopeKey'
 export { PDA_TASK_KINDS, getPdaTaskKind } from './tasks/pdaTaskKinds'
 export type { PdaTaskKind } from './tasks/pdaTaskKinds'
-export {
-  openFileContentBlob,
-  sopFileContentTarget,
-  type FileContentTarget,
-} from './files/fileContent'
+export { openSopFileContent, type BusinessScopeLike } from './files/fileContent'
 
 export { statusActionGate } from './actions/statusActionGate'
 export type {

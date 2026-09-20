@@ -183,27 +183,27 @@ public sealed class HttpGatewayFileStorageClient(
         // FileStorage 只应回内部相对路径。绝对 URL、协议相对 URL 或前缀不符都意味着本网关会被
         // 指去跟随一个外部地址，失败关闭（ADR 0023 决策 1.3、ADR 0030 决策 1）。
         var downstreamUrl = grant.Download.Url;
-        if (IsExternallyAddressedTransferUrl(downstreamUrl)
-            || !downstreamUrl.StartsWith(
+        if (!downstreamUrl.StartsWith(
                 ConsoleFileStorageTransferRoutes.DownstreamDownloadGrantPrefix,
                 StringComparison.Ordinal))
         {
+            // 绝对 URL、协议相对 URL 与前缀不符都落在这一个判断里：前缀以 `/` 开头，所以
+            // `https://…`、`//host/…` 都不可能通过。不再另写 IsExternallyAddressedTransferUrl 析取项
+            // ——它被本判断完全蕴含，留着会让读者以为存在两条独立防线。
             throw GatewayAuthException.BadGateway("filestorage-transfer-url-not-proxyable");
         }
 
+        // 无条件转发**下游签发时给出的**传输头，不做「为空就用网关自己拼的租户头」这类回落：
+        // 该回落生产不可达（真实 producer `PostgreSqlFileStorageService` 恒返回三个头），而一旦
+        // 真的走到，它会把下游签发的凭据头静默换成网关另拼的一套——正是本 PR 要消灭的口径漂移。
+        // 与 BusinessGateway 字节面同一动作保持一致（`BusinessFileTransferClient` 也是无条件转发）。
         await ProxyRawAsync(
             HttpMethod.Get,
             downstreamUrl,
             null,
             response,
             cancellationToken,
-            grant.Download.Headers.Count > 0
-                ? grant.Download.Headers
-                : new Dictionary<string, string>
-                {
-                    ["X-Organization-Id"] = organizationId,
-                    ["X-Environment-Id"] = environmentId
-                });
+            grant.Download.Headers);
     }
 
     private async Task ProxyRawAsync(

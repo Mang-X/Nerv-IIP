@@ -1221,16 +1221,6 @@ describe('pda useBusinessMes composables', () => {
     expect(sops.currentSops.value[0]).toMatchObject({ fileId: 'file-10' })
   })
 
-  // #3314：SOP 查看不再取 download grant；字节路由以 fileId 为入参。
-  it('resolves the SOP byte route from the fileId without asking for a download grant', () => {
-    const sops = useMesCurrentOperationSops()
-
-    const target = sops.sopFileDownloadTarget('file-10')
-
-    expect(target.downloadUrl).toBe('/api/business-console/v1/files/sop-documents/file-10/content')
-    expect(target.downloadUrl).not.toContain('download-grants')
-  })
-
   it('records a production report forwarding the caller-supplied idempotency key + business fields', async () => {
     const { recordReport } = useMesProductionReports()
 

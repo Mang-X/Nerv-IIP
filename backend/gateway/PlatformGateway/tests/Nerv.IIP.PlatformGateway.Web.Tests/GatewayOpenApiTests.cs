@@ -106,11 +106,17 @@ public sealed class GatewayOpenApiTests
         Assert.Equal("patchConsoleTusUpload", paths.GetProperty("/api/console/v1/files/tus/{uploadSessionId}").GetProperty("patch").GetProperty("operationId").GetString());
         // #3314：字节面只剩一条以 fileId 为入参的路由；grant 由网关服务端签发并立即兑换。
         Assert.Equal("downloadConsoleFileContent", paths.GetProperty("/api/console/v1/files/{fileId}/content").GetProperty("get").GetProperty("operationId").GetString());
-        // 结构不变量：公开契约里不得再有任何以 download grant id 为入参、或把 grant id 交出去的路由。
-        Assert.DoesNotContain(
-            paths.EnumerateObject().Select(path => path.Name),
-            name => name.Contains("{downloadGrantId}", StringComparison.Ordinal)
-                || name.EndsWith("/download-grants", StringComparison.Ordinal));
+        // #3314 结构不变量，见 AssertFileFaceExposesOnlyFileIdKeyedByteRoutes 的注释。
+        AssertFileFaceExposesOnlyFileIdKeyedByteRoutes(
+            paths,
+            "/api/console/v1/files",
+            "/api/console/v1/files",
+            "/api/console/v1/files/usage",
+            "/api/console/v1/files/upload-sessions",
+            "/api/console/v1/files/upload-sessions/{uploadSessionId}/complete",
+            "/api/console/v1/files/tus/{uploadSessionId}",
+            "/api/console/v1/files/{fileId}",
+            "/api/console/v1/files/{fileId}/content");
 
         var queryLogs = paths.GetProperty("/api/console/v1/logs/query").GetProperty("post");
         Assert.Equal("queryConsoleLogs", queryLogs.GetProperty("operationId").GetString());
@@ -237,4 +243,57 @@ public sealed class GatewayOpenApiTests
             operation.GetProperty("responses").TryGetProperty(statusCode, out _),
             $"Did not expect response status {statusCode}.");
     }
+
+    /// <summary>
+    /// #3314 第 1 轮审核 E1 的承担方。
+    ///
+    /// 上一版判据写的是 <c>name.Contains("{downloadGrantId}") || name.EndsWith("/download-grants")</c>
+    /// ——它绑的是**路由参数的拼写**和**路径末段**，不是「以 FileStorage 内部标识为入参」这个性质。
+    /// 审核加回一条功能完整、只是改了名的兑换路由（<c>/files/tickets/{grantId}/content</c>）后
+    /// 全套断言照绿。这里换成三条按类的判据：
+    ///
+    /// 1. **入参类型**：文件面上任何取字节的路由（路径以 <c>/content</c> 结尾），其路径参数必须
+    ///    **恰好是** <c>fileId</c> 一个。钉的是「对外入参是业务标识、不是 FileStorage 内部标识」，
+    ///    与那个标识被拼成 downloadGrantId / grantId / ticketId 无关。
+    /// 2. **闭集**：文件面的路由清单必须与钉住的集合逐字相等，新增/改名一律失败关闭。
+    /// 3. **禁止片段**：文件面不得出现 <c>/download-grants</c>（签发面与兑换面一并覆盖）。
+    ///
+    /// **本判据不自称完备**：同时改判据 2 的清单与被加的路由仍可绕过，那是一次显式的两处编辑，
+    /// 由评审承担，不由本断言承担。
+    /// </summary>
+    private static void AssertFileFaceExposesOnlyFileIdKeyedByteRoutes(
+        JsonElement paths,
+        string filePrefix,
+        params string[] expectedFileRoutes)
+    {
+        var fileRoutes = paths.EnumerateObject()
+            .Select(path => path.Name)
+            .Where(name => name.StartsWith(filePrefix, StringComparison.Ordinal))
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+
+        foreach (var route in fileRoutes.Where(name => name.EndsWith("/content", StringComparison.Ordinal)))
+        {
+            var parameters = RoutePathParameters(route);
+            Assert.True(
+                parameters.Length == 1 && string.Equals(parameters[0], "fileId", StringComparison.Ordinal),
+                $"取字节路由的入参必须恰好是业务标识 {{fileId}}，不得是 FileStorage 内部标识；"
+                    + $"实际 {route} 的路径参数为 [{string.Join(", ", parameters)}]");
+        }
+
+        Assert.Equal(
+            expectedFileRoutes.OrderBy(name => name, StringComparer.Ordinal).ToArray(),
+            fileRoutes);
+
+        Assert.DoesNotContain(
+            fileRoutes,
+            name => name.Contains("/download-grants", StringComparison.Ordinal));
+    }
+
+    private static string[] RoutePathParameters(string route) =>
+        route.Split('/', StringSplitOptions.RemoveEmptyEntries)
+            .Where(segment => segment.StartsWith('{') && segment.EndsWith('}'))
+            .Select(segment => segment[1..^1])
+            .ToArray();
+
 }

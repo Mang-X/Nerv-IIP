@@ -36,7 +36,7 @@ import { assertLiveStackReachable } from './support/preflight'
 //   a real facade RESPONSE BODY stalls after headers」（headersOkBodyStalls L27-41：headers
 //   立即 200、text() 挂起直到 abort → 超时文案）；
 // - src/api/download-timeout.integration.test.ts L19-47：SOP 下载 blob body 卡死，经
-//   openFileContentBlob 自身 ceiling abort → 「网络超时」。
+//   openSopFileContent 自身 ceiling abort → 「网络超时」。
 // live 层不重复造该形态（覆盖归属声明同步在 docs/governance/testing/mobile-pda.md 的 L2 节）。
 
 /** 检验计划特性 GET 路径（代码事实：api-client sdk.gen.ts

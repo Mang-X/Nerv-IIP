@@ -325,6 +325,8 @@ public sealed class GatewayConsoleFileStorageTests
         // 组织/环境取自 principal，不由调用方声明。
         Assert.Equal("org-001", files.LastDownloadContentOrganizationId);
         Assert.Equal("env-dev", files.LastDownloadContentEnvironmentId);
+        // 最后一问是兑换那个码；两码都被问过由
+        // File_content_route_asks_authorization_for_both_required_codes 承担。
         Assert.Equal(GatewayPermissions.FilesRead, auth.LastRequirement!.PermissionCode);
     }
 
@@ -380,25 +382,118 @@ public sealed class GatewayConsoleFileStorageTests
     }
 
     /// <summary>
+    /// #3314 第 1 轮审核 E2 的承担方：「grant id 不出网关进程」此前**只有契约形状**被钉住，
+    /// 响应面零断言——审核把 grant URL 写进响应头，PG 117 条一条都不红。
+    ///
+    /// 旧缺陷的实际形态恰恰是**响应字段**（旧 `DownloadGrantResponse.download.url` 里带
+    /// `/download-grants/{id}/content`），不是路径模板。所以这里断言的是真正交给调用方的那一面：
+    /// **字节响应的头与体都不得出现 `/download-grants/` 片段或 grant id 本身。**
+    ///
+    /// 会失败的具体输入：任何把 `downstreamUrl`（或从中截出的 grant id）写进响应头/响应体的改动。
+    /// 阴性对照：下游真实回的内容 `hello` 必须原样到达，否则本断言会退化成「什么都不回也能过」。
+    /// </summary>
+    [Fact]
+    public async Task File_content_response_leaks_neither_the_grant_id_nor_the_downstream_grant_url()
+    {
+        const string grantId = "dgr-leak-probe-3314";
+        var handler = new RecordingHttpMessageHandler(request =>
+            request.RequestUri!.AbsolutePath.EndsWith("/download-grants", StringComparison.Ordinal)
+                ? new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(GrantFor($"/api/files/v1/download-grants/{grantId}/content"))
+                }
+                : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("hello") });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://files.local") };
+        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"));
+        await using var factory = PlatformGatewayTestHost.CreateFactory()
+            .WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IGatewayFileStorageClient>();
+                services.AddSingleton<IGatewayFileStorageClient>(files);
+                services.RemoveAll<IGatewayAuthorizationClient>();
+                services.AddSingleton<IGatewayAuthorizationClient>(FakeGatewayAuthorizationClient.Allowed());
+            }));
+        using var request = AuthorizedRequest(HttpMethod.Get, "/api/console/v1/files/file-001/content");
+
+        var response = await factory.CreateClient().SendAsync(request);
+
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadAsStringAsync();
+        // 阴性对照：真实字节必须到达。
+        Assert.Equal("hello", body);
+        AssertNoGrantLeak(response, body, grantId);
+    }
+
+    internal static void AssertNoGrantLeak(HttpResponseMessage response, string body, string grantId)
+    {
+        var rendered = string.Join(
+            "\n",
+            response.Headers
+                .Concat(response.Content.Headers)
+                .Select(header => $"{header.Key}: {string.Join(",", header.Value)}"));
+
+        foreach (var (surface, text) in new[] { ("响应头", rendered), ("响应体", body) })
+        {
+            Assert.False(
+                text.Contains("/download-grants/", StringComparison.OrdinalIgnoreCase),
+                $"{surface}泄漏了 FileStorage 的 download-grant 路径：{text}");
+            Assert.False(
+                text.Contains(grantId, StringComparison.OrdinalIgnoreCase),
+                $"{surface}泄漏了 download grant id：{text}");
+        }
+    }
+
+    /// <summary>
     /// #3314 实测的越权方向之二：只持 <c>business.engineering.documents.read</c> 的主体曾经能在
     /// 本网关兑换 SOP 面签发的 grant。改造后它走不到任何 grant 入参，唯一的字节路由要
     /// <c>files.read</c>，缺码即被**本网关的权限门**拒绝，FileStorage 一发都收不到。
     ///
     /// 会失败的具体输入：把本路由的权限码换成别的、或不检查授权结果就继续代理。
     /// </summary>
-    [Fact]
-    public async Task File_content_route_rejects_a_principal_without_the_files_read_permission()
+    /// <summary>
+    /// #3314 第 1 轮审核 P1：本路由把「签发 + 兑换」两跳并成一跳，**所需权限码不得因此收窄**。
+    /// 合并前自助取字节要同时持 <c>files.download-grants.create</c>（签发）与 <c>files.read</c>（兑换）；
+    /// 只校验其中一个，等于让只持另一个的角色新获得字节能力。
+    ///
+    /// 会失败的具体输入：主体只持其中**一个**码 —— 两种缺法各一格，任一格 200 都说明门收窄了。
+    /// 阴性对照在 <see cref="File_content_proxies_stream_and_requires_read_permission"/>：
+    /// 两码齐全时必须 200，否则本用例会退化成「什么都拒也能过」。
+    /// </summary>
+    [Theory]
+    [InlineData(GatewayPermissions.FilesRead)]
+    [InlineData(GatewayPermissions.FilesDownloadGrantsCreate)]
+    public async Task File_content_route_rejects_a_principal_holding_only_one_of_the_two_required_codes(
+        string onlyHeldCode)
     {
         var files = new FakeGatewayFileStorageClient();
-        var auth = FakeGatewayAuthorizationClient.Forbidden();
+        var auth = FakeGatewayAuthorizationClient.AllowOnly(onlyHeldCode);
         await using var factory = CreateFactory(files, auth);
         using var request = AuthorizedRequest(HttpMethod.Get, "/api/console/v1/files/file-001/content");
 
         var response = await factory.CreateClient().SendAsync(request);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        Assert.Equal(GatewayPermissions.FilesRead, auth.LastRequirement!.PermissionCode);
+        // 拒绝发生在网关的权限门，FileStorage 一发都收不到。
         Assert.Null(files.LastDownloadContentFileId);
+    }
+
+    /// <summary>
+    /// 两个码都必须被真的问过 —— 否则「要求两个码」可以退化成「声明了两个、只校验第一个」。
+    /// </summary>
+    [Fact]
+    public async Task File_content_route_asks_authorization_for_both_required_codes()
+    {
+        var files = new FakeGatewayFileStorageClient();
+        var auth = FakeGatewayAuthorizationClient.Allowed();
+        await using var factory = CreateFactory(files, auth);
+        using var request = AuthorizedRequest(HttpMethod.Get, "/api/console/v1/files/file-001/content");
+
+        var response = await factory.CreateClient().SendAsync(request);
+
+        response.EnsureSuccessStatusCode();
+        Assert.Equal(
+            new[] { GatewayPermissions.FilesDownloadGrantsCreate, GatewayPermissions.FilesRead },
+            auth.Requirements.Select(requirement => requirement.PermissionCode).ToArray());
     }
 
     [Fact]

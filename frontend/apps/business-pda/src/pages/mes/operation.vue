@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesOperationTaskRow } from '@nerv-iip/api-client'
-import { openFileContentBlob } from '@nerv-iip/business-core'
+import { openSopFileContent } from '@nerv-iip/business-core'
 import {
   createTimeoutFetch,
   describeRequestError,
@@ -166,7 +166,6 @@ const {
   pending: sopsPending,
   error: sopsError,
   refresh: refreshSops,
-  sopFileDownloadTarget,
 } = useMesCurrentOperationSops()
 
 // SOP 文件下载走 PDA 全局超时 fetch —— 弱网/离线有界失败，不无限挂起（#814）。
@@ -448,10 +447,11 @@ async function openSopFile(sop: CurrentSop) {
   sopFileError.value = ''
   openingSopFileId.value = fileId
   try {
-    await openFileContentBlob(sopFileDownloadTarget(fileId), {
-      fetch: downloadFetch,
-      timeoutMs: REQUEST_TIMEOUT_MS,
-    })
+    await openSopFileContent(
+      fileId,
+      { organizationId: sopFilters.organizationId, environmentId: sopFilters.environmentId },
+      { fetch: downloadFetch, timeoutMs: REQUEST_TIMEOUT_MS },
+    )
   } catch (error) {
     sopFileError.value = error instanceof Error ? error.message : '无法打开SOP。'
   } finally {

@@ -68,9 +68,8 @@ import {
   reduceServerPagination,
   serverPaginationIdentity,
   statusActionGate,
-  sopFileContentTarget,
 } from '@nerv-iip/business-core'
-import type { AvailableMaterialLotFields, FileContentTarget } from '@nerv-iip/business-core'
+import type { AvailableMaterialLotFields } from '@nerv-iip/business-core'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import {
   useListFreshness,
@@ -1362,18 +1361,6 @@ export function useMesCurrentOperationSops() {
     }),
     enabled: enabled.value,
   }))
-  /**
-   * #3314：SOP 查看不再先取 download grant 再兑换。网关只暴露一条以 fileId 为入参的字节
-   * 路由，grant 在服务端签发并立即兑换——调用方拿不到 grant id，因此这里没有网络往返，
-   * 只是把当前业务范围拼成取字节的目标。
-   */
-  function sopFileDownloadTarget(fileId: string): FileContentTarget {
-    return sopFileContentTarget(fileId, {
-      organizationId: filters.organizationId,
-      environmentId: filters.environmentId,
-    })
-  }
-
   return {
     filters,
     currentSops: computed<BusinessConsoleCurrentSopDocumentItem[]>(
@@ -1387,7 +1374,6 @@ export function useMesCurrentOperationSops() {
     pending: currentSopsQuery.isLoading,
     error: currentSopsQuery.error,
     refresh: currentSopsQuery.refetch,
-    sopFileDownloadTarget,
   }
 }
 

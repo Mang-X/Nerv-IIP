@@ -296,6 +296,14 @@ public sealed class PatchConsoleTusUploadEndpoint(
 // 而 FileStorage 的 grant id 是全服务共用命名空间、兑换面既不看用途也不看签发门面
 // ——实测该 id 可以在权限口径不同的另一条网关路由上兑换成功（#3314）。
 //
+// **权限码要求与合并前的两跳一致，不因为合并成一跳而收窄**：旧形状下自助取字节必须先持
+// `files.download-grants.create` 签发、再持 `files.read` 兑换。把两跳并成一跳后若只校验
+// 其中一个码，只持 `files.read` 的角色就**新获得**了取字节能力——那是一次权限扩张，不是
+// 本次修复的内容（#3314 第 1 轮审核 P1）。
+//
+// **本路由不做用途复核**，因此持这两个码即可读本租户任意用途的文件字节；与 BusinessGateway
+// 的按用途分面不同。该缺口由 #3663 以「purpose 结构性归属」承接，不在本路由内解决。
+//
 // 组织/环境取自 principal，不收调用方入参：字节面没有 JSON 请求体可校验，从头部读等于让
 // 调用方自己声明租户范围。
 // ---------------------------------------------------------------------------
@@ -311,12 +319,22 @@ public sealed class DownloadConsoleFileContentEndpoint(
     IGatewayFileStorageClient files)
     : EndpointWithoutRequest
 {
+    /// <summary>
+    /// 合并前两跳各自的门：签发要 <c>files.download-grants.create</c>、兑换要 <c>files.read</c>。
+    /// 顺序即校验顺序，缺任一个都 403 且不触达 FileStorage。
+    /// </summary>
+    public static readonly string[] RequiredPermissionCodes =
+    [
+        GatewayPermissions.FilesDownloadGrantsCreate,
+        GatewayPermissions.FilesRead,
+    ];
+
     public override Task HandleAsync(CancellationToken ct) =>
         AuthorizedProxyEndpointExecutor.ExecuteAsync(
             HttpContext,
             iam,
             auth,
-            GatewayPermissions.FilesRead,
+            RequiredPermissionCodes,
             async (context, cancellationToken) =>
                 await files.StreamFileContentAsync(
                     Route<string>("fileId")!,

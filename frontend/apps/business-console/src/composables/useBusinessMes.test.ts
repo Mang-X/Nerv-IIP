@@ -1306,23 +1306,6 @@ describe('business MES composables', () => {
     expect(sops.currentSops.value[0]).toMatchObject({ revision: 'B', fileId: 'file-sop-b' })
   })
 
-  // #3314：SOP 查看不再取 download grant；字节路由以 fileId 为入参，grant 在网关服务端
-  // 签发并立即兑换，调用方拿不到 grant id。
-  it('resolves the SOP byte route from the fileId without asking for a download grant', () => {
-    const sops = useMesCurrentOperationSops()
-
-    const target = sops.sopFileDownloadTarget('file-sop-b')
-
-    expect(target).toMatchObject({
-      downloadUrl: '/api/business-console/v1/files/sop-documents/file-sop-b/content',
-      downloadHeaders: {
-        'X-Organization-Id': 'org-001',
-        'X-Environment-Id': 'env-dev',
-      },
-    })
-    expect(target.downloadUrl).not.toContain('download-grants')
-  })
-
   it('exposes secondary MES list totals from response envelopes', () => {
     const totals = new Map([
       ['listBusinessConsoleMesCapacityImpacts', 11],

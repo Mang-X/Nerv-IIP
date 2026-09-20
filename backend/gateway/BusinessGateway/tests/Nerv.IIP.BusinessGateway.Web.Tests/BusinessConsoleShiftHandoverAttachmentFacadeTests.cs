@@ -399,6 +399,45 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
         Assert.Equal(failure == "transport" ? "downstream-unavailable" : "downstream-timeout", exception.Message);
     }
 
+    /// <summary>
+    /// #3314 第 1 轮审核 E3 的承担方。
+    ///
+    /// 被删掉的 `Sop_content_maps_transport_failures_instead_of_letting_them_escape` 打的是旧的
+    /// `DownloadSopFileContentAsync`。**它要证的不变量没有随结构消失**：取字节那一跳在新形状下
+    /// 依然存在（`StreamFileContentAsync`），而 `BusinessConsoleFileTransfer.ProxyAsync` 只 catch
+    /// `BusinessServiceProxyException`——传输故障若不被映射成语义码，就会逃逸成 500「未知错误」，
+    /// 调用方无从判断是下游不可用。所以在新位置重证它。
+    ///
+    /// 与上面 `Byte_paths_report_downstream_unavailability_...` 的区别：那条打的是 tus HEAD 腿，
+    /// 本条打的是**取字节腿**——两条腿走 `ProxyRawAsync` 的不同入口参数（HEAD/无 body vs GET/有 body），
+    /// 删掉任一条另一条都不会红。
+    /// </summary>
+    [Theory]
+    [InlineData("transport", "downstream-unavailable")]
+    [InlineData("timeout", "downstream-timeout")]
+    public async Task Byte_content_hop_maps_transport_failures_instead_of_letting_them_escape(
+        string failure,
+        string expectedMessage)
+    {
+        var client = CreateTransferClient(new StubHandler(_ => failure == "transport"
+            ? throw new HttpRequestException("connection refused")
+            : throw new TaskCanceledException("timed out")));
+        var httpContext = ResponseContext();
+        var ticket = new BusinessFileDownloadTicket(
+            "/api/files/v1/download-grants/grant-handover-1/content",
+            new Dictionary<string, string>
+            {
+                ["X-Organization-Id"] = "org-001",
+                ["X-Environment-Id"] = "env-dev",
+            });
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.StreamFileContentAsync("internal-test-token", ticket, httpContext.Response, CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, exception.StatusCode);
+        Assert.Equal(expectedMessage, exception.Message);
+    }
+
     // =====================================================================
     // 端点层：权限口径与门面接线
     // =====================================================================

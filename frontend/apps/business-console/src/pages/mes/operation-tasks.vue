@@ -4,7 +4,7 @@ import type {
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
-import { openFileContentBlob, statusActionGate } from '@nerv-iip/business-core'
+import { openSopFileContent, statusActionGate } from '@nerv-iip/business-core'
 import MesWorkScopeSelect from '@/components/mes/MesWorkScopeSelect.vue'
 import ActualHoursCell from '@/components/mes/ActualHoursCell.vue'
 import ProductionReportDialog from '@/components/mes/ProductionReportDialog.vue'
@@ -168,7 +168,6 @@ const {
   currentSopsError,
   currentSopsPending,
   refreshCurrentSops,
-  sopFileDownloadTarget,
 } = useMesCurrentOperationSops()
 
 // --- Filters (live) ---
@@ -309,7 +308,10 @@ async function openSopFile(sop: CurrentSop) {
   sopFileError.value = ''
   openingSopFileId.value = fileId
   try {
-    await openFileContentBlob(sopFileDownloadTarget(fileId))
+    await openSopFileContent(fileId, {
+      organizationId: sopFilters.organizationId,
+      environmentId: sopFilters.environmentId,
+    })
   } catch (error) {
     sopFileError.value = inlineErrorMessage(error, '无法打开SOP。')
   } finally {

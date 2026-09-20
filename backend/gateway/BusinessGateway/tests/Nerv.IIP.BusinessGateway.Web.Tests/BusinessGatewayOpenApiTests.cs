@@ -323,16 +323,15 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/files/shift-handover-attachments/tus/{uploadSessionId}", "patch", "patchBusinessConsoleShiftHandoverAttachmentTusUpload");
         // 下载面只有一条字节路由、以 fileId 为入参：grant id 不出网关（#3096 审核 A1）。
         AssertOperationId(paths, "/api/business-console/v1/files/shift-handover-attachments/{fileId}/content", "get", "downloadBusinessConsoleShiftHandoverAttachmentContent");
-        Assert.DoesNotContain(
-            paths.EnumerateObject().Select(path => path.Name),
-            name => name.StartsWith("/api/business-console/v1/files/shift-handover-attachments/download-grants", StringComparison.Ordinal));
-        // #3314 结构不变量：本网关的公开契约里不得再有**任何**以 download grant id 为入参的路由，
-        // 也不得有任何签发面把 grant id 交出去。按门面前缀点名只能挡住已知那两条；这里按
-        // 「路径模板里出现 downloadGrantId / 以 download-grants 结尾」整类判定。
-        Assert.DoesNotContain(
-            paths.EnumerateObject().Select(path => path.Name),
-            name => name.Contains("{downloadGrantId}", StringComparison.Ordinal)
-                || name.EndsWith("/download-grants", StringComparison.Ordinal));
+        // #3314 结构不变量，见 AssertFileFaceExposesOnlyFileIdKeyedByteRoutes 的注释。
+        AssertFileFaceExposesOnlyFileIdKeyedByteRoutes(
+            paths,
+            "/api/business-console/v1/files/",
+            "/api/business-console/v1/files/sop-documents/{fileId}/content",
+            "/api/business-console/v1/files/shift-handover-attachments/upload-sessions",
+            "/api/business-console/v1/files/shift-handover-attachments/upload-sessions/{uploadSessionId}/complete",
+            "/api/business-console/v1/files/shift-handover-attachments/tus/{uploadSessionId}",
+            "/api/business-console/v1/files/shift-handover-attachments/{fileId}/content");
         AssertOperationId(paths, "/api/business-console/v1/engineering/items", "post", "createBusinessConsoleEngineeringItemRevision");
         AssertOperationId(paths, "/api/business-console/v1/engineering/engineering-boms", "get", "listBusinessConsoleEngineeringBoms");
         AssertOperationId(paths, "/api/business-console/v1/engineering/engineering-boms/explosion", "get", "getBusinessConsoleEngineeringBomExplosion");
@@ -2732,4 +2731,57 @@ public sealed class BusinessGatewayOpenApiTests
             });
         }
     }
+
+    /// <summary>
+    /// #3314 第 1 轮审核 E1 的承担方。
+    ///
+    /// 上一版判据写的是 <c>name.Contains("{downloadGrantId}") || name.EndsWith("/download-grants")</c>
+    /// ——它绑的是**路由参数的拼写**和**路径末段**，不是「以 FileStorage 内部标识为入参」这个性质。
+    /// 审核加回一条功能完整、只是改了名的兑换路由（<c>/files/tickets/{grantId}/content</c>）后
+    /// 全套断言照绿。这里换成三条按类的判据：
+    ///
+    /// 1. **入参类型**：文件面上任何取字节的路由（路径以 <c>/content</c> 结尾），其路径参数必须
+    ///    **恰好是** <c>fileId</c> 一个。钉的是「对外入参是业务标识、不是 FileStorage 内部标识」，
+    ///    与那个标识被拼成 downloadGrantId / grantId / ticketId 无关。
+    /// 2. **闭集**：文件面的路由清单必须与钉住的集合逐字相等，新增/改名一律失败关闭。
+    /// 3. **禁止片段**：文件面不得出现 <c>/download-grants</c>（签发面与兑换面一并覆盖）。
+    ///
+    /// **本判据不自称完备**：同时改判据 2 的清单与被加的路由仍可绕过，那是一次显式的两处编辑，
+    /// 由评审承担，不由本断言承担。
+    /// </summary>
+    private static void AssertFileFaceExposesOnlyFileIdKeyedByteRoutes(
+        JsonElement paths,
+        string filePrefix,
+        params string[] expectedFileRoutes)
+    {
+        var fileRoutes = paths.EnumerateObject()
+            .Select(path => path.Name)
+            .Where(name => name.StartsWith(filePrefix, StringComparison.Ordinal))
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+
+        foreach (var route in fileRoutes.Where(name => name.EndsWith("/content", StringComparison.Ordinal)))
+        {
+            var parameters = RoutePathParameters(route);
+            Assert.True(
+                parameters.Length == 1 && string.Equals(parameters[0], "fileId", StringComparison.Ordinal),
+                $"取字节路由的入参必须恰好是业务标识 {{fileId}}，不得是 FileStorage 内部标识；"
+                    + $"实际 {route} 的路径参数为 [{string.Join(", ", parameters)}]");
+        }
+
+        Assert.Equal(
+            expectedFileRoutes.OrderBy(name => name, StringComparer.Ordinal).ToArray(),
+            fileRoutes);
+
+        Assert.DoesNotContain(
+            fileRoutes,
+            name => name.Contains("/download-grants", StringComparison.Ordinal));
+    }
+
+    private static string[] RoutePathParameters(string route) =>
+        route.Split('/', StringSplitOptions.RemoveEmptyEntries)
+            .Where(segment => segment.StartsWith('{') && segment.EndsWith('}'))
+            .Select(segment => segment[1..^1])
+            .ToArray();
+
 }

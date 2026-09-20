@@ -135,6 +135,84 @@ public sealed class BusinessConsoleSopFileDownloadFacadeTests
         Assert.Null(transfer.LastStreamedTicket);
     }
 
+    /// <summary>
+    /// #3314 第 1 轮审核 E2 的承担方（BG 侧）：「grant id 不出网关进程」此前只有契约形状被钉住，
+    /// 响应面零断言——审核把 ticket 的下游 URL 写进响应头，BG 1590 条一条都不红。
+    ///
+    /// 旧缺陷的实际形态就是**响应字段**（旧 `downloadUrl` 里带 `/files/download-grants/{id}/content`）。
+    /// 这里断言真正交给调用方的那一面：字节响应的头与体都不得出现 `/download-grants/` 片段或 grant id。
+    ///
+    /// **走真实的 <see cref="HttpBusinessFileTransferClient"/>**（下游由 <see cref="LeakProbeHandler"/> 桩住），
+    /// 不走 Recording 替身——第一版用替身写，结果对真实客户端的泄漏变异零鉴别力（本轮 H4 实测 GREEN）。
+    ///
+    /// 阴性对照：下游真实回的字节必须原样到达，且下游**故意**回一个带 grant id 的自定义头，
+    /// 用来证明这条链路确实会转发下游响应头——否则本断言会退化成「什么头都不转发也能过」。
+    /// </summary>
+    [Fact]
+    public async Task Sop_content_response_leaks_neither_the_grant_id_nor_the_downstream_grant_url()
+    {
+        const string grantId = "grant-sop-v2";
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var files = new RecordingBusinessFileStorageClient();
+        var handler = new LeakProbeHandler();
+        var transfer = new HttpBusinessFileTransferClient(
+            new HttpClient(handler) { BaseAddress = new Uri("http://file-storage.local") });
+        await using var lease = LeaseHost(auth, files, transfer);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        using var request = Scoped(HttpMethod.Get, SopContentRoute);
+
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        // 阴性对照 ①：真实字节必须到达。
+        Assert.Equal("SOP PDF bytes", body);
+        // 阴性对照 ②：下游的自定义响应头确实被转发了——证明这条链路有转发头的能力。
+        Assert.Equal("forwarded", response.Headers.GetValues("X-Downstream-Marker").Single());
+        // 桩客户端签发的下游 URL 带 grant id，它必须留在进程内。
+        Assert.Contains(grantId, handler.LastRequestPath);
+        AssertNoGrantLeak(response, body, grantId);
+    }
+
+    private static void AssertNoGrantLeak(HttpResponseMessage response, string body, string grantId)
+    {
+        var rendered = string.Join(
+            "\n",
+            response.Headers
+                .Concat(response.Content.Headers)
+                .Select(header => $"{header.Key}: {string.Join(",", header.Value)}"));
+
+        foreach (var (surface, text) in new[] { ("响应头", rendered), ("响应体", body) })
+        {
+            Assert.False(
+                text.Contains("/download-grants/", StringComparison.OrdinalIgnoreCase),
+                $"{surface}泄漏了 FileStorage 的 download-grant 路径：{text}");
+            Assert.False(
+                text.Contains(grantId, StringComparison.OrdinalIgnoreCase),
+                $"{surface}泄漏了 download grant id：{text}");
+        }
+    }
+
+    /// <summary>取字节那一跳的下游桩：回真实字节 + 一个可被断言转发到的自定义头。</summary>
+    private sealed class LeakProbeHandler : HttpMessageHandler
+    {
+        public string LastRequestPath { get; private set; } = string.Empty;
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            LastRequestPath = request.RequestUri!.AbsolutePath;
+            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent("SOP PDF bytes"u8.ToArray()),
+            };
+            response.Headers.TryAddWithoutValidation("X-Downstream-Marker", "forwarded");
+            return Task.FromResult(response);
+        }
+    }
+
     private static HttpRequestMessage Scoped(HttpMethod method, string route)
     {
         var request = new HttpRequestMessage(method, route);
