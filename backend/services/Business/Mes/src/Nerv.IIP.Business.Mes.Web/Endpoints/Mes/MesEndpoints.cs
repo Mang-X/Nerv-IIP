@@ -1984,6 +1984,11 @@ public static class MesEndpointContracts
 {
     public static readonly IReadOnlyCollection<MesEndpointContract> All =
     [
+        new(typeof(RaiseAndonCallEndpoint), "POST", "/api/business/v1/mes/andon-calls", MesPermissionCodes.OperationsManage, "raiseBusinessMesAndonCall"),
+        new(typeof(ClaimAndonCallEndpoint), "POST", "/api/business/v1/mes/andon-calls/{id}/claim", MesPermissionCodes.OperationsManage, "claimBusinessMesAndonCall"),
+        new(typeof(CloseAndonCallEndpoint), "POST", "/api/business/v1/mes/andon-calls/{id}/close", MesPermissionCodes.OperationsManage, "closeBusinessMesAndonCall"),
+        new(typeof(GetAndonCallEndpoint), "GET", "/api/business/v1/mes/andon-calls/{id}", MesPermissionCodes.OperationsRead, "getBusinessMesAndonCall"),
+        new(typeof(ListAndonCallsEndpoint), "GET", "/api/business/v1/mes/andon-calls", MesPermissionCodes.OperationsRead, "listBusinessMesAndonCalls"),
         new(typeof(GetFoundationReadinessAreaEndpoint), "GET", "/api/business/v1/mes/foundation-readiness/{areaCode}", MesPermissionCodes.FoundationRead, "getBusinessMesFoundationReadinessArea"),
         new(typeof(GetMesOverviewEndpoint), "GET", "/api/business/v1/mes/overview", MesPermissionCodes.OverviewRead, "getBusinessMesOverview"),
         new(typeof(ListProductionPlansEndpoint), "GET", "/api/business/v1/mes/production-plans", MesPermissionCodes.PlansRead, "listBusinessMesProductionPlans"),
