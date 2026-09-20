@@ -180,6 +180,18 @@ export type {
 export { isAvailableMaterialLot } from './mes/materialLots'
 export type { AvailableMaterialLotFields, MaterialLotAvailabilityLike } from './mes/materialLots'
 export {
+  incomingPartyState,
+  incomingUserLabel,
+  outgoingPartyState,
+  outgoingUserLabel,
+  SHIFT_HANDOVER_PARTY_STATE_LABELS,
+} from './mes/shiftHandoverParties'
+export type {
+  ShiftHandoverIncomingPartyFields,
+  ShiftHandoverOutgoingPartyFields,
+  ShiftHandoverPartyState,
+} from './mes/shiftHandoverParties'
+export {
   acquirePendingBusinessIntent,
   clearPendingBusinessIntent,
   completePendingBusinessIntent,
