@@ -20,6 +20,7 @@ import type { LineBoard } from '@/data/contracts/line'
 import { fetchLineBoard } from '@/data/fetchers/line'
 import { OEE_PLACEHOLDER_BADGE } from '@/data/copy'
 import { formatScreenFreshness } from '@/data/freshness'
+import { IS_REAL_DATA } from '@/data/config'
 import ScreenLayout from '@/layouts/ScreenLayout.vue'
 
 // 单线监控大屏（spec §四）：现场远距可读；横幅只在报警/停机时出现；
@@ -135,6 +136,10 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
     screen="指挥中心大屏 03"
   >
     <div v-if="board" class="lb">
+      <p class="lb-andon-h">
+        本页产线聚合为演示数据 ·
+        <RouterLink to="/andon" class="lb-back">进入真实安灯队列</RouterLink>
+      </p>
       <!-- 即时停机/报警横幅：有事才出现（异常是例外） -->
       <div v-if="board.banner" class="lb-banner" :class="board.banner.level">
         <i class="lb-banner-dot" />
@@ -204,11 +209,14 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
             </div>
           </NvScreenScrollArea>
 
-          <!-- 安灯呼叫（并入线体域，与状态灯同侧；闭环 待 MAN-322） -->
-          <div class="lb-andon-mini">
+          <div v-if="IS_REAL_DATA" class="lb-andon-mini">
+            <RouterLink to="/andon" class="lb-back">查看真实安灯待响应 / 处理中队列 ›</RouterLink>
+            <p class="lb-andon-h">请在安灯看板选择已授权的真实作业范围</p>
+          </div>
+          <div v-else class="lb-andon-mini">
             <div class="lb-andon-h">
               <span>安灯呼叫</span>
-              <NvScreenStatusTag tone="amber" label="闭环 · 待 MAN-322" />
+              <NvScreenStatusTag tone="amber" label="演示数据" />
             </div>
             <div v-for="a in board.andon" :key="a.time + a.station" class="lb-andon-row">
               <span class="lb-andon-time">{{ a.time }}</span>
