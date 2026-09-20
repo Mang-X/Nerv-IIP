@@ -154,7 +154,7 @@ public sealed record MaterialIssueRequestedDomainEvent(
     MaterialTransferAllocation? SourceAllocation = null,
     int AllocationIndex = 0) : IDomainEvent;
 
-public sealed record MaterialLineSideReceiptConfirmedDomainEvent(MaterialIssueRequest MaterialIssueRequest, decimal ReceivedQuantity) : IDomainEvent;
+public sealed record MaterialLineSideReceiptConfirmedDomainEvent(MaterialIssueRequest MaterialIssueRequest, decimal ReceivedQuantity, decimal? UnitCost = null) : IDomainEvent;
 
 public sealed record MaterialLineSideReturnRequestedDomainEvent(
     MaterialIssueRequest MaterialIssueRequest,

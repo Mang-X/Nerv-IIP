@@ -597,6 +597,7 @@ public sealed class MaterialLineSideReceiptConfirmedIntegrationEventConverter
             request.MaterialLotId,
             Math.Abs(domainEvent.ReceivedQuantity),
             occurredAtUtc,
+            unitCost: domainEvent.UnitCost,
             ownerType: locations.SourceAllocations.FirstOrDefault()?.OwnerType ?? "production",
             ownerId: locations.SourceAllocations.FirstOrDefault()?.OwnerId);
     }
