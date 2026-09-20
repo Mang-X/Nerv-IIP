@@ -81,7 +81,17 @@ public sealed class SchedulingProblemProducer(
                 request.HorizonStartUtc,
                 request.HorizonEndUtc,
                 request.Orders.Select(x => x.Order).ToArray()),
-            (order, operation) => operationIds[order.OrderId][operation.Sequence],
+            (order, operation) =>
+            {
+                if (!operationIds[order.OrderId].TryGetValue(operation.Sequence, out var operationTaskId) ||
+                    string.IsNullOrWhiteSpace(operationTaskId))
+                {
+                    throw new KnownException(
+                        $"MES 工单 '{order.OrderId}' 缺少序号 '{operation.Sequence}' 的工序任务。");
+                }
+
+                return operationTaskId;
+            },
             cancellationToken);
     }
 

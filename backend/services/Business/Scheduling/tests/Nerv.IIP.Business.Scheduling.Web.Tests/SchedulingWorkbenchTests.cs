@@ -174,7 +174,10 @@ public sealed class SchedulingWorkbenchTests
             start,
             [new("WO-001", 10, false)],
             CancellationToken.None);
-        var producer = new SchedulingProblemProducer(productEngineering, new StubMasterDataClient(start));
+        var masterData = new StubMasterDataClient(
+            start,
+            [new SchedulingProblemToolingFactSnapshot("MES-TASK-010", 42, ["fixture.cutting"], false)]);
+        var producer = new SchedulingProblemProducer(productEngineering, masterData);
 
         var problem = await producer.AssembleWorkbenchAsync(
             new AssembleSchedulingWorkbenchProblemRequest(
@@ -187,6 +190,9 @@ public sealed class SchedulingWorkbenchTests
             CancellationToken.None);
 
         var operations = Assert.Single(problem.Orders).Operations.OrderBy(x => x.OperationSequence).ToArray();
+        Assert.Equal(
+            ["MES-TASK-010", "MES-TASK-020"],
+            masterData.Transitions.Select(x => x.OperationId).ToArray());
         Assert.Collection(
             operations,
             operation =>
@@ -194,6 +200,9 @@ public sealed class SchedulingWorkbenchTests
                 Assert.Equal("MES-TASK-010", operation.OperationId);
                 Assert.Equal(10, operation.OperationSequence);
                 Assert.Empty(operation.PredecessorOperationIds);
+                Assert.Equal(42, operation.SetupMinutes);
+                Assert.Equal(["fixture.cutting"], operation.RequiredToolingIds);
+                Assert.False(operation.ToolingAvailable);
             },
             operation =>
             {
@@ -201,6 +210,61 @@ public sealed class SchedulingWorkbenchTests
                 Assert.Equal(20, operation.OperationSequence);
                 Assert.Equal(["MES-TASK-010"], operation.PredecessorOperationIds);
             });
+    }
+
+    [Fact]
+    public async Task Workbench_problem_reports_missing_mes_operation_identity_as_known_exception()
+    {
+        var start = new DateTimeOffset(2026, 7, 24, 0, 0, 0, TimeSpan.Zero);
+        var routing = new SchedulingProblemRoutingSnapshot(
+            "ROUTE-001",
+            "A",
+            "SKU-001",
+            [new SchedulingProblemRoutingOperationSnapshot(10, "WC-001", "cutting", "Cutting", 0, 30, 0)]);
+        var productEngineering = new StubProductEngineeringClient(routing);
+        var handler = new StubHandler(_ => Json(new
+        {
+            items = new[]
+            {
+                new
+                {
+                    workOrderId = "WO-001",
+                    skuId = "SKU-001",
+                    skuCode = "SKU-001",
+                    productionVersionId = "pv-001",
+                    quantity = 1,
+                    priority = 10,
+                    dueUtc = start.AddHours(8),
+                    status = "released",
+                    workOrderNo = "MO-001",
+                    operationTasks = Array.Empty<object>(),
+                },
+            },
+            total = 1,
+        }));
+        var provider = new HttpSchedulingWorkbenchSourceProvider(
+            new HttpClient(handler) { BaseAddress = new Uri("http://mes") },
+            productEngineering);
+        var sourceOrders = await provider.ResolveOrdersAsync(
+            "org-001",
+            "env-dev",
+            start,
+            [new("WO-001", 10, false)],
+            CancellationToken.None);
+        var producer = new SchedulingProblemProducer(productEngineering, new StubMasterDataClient(start));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => producer.AssembleWorkbenchAsync(
+            new AssembleSchedulingWorkbenchProblemRequest(
+                "problem-missing-mes-identity",
+                "org-001",
+                "env-dev",
+                start,
+                start.AddHours(8),
+                sourceOrders),
+            CancellationToken.None));
+
+        Assert.Contains("WO-001", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("10", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -515,8 +579,12 @@ public sealed class SchedulingWorkbenchTests
                 new SchedulingProblemProductionVersionSnapshot(productionVersionId, "SKU-001", "ROUTE-001:A"));
     }
 
-    private sealed class StubMasterDataClient(DateTimeOffset start) : ISchedulingProblemMasterDataClient
+    private sealed class StubMasterDataClient(
+        DateTimeOffset start,
+        IReadOnlyCollection<SchedulingProblemToolingFactSnapshot>? toolingFacts = null) : ISchedulingProblemMasterDataClient
     {
+        public IReadOnlyCollection<SchedulingProblemToolingTransitionSnapshot> Transitions { get; private set; } = [];
+
         public Task<SchedulingProblemWorkCenterSnapshot> GetWorkCenterAsync(
             string organizationId,
             string environmentId,
@@ -545,7 +613,11 @@ public sealed class SchedulingWorkbenchTests
             string organizationId,
             string environmentId,
             IReadOnlyCollection<SchedulingProblemToolingTransitionSnapshot> transitions,
-            CancellationToken cancellationToken) => Task.FromResult<IReadOnlyCollection<SchedulingProblemToolingFactSnapshot>>([]);
+            CancellationToken cancellationToken)
+        {
+            Transitions = transitions;
+            return Task.FromResult(toolingFacts ?? []);
+        }
     }
 
     private static ApplicationDbContext CreateDbContext()
