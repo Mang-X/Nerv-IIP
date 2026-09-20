@@ -102,10 +102,15 @@ public sealed class GatewayOpenApiTests
         Assert.Equal("createConsoleFileUploadSession", paths.GetProperty("/api/console/v1/files/upload-sessions").GetProperty("post").GetProperty("operationId").GetString());
         Assert.Equal("completeConsoleFileUploadSession", paths.GetProperty("/api/console/v1/files/upload-sessions/{uploadSessionId}/complete").GetProperty("post").GetProperty("operationId").GetString());
         Assert.Equal("getConsoleFileMetadata", paths.GetProperty("/api/console/v1/files/{fileId}").GetProperty("get").GetProperty("operationId").GetString());
-        Assert.Equal("createConsoleFileDownloadGrant", paths.GetProperty("/api/console/v1/files/{fileId}/download-grants").GetProperty("post").GetProperty("operationId").GetString());
         Assert.Equal("getConsoleTusUploadOffset", paths.GetProperty("/api/console/v1/files/tus/{uploadSessionId}").GetProperty("head").GetProperty("operationId").GetString());
         Assert.Equal("patchConsoleTusUpload", paths.GetProperty("/api/console/v1/files/tus/{uploadSessionId}").GetProperty("patch").GetProperty("operationId").GetString());
-        Assert.Equal("downloadConsoleFileGrantContent", paths.GetProperty("/api/console/v1/files/download-grants/{downloadGrantId}/content").GetProperty("get").GetProperty("operationId").GetString());
+        // #3314：字节面只剩一条以 fileId 为入参的路由；grant 由网关服务端签发并立即兑换。
+        Assert.Equal("downloadConsoleFileContent", paths.GetProperty("/api/console/v1/files/{fileId}/content").GetProperty("get").GetProperty("operationId").GetString());
+        // 结构不变量：公开契约里不得再有任何以 download grant id 为入参、或把 grant id 交出去的路由。
+        Assert.DoesNotContain(
+            paths.EnumerateObject().Select(path => path.Name),
+            name => name.Contains("{downloadGrantId}", StringComparison.Ordinal)
+                || name.EndsWith("/download-grants", StringComparison.Ordinal));
 
         var queryLogs = paths.GetProperty("/api/console/v1/logs/query").GetProperty("post");
         Assert.Equal("queryConsoleLogs", queryLogs.GetProperty("operationId").GetString());

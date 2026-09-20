@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { openDownloadGrantBlob } from './downloadGrant'
+import { openFileContentBlob, sopFileContentTarget } from './fileContent'
 
-describe('openDownloadGrantBlob', () => {
+describe('openFileContentBlob', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
@@ -37,7 +37,7 @@ describe('openDownloadGrantBlob', () => {
       }),
     })
 
-    await openDownloadGrantBlob({
+    await openFileContentBlob({
       downloadUrl: '/api/business-console/v1/files/download-grants/grant-1/content',
       downloadHeaders: {
         'X-Organization-Id': 'org-001',
@@ -72,7 +72,7 @@ describe('openDownloadGrantBlob', () => {
     })
 
     await expect(
-      openDownloadGrantBlob(
+      openFileContentBlob(
         { downloadUrl: '/api/business-console/v1/files/download-grants/grant-1/content' },
         { fetch: injectedFetch as unknown as typeof fetch },
       ),
@@ -98,7 +98,7 @@ describe('openDownloadGrantBlob', () => {
     )
     vi.stubGlobal('fetch', fetchMock)
 
-    const pending = openDownloadGrantBlob({ downloadUrl: '/x' }, { timeoutMs: 1_000 })
+    const pending = openFileContentBlob({ downloadUrl: '/x' }, { timeoutMs: 1_000 })
     const assertion = expect(pending).rejects.toThrow('网络超时')
     await vi.advanceTimersByTimeAsync(1_000)
     await assertion
@@ -106,8 +106,28 @@ describe('openDownloadGrantBlob', () => {
   })
 
   it('rejects grants without a download URL', async () => {
-    await expect(openDownloadGrantBlob({ downloadUrl: ' ' })).rejects.toThrow(
+    await expect(openFileContentBlob({ downloadUrl: ' ' })).rejects.toThrow(
       '文件服务未返回可用的SOP查看链接。',
     )
+  })
+})
+
+describe('sopFileContentTarget', () => {
+  it('builds the single-hop fileId route and carries the business scope in headers', () => {
+    // #3314：调用方不再拿到 download grant id，字节路由以 fileId 为入参。
+    const target = sopFileContentTarget('file sop/v2', {
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+    })
+
+    expect(target.downloadUrl).toBe(
+      '/api/business-console/v1/files/sop-documents/file%20sop%2Fv2/content',
+    )
+    expect(target.downloadHeaders).toEqual({
+      'X-Organization-Id': 'org-001',
+      'X-Environment-Id': 'env-dev',
+    })
+    // 结构不变量：本 URL 里不得出现 download-grants 段。
+    expect(target.downloadUrl).not.toContain('download-grants')
   })
 })

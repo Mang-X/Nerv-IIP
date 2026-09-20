@@ -87,7 +87,9 @@ const captureOperationActionContext = vi.fn(
 )
 const refresh = vi.fn(async () => {})
 const refreshSops = vi.fn()
-const createSopFileDownloadGrant = vi.fn()
+const sopFileDownloadTarget = vi.fn((fileId: string) => ({
+  downloadUrl: `/api/business-console/v1/files/sop-documents/${fileId}/content`,
+}))
 
 const filters = reactive({
   organizationId: 'org-001',
@@ -203,7 +205,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     pending: ref(false),
     error: sopsErrorRef,
     refresh: refreshSops,
-    createSopFileDownloadGrant,
+    sopFileDownloadTarget,
   }),
   // 作业范围选择入口自带一个独立实例（#1297）：页面挂载时必须能解析到它。
   useMesWorkScopeSelection: () => ({
@@ -241,7 +243,7 @@ describe('PDA MES operation execution page', () => {
     tasksPendingRef.value = false
     tasksSuccessfulRef.value = true
     currentSopsRef.value = []
-    createSopFileDownloadGrant.mockClear()
+    sopFileDownloadTarget.mockClear()
     push.mockReset().mockResolvedValue(undefined)
     replace.mockReset().mockImplementation(async (to: { query?: Record<string, string> }) => {
       routeState.replaceQuery?.(to.query ?? {})
@@ -1398,7 +1400,9 @@ describe('PDA MES operation execution page', () => {
     currentSopsRef.value = [
       { fileId: 'F1', fileName: 'SOP-1', documentNumber: 'D1', revision: 'A', effectiveDate: null },
     ]
-    createSopFileDownloadGrant.mockRejectedValueOnce(new Error('网络超时，请检查连接后重试'))
+    sopFileDownloadTarget.mockImplementationOnce(() => {
+      throw new Error('网络超时，请检查连接后重试')
+    })
     const wrapper = mount(OperationPage, { attachTo: document.body })
     await wrapper.findAll('[data-row]')[0].trigger('click')
     await flushPromises()

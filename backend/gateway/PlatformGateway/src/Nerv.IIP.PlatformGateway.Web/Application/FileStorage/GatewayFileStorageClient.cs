@@ -31,11 +31,6 @@ public interface IGatewayFileStorageClient
         FileStorageUsageRequest request,
         CancellationToken cancellationToken);
 
-    Task<DownloadGrantResponse> CreateDownloadGrantAsync(
-        string fileId,
-        CreateDownloadGrantRequest request,
-        CancellationToken cancellationToken);
-
     Task ProxyTusHeadAsync(
         string uploadSessionId,
         string organizationId,
@@ -51,8 +46,12 @@ public interface IGatewayFileStorageClient
         HttpResponse response,
         CancellationToken cancellationToken);
 
-    Task ProxyDownloadGrantContentAsync(
-        string downloadGrantId,
+    /// <summary>
+    /// 平台控制台取文件字节的**唯一**入口：在服务端签发 download grant、校验其 URL 是可代理的
+    /// 内部路径、随即就地兑换。grant id 不出本进程（#3314）。
+    /// </summary>
+    Task StreamFileContentAsync(
+        string fileId,
         string organizationId,
         string environmentId,
         HttpResponse response,
@@ -131,23 +130,6 @@ public sealed class HttpGatewayFileStorageClient(
             "/api/files/v1/usage" + BuildUsageQuery(request),
             cancellationToken);
 
-    public async Task<DownloadGrantResponse> CreateDownloadGrantAsync(
-        string fileId,
-        CreateDownloadGrantRequest request,
-        CancellationToken cancellationToken)
-    {
-        var response = await SendForJsonAsync<DownloadGrantResponse>(
-            () => JsonContent.Create(request),
-            HttpMethod.Post,
-            $"/api/files/v1/files/{Uri.EscapeDataString(fileId)}/download-grants",
-            cancellationToken);
-
-        return response with
-        {
-            Download = RewriteTransferInstructions(response.Download)
-        };
-    }
-
     public Task ProxyTusHeadAsync(
         string uploadSessionId,
         string organizationId,
@@ -185,23 +167,44 @@ public sealed class HttpGatewayFileStorageClient(
                 ["X-Environment-Id"] = environmentId
             });
 
-    public Task ProxyDownloadGrantContentAsync(
-        string downloadGrantId,
+    public async Task StreamFileContentAsync(
+        string fileId,
         string organizationId,
         string environmentId,
         HttpResponse response,
-        CancellationToken cancellationToken) =>
-        ProxyRawAsync(
+        CancellationToken cancellationToken)
+    {
+        var grant = await SendForJsonAsync<DownloadGrantResponse>(
+            () => JsonContent.Create(new CreateDownloadGrantRequest(organizationId, environmentId)),
+            HttpMethod.Post,
+            $"/api/files/v1/files/{Uri.EscapeDataString(fileId)}/download-grants",
+            cancellationToken);
+
+        // FileStorage 只应回内部相对路径。绝对 URL、协议相对 URL 或前缀不符都意味着本网关会被
+        // 指去跟随一个外部地址，失败关闭（ADR 0023 决策 1.3、ADR 0030 决策 1）。
+        var downstreamUrl = grant.Download.Url;
+        if (IsExternallyAddressedTransferUrl(downstreamUrl)
+            || !downstreamUrl.StartsWith(
+                ConsoleFileStorageTransferRoutes.DownstreamDownloadGrantPrefix,
+                StringComparison.Ordinal))
+        {
+            throw GatewayAuthException.BadGateway("filestorage-transfer-url-not-proxyable");
+        }
+
+        await ProxyRawAsync(
             HttpMethod.Get,
-            $"/api/files/v1/download-grants/{Uri.EscapeDataString(downloadGrantId)}/content",
+            downstreamUrl,
             null,
             response,
             cancellationToken,
-            new Dictionary<string, string>
-            {
-                ["X-Organization-Id"] = organizationId,
-                ["X-Environment-Id"] = environmentId
-            });
+            grant.Download.Headers.Count > 0
+                ? grant.Download.Headers
+                : new Dictionary<string, string>
+                {
+                    ["X-Organization-Id"] = organizationId,
+                    ["X-Environment-Id"] = environmentId
+                });
+    }
 
     private async Task ProxyRawAsync(
         HttpMethod method,
@@ -373,12 +376,6 @@ public sealed class HttpGatewayFileStorageClient(
         {
             return ConsoleFileStorageTransferRoutes.ConsoleTusPrefix
                 + url[ConsoleFileStorageTransferRoutes.DownstreamTusPrefix.Length..];
-        }
-
-        if (url.StartsWith(ConsoleFileStorageTransferRoutes.DownstreamDownloadGrantPrefix, StringComparison.Ordinal))
-        {
-            return ConsoleFileStorageTransferRoutes.ConsoleDownloadGrantPrefix
-                + url[ConsoleFileStorageTransferRoutes.DownstreamDownloadGrantPrefix.Length..];
         }
 
         return url;

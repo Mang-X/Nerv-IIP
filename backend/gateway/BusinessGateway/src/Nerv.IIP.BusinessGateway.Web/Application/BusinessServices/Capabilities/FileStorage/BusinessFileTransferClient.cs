@@ -36,14 +36,14 @@ public interface IBusinessFileTransferClient
         CancellationToken cancellationToken);
 
     /// <summary>
-    /// 兑换已授权凭据取字节。凭据由 <see cref="IBusinessFileStorageClient.AuthorizeShiftHandoverAttachmentDownloadAsync"/>
+    /// 兑换已授权凭据取字节。凭据由 <see cref="IBusinessFileStorageClient"/> 的 Authorize* 方法
     /// 在 JSON 面产出（用途已复核、URL 已校验），调用方全程拿不到 FileStorage 的 downloadGrantId——
-    /// 该 id 是全服务共用命名空间且兑换面不校验用途，交出去就成了跨门面兑换通道（#3096 审核 A1）。
-    /// 本方法只做一跳真字节转发，这是本 client 存在的全部理由（#3096 审核 Q2）。
+    /// 该 id 是全服务共用命名空间且兑换面不校验用途，交出去就成了跨门面兑换通道（#3096 审核 A1、
+    /// #3314 实测双向兑换成功）。本方法只做一跳真字节转发，这是本 client 存在的全部理由（#3096 审核 Q2）。
     /// </summary>
-    Task StreamShiftHandoverAttachmentContentAsync(
+    Task StreamFileContentAsync(
         string internalBearerToken,
-        ShiftHandoverAttachmentDownloadTicket ticket,
+        BusinessFileDownloadTicket ticket,
         HttpResponse targetResponse,
         CancellationToken cancellationToken);
 }
@@ -112,9 +112,9 @@ public sealed class HttpBusinessFileTransferClient(HttpClient httpClient)
             },
             cancellationToken);
 
-    public Task StreamShiftHandoverAttachmentContentAsync(
+    public Task StreamFileContentAsync(
         string internalBearerToken,
-        ShiftHandoverAttachmentDownloadTicket ticket,
+        BusinessFileDownloadTicket ticket,
         HttpResponse targetResponse,
         CancellationToken cancellationToken) =>
         ProxyRawAsync(

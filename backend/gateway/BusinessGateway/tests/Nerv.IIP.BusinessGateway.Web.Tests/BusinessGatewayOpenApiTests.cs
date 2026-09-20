@@ -313,8 +313,8 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/engineering/documents", "post", "registerBusinessConsoleEngineeringDocument");
         AssertOperationId(paths, "/api/business-console/v1/engineering/sops/publish", "post", "publishBusinessConsoleEngineeringSopDocument");
         AssertOperationId(paths, "/api/business-console/v1/engineering/sops/current", "get", "getBusinessConsoleCurrentEngineeringSopDocuments");
-        AssertOperationId(paths, "/api/business-console/v1/files/{fileId}/download-grants", "post", "createBusinessConsoleSopFileDownloadGrant");
-        AssertOperationId(paths, "/api/business-console/v1/files/download-grants/{downloadGrantId}/content", "get", "downloadBusinessConsoleSopFileContent");
+        // #3314 SOP 下载面：只有一条字节路由、以 fileId 为入参；grant id 不再出现在公开契约里。
+        AssertOperationId(paths, "/api/business-console/v1/files/sop-documents/{fileId}/content", "get", "downloadBusinessConsoleSopFileContent");
         // #3085 交接班附件门面：上传三段（会话 / tus HEAD+PATCH / complete）与下载两段都必须进契约，
         // 否则 business-console 与 PDA 侧没有可消费的 generated operation。
         AssertOperationId(paths, "/api/business-console/v1/files/shift-handover-attachments/upload-sessions", "post", "createBusinessConsoleShiftHandoverAttachmentUploadSession");
@@ -326,6 +326,13 @@ public sealed class BusinessGatewayOpenApiTests
         Assert.DoesNotContain(
             paths.EnumerateObject().Select(path => path.Name),
             name => name.StartsWith("/api/business-console/v1/files/shift-handover-attachments/download-grants", StringComparison.Ordinal));
+        // #3314 结构不变量：本网关的公开契约里不得再有**任何**以 download grant id 为入参的路由，
+        // 也不得有任何签发面把 grant id 交出去。按门面前缀点名只能挡住已知那两条；这里按
+        // 「路径模板里出现 downloadGrantId / 以 download-grants 结尾」整类判定。
+        Assert.DoesNotContain(
+            paths.EnumerateObject().Select(path => path.Name),
+            name => name.Contains("{downloadGrantId}", StringComparison.Ordinal)
+                || name.EndsWith("/download-grants", StringComparison.Ordinal));
         AssertOperationId(paths, "/api/business-console/v1/engineering/items", "post", "createBusinessConsoleEngineeringItemRevision");
         AssertOperationId(paths, "/api/business-console/v1/engineering/engineering-boms", "get", "listBusinessConsoleEngineeringBoms");
         AssertOperationId(paths, "/api/business-console/v1/engineering/engineering-boms/explosion", "get", "getBusinessConsoleEngineeringBomExplosion");

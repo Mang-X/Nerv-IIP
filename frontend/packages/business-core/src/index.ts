@@ -168,8 +168,12 @@ export { formatWorkScopeKey, parseWorkScopeKey } from './scope/workScopeKey'
 export type { WorkScopeKeyParts } from './scope/workScopeKey'
 export { PDA_TASK_KINDS, getPdaTaskKind } from './tasks/pdaTaskKinds'
 export type { PdaTaskKind } from './tasks/pdaTaskKinds'
-export { openDownloadGrantBlob } from './files/downloadGrant'
-export type { DownloadGrantLike } from './files/downloadGrant'
+export {
+  openFileContentBlob,
+  sopFileContentTarget,
+  type FileContentTarget,
+} from './files/fileContent'
+
 export { statusActionGate } from './actions/statusActionGate'
 export type {
   LifecycleActionRequest,

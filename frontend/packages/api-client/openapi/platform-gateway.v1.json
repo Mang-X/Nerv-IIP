@@ -1899,61 +1899,6 @@
         ]
       }
     },
-    "/api/console/v1/files/{fileId}/download-grants": {
-      "post": {
-        "tags": [
-          "Console Files",
-          "Api"
-        ],
-        "operationId": "createConsoleFileDownloadGrant",
-        "parameters": [
-          {
-            "name": "fileId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "x-name": "CreateDownloadGrantRequest",
-          "description": "",
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NervIIPContractsFileStorageCreateDownloadGrantRequest"
-              }
-            }
-          },
-          "required": true,
-          "x-position": 1
-        },
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfDownloadGrantResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized"
-          },
-          "403": {
-            "description": "Forbidden"
-          }
-        },
-        "security": [
-          {
-            "JWTBearerAuth": []
-          }
-        ]
-      }
-    },
     "/api/console/v1/files/tus/{uploadSessionId}": {
       "head": {
         "tags": [
@@ -2022,16 +1967,16 @@
         ]
       }
     },
-    "/api/console/v1/files/download-grants/{downloadGrantId}/content": {
+    "/api/console/v1/files/{fileId}/content": {
       "get": {
         "tags": [
           "Console Files",
           "Api"
         ],
-        "operationId": "downloadConsoleFileGrantContent",
+        "operationId": "downloadConsoleFileContent",
         "parameters": [
           {
-            "name": "downloadGrantId",
+            "name": "fileId",
             "in": "path",
             "required": true,
             "schema": {
@@ -2040,8 +1985,16 @@
           }
         ],
         "responses": {
-          "204": {
-            "description": "No Content"
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
           },
           "401": {
             "description": "Unauthorized"
@@ -4322,55 +4275,6 @@
       "NervIIPPlatformGatewayWebEndpointsFilesConsoleFileStorageUsageRequest": {
         "type": "object",
         "additionalProperties": false
-      },
-      "NetCorePalExtensionsDtoResponseDataOfDownloadGrantResponse": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
-          },
-          {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "data": {
-                "nullable": true,
-                "oneOf": [
-                  {
-                    "$ref": "#/components/schemas/NervIIPContractsFileStorageDownloadGrantResponse"
-                  }
-                ]
-              }
-            }
-          }
-        ]
-      },
-      "NervIIPContractsFileStorageDownloadGrantResponse": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "fileId": {
-            "type": "string"
-          },
-          "expiresAtUtc": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "download": {
-            "$ref": "#/components/schemas/NervIIPContractsFileStorageTransferInstructions"
-          }
-        }
-      },
-      "NervIIPContractsFileStorageCreateDownloadGrantRequest": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "organizationId": {
-            "type": "string"
-          },
-          "environmentId": {
-            "type": "string"
-          }
-        }
       },
       "NetCorePalExtensionsDtoResponseDataOfConsoleAuthResponse": {
         "allOf": [

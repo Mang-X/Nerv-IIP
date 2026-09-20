@@ -195,25 +195,6 @@ public sealed class GatewayConsoleFileStorageTests
     }
 
     [Fact]
-    public async Task Create_download_grant_forwards_file_id_and_requires_download_grant_permission()
-    {
-        var files = new FakeGatewayFileStorageClient();
-        var auth = FakeGatewayAuthorizationClient.Allowed();
-        await using var factory = CreateFactory(files, auth);
-        using var request = AuthorizedRequest(HttpMethod.Post, "/api/console/v1/files/file-001/download-grants");
-        request.Content = JsonContent.Create(new CreateDownloadGrantRequest("org-001", "env-dev"));
-
-        var response = await factory.CreateClient().SendAsync(request);
-
-        response.EnsureSuccessStatusCode();
-        var body = await ReadResponseDataAsync<DownloadGrantResponse>(response);
-        Assert.Equal("file-001", body.FileId);
-        Assert.Equal("/api/console/v1/files/download-grants/download-grant-001/content", body.Download.Url);
-        Assert.Equal("file-001", files.LastDownloadGrantFileId);
-        Assert.Equal(GatewayPermissions.FilesDownloadGrantsCreate, auth.LastRequirement!.PermissionCode);
-    }
-
-    [Fact]
     public async Task File_storage_http_client_lists_files_with_filters_and_internal_token()
     {
         var handler = new RecordingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
@@ -329,45 +310,95 @@ public sealed class GatewayConsoleFileStorageTests
     }
 
     [Fact]
-    public async Task Download_grant_content_proxies_stream_and_requires_read_permission()
+    public async Task File_content_proxies_stream_and_requires_read_permission()
     {
         var files = new FakeGatewayFileStorageClient();
         var auth = FakeGatewayAuthorizationClient.Allowed();
         await using var factory = CreateFactory(files, auth);
-        using var request = AuthorizedRequest(HttpMethod.Get, "/api/console/v1/files/download-grants/download-grant-001/content");
-        AddTenantHeaders(request);
+        using var request = AuthorizedRequest(HttpMethod.Get, "/api/console/v1/files/file-001/content");
 
         var response = await factory.CreateClient().SendAsync(request);
 
         response.EnsureSuccessStatusCode();
         Assert.Equal("hello", await response.Content.ReadAsStringAsync());
-        Assert.Equal("download-grant-001", files.LastDownloadContentGrantId);
+        Assert.Equal("file-001", files.LastDownloadContentFileId);
+        // 组织/环境取自 principal，不由调用方声明。
         Assert.Equal("org-001", files.LastDownloadContentOrganizationId);
         Assert.Equal("env-dev", files.LastDownloadContentEnvironmentId);
         Assert.Equal(GatewayPermissions.FilesRead, auth.LastRequirement!.PermissionCode);
-        Assert.Equal("org-001", auth.LastRequirement.OrganizationId);
-        Assert.Equal("env-dev", auth.LastRequirement.EnvironmentId);
-        Assert.Equal("file-download-grant", auth.LastRequirement.ResourceType);
-        Assert.Equal("download-grant-001", auth.LastRequirement.ResourceId);
     }
 
+    /// <summary>
+    /// #3314 的核心不变量（PlatformGateway 侧）：本网关不存在任何以调用方提供的 download grant id
+    /// 为入参的路由，也不存在任何把 grant id 交给调用方的签发路由。
+    ///
+    /// 缺陷原状：本网关的 <c>GET /api/console/v1/files/download-grants/{downloadGrantId}/content</c>
+    /// （门 <c>files.read</c>）与 BusinessGateway 的同形路由（门
+    /// <c>business.engineering.documents.read</c>）代理到同一个下游；真栈实测两个方向都 200，
+    /// IAM 对 user 主体只看权限码不看资源，FileStorage 的 grant 记录也没有归属字段。
+    ///
+    /// 会失败的具体输入：把那两条路由中的任意一条加回来，对应那一格不再是 404/405。
+    /// 阴性对照：同一套桩走新形状的 fileId 路由必须仍然 200。
+    /// </summary>
     [Fact]
-    public async Task Download_grant_content_requires_explicit_tenant_headers()
+    public async Task No_console_route_redeems_a_download_grant_id_supplied_by_the_caller()
     {
         var files = new FakeGatewayFileStorageClient();
         var auth = FakeGatewayAuthorizationClient.Allowed();
         await using var factory = CreateFactory(files, auth);
-        using var request = AuthorizedRequest(HttpMethod.Get, "/api/console/v1/files/download-grants/download-grant-001/content");
+        var client = factory.CreateClient();
+
+        using (var redeem = AuthorizedRequest(
+            HttpMethod.Get,
+            "/api/console/v1/files/download-grants/download-grant-001/content"))
+        {
+            AddTenantHeaders(redeem);
+            var response = await client.SendAsync(redeem);
+            Assert.True(
+                response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.MethodNotAllowed,
+                $"以 grant id 为入参的兑换面不得存在，实际 {(int)response.StatusCode}");
+        }
+
+        using (var issue = AuthorizedRequest(HttpMethod.Post, "/api/console/v1/files/file-001/download-grants"))
+        {
+            issue.Content = JsonContent.Create(new { organizationId = "org-001", environmentId = "env-dev" });
+            var response = await client.SendAsync(issue);
+            Assert.True(
+                response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.MethodNotAllowed,
+                $"把 grant id 交给调用方的签发面不得存在，实际 {(int)response.StatusCode}");
+        }
+
+        Assert.Null(files.LastDownloadContentFileId);
+
+        // 阴性对照：新形状必须仍然通。
+        using (var ok = AuthorizedRequest(HttpMethod.Get, "/api/console/v1/files/file-001/content"))
+        {
+            var response = await client.SendAsync(ok);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Equal("hello", await response.Content.ReadAsStringAsync());
+        }
+    }
+
+    /// <summary>
+    /// #3314 实测的越权方向之二：只持 <c>business.engineering.documents.read</c> 的主体曾经能在
+    /// 本网关兑换 SOP 面签发的 grant。改造后它走不到任何 grant 入参，唯一的字节路由要
+    /// <c>files.read</c>，缺码即被**本网关的权限门**拒绝，FileStorage 一发都收不到。
+    ///
+    /// 会失败的具体输入：把本路由的权限码换成别的、或不检查授权结果就继续代理。
+    /// </summary>
+    [Fact]
+    public async Task File_content_route_rejects_a_principal_without_the_files_read_permission()
+    {
+        var files = new FakeGatewayFileStorageClient();
+        var auth = FakeGatewayAuthorizationClient.Forbidden();
+        await using var factory = CreateFactory(files, auth);
+        using var request = AuthorizedRequest(HttpMethod.Get, "/api/console/v1/files/file-001/content");
 
         var response = await factory.CreateClient().SendAsync(request);
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<object>>();
-        Assert.NotNull(envelope);
-        Assert.False(envelope.Success);
-        Assert.Equal("X-Organization-Id and X-Environment-Id headers are required.", envelope.Message);
-        Assert.Null(files.LastDownloadContentGrantId);
-        Assert.Null(auth.LastRequirement);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(GatewayPermissions.FilesRead, auth.LastRequirement!.PermissionCode);
+        Assert.Null(files.LastDownloadContentFileId);
     }
 
     [Fact]
@@ -514,8 +545,16 @@ public sealed class GatewayConsoleFileStorageTests
     [Fact]
     public async Task File_storage_raw_proxy_filters_hop_by_hop_response_headers()
     {
-        var handler = new RecordingHttpMessageHandler(_ =>
+        var handler = new RecordingHttpMessageHandler(request =>
         {
+            if (request.RequestUri!.AbsolutePath.EndsWith("/download-grants", StringComparison.Ordinal))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(GrantFor("/api/files/v1/download-grants/download-grant-001/content"))
+                };
+            }
+
             var downstream = new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("hello")
@@ -530,21 +569,15 @@ public sealed class GatewayConsoleFileStorageTests
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://files.local") };
         var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"));
         var context = new DefaultHttpContext();
-        context.Request.Headers["X-Organization-Id"] = "org-001";
-        context.Request.Headers["X-Environment-Id"] = "env-dev";
         await using var body = new MemoryStream();
         context.Response.Body = body;
 
-        await files.ProxyDownloadGrantContentAsync(
-            "download-grant-001",
-            "org-001",
-            "env-dev",
-            context.Response,
-            CancellationToken.None);
+        await files.StreamFileContentAsync("file-001", "org-001", "env-dev", context.Response, CancellationToken.None);
 
-        var request = Assert.Single(handler.Requests);
-        Assert.Equal("org-001", request.Headers["X-Organization-Id"]);
-        Assert.Equal("env-dev", request.Headers["X-Environment-Id"]);
+        var byteRequest = handler.Requests[1];
+        Assert.Equal("/api/files/v1/download-grants/download-grant-001/content", byteRequest.RequestUri.AbsolutePath);
+        Assert.Equal("org-001", byteRequest.Headers["X-Organization-Id"]);
+        Assert.Equal("env-dev", byteRequest.Headers["X-Environment-Id"]);
         Assert.False(context.Response.Headers.ContainsKey("Transfer-Encoding"));
         Assert.False(context.Response.Headers.ContainsKey("Connection"));
         Assert.False(context.Response.Headers.ContainsKey("Keep-Alive"));
@@ -555,6 +588,75 @@ public sealed class GatewayConsoleFileStorageTests
         using var reader = new StreamReader(body);
         Assert.Equal("hello", await reader.ReadToEndAsync());
     }
+
+    /// <summary>
+    /// #3314 路线 A 的结构不变量：本 client 取字节前必须自己签发 grant，且**不把 grant id 交出去**。
+    ///
+    /// 会失败的具体输入：把「先签发」那一跳去掉、直接拿调用方给的标识拼 content URL——那样
+    /// <c>handler.Requests</c> 里就不会出现 <c>POST /api/files/v1/files/{fileId}/download-grants</c>，
+    /// 第一条断言红。
+    /// </summary>
+    [Fact]
+    public async Task File_content_signs_its_own_grant_server_side_and_never_takes_a_grant_id_from_the_caller()
+    {
+        var handler = new RecordingHttpMessageHandler(request =>
+            request.RequestUri!.AbsolutePath.EndsWith("/download-grants", StringComparison.Ordinal)
+                ? new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(GrantFor("/api/files/v1/download-grants/grant-server-signed/content"))
+                }
+                : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("bytes") });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://files.local") };
+        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"));
+        var context = new DefaultHttpContext();
+        await using var body = new MemoryStream();
+        context.Response.Body = body;
+
+        await files.StreamFileContentAsync("file-001", "org-001", "env-dev", context.Response, CancellationToken.None);
+
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.Equal(HttpMethod.Post, handler.Requests[0].Method);
+        Assert.Equal("/api/files/v1/files/file-001/download-grants", handler.Requests[0].RequestUri.AbsolutePath);
+        Assert.Equal(HttpMethod.Get, handler.Requests[1].Method);
+        Assert.Equal("/api/files/v1/download-grants/grant-server-signed/content", handler.Requests[1].RequestUri.AbsolutePath);
+    }
+
+    /// <summary>
+    /// 失败关闭：FileStorage 若回一个不可代理的下游地址（绝对 URL / 前缀不符），本 client 不得跟随。
+    /// </summary>
+    [Theory]
+    [InlineData("https://filestorage.internal/api/files/v1/download-grants/g/content")]
+    [InlineData("//filestorage.internal/api/files/v1/download-grants/g/content")]
+    [InlineData("/api/files/v1/tus/g")]
+    public async Task File_content_refuses_a_grant_url_that_is_not_a_proxyable_internal_download_path(string url)
+    {
+        var handler = new RecordingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(GrantFor(url))
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://files.local") };
+        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"));
+        var context = new DefaultHttpContext();
+        await using var body = new MemoryStream();
+        context.Response.Body = body;
+
+        var exception = await Assert.ThrowsAsync<GatewayAuthException>(
+            () => files.StreamFileContentAsync("file-001", "org-001", "env-dev", context.Response, CancellationToken.None));
+
+        Assert.Equal("filestorage-transfer-url-not-proxyable", exception.Reason);
+        // 拒绝必须发生在跟随之前
+        Assert.Single(handler.Requests);
+    }
+
+    private static DownloadGrantResponse GrantFor(string url) =>
+        new(
+            "file-001",
+            DateTimeOffset.Parse("2026-09-20T08:00:00Z"),
+            new TransferInstructions(url, new Dictionary<string, string>
+            {
+                ["X-Organization-Id"] = "org-001",
+                ["X-Environment-Id"] = "env-dev",
+            }));
 
     [Fact]
     public async Task ListFiles_OwnerId_EquivalentToUploaderId_SameFilterParameter()
@@ -646,14 +748,13 @@ public sealed class GatewayConsoleFileStorageTests
         public string? LastMetadataFileId { get; private set; }
         public ListFilesRequest? LastListRequest { get; private set; }
         public FileStorageUsageRequest? LastUsageRequest { get; private set; }
-        public string? LastDownloadGrantFileId { get; private set; }
         public string? LastTusHeadUploadSessionId { get; private set; }
         public string? LastTusHeadOrganizationId { get; private set; }
         public string? LastTusHeadEnvironmentId { get; private set; }
         public string? LastTusPatchUploadSessionId { get; private set; }
         public string? LastTusPatchOrganizationId { get; private set; }
         public string? LastTusPatchEnvironmentId { get; private set; }
-        public string? LastDownloadContentGrantId { get; private set; }
+        public string? LastDownloadContentFileId { get; private set; }
         public string? LastDownloadContentOrganizationId { get; private set; }
         public string? LastDownloadContentEnvironmentId { get; private set; }
         public Exception? ExceptionToThrow { get; init; }
@@ -710,19 +811,6 @@ public sealed class GatewayConsoleFileStorageTests
                 4096));
         }
 
-        public Task<DownloadGrantResponse> CreateDownloadGrantAsync(
-            string fileId,
-            CreateDownloadGrantRequest request,
-            CancellationToken cancellationToken)
-        {
-            ThrowIfConfigured();
-            LastDownloadGrantFileId = fileId;
-            return Task.FromResult(new DownloadGrantResponse(
-                "file-001",
-                DateTimeOffset.UtcNow.AddMinutes(5),
-                new TransferInstructions("/api/console/v1/files/download-grants/download-grant-001/content", new Dictionary<string, string>())));
-        }
-
         public Task ProxyTusHeadAsync(
             string uploadSessionId,
             string organizationId,
@@ -758,15 +846,15 @@ public sealed class GatewayConsoleFileStorageTests
             return Task.CompletedTask;
         }
 
-        public async Task ProxyDownloadGrantContentAsync(
-            string downloadGrantId,
+        public async Task StreamFileContentAsync(
+            string fileId,
             string organizationId,
             string environmentId,
             HttpResponse response,
             CancellationToken cancellationToken)
         {
             ThrowIfConfigured();
-            LastDownloadContentGrantId = downloadGrantId;
+            LastDownloadContentFileId = fileId;
             LastDownloadContentOrganizationId = organizationId;
             LastDownloadContentEnvironmentId = environmentId;
             response.ContentType = "text/plain";

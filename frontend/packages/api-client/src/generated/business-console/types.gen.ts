@@ -6867,24 +6867,6 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     reason: string;
 };
 
-export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSopFileDownloadGrantResponse = NetCorePalExtensionsDtoResponseData & {
-    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSopFileDownloadGrantResponse | null;
-};
-
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSopFileDownloadGrantResponse = {
-    fileId?: string;
-    expiresAtUtc?: string;
-    downloadUrl?: string;
-    downloadHeaders?: {
-        [key: string]: string;
-    };
-};
-
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSopFileDownloadGrantRequest = {
-    organizationId: string;
-    environmentId: string;
-};
-
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleShiftHandoverAttachmentUploadSessionResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleShiftHandoverAttachmentUploadSessionResponse | null;
 };
@@ -20454,48 +20436,13 @@ export type HealthEndpointResponses = {
 
 export type HealthEndpointResponse = HealthEndpointResponses[keyof HealthEndpointResponses];
 
-export type CreateBusinessConsoleSopFileDownloadGrantData = {
-    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSopFileDownloadGrantRequest;
+export type DownloadBusinessConsoleSopFileContentData = {
+    body?: never;
     path: {
         fileId: string;
     };
     query?: never;
-    url: '/api/business-console/v1/files/{fileId}/download-grants';
-};
-
-export type CreateBusinessConsoleSopFileDownloadGrantErrors = {
-    /**
-     * Bad Request
-     */
-    400: NetCorePalExtensionsDtoResponseData;
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Forbidden
-     */
-    403: unknown;
-};
-
-export type CreateBusinessConsoleSopFileDownloadGrantError = CreateBusinessConsoleSopFileDownloadGrantErrors[keyof CreateBusinessConsoleSopFileDownloadGrantErrors];
-
-export type CreateBusinessConsoleSopFileDownloadGrantResponses = {
-    /**
-     * Success
-     */
-    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSopFileDownloadGrantResponse;
-};
-
-export type CreateBusinessConsoleSopFileDownloadGrantResponse = CreateBusinessConsoleSopFileDownloadGrantResponses[keyof CreateBusinessConsoleSopFileDownloadGrantResponses];
-
-export type DownloadBusinessConsoleSopFileContentData = {
-    body?: never;
-    path: {
-        downloadGrantId: string;
-    };
-    query?: never;
-    url: '/api/business-console/v1/files/download-grants/{downloadGrantId}/content';
+    url: '/api/business-console/v1/files/sop-documents/{fileId}/content';
 };
 
 export type DownloadBusinessConsoleSopFileContentErrors = {

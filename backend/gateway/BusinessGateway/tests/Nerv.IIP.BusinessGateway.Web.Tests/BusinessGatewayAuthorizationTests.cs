@@ -650,8 +650,7 @@ public sealed class BusinessGatewayAuthorizationTests
             horizonStart = "2026-05-25",
             horizonEnd = "2026-06-30",
         },
-        "/api/business-console/v1/files/file-sop-v2/download-grants"
-            or "/api/business-console/v1/files/shift-handover-attachments/upload-sessions/ups-handover-1/complete" => new
+        "/api/business-console/v1/files/shift-handover-attachments/upload-sessions/ups-handover-1/complete" => new
         {
             organizationId = "org-001",
             environmentId = "env-dev",
@@ -1321,8 +1320,8 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Put, "/api/business-console/v1/engineering/production-versions/pv-001", BusinessGatewayPermissions.EngineeringProductionVersionsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/production-versions/pv-001/archive", BusinessGatewayPermissions.EngineeringProductionVersionsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/production-versions/resolve", BusinessGatewayPermissions.EngineeringProductionVersionsRead);
-        routes.Add(HttpMethod.Post, "/api/business-console/v1/files/file-sop-v2/download-grants", BusinessGatewayPermissions.EngineeringDocumentsRead);
-        routes.Add(HttpMethod.Get, "/api/business-console/v1/files/download-grants/grant-sop-v2/content", BusinessGatewayPermissions.EngineeringDocumentsRead);
+        // #3314：SOP 下载面只剩一条以 fileId 为入参的字节路由，grant id 不再交给调用方。
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/files/sop-documents/file-sop-v2/content", BusinessGatewayPermissions.EngineeringDocumentsRead);
         // #3085：交接班附件面与 SOP 面共用 FileStorage 但不共用权限口径。写面归 handovers.manage，
         // 读面归 handovers.read，两侧都不落到 engineering.documents.read 上。
         routes.Add(HttpMethod.Post, "/api/business-console/v1/files/shift-handover-attachments/upload-sessions", BusinessGatewayPermissions.MesHandoversManage);

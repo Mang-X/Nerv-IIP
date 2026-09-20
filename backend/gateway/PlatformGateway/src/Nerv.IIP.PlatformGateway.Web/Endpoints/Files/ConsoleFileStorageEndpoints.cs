@@ -229,26 +229,6 @@ public sealed class GetConsoleFileMetadataEndpoint(
 }
 
 [Tags("Console Files")]
-[HttpPost("/api/console/v1/files/{fileId}/download-grants")]
-[GatewayOperationId("createConsoleFileDownloadGrant")]
-[Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
-public sealed class CreateConsoleFileDownloadGrantEndpoint(
-    IGatewayIamAuthClient iam,
-    IGatewayAuthorizationClient auth,
-    IGatewayFileStorageClient files)
-    : AuthorizedProxyEndpoint<CreateDownloadGrantRequest, DownloadGrantResponse>(
-        iam,
-        auth,
-        GatewayPermissions.FilesDownloadGrantsCreate)
-{
-    protected override Task<DownloadGrantResponse> ForwardAsync(
-        AuthorizedProxyRequestContext context,
-        CreateDownloadGrantRequest request,
-        CancellationToken cancellationToken) =>
-        files.CreateDownloadGrantAsync(Route<string>("fileId")!, request, cancellationToken);
-}
-
-[Tags("Console Files")]
 [GatewayOperationId("getConsoleTusUploadOffset")]
 [Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
 public sealed class GetConsoleTusUploadOffsetEndpoint(
@@ -307,47 +287,42 @@ public sealed class PatchConsoleTusUploadEndpoint(
             ct);
 }
 
+// ---------------------------------------------------------------------------
+// #3314 平台控制台的文件字节面。
+//
+// 这里**只有一条**字节路由、以 fileId 为入参：download grant 由网关在服务端签发并立即兑换，
+// 调用方拿不到 grant id。曾经的 `POST /files/{fileId}/download-grants` +
+// `GET /files/download-grants/{downloadGrantId}/content` 两跳形状把 grant id 交了出去，
+// 而 FileStorage 的 grant id 是全服务共用命名空间、兑换面既不看用途也不看签发门面
+// ——实测该 id 可以在权限口径不同的另一条网关路由上兑换成功（#3314）。
+//
+// 组织/环境取自 principal，不收调用方入参：字节面没有 JSON 请求体可校验，从头部读等于让
+// 调用方自己声明租户范围。
+// ---------------------------------------------------------------------------
+
 [Tags("Console Files")]
-[HttpGet("/api/console/v1/files/download-grants/{downloadGrantId}/content")]
-[GatewayOperationId("downloadConsoleFileGrantContent")]
+[HttpGet("/api/console/v1/files/{fileId}/content")]
+[GatewayOperationId("downloadConsoleFileContent")]
 [Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
-public sealed class DownloadConsoleFileGrantContentEndpoint(
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(byte[]), StatusCodes.Status200OK, "application/octet-stream")]
+public sealed class DownloadConsoleFileContentEndpoint(
+    IGatewayIamAuthClient iam,
     IGatewayAuthorizationClient auth,
     IGatewayFileStorageClient files)
     : EndpointWithoutRequest
 {
-    public override async Task HandleAsync(CancellationToken ct)
-    {
-        var organizationId = HttpContext.Request.Headers["X-Organization-Id"].ToString();
-        var environmentId = HttpContext.Request.Headers["X-Environment-Id"].ToString();
-        if (string.IsNullOrWhiteSpace(organizationId) || string.IsNullOrWhiteSpace(environmentId))
-        {
-            await ResponseDataEndpointResults.WriteErrorAsync(
-                HttpContext,
-                StatusCodes.Status400BadRequest,
-                "X-Organization-Id and X-Environment-Id headers are required.",
-                ct);
-            return;
-        }
-
-        var downloadGrantId = Route<string>("downloadGrantId")!;
-        var requirement = new GatewayPermissionRequirement(
+    public override Task HandleAsync(CancellationToken ct) =>
+        AuthorizedProxyEndpointExecutor.ExecuteAsync(
+            HttpContext,
+            iam,
+            auth,
             GatewayPermissions.FilesRead,
-            organizationId,
-            environmentId,
-            "file-download-grant",
-            downloadGrantId);
-        var principal = await GatewayAuthorization.RequirePermissionAsync(HttpContext, auth, requirement, ct);
-        if (principal is null)
-        {
-            return;
-        }
-
-        await files.ProxyDownloadGrantContentAsync(
-            downloadGrantId,
-            organizationId,
-            environmentId,
-            HttpContext.Response,
+            async (context, cancellationToken) =>
+                await files.StreamFileContentAsync(
+                    Route<string>("fileId")!,
+                    context.Principal.OrganizationId,
+                    context.Principal.EnvironmentId,
+                    HttpContext.Response,
+                    cancellationToken),
             ct);
-    }
 }

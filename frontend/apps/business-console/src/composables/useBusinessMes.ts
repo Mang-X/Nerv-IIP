@@ -18,7 +18,6 @@ import {
   createBusinessConsoleMesMaterialIssueRequestMutationOptions,
   createBusinessConsoleMesRushWorkOrderMutationOptions,
   createBusinessConsoleMesShiftHandoverMutationOptions,
-  createBusinessConsoleSopFileDownloadGrantMutationOptions,
   getBusinessConsoleMesBatchTraceabilityQueryOptions,
   getBusinessConsoleMesMaterialLotTraceabilityQueryOptions,
   getBusinessConsoleMesCurrentOperationSopsQueryOptions,
@@ -87,8 +86,6 @@ import {
   type BusinessConsoleMesMaterialReadinessEnvelope,
   type BusinessConsoleCurrentSopDocumentItem,
   type BusinessConsoleCurrentSopDocumentsEnvelope,
-  type BusinessConsoleSopFileDownloadGrantEnvelope,
-  type BusinessConsoleSopFileDownloadGrantResponse,
   type BusinessConsoleMesOperationTaskActionRequest,
   type BusinessConsoleMesOperationTaskListEnvelope,
   type BusinessConsoleMesOperationTaskRow,
@@ -147,8 +144,9 @@ import {
   peekPendingBusinessIntent,
   reduceServerPagination,
   serverPaginationIdentity,
+  sopFileContentTarget,
 } from '@nerv-iip/business-core'
-import type { AvailableMaterialLotFields } from '@nerv-iip/business-core'
+import type { AvailableMaterialLotFields, FileContentTarget } from '@nerv-iip/business-core'
 export { describeMesReadinessReason, describeMesReadinessReasons } from '@nerv-iip/business-core'
 export type { MesReadinessReasonDisplay } from '@nerv-iip/business-core'
 import { useAuthStore } from '@/stores/auth'
@@ -2147,26 +2145,16 @@ export function useMesCurrentOperationSops() {
     }),
     enabled: enabled.value,
   }))
-  const downloadGrantMutation = useMutation(
-    createBusinessConsoleSopFileDownloadGrantMutationOptions(),
-  )
-
-  async function createSopFileDownloadGrant(
-    fileId: string,
-  ): Promise<BusinessConsoleSopFileDownloadGrantResponse | null> {
-    const envelope = await downloadGrantMutation.mutateAsync({
-      path: { fileId },
-      body: {
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
-      },
+  /**
+   * #3314：SOP 查看不再先取 download grant 再兑换。网关只暴露一条以 fileId 为入参的字节
+   * 路由，grant 在服务端签发并立即兑换——调用方拿不到 grant id，因此这里没有网络往返，
+   * 只是把当前业务范围拼成取字节的目标。
+   */
+  function sopFileDownloadTarget(fileId: string): FileContentTarget {
+    return sopFileContentTarget(fileId, {
+      organizationId: filters.organizationId,
+      environmentId: filters.environmentId,
     })
-    return (
-      unwrapData<
-        BusinessConsoleSopFileDownloadGrantResponse,
-        BusinessConsoleSopFileDownloadGrantEnvelope
-      >(envelope as BusinessConsoleSopFileDownloadGrantEnvelope) ?? null
-    )
   }
 
   return {
@@ -2181,7 +2169,7 @@ export function useMesCurrentOperationSops() {
     currentSopsPending: sopsQuery.isLoading,
     currentSopsState: businessReadState(sopsQuery, () => enabled.value),
     refreshCurrentSops: () => (enabled.value ? sopsQuery.refetch() : Promise.resolve()),
-    createSopFileDownloadGrant,
+    sopFileDownloadTarget,
   }
 }
 

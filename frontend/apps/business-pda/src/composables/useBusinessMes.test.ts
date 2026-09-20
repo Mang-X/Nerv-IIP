@@ -8,7 +8,6 @@ import {
   confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions,
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   createBusinessConsoleMesMaterialIssueRequestMutationOptions,
-  createBusinessConsoleSopFileDownloadGrantMutationOptions,
   getBusinessConsoleMesCurrentOperationSopsQueryOptions,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
   getBusinessConsoleMesWorkOrderDetail,
@@ -182,9 +181,6 @@ vi.mock('@nerv-iip/api-client', () => ({
   ),
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions: mockMutationOptions(
     'createBusinessConsoleMesFinishedGoodsReceiptRequest',
-  ),
-  createBusinessConsoleSopFileDownloadGrantMutationOptions: mockMutationOptions(
-    'createBusinessConsoleSopFileDownloadGrant',
   ),
 }))
 
@@ -1225,10 +1221,14 @@ describe('pda useBusinessMes composables', () => {
     expect(sops.currentSops.value[0]).toMatchObject({ fileId: 'file-10' })
   })
 
-  it('exposes a generated SDK mutation path for SOP file download grants', () => {
-    useMesCurrentOperationSops()
+  // #3314：SOP 查看不再取 download grant；字节路由以 fileId 为入参。
+  it('resolves the SOP byte route from the fileId without asking for a download grant', () => {
+    const sops = useMesCurrentOperationSops()
 
-    expect(createBusinessConsoleSopFileDownloadGrantMutationOptions).toHaveBeenCalled()
+    const target = sops.sopFileDownloadTarget('file-10')
+
+    expect(target.downloadUrl).toBe('/api/business-console/v1/files/sop-documents/file-10/content')
+    expect(target.downloadUrl).not.toContain('download-grants')
   })
 
   it('records a production report forwarding the caller-supplied idempotency key + business fields', async () => {

@@ -6,16 +6,15 @@ namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
 public interface IBusinessFileStorageClient
 {
-    Task<BusinessConsoleSopFileDownloadGrantResponse> CreateSopFileDownloadGrantAsync(
+    /// <summary>
+    /// 工程 SOP 文件下载的**唯一**授权入口：复核用途、签发 download grant、校验下游 URL 可代理，
+    /// 返回只在网关进程内流转的取字节凭据。调用方全程拿不到 downloadGrantId（#3314）。
+    /// </summary>
+    Task<BusinessFileDownloadTicket> AuthorizeSopFileDownloadAsync(
         string internalBearerToken,
         string fileId,
-        BusinessConsoleCreateSopFileDownloadGrantRequest request,
-        CancellationToken cancellationToken);
-
-    Task<BusinessConsoleSopFileContentResponse> DownloadSopFileContentAsync(
-        string internalBearerToken,
-        string downloadGrantId,
-        IReadOnlyDictionary<string, string> downloadHeaders,
+        string organizationId,
+        string environmentId,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleShiftHandoverAttachmentUploadSessionResponse> CreateShiftHandoverAttachmentUploadSessionAsync(
@@ -35,7 +34,7 @@ public interface IBusinessFileStorageClient
     /// 返回只在网关进程内流转的取字节凭据。用途复核只在本方法一处把关（#3096 审核 A1）；
     /// 这两发都是纯 JSON RPC，因此留在 JSON 面的弹性管线上（#3096 审核 Q2）。
     /// </summary>
-    Task<ShiftHandoverAttachmentDownloadTicket> AuthorizeShiftHandoverAttachmentDownloadAsync(
+    Task<BusinessFileDownloadTicket> AuthorizeShiftHandoverAttachmentDownloadAsync(
         string internalBearerToken,
         string fileId,
         string organizationId,
@@ -47,7 +46,7 @@ public interface IBusinessFileStorageClient
 /// 已通过用途复核并签发完成的取字节凭据。**不出网关进程**：它携带 FileStorage 内部路径，
 /// 既不是公开契约类型，也不进 OpenAPI。
 /// </summary>
-public sealed record ShiftHandoverAttachmentDownloadTicket(
+public sealed record BusinessFileDownloadTicket(
     string DownstreamUrl,
     IReadOnlyDictionary<string, string> TransferHeaders);
 
@@ -62,52 +61,20 @@ public sealed class HttpBusinessFileStorageClient(HttpClient httpClient)
     // 不声明的话，非 400 响应的 code 与 message 会双双落空（#3096 审核阻断 A）。
     protected override bool AcceptsBareDownstreamErrorPayload => true;
 
-    public async Task<BusinessConsoleSopFileDownloadGrantResponse> CreateSopFileDownloadGrantAsync(
+    public Task<BusinessFileDownloadTicket> AuthorizeSopFileDownloadAsync(
         string internalBearerToken,
         string fileId,
-        BusinessConsoleCreateSopFileDownloadGrantRequest request,
-        CancellationToken cancellationToken)
-    {
-        var grant = await SendAsync<DownloadGrantResponse>(
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken) =>
+        AuthorizeDownloadAsync(
             internalBearerToken,
-            HttpMethod.Post,
-            $"/api/files/v1/files/{Uri.EscapeDataString(fileId)}/download-grants",
-            new CreateDownloadGrantRequest(request.OrganizationId, request.EnvironmentId),
+            fileId,
+            organizationId,
+            environmentId,
+            EngineeringDocuments.FilePurpose,
+            "filestorage-file-not-engineering-document",
             cancellationToken);
-        return new BusinessConsoleSopFileDownloadGrantResponse(
-            grant.FileId,
-            grant.ExpiresAtUtc,
-            FileStorageRoutes.RewriteProxiedUrl(
-                grant.Download.Url,
-                FileStorageRoutes.DownstreamDownloadGrantPrefix,
-                FileStorageRoutes.ConsoleSopDownloadGrantPrefix),
-            grant.Download.Headers);
-    }
-
-    public async Task<BusinessConsoleSopFileContentResponse> DownloadSopFileContentAsync(
-        string internalBearerToken,
-        string downloadGrantId,
-        IReadOnlyDictionary<string, string> downloadHeaders,
-        CancellationToken cancellationToken)
-    {
-        using var message = new HttpRequestMessage(
-            HttpMethod.Get,
-            $"/api/files/v1/download-grants/{Uri.EscapeDataString(downloadGrantId)}/content");
-        message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalBearerToken);
-        FileStorageRoutes.CopyHeaders(downloadHeaders, message);
-
-        using var response = await SendRawAsync(message, HttpCompletionOption.ResponseContentRead, cancellationToken);
-        if (!response.IsSuccessStatusCode)
-        {
-            throw BusinessServiceProxyException.FromSafeDownstreamMessage(response.StatusCode, "filestorage-download-content-failed");
-        }
-
-        var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
-        return new BusinessConsoleSopFileContentResponse(
-            response.Content.Headers.ContentType?.ToString() ?? "application/octet-stream",
-            response.Content.Headers.ContentLength,
-            bytes);
-    }
 
     public async Task<BusinessConsoleShiftHandoverAttachmentUploadSessionResponse> CreateShiftHandoverAttachmentUploadSessionAsync(
         string internalBearerToken,
@@ -180,26 +147,50 @@ public sealed class HttpBusinessFileStorageClient(HttpClient httpClient)
             file.SizeBytes);
     }
 
-    public async Task<ShiftHandoverAttachmentDownloadTicket> AuthorizeShiftHandoverAttachmentDownloadAsync(
+    public Task<BusinessFileDownloadTicket> AuthorizeShiftHandoverAttachmentDownloadAsync(
         string internalBearerToken,
         string fileId,
         string organizationId,
         string environmentId,
+        CancellationToken cancellationToken) =>
+        AuthorizeDownloadAsync(
+            internalBearerToken,
+            fileId,
+            organizationId,
+            environmentId,
+            ShiftHandoverAttachments.FilePurpose,
+            "filestorage-file-not-shift-handover-attachment",
+            cancellationToken);
+
+    /// <summary>
+    /// 两个业务门面共用的下载授权序列。业务域读权限只授权读**本门面用途**的文件，而 FileStorage 的
+    /// download-grant 既不看用途、也不记签发门面，所以用途口径必须在这里收：否则持任一门面读权限的
+    /// 主体可以拿任意 fileId（例如另一门面的文件）换字节。
+    ///
+    /// 签发出来的 grant id **不出本进程**——它由 <see cref="IBusinessFileTransferClient.StreamFileContentAsync"/>
+    /// 就地兑换。#3314 实测过相反做法：把 id 交给调用方后，两条权限口径不同的网关路由可以互相兑换
+    /// 对方签发的 grant，三层没有一层拒绝。
+    /// </summary>
+    private async Task<BusinessFileDownloadTicket> AuthorizeDownloadAsync(
+        string internalBearerToken,
+        string fileId,
+        string organizationId,
+        string environmentId,
+        string requiredFilePurpose,
+        string purposeMismatchCode,
         CancellationToken cancellationToken)
     {
-        // business.mes.handovers.read 只授权读交接班照片。FileStorage 的 download-grant 不看用途，
-        // 所以用途口径必须在这里收：否则持交接班读权限的人可以拿任意 fileId（例如工程 SOP 文件）换字节。
         var metadata = await SendAsync<FileMetadataResponse>(
             internalBearerToken,
             HttpMethod.Get,
             $"/api/files/v1/files/{Uri.EscapeDataString(fileId)}",
             body: null,
             cancellationToken);
-        if (!string.Equals(metadata.FilePurpose, ShiftHandoverAttachments.FilePurpose, StringComparison.Ordinal))
+        if (!string.Equals(metadata.FilePurpose, requiredFilePurpose, StringComparison.Ordinal))
         {
             throw BusinessServiceProxyException.FromSafeDownstreamMessage(
                 HttpStatusCode.NotFound,
-                "filestorage-file-not-shift-handover-attachment");
+                purposeMismatchCode);
         }
 
         var grant = await SendAsync<DownloadGrantResponse>(
@@ -213,7 +204,7 @@ public sealed class HttpBusinessFileStorageClient(HttpClient httpClient)
             grant.Download.Url,
             FileStorageRoutes.DownstreamDownloadGrantPrefix);
 
-        return new ShiftHandoverAttachmentDownloadTicket(grant.Download.Url, grant.Download.Headers);
+        return new BusinessFileDownloadTicket(grant.Download.Url, grant.Download.Headers);
     }
 }
 
@@ -223,7 +214,6 @@ public static class FileStorageRoutes
     public const string DownstreamTusPrefix = "/api/files/v1/tus/";
     public const string DownstreamDownloadGrantPrefix = "/api/files/v1/download-grants/";
 
-    public const string ConsoleSopDownloadGrantPrefix = "/api/business-console/v1/files/download-grants/";
     public const string ConsoleShiftHandoverTusPrefix = "/api/business-console/v1/files/shift-handover-attachments/tus/";
 
     public static string RewriteProxiedUrl(string url, string downstreamPrefix, string consolePrefix)
@@ -261,6 +251,14 @@ public static class FileStorageRoutes
             }
         }
     }
+}
+
+/// <summary>
+/// 工程 SOP 文件门面的固定值：用途由 BusinessGateway 决定，不从请求体读取。
+/// </summary>
+public static class EngineeringDocuments
+{
+    public const string FilePurpose = "engineering-document";
 }
 
 /// <summary>
