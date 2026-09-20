@@ -96,7 +96,8 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
     /// <summary>
     /// 工单生命周期状态的**全集**：<see cref="TerminalStatuses"/> 与 <see cref="UnfinishedStatuses"/> 都以它为底集，
     /// 两者是它的一个划分。新增一个 <c>*Status</c> 常量必须同时登记进本数组，
-    /// 否则 <c>WorkOrderStatusDomainTests</c> 的反射完备性断言会红。
+    /// 否则 <c>ShiftHandoverUnfinishedWorkOrderStatusTests.Work_order_status_sets_partition_every_declared_status_constant</c>
+    /// 的反射完备性断言会红。
     /// 物料需求快照状态（<see cref="MaterialRequirementSnapshotCapturedStatus"/> 等）不是工单状态，不在本集合内。
     /// </summary>
     public static readonly ImmutableArray<string> AllStatuses =

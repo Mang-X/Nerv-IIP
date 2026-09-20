@@ -143,9 +143,9 @@ public sealed class MasterDataSeedServiceTests
     /// 「装配一线**早**班组」绑在「**白**班」上，屏上一行就同时写着两个班次词，
     /// 与本票要修的「操作工看到的字说了假话」是同一形状——而且这一次是改名**制造**出来的。</para>
     ///
-    /// <para>判据写成结构性的而不是逐个班组点名：班组名里**不得出现它自己那个班次以外的任何班次显示名**。
-    /// 这样将来再改任一侧的名字都会在这里显影，不用维护一张会漂的对照表。
-    /// 「CNC 精加工班组」这类不含班次词的名字天然不触发。</para>
+    /// <para>判据写成结构性的而不是逐个班组点名：班组名里**不得出现它自己那个班次以外的任何班次显示名**
+    /// （最长匹配优先，被更长命中遮蔽的子串不算独立出现）。这样将来再改任一侧的名字都会在这里显影，
+    /// 不用维护一张会漂的对照表。「CNC 精加工班组」这类不含班次词的名字天然不触发。</para>
     /// </summary>
     [Fact]
     public async Task Team_names_never_contradict_the_shift_they_are_bound_to()
@@ -167,12 +167,33 @@ public sealed class MasterDataSeedServiceTests
         Assert.NotEmpty(shiftNames);
         Assert.NotEmpty(teams);
 
-        var contradictions = (
-            from team in teams
-            from shift in shiftNames
-            where !string.Equals(shift.Code, team.ShiftCode, StringComparison.Ordinal)
-                && team.Name.Contains(shift.Name, StringComparison.Ordinal)
-            select $"{team.Code}「{team.Name}」绑定 {team.ShiftCode}，名字里却写着另一个班次「{shift.Name}」({shift.Code})")
+        var contradictions = teams
+            .SelectMany(team =>
+            {
+                // 命中 = 班组名里出现过的班次显示名。
+                var hits = shiftNames
+                    .Where(shift => team.Name.Contains(shift.Name, StringComparison.Ordinal))
+                    .ToArray();
+
+                // 子串遮蔽：若某个命中本身是另一个更长命中的真子串，那它这次「出现」是被更长的那个
+                // 带出来的，不是独立出现，不能据此判矛盾。design.md §5.3 的 NORMAL=常白班 与
+                // DAY=白班 正是这种嵌套——不做遮蔽的话，一个绑 NORMAL 的「…常白班组」会因为名字里
+                // 含子串「白班」被判成与 DAY 矛盾，那是**误报**。本轮有意不补 NORMAL，但引信就写在
+                // 文档里：下一个人照文档补种子就会撞上，所以先把它堵掉。
+                var shadowed = hits
+                    .Where(hit => hits.Any(longer =>
+                        longer.Name.Length > hit.Name.Length &&
+                        longer.Name.Contains(hit.Name, StringComparison.Ordinal)))
+                    .Select(hit => hit.Code)
+                    .ToHashSet(StringComparer.Ordinal);
+
+                return hits
+                    .Where(hit =>
+                        !shadowed.Contains(hit.Code) &&
+                        !string.Equals(hit.Code, team.ShiftCode, StringComparison.Ordinal))
+                    .Select(hit =>
+                        $"{team.Code}「{team.Name}」绑定 {team.ShiftCode}，名字里却写着另一个班次「{hit.Name}」({hit.Code})");
+            })
             .OrderBy(x => x, StringComparer.Ordinal)
             .ToArray();
 
