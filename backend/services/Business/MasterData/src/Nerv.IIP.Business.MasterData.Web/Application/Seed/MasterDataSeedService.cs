@@ -52,10 +52,15 @@ public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
         new("min", "s", 60m, 0)
     ];
 
+    // 显示名的权威是 docs/product/master-data/design.md §5.3「种子：组织/班次/日历」：
+    // DAY=白班(08:00-20:00)、NIGHT=夜班(20:00-08:00,跨天)。本数组曾写成「早班」「晚班」，
+    // 其中「早班」还与设定集种子的 EARLY(08:00-16:00) 撞名（#3473）。
+    // 已知偏离且有意不补：文档还列了 NORMAL=常白班(08:30-17:30)，本种子没有它。
+    // 那是「少一个班次」的缺失，不是「屏上看到错的东西」的矛盾，不在 #3473 范围内。
     private static readonly ShiftSeed[] Shifts =
     [
         new("DAY", "白班", new TimeOnly(8, 0), new TimeOnly(20, 0), 720),
-        new("NIGHT", "晚班", new TimeOnly(20, 0), new TimeOnly(8, 0), 720)
+        new("NIGHT", "夜班", new TimeOnly(20, 0), new TimeOnly(8, 0), 720)
     ];
 
     private static readonly DepartmentSeed[] Departments =
@@ -103,8 +108,8 @@ public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
 
     private static readonly TeamSeed[] Teams =
     [
-        new("TEAM-ASSY-A", "装配一线早班组", "DEPT-PROD", "DAY"),
-        new("TEAM-ASSY-B", "装配一线晚班组", "DEPT-PROD", "NIGHT")
+        new("TEAM-ASSY-A", "装配一线白班组", "DEPT-PROD", "DAY"),
+        new("TEAM-ASSY-B", "装配一线夜班组", "DEPT-PROD", "NIGHT")
     ];
 
     private static readonly TeamMemberSeed[] TeamMembers =

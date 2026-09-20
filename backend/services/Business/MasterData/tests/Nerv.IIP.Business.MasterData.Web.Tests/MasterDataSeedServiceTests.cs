@@ -20,12 +20,12 @@ public sealed class MasterDataSeedServiceTests
 
         await new MasterDataSeedService(db).SeedAsync("org-001", "env-dev");
 
-        // 显示名的权威是产品文档 docs/product/master-data/design.md §主数据对象「Shift」一行：
-        // DAY=白班(08:00-20:00)、NIGHT=夜班(20:00-08:00)。这两条断言钉的是「种子与该约定一致」，
-        // 不是「DAY 这个码天生叫什么」——#3473 之前它被写成「早班」，与设定集种子的 EARLY(08–16)
-        // 撞名，PDA 班次选择器里出现两条「早班」，操作工分不清选哪个。
+        // 显示名的权威是产品文档 docs/product/master-data/design.md §5.3：
+        // DAY=白班(08:00-20:00)、NIGHT=夜班(20:00-08:00,跨天)。这两条断言钉的是「种子与该约定一致」，
+        // 不是「DAY 这个码天生叫什么」——#3473 之前它们被写成「早班」「晚班」，其中「早班」还与
+        // 设定集种子的 EARLY(08–16) 撞名，PDA 班次选择器里出现两条「早班」，操作工分不清选哪个。
         Assert.Equal("白班", (await db.Shifts.SingleAsync(x => x.Code == "DAY")).Name);
-        Assert.Equal("晚班", (await db.Shifts.SingleAsync(x => x.Code == "NIGHT")).Name);
+        Assert.Equal("夜班", (await db.Shifts.SingleAsync(x => x.Code == "NIGHT")).Name);
         Assert.Equal("标准工作日历", (await db.WorkCalendars.SingleAsync(x => x.Code == "STANDARD")).Name);
         Assert.Equal("千克", (await db.UnitsOfMeasure.SingleAsync(x => x.Code == "kg")).Name);
         Assert.Equal(
@@ -61,7 +61,7 @@ public sealed class MasterDataSeedServiceTests
         Assert.Equal(6, await db.Skills.CountAsync());
 
         var team = await db.Teams.SingleAsync(x => x.Code == "TEAM-ASSY-A");
-        Assert.Equal("装配一线早班组", team.Name);
+        Assert.Equal("装配一线白班组", team.Name);
         Assert.Equal("DEPT-PROD", team.DepartmentCode);
         Assert.Equal("DAY", team.ShiftCode);
         Assert.Equal(3, await db.TeamMembers.CountAsync(x => x.TeamCode == "TEAM-ASSY-A"));
@@ -134,6 +134,49 @@ public sealed class MasterDataSeedServiceTests
             .OrderBy(x => x, StringComparer.Ordinal)
             .ToArray();
         Assert.Equal([], duplicated);
+    }
+
+    /// <summary>
+    /// 班组名不得与它绑定的班次自相矛盾。
+    ///
+    /// <para>这不是「读着别扭」：#3473 把 <c>DAY</c> 改名为「白班」之后，原封不动的班组名
+    /// 「装配一线**早**班组」绑在「**白**班」上，屏上一行就同时写着两个班次词，
+    /// 与本票要修的「操作工看到的字说了假话」是同一形状——而且这一次是改名**制造**出来的。</para>
+    ///
+    /// <para>判据写成结构性的而不是逐个班组点名：班组名里**不得出现它自己那个班次以外的任何班次显示名**。
+    /// 这样将来再改任一侧的名字都会在这里显影，不用维护一张会漂的对照表。
+    /// 「CNC 精加工班组」这类不含班次词的名字天然不触发。</para>
+    /// </summary>
+    [Fact]
+    public async Task Team_names_never_contradict_the_shift_they_are_bound_to()
+    {
+        await using var db = CreateDbContext();
+
+        await new MasterDataSeedService(db).SeedAsync("org-001", "env-dev");
+        await new WorldBibleSeedService(db).SeedAsync("org-001", "env-dev");
+
+        var shiftNames = await db.Shifts
+            .Where(x => x.OrganizationId == "org-001" && x.EnvironmentId == "env-dev")
+            .Select(x => new { x.Code, x.Name })
+            .ToArrayAsync();
+        var teams = await db.Teams
+            .Where(x => x.OrganizationId == "org-001" && x.EnvironmentId == "env-dev")
+            .Select(x => new { x.Code, x.Name, x.ShiftCode })
+            .ToArrayAsync();
+
+        Assert.NotEmpty(shiftNames);
+        Assert.NotEmpty(teams);
+
+        var contradictions = (
+            from team in teams
+            from shift in shiftNames
+            where !string.Equals(shift.Code, team.ShiftCode, StringComparison.Ordinal)
+                && team.Name.Contains(shift.Name, StringComparison.Ordinal)
+            select $"{team.Code}「{team.Name}」绑定 {team.ShiftCode}，名字里却写着另一个班次「{shift.Name}」({shift.Code})")
+            .OrderBy(x => x, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal([], contradictions);
     }
 
     private static ApplicationDbContext CreateDbContext()
