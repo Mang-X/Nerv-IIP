@@ -65,6 +65,7 @@ if (usePostgreSql)
         options.UseConfiguredTransport(builder.Configuration, builder.Environment.EnvironmentName);
         options.UseIntegrationEventDeadLetterOnFailedThreshold();
     });
+    builder.Services.AddNervIipCanonicalTopicSubscriptions(builder.Environment.EnvironmentName);
 }
 else
 {
@@ -133,6 +134,7 @@ builder.Services.AddScoped<ApprovalRejectedIntegrationEventHandlerForNotificatio
 builder.Services.AddScoped<ScheduleConflictDetectedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<SchedulePlanInvalidatedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<WorkOrderEngineeringChangeImpactDetectedIntegrationEventHandlerForNotification>();
+builder.Services.AddScoped<AndonCallEscalatedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<AlarmRaisedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<AlarmClearedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<AlarmEscalatedIntegrationEventHandlerForNotification>();
