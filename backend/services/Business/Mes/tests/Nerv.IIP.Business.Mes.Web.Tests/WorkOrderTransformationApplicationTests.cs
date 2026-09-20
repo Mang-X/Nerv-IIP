@@ -1,7 +1,10 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
+using Nerv.IIP.Business.Mes.Web.Application.Behaviors;
 using Nerv.IIP.Business.Mes.Web.Application.Errors;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
 
@@ -9,6 +12,30 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class WorkOrderTransformationApplicationTests
 {
+    // #3469 narrow pipeline contract only: the real provider race is covered separately.
+    [Fact]
+    public async Task Reversal_version_conflict_is_bounded_and_becomes_a_lifecycle_conflict()
+    {
+        await using var db = CreateContext();
+        var behavior = new WorkOrderConcurrencyRetryBehavior<ReverseProductionReportCommand, ReverseProductionReportCommandResult>(db);
+        var command = new ReverseProductionReportCommand("org-001", "env-dev", "PR-001", "更正报工",
+            DateTimeOffset.UnixEpoch, "operator-001", "reverse-conflict");
+        var attempts = 0;
+        var exception = await Assert.ThrowsAsync<MesLifecycleConflictException>(() => behavior.Handle(command, _ =>
+        {
+            Assert.Empty(db.ChangeTracker.Entries());
+            attempts++;
+            var order = WorkOrder.Create("org-001", "env-dev", "WO-001", "SKU-001", "PV-001",
+                10m, 1, DateTimeOffset.UnixEpoch.AddDays(1));
+            var entry = db.WorkOrders.Attach(order);
+            throw new WorkOrderVersionConflict(entry);
+        }, CancellationToken.None));
+        Assert.Equal(3, attempts);
+        Assert.Equal("concurrent-update", exception.CurrentStatus);
+        Assert.DoesNotContain("provider-private-diagnostics", exception.Message);
+        Assert.Empty(db.ChangeTracker.Entries());
+    }
+
     [Fact]
     public async Task Split_persists_lineage_and_replays_the_same_idempotency_key()
     {
@@ -116,6 +143,12 @@ public sealed class WorkOrderTransformationApplicationTests
         Assert.Equal("work-order-transformation", exception.Action);
         Assert.Equal("invalid-split", exception.CurrentStatus);
         Assert.Equal(0, await db.WorkOrderTransformations.CountAsync());
+    }
+
+    private sealed class WorkOrderVersionConflict(EntityEntry entry)
+        : DbUpdateConcurrencyException("provider-private-diagnostics")
+    {
+        public override IReadOnlyList<EntityEntry> Entries => [entry];
     }
 
     private static ApplicationDbContext CreateContext()

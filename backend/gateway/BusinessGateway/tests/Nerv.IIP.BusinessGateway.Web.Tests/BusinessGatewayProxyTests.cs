@@ -5668,17 +5668,21 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("QUALITY_PLAN_MISSING", document.RootElement.GetProperty("message").GetString());
     }
 
-    [Fact]
-    public async Task Mes_lifecycle_conflict_preserves_status_and_safe_code()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Mes_lifecycle_conflict_preserves_status_and_safe_code(bool reversal)
     {
         var mes = new RecordingMesClient
         {
             ReleaseFailure = BusinessServiceProxyException.FromSafeDownstreamMessage(
                 HttpStatusCode.Conflict,
                 "lifecycle-conflict"),
+            ReverseProductionReportFailure = BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.Conflict, "lifecycle-conflict"),
         };
         await using var lease = LeaseHost(
-            AllowedOrganizationScope(BusinessGatewayPermissions.MesWorkOrdersManage),
+            AllowedOrganizationScope(reversal ? BusinessGatewayPermissions.MesReportingWrite : BusinessGatewayPermissions.MesWorkOrdersManage),
             services =>
         {
             services.RemoveAll<IBusinessMesClient>();
@@ -5692,8 +5696,10 @@ public sealed class BusinessGatewayProxyTests
         BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.PostAsJsonAsync(
-            "/api/business-console/v1/mes/work-orders/WO-001/release?organizationId=org-001&environmentId=env-dev",
-            new { confirmWarnings = false, idempotencyKey = "release-conflict-001" });
+            reversal
+                ? "/api/business-console/v1/mes/production-reports/PR-001/reverse?organizationId=org-001&environmentId=env-dev"
+                : "/api/business-console/v1/mes/work-orders/WO-001/release?organizationId=org-001&environmentId=env-dev",
+            new { confirmWarnings = false, idempotencyKey = "release-conflict-001", reason = "更正报工" });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -20460,6 +20466,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
     public Exception? ProductionPlanReadinessFailure { get; init; }
 
     public Exception? ReleaseFailure { get; init; }
+    public Exception? ReverseProductionReportFailure { get; init; }
 
     public Exception? StartOperationFailure { get; init; }
 
@@ -20804,6 +20811,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
     {
         LastInternalToken = internalBearerToken;
         ReverseProductionReportCallCount++;
+        if (ReverseProductionReportFailure is not null) throw ReverseProductionReportFailure;
         LastReverseProductionReportRequest = request;
         LastReverseProductionReportActor = actor;
         return Task.FromResult(new BusinessConsoleMesReverseProductionReportResponse("PR-REV-001", reportNo, "PR-ORIG-001"));

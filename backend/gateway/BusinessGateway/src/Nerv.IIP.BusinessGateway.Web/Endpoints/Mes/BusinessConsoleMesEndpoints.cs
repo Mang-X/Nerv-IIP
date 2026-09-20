@@ -814,6 +814,7 @@ public sealed class GetBusinessConsoleMesQualityHoldTimelineEndpoint(
 [Tags("Business Console MES")]
 [HttpPost("/api/business-console/v1/mes/production-reports/{reportNo}/reverse")]
 [BusinessGatewayOperationId("reverseBusinessConsoleMesProductionReport")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
 public sealed class ReverseBusinessConsoleMesProductionReportEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
