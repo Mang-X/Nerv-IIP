@@ -86,35 +86,7 @@ export async function runFinishedProduction(options: {
           }
           return result
         }
-        facts.beforeReleaseInventory = await balances()
-        const readiness = () =>
-          call<Api.BusinessConsoleMesMaterialReadinessResponse>(
-            'GET',
-            query(`${mes}/work-orders/${workOrderId}/material-readiness`, workScope),
-          )
-        facts.beforeReleaseReadiness = await readiness()
-        facts.release = await call(
-          'POST',
-          query(`${mes}/work-orders/${workOrderId}/release`, workScope),
-          {},
-        )
-        const released = await detail()
-        expect(released.status?.toLowerCase()).toBe('released')
-        facts.releasedWorkOrder = released
-        facts.afterReleaseInventory = await balances()
-        const materialReadiness = await readiness()
-        facts.afterReleaseReadiness = materialReadiness
-        expect(materialReadiness.items).toHaveLength(requirements.length)
-        for (const line of requirements) {
-          expect(
-            materialReadiness.items!.filter((item) => item.materialId === line.skuCode),
-          ).toEqual([
-            expect.objectContaining({
-              requiredQuantity: calculateRequiredQuantity(line, frozen.quantity!),
-              shortageQuantity: 0,
-            }),
-          ])
-        }
+        facts.warehouseInventory = await balances()
 
         const issues: Row[] = []
         facts.materialIssues = issues
@@ -162,6 +134,35 @@ export async function runFinishedProduction(options: {
             uomCode: line.unitOfMeasureCode,
             materialIssueRequestNo: issueNo,
           })
+        }
+        facts.beforeReleaseInventory = await balances()
+        const readiness = () =>
+          call<Api.BusinessConsoleMesMaterialReadinessResponse>(
+            'GET',
+            query(`${mes}/work-orders/${workOrderId}/material-readiness`, workScope),
+          )
+        facts.beforeReleaseReadiness = await readiness()
+        facts.release = await call(
+          'POST',
+          query(`${mes}/work-orders/${workOrderId}/release`, workScope),
+          {},
+        )
+        const released = await detail()
+        expect(released.status?.toLowerCase()).toBe('released')
+        facts.releasedWorkOrder = released
+        facts.afterReleaseInventory = await balances()
+        const materialReadiness = await readiness()
+        facts.afterReleaseReadiness = materialReadiness
+        expect(materialReadiness.items).toHaveLength(requirements.length)
+        for (const line of requirements) {
+          expect(
+            materialReadiness.items!.filter((item) => item.materialId === line.skuCode),
+          ).toEqual([
+            expect.objectContaining({
+              requiredQuantity: calculateRequiredQuantity(line, frozen.quantity!),
+              shortageQuantity: 0,
+            }),
+          ])
         }
         const tasks = [...released.operationTasks!].sort(
           (a, b) => a.operationSequence! - b.operationSequence!,

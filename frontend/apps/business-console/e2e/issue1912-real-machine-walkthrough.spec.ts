@@ -713,12 +713,6 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     predicate: (row: JsonRecord) => boolean,
     timeoutMs = 90_000,
   ) => pollRowsFor(workerRuntime, path, query, predicate, timeoutMs)
-  const pollData = (
-    path: string,
-    query: JsonRecord,
-    predicate: (data: JsonRecord) => boolean,
-    timeoutMs = 90_000,
-  ) => pollDataFor(adminRuntime, path, query, predicate, timeoutMs)
   const workerPollData = (
     path: string,
     query: JsonRecord,
