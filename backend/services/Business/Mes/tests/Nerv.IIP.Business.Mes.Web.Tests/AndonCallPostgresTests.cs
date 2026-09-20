@@ -231,8 +231,8 @@ public sealed class AndonCallPostgresTests
         await connection.OpenAsync();
         await using var trigger = connection.CreateCommand();
         trigger.CommandText = """
-            CREATE FUNCTION cap.reject_andon_outbox() RETURNS trigger LANGUAGE plpgsql AS $
-            BEGIN RAISE EXCEPTION 'injected andon outbox failure'; END; $;
+            CREATE FUNCTION cap.reject_andon_outbox() RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN RAISE EXCEPTION 'injected andon outbox failure'; END; $$;
             CREATE TRIGGER reject_andon_outbox BEFORE INSERT ON cap.published
             FOR EACH ROW EXECUTE FUNCTION cap.reject_andon_outbox();
             """;
