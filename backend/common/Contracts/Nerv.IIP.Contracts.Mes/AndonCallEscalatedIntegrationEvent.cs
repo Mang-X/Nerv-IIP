@@ -10,8 +10,13 @@ public sealed record AndonCallEscalatedIntegrationEvent(
 {
     public const string Type = "mes.AndonCallEscalated";
     public const int Version = 1;
+    public const string TopicTemplate =
+        "nerv-iip.{deployment-profile}.business-mes.mes.andon-call-escalated.v1";
     public static string Topic(string deploymentEnvironment) =>
-        $"nerv-iip.{deploymentEnvironment.ToLowerInvariant()}.business-mes.mes.andon-call-escalated.v1";
+        TopicTemplate.Replace(
+            "{deployment-profile}",
+            deploymentEnvironment.ToLowerInvariant(),
+            StringComparison.Ordinal);
 
     object? IIntegrationEventEnvelope.PayloadObject => Payload;
 }

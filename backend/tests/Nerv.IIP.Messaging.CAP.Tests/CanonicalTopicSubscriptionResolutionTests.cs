@@ -55,6 +55,7 @@ public sealed class CanonicalTopicSubscriptionResolutionTests
             AssetUnavailableIntegrationEventTopics.V2Template,
             MesActualTimeIntegrationEventTopics.SettledV2Template,
             MesActualTimeIntegrationEventTopics.VoidedV2Template,
+            AndonCallEscalatedIntegrationEvent.TopicTemplate,
             AssetUnavailableIntegrationEventTopics.V1LegacyAlias,
             MesActualTimeIntegrationEventTopics.SettledV1LegacyAlias,
             MesActualTimeIntegrationEventTopics.VoidedV1LegacyAlias,
