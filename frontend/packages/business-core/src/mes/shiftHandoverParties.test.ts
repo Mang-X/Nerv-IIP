@@ -83,6 +83,45 @@ describe('shiftHandoverParties', () => {
     for (const label of labels) expect(label).not.toContain('user-admin')
   })
 
+  /**
+   * 状态层穷举（`*PartyState`）。调用方按状态分支，不重新推导规则，所以四个状态本身要各有一格。
+   *
+   * 这一格是从 `business-pda` 的 `useBusinessShiftHandover.test.ts` **搬过来**的：四态判据
+   * 现在只住在本模块，覆盖也要跟着落在这里，不能两边各留一份（#3644 Q-B3）。
+   */
+  it('exposes all four states so callers branch instead of re-deriving the rule', () => {
+    expect(outgoingPartyState({ outgoingUserId: 'u', outgoingUserName: '张三' })).toBe('named')
+    expect(outgoingPartyState({ outgoingUserId: 'u', outgoingUserName: null })).toBe(
+      'name-unresolved',
+    )
+    expect(outgoingPartyState({ outgoingUserId: null, outgoingUserName: null })).toBe('absent')
+
+    expect(
+      incomingPartyState({
+        incomingUserId: 'u',
+        incomingUserName: '李四',
+        acceptedAtUtc: '2026-09-14T01:00:00Z',
+      }),
+    ).toBe('named')
+    expect(
+      incomingPartyState({
+        incomingUserId: 'u',
+        incomingUserName: null,
+        acceptedAtUtc: '2026-09-14T01:00:00Z',
+      }),
+    ).toBe('name-unresolved')
+    expect(
+      incomingPartyState({
+        incomingUserId: null,
+        incomingUserName: null,
+        acceptedAtUtc: '2026-09-14T01:00:00Z',
+      }),
+    ).toBe('absent')
+    expect(
+      incomingPartyState({ incomingUserId: null, incomingUserName: null, acceptedAtUtc: null }),
+    ).toBe('pending')
+  })
+
   it('trims the resolved name and treats whitespace-only names as unresolved', () => {
     expect(outgoingUserLabel({ outgoingUserId: 'user-a', outgoingUserName: '  张三  ' })).toBe(
       '张三',
