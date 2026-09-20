@@ -1,4 +1,5 @@
 import {
+  isForbiddenRequestError,
   listBusinessConsoleQualityInspectionTasksQueryOptions,
   listBusinessConsoleWmsCountExecutionsQueryOptions,
   listBusinessConsoleWmsInboundOrdersQueryOptions,
@@ -118,12 +119,6 @@ export interface WarehouseSummaryEntry {
   state: WarehouseSummaryEntryState
 }
 
-function isForbidden(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false
-  const value = error as { status?: unknown; response?: { status?: unknown } }
-  return value.status === 403 || value.response?.status === 403
-}
-
 interface CountQueryFace {
   data: { value: { success?: boolean; data?: { total?: number } | null } | undefined }
   error: { value: unknown }
@@ -133,7 +128,7 @@ interface CountQueryFace {
 /** 一格计数的读数 + 状态。403 与「真的是 0」在这里就分开，不留给呈现层去猜。 */
 function readCount(query: CountQueryFace): Pick<WarehouseSummaryEntry, 'count' | 'state'> {
   if (query.error.value) {
-    return { count: null, state: isForbidden(query.error.value) ? 'denied' : 'failed' }
+    return { count: null, state: isForbiddenRequestError(query.error.value) ? 'denied' : 'failed' }
   }
   const envelope = query.data.value
   if (envelope?.success) return { count: envelope.data?.total ?? 0, state: 'counted' }

@@ -67,27 +67,33 @@ const identitySubtitle = computed(() => {
 /**
  * 仓储计数取不到时格子里写什么。**绝不回落成 `0`**：`0` 断言的是「一件都没有」，
  * 而这几种情形断言的是「这个人/这一刻看不到数」，现场据此导出的行动完全不同（#3474）。
+ *
+ * 用词跟 PDA 既有**可见**口径走，不用开发口径：读不到一律说「加载失败」（同文件
+ * `待检任务加载失败，请重试。`、`TaskListShell` 的 `任务加载失败，请重试。`）。
+ * 「取数」在 PDA 只出现在注释里，从来没上过屏。
  */
 const WAREHOUSE_STATE_TEXT: Record<WarehouseSummaryEntryState, string> = {
   counted: '',
   loading: '…',
   denied: '无范围',
-  failed: '取数失败',
+  failed: '加载失败',
 }
 
 /**
  * 板块级说明。全被拒时说清「不是 0」；只有部分格被拒时不能把整块说死，否则又会
  * 谎报另一个方向（真读到的那几格是真的）。
+ *
+ * 三句都要带**下一步动作**：只说「这不是 0」是在向用户解释缺陷，操作工据此做不了任何事。
  */
 const warehouseScopeNote = computed(() => {
   if (warehouse.scopeDenied.value) {
     return '当前账号没有仓储数据范围，看不到任何仓储单据——这不是「0 件」。请联系管理员分配仓库范围。'
   }
   if (warehouse.hasDeniedEntry.value) {
-    return '标「无范围」的项目未授予当前账号的仓储数据范围，其计数不可知，不是 0。'
+    return '标「无范围」的项目没有分配给当前账号，其数量不可知，不是 0。需要这几项请联系管理员分配仓库范围。'
   }
   if (warehouse.hasFailedEntry.value) {
-    return '标「取数失败」的项目本次没读到，计数不可知，不是 0。下拉或稍后重试。'
+    return '标「加载失败」的项目本次没读到，数量不可知，不是 0。请下拉刷新或稍后重试。'
   }
   return ''
 })
@@ -225,11 +231,15 @@ function openRoute(route: string) {
             <span
               v-if="entry.state === 'counted'"
               class="text-lg font-semibold tabular-nums text-foreground"
+              :data-testid="`home-warehouse-${entry.key}-value`"
               >{{ entry.count }}</span
             >
-            <span v-else class="text-xs font-medium text-muted-foreground">{{
-              WAREHOUSE_STATE_TEXT[entry.state]
-            }}</span>
+            <span
+              v-else
+              class="text-xs font-medium text-muted-foreground"
+              :data-testid="`home-warehouse-${entry.key}-value`"
+              >{{ WAREHOUSE_STATE_TEXT[entry.state] }}</span
+            >
             <span class="text-xs text-muted-foreground">{{ entry.label }}</span>
           </button>
         </div>

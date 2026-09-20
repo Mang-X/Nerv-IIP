@@ -36,7 +36,12 @@ function queryOptions(id: string) {
   }))
 }
 
-vi.mock('@nerv-iip/api-client', () => ({
+// `isForbiddenRequestError` 用**真身**而不是桩：这组用例要检验的恰恰是「403 能不能被认出来」，
+// 把谓词换成桩等于把被测判据一起换掉。这里不能用 `importOriginal()`——它会拉起整个 generated
+// 图（`@pinia/colada.gen`），与本文件对 `@pinia/colada` 的窄 mock 冲突；canonical 那个模块自身
+// 零依赖，直接深引即可。
+vi.mock('@nerv-iip/api-client', async () => ({
+  ...(await import('../../../../packages/api-client/src/transport/request-error-status')),
   listBusinessConsoleMesDispatchTasksQueryOptions: queryOptions('dispatch'),
   listBusinessConsoleQualityInspectionTasksQueryOptions: queryOptions('inspection'),
   listBusinessConsoleWmsCountExecutionsQueryOptions: queryOptions('count'),

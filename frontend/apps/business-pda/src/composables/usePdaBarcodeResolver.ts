@@ -1,4 +1,5 @@
 import {
+  isForbiddenRequestError,
   resolveBusinessConsoleBarcode,
   searchBusinessConsoleObjects,
   type BusinessConsoleBarcodeResolveCandidate,
@@ -31,12 +32,6 @@ interface BarcodeResolverOptions {
     request: BusinessConsoleBarcodeResolveRequest,
   ) => Promise<BusinessConsoleBarcodeResolveEnvelope>
   searchCandidates?: (query: string) => Promise<BusinessConsoleSearchEnvelope>
-}
-
-export function isForbiddenRequestError(error: unknown) {
-  if (!error || typeof error !== 'object') return false
-  const value = error as { status?: number; response?: { status?: number } }
-  return value.status === 403 || value.response?.status === 403
 }
 
 async function defaultResolveBarcode(request: BusinessConsoleBarcodeResolveRequest) {
