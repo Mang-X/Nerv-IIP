@@ -356,6 +356,12 @@
       "sourceReasonPattern": "^Skip = GetSkipReason\\(Environment\\.GetEnvironmentVariable\\(\"NERV_IIP_TEST_POSTGRES\"\\)\\);$"
     },
     {
+      "id": "notification-andon-cap-postgres",
+      "sourcePath": "backend/services/Notification/tests/Nerv.IIP.Notification.Web.Tests/NotificationCapOutboxAcceptanceTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the MES Andon PostgreSQL \\+ CAP notification proof\\.\";$"
+    },
+    {
       "id": "notification-envelope-field-budget-postgres",
       "sourcePath": "backend/services/Notification/tests/Nerv.IIP.Notification.Web.Tests/NotificationEnvelopeFieldBudgetPostgresTests.cs",
       "sourceOrdinal": 1,
@@ -1431,9 +1437,14 @@
         "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Stale_concurrent_claims_commit_exactly_one_responder_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Service_api_preserves_four_category_lifecycles_and_intent_receipts_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Concurrent_api_intents_converge_and_claim_loser_receives_conflict_on_postgres",
-        "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Api_rejects_wrong_source_scope_and_actor_and_filters_queue_before_total_on_postgres"
+        "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Api_rejects_wrong_source_scope_and_actor_and_filters_queue_before_total_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Escalation_uses_scoped_policy_at_deadline_and_survives_restart_once_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Missing_policy_and_responded_calls_never_escalate_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Claim_and_close_committed_during_scan_prevent_escalation_and_outbox_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Concurrent_scans_commit_one_intent_and_outbox_failure_rolls_back_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Configured_host_escalates_on_controlled_background_tick_on_postgres"
       ],
-      "expectedRuntimeTestCount": 6
+      "expectedRuntimeTestCount": 11
     },
     {
       "id": "mes-production-candidate",
@@ -1758,6 +1769,25 @@
       "exitCondition": null,
       "testIdentities": [
         "Nerv.IIP.Business.Performance.Tests.SchedulingScaleBenchmarkTests.SchedulingScale_APS_Lite_100_500_1000_outputs_repeatable_PostgreSQL_evidence"
+      ],
+      "expectedRuntimeTestCount": 1
+    },
+    {
+      "id": "notification-andon-cap-postgres",
+      "sourceId": "notification-andon-cap-postgres",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Notification\\.Web\\.Tests\\.NotificationCapOutboxAcceptanceTests\\.PostgreSQL_cap_outbox_delivers_duplicate_andon_escalation_once_to_the_explicit_recipient$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the MES Andon PostgreSQL \\+ CAP notification proof\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Notification.Web.Tests.NotificationCapOutboxAcceptanceTests.PostgreSQL_cap_outbox_delivers_duplicate_andon_escalation_once_to_the_explicit_recipient"
       ],
       "expectedRuntimeTestCount": 1
     },

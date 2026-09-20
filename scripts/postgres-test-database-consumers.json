@@ -272,12 +272,12 @@
     },
     {
       "sourcePath": "backend/services/Notification/tests/Nerv.IIP.Notification.Web.Tests/NotificationCapOutboxAcceptanceTests.cs",
-      "sourceSha256": "a55111757bb20ca1e66887ba5a1e612f6f48abb35b4ce5148874d5ccb9866f14",
-      "factoryCallCount": 3,
+      "sourceSha256": "51a7b44c42ead1ed3d3c0250a6b7539fb1e60b70ea37df89878e7a298902a69c",
+      "factoryCallCount": 4,
       "ownerships": [
         {
           "strategy": "best-effort-dispose",
-          "factoryCallCount": 3,
+          "factoryCallCount": 4,
           "reason": "Ordinary Notification CAP acceptance tests use the shared helper lifecycle and do not claim explicit DROP-failure evidence."
         }
       ]

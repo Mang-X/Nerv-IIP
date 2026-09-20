@@ -299,14 +299,19 @@
       "project": "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/Nerv.IIP.Business.Mes.Web.Tests.csproj",
       "filter": "FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests",
       "databasePrefix": "nerv_iip_mes_andon",
-      "diagnosticSchemas": ["mes"],
+      "diagnosticSchemas": ["mes", "cap"],
       "expectedTestIdentities": [
         "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Migration_persists_complete_facts_and_replay_keeps_original_times_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Raise_intent_is_unique_within_scope_and_does_not_cross_tenants_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Stale_concurrent_claims_commit_exactly_one_responder_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Service_api_preserves_four_category_lifecycles_and_intent_receipts_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Concurrent_api_intents_converge_and_claim_loser_receives_conflict_on_postgres",
-        "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Api_rejects_wrong_source_scope_and_actor_and_filters_queue_before_total_on_postgres"
+        "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Api_rejects_wrong_source_scope_and_actor_and_filters_queue_before_total_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Escalation_uses_scoped_policy_at_deadline_and_survives_restart_once_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Missing_policy_and_responded_calls_never_escalate_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Claim_and_close_committed_during_scan_prevent_escalation_and_outbox_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Concurrent_scans_commit_one_intent_and_outbox_failure_rolls_back_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Configured_host_escalates_on_controlled_background_tick_on_postgres"
       ]
     },
     {
@@ -631,6 +636,23 @@
       ],
       "expectedTestIdentities": [
         "Nerv.IIP.Business.Inventory.Web.Tests.InventoryDirectoryPostgresTests.PostgreSql_fixture_allocates_parallel_run_scoped_ports_and_cleans_each_run"
+      ]
+    },
+    {
+      "id": "notification-andon-cap-postgres",
+      "service": "Notification",
+      "tier": "core",
+      "status": "active",
+      "databaseOwnership": "test-owned",
+      "project": "backend/services/Notification/tests/Nerv.IIP.Notification.Web.Tests/Nerv.IIP.Notification.Web.Tests.csproj",
+      "filter": "FullyQualifiedName~Nerv.IIP.Notification.Web.Tests.NotificationCapOutboxAcceptanceTests.PostgreSQL_cap_outbox_delivers_duplicate_andon_escalation_once_to_the_explicit_recipient",
+      "databasePrefix": "nerv_notification_andon_cap",
+      "diagnosticSchemas": [
+        "notification",
+        "cap"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Notification.Web.Tests.NotificationCapOutboxAcceptanceTests.PostgreSQL_cap_outbox_delivers_duplicate_andon_escalation_once_to_the_explicit_recipient"
       ]
     },
     {

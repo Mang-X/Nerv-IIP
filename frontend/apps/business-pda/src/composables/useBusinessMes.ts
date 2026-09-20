@@ -1287,6 +1287,7 @@ export function useMesOperationTasks() {
     pending: operationTasksQuery.isLoading,
     error: operationTasksQuery.error,
     operationListScope: operationListScope.selectedScope,
+    operationActionScope: operationScope.selectedScope,
     operationListContextIdentity,
     operationActionContextIdentity,
     operationListScopeMessage: operationListScope.scopeMessage,

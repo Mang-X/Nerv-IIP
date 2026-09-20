@@ -44,6 +44,9 @@ public sealed class CapSubscribeTopicConventionTests
         Assert.True(IsAllowedSubscriptionTopic(
             typeof(MesOperationActualTimeSettledV2IntegrationEvent),
             MesActualTimeIntegrationEventTopics.SettledV2Template));
+        Assert.True(IsAllowedSubscriptionTopic(
+            typeof(AndonCallEscalatedIntegrationEvent),
+            AndonCallEscalatedIntegrationEvent.TopicTemplate));
         Assert.False(IsAllowedSubscriptionTopic(
             typeof(AssetUnavailableV2IntegrationEvent),
             "nerv-iip.{deployment-profile}.business-maintenance.maintenance.asset-unavailable.v3"));
@@ -115,7 +118,10 @@ public sealed class CapSubscribeTopicConventionTests
 
     private static string? CanonicalSubscriptionTemplate(Type integrationEventType) =>
         AssetUnavailableIntegrationEventTopics.CanonicalSubscriptionTemplate(integrationEventType)
-        ?? MesActualTimeIntegrationEventTopics.CanonicalSubscriptionTemplate(integrationEventType);
+        ?? MesActualTimeIntegrationEventTopics.CanonicalSubscriptionTemplate(integrationEventType)
+        ?? (integrationEventType == typeof(AndonCallEscalatedIntegrationEvent)
+            ? AndonCallEscalatedIntegrationEvent.TopicTemplate
+            : null);
 
     private static bool ImplementsCapSubscribe(Type type) =>
         type.GetInterfaces().Any(i => string.Equals(i.Name, "ICapSubscribe", StringComparison.Ordinal));

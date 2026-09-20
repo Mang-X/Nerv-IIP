@@ -44,6 +44,8 @@ import {
 } from './components/operationPresentation'
 import type { MesScanAccepted } from '@/composables/mes/useMesScanPrevalidation'
 import { useMesScanGate } from '@/composables/mes/useMesScanGate'
+import { useMesAndonCall, type AndonOperationContext } from '@/composables/mes/useMesAndonCall'
+import MesAndonCallPanel from './components/MesAndonCallPanel.vue'
 
 definePage({
   meta: {
@@ -73,6 +75,7 @@ const {
   claimTask,
   actionPending,
   operationListScope,
+  operationActionScope,
   operationListContextIdentity,
   operationActionContextIdentity,
   operationListScopeMessage,
@@ -196,7 +199,6 @@ const operationKey = ref('')
 const operationContext = shallowRef<OperationActionContext | null>(null)
 const operationResultUnknown = ref(false)
 const operationResultContextConflict = shallowRef<'identity' | 'route' | null>(null)
-usePendingWriteLeaveGuard(operationResultUnknown)
 
 // --- BottomSheet 状态 ---
 const selected = ref<Task | null>(null)
@@ -232,6 +234,45 @@ const canClaimSelectedTask = computed(() => {
 const scanActive = computed(() => selected.value === null && result.value === null)
 const scanGate = useMesScanGate()
 const scanGuarded = scanGate.guarded
+const andonScopeMessage = computed(() => {
+  if (!operationScopeReady.value) return operationScopeMessage.value
+  const read = operationListScope.value
+  const write = operationActionScope.value
+  if (!read || !write || read.kind !== write.kind || read.id !== write.id)
+    return '呼叫授权范围与当前列表不一致，请重新选择作业范围。'
+  if (
+    !selected.value?.workOrderId ||
+    !selected.value.operationTaskId ||
+    !selected.value.workCenterId
+  )
+    return '工序来源尚未就绪，请刷新后重试。'
+  if (scanGuarded.value) return '请先完成当前扫码核验。'
+  return ''
+})
+const andonContext = computed<AndonOperationContext | null>(() => {
+  const task = selected.value
+  const scope = operationActionScope.value
+  if (
+    andonScopeMessage.value ||
+    !task?.workOrderId ||
+    !task.operationTaskId ||
+    !task.workCenterId ||
+    !scope
+  )
+    return null
+  return {
+    identity: operationPageIdentity.value,
+    organizationId: filters.organizationId,
+    environmentId: filters.environmentId,
+    scopeKind: scope.kind,
+    scopeId: scope.id,
+    workOrderId: task.workOrderId,
+    operationTaskId: task.operationTaskId,
+    workCenterId: task.workCenterId,
+  }
+})
+const andon = reactive(useMesAndonCall(andonContext))
+usePendingWriteLeaveGuard(() => operationResultUnknown.value || andon.unresolved)
 const actionOrScanPending = computed(() => actionPending.value || scanGuarded.value)
 const validatedDeviceAssetId = ref('')
 const validatedPersonnelId = ref('')
@@ -730,6 +771,20 @@ async function onScanAccepted(value: MesScanAccepted) {
       @open-sop="openSopFile"
       @claim="claimSelectedTask"
     >
+      <template #andon-call>
+        <MesAndonCallPanel
+          :category="andon.category"
+          :pending="andon.pending"
+          :unresolved="andon.unresolved"
+          :can-submit="andon.canSubmit"
+          :scope-message="andonScopeMessage"
+          :message="andon.message"
+          :receipt="andon.receipt"
+          @select-category="andon.selectCategory"
+          @submit="andon.submit"
+          @reset="andon.reset"
+        />
+      </template>
       <template #context-scan>
         <MesScanPrevalidation
           :organization-id="filters.organizationId"
