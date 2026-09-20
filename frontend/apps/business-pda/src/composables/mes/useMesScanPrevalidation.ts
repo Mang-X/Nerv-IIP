@@ -1,4 +1,5 @@
 import {
+  isForbiddenRequestError,
   prevalidateBusinessConsoleMesContextScan,
   prevalidateBusinessConsoleMesMaterialScan,
   type BusinessConsoleBarcodeResolveCandidate,
@@ -12,7 +13,7 @@ import {
 import { computed, shallowRef, toValue, watch, type MaybeRefOrGetter } from 'vue'
 
 import { describeRequestError } from '@/api/request-timeout'
-import { isForbiddenRequestError, usePdaBarcodeResolver } from '@/composables/usePdaBarcodeResolver'
+import { usePdaBarcodeResolver } from '@/composables/usePdaBarcodeResolver'
 
 export type MesScanPrevalidationStatus =
   | 'idle'

@@ -1,4 +1,5 @@
 using MediatR;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.AndonCallAggregate;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.Mes.Domain;
@@ -28,6 +29,8 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     private const string ProcessedIntegrationEventInstanceIndexName = "ux_processed_integration_events_consumer_event_id";
 
     public DbSet<WorkOrder> WorkOrders => Set<WorkOrder>();
+
+    public DbSet<AndonCall> AndonCalls => Set<AndonCall>();
 
     public DbSet<WorkOrderTransformation> WorkOrderTransformations => Set<WorkOrderTransformation>();
 

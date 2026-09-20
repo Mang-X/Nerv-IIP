@@ -717,6 +717,77 @@ public sealed class MesAggregateTests
     }
 
     [Fact]
+    public void MaterialIssueRequest_new_receipt_waits_for_outbound_before_emitting_inbound_once()
+    {
+        // #3646 / DomainInvariant：收料确认不能先于实际出库价值发入库。
+        var at = DateTimeOffset.Parse("2026-09-20T08:00:00Z");
+        var request = MaterialIssueRequest.Create("org-001", "env-dev", "MIR-3646", "WO-001", null, "MAT-001", "KG", 1.4m, at);
+        request.ClearDomainEvents();
+        request.ConfirmLineSideReceipt(MaterialSupplyTestFixtures.Locations, at);
+        Assert.Empty(request.GetDomainEvents().OfType<MaterialLineSideReceiptConfirmedDomainEvent>());
+        Assert.Equal(0m, request.ReceivedQuantity);
+        request.ClearDomainEvents();
+        var token = request.PendingPostingToken!;
+        request.MarkInventoryPosted(token, MaterialTransferLeg.WarehouseIssue, at, 0, 8m, -11.2m);
+        Assert.Equal(8m, Assert.Single(request.GetDomainEvents().OfType<MaterialLineSideReceiptConfirmedDomainEvent>()).UnitCost);
+        request.ClearDomainEvents();
+        request.MarkInventoryPosted(token, MaterialTransferLeg.WarehouseIssue, at, 0, 8m, -11.2m);
+        Assert.Empty(request.GetDomainEvents());
+        Assert.Equal(0m, request.ReceivedQuantity);
+        request.MarkInventoryPosted(token, MaterialTransferLeg.LineSideReceipt, at);
+        Assert.Equal(1.4m, request.ReceivedQuantity);
+    }
+
+    [Fact]
+    public void MaterialIssueRequest_mixed_value_receipt_retries_only_inbound_and_preserves_amount()
+    {
+        var at = DateTimeOffset.Parse("2026-09-20T08:00:00Z");
+        var request = MaterialIssueRequest.Create("org-001", "env-dev", "MIR-MIX", "WO-001", null, "MAT-001", "KG", 3m, at);
+        var locations = new MaterialTransferLocations("SITE", "WH-A", "SITE", "LINE",
+            [new("SITE", "WH-A", "A", 1.4m), new("SITE", "WH-B", "B", 1.6m)]);
+        request.ConfirmLineSideReceipt(locations, at);
+        request.ClearDomainEvents();
+        var token = request.PendingPostingToken!;
+        request.MarkInventoryPosted(token, MaterialTransferLeg.WarehouseIssue, at, 1, 12m, -19.2m);
+        Assert.Empty(request.GetDomainEvents());
+        request.MarkInventoryPosted(token, MaterialTransferLeg.WarehouseIssue, at, 0, 8m, -11.2m);
+        var inbound = Assert.Single(request.GetDomainEvents().OfType<MaterialLineSideReceiptConfirmedDomainEvent>());
+        Assert.Equal(30.4m, decimal.Round(inbound.UnitCost!.Value * inbound.ReceivedQuantity, 6));
+        request.MarkInventoryPostingFailed("rejected", "入库失败", at, token);
+        request.ClearDomainEvents();
+        request.ConfirmLineSideReceipt(locations, at);
+        Assert.Empty(request.GetDomainEvents().OfType<MaterialIssueRequestedDomainEvent>());
+        Assert.Equal(inbound.UnitCost, Assert.Single(request.GetDomainEvents().OfType<MaterialLineSideReceiptConfirmedDomainEvent>()).UnitCost);
+        request.MarkInventoryPosted(request.PendingPostingToken!, MaterialTransferLeg.LineSideReceipt, at);
+        Assert.Equal(3m, request.ReceivedQuantity);
+    }
+
+    [Theory]
+    [InlineData(MaterialTransferLeg.WarehouseIssue)]
+    [InlineData(MaterialTransferLeg.LineSideReceipt)]
+    public void MaterialIssueRequest_legacy_inflight_keeps_original_protocol_on_partial_retry(MaterialTransferLeg settledLeg)
+    {
+        var at = DateTimeOffset.Parse("2026-09-20T08:00:00Z");
+        var request = MaterialIssueRequest.Create("org-001", "env-dev", "MIR-LEGACY", "WO-001", null, "MAT-001", "KG", 2m, at);
+        request.ConfirmLineSideReceipt(MaterialSupplyTestFixtures.Locations, at);
+        // 模拟新增协议列之前已发出两腿的持久行；false 是 migration 对旧行的缺省值。
+        typeof(MaterialIssueRequest).GetProperty(nameof(MaterialIssueRequest.ReceiptUsesActualIssueValue))!.SetValue(request, false);
+        request.MarkInventoryPosted(request.PendingPostingToken!, settledLeg, at);
+        request.MarkInventoryPostingFailed("rejected", "旧腿失败", at, request.PendingPostingToken);
+        request.ClearDomainEvents();
+        request.ConfirmLineSideReceipt(MaterialSupplyTestFixtures.Locations, at);
+        Assert.False(request.ReceiptUsesActualIssueValue);
+        Assert.Single(request.GetDomainEvents());
+        if (settledLeg == MaterialTransferLeg.WarehouseIssue)
+        {
+            Assert.Null(Assert.IsType<MaterialLineSideReceiptConfirmedDomainEvent>(request.GetDomainEvents().Single()).UnitCost);
+        }
+        request.MarkInventoryPosted(request.PendingPostingToken!, settledLeg == MaterialTransferLeg.WarehouseIssue
+            ? MaterialTransferLeg.LineSideReceipt : MaterialTransferLeg.WarehouseIssue, at);
+        Assert.Equal(2m, request.ReceivedQuantity);
+    }
+
+    [Fact]
     public void MaterialIssueRequest_line_side_receipt_raises_transfer_events_with_delta_quantity()
     {
         var request = MaterialIssueRequest.Create(
@@ -774,14 +845,40 @@ public sealed class MesAggregateTests
             "LOT-WO");
 
         var token = request.PendingPostingToken!;
-        request.MarkInventoryPosted(token, MaterialTransferLeg.WarehouseIssue, DateTimeOffset.Parse("2026-05-23T08:31:00Z"), 0);
+        request.MarkInventoryPosted(token, MaterialTransferLeg.WarehouseIssue, DateTimeOffset.Parse("2026-05-23T08:31:00Z"), 1, 12m, -24m);
+        request.MarkInventoryPostingFailed("rejected", "来源 A 出库失败", DateTimeOffset.Parse("2026-05-23T08:31:30Z"), token);
+        request.ClearDomainEvents();
+        request.ConfirmLineSideReceipt(request.RequireTransferLocations(), DateTimeOffset.Parse("2026-05-23T08:31:40Z"), 5m, "LOT-WO");
+        var retryIssue = Assert.Single(request.GetDomainEvents().OfType<MaterialIssueRequestedDomainEvent>());
+        Assert.Equal(3m, retryIssue.IssuedQuantity);
+        Assert.Equal(12m, request.GetSourceAllocations()[1].UnitCost);
+        Assert.Equal(-24m, request.GetSourceAllocations()[1].MovementAmount);
+        // 旧尝试重复回执不能改写已保存价值，也不能增加完成来源数。
+        request.MarkInventoryPosted(token, MaterialTransferLeg.WarehouseIssue, DateTimeOffset.Parse("2026-05-23T08:31:50Z"), 1, 99m, -198m);
         request.MarkInventoryPosted(token, MaterialTransferLeg.LineSideReceipt, DateTimeOffset.Parse("2026-05-23T08:32:00Z"));
         Assert.Equal(0m, request.ReceivedQuantity);
 
-        request.MarkInventoryPosted(token, MaterialTransferLeg.WarehouseIssue, DateTimeOffset.Parse("2026-05-23T08:33:00Z"), 1);
+        request.MarkInventoryPosted(request.PendingPostingToken!, MaterialTransferLeg.WarehouseIssue, DateTimeOffset.Parse("2026-05-23T08:33:00Z"), 0, 8m, -24m);
 
         Assert.Equal(5m, request.ReceivedQuantity);
         Assert.Equal(MaterialIssueRequest.ReceivedStatus, request.Status);
+        var allocations = request.GetSourceAllocations();
+        Assert.Equal(("LOT-A", 3m, 8m, -24m), (allocations[0].SourceLotNo, allocations[0].Quantity, allocations[0].UnitCost, allocations[0].MovementAmount));
+        Assert.Equal(("LOT-B", 2m, 12m, -24m), (allocations[1].SourceLotNo, allocations[1].Quantity, allocations[1].UnitCost, allocations[1].MovementAmount));
+    }
+
+    [Fact]
+    public void MaterialIssueRequest_legacy_source_json_keeps_actual_value_unknown()
+    {
+        var request = MaterialIssueRequest.Create("org-001", "env-dev", "MIR-OLD", "WO-001", null, "MAT-001", "KG", 1.4m, DateTimeOffset.Parse("2026-09-20T08:00:00Z"));
+        typeof(MaterialIssueRequest).GetProperty(nameof(MaterialIssueRequest.SourceAllocationsJson))!.SetValue(request,
+            """[{"SourceSiteCode":"SITE-001","SourceLocationCode":"WH-001","SourceLotNo":"LOT-OLD","Quantity":1.4}]""");
+
+        var allocation = Assert.Single(request.GetSourceAllocations());
+        Assert.Equal(1.4m, allocation.Quantity);
+        Assert.Equal("production", allocation.OwnerType);
+        Assert.Null(allocation.UnitCost);
+        Assert.Null(allocation.MovementAmount);
     }
 
     [Fact]

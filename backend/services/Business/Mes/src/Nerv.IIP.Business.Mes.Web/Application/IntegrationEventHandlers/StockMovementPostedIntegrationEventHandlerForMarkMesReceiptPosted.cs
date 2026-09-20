@@ -6,16 +6,26 @@ using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
+using NetCorePal.Extensions.Repository;
+using NetCorePal.Extensions.Repository.EntityFrameworkCore;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Inventory.StockMovementPostedIntegrationEvent", ConsumerName)]
 public sealed class StockMovementPostedIntegrationEventHandlerForMarkMesReceiptPosted(
     ApplicationDbContext dbContext,
-    IIntegrationEventDeadLetterStore deadLetterStore)
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    ITransactionUnitOfWork unitOfWork)
     : IIntegrationEventHandler<StockMovementPostedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-mes.stock-movement-posted";
+
+    public StockMovementPostedIntegrationEventHandlerForMarkMesReceiptPosted(
+        ApplicationDbContext dbContext,
+        IIntegrationEventDeadLetterStore deadLetterStore)
+        : this(dbContext, deadLetterStore, dbContext)
+    {
+    }
 
     private readonly IntegrationEventConsumerGuard<StockMovementPostedIntegrationEvent> consumerGuard = new(
         new IntegrationEventEnvelopeValidator(),
@@ -56,11 +66,6 @@ public sealed class StockMovementPostedIntegrationEventHandlerForMarkMesReceiptP
             return;
         }
 
-        if (!await MesProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
-        {
-            return;
-        }
-
         if (isMaterialTransferLeg)
         {
             await MarkMaterialTransferPostedAsync(
@@ -69,6 +74,11 @@ public sealed class StockMovementPostedIntegrationEventHandlerForMarkMesReceiptP
                 transferLeg,
                 allocationIndex,
                 cancellationToken);
+            return;
+        }
+
+        if (!await MesProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
+        {
             return;
         }
 
@@ -106,6 +116,11 @@ public sealed class StockMovementPostedIntegrationEventHandlerForMarkMesReceiptP
         int? allocationIndex,
         CancellationToken cancellationToken)
     {
+        if (!await MesProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
+        {
+            return;
+        }
+
         var materialRequest = await dbContext.MaterialIssueRequests.SingleOrDefaultAsync(
             x => x.OrganizationId == integrationEvent.OrganizationId
                 && x.EnvironmentId == integrationEvent.EnvironmentId
@@ -121,8 +136,10 @@ public sealed class StockMovementPostedIntegrationEventHandlerForMarkMesReceiptP
             transferToken,
             transferLeg,
             integrationEvent.Payload.PostedAtUtc,
-            allocationIndex);
-        await dbContext.SaveChangesAsync(cancellationToken);
+            allocationIndex,
+            integrationEvent.Payload.UnitCost,
+            integrationEvent.Payload.MovementAmount);
+        await ((IUnitOfWork)unitOfWork).SaveEntitiesAsync(cancellationToken);
     }
 
     private static bool MatchesReceipt(

@@ -101,6 +101,9 @@ public sealed class MesWmsMaterialIssueChainAcceptanceTests
             "LOT-OIL-ALT");
         var warehouseMovement = new MaterialIssueRequestedIntegrationEventConverter().Convert(
             Assert.Single(linked.GetDomainEvents().OfType<MaterialIssueRequestedDomainEvent>()));
+        Assert.Empty(linked.GetDomainEvents().OfType<MaterialLineSideReceiptConfirmedDomainEvent>());
+        linked.MarkInventoryPosted(linked.PendingPostingToken!, MaterialTransferLeg.WarehouseIssue,
+            requestedAtUtc.AddMinutes(6), 0, 8m, -48m);
         var lineSideMovement = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
             Assert.Single(linked.GetDomainEvents().OfType<MaterialLineSideReceiptConfirmedDomainEvent>()));
         Assert.Equal("MAT-OIL-ALT", warehouseMovement.Payload.SkuCode);

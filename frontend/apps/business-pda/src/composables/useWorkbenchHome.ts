@@ -1,4 +1,5 @@
 import {
+  isForbiddenRequestError,
   listBusinessConsoleQualityInspectionTasksQueryOptions,
   listBusinessConsoleWmsCountExecutionsQueryOptions,
   listBusinessConsoleWmsInboundOrdersQueryOptions,
@@ -95,11 +96,44 @@ export function usePdaIdentity() {
   }
 }
 
+/**
+ * 一格仓储计数的读数状态。
+ *
+ * `counted` 之外**都不是数字**：把「看不到任何仓储数据」渲染成 `0` 会在屏上断言
+ * 「待收货 0 件」——那是假读数，现场据此得出的行动与真相相反（#3474）。
+ *
+ * - `denied`：网关 403。前端只有权限码、拿不到主体的**数据范围**（仓库/库区授权不在
+ *   principal 里），所以「有权限码但无数据范围」只能由 403 这条权威事实揭示，不能靠
+ *   前置判断——与 #2793 对停机原因目录的裁定同一条口径。
+ * - `failed`：其它取数失败（含 `success:false` 信封）。仍是「不知道」，不是 0。
+ * - `loading`：还没有任何应答。
+ */
+export type WarehouseSummaryEntryState = 'counted' | 'loading' | 'denied' | 'failed'
+
 export interface WarehouseSummaryEntry {
   key: 'inbound' | 'putaway' | 'pick' | 'count'
   label: string
   route: string
-  count: number
+  /** 仅当 `state === 'counted'` 时是真读数；其余一律 `null`，调用方不得代为回落成 0。 */
+  count: number | null
+  state: WarehouseSummaryEntryState
+}
+
+interface CountQueryFace {
+  data: { value: { success?: boolean; data?: { total?: number } | null } | undefined }
+  error: { value: unknown }
+  isLoading: { value: boolean }
+}
+
+/** 一格计数的读数 + 状态。403 与「真的是 0」在这里就分开，不留给呈现层去猜。 */
+function readCount(query: CountQueryFace): Pick<WarehouseSummaryEntry, 'count' | 'state'> {
+  if (query.error.value) {
+    return { count: null, state: isForbiddenRequestError(query.error.value) ? 'denied' : 'failed' }
+  }
+  const envelope = query.data.value
+  if (envelope?.success) return { count: envelope.data?.total ?? 0, state: 'counted' }
+  if (envelope) return { count: null, state: 'failed' }
+  return { count: null, state: 'loading' }
 }
 
 export function useWarehouseSummary() {
@@ -147,13 +181,13 @@ export function useWarehouseSummary() {
         key: 'inbound',
         label: '待收货',
         route: '/wms/inbound',
-        count: listTotal(inboundQuery.data.value),
+        ...readCount(inboundQuery),
       })
       result.push({
         key: 'putaway',
         label: '待上架',
         route: '/wms/putaway',
-        count: listTotal(putawayQuery.data.value),
+        ...readCount(putawayQuery),
       })
     }
     if (canShipments.value) {
@@ -161,7 +195,7 @@ export function useWarehouseSummary() {
         key: 'pick',
         label: '待拣货',
         route: '/wms/pick',
-        count: listTotal(pickingQuery.data.value),
+        ...readCount(pickingQuery),
       })
     }
     if (canCounts.value) {
@@ -169,15 +203,29 @@ export function useWarehouseSummary() {
         key: 'count',
         label: '待盘点',
         route: '/wms/count',
-        count: listTotal(countQuery.data.value),
+        ...readCount(countQuery),
       })
     }
     return result
   })
 
+  /**
+   * 整块板块被数据范围挡在门外：有权限码、发了请求、每一格都吃到 403。
+   * 这时屏上一个数字都不该有，取而代之的是一句能导出行动的说明。
+   */
+  const scopeDenied = computed(
+    () => entries.value.length > 0 && entries.value.every((entry) => entry.state === 'denied'),
+  )
+  /** 部分格被拒（例如只授了收货范围）：板块还有真读数，但不能让被拒那几格假装是 0。 */
+  const hasDeniedEntry = computed(() => entries.value.some((entry) => entry.state === 'denied'))
+  const hasFailedEntry = computed(() => entries.value.some((entry) => entry.state === 'failed'))
+
   return {
     enabled,
     entries,
+    scopeDenied,
+    hasDeniedEntry,
+    hasFailedEntry,
     pending: computed(
       () =>
         inboundQuery.isLoading.value ||

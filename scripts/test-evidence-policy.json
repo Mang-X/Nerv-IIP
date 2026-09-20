@@ -1414,6 +1414,25 @@
       "expectedRuntimeTestCount": 9
     },
     {
+      "id": "mes-andon",
+      "sourceId": "mes-production-candidate",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Mes\\.Web\\.Tests\\.AndonCallPostgresTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run real PostgreSQL MES candidate proof\\.$",
+      "allowedLanes": ["backend"],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Migration_persists_complete_facts_and_replay_keeps_original_times_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Raise_intent_is_unique_within_scope_and_does_not_cross_tenants_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Stale_concurrent_claims_commit_exactly_one_responder_on_postgres"
+      ],
+      "expectedRuntimeTestCount": 3
+    },
+    {
       "id": "mes-production-candidate",
       "sourceId": "mes-production-candidate",
       "classification": "environment-gated",
@@ -1502,6 +1521,7 @@
       "expiresOn": null,
       "exitCondition": null,
       "testIdentities": [
+        "Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Http_receipt_commits_one_actual_value_inbound_with_last_source_and_rolls_back_outbox_failure_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_blank_defect_number_early_return_persists_only_inbox",
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_missing_defect_early_return_persists_only_inbox",
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_persists_business_fact_and_inbox_across_scopes_and_replay",
@@ -1521,7 +1541,7 @@
         "Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_true_duplicate_event_instances_are_unrepresentable_before_the_migration",
         "Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_migration_fails_closed_on_ambiguous_event_instance_history"
       ],
-      "expectedRuntimeTestCount": 18
+      "expectedRuntimeTestCount": 19
     },
     {
       "id": "erp-world-history",
