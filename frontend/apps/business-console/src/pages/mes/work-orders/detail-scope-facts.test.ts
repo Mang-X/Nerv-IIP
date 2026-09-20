@@ -113,7 +113,11 @@ function mountDetail() {
         BusinessLayout: { template: '<main><slot /></main>' },
         QualityHoldPanel: { template: '<div />' },
         NvPageHeader: { template: '<header><slot name="actions" /></header>' },
-        NvDataTable: { props: ['rows'], template: '<div />' },
+        NvDataTable: {
+          props: ['rows'],
+          template:
+            '<div><slot v-for="row in rows" name="cell-operationTaskId" :row="row" /></div>',
+        },
         NvButton: { template: '<button><slot /></button>' },
         NvStatusBadge: {
           props: ['label', 'value'],
@@ -131,9 +135,26 @@ function mountDetail() {
 
 describe('work-order detail — 拒载时不反显安全假文案 (#1288)', () => {
   beforeEach(() => {
+    routeState.query = {}
     detailState.detail = undefined
     detailState.materialReadiness = undefined
     detailState.scopeMessage = ''
+  })
+
+  it('安灯来源链接在工单详情标识同一来源工序，不把其它工序标成来源', () => {
+    routeState.query = { operationTaskId: 'task-20' }
+    detailState.detail = {
+      workOrderId: 'WO-1',
+      operationTasks: [
+        { operationTaskId: 'task-10', operationTaskNo: 'WO-1-OP-10' },
+        { operationTaskId: 'task-20', operationTaskNo: 'WO-1-OP-20' },
+      ],
+    }
+    const wrapper = mountDetail()
+    expect(wrapper.findAll('[data-andon-source="true"]')).toHaveLength(1)
+    expect(wrapper.get('[data-andon-source="true"]').text()).toContain('WO-1-OP-20')
+    expect(wrapper.get('[data-andon-source="true"]').text()).toContain('来源工序')
+    wrapper.unmount()
   })
 
   it('作业范围未就绪整页拒载时，不渲染「无阻塞 / 已齐套 / 用料已备齐」', () => {

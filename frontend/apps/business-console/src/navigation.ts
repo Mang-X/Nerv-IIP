@@ -517,6 +517,12 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           requiredPermissions: [P.mesOperationsRead],
         },
         {
+          title: '安灯响应',
+          icon: BellRingIcon,
+          to: { path: '/mes/andon' },
+          requiredPermissions: [P.mesOperationsRead],
+        },
+        {
           title: '在制跟踪',
           icon: ActivityIcon,
           to: { path: '/mes/wip' },
