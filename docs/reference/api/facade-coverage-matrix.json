@@ -21,40 +21,45 @@
       "method": "POST",
       "route": "/api/business/v1/mes/andon-calls",
       "operationId": "raiseBusinessMesAndonCall",
-      "classification": "deferred",
-      "followUp": "#3653：交付安灯 BusinessGateway facade。"
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["raiseBusinessConsoleMesAndonCall"]
     },
     {
       "service": "Mes",
       "method": "POST",
       "route": "/api/business/v1/mes/andon-calls/{id}/claim",
       "operationId": "claimBusinessMesAndonCall",
-      "classification": "deferred",
-      "followUp": "#3653：交付安灯 BusinessGateway facade。"
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["claimBusinessConsoleMesAndonCall"]
     },
     {
       "service": "Mes",
       "method": "POST",
       "route": "/api/business/v1/mes/andon-calls/{id}/close",
       "operationId": "closeBusinessMesAndonCall",
-      "classification": "deferred",
-      "followUp": "#3653：交付安灯 BusinessGateway facade。"
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["closeBusinessConsoleMesAndonCall"]
     },
     {
       "service": "Mes",
       "method": "GET",
       "route": "/api/business/v1/mes/andon-calls/{id}",
       "operationId": "getBusinessMesAndonCall",
-      "classification": "deferred",
-      "followUp": "#3653：交付安灯 BusinessGateway facade。"
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["getBusinessConsoleMesAndonCall"]
     },
     {
       "service": "Mes",
       "method": "GET",
       "route": "/api/business/v1/mes/andon-calls",
       "operationId": "listBusinessMesAndonCalls",
-      "classification": "deferred",
-      "followUp": "#3653：交付安灯 BusinessGateway facade。"
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["listBusinessConsoleMesAndonCalls"]
     },
     {
       "service": "Approval",

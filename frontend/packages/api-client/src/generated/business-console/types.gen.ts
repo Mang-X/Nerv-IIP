@@ -3795,6 +3795,72 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     recipientRef?: string | null;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesAndonCallResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAndonCallResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAndonCallResponse = {
+    id?: string;
+    organizationId?: string;
+    environmentId?: string;
+    category?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAndonCategory;
+    status?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAndonStatus;
+    workOrderId?: string;
+    operationTaskId?: string;
+    workCenterId?: string;
+    callerId?: string;
+    raisedAtUtc?: string;
+    responderId?: string | null;
+    firstRespondedAtUtc?: string | null;
+    responseDurationSeconds?: number | null;
+    closedAtUtc?: string | null;
+    escalatedAtUtc?: string | null;
+    escalationRecipientId?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAndonCategory = 'materialShortage' | 'equipment' | 'quality' | 'process';
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAndonStatus = 'open' | 'claimed' | 'closed';
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRaiseAndonCallRequest = {
+    organizationId: string;
+    environmentId: string;
+    scopeKind?: string | null;
+    scopeId?: string | null;
+    idempotencyKey: string;
+    category?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAndonCategory;
+    workOrderId: string;
+    operationTaskId: string;
+    workCenterId: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAndonCallActionRequest = {
+    organizationId: string;
+    environmentId: string;
+    scopeKind?: string | null;
+    scopeId?: string | null;
+    idempotencyKey: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAndonCallRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesAndonCallListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAndonCallListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAndonCallListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAndonCallResponse>;
+    total?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListAndonCallsRequest = {
+    [key: string]: never;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAndonQueue = 'awaitingResponse' | 'unclosed' | 'all';
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesFoundationReadinessResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesFoundationReadinessResponse | null;
 };
@@ -14883,6 +14949,195 @@ export type MarkBusinessConsoleNotificationMessageReadResponses = {
 };
 
 export type MarkBusinessConsoleNotificationMessageReadResponse = MarkBusinessConsoleNotificationMessageReadResponses[keyof MarkBusinessConsoleNotificationMessageReadResponses];
+
+export type ListBusinessConsoleMesAndonCallsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+        queue: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAndonQueue;
+        category?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAndonCategory | null;
+        workCenterId?: string | null;
+        skip: number;
+        take: number;
+    };
+    url: '/api/business-console/v1/mes/andon-calls';
+};
+
+export type ListBusinessConsoleMesAndonCallsErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleMesAndonCallsError = ListBusinessConsoleMesAndonCallsErrors[keyof ListBusinessConsoleMesAndonCallsErrors];
+
+export type ListBusinessConsoleMesAndonCallsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesAndonCallListResponse;
+};
+
+export type ListBusinessConsoleMesAndonCallsResponse = ListBusinessConsoleMesAndonCallsResponses[keyof ListBusinessConsoleMesAndonCallsResponses];
+
+export type RaiseBusinessConsoleMesAndonCallData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRaiseAndonCallRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/mes/andon-calls';
+};
+
+export type RaiseBusinessConsoleMesAndonCallErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
+};
+
+export type RaiseBusinessConsoleMesAndonCallError = RaiseBusinessConsoleMesAndonCallErrors[keyof RaiseBusinessConsoleMesAndonCallErrors];
+
+export type RaiseBusinessConsoleMesAndonCallResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesAndonCallResponse;
+};
+
+export type RaiseBusinessConsoleMesAndonCallResponse = RaiseBusinessConsoleMesAndonCallResponses[keyof RaiseBusinessConsoleMesAndonCallResponses];
+
+export type ClaimBusinessConsoleMesAndonCallData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAndonCallActionRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/mes/andon-calls/{id}/claim';
+};
+
+export type ClaimBusinessConsoleMesAndonCallErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
+};
+
+export type ClaimBusinessConsoleMesAndonCallError = ClaimBusinessConsoleMesAndonCallErrors[keyof ClaimBusinessConsoleMesAndonCallErrors];
+
+export type ClaimBusinessConsoleMesAndonCallResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesAndonCallResponse;
+};
+
+export type ClaimBusinessConsoleMesAndonCallResponse = ClaimBusinessConsoleMesAndonCallResponses[keyof ClaimBusinessConsoleMesAndonCallResponses];
+
+export type CloseBusinessConsoleMesAndonCallData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAndonCallActionRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/mes/andon-calls/{id}/close';
+};
+
+export type CloseBusinessConsoleMesAndonCallErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
+};
+
+export type CloseBusinessConsoleMesAndonCallError = CloseBusinessConsoleMesAndonCallErrors[keyof CloseBusinessConsoleMesAndonCallErrors];
+
+export type CloseBusinessConsoleMesAndonCallResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesAndonCallResponse;
+};
+
+export type CloseBusinessConsoleMesAndonCallResponse = CloseBusinessConsoleMesAndonCallResponses[keyof CloseBusinessConsoleMesAndonCallResponses];
+
+export type GetBusinessConsoleMesAndonCallData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+    };
+    url: '/api/business-console/v1/mes/andon-calls/{id}';
+};
+
+export type GetBusinessConsoleMesAndonCallErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleMesAndonCallError = GetBusinessConsoleMesAndonCallErrors[keyof GetBusinessConsoleMesAndonCallErrors];
+
+export type GetBusinessConsoleMesAndonCallResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesAndonCallResponse;
+};
+
+export type GetBusinessConsoleMesAndonCallResponse = GetBusinessConsoleMesAndonCallResponses[keyof GetBusinessConsoleMesAndonCallResponses];
 
 export type GetBusinessConsoleMesFoundationReadinessData = {
     body?: never;
