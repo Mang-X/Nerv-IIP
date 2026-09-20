@@ -71,9 +71,15 @@ internal static class AndonCallAccess
         var tasks = GetMesWorkOrderDetailQueryHandler.QueryOperationTaskEntities(db,
             tenant.OrganizationId, tenant.EnvironmentId, null, null,
             assignedUserIds: scope.AssignedUserIds, teamIds: scope.TeamIds, workCenterIds: scope.WorkCenterIds);
-        return db.Set<AndonCall>().Where(call => call.OrganizationId == tenant.OrganizationId &&
+        var query = db.Set<AndonCall>().Where(call => call.OrganizationId == tenant.OrganizationId &&
             call.EnvironmentId == tenant.EnvironmentId && tasks.Any(task =>
                 task.OperationTaskIdValue == call.OperationTaskIdValue && task.WorkOrderId == call.WorkOrderId));
+        if (scope.WorkCenterIds is not null)
+        {
+            var workCenterIds = scope.WorkCenterIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            query = query.Where(call => workCenterIds.Contains(call.WorkCenterId));
+        }
+        return query;
     }
 
     internal static async Task EnsureSourceAsync(ApplicationDbContext db, AndonCallScope scope,

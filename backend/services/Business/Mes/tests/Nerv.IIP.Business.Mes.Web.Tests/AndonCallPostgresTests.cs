@@ -289,6 +289,27 @@ public sealed class AndonCallPostgresTests
         Assert.False(foreignDetail.GetProperty("success").GetBoolean());
         var empty = await client.GetFromJsonAsync<JsonElement>(root + "&category=Equipment");
         Assert.Equal(0, empty.GetProperty("total").GetInt32());
+        await using (var rescheduleScope = factory.Services.CreateAsyncScope())
+        {
+            var db = rescheduleScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var task = await db.OperationTasks.SingleAsync();
+            task.ApplyScheduleAssignment("WC-2", null, RaisedAt, RaisedAt.AddHours(1), RaisedAt);
+            await db.SaveChangesAsync();
+        }
+        var movedQueue = await client.GetFromJsonAsync<JsonElement>(root + "&workCenterIds=WC-2");
+        Assert.Equal(0, movedQueue.GetProperty("total").GetInt32());
+        Assert.Empty(movedQueue.GetProperty("items").EnumerateArray());
+        var movedDetail = await client.GetFromJsonAsync<JsonElement>(
+            $"/api/business/v1/mes/andon-calls/{ids[1]}?organizationId=org-1&environmentId=env-1&workCenterIds=WC-2");
+        Assert.False(movedDetail.GetProperty("success").GetBoolean());
+        using var movedClaim = await client.PostAsJsonAsync($"/api/business/v1/mes/andon-calls/{ids[1]}/claim",
+            new { organizationId = "org-1", environmentId = "env-1", workCenterIds = "WC-2", idempotencyKey = "moved" });
+        Assert.False((await movedClaim.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("success").GetBoolean());
+        var authorizedQueue = await client.GetFromJsonAsync<JsonElement>(root + "&workCenterIds=WC-1,WC-2");
+        Assert.Equal(3, authorizedQueue.GetProperty("total").GetInt32());
+        using var authorizedClaim = await client.PostAsJsonAsync($"/api/business/v1/mes/andon-calls/{ids[1]}/claim",
+            new { organizationId = "org-1", environmentId = "env-1", workCenterIds = "WC-1,WC-2", idempotencyKey = "authorized" });
+        Assert.Equal("Claimed", (await authorizedClaim.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("status").GetString());
         using var unauthenticated = factory.CreateClient();
         Assert.Equal(HttpStatusCode.Unauthorized, (await unauthenticated.GetAsync(root)).StatusCode);
     }
