@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import { reactive, ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -38,6 +38,11 @@ vi.mock('@/composables/mes/useMesDisplayNames', () => ({
 const detailState = vi.hoisted(() => ({
   qualityHolds: [] as Array<Record<string, unknown>>,
   workOrders: [] as Array<Record<string, unknown>>,
+  workOrderStatus: 'released',
+}))
+const holdActionState = vi.hoisted(() => ({
+  holdWorkOrder: vi.fn(async () => undefined),
+  refreshDetail: vi.fn(async () => undefined),
 }))
 
 vi.mock('@/composables/mes/useProductionReportSerialOptions', () => ({
@@ -97,7 +102,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
       workOrderId: 'WO-1',
       skuId: 'FG-1',
       quantity: 10,
-      status: 'released',
+      status: detailState.workOrderStatus,
       operationTasks: [],
       blockingReasons: [],
       qualityHolds: detailState.qualityHolds,
@@ -111,7 +116,9 @@ vi.mock('@/composables/useBusinessMes', () => ({
     materialReadiness: ref({ items: [], readinessStatus: 'Ready', blockingReasons: [] }),
     materialReadinessError: ref(undefined),
     materialReadinessPending: ref(false),
-    refreshDetail: vi.fn(),
+    holdWorkOrder: holdActionState.holdWorkOrder,
+    holdWorkOrderPending: ref(false),
+    refreshDetail: holdActionState.refreshDetail,
     refreshMaterialReadiness: vi.fn(),
     retryCancelPreview: vi.fn(),
     workOrderManageScopeMessage: ref(''),
@@ -205,6 +212,9 @@ const holdPanelStub = {
 describe('work-order detail — quality hold block', () => {
   beforeEach(() => {
     detailState.qualityHolds = []
+    detailState.workOrderStatus = 'released'
+    holdActionState.holdWorkOrder.mockClear()
+    holdActionState.refreshDetail.mockClear()
   })
 
   function mountDetail(codes: string[]) {
@@ -228,6 +238,11 @@ describe('work-order detail — quality hold block', () => {
           NvTooltipTrigger: { template: '<div><slot /></div>' },
           NvTooltipContent: { template: '<div><slot /></div>' },
           NvAlertDialog: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
+          NvAlertDialogContent: { template: '<div><slot /></div>' },
+          NvAlertDialogHeader: { template: '<div><slot /></div>' },
+          NvAlertDialogTitle: { template: '<h2><slot /></h2>' },
+          NvAlertDialogDescription: { template: '<p><slot /></p>' },
+          NvAlertDialogFooter: { template: '<div><slot /></div>' },
         },
       },
     })
@@ -335,6 +350,40 @@ describe('work-order detail — quality hold block', () => {
   it('renders no hold block when there are no active holds', () => {
     const wrapper = mountDetail(['business.mes.work-orders.read'])
     expect(wrapper.find('[data-testid="hold-panel"]').exists()).toBe(false)
+  })
+
+  it('requires a reason before manually holding the current work order', async () => {
+    const wrapper = mountDetail(['business.mes.work-orders.read'])
+
+    await wrapper.get('[data-testid="open-hold-work-order"]').trigger('click')
+    expect(wrapper.text()).toContain('挂起工单 · WO-1')
+
+    const confirm = wrapper.get('[data-testid="confirm-hold-work-order"]')
+    await confirm.trigger('click')
+    expect(wrapper.get('[data-testid="hold-validation-summary"]').text()).toContain(
+      '请完整填写带 * 的必填项（已标红）。',
+    )
+    expect(wrapper.text()).toContain('请输入挂起原因。')
+    expect(holdActionState.holdWorkOrder).not.toHaveBeenCalled()
+
+    await wrapper.get('#hold-reason').setValue('   ')
+    await confirm.trigger('click')
+    expect(holdActionState.holdWorkOrder).not.toHaveBeenCalled()
+
+    await wrapper.get('#hold-reason').setValue('设备异常，等待维修确认')
+    await confirm.trigger('click')
+    await flushPromises()
+
+    expect(holdActionState.holdWorkOrder).toHaveBeenCalledWith('设备异常，等待维修确认')
+    expect(holdActionState.refreshDetail).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not offer manual hold for a terminal work order', () => {
+    detailState.workOrderStatus = 'closed'
+
+    const wrapper = mountDetail(['business.mes.work-orders.read'])
+
+    expect(wrapper.find('[data-testid="open-hold-work-order"]').exists()).toBe(false)
   })
 })
 
