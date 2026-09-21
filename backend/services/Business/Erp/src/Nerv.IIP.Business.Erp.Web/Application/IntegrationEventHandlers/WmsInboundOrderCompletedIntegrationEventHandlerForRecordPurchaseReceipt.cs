@@ -18,7 +18,8 @@ public sealed class WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurc
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
     ErpCodingService codingService,
-    ILogger<WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt> logger)
+    ILogger<WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt> logger,
+    IErpIntegrationEventContextAccessor eventContext)
     : IIntegrationEventHandler<WmsIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-erp.wms-inbound-completed-purchase-receipt";
@@ -52,6 +53,10 @@ public sealed class WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurc
         WmsIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
     {
+        using var causationScope = eventContext.BeginScope(
+            integrationEvent.EventId,
+            integrationEvent.CorrelationId,
+            integrationEvent.Actor);
         if (!string.Equals(integrationEvent.SourceService, WmsIntegrationEventSources.BusinessWms, StringComparison.OrdinalIgnoreCase))
         {
             await DeadLetterAsync(

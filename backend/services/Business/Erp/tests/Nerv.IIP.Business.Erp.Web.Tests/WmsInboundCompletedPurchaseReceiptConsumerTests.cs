@@ -1,6 +1,7 @@
 extern alias WmsWeb;
 
 using MediatR;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
@@ -22,6 +23,25 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 
 public sealed class WmsInboundCompletedPurchaseReceiptConsumerTests
 {
+    [Fact]
+    public async Task InboundOrderCompletedHandler_EstablishesUpstreamEventContextForEtaChange()
+    {
+        var eventContext = new RecordingContextAccessor();
+        await using var dbContext = CreateDbContext();
+        await ReleasePurchaseOrderAsync(dbContext, "PO-WMS-ETA-001", "LINE-001", 2m, 12.5m);
+        var integrationEvent = BuildWmsCompletedEvent("WMS-IN-ETA-001", "purchase-order", "PO-WMS-ETA-001", "LINE-001", 1m);
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var inboundHandler = CreateInboundHandler(dbContext, deadLetters, eventContext);
+
+        await inboundHandler.HandleAsync(integrationEvent, CancellationToken.None);
+
+        var receipt = Assert.Single(dbContext.PurchaseReceipts);
+        Assert.Single(receipt.GetDomainEvents().OfType<MaterialSupplyEtaChangedDomainEvent>());
+        Assert.Equal(integrationEvent.EventId, eventContext.CausationId);
+        Assert.Equal(integrationEvent.CorrelationId, eventContext.CorrelationId);
+        Assert.Equal(integrationEvent.Actor, eventContext.Actor);
+    }
+
     [Fact]
     public async Task InboundOrderCompletedHandler_RecordsPurchaseReceiptAndGrIrToApClosureOnce()
     {
@@ -304,13 +324,15 @@ public sealed class WmsInboundCompletedPurchaseReceiptConsumerTests
 
     private static WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt CreateInboundHandler(
         ApplicationDbContext dbContext,
-        IIntegrationEventDeadLetterStore deadLetterStore)
+        IIntegrationEventDeadLetterStore deadLetterStore,
+        IErpIntegrationEventContextAccessor? eventContext = null)
     {
         return new WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt(
             dbContext,
             deadLetterStore,
             new ErpCodingService(),
-            new TestLogger<WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt>());
+            new TestLogger<WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt>(),
+            eventContext ?? new HttpErpIntegrationEventContextAccessor(new HttpContextAccessor()));
     }
 
     private static async Task ReleasePurchaseOrderAsync(
@@ -379,6 +401,25 @@ public sealed class WmsInboundCompletedPurchaseReceiptConsumerTests
             .UseInMemoryDatabase($"erp-wms-inbound-grir-{Guid.CreateVersion7():N}", new InMemoryDatabaseRoot())
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private sealed class RecordingContextAccessor : IErpIntegrationEventContextAccessor
+    {
+        private readonly HttpErpIntegrationEventContextAccessor inner = new(new HttpContextAccessor());
+
+        public string? CorrelationId { get; private set; }
+        public string? CausationId { get; private set; }
+        public string? Actor { get; private set; }
+
+        public ErpIntegrationEventContext GetContext() => inner.GetContext();
+
+        public IDisposable BeginScope(string causationId, string? correlationId = null, string? actor = null)
+        {
+            CausationId = causationId;
+            CorrelationId = correlationId;
+            Actor = actor;
+            return inner.BeginScope(causationId, correlationId, actor);
+        }
     }
 
     private sealed class TestLogger<T> : ILogger<T>
