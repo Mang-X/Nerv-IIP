@@ -232,7 +232,8 @@ public sealed record SchedulePlanMaterialRiskContract(
     string OperationId,
     IReadOnlyCollection<string> ReasonCodes,
     IReadOnlyCollection<SchedulingMaterialShortageContract> Shortages,
-    string Message);
+    string Message,
+    DateTimeOffset? MaterialReadyUtc = null);
 
 /// <summary>
 /// 计划所依据的工作日历(投影自排程问题的班次窗口),供读面画工作日/非工作日与班次边界。

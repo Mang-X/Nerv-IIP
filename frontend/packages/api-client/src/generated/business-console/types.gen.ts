@@ -1504,6 +1504,7 @@ export type NervIipContractsSchedulingSchedulePlanMaterialRiskContract = {
     reasonCodes?: Array<string>;
     shortages?: Array<NervIipContractsSchedulingSchedulingMaterialShortageContract>;
     message?: string;
+    materialReadyUtc?: string | null;
 };
 
 export type NervIipContractsSchedulingSchedulingMaterialShortageContract = {
