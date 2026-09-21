@@ -17,6 +17,7 @@ import {
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
   getBusinessConsoleMesWorkOrderTraceabilityQueryOptions,
   getBusinessConsoleMesWipSummaryQueryOptions,
+  holdBusinessConsoleMesWorkOrder,
   listBusinessConsoleMesCapacityImpactsQueryOptions,
   listBusinessConsoleMesDispatchTasksQueryOptions,
   listBusinessConsoleMesDowntimeEventsQueryOptions,
@@ -251,6 +252,10 @@ vi.mock('@nerv-iip/api-client', () => ({
   getBusinessConsoleMesWorkOrderTraceabilityQueryOptions: vi.fn(() => ({
     key: [{ _id: 'getBusinessConsoleMesWorkOrderTraceability' }],
     query: vi.fn(),
+  })),
+  holdBusinessConsoleMesWorkOrder: vi.fn(async () => ({
+    data: { success: true },
+    response: { status: 200 },
   })),
   listBusinessConsoleMesDispatchTasksQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleMesDispatchTasks' }],
@@ -1954,6 +1959,26 @@ describe('business MES composables', () => {
         }),
       }),
     )
+  })
+
+  it('holds a work order with the reason through the selected manage scope and refreshes MES reads', async () => {
+    const detail = useMesWorkOrderDetail()
+    detail.filters.workOrderId = 'WO-HOLD'
+
+    await detail.holdWorkOrder('设备异常，等待维修确认')
+
+    expect(holdBusinessConsoleMesWorkOrder).toHaveBeenCalledWith({
+      path: { workOrderId: 'WO-HOLD' },
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        scopeKind: 'work-center',
+        scopeId: 'WC-A',
+      },
+      body: { reason: '设备异常，等待维修确认' },
+      throwOnError: false,
+    })
+    expect(coladaState.invalidateQueries).toHaveBeenCalledTimes(6)
   })
 
   it('preflights and releases the exact work order through the selected manage scope', async () => {

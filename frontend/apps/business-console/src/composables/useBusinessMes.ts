@@ -32,6 +32,7 @@ import {
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
   getBusinessConsoleMesWorkOrderTransformationQueryOptions,
   getBusinessConsoleMesWorkOrderTraceabilityQueryOptions,
+  holdBusinessConsoleMesWorkOrder,
   listBusinessConsoleMesFinishedGoodsReceiptRequests,
   listBusinessConsoleMesMaterialIssueRequests,
   listBusinessConsoleMesDispatchTasksQueryOptions,
@@ -1668,6 +1669,17 @@ export function useMesWorkOrderDetail() {
 
   const cancelWorkOrderPending = shallowRef(false)
   const cancelWorkOrderError = shallowRef<unknown>()
+  const holdWorkOrderPending = shallowRef(false)
+  const holdWorkOrderError = shallowRef<unknown>()
+  const refreshHeldWorkOrderQueries = () =>
+    invalidateMesQueries(queryCache, [
+      'getBusinessConsoleMesWorkOrderDetail',
+      'listBusinessConsoleMesWorkOrders',
+      'getBusinessConsoleMesOverview',
+      'getBusinessConsoleMesWipSummary',
+      'listBusinessConsoleMesOperationTasks',
+      'listBusinessConsoleMesDispatchTasks',
+    ])
   const refreshCancelledWorkOrderQueries = () =>
     invalidateMesQueries(queryCache, [
       // 本域：取消改动工单及其派生读模型（详情/列表/概览/在制/工序/派工/齐套/领料/完工入库）
@@ -1735,6 +1747,57 @@ export function useMesWorkOrderDetail() {
     }
   }
 
+  async function holdWorkOrder(reason: string) {
+    const selectedManageScope = workOrderManageScope.requireSelectedScope()
+    holdWorkOrderPending.value = true
+    holdWorkOrderError.value = undefined
+    try {
+      const result = await executeLifecycleAction({
+        readLatest: async () => {
+          const query = getBusinessConsoleMesWorkOrderDetailQueryOptions({
+            path: { workOrderId: filters.workOrderId },
+            query: {
+              organizationId: filters.organizationId,
+              environmentId: filters.environmentId,
+              scopeKind: selectedManageScope.kind,
+              scopeId: selectedManageScope.id,
+            },
+          })
+          const response = await query.query({
+            signal: new AbortController().signal,
+          } as Parameters<typeof query.query>[0])
+          const item = response?.success ? response.data : undefined
+          return item
+            ? {
+                domain: 'mes-work-order' as const,
+                action: 'hold' as const,
+                facts: { status: item.status },
+              }
+            : undefined
+        },
+        command: () =>
+          holdBusinessConsoleMesWorkOrder({
+            path: { workOrderId: filters.workOrderId },
+            query: {
+              organizationId: filters.organizationId,
+              environmentId: filters.environmentId,
+              scopeKind: selectedManageScope.kind,
+              scopeId: selectedManageScope.id,
+            },
+            body: { reason },
+            throwOnError: false,
+          }),
+      })
+      await refreshHeldWorkOrderQueries()
+      return result
+    } catch (error) {
+      holdWorkOrderError.value = error
+      throw error
+    } finally {
+      holdWorkOrderPending.value = false
+    }
+  }
+
   const closeWorkOrderMutation = useMutation({
     ...closeBusinessConsoleMesWorkOrderMutationOptions(),
     onSuccess() {
@@ -1793,6 +1856,9 @@ export function useMesWorkOrderDetail() {
     closeWorkOrder,
     closeWorkOrderError: closeWorkOrderMutation.error,
     closeWorkOrderPending: closeWorkOrderMutation.isLoading,
+    holdWorkOrder,
+    holdWorkOrderError,
+    holdWorkOrderPending,
     recordEngineeringChangeDecision,
     recordEngineeringChangeDecisionError: engineeringChangeDecisionMutation.error,
     recordEngineeringChangeDecisionPending: engineeringChangeDecisionMutation.isLoading,
