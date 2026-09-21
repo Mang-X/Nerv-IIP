@@ -820,6 +820,11 @@ businessDemandPlanning = businessDemandPlanning
     .WithReference(businessErp)
     .WaitFor(businessErp);
 
+businessMes = businessMes
+    .WithEnvironment("Erp__BaseUrl", businessErp.GetEndpoint("http"))
+    .WithReference(businessErp)
+    .WaitFor(businessErp);
+
 // Quality resolves ERP purchase-receipt facts and — for every disposition that requires central
 // approval (rework / scrap / return-to-supplier / conditional-release) — the Approval chain status
 // over HTTP. Both base URLs must be the session's dynamic endpoints; without them Quality falls

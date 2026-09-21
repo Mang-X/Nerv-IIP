@@ -448,6 +448,7 @@ public sealed class MesAssetUnavailableRedisCapTransportTests(ITestOutputHelper 
             ["Quality:BaseUrl"] = "https://quality.test",
             ["ProductEngineering:BaseUrl"] = "https://product-engineering.test",
             ["Inventory:BaseUrl"] = "https://inventory.test",
+            ["Erp:BaseUrl"] = "https://erp.test",
         };
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {

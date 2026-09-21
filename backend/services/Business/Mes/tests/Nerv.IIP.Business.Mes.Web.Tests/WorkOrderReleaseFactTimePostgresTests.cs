@@ -179,7 +179,7 @@ public sealed class WorkOrderReleaseFactTimePostgresTests
                 organizationId, environmentId, workOrderId, $"OP-{workOrderId}-{sequence}", "MAT-OIL", null,
                 requiredQuantity: 10m, availableQuantity: 10m, stagedQuantity: 0m,
                 sourceSystem: "Inventory", sourceSnapshotId: $"inv-ready-{workOrderId}-{sequence}",
-                capturedAtUtc: ReleaseRequestedAtUtc.AddDays(-20), substituteMaterialIds: []));
+                capturedAtUtc: ReleaseRequestedAtUtc.AddDays(-20), substituteMaterialIds: [], uomCode: "PCS"));
         }
     }
 

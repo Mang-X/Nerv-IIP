@@ -4271,6 +4271,9 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     status?: string;
     shortageStage?: string | null;
     substituteMaterialIds?: Array<string> | null;
+    uomCode?: string | null;
+    expectedAvailableAtUtc?: string | null;
+    expectedAvailabilitySource?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialReadinessRequest = {

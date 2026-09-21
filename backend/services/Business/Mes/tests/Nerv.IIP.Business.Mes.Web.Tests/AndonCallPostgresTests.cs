@@ -629,7 +629,7 @@ public sealed class AndonCallPostgresTests
         {
             order.RecordMaterialRequirementSnapshot(WorkOrder.MaterialRequirementSnapshotCapturedStatus, RaisedAt);
             db.MaterialRequirements.Add(MaterialRequirement.Capture("org-1", "env-1", "WO-1", "OP-1", "MAT-1", null,
-                10m, 3m, 0m, "ProductEngineering", "SNAP-1", RaisedAt, []));
+                10m, 3m, 0m, "ProductEngineering", "SNAP-1", RaisedAt, [], "PCS"));
             db.QualityHoldContexts.Add(QualityHoldContext.Capture("org-1", "env-1", "WO-1", "OP-1", "Quality",
                 "DOC-1", "INSPECTION-1", null, "rejected", "quality.InspectionRejected", "首件不合格", RaisedAt));
             db.WorkCenterUnavailabilities.Add(WorkCenterUnavailability.Open("org-1", "env-1", "DT-1", "WC-1",

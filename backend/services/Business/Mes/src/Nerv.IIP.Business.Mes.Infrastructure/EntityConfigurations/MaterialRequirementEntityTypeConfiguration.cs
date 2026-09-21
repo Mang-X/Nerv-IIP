@@ -18,6 +18,7 @@ public sealed class MaterialRequirementEntityTypeConfiguration : IEntityTypeConf
         builder.Property(x => x.MaterialId).HasColumnName("material_id").IsRequired().HasMaxLength(100).HasComment("MasterData material SKU id required by the work order or operation.");
         builder.Property(x => x.MaterialLotId).HasColumnName("material_lot_id").HasMaxLength(100).HasComment("Optional preferred or allocated material lot id from Inventory/WMS readiness.");
         builder.Property(x => x.RequiredQuantity).HasColumnName("required_quantity").HasPrecision(18, 6).IsRequired().HasComment("Required material quantity from released MBOM or operation demand snapshot.");
+        builder.Property(x => x.UomCode).HasColumnName("uom_code").IsRequired().HasMaxLength(50).HasComment("Unit of measure frozen with the released MBOM material requirement.");
         builder.Property(x => x.AvailableQuantity).HasColumnName("available_quantity").HasPrecision(18, 6).IsRequired().HasComment("Available Inventory quantity snapshot for this requirement.");
         builder.Property(x => x.StagedQuantity).HasColumnName("staged_quantity").HasPrecision(18, 6).IsRequired().HasComment("WMS staged quantity snapshot for this requirement.");
         builder.Property(x => x.SourceSystem).HasColumnName("source_system").IsRequired().HasMaxLength(100).HasComment("Owning source system that produced the material readiness snapshot.");

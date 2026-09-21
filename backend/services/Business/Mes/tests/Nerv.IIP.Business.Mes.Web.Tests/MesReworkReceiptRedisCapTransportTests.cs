@@ -251,6 +251,7 @@ public sealed class MesReworkReceiptRedisCapTransportTests(ITestOutputHelper out
             ["ProductEngineering:BaseUrl"] = "https://product-engineering.test",
             ["Inventory:BaseUrl"] = "https://inventory.test",
             ["MasterData:BaseUrl"] = "https://master-data.test",
+            ["Erp:BaseUrl"] = "https://erp.test",
             ["Quality:BaseUrl"] = "https://quality.test",
             ["Approval:BaseUrl"] = "https://approval.test",
         };

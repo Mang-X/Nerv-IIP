@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Queries.Procurement;
+using Nerv.IIP.Contracts.Erp;
 using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
@@ -31,10 +32,11 @@ public sealed class MaterialSupplyEtaPostgresTests
             new ResolveMaterialSupplyEtasQuery(
                 "org-001",
                 "env-dev",
-                [new MaterialSupplyEtaRequestItem("SKU-RM-1000", 10m)]),
+                [new MaterialSupplyEtaRequestItem("SKU-RM-1000", "kg", 10m)]),
             CancellationToken.None);
 
         var item = Assert.Single(response.Items);
+        Assert.Equal("kg", item.UomCode);
         Assert.Equal(12m, item.OpenPurchaseQuantity);
         Assert.Equal(new DateOnly(2026, 6, 5), item.ExpectedAvailableDate);
     }

@@ -14,6 +14,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.ProductEngineering;
 using Nerv.IIP.Business.Mes.Web.Application.Quality;
+using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Business.Mes.Web.Application.Behaviors;
@@ -65,6 +66,7 @@ var inventoryBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(bu
 var masterDataBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
 var qualityBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Quality:BaseUrl", "http://localhost:5110");
 var approvalBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Approval:BaseUrl", "http://localhost:5114");
+var erpBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Erp:BaseUrl", "http://localhost:5118");
 // `Inventory:SiteCode` 是唯一权威的站点键。`Inventory:SiteCodes`（复数）保留给真正的多站点部署
 // —— 齐套可用量需要跨站点求和，与「本服务归属哪个站点」不是同一件事，因此不能合并；
 // 未显式配置时它回落到权威键，不再各自留一份默认值。
@@ -111,6 +113,10 @@ builder.Services.AddHttpClient<MesMasterDataHttpClient>(client =>
 {
     client.BaseAddress = masterDataBaseAddress;
 });
+builder.Services.AddHttpClient<MesErpHttpClient>(client =>
+{
+    client.BaseAddress = erpBaseAddress;
+});
 builder.Services
     .AddOptions<MesQualityHttpClientOptions>()
     .Bind(builder.Configuration.GetSection(MesQualityHttpClientOptions.SectionName))
@@ -138,7 +144,14 @@ builder.Services.AddHttpClient<IMesOperationTaskStartApprovalClient, HttpMesOper
 builder.Services.Configure<MesMaterialSupplyLocationOptions>(builder.Configuration.GetSection("Inventory"));
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<MesMaterialSupplyLocationOptions>>().Value);
 builder.Services.AddScoped<IMesMaterialSupplyLocationResolver, InventoryMesMaterialSupplyLocationResolver>();
-builder.Services.AddScoped<IMesMaterialRequirementSnapshotProvider, HttpMesProductEngineeringMaterialRequirementSnapshotProvider>();
+builder.Services.AddScoped<IMesMaterialAvailabilityReader, HttpMesMaterialAvailabilityReader>();
+builder.Services.AddScoped<IMesMaterialRequirementSnapshotProvider>(services =>
+    new HttpMesProductEngineeringMaterialRequirementSnapshotProvider(
+        services.GetRequiredService<MesProductEngineeringHttpClient>(),
+        services.GetRequiredService<IMesMaterialAvailabilityReader>(),
+        services.GetRequiredService<IInternalServiceTokenProvider>(),
+        services.GetRequiredService<ILogger<HttpMesProductEngineeringMaterialRequirementSnapshotProvider>>()));
+builder.Services.AddScoped<IMesMaterialReadinessLiveCoverageProvider, HttpMesMaterialReadinessLiveCoverageProvider>();
 builder.Services.AddScoped<IMesMaterialLotAvailabilityProvider, HttpMesMaterialLotAvailabilityProvider>();
 builder.Services.AddScoped<IMesRoutingSnapshotProvider, HttpMesProductEngineeringRoutingSnapshotProvider>();
 builder.Services.AddScoped<IMesWorkerSkillQualificationGate, HttpMesWorkerSkillQualificationGate>();

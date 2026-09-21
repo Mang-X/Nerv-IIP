@@ -2149,7 +2149,7 @@ public sealed class BusinessGatewayProxyTests
 
     // Contract: GatewayProxy + Regression. Authority: Issue #2223 acceptance 3-4.
     [Fact]
-    public async Task Mes_material_readiness_proxy_preserves_substitute_candidate_ids()
+    public async Task Mes_material_readiness_proxy_preserves_uom_substitutes_and_live_eta()
     {
         var mes = new RecordingMesClient
         {
@@ -2167,7 +2167,10 @@ public sealed class BusinessGatewayProxyTests
                     0m,
                     0m,
                     "Ready",
-                    SubstituteMaterialIds: ["MAT-ALT-A", "MAT-ALT-B"])])
+                    UomCode: "PCS",
+                    SubstituteMaterialIds: ["MAT-ALT-A", "MAT-ALT-B"],
+                    ExpectedAvailableAtUtc: DateTimeOffset.Parse("2026-09-28T00:00:00Z"),
+                    ExpectedAvailabilitySource: "erp.purchase-order-promised-date")])
         };
         await using var lease = LeaseHost(
             AllowedOrganizationScope(BusinessGatewayPermissions.MesMaterialsRead),
@@ -2191,6 +2194,9 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(
             ["MAT-ALT-A", "MAT-ALT-B"],
             row.GetProperty("substituteMaterialIds").EnumerateArray().Select(x => x.GetString()!).ToArray());
+        Assert.Equal("PCS", row.GetProperty("uomCode").GetString());
+        Assert.Equal("2026-09-28T00:00:00+00:00", row.GetProperty("expectedAvailableAtUtc").GetString());
+        Assert.Equal("erp.purchase-order-promised-date", row.GetProperty("expectedAvailabilitySource").GetString());
     }
 
     [Fact]

@@ -101,7 +101,7 @@ public sealed class MesMaterialScanGatewaySeamTests
             "SKU-001"));
         db.MaterialRequirements.Add(MaterialRequirement.Capture(
             "org-001", "env-dev", "WO-001", "OP-10", "MAT-PRIMARY", null,
-            5m, 5m, 0m, "product-engineering", "snap-001", Now, ["MAT-SUB"]));
+            5m, 5m, 0m, "product-engineering", "snap-001", Now, ["MAT-SUB"], "PCS"));
         var issue = MaterialIssueRequest.Create(
             "org-001", "env-dev", "MIR-001", "WO-001", "OP-10", "MAT-SUB", "PCS", 5m, Now);
         issue.ConfirmAndPostLineSideReceipt(

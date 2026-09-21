@@ -367,7 +367,8 @@ public sealed class MesTaskScopeQueryTests
             "ProductEngineering",
             "SNAP-ASSEMBLY",
             now,
-            []));
+            [],
+            "PCS"));
         await dbContext.SaveChangesAsync();
 
         var evaluatedReadiness = await new MesOperationTaskActionReadinessEvaluator(dbContext)
@@ -448,7 +449,8 @@ public sealed class MesTaskScopeQueryTests
             "ProductEngineering",
             "SNAP-READY",
             now,
-            []));
+            [],
+            "PCS"));
         await dbContext.SaveChangesAsync();
 
         var result = await new ListOperationTasksQueryHandler(dbContext).Handle(
@@ -492,7 +494,8 @@ public sealed class MesTaskScopeQueryTests
             "Legacy",
             "SNAP-LEGACY",
             now.AddDays(-1),
-            []));
+            [],
+            "PCS"));
         await dbContext.SaveChangesAsync();
 
         var list = await new ListOperationTasksQueryHandler(dbContext).Handle(

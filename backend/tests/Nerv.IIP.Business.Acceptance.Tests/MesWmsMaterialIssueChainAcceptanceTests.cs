@@ -150,7 +150,7 @@ public sealed class MesWmsMaterialIssueChainAcceptanceTests
         mesDb.OperationTasks.Add(operationTask);
         mesDb.MaterialRequirements.Add(MaterialRequirement.Capture(
             "org-001", "env-dev", "WO-1324", "OP-10", "MAT-OIL-PRIMARY", null,
-            6m, 0m, 0m, "MBOM", "SNAP-1324", now, ["MAT-OIL-ALT"]));
+            6m, 0m, 0m, "MBOM", "SNAP-1324", now, ["MAT-OIL-ALT"], "L"));
     }
 
     private sealed class NoopMediator : IMediator

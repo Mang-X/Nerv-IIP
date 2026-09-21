@@ -36,7 +36,7 @@ public sealed class MesEndpointContractTests
 {
     // Contract: HttpApi + Regression. Authority: Issue #2223 acceptance 3.
     [Fact]
-    public async Task Material_readiness_endpoint_exposes_the_frozen_substitute_candidate_ids()
+    public async Task Material_readiness_endpoint_exposes_frozen_substitutes_and_live_erp_eta()
     {
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
@@ -61,6 +61,10 @@ public sealed class MesEndpointContractTests
         Assert.Equal(
             ["MAT-ALT-A", "MAT-ALT-B"],
             row.GetProperty("substituteMaterialIds").EnumerateArray().Select(x => x.GetString()!).ToArray());
+        Assert.Equal("2026-09-28T00:00:00+00:00", row.GetProperty("expectedAvailableAtUtc").GetString());
+        Assert.Equal(
+            MesMaterialAvailabilitySources.ErpPurchaseOrderPromisedDate,
+            row.GetProperty("expectedAvailabilitySource").GetString());
     }
 
     [Fact]
@@ -1465,7 +1469,7 @@ public sealed class MesEndpointContractTests
         var wip = await new GetWipSummaryQueryHandler(dbContext).Handle(
             new GetWipSummaryQuery("org-001", "env-dev", null, Take: 100),
             CancellationToken.None);
-        var material = await new GetMaterialReadinessQueryHandler(dbContext).Handle(
+        var material = await new GetMaterialReadinessQueryHandler(dbContext, FrozenMaterialReadinessLiveCoverageProvider.Instance).Handle(
             new GetMaterialReadinessQuery("org-001", "env-dev", "WO-001"),
             CancellationToken.None);
 
@@ -2222,7 +2226,7 @@ public sealed class MesEndpointContractTests
             MaterialIssueRequest.Create("org-002", "env-dev", "MIR-OTHER-SCOPE", "WO-SUP-001", "OP-10", "MAT-001", "PCS", 2m, now));
         dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
             "org-001", "env-dev", "WO-SUP-001", "OP-10", "MAT-001", null,
-            2m, 0m, 0m, "MBOM", "SNAP-SUP-001", now, []));
+            2m, 0m, 0m, "MBOM", "SNAP-SUP-001", now, [], "PCS"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var handler = new CreateMaterialIssueRequestCommandHandler(dbContext);
@@ -2272,17 +2276,17 @@ public sealed class MesEndpointContractTests
             WorkOrder.Create("org-001", "env-dev", "WO-SCOPE", "SKU-FG", "PV-001", 10m, 10, now));
         dbContext.MaterialRequirements.AddRange(
             // Same identity: the older row must neither authorize MAT-STALE nor contribute quantity.
-            MaterialRequirement.Capture("org-001", "env-dev", "WO-SUB", "OP-10", "MAT-PRIMARY", null, 100m, 0m, 0m, "MBOM", "SNAP-OLD", now.AddMinutes(-3), ["MAT-STALE"]),
-            MaterialRequirement.Capture("org-001", "env-dev", "WO-SUB", "OP-10", "MAT-PRIMARY", null, 4m, 0m, 0m, "MBOM", "SNAP-LATEST", now, ["MAT-ALT"]),
+            MaterialRequirement.Capture("org-001", "env-dev", "WO-SUB", "OP-10", "MAT-PRIMARY", null, 100m, 0m, 0m, "MBOM", "SNAP-OLD", now.AddMinutes(-3), ["MAT-STALE"], "PCS"),
+            MaterialRequirement.Capture("org-001", "env-dev", "WO-SUB", "OP-10", "MAT-PRIMARY", null, 4m, 0m, 0m, "MBOM", "SNAP-LATEST", now, ["MAT-ALT"], "PCS"),
             // A distinct lot identity of the same primary is additive, not ambiguous.
-            MaterialRequirement.Capture("org-001", "env-dev", "WO-SUB", "OP-10", "MAT-PRIMARY", "LOT-B", 6m, 0m, 0m, "MBOM", "SNAP-LOT-B", now, ["MAT-ALT"]),
+            MaterialRequirement.Capture("org-001", "env-dev", "WO-SUB", "OP-10", "MAT-PRIMARY", "LOT-B", 6m, 0m, 0m, "MBOM", "SNAP-LOT-B", now, ["MAT-ALT"], "PCS"),
             // Work-order-level requirements are eligible for an operation-scoped request.
-            MaterialRequirement.Capture("org-001", "env-dev", "WO-SUB", null, "MAT-PRIMARY", "LOT-C", 2m, 0m, 0m, "MBOM", "SNAP-WO", now, ["MAT-ALT"]),
+            MaterialRequirement.Capture("org-001", "env-dev", "WO-SUB", null, "MAT-PRIMARY", "LOT-C", 2m, 0m, 0m, "MBOM", "SNAP-WO", now, ["MAT-ALT"], "PCS"),
             // A different task must not make OP-10 ambiguous.
-            MaterialRequirement.Capture("org-001", "env-dev", "WO-SUB", "OP-20", "MAT-OTHER", null, 8m, 0m, 0m, "MBOM", "SNAP-OP-20", now, ["MAT-ALT"]),
-            MaterialRequirement.Capture("org-001", "env-dev", "WO-AMB", "OP-10", "MAT-A", null, 3m, 0m, 0m, "MBOM", "SNAP-A", now, ["MAT-AMB"]),
-            MaterialRequirement.Capture("org-001", "env-dev", "WO-AMB", "OP-10", "MAT-B", null, 5m, 0m, 0m, "MBOM", "SNAP-B", now, ["MAT-AMB"]),
-            MaterialRequirement.Capture("org-002", "env-dev", "WO-SCOPE", "OP-10", "MAT-SCOPED", null, 7m, 0m, 0m, "MBOM", "SNAP-SCOPE", now, ["MAT-CROSS-SCOPE"]));
+            MaterialRequirement.Capture("org-001", "env-dev", "WO-SUB", "OP-20", "MAT-OTHER", null, 8m, 0m, 0m, "MBOM", "SNAP-OP-20", now, ["MAT-ALT"], "PCS"),
+            MaterialRequirement.Capture("org-001", "env-dev", "WO-AMB", "OP-10", "MAT-A", null, 3m, 0m, 0m, "MBOM", "SNAP-A", now, ["MAT-AMB"], "PCS"),
+            MaterialRequirement.Capture("org-001", "env-dev", "WO-AMB", "OP-10", "MAT-B", null, 5m, 0m, 0m, "MBOM", "SNAP-B", now, ["MAT-AMB"], "PCS"),
+            MaterialRequirement.Capture("org-002", "env-dev", "WO-SCOPE", "OP-10", "MAT-SCOPED", null, 7m, 0m, 0m, "MBOM", "SNAP-SCOPE", now, ["MAT-CROSS-SCOPE"], "PCS"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var handler = new CreateMaterialIssueRequestCommandHandler(dbContext);
@@ -2370,7 +2374,7 @@ public sealed class MesEndpointContractTests
             "org-001", "env-dev", "WO-SUB-HTTP", "SKU-FG", "PV-001", 10m, 10, now));
         dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
             "org-001", "env-dev", "WO-SUB-HTTP", "OP-10", "MAT-PRIMARY", null,
-            4m, 0m, 0m, "MBOM", "SNAP-HTTP", now, ["MAT-ALT"]));
+            4m, 0m, 0m, "MBOM", "SNAP-HTTP", now, ["MAT-ALT"], "PCS"));
         dbContext.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
             "org-002", "env-dev", "MIR-SUB-OTHER", "WO-SUB-HTTP", "OP-10", "MAT-ALT", "PCS", 4m, now,
             substitutedMaterialId: "MAT-OTHER-PRIMARY"));
@@ -3471,14 +3475,17 @@ public sealed class MesEndpointContractTests
                 [new MesMaterialReadinessRow(
                     "MAT-PRIMARY",
                     null,
+                    "PCS",
                     10m,
-                    12m,
+                    4m,
                     0m,
                     0m,
                     0m,
-                    0m,
-                    "Ready",
-                    SubstituteMaterialIds: ["MAT-ALT-A", "MAT-ALT-B"])]);
+                    6m,
+                    "Shortage",
+                    SubstituteMaterialIds: ["MAT-ALT-A", "MAT-ALT-B"],
+                    ExpectedAvailableAtUtc: DateTimeOffset.Parse("2026-09-28T00:00:00Z"),
+                    ExpectedAvailabilitySource: MesMaterialAvailabilitySources.ErpPurchaseOrderPromisedDate)]);
             return Task.FromResult((TResponse)(object)response);
         }
 

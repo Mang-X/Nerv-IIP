@@ -63,7 +63,7 @@ public sealed partial class MesMaterialScanPrevalidationTests
         SeedMesFacts(db, "MAT-SUB", includeRequirement: false, completeReceipt: true);
         db.MaterialRequirements.Add(MaterialRequirement.Capture(
             "org-001", "env-dev", "WO-001", "OP-10", "MAT-PRIMARY", null,
-            5m, 5m, 0m, "product-engineering", "snap-001", Now, ["MAT-SUB"]));
+            5m, 5m, 0m, "product-engineering", "snap-001", Now, ["MAT-SUB"], "PCS"));
         await db.SaveChangesAsync();
         var response = await CreateHandler(
             db,
@@ -104,10 +104,10 @@ public sealed partial class MesMaterialScanPrevalidationTests
         db.MaterialRequirements.AddRange(
             MaterialRequirement.Capture(
                 "org-001", "env-dev", "WO-001", "OP-10", "MAT-PRIMARY", null,
-                5m, 5m, 0m, "product-engineering", "snap-old", Now.AddMinutes(-1), ["MAT-SUB"]),
+                5m, 5m, 0m, "product-engineering", "snap-old", Now.AddMinutes(-1), ["MAT-SUB"], "PCS"),
             MaterialRequirement.Capture(
                 "org-001", "env-dev", "WO-001", "OP-10", "MAT-PRIMARY", null,
-                5m, 5m, 0m, "product-engineering", "snap-latest", Now, []));
+                5m, 5m, 0m, "product-engineering", "snap-latest", Now, [], "PCS"));
         await db.SaveChangesAsync();
         var inventory = new StubAvailabilityProvider(new(true, false, true));
 
@@ -126,10 +126,10 @@ public sealed partial class MesMaterialScanPrevalidationTests
         db.MaterialRequirements.AddRange(
             MaterialRequirement.Capture(
                 "org-001", "env-dev", "WO-001", "OP-10", "MAT-A", null,
-                5m, 5m, 0m, "product-engineering", "snap-old", Now.AddMinutes(-1), []),
+                5m, 5m, 0m, "product-engineering", "snap-old", Now.AddMinutes(-1), [], "PCS"),
             MaterialRequirement.Capture(
                 "org-001", "env-dev", "WO-001", "OP-10", "MAT-B", null,
-                5m, 5m, 0m, "product-engineering", "snap-latest", Now, []));
+                5m, 5m, 0m, "product-engineering", "snap-latest", Now, [], "PCS"));
         await db.SaveChangesAsync();
         var inventory = new StubAvailabilityProvider(new(true, false, true));
 
@@ -161,7 +161,7 @@ public sealed partial class MesMaterialScanPrevalidationTests
         SeedMesFacts(db, "MAT-PRIMARY", includeRequirement: false, completeReceipt: true);
         db.MaterialRequirements.Add(MaterialRequirement.Capture(
             "org-001", "env-dev", "WO-001", "OP-10", "MAT-PRIMARY", null,
-            5m, 5m, 0m, "product-engineering", "snap-unclosed", Now.AddMinutes(1), []));
+            5m, 5m, 0m, "product-engineering", "snap-unclosed", Now.AddMinutes(1), [], "PCS"));
         await db.SaveChangesAsync();
         var inventory = new StubAvailabilityProvider(new(true, false, true));
 
@@ -314,7 +314,7 @@ public sealed partial class MesMaterialScanPrevalidationTests
         SeedMesFacts(db, "MAT-OTHER-OP", includeRequirement: false, completeReceipt: true);
         db.MaterialRequirements.Add(MaterialRequirement.Capture(
             "org-001", "env-dev", "WO-001", "OP-20", "MAT-OTHER-OP", null,
-            5m, 5m, 0m, "product-engineering", "snap-other-op", Now, []));
+            5m, 5m, 0m, "product-engineering", "snap-other-op", Now, [], "PCS"));
         await db.SaveChangesAsync();
         var inventory = new StubAvailabilityProvider(new(true, false, true));
 
@@ -749,7 +749,7 @@ public sealed partial class MesMaterialScanPrevalidationTests
         {
             db.MaterialRequirements.Add(MaterialRequirement.Capture(
                 "org-001", "env-dev", "WO-001", "OP-10", materialId, null,
-                5m, 5m, 0m, "product-engineering", "snap-001", Now, []));
+                5m, 5m, 0m, "product-engineering", "snap-001", Now, [], "PCS"));
         }
 
         var issue = MaterialIssueRequest.Create(

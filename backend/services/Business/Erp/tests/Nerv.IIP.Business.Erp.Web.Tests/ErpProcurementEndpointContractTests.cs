@@ -15,6 +15,7 @@ using Nerv.IIP.Business.Erp.Web.Application.Queries.Procurement;
 using Nerv.IIP.Business.Erp.Web.Application.Wms;
 using Nerv.IIP.Business.Erp.Web.Endpoints.Erp;
 using Nerv.IIP.Contracts.Approval;
+using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.Primitives;
@@ -415,6 +416,7 @@ public sealed class ErpProcurementEndpointContractTests
         AddReleasedPurchaseOrder(dbContext, "PO-ETA-001", "SKU-RM-1000", 4m, new DateOnly(2026, 6, 3));
         AddReleasedPurchaseOrder(dbContext, "PO-ETA-002", "SKU-RM-1000", 7m, new DateOnly(2026, 6, 5));
         AddReleasedPurchaseOrder(dbContext, "PO-ETA-003", "SKU-RM-2000", 2m, new DateOnly(2026, 6, 4));
+        AddReleasedPurchaseOrder(dbContext, "PO-ETA-BOX", "SKU-RM-1000", 100m, new DateOnly(2026, 6, 1), uomCode: "BOX");
         AddReleasedPurchaseOrder(dbContext, "PO-OTHER-ENV", "SKU-RM-1000", 100m, new DateOnly(2026, 6, 1), environmentId: "env-other");
         var partlyReceivedOrder = PurchaseOrder.Create(
             "org-001",
@@ -456,8 +458,8 @@ public sealed class ErpProcurementEndpointContractTests
                 " org-001 ",
                 " env-dev ",
                 [
-                    new MaterialSupplyEtaRequestItem("SKU-RM-2000", 3m),
-                    new MaterialSupplyEtaRequestItem("SKU-RM-1000", 10m),
+                    new MaterialSupplyEtaRequestItem("SKU-RM-2000", "kg", 3m),
+                    new MaterialSupplyEtaRequestItem("SKU-RM-1000", "kg", 10m),
                 ]),
             CancellationToken.None);
 
@@ -465,6 +467,7 @@ public sealed class ErpProcurementEndpointContractTests
             item =>
             {
                 Assert.Equal("SKU-RM-1000", item.SkuCode);
+                Assert.Equal("kg", item.UomCode);
                 Assert.Equal(10m, item.ShortageQuantity);
                 Assert.Equal(12m, item.OpenPurchaseQuantity);
                 Assert.Equal(new DateOnly(2026, 6, 5), item.ExpectedAvailableDate);
@@ -487,8 +490,8 @@ public sealed class ErpProcurementEndpointContractTests
             "org-001",
             "env-dev",
             [
-                new MaterialSupplyEtaRequestItem("SKU-RM-1000", 1m),
-                new MaterialSupplyEtaRequestItem(" SKU-RM-1000 ", 0m),
+                new MaterialSupplyEtaRequestItem("SKU-RM-1000", "kg", 1m),
+                new MaterialSupplyEtaRequestItem(" SKU-RM-1000 ", " kg ", 0m),
             ]));
 
         Assert.False(result.IsValid);
@@ -505,7 +508,7 @@ public sealed class ErpProcurementEndpointContractTests
         var nullSku = validator.Validate(new ResolveMaterialSupplyEtasQuery(
             "org-001",
             "env-dev",
-            [new MaterialSupplyEtaRequestItem(null!, 1m)]));
+            [new MaterialSupplyEtaRequestItem(null!, "kg", 1m)]));
 
         Assert.False(nullItems.IsValid);
         Assert.Contains(nullItems.Errors, error => error.PropertyName == "Items");
@@ -1114,7 +1117,8 @@ public sealed class ErpProcurementEndpointContractTests
         decimal quantity,
         DateOnly promisedDate,
         string organizationId = "org-001",
-        string environmentId = "env-dev")
+        string environmentId = "env-dev",
+        string uomCode = "kg")
     {
         var order = PurchaseOrder.Create(
             organizationId,
@@ -1122,7 +1126,7 @@ public sealed class ErpProcurementEndpointContractTests
             purchaseOrderNo,
             "SUP-001",
             "SITE-01",
-            [new PurchaseOrderLineDraft("10", skuCode, "kg", quantity, 1m, promisedDate)]);
+            [new PurchaseOrderLineDraft("10", skuCode, uomCode, quantity, 1m, promisedDate)]);
         order.MarkApprovalRequested($"approval-{purchaseOrderNo}");
         order.ReleaseAfterApproval($"approval-{purchaseOrderNo}");
         dbContext.PurchaseOrders.Add(order);

@@ -605,7 +605,8 @@ public sealed class WorldHistorySeedService(
                 sourceSystem: SourceSystem,
                 sourceSnapshotId: $"{plan.WorkOrderNo}-KIT",
                 capturedAtUtc: capturedAtUtc,
-                substituteMaterialIds: []);
+                substituteMaterialIds: [],
+                uomCode: component.UomCode);
             dbContext.MaterialRequirements.Add(requirement);
         }
 

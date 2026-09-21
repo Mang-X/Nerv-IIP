@@ -39,7 +39,7 @@ public sealed class MesMaterialSubstituteSnapshotPostgresTests
             setup.MaterialRequirements.Add(MaterialRequirement.Capture(
                 "org-001", "env-dev", "WO-SUBSTITUTE-PG-001", null, "MAT-PRIMARY", null,
                 10m, 2m, 0m, "product-engineering-http", "MBOM-001:A:MAT-PRIMARY", capturedAtUtc,
-                ["MAT-ALT-A", "MAT-ALT-B"]));
+                ["MAT-ALT-A", "MAT-ALT-B"], "PCS"));
             var substitutedIssue = MaterialIssueRequest.Create(
                 "org-001", "env-dev", "MIR-SUBSTITUTE-PG-001", "WO-SUBSTITUTE-PG-001", null,
                 "MAT-ALT-A", "PCS", 1m, capturedAtUtc,
