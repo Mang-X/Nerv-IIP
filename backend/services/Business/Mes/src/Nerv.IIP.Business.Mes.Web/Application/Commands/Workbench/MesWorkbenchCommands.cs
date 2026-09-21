@@ -2351,7 +2351,8 @@ internal static class MaterialReadinessGuards
                 result.SourceSystem,
                 line.SourceSnapshotId,
                 capturedAtUtc,
-                line.SubstituteMaterialIds));
+                line.SubstituteMaterialIds,
+                line.UomCode));
         }
 
         workOrder.RecordMaterialRequirementSnapshot(

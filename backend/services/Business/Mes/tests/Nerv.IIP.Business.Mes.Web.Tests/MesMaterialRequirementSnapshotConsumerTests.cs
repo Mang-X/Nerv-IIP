@@ -184,7 +184,7 @@ public sealed class MesMaterialRequirementSnapshotConsumerTests
         await dbContext.SaveChangesAsync();
         dbContext.Entry(requirement).Property(x => x.RequiredQuantity).CurrentValue = 5m;
 
-        var response = await new GetMaterialReadinessQueryHandler(dbContext).Handle(
+        var response = await new GetMaterialReadinessQueryHandler(dbContext, FrozenMaterialReadinessLiveCoverageProvider.Instance).Handle(
             new GetMaterialReadinessQuery(OrganizationId, EnvironmentId, WorkOrderId),
             CancellationToken.None);
 

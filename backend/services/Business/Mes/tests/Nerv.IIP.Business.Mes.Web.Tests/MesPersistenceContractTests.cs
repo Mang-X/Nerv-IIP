@@ -358,7 +358,7 @@ public sealed class MesPersistenceContractTests
 
         using var recreatedScope = services.CreateScope();
         var recreatedDbContext = recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var readiness = await new GetMaterialReadinessQueryHandler(recreatedDbContext).Handle(
+        var readiness = await new GetMaterialReadinessQueryHandler(recreatedDbContext, FrozenMaterialReadinessLiveCoverageProvider.Instance).Handle(
             new GetMaterialReadinessQuery("org-001", "env-dev", "WO-MAT-001"),
             CancellationToken.None);
 
@@ -422,7 +422,7 @@ public sealed class MesPersistenceContractTests
 
         using var recreatedScope = services.CreateScope();
         var recreatedDbContext = recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var readiness = await new GetMaterialReadinessQueryHandler(recreatedDbContext).Handle(
+        var readiness = await new GetMaterialReadinessQueryHandler(recreatedDbContext, FrozenMaterialReadinessLiveCoverageProvider.Instance).Handle(
             new GetMaterialReadinessQuery("org-001", "env-dev", "WO-INFLIGHT-001"),
             CancellationToken.None);
 
@@ -477,7 +477,7 @@ public sealed class MesPersistenceContractTests
 
         using var recreatedScope = services.CreateScope();
         var recreatedDbContext = recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var readiness = await new GetMaterialReadinessQueryHandler(recreatedDbContext).Handle(
+        var readiness = await new GetMaterialReadinessQueryHandler(recreatedDbContext, FrozenMaterialReadinessLiveCoverageProvider.Instance).Handle(
             new GetMaterialReadinessQuery("org-001", "env-dev", "WO-CANCELLED-001"),
             CancellationToken.None);
 
@@ -540,7 +540,7 @@ public sealed class MesPersistenceContractTests
         dbContext.MaterialIssueRequests.Add(wrongLotRequest);
         await dbContext.SaveChangesAsync();
 
-        var readiness = await new GetMaterialReadinessQueryHandler(dbContext).Handle(
+        var readiness = await new GetMaterialReadinessQueryHandler(dbContext, FrozenMaterialReadinessLiveCoverageProvider.Instance).Handle(
             new GetMaterialReadinessQuery("org-001", "env-dev", "WO-LOT-001"),
             CancellationToken.None);
 
@@ -2084,7 +2084,7 @@ public sealed class MesPersistenceContractTests
         var release = await new ReleaseWorkOrderCommandHandler(dbContext).Handle(
             new ReleaseWorkOrderCommand("org-001", "env-dev", "WO-SNAPSHOT-001", now.AddMinutes(10)),
             CancellationToken.None);
-        var readiness = await new GetMaterialReadinessQueryHandler(dbContext).Handle(
+        var readiness = await new GetMaterialReadinessQueryHandler(dbContext, FrozenMaterialReadinessLiveCoverageProvider.Instance).Handle(
             new GetMaterialReadinessQuery("org-001", "env-dev", "WO-SNAPSHOT-001"),
             CancellationToken.None);
 
@@ -2928,7 +2928,7 @@ public sealed class MesPersistenceContractTests
         await dbContext.SaveChangesAsync();
 
         // 过账回执之前：单据在途，齐套一分钱都不能认（消灭「MES 单方面翻绿」的假绿路径，#1322）。
-        var pendingReadiness = await new GetMaterialReadinessQueryHandler(dbContext).Handle(
+        var pendingReadiness = await new GetMaterialReadinessQueryHandler(dbContext, FrozenMaterialReadinessLiveCoverageProvider.Instance).Handle(
             new GetMaterialReadinessQuery("org-001", "env-dev", "WO-PARTIAL-001"),
             CancellationToken.None);
         Assert.Equal(0m, Assert.Single(pendingReadiness.Items).ReceivedQuantity);
@@ -2938,7 +2938,7 @@ public sealed class MesPersistenceContractTests
 
         await MaterialSupplyTestFixtures.PostPendingReceiptAsync(dbContext, "MIR-PARTIAL-001", now.AddMinutes(6));
 
-        var readiness = await new GetMaterialReadinessQueryHandler(dbContext).Handle(
+        var readiness = await new GetMaterialReadinessQueryHandler(dbContext, FrozenMaterialReadinessLiveCoverageProvider.Instance).Handle(
             new GetMaterialReadinessQuery("org-001", "env-dev", "WO-PARTIAL-001"),
             CancellationToken.None);
 

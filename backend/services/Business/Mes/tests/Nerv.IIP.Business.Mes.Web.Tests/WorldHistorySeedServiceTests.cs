@@ -316,7 +316,7 @@ public sealed class WorldHistorySeedServiceTests
         await CreateSeed(dbContext).SeedAsync("org-001", "env-dev", AsOfDate, ShortageScale);
 
         var shortWorkOrderId = (await ShortWorkOrderIdsAsync(dbContext)).Order(StringComparer.Ordinal).First();
-        var readiness = await new GetMaterialReadinessQueryHandler(dbContext).Handle(
+        var readiness = await new GetMaterialReadinessQueryHandler(dbContext, FrozenMaterialReadinessLiveCoverageProvider.Instance).Handle(
             new GetMaterialReadinessQuery("org-001", "env-dev", shortWorkOrderId),
             CancellationToken.None);
 

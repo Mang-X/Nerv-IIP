@@ -36,7 +36,7 @@ public sealed class MesEndpointContractTests
 {
     // Contract: HttpApi + Regression. Authority: Issue #2223 acceptance 3.
     [Fact]
-    public async Task Material_readiness_endpoint_exposes_the_frozen_substitute_candidate_ids()
+    public async Task Material_readiness_endpoint_exposes_frozen_substitutes_and_live_erp_eta()
     {
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
@@ -61,6 +61,10 @@ public sealed class MesEndpointContractTests
         Assert.Equal(
             ["MAT-ALT-A", "MAT-ALT-B"],
             row.GetProperty("substituteMaterialIds").EnumerateArray().Select(x => x.GetString()!).ToArray());
+        Assert.Equal("2026-09-28T00:00:00+00:00", row.GetProperty("expectedAvailableAtUtc").GetString());
+        Assert.Equal(
+            MesMaterialAvailabilitySources.ErpPurchaseOrderPromisedDate,
+            row.GetProperty("expectedAvailabilitySource").GetString());
     }
 
     [Fact]
@@ -1465,7 +1469,7 @@ public sealed class MesEndpointContractTests
         var wip = await new GetWipSummaryQueryHandler(dbContext).Handle(
             new GetWipSummaryQuery("org-001", "env-dev", null, Take: 100),
             CancellationToken.None);
-        var material = await new GetMaterialReadinessQueryHandler(dbContext).Handle(
+        var material = await new GetMaterialReadinessQueryHandler(dbContext, FrozenMaterialReadinessLiveCoverageProvider.Instance).Handle(
             new GetMaterialReadinessQuery("org-001", "env-dev", "WO-001"),
             CancellationToken.None);
 
@@ -3472,13 +3476,15 @@ public sealed class MesEndpointContractTests
                     "MAT-PRIMARY",
                     null,
                     10m,
-                    12m,
+                    4m,
                     0m,
                     0m,
                     0m,
-                    0m,
-                    "Ready",
-                    SubstituteMaterialIds: ["MAT-ALT-A", "MAT-ALT-B"])]);
+                    6m,
+                    "Shortage",
+                    SubstituteMaterialIds: ["MAT-ALT-A", "MAT-ALT-B"],
+                    ExpectedAvailableAtUtc: DateTimeOffset.Parse("2026-09-28T00:00:00Z"),
+                    ExpectedAvailabilitySource: MesMaterialAvailabilitySources.ErpPurchaseOrderPromisedDate)]);
             return Task.FromResult((TResponse)(object)response);
         }
 

@@ -1546,9 +1546,13 @@ public sealed record MesMaterialReadinessRow(
     decimal ShortageQuantity,
     string Status,
     string ShortageStage = MesMaterialShortageStages.None,
-    IReadOnlyCollection<string>? SubstituteMaterialIds = null);
+    IReadOnlyCollection<string>? SubstituteMaterialIds = null,
+    DateTimeOffset? ExpectedAvailableAtUtc = null,
+    string? ExpectedAvailabilitySource = null);
 
-public sealed class GetMaterialReadinessQueryHandler(ApplicationDbContext dbContext)
+public sealed class GetMaterialReadinessQueryHandler(
+    ApplicationDbContext dbContext,
+    IMesMaterialReadinessLiveCoverageProvider liveCoverageProvider)
     : IQueryHandler<GetMaterialReadinessQuery, MesMaterialReadinessResponse>
 {
     public async Task<MesMaterialReadinessResponse> Handle(GetMaterialReadinessQuery request, CancellationToken cancellationToken)
@@ -1593,6 +1597,37 @@ public sealed class GetMaterialReadinessQueryHandler(ApplicationDbContext dbCont
             })
             .ToArrayAsync(cancellationToken);
 
+        var coverageRequestItems = requirements
+            .GroupBy(x => new { x.MaterialId, x.MaterialLotId })
+            .Select(group =>
+            {
+                var issueRows = issues.Where(issue =>
+                    string.Equals(issue.MaterialId, group.Key.MaterialId, StringComparison.OrdinalIgnoreCase) &&
+                    (group.Key.MaterialLotId is null ||
+                        string.Equals(issue.MaterialLotId, group.Key.MaterialLotId, StringComparison.OrdinalIgnoreCase)));
+                return new MesMaterialReadinessLiveCoverageRequestItem(
+                    group.Key.MaterialId,
+                    group.Key.MaterialLotId,
+                    group.First().UomCode,
+                    group.Sum(x => x.RequiredQuantity),
+                    group.Sum(x => x.AvailableQuantity),
+                    group.Sum(x => x.StagedQuantity),
+                    issueRows.Sum(x => x.ReceivedQuantity),
+                    MaterialSubstituteCandidateNormalizer.Normalize(
+                        group.Key.MaterialId,
+                        group.SelectMany(x => x.SubstituteMaterialIds ?? [])));
+            })
+            .ToArray();
+        var liveCoverage = await liveCoverageProvider.ResolveAsync(
+            new MesMaterialReadinessLiveCoverageRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                coverageRequestItems),
+            cancellationToken);
+        var liveCoverageByMaterial = liveCoverage.Items.ToDictionary(
+            x => (x.MaterialId.ToUpperInvariant(), x.MaterialLotId?.ToUpperInvariant()),
+            x => x);
+
         var rows = requirements
             .GroupBy(x => new { x.MaterialId, x.MaterialLotId })
             .Select(x =>
@@ -1602,7 +1637,12 @@ public sealed class GetMaterialReadinessQueryHandler(ApplicationDbContext dbCont
                     (x.Key.MaterialLotId is null ||
                         string.Equals(y.MaterialLotId, x.Key.MaterialLotId, StringComparison.OrdinalIgnoreCase)));
                 var required = x.Sum(y => y.RequiredQuantity);
-                var available = x.Sum(y => y.AvailableQuantity);
+                liveCoverageByMaterial.TryGetValue(
+                    (x.Key.MaterialId.ToUpperInvariant(), x.Key.MaterialLotId?.ToUpperInvariant()),
+                    out var coverage);
+                var available = liveCoverage.InventoryAvailable
+                    ? Math.Max(0m, coverage?.AvailableQuantity ?? 0m)
+                    : 0m;
                 var staged = x.Sum(y => y.StagedQuantity);
                 // 「应领」只算仍然在途/已兑现的领料单。取消、退料中、预留失效的单子不代表仓库还在配货,
                 // 把它们算进来会让 requested 虚高,进而把「其实没人在配」误标成「仓库配送中」。
@@ -1632,7 +1672,9 @@ public sealed class GetMaterialReadinessQueryHandler(ApplicationDbContext dbCont
                         : requested > received
                             ? MesMaterialShortageStages.AwaitingDelivery
                             : MesMaterialShortageStages.AwaitingPreparation,
-                    substituteMaterialIds);
+                    substituteMaterialIds,
+                    shortage > 0 && liveCoverage.ErpAvailable ? coverage?.ExpectedAvailableAtUtc : null,
+                    shortage > 0 && liveCoverage.ErpAvailable ? coverage?.ExpectedAvailabilitySource : null);
             })
             .OrderBy(x => x.MaterialId, StringComparer.OrdinalIgnoreCase)
             .ThenBy(x => x.MaterialLotId, StringComparer.OrdinalIgnoreCase)
