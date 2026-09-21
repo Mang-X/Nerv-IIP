@@ -15,6 +15,7 @@ export { useSchedulingPlan, type SchedulingContext } from './composables/useSche
 export { useSchedulingEdits, type SchedulingEditsDeps } from './composables/useSchedulingEdits'
 
 export { toModel, toLockedAssignments } from './model/aps-mapper'
+export { materialReadyLabel } from './model/material-risk'
 export {
   BLOCK_KINDS,
   BLOCK_LABELS,

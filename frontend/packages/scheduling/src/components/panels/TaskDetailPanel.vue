@@ -4,6 +4,7 @@ import { NvButton } from '@nerv-iip/ui'
 import { LockIcon, UnlockIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import { conflictReasonLabel } from '../../model/labels'
+import { materialReadyLabel } from '../../model/material-risk'
 import type { ScheduleTask } from '../../model/types'
 
 // 选中工序/工单的完整详情(取代弹出抽屉,常驻右侧栏顶部)。
@@ -13,6 +14,7 @@ const emit = defineEmits<{ 'toggle-lock': [taskId: string, locked: boolean] }>()
 
 const isOrder = computed(() => props.task?.type === 'order')
 const isBlock = computed(() => !!props.task?.blockKind)
+const materialReadyText = computed(() => materialReadyLabel(props.task?.materialRisk))
 const PRIO = { high: ['高', 'danger'], medium: ['中', 'warning'], low: ['低', 'muted'] } as const
 const BLOCK = {
   maintenance: {
@@ -170,6 +172,9 @@ const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
         data-testid="task-material-risk"
       >
         <p class="font-medium">物料风险 · 需在开工前完成备料</p>
+        <p v-if="materialReadyText" class="mt-1 font-medium">
+          {{ materialReadyText }}
+        </p>
         <ul v-if="task.materialRisk.shortages.length" class="mt-1 grid gap-0.5">
           <li
             v-for="s in task.materialRisk.shortages"

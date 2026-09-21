@@ -2,6 +2,7 @@
 import { LockIcon, TriangleAlertIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import type { TimeScale } from '../engine/engine'
+import { materialReadyLabel } from '../model/material-risk'
 import type { LaneOrder, ScheduleModel, ScheduleTask } from '../model/types'
 
 const props = withDefaults(
@@ -331,6 +332,9 @@ function selectTask(task: ScheduleTask) {
               </span>
               <span v-if="positioned.task.locked" class="nv-timeline-task__status">
                 <LockIcon aria-hidden="true" />锁定
+              </span>
+              <span v-if="positioned.task.materialRisk" class="nv-timeline-task__status">
+                {{ materialReadyLabel(positioned.task.materialRisk) ?? '缺料待备' }}
               </span>
             </span>
           </button>

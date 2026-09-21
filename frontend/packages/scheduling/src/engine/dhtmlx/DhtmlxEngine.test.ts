@@ -83,6 +83,37 @@ describe('DhtmlxEngine (fake factory)', () => {
     expect(fake.state.destroyed).toBe(true)
   })
 
+  it('资源卡片使用同一物料风险事实显示预计到料日期', () => {
+    const fake = makeFakeGantt()
+    const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
+    const model = toModel({
+      ...samplePlan,
+      materialRisks: [
+        {
+          orderId: 'WO-001',
+          operationId: 'op-10',
+          reasonCodes: ['material-shortage'],
+          shortages: [],
+          message: '需在开工前完成备料',
+          materialReadyUtc: '2026-09-28T08:00:00.000Z',
+        },
+      ],
+    })
+    engine.mount(el(), { ...options(), view: 'resource' })
+    engine.setData(model)
+
+    const template = fake.state.templates.task_text as (
+      start: unknown,
+      end: unknown,
+      task: { nerv?: (typeof model.tasks)[number] },
+    ) => string
+    const html = template(undefined, undefined, {
+      nerv: model.tasks.find((task) => task.id === 'a1'),
+    })
+
+    expect(html).toContain('预计到料 09-28')
+  })
+
   it('maps resource load utilization into the resource lane header', () => {
     const fake = makeFakeGantt()
     const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
