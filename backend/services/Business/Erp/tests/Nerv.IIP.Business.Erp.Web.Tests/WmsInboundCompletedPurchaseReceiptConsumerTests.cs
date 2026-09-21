@@ -59,7 +59,7 @@ public sealed class WmsInboundCompletedPurchaseReceiptConsumerTests
         var etaChanged = Assert.Single(scope.ServiceProvider
             .GetRequiredService<RecordingIntegrationEventPublisher>()
             .Published
-            .OfType<ErpIntegrationEvent<MaterialSupplyEtaChangedPayload>>());
+            .OfType<MaterialSupplyEtaChangedIntegrationEvent>());
         Assert.Equal(integrationEvent.EventId, etaChanged.CausationId);
         Assert.Equal(integrationEvent.CorrelationId, etaChanged.CorrelationId);
         Assert.Equal(integrationEvent.Actor, etaChanged.Actor);

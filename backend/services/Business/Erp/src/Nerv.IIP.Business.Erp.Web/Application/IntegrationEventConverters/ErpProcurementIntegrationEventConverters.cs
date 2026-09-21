@@ -49,12 +49,12 @@ public sealed class PurchaseOrderReleasedIntegrationEventConverter
 }
 
 public sealed class MaterialSupplyEtaChangedIntegrationEventConverter(IErpIntegrationEventContextAccessor contextAccessor)
-    : IIntegrationEventConverter<MaterialSupplyEtaChangedDomainEvent, ErpIntegrationEvent<MaterialSupplyEtaChangedPayload>>
+    : IIntegrationEventConverter<MaterialSupplyEtaChangedDomainEvent, MaterialSupplyEtaChangedIntegrationEvent>
 {
-    public ErpIntegrationEvent<MaterialSupplyEtaChangedPayload> Convert(MaterialSupplyEtaChangedDomainEvent domainEvent)
+    public MaterialSupplyEtaChangedIntegrationEvent Convert(MaterialSupplyEtaChangedDomainEvent domainEvent)
     {
         var context = contextAccessor.GetContext();
-        return new ErpIntegrationEvent<MaterialSupplyEtaChangedPayload>(
+        return new MaterialSupplyEtaChangedIntegrationEvent(
             EventIds.New(),
             ErpIntegrationEventTypes.MaterialSupplyEtaChanged,
             ErpIntegrationEventVersions.V1,

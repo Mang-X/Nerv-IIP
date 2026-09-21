@@ -70,6 +70,23 @@ public sealed record MaterialSupplyEtaChangedPayload(
     string ChangeReason,
     IReadOnlyCollection<string> SkuCodes);
 
+public sealed record MaterialSupplyEtaChangedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    MaterialSupplyEtaChangedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
 public sealed record PurchaseReceiptRecordedPayload(
     string PurchaseReceiptId,
     string PurchaseReceiptNo,

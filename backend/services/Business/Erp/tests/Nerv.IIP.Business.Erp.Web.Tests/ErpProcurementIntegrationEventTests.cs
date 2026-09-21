@@ -1,4 +1,5 @@
 using System.Text.Json;
+using DotNetCore.CAP;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseRequisitionAggregate;
@@ -6,6 +7,7 @@ using Nerv.IIP.Business.Erp.Domain.DomainEvents;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.IntegrationEvents;
+using NetCorePal.Extensions.DistributedTransactions.CAP;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
 
@@ -118,11 +120,14 @@ public sealed class ErpProcurementIntegrationEventTests
 
         var integrationEvent = new MaterialSupplyEtaChangedIntegrationEventConverter(new StaticContextAccessor()).Convert(domainEvent);
         var json = JsonSerializer.Serialize(integrationEvent, new JsonSerializerOptions(JsonSerializerDefaults.Web));
-        var roundTripped = JsonSerializer.Deserialize<ErpIntegrationEvent<MaterialSupplyEtaChangedPayload>>(
+        var roundTripped = JsonSerializer.Deserialize<MaterialSupplyEtaChangedIntegrationEvent>(
             json,
             new JsonSerializerOptions(JsonSerializerDefaults.Web));
 
+        Assert.StartsWith("evt-", integrationEvent.EventId, StringComparison.Ordinal);
         Assert.Equal("erp.MaterialSupplyEtaChanged", integrationEvent.EventType);
+        Assert.Equal(ErpIntegrationEventVersions.V1, integrationEvent.EventVersion);
+        Assert.Equal(ErpIntegrationEventSources.BusinessErp, integrationEvent.SourceService);
         Assert.Equal("org-001", integrationEvent.OrganizationId);
         Assert.Equal("env-dev", integrationEvent.EnvironmentId);
         Assert.Equal("corr-eta-001", integrationEvent.CorrelationId);
@@ -135,14 +140,97 @@ public sealed class ErpProcurementIntegrationEventTests
         Assert.Equal(domainEvent.ChangedAtUtc, integrationEvent.OccurredAtUtc);
         Assert.Equal(["SKU-RM-1000", "SKU-RM-2000"], integrationEvent.Payload.SkuCodes);
         Assert.NotNull(roundTripped);
+        Assert.Equal(integrationEvent.EventId, roundTripped.EventId);
         Assert.Equal(integrationEvent.EventType, roundTripped.EventType);
+        Assert.Equal(integrationEvent.EventVersion, roundTripped.EventVersion);
         Assert.Equal(integrationEvent.OccurredAtUtc, roundTripped.OccurredAtUtc);
+        Assert.Equal(integrationEvent.SourceService, roundTripped.SourceService);
+        Assert.Equal(integrationEvent.CorrelationId, roundTripped.CorrelationId);
+        Assert.Equal(integrationEvent.CausationId, roundTripped.CausationId);
+        Assert.Equal(integrationEvent.OrganizationId, roundTripped.OrganizationId);
+        Assert.Equal(integrationEvent.EnvironmentId, roundTripped.EnvironmentId);
+        Assert.Equal(integrationEvent.Actor, roundTripped.Actor);
+        Assert.Equal(integrationEvent.IdempotencyKey, roundTripped.IdempotencyKey);
         Assert.Equal(integrationEvent.Payload.SkuCodes, roundTripped.Payload.SkuCodes);
+    }
+
+    [Fact]
+    public async Task Material_supply_eta_changed_event_publishes_on_its_named_cap_topic()
+    {
+        var domainEvent = new MaterialSupplyEtaChangedDomainEvent(
+            "org-001",
+            "env-dev",
+            "purchase-order",
+            "PO-001",
+            "purchase-order-change-approved",
+            "purchase-order:PO-001:change:2",
+            new DateTimeOffset(2026, 6, 2, 3, 4, 5, TimeSpan.Zero),
+            ["SKU-RM-1000"]);
+        var etaEvent = new MaterialSupplyEtaChangedIntegrationEventConverter(new StaticContextAccessor()).Convert(domainEvent);
+        var otherErpEvent = new ErpIntegrationEvent<PurchaseOrderReleasedPayload>(
+            "evt-other",
+            ErpIntegrationEventTypes.PurchaseOrderReleased,
+            ErpIntegrationEventVersions.V1,
+            domainEvent.ChangedAtUtc,
+            ErpIntegrationEventSources.BusinessErp,
+            "corr-other",
+            "cause-other",
+            domainEvent.OrganizationId,
+            domainEvent.EnvironmentId,
+            "system:erp",
+            "erp:purchase-order-released:PO-002",
+            new PurchaseOrderReleasedPayload("po-id-002", "PO-002", "SUP-001", "SITE-01", 12m));
+        var cap = new RecordingCapPublisher();
+        var publisher = new CapIntegrationEventPublisher(cap, []);
+
+        await publisher.PublishAsync(etaEvent, CancellationToken.None);
+        await publisher.PublishAsync(otherErpEvent, CancellationToken.None);
+
+        Assert.Equal(
+            [nameof(MaterialSupplyEtaChangedIntegrationEvent), "ErpIntegrationEvent`1"],
+            cap.Published.Select(item => item.Name));
     }
 
     private sealed class StaticContextAccessor : IErpIntegrationEventContextAccessor
     {
         public ErpIntegrationEventContext GetContext() =>
             new("corr-eta-001", "command:record-receipt:001", "user:buyer-001");
+    }
+
+    private sealed class RecordingCapPublisher : ICapPublisher
+    {
+        public List<(string Name, object? Content)> Published { get; } = [];
+        public IServiceProvider ServiceProvider => throw new NotSupportedException();
+        public ICapTransaction? Transaction { get; set; }
+
+        public Task PublishAsync<T>(string name, T? contentObj, string? callbackName = null, CancellationToken cancellationToken = default)
+        {
+            Published.Add((name, contentObj));
+            return Task.CompletedTask;
+        }
+
+        public Task PublishAsync<T>(string name, T? contentObj, IDictionary<string, string?> headers, CancellationToken cancellationToken = default)
+        {
+            Published.Add((name, contentObj));
+            return Task.CompletedTask;
+        }
+
+        public void Publish<T>(string name, T? contentObj, string? callbackName = null) =>
+            Published.Add((name, contentObj));
+
+        public void Publish<T>(string name, T? contentObj, IDictionary<string, string?> headers) =>
+            Published.Add((name, contentObj));
+
+        public Task PublishDelayAsync<T>(TimeSpan delayTime, string name, T? contentObj, IDictionary<string, string?> headers, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task PublishDelayAsync<T>(TimeSpan delayTime, string name, T? contentObj, string? callbackName = null, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public void PublishDelay<T>(TimeSpan delayTime, string name, T? contentObj, IDictionary<string, string?> headers) =>
+            throw new NotSupportedException();
+
+        public void PublishDelay<T>(TimeSpan delayTime, string name, T? contentObj, string? callbackName = null) =>
+            throw new NotSupportedException();
     }
 }
