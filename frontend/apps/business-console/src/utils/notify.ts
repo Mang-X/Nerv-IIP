@@ -48,6 +48,11 @@ export function friendlyErrorMessage(
   if (/downstream-timeout|\b504\b|gateway ?time-?out/i.test(raw)) {
     return '服务响应超时，任务可能仍在处理；请稍后刷新相关列表查看结果，勿立即重复提交。'
   }
+  // 网关无法安全传递下游错误时只会返回技术码；与 PDA 保持同一条可行动指引，
+  // 不把 `downstream-request-failed` 原样呈现给业务用户（#3702）。
+  if (raw.trim() === 'downstream-request-failed') {
+    return '服务暂时不可用，请稍后重试；写操作请先刷新核实结果'
+  }
   if (
     /downstream-invalid-response|\b502\b|bad ?gateway|\b503\b|service unavailable|\b500\b/i.test(
       raw,
