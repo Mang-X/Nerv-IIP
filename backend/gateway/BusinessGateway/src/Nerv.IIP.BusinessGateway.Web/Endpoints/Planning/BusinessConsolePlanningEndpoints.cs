@@ -494,6 +494,7 @@ public sealed class BusinessConsoleReviewMpsBucketRequestValidator : Validator<B
         RuleFor(x => x.MpsId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ReviewedBy).NotEmpty().MaximumLength(150);
     }
 }
 
@@ -504,6 +505,7 @@ public sealed class BusinessConsoleReleaseMpsBucketRequestValidator : Validator<
         RuleFor(x => x.MpsId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ReleasedBy).NotEmpty().MaximumLength(150);
     }
 }
 

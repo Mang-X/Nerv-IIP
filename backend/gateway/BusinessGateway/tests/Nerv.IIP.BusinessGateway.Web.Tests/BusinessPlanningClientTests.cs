@@ -64,8 +64,8 @@ public sealed class BusinessPlanningClientTests
         var releaseHandler = new StubHandler(MpsResponse("Released", releasedBy: "user-admin"));
         var reviewClient = PlanningClient(reviewHandler);
         var releaseClient = PlanningClient(releaseHandler);
-        var reviewRequest = new BusinessConsoleReviewMpsBucketRequest("mps-001", "org-001", "env-dev");
-        var releaseRequest = new BusinessConsoleReleaseMpsBucketRequest("mps-001", "org-001", "env-dev");
+        var reviewRequest = new BusinessConsoleReviewMpsBucketRequest("mps-001", "org-001", "env-dev", "forged-reviewer");
+        var releaseRequest = new BusinessConsoleReleaseMpsBucketRequest("mps-001", "org-001", "env-dev", "forged-releaser");
 
         await reviewClient.ReviewMpsBucketAsync(
             "internal-token",

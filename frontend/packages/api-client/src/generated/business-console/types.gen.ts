@@ -3495,11 +3495,11 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleU
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReviewMpsBucketRequest = {
-    [key: string]: never;
+    reviewedBy: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReleaseMpsBucketRequest = {
-    [key: string]: never;
+    releasedBy: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleDemandSourceListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -14372,7 +14372,7 @@ export type UpdateBusinessConsolePlanningMpsBucketResponses = {
 export type UpdateBusinessConsolePlanningMpsBucketResponse = UpdateBusinessConsolePlanningMpsBucketResponses[keyof UpdateBusinessConsolePlanningMpsBucketResponses];
 
 export type ReviewBusinessConsolePlanningMpsBucketData = {
-    body?: never;
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReviewMpsBucketRequest;
     path: {
         mpsId: string;
     };
@@ -14410,7 +14410,7 @@ export type ReviewBusinessConsolePlanningMpsBucketResponses = {
 export type ReviewBusinessConsolePlanningMpsBucketResponse = ReviewBusinessConsolePlanningMpsBucketResponses[keyof ReviewBusinessConsolePlanningMpsBucketResponses];
 
 export type ReleaseBusinessConsolePlanningMpsBucketData = {
-    body?: never;
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReleaseMpsBucketRequest;
     path: {
         mpsId: string;
     };

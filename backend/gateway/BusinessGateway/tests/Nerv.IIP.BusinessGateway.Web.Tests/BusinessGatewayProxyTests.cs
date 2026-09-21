@@ -6731,8 +6731,17 @@ public sealed class BusinessGatewayProxyTests
     [Fact]
     public async Task Planning_mps_review_and_release_ignore_forged_actors_and_use_the_authorized_principal()
     {
+        const string trustedActor = "trusted-planner-42";
         var planning = new RecordingPlanningClient();
-        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        var authorization = new FakeBusinessGatewayAuthorizationClient(
+            _ => true,
+            allowedResult: BusinessGatewayAuthorizationResult.Allowed(
+                trustedActor,
+                "user",
+                "trusted.planner",
+                "org-001",
+                "env-dev"));
+        await using var lease = LeaseHost(authorization, services =>
         {
             services.RemoveAll<IBusinessPlanningClient>();
             services.AddSingleton<IBusinessPlanningClient>(planning);
@@ -6757,8 +6766,8 @@ public sealed class BusinessGatewayProxyTests
 
         Assert.Equal(HttpStatusCode.OK, review.StatusCode);
         Assert.Equal(HttpStatusCode.OK, release.StatusCode);
-        Assert.Equal("user-admin", planning.LastReviewedBy);
-        Assert.Equal("user-admin", planning.LastReleasedBy);
+        Assert.Equal(trustedActor, planning.LastReviewedBy);
+        Assert.Equal(trustedActor, planning.LastReleasedBy);
     }
 
     [Fact]
