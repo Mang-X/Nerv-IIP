@@ -360,7 +360,14 @@ describe('work-order detail — quality hold block', () => {
 
     const confirm = wrapper.get('[data-testid="confirm-hold-work-order"]')
     await confirm.trigger('click')
+    expect(wrapper.get('[data-testid="hold-validation-summary"]').text()).toContain(
+      '请完整填写带 * 的必填项（已标红）。',
+    )
     expect(wrapper.text()).toContain('请输入挂起原因。')
+    expect(holdActionState.holdWorkOrder).not.toHaveBeenCalled()
+
+    await wrapper.get('#hold-reason').setValue('   ')
+    await confirm.trigger('click')
     expect(holdActionState.holdWorkOrder).not.toHaveBeenCalled()
 
     await wrapper.get('#hold-reason').setValue('设备异常，等待维修确认')
@@ -369,6 +376,14 @@ describe('work-order detail — quality hold block', () => {
 
     expect(holdActionState.holdWorkOrder).toHaveBeenCalledWith('设备异常，等待维修确认')
     expect(holdActionState.refreshDetail).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not offer manual hold for a terminal work order', () => {
+    detailState.workOrderStatus = 'closed'
+
+    const wrapper = mountDetail(['business.mes.work-orders.read'])
+
+    expect(wrapper.find('[data-testid="open-hold-work-order"]').exists()).toBe(false)
   })
 })
 

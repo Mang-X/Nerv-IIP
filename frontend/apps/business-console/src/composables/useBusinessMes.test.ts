@@ -1964,9 +1964,19 @@ describe('business MES composables', () => {
   it('holds a work order with the reason through the selected manage scope and refreshes MES reads', async () => {
     const detail = useMesWorkOrderDetail()
     detail.filters.workOrderId = 'WO-HOLD'
+    vi.mocked(getBusinessConsoleMesWorkOrderDetailQueryOptions).mockClear()
 
     await detail.holdWorkOrder('设备异常，等待维修确认')
 
+    expect(getBusinessConsoleMesWorkOrderDetailQueryOptions).toHaveBeenCalledWith({
+      path: { workOrderId: 'WO-HOLD' },
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        scopeKind: 'work-center',
+        scopeId: 'WC-A',
+      },
+    })
     expect(holdBusinessConsoleMesWorkOrder).toHaveBeenCalledWith({
       path: { workOrderId: 'WO-HOLD' },
       query: {
@@ -1978,7 +1988,40 @@ describe('business MES composables', () => {
       body: { reason: '设备异常，等待维修确认' },
       throwOnError: false,
     })
-    expect(coladaState.invalidateQueries).toHaveBeenCalledTimes(6)
+    const invalidationCalls = coladaState.invalidateQueries.mock.calls as unknown as Array<
+      [{ predicate: (entry: { key: Array<{ _id: string }> }) => boolean }]
+    >
+    const expectedInvalidatedIds = [
+      'getBusinessConsoleMesWorkOrderDetail',
+      'listBusinessConsoleMesWorkOrders',
+      'getBusinessConsoleMesOverview',
+      'getBusinessConsoleMesWipSummary',
+      'listBusinessConsoleMesOperationTasks',
+      'listBusinessConsoleMesDispatchTasks',
+    ]
+    expect(
+      expectedInvalidatedIds.filter((id) =>
+        invalidationCalls.some(([options]) => options.predicate({ key: [{ _id: id }] })),
+      ),
+    ).toEqual(expectedInvalidatedIds)
+    expect(invalidationCalls).toHaveLength(expectedInvalidatedIds.length)
+  })
+
+  it('rejects manual hold when the submit-time work-order status is terminal', async () => {
+    workOrderDetailQuery.mockResolvedValueOnce({
+      success: true,
+      data: { workOrderId: 'WO-HOLD', status: 'Closed' },
+    })
+    const detail = useMesWorkOrderDetail()
+    detail.filters.workOrderId = 'WO-HOLD'
+
+    await expect(detail.holdWorkOrder('设备异常，等待维修确认')).rejects.toThrow(
+      '状态已被其他操作更新',
+    )
+
+    expect(workOrderDetailQuery).toHaveBeenCalledTimes(1)
+    expect(holdBusinessConsoleMesWorkOrder).not.toHaveBeenCalled()
+    expect(coladaState.invalidateQueries).not.toHaveBeenCalled()
   })
 
   it('preflights and releases the exact work order through the selected manage scope', async () => {

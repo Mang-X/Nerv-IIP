@@ -1821,6 +1821,14 @@ function formatStatus(value?: string | null) {
             >挂起后工单暂停后续执行；确认原因后可在工单状态中追溯。</NvAlertDialogDescription
           >
         </NvAlertDialogHeader>
+        <p
+          v-if="holdShowErrors && holdReasonError"
+          class="text-sm text-destructive"
+          role="alert"
+          data-testid="hold-validation-summary"
+        >
+          请完整填写带 * 的必填项（已标红）。
+        </p>
         <NvField :data-invalid="holdShowErrors && !!holdReasonError">
           <NvFieldLabel for="hold-reason"
             >挂起原因 <span class="text-destructive">*</span></NvFieldLabel
