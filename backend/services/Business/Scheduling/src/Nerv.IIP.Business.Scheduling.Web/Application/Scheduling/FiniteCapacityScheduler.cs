@@ -483,18 +483,17 @@ file sealed class SchedulerState
                 locked.ResourceId,
                 ApplicableEquipmentDataRisks(locked.ResourceId, locked.StartUtc, locked.EndUtc));
 
-            // 锁定工序同样吃软约束语义:它已经占住计划位置,缺料照样得在开工前补齐,
-            // 否则 MES 齐套硬门会在开工时拦下一个"看起来已排好"的工序。
+            // 锁定工序已经占住计划位置，无论新工序采用 Soft 还是 Hard 口径，
+            // 缺料都必须随方案投影，否则读面会把一个实际缺料的已排工序显示为无风险。
             var lockedOrder = problem.Orders
                 .FirstOrDefault(x => string.Equals(x.OrderId, locked.OrderId, StringComparison.Ordinal));
-            if (materialConstraintMode == SchedulingMaterialConstraintModeContract.Soft
-                && lockedOrder is not null
+            if (lockedOrder is not null
                 && operationByKey.TryGetValue(
                     new OperationKey(locked.OrderId, locked.OperationId),
                     out var lockedOperation))
             {
                 var lockedItem = new OperationWorkItem(lockedOrder, lockedOperation);
-                var lockedMaterialBlocks = ApplicableOpenEndedMaterialBlocks(lockedItem).ToList();
+                var lockedMaterialBlocks = ApplicableMaterialBlocks(lockedItem).ToList();
                 if (lockedMaterialBlocks.Count > 0)
                 {
                     AddMaterialRisk(lockedItem, lockedMaterialBlocks);
@@ -786,8 +785,11 @@ file sealed class SchedulerState
 
         // 物料口径:齐套是开工门槛,不是排产门槛。
         // 软约束(默认)下缺料工序照排,只登记物料风险 + 预警级冲突,提示「需在开工前完成备料」;
-        // 硬约束下沿用旧行为,缺料直接判为不可排。
-        var openEndedMaterialBlocks = ApplicableOpenEndedMaterialBlocks(item).ToList();
+        // 硬约束下沿用旧行为：没有 ETA 的开放缺口直接判为不可排；有 ETA 的缺口仍从 ETA 后排入。
+        var materialBlocks = ApplicableMaterialBlocks(item).ToList();
+        var openEndedMaterialBlocks = materialBlocks
+            .Where(x => !x.MaterialReadyUtc.HasValue)
+            .ToList();
         if (openEndedMaterialBlocks.Count > 0)
         {
             if (materialConstraintMode == SchedulingMaterialConstraintModeContract.Hard)
@@ -858,9 +860,9 @@ file sealed class SchedulerState
 
         var selected = feasibleSlots[0];
         // 工序确实排进去了才登记物料风险,避免给不可排工序挂上「已排但缺料」的假标记。
-        if (openEndedMaterialBlocks.Count > 0)
+        if (materialBlocks.Count > 0)
         {
-            AddMaterialRisk(item, openEndedMaterialBlocks);
+            AddMaterialRisk(item, materialBlocks);
         }
 
         // 设备数据风险同理:只对真正落到这台设备上的时段登记。
@@ -905,10 +907,10 @@ file sealed class SchedulerState
             .Select(x => x.MaterialReadyUtc!.Value);
     }
 
-    private IEnumerable<SchedulingMaterialReadinessContract> ApplicableOpenEndedMaterialBlocks(OperationWorkItem item)
+    private IEnumerable<SchedulingMaterialReadinessContract> ApplicableMaterialBlocks(OperationWorkItem item)
     {
         return problem.MaterialReadiness
-            .Where(x => !x.IsReady && !x.MaterialReadyUtc.HasValue)
+            .Where(x => !x.IsReady)
             .Where(x => AppliesTo(x.ScopeType, x.ScopeId, item));
     }
 
@@ -1690,6 +1692,7 @@ file sealed class SchedulerState
             .OrderBy(x => x.MaterialId, StringComparer.Ordinal)
             .ThenBy(x => x.MaterialLotId, StringComparer.Ordinal)
             .ToArray();
+        var materialReadyUtc = blocks.Max(x => x.MaterialReadyUtc);
         var message = MaterialRiskMessage(shortages, reasonCodes);
 
         materialRisks.Add(new SchedulePlanMaterialRiskContract(
@@ -1697,7 +1700,8 @@ file sealed class SchedulerState
             item.Operation.OperationId,
             reasonCodes,
             shortages,
-            message));
+            message,
+            materialReadyUtc));
         AddConflict(
             ScheduleConflictReasonCodeContract.Material,
             ScheduleConflictSeverityContract.Warning,

@@ -61,6 +61,46 @@ describe('GanttChart', () => {
     wrapper.unmount()
   })
 
+  it('只读卡片显示真实预计到料日期，无 ETA 的风险不造日期', async () => {
+    const withEta = toModel({
+      ...samplePlan,
+      materialRisks: [
+        {
+          orderId: 'WO-001',
+          operationId: 'op-10',
+          reasonCodes: ['material-shortage'],
+          shortages: [],
+          message: '需在开工前完成备料',
+          materialReadyUtc: '2026-09-28T08:00:00.000Z',
+        },
+        {
+          orderId: 'WO-001',
+          operationId: 'op-20',
+          reasonCodes: ['material-shortage'],
+          shortages: [],
+          message: '需在开工前完成备料',
+          materialReadyUtc: null,
+        },
+      ],
+    })
+    const wrapper = mount(GanttChart, {
+      props: { model: withEta, scale: 'hour', readOnly: true },
+      attachTo: document.body,
+    })
+    await settle()
+
+    const withEtaTask = wrapper.find('[data-task-id="a1"]')
+    const withoutEtaTask = wrapper.find('[data-task-id="a2"]')
+
+    expect(withEtaTask.text()).toContain('预计到料 09-28')
+    expect(withEtaTask.attributes('aria-label')).toContain('预计到料 09-28')
+    expect(withoutEtaTask.text()).toContain('缺料待备')
+    expect(withoutEtaTask.text()).not.toContain('预计到料')
+    expect(withoutEtaTask.attributes('aria-label')).toContain('缺料待备')
+    expect(withoutEtaTask.attributes('aria-label')).not.toContain('预计到料')
+    wrapper.unmount()
+  })
+
   it('shows a clear empty state when the schedule has no tasks', async () => {
     const model = { ...toModel(samplePlan), tasks: [], links: [] }
     const wrapper = mount(GanttChart, {

@@ -61,6 +61,7 @@ describe('toModel', () => {
             },
           ],
           message: '物料未齐套：RM-OIL-01 缺 145.86。已按计划排入,需在开工前完成备料。',
+          materialReadyUtc: '2026-09-28T08:00:00.000Z',
         },
       ],
     })
@@ -68,6 +69,8 @@ describe('toModel', () => {
     const op10 = m.tasks.find((t) => t.id === 'a1')!
     expect(op10.materialRisk?.shortages[0]!.shortageQuantity).toBe(145.86)
     expect(op10.materialRisk?.message).toContain('需在开工前完成备料')
+    expect(op10.materialRisk?.materialReadyUtc).toBe('2026-09-28T08:00:00.000Z')
+    expect(m.materialRisks?.[0]?.materialReadyUtc).toBe('2026-09-28T08:00:00.000Z')
     expect(m.materialRisks).toHaveLength(1)
     // 风险挂在已排 task 上，不是把工序标成「未排」。
     expect(op10.type).toBe('operation')

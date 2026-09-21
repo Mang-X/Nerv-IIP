@@ -128,6 +128,8 @@ export interface MaterialRisk {
   shortages: MaterialShortage[]
   /** 中文人话提示，读面直接展示（含「需在开工前完成备料」）。 */
   message: string
+  /** 该风险工序的真实物料预计就绪时间；无值时保持开放缺料风险。 */
+  materialReadyUtc?: string | null
 }
 
 /** 某工序的设备数据风险：状态盲区的原因 + 已翻译成人话的提示。 */

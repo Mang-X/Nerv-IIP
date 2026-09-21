@@ -38866,6 +38866,11 @@
           },
           "message": {
             "type": "string"
+          },
+          "materialReadyUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         }
       },

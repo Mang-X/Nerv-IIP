@@ -1156,6 +1156,7 @@ public class FiniteCapacitySchedulerTests
         Assert.Contains("material-shortage", risk.ReasonCodes);
         Assert.Contains(risk.Shortages, x => x.MaterialId == "RM-OIL-01" && x.ShortageQuantity == 145.86m);
         Assert.Contains("需在开工前完成备料", risk.Message);
+        Assert.Null(risk.MaterialReadyUtc);
         Assert.Equal(1, plan.Metrics.MaterialRiskOperationCount);
         Assert.Contains(plan.GanttItems, x => x.OperationId == "WO-SNAPSHOT-001-OP10" && x.HasMaterialRisk);
         // 物料风险是预警,不是阻断。
@@ -1163,6 +1164,98 @@ public class FiniteCapacitySchedulerTests
             x.OperationId == "WO-SNAPSHOT-001-OP10"
             && x.ReasonCode == ScheduleConflictReasonCodeContract.Material
             && x.Severity == ScheduleConflictSeverityContract.Warning);
+    }
+
+    [Fact]
+    public void Schedule_projects_latest_material_ready_time_for_scheduled_shortage()
+    {
+        var problem = CreateMaterialShortageProblem();
+        var firstReadiness = problem.MaterialReadiness.Single();
+        var earlierReadyUtc = problem.HorizonStartUtc.AddHours(1);
+        var latestReadyUtc = problem.HorizonStartUtc.AddHours(2);
+        problem = problem with
+        {
+            MaterialReadiness =
+            [
+                firstReadiness with { MaterialReadyUtc = earlierReadyUtc },
+                firstReadiness with
+                {
+                    ScopeType = "operation",
+                    ScopeId = "WO-SNAPSHOT-001-OP10",
+                    MaterialReadyUtc = latestReadyUtc,
+                    ReasonCodes = ["supplier-confirmed"]
+                }
+            ]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-material-eta-001", GeneratedAtUtc);
+
+        var assignment = Assert.Single(plan.Assignments);
+        var risk = Assert.Single(plan.MaterialRisks ?? []);
+        Assert.Equal(latestReadyUtc, assignment.StartUtc);
+        Assert.Equal(latestReadyUtc, risk.MaterialReadyUtc);
+        Assert.Equal(1, plan.Metrics.MaterialRiskOperationCount);
+        Assert.True(Assert.Single(plan.GanttItems).HasMaterialRisk);
+    }
+
+    [Fact]
+    public void Schedule_hard_constraint_waits_for_eta_and_projects_material_risk()
+    {
+        var problem = CreateMaterialShortageProblem();
+        var materialReadyUtc = problem.HorizonStartUtc.AddHours(2);
+        problem = problem with
+        {
+            MaterialReadiness =
+            [
+                problem.MaterialReadiness.Single() with { MaterialReadyUtc = materialReadyUtc }
+            ]
+        };
+
+        var plan = new FiniteCapacityScheduler(SchedulingMaterialConstraintModeContract.Hard)
+            .Schedule(problem, "plan-material-hard-eta-001", GeneratedAtUtc);
+
+        Assert.Equal(materialReadyUtc, Assert.Single(plan.Assignments).StartUtc);
+        Assert.DoesNotContain(plan.UnscheduledOperations, x =>
+            x.ReasonCode == ScheduleConflictReasonCodeContract.Material);
+        Assert.Equal(materialReadyUtc, Assert.Single(plan.MaterialRisks ?? []).MaterialReadyUtc);
+        Assert.True(Assert.Single(plan.GanttItems).HasMaterialRisk);
+        Assert.Equal(1, plan.Metrics.MaterialRiskOperationCount);
+    }
+
+    [Fact]
+    public void Schedule_does_not_project_material_risk_for_unscheduled_operation_with_eta()
+    {
+        var problem = CreateMaterialShortageProblem();
+        var order = problem.Orders.Single();
+        problem = problem with
+        {
+            Orders =
+            [
+                order with
+                {
+                    Operations =
+                    [
+                        order.Operations.Single() with
+                        {
+                            RequiredCapabilityCode = "CAP-NOT-INSTALLED"
+                        }
+                    ]
+                }
+            ],
+            MaterialReadiness =
+            [
+                problem.MaterialReadiness.Single() with
+                {
+                    MaterialReadyUtc = problem.HorizonStartUtc.AddHours(1)
+                }
+            ]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-material-eta-unscheduled-001", GeneratedAtUtc);
+
+        Assert.Empty(plan.Assignments);
+        Assert.Empty(plan.MaterialRisks ?? []);
+        Assert.Equal(0, plan.Metrics.MaterialRiskOperationCount);
     }
 
     [Fact]
@@ -1302,8 +1395,43 @@ public class FiniteCapacitySchedulerTests
     }
 
     [Fact]
-    // 硬约束下锁定工序不登记风险(走的是旧的硬门语义)。
-    public void Schedule_does_not_flag_locked_material_risk_under_hard_constraint()
+    public void Schedule_projects_material_ready_time_for_locked_assignment()
+    {
+        var problem = CreateMaterialShortageProblem();
+        var materialReadyUtc = problem.HorizonStartUtc.AddHours(2);
+        var operation = problem.Orders.Single().Operations.Single();
+        var lockedProblem = problem with
+        {
+            MaterialReadiness =
+            [
+                problem.MaterialReadiness.Single() with { MaterialReadyUtc = materialReadyUtc }
+            ],
+            LockedAssignments =
+            [
+                new SchedulingLockedAssignmentContract(
+                    AssignmentId: "assign-locked-eta-001",
+                    OrderId: "WO-SNAPSHOT-001",
+                    OperationId: operation.OperationId,
+                    OperationSequence: operation.OperationSequence,
+                    ResourceId: "DEV-SNAPSHOT-01",
+                    WorkCenterId: "WC-SNAPSHOT",
+                    StartUtc: materialReadyUtc,
+                    EndUtc: materialReadyUtc.AddMinutes(60),
+                    LockReasonCode: "planner-lock")
+            ]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(lockedProblem, "plan-locked-risk-eta-001", GeneratedAtUtc);
+
+        Assert.True(Assert.Single(plan.Assignments).IsLocked);
+        Assert.Equal(materialReadyUtc, Assert.Single(plan.MaterialRisks ?? []).MaterialReadyUtc);
+        Assert.Equal(1, plan.Metrics.MaterialRiskOperationCount);
+        Assert.True(Assert.Single(plan.GanttItems).HasMaterialRisk);
+    }
+
+    [Fact]
+    // 锁定工序已经进入方案，Hard 只阻止新的开放缺口排入，不能把已排缺料风险藏掉。
+    public void Schedule_flags_locked_material_risk_under_hard_constraint()
     {
         var problem = CreateMaterialShortageProblem();
         var operation = problem.Orders.Single().Operations.Single();
@@ -1327,7 +1455,8 @@ public class FiniteCapacitySchedulerTests
         var plan = new FiniteCapacityScheduler(SchedulingMaterialConstraintModeContract.Hard)
             .Schedule(lockedProblem, "plan-locked-risk-hard-001", GeneratedAtUtc);
 
-        Assert.Empty(plan.MaterialRisks ?? []);
+        Assert.Single(plan.MaterialRisks ?? []);
+        Assert.True(Assert.Single(plan.GanttItems).HasMaterialRisk);
     }
 
     [Theory]
