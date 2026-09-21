@@ -12,6 +12,7 @@ public enum SchedulePlanInvalidationScope
     AllInvalidatablePlans = 2,
     GeneratedWorkCenter = 3,
     GeneratedCalendar = 4,
+    GeneratedSku = 5,
 }
 
 public sealed record RecordSchedulePlanInvalidationsCommand(
@@ -25,7 +26,8 @@ public sealed record RecordSchedulePlanInvalidationsCommand(
     SchedulePlanInvalidationScope Scope,
     string? ScopeValue,
     string? AffectedWorkOrderId,
-    string? AffectedSkuCode) : ICommand<RecordSchedulePlanInvalidationsResponse>;
+    string? AffectedSkuCode,
+    IReadOnlyCollection<string>? AffectedSkuCodes = null) : ICommand<RecordSchedulePlanInvalidationsResponse>;
 
 public sealed record RecordSchedulePlanInvalidationsResponse(int MatchedPlanCount, int RecordedInvalidationCount);
 
@@ -46,6 +48,9 @@ public sealed class RecordSchedulePlanInvalidationsCommandValidator
                 or SchedulePlanInvalidationScope.WorkOrderOrOperation
                 or SchedulePlanInvalidationScope.GeneratedWorkCenter
                 or SchedulePlanInvalidationScope.GeneratedCalendar);
+        RuleFor(x => x.AffectedSkuCodes)
+            .NotEmpty()
+            .When(x => x.Scope == SchedulePlanInvalidationScope.GeneratedSku);
     }
 }
 
@@ -61,7 +66,10 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
         var calendarResourceIdsByProblem = request.Scope == SchedulePlanInvalidationScope.GeneratedCalendar
             ? await FindCalendarResourceIdsByProblemAsync(request, cancellationToken)
             : [];
-        var plans = await QueryPlans(request, calendarResourceIdsByProblem.Keys).ToArrayAsync(cancellationToken);
+        var skuByProblem = request.Scope == SchedulePlanInvalidationScope.GeneratedSku
+            ? await FindSkuByProblemAsync(request, cancellationToken)
+            : [];
+        var plans = await QueryPlans(request, calendarResourceIdsByProblem.Keys, skuByProblem.Keys).ToArrayAsync(cancellationToken);
         if (request.Scope == SchedulePlanInvalidationScope.GeneratedCalendar)
         {
             plans = plans
@@ -120,7 +128,9 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
                 affectedResourceId,
                 affectedWorkOrderId,
                 affectedOperationId,
-                request.AffectedSkuCode,
+                request.Scope == SchedulePlanInvalidationScope.GeneratedSku
+                    ? skuByProblem[plan.ProblemId]
+                    : request.AffectedSkuCode,
                 request.OccurredAtUtc,
                 recordedAtUtc,
                 snapshot);
@@ -133,7 +143,8 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
 
     private IQueryable<SchedulePlan> QueryPlans(
         RecordSchedulePlanInvalidationsCommand request,
-        IReadOnlyCollection<string> calendarProblemIds)
+        IReadOnlyCollection<string> calendarProblemIds,
+        IReadOnlyCollection<string> skuProblemIds)
     {
         var normalizedScopeValue = Normalize(request.ScopeValue);
         // Inline the invalidatable-status predicate: a custom method call (IsInvalidatableStatus) inside a
@@ -158,6 +169,9 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
             SchedulePlanInvalidationScope.GeneratedCalendar => query.Where(x =>
                 x.Status == SchedulePlanLifecycleStatus.Generated &&
                 calendarProblemIds.Contains(x.ProblemId)),
+            SchedulePlanInvalidationScope.GeneratedSku => query.Where(x =>
+                x.Status == SchedulePlanLifecycleStatus.Generated &&
+                skuProblemIds.Contains(x.ProblemId)),
             SchedulePlanInvalidationScope.WorkOrderOrOperation => query.Where(x => x.Assignments.Any(assignment =>
                 assignment.WorkOrderId == normalizedScopeValue ||
                 assignment.OperationId == normalizedScopeValue)),
@@ -217,6 +231,57 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
         }
 
         return matched;
+    }
+
+    private async Task<Dictionary<string, string>> FindSkuByProblemAsync(
+        RecordSchedulePlanInvalidationsCommand request,
+        CancellationToken cancellationToken)
+    {
+        var skuCodes = request.AffectedSkuCodes!
+            .Select(Normalize)
+            .ToHashSet(StringComparer.Ordinal);
+        var generatedProblemIds = dbContext.SchedulePlans.AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.Status == SchedulePlanLifecycleStatus.Generated)
+            .Select(x => x.ProblemId);
+        var snapshots = await dbContext.ScheduleProblems.AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                generatedProblemIds.Contains(x.ProblemId))
+            .Select(x => new { x.ProblemId, x.ProblemJson })
+            .ToArrayAsync(cancellationToken);
+
+        return snapshots
+            .Select(snapshot => new
+            {
+                snapshot.ProblemId,
+                SkuCode = FindFirstMatchingSku(snapshot.ProblemJson, skuCodes),
+            })
+            .Where(x => x.SkuCode is not null)
+            .ToDictionary(x => x.ProblemId, x => x.SkuCode!, StringComparer.Ordinal);
+    }
+
+    private static string? FindFirstMatchingSku(string problemJson, IReadOnlySet<string> skuCodes)
+    {
+        try
+        {
+            var problem = System.Text.Json.JsonSerializer.Deserialize<SchedulingProblemContract>(
+                problemJson,
+                SchedulingJson.Options);
+            return problem?.MaterialReadiness
+                .SelectMany(readiness => readiness.Shortages ?? [])
+                .Select(shortage => shortage.MaterialId)
+                .Where(skuCodes.Contains)
+                .Order(StringComparer.Ordinal)
+                .FirstOrDefault();
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null;
+        }
     }
 
     private static (string? WorkOrderId, string? OperationId) ResolveWorkOrderOrOperation(

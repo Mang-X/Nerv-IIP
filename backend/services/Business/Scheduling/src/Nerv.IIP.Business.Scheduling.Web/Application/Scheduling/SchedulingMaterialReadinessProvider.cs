@@ -213,13 +213,16 @@ public sealed class HttpSchedulingMaterialReadinessProvider(
             .OrderBy(x => x.MaterialId, StringComparer.Ordinal)
             .ThenBy(x => x.MaterialLotId, StringComparer.Ordinal)
             .ToArray();
+        var materialReadyUtc = response.Items
+            .Where(x => x.ShortageQuantity > 0)
+            .Max(x => x.ExpectedAvailableAtUtc);
 
         return
         [
             new SchedulingMaterialReadinessContract(
                 ScopeType: "order",
                 ScopeId: response.WorkOrderId,
-                MaterialReadyUtc: null,
+                MaterialReadyUtc: materialReadyUtc,
                 IsReady: false,
                 ReasonCodes: reasonCodes,
                 Shortages: shortages)
@@ -262,7 +265,8 @@ public sealed class HttpSchedulingMaterialReadinessProvider(
         decimal StagedQuantity,
         decimal ReceivedQuantity,
         decimal ShortageQuantity,
-        string Status);
+        string Status,
+        DateTimeOffset? ExpectedAvailableAtUtc = null);
 }
 
 public static class MaterialReadinessSchedulingAdapter

@@ -66,6 +66,102 @@ public sealed class SchedulingProviderDegradationTests
     }
 
     [Fact]
+    public async Task MaterialReadinessProvider_UsesLatestNonNullEtaAcrossShortageRows()
+    {
+        var provider = new HttpSchedulingMaterialReadinessProvider(
+            new StaticResponseHttpClientFactory(
+                """
+                {
+                  "workOrderId": "WO-SNAPSHOT-001",
+                  "readinessStatus": "Blocked",
+                  "blockingReasons": ["material.shortage"],
+                  "items": [
+                    {
+                      "materialId": "RM-001",
+                      "materialLotId": null,
+                      "requiredQuantity": 10,
+                      "availableQuantity": 4,
+                      "requestedQuantity": 0,
+                      "stagedQuantity": 0,
+                      "receivedQuantity": 0,
+                      "shortageQuantity": 6,
+                      "status": "Shortage",
+                      "expectedAvailableAtUtc": "2026-06-02T08:00:00Z"
+                    },
+                    {
+                      "materialId": "RM-002",
+                      "materialLotId": null,
+                      "requiredQuantity": 5,
+                      "availableQuantity": 0,
+                      "requestedQuantity": 0,
+                      "stagedQuantity": 0,
+                      "receivedQuantity": 0,
+                      "shortageQuantity": 5,
+                      "status": "Shortage",
+                      "expectedAvailableAtUtc": "2026-06-03T09:30:00Z"
+                    },
+                    {
+                      "materialId": "RM-003",
+                      "materialLotId": null,
+                      "requiredQuantity": 2,
+                      "availableQuantity": 0,
+                      "requestedQuantity": 0,
+                      "stagedQuantity": 0,
+                      "receivedQuantity": 0,
+                      "shortageQuantity": 2,
+                      "status": "Shortage",
+                      "expectedAvailableAtUtc": null
+                    }
+                  ]
+                }
+                """),
+            new TestInternalServiceTokenProvider("test-internal-token"),
+            NullLogger<HttpSchedulingMaterialReadinessProvider>.Instance);
+
+        var readiness = await provider.QueryAsync(CreateSingleOperationProblem(), CancellationToken.None);
+
+        var block = Assert.Single(readiness);
+        Assert.Equal(DateTimeOffset.Parse("2026-06-03T09:30:00Z"), block.MaterialReadyUtc);
+        Assert.False(block.IsReady);
+    }
+
+    [Fact]
+    public async Task MaterialReadinessProvider_KeepsOpenRiskWhenNoShortageRowHasAnEta()
+    {
+        var provider = new HttpSchedulingMaterialReadinessProvider(
+            new StaticResponseHttpClientFactory(
+                """
+                {
+                  "workOrderId": "WO-SNAPSHOT-001",
+                  "readinessStatus": "Blocked",
+                  "blockingReasons": ["material.shortage"],
+                  "items": [
+                    {
+                      "materialId": "RM-001",
+                      "materialLotId": null,
+                      "requiredQuantity": 10,
+                      "availableQuantity": 4,
+                      "requestedQuantity": 0,
+                      "stagedQuantity": 0,
+                      "receivedQuantity": 0,
+                      "shortageQuantity": 6,
+                      "status": "Shortage",
+                      "expectedAvailableAtUtc": null
+                    }
+                  ]
+                }
+                """),
+            new TestInternalServiceTokenProvider("test-internal-token"),
+            NullLogger<HttpSchedulingMaterialReadinessProvider>.Instance);
+
+        var readiness = await provider.QueryAsync(CreateSingleOperationProblem(), CancellationToken.None);
+
+        var block = Assert.Single(readiness);
+        Assert.Null(block.MaterialReadyUtc);
+        Assert.False(block.IsReady);
+    }
+
+    [Fact]
     public async Task MaterialReadinessProvider_FailsClosedForUnsuccessfulResponseDataEnvelope()
     {
         var provider = new HttpSchedulingMaterialReadinessProvider(

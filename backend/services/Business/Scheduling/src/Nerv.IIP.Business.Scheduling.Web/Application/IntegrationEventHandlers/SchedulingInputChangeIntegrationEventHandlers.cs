@@ -8,6 +8,7 @@ using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 using Nerv.IIP.Business.Scheduling.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Contracts.IndustrialTelemetry;
 using Nerv.IIP.Contracts.IntegrationEvents;
+using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Maintenance;
 using Nerv.IIP.Contracts.MasterData;
@@ -416,6 +417,52 @@ public sealed class StockAvailabilityChangedIntegrationEventHandlerForInvalidate
     }
 }
 
+[IntegrationEventConsumer("Nerv.IIP.Contracts.Erp.MaterialSupplyEtaChangedIntegrationEvent", ConsumerName)]
+public sealed class MaterialSupplyEtaChangedIntegrationEventHandlerForInvalidateSchedulePlans(
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    ISender sender)
+    : IIntegrationEventHandler<MaterialSupplyEtaChangedIntegrationEvent>, ICapSubscribe
+{
+    public const string ConsumerName = "business-scheduling.material-supply-eta-changed";
+
+    private readonly IntegrationEventConsumerGuard<MaterialSupplyEtaChangedIntegrationEvent> consumerGuard = new(
+        new IntegrationEventEnvelopeValidator(),
+        deadLetterStore,
+        new IntegrationEventConsumerOptions(
+            ConsumerName,
+            ErpIntegrationEventTypes.MaterialSupplyEtaChanged,
+            ErpIntegrationEventVersions.V1));
+
+    public Task HandleAsync(
+        MaterialSupplyEtaChangedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken)
+    {
+        return consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
+    }
+
+    [CapSubscribe(nameof(MaterialSupplyEtaChangedIntegrationEvent), Group = ConsumerName)]
+    public Task HandleCapAsync(
+        MaterialSupplyEtaChangedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken)
+    {
+        return HandleAsync(integrationEvent, cancellationToken);
+    }
+
+    private async Task HandleValidEventAsync(
+        MaterialSupplyEtaChangedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken)
+    {
+        var skuCodes = integrationEvent.Payload.SkuCodes
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        await sender.Send(
+            new ProcessMaterialSupplyEtaChangedCommand(integrationEvent, skuCodes),
+            cancellationToken);
+    }
+}
+
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Quality.InspectionResultIntegrationEvent", ConsumerName)]
 public sealed class QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans(
     ApplicationDbContext dbContext,
@@ -734,6 +781,24 @@ internal static class SchedulingPlanInvalidationService
                 affectedWorkOrderId,
                 affectedSkuCode),
             cancellationToken);
+    }
+
+    internal static RecordSchedulePlanInvalidationsCommand ToSkuCommand<TIntegrationEvent>(
+        TIntegrationEvent integrationEvent,
+        string reasonCode,
+        IReadOnlyCollection<string> affectedSkuCodes)
+        where TIntegrationEvent : IIntegrationEventEnvelope
+    {
+        return ToCommand(
+            integrationEvent,
+            reasonCode,
+            SchedulePlanInvalidationScope.GeneratedSku,
+            scopeValue: null,
+            affectedWorkOrderId: null,
+            affectedSkuCode: null) with
+        {
+            AffectedSkuCodes = affectedSkuCodes,
+        };
     }
 
     private static string Required(string value, string parameterName)
