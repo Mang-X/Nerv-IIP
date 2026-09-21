@@ -253,6 +253,14 @@ function taskLabel(task: ScheduleTask) {
   return `${task.orderId || '未关联工单'} · ${sequence}`
 }
 
+function taskAriaLabel(task: ScheduleTask) {
+  const parts = [taskLabel(task), taskTime(task)]
+  if (task.hasConflict) parts.push('冲突')
+  if (task.locked) parts.push('锁定')
+  if (task.materialRisk) parts.push(materialReadyLabel(task.materialRisk) ?? '缺料待备')
+  return parts.join('，')
+}
+
 function selectTask(task: ScheduleTask) {
   emit('taskSelect', task.id)
   if (task.hasConflict) emit('conflictClick', task.id)
@@ -321,7 +329,7 @@ function selectTask(task: ScheduleTask) {
               top: `${positioned.row * 58 + 8}px`,
               width: `${positioned.width}%`,
             }"
-            :aria-label="`${taskLabel(positioned.task)}，${taskTime(positioned.task)}${positioned.task.hasConflict ? '，冲突' : ''}${positioned.task.locked ? '，锁定' : ''}`"
+            :aria-label="taskAriaLabel(positioned.task)"
             @click="selectTask(positioned.task)"
           >
             <span class="nv-timeline-task__title">{{ taskLabel(positioned.task) }}</span>

@@ -89,9 +89,15 @@ describe('GanttChart', () => {
     })
     await settle()
 
-    expect(wrapper.find('[data-task-id="a1"]').text()).toContain('预计到料 09-28')
-    expect(wrapper.find('[data-task-id="a2"]').text()).toContain('缺料待备')
-    expect(wrapper.find('[data-task-id="a2"]').text()).not.toContain('预计到料')
+    const withEtaTask = wrapper.find('[data-task-id="a1"]')
+    const withoutEtaTask = wrapper.find('[data-task-id="a2"]')
+
+    expect(withEtaTask.text()).toContain('预计到料 09-28')
+    expect(withEtaTask.attributes('aria-label')).toContain('预计到料 09-28')
+    expect(withoutEtaTask.text()).toContain('缺料待备')
+    expect(withoutEtaTask.text()).not.toContain('预计到料')
+    expect(withoutEtaTask.attributes('aria-label')).toContain('缺料待备')
+    expect(withoutEtaTask.attributes('aria-label')).not.toContain('预计到料')
     wrapper.unmount()
   })
 
