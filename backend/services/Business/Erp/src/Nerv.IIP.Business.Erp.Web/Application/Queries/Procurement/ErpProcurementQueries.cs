@@ -418,13 +418,16 @@ public sealed class ResolveMaterialSupplyEtasQueryValidator : AbstractValidator<
     {
         this.AddTenantRules(query => query.OrganizationId, query => query.EnvironmentId);
         RuleFor(query => query.Items)
-            .NotEmpty()
+            .NotEmpty();
+        RuleFor(query => query.Items)
             .Must(items => items
                 .Select(item => item.SkuCode.Trim())
                 .Distinct(StringComparer.Ordinal)
                 .Count() == items.Count)
+            .When(query => query.Items is not null
+                && query.Items.All(item => item is not null && !string.IsNullOrWhiteSpace(item.SkuCode)))
             .WithMessage("Material supply ETA requests require unique SKU codes.");
-        RuleForEach(query => query.Items).ChildRules(item =>
+        RuleForEach(query => query.Items).NotNull().ChildRules(item =>
         {
             item.RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(100);
             item.RuleFor(x => x.ShortageQuantity).GreaterThan(0m);

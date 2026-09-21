@@ -252,19 +252,39 @@ public sealed class PurchaseOrder : Entity<PurchaseOrderId>, IAggregateRoot
         var change = changeHistory.SingleOrDefault(x => string.Equals(x.ApprovalChainId, ErpText.Required(approvalChainId, nameof(approvalChainId)), StringComparison.Ordinal))
             ?? throw new InvalidOperationException("Purchase order change approval chain was not found.");
         change.EnsurePending();
-        foreach (var lineChange in change.Lines)
+        var etaChanges = change.Lines
+            .Select(lineChange =>
+            {
+                var line = lines.Single(x => x.LineNo == lineChange.LineNo);
+                return new
+                {
+                    Line = line,
+                    OpenQuantity = line.OpenQuantity,
+                    line.PromisedDate,
+                };
+            })
+            .ToArray();
+        foreach (var etaChange in etaChanges)
         {
-            var line = lines.Single(x => x.LineNo == lineChange.LineNo);
-            line.ApplyChange(lineChange.OrderedQuantity, lineChange.UnitPrice, lineChange.PromisedDate);
+            var lineChange = change.Lines.Single(x => x.LineNo == etaChange.Line.LineNo);
+            etaChange.Line.ApplyChange(lineChange.OrderedQuantity, lineChange.UnitPrice, lineChange.PromisedDate);
         }
 
         change.Approve();
         TotalAmount = lines.Sum(x => x.LineAmount);
         Version++;
-        AddMaterialSupplyEtaChanged(
-            "purchase-order-change-approved",
-            $"purchase-order:{PurchaseOrderNo}:change:{Version}",
-            change.Lines.Select(changeLine => lines.Single(line => line.LineNo == changeLine.LineNo).SkuCode));
+        var affectedSkuCodes = etaChanges
+            .Where(etaChange => etaChange.OpenQuantity != etaChange.Line.OpenQuantity
+                || etaChange.PromisedDate != etaChange.Line.PromisedDate)
+            .Select(etaChange => etaChange.Line.SkuCode)
+            .ToArray();
+        if (affectedSkuCodes.Length > 0)
+        {
+            AddMaterialSupplyEtaChanged(
+                "purchase-order-change-approved",
+                $"purchase-order:{PurchaseOrderNo}:change:{Version}",
+                affectedSkuCodes);
+        }
     }
 
     public void RejectChange(string approvalChainId)

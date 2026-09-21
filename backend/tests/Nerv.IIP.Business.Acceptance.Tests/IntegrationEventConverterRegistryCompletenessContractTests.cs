@@ -123,19 +123,19 @@ public sealed class IntegrationEventConverterRegistryCompletenessContractTests
     /// （owner 2026-09-15 裁定**不启动**，票面保留作将来重估依据）。
     /// ⛔ 往这里加一条不是「修好了」，是「记上账了」——两者在 diff 里必须看得出区别，
     /// 所以本表与 <c>ConvertedProducerKeys()</c> 是**两张分开的表**而不是一张带标志位的表。</para>
-/// <para>⚠️ <b>⛔ 但别把「挪进已接入表」读成「必须真接入」——那道门槛比它看起来低。</b>
-/// 复审实测两格：
-/// <list type="bullet">
-/// <item>拿**平凡输入**把一条挪进 <c>ConvertedProducerKeys()</c> ⇒ 🔴 红，被
-/// <c>Fallback_shape_fits_the_narrowest_platform_carrier_column_for_every_converted_producer</c>
-/// 里的 <c>IsDigested</c> 哨兵抓住 ⇒ 确实不是「只换个名字」；</item>
-/// <item>但拿**手写的长字符串**（如 <c>new string('x', 200)</c>）＋**手写的**
-/// <c>PlainConcatenationLength</c> 挪进去 ⇒ 🟢 <b>27/27 全绿</b>。</item>
-/// </list>
-/// ⇒ 已接入表的真实门槛只是「输入够长、走得到回落分支」，
-/// ⛔ <b>它<u>不</u>校验那些段是否派生自被测服务自己的 EF 列宽</b>。
-/// ⚠️ 这个弱点**早于本 PR 就存在**，本 PR 不修、只登记；
-/// 它正是本类覆盖边界第 2 条「登记了但最坏输入给小了仍是空转」的**机器可证形态**。</para>
+    /// <para>⚠️ <b>⛔ 但别把「挪进已接入表」读成「必须真接入」——那道门槛比它看起来低。</b>
+    /// 复审实测两格：
+    /// <list type="bullet">
+    /// <item>拿**平凡输入**把一条挪进 <c>ConvertedProducerKeys()</c> ⇒ 🔴 红，被
+    /// <c>Fallback_shape_fits_the_narrowest_platform_carrier_column_for_every_converted_producer</c>
+    /// 里的 <c>IsDigested</c> 哨兵抓住 ⇒ 确实不是「只换个名字」；</item>
+    /// <item>但拿**手写的长字符串**（如 <c>new string('x', 200)</c>）＋**手写的**
+    /// <c>PlainConcatenationLength</c> 挪进去 ⇒ 🟢 <b>27/27 全绿</b>。</item>
+    /// </list>
+    /// ⇒ 已接入表的真实门槛只是「输入够长、走得到回落分支」，
+    /// ⛔ <b>它<u>不</u>校验那些段是否派生自被测服务自己的 EF 列宽</b>。
+    /// ⚠️ 这个弱点**早于本 PR 就存在**，本 PR 不修、只登记；
+    /// 它正是本类覆盖边界第 2 条「登记了但最坏输入给小了仍是空转」的**机器可证形态**。</para>
     /// <para>⚠️ 本表条目数**没有**签入棘轮常量（⛔ 不是 <c>N == K</c> 等式）：
     /// 本类要的是「集合相等」，集合相等已经强制任何增减都进 diff，再加一个计数常量只是同义重复。</para>
     /// </remarks>
@@ -164,13 +164,14 @@ public sealed class IntegrationEventConverterRegistryCompletenessContractTests
         typeof(DemandPlanningConverters.PlannedPurchaseSuggestedIntegrationEventConverter),
         typeof(DemandPlanningConverters.PlannedWorkOrderSuggestedIntegrationEventConverter),
         typeof(DemandPlanningConverters.PlanningSuggestionAcceptedIntegrationEventConverter),
-        // Erp（15 条）
+        // Erp（16 条）
         typeof(ErpConverters.AccountPayableCreatedIntegrationEventConverter),
         typeof(ErpConverters.AccountReceivableCreatedIntegrationEventConverter),
         typeof(ErpConverters.CostCandidateCreatedIntegrationEventConverter),
         typeof(ErpConverters.DeliveryOrderOutboundOrderRequestedIntegrationEventConverter),
         typeof(ErpConverters.DeliveryOrderReleasedIntegrationEventConverter),
         typeof(ErpConverters.JournalVoucherPostedIntegrationEventConverter),
+        typeof(ErpConverters.MaterialSupplyEtaChangedIntegrationEventConverter),
         typeof(ErpConverters.PurchaseOrderReleasedIntegrationEventConverter),
         typeof(ErpConverters.PurchaseReceiptInventoryMovementRequestedIntegrationEventConverter),
         typeof(ErpConverters.PurchaseReceiptRecordedIntegrationEventConverter),

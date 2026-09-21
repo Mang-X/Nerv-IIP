@@ -48,22 +48,29 @@ public sealed class PurchaseOrderReleasedIntegrationEventConverter
     }
 }
 
-public sealed class MaterialSupplyEtaChangedIntegrationEventConverter
+public sealed class MaterialSupplyEtaChangedIntegrationEventConverter(IErpIntegrationEventContextAccessor contextAccessor)
     : IIntegrationEventConverter<MaterialSupplyEtaChangedDomainEvent, ErpIntegrationEvent<MaterialSupplyEtaChangedPayload>>
 {
     public ErpIntegrationEvent<MaterialSupplyEtaChangedPayload> Convert(MaterialSupplyEtaChangedDomainEvent domainEvent)
     {
-        return Envelope(
+        var context = contextAccessor.GetContext();
+        return new ErpIntegrationEvent<MaterialSupplyEtaChangedPayload>(
+            EventIds.New(),
             ErpIntegrationEventTypes.MaterialSupplyEtaChanged,
+            ErpIntegrationEventVersions.V1,
+            domainEvent.ChangedAtUtc,
+            ErpIntegrationEventSources.BusinessErp,
+            context.CorrelationId,
+            context.CausationId,
             domainEvent.OrganizationId,
             domainEvent.EnvironmentId,
+            context.Actor,
             EventIds.Idempotency("material-supply-eta-changed", domainEvent.OrganizationId, domainEvent.EnvironmentId, domainEvent.ChangeIdentity),
             new MaterialSupplyEtaChangedPayload(
                 domainEvent.SourceDocumentType,
                 domainEvent.SourceDocumentNo,
                 domainEvent.ChangeReason,
-                domainEvent.SkuCodes.Distinct(StringComparer.Ordinal).OrderBy(skuCode => skuCode, StringComparer.Ordinal).ToArray()),
-            domainEvent.ChangedAtUtc);
+                domainEvent.SkuCodes.Distinct(StringComparer.Ordinal).OrderBy(skuCode => skuCode, StringComparer.Ordinal).ToArray()));
     }
 }
 

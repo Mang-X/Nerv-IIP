@@ -53,9 +53,15 @@ public sealed class PurchaseReceipt : Entity<PurchaseReceiptId>, IAggregateRoot
             PurchaseReceiptLine.ValidateQualityStatus(draft.QualityStatus, nameof(draft.QualityStatus));
         }
 
+        var affectedSkuCodes = new List<string>();
         foreach (var draft in drafts)
         {
+            var previousOpenQuantity = order.Lines.Single(line => line.LineNo == draft.PurchaseOrderLineNo).OpenQuantity;
             var orderLine = order.RegisterReceipt(draft.PurchaseOrderLineNo, draft.ReceivedQuantity, draft.FinalDelivery);
+            if (previousOpenQuantity != orderLine.OpenQuantity)
+            {
+                affectedSkuCodes.Add(orderLine.SkuCode);
+            }
             var line = PurchaseReceiptLine.Create(draft, orderLine, SiteCode);
             lines.Add(line);
         }
@@ -67,15 +73,18 @@ public sealed class PurchaseReceipt : Entity<PurchaseReceiptId>, IAggregateRoot
 
         var qualityStatuses = lines.Select(x => x.QualityStatus).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         QualityStatus = qualityStatuses.Length == 1 ? qualityStatuses[0] : "mixed";
-        this.AddDomainEvent(new MaterialSupplyEtaChangedDomainEvent(
-            OrganizationId,
-            EnvironmentId,
-            "purchase-receipt",
-            PurchaseReceiptNo,
-            "purchase-receipt-recorded",
-            $"purchase-receipt:{PurchaseReceiptNo}",
-            DateTimeOffset.UtcNow,
-            lines.Select(line => line.SkuCode).Distinct(StringComparer.Ordinal).OrderBy(skuCode => skuCode, StringComparer.Ordinal).ToArray()));
+        if (affectedSkuCodes.Count > 0)
+        {
+            this.AddDomainEvent(new MaterialSupplyEtaChangedDomainEvent(
+                OrganizationId,
+                EnvironmentId,
+                "purchase-receipt",
+                PurchaseReceiptNo,
+                "purchase-receipt-recorded",
+                $"purchase-receipt:{PurchaseReceiptNo}",
+                DateTimeOffset.UtcNow,
+                affectedSkuCodes.Distinct(StringComparer.Ordinal).OrderBy(skuCode => skuCode, StringComparer.Ordinal).ToArray()));
+        }
         this.AddDomainEvent(new PurchaseReceiptRecordedDomainEvent(this));
         if (InventoryPostingRoute == PurchaseReceiptInventoryPostingRoute.Direct)
         {

@@ -415,6 +415,18 @@ public sealed class ErpProcurementEndpointContractTests
         AddReleasedPurchaseOrder(dbContext, "PO-ETA-001", "SKU-RM-1000", 4m, new DateOnly(2026, 6, 3));
         AddReleasedPurchaseOrder(dbContext, "PO-ETA-002", "SKU-RM-1000", 7m, new DateOnly(2026, 6, 5));
         AddReleasedPurchaseOrder(dbContext, "PO-ETA-003", "SKU-RM-2000", 2m, new DateOnly(2026, 6, 4));
+        AddReleasedPurchaseOrder(dbContext, "PO-OTHER-ENV", "SKU-RM-1000", 100m, new DateOnly(2026, 6, 1), environmentId: "env-other");
+        var partlyReceivedOrder = PurchaseOrder.Create(
+            "org-001",
+            "env-dev",
+            "PO-PARTLY-RECEIVED",
+            "SUP-001",
+            "SITE-01",
+            [new PurchaseOrderLineDraft("10", "SKU-RM-1000", "kg", 10m, 1m, new DateOnly(2026, 6, 1))]);
+        partlyReceivedOrder.MarkApprovalRequested("approval-partly-received");
+        partlyReceivedOrder.ReleaseAfterApproval("approval-partly-received");
+        partlyReceivedOrder.RegisterReceipt("10", 9m);
+        dbContext.PurchaseOrders.Add(partlyReceivedOrder);
         var partiallyOpenOrder = PurchaseOrder.Create(
             "org-001",
             "env-dev",
@@ -454,7 +466,7 @@ public sealed class ErpProcurementEndpointContractTests
             {
                 Assert.Equal("SKU-RM-1000", item.SkuCode);
                 Assert.Equal(10m, item.ShortageQuantity);
-                Assert.Equal(11m, item.OpenPurchaseQuantity);
+                Assert.Equal(12m, item.OpenPurchaseQuantity);
                 Assert.Equal(new DateOnly(2026, 6, 5), item.ExpectedAvailableDate);
             },
             item =>
@@ -482,6 +494,23 @@ public sealed class ErpProcurementEndpointContractTests
         Assert.False(result.IsValid);
         Assert.Contains(result.Errors, error => error.PropertyName == "Items");
         Assert.Contains(result.Errors, error => error.PropertyName == "Items[1].ShortageQuantity");
+    }
+
+    [Fact]
+    public void Resolve_material_supply_etas_rejects_null_items_and_null_sku_without_throwing()
+    {
+        var validator = new ResolveMaterialSupplyEtasQueryValidator();
+
+        var nullItems = validator.Validate(new ResolveMaterialSupplyEtasQuery("org-001", "env-dev", null!));
+        var nullSku = validator.Validate(new ResolveMaterialSupplyEtasQuery(
+            "org-001",
+            "env-dev",
+            [new MaterialSupplyEtaRequestItem(null!, 1m)]));
+
+        Assert.False(nullItems.IsValid);
+        Assert.Contains(nullItems.Errors, error => error.PropertyName == "Items");
+        Assert.False(nullSku.IsValid);
+        Assert.Contains(nullSku.Errors, error => error.PropertyName == "Items[0].SkuCode");
     }
 
     [Fact]
@@ -1084,11 +1113,12 @@ public sealed class ErpProcurementEndpointContractTests
         string skuCode,
         decimal quantity,
         DateOnly promisedDate,
-        string organizationId = "org-001")
+        string organizationId = "org-001",
+        string environmentId = "env-dev")
     {
         var order = PurchaseOrder.Create(
             organizationId,
-            "env-dev",
+            environmentId,
             purchaseOrderNo,
             "SUP-001",
             "SITE-01",

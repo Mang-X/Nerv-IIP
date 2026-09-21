@@ -116,7 +116,7 @@ public sealed class ErpProcurementIntegrationEventTests
             new DateTimeOffset(2026, 6, 2, 3, 4, 5, TimeSpan.Zero),
             ["SKU-RM-2000", "SKU-RM-1000", "SKU-RM-1000"]);
 
-        var integrationEvent = new MaterialSupplyEtaChangedIntegrationEventConverter().Convert(domainEvent);
+        var integrationEvent = new MaterialSupplyEtaChangedIntegrationEventConverter(new StaticContextAccessor()).Convert(domainEvent);
         var json = JsonSerializer.Serialize(integrationEvent, new JsonSerializerOptions(JsonSerializerDefaults.Web));
         var roundTripped = JsonSerializer.Deserialize<ErpIntegrationEvent<MaterialSupplyEtaChangedPayload>>(
             json,
@@ -125,6 +125,9 @@ public sealed class ErpProcurementIntegrationEventTests
         Assert.Equal("erp.MaterialSupplyEtaChanged", integrationEvent.EventType);
         Assert.Equal("org-001", integrationEvent.OrganizationId);
         Assert.Equal("env-dev", integrationEvent.EnvironmentId);
+        Assert.Equal("corr-eta-001", integrationEvent.CorrelationId);
+        Assert.Equal("command:record-receipt:001", integrationEvent.CausationId);
+        Assert.Equal("user:buyer-001", integrationEvent.Actor);
         Assert.EndsWith("purchase-order:PO-001:change:2", integrationEvent.IdempotencyKey, StringComparison.Ordinal);
         Assert.Equal("purchase-order", integrationEvent.Payload.SourceDocumentType);
         Assert.Equal("PO-001", integrationEvent.Payload.SourceDocumentNo);
@@ -135,5 +138,11 @@ public sealed class ErpProcurementIntegrationEventTests
         Assert.Equal(integrationEvent.EventType, roundTripped.EventType);
         Assert.Equal(integrationEvent.OccurredAtUtc, roundTripped.OccurredAtUtc);
         Assert.Equal(integrationEvent.Payload.SkuCodes, roundTripped.Payload.SkuCodes);
+    }
+
+    private sealed class StaticContextAccessor : IErpIntegrationEventContextAccessor
+    {
+        public ErpIntegrationEventContext GetContext() =>
+            new("corr-eta-001", "command:record-receipt:001", "user:buyer-001");
     }
 }
