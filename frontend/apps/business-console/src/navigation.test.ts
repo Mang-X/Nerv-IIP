@@ -25,15 +25,6 @@ describe('business console scheduling navigation', () => {
     expect(scheduling?.title).toBe('排产工作台')
     expect(scheduling?.requiredPermissions).toEqual([P.schedulingPlansRead])
   })
-
-  // 规则排程（过渡）已从 MES 菜单撤下：菜单里只留一个权威排程入口（/scheduling），
-  // 页面本身保留为可直达的诊断入口，域归属不变。
-  it('keeps MES rule scheduling out of the menu while the page stays reachable', () => {
-    const mesItems = DOMAIN_SIDE_NAV.mes?.flatMap((section) => section.items) ?? []
-
-    expect(mesItems.find((item) => pathOf(item.to) === '/mes/schedules')).toBeUndefined()
-    expect(resolveDomainId('/mes/schedules')).toBe('mes')
-  })
 })
 
 describe('business console MES production report navigation', () => {

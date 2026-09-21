@@ -125,12 +125,9 @@ public sealed class BusinessGatewayHttpClientResilienceTests
                     new DateOnly(2026, 5, 28),
                     new DateOnly(2026, 6, 28)),
                 CancellationToken.None),
-            services => services.GetRequiredService<IBusinessMesClient>().RunScheduleAsync(
+            services => services.GetRequiredService<IBusinessMesClient>().ListShiftHandoversAsync(
                 "internal-token",
-                new BusinessConsoleRunScheduleRequest(
-                    "org-001",
-                    "env-dev",
-                    "manual"),
+                new BusinessConsoleMesListRequest("org-001", "env-dev"),
                 CancellationToken.None),
         };
 

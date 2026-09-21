@@ -37,12 +37,12 @@
 | Inventory | 19 | 13 | 1 | 5 |
 | Maintenance | 27 | 21 | 4 | 2 |
 | MasterData | 50 | 45 | 1 | 4 |
-| Mes | 73 | 69 | 2 | 2 |
+| Mes | 71 | 67 | 2 | 2 |
 | ProductEngineering | 39 | 38 | 0 | 1 |
 | Quality | 43 | 30 | 12 | 1 |
 | Scheduling | 15 | 13 | 1 | 1 |
 | Wms | 49 | 37 | 7 | 5 |
-| **Total** | **459** | **378** | **51** | **30** |
+| **Total** | **457** | **376** | **51** | **30** |
 
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 

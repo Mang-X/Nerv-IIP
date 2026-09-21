@@ -252,11 +252,6 @@ public interface IBusinessMesClient
     Task<BusinessConsoleRecordProductionReportResponse> PromoteTelemetryCandidateAsync(string internalBearerToken, string candidateId, BusinessConsoleMesTelemetryCandidatePromoteRequest request, string actor, CancellationToken cancellationToken);
     Task<BusinessConsoleAcceptedResponse> DismissTelemetryCandidateAsync(string internalBearerToken, string candidateId, BusinessConsoleMesTelemetryCandidateDismissRequest request, string actor, CancellationToken cancellationToken);
 
-    Task<BusinessConsoleMesScheduleResult> RunScheduleAsync(
-        string internalBearerToken,
-        BusinessConsoleRunScheduleRequest request,
-        CancellationToken cancellationToken);
-
     Task<BusinessConsoleRecordProductionReportResponse> RecordProductionReportAsync(
         string internalBearerToken,
         BusinessConsoleRecordProductionReportRequest request,
@@ -315,11 +310,6 @@ public interface IBusinessMesClient
         string internalBearerToken,
         string downtimeEventId,
         BusinessConsoleMesRecoverDowntimeEventRequest request,
-        CancellationToken cancellationToken);
-
-    Task<BusinessConsoleMesScheduleResultListResponse> ListScheduleResultsAsync(
-        string internalBearerToken,
-        BusinessConsoleMesScheduleResultListRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleMesShiftHandoverListResponse> ListShiftHandoversAsync(
@@ -966,20 +956,6 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             new { request.OrganizationId, request.EnvironmentId, CandidateId = candidateId, request.Reason, Actor = actor },
             MesTelemetryCandidateDocumentType, cancellationToken);
 
-    public async Task<BusinessConsoleMesScheduleResult> RunScheduleAsync(
-        string internalBearerToken,
-        BusinessConsoleRunScheduleRequest request,
-        CancellationToken cancellationToken)
-    {
-        var result = await SendAsync<DownstreamMesScheduleResult>(
-            internalBearerToken,
-            HttpMethod.Post,
-            "/api/business/v1/mes/schedules/run",
-            request,
-            cancellationToken);
-        return result.ToBusinessConsoleResult();
-    }
-
     public Task<BusinessConsoleRecordProductionReportResponse> RecordProductionReportAsync(
         string internalBearerToken,
         BusinessConsoleRecordProductionReportRequest request,
@@ -1217,22 +1193,6 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             $"/api/business/v1/mes/downtime-events/{Uri.EscapeDataString(downtimeEventId)}/recover",
             request,
             MesDowntimeEventDocumentType,
-            cancellationToken);
-
-    public Task<BusinessConsoleMesScheduleResultListResponse> ListScheduleResultsAsync(
-        string internalBearerToken,
-        BusinessConsoleMesScheduleResultListRequest request,
-        CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleMesScheduleResultListResponse>(
-            internalBearerToken,
-            HttpMethod.Get,
-            "/api/business/v1/mes/schedules?" + Query(
-                ("organizationId", request.OrganizationId),
-                ("environmentId", request.EnvironmentId),
-                ("trigger", request.Trigger),
-                ("skip", request.Skip),
-                ("take", request.Take)),
-            null,
             cancellationToken);
 
     public Task<BusinessConsoleMesShiftHandoverListResponse> ListShiftHandoversAsync(

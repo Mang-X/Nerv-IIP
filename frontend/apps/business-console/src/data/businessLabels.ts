@@ -500,12 +500,6 @@ export const REWORK_WORK_ORDER_CREATION_STATUS_LABELS: Readonly<Record<string, s
   created: '已创建',
 }
 
-/** 规则排程给每条工序分配写的原因（后端 RuleScheduler 只产出这两种）。 */
-export const RULE_SCHEDULE_REASON_LABELS: Readonly<Record<string, string>> = {
-  'in-progress-preserved': '在制工序保留原时段',
-  'rule-sequenced': '按优先级与交期排序',
-}
-
 /** 遥测报工候选状态（无挂起原因时展示，来自 TelemetryProductionReportCandidate.status）。 */
 export const TELEMETRY_CANDIDATE_STATUS_LABELS: Readonly<Record<string, string>> = {
   'pending-confirmation': '待确认',

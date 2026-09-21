@@ -5027,29 +5027,6 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     recoveredAtUtc?: string;
 };
 
-export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesScheduleResultListResponse = NetCorePalExtensionsDtoResponseData & {
-    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesScheduleResultListResponse | null;
-};
-
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesScheduleResultListResponse = {
-    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesScheduleResultRow>;
-    total?: number;
-};
-
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesScheduleResultRow = {
-    scheduleVersion?: number;
-    trigger?: string;
-    scheduledAtUtc?: string;
-    assignmentCount?: number;
-    affectedWorkOrderCount?: number;
-    affectedWorkOrderIds?: Array<string>;
-    assignments?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduledOperation>;
-};
-
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesScheduleResultListRequest = {
-    [key: string]: never;
-};
-
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesShiftHandoverListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverListResponse | null;
 };
@@ -5208,16 +5185,6 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     workCenterName?: string | null;
     deviceAssetCode?: string | null;
     deviceAssetName?: string | null;
-};
-
-export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesScheduleResult = NetCorePalExtensionsDtoResponseData & {
-    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesScheduleResult | null;
-};
-
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRunScheduleRequest = {
-    organizationId?: string;
-    environmentId?: string;
-    trigger?: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfLineSideInventoryBalancesResponse = NetCorePalExtensionsDtoResponseData & {
@@ -17388,39 +17355,6 @@ export type ConfirmBusinessConsoleMesDowntimeRecoveryResponses = {
 
 export type ConfirmBusinessConsoleMesDowntimeRecoveryResponse = ConfirmBusinessConsoleMesDowntimeRecoveryResponses[keyof ConfirmBusinessConsoleMesDowntimeRecoveryResponses];
 
-export type ListBusinessConsoleMesScheduleResultsData = {
-    body?: never;
-    path?: never;
-    query: {
-        organizationId: string;
-        environmentId: string;
-        trigger?: string | null;
-        skip?: number;
-        take?: number;
-    };
-    url: '/api/business-console/v1/mes/schedules';
-};
-
-export type ListBusinessConsoleMesScheduleResultsErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Forbidden
-     */
-    403: unknown;
-};
-
-export type ListBusinessConsoleMesScheduleResultsResponses = {
-    /**
-     * Success
-     */
-    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesScheduleResultListResponse;
-};
-
-export type ListBusinessConsoleMesScheduleResultsResponse = ListBusinessConsoleMesScheduleResultsResponses[keyof ListBusinessConsoleMesScheduleResultsResponses];
-
 export type ListBusinessConsoleMesShiftHandoversData = {
     body?: never;
     path?: never;
@@ -17689,33 +17623,6 @@ export type ListBusinessConsoleMesCapacityImpactsResponses = {
 };
 
 export type ListBusinessConsoleMesCapacityImpactsResponse = ListBusinessConsoleMesCapacityImpactsResponses[keyof ListBusinessConsoleMesCapacityImpactsResponses];
-
-export type RunBusinessConsoleMesScheduleData = {
-    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRunScheduleRequest;
-    path?: never;
-    query?: never;
-    url: '/api/business-console/v1/mes/schedules/run';
-};
-
-export type RunBusinessConsoleMesScheduleErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Forbidden
-     */
-    403: unknown;
-};
-
-export type RunBusinessConsoleMesScheduleResponses = {
-    /**
-     * Success
-     */
-    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesScheduleResult;
-};
-
-export type RunBusinessConsoleMesScheduleResponse = RunBusinessConsoleMesScheduleResponses[keyof RunBusinessConsoleMesScheduleResponses];
 
 export type ListBusinessConsoleMesLineSideInventoryBalancesData = {
     body?: never;

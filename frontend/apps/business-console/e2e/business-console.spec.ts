@@ -34,7 +34,6 @@ const principal = {
     // 完工入库用例断言的是 manage 用户才渲染的登记入口（receipts.vue 里 canManageReceipts
     // 控制「从工单详情发起」按钮与带 query 自动开弹窗），故额外给操作级 manage 码。
     'business.mes.receipts.manage',
-    'business.mes.schedules.read', // /mes/schedules
     'business.mes.downtime.read', // /mes/downtime
     'business.mes.handovers.read', // /mes/handovers
     'business.mes.traceability.read', // /mes/traceability
@@ -72,7 +71,6 @@ test('business console smoke pages render', async ({ page }) => {
   await expectHeading(page, '/mes/production-reports', '报工记录')
   await expectHeading(page, '/mes/quality', '质量与不良')
   await expectHeading(page, '/mes/receipts', '完工入库')
-  await expectHeading(page, '/mes/schedules', '规则排程')
   await expectHeading(page, '/mes/downtime', '设备与停机')
   await expectHeading(page, '/mes/handovers', '班次交接')
   await expectHeading(page, '/mes/traceability', '追溯查询')

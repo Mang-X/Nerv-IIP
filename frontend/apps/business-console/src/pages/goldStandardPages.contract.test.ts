@@ -8,7 +8,6 @@ import { describe, expect, it } from 'vitest'
 const GOLD_STANDARD_PAGES = [
   'mes/operation-tasks.vue',
   'mes/work-orders/index.vue',
-  'mes/schedules.vue',
   'mes/wip.vue',
   'mes/capacity.vue',
   'mes/dispatch.vue',

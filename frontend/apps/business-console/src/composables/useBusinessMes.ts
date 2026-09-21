@@ -52,7 +52,6 @@ import {
   listBusinessConsoleMesRelatedQualityItemsQueryOptions,
   listBusinessConsoleSearchableDirectoryQueryOptions,
   listBusinessConsoleQualityScrapReasonCodesQueryOptions,
-  listBusinessConsoleMesScheduleResultsQueryOptions,
   listBusinessConsoleMesShiftHandoversQueryOptions,
   getBusinessConsoleMesShiftHandoverQueryOptions,
   pauseBusinessConsoleMesOperationTaskMutationOptions,
@@ -65,7 +64,6 @@ import {
   splitBusinessConsoleMesWorkOrderMutationOptions,
   resumeBusinessConsoleMesOperationTaskMutationOptions,
   reverseBusinessConsoleMesProductionReportMutationOptions,
-  runBusinessConsoleMesScheduleMutationOptions,
   startBusinessConsoleMesOperationTaskMutationOptions,
   type BusinessConsoleMesCapacityImpactListEnvelope,
   type BusinessConsoleMesCapacityImpactRow,
@@ -115,10 +113,6 @@ import {
   type BusinessConsoleMesTraceabilityEnvelope,
   type BusinessConsoleMesTraceabilityResponse,
   type BusinessConsoleCreateRushWorkOrderRequest,
-  type BusinessConsoleMesScheduleEnvelope,
-  type BusinessConsoleMesScheduleResult,
-  type BusinessConsoleMesScheduleResultListEnvelope,
-  type BusinessConsoleMesScheduleResultRow,
   type BusinessConsoleMesWipSummaryEnvelope,
   type BusinessConsoleMesWipSummaryRow,
   type BusinessConsoleMesWorkOrderDetailEnvelope,
@@ -128,7 +122,6 @@ import {
   type BusinessConsoleMesCloseWorkOrderRequest,
   type BusinessConsoleMesEngineeringChangeDecisionRequest,
   type BusinessConsoleRecordProductionReportRequest,
-  type BusinessConsoleRunScheduleRequest,
   type ListBusinessConsoleMesWorkOrdersData,
 } from '@nerv-iip/api-client'
 import {
@@ -676,16 +669,6 @@ function listItems(envelope: BusinessConsoleMesWorkOrderListEnvelope | undefined
   }
 
   return envelope.data?.items ?? []
-}
-
-function unwrapSchedule(
-  envelope: BusinessConsoleMesScheduleEnvelope | undefined,
-): BusinessConsoleMesScheduleResult | undefined {
-  if (!envelope?.success) {
-    return undefined
-  }
-
-  return envelope.data ?? undefined
 }
 
 function isBusinessQuery(id: string) {
@@ -3303,59 +3286,5 @@ export function useMesCapacityImpacts() {
     capacityImpactsTotal: computed(() => envelopeTotal(capacityQuery.data.value)),
     filters,
     refreshCapacityImpacts: () => refetchWithBusinessContext(filters, capacityQuery),
-  }
-}
-
-export function useMesSchedules() {
-  const queryCache = useQueryCache()
-  // 本次会话刚跑的那一次：立即展示，不必等历史列表重取。
-  const lastScheduleEnvelope = shallowRef<BusinessConsoleMesScheduleEnvelope>()
-  const filters = defaultFilters()
-
-  // 历史排程结果的真读面。此前这里只有 mutation，页面刷新后历史一条都查不到。
-  const historyQuery = useQuery(() =>
-    withBusinessContextEnabled(
-      listBusinessConsoleMesScheduleResultsQueryOptions({
-        query: {
-          organizationId: filters.organizationId,
-          environmentId: filters.environmentId,
-          skip: filters.skip,
-          take: filters.take,
-        },
-      }),
-      filters,
-    ),
-  )
-
-  const runScheduleMutation = useMutation({
-    ...runBusinessConsoleMesScheduleMutationOptions(),
-    onSuccess(result) {
-      lastScheduleEnvelope.value = result
-      void invalidateWorkOrders(queryCache).catch(ignoreBackgroundError)
-      // 新跑的这一次已经落库，失效重取比乐观补一行更准。
-      void invalidateMesQueries(queryCache, ['listBusinessConsoleMesScheduleResults']).catch(
-        ignoreBackgroundError,
-      )
-    },
-  })
-
-  return {
-    filters,
-    lastSchedule: computed(() => unwrapSchedule(lastScheduleEnvelope.value)),
-    scheduleHistory: computed<BusinessConsoleMesScheduleResultRow[]>(() =>
-      envelopeItems<
-        BusinessConsoleMesScheduleResultRow,
-        BusinessConsoleMesScheduleResultListEnvelope
-      >(historyQuery.data.value),
-    ),
-    scheduleHistoryTotal: computed(() => envelopeTotal(historyQuery.data.value)),
-    scheduleHistoryError: historyQuery.error,
-    scheduleHistoryPending: historyQuery.isLoading,
-    scheduleHistoryState: businessReadState(historyQuery, () => hasBusinessContext(filters)),
-    refreshScheduleHistory: () => refetchWithBusinessContext(filters, historyQuery),
-    runSchedule: (body: BusinessConsoleRunScheduleRequest) =>
-      runScheduleMutation.mutateAsync({ body }),
-    runScheduleError: runScheduleMutation.error,
-    runSchedulePending: runScheduleMutation.isLoading,
   }
 }

@@ -16,7 +16,6 @@ import PlansPage from './plans.vue'
 import ProductionReportsPage from './production-reports.vue'
 import QualityPage from './quality.vue'
 import ReceiptsPage from './receipts.vue'
-import SchedulesPage from './schedules.vue'
 import TraceabilityPage from './traceability.vue'
 import WipPage from './wip.vue'
 import WorkOrderDetailPage from './work-orders/[workOrderId].vue'
@@ -46,7 +45,6 @@ const overrides = vi.hoisted(() => ({
   useMesProductionPlans: ['productionPlansError'],
   useMesProductionReports: ['productionReportsError'],
   useMesRelatedQualityItems: ['qualityItemsError'],
-  useMesSchedules: ['scheduleHistoryError'],
   useMesShiftHandovers: ['handoversError'],
   useMesTraceability: ['traceabilityError'],
   useMesWipSummary: ['wipError'],
@@ -62,7 +60,6 @@ const retryHandlers = vi.hoisted(
   () =>
     ({
       useMesFoundationReadiness: ['refreshReadiness'],
-      useMesSchedules: ['refreshScheduleHistory'],
       useMesDispatchTasks: ['refreshDispatchTasks'],
       useMesOverview: ['refreshOverview'],
       useMesWorkOrderDetail: [
@@ -192,11 +189,6 @@ const pages: Array<{
     absentText: ['暂无追溯数据'],
   },
   {
-    name: '规则排程',
-    page: SchedulesPage,
-    absentText: ['尚无历史排程运行记录', '该次排程没有工序分配'],
-  },
-  {
     name: '在制跟踪',
     page: WipPage,
     absentText: ['暂无在制数据'],
@@ -265,21 +257,6 @@ describe('MES 列表页读面失败时落到表格错误态（#2854）', () => {
       }
     })
   }
-
-  // 两张表共用刷新入口，逐按钮清空间谍，避免一个有效绑定掩盖另一个缺失绑定。
-  it('规则排程：两张表各自重试历史读取（#3065）', async () => {
-    const wrapper = await mountPage(SchedulesPage)
-    const retryButtons = wrapper
-      .findAll('button')
-      .filter((button) => button.text().includes('重新加载'))
-    expect(retryButtons).toHaveLength(2)
-    for (const button of retryButtons) {
-      retrySpies.refreshScheduleHistory.mockClear()
-      await button.trigger('click')
-      await flushPromises()
-      expect(retrySpies.refreshScheduleHistory).toHaveBeenCalledTimes(1)
-    }
-  })
 
   const retryPages: Array<{ name: string; page: Component; handlers: string[] }> = [
     {
