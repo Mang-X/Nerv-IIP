@@ -13,6 +13,7 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 /// #3098：领料申请按 RequestId 定位的谓词必须在真实关系 provider 上可翻译。
 /// 原实现在 RequestId 是 Guid 形态时把 <c>x.Id.Id == requestGuid</c> 写进谓词，整条查询翻译不了，
 /// 于是线边收料 / 退料（含命令锁）/ 领料申请详情四处只要传 Guid 就 500。
+/// #3700 同样要求列表查询在关系型 provider 上实际执行，避免投影后的排序导致空库也在翻译阶段返回 500。
 /// 既有用例跑在 InMemory 上（一律客户端求值）所以照绿，因此这里用 SQLite 实跑；
 /// 已实测：把任一处谓词改回 <c>x.Id.Id == requestGuid</c>，对应的 Guid 用例转红并报 could not be translated。
 /// </summary>
@@ -23,6 +24,22 @@ public sealed class MesMaterialIssueRequestLookupPersistenceTests
     private static readonly DateTimeOffset RequestedAtUtc = DateTimeOffset.Parse("2026-09-01T08:00:00Z");
     private static readonly DateTimeOffset ReceivedAtUtc = DateTimeOffset.Parse("2026-09-01T09:00:00Z");
     private static readonly DateTimeOffset ReturnedAtUtc = DateTimeOffset.Parse("2026-09-01T10:00:00Z");
+
+    [Fact]
+    public async Task List_on_empty_relational_database_returns_empty_page()
+    {
+        await using var connection = await CreateOpenSqliteConnectionAsync();
+        await using var dbContext = CreateSqliteDbContext(connection);
+        await dbContext.Database.EnsureCreatedAsync();
+
+        var response = await new ListMaterialIssueRequestsQueryHandler(dbContext).Handle(
+            new ListMaterialIssueRequestsQuery(Org, Env, WorkOrderId: null, Skip: 0, Take: 10),
+            CancellationToken.None);
+
+        Assert.Empty(response.Items);
+        Assert.Equal(0, response.Total);
+        Assert.Equal(0, response.SupplementaryCount);
+    }
 
     [Fact]
     public async Task Confirm_receipt_by_guid_id_translates_and_starts_posting_on_relational_provider()
