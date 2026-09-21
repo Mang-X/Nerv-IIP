@@ -155,7 +155,7 @@ public sealed class ErpProcurementIntegrationEventTests
     }
 
     [Fact]
-    public async Task Material_supply_eta_changed_event_publishes_on_its_named_cap_topic()
+    public async Task Material_supply_eta_changed_event_publishes_on_its_controlled_named_cap_alias()
     {
         var domainEvent = new MaterialSupplyEtaChangedDomainEvent(
             "org-001",
