@@ -1552,7 +1552,7 @@
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Stock_movement_posted_missing_material_request_early_return_persists_only_inbox",
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Stock_movement_posted_no_match_early_return_persists_only_inbox",
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Stock_movement_posting_failed_unknown_prefix_early_return_persists_only_inbox",
-        "Nerv.IIP.Business.Mes.Web.Tests.MesCapSubscriptionTests.PostgreSQL_asset_restored_handler_persists_window_schedule_and_inbox_without_external_save",
+        "Nerv.IIP.Business.Mes.Web.Tests.MesCapSubscriptionTests.PostgreSQL_asset_restored_handler_persists_window_and_inbox_without_external_save",
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSubscriptionTests.PostgreSQL_cap_quality_results_persist_rejected_passed_and_conditional_hold_states",
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSubscriptionTests.PostgreSQL_cap_with_inmemory_messaging_delivers_asset_unavailable_event_to_mes_consumer",
         "Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_v1_v2_concurrent_claims_commit_one_business_effect_across_independent_transactions",
