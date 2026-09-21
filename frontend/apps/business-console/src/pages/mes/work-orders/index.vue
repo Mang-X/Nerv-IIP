@@ -633,12 +633,7 @@ async function submitRushWorkOrder() {
   }
   try {
     const response = await createRushWorkOrder(body)
-    const affected = response?.data?.affectedWorkOrderIds ?? []
-    // 排程反馈是结果、不是常驻说明：随成功 toast 一次说清，弹窗即关，不在表单里堆一块「反馈区」。
-    notifySuccess(
-      `已创建急单 ${response?.data?.workOrderId ?? ''}` +
-        (affected.length ? ` · 重排影响 ${affected.length} 个在制工单` : ''),
-    )
+    notifySuccess(`已创建急单 ${response?.data?.workOrderId ?? ''}`)
     rushForm.idempotencyKey = newMesIdempotencyKey('rush-work-order')
     rushSheetOpen.value = false
   } catch (error) {

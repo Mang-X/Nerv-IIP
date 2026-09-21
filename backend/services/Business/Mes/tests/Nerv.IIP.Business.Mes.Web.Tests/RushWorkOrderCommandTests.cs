@@ -4,9 +4,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using System.Data.Common;
 using Nerv.IIP.Business.Mes.Infrastructure;
-using Nerv.IIP.Business.Mes.Infrastructure.Repositories;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
-using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
@@ -35,7 +33,7 @@ public sealed class RushWorkOrderCommandTests
             now.AddDays(1), "WC-1", "OP-10", 10, TimeSpan.FromMinutes(30), now,
             "rush-predicate-replay");
 
-        await new CreateRushWorkOrderCommandHandler(new InMemoryMesPlanningStore(), new RuleScheduler(), coding)
+        await new CreateRushWorkOrderCommandHandler(new InMemoryMesPlanningStore(), coding)
             .Handle(command, CancellationToken.None);
         var persistedWorkOrder = WorkOrder.Create(
             "org-001", "env-dev", "WO-PREDICATE", "SKU-1", "PV-1", 1m, 1000, now.AddDays(1));
@@ -45,8 +43,8 @@ public sealed class RushWorkOrderCommandTests
         dbContext.ChangeTracker.Clear();
         interceptor.Clear();
 
-        var store = new PersistentMesPlanningStore(dbContext, new OperationTaskRepository(dbContext));
-        var handler = new CreateRushWorkOrderCommandHandler(store, new RuleScheduler(), coding, dbContext);
+        var store = new PersistentMesPlanningStore(dbContext);
+        var handler = new CreateRushWorkOrderCommandHandler(store, coding, dbContext);
         await handler.Handle(command, CancellationToken.None);
 
         var replayQuery = Assert.Single(interceptor.Commands, sql =>
@@ -57,14 +55,14 @@ public sealed class RushWorkOrderCommandTests
         Assert.Contains("WHERE", replayQuery, StringComparison.OrdinalIgnoreCase);
     }
     [Fact]
-    public async Task CreateRushWorkOrderCommand_CreatesHighPriorityWorkOrderAndReturnsDelayedOrders()
+    public async Task CreateRushWorkOrderCommand_CreatesHighPriorityWorkOrderWithoutScheduling()
     {
         var store = new InMemoryMesPlanningStore();
         var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
         store.AddWorkOrder(new PlannedWorkOrder("org-001", "env-dev", "WO-NORMAL", "SKU-N", null, 1m, 10, now.AddDays(1)));
         store.AddOperationTask(new PlannedOperationTask("WO-NORMAL", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2), "SKU-001"));
 
-        var handler = new CreateRushWorkOrderCommandHandler(store, new RuleScheduler());
+        var handler = new CreateRushWorkOrderCommandHandler(store);
 
         var response = await handler.Handle(
             new CreateRushWorkOrderCommand(
@@ -87,8 +85,6 @@ public sealed class RushWorkOrderCommandTests
         var operation = Assert.Single(store.OperationTasks, x => x.WorkOrderId == "WO-RUSH");
         Assert.Equal("OP-RUSH-20", operation.OperationTaskId);
         Assert.Equal(20, operation.OperationSequence);
-        Assert.Equal(RescheduleTrigger.RushOrder, response.Schedule.Trigger);
-        Assert.Contains("WO-NORMAL", response.AffectedWorkOrderIds);
     }
 
     private sealed class RecordingCommandInterceptor : DbCommandInterceptor
@@ -123,7 +119,7 @@ public sealed class RushWorkOrderCommandTests
         var store = new InMemoryMesPlanningStore();
         var numbering = new MesCodingService();
         var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
-        var handler = new CreateRushWorkOrderCommandHandler(store, new RuleScheduler(), numbering);
+        var handler = new CreateRushWorkOrderCommandHandler(store, numbering);
 
         var response = await handler.Handle(
             new CreateRushWorkOrderCommand(
@@ -153,7 +149,7 @@ public sealed class RushWorkOrderCommandTests
         var store = new InMemoryMesPlanningStore();
         var numbering = new MesCodingService();
         var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
-        var handler = new CreateRushWorkOrderCommandHandler(store, new RuleScheduler(), numbering);
+        var handler = new CreateRushWorkOrderCommandHandler(store, numbering);
         var command = new CreateRushWorkOrderCommand(
             "org-001",
             "env-dev",
@@ -187,7 +183,7 @@ public sealed class RushWorkOrderCommandTests
             .Select(async index =>
             {
                 var store = new InMemoryMesPlanningStore();
-                var handler = new CreateRushWorkOrderCommandHandler(store, new RuleScheduler(), numbering);
+                var handler = new CreateRushWorkOrderCommandHandler(store, numbering);
                 var response = await handler.Handle(
                     new CreateRushWorkOrderCommand(
                         "org-001",
@@ -245,7 +241,7 @@ public sealed class RushWorkOrderCommandTests
     }
 
     [Fact]
-    public async Task ConvertPlanToWorkOrderCommand_SchedulesCreatedOperationAroundWorkCenterUnavailability()
+    public async Task ConvertPlanToWorkOrderCommand_CreatesOperationWithoutWritingScheduleResults()
     {
         await using var provider = MesTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
@@ -283,11 +279,11 @@ public sealed class RushWorkOrderCommandTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         Assert.Equal("WO-PLAN-001", response.ReferenceId);
-        var schedule = await dbContext.ScheduleResults.AsNoTracking().SingleAsync(CancellationToken.None);
-        var assignment = Assert.Single(schedule.Assignments);
-        Assert.Equal("WO-PLAN-001", assignment.WorkOrderId);
-        Assert.Equal("WO-PLAN-001-OP-10", assignment.OperationTaskId);
-        Assert.Equal(now.AddHours(2), assignment.StartUtc);
+        // #3696：建单不再顺带排程——WorkCenterId 分支只建工序，不写 ScheduleResults。
+        var operation = await dbContext.OperationTasks.AsNoTracking().SingleAsync(CancellationToken.None);
+        Assert.Equal("WO-PLAN-001", operation.WorkOrderId);
+        Assert.Equal("WO-PLAN-001-OP-10", operation.OperationTaskIdValue);
+        Assert.Empty(await dbContext.ScheduleResults.AsNoTracking().ToArrayAsync(CancellationToken.None));
     }
 
     [Fact]

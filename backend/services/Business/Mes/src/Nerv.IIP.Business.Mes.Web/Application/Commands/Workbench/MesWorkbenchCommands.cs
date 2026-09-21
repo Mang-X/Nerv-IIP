@@ -11,13 +11,8 @@ using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Behaviors;
-using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
-using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Business.Mes.Web.Application.ProductEngineering;
 using Nerv.IIP.Business.Mes.Web.Application.MasterData;
-using DomainScheduleResult = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.ScheduleResult;
-using DomainScheduleTrigger = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.ScheduleTrigger;
-using DomainScheduledOperationSnapshot = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.ScheduledOperationSnapshot;
 using DomainWorkCenterUnavailability = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability;
 using DomainDefectRecord = Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate.DefectRecord;
 using DomainShiftHandover = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandover;
@@ -591,7 +586,6 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
 {
     private const int ConvertedPlanPriority = 100;
     private readonly ApplicationDbContext dbContext;
-    private readonly RuleScheduler scheduler;
     private readonly MesCodingService _codingService;
     private readonly IMesMaterialRequirementSnapshotProvider? materialSnapshotProvider;
     private readonly IMesSkuAvailabilityScopeCoordinator skuAvailabilityScopeCoordinator;
@@ -599,14 +593,12 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
 
     public ConvertPlanToWorkOrderCommandHandler(
         ApplicationDbContext dbContext,
-        RuleScheduler scheduler,
         MesCodingService codingService,
         IMesSkuAvailabilityScopeCoordinator skuAvailabilityScopeCoordinator,
         IMesMaterialRequirementSnapshotProvider materialSnapshotProvider,
         IMesRoutingSnapshotProvider routingSnapshotProvider)
     {
         this.dbContext = dbContext;
-        this.scheduler = scheduler;
         _codingService = codingService;
         this.materialSnapshotProvider = materialSnapshotProvider;
         this.skuAvailabilityScopeCoordinator = skuAvailabilityScopeCoordinator;
@@ -615,42 +607,23 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
 
     internal ConvertPlanToWorkOrderCommandHandler(
         ApplicationDbContext dbContext,
-        RuleScheduler scheduler,
-        MesCodingService? codingService = null,
-        IMesMaterialRequirementSnapshotProvider? materialSnapshotProvider = null)
-        : this(
-            dbContext,
-            scheduler,
-            codingService,
-            materialSnapshotProvider,
-            new PostgreSqlMesSkuAvailabilityScopeCoordinator(dbContext),
-            null)
-    {
-    }
-
-    internal ConvertPlanToWorkOrderCommandHandler(
-        ApplicationDbContext dbContext,
-        RuleScheduler scheduler,
         MesCodingService? codingService,
         IMesMaterialRequirementSnapshotProvider? materialSnapshotProvider,
         IMesSkuAvailabilityScopeCoordinator skuAvailabilityScopeCoordinator,
         IMesRoutingSnapshotProvider? routingSnapshotProvider = null)
     {
         this.dbContext = dbContext;
-        this.scheduler = scheduler;
         _codingService = codingService ?? new MesCodingService();
         this.materialSnapshotProvider = materialSnapshotProvider;
         this.skuAvailabilityScopeCoordinator = skuAvailabilityScopeCoordinator;
         this.routingSnapshotProvider = routingSnapshotProvider;
     }
 
-    internal ConvertPlanToWorkOrderCommandHandler(ApplicationDbContext dbContext)
-        : this(dbContext, new RuleScheduler())
-    {
-    }
-
-    internal ConvertPlanToWorkOrderCommandHandler(ApplicationDbContext dbContext, MesCodingService? codingService)
-        : this(dbContext, new RuleScheduler(), codingService)
+    internal ConvertPlanToWorkOrderCommandHandler(
+        ApplicationDbContext dbContext,
+        MesCodingService? codingService = null,
+        IMesMaterialRequirementSnapshotProvider? materialSnapshotProvider = null)
+        : this(dbContext, codingService, materialSnapshotProvider, new PostgreSqlMesSkuAvailabilityScopeCoordinator(dbContext))
     {
     }
 
@@ -820,9 +793,6 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
 
         if (!string.IsNullOrWhiteSpace(request.WorkCenterId))
         {
-            var baselinePlan = scheduler.Schedule(
-                await GetScheduleOperationsAsync(request.OrganizationId, request.EnvironmentId, cancellationToken),
-                await GetUnavailabilitiesAsync(request.OrganizationId, request.EnvironmentId, cancellationToken));
             dbContext.OperationTasks.Add(OperationTask.Create(
                 request.OrganizationId,
                 request.EnvironmentId,
@@ -845,10 +815,6 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
                 request.SkuId,
                 request.UomCode,
                 request.PlannedQuantity));
-            var plan = scheduler.Schedule(
-                await GetScheduleOperationsAsync(request.OrganizationId, request.EnvironmentId, cancellationToken),
-                await GetUnavailabilitiesAsync(request.OrganizationId, request.EnvironmentId, cancellationToken));
-            await AddScheduleResultAsync(RescheduleTrigger.Manual, request.RequestedAtUtc, plan, baselinePlan.Assignments, cancellationToken);
         }
         else
         {
@@ -890,135 +856,6 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
         return new MesAcceptedResponse("Accepted", workOrderId, request.RequestedAtUtc);
     }
 
-    private async Task<IReadOnlyCollection<ScheduleOperation>> GetScheduleOperationsAsync(
-        string organizationId,
-        string environmentId,
-        CancellationToken cancellationToken)
-    {
-        var persistedWorkOrders = await dbContext.WorkOrders
-            .AsNoTracking()
-            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId)
-            .ToListAsync(cancellationToken);
-        var persistedWorkOrderIds = persistedWorkOrders.Select(x => x.Id).ToHashSet();
-        var workOrders = persistedWorkOrders
-            .Concat(dbContext.WorkOrders.Local.Where(x =>
-                x.OrganizationId == organizationId &&
-                x.EnvironmentId == environmentId &&
-                !persistedWorkOrderIds.Contains(x.Id)))
-            .GroupBy(x => x.WorkOrderIdValue, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(x => x.Key, x => x.Last(), StringComparer.OrdinalIgnoreCase);
-
-        var workOrderIds = workOrders.Keys.ToArray();
-        var persistedOperationTasks = await dbContext.OperationTasks
-            .AsNoTracking()
-            .Where(x =>
-                x.OrganizationId == organizationId &&
-                x.EnvironmentId == environmentId &&
-                workOrderIds.Contains(x.WorkOrderId))
-            .ToListAsync(cancellationToken);
-        var persistedOperationTaskIds = persistedOperationTasks.Select(x => x.Id).ToHashSet();
-        var operationTasks = persistedOperationTasks
-            .Concat(dbContext.OperationTasks.Local.Where(x =>
-                x.OrganizationId == organizationId &&
-                x.EnvironmentId == environmentId &&
-                workOrders.ContainsKey(x.WorkOrderId) &&
-                !persistedOperationTaskIds.Contains(x.Id)))
-            .ToList();
-
-        return operationTasks.Select(x =>
-        {
-            var workOrder = workOrders[x.WorkOrderId];
-            return new ScheduleOperation(
-                x.WorkOrderId,
-                x.OperationTaskIdValue,
-                ToWebStatus(x.Status),
-                x.OperationSequence,
-                workOrder.Priority,
-                workOrder.DueUtc,
-                x.EarliestStartUtc,
-                x.Duration,
-                x.WorkCenterId,
-                x.AlternativeWorkCenterIdList,
-                x.ExistingStartUtc,
-                x.ExistingEndUtc);
-        }).ToArray();
-    }
-
-    private async Task<IReadOnlyCollection<WorkCenterUnavailability>> GetUnavailabilitiesAsync(
-        string organizationId,
-        string environmentId,
-        CancellationToken cancellationToken)
-    {
-        var persisted = await dbContext.WorkCenterUnavailabilities
-            .AsNoTracking()
-            .Where(x =>
-                (x.OrganizationId == null || x.OrganizationId == organizationId) &&
-                (x.EnvironmentId == null || x.EnvironmentId == environmentId))
-            .OrderBy(x => x.FromUtc)
-            .ToListAsync(cancellationToken);
-        var persistedIds = persisted.Select(x => x.Id).ToHashSet();
-        return persisted
-            .Concat(dbContext.WorkCenterUnavailabilities.Local.Where(x =>
-                IsInScope(x, organizationId, environmentId) &&
-                !persistedIds.Contains(x.Id)))
-            .Select(x => new WorkCenterUnavailability(
-                x.WorkCenterId,
-                x.FromUtc,
-                x.ToUtc,
-                x.Reason,
-                x.DeviceAssetId,
-                x.OrganizationId,
-                x.EnvironmentId))
-            .ToArray();
-    }
-
-    private async Task AddScheduleResultAsync(
-        RescheduleTrigger trigger,
-        DateTimeOffset scheduledAtUtc,
-        RuleSchedulePlan plan,
-        IReadOnlyCollection<ScheduledOperation> compareAssignments,
-        CancellationToken cancellationToken)
-    {
-        var version = await dbContext.ScheduleResults.CountAsync(cancellationToken) + 1;
-        var affectedWorkOrderIds = FindAffectedWorkOrders(plan, compareAssignments);
-        dbContext.ScheduleResults.Add(DomainScheduleResult.Create(
-            version,
-            Enum.Parse<DomainScheduleTrigger>(trigger.ToString()),
-            scheduledAtUtc,
-            plan.Assignments.Select(x => new DomainScheduledOperationSnapshot(
-                x.WorkOrderId,
-                x.OperationTaskId,
-                x.WorkCenterId,
-                x.StartUtc,
-                x.EndUtc,
-                x.Reason)).ToArray(),
-            affectedWorkOrderIds));
-    }
-
-    private static IReadOnlyCollection<string> FindAffectedWorkOrders(
-        RuleSchedulePlan plan,
-        IReadOnlyCollection<ScheduledOperation> compareAssignments)
-    {
-        var previousByTask = compareAssignments.ToDictionary(x => x.OperationTaskId, StringComparer.OrdinalIgnoreCase);
-        return plan.Assignments
-            .Where(x => previousByTask.TryGetValue(x.OperationTaskId, out var prior) && x.StartUtc > prior.StartUtc)
-            .Select(x => x.WorkOrderId)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Order(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-    }
-
-    private static OperationTaskStatus ToWebStatus(OperationTaskLifecycleStatus status) =>
-        Enum.Parse<OperationTaskStatus>(status.ToString());
-
-    private static bool IsInScope(DomainWorkCenterUnavailability unavailability, string organizationId, string environmentId)
-    {
-        var organizationMatches = unavailability.OrganizationId is null
-            || string.Equals(unavailability.OrganizationId, organizationId, StringComparison.Ordinal);
-        var environmentMatches = unavailability.EnvironmentId is null
-            || string.Equals(unavailability.EnvironmentId, environmentId, StringComparison.Ordinal);
-        return organizationMatches && environmentMatches;
-    }
 }
 
 public sealed record CreateMaterialIssueRequestCommand(

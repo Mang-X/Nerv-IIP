@@ -4766,25 +4766,7 @@ public sealed record BusinessConsoleCreateRushWorkOrderRequest(
     int DurationMinutes,
     string? IdempotencyKey = null);
 
-public sealed record BusinessConsoleMesScheduleResult(
-    int ScheduleVersion,
-    string Trigger,
-    DateTimeOffset ScheduledAtUtc,
-    IReadOnlyCollection<BusinessConsoleScheduledOperation> Assignments,
-    IReadOnlyCollection<string> AffectedWorkOrderIds);
-
-public sealed record BusinessConsoleScheduledOperation(
-    string WorkOrderId,
-    string OperationTaskId,
-    string WorkCenterId,
-    DateTimeOffset StartUtc,
-    DateTimeOffset EndUtc,
-    string Reason);
-
-public sealed record BusinessConsoleCreateRushWorkOrderResponse(
-    string WorkOrderId,
-    BusinessConsoleMesScheduleResult Schedule,
-    IReadOnlyCollection<string> AffectedWorkOrderIds);
+public sealed record BusinessConsoleCreateRushWorkOrderResponse(string WorkOrderId);
 
 public sealed record BusinessConsoleRecordProductionReportRequest(
     string OrganizationId,

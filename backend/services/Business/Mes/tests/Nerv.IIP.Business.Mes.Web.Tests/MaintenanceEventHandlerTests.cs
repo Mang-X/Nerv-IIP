@@ -10,7 +10,6 @@ using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Infrastructure.IntegrationEvents;
-using Nerv.IIP.Business.Mes.Infrastructure.Repositories;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
@@ -30,7 +29,7 @@ public sealed class MaintenanceEventHandlerTests
     /// <summary>
     /// P1-2 / #2964：v1 与 v2 在两个独立事务里争夺同一停机事实。第一个竞争者赢得双身份 claim 后被夹具停在
     /// 副作用入口之前；第二个竞争者必须被 PostgreSQL advisory 锁挡在 claim 这一行（用 pg_stat_activity 观察到
-    /// 真实的 waiter），根本走不到副作用；释放后只有一条收件箱行、一条停机事实、一次重排。
+    /// 真实的 waiter），根本走不到副作用；释放后只有一条收件箱行、一条停机事实，且不写任何排程结果。
     /// </summary>
     [PostgreSqlFact]
     public async Task PostgreSQL_v1_v2_concurrent_claims_commit_one_business_effect_across_independent_transactions()
@@ -77,9 +76,7 @@ public sealed class MaintenanceEventHandlerTests
         {
             services.RemoveAll<IMesPlanningStore>();
             services.AddScoped<IMesPlanningStore>(provider => new ClaimRaceGatePlanningStore(
-                new PersistentMesPlanningStore(
-                    provider.GetRequiredService<ApplicationDbContext>(),
-                    provider.GetRequiredService<IOperationTaskRepository>()),
+                new PersistentMesPlanningStore(provider.GetRequiredService<ApplicationDbContext>()),
                 gate));
         });
         using var client = factory.CreateClient();
@@ -111,7 +108,8 @@ public sealed class MaintenanceEventHandlerTests
         Assert.Equal(expectedWinnerEventId, inbox.EventId);
         Assert.Equal(expectedIdempotencyKey, inbox.IdempotencyKey);
         Assert.Equal(1, await db.WorkCenterUnavailabilities.AsNoTracking().CountAsync());
-        Assert.Equal(1, await db.ScheduleResults.AsNoTracking().CountAsync());
+        // #3696：设备停机事件不再触发任何 MES 侧排程，事件路径不得写 ScheduleResults。
+        Assert.Equal(0, await db.ScheduleResults.AsNoTracking().CountAsync());
     }
 
     /// <summary>
@@ -347,7 +345,7 @@ public sealed class MaintenanceEventHandlerTests
     }
 
     [Fact]
-    public async Task AssetUnavailableHandler_RecordsOpenUnavailableWindowAndAutoReschedules()
+    public async Task AssetUnavailableHandler_RecordsOpenUnavailableWindow()
     {
         var store = new InMemoryMesPlanningStore();
         var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
@@ -366,11 +364,10 @@ public sealed class MaintenanceEventHandlerTests
         Assert.Equal("WC-A", window.WorkCenterId);
         Assert.Null(window.ToUtc);
         Assert.Equal("breakdown", window.Reason);
-        Assert.Equal(RescheduleTrigger.AssetUnavailable, Assert.Single(store.ScheduleResults).Trigger);
     }
 
     [Fact]
-    public async Task AssetUnavailableHandler_SkipsDuplicateEventBeforeRecordingWindowOrRescheduling()
+    public async Task AssetUnavailableHandler_SkipsDuplicateEventBeforeRecordingWindow()
     {
         var store = new InMemoryMesPlanningStore();
         var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
@@ -400,7 +397,6 @@ public sealed class MaintenanceEventHandlerTests
         }
 
         Assert.Single(store.Unavailabilities);
-        Assert.Single(store.ScheduleResults);
         await using var assertionDbContext = CreateDbContext(options);
         Assert.Equal(1, await assertionDbContext.ProcessedIntegrationEvents.CountAsync());
     }
@@ -437,7 +433,6 @@ public sealed class MaintenanceEventHandlerTests
         }
 
         Assert.Single(store.Unavailabilities);
-        Assert.Single(store.ScheduleResults);
         await using var assertionDbContext = CreateDbContext(options);
         var processed = Assert.Single(await assertionDbContext.ProcessedIntegrationEvents.ToListAsync());
         Assert.Equal(integrationEvent.EventId, processed.EventId);
@@ -475,7 +470,6 @@ public sealed class MaintenanceEventHandlerTests
 
         var window = Assert.Single(store.Unavailabilities);
         Assert.Equal("CUSTOM-DOWNTIME-CODE", window.Reason);
-        Assert.Single(store.ScheduleResults);
         await using var assertionDbContext = CreateDbContext(options);
         var processed = Assert.Single(await assertionDbContext.ProcessedIntegrationEvents.ToListAsync());
         Assert.Equal(v2.EventId, processed.EventId);
@@ -492,7 +486,7 @@ public sealed class MaintenanceEventHandlerTests
         await using var dbContext = CreateDbContext();
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
         var handler = new AssetUnavailableV2IntegrationEventHandlerForReschedule(
-            CreateUnavailableProcessor(store, dbContext, autoReschedule: false),
+            CreateUnavailableProcessor(store, dbContext),
             deadLetters);
         var integrationEvent = CreateUnavailableV2Event(now, "asset-unavailable:WO-001:empty-causation") with
         {
@@ -548,7 +542,6 @@ public sealed class MaintenanceEventHandlerTests
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
 
         Assert.Empty(store.Unavailabilities);
-        Assert.Empty(store.ScheduleResults);
         Assert.Empty(dbContext.ProcessedIntegrationEvents);
         var deadLetter = Assert.Single(await deadLetters.ListAsync(
             AssetUnavailableV2IntegrationEventHandlerForReschedule.ConsumerName,
@@ -579,13 +572,12 @@ public sealed class MaintenanceEventHandlerTests
         }
 
         Assert.Single(store.Unavailabilities);
-        Assert.Single(store.ScheduleResults);
         await using var assertionDbContext = CreateDbContext(options);
         Assert.Single(await assertionDbContext.ProcessedIntegrationEvents.ToListAsync());
     }
 
     [Fact]
-    public async Task AssetRestoredHandler_ClosesUnavailableWindowAndAutoReschedules()
+    public async Task AssetRestoredHandler_ClosesUnavailableWindow()
     {
         var store = new InMemoryMesPlanningStore();
         var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
@@ -594,8 +586,6 @@ public sealed class MaintenanceEventHandlerTests
 
         var handler = new AssetRestoredIntegrationEventHandlerForReschedule(
             store,
-            new RuleScheduler(),
-            new MesRescheduleOptions { AutoRescheduleOnAssetRestored = true },
             CreateDbContext(),
             new InMemoryIntegrationEventDeadLetterStore());
 
@@ -603,11 +593,10 @@ public sealed class MaintenanceEventHandlerTests
 
         var window = Assert.Single(store.Unavailabilities);
         Assert.Equal(now.AddHours(2), window.ToUtc);
-        Assert.Equal(RescheduleTrigger.AssetRestored, Assert.Single(store.ScheduleResults).Trigger);
     }
 
     [Fact]
-    public async Task AssetRestoredHandler_SkipsDuplicateEventBeforeClosingWindowOrRescheduling()
+    public async Task AssetRestoredHandler_SkipsDuplicateEventBeforeClosingWindow()
     {
         var store = new InMemoryMesPlanningStore();
         var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
@@ -620,8 +609,6 @@ public sealed class MaintenanceEventHandlerTests
         {
             var handler = new AssetRestoredIntegrationEventHandlerForReschedule(
                 store,
-                new RuleScheduler(),
-                new MesRescheduleOptions { AutoRescheduleOnAssetRestored = true },
                 dbContext,
                 new InMemoryIntegrationEventDeadLetterStore());
             await handler.HandleAsync(integrationEvent, CancellationToken.None);
@@ -632,8 +619,6 @@ public sealed class MaintenanceEventHandlerTests
         {
             var handler = new AssetRestoredIntegrationEventHandlerForReschedule(
                 store,
-                new RuleScheduler(),
-                new MesRescheduleOptions { AutoRescheduleOnAssetRestored = true },
                 dbContext,
                 new InMemoryIntegrationEventDeadLetterStore());
             await handler.HandleAsync(integrationEvent, CancellationToken.None);
@@ -642,13 +627,12 @@ public sealed class MaintenanceEventHandlerTests
 
         var window = Assert.Single(store.Unavailabilities);
         Assert.Equal(now.AddHours(2), window.ToUtc);
-        Assert.Single(store.ScheduleResults);
         await using var assertionDbContext = CreateDbContext(options);
         Assert.Equal(1, await assertionDbContext.ProcessedIntegrationEvents.CountAsync());
     }
 
     [Fact]
-    public async Task AssetUnavailableHandler_DeadLettersUnsupportedEventVersionWithoutRescheduling()
+    public async Task AssetUnavailableHandler_DeadLettersUnsupportedEventVersion()
     {
         var store = new InMemoryMesPlanningStore();
         var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
@@ -659,7 +643,6 @@ public sealed class MaintenanceEventHandlerTests
         await handler.HandleAsync(CreateUnavailableEvent(DateTimeOffset.Parse("2026-05-22T08:00:00Z"), eventVersion: 2), CancellationToken.None);
 
         Assert.Empty(store.Unavailabilities);
-        Assert.Empty(store.ScheduleResults);
         var deadLetter = Assert.Single(await deadLetterStore.ListAsync(
             AssetUnavailableIntegrationEventHandlerForReschedule.ConsumerName,
             IntegrationEventDeadLetterStatus.Pending,
@@ -677,15 +660,12 @@ public sealed class MaintenanceEventHandlerTests
         var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
         var handler = new AssetRestoredIntegrationEventHandlerForReschedule(
             store,
-            new RuleScheduler(),
-            new MesRescheduleOptions { AutoRescheduleOnAssetRestored = true },
             CreateDbContext(),
             deadLetterStore);
 
         await handler.HandleAsync(CreateRestoredEvent(now.AddHours(2), eventVersion: 2), CancellationToken.None);
 
         Assert.Null(Assert.Single(store.Unavailabilities).ToUtc);
-        Assert.Empty(store.ScheduleResults);
         var deadLetter = Assert.Single(await deadLetterStore.ListAsync(
             AssetRestoredIntegrationEventHandlerForReschedule.ConsumerName,
             IntegrationEventDeadLetterStatus.Pending,
@@ -775,15 +755,8 @@ public sealed class MaintenanceEventHandlerTests
     /// </summary>
     private static IMesAssetUnavailableCanonicalProcessor CreateUnavailableProcessor(
         IMesPlanningStore store,
-        ApplicationDbContext dbContext,
-        bool autoReschedule = true) =>
-        new MesAssetUnavailableCanonicalProcessor(new DirectCommandSender(
-            dbContext,
-            store,
-            new MesRescheduleOptions { AutoRescheduleOnAssetUnavailable = autoReschedule }));
-
-    private static PersistentMesPlanningStore CreatePersistentStore(ApplicationDbContext dbContext) =>
-        new(dbContext, new OperationTaskRepository(dbContext));
+        ApplicationDbContext dbContext) =>
+        new MesAssetUnavailableCanonicalProcessor(new DirectCommandSender(dbContext, store));
 
     private static ApplicationDbContext CreateDbContext(DbContextOptions<ApplicationDbContext> options)
     {
@@ -845,14 +818,13 @@ public sealed class MaintenanceEventHandlerTests
 
     private sealed class DirectCommandSender(
         ApplicationDbContext dbContext,
-        IMesPlanningStore store,
-        MesRescheduleOptions options) : ISender
+        IMesPlanningStore store) : ISender
     {
         public async Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
         {
             var command = Assert.IsType<ProcessAssetUnavailableCommand>(request);
             var handler = new ProcessAssetUnavailableCommandHandler(
-                new PostgreSqlMesAssetUnavailableInboxClaimCoordinator(dbContext), store, new RuleScheduler(), options);
+                new PostgreSqlMesAssetUnavailableInboxClaimCoordinator(dbContext), store);
             var result = await handler.Handle(command, cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
             return (TResponse)(object)result;
@@ -903,7 +875,6 @@ public sealed class MaintenanceEventHandlerTests
         public Task<IReadOnlyCollection<PlannedOperationTask>> GetOperationTasksAsync(CancellationToken cancellationToken = default) => inner.GetOperationTasksAsync(cancellationToken);
         public Task<IReadOnlyCollection<WorkCenterUnavailability>> GetUnavailabilitiesAsync(CancellationToken cancellationToken = default) => inner.GetUnavailabilitiesAsync(cancellationToken);
         public Task<IReadOnlyCollection<WorkCenterUnavailability>> GetUnavailabilitiesAsync(string organizationId, string environmentId, CancellationToken cancellationToken = default) => inner.GetUnavailabilitiesAsync(organizationId, environmentId, cancellationToken);
-        public Task<IReadOnlyCollection<MesScheduleResult>> GetScheduleResultsAsync(CancellationToken cancellationToken = default) => inner.GetScheduleResultsAsync(cancellationToken);
         public Task CloseUnavailabilityAsync(string deviceAssetId, DateTimeOffset restoredAtUtc, CancellationToken cancellationToken = default) => inner.CloseUnavailabilityAsync(deviceAssetId, restoredAtUtc, cancellationToken);
         public Task CloseUnavailabilityAsync(string organizationId, string environmentId, string deviceAssetId, DateTimeOffset restoredAtUtc, CancellationToken cancellationToken = default) => inner.CloseUnavailabilityAsync(organizationId, environmentId, deviceAssetId, restoredAtUtc, cancellationToken);
         public async Task<string> ResolveWorkCenterIdAsync(string deviceAssetId, CancellationToken cancellationToken = default)
@@ -916,7 +887,5 @@ public sealed class MaintenanceEventHandlerTests
             await gate.EnterSideEffectsAsync(cancellationToken);
             return await inner.ResolveWorkCenterIdAsync(organizationId, environmentId, deviceAssetId, cancellationToken);
         }
-        public Task<MesScheduleResult> AddScheduleResultAsync(RescheduleTrigger trigger, DateTimeOffset scheduledAtUtc, RuleSchedulePlan plan, IReadOnlyCollection<ScheduledOperation>? compareAssignments = null, CancellationToken cancellationToken = default) => inner.AddScheduleResultAsync(trigger, scheduledAtUtc, plan, compareAssignments, cancellationToken);
-        public Task<IReadOnlyCollection<ScheduleOperation>> GetScheduleOperationsAsync(string organizationId, string environmentId, CancellationToken cancellationToken = default) => inner.GetScheduleOperationsAsync(organizationId, environmentId, cancellationToken);
     }
 }

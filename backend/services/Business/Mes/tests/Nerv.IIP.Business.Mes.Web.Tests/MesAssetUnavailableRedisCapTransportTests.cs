@@ -481,7 +481,7 @@ public sealed class MesAssetUnavailableRedisCapTransportTests(ITestOutputHelper 
                 {
                     var db = provider.GetRequiredService<ApplicationDbContext>();
                     return new PoisoningPlanningStore(
-                        new PersistentMesPlanningStore(db, provider.GetRequiredService<IOperationTaskRepository>()),
+                        new PersistentMesPlanningStore(db),
                         poison);
                 });
             });
@@ -516,7 +516,8 @@ public sealed class MesAssetUnavailableRedisCapTransportTests(ITestOutputHelper 
                 var inbox = await db.ProcessedIntegrationEvents.AsNoTracking().SingleAsync(token);
                 Assert.Equal(idempotencyKey, inbox.IdempotencyKey);
                 Assert.Equal(1, await db.WorkCenterUnavailabilities.AsNoTracking().CountAsync(token));
-                Assert.Equal(1, await db.ScheduleResults.AsNoTracking().CountAsync(token));
+                // #3696：停机事件消费不再触发排程，不得写 ScheduleResults。
+                Assert.Equal(0, await db.ScheduleResults.AsNoTracking().CountAsync(token));
             },
             options: new EventuallyOptions(TimeSpan.FromSeconds(90), TimeSpan.FromMilliseconds(250), []));
 
@@ -612,13 +613,10 @@ public sealed class MesAssetUnavailableRedisCapTransportTests(ITestOutputHelper 
         public Task<IReadOnlyCollection<PlannedOperationTask>> GetOperationTasksAsync(CancellationToken cancellationToken = default) => inner.GetOperationTasksAsync(cancellationToken);
         public Task<IReadOnlyCollection<WorkCenterUnavailability>> GetUnavailabilitiesAsync(CancellationToken cancellationToken = default) => inner.GetUnavailabilitiesAsync(cancellationToken);
         public Task<IReadOnlyCollection<WorkCenterUnavailability>> GetUnavailabilitiesAsync(string organizationId, string environmentId, CancellationToken cancellationToken = default) => inner.GetUnavailabilitiesAsync(organizationId, environmentId, cancellationToken);
-        public Task<IReadOnlyCollection<MesScheduleResult>> GetScheduleResultsAsync(CancellationToken cancellationToken = default) => inner.GetScheduleResultsAsync(cancellationToken);
         public Task CloseUnavailabilityAsync(string deviceAssetId, DateTimeOffset restoredAtUtc, CancellationToken cancellationToken = default) => inner.CloseUnavailabilityAsync(deviceAssetId, restoredAtUtc, cancellationToken);
         public Task CloseUnavailabilityAsync(string organizationId, string environmentId, string deviceAssetId, DateTimeOffset restoredAtUtc, CancellationToken cancellationToken = default) => inner.CloseUnavailabilityAsync(organizationId, environmentId, deviceAssetId, restoredAtUtc, cancellationToken);
         public Task<string> ResolveWorkCenterIdAsync(string deviceAssetId, CancellationToken cancellationToken = default) => ResolveAsync(() => inner.ResolveWorkCenterIdAsync(deviceAssetId, cancellationToken));
         public Task<string> ResolveWorkCenterIdAsync(string organizationId, string environmentId, string deviceAssetId, CancellationToken cancellationToken = default) => ResolveAsync(() => inner.ResolveWorkCenterIdAsync(organizationId, environmentId, deviceAssetId, cancellationToken));
-        public Task<MesScheduleResult> AddScheduleResultAsync(RescheduleTrigger trigger, DateTimeOffset scheduledAtUtc, RuleSchedulePlan plan, IReadOnlyCollection<ScheduledOperation>? compareAssignments = null, CancellationToken cancellationToken = default) => inner.AddScheduleResultAsync(trigger, scheduledAtUtc, plan, compareAssignments, cancellationToken);
-        public Task<IReadOnlyCollection<ScheduleOperation>> GetScheduleOperationsAsync(string organizationId, string environmentId, CancellationToken cancellationToken = default) => inner.GetScheduleOperationsAsync(organizationId, environmentId, cancellationToken);
 
         private Task<string> ResolveAsync(Func<Task<string>> next)
         {

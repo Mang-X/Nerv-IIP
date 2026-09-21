@@ -53,8 +53,8 @@ public static class WorldHistoryScheduleResultSpec
     /// 由 L1 工序任务实际用过的周计划号，生成历次排程运行。
     ///
     /// <paramref name="schedulePlanIds"/> 必须是**库里真实存在**的计划号（升序）——
-    /// 排程结果不凭空造周次。版本号自 1 起沿时间顺序递增，与运行时
-    /// <c>AddScheduleResultAsync</c> 的「已有条数 + 1」口径衔接，不会撞号。
+    /// 排程结果不凭空造周次。版本号自 1 起沿时间顺序递增；#3696 删除规则排程链后
+    /// 运行时不再写 <c>ScheduleResults</c>，种子是该表唯一写入方，不会撞号。
     /// </summary>
     public static IReadOnlyList<WorldHistoryScheduleRun> BuildRuns(
         IReadOnlyList<string> schedulePlanIds,

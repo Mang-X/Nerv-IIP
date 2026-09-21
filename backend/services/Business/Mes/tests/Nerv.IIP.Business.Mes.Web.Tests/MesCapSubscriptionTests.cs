@@ -166,7 +166,6 @@ public sealed class MesCapSubscriptionTests
 
         var services = new ServiceCollection();
         services.AddSingleton<IMesPlanningStore>(new InMemoryMesPlanningStore());
-        services.AddSingleton<RuleScheduler>();
         services.AddSingleton<MesCodingService>();
         services.AddSingleton<IMesMaterialRequirementSnapshotProvider>(NoRequirementSnapshotProvider.Instance);
         services.AddSingleton(new ApplicationDbContext(
@@ -196,7 +195,7 @@ public sealed class MesCapSubscriptionTests
 
         await PublishAsync(factory, CreateUnavailableEvent(DateTimeOffset.Parse("2026-05-23T08:00:00Z")));
 
-        await AssertEventuallyAsync("the MES CAP consumer persisted the inbox, work-center unavailable window, and reschedule result", async token =>
+        await AssertEventuallyAsync("the MES CAP consumer persisted the inbox and work-center unavailable window", async token =>
         {
             using var scope = factory.Services.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -211,20 +210,17 @@ public sealed class MesCapSubscriptionTests
                 .SingleOrDefaultAsync(
                     x => x.DeviceAssetId == "ASSET-CNC-01",
                     token);
-            var result = await dbContext.ScheduleResults
-                .AsNoTracking()
-                .SingleOrDefaultAsync(token);
-
             Assert.True(inbox is not null, "MES CAP consumer should persist the processed-event inbox row.");
             Assert.True(window is not null, "MES CAP consumer should persist the work-center unavailable window.");
             Assert.Equal("WC-A", window.WorkCenterId);
             Assert.Null(window.ToUtc);
-            Assert.True(result is not null, "MES CAP consumer should auto-reschedule after asset unavailable.");
+            // #3696：停机事件消费不再触发排程，不得写 ScheduleResults。
+            Assert.Equal(0, await dbContext.ScheduleResults.AsNoTracking().CountAsync(token));
         });
     }
 
     [PostgreSqlFact]
-    public async Task PostgreSQL_asset_restored_handler_persists_window_schedule_and_inbox_without_external_save()
+    public async Task PostgreSQL_asset_restored_handler_persists_window_and_inbox_without_external_save()
     {
         await MesPostgresLaneDatabase.ResetSchemaAsync();
         await using var factory = CreateFactory(MesPostgresLaneDatabase.ConnectionString);
@@ -258,12 +254,12 @@ public sealed class MesCapSubscriptionTests
         using var assertionScope = factory.Services.CreateScope();
         var assertionDb = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var window = await assertionDb.WorkCenterUnavailabilities.AsNoTracking().SingleAsync();
-        var schedule = await assertionDb.ScheduleResults.AsNoTracking().SingleAsync();
         var inbox = await assertionDb.ProcessedIntegrationEvents.AsNoTracking().SingleAsync(x =>
             x.ConsumerName == AssetRestoredIntegrationEventHandlerForReschedule.ConsumerName);
 
         Assert.Equal(restoredAtUtc, window.ToUtc);
-        Assert.Equal("AssetRestored", schedule.Trigger.ToString());
+        // #3696：恢复事件消费不再触发排程，不得写 ScheduleResults。
+        Assert.Equal(0, await assertionDb.ScheduleResults.AsNoTracking().CountAsync());
         Assert.Equal(integrationEvent.EventId, inbox.EventId);
     }
 

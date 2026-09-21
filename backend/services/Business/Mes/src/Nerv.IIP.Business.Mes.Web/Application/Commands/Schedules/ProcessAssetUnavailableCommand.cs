@@ -10,7 +10,7 @@ namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
 /// <summary>
 /// Maintenance AssetUnavailable（v1/v2 汇入同一 canonical 事实）在 MES 侧的唯一业务入口。
 /// #2964 冻结的边界：只有在同一事务里同时赢得 <c>(ConsumerName, EventId)</c> 与
-/// <c>(ConsumerName, IdempotencyKey)</c> 两项身份的事务才能继续登记停机与重排；claim 与副作用同属
+/// <c>(ConsumerName, IdempotencyKey)</c> 两项身份的事务才能继续登记停机；claim 与副作用同属
 /// 这条 command 的 UoW，任一环节失败整体回滚，不会留下"已 claim 但没有停机事实"的半成品。
 /// </summary>
 public sealed record ProcessAssetUnavailableCommand(
@@ -38,9 +38,7 @@ public sealed class ProcessAssetUnavailableCommandValidator : AbstractValidator<
 
 public sealed class ProcessAssetUnavailableCommandHandler(
     IMesAssetUnavailableInboxClaimCoordinator claimCoordinator,
-    IMesPlanningStore store,
-    RuleScheduler scheduler,
-    MesRescheduleOptions options)
+    IMesPlanningStore store)
     : ICommandHandler<ProcessAssetUnavailableCommand, ProcessAssetUnavailableResult>
 {
     public async Task<ProcessAssetUnavailableResult> Handle(
@@ -71,18 +69,6 @@ public sealed class ProcessAssetUnavailableCommandHandler(
             request.DeviceAssetId,
             envelope.OrganizationId,
             envelope.EnvironmentId));
-
-        if (options.AutoRescheduleOnAssetUnavailable)
-        {
-            var plan = scheduler.Schedule(
-                await store.GetScheduleOperationsAsync(envelope.OrganizationId, envelope.EnvironmentId, cancellationToken),
-                await store.GetUnavailabilitiesAsync(envelope.OrganizationId, envelope.EnvironmentId, cancellationToken));
-            await store.AddScheduleResultAsync(
-                RescheduleTrigger.AssetUnavailable,
-                envelope.OccurredAtUtc,
-                plan,
-                cancellationToken: cancellationToken);
-        }
 
         return new ProcessAssetUnavailableResult(true);
     }
