@@ -53,7 +53,7 @@ test('#3703 班组长可在工单详情填写原因并人工挂起', async ({ pa
 
     if (pathname === '/api/business-console/v1/mes/work-orders/WO-3703/hold') {
       holdRequests.push(route.request().postDataJSON())
-      workOrderStatus = 'held'
+      workOrderStatus = 'hold'
       return fulfillJson(route, envelope({ accepted: true, downstreamDocumentId: 'WO-3703' }))
     }
 
@@ -120,6 +120,7 @@ test('#3703 班组长可在工单详情填写原因并人工挂起', async ({ pa
 
   await expect(dialog).toBeHidden()
   await expect(page.getByText('工单 WO-3703 已挂起。')).toBeVisible()
+  await expect(page.getByText('已暂停', { exact: true })).toBeVisible()
   await expect.poll(() => holdRequests).toEqual([{ reason: '总装设备异常，等待维修确认' }])
 })
 

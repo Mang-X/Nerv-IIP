@@ -69,8 +69,13 @@ import {
 } from './useBusinessMes'
 import { useBusinessContextStore } from '@/stores/businessContext'
 
+type TestQueryCacheEntry = { key: Array<{ _id: string }> }
+type TestInvalidateQueriesOptions = {
+  predicate: (entry: TestQueryCacheEntry) => boolean
+}
+
 const coladaState = vi.hoisted(() => ({
-  invalidateQueries: vi.fn(async () => undefined),
+  invalidateQueries: vi.fn(async (_options: TestInvalidateQueriesOptions) => undefined),
   queryFactoriesById: new Map<
     string,
     () => {
@@ -1581,9 +1586,7 @@ describe('business MES composables', () => {
       },
     })
     expect(mutation.mock.calls[0]?.[0].body).not.toHaveProperty('actor')
-    const invalidationCalls = coladaState.invalidateQueries.mock.calls as unknown as Array<
-      [{ predicate: (entry: { key: Array<{ _id: string }> }) => boolean }]
-    >
+    const invalidationCalls = coladaState.invalidateQueries.mock.calls
     const invalidatedIds = [
       'listBusinessConsoleMesRelatedQualityItems',
       'listBusinessConsoleMesOperationTasks',
@@ -1988,9 +1991,7 @@ describe('business MES composables', () => {
       body: { reason: '设备异常，等待维修确认' },
       throwOnError: false,
     })
-    const invalidationCalls = coladaState.invalidateQueries.mock.calls as unknown as Array<
-      [{ predicate: (entry: { key: Array<{ _id: string }> }) => boolean }]
-    >
+    const invalidationCalls = coladaState.invalidateQueries.mock.calls
     const expectedInvalidatedIds = [
       'getBusinessConsoleMesWorkOrderDetail',
       'listBusinessConsoleMesWorkOrders',
