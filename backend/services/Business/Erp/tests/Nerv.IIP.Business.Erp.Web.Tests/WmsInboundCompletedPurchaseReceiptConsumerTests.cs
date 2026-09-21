@@ -1,8 +1,10 @@
 extern alias WmsWeb;
 
 using MediatR;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.DomainEvents;
@@ -15,13 +17,55 @@ using Nerv.IIP.Business.Erp.Web.Application.Queries.SalesFinance;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.DomainEvents;
 using Nerv.IIP.Contracts.Wms;
+using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Messaging.CAP;
+using NetCorePal.Extensions.DependencyInjection;
+using NetCorePal.Extensions.DistributedTransactions;
 using InboundOrderCompletedIntegrationEventConverter = WmsWeb::Nerv.IIP.Business.Wms.Web.Application.IntegrationEventConverters.InboundOrderCompletedIntegrationEventConverter;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
 
 public sealed class WmsInboundCompletedPurchaseReceiptConsumerTests
 {
+    [Fact]
+    public async Task InboundOrderCompletedHandler_PublishesEtaChangeWithUpstreamEventContext()
+    {
+        var databaseName = $"erp-wms-inbound-eta-{Guid.CreateVersion7():N}";
+        var databaseRoot = new InMemoryDatabaseRoot();
+        await using (var setupContext = CreateDbContext(databaseName, databaseRoot))
+        {
+            await ReleasePurchaseOrderAsync(setupContext, "PO-WMS-ETA-001", "LINE-001", 2m, 12.5m);
+        }
+
+        await using var provider = CreateEtaPublishingProvider(databaseName, databaseRoot);
+        await using var scope = provider.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var integrationEvent = BuildWmsCompletedEvent("WMS-IN-ETA-001", "purchase-order", "PO-WMS-ETA-001", "LINE-001", 1m);
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var inboundHandler = CreateInboundHandler(
+            dbContext,
+            deadLetters,
+            scope.ServiceProvider.GetRequiredService<IErpIntegrationEventContextAccessor>());
+
+        await inboundHandler.HandleAsync(integrationEvent, CancellationToken.None);
+
+        Assert.Equal(
+            1m,
+            await dbContext.PurchaseOrders
+                .SelectMany(order => order.Lines)
+                .Where(line => line.LineNo == "LINE-001")
+                .Select(line => line.ReceivedQuantity)
+                .SingleAsync());
+        var etaChanged = Assert.Single(scope.ServiceProvider
+            .GetRequiredService<RecordingIntegrationEventPublisher>()
+            .Published
+            .OfType<ErpIntegrationEvent<MaterialSupplyEtaChangedPayload>>());
+        Assert.Equal(integrationEvent.EventId, etaChanged.CausationId);
+        Assert.Equal(integrationEvent.CorrelationId, etaChanged.CorrelationId);
+        Assert.Equal(integrationEvent.Actor, etaChanged.Actor);
+        Assert.Equal(["SKU-RM-1000"], etaChanged.Payload.SkuCodes);
+    }
+
     [Fact]
     public async Task InboundOrderCompletedHandler_RecordsPurchaseReceiptAndGrIrToApClosureOnce()
     {
@@ -98,6 +142,8 @@ public sealed class WmsInboundCompletedPurchaseReceiptConsumerTests
         {
             var options = new DbContextOptionsBuilder<ApplicationDbContext>()
                 .UseInMemoryDatabase(databaseName, databaseRoot)
+                .ConfigureWarnings(warnings => warnings.Ignore(
+                    Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
                 .Options;
             return new ApplicationDbContext(options, new NoopMediator());
         }
@@ -304,13 +350,15 @@ public sealed class WmsInboundCompletedPurchaseReceiptConsumerTests
 
     private static WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt CreateInboundHandler(
         ApplicationDbContext dbContext,
-        IIntegrationEventDeadLetterStore deadLetterStore)
+        IIntegrationEventDeadLetterStore deadLetterStore,
+        IErpIntegrationEventContextAccessor? eventContext = null)
     {
         return new WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt(
             dbContext,
             deadLetterStore,
             new ErpCodingService(),
-            new TestLogger<WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt>());
+            new TestLogger<WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt>(),
+            eventContext ?? new HttpErpIntegrationEventContextAccessor(new HttpContextAccessor()));
     }
 
     private static async Task ReleasePurchaseOrderAsync(
@@ -375,10 +423,51 @@ public sealed class WmsInboundCompletedPurchaseReceiptConsumerTests
 
     private static ApplicationDbContext CreateDbContext()
     {
+        return CreateDbContext(
+            $"erp-wms-inbound-grir-{Guid.CreateVersion7():N}",
+            new InMemoryDatabaseRoot());
+    }
+
+    private static ApplicationDbContext CreateDbContext(string databaseName, InMemoryDatabaseRoot databaseRoot)
+    {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseInMemoryDatabase($"erp-wms-inbound-grir-{Guid.CreateVersion7():N}", new InMemoryDatabaseRoot())
+            .UseInMemoryDatabase(databaseName, databaseRoot)
+            .ConfigureWarnings(warnings => warnings.Ignore(
+                Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private static ServiceProvider CreateEtaPublishingProvider(string databaseName, InMemoryDatabaseRoot databaseRoot)
+    {
+        var services = new ServiceCollection();
+        services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
+        services.AddIntegrationEvents(typeof(Program));
+        services.AddSingleton<RecordingIntegrationEventPublisher>();
+        services.AddSingleton<IIntegrationEventPublisher>(provider =>
+            provider.GetRequiredService<RecordingIntegrationEventPublisher>());
+        services.AddHttpContextAccessor();
+        services.AddScoped<IErpIntegrationEventContextAccessor, HttpErpIntegrationEventContextAccessor>();
+        services.AddDbContext<ApplicationDbContext>(options =>
+            options
+                .UseInMemoryDatabase(databaseName, databaseRoot)
+                .ConfigureWarnings(warnings => warnings.Ignore(
+                    Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning)));
+        services.AddUnitOfWork<ApplicationDbContext>();
+        return services.BuildServiceProvider();
+    }
+
+    private sealed class RecordingIntegrationEventPublisher : IIntegrationEventPublisher
+    {
+        public List<object> Published { get; } = [];
+
+        Task IIntegrationEventPublisher.PublishAsync<TIntegrationEvent>(
+            TIntegrationEvent integrationEvent,
+            CancellationToken cancellationToken)
+        {
+            Published.Add(integrationEvent!);
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class TestLogger<T> : ILogger<T>

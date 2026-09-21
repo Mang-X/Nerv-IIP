@@ -111,6 +111,7 @@ public sealed class ErpProcurementAggregateTests
         order.MarkApprovalRequested("approval-create");
         order.ReleaseAfterApproval("approval-create");
         order.RegisterReceipt("LINE-001", 4m);
+        order.ClearDomainEvents();
 
         var change = order.RequestChange(
             [new PurchaseOrderLineChangeDraft("LINE-001", 8m, 15m, new DateOnly(2026, 6, 10))]);
@@ -119,8 +120,11 @@ public sealed class ErpProcurementAggregateTests
         Assert.Equal(10m, order.Lines.Single().OrderedQuantity);
         Assert.Equal(6m, order.Lines.Single().OpenQuantity);
         Assert.Equal(PurchaseOrderChangeStatus.PendingApproval, change.Status);
+        Assert.Empty(order.GetDomainEvents().OfType<MaterialSupplyEtaChangedDomainEvent>());
 
+        var beforeApply = DateTimeOffset.UtcNow;
         order.ApplyApprovedChange("approval-change");
+        var afterApply = DateTimeOffset.UtcNow;
 
         var line = order.Lines.Single();
         Assert.Equal(8m, line.OrderedQuantity);
@@ -130,6 +134,63 @@ public sealed class ErpProcurementAggregateTests
         Assert.Equal(PurchaseOrderChangeStatus.Approved, change.Status);
         Assert.Equal(2, order.Version);
         Assert.Single(order.ChangeHistory);
+        var etaChanged = Assert.Single(order.GetDomainEvents().OfType<MaterialSupplyEtaChangedDomainEvent>());
+        Assert.Equal("purchase-order-change-approved", etaChanged.ChangeReason);
+        Assert.Equal("purchase-order:PO-CHANGE-001:change:2", etaChanged.ChangeIdentity);
+        Assert.InRange(etaChanged.ChangedAtUtc, beforeApply, afterApply);
+        Assert.Equal(["SKU-RM-1000"], etaChanged.SkuCodes);
+    }
+
+    [Fact]
+    public void Purchase_order_price_only_change_does_not_publish_material_supply_eta_change()
+    {
+        var order = PurchaseOrder.Create(
+            "org-001",
+            "env-dev",
+            "PO-PRICE-ONLY",
+            "SUP-001",
+            "SITE-01",
+            [NewPurchaseOrderLine(quantity: 10m)]);
+        order.MarkApprovalRequested("approval-create");
+        order.ReleaseAfterApproval("approval-create");
+        order.ClearDomainEvents();
+        var line = Assert.Single(order.Lines);
+        var change = order.RequestChange(
+            [new PurchaseOrderLineChangeDraft(line.LineNo, line.OrderedQuantity, line.UnitPrice + 1m, line.PromisedDate)]);
+        change.AssignApprovalChain("approval-price-only");
+
+        order.ApplyApprovedChange("approval-price-only");
+
+        Assert.Empty(order.GetDomainEvents().OfType<MaterialSupplyEtaChangedDomainEvent>());
+    }
+
+    [Fact]
+    public void Purchase_order_change_publishes_only_skus_whose_open_quantity_or_promised_date_changed()
+    {
+        var order = PurchaseOrder.Create(
+            "org-001",
+            "env-dev",
+            "PO-CHANGED-SKUS",
+            "SUP-001",
+            "SITE-01",
+            [
+                NewPurchaseOrderLine(quantity: 10m),
+                new PurchaseOrderLineDraft("LINE-002", "SKU-RM-2000", "kg", 5m, 20m, new DateOnly(2026, 6, 4)),
+            ]);
+        order.MarkApprovalRequested("approval-create");
+        order.ReleaseAfterApproval("approval-create");
+        order.ClearDomainEvents();
+        var change = order.RequestChange(
+            [
+                new PurchaseOrderLineChangeDraft("LINE-001", 8m, 12.5m, new DateOnly(2026, 6, 3)),
+                new PurchaseOrderLineChangeDraft("LINE-002", 5m, 21m, new DateOnly(2026, 6, 4)),
+            ]);
+        change.AssignApprovalChain("approval-change");
+
+        order.ApplyApprovedChange("approval-change");
+
+        var etaChanged = Assert.Single(order.GetDomainEvents().OfType<MaterialSupplyEtaChangedDomainEvent>());
+        Assert.Equal(["SKU-RM-1000"], etaChanged.SkuCodes);
     }
 
     [Fact]
@@ -149,6 +210,28 @@ public sealed class ErpProcurementAggregateTests
     }
 
     [Fact]
+    public void Rejected_purchase_order_change_does_not_publish_material_supply_eta_change()
+    {
+        var order = PurchaseOrder.Create(
+            "org-001",
+            "env-dev",
+            "PO-CHANGE-REJECT-001",
+            "SUP-001",
+            "SITE-01",
+            [NewPurchaseOrderLine(quantity: 10m)]);
+        order.MarkApprovalRequested("approval-create");
+        order.ReleaseAfterApproval("approval-create");
+        order.ClearDomainEvents();
+        var change = order.RequestChange(
+            [new PurchaseOrderLineChangeDraft("LINE-001", 8m, 15m, new DateOnly(2026, 6, 10))]);
+        change.AssignApprovalChain("approval-change");
+
+        order.RejectChange("approval-change");
+
+        Assert.Empty(order.GetDomainEvents().OfType<MaterialSupplyEtaChangedDomainEvent>());
+    }
+
+    [Fact]
     public void Approval_rejection_returns_purchase_order_to_editable_pending_state()
     {
         var order = PurchaseOrder.Create("org-001", "env-dev", "PO-REJECT-001", "SUP-001", "SITE-01", [NewPurchaseOrderLine(quantity: 10m)]);
@@ -159,6 +242,7 @@ public sealed class ErpProcurementAggregateTests
 
         Assert.Equal(PurchaseOrderStatus.PendingApproval, order.Status);
         Assert.Null(order.ApprovalChainId);
+        Assert.Empty(order.GetDomainEvents().OfType<MaterialSupplyEtaChangedDomainEvent>());
     }
 
     [Fact]
@@ -190,13 +274,48 @@ public sealed class ErpProcurementAggregateTests
         order.MarkApprovalRequested("approval-final");
         order.ReleaseAfterApproval("approval-final");
         order.RegisterReceipt("LINE-001", 8m);
+        order.ClearDomainEvents();
 
         order.CloseRemainingLine("LINE-001", "supplier final delivery");
 
         Assert.True(order.Lines.Single().FinalDelivery);
         Assert.Equal(0m, order.Lines.Single().OpenQuantity);
         Assert.Equal(PurchaseOrderStatus.Closed, order.Status);
+        var etaChanged = Assert.Single(order.GetDomainEvents().OfType<MaterialSupplyEtaChangedDomainEvent>());
+        Assert.Equal("purchase-order-line-closed", etaChanged.ChangeReason);
+        Assert.Equal(["SKU-RM-1000"], etaChanged.SkuCodes);
         Assert.Throws<InvalidOperationException>(() => order.Cancel("no longer needed"));
+    }
+
+    [Fact]
+    public void Purchase_order_release_and_cancel_publish_material_supply_eta_changes()
+    {
+        var order = PurchaseOrder.Create(
+            "org-001",
+            "env-dev",
+            "PO-CANCEL-001",
+            "SUP-001",
+            "SITE-01",
+            [
+                NewPurchaseOrderLine(quantity: 10m),
+                new PurchaseOrderLineDraft("LINE-002", "SKU-RM-2000", "kg", 2m, 1m, new DateOnly(2026, 6, 4)),
+            ]);
+        order.MarkApprovalRequested("approval-cancel");
+
+        order.ReleaseAfterApproval("approval-cancel");
+
+        var released = Assert.Single(order.GetDomainEvents().OfType<MaterialSupplyEtaChangedDomainEvent>());
+        Assert.Equal("purchase-order-released", released.ChangeReason);
+        Assert.Equal("purchase-order:PO-CANCEL-001:release:1", released.ChangeIdentity);
+        Assert.Equal(["SKU-RM-1000", "SKU-RM-2000"], released.SkuCodes);
+        order.ClearDomainEvents();
+
+        order.Cancel("no longer needed");
+
+        var cancelled = Assert.Single(order.GetDomainEvents().OfType<MaterialSupplyEtaChangedDomainEvent>());
+        Assert.Equal("purchase-order-cancelled", cancelled.ChangeReason);
+        Assert.Equal("purchase-order:PO-CANCEL-001:cancel:2", cancelled.ChangeIdentity);
+        Assert.Equal(["SKU-RM-1000", "SKU-RM-2000"], cancelled.SkuCodes);
     }
 
     [Fact]
@@ -409,7 +528,64 @@ public sealed class ErpProcurementAggregateTests
         Assert.Equal(4m, order.Lines.Single().ReceivedQuantity);
         Assert.Contains(receipt.GetDomainEvents(), domainEvent => domainEvent is PurchaseReceiptRecordedDomainEvent);
         Assert.Single(receipt.GetDomainEvents().OfType<PurchaseReceiptInventoryMovementRequestedDomainEvent>());
+        var etaChanged = Assert.Single(receipt.GetDomainEvents().OfType<MaterialSupplyEtaChangedDomainEvent>());
+        Assert.Equal("purchase-receipt-recorded", etaChanged.ChangeReason);
+        Assert.Equal("purchase-receipt:RCV-001", etaChanged.ChangeIdentity);
+        Assert.Equal(["SKU-RM-1000"], etaChanged.SkuCodes);
         Assert.Throws<InvalidOperationException>(() => receipt.Cancel());
+    }
+
+    [Fact]
+    public void Purchase_receipt_material_supply_eta_change_deduplicates_skus()
+    {
+        var order = PurchaseOrder.Create(
+            "org-001",
+            "env-dev",
+            "PO-DEDUPE-001",
+            "SUP-001",
+            "SITE-01",
+            [
+                NewPurchaseOrderLine(quantity: 10m),
+                new PurchaseOrderLineDraft("LINE-002", "SKU-RM-1000", "kg", 5m, 1m, new DateOnly(2026, 6, 4)),
+            ]);
+        order.MarkApprovalRequested("approval-dedupe");
+        order.ReleaseAfterApproval("approval-dedupe");
+
+        var receipt = PurchaseReceipt.Record(
+            order,
+            "RCV-DEDUPE-001",
+            [
+                new PurchaseReceiptLineDraft("LINE-001", 2m, "accepted"),
+                new PurchaseReceiptLineDraft("LINE-002", 1m, "accepted"),
+            ]);
+
+        var etaChanged = Assert.Single(receipt.GetDomainEvents().OfType<MaterialSupplyEtaChangedDomainEvent>());
+        Assert.Equal(["SKU-RM-1000"], etaChanged.SkuCodes);
+    }
+
+    [Fact]
+    public void Purchase_receipt_does_not_publish_eta_change_for_a_line_that_was_already_fully_received()
+    {
+        var order = PurchaseOrder.Create(
+            "org-001",
+            "env-dev",
+            "PO-OVER-RECEIPT",
+            "SUP-001",
+            "SITE-01",
+            [
+                NewPurchaseOrderLine(quantity: 10m, overReceiptTolerancePercent: 10m),
+                new PurchaseOrderLineDraft("LINE-002", "SKU-RM-2000", "kg", 5m, 1m, new DateOnly(2026, 6, 4)),
+            ]);
+        order.MarkApprovalRequested("approval-over-receipt");
+        order.ReleaseAfterApproval("approval-over-receipt");
+        order.RegisterReceipt("LINE-001", 10m);
+
+        var receipt = PurchaseReceipt.Record(
+            order,
+            "RCV-OVER-RECEIPT",
+            [new PurchaseReceiptLineDraft("LINE-001", 0.5m, "accepted")]);
+
+        Assert.Empty(receipt.GetDomainEvents().OfType<MaterialSupplyEtaChangedDomainEvent>());
     }
 
     [Fact]

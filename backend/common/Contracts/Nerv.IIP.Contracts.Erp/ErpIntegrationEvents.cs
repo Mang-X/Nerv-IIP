@@ -7,6 +7,7 @@ public static class ErpIntegrationEventTypes
     public const string PurchaseRequisitionCreated = "erp.PurchaseRequisitionCreated";
     public const string PurchaseOrderReleased = "erp.PurchaseOrderReleased";
     public const string PurchaseReceiptRecorded = "erp.PurchaseReceiptRecorded";
+    public const string MaterialSupplyEtaChanged = "erp.MaterialSupplyEtaChanged";
     public const string SalesReturnAuthorized = "erp.SalesReturnAuthorized";
     public const string SalesOrderReleased = "erp.SalesOrderReleased";
     public const string SalesOrderChanged = "erp.SalesOrderChanged";
@@ -62,6 +63,12 @@ public sealed record PurchaseOrderReleasedPayload(
     string SupplierCode,
     string SiteCode,
     decimal TotalAmount);
+
+public sealed record MaterialSupplyEtaChangedPayload(
+    string SourceDocumentType,
+    string SourceDocumentNo,
+    string ChangeReason,
+    IReadOnlyCollection<string> SkuCodes);
 
 public sealed record PurchaseReceiptRecordedPayload(
     string PurchaseReceiptId,

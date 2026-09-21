@@ -1,4 +1,5 @@
 using MediatR;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
@@ -64,7 +65,8 @@ public sealed class ProcureToPayWmsErpClosureAcceptanceTests
             erpDb,
             deadLetters,
             new ErpCodingService(),
-            NullLogger<WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt>.Instance);
+            NullLogger<WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt>.Instance,
+            new HttpErpIntegrationEventContextAccessor(new HttpContextAccessor()));
 
         await wmsToErpHandler.HandleAsync(wmsEvent, CancellationToken.None);
         await erpDb.SaveChangesAsync(CancellationToken.None);
@@ -146,6 +148,8 @@ public sealed class ProcureToPayWmsErpClosureAcceptanceTests
     {
         var options = new DbContextOptionsBuilder<ErpDbContext>()
             .UseInMemoryDatabase($"p2p-wms-erp-{Guid.NewGuid():N}")
+            .ConfigureWarnings(warnings => warnings.Ignore(
+                Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
             .Options;
         return new ErpDbContext(options, new NoopMediator());
     }

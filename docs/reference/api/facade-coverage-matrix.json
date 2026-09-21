@@ -1117,6 +1117,14 @@
     {
       "service": "Erp",
       "method": "POST",
+      "route": "/api/business/v1/erp/material-supply-etas/resolve",
+      "operationId": "resolveErpMaterialSupplyEtas",
+      "classification": "internal",
+      "rationale": "Service-to-service material supply ETA read contract for Scheduling invalidation and replanning (#3684); not a user-facing Gateway action."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
       "route": "/api/business/v1/erp/opportunities",
       "operationId": "openErpOpportunity",
       "classification": "exposed",

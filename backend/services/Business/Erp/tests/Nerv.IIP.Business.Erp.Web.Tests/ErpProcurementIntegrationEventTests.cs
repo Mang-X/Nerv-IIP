@@ -4,6 +4,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseRequisitionAggregate;
 using Nerv.IIP.Business.Erp.Domain.DomainEvents;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.IntegrationEvents;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
@@ -100,5 +101,48 @@ public sealed class ErpProcurementIntegrationEventTests
         Assert.Equal("LINE-001", line.LineReference);
         Assert.Equal("SKU-RM-1000", line.SkuCode);
         Assert.Equal(2m, line.ReceivedQuantity);
+    }
+
+    [Fact]
+    public void Material_supply_eta_changed_event_exposes_stable_sku_invalidation_contract()
+    {
+        var domainEvent = new MaterialSupplyEtaChangedDomainEvent(
+            "org-001",
+            "env-dev",
+            "purchase-order",
+            "PO-001",
+            "purchase-order-change-approved",
+            "purchase-order:PO-001:change:2",
+            new DateTimeOffset(2026, 6, 2, 3, 4, 5, TimeSpan.Zero),
+            ["SKU-RM-2000", "SKU-RM-1000", "SKU-RM-1000"]);
+
+        var integrationEvent = new MaterialSupplyEtaChangedIntegrationEventConverter(new StaticContextAccessor()).Convert(domainEvent);
+        var json = JsonSerializer.Serialize(integrationEvent, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var roundTripped = JsonSerializer.Deserialize<ErpIntegrationEvent<MaterialSupplyEtaChangedPayload>>(
+            json,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        Assert.Equal("erp.MaterialSupplyEtaChanged", integrationEvent.EventType);
+        Assert.Equal("org-001", integrationEvent.OrganizationId);
+        Assert.Equal("env-dev", integrationEvent.EnvironmentId);
+        Assert.Equal("corr-eta-001", integrationEvent.CorrelationId);
+        Assert.Equal("command:record-receipt:001", integrationEvent.CausationId);
+        Assert.Equal("user:buyer-001", integrationEvent.Actor);
+        Assert.EndsWith("purchase-order:PO-001:change:2", integrationEvent.IdempotencyKey, StringComparison.Ordinal);
+        Assert.Equal("purchase-order", integrationEvent.Payload.SourceDocumentType);
+        Assert.Equal("PO-001", integrationEvent.Payload.SourceDocumentNo);
+        Assert.Equal("purchase-order-change-approved", integrationEvent.Payload.ChangeReason);
+        Assert.Equal(domainEvent.ChangedAtUtc, integrationEvent.OccurredAtUtc);
+        Assert.Equal(["SKU-RM-1000", "SKU-RM-2000"], integrationEvent.Payload.SkuCodes);
+        Assert.NotNull(roundTripped);
+        Assert.Equal(integrationEvent.EventType, roundTripped.EventType);
+        Assert.Equal(integrationEvent.OccurredAtUtc, roundTripped.OccurredAtUtc);
+        Assert.Equal(integrationEvent.Payload.SkuCodes, roundTripped.Payload.SkuCodes);
+    }
+
+    private sealed class StaticContextAccessor : IErpIntegrationEventContextAccessor
+    {
+        public ErpIntegrationEventContext GetContext() =>
+            new("corr-eta-001", "command:record-receipt:001", "user:buyer-001");
     }
 }

@@ -732,7 +732,7 @@ try {
     # 生产侧已无任何派生凭证号，两条一并删除；voucher_no 那条唯一索引改由
     # ErpJournalVoucherNoPostgresAcceptanceTests 与 PostgreSQL_dedup_sites_key_on_the_source_document_*
     # 在来源键那一面承担。⛔ 这是「要证的事没了」，不是「测试碍事」。
-    Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 28) 'The ERP member must freeze exactly its twenty-eight PostgreSQL identities.'
+    Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 29) 'The ERP member must freeze exactly its twenty-nine PostgreSQL identities.'
     Assert-Contract ([string]::Equals([string]$erpMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) 'ERP keeps runner-owned databases for failure diagnostics.'
     $acceptanceMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'acceptance-postgres-profile' -RepositoryRoot $repoRoot
     Assert-Contract (@($acceptanceMember.expectedTestIdentities).Count -eq 16) '跨服务验收成员必须冻结十六条 PostgreSQL 测试身份。'
