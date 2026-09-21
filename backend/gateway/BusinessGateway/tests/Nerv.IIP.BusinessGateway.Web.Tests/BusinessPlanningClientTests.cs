@@ -60,8 +60,9 @@ public sealed class BusinessPlanningClientTests
     [Fact]
     public async Task Mps_review_and_release_forward_the_gateway_supplied_actor_to_demand_planning()
     {
-        var reviewHandler = new StubHandler(MpsResponse("Reviewed", reviewedBy: "user-admin"));
-        var releaseHandler = new StubHandler(MpsResponse("Released", releasedBy: "user-admin"));
+        const string trustedActor = "trusted-client-actor-77";
+        var reviewHandler = new StubHandler(MpsResponse("Reviewed", reviewedBy: trustedActor));
+        var releaseHandler = new StubHandler(MpsResponse("Released", releasedBy: trustedActor));
         var reviewClient = PlanningClient(reviewHandler);
         var releaseClient = PlanningClient(releaseHandler);
         var reviewRequest = new BusinessConsoleReviewMpsBucketRequest("mps-001", "org-001", "env-dev", "forged-reviewer");
@@ -70,20 +71,20 @@ public sealed class BusinessPlanningClientTests
         await reviewClient.ReviewMpsBucketAsync(
             "internal-token",
             "mps-001",
-            "user-admin",
+            trustedActor,
             reviewRequest,
             CancellationToken.None);
         await releaseClient.ReleaseMpsBucketAsync(
             "internal-token",
             "mps-001",
-            "user-admin",
+            trustedActor,
             releaseRequest,
             CancellationToken.None);
 
         using var reviewBody = JsonDocument.Parse(reviewHandler.RequestBody!);
         using var releaseBody = JsonDocument.Parse(releaseHandler.RequestBody!);
-        Assert.Equal("user-admin", reviewBody.RootElement.GetProperty("reviewedBy").GetString());
-        Assert.Equal("user-admin", releaseBody.RootElement.GetProperty("releasedBy").GetString());
+        Assert.Equal(trustedActor, reviewBody.RootElement.GetProperty("reviewedBy").GetString());
+        Assert.Equal(trustedActor, releaseBody.RootElement.GetProperty("releasedBy").GetString());
     }
 
     private static HttpBusinessPlanningClient PlanningClient(HttpMessageHandler handler) =>
