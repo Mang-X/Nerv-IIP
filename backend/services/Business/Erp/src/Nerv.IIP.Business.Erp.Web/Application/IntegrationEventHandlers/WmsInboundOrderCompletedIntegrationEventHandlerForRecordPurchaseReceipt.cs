@@ -196,7 +196,7 @@ public sealed class WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurc
             return;
         }
 
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await dbContext.SaveEntitiesAsync(cancellationToken);
     }
 
     private static ReceiptProjectionDecision TryBuildReceiptLines(

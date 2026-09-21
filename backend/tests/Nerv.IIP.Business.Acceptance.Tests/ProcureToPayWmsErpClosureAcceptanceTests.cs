@@ -148,6 +148,8 @@ public sealed class ProcureToPayWmsErpClosureAcceptanceTests
     {
         var options = new DbContextOptionsBuilder<ErpDbContext>()
             .UseInMemoryDatabase($"p2p-wms-erp-{Guid.NewGuid():N}")
+            .ConfigureWarnings(warnings => warnings.Ignore(
+                Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
             .Options;
         return new ErpDbContext(options, new NoopMediator());
     }
