@@ -1538,6 +1538,7 @@ public static class MesMaterialShortageStages
 public sealed record MesMaterialReadinessRow(
     string MaterialId,
     string? MaterialLotId,
+    string UomCode,
     decimal RequiredQuantity,
     decimal AvailableQuantity,
     decimal RequestedQuantity,
@@ -1591,6 +1592,7 @@ public sealed class GetMaterialReadinessQueryHandler(
             {
                 x.MaterialId,
                 x.MaterialLotId,
+                x.UomCode,
                 x.RequestedQuantity,
                 x.ReceivedQuantity,
                 x.Status,
@@ -1598,17 +1600,18 @@ public sealed class GetMaterialReadinessQueryHandler(
             .ToArrayAsync(cancellationToken);
 
         var coverageRequestItems = requirements
-            .GroupBy(x => new { x.MaterialId, x.MaterialLotId })
+            .GroupBy(x => new { x.MaterialId, x.MaterialLotId, x.UomCode })
             .Select(group =>
             {
                 var issueRows = issues.Where(issue =>
                     string.Equals(issue.MaterialId, group.Key.MaterialId, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(issue.UomCode, group.Key.UomCode, StringComparison.OrdinalIgnoreCase) &&
                     (group.Key.MaterialLotId is null ||
                         string.Equals(issue.MaterialLotId, group.Key.MaterialLotId, StringComparison.OrdinalIgnoreCase)));
                 return new MesMaterialReadinessLiveCoverageRequestItem(
                     group.Key.MaterialId,
                     group.Key.MaterialLotId,
-                    group.First().UomCode,
+                    group.Key.UomCode,
                     group.Sum(x => x.RequiredQuantity),
                     group.Sum(x => x.AvailableQuantity),
                     group.Sum(x => x.StagedQuantity),
@@ -1625,20 +1628,21 @@ public sealed class GetMaterialReadinessQueryHandler(
                 coverageRequestItems),
             cancellationToken);
         var liveCoverageByMaterial = liveCoverage.Items.ToDictionary(
-            x => (x.MaterialId.ToUpperInvariant(), x.MaterialLotId?.ToUpperInvariant()),
+            x => (x.MaterialId.ToUpperInvariant(), x.MaterialLotId?.ToUpperInvariant(), x.UomCode.ToUpperInvariant()),
             x => x);
 
         var rows = requirements
-            .GroupBy(x => new { x.MaterialId, x.MaterialLotId })
+            .GroupBy(x => new { x.MaterialId, x.MaterialLotId, x.UomCode })
             .Select(x =>
             {
                 var issueRows = issues.Where(y =>
                     string.Equals(y.MaterialId, x.Key.MaterialId, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(y.UomCode, x.Key.UomCode, StringComparison.OrdinalIgnoreCase) &&
                     (x.Key.MaterialLotId is null ||
                         string.Equals(y.MaterialLotId, x.Key.MaterialLotId, StringComparison.OrdinalIgnoreCase)));
                 var required = x.Sum(y => y.RequiredQuantity);
                 liveCoverageByMaterial.TryGetValue(
-                    (x.Key.MaterialId.ToUpperInvariant(), x.Key.MaterialLotId?.ToUpperInvariant()),
+                    (x.Key.MaterialId.ToUpperInvariant(), x.Key.MaterialLotId?.ToUpperInvariant(), x.Key.UomCode.ToUpperInvariant()),
                     out var coverage);
                 var available = liveCoverage.InventoryAvailable
                     ? Math.Max(0m, coverage?.AvailableQuantity ?? 0m)
@@ -1659,6 +1663,7 @@ public sealed class GetMaterialReadinessQueryHandler(
                 return new MesMaterialReadinessRow(
                     x.Key.MaterialId,
                     x.Key.MaterialLotId,
+                    x.Key.UomCode,
                     required,
                     available,
                     requested,
@@ -1678,6 +1683,7 @@ public sealed class GetMaterialReadinessQueryHandler(
             })
             .OrderBy(x => x.MaterialId, StringComparer.OrdinalIgnoreCase)
             .ThenBy(x => x.MaterialLotId, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.UomCode, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
         var blockingReasons = rows

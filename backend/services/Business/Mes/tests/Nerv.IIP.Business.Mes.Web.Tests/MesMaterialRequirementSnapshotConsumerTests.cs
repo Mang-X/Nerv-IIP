@@ -357,7 +357,8 @@ public sealed class MesMaterialRequirementSnapshotConsumerTests
             "test",
             $"snapshot-{capturedAtUtc:yyyyMMddHHmm}-{operationTaskId ?? "work-order"}-{materialId}-{lotId}",
             capturedAtUtc,
-            substituteMaterialIds ?? []);
+            substituteMaterialIds ?? [],
+            "PCS");
 
     private static MaterialIssueRequest ReceivedIssue(
         string? operationTaskId,

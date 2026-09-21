@@ -73,7 +73,8 @@ public sealed class MesEngineeringChangeReadinessTests
                 "test",
                 "PV-1:MAT-CHAIN",
                 DateTimeOffset.Parse("2026-07-06T07:00:00Z"),
-                []));
+                [],
+                "PCS"));
             await dbContext.SaveChangesAsync(CancellationToken.None);
         }
 
@@ -134,7 +135,7 @@ public sealed class MesEngineeringChangeReadinessTests
                 "SKU-001"));
             dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
                 "org-001", "env-dev", "WO-CHAIN", null, "MAT-CHAIN", null, 10m, 10m, 0m, "test",
-                "PV-1:MAT-CHAIN", DateTimeOffset.Parse("2026-07-06T07:00:00Z"), []));
+                "PV-1:MAT-CHAIN", DateTimeOffset.Parse("2026-07-06T07:00:00Z"), [], "PCS"));
 
             foreach (var edge in InvalidEdges(invalidChain))
             {

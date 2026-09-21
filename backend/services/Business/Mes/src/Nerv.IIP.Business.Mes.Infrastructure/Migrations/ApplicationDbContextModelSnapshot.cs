@@ -893,10 +893,8 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
 
                     b.Property<string>("UomCode")
                         .IsRequired()
-                        .ValueGeneratedOnAdd()
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)")
-                        .HasDefaultValue("UNSPECIFIED")
                         .HasColumnName("uom_code")
                         .HasComment("Unit of measure frozen with the released MBOM material requirement.");
 

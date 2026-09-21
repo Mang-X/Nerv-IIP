@@ -320,7 +320,8 @@ public sealed class WorkOrderReleaseFactTimeTests
             sourceSystem: "Inventory",
             sourceSnapshotId: $"inv-ready-{workOrderId}",
             capturedAtUtc: ReleaseRequestedAtUtc.AddDays(-20),
-            substituteMaterialIds: []));
+            substituteMaterialIds: [],
+            uomCode: "PCS"));
     }
 
     private static void AddReport(

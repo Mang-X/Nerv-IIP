@@ -48920,6 +48920,19 @@
             "items": {
               "type": "string"
             }
+          },
+          "uomCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "expectedAvailableAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "expectedAvailabilitySource": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

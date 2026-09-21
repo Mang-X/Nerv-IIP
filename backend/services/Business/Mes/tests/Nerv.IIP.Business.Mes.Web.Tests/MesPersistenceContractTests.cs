@@ -36,6 +36,29 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class MesPersistenceContractTests
 {
+    [Fact]
+    public void Material_requirement_capture_rejects_the_legacy_unspecified_uom_for_new_rows()
+    {
+        var exception = Assert.Throws<ArgumentException>(() => MaterialRequirement.Capture(
+            "org-001", "env-dev", "WO-UOM-GUARD", null, "MAT-PRIMARY", null,
+            1m, 0m, 0m, "product-engineering-http", "MBOM-GUARD:MAT-PRIMARY",
+            DateTimeOffset.Parse("2026-09-21T08:00:00Z"), [], MaterialIssueRequest.UnspecifiedUomCode));
+
+        Assert.Equal("uomCode", exception.ParamName);
+    }
+
+    [Fact]
+    public void Material_requirement_uom_has_no_database_default_for_new_rows()
+    {
+        var services = CreateServices(nameof(Material_requirement_uom_has_no_database_default_for_new_rows));
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var property = dbContext.Model.FindEntityType(typeof(MaterialRequirement))!
+            .FindProperty(nameof(MaterialRequirement.UomCode))!;
+
+        Assert.Null(property.GetDefaultValue());
+    }
+
     // Contract: DomainInvariant + Regression. Authority: Issue #2222 acceptance 2; omitted input must not be interpreted as a genuine empty set.
     [Fact]
     public void Material_requirement_capture_rejects_an_omitted_substitute_candidate_collection()
@@ -43,7 +66,7 @@ public sealed class MesPersistenceContractTests
         var exception = Assert.Throws<ArgumentNullException>(() => MaterialRequirement.Capture(
             "org-001", "env-dev", "WO-SUBSTITUTE-GUARD", null, "MAT-PRIMARY", null,
             1m, 0m, 0m, "product-engineering-http", "MBOM-GUARD:MAT-PRIMARY",
-            DateTimeOffset.Parse("2026-08-25T13:00:00Z"), null!));
+            DateTimeOffset.Parse("2026-08-25T13:00:00Z"), null!, "PCS"));
 
         Assert.Equal("substituteMaterialIds", exception.ParamName);
     }
@@ -64,7 +87,7 @@ public sealed class MesPersistenceContractTests
             dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
                 "org-001", "env-dev", "WO-SUBSTITUTE-001", null, "MAT-PRIMARY", null,
                 10m, 2m, 0m, "product-engineering-http", "MBOM-001:A:MAT-PRIMARY", now,
-                ["MAT-ALT-A", "MAT-ALT-B"]));
+                ["MAT-ALT-A", "MAT-ALT-B"], "PCS"));
             dbContext.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
                 "org-001", "env-dev", "MIR-SUBSTITUTE-001", "WO-SUBSTITUTE-001", null,
                 "MAT-PRIMARY", "PCS", 1m, now));
@@ -332,7 +355,8 @@ public sealed class MesPersistenceContractTests
                 sourceSystem: "Inventory",
                 sourceSnapshotId: "inv-snap-001",
                 capturedAtUtc: now,
-                substituteMaterialIds: ["MAT-OIL-ALT-A", "MAT-OIL-ALT-B"]));
+                substituteMaterialIds: ["MAT-OIL-ALT-A", "MAT-OIL-ALT-B"],
+                uomCode: "L"));
             await dbContext.SaveChangesAsync();
         }
 
@@ -406,7 +430,8 @@ public sealed class MesPersistenceContractTests
                 sourceSystem: "Inventory",
                 sourceSnapshotId: "inv-snap-inflight",
                 capturedAtUtc: now,
-                substituteMaterialIds: []));
+                substituteMaterialIds: [],
+                uomCode: "L"));
             dbContext.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
                 "org-001",
                 "env-dev",
@@ -457,7 +482,8 @@ public sealed class MesPersistenceContractTests
                 sourceSystem: "Inventory",
                 sourceSnapshotId: "inv-snap-cancelled",
                 capturedAtUtc: now,
-                substituteMaterialIds: []));
+                substituteMaterialIds: [],
+                uomCode: "L"));
 
             // 一张已取消的领料单:没有收过任何料,取消后不该再被算成「仓库在配」。
             var cancelled = MaterialIssueRequest.Create(
@@ -525,7 +551,8 @@ public sealed class MesPersistenceContractTests
             sourceSystem: "Inventory",
             sourceSnapshotId: "inv-snap-lot-a",
             capturedAtUtc: now,
-            substituteMaterialIds: []));
+            substituteMaterialIds: [],
+            uomCode: "L"));
         var wrongLotRequest = MaterialIssueRequest.Create(
             "org-001",
             "env-dev",
@@ -609,7 +636,8 @@ public sealed class MesPersistenceContractTests
             sourceSystem: "Inventory",
             sourceSnapshotId: "inv-snap-002",
             capturedAtUtc: now,
-            substituteMaterialIds: []));
+            substituteMaterialIds: [],
+            uomCode: "PCS"));
         await dbContext.SaveChangesAsync();
 
         var releaseException = await Assert.ThrowsAsync<KnownException>(() =>
@@ -908,7 +936,8 @@ public sealed class MesPersistenceContractTests
             sourceSystem: "Inventory",
             sourceSnapshotId: "inv-ready-qh",
             capturedAtUtc: now,
-            substituteMaterialIds: []));
+            substituteMaterialIds: [],
+            uomCode: "PCS"));
         await dbContext.SaveChangesAsync();
 
         var qualityConsumer = new QualityInspectionResultIntegrationEventHandlerForUpdateMesHoldContext(dbContext, deadLetters);
@@ -2064,7 +2093,8 @@ public sealed class MesPersistenceContractTests
             sourceSystem: "Inventory",
             sourceSnapshotId: "inv-snap-old",
             capturedAtUtc: now,
-            substituteMaterialIds: []));
+            substituteMaterialIds: [],
+            uomCode: "PCS"));
         dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
             "org-001",
             "env-dev",
@@ -2078,7 +2108,8 @@ public sealed class MesPersistenceContractTests
             sourceSystem: "Inventory",
             sourceSnapshotId: "inv-snap-new",
             capturedAtUtc: now.AddMinutes(5),
-            substituteMaterialIds: []));
+            substituteMaterialIds: [],
+            uomCode: "PCS"));
         await dbContext.SaveChangesAsync();
 
         var release = await new ReleaseWorkOrderCommandHandler(dbContext).Handle(
@@ -2133,7 +2164,8 @@ public sealed class MesPersistenceContractTests
                 sourceSystem: "Inventory",
                 sourceSnapshotId: "inv-ready-001",
                 capturedAtUtc: now,
-                substituteMaterialIds: []));
+                substituteMaterialIds: [],
+                uomCode: "PCS"));
             await dbContext.SaveChangesAsync();
 
             var response = await new ReleaseWorkOrderCommandHandler(dbContext).Handle(
@@ -2302,7 +2334,8 @@ public sealed class MesPersistenceContractTests
             sourceSystem: "Inventory",
             sourceSnapshotId: "inv-life-ready",
             capturedAtUtc: now,
-            substituteMaterialIds: []));
+            substituteMaterialIds: [],
+            uomCode: "PCS"));
         dbContext.ProductionReports.Add(ProductionReport.Record(
             "org-001", "env-dev", "PR-LIFE-001", "WO-LIFE-001", "OP-LIFE-10",
             1m, 0m, false, now.AddMinutes(30)));
@@ -2909,7 +2942,8 @@ public sealed class MesPersistenceContractTests
             sourceSystem: "Inventory",
             sourceSnapshotId: "inv-snap-001",
             capturedAtUtc: now,
-            substituteMaterialIds: []));
+            substituteMaterialIds: [],
+            uomCode: "L"));
         dbContext.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
             "org-001",
             "env-dev",

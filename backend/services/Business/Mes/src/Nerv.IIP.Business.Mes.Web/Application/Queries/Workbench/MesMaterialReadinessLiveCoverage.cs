@@ -1,6 +1,9 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using NetCorePal.Extensions.Dto;
+using Nerv.IIP.Business.Mes.Web.Application.Readiness;
+using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
@@ -33,6 +36,7 @@ public sealed record MesMaterialReadinessLiveCoverageResult(
 public sealed record MesMaterialReadinessLiveCoverageItem(
     string MaterialId,
     string? MaterialLotId,
+    string UomCode,
     decimal AvailableQuantity,
     DateTimeOffset? ExpectedAvailableAtUtc,
     string? ExpectedAvailabilitySource);
@@ -41,25 +45,6 @@ public interface IMesMaterialReadinessLiveCoverageProvider
 {
     Task<MesMaterialReadinessLiveCoverageResult> ResolveAsync(
         MesMaterialReadinessLiveCoverageRequest request,
-        CancellationToken cancellationToken);
-}
-
-public sealed record MesMaterialAvailabilityReadRequest(
-    string OrganizationId,
-    string EnvironmentId,
-    IReadOnlyCollection<string> MaterialIds,
-    string UomCode,
-    string? MaterialLotId,
-    DateOnly EffectiveDate);
-
-public sealed record MesMaterialAvailabilityReadResult(
-    bool SourceAvailable,
-    decimal AvailableQuantity);
-
-public interface IMesMaterialAvailabilityReader
-{
-    Task<MesMaterialAvailabilityReadResult> ReadAsync(
-        MesMaterialAvailabilityReadRequest request,
         CancellationToken cancellationToken);
 }
 
@@ -113,6 +98,7 @@ public sealed class HttpMesMaterialReadinessLiveCoverageProvider(
                 request.Items.Select(item => new MesMaterialReadinessLiveCoverageItem(
                     item.MaterialId,
                     item.MaterialLotId,
+                    item.UomCode,
                     0m,
                     null,
                     null)).ToArray());
@@ -126,14 +112,19 @@ public sealed class HttpMesMaterialReadinessLiveCoverageProvider(
             .Select(x => new
             {
                 x.Item.MaterialId,
+                x.Item.UomCode,
                 Quantity = Math.Max(
                     0m,
                     x.Item.RequiredQuantity - x.AvailableQuantity - x.Item.StagedQuantity - x.Item.ReceivedQuantity),
             })
             .Where(x => x.Quantity > 0m)
-            .GroupBy(x => x.MaterialId, StringComparer.Ordinal)
-            .Select(group => new MaterialSupplyEtaRequestItem(group.Key, group.Sum(x => x.Quantity)))
+            .GroupBy(x => (x.MaterialId, x.UomCode))
+            .Select(group => new MaterialSupplyEtaRequestItem(
+                group.Key.MaterialId,
+                group.Key.UomCode,
+                group.Sum(x => x.Quantity)))
             .OrderBy(x => x.SkuCode, StringComparer.Ordinal)
+            .ThenBy(x => x.UomCode, StringComparer.Ordinal)
             .ToArray();
         if (shortages.Length == 0)
         {
@@ -179,7 +170,7 @@ public sealed class HttpMesMaterialReadinessLiveCoverageProvider(
                 return null;
             }
 
-            var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<ResolveMaterialSupplyEtasResponse>>(
+            var envelope = await response.Content.ReadFromJsonAsync<ResponseData<ResolveMaterialSupplyEtasResponse>>(
                 cancellationToken);
             return envelope is { Success: true, Data: not null } ? envelope.Data : null;
         }
@@ -206,19 +197,20 @@ public sealed class HttpMesMaterialReadinessLiveCoverageProvider(
         bool ErpAvailable,
         IReadOnlyCollection<MaterialSupplyEtaResponseItem> etas)
     {
-        var etaByMaterial = etas.ToDictionary(x => x.SkuCode, StringComparer.Ordinal);
+        var etaByMaterial = etas.ToDictionary(x => (x.SkuCode, x.UomCode));
         return new MesMaterialReadinessLiveCoverageResult(
             InventoryAvailable: true,
             ErpAvailable,
             currentRows.Select(row =>
             {
-                etaByMaterial.TryGetValue(row.Item.MaterialId, out var eta);
+                etaByMaterial.TryGetValue((row.Item.MaterialId, row.Item.UomCode), out var eta);
                 DateTimeOffset? expectedAtUtc = eta?.ExpectedAvailableDate is { } date
                     ? new DateTimeOffset(date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc))
                     : null;
                 return new MesMaterialReadinessLiveCoverageItem(
                     row.Item.MaterialId,
                     row.Item.MaterialLotId,
+                    row.Item.UomCode,
                     row.AvailableQuantity,
                     expectedAtUtc,
                     expectedAtUtc is null ? null : MesMaterialAvailabilitySources.ErpPurchaseOrderPromisedDate);
@@ -229,21 +221,4 @@ public sealed class HttpMesMaterialReadinessLiveCoverageProvider(
         MesMaterialReadinessLiveCoverageRequestItem Item,
         decimal AvailableQuantity);
 
-    private sealed record ResolveMaterialSupplyEtasRequest(
-        string OrganizationId,
-        string EnvironmentId,
-        IReadOnlyCollection<MaterialSupplyEtaRequestItem> Items);
-
-    private sealed record MaterialSupplyEtaRequestItem(string SkuCode, decimal ShortageQuantity);
-
-    private sealed record ResolveMaterialSupplyEtasResponse(
-        IReadOnlyCollection<MaterialSupplyEtaResponseItem> Items);
-
-    private sealed record MaterialSupplyEtaResponseItem(
-        string SkuCode,
-        decimal ShortageQuantity,
-        decimal OpenPurchaseQuantity,
-        DateOnly? ExpectedAvailableDate);
-
-    private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
 }

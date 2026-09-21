@@ -165,11 +165,6 @@ public sealed record ListPurchaseOrdersRequest(
     int Skip = 0,
     int Take = 100);
 
-public sealed record ResolveMaterialSupplyEtasRequest(
-    string OrganizationId,
-    string EnvironmentId,
-    IReadOnlyCollection<MaterialSupplyEtaRequestItem> Items);
-
 public sealed record GetPurchaseReceiptSourceDocumentRequest(
     string OrganizationId,
     string EnvironmentId,

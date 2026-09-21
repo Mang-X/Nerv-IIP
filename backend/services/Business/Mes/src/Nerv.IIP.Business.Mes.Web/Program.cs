@@ -14,6 +14,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.ProductEngineering;
 using Nerv.IIP.Business.Mes.Web.Application.Quality;
+using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Business.Mes.Web.Application.Behaviors;
@@ -143,11 +144,13 @@ builder.Services.AddHttpClient<IMesOperationTaskStartApprovalClient, HttpMesOper
 builder.Services.Configure<MesMaterialSupplyLocationOptions>(builder.Configuration.GetSection("Inventory"));
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<MesMaterialSupplyLocationOptions>>().Value);
 builder.Services.AddScoped<IMesMaterialSupplyLocationResolver, InventoryMesMaterialSupplyLocationResolver>();
-builder.Services.AddScoped<HttpMesProductEngineeringMaterialRequirementSnapshotProvider>();
+builder.Services.AddScoped<IMesMaterialAvailabilityReader, HttpMesMaterialAvailabilityReader>();
 builder.Services.AddScoped<IMesMaterialRequirementSnapshotProvider>(services =>
-    services.GetRequiredService<HttpMesProductEngineeringMaterialRequirementSnapshotProvider>());
-builder.Services.AddScoped<IMesMaterialAvailabilityReader>(services =>
-    services.GetRequiredService<HttpMesProductEngineeringMaterialRequirementSnapshotProvider>());
+    new HttpMesProductEngineeringMaterialRequirementSnapshotProvider(
+        services.GetRequiredService<MesProductEngineeringHttpClient>(),
+        services.GetRequiredService<IMesMaterialAvailabilityReader>(),
+        services.GetRequiredService<IInternalServiceTokenProvider>(),
+        services.GetRequiredService<ILogger<HttpMesProductEngineeringMaterialRequirementSnapshotProvider>>()));
 builder.Services.AddScoped<IMesMaterialReadinessLiveCoverageProvider, HttpMesMaterialReadinessLiveCoverageProvider>();
 builder.Services.AddScoped<IMesMaterialLotAvailabilityProvider, HttpMesMaterialLotAvailabilityProvider>();
 builder.Services.AddScoped<IMesRoutingSnapshotProvider, HttpMesProductEngineeringRoutingSnapshotProvider>();

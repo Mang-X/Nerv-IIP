@@ -37,7 +37,7 @@ public sealed class MaterialRequirement : Entity<MaterialRequirementId>, IAggreg
         MaterialId = DomainGuard.Required(materialId, nameof(materialId));
         MaterialLotId = string.IsNullOrWhiteSpace(materialLotId) ? null : materialLotId.Trim();
         RequiredQuantity = DomainGuard.Positive(requiredQuantity, nameof(requiredQuantity));
-        UomCode = DomainGuard.Required(uomCode, nameof(uomCode));
+        UomCode = RequiredUom(uomCode);
         AvailableQuantity = DomainGuard.NonNegative(availableQuantity, nameof(availableQuantity));
         StagedQuantity = DomainGuard.NonNegative(stagedQuantity, nameof(stagedQuantity));
         SourceSystem = DomainGuard.Required(sourceSystem, nameof(sourceSystem));
@@ -76,7 +76,7 @@ public sealed class MaterialRequirement : Entity<MaterialRequirementId>, IAggreg
         string sourceSnapshotId,
         DateTimeOffset capturedAtUtc,
         IReadOnlyCollection<string> substituteMaterialIds,
-        string uomCode = MaterialIssueRequest.UnspecifiedUomCode)
+        string uomCode)
     {
         return new MaterialRequirement(
             organizationId,
@@ -97,5 +97,16 @@ public sealed class MaterialRequirement : Entity<MaterialRequirementId>, IAggreg
 
     public IReadOnlyCollection<string> GetSubstituteMaterialIds() =>
         JsonSerializer.Deserialize<string[]>(SubstituteMaterialIdsJson) ?? [];
+
+    private static string RequiredUom(string uomCode)
+    {
+        var normalized = DomainGuard.Required(uomCode, nameof(uomCode));
+        if (string.Equals(normalized, MaterialIssueRequest.UnspecifiedUomCode, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("New material requirement snapshots require a real UOM.", nameof(uomCode));
+        }
+
+        return normalized;
+    }
 
 }

@@ -8,6 +8,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
+using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
@@ -48,7 +49,8 @@ public sealed class MesMaterialReadinessLiveCoverageTests
             [new MesMaterialReadinessLiveCoverageItem(
                 "MAT-001",
                 null,
-                AvailableQuantity: 2m,
+                "PCS",
+                2m,
                 expectedAtUtc,
                 MesMaterialAvailabilitySources.ErpPurchaseOrderPromisedDate)]));
 
@@ -58,6 +60,7 @@ public sealed class MesMaterialReadinessLiveCoverageTests
 
         var row = Assert.Single(response.Items);
         Assert.Equal(10m, row.RequiredQuantity);
+        Assert.Equal("PCS", row.UomCode);
         Assert.Equal(2m, row.AvailableQuantity);
         Assert.Equal(8m, row.ShortageQuantity);
         Assert.Equal(expectedAtUtc, row.ExpectedAvailableAtUtc);
@@ -140,6 +143,7 @@ public sealed class MesMaterialReadinessLiveCoverageTests
                         new
                         {
                             skuCode = "MAT-003",
+                            uomCode = "PCS",
                             shortageQuantity = 5m,
                             openPurchaseQuantity = 5m,
                             expectedAvailableDate = "2026-09-28",
@@ -165,6 +169,7 @@ public sealed class MesMaterialReadinessLiveCoverageTests
 
         Assert.True(result.InventoryAvailable);
         Assert.True(result.ErpAvailable);
+        Assert.Equal(["MAT-003", "MAT-ALT-003"], inventory.LastRequest!.MaterialIds);
         var row = Assert.Single(result.Items);
         Assert.Equal(4m, row.AvailableQuantity);
         Assert.Equal(DateTimeOffset.Parse("2026-09-28T00:00:00Z"), row.ExpectedAvailableAtUtc);
@@ -178,7 +183,97 @@ public sealed class MesMaterialReadinessLiveCoverageTests
         Assert.Equal("env-dev", body.RootElement.GetProperty("environmentId").GetString());
         var requested = Assert.Single(body.RootElement.GetProperty("items").EnumerateArray());
         Assert.Equal("MAT-003", requested.GetProperty("skuCode").GetString());
+        Assert.Equal("PCS", requested.GetProperty("uomCode").GetString());
         Assert.Equal(5m, requested.GetProperty("shortageQuantity").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Query_keeps_same_material_in_different_uoms_as_distinct_readiness_rows()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var capturedAtUtc = DateTimeOffset.Parse("2026-09-21T08:00:00Z");
+        dbContext.WorkOrders.Add(WorkOrder.Create(
+            "org-001", "env-dev", "WO-UOM-001", "FG-001", "PV-001", 1m, 10, capturedAtUtc));
+        dbContext.MaterialRequirements.AddRange(
+            MaterialRequirement.Capture(
+                "org-001", "env-dev", "WO-UOM-001", "OP-10", "MAT-SAME", null,
+                10m, 8m, 0m, "MBOM", "MBOM:PCS", capturedAtUtc, [], "PCS"),
+            MaterialRequirement.Capture(
+                "org-001", "env-dev", "WO-UOM-001", "OP-20", "MAT-SAME", null,
+                2m, 0m, 0m, "MBOM", "MBOM:BOX", capturedAtUtc, [], "BOX"));
+        dbContext.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
+            "org-001", "env-dev", "MIR-UOM-001", "WO-UOM-001", "OP-10", "MAT-SAME", "PCS", 2m, capturedAtUtc));
+        await dbContext.SaveChangesAsync();
+        var coverage = new StubLiveCoverageProvider(new MesMaterialReadinessLiveCoverageResult(
+            true,
+            true,
+            [
+                new MesMaterialReadinessLiveCoverageItem("MAT-SAME", null, "PCS", 8m, null, null),
+                new MesMaterialReadinessLiveCoverageItem("MAT-SAME", null, "BOX", 0m, DateTimeOffset.Parse("2026-09-30T00:00:00Z"), MesMaterialAvailabilitySources.ErpPurchaseOrderPromisedDate),
+            ]));
+
+        var response = await new GetMaterialReadinessQueryHandler(dbContext, coverage).Handle(
+            new GetMaterialReadinessQuery("org-001", "env-dev", "WO-UOM-001"),
+            CancellationToken.None);
+
+        Assert.Collection(
+            response.Items.OrderBy(x => x.UomCode, StringComparer.Ordinal),
+            box =>
+            {
+                Assert.Equal("BOX", box.UomCode);
+                Assert.Equal(2m, box.RequiredQuantity);
+                Assert.Equal(2m, box.ShortageQuantity);
+            },
+            pcs =>
+            {
+                Assert.Equal("PCS", pcs.UomCode);
+                Assert.Equal(10m, pcs.RequiredQuantity);
+                Assert.Equal(8m, pcs.AvailableQuantity);
+                Assert.Equal(2m, pcs.RequestedQuantity);
+            });
+    }
+
+    [Fact]
+    public async Task Http_provider_keeps_eta_empty_when_open_purchase_quantity_cannot_cover_the_shortage()
+    {
+        var inventory = new StubMaterialAvailabilityReader(_ => new MesMaterialAvailabilityReadResult(true, 2m));
+        using var erpHandler = new RecordingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new
+            {
+                success = true,
+                message = "ok",
+                code = 0,
+                data = new
+                {
+                    items = new[]
+                    {
+                        new
+                        {
+                            skuCode = "MAT-005",
+                            uomCode = "PCS",
+                            shortageQuantity = 8m,
+                            openPurchaseQuantity = 7m,
+                            expectedAvailableDate = (string?)null,
+                        },
+                    },
+                },
+            }),
+        });
+        var provider = CreateHttpProvider(inventory, erpHandler);
+
+        var result = await provider.ResolveAsync(
+            new MesMaterialReadinessLiveCoverageRequest(
+                "org-001",
+                "env-dev",
+                [new MesMaterialReadinessLiveCoverageRequestItem("MAT-005", null, "PCS", 10m, 0m, 0m, 0m, [])]),
+            CancellationToken.None);
+
+        var row = Assert.Single(result.Items);
+        Assert.Null(row.ExpectedAvailableAtUtc);
+        Assert.Null(row.ExpectedAvailabilitySource);
     }
 
     [Fact]
@@ -236,9 +331,15 @@ public sealed class MesMaterialReadinessLiveCoverageTests
         Func<MesMaterialAvailabilityReadRequest, MesMaterialAvailabilityReadResult> resolve)
         : IMesMaterialAvailabilityReader
     {
+        public MesMaterialAvailabilityReadRequest? LastRequest { get; private set; }
+
         public Task<MesMaterialAvailabilityReadResult> ReadAsync(
             MesMaterialAvailabilityReadRequest request,
-            CancellationToken cancellationToken) => Task.FromResult(resolve(request));
+            CancellationToken cancellationToken)
+        {
+            LastRequest = request;
+            return Task.FromResult(resolve(request));
+        }
     }
 
     private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
@@ -280,6 +381,7 @@ internal sealed class FrozenMaterialReadinessLiveCoverageProvider : IMesMaterial
             request.Items.Select(item => new MesMaterialReadinessLiveCoverageItem(
                 item.MaterialId,
                 item.MaterialLotId,
+                item.UomCode,
                 item.FrozenAvailableQuantity,
                 null,
                 null)).ToArray()));
