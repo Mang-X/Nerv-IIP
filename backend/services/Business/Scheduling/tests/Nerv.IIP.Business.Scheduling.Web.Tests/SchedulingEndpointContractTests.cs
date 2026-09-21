@@ -233,6 +233,13 @@ public sealed class SchedulingEndpointContractTests
         var created = await createHandler.Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
+        var detail = await new GetSchedulePlanDetailQueryHandler(
+                dbContext,
+                NullLogger<GetSchedulePlanDetailQueryHandler>.Instance)
+            .Handle(
+                new GetSchedulePlanDetailQuery(created.PlanId, problem.OrganizationId, problem.EnvironmentId),
+                CancellationToken.None);
+
         var snapshot = await dbContext.ScheduleProblems.SingleAsync();
         var persistedProblem = JsonSerializer.Deserialize<SchedulingProblemContract>(
             snapshot.ProblemJson,
@@ -245,6 +252,8 @@ public sealed class SchedulingEndpointContractTests
             new FiniteCapacityScheduler().Schedule(persistedProblem, "fingerprint-proof", FixedNow).ProblemFingerprint,
             snapshot.ProblemFingerprint);
         Assert.Equal(FixedNow.AddHours(2), Assert.Single(created.Assignments).StartUtc);
+        Assert.Equal(FixedNow.AddHours(2), Assert.Single(created.MaterialRisks ?? []).MaterialReadyUtc);
+        Assert.Equal(FixedNow.AddHours(2), Assert.Single(detail.MaterialRisks ?? []).MaterialReadyUtc);
     }
 
     [Fact]

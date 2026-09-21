@@ -160,6 +160,31 @@ public sealed class SchedulingPersistenceTests
             reloaded.GanttItems.Select(x => (x.OperationId, x.HasMaterialRisk, x.HasEquipmentRisk)));
     }
 
+    [Fact]
+    public void Historical_material_risk_without_ready_time_reads_as_null()
+    {
+        var problem = CreateRiskRoundTripProblem();
+        var generated = SchedulePlanContractMapper.WithStatus(
+            new FiniteCapacityScheduler().Schedule(
+                problem,
+                "plan-legacy-material-risk-001",
+                problem.HorizonStartUtc),
+            SchedulePlanStatusContract.Generated);
+        var snapshot = SchedulePlanContractMapper.ToDomainSnapshot(generated) with
+        {
+            MaterialRisksJson =
+                """[{"orderId":"WO-RISK-001","operationId":"WO-RISK-001-OP10","reasonCodes":["material-shortage"],"shortages":[],"message":"需在开工前完成备料。"}]"""
+        };
+        var persisted = SchedulePlan.FromGeneratedPlan(
+            problem.OrganizationId,
+            problem.EnvironmentId,
+            snapshot);
+
+        var reloaded = SchedulePlanContractMapper.ToContract(persisted);
+
+        Assert.Null(Assert.Single(reloaded.MaterialRisks ?? []).MaterialReadyUtc);
+    }
+
     /// <summary>
     /// #1409：设备不可用窗口（甘特上的维护/停机遮罩带）必须随方案落库。
     ///
