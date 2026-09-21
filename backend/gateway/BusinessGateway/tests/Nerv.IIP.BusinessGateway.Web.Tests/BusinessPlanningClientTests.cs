@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
 namespace Nerv.IIP.BusinessGateway.Web.Tests;
@@ -56,19 +57,79 @@ public sealed class BusinessPlanningClientTests
         Assert.Equal("FC20260823000001", response.ForecastReference);
     }
 
+    [Fact]
+    public async Task Mps_review_and_release_forward_the_gateway_supplied_actor_to_demand_planning()
+    {
+        const string trustedActor = "trusted-client-actor-77";
+        var reviewHandler = new StubHandler(MpsResponse("Reviewed", reviewedBy: trustedActor));
+        var releaseHandler = new StubHandler(MpsResponse("Released", releasedBy: trustedActor));
+        var reviewClient = PlanningClient(reviewHandler);
+        var releaseClient = PlanningClient(releaseHandler);
+        var reviewRequest = new BusinessConsoleReviewMpsBucketRequest("mps-001", "org-001", "env-dev", "forged-reviewer");
+        var releaseRequest = new BusinessConsoleReleaseMpsBucketRequest("mps-001", "org-001", "env-dev", "forged-releaser");
+
+        await reviewClient.ReviewMpsBucketAsync(
+            "internal-token",
+            "mps-001",
+            trustedActor,
+            reviewRequest,
+            CancellationToken.None);
+        await releaseClient.ReleaseMpsBucketAsync(
+            "internal-token",
+            "mps-001",
+            trustedActor,
+            releaseRequest,
+            CancellationToken.None);
+
+        using var reviewBody = JsonDocument.Parse(reviewHandler.RequestBody!);
+        using var releaseBody = JsonDocument.Parse(releaseHandler.RequestBody!);
+        Assert.Equal(trustedActor, reviewBody.RootElement.GetProperty("reviewedBy").GetString());
+        Assert.Equal(trustedActor, releaseBody.RootElement.GetProperty("releasedBy").GetString());
+    }
+
+    private static HttpBusinessPlanningClient PlanningClient(HttpMessageHandler handler) =>
+        new(new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://demand-planning.local"),
+        });
+
+    private static string MpsResponse(string status, string? reviewedBy = null, string? releasedBy = null) =>
+        JsonSerializer.Serialize(new
+        {
+            data = new
+            {
+                mpsId = "mps-001",
+                skuCode = "SKU-001",
+                uomCode = "pcs",
+                siteCode = "SITE-01",
+                bucketDate = "2026-06-15",
+                quantity = 120m,
+                status,
+                reviewedBy,
+                reviewedAtUtc = reviewedBy is null ? null : "2026-06-01T08:00:00Z",
+                releasedBy,
+                releasedAtUtc = releasedBy is null ? null : "2026-06-01T09:00:00Z",
+            },
+        });
+
     private sealed class StubHandler(string json) : HttpMessageHandler
     {
         public Uri? RequestUri { get; private set; }
 
-        protected override Task<HttpResponseMessage> SendAsync(
+        public string? RequestBody { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
             RequestUri = request.RequestUri;
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            RequestBody = request.Content is null
+                ? null
+                : await request.Content.ReadAsStringAsync(cancellationToken);
+            return new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(json, Encoding.UTF8, "application/json"),
-            });
+            };
         }
     }
 }
