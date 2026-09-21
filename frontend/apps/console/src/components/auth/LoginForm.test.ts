@@ -9,7 +9,7 @@ describe('LoginForm', () => {
     return mount(LoginForm, {
       ...options,
       global: {
-        ...options.global,
+        ...(options.global ?? {}),
         plugins: [createConsoleI18n(), ...(options.global?.plugins ?? [])],
       },
     })

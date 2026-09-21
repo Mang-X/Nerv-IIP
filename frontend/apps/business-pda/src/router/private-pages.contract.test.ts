@@ -26,7 +26,7 @@ describe('PDA private page components', () => {
     // 交班录入 / 接班列表 / 接班详情三条都要真的进路由表——首页入口指的就是这三条。
     expect(paths).toContain('/mes/handover')
     expect(paths).toContain('/mes/handovers')
-    expect(paths.some((path) => path.startsWith('/mes/handovers/:handoverId'))).toBe(true)
+    expect(paths.some((path) => /^\/mes\/handovers\/:handoverId/.test(path))).toBe(true)
 
     // 交班录入与接班列表不能塌成同一条路由（差一个 s）。
     expect(paths.filter((path) => path === '/mes/handover')).toHaveLength(1)

@@ -11,12 +11,12 @@ export { default as NvMetricStrip } from './NvMetricStrip.vue'
 // Prop shapes consumers need to annotate their own data with — apps may only
 // import from the bare barrel, so these have to travel with the components.
 export type {
-  NvMetricAction,
-  NvMetricDelta,
-  NvMetricFacet,
-  NvMetricSegment,
-  NvMetricStatus,
-  NvMetricStripCell,
-  NvMetricTone,
-  NvMetricVariant,
+  NvMetricAction as NvMetricAction,
+  NvMetricDelta as NvMetricDelta,
+  NvMetricFacet as NvMetricFacet,
+  NvMetricSegment as NvMetricSegment,
+  NvMetricStatus as NvMetricStatus,
+  NvMetricStripCell as NvMetricStripCell,
+  NvMetricTone as NvMetricTone,
+  NvMetricVariant as NvMetricVariant,
 } from './metric'

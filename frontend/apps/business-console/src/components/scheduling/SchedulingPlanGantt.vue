@@ -127,7 +127,7 @@ function buildGroupedTasks(
     const workCenter = workCenterCode ? workCenterByCode.get(workCenterCode) : undefined
     const workshopCode = workCenter?.workshopCode?.trim()
     const lineCode = workCenter?.lineCode?.trim()
-    const dimensions = { ...task.dimensions }
+    const dimensions = { ...(task.dimensions ?? {}) }
 
     if (workCenterCode) {
       dimensions.workCenter = {

@@ -85,10 +85,8 @@ vi.mock('@nerv-iip/ui', () => {
       props: ['columns', 'rows', 'emptyMessage'],
       setup(props, { slots }) {
         return () =>
-          h(
-            'div',
-            { 'data-testid': 'table' },
-            props.rows?.length
+          h('div', { 'data-testid': 'table' }, [
+            ...(props.rows?.length
               ? props.rows.flatMap((row: Record<string, unknown>) =>
                   props.columns.map((column: { key: string }) =>
                     h(
@@ -98,8 +96,8 @@ vi.mock('@nerv-iip/ui', () => {
                     ),
                   ),
                 )
-              : [h('p', props.emptyMessage)],
-          )
+              : [h('p', props.emptyMessage)]),
+          ])
       },
     }),
     NvDatePicker: modelInput,

@@ -1294,7 +1294,7 @@ export class DhtmlxEngine implements SchedulingEngine {
         const laneResId = String(lane.id).slice(5)
         const dim = this.options.groupBy || 'workCenter'
         task.nerv.dimensions = {
-          ...task.nerv.dimensions,
+          ...(task.nerv.dimensions ?? {}),
           [dim]: { id: laneResId, label: String(lane.text ?? laneResId) },
         }
         if (dim === 'workCenter') {
