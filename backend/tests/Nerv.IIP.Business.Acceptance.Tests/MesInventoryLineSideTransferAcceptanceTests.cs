@@ -1183,7 +1183,8 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             "MBOM",
             $"SNAP-{workOrderId}-MAT-OIL",
             now,
-            []));
+            [],
+            "L"));
     }
 
     private static async Task RecordMesOutputLotAsync(
