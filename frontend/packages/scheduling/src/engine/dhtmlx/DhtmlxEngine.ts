@@ -10,6 +10,7 @@ import {
   type Unsubscribe,
 } from '../engine'
 import { conflictReasonLabel } from '../../model/labels'
+import { materialReadyLabel } from '../../model/material-risk'
 import { resolveTimeScale } from '../../model/scale'
 import { createGanttInstanceSync } from './loader'
 import { applySkin } from './skin'
@@ -275,8 +276,9 @@ function cardHtml(t: ScheduleTask): string {
     ? `<span class="nerv-card-alert" title="冲突">${ALERT_ICON}</span>`
     : ''
   // 物料风险(软约束):已排但缺料 —— 提示「开工前备料」,不是排不进去。
+  const matRiskLabel = materialReadyLabel(t.materialRisk)
   const matRisk = t.materialRisk
-    ? `<span class="nv-sched-material-risk-chip" title="需在开工前完成备料">缺料待备</span>`
+    ? `<span class="nv-sched-material-risk-chip" title="${matRiskLabel ?? '需在开工前完成备料'}">${matRiskLabel ?? '缺料待备'}</span>`
     : ''
   // 设备数据风险(软约束):排在状态未知的设备上 —— 提示「开工前确认设备」,不是排不进去。
   const equipRisk = t.equipmentRisk
@@ -346,7 +348,9 @@ export function tooltipHtml(t: ScheduleTask): string {
     t.isRush ? chip('插单', 'var(--nv-scheduling-rush)') : '',
     t.locked ? chip('已锁定', 'var(--nv-brand)') : '',
     t.hasConflict ? chip('冲突', 'var(--destructive)') : '',
-    t.materialRisk ? chip('缺料待备', 'var(--nv-scheduling-kit-warn)') : '',
+    t.materialRisk
+      ? chip(materialReadyLabel(t.materialRisk) ?? '缺料待备', 'var(--nv-scheduling-kit-warn)')
+      : '',
     t.equipmentRisk ? chip('设备状态未知', 'var(--nv-scheduling-equip-unknown)') : '',
   ]
     .filter(Boolean)

@@ -122,6 +122,7 @@ export function toModel(plan: SchedulePlanContract): ScheduleModel {
       shortageQuantity: s.shortageQuantity ?? 0,
     })),
     message: r.message ?? '',
+    materialReadyUtc: r.materialReadyUtc,
   }))
   for (const risk of materialRisks) {
     const t = operations.find(

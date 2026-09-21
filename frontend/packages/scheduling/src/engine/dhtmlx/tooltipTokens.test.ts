@@ -52,4 +52,38 @@ describe('tooltipHtml 颜色事实源', () => {
     const rawColor = /(?:color|background)\s*:\s*(?:oklch\(|#[0-9a-fA-F]{3}|rgba?\()/
     expect(rawColor.test(html)).toBe(false)
   })
+
+  it('物料风险有真实 ETA 时显示统一的预计到料日期', () => {
+    const html = tooltipHtml(
+      task({
+        materialRisk: {
+          orderId: 'WO-2026-03008',
+          operationId: 'OP-10',
+          reasonCodes: ['material-shortage'],
+          shortages: [],
+          message: '物料未齐套。已按计划排入，需在开工前完成备料。',
+          materialReadyUtc: '2026-09-28T08:00:00.000Z',
+        },
+      }),
+    )
+
+    expect(html).toContain('预计到料 09-28')
+  })
+
+  it('物料风险无 ETA 时不伪造预计到料日期', () => {
+    const html = tooltipHtml(
+      task({
+        materialRisk: {
+          orderId: 'WO-2026-03008',
+          operationId: 'OP-10',
+          reasonCodes: ['material-shortage'],
+          shortages: [],
+          message: '物料未齐套。已按计划排入，需在开工前完成备料。',
+        },
+      }),
+    )
+
+    expect(html).not.toContain('预计到料')
+    expect(html).toContain('需在开工前完成备料')
+  })
 })
