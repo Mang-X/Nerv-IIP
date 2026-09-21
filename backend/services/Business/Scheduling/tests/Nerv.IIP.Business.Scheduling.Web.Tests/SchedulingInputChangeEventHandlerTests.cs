@@ -507,7 +507,6 @@ public sealed class SchedulingInputChangeEventHandlerTests
 
         using var scope = provider.CreateScope();
         var handler = new MaterialSupplyEtaChangedIntegrationEventHandlerForInvalidateSchedulePlans(
-            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
             new InMemoryIntegrationEventDeadLetterStore(),
             scope.ServiceProvider.GetRequiredService<ISender>());
         var integrationEvent = CreateMaterialSupplyEtaChangedEvent();
@@ -517,10 +516,11 @@ public sealed class SchedulingInputChangeEventHandlerTests
 
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var invalidations = await dbContext.SchedulePlanInvalidations.OrderBy(x => x.PlanId).ToArrayAsync();
-        Assert.Equal(["plan-eta-sku-001", "plan-eta-sku-002"], invalidations.Select(x => x.PlanId));
+        Assert.Equal(["plan-eta-both", "plan-eta-sku-001", "plan-eta-sku-002"], invalidations.Select(x => x.PlanId));
         Assert.Equal(
             new Dictionary<string, string?>
             {
+                ["plan-eta-both"] = "SKU-001",
                 ["plan-eta-sku-001"] = "SKU-001",
                 ["plan-eta-sku-002"] = "SKU-002",
             },
@@ -1126,6 +1126,8 @@ public sealed class SchedulingInputChangeEventHandlerTests
         dbContext.SchedulePlans.Add(CreatePlan(
             "plan-eta-sku-002", SchedulePlanStatusContract.Generated, "org-001", "env-dev", "problem-eta-sku-002"));
         dbContext.SchedulePlans.Add(CreatePlan(
+            "plan-eta-both", SchedulePlanStatusContract.Generated, "org-001", "env-dev", "problem-eta-both"));
+        dbContext.SchedulePlans.Add(CreatePlan(
             "plan-eta-unrelated", SchedulePlanStatusContract.Generated, "org-001", "env-dev", "problem-eta-unrelated"));
         var released = CreatePlan(
             "plan-eta-released", SchedulePlanStatusContract.Generated, "org-001", "env-dev", "problem-eta-released");
@@ -1138,6 +1140,7 @@ public sealed class SchedulingInputChangeEventHandlerTests
 
         dbContext.ScheduleProblems.Add(CreateSkuProblemSnapshot("problem-eta-sku-001", "org-001", "env-dev", "SKU-001"));
         dbContext.ScheduleProblems.Add(CreateSkuProblemSnapshot("problem-eta-sku-002", "org-001", "env-dev", "SKU-002"));
+        dbContext.ScheduleProblems.Add(CreateSkuProblemSnapshot("problem-eta-both", "org-001", "env-dev", "SKU-002", "SKU-001"));
         dbContext.ScheduleProblems.Add(CreateSkuProblemSnapshot("problem-eta-unrelated", "org-001", "env-dev", "SKU-999"));
         dbContext.ScheduleProblems.Add(CreateSkuProblemSnapshot("problem-eta-released", "org-001", "env-dev", "SKU-001"));
         dbContext.ScheduleProblems.Add(CreateSkuProblemSnapshot("problem-eta-other-env", "org-001", "env-other", "SKU-001"));
@@ -1149,7 +1152,7 @@ public sealed class SchedulingInputChangeEventHandlerTests
         string problemId,
         string organizationId,
         string environmentId,
-        string skuCode)
+        params string[] skuCodes)
     {
         var horizonStart = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
         var horizonEnd = horizonStart.AddHours(8);
@@ -1170,8 +1173,8 @@ public sealed class SchedulingInputChangeEventHandlerTests
                     "WO-001",
                     horizonStart.AddHours(2),
                     false,
-                    [$"{skuCode} shortage 2"],
-                    [new SchedulingMaterialShortageContract(skuCode, null, 5m, 3m, 2m)])
+                    skuCodes.Select(skuCode => $"{skuCode} shortage 2").ToArray(),
+                    skuCodes.Select(skuCode => new SchedulingMaterialShortageContract(skuCode, null, 5m, 3m, 2m)).ToArray())
             ],
             [],
             []);

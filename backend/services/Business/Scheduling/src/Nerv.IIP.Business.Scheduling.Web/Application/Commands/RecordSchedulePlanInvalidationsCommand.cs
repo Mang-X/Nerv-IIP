@@ -26,7 +26,8 @@ public sealed record RecordSchedulePlanInvalidationsCommand(
     SchedulePlanInvalidationScope Scope,
     string? ScopeValue,
     string? AffectedWorkOrderId,
-    string? AffectedSkuCode) : ICommand<RecordSchedulePlanInvalidationsResponse>;
+    string? AffectedSkuCode,
+    IReadOnlyCollection<string>? AffectedSkuCodes = null) : ICommand<RecordSchedulePlanInvalidationsResponse>;
 
 public sealed record RecordSchedulePlanInvalidationsResponse(int MatchedPlanCount, int RecordedInvalidationCount);
 
@@ -46,8 +47,10 @@ public sealed class RecordSchedulePlanInvalidationsCommandValidator
             .When(x => x.Scope is SchedulePlanInvalidationScope.Resource
                 or SchedulePlanInvalidationScope.WorkOrderOrOperation
                 or SchedulePlanInvalidationScope.GeneratedWorkCenter
-                or SchedulePlanInvalidationScope.GeneratedCalendar
-                or SchedulePlanInvalidationScope.GeneratedSku);
+                or SchedulePlanInvalidationScope.GeneratedCalendar);
+        RuleFor(x => x.AffectedSkuCodes)
+            .NotEmpty()
+            .When(x => x.Scope == SchedulePlanInvalidationScope.GeneratedSku);
     }
 }
 
@@ -63,10 +66,10 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
         var calendarResourceIdsByProblem = request.Scope == SchedulePlanInvalidationScope.GeneratedCalendar
             ? await FindCalendarResourceIdsByProblemAsync(request, cancellationToken)
             : [];
-        var skuProblemIds = request.Scope == SchedulePlanInvalidationScope.GeneratedSku
-            ? await FindSkuProblemIdsAsync(request, cancellationToken)
+        var skuByProblem = request.Scope == SchedulePlanInvalidationScope.GeneratedSku
+            ? await FindSkuByProblemAsync(request, cancellationToken)
             : [];
-        var plans = await QueryPlans(request, calendarResourceIdsByProblem.Keys, skuProblemIds).ToArrayAsync(cancellationToken);
+        var plans = await QueryPlans(request, calendarResourceIdsByProblem.Keys, skuByProblem.Keys).ToArrayAsync(cancellationToken);
         if (request.Scope == SchedulePlanInvalidationScope.GeneratedCalendar)
         {
             plans = plans
@@ -125,7 +128,9 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
                 affectedResourceId,
                 affectedWorkOrderId,
                 affectedOperationId,
-                request.AffectedSkuCode,
+                request.Scope == SchedulePlanInvalidationScope.GeneratedSku
+                    ? skuByProblem[plan.ProblemId]
+                    : request.AffectedSkuCode,
                 request.OccurredAtUtc,
                 recordedAtUtc,
                 snapshot);
@@ -228,11 +233,13 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
         return matched;
     }
 
-    private async Task<IReadOnlyCollection<string>> FindSkuProblemIdsAsync(
+    private async Task<Dictionary<string, string>> FindSkuByProblemAsync(
         RecordSchedulePlanInvalidationsCommand request,
         CancellationToken cancellationToken)
     {
-        var skuCode = Normalize(request.ScopeValue);
+        var skuCodes = request.AffectedSkuCodes!
+            .Select(Normalize)
+            .ToHashSet(StringComparer.Ordinal);
         var generatedProblemIds = dbContext.SchedulePlans.AsNoTracking()
             .Where(x =>
                 x.OrganizationId == request.OrganizationId &&
@@ -248,25 +255,32 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
             .ToArrayAsync(cancellationToken);
 
         return snapshots
-            .Where(snapshot => ProblemContainsSku(snapshot.ProblemJson, skuCode))
-            .Select(snapshot => snapshot.ProblemId)
-            .ToArray();
+            .Select(snapshot => new
+            {
+                snapshot.ProblemId,
+                SkuCode = FindFirstMatchingSku(snapshot.ProblemJson, skuCodes),
+            })
+            .Where(x => x.SkuCode is not null)
+            .ToDictionary(x => x.ProblemId, x => x.SkuCode!, StringComparer.Ordinal);
     }
 
-    private static bool ProblemContainsSku(string problemJson, string skuCode)
+    private static string? FindFirstMatchingSku(string problemJson, IReadOnlySet<string> skuCodes)
     {
         try
         {
             var problem = System.Text.Json.JsonSerializer.Deserialize<SchedulingProblemContract>(
                 problemJson,
                 SchedulingJson.Options);
-            return problem is not null && problem.MaterialReadiness.Any(readiness =>
-                readiness.Shortages?.Any(shortage =>
-                    string.Equals(shortage.MaterialId, skuCode, StringComparison.Ordinal)) == true);
+            return problem?.MaterialReadiness
+                .SelectMany(readiness => readiness.Shortages ?? [])
+                .Select(shortage => shortage.MaterialId)
+                .Where(skuCodes.Contains)
+                .Order(StringComparer.Ordinal)
+                .FirstOrDefault();
         }
         catch (System.Text.Json.JsonException)
         {
-            return false;
+            return null;
         }
     }
 

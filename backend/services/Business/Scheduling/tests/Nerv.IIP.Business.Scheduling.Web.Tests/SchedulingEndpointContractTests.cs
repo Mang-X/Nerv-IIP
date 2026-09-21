@@ -230,7 +230,7 @@ public sealed class SchedulingEndpointContractTests
             new OrderUrgencyService(dbContext, clock),
             SchedulingEquipmentUnknownModeOption.Default);
 
-        await createHandler.Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None);
+        var created = await createHandler.Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var snapshot = await dbContext.ScheduleProblems.SingleAsync();
@@ -241,6 +241,45 @@ public sealed class SchedulingEndpointContractTests
         var shortage = Assert.Single(readiness.Shortages!);
         Assert.Equal("MAT-A", shortage.MaterialId);
         Assert.Equal(FixedNow.AddHours(2), readiness.MaterialReadyUtc);
+        Assert.Equal(
+            new FiniteCapacityScheduler().Schedule(persistedProblem, "fingerprint-proof", FixedNow).ProblemFingerprint,
+            snapshot.ProblemFingerprint);
+        Assert.Equal(FixedNow.AddHours(2), Assert.Single(created.Assignments).StartUtc);
+    }
+
+    [Fact]
+    public async Task Create_rejects_same_problem_id_when_provider_material_readiness_changes()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var problem = CreateSingleOperationProblem();
+        var clock = new FixedTimeProvider(FixedNow);
+
+        CreateSchedulePlanCommandHandler CreateHandler(DateTimeOffset materialReadyUtc) => new(
+            dbContext,
+            new FiniteCapacityScheduler(),
+            clock,
+            new NoopSchedulingEquipmentAvailabilityProvider(),
+            new StubSchedulingMaterialReadinessProvider(
+                [
+                    new SchedulingMaterialReadinessContract(
+                        "order",
+                        "WO-SNAPSHOT-001",
+                        materialReadyUtc,
+                        false,
+                        ["MAT-A shortage 2"],
+                        [new SchedulingMaterialShortageContract("MAT-A", null, 5m, 3m, 2m)])
+                ]),
+            new SchedulingOperationOverrideOverlay(dbContext),
+            new OrderUrgencyService(dbContext, clock),
+            SchedulingEquipmentUnknownModeOption.Default);
+
+        await CreateHandler(FixedNow.AddHours(2)).Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await Assert.ThrowsAsync<KnownException>(() =>
+            CreateHandler(FixedNow.AddHours(3)).Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None));
     }
 
     [Fact]

@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Text.Json;
@@ -11,6 +12,7 @@ using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
 using Nerv.IIP.Contracts.IntegrationEvents;
+using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.MasterData;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Contracts.Scheduling;
@@ -167,6 +169,74 @@ public sealed class RecordSchedulePlanInvalidationsPostgresProfileTests
         Assert.False(plans.Single(x => x.PlanId == "plan-other").IsInvalidated);
         Assert.Single(await dbContext.SchedulePlanInvalidations.ToArrayAsync());
         Assert.Single(await dbContext.ProcessedIntegrationEvents.ToArrayAsync());
+    }
+
+    [SchedulingPostgresFact]
+    public async Task Postgres_material_eta_event_replay_converges_after_the_first_atomic_commit_fails()
+    {
+        await SchedulingPostgresLaneDatabase.ResetSchemaAsync();
+        var interceptor = new FailNextSaveChangesInterceptor();
+        var services = new ServiceCollection();
+        services.AddSingleton<TimeProvider>(new FixedTimeProvider(FixedNow));
+        services.AddScoped<ISchedulingIntegrationEventContextAccessor, StubSchedulingIntegrationEventContextAccessor>();
+        services.AddScoped<SchedulePlanInvalidatedIntegrationEventConverter>();
+        services.AddSingleton<IIntegrationEventPublisher, NoOpIntegrationEventPublisher>();
+        services.AddMediatR(configuration => configuration
+            .RegisterServicesFromAssembly(typeof(Program).Assembly)
+            .AddUnitOfWorkBehaviors());
+        services.AddSchedulingPostgreSqlPersistence(SchedulingPostgresLaneDatabase.ConnectionString);
+        services.AddSingleton(interceptor);
+        services.AddDbContext<ApplicationDbContext>((serviceProvider, options) =>
+            options.AddInterceptors(serviceProvider.GetRequiredService<FailNextSaveChangesInterceptor>()));
+        services.AddUnitOfWork<ApplicationDbContext>();
+        await using var provider = services.BuildServiceProvider();
+
+        using (var seedScope = provider.CreateScope())
+        {
+            var dbContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            SchedulingPostgresLaneDatabase.AssertUsesGovernedDatabase(dbContext);
+            await dbContext.Database.MigrateAsync();
+            dbContext.SchedulePlans.Add(CreatePlanWithAssignment("plan-eta-a", "ASSET-CNC-01", "problem-eta-a"));
+            dbContext.SchedulePlans.Add(CreatePlanWithAssignment("plan-eta-b", "ASSET-CNC-01", "problem-eta-b"));
+            dbContext.ScheduleProblems.Add(CreateMaterialProblemSnapshot("problem-eta-a", "SKU-001"));
+            dbContext.ScheduleProblems.Add(CreateMaterialProblemSnapshot("problem-eta-b", "SKU-002"));
+            await dbContext.SaveChangesAsync();
+        }
+
+        var integrationEvent = CreateMaterialSupplyEtaChangedEvent();
+        interceptor.FailNextSave();
+        using (var failedScope = provider.CreateScope())
+        {
+            var handler = new MaterialSupplyEtaChangedIntegrationEventHandlerForInvalidateSchedulePlans(
+                new InMemoryIntegrationEventDeadLetterStore(),
+                failedScope.ServiceProvider.GetRequiredService<ISender>());
+            await Assert.ThrowsAsync<DbUpdateException>(() =>
+                handler.HandleAsync(integrationEvent, CancellationToken.None));
+        }
+
+        using (var afterFailureScope = provider.CreateScope())
+        {
+            var dbContext = afterFailureScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            Assert.Empty(await dbContext.ProcessedIntegrationEvents.ToArrayAsync());
+            Assert.Empty(await dbContext.SchedulePlanInvalidations.ToArrayAsync());
+        }
+
+        using (var replayScope = provider.CreateScope())
+        {
+            var handler = new MaterialSupplyEtaChangedIntegrationEventHandlerForInvalidateSchedulePlans(
+                new InMemoryIntegrationEventDeadLetterStore(),
+                replayScope.ServiceProvider.GetRequiredService<ISender>());
+            await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        }
+
+        using (var assertionScope = provider.CreateScope())
+        {
+            var dbContext = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            Assert.Single(await dbContext.ProcessedIntegrationEvents.ToArrayAsync());
+            var invalidations = await dbContext.SchedulePlanInvalidations.OrderBy(x => x.PlanId).ToArrayAsync();
+            Assert.Equal(["plan-eta-a", "plan-eta-b"], invalidations.Select(x => x.PlanId));
+            Assert.Equal(["SKU-001", "SKU-002"], invalidations.Select(x => x.AffectedSkuCode));
+        }
     }
 
     /// <summary>
@@ -490,6 +560,65 @@ public sealed class RecordSchedulePlanInvalidationsPostgresProfileTests
             FixedNow);
     }
 
+    private static ScheduleProblemSnapshot CreateMaterialProblemSnapshot(string problemId, string skuCode)
+    {
+        var horizonStart = FixedNow.AddHours(-4);
+        var horizonEnd = FixedNow.AddHours(4);
+        var problem = new SchedulingProblemContract(
+            1,
+            problemId,
+            "org-001",
+            "env-dev",
+            horizonStart,
+            horizonEnd,
+            [],
+            [],
+            [],
+            [],
+            [
+                new SchedulingMaterialReadinessContract(
+                    "order",
+                    "WO-001",
+                    horizonStart.AddHours(2),
+                    false,
+                    [$"{skuCode} shortage"],
+                    [new SchedulingMaterialShortageContract(skuCode, null, 5m, 3m, 2m)])
+            ],
+            [],
+            []);
+        return new ScheduleProblemSnapshot(
+            problemId,
+            1,
+            "org-001",
+            "env-dev",
+            $"fingerprint-{problemId}",
+            JsonSerializer.Serialize(problem, SchedulingJson.Options),
+            horizonStart,
+            horizonEnd,
+            FixedNow);
+    }
+
+    private static MaterialSupplyEtaChangedIntegrationEvent CreateMaterialSupplyEtaChangedEvent()
+    {
+        return new MaterialSupplyEtaChangedIntegrationEvent(
+            "evt-erp-material-eta-postgres-001",
+            ErpIntegrationEventTypes.MaterialSupplyEtaChanged,
+            ErpIntegrationEventVersions.V1,
+            FixedNow,
+            ErpIntegrationEventSources.BusinessErp,
+            "corr-erp-material-eta-postgres-001",
+            "PO-001",
+            "org-001",
+            "env-dev",
+            "system:test",
+            "erp:material-supply-eta-changed:org-001:env-dev:PO-001:released",
+            new MaterialSupplyEtaChangedPayload(
+                "purchase-order",
+                "PO-001",
+                "released",
+                ["SKU-002", "SKU-001", "SKU-001"]));
+    }
+
     private static WorkCalendarChangedIntegrationEvent CreateWorkCalendarChangedEvent()
     {
         return new WorkCalendarChangedIntegrationEvent(
@@ -530,6 +659,27 @@ public sealed class RecordSchedulePlanInvalidationsPostgresProfileTests
             CancellationToken cancellationToken)
         {
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FailNextSaveChangesInterceptor : SaveChangesInterceptor
+    {
+        private bool shouldFail;
+
+        public void FailNextSave() => shouldFail = true;
+
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (shouldFail)
+            {
+                shouldFail = false;
+                throw new DbUpdateException("Injected atomic commit failure.");
+            }
+
+            return base.SavingChangesAsync(eventData, result, cancellationToken);
         }
     }
 }

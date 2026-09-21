@@ -419,7 +419,6 @@ public sealed class StockAvailabilityChangedIntegrationEventHandlerForInvalidate
 
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Erp.MaterialSupplyEtaChangedIntegrationEvent", ConsumerName)]
 public sealed class MaterialSupplyEtaChangedIntegrationEventHandlerForInvalidateSchedulePlans(
-    ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
     ISender sender)
     : IIntegrationEventHandler<MaterialSupplyEtaChangedIntegrationEvent>, ICapSubscribe
@@ -453,27 +452,14 @@ public sealed class MaterialSupplyEtaChangedIntegrationEventHandlerForInvalidate
         MaterialSupplyEtaChangedIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
     {
-        if (!await SchedulingProcessedIntegrationEventInbox.TryRecordAsync(
-                dbContext,
-                ConsumerName,
-                integrationEvent,
-                cancellationToken))
-        {
-            return;
-        }
-
-        foreach (var skuCode in integrationEvent.Payload.SkuCodes
-                     .Select(x => x.Trim())
-                     .Distinct(StringComparer.Ordinal)
-                     .Order(StringComparer.Ordinal))
-        {
-            await SchedulingPlanInvalidationService.InvalidateGeneratedPlansBySkuAsync(
-                sender,
-                integrationEvent,
-                SchedulingPlanInvalidationReasons.MaterialReadinessChanged,
-                skuCode,
-                cancellationToken);
-        }
+        var skuCodes = integrationEvent.Payload.SkuCodes
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        await sender.Send(
+            new ProcessMaterialSupplyEtaChangedCommand(integrationEvent, skuCodes),
+            cancellationToken);
     }
 }
 
@@ -797,24 +783,22 @@ internal static class SchedulingPlanInvalidationService
             cancellationToken);
     }
 
-    public static async Task InvalidateGeneratedPlansBySkuAsync<TIntegrationEvent>(
-        ISender sender,
+    internal static RecordSchedulePlanInvalidationsCommand ToSkuCommand<TIntegrationEvent>(
         TIntegrationEvent integrationEvent,
         string reasonCode,
-        string affectedSkuCode,
-        CancellationToken cancellationToken)
+        IReadOnlyCollection<string> affectedSkuCodes)
         where TIntegrationEvent : IIntegrationEventEnvelope
     {
-        var normalizedSkuCode = Required(affectedSkuCode, nameof(affectedSkuCode));
-        await sender.Send(
-            ToCommand(
-                integrationEvent,
-                reasonCode,
-                SchedulePlanInvalidationScope.GeneratedSku,
-                normalizedSkuCode,
-                affectedWorkOrderId: null,
-                affectedSkuCode: normalizedSkuCode),
-            cancellationToken);
+        return ToCommand(
+            integrationEvent,
+            reasonCode,
+            SchedulePlanInvalidationScope.GeneratedSku,
+            scopeValue: null,
+            affectedWorkOrderId: null,
+            affectedSkuCode: null) with
+        {
+            AffectedSkuCodes = affectedSkuCodes,
+        };
     }
 
     private static string Required(string value, string parameterName)
