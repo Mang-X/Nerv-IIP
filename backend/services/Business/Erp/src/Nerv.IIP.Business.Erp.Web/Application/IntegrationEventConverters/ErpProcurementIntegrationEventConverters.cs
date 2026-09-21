@@ -48,6 +48,25 @@ public sealed class PurchaseOrderReleasedIntegrationEventConverter
     }
 }
 
+public sealed class MaterialSupplyEtaChangedIntegrationEventConverter
+    : IIntegrationEventConverter<MaterialSupplyEtaChangedDomainEvent, ErpIntegrationEvent<MaterialSupplyEtaChangedPayload>>
+{
+    public ErpIntegrationEvent<MaterialSupplyEtaChangedPayload> Convert(MaterialSupplyEtaChangedDomainEvent domainEvent)
+    {
+        return Envelope(
+            ErpIntegrationEventTypes.MaterialSupplyEtaChanged,
+            domainEvent.OrganizationId,
+            domainEvent.EnvironmentId,
+            EventIds.Idempotency("material-supply-eta-changed", domainEvent.OrganizationId, domainEvent.EnvironmentId, domainEvent.ChangeIdentity),
+            new MaterialSupplyEtaChangedPayload(
+                domainEvent.SourceDocumentType,
+                domainEvent.SourceDocumentNo,
+                domainEvent.ChangeReason,
+                domainEvent.SkuCodes.Distinct(StringComparer.Ordinal).OrderBy(skuCode => skuCode, StringComparer.Ordinal).ToArray()),
+            domainEvent.ChangedAtUtc);
+    }
+}
+
 public sealed class PurchaseReceiptRecordedIntegrationEventConverter
     : IIntegrationEventConverter<PurchaseReceiptRecordedDomainEvent, PurchaseReceiptRecordedIntegrationEvent>
 {
@@ -138,13 +157,14 @@ internal static class ErpIntegrationEventConverterHelpers
         string organizationId,
         string environmentId,
         string idempotencyKey,
-        TPayload payload)
+        TPayload payload,
+        DateTimeOffset? occurredAtUtc = null)
     {
         return new ErpIntegrationEvent<TPayload>(
             EventIds.New(),
             eventType,
             ErpIntegrationEventVersions.V1,
-            DateTimeOffset.UtcNow,
+            occurredAtUtc ?? DateTimeOffset.UtcNow,
             ErpIntegrationEventSources.BusinessErp,
             "system:erp",
             "system:erp",

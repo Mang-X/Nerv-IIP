@@ -30,6 +30,7 @@ Reference 与源码冲突时，以当前代码/契约/测试为准并修正本�
 | DemandPlanning | `PlanningSuggestionAcceptedIntegrationEvent` | DemandPlanning | MES；指向采购申请的建议由 ERP 消费 | `consumed-internally` |
 | ERP | `PurchaseRequisitionCreatedPayload` | ERP | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
 | ERP | `PurchaseOrderReleasedPayload` | ERP | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
+| ERP | `MaterialSupplyEtaChangedPayload` | ERP | Scheduling 的物料 ETA 投影失效仍待活动消费者实现 | `needs-business-consumer` |
 | ERP | `PurchaseReceiptRecordedIntegrationEvent` | ERP | ERP GR/IR 处理；Quality 来料检验 | `consumed-internally` |
 | ERP | `SalesReturnAuthorizedIntegrationEvent` | ERP | WMS | `consumed-internally` |
 | ERP | `SalesOrderReleased` / `SalesOrderChanged` / `SalesOrderCancelled` | ERP | DemandPlanning 销售订单需求投影 | `consumed-internally` |

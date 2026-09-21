@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseRequisitionAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.RequestForQuotationAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
@@ -401,6 +402,111 @@ public sealed class ListPurchaseOrdersQueryHandler(ApplicationDbContext dbContex
             .ToArrayAsync(cancellationToken);
 
         return new ListPurchaseOrdersResponse(orders, total);
+    }
+}
+
+public sealed record MaterialSupplyEtaRequestItem(string SkuCode, decimal ShortageQuantity);
+
+public sealed record ResolveMaterialSupplyEtasQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    IReadOnlyCollection<MaterialSupplyEtaRequestItem> Items) : IQuery<ResolveMaterialSupplyEtasResponse>;
+
+public sealed class ResolveMaterialSupplyEtasQueryValidator : AbstractValidator<ResolveMaterialSupplyEtasQuery>
+{
+    public ResolveMaterialSupplyEtasQueryValidator()
+    {
+        this.AddTenantRules(query => query.OrganizationId, query => query.EnvironmentId);
+        RuleFor(query => query.Items)
+            .NotEmpty()
+            .Must(items => items
+                .Select(item => item.SkuCode.Trim())
+                .Distinct(StringComparer.Ordinal)
+                .Count() == items.Count)
+            .WithMessage("Material supply ETA requests require unique SKU codes.");
+        RuleForEach(query => query.Items).ChildRules(item =>
+        {
+            item.RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(100);
+            item.RuleFor(x => x.ShortageQuantity).GreaterThan(0m);
+        });
+    }
+}
+
+public sealed record ResolveMaterialSupplyEtasResponse(IReadOnlyCollection<MaterialSupplyEtaResponseItem> Items);
+
+public sealed record MaterialSupplyEtaResponseItem(
+    string SkuCode,
+    decimal ShortageQuantity,
+    decimal OpenPurchaseQuantity,
+    DateOnly? ExpectedAvailableDate);
+
+public sealed class ResolveMaterialSupplyEtasQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<ResolveMaterialSupplyEtasQuery, ResolveMaterialSupplyEtasResponse>
+{
+    public async Task<ResolveMaterialSupplyEtasResponse> Handle(
+        ResolveMaterialSupplyEtasQuery request,
+        CancellationToken cancellationToken)
+    {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var requestedItems = request.Items
+            .Select(item => new MaterialSupplyEtaRequestItem(item.SkuCode.Trim(), item.ShortageQuantity))
+            .OrderBy(item => item.SkuCode, StringComparer.Ordinal)
+            .ToArray();
+        var skuCodes = requestedItems.Select(item => item.SkuCode).ToArray();
+        var openLines = await dbContext.PurchaseOrders
+            .AsNoTracking()
+            .Where(order => order.OrganizationId == tenant.OrganizationId
+                && order.EnvironmentId == tenant.EnvironmentId
+                && order.Status == PurchaseOrderStatus.Released)
+            .SelectMany(order => order.Lines.Select(line => new
+            {
+                order.PurchaseOrderNo,
+                line.LineNo,
+                line.SkuCode,
+                OpenQuantity = line.OrderedQuantity - line.ReceivedQuantity,
+                line.PromisedDate,
+                line.FinalDelivery,
+            }))
+            .Where(line => skuCodes.Contains(line.SkuCode)
+                && !line.FinalDelivery
+                && line.OpenQuantity > 0m)
+            .ToArrayAsync(cancellationToken);
+
+        var linesBySku = openLines
+            .GroupBy(line => line.SkuCode, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => group
+                    .OrderBy(line => line.PromisedDate)
+                    .ThenBy(line => line.PurchaseOrderNo, StringComparer.Ordinal)
+                    .ThenBy(line => line.LineNo, StringComparer.Ordinal)
+                    .ToArray(),
+                StringComparer.Ordinal);
+
+        var result = requestedItems.Select(item =>
+        {
+            var lines = linesBySku.GetValueOrDefault(item.SkuCode) ?? [];
+            var totalOpenQuantity = lines.Sum(line => line.OpenQuantity);
+            var accumulatedQuantity = 0m;
+            DateOnly? expectedAvailableDate = null;
+            foreach (var line in lines)
+            {
+                accumulatedQuantity += line.OpenQuantity;
+                if (accumulatedQuantity >= item.ShortageQuantity)
+                {
+                    expectedAvailableDate = line.PromisedDate;
+                    break;
+                }
+            }
+
+            return new MaterialSupplyEtaResponseItem(
+                item.SkuCode,
+                item.ShortageQuantity,
+                totalOpenQuantity,
+                expectedAvailableDate);
+        }).ToArray();
+
+        return new ResolveMaterialSupplyEtasResponse(result);
     }
 }
 

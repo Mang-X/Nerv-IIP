@@ -153,6 +153,10 @@ public sealed class PurchaseOrder : Entity<PurchaseOrderId>, IAggregateRoot
 
         Status = PurchaseOrderStatus.Released;
         this.AddDomainEvent(new PurchaseOrderReleasedDomainEvent(this));
+        AddMaterialSupplyEtaChanged(
+            "purchase-order-released",
+            $"purchase-order:{PurchaseOrderNo}:release:{Version}",
+            lines.Select(line => line.SkuCode));
     }
 
     public void ReturnToEditableAfterApprovalRejected(string approvalChainId)
@@ -257,6 +261,10 @@ public sealed class PurchaseOrder : Entity<PurchaseOrderId>, IAggregateRoot
         change.Approve();
         TotalAmount = lines.Sum(x => x.LineAmount);
         Version++;
+        AddMaterialSupplyEtaChanged(
+            "purchase-order-change-approved",
+            $"purchase-order:{PurchaseOrderNo}:change:{Version}",
+            change.Lines.Select(changeLine => lines.Single(line => line.LineNo == changeLine.LineNo).SkuCode));
     }
 
     public void RejectChange(string approvalChainId)
@@ -274,6 +282,10 @@ public sealed class PurchaseOrder : Entity<PurchaseOrderId>, IAggregateRoot
         line.CloseRemaining();
         changeHistory.Add(PurchaseOrderChange.Applied("final-delivery", [line.ToChangeDraft()], reason));
         Version++;
+        AddMaterialSupplyEtaChanged(
+            "purchase-order-line-closed",
+            $"purchase-order:{PurchaseOrderNo}:close:{Version}",
+            [line.SkuCode]);
         if (lines.All(x => x.OpenQuantity == 0 || x.FinalDelivery))
         {
             Status = PurchaseOrderStatus.Closed;
@@ -291,6 +303,23 @@ public sealed class PurchaseOrder : Entity<PurchaseOrderId>, IAggregateRoot
         changeHistory.Add(PurchaseOrderChange.Applied("cancel", [], reason));
         Version++;
         Status = PurchaseOrderStatus.Cancelled;
+        AddMaterialSupplyEtaChanged(
+            "purchase-order-cancelled",
+            $"purchase-order:{PurchaseOrderNo}:cancel:{Version}",
+            lines.Select(line => line.SkuCode));
+    }
+
+    private void AddMaterialSupplyEtaChanged(string changeReason, string changeIdentity, IEnumerable<string> skuCodes)
+    {
+        this.AddDomainEvent(new MaterialSupplyEtaChangedDomainEvent(
+            OrganizationId,
+            EnvironmentId,
+            "purchase-order",
+            PurchaseOrderNo,
+            changeReason,
+            changeIdentity,
+            DateTimeOffset.UtcNow,
+            skuCodes.Distinct(StringComparer.Ordinal).OrderBy(skuCode => skuCode, StringComparer.Ordinal).ToArray()));
     }
 
     private void EnsureOpen()

@@ -164,6 +164,11 @@ public sealed record ListPurchaseOrdersRequest(
     int Skip = 0,
     int Take = 100);
 
+public sealed record ResolveMaterialSupplyEtasRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    IReadOnlyCollection<MaterialSupplyEtaRequestItem> Items);
+
 public sealed record GetPurchaseReceiptSourceDocumentRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -498,6 +503,24 @@ public sealed class ListPurchaseOrdersEndpoint(ISender sender)
     }
 }
 
+public sealed class ResolveMaterialSupplyEtasEndpoint(ISender sender)
+    : ErpEndpoint<ResolveMaterialSupplyEtasRequest, ResponseData<ResolveMaterialSupplyEtasResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureErpContract(ErpProcurementEndpointContracts.Get<ResolveMaterialSupplyEtasEndpoint>());
+    }
+
+    public override async Task HandleAsync(ResolveMaterialSupplyEtasRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ResolveMaterialSupplyEtasQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.Items), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed record ErpEndpointContract(
     Type EndpointType,
     string HttpMethod,
@@ -527,6 +550,7 @@ public static class ErpProcurementEndpointContracts
         new(typeof(ReleaseSupplierInvoicePaymentHoldEndpoint), "POST", "/api/business/v1/erp/supplier-invoices/{invoiceNo}/release-payment-hold", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "releaseErpSupplierInvoicePaymentHold"),
         new(typeof(VoidSupplierInvoicePaymentHoldEndpoint), "POST", "/api/business/v1/erp/supplier-invoices/{invoiceNo}/void-payment-hold", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "voidErpSupplierInvoicePaymentHold"),
         new(typeof(ListPurchaseOrdersEndpoint), "GET", "/api/business/v1/erp/purchase-orders", ErpPermissionCodes.ProcurementRead, InternalServiceAuthorizationPolicy.Name, "listErpPurchaseOrders"),
+        new(typeof(ResolveMaterialSupplyEtasEndpoint), "POST", "/api/business/v1/erp/material-supply-etas/resolve", ErpPermissionCodes.ProcurementRead, InternalServiceAuthorizationPolicy.Name, "resolveErpMaterialSupplyEtas"),
     ];
 
     public static ErpEndpointContract Get<TEndpoint>()
