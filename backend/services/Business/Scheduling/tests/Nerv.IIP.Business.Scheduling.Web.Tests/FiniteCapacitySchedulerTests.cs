@@ -1199,6 +1199,30 @@ public class FiniteCapacitySchedulerTests
     }
 
     [Fact]
+    public void Schedule_hard_constraint_waits_for_eta_and_projects_material_risk()
+    {
+        var problem = CreateMaterialShortageProblem();
+        var materialReadyUtc = problem.HorizonStartUtc.AddHours(2);
+        problem = problem with
+        {
+            MaterialReadiness =
+            [
+                problem.MaterialReadiness.Single() with { MaterialReadyUtc = materialReadyUtc }
+            ]
+        };
+
+        var plan = new FiniteCapacityScheduler(SchedulingMaterialConstraintModeContract.Hard)
+            .Schedule(problem, "plan-material-hard-eta-001", GeneratedAtUtc);
+
+        Assert.Equal(materialReadyUtc, Assert.Single(plan.Assignments).StartUtc);
+        Assert.DoesNotContain(plan.UnscheduledOperations, x =>
+            x.ReasonCode == ScheduleConflictReasonCodeContract.Material);
+        Assert.Equal(materialReadyUtc, Assert.Single(plan.MaterialRisks ?? []).MaterialReadyUtc);
+        Assert.True(Assert.Single(plan.GanttItems).HasMaterialRisk);
+        Assert.Equal(1, plan.Metrics.MaterialRiskOperationCount);
+    }
+
+    [Fact]
     public void Schedule_does_not_project_material_risk_for_unscheduled_operation_with_eta()
     {
         var problem = CreateMaterialShortageProblem();
