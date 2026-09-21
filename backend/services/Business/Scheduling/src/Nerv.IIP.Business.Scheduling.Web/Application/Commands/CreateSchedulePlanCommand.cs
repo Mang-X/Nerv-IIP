@@ -92,6 +92,10 @@ public sealed class CreateSchedulePlanCommandHandler(
         var schedulingProblem = MaterialReadinessSchedulingAdapter.Apply(
             EquipmentAvailabilitySchedulingAdapter.Apply(overlaidProblem, availability, equipmentUnknownMode.Mode),
             materialReadiness);
+        var persistedProblem = normalizedProblem with
+        {
+            MaterialReadiness = schedulingProblem.MaterialReadiness,
+        };
         var urgencyInputFingerprint = CalculateProblemFingerprint(schedulingProblem);
         var preview = scheduler.Schedule(schedulingProblem, $"plan-{Guid.CreateVersion7():N}", generatedAtUtc);
         var generated = SchedulePlanContractMapper.WithStatus(preview, SchedulePlanStatusContract.Generated);
@@ -101,7 +105,7 @@ public sealed class CreateSchedulePlanCommandHandler(
             overlaidProblem.OrganizationId,
             overlaidProblem.EnvironmentId,
             problemFingerprint,
-            JsonSerializer.Serialize(normalizedProblem, SchedulingJson.Options),
+            JsonSerializer.Serialize(persistedProblem, SchedulingJson.Options),
             overlaidProblem.HorizonStartUtc,
             overlaidProblem.HorizonEndUtc,
             generatedAtUtc));

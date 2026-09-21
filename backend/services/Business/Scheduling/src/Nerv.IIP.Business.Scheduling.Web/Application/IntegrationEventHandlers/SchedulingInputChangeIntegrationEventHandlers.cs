@@ -8,6 +8,7 @@ using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 using Nerv.IIP.Business.Scheduling.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Contracts.IndustrialTelemetry;
 using Nerv.IIP.Contracts.IntegrationEvents;
+using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Maintenance;
 using Nerv.IIP.Contracts.MasterData;
@@ -416,6 +417,66 @@ public sealed class StockAvailabilityChangedIntegrationEventHandlerForInvalidate
     }
 }
 
+[IntegrationEventConsumer("Nerv.IIP.Contracts.Erp.MaterialSupplyEtaChangedIntegrationEvent", ConsumerName)]
+public sealed class MaterialSupplyEtaChangedIntegrationEventHandlerForInvalidateSchedulePlans(
+    ApplicationDbContext dbContext,
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    ISender sender)
+    : IIntegrationEventHandler<MaterialSupplyEtaChangedIntegrationEvent>, ICapSubscribe
+{
+    public const string ConsumerName = "business-scheduling.material-supply-eta-changed";
+
+    private readonly IntegrationEventConsumerGuard<MaterialSupplyEtaChangedIntegrationEvent> consumerGuard = new(
+        new IntegrationEventEnvelopeValidator(),
+        deadLetterStore,
+        new IntegrationEventConsumerOptions(
+            ConsumerName,
+            ErpIntegrationEventTypes.MaterialSupplyEtaChanged,
+            ErpIntegrationEventVersions.V1));
+
+    public Task HandleAsync(
+        MaterialSupplyEtaChangedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken)
+    {
+        return consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
+    }
+
+    [CapSubscribe(nameof(MaterialSupplyEtaChangedIntegrationEvent), Group = ConsumerName)]
+    public Task HandleCapAsync(
+        MaterialSupplyEtaChangedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken)
+    {
+        return HandleAsync(integrationEvent, cancellationToken);
+    }
+
+    private async Task HandleValidEventAsync(
+        MaterialSupplyEtaChangedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken)
+    {
+        if (!await SchedulingProcessedIntegrationEventInbox.TryRecordAsync(
+                dbContext,
+                ConsumerName,
+                integrationEvent,
+                cancellationToken))
+        {
+            return;
+        }
+
+        foreach (var skuCode in integrationEvent.Payload.SkuCodes
+                     .Select(x => x.Trim())
+                     .Distinct(StringComparer.Ordinal)
+                     .Order(StringComparer.Ordinal))
+        {
+            await SchedulingPlanInvalidationService.InvalidateGeneratedPlansBySkuAsync(
+                sender,
+                integrationEvent,
+                SchedulingPlanInvalidationReasons.MaterialReadinessChanged,
+                skuCode,
+                cancellationToken);
+        }
+    }
+}
+
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Quality.InspectionResultIntegrationEvent", ConsumerName)]
 public sealed class QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans(
     ApplicationDbContext dbContext,
@@ -733,6 +794,26 @@ internal static class SchedulingPlanInvalidationService
                 scopeValue: null,
                 affectedWorkOrderId,
                 affectedSkuCode),
+            cancellationToken);
+    }
+
+    public static async Task InvalidateGeneratedPlansBySkuAsync<TIntegrationEvent>(
+        ISender sender,
+        TIntegrationEvent integrationEvent,
+        string reasonCode,
+        string affectedSkuCode,
+        CancellationToken cancellationToken)
+        where TIntegrationEvent : IIntegrationEventEnvelope
+    {
+        var normalizedSkuCode = Required(affectedSkuCode, nameof(affectedSkuCode));
+        await sender.Send(
+            ToCommand(
+                integrationEvent,
+                reasonCode,
+                SchedulePlanInvalidationScope.GeneratedSku,
+                normalizedSkuCode,
+                affectedWorkOrderId: null,
+                affectedSkuCode: normalizedSkuCode),
             cancellationToken);
     }
 

@@ -157,6 +157,7 @@ try
     builder.Services.AddScoped<AssetRestoredIntegrationEventHandlerForInvalidateSchedulePlans>();
     builder.Services.AddScoped<DeviceStateChangedIntegrationEventHandlerForInvalidateSchedulePlans>();
     builder.Services.AddScoped<StockAvailabilityChangedIntegrationEventHandlerForInvalidateSchedulePlans>();
+    builder.Services.AddScoped<MaterialSupplyEtaChangedIntegrationEventHandlerForInvalidateSchedulePlans>();
     builder.Services.AddScoped<QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans>();
     builder.Services.AddScoped<WorkOrderReleasedIntegrationEventHandlerForInvalidateSchedulePlans>();
     builder.Services.AddScoped<MesOperationTaskManuallyDispatchedIntegrationEventHandlerForUpsertOverride>();

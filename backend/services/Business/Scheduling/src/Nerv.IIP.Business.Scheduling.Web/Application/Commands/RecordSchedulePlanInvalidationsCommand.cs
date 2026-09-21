@@ -12,6 +12,7 @@ public enum SchedulePlanInvalidationScope
     AllInvalidatablePlans = 2,
     GeneratedWorkCenter = 3,
     GeneratedCalendar = 4,
+    GeneratedSku = 5,
 }
 
 public sealed record RecordSchedulePlanInvalidationsCommand(
@@ -45,7 +46,8 @@ public sealed class RecordSchedulePlanInvalidationsCommandValidator
             .When(x => x.Scope is SchedulePlanInvalidationScope.Resource
                 or SchedulePlanInvalidationScope.WorkOrderOrOperation
                 or SchedulePlanInvalidationScope.GeneratedWorkCenter
-                or SchedulePlanInvalidationScope.GeneratedCalendar);
+                or SchedulePlanInvalidationScope.GeneratedCalendar
+                or SchedulePlanInvalidationScope.GeneratedSku);
     }
 }
 
@@ -61,7 +63,10 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
         var calendarResourceIdsByProblem = request.Scope == SchedulePlanInvalidationScope.GeneratedCalendar
             ? await FindCalendarResourceIdsByProblemAsync(request, cancellationToken)
             : [];
-        var plans = await QueryPlans(request, calendarResourceIdsByProblem.Keys).ToArrayAsync(cancellationToken);
+        var skuProblemIds = request.Scope == SchedulePlanInvalidationScope.GeneratedSku
+            ? await FindSkuProblemIdsAsync(request, cancellationToken)
+            : [];
+        var plans = await QueryPlans(request, calendarResourceIdsByProblem.Keys, skuProblemIds).ToArrayAsync(cancellationToken);
         if (request.Scope == SchedulePlanInvalidationScope.GeneratedCalendar)
         {
             plans = plans
@@ -133,7 +138,8 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
 
     private IQueryable<SchedulePlan> QueryPlans(
         RecordSchedulePlanInvalidationsCommand request,
-        IReadOnlyCollection<string> calendarProblemIds)
+        IReadOnlyCollection<string> calendarProblemIds,
+        IReadOnlyCollection<string> skuProblemIds)
     {
         var normalizedScopeValue = Normalize(request.ScopeValue);
         // Inline the invalidatable-status predicate: a custom method call (IsInvalidatableStatus) inside a
@@ -158,6 +164,9 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
             SchedulePlanInvalidationScope.GeneratedCalendar => query.Where(x =>
                 x.Status == SchedulePlanLifecycleStatus.Generated &&
                 calendarProblemIds.Contains(x.ProblemId)),
+            SchedulePlanInvalidationScope.GeneratedSku => query.Where(x =>
+                x.Status == SchedulePlanLifecycleStatus.Generated &&
+                skuProblemIds.Contains(x.ProblemId)),
             SchedulePlanInvalidationScope.WorkOrderOrOperation => query.Where(x => x.Assignments.Any(assignment =>
                 assignment.WorkOrderId == normalizedScopeValue ||
                 assignment.OperationId == normalizedScopeValue)),
@@ -217,6 +226,48 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
         }
 
         return matched;
+    }
+
+    private async Task<IReadOnlyCollection<string>> FindSkuProblemIdsAsync(
+        RecordSchedulePlanInvalidationsCommand request,
+        CancellationToken cancellationToken)
+    {
+        var skuCode = Normalize(request.ScopeValue);
+        var generatedProblemIds = dbContext.SchedulePlans.AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.Status == SchedulePlanLifecycleStatus.Generated)
+            .Select(x => x.ProblemId);
+        var snapshots = await dbContext.ScheduleProblems.AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                generatedProblemIds.Contains(x.ProblemId))
+            .Select(x => new { x.ProblemId, x.ProblemJson })
+            .ToArrayAsync(cancellationToken);
+
+        return snapshots
+            .Where(snapshot => ProblemContainsSku(snapshot.ProblemJson, skuCode))
+            .Select(snapshot => snapshot.ProblemId)
+            .ToArray();
+    }
+
+    private static bool ProblemContainsSku(string problemJson, string skuCode)
+    {
+        try
+        {
+            var problem = System.Text.Json.JsonSerializer.Deserialize<SchedulingProblemContract>(
+                problemJson,
+                SchedulingJson.Options);
+            return problem is not null && problem.MaterialReadiness.Any(readiness =>
+                readiness.Shortages?.Any(shortage =>
+                    string.Equals(shortage.MaterialId, skuCode, StringComparison.Ordinal)) == true);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return false;
+        }
     }
 
     private static (string? WorkOrderId, string? OperationId) ResolveWorkOrderOrOperation(

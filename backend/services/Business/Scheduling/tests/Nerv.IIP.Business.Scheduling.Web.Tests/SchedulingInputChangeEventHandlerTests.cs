@@ -15,6 +15,7 @@ using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
 using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.IntegrationEvents;
+using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.IndustrialTelemetry;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Maintenance;
@@ -496,6 +497,40 @@ public sealed class SchedulingInputChangeEventHandlerTests
             Assert.Equal("SKU-001", invalidation.AffectedSkuCode);
             Assert.Equal("inventory.StockAvailabilityChanged", invalidation.SourceEventType);
         });
+    }
+
+    [Fact]
+    public async Task Erp_material_supply_eta_changed_invalidates_only_generated_plans_with_affected_skus_once()
+    {
+        await using var provider = CreateInMemoryProvider();
+        await SeedMaterialSupplyEtaPlansAsync(provider);
+
+        using var scope = provider.CreateScope();
+        var handler = new MaterialSupplyEtaChangedIntegrationEventHandlerForInvalidateSchedulePlans(
+            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+            new InMemoryIntegrationEventDeadLetterStore(),
+            scope.ServiceProvider.GetRequiredService<ISender>());
+        var integrationEvent = CreateMaterialSupplyEtaChangedEvent();
+
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var invalidations = await dbContext.SchedulePlanInvalidations.OrderBy(x => x.PlanId).ToArrayAsync();
+        Assert.Equal(["plan-eta-sku-001", "plan-eta-sku-002"], invalidations.Select(x => x.PlanId));
+        Assert.Equal(
+            new Dictionary<string, string?>
+            {
+                ["plan-eta-sku-001"] = "SKU-001",
+                ["plan-eta-sku-002"] = "SKU-002",
+            },
+            invalidations.ToDictionary(x => x.PlanId, x => x.AffectedSkuCode));
+        Assert.All(invalidations, invalidation =>
+        {
+            Assert.Equal(SchedulingPlanInvalidationReasons.MaterialReadinessChanged, invalidation.ReasonCode);
+            Assert.Equal(ErpIntegrationEventTypes.MaterialSupplyEtaChanged, invalidation.SourceEventType);
+        });
+        Assert.Single(await dbContext.ProcessedIntegrationEvents.ToArrayAsync());
     }
 
     [Theory]
@@ -983,6 +1018,9 @@ public sealed class SchedulingInputChangeEventHandlerTests
         AssertSubscription<StockAvailabilityChangedIntegrationEventHandlerForInvalidateSchedulePlans>(
             "StockAvailabilityChangedIntegrationEvent",
             StockAvailabilityChangedIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName);
+        AssertSubscription<MaterialSupplyEtaChangedIntegrationEventHandlerForInvalidateSchedulePlans>(
+            "MaterialSupplyEtaChangedIntegrationEvent",
+            MaterialSupplyEtaChangedIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName);
         AssertSubscription<QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans>(
             "InspectionResultIntegrationEvent",
             QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName);
@@ -1077,6 +1115,76 @@ public sealed class SchedulingInputChangeEventHandlerTests
         dbContext.SchedulePlans.Add(released);
         dbContext.SchedulePlans.Add(CreatePlan("plan-other-env", SchedulePlanStatusContract.Generated, "org-001", "env-other"));
         await dbContext.SaveChangesAsync();
+    }
+
+    private static async Task SeedMaterialSupplyEtaPlansAsync(ServiceProvider provider)
+    {
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.SchedulePlans.Add(CreatePlan(
+            "plan-eta-sku-001", SchedulePlanStatusContract.Generated, "org-001", "env-dev", "problem-eta-sku-001"));
+        dbContext.SchedulePlans.Add(CreatePlan(
+            "plan-eta-sku-002", SchedulePlanStatusContract.Generated, "org-001", "env-dev", "problem-eta-sku-002"));
+        dbContext.SchedulePlans.Add(CreatePlan(
+            "plan-eta-unrelated", SchedulePlanStatusContract.Generated, "org-001", "env-dev", "problem-eta-unrelated"));
+        var released = CreatePlan(
+            "plan-eta-released", SchedulePlanStatusContract.Generated, "org-001", "env-dev", "problem-eta-released");
+        released.Release(FixedNow, 1);
+        dbContext.SchedulePlans.Add(released);
+        dbContext.SchedulePlans.Add(CreatePlan(
+            "plan-eta-other-env", SchedulePlanStatusContract.Generated, "org-001", "env-other", "problem-eta-other-env"));
+        dbContext.SchedulePlans.Add(CreatePlan(
+            "plan-eta-other-org", SchedulePlanStatusContract.Generated, "org-other", "env-dev", "problem-eta-other-org"));
+
+        dbContext.ScheduleProblems.Add(CreateSkuProblemSnapshot("problem-eta-sku-001", "org-001", "env-dev", "SKU-001"));
+        dbContext.ScheduleProblems.Add(CreateSkuProblemSnapshot("problem-eta-sku-002", "org-001", "env-dev", "SKU-002"));
+        dbContext.ScheduleProblems.Add(CreateSkuProblemSnapshot("problem-eta-unrelated", "org-001", "env-dev", "SKU-999"));
+        dbContext.ScheduleProblems.Add(CreateSkuProblemSnapshot("problem-eta-released", "org-001", "env-dev", "SKU-001"));
+        dbContext.ScheduleProblems.Add(CreateSkuProblemSnapshot("problem-eta-other-env", "org-001", "env-other", "SKU-001"));
+        dbContext.ScheduleProblems.Add(CreateSkuProblemSnapshot("problem-eta-other-org", "org-other", "env-dev", "SKU-001"));
+        await dbContext.SaveChangesAsync();
+    }
+
+    private static ScheduleProblemSnapshot CreateSkuProblemSnapshot(
+        string problemId,
+        string organizationId,
+        string environmentId,
+        string skuCode)
+    {
+        var horizonStart = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
+        var horizonEnd = horizonStart.AddHours(8);
+        var problem = new SchedulingProblemContract(
+            1,
+            problemId,
+            organizationId,
+            environmentId,
+            horizonStart,
+            horizonEnd,
+            [new SchedulingOrderContract("WO-001", "FG-001", 1, horizonEnd, 1, false, [])],
+            [],
+            [],
+            [],
+            [
+                new SchedulingMaterialReadinessContract(
+                    "order",
+                    "WO-001",
+                    horizonStart.AddHours(2),
+                    false,
+                    [$"{skuCode} shortage 2"],
+                    [new SchedulingMaterialShortageContract(skuCode, null, 5m, 3m, 2m)])
+            ],
+            [],
+            []);
+        return new ScheduleProblemSnapshot(
+            problemId,
+            1,
+            organizationId,
+            environmentId,
+            $"fingerprint-{problemId}",
+            JsonSerializer.Serialize(problem, SchedulingJson.Options),
+            horizonStart,
+            horizonEnd,
+            FixedNow);
     }
 
     private static SchedulePlan CreatePlan(
@@ -1292,6 +1400,27 @@ public sealed class SchedulingInputChangeEventHandlerTests
                 new DateTimeOffset(2026, 6, 1, 9, 5, 0, TimeSpan.Zero),
                 12,
                 120));
+    }
+
+    private static MaterialSupplyEtaChangedIntegrationEvent CreateMaterialSupplyEtaChangedEvent()
+    {
+        return new MaterialSupplyEtaChangedIntegrationEvent(
+            "evt-erp-material-eta-001",
+            ErpIntegrationEventTypes.MaterialSupplyEtaChanged,
+            ErpIntegrationEventVersions.V1,
+            new DateTimeOffset(2026, 6, 1, 9, 6, 0, TimeSpan.Zero),
+            ErpIntegrationEventSources.BusinessErp,
+            "corr-erp-material-eta-001",
+            "PO-001",
+            "org-001",
+            "env-dev",
+            "system:erp",
+            "erp:material-supply-eta-changed:org-001:env-dev:PO-001:released",
+            new MaterialSupplyEtaChangedPayload(
+                "purchase-order",
+                "PO-001",
+                "released",
+                ["SKU-002", "SKU-001", "SKU-001"]));
     }
 
     /// <summary>
