@@ -984,9 +984,9 @@ public sealed class MesEndpointContractTests
     }
 
     [Fact]
-    public void MesEndpointContracts_ExposeRescheduleAndRushOrderRoutes()
+    public void MesEndpointContracts_ExposePlanningAndRushOrderRoutes()
     {
-        Assert.Equal(73, MesEndpointContracts.All.Count);
+        Assert.Equal(71, MesEndpointContracts.All.Count);
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/foundation-readiness/{areaCode}"
@@ -1012,17 +1012,6 @@ public sealed class MesEndpointContractTests
             && x.Route == "/api/business/v1/mes/production-plans/{productionPlanId}/work-orders"
             && x.PermissionCode == MesPermissionCodes.WorkOrdersManage
             && x.OperationId == "convertBusinessMesPlanToWorkOrder");
-        Assert.Contains(MesEndpointContracts.All, x =>
-            x.HttpMethod == "POST"
-            && x.Route == "/api/business/v1/mes/schedules/run"
-            && x.PermissionCode == MesPermissionCodes.SchedulesManage
-            && x.OperationId == "runBusinessMesSchedule");
-        Assert.Contains(MesEndpointContracts.All, x =>
-            x.HttpMethod == "GET"
-            && x.Route == "/api/business/v1/mes/schedules"
-            && x.PermissionCode == MesPermissionCodes.SchedulesRead
-            && x.OperationId == "listBusinessMesScheduleResults");
-
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/mes/work-orders/rush"
@@ -3449,7 +3438,6 @@ public sealed class MesEndpointContractTests
 
     private static readonly string[] MesWriteAuthRoutes =
     [
-        "/api/business/v1/mes/schedules/run",
         "/api/business/v1/mes/work-orders/rush",
         "/api/business/v1/mes/work-orders/WO-001/close",
         "/api/business/v1/mes/work-orders/WO-001/hold",

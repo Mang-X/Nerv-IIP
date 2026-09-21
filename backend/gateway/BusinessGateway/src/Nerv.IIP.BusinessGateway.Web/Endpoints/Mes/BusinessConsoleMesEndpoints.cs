@@ -2558,28 +2558,6 @@ public sealed class ConfirmBusinessConsoleMesDowntimeRecoveryEndpoint(
 }
 
 [Tags("Business Console MES")]
-[HttpGet("/api/business-console/v1/mes/schedules")]
-[BusinessGatewayOperationId("listBusinessConsoleMesScheduleResults")]
-public sealed class ListBusinessConsoleMesScheduleResultsEndpoint(
-    IBusinessGatewayAuthorizationClient auth,
-    IBusinessMesClient mes,
-    IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesScheduleResultListRequest, BusinessConsoleMesScheduleResultListResponse>(
-        auth,
-        BusinessGatewayPermissions.MesSchedulesRead)
-{
-    protected override string OrganizationId(BusinessConsoleMesScheduleResultListRequest request) => request.OrganizationId;
-
-    protected override string EnvironmentId(BusinessConsoleMesScheduleResultListRequest request) => request.EnvironmentId;
-
-    protected override Task<BusinessConsoleMesScheduleResultListResponse> ForwardAsync(
-        BusinessConsoleMesScheduleResultListRequest request,
-        string bearerToken,
-        CancellationToken cancellationToken) =>
-        mes.ListScheduleResultsAsync(tokenProvider.BearerToken, request, cancellationToken);
-}
-
-[Tags("Business Console MES")]
 [HttpGet("/api/business-console/v1/mes/shift-handovers")]
 [BusinessGatewayOperationId("listBusinessConsoleMesShiftHandovers")]
 public sealed class ListBusinessConsoleMesShiftHandoversEndpoint(
@@ -2911,26 +2889,4 @@ public sealed class ListBusinessConsoleMesCapacityImpactsEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         mes.ListCapacityImpactsAsync(tokenProvider.BearerToken, request, cancellationToken);
-}
-
-[Tags("Business Console MES")]
-[HttpPost("/api/business-console/v1/mes/schedules/run")]
-[BusinessGatewayOperationId("runBusinessConsoleMesSchedule")]
-public sealed class RunBusinessConsoleMesScheduleEndpoint(
-    IBusinessGatewayAuthorizationClient auth,
-    IBusinessMesClient mes,
-    IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleRunScheduleRequest, BusinessConsoleMesScheduleResult>(
-        auth,
-        BusinessGatewayPermissions.MesSchedulesManage)
-{
-    protected override string OrganizationId(BusinessConsoleRunScheduleRequest request) => request.OrganizationId;
-
-    protected override string EnvironmentId(BusinessConsoleRunScheduleRequest request) => request.EnvironmentId;
-
-    protected override Task<BusinessConsoleMesScheduleResult> ForwardAsync(
-        BusinessConsoleRunScheduleRequest request,
-        string bearerToken,
-        CancellationToken cancellationToken) =>
-        mes.RunScheduleAsync(tokenProvider.BearerToken, request, cancellationToken);
 }

@@ -1458,8 +1458,6 @@ public sealed class BusinessGatewayOpenApiTests
             "operationActualMachineHours");
         AssertSchemaProperties(document, "BusinessConsoleMesProductionReportDetailResponse", "laborAllocations");
         AssertSchemaProperties(document, "BusinessConsoleMesLaborAllocation", "workerId", "workerName", "sharePercent", "allocatedLaborTicks");
-        AssertOperationId(paths, "/api/business-console/v1/mes/schedules/run", "post", "runBusinessConsoleMesSchedule");
-        AssertOperationId(paths, "/api/business-console/v1/mes/schedules", "get", "listBusinessConsoleMesScheduleResults");
         AssertOperationId(paths, "/api/business-console/v1/mes/production-reports", "post", "recordBusinessConsoleMesProductionReport");
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/production-reports", "post", "idempotencyKey", 128);
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/production-reports", "post", "scopeKind", 50);

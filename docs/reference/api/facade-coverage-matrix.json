@@ -3519,32 +3519,6 @@
     },
     {
       "service": "Mes",
-      "method": "POST",
-      "route": "/api/business/v1/mes/schedules/run",
-      "operationId": "runBusinessMesSchedule",
-      "classification": "exposed",
-      "gateways": [
-        "business"
-      ],
-      "gatewayOperationIds": [
-        "runBusinessConsoleMesSchedule"
-      ]
-    },
-    {
-      "service": "Mes",
-      "method": "GET",
-      "route": "/api/business/v1/mes/schedules",
-      "operationId": "listBusinessMesScheduleResults",
-      "classification": "exposed",
-      "gateways": [
-        "business"
-      ],
-      "gatewayOperationIds": [
-        "listBusinessConsoleMesScheduleResults"
-      ]
-    },
-    {
-      "service": "Mes",
       "method": "GET",
       "route": "/api/business/v1/mes/shift-handovers",
       "operationId": "listBusinessMesShiftHandovers",

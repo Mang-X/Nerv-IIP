@@ -38,8 +38,6 @@ public sealed class MesPermissionCodeSecondSourceTests
             ["listBusinessMesProductionPlans"] = "business.mes.plans.read", // GET /api/business/v1/mes/production-plans
             ["getBusinessMesProductionPlanReadiness"] = "business.mes.plans.read", // GET /api/business/v1/mes/production-plans/{productionPlanId}/readiness
             ["convertBusinessMesPlanToWorkOrder"] = "business.mes.work-orders.manage", // POST /api/business/v1/mes/production-plans/{productionPlanId}/work-orders
-            ["runBusinessMesSchedule"] = "business.mes.schedules.manage", // POST /api/business/v1/mes/schedules/run
-            ["listBusinessMesScheduleResults"] = "business.mes.schedules.read", // GET /api/business/v1/mes/schedules
             ["createBusinessMesRushWorkOrder"] = "business.mes.work-orders.manage", // POST /api/business/v1/mes/work-orders/rush
             ["listBusinessMesWorkOrders"] = "business.mes.work-orders.read", // GET /api/business/v1/mes/work-orders
             ["getBusinessMesWorkOrderDetail"] = "business.mes.work-orders.read", // GET /api/business/v1/mes/work-orders/{workOrderId}

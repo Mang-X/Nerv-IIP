@@ -30,7 +30,6 @@ import {
   listBusinessConsoleMesProductionPlansQueryOptions,
   listBusinessConsoleMesProductionReportsQueryOptions,
   listBusinessConsoleMesReportableOperationTasks,
-  listBusinessConsoleMesScheduleResultsQueryOptions,
   listBusinessConsoleMesShiftHandoversQueryOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
   listBusinessConsoleSearchableDirectoryQueryOptions,
@@ -41,7 +40,6 @@ import {
   releaseBusinessConsoleMesWorkOrderMutationOptions,
   retryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingMutationOptions,
   reverseBusinessConsoleMesProductionReportMutationOptions,
-  runBusinessConsoleMesScheduleMutationOptions,
   startBusinessConsoleMesOperationTaskMutationOptions,
 } from '@nerv-iip/api-client'
 import {
@@ -62,7 +60,6 @@ import {
   useMesProductionReporting,
   useMesProductionReports,
   useMesQualityContext,
-  useMesSchedules,
   useMesShiftHandovers,
   useMesTraceability,
   useMesWipSummary,
@@ -338,10 +335,6 @@ vi.mock('@nerv-iip/api-client', () => ({
     key: [{ _id: 'listBusinessConsoleMesRelatedQualityItems' }],
     query: vi.fn(),
   })),
-  listBusinessConsoleMesScheduleResultsQueryOptions: vi.fn(() => ({
-    key: [{ _id: 'listBusinessConsoleMesScheduleResults' }],
-    query: vi.fn(),
-  })),
   listBusinessConsoleMesShiftHandoversQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleMesShiftHandovers' }],
     query: vi.fn(),
@@ -401,12 +394,6 @@ vi.mock('@nerv-iip/api-client', () => ({
     })),
   })),
   reverseBusinessConsoleMesProductionReportMutationOptions: vi.fn(() => ({
-    mutation: vi.fn(async (vars) => ({
-      success: true,
-      data: vars.body,
-    })),
-  })),
-  runBusinessConsoleMesScheduleMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({
       success: true,
       data: vars.body,
@@ -1877,45 +1864,6 @@ describe('business MES composables', () => {
     expect(
       coladaState.queryFactoriesById.get('getBusinessConsoleMesProductionReport')?.(),
     ).toMatchObject({ enabled: false })
-  })
-
-  it('reads schedule history through the generated query option', () => {
-    const schedules = useMesSchedules()
-    schedules.filters.skip = 5
-    schedules.filters.take = 25
-
-    coladaState.queryFactoriesById.get('listBusinessConsoleMesScheduleResults')?.()
-
-    expect(listBusinessConsoleMesScheduleResultsQueryOptions).toHaveBeenCalledWith({
-      query: expect.objectContaining({ skip: 5, take: 25 }),
-    })
-
-    // 业务上下文为空时不发请求（页面给空态，不是反复失败的请求）。
-    schedules.filters.organizationId = ''
-    expect(
-      coladaState.queryFactoriesById.get('listBusinessConsoleMesScheduleResults')?.(),
-    ).toMatchObject({ enabled: false })
-  })
-
-  it('runs schedule mutations through the generated option', async () => {
-    const { runSchedule } = useMesSchedules()
-
-    await runSchedule({
-      organizationId: 'org-001',
-      environmentId: 'env-dev',
-      trigger: 'manual',
-    })
-
-    expect(runBusinessConsoleMesScheduleMutationOptions).toHaveBeenCalled()
-    expect(
-      vi.mocked(runBusinessConsoleMesScheduleMutationOptions).mock.results[0]?.value.mutation,
-    ).toHaveBeenCalledWith({
-      body: {
-        organizationId: 'org-001',
-        environmentId: 'env-dev',
-        trigger: 'manual',
-      },
-    })
   })
 
   it('suppresses traceability queries when their required scope is empty', () => {

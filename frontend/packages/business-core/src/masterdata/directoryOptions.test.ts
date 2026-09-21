@@ -9,7 +9,7 @@ describe('isSystemIdentifier / toDirectoryOptions', () => {
       { code: 'NIGHT', displayName: '夜班', active: true },
     ])
     // 顺序由中文 label 排序决定（见下方排序用例），这里只关心 GUID 行被剔掉。
-    expect([...options.map((o) => o.value)].sort()).toEqual(['EARLY', 'NIGHT'])
+    expect(options.map((o) => o.value).sort()).toEqual(['EARLY', 'NIGHT'])
   })
 
   it('drops inactive and blank-code rows', () => {

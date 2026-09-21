@@ -39,7 +39,7 @@ MES（ISA-95 Level-3）分**四大运营域**：生产运营、质量运营、�
 ```
 制造执行（MES = 生产运营管理）          ← 括号内为 ISA-95 活动，仅说明，不上界面
 ├─ 生产总览        /mes                  [域首页 / Andon 总览]          (Analysis 总览)
-├─ 计划与排程      生产计划 /mes/plans · 排程 /mes/schedules            (Scheduling)
+├─ 计划与排程      生产计划 /mes/plans（排程入口在排产工作台 /scheduling）  (Scheduling)
 ├─ 工单与派工      /mes/work-orders[+详情]（派工看板收为页内 Tab）       (Dispatching)
 ├─ 领料与齐套      /mes/materials（开工准备 foundation 收为 Tab）         (Execution Readiness)
 │                  ← 由「齐套与物料」改名，**领料**进标题；主操作=发起领料/领料申请
