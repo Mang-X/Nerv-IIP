@@ -85,6 +85,23 @@ public sealed class BusinessGatewayOpenApiTests
     }
 
     [Fact]
+    public async Task Planning_mps_actor_fields_are_not_client_supplied_contract_properties()
+    {
+        var json = await BusinessGatewayTestHost.GetOpenApiDocumentAsync();
+        using var document = JsonDocument.Parse(json);
+        var paths = document.RootElement.GetProperty("paths");
+
+        foreach (var path in new[]
+                 {
+                     "/api/business-console/v1/planning/mps/{mpsId}/review",
+                     "/api/business-console/v1/planning/mps/{mpsId}/release",
+                 })
+        {
+            Assert.False(paths.GetProperty(path).GetProperty("post").TryGetProperty("requestBody", out _));
+        }
+    }
+
+    [Fact]
     public async Task Business_gateway_exports_openapi_document_with_stable_business_console_operation_ids()
     {
         var json = await BusinessGatewayTestHost.GetOpenApiDocumentAsync();

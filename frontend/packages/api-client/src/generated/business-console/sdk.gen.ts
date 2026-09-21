@@ -1177,21 +1177,13 @@ export const updateBusinessConsolePlanningMpsBucket = <ThrowOnError extends bool
 export const reviewBusinessConsolePlanningMpsBucket = <ThrowOnError extends boolean = false>(options: Options<ReviewBusinessConsolePlanningMpsBucketData, ThrowOnError>): RequestResult<ReviewBusinessConsolePlanningMpsBucketResponses, ReviewBusinessConsolePlanningMpsBucketErrors, ThrowOnError> => (options.client ?? client).post<ReviewBusinessConsolePlanningMpsBucketResponses, ReviewBusinessConsolePlanningMpsBucketErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/business-console/v1/planning/mps/{mpsId}/review',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
+    ...options
 });
 
 export const releaseBusinessConsolePlanningMpsBucket = <ThrowOnError extends boolean = false>(options: Options<ReleaseBusinessConsolePlanningMpsBucketData, ThrowOnError>): RequestResult<ReleaseBusinessConsolePlanningMpsBucketResponses, ReleaseBusinessConsolePlanningMpsBucketErrors, ThrowOnError> => (options.client ?? client).post<ReleaseBusinessConsolePlanningMpsBucketResponses, ReleaseBusinessConsolePlanningMpsBucketErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/business-console/v1/planning/mps/{mpsId}/release',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
+    ...options
 });
 
 export const listBusinessConsolePlanningDemands = <ThrowOnError extends boolean = false>(options: Options<ListBusinessConsolePlanningDemandsData, ThrowOnError>): RequestResult<ListBusinessConsolePlanningDemandsResponses, ListBusinessConsolePlanningDemandsErrors, ThrowOnError> => (options.client ?? client).get<ListBusinessConsolePlanningDemandsResponses, ListBusinessConsolePlanningDemandsErrors, ThrowOnError>({

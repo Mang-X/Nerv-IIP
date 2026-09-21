@@ -104,8 +104,14 @@ public sealed class ReviewBusinessConsolePlanningMpsBucketEndpoint(
         string bearerToken,
         CancellationToken cancellationToken)
     {
+        var (_, actorRef) = RequireAuthorizedPrincipalActor();
         var mpsId = Route<string>("mpsId") ?? request.MpsId;
-        return planning.ReviewMpsBucketAsync(tokenProvider.BearerToken, mpsId, request with { MpsId = mpsId }, cancellationToken);
+        return planning.ReviewMpsBucketAsync(
+            tokenProvider.BearerToken,
+            mpsId,
+            actorRef,
+            request with { MpsId = mpsId },
+            cancellationToken);
     }
 }
 
@@ -133,8 +139,14 @@ public sealed class ReleaseBusinessConsolePlanningMpsBucketEndpoint(
         string bearerToken,
         CancellationToken cancellationToken)
     {
+        var (_, actorRef) = RequireAuthorizedPrincipalActor();
         var mpsId = Route<string>("mpsId") ?? request.MpsId;
-        return planning.ReleaseMpsBucketAsync(tokenProvider.BearerToken, mpsId, request with { MpsId = mpsId }, cancellationToken);
+        return planning.ReleaseMpsBucketAsync(
+            tokenProvider.BearerToken,
+            mpsId,
+            actorRef,
+            request with { MpsId = mpsId },
+            cancellationToken);
     }
 }
 
@@ -482,7 +494,6 @@ public sealed class BusinessConsoleReviewMpsBucketRequestValidator : Validator<B
         RuleFor(x => x.MpsId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.ReviewedBy).NotEmpty().MaximumLength(150);
     }
 }
 
@@ -493,7 +504,6 @@ public sealed class BusinessConsoleReleaseMpsBucketRequestValidator : Validator<
         RuleFor(x => x.MpsId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.ReleasedBy).NotEmpty().MaximumLength(150);
     }
 }
 

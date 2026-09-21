@@ -2892,14 +2892,12 @@ public sealed record BusinessConsoleUpdateMpsBucketRequest(
 public sealed record BusinessConsoleReviewMpsBucketRequest(
     [property: RouteParam] string MpsId,
     [property: QueryParam] string OrganizationId,
-    [property: QueryParam] string EnvironmentId,
-    string ReviewedBy);
+    [property: QueryParam] string EnvironmentId);
 
 public sealed record BusinessConsoleReleaseMpsBucketRequest(
     [property: RouteParam] string MpsId,
     [property: QueryParam] string OrganizationId,
-    [property: QueryParam] string EnvironmentId,
-    string ReleasedBy);
+    [property: QueryParam] string EnvironmentId);
 
 public sealed record BusinessConsoleMpsBucketItem(
     string MpsId,

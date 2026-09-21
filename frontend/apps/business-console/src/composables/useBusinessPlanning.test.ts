@@ -96,13 +96,13 @@ vi.mock('@nerv-iip/api-client', () => ({
   reviewBusinessConsolePlanningMpsBucketMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({
       success: true,
-      data: { mpsId: vars.path.mpsId, status: 'Reviewed', reviewedBy: vars.body.reviewedBy },
+      data: { mpsId: vars.path.mpsId, status: 'Reviewed', reviewedBy: 'user-admin' },
     })),
   })),
   releaseBusinessConsolePlanningMpsBucketMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({
       success: true,
-      data: { mpsId: vars.path.mpsId, status: 'Released', releasedBy: vars.body.releasedBy },
+      data: { mpsId: vars.path.mpsId, status: 'Released', releasedBy: 'user-admin' },
     })),
   })),
 }))
@@ -315,7 +315,6 @@ describe('business planning composable', () => {
     ).toHaveBeenCalledWith({
       path: { mpsId: 'mps-1' },
       query: { organizationId: 'org-001', environmentId: 'env-dev' },
-      body: { reviewedBy: 'planner.li' },
     })
     expect(releaseBusinessConsolePlanningMpsBucketMutationOptions).toHaveBeenCalled()
     expect(
@@ -324,7 +323,6 @@ describe('business planning composable', () => {
     ).toHaveBeenCalledWith({
       path: { mpsId: 'mps-1' },
       query: { organizationId: 'org-001', environmentId: 'env-dev' },
-      body: { releasedBy: 'planner.li' },
     })
     expect(coladaState.invalidateQueries).toHaveBeenCalledWith({ predicate: expect.any(Function) })
   })

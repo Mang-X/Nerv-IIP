@@ -12707,19 +12707,6 @@
             }
           }
         ],
-        "requestBody": {
-          "x-name": "BusinessConsoleReviewMpsBucketRequest",
-          "description": "",
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReviewMpsBucketRequest"
-              }
-            }
-          },
-          "required": true,
-          "x-position": 1
-        },
         "responses": {
           "200": {
             "description": "Success",
@@ -12788,19 +12775,6 @@
             }
           }
         ],
-        "requestBody": {
-          "x-name": "BusinessConsoleReleaseMpsBucketRequest",
-          "description": "",
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReleaseMpsBucketRequest"
-              }
-            }
-          },
-          "required": true,
-          "x-position": 1
-        },
         "responses": {
           "200": {
             "description": "Success",
@@ -45956,33 +45930,11 @@
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReviewMpsBucketRequest": {
         "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "reviewedBy"
-        ],
-        "properties": {
-          "reviewedBy": {
-            "type": "string",
-            "maxLength": 150,
-            "minLength": 0,
-            "nullable": false
-          }
-        }
+        "additionalProperties": false
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReleaseMpsBucketRequest": {
         "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "releasedBy"
-        ],
-        "properties": {
-          "releasedBy": {
-            "type": "string",
-            "maxLength": 150,
-            "minLength": 0,
-            "nullable": false
-          }
-        }
+        "additionalProperties": false
       },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleDemandSourceListResponse": {
         "allOf": [
