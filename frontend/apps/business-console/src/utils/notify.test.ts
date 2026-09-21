@@ -307,6 +307,17 @@ describe('inlineErrorMessage', () => {
     expect(inlineErrorMessage({ message: 'lifecycle-conflict' })).toBe('状态已被其他操作更新')
   })
 
+  it.each([
+    { message: 'downstream-request-failed' },
+    { status: 500, message: 'downstream-request-failed' },
+  ])('下游请求失败的错误信封不把原始技术码呈现给 PC 用户', (error) => {
+    const message = inlineErrorMessage(error, '原有兜底')
+
+    expect(message).toBe('服务暂时不可用，请稍后重试；写操作请先刷新核实结果')
+    expect(message).not.toContain('downstream-request-failed')
+    expect(message).not.toBe('原有兜底')
+  })
+
   it('无错误时返回空串，模板可直接判空', () => {
     expect(inlineErrorMessage(undefined)).toBe('')
     expect(inlineErrorMessage(null)).toBe('')
