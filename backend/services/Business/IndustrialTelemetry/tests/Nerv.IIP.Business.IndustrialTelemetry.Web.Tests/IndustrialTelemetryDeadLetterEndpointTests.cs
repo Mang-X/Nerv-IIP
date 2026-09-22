@@ -43,6 +43,20 @@ public sealed class IndustrialTelemetryDeadLetterEndpointTests
         var byStatus = await ReadAsync<ListResponse>(client, $"{RoutePrefix}?status=Replayed");
         Assert.Empty(byStatus.Data.Items);
 
+        // #3739：失败码与时间窗由事实所有方过滤，不在 Gateway 对已取回的窗口二次筛选。
+        var byFailureCode = await ReadAsync<ListResponse>(client, $"{RoutePrefix}?failureCode=handler-retry-exhausted");
+        Assert.Equal(new[] { first.Id, second.Id, other.Id }, byFailureCode.Data.Items.Select(x => x.Id).ToArray());
+
+        var byUnknownFailureCode = await ReadAsync<ListResponse>(client, $"{RoutePrefix}?failureCode=never-emitted");
+        Assert.Empty(byUnknownFailureCode.Data.Items);
+
+        var from = Uri.EscapeDataString(second.DeadLetteredAtUtc.ToString("O"));
+        var to = Uri.EscapeDataString(second.DeadLetteredAtUtc.ToString("O"));
+        var inWindow = await ReadAsync<ListResponse>(
+            client,
+            $"{RoutePrefix}?deadLetteredFromUtc={from}&deadLetteredToUtc={to}");
+        Assert.Equal(new[] { second.Id }, inWindow.Data.Items.Select(x => x.Id).ToArray());
+
         var paged = await ReadAsync<ListResponse>(client, $"{RoutePrefix}?skip=1&take=1");
         Assert.Equal(new[] { second.Id }, paged.Data.Items.Select(x => x.Id).ToArray());
     }
@@ -79,7 +93,7 @@ public sealed class IndustrialTelemetryDeadLetterEndpointTests
         var detail = await ReadAsync<DetailResponse>(client, $"{RoutePrefix}/{message.Id}");
         Assert.Equal(message.EventJson, detail.Data.EventJson);
         Assert.Equal(message.EventClrType, detail.Data.EventClrType);
-        Assert.Equal("Pending", detail.Data.Status);
+        Assert.Equal("pending", detail.Data.Status);
 
         var missing = await client.GetAsync($"{RoutePrefix}/{Guid.CreateVersion7()}");
         Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
@@ -99,7 +113,7 @@ public sealed class IndustrialTelemetryDeadLetterEndpointTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var replay = await response.Content.ReadFromJsonAsync<ReplayResponse>();
         Assert.True(replay!.Data.Succeeded);
-        Assert.Equal("Replayed", replay.Data.Status);
+        Assert.Equal("replayed", replay.Data.Status);
         Assert.Equal([message.Id], handler.ReplayedIds);
 
         var stored = await store.GetAsync(message.Id, CancellationToken.None);
@@ -120,7 +134,7 @@ public sealed class IndustrialTelemetryDeadLetterEndpointTests
 
         var replay = await response.Content.ReadFromJsonAsync<ReplayResponse>();
         Assert.False(replay!.Data.Succeeded);
-        Assert.Equal("Failed", replay.Data.Status);
+        Assert.Equal("failed", replay.Data.Status);
         Assert.Equal("下游仍不可用", replay.Data.Message);
 
         var stored = await store.GetAsync(message.Id, CancellationToken.None);
@@ -148,7 +162,7 @@ public sealed class IndustrialTelemetryDeadLetterEndpointTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var replay = await response.Content.ReadFromJsonAsync<ReplayResponse>();
         Assert.False(replay!.Data.Succeeded);
-        Assert.Equal("NoHandler", replay.Data.Status);
+        Assert.Equal("noHandler", replay.Data.Status);
 
         var stored = await store.GetAsync(message.Id, CancellationToken.None);
         Assert.Equal(IntegrationEventDeadLetterStatus.Pending, stored!.Status);
@@ -173,7 +187,7 @@ public sealed class IndustrialTelemetryDeadLetterEndpointTests
 
         var batch = await response.Content.ReadFromJsonAsync<BatchReplayResponse>();
         Assert.Equal([first.Id, second.Id], batch!.Data.Items.Select(x => x.Id).ToArray());
-        Assert.All(batch.Data.Items, item => Assert.Equal("NoHandler", item.Status));
+        Assert.All(batch.Data.Items, item => Assert.Equal("noHandler", item.Status));
         foreach (var seeded in new[] { first, second })
         {
             var stored = await store.GetAsync(seeded.Id, CancellationToken.None);
@@ -227,7 +241,7 @@ public sealed class IndustrialTelemetryDeadLetterEndpointTests
             new { reason = "告警源已下线，不再重放" },
             CancellationToken.None);
         var detail = await accepted.Content.ReadFromJsonAsync<DetailResponse>();
-        Assert.Equal("Ignored", detail!.Data.Status);
+        Assert.Equal("ignored", detail!.Data.Status);
         Assert.Equal("告警源已下线，不再重放", detail.Data.FailureMessage);
     }
 

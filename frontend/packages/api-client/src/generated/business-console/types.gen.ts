@@ -8149,6 +8149,156 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleS
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleDeadLetterListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterItem>;
+    sourceStatuses?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterSourceStatus>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterItem = {
+    service?: string;
+    deadLetter?: NervIipMessagingCapIntegrationEventDeadLetterResponse;
+};
+
+export type NervIipMessagingCapIntegrationEventDeadLetterResponse = {
+    id?: string;
+    consumerName?: string;
+    eventId?: string | null;
+    eventType?: string | null;
+    eventVersion?: number | null;
+    sourceService?: string | null;
+    idempotencyKey?: string | null;
+    failureCode?: string;
+    failureMessage?: string;
+    status?: NervIipMessagingCapIntegrationEventDeadLetterStatus;
+    deadLetteredAtUtc?: string;
+    replayedAtUtc?: string | null;
+};
+
+export type NervIipMessagingCapIntegrationEventDeadLetterStatus = 'pending' | 'replayed' | 'failed' | 'ignored';
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterSourceStatus = {
+    service?: string;
+    status?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterSourceState;
+    reason?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterSourceFailureReason | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterSourceState = 'available' | 'unavailable';
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterSourceFailureReason = 'sourceTimeout' | 'sourceUnavailable';
+
+export type NervIipBusinessGatewayWebEndpointsDeadLettersBusinessConsoleDeadLetterListRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleDeadLetterMetricsResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterMetricsResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterMetricsResponse = {
+    actionableCount?: number;
+    pendingCount?: number;
+    failedCount?: number;
+    ignoredCount?: number;
+    replayedCount?: number;
+    services?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterServiceMetrics>;
+    sourceStatuses?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterSourceStatus>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterServiceMetrics = {
+    service?: string;
+    metrics?: NervIipMessagingCapIntegrationEventDeadLetterMetricsResponse;
+};
+
+export type NervIipMessagingCapIntegrationEventDeadLetterMetricsResponse = {
+    actionableCount?: number;
+    pendingCount?: number;
+    failedCount?: number;
+    ignoredCount?: number;
+    replayedCount?: number;
+    eventTypes?: Array<NervIipMessagingCapIntegrationEventDeadLetterEventTypeMetricsResponse>;
+};
+
+export type NervIipMessagingCapIntegrationEventDeadLetterEventTypeMetricsResponse = {
+    eventType?: string;
+    actionableCount?: number;
+    pendingCount?: number;
+    failedCount?: number;
+    ignoredCount?: number;
+    replayedCount?: number;
+};
+
+export type NervIipBusinessGatewayWebEndpointsDeadLettersBusinessConsoleDeadLetterMetricsRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfIntegrationEventDeadLetterDetailResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipMessagingCapIntegrationEventDeadLetterDetailResponse | null;
+};
+
+export type NervIipMessagingCapIntegrationEventDeadLetterDetailResponse = {
+    id?: string;
+    consumerName?: string;
+    eventId?: string | null;
+    eventType?: string | null;
+    eventVersion?: number | null;
+    sourceService?: string | null;
+    idempotencyKey?: string | null;
+    eventClrType?: string;
+    eventJson?: string;
+    failureCode?: string;
+    failureMessage?: string;
+    status?: NervIipMessagingCapIntegrationEventDeadLetterStatus;
+    deadLetteredAtUtc?: string;
+    replayedAtUtc?: string | null;
+};
+
+export type NervIipBusinessGatewayWebEndpointsDeadLettersBusinessConsoleDeadLetterItemRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfIntegrationEventDeadLetterReplayResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipMessagingCapIntegrationEventDeadLetterReplayResponse | null;
+};
+
+export type NervIipMessagingCapIntegrationEventDeadLetterReplayResponse = {
+    id?: string;
+    succeeded?: boolean;
+    status?: NervIipMessagingCapIntegrationEventDeadLetterReplayStatus;
+    message?: string | null;
+};
+
+export type NervIipMessagingCapIntegrationEventDeadLetterReplayStatus = 'replayed' | 'failed' | 'noHandler' | 'notFound';
+
+export type NetCorePalExtensionsDtoResponseDataOfIntegrationEventDeadLetterBatchReplayResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipMessagingCapIntegrationEventDeadLetterBatchReplayResponse | null;
+};
+
+export type NervIipMessagingCapIntegrationEventDeadLetterBatchReplayResponse = {
+    items?: Array<NervIipMessagingCapIntegrationEventDeadLetterReplayResponse>;
+};
+
+export type NervIipBusinessGatewayWebEndpointsDeadLettersBusinessConsoleReplayDeadLettersRequest = {
+    organizationId: string;
+    environmentId: string;
+    consumerName?: string | null;
+    eventType?: string | null;
+    failureCode?: string | null;
+    status?: NervIipMessagingCapIntegrationEventDeadLetterStatus | null;
+    deadLetteredFromUtc?: string | null;
+    deadLetteredToUtc?: string | null;
+    take?: number | null;
+};
+
+export type NervIipBusinessGatewayWebEndpointsDeadLettersBusinessConsoleIgnoreDeadLetterRequest = {
+    organizationId: string;
+    environmentId: string;
+    reason?: string;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodeRuleListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodeRuleListResponse | null;
 };
@@ -22680,6 +22830,233 @@ export type ListBusinessConsoleSearchableDirectoryResponses = {
 };
 
 export type ListBusinessConsoleSearchableDirectoryResponse = ListBusinessConsoleSearchableDirectoryResponses[keyof ListBusinessConsoleSearchableDirectoryResponses];
+
+export type ListBusinessConsoleDeadLettersData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        service?: string | null;
+        consumerName?: string | null;
+        eventType?: string | null;
+        failureCode?: string | null;
+        status?: NervIipMessagingCapIntegrationEventDeadLetterStatus | null;
+        deadLetteredFromUtc?: string | null;
+        deadLetteredToUtc?: string | null;
+        take?: number | null;
+    };
+    url: '/api/business-console/v1/dead-letters';
+};
+
+export type ListBusinessConsoleDeadLettersErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleDeadLettersError = ListBusinessConsoleDeadLettersErrors[keyof ListBusinessConsoleDeadLettersErrors];
+
+export type ListBusinessConsoleDeadLettersResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleDeadLetterListResponse;
+};
+
+export type ListBusinessConsoleDeadLettersResponse = ListBusinessConsoleDeadLettersResponses[keyof ListBusinessConsoleDeadLettersResponses];
+
+export type GetBusinessConsoleDeadLetterMetricsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        service?: string | null;
+    };
+    url: '/api/business-console/v1/dead-letters/metrics';
+};
+
+export type GetBusinessConsoleDeadLetterMetricsErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleDeadLetterMetricsError = GetBusinessConsoleDeadLetterMetricsErrors[keyof GetBusinessConsoleDeadLetterMetricsErrors];
+
+export type GetBusinessConsoleDeadLetterMetricsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleDeadLetterMetricsResponse;
+};
+
+export type GetBusinessConsoleDeadLetterMetricsResponse = GetBusinessConsoleDeadLetterMetricsResponses[keyof GetBusinessConsoleDeadLetterMetricsResponses];
+
+export type GetBusinessConsoleDeadLetterData = {
+    body?: never;
+    path: {
+        service: string;
+        deadLetterId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/dead-letters/{service}/{deadLetterId}';
+};
+
+export type GetBusinessConsoleDeadLetterErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleDeadLetterError = GetBusinessConsoleDeadLetterErrors[keyof GetBusinessConsoleDeadLetterErrors];
+
+export type GetBusinessConsoleDeadLetterResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfIntegrationEventDeadLetterDetailResponse;
+};
+
+export type GetBusinessConsoleDeadLetterResponse = GetBusinessConsoleDeadLetterResponses[keyof GetBusinessConsoleDeadLetterResponses];
+
+export type ReplayBusinessConsoleDeadLetterData = {
+    body?: never;
+    path: {
+        service: string;
+        deadLetterId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/dead-letters/{service}/{deadLetterId}/replay';
+};
+
+export type ReplayBusinessConsoleDeadLetterErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ReplayBusinessConsoleDeadLetterError = ReplayBusinessConsoleDeadLetterErrors[keyof ReplayBusinessConsoleDeadLetterErrors];
+
+export type ReplayBusinessConsoleDeadLetterResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfIntegrationEventDeadLetterReplayResponse;
+};
+
+export type ReplayBusinessConsoleDeadLetterResponse = ReplayBusinessConsoleDeadLetterResponses[keyof ReplayBusinessConsoleDeadLetterResponses];
+
+export type ReplayBusinessConsoleDeadLettersData = {
+    body: NervIipBusinessGatewayWebEndpointsDeadLettersBusinessConsoleReplayDeadLettersRequest;
+    path: {
+        service: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/dead-letters/{service}/replay-batch';
+};
+
+export type ReplayBusinessConsoleDeadLettersErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ReplayBusinessConsoleDeadLettersError = ReplayBusinessConsoleDeadLettersErrors[keyof ReplayBusinessConsoleDeadLettersErrors];
+
+export type ReplayBusinessConsoleDeadLettersResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfIntegrationEventDeadLetterBatchReplayResponse;
+};
+
+export type ReplayBusinessConsoleDeadLettersResponse = ReplayBusinessConsoleDeadLettersResponses[keyof ReplayBusinessConsoleDeadLettersResponses];
+
+export type IgnoreBusinessConsoleDeadLetterData = {
+    body: NervIipBusinessGatewayWebEndpointsDeadLettersBusinessConsoleIgnoreDeadLetterRequest;
+    path: {
+        service: string;
+        deadLetterId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/dead-letters/{service}/{deadLetterId}/ignore';
+};
+
+export type IgnoreBusinessConsoleDeadLetterErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type IgnoreBusinessConsoleDeadLetterError = IgnoreBusinessConsoleDeadLetterErrors[keyof IgnoreBusinessConsoleDeadLetterErrors];
+
+export type IgnoreBusinessConsoleDeadLetterResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfIntegrationEventDeadLetterDetailResponse;
+};
+
+export type IgnoreBusinessConsoleDeadLetterResponse = IgnoreBusinessConsoleDeadLetterResponses[keyof IgnoreBusinessConsoleDeadLetterResponses];
 
 export type ListBusinessConsoleBarcodeRulesData = {
     body?: never;
