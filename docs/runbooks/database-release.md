@@ -217,6 +217,15 @@ Quality 数量巡检链路依次引入 `AddPeriodicInspectionQuantityWatermark`�
 3. 发布后抽查历史批次仍可 dispatch，新建 `reserved` 批次在 MES 关联前被 dispatch gate 拒绝；同一生产上报关联重放成功，不同关联不得覆盖。
 4. 开始创建 `reserved` 或写入 MES 关联后不执行本 migration 的 `Down`：旧版本无法表达激活门且会把未关联批次误当作可打印。发布失败时停止新版本服务并优先前滚补救；需要恢复时走第 6 节的批准恢复点。
 
+### 6.8 BusinessMES 规则排程结果删表 migration
+
+`20260922025318_DropMesScheduleResults` 删除 `mes.schedule_results` 表及其两个索引。该表的唯一写入方是已于 #3696 删除的规则排程器与已于本次删除的世界史种子；owner 裁决临时排程器整链下线（#3593），排程结果的当前权威产出方是 BusinessScheduling（APS）。执行前仍须满足第 2 节的备份、版本冻结与失败停止条件：
+
+1. 这是**破坏性删表**：`Up` 一次删掉该表全部行与全部列。发布前必须完成第 6 节的备份或平台快照，并确认该环境的 `mes.schedule_results` 内容已无业务需要；有保留需要时先按批准流程导出，不要依赖 migration。
+2. **`Down` 不是回滚授权，也不是数据恢复手段**：它只重建一张结构等价的空表，历史行不会回来。发布失败时停止新版本服务并优先前滚补救；确需还原数据时走第 6 节的批准恢复点。该 `Down` 与原 schema 的逐字段一致性只有静态核对，未在任何 lane 实跑。
+3. migration 已应用但新版本健康检查失败时，保留现有 schema，不手工重建该表、不回灌历史排程结果：读该表的应用代码（查询读面、种子与一致性校验）在同一版本内已一并删除，重建空表不会让任何功能回来。
+4. 旧版本 MES 服务不能在本 migration 之后继续运行：它的 `DbSet` 与种子仍指向已删除的表。升级窗口内先停旧版本再应用 migration。
+
 ## 7. Seed 契约
 
 Seed 是显式步骤，不混入普通 Web 启动。每个 seed 至少声明 `seedName`、`seedVersion`、`ownerService`、幂等规则、输入来源、重复执行结果和敏感信息处理。初始管理员密码、客户端密钥、Connector 凭据不得写入日志。

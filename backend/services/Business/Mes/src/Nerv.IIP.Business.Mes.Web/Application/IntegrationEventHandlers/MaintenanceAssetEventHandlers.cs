@@ -6,7 +6,6 @@ using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
-using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Maintenance;
 using Nerv.IIP.Messaging.CAP;

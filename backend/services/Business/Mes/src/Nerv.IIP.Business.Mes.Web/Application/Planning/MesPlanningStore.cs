@@ -1,6 +1,21 @@
-using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
-
 namespace Nerv.IIP.Business.Mes.Web.Application.Planning;
+
+public enum OperationTaskStatus
+{
+    Queued,
+    InProgress,
+    Completed,
+    Cancelled,
+}
+
+public sealed record WorkCenterUnavailability(
+    string WorkCenterId,
+    DateTimeOffset FromUtc,
+    DateTimeOffset? ToUtc,
+    string Reason,
+    string? DeviceAssetId = null,
+    string? OrganizationId = null,
+    string? EnvironmentId = null);
 
 public sealed record PlannedWorkOrder(
     string OrganizationId,

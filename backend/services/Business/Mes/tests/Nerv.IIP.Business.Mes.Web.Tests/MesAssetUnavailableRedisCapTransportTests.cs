@@ -14,7 +14,6 @@ using Nerv.IIP.Business.Mes.Infrastructure.Repositories;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
-using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Maintenance;
 using Nerv.IIP.Messaging.CAP;
@@ -281,7 +280,6 @@ public sealed class MesAssetUnavailableRedisCapTransportTests(ITestOutputHelper 
         var assertionDb = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         Assert.Equal(0, await assertionDb.ProcessedIntegrationEvents.AsNoTracking().CountAsync());
         Assert.Equal(0, await assertionDb.WorkCenterUnavailabilities.AsNoTracking().CountAsync());
-        Assert.Equal(0, await assertionDb.ScheduleResults.AsNoTracking().CountAsync());
     }
 
     private async Task AssertWithDiagnosticsAsync(
@@ -516,8 +514,6 @@ public sealed class MesAssetUnavailableRedisCapTransportTests(ITestOutputHelper 
                 var inbox = await db.ProcessedIntegrationEvents.AsNoTracking().SingleAsync(token);
                 Assert.Equal(idempotencyKey, inbox.IdempotencyKey);
                 Assert.Equal(1, await db.WorkCenterUnavailabilities.AsNoTracking().CountAsync(token));
-                // #3696：停机事件消费不再触发排程，不得写 ScheduleResults。
-                Assert.Equal(0, await db.ScheduleResults.AsNoTracking().CountAsync(token));
             },
             options: new EventuallyOptions(TimeSpan.FromSeconds(90), TimeSpan.FromMilliseconds(250), []));
 

@@ -8,7 +8,6 @@ using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.MasterData;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
-using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.DemandPlanning;
 using Nerv.IIP.Contracts.MasterData;
 using Nerv.IIP.Messaging.CAP;

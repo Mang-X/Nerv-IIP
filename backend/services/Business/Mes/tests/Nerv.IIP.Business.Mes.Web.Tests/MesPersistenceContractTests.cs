@@ -23,7 +23,6 @@ using Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.Business.Mes.Web.Application.Quality;
-using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.Maintenance;
 using Nerv.IIP.Contracts.Mes;
@@ -169,9 +168,6 @@ public sealed class MesPersistenceContractTests
 
         Assert.Contains(await store.GetWorkOrdersAsync(), x => x.WorkOrderId == "WO-PERSISTED");
         Assert.Contains(await store.GetOperationTasksAsync(), x => x.OperationTaskId == "OP-10");
-        // #3696：急单不再顺带排程，不得写 ScheduleResults。
-        Assert.Empty(await recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
-            .ScheduleResults.AsNoTracking().ToArrayAsync());
     }
 
     [Fact]
@@ -205,9 +201,6 @@ public sealed class MesPersistenceContractTests
         Assert.Equal("WC-A", window.WorkCenterId);
         Assert.Equal("ASSET-CNC-01", window.DeviceAssetId);
         Assert.Null(window.ToUtc);
-        // #3696：停机事件不再触发排程，不得写 ScheduleResults。
-        Assert.Empty(await recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
-            .ScheduleResults.AsNoTracking().ToArrayAsync());
     }
 
     [Fact]

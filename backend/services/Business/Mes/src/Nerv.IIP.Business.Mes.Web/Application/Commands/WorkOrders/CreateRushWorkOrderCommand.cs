@@ -2,7 +2,6 @@ using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.ProductEngineering;
 using Nerv.IIP.Business.Mes.Web.Application.MasterData;
-using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 

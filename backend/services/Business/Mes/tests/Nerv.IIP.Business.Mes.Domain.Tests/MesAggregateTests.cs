@@ -293,22 +293,6 @@ public sealed class MesAggregateTests
     }
 
     [Fact]
-    public void Rule_schedule_result_is_deterministic_for_same_assignments()
-    {
-        var scheduledAt = DateTimeOffset.Parse("2026-05-23T08:00:00Z");
-        var assignments = new[]
-        {
-            new ScheduledOperationSnapshot("WO-001", "OP-10", "WC-A", scheduledAt, scheduledAt.AddMinutes(30), "rule-sequenced"),
-        };
-
-        var first = ScheduleResult.Create(1, ScheduleTrigger.Manual, scheduledAt, assignments, []);
-        var second = ScheduleResult.Create(1, ScheduleTrigger.Manual, scheduledAt, assignments, []);
-
-        Assert.Equal(first.AssignmentsJson, second.AssignmentsJson);
-        Assert.Contains("\"_v\":1", first.AssignmentsJson, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void ProductionReport_records_quantities_and_operation_completion()
     {
         var report = ProductionReport.Record(

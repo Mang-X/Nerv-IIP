@@ -7,7 +7,7 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 /// <summary>
 /// L1 背景历史引擎测试的公共夹具：一次性的 InMemory <see cref="ApplicationDbContext"/>，
-/// 以及「先把工单链铺好」这一步——追溯断点、规则排程等后置块都只挂在真实落库的工单上。
+/// 以及「先把工单链铺好」这一步——追溯断点等后置块都只挂在真实落库的工单上。
 /// </summary>
 internal static class WorldHistorySeedTestContext
 {
