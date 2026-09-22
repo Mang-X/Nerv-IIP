@@ -348,6 +348,7 @@ function Start-NervFullStackSession {
         [string] $CoordinatorStartTimeUtc,
         [string] $SessionAdminPassword,
         [string] $SessionWorkerPassword,
+        [object] $SessionCreationState,
         [switch] $EnableWmsDemoWorker,
         [switch] $PassThru
     )
@@ -391,6 +392,8 @@ function Start-NervFullStackSession {
 
         return $manifest
     }
+
+    if ($null -ne $SessionCreationState) { $SessionCreationState.SessionCreated = $true }
 
     $manifest = $createdManifest
     $newSessionId = "$($manifest.sessionId)"
@@ -721,12 +724,14 @@ elseif ([string]::Equals([string]($Action), [string]('run'), [StringComparison]:
                 $runResult = Invoke-NervFullStackSessionEnvironment -SessionId $SessionId -ScriptBlock {
                     Invoke-NervManagedFullStackRun `
                     -StartAction {
+                        param($SessionCreationState)
                         Start-NervFullStackSession `
                             -GuardianMode Automated `
                             -CoordinatorPid $PID `
                             -CoordinatorStartTimeUtc $runProcess.StartTime.ToUniversalTime().ToString('O') `
                             -SessionAdminPassword $sessionAdminPassword `
                             -SessionWorkerPassword $sessionWorkerPassword `
+                            -SessionCreationState $SessionCreationState `
                             -EnableWmsDemoWorker:$EnableWmsDemoWorker `
                             -PassThru
                     } `

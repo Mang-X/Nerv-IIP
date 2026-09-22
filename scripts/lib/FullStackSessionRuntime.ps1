@@ -1686,16 +1686,17 @@ function Invoke-NervManagedFullStackRun {
     )
 
     $manifest = $null
+    $startupState = [pscustomobject]@{ SessionCreated = $false }
     $scenarioFailure = $null
     $cleanupFailure = $null
     $collectionFailures = [System.Collections.Generic.List[string]]::new()
     try {
-        $manifest = & $StartAction
+        $manifest = & $StartAction $startupState
         & $ScenarioAction $manifest | Out-Null
     }
     catch {
         $scenarioFailure = $_
-        if ($null -eq $manifest -and $null -ne $ResolveFailedManifestAction) {
+        if ($null -eq $manifest -and $startupState.SessionCreated -and $null -ne $ResolveFailedManifestAction) {
             try { $manifest = & $ResolveFailedManifestAction } catch { }
         }
         if ($null -ne $manifest -and $null -ne $FailureAction) {

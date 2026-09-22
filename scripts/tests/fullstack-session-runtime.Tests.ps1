@@ -1638,6 +1638,65 @@ Assert-True ([string]::Equals([string]$managedScenarioFailure, 'original scenari
 Assert-True ($script:managedCollectCalls -eq 1) 'Managed run must collect after scenario failure.'
 Assert-True ($script:managedStopCalls -eq 1) 'Managed run must stop after scenario failure.'
 
+$managedRunOwnerStartedAt = '2026-09-22T01:02:03.0000000Z'
+$ownedFailedStartManifest = [pscustomobject]@{
+    sessionId = 'nerv-dead-000006'
+    state = 'Failed'
+    coordinator = [pscustomobject]@{
+        pid = 4242
+        processStartTimeUtc = '2026-09-22T01:02:04.0000000Z'
+    }
+}
+$foreignFailedStartManifest = [pscustomobject]@{
+    sessionId = 'nerv-dead-000006'
+    state = 'Running'
+    coordinator = [pscustomobject]@{
+        pid = 12009
+        processStartTimeUtc = $managedRunOwnerStartedAt
+    }
+}
+$script:managedFailureCalls = 0
+$script:managedCollectCalls = 0
+$script:managedStopCalls = 0
+$foreignStartFailure = $null
+try {
+    Invoke-NervManagedFullStackRun `
+        -StartAction { param($SessionCreationState) throw "Full-stack session ID 'nerv-dead-000006' already exists and cannot be overwritten." } `
+        -ScenarioAction { param($Manifest) throw 'Scenario must not run after startup rejection.' } `
+        -ResolveFailedManifestAction { $foreignFailedStartManifest } `
+        -FailureAction { param($Manifest, $FailureRecord) $script:managedFailureCalls++ } `
+        -CollectAction { param($Manifest) $script:managedCollectCalls++ } `
+        -StopAction { param($Manifest) $script:managedStopCalls++; [pscustomobject]@{ Complete = $true; Manifest = $Manifest } } | Out-Null
+}
+catch { $foreignStartFailure = $_.Exception.Message }
+Assert-True ([string]::Equals([string]$foreignStartFailure, "Full-stack session ID 'nerv-dead-000006' already exists and cannot be overwritten.", [StringComparison]::Ordinal)) 'A conflicting SessionId must preserve the original startup rejection.'
+Assert-True ($script:managedFailureCalls -eq 0) 'A conflicting SessionId must not mutate the existing session failure state.'
+Assert-True ($script:managedCollectCalls -eq 0) 'A conflicting SessionId must not collect diagnostics from the existing session.'
+Assert-True ($script:managedStopCalls -eq 0) 'A conflicting SessionId must not stop the existing session.'
+
+$script:managedFailureCalls = 0
+$script:managedCollectCalls = 0
+$script:managedStopCalls = 0
+$ownedStartFailure = $null
+try {
+    Invoke-NervManagedFullStackRun `
+        -StartAction {
+            param($SessionCreationState)
+            $SessionCreationState.SessionCreated = $true
+            throw 'owned startup failure after AppHost coordinator registration'
+        } `
+        -ScenarioAction { param($Manifest) throw 'Scenario must not run after startup failure.' } `
+        -ResolveFailedManifestAction { $ownedFailedStartManifest } `
+        -FailureAction { param($Manifest, $FailureRecord) $script:managedFailureCalls++ } `
+        -CollectAction { param($Manifest) $script:managedCollectCalls++ } `
+        -StopAction { param($Manifest) $script:managedStopCalls++; [pscustomobject]@{ Complete = $true; Manifest = $Manifest } } | Out-Null
+}
+catch { $ownedStartFailure = $_.Exception.Message }
+Assert-True ([string]::Equals([string]$ownedStartFailure, 'owned startup failure after AppHost coordinator registration', [StringComparison]::Ordinal)) 'An owned startup failure after AppHost coordinator registration must preserve the original error.'
+Assert-True ($script:managedFailureCalls -eq 1) 'An owned startup failure must retain failure recording.'
+Assert-True ($script:managedCollectCalls -eq 1) 'An owned startup failure must retain diagnostic collection.'
+Assert-True ($script:managedStopCalls -eq 1) 'An owned startup failure must retain cleanup.'
+
 $script:preparedDiagnosticState = $null
 $script:collectedDiagnosticState = $null
 $failedDiagnosticResult = Invoke-NervFullStackDiagnosticCollection `
@@ -2427,7 +2486,7 @@ finally {
 & {
     . (Join-Path $repoRoot 'scripts/fullstack-session.ps1') -Action help 6>$null
     $probeRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-proof-start-$([guid]::NewGuid().ToString('N'))"
-    $probeState = @{ Manifest = $null; Failed = $false; Canary = 'synthetic-proof-canary-3160'; Calls = 0 }
+    $probeState = @{ Manifest = $null; Failed = $false; FailReadiness = $false; Canary = 'synthetic-proof-canary-3160'; Calls = 0 }
     $realProducer = ${function:New-NervFullStackSecretEnvironment}
     function New-NervFullStackSecretEnvironment {
         param($SessionId, [switch] $IncludeDemoWorkerPassword)
@@ -2456,7 +2515,10 @@ finally {
         param($StartObject)
         return @{ AppHostPid = $PID; CliPid = $PID; AppHostId = 'synthetic'; AppHostPath = 'synthetic'; LogFile = 'synthetic' }
     }
-    function Wait-NervAspireResource { param($AppHostProject, $ResourceName, $WorkingDirectory) }
+    function Wait-NervAspireResource {
+        param($AppHostProject, $ResourceName, $WorkingDirectory)
+        if ($probeState.FailReadiness) { throw 'synthetic readiness failure after AppHost coordinator registration' }
+    }
     function Get-NervFullStackContainerRecords { param($OwnedSessionId, $Environment) }
     function Get-NervFullStackDcpNetworkIds { param($SessionId, $ContainerRecords, $WorkingDirectory, $Environment) }
     function Get-NervAspireDescribeObjectWithEndpoints { param($AppHostProject, $WorkingDirectory) return $null }
@@ -2511,6 +2573,41 @@ if ([Convert]::FromBase64String($key).Length -lt 32) { exit 44 }
             }
         }
         Assert-True ($probeState.Calls -eq 2) 'Both success and failure must execute the real child boundary once.'
+
+        $sessionScriptAst = [Management.Automation.Language.Parser]::ParseInput($fullStackSessionText, [ref] $null, [ref] $null)
+        $managedRunCall = @($sessionScriptAst.FindAll({
+            param($node)
+            $node -is [Management.Automation.Language.CommandAst] -and
+                [string]::Equals($node.GetCommandName(), 'Invoke-NervManagedFullStackRun', [StringComparison]::Ordinal)
+        }, $true))[0]
+        $productionStartAction = $managedRunCall.CommandElements[2].ScriptBlock.GetScriptBlock()
+        $probeState.Manifest = $null
+        $probeState.Failed = $false
+        $probeState.FailReadiness = $true
+        $runProcess = Get-Process -Id $PID
+        $sessionAdminPassword = 'synthetic-admin-password'
+        $sessionWorkerPassword = $null
+        $EnableWmsDemoWorker = $false
+        $NoBuild = $false
+        $script:productionManagedFailureCalls = 0
+        $script:productionManagedCollectCalls = 0
+        $script:productionManagedStopCalls = 0
+        $productionManagedFailure = $null
+        try {
+            Invoke-NervManagedFullStackRun `
+                -StartAction $productionStartAction `
+                -ScenarioAction { param($Manifest) throw 'Scenario must not run after readiness failure.' } `
+                -ResolveFailedManifestAction { $probeState.Manifest } `
+                -FailureAction { param($Manifest, $FailureRecord) $script:productionManagedFailureCalls++ } `
+                -CollectAction { param($Manifest) $script:productionManagedCollectCalls++ } `
+                -StopAction { param($Manifest) $script:productionManagedStopCalls++; [pscustomobject]@{ Complete = $true; Manifest = $Manifest } } | Out-Null
+        }
+        catch { $productionManagedFailure = $_.Exception.Message }
+        Assert-True ($productionManagedFailure.Contains('synthetic readiness failure after AppHost coordinator registration', [StringComparison]::Ordinal)) 'The production managed StartAction must preserve a readiness failure after AppHost coordinator registration.'
+        Assert-True ($script:productionManagedFailureCalls -eq 1) 'The production managed StartAction must retain failure recording after readiness failure.'
+        Assert-True ($script:productionManagedCollectCalls -eq 1) 'The production managed StartAction must retain diagnostic collection after readiness failure.'
+        Assert-True ($script:productionManagedStopCalls -eq 1) 'The production managed StartAction must retain cleanup after readiness failure.'
+
         Invoke-WithScopedEnvironment -Variables @{ $proofSecretName = $probeState.Canary } -ScriptBlock {
             $protected = Protect-NervFullStackDiagnosticText -Text "inspection failed for $($probeState.Canary)" -SensitiveValues @(Get-NervFullStackGuardianSensitiveValues)
             Assert-True ($protected.Contains('<redacted>', [StringComparison]::Ordinal) -and -not $protected.Contains($probeState.Canary, [StringComparison]::Ordinal)) 'Guardian diagnostics must protect the inherited proof key.'
