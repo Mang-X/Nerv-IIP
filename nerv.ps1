@@ -62,6 +62,9 @@ function Write-NervHelp {
     Write-Host @'
 Nerv-IIP development commands
 
+fullstack run is one-shot and automatically stops and cleans up its session when complete.
+Use fullstack start for interactive walkthroughs.
+
 Usage:
   .\nerv.ps1 bootstrap [-InstallMissing] [-Start]
   .\nerv.ps1 dev [-NoBuild] [-InfraOnly] [-OpenDashboard]

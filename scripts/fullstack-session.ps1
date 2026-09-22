@@ -35,6 +35,9 @@ function Write-NervFullStackHelp {
     Write-Host @'
 Nerv-IIP isolated full-stack sessions
 
+fullstack run is one-shot and automatically stops and cleans up its session when complete.
+Use fullstack start for interactive walkthroughs.
+
 Usage:
   .\nerv.ps1 fullstack run -Scenario smoke [-NoBuild]
   .\nerv.ps1 fullstack run -Scenario smoke -EnableWmsDemoWorker [-NoBuild]
