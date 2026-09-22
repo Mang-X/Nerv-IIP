@@ -1501,7 +1501,13 @@ $liveAssignments = Get-NervSourceSkipAssignments -RepoRoot $repoRoot
 # 蹭理由等于把一条假理由固化进证据记录；本仓 canonical 是一类一属性一规则。#3657 的
 # Notification Andon PostgreSQL + CAP 用例登记后增至 57；#3684 登记 ERP 物料供应 ETA 的 PostgreSQL
 # 查询翻译证据后增至 58。
-Assert-Equal 58 $liveAssignments.Count '已批准的 source skip 清单变更必须显式分类。'
+# #3739 登记死信列表新增谓词（failureCode / 死信时间窗）的真库证据，增至 60。这三段谓词由 EF
+# 翻译成 SQL 在库里执行，而 InMemory store 是**另一份**进程内 LINQ 实现：把
+# PersistentIntegrationEventDeadLetterStore 的三段过滤整块删掉，InMemory 侧断言全绿（实测），
+# 所以那侧的绿证不到这侧。⭐ 登记两条而不是一条，是因为 Maintenance 注册的是自己的 store 副本，
+# 与共享实现**不同形**（它的 eventType 谓词多一段 EventClrType，见 #3758）——
+# 「照抄了 canonical」在这里是待核主张，不能让一条用例替两份实现作证。
+Assert-Equal 60 $liveAssignments.Count '已批准的 source skip 清单变更必须显式分类。'
 Assert-True (($liveAssignments | Where-Object sourcePath -like '*SimulatedConnectorHostProcessTests.cs').sourceText.Contains('Windows runs the platform-specific executable resolution contract only', [StringComparison]::Ordinal)) 'Quote-aware scanner must retain semicolons inside a C# string literal.'
 $livePolicy = Import-NervTestEvidencePolicy -Path (Join-Path $repoRoot 'scripts/test-evidence-policy.json')
 $liveViolations = Test-NervTestEvidencePolicy -Policy $livePolicy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)

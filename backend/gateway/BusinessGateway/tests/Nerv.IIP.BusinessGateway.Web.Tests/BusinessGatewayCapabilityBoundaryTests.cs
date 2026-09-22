@@ -1546,7 +1546,27 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
             "BusinessServiceClients.cs",
             includeInLegacy: false);
 
+        // #3739：死信运维面是跨服务能力（同一份契约挂在 10 个服务上），只有一个不设 BaseAddress 的
+        // client，基址随来源表逐次传入。它仍然是受管 capability client，因此按目录合同登记。
+        AddManagedType(
+            seedCapabilities,
+            legacyDeclarations,
+            "Interface",
+            "IBusinessDeadLetterClient",
+            "DeadLetters",
+            "Capabilities/DeadLetters/BusinessDeadLetterClient.cs",
+            includeInLegacy: false);
+        AddManagedType(
+            seedCapabilities,
+            legacyDeclarations,
+            "Class",
+            "HttpBusinessDeadLetterClient",
+            "DeadLetters",
+            "Capabilities/DeadLetters/BusinessDeadLetterClient.cs",
+            includeInLegacy: false);
+
         var capabilityDirectories = capabilities.Values
+            .Append("DeadLetters")
             .Distinct(StringComparer.Ordinal)
             .ToDictionary(
                 capability => capability,

@@ -29,7 +29,7 @@
     },
     {
       "path": "backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Nerv.IIP.BusinessGateway.Web.csproj",
-      "sha256": "615f64dbd27993060f062a5bb505bdf0c34062a0de5a86968f7a737bf3dcaa42"
+      "sha256": "94f3a7ce0263af46110b725e9e8b6e28ce98c3c0743abec8362b362799c05bd8"
     },
     {
       "path": "backend/common/Caching/Nerv.IIP.Caching/Nerv.IIP.Caching.csproj",
@@ -86,6 +86,10 @@
     {
       "path": "backend/common/Localization/Nerv.IIP.Localization/Nerv.IIP.Localization.csproj",
       "sha256": "c75bf9f225d126f71620e43d9ac2421d81d867152324d9f8cd64782c36f9d31c"
+    },
+    {
+      "path": "backend/common/Messaging/Nerv.IIP.Messaging.CAP.Contracts/Nerv.IIP.Messaging.CAP.Contracts.csproj",
+      "sha256": "e9d92e56cb6cc8d361cfd214e2149c40b12136186ed5cfe72d0842a6e8aea5c3"
     },
     {
       "path": "backend/common/Observability/Nerv.IIP.Observability/Nerv.IIP.Observability.csproj",
@@ -156,6 +160,10 @@
       "sha256": "03eeadc5ef377c17f787ab65f41fb4c8a9c936bb7f7f4171111fdeec8a81cb46"
     },
     {
+      "path": "backend/common/Messaging/Nerv.IIP.Messaging.CAP.Contracts/packages.lock.json",
+      "sha256": "03eeadc5ef377c17f787ab65f41fb4c8a9c936bb7f7f4171111fdeec8a81cb46"
+    },
+    {
       "path": "backend/common/Observability/Nerv.IIP.Observability/packages.lock.json",
       "sha256": "9a11739321ad0063966818aa49fea856f2d0b59664463aeaaa7d7cbf7276b7b2"
     },
@@ -169,7 +177,7 @@
     },
     {
       "path": "backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/packages.lock.json",
-      "sha256": "d24599388c69fd9a475b9740ceadc15a98d1346bf970b0b889b73f88341dd6aa"
+      "sha256": "47aea6434db983cbde421a67a2180345bb75508ae07940b6c9344c872b821a0b"
     }
   ],
   "lock": {
@@ -188,6 +196,7 @@
       "backend/common/Contracts/Nerv.IIP.Contracts.Notification/packages.lock.json",
       "backend/common/Contracts/Nerv.IIP.Contracts.Scheduling/packages.lock.json",
       "backend/common/Localization/Nerv.IIP.Localization/packages.lock.json",
+      "backend/common/Messaging/Nerv.IIP.Messaging.CAP.Contracts/packages.lock.json",
       "backend/common/Observability/Nerv.IIP.Observability/packages.lock.json",
       "backend/common/Sdk/Nerv.IIP.Sdk.Core/packages.lock.json",
       "backend/common/ServiceAuth/Nerv.IIP.ServiceAuth/packages.lock.json",
