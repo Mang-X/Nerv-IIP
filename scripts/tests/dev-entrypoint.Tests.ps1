@@ -82,6 +82,15 @@ foreach ($expected in @(
     }
 }
 
+foreach ($expected in @(
+    'fullstack run is one-shot and automatically stops and cleans up its session when complete',
+    'Use fullstack start for interactive diagnostic walkthroughs; run fullstack stop before handoff or ending the task'
+)) {
+    if (-not $help.Output.Contains($expected, [StringComparison]::Ordinal)) {
+        throw "Root help output did not explain full-stack session '$expected'. Output: $($help.Output)"
+    }
+}
+
 $fullStackHelp = Invoke-Nerv -Arguments @('fullstack', 'help')
 if ($fullStackHelp.ExitCode -ne 0) {
     throw "Expected fullstack help to exit 0, got $($fullStackHelp.ExitCode). Output: $($fullStackHelp.Output)"
@@ -134,6 +143,14 @@ if ([string]::Equals('Automated', "Automated`u{00AD}", [StringComparison]::Ordin
 foreach ($expected in @('run', 'start', 'url', 'status', 'logs', 'stop', 'list', 'gc', '-EnableWmsDemoWorker')) {
     if (-not $fullStackHelp.Output.Contains($expected)) {
         throw "Full-stack help did not contain '$expected'. Output: $($fullStackHelp.Output)"
+    }
+}
+foreach ($expected in @(
+    'fullstack run is one-shot and automatically stops and cleans up its session when complete',
+    'Use fullstack start for interactive diagnostic walkthroughs; run fullstack stop before handoff or ending the task'
+)) {
+    if (-not $fullStackHelp.Output.Contains($expected, [StringComparison]::Ordinal)) {
+        throw "Full-stack help output did not explain session '$expected'. Output: $($fullStackHelp.Output)"
     }
 }
 
