@@ -44,19 +44,9 @@ test('NERV-2115 隔离外购与活塞杆自制供给满足同一冻结需求', a
           'GET',
           query(rodSkuPath),
         )
-        report.rodSkuBeforePreparation = rodSku
-        // 本场景不赋序；将旧 seed 的同义码值配置为公开码表值，不放宽报工校验。
-        expect(['not-serialized', 'none']).toContain(rodSku.serialTrackingPolicy)
-        await call('PATCH', rodSkuPath, {
-          ...scope,
-          serialTrackingPolicy: 'none',
-        } satisfies Api.BusinessConsoleUpdateMasterDataResourceRequest)
-        const preparedSku = await call<Api.BusinessConsoleMasterDataResourceDetail>(
-          'GET',
-          query(rodSkuPath),
-        )
-        expect(preparedSku).toMatchObject({ active: true, serialTrackingPolicy: 'none' })
-        report.rodSkuAfterPreparation = preparedSku
+        report.rodSku = rodSku
+        // 本场景不赋序。种子 SKU 出厂即是公开码表里的 none，报工前不改任何主数据（#3725）。
+        expect(rodSku).toMatchObject({ active: true, serialTrackingPolicy: 'none' })
         expect(orders.filter((order) => order.requirement.skuCode === rod.skuCode)).toHaveLength(0)
         const raw = orders.filter((order) => order.requirement.skuCode === 'RM-BAR-01')
         expect(raw).toHaveLength(1)
