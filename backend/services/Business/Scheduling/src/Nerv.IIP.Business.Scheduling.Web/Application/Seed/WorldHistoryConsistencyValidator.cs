@@ -11,9 +11,9 @@ namespace Nerv.IIP.Business.Scheduling.Web.Application.Seed;
 ///
 /// 覆盖：问题快照与规格逐条配对且能被 <c>CreateSchedulePlanRevisionCommandHandler</c> 用同一套
 /// <see cref="SchedulingJson.Options"/> 反序列化回 <see cref="SchedulingProblemContract"/>、
-/// 订单紧急度快照覆盖问题里出现过的每个工单、
-/// 全部时间戳落在 [上线日, asOfDate] 窗口内、与固定演示事实（<c>*-DEMO-*</c>）
-/// 和千单规模块（<c>*-SCALE-*</c>）隔离。
+/// 订单紧急度快照覆盖问题里出现过的每个工单、全部时间戳落在 [上线日, asOfDate] 窗口内。
+/// 号段与固定演示事实（<c>*-DEMO-*</c>）/ 千单规模块（<c>*-SCALE-*</c>）的隔离由
+/// <c>WorldHistorySchedulingSeedServiceTests</c> 对同一批行断言，校验器不再重复一遍。
 ///
 /// **fail-closed**：任何一条不成立即抛 <see cref="WorldHistoryConsistencyException"/>（中文累积）。
 /// </summary>
@@ -45,7 +45,6 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
 
         CheckProblems(facts, problems, organizationId, environmentId, lowerBound, upperBound, failures);
         CheckUrgencies(facts, urgencyOrderIds, failures);
-        CheckIsolation(problems, failures);
 
         if (failures.Count > 0)
         {
@@ -146,21 +145,6 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         }
     }
 
-    private static void CheckIsolation(
-        IReadOnlyList<ScheduleProblemSnapshot> problems,
-        List<string> failures)
-    {
-        foreach (var reference in problems.Select(x => x.ProblemId))
-        {
-            foreach (var infix in WorldHistorySchedulingSpec.ReservedInfixes)
-            {
-                if (reference.Contains(infix, StringComparison.Ordinal))
-                {
-                    failures.Add($"世界观排产编号 {reference} 撞入保留号段 {infix}。");
-                }
-            }
-        }
-    }
 }
 
 /// <summary>排产域一致性校验通过后的对账摘要。</summary>

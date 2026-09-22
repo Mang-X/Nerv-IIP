@@ -111,12 +111,12 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
             .Select(x => new { x.OrderId, x.InputFingerprint })
             .ToArrayAsync(cancellationToken);
         var existing = existingKeys
-            .Select(x => $"{x.OrderId}{x.InputFingerprint}")
+            .Select(x => $"{x.OrderId}{x.InputFingerprint}")
             .ToHashSet(StringComparer.Ordinal);
 
         var written = 0;
         foreach (var fact in facts.Where(fact =>
-                     !existing.Contains($"{fact.OrderId}{fact.InputFingerprint}")))
+                     !existing.Contains($"{fact.OrderId}{fact.InputFingerprint}")))
         {
             var result = OrderUrgencyCalculator.Calculate(WorldHistorySchedulingSpec.ToCalculationInput(fact));
             dbContext.OrderUrgencySnapshots.Add(new OrderUrgencySnapshot(

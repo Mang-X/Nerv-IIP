@@ -39,9 +39,6 @@ public static class WorldHistorySchedulingSpec
 
     public static string ProblemId(int index) => $"{ProblemNumberPrefix}{index:D4}";
 
-    /// <summary>本引擎产出的全部编号前缀，供隔离性回归测试断言。</summary>
-    public static readonly string[] NumberSegmentPrefixes = [ProblemNumberPrefix];
-
     /// <summary>保留号段：固定演示事实与千单规模块，世界观历史绝不可撞入。</summary>
     public static readonly string[] ReservedInfixes = ["-DEMO-", "-SCALE-"];
 
@@ -154,7 +151,6 @@ public static class WorldHistorySchedulingSpec
             $"{problemId}|{slot.Orders.Count}|{problem.Orders.Sum(x => x.Operations.Count)}|{horizonStartUtc:O}|{horizonEndUtc:O}");
 
         return new WorldHistoryScheduleProblemFact(
-            Index: slot.Index,
             ProblemId: problemId,
             ProblemFingerprint: fingerprint,
             WeekStart: slot.WeekStart,
@@ -468,7 +464,6 @@ public sealed record WorldHistorySchedulingFacts(
 
 /// <summary>一个历史排产问题的完整事实（工单 / 路线 / 日历 / 资源 / 不可用窗口）。</summary>
 public sealed record WorldHistoryScheduleProblemFact(
-    int Index,
     string ProblemId,
     string ProblemFingerprint,
     DateOnly WeekStart,
