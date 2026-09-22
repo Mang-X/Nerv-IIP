@@ -131,6 +131,57 @@ public sealed class IndustrialTelemetryDeadLetterEndpointTests
         Assert.NotNull(stored.ReplayedAtUtc);
     }
 
+    /// <summary>
+    /// #3738 审核规格轴阻断：本服务（以及另外 7 个服务）一条重放 handler 都没有。此时重放**一次都没尝试过**，
+    /// 不得改写原行——store 没有任何回到 Pending 的方法，而原始 FailureCode/FailureMessage 是这条死信仅存的取证。
+    /// </summary>
+    [Fact]
+    public async Task Replay_without_a_registered_handler_leaves_the_row_untouched()
+    {
+        using var factory = CreateFactory();
+        var store = factory.Services.GetRequiredService<IIntegrationEventDeadLetterStore>();
+        var message = await SeedAsync(store, "iiot.alarm-raised", "AlarmRaised", TimeSpan.Zero);
+        using var client = CreateAuthorizedClient(factory);
+
+        var response = await client.PostAsync($"{RoutePrefix}/{message.Id}/replay", content: null);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var replay = await response.Content.ReadFromJsonAsync<ReplayResponse>();
+        Assert.False(replay!.Data.Succeeded);
+        Assert.Equal("NoHandler", replay.Data.Status);
+
+        var stored = await store.GetAsync(message.Id, CancellationToken.None);
+        Assert.Equal(IntegrationEventDeadLetterStatus.Pending, stored!.Status);
+        Assert.Equal(message.FailureCode, stored.FailureCode);
+        Assert.Equal(message.FailureMessage, stored.FailureMessage);
+        Assert.Null(stored.ReplayedAtUtc);
+    }
+
+    /// <summary>
+    /// 同一条不变量的批量面：一次无参 <c>replay-batch</c> 曾把该服务当前整批 Pending 不可逆改写成 Failed。
+    /// </summary>
+    [Fact]
+    public async Task Batch_replay_without_a_registered_handler_leaves_every_row_untouched()
+    {
+        using var factory = CreateFactory();
+        var store = factory.Services.GetRequiredService<IIntegrationEventDeadLetterStore>();
+        var first = await SeedAsync(store, "iiot.alarm-raised", "AlarmRaised", TimeSpan.Zero);
+        var second = await SeedAsync(store, "iiot.alarm-cleared", "AlarmCleared", TimeSpan.FromMinutes(1));
+        using var client = CreateAuthorizedClient(factory);
+
+        var response = await client.PostAsJsonAsync($"{RoutePrefix}/replay-batch", new { }, CancellationToken.None);
+
+        var batch = await response.Content.ReadFromJsonAsync<BatchReplayResponse>();
+        Assert.Equal([first.Id, second.Id], batch!.Data.Items.Select(x => x.Id).ToArray());
+        Assert.All(batch.Data.Items, item => Assert.Equal("NoHandler", item.Status));
+        foreach (var seeded in new[] { first, second })
+        {
+            var stored = await store.GetAsync(seeded.Id, CancellationToken.None);
+            Assert.Equal(IntegrationEventDeadLetterStatus.Pending, stored!.Status);
+            Assert.Equal(seeded.FailureMessage, stored.FailureMessage);
+        }
+    }
+
     [Fact]
     public async Task Batch_replay_only_touches_the_selected_consumer()
     {

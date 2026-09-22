@@ -34,7 +34,6 @@ public static class WmsDeadLetterEndpointContracts
 {
     public static readonly IReadOnlyCollection<IntegrationEventDeadLetterEndpointContract> All =
         IntegrationEventDeadLetterEndpointContracts.For<WmsDeadLetterRoutes>(
-            "Wms",
             typeof(ListWmsDeadLettersEndpoint),
             typeof(GetWmsDeadLetterMetricsEndpoint),
             typeof(GetWmsDeadLetterEndpoint),

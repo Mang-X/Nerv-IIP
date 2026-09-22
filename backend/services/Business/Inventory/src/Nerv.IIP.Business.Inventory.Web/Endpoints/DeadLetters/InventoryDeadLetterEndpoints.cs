@@ -34,7 +34,6 @@ public static class InventoryDeadLetterEndpointContracts
 {
     public static readonly IReadOnlyCollection<IntegrationEventDeadLetterEndpointContract> All =
         IntegrationEventDeadLetterEndpointContracts.For<InventoryDeadLetterRoutes>(
-            "Inventory",
             typeof(ListInventoryDeadLettersEndpoint),
             typeof(GetInventoryDeadLetterMetricsEndpoint),
             typeof(GetInventoryDeadLetterEndpoint),

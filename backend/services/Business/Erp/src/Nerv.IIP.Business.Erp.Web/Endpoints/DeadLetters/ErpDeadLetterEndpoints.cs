@@ -34,7 +34,6 @@ public static class ErpDeadLetterEndpointContracts
 {
     public static readonly IReadOnlyCollection<IntegrationEventDeadLetterEndpointContract> All =
         IntegrationEventDeadLetterEndpointContracts.For<ErpDeadLetterRoutes>(
-            "Erp",
             typeof(ListErpDeadLettersEndpoint),
             typeof(GetErpDeadLetterMetricsEndpoint),
             typeof(GetErpDeadLetterEndpoint),

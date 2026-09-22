@@ -126,11 +126,15 @@ public sealed record IntegrationEventDeadLetterEndpointContract(
 public static class IntegrationEventDeadLetterEndpointContracts
 {
     /// <summary>
-    /// 由路由前缀与 operationId 词干一次生成 6 条登记行。路由与端点基类读同一份
-    /// <see cref="IntegrationEventDeadLetterRoutes"/> 常量，登记表不可能与实际路由各写各的。
+    /// 由路由前缀与**端点类型名**一次生成 6 条登记行。
+    ///
+    /// operationId 不接受调用方另给的词干：各服务的 <c>Endpoints.NameGenerator</c> 在自己的 registry 里
+    /// 查不到该端点时一律回落到「类型名去掉 Endpoint 后缀 + 首字母小写」，而 DLQ 契约另立在
+    /// <c>*DeadLetterEndpointContracts</c>、不在那些 registry 里，所以真实 OpenAPI operationId 只由类型名决定。
+    /// 允许手写词干就等于允许登记表与真实契约各写各的（#3738 审核质量轴阻断：Mes/Quality/IIoT 共 18 行曾这样漂）。
+    /// 这条派生规则与真实文档的一致性由 IIoT 的 OpenAPI 用例实跑钉住，不靠「照抄了 canonical」。
     /// </summary>
     public static IReadOnlyCollection<IntegrationEventDeadLetterEndpointContract> For<TRoutes>(
-        string operationIdInfix,
         Type listEndpoint,
         Type metricsEndpoint,
         Type detailEndpoint,
@@ -141,21 +145,31 @@ public static class IntegrationEventDeadLetterEndpointContracts
     [
         new(listEndpoint, "GET", TRoutes.RoutePrefix + IntegrationEventDeadLetterRoutes.Collection,
             NervIipPermissionCodes.BusinessDlqRead, InternalServiceAuthorizationPolicy.Name,
-            $"list{operationIdInfix}DeadLetters"),
+            OperationIdOf(listEndpoint)),
         new(metricsEndpoint, "GET", TRoutes.RoutePrefix + IntegrationEventDeadLetterRoutes.Metrics,
             NervIipPermissionCodes.BusinessDlqRead, InternalServiceAuthorizationPolicy.Name,
-            $"get{operationIdInfix}DeadLetterMetrics"),
+            OperationIdOf(metricsEndpoint)),
         new(detailEndpoint, "GET", TRoutes.RoutePrefix + IntegrationEventDeadLetterRoutes.Item,
             NervIipPermissionCodes.BusinessDlqRead, InternalServiceAuthorizationPolicy.Name,
-            $"get{operationIdInfix}DeadLetter"),
+            OperationIdOf(detailEndpoint)),
         new(replayEndpoint, "POST", TRoutes.RoutePrefix + IntegrationEventDeadLetterRoutes.Replay,
             NervIipPermissionCodes.BusinessDlqManage, InternalServiceAuthorizationPolicy.Name,
-            $"replay{operationIdInfix}DeadLetter"),
+            OperationIdOf(replayEndpoint)),
         new(replayBatchEndpoint, "POST", TRoutes.RoutePrefix + IntegrationEventDeadLetterRoutes.ReplayBatch,
             NervIipPermissionCodes.BusinessDlqManage, InternalServiceAuthorizationPolicy.Name,
-            $"replay{operationIdInfix}DeadLetters"),
+            OperationIdOf(replayBatchEndpoint)),
         new(ignoreEndpoint, "POST", TRoutes.RoutePrefix + IntegrationEventDeadLetterRoutes.Ignore,
             NervIipPermissionCodes.BusinessDlqManage, InternalServiceAuthorizationPolicy.Name,
-            $"ignore{operationIdInfix}DeadLetter"),
+            OperationIdOf(ignoreEndpoint)),
     ];
+
+    /// <summary>各服务 <c>NameGenerator</c> 未命中 registry 时的回落规则，见 <see cref="For{TRoutes}"/> 的说明。</summary>
+    public static string OperationIdOf(Type endpointType)
+    {
+        ArgumentNullException.ThrowIfNull(endpointType);
+        var name = endpointType.Name.EndsWith("Endpoint", StringComparison.Ordinal)
+            ? endpointType.Name[..^"Endpoint".Length]
+            : endpointType.Name;
+        return char.ToLowerInvariant(name[0]) + name[1..];
+    }
 }

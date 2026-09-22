@@ -11,20 +11,20 @@ public sealed class QualityDeadLetterRoutes : IIntegrationEventDeadLetterRouteGr
     public static string RoutePrefix => "/api/business/v1/quality";
 }
 
-public sealed class ListQualityDeadLettersEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
+public sealed class ListBusinessQualityDeadLettersEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
     : ListIntegrationEventDeadLettersEndpointBase<QualityDeadLetterRoutes>(deadLetterStore);
 
-public sealed class GetQualityDeadLetterMetricsEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
+public sealed class GetBusinessQualityDeadLetterMetricsEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
     : GetIntegrationEventDeadLetterMetricsEndpointBase<QualityDeadLetterRoutes>(deadLetterStore);
 
-public sealed class GetQualityDeadLetterEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
+public sealed class GetBusinessQualityDeadLetterEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
     : GetIntegrationEventDeadLetterEndpointBase<QualityDeadLetterRoutes>(deadLetterStore);
 
-public sealed class ReplayQualityDeadLetterEndpoint : ReplayIntegrationEventDeadLetterEndpointBase<QualityDeadLetterRoutes>;
+public sealed class ReplayBusinessQualityDeadLetterEndpoint : ReplayIntegrationEventDeadLetterEndpointBase<QualityDeadLetterRoutes>;
 
-public sealed class ReplayQualityDeadLettersEndpoint : ReplayIntegrationEventDeadLettersEndpointBase<QualityDeadLetterRoutes>;
+public sealed class ReplayBusinessQualityDeadLettersEndpoint : ReplayIntegrationEventDeadLettersEndpointBase<QualityDeadLetterRoutes>;
 
-public sealed class IgnoreQualityDeadLetterEndpoint(
+public sealed class IgnoreBusinessQualityDeadLetterEndpoint(
     IIntegrationEventDeadLetterStore deadLetterStore,
     TimeProvider timeProvider)
     : IgnoreIntegrationEventDeadLetterEndpointBase<QualityDeadLetterRoutes>(deadLetterStore, timeProvider);
@@ -34,11 +34,10 @@ public static class QualityDeadLetterEndpointContracts
 {
     public static readonly IReadOnlyCollection<IntegrationEventDeadLetterEndpointContract> All =
         IntegrationEventDeadLetterEndpointContracts.For<QualityDeadLetterRoutes>(
-            "BusinessQuality",
-            typeof(ListQualityDeadLettersEndpoint),
-            typeof(GetQualityDeadLetterMetricsEndpoint),
-            typeof(GetQualityDeadLetterEndpoint),
-            typeof(ReplayQualityDeadLetterEndpoint),
-            typeof(ReplayQualityDeadLettersEndpoint),
-            typeof(IgnoreQualityDeadLetterEndpoint));
+            typeof(ListBusinessQualityDeadLettersEndpoint),
+            typeof(GetBusinessQualityDeadLetterMetricsEndpoint),
+            typeof(GetBusinessQualityDeadLetterEndpoint),
+            typeof(ReplayBusinessQualityDeadLetterEndpoint),
+            typeof(ReplayBusinessQualityDeadLettersEndpoint),
+            typeof(IgnoreBusinessQualityDeadLetterEndpoint));
 }

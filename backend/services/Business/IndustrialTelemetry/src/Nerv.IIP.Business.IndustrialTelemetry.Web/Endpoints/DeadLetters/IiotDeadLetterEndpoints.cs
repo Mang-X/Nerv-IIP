@@ -11,20 +11,20 @@ public sealed class IiotDeadLetterRoutes : IIntegrationEventDeadLetterRouteGroup
     public static string RoutePrefix => "/api/business/v1/iiot";
 }
 
-public sealed class ListIiotDeadLettersEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
+public sealed class ListBusinessIiotDeadLettersEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
     : ListIntegrationEventDeadLettersEndpointBase<IiotDeadLetterRoutes>(deadLetterStore);
 
-public sealed class GetIiotDeadLetterMetricsEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
+public sealed class GetBusinessIiotDeadLetterMetricsEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
     : GetIntegrationEventDeadLetterMetricsEndpointBase<IiotDeadLetterRoutes>(deadLetterStore);
 
-public sealed class GetIiotDeadLetterEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
+public sealed class GetBusinessIiotDeadLetterEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
     : GetIntegrationEventDeadLetterEndpointBase<IiotDeadLetterRoutes>(deadLetterStore);
 
-public sealed class ReplayIiotDeadLetterEndpoint : ReplayIntegrationEventDeadLetterEndpointBase<IiotDeadLetterRoutes>;
+public sealed class ReplayBusinessIiotDeadLetterEndpoint : ReplayIntegrationEventDeadLetterEndpointBase<IiotDeadLetterRoutes>;
 
-public sealed class ReplayIiotDeadLettersEndpoint : ReplayIntegrationEventDeadLettersEndpointBase<IiotDeadLetterRoutes>;
+public sealed class ReplayBusinessIiotDeadLettersEndpoint : ReplayIntegrationEventDeadLettersEndpointBase<IiotDeadLetterRoutes>;
 
-public sealed class IgnoreIiotDeadLetterEndpoint(
+public sealed class IgnoreBusinessIiotDeadLetterEndpoint(
     IIntegrationEventDeadLetterStore deadLetterStore,
     TimeProvider timeProvider)
     : IgnoreIntegrationEventDeadLetterEndpointBase<IiotDeadLetterRoutes>(deadLetterStore, timeProvider);
@@ -34,11 +34,10 @@ public static class IiotDeadLetterEndpointContracts
 {
     public static readonly IReadOnlyCollection<IntegrationEventDeadLetterEndpointContract> All =
         IntegrationEventDeadLetterEndpointContracts.For<IiotDeadLetterRoutes>(
-            "BusinessIiot",
-            typeof(ListIiotDeadLettersEndpoint),
-            typeof(GetIiotDeadLetterMetricsEndpoint),
-            typeof(GetIiotDeadLetterEndpoint),
-            typeof(ReplayIiotDeadLetterEndpoint),
-            typeof(ReplayIiotDeadLettersEndpoint),
-            typeof(IgnoreIiotDeadLetterEndpoint));
+            typeof(ListBusinessIiotDeadLettersEndpoint),
+            typeof(GetBusinessIiotDeadLetterMetricsEndpoint),
+            typeof(GetBusinessIiotDeadLetterEndpoint),
+            typeof(ReplayBusinessIiotDeadLetterEndpoint),
+            typeof(ReplayBusinessIiotDeadLettersEndpoint),
+            typeof(IgnoreBusinessIiotDeadLetterEndpoint));
 }

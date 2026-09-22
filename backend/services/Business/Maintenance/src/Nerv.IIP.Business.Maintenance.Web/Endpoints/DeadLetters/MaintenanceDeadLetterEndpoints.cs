@@ -34,7 +34,6 @@ public static class MaintenanceDeadLetterEndpointContracts
 {
     public static readonly IReadOnlyCollection<IntegrationEventDeadLetterEndpointContract> All =
         IntegrationEventDeadLetterEndpointContracts.For<MaintenanceDeadLetterRoutes>(
-            "Maintenance",
             typeof(ListMaintenanceDeadLettersEndpoint),
             typeof(GetMaintenanceDeadLetterMetricsEndpoint),
             typeof(GetMaintenanceDeadLetterEndpoint),

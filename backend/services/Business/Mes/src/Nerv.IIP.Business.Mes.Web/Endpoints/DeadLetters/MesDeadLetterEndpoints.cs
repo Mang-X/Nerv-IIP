@@ -11,20 +11,20 @@ public sealed class MesDeadLetterRoutes : IIntegrationEventDeadLetterRouteGroup
     public static string RoutePrefix => "/api/business/v1/mes";
 }
 
-public sealed class ListMesDeadLettersEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
+public sealed class ListBusinessMesDeadLettersEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
     : ListIntegrationEventDeadLettersEndpointBase<MesDeadLetterRoutes>(deadLetterStore);
 
-public sealed class GetMesDeadLetterMetricsEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
+public sealed class GetBusinessMesDeadLetterMetricsEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
     : GetIntegrationEventDeadLetterMetricsEndpointBase<MesDeadLetterRoutes>(deadLetterStore);
 
-public sealed class GetMesDeadLetterEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
+public sealed class GetBusinessMesDeadLetterEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
     : GetIntegrationEventDeadLetterEndpointBase<MesDeadLetterRoutes>(deadLetterStore);
 
-public sealed class ReplayMesDeadLetterEndpoint : ReplayIntegrationEventDeadLetterEndpointBase<MesDeadLetterRoutes>;
+public sealed class ReplayBusinessMesDeadLetterEndpoint : ReplayIntegrationEventDeadLetterEndpointBase<MesDeadLetterRoutes>;
 
-public sealed class ReplayMesDeadLettersEndpoint : ReplayIntegrationEventDeadLettersEndpointBase<MesDeadLetterRoutes>;
+public sealed class ReplayBusinessMesDeadLettersEndpoint : ReplayIntegrationEventDeadLettersEndpointBase<MesDeadLetterRoutes>;
 
-public sealed class IgnoreMesDeadLetterEndpoint(
+public sealed class IgnoreBusinessMesDeadLetterEndpoint(
     IIntegrationEventDeadLetterStore deadLetterStore,
     TimeProvider timeProvider)
     : IgnoreIntegrationEventDeadLetterEndpointBase<MesDeadLetterRoutes>(deadLetterStore, timeProvider);
@@ -34,11 +34,10 @@ public static class MesDeadLetterEndpointContracts
 {
     public static readonly IReadOnlyCollection<IntegrationEventDeadLetterEndpointContract> All =
         IntegrationEventDeadLetterEndpointContracts.For<MesDeadLetterRoutes>(
-            "BusinessMes",
-            typeof(ListMesDeadLettersEndpoint),
-            typeof(GetMesDeadLetterMetricsEndpoint),
-            typeof(GetMesDeadLetterEndpoint),
-            typeof(ReplayMesDeadLetterEndpoint),
-            typeof(ReplayMesDeadLettersEndpoint),
-            typeof(IgnoreMesDeadLetterEndpoint));
+            typeof(ListBusinessMesDeadLettersEndpoint),
+            typeof(GetBusinessMesDeadLetterMetricsEndpoint),
+            typeof(GetBusinessMesDeadLetterEndpoint),
+            typeof(ReplayBusinessMesDeadLetterEndpoint),
+            typeof(ReplayBusinessMesDeadLettersEndpoint),
+            typeof(IgnoreBusinessMesDeadLetterEndpoint));
 }

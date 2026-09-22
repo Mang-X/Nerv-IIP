@@ -34,7 +34,6 @@ public static class SchedulingDeadLetterEndpointContracts
 {
     public static readonly IReadOnlyCollection<IntegrationEventDeadLetterEndpointContract> All =
         IntegrationEventDeadLetterEndpointContracts.For<SchedulingDeadLetterRoutes>(
-            "Scheduling",
             typeof(ListSchedulingDeadLettersEndpoint),
             typeof(GetSchedulingDeadLetterMetricsEndpoint),
             typeof(GetSchedulingDeadLetterEndpoint),
