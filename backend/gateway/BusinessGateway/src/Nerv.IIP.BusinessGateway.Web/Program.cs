@@ -17,6 +17,7 @@ using Nerv.IIP.BusinessGateway.Web.Application.Resilience;
 using Nerv.IIP.Caching;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Localization;
+using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Observability;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.AspNetCore;
@@ -73,6 +74,7 @@ builder.Services.AddScoped<WmsTrustedRequestContextResolver>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddTransient<AcceptLanguageForwardingHandler>();
 builder.Services.AddScoped<BusinessConsoleSearchService>();
+builder.Services.AddScoped<BusinessConsoleDeadLetterService>();
 builder.Services.AddScoped<BusinessGatewayDataScopeFilter>();
 builder.Services.AddScoped<IBusinessOeeAggregateCapability, BusinessOeeAggregateCapability>();
 builder.Services.AddScoped<IBusinessMesProductionReportCoordinator, BusinessMesProductionReportCoordinator>();
@@ -193,6 +195,23 @@ builder.Services.AddHttpClient<IBusinessMaintenanceClient, HttpBusinessMaintenan
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
 builder.Services.AddHttpClient<IBusinessAppHubClient, HttpBusinessAppHubClient>(client => client.BaseAddress = appHubBaseAddress)
     .AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddStandardResilienceHandler();
+// 死信运维面（#3739）扇出 10 个服务的同一份契约，因此是一个不设 BaseAddress 的 client：
+// 基址随来源表逐次传入，弹性策略只有这一份。来源表按共享清单校验，少配一个服务在启动期就炸。
+builder.Services.AddHttpClient<IBusinessDeadLetterClient, HttpBusinessDeadLetterClient>()
+    .AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
+builder.Services.AddSingleton(new BusinessDeadLetterSources(new Dictionary<string, Uri>(StringComparer.Ordinal)
+{
+    [IntegrationEventDeadLetterServices.AppHub.Name] = appHubBaseAddress,
+    [IntegrationEventDeadLetterServices.DemandPlanning.Name] = demandPlanningBaseAddress,
+    [IntegrationEventDeadLetterServices.Erp.Name] = erpBaseAddress,
+    [IntegrationEventDeadLetterServices.IndustrialTelemetry.Name] = industrialTelemetryBaseAddress,
+    [IntegrationEventDeadLetterServices.Inventory.Name] = inventoryBaseAddress,
+    [IntegrationEventDeadLetterServices.Maintenance.Name] = maintenanceBaseAddress,
+    [IntegrationEventDeadLetterServices.Mes.Name] = mesBaseAddress,
+    [IntegrationEventDeadLetterServices.Quality.Name] = qualityBaseAddress,
+    [IntegrationEventDeadLetterServices.Scheduling.Name] = schedulingBaseAddress,
+    [IntegrationEventDeadLetterServices.Wms.Name] = wmsBaseAddress,
+}));
 builder.Services.AddBusinessGatewayAuthentication(builder.Configuration, builder.Environment);
 var allowedCorsOrigins = ResolveGatewayCorsOrigins(builder.Configuration, builder.Environment);
 builder.Services.AddCors(options =>

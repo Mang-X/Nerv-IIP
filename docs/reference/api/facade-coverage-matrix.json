@@ -5562,432 +5562,486 @@
       "method": "GET",
       "route": "/api/business/v1/planning/dlq",
       "operationId": "listPlanningDeadLetters",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["listBusinessConsoleDeadLetters"]
     },
     {
       "service": "DemandPlanning",
       "method": "GET",
       "route": "/api/business/v1/planning/dlq/metrics",
       "operationId": "getPlanningDeadLetterMetrics",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["getBusinessConsoleDeadLetterMetrics"]
     },
     {
       "service": "DemandPlanning",
       "method": "GET",
       "route": "/api/business/v1/planning/dlq/{deadLetterId}",
       "operationId": "getPlanningDeadLetter",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["getBusinessConsoleDeadLetter"]
     },
     {
       "service": "DemandPlanning",
       "method": "POST",
       "route": "/api/business/v1/planning/dlq/{deadLetterId}/replay",
       "operationId": "replayPlanningDeadLetter",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["replayBusinessConsoleDeadLetter"]
     },
     {
       "service": "DemandPlanning",
       "method": "POST",
       "route": "/api/business/v1/planning/dlq/replay-batch",
       "operationId": "replayPlanningDeadLetters",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["replayBusinessConsoleDeadLetters"]
     },
     {
       "service": "DemandPlanning",
       "method": "POST",
       "route": "/api/business/v1/planning/dlq/{deadLetterId}/ignore",
       "operationId": "ignorePlanningDeadLetter",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["ignoreBusinessConsoleDeadLetter"]
     },
     {
       "service": "Erp",
       "method": "GET",
       "route": "/api/business/v1/erp/dlq",
       "operationId": "listErpDeadLetters",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["listBusinessConsoleDeadLetters"]
     },
     {
       "service": "Erp",
       "method": "GET",
       "route": "/api/business/v1/erp/dlq/metrics",
       "operationId": "getErpDeadLetterMetrics",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["getBusinessConsoleDeadLetterMetrics"]
     },
     {
       "service": "Erp",
       "method": "GET",
       "route": "/api/business/v1/erp/dlq/{deadLetterId}",
       "operationId": "getErpDeadLetter",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["getBusinessConsoleDeadLetter"]
     },
     {
       "service": "Erp",
       "method": "POST",
       "route": "/api/business/v1/erp/dlq/{deadLetterId}/replay",
       "operationId": "replayErpDeadLetter",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["replayBusinessConsoleDeadLetter"]
     },
     {
       "service": "Erp",
       "method": "POST",
       "route": "/api/business/v1/erp/dlq/replay-batch",
       "operationId": "replayErpDeadLetters",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["replayBusinessConsoleDeadLetters"]
     },
     {
       "service": "Erp",
       "method": "POST",
       "route": "/api/business/v1/erp/dlq/{deadLetterId}/ignore",
       "operationId": "ignoreErpDeadLetter",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["ignoreBusinessConsoleDeadLetter"]
     },
     {
       "service": "IndustrialTelemetry",
       "method": "GET",
       "route": "/api/business/v1/iiot/dlq",
       "operationId": "listBusinessIiotDeadLetters",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["listBusinessConsoleDeadLetters"]
     },
     {
       "service": "IndustrialTelemetry",
       "method": "GET",
       "route": "/api/business/v1/iiot/dlq/metrics",
       "operationId": "getBusinessIiotDeadLetterMetrics",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["getBusinessConsoleDeadLetterMetrics"]
     },
     {
       "service": "IndustrialTelemetry",
       "method": "GET",
       "route": "/api/business/v1/iiot/dlq/{deadLetterId}",
       "operationId": "getBusinessIiotDeadLetter",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["getBusinessConsoleDeadLetter"]
     },
     {
       "service": "IndustrialTelemetry",
       "method": "POST",
       "route": "/api/business/v1/iiot/dlq/{deadLetterId}/replay",
       "operationId": "replayBusinessIiotDeadLetter",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["replayBusinessConsoleDeadLetter"]
     },
     {
       "service": "IndustrialTelemetry",
       "method": "POST",
       "route": "/api/business/v1/iiot/dlq/replay-batch",
       "operationId": "replayBusinessIiotDeadLetters",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["replayBusinessConsoleDeadLetters"]
     },
     {
       "service": "IndustrialTelemetry",
       "method": "POST",
       "route": "/api/business/v1/iiot/dlq/{deadLetterId}/ignore",
       "operationId": "ignoreBusinessIiotDeadLetter",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["ignoreBusinessConsoleDeadLetter"]
     },
     {
       "service": "Inventory",
       "method": "GET",
       "route": "/api/inventory/v1/dlq",
       "operationId": "listInventoryDeadLetters",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["listBusinessConsoleDeadLetters"]
     },
     {
       "service": "Inventory",
       "method": "GET",
       "route": "/api/inventory/v1/dlq/metrics",
       "operationId": "getInventoryDeadLetterMetrics",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["getBusinessConsoleDeadLetterMetrics"]
     },
     {
       "service": "Inventory",
       "method": "GET",
       "route": "/api/inventory/v1/dlq/{deadLetterId}",
       "operationId": "getInventoryDeadLetter",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["getBusinessConsoleDeadLetter"]
     },
     {
       "service": "Inventory",
       "method": "POST",
       "route": "/api/inventory/v1/dlq/{deadLetterId}/replay",
       "operationId": "replayInventoryDeadLetter",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["replayBusinessConsoleDeadLetter"]
     },
     {
       "service": "Inventory",
       "method": "POST",
       "route": "/api/inventory/v1/dlq/replay-batch",
       "operationId": "replayInventoryDeadLetters",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["replayBusinessConsoleDeadLetters"]
     },
     {
       "service": "Inventory",
       "method": "POST",
       "route": "/api/inventory/v1/dlq/{deadLetterId}/ignore",
       "operationId": "ignoreInventoryDeadLetter",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["ignoreBusinessConsoleDeadLetter"]
     },
     {
       "service": "Maintenance",
       "method": "GET",
       "route": "/api/business/v1/maintenance/dlq",
       "operationId": "listMaintenanceDeadLetters",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["listBusinessConsoleDeadLetters"]
     },
     {
       "service": "Maintenance",
       "method": "GET",
       "route": "/api/business/v1/maintenance/dlq/metrics",
       "operationId": "getMaintenanceDeadLetterMetrics",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["getBusinessConsoleDeadLetterMetrics"]
     },
     {
       "service": "Maintenance",
       "method": "GET",
       "route": "/api/business/v1/maintenance/dlq/{deadLetterId}",
       "operationId": "getMaintenanceDeadLetter",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["getBusinessConsoleDeadLetter"]
     },
     {
       "service": "Maintenance",
       "method": "POST",
       "route": "/api/business/v1/maintenance/dlq/{deadLetterId}/replay",
       "operationId": "replayMaintenanceDeadLetter",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["replayBusinessConsoleDeadLetter"]
     },
     {
       "service": "Maintenance",
       "method": "POST",
       "route": "/api/business/v1/maintenance/dlq/replay-batch",
       "operationId": "replayMaintenanceDeadLetters",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["replayBusinessConsoleDeadLetters"]
     },
     {
       "service": "Maintenance",
       "method": "POST",
       "route": "/api/business/v1/maintenance/dlq/{deadLetterId}/ignore",
       "operationId": "ignoreMaintenanceDeadLetter",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["ignoreBusinessConsoleDeadLetter"]
     },
     {
       "service": "Mes",
       "method": "GET",
       "route": "/api/business/v1/mes/dlq",
       "operationId": "listBusinessMesDeadLetters",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["listBusinessConsoleDeadLetters"]
     },
     {
       "service": "Mes",
       "method": "GET",
       "route": "/api/business/v1/mes/dlq/metrics",
       "operationId": "getBusinessMesDeadLetterMetrics",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["getBusinessConsoleDeadLetterMetrics"]
     },
     {
       "service": "Mes",
       "method": "GET",
       "route": "/api/business/v1/mes/dlq/{deadLetterId}",
       "operationId": "getBusinessMesDeadLetter",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["getBusinessConsoleDeadLetter"]
     },
     {
       "service": "Mes",
       "method": "POST",
       "route": "/api/business/v1/mes/dlq/{deadLetterId}/replay",
       "operationId": "replayBusinessMesDeadLetter",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["replayBusinessConsoleDeadLetter"]
     },
     {
       "service": "Mes",
       "method": "POST",
       "route": "/api/business/v1/mes/dlq/replay-batch",
       "operationId": "replayBusinessMesDeadLetters",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["replayBusinessConsoleDeadLetters"]
     },
     {
       "service": "Mes",
       "method": "POST",
       "route": "/api/business/v1/mes/dlq/{deadLetterId}/ignore",
       "operationId": "ignoreBusinessMesDeadLetter",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["ignoreBusinessConsoleDeadLetter"]
     },
     {
       "service": "Quality",
       "method": "GET",
       "route": "/api/business/v1/quality/dlq",
       "operationId": "listBusinessQualityDeadLetters",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["listBusinessConsoleDeadLetters"]
     },
     {
       "service": "Quality",
       "method": "GET",
       "route": "/api/business/v1/quality/dlq/metrics",
       "operationId": "getBusinessQualityDeadLetterMetrics",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["getBusinessConsoleDeadLetterMetrics"]
     },
     {
       "service": "Quality",
       "method": "GET",
       "route": "/api/business/v1/quality/dlq/{deadLetterId}",
       "operationId": "getBusinessQualityDeadLetter",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["getBusinessConsoleDeadLetter"]
     },
     {
       "service": "Quality",
       "method": "POST",
       "route": "/api/business/v1/quality/dlq/{deadLetterId}/replay",
       "operationId": "replayBusinessQualityDeadLetter",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["replayBusinessConsoleDeadLetter"]
     },
     {
       "service": "Quality",
       "method": "POST",
       "route": "/api/business/v1/quality/dlq/replay-batch",
       "operationId": "replayBusinessQualityDeadLetters",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["replayBusinessConsoleDeadLetters"]
     },
     {
       "service": "Quality",
       "method": "POST",
       "route": "/api/business/v1/quality/dlq/{deadLetterId}/ignore",
       "operationId": "ignoreBusinessQualityDeadLetter",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["ignoreBusinessConsoleDeadLetter"]
     },
     {
       "service": "Scheduling",
       "method": "GET",
       "route": "/api/business/v1/scheduling/dlq",
       "operationId": "listSchedulingDeadLetters",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["listBusinessConsoleDeadLetters"]
     },
     {
       "service": "Scheduling",
       "method": "GET",
       "route": "/api/business/v1/scheduling/dlq/metrics",
       "operationId": "getSchedulingDeadLetterMetrics",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["getBusinessConsoleDeadLetterMetrics"]
     },
     {
       "service": "Scheduling",
       "method": "GET",
       "route": "/api/business/v1/scheduling/dlq/{deadLetterId}",
       "operationId": "getSchedulingDeadLetter",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["getBusinessConsoleDeadLetter"]
     },
     {
       "service": "Scheduling",
       "method": "POST",
       "route": "/api/business/v1/scheduling/dlq/{deadLetterId}/replay",
       "operationId": "replaySchedulingDeadLetter",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["replayBusinessConsoleDeadLetter"]
     },
     {
       "service": "Scheduling",
       "method": "POST",
       "route": "/api/business/v1/scheduling/dlq/replay-batch",
       "operationId": "replaySchedulingDeadLetters",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["replayBusinessConsoleDeadLetters"]
     },
     {
       "service": "Scheduling",
       "method": "POST",
       "route": "/api/business/v1/scheduling/dlq/{deadLetterId}/ignore",
       "operationId": "ignoreSchedulingDeadLetter",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["ignoreBusinessConsoleDeadLetter"]
     },
     {
       "service": "Wms",
       "method": "GET",
       "route": "/api/business/v1/wms/dlq",
       "operationId": "listWmsDeadLetters",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["listBusinessConsoleDeadLetters"]
     },
     {
       "service": "Wms",
       "method": "GET",
       "route": "/api/business/v1/wms/dlq/metrics",
       "operationId": "getWmsDeadLetterMetrics",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["getBusinessConsoleDeadLetterMetrics"]
     },
     {
       "service": "Wms",
       "method": "GET",
       "route": "/api/business/v1/wms/dlq/{deadLetterId}",
       "operationId": "getWmsDeadLetter",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["getBusinessConsoleDeadLetter"]
     },
     {
       "service": "Wms",
       "method": "POST",
       "route": "/api/business/v1/wms/dlq/{deadLetterId}/replay",
       "operationId": "replayWmsDeadLetter",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["replayBusinessConsoleDeadLetter"]
     },
     {
       "service": "Wms",
       "method": "POST",
       "route": "/api/business/v1/wms/dlq/replay-batch",
       "operationId": "replayWmsDeadLetters",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["replayBusinessConsoleDeadLetters"]
     },
     {
       "service": "Wms",
       "method": "POST",
       "route": "/api/business/v1/wms/dlq/{deadLetterId}/ignore",
       "operationId": "ignoreWmsDeadLetter",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the cross-service dead-letter facade and backlog counters are delivered by #3739 and the business-console ops page by #3740 (parent #3727)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["ignoreBusinessConsoleDeadLetter"]
     }
   ]
 }

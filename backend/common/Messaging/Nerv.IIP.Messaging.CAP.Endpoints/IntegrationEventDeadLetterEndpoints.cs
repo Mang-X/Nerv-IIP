@@ -89,7 +89,7 @@ public abstract class ReplayIntegrationEventDeadLetterEndpointBase<TRoutes>
     {
         var replayExecutor = HttpContext.RequestServices.GetRequiredService<IntegrationEventDeadLetterReplayExecutor>();
         var result = await replayExecutor.ReplayAsync(Route<Guid>("deadLetterId"), ct);
-        if (result.Status == IntegrationEventDeadLetterReplayStatuses.NotFound)
+        if (result.Status == IntegrationEventDeadLetterReplayStatus.NotFound)
         {
             await Send.NotFoundAsync(ct);
             return;
@@ -114,12 +114,7 @@ public abstract class ReplayIntegrationEventDeadLettersEndpointBase<TRoutes>
     {
         var replayExecutor = HttpContext.RequestServices.GetRequiredService<IntegrationEventDeadLetterReplayExecutor>();
         var results = await replayExecutor.ReplayBatchAsync(
-            new IntegrationEventDeadLetterQuery(
-                req.ConsumerName,
-                IntegrationEventDeadLetterEndpointMapper.ParseStatus(req.Status),
-                req.EventType,
-                Skip: 0,
-                Take: IntegrationEventDeadLetterEndpointMapper.ParseTake(req.Take)),
+            IntegrationEventDeadLetterEndpointMapper.QueryFrom(req),
             ct);
         await Send.OkAsync(
             new IntegrationEventDeadLetterBatchReplayResponse(
@@ -166,10 +161,24 @@ public static class IntegrationEventDeadLetterEndpointMapper
     public static IntegrationEventDeadLetterQuery QueryFrom(ListIntegrationEventDeadLettersRequest request) =>
         new(
             request.ConsumerName,
-            ParseStatus(request.Status),
+            request.Status,
             request.EventType,
             ParseSkip(request.Skip),
-            ParseTake(request.Take));
+            ParseTake(request.Take),
+            request.FailureCode,
+            request.DeadLetteredFromUtc,
+            request.DeadLetteredToUtc);
+
+    public static IntegrationEventDeadLetterQuery QueryFrom(ReplayIntegrationEventDeadLetterBatchRequest request) =>
+        new(
+            request.ConsumerName,
+            request.Status,
+            request.EventType,
+            Skip: 0,
+            ParseTake(request.Take),
+            request.FailureCode,
+            request.DeadLetteredFromUtc,
+            request.DeadLetteredToUtc);
 
     public static IntegrationEventDeadLetterResponse ToResponse(IntegrationEventDeadLetterMessage message) =>
         new(
@@ -182,7 +191,7 @@ public static class IntegrationEventDeadLetterEndpointMapper
             message.IdempotencyKey,
             message.FailureCode,
             message.FailureMessage,
-            message.Status.ToString(),
+            message.Status,
             message.DeadLetteredAtUtc,
             message.ReplayedAtUtc);
 
@@ -199,7 +208,7 @@ public static class IntegrationEventDeadLetterEndpointMapper
             message.EventJson,
             message.FailureCode,
             message.FailureMessage,
-            message.Status.ToString(),
+            message.Status,
             message.DeadLetteredAtUtc,
             message.ReplayedAtUtc);
 
@@ -214,18 +223,6 @@ public static class IntegrationEventDeadLetterEndpointMapper
             metrics.IgnoredCount,
             metrics.ReplayedCount,
             metrics.EventTypes.Select(ToEventTypeMetricsResponse).ToArray());
-
-    public static IntegrationEventDeadLetterStatus? ParseStatus(string? status)
-    {
-        if (string.IsNullOrWhiteSpace(status))
-        {
-            return null;
-        }
-
-        return Enum.TryParse<IntegrationEventDeadLetterStatus>(status, ignoreCase: true, out var parsed)
-            ? parsed
-            : throw new KnownException("不支持的死信状态。");
-    }
 
     public static int ParseTake(int? take)
     {

@@ -259,12 +259,19 @@ public interface IIntegrationEventDeadLetterStore
         CancellationToken cancellationToken);
 }
 
+/// <remarks>
+/// 过滤条件由**事实所有方**（各服务的 store）执行，不在 Gateway 对已取回的窗口二次筛选：
+/// 那会让「按失败码/时间筛选」在用户看来是全量搜索、实际只搜了第一页（#3739）。
+/// </remarks>
 public sealed record IntegrationEventDeadLetterQuery(
     string? ConsumerName,
     IntegrationEventDeadLetterStatus? Status,
     string? EventType,
     int Skip = 0,
-    int Take = 100);
+    int Take = 100,
+    string? FailureCode = null,
+    DateTimeOffset? DeadLetteredFromUtc = null,
+    DateTimeOffset? DeadLetteredToUtc = null);
 
 public sealed record IntegrationEventDeadLetterMetrics(
     int PendingCount,
@@ -388,6 +395,9 @@ public sealed class InMemoryIntegrationEventDeadLetterStore : IIntegrationEventD
                     .Where(message => string.IsNullOrWhiteSpace(query.ConsumerName) || message.ConsumerName == query.ConsumerName)
                     .Where(message => query.Status is null || message.Status == query.Status)
                     .Where(message => string.IsNullOrWhiteSpace(query.EventType) || message.EventType == query.EventType)
+                    .Where(message => string.IsNullOrWhiteSpace(query.FailureCode) || message.FailureCode == query.FailureCode)
+                    .Where(message => query.DeadLetteredFromUtc is null || message.DeadLetteredAtUtc >= query.DeadLetteredFromUtc)
+                    .Where(message => query.DeadLetteredToUtc is null || message.DeadLetteredAtUtc <= query.DeadLetteredToUtc)
                     .OrderBy(message => message.DeadLetteredAtUtc)
                     .Skip(skip)
                     .Take(take)
@@ -801,18 +811,10 @@ public static class ForensicJson
     }
 }
 
-public enum IntegrationEventDeadLetterStatus
-{
-    Pending = 0,
-    Replayed = 1,
-    Failed = 2,
-    Ignored = 3
-}
-
 public sealed record IntegrationEventDeadLetterReplayResult(
     Guid Id,
     bool Succeeded,
-    string Status,
+    IntegrationEventDeadLetterReplayStatus Status,
     string? Message);
 
 public interface IIntegrationEventDeadLetterReplayHandler
@@ -820,16 +822,6 @@ public interface IIntegrationEventDeadLetterReplayHandler
     bool CanReplay(IntegrationEventDeadLetterMessage message);
 
     Task ReplayAsync(IntegrationEventDeadLetterMessage message, CancellationToken cancellationToken);
-}
-
-/// <summary>重放结果里非 <see cref="IntegrationEventDeadLetterStatus"/> 的取值。</summary>
-public static class IntegrationEventDeadLetterReplayStatuses
-{
-    /// <summary>目标死信行不存在。HTTP 出口按它判 404。</summary>
-    public const string NotFound = "NotFound";
-
-    /// <summary>本服务没有能处理该事件的重放 handler，因此一次都没有尝试过；原行保持原状。</summary>
-    public const string NoHandler = "NoHandler";
 }
 
 public sealed class IntegrationEventDeadLetterReplayExecutor(
@@ -848,7 +840,7 @@ public sealed class IntegrationEventDeadLetterReplayExecutor(
             return new IntegrationEventDeadLetterReplayResult(
                 id,
                 false,
-                IntegrationEventDeadLetterReplayStatuses.NotFound,
+                IntegrationEventDeadLetterReplayStatus.NotFound,
                 "Dead-letter message was not found.");
         }
 
@@ -864,13 +856,13 @@ public sealed class IntegrationEventDeadLetterReplayExecutor(
                 return new IntegrationEventDeadLetterReplayResult(
                     id,
                     false,
-                    IntegrationEventDeadLetterReplayStatuses.NoHandler,
+                    IntegrationEventDeadLetterReplayStatus.NoHandler,
                     $"No replay handler is registered for '{message.EventClrType}'.");
             }
 
             await handler.ReplayAsync(message, cancellationToken);
             await deadLetterStore.MarkReplayedAsync(id, timeProvider.GetUtcNow(), cancellationToken);
-            return new IntegrationEventDeadLetterReplayResult(id, true, IntegrationEventDeadLetterStatus.Replayed.ToString(), null);
+            return new IntegrationEventDeadLetterReplayResult(id, true, IntegrationEventDeadLetterReplayStatus.Replayed, null);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -880,7 +872,7 @@ public sealed class IntegrationEventDeadLetterReplayExecutor(
                 ex.Message,
                 timeProvider.GetUtcNow(),
                 cancellationToken);
-            return new IntegrationEventDeadLetterReplayResult(id, false, IntegrationEventDeadLetterStatus.Failed.ToString(), ex.Message);
+            return new IntegrationEventDeadLetterReplayResult(id, false, IntegrationEventDeadLetterReplayStatus.Failed, ex.Message);
         }
     }
 
