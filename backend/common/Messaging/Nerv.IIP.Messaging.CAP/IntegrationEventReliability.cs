@@ -822,6 +822,12 @@ public interface IIntegrationEventDeadLetterReplayHandler
     Task ReplayAsync(IntegrationEventDeadLetterMessage message, CancellationToken cancellationToken);
 }
 
+/// <summary>重放结果里非 <see cref="IntegrationEventDeadLetterStatus"/> 的取值。HTTP 出口按它判 404。</summary>
+public static class IntegrationEventDeadLetterReplayStatuses
+{
+    public const string NotFound = "NotFound";
+}
+
 public sealed class IntegrationEventDeadLetterReplayExecutor(
     IIntegrationEventDeadLetterStore deadLetterStore,
     IEnumerable<IIntegrationEventDeadLetterReplayHandler> handlers,
@@ -835,7 +841,11 @@ public sealed class IntegrationEventDeadLetterReplayExecutor(
         var message = await deadLetterStore.GetAsync(id, cancellationToken);
         if (message is null)
         {
-            return new IntegrationEventDeadLetterReplayResult(id, false, "NotFound", "Dead-letter message was not found.");
+            return new IntegrationEventDeadLetterReplayResult(
+                id,
+                false,
+                IntegrationEventDeadLetterReplayStatuses.NotFound,
+                "Dead-letter message was not found.");
         }
 
         try

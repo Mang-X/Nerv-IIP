@@ -119,6 +119,7 @@ try
             x.UseDashboard();
         });
     }
+    builder.Services.AddIntegrationEventDeadLetterEndpoints();
 
     builder.Services.AddMediatR(cfg =>
         cfg.RegisterServicesFromAssemblies(Assembly.GetExecutingAssembly())

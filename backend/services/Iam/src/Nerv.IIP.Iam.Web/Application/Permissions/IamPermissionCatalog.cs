@@ -31,6 +31,8 @@ public static class IamPermissionCatalog
         [NervIipPermissionCodes.OpsResultsWrite] = "Write operation results.",
         [NervIipPermissionCodes.OpsAuditRead] = "Read operation audit records.",
         [NervIipPermissionCodes.ObservabilityLogsRead] = "Query centralized platform logs.",
+        [NervIipPermissionCodes.BusinessDlqRead] = "Read business service integration event dead letters.",
+        [NervIipPermissionCodes.BusinessDlqManage] = "Replay and ignore business service integration event dead letters.",
         [NervIipPermissionCodes.NotificationIntentsSubmit] = "Submit notification intents.",
         [NervIipPermissionCodes.NotificationDlqRead] = "Read notification integration event dead letters.",
         [NervIipPermissionCodes.NotificationDlqManage] = "Replay and ignore notification integration event dead letters.",

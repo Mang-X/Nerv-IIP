@@ -164,6 +164,10 @@ public static class NervIipPermissionCodes
     public const string MaintenancePlansManage = "business.maintenance.plans.manage";
     public const string MaintenanceDowntimeReasonsRead = "business.maintenance.downtime-reasons.read";
 
+    // business.dlq.*
+    public const string BusinessDlqRead = "business.dlq.read";
+    public const string BusinessDlqManage = "business.dlq.manage";
+
     // notifications.*
     public const string NotificationIntentsSubmit = "notifications.intents.submit";
     public const string NotificationDlqRead = "notifications.dlq.read";

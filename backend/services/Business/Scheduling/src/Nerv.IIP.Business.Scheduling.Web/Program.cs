@@ -148,7 +148,7 @@ try
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
     builder.Services.AddScoped<IntegrationEventCapFailureDeadLetterer>();
-    builder.Services.AddScoped<IntegrationEventDeadLetterReplayExecutor>();
+    builder.Services.AddIntegrationEventDeadLetterEndpoints();
     builder.Services.AddScoped<IIntegrationEventDeadLetterReplayHandler, SchedulingAssetUnavailableDeadLetterReplayHandler>();
     builder.Services.AddScoped<AssetUnavailableCanonicalProcessor>();
     builder.Services.AddScoped<IAssetUnavailableCanonicalProcessor>(sp => sp.GetRequiredService<AssetUnavailableCanonicalProcessor>());

@@ -121,6 +121,7 @@ try
         QualityFacts.ServiceName);
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
+    builder.Services.AddIntegrationEventDeadLetterEndpoints();
     builder.Services.AddScoped<IReworkWorkOrderBindingWriter, PostgresReworkWorkOrderBindingWriter>();
     builder.Services.AddScoped<ReworkWorkOrderBindingStore>();
     builder.Services.AddHttpContextAccessor();
