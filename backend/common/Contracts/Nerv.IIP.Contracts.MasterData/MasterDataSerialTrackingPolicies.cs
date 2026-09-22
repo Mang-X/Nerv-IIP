@@ -7,8 +7,14 @@ namespace Nerv.IIP.Contracts.MasterData;
 /// 本类是该码集下沉到契约层的**唯一**可引用副本——字典种子、MES 领域校验与业务网关报工判定
 /// 全部引它，避免各层各抄一份后字典新增码值时消费方静默拒绝（#3725 的反向失效，#3747）。
 ///
-/// 新增码值时：先改字典种子与 <c>docs/reference/master-data/dictionary.md</c>，再改这里；
-/// 两者不一致由 <c>MasterDataDictionaryRulesTests</c> 报红。
+/// 新增码值时：字典种子、<c>docs/reference/master-data/dictionary.md</c>、本类、以及
+/// <c>frontend/apps/business-console/src/data/masterDataReference.ts</c> 的下拉选项表都要改。
+///
+/// ⚠️ 这四处里只有一对有门禁：<c>MasterDataDictionaryRulesTests</c> 钉住本类的
+/// <see cref="CanonicalValues"/> 与**它自己文件内手抄的** <c>ExpectedDictionaryCodes</c> 逐值相等。
+/// 「那张手抄表抄对了 <c>dictionary.md</c>」和「前端下拉表跟上了」都没有任何断言——
+/// 前者两边一起改错同一个值时断言照样绿，后者与后端完全无连接（#3747 就地登记的失效方向）。
+/// 字典种子那半边现在恒真：种子已经引用本类，「种子与常量不一致」 在结构上不可表达。
 /// </summary>
 public static class MasterDataSerialTrackingPolicies
 {

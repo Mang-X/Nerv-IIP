@@ -122,13 +122,25 @@ it('treats an unknown policy as non-serialized instead of blocking the operator'
   expect(serials.valid.value).toBe(true)
   expect(api.templates).not.toHaveBeenCalled()
 })
-it('still rejects a missing policy and a missing resource permission before submitting', async () => {
+// 真不变量是**上屏文案**，不是 valid：`valid = Boolean(policy.value) && !message.value`，
+// 策略为空时 valid 本来就是 false，只断 valid 对 `!sku.serialTrackingPolicy` 那条守卫零鉴别力
+// （删掉守卫后 8/8 仍绿，#3763 第 1 轮审核实测）。删掉守卫的真实后果是文案从
+// 「去找基础资料管理员」变成「请先选择已核验的工单与工序」——在工单已选的场景下是误导操作工的错话。
+it('surfaces the master-data owner message when the policy is missing, not the pick-a-work-order hint', async () => {
   api.sku.mockResolvedValue({
     data: { success: true, data: { code: 'SKU-1', active: true, serialTrackingPolicy: '' } },
   })
   const { serials } = setup()
   await flushPromises()
+  expect(serials.message.value).toBe('产品追踪设置不可用，请联系基础资料管理员核对后重试。')
   expect(serials.valid.value).toBe(false)
+})
+it('still rejects a missing resource permission before submitting', async () => {
+  api.sku.mockResolvedValue({
+    data: { success: true, data: { code: 'SKU-1', active: true, serialTrackingPolicy: '' } },
+  })
+  const { serials } = setup()
+  await flushPromises()
   principal.value = { permissionCodes: [] }
   await flushPromises()
   expect(serials.message.value).toContain('权限')

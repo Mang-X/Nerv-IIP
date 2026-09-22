@@ -45,7 +45,9 @@
 
 `inventory-location` 是跨域配置候选码，不拥有 Inventory `StockLocation` 事实；实际库存库位仍由 Inventory 维护。
 
-`serial-tracking-policy` 另有一份契约层可引用副本 `Nerv.IIP.Contracts.MasterData.MasterDataSerialTrackingPolicies`（MES 领域校验与业务网关报工的 `production-serial-policy-invalid` 判定都引它）；字典种子本身也引这份常量，二者由 `MasterDataDictionaryRulesTests` 钉住与本表逐值相等。新增该码集的码值时三处必须一起改。
+`serial-tracking-policy` 另有一份契约层可引用副本 `Nerv.IIP.Contracts.MasterData.MasterDataSerialTrackingPolicies`（MES 领域校验与业务网关报工的 `production-serial-policy-invalid` 判定都引它）；字典种子本身也引这份常量，因此「种子与该常量一致」是结构性的，不靠断言。
+
+新增该码集的码值时，字典种子、本表、该契约常量、以及 `frontend/apps/business-console/src/data/masterDataReference.ts` 的下拉选项表都要改。**其中只有「契约常量 ↔ `MasterDataDictionaryRulesTests` 文件内手抄的 `ExpectedDictionaryCodes`」这一对有门禁**；那张手抄表与本表的一致性、以及前端下拉表与后端的一致性，都没有任何断言（后者的失效方向见该前端文件的就地注释，#3747）。
 
 ### 2.2 业务伙伴 / 组织 / 人员
 
