@@ -138,7 +138,9 @@ public class Sku : Entity<SkuId>, IAggregateRoot
 
     public static Sku Create(string organizationId, string environmentId, string code, string name, string unit, string category)
     {
-        return new Sku(organizationId, environmentId, code, name, unit, category, category, "not-tracked", "not-serialized", string.Empty, string.Empty, string.Empty, false, [], null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "active", true, true, true);
+        // 批次/序列策略取各自码集的“不管理”码（batch-tracking-policy / serial-tracking-policy 的 none）。
+        // 这两个值会随 SKU 一路走到网关报工协调器等按码集判定的消费方，写码集外的同义词即等于让下游恒定拒绝。
+        return new Sku(organizationId, environmentId, code, name, unit, category, category, "none", "none", string.Empty, string.Empty, string.Empty, false, [], null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "active", true, true, true);
     }
 
     public static Sku CreateIndustrial(

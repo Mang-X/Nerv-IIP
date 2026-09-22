@@ -22,6 +22,31 @@ public sealed class MasterDataDictionaryRulesTests
             item => string.Equals(item.CodeSet, "priority", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// `Sku.Create` 自己写死的两个受控码值必须落在各自码集里。
+    /// 期望值不在这里手抄，而是从 <see cref="MasterDataDictionaryRules.StandardReferenceData"/>
+    /// 按码集筛出来——码集改了这条断言跟着改，工厂方法再塞同义词（曾经的 `not-serialized`）就会红。
+    /// </summary>
+    [Fact]
+    public void Sku_create_defaults_stay_inside_their_own_dictionary_code_sets()
+    {
+        var sku = Sku.Create("org-001", "env-dev", "SKU-DEFAULTS", "Default SKU", "pcs", "electronic");
+
+        foreach (var (codeSet, value) in new[]
+        {
+            ("batch-tracking-policy", sku.BatchTrackingPolicy),
+            ("serial-tracking-policy", sku.SerialTrackingPolicy)
+        })
+        {
+            var codes = MasterDataDictionaryRules.StandardReferenceData
+                .Where(x => string.Equals(x.CodeSet, codeSet, StringComparison.Ordinal))
+                .Select(x => x.Code)
+                .ToArray();
+
+            Assert.Contains(value, codes, StringComparer.Ordinal);
+        }
+    }
+
     [Fact]
     public async Task MasterData_seed_creates_authoritative_dictionary_codes()
     {
