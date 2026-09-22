@@ -13,7 +13,8 @@ namespace Nerv.IIP.Messaging.CAP.Tests;
 /// <see cref="PersistentIntegrationEventDeadLetterStore{TDbContext}"/> 的三段过滤整块删掉，
 /// InMemory 侧的断言全绿（#3739 审核实测），所以那侧的绿证不到这侧。
 ///
-/// 走这份共享实现的是 facade 覆盖的 9 个服务——Maintenance 是第 10 个，但它注册的是自己的副本
+/// facade 覆盖的 10 个服务里有 9 个走这份共享实现（此外 Notification 也注册它，只是不在 facade
+/// 的来源表里）——Maintenance 是例外，它注册的是自己的副本
 /// （`Maintenance.Web/Program.cs`），由 `MaintenanceDeadLetterFilterPostgresTests` 单独钉住。
 ///
 /// 默认 skip；设置 <c>NERV_IIP_TEST_POSTGRES</c> 后运行（与既有 *PostgresProfileTests 同一 env gate）。

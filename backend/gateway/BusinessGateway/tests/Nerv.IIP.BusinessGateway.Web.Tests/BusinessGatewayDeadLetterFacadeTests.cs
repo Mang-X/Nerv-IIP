@@ -488,8 +488,9 @@ public sealed class BusinessGatewayDeadLetterFacadeTests
                 //
                 // 为什么不能干脆不观察取消：那样这次请求在服务端永远挂着，删掉扇出上限后整条 lane
                 // 会挂死而不是报错（实测 600s 无输出），哨兵读数就没了。观察取消让它能收尾。
-                // RunContinuationsAsynchronously 是必须的：默认情况下 TrySetResult 会让本方法的后续
-                // **同步跑在取消回调那个线程上**，而 registration 的释放要等该回调结束——自锁。
+                // RunContinuationsAsynchronously：不加的话 TrySetResult 会让本方法的续体——包括下面那句
+                // throw——**内联跑在 CancelAfter 的定时器线程上**，即用户代码跑在取消回调里。
+                // 这里要的是把续体挡在那个线程之外，不是修自锁。
                 var abandoned = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 using var registration = cancellationToken.Register(() => abandoned.TrySetResult());
                 await abandoned.Task;
