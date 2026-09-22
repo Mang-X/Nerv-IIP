@@ -42,14 +42,13 @@ public sealed class MasterDataPostgresProfileTests
     {
         var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
         var counter = new RelationalReadCounter();
-        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseNpgsql(connectionString)
-            .AddInterceptors(counter)
-            .Options;
-        await using var dbContext = new ApplicationDbContext(options, new NoopMediator());
+        await using var provider = BuildPersistenceProvider(connectionString, options => options.AddInterceptors(counter));
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         AssertUsesGovernedDatabase(dbContext);
         await DropMasterDataSchemaAsync(dbContext);
         await dbContext.Database.MigrateAsync();
+        await AssertMigrationsHistoryTableInSchemaAsync(dbContext, MasterDataFacts.Schema);
         var devices = Enumerable.Range(1, 200)
             .Select(index => DeviceAsset.Register(
                 "org-001",
@@ -190,6 +189,25 @@ public sealed class MasterDataPostgresProfileTests
         return services;
     }
 
+    private static ServiceProvider BuildPersistenceProvider(
+        string connectionString,
+        Action<DbContextOptionsBuilder>? configureOptions = null)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging(builder => builder.AddConsole());
+        services.AddMediatR(configuration =>
+        {
+            configuration.RegisterServicesFromAssembly(typeof(Program).Assembly);
+        });
+        services.AddMasterDataPostgreSqlPersistence(connectionString);
+        if (configureOptions is not null)
+        {
+            services.AddDbContext<ApplicationDbContext>(configureOptions);
+        }
+
+        return services.BuildServiceProvider();
+    }
+
     private static async Task SendLifecycleCommandAsync(
         ServiceProvider provider,
         SetMasterDataResourceEnabledCommand command)
@@ -229,16 +247,7 @@ public sealed class MasterDataPostgresProfileTests
     public async Task Postgres_store_persists_master_data_aggregates()
     {
         var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
-
-        var services = new ServiceCollection();
-        services.AddLogging(builder => builder.AddConsole());
-        services.AddMediatR(configuration =>
-        {
-            configuration.RegisterServicesFromAssembly(typeof(Program).Assembly);
-        });
-        services.AddMasterDataPostgreSqlPersistence(connectionString);
-
-        await using var provider = services.BuildServiceProvider();
+        await using var provider = BuildPersistenceProvider(connectionString);
 
         using (var scope = provider.CreateScope())
         {
@@ -287,16 +296,7 @@ public sealed class MasterDataPostgresProfileTests
     public async Task Postgres_migration_normalizes_legacy_sku_tracking_policy_synonyms_and_leaves_valid_rows()
     {
         var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
-
-        var services = new ServiceCollection();
-        services.AddLogging(builder => builder.AddConsole());
-        services.AddMediatR(configuration =>
-        {
-            configuration.RegisterServicesFromAssembly(typeof(Program).Assembly);
-        });
-        services.AddMasterDataPostgreSqlPersistence(connectionString);
-
-        await using var provider = services.BuildServiceProvider();
+        await using var provider = BuildPersistenceProvider(connectionString);
 
         using (var seedScope = provider.CreateScope())
         {
@@ -354,16 +354,7 @@ public sealed class MasterDataPostgresProfileTests
     public async Task Postgres_work_calendar_update_replaces_owned_details_after_reload()
     {
         var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
-
-        var services = new ServiceCollection();
-        services.AddLogging(builder => builder.AddConsole());
-        services.AddMediatR(configuration =>
-        {
-            configuration.RegisterServicesFromAssembly(typeof(Program).Assembly);
-        });
-        services.AddMasterDataPostgreSqlPersistence(connectionString);
-
-        await using var provider = services.BuildServiceProvider();
+        await using var provider = BuildPersistenceProvider(connectionString);
 
         using (var seedScope = provider.CreateScope())
         {
@@ -457,9 +448,13 @@ public sealed class MasterDataPostgresProfileTests
     private static async Task DropMasterDataSchemaAsync(ApplicationDbContext db)
     {
         var quotedSchema = new NpgsqlCommandBuilder().QuoteIdentifier(MasterDataFacts.Schema);
+        var quotedCapSchema = new NpgsqlCommandBuilder().QuoteIdentifier("cap");
         await db.Database.OpenConnectionAsync();
         await using var command = db.Database.GetDbConnection().CreateCommand();
-        command.CommandText = $"DROP SCHEMA IF EXISTS {quotedSchema} CASCADE";
+        // CAP's EF-Core storage provisions its own "cap" schema (see ReadCapPublishedRowsAsync)
+        // independent of MasterDataFacts.Schema; it must be dropped alongside the service schema
+        // or published/received rows from a prior run make outbox assertions overmatch on rerun.
+        command.CommandText = $"DROP SCHEMA IF EXISTS {quotedSchema} CASCADE; DROP SCHEMA IF EXISTS {quotedCapSchema} CASCADE";
         await command.ExecuteNonQueryAsync();
     }
 
@@ -515,31 +510,6 @@ public sealed class MasterDataPostgresProfileTests
             ReadCount++;
             return ValueTask.FromResult(result);
         }
-    }
-
-    private sealed class NoopMediator : IMediator
-    {
-        public Task Publish(object notification, CancellationToken cancellationToken = default) => Task.CompletedTask;
-
-        public Task Publish<TNotification>(TNotification notification, CancellationToken cancellationToken = default)
-            where TNotification : INotification => Task.CompletedTask;
-
-        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-
-        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
-            where TRequest : IRequest => throw new NotSupportedException();
-
-        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-
-        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
-            IStreamRequest<TResponse> request,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException();
-
-        public IAsyncEnumerable<object?> CreateStream(
-            object request,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
 }
