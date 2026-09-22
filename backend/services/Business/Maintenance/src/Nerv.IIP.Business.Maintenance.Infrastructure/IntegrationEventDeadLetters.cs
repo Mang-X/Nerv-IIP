@@ -59,6 +59,21 @@ public sealed class MaintenanceIntegrationEventDeadLetterStore(ApplicationDbCont
             queryable = queryable.Where(x => x.EventType == query.EventType || x.EventClrType == query.EventType);
         }
 
+        if (!string.IsNullOrWhiteSpace(query.FailureCode))
+        {
+            queryable = queryable.Where(x => x.FailureCode == query.FailureCode);
+        }
+
+        if (query.DeadLetteredFromUtc is not null)
+        {
+            queryable = queryable.Where(x => x.DeadLetteredAtUtc >= query.DeadLetteredFromUtc);
+        }
+
+        if (query.DeadLetteredToUtc is not null)
+        {
+            queryable = queryable.Where(x => x.DeadLetteredAtUtc <= query.DeadLetteredToUtc);
+        }
+
         return await queryable
             .OrderBy(x => x.DeadLetteredAtUtc)
             .Skip(query.Skip)

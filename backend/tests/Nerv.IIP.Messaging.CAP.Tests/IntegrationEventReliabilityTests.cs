@@ -263,7 +263,7 @@ public sealed class IntegrationEventReliabilityTests
         var result = await executor.ReplayAsync(message.Id, CancellationToken.None);
 
         Assert.False(result.Succeeded);
-        Assert.Equal(IntegrationEventDeadLetterStatus.Failed.ToString(), result.Status);
+        Assert.Equal(IntegrationEventDeadLetterReplayStatus.Failed, result.Status);
         var failed = Assert.Single(await store.ListAsync("sample.consumer", IntegrationEventDeadLetterStatus.Failed, CancellationToken.None));
         Assert.Equal(message.Id, failed.Id);
         Assert.Equal("replay-handler-failed", failed.FailureCode);

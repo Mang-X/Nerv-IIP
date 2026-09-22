@@ -59,6 +59,21 @@ public sealed class PersistentIntegrationEventDeadLetterStore<TDbContext>(TDbCon
             queryable = queryable.Where(x => x.EventType == query.EventType);
         }
 
+        if (!string.IsNullOrWhiteSpace(query.FailureCode))
+        {
+            queryable = queryable.Where(x => x.FailureCode == query.FailureCode);
+        }
+
+        if (query.DeadLetteredFromUtc is not null)
+        {
+            queryable = queryable.Where(x => x.DeadLetteredAtUtc >= query.DeadLetteredFromUtc);
+        }
+
+        if (query.DeadLetteredToUtc is not null)
+        {
+            queryable = queryable.Where(x => x.DeadLetteredAtUtc <= query.DeadLetteredToUtc);
+        }
+
         var skip = Math.Max(query.Skip, 0);
         var take = Math.Clamp(query.Take, 1, 500);
 

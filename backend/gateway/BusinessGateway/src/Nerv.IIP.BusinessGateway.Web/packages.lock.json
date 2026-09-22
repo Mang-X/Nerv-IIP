@@ -573,6 +573,9 @@
       "nerv.iip.localization": {
         "type": "Project"
       },
+      "nerv.iip.messaging.cap.contracts": {
+        "type": "Project"
+      },
       "nerv.iip.observability": {
         "type": "Project",
         "dependencies": {

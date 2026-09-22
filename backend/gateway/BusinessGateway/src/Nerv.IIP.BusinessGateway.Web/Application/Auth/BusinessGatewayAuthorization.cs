@@ -80,6 +80,12 @@ public enum BusinessGatewayAuthorizationContinuityMode
 
 public static class BusinessGatewayPermissions
 {
+    /// <summary>#3739：死信运维面。#3738 只登记了这两个码，强制点在本网关 facade 上。</summary>
+    public const string DeadLettersRead = "business.dlq.read";
+
+    /// <inheritdoc cref="DeadLettersRead"/>
+    public const string DeadLettersManage = "business.dlq.manage";
+
     public const string MasterDataProductsRead = "business.masterdata.products.read";
     public const string MasterDataProductsManage = "business.masterdata.products.manage";
     public const string MasterDataPartnersManage = "business.masterdata.partners.manage";

@@ -31,18 +31,18 @@
 | --- | ---: | ---: | ---: | ---: |
 | Approval | 16 | 11 | 4 | 1 |
 | BarcodeLabel | 21 | 15 | 2 | 4 |
-| DemandPlanning | 22 | 16 | 6 | 0 |
-| Erp | 69 | 45 | 22 | 2 |
-| IndustrialTelemetry | 34 | 25 | 7 | 2 |
-| Inventory | 25 | 13 | 7 | 5 |
-| Maintenance | 33 | 21 | 10 | 2 |
+| DemandPlanning | 22 | 22 | 0 | 0 |
+| Erp | 69 | 51 | 16 | 2 |
+| IndustrialTelemetry | 34 | 31 | 1 | 2 |
+| Inventory | 25 | 19 | 1 | 5 |
+| Maintenance | 33 | 27 | 4 | 2 |
 | MasterData | 50 | 45 | 1 | 4 |
-| Mes | 77 | 67 | 8 | 2 |
+| Mes | 77 | 73 | 2 | 2 |
 | ProductEngineering | 39 | 38 | 0 | 1 |
-| Quality | 49 | 30 | 18 | 1 |
-| Scheduling | 21 | 13 | 7 | 1 |
-| Wms | 55 | 37 | 13 | 5 |
-| **Total** | **511** | **376** | **105** | **30** |
+| Quality | 49 | 36 | 12 | 1 |
+| Scheduling | 21 | 19 | 1 | 1 |
+| Wms | 55 | 43 | 7 | 5 |
+| **Total** | **511** | **430** | **51** | **30** |
 
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
