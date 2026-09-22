@@ -290,14 +290,11 @@ function formatPayload(value: string | null | undefined) {
         </span>
       </p>
 
+      <!-- 四档互斥且相加等于总数；不再单列「积压」，它只是「待处理 + 重放失败」的和。 -->
       <NvSectionCards :columns="4">
-        <NvSectionCard
-          description="待处理积压"
-          :value="metrics?.actionableCount ?? 0"
-          hint="待处理 + 重放失败"
-        />
         <NvSectionCard description="待处理" :value="metrics?.pendingCount ?? 0" />
         <NvSectionCard description="重放失败" :value="metrics?.failedCount ?? 0" />
+        <NvSectionCard description="已重放" :value="metrics?.replayedCount ?? 0" />
         <NvSectionCard description="已忽略" :value="metrics?.ignoredCount ?? 0" />
       </NvSectionCards>
 
