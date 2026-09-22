@@ -4212,25 +4212,6 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateRushWorkOr
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateRushWorkOrderResponse = {
     workOrderId?: string;
-    schedule?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesScheduleResult;
-    affectedWorkOrderIds?: Array<string>;
-};
-
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesScheduleResult = {
-    scheduleVersion?: number;
-    trigger?: string;
-    scheduledAtUtc?: string;
-    assignments?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduledOperation>;
-    affectedWorkOrderIds?: Array<string>;
-};
-
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduledOperation = {
-    workOrderId?: string;
-    operationTaskId?: string;
-    workCenterId?: string;
-    startUtc?: string;
-    endUtc?: string;
-    reason?: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateRushWorkOrderRequest = {

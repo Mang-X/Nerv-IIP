@@ -195,7 +195,6 @@ public sealed class MesRoutingSnapshotTests
         var command = NewCommand(requestedAtUtc, idempotencyKey: "routing-snapshot-001");
         var handler = new ConvertPlanToWorkOrderCommandHandler(
             dbContext,
-            new RuleScheduler(),
             null,
             NoMaterialRequirementsProvider.Instance,
             new PostgreSqlMesSkuAvailabilityScopeCoordinator(dbContext),
@@ -272,7 +271,6 @@ public sealed class MesRoutingSnapshotTests
                 productionVersionId));
         var handler = new ConvertPlanToWorkOrderCommandHandler(
             dbContext,
-            new RuleScheduler(),
             null,
             NoMaterialRequirementsProvider.Instance,
             new PostgreSqlMesSkuAvailabilityScopeCoordinator(dbContext),
@@ -301,7 +299,6 @@ public sealed class MesRoutingSnapshotTests
             MesRoutingSnapshotResult.Missing("product-engineering:routing:ROUTE-MISSING:A"));
         var handler = new ConvertPlanToWorkOrderCommandHandler(
             dbContext,
-            new RuleScheduler(),
             null,
             NoMaterialRequirementsProvider.Instance,
             new PostgreSqlMesSkuAvailabilityScopeCoordinator(dbContext),
@@ -626,7 +623,6 @@ public sealed class MesRoutingSnapshotTests
         var routingProvider = new ScopeAssertingRoutingSnapshotProvider(coordinator);
         var handler = new ConvertPlanToWorkOrderCommandHandler(
             dbContext,
-            new RuleScheduler(),
             null,
             NoMaterialRequirementsProvider.Instance,
             coordinator,

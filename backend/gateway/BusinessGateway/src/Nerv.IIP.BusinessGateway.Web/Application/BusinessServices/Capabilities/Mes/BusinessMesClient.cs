@@ -1300,10 +1300,7 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             "/api/business/v1/mes/work-orders/rush",
             request,
             cancellationToken);
-        return new BusinessConsoleCreateRushWorkOrderResponse(
-            response.WorkOrderId,
-            response.Schedule.ToBusinessConsoleResult(),
-            response.AffectedWorkOrderIds);
+        return new BusinessConsoleCreateRushWorkOrderResponse(response.WorkOrderId);
     }
 
     private async Task<BusinessConsoleMesOperationTaskActionResponse> OperationTaskActionAsync(
@@ -1510,26 +1507,7 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             ("plannedStartUtc", request.PlannedStartUtc),
             ("plannedEndUtc", request.PlannedEndUtc));
 
-    private sealed record DownstreamCreateRushWorkOrderResponse(
-        string WorkOrderId,
-        DownstreamMesScheduleResult Schedule,
-        IReadOnlyCollection<string> AffectedWorkOrderIds);
-
-    private sealed record DownstreamMesScheduleResult(
-        int ScheduleVersion,
-        JsonElement Trigger,
-        DateTimeOffset ScheduledAtUtc,
-        IReadOnlyCollection<BusinessConsoleScheduledOperation> Assignments,
-        IReadOnlyCollection<string> AffectedWorkOrderIds)
-    {
-        public BusinessConsoleMesScheduleResult ToBusinessConsoleResult() =>
-            new(
-                ScheduleVersion,
-                FormatTrigger(Trigger),
-                ScheduledAtUtc,
-                Assignments,
-                AffectedWorkOrderIds);
-    }
+    private sealed record DownstreamCreateRushWorkOrderResponse(string WorkOrderId);
 
     private sealed record DownstreamRecordProductionReportResponse(
         DownstreamProductionReportId? ProductionReportId,
@@ -1594,10 +1572,4 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         DateTimeOffset? ReversedAtUtc,
         string? IdempotencyKey);
 
-    private static string FormatTrigger(JsonElement trigger) => trigger.ValueKind switch
-    {
-        JsonValueKind.String => trigger.GetString() ?? string.Empty,
-        JsonValueKind.Number => trigger.GetRawText(),
-        _ => trigger.ToString(),
-    };
 }

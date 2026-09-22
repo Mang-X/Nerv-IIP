@@ -1,5 +1,4 @@
 using Nerv.IIP.Business.Mes.Infrastructure;
-using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.ProductEngineering;
 using Nerv.IIP.Business.Mes.Web.Application.MasterData;
@@ -22,39 +21,32 @@ public sealed record CreateRushWorkOrderCommand(
     DateTimeOffset RequestedAtUtc,
     string? IdempotencyKey = null) : ICommand<CreateRushWorkOrderResponse>;
 
-public sealed record CreateRushWorkOrderResponse(
-    string WorkOrderId,
-    MesScheduleResult Schedule,
-    IReadOnlyCollection<string> AffectedWorkOrderIds);
+public sealed record CreateRushWorkOrderResponse(string WorkOrderId);
 
 public sealed class CreateRushWorkOrderCommandHandler
     : ICommandHandler<CreateRushWorkOrderCommand, CreateRushWorkOrderResponse>
 {
     private const int RushPriority = 1000;
     private readonly IMesPlanningStore store;
-    private readonly RuleScheduler scheduler;
     private readonly MesCodingService _codingService;
     private readonly ApplicationDbContext? dbContext;
     private readonly IMesSkuAvailabilityScopeCoordinator? skuAvailabilityScopeCoordinator;
 
     public CreateRushWorkOrderCommandHandler(
         IMesPlanningStore store,
-        RuleScheduler scheduler,
         MesCodingService codingService,
         ApplicationDbContext dbContext,
         IMesSkuAvailabilityScopeCoordinator skuAvailabilityScopeCoordinator)
-        : this(store, scheduler, codingService, dbContext, skuAvailabilityScopeCoordinator, isTestConstruction: false)
+        : this(store, codingService, dbContext, skuAvailabilityScopeCoordinator, isTestConstruction: false)
     {
     }
 
     internal CreateRushWorkOrderCommandHandler(
         IMesPlanningStore store,
-        RuleScheduler scheduler,
         MesCodingService? codingService = null,
         ApplicationDbContext? dbContext = null)
         : this(
             store,
-            scheduler,
             codingService ?? new MesCodingService(),
             dbContext,
             dbContext is null ? null : new PostgreSqlMesSkuAvailabilityScopeCoordinator(dbContext),
@@ -64,7 +56,6 @@ public sealed class CreateRushWorkOrderCommandHandler
 
     private CreateRushWorkOrderCommandHandler(
         IMesPlanningStore store,
-        RuleScheduler scheduler,
         MesCodingService codingService,
         ApplicationDbContext? dbContext,
         IMesSkuAvailabilityScopeCoordinator? skuAvailabilityScopeCoordinator,
@@ -72,7 +63,6 @@ public sealed class CreateRushWorkOrderCommandHandler
     {
         _ = isTestConstruction;
         this.store = store;
-        this.scheduler = scheduler;
         _codingService = codingService;
         this.dbContext = dbContext;
         this.skuAvailabilityScopeCoordinator = skuAvailabilityScopeCoordinator;
@@ -96,10 +86,7 @@ public sealed class CreateRushWorkOrderCommandHandler
                 cancellationToken);
             if (replayedWorkOrderExists)
             {
-                return new CreateRushWorkOrderResponse(
-                    allocation.Code,
-                    new MesScheduleResult(0, RescheduleTrigger.RushOrder, request.RequestedAtUtc, [], []),
-                    []);
+                return new CreateRushWorkOrderResponse(allocation.Code);
             }
         }
 
@@ -140,9 +127,6 @@ public sealed class CreateRushWorkOrderCommandHandler
         var operationTaskId = string.IsNullOrWhiteSpace(request.OperationTaskId)
             ? $"{workOrderId}-OP-{request.OperationSequence}"
             : request.OperationTaskId.Trim();
-        var baselinePlan = scheduler.Schedule(
-            await store.GetScheduleOperationsAsync(request.OrganizationId, request.EnvironmentId, cancellationToken),
-            await store.GetUnavailabilitiesAsync(request.OrganizationId, request.EnvironmentId, cancellationToken));
 
         store.AddWorkOrder(new PlannedWorkOrder(
             request.OrganizationId,
@@ -170,19 +154,7 @@ public sealed class CreateRushWorkOrderCommandHandler
             request.OrganizationId,
             request.EnvironmentId));
 
-        var plan = scheduler.Schedule(
-            await store.GetScheduleOperationsAsync(request.OrganizationId, request.EnvironmentId, cancellationToken),
-            await store.GetUnavailabilitiesAsync(request.OrganizationId, request.EnvironmentId, cancellationToken));
-        var schedule = await store.AddScheduleResultAsync(
-            RescheduleTrigger.RushOrder,
-            request.RequestedAtUtc,
-            plan,
-            baselinePlan.Assignments,
-            cancellationToken);
-        return new CreateRushWorkOrderResponse(
-            workOrderId,
-            schedule,
-            schedule.AffectedWorkOrderIds);
+        return new CreateRushWorkOrderResponse(workOrderId);
     }
 
     private static string WorkOrderPayloadFingerprint(CreateRushWorkOrderCommand request)

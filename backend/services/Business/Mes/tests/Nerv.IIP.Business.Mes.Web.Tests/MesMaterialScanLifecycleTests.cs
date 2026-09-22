@@ -35,7 +35,6 @@ public sealed partial class MesMaterialScanPrevalidationTests
                     "MBOM-001:MAT-PRIMARY", [])]));
         var converted = await new ConvertPlanToWorkOrderCommandHandler(
             db,
-            new RuleScheduler(),
             null,
             snapshotProvider).Handle(
                 new ConvertPlanToWorkOrderCommand(

@@ -14,13 +14,6 @@ using NetCorePal.Extensions.DistributedTransactions;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 
-public sealed class MesRescheduleOptions
-{
-    public bool AutoRescheduleOnAssetUnavailable { get; set; } = true;
-
-    public bool AutoRescheduleOnAssetRestored { get; set; } = true;
-}
-
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Maintenance.AssetUnavailableIntegrationEvent", ConsumerName)]
 public sealed class AssetUnavailableIntegrationEventHandlerForReschedule(
     IMesAssetUnavailableCanonicalProcessor processor,
@@ -184,8 +177,6 @@ public sealed class MesAssetUnavailableCanonicalProcessor(ISender sender) : IMes
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Maintenance.AssetRestoredIntegrationEvent", ConsumerName)]
 public sealed class AssetRestoredIntegrationEventHandlerForReschedule(
     IMesPlanningStore store,
-    RuleScheduler scheduler,
-    MesRescheduleOptions options,
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore)
     : IIntegrationEventHandler<AssetRestoredIntegrationEvent>, ICapSubscribe
@@ -226,14 +217,6 @@ public sealed class AssetRestoredIntegrationEventHandlerForReschedule(
             payload.DeviceAssetId,
             payload.RestoredAtUtc,
             cancellationToken);
-
-        if (options.AutoRescheduleOnAssetRestored)
-        {
-            var plan = scheduler.Schedule(
-                await store.GetScheduleOperationsAsync(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, cancellationToken),
-                await store.GetUnavailabilitiesAsync(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, cancellationToken));
-            await store.AddScheduleResultAsync(RescheduleTrigger.AssetRestored, integrationEvent.OccurredAtUtc, plan, cancellationToken: cancellationToken);
-        }
 
         await dbContext.SaveChangesAsync(cancellationToken);
     }

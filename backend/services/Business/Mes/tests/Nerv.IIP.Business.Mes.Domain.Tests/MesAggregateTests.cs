@@ -1172,11 +1172,9 @@ public sealed class MesAggregateTests
     /// 删掉本条守卫仍会被另一条兜住、<c>Assert.Throws</c> 照样绿——所以这里既隔离夹具、
     /// 又断言到**消息**，两道都用上。</para>
     ///
-    /// <para><b>为什么负时长窗口有害而不只是难看</b>：这段窗口会进排程的重叠判定
-    /// （<c>RuleScheduler</c> 按 <c>FromUtc</c>/<c>ToUtc</c> 判重叠并把候选推到
-    /// <c>conflict.ToUtc.Value</c>），也会进工序动作的开工拦截
+    /// <para><b>为什么负时长窗口有害而不只是难看</b>：这段窗口会进工序动作的开工拦截
     /// （<c>MesOperationTaskActionReadinessEvaluator</c> 判 <c>ToUtc > evaluatedAtUtc</c>）。
-    /// 一个 <c>ToUtc &lt; FromUtc</c> 的窗口在这两处都会被静默当成「已经结束」。</para>
+    /// 一个 <c>ToUtc &lt; FromUtc</c> 的窗口在这里会被静默当成「已经结束」。</para>
     ///
     /// <para><b>本用例不证明什么</b>：不证明 <c>WorkCenterUnavailability.Open</c> 也拒绝负时长窗口
     /// ——它**不拒**，<c>Open(..., toUtc:</c> 早于 <c>fromUtc, ...)</c> 今天仍然构造得出来。

@@ -42,7 +42,6 @@ public sealed class DemandPlanningMesBridgeAcceptanceTests
         var mesBridge = new MesCommandPlanningSuggestionDownstreamBridge(
             new ConvertPlanToWorkOrderCommandHandler(
                 mesDb,
-                new RuleScheduler(),
                 null,
                 null,
                 new PostgreSqlMesSkuAvailabilityScopeCoordinator(mesDb),
@@ -104,7 +103,6 @@ public sealed class DemandPlanningMesBridgeAcceptanceTests
         var mesBridge = new MesCommandPlanningSuggestionDownstreamBridge(
             new ConvertPlanToWorkOrderCommandHandler(
                 mesDb,
-                new RuleScheduler(),
                 null,
                 null,
                 new PostgreSqlMesSkuAvailabilityScopeCoordinator(mesDb),
