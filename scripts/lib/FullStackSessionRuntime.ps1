@@ -1674,24 +1674,6 @@ function Collect-NervFullStackDiagnostics {
     return [pscustomobject]@{ Complete = $collectionErrors.Count -eq 0; Errors = @($collectionErrors) }
 }
 
-function Resolve-NervManagedFullStackRunManifest {
-    param(
-        [Parameter(Mandatory)] [object] $Manifest,
-        [Parameter(Mandatory)] [int] $CoordinatorPid,
-        [Parameter(Mandatory)] [string] $CoordinatorStartTimeUtc
-    )
-
-    if ([int] $Manifest.coordinator.pid -ne $CoordinatorPid) { return $null }
-
-    $expectedStart = [DateTimeOffset]::Parse($CoordinatorStartTimeUtc).UtcDateTime
-    $manifestStart = [DateTimeOffset]::Parse("$($Manifest.coordinator.processStartTimeUtc)").UtcDateTime
-    if ([Math]::Abs(($manifestStart - $expectedStart).TotalMilliseconds) -ge $script:NervProcessStartTimeToleranceMilliseconds) {
-        return $null
-    }
-
-    return $Manifest
-}
-
 function Invoke-NervManagedFullStackRun {
     param(
         [Parameter(Mandatory)] [scriptblock] $StartAction,
@@ -1704,16 +1686,17 @@ function Invoke-NervManagedFullStackRun {
     )
 
     $manifest = $null
+    $startupState = [pscustomobject]@{ SessionCreated = $false }
     $scenarioFailure = $null
     $cleanupFailure = $null
     $collectionFailures = [System.Collections.Generic.List[string]]::new()
     try {
-        $manifest = & $StartAction
+        $manifest = & $StartAction $startupState
         & $ScenarioAction $manifest | Out-Null
     }
     catch {
         $scenarioFailure = $_
-        if ($null -eq $manifest -and $null -ne $ResolveFailedManifestAction) {
+        if ($null -eq $manifest -and $startupState.SessionCreated -and $null -ne $ResolveFailedManifestAction) {
             try { $manifest = & $ResolveFailedManifestAction } catch { }
         }
         if ($null -ne $manifest -and $null -ne $FailureAction) {
