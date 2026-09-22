@@ -13,7 +13,6 @@ using Nerv.IIP.Business.Mes.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
-using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Maintenance;
 using Nerv.IIP.Messaging.CAP;
@@ -108,8 +107,6 @@ public sealed class MaintenanceEventHandlerTests
         Assert.Equal(expectedWinnerEventId, inbox.EventId);
         Assert.Equal(expectedIdempotencyKey, inbox.IdempotencyKey);
         Assert.Equal(1, await db.WorkCenterUnavailabilities.AsNoTracking().CountAsync());
-        // #3696：设备停机事件不再触发任何 MES 侧排程，事件路径不得写 ScheduleResults。
-        Assert.Equal(0, await db.ScheduleResults.AsNoTracking().CountAsync());
     }
 
     /// <summary>

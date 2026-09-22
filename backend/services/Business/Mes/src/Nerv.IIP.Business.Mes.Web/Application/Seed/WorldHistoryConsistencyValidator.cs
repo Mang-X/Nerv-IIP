@@ -1040,47 +1040,6 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
     }
 
     #endregion
-
-    #region 规则排程
-
-    /// <summary>排程结果的 fail-closed 校验：版本号唯一且连续、分配非空、时间窗口合法。</summary>
-    public async Task<WorldHistoryScheduleResultValidationReport> ValidateScheduleResultsAsync(
-        CancellationToken cancellationToken = default)
-    {
-        var failures = new List<string>();
-        var results = await dbContext.ScheduleResults
-            .AsNoTracking()
-            .OrderBy(x => x.ScheduleVersion)
-            .ToArrayAsync(cancellationToken);
-
-        var versions = results.Select(x => x.ScheduleVersion).ToArray();
-        if (versions.Length != versions.Distinct().Count())
-        {
-            failures.Add("排程结果的版本号存在重复。");
-        }
-
-        foreach (var result in results)
-        {
-            if (result.Assignments.Count == 0)
-            {
-                failures.Add($"排程结果 v{result.ScheduleVersion} 没有任何工序分配。");
-            }
-
-            foreach (var assignment in result.Assignments.Where(x => x.EndUtc < x.StartUtc))
-            {
-                failures.Add($"排程结果 v{result.ScheduleVersion} 的工序 {assignment.OperationTaskId} 结束早于开始。");
-            }
-        }
-
-        if (failures.Count > 0)
-        {
-            throw new WorldHistoryConsistencyException(failures);
-        }
-
-        return new WorldHistoryScheduleResultValidationReport(results.Length);
-    }
-
-    #endregion
 }
 
 /// <summary>MES 侧一致性校验器的产出摘要。</summary>
@@ -1106,9 +1065,6 @@ public sealed record WorldHistoryGenealogyValidationReport(
 public sealed record WorldHistoryFoundationValidationReport(
     int DeviceAssetMappingsChecked,
     int DisabledSkusChecked);
-
-/// <summary>「规则排程」块的校验产出摘要。</summary>
-public sealed record WorldHistoryScheduleResultValidationReport(int ScheduleResultsChecked);
 
 /// <summary>一致性校验失败。抛出即代表 seed 失败（fail-closed）。</summary>
 public sealed class WorldHistoryConsistencyException : InvalidOperationException

@@ -166,7 +166,6 @@ builder.Services.AddScoped<WorldHistorySeedService>();
 builder.Services.AddScoped<WorldHistoryFloorEventsSeedService>();
 builder.Services.AddScoped<WorldHistoryGenealogySeedService>();
 builder.Services.AddScoped<WorldHistoryFoundationSeedService>();
-builder.Services.AddScoped<WorldHistoryScheduleResultSeedService>();
 // Register the FluentValidation command validators (CancelWorkOrder/ReturnLineSideMaterial/... — 11 in total)
 // so the MediatR AddKnownExceptionValidationBehavior below can execute them. Without both lines the validators
 // are dead code and command-level validation never runs — matching every other business service.
@@ -337,15 +336,6 @@ if (leaderDemoSeedEnabled)
             foundation.Validation.DeviceAssetMappingsChecked,
             foundation.Validation.DisabledSkusChecked);
 
-        // L1「规则排程」块：历次排程运行。分配只引用已落库的工序任务，故排在工单链之后。
-        var scheduleResults = await scope.ServiceProvider.GetRequiredService<WorldHistoryScheduleResultSeedService>().SeedAsync(
-            leaderDemoOrganizationId,
-            leaderDemoEnvironmentId,
-            WorldHistoryConfiguration.ResolveScale(builder.Configuration));
-        app.Logger.LogInformation(
-            "World-history MES schedule-result seed completed: {ScheduleResults} schedule runs; validator checked {Checked}.",
-            scheduleResults.ScheduleResultsWritten,
-            scheduleResults.Validation.ScheduleResultsChecked);
     }
 }
 

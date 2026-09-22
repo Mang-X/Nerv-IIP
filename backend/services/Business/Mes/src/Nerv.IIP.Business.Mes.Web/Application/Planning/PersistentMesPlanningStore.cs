@@ -2,7 +2,6 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
-using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using DeviceAssetWorkCenterMapping = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.DeviceAssetWorkCenterMapping;
 using DomainOperationTask = Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate.OperationTask;
 using DomainWorkCenterUnavailability = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability;

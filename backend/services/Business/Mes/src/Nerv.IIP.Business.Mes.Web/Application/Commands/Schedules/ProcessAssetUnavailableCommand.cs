@@ -2,7 +2,6 @@ using FluentValidation;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
-using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.IntegrationEvents;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;

@@ -12,7 +12,6 @@ using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
-using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Maintenance;
 using Nerv.IIP.Contracts.Quality;
@@ -214,8 +213,6 @@ public sealed class MesCapSubscriptionTests
             Assert.True(window is not null, "MES CAP consumer should persist the work-center unavailable window.");
             Assert.Equal("WC-A", window.WorkCenterId);
             Assert.Null(window.ToUtc);
-            // #3696：停机事件消费不再触发排程，不得写 ScheduleResults。
-            Assert.Equal(0, await dbContext.ScheduleResults.AsNoTracking().CountAsync(token));
         });
     }
 
@@ -258,8 +255,6 @@ public sealed class MesCapSubscriptionTests
             x.ConsumerName == AssetRestoredIntegrationEventHandlerForReschedule.ConsumerName);
 
         Assert.Equal(restoredAtUtc, window.ToUtc);
-        // #3696：恢复事件消费不再触发排程，不得写 ScheduleResults。
-        Assert.Equal(0, await assertionDb.ScheduleResults.AsNoTracking().CountAsync());
         Assert.Equal(integrationEvent.EventId, inbox.EventId);
     }
 

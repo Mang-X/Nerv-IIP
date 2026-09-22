@@ -8,7 +8,6 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
-using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -59,9 +58,6 @@ public sealed class RushWorkOrderCommandTests
     {
         var store = new InMemoryMesPlanningStore();
         var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
-        store.AddWorkOrder(new PlannedWorkOrder("org-001", "env-dev", "WO-NORMAL", "SKU-N", null, 1m, 10, now.AddDays(1)));
-        store.AddOperationTask(new PlannedOperationTask("WO-NORMAL", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2), "SKU-001"));
-
         var handler = new CreateRushWorkOrderCommandHandler(store);
 
         var response = await handler.Handle(
@@ -241,7 +237,7 @@ public sealed class RushWorkOrderCommandTests
     }
 
     [Fact]
-    public async Task ConvertPlanToWorkOrderCommand_CreatesOperationWithoutWritingScheduleResults()
+    public async Task ConvertPlanToWorkOrderCommand_CreatesOperationForWorkCenterShortcut()
     {
         await using var provider = MesTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
@@ -279,11 +275,10 @@ public sealed class RushWorkOrderCommandTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         Assert.Equal("WO-PLAN-001", response.ReferenceId);
-        // #3696：建单不再顺带排程——WorkCenterId 分支只建工序，不写 ScheduleResults。
+        // WorkCenterId 捷径分支只建工序：工序号由工单号派生，序号固定 10。
         var operation = await dbContext.OperationTasks.AsNoTracking().SingleAsync(CancellationToken.None);
         Assert.Equal("WO-PLAN-001", operation.WorkOrderId);
         Assert.Equal("WO-PLAN-001-OP-10", operation.OperationTaskIdValue);
-        Assert.Empty(await dbContext.ScheduleResults.AsNoTracking().ToArrayAsync(CancellationToken.None));
     }
 
     [Fact]

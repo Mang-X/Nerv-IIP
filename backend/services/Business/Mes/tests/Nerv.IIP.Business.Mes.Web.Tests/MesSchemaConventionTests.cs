@@ -405,7 +405,6 @@ public sealed class MesSchemaConventionTests
             typeof(QualityHoldTransition),
             typeof(MaterialRequirement),
             typeof(MaterialIssueRequest),
-            typeof(ScheduleResult),
             typeof(WorkCenterUnavailability),
             typeof(DeviceAssetWorkCenterMapping),
             typeof(FinishedGoodsReceiptRequest),
@@ -429,8 +428,6 @@ public sealed class MesSchemaConventionTests
             fixture.DbContext,
             MesFacts.ServiceName,
             [
-                new JsonColumnRule(typeof(ScheduleResult), nameof(ScheduleResult.AssignmentsJson)),
-                new JsonColumnRule(typeof(ScheduleResult), nameof(ScheduleResult.AffectedWorkOrderIdsJson)),
                 new JsonColumnRule(typeof(MaterialRequirement), nameof(MaterialRequirement.SubstituteMaterialIdsJson)),
             ]));
         failures.AddRange(SchemaConventionAssertions.MigrationsHistoryTableIsInSchema(fixture.DbContext, MesFacts.ServiceName, MesFacts.Schema));
