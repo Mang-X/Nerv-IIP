@@ -321,7 +321,7 @@ try {
 
     $schedulingMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'scheduling-postgres-profile' -RepositoryRoot $repoRoot
     $schedulingIdentities = @(
-        'Nerv.IIP.Business.Scheduling.Web.Tests.OperationExecutionProjectionPostgresProfileTests.Migration_and_consumer_transaction_persist_one_projection_for_a_replayed_report',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.OperationExecutionProjectionPostgresProfileTests.Migration_and_concurrent_consumers_persist_one_projection_without_lost_quantity',
         'Nerv.IIP.Business.Scheduling.Web.Tests.OrderUrgencyRetentionPostgresCapacityTests.Representative_capacity_scan_and_overlapping_workers_are_safe_on_PostgreSQL',
         'Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_calendar_event_handler_changes_the_generated_plan_query_state_once',
         'Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_material_eta_event_replay_converges_after_the_first_atomic_commit_fails',

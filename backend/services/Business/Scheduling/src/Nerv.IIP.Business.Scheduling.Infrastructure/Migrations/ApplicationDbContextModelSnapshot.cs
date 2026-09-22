@@ -23,6 +23,53 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.OperationExecutionProjectionAggregate.OperationExecutionDowntimeState", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Downtime state row id.");
+
+                    b.Property<string>("DowntimeEventNo")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("downtime_event_no")
+                        .HasComment("MES downtime business identity.");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active")
+                        .HasComment("Whether this downtime still blocks the operation.");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at_utc")
+                        .HasComment("Ordering watermark for this downtime identity in UTC.");
+
+                    b.Property<Guid>("OperationExecutionProjectionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("operation_execution_projection_id")
+                        .HasComment("Owning operation execution projection id.");
+
+                    b.Property<string>("SourceEventId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("source_event_id")
+                        .HasComment("Integration event id that supplied this downtime state.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OperationExecutionProjectionId", "DowntimeEventNo")
+                        .IsUnique();
+
+                    b.ToTable("operation_execution_downtime_states", "scheduling", t =>
+                        {
+                            t.HasComment("Latest state of each MES downtime fact associated with a Scheduling operation execution projection.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.OperationExecutionProjectionAggregate.OperationExecutionProjection", b =>
                 {
                     b.Property<Guid>("Id")
@@ -67,7 +114,7 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                     b.Property<bool>("IsDowntimeBlocked")
                         .HasColumnType("boolean")
                         .HasColumnName("is_downtime_blocked")
-                        .HasComment("Whether the latest operation-scoped downtime fact is active.");
+                        .HasComment("Whether any operation-scoped downtime fact is active.");
 
                     b.Property<bool>("IsPaused")
                         .HasColumnType("boolean")
@@ -1827,6 +1874,15 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                     b.ToTable("cap_received_messages", "scheduling");
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.OperationExecutionProjectionAggregate.OperationExecutionDowntimeState", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.OperationExecutionProjectionAggregate.OperationExecutionProjection", null)
+                        .WithMany("DowntimeStates")
+                        .HasForeignKey("OperationExecutionProjectionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate.SchedulePlanAssignment", b =>
                 {
                     b.HasOne("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate.SchedulePlan", null)
@@ -1870,6 +1926,11 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                         .HasForeignKey("ArchiveBatchId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.OperationExecutionProjectionAggregate.OperationExecutionProjection", b =>
+                {
+                    b.Navigation("DowntimeStates");
                 });
 
             modelBuilder.Entity("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate.SchedulePlan", b =>

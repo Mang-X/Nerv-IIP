@@ -27,7 +27,7 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                     actual_completed_at_utc = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true, comment: "Latest accepted operation completion timestamp in UTC."),
                     is_paused = table.Column<bool>(type: "boolean", nullable: false, comment: "Whether the latest lifecycle fact leaves the operation paused."),
                     completed_quantity = table.Column<decimal>(type: "numeric(18,6)", precision: 18, scale: 6, nullable: false, comment: "Net reported good quantity, including negative reversal deltas."),
-                    is_downtime_blocked = table.Column<bool>(type: "boolean", nullable: false, comment: "Whether the latest operation-scoped downtime fact is active."),
+                    is_downtime_blocked = table.Column<bool>(type: "boolean", nullable: false, comment: "Whether any operation-scoped downtime fact is active."),
                     is_quality_blocked = table.Column<bool>(type: "boolean", nullable: false, comment: "Whether the latest operation-scoped quality result blocks execution."),
                     lifecycle_occurred_at_utc = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true, comment: "Ordering watermark for lifecycle state facts in UTC."),
                     lifecycle_event_id = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: true, comment: "Integration event id that supplied the current lifecycle state."),
@@ -44,6 +44,38 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                 },
                 comment: "Latest MES and quality execution facts projected at operation-task grain.");
 
+            migrationBuilder.CreateTable(
+                name: "operation_execution_downtime_states",
+                schema: "scheduling",
+                columns: table => new
+                {
+                    id = table.Column<Guid>(type: "uuid", nullable: false, comment: "Downtime state row id."),
+                    operation_execution_projection_id = table.Column<Guid>(type: "uuid", nullable: false, comment: "Owning operation execution projection id."),
+                    downtime_event_no = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false, comment: "MES downtime business identity."),
+                    is_active = table.Column<bool>(type: "boolean", nullable: false, comment: "Whether this downtime still blocks the operation."),
+                    occurred_at_utc = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false, comment: "Ordering watermark for this downtime identity in UTC."),
+                    source_event_id = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false, comment: "Integration event id that supplied this downtime state.")
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_operation_execution_downtime_states", x => x.id);
+                    table.ForeignKey(
+                        name: "FK_operation_execution_downtime_states_operation_execution_pro~",
+                        column: x => x.operation_execution_projection_id,
+                        principalSchema: "scheduling",
+                        principalTable: "operation_execution_projections",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.Cascade);
+                },
+                comment: "Latest state of each MES downtime fact associated with a Scheduling operation execution projection.");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_operation_execution_downtime_states_operation_execution_pro~",
+                schema: "scheduling",
+                table: "operation_execution_downtime_states",
+                columns: new[] { "operation_execution_projection_id", "downtime_event_no" },
+                unique: true);
+
             migrationBuilder.CreateIndex(
                 name: "IX_operation_execution_projections_organization_id_environment~",
                 schema: "scheduling",
@@ -55,6 +87,10 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropTable(
+                name: "operation_execution_downtime_states",
+                schema: "scheduling");
+
             migrationBuilder.DropTable(
                 name: "operation_execution_projections",
                 schema: "scheduling");

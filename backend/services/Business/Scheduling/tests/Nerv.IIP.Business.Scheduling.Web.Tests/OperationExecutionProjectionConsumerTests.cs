@@ -52,6 +52,26 @@ public sealed class OperationExecutionProjectionConsumerTests
     }
 
     [Fact]
+    public async Task Lifecycle_recovery_consumers_map_resume_and_completion()
+    {
+        await using var db = CreateDbContext();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var mutationLock = new NoopOperationExecutionProjectionMutationLock();
+
+        await new MesOperationTaskPausedIntegrationEventHandlerForProjectExecution(db, deadLetters, mutationLock)
+            .HandleAsync(Lifecycle<MesOperationTaskPausedIntegrationEvent>("evt-pause", BaseTime.AddMinutes(10)), CancellationToken.None);
+        await new MesOperationTaskResumedIntegrationEventHandlerForProjectExecution(db, deadLetters, mutationLock)
+            .HandleAsync(Lifecycle<MesOperationTaskResumedIntegrationEvent>("evt-resume", BaseTime.AddMinutes(20)), CancellationToken.None);
+        await new MesOperationTaskCompletedIntegrationEventHandlerForProjectExecution(db, deadLetters, mutationLock)
+            .HandleAsync(Lifecycle<MesOperationTaskCompletedIntegrationEvent>("evt-complete", BaseTime.AddMinutes(30)), CancellationToken.None);
+
+        var projection = await db.OperationExecutionProjections.SingleAsync();
+        Assert.False(projection.IsPaused);
+        Assert.Equal(BaseTime.AddMinutes(30), projection.ActualCompletedAtUtc);
+        Assert.Equal("evt-complete", projection.LifecycleEventId);
+    }
+
+    [Fact]
     public async Task Downtime_and_quality_consumers_skip_facts_without_operation_identity()
     {
         await using var db = CreateDbContext();
@@ -60,9 +80,9 @@ public sealed class OperationExecutionProjectionConsumerTests
         var downtimeHandler = new MesDowntimeStartedIntegrationEventHandlerForProjectExecution(db, deadLetters, mutationLock);
         var qualityHandler = new QualityInspectionResultIntegrationEventHandlerForProjectExecution(db, deadLetters, mutationLock);
 
-        await downtimeHandler.HandleAsync(DowntimeStarted("evt-downtime-unscoped", operationId: null), CancellationToken.None);
+        await downtimeHandler.HandleAsync(DowntimeStarted("evt-downtime-unscoped", "DT-UNSCOPED", operationId: null), CancellationToken.None);
         await qualityHandler.HandleAsync(QualityResult("evt-quality-unscoped", QualityIntegrationEventTypes.InspectionRejected, operationId: null), CancellationToken.None);
-        await downtimeHandler.HandleAsync(DowntimeStarted("evt-downtime", "op-010"), CancellationToken.None);
+        await downtimeHandler.HandleAsync(DowntimeStarted("evt-downtime", "DT-001", "op-010"), CancellationToken.None);
         await qualityHandler.HandleAsync(QualityResult("evt-quality", QualityIntegrationEventTypes.InspectionRejected, "op-010"), CancellationToken.None);
 
         var projection = await db.OperationExecutionProjections.SingleAsync();
@@ -70,6 +90,48 @@ public sealed class OperationExecutionProjectionConsumerTests
         Assert.True(projection.IsQualityBlocked);
         Assert.Equal("op-010", projection.OperationId);
         Assert.Equal(2, await db.ProcessedIntegrationEvents.CountAsync());
+    }
+
+    [Fact]
+    public async Task Downtime_restore_and_quality_release_consumers_clear_their_own_blocks()
+    {
+        await using var db = CreateDbContext();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var mutationLock = new NoopOperationExecutionProjectionMutationLock();
+
+        await new MesDowntimeStartedIntegrationEventHandlerForProjectExecution(db, deadLetters, mutationLock)
+            .HandleAsync(DowntimeStarted("evt-downtime", "DT-001", "op-010"), CancellationToken.None);
+        await new QualityInspectionResultIntegrationEventHandlerForProjectExecution(db, deadLetters, mutationLock)
+            .HandleAsync(QualityResult("evt-quality", QualityIntegrationEventTypes.InspectionRejected, "op-010"), CancellationToken.None);
+        await new MesDowntimeRestoredIntegrationEventHandlerForProjectExecution(db, deadLetters, mutationLock)
+            .HandleAsync(DowntimeRestored("evt-restored", "DT-001", "op-010", BaseTime.AddMinutes(10)), CancellationToken.None);
+        await new QualityInspectionResultIntegrationEventHandlerForProjectExecution(db, deadLetters, mutationLock)
+            .HandleAsync(QualityResult("evt-release", QualityIntegrationEventTypes.InspectionPassed, "op-010", BaseTime.AddMinutes(15)), CancellationToken.None);
+
+        var projection = await db.OperationExecutionProjections.SingleAsync();
+        Assert.False(projection.IsDowntimeBlocked);
+        Assert.False(projection.IsQualityBlocked);
+        Assert.Equal("evt-restored", projection.DowntimeEventId);
+        Assert.Equal("evt-release", projection.QualityEventId);
+    }
+
+    [Fact]
+    public async Task Restoring_one_downtime_keeps_another_active_downtime_blocking_the_operation()
+    {
+        await using var db = CreateDbContext();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var mutationLock = new NoopOperationExecutionProjectionMutationLock();
+        var started = new MesDowntimeStartedIntegrationEventHandlerForProjectExecution(db, deadLetters, mutationLock);
+        var restored = new MesDowntimeRestoredIntegrationEventHandlerForProjectExecution(db, deadLetters, mutationLock);
+
+        await started.HandleAsync(DowntimeStarted("evt-a-start", "DT-A", "op-010", BaseTime.AddMinutes(10)), CancellationToken.None);
+        await started.HandleAsync(DowntimeStarted("evt-b-start", "DT-B", "op-010", BaseTime.AddMinutes(20)), CancellationToken.None);
+        await restored.HandleAsync(DowntimeRestored("evt-a-restored", "DT-A", "op-010", BaseTime.AddMinutes(30)), CancellationToken.None);
+
+        var projection = await db.OperationExecutionProjections.SingleAsync();
+        Assert.True(projection.IsDowntimeBlocked);
+        Assert.Equal(2, projection.DowntimeStates.Count);
+        Assert.Single(projection.DowntimeStates, state => state.IsActive);
     }
 
     [Fact]
@@ -82,13 +144,26 @@ public sealed class OperationExecutionProjectionConsumerTests
 
         await handler.HandleAsync(ProductionReport("evt-a", "RPT-A", 1m, 0m, 0m, BaseTime), CancellationToken.None);
         await handler.HandleAsync(ProductionReport("evt-b", "RPT-B", 2m, 0m, 0m, BaseTime, organizationId: "org-002"), CancellationToken.None);
-        await handler.HandleAsync(ProductionReport("evt-c", "RPT-C", 3m, 0m, 0m, BaseTime, operationId: "op-020"), CancellationToken.None);
+        await handler.HandleAsync(ProductionReport("evt-c", "RPT-C", 3m, 0m, 0m, BaseTime, environmentId: "env-prod"), CancellationToken.None);
+        await handler.HandleAsync(ProductionReport("evt-d", "RPT-D", 4m, 0m, 0m, BaseTime, workOrderId: "wo-002"), CancellationToken.None);
+        await handler.HandleAsync(ProductionReport("evt-e", "RPT-E", 5m, 0m, 0m, BaseTime, operationId: "op-020"), CancellationToken.None);
 
-        var projections = await db.OperationExecutionProjections.OrderBy(x => x.OrganizationId).ThenBy(x => x.OperationId).ToArrayAsync();
-        Assert.Equal(3, projections.Length);
+        var projections = await db.OperationExecutionProjections
+            .OrderBy(x => x.OrganizationId)
+            .ThenBy(x => x.EnvironmentId)
+            .ThenBy(x => x.WorkOrderId)
+            .ThenBy(x => x.OperationId)
+            .ToArrayAsync();
+        Assert.Equal(5, projections.Length);
         Assert.Equal(
-            [("org-001", "op-010", 1m), ("org-001", "op-020", 3m), ("org-002", "op-010", 2m)],
-            projections.Select(x => (x.OrganizationId, x.OperationId, x.CompletedQuantity)));
+            [
+                ("org-001", "env-dev", "wo-001", "op-010", 1m),
+                ("org-001", "env-dev", "wo-001", "op-020", 5m),
+                ("org-001", "env-dev", "wo-002", "op-010", 4m),
+                ("org-001", "env-prod", "wo-001", "op-010", 3m),
+                ("org-002", "env-dev", "wo-001", "op-010", 2m),
+            ],
+            projections.Select(x => (x.OrganizationId, x.EnvironmentId, x.WorkOrderId, x.OperationId, x.CompletedQuantity)));
     }
 
     private static ApplicationDbContext CreateDbContext()
@@ -106,8 +181,24 @@ public sealed class OperationExecutionProjectionConsumerTests
         object integrationEvent = typeof(T) == typeof(MesOperationTaskStartedIntegrationEvent)
             ? new MesOperationTaskStartedIntegrationEvent(eventId, MesIntegrationEventTypes.OperationTaskStarted, 1, changedAtUtc,
                 MesIntegrationEventSources.BusinessMes, eventId, eventId, "org-001", "env-dev", "operator", eventId, payload)
-            : new MesOperationTaskPausedIntegrationEvent(eventId, MesIntegrationEventTypes.OperationTaskPaused, 1, changedAtUtc,
-                MesIntegrationEventSources.BusinessMes, eventId, eventId, "org-001", "env-dev", "operator", eventId, payload);
+            : typeof(T) == typeof(MesOperationTaskPausedIntegrationEvent)
+                ? new MesOperationTaskPausedIntegrationEvent(eventId, MesIntegrationEventTypes.OperationTaskPaused, 1, changedAtUtc,
+                    MesIntegrationEventSources.BusinessMes, eventId, eventId, "org-001", "env-dev", "operator", eventId, payload)
+                : typeof(T) == typeof(MesOperationTaskResumedIntegrationEvent)
+                    ? new MesOperationTaskResumedIntegrationEvent(eventId, MesIntegrationEventTypes.OperationTaskResumed, 1, changedAtUtc,
+                        MesIntegrationEventSources.BusinessMes, eventId, eventId, "org-001", "env-dev", "operator", eventId, payload)
+                    : new MesOperationTaskCompletedIntegrationEvent(eventId, MesIntegrationEventTypes.OperationTaskCompleted, 1, changedAtUtc,
+                        MesIntegrationEventSources.BusinessMes, eventId, eventId, "org-001", "env-dev", "operator", eventId,
+                        new OperationTaskCompletedPayload(
+                            "wo-001",
+                            "op-010",
+                            "SKU-001",
+                            10,
+                            "wc-001",
+                            100m,
+                            "PCS",
+                            false,
+                            changedAtUtc));
         return (T)integrationEvent;
     }
 
@@ -120,6 +211,8 @@ public sealed class OperationExecutionProjectionConsumerTests
         DateTimeOffset reportedAtUtc,
         string? reversedReportNo = null,
         string organizationId = "org-001",
+        string environmentId = "env-dev",
+        string workOrderId = "wo-001",
         string operationId = "op-010") =>
         new(
             eventId,
@@ -130,12 +223,12 @@ public sealed class OperationExecutionProjectionConsumerTests
             eventId,
             eventId,
             organizationId,
-            "env-dev",
+            environmentId,
             "operator",
             $"production-report:{reportNo}",
             new ProductionReportRecordedPayload(
                 reportNo,
-                "wo-001",
+                workOrderId,
                 operationId,
                 "wc-001",
                 null,
@@ -148,12 +241,16 @@ public sealed class OperationExecutionProjectionConsumerTests
                 reversedReportNo is not null,
                 reversedReportNo));
 
-    private static MesDowntimeStartedIntegrationEvent DowntimeStarted(string eventId, string? operationId) =>
+    private static MesDowntimeStartedIntegrationEvent DowntimeStarted(
+        string eventId,
+        string downtimeEventNo,
+        string? operationId,
+        DateTimeOffset? occurredAtUtc = null) =>
         new(
             eventId,
             MesIntegrationEventTypes.DowntimeStarted,
             1,
-            BaseTime,
+            occurredAtUtc ?? BaseTime,
             MesIntegrationEventSources.BusinessMes,
             eventId,
             eventId,
@@ -161,14 +258,45 @@ public sealed class OperationExecutionProjectionConsumerTests
             "env-dev",
             "operator",
             eventId,
-            new DowntimeStartedPayload("DT-001", "wo-001", operationId, "wc-001", null, "failure", BaseTime, null));
+            new DowntimeStartedPayload(downtimeEventNo, "wo-001", operationId, "wc-001", null, "failure", occurredAtUtc ?? BaseTime, null));
 
-    private static InspectionResultIntegrationEvent QualityResult(string eventId, string eventType, string? operationId) =>
+    private static MesDowntimeRestoredIntegrationEvent DowntimeRestored(
+        string eventId,
+        string downtimeEventNo,
+        string? operationId,
+        DateTimeOffset restoredAtUtc) =>
+        new(
+            eventId,
+            MesIntegrationEventTypes.DowntimeRestored,
+            1,
+            restoredAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            eventId,
+            eventId,
+            "org-001",
+            "env-dev",
+            "operator",
+            eventId,
+            new DowntimeRestoredPayload(
+                downtimeEventNo,
+                "wo-001",
+                operationId,
+                "wc-001",
+                null,
+                "failure",
+                BaseTime,
+                restoredAtUtc));
+
+    private static InspectionResultIntegrationEvent QualityResult(
+        string eventId,
+        string eventType,
+        string? operationId,
+        DateTimeOffset? recordedAtUtc = null) =>
         new(
             eventId,
             eventType,
             1,
-            BaseTime.AddMinutes(5),
+            recordedAtUtc ?? BaseTime.AddMinutes(5),
             QualityIntegrationEventSources.BusinessQuality,
             eventId,
             eventId,
@@ -187,7 +315,7 @@ public sealed class OperationExecutionProjectionConsumerTests
                 "Rejected",
                 null,
                 [],
-                BaseTime.AddMinutes(5),
+                recordedAtUtc ?? BaseTime.AddMinutes(5),
                 WorkOrderId: "wo-001",
                 OperationTaskId: operationId));
 

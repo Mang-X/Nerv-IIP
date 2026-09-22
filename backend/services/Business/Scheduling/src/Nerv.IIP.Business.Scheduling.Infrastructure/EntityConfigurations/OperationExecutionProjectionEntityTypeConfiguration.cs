@@ -22,7 +22,7 @@ public sealed class OperationExecutionProjectionEntityTypeConfiguration
         builder.Property(x => x.ActualCompletedAtUtc).HasColumnName("actual_completed_at_utc").HasComment("Latest accepted operation completion timestamp in UTC.");
         builder.Property(x => x.IsPaused).HasColumnName("is_paused").IsRequired().HasComment("Whether the latest lifecycle fact leaves the operation paused.");
         builder.Property(x => x.CompletedQuantity).HasColumnName("completed_quantity").HasPrecision(18, 6).IsRequired().HasComment("Net reported good quantity, including negative reversal deltas.");
-        builder.Property(x => x.IsDowntimeBlocked).HasColumnName("is_downtime_blocked").IsRequired().HasComment("Whether the latest operation-scoped downtime fact is active.");
+        builder.Property(x => x.IsDowntimeBlocked).HasColumnName("is_downtime_blocked").IsRequired().HasComment("Whether any operation-scoped downtime fact is active.");
         builder.Property(x => x.IsQualityBlocked).HasColumnName("is_quality_blocked").IsRequired().HasComment("Whether the latest operation-scoped quality result blocks execution.");
         builder.Property(x => x.LifecycleOccurredAtUtc).HasColumnName("lifecycle_occurred_at_utc").HasComment("Ordering watermark for lifecycle state facts in UTC.");
         builder.Property(x => x.LifecycleEventId).HasColumnName("lifecycle_event_id").HasMaxLength(128).HasComment("Integration event id that supplied the current lifecycle state.");
@@ -33,5 +33,9 @@ public sealed class OperationExecutionProjectionEntityTypeConfiguration
         builder.Property(x => x.LatestSourceOccurredAtUtc).HasColumnName("latest_source_occurred_at_utc").IsRequired().HasComment("Latest accepted source-fact timestamp across all execution axes in UTC.");
         builder.Property(x => x.LatestSourceEventId).HasColumnName("latest_source_event_id").HasMaxLength(128).IsRequired().HasComment("Integration event id for the latest accepted source fact.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderId, x.OperationId }).IsUnique();
+        builder.HasMany(x => x.DowntimeStates)
+            .WithOne()
+            .HasForeignKey(x => x.OperationExecutionProjectionId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

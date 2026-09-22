@@ -11,7 +11,7 @@ namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 public sealed class OperationExecutionProjectionPostgresProfileTests
 {
     [SchedulingPostgresFact]
-    public async Task Migration_and_consumer_transaction_persist_one_projection_for_a_replayed_report()
+    public async Task Migration_and_concurrent_consumers_persist_one_projection_without_lost_quantity()
     {
         await SchedulingPostgresLaneDatabase.ResetSchemaAsync();
         await using var provider = CreateProvider();
@@ -23,18 +23,19 @@ public sealed class OperationExecutionProjectionPostgresProfileTests
             await db.Database.MigrateAsync();
         }
 
-        var integrationEvent = ProductionReport();
-        await ConsumeAsync(provider, integrationEvent);
-        await ConsumeAsync(provider, integrationEvent);
+        var firstReport = ProductionReport("evt-report-1", "RPT-001", 7m);
+        var secondReport = ProductionReport("evt-report-2", "RPT-002", 5m);
+        await Task.WhenAll(
+            ConsumeAsync(provider, firstReport),
+            ConsumeAsync(provider, secondReport));
 
         await using var verifyScope = provider.CreateAsyncScope();
         var verifyDb = verifyScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var projection = await verifyDb.OperationExecutionProjections.AsNoTracking().SingleAsync();
         Assert.Equal(("org-001", "env-dev", "wo-001", "op-010"),
             (projection.OrganizationId, projection.EnvironmentId, projection.WorkOrderId, projection.OperationId));
-        Assert.Equal(7m, projection.CompletedQuantity);
-        Assert.Equal("evt-report", projection.LatestSourceEventId);
-        Assert.Single(await verifyDb.ProcessedIntegrationEvents.AsNoTracking().ToArrayAsync());
+        Assert.Equal(12m, projection.CompletedQuantity);
+        Assert.Equal(2, await verifyDb.ProcessedIntegrationEvents.AsNoTracking().CountAsync());
     }
 
     private static async Task ConsumeAsync(
@@ -61,28 +62,31 @@ public sealed class OperationExecutionProjectionPostgresProfileTests
         return services.BuildServiceProvider();
     }
 
-    private static ProductionReportRecordedIntegrationEvent ProductionReport()
+    private static ProductionReportRecordedIntegrationEvent ProductionReport(
+        string eventId,
+        string reportNo,
+        decimal goodQuantity)
     {
         var reportedAtUtc = new DateTimeOffset(2026, 9, 22, 8, 0, 0, TimeSpan.Zero);
         return new ProductionReportRecordedIntegrationEvent(
-            "evt-report",
+            eventId,
             MesIntegrationEventTypes.ProductionReportRecorded,
             MesIntegrationEventVersions.V1,
             reportedAtUtc,
             MesIntegrationEventSources.BusinessMes,
-            "corr-report",
-            "cause-report",
+            $"corr-{reportNo}",
+            $"cause-{reportNo}",
             "org-001",
             "env-dev",
             "operator",
-            "production-report:RPT-001",
+            $"production-report:{reportNo}",
             new ProductionReportRecordedPayload(
-                "RPT-001",
+                reportNo,
                 "wo-001",
                 "op-010",
                 "wc-001",
                 null,
-                7m,
+                goodQuantity,
                 2m,
                 1m,
                 "PCS",

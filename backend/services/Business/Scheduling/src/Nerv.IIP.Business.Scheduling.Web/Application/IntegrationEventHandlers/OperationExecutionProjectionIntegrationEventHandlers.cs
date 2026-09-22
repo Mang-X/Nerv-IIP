@@ -177,7 +177,10 @@ public sealed class MesDowntimeStartedIntegrationEventHandlerForProjectExecution
         return OperationExecutionProjectionConsumerPersistence.ProjectAsync(
             dbContext, mutationLock, ConsumerName, value,
             value.Payload.WorkOrderId, value.Payload.OperationTaskId, null, value.Payload.WorkCenterId,
-            projection => projection.ApplyDowntimeStarted(value.Payload.StartedAtUtc, value.EventId),
+            projection => projection.ApplyDowntimeStarted(
+                value.Payload.DowntimeEventNo,
+                value.Payload.StartedAtUtc,
+                value.EventId),
             cancellationToken);
     }
 }
@@ -211,7 +214,10 @@ public sealed class MesDowntimeRestoredIntegrationEventHandlerForProjectExecutio
         return OperationExecutionProjectionConsumerPersistence.ProjectAsync(
             dbContext, mutationLock, ConsumerName, value,
             value.Payload.WorkOrderId, value.Payload.OperationTaskId, null, value.Payload.WorkCenterId,
-            projection => projection.ApplyDowntimeRestored(value.Payload.RestoredAtUtc, value.EventId),
+            projection => projection.ApplyDowntimeRestored(
+                value.Payload.DowntimeEventNo,
+                value.Payload.RestoredAtUtc,
+                value.EventId),
             cancellationToken);
     }
 }
@@ -307,7 +313,9 @@ internal static class OperationExecutionProjectionConsumerPersistence
             return;
         }
 
-        var projection = await dbContext.OperationExecutionProjections.SingleOrDefaultAsync(
+        var projection = await dbContext.OperationExecutionProjections
+            .Include(x => x.DowntimeStates)
+            .SingleOrDefaultAsync(
             x => x.OrganizationId == integrationEvent.OrganizationId
                  && x.EnvironmentId == integrationEvent.EnvironmentId
                  && x.WorkOrderId == workOrderId

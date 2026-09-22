@@ -55,9 +55,9 @@ public sealed class OperationExecutionProjectionTests
     {
         var projection = CreateProjection();
 
-        projection.ApplyDowntimeStarted(BaseTime.AddMinutes(30), "evt-downtime");
+        projection.ApplyDowntimeStarted("DT-001", BaseTime.AddMinutes(30), "evt-downtime");
         projection.ApplyQualityReleased(BaseTime.AddMinutes(40), "evt-quality-release");
-        projection.ApplyDowntimeRestored(BaseTime.AddMinutes(20), "evt-old-restore");
+        projection.ApplyDowntimeRestored("DT-001", BaseTime.AddMinutes(20), "evt-old-restore");
         projection.ApplyQualityBlocked(BaseTime.AddMinutes(35), "evt-old-reject");
 
         Assert.True(projection.IsDowntimeBlocked);
@@ -65,6 +65,61 @@ public sealed class OperationExecutionProjectionTests
         Assert.Equal(BaseTime.AddMinutes(30), projection.DowntimeOccurredAtUtc);
         Assert.Equal(BaseTime.AddMinutes(40), projection.QualityOccurredAtUtc);
         Assert.Equal("evt-quality-release", projection.LatestSourceEventId);
+    }
+
+    [Fact]
+    public void Earlier_first_fact_on_another_axis_is_not_rejected_by_the_global_latest_source()
+    {
+        var projection = CreateProjection();
+
+        projection.ApplyDowntimeStarted("DT-001", BaseTime.AddMinutes(30), "evt-downtime");
+        projection.ApplyQualityBlocked(BaseTime.AddMinutes(20), "evt-quality");
+
+        Assert.True(projection.IsDowntimeBlocked);
+        Assert.True(projection.IsQualityBlocked);
+        Assert.Equal(BaseTime.AddMinutes(30), projection.LatestSourceOccurredAtUtc);
+    }
+
+    [Fact]
+    public void Restoring_one_of_two_active_downtimes_keeps_the_operation_blocked()
+    {
+        var projection = CreateProjection();
+
+        projection.ApplyDowntimeStarted("DT-A", BaseTime.AddMinutes(10), "evt-a-start");
+        projection.ApplyDowntimeStarted("DT-B", BaseTime.AddMinutes(20), "evt-b-start");
+        projection.ApplyDowntimeRestored("DT-A", BaseTime.AddMinutes(30), "evt-a-restored");
+
+        Assert.True(projection.IsDowntimeBlocked);
+
+        projection.ApplyDowntimeRestored("DT-B", BaseTime.AddMinutes(40), "evt-b-restored");
+
+        Assert.False(projection.IsDowntimeBlocked);
+    }
+
+    [Fact]
+    public void Zero_duration_downtime_converges_to_restored_when_events_arrive_in_reverse_order()
+    {
+        var projection = CreateProjection();
+        var occurredAtUtc = BaseTime.AddMinutes(10);
+
+        projection.ApplyDowntimeRestored("DT-001", occurredAtUtc, "evt-restored");
+        projection.ApplyDowntimeStarted("DT-001", occurredAtUtc, "evt-started");
+
+        Assert.False(projection.IsDowntimeBlocked);
+        Assert.Equal("evt-restored", projection.DowntimeEventId);
+    }
+
+    [Fact]
+    public void Zero_duration_downtime_converges_to_restored_when_events_arrive_in_source_order()
+    {
+        var projection = CreateProjection();
+        var occurredAtUtc = BaseTime.AddMinutes(10);
+
+        projection.ApplyDowntimeStarted("DT-001", occurredAtUtc, "evt-started");
+        projection.ApplyDowntimeRestored("DT-001", occurredAtUtc, "evt-restored");
+
+        Assert.False(projection.IsDowntimeBlocked);
+        Assert.Equal("evt-restored", projection.DowntimeEventId);
     }
 
     private static OperationExecutionProjection CreateProjection() =>
