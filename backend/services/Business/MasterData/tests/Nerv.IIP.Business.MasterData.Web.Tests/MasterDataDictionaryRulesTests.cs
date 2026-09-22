@@ -446,7 +446,7 @@ public sealed class MasterDataDictionaryRulesTests
     /// 多数码集手抄自 `docs/reference/master-data/dictionary.md`，供本文件用作独立 oracle；两者之间
     /// 没有任何机器校验，只靠这条注释指过去。已知例外：`uom-dimension` 这里是 10 码，文档
     /// （`dictionary.md:44`）只列 6 码（count/length/area/volume/weight/time），另外 4 码
-    /// （force/torque/pressure/ratio）照抄的是同文件 producer 侧 `MasterDataDictionaryRules.cs:80-83`，
+    /// （force/torque/pressure/ratio）照抄的是 producer 侧 `MasterDataDictionaryRules.cs:80-83`，
     /// 与文档存在真实漂移（登记为独立事项，不在本 PR 修）。
     /// `dictionary.md` 自身也不是运行时权威：其 `:3` 明确自述「不是独立运行时事实源」，最终以 seed /
     /// ReferenceData 独立目录 API / 领域校验器 / 前端消费代码为准；这份手抄表同样不是权威，只是复核入口。
