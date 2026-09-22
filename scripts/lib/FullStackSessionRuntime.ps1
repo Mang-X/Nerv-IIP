@@ -1674,6 +1674,24 @@ function Collect-NervFullStackDiagnostics {
     return [pscustomobject]@{ Complete = $collectionErrors.Count -eq 0; Errors = @($collectionErrors) }
 }
 
+function Resolve-NervManagedFullStackRunManifest {
+    param(
+        [Parameter(Mandatory)] [object] $Manifest,
+        [Parameter(Mandatory)] [int] $CoordinatorPid,
+        [Parameter(Mandatory)] [string] $CoordinatorStartTimeUtc
+    )
+
+    if ([int] $Manifest.coordinator.pid -ne $CoordinatorPid) { return $null }
+
+    $expectedStart = [DateTimeOffset]::Parse($CoordinatorStartTimeUtc).UtcDateTime
+    $manifestStart = [DateTimeOffset]::Parse("$($Manifest.coordinator.processStartTimeUtc)").UtcDateTime
+    if ([Math]::Abs(($manifestStart - $expectedStart).TotalMilliseconds) -ge $script:NervProcessStartTimeToleranceMilliseconds) {
+        return $null
+    }
+
+    return $Manifest
+}
+
 function Invoke-NervManagedFullStackRun {
     param(
         [Parameter(Mandatory)] [scriptblock] $StartAction,

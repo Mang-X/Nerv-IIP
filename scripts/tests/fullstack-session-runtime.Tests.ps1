@@ -1638,6 +1638,71 @@ Assert-True ([string]::Equals([string]$managedScenarioFailure, 'original scenari
 Assert-True ($script:managedCollectCalls -eq 1) 'Managed run must collect after scenario failure.'
 Assert-True ($script:managedStopCalls -eq 1) 'Managed run must stop after scenario failure.'
 
+$managedRunOwnerStartedAt = '2026-09-22T01:02:03.0000000Z'
+$ownedFailedStartManifest = [pscustomobject]@{
+    sessionId = 'nerv-dead-000006'
+    state = 'Failed'
+    coordinator = [pscustomobject]@{
+        pid = 12008
+        processStartTimeUtc = $managedRunOwnerStartedAt
+    }
+}
+$foreignFailedStartManifest = [pscustomobject]@{
+    sessionId = 'nerv-dead-000006'
+    state = 'Running'
+    coordinator = [pscustomobject]@{
+        pid = 12009
+        processStartTimeUtc = $managedRunOwnerStartedAt
+    }
+}
+$script:managedFailureCalls = 0
+$script:managedCollectCalls = 0
+$script:managedStopCalls = 0
+$foreignStartFailure = $null
+try {
+    Invoke-NervManagedFullStackRun `
+        -StartAction { throw "Full-stack session ID 'nerv-dead-000006' already exists and cannot be overwritten." } `
+        -ScenarioAction { param($Manifest) throw 'Scenario must not run after startup rejection.' } `
+        -ResolveFailedManifestAction {
+            Resolve-NervManagedFullStackRunManifest `
+                -Manifest $foreignFailedStartManifest `
+                -CoordinatorPid 12008 `
+                -CoordinatorStartTimeUtc $managedRunOwnerStartedAt
+        } `
+        -FailureAction { param($Manifest, $FailureRecord) $script:managedFailureCalls++ } `
+        -CollectAction { param($Manifest) $script:managedCollectCalls++ } `
+        -StopAction { param($Manifest) $script:managedStopCalls++; [pscustomobject]@{ Complete = $true; Manifest = $Manifest } } | Out-Null
+}
+catch { $foreignStartFailure = $_.Exception.Message }
+Assert-True ([string]::Equals([string]$foreignStartFailure, "Full-stack session ID 'nerv-dead-000006' already exists and cannot be overwritten.", [StringComparison]::Ordinal)) 'A conflicting SessionId must preserve the original startup rejection.'
+Assert-True ($script:managedFailureCalls -eq 0) 'A conflicting SessionId must not mutate the existing session failure state.'
+Assert-True ($script:managedCollectCalls -eq 0) 'A conflicting SessionId must not collect diagnostics from the existing session.'
+Assert-True ($script:managedStopCalls -eq 0) 'A conflicting SessionId must not stop the existing session.'
+
+$script:managedFailureCalls = 0
+$script:managedCollectCalls = 0
+$script:managedStopCalls = 0
+$ownedStartFailure = $null
+try {
+    Invoke-NervManagedFullStackRun `
+        -StartAction { throw 'owned startup failure' } `
+        -ScenarioAction { param($Manifest) throw 'Scenario must not run after startup failure.' } `
+        -ResolveFailedManifestAction {
+            Resolve-NervManagedFullStackRunManifest `
+                -Manifest $ownedFailedStartManifest `
+                -CoordinatorPid 12008 `
+                -CoordinatorStartTimeUtc $managedRunOwnerStartedAt
+        } `
+        -FailureAction { param($Manifest, $FailureRecord) $script:managedFailureCalls++ } `
+        -CollectAction { param($Manifest) $script:managedCollectCalls++ } `
+        -StopAction { param($Manifest) $script:managedStopCalls++; [pscustomobject]@{ Complete = $true; Manifest = $Manifest } } | Out-Null
+}
+catch { $ownedStartFailure = $_.Exception.Message }
+Assert-True ([string]::Equals([string]$ownedStartFailure, 'owned startup failure', [StringComparison]::Ordinal)) 'An owned startup failure must preserve the original error.'
+Assert-True ($script:managedFailureCalls -eq 1) 'An owned startup failure must retain failure recording.'
+Assert-True ($script:managedCollectCalls -eq 1) 'An owned startup failure must retain diagnostic collection.'
+Assert-True ($script:managedStopCalls -eq 1) 'An owned startup failure must retain cleanup.'
+
 $script:preparedDiagnosticState = $null
 $script:collectedDiagnosticState = $null
 $failedDiagnosticResult = Invoke-NervFullStackDiagnosticCollection `

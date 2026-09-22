@@ -774,7 +774,11 @@ elseif ([string]::Equals([string]($Scenario), [string]('leader-demo-equipment-br
                             }
                     } `
                     -ResolveFailedManifestAction {
-                        Read-NervFullStackManifest -SessionId $SessionId
+                        $failedManifest = Read-NervFullStackManifest -SessionId $SessionId
+                        Resolve-NervManagedFullStackRunManifest `
+                            -Manifest $failedManifest `
+                            -CoordinatorPid $PID `
+                            -CoordinatorStartTimeUtc $runProcess.StartTime.ToUniversalTime().ToString('O')
                     } `
                     -FailureAction {
                         param($InputManifest, $FailureRecord)
