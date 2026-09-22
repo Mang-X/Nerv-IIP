@@ -144,9 +144,10 @@ public sealed class WorldHistorySchedulingSeedServiceTests(ITestOutputHelper out
     }
 
     /// <summary>
-    /// 演示走查缺口：排产工作台页完全空白（<c>nerv_iip_scheduling</c> 业务表 0 行）。
-    /// 全链写入 + 幂等重跑零写入，且对任意 asOfDate（含周日、春节段、月末冲量窗口）成立；
-    /// 量以 spec 事实流为准，不空断。
+    /// 种子不再写排产方案——历史表为空直到用户现场生成（#3594）。
+    /// 只写问题快照作为引擎的输入、及订单紧急度快照；
+    /// 幂等重跑零写入问题快照和紧急度快照（已存在则跳过），
+    /// 且对任意 asOfDate（含周日、春节段、月末冲量窗口）成立。
     /// </summary>
     [Theory]
     [InlineData(2026, 7, 27)]
@@ -167,14 +168,16 @@ public sealed class WorldHistorySchedulingSeedServiceTests(ITestOutputHelper out
         output.WriteLine($"small-scale-{asOfDate:yyyy-MM-dd}-plans={first.SchedulePlansWritten}");
         output.WriteLine($"small-scale-{asOfDate:yyyy-MM-dd}-assignments={first.AssignmentsWritten}");
 
-        Assert.Equal(facts.Plans.Count, first.SchedulePlansWritten);
+        // 种子写入问题快照（引擎的输入）和订单紧急度快照，不再写排产方案和明细
+        Assert.Equal(0, first.SchedulePlansWritten);
         Assert.Equal(facts.Plans.Count, first.ScheduleProblemsWritten);
-        Assert.Equal(facts.AssignmentCount, first.AssignmentsWritten);
-        Assert.Equal(facts.ResourceLoadCount, first.ResourceLoadsWritten);
-        Assert.Equal(facts.ConflictCount, first.ConflictsWritten);
-        Assert.Equal(facts.UnscheduledOperationCount, first.UnscheduledOperationsWritten);
+        Assert.Equal(0, first.AssignmentsWritten);
+        Assert.Equal(0, first.ResourceLoadsWritten);
+        Assert.Equal(0, first.ConflictsWritten);
+        Assert.Equal(0, first.UnscheduledOperationsWritten);
         Assert.Equal(facts.Urgencies.Count, first.OrderUrgencySnapshotsWritten);
 
+        // 幂等重跑：问题快照和紧急度快照已存在则跳过
         Assert.Equal(0, second.SchedulePlansWritten);
         Assert.Equal(0, second.ScheduleProblemsWritten);
         Assert.Equal(0, second.AssignmentsWritten);
@@ -183,40 +186,16 @@ public sealed class WorldHistorySchedulingSeedServiceTests(ITestOutputHelper out
         Assert.Equal(0, second.UnscheduledOperationsWritten);
         Assert.Equal(0, second.OrderUrgencySnapshotsWritten);
 
-        // 库终态 == spec 事实流。
-        Assert.Equal(facts.Plans.Count, await db.SchedulePlans.CountAsync());
+        // 库终态：排产方案表为空（待用户现场生成），问题快照和紧急度快照按规格完整
+        Assert.Equal(0, await db.SchedulePlans.CountAsync());
         Assert.Equal(facts.Plans.Count, await db.ScheduleProblems.CountAsync());
         Assert.Equal(facts.Urgencies.Count, await db.OrderUrgencySnapshots.CountAsync());
-        var persistedAssignments = await db.SchedulePlans.AsNoTracking().SumAsync(x => x.Assignments.Count);
-        Assert.Equal(facts.AssignmentCount, persistedAssignments);
-
-        // 生命周期分布：恰一个已发布（ux_schedule_plans_scope_active_release），队尾待发布。
-        Assert.Equal(1, await db.SchedulePlans.CountAsync(x => x.Status == SchedulePlanLifecycleStatus.Released));
-        Assert.Equal(
-            facts.CountOf(SchedulePlanLifecycleStatus.Generated),
-            await db.SchedulePlans.CountAsync(x => x.Status == SchedulePlanLifecycleStatus.Generated));
-        Assert.Equal(
-            facts.CountOf(SchedulePlanLifecycleStatus.Superseded),
-            await db.SchedulePlans.CountAsync(x => x.Status == SchedulePlanLifecycleStatus.Superseded));
-        Assert.Equal(
-            facts.CountOf(SchedulePlanLifecycleStatus.Revoked),
-            await db.SchedulePlans.CountAsync(x => x.Status == SchedulePlanLifecycleStatus.Revoked));
-
-        // 发布号单调唯一（ux_schedule_plans_scope_release_revision）。
-        var revisions = await db.SchedulePlans.AsNoTracking()
-            .Where(x => x.ReleaseRevision != null)
-            .Select(x => x.ReleaseRevision!.Value)
-            .ToArrayAsync();
-        Assert.Equal(revisions.Length, revisions.Distinct().Count());
-        Assert.Equal(Enumerable.Range(1, revisions.Length).Select(x => (long)x), revisions.OrderBy(x => x));
 
         // 号段格式与保留段隔离。
-        var planIds = await db.SchedulePlans.Select(x => x.PlanId).ToArrayAsync();
-        Assert.All(planIds, planId => Assert.Matches(@"^SP-2026-\d{4}$", planId));
         var problemIds = await db.ScheduleProblems.Select(x => x.ProblemId).ToArrayAsync();
         Assert.All(problemIds, problemId => Assert.Matches(@"^SPB-2026-\d{4}$", problemId));
         Assert.All(
-            planIds.Concat(problemIds),
+            problemIds,
             reference => Assert.DoesNotContain(
                 WorldHistorySchedulingSpec.ReservedInfixes,
                 infix => reference.Contains(infix, StringComparison.Ordinal)));

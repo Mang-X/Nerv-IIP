@@ -42,20 +42,20 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
         var facts = WorldHistorySchedulingSpec.BuildSchedulingFacts(asOfDate, scale);
 
         var problemsWritten = await SeedProblemsAsync(organizationId, environmentId, facts.Plans, cancellationToken);
-        var written = await SeedPlansAsync(organizationId, environmentId, facts.Plans, cancellationToken);
+        // 种子不再写排产方案——历史表为空直到用户生成；引擎现场计算
         var urgenciesWritten = await SeedUrgencySnapshotsAsync(organizationId, environmentId, facts.Urgencies, cancellationToken);
 
-        // fail-closed：方案数量、生命周期分布、发布号单调、问题快照可反序列化对不上就让 seed 失败。
+        // fail-closed：问题快照可反序列化对不上就让 seed 失败；验证改为校验问题入力的最小完整性
         var validation = await new WorldHistoryConsistencyValidator(dbContext)
             .ValidateAsync(organizationId, environmentId, asOfDate, scale, cancellationToken);
 
         return new WorldHistorySchedulingSeedReport(
             ScheduleProblemsWritten: problemsWritten,
-            SchedulePlansWritten: written.Plans,
-            AssignmentsWritten: written.Assignments,
-            ResourceLoadsWritten: written.ResourceLoads,
-            ConflictsWritten: written.Conflicts,
-            UnscheduledOperationsWritten: written.UnscheduledOperations,
+            SchedulePlansWritten: 0,
+            AssignmentsWritten: 0,
+            ResourceLoadsWritten: 0,
+            ConflictsWritten: 0,
+            UnscheduledOperationsWritten: 0,
             OrderUrgencySnapshotsWritten: urgenciesWritten,
             Validation: validation);
     }

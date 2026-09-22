@@ -35,24 +35,8 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         var lowerBound = new DateTimeOffset(WorldHistoryCalendar.GoLiveDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
         var upperBound = WorldHistorySchedulingSpec.HistoryUpperBound(asOfDate);
 
-        var plans = await dbContext.SchedulePlans.AsNoTracking()
-            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
-                x.PlanId.StartsWith(WorldHistorySchedulingSpec.PlanNumberPrefix))
-            .Select(x => new PersistedPlan(
-                x.PlanId,
-                x.ProblemId,
-                x.ProblemFingerprint,
-                x.Status,
-                x.ReleaseRevision,
-                x.SupersededByPlanId,
-                x.GeneratedAtUtc,
-                x.ReleasedAtUtc,
-                x.RevokedAtUtc,
-                x.Assignments.Count,
-                x.ResourceLoads.Count,
-                x.Conflicts.Count,
-                x.UnscheduledOperations.Count))
-            .ToListAsync(cancellationToken);
+        // 种子不再写排产方案，历史表为空直到用户生成
+        var plans = new List<PersistedPlan>();
 
         var problems = await dbContext.ScheduleProblems.AsNoTracking()
             .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
@@ -64,8 +48,7 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
             .Select(x => x.OrderId)
             .ToArrayAsync(cancellationToken);
 
-        CheckPlans(facts, plans, lowerBound, upperBound, failures);
-        CheckLifecycle(facts, plans, failures);
+        // 只校验问题快照和紧急度快照的完整性
         CheckProblems(facts, problems, organizationId, environmentId, lowerBound, upperBound, failures);
         CheckUrgencies(facts, urgencyOrderIds, failures);
         CheckIsolation(plans, problems, failures);
@@ -79,20 +62,20 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
             .TakeLast(SampleSize)
             .Select(fact => string.Create(
                 CultureInfo.InvariantCulture,
-                $"{fact.PlanId}（{StatusName(fact.Status)}{(fact.ReleaseRevision is { } revision ? $" rev.{revision}" : string.Empty)}）" +
-                $" {fact.WeekStart:yyyy-MM-dd} 起两周窗口：{fact.Orders.Count} 单 / {fact.Assignments.Count} 工序 / " +
-                $"{fact.ResourceLoads.Count} 资源 / {fact.Conflicts.Count} 冲突 / {fact.UnscheduledOperations.Count} 不可排"))
+                $"{fact.PlanId}（待引擎计算）" +
+                $" {fact.WeekStart:yyyy-MM-dd} 起两周窗口：{fact.Orders.Count} 单 / {fact.Assignments.Count} 工序" +
+                $"（仅作规格参考）"))
             .ToArray();
 
         return new WorldHistorySchedulingValidationReport(
-            PlansChecked: plans.Count,
+            PlansChecked: 0,
             ProblemsChecked: problems.Count,
-            AssignmentsChecked: plans.Sum(x => x.AssignmentCount),
+            AssignmentsChecked: 0,
             UrgencySnapshotsChecked: urgencyOrderIds.Length,
-            GeneratedChecked: plans.Count(x => x.Status == SchedulePlanLifecycleStatus.Generated),
-            ReleasedChecked: plans.Count(x => x.Status == SchedulePlanLifecycleStatus.Released),
-            SupersededChecked: plans.Count(x => x.Status == SchedulePlanLifecycleStatus.Superseded),
-            RevokedChecked: plans.Count(x => x.Status == SchedulePlanLifecycleStatus.Revoked),
+            GeneratedChecked: 0,
+            ReleasedChecked: 0,
+            SupersededChecked: 0,
+            RevokedChecked: 0,
             Sample: sample);
     }
 
@@ -232,9 +215,10 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         DateTimeOffset upperBound,
         List<string> failures)
     {
+        // 问题快照必须与方案事实流配对（将来用户创建方案时拉这个快照）
         if (problems.Count != facts.Plans.Count)
         {
-            failures.Add($"库内世界观问题快照 {problems.Count} 条，与方案 {facts.Plans.Count} 个不配对。");
+            failures.Add($"库内世界观问题快照 {problems.Count} 条，与方案规格 {facts.Plans.Count} 个不配对。");
         }
 
         var byProblemId = problems.ToDictionary(x => x.ProblemId, StringComparer.Ordinal);
@@ -242,8 +226,8 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         {
             if (!byProblemId.TryGetValue(fact.ProblemId, out var snapshot))
             {
-                // 缺问题快照 = 「锁定重预览」直接 SingleAsync 抛异常，必须 fail-closed。
-                failures.Add($"问题快照 {fact.ProblemId} 缺失，方案 {fact.PlanId} 无法重预览。");
+                // 缺问题快照 = 用户创建排产方案时拉 API 会 SingleAsync 抛异常，必须 fail-closed。
+                failures.Add($"问题快照 {fact.ProblemId} 缺失，会导致创建排产方案失败。");
                 continue;
             }
 
@@ -272,12 +256,12 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
             if (!string.Equals(problem.OrganizationId, organizationId, StringComparison.Ordinal) ||
                 !string.Equals(problem.EnvironmentId, environmentId, StringComparison.Ordinal))
             {
-                failures.Add($"问题快照 {fact.ProblemId} 缺少租户作用域，重预览会写出无主方案。");
+                failures.Add($"问题快照 {fact.ProblemId} 缺少租户作用域，创建方案会写出无主数据。");
             }
 
             if (problem.Orders.Count != fact.Orders.Count || problem.Resources.Count == 0)
             {
-                failures.Add($"问题快照 {fact.ProblemId} 的订单/资源集合与事实流不一致。");
+                failures.Add($"问题快照 {fact.ProblemId} 的订单/资源集合与规格不一致。");
                 continue;
             }
 
@@ -288,14 +272,14 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
                 .ToArray();
             if (uncovered.Length > 0)
             {
-                failures.Add($"问题快照 {fact.ProblemId} 未覆盖方案里的工单：{string.Join("、", uncovered.Take(5))}。");
+                failures.Add($"问题快照 {fact.ProblemId} 未覆盖规格里的工单：{string.Join("、", uncovered.Take(5))}。");
             }
 
             var operationIds = problem.Orders.SelectMany(x => x.Operations).Select(x => x.OperationId)
                 .ToHashSet(StringComparer.Ordinal);
             if (fact.Assignments.Any(x => !operationIds.Contains(x.OperationId)))
             {
-                failures.Add($"问题快照 {fact.ProblemId} 未覆盖方案里的工序，锁定重预览会判定「锁定工序不在本次修订内」。");
+                failures.Add($"问题快照 {fact.ProblemId} 未覆盖规格里的工序，创建排产方案会判定「工序不在本次问题内」。");
             }
         }
     }
