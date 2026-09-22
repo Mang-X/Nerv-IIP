@@ -1,3 +1,5 @@
+using Nerv.IIP.Business.Mes.Domain.DomainEvents;
+
 namespace Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate;
 
 public partial record WorkCenterUnavailabilityId : IGuidStronglyTypedId;
@@ -16,7 +18,9 @@ public sealed class WorkCenterUnavailability : Entity<WorkCenterUnavailabilityId
         DateTimeOffset fromUtc,
         DateTimeOffset? toUtc,
         string reason,
-        string? deviceAssetId)
+        string? deviceAssetId,
+        string? workOrderId,
+        string? operationTaskId)
     {
         OrganizationId = string.IsNullOrWhiteSpace(organizationId) ? null : organizationId.Trim();
         EnvironmentId = string.IsNullOrWhiteSpace(environmentId) ? null : environmentId.Trim();
@@ -26,6 +30,8 @@ public sealed class WorkCenterUnavailability : Entity<WorkCenterUnavailabilityId
         ToUtc = toUtc;
         Reason = DomainGuard.Required(reason, nameof(reason));
         DeviceAssetId = string.IsNullOrWhiteSpace(deviceAssetId) ? null : deviceAssetId.Trim();
+        WorkOrderId = string.IsNullOrWhiteSpace(workOrderId) ? null : workOrderId.Trim();
+        OperationTaskId = string.IsNullOrWhiteSpace(operationTaskId) ? null : operationTaskId.Trim();
     }
 
     public string WorkCenterId { get; private set; } = string.Empty;
@@ -36,6 +42,8 @@ public sealed class WorkCenterUnavailability : Entity<WorkCenterUnavailabilityId
     public DateTimeOffset? ToUtc { get; private set; }
     public string Reason { get; private set; } = string.Empty;
     public string? DeviceAssetId { get; private set; }
+    public string? WorkOrderId { get; private set; }
+    public string? OperationTaskId { get; private set; }
 
     public static WorkCenterUnavailability Open(
         string? organizationId,
@@ -45,9 +53,27 @@ public sealed class WorkCenterUnavailability : Entity<WorkCenterUnavailabilityId
         DateTimeOffset fromUtc,
         DateTimeOffset? toUtc,
         string reason,
-        string? deviceAssetId)
+        string? deviceAssetId,
+        string? workOrderId = null,
+        string? operationTaskId = null)
     {
-        return new WorkCenterUnavailability(organizationId, environmentId, downtimeEventNo, workCenterId, fromUtc, toUtc, reason, deviceAssetId);
+        var downtime = new WorkCenterUnavailability(
+            organizationId,
+            environmentId,
+            downtimeEventNo,
+            workCenterId,
+            fromUtc,
+            toUtc,
+            reason,
+            deviceAssetId,
+            workOrderId,
+            operationTaskId);
+        downtime.AddDomainEvent(new DowntimeStartedDomainEvent(downtime));
+        if (toUtc is { } restoredAtUtc)
+        {
+            downtime.AddDomainEvent(new DowntimeRestoredDomainEvent(downtime, restoredAtUtc));
+        }
+        return downtime;
     }
 
     /// <summary>
@@ -90,5 +116,6 @@ public sealed class WorkCenterUnavailability : Entity<WorkCenterUnavailabilityId
         }
 
         ToUtc = restoredAtUtc;
+        AddDomainEvent(new DowntimeRestoredDomainEvent(this, restoredAtUtc));
     }
 }

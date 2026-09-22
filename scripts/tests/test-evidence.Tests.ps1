@@ -1553,7 +1553,8 @@ Assert-Equal 2 @($demandPlanningRedisRules[0].testIdentities).Count 'The Redis/C
 $mesMaterialSubstituteIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.MesMaterialSubstituteSnapshotPostgresTests.Substitute_snapshot_migration_and_cross_scope_readback_hold_on_postgres'
 $mesProductionCandidateRules = @($livePolicy.rules | Where-Object { [string]::Equals([string]$_.id, 'mes-production-candidate', [StringComparison]::Ordinal) })
 Assert-Equal 1 $mesProductionCandidateRules.Count 'The MES production candidate PostgreSQL proofs must have one evidence policy rule.'
-Assert-Equal 56 @($mesProductionCandidateRules[0].testIdentities).Count 'The MES production candidate policy rule must freeze its fifty-six governed PostgreSQL identities.'
+Assert-Equal 59 @($mesProductionCandidateRules[0].testIdentities).Count 'The MES production candidate policy rule must freeze its fifty-nine governed PostgreSQL identities.'
+# #3720 增加停机开始、停机恢复与工序生命周期事实的 3 条 PostgreSQL 回归，共 59 条。
 # #3469 增加一次合法资本化与冲销交错的 PostgreSQL 回归，共 56 条。
 # #3129 把 52 抬到 55：下达命令与 #3119 补下达两条路径各自把报工按 (工单, 工序) 分组并用
 # SUM(CASE WHEN reversed_report_no IS NULL ...) 排除冲销行，分组键与条件求和都必须由真实 provider 翻译；

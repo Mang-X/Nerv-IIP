@@ -36,6 +36,7 @@
         "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_cap_concurrent_operation_recovers_loser_and_persists_exactly_one_audit_and_outbox",
         "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_device_reference_batch_uses_two_fixed_relational_reads_for_one_and_two_hundred_references",
         "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_disable_endpoint_transaction_fact_persists_audit_and_cap_outbox_with_operation_identity",
+        "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_migration_normalizes_legacy_sku_tracking_policy_synonyms_and_leaves_valid_rows",
         "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_store_persists_master_data_aggregates",
         "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_work_calendar_update_replaces_owned_details_after_reload",
         "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTestsToolingAudit.Tooling_audit_is_scoped_and_excludes_sensitive_request_content_on_postgres",
@@ -442,6 +443,25 @@
         "Nerv.IIP.Business.Mes.Web.Tests.CreatedWorkOrderReleaseBackfillPostgresTests.Backfill_clears_the_impact_query_for_executing_created_work_orders_and_reruns_clean_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.CreatedWorkOrderReleaseBackfillPostgresTests.Backfill_publishes_the_release_fact_through_the_real_unit_of_work_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.MesOperationTaskSkuSourcePostgresTests.Rush_release_and_completion_events_agree_on_the_work_order_sku_on_postgres"
+      ]
+    },
+    {
+      "id": "mes-execution-facts-postgres",
+      "service": "Mes",
+      "tier": "core",
+      "status": "active",
+      "databaseOwnership": "runner",
+      "project": "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/Nerv.IIP.Business.Mes.Web.Tests.csproj",
+      "filter": "FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Downtime_outbox_failure_rolls_back_window_and_retry_commits_one_fact|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Downtime_recovery_outbox_failure_rolls_back_end_and_retry_commits_one_fact|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Lifecycle_actions_commit_one_outbox_per_valid_transition_and_replay_adds_none",
+      "databasePrefix": "nerv_iip_mes_execution",
+      "diagnosticSchemas": [
+        "mes",
+        "cap"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Downtime_outbox_failure_rolls_back_window_and_retry_commits_one_fact",
+        "Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Downtime_recovery_outbox_failure_rolls_back_end_and_retry_commits_one_fact",
+        "Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Lifecycle_actions_commit_one_outbox_per_valid_transition_and_replay_adds_none"
       ]
     },
     {

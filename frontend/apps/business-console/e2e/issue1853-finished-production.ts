@@ -47,19 +47,9 @@ export async function runFinishedProduction(options: {
         expect(frozen).toMatchObject({ skuId: 'FG-QJ-P1-L', quantity: 1 })
         const skuPath = `/api/business-console/v1/master-data/resources/sku/${frozen.skuId}`
         const sku = await call<Api.BusinessConsoleMasterDataResourceDetail>('GET', query(skuPath))
-        facts.skuBeforePreparation = sku
-        // 本场景不赋序；通过公开配置将旧 seed 的同义码值规范为公开码表值。
-        expect(['not-serialized', 'none']).toContain(sku.serialTrackingPolicy)
-        await call('PATCH', skuPath, {
-          ...scope,
-          serialTrackingPolicy: 'none',
-        } satisfies Api.BusinessConsoleUpdateMasterDataResourceRequest)
-        const preparedSku = await call<Api.BusinessConsoleMasterDataResourceDetail>(
-          'GET',
-          query(skuPath),
-        )
-        expect(preparedSku).toMatchObject({ active: true, serialTrackingPolicy: 'none' })
-        facts.skuAfterPreparation = preparedSku
+        facts.sku = sku
+        // 本场景不赋序。种子 SKU 出厂即是公开码表里的 none，报工前不改任何主数据（#3725）。
+        expect(sku).toMatchObject({ active: true, serialTrackingPolicy: 'none' })
         const versions = await call<{ items: Api.BusinessConsoleProductionVersionItem[] }>(
           'GET',
           query('/api/business-console/v1/engineering/production-versions', {
