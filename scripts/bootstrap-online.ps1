@@ -374,33 +374,52 @@ function Initialize-LocalAppHostSecrets {
         'Parameters:iam-seed-admin-password' = $adminPassword
         'Parameters:iam-seed-connector-host-secret' = New-SecretValue -Bytes 32
         'Parameters:connector-ingestion-token-signing-key' = New-SecretValue -Bytes 48
+        'Parameters:iam-secrets-pepper' = New-SecretValue -Bytes 48
     }
+
+    $requiredSecrets = Get-AppHostRequiredUserSecretNames -AppHostProject $AppHostProject
+    $requiredSecretSet = [Collections.Generic.HashSet[string]]::new(
+        [string[]] $requiredSecrets,
+        [StringComparer]::Ordinal)
 
     $iamJwtSecrets = @(
         'Parameters:iam-jwt-signing-key-id',
         'Parameters:iam-jwt-private-key-pem',
         'Parameters:iam-jwt-jwks-json'
     )
-    $missingIamJwtSecrets = @($iamJwtSecrets | Where-Object {
+    $iamJwtSecretSet = [Collections.Generic.HashSet[string]]::new(
+        [string[]] $iamJwtSecrets,
+        [StringComparer]::Ordinal)
+    $requiredIamJwtSecrets = @($iamJwtSecrets | Where-Object { $requiredSecretSet.Contains($_) })
+    $missingIamJwtSecrets = @($requiredIamJwtSecrets | Where-Object {
         -not $existing.ContainsKey($_) -or [string]::IsNullOrWhiteSpace($existing[$_])
     })
     if ($missingIamJwtSecrets.Count -gt 0) {
         $jwtMaterial = New-IamJwtSigningMaterial
-        Set-AppHostUserSecret -ExistingSecrets $existing -AppHostProject $AppHostProject -Name 'Parameters:iam-jwt-signing-key-id' -Value $jwtMaterial.Kid
-        Set-AppHostUserSecret -ExistingSecrets $existing -AppHostProject $AppHostProject -Name 'Parameters:iam-jwt-private-key-pem' -Value $jwtMaterial.PrivateKeyPem
-        Set-AppHostUserSecret -ExistingSecrets $existing -AppHostProject $AppHostProject -Name 'Parameters:iam-jwt-jwks-json' -Value $jwtMaterial.JwksJson
-        foreach ($name in $iamJwtSecrets) {
+        $jwtValues = @{
+            'Parameters:iam-jwt-signing-key-id' = $jwtMaterial.Kid
+            'Parameters:iam-jwt-private-key-pem' = $jwtMaterial.PrivateKeyPem
+            'Parameters:iam-jwt-jwks-json' = $jwtMaterial.JwksJson
+        }
+        foreach ($name in $requiredIamJwtSecrets) {
+            Set-AppHostUserSecret -ExistingSecrets $existing -AppHostProject $AppHostProject -Name $name -Value $jwtValues[$name]
             $created.Add($name)
         }
     }
 
-    if (Set-AppHostUserSecretIfMissing -ExistingSecrets $existing -AppHostProject $AppHostProject -Name 'Parameters:iam-secrets-pepper' -Value (New-SecretValue -Bytes 48)) {
-        $created.Add('Parameters:iam-secrets-pepper')
-    }
+    foreach ($name in $requiredSecrets) {
+        if ($iamJwtSecretSet.Contains($name)) {
+            continue
+        }
 
-    foreach ($entry in $secretMap.GetEnumerator()) {
-        if (Set-AppHostUserSecretIfMissing -ExistingSecrets $existing -AppHostProject $AppHostProject -Name $entry.Key -Value $entry.Value) {
-            $created.Add($entry.Key)
+        $value = if ($secretMap.Contains($name)) {
+            $secretMap[$name]
+        }
+        else {
+            New-SecretValue -Bytes 48
+        }
+        if (Set-AppHostUserSecretIfMissing -ExistingSecrets $existing -AppHostProject $AppHostProject -Name $name -Value $value) {
+            $created.Add($name)
         }
     }
 

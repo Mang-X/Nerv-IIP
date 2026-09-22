@@ -48,6 +48,54 @@ if (-not (Test-DotNet10Sdk)) {
     if ($LASTEXITCODE -ne 0) {
         throw "Bootstrap single-SDK regression test failed: $($output | Out-String)"
     }
+
+    $appHostDirectory = Join-Path $harnessRoot 'infra/aspire/Fake.AppHost'
+    [System.IO.Directory]::CreateDirectory($appHostDirectory) | Out-Null
+    $appHostProject = Join-Path $appHostDirectory 'Fake.AppHost.csproj'
+    [System.IO.File]::WriteAllText($appHostProject, '<Project Sdk="Microsoft.NET.Sdk" />', [System.Text.UTF8Encoding]::new($false))
+    [System.IO.File]::WriteAllText(
+        (Join-Path $appHostDirectory 'Program.cs'),
+        'var proof = builder.AddParameter("template-asset-retirement-proof-secret-base64", secret: true);',
+        [System.Text.UTF8Encoding]::new($false))
+
+    $secretHarness = @"
+$($bootstrapText.Substring(0, $mainStart))
+`$script:capturedSecrets = @{}
+
+function Get-AppHostUserSecrets {
+    param([string] `$AppHostProject)
+    return @{}
+}
+
+function Invoke-DotNet {
+    param(
+        [string[]] `$Arguments,
+        [string] `$WorkingDirectory,
+        [int] `$TimeoutSeconds,
+        [string] `$Name,
+        [int[]] `$SensitiveArgumentIndexes
+    )
+    `$script:capturedSecrets[`$Arguments[2]] = `$Arguments[3]
+}
+
+Initialize-LocalAppHostSecrets -AppHostProject '$($appHostProject.Replace("'", "''"))'
+
+`$secretName = 'Parameters:template-asset-retirement-proof-secret-base64'
+if (-not `$script:capturedSecrets.ContainsKey(`$secretName)) {
+    throw "Bootstrap did not initialize the AppHost-discovered secret '`$secretName'."
+}
+
+`$secretBytes = [Convert]::FromBase64String(`$script:capturedSecrets[`$secretName])
+if (`$secretBytes.Length -lt 32) {
+    throw "Bootstrap initialized '`$secretName' with fewer than 32 bytes."
+}
+"@
+    [System.IO.File]::WriteAllText($harnessPath, $secretHarness, [System.Text.UTF8Encoding]::new($false))
+
+    $output = & pwsh -NoProfile -File $harnessPath 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Bootstrap AppHost secret discovery regression test failed: $($output | Out-String)"
+    }
 }
 finally {
     if (Test-Path -LiteralPath $harnessRoot) {
