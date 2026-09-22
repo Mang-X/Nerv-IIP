@@ -84,7 +84,7 @@ foreach ($expected in @(
 
 foreach ($expected in @(
     'fullstack run is one-shot and automatically stops and cleans up its session when complete',
-    'Use fullstack start for interactive walkthroughs'
+    'Use fullstack start for diagnostic walkthroughs; run fullstack stop before handoff or ending the task'
 )) {
     if (-not $help.Output.Contains($expected, [StringComparison]::Ordinal)) {
         throw "Root help output did not explain full-stack session '$expected'. Output: $($help.Output)"
@@ -147,7 +147,7 @@ foreach ($expected in @('run', 'start', 'url', 'status', 'logs', 'stop', 'list',
 }
 foreach ($expected in @(
     'fullstack run is one-shot and automatically stops and cleans up its session when complete',
-    'Use fullstack start for interactive walkthroughs'
+    'Use fullstack start for diagnostic walkthroughs; run fullstack stop before handoff or ending the task'
 )) {
     if (-not $fullStackHelp.Output.Contains($expected, [StringComparison]::Ordinal)) {
         throw "Full-stack help output did not explain session '$expected'. Output: $($fullStackHelp.Output)"

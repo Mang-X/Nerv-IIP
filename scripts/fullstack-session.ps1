@@ -36,7 +36,7 @@ function Write-NervFullStackHelp {
 Nerv-IIP isolated full-stack sessions
 
 fullstack run is one-shot and automatically stops and cleans up its session when complete.
-Use fullstack start for interactive walkthroughs.
+Use fullstack start for diagnostic walkthroughs; run fullstack stop before handoff or ending the task.
 
 Usage:
   .\nerv.ps1 fullstack run -Scenario smoke [-NoBuild]
