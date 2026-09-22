@@ -64,15 +64,11 @@ export function useProductionReportSerials(
         })
         if (!current) return
         const sku = response.data?.data
-        if (
-          !response.data?.success ||
-          !sku?.active ||
-          !['none', 'on-production', 'on-receipt', 'on-shipment'].includes(
-            sku.serialTrackingPolicy ?? '',
-          )
-        )
+        // 策略码是否落在 serial-tracking-policy 码集内由网关报工判定（#3747），本地不再抄一份码集：
+        // 抄一份只会在字典新增策略码时先一步把操作工挡死。本地只区分「是不是 on-production」。
+        if (!response.data?.success || !sku?.active || !sku.serialTrackingPolicy)
           throw new Error('产品追踪设置不可用，请联系基础资料管理员核对后重试。')
-        policy.value = sku.serialTrackingPolicy!
+        policy.value = sku.serialTrackingPolicy
         if (policy.value !== 'on-production') return
         if (!sku.defaultBarcodeRuleCode?.trim())
           throw new Error('产品尚未配置条码规则，请联系基础资料管理员配置后重试。')

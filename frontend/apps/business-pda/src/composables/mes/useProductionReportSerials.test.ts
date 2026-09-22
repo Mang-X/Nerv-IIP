@@ -108,12 +108,23 @@ it.each(['none', 'on-receipt', 'on-shipment'])('does not allocate for %s', async
   expect(serials.pendingCount.value).toBe(0)
   expect(api.templates).not.toHaveBeenCalled()
 })
-it('rejects unsupported optional policy and missing resource permission before submitting', async () => {
+// #3747：码集成员判定的权威在网关，PDA 不再抄一份码集——非 on-production 一律按「不赋序」处理。
+it('treats an unknown policy as non-serialized instead of blocking the operator', async () => {
   api.sku.mockResolvedValue({
     data: {
       success: true,
       data: { code: 'SKU-1', active: true, serialTrackingPolicy: 'optional' },
     },
+  })
+  const { serials } = setup()
+  await flushPromises()
+  expect(serials.required.value).toBe(false)
+  expect(serials.valid.value).toBe(true)
+  expect(api.templates).not.toHaveBeenCalled()
+})
+it('still rejects a missing policy and a missing resource permission before submitting', async () => {
+  api.sku.mockResolvedValue({
+    data: { success: true, data: { code: 'SKU-1', active: true, serialTrackingPolicy: '' } },
   })
   const { serials } = setup()
   await flushPromises()

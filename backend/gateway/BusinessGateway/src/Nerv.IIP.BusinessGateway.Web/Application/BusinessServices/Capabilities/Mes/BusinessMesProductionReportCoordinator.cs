@@ -1,6 +1,7 @@
 using System.Net;
 using System.Security.Cryptography;
 using System.Text.Json;
+using Nerv.IIP.Contracts.MasterData;
 
 namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
@@ -27,16 +28,7 @@ public sealed class BusinessMesProductionReportCoordinator(
     IBusinessBarcodeLabelClient barcodeLabel)
     : IBusinessMesProductionReportCoordinator
 {
-    private const string OnProductionPolicy = "on-production";
     private const string WorkOrderSource = "work-order";
-
-    private static readonly HashSet<string> SupportedPolicies = new(StringComparer.Ordinal)
-    {
-        "none",
-        "on-receipt",
-        OnProductionPolicy,
-        "on-shipment",
-    };
 
     public async Task<BusinessConsoleRecordProductionReportResponse> RecordAsync(
         string internalBearerToken,
@@ -98,12 +90,12 @@ public sealed class BusinessMesProductionReportCoordinator(
                 workOrder.SkuId),
             cancellationToken);
         var policy = sku.SerialTrackingPolicy;
-        if (!sku.Active || string.IsNullOrWhiteSpace(policy) || !SupportedPolicies.Contains(policy))
+        if (!sku.Active || string.IsNullOrWhiteSpace(policy) || !MasterDataSerialTrackingPolicies.IsSupported(policy))
         {
             throw InvalidRequest(BusinessMesProductionReportStableWireCodes.SerialPolicyInvalid);
         }
 
-        if (!string.Equals(policy, OnProductionPolicy, StringComparison.Ordinal) || request.GoodQuantity == 0)
+        if (!string.Equals(policy, MasterDataSerialTrackingPolicies.OnProduction, StringComparison.Ordinal) || request.GoodQuantity == 0)
         {
             return await mes.RecordProductionReportAsync(
                 internalBearerToken,
@@ -191,7 +183,7 @@ public sealed class BusinessMesProductionReportCoordinator(
 
         var report = await mes.RecordProductionReportAsync(
             internalBearerToken,
-            AuthoritativeRequest(request, OnProductionPolicy, serials),
+            AuthoritativeRequest(request, MasterDataSerialTrackingPolicies.OnProduction, serials),
             actor,
             reportIntentFingerprint,
             cancellationToken);

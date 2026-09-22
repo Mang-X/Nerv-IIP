@@ -21,6 +21,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Quality;
 using Nerv.IIP.Testing;
 using Npgsql;
+using Nerv.IIP.Contracts.MasterData;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -257,7 +258,7 @@ public sealed class ProductionReportSerialNumberPostgresTests
 
     [MesRealPostgresFact]
     public Task Legacy_v1_receipt_without_serial_replays_the_existing_report_through_the_new_handler_on_postgres() =>
-        VerifyLegacyV1ReceiptReplayAsync(null, 1, ProductionSerialTrackingPolicies.None);
+        VerifyLegacyV1ReceiptReplayAsync(null, 1, MasterDataSerialTrackingPolicies.None);
 
     [MesRealPostgresFact]
     public Task Legacy_v1_receipt_with_single_serial_replays_the_existing_report_through_the_new_handler_on_postgres() =>
@@ -520,7 +521,7 @@ public sealed class ProductionReportSerialNumberPostgresTests
             false,
             DateTimeOffset.Parse("2026-09-14T08:00:00Z"),
             idempotencyKey,
-            SerialTrackingPolicy: ProductionSerialTrackingPolicies.OnProduction,
+            SerialTrackingPolicy: MasterDataSerialTrackingPolicies.OnProduction,
             SerialNumbers: ["SN-B", "SN-A"],
             ReportIntentFingerprint: fingerprint);
 

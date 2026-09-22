@@ -6,6 +6,7 @@ using Nerv.IIP.Business.MasterData.Infrastructure;
 using Nerv.IIP.Business.MasterData.Infrastructure.Repositories;
 using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 using Nerv.IIP.Business.MasterData.Web.Application.Seed;
+using Nerv.IIP.Contracts.MasterData;
 using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.MasterData.Web.Tests;
@@ -36,6 +37,25 @@ public sealed class MasterDataDictionaryRulesTests
 
         Assert.Contains(sku.BatchTrackingPolicy, ExpectedDictionaryCodes["batch-tracking-policy"], StringComparer.Ordinal);
         Assert.Contains(sku.SerialTrackingPolicy, ExpectedDictionaryCodes["serial-tracking-policy"], StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// #3747：<c>serial-tracking-policy</c> 码集在契约层的共享副本必须与字典码集逐值相等。
+    ///
+    /// 这条是 #3725 的**反向**失效方向：字典新增一个策略码时，引 <see cref="MasterDataSerialTrackingPolicies"/>
+    /// 做判定的消费方（MES 领域校验、业务网关报工的 400 判定）若不同步，会静默拒绝该码值——
+    /// 全链路只表现为报工 400，没有任何门禁会红。
+    ///
+    /// oracle 同样取 <see cref="ExpectedDictionaryCodes"/>（照 `docs/reference/master-data/dictionary.md` 抄、
+    /// 并由 <see cref="MasterData_seed_creates_authoritative_dictionary_codes"/> 钉住 seed 与它一致），
+    /// 不取 <c>StandardReferenceData</c>：字典种子现在已经引用这份常量，两边取自同一侧时这条断言恒真。
+    /// </summary>
+    [Fact]
+    public void Serial_tracking_policy_contract_vocabulary_equals_dictionary_code_set()
+    {
+        Assert.Equal(
+            ExpectedDictionaryCodes["serial-tracking-policy"].Order(StringComparer.Ordinal),
+            MasterDataSerialTrackingPolicies.CanonicalValues.Order(StringComparer.Ordinal));
     }
 
     [Fact]

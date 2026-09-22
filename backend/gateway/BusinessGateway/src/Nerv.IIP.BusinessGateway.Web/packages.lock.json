@@ -555,6 +555,12 @@
           "Nerv.IIP.Contracts.IntegrationEvents": "[1.0.0, )"
         }
       },
+      "nerv.iip.contracts.masterdata": {
+        "type": "Project",
+        "dependencies": {
+          "Nerv.IIP.Contracts.IntegrationEvents": "[1.0.0, )"
+        }
+      },
       "nerv.iip.contracts.mes": {
         "type": "Project",
         "dependencies": {

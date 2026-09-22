@@ -11,7 +11,14 @@ import { useMesPrincipalWorkScope } from '@/composables/useBusinessMes'
 import { notifyError } from '@/utils/notify'
 import type { ProductionReportContext } from './useProductionReportForm'
 
-/** 只消费权威 SKU 策略与启用模板目录，不把策略或规则传入报工。 */
+/**
+ * 只消费权威 SKU 策略与启用模板目录，不把策略或规则传入报工。
+ *
+ * 这里**不**复校验策略码是否落在 `serial-tracking-policy` 码集内（#3747）：该判定的权威在网关
+ * 报工协调器（`production-serial-policy-invalid` → `stableErrorMessages` 已有中文文案），
+ * 前端再抄一份码集的净效果只有一个——字典新增策略码时本页先一步把用户挡死。
+ * 本地只区分「是不是 on-production」，因为只有它决定要不要选标签模板。
+ */
 export function useProductionReportSerialOptions(context: () => ProductionReportContext | null) {
   const businessContext = bindBusinessContext(reactive({ organizationId: '', environmentId: '' }))
   const scope = useMesPrincipalWorkScope(businessContext, 'business.mes.work-orders.read')
@@ -49,12 +56,7 @@ export function useProductionReportSerialOptions(context: () => ProductionReport
         throwOnError: true,
       })
       const policy = sku.data?.data?.serialTrackingPolicy
-      if (
-        !sku.data?.success ||
-        !sku.data.data?.active ||
-        !policy ||
-        !['none', 'on-receipt', 'on-production', 'on-shipment'].includes(policy)
-      ) {
+      if (!sku.data?.success || !sku.data.data?.active || !policy) {
         throw new Error('物料的序列号追踪设置不可用，请联系基础数据维护人员。')
       }
       if (generation !== currentGeneration) return

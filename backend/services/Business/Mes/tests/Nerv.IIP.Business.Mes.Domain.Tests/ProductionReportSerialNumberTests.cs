@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
+using Nerv.IIP.Contracts.MasterData;
 
 namespace Nerv.IIP.Business.Mes.Domain.Tests;
 
@@ -21,12 +22,12 @@ public sealed class ProductionReportSerialNumberTests
     public void Assignment_maps_the_legacy_single_serial_wire_without_silently_losing_it()
     {
         var assignment = ProductionReportSerialNumberAssignment.Create(
-            ProductionSerialTrackingPolicies.None,
+            MasterDataSerialTrackingPolicies.None,
             4m,
             null,
             "  SN-LEGACY-001  ");
 
-        Assert.Equal(ProductionSerialTrackingPolicies.OnProduction, assignment.SerialTrackingPolicy);
+        Assert.Equal(MasterDataSerialTrackingPolicies.OnProduction, assignment.SerialTrackingPolicy);
         Assert.Equal(["SN-LEGACY-001"], assignment.SerialNumbers);
     }
 
@@ -54,7 +55,7 @@ public sealed class ProductionReportSerialNumberTests
     public void Assignment_rejects_mixing_legacy_and_collection_wires()
     {
         Assert.Throws<InvalidOperationException>(() => ProductionReportSerialNumberAssignment.Create(
-            ProductionSerialTrackingPolicies.OnProduction,
+            MasterDataSerialTrackingPolicies.OnProduction,
             1m,
             ["SN-001"],
             "SN-001"));

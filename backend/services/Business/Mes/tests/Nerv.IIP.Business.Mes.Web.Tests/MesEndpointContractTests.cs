@@ -28,6 +28,7 @@ using Nerv.IIP.Business.Mes.Web.Endpoints.Mes;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Testing;
 using Nerv.IIP.Business.Mes.Web.Application.Quality;
+using Nerv.IIP.Contracts.MasterData;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -759,7 +760,7 @@ public sealed class MesEndpointContractTests
         Assert.Equal("PRPT-WIRE-001", root.GetProperty("reportNo").GetString());
         Assert.Equal(["SN-WIRE-001"], root.GetProperty("serialNumbers").EnumerateArray().Select(x => x.GetString()));
         Assert.Equal("  SN-WIRE-001  ", sender.Command!.SerialNo);
-        Assert.Equal(ProductionSerialTrackingPolicies.None, sender.Command.SerialTrackingPolicy);
+        Assert.Equal(MasterDataSerialTrackingPolicies.None, sender.Command.SerialTrackingPolicy);
         Assert.Null(sender.Command.SerialNumbers);
     }
 
