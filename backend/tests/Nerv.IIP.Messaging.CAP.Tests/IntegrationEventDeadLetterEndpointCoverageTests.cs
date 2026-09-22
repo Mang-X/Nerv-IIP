@@ -24,6 +24,10 @@ public sealed class IntegrationEventDeadLetterEndpointCoverageTests
         @":\s*IIntegrationEventDeadLetterRouteGroup\b",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
+    private static readonly Regex LocalDeadLetterRoute = new(
+        @"""(?<prefix>/[A-Za-z0-9\-_/{}]*?)/dlq""",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
     private static readonly Regex StoreRegistration = new(
         @"Add(?:Scoped|Singleton|Transient)<\s*" + StoreInterfaceName + @"\s*,",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -54,6 +58,67 @@ public sealed class IntegrationEventDeadLetterEndpointCoverageTests
             + string.Join('\n', uncovered.Select(name => $"  {name}"))
             + "\n补法二选一：Web 项目引用 Nerv.IIP.Messaging.CAP.Endpoints 并落地 6 个密封端点类，"
             + "或在本服务 Endpoints/ 下自建消费 store 的 /dlq 端点。");
+    }
+
+    /// <summary>
+    /// #3739：读取出口存在，不等于运维打得开。这条门把 #3738 的判定维度（服务注册了
+    /// <c>IIntegrationEventDeadLetterStore</c>）接到 Gateway 一侧：每个写死信的服务都必须能从某个
+    /// 网关运维面到达。
+    ///
+    /// 「到达」认两种形态，都不点名任何服务：
+    ///   * 进了共享清单 <see cref="IntegrationEventDeadLetterServices.All"/>——BusinessGateway 的来源表
+    ///     按这份清单逐条要求基址（缺一条启动即抛），扇出也是对它遍历，因此进了清单就是接上了；
+    ///   * 该服务自建的 <c>/dlq</c> 路由前缀出现在某个网关源码里（Notification 的历史实现走这条）。
+    /// 新增一个写死信的服务而两条都不满足就红。
+    /// </summary>
+    [Fact]
+    public void Every_service_that_writes_dead_letters_is_reachable_from_a_gateway_operations_facade()
+    {
+        var services = DiscoverServices();
+        var registering = services.Where(service => service.RegistersStore).ToArray();
+        Assert.NotEmpty(registering);
+
+        var registered = IntegrationEventDeadLetterServices.All
+            .Select(service => service.Name)
+            .ToArray();
+
+        // 清单反向也要成立：列进去的必须真的是写死信、且真的落地了共享路由组的服务，
+        // 否则网关会对着一个没有该出口的服务要基址。
+        Assert.Equal(
+            [],
+            registered.Except(registering.Select(service => service.Name), StringComparer.Ordinal).Order(StringComparer.Ordinal));
+        Assert.Equal(
+            [],
+            registered
+                .Except(services.Where(service => service.DeclaresRouteGroup).Select(service => service.Name), StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal));
+
+        var gatewaySources = ReadGatewaySources();
+        var unreachable = registering
+            .Where(service => !registered.Contains(service.Name, StringComparer.Ordinal))
+            .Where(service => !service.LocalDeadLetterRoutePrefixes.Any(prefix =>
+                gatewaySources.Any(source => source.Contains(prefix + "/dlq", StringComparison.Ordinal))))
+            .Select(service => service.Name)
+            .ToArray();
+
+        Assert.True(
+            unreachable.Length == 0,
+            "这些服务把集成事件死信写进了自己的库，服务上有读取出口，但没有任何网关运维面能到达它们——"
+            + "运维因此仍然看不到这些死信（#3727）：\n"
+            + string.Join('\n', unreachable.Select(name => $"  {name}"))
+            + "\n补法二选一：把该服务加进 IntegrationEventDeadLetterServices 并在 BusinessGateway 配置它的基址，"
+            + "或在某个网关上为它自建的 /dlq 路由前缀落地 facade。");
+    }
+
+    private static IReadOnlyList<string> ReadGatewaySources()
+    {
+        var gatewayRoot = Path.Combine(FindRepositoryRoot(), "backend", "gateway");
+        var sources = Directory.EnumerateFiles(gatewayRoot, "*.cs", SearchOption.AllDirectories)
+            .Where(path => path.Contains($"{Path.DirectorySeparatorChar}src{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            .Select(File.ReadAllText)
+            .ToArray();
+        Assert.NotEmpty(sources);
+        return sources;
     }
 
     private static IReadOnlyList<ServiceScan> DiscoverServices()
@@ -99,11 +164,20 @@ public sealed class IntegrationEventDeadLetterEndpointCoverageTests
             && source.Text.Contains(StoreInterfaceName, StringComparison.Ordinal)
             && source.Text.Contains("/dlq", StringComparison.Ordinal));
 
+        var localRoutePrefixes = sources
+            .Where(source => source.Path.Contains($"{Path.DirectorySeparatorChar}Endpoints{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            .SelectMany(source => LocalDeadLetterRoute.Matches(source.Text).Select(match => match.Groups["prefix"].Value))
+            .Where(prefix => prefix.Length > 0)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
         return new ServiceScan(
             Path.GetFileName(serviceRoot),
             sources.Any(source => StoreRegistration.IsMatch(source.Text)),
             sources.Any(source => source.Text.Contains(StoreInterfaceName, StringComparison.Ordinal)),
-            usesSharedModule || hasLocalDeadLetterEndpoint);
+            usesSharedModule || hasLocalDeadLetterEndpoint,
+            declaresRouteGroup,
+            localRoutePrefixes);
     }
 
     private static string FindRepositoryRoot()
@@ -123,5 +197,11 @@ public sealed class IntegrationEventDeadLetterEndpointCoverageTests
         throw new DirectoryNotFoundException("Repository root was not found.");
     }
 
-    private sealed record ServiceScan(string Name, bool RegistersStore, bool MentionsStore, bool ExposesEndpoints);
+    private sealed record ServiceScan(
+        string Name,
+        bool RegistersStore,
+        bool MentionsStore,
+        bool ExposesEndpoints,
+        bool DeclaresRouteGroup,
+        IReadOnlyList<string> LocalDeadLetterRoutePrefixes);
 }
