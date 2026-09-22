@@ -28,6 +28,7 @@ $ErrorActionPreference = 'Stop'
 
 $root = Resolve-Path (Join-Path $PSScriptRoot '..')
 . (Join-Path $root 'scripts/lib/ScriptAutomation.ps1')
+. (Join-Path $root 'scripts/lib/AppHostUserSecrets.ps1')
 
 function Write-DevHelp {
     Write-Host @'
@@ -111,20 +112,7 @@ function Assert-AppHostUserSecrets {
 
     $appHostSource = Join-Path (Split-Path -Parent $AppHostProject) 'Program.cs'
     $sourceText = Get-Content -LiteralPath $appHostSource -Raw
-    $explicitSecrets = [regex]::Matches($sourceText, 'AddParameter\s*\(\s*"(?<name>[^"]+)"\s*,\s*secret\s*:\s*true\s*\)') |
-        ForEach-Object { "Parameters:$($_.Groups['name'].Value)" }
-
-    $requiredSecrets = Get-NervStringsSorted -Values @(@(
-        $explicitSecrets
-        # Aspire's Postgres integration owns this parameter implicitly; it is not declared
-        # through AddParameter(...) in the AppHost source, but local startup still needs it.
-        'Parameters:postgres-password'
-    )) -Comparer ([StringComparer]::Ordinal) -Unique
-
-    $matchedExplicitCount = @($explicitSecrets).Count
-    if ($matchedExplicitCount -eq 0) {
-        throw "Could not discover required AppHost secret parameters from $appHostSource."
-    }
+    $requiredSecrets = Get-AppHostRequiredUserSecretNames -AppHostProject $AppHostProject
 
     $appHostSecretParameterNames = @(
         [regex]::Matches($sourceText, 'AddParameter\s*\(\s*"(?<name>[^"]+)"') |
