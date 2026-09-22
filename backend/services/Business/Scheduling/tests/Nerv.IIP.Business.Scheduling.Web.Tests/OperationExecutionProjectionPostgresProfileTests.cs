@@ -32,9 +32,15 @@ public sealed class OperationExecutionProjectionPostgresProfileTests
         var first = ConsumeAsync(provider, firstReport, applied: firstApplied, release: releaseFirst.Task);
         try
         {
-            await firstApplied.Task;
+            await WaitForHandshakeOrConsumerAsync(
+                firstApplied.Task,
+                first,
+                "the first consumer applies its report while retaining the transaction lock");
             var second = ConsumeAsync(provider, secondReport, started: secondStarted);
-            await secondStarted.Task;
+            await WaitForHandshakeOrConsumerAsync(
+                secondStarted.Task,
+                second,
+                "the second consumer begins its competing transaction");
             try
             {
                 await WaitForBlockedAdvisoryMutationAsync(provider, second);
@@ -58,6 +64,22 @@ public sealed class OperationExecutionProjectionPostgresProfileTests
             (projection.OrganizationId, projection.EnvironmentId, projection.WorkOrderId, projection.OperationId));
         Assert.Equal(12m, projection.CompletedQuantity);
         Assert.Equal(2, await verifyDb.ProcessedIntegrationEvents.AsNoTracking().CountAsync());
+    }
+
+    private static async Task WaitForHandshakeOrConsumerAsync(
+        Task signal,
+        Task consumer,
+        string boundary)
+    {
+        await Task.WhenAny(signal, consumer);
+        if (signal.IsCompleted)
+        {
+            await signal;
+            return;
+        }
+
+        await consumer;
+        throw new InvalidOperationException($"The consumer completed before reaching {boundary}.");
     }
 
     private static async Task ConsumeAsync(
