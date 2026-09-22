@@ -445,6 +445,25 @@
       ]
     },
     {
+      "id": "mes-execution-facts-postgres",
+      "service": "Mes",
+      "tier": "core",
+      "status": "active",
+      "databaseOwnership": "runner",
+      "project": "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/Nerv.IIP.Business.Mes.Web.Tests.csproj",
+      "filter": "FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Downtime_outbox_failure_rolls_back_window_and_retry_commits_one_fact|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Downtime_recovery_outbox_failure_rolls_back_end_and_retry_commits_one_fact|FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Lifecycle_actions_commit_one_outbox_per_valid_transition_and_replay_adds_none",
+      "databasePrefix": "nerv_iip_mes_execution",
+      "diagnosticSchemas": [
+        "mes",
+        "cap"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Downtime_outbox_failure_rolls_back_window_and_retry_commits_one_fact",
+        "Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Downtime_recovery_outbox_failure_rolls_back_end_and_retry_commits_one_fact",
+        "Nerv.IIP.Business.Mes.Web.Tests.OperationActualTimeSettlementPostgresTests.Lifecycle_actions_commit_one_outbox_per_valid_transition_and_replay_adds_none"
+      ]
+    },
+    {
       "id": "wms-postgres-profile",
       "service": "Wms",
       "tier": "core",

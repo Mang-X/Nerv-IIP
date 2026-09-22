@@ -227,6 +227,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         ExistingStartUtc ??= startedAtUtc;
         ExistingEndUtc = null;
         StartMachineTimeExecutionWindow();
+        AddDomainEvent(new OperationTaskStartedDomainEvent(this, startedAtUtc));
     }
 
     public void MarkScheduleInvalidated(string? reasonCode = null)
@@ -252,6 +253,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
 
         Status = OperationTaskLifecycleStatus.Paused;
         PausedAtUtc = pausedAtUtc;
+        AddDomainEvent(new OperationTaskPausedDomainEvent(this, pausedAtUtc));
     }
 
     public void Resume(DateTimeOffset resumedAtUtc)
@@ -265,6 +267,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         Status = OperationTaskLifecycleStatus.InProgress;
         ExistingStartUtc ??= resumedAtUtc;
         ExistingEndUtc = null;
+        AddDomainEvent(new OperationTaskResumedDomainEvent(this, resumedAtUtc));
     }
 
     public void Complete(
