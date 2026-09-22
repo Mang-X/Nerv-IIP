@@ -3,9 +3,11 @@
 #   SideEffects:
 #     - Opens one loopback TCP listener for acceptance verification
 #   Writes:
-#     - Ready JSON published atomically at the caller-provided path via a sibling staging file rename
+#     - Ready JSON at the caller-provided path
+#     - Same-directory staging file '<ReadyPath>.<pid>.staging' renamed onto the ready path
 #   Cleanup:
 #     - Closes accepted sockets and the listener when the stop marker appears or the process exits
+#     - Removes both the ready record and its staging file when the process exits
 #   Requires:
 #     - PowerShell 7
 #   Assumption:
@@ -22,6 +24,8 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $Port)
+$readyFullPath = [System.IO.Path]::GetFullPath($ReadyPath)
+$readyStagingPath = "$readyFullPath.$PID.staging"
 $client = $null
 $stream = $null
 $script:StopRequested = $false
@@ -87,8 +91,6 @@ try {
         processId = $PID
         readyAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
     }
-    $readyFullPath = [System.IO.Path]::GetFullPath($ReadyPath)
-    $readyStagingPath = "$readyFullPath.$PID.staging"
     $ready | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $readyStagingPath -Encoding utf8
     [System.IO.File]::Move($readyStagingPath, $readyFullPath, $true)
 
@@ -128,4 +130,5 @@ finally {
     if ($null -ne $client) { $client.Dispose() }
     $listener.Stop()
     Remove-Item -LiteralPath $ReadyPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $readyStagingPath -Force -ErrorAction SilentlyContinue
 }

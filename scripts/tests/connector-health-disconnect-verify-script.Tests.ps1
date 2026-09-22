@@ -103,18 +103,17 @@ function Wait-ReadyRecord([object] $Managed, [string] $Path, [int] $TimeoutSecon
     $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
     while ([DateTimeOffset]::UtcNow -lt $deadline) {
         if (Test-Path -LiteralPath $Path -PathType Leaf) {
-            $raw = Get-Content -LiteralPath $Path -Raw
-            if (-not [string]::IsNullOrWhiteSpace($raw)) {
-                $ready = $raw | ConvertFrom-Json
-                if ([string]::Equals([string] $ready.state, [string]('ready'), [StringComparison]::OrdinalIgnoreCase)) { return $ready }
-            }
+            $ready = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+            if ([string]::Equals([string] $ready.state, [string]('ready'), [StringComparison]::OrdinalIgnoreCase)) { return $ready }
         }
         if ($Managed.Process.HasExited) {
-            throw "Modbus simulator (pid=$($Managed.ProcessId)) exited with code $($Managed.Process.ExitCode) before publishing a ready record at '$Path'; $(Get-SimulatorFailureDetail -Managed $Managed)."
+            # Read the exit code before Get-SimulatorFailureDetail, which stops and disposes the process.
+            $exitCode = $Managed.Process.ExitCode
+            throw "Modbus simulator (pid=$($Managed.ProcessId)) exited with code $exitCode before publishing a ready record at '$Path'; $(Get-SimulatorFailureDetail -Managed $Managed)."
         }
         Start-Sleep -Milliseconds 25
     }
-    throw "Modbus simulator (pid=$($Managed.ProcessId)) is still running but did not publish a ready record at '$Path' within $TimeoutSeconds seconds; $(Get-SimulatorFailureDetail -Managed $Managed)."
+    throw "Modbus simulator (pid=$($Managed.ProcessId)) did not publish a ready record at '$Path' within $TimeoutSeconds seconds; $(Get-SimulatorFailureDetail -Managed $Managed)."
 }
 
 function Read-Exactly([System.IO.Stream] $Stream, [int] $Count) {
