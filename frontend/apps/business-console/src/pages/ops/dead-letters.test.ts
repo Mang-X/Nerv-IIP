@@ -35,6 +35,9 @@ const state = vi.hoisted(() => ({
     ignoredCount: 4,
   } as Record<string, number> | undefined,
   metricsError: undefined as unknown,
+  selectedRowKeys: [] as string[],
+  selectedDeadLetter: undefined as Record<string, unknown> | undefined,
+  selectedTarget: undefined as { service: string; deadLetterId: string } | undefined,
 }))
 
 vi.mock('@/stores/auth', () => ({
@@ -72,12 +75,12 @@ vi.mock('@/composables/useBusinessDeadLetters', async (importOriginal) => {
         replayOutcomes: state.replayOutcomes,
         replayPending: ref(false),
         replaySelected: vi.fn(async () => ({ outcomes: [], firstError: undefined })),
-        selectedDeadLetter: computed(() => undefined),
+        selectedDeadLetter: computed(() => state.selectedDeadLetter),
         detailError: shallowRef(),
         detailPending: ref(false),
         selectedRowKey: ref(''),
-        selectedRowKeys: ref<string[]>([]),
-        selectedTarget: computed(() => undefined),
+        selectedRowKeys: ref<string[]>(state.selectedRowKeys),
+        selectedTarget: computed(() => state.selectedTarget),
         serviceMetrics: computed(() => []),
         unavailableSources,
       }
@@ -103,6 +106,41 @@ function seedRow(service = 'Erp', id = 'dl-1') {
   ]
 }
 
+/** 抽屉走 reka 的真实弹层：要 flushPromises 而不是 nextTick，否则框还没开。 */
+async function mountDrawerWithReason(permissionCodes: string[]) {
+  seedRow()
+  state.permissionCodes = permissionCodes
+  state.selectedTarget = { service: 'Erp', deadLetterId: 'dl-1' }
+  state.selectedDeadLetter = {
+    id: 'dl-1',
+    status: 'pending',
+    eventType: 'erp.OperationActualTimeLaborCost',
+  }
+  const wrapper = await mountPage()
+
+  await wrapper
+    .findAll('button')
+    .find((b) => b.text().includes('详情'))
+    ?.trigger('click')
+  await flushPromises()
+  const reason = document.querySelector('#dead-letter-ignore-reason') as HTMLTextAreaElement | null
+  if (!reason) throw new Error('忽略原因输入框未渲染——抽屉没打开')
+  reason.value = '上游已下线，不再重放'
+  reason.dispatchEvent(new Event('input'))
+  await flushPromises()
+  return wrapper
+}
+
+/** 抽屉内容 teleport 到 body，wrapper 查不到，按文案在 document 里找。 */
+function drawerIgnoreButton(_wrapper: unknown) {
+  const button = [...document.querySelectorAll('button')].find((b) =>
+    (b.textContent ?? '').includes('忽略'),
+  )
+  return button
+    ? { attributes: (name: string) => button.getAttribute(name) ?? undefined }
+    : undefined
+}
+
 async function mountPage() {
   const wrapper = mount(DeadLettersPage, { global: { stubs } })
   await flushPromises()
@@ -120,6 +158,9 @@ describe('集成事件死信运维页', () => {
     state.permissionCodes = ['business.dlq.read', 'business.dlq.manage']
     state.metrics = { pendingCount: 2, failedCount: 1, replayedCount: 7, ignoredCount: 4 }
     state.metricsError = undefined
+    state.selectedRowKeys = []
+    state.selectedDeadLetter = undefined
+    state.selectedTarget = undefined
     notify.notifySuccess.mockClear()
     notify.notifyWarning.mockClear()
     notify.notifyOperationFailure.mockClear()
@@ -176,12 +217,47 @@ describe('集成事件死信运维页', () => {
     expect(wrapper.text()).toContain('该服务无重放能力')
   })
 
-  it('只读角色看不到可点的重放与忽略按钮——按了必然 403', async () => {
+  it('只读角色：行内重放按钮不可点——按了必然 403', async () => {
     seedRow()
     state.permissionCodes = ['business.dlq.read']
     const wrapper = await mountPage()
 
     expect(wrapper.find('[aria-label^="重放死信"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('只读角色：动作栏「重放选中」不可点', async () => {
+    seedRow()
+    state.selectedRowKeys = [deadLetterRowKey('Erp', 'dl-1')]
+    state.permissionCodes = ['business.dlq.read']
+    const wrapper = await mountPage()
+
+    const bulk = wrapper.findAll('button').find((b) => b.text().includes('重放选中'))
+    expect(bulk, '动作栏按钮应已渲染（选中了 1 行）').toBeTruthy()
+    expect(bulk?.attributes('disabled')).toBeDefined()
+  })
+
+  it('带 manage 码：动作栏「重放选中」可点', async () => {
+    seedRow()
+    state.selectedRowKeys = [deadLetterRowKey('Erp', 'dl-1')]
+    state.permissionCodes = ['business.dlq.read', 'business.dlq.manage']
+    const wrapper = await mountPage()
+
+    const bulk = wrapper.findAll('button').find((b) => b.text().includes('重放选中'))
+    expect(bulk?.attributes('disabled')).toBeUndefined()
+  })
+
+  it('只读角色：抽屉内「忽略」不可点——即使已填写理由', async () => {
+    const wrapper = await mountDrawerWithReason(['business.dlq.read'])
+
+    const ignore = drawerIgnoreButton(wrapper)
+    expect(ignore, '忽略按钮应已渲染').toBeTruthy()
+    expect(ignore?.attributes('disabled')).toBeDefined()
+  })
+
+  it('带 manage 码：抽屉内「忽略」在填了理由后可点', async () => {
+    const wrapper = await mountDrawerWithReason(['business.dlq.read', 'business.dlq.manage'])
+
+    expect(drawerIgnoreButton(wrapper)?.attributes('disabled')).toBeUndefined()
   })
 
   it('持有 manage 码时重放按钮可点', async () => {
@@ -198,6 +274,21 @@ describe('集成事件死信运维页', () => {
 
     expect(text).toContain('未能读取死信概览')
     expect(text).not.toContain('待处理2')
+  })
+
+  it('概览失败时点名服务清单也受影响，且下拉停用——不能被读成「只接入了一个来源」', async () => {
+    state.metricsError = new Error('boom')
+    const wrapper = await mountPage()
+    const text = wrapper.text()
+
+    // 降级条要点全受影响面：服务清单与概览同源，一起失效。
+    expect(text).toContain('服务清单')
+    expect(text).toContain('这不代表平台只接入了一个来源')
+    // 只剩「全部服务」一项的可用下拉本身就是那个错误结论的来源，必须停用。
+    // 只剩「全部服务」一项的**可用**下拉本身就是那个错误结论的来源，必须停用。
+    const serviceTrigger = wrapper.findAll('button').find((b) => b.text() === '全部服务')
+    expect(serviceTrigger, '服务下拉应已渲染').toBeTruthy()
+    expect(serviceTrigger?.attributes('disabled')).toBeDefined()
   })
 
   it('四张概览卡各自取自己的字段，不是同一个数', async () => {

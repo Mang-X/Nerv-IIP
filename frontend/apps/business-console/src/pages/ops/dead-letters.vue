@@ -230,11 +230,16 @@ async function handleReplayRow(row: DeadLetterRow) {
 
 async function handleReplaySelected() {
   // 整批走完才返回，列表与计数已在 composable 里统一失效——这里不会留下「部分已重放但屏上没变」。
-  const { outcomes, firstError } = await replaySelected(selectedRows.value)
+  const { outcomes, firstError, unansweredCount } = await replaySelected(selectedRows.value)
   selectedRowKeys.value = []
 
   if (firstError) {
-    notifyOperationFailure('重放失败', firstError, '部分死信未能重放，请查看「重放结果」列。')
+    // 「没收到答复」不等于「重放失败」：结果未知，要引导去核实，而不是说它失败了。
+    notifyOperationFailure(
+      '重放未确认',
+      firstError,
+      `${unansweredCount} 条未收到服务端答复，结果未知；请刷新列表核实是否已重放，勿直接重试。`,
+    )
     return
   }
 
@@ -314,7 +319,10 @@ function formatPayload(value: string | null | undefined) {
         role="alert"
       >
         <ShieldAlertIcon class="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-        <span>未能读取死信概览，下方计数与按服务分组暂不可用：{{ metricsErrorMessage }}</span>
+        <span>
+          未能读取死信概览，下方计数、按服务分组与<strong>服务清单</strong>均暂不可用（服务下拉因此为空，
+          这不代表平台只接入了一个来源）：{{ metricsErrorMessage }}
+        </span>
       </p>
       <!-- 四档互斥且相加等于总数；不再单列「积压」，它只是「待处理 + 重放失败」的和。 -->
       <NvSectionCards v-else :columns="4">
@@ -344,7 +352,12 @@ function formatPayload(value: string | null | undefined) {
       <section class="grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-2 xl:grid-cols-3">
         <NvField>
           <NvFieldLabel>服务</NvFieldLabel>
-          <NvSelect v-model="filters.service">
+          <!--
+            服务清单与概览同源。概览读不到时清单为空，此时必须停用并说明原因：
+            一个只剩「全部服务」的下拉会被读成「平台只接入了一个来源」。
+          -->
+          <NvSelect v-model="filters.service" :disabled="Boolean(metricsErrorMessage)">
+            <!-- placeholder 永远走不到：service 始终有取值（默认哨兵 all），故保持静态。 -->
             <NvSelectTrigger><NvSelectValue placeholder="全部服务" /></NvSelectTrigger>
             <NvSelectContent>
               <NvSelectItem value="all">全部服务</NvSelectItem>
@@ -382,7 +395,7 @@ function formatPayload(value: string | null | undefined) {
         :error="listError"
         :error-message="listErrorMessage"
         :awaiting-scope="!contextReady"
-        awaiting-scope-message="当前账号未返回组织或环境，尚未发起查询。"
+        awaiting-scope-message="尚未选择业务范围，还没有发起查询。"
         :empty-message="emptyMessage"
         selectable
         search-placeholder="搜索事件类型、消费者、失败码…"

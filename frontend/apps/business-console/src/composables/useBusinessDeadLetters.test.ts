@@ -3,7 +3,10 @@ import { shallowRef } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import { useBusinessContextStore } from '@/stores/businessContext'
-import { getBusinessConsoleDeadLetterMetricsQueryOptions } from '@nerv-iip/api-client'
+import {
+  getBusinessConsoleDeadLetterMetricsQueryOptions,
+  listBusinessConsoleDeadLettersQueryOptions,
+} from '@nerv-iip/api-client'
 import { deadLetterRowKey, useBusinessDeadLetters } from './useBusinessDeadLetters'
 
 const apiState = vi.hoisted(() => ({
@@ -18,7 +21,20 @@ const apiState = vi.hoisted(() => ({
 const coladaState = vi.hoisted(() => ({
   queryDataById: new Map<string, unknown>(),
   invalidateQueries: vi.fn(async () => undefined),
+  /**
+   * 每个查询的 options 工厂。mock 的 `useQuery` 不具响应性（只在构造时求值一次），
+   * 断言若依赖「改了 filters 就会自动重新求值」会**恒真**——那正是上一版那条零鉴别力断言的成因。
+   * 这里把工厂留出来，由测试显式重新求值，鉴别力不再挂在 mock 的响应性上。
+   */
+  queryFactoryById: new Map<string, () => unknown>(),
 }))
+
+/** 显式重新求值某个查询的 options，使 generated options 函数收到当前 filters。 */
+function reevaluateQuery(id: string) {
+  const factory = coladaState.queryFactoryById.get(id)
+  if (!factory) throw new Error(`query factory not registered: ${id}`)
+  factory()
+}
 
 vi.mock('@nerv-iip/api-client', () => ({
   listBusinessConsoleDeadLettersQueryOptions: vi.fn(() => ({
@@ -71,6 +87,7 @@ vi.mock('@pinia/colada', () => ({
     const options = optionsFactory()
     const key = Array.isArray(options.key) ? options.key[0] : undefined
     const id = key && typeof key === 'object' && '_id' in key ? String(key._id) : ''
+    coladaState.queryFactoryById.set(id, optionsFactory)
     return {
       data: shallowRef(coladaState.queryDataById.get(id)),
       error: shallowRef(),
@@ -114,6 +131,7 @@ describe('死信运维 composable', () => {
     apiState.replayResults.clear()
     apiState.replayThrows.clear()
     coladaState.queryDataById.clear()
+    coladaState.queryFactoryById.clear()
     coladaState.invalidateQueries.mockClear()
   })
 
@@ -183,13 +201,22 @@ describe('死信运维 composable', () => {
     const deadLetters = useBusinessDeadLetters()
     deadLetters.filters.service = 'Erp'
 
-    const lastMetricsCall = vi
+    // 显式重新求值，不指望 mock 的 useQuery 有响应性。
+    reevaluateQuery('getBusinessConsoleDeadLetterMetrics')
+    reevaluateQuery('listBusinessConsoleDeadLetters')
+
+    // `toStrictEqual`：`toEqual` 把值为 undefined 的键视同不存在，
+    // 于是 `{..., service: undefined}` 也会通过，断言挡不住它自称要挡的那个回归。
+    const metricsQuery = vi
       .mocked(getBusinessConsoleDeadLetterMetricsQueryOptions)
-      .mock.calls.at(-1)
-    expect(lastMetricsCall?.[0].query).toEqual({
-      organizationId: 'org-001',
-      environmentId: 'env-dev',
-    })
+      .mock.calls.at(-1)?.[0].query
+    expect(metricsQuery).toStrictEqual({ organizationId: 'org-001', environmentId: 'env-dev' })
+
+    // 阳性对照：同一时刻列表侧**确实**带上了筛选，证明筛选真的生效、不是「哪边都没传」。
+    const listQuery = vi
+      .mocked(listBusinessConsoleDeadLettersQueryOptions)
+      .mock.calls.at(-1)?.[0].query
+    expect(listQuery?.service).toBe('Erp')
   })
 
   it('整批重放中某行失败不中断其余行，且列表计数一定被失效', async () => {
@@ -201,7 +228,7 @@ describe('死信运维 composable', () => {
     apiState.replayThrows.add('Mes/dl-2')
     const deadLetters = useBusinessDeadLetters()
 
-    const { outcomes, firstError } = await deadLetters.replaySelected([
+    const { outcomes, firstError, unansweredCount } = await deadLetters.replaySelected([
       { service: 'Erp', deadLetterId: 'dl-1' },
       { service: 'Mes', deadLetterId: 'dl-2' },
       { service: 'Wms', deadLetterId: 'dl-3' },
@@ -213,14 +240,25 @@ describe('死信运维 composable', () => {
       'Mes/dl-2',
       'Wms/dl-3',
     ])
-    expect(outcomes.map(({ outcome }) => outcome.status)).toEqual([
-      'replayed',
-      'failed',
-      'replayed',
-    ])
+    expect(outcomes.map(({ outcome }) => outcome.status)).toEqual(['replayed', 'replayed'])
     expect(firstError).toBeDefined()
+    expect(unansweredCount).toBe(1)
     // 半应用状态的解药：无论成败，列表与计数都回到服务端的说法
     expect(coladaState.invalidateQueries).toHaveBeenCalled()
+  })
+
+  it('没收到答复的行不写受控枚举——「未知」不能伪装成「试过并失败了」', async () => {
+    seedList([{ service: 'Mes', id: 'dl-2' }])
+    apiState.replayThrows.add('Mes/dl-2')
+    const deadLetters = useBusinessDeadLetters()
+
+    const { unansweredCount } = await deadLetters.replaySelected([
+      { service: 'Mes', deadLetterId: 'dl-2' },
+    ])
+
+    expect(unansweredCount).toBe(1)
+    // 行上不留痕迹：留了 `failed` 会与刷新后的「状态」列自相矛盾（502 但下游其实已重放成功）。
+    expect(deadLetters.replayOutcomes.get('Mes/dl-2')).toBeUndefined()
   })
 
   it('答不上来的来源在列表与计数里各报一次，合并后只提示一次', () => {

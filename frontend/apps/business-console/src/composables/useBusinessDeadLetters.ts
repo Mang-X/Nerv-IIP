@@ -247,29 +247,35 @@ export function useBusinessDeadLetters() {
    * 依次重放给定的行，逐行记录结果并返回汇总。
    * 串行是为了不对 10 个下游同时放大流量。
    *
-   * **一行失败不中断整批**：中断会留下「前几行后端已经重放、而列表与计数不刷新」的半应用状态，
-   * 屏上「状态」列与「重放结果」列互相矛盾。这里把失败也记成该行的一次结果（`failed`），
-   * 整批走完后统一失效缓存；传输层错误经 `error` 回给调用方上屏，不吞。
+   * **一行失败不中断整批**：中断会留下「前几行后端已经重放、而列表与计数不刷新」的半应用状态。
+   * 收到答复的行按答复记结果；**没收到答复的只计数、不在行上写受控枚举**（见下方 catch）。
+   * 整批走完后统一失效缓存；传输层错误经 `firstError` 回给调用方上屏，不吞。
    */
   async function replaySelected(rows: DeadLetterTarget[]) {
     const outcomes: Array<{ rowKey: string; outcome: DeadLetterReplayOutcome }> = []
     let firstError: unknown
+    /** 没收到服务端答复的行数。它们**不是**「重放失败」，而是结果未知，需要人去刷新核实。 */
+    let unansweredCount = 0
     try {
       for (const { service, deadLetterId } of rows) {
         const rowKey = deadLetterRowKey(service, deadLetterId)
         try {
           outcomes.push({ rowKey, outcome: await replay(service, deadLetterId) })
         } catch (error) {
+          /*
+           * 没收到答复 ⇒ **不知道**服务端做没做，不能写成 `failed`：那是受控枚举里
+           * 「试过并失败了」的取值，把未知伪造成已知。更具体的坏处是它会与刷新后的状态列打架——
+           * 网关在下游已重放成功后返 502 时，行上会同时出现「重放失败」与「已重放」。
+           * 这里只计数并把错误交给调用方上屏，行上不留痕迹（与单条重放路径一致）。
+           */
           firstError ??= error
-          const outcome: DeadLetterReplayOutcome = { status: 'failed', succeeded: false }
-          replayOutcomes.set(rowKey, outcome)
-          outcomes.push({ rowKey, outcome })
+          unansweredCount += 1
         }
       }
     } finally {
       await invalidateDeadLetters()
     }
-    return { outcomes, firstError }
+    return { outcomes, firstError, unansweredCount }
   }
 
   async function replayOne(service: string, deadLetterId: string) {
