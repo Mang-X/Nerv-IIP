@@ -24,6 +24,7 @@ try {
     $harnessScripts = Join-Path $harnessRoot 'scripts'
     [System.IO.Directory]::CreateDirectory((Join-Path $harnessScripts 'lib')) | Out-Null
     Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1') -Destination (Join-Path $harnessScripts 'lib/ScriptAutomation.ps1')
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/lib/AppHostUserSecrets.ps1') -Destination (Join-Path $harnessScripts 'lib/AppHostUserSecrets.ps1')
 
     $harness = @"
 $($bootstrapText.Substring(0, $mainStart))
@@ -88,6 +89,11 @@ if (-not `$script:capturedSecrets.ContainsKey(`$secretName)) {
 `$secretBytes = [Convert]::FromBase64String(`$script:capturedSecrets[`$secretName])
 if (`$secretBytes.Length -lt 32) {
     throw "Bootstrap initialized '`$secretName' with fewer than 32 bytes."
+}
+
+`$postgresSecretName = 'Parameters:postgres-password'
+if (-not `$script:capturedSecrets.ContainsKey(`$postgresSecretName)) {
+    throw "Bootstrap did not initialize the implicit AppHost secret '`$postgresSecretName'."
 }
 "@
     [System.IO.File]::WriteAllText($harnessPath, $secretHarness, [System.Text.UTF8Encoding]::new($false))

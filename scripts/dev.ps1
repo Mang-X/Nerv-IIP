@@ -28,6 +28,7 @@ $ErrorActionPreference = 'Stop'
 
 $root = Resolve-Path (Join-Path $PSScriptRoot '..')
 . (Join-Path $root 'scripts/lib/ScriptAutomation.ps1')
+. (Join-Path $root 'scripts/lib/AppHostUserSecrets.ps1')
 
 function Write-DevHelp {
     Write-Host @'
