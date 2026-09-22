@@ -69,6 +69,10 @@ public sealed class WorkCenterUnavailability : Entity<WorkCenterUnavailabilityId
             workOrderId,
             operationTaskId);
         downtime.AddDomainEvent(new DowntimeStartedDomainEvent(downtime));
+        if (toUtc is { } restoredAtUtc)
+        {
+            downtime.AddDomainEvent(new DowntimeRestoredDomainEvent(downtime, restoredAtUtc));
+        }
         return downtime;
     }
 

@@ -63,4 +63,20 @@ public sealed class MesExecutionFactDomainEventTests
         Assert.Same(downtime, restored.Downtime);
         Assert.Equal(recoveredAtUtc, restored.RestoredAtUtc);
     }
+
+    [Fact]
+    public void Completed_downtime_backfill_raises_started_and_restored_facts()
+    {
+        var startedAtUtc = DateTimeOffset.Parse("2026-09-22T02:00:00Z");
+        var recoveredAtUtc = startedAtUtc.AddMinutes(45);
+
+        var downtime = WorkCenterUnavailability.Open(
+            "org-001", "env-dev", "DT-002", "WC-01", startedAtUtc, recoveredAtUtc,
+            "equipment-fault", "DEVICE-01", "WO-001", "OP-10");
+
+        var events = downtime.GetDomainEvents().ToArray();
+        Assert.IsType<DowntimeStartedDomainEvent>(events[0]);
+        var restored = Assert.IsType<DowntimeRestoredDomainEvent>(events[1]);
+        Assert.Equal(recoveredAtUtc, restored.RestoredAtUtc);
+    }
 }

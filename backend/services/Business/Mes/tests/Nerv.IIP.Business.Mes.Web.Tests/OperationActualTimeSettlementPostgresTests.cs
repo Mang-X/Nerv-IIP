@@ -151,6 +151,8 @@ public sealed class OperationActualTimeSettlementPostgresTests
         var startedAtUtc = At(0);
         var pausedAtUtc = At(20);
         var resumedAtUtc = At(30);
+        var secondPausedAtUtc = At(40);
+        var secondResumedAtUtc = At(50);
         using (var commandScope = factory.Services.CreateScope())
         {
             var sender = commandScope.ServiceProvider.GetRequiredService<ISender>();
@@ -162,6 +164,10 @@ public sealed class OperationActualTimeSettlementPostgresTests
                 "org-001", "env-dev", "OP-001", "pause", pausedAtUtc, "lifecycle-pause-3720"));
             await sender.Send(new ChangeOperationTaskStateCommand(
                 "org-001", "env-dev", "OP-001", "resume", resumedAtUtc, "lifecycle-resume-3720"));
+            await sender.Send(new ChangeOperationTaskStateCommand(
+                "org-001", "env-dev", "OP-001", "pause", secondPausedAtUtc, "lifecycle-pause-2-3720"));
+            await sender.Send(new ChangeOperationTaskStateCommand(
+                "org-001", "env-dev", "OP-001", "resume", secondResumedAtUtc, "lifecycle-resume-2-3720"));
         }
 
         using var assertionScope = factory.Services.CreateScope();
@@ -169,11 +175,63 @@ public sealed class OperationActualTimeSettlementPostgresTests
         var task = await dbContext.OperationTasks.AsNoTracking().SingleAsync();
         Assert.Equal(OperationTaskLifecycleStatus.InProgress, task.Status);
         Assert.Equal(startedAtUtc, task.ExistingStartUtc);
-        Assert.Equal(TimeSpan.FromMinutes(10), task.PausedDuration);
+        Assert.Equal(TimeSpan.FromMinutes(20), task.PausedDuration);
         var outboxes = await ReadCapOutboxContentAsync();
-        Assert.Single(outboxes, content => content.Contains("mes.OperationTaskStarted", StringComparison.Ordinal));
-        Assert.Single(outboxes, content => content.Contains("mes.OperationTaskPaused", StringComparison.Ordinal));
-        Assert.Single(outboxes, content => content.Contains("mes.OperationTaskResumed", StringComparison.Ordinal));
+        Assert.Single(outboxes, content => content.StartsWith(
+            "nerv-iip.development.business-mes.mes.operation-task-started.v1", StringComparison.Ordinal));
+        var pausedOutboxes = outboxes.Where(content => content.StartsWith(
+            "nerv-iip.development.business-mes.mes.operation-task-paused.v1", StringComparison.Ordinal)).ToArray();
+        var resumedOutboxes = outboxes.Where(content => content.StartsWith(
+            "nerv-iip.development.business-mes.mes.operation-task-resumed.v1", StringComparison.Ordinal)).ToArray();
+        Assert.Equal(2, pausedOutboxes.Length);
+        Assert.Equal(2, resumedOutboxes.Length);
+        Assert.Equal(2, pausedOutboxes.Select(ReadIdempotencyKey).Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(2, resumedOutboxes.Select(ReadIdempotencyKey).Distinct(StringComparer.Ordinal).Count());
+    }
+
+    [MesRealPostgresFact]
+    public async Task Downtime_recovery_outbox_failure_rolls_back_end_and_retry_commits_one_fact()
+    {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await using var factory = CreateFactory();
+        await MigrateAndInitializeCapAsync(factory);
+        var record = new RecordDowntimeEventCommand(
+            "org-001", "env-dev", "WO-001", "OP-001", "WC-001", "DEVICE-001",
+            "equipment-fault", At(10), null, "downtime-recovery-3720");
+        string downtimeNo;
+        using (var createScope = factory.Services.CreateScope())
+            downtimeNo = (await createScope.ServiceProvider.GetRequiredService<ISender>().Send(record)).ReferenceId;
+
+        await InstallDowntimeRestoredOutboxFailureTriggerAsync();
+        var recover = new ConfirmDowntimeRecoveryCommand("org-001", "env-dev", downtimeNo, At(30));
+        using (var failingScope = factory.Services.CreateScope())
+        {
+            var exception = await Assert.ThrowsAnyAsync<Exception>(() =>
+                failingScope.ServiceProvider.GetRequiredService<ISender>().Send(recover));
+            Assert.Contains("injected downtime restored outbox failure", exception.ToString(), StringComparison.Ordinal);
+        }
+        using (var rollbackScope = factory.Services.CreateScope())
+        {
+            var persisted = await rollbackScope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
+                .WorkCenterUnavailabilities.AsNoTracking().SingleAsync();
+            Assert.Null(persisted.ToUtc);
+            Assert.DoesNotContain(await ReadCapOutboxContentAsync(), content =>
+                content.Contains("mes.DowntimeRestored", StringComparison.Ordinal));
+        }
+
+        await RemoveDowntimeRestoredOutboxFailureTriggerAsync();
+        using (var retryScope = factory.Services.CreateScope())
+            await retryScope.ServiceProvider.GetRequiredService<ISender>().Send(recover);
+
+        using var assertionScope = factory.Services.CreateScope();
+        var restored = await assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
+            .WorkCenterUnavailabilities.AsNoTracking().SingleAsync();
+        Assert.Equal(At(30), restored.ToUtc);
+        var restoredOutbox = Assert.Single(await ReadCapOutboxContentAsync(), content => content.StartsWith(
+            "nerv-iip.development.business-mes.mes.downtime-restored.v1", StringComparison.Ordinal));
+        var restoredValue = ReadOutboxValue(restoredOutbox);
+        Assert.Equal(downtimeNo, restoredValue.GetProperty("Payload").GetProperty("DowntimeEventNo").GetString());
+        Assert.Equal(At(30), restoredValue.GetProperty("Payload").GetProperty("RestoredAtUtc").GetDateTimeOffset());
     }
 
     [MesRealPostgresFact]
@@ -218,7 +276,8 @@ public sealed class OperationActualTimeSettlementPostgresTests
         Assert.Equal("OP-001", persisted.OperationTaskId);
         Assert.Single(
             await ReadCapOutboxContentAsync(),
-            content => content.Contains("mes.DowntimeStarted", StringComparison.Ordinal));
+            content => content.StartsWith(
+                "nerv-iip.development.business-mes.mes.downtime-started.v1", StringComparison.Ordinal));
     }
 
     [MesRealPostgresFact]
@@ -758,6 +817,16 @@ public sealed class OperationActualTimeSettlementPostgresTests
         return content.ToArray();
     }
 
+    private static string ReadIdempotencyKey(string outbox) =>
+        ReadOutboxValue(outbox).GetProperty("IdempotencyKey").GetString()!;
+
+    private static System.Text.Json.JsonElement ReadOutboxValue(string outbox)
+    {
+        var content = outbox[(outbox.IndexOf('\n') + 1)..];
+        using var document = System.Text.Json.JsonDocument.Parse(content);
+        return document.RootElement.GetProperty("Value").Clone();
+    }
+
     private static async Task InstallSettlementOutboxFailureTriggerAsync()
     {
         await using var connection = new NpgsqlConnection(MesPostgresLaneDatabase.ConnectionString);
@@ -838,6 +907,40 @@ public sealed class OperationActualTimeSettlementPostgresTests
         command.CommandText = """
             DROP TRIGGER reject_downtime_started_outbox ON cap.published;
             DROP FUNCTION cap.reject_downtime_started_outbox();
+            """;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task InstallDowntimeRestoredOutboxFailureTriggerAsync()
+    {
+        await using var connection = new NpgsqlConnection(MesPostgresLaneDatabase.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            CREATE OR REPLACE FUNCTION cap.reject_downtime_restored_outbox()
+            RETURNS trigger AS $$
+            BEGIN
+                IF NEW."Content" LIKE '%mes.DowntimeRestored%' THEN
+                    RAISE EXCEPTION 'injected downtime restored outbox failure';
+                END IF;
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql;
+            CREATE TRIGGER reject_downtime_restored_outbox
+            BEFORE INSERT ON cap.published
+            FOR EACH ROW EXECUTE FUNCTION cap.reject_downtime_restored_outbox();
+            """;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task RemoveDowntimeRestoredOutboxFailureTriggerAsync()
+    {
+        await using var connection = new NpgsqlConnection(MesPostgresLaneDatabase.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            DROP TRIGGER reject_downtime_restored_outbox ON cap.published;
+            DROP FUNCTION cap.reject_downtime_restored_outbox();
             """;
         await command.ExecuteNonQueryAsync();
     }

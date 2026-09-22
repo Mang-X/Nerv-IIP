@@ -92,6 +92,30 @@ public static class MesActualTimeIntegrationEventTopics
         deploymentProfile.Trim().ToLowerInvariant();
 }
 
+public static class MesExecutionFactIntegrationEventTopics
+{
+    public static string OperationTaskStarted(string deploymentProfile) =>
+        Build(deploymentProfile, "operation-task-started");
+
+    public static string OperationTaskPaused(string deploymentProfile) =>
+        Build(deploymentProfile, "operation-task-paused");
+
+    public static string OperationTaskResumed(string deploymentProfile) =>
+        Build(deploymentProfile, "operation-task-resumed");
+
+    public static string DowntimeStarted(string deploymentProfile) =>
+        Build(deploymentProfile, "downtime-started");
+
+    public static string DowntimeRestored(string deploymentProfile) =>
+        Build(deploymentProfile, "downtime-restored");
+
+    private static string Build(string deploymentProfile, string eventName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(deploymentProfile);
+        return $"nerv-iip.{deploymentProfile.Trim().ToLowerInvariant()}.business-mes.mes.{eventName}.v1";
+    }
+}
+
 public enum MesMachineTimeFactStatus
 {
     Available,
@@ -440,7 +464,7 @@ public sealed record DowntimeStartedPayload(
     string? DeviceAssetId,
     string Reason,
     DateTimeOffset StartedAtUtc,
-    DateTimeOffset? PlannedEndUtc);
+    DateTimeOffset? EndedAtUtc);
 
 public sealed record MesDowntimeRestoredIntegrationEvent(
     string EventId,
