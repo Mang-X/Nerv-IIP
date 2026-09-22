@@ -279,31 +279,44 @@ public sealed class MasterDataPostgresProfileTests
     /// `20260922083128_NormalizeSkuTrackingPolicyCodes` 的两条 UPDATE 是本次唯一有行为的数据迁移。
     /// 夹具用**当时 `Sku.Create` 写出的那两个码集外同义词**建行（域层不校验码集，所以这条路和历史库一致），
     /// 另一行取码集内的合法值作对照——它必须原样不动，否则 UPDATE 的 WHERE 就形同虚设。
+    /// 走服务注册而不是手搓 <c>DbContextOptionsBuilder</c>：只有前者把 `__EFMigrationsHistory`
+    /// 放进服务 schema，drop schema 才能真的把迁移状态一起清掉；手搓 options 的 history 落在
+    /// `public`，本类里别的用例留下的记录会让 `MigrateAsync` 变成空操作，表根本建不出来。
     /// </summary>
     [PostgresFact]
     public async Task Postgres_migration_normalizes_legacy_sku_tracking_policy_synonyms_and_leaves_valid_rows()
     {
         var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
-        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseNpgsql(connectionString)
-            .Options;
 
-        await using (var seed = new ApplicationDbContext(options, new NoopMediator()))
+        var services = new ServiceCollection();
+        services.AddLogging(builder => builder.AddConsole());
+        services.AddMediatR(configuration =>
         {
-            AssertUsesGovernedDatabase(seed);
-            await DropMasterDataSchemaAsync(seed);
-            await seed.GetService<IMigrator>().MigrateAsync(TrackingPolicyNormalizationPredecessor);
+            configuration.RegisterServicesFromAssembly(typeof(Program).Assembly);
+        });
+        services.AddMasterDataPostgreSqlPersistence(connectionString);
 
-            seed.Skus.Add(LegacySku("SKU-LEGACY", "not-tracked", "not-serialized"));
-            seed.Skus.Add(LegacySku("SKU-VALID", "mandatory", "on-production"));
-            await seed.SaveChangesAsync();
+        await using var provider = services.BuildServiceProvider();
+
+        using (var seedScope = provider.CreateScope())
+        {
+            var db = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            AssertUsesGovernedDatabase(db);
+            await DropMasterDataSchemaAsync(db);
+            await db.GetService<IMigrator>().MigrateAsync(TrackingPolicyNormalizationPredecessor);
+            await AssertMigrationsHistoryTableInSchemaAsync(db, MasterDataFacts.Schema);
+
+            db.Skus.Add(LegacySku("SKU-LEGACY", "not-tracked", "not-serialized"));
+            db.Skus.Add(LegacySku("SKU-VALID", "mandatory", "on-production"));
+            await db.SaveChangesAsync();
         }
 
-        await using (var upgraded = new ApplicationDbContext(options, new NoopMediator()))
+        using (var upgradeScope = provider.CreateScope())
         {
-            await upgraded.Database.MigrateAsync();
+            var db = upgradeScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await db.Database.MigrateAsync();
 
-            var persisted = await upgraded.Skus
+            var persisted = await db.Skus
                 .AsNoTracking()
                 .OrderBy(x => x.Code)
                 .Select(x => new { x.Code, x.BatchTrackingPolicy, x.SerialTrackingPolicy })
