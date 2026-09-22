@@ -63,7 +63,7 @@ function Write-NervHelp {
 Nerv-IIP development commands
 
 fullstack run is one-shot and automatically stops and cleans up its session when complete.
-Use fullstack start for diagnostic walkthroughs; run fullstack stop before handoff or ending the task.
+Use fullstack start for interactive diagnostic walkthroughs; run fullstack stop before handoff or ending the task.
 
 Usage:
   .\nerv.ps1 bootstrap [-InstallMissing] [-Start]
