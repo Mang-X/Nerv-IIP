@@ -302,7 +302,10 @@
       "project": "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/Nerv.IIP.Business.Mes.Web.Tests.csproj",
       "filter": "FullyQualifiedName~Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests",
       "databasePrefix": "nerv_iip_mes_andon",
-      "diagnosticSchemas": ["mes", "cap"],
+      "diagnosticSchemas": [
+        "mes",
+        "cap"
+      ],
       "expectedTestIdentities": [
         "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Migration_persists_complete_facts_and_replay_keeps_original_times_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests.Raise_intent_is_unique_within_scope_and_does_not_cross_tenants_on_postgres",
@@ -693,6 +696,38 @@
       "expectedTestIdentities": [
         "Nerv.IIP.Notification.Web.Tests.NotificationEnvelopeFieldBudgetPostgresTests.Oversized_envelope_field_dead_letters_and_stays_replayable_on_postgres",
         "Nerv.IIP.Notification.Web.Tests.NotificationEnvelopeFieldBudgetPostgresTests.Without_the_gate_an_oversized_key_raises_22001_on_postgres"
+      ]
+    },
+    {
+      "id": "messaging-cap-dead-letter-filter-postgres",
+      "service": "Messaging",
+      "tier": "core",
+      "status": "active",
+      "databaseOwnership": "test-owned",
+      "project": "backend/tests/Nerv.IIP.Messaging.CAP.Tests/Nerv.IIP.Messaging.CAP.Tests.csproj",
+      "filter": "FullyQualifiedName~Nerv.IIP.Messaging.CAP.Tests.IntegrationEventDeadLetterPostgresFilterTests",
+      "databasePrefix": "nerv_iip_dlq_filter",
+      "diagnosticSchemas": [
+        "public"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Messaging.CAP.Tests.IntegrationEventDeadLetterPostgresFilterTests.Failure_code_and_dead_lettered_window_are_filtered_by_postgres"
+      ]
+    },
+    {
+      "id": "maintenance-dead-letter-filter-postgres",
+      "service": "Maintenance",
+      "tier": "core",
+      "status": "active",
+      "databaseOwnership": "test-owned",
+      "project": "backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/Nerv.IIP.Business.Maintenance.Web.Tests.csproj",
+      "filter": "FullyQualifiedName~Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceDeadLetterFilterPostgresTests",
+      "databasePrefix": "nerv_iip_maintenance_dlq",
+      "diagnosticSchemas": [
+        "maintenance"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceDeadLetterFilterPostgresTests.Failure_code_and_dead_lettered_window_are_filtered_by_the_maintenance_store"
       ]
     }
   ],

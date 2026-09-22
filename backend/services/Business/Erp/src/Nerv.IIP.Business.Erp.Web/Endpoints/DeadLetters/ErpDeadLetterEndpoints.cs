@@ -4,12 +4,13 @@ using Nerv.IIP.Messaging.CAP;
 namespace Nerv.IIP.Business.Erp.Web.Endpoints.DeadLetters;
 
 /// <summary>
-/// 本服务死信读取与重放端点的路由前缀。6 个端点的实现只有一份，位于
-/// <c>Nerv.IIP.Messaging.CAP.Endpoints</c> 共享模块；这里只声明前缀并落地具体端点类型。
+/// 本服务死信读取与重放端点的路由组。6 个端点的实现只有一份，位于
+/// <c>Nerv.IIP.Messaging.CAP.Endpoints</c> 共享模块；前缀取自共享清单
+/// <see cref="IntegrationEventDeadLetterServices"/>，与 BusinessGateway 扇出用的是同一个字符串。
 /// </summary>
 public sealed class ErpDeadLetterRoutes : IIntegrationEventDeadLetterRouteGroup
 {
-    public static string RoutePrefix => "/api/business/v1/erp";
+    public static string RoutePrefix => IntegrationEventDeadLetterServices.Erp.RoutePrefix;
 }
 
 public sealed class ListErpDeadLettersEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)

@@ -84,6 +84,18 @@
       ]
     },
     {
+      "sourcePath": "backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceDeadLetterFilterPostgresTests.cs",
+      "sourceSha256": "f3ffdfea2a1328d7bbc4d86d01534353d2dc2abfa70d2de6b5fbce302a39ec12",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "best-effort-dispose",
+          "factoryCallCount": 1,
+          "reason": "Ordinary filter-predicate proof uses the shared helper lifecycle and does not claim explicit DROP-failure evidence."
+        }
+      ]
+    },
+    {
       "sourcePath": "backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/WorldHistoryMaintenanceSeedPostgresTests.cs",
       "sourceSha256": "1863ff8da3ed832182f3368bcbf1afb080ca3ba0915011b877120e9fc08c562f",
       "factoryCallCount": 1,
@@ -327,6 +339,18 @@
           "strategy": "explicit-drop-finally",
           "factoryCallCount": 1,
           "reason": "The FullChain ERP return acceptance proof preserves DROP-failure evidence by explicitly cleaning up after both DbContexts are disposed."
+        }
+      ]
+    },
+    {
+      "sourcePath": "backend/tests/Nerv.IIP.Messaging.CAP.Tests/IntegrationEventDeadLetterPostgresFilterTests.cs",
+      "sourceSha256": "b1a6ced53c41e16694ecea92d6e06217dcfec1d9bf3560b0cfaf84dea01bf67f",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "best-effort-dispose",
+          "factoryCallCount": 1,
+          "reason": "Ordinary filter-predicate proof uses the shared helper lifecycle and does not claim explicit DROP-failure evidence."
         }
       ]
     },
