@@ -12,8 +12,10 @@ namespace Nerv.IIP.Business.Scheduling.Web.Application.Seed;
 /// 覆盖：问题快照与规格逐条配对且能被 <c>CreateSchedulePlanRevisionCommandHandler</c> 用同一套
 /// <see cref="SchedulingJson.Options"/> 反序列化回 <see cref="SchedulingProblemContract"/>、
 /// 订单紧急度快照覆盖问题里出现过的每个工单、全部时间戳落在 [上线日, asOfDate] 窗口内。
-/// 号段与固定演示事实（<c>*-DEMO-*</c>）/ 千单规模块（<c>*-SCALE-*</c>）的隔离由
-/// <c>WorldHistorySchedulingSeedServiceTests</c> 对同一批行断言，校验器不再重复一遍。
+/// **不覆盖**号段隔离：本引擎的问题号由 <c>WorldHistorySchedulingSpec.ProblemId</c> 拼成
+/// <c>SPB-2026-{index:D4}</c>，结构上撞不进保留段（<c>*-DEMO-*</c> / <c>*-SCALE-*</c>），
+/// 运行时校验它等于给不可达状态兜底。号段格式本身由
+/// <c>WorldHistorySchedulingSeedServiceTests</c> 在测试库上断言。
 ///
 /// **fail-closed**：任何一条不成立即抛 <see cref="WorldHistoryConsistencyException"/>（中文累积）。
 /// </summary>

@@ -2,6 +2,7 @@ using System.Text.Json;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
+using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 using Nerv.IIP.Business.Scheduling.Web.Application.Seed;
 using Nerv.IIP.Contracts.Scheduling;
 using Xunit.Abstractions;
@@ -12,12 +13,15 @@ namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 /// L1 背景历史（排产域侧）的常规门禁测试：形状、确定性、幂等、号段隔离、
 /// 问题快照可反序列化、以及**排产方案表保持为空**。
 ///
-/// 「最小数据集在引擎口径下能排满 ≥90%」由 #3723 承接：本 PR 把种子工时口径拉回
-/// 排程运行时的原值口径后，实测排入率是 63–65%，配平数据集不在本 PR 范围内。
+/// 「最小数据集在引擎口径下能排满 ≥90%」由 #3723 承接：配平工单量 / 路线节拍 / 日历产能
+/// 不在本 PR 范围内，排入率的实测读数与阈值断言都归那张票。
 /// </summary>
 public sealed class WorldHistorySchedulingSeedServiceTests(ITestOutputHelper output)
 {
     private static readonly DateOnly AsOfDate = new(2026, 7, 27);
+
+    /// <summary>口径比对用的占位工作中心：时长与工作中心无关，只需装配得起来。</summary>
+    private const string WorkCenterCode = "WC-PARITY";
 
     /// <summary>库写入类用例的规模：足够覆盖全链，又不让 InMemory provider 变慢。</summary>
     private const double SmallScale = 0.05d;
@@ -52,6 +56,77 @@ public sealed class WorldHistorySchedulingSeedServiceTests(ITestOutputHelper out
         Assert.Equal(
             facts.Problems.SelectMany(x => x.Orders).Select(x => x.WorkOrderNo).Distinct(StringComparer.Ordinal).Count(),
             facts.Urgencies.Count);
+    }
+
+    /// <summary>
+    /// 种子写进问题快照的工序时长，必须与排程运行时算出来的逐道相等——这是本 PR
+    /// 「工时口径真对齐」的承重点（#3594），也是 `WorldHistoryMesSpec.OperationMinutes`
+    /// 文档注释里那句「同一公式、同一取值口径」的断言化。
+    ///
+    /// 期望值**不在夹具里手抄**：把世界观的路线常量原样喂给真正的
+    /// <see cref="SchedulingProblemProducer"/>，由它自己算出时长当 oracle。
+    /// 种子那边只要重新引入并行工位除数、把准备工时算进时长、或加回时长夹取，这里就会红。
+    /// </summary>
+    [Fact]
+    public async Task Seed_operation_durations_match_the_scheduling_runtime_producer()
+    {
+        // 前提：PE 路线契约里的单件工时是整数（SchedulingProblemRoutingOperationSnapshot.RunMinutes）。
+        // 世界观路线取非整数值时两侧口径不可能相等，先把这条前提钉住。
+        Assert.All(
+            WorldHistoryMesSpec.StandardOperations,
+            operation => Assert.Equal(Math.Truncate(operation.RunMinutesPerUnit), operation.RunMinutesPerUnit));
+
+        var facts = WorldHistorySchedulingSpec.BuildSchedulingFacts(AsOfDate, SmallScale);
+        var seededOrders = facts.Problems
+            .SelectMany(x => x.Problem.Orders)
+            .GroupBy(x => x.OrderId, StringComparer.Ordinal)
+            .Select(x => x.First())
+            .OrderBy(x => x.OrderId, StringComparer.Ordinal)
+            .ToArray();
+        Assert.NotEmpty(seededOrders);
+
+        var horizonStartUtc = facts.Problems[0].HorizonStartUtc;
+        var runtimeProblem = await new SchedulingProblemProducer(
+                new WorldHistoryRoutingClient(),
+                new WorldHistoryMasterDataClient())
+            .AssembleAsync(
+                new AssembleSchedulingProblemRequest(
+                    "world-history-duration-parity",
+                    "org-001",
+                    "env-dev",
+                    horizonStartUtc,
+                    horizonStartUtc.AddDays(WorldHistorySchedulingSpec.HorizonDays),
+                    [.. seededOrders.Select(order => new SchedulingProblemSourceOrder(
+                        order.OrderId,
+                        order.SkuCode,
+                        order.Quantity,
+                        order.DueUtc,
+                        order.Priority,
+                        order.IsRush,
+                        horizonStartUtc,
+                        // 工单号即路线号：喂给 producer 的是世界观路线常量本身。
+                        RoutingVersionId: order.OrderId))]),
+                CancellationToken.None);
+
+        var runtimeDurations = runtimeProblem.Orders
+            .SelectMany(order => order.Operations.Select(operation =>
+                (Key: (order.OrderId, operation.OperationSequence), operation.DurationMinutes)))
+            .ToDictionary(x => x.Key, x => x.DurationMinutes);
+
+        var compared = 0;
+        foreach (var order in seededOrders)
+        {
+            foreach (var operation in order.Operations)
+            {
+                Assert.Equal(
+                    runtimeDurations[(order.OrderId, operation.OperationSequence)],
+                    operation.DurationMinutes);
+                compared++;
+            }
+        }
+
+        output.WriteLine($"duration-parity-operations={compared}");
+        Assert.Equal(seededOrders.Sum(x => x.Operations.Count), compared);
     }
 
     [Fact]
@@ -197,6 +272,75 @@ public sealed class WorldHistorySchedulingSeedServiceTests(ITestOutputHelper out
             .UseInMemoryDatabase($"scheduling-world-history-{Guid.CreateVersion7():N}")
             .Options;
         return new ApplicationDbContext(options, new WorldHistoryTestMediator());
+    }
+
+    /// <summary>把世界观的路线常量按 PE 路线快照的形状交给 producer（工单号即路线号）。</summary>
+    private sealed class WorldHistoryRoutingClient : ISchedulingProblemProductEngineeringClient
+    {
+        public Task<SchedulingProblemRoutingSnapshot> GetRoutingAsync(
+            string organizationId,
+            string environmentId,
+            string routingVersionId,
+            CancellationToken cancellationToken)
+        {
+            var operations = WorldHistoryMesSpec.OperationSequences(routingVersionId)
+                .Select(sequence =>
+                {
+                    var operation = WorldHistoryMesSpec.Operation(sequence);
+                    return new SchedulingProblemRoutingOperationSnapshot(
+                        sequence,
+                        WorkCenterCode,
+                        operation.OperationCode,
+                        operation.OperationName,
+                        operation.SetupMinutes,
+                        (int)operation.RunMinutesPerUnit,
+                        operation.TeardownMinutes,
+                        operation.RequiresQualityInspection);
+                })
+                .ToArray();
+            return Task.FromResult(new SchedulingProblemRoutingSnapshot(
+                routingVersionId, "1", routingVersionId, operations));
+        }
+    }
+
+    /// <summary>
+    /// 时长只取决于路线的单件工时、收尾与数量，与工作中心 / 日历 / 设备无关，
+    /// 因此这里只给 producer 装配所必需的最小主数据。
+    /// </summary>
+    private sealed class WorldHistoryMasterDataClient : ISchedulingProblemMasterDataClient
+    {
+        public Task<SchedulingProblemWorkCenterSnapshot> GetWorkCenterAsync(
+            string organizationId,
+            string environmentId,
+            string workCenterCode,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new SchedulingProblemWorkCenterSnapshot(
+                workCenterCode, WorldHistoryMesSpec.CalendarId, 1, [workCenterCode]));
+
+        public Task<SchedulingProblemCalendarSnapshot> GetCalendarAsync(
+            string organizationId,
+            string environmentId,
+            string calendarCode,
+            DateTimeOffset horizonStartUtc,
+            DateTimeOffset horizonEndUtc,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new SchedulingProblemCalendarSnapshot(
+                calendarCode, [new SchedulingProblemShiftWindowSnapshot(horizonStartUtc, horizonEndUtc, "parity")]));
+
+        public Task<IReadOnlyCollection<SchedulingProblemDeviceAssetSnapshot>> ListDeviceAssetsAsync(
+            string organizationId,
+            string environmentId,
+            string workCenterCode,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyCollection<SchedulingProblemDeviceAssetSnapshot>>(
+                [new SchedulingProblemDeviceAssetSnapshot($"DEV-{workCenterCode}", workCenterCode)]);
+
+        public Task<IReadOnlyCollection<SchedulingProblemToolingFactSnapshot>> ResolveToolingFactsAsync(
+            string organizationId,
+            string environmentId,
+            IReadOnlyCollection<SchedulingProblemToolingTransitionSnapshot> transitions,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyCollection<SchedulingProblemToolingFactSnapshot>>([]);
     }
 
     private sealed class WorldHistoryTestMediator : IMediator
