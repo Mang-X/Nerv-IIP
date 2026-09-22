@@ -2518,7 +2518,9 @@ public sealed class RecordDowntimeEventCommandHandler(ApplicationDbContext dbCon
             request.FromUtc,
             request.ToUtc,
             request.Reason,
-            request.DeviceAssetId);
+            request.DeviceAssetId,
+            request.WorkOrderId,
+            request.OperationTaskId);
         dbContext.WorkCenterUnavailabilities.Add(downtime);
         await Task.CompletedTask;
         return new MesAcceptedResponse("Accepted", downtime.DowntimeEventNo, request.FromUtc);

@@ -15,6 +15,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Business.Mes.Web.Application.Quality;
@@ -138,6 +139,87 @@ public sealed class OperationActualTimeSettlementPostgresTests
     private const string SettledV2Topic = "nerv-iip.development.business-mes.mes.operation-actual-time-settled.v2";
     private const string VoidedV1Topic = "nerv-iip.development.business-mes.mes.operation-actual-time-settlement-voided.v1";
     private const string VoidedV2Topic = "nerv-iip.development.business-mes.mes.operation-actual-time-settlement-voided.v2";
+
+    [MesRealPostgresFact]
+    public async Task Lifecycle_actions_commit_one_outbox_per_valid_transition_and_replay_adds_none()
+    {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await using var factory = CreateFactory();
+        await MigrateAndInitializeCapAsync(factory);
+        await SeedQueuedTaskAsync(factory);
+
+        var startedAtUtc = At(0);
+        var pausedAtUtc = At(20);
+        var resumedAtUtc = At(30);
+        using (var commandScope = factory.Services.CreateScope())
+        {
+            var sender = commandScope.ServiceProvider.GetRequiredService<ISender>();
+            var start = new ChangeOperationTaskStateCommand(
+                "org-001", "env-dev", "OP-001", "start", startedAtUtc, "lifecycle-start-3720");
+            await sender.Send(start);
+            await sender.Send(start);
+            await sender.Send(new ChangeOperationTaskStateCommand(
+                "org-001", "env-dev", "OP-001", "pause", pausedAtUtc, "lifecycle-pause-3720"));
+            await sender.Send(new ChangeOperationTaskStateCommand(
+                "org-001", "env-dev", "OP-001", "resume", resumedAtUtc, "lifecycle-resume-3720"));
+        }
+
+        using var assertionScope = factory.Services.CreateScope();
+        var dbContext = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var task = await dbContext.OperationTasks.AsNoTracking().SingleAsync();
+        Assert.Equal(OperationTaskLifecycleStatus.InProgress, task.Status);
+        Assert.Equal(startedAtUtc, task.ExistingStartUtc);
+        Assert.Equal(TimeSpan.FromMinutes(10), task.PausedDuration);
+        var outboxes = await ReadCapOutboxContentAsync();
+        Assert.Single(outboxes, content => content.Contains("mes.OperationTaskStarted", StringComparison.Ordinal));
+        Assert.Single(outboxes, content => content.Contains("mes.OperationTaskPaused", StringComparison.Ordinal));
+        Assert.Single(outboxes, content => content.Contains("mes.OperationTaskResumed", StringComparison.Ordinal));
+    }
+
+    [MesRealPostgresFact]
+    public async Task Downtime_outbox_failure_rolls_back_window_and_retry_commits_one_fact()
+    {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await using var factory = CreateFactory();
+        await MigrateAndInitializeCapAsync(factory);
+        await InstallDowntimeOutboxFailureTriggerAsync();
+        var command = new RecordDowntimeEventCommand(
+            "org-001", "env-dev", "WO-001", "OP-001", "WC-001", "DEVICE-001",
+            "equipment-fault", At(10), null, "downtime-3720");
+
+        using (var failingScope = factory.Services.CreateScope())
+        {
+            var exception = await Assert.ThrowsAnyAsync<Exception>(() =>
+                failingScope.ServiceProvider.GetRequiredService<ISender>().Send(command));
+            Assert.Contains("injected downtime outbox failure", exception.ToString(), StringComparison.Ordinal);
+        }
+
+        using (var rollbackScope = factory.Services.CreateScope())
+        {
+            var dbContext = rollbackScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            Assert.Empty(await dbContext.WorkCenterUnavailabilities.AsNoTracking().ToArrayAsync());
+            Assert.DoesNotContain(
+                await ReadCapOutboxContentAsync(),
+                content => content.Contains("mes.DowntimeStarted", StringComparison.Ordinal));
+        }
+
+        await RemoveDowntimeOutboxFailureTriggerAsync();
+        using (var retryScope = factory.Services.CreateScope())
+        {
+            var sender = retryScope.ServiceProvider.GetRequiredService<ISender>();
+            await sender.Send(command);
+            await sender.Send(command);
+        }
+
+        using var assertionScope = factory.Services.CreateScope();
+        var persisted = await assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
+            .WorkCenterUnavailabilities.AsNoTracking().SingleAsync();
+        Assert.Equal("WO-001", persisted.WorkOrderId);
+        Assert.Equal("OP-001", persisted.OperationTaskId);
+        Assert.Single(
+            await ReadCapOutboxContentAsync(),
+            content => content.Contains("mes.DowntimeStarted", StringComparison.Ordinal));
+    }
 
     [MesRealPostgresFact]
     public async Task Completion_state_and_settlement_outbox_are_committed_together_on_postgres()
@@ -620,6 +702,17 @@ public sealed class OperationActualTimeSettlementPostgresTests
         await dbContext.SaveChangesAsync();
     }
 
+    private static async Task SeedQueuedTaskAsync(WebApplicationFactory<Program> factory)
+    {
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.WorkOrders.Add(CreateWorkOrder());
+        dbContext.OperationTasks.Add(OperationTask.Queue(
+            "org-001", "env-dev", "WO-001", "OP-001", 10, "WC-001", [],
+            At(0), TimeSpan.FromHours(1), "SKU-001"));
+        await dbContext.SaveChangesAsync();
+    }
+
     private static WorkOrder CreateWorkOrder()
     {
         var workOrder = WorkOrder.Create(
@@ -628,6 +721,9 @@ public sealed class OperationActualTimeSettlementPostgresTests
         // #3119：未下达的工单不受理报工，报工类夹具因此必须先补记发布（生产上这一步由下达完成）。
         // 清掉发布留下的领域事件：本组用例断言的是结算出站消息，夹具自己造的事件不该混进去。
         workOrder.MarkReleased();
+        workOrder.RecordMaterialRequirementSnapshot(
+            WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus,
+            At(-10));
         workOrder.ClearDomainEvents();
         return workOrder;
     }
@@ -708,6 +804,40 @@ public sealed class OperationActualTimeSettlementPostgresTests
             CREATE TRIGGER reject_actual_time_settlement_void_outbox
             BEFORE INSERT ON cap.published
             FOR EACH ROW EXECUTE FUNCTION cap.reject_actual_time_settlement_void_outbox();
+            """;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task InstallDowntimeOutboxFailureTriggerAsync()
+    {
+        await using var connection = new NpgsqlConnection(MesPostgresLaneDatabase.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            CREATE OR REPLACE FUNCTION cap.reject_downtime_started_outbox()
+            RETURNS trigger AS $$
+            BEGIN
+                IF NEW."Content" LIKE '%mes.DowntimeStarted%' THEN
+                    RAISE EXCEPTION 'injected downtime outbox failure';
+                END IF;
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql;
+            CREATE TRIGGER reject_downtime_started_outbox
+            BEFORE INSERT ON cap.published
+            FOR EACH ROW EXECUTE FUNCTION cap.reject_downtime_started_outbox();
+            """;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task RemoveDowntimeOutboxFailureTriggerAsync()
+    {
+        await using var connection = new NpgsqlConnection(MesPostgresLaneDatabase.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            DROP TRIGGER reject_downtime_started_outbox ON cap.published;
+            DROP FUNCTION cap.reject_downtime_started_outbox();
             """;
         await command.ExecuteNonQueryAsync();
     }

@@ -1,6 +1,7 @@
 using System.Globalization;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
@@ -259,6 +260,114 @@ public sealed class OperationTaskCompletedIntegrationEventConverter
                 task.UomCode,
                 task.RequiresQualityInspection,
                 completedAtUtc));
+    }
+}
+
+public sealed class OperationTaskStartedIntegrationEventConverter
+    : IIntegrationEventConverter<OperationTaskStartedDomainEvent, MesOperationTaskStartedIntegrationEvent>
+{
+    public MesOperationTaskStartedIntegrationEvent Convert(OperationTaskStartedDomainEvent domainEvent)
+    {
+        var task = domainEvent.OperationTask;
+        var idempotencyKey = OperationTaskLifecycleIntegrationEventConverter.BuildIdempotencyKey(
+            "operation-task-started", task, domainEvent.StartedAtUtc);
+        return new MesOperationTaskStartedIntegrationEvent(
+            $"evt-{Guid.CreateVersion7():N}", MesIntegrationEventTypes.OperationTaskStarted,
+            MesIntegrationEventVersions.V1, domainEvent.StartedAtUtc, MesIntegrationEventSources.BusinessMes,
+            idempotencyKey, task.WorkOrderId, task.OrganizationId, task.EnvironmentId, "system:mes", idempotencyKey,
+            OperationTaskLifecycleIntegrationEventConverter.Payload(task, domainEvent.StartedAtUtc));
+    }
+}
+
+public sealed class OperationTaskPausedIntegrationEventConverter
+    : IIntegrationEventConverter<OperationTaskPausedDomainEvent, MesOperationTaskPausedIntegrationEvent>
+{
+    public MesOperationTaskPausedIntegrationEvent Convert(OperationTaskPausedDomainEvent domainEvent)
+    {
+        var task = domainEvent.OperationTask;
+        var idempotencyKey = OperationTaskLifecycleIntegrationEventConverter.BuildIdempotencyKey(
+            "operation-task-paused", task, domainEvent.PausedAtUtc);
+        return new MesOperationTaskPausedIntegrationEvent(
+            $"evt-{Guid.CreateVersion7():N}", MesIntegrationEventTypes.OperationTaskPaused,
+            MesIntegrationEventVersions.V1, domainEvent.PausedAtUtc, MesIntegrationEventSources.BusinessMes,
+            idempotencyKey, task.WorkOrderId, task.OrganizationId, task.EnvironmentId, "system:mes", idempotencyKey,
+            OperationTaskLifecycleIntegrationEventConverter.Payload(task, domainEvent.PausedAtUtc));
+    }
+}
+
+public sealed class OperationTaskResumedIntegrationEventConverter
+    : IIntegrationEventConverter<OperationTaskResumedDomainEvent, MesOperationTaskResumedIntegrationEvent>
+{
+    public MesOperationTaskResumedIntegrationEvent Convert(OperationTaskResumedDomainEvent domainEvent)
+    {
+        var task = domainEvent.OperationTask;
+        var idempotencyKey = OperationTaskLifecycleIntegrationEventConverter.BuildIdempotencyKey(
+            "operation-task-resumed", task, domainEvent.ResumedAtUtc);
+        return new MesOperationTaskResumedIntegrationEvent(
+            $"evt-{Guid.CreateVersion7():N}", MesIntegrationEventTypes.OperationTaskResumed,
+            MesIntegrationEventVersions.V1, domainEvent.ResumedAtUtc, MesIntegrationEventSources.BusinessMes,
+            idempotencyKey, task.WorkOrderId, task.OrganizationId, task.EnvironmentId, "system:mes", idempotencyKey,
+            OperationTaskLifecycleIntegrationEventConverter.Payload(task, domainEvent.ResumedAtUtc));
+    }
+}
+
+internal static class OperationTaskLifecycleIntegrationEventConverter
+{
+    public static string BuildIdempotencyKey(
+        string eventName,
+        OperationTask task,
+        DateTimeOffset changedAtUtc) =>
+        EventIds.Idempotency(
+            eventName,
+            task.OrganizationId,
+            task.EnvironmentId,
+            task.OperationTaskId,
+            changedAtUtc.UtcTicks.ToString(CultureInfo.InvariantCulture));
+
+    public static OperationTaskLifecyclePayload Payload(OperationTask task, DateTimeOffset changedAtUtc) =>
+        new(task.WorkOrderId, task.OperationTaskId, task.OperationSequence, task.WorkCenterId, changedAtUtc);
+}
+
+public sealed class DowntimeStartedIntegrationEventConverter
+    : IIntegrationEventConverter<DowntimeStartedDomainEvent, MesDowntimeStartedIntegrationEvent>
+{
+    public MesDowntimeStartedIntegrationEvent Convert(DowntimeStartedDomainEvent domainEvent)
+    {
+        var downtime = domainEvent.Downtime;
+        var organizationId = downtime.OrganizationId ?? string.Empty;
+        var environmentId = downtime.EnvironmentId ?? string.Empty;
+        var idempotencyKey = EventIds.Idempotency(
+            "downtime-started", organizationId, environmentId, downtime.DowntimeEventNo);
+        return new MesDowntimeStartedIntegrationEvent(
+            $"evt-{Guid.CreateVersion7():N}", MesIntegrationEventTypes.DowntimeStarted,
+            MesIntegrationEventVersions.V1, downtime.FromUtc, MesIntegrationEventSources.BusinessMes,
+            idempotencyKey, downtime.WorkOrderId ?? downtime.DowntimeEventNo,
+            organizationId, environmentId, "system:mes", idempotencyKey,
+            new DowntimeStartedPayload(
+                downtime.DowntimeEventNo, downtime.WorkOrderId, downtime.OperationTaskId,
+                downtime.WorkCenterId, downtime.DeviceAssetId, downtime.Reason, downtime.FromUtc, downtime.ToUtc));
+    }
+}
+
+public sealed class DowntimeRestoredIntegrationEventConverter
+    : IIntegrationEventConverter<DowntimeRestoredDomainEvent, MesDowntimeRestoredIntegrationEvent>
+{
+    public MesDowntimeRestoredIntegrationEvent Convert(DowntimeRestoredDomainEvent domainEvent)
+    {
+        var downtime = domainEvent.Downtime;
+        var organizationId = downtime.OrganizationId ?? string.Empty;
+        var environmentId = downtime.EnvironmentId ?? string.Empty;
+        var idempotencyKey = EventIds.Idempotency(
+            "downtime-restored", organizationId, environmentId, downtime.DowntimeEventNo);
+        return new MesDowntimeRestoredIntegrationEvent(
+            $"evt-{Guid.CreateVersion7():N}", MesIntegrationEventTypes.DowntimeRestored,
+            MesIntegrationEventVersions.V1, domainEvent.RestoredAtUtc, MesIntegrationEventSources.BusinessMes,
+            idempotencyKey, downtime.WorkOrderId ?? downtime.DowntimeEventNo,
+            organizationId, environmentId, "system:mes", idempotencyKey,
+            new DowntimeRestoredPayload(
+                downtime.DowntimeEventNo, downtime.WorkOrderId, downtime.OperationTaskId,
+                downtime.WorkCenterId, downtime.DeviceAssetId, downtime.Reason,
+                downtime.FromUtc, domainEvent.RestoredAtUtc));
     }
 }
 

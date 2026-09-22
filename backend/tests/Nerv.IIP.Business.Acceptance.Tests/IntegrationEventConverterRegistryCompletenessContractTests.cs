@@ -205,8 +205,10 @@ public sealed class IntegrationEventConverterRegistryCompletenessContractTests
         typeof(MasterDataConverters.SkuDisabledIntegrationEventConverter),
         typeof(MasterDataConverters.UnitOfMeasureChangedIntegrationEventConverter),
         typeof(MasterDataConverters.WorkCalendarChangedIntegrationEventConverter),
-        // Mes（18 条）
+        // Mes（23 条）
         typeof(MesConverters.DefectRaisedIntegrationEventConverter),
+        typeof(MesConverters.DowntimeRestoredIntegrationEventConverter),
+        typeof(MesConverters.DowntimeStartedIntegrationEventConverter),
         typeof(MesConverters.FinishedGoodsReceiptRequestedForQualityIntegrationEventConverter),
         typeof(MesConverters.FinishedGoodsReceiptRequestedIntegrationEventConverter),
         typeof(MesConverters.MaterialIssueRequestCreatedIntegrationEventConverter),
@@ -217,6 +219,9 @@ public sealed class IntegrationEventConverterRegistryCompletenessContractTests
         typeof(MesConverters.OperationTaskCompletedIntegrationEventConverter),
         typeof(MesConverters.OperationTaskManualDispatchClearedIntegrationEventConverter),
         typeof(MesConverters.OperationTaskManuallyDispatchedIntegrationEventConverter),
+        typeof(MesConverters.OperationTaskPausedIntegrationEventConverter),
+        typeof(MesConverters.OperationTaskResumedIntegrationEventConverter),
+        typeof(MesConverters.OperationTaskStartedIntegrationEventConverter),
         typeof(MesConverters.ProductionReportRecordedIntegrationEventConverter),
         typeof(MesConverters.ReworkWorkOrderCreatedIntegrationEventConverter),
         typeof(MesConverters.WorkOrderCancelledIntegrationEventConverter),

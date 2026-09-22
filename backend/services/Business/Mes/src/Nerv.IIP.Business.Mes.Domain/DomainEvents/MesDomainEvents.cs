@@ -3,6 +3,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAg
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.EngineeringChangeAggregate;
 
@@ -65,6 +66,25 @@ public sealed record WorkOrderClosedDomainEvent(WorkOrder WorkOrder, DateTimeOff
 public sealed record MesEngineeringChangeWorkOrderImpactDetectedDomainEvent(MesEngineeringChangeWorkOrderImpact Impact) : IDomainEvent;
 
 public sealed record OperationTaskCompletedDomainEvent(OperationTask OperationTask) : IDomainEvent;
+
+public sealed record OperationTaskStartedDomainEvent(
+    OperationTask OperationTask,
+    DateTimeOffset StartedAtUtc) : IDomainEvent;
+
+public sealed record OperationTaskPausedDomainEvent(
+    OperationTask OperationTask,
+    DateTimeOffset PausedAtUtc) : IDomainEvent;
+
+public sealed record OperationTaskResumedDomainEvent(
+    OperationTask OperationTask,
+    DateTimeOffset ResumedAtUtc) : IDomainEvent;
+
+public sealed record DowntimeStartedDomainEvent(
+    WorkCenterUnavailability Downtime) : IDomainEvent;
+
+public sealed record DowntimeRestoredDomainEvent(
+    WorkCenterUnavailability Downtime,
+    DateTimeOffset RestoredAtUtc) : IDomainEvent;
 
 public enum MachineTimeFactStatus
 {
