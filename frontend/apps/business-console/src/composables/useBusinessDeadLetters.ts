@@ -114,10 +114,20 @@ export function useBusinessDeadLetters() {
     enabled: contextReady.value,
   }))
 
-  // 计数与列表使用同一个 service 口径：两边范围不一致时，概览卡说的就不是列表在说的那件事。
+  /**
+   * 概览**始终扇出全部来源**，不跟随 service 筛选。
+   *
+   * 这一条同时解决两件事：
+   * 1. 「有哪些服务可选」是一个与当次筛选无关的事实，产出方是网关扇出的来源表
+   *    （`IntegrationEventDeadLetterServices.All`）。网关在 `service` 非空时只扇出那一个来源
+   *    （`BusinessConsoleDeadLetterService.FanOutAsync`），所以带筛选的响应**不能**充当服务清单：
+   *    选中某个服务后下拉会塌缩成只剩它自己，用户再也切不到别的服务。
+   * 2. 概览的语义本就是「全局还积压多少」，筛选中的列表不应把它一起缩掉——
+   *    否则筛到一个干净的服务时，屏上会显示全局积压为 0。
+   */
   const metricsQuery = useQuery(() => ({
     ...getBusinessConsoleDeadLetterMetricsQueryOptions({
-      query: { ...scopeQuery.value, service: serviceFilter.value },
+      query: scopeQuery.value,
     }),
     enabled: contextReady.value,
   }))
@@ -188,17 +198,15 @@ export function useBusinessDeadLetters() {
     return unavailableSources.value.some((source) => source.service === service)
   })
 
+  /**
+   * 可选服务清单。**只取自不带筛选的概览响应**——列表响应会随 service 筛选收缩到一条，
+   * 拿它当清单会让下拉在选中后塌缩。这里不缓存上一次的结果：那只是让两份副本相等，
+   * 真正的产出方是网关那张来源表。
+   */
   const availableServices = computed(() =>
-    [
-      ...new Set([
-        ...(unwrapData(listEnvelope.value)?.sourceStatuses ?? []).flatMap((status) =>
-          status.service ? [status.service] : [],
-        ),
-        ...(metrics.value?.sourceStatuses ?? []).flatMap((status) =>
-          status.service ? [status.service] : [],
-        ),
-      ]),
-    ].sort((a, b) => a.localeCompare(b)),
+    (metrics.value?.sourceStatuses ?? [])
+      .flatMap((status) => (status.service ? [status.service] : []))
+      .sort((a, b) => a.localeCompare(b)),
   )
 
   async function refresh() {
@@ -237,24 +245,40 @@ export function useBusinessDeadLetters() {
 
   /**
    * 依次重放给定的行，逐行记录结果并返回汇总。
-   * 串行是为了让每一行的结果都能单独归位，也不对 10 个下游同时放大流量。
+   * 串行是为了不对 10 个下游同时放大流量。
+   *
+   * **一行失败不中断整批**：中断会留下「前几行后端已经重放、而列表与计数不刷新」的半应用状态，
+   * 屏上「状态」列与「重放结果」列互相矛盾。这里把失败也记成该行的一次结果（`failed`），
+   * 整批走完后统一失效缓存；传输层错误经 `error` 回给调用方上屏，不吞。
    */
   async function replaySelected(rows: DeadLetterTarget[]) {
     const outcomes: Array<{ rowKey: string; outcome: DeadLetterReplayOutcome }> = []
-    for (const { service, deadLetterId } of rows) {
-      outcomes.push({
-        rowKey: deadLetterRowKey(service, deadLetterId),
-        outcome: await replay(service, deadLetterId),
-      })
+    let firstError: unknown
+    try {
+      for (const { service, deadLetterId } of rows) {
+        const rowKey = deadLetterRowKey(service, deadLetterId)
+        try {
+          outcomes.push({ rowKey, outcome: await replay(service, deadLetterId) })
+        } catch (error) {
+          firstError ??= error
+          const outcome: DeadLetterReplayOutcome = { status: 'failed', succeeded: false }
+          replayOutcomes.set(rowKey, outcome)
+          outcomes.push({ rowKey, outcome })
+        }
+      }
+    } finally {
+      await invalidateDeadLetters()
     }
-    await invalidateDeadLetters()
-    return outcomes
+    return { outcomes, firstError }
   }
 
   async function replayOne(service: string, deadLetterId: string) {
-    const outcome = await replay(service, deadLetterId)
-    await invalidateDeadLetters()
-    return outcome
+    try {
+      return await replay(service, deadLetterId)
+    } finally {
+      // 与整批同一条不变量：无论这次成不成，列表与计数都要回到服务端的说法。
+      await invalidateDeadLetters()
+    }
   }
 
   async function ignore(service: string, deadLetterId: string, reason: string) {

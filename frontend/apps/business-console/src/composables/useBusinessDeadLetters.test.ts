@@ -3,6 +3,7 @@ import { shallowRef } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import { useBusinessContextStore } from '@/stores/businessContext'
+import { getBusinessConsoleDeadLetterMetricsQueryOptions } from '@nerv-iip/api-client'
 import { deadLetterRowKey, useBusinessDeadLetters } from './useBusinessDeadLetters'
 
 const apiState = vi.hoisted(() => ({
@@ -10,6 +11,8 @@ const apiState = vi.hoisted(() => ({
   replayCalls: [] as Array<{ service: string; deadLetterId: string; query: unknown }>,
   /** 按 `service/id` 给定这次重放的返回；缺省按「已重放」。 */
   replayResults: new Map<string, { succeeded: boolean; status: string }>(),
+  /** 这些行的重放调用直接抛（模拟传输层失败）。 */
+  replayThrows: new Set<string>(),
 }))
 
 const coladaState = vi.hoisted(() => ({
@@ -33,6 +36,14 @@ vi.mock('@nerv-iip/api-client', () => ({
   replayBusinessConsoleDeadLetterMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars: { path: { service: string; deadLetterId: string } }) => {
       const { service, deadLetterId } = vars.path
+      if (apiState.replayThrows.has(deadLetterRowKey(service, deadLetterId))) {
+        apiState.replayCalls.push({
+          service,
+          deadLetterId,
+          query: (vars as { query?: unknown }).query,
+        })
+        throw new Error('transport boom')
+      }
       apiState.replayCalls.push({
         service,
         deadLetterId,
@@ -101,6 +112,7 @@ describe('死信运维 composable', () => {
     useBusinessContextStore().patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
     apiState.replayCalls = []
     apiState.replayResults.clear()
+    apiState.replayThrows.clear()
     coladaState.queryDataById.clear()
     coladaState.invalidateQueries.mockClear()
   })
@@ -147,6 +159,68 @@ describe('死信运维 composable', () => {
 
     expect(deadLetters.replayOutcomes.get('Erp/shared-id')?.status).toBe('noHandler')
     expect(deadLetters.replayOutcomes.get('Mes/shared-id')).toBeUndefined()
+  })
+
+  it('选中某个服务后，可选服务清单不塌缩——否则用户切不到别的服务', () => {
+    // 网关在 service 非空时只扇出那一个来源，列表响应的 sourceStatuses 因此只回一条；
+    // 清单必须取自不带筛选的概览响应。
+    seedList([{ service: 'Erp', id: 'dl-1' }], [{ service: 'Erp', status: 'available' }])
+    seedMetrics([
+      { service: 'Erp', status: 'available' },
+      { service: 'Mes', status: 'available' },
+      { service: 'Wms', status: 'available' },
+    ])
+    const deadLetters = useBusinessDeadLetters()
+
+    deadLetters.filters.service = 'Erp'
+
+    expect(deadLetters.availableServices.value).toEqual(['Erp', 'Mes', 'Wms'])
+  })
+
+  it('概览查询不带 service —— 它是全局堆积，不随列表筛选收缩', () => {
+    seedList([])
+    seedMetrics([])
+    const deadLetters = useBusinessDeadLetters()
+    deadLetters.filters.service = 'Erp'
+
+    const lastMetricsCall = vi
+      .mocked(getBusinessConsoleDeadLetterMetricsQueryOptions)
+      .mock.calls.at(-1)
+    expect(lastMetricsCall?.[0].query).toEqual({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+    })
+  })
+
+  it('整批重放中某行失败不中断其余行，且列表计数一定被失效', async () => {
+    seedList([
+      { service: 'Erp', id: 'dl-1' },
+      { service: 'Mes', id: 'dl-2' },
+      { service: 'Wms', id: 'dl-3' },
+    ])
+    apiState.replayThrows.add('Mes/dl-2')
+    const deadLetters = useBusinessDeadLetters()
+
+    const { outcomes, firstError } = await deadLetters.replaySelected([
+      { service: 'Erp', deadLetterId: 'dl-1' },
+      { service: 'Mes', deadLetterId: 'dl-2' },
+      { service: 'Wms', deadLetterId: 'dl-3' },
+    ])
+
+    // 第 2 行失败没有挡住第 3 行
+    expect(apiState.replayCalls.map((c) => `${c.service}/${c.deadLetterId}`)).toEqual([
+      'Erp/dl-1',
+      'Mes/dl-2',
+      'Wms/dl-3',
+    ])
+    expect(outcomes.map(({ outcome }) => outcome.status)).toEqual([
+      'replayed',
+      'failed',
+      'replayed',
+    ])
+    expect(firstError).toBeDefined()
+    // 半应用状态的解药：无论成败，列表与计数都回到服务端的说法
+    expect(coladaState.invalidateQueries).toHaveBeenCalled()
   })
 
   it('答不上来的来源在列表与计数里各报一次，合并后只提示一次', () => {

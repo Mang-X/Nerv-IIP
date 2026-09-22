@@ -5,6 +5,8 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, StatusTone } from '@nerv-iip/ui'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
+import { useAuthStore } from '@/stores/auth'
 import {
   deadLetterRowKey,
   useBusinessDeadLetters,
@@ -61,6 +63,7 @@ const {
   listError,
   listPending,
   metrics,
+  metricsError,
   refresh,
   replayOne,
   replayOutcomes,
@@ -79,8 +82,23 @@ const {
 const detailOpen = ref(false)
 const ignoreReason = ref('')
 
+const auth = useAuthStore()
+/**
+ * 重放与忽略端点要求 `business.dlq.manage`（网关侧强制，见 BusinessGatewayAuthorization）。
+ * 只读角色不该看到一个按下去必然 403 的按钮——前端可见性与网关授权一起改、保持一致。
+ */
+const canManage = computed(() =>
+  (auth.principal?.permissionCodes ?? []).includes(P.deadLettersManage),
+)
+
 const listErrorMessage = computed(() => inlineErrorMessage(listError.value))
 const detailErrorMessage = computed(() => inlineErrorMessage(detailError.value))
+/**
+ * 概览取数失败时必须明确降级：四张卡一律 `?? 0` 会把「没读到」画成「正常且为零」，
+ * 而这正是母票 #3727 要消除的静默。`unavailableSources` 只来自**成功**信封里的逐源状态，
+ * 覆盖不到「概览请求整体失败」这一档。
+ */
+const metricsErrorMessage = computed(() => inlineErrorMessage(metricsError.value))
 const actionPending = computed(() => replayPending.value || ignorePending.value)
 
 /**
@@ -177,7 +195,7 @@ function replayDisplay(row: DeadLetterRow) {
 
 function canReplay(row: DeadLetterRow) {
   const status = row.deadLetter.status
-  return status !== 'replayed' && status !== 'ignored'
+  return canManage.value && status !== 'replayed' && status !== 'ignored'
 }
 
 function openDetail(row: DeadLetterRow) {
@@ -211,17 +229,20 @@ async function handleReplayRow(row: DeadLetterRow) {
 }
 
 async function handleReplaySelected() {
-  try {
-    const outcomes = await replaySelected(selectedRows.value)
-    const replayed = outcomes.filter(({ outcome }) => outcome.status === 'replayed').length
-    if (replayed === outcomes.length) {
-      notifySuccess(`已重放 ${replayed} 条死信`)
-    } else {
-      notifyWarning(`${outcomes.length} 条中重放成功 ${replayed} 条，其余见「重放结果」列`)
-    }
-    selectedRowKeys.value = []
-  } catch (error) {
-    notifyOperationFailure('重放失败', error, '无法重放选中死信，请稍后重试。')
+  // 整批走完才返回，列表与计数已在 composable 里统一失效——这里不会留下「部分已重放但屏上没变」。
+  const { outcomes, firstError } = await replaySelected(selectedRows.value)
+  selectedRowKeys.value = []
+
+  if (firstError) {
+    notifyOperationFailure('重放失败', firstError, '部分死信未能重放，请查看「重放结果」列。')
+    return
+  }
+
+  const replayed = outcomes.filter(({ outcome }) => outcome.status === 'replayed').length
+  if (replayed === outcomes.length) {
+    notifySuccess(`已重放 ${replayed} 条死信`)
+  } else {
+    notifyWarning(`${outcomes.length} 条中重放成功 ${replayed} 条，其余见「重放结果」列`)
   }
 }
 
@@ -260,11 +281,7 @@ function formatPayload(value: string | null | undefined) {
 <template>
   <BusinessLayout>
     <section class="grid gap-6">
-      <NvPageHeader
-        title="集成事件死信"
-        :breadcrumbs="[{ label: '集成运维' }]"
-        :count="`${rows.length} 条`"
-      >
+      <NvPageHeader title="集成事件死信" :breadcrumbs="[{ label: '集成运维' }]">
         <template #actions>
           <NvButton
             size="sm"
@@ -290,8 +307,17 @@ function formatPayload(value: string | null | undefined) {
         </span>
       </p>
 
+      <!-- 概览取数失败时不画 0：那会被读成「正常且为零」。 -->
+      <p
+        v-if="metricsErrorMessage"
+        class="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm"
+        role="alert"
+      >
+        <ShieldAlertIcon class="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+        <span>未能读取死信概览，下方计数与按服务分组暂不可用：{{ metricsErrorMessage }}</span>
+      </p>
       <!-- 四档互斥且相加等于总数；不再单列「积压」，它只是「待处理 + 重放失败」的和。 -->
-      <NvSectionCards :columns="4">
+      <NvSectionCards v-else :columns="4">
         <NvSectionCard description="待处理" :value="metrics?.pendingCount ?? 0" />
         <NvSectionCard description="重放失败" :value="metrics?.failedCount ?? 0" />
         <NvSectionCard description="已重放" :value="metrics?.replayedCount ?? 0" />
@@ -366,7 +392,7 @@ function formatPayload(value: string | null | undefined) {
           <NvButton
             size="sm"
             type="button"
-            :disabled="actionPending || selectedRows.length === 0"
+            :disabled="!canManage || actionPending || selectedRows.length === 0"
             @click="handleReplaySelected"
           >
             <RotateCwIcon class="size-4" aria-hidden="true" />
@@ -422,7 +448,9 @@ function formatPayload(value: string | null | undefined) {
       <NvSheetContent side="right" size="lg" class="overflow-y-auto">
         <NvSheetHeader>
           <NvSheetTitle>死信详情</NvSheetTitle>
-          <NvSheetDescription>{{ selectedRowKey }}</NvSheetDescription>
+          <NvSheetDescription>
+            {{ selectedTarget?.service }} · {{ selectedDeadLetter?.eventType ?? '未知事件类型' }}
+          </NvSheetDescription>
         </NvSheetHeader>
 
         <p v-if="detailErrorMessage" class="px-4 text-sm text-destructive" role="alert">
@@ -482,7 +510,7 @@ function formatPayload(value: string | null | undefined) {
             <NvButton
               type="button"
               variant="outline"
-              :disabled="actionPending || ignoreReason.trim().length === 0"
+              :disabled="!canManage || actionPending || ignoreReason.trim().length === 0"
               @click="handleIgnore"
             >
               <BanIcon class="size-4" aria-hidden="true" />
