@@ -3,7 +3,7 @@
 #   SideEffects:
 #     - Opens one loopback TCP listener for acceptance verification
 #   Writes:
-#     - Ready JSON at the caller-provided path
+#     - Ready JSON published atomically at the caller-provided path via a sibling staging file rename
 #   Cleanup:
 #     - Closes accepted sockets and the listener when the stop marker appears or the process exits
 #   Requires:
@@ -87,7 +87,10 @@ try {
         processId = $PID
         readyAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
     }
-    $ready | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $ReadyPath -Encoding utf8
+    $readyFullPath = [System.IO.Path]::GetFullPath($ReadyPath)
+    $readyStagingPath = "$readyFullPath.$PID.staging"
+    $ready | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $readyStagingPath -Encoding utf8
+    [System.IO.File]::Move($readyStagingPath, $readyFullPath, $true)
 
     while (-not $script:StopRequested) {
         if (Test-Path -LiteralPath $StopPath -PathType Leaf) {
