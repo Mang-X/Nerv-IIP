@@ -28,6 +28,13 @@ public sealed class MasterDataDictionaryRulesTests
     /// 抄写，并由 <see cref="MasterData_seed_creates_authoritative_dictionary_codes"/> 钉住 seed 与它一致，
     /// 因此独立于被测的 <c>Sku.Create</c>。不取 <c>StandardReferenceData</c>：那是 seed producer 自身，
     /// 与工厂方法同在实现一侧，两边一起改坏时这条断言会静默变绿。
+    ///
+    /// 护栏实际宽度（已实测，非票面转抄）：这里的 <c>Assert.Contains</c> 只钉「落在集合里」，不钉「等于
+    /// 文档规定的那个值」。把 `Sku.Create` 的默认值单独换成同码集里任意另一个合法码（例如
+    /// batch-tracking-policy 从 "none" 换成 "optional"、serial-tracking-policy 从 "none" 换成
+    /// "on-receipt"），不动 <see cref="ExpectedDictionaryCodes"/> 也不动 `StandardReferenceData`，
+    /// 本类全部 12 条用例照样全绿——单点改坏即可绕过，不需要三处联动。
+    /// 取值对不对，最终只能回 `docs/reference/master-data/dictionary.md` 人工核对。
     /// </summary>
     [Fact]
     public void Sku_create_defaults_stay_inside_their_own_dictionary_code_sets()
@@ -38,6 +45,12 @@ public sealed class MasterDataDictionaryRulesTests
         Assert.Contains(sku.SerialTrackingPolicy, ExpectedDictionaryCodes["serial-tracking-policy"], StringComparer.Ordinal);
     }
 
+    /// <summary>
+    /// 钉住 seed 落库的每个码集与 <see cref="ExpectedDictionaryCodes"/> 里同名码集的**集合相等**
+    /// （逐码集排序后 <c>Assert.Equal</c>）。这只保证 seed producer（`MasterDataSeedService` /
+    /// `StandardReferenceData`）与测试自己手抄的 oracle 不互相漂移，不保证 oracle 本身抄对了
+    /// `docs/reference/master-data/dictionary.md`——两边一起改错同一个值，这条断言照样绿。
+    /// </summary>
     [Fact]
     public async Task MasterData_seed_creates_authoritative_dictionary_codes()
     {
@@ -428,6 +441,12 @@ public sealed class MasterDataDictionaryRulesTests
         return services.BuildServiceProvider();
     }
 
+    /// <summary>
+    /// 手抄自 `docs/reference/master-data/dictionary.md`，供本文件用作独立 oracle。两者之间没有任何
+    /// 机器校验，只靠这条注释指过去——码表的最终权威永远是那份人工文档，不是这里。
+    /// 本类断言拿它验的是「内部各处一致」（seed 与它集合相等、`Sku.Create` 的默认值落在其码集内），
+    /// 不是「抄得对不对」；把这里的取值和文档一起抄错，全类照样绿。
+    /// </summary>
     private static readonly IReadOnlyDictionary<string, string[]> ExpectedDictionaryCodes =
         new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
