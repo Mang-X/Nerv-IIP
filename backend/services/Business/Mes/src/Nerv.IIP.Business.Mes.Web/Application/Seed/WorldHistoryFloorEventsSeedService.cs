@@ -72,7 +72,7 @@ public sealed class WorldHistoryFloorEventsSeedService(ApplicationDbContext dbCo
             var added = 0;
             foreach (var downtime in batch.Where(x => !existing.Contains(x.DowntimeEventNo)))
             {
-                dbContext.WorkCenterUnavailabilities.Add(WorkCenterUnavailability.Open(
+                var historicalWindow = WorkCenterUnavailability.Open(
                     organizationId,
                     environmentId,
                     downtime.DowntimeEventNo,
@@ -80,7 +80,9 @@ public sealed class WorldHistoryFloorEventsSeedService(ApplicationDbContext dbCo
                     downtime.FromUtc,
                     downtime.ToUtc,
                     downtime.Reason,
-                    downtime.DeviceAssetId));
+                    downtime.DeviceAssetId);
+                historicalWindow.ClearDomainEvents();
+                dbContext.WorkCenterUnavailabilities.Add(historicalWindow);
                 added++;
             }
 

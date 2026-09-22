@@ -3094,11 +3094,13 @@ public sealed class MesEndpointContractTests
 
         Assert.Equal(firstResult, secondResult);
         Assert.Equal(startedAtUtc, firstResult.AcceptedAtUtc);
-        Assert.Equal(1, await dbContext.WorkCenterUnavailabilities.CountAsync(
+        var persisted = await dbContext.WorkCenterUnavailabilities.SingleAsync(
             x => x.OrganizationId == "org-001" &&
                 x.EnvironmentId == "env-dev" &&
                 x.WorkCenterId == "WC-CNC-01",
-            CancellationToken.None));
+            CancellationToken.None);
+        Assert.Equal("WO-DOWNTIME", persisted.WorkOrderId);
+        Assert.Equal("OP-10", persisted.OperationTaskId);
     }
 
     [Theory]

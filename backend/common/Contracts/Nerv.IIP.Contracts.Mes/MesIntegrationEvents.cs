@@ -18,6 +18,11 @@ public static class MesIntegrationEventTypes
     public const string ReworkWorkOrderCreated = "mes.ReworkWorkOrderCreated";
     public const string WorkOrderEngineeringChangeImpactDetected = "mes.WorkOrderEngineeringChangeImpactDetected";
     public const string OperationTaskCompleted = "mes.OperationTaskCompleted";
+    public const string OperationTaskStarted = "mes.OperationTaskStarted";
+    public const string OperationTaskPaused = "mes.OperationTaskPaused";
+    public const string OperationTaskResumed = "mes.OperationTaskResumed";
+    public const string DowntimeStarted = "mes.DowntimeStarted";
+    public const string DowntimeRestored = "mes.DowntimeRestored";
     public const string OperationActualTimeSettled = "mes.OperationActualTimeSettled";
     public const string OperationActualTimeSettlementVoided = "mes.OperationActualTimeSettlementVoided";
     public const string OperationTaskManuallyDispatched = "mes.OperationTaskManuallyDispatched";
@@ -85,6 +90,30 @@ public static class MesActualTimeIntegrationEventTopics
 
     private static string NormalizeDeploymentProfile(string deploymentProfile) =>
         deploymentProfile.Trim().ToLowerInvariant();
+}
+
+public static class MesExecutionFactIntegrationEventTopics
+{
+    public static string OperationTaskStarted(string deploymentProfile) =>
+        Build(deploymentProfile, "operation-task-started");
+
+    public static string OperationTaskPaused(string deploymentProfile) =>
+        Build(deploymentProfile, "operation-task-paused");
+
+    public static string OperationTaskResumed(string deploymentProfile) =>
+        Build(deploymentProfile, "operation-task-resumed");
+
+    public static string DowntimeStarted(string deploymentProfile) =>
+        Build(deploymentProfile, "downtime-started");
+
+    public static string DowntimeRestored(string deploymentProfile) =>
+        Build(deploymentProfile, "downtime-restored");
+
+    private static string Build(string deploymentProfile, string eventName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(deploymentProfile);
+        return $"nerv-iip.{deploymentProfile.Trim().ToLowerInvariant()}.business-mes.mes.{eventName}.v1";
+    }
 }
 
 public enum MesMachineTimeFactStatus
@@ -351,6 +380,118 @@ public sealed record OperationTaskCompletedPayload(
     string UomCode,
     bool RequiresQualityInspection,
     DateTimeOffset CompletedAtUtc);
+
+public sealed record MesOperationTaskStartedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    OperationTaskLifecyclePayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record MesOperationTaskPausedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    OperationTaskLifecyclePayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record MesOperationTaskResumedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    OperationTaskLifecyclePayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record OperationTaskLifecyclePayload(
+    string WorkOrderId,
+    string OperationTaskId,
+    int OperationSequence,
+    string WorkCenterId,
+    DateTimeOffset ChangedAtUtc);
+
+public sealed record MesDowntimeStartedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    DowntimeStartedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record DowntimeStartedPayload(
+    string DowntimeEventNo,
+    string? WorkOrderId,
+    string? OperationTaskId,
+    string WorkCenterId,
+    string? DeviceAssetId,
+    string Reason,
+    DateTimeOffset StartedAtUtc,
+    DateTimeOffset? EndedAtUtc);
+
+public sealed record MesDowntimeRestoredIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    DowntimeRestoredPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record DowntimeRestoredPayload(
+    string DowntimeEventNo,
+    string? WorkOrderId,
+    string? OperationTaskId,
+    string WorkCenterId,
+    string? DeviceAssetId,
+    string Reason,
+    DateTimeOffset StartedAtUtc,
+    DateTimeOffset RestoredAtUtc);
 
 [JsonConverter(typeof(MesOperationActualTimeSettledV1IntegrationEventJsonConverter))]
 public sealed record MesOperationActualTimeSettledIntegrationEvent(

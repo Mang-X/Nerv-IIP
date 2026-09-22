@@ -58,6 +58,11 @@ builder.Services.AddScoped<OperationActualTimeSettledV1IntegrationEventConverter
 builder.Services.AddScoped<OperationActualTimeSettledIntegrationEventConverter>();
 builder.Services.AddScoped<OperationActualTimeSettlementVoidedV1IntegrationEventConverter>();
 builder.Services.AddScoped<OperationActualTimeSettlementVoidedIntegrationEventConverter>();
+builder.Services.AddScoped<OperationTaskStartedIntegrationEventConverter>();
+builder.Services.AddScoped<OperationTaskPausedIntegrationEventConverter>();
+builder.Services.AddScoped<OperationTaskResumedIntegrationEventConverter>();
+builder.Services.AddScoped<DowntimeStartedIntegrationEventConverter>();
+builder.Services.AddScoped<DowntimeRestoredIntegrationEventConverter>();
 builder.Services.AddScoped<IMesIntegrationEventOutboxPublisher, CapMesIntegrationEventOutboxPublisher>();
 builder.Services.AddSingleton(new MesActualTimeTopicOptions(builder.Environment.EnvironmentName));
 var productEngineeringBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "ProductEngineering:BaseUrl", "http://localhost:5108");
