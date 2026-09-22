@@ -58,6 +58,11 @@ public sealed class RushWorkOrderCommandTests
     {
         var store = new InMemoryMesPlanningStore();
         var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
+        // 前置状态：库里已经存在别的工单与工序。急单在非空库上也必须照样落单——
+        // 删掉这两行会把用例输入窄化成「空库建单」，「store 非空则早返」这类实现错误就杀不掉了（#3715 审核 M4）。
+        store.AddWorkOrder(new PlannedWorkOrder("org-001", "env-dev", "WO-NORMAL", "SKU-N", null, 1m, 10, now.AddDays(1)));
+        store.AddOperationTask(new PlannedOperationTask("WO-NORMAL", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2), "SKU-001"));
+
         var handler = new CreateRushWorkOrderCommandHandler(store);
 
         var response = await handler.Handle(

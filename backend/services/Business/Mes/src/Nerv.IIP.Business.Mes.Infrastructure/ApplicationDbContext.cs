@@ -68,7 +68,6 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
 
     public DbSet<MaterialIssueRequest> MaterialIssueRequests => Set<MaterialIssueRequest>();
 
-
     public DbSet<WorkCenterUnavailability> WorkCenterUnavailabilities => Set<WorkCenterUnavailability>();
 
     public DbSet<ChangeoverRecord> ChangeoverRecords => Set<ChangeoverRecord>();

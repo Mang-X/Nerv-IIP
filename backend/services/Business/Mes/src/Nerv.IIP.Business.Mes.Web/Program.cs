@@ -335,7 +335,6 @@ if (leaderDemoSeedEnabled)
             foundation.DisabledSkusWritten,
             foundation.Validation.DeviceAssetMappingsChecked,
             foundation.Validation.DisabledSkusChecked);
-
     }
 }
 
