@@ -62,6 +62,11 @@ public sealed class OperationExecutionProjectionConsumerTests
             .HandleAsync(Lifecycle<MesOperationTaskPausedIntegrationEvent>("evt-pause", BaseTime.AddMinutes(10)), CancellationToken.None);
         await new MesOperationTaskResumedIntegrationEventHandlerForProjectExecution(db, deadLetters, mutationLock)
             .HandleAsync(Lifecycle<MesOperationTaskResumedIntegrationEvent>("evt-resume", BaseTime.AddMinutes(20)), CancellationToken.None);
+
+        var resumedProjection = await db.OperationExecutionProjections.SingleAsync();
+        Assert.False(resumedProjection.IsPaused);
+        Assert.Equal("evt-resume", resumedProjection.LifecycleEventId);
+
         await new MesOperationTaskCompletedIntegrationEventHandlerForProjectExecution(db, deadLetters, mutationLock)
             .HandleAsync(Lifecycle<MesOperationTaskCompletedIntegrationEvent>("evt-complete", BaseTime.AddMinutes(30)), CancellationToken.None);
 
