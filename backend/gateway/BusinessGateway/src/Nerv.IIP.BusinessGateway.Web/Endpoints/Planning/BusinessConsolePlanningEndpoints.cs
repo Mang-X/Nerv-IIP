@@ -104,8 +104,14 @@ public sealed class ReviewBusinessConsolePlanningMpsBucketEndpoint(
         string bearerToken,
         CancellationToken cancellationToken)
     {
+        var (_, actorRef) = RequireAuthorizedPrincipalActor();
         var mpsId = Route<string>("mpsId") ?? request.MpsId;
-        return planning.ReviewMpsBucketAsync(tokenProvider.BearerToken, mpsId, request with { MpsId = mpsId }, cancellationToken);
+        return planning.ReviewMpsBucketAsync(
+            tokenProvider.BearerToken,
+            mpsId,
+            actorRef,
+            request with { MpsId = mpsId },
+            cancellationToken);
     }
 }
 
@@ -133,8 +139,14 @@ public sealed class ReleaseBusinessConsolePlanningMpsBucketEndpoint(
         string bearerToken,
         CancellationToken cancellationToken)
     {
+        var (_, actorRef) = RequireAuthorizedPrincipalActor();
         var mpsId = Route<string>("mpsId") ?? request.MpsId;
-        return planning.ReleaseMpsBucketAsync(tokenProvider.BearerToken, mpsId, request with { MpsId = mpsId }, cancellationToken);
+        return planning.ReleaseMpsBucketAsync(
+            tokenProvider.BearerToken,
+            mpsId,
+            actorRef,
+            request with { MpsId = mpsId },
+            cancellationToken);
     }
 }
 

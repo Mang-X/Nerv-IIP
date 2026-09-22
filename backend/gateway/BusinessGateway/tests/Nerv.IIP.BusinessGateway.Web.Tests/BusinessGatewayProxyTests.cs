@@ -6723,9 +6723,51 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("mps-001", planning.LastUpdateMpsId);
         Assert.Equal(132m, planning.LastUpdateMpsRequest!.Quantity);
         Assert.Equal("mps-001", planning.LastReviewMpsId);
-        Assert.Equal("planner.li", planning.LastReviewMpsRequest!.ReviewedBy);
+        Assert.Equal("user-admin", planning.LastReviewedBy);
         Assert.Equal("mps-001", planning.LastReleaseMpsId);
-        Assert.Equal("planning.manager", planning.LastReleaseMpsRequest!.ReleasedBy);
+        Assert.Equal("user-admin", planning.LastReleasedBy);
+    }
+
+    [Fact]
+    public async Task Planning_mps_review_and_release_ignore_forged_actors_and_use_the_authorized_principal()
+    {
+        const string trustedActor = "trusted-planner-42";
+        var planning = new RecordingPlanningClient();
+        var authorization = new FakeBusinessGatewayAuthorizationClient(
+            _ => true,
+            allowedResult: BusinessGatewayAuthorizationResult.Allowed(
+                trustedActor,
+                "user",
+                "trusted.planner",
+                "org-001",
+                "env-dev"));
+        await using var lease = LeaseHost(authorization, services =>
+        {
+            services.RemoveAll<IBusinessPlanningClient>();
+            services.AddSingleton<IBusinessPlanningClient>(planning);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var review = await client.PostAsJsonAsync(
+            "/api/business-console/v1/planning/mps/mps-001/review?organizationId=org-001&environmentId=env-dev",
+            new
+            {
+                reviewedBy = "forged-reviewer",
+            });
+        var release = await client.PostAsJsonAsync(
+            "/api/business-console/v1/planning/mps/mps-001/release?organizationId=org-001&environmentId=env-dev",
+            new
+            {
+                releasedBy = "forged-releaser",
+            });
+
+        Assert.Equal(HttpStatusCode.OK, review.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, release.StatusCode);
+        Assert.Equal(trustedActor, planning.LastReviewedBy);
+        Assert.Equal(trustedActor, planning.LastReleasedBy);
     }
 
     [Fact]
@@ -18059,9 +18101,13 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
 
     public BusinessConsoleReviewMpsBucketRequest? LastReviewMpsRequest { get; private set; }
 
+    public string? LastReviewedBy { get; private set; }
+
     public string? LastReleaseMpsId { get; private set; }
 
     public BusinessConsoleReleaseMpsBucketRequest? LastReleaseMpsRequest { get; private set; }
+
+    public string? LastReleasedBy { get; private set; }
 
     public string? LastCancelledDemandSourceId { get; private set; }
 
@@ -18150,11 +18196,13 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
     public Task<BusinessConsoleMpsBucketItem> ReviewMpsBucketAsync(
         string internalBearerToken,
         string mpsId,
+        string reviewedBy,
         BusinessConsoleReviewMpsBucketRequest request,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
         LastReviewMpsId = mpsId;
+        LastReviewedBy = reviewedBy;
         LastReviewMpsRequest = request;
         return Task.FromResult(new BusinessConsoleMpsBucketItem(
             mpsId,
@@ -18164,18 +18212,20 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
             new DateOnly(2026, 6, 15),
             120m,
             "Reviewed",
-            request.ReviewedBy,
+            reviewedBy,
             DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture)));
     }
 
     public Task<BusinessConsoleMpsBucketItem> ReleaseMpsBucketAsync(
         string internalBearerToken,
         string mpsId,
+        string releasedBy,
         BusinessConsoleReleaseMpsBucketRequest request,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
         LastReleaseMpsId = mpsId;
+        LastReleasedBy = releasedBy;
         LastReleaseMpsRequest = request;
         return Task.FromResult(new BusinessConsoleMpsBucketItem(
             mpsId,
@@ -18187,7 +18237,7 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
             "Released",
             "planner.li",
             DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
-            request.ReleasedBy,
+            releasedBy,
             DateTimeOffset.Parse("2026-06-01T09:00:00Z", CultureInfo.InvariantCulture)));
     }
 

@@ -1327,10 +1327,10 @@ public sealed class ListMaterialIssueRequestsQueryHandler(ApplicationDbContext d
 
         var total = await query.CountAsync(cancellationToken);
         var supplementaryCount = await query.CountAsync(x => x.IsSupplementary, cancellationToken);
-        var items = await ProjectRows(query, dbContext)
-            .OrderByDescending(x => x.RequestedAtUtc)
-            .Skip(page.Skip)
-            .Take(page.Take)
+        var items = await ProjectRows(query
+                .OrderByDescending(x => x.RequestedAtUtc)
+                .Skip(page.Skip)
+                .Take(page.Take), dbContext)
             .ToArrayAsync(cancellationToken);
         return new MesMaterialIssueRequestListResponse(items, total, supplementaryCount);
     }

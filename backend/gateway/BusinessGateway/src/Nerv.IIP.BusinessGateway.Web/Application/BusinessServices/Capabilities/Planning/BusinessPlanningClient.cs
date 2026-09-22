@@ -25,12 +25,14 @@ public interface IBusinessPlanningClient
     Task<BusinessConsoleMpsBucketItem> ReviewMpsBucketAsync(
         string internalBearerToken,
         string mpsId,
+        string reviewedBy,
         BusinessConsoleReviewMpsBucketRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleMpsBucketItem> ReleaseMpsBucketAsync(
         string internalBearerToken,
         string mpsId,
+        string releasedBy,
         BusinessConsoleReleaseMpsBucketRequest request,
         CancellationToken cancellationToken);
 
@@ -155,6 +157,7 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
     public async Task<BusinessConsoleMpsBucketItem> ReviewMpsBucketAsync(
         string internalBearerToken,
         string mpsId,
+        string reviewedBy,
         BusinessConsoleReviewMpsBucketRequest request,
         CancellationToken cancellationToken)
     {
@@ -162,7 +165,7 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
             internalBearerToken,
             HttpMethod.Post,
             $"/api/business/v1/planning/mps/{Uri.EscapeDataString(mpsId)}/review?" + PlanningContextQuery(request.OrganizationId, request.EnvironmentId),
-            request,
+            new DownstreamReviewMpsBucketRequest(reviewedBy),
             cancellationToken);
         return ToBusinessConsoleMpsBucket(response);
     }
@@ -170,6 +173,7 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
     public async Task<BusinessConsoleMpsBucketItem> ReleaseMpsBucketAsync(
         string internalBearerToken,
         string mpsId,
+        string releasedBy,
         BusinessConsoleReleaseMpsBucketRequest request,
         CancellationToken cancellationToken)
     {
@@ -177,10 +181,14 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
             internalBearerToken,
             HttpMethod.Post,
             $"/api/business/v1/planning/mps/{Uri.EscapeDataString(mpsId)}/release?" + PlanningContextQuery(request.OrganizationId, request.EnvironmentId),
-            request,
+            new DownstreamReleaseMpsBucketRequest(releasedBy),
             cancellationToken);
         return ToBusinessConsoleMpsBucket(response);
     }
+
+    private sealed record DownstreamReviewMpsBucketRequest(string ReviewedBy);
+
+    private sealed record DownstreamReleaseMpsBucketRequest(string ReleasedBy);
 
     public Task<BusinessConsoleDemandSourceListResponse> ListDemandSourcesAsync(
         string internalBearerToken,

@@ -85,6 +85,39 @@ public sealed class BusinessGatewayOpenApiTests
     }
 
     [Fact]
+    public async Task Planning_mps_actor_fields_remain_in_the_v1_compatibility_contract()
+    {
+        var json = await BusinessGatewayTestHost.GetOpenApiDocumentAsync();
+        using var document = JsonDocument.Parse(json);
+        var paths = document.RootElement.GetProperty("paths");
+
+        foreach (var (path, actorProperty) in new[]
+                 {
+                     ("/api/business-console/v1/planning/mps/{mpsId}/review", "reviewedBy"),
+                     ("/api/business-console/v1/planning/mps/{mpsId}/release", "releasedBy"),
+                 })
+        {
+            var requestBody = paths.GetProperty(path).GetProperty("post").GetProperty("requestBody");
+            Assert.True(requestBody.GetProperty("required").GetBoolean());
+
+            var schemaRef = requestBody
+                .GetProperty("content")
+                .GetProperty("application/json")
+                .GetProperty("schema")
+                .GetProperty("$ref")
+                .GetString()!;
+            var schemaName = schemaRef["#/components/schemas/".Length..];
+            var schema = document.RootElement
+                .GetProperty("components")
+                .GetProperty("schemas")
+                .GetProperty(schemaName);
+
+            Assert.Contains(schema.GetProperty("required").EnumerateArray(), item => item.GetString() == actorProperty);
+            Assert.True(schema.GetProperty("properties").TryGetProperty(actorProperty, out _));
+        }
+    }
+
+    [Fact]
     public async Task Business_gateway_exports_openapi_document_with_stable_business_console_operation_ids()
     {
         var json = await BusinessGatewayTestHost.GetOpenApiDocumentAsync();

@@ -82,7 +82,7 @@ import {
   ShieldCheckIcon,
   XCircleIcon,
 } from '@lucide/vue'
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 definePage({
@@ -102,6 +102,8 @@ const {
   cancelPreviewReady,
   cancelWorkOrder,
   cancelWorkOrderPending,
+  holdWorkOrder,
+  holdWorkOrderPending,
   closeWorkOrder,
   closeWorkOrderPending,
   confirmLineSideReceipt,
@@ -596,6 +598,51 @@ const cancelOpen = ref(false)
 const cancelForm = reactive({ reasonCode: '', remark: '' })
 
 const currentStatus = computed(() => (detail.value?.status ?? '').toLowerCase())
+const holdOpen = shallowRef(false)
+const holdReason = shallowRef('')
+const holdShowErrors = shallowRef(false)
+const HOLD_REASON_MAX_LENGTH = 500
+const canHold = computed(
+  () =>
+    workOrderManageScopeReady.value &&
+    statusActionGate({
+      domain: 'mes-work-order',
+      action: 'hold',
+      facts: { status: detail.value?.status },
+    }).executable,
+)
+const holdReasonError = computed(() => (holdReason.value.trim() ? '' : '请输入挂起原因。'))
+function openHoldDialog() {
+  if (!canHold.value) return
+  holdReason.value = ''
+  holdShowErrors.value = false
+  holdOpen.value = true
+}
+async function submitHold() {
+  if (!canHold.value || holdWorkOrderPending.value) return
+  holdShowErrors.value = true
+  if (holdReasonError.value) return
+  try {
+    await holdWorkOrder(holdReason.value.trim())
+    holdOpen.value = false
+    notifySuccess(`工单 ${workOrderLabel.value} 已挂起。`)
+    await refreshDetail()
+  } catch (error) {
+    if (
+      await recoverLifecycleAction(error, {
+        reset: () => {
+          holdOpen.value = false
+          holdReason.value = ''
+        },
+        refresh: refreshDetail,
+        notify: (message) => notifyError(message),
+      })
+    ) {
+      return
+    }
+    notifyOperationFailure('挂起工单失败', error, '挂起工单失败，请稍后重试。')
+  }
+}
 const closeOpen = ref(false)
 const decisionOpen = ref(false)
 const decisionShowErrors = ref(false)
@@ -919,6 +966,16 @@ function formatStatus(value?: string | null) {
           @click="openSplitDialog"
         >
           拆分工单
+        </NvButton>
+        <NvButton
+          v-if="canHold"
+          size="sm"
+          type="button"
+          variant="outline"
+          data-testid="open-hold-work-order"
+          @click="openHoldDialog"
+        >
+          挂起工单
         </NvButton>
         <NvButton
           v-if="canClose"
@@ -1751,6 +1808,58 @@ function formatStatus(value?: string | null) {
           >
             <Spinner v-if="closeWorkOrderPending" aria-hidden="true" />
             确认关闭
+          </NvButton>
+        </NvAlertDialogFooter>
+      </NvAlertDialogContent>
+    </NvAlertDialog>
+
+    <NvAlertDialog v-model:open="holdOpen">
+      <NvAlertDialogContent class="sm:max-w-md">
+        <NvAlertDialogHeader>
+          <NvAlertDialogTitle>挂起工单 · {{ workOrderLabel }}</NvAlertDialogTitle>
+          <NvAlertDialogDescription
+            >挂起后工单暂停后续执行；确认原因后可在工单状态中追溯。</NvAlertDialogDescription
+          >
+        </NvAlertDialogHeader>
+        <p
+          v-if="holdShowErrors && holdReasonError"
+          class="text-sm text-destructive"
+          role="alert"
+          data-testid="hold-validation-summary"
+        >
+          请完整填写带 * 的必填项（已标红）。
+        </p>
+        <NvField :data-invalid="holdShowErrors && !!holdReasonError">
+          <NvFieldLabel for="hold-reason"
+            >挂起原因 <span class="text-destructive">*</span></NvFieldLabel
+          >
+          <NvInput
+            id="hold-reason"
+            v-model="holdReason"
+            :maxlength="HOLD_REASON_MAX_LENGTH"
+            placeholder="请说明挂起原因"
+          />
+          <p v-if="holdShowErrors && holdReasonError" class="text-xs text-destructive" role="alert">
+            {{ holdReasonError }}
+          </p>
+        </NvField>
+        <NvAlertDialogFooter>
+          <NvButton
+            type="button"
+            variant="outline"
+            :disabled="holdWorkOrderPending"
+            @click="holdOpen = false"
+          >
+            返回
+          </NvButton>
+          <NvButton
+            type="button"
+            :disabled="holdWorkOrderPending"
+            data-testid="confirm-hold-work-order"
+            @click="submitHold"
+          >
+            <Spinner v-if="holdWorkOrderPending" aria-hidden="true" />
+            确认挂起
           </NvButton>
         </NvAlertDialogFooter>
       </NvAlertDialogContent>
