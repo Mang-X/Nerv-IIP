@@ -10,18 +10,16 @@ using Nerv.IIP.Contracts.Scheduling;
 namespace Nerv.IIP.Business.Scheduling.Web.Application.Seed;
 
 /// <summary>
-/// 《工厂世界观设定集》L1 背景历史引擎的 **排产域侧**：
-/// 问题快照 → 排产方案（含资源分配 / 资源负荷 / 冲突 / 不可排工序）→ 订单紧急度快照。
+/// 《工厂世界观设定集》L1 背景历史引擎的 **排产域侧**：问题快照（排程引擎的输入）与订单紧急度快照。
 ///
-/// 领域事件说明：<see cref="SchedulePlan.FromGeneratedPlan"/> 每个方案发 1 个
-/// <c>SchedulePlanGeneratedDomainEvent</c>、每条冲突再各发 1 个 <c>ScheduleConflictDetectedDomainEvent</c>，
-/// N 方案 × M 冲突经 CAP 会直接把消息总线打爆。本引擎**绕开仓储与 UnitOfWork**，
-/// 直接调用 <c>DbContext.SaveChangesAsync()</c>——本仓栈里该方法不派发领域事件
-/// （派发只发生在 netcorepal 的 UnitOfWork/命令管线上），与 ERP/MES/Quality/DemandPlanning 引擎同一前提。
+/// **不写排产方案**：<c>schedule_plans</c> 及其四张明细在演示环境保持为空，直到用户在工作台点「生成」，
+/// 由 <see cref="FiniteCapacityScheduler"/> 现场算出来（#3594）。种子回填的方案盖着
+/// <c>aps-lite-v1</c> 的算法版本章却从未被该算法算过，排程行为一变就与演示数据脱节。
 ///
-/// 时间回填：排产聚合的所有时间戳（<c>GeneratedAtUtc</c> / <c>ReleasedAtUtc</c> /
-/// <c>RevokedAtUtc</c> / <c>StartUtc</c> / <c>EndUtc</c> / <c>CapturedAtUtc</c>）都由入参显式给定，
-/// 没有一处写 <c>UtcNow</c>，因此不需要 EF Entry 级别的回填。
+/// 时间回填：问题快照与紧急度快照的时间戳（<c>CapturedAtUtc</c> / <c>CalculatedAtUtc</c>）
+/// 都由入参显式给定，没有一处写 <c>UtcNow</c>，因此不需要 EF Entry 级别的回填。
+/// 本引擎**绕开仓储与 UnitOfWork**，直接调用 <c>DbContext.SaveChangesAsync()</c>——本仓栈里该方法
+/// 不派发领域事件（派发只发生在 netcorepal 的 UnitOfWork/命令管线上），与其它域的历史引擎同一前提。
 /// </summary>
 public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
 {
@@ -41,21 +39,15 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
 
         var facts = WorldHistorySchedulingSpec.BuildSchedulingFacts(asOfDate, scale);
 
-        var problemsWritten = await SeedProblemsAsync(organizationId, environmentId, facts.Plans, cancellationToken);
-        var written = await SeedPlansAsync(organizationId, environmentId, facts.Plans, cancellationToken);
+        var problemsWritten = await SeedProblemsAsync(organizationId, environmentId, facts.Problems, cancellationToken);
         var urgenciesWritten = await SeedUrgencySnapshotsAsync(organizationId, environmentId, facts.Urgencies, cancellationToken);
 
-        // fail-closed：方案数量、生命周期分布、发布号单调、问题快照可反序列化对不上就让 seed 失败。
+        // fail-closed：问题快照反序列化不回来、或紧急度快照缺工单就让 seed 失败。
         var validation = await new WorldHistoryConsistencyValidator(dbContext)
             .ValidateAsync(organizationId, environmentId, asOfDate, scale, cancellationToken);
 
         return new WorldHistorySchedulingSeedReport(
             ScheduleProblemsWritten: problemsWritten,
-            SchedulePlansWritten: written.Plans,
-            AssignmentsWritten: written.Assignments,
-            ResourceLoadsWritten: written.ResourceLoads,
-            ConflictsWritten: written.Conflicts,
-            UnscheduledOperationsWritten: written.UnscheduledOperations,
             OrderUrgencySnapshotsWritten: urgenciesWritten,
             Validation: validation);
     }
@@ -65,24 +57,24 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
     private async Task<int> SeedProblemsAsync(
         string organizationId,
         string environmentId,
-        IReadOnlyList<WorldHistorySchedulePlanFact> plans,
+        IReadOnlyList<WorldHistoryScheduleProblemFact> problems,
         CancellationToken cancellationToken)
     {
         var existing = await LoadExistingProblemIdsAsync(organizationId, environmentId, cancellationToken);
         var written = 0;
-        foreach (var plan in plans.Where(plan => !existing.Contains(plan.ProblemId)))
+        foreach (var fact in problems.Where(fact => !existing.Contains(fact.ProblemId)))
         {
-            var problem = WorldHistorySchedulingSpec.Scope(plan.Problem, organizationId, environmentId);
+            var problem = WorldHistorySchedulingSpec.Scope(fact.Problem, organizationId, environmentId);
             dbContext.ScheduleProblems.Add(new ScheduleProblemSnapshot(
-                plan.ProblemId,
+                fact.ProblemId,
                 WorldHistorySchedulingSpec.ContractVersion,
                 organizationId,
                 environmentId,
-                plan.ProblemFingerprint,
+                fact.ProblemFingerprint,
                 JsonSerializer.Serialize(problem, SchedulingJson.Options),
-                plan.HorizonStartUtc,
-                plan.HorizonEndUtc,
-                plan.CapturedAtUtc));
+                fact.HorizonStartUtc,
+                fact.HorizonEndUtc,
+                fact.CapturedAtUtc));
             written++;
             await FlushAsync(cancellationToken);
         }
@@ -106,63 +98,6 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
 
     #endregion
 
-    #region 排产方案（自然键 PlanId；一方案一次 SaveChanges）
-
-    private async Task<(int Plans, int Assignments, int ResourceLoads, int Conflicts, int UnscheduledOperations)> SeedPlansAsync(
-        string organizationId,
-        string environmentId,
-        IReadOnlyList<WorldHistorySchedulePlanFact> facts,
-        CancellationToken cancellationToken)
-    {
-        var existingIds = await dbContext.SchedulePlans.AsNoTracking()
-            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
-                x.PlanId.StartsWith(WorldHistorySchedulingSpec.PlanNumberPrefix))
-            .Select(x => x.PlanId)
-            .ToArrayAsync(cancellationToken);
-        var existing = existingIds.ToHashSet(StringComparer.Ordinal);
-
-        var plans = 0;
-        var assignments = 0;
-        var resourceLoads = 0;
-        var conflicts = 0;
-        var unscheduled = 0;
-        foreach (var fact in facts.Where(fact => !existing.Contains(fact.PlanId)))
-        {
-            var plan = SchedulePlan.FromGeneratedPlan(
-                organizationId,
-                environmentId,
-                fact.ToGeneratedSnapshot(FiniteCapacityScheduler.AlgorithmVersion));
-
-            // 顺序要紧：先发布再终结，领域动作拒绝「未发布即撤销」。
-            if (fact.ReleaseRevision is { } revision && fact.ReleasedAtUtc is { } releasedAtUtc)
-            {
-                plan.Release(releasedAtUtc, revision);
-                if (fact.Status == SchedulePlanLifecycleStatus.Superseded && fact.RevokedAtUtc is { } supersededAtUtc)
-                {
-                    plan.Supersede(fact.SupersededByPlanId!, supersededAtUtc);
-                }
-                else if (fact.Status == SchedulePlanLifecycleStatus.Revoked && fact.RevokedAtUtc is { } revokedAtUtc)
-                {
-                    plan.Revoke(revokedAtUtc);
-                }
-            }
-
-            dbContext.SchedulePlans.Add(plan);
-            plans++;
-            assignments += fact.Assignments.Count;
-            resourceLoads += fact.ResourceLoads.Count;
-            conflicts += fact.Conflicts.Count;
-            unscheduled += fact.UnscheduledOperations.Count;
-
-            // 单个方案可带 200–500 条明细，逐方案落库并清跟踪器，避免变更跟踪器无限膨胀。
-            await FlushAsync(cancellationToken, force: true);
-        }
-
-        return (plans, assignments, resourceLoads, conflicts, unscheduled);
-    }
-
-    #endregion
-
     #region 订单紧急度快照（自然键 (Org, Env, OrderId, ModelVersion, InputFingerprint, Revision, Bucket)）
 
     private async Task<int> SeedUrgencySnapshotsAsync(
@@ -176,12 +111,12 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
             .Select(x => new { x.OrderId, x.InputFingerprint })
             .ToArrayAsync(cancellationToken);
         var existing = existingKeys
-            .Select(x => $"{x.OrderId}{x.InputFingerprint}")
+            .Select(x => $"{x.OrderId}{x.InputFingerprint}")
             .ToHashSet(StringComparer.Ordinal);
 
         var written = 0;
         foreach (var fact in facts.Where(fact =>
-                     !existing.Contains($"{fact.OrderId}{fact.InputFingerprint}")))
+                     !existing.Contains($"{fact.OrderId}{fact.InputFingerprint}")))
         {
             var result = OrderUrgencyCalculator.Calculate(WorldHistorySchedulingSpec.ToCalculationInput(fact));
             dbContext.OrderUrgencySnapshots.Add(new OrderUrgencySnapshot(
@@ -227,10 +162,5 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
 /// <summary>一次 L1 排产域历史生成的产出摘要。</summary>
 public sealed record WorldHistorySchedulingSeedReport(
     int ScheduleProblemsWritten,
-    int SchedulePlansWritten,
-    int AssignmentsWritten,
-    int ResourceLoadsWritten,
-    int ConflictsWritten,
-    int UnscheduledOperationsWritten,
     int OrderUrgencySnapshotsWritten,
     WorldHistorySchedulingValidationReport Validation);
