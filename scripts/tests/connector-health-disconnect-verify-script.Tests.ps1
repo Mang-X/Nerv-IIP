@@ -73,6 +73,7 @@ Assert-Contract ($simulator.Contains('TcpListener', [StringComparison]::Ordinal)
 Assert-Contract ($simulator.Contains('127.0.0.1', [StringComparison]::Ordinal)) 'Simulator must bind loopback only.'
 Assert-Contract ($simulator.Contains('ready', [StringComparison]::Ordinal)) 'Simulator must publish ready JSON.'
 Assert-Contract ($simulator.Contains('ConvertTo-Json', [StringComparison]::Ordinal)) 'Simulator ready record must be JSON.'
+Assert-Contract ($simulator.Contains('[System.IO.File]::Move($readyStagingPath, $readyFullPath, $true)', [StringComparison]::Ordinal)) 'Simulator must publish the ready record by renaming a sibling staging file so readers never observe a truncated file.'
 Assert-Contract ($simulator.Contains('StopRequested', [StringComparison]::Ordinal)) 'Simulator must support a governed stop request.'
 Assert-Contract ($simulator.Contains('.Stop()', [StringComparison]::Ordinal)) 'Simulator must stop its listener so the same port can be rebound.'
 
@@ -89,16 +90,30 @@ Assert-Contract (-not $appHost.Contains('.WithEnvironment("Modbus__Registers__1_
 Assert-Contract ($connectorHostProgram.Contains('section.GetValue<ushort>("RegisterCount", 1)', [StringComparison]::Ordinal)) 'Connector Host must bind the configured Modbus register count.'
 Assert-Contract ($connectorHostProgram.Contains('section["DataType"]', [StringComparison]::Ordinal)) 'Connector Host must bind the configured Modbus data type.'
 
-function Wait-ReadyRecord([string] $Path, [int] $TimeoutSeconds = 10) {
+function Get-SimulatorFailureDetail([object] $Managed) {
+    # Stopping the managed process flushes and closes the redirected log streams; without it the
+    # simulator's own error text is still sitting in the FileStream buffer and never reaches us.
+    [void] $Managed.Stop.Invoke('Collect Modbus simulator failure diagnostics')
+    $stderr = if (Test-Path -LiteralPath $Managed.StderrPath -PathType Leaf) { (Get-Content -LiteralPath $Managed.StderrPath -Raw) } else { $null }
+    if ([string]::IsNullOrWhiteSpace($stderr)) { return 'simulator stderr was empty' }
+    return "simulator stderr: $($stderr.Trim())"
+}
+
+function Wait-ReadyRecord([object] $Managed, [string] $Path, [int] $TimeoutSeconds = 10) {
     $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
     while ([DateTimeOffset]::UtcNow -lt $deadline) {
         if (Test-Path -LiteralPath $Path -PathType Leaf) {
             $ready = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
-            if ([string]::Equals([string]("$($ready.state)"), [string]('ready'), [StringComparison]::OrdinalIgnoreCase)) { return $ready }
+            if ([string]::Equals([string] $ready.state, [string]('ready'), [StringComparison]::OrdinalIgnoreCase)) { return $ready }
+        }
+        if ($Managed.Process.HasExited) {
+            # Read the exit code before Get-SimulatorFailureDetail, which stops and disposes the process.
+            $exitCode = $Managed.Process.ExitCode
+            throw "Modbus simulator (pid=$($Managed.ProcessId)) exited with code $exitCode before publishing a ready record at '$Path'; $(Get-SimulatorFailureDetail -Managed $Managed)."
         }
         Start-Sleep -Milliseconds 25
     }
-    throw "Timed out waiting for simulator ready record '$Path'."
+    throw "Modbus simulator (pid=$($Managed.ProcessId)) did not publish a ready record at '$Path' within $TimeoutSeconds seconds; $(Get-SimulatorFailureDetail -Managed $Managed)."
 }
 
 function Read-Exactly([System.IO.Stream] $Stream, [int] $Count) {
@@ -134,7 +149,7 @@ try {
         -Name 'modbus-simulator-contract-first' `
         -LogDirectory (Join-Path $simulatorTestRoot 'first-logs')
     $managedProcesses.Add([pscustomobject]@{ Managed = $first; StopPath = $stopPath })
-    $ready = Wait-ReadyRecord -Path $readyPath
+    $ready = Wait-ReadyRecord -Managed $first -Path $readyPath
     $port = [int] $ready.port
     $client = [System.Net.Sockets.TcpClient]::new()
     try {
@@ -167,7 +182,7 @@ try {
         -Name 'modbus-simulator-contract-restart' `
         -LogDirectory (Join-Path $simulatorTestRoot 'restart-logs')
     $managedProcesses.Add([pscustomobject]@{ Managed = $restart; StopPath = $restartStopPath })
-    $restartReady = Wait-ReadyRecord -Path $restartReadyPath
+    $restartReady = Wait-ReadyRecord -Managed $restart -Path $restartReadyPath
     Assert-Contract ((([int] $restartReady.port) -eq ($port))) 'Simulator must restart ready on the exact same port.'
 }
 finally {
