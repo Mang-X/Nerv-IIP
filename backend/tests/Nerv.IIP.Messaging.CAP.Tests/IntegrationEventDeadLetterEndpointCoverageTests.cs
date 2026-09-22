@@ -20,6 +20,10 @@ public sealed class IntegrationEventDeadLetterEndpointCoverageTests
 {
     private const string StoreInterfaceName = "IIntegrationEventDeadLetterStore";
 
+    private static readonly Regex RouteGroupDeclaration = new(
+        @":\s*IIntegrationEventDeadLetterRouteGroup\b",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
     private static readonly Regex StoreRegistration = new(
         @"Add(?:Scoped|Singleton|Transient)<\s*" + StoreInterfaceName + @"\s*,",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -83,8 +87,13 @@ public sealed class IntegrationEventDeadLetterEndpointCoverageTests
             .Select(File.ReadAllText)
             .ToArray();
 
-        var usesSharedModule = projects.Any(project =>
+        // 「引用了共享模块」单独不够：只删掉服务的 6 个密封端点类而留着 ProjectReference，该服务的死信
+        // 会重回「只写不读」，而引用还在。必须同时要求该服务真的落地了路由组（#3738 审核证据轴实测）。
+        var referencesSharedModule = projects.Any(project =>
             project.Contains("Nerv.IIP.Messaging.CAP.Endpoints.csproj", StringComparison.Ordinal));
+        var declaresRouteGroup = sources.Any(source =>
+            RouteGroupDeclaration.IsMatch(source.Text));
+        var usesSharedModule = referencesSharedModule && declaresRouteGroup;
         var hasLocalDeadLetterEndpoint = sources.Any(source =>
             source.Path.Contains($"{Path.DirectorySeparatorChar}Endpoints{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
             && source.Text.Contains(StoreInterfaceName, StringComparison.Ordinal)
