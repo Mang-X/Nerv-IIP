@@ -13,6 +13,9 @@
     <PackageReference Include="Npgsql" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <!-- #3739：死信列表的失败码与时间窗谓词由 EF 翻译成 SQL 执行，SQLite/InMemory 与 Npgsql
+         的翻译与时间戳精度都不等价（timestamptz 只存到微秒）。要钉住生产实现就得在真 provider 上跑。 -->
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <PackageReference Include="Microsoft.Extensions.Configuration" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
