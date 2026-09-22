@@ -2,6 +2,8 @@ using System.Data.Common;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -33,6 +35,8 @@ namespace Nerv.IIP.Business.MasterData.Web.Tests;
 [Collection(MasterDataPostgresProfileCollection.Name)]
 public sealed class MasterDataPostgresProfileTests
 {
+    private const string TrackingPolicyNormalizationPredecessor = "20260825081539_AddToolingOperationAudit";
+
     [PostgresFact]
     public async Task Postgres_device_reference_batch_uses_two_fixed_relational_reads_for_one_and_two_hundred_references()
     {
@@ -269,6 +273,68 @@ public sealed class MasterDataPostgresProfileTests
             Assert.Equal(1, await db.Set<WorkCalendar>().CountAsync());
             Assert.Equal(1, await CountRowsAsync(db, "work_calendar_working_times"));
         }
+    }
+
+    /// <summary>
+    /// `20260922083128_NormalizeSkuTrackingPolicyCodes` 的两条 UPDATE 是本次唯一有行为的数据迁移。
+    /// 夹具用**当时 `Sku.Create` 写出的那两个码集外同义词**建行（域层不校验码集，所以这条路和历史库一致），
+    /// 另一行取码集内的合法值作对照——它必须原样不动，否则 UPDATE 的 WHERE 就形同虚设。
+    /// </summary>
+    [PostgresFact]
+    public async Task Postgres_migration_normalizes_legacy_sku_tracking_policy_synonyms_and_leaves_valid_rows()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql(connectionString)
+            .Options;
+
+        await using (var seed = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            AssertUsesGovernedDatabase(seed);
+            await DropMasterDataSchemaAsync(seed);
+            await seed.GetService<IMigrator>().MigrateAsync(TrackingPolicyNormalizationPredecessor);
+
+            seed.Skus.Add(LegacySku("SKU-LEGACY", "not-tracked", "not-serialized"));
+            seed.Skus.Add(LegacySku("SKU-VALID", "mandatory", "on-production"));
+            await seed.SaveChangesAsync();
+        }
+
+        await using (var upgraded = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            await upgraded.Database.MigrateAsync();
+
+            var persisted = await upgraded.Skus
+                .AsNoTracking()
+                .OrderBy(x => x.Code)
+                .Select(x => new { x.Code, x.BatchTrackingPolicy, x.SerialTrackingPolicy })
+                .ToArrayAsync();
+
+            Assert.Equal(
+                [
+                    ("SKU-LEGACY", "none", "none"),
+                    ("SKU-VALID", "mandatory", "on-production")
+                ],
+                persisted.Select(x => (x.Code, x.BatchTrackingPolicy, x.SerialTrackingPolicy)));
+        }
+    }
+
+    private static Sku LegacySku(string code, string batchTrackingPolicy, string serialTrackingPolicy)
+    {
+        return Sku.CreateIndustrial(
+            "org-001",
+            "env-dev",
+            code,
+            code,
+            "pcs",
+            "electronic",
+            "electronic",
+            batchTrackingPolicy,
+            serialTrackingPolicy,
+            string.Empty,
+            string.Empty,
+            string.Empty,
+            false,
+            []);
     }
 
     [PostgresFact]

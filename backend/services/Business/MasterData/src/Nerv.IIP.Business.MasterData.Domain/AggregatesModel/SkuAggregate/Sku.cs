@@ -140,7 +140,22 @@ public class Sku : Entity<SkuId>, IAggregateRoot
     {
         // 批次/序列策略取各自码集的“不管理”码（batch-tracking-policy / serial-tracking-policy 的 none）。
         // 这两个值会随 SKU 一路走到网关报工协调器等按码集判定的消费方，写码集外的同义词即等于让下游恒定拒绝。
-        return new Sku(organizationId, environmentId, code, name, unit, category, category, "none", "none", string.Empty, string.Empty, string.Empty, false, [], null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "active", true, true, true);
+        // 两个策略用具名实参传：它们同类型相邻且此处取值相同，位置写反不会报编译错，也不会被任何断言抓到。
+        return CreateIndustrial(
+            organizationId,
+            environmentId,
+            code,
+            name,
+            unit,
+            category,
+            category,
+            batchTrackingPolicy: "none",
+            serialTrackingPolicy: "none",
+            shelfLifePolicyCode: string.Empty,
+            storageConditionCode: string.Empty,
+            defaultBarcodeRuleCode: string.Empty,
+            qualityRequired: false,
+            complianceTags: []);
     }
 
     public static Sku CreateIndustrial(
