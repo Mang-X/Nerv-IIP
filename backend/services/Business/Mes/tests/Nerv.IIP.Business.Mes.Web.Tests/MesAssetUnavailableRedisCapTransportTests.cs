@@ -141,7 +141,7 @@ public sealed class MesAssetUnavailableRedisCapTransportTests(ITestOutputHelper 
                 .ReplayAsync(deadLetter.Id, CancellationToken.None);
         }
         Assert.True(replay.Succeeded, replay.Message);
-        Assert.Equal(IntegrationEventDeadLetterStatus.Replayed.ToString(), replay.Status);
+        Assert.Equal(IntegrationEventDeadLetterReplayStatus.Replayed, replay.Status);
 
         ArrivalLog.Arrival replayed = null!;
         await Eventually.AssertAsync(
