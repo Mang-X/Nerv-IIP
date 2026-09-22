@@ -143,8 +143,7 @@ public sealed class MesPersistenceContractTests
         using (var scope = services.CreateScope())
         {
             var handler = new CreateRushWorkOrderCommandHandler(
-                scope.ServiceProvider.GetRequiredService<IMesPlanningStore>(),
-                scope.ServiceProvider.GetRequiredService<RuleScheduler>());
+                scope.ServiceProvider.GetRequiredService<IMesPlanningStore>());
 
             await handler.Handle(
                 new CreateRushWorkOrderCommand(
@@ -170,38 +169,9 @@ public sealed class MesPersistenceContractTests
 
         Assert.Contains(await store.GetWorkOrdersAsync(), x => x.WorkOrderId == "WO-PERSISTED");
         Assert.Contains(await store.GetOperationTasksAsync(), x => x.OperationTaskId == "OP-10");
-        Assert.Contains(await store.GetScheduleResultsAsync(), x => x.Trigger == RescheduleTrigger.RushOrder);
-    }
-
-    [Fact]
-    public async Task Reschedule_uses_persisted_work_order_and_schedule_facts()
-    {
-        var services = CreateServices(nameof(Reschedule_uses_persisted_work_order_and_schedule_facts));
-        var now = DateTimeOffset.Parse("2026-05-23T08:00:00Z");
-
-        using (var scope = services.CreateScope())
-        {
-            var store = scope.ServiceProvider.GetRequiredService<IMesPlanningStore>();
-            store.AddWorkOrder(new PlannedWorkOrder("org-001", "env-dev", "WO-001", "SKU-1", null, 1m, 10, now.AddHours(12)));
-            store.AddOperationTask(new PlannedOperationTask("WO-001", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2), "SKU-001"));
-
-            var handler = new RescheduleCommandHandler(store, scope.ServiceProvider.GetRequiredService<RuleScheduler>());
-            await handler.Handle(new RescheduleCommand("org-001", "env-dev", RescheduleTrigger.Manual, now), CancellationToken.None);
-
-            await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().SaveChangesAsync();
-        }
-
-        using (var scope = services.CreateScope())
-        {
-            var store = scope.ServiceProvider.GetRequiredService<IMesPlanningStore>();
-            store.AddUnavailability(new WorkCenterUnavailability("WC-A", now, now.AddHours(4), "breakdown"));
-
-            var handler = new RescheduleCommandHandler(store, scope.ServiceProvider.GetRequiredService<RuleScheduler>());
-            var second = await handler.Handle(new RescheduleCommand("org-001", "env-dev", RescheduleTrigger.AssetUnavailable, now.AddMinutes(5)), CancellationToken.None);
-
-            Assert.Equal(2, second.ScheduleVersion);
-            Assert.Contains("WO-001", second.AffectedWorkOrderIds);
-        }
+        // #3696：急单不再顺带排程，不得写 ScheduleResults。
+        Assert.Empty(await recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
+            .ScheduleResults.AsNoTracking().ToArrayAsync());
     }
 
     [Fact]
@@ -235,36 +205,16 @@ public sealed class MesPersistenceContractTests
         Assert.Equal("WC-A", window.WorkCenterId);
         Assert.Equal("ASSET-CNC-01", window.DeviceAssetId);
         Assert.Null(window.ToUtc);
-        Assert.Equal(RescheduleTrigger.AssetUnavailable, Assert.Single(await recreatedStore.GetScheduleResultsAsync()).Trigger);
-    }
-
-    [Fact]
-    public async Task Scheduling_reads_operation_tasks_only_for_requested_organization_and_environment()
-    {
-        var services = CreateServices(nameof(Scheduling_reads_operation_tasks_only_for_requested_organization_and_environment));
-        var now = DateTimeOffset.Parse("2026-05-23T08:00:00Z");
-
-        using var scope = services.CreateScope();
-        var store = scope.ServiceProvider.GetRequiredService<IMesPlanningStore>();
-        store.AddWorkOrder(new PlannedWorkOrder("org-a", "env-dev", "WO-SHARED", "SKU-A", null, 1m, 10, now.AddHours(4)));
-        store.AddOperationTask(new PlannedOperationTask("WO-SHARED", "OP-A", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromMinutes(30), "SKU-001", OrganizationId: "org-a", EnvironmentId: "env-dev"));
-        store.AddWorkOrder(new PlannedWorkOrder("org-b", "env-dev", "WO-SHARED", "SKU-B", null, 1m, 10, now.AddHours(4)));
-        store.AddOperationTask(new PlannedOperationTask("WO-SHARED", "OP-B", OperationTaskStatus.Queued, 10, "WC-B", [], now, TimeSpan.FromMinutes(30), "SKU-001", OrganizationId: "org-b", EnvironmentId: "env-dev"));
-        await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().SaveChangesAsync();
-
-        var orgAOperations = await store.GetScheduleOperationsAsync("org-a", "env-dev");
-
-        var operation = Assert.Single(orgAOperations);
-        Assert.Equal("OP-A", operation.OperationTaskId);
-        Assert.Equal("WC-A", operation.WorkCenterId);
+        // #3696：停机事件不再触发排程，不得写 ScheduleResults。
+        Assert.Empty(await recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
+            .ScheduleResults.AsNoTracking().ToArrayAsync());
     }
 
     [Fact]
     public async Task Maintenance_unavailability_constraints_are_scoped_to_event_organization_and_environment()
     {
         var services = CreateServices(
-            nameof(Maintenance_unavailability_constraints_are_scoped_to_event_organization_and_environment),
-            autoRescheduleOnAssetUnavailable: false);
+            nameof(Maintenance_unavailability_constraints_are_scoped_to_event_organization_and_environment));
         var now = DateTimeOffset.Parse("2026-05-23T08:00:00Z");
 
         using var scope = services.CreateScope();
@@ -281,15 +231,11 @@ public sealed class MesPersistenceContractTests
             new InMemoryIntegrationEventDeadLetterStore());
         await handler.HandleAsync(CreateUnavailableEvent(now, organizationId: "org-b"), CancellationToken.None);
 
-        var orgAPlan = new RuleScheduler().Schedule(
-            await store.GetScheduleOperationsAsync("org-a", "env-dev"),
-            await store.GetUnavailabilitiesAsync("org-a", "env-dev"));
-        var orgBPlan = new RuleScheduler().Schedule(
-            await store.GetScheduleOperationsAsync("org-b", "env-dev"),
-            await store.GetUnavailabilitiesAsync("org-b", "env-dev"));
-
-        Assert.Equal(now, Assert.Single(orgAPlan.Assignments).StartUtc);
-        Assert.True(Assert.Single(orgBPlan.Assignments).StartUtc > now);
+        // #3696：排程器已删除；这里直接断言停机约束只落在事件所属组织，不再经由排程结果观察。
+        Assert.Empty(await store.GetUnavailabilitiesAsync("org-a", "env-dev"));
+        var window = Assert.Single(await store.GetUnavailabilitiesAsync("org-b", "env-dev"));
+        Assert.Equal("WC-A", window.WorkCenterId);
+        Assert.Equal("org-b", window.OrganizationId);
     }
 
     [Fact]
@@ -759,7 +705,6 @@ public sealed class MesPersistenceContractTests
             var dbContext = convertScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var converted = await new ConvertPlanToWorkOrderCommandHandler(
                 dbContext,
-                new RuleScheduler(),
                 null,
                 snapshotProvider).Handle(
                     new ConvertPlanToWorkOrderCommand(
@@ -824,7 +769,7 @@ public sealed class MesPersistenceContractTests
                         "MBOM-FSA-1:MAT-OIL",
                         []),
                 ]));
-        var handler = new ConvertPlanToWorkOrderCommandHandler(dbContext, new RuleScheduler(), null, snapshotProvider);
+        var handler = new ConvertPlanToWorkOrderCommandHandler(dbContext, null, snapshotProvider);
 
         var response = await handler.Handle(
             new ConvertPlanToWorkOrderCommand(
@@ -3983,7 +3928,7 @@ public sealed class MesPersistenceContractTests
         Assert.Equal("WC-A", task.WorkCenterId);
     }
 
-    private static ServiceProvider CreateServices(string databaseName, bool autoRescheduleOnAssetUnavailable = true)
+    private static ServiceProvider CreateServices(string databaseName)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -3991,8 +3936,6 @@ public sealed class MesPersistenceContractTests
         services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName));
         services.AddScoped<IOperationTaskRepository, OperationTaskRepository>();
         services.AddScoped<IMesPlanningStore, PersistentMesPlanningStore>();
-        services.AddSingleton<RuleScheduler>();
-        services.AddSingleton(new MesRescheduleOptions { AutoRescheduleOnAssetUnavailable = autoRescheduleOnAssetUnavailable });
         services.AddScoped<IMesAssetUnavailableInboxClaimCoordinator, PostgreSqlMesAssetUnavailableInboxClaimCoordinator>();
         return services.BuildServiceProvider();
     }

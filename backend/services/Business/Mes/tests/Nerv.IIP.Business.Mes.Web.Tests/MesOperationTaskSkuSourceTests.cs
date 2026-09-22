@@ -81,7 +81,6 @@ public sealed class MesOperationTaskSkuSourceTests
 
         var handler = new ConvertPlanToWorkOrderCommandHandler(
             dbContext,
-            new RuleScheduler(),
             null,
             NoRequirementsProvider.Instance,
             new PostgreSqlMesSkuAvailabilityScopeCoordinator(dbContext),

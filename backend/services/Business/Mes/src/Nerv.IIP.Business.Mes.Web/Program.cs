@@ -16,7 +16,6 @@ using Nerv.IIP.Business.Mes.Web.Application.ProductEngineering;
 using Nerv.IIP.Business.Mes.Web.Application.Quality;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
-using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Business.Mes.Web.Application.Behaviors;
 using Nerv.IIP.Business.Mes.Web.Application.Seed;
 using Nerv.IIP.Business.Mes.Web.Application.Errors;
@@ -211,7 +210,6 @@ builder.Services.AddScoped<IMesPlanningStore, PersistentMesPlanningStore>();
 builder.Services.AddScoped<MesFoundationReadinessService>();
 builder.Services.Configure<MesEngineeringChangeOptions>(
     builder.Configuration.GetSection("Mes:EngineeringChange"));
-builder.Services.AddSingleton<RuleScheduler>();
 builder.Services.AddScoped<MesCodingService>();
 builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
 builder.Services.AddSingleton(TimeProvider.System);
@@ -222,11 +220,6 @@ builder.Services.AddOptions<AndonEscalationOptions>()
 builder.Services.AddSingleton<AndonEscalationScanner>();
 builder.Services.AddHostedService<AndonEscalationWorker>();
 builder.Services.AddMesCapIntegrationEvents(builder.Configuration, builder.Environment.EnvironmentName, isTesting);
-builder.Services.AddSingleton(new MesRescheduleOptions
-{
-    AutoRescheduleOnAssetUnavailable = builder.Configuration.GetValue("Mes:AutoRescheduleOnAssetUnavailable", true),
-    AutoRescheduleOnAssetRestored = builder.Configuration.GetValue("Mes:AutoRescheduleOnAssetRestored", true),
-});
 builder.Services.AddMesIntegrationEventConsumers();
 
 var app = builder.Build();

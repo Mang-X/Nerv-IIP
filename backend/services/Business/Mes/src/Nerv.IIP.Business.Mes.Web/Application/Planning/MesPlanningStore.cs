@@ -1,4 +1,3 @@
-using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Planning;
@@ -34,13 +33,6 @@ public sealed record PlannedOperationTask(
     string? OrganizationId = null,
     string? EnvironmentId = null);
 
-public sealed record MesScheduleResult(
-    int ScheduleVersion,
-    RescheduleTrigger Trigger,
-    DateTimeOffset ScheduledAtUtc,
-    IReadOnlyCollection<ScheduledOperation> Assignments,
-    IReadOnlyCollection<string> AffectedWorkOrderIds);
-
 public interface IMesPlanningStore
 {
     void AddWorkOrder(PlannedWorkOrder workOrder);
@@ -68,8 +60,6 @@ public interface IMesPlanningStore
         string environmentId,
         CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyCollection<MesScheduleResult>> GetScheduleResultsAsync(CancellationToken cancellationToken = default);
-
     Task CloseUnavailabilityAsync(string deviceAssetId, DateTimeOffset restoredAtUtc, CancellationToken cancellationToken = default);
 
     Task CloseUnavailabilityAsync(
@@ -87,17 +77,6 @@ public interface IMesPlanningStore
         string deviceAssetId,
         CancellationToken cancellationToken = default);
 
-    Task<MesScheduleResult> AddScheduleResultAsync(
-        RescheduleTrigger trigger,
-        DateTimeOffset scheduledAtUtc,
-        RuleSchedulePlan plan,
-        IReadOnlyCollection<ScheduledOperation>? compareAssignments = null,
-        CancellationToken cancellationToken = default);
-
-    Task<IReadOnlyCollection<ScheduleOperation>> GetScheduleOperationsAsync(
-        string organizationId,
-        string environmentId,
-        CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -109,7 +88,6 @@ public sealed class InMemoryMesPlanningStore : IMesPlanningStore
     private readonly List<PlannedWorkOrder> _workOrders = [];
     private readonly List<PlannedOperationTask> _operationTasks = [];
     private readonly List<WorkCenterUnavailability> _unavailabilities = [];
-    private readonly List<MesScheduleResult> _scheduleResults = [];
     private readonly Dictionary<string, string> _assetWorkCenterMap = new(StringComparer.OrdinalIgnoreCase);
 
     public IReadOnlyCollection<PlannedWorkOrder> WorkOrders => _workOrders;
@@ -117,8 +95,6 @@ public sealed class InMemoryMesPlanningStore : IMesPlanningStore
     public IReadOnlyCollection<PlannedOperationTask> OperationTasks => _operationTasks;
 
     public IReadOnlyCollection<WorkCenterUnavailability> Unavailabilities => _unavailabilities;
-
-    public IReadOnlyCollection<MesScheduleResult> ScheduleResults => _scheduleResults;
 
     public void AddWorkOrder(PlannedWorkOrder workOrder)
     {
@@ -173,52 +149,6 @@ public sealed class InMemoryMesPlanningStore : IMesPlanningStore
             : deviceAssetId;
     }
 
-    public MesScheduleResult AddScheduleResult(
-        RescheduleTrigger trigger,
-        DateTimeOffset scheduledAtUtc,
-        RuleSchedulePlan plan,
-        IReadOnlyCollection<ScheduledOperation>? compareAssignments = null)
-    {
-        ArgumentNullException.ThrowIfNull(plan);
-        var affected = FindAffectedWorkOrders(plan, compareAssignments);
-        var result = new MesScheduleResult(
-            _scheduleResults.Count + 1,
-            trigger,
-            scheduledAtUtc,
-            plan.Assignments,
-            affected);
-        _scheduleResults.Add(result);
-        return result;
-    }
-
-    public IReadOnlyCollection<ScheduleOperation> GetScheduleOperations(string organizationId, string environmentId)
-    {
-        var workOrders = _workOrders
-            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId)
-            .ToDictionary(x => x.WorkOrderId, StringComparer.OrdinalIgnoreCase);
-
-        return _operationTasks
-            .Where(x => workOrders.ContainsKey(x.WorkOrderId))
-            .Select(x =>
-            {
-                var workOrder = workOrders[x.WorkOrderId];
-                return new ScheduleOperation(
-                    x.WorkOrderId,
-                    x.OperationTaskId,
-                    x.Status,
-                    x.OperationSequence,
-                    workOrder.Priority,
-                    workOrder.DueUtc,
-                    x.EarliestStartUtc,
-                    x.Duration,
-                    x.WorkCenterId,
-                    x.AlternativeWorkCenterIds,
-                    x.ExistingStartUtc,
-                    x.ExistingEndUtc);
-            })
-            .ToList();
-    }
-
     public Task<IReadOnlyCollection<PlannedWorkOrder>> GetWorkOrdersAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -260,12 +190,6 @@ public sealed class InMemoryMesPlanningStore : IMesPlanningStore
             .Where(x => IsInScope(x, organizationId, environmentId))
             .ToList();
         return Task.FromResult<IReadOnlyCollection<WorkCenterUnavailability>>(scoped);
-    }
-
-    public Task<IReadOnlyCollection<MesScheduleResult>> GetScheduleResultsAsync(CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(ScheduleResults);
     }
 
     public Task CloseUnavailabilityAsync(string deviceAssetId, DateTimeOffset restoredAtUtc, CancellationToken cancellationToken = default)
@@ -313,45 +237,6 @@ public sealed class InMemoryMesPlanningStore : IMesPlanningStore
         _ = environmentId;
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult(ResolveWorkCenterId(deviceAssetId));
-    }
-
-    public Task<MesScheduleResult> AddScheduleResultAsync(
-        RescheduleTrigger trigger,
-        DateTimeOffset scheduledAtUtc,
-        RuleSchedulePlan plan,
-        IReadOnlyCollection<ScheduledOperation>? compareAssignments = null,
-        CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(AddScheduleResult(trigger, scheduledAtUtc, plan, compareAssignments));
-    }
-
-    public Task<IReadOnlyCollection<ScheduleOperation>> GetScheduleOperationsAsync(
-        string organizationId,
-        string environmentId,
-        CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(GetScheduleOperations(organizationId, environmentId));
-    }
-
-    private IReadOnlyCollection<string> FindAffectedWorkOrders(
-        RuleSchedulePlan plan,
-        IReadOnlyCollection<ScheduledOperation>? compareAssignments)
-    {
-        var previousAssignments = compareAssignments ?? _scheduleResults.LastOrDefault()?.Assignments;
-        if (previousAssignments is null)
-        {
-            return [];
-        }
-
-        var previousByTask = previousAssignments.ToDictionary(x => x.OperationTaskId, StringComparer.OrdinalIgnoreCase);
-        return plan.Assignments
-            .Where(x => previousByTask.TryGetValue(x.OperationTaskId, out var prior) && x.StartUtc > prior.StartUtc)
-            .Select(x => x.WorkOrderId)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Order(StringComparer.OrdinalIgnoreCase)
-            .ToList();
     }
 
     private static bool IsInScope(WorkCenterUnavailability unavailability, string organizationId, string environmentId)
