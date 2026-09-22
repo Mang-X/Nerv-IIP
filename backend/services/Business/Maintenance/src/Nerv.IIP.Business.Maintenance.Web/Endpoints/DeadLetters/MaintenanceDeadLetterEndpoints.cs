@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Nerv.IIP.Messaging.CAP;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Endpoints.DeadLetters;
@@ -34,10 +35,14 @@ public static class MaintenanceDeadLetterEndpointContracts
 {
     public static readonly IReadOnlyCollection<IntegrationEventDeadLetterEndpointContract> All =
         IntegrationEventDeadLetterEndpointContracts.For<MaintenanceDeadLetterRoutes>(
+            "Maintenance",
             typeof(ListMaintenanceDeadLettersEndpoint),
             typeof(GetMaintenanceDeadLetterMetricsEndpoint),
             typeof(GetMaintenanceDeadLetterEndpoint),
             typeof(ReplayMaintenanceDeadLetterEndpoint),
             typeof(ReplayMaintenanceDeadLettersEndpoint),
             typeof(IgnoreMaintenanceDeadLetterEndpoint));
+
+    public static bool TryGet(Type endpointType, [NotNullWhen(true)] out IntegrationEventDeadLetterEndpointContract? contract) =>
+        IntegrationEventDeadLetterEndpointContracts.TryGet(All, endpointType, out contract);
 }

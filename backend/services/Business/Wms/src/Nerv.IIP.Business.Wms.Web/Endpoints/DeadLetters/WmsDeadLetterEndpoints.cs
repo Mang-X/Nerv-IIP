@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Nerv.IIP.Messaging.CAP;
 
 namespace Nerv.IIP.Business.Wms.Web.Endpoints.DeadLetters;
@@ -34,10 +35,14 @@ public static class WmsDeadLetterEndpointContracts
 {
     public static readonly IReadOnlyCollection<IntegrationEventDeadLetterEndpointContract> All =
         IntegrationEventDeadLetterEndpointContracts.For<WmsDeadLetterRoutes>(
+            "Wms",
             typeof(ListWmsDeadLettersEndpoint),
             typeof(GetWmsDeadLetterMetricsEndpoint),
             typeof(GetWmsDeadLetterEndpoint),
             typeof(ReplayWmsDeadLetterEndpoint),
             typeof(ReplayWmsDeadLettersEndpoint),
             typeof(IgnoreWmsDeadLetterEndpoint));
+
+    public static bool TryGet(Type endpointType, [NotNullWhen(true)] out IntegrationEventDeadLetterEndpointContract? contract) =>
+        IntegrationEventDeadLetterEndpointContracts.TryGet(All, endpointType, out contract);
 }

@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text.Json;
 using DotNetCore.CAP;
 using FastEndpoints;
+using Nerv.IIP.Business.Quality.Web.Endpoints.DeadLetters;
 using FastEndpoints.Swagger;
 using FluentValidation.AspNetCore;
 using Hangfire;
@@ -333,8 +334,13 @@ try
                 return inspectionContract.OperationId;
             }
 
-            return QualityReasonEndpointContracts.TryGet(ctx.EndpointType, out var reasonContract)
-                ? reasonContract.OperationId
+            if (QualityReasonEndpointContracts.TryGet(ctx.EndpointType, out var reasonContract))
+            {
+                return reasonContract.OperationId;
+            }
+
+            return QualityDeadLetterEndpointContracts.TryGet(ctx.EndpointType, out var deadLetterContract)
+                ? deadLetterContract.OperationId
                 : ToLowerCamelEndpointName(ctx.EndpointType.Name);
         };
     }).UseSwaggerGen();

@@ -47,9 +47,10 @@ public sealed class QualityOpenApiTests
                 GetOperationId(document, contract.Route, contract.HttpMethod.ToLowerInvariant()));
         }
 
-        // #3738：死信登记行的 operationId 由端点类型名派生（契约不接受手写词干）。这一圈是该派生规则与
-        // 服务真实 NameGenerator 回落规则之间唯一的实跑对照——两者一旦分叉，这里红，而不是等 #3739
-        // 按矩阵去快照里找不到 operation。
+        // #3738：死信登记表是 operationId 的唯一产出方，本服务 NameGenerator 通过
+        // QualityDeadLetterEndpointContracts.TryGet 直接取它。这一圈钉的是那条链真的接上了——
+        // 漏接则 swagger 回落到类型名、与登记值分叉，这里红，而不是等 #3739 按矩阵去快照里找不到 operation。
+        // 证明范围：只有 Quality 一个服务有这条实跑对照，另外 8 个服务的链是否接上无门禁（#3750）。
         foreach (var contract in QualityDeadLetterEndpointContracts.All)
         {
             Assert.Equal(

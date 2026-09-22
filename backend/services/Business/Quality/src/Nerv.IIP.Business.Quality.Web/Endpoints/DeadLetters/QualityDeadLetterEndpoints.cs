@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Nerv.IIP.Messaging.CAP;
 
 namespace Nerv.IIP.Business.Quality.Web.Endpoints.DeadLetters;
@@ -11,20 +12,20 @@ public sealed class QualityDeadLetterRoutes : IIntegrationEventDeadLetterRouteGr
     public static string RoutePrefix => "/api/business/v1/quality";
 }
 
-public sealed class ListBusinessQualityDeadLettersEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
+public sealed class ListQualityDeadLettersEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
     : ListIntegrationEventDeadLettersEndpointBase<QualityDeadLetterRoutes>(deadLetterStore);
 
-public sealed class GetBusinessQualityDeadLetterMetricsEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
+public sealed class GetQualityDeadLetterMetricsEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
     : GetIntegrationEventDeadLetterMetricsEndpointBase<QualityDeadLetterRoutes>(deadLetterStore);
 
-public sealed class GetBusinessQualityDeadLetterEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
+public sealed class GetQualityDeadLetterEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
     : GetIntegrationEventDeadLetterEndpointBase<QualityDeadLetterRoutes>(deadLetterStore);
 
-public sealed class ReplayBusinessQualityDeadLetterEndpoint : ReplayIntegrationEventDeadLetterEndpointBase<QualityDeadLetterRoutes>;
+public sealed class ReplayQualityDeadLetterEndpoint : ReplayIntegrationEventDeadLetterEndpointBase<QualityDeadLetterRoutes>;
 
-public sealed class ReplayBusinessQualityDeadLettersEndpoint : ReplayIntegrationEventDeadLettersEndpointBase<QualityDeadLetterRoutes>;
+public sealed class ReplayQualityDeadLettersEndpoint : ReplayIntegrationEventDeadLettersEndpointBase<QualityDeadLetterRoutes>;
 
-public sealed class IgnoreBusinessQualityDeadLetterEndpoint(
+public sealed class IgnoreQualityDeadLetterEndpoint(
     IIntegrationEventDeadLetterStore deadLetterStore,
     TimeProvider timeProvider)
     : IgnoreIntegrationEventDeadLetterEndpointBase<QualityDeadLetterRoutes>(deadLetterStore, timeProvider);
@@ -34,10 +35,14 @@ public static class QualityDeadLetterEndpointContracts
 {
     public static readonly IReadOnlyCollection<IntegrationEventDeadLetterEndpointContract> All =
         IntegrationEventDeadLetterEndpointContracts.For<QualityDeadLetterRoutes>(
-            typeof(ListBusinessQualityDeadLettersEndpoint),
-            typeof(GetBusinessQualityDeadLetterMetricsEndpoint),
-            typeof(GetBusinessQualityDeadLetterEndpoint),
-            typeof(ReplayBusinessQualityDeadLetterEndpoint),
-            typeof(ReplayBusinessQualityDeadLettersEndpoint),
-            typeof(IgnoreBusinessQualityDeadLetterEndpoint));
+            "BusinessQuality",
+            typeof(ListQualityDeadLettersEndpoint),
+            typeof(GetQualityDeadLetterMetricsEndpoint),
+            typeof(GetQualityDeadLetterEndpoint),
+            typeof(ReplayQualityDeadLetterEndpoint),
+            typeof(ReplayQualityDeadLettersEndpoint),
+            typeof(IgnoreQualityDeadLetterEndpoint));
+
+    public static bool TryGet(Type endpointType, [NotNullWhen(true)] out IntegrationEventDeadLetterEndpointContract? contract) =>
+        IntegrationEventDeadLetterEndpointContracts.TryGet(All, endpointType, out contract);
 }

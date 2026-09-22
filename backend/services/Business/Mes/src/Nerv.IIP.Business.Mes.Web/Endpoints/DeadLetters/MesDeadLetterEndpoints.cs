@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Nerv.IIP.Messaging.CAP;
 
 namespace Nerv.IIP.Business.Mes.Web.Endpoints.DeadLetters;
@@ -11,20 +12,20 @@ public sealed class MesDeadLetterRoutes : IIntegrationEventDeadLetterRouteGroup
     public static string RoutePrefix => "/api/business/v1/mes";
 }
 
-public sealed class ListBusinessMesDeadLettersEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
+public sealed class ListMesDeadLettersEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
     : ListIntegrationEventDeadLettersEndpointBase<MesDeadLetterRoutes>(deadLetterStore);
 
-public sealed class GetBusinessMesDeadLetterMetricsEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
+public sealed class GetMesDeadLetterMetricsEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
     : GetIntegrationEventDeadLetterMetricsEndpointBase<MesDeadLetterRoutes>(deadLetterStore);
 
-public sealed class GetBusinessMesDeadLetterEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
+public sealed class GetMesDeadLetterEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
     : GetIntegrationEventDeadLetterEndpointBase<MesDeadLetterRoutes>(deadLetterStore);
 
-public sealed class ReplayBusinessMesDeadLetterEndpoint : ReplayIntegrationEventDeadLetterEndpointBase<MesDeadLetterRoutes>;
+public sealed class ReplayMesDeadLetterEndpoint : ReplayIntegrationEventDeadLetterEndpointBase<MesDeadLetterRoutes>;
 
-public sealed class ReplayBusinessMesDeadLettersEndpoint : ReplayIntegrationEventDeadLettersEndpointBase<MesDeadLetterRoutes>;
+public sealed class ReplayMesDeadLettersEndpoint : ReplayIntegrationEventDeadLettersEndpointBase<MesDeadLetterRoutes>;
 
-public sealed class IgnoreBusinessMesDeadLetterEndpoint(
+public sealed class IgnoreMesDeadLetterEndpoint(
     IIntegrationEventDeadLetterStore deadLetterStore,
     TimeProvider timeProvider)
     : IgnoreIntegrationEventDeadLetterEndpointBase<MesDeadLetterRoutes>(deadLetterStore, timeProvider);
@@ -34,10 +35,14 @@ public static class MesDeadLetterEndpointContracts
 {
     public static readonly IReadOnlyCollection<IntegrationEventDeadLetterEndpointContract> All =
         IntegrationEventDeadLetterEndpointContracts.For<MesDeadLetterRoutes>(
-            typeof(ListBusinessMesDeadLettersEndpoint),
-            typeof(GetBusinessMesDeadLetterMetricsEndpoint),
-            typeof(GetBusinessMesDeadLetterEndpoint),
-            typeof(ReplayBusinessMesDeadLetterEndpoint),
-            typeof(ReplayBusinessMesDeadLettersEndpoint),
-            typeof(IgnoreBusinessMesDeadLetterEndpoint));
+            "BusinessMes",
+            typeof(ListMesDeadLettersEndpoint),
+            typeof(GetMesDeadLetterMetricsEndpoint),
+            typeof(GetMesDeadLetterEndpoint),
+            typeof(ReplayMesDeadLetterEndpoint),
+            typeof(ReplayMesDeadLettersEndpoint),
+            typeof(IgnoreMesDeadLetterEndpoint));
+
+    public static bool TryGet(Type endpointType, [NotNullWhen(true)] out IntegrationEventDeadLetterEndpointContract? contract) =>
+        IntegrationEventDeadLetterEndpointContracts.TryGet(All, endpointType, out contract);
 }

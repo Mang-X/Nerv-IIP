@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Nerv.IIP.Messaging.CAP;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Endpoints.DeadLetters;
@@ -11,20 +12,20 @@ public sealed class IiotDeadLetterRoutes : IIntegrationEventDeadLetterRouteGroup
     public static string RoutePrefix => "/api/business/v1/iiot";
 }
 
-public sealed class ListBusinessIiotDeadLettersEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
+public sealed class ListIiotDeadLettersEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
     : ListIntegrationEventDeadLettersEndpointBase<IiotDeadLetterRoutes>(deadLetterStore);
 
-public sealed class GetBusinessIiotDeadLetterMetricsEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
+public sealed class GetIiotDeadLetterMetricsEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
     : GetIntegrationEventDeadLetterMetricsEndpointBase<IiotDeadLetterRoutes>(deadLetterStore);
 
-public sealed class GetBusinessIiotDeadLetterEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
+public sealed class GetIiotDeadLetterEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
     : GetIntegrationEventDeadLetterEndpointBase<IiotDeadLetterRoutes>(deadLetterStore);
 
-public sealed class ReplayBusinessIiotDeadLetterEndpoint : ReplayIntegrationEventDeadLetterEndpointBase<IiotDeadLetterRoutes>;
+public sealed class ReplayIiotDeadLetterEndpoint : ReplayIntegrationEventDeadLetterEndpointBase<IiotDeadLetterRoutes>;
 
-public sealed class ReplayBusinessIiotDeadLettersEndpoint : ReplayIntegrationEventDeadLettersEndpointBase<IiotDeadLetterRoutes>;
+public sealed class ReplayIiotDeadLettersEndpoint : ReplayIntegrationEventDeadLettersEndpointBase<IiotDeadLetterRoutes>;
 
-public sealed class IgnoreBusinessIiotDeadLetterEndpoint(
+public sealed class IgnoreIiotDeadLetterEndpoint(
     IIntegrationEventDeadLetterStore deadLetterStore,
     TimeProvider timeProvider)
     : IgnoreIntegrationEventDeadLetterEndpointBase<IiotDeadLetterRoutes>(deadLetterStore, timeProvider);
@@ -34,10 +35,14 @@ public static class IiotDeadLetterEndpointContracts
 {
     public static readonly IReadOnlyCollection<IntegrationEventDeadLetterEndpointContract> All =
         IntegrationEventDeadLetterEndpointContracts.For<IiotDeadLetterRoutes>(
-            typeof(ListBusinessIiotDeadLettersEndpoint),
-            typeof(GetBusinessIiotDeadLetterMetricsEndpoint),
-            typeof(GetBusinessIiotDeadLetterEndpoint),
-            typeof(ReplayBusinessIiotDeadLetterEndpoint),
-            typeof(ReplayBusinessIiotDeadLettersEndpoint),
-            typeof(IgnoreBusinessIiotDeadLetterEndpoint));
+            "BusinessIiot",
+            typeof(ListIiotDeadLettersEndpoint),
+            typeof(GetIiotDeadLetterMetricsEndpoint),
+            typeof(GetIiotDeadLetterEndpoint),
+            typeof(ReplayIiotDeadLetterEndpoint),
+            typeof(ReplayIiotDeadLettersEndpoint),
+            typeof(IgnoreIiotDeadLetterEndpoint));
+
+    public static bool TryGet(Type endpointType, [NotNullWhen(true)] out IntegrationEventDeadLetterEndpointContract? contract) =>
+        IntegrationEventDeadLetterEndpointContracts.TryGet(All, endpointType, out contract);
 }
